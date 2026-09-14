@@ -1,6 +1,6 @@
 // MamushkaComponent — nest level + material/hp (no quadtree).
 
-import { Component } from '/src/core/Component.js';
+import { Component } from '/src/core/component.js';
 
 /** Dirt (shallow). */
 export const MATERIAL_DIRT = 0;

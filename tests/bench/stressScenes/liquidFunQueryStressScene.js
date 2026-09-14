@@ -1,6 +1,6 @@
 // LiquidFunQueryStressScene — dense fluid + per-frame sync QueryAABB/RayCast churn.
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/Camera.js';
+import { Camera } from '/src/core/camera.js';
 import WEED from '/src/index.js';
 import { LiquidFunQueryChurn } from './liquidFunQuery/liquidFunQueryChurn.js';
 

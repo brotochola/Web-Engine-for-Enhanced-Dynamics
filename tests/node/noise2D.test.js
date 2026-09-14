@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Noise2D } from '../../src/core/Noise2D.js';
+import { Noise2D } from '../../src/core/noise2D.js';
 
 test('sample is deterministic for the same seed', () => {
   const a = new Noise2D(42);

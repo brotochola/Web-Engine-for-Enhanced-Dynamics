@@ -21,14 +21,14 @@ import {
   State,
   Texture,
   TextureSource,
-} from '../lib/pixi_8.16_.min.js';
+} from '../vendor/pixi.min.js';
 
-import { DECORATION_Y_SORT_SCALE, ENTITY_GLOW_SORT_BIAS } from '../core/ConfigDefaults.js';
-import { instancedSpriteGpuProgram } from './instancedSpriteWgsl.js';
+import { DECORATION_Y_SORT_SCALE, ENTITY_GLOW_SORT_BIAS } from '../util/configDefaults.js';
+import { instancedSpriteGpuProgram } from './webgpu/instancedSpriteWgsl.js';
 import {
   instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
-} from './instancedSpriteGlsl.js';
+} from './webgl/instancedSpriteGlsl.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -180,7 +180,7 @@ export class InstancedSpriteBatch {
    * @param {object} opts
    * @param {number} opts.capacity
    * @param {string} opts.label
-   * @param {import('../lib/pixi_8.16_.min.js').TextureSource} opts.atlasSource
+   * @param {import('../vendor/pixi.min.js').TextureSource} opts.atlasSource
    * @param {boolean} [opts.depthTest=true]
    * @param {boolean} [opts.depthMask=true] - false → test Z (Y-sort) without writing (soft particles)
    * @param {boolean} [opts.alphaDiscard=true] - false → blend-only fragment (no discard; soft particles)

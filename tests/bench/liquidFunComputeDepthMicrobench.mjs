@@ -7,18 +7,18 @@
 // already in the system (demo dulce blob analogue).
 //
 // Usage:
-//   node tests/bench/liquidfun-computedepth-microbench.mjs
-//   node tests/bench/liquidfun-computedepth-microbench.mjs --reps 11 --output tests/results/liquidfun-computedepth-micro.json
+//   node tests/bench/liquidFunComputeDepthMicrobench.mjs
+//   node tests/bench/liquidFunComputeDepthMicrobench.mjs --reps 11 --output tests/results/liquidfun-computedepth-micro.json
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs, writeReport } from './microbench-helpers.mjs';
+import { parseArgs, writeReport } from './microbenchHelpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOX2D_DIR = path.resolve(__dirname, '../../src/box2d');
-const WASM_PATH = path.join(BOX2D_DIR, 'box2d_wasm.wasm');
-const JS_PATH = path.join(BOX2D_DIR, 'box2d_wasm.js');
+const WASM_PATH = path.join(BOX2D_DIR, 'box2dWasm.wasm');
+const JS_PATH = path.join(BOX2D_DIR, 'box2dWasm.js');
 
 const args = parseArgs();
 const PUDDLE_HALF_W = Number(args['puddle-half-w'] ?? 1200);

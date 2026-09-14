@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Scene } from '../../src/core/Scene.js';
+import { Scene } from '../../src/core/scene.js';
 import {
   normalizeRendererBackend,
   assertSceneRendererConfig,
@@ -13,7 +13,7 @@ import {
   detectShaderDialectFromSource,
   errorShaderFetchFailed,
   errorCompileFailed,
-} from '../../src/core/rendererBackend.js';
+} from '../../src/render/rendererBackend.js';
 
 const WGSL_LOOK = `@fragment fn mainFrag() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }`;
 const GLSL_LOOK = `precision mediump float;\nvoid main() { gl_FragColor = vec4(1.0); }`;

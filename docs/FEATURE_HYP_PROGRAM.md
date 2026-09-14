@@ -8,7 +8,7 @@ Same pipeline as Ray for every isolatable hot subsystem:
 4. **Tournament** headless singles → pairs → stacks → merge champion
 5. **L3** demo gate when relevant
 
-Shared helpers: [`tests/bench/feature-tournament-lib.mjs`](../tests/bench/feature-tournament-lib.mjs), [`microbench-helpers.mjs`](../tests/bench/microbench-helpers.mjs).
+Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../tests/bench/featureTournamentLib.mjs), [`microbenchHelpers.mjs`](../tests/bench/microbenchHelpers.mjs).
 
 ## Protocol (headless)
 

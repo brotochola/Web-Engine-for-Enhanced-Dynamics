@@ -6,7 +6,7 @@ import {
   packLightDataTexel,
   readLightDataTexel,
   clearUnusedLightDataTexels,
-} from '../../src/core/utils.js';
+} from '../../src/util/utils.js';
 
 test('light data texture pack/read matches 2-row RGBA32F layout', () => {
   const maxLights = 4;

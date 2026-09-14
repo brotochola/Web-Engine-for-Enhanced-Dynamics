@@ -1,15 +1,15 @@
 // L1 kernels for skip-work hyps: contact publish Atomics, speed hypot, input edges.
 //
 // Usage:
-//   node tests/bench/skip-work-microbench.mjs
-//   node tests/bench/skip-work-microbench.mjs --output tests/results/skip-work-hyps/B0-micro.json
+//   node tests/bench/skipWorkMicrobench.mjs
+//   node tests/bench/skipWorkMicrobench.mjs --output tests/results/skip-work-hyps/B0-micro.json
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { Keyboard } from '../../src/core/Keyboard.js';
-import { calculateSpeed } from '../../src/core/utils.js';
-import { parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { Keyboard } from '../../src/core/keyboard.js';
+import { calculateSpeed } from '../../src/util/utils.js';
+import { parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 function publishPairs(pairs, gen, out) {
   let n = 0;

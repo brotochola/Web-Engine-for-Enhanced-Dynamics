@@ -3,12 +3,12 @@
  * Particle hyp tournament (Wave B — emit + integrate): Round1 singles → Round2 pairs →
  * Round3 stacks → champion.
  *
- *   node tests/bench/run-particle-hyp-tournament.mjs --round all
- *   node tests/bench/run-particle-hyp-tournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
- *   node tests/bench/run-particle-hyp-tournament.mjs --round 2
- *   node tests/bench/run-particle-hyp-tournament.mjs --round 3
- *   node tests/bench/run-particle-hyp-tournament.mjs --dry-apply
- *   node tests/bench/run-particle-hyp-tournament.mjs --include-l3   (adds zenithalParticleTestScene)
+ *   node tests/bench/runParticleHypTournament.mjs --round all
+ *   node tests/bench/runParticleHypTournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
+ *   node tests/bench/runParticleHypTournament.mjs --round 2
+ *   node tests/bench/runParticleHypTournament.mjs --round 3
+ *   node tests/bench/runParticleHypTournament.mjs --dry-apply
+ *   node tests/bench/runParticleHypTournament.mjs --include-l3   (adds zenithalParticleTestScene)
  */
 
 import { execFileSync } from 'node:child_process';
@@ -25,17 +25,17 @@ import {
   pairsOf,
   tagFromIds,
   sortHypIds,
-} from './feature-tournament-lib.mjs';
+} from './featureTournamentLib.mjs';
 import { applyCombo, applyHyp, restoreAll, PATHS, CANONICAL_ORDER, HYPS } from './particle-hyps/hypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)), '..');
-const integratedRunner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
-const microRunner = path.join(repoRoot, 'tests/bench/particle-l1-microbench.mjs');
+const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
+const microRunner = path.join(repoRoot, 'tests/bench/particleL1Microbench.mjs');
 const outDir = path.join(repoRoot, 'tests/results/particle-hyps/tournament');
 
 const SCENES_ALL = [
-  { key: 'particleEmit', scene: '/tests/bench/stressScenes/ParticleEmitStressScene.js', exportName: 'ParticleEmitStressScene' },
-  { key: 'particleIntegrate', scene: '/tests/bench/stressScenes/ParticleIntegrateStressScene.js', exportName: 'ParticleIntegrateStressScene' },
+  { key: 'particleEmit', scene: '/tests/bench/stressScenes/particleEmitStressScene.js', exportName: 'ParticleEmitStressScene' },
+  { key: 'particleIntegrate', scene: '/tests/bench/stressScenes/particleIntegrateStressScene.js', exportName: 'ParticleIntegrateStressScene' },
   { key: 'zenithal', scene: '/demos/zenithalParticleTestScene/zenithalParticleTestScene.js', exportName: 'ZenithalParticleTestScene' },
 ];
 

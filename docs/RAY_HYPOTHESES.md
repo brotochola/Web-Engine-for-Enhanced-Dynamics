@@ -1,6 +1,6 @@
 # Ray optimization hypotheses
 
-Falsifiable claims for speeding up [`src/core/Ray.js`](../src/core/Ray.js). Test **headless only** with the three-layer protocol below.
+Falsifiable claims for speeding up [`src/core/ray.js`](../src/core/ray.js). Test **headless only** with the three-layer protocol below.
 
 ## Protocol (always headless)
 
@@ -14,9 +14,9 @@ Tournament (singles → pairs → stacks):
 
 ```bash
 pnpm bench:ray:tournament
-node tests/bench/run-ray-hyp-tournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
-node tests/bench/run-ray-hyp-tournament.mjs --round 2
-node tests/bench/run-ray-hyp-tournament.mjs --round 3
+node tests/bench/runRayHypTournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
+node tests/bench/runRayHypTournament.mjs --round 2
+node tests/bench/runRayHypTournament.mjs --round 3
 ```
 
 Summaries: `tests/results/ray-hyps/tournament/round{1,2,3}-summary.json`, `tournament-leaderboard.json`.
@@ -55,7 +55,7 @@ Screening: `--runs 2`, warmup 8s, duration 10s, headless.
 
 ### Production status (2026-08-05): **SHIPPED again (with Decals/Particles)**
 
-H6+H1 was briefly reverted after a noisy **headless** Predator matrix, then **re-selected** by a headed Predator pick (`tests/bench/run-predator-headed-pick.mjs`, 3 runs × 25s/18s):
+H6+H1 was briefly reverted after a noisy **headless** Predator matrix, then **re-selected** by a headed Predator pick (`tests/bench/runPredatorHeadedPick.mjs`, 3 runs × 25s/18s):
 
 | Config | logic max STEP vs BASE |
 |--------|------------------------|
@@ -69,9 +69,9 @@ Post-merge sanity (RayStress L2): logic STEP ~2.2 ms (was ~2.8 ms BASE).
 
 ## Patch layout
 
-- Baselines (pre-opt): [`tests/bench/ray-hyps/baseline_Ray.js`](../tests/bench/ray-hyps/baseline_Ray.js), `baseline_utils.js`
+- Baselines (pre-opt): [`tests/bench/ray-hyps/baselineRay.js`](../tests/bench/ray-hyps/baselineRay.js), `baselineUtils.js`
 - Composable transforms: [`tests/bench/ray-hyps/hypPatches.mjs`](../tests/bench/ray-hyps/hypPatches.mjs) (`applyCombo`, `CANONICAL_ORDER = H2→H6→H1→H3→H4→H5`)
-- Tournament runner: [`tests/bench/run-ray-hyp-tournament.mjs`](../tests/bench/run-ray-hyp-tournament.mjs)
+- Tournament runner: [`tests/bench/runRayHypTournament.mjs`](../tests/bench/runRayHypTournament.mjs)
 
 ## Related
 

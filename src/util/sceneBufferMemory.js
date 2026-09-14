@@ -3,9 +3,9 @@ import {
   QUERY_SNAPSHOT_COUNT,
   calculateQueryResultsSABSize,
   getQuerySnapshotElements,
-} from './QuerySystem.js';
+} from '../core/querySystem.js';
 import { STATE_CHANNEL_COUNT } from '../box2d/box2dConstants.js';
-import { PHYSICS_STATS } from '../workers/workers-utils.js';
+import { PHYSICS_STATS } from './workersUtils.js';
 
 function summarizeBufferNode(value, path, flatBreakdown) {
   if (value instanceof SharedArrayBuffer) {

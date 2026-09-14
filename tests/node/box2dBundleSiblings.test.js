@@ -7,26 +7,26 @@ import { fileURLToPath } from 'node:url';
 import {
   extractImportScriptNames,
   listBox2dSiblingNames,
-} from '../../scripts/build-bundle.js';
+} from '../../scripts/buildBundle.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const box2dDir = join(root, 'src', 'box2d');
-const weedPost = readFileSync(join(box2dDir, 'weedjs_post.js'), 'utf8');
-const buildBundleSrc = readFileSync(join(root, 'scripts', 'build-bundle.js'), 'utf8');
+const weedPost = readFileSync(join(box2dDir, 'weedjsPost.js'), 'utf8');
+const buildBundleSrc = readFileSync(join(root, 'scripts', 'buildBundle.js'), 'utf8');
 
 test('weedjs_post importScripts siblings exist and are auto-embedded', () => {
   const imported = extractImportScriptNames(weedPost);
   assert.ok(imported.length > 0, 'weedjs_post.js has no importScripts filenames');
-  assert.ok(imported.includes('box2dRayCast.impl.js'), 'missing box2dRayCast.impl.js');
-  assert.ok(imported.includes('liquidFunQuery.impl.js'), 'missing liquidFunQuery.impl.js');
+  assert.ok(imported.includes('box2dRayCastImpl.js'), 'missing box2dRayCast.impl.js');
+  assert.ok(imported.includes('liquidFunQueryImpl.js'), 'missing liquidFunQuery.impl.js');
 
   for (const name of imported) {
     assert.ok(existsSync(join(box2dDir, name)), `missing src/box2d/${name}`);
   }
 
   const siblings = listBox2dSiblingNames(weedPost);
-  assert.ok(siblings.includes('weedjs_post.js'));
-  assert.ok(siblings.includes('physics_host.impl.js'));
+  assert.ok(siblings.includes('weedjsPost.js'));
+  assert.ok(siblings.includes('physicsHostImpl.js'));
   for (const name of imported) {
     assert.ok(siblings.includes(name), `listBox2dSiblingNames omitted ${name}`);
   }

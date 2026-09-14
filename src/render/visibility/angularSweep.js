@@ -4,7 +4,7 @@
 // Circles use analytical tangents; boxes/polygons use silhouette vertex events
 // and ray–edge hits. Allocation-free hot path (pre-allocated output / scratch).
 
-import { normalizeAngleSigned } from '../../core/utils.js';
+import { normalizeAngleSigned } from '../../util/utils.js';
 
 const TWO_PI = Math.PI * 2;
 const EPSILON = 1e-5;

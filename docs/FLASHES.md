@@ -2,7 +2,7 @@
 
 Flashes are short-lived pooled lights (muzzle flashes, sparks, impacts). Each slot is a real `GameObject` with `LightEmitter` + `FlashComponent` — not a particle. Intensity fades linearly over `lifespan`, then the entity despawns.
 
-Flash has **no Collider**, so it never enters the spatial grid. Point-shadow gathering for a flash uses a direct grid query around the flash position in `pre_render_worker`.
+Flash has **no Collider**, so it never enters the spatial grid. Point-shadow gathering for a flash uses a direct grid query around the flash position in `preRenderWorker`.
 
 ## Setup
 
@@ -71,7 +71,7 @@ Keep `castShadows: true` (default) for longer / dramatic flashes (explosions, li
 3. Logic `tick` advances `currentLife`, sets `lightIntensity = initialIntensity * (1 - life/lifespan)`, despawns when expired.
 4. `onDespawned` clears light/flash active flags; pool clear also zeros SoA fields (`castShadows` → `0`).
 
-## Lighting budget (`pre_render_worker`)
+## Lighting budget (`preRenderWorker`)
 
 Flashes share `lighting.maxLights` with persistent `LightEmitter`s:
 
@@ -97,17 +97,17 @@ Flash.create(config)
   → Flash GameObject pool (LightEmitter + FlashComponent)
 logic tick
   → fade intensity / despawn
-pre_render_worker
+preRenderWorker
   → visible light list (persist preferred over flash)
   → lighting texture
   → optional point-shadow pass (skipped when castShadows === 0)
-pixi_worker
+pixiWorker
   → draw lighting (+ glow if hasGlowSprite)
 ```
 
 ## Related
 
-- [`Flash.js`](../src/core/Flash.js)
-- [`FlashComponent.js`](../src/components/FlashComponent.js)
-- [`LightEmitter.js`](../src/components/LightEmitter.js)
+- [`flash.js`](../src/core/flash.js)
+- [`flashComponent.js`](../src/components/flashComponent.js)
+- [`lightEmitter.js`](../src/components/lightEmitter.js)
 - Demo: [`person.js`](../demos/predatorScene/gameObjects/person.js) (muzzle `castShadows: false`), [`PredatorScene.js`](../demos/predatorScene/predatorScene.js) (`maxFlashes`)

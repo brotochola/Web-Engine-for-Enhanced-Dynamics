@@ -2,11 +2,11 @@
 // Single ShapeType.Box chassis per car (Phaser-style top-down forces)
 
 import WEED from '/src/index.js';
-import { Layer } from '/src/core/Layer.js';
+import { Layer } from '/src/core/layer.js';
 import { AICar } from './gameObjects/aiCar.js';
 import { PlayerCar } from './gameObjects/playerCar.js';
-import { NavGrid } from '/src/core/NavGrid.js';
-import { rng } from '/src/core/utils.js';
+import { NavGrid } from '/src/core/navGrid.js';
+import { rng } from '/src/util/utils.js';
 import { Rock } from '/demos/predatorScene/gameObjects/rock.js';
 
 import { PersonThatFollowsAFlowfield } from './gameObjects/personThatFollowsAFlowfield.js';

@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Layer, RESERVED_LOOK_UNIFORMS } from '../../src/core/Layer.js';
+import { Layer, RESERVED_LOOK_UNIFORMS } from '../../src/core/layer.js';
 import {
   buildComputePrelude,
   buildLookPrelude,
   prependComputePrelude,
   prependLookPrelude,
   FRAME_PREFIX_FIELDS,
-} from '../../src/workers/wgslPrelude.js';
+} from '../../src/render/webgpu/wgslPrelude.js';
 
 const BUILT_IN_LAYERS = {
   BACKGROUND: {},

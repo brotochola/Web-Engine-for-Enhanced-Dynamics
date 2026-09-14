@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
  * 5-run confirmation for promoted sleep-neighbor hyps.
- *   node tests/bench/run-sleep-neighbor-confirm.mjs
+ *   node tests/bench/runSleepNeighborConfirm.mjs
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { applyHyp, restoreAll } from './sleep-neighbor-hyps/sleepHypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests/results/sleep-neighbor-hyps');
 const outPath = path.join(outDir, 'confirm-summary.json');
 

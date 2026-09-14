@@ -6,8 +6,8 @@
  * Main Fps vs Main Step (e.g. 20 fps with 0.4 ms step).
  *
  * Usage:
- *   node tests/bench/liquidFun-gpu-trace.mjs
- *   node tests/bench/liquidFun-gpu-trace.mjs --headless
+ *   node tests/bench/liquidFunGpuTrace.mjs
+ *   node tests/bench/liquidFunGpuTrace.mjs --headless
  *
  * Writes tests/results/liquidFun-gpu-trace.json (+ optional .trace.json.gz raw events).
  */
@@ -90,7 +90,7 @@ async function main() {
     const page = await browser.newPage();
     page.on('pageerror', (error) => console.error('[gpu-trace] page error', error));
 
-    await page.goto(`${baseUrl}/tests/bench/integrated-worker-benchmark.html`, {
+    await page.goto(`${baseUrl}/tests/bench/integratedWorkerBenchmark.html`, {
       waitUntil: 'networkidle',
     });
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, {

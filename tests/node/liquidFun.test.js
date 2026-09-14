@@ -9,15 +9,15 @@ import {
   enqueueSetLiquidFunLayers,
   BOX2D_CMD,
 } from '../../src/box2d/box2dCommandRing.js';
-import { LiquidFun, LIQUIDFUN_FLAGS } from '../../src/core/LiquidFun.js';
-import { Layer } from '../../src/core/Layer.js';
-import { ParticleEmitter } from '../../src/core/ParticleEmitter.js';
+import { LiquidFun, LIQUIDFUN_FLAGS } from '../../src/core/liquidFun.js';
+import { Layer } from '../../src/core/layer.js';
+import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { GameObject } from '../../src/core/gameObject.js';
-import { Scene } from '../../src/core/Scene.js';
-import { PHYSICS_DEFAULTS } from '../../src/core/ConfigDefaults.js';
-import { validatePhysicsConfig } from '../../src/core/utils.js';
-import { bindLiquidFunRender, liquidFunRenderByteSize } from '../../src/core/liquidFunRender.js';
-import { bindLiquidFunGroups, liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from '../../src/core/liquidFunGroups.js';
+import { Scene } from '../../src/core/scene.js';
+import { PHYSICS_DEFAULTS } from '../../src/util/configDefaults.js';
+import { validatePhysicsConfig } from '../../src/util/utils.js';
+import { bindLiquidFunRender, liquidFunRenderByteSize } from '../../src/render/liquidFunRender.js';
+import { bindLiquidFunGroups, liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from '../../src/util/liquidFunGroups.js';
 
 test('LIQUIDFUN_FLAGS match liquidfun-c lfParticleFlag', () => {
   assert.equal(LIQUIDFUN_FLAGS.WATER, 0);

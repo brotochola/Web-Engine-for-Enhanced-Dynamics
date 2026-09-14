@@ -1,7 +1,7 @@
 // poseInterpolationVerify.mjs — objective check for preRender.interpolation
 //
 // Samples one dynamic ball's *resolved render-queue* x/y (what pixi actually
-// draws, via the canonical src/core/RenderQueueLayout.js layout — same module
+// draws, via the canonical src/render/renderQueueLayout.js layout — same module
 // pre_render_worker/pixi_worker use, so this can't drift from the real thing)
 // every rAF tick, tagged with the concurrent physics poseSync readyFrame.
 // Grouping samples by readyFrame answers directly: does the on-screen
@@ -26,7 +26,7 @@ async function sampleMode(browser, baseUrl, mode) {
   const page = await browser.newPage();
   page.on('pageerror', (error) => console.error(`[verify:${mode}] page error`, error));
   try {
-    await page.goto(`${baseUrl}/tests/bench/integrated-worker-benchmark.html`, { waitUntil: 'networkidle' });
+    await page.goto(`${baseUrl}/tests/bench/integratedWorkerBenchmark.html`, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, { timeout: 30000 });
 
     return await page.evaluate(
@@ -36,7 +36,7 @@ async function sampleMode(browser, baseUrl, mode) {
           import('/src/index.js'),
           import(sceneModule),
           import('/demos/ballsScene/gameObjects/ball.js'),
-          import('/src/core/RenderQueueLayout.js'),
+          import('/src/render/renderQueueLayout.js'),
         ]);
         const { RigidBody } = WEED;
 

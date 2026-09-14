@@ -1,4 +1,4 @@
-import { ShadowCaster } from '/src/components/ShadowCaster.js';
+import { ShadowCaster } from '/src/components/shadowCaster.js';
 import WEED from '/src/index.js';
 
 // Destructure what we need from WEED

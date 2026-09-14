@@ -4,7 +4,7 @@
  * Intensity / sqrt live on group id. Pose is HEAP x/y. Radius = 10 * sqrtI.
  */
 
-import { lightInfluenceRadius } from './utils.js';
+import { lightInfluenceRadius } from '../util/utils.js';
 
 export const LF_LIGHT_SPLAT_FLOATS = 4;
 export const LF_LIGHT_SPLAT_STRIDE = LF_LIGHT_SPLAT_FLOATS * 4;

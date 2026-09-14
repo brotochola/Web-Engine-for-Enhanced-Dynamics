@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TileMap } from '../../src/core/TileMap.js';
+import { TileMap } from '../../src/core/tileMap.js';
 import {
   deriveViewportChunkSize,
   normalizeChunkGrid,
@@ -9,7 +9,7 @@ import {
   listEvictChunkKeys,
   chunkKey,
   chunkRing,
-} from '../../src/core/tilemapCull.js';
+} from '../../src/render/tilemapCull.js';
 
 function makeMap(w, h) {
   const map = new TileMap(0, 'test', w, h, 16, 16, [{ firstgid: 1, columns: 8 }]);

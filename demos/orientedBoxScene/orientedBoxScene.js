@@ -3,7 +3,7 @@
 import { OrientedBox } from './gameObjects/orientedBox.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { Ball } from '/demos/ballsScene/gameObjects/ball.js';
-import { Camera } from '/src/core/Camera.js';
+import { Camera } from '/src/core/camera.js';
 import WEED from '/src/index.js';
 
 export class OrientedBoxScene extends WEED.Scene {

@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 // like AbstractWorker.js are. Source-text assertion matches the existing
 // convention for this exact situation (see gpuSortKeyNoCpuSort.test.js).
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const physicsHost = readFileSync(join(root, 'src/box2d/physics_host.impl.js'), 'utf8');
+const physicsHost = readFileSync(join(root, 'src/box2d/physicsHostImpl.js'), 'utf8');
 
 test('physics_host gameLoop uses constant dt when fixedFps is set', () => {
   assert.match(

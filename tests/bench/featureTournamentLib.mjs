@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 
 export function parseTournamentArgs(argv, defaults = {}) {
   const out = {

@@ -120,7 +120,7 @@ Built a real benchmark scene specifically so every optimization had a number att
 
 The first real session with LiquidFun particles actually moving in WeedJS, and almost everything about it was wrong. Particles didn't collide with each other — spawn any number of them and they'd collapse into a single flat line the instant they touched the floor. They compressed far past where real water should — "i need thousands of particles to fill a little space." They climbed straight through walls while supposedly colliding with them. At three thousand particles, the physics step already blew past the 16.67 ms frame budget.
 
-The moment that mattered most wasn't a bug, it was a question aimed at the process itself: "isn't this solved in the original liquid fun??? can't you take a look at the original repo? i feel you're trying to reinvent the wheel." Right alongside it, the architectural line that held for the rest of the project: WeedJS's own CPU particles (`ParticleComponent`, `particle_worker`) and these new LiquidFun particles are never the same system and must never get mixed — not the same gravity pass, not the same buffer, not the same anything, except where they're deliberately asked to touch.
+The moment that mattered most wasn't a bug, it was a question aimed at the process itself: "isn't this solved in the original liquid fun??? can't you take a look at the original repo? i feel you're trying to reinvent the wheel." Right alongside it, the architectural line that held for the rest of the project: WeedJS's own CPU particles (`ParticleComponent`, `particleWorker`) and these new LiquidFun particles are never the same system and must never get mixed — not the same gravity pass, not the same buffer, not the same anything, except where they're deliberately asked to touch.
 
 ## Tuesday 28 July 2026 (evening) — Gamepad, and Sleeping For Real
 
@@ -144,7 +144,7 @@ Nine in the morning, after the crash gauntlet: Box2D 3.0 WASM, data-oriented, ou
 
 ## Tuesday 28 July 2026 (early morning) — The Crash Gauntlet
 
-`box2d_wasm.js` failed to even load one of its own generated files. Fixed that, and hit `createDistanceJointLocal failed` — the WASM joint table, full. Fixed that, and hit the real wall: `Aborted(OOM)`, a genuine out-of-memory abort deep inside the WASM heap, with a native stack trace running through function indices instead of source lines. One demo had a pool of 50,000 `ConstraintBox` slots left over from before the fork — cut to 600, because nothing in that scene ever needed more than a few hundred at once, and the WASM heap doesn't forgive being asked for that much space by accident.
+`box2dWasm.js` failed to even load one of its own generated files. Fixed that, and hit `createDistanceJointLocal failed` — the WASM joint table, full. Fixed that, and hit the real wall: `Aborted(OOM)`, a genuine out-of-memory abort deep inside the WASM heap, with a native stack trace running through function indices instead of source lines. One demo had a pool of 50,000 `ConstraintBox` slots left over from before the fork — cut to 600, because nothing in that scene ever needed more than a few hundred at once, and the WASM heap doesn't forgive being asked for that much space by accident.
 
 Fixed the heap properly after that: 512 MB, fixed, no growth allowed. And a question that mattered more than it looked like: if Box2D's own memory ever did grow, would WeedJS even notice — because growth means a new `ArrayBuffer` under the hood, and every existing typed-array view into the old one goes stale silently, still readable, just wrong. Locking the heap size sidestepped having to answer that for now. It's still an open question for later.
 
@@ -202,7 +202,7 @@ One day, an enormous amount of ground covered. Visibility-polygon buffers get re
 
 The first real unit tests show up in the repo today — `buildSceneMemoryUsageReport`, `preInitializeEntityTypeArrays`. Small, but it's the first time "does this function actually do what the comment says" gets checked by code instead of by eyeballing a demo.
 
-And `Ray` grows up: `castWithInfo`, `castAll`, `linecast` all take an optional `out` parameter now. January's fix was an internal pool nobody outside `Ray.js` could see. This is that same idea, made a real public contract — pass your own object in if you need a result to survive past the next Ray call, otherwise you're borrowing a shared one and you'd better use it immediately. Mass finally syncs properly between `Collider` and `RigidBody` instead of drifting apart. Version 0.5.2. A README that actually describes what's here now, not what was here in November.
+And `Ray` grows up: `castWithInfo`, `castAll`, `linecast` all take an optional `out` parameter now. January's fix was an internal pool nobody outside `ray.js` could see. This is that same idea, made a real public contract — pass your own object in if you need a result to survive past the next Ray call, otherwise you're borrowing a shared one and you'd better use it immediately. Mass finally syncs properly between `Collider` and `RigidBody` instead of drifting apart. Version 0.5.2. A README that actually describes what's here now, not what was here in November.
 
 ## Friday 10 April 2026 — QuerySystem, Round Three
 
@@ -268,7 +268,7 @@ And the first car. I didn't have oriented boxes yet — that's still five months
 
 ## Saturday 14 February 2026 — The Worker Born in January Gets Deleted
 
-`nav_worker` — maybe a month old, built in January for pathfinding — removed outright. Its job folds into `particle_worker` and a brand new `pre_render_worker`, because it turns out pathfinding and shadow-queue building didn't need a whole dedicated thread to themselves. Real physics constraints land the same day — joints, cloth, something you can actually build a ragdoll or a rope out of. Render queues get double-buffered so `pre_render_worker` can write the next frame while `pixi_worker` is still reading the current one.
+`nav_worker` — maybe a month old, built in January for pathfinding — removed outright. Its job folds into `particleWorker` and a brand new `preRenderWorker`, because it turns out pathfinding and shadow-queue building didn't need a whole dedicated thread to themselves. Real physics constraints land the same day — joints, cloth, something you can actually build a ragdoll or a rope out of. Render queues get double-buffered so `preRenderWorker` can write the next frame while `pixiWorker` is still reading the current one.
 
 ## Thursday 12 February 2026 — Any Worker Can Spawn Now
 
@@ -280,7 +280,7 @@ Light glow sprites fold into the main particle container instead of needing thei
 
 ## Tuesday 10 February 2026 — 150 FPS Render, But Shadows Broke
 
-`particle_worker` starts building the actual render queue that `pixi_worker` just consumes, instead of Pixi walking the whole entity list itself every frame. 150 FPS. Same commit: shadows broke. Spent the rest of the session rebuilding shadows on top of the new queue — entity type and index carried along with each item, a texture lookup added, the whole thing pre-sorted before it ever reaches Pixi. You don't get the speed for free. You get the speed, then you pay off what it broke.
+`particleWorker` starts building the actual render queue that `pixiWorker` just consumes, instead of Pixi walking the whole entity list itself every frame. 150 FPS. Same commit: shadows broke. Spent the rest of the session rebuilding shadows on top of the new queue — entity type and index carried along with each item, a texture lookup added, the whole thing pre-sorted before it ever reaches Pixi. You don't get the speed for free. You get the speed, then you pay off what it broke.
 
 ## Monday 9 February 2026 — A Real Bundle
 
@@ -360,7 +360,7 @@ Flashes cast real shadows now, not just light. First real npm package — you ca
 
 ## Tuesday 13 January 2026 — Raycasts, and a Grid Class of Its Own
 
-I didn't want a raycast worker. I wanted `Ray.cast()` to just be a static method any worker's entity tick could call directly, because the spatial grid already lives on a SharedArrayBuffer — no message, no round trip, just read the same memory `spatial_worker` already wrote:
+I didn't want a raycast worker. I wanted `Ray.cast()` to just be a static method any worker's entity tick could call directly, because the spatial grid already lives on a SharedArrayBuffer — no message, no round trip, just read the same memory `spatialWorker` already wrote:
 
 ```js
 const hitEntityIndex = Ray.cast(fromX, fromY, toX, toY, maxDistance);
@@ -431,7 +431,7 @@ Dense day. The shader does the whole look now — no more tint as a crutch under
 
 ## Friday 12 – Saturday 13 December 2025 — Shadows That Actually Follow the Light
 
-Light formula refined, every component gets an `active` flag. Then I actually sat down with the profiler and went looking for garbage collection pauses, and found two real ones. `particle_worker` was building a brand-new camera-bounds object, every single frame, just to check what's on screen — so I gave it one scratch object, `_cameraBounds`, and started writing into the same one instead. `pixi_worker` was worse: every frame it built a fresh array and a fresh `{entityId, sprite, y}` object per visible sprite, just to sort them by depth — so that became `_ySortPool`, a pool of objects reused frame to frame, only truncated to the active count before sorting.
+Light formula refined, every component gets an `active` flag. Then I actually sat down with the profiler and went looking for garbage collection pauses, and found two real ones. `particleWorker` was building a brand-new camera-bounds object, every single frame, just to check what's on screen — so I gave it one scratch object, `_cameraBounds`, and started writing into the same one instead. `pixiWorker` was worse: every frame it built a fresh array and a fresh `{entityId, sprite, y}` object per visible sprite, just to sort them by depth — so that became `_ySortPool`, a pool of objects reused frame to frame, only truncated to the active count before sorting.
 
 Then the big one: projected shadows, wired into the real rendering pipeline this time, not a test file. `ShadowCaster` as a component. The trick is a rotation, not a flip — point the shadow sprite away from the light with `atan2`, then stretch it, width from the caster's radius, length growing the farther the light is:
 
@@ -450,7 +450,7 @@ Decals that actually stick to the ground and don't look wrong when they do. And 
 
 ## Monday 8 December 2025 — The Particle System Gets Its Own Worker
 
-Quick warm-up first: `rng()` and seeded random tried out in the demos, Pixi upgraded to v8. Then the real event, same evening: `ParticleEmitter`, `ParticleComponent`, and a brand-new `particle_worker` — a whole separate system, but built from the start to Y-sort and render exactly like everything else, not bolted on as a second pipeline nobody trusts. First real use: blood particles on `Predator`.
+Quick warm-up first: `rng()` and seeded random tried out in the demos, Pixi upgraded to v8. Then the real event, same evening: `ParticleEmitter`, `ParticleComponent`, and a brand-new `particleWorker` — a whole separate system, but built from the start to Y-sort and render exactly like everything else, not bolted on as a second pipeline nobody trusts. First real use: blood particles on `Predator`.
 
 ## Friday 5 – Saturday 6 December 2025 — The Indices Don't Match. Why Am I Even Mapping Them?
 
@@ -502,7 +502,7 @@ Cleaned up the entity classes so adding a new one didn't feel like a chore, and 
 
 ## Sunday 16 November 2025 — Six Threads to Light a Candle
 
-I got greedy. Not just a light shader — a whole extra worker, `lighting_worker.js`, doing real physics: lumens over distance squared, the actual inverse-square falloff, like light works in real life. A `Candle` entity that flickers. A fragment shader in `pixi_worker` waiting for tints from all of it. I even wrote three design docs before I was done, because I could already see the shape of it in my head and wanted to get it down before I lost it.
+I got greedy. Not just a light shader — a whole extra worker, `lighting_worker.js`, doing real physics: lumens over distance squared, the actual inverse-square falloff, like light works in real life. A `Candle` entity that flickers. A fragment shader in `pixiWorker` waiting for tints from all of it. I even wrote three design docs before I was done, because I could already see the shape of it in my head and wanted to get it down before I lost it.
 
 And then it just did not work. I was standardizing buffers everywhere else in the engine that same night, and something in that broke it, in a way I never actually figured out. There's a commit that says "the lighting system doesnt work," and not long after, one that says "no more lights, for now" — and the whole thing is gone. The worker, the entity, all three docs. Deleted like it was never there.
 
@@ -512,7 +512,7 @@ That stung a little. But it taught me something real too: I can design a system 
 
 Woke up, looked at the Three.js renderer from the night before, and went back to Pixi. Tried a shader-based Pixi worker on the way there too — built it, ran it, and knew immediately: don't want it. Left it in the repo anyway.
 
-Then the real thing: `AbstractWorker.js`. Init, pause, resume — one shape that every worker in this engine would extend from now on, instead of each one reinventing its own boot sequence. The Three.js renderer and the shader-Pixi experiment got moved out into their own folder instead of deleted. Wasn't ready to throw that work away, just ready to stop looking at it every day.
+Then the real thing: `abstractWorker.js`. Init, pause, resume — one shape that every worker in this engine would extend from now on, instead of each one reinventing its own boot sequence. The Three.js renderer and the shader-Pixi experiment got moved out into their own folder instead of deleted. Wasn't ready to throw that work away, just ready to stop looking at it every day.
 
 ## Saturday 15 November 2025 — A Repo, a GameObject, and Fifty Thousand Boids
 

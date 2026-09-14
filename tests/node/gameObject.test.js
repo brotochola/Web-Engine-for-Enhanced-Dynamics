@@ -2,18 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { GameObject } from '../../src/core/gameObject.js';
-import { Scene } from '../../src/core/Scene.js';
-import { Layer } from '../../src/core/Layer.js';
-import { LAYER_FEEDER_KIND } from '../../src/core/ConfigDefaults.js';
-import { DecorationPool } from '../../src/core/DecorationPool.js';
-import { Transform } from '../../src/components/Transform.js';
-import { RigidBody } from '../../src/components/RigidBody.js';
-import { SpriteRenderer } from '../../src/components/SpriteRenderer.js';
-import { AdobeAnimComponent } from '../../src/components/AdobeAnimComponent.js';
-import { LightEmitter } from '../../src/components/LightEmitter.js';
-import { Collider } from '../../src/components/Collider.js';
-import { FlashComponent } from '../../src/components/FlashComponent.js';
-import { resetFreeList } from '../../src/core/atomicFreeList.js';
+import { Scene } from '../../src/core/scene.js';
+import { Layer } from '../../src/core/layer.js';
+import { LAYER_FEEDER_KIND } from '../../src/util/configDefaults.js';
+import { DecorationPool } from '../../src/core/decorationPool.js';
+import { Transform } from '../../src/components/transform.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
+import { LightEmitter } from '../../src/components/lightEmitter.js';
+import { Collider } from '../../src/components/collider.js';
+import { FlashComponent } from '../../src/components/flashComponent.js';
+import { resetFreeList } from '../../src/util/atomicFreeList.js';
 
 test('Scene.preInitializeEntityTypeArrays fills registered ranges directly', { concurrency: false }, () => {
   class RangeFillA extends GameObject {}

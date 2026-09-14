@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const preRender = readFileSync(join(root, 'src/workers/pre_render_worker.js'), 'utf8');
-const pixi = readFileSync(join(root, 'src/workers/pixi_worker.js'), 'utf8');
-const defaults = readFileSync(join(root, 'src/core/ConfigDefaults.js'), 'utf8');
+const preRender = readFileSync(join(root, 'src/workers/preRenderWorker.js'), 'utf8');
+const pixi = readFileSync(join(root, 'src/workers/pixiWorker.js'), 'utf8');
+const defaults = readFileSync(join(root, 'src/util/configDefaults.js'), 'utf8');
 
 test('main ENTITIES queue does not CPU-heapsort; GPU sortKey path', () => {
   assert.doesNotMatch(preRender, /_heapsortRenderables|_heapsortCollector/);

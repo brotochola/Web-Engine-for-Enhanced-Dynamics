@@ -1,10 +1,10 @@
 // DebugCanvas.js — Manages the full-screen canvas overlay for all debug rendering
 
-import { DEBUG_FLAGS } from '../DebugFlags.js';
-import { NavDebugRenderer } from './NavDebugRenderer.js';
-import { PhysicsDebugRenderer } from './PhysicsDebugRenderer.js';
+import { DEBUG_FLAGS } from '../debugFlags.js';
+import { NavDebugRenderer } from './navDebugRenderer.js';
+import { PhysicsDebugRenderer } from './physicsDebugRenderer.js';
 import { bindBox2dHotFields, isBox2dHotFieldsBound } from '../../../box2d/box2dHotFields.js';
-import { createRenderQueueCameraViews } from '../../RenderQueueLayout.js';
+import { createRenderQueueCameraViews } from '../../../render/renderQueueLayout.js';
 
 /**
  * Owns the <canvas> overlay that sits above the game viewport.

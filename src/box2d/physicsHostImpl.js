@@ -112,7 +112,7 @@
     polyNormalY: { type: Float32Array, length: MAX_POLYGON_VERTICES },
   };
 
-  // Mirrors src/core/liquidFunRender.js bindLiquidFunRender (nested classic
+  // Mirrors src/render/liquidFunRender.js bindLiquidFunRender (nested classic
   // worker - no ESM import). Layout must stay identical to that file.
   function bindLiquidFunRenderViews(sab, maxCount) {
     var n = maxCount | 0;
@@ -162,7 +162,7 @@
     };
   }
 
-  // Mirrors src/core/liquidFunGroups.js bindLiquidFunGroups.
+  // Mirrors src/util/liquidFunGroups.js bindLiquidFunGroups.
   function bindLiquidFunGroupsViews(sab, maxGroups) {
     var n = maxGroups | 0;
     var off = 0;

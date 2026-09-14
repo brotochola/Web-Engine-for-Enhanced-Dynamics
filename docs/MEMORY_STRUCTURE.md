@@ -10,7 +10,7 @@ For how spatial rebuild + neighbors and physics use these buffers in practice, s
 
 ## How It Works
 
-Every scene buffer is allocated by `src/core/sceneSharedBuffers.js`, invoked from `Scene.createSharedBuffers()`. Workers get SAB references at init time through `AbstractWorker`. From that point, workers read/write typed array views directly for frame data.
+Every scene buffer is allocated by `src/util/sceneSharedBuffers.js`, invoked from `Scene.createSharedBuffers()`. Workers get SAB references at init time through `AbstractWorker`. From that point, workers read/write typed array views directly for frame data.
 
 The golden rule: **one writer per data region**. Multiple readers are fine. This avoids Atomics overhead in frame-critical paths.
 
@@ -148,7 +148,7 @@ Box2D still writes begin/end into WASM HEAP buffers each step. Nested `weedjs_po
 | Property   | Value |
 | ---------- | ----- |
 | **Size**   | `Joint.getBufferSize(maxJoints)` — type, pairs, localAnchors A/B, active, distance/revolute/weld fields, dense active list, `revision` |
-| **Layout** | See `src/core/Joint.js` `initializeArrays` |
+| **Layout** | See `src/core/joint.js` `initializeArrays` |
 
 ### `jointFreeList` / `jointFreeListTop`
 
@@ -190,7 +190,7 @@ Allocated in `sceneSharedBuffers.js`; wired via `sceneWorkerBootstrap` `posePubl
 
 Two identical buffers. Pre_render writes one while pixi reads the other.
 
-**Size per buffer:** computed by `computeBufferSize(maxItems)` in `src/core/RenderQueueLayout.js`
+**Size per buffer:** computed by `computeBufferSize(maxItems)` in `src/render/renderQueueLayout.js`
 
 **Per-item layout (packed SoA across the buffer):**
 
@@ -210,7 +210,7 @@ Two identical buffers. Pre_render writes one while pixi reads the other.
 | `type`        | Uint8   | max (+ 4-byte align pad) |
 | `entityIndex` | Int32   | max                      |
 
-This layout is defined once in `src/core/RenderQueueLayout.js` and used by Scene (allocation), pre_render_worker (write views), and pixi_worker (read views). To add a field, edit the `FIELDS` array in that file.
+This layout is defined once in `src/render/renderQueueLayout.js` and used by Scene (allocation), preRenderWorker (write views), and pixiWorker (read views). To add a field, edit the `FIELDS` array in that file.
 
 | Writer            | Reader      |
 | ----------------- | ----------- |
@@ -220,7 +220,7 @@ This layout is defined once in `src/core/RenderQueueLayout.js` and used by Scene
 
 Each custom layer (defined in `config.layers`) gets its own double-buffered render queue with the **same SoA layout** as the main queue, sized to `config.layers[name].maxItems` (default 5000).
 
-Entities are routed to a layer's queue when `SpriteRenderer.layerMask` includes that bit via `entity.setLayer('water')`. The pre_render_worker's `collectRenderable()` writes once per sprite-queue bit; `buildCustomLayerQueues()` Y-sorts and writes the layer's SAB.
+Entities are routed to a layer's queue when `SpriteRenderer.layerMask` includes that bit via `entity.setLayer('water')`. The preRenderWorker's `collectRenderable()` writes once per sprite-queue bit; `buildCustomLayerQueues()` Y-sorts and writes the layer's SAB.
 
 | Writer            | Reader      |
 | ----------------- | ----------- |
@@ -283,7 +283,7 @@ Same double-buffered pattern. Separate queue for shadow casters and lights.
 
 ## 7. Layer System SABs
 
-The layer system (`src/core/Layer.js`) stores all layer configuration and shader uniforms in SharedArrayBuffers so any worker can read them without postMessage.
+The layer system (`src/core/layer.js`) stores all layer configuration and shader uniforms in SharedArrayBuffers so any worker can read them without postMessage.
 
 ### Layer Config SAB (`Layer._configSAB`)
 
@@ -339,9 +339,9 @@ Only allocated for custom layers that have a `shader` with `uniforms`. One SAB p
 | --------------------------- | ----------------------------------- |
 | Any thread (`setUniform()`) | Pixi worker (shader uniform upload) |
 
-### `RenderQueueLayout.js` (shared layout definition)
+### `renderQueueLayout.js` (shared layout definition)
 
-Not a SAB itself, but the single source of truth for all render queue memory layouts. Imported by Scene (allocation), pre_render_worker (write views), and pixi_worker (read views).
+Not a SAB itself, but the single source of truth for all render queue memory layouts. Imported by Scene (allocation), preRenderWorker (write views), and pixiWorker (read views).
 
 **Exports:**
 
@@ -356,7 +356,7 @@ To add a new per-sprite field, add an entry to the `FIELDS` array in this file. 
 
 ## 7b. TileMap SABs
 
-The TileMap system (`src/core/TileMap.js`) stores all tile data in SharedArrayBuffers so any worker can query tile GIDs without postMessage.
+The TileMap system (`src/core/tileMap.js`) stores all tile data in SharedArrayBuffers so any worker can query tile GIDs without postMessage.
 
 ### Per-Tilemap SAB (`TileMap._sabs[id]`)
 
@@ -440,7 +440,7 @@ Persistent decals (blood, scorch marks, etc.) are stamped onto tile-based RGBA b
 
 ## 10. Entity + Particle + Decoration + Bullet Free Lists
 
-O(1) lock-free pool allocation via a Treiber stack with an ABA tag (`src/core/atomicFreeList.js`). Every pooled type gets the same pattern:
+O(1) lock-free pool allocation via a Treiber stack with an ABA tag (`src/util/atomicFreeList.js`). Every pooled type gets the same pattern:
 
 | Buffer        | Size                 | Typed Array     | Purpose                                                                                  |
 | ------------- | -------------------- | --------------- | ----------------------------------------------------------------------------------------- |
@@ -627,9 +627,9 @@ The big picture. Who writes what, who reads what.
 
 ## Notes for Contributors
 
-- All SABs are created in `src/core/sceneSharedBuffers.js` via `Scene.createSharedBuffers()`. If you add a new buffer, that's where it goes.
+- All SABs are created in `src/util/sceneSharedBuffers.js` via `Scene.createSharedBuffers()`. If you add a new buffer, that's where it goes.
 - Prefer extending existing SAB layouts over adding new message payloads for per-frame data.
 - Keep hot-path data in typed arrays. Object allocation in worker loops is the enemy.
 - The audio mixer SAB is created in `SoundManager.initializeAudioWorklet()`, not `Scene.createSharedBuffers()`. Workers receive it via `SoundManager.initializeSlotSAB()`.
-- If you change any layout, update: `src/core/sceneSharedBuffers.js`, the relevant worker init, and this document.
+- If you change any layout, update: `src/util/sceneSharedBuffers.js`, the relevant worker init, and this document.
 

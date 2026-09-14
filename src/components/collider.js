@@ -9,9 +9,9 @@
 // - Box:    mass = width * height (area)
 // - Polygon: mass = polygon area (shoelace)
 
-import { Component } from '../core/Component.js';
-import { RigidBody } from './RigidBody.js';
-import { MAX_POLYGON_VERTICES, ShapeType } from '../core/ConfigDefaults.js';
+import { Component } from '../core/component.js';
+import { RigidBody } from './rigidBody.js';
+import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 
 class Collider extends Component {

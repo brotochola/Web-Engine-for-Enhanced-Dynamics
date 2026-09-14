@@ -9,8 +9,8 @@ import {
   createBulletTrailCanvas,
   LIGHT_GRADIENT_TEXTURE_RADIUS,
   METABALL_TEXTURE_RADIUS,
-} from './utils.js';
-import { ASSETS_DEFAULTS } from './ConfigDefaults.js';
+} from '../util/utils.js';
+import { ASSETS_DEFAULTS } from '../util/configDefaults.js';
 
 /**
  * MaxRectsPacker - Rectangle packing algorithm for texture atlas generation

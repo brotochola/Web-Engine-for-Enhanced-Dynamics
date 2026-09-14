@@ -12,7 +12,7 @@ import {
   createStatsReader,
   createMultiWorkerStatsReaderArray,
   workerLoadPct,
-} from '../../../workers/workers-utils.js';
+} from '../../../util/workersUtils.js';
 
 /**
  * Manages worker stat buffer views, FPS smoothing, and cached previous values.

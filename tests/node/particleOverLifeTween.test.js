@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ParticleComponent } from '../../src/components/ParticleComponent.js';
-import { ParticleEmitter } from '../../src/core/ParticleEmitter.js';
-import { updateParticlePhysicsBuffers } from '../../src/core/particleIntegrate.js';
-import { PARTICLE_EASE } from '../../src/core/ConfigDefaults.js';
+import { ParticleComponent } from '../../src/components/particleComponent.js';
+import { ParticleEmitter } from '../../src/core/particleEmitter.js';
+import { updateParticlePhysicsBuffers } from '../../src/util/particleIntegrate.js';
+import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
 
 function setupPool(max) {
   const previous = {};

@@ -9,11 +9,11 @@ const __dirname = path.dirname(__filename);
 
 // Worker files that need to be bundled separately
 const workerEntries = {
-    'workers/logic_worker': './src/workers/logic_worker.js',
-    'workers/pixi_worker': './src/workers/pixi_worker.js',
-    'workers/spatial_worker': './src/workers/spatial_worker.js',
-    'workers/particle_worker': './src/workers/particle_worker.js',
-    'workers/pre_render_worker': './src/workers/pre_render_worker.js',
+    'workers/logicWorker': './src/workers/logicWorker.js',
+    'workers/pixiWorker': './src/workers/pixiWorker.js',
+    'workers/spatialWorker': './src/workers/spatialWorker.js',
+    'workers/particleWorker': './src/workers/particleWorker.js',
+    'workers/preRenderWorker': './src/workers/preRenderWorker.js',
 };
 
 // Check if we should obfuscate
@@ -22,12 +22,12 @@ const shouldObfuscate = process.env.OBFUSCATE === 'true';
 // Production mode: swap debug modules with no-op stubs
 const isProd = process.env.WEED_PROD === 'true';
 const debugStubAliases = isProd ? {
-    [path.resolve(__dirname, 'src/core/debug/DebugDraw.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/DebugDraw.js'),
-    [path.resolve(__dirname, 'src/core/debug/DebugUI.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/DebugUI.js'),
-    [path.resolve(__dirname, 'src/core/debug/DebugFlags.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/DebugFlags.js'),
+    [path.resolve(__dirname, 'src/core/debug/debugDraw.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/debugDraw.js'),
+    [path.resolve(__dirname, 'src/core/debug/debugUi.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/debugUi.js'),
+    [path.resolve(__dirname, 'src/core/debug/debugFlags.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/debugFlags.js'),
 } : {};
 
 // Obfuscator options
@@ -86,7 +86,7 @@ const optimization = {
 // Babel loader config
 const babelLoader = {
     test: /\.js$/,
-    exclude: [/node_modules/, /src[\\/]lib[\\/]/],
+    exclude: [/node_modules/, /src[\\/]vendor[\\/]/],
     use: {
         loader: 'babel-loader',
         options: {
@@ -138,7 +138,7 @@ const mainConfig = {
 
 // Workers bundle configuration.
 // Shared AbstractWorker graph is extracted once into workers/worker_common.min.js
-// (import-scripts). build-bundle.js embeds that chunk once and rewrites the
+// (import-scripts). buildBundle.js embeds that chunk once and rewrites the
 // importScripts URL to a blob URL at createWorker() time.
 const workersConfig = {
     mode: 'production',

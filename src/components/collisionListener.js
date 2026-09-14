@@ -1,4 +1,4 @@
-import { Component } from '../core/Component.js';
+import { Component } from '../core/component.js';
 
 /**
  * Marker component that enables collision lifecycle callbacks for an entity type.

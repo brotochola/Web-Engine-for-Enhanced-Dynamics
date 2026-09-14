@@ -1,13 +1,13 @@
 // Decoration.js - Lazy facade over one decoration pool slot (logic worker / main thread)
 
-import { DecorationComponent } from '../components/DecorationComponent.js';
-import { ensureDecorationFacade, evictDecorationFacade } from './decorationFacades.js';
-import { DECORATION_INNER_Z_MIN, DECORATION_INNER_Z_MAX } from './ConfigDefaults.js';
-import { DecorationSpatial } from './DecorationSpatial.js';
-import { DECORATION_NO_PARENT } from './DecorationPool.js';
-import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from './decorationSway.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
+import { ensureDecorationFacade, evictDecorationFacade } from '../util/decorationFacades.js';
+import { DECORATION_INNER_Z_MIN, DECORATION_INNER_Z_MAX } from '../util/configDefaults.js';
+import { DecorationSpatial } from './decorationSpatial.js';
+import { DECORATION_NO_PARENT } from './decorationPool.js';
+import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from '../util/decorationSway.js';
 
-export { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from './decorationSway.js';
+export { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from '../util/decorationSway.js';
 
 export class Decoration {
   /**

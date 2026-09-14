@@ -1,11 +1,11 @@
 // Print skip-work integrated-bench JSON metrics.
-//   node tests/bench/skip-work-summarize.mjs tests/results/skip-work-hyps/B0-balls.json
+//   node tests/bench/skipWorkSummarize.mjs tests/results/skip-work-hyps/B0-balls.json
 
 import fs from 'node:fs';
 
 const path = process.argv[2];
 if (!path) {
-  console.error('usage: node tests/bench/skip-work-summarize.mjs <bench.json>');
+  console.error('usage: node tests/bench/skipWorkSummarize.mjs <bench.json>');
   process.exit(1);
 }
 

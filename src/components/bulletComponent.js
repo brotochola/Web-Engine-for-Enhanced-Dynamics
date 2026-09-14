@@ -2,7 +2,7 @@
 // Bullets are NOT GameObjects - they have their own separate pool
 // Straight-line movement, raycast collision (prev→next), no physics
 
-import { Component } from '../core/Component.js';
+import { Component } from '../core/component.js';
 
 export class BulletComponent extends Component {
   static ARRAY_SCHEMA = {

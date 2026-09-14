@@ -10,7 +10,7 @@ function stubPixiBackends() {
     name: 'stub-pixi-backends',
     setup(build) {
       build.onResolve({ filter: /\/CanvasRenderer\.mjs$/ }, () => {
-        return { path: path.join(stubDir, 'CanvasRenderer.mjs') };
+        return { path: path.join(stubDir, 'canvasRenderer.mjs') };
       });
     },
   };
@@ -18,11 +18,11 @@ function stubPixiBackends() {
 
 const result = await esbuild.build({
   absWorkingDir: root,
-  entryPoints: [path.join(root, 'scripts', 'build-pixi-worker.js')],
+  entryPoints: [path.join(root, 'scripts', 'buildPixiWorker.js')],
   bundle: true,
   format: 'esm',
   minify: true,
-  outfile: path.join(root, 'src', 'lib', 'pixi_8.16_.min.js'),
+  outfile: path.join(root, 'src', 'vendor', 'pixi.min.js'),
   plugins: [stubPixiBackends()],
   logLevel: 'info',
 });

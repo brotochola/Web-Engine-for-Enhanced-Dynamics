@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CollisionListener } from '../../src/components/CollisionListener.js';
+import { CollisionListener } from '../../src/components/collisionListener.js';
 
 function scanWantsContactRing(entityClasses) {
   for (const EntityClass of entityClasses) {

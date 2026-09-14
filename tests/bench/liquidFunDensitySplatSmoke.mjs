@@ -1,13 +1,13 @@
 // liquidFun-density-splat-smoke.mjs — headed smoke for densitySource:'liquidFun'
 // Boots liquidFunDemoScene, waits for particles, asserts no page error.
 //
-// Usage: node tests/bench/liquidFun-density-splat-smoke.mjs [--headed]
+// Usage: node tests/bench/liquidFunDensitySplatSmoke.mjs [--headed]
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
-import { LAYER_DENSITY_SOURCE } from '../../src/core/ConfigDefaults.js';
+import { LAYER_DENSITY_SOURCE } from '../../src/util/configDefaults.js';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const headed = process.argv.includes('--headed');
@@ -24,7 +24,7 @@ async function main() {
   });
 
   try {
-    await page.goto(`${baseUrl}/tests/bench/integrated-worker-benchmark.html`, {
+    await page.goto(`${baseUrl}/tests/bench/integratedWorkerBenchmark.html`, {
       waitUntil: 'networkidle',
     });
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, {

@@ -1,8 +1,8 @@
 // EntitiesPanel.js — Active/visible counts, pool stats, and entity tool buttons
 
-import { createPanel, createRow, createStat, createDivider } from '../ui/DebugDOM.js';
-import { formatNumber } from '../../utils.js';
-import { PARTICLE_STATS, RENDERER_STATS } from '../stats/StatsCollector.js';
+import { createPanel, createRow, createStat, createDivider } from '../ui/debugDom.js';
+import { formatNumber } from '../../../util/utils.js';
+import { PARTICLE_STATS, RENDERER_STATS } from '../stats/statsCollector.js';
 
 export class EntitiesPanel {
   constructor(debugUI) {

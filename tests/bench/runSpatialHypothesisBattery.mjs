@@ -3,8 +3,8 @@
  * Headed (or headless) integrated BallsScene benchmark; reports physics + spatial worker metrics.
  *
  * Usage:
- *   node tests/bench/run-spatial-hypothesis-battery.mjs
- *   node tests/bench/run-spatial-hypothesis-battery.mjs --headless --warmup-ms 5000 --duration-ms 4000
+ *   node tests/bench/runSpatialHypothesisBattery.mjs
+ *   node tests/bench/runSpatialHypothesisBattery.mjs --headless --warmup-ms 5000 --duration-ms 4000
  */
 
 import { spawnSync } from 'node:child_process';
@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests', 'results');
 
 function parseArgs(argv) {

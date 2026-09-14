@@ -1,6 +1,6 @@
 # Raycasting
 
-`Ray` is a static class in `src/core/Ray.js`. It casts rays against the spatial grid using DDA (Digital Differential Analyzer) traversal. Object and array return values are borrowed by default -- pre-allocated and reused for zero GC pressure.
+`Ray` is a static class in `src/core/ray.js`. It casts rays against the spatial grid using DDA (Digital Differential Analyzer) traversal. Object and array return values are borrowed by default -- pre-allocated and reused for zero GC pressure.
 
 All methods accept an optional `mask` parameter (Uint32 bitmask, default `0xFFFFFFFF`). Only entities whose `collisionLayer` bit is set in the mask are considered. Rays do not use `collisionGroupIndex` (that filter is for entity–entity physics pairs only). See **Collision Filtering** in `bible_of_weed_js.md`.
 
@@ -143,7 +143,7 @@ The ray checks `(1 << (entity.collisionLayer & 31)) & mask` per entity -- one bi
 - Layer mask filter is one bitwise AND per entity -- evaluated before any shape intersection math.
 - `linecastBetweenEntities` uses scalar excludeA/B (no Set).
 - `castAll` reuses a pool of hit objects; only allocates new ones if the pool grows (one-time cost).
-- Correctness + throughput regression: `node tests/bench/ray-microbench.mjs` (20k brute-force comparisons + timed workloads).
+- Correctness + throughput regression: `node tests/bench/rayMicrobench.mjs` (20k brute-force comparisons + timed workloads).
 - WeedJS vs Box2D kernel A/B (idle Node): `pnpm bench:micro:ray-vs-box2d`. Soft hit/miss agreement only — filters/math differ.
 - Busy-physics hyp (logic DDA vs physics-thread SAB cast): `pnpm bench:feature:ray-vs-box2d:weedjs:busy` vs `…:box2d:busy`. Read `RAYCAST_MS` + physics `STEP_MS`/`BOX2D_MS`. WeedJS ray is **logic-thread DDA**, not a dedicated ray worker.
 - Public sync API for Box2D closest ray: `box2dCastRayClosest(ox, oy, dx, dy, out?, filter?)` (SAB, single-flight; same pattern as QueryAABB).

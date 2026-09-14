@@ -2,9 +2,9 @@
 /**
  * Spatial worker hypothesis campaign.
  *
- *   node tests/bench/run-spatial-hyp-campaign.mjs
- *   node tests/bench/run-spatial-hyp-campaign.mjs --only BASE,H3,H6
- *   node tests/bench/run-spatial-hyp-campaign.mjs --runs 2 --skip-restore-check
+ *   node tests/bench/runSpatialHypCampaign.mjs
+ *   node tests/bench/runSpatialHypCampaign.mjs --only BASE,H3,H6
+ *   node tests/bench/runSpatialHypCampaign.mjs --runs 2 --skip-restore-check
  */
 
 import { execFileSync } from 'node:child_process';
@@ -12,12 +12,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { HYPS, applyHyp, restoreAll, PATHS } from './spatial-hyps/hypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests/results/spatial-hyps');
 const summaryPath = path.join(outDir, 'campaign-summary.json');
 

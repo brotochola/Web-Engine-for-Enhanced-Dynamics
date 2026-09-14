@@ -3,7 +3,7 @@
 // loops can be exercised from Node (tests/bench) without instantiating workers.
 // particle_worker.js calls these as thin wrappers (this.* -> plain params).
 
-import { ParticleEmitter } from './ParticleEmitter.js';
+import { ParticleEmitter } from '../core/particleEmitter.js';
 import {
   PARTICLE_TWEEN,
   applyParticleEase,

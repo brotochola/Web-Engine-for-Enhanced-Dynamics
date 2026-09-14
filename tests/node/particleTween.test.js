@@ -10,8 +10,8 @@ import {
   applyParticleEase,
   lerpRgb,
   resolveEaseId,
-} from '../../src/core/particleTween.js';
-import { PARTICLE_EASE } from '../../src/core/ConfigDefaults.js';
+} from '../../src/util/particleTween.js';
+import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
 
 // Spawn-only range
 {

@@ -2,10 +2,10 @@
 // Provides consistent camera state via SharedArrayBuffer
 // Pattern follows Mouse and Keyboard static classes
 
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import Keyboard from './Keyboard.js';
-import { Mouse } from './Mouse.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import Keyboard from './keyboard.js';
+import { Mouse } from './mouse.js';
 
 /**
  * Static Camera class for managing viewport state

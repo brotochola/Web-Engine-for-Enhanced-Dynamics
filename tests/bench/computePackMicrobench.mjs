@@ -1,13 +1,13 @@
 // L1 packBox2dBodies throughput (no GPU). Correctness gate then time N=64/512 sweep on/off.
 
-import { Collider } from '../../src/components/Collider.js';
-import { Transform } from '../../src/components/Transform.js';
-import { RigidBody } from '../../src/components/RigidBody.js';
-import { Layer } from '../../src/core/Layer.js';
-import { ShapeType, COMPUTE_FLAG_STATIC } from '../../src/core/ConfigDefaults.js';
-import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
-import { syncColliderFeed } from '../../src/core/layerFeed.js';
-import { parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { Collider } from '../../src/components/collider.js';
+import { Transform } from '../../src/components/transform.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { Layer } from '../../src/core/layer.js';
+import { ShapeType, COMPUTE_FLAG_STATIC } from '../../src/util/configDefaults.js';
+import { packBox2dBodies, BODY_FLOATS } from '../../src/render/box2dBodyPack.js';
+import { syncColliderFeed } from '../../src/util/layerFeed.js';
+import { parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
 const OUTPUT = args.output ? String(args.output) : 'tests/results/compute-pack-micro.json';

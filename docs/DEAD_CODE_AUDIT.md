@@ -5,7 +5,7 @@
 | Item | Action |
 |------|--------|
 | `tests/results/` | Gitignored; untracked from index |
-| `spatial_worker` cell-range | Uses `ColliderUtils.getCellRange` |
+| `spatialWorker` cell-range | Uses `ColliderUtils.getCellRange` |
 | `AngularSweep` angle normalize | Uses `utils.normalizeAngleSigned` |
 | Commented dead in particle/pixi workers | Removed |
 | Stale `pixi4webworkers` comment | Removed |
@@ -29,4 +29,4 @@
 
 1. Optionally remove `QuerySystem.getPrecomputedQueryInfo` + types if confirmed never for games.
 2. knip / unused-export ESLint for CI.
-3. Clean dead imports in `pixi_worker` if any remain.
+3. Clean dead imports in `pixiWorker` if any remain.

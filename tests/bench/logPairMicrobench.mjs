@@ -1,14 +1,14 @@
 // L1 microbench: Cantor pair keys (baseline) vs Uint16 bitpack (LOG-PAIR).
 //
 // Usage:
-//   node tests/bench/log-pair-microbench.mjs
-//   node tests/bench/log-pair-microbench.mjs --pairs 200000 --contacts 50000 --output tests/results/log-pair-micro.json
+//   node tests/bench/logPairMicrobench.mjs
+//   node tests/bench/logPairMicrobench.mjs --pairs 200000 --contacts 50000 --output tests/results/log-pair-micro.json
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { cantorPair, cantorUnpair } from '../../src/core/utils.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { cantorPair, cantorUnpair } from '../../src/util/utils.js';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 function collisionPairKey(minE, maxE) {
   return ((minE & 0xffff) << 16) | (maxE & 0xffff);

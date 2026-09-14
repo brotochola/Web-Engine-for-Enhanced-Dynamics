@@ -7,7 +7,7 @@ import {
   popFreeIndex,
   pushFreeIndex,
   getFreeListCount,
-} from '../../src/core/atomicFreeList.js';
+} from '../../src/util/atomicFreeList.js';
 
 function makeList(count) {
   const top = new Int32Array(new SharedArrayBuffer(8));
@@ -123,7 +123,7 @@ async function runStress({ capacity, workers, iterations }) {
 
   resetFreeList(new Int32Array(topBuf), new Uint16Array(linksBuf), capacity, 1);
 
-  const moduleUrl = new URL('../../src/core/atomicFreeList.js', import.meta.url).href;
+  const moduleUrl = new URL('../../src/util/atomicFreeList.js', import.meta.url).href;
 
   const results = await Promise.all(
     Array.from({ length: workers }, () => {

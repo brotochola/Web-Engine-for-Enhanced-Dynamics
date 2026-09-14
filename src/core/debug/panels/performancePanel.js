@@ -1,8 +1,8 @@
 // PerformancePanel.js — Full-width worker rows (expandable details), pools, audio
 
-import { createPanel, createStat } from '../ui/DebugDOM.js';
-import { formatNumber } from '../../utils.js';
-import { DecorationPool } from '../../DecorationPool.js';
+import { createPanel, createStat } from '../ui/debugDom.js';
+import { formatNumber } from '../../../util/utils.js';
+import { DecorationPool } from '../../decorationPool.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -13,7 +13,7 @@ import {
   WORKER_DISPLAY_CONFIG,
   WORKER_ROW_ORDER,
   workerLoadPct,
-} from '../stats/StatsCollector.js';
+} from '../stats/statsCollector.js';
 
 const COMMON_KEYS = ['STEP_MS', 'LOAD', 'FPS', 'MSG_MS'];
 const LEAN_KEYS = ['STEP_MS', 'LOAD', 'FPS'];

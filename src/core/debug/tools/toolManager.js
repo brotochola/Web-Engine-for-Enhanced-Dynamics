@@ -1,15 +1,15 @@
 // ToolManager.js — Manages painter, eraser, and inspector tools
 
-import { Mouse } from '../../Mouse.js';
-import { Transform } from '../../../components/Transform.js';
-import { Grid } from '../../Grid.js';
+import { Mouse } from '../../mouse.js';
+import { Transform } from '../../../components/transform.js';
+import { Grid } from '../../grid.js';
 import {
   distanceSq2D,
   getComponentColor,
   getComponentPropertyNames,
   formatComponentValue,
   rng,
-} from '../../utils.js';
+} from '../../../util/utils.js';
 
 /**
  * Unified manager for all debug tools: paint / erase / inspect.

@@ -40,11 +40,11 @@
 // The helper syntax resolves to the frame name automatically.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { SharedAtomicPool } from './SharedAtomicPool.js';
-import { CAMERA_TYPES } from './ConfigDefaults.js';
-import { randomRange, randomColor, rng } from './utils.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { SharedAtomicPool } from './sharedAtomicPool.js';
+import { CAMERA_TYPES } from '../util/configDefaults.js';
+import { randomRange, randomColor, rng } from '../util/utils.js';
 
 export const DECAL_STAMPS_BLEND_MODE = Object.freeze({
   normal: 0,

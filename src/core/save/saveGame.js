@@ -15,7 +15,7 @@ import {
   SAVE_FORMAT_VERSION,
 } from './entitySaveSnapshot.js';
 import { applyEntitySaveRestore } from './entitySaveSnapshot.js';
-import { SaveStore } from './SaveStore.js';
+import { SaveStore } from './saveStore.js';
 import {
   packLiquidFunSnapshot,
   unpackLiquidFunSnapshot,

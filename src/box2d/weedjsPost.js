@@ -8,16 +8,16 @@
   }
 
   importScripts(
-    'box2dConstants.impl.js',
-    'physics-api.js',
-    'box2dCommandRing.impl.js',
-    'box2dContactRing.impl.js',
-    'box2dContactHitRing.impl.js',
-    'box2dJointBreakRing.impl.js',
-    'box2dMovedBodies.impl.js',
-    'box2dQueryAabb.impl.js',
-    'box2dRayCast.impl.js',
-    'liquidFunQuery.impl.js',
+    'box2dConstantsImpl.js',
+    'physicsApi.js',
+    'box2dCommandRingImpl.js',
+    'box2dContactRingImpl.js',
+    'box2dContactHitRingImpl.js',
+    'box2dJointBreakRingImpl.js',
+    'box2dMovedBodiesImpl.js',
+    'box2dQueryAabbImpl.js',
+    'box2dRayCastImpl.js',
+    'liquidFunQueryImpl.js',
   );
   const drainBox2dCommandRing = Box2dCommandRing.drainCommandRing;
   const publishBox2dContactEvent = Box2dContactRing.publishContactEvent;
@@ -141,7 +141,7 @@
   let poseCapacity = 0;
   let poseFrame = 0;
 
-  // Mirrors PHYSICS_STATS in src/workers/workers-utils.js (nested classic worker — no ESM import).
+  // Mirrors PHYSICS_STATS in src/util/workersUtils.js (nested classic worker — no ESM import).
   const PS = {
     BODY_COUNT: 3,
     JOINT_COUNT: 4,
@@ -758,7 +758,7 @@
     Atomics.store(lockView, 0, 0);
   }
 
-  /** Mirrors Joint.remove (src/core/Joint.js) — pool free list untouched (ponytail: idx leak on break, upgrade: bind jointFreeList/jointFreeListTop here too). */
+  /** Mirrors Joint.remove (src/core/joint.js) — pool free list untouched (ponytail: idx leak on break, upgrade: bind jointFreeList/jointFreeListTop here too). */
   function removeWeedJoint(idx) {
     const jv = jointViews;
     if (!jv || idx < 0 || idx >= maxJoints || !jv.active[idx]) return;

@@ -2,7 +2,7 @@
 // Click (button 0) to emit blood particles that stamp decals on the floor
 
 import WEED from '/src/index.js';
-import { Layer } from '/src/core/Layer.js';
+import { Layer } from '/src/core/layer.js';
 import { ZenithalCar } from './gameObjects/zenithalCar.js';
 import { ZenithalLight } from './gameObjects/zenithalLight.js';
 

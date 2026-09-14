@@ -180,7 +180,7 @@ First frame copies current camera into prev so shift is 0. Ubo size is 16-byte a
 
 World lattice math lives entirely in **scene WGSL + scene JS** — the engine has no "cell", "lattice", or "margin" concept, only the generic `compute.size.{width,height}` mode and the generic per-frame camera/zoom/world floats above.
 
-The pattern the fire demo uses (see `demos/burningBoxesScene/`), analogous to `src/core/Grid.js` spatial hashing:
+The pattern the fire demo uses (see `demos/burningBoxesScene/`), analogous to `src/core/grid.js` spatial hashing:
 
 1. Pick a fixed world-units-per-cell size (a scene constant, e.g. `FIRE_CELL_SIZE`). Size the compute texture from world dims: `compute.size = { width: ceil(worldWidth / cellSize), height: ceil(worldHeight / cellSize) }`. This texture covers the **whole world**, allocated once — it never resizes or shifts on pan/zoom.
 2. Texel `(i, j)` is always world cell `(i, j)`: world position `(i+0.5, j+0.5) * h` where `h` is the cell-size scene uniform. Origin is always `(0, 0)` — no camera-relative offset, no `lattice_origin`/shift pass.

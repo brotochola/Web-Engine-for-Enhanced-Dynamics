@@ -1,5 +1,5 @@
 // ESM facade over box2dMovedBodies.impl.js
-import './box2dMovedBodies.impl.js';
+import './box2dMovedBodiesImpl.js';
 
 const M = globalThis.Box2dMovedBodies;
 

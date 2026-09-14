@@ -2,8 +2,8 @@
 // Demonstrates the new Scene-based architecture for WeedJS
 
 import WEED from '/src/index.js';
-import { Layer } from '/src/core/Layer.js';
-import { TileMap } from '/src/core/TileMap.js';
+import { Layer } from '/src/core/layer.js';
+import { TileMap } from '/src/core/tileMap.js';
 
 // import { Player } from "/demos/predatorScene/gameObjects/player.js";
 import { TallLight } from '/demos/predatorScene/gameObjects/tallLight.js';
@@ -17,8 +17,8 @@ import { Fire } from '/demos/predatorScene/gameObjects/fire.js';
 import { Explosion } from '/demos/predatorScene/gameObjects/explosion.js';
 import { MySoldier } from '/demos/predatorScene/gameObjects/mySoldier.js';
 import { Destination } from '/demos/predatorScene/gameObjects/destination.js';
-import { NavGrid } from '/src/core/NavGrid.js';
-import { containerRadius } from '/src/core/utils.js';
+import { NavGrid } from '/src/core/navGrid.js';
+import { containerRadius } from '/src/util/utils.js';
 import { DropMoney } from '/demos/predatorScene/gameObjects/dropMoney.js';
 import { DropAk47 } from '/demos/predatorScene/gameObjects/dropAk47.js';
 import { DropShotgun } from '/demos/predatorScene/gameObjects/dropShotgun.js';

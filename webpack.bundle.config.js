@@ -39,12 +39,12 @@ function bundleFileName(esm) {
 }
 
 const debugStubAliases = isProd ? {
-    [path.resolve(__dirname, 'src/core/debug/DebugDraw.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/DebugDraw.js'),
-    [path.resolve(__dirname, 'src/core/debug/DebugUI.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/DebugUI.js'),
-    [path.resolve(__dirname, 'src/core/debug/DebugFlags.js')]:
-        path.resolve(__dirname, 'src/core/debug/stubs/DebugFlags.js'),
+    [path.resolve(__dirname, 'src/core/debug/debugDraw.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/debugDraw.js'),
+    [path.resolve(__dirname, 'src/core/debug/debugUi.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/debugUi.js'),
+    [path.resolve(__dirname, 'src/core/debug/debugFlags.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/debugFlags.js'),
 } : {};
 
 // UMD build (for <script> tags and CommonJS)
@@ -66,7 +66,7 @@ const umdConfig = {
         rules: [
             {
                 test: /\.js$/,
-                exclude: [/node_modules/, /src[\\/]lib[\\/]/, /\.worker\.bundled\.js$/],
+                exclude: [/node_modules/, /src[\\/]vendor[\\/]/, /\.worker\.bundled\.js$/],
                 use: {
                     loader: 'babel-loader',
                     options: {

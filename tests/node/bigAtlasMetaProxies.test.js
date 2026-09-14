@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SpriteSheetRegistry } from '../../src/core/SpriteSheetRegistry.js';
+import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
 
 test('meta.proxySheets registration resolves proxy anim names', () => {
   SpriteSheetRegistry.clearForSceneUnload();

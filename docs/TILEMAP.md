@@ -8,7 +8,7 @@ SAB-backed Tiled tilemap data accessible from any thread, with allocation-free q
 
 TileMap loads [Tiled](https://www.mapeditor.org/) JSON tilemaps and backs their tile data with `SharedArrayBuffer`. All workers share the same tile memory instead of receiving cloned map payloads. Tile data is written once at scene load and is immutable after that.
 
-Architecture mirrors `Layer.js`: static registry + lightweight facade instances.
+Architecture mirrors `layer.js`: static registry + lightweight facade instances.
 
 ---
 
@@ -159,7 +159,7 @@ On `setTilemapBackground`, the worker builds every chunk that currently intersec
 2. **Keep** built meshes out to `cacheGrid` (hidden). Outside that, destroy.
 3. **Stream** missing keep-set chunks, at most `maxChunkBuildsPerFrame` per pixi tick, **before** applying the new camera snapshot (so a build hitch is not paired with camera motion).
 
-Override defaults with `config.renderer.tilemapCull` (merged over `TILEMAP_CULL_DEFAULTS` in [`ConfigDefaults.js`](../src/core/ConfigDefaults.js)):
+Override defaults with `config.renderer.tilemapCull` (merged over `TILEMAP_CULL_DEFAULTS` in [`configDefaults.js`](../src/util/configDefaults.js)):
 
 ```javascript
 renderer: {

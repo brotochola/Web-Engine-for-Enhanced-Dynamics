@@ -1,13 +1,13 @@
 // L1 microbench: glow collect inside entity loop (baseline) vs lights-only pass (PRE-HOT).
 //
 // Usage:
-//   node tests/bench/pre-hot-microbench.mjs
-//   node tests/bench/pre-hot-microbench.mjs --entities 12000 --lights 80 --frames 2000 --output tests/results/pre-hot-micro.json
+//   node tests/bench/preHotMicrobench.mjs
+//   node tests/bench/preHotMicrobench.mjs --entities 12000 --lights 80 --frames 2000 --output tests/results/pre-hot-micro.json
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const MIN_GLOW_INTENSITY = 0.05;
 const MIN_GLOW_RANGE = 10;

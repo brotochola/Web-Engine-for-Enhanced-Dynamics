@@ -1,4 +1,4 @@
-import { Component } from '../core/Component.js';
+import { Component } from '../core/component.js';
 
 /**
  * Point / glow light on an entity.

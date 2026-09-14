@@ -5,9 +5,9 @@
 // - Caller should pre-compute invariants (invCellSize, maxCol, maxRow) outside loops
 // - For ultra-hot paths (every frame, thousands of entities), inline the math instead
 
-import { Transform } from '../components/Transform.js';
-import { Collider } from '../components/Collider.js';
-import { MAX_POLYGON_VERTICES, ShapeType } from './ConfigDefaults.js';
+import { Transform } from '../components/transform.js';
+import { Collider } from '../components/collider.js';
+import { MAX_POLYGON_VERTICES, ShapeType } from './configDefaults.js';
 
 /**
  * Shape type constants — aliases for ShapeType (Box2D / WASM C numbers).

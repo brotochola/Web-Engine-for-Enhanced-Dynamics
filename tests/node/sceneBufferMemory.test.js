@@ -6,8 +6,8 @@ import {
   buildMemoryUsageSummary,
   formatBytes,
   getSharedBufferSize,
-} from '../../src/core/sceneBufferMemory.js';
-import { PHYSICS_STATS } from '../../src/workers/workers-utils.js';
+} from '../../src/util/sceneBufferMemory.js';
+import { PHYSICS_STATS } from '../../src/util/workersUtils.js';
 
 test('buildMemoryUsageSummary summarizes nested SharedArrayBuffer trees', () => {
   const buffers = {

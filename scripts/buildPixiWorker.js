@@ -12,7 +12,7 @@
 //   npm install pixi.js@<version>
 //   npm run build:pixi
 //
-// Outfile stays src/lib/pixi_8.16_.min.js (import paths). Packed version is package.json pixi.js.
+// Outfile stays src/vendor/pixi.min.js (import paths). Packed version is package.json pixi.js.
 // WebGPURenderer is bundled (compute layers + GpuProgram). CanvasRenderer stays stubbed.
 
 import { ExtensionType, extensions } from '../node_modules/pixi.js/lib/extensions/Extensions.mjs';

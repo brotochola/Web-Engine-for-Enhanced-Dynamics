@@ -34,19 +34,19 @@ self.postMessage({
   when: Date.now(),
 });
 
-import { Transform } from '../components/Transform.js';
-import { Collider } from '../components/Collider.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { AbstractWorker } from './AbstractWorker.js';
-import { Grid } from '../core/Grid.js';
+import { Transform } from '../components/transform.js';
+import { Collider } from '../components/collider.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { AbstractWorker } from './abstractWorker.js';
+import { Grid } from '../core/grid.js';
 import {
   SPATIAL_STATS,
   createMultiWorkerStatsWriter,
   getEntityHomeCellIndex,
-} from './workers-utils.js';
-import { generateSymmetricalCirclePattern } from '../core/utils.js';
-import { SPATIAL_DEFAULTS } from '../core/ConfigDefaults.js';
-import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult } from '../core/ColliderUtils.js';
+} from '../util/workersUtils.js';
+import { generateSymmetricalCirclePattern } from '../util/utils.js';
+import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
+import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult } from '../util/colliderUtils.js';
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection

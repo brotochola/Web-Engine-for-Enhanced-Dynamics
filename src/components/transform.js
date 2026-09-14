@@ -3,7 +3,7 @@
 // Pose (x/y/rotation/rotC/rotS): Box2D WASM HEAP only — bound via bindBox2dHotFields after box2dReady
 // (logic constructs GameObjects after that bind so setup() can write this.x)
 
-import { Component } from '../core/Component.js';
+import { Component } from '../core/component.js';
 
 export class Transform extends Component {
   static ARRAY_SCHEMA = {

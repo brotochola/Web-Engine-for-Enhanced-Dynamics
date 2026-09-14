@@ -29,11 +29,11 @@ if (process.argv.includes('--obfuscate')) process.env.OBFUSCATE = 'true';
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
 
 export const WORKER_NAMES = [
-    'spatial_worker',
-    'logic_worker',
-    'pixi_worker',
-    'particle_worker',
-    'pre_render_worker',
+    'spatialWorker',
+    'logicWorker',
+    'pixiWorker',
+    'particleWorker',
+    'preRenderWorker',
 ];
 
 export const BUNDLE_ARTIFACTS = [
@@ -49,7 +49,7 @@ export const BUNDLE_ARTIFACTS = [
 
 const KEEP_DIST_FILES = new Set([...BUNDLE_ARTIFACTS, 'index.html']);
 
-const BOX2D_ALWAYS_SIBLINGS = ['weedjs_post.js', 'physics_host.impl.js'];
+const BOX2D_ALWAYS_SIBLINGS = ['weedjsPost.js', 'physicsHostImpl.js'];
 
 /** Quoted .js filenames in the first importScripts(...) of a classic script. */
 export function extractImportScriptNames(source) {
@@ -104,7 +104,7 @@ function runWebpack(configFile, env) {
 
 function buildBox2dWorkerSource() {
     const box2dDir = path.join(rootDir, 'src', 'box2d');
-    const weedPostPath = path.join(box2dDir, 'weedjs_post.js');
+    const weedPostPath = path.join(box2dDir, 'weedjsPost.js');
     const weedPostSource = fs.readFileSync(weedPostPath, 'utf8');
     const siblingNames = listBox2dSiblingNames(weedPostSource);
 
@@ -115,11 +115,11 @@ function buildBox2dWorkerSource() {
             throw new Error(`Box2D sibling missing: ${filePath}`);
         }
         box2dSiblingScripts[name] =
-            name === 'weedjs_post.js' ? weedPostSource : fs.readFileSync(filePath, 'utf8');
+            name === 'weedjsPost.js' ? weedPostSource : fs.readFileSync(filePath, 'utf8');
     }
 
-    const box2dGlue = fs.readFileSync(path.join(box2dDir, 'box2d_wasm.js'), 'utf8');
-    const wasmBytes = fs.readFileSync(path.join(box2dDir, 'box2d_wasm.wasm'));
+    const box2dGlue = fs.readFileSync(path.join(box2dDir, 'box2dWasm.js'), 'utf8');
+    const wasmBytes = fs.readFileSync(path.join(box2dDir, 'box2dWasm.wasm'));
     const gzipped = zlib.gzipSync(wasmBytes, { level: 9 });
     const box2dWasmGzipB64 = gzipped.toString('base64');
 
@@ -183,8 +183,8 @@ function buildBox2dWorkerSource() {
         `    return __importScripts.apply(global, args);\n` +
         `  };\n` +
         `  if (global.name !== "em-pthread") {\n` +
-        `    global.importScripts("weedjs_post.js");\n` +
-        `    global.importScripts("physics_host.impl.js");\n` +
+        `    global.importScripts("weedjsPost.js");\n` +
+        `    global.importScripts("physicsHostImpl.js");\n` +
         `    var __weedReady = Module["onRuntimeInitialized"];\n` +
         `    Module["onRuntimeInitialized"] = function () {\n` +
         `      if (typeof __weedReady === "function") __weedReady();\n` +
@@ -426,7 +426,7 @@ function buildProdAxis({ prod, box2dWorkerSource, audioWorkletSource }) {
 
     const debugUICSS = prod
         ? ''
-        : fs.readFileSync(path.join(rootDir, 'src', 'core', 'debug', 'DebugUI.css'), 'utf8');
+        : fs.readFileSync(path.join(rootDir, 'src', 'core', 'debug', 'debugUi.css'), 'utf8');
 
     printSizeBreakdown(label, sizes, Buffer.byteLength(box2dWorkerSource, 'utf8'));
 
@@ -487,7 +487,7 @@ function main() {
     console.log('📦 Preparing shared Box2D embed (gzip → base64)...');
     const box2dWorkerSource = buildBox2dWorkerSource();
     const audioWorkletSource = fs.readFileSync(
-        path.join(rootDir, 'src', 'workers', 'AudioMixerProcessor.js'),
+        path.join(rootDir, 'src', 'workers', 'audioMixerProcessor.js'),
         'utf8',
     );
 

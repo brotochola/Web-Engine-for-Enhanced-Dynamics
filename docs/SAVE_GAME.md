@@ -22,7 +22,7 @@ An entity is included in a save only if:
 
 Per entity, the snapshot packs SoA component fields (plus Transform pose and RigidBody velocity/sleeping from Box2D HEAP views). JS-only FSM locals that are not in an `ARRAY_SCHEMA` are not saved.
 
-After restore, the physics host marks the Box2D body dirty when **either** `RigidBody` or `Collider` is active on the entity (RigidBody-only / Collider-only / both). See [PHYSICS.md ó composition](./PHYSICS.md#rigidbody--collider-composition).
+After restore, the physics host marks the Box2D body dirty when **either** `RigidBody` or `Collider` is active on the entity (RigidBody-only / Collider-only / both). See [PHYSICS.md ÔøΩ composition](./PHYSICS.md#rigidbody--collider-composition).
 
 ## Scene lifecycle (new game vs load)
 
@@ -53,8 +53,8 @@ Do not gate spawns with `if (!this._restorePayload)` inside `create()`.
 
 Save code lives under `src/core/save/`:
 
-- `SaveGame.js` ? orchestrate save/load
-- `SaveStore.js` ? IndexedDB + catalog
+- `saveGame.js` ? orchestrate save/load
+- `saveStore.js` ? IndexedDB + catalog
 - `entitySaveSnapshot.js` ? entity SoA pack/unpack + outer encode/decode
 - `binarySaveCodec.js` ? sectioned little-endian body (sole wire codec)
 - `liquidFunSave.js` ? LiquidFun typed-array snapshot helpers
@@ -124,7 +124,7 @@ Debug overlay ? **Saves** tab:
 
 - **Save** ? new slot for the current scene
 - **Load** ? selected row (remount + restore)
-- **ù** on each row ? delete that slot (`SaveStore.remove`)
+- **ÔøΩ** on each row ? delete that slot (`SaveStore.remove`)
 - **List** ? slots filtered to `scene.constructor.name`
 
 ## Joints + LiquidFun + Decals

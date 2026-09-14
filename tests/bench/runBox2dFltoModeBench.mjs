@@ -4,8 +4,8 @@
  * Restores default wasm (4 pthreads, -flto=full) at the end.
  *
  * Usage:
- *   node tests/bench/run-box2d-flto-mode-bench.mjs
- *   node tests/bench/run-box2d-flto-mode-bench.mjs --runs 5
+ *   node tests/bench/runBox2dFltoModeBench.mjs
+ *   node tests/bench/runBox2dFltoModeBench.mjs --runs 5
  */
 
 import { execFileSync } from 'node:child_process';
@@ -13,13 +13,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const ballsScenePath = path.join(repoRoot, 'demos/ballsScene/ballsScene.js');
 const siblingRoot = path.resolve(repoRoot, '../Box2d_3.2_C_-_liquidfun');
 const buildBat = path.join(siblingRoot, 'weedjs', 'build_for_weed.bat');
-const medianRunner = path.join(repoRoot, 'tests/bench/run-headed-median.mjs');
+const medianRunner = path.join(repoRoot, 'tests/bench/runHeadedMedian.mjs');
 const resultsDir = path.join(repoRoot, 'tests/results');
 
 const CASES = [

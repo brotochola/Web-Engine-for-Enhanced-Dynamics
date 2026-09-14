@@ -1,6 +1,6 @@
 # Particles
 
-Particles are a dedicated pool (`ParticleComponent` + `ParticleEmitter`), not GameObjects. Any worker (or the main thread) can spawn; `particle_worker` owns simulation, visibility lists, and decal stamping; `pre_render_worker` maps pose for the render queue.
+Particles are a dedicated pool (`ParticleComponent` + `ParticleEmitter`), not GameObjects. Any worker (or the main thread) can spawn; `particleWorker` owns simulation, visibility lists, and decal stamping; `preRenderWorker` maps pose for the render queue.
 
 ## Spawn API
 
@@ -85,7 +85,7 @@ Props that accept over-life ops: `alpha`, `scale` / `scaleX` / `scaleY`, `tint`,
 
 `scale: { min, max }` samples once and writes both axes — aspect stays locked. Pass both `scaleX` and `scaleY` with no `scale` only for non-uniform stamps (decals, muzzle).
 
-## Physics (`particle_worker`)
+## Physics (`particleWorker`)
 
 Convention: `z < 0` = airborne, `z >= 0` = on ground.
 
@@ -97,7 +97,7 @@ Convention: `z < 0` = airborne, `z >= 0` = on ground.
 
 Zenithal vs topdown does **not** change physics. Only `flat` vs heighted does. One active list is enough; do not split pools by `viewMode` for simulation.
 
-## Rendering (`pre_render_worker`)
+## Rendering (`preRenderWorker`)
 
 Reads per-particle `viewMode` / `flat`:
 
@@ -128,18 +128,18 @@ Same as before: `texture` name, or `spritesheet` + `animation` + `frame`. Resolv
 ```
 emit / emitFlat / emitZenithal / stampDecal
   → ParticleComponent SAB (incl. flat, viewMode)
-particle_worker
+particleWorker
   → physics + ground / decals + visibleParticlesData
-pre_render_worker
+preRenderWorker
   → render queue pose from viewMode / flat
-pixi_worker
+pixiWorker
   → draw
 ```
 
 ## Related
 
-- [`ParticleEmitter.js`](../src/core/ParticleEmitter.js)
-- [`ParticleComponent.js`](../src/components/ParticleComponent.js)
-- [`particle_worker.js`](../src/workers/particle_worker.js)
+- [`particleEmitter.js`](../src/core/particleEmitter.js)
+- [`particleComponent.js`](../src/components/particleComponent.js)
+- [`particleWorker.js`](../src/workers/particleWorker.js)
 - [LiquidFun (Box2D fluids)](./LIQUIDFUN.md)
 - Demo: [`zenithalParticleTestScene.js`](../demos/zenithalParticleTestScene/zenithalParticleTestScene.js), [`bluePlatformerPlayer.js`](../demos/platformerGameScene/gameObjects/bluePlatformerPlayer.js), [`liquidFunDemoScene.js`](../demos/liquidFunDemoScene/liquidFunDemoScene.js)

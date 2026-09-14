@@ -5,7 +5,7 @@
 **Scenes:** BallsScene, PredatorScene  
 **Runtime:** headed Chromium, warmup **8 s** / measure **6 s**  
 **Data:** [`tests/results/multigrid-hyps/smoke-summary.json`](../tests/results/multigrid-hyps/smoke-summary.json), [`confirm-summary.json`](../tests/results/multigrid-hyps/confirm-summary.json)  
-**Prototype:** [`tests/bench/multigrid-hyps/m1_spatial_worker.js`](../tests/bench/multigrid-hyps/m1_spatial_worker.js) (not merged)
+**Prototype:** [`tests/bench/multigrid-hyps/m1SpatialWorker.js`](../tests/bench/multigrid-hyps/m1SpatialWorker.js) (not merged)
 
 ---
 
@@ -58,8 +58,8 @@ BODY stayed within ±5%.
 ## 5. Reproducibility
 
 ```bash
-node tests/bench/run-multigrid-smoke.mjs
-node tests/bench/run-multigrid-smoke.mjs --confirm
+node tests/bench/runMultigridSmoke.mjs
+node tests/bench/runMultigridSmoke.mjs --confirm
 ```
 
-Restores [`src/workers/spatial_worker.js`](../src/workers/spatial_worker.js) from `tests/bench/multigrid-hyps/baseline_spatial_worker.js` after runs.
+Restores [`src/workers/spatialWorker.js`](../src/workers/spatialWorker.js) from `tests/bench/multigrid-hyps/baselineSpatialWorker.js` after runs.

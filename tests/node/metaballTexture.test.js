@@ -5,7 +5,7 @@ import {
   METABALL_TEXTURE_RADIUS,
   fillMetaballRgba,
   createMetaballCanvas,
-} from '../../src/core/utils.js';
+} from '../../src/util/utils.js';
 
 function alphaAt(data, size, x, y) {
   return data[(y * size + x) * 4 + 3];

@@ -28,7 +28,7 @@ if (fs.existsSync(lockPath)) {
   fs.writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
 }
 
-const sync = spawnSync(process.execPath, [path.join(rootDir, 'scripts', 'sync-version.js')], {
+const sync = spawnSync(process.execPath, [path.join(rootDir, 'scripts', 'syncVersion.js')], {
   cwd: rootDir,
   stdio: 'inherit',
 });

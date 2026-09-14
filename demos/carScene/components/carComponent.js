@@ -1,6 +1,6 @@
 // CarComponent.js - Data for single-body car entities (Box2D-first drive)
 
-import { Component } from '/src/core/Component.js';
+import { Component } from '/src/core/component.js';
 
 // Constant accel while input held; Box2D linearDamping sets top speed
 export const CAR_DEFAULTS = {

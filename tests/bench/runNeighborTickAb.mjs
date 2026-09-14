@@ -2,7 +2,7 @@
 /**
  * A/B: spatial.neighborTickInterval off(1) vs on(6) for Balls + Predator.
  *
- *   node tests/bench/run-neighbor-tick-ab.mjs
+ *   node tests/bench/runNeighborTickAb.mjs
  */
 
 import { execFileSync } from 'node:child_process';
@@ -10,10 +10,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests/results/neighbor-tick-ab-nopublish');
 const summaryPath = path.join(outDir, 'summary.json');
 

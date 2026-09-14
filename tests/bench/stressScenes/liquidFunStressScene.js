@@ -7,7 +7,7 @@
 // default since H1) - flip to true for a round that needs to exercise
 // RemoveSpuriousBodyContacts (see H5 in docs/LIQUIDFUN_HYPOTHESES.md).
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/Camera.js';
+import { Camera } from '/src/core/camera.js';
 import WEED from '/src/index.js';
 
 const { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } = WEED;

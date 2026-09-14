@@ -1,17 +1,17 @@
 // PhysicsDebugRenderer.js — Draws entity-level debug overlays
 // Colliders, velocity, acceleration, neighbors, raycasts, sleeping, constraints, origins, indices
 
-import { Transform } from '../../../components/Transform.js';
-import { RigidBody } from '../../../components/RigidBody.js';
-import { Collider } from '../../../components/Collider.js';
-import { SpriteRenderer } from '../../../components/SpriteRenderer.js';
-import { Mouse } from '../../Mouse.js';
-import { Grid } from '../../Grid.js';
-import { Joint } from '../../Joint.js';
-import { DebugDraw } from '../DebugDraw.js';
-import { distanceSq2D } from '../../utils.js';
-import { ShapeType } from '../../ConfigDefaults.js';
-import { getColliderBounds, _boundsResult } from '../../ColliderUtils.js';
+import { Transform } from '../../../components/transform.js';
+import { RigidBody } from '../../../components/rigidBody.js';
+import { Collider } from '../../../components/collider.js';
+import { SpriteRenderer } from '../../../components/spriteRenderer.js';
+import { Mouse } from '../../mouse.js';
+import { Grid } from '../../grid.js';
+import { Joint } from '../../joint.js';
+import { DebugDraw } from '../debugDraw.js';
+import { distanceSq2D } from '../../../util/utils.js';
+import { ShapeType } from '../../../util/configDefaults.js';
+import { getColliderBounds, _boundsResult } from '../../../util/colliderUtils.js';
 
 export class PhysicsDebugRenderer {
   constructor() {

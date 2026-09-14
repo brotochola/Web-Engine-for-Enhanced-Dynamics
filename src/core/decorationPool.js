@@ -10,19 +10,19 @@
 // - activeDecorationsData compact-list mutation is protected by a tiny SAB lock
 // - Any worker or the main thread can safely spawn/despawn decorations
 
-import { DecorationComponent } from '../components/DecorationComponent.js';
-import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { SharedAtomicPool } from './SharedAtomicPool.js';
-import { randomRange } from './utils.js';
-import { Layer } from './Layer.js';
-import { evictDecorationFacade, clearAllDecorationFacades } from './decorationFacades.js';
-import { DecorationSpatial } from './DecorationSpatial.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
+import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { SharedAtomicPool } from './sharedAtomicPool.js';
+import { randomRange } from '../util/utils.js';
+import { Layer } from './layer.js';
+import { evictDecorationFacade, clearAllDecorationFacades } from '../util/decorationFacades.js';
+import { DecorationSpatial } from './decorationSpatial.js';
 import {
   DECORATION_Y_SORT_SCALE,
   DECORATION_INNER_Z_MIN,
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
-} from './ConfigDefaults.js';
+} from '../util/configDefaults.js';
 
 export {
   DECORATION_Y_SORT_SCALE,
@@ -39,7 +39,7 @@ export {
   SWAY_IMPULSE,
   SWAY_ANGLE_PER_MS,
   advanceImpulsePhase,
-} from './decorationSway.js';
+} from '../util/decorationSway.js';
 
 export class DecorationPool extends SharedAtomicPool {
   // Pool name for logging (used by base class)

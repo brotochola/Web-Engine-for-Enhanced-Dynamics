@@ -1,14 +1,14 @@
 // Run all hyp-win L1 microbenches and write a summary JSON.
 //
 // Usage:
-//   node tests/bench/run-hyp-wins-microbenches.mjs
+//   node tests/bench/runHypWinsMicrobenches.mjs
 //   pnpm bench:micro:hyp-wins
 
-import { parseArgs, writeReport } from './microbench-helpers.mjs';
-import { runLogPairMicrobench } from './log-pair-microbench.mjs';
-import { runParCamMicrobench } from './par-cam-microbench.mjs';
-import { runPreAnimMicrobench } from './pre-anim-microbench.mjs';
-import { runPreHotMicrobench } from './pre-hot-microbench.mjs';
+import { parseArgs, writeReport } from './microbenchHelpers.mjs';
+import { runLogPairMicrobench } from './logPairMicrobench.mjs';
+import { runParCamMicrobench } from './parCamMicrobench.mjs';
+import { runPreAnimMicrobench } from './preAnimMicrobench.mjs';
+import { runPreHotMicrobench } from './preHotMicrobench.mjs';
 
 const args = parseArgs();
 const outputPath = args.output

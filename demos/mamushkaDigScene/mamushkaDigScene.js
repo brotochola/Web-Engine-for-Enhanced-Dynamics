@@ -5,13 +5,13 @@ import { Lamp } from './gameObjects/lamp.js';
 import { MamushkaBox, ORDER1_CELL, weldTouchingMamushkas } from './gameObjects/mamushkaBox.js';
 import { buildOccupancy, packMamushkaRoots } from './mamushkaPack.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/Camera.js';
+import { Camera } from '/src/core/camera.js';
 import {
   BLEND_MODES,
   LAYER_DENSITY_SOURCE,
   LAYER_SPLAT_FALLOFF,
   LAYER_SCALE_MODE,
-} from '/src/core/ConfigDefaults.js';
+} from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 
 const { Transform, LiquidFun } = WEED;

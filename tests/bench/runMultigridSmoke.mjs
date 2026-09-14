@@ -2,19 +2,19 @@
 /**
  * Dual-grid (fine + 4×) smoke bench — short discard run.
  *
- *   node tests/bench/run-multigrid-smoke.mjs
- *   node tests/bench/run-multigrid-smoke.mjs --confirm
+ *   node tests/bench/runMultigridSmoke.mjs
+ *   node tests/bench/runMultigridSmoke.mjs --confirm
  */
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { HYPS, applyHyp, restoreAll } from './multigrid-hyps/multigridHypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests/results/multigrid-hyps');
 
 const WARMUP_MS = 8_000;

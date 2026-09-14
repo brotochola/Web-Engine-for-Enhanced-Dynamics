@@ -4,8 +4,8 @@
 import WEED from '/src/index.js';
 
 import { Person } from './person.js';
-import { SoldierBehaviorFSM } from '../fsm/soldierBehaviorFSM.js';
-import { PersonAnimationFSM } from '../fsm/personAnimationFSM.js';
+import { SoldierBehaviorFSM } from '../fsm/soldierBehaviorFsm.js';
+import { PersonAnimationFSM } from '../fsm/personAnimationFsm.js';
 import { PersonComponent } from '../components/personComponent.js';
 
 const { Transform, Keyboard, Decoration } = WEED;

@@ -1,6 +1,6 @@
 // Noise occupancy → order-1 quadtree pack (destructuble_terrain_2d procgen.js).
 
-import { Noise2D } from '../../src/core/Noise2D.js';
+import { Noise2D } from '../../src/core/noise2D.js';
 
 const MATERIAL_DIRT = 0;
 const MATERIAL_STONE = 1;

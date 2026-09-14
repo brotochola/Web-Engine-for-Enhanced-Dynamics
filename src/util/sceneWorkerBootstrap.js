@@ -1,11 +1,11 @@
 import { getPortTransferables, postWorkerInitMessage } from './utils.js';
-import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { AdobeAnimRegistry } from './AdobeAnimRegistry.js';
-import { Flash } from './Flash.js';
-import { Layer } from './Layer.js';
-import { TileMap } from './TileMap.js';
-import { NavGrid } from './NavGrid.js';
-import { SoundManager } from './SoundManager.js';
+import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
+import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
+import { Flash } from '../core/flash.js';
+import { Layer } from '../core/layer.js';
+import { TileMap } from '../core/tileMap.js';
+import { NavGrid } from '../core/navGrid.js';
+import { SoundManager } from '../core/soundManager.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
 // code, but cycling scenes within a session reuses the browser's HTTP and
@@ -21,7 +21,7 @@ function createSceneWorkerFactory(useInlineWorkers, cacheBust) {
   };
 }
 
-/** Classic Box2D worker (pthread entry). Bundle blob or /src/box2d/box2d_wasm.js — no type:module. */
+/** Classic Box2D worker (pthread entry). Bundle blob or /src/box2d/box2dWasm.js — no type:module. */
 function createPhysicsWorker(useInlineWorkers, cacheBust) {
   if (useInlineWorkers) {
     if (typeof window.WEED.getBox2dWorkerUrl !== 'function') {
@@ -29,27 +29,27 @@ function createPhysicsWorker(useInlineWorkers, cacheBust) {
     }
     return new Worker(window.WEED.getBox2dWorkerUrl());
   }
-  return new Worker(`/src/box2d/box2d_wasm.js${cacheBust}`);
+  return new Worker(`/src/box2d/box2dWasm.js${cacheBust}`);
 }
 
 function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBust) {
   const numberOfSpatialWorkers = scene.config.spatial.numberOfSpatialWorkers;
   for (let i = 0; i < numberOfSpatialWorkers; i++) {
-    const spatialWorker = makeWorker('spatial_worker');
+    const spatialWorker = makeWorker('spatialWorker');
     spatialWorker.name = `spatial${i}`;
     scene.workers.spatialWorkers.push(spatialWorker);
   }
 
   for (let i = 0; i < scene.numberOfLogicWorkers; i++) {
-    const logicWorker = makeWorker('logic_worker');
+    const logicWorker = makeWorker('logicWorker');
     logicWorker.name = `logic${i}`;
     scene.workers.logicWorkers.push(logicWorker);
   }
 
   scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust);
-  scene.workers.renderer = makeWorker('pixi_worker');
-  scene.workers.particle = makeWorker('particle_worker');
-  scene.workers.preRender = makeWorker('pre_render_worker');
+  scene.workers.renderer = makeWorker('pixiWorker');
+  scene.workers.particle = makeWorker('particleWorker');
+  scene.workers.preRender = makeWorker('preRenderWorker');
 
   scene.workers.physics.name = 'physics';
   scene.workers.renderer.name = 'renderer';

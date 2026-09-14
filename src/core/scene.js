@@ -3,12 +3,12 @@
 // This was previously GameEngine.js - renamed to better reflect its role
 
 import { GameObject } from './gameObject.js';
-import { popFreeIndex } from './atomicFreeList.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
+import { popFreeIndex } from '../util/atomicFreeList.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import { Collider } from '../components/collider.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
-import { LiquidFun } from './LiquidFun.js';
+import { LiquidFun } from './liquidFun.js';
 import { bindCommandRing, enqueueExplode } from '../box2d/box2dCommandRing.js';
 import {
   bindQueryAabbSab,
@@ -20,24 +20,24 @@ import {
 } from '../box2d/box2dRayCast.js';
 import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindMovedBodies, getMovedBodiesViews } from '../box2d/box2dMovedBodies.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { DecorationComponent } from '../components/DecorationComponent.js';
-import { BulletComponent } from '../components/BulletComponent.js';
-import { DecorationPool } from './DecorationPool.js';
-import { BulletPool } from './BulletPool.js';
-import { ShadowCaster } from '../components/ShadowCaster.js';
-import { FlashComponent } from '../components/FlashComponent.js';
-import { LightEmitter } from '../components/LightEmitter.js';
-import { LightOccluder } from '../components/LightOccluder.js';
-import { CameraInOutListener } from '../components/CameraInOutListener.js';
-import { CollisionListener } from '../components/CollisionListener.js';
-import { JointBreakListener } from '../components/JointBreakListener.js';
-import { Grab } from '../components/Grab.js';
-import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { AdobeAnimRegistry } from './AdobeAnimRegistry.js';
-import { AdobeAnimCompiler } from './AdobeAnimCompiler.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
+import { BulletComponent } from '../components/bulletComponent.js';
+import { DecorationPool } from './decorationPool.js';
+import { BulletPool } from './bulletPool.js';
+import { ShadowCaster } from '../components/shadowCaster.js';
+import { FlashComponent } from '../components/flashComponent.js';
+import { LightEmitter } from '../components/lightEmitter.js';
+import { LightOccluder } from '../components/lightOccluder.js';
+import { CameraInOutListener } from '../components/cameraInOutListener.js';
+import { CollisionListener } from '../components/collisionListener.js';
+import { JointBreakListener } from '../components/jointBreakListener.js';
+import { Grab } from '../components/grab.js';
+import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
+import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
   setupWorkerCommunication,
   seededRandom,
@@ -47,23 +47,23 @@ import {
   exposeComponentsGlobally,
   exposeEntityClassesGlobally,
   urlToPath,
-} from './utils.js';
-import { DebugFlags } from './debug/DebugFlags.js';
-import { Mouse } from './Mouse.js';
-import { Gamepad } from './Gamepad.js';
-import Keyboard from './Keyboard.js';
-import { Flash } from './Flash.js';
-import { BigAtlasInspector } from './BigAtlasInspector.js';
-import { Camera } from './Camera.js';
+} from '../util/utils.js';
+import { DebugFlags } from './debug/debugFlags.js';
+import { Mouse } from './mouse.js';
+import { Gamepad } from './gamepad.js';
+import Keyboard from './keyboard.js';
+import { Flash } from './flash.js';
+import { BigAtlasInspector } from './bigAtlasInspector.js';
+import { Camera } from './camera.js';
 import {
   buildMemoryUsageSummary,
   buildSceneMemoryUsageReport,
   getSharedBufferSize as getSharedBufferSizeFromBuffers,
-} from './sceneBufferMemory.js';
-import { createSceneSharedBuffers, teardownSceneSharedState } from './sceneSharedBuffers.js';
-import { createSceneWorkers } from './sceneWorkerBootstrap.js';
-import { QuerySystem } from './QuerySystem.js';
-import { GrabSystem } from './GrabSystem.js';
+} from '../util/sceneBufferMemory.js';
+import { createSceneSharedBuffers, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
+import { createSceneWorkers } from '../util/sceneWorkerBootstrap.js';
+import { QuerySystem } from './querySystem.js';
+import { GrabSystem } from './grabSystem.js';
 import {
   SCENE_DEFAULTS,
   PHYSICS_DEFAULTS,
@@ -81,15 +81,15 @@ import {
   SUN_DEFAULTS,
   ASSETS_DEFAULTS,
   DEFAULT_LAYERS,
-} from './ConfigDefaults.js';
-import { Sun } from './Sun.js';
-import { Layer } from './Layer.js';
-import { TileMap } from './TileMap.js';
-import { computeBufferSize as computeRenderQueueBufferSize } from './RenderQueueLayout.js';
-import { NavGrid } from './NavGrid.js';
-import { Grid } from './Grid.js';
-import { Ray } from './Ray.js';
-import { DebugDraw } from './debug/DebugDraw.js';
+} from '../util/configDefaults.js';
+import { Sun } from './sun.js';
+import { Layer } from './layer.js';
+import { TileMap } from './tileMap.js';
+import { computeBufferSize as computeRenderQueueBufferSize } from '../render/renderQueueLayout.js';
+import { NavGrid } from './navGrid.js';
+import { Grid } from './grid.js';
+import { Ray } from './ray.js';
+import { DebugDraw } from './debug/debugDraw.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -97,17 +97,17 @@ import {
   SPATIAL_STATS,
   LOGIC_STATS,
   PRE_RENDER_STATS,
-} from '../workers/workers-utils.js';
-import { ParticleEmitter } from './ParticleEmitter.js';
-import { Joint } from './Joint.js';
-import { SoundManager } from './SoundManager.js';
-import { Decoration } from './Decoration.js';
+} from '../util/workersUtils.js';
+import { ParticleEmitter } from './particleEmitter.js';
+import { Joint } from './joint.js';
+import { SoundManager } from './soundManager.js';
+import { Decoration } from './decoration.js';
 import {
   assertSceneRendererConfig,
   assertLoadedShadersCompatible,
   collectComputeAssetNames,
   errorShaderFetchFailed,
-} from './rendererBackend.js';
+} from '../render/rendererBackend.js';
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -950,7 +950,7 @@ class Scene {
     // before play starts (workers stay paused until start below).
     if (this._restorePayload) {
       const payload = this._restorePayload;
-      const { applySavePayloadToScene } = await import('./save/SaveGame.js');
+      const { applySavePayloadToScene } = await import('./save/saveGame.js');
       await applySavePayloadToScene(this, payload);
       await this.onLoadGame(payload);
     } else {
@@ -2348,7 +2348,7 @@ class Scene {
    * @param {string} [slotId]
    */
   async saveGame(slotId) {
-    const { saveGame } = await import('./save/SaveGame.js');
+    const { saveGame } = await import('./save/saveGame.js');
     return saveGame(this, slotId);
   }
 
@@ -2357,7 +2357,7 @@ class Scene {
    * @param {string} slotId
    */
   async loadGame(slotId) {
-    const { loadGame } = await import('./save/SaveGame.js');
+    const { loadGame } = await import('./save/saveGame.js');
     return loadGame(this.game, this.constructor, slotId);
   }
 

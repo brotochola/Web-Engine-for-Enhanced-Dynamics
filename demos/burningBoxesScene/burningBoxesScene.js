@@ -2,14 +2,14 @@ import { BurningBox } from './gameObjects/burningBox.js';
 import { Blower } from './gameObjects/blower.js';
 import { RocketBox } from './gameObjects/rocketBox.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/Camera.js';
+import { Camera } from '/src/core/camera.js';
 import {
   BLEND_MODES,
   LAYER_COMPUTE_SOURCE,
   LAYER_DENSITY_SOURCE,
   LAYER_SPLAT_FALLOFF,
   LAYER_SCALE_MODE,
-} from '/src/core/ConfigDefaults.js';
+} from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 
 const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS } = WEED;

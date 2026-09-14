@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Layer } from '../../src/core/Layer.js';
-import { Collider } from '../../src/components/Collider.js';
+import { Layer } from '../../src/core/layer.js';
+import { Collider } from '../../src/components/collider.js';
 import {
   LAYER_DENSITY_SOURCE,
-} from '../../src/core/ConfigDefaults.js';
+} from '../../src/util/configDefaults.js';
 import {
   syncColliderFeed,
   syncParticleFeed,
   colliderFeedCount,
   particleFeedCount,
   visitColliderFeed,
-} from '../../src/core/layerFeed.js';
+} from '../../src/util/layerFeed.js';
 
 const BUILT_IN = {
   BACKGROUND: {},

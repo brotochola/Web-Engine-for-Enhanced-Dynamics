@@ -6,13 +6,13 @@
 // one so the pool never exhausts mid-benchmark, matching real gameplay recycling.
 //
 // Usage:
-//   node tests/bench/particle-emit-microbench.mjs
-//   node tests/bench/particle-emit-microbench.mjs --particles 4096 --bursts 2000 --burst-size 256 --output tests/results/particle-emit-micro.json
+//   node tests/bench/particleEmitMicrobench.mjs
+//   node tests/bench/particleEmitMicrobench.mjs --particles 4096 --bursts 2000 --burst-size 256 --output tests/results/particle-emit-micro.json
 
-import { ParticleComponent } from '../../src/components/ParticleComponent.js';
-import { ParticleEmitter } from '../../src/core/ParticleEmitter.js';
-import { seededRandom } from '../../src/core/utils.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { ParticleComponent } from '../../src/components/particleComponent.js';
+import { ParticleEmitter } from '../../src/core/particleEmitter.js';
+import { seededRandom } from '../../src/util/utils.js';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
 const MAX_PARTICLES = Number(args.particles ?? 4096);

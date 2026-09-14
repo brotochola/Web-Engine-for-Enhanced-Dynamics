@@ -1,4 +1,4 @@
-import { RESERVED_LOOK_UNIFORMS } from '../core/Layer.js';
+import { RESERVED_LOOK_UNIFORMS } from '../../core/layer.js';
 
 /**
  * Engine WGSL preludes. Structs are generated from the layer uniform map so

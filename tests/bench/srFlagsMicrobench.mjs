@@ -13,14 +13,14 @@
 // (base-2 8.85; pack 9.32 / 8.46). Keep 7 SoA columns. Do not bitpack engine.
 //
 // Usage:
-//   node tests/bench/sr-flags-microbench.mjs
+//   node tests/bench/srFlagsMicrobench.mjs
 //   pnpm bench:micro:sr-flags
-//   node tests/bench/sr-flags-microbench.mjs --entities 8000 --ticks 2000 --output tests/results/sr-flags-micro.json
+//   node tests/bench/srFlagsMicrobench.mjs --entities 8000 --ticks 2000 --output tests/results/sr-flags-micro.json
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const F_ACTIVE = 1 << 0;
 const F_ANIMATED = 1 << 1;

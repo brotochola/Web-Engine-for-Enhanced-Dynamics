@@ -2,8 +2,8 @@
 /**
  * Ray hyp tournament: Round1 singles → Round2 pairs → Round3 stacks → champion.
  *
- *   node tests/bench/run-ray-hyp-tournament.mjs --round all
- *   node tests/bench/run-ray-hyp-tournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
+ *   node tests/bench/runRayHypTournament.mjs --round all
+ *   node tests/bench/runRayHypTournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
  */
 
 import { execFileSync } from 'node:child_process';
@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import {
   applyCombo,
   applyHyp,
@@ -23,12 +23,12 @@ import {
 } from './ray-hyps/hypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const integratedRunner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
-const microRunner = path.join(repoRoot, 'tests/bench/ray-microbench.mjs');
+const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
+const microRunner = path.join(repoRoot, 'tests/bench/rayMicrobench.mjs');
 const outDir = path.join(repoRoot, 'tests/results/ray-hyps/tournament');
 
 const SCENES = [
-  { key: 'rayStress', scene: '/tests/bench/stressScenes/RayStressScene.js', exportName: 'RayStressScene' },
+  { key: 'rayStress', scene: '/tests/bench/stressScenes/rayStressScene.js', exportName: 'RayStressScene' },
   { key: 'predator', scene: '/demos/predatorScene/predatorScene.js', exportName: 'PredatorScene' },
 ];
 

@@ -11,15 +11,15 @@
 //      sparse-alpha scenarios.
 //
 // Usage:
-//   node tests/bench/decal-microbench.mjs
-//   node tests/bench/decal-microbench.mjs --stamps 5000 --seed 12648430 --output tests/results/decal-micro.json
+//   node tests/bench/decalMicrobench.mjs
+//   node tests/bench/decalMicrobench.mjs --stamps 5000 --seed 12648430 --output tests/results/decal-micro.json
 
-import { stampParticleToTileBuffers } from '../../src/core/decalStamp.js';
+import { stampParticleToTileBuffers } from '../../src/util/decalStamp.js';
 import {
   calculateDecalTileBounds,
   calculateTileClipRegion,
-} from '../../src/core/utils.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+} from '../../src/util/utils.js';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
 const STAMPS = Number(args.stamps ?? 5000);

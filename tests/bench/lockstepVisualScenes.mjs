@@ -68,7 +68,7 @@ export const LOCKSTEP_VISUAL_SCENES = [
   },
   {
     id: 'lfstress',
-    module: '/tests/bench/stressScenes/LiquidFunStressScene.js',
+    module: '/tests/bench/stressScenes/liquidFunStressScene.js',
     exportName: 'LiquidFunStressScene',
     steps: 100,
     dtMs: 16.67,

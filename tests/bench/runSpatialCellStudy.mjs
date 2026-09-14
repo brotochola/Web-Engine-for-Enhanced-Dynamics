@@ -3,8 +3,8 @@
  * Headless repeated integrated BallsScene benchmark at the scene's configured spatial settings.
  * Writes tests/results/research-spatial-cell.json (relative to repo root).
  *
- *   node tests/bench/run-spatial-cell-study.mjs
- *   node tests/bench/run-spatial-cell-study.mjs --runs 3 --warmup-ms 10000 --duration-ms 8000
+ *   node tests/bench/runSpatialCellStudy.mjs
+ *   node tests/bench/runSpatialCellStudy.mjs --runs 3 --warmup-ms 10000 --duration-ms 8000
  *
  * To compare different spatial.cellSize values, change `demos/ballsScene/ballsScene.js` static config
  * between runs (no CLI overrides).
@@ -17,7 +17,7 @@ import path from 'path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outReport = path.join(repoRoot, 'tests', 'results', 'research-spatial-cell.json');
 
 function parseArgs(argv) {

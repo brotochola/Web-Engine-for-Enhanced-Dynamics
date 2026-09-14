@@ -4,10 +4,10 @@
 //
 // EXTENDS SharedAtomicPool for thread-safe free list management
 
-import { BulletComponent } from '../components/BulletComponent.js';
-import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { SharedAtomicPool } from './SharedAtomicPool.js';
-import { Layer } from './Layer.js';
+import { BulletComponent } from '../components/bulletComponent.js';
+import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { SharedAtomicPool } from './sharedAtomicPool.js';
+import { Layer } from './layer.js';
 
 export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';

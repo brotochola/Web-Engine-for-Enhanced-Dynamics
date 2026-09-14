@@ -3,14 +3,14 @@
 // per bit) vs optimized = bit-scan over precomputed Layer._spriteQueueBits.
 //
 // Usage:
-//   node tests/bench/layer-collect-microbench.mjs
-//   node tests/bench/layer-collect-microbench.mjs --renderables 20000 --frames 500 --output tests/results/layer-collect-micro.json
+//   node tests/bench/layerCollectMicrobench.mjs
+//   node tests/bench/layerCollectMicrobench.mjs --renderables 20000 --frames 500 --output tests/results/layer-collect-micro.json
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
-import { Layer } from '../../src/core/Layer.js';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { Layer } from '../../src/core/layer.js';
 
 const BUILT_IN_LAYERS = {
   BACKGROUND: {},

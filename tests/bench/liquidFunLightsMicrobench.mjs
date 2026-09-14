@@ -3,8 +3,8 @@
 import {
   packLiquidFunLightSlabs,
   LF_LIGHT_SPLAT_FLOATS,
-} from '../../src/core/liquidFunLightSplat.js';
-import { parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+} from '../../src/render/liquidFunLightSplat.js';
+import { parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
 const OUTPUT = args.output ? String(args.output) : 'tests/results/liquidfun-lights-micro.json';

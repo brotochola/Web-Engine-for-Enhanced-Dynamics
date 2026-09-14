@@ -2,11 +2,11 @@
 // Uses DDA (Digital Differential Analyzer) to traverse only cells the ray passes through
 // Now uses Grid class for spatial data and utils for geometric intersections
 
-import { Transform } from '../components/Transform.js';
-import { Collider } from '../components/Collider.js';
-import { Grid } from './Grid.js';
-import { rayCircleIntersect, rayBoxIntersect, rayPolygonIntersect } from './utils.js';
-import { MAX_POLYGON_VERTICES, ShapeType } from './ConfigDefaults.js';
+import { Transform } from '../components/transform.js';
+import { Collider } from '../components/collider.js';
+import { Grid } from './grid.js';
+import { rayCircleIntersect, rayBoxIntersect, rayPolygonIntersect } from '../util/utils.js';
+import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 
 /**
  * Ray - Static class for raycasting against entities in the spatial grid

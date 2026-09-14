@@ -4,7 +4,7 @@ import {
   collectBlobScriptDeps,
   expandBlobEntityScripts,
   rewriteBlobImports,
-} from '../../src/core/utils.js';
+} from '../../src/util/utils.js';
 
 const CAMERA = `import { MySoldier } from './mySoldier.js';
 import WEED from '/src/index.js';

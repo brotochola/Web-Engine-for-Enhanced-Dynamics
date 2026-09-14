@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Layer } from '../../src/core/Layer.js';
+import { Layer } from '../../src/core/layer.js';
 import {
   LAYER_DENSITY_SOURCE,
   LAYER_SPLAT_FALLOFF,
   LAYER_SCALE_MODE,
   LAYER_FEEDER_KIND,
-} from '../../src/core/ConfigDefaults.js';
+} from '../../src/util/configDefaults.js';
 
 const BUILT_IN_LAYERS = {
   BACKGROUND: {},

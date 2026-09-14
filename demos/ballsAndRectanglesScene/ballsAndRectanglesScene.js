@@ -3,7 +3,7 @@
 
 import { Ball } from '/demos/ballsScene/gameObjects/ball.js';
 import { Box } from './gameObjects/box.js';
-import { Camera } from '/src/core/Camera.js';
+import { Camera } from '/src/core/camera.js';
 import WEED from '/src/index.js';
 
 export class BallsAndRectanglesScene extends WEED.Scene {
@@ -154,7 +154,7 @@ export class BallsAndRectanglesScene extends WEED.Scene {
   }
 
   async spawnBallAtMouse() {
-    const { Mouse } = await import('/src/core/Mouse.js');
+    const { Mouse } = await import('/src/core/mouse.js');
     if (Mouse.x > 0 && Mouse.y > 0) {
       this.spawnEntity('Ball', {
         x: Mouse.x,
@@ -166,7 +166,7 @@ export class BallsAndRectanglesScene extends WEED.Scene {
   }
 
   async spawnBoxAtMouse() {
-    const { Mouse } = await import('/src/core/Mouse.js');
+    const { Mouse } = await import('/src/core/mouse.js');
     if (Mouse.x > 0 && Mouse.y > 0) {
       this.spawnEntity('Box', {
         x: Mouse.x,

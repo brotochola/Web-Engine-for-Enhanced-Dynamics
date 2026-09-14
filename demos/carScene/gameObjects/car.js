@@ -3,8 +3,8 @@
 
 import WEED from '/src/index.js';
 import { CarComponent, CAR_DEFAULTS } from '../components/carComponent.js';
-import { dot2 } from '/src/core/utils.js';
-import { randomUnitCS } from '/src/core/utils.js';
+import { dot2 } from '/src/util/utils.js';
+import { randomUnitCS } from '/src/util/utils.js';
 
 const {
     GameObject,

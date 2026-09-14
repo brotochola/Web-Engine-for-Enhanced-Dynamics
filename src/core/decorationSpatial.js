@@ -1,7 +1,7 @@
 // DecorationSpatial.js - SAB spatial hash for world-owned decorations (not parented).
 // Intrusive doubly-linked lists per cell; no maxPerCell. Mutate on spawn/despawn/move.
 
-import { DecorationComponent } from '../components/DecorationComponent.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
 
 const EMPTY = 0xffff;
 const NOT_IN_GRID = -1;

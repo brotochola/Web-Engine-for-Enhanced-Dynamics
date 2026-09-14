@@ -1,14 +1,14 @@
 /**
  * L1: Box2dBodyPack hot loop — no alloc in the pack (preallocated dest).
  */
-import { timeIt } from './microbench-helpers.mjs';
-import { Collider } from '../../src/components/Collider.js';
-import { Transform } from '../../src/components/Transform.js';
-import { RigidBody } from '../../src/components/RigidBody.js';
-import { Layer } from '../../src/core/Layer.js';
-import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
-import { syncColliderFeed } from '../../src/core/layerFeed.js';
-import { ShapeType } from '../../src/core/ConfigDefaults.js';
+import { timeIt } from './microbenchHelpers.mjs';
+import { Collider } from '../../src/components/collider.js';
+import { Transform } from '../../src/components/transform.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { Layer } from '../../src/core/layer.js';
+import { packBox2dBodies, BODY_FLOATS } from '../../src/render/box2dBodyPack.js';
+import { syncColliderFeed } from '../../src/util/layerFeed.js';
+import { ShapeType } from '../../src/util/configDefaults.js';
 
 const N = 256;
 Collider.initializeArrays(new SharedArrayBuffer(Collider.getBufferSize(N)), N);

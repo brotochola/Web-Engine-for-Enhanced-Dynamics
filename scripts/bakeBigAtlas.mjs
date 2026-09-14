@@ -3,7 +3,7 @@
  * (proxySheets + individualTextures live in json.meta).
  *
  * Usage:
- *   node scripts/bake-big-atlas.mjs \
+ *   node scripts/bakeBigAtlas.mjs \
  *     --scene /demos/predatorScene/predatorScene.js \
  *     --export PredatorScene \
  *     --out demos/img/baked/PredatorScene
@@ -44,7 +44,7 @@ async function main() {
   const headed = Boolean(args.headed);
 
   const server = await createStaticBenchmarkServer(repoRoot);
-  const pageUrl = `http://127.0.0.1:${server.port}/scripts/bake-big-atlas.html`;
+  const pageUrl = `http://127.0.0.1:${server.port}/scripts/bakeBigAtlas.html`;
 
   const browser = await chromium.launch({
     headless: !headed,

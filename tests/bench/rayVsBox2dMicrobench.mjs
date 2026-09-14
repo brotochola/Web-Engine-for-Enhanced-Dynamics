@@ -4,22 +4,22 @@
 // (grid DDA + collisionLayer vs fixture ray + category/mask — not bit-identical).
 //
 // Usage:
-//   node tests/bench/ray-vs-box2d-microbench.mjs
-//   node tests/bench/ray-vs-box2d-microbench.mjs --entities 2000 --rays 100000 --output tests/results/ray-vs-box2d-micro.json
+//   node tests/bench/rayVsBox2dMicrobench.mjs
+//   node tests/bench/rayVsBox2dMicrobench.mjs --entities 2000 --rays 100000 --output tests/results/ray-vs-box2d-micro.json
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Ray } from '../../src/core/Ray.js';
-import { Grid } from '../../src/core/Grid.js';
-import { Transform } from '../../src/components/Transform.js';
-import { Collider } from '../../src/components/Collider.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { Ray } from '../../src/core/ray.js';
+import { Grid } from '../../src/core/grid.js';
+import { Transform } from '../../src/components/transform.js';
+import { Collider } from '../../src/components/collider.js';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOX2D_DIR = path.resolve(__dirname, '../../src/box2d');
-const WASM_PATH = path.join(BOX2D_DIR, 'box2d_wasm.wasm');
-const JS_PATH = path.join(BOX2D_DIR, 'box2d_wasm.js');
+const WASM_PATH = path.join(BOX2D_DIR, 'box2dWasm.wasm');
+const JS_PATH = path.join(BOX2D_DIR, 'box2dWasm.js');
 
 const args = parseArgs();
 const WORLD_W = 4000;

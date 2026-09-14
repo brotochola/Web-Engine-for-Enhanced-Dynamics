@@ -1,5 +1,5 @@
 // ESM facade over liquidFunQuery.impl.js (one logic source for importScripts + import).
-import './liquidFunQuery.impl.js';
+import './liquidFunQueryImpl.js';
 
 const R = globalThis.LiquidFunQuery;
 

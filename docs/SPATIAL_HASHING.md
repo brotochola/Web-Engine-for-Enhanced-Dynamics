@@ -2,7 +2,7 @@
 
 This document describes the **spatial worker** pipeline: row-partitioned grid rebuild, neighbor discovery, shared buffers, and performance-oriented details (caching, `entityPosData`, static/sleeping rules).
 
-Implementation: `src/workers/spatial_worker.js`, `src/core/Grid.js`. High-level worker map: [Workers architecture](./WORKERS_ARCHITECTURE.md). Physics consumption of neighbors: [Physics pipeline](./PHYSICS.md).
+Implementation: `src/workers/spatialWorker.js`, `src/core/grid.js`. High-level worker map: [Workers architecture](./WORKERS_ARCHITECTURE.md). Physics consumption of neighbors: [Physics pipeline](./PHYSICS.md).
 
 ---
 
@@ -63,7 +63,7 @@ Visual-range neighbors only. Physics contacts come from Box2D, not this buffer.
 
 **When it is read:** During neighbor search on the **same worker** in the same frame, after rebuild — so the data used for pairwise distance is the freshly written cache for entities this worker updated, and linear reads improve cache locality vs scattering across `Transform` + `Collider` arrays.
 
-**Important:** Code that runs on **other** workers or **before** the owning spatial pass must **not** treat `entityPosData` as authoritative for game logic. The file header in `spatial_worker.js` states that **home row** determination for ownership uses **Transform** (and related) as source of truth, not `entityPosData` read from another worker.
+**Important:** Code that runs on **other** workers or **before** the owning spatial pass must **not** treat `entityPosData` as authoritative for game logic. The file header in `spatialWorker.js` states that **home row** determination for ownership uses **Transform** (and related) as source of truth, not `entityPosData` read from another worker.
 
 ---
 
@@ -168,13 +168,13 @@ With Verlet alone, dense scenes can already show ~90% `NEIGHBORS_REUSED` (cell w
 
 Spatial neighbor lists are **visual-range only**. Static/sleeping pairs are not filtered out of `neighborData` for collision anymore — Box2D owns contacts and sleep.
 
-**Cell sleeping today:** `particle_worker` writes `Grid.cellSleepingData` from `RigidBody.sleeping` (a cell is sleeping when every occupant is sleeping or static; empty cells are marked awake). Production `spatial_worker` does **not** skip grid rebuild or neighbor search based on those flags — see the sleep-neighborhood campaign report for experimental hyps. Debug overlays can draw sleeping cells.
+**Cell sleeping today:** `particleWorker` writes `Grid.cellSleepingData` from `RigidBody.sleeping` (a cell is sleeping when every occupant is sleeping or static; empty cells are marked awake). Production `spatialWorker` does **not** skip grid rebuild or neighbor search based on those flags — see the sleep-neighborhood campaign report for experimental hyps. Debug overlays can draw sleeping cells.
 
 ---
 
 ## Worker stats
 
-Spatial workers write into `spatialStats` (multi-worker layout). Relevant keys from `SPATIAL_STATS` in `workers-utils.js`:
+Spatial workers write into `spatialStats` (multi-worker layout). Relevant keys from `SPATIAL_STATS` in `workersUtils.js`:
 
 | Key | Meaning |
 |-----|--------|
@@ -210,7 +210,7 @@ spatial: {
 }
 ```
 
-A/B harness: `tests/bench/run-neighbor-tick-ab.mjs`.
+A/B harness: `tests/bench/runNeighborTickAb.mjs`.
 
 ---
 

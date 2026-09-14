@@ -1,15 +1,15 @@
 // Sparse entity save snapshot: pack/unpack SoA fields for serializable active entities.
 // Used by SaveGame encode/decode and by GameObject.spawn(_saveRestore).
 
-import { Component } from '../Component.js';
-import { Transform } from '../../components/Transform.js';
-import { RigidBody } from '../../components/RigidBody.js';
-import { Collider } from '../../components/Collider.js';
-import { Camera } from '../Camera.js';
-import { Sun } from '../Sun.js';
+import { Component } from '../component.js';
+import { Transform } from '../../components/transform.js';
+import { RigidBody } from '../../components/rigidBody.js';
+import { Collider } from '../../components/collider.js';
+import { Camera } from '../camera.js';
+import { Sun } from '../sun.js';
 import { VERSION } from '../../version.js';
 import { BODY_DIRTY, markBodyDirty } from '../../box2d/box2dBodySync.js';
-import { Joint } from '../Joint.js';
+import { Joint } from '../joint.js';
 import { encodeBinarySaveBody, decodeBinarySaveBody } from './binarySaveCodec.js';
 
 export const SAVE_MAGIC = 'WEEDSAVE1';

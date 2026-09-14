@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Camera } from '../../src/core/Camera.js';
-import { Mouse } from '../../src/core/Mouse.js';
-import { RigidBody } from '../../src/components/RigidBody.js';
+import { Camera } from '../../src/core/camera.js';
+import { Mouse } from '../../src/core/mouse.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
 
 function setupCamera({ zoom = 1, cx = 400, cy = 300, canvasW = 800, canvasH = 600 } = {}) {
   const data = new Float32Array(6);

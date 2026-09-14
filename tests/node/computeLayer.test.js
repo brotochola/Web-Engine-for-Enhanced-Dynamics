@@ -1,20 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Layer, reservedLookUniformFloatCount } from '../../src/core/Layer.js';
-import { Collider } from '../../src/components/Collider.js';
-import { Transform } from '../../src/components/Transform.js';
-import { RigidBody } from '../../src/components/RigidBody.js';
-import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
-import { inferComputeLayout, resolveComputeLayout, DEFAULT_SIMPLE_LAYOUT } from '../../src/workers/inferComputeLayout.js';
-import { prependComputePrelude, buildComputePrelude } from '../../src/workers/wgslPrelude.js';
+import { Layer, reservedLookUniformFloatCount } from '../../src/core/layer.js';
+import { Collider } from '../../src/components/collider.js';
+import { Transform } from '../../src/components/transform.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { packBox2dBodies, BODY_FLOATS } from '../../src/render/box2dBodyPack.js';
+import { inferComputeLayout, resolveComputeLayout, DEFAULT_SIMPLE_LAYOUT } from '../../src/render/webgpu/inferComputeLayout.js';
+import { prependComputePrelude, buildComputePrelude } from '../../src/render/webgpu/wgslPrelude.js';
 import {
   ENGINE_FRAME_PREFIX_FLOATS,
   computePassActive,
   allComputePassesIdle,
   computeLayerPacksBodies,
   ComputeLayer,
-} from '../../src/workers/ComputeLayer.js';
+} from '../../src/render/webgpu/computeLayer.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,12 +24,12 @@ import {
   COMPUTE_FLAG_STATIC,
   COMPUTE_FLAG_SWEEP,
   COMPUTE_LAYER_DEFAULT_MAX_PARTICLES,
-} from '../../src/core/ConfigDefaults.js';
-import { LiquidFun } from '../../src/core/LiquidFun.js';
-import { liquidFunRenderByteSize } from '../../src/core/liquidFunRender.js';
-import { packLiquidFunParticles, PARTICLE_FLOATS } from '../../src/workers/LiquidFunParticlePack.js';
-import { ParticleComponent } from '../../src/components/ParticleComponent.js';
-import { syncColliderFeed } from '../../src/core/layerFeed.js';
+} from '../../src/util/configDefaults.js';
+import { LiquidFun } from '../../src/core/liquidFun.js';
+import { liquidFunRenderByteSize } from '../../src/render/liquidFunRender.js';
+import { packLiquidFunParticles, PARTICLE_FLOATS } from '../../src/render/liquidFunParticlePack.js';
+import { ParticleComponent } from '../../src/components/particleComponent.js';
+import { syncColliderFeed } from '../../src/util/layerFeed.js';
 
 function subscribeCollider(index, layerId) {
   const bit = 1 << (layerId | 0);

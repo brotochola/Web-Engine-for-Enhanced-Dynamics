@@ -1,21 +1,21 @@
-// Microbenchmark + correctness check for src/core/particleIntegrate.js (L1 isolated).
+// Microbenchmark + correctness check for src/util/particleIntegrate.js (L1 isolated).
 //
 // Exercises the exact functions particle_worker.js calls (updateParticlePhysicsBuffers,
 // buildActiveListBuffers, buildActiveAndVisibleListBuffers) against a real
 // ParticleComponent SoA + ParticleEmitter free list, with no workers/camera involved.
 //
 // Usage:
-//   node tests/bench/particle-integrate-microbench.mjs
-//   node tests/bench/particle-integrate-microbench.mjs --particles 8192 --steps 3000 --output tests/results/particle-integrate-micro.json
+//   node tests/bench/particleIntegrateMicrobench.mjs
+//   node tests/bench/particleIntegrateMicrobench.mjs --particles 8192 --steps 3000 --output tests/results/particle-integrate-micro.json
 
-import { ParticleComponent } from '../../src/components/ParticleComponent.js';
-import { ParticleEmitter } from '../../src/core/ParticleEmitter.js';
+import { ParticleComponent } from '../../src/components/particleComponent.js';
+import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import {
   updateParticlePhysicsBuffers,
   buildActiveListBuffers,
   buildActiveAndVisibleListBuffers,
-} from '../../src/core/particleIntegrate.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+} from '../../src/util/particleIntegrate.js';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
 const MAX_PARTICLES = Number(args.particles ?? 8192);

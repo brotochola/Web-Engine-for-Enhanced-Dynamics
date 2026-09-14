@@ -5,8 +5,8 @@
  * `state = { particleEmitter: string, particleIntegrate: string, sharedAtomicPool: string,
  * atomicFreeList: string }` holds in-memory source text. `applyCombo(ids)` restores
  * baselines, sorts ids into CANONICAL_ORDER, folds the matching transforms over a fresh
- * state, then writes the result to src/core/ParticleEmitter.js, src/core/particleIntegrate.js,
- * src/core/SharedAtomicPool.js and src/core/atomicFreeList.js.
+ * state, then writes the result to src/core/particleEmitter.js, src/util/particleIntegrate.js,
+ * src/core/sharedAtomicPool.js and src/util/atomicFreeList.js.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,14 +16,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 
 export const PATHS = {
-  particleEmitter: path.join(repoRoot, 'src/core/ParticleEmitter.js'),
-  particleIntegrate: path.join(repoRoot, 'src/core/particleIntegrate.js'),
-  sharedAtomicPool: path.join(repoRoot, 'src/core/SharedAtomicPool.js'),
-  atomicFreeList: path.join(repoRoot, 'src/core/atomicFreeList.js'),
-  baselineParticleEmitter: path.join(here, 'baseline_ParticleEmitter.js'),
-  baselineParticleIntegrate: path.join(here, 'baseline_particleIntegrate.js'),
-  baselineSharedAtomicPool: path.join(here, 'baseline_SharedAtomicPool.js'),
-  baselineAtomicFreeList: path.join(here, 'baseline_atomicFreeList.js'),
+  particleEmitter: path.join(repoRoot, 'src/core/particleEmitter.js'),
+  particleIntegrate: path.join(repoRoot, 'src/util/particleIntegrate.js'),
+  sharedAtomicPool: path.join(repoRoot, 'src/core/sharedAtomicPool.js'),
+  atomicFreeList: path.join(repoRoot, 'src/util/atomicFreeList.js'),
+  baselineParticleEmitter: path.join(here, 'baselineParticleEmitter.js'),
+  baselineParticleIntegrate: path.join(here, 'baselineParticleIntegrate.js'),
+  baselineSharedAtomicPool: path.join(here, 'baselineSharedAtomicPool.js'),
+  baselineAtomicFreeList: path.join(here, 'baselineAtomicFreeList.js'),
 };
 
 // Save baselines on first load if they don't exist yet — safe to re-run.
@@ -216,8 +216,8 @@ export const DECAL_STAMPS_BLEND_MODE = Object.freeze({`,
 function P4(state) {
   const particleIntegrate = replaceOnce(
     state.particleIntegrate,
-    `import { ParticleEmitter } from './ParticleEmitter.js';`,
-    `import { ParticleEmitter } from './ParticleEmitter.js';
+    `import { ParticleEmitter } from './particleEmitter.js';`,
+    `import { ParticleEmitter } from './particleEmitter.js';
 
 // P4: reused across calls (single-threaded per worker module instance, same
 // non-reentrancy assumption as ParticleEmitter's other hot-path scratches).
@@ -516,14 +516,14 @@ export function popFreeIndices(top, links, maxToPop, outArray, outOffset = 0, st
   popFreeIndex,
   pushFreeIndex,
   getFreeListCount,
-} from './atomicFreeList.js';`,
+} from '../util/atomicFreeList.js';`,
     `import {
   resetFreeList,
   popFreeIndex,
   popFreeIndices,
   pushFreeIndex,
   getFreeListCount,
-} from './atomicFreeList.js';`,
+} from '../util/atomicFreeList.js';`,
     'P6'
   );
 
@@ -606,8 +606,8 @@ export function sortHypIds(ids) {
 /**
  * Restore baselines, then fold the transforms for `ids` (sorted into
  * CANONICAL_ORDER) over the baseline source, writing the result to
- * src/core/ParticleEmitter.js, src/core/particleIntegrate.js,
- * src/core/SharedAtomicPool.js and src/core/atomicFreeList.js.
+ * src/core/particleEmitter.js, src/util/particleIntegrate.js,
+ * src/core/sharedAtomicPool.js and src/util/atomicFreeList.js.
  */
 // Source files are checked out CRLF (Windows) — normalize to LF for anchor
 // matching, and write patched output back as LF (restoreAll() still restores

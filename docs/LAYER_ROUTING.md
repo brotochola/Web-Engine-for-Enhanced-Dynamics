@@ -11,7 +11,7 @@ Backgrounds are configured through `Scene.setBackground` (viewport-cover + paral
 ### API
 
 ```javascript
-import { Layer } from '/src/core/Layer.js';
+import { Layer } from '/src/core/layer.js';
 
 this.setBackground({
   texture: 'landscape',
@@ -35,7 +35,7 @@ Layer.BACKGROUND.clearBackground();
 ### How It Works
 
 1. Layer instance methods post a message to the renderer worker via `Layer._postToRenderer` (a callback wired by Scene during init).
-2. The renderer worker (`pixi_worker.js`) receives the `setBackground` message, creates the appropriate display object, and sends `backgroundReady` back with the same `requestId`.
+2. The renderer worker (`pixiWorker.js`) receives the `setBackground` message, creates the appropriate display object, and sends `backgroundReady` back with the same `requestId`.
 3. Scene forwards the `backgroundReady` message to `Layer.resolveBackgroundReady(layerId, requestId)`, which resolves the matching Promise.
 
 The `layerId` is included in the message for future multi-background-layer support.
@@ -127,7 +127,7 @@ LightEmitter.layerIdOfGlowSprite[this.index] = 0; // inherit entity layerMask
 ### Data Flow
 
 ```
-pre_render_worker:
+preRenderWorker:
   collectVisible*()
     --> collectRenderable(type, index, sortKey)
           |
@@ -139,7 +139,7 @@ pre_render_worker:
   buildRenderQueue()        --> Y-sort default collector, dispatch by type, write to main SAB
   buildCustomLayerQueues()  --> per-layer Y-sort, dispatch by type, write to per-layer SABs
 
-pixi_worker:
+pixiWorker:
   updateSpritesFromRenderQueue()  --> read main SAB, apply to sprites
   updateCustomLayers()            --> read each layer SAB, apply to sprites (type-agnostic)
 ```
@@ -150,7 +150,7 @@ Each `layerMask` field is a `Uint16Array` (2 bytes per pool slot). `Layer.MAX_LA
 
 ### Custom Layer Dispatch
 
-`buildCustomLayerQueues()` handles all six renderable types. Each type's dispatch branch mirrors the corresponding branch in `buildRenderQueue()`, writing the same fields (x, y, scaleX, scaleY, rotation, alpha, tint, textureId, anchorX, anchorY) into the per-layer render queue SAB. Sprite animation for custom-layer entities is advanced in `pre_render_worker` (same as the main ENTITIES queue); `pixi_worker` only reads the resolved `textureId` and does not run per-entity animation logic.
+`buildCustomLayerQueues()` handles all six renderable types. Each type's dispatch branch mirrors the corresponding branch in `buildRenderQueue()`, writing the same fields (x, y, scaleX, scaleY, rotation, alpha, tint, textureId, anchorX, anchorY) into the per-layer render queue SAB. Sprite animation for custom-layer entities is advanced in `preRenderWorker` (same as the main ENTITIES queue); `pixiWorker` only reads the resolved `textureId` and does not run per-entity animation logic.
 
 ---
 

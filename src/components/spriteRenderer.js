@@ -1,9 +1,9 @@
 // SpriteRenderer.js - Rendering component for visual appearance
 // Handles animation, tinting, transparency, and sprite effects
 
-import { Component } from '../core/Component.js';
-import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
-import { SPRITE_TILE_MODE } from '../core/ConfigDefaults.js';
+import { Component } from '../core/component.js';
+import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
+import { SPRITE_TILE_MODE } from '../util/configDefaults.js';
 
 /** GLSL-style fract (works for negatives). */
 export function fract01(x) {

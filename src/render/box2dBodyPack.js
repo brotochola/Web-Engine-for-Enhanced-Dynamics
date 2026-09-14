@@ -6,11 +6,11 @@
  * Transform (grab writes HEAP immediately). Sweep/prev stay on the same clock:
  * previous pose slot, or HEAP px/py when packing Transform. Never mix.
  */
-import { Collider } from '../components/Collider.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { MAX_POLYGON_VERTICES, ShapeType, COMPUTE_FLAG_STATIC, COMPUTE_FLAG_SWEEP } from '../core/ConfigDefaults.js';
-import { snapshotColliderFeed } from '../core/layerFeed.js';
+import { Collider } from '../components/collider.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import { MAX_POLYGON_VERTICES, ShapeType, COMPUTE_FLAG_STATIC, COMPUTE_FLAG_SWEEP } from '../util/configDefaults.js';
+import { snapshotColliderFeed } from '../util/layerFeed.js';
 
 export const BODY_FLOATS = 16;
 export const BODY_STRIDE_BYTES = BODY_FLOATS * 4;

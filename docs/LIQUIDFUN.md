@@ -18,9 +18,9 @@ Box2D 3 (Erin Catto C, this fork) has opaque ids, SoA buffers, and no hook to in
 |--------|----------|------|
 | `lf_particle_system.c` | sibling `box2d+liquidfun/` | Grid, contacts, pressure, groups, body coupling |
 | `wasm_wrapper.c` | sibling `box2d/src/` | `EMSCRIPTEN_KEEPALIVE` exports + global `g_particles` |
-| `physics-api.js` | this repo | `cwrap` + center+half → WASM AABB |
+| `physicsApi.js` | this repo | `cwrap` + center+half → WASM AABB |
 | `box2dCommandRing` | this repo | Main/logic → physics worker (no `postMessage` blobs) |
-| `weedjs_post.js` | this repo | Drain ring, `world.step`; LiquidFun pose is **HEAP-bound** (no x/y/alpha memcpy). Particles whose centers leave scene `worldWidth`×`worldHeight` are `LF_ZOMBIE`-destroyed each physics step |
+| `weedjsPost.js` | this repo | Drain ring, `world.step`; LiquidFun pose is **HEAP-bound** (no x/y/alpha memcpy). Particles whose centers leave scene `worldWidth`×`worldHeight` are `LF_ZOMBIE`-destroyed each physics step |
 | `LiquidFun` | this repo | Scene-facing API; `bindSabs` + `bindHeapPose` + emit/query |
 
 ### Particle pose: HEAP SAB (like Transform)
@@ -85,9 +85,9 @@ physics worker (box2d_wasm.js + weedjs_post + physics_host)
   afterStep
     syncLiquidFunParticlesToSharedBuffers   // HEAPF32 pos → LiquidFun render SAB x/y
 
-particle_worker   // CPU ParticleComponent only
-pre_render_worker // CPU queue + LiquidFun SAB → same pixi batch
-pixi_worker
+particleWorker   // CPU ParticleComponent only
+preRenderWorker // CPU queue + LiquidFun SAB → same pixi batch
+pixiWorker
 ```
 
 `step_world` always steps particles when the system exists. No extra JS flag enables fixture contact.
@@ -125,7 +125,7 @@ Scene sets `enabled: true` to auto-create the system at physics init. Do not als
 
 Group id **0 is valid**. `-1` is `LF_NULL_PARTICLE_GROUP` (no system, inverted AABB, or capacity full).
 
-JS scene API stays **center + half extents** (same as Weed boxes). Conversion to AABB happens once in [`physics-api.js`](../src/box2d/physics-api.js), not in the ring and not per particle.
+JS scene API stays **center + half extents** (same as Weed boxes). Conversion to AABB happens once in [`physicsApi.js`](../src/box2d/physicsApi.js), not in the ring and not per particle.
 
 ---
 
@@ -207,7 +207,7 @@ LiquidFun lagging rigid bodies by **1-2 frames is acceptable** for Weed — conf
 | | Weed CPU | LiquidFun |
 |--|----------|-----------|
 | Create | `ParticleEmitter.emit` / pool | ring `SET_LIQUIDFUN_EMIT` + create → WASM HEAP |
-| Simulate | `particle_worker` + `ParticleComponent` | `lfParticleSystem_Step` inside `step_world` only |
+| Simulate | `particleWorker` + `ParticleComponent` | `lfParticleSystem_Step` inside `step_world` only |
 | Store | `ParticleComponent` SAB | WASM pos/vel/flags + **thin render SAB** |
 | Render | pre_render collect | pre_render collect | same pixi particle batch |
 
@@ -227,12 +227,12 @@ CPU ParticleEmitter poses use the same `layerMask` for density splat and compute
 - Particle SoA lives in WASM HEAP (`growable=false` so TypedArray views stay valid).
 - `syncLiquidFunParticlesToSharedBuffers` bulk-`.set()`s the C-side deinterleaved `x`/`y` HEAP arrays (see WASM ABI) → render SAB `x/y`. Tint/texture/scale painted on new slots of **that** SAB. Cached `x`/`y` byte offsets, not `pos`.
 
-**Render (hot, other workers):** `particle_worker` scans the CPU pool only. `pre_render_worker` collects CPU visibles then LiquidFun from the render SAB (same camera cull) into the same queue. Pixi unchanged (`rqType=1`).
+**Render (hot, other workers):** `particleWorker` scans the CPU pool only. `preRenderWorker` collects CPU visibles then LiquidFun from the render SAB (same camera cull) into the same queue. Pixi unchanged (`rqType=1`).
 
 Do **not**:
 
 - Bind `ParticleComponent` as LiquidFun `particleViews`.
-- Allocate objects / arrays inside `syncLiquidFunParticlesToSharedBuffers` or the particle_worker scan.
+- Allocate objects / arrays inside `syncLiquidFunParticlesToSharedBuffers` or the particleWorker scan.
 - `JSON` or structured-clone particle buffers across workers.
 - Recreate the particle system every emit (`create_particle_system` destroys the previous one).
 - Treat group id `0` as failure.
@@ -297,7 +297,7 @@ Pressure uses **critical pressure** `density * (diameter / dt)²`, not `|gravity
 10k @ 60 is the goal after the step cuts, not a guarantee on a weak CPU. Next lever if still over: slightly larger particle radius (fewer particles for the same puddle) — not extra substeps to hide tunneling.
 
 Measured, not aspirational, as of the 2026-08-23 optimization campaign: a dedicated
-L2 benchmark scene (`tests/bench/stressScenes/LiquidFunStressScene.js`, ~10.2k water
+L2 benchmark scene (`tests/bench/stressScenes/liquidFunStressScene.js`, ~10.2k water
 + ~2k spring/staticPressure) runs `BOX2D_MS` ≈ 5.5ms headless — comfortably inside a
 60fps frame budget on its own, before accounting for rendering/other workers. Full
 before/after numbers for every optimization: [LIQUIDFUN_HYPOTHESES.md](./LIQUIDFUN_HYPOTHESES.md).
@@ -312,12 +312,12 @@ Weed only consumes **WASM** from the sibling `Box2d_3.2_C_-_liquidfun` tree. Nat
 weedjs\build_for_weed.bat
 ```
 
-Copies `box2d_wasm.js` + `.wasm` into `src/box2d/`. Do not copy a plain `build_wasm.bat` output (lab `game-constants.js` / missing `weedjs_post.js`).
+Copies `box2dWasm.js` + `.wasm` into `src/box2d/`. Do not copy a plain `build_wasm.bat` output (lab `game-constants.js` / missing `weedjsPost.js`).
 
 After C changes, engine tests (Node WASM + lockstep visual). Not native Box2D binaries:
 
 ```bat
-node --test tests/node/liquidfun.test.js tests/node/liquidfun.wasm.test.js
+node --test tests/node/liquidFun.test.js tests/node/liquidFun.wasm.test.js
 pnpm test:visual --scene liquidfun,lfstress
 ```
 
@@ -327,9 +327,9 @@ pnpm test:visual --scene liquidfun,lfstress
 
 | File | What |
 |------|------|
-| [`tests/node/liquidfun.test.js`](../tests/node/liquidfun.test.js) | Flags (including BARRIER / STATIC_PRESSURE), AABB, `SET_LIQUIDFUN_EMIT` ring, `physics.liquidFun` merge + maxCount clamp 65535 |
-| [`tests/node/liquidfun.wasm.test.js`](../tests/node/liquidfun.wasm.test.js) | Y-down floor settle + `spanY`; no wall-climb **and** no centers inside the wall; water beside a thick box (`maxPen < radius`); 10k create/step smoke; **1-particle point rest** on floor top (`|vy|` small); barrier smoke; staticPressure finite; deinterleaved `x`/`y` exactly match interleaved `pos`; `strictContactCheck` 5th-arg smoke |
-| [`tests/bench/run-lockstep-visual.mjs`](../tests/bench/run-lockstep-visual.mjs) (`pnpm test:visual`) | Headed two-run lockstep. `liquidfun` + `lfstress` are `match: 'exact'` at 100 steps (CPU `hashLiquidFun` + PNG). Catalog: [`lockstepVisualScenes.mjs`](../tests/bench/lockstepVisualScenes.mjs). `water` stays `not-black` (rigid metaball balls, not LiquidFun). |
+| [`tests/node/liquidFun.test.js`](../tests/node/liquidFun.test.js) | Flags (including BARRIER / STATIC_PRESSURE), AABB, `SET_LIQUIDFUN_EMIT` ring, `physics.liquidFun` merge + maxCount clamp 65535 |
+| [`tests/node/liquidFun.wasm.test.js`](../tests/node/liquidFun.wasm.test.js) | Y-down floor settle + `spanY`; no wall-climb **and** no centers inside the wall; water beside a thick box (`maxPen < radius`); 10k create/step smoke; **1-particle point rest** on floor top (`|vy|` small); barrier smoke; staticPressure finite; deinterleaved `x`/`y` exactly match interleaved `pos`; `strictContactCheck` 5th-arg smoke |
+| [`tests/bench/runLockstepVisual.mjs`](../tests/bench/runLockstepVisual.mjs) (`pnpm test:visual`) | Headed two-run lockstep. `liquidfun` + `lfstress` are `match: 'exact'` at 100 steps (CPU `hashLiquidFun` + PNG). Catalog: [`lockstepVisualScenes.mjs`](../tests/bench/lockstepVisualScenes.mjs). `water` stays `not-black` (rigid metaball balls, not LiquidFun). |
 
 
 ## Save / restore (groups + pairs)

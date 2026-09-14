@@ -11,7 +11,7 @@ import {
   LOGIC_STATS,
   PRE_RENDER_STATS,
   WORKER_DISPLAY_CONFIG,
-} from '../../src/workers/workers-utils.js';
+} from '../../src/util/workersUtils.js';
 import {
   getWorkerFrameRateLayout,
   createWorkerBenchmarkReader,

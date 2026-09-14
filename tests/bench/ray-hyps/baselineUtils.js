@@ -3,8 +3,8 @@
 // Shared utility functions for the multithreaded game engine
 // ============================================================================
 
-import { PHYSICS_DEFAULTS } from './ConfigDefaults.js';
-import { GameObject } from './gameObject.js';
+import { PHYSICS_DEFAULTS } from './configDefaults.js';
+import { GameObject } from '../core/gameObject.js';
 
 // ============================================================================
 // MATH UTILITIES

@@ -30,6 +30,6 @@ NODE_BIN="$(resolve_node)" || {
   exit 1
 }
 
-"$NODE_BIN" scripts/bump-patch-version.js
+"$NODE_BIN" scripts/bumpPatchVersion.js
 git add package.json src/version.js
 # package-lock.json is gitignored in this repo — do not git add it.

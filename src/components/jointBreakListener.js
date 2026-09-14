@@ -1,4 +1,4 @@
-import { Component } from '../core/Component.js';
+import { Component } from '../core/component.js';
 
 /**
  * Marker component that enables joint-break callbacks for an entity type.

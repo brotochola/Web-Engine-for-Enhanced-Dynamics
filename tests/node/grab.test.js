@@ -2,15 +2,15 @@ import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { GameObject } from '../../src/core/gameObject.js';
-import { Transform } from '../../src/components/Transform.js';
-import { RigidBody } from '../../src/components/RigidBody.js';
-import { Collider } from '../../src/components/Collider.js';
-import { SpriteRenderer } from '../../src/components/SpriteRenderer.js';
-import { Grab } from '../../src/components/Grab.js';
-import { GrabSystem } from '../../src/core/GrabSystem.js';
-import { pointInCollider } from '../../src/core/ColliderUtils.js';
-import { ShapeType } from '../../src/core/ConfigDefaults.js';
-import { Mouse } from '../../src/core/Mouse.js';
+import { Transform } from '../../src/components/transform.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { Collider } from '../../src/components/collider.js';
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { Grab } from '../../src/components/grab.js';
+import { GrabSystem } from '../../src/core/grabSystem.js';
+import { pointInCollider } from '../../src/util/colliderUtils.js';
+import { ShapeType } from '../../src/util/configDefaults.js';
+import { Mouse } from '../../src/core/mouse.js';
 import {
   createCommandRingSab,
   bindCommandRing,

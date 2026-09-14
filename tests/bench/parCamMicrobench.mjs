@@ -1,14 +1,14 @@
 // L1 microbench: camera bounds x3/frame (baseline) vs once + cache (PAR-CAM).
 //
 // Usage:
-//   node tests/bench/par-cam-microbench.mjs
-//   node tests/bench/par-cam-microbench.mjs --frames 200000 --output tests/results/par-cam-micro.json
+//   node tests/bench/parCamMicrobench.mjs
+//   node tests/bench/parCamMicrobench.mjs --frames 200000 --output tests/results/par-cam-micro.json
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { calculateCameraScreenBounds } from '../../src/core/utils.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { calculateCameraScreenBounds } from '../../src/util/utils.js';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 /**
  * @param {Record<string, unknown>} [cliArgs]

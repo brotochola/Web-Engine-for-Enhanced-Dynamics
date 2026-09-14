@@ -5,7 +5,7 @@ import {
   advanceImpulsePhase,
   SWAY_ANGLE_PER_MS,
   IMPULSE_DONE,
-} from '../../src/core/decorationSway.js';
+} from '../../src/util/decorationSway.js';
 
 test('advanceImpulsePhase completes half-sine at π', { concurrency: false }, () => {
   let phase = 0;

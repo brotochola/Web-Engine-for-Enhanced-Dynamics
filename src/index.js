@@ -10,29 +10,29 @@ import { VERSION } from './version.js';
 // ============================================================================
 export { VERSION } from './version.js';
 export { GameEngine } from './core/gameEngine.js';
-export { Scene } from './core/Scene.js';
+export { Scene } from './core/scene.js';
 export { GameObject, Keyboard, SceneBridge } from './core/gameObject.js';
-export { Component } from './core/Component.js';
-export { FSM } from './core/FSM.js';
-export { FSMState } from './core/FSMState.js';
-export { DebugFlags, DEBUG_FLAGS, DEBUG_SELECTED_ENTITY_OFFSET } from './core/debug/DebugFlags.js';
-export { DebugUI } from './core/debug/DebugUI.js';
-export { DebugDraw } from './core/debug/DebugDraw.js';
-export { Mouse } from './core/Mouse.js';
-export { Gamepad } from './core/Gamepad.js';
-export { Camera } from './core/Camera.js';
-export { Noise2D } from './core/Noise2D.js';
-export { Ray } from './core/Ray.js';
-export { NavGrid } from './core/NavGrid.js';
-export { Grid } from './core/Grid.js';
-export { Sun } from './core/Sun.js';
-export { Layer } from './core/Layer.js';
-export { TileMap } from './core/TileMap.js';
-export { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
-export { AdobeAnimRegistry } from './core/AdobeAnimRegistry.js';
-export { BigAtlasInspector } from './core/BigAtlasInspector.js';
-export { SoundManager } from './core/SoundManager.js';
-export * from './core/utils.js';
+export { Component } from './core/component.js';
+export { FSM } from './core/fsm.js';
+export { FSMState } from './core/fsmState.js';
+export { DebugFlags, DEBUG_FLAGS, DEBUG_SELECTED_ENTITY_OFFSET } from './core/debug/debugFlags.js';
+export { DebugUI } from './core/debug/debugUi.js';
+export { DebugDraw } from './core/debug/debugDraw.js';
+export { Mouse } from './core/mouse.js';
+export { Gamepad } from './core/gamepad.js';
+export { Camera } from './core/camera.js';
+export { Noise2D } from './core/noise2D.js';
+export { Ray } from './core/ray.js';
+export { NavGrid } from './core/navGrid.js';
+export { Grid } from './core/grid.js';
+export { Sun } from './core/sun.js';
+export { Layer } from './core/layer.js';
+export { TileMap } from './core/tileMap.js';
+export { SpriteSheetRegistry } from './core/spriteSheetRegistry.js';
+export { AdobeAnimRegistry } from './core/adobeAnimRegistry.js';
+export { BigAtlasInspector } from './core/bigAtlasInspector.js';
+export { SoundManager } from './core/soundManager.js';
+export * from './util/utils.js';
 export {
   SaveStore,
   saveGame,
@@ -44,38 +44,38 @@ export {
   isEntityClassSerializable,
   shouldSaveEntity,
   applyEntitySaveRestore,
-} from './core/save/SaveGame.js';
-export * as SaveGame from './core/save/SaveGame.js';
+} from './core/save/saveGame.js';
+export * as SaveGame from './core/save/saveGame.js';
 
 // ============================================================================
 // COMPONENTS
 // ============================================================================
-export { Transform } from './components/Transform.js';
-export { RigidBody } from './components/RigidBody.js';
-export { Collider } from './components/Collider.js';
-export { SpriteRenderer } from './components/SpriteRenderer.js';
-export { AdobeAnimComponent } from './components/AdobeAnimComponent.js';
-export { ParticleComponent } from './components/ParticleComponent.js';
-export { DecorationComponent } from './components/DecorationComponent.js';
-export { LightEmitter } from './components/LightEmitter.js';
-export { ShadowCaster } from './components/ShadowCaster.js';
+export { Transform } from './components/transform.js';
+export { RigidBody } from './components/rigidBody.js';
+export { Collider } from './components/collider.js';
+export { SpriteRenderer } from './components/spriteRenderer.js';
+export { AdobeAnimComponent } from './components/adobeAnimComponent.js';
+export { ParticleComponent } from './components/particleComponent.js';
+export { DecorationComponent } from './components/decorationComponent.js';
+export { LightEmitter } from './components/lightEmitter.js';
+export { ShadowCaster } from './components/shadowCaster.js';
 export {
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
   LIGHT_OCCLUDER_MASK_SPRITE,
-} from './components/LightOccluder.js';
-export { FlashComponent } from './components/FlashComponent.js';
-export { CameraInOutListener } from './components/CameraInOutListener.js';
-export { CollisionListener } from './components/CollisionListener.js';
-export { JointBreakListener } from './components/JointBreakListener.js';
-export { Grab } from './components/Grab.js';
+} from './components/lightOccluder.js';
+export { FlashComponent } from './components/flashComponent.js';
+export { CameraInOutListener } from './components/cameraInOutListener.js';
+export { CollisionListener } from './components/collisionListener.js';
+export { JointBreakListener } from './components/jointBreakListener.js';
+export { Grab } from './components/grab.js';
 
 // ============================================================================
 // PARTICLES
 // ============================================================================
 // Note: Particles are NOT GameObjects - they use ParticleComponent directly
-export { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter.js';
-export { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from './core/LiquidFun.js';
+export { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/particleEmitter.js';
+export { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from './core/liquidFun.js';
 
 // ============================================================================
 // DECORATIONS
@@ -91,23 +91,23 @@ export {
   SWAY_OFF,
   SWAY_LOOP,
   SWAY_IMPULSE,
-} from './core/DecorationPool.js';
-export { Decoration } from './core/Decoration.js';
-export { DecorationSpatial } from './core/DecorationSpatial.js';
+} from './core/decorationPool.js';
+export { Decoration } from './core/decoration.js';
+export { DecorationSpatial } from './core/decorationSpatial.js';
 
 // ============================================================================
 // BULLETS
 // ============================================================================
 // Note: Bullets are NOT GameObjects - they use BulletComponent directly
-export { BulletPool } from './core/BulletPool.js';
-export { BulletComponent } from './components/BulletComponent.js';
+export { BulletPool } from './core/bulletPool.js';
+export { BulletComponent } from './components/bulletComponent.js';
 
 // ============================================================================
 // CONSTRAINTS
 // ============================================================================
 // Distance constraints for position-based dynamics (ropes, springs, rigid connections)
-export { Joint } from './core/Joint.js';
-export { SharedAtomicPool } from './core/SharedAtomicPool.js';
+export { Joint } from './core/joint.js';
+export { SharedAtomicPool } from './core/sharedAtomicPool.js';
 export {
   getMovedBodiesViews,
   bindMovedBodies,
@@ -137,7 +137,7 @@ export {
 // FLASHES
 // ============================================================================
 // Note: Flashes ARE GameObjects (auto-registered) with LightEmitter + FlashComponent
-export { Flash } from './core/Flash.js';
+export { Flash } from './core/flash.js';
 
 // ============================================================================
 // QUERY SYSTEM (Worker Context Only)
@@ -154,7 +154,7 @@ export { Flash } from './core/Flash.js';
 // ============================================================================
 // Note: Workers are typically loaded as separate files via new Worker()
 // but we export them here for bundling purposes
-export { AbstractWorker } from './workers/AbstractWorker.js';
+export { AbstractWorker } from './workers/abstractWorker.js';
 export {
   ShapeType,
   MAX_POLYGON_VERTICES,
@@ -172,45 +172,45 @@ export {
   DEFAULT_LAYERS,
   CAMERA_TYPES,
   PARTICLE_EASE,
-} from './core/ConfigDefaults.js';
+} from './util/configDefaults.js';
 
-// Worker files (logic_worker, pixi_worker, spatial_worker, …)
-// Physics = classic src/box2d/box2d_wasm.js + physics_host.impl.js (not ESM).
+// Worker files (logicWorker, pixiWorker, spatialWorker, …)
+// Physics = classic src/box2d/box2dWasm.js + physicsHostImpl.js (not ESM).
 // are designed to be loaded as Web Workers and don't have default exports,
 // but you can import them as modules if needed for bundling:
-// import './workers/logic_worker.js';
-// import './workers/pixi_worker.js';
-// import './workers/spatial_worker.js';
+// import './workers/logicWorker.js';
+// import './workers/pixiWorker.js';
+// import './workers/spatialWorker.js';
 
 // ============================================================================
 // WEED NAMESPACE - PIXI-style usage 🌿
 // ============================================================================
 // Import everything we need for the namespace
 import { GameEngine } from './core/gameEngine.js';
-import { Scene } from './core/Scene.js';
+import { Scene } from './core/scene.js';
 import { GameObject, Keyboard, SceneBridge } from './core/gameObject.js';
-import { Component } from './core/Component.js';
-import { FSM } from './core/FSM.js';
-import { FSMState } from './core/FSMState.js';
-import { DebugFlags, DEBUG_FLAGS, DEBUG_SELECTED_ENTITY_OFFSET } from './core/debug/DebugFlags.js';
-import { DebugUI } from './core/debug/DebugUI.js';
-import { DebugDraw } from './core/debug/DebugDraw.js';
-import { Mouse } from './core/Mouse.js';
-import { Gamepad } from './core/Gamepad.js';
-import { Camera } from './core/Camera.js';
-import { Noise2D } from './core/Noise2D.js';
-import { Ray } from './core/Ray.js';
-import { NavGrid } from './core/NavGrid.js';
-import { Grid } from './core/Grid.js';
-import { Sun } from './core/Sun.js';
-import { Layer } from './core/Layer.js';
-import { TileMap } from './core/TileMap.js';
-import { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
-import { AdobeAnimRegistry } from './core/AdobeAnimRegistry.js';
-import { BigAtlasInspector } from './core/BigAtlasInspector.js';
-import { SoundManager } from './core/SoundManager.js';
-import * as SaveGameNS from './core/save/SaveGame.js';
-import { SaveStore } from './core/save/SaveStore.js';
+import { Component } from './core/component.js';
+import { FSM } from './core/fsm.js';
+import { FSMState } from './core/fsmState.js';
+import { DebugFlags, DEBUG_FLAGS, DEBUG_SELECTED_ENTITY_OFFSET } from './core/debug/debugFlags.js';
+import { DebugUI } from './core/debug/debugUi.js';
+import { DebugDraw } from './core/debug/debugDraw.js';
+import { Mouse } from './core/mouse.js';
+import { Gamepad } from './core/gamepad.js';
+import { Camera } from './core/camera.js';
+import { Noise2D } from './core/noise2D.js';
+import { Ray } from './core/ray.js';
+import { NavGrid } from './core/navGrid.js';
+import { Grid } from './core/grid.js';
+import { Sun } from './core/sun.js';
+import { Layer } from './core/layer.js';
+import { TileMap } from './core/tileMap.js';
+import { SpriteSheetRegistry } from './core/spriteSheetRegistry.js';
+import { AdobeAnimRegistry } from './core/adobeAnimRegistry.js';
+import { BigAtlasInspector } from './core/bigAtlasInspector.js';
+import { SoundManager } from './core/soundManager.js';
+import * as SaveGameNS from './core/save/saveGame.js';
+import { SaveStore } from './core/save/saveStore.js';
 import {
   containerRadius,
   distanceSq2D,
@@ -220,39 +220,39 @@ import {
   mixTint,
   randomColor,
   rng,
-} from './core/utils.js';
+} from './util/utils.js';
 
-import { Transform } from './components/Transform.js';
-import { RigidBody } from './components/RigidBody.js';
-import { Collider } from './components/Collider.js';
-import { SpriteRenderer } from './components/SpriteRenderer.js';
-import { AdobeAnimComponent } from './components/AdobeAnimComponent.js';
-import { ParticleComponent } from './components/ParticleComponent.js';
+import { Transform } from './components/transform.js';
+import { RigidBody } from './components/rigidBody.js';
+import { Collider } from './components/collider.js';
+import { SpriteRenderer } from './components/spriteRenderer.js';
+import { AdobeAnimComponent } from './components/adobeAnimComponent.js';
+import { ParticleComponent } from './components/particleComponent.js';
 
-import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter.js';
-import { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from './core/LiquidFun.js';
-import { DecorationPool, SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from './core/DecorationPool.js';
-import { Decoration } from './core/Decoration.js';
-import { DecorationSpatial } from './core/DecorationSpatial.js';
-import { BulletPool } from './core/BulletPool.js';
-import { SharedAtomicPool } from './core/SharedAtomicPool.js';
-import { DecorationComponent } from './components/DecorationComponent.js';
-import { BulletComponent } from './components/BulletComponent.js';
-import { LightEmitter } from './components/LightEmitter.js';
-import { ShadowCaster } from './components/ShadowCaster.js';
+import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/particleEmitter.js';
+import { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from './core/liquidFun.js';
+import { DecorationPool, SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from './core/decorationPool.js';
+import { Decoration } from './core/decoration.js';
+import { DecorationSpatial } from './core/decorationSpatial.js';
+import { BulletPool } from './core/bulletPool.js';
+import { SharedAtomicPool } from './core/sharedAtomicPool.js';
+import { DecorationComponent } from './components/decorationComponent.js';
+import { BulletComponent } from './components/bulletComponent.js';
+import { LightEmitter } from './components/lightEmitter.js';
+import { ShadowCaster } from './components/shadowCaster.js';
 import {
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
   LIGHT_OCCLUDER_MASK_SPRITE,
-} from './components/LightOccluder.js';
-import { FlashComponent } from './components/FlashComponent.js';
-import { Flash } from './core/Flash.js';
-import { CameraInOutListener } from './components/CameraInOutListener.js';
-import { CollisionListener } from './components/CollisionListener.js';
-import { JointBreakListener } from './components/JointBreakListener.js';
-import { Grab } from './components/Grab.js';
-import { Joint } from './core/Joint.js';
-import { AbstractWorker } from './workers/AbstractWorker.js';
+} from './components/lightOccluder.js';
+import { FlashComponent } from './components/flashComponent.js';
+import { Flash } from './core/flash.js';
+import { CameraInOutListener } from './components/cameraInOutListener.js';
+import { CollisionListener } from './components/collisionListener.js';
+import { JointBreakListener } from './components/jointBreakListener.js';
+import { Grab } from './components/grab.js';
+import { Joint } from './core/joint.js';
+import { AbstractWorker } from './workers/abstractWorker.js';
 import {
   getMovedBodiesViews,
   bindMovedBodies,
@@ -294,7 +294,7 @@ import {
   DEFAULT_LAYERS,
   CAMERA_TYPES,
   PARTICLE_EASE,
-} from './core/ConfigDefaults.js';
+} from './util/configDefaults.js';
 
 const enums = Object.freeze({
   ShapeType,

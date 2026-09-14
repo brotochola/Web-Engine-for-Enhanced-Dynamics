@@ -7,12 +7,12 @@ import {
   OCC_POLY,
   writeOrientedBoxVerts,
   writePolygonVerts,
-} from '../../src/workers/visibility/AngularSweep.js';
+} from '../../src/render/visibility/angularSweep.js';
 import {
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
   LIGHT_OCCLUDER_MASK_SPRITE,
-} from '../../src/components/LightOccluder.js';
+} from '../../src/components/lightOccluder.js';
 
 test('LightOccluder schema has maskMode, no radius', () => {
   assert.ok(LightOccluder.ARRAY_SCHEMA.active);

@@ -8,10 +8,10 @@
  * was createBindGroup per swap. WebGPU has no dispatch origin; passes.dispatch
  * is workgroup counts only.
  */
-import { packBox2dBodies, BODY_FLOATS } from './Box2dBodyPack.js';
-import { packLiquidFunParticles, PARTICLE_FLOATS } from './LiquidFunParticlePack.js';
-import { LAYER_COMPUTE_SOURCE } from '../core/ConfigDefaults.js';
-import { Layer, RESERVED_LOOK_UNIFORMS } from '../core/Layer.js';
+import { packBox2dBodies, BODY_FLOATS } from '../box2dBodyPack.js';
+import { packLiquidFunParticles, PARTICLE_FLOATS } from '../liquidFunParticlePack.js';
+import { LAYER_COMPUTE_SOURCE } from '../../util/configDefaults.js';
+import { Layer, RESERVED_LOOK_UNIFORMS } from '../../core/layer.js';
 import { pinGpuTexture } from './pinGpuTexture.js';
 import { resolveComputeLayout } from './inferComputeLayout.js';
 import { prependComputePrelude } from './wgslPrelude.js';

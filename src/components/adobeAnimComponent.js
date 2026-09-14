@@ -1,5 +1,5 @@
-import { Component } from '../core/Component.js';
-import { AdobeAnimRegistry } from '../core/AdobeAnimRegistry.js';
+import { Component } from '../core/component.js';
+import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 
 export class AdobeAnimComponent extends Component {
   static _emptyOptions = Object.freeze({});

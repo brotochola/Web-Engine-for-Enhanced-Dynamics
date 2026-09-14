@@ -4,9 +4,9 @@
  * and prints median / mean / stdev / CV for physics + spatial worker stats.
  *
  * Usage:
- *   node tests/bench/run-headed-median.mjs
- *   node tests/bench/run-headed-median.mjs --runs 6 --json-out tests/results/research-spatial-headed.json
- *   node tests/bench/run-headed-median.mjs --scene /demos/carScene/carScene.js --scene-export CarScene
+ *   node tests/bench/runHeadedMedian.mjs
+ *   node tests/bench/runHeadedMedian.mjs --runs 6 --json-out tests/results/research-spatial-headed.json
+ *   node tests/bench/runHeadedMedian.mjs --scene /demos/carScene/carScene.js --scene-export CarScene
  *
  * Leave the Chromium window visible; do not minimize during measurement.
  */
@@ -17,7 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 
 function formatLoadPct(stepMs) {
@@ -25,7 +25,7 @@ function formatLoadPct(stepMs) {
 }
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 
 function parseArgs(argv) {
   const out = {

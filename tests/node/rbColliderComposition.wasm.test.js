@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOX2D_DIR = path.resolve(__dirname, '../../src/box2d');
-const WASM_PATH = path.join(BOX2D_DIR, 'box2d_wasm.wasm');
-const JS_PATH = path.join(BOX2D_DIR, 'box2d_wasm.js');
+const WASM_PATH = path.join(BOX2D_DIR, 'box2dWasm.wasm');
+const JS_PATH = path.join(BOX2D_DIR, 'box2dWasm.js');
 
 const BODY_STATIC = 0;
 const BODY_DYNAMIC = 1;

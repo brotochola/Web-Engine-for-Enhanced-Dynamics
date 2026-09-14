@@ -1,10 +1,10 @@
 # Physics pipeline
 
-Weed runs **Box2D 3.0** (the real C library, WASM + SIMD + pthreads) as Scene’s physics worker: classic `src/box2d/box2d_wasm.js` + [`physics_host.impl.js`](../src/box2d/physics_host.impl.js) + [`weedjs_post.js`](../src/box2d/weedjs_post.js). After `box2dReady`, `bindBox2dHotFields` points `Transform.x/y/rotation/rotC/rotS` and `RigidBody.vx/vy/angularVelocity/sleeping` at WASM HEAP — those fields are not in Weed SoA. **Facing truth is `Transform.rotC` / `Transform.rotS`** (native `b2Rot`); `Transform.rotation` is a derived angle (atan2) for API convenience — hot paths must not `Math.cos/sin(rotation)`. The `GameObject.rotation` setter is the radians **write boundary** (`syncRotCSFromAngle` + cmd-ring `SET_ROT_CS`); the ring never takes radians. Visual consumers (pre_render, particle parent-follow) do **not** sample live HEAP mid-step; they latch a post-step **pose publish** SAB (`poseDataA/B` + `poseSync`).
+Weed runs **Box2D 3.0** (the real C library, WASM + SIMD + pthreads) as Scene’s physics worker: classic `src/box2d/box2dWasm.js` + [`physicsHostImpl.js`](../src/box2d/physicsHostImpl.js) + [`weedjsPost.js`](../src/box2d/weedjsPost.js). After `box2dReady`, `bindBox2dHotFields` points `Transform.x/y/rotation/rotC/rotS` and `RigidBody.vx/vy/angularVelocity/sleeping` at WASM HEAP — those fields are not in Weed SoA. **Facing truth is `Transform.rotC` / `Transform.rotS`** (native `b2Rot`); `Transform.rotation` is a derived angle (atan2) for API convenience — hot paths must not `Math.cos/sin(rotation)`. The `GameObject.rotation` setter is the radians **write boundary** (`syncRotCSFromAngle` + cmd-ring `SET_ROT_CS`); the ring never takes radians. Visual consumers (pre_render, particle parent-follow) do **not** sample live HEAP mid-step; they latch a post-step **pose publish** SAB (`poseDataA/B` + `poseSync`).
 
 Bundle builds (`npm run make_bundle`) shove glue + `.wasm` + the `importScripts` siblings into `WEED.Box2dWorkerSource` so npm consumers don’t fetch a separate `dist/box2d/`. Rebuild notes: [src/box2d/README.md](../src/box2d/README.md).
 
-This doc is about the **pipeline** (step, contacts, joints, invariants). Implementation: `src/box2d/physics_host.impl.js`, `src/box2d/weedjs_post.js`, `src/components/RigidBody.js`, `src/core/gameObject.js`, `src/core/Joint.js`.
+This doc is about the **pipeline** (step, contacts, joints, invariants). Implementation: `src/box2d/physicsHostImpl.js`, `src/box2d/weedjsPost.js`, `src/components/rigidBody.js`, `src/core/gameObject.js`, `src/core/joint.js`.
 
 Related: [Spatial hashing & neighbors](./SPATIAL_HASHING.md), [Workers architecture](./WORKERS_ARCHITECTURE.md), [Memory structure](./MEMORY_STRUCTURE.md), [LiquidFun fluids](./LIQUIDFUN.md).
 
@@ -67,7 +67,7 @@ Live HEAP `Transform` mutates during solver substeps. Async readers must not sam
 | `poseSync` | `Int32[2]` `[readyFrame, consumedFrame]` | Writer stores ready; pre_render latches `(ready-1)%2` and stores consumed |
 
 - **Writer:** `weedjs_post.publishPose` after `world.step` (dense body list → typed views; no alloc).
-- **Readers:** `pre_render_worker` (entities / adobe / shadows / parented deco compose) consumes; `particle_worker` parent-follow latches without consume. Logic binds the same latch for `Camera.followEntity`. Pixi compute pack and debug colliders pin the generation stamped as `Int32 poseReady` on the render-queue camera SAB (same slot as sprites; no `Atomics.load` of live `poseSync`).
+- **Readers:** `preRenderWorker` (entities / adobe / shadows / parented deco compose) consumes; `particleWorker` parent-follow latches without consume. Logic binds the same latch for `Camera.followEntity`. Pixi compute pack and debug colliders pin the generation stamped as `Int32 poseReady` on the render-queue camera SAB (same slot as sprites; no `Atomics.load` of live `poseSync`).
 - **Boot:** `readyFrame === 0` → fall back to live `Transform`.
 - **Not** soft interpolation / `averaged*` — one coherent post-step snapshot per publish.
 
@@ -75,7 +75,7 @@ Live HEAP `Transform` mutates during solver substeps. Async readers must not sam
 
 Two independent `requestAnimationFrame` loops (physics vs pre_render/pixi) drift. At ~60 vs ~59.3 FPS they **lap about once a second**. Double-buffer without a gate: the third publish writes `poseFrame & 1` onto the buffer pre_render is still reading → sprites jump to the other generation (looks like last frame / rewind).
 
-**Correct gate** (`maybePublishPose` in `weedjs_post.js`): after `world.step`, skip **publish only** when `poseFrame > consumedFrame`. The sim keeps running; the next free slot gets the latest HEAP pose (at most a 1-frame *forward* skip).
+**Correct gate** (`maybePublishPose` in `weedjsPost.js`): after `world.step`, skip **publish only** when `poseFrame > consumedFrame`. The sim keeps running; the next free slot gets the latest HEAP pose (at most a 1-frame *forward* skip).
 
 **Wrong gate:** zero `dt` / skip `world.step` until consume. That couples physics to visual jitter → random freeze-then-catch-up. Worse than the rhythmic lap.
 
@@ -266,7 +266,7 @@ Physics sync iterates the dense active list (`activeIndices` / `activeCount`), n
 
 ## Worker stats
 
-Written to per-worker stats SABs via indices in `src/workers/workers-utils.js`. DebugUI Performance tab shows **Step** (`STEP_MS`) first after the worker name, then **FPS**.
+Written to per-worker stats SABs via indices in `src/util/workersUtils.js`. DebugUI Performance tab shows **Step** (`STEP_MS`) first after the worker name, then **FPS**.
 
 | Key | Meaning |
 | --- | --- |
@@ -303,4 +303,4 @@ All workers extend `AbstractWorker`. Incoming `onmessage` uses an **array queue*
 
 Inter-worker `handleWorkerMessage` attaches `_fromWorker` **in place** on object payloads when possible, avoiding `{ ...data }` copies.
 
-See `src/workers/AbstractWorker.js`.
+See `src/workers/abstractWorker.js`.

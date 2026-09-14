@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
-import { BUNDLE_ARTIFACTS } from './build-bundle.js';
+import { BUNDLE_ARTIFACTS } from './buildBundle.js';
 import { createStaticBenchmarkServer } from '../tests/helpers/createStaticBenchmarkServer.mjs';
 import { analyzePng, captureCanvasPng } from '../tests/helpers/visualPngCompare.mjs';
 

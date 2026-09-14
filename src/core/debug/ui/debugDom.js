@@ -17,7 +17,7 @@ export async function injectStyles() {
     cssText = globalThis.WEED.DebugUICSS;
   } else {
     try {
-      const cssPath = new URL('../DebugUI.css', import.meta.url).href;
+      const cssPath = new URL('../debugUi.css', import.meta.url).href;
       const response = await fetch(cssPath);
       cssText = await response.text();
     } catch (error) {

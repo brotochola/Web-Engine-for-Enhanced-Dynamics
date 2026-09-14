@@ -1,5 +1,5 @@
 /**
- * Declarations for {@link ../src/core/utils.js} (re-exported from package entry).
+ * Declarations for {@link ../src/util/utils.js} (re-exported from package entry).
  */
 
 export type Vec2Like = { x: number; y: number };

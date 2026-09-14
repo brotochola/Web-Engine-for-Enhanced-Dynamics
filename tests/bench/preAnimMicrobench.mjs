@@ -1,13 +1,13 @@
 // L1 microbench: anim frameDuration = 1/(speed*60) every tick vs cached (PRE-ANIM).
 //
 // Usage:
-//   node tests/bench/pre-anim-microbench.mjs
-//   node tests/bench/pre-anim-microbench.mjs --entities 8000 --ticks 2000 --speed-change-rate 0.001 --output tests/results/pre-anim-micro.json
+//   node tests/bench/preAnimMicrobench.mjs
+//   node tests/bench/preAnimMicrobench.mjs --entities 8000 --ticks 2000 --speed-change-rate 0.001 --output tests/results/pre-anim-micro.json
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 /**
  * @param {Record<string, unknown>} [cliArgs]

@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { AbstractWorker } from '../../src/workers/AbstractWorker.js';
+import { AbstractWorker } from '../../src/workers/abstractWorker.js';
 import {
   RENDER_QUEUE_CAMERA_BYTES,
   RENDER_QUEUE_POSE_READY_OFFSET,
   createRenderQueueCameraViews,
-} from '../../src/core/RenderQueueLayout.js';
+} from '../../src/render/renderQueueLayout.js';
 
-// Regression: src/box2d/weedjs_post.js (physics-worker writer) and
+// Regression: src/box2d/weedjsPost.js (physics-worker writer) and
 // AbstractWorker._bindPosePublish (every consumer worker's reader) each keep
 // their OWN Float32Array views over the same poseDataA/B SAB (documented in
 // AbstractWorker._latchPose's JSDoc: "same SAB"). Pin the canonical 4-channel

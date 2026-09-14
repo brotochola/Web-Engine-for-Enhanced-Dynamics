@@ -3,7 +3,7 @@
 // {from,to[,ease]} (+ start/end aliases) = over-life tween; endpoints may be nested {min,max}
 // Expo easings use a 256-sample LUT + linear lerp (Math.pow is too expensive per particle).
 
-import { PARTICLE_DEFAULTS, PARTICLE_EASE } from './ConfigDefaults.js';
+import { PARTICLE_DEFAULTS, PARTICLE_EASE } from './configDefaults.js';
 import { randomRange, randomColor } from './utils.js';
 
 /** @typedef {{ from: number, to: number, tween: boolean, ease: number }} ParticleTweenResult */

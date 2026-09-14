@@ -7,10 +7,10 @@ import {
   bumpBodyGeneration,
   withBodyDirtyDeferred,
 } from '../../src/box2d/box2dBodySync.js';
-import { Joint } from '../../src/core/Joint.js';
-import { resetFreeList } from '../../src/core/atomicFreeList.js';
-import { Collider } from '../../src/components/Collider.js';
-import { RigidBody } from '../../src/components/RigidBody.js';
+import { Joint } from '../../src/core/joint.js';
+import { resetFreeList } from '../../src/util/atomicFreeList.js';
+import { Collider } from '../../src/components/collider.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
 
 test('body dirty: coalesces flags and publishes dirty words', () => {
   const entityCount = 64;

@@ -6,5 +6,5 @@ if [ -z "$msg_file" ] || [ ! -f "$msg_file" ]; then
 fi
 tmp="${msg_file}.strip"
 # portable sed: delete Cursor co-author / Made-with lines
-sed -e '/^Co-authored-by:.*[Cc]ursor/d' -e '/^Made-with:.*[Cc]ursor/d' -e '/^Made with Cursor/d' "$msg_file" > "$tmp" && mv "$tmp" "$msg_file"
+sed -e '/cursoragent@cursor\.com/d' -e '/^Co-authored-by:.*[Cc]ursor/d' -e '/^Made-with:.*[Cc]ursor/d' -e '/^Made with Cursor/d' "$msg_file" > "$tmp" && mv "$tmp" "$msg_file"
 exit 0

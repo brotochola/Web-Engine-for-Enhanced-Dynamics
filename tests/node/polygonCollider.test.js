@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Collider } from '../../src/components/Collider.js';
-import { RigidBody } from '../../src/components/RigidBody.js';
-import { ShapeType, MAX_POLYGON_VERTICES } from '../../src/core/ConfigDefaults.js';
+import { Collider } from '../../src/components/collider.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { ShapeType, MAX_POLYGON_VERTICES } from '../../src/util/configDefaults.js';
 
 function initComponents(count = 4) {
   const cSize = Collider.getBufferSize(count);

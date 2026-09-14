@@ -9,21 +9,21 @@ self.postMessage({
 
 // Import engine dependencies
 
-import { Transform } from '../components/Transform.js';
+import { Transform } from '../components/transform.js';
 
-import { Collider } from '../components/Collider.js';
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { DecorationComponent } from '../components/DecorationComponent.js';
-import { DecorationPool } from '../core/DecorationPool.js';
-import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
-import { AbstractWorker } from './AbstractWorker.js';
+import { Collider } from '../components/collider.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
+import { DecorationPool } from '../core/decorationPool.js';
+import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
+import { AbstractWorker } from './abstractWorker.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 
-import { LightEmitter } from '../components/LightEmitter.js';
-import { LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/LightOccluder.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { Sun } from '../core/Sun.js';
+import { LightEmitter } from '../components/lightEmitter.js';
+import { LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { Sun } from '../core/sun.js';
 
 import {
   DEFAULT_LAYERS,
@@ -34,21 +34,21 @@ import {
   MAX_POLYGON_VERTICES,
   LAYER_DENSITY_SOURCE,
   LAYER_SCALE_MODE,
-} from '../core/ConfigDefaults.js';
+} from '../util/configDefaults.js';
 import {
   writeOrientedBoxVerts,
   writePolygonVerts,
-} from './visibility/AngularSweep.js';
-import { Layer } from '../core/Layer.js';
-import { coverBackgroundTransform } from '../core/coverBackground.js';
-import { TileMap } from '../core/TileMap.js';
+} from '../render/visibility/angularSweep.js';
+import { Layer } from '../core/layer.js';
+import { coverBackgroundTransform } from '../render/coverBackground.js';
+import { TileMap } from '../core/tileMap.js';
 import {
   deriveViewportChunkSize,
   listVisibleChunks,
   listEvictChunkKeys,
   chunkRing,
-} from '../core/tilemapCull.js';
-import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../core/RenderQueueLayout.js';
+} from '../render/tilemapCull.js';
+import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
   sortByY,
   normalizeAngleDifference,
@@ -58,7 +58,7 @@ import {
   packLightDataTexel,
   clearUnusedLightDataTexels,
   LIGHT_DATA_TEX_HEIGHT,
-} from '../core/utils.js';
+} from '../util/utils.js';
 import {
   InstancedSpriteBatch,
   BATCH_SPACE,
@@ -66,11 +66,11 @@ import {
   buildTextureLut,
   packTextureLutRgba,
   TEX_LUT_RGBA_WIDTH,
-} from './InstancedSpriteBatch.js';
-import { LiquidFunDensitySplat } from './LiquidFunDensitySplat.js';
-import { LiquidFun } from '../core/LiquidFun.js';
-import { ComputeLayer } from './ComputeLayer.js';
-import { releasePixiBindGroupsOnResource } from './releasePixiBindGroups.js';
+} from '../render/instancedSpriteBatch.js';
+import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
+import { LiquidFun } from '../core/liquidFun.js';
+import { ComputeLayer } from '../render/webgpu/computeLayer.js';
+import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
 
 function finiteOrZero(n) {
   return Number.isFinite(n) ? n : 0;
@@ -168,9 +168,9 @@ function applyComputeTexSizeUniform(cl) {
     cl.compute.numY
   );
 }
-import { writeRgba32Float } from './pinGpuTexture.js';
-import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from './pixiMeshWgsl.js';
-import { prependLookPrelude } from './wgslPrelude.js';
+import { writeRgba32Float } from '../render/webgpu/pinGpuTexture.js';
+import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from '../render/webgpu/pixiMeshWgsl.js';
+import { prependLookPrelude } from '../render/webgpu/wgslPrelude.js';
 import {
   normalizeRendererBackend,
   assertLookShaderCompatible,
@@ -180,7 +180,7 @@ import {
   errorShaderFetchFailed,
   pixiRendererTypeName,
   RENDERER_BACKEND_WEBGPU,
-} from '../core/rendererBackend.js';
+} from '../render/rendererBackend.js';
 
 function fetchEngineShader(path) {
   const slash = path.lastIndexOf('/');
@@ -202,7 +202,7 @@ function sortByDistSq(a, b) {
   return a.distSq - b.distSq;
 }
 
-import { RENDERER_STATS, createStatsWriter } from './workers-utils.js';
+import { RENDERER_STATS, createStatsWriter } from '../util/workersUtils.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -229,7 +229,7 @@ import {
   // Web Worker adapter - REQUIRED for PixiJS 8 in workers
   DOMAdapter,
   WebWorkerAdapter,
-} from '../lib/pixi_8.16_.min.js'
+} from '../vendor/pixi.min.js'
 
 // CRITICAL: Set the WebWorkerAdapter BEFORE any PixiJS operations
 // This enables OffscreenCanvas and WebGL support in web workers
@@ -244,7 +244,7 @@ import {
   CompositeTilemap,
   TilemapPipe,
   settings as tilemapSettings,
-} from '../lib/pixi-tilemap-module.js';
+} from '../vendor/pixiTilemapModule.js';
 
 // Enable 32-bit indices for large tilemaps (>16K tiles)
 // Without this, only ~16,383 tiles can be rendered due to 16-bit index limit
@@ -2996,7 +2996,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * Pixi v8 TextureSource.scaleMode for RT upsample (LINEAR soft / NEAREST blocky).
-   * @param {import('../lib/pixi_8.16_.min.js').RenderTexture|null|undefined} rt
+   * @param {import('../vendor/pixi.min.js').RenderTexture|null|undefined} rt
    * @param {string} mode
    */
   _setRtScaleMode(rt, mode) {
@@ -3700,52 +3700,52 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const shaderFetches = [];
     if (this._useWebGpu) {
       shaderFetches.push(
-        fetchEngineShader('/src/shaders/instanced_sprite.wgsl').then((s) => {
+        fetchEngineShader('/src/shaders/instancedSprite.wgsl').then((s) => {
           sh.sprite = s;
         }),
-        fetchEngineShader('/src/shaders/lf_splat.wgsl').then((s) => {
+        fetchEngineShader('/src/shaders/lfSplat.wgsl').then((s) => {
           sh.lfSplat = s;
         }),
-        fetchEngineShader('/src/shaders/lf_light_splat.wgsl').then((s) => {
+        fetchEngineShader('/src/shaders/lfLightSplat.wgsl').then((s) => {
           sh.lfLightSplat = s;
         }),
-        fetchEngineShader('/src/shaders/fullscreen_look.vert.wgsl').then((s) => {
+        fetchEngineShader('/src/shaders/fullscreenLook.vert.wgsl').then((s) => {
           sh.lookVert = s;
         }),
-        fetchEngineShader('/src/shaders/lighting_basic.wgsl').then((s) => {
+        fetchEngineShader('/src/shaders/lightingBasic.wgsl').then((s) => {
           sh.lightingFrag = s;
         })
       );
     } else {
       shaderFetches.push(
-        fetchEngineShader('/src/shaders/instanced_sprite.vert.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/instancedSprite.vert.glsl').then((s) => {
           sh.spriteVert = s;
         }),
-        fetchEngineShader('/src/shaders/instanced_sprite.frag.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/instancedSprite.frag.glsl').then((s) => {
           sh.spriteFrag = s;
         }),
-        fetchEngineShader('/src/shaders/instanced_sprite_blend.frag.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/instancedSpriteBlend.frag.glsl').then((s) => {
           sh.spriteFragBlend = s;
         }),
-        fetchEngineShader('/src/shaders/instanced_sprite_additive.frag.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/instancedSpriteAdditive.frag.glsl').then((s) => {
           sh.spriteFragAdd = s;
         }),
-        fetchEngineShader('/src/shaders/lf_splat.vert.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/lfSplat.vert.glsl').then((s) => {
           sh.lfSplatVert = s;
         }),
-        fetchEngineShader('/src/shaders/lf_splat.frag.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/lfSplat.frag.glsl').then((s) => {
           sh.lfSplatFrag = s;
         }),
-        fetchEngineShader('/src/shaders/lf_light_splat.vert.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/lfLightSplat.vert.glsl').then((s) => {
           sh.lfLightSplatVert = s;
         }),
-        fetchEngineShader('/src/shaders/lf_light_splat.frag.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/lfLightSplat.frag.glsl').then((s) => {
           sh.lfLightSplatFrag = s;
         }),
-        fetchEngineShader('/src/shaders/fullscreen_look.vert.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/fullscreenLook.vert.glsl').then((s) => {
           sh.lookVert = s;
         }),
-        fetchEngineShader('/src/shaders/lighting_basic.frag.glsl').then((s) => {
+        fetchEngineShader('/src/shaders/lightingBasic.frag.glsl').then((s) => {
           sh.lightingFrag = s;
         })
       );
@@ -3753,25 +3753,25 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (data.visibilityPolygons && data.visibilityPolygons.enabled) {
       if (this._useWebGpu) {
         shaderFetches.push(
-          fetchEngineShader('/src/shaders/visibility_polygon.wgsl').then((s) => {
+          fetchEngineShader('/src/shaders/visibilityPolygon.wgsl').then((s) => {
             this._visPolyWgsl = s;
           }),
-          fetchEngineShader('/src/shaders/occluder_self_lit_sprite.wgsl').then((s) => {
+          fetchEngineShader('/src/shaders/occluderSelfLitSprite.wgsl').then((s) => {
             this._selfLitSpriteWgsl = s;
           })
         );
       } else {
         shaderFetches.push(
-          fetchEngineShader('/src/shaders/visibility_polygon.vert.glsl').then((s) => {
+          fetchEngineShader('/src/shaders/visibilityPolygon.vert.glsl').then((s) => {
             this._visPolyVertexShader = s;
           }),
-          fetchEngineShader('/src/shaders/visibility_polygon.frag.glsl').then((s) => {
+          fetchEngineShader('/src/shaders/visibilityPolygon.frag.glsl').then((s) => {
             this._visPolyFragmentShader = s;
           }),
-          fetchEngineShader('/src/shaders/occluder_self_lit_sprite.vert.glsl').then((s) => {
+          fetchEngineShader('/src/shaders/occluderSelfLitSprite.vert.glsl').then((s) => {
             this._selfLitSpriteVertShader = s;
           }),
-          fetchEngineShader('/src/shaders/occluder_self_lit_sprite.frag.glsl').then((s) => {
+          fetchEngineShader('/src/shaders/occluderSelfLitSprite.frag.glsl').then((s) => {
             this._selfLitSpriteFragShader = s;
           })
         );

@@ -5,9 +5,9 @@ import {
   createSceneSharedBuffers,
   computeAutoMaxVisibleRenderables,
   resolveMaxVisibleRenderables,
-} from '../../src/core/sceneSharedBuffers.js';
-import { AdobeAnimComponent } from '../../src/components/AdobeAnimComponent.js';
-import { AdobeAnimRegistry } from '../../src/core/AdobeAnimRegistry.js';
+} from '../../src/util/sceneSharedBuffers.js';
+import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
+import { AdobeAnimRegistry } from '../../src/core/adobeAnimRegistry.js';
 
 function createValidationScene(overrides = {}) {
   const scene = {

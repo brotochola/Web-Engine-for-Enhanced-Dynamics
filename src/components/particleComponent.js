@@ -3,7 +3,7 @@
 // This component contains ALL data needed for particles (position, velocity, visuals)
 // Particles have fixed anchor (0.5, 0.5); optional over-life tweens + short frame cycle
 
-import { Component } from '../core/Component.js';
+import { Component } from '../core/component.js';
 
 export class ParticleComponent extends Component {
   static ARRAY_SCHEMA = {

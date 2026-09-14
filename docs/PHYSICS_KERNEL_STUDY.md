@@ -5,13 +5,13 @@
 Isolated movement-kernel microbench (does not touch `physics_worker.js`):
 
 ```bash
-node tests/bench/run-physics-kernel-study.mjs
+node tests/bench/runPhysicsKernelStudy.mjs
 ```
 
 Optional:
 
 ```bash
-node tests/bench/run-physics-kernel-study.mjs --entities 100000 --iterations 240
+node tests/bench/runPhysicsKernelStudy.mjs --entities 100000 --iterations 240
 ```
 
 ## Why it existed

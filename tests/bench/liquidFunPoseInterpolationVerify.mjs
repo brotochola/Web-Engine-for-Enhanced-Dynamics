@@ -35,7 +35,7 @@ async function sampleMode(browser, baseUrl, mode) {
   const page = await browser.newPage();
   page.on('pageerror', (error) => console.error(`[verify:${mode}] page error`, error));
   try {
-    await page.goto(`${baseUrl}/tests/bench/integrated-worker-benchmark.html`, { waitUntil: 'networkidle' });
+    await page.goto(`${baseUrl}/tests/bench/integratedWorkerBenchmark.html`, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, { timeout: 30000 });
 
     return await page.evaluate(
@@ -43,7 +43,7 @@ async function sampleMode(browser, baseUrl, mode) {
         const sceneModule = '/demos/liquidFunDemoScene/liquidFunDemoScene.js';
         const [{ LiquidFunDemoScene }, RenderQueueLayout] = await Promise.all([
           import(sceneModule),
-          import('/src/core/RenderQueueLayout.js'),
+          import('/src/render/renderQueueLayout.js'),
         ]);
 
         LiquidFunDemoScene.config = {
@@ -71,7 +71,7 @@ async function sampleMode(browser, baseUrl, mode) {
         await new Promise((resolve) => setTimeout(resolve, 800));
 
         const { LiquidFun } = await import('/src/index.js').then((m) => m.default);
-        const LiquidFunRenderModule = await import('/src/core/liquidFunRender.js');
+        const LiquidFunRenderModule = await import('/src/render/liquidFunRender.js');
         const lfViews = LiquidFunRenderModule.bindLiquidFunRender(scene.buffers.liquidFunRender, scene.liquidFunMaxCount);
 
         LiquidFun.emit({
@@ -186,7 +186,7 @@ async function verifyReorderMitigation(browser, baseUrl) {
   const page = await browser.newPage();
   page.on('pageerror', (error) => console.error('[verify:reorder] page error', error));
   try {
-    await page.goto(`${baseUrl}/tests/bench/integrated-worker-benchmark.html`, { waitUntil: 'networkidle' });
+    await page.goto(`${baseUrl}/tests/bench/integratedWorkerBenchmark.html`, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, { timeout: 30000 });
 
     return await page.evaluate(async () => {
@@ -209,7 +209,7 @@ async function verifyReorderMitigation(browser, baseUrl) {
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       const { LiquidFun } = await import('/src/index.js').then((m) => m.default);
-      const LiquidFunRenderModule = await import('/src/core/liquidFunRender.js');
+      const LiquidFunRenderModule = await import('/src/render/liquidFunRender.js');
       const lfViews = LiquidFunRenderModule.bindLiquidFunRender(scene.buffers.liquidFunRender, scene.liquidFunMaxCount);
 
       // Never-expiring blob first, so there's always a survivor to reseed.

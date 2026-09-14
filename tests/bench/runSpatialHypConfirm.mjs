@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
  * 5-run confirmation for promoted spatial hyps.
- *   node tests/bench/run-spatial-hyp-confirm.mjs
+ *   node tests/bench/runSpatialHypConfirm.mjs
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { applyHyp, restoreAll } from './spatial-hyps/hypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests/results/spatial-hyps');
 const outPath = path.join(outDir, 'confirm-summary.json');
 

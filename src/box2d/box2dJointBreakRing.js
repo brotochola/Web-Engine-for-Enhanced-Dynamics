@@ -1,5 +1,5 @@
 // ESM facade over box2dJointBreakRing.impl.js
-import './box2dJointBreakRing.impl.js';
+import './box2dJointBreakRingImpl.js';
 
 const R = globalThis.Box2dJointBreakRing;
 

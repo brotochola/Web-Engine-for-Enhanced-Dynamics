@@ -3,7 +3,7 @@
 Falsifiable claims for speeding up `lfParticleSystem_Step` — the sibling
 `Box2d_3.2_C_-_liquidfun` repo's [`box2d+liquidfun/src/lf_particle_system.c`](../../Box2d_3.2_C_-_liquidfun/box2d+liquidfun/src/lf_particle_system.c),
 wired into this repo via [`box2d/src/wasm_wrapper.c`](../../Box2d_3.2_C_-_liquidfun/box2d/src/wasm_wrapper.c)
-→ [`src/box2d/physics-api.js`](../src/box2d/physics-api.js) → [`src/box2d/weedjs_post.js`](../src/box2d/weedjs_post.js).
+→ [`src/box2d/physicsApi.js`](../src/box2d/physicsApi.js) → [`src/box2d/weedjsPost.js`](../src/box2d/weedjsPost.js).
 Same protocol family as [`PARTICLE_HYPOTHESES.md`](./PARTICLE_HYPOTHESES.md) /
 [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md) (Wave family in
 [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)). Hot loop is C; L1 micros
@@ -13,14 +13,14 @@ instantiate the WASM in Node (`CapturePairs` create-time, `ComputeDepth` spawn-s
 
 | Layer | Command | Primary metric |
 |-------|---------|-----------------|
-| **Correctness** | `node --test tests/node/liquidfun.test.js tests/node/liquidfun.wasm.test.js` (then `pnpm test:node`) | All pass. Sibling C: ship **WASM only** (`weedjs\build_for_weed.bat`). Do not build native Box2D `test.exe`. |
-| **L1 (H6)** | `pnpm bench:micro:liquidfun-capturepairs` ([`tests/bench/liquidfun-capturepairs-microbench.mjs`](../tests/bench/liquidfun-capturepairs-microbench.mjs)) | Wall-clock ms for one large SPRING-group `create_particle_group_box` call — create-time-only; L2 steady-state never sees it |
-| **L1 (H9)** | `pnpm bench:micro:liquidfun-computedepth` ([`tests/bench/liquidfun-computedepth-microbench.mjs`](../tests/bench/liquidfun-computedepth-microbench.mjs)) | First `step_world` after a SOLID ice create, with a large tracked puddle already in the system |
+| **Correctness** | `node --test tests/node/liquidFun.test.js tests/node/liquidFun.wasm.test.js` (then `pnpm test:node`) | All pass. Sibling C: ship **WASM only** (`weedjs\build_for_weed.bat`). Do not build native Box2D `test.exe`. |
+| **L1 (H6)** | `pnpm bench:micro:liquidfun-capturepairs` ([`tests/bench/liquidFunCapturePairsMicrobench.mjs`](../tests/bench/liquidFunCapturePairsMicrobench.mjs)) | Wall-clock ms for one large SPRING-group `create_particle_group_box` call — create-time-only; L2 steady-state never sees it |
+| **L1 (H9)** | `pnpm bench:micro:liquidfun-computedepth` ([`tests/bench/liquidFunComputeDepthMicrobench.mjs`](../tests/bench/liquidFunComputeDepthMicrobench.mjs)) | First `step_world` after a SOLID ice create, with a large tracked puddle already in the system |
 | **L2** | `pnpm bench:feature:liquidfun` (`LiquidFunStressScene`), **2 runs per point** | `physics.LIQUIDFUN_MS` (fluid solve); `BOX2D_MS` still full `step_world` (rigid + LiquidFun) |
 | **L2 query** | `pnpm bench:feature:liquidfun-query` (`LiquidFunQueryStressScene`) | physics `STEP_MS` / `BOX2D_MS` / `LIQUIDFUN_MS` + logic `STEP_MS` under sync QueryAABB/RayCast churn |
 | **L3** | `pnpm test:visual --scene liquidfun,lfstress` (headed lockstep; catalog `match: 'exact'`, 100 steps) | Two-run CPU `hashLiquidFun` + PNG exact. Demo still fine to poke by hand. |
 
-Every C change: edit sibling repo → `weedjs\build_for_weed.bat` (incremental, ~10-15s once configured) → copies `box2d_wasm.js`/`.wasm` into `src/box2d/` → correctness gate → L2 ×2 → record here → stop for manual sanity check before the next hypothesis.
+Every C change: edit sibling repo → `weedjs\build_for_weed.bat` (incremental, ~10-15s once configured) → copies `box2dWasm.js`/`.wasm` into `src/box2d/` → correctness gate → L2 ×2 → record here → stop for manual sanity check before the next hypothesis.
 
 **Caveat (known going in):** the L2 harness measures steady-state `STEP_MS` after warmup. One-time costs (`CapturePairs` at SPRING/BARRIER create, `ComputeDepth` on the first step after a SOLID group sets `needsUpdateDepth`) run during warmup and will not move `LIQUIDFUN_MS` even when the code-level fix is real. Use the matching L1 micro.
 
@@ -52,8 +52,8 @@ Every C change: edit sibling repo → `weedjs\build_for_weed.bat` (incremental, 
 
 ### H1 — `strictContactCheck` configurable, default `false` (2026-08-23)
 
-Landed across `ConfigDefaults.js`, `utils.js`, `physics_host.impl.js` (both merge copies),
-`weedjs_post.js`, `box2dCommandRing.impl.js`, `LiquidFun.js`, `liquidFunQuery.js`, `physics-api.js`,
+Landed across `configDefaults.js`, `utils.js`, `physicsHostImpl.js` (both merge copies),
+`weedjsPost.js`, `box2dCommandRingImpl.js`, `liquidFun.js`, `liquidFunQuery.js`, `physicsApi.js`,
 `wasm_wrapper.c`. Correctness: 17/17 liquidfun tests, 168/168 full suite (including the
 existing floor+wall-corner test, which still holds with `strictContactCheck=false` —
 no regression).
@@ -208,11 +208,11 @@ already the right tool for a list whose size isn't actually bounded small.
 group creation, which happens during a scene's `create()`/warmup — before
 `bench:feature:liquidfun`'s measured window starts. The L2 harness structurally
 cannot see this win (flagged as a known caveat before starting this campaign).
-Added a new **L1 microbench**, [`tests/bench/liquidfun-capturepairs-microbench.mjs`](../tests/bench/liquidfun-capturepairs-microbench.mjs)
+Added a new **L1 microbench**, [`tests/bench/liquidFunCapturePairsMicrobench.mjs`](../tests/bench/liquidFunCapturePairsMicrobench.mjs)
 (`pnpm bench:micro:liquidfun-capturepairs`), filling the "no L1 yet" gap noted in
 this doc's intro — times one `create_particle_group_box` call (SPRING flag) in
 isolation via the raw WASM export, same instantiation pattern as
-`liquidfun.wasm.test.js`.
+`liquidFun.wasm.test.js`.
 
 **Change:** pre-existing particles are never pair candidates (only the new
 `[start, start+n)` range pairs with itself), so build a scratch grid over just
@@ -296,8 +296,8 @@ and `destroy_particle_system`, sized to `g_particle_capacity`), filled with one
 tight C loop over `lfParticleSystem_GetPositionBuffer` right after
 `lfParticleSystem_Step` inside `step_world`. New exports
 `get_particle_x_byte_offset()` / `get_particle_y_byte_offset()` follow the
-existing `get_particle_pos_byte_offset` pattern exactly. `physics-api.js` wraps
-both; `weedjs_post.js`'s `syncLiquidFunParticlesToSharedBuffers` now does two
+existing `get_particle_pos_byte_offset` pattern exactly. `physicsApi.js` wraps
+both; `weedjsPost.js`'s `syncLiquidFunParticlesToSharedBuffers` now does two
 bulk `Float32Array.set(heapF32.subarray(...))` calls instead of a scalar
 per-particle loop reading interleaved floats out of `Module.HEAPF32`.
 
@@ -325,9 +325,9 @@ whichever scene was current at the time, and none regressed correctness.
 ## Render extension — pose extrapolation for particles (2026-08-23)
 
 Not a `lfParticleSystem_Step` hot-loop hypothesis like H1-H8 above — a new
-opt-in **renderer** feature (`config.renderer.interpolation`, `ConfigDefaults.js`)
+opt-in **renderer** feature (`config.renderer.interpolation`, `configDefaults.js`)
 that reuses this campaign's H8 deinterleave pipeline, so it's logged here rather
-than starting a separate doc. Also covers rigid bodies (`pre_render_worker.js`
+than starting a separate doc. Also covers rigid bodies (`preRenderWorker.js`
 `_displayPose`), out of scope for this LiquidFun-only doc.
 
 **Why:** the physics worker (and LiquidFun's step) can run behind the display's
@@ -340,10 +340,10 @@ never interpolate between two known frames like rigid bodies can.
 **Change:** mirrored `get_particle_x/y_byte_offset`'s pattern with
 `get_particle_vx/vy_byte_offset` (`wasm_wrapper.c`, filled from
 `lfParticleSystem_GetVelocityBuffer` in the same `step_world` loop that already
-fills `g_particle_x/y`), wrapped in `physics-api.js`, added `vx`/`vy` channels
-to the LiquidFun render SAB (`liquidFunRender.js` + `physics_host.impl.js`),
+fills `g_particle_x/y`), wrapped in `physicsApi.js`, added `vx`/`vy` channels
+to the LiquidFun render SAB (`liquidFunRender.js` + `physicsHostImpl.js`),
 bulk-copied in `syncLiquidFunParticlesToSharedBuffers` (same `Float32Array.set`
-technique as H8). `pre_render_worker.js` extrapolates only at the final
+technique as H8). `preRenderWorker.js` extrapolates only at the final
 render-queue write (not during AABB culling — imperceptible slop there, not
 worth the extra per-entity cost in that hot loop).
 
@@ -355,19 +355,19 @@ interleaved velocity buffer` (same shape as H8's position test) + a
 
 **Found and fixed along the way:** `AbstractWorker._bindPosePublish` (every
 consumer worker's *reader* of the rigid-body pose SAB) is a separate,
-hand-duplicated copy of `weedjs_post.js`'s `bindPosePublish` (the physics
+hand-duplicated copy of `weedjsPost.js`'s `bindPosePublish` (the physics
 worker's *writer*) — the two must agree byte-for-byte on the same SAB and had
 already drifted once before (see `tests/node/gpuSortKeyNoCpuSort.test.js`
 history: a boolean `renderer.interpolation: true` existed Jan 2026, directly in
-the pre-render-queue-era `pixi_worker.js`, removed Aug 2026 as dead code when
-that pipeline was rebuilt around `pre_render_worker`). Adding vx/vy/angVel to
+the pre-render-queue-era `pixiWorker.js`, removed Aug 2026 as dead code when
+that pipeline was rebuilt around `preRenderWorker`). Adding vx/vy/angVel to
 the writer without the reader crashed `_displayPose` at runtime
 (`this._poseAngVel[idx]` on `undefined`) — only caught by the L2 benchmark run,
 not the unit suite. Added `tests/node/poseInterpolation.test.js` to pin the
 7-channel byte layout on the reader directly, so this class of drift fails in
 Node next time.
 
-**Benchmark — does it eat FPS?** `pre_render_worker`'s own `STEP_MS`/Load%,
+**Benchmark — does it eat FPS?** `preRenderWorker`'s own `STEP_MS`/Load%,
 2 runs per point, headless, `renderer.interpolation.mode` temp-set per run
 (reverted after):
 
@@ -394,15 +394,15 @@ The above benchmark table is still valid (it measures `pre_render` cost
 regardless of whether the math it runs has any effect), but the particle
 *data* it was operating on was broken: the LiquidFun render SAB gets bound
 via a **third**, independent path beyond the two already covered by
-`tests/node/poseInterpolation.test.js` — `physics_host.impl.js` packs
+`tests/node/poseInterpolation.test.js` — `physicsHostImpl.js` packs
 `state.liquidFun` (itself correctly bound, vx/vy included) into a plain
 `{sab, byteOffset, length}` descriptor per field and hands it to
-`weedjs_post.js`'s `WEEDJS_INIT` handler, which unpacks each field back into
+`weedjsPost.js`'s `WEEDJS_INIT` handler, which unpacks each field back into
 a real view via `viewFromDesc()`. Both ends had their own hand-written field
 list; vx/vy were added to the *source* (`bindLiquidFunRenderViews`) but never
-threaded through this pack/unpack round trip, so `weedjs_post.js`'s actual
+threaded through this pack/unpack round trip, so `weedjsPost.js`'s actual
 `liquidFunViews.vx/vy` stayed `undefined` and the SAB's vx/vy channel that
-`pre_render_worker.js` reads for extrapolation stayed at its zero-initialized
+`preRenderWorker.js` reads for extrapolation stayed at its zero-initialized
 value forever. `extrapolate` mode ran with `vx=vy=0` for every particle -
 silently doing nothing, indistinguishable from `off` by design, not by bug
 in the blend math itself.
@@ -418,8 +418,8 @@ verification, adapted for particles (`tests/bench/liquidFunPoseInterpolationVeri
 | `extrapolate` (before fix) | 0.000px, every group - identical to `off` |
 | `extrapolate` (after fix) | 7.9-13.3px, every group |
 
-Fixed by adding `vx`/`vy` to both `physics_host.impl.js`'s `initPayload.liquidFunViews`
-pack and `weedjs_post.js`'s unpack. Regression test:
+Fixed by adding `vx`/`vy` to both `physicsHostImpl.js`'s `initPayload.liquidFunViews`
+pack and `weedjsPost.js`'s unpack. Regression test:
 `tests/node/liquidFunViewsDescriptor.test.js`. 175/175 full suite.
 
 ### H9 — Scope `ComputeDepth` to dirty solid groups (2026-09-03)
@@ -444,7 +444,7 @@ depth only on dirty solid slabs. `iterationCount = sqrt(dirtySolidParticleCount)
 New ice does not invalidate old ice depth. OOB compact still sets
 `needsUpdateDepth` on modified solid groups (`SolveZombie`).
 
-**Correctness:** 31/31 `liquidfun.wasm.test.js` (3 new: tracked viscous puddle +
+**Correctness:** 31/31 `liquidFun.wasm.test.js` (3 new: tracked viscous puddle +
 ice stays finite; overlapping solids eject; second ice still ejects after first
 group depth is stale). Full `pnpm test:node` 240/240.
 
@@ -494,7 +494,7 @@ still leaves the world (rest rebuild, not this hyp).
 
 Rebuild: `weedjs\build_for_weed.bat` → copy WASM into `src/box2d/`. Native `test.exe` not run (not the product).
 
-**Correctness:** Weed `liquidfun.test.js` + `liquidfun.wasm.test.js` + `liquidFunQuery.test.js` 52/52. Box2D wasm composition tests 18/18.
+**Correctness:** Weed `liquidFun.test.js` + `liquidFun.wasm.test.js` + `liquidFunQuery.test.js` 52/52. Box2D wasm composition tests 18/18.
 
 **L2** (headless, 25s warmup + 18s). RayStressScene = control (C change should not move rays).
 
@@ -522,4 +522,4 @@ Catalog: both `match: 'exact'`, `lfstress` steps **100**. `water` stays `not-bla
 - Sibling campaigns: [`PARTICLE_HYPOTHESES.md`](./PARTICLE_HYPOTHESES.md), [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md), [`DECAL_HYPOTHESES.md`](./DECAL_HYPOTHESES.md)
 - LiquidFun architecture/algorithm docs: [`LIQUIDFUN.md`](./LIQUIDFUN.md)
 - Sibling repo roadmap: `Box2d_3.2_C_-_liquidfun/box2d+liquidfun/ROADMAP.md`
-- L2 scene: [`tests/bench/stressScenes/LiquidFunStressScene.js`](../tests/bench/stressScenes/LiquidFunStressScene.js)
+- L2 scene: [`tests/bench/stressScenes/liquidFunStressScene.js`](../tests/bench/stressScenes/liquidFunStressScene.js)

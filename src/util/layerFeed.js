@@ -2,7 +2,7 @@
  * Dense per-layer feeder lists for compute / density packers.
  * Mask writes are rare; packers walk O(feeders) not O(pool).
  */
-import { Layer } from './Layer.js';
+import { Layer } from '../core/layer.js';
 
 function acquireLayerLock(lock, layerId) {
   if (!lock) return;

@@ -9,7 +9,7 @@ import {
   createMultiWorkerStatsReaderArray,
   createMultiWorkerStatsWriter,
   getEntityHomeCellIndex,
-} from '../../src/workers/workers-utils.js';
+} from '../../src/util/workersUtils.js';
 
 test('single-worker stats readers share the same buffer layout', () => {
   const buffer = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);

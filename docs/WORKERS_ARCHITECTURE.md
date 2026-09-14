@@ -11,15 +11,15 @@ Each worker owns its data region so hot paths can avoid broad locking and per-fr
 
 | Worker                | Count | Scalable | Runs Entity Scripts | Primary Job                                              |
 | --------------------- | ----: | -------- | ------------------- | -------------------------------------------------------- |
-| `spatial_worker`      |  1..N | Yes      | No                  | Spatial hash grid + neighbor lists                       |
-| `physics` (classic)   |     1 | No       | No                  | Box2D 3.0 WASM host (`box2d_wasm` + `physics_host`), contacts, joints |
-| `logic_worker`        |  1..N | Yes      | **Yes**             | Entity `tick()`, callbacks, lifecycle                    |
-| `particle_worker`     |     1 | No       | No                  | Particles, bullets, decals, navigation, visibility lists |
-| `pre_render_worker`   |     1 | No       | No                  | Animation, Y-sort, render + shadow queue assembly        |
-| `pixi_worker`         |     1 | No       | No                  | PixiJS on OffscreenCanvas. Draws the frame.              |
-| `AudioMixerProcessor` |     1 | No       | No                  | Real-time PCM mixing on audio thread (AudioWorklet)      |
+| `spatialWorker`      |  1..N | Yes      | No                  | Spatial hash grid + neighbor lists                       |
+| `physics` (classic)   |     1 | No       | No                  | Box2D 3.0 WASM host (`box2dWasm` + `physicsHost`), contacts, joints |
+| `logicWorker`        |  1..N | Yes      | **Yes**             | Entity `tick()`, callbacks, lifecycle                    |
+| `particleWorker`     |     1 | No       | No                  | Particles, bullets, decals, navigation, visibility lists |
+| `preRenderWorker`   |     1 | No       | No                  | Animation, Y-sort, render + shadow queue assembly        |
+| `pixiWorker`         |     1 | No       | No                  | PixiJS on OffscreenCanvas. Draws the frame.              |
+| `audioMixerProcessor` |     1 | No       | No                  | Real-time PCM mixing on audio thread (AudioWorklet)      |
 
-All workers live in `src/workers/`. They are bootstrapped by `src/core/sceneWorkerBootstrap.js`, invoked from `src/core/Scene.js` (`createWorkers()`).
+All workers live in `src/workers/`. They are bootstrapped by `src/util/sceneWorkerBootstrap.js`, invoked from `src/core/scene.js` (`createWorkers()`).
 
 ---
 
@@ -56,7 +56,7 @@ Details: [SPATIAL_HASHING.md](./SPATIAL_HASHING.md)
 
 ### Physics Worker (1)
 
-Owns the Box2D tick. Scene’s `workers.physics` **is** the classic `box2d_wasm.js` worker (`physics_host.impl.js` + `weedjs_post.js`); steps via in-process `weedjsDoStep` (no nested ESM / Atomics handshake).
+Owns the Box2D tick. Scene’s `workers.physics` **is** the classic `box2dWasm.js` worker (`physicsHostImpl.js` + `weedjsPost.js`); steps via in-process `weedjsDoStep` (no nested ESM / Atomics handshake).
 
 **What it does each frame:**
 
@@ -182,7 +182,7 @@ The multitasker. Handles particles, bullets, decals, navigation computation, vis
 
 ### Pre-Render Worker (1)
 
-Reads visibility lists, advances animations, builds the render and shadow queues that pixi consumes. **Sprite animation is owned entirely here** (main ENTITIES queue and custom-layer queues) — `pixi_worker` only consumes resolved `textureId` values from the render queue.
+Reads visibility lists, advances animations, builds the render and shadow queues that pixi consumes. **Sprite animation is owned entirely here** (main ENTITIES queue and custom-layer queues) — `pixiWorker` only consumes resolved `textureId` values from the render queue.
 
 **What it does each frame:**
 
@@ -193,7 +193,7 @@ Reads visibility lists, advances animations, builds the render and shadow queues
    - ENTITIES bit → main render queue
    - other sprite-queue bits → per-layer custom collector
    - density bits skip sprite collect
-5. Build main render queue (Y-sorted, SoA packed via `RenderQueueLayout.js`). Uses heapsort for >256 items, insertion sort otherwise
+5. Build main render queue (Y-sorted, SoA packed via `renderQueueLayout.js`). Uses heapsort for >256 items, insertion sort otherwise
 6. Build per-layer custom render queues (same Y-sort + heapsort fallback). Emits `console.warn` if a layer's queue overflows `maxItems`
 7. Build shadow/light render queue (respects `maxShadowsPerEntity` budget across sun + point lights)
 8. If more than 1 frame ahead of pixi, skip this pre-render tick and let pixi reuse the latest complete queue
@@ -208,7 +208,7 @@ Visibility polygon generation uses bounded event/active pools. If those caps ove
 | -------------------------- | -------------- | ------------------------------------------------------------------------------------- |
 | `poseDataA/B`              | Read           | Latched post-step display pose (SoA x/y/rotation); consume via `poseSync`             |
 | `poseSync`                 | Read/**Write** | Atomics: readyFrame (physics) + consumedFrame (pre_render, like pixi on render queue) |
-| `renderQueueDataA/B`       | **Write**      | Alternating double buffer (layout from `RenderQueueLayout.js`)                        |
+| `renderQueueDataA/B`       | **Write**      | Alternating double buffer (layout from `renderQueueLayout.js`)                        |
 | `renderQueueCameraA/B`     | **Write**      | Per-buffer camera snapshot `[zoom,x,y]` frame-locked to render queue generation       |
 | `shadowRenderQueueDataA/B` | **Write**      | Shadow/light queue                                                                    |
 | Per-layer `dataA/B`        | **Write**      | Custom layer render queues (same SoA layout, sized to `config.layers[name].maxItems`) |
@@ -230,7 +230,7 @@ Visibility polygon generation uses bounded event/active pools. If those caps ove
 
 ### Pixi Worker (1)
 
-Consumes the render queues and draws to an OffscreenCanvas. Never touches game state. **No per-entity sprite animation** — textures and frames are resolved in `pre_render_worker` and written into the queue as `textureId`.
+Consumes the render queues and draws to an OffscreenCanvas. Never touches game state. **No per-entity sprite animation** — textures and frames are resolved in `preRenderWorker` and written into the queue as `textureId`.
 
 **OffscreenCanvas:** transferred from main thread at init via `canvas.transferControlToOffscreen()`.
 
@@ -285,7 +285,7 @@ This enables effects like metaball water, fog accumulation, heat distortion -- a
 
 | Buffer                     | Access         | Notes                                                             |
 | -------------------------- | -------------- | ----------------------------------------------------------------- |
-| `renderQueueDataA/B`       | Read           | Main sprite queue (layout from `RenderQueueLayout.js`)            |
+| `renderQueueDataA/B`       | Read           | Main sprite queue (layout from `renderQueueLayout.js`)            |
 | `renderQueueCameraA/B`     | Read           | Camera snapshot matched to the consumed render queue buffer       |
 | `shadowRenderQueueDataA/B` | Read           | Shadow/light queue                                                |
 | Per-layer `dataA/B`        | Read           | Custom layer render queues (same SoA layout)                      |
@@ -513,7 +513,7 @@ Where `N = numberOfSpatialWorkers`, `L = numberOfLogicWorkers`.
 
 Worker script URLs use a single per-page cache-bust token (`WORKER_CACHE_BUST` in `sceneWorkerBootstrap.js`) so scene cycles within one session reuse compiled worker modules.
 
-Regression harness: `node tests/bench/scene-cycle-smoke.mjs`.
+Regression harness: `node tests/bench/sceneCycleSmoke.mjs`.
 
 ---
 

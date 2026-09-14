@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const dir = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(dir, '../../src/workers/InstancedSpriteBatch.js'), 'utf8');
-const gpuJs = readFileSync(join(dir, '../../src/workers/instancedSpriteWgsl.js'), 'utf8');
-const wgsl = readFileSync(join(dir, '../../src/shaders/instanced_sprite.wgsl'), 'utf8');
+const src = readFileSync(join(dir, '../../src/render/instancedSpriteBatch.js'), 'utf8');
+const gpuJs = readFileSync(join(dir, '../../src/render/webgpu/instancedSpriteWgsl.js'), 'utf8');
+const wgsl = readFileSync(join(dir, '../../src/shaders/instancedSprite.wgsl'), 'utf8');
 
 test('normal fragment scales PMA rgb by instance alpha without re-multiplying tex.a', () => {
   assert.match(wgsl, /let a = t\.a \* in\.vColor\.a;/);
@@ -64,7 +64,7 @@ test('ctor sets State.depthMask; upload excludeType0/1; indices skip filter', ()
   assert.match(src, /useIndices/);
 });
 
-const pixiSrc = readFileSync(join(dir, '../../src/workers/pixi_worker.js'), 'utf8');
+const pixiSrc = readFileSync(join(dir, '../../src/workers/pixiWorker.js'), 'utf8');
 
 test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', () => {
   assert.match(pixiSrc, /function emptyInstancedMesh\(obj\)/);
@@ -132,9 +132,9 @@ test('entity and custom-layer uploads pass queue repeatX/Y and tile fields', () 
 test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {
   const shaderDir = join(dir, '../../src/shaders');
   const glsl = [
-    readFileSync(join(shaderDir, 'instanced_sprite.frag.glsl'), 'utf8'),
-    readFileSync(join(shaderDir, 'instanced_sprite_blend.frag.glsl'), 'utf8'),
-    readFileSync(join(shaderDir, 'instanced_sprite_additive.frag.glsl'), 'utf8'),
+    readFileSync(join(shaderDir, 'instancedSprite.frag.glsl'), 'utf8'),
+    readFileSync(join(shaderDir, 'instancedSpriteBlend.frag.glsl'), 'utf8'),
+    readFileSync(join(shaderDir, 'instancedSpriteAdditive.frag.glsl'), 'utf8'),
   ].join('\n');
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, 0\.0\);/);
@@ -155,7 +155,7 @@ test('pixi binds packed LUT as rgba32float TextureSource', () => {
 
 test('packTextureLutRgba writes 10 floats into 3 RGBA32F texels', async () => {
   const { packTextureLutRgba, TEX_LUT_FLOATS } = await import(
-    '../../src/workers/InstancedSpriteBatch.js'
+    '../../src/render/instancedSpriteBatch.js'
   );
   const lut = new Float32Array(TEX_LUT_FLOATS);
   for (let i = 0; i < TEX_LUT_FLOATS; i++) lut[i] = i + 1;
@@ -167,18 +167,18 @@ test('packTextureLutRgba writes 10 floats into 3 RGBA32F texels', async () => {
 });
 
 test('lighting GLSL loop bound is MAX_LIGHTS token', () => {
-  const lighting = readFileSync(join(dir, '../../src/shaders/lighting_basic.frag.glsl'), 'utf8');
+  const lighting = readFileSync(join(dir, '../../src/shaders/lightingBasic.frag.glsl'), 'utf8');
   assert.match(lighting, /for \(int i = 0; i < MAX_LIGHTS; i\+\+\)/);
   assert.doesNotMatch(lighting, /\$\{this\.maxLights\}/);
   assert.match(pixiSrc, /\/MAX_LIGHTS\/g/);
-  assert.match(pixiSrc, /lighting_basic\.frag\.glsl/);
-  assert.match(pixiSrc, /instanced_sprite\.wgsl/);
-  assert.match(pixiSrc, /instanced_sprite\.vert\.glsl/);
+  assert.match(pixiSrc, /lightingBasic\.frag\.glsl/);
+  assert.match(pixiSrc, /instancedSprite\.wgsl/);
+  assert.match(pixiSrc, /instancedSprite\.vert\.glsl/);
 });
 
 test('lighting WGSL reconstructs world from framebuffer Y without flip', () => {
-  const glsl = readFileSync(join(dir, '../../src/shaders/lighting_basic.frag.glsl'), 'utf8');
-  const wgsl = readFileSync(join(dir, '../../src/shaders/lighting_basic.wgsl'), 'utf8');
+  const glsl = readFileSync(join(dir, '../../src/shaders/lightingBasic.frag.glsl'), 'utf8');
+  const wgsl = readFileSync(join(dir, '../../src/shaders/lightingBasic.wgsl'), 'utf8');
   assert.match(glsl, /normCoord = gl_FragCoord\.xy \/ uViewport/);
   assert.match(wgsl, /normCoord = in\.position\.xy \/ vp/);
   assert.doesNotMatch(wgsl, /1\.0 - in\.position\.y/);

@@ -8,23 +8,23 @@ self.postMessage({
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
-import { Joint } from '../core/Joint.js';
-import { Mouse } from '../core/Mouse.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Camera } from '../core/Camera.js';
+import { Joint } from '../core/joint.js';
+import { Mouse } from '../core/mouse.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import { Camera } from '../core/camera.js';
 
-import { CameraInOutListener } from '../components/CameraInOutListener.js';
-import { CollisionListener } from '../components/CollisionListener.js';
-import { JointBreakListener } from '../components/JointBreakListener.js';
+import { CameraInOutListener } from '../components/cameraInOutListener.js';
+import { CollisionListener } from '../components/collisionListener.js';
+import { JointBreakListener } from '../components/jointBreakListener.js';
 
-import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
+import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
-import { AbstractWorker } from './AbstractWorker.js';
+import { AbstractWorker } from './abstractWorker.js';
 
-import { LOGIC_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
-import { Ray } from '../core/Ray.js';
-import { _cantorResult } from '../core/utils.js';
+import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
+import { Ray } from '../core/ray.js';
+import { _cantorResult } from '../util/utils.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';

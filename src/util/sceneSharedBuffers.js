@@ -1,44 +1,44 @@
-import { GameObject } from './gameObject.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { DecorationComponent } from '../components/DecorationComponent.js';
-import { BulletComponent } from '../components/BulletComponent.js';
-import { DecorationPool } from './DecorationPool.js';
-import { DecorationSpatial } from './DecorationSpatial.js';
-import { BulletPool } from './BulletPool.js';
-import { ShadowCaster } from '../components/ShadowCaster.js';
-import { FlashComponent } from '../components/FlashComponent.js';
-import { LightEmitter } from '../components/LightEmitter.js';
-import { LightOccluder } from '../components/LightOccluder.js';
-import { CameraInOutListener } from '../components/CameraInOutListener.js';
-import { CollisionListener } from '../components/CollisionListener.js';
-import { Grab } from '../components/Grab.js';
-import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { AdobeAnimRegistry } from './AdobeAnimRegistry.js';
-import { DebugFlags } from './debug/DebugFlags.js';
-import { Mouse } from './Mouse.js';
-import { Gamepad } from './Gamepad.js';
-import Keyboard from './Keyboard.js';
-import { Flash } from './Flash.js';
-import { Camera } from './Camera.js';
+import { GameObject } from '../core/gameObject.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import { Collider } from '../components/collider.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
+import { BulletComponent } from '../components/bulletComponent.js';
+import { DecorationPool } from '../core/decorationPool.js';
+import { DecorationSpatial } from '../core/decorationSpatial.js';
+import { BulletPool } from '../core/bulletPool.js';
+import { ShadowCaster } from '../components/shadowCaster.js';
+import { FlashComponent } from '../components/flashComponent.js';
+import { LightEmitter } from '../components/lightEmitter.js';
+import { LightOccluder } from '../components/lightOccluder.js';
+import { CameraInOutListener } from '../components/cameraInOutListener.js';
+import { CollisionListener } from '../components/collisionListener.js';
+import { Grab } from '../components/grab.js';
+import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
+import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
+import { DebugFlags } from '../core/debug/debugFlags.js';
+import { Mouse } from '../core/mouse.js';
+import { Gamepad } from '../core/gamepad.js';
+import Keyboard from '../core/keyboard.js';
+import { Flash } from '../core/flash.js';
+import { Camera } from '../core/camera.js';
 import {
   SUN_DEFAULTS,
   LAYER_DEFAULTS,
   DEFAULT_LAYERS,
-} from './ConfigDefaults.js';
-import { Sun } from './Sun.js';
-import { Layer } from './Layer.js';
-import { TileMap } from './TileMap.js';
-import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from './RenderQueueLayout.js';
+} from './configDefaults.js';
+import { Sun } from '../core/sun.js';
+import { Layer } from '../core/layer.js';
+import { TileMap } from '../core/tileMap.js';
+import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { resetFreeList } from './atomicFreeList.js';
-import { NavGrid } from './NavGrid.js';
-import { Grid } from './Grid.js';
-import { Ray } from './Ray.js';
-import { DebugDraw } from './debug/DebugDraw.js';
+import { NavGrid } from '../core/navGrid.js';
+import { Grid } from '../core/grid.js';
+import { Ray } from '../core/ray.js';
+import { DebugDraw } from '../core/debug/debugDraw.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -46,14 +46,14 @@ import {
   SPATIAL_STATS,
   LOGIC_STATS,
   PRE_RENDER_STATS,
-} from '../workers/workers-utils.js';
-import { ParticleEmitter } from './ParticleEmitter.js';
-import { liquidFunRenderByteSize } from './liquidFunRender.js';
+} from './workersUtils.js';
+import { ParticleEmitter } from '../core/particleEmitter.js';
+import { liquidFunRenderByteSize } from '../render/liquidFunRender.js';
 import { liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from './liquidFunGroups.js';
-import { LiquidFun } from './LiquidFun.js';
-import { Joint } from './Joint.js';
-import { SoundManager } from './SoundManager.js';
-import { MAX_COMPONENTS, MAX_ENTITIES, MAX_ENTITY_TYPES } from './QuerySystem.js';
+import { LiquidFun } from '../core/liquidFun.js';
+import { Joint } from '../core/joint.js';
+import { SoundManager } from '../core/soundManager.js';
+import { MAX_COMPONENTS, MAX_ENTITIES, MAX_ENTITY_TYPES } from '../core/querySystem.js';
 import {
   BODY_DIRTY,
   bindBodySyncBuffers,

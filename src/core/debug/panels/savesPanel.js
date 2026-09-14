@@ -1,7 +1,7 @@
 // SavesPanel.js — Save / load sparse entity saves for the current scene
 
-import { createPanel, createRow, createStat, createButton } from '../ui/DebugDOM.js';
-import { SaveStore } from '../../save/SaveStore.js';
+import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
+import { SaveStore } from '../../save/saveStore.js';
 
 export class SavesPanel {
   constructor(debugUI) {

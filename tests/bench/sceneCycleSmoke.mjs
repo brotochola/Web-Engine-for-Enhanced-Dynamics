@@ -2,7 +2,7 @@
 // verify teardown leaves no broken state behind (Layer/NavGrid/Sound statics),
 // no page errors occur, and the JS heap does not grow monotonically.
 //
-// Usage: node tests/bench/scene-cycle-smoke.mjs [--cycles 4] [--scene /demos/ballsScene/ballsScene.js] [--scene-export BallsScene] [--headed]
+// Usage: node tests/bench/sceneCycleSmoke.mjs [--cycles 4] [--scene /demos/ballsScene/ballsScene.js] [--scene-export BallsScene] [--headed]
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,7 +38,7 @@ async function main() {
   const headed = Boolean(args.headed);
 
   const server = await createStaticBenchmarkServer(repoRoot);
-  const pageUrl = `http://127.0.0.1:${server.port}/tests/bench/integrated-worker-benchmark.html`;
+  const pageUrl = `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html`;
 
   const browser = await chromium.launch({
     headless: !headed,

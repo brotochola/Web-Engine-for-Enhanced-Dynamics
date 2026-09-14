@@ -16,7 +16,7 @@ BallsScene starts with a **dense spawn**; the first seconds are not representati
 2. **Constants** — same branch, same `pnpm`/Node, same headed flags, **don’t minimize** the browser, avoid heavy background load.
 3. **Primary response variables** — physics `statsSamplesAverage.STEP_MS` and derived **Load%** (`STEP_MS / (1000/60) * 100`, or `1000/fixedFps` when `fixedFps > 0`). Equivalence: `BODY_COUNT`. FPS is **secondary** (with capped `noLimitFPS: false`, FPS ≈ 60 is expected and uninformative). Diagnose `STEP_MS` with `BODY_SYNC_MS`, `JOINT_SYNC_MS`, `COMMAND_MS`, `FORCE_MS`, `BOX2D_MS`, and `POST_MS`; also compare `BODY_SYNC_VISITED` / `BODY_SYNC_CHANGES`, `BODY_MOVED_COUNT`, `AWAKE_COUNT` so workload remains equivalent.
 4. **Equivalence check** — if `BODY_COUNT` shifts a lot between A and B, the runs are **not comparable** (different simulation state). Do **not** attribute STEP_MS/Load% delta to the code change.
-5. **Replication** — `pnpm bench:headed:median` (or `run-headed-median.mjs`): use **≥5 runs**, report **median** and **CV** (coefficient of variation). Lower CV on body counts usually means more comparable load. Prints **spatial** `STEP_MS` / Load% / `NEIGHBOR_MS` / `GRID_CELLS_CHECKED` medians when present. Keep `COMMAND_OVERFLOW_TOTAL`, `CONTACT_DROPPED`, and `SENSOR_DROPPED` at zero. Optional JSON: `pnpm bench:headed:spatial-confirm` (writes `tests/results/research-spatial-headed.json`).
+5. **Replication** — `pnpm bench:headed:median` (or `runHeadedMedian.mjs`): use **≥5 runs**, report **median** and **CV** (coefficient of variation). Lower CV on body counts usually means more comparable load. Prints **spatial** `STEP_MS` / Load% / `NEIGHBOR_MS` / `GRID_CELLS_CHECKED` medians when present. Keep `COMMAND_OVERFLOW_TOTAL`, `CONTACT_DROPPED`, and `SENSOR_DROPPED` at zero. Optional JSON: `pnpm bench:headed:spatial-confirm` (writes `tests/results/research-spatial-headed.json`).
 6. **A/B design** — same machine, back-to-back: **revert → N runs → patch → N runs** (or alternating if you script it). Prefer conclusions only when **BODY_COUNT medians** agree within a few percent **and** STEP_MS / Load% move consistently.
 
 ## Worker Load%
@@ -28,14 +28,14 @@ frameBudgetMs = 1000 / 60 ≈ 16.667   // or 1000/fixedFps when fixedFps > 0
 loadPct       = (STEP_MS / frameBudgetMs) * 100
 ```
 
-Always compare against **60 Hz** unless that worker has `fixedFps > 0`. Do **not** use measured FPS as denominator (circular). Uncapped workers can report >100% — intentional (“busy vs real-time budget”). Helper: `workerLoadPct` in `src/workers/workers-utils.js`. JSON reports stay unchanged; Load% is derived when printing.
+Always compare against **60 Hz** unless that worker has `fixedFps > 0`. Do **not** use measured FPS as denominator (circular). Uncapped workers can report >100% — intentional (“busy vs real-time budget”). Helper: `workerLoadPct` in `src/util/workersUtils.js`. JSON reports stay unchanged; Load% is derived when printing.
 
 ## Scene configuration
 
 Integrated benchmarks use **BallsScene** by default. You can select another scene module/export when the workload you care about is not represented by BallsScene:
 
 ```bash
-node tests/bench/run-integrated-worker-benchmark.mjs --headed \
+node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
   --scene /demos/ballsAndRectanglesScene/ballsAndRectanglesScene.js \
   --scene-export BallsAndRectanglesScene \
   --output tests/results/balls-and-rectangles-headed.json
@@ -53,8 +53,8 @@ Use scene selection for targeted checks:
 Stationary spatial reuse check:
 
 ```bash
-node tests/bench/run-integrated-worker-benchmark.mjs --headed \
-  --scene /tests/bench/stressScenes/StationarySpatialScene.js \
+node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
+  --scene /tests/bench/stressScenes/stationarySpatialScene.js \
   --scene-export StationarySpatialScene \
   --output tests/results/stationary-spatial-headed.json
 ```
@@ -62,8 +62,8 @@ node tests/bench/run-integrated-worker-benchmark.mjs --headed \
 Query churn check:
 
 ```bash
-node tests/bench/run-integrated-worker-benchmark.mjs --headed \
-  --scene /tests/bench/stressScenes/QueryChurnScene.js \
+node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
+  --scene /tests/bench/stressScenes/queryChurnScene.js \
   --scene-export QueryChurnScene \
   --output tests/results/query-churn-headed.json
 ```
@@ -71,8 +71,8 @@ node tests/bench/run-integrated-worker-benchmark.mjs --headed \
 Render queue stress check:
 
 ```bash
-node tests/bench/run-integrated-worker-benchmark.mjs --headed \
-  --scene /tests/bench/stressScenes/RenderQueueStressScene.js \
+node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
+  --scene /tests/bench/stressScenes/renderQueueStressScene.js \
   --scene-export RenderQueueStressScene \
   --output tests/results/render-queue-stress-headed.json
 ```
@@ -82,8 +82,8 @@ Ray stress (L2) check:
 ```bash
 pnpm bench:feature:ray
 # or:
-node tests/bench/run-integrated-worker-benchmark.mjs --headed \
-  --scene /tests/bench/stressScenes/RayStressScene.js \
+node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
+  --scene /tests/bench/stressScenes/rayStressScene.js \
   --scene-export RayStressScene \
   --output tests/results/ray-stress-headed.json
 ```
@@ -98,7 +98,7 @@ pnpm bench:micro:ray
 Physics kernel study (isolated JavaScript loop research, not an engine scene):
 
 ```bash
-node tests/bench/run-physics-kernel-study.mjs --entities 100000 --iterations 240
+node tests/bench/runPhysicsKernelStudy.mjs --entities 100000 --iterations 240
 ```
 
 To compare different static config values inside a scene (e.g. `cellSize`), edit that scene's config between runs; there is no CLI patch into scene config.

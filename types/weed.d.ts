@@ -1703,7 +1703,7 @@ export interface SunHourColorKeyframe {
   readonly color: number;
 }
 
-/** Byte offsets into the Sun SharedArrayBuffer (see `Sun.js`). */
+/** Byte offsets into the Sun SharedArrayBuffer (see `sun.js`). */
 export interface SunOffsets {
   readonly ENABLED: 0;
   readonly ANGLE: 4;

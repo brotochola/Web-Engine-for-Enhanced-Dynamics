@@ -1,4 +1,4 @@
-import { Component } from '../core/Component.js';
+import { Component } from '../core/component.js';
 
 /** Self-lit fill uses Collider footprint (default, fastest). */
 export const LIGHT_OCCLUDER_MASK_COLLIDER = 0;

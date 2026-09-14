@@ -8,10 +8,10 @@
 // shadow casters near a flash via a direct grid query instead.
 
 import { GameObject } from './gameObject.js';
-import { LightEmitter } from '../components/LightEmitter.js';
-import { FlashComponent } from '../components/FlashComponent.js';
-import { Transform } from '../components/Transform.js';
-import { Camera } from './Camera.js';
+import { LightEmitter } from '../components/lightEmitter.js';
+import { FlashComponent } from '../components/flashComponent.js';
+import { Transform } from '../components/transform.js';
+import { Camera } from './camera.js';
 
 export class Flash extends GameObject {
   // Flash is an internal engine class - no user script needed

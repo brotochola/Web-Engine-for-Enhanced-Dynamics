@@ -1,22 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Component } from '../../src/core/Component.js';
-import { Transform } from '../../src/components/Transform.js';
-import { RigidBody } from '../../src/components/RigidBody.js';
-import { Collider } from '../../src/components/Collider.js';
-import { SpriteRenderer } from '../../src/components/SpriteRenderer.js';
-import { CameraInOutListener } from '../../src/components/CameraInOutListener.js';
-import { CollisionListener } from '../../src/components/CollisionListener.js';
-import { LightEmitter } from '../../src/components/LightEmitter.js';
-import { ShadowCaster } from '../../src/components/ShadowCaster.js';
-import { FlashComponent } from '../../src/components/FlashComponent.js';
-import { LightOccluder } from '../../src/components/LightOccluder.js';
-import { AdobeAnimComponent } from '../../src/components/AdobeAnimComponent.js';
-import { Scene } from '../../src/core/Scene.js';
-import { QuerySystem } from '../../src/core/QuerySystem.js';
+import { Component } from '../../src/core/component.js';
+import { Transform } from '../../src/components/transform.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { Collider } from '../../src/components/collider.js';
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { CameraInOutListener } from '../../src/components/cameraInOutListener.js';
+import { CollisionListener } from '../../src/components/collisionListener.js';
+import { LightEmitter } from '../../src/components/lightEmitter.js';
+import { ShadowCaster } from '../../src/components/shadowCaster.js';
+import { FlashComponent } from '../../src/components/flashComponent.js';
+import { LightOccluder } from '../../src/components/lightOccluder.js';
+import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
+import { Scene } from '../../src/core/scene.js';
+import { QuerySystem } from '../../src/core/querySystem.js';
 import { GameObject } from '../../src/core/gameObject.js';
-import { createSceneSharedBuffers } from '../../src/core/sceneSharedBuffers.js';
+import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 
 function resetOptionalComponentIds() {
   LightEmitter.componentId = null;

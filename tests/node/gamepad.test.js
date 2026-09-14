@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Gamepad } from '../../src/core/Gamepad.js';
+import { Gamepad } from '../../src/core/gamepad.js';
 
 function makeFakePad({ axes = [0, 0, 0, 0], buttons = [] } = {}) {
   const btn = (pressed, value = pressed ? 1 : 0) => ({ pressed: !!pressed, value });

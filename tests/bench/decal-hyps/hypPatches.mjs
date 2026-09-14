@@ -5,8 +5,8 @@
  * `state = { decalStamp: string, particleEmitter: string, particleWorker: string }`
  * holds in-memory source text. `applyCombo(ids)` restores baselines, sorts ids
  * into CANONICAL_ORDER, folds the matching transforms over a fresh state, then
- * writes the result to src/core/decalStamp.js, src/core/ParticleEmitter.js and
- * src/workers/particle_worker.js.
+ * writes the result to src/util/decalStamp.js, src/core/particleEmitter.js and
+ * src/workers/particleWorker.js.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,12 +16,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 
 export const PATHS = {
-  decalStamp: path.join(repoRoot, 'src/core/decalStamp.js'),
-  particleEmitter: path.join(repoRoot, 'src/core/ParticleEmitter.js'),
-  particleWorker: path.join(repoRoot, 'src/workers/particle_worker.js'),
-  baselineDecalStamp: path.join(here, 'baseline_decalStamp.js'),
-  baselineParticleEmitter: path.join(here, 'baseline_ParticleEmitter.js'),
-  baselineParticleWorker: path.join(here, 'baseline_particle_worker.js'),
+  decalStamp: path.join(repoRoot, 'src/util/decalStamp.js'),
+  particleEmitter: path.join(repoRoot, 'src/core/particleEmitter.js'),
+  particleWorker: path.join(repoRoot, 'src/workers/particleWorker.js'),
+  baselineDecalStamp: path.join(here, 'baselineDecalStamp.js'),
+  baselineParticleEmitter: path.join(here, 'baselineParticleEmitter.js'),
+  baselineParticleWorker: path.join(here, 'baselineParticleWorker.js'),
 };
 
 // Save baselines on first load if they don't exist yet — safe to re-run.
@@ -271,8 +271,8 @@ function D3(state) {
 function D4(state) {
   let decalStamp = replaceOnce(
     state.decalStamp,
-    `import { calculateDecalTileBounds, calculateTileClipRegion, _decalTileBounds, _tileClipRegion } from './utils.js';`,
-    `import { calculateDecalTileBounds, calculateTileClipRegion, _decalTileBounds, _tileClipRegion } from './utils.js';
+    `import { calculateDecalTileBounds, calculateTileClipRegion, _decalTileBounds, _tileClipRegion } from '../util/utils.js';`,
+    `import { calculateDecalTileBounds, calculateTileClipRegion, _decalTileBounds, _tileClipRegion } from '../util/utils.js';
 
 // D4: last-stamp bounds cache (weak — positions are usually unique per particle).
 let _lastBoundsWorldX = NaN;
@@ -418,8 +418,8 @@ export function sortHypIds(ids) {
 /**
  * Restore baselines, then fold the transforms for `ids` (sorted into
  * CANONICAL_ORDER) over the baseline source, writing the result to
- * src/core/decalStamp.js, src/core/ParticleEmitter.js and
- * src/workers/particle_worker.js.
+ * src/util/decalStamp.js, src/core/particleEmitter.js and
+ * src/workers/particleWorker.js.
  */
 // Source files are checked out CRLF (Windows) — normalize to LF for anchor
 // matching, and write patched output back as LF (restoreAll() still restores

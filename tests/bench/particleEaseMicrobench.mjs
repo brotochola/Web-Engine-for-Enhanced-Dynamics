@@ -1,15 +1,15 @@
 // L1 microbench: particle ease — prod (LUT) vs exact Math.pow vs local LUT vs cubic/quad.
 //
 // Usage:
-//   node tests/bench/particle-ease-microbench.mjs
-//   node tests/bench/particle-ease-microbench.mjs --iters 1000000 --output tests/results/particle-ease-micro.json
+//   node tests/bench/particleEaseMicrobench.mjs
+//   node tests/bench/particleEaseMicrobench.mjs --iters 1000000 --output tests/results/particle-ease-micro.json
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { PARTICLE_EASE } from '../../src/core/ConfigDefaults.js';
-import { applyParticleEase } from '../../src/core/particleTween.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
+import { applyParticleEase } from '../../src/util/particleTween.js';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 /** @param {number} t */
 function easeExpoOut(t) {

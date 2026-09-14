@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mixSeed, seededRandom } from '../../src/core/utils.js';
+import { mixSeed, seededRandom } from '../../src/util/utils.js';
 
 test('mixSeed is deterministic and splits main vs worker streams', () => {
   const seed = 123456;

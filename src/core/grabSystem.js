@@ -1,12 +1,12 @@
 // GrabSystem.js - Main-thread mouse grab for entity types that list Grab
 // One owner (one cursor). Logic workers must not run this — they partition ticks.
 
-import { Mouse } from './Mouse.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { pointInCollider } from './ColliderUtils.js';
+import { Mouse } from './mouse.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import { Collider } from '../components/collider.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { pointInCollider } from '../util/colliderUtils.js';
 
 function isExplicitStatic(i) {
   return !!(RigidBody.active && RigidBody.active[i] && RigidBody.static[i]);
@@ -53,7 +53,7 @@ export class GrabSystem {
   }
 
   /**
-   * @param {import('./Scene.js').Scene} scene
+   * @param {import('./scene.js').Scene} scene
    */
   static update(scene) {
     if (!scene) return;

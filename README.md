@@ -24,15 +24,15 @@ WeedJS brings console-style, data-oriented optimization patterns to the browser:
 
 WeedJS splits work across specialized workers. Hot frame data lives in typed arrays on `SharedArrayBuffer`; control flow and setup still use `postMessage` and `MessagePort` where that is the right browser primitive.
 
-| Worker                | Count | Primary job                                              |
-| --------------------- | ----: | -------------------------------------------------------- |
-| `spatial_worker`      |  1..N | Spatial hash rebuilds and neighbor lists                 |
+| Worker                | Count | Primary job                                                           |
+| --------------------- | ----: | --------------------------------------------------------------------- |
+| `spatial_worker`      |  1..N | Spatial hash rebuilds and neighbor lists                              |
 | `physics` (classic)   |     1 | Box2D 3.0 WASM host (`box2d_wasm` + `physics_host`), contacts, joints |
-| `logic_worker`        |  1..N | Entity `tick()`, lifecycle, collision callbacks          |
-| `particle_worker`     |     1 | Particles, bullets, decals, navigation, visibility lists |
-| `pre_render_worker`   |     1 | Animation, Y-sorting, render queue assembly              |
-| `pixi_worker`         |     1 | PixiJS rendering on `OffscreenCanvas`                    |
-| `AudioMixerProcessor` |     1 | Real-time audio mixing on an AudioWorklet thread         |
+| `logic_worker`        |  1..N | Entity `tick()`, lifecycle, collision callbacks                       |
+| `particle_worker`     |     1 | Particles, bullets, decals, navigation, visibility lists              |
+| `pre_render_worker`   |     1 | Animation, Y-sorting, render queue assembly                           |
+| `pixi_worker`         |     1 | PixiJS rendering on `OffscreenCanvas`                                 |
+| `AudioMixerProcessor` |     1 | Real-time audio mixing on an AudioWorklet thread                      |
 
 The core design rule is single-writer ownership for each shared data region. That keeps most hot paths lock-free and allocation-light while still allowing all workers to read the state they need.
 
@@ -50,6 +50,21 @@ npm run dev
 Open `http://localhost:8000/demos/`, or use the port printed by the server if `8000` is already in use.
 
 `SharedArrayBuffer` needs cross-origin isolation (COOP/COEP). Same headers unlock Box2D’s pthread pool. The included `npm run dev` server already sends them.
+
+---
+
+## Demos
+
+`npm run dev` (or the [live demo](https://multithreaded-game-engine.vercel.app/demos)) opens a scene picker; every scene runs on the same engine build, nothing is a separate app.
+
+- 🔥 **Burning Boxes** — WebGPU compute layer: a fire/smoke fluid sim (advection, buoyancy, pressure, swirls) driven straight from packed Box2D collider geometry and LiquidFun oil particles, stepped in WGSL on the GPU. [`demos/burningBoxesScene`](demos/burningBoxesScene) · [`docs/COMPUTE_LAYERS.md`](docs/COMPUTE_LAYERS.md)
+- 🌊 **LiquidFun Fluid** — six liquid tools (water, oil, cream, dulce de leche, rigid "ice" groups, elastic jelly) with distinct viscosity/tension/group flags, dynamic Box2D boxes falling into the tanks. [`demos/liquidFunDemoScene`](demos/liquidFunDemoScene) · [`docs/LIQUIDFUN.md`](docs/LIQUIDFUN.md)
+- 🧪 **LiquidFun Stress (bench)** — particle-count stress scene used by the benchmark harness.
+- 💧 **Water & Boxes** — custom-layer metaball water (additive blend + threshold shader) next to regular Box2D boxes; CPU sprite density, no LiquidFun involved.
+- 🐺 **Predators**, 🐦 **Boids**, 🐜 **Ants** — large-population entity/AI demos exercising spatial hashing and neighbor queries.
+- 🚗 **Car**, 🔗 **Constraints**, 🐷 **Bad Piggies**, 🧱 **Mamushka Dig** — Box2D joints, constraint rigs, and destructible/dig terrain.
+
+The same picker also has Adobe Animate playback, tilemap navigation, ray casting, and `QueryAABB` demos.
 
 ---
 
@@ -170,11 +185,13 @@ WeedJS is intended to be a full 2D game runtime, not just a renderer. The major 
 - **Bullets and projectile trails**: `BulletPool` and `BulletComponent` provide lightweight projectile slots, impact reporting, damage payloads, trail rendering, and visibility culling without turning every shot into a full entity.
 - **Decorations and attachments**: `DecorationPool` handles trees, rocks, props, child decorations attached to entities, sway animation, custom anchors, tint, alpha, and Y-sort ordering.
 - **Physics (Box2D 3.0)**: real Box2D 3 — the C rewrite — compiled to multithreaded WASM (SIMD + pthreads), not a JS reimplementation. Phaser games usually run Arcade or Matter on the main thread; Weed keeps the solver off-thread. Pose and velocity live on the WASM HEAP (`bindBox2dHotFields`), with sequenced contact/command rings feeding logic workers. Circles, boxes, polygons, sensors, sleeping, layers/masks/`groupIndex`, damping, friction, world `maximumLinearSpeed`, and Weed `Joint`s (`addDistance` / `addRevolute` / `addWeld`). Runtime lives under `src/box2d/`; `npm run make_bundle` embeds glue + wasm into `weed.bundle*.min.js` (no loose `dist/box2d/`). Smoke: `dist/index.html`. Details: [`src/box2d/README.md`](src/box2d/README.md), [`docs/PHYSICS.md`](docs/PHYSICS.md).
+- **Fluids (LiquidFun)**: `liquidfun-c` — a from-scratch C17 particle sidecar on Box2D 3's public C API (not Google's C++ pasted in), compiled into the same WASM as rigid bodies. Particle pose (`count`/`x`/`y`/`alpha`/`weight`) lives HEAP-bound like `Transform`, no per-frame memcpy. Water, viscous/tensile liquids, and `SOLID`/`RIGID` particle groups two-way-couple with Box2D bodies; `QueryAABB`/`RayCast` walk the particle spatial hash. Two render paths — sprite density (atlas splat) or `LAYER_DENSITY_SOURCE.LIQUID_FUN` buffer density for large counts, straight from HEAP into a metaball-style layer. Details: [`docs/LIQUIDFUN.md`](docs/LIQUIDFUN.md).
 - **Spatial hashing**: row-owned spatial workers rebuild the grid, cache entity positions, reuse neighbor results when cells have not changed, and expose nearby entities through `this.neighborCount` / `this.getNeighbor(i)`.
 - **Ray casting**: `Ray.cast`, `Ray.castWithInfo`, `Ray.castAll`, `Ray.linecast`, and line-of-sight helpers traverse the spatial grid with DDA and support collision layer masks.
 - **Point lights and shadows**: `LightEmitter`, `ShadowCaster`, `LightOccluder`, `Flash`, and `Sun` support point lights, glow sprites, temporary flashes, ambient lighting, day/night-style sun control, and shadow queues.
 - **Layers**: built-in layers handle backgrounds, decals, cast shadows, entities, and lighting. Custom layers can route entities, particles, decorations, bullets, trails, and glow sprites into separate render queues.
 - **Custom shader layers**: custom layers can define fragment shaders, uniforms, blend modes, render-target resolution, and a two-render-texture pipeline for effects like metaballs, fog, heat distortion, glow accumulation, water, and other screen-space passes.
+- **Compute layers (WebGPU)**: generic compute on a custom layer — engine packs Box2D collider geometry and live LiquidFun particle poses into GPU storage buffers, dispatches scene-declared WGSL passes (ping-pong textures, iteration, camera/zoom-gated skips), and pins the last write as the layer's look texture. No built-in fire/fluid shader ships; the engine only does the plumbing (bind-layout inference, `FrameData` UBO, panel-driven uniforms). `renderer: { backend: 'webgpu' }` opt-in per scene. Details: [`docs/COMPUTE_LAYERS.md`](docs/COMPUTE_LAYERS.md).
 - **Tilemaps**: `TileMap` loads Tiled JSON maps, stores layer data in `SharedArrayBuffer`, supports allocation-free tile queries from any worker, and renders tilemap backgrounds through the Pixi worker.
 - **Rendering**: the pre-render worker builds double-buffered render queues, Y-sorts sprites, advances animations, prepares shadows/lights, and feeds a PixiJS renderer running on `OffscreenCanvas`.
 - **Animation**: `SpriteSheetRegistry`, `AdobeAnimRegistry`, `AdobeAnimCompiler`, `SpriteRenderer`, and `AdobeAnimComponent` cover spritesheets and Adobe Animate-style exports.
@@ -246,22 +263,24 @@ npm run test:visual
 
 Start with `docs/README.md` for the full docs index.
 
-| File                           | Contents                                         |
-| ------------------------------ | ------------------------------------------------ |
-| `docs/bible_of_weed_js.md`     | Practical quick reference and engine contracts   |
-| `docs/DEVLOG.md`               | Dated project journal (stories; fill gaps)      |
-| `docs/WORKERS_ARCHITECTURE.md` | Worker roles, data flow, message protocols       |
-| `docs/MEMORY_STRUCTURE.md`     | Shared memory layout and ownership map           |
-| `docs/COMPONENT_STORAGE.md`    | Dense component storage policy                   |
-| `docs/SPATIAL_HASHING.md`      | Spatial grid and neighbor query pipeline         |
-| `docs/PHYSICS.md`              | Box2D 3.0 worker pipeline and invariants         |
-| `src/box2d/README.md`          | Nested WASM runtime, rebuild, bundle embed       |
-| `docs/LAYER_ROUTING.md`        | Render layers, backgrounds, custom layer routing |
-| `docs/PARTICLES.md`            | ParticleEmitter modes and physics vs view        |
-| `docs/FLASHES.md`              | Flash.create, castShadows, light budget          |
-| `docs/TILEMAP.md`              | SAB-backed Tiled map API                         |
-| `docs/RAYCASTING.md`           | Grid-based raycast API                           |
-| `docs/ENTITY_TEMPLATE.js`      | Copy-paste entity starter                        |
+| File                           | Contents                                                        |
+| ------------------------------ | --------------------------------------------------------------- |
+| `docs/bible_of_weed_js.md`     | Practical quick reference and engine contracts                  |
+| `docs/DEVLOG.md`               | Dated project journal (stories; fill gaps)                      |
+| `docs/WORKERS_ARCHITECTURE.md` | Worker roles, data flow, message protocols                      |
+| `docs/MEMORY_STRUCTURE.md`     | Shared memory layout and ownership map                          |
+| `docs/COMPONENT_STORAGE.md`    | Dense component storage policy                                  |
+| `docs/SPATIAL_HASHING.md`      | Spatial grid and neighbor query pipeline                        |
+| `docs/PHYSICS.md`              | Box2D 3.0 worker pipeline and invariants                        |
+| `docs/LIQUIDFUN.md`            | liquidfun-c fluids, HEAP-bound particle pose, body coupling     |
+| `src/box2d/README.md`          | Nested WASM runtime, rebuild, bundle embed                      |
+| `docs/LAYER_ROUTING.md`        | Render layers, backgrounds, custom layer routing                |
+| `docs/COMPUTE_LAYERS.md`       | WebGPU compute layers, Box2D/LiquidFun GPU packing, WGSL passes |
+| `docs/PARTICLES.md`            | ParticleEmitter modes and physics vs view                       |
+| `docs/FLASHES.md`              | Flash.create, castShadows, light budget                         |
+| `docs/TILEMAP.md`              | SAB-backed Tiled map API                                        |
+| `docs/RAYCASTING.md`           | Grid-based raycast API                                          |
+| `docs/ENTITY_TEMPLATE.js`      | Copy-paste entity starter                                       |
 
 ---
 

@@ -1,5 +1,5 @@
 // ESM facade over box2dQueryAabb.impl.js (one logic source for importScripts + import).
-import './box2dQueryAabb.impl.js';
+import './box2dQueryAabbImpl.js';
 
 const R = globalThis.Box2dQueryAabb;
 

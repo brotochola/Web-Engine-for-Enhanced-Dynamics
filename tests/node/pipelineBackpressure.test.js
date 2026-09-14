@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const weedjsPost = readFileSync(join(root, 'src/box2d/weedjs_post.js'), 'utf8');
+const weedjsPost = readFileSync(join(root, 'src/box2d/weedjsPost.js'), 'utf8');
 
 /** Same predicate as posePublishBlocked. */
 function publishBlocked(published, consumed) {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { releasePixiBindGroupsOnResource } from '../../src/workers/releasePixiBindGroups.js';
+import { releasePixiBindGroupsOnResource } from '../../src/render/releasePixiBindGroups.js';
 
 test('releasePixiBindGroupsOnResource destroys BindGroup contexts on ~change', () => {
   let destroyed = 0;

@@ -17,7 +17,7 @@ import {
   popFreeIndex,
   pushFreeIndex,
   getFreeListCount,
-} from './atomicFreeList.js';
+} from '../util/atomicFreeList.js';
 
 /**
  * Base class for atomic object pools backed by SharedArrayBuffer.

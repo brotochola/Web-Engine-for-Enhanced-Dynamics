@@ -14,10 +14,10 @@ import {
   Buffer,
   BufferUsage,
   State,
-} from '../lib/pixi_8.16_.min.js';
-import { packLiquidFunLightSlabs } from '../core/liquidFunLightSplat.js';
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { snapshotParticleFeed } from '../core/layerFeed.js';
+} from '../vendor/pixi.min.js';
+import { packLiquidFunLightSlabs } from './liquidFunLightSplat.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { snapshotParticleFeed } from '../util/layerFeed.js';
 
 export const LF_SPLAT_FLOATS = 4;
 export const LF_SPLAT_STRIDE = LF_SPLAT_FLOATS * 4;

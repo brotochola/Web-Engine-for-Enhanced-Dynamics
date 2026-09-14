@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { STATE_CHANNELS, STATE_CHANNEL_COUNT } from '../../src/box2d/box2dConstants.js';
 import { bindBox2dHotFields } from '../../src/box2d/box2dHotFields.js';
-import { Transform } from '../../src/components/Transform.js';
+import { Transform } from '../../src/components/transform.js';
 
 test('STATE_CHANNELS includes ROT_C / ROT_S as channels 6 and 7', () => {
   assert.equal(STATE_CHANNEL_COUNT, 8);

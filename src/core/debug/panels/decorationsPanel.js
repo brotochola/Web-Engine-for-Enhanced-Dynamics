@@ -1,9 +1,9 @@
 // DecorationsPanel.js — Decoration pool counts (total, active, visible, sprites)
 
-import { createPanel, createRow, createStat, createDivider } from '../ui/DebugDOM.js';
-import { formatNumber } from '../../utils.js';
-import { DecorationPool } from '../../DecorationPool.js';
-import { RENDERER_STATS } from '../stats/StatsCollector.js';
+import { createPanel, createRow, createStat, createDivider } from '../ui/debugDom.js';
+import { formatNumber } from '../../../util/utils.js';
+import { DecorationPool } from '../../decorationPool.js';
+import { RENDERER_STATS } from '../stats/statsCollector.js';
 
 export class DecorationsPanel {
   constructor(debugUI) {

@@ -7,10 +7,10 @@ import {
   liquidFunRayCast,
   liquidFunRayCastAsync,
 } from '../box2d/liquidFunQuery.js';
-import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { bindLiquidFunGroups, LIQUIDFUN_GROUPS_MAX } from './liquidFunGroups.js';
-import { bindLiquidFunRender } from './liquidFunRender.js';
-import { Layer } from './Layer.js';
+import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { bindLiquidFunGroups, LIQUIDFUN_GROUPS_MAX } from '../util/liquidFunGroups.js';
+import { bindLiquidFunRender } from '../render/liquidFunRender.js';
+import { Layer } from './layer.js';
 
 // Bits match liquidfun-c lfParticleFlag (not Google LiquidFun's extra listener bits).
 export const LIQUIDFUN_FLAGS = Object.freeze({

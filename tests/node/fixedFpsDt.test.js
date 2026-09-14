@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const abstractWorker = readFileSync(join(root, 'src/workers/AbstractWorker.js'), 'utf8');
+const abstractWorker = readFileSync(join(root, 'src/workers/abstractWorker.js'), 'utf8');
 
 test('pixi blob workers resolve engine shaders against pageOrigin', () => {
-  const pixi = readFileSync(join(root, 'src/workers/pixi_worker.js'), 'utf8');
-  const bootstrap = readFileSync(join(root, 'src/core/sceneWorkerBootstrap.js'), 'utf8');
+  const pixi = readFileSync(join(root, 'src/workers/pixiWorker.js'), 'utf8');
+  const bootstrap = readFileSync(join(root, 'src/util/sceneWorkerBootstrap.js'), 'utf8');
   assert.match(pixi, /self\.__weedPageOrigin/);
   assert.match(abstractWorker, /self\.__weedPageOrigin = e\.data\.pageOrigin/);
   assert.match(bootstrap, /pageOrigin:/);

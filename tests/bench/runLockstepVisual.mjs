@@ -84,7 +84,7 @@ function sceneUrl(port, spec, { bundle, stepsOverride }) {
     q.set('centerY', String(spec.centerY));
   }
   if (bundle) q.set('bundle', '1');
-  return `http://127.0.0.1:${port}/tests/bench/lockstep-visual.html?${q}`;
+  return `http://127.0.0.1:${port}/tests/bench/lockstepVisual.html?${q}`;
 }
 
 async function runScene(browser, url) {

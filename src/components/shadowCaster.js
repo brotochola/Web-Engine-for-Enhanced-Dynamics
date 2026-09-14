@@ -2,7 +2,7 @@
 // Shadow pixels are written to the double-buffered shadow render queue (not this SoA).
 // Entity SoA only stores which entities cast shadows and how tall/anchored they are.
 
-import { Component } from '../core/Component.js';
+import { Component } from '../core/component.js';
 
 export class ShadowCaster extends Component {
   static ARRAY_SCHEMA = {

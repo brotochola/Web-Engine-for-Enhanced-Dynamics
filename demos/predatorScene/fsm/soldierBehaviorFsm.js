@@ -2,10 +2,10 @@
 // States: IDLE, GOING_TO_DESTINATION, GOING_TO_ENEMY, CLOSE_ATTACKING, RANGED_ATTACKING
 
 import WEED from '/src/index.js';
-import { SHOOT_DURATION_MS, WALK_SPEED_THRESHOLD } from './personAnimationFSM.js';
+import { SHOOT_DURATION_MS, WALK_SPEED_THRESHOLD } from './personAnimationFsm.js';
 import { Civilian } from '../gameObjects/civilian.js';
 import { Destination } from '../gameObjects/destination.js';
-import { NavGrid } from '/src/core/NavGrid.js';
+import { NavGrid } from '/src/core/navGrid.js';
 import { PersonComponent, DIRECTION_NAMES } from '../components/personComponent.js';
 
 import { LootableComponent } from '../components/lootableComponent.js';

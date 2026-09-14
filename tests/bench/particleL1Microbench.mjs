@@ -5,8 +5,8 @@
 // single-microRunner contract (see decal/ray tournaments) still applies with two L1 sources.
 //
 // Usage:
-//   node tests/bench/particle-l1-microbench.mjs --output tests/results/particle-l1.json
-//   node tests/bench/particle-l1-microbench.mjs --particles 4096 --bursts 2000 --steps 3000 --output out.json
+//   node tests/bench/particleL1Microbench.mjs --output tests/results/particle-l1.json
+//   node tests/bench/particleL1Microbench.mjs --particles 4096 --bursts 2000 --steps 3000 --output out.json
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -70,8 +70,8 @@ function runMicro(scriptName, allowedFlags) {
   }
 }
 
-const emitReport = runMicro('particle-emit-microbench.mjs', ['particles', 'bursts', 'burst-size', 'seed']);
-const integrateReport = runMicro('particle-integrate-microbench.mjs', ['particles', 'steps', 'seed']);
+const emitReport = runMicro('particleEmitMicrobench.mjs', ['particles', 'bursts', 'burst-size', 'seed']);
+const integrateReport = runMicro('particleIntegrateMicrobench.mjs', ['particles', 'steps', 'seed']);
 
 const cases = {};
 for (const [key, val] of Object.entries(emitReport.cases || {})) {

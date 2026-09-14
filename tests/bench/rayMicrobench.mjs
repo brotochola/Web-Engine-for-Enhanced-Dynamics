@@ -7,15 +7,15 @@
 //   2. Times cast / linecast / castAll / hasLineOfSight / mask variants.
 //
 // Usage:
-//   node tests/bench/ray-microbench.mjs
-//   node tests/bench/ray-microbench.mjs --entities 2000 --rays 200000 --cell-size 128 --seed 12648430 --output tests/results/ray-micro.json
+//   node tests/bench/rayMicrobench.mjs
+//   node tests/bench/rayMicrobench.mjs --entities 2000 --rays 200000 --cell-size 128 --seed 12648430 --output tests/results/ray-micro.json
 
-import { Ray } from '../../src/core/Ray.js';
-import { Grid } from '../../src/core/Grid.js';
-import { Transform } from '../../src/components/Transform.js';
-import { Collider } from '../../src/components/Collider.js';
-import { rayCircleIntersect, rayBoxIntersect } from '../../src/core/utils.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { Ray } from '../../src/core/ray.js';
+import { Grid } from '../../src/core/grid.js';
+import { Transform } from '../../src/components/transform.js';
+import { Collider } from '../../src/components/collider.js';
+import { rayCircleIntersect, rayBoxIntersect } from '../../src/util/utils.js';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
 const WORLD_W = 4000;

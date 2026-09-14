@@ -1,9 +1,9 @@
 /**
  * Pack LiquidFun HEAP + CPU ParticleEmitter poses into the GPU particles SSBO.
  */
-import { LiquidFun } from '../core/LiquidFun.js';
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { snapshotParticleFeed } from '../core/layerFeed.js';
+import { LiquidFun } from '../core/liquidFun.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { snapshotParticleFeed } from '../util/layerFeed.js';
 
 export const PARTICLE_FLOATS = 4;
 export const PARTICLE_STRIDE_BYTES = PARTICLE_FLOATS * 4;

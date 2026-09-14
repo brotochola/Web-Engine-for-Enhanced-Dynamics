@@ -1,8 +1,8 @@
 import WEED from '/src/index.js';
 
-import { SpriteRenderer } from '/src/components/SpriteRenderer.js';
-import { Collider } from '/src/components/Collider.js';
-import { CollisionListener } from '/src/components/CollisionListener.js';
+import { SpriteRenderer } from '/src/components/spriteRenderer.js';
+import { Collider } from '/src/components/collider.js';
+import { CollisionListener } from '/src/components/collisionListener.js';
 import { MySoldier } from './mySoldier.js';
 
 const { GameObject, Transform } = WEED;

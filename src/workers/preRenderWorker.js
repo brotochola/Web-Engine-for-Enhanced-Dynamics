@@ -2,28 +2,28 @@
 // Handles all visual calculations AFTER physics, BEFORE pixi_worker renders
 // This worker is purely visual - no physics or game logic
 
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { DecorationComponent } from '../components/DecorationComponent.js';
-import { BulletComponent } from '../components/BulletComponent.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
-import { LightEmitter } from '../components/LightEmitter.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
-import { ShadowCaster } from '../components/ShadowCaster.js';
-import { FlashComponent } from '../components/FlashComponent.js';
-import { LightOccluder } from '../components/LightOccluder.js';
-import { AbstractWorker } from './AbstractWorker.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
+import { BulletComponent } from '../components/bulletComponent.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import { Collider } from '../components/collider.js';
+import { LightEmitter } from '../components/lightEmitter.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
+import { ShadowCaster } from '../components/shadowCaster.js';
+import { FlashComponent } from '../components/flashComponent.js';
+import { LightOccluder } from '../components/lightOccluder.js';
+import { AbstractWorker } from './abstractWorker.js';
 import {
     buildVisibilityPolygon,
     OCC_CIRCLE,
     OCC_POLY,
     writeOrientedBoxVerts,
     writePolygonVerts,
-} from './visibility/AngularSweep.js';
-import { Grid } from '../core/Grid.js';
-import { Sun } from '../core/Sun.js';
+} from '../render/visibility/angularSweep.js';
+import { Grid } from '../core/grid.js';
+import { Sun } from '../core/sun.js';
 import {
     calculateCameraScreenBounds,
     screenBoundsToWorldBounds,
@@ -31,8 +31,8 @@ import {
     lightInfluenceRadius,
     lightCookieScale,
     lightGlowScale,
-} from '../core/utils.js';
-import { PRE_RENDER_STATS, createStatsWriter } from './workers-utils.js';
+} from '../util/utils.js';
+import { PRE_RENDER_STATS, createStatsWriter } from '../util/workersUtils.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -42,13 +42,13 @@ import {
     ShapeType,
     MAX_POLYGON_VERTICES,
     SPRITE_TILE_MODE,
-} from '../core/ConfigDefaults.js';
-import { Layer } from '../core/Layer.js';
-import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../core/RenderQueueLayout.js';
-import { bindLiquidFunRender } from '../core/liquidFunRender.js';
-import { LiquidFun } from '../core/LiquidFun.js';
-import { DECORATION_NO_PARENT } from '../core/DecorationPool.js';
-import { AdobeAnimRegistry } from '../core/AdobeAnimRegistry.js';
+} from '../util/configDefaults.js';
+import { Layer } from '../core/layer.js';
+import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
+import { bindLiquidFunRender } from '../render/liquidFunRender.js';
+import { LiquidFun } from '../core/liquidFun.js';
+import { DECORATION_NO_PARENT } from '../core/decorationPool.js';
+import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 const INVALID_TEXTURE_ID = 0xFFFF;
 const TILE_MODE_LOCAL = SPRITE_TILE_MODE.LOCAL;
 

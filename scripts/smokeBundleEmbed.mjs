@@ -5,11 +5,11 @@ import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
-import { BUNDLE_ARTIFACTS, extractImportScriptNames } from './build-bundle.js';
+import { BUNDLE_ARTIFACTS, extractImportScriptNames } from './buildBundle.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
-const weedPost = fs.readFileSync(path.join(root, 'src', 'box2d', 'weedjs_post.js'), 'utf8');
+const weedPost = fs.readFileSync(path.join(root, 'src', 'box2d', 'weedjsPost.js'), 'utf8');
 const siblingNames = extractImportScriptNames(weedPost);
 
 function assert(cond, msg) {
@@ -77,8 +77,8 @@ if (missing.length) {
   );
 }
 
-assert(siblingNames.includes('box2dRayCast.impl.js'), 'weedjs_post missing box2dRayCast.impl.js');
-assert(siblingNames.includes('liquidFunQuery.impl.js'), 'weedjs_post missing liquidFunQuery.impl.js');
+assert(siblingNames.includes('box2dRayCastImpl.js'), 'weedjs_post missing box2dRayCast.impl.js');
+assert(siblingNames.includes('liquidFunQueryImpl.js'), 'weedjs_post missing liquidFunQuery.impl.js');
 
 for (const name of BUNDLE_ARTIFACTS) {
   const filePath = path.join(dist, name);

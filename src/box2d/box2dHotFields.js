@@ -3,10 +3,10 @@
 // after box2dReady. Logic constructs GameObjects only after this bind.
 // Units: px, px/s, rad, rad/s (Box2D native).
 
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
 import { STATE_CHANNELS } from './box2dConstants.js';
-import { setRotCSFromAngle } from '../core/utils.js';
+import { setRotCSFromAngle } from '../util/utils.js';
 
 export { STATE_CHANNELS };
 

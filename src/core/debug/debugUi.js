@@ -4,23 +4,23 @@
 // Static draw API (DebugUI.drawLine, etc.) delegates to DebugDraw so game scripts
 // can call DebugUI.drawLine(...) from any worker or the main thread.
 
-import { injectStyles, createTab } from './ui/DebugDOM.js';
-import { StatsCollector } from './stats/StatsCollector.js';
-import { DebugCanvas } from './rendering/DebugCanvas.js';
-import { ToolManager } from './tools/ToolManager.js';
-import { DebugDraw } from './DebugDraw.js';
-import { DEBUG_DEFAULTS } from '../ConfigDefaults.js';
+import { injectStyles, createTab } from './ui/debugDom.js';
+import { StatsCollector } from './stats/statsCollector.js';
+import { DebugCanvas } from './rendering/debugCanvas.js';
+import { ToolManager } from './tools/toolManager.js';
+import { DebugDraw } from './debugDraw.js';
+import { DEBUG_DEFAULTS } from '../../util/configDefaults.js';
 
 // Panels
-import { ScenePanel } from './panels/ScenePanel.js';
-import { PerformancePanel } from './panels/PerformancePanel.js';
-import { VisualAidsPanel } from './panels/VisualAidsPanel.js';
-import { EntitiesPanel } from './panels/EntitiesPanel.js';
-import { DecorationsPanel } from './panels/DecorationsPanel.js';
-import { LayersPanel } from './panels/LayersPanel.js';
-import { NavigationPanel } from './panels/NavigationPanel.js';
-import { MemoryPanel } from './panels/MemoryPanel.js';
-import { SavesPanel } from './panels/SavesPanel.js';
+import { ScenePanel } from './panels/scenePanel.js';
+import { PerformancePanel } from './panels/performancePanel.js';
+import { VisualAidsPanel } from './panels/visualAidsPanel.js';
+import { EntitiesPanel } from './panels/entitiesPanel.js';
+import { DecorationsPanel } from './panels/decorationsPanel.js';
+import { LayersPanel } from './panels/layersPanel.js';
+import { NavigationPanel } from './panels/navigationPanel.js';
+import { MemoryPanel } from './panels/memoryPanel.js';
+import { SavesPanel } from './panels/savesPanel.js';
 
 /**
  * DebugUI — Self-contained debug overlay managed by GameEngine.

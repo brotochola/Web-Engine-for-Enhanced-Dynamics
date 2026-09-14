@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const scene = readFileSync(join(root, 'src/core/Scene.js'), 'utf8');
-const abstractWorker = readFileSync(join(root, 'src/workers/AbstractWorker.js'), 'utf8');
-const physicsHost = readFileSync(join(root, 'src/box2d/physics_host.impl.js'), 'utf8');
-const pixi = readFileSync(join(root, 'src/workers/pixi_worker.js'), 'utf8');
-const defaults = readFileSync(join(root, 'src/core/ConfigDefaults.js'), 'utf8');
+const scene = readFileSync(join(root, 'src/core/scene.js'), 'utf8');
+const abstractWorker = readFileSync(join(root, 'src/workers/abstractWorker.js'), 'utf8');
+const physicsHost = readFileSync(join(root, 'src/box2d/physicsHostImpl.js'), 'utf8');
+const pixi = readFileSync(join(root, 'src/workers/pixiWorker.js'), 'utf8');
+const defaults = readFileSync(join(root, 'src/util/configDefaults.js'), 'utf8');
 
 test('SCENE_DEFAULTS.manualStep is false', () => {
   assert.match(defaults, /manualStep: false/);

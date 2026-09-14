@@ -1,6 +1,6 @@
 // ScenePanel.js — Scene switching and play/pause controls
 
-import { createPanel, createRow, createStat, createButton } from '../ui/DebugDOM.js';
+import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
 
 export class ScenePanel {
   constructor(debugUI) {

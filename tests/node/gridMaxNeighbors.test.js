@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Grid } from '../../src/core/Grid.js';
-import { SPATIAL_DEFAULTS } from '../../src/core/ConfigDefaults.js';
+import { Grid } from '../../src/core/grid.js';
+import { SPATIAL_DEFAULTS } from '../../src/util/configDefaults.js';
 
 function restoreGrid(snapshot) {
   Grid.maxNeighbors = snapshot.maxNeighbors;

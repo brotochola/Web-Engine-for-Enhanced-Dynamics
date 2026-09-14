@@ -6,7 +6,7 @@ const { GameObject, ParticleEmitter } = WEED;
 // stays airborne (falling under gravity) for most of the measurement window,
 // stressing PARTICLE_PHYSICS_MS / BUILD_ACTIVE_VISIBLE_MS / ACTIVE_PARTICLES.
 // NOTE: ParticleEmitter._spawn treats `gravity` as a plain scalar (cfg.gravity ?? 0.15,
-// see src/core/ParticleEmitter.js), NOT a {min,max} range like x/y/z/vx/vy/vz/lifespan/scale.
+// see src/core/particleEmitter.js), NOT a {min,max} range like x/y/z/vx/vy/vz/lifespan/scale.
 const INITIAL_BURST = 15000;
 const TOPUP_PER_TICK = 150;
 const GRAVITY = 0.08;

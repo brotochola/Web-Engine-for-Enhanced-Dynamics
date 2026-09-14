@@ -5,7 +5,7 @@ import {
   DebugFlags,
   DEBUG_FLAGS,
   DEBUG_SELECTED_ENTITY_OFFSET,
-} from '../../src/core/debug/DebugFlags.js';
+} from '../../src/core/debug/debugFlags.js';
 
 test('selected entity storage does not alias joint and origin flags', () => {
   const debugBuffer = new SharedArrayBuffer(32);

@@ -3,10 +3,10 @@
 // Position and rotation are stored in Transform component
 // Units (Box2D): vx/vy px/s, ax/ay px/s², angularVelocity rad/s
 
-import { Component } from '../core/Component.js';
-import { Collider } from './Collider.js';
-import { updateMassFromCircle, updateMassFromBox } from '../core/utils.js';
-import { ShapeType } from '../core/ConfigDefaults.js';
+import { Component } from '../core/component.js';
+import { Collider } from './collider.js';
+import { updateMassFromCircle, updateMassFromBox } from '../util/utils.js';
+import { ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 
 export class RigidBody extends Component {

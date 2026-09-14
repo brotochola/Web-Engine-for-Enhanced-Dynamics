@@ -1,7 +1,7 @@
 // MemoryPanel.js — Scene SharedArrayBuffer usage + WASM HEAP / JS heap
 
-import { createPanel, createStat } from '../ui/DebugDOM.js';
-import { formatBytes } from '../../sceneBufferMemory.js';
+import { createPanel, createStat } from '../ui/debugDom.js';
+import { formatBytes } from '../../../util/sceneBufferMemory.js';
 
 const TOP_BUFFERS = 12;
 const TOP_WASTE = 8;

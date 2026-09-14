@@ -5,9 +5,9 @@ import {
   packTileOffset01,
   unpackTileOffset01,
   bakeLocalOffsetFromWorld,
-} from '../../src/components/SpriteRenderer.js';
-import { SPRITE_TILE_MODE } from '../../src/core/ConfigDefaults.js';
-import { computeBufferSize, createViews } from '../../src/core/RenderQueueLayout.js';
+} from '../../src/components/spriteRenderer.js';
+import { SPRITE_TILE_MODE } from '../../src/util/configDefaults.js';
+import { computeBufferSize, createViews } from '../../src/render/renderQueueLayout.js';
 
 function glFract(x) {
   return x - Math.floor(x);

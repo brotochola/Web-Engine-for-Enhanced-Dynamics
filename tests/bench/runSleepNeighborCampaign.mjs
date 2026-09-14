@@ -2,9 +2,9 @@
 /**
  * Sleep-neighborhood neighbor hypothesis campaign.
  *
- *   node tests/bench/run-sleep-neighbor-campaign.mjs
- *   node tests/bench/run-sleep-neighbor-campaign.mjs --only S0,S2,S5
- *   node tests/bench/run-sleep-neighbor-campaign.mjs --dry-apply
+ *   node tests/bench/runSleepNeighborCampaign.mjs
+ *   node tests/bench/runSleepNeighborCampaign.mjs --only S0,S2,S5
+ *   node tests/bench/runSleepNeighborCampaign.mjs --dry-apply
  */
 
 import { execFileSync } from 'node:child_process';
@@ -12,12 +12,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { HYPS, applyHyp, restoreAll, PATHS } from './sleep-neighbor-hyps/sleepHypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests/results/sleep-neighbor-hyps');
 const summaryPath = path.join(outDir, 'campaign-summary.json');
 

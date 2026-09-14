@@ -2,11 +2,11 @@
 /**
  * Decal hyp tournament: Round1 singles → Round2 pairs → Round3 stacks → champion.
  *
- *   node tests/bench/run-decal-hyp-tournament.mjs --round all
- *   node tests/bench/run-decal-hyp-tournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
- *   node tests/bench/run-decal-hyp-tournament.mjs --round 2
- *   node tests/bench/run-decal-hyp-tournament.mjs --round 3
- *   node tests/bench/run-decal-hyp-tournament.mjs --dry-apply
+ *   node tests/bench/runDecalHypTournament.mjs --round all
+ *   node tests/bench/runDecalHypTournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
+ *   node tests/bench/runDecalHypTournament.mjs --round 2
+ *   node tests/bench/runDecalHypTournament.mjs --round 3
+ *   node tests/bench/runDecalHypTournament.mjs --dry-apply
  */
 
 import { execFileSync } from 'node:child_process';
@@ -23,16 +23,16 @@ import {
   pairsOf,
   tagFromIds,
   sortHypIds,
-} from './feature-tournament-lib.mjs';
+} from './featureTournamentLib.mjs';
 import { applyCombo, applyHyp, restoreAll, PATHS, CANONICAL_ORDER, HYPS } from './decal-hyps/hypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)), '..');
-const integratedRunner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
-const microRunner = path.join(repoRoot, 'tests/bench/decal-microbench.mjs');
+const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
+const microRunner = path.join(repoRoot, 'tests/bench/decalMicrobench.mjs');
 const outDir = path.join(repoRoot, 'tests/results/decal-hyps/tournament');
 
 const SCENES_ALL = [
-  { key: 'decalStress', scene: '/tests/bench/stressScenes/DecalStampStressScene.js', exportName: 'DecalStampStressScene' },
+  { key: 'decalStress', scene: '/tests/bench/stressScenes/decalStampStressScene.js', exportName: 'DecalStampStressScene' },
   { key: 'zenithal', scene: '/demos/zenithalParticleTestScene/zenithalParticleTestScene.js', exportName: 'ZenithalParticleTestScene' },
 ];
 

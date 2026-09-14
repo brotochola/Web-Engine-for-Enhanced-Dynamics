@@ -1,9 +1,9 @@
 // LayersPanel.js — Per-layer controls (visible, alpha, blend, shader, uniforms, y-sort, z-index)
 
-import { createPanel } from '../ui/DebugDOM.js';
-import { FloatingPanel } from '../ui/FloatingPanel.js';
-import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE } from '../../ConfigDefaults.js';
-import { Layer, RESERVED_LOOK_UNIFORMS } from '../../Layer.js';
+import { createPanel } from '../ui/debugDom.js';
+import { FloatingPanel } from '../ui/floatingPanel.js';
+import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE } from '../../../util/configDefaults.js';
+import { Layer, RESERVED_LOOK_UNIFORMS } from '../../layer.js';
 
 function computeSizeLabel(meta) {
   const size = meta?.compute?.size;

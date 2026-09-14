@@ -1,7 +1,7 @@
 // PersonComponent.js - Data for person entities
 // Tracks team behavior, grouping, separation, and facing direction
 
-import { Component } from '/src/core/Component.js';
+import { Component } from '/src/core/component.js';
 
 // Direction constants (matches getDirectionFromAngle output)
 export const DIRECTION_UP = 0;

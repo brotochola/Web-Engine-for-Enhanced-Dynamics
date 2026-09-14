@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { packLiquidFunLightSlabs, LF_LIGHT_SPLAT_FLOATS } from '../../src/core/liquidFunLightSplat.js';
-import { lightInfluenceRadius } from '../../src/core/utils.js';
+import { packLiquidFunLightSlabs, LF_LIGHT_SPLAT_FLOATS } from '../../src/render/liquidFunLightSplat.js';
+import { lightInfluenceRadius } from '../../src/util/utils.js';
 
 function makeViews(n) {
   return {

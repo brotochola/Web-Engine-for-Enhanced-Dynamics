@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { chromium } from 'playwright';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
 import {
   DEFAULT_DURATION_MS,
@@ -172,7 +172,7 @@ async function main() {
   const server = await createStaticBenchmarkServer(repoRoot);
   const srcModules = Boolean(cliArgs.src);
   const benchmarkUrl =
-    `http://127.0.0.1:${server.port}/tests/bench/integrated-worker-benchmark.html` +
+    `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html` +
     (srcModules ? '?src=1' : '');
   if (srcModules) {
     console.log('Benchmark: live /src modules (not dist bundle).');
@@ -186,7 +186,7 @@ async function main() {
     console.warn(
       'Benchmark: headless Chromium (no window). For a visible browser and demo-parity FPS, run:\n' +
         '  pnpm test:bench:headed\n' +
-        '  or: node tests/bench/run-integrated-worker-benchmark.mjs --headed\n'
+        '  or: node tests/bench/runIntegratedWorkerBenchmark.mjs --headed\n'
     );
   }
 

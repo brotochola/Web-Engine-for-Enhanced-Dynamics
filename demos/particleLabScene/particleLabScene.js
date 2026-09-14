@@ -1,7 +1,7 @@
 // particleLabScene.js — ParticleEmitter playground: presets + sliders + click/spray
 
 import WEED from '/src/index.js';
-import { PARTICLE_EASE } from '/src/core/ConfigDefaults.js';
+import { PARTICLE_EASE } from '/src/util/configDefaults.js';
 import {
   PARTICLE_LAB_PRESETS,
   PARTICLE_LAB_PRESET_ORDER,

@@ -341,7 +341,7 @@ function postRun() {
 var wasmBinaryFile;
 
 function findWasmBinary() {
-  return locateFile("box2d_wasm.wasm");
+  return locateFile("box2dWasm.wasm");
 }
 
 function getBinarySync(file) {
@@ -1707,6 +1707,6 @@ if ((!(ENVIRONMENT_IS_PTHREAD))) {
     console.log("[physics] pthread worker — skip app glue");
     return;
   }
-  importScripts("weedjs_post.js");
-  importScripts("physics_host.impl.js");
+  importScripts("weedjsPost.js");
+  importScripts("physicsHostImpl.js");
 })();

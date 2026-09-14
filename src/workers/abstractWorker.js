@@ -2,17 +2,17 @@
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
 import { GameObject, SpriteSheetRegistry } from '../core/gameObject.js';
-import { AdobeAnimRegistry } from '../core/AdobeAnimRegistry.js';
-import Keyboard from '../core/Keyboard.js';
-import { Mouse } from '../core/Mouse.js';
-import { Gamepad } from '../core/Gamepad.js';
-import { ParticleEmitter } from '../core/ParticleEmitter.js';
-import { DecorationPool } from '../core/DecorationPool.js';
-import { DecorationSpatial } from '../core/DecorationSpatial.js';
-import { Decoration } from '../core/Decoration.js';
-import { BulletPool } from '../core/BulletPool.js';
-import { BulletComponent } from '../components/BulletComponent.js';
-import { Flash } from '../core/Flash.js';
+import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
+import Keyboard from '../core/keyboard.js';
+import { Mouse } from '../core/mouse.js';
+import { Gamepad } from '../core/gamepad.js';
+import { ParticleEmitter } from '../core/particleEmitter.js';
+import { DecorationPool } from '../core/decorationPool.js';
+import { DecorationSpatial } from '../core/decorationSpatial.js';
+import { Decoration } from '../core/decoration.js';
+import { BulletPool } from '../core/bulletPool.js';
+import { BulletComponent } from '../components/bulletComponent.js';
+import { Flash } from '../core/flash.js';
 import {
   seededRandom,
   loadEntityScripts,
@@ -26,23 +26,23 @@ import {
   getDirectionFromVector,
   getDirection8FromVector,
   containerRadius,
-} from '../core/utils.js';
-import { Camera } from '../core/Camera.js';
-import { Sun } from '../core/Sun.js';
-import { Layer } from '../core/Layer.js';
-import { TileMap } from '../core/TileMap.js';
-import { Ray } from '../core/Ray.js';
-import { LiquidFun } from '../core/LiquidFun.js';
+} from '../util/utils.js';
+import { Camera } from '../core/camera.js';
+import { Sun } from '../core/sun.js';
+import { Layer } from '../core/layer.js';
+import { TileMap } from '../core/tileMap.js';
+import { Ray } from '../core/ray.js';
+import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
-import { SceneBridge } from '../core/SceneBridge.js';
-import { DebugDraw } from '../core/debug/DebugDraw.js';
-import { Grid } from '../core/Grid.js';
-import { NavGrid } from '../core/NavGrid.js';
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { DecorationComponent } from '../components/DecorationComponent.js';
-import { Joint } from '../core/Joint.js';
-import { SoundManager } from '../core/SoundManager.js';
-import { createWorkerQueryFunctions } from '../core/QuerySystem.js';
+import { SceneBridge } from '../core/sceneBridge.js';
+import { DebugDraw } from '../core/debug/debugDraw.js';
+import { Grid } from '../core/grid.js';
+import { NavGrid } from '../core/navGrid.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
+import { Joint } from '../core/joint.js';
+import { SoundManager } from '../core/soundManager.js';
+import { createWorkerQueryFunctions } from '../core/querySystem.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
@@ -51,23 +51,23 @@ import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { bindBodySyncBuffers } from '../box2d/box2dBodySync.js';
 
-import { Component } from '../core/Component.js';
-import { FSM } from '../core/FSM.js';
-import { FSMState } from '../core/FSMState.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
-import { LightEmitter } from '../components/LightEmitter.js';
-import { ShadowCaster } from '../components/ShadowCaster.js';
-import { FlashComponent } from '../components/FlashComponent.js';
-import { LightOccluder } from '../components/LightOccluder.js';
-import { CameraInOutListener } from '../components/CameraInOutListener.js';
-import { CollisionListener } from '../components/CollisionListener.js';
-import { JointBreakListener } from '../components/JointBreakListener.js';
-import { Grab } from '../components/Grab.js';
-import { ShapeType } from '../core/ConfigDefaults.js';
+import { Component } from '../core/component.js';
+import { FSM } from '../core/fsm.js';
+import { FSMState } from '../core/fsmState.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import { Collider } from '../components/collider.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
+import { LightEmitter } from '../components/lightEmitter.js';
+import { ShadowCaster } from '../components/shadowCaster.js';
+import { FlashComponent } from '../components/flashComponent.js';
+import { LightOccluder } from '../components/lightOccluder.js';
+import { CameraInOutListener } from '../components/cameraInOutListener.js';
+import { CollisionListener } from '../components/collisionListener.js';
+import { JointBreakListener } from '../components/jointBreakListener.js';
+import { Grab } from '../components/grab.js';
+import { ShapeType } from '../util/configDefaults.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers

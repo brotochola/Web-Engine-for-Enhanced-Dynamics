@@ -40,18 +40,18 @@
 // The helper syntax resolves to the frame name automatically.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { SharedAtomicPool } from './SharedAtomicPool.js';
-import { CAMERA_TYPES, PARTICLE_EASE } from './ConfigDefaults.js';
-import { randomRange, randomColor, rng } from './utils.js';
-import { Layer } from './Layer.js';
-import { syncParticleFeed } from './layerFeed.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { SharedAtomicPool } from './sharedAtomicPool.js';
+import { CAMERA_TYPES, PARTICLE_EASE } from '../util/configDefaults.js';
+import { randomRange, randomColor, rng } from '../util/utils.js';
+import { Layer } from './layer.js';
+import { syncParticleFeed } from '../util/layerFeed.js';
 import {
   PARTICLE_TWEEN,
   resolveParticleOp,
   resolveParticleColorOp,
-} from './particleTween.js';
+} from '../util/particleTween.js';
 export const DECAL_STAMPS_BLEND_MODE = Object.freeze({
   normal: 0,
   multiply: 1,

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Layer } from '../../src/core/Layer.js';
-import { LAYER_DENSITY_SOURCE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../../src/core/ConfigDefaults.js';
+import { Layer } from '../../src/core/layer.js';
+import { LAYER_DENSITY_SOURCE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../../src/util/configDefaults.js';
 
 const BUILT_IN_LAYERS = {
   BACKGROUND: {},

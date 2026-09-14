@@ -1,10 +1,10 @@
 // particle_worker.js - Dedicated worker for particle physics, navigation, and derived properties
 // Handles: particle physics, blood decals, decoration sway, flowfields, A*, walkability, derived properties
 
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { ParticleEmitter } from '../core/ParticleEmitter.js';
-import { DecorationComponent } from '../components/DecorationComponent.js';
-import { DecorationPool, DECORATION_NO_PARENT } from '../core/DecorationPool.js';
+import { ParticleComponent } from '../components/particleComponent.js';
+import { ParticleEmitter } from '../core/particleEmitter.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
+import { DecorationPool, DECORATION_NO_PARENT } from '../core/decorationPool.js';
 import {
   SWAY_LOOP,
   SWAY_IMPULSE,
@@ -12,36 +12,36 @@ import {
   SWAY_ANGLE_PER_MS,
   IMPULSE_DONE,
   advanceImpulsePhase,
-} from '../core/decorationSway.js';
-import { BulletPool } from '../core/BulletPool.js';
-import { BulletComponent } from '../components/BulletComponent.js';
-import { Ray } from '../core/Ray.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { AbstractWorker } from './AbstractWorker.js';
-import { Grid } from '../core/Grid.js';
-import { NavGrid, DIRECTION, DIR_TO_VEC } from '../core/NavGrid.js';
+} from '../util/decorationSway.js';
+import { BulletPool } from '../core/bulletPool.js';
+import { BulletComponent } from '../components/bulletComponent.js';
+import { Ray } from '../core/ray.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import { Collider } from '../components/collider.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { AbstractWorker } from './abstractWorker.js';
+import { Grid } from '../core/grid.js';
+import { NavGrid, DIRECTION, DIR_TO_VEC } from '../core/navGrid.js';
 import {
   calculateSpeed,
   calculateCameraScreenBounds,
   screenBoundsToWorldBounds,
-} from '../core/utils.js';
-import { stampParticleToTileBuffers } from '../core/decalStamp.js';
+} from '../util/utils.js';
+import { stampParticleToTileBuffers } from '../util/decalStamp.js';
 import {
   updateParticlePhysicsBuffers,
   buildActiveListBuffers,
   buildActiveAndVisibleListBuffers,
-} from '../core/particleIntegrate.js';
-import { PARTICLE_STATS, createStatsWriter } from './workers-utils.js';
-import { NAVIGATION_DEFAULTS } from '../core/ConfigDefaults.js';
+} from '../util/particleIntegrate.js';
+import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
+import { NAVIGATION_DEFAULTS } from '../util/configDefaults.js';
 import {
   getColliderBounds,
   getCellRange,
   _boundsResult,
   _cellRangeResult,
-} from '../core/ColliderUtils.js';
+} from '../util/colliderUtils.js';
 
 const EMPTY_SLOT = 0;
 const OCCUPIED_SLOT = 1;

@@ -39,10 +39,10 @@ This folder contains the engine notes that are closest to the code. The docs are
 | [`../src/index.js`](../src/index.js)                                                                       | Public source entry and exported namespace                                 |
 | [`../demos/`](../demos/)                                                                                   | Browser demos and scene examples                                           |
 | [`../tests/node/`](../tests/node/)                                                                         | Node test suite for core data structures and worker protocol helpers       |
-| [`../tests/bench/`](../tests/bench/)                                                                       | Playwright harness (`integrated-worker-benchmark.html`) plus scripts below |
-| [`../tests/bench/run-integrated-worker-benchmark.mjs`](../tests/bench/run-integrated-worker-benchmark.mjs) | `npm run test:bench` — worker FPS comparison (`BallsScene`)                |
-| [`../tests/bench/scene-cycle-smoke.mjs`](../tests/bench/scene-cycle-smoke.mjs)                             | Scene load/destroy leak smoke (heap, `Layer`/`NavGrid`/`Sound` statics)    |
-| [`../tests/bench/ray-microbench.mjs`](../tests/bench/ray-microbench.mjs)                                   | Ray DDA L1 microbench (`pnpm bench:micro:ray`)                             |
+| [`../tests/bench/`](../tests/bench/)                                                                       | Playwright harness (`integratedWorkerBenchmark.html`) plus scripts below |
+| [`../tests/bench/runIntegratedWorkerBenchmark.mjs`](../tests/bench/runIntegratedWorkerBenchmark.mjs) | `npm run test:bench` — worker FPS comparison (`BallsScene`)                |
+| [`../tests/bench/sceneCycleSmoke.mjs`](../tests/bench/sceneCycleSmoke.mjs)                             | Scene load/destroy leak smoke (heap, `Layer`/`NavGrid`/`Sound` statics)    |
+| [`../tests/bench/rayMicrobench.mjs`](../tests/bench/rayMicrobench.mjs)                                   | Ray DDA L1 microbench (`pnpm bench:micro:ray`)                             |
 | [`../tests/bench/stressScenes/`](../tests/bench/stressScenes/)                                             | L2 feature stress scenes (Ray, QueryChurn, StationarySpatial, RenderQueue) |
 | [`./FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)                                                       | Feature bench pyramid + catalog                                            |
 | [`./spatial_worker_hypothesis_report.md`](./spatial_worker_hypothesis_report.md)                           | Spatial hyp campaign + neighbor-reuse defaults (H3)                        |

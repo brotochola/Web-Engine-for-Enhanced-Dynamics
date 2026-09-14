@@ -2,8 +2,8 @@
 
 import { WeldBreakBox } from './gameObjects/weldBreakBox.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/Camera.js';
-import { BLEND_MODES } from '/src/core/ConfigDefaults.js';
+import { Camera } from '/src/core/camera.js';
+import { BLEND_MODES } from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 
 const { Joint } = WEED;

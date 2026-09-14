@@ -10,7 +10,7 @@ import {
   COVER_BG_DEFAULT_ZOOM_PARALLAX,
   coverBackgroundTransform,
   normalizeCoverBackgroundOptions,
-} from '../../src/core/coverBackground.js';
+} from '../../src/render/coverBackground.js';
 
 function assertCovers(t, canvasW, canvasH, texW, texH) {
   const w = texW * t.scale;
@@ -116,7 +116,7 @@ test('coverBackgroundTransform: pan is linear in eased camera, covers at world e
 
 test('pixi_worker: cover type + look RT transparent clear', () => {
   const pixi = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), '../../src/workers/pixi_worker.js'),
+    join(dirname(fileURLToPath(import.meta.url)), '../../src/workers/pixiWorker.js'),
     'utf8'
   );
   assert.match(pixi, /case 'cover':/);
@@ -127,6 +127,6 @@ test('pixi_worker: cover type + look RT transparent clear', () => {
 });
 
 test('Scene.setBackground is a prototype method', async () => {
-  const { Scene } = await import('../../src/core/Scene.js');
+  const { Scene } = await import('../../src/core/scene.js');
   assert.equal(typeof Scene.prototype.setBackground, 'function');
 });

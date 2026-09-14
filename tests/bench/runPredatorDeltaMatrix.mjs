@@ -6,8 +6,8 @@
  *   Decal UV-DDA alone | Particle P4+P5 alone |
  *   ALL champions together
  *
- *   node tests/bench/run-predator-delta-matrix.mjs
- *   node tests/bench/run-predator-delta-matrix.mjs --runs 2 --warmup-ms 8000 --duration-ms 10000
+ *   node tests/bench/runPredatorDeltaMatrix.mjs
+ *   node tests/bench/runPredatorDeltaMatrix.mjs --runs 2 --warmup-ms 8000 --duration-ms 10000
  */
 
 import { execFileSync } from 'node:child_process';
@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import {
   applyCombo as applyRayCombo,
   restoreAll as restoreRay,
@@ -30,7 +30,7 @@ import {
 } from './particle-hyps/hypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const integratedRunner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests/results/predator-delta-matrix');
 
 function parseArgs(argv) {

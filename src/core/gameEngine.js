@@ -1,11 +1,11 @@
 // GameEngine.js - Lightweight scene orchestrator
 // Manages canvas, scene lifecycle, input listeners, browser hardening, and debug UI
 
-import { DebugUI } from './debug/DebugUI.js';
-import { Mouse } from './Mouse.js';
-import { SoundManager } from './SoundManager.js';
-import { printLogo } from './utils.js';
-import { DEBUG_DEFAULTS, ENGINE_DEFAULTS } from './ConfigDefaults.js';
+import { DebugUI } from './debug/debugUi.js';
+import { Mouse } from './mouse.js';
+import { SoundManager } from './soundManager.js';
+import { printLogo } from '../util/utils.js';
+import { DEBUG_DEFAULTS, ENGINE_DEFAULTS } from '../util/configDefaults.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
@@ -213,7 +213,7 @@ class GameEngine {
     try {
       let restorePayload = options.restorePayload || null;
       if (!restorePayload && options.restoreSlot) {
-        const { SaveStore, decodeSave } = await import('./save/SaveGame.js');
+        const { SaveStore, decodeSave } = await import('./save/saveGame.js');
         const blob = await SaveStore.get(options.restoreSlot);
         if (!blob) throw new Error(`Save slot not found: ${options.restoreSlot}`);
         restorePayload = await decodeSave(blob);

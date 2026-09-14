@@ -2,13 +2,13 @@
 // (shader LUT / packed tint) vs one index compact + three tight packs (triple-scan).
 //
 // Usage:
-//   node tests/bench/instanced-pack-microbench.mjs
-//   node tests/bench/instanced-pack-microbench.mjs --count 8000 --frames 2000 --output tests/results/instanced-pack-micro.json
+//   node tests/bench/instancedPackMicrobench.mjs
+//   node tests/bench/instancedPackMicrobench.mjs --count 8000 --frames 2000 --output tests/results/instanced-pack-micro.json
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const TEX_LUT_FLOATS = 10;
 const PACK25 = 25;

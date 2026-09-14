@@ -12,7 +12,7 @@ import {
   applyEntitySaveRestore,
   componentSchemaFingerprint,
 } from '../../src/core/save/entitySaveSnapshot.js';
-import { Component } from '../../src/core/Component.js';
+import { Component } from '../../src/core/component.js';
 
 class FakeSerializable extends Component {
   static ARRAY_SCHEMA = {

@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 import { DIRECTION_DOWN, PersonComponent } from '/demos/predatorScene/components/personComponent.js';
-import { PersonAnimationFSM } from '/demos/predatorScene/fsm/personAnimationFSM.js';
+import { PersonAnimationFSM } from '/demos/predatorScene/fsm/personAnimationFsm.js';
 import { LootableComponent } from '/demos/predatorScene/components/lootableComponent.js';
 import { CarComponent } from '../components/carComponent.js';
 import { ParticleEmitter, SpriteSheetRegistry, SoundManager } from '/src/index.js';

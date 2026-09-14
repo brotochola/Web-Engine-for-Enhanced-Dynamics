@@ -5,9 +5,9 @@ import {
   QuerySystem,
   calculateQueryResultsSABSize,
   createWorkerQueryFunctions,
-} from '../../src/core/QuerySystem.js';
+} from '../../src/core/querySystem.js';
 import { GameObject } from '../../src/core/gameObject.js';
-import { Transform } from '../../src/components/Transform.js';
+import { Transform } from '../../src/components/transform.js';
 
 class QueryTestComponentA {}
 QueryTestComponentA.componentId = 0;

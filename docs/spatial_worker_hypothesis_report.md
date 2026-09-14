@@ -1,4 +1,4 @@
-# Informe experimental: hipótesis de optimización del `spatial_worker` (weed.js)
+# Informe experimental: hipótesis de optimización del `spatialWorker` (weed.js)
 
 **Proyecto:** `multithreadad-game-engine`  
 **Rama de trabajo:** `exp/spatial-hyps`  
@@ -6,7 +6,7 @@
 **Escenas:** `BallsScene`, `PredatorScene`  
 **Runtime:** Chromium headed (Playwright), throttle mitigation activa  
 **Datos:** `tests/results/spatial-hyps/campaign-summary.json`, `tests/results/spatial-hyps/confirm-summary.json`  
-**Código bajo prueba:** [`src/workers/spatial_worker.js`](../src/workers/spatial_worker.js) (restaurado a baseline al cerrar la campaña)
+**Código bajo prueba:** [`src/workers/spatialWorker.js`](../src/workers/spatialWorker.js) (restaurado a baseline al cerrar la campaña)
 
 ---
 
@@ -35,7 +35,7 @@ El árbol de fuentes quedó restaurado al baseline; los parches viven en [`tests
 
 ### 2.1 Pregunta
 
-> ¿Qué cambios locales sobre el `spatial_worker` de weed.js reducen de forma reproducible el `STEP_MS` (y, en Predator, el máximo entre workers) en Balls y Predator, sin romper equivalencia de carga (`BODY_COUNT` ±5%), y cuáles de las ideas del banco Morton/`AdaptiveSpatial` se traducen al modelo SAB + row-ownership?
+> ¿Qué cambios locales sobre el `spatialWorker` de weed.js reducen de forma reproducible el `STEP_MS` (y, en Predator, el máximo entre workers) en Balls y Predator, sin romper equivalencia de carga (`BODY_COUNT` ±5%), y cuáles de las ideas del banco Morton/`AdaptiveSpatial` se traducen al modelo SAB + row-ownership?
 
 ### 2.2 Motivación
 
@@ -73,7 +73,7 @@ Método hipotético-deductivo: (1) H1–H15 falsables; (2) screening headed 2-ru
 | Warmup / measure | 25 s / 18 s ([`benchmarkDefaults.mjs`](../tests/bench/benchmarkDefaults.mjs)) |
 | Modo | headed Chromium |
 | Aislamiento | 1 hipótesis por corrida; restore desde snapshot baseline |
-| Harness | [`run-spatial-hyp-campaign.mjs`](../tests/bench/run-spatial-hyp-campaign.mjs), [`run-spatial-hyp-confirm.mjs`](../tests/bench/run-spatial-hyp-confirm.mjs) |
+| Harness | [`runSpatialHypCampaign.mjs`](../tests/bench/runSpatialHypCampaign.mjs), [`runSpatialHypConfirm.mjs`](../tests/bench/runSpatialHypConfirm.mjs) |
 
 ### 4.3 Hipótesis (enunciado corto)
 
@@ -219,7 +219,7 @@ Baseline de confirmación (más conservador que el screening temprano en Predato
 | cellSize | Mantener Balls **100**, Predator **128** |
 | Morton reorder / BVH / hash Map | No como default (confirmado otra vez) |
 
-**Estado del código:** H3 Verlet *correcto* vive en [`src/workers/spatial_worker.js`](../src/workers/spatial_worker.js) detrás de `neighborReuseSkin` (default **0.04**). El oracle FN/FP (`verifyNeighborSets`) se retiró del motor tras validar FN=0/FP=0; ver §12.
+**Estado del código:** H3 Verlet *correcto* vive en [`src/workers/spatialWorker.js`](../src/workers/spatialWorker.js) detrás de `neighborReuseSkin` (default **0.04**). El oracle FN/FP (`verifyNeighborSets`) se retiró del motor tras validar FN=0/FP=0; ver §12.
 
 ---
 
@@ -250,9 +250,9 @@ Baseline de confirmación (más conservador que el screening temprano en Predato
 cd d:\xampp\htdocs\multithreadad-game-engine
 git checkout exp/spatial-hyps
 
-node tests/bench/run-spatial-hyp-campaign.mjs --dry-apply
-node tests/bench/run-spatial-hyp-campaign.mjs --runs 2
-node tests/bench/run-spatial-hyp-confirm.mjs
+node tests/bench/runSpatialHypCampaign.mjs --dry-apply
+node tests/bench/runSpatialHypCampaign.mjs --runs 2
+node tests/bench/runSpatialHypConfirm.mjs
 ```
 
 Artefactos: `tests/results/spatial-hyps/*.json`.
@@ -295,7 +295,7 @@ Perf Δ STEP_MS ≈ **−53.7%** en esa escena.
 
 ### 12.5 Barrido skin × frames (parcial)
 
-Harness: [`run-neighbor-reuse-grid.mjs`](../tests/bench/run-neighbor-reuse-grid.mjs). Artefacto: `tests/results/neighbor-reuse/skin-frames-grid.json` (cortó en `skin=0.25 frames=15` Predator; skins **0–0.2** completos).
+Harness: [`runNeighborReuseGrid.mjs`](../tests/bench/runNeighborReuseGrid.mjs). Artefacto: `tests/results/neighbor-reuse/skin-frames-grid.json` (cortó en `skin=0.25 frames=15` Predator; skins **0–0.2** completos).
 
 Baseline `skin=0`: Balls STEP_max **15.74 ms**, Predator **53.43 ms**.
 

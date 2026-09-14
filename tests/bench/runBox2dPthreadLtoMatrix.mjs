@@ -5,9 +5,9 @@
  * Restores box2dWorkerCount=4 and t4_flto_full wasm at the end.
  *
  * Usage:
- *   node tests/bench/run-box2d-pthread-lto-matrix.mjs
- *   node tests/bench/run-box2d-pthread-lto-matrix.mjs --runs 5
- *   node tests/bench/run-box2d-pthread-lto-matrix.mjs --skip-build   # reuse current wasm (debug)
+ *   node tests/bench/runBox2dPthreadLtoMatrix.mjs
+ *   node tests/bench/runBox2dPthreadLtoMatrix.mjs --runs 5
+ *   node tests/bench/runBox2dPthreadLtoMatrix.mjs --skip-build   # reuse current wasm (debug)
  */
 
 import { execFileSync } from 'node:child_process';
@@ -15,13 +15,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const ballsScenePath = path.join(repoRoot, 'demos/ballsScene/ballsScene.js');
 const siblingRoot = path.resolve(repoRoot, '../Box2d_3.2_C_-_liquidfun');
 const buildBat = path.join(siblingRoot, 'weedjs', 'build_for_weed.bat');
-const medianRunner = path.join(repoRoot, 'tests/bench/run-headed-median.mjs');
+const medianRunner = path.join(repoRoot, 'tests/bench/runHeadedMedian.mjs');
 const resultsDir = path.join(repoRoot, 'tests/results');
 
 const CASES = [

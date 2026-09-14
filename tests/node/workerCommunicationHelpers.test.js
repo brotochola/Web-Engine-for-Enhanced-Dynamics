@@ -5,7 +5,7 @@ import {
   getPortTransferables,
   postWorkerInitMessage,
   setupWorkerCommunication,
-} from '../../src/core/utils.js';
+} from '../../src/util/utils.js';
 
 test('setupWorkerCommunication wires bidirectional ports per connection', () => {
   const ports = setupWorkerCommunication([

@@ -8,7 +8,7 @@ import {
   addToTypeActiveList,
   removeFromTypeActiveList,
   clearTypeActiveList,
-} from '../../src/core/gameObjectActiveState.js';
+} from '../../src/util/gameObjectActiveState.js';
 
 test('active entity helpers keep lists sorted, deduped, and compacted', () => {
   const activeEntitiesData = new Uint16Array(8);

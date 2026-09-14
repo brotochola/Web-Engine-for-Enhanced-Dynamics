@@ -30,8 +30,8 @@ import {
     LAYER_SUBSCRIBE_KIND,
     COMPUTE_LAYER_DEFAULT_MAX_BODIES,
     COMPUTE_LAYER_DEFAULT_MAX_PARTICLES,
-} from './ConfigDefaults.js';
-import { normalizeCoverBackgroundOptions } from './coverBackground.js';
+} from '../util/configDefaults.js';
+import { normalizeCoverBackgroundOptions } from '../render/coverBackground.js';
 
 /**
  * Engine-reserved look uniforms, auto-declared on every custom shader layer

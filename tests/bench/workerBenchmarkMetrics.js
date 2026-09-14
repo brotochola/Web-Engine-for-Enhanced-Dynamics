@@ -7,7 +7,7 @@ import {
   PRE_RENDER_STATS,
   createStatsReader,
   createMultiWorkerStatsReaderArray,
-} from '../../src/workers/workers-utils.js';
+} from '../../src/util/workersUtils.js';
 
 const FRAME_RATE_STRIDE_FLOATS = 16;
 

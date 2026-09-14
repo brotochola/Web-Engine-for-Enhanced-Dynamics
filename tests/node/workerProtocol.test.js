@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { AbstractWorker } from '../../src/workers/AbstractWorker.js';
+import { AbstractWorker } from '../../src/workers/abstractWorker.js';
 
 test('sendDataToWorker returns success status and posts when port exists', { concurrency: false }, () => {
   const postedMessages = [];
@@ -46,7 +46,7 @@ test('logic worker keeps pending list updates when forwarding to logic0 fails', 
   console.warn = (...args) => warnings.push(args.map(String).join(' '));
 
   try {
-    const logicWorkerUrl = new URL('../../src/workers/logic_worker.js', import.meta.url);
+    const logicWorkerUrl = new URL('../../src/workers/logicWorker.js', import.meta.url);
     logicWorkerUrl.searchParams.set('workerProtocolTest', `${Date.now()}-${Math.random()}`);
     await import(logicWorkerUrl.href);
 

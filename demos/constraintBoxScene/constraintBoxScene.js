@@ -7,7 +7,7 @@ import {
     PART_KEYS,
 } from './components/constraintBoxComponent.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/Camera.js';
+import { Camera } from '/src/core/camera.js';
 import WEED from '/src/index.js';
 const { Mouse, Transform, RigidBody } = WEED;
 

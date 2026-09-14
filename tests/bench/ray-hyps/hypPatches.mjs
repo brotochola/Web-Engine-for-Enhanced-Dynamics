@@ -5,7 +5,7 @@
  * `state = { ray: string, utils: string }` holds in-memory source text.
  * `applyCombo(ids)` restores baselines, sorts ids into CANONICAL_ORDER,
  * folds the matching transforms over a fresh state, then writes the
- * result to src/core/Ray.js and src/core/utils.js.
+ * result to src/core/ray.js and src/util/utils.js.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,10 +15,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 
 export const PATHS = {
-  ray: path.join(repoRoot, 'src/core/Ray.js'),
-  utils: path.join(repoRoot, 'src/core/utils.js'),
-  baselineRay: path.join(here, 'baseline_Ray.js'),
-  baselineUtils: path.join(here, 'baseline_utils.js'),
+  ray: path.join(repoRoot, 'src/core/ray.js'),
+  utils: path.join(repoRoot, 'src/util/utils.js'),
+  baselineRay: path.join(here, 'baselineRay.js'),
+  baselineUtils: path.join(here, 'baselineUtils.js'),
 };
 
 /** Canonical fold order — determines the order transforms are composed in for a combo. */
@@ -1204,7 +1204,7 @@ export function sortHypIds(ids) {
 /**
  * Restore baselines, then fold the transforms for `ids` (sorted into
  * CANONICAL_ORDER) over the baseline source, writing the result to
- * src/core/Ray.js and src/core/utils.js.
+ * src/core/ray.js and src/util/utils.js.
  */
 export function applyCombo(ids) {
   restoreAll();

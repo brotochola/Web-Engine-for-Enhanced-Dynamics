@@ -6,7 +6,7 @@ import WEED from '/src/index.js';
 // import { Player } from '../gameObjects/player.js';
 import { MySoldier } from '../gameObjects/mySoldier.js';
 import { CivilianComponent } from '../components/civilianComponent.js';
-import { SoldierBehaviorFSM } from './soldierBehaviorFSM.js';
+import { SoldierBehaviorFSM } from './soldierBehaviorFsm.js';
 
 const { FSM, FSMState, Transform } = WEED;
 

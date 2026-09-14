@@ -22,10 +22,10 @@
 //
 // =============================================================================
 
-import { Transform } from '../components/Transform.js';
-import { Collider } from '../components/Collider.js';
-import { distanceSq2D } from './utils.js';
-import { SPATIAL_DEFAULTS } from './ConfigDefaults.js';
+import { Transform } from '../components/transform.js';
+import { Collider } from '../components/collider.js';
+import { distanceSq2D } from '../util/utils.js';
+import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 
 // =============================================================================
 // CONSTANTS - Configurable via scene (defaults shown)

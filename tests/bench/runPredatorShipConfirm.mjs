@@ -12,13 +12,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { restoreAll as restoreRay } from './ray-hyps/hypPatches.mjs';
 import { applyCombo as applyDecal, restoreAll as restoreDecal } from './decal-hyps/hypPatches.mjs';
 import { applyCombo as applyParticle, restoreAll as restoreParticle } from './particle-hyps/hypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const integratedRunner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests/results/predator-ship-confirm');
 
 const runs = 2;

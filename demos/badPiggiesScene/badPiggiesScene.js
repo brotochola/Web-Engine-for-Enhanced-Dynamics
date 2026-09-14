@@ -5,13 +5,13 @@ import { GhostMachineBox } from './gameObjects/ghostMachineBox.js';
 import { GhostMachineWheel } from './gameObjects/ghostMachineWheel.js';
 import { GhostMachineRocket } from './gameObjects/ghostMachineRocket.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/Camera.js';
+import { Camera } from '/src/core/camera.js';
 import {
   BLEND_MODES,
   LAYER_DENSITY_SOURCE,
   LAYER_SCALE_MODE,
   LAYER_SPLAT_FALLOFF,
-} from '/src/core/ConfigDefaults.js';
+} from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 import {
   CELL,

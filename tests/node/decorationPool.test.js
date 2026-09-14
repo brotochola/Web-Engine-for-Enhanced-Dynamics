@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DecorationComponent } from '../../src/components/DecorationComponent.js';
-import { Decoration } from '../../src/core/Decoration.js';
-import { DecorationPool } from '../../src/core/DecorationPool.js';
-import { DecorationSpatial } from '../../src/core/DecorationSpatial.js';
-import { resetFreeList } from '../../src/core/atomicFreeList.js';
+import { DecorationComponent } from '../../src/components/decorationComponent.js';
+import { Decoration } from '../../src/core/decoration.js';
+import { DecorationPool } from '../../src/core/decorationPool.js';
+import { DecorationSpatial } from '../../src/core/decorationSpatial.js';
+import { resetFreeList } from '../../src/util/atomicFreeList.js';
 
 function assertApprox(actual, expected, epsilon = 0.00001) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be close to ${expected}`);

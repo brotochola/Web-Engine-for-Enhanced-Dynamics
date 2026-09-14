@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectSceneWorkerScriptUrls } from '../../src/core/sceneWorkerBootstrap.js';
+import { collectSceneWorkerScriptUrls } from '../../src/util/sceneWorkerBootstrap.js';
 
 test('collectSceneWorkerScriptUrls: pooled entities before zero-count parents', () => {
   const urls = collectSceneWorkerScriptUrls(

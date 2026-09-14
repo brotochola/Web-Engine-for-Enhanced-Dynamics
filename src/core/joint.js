@@ -2,8 +2,8 @@
 // Thread-safe pool backed by SharedArrayBuffer; syncs to WASM in weedjs_post.
 // Extends SharedAtomicPool for atomic free list operations.
 
-import { SharedAtomicPool } from './SharedAtomicPool.js';
-import { Transform } from '../components/Transform.js';
+import { SharedAtomicPool } from './sharedAtomicPool.js';
+import { Transform } from '../components/transform.js';
 import { JOINT_TYPE } from '../box2d/box2dConstants.js';
 
 /**

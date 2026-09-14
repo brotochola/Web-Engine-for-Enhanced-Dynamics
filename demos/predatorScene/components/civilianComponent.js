@@ -1,7 +1,7 @@
 // CivilianComponent.js - Data for civilian entities
 // Tracks panic state: where to flee from when damaged
 
-import { Component } from '/src/core/Component.js';
+import { Component } from '/src/core/component.js';
 
 export class CivilianComponent extends Component {
   static ARRAY_SCHEMA = {

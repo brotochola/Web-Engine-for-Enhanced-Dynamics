@@ -1,7 +1,7 @@
 // NavigationPanel.js — Flowfield / A* path / walkability grid visualization controls
 
-import { createPanel, createRow, createStat, createButton } from '../ui/DebugDOM.js';
-import { NavGrid } from '../../NavGrid.js';
+import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
+import { NavGrid } from '../../navGrid.js';
 
 export class NavigationPanel {
   constructor(debugUI) {

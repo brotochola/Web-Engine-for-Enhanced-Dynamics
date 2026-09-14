@@ -2,9 +2,9 @@
 /**
  * Ray hypothesis campaign — headless L1 micro + L2 RayStress + L3 Predator.
  *
- *   node tests/bench/run-ray-hyp-campaign.mjs
- *   node tests/bench/run-ray-hyp-campaign.mjs --only BASE,H1 --runs 1
- *   node tests/bench/run-ray-hyp-campaign.mjs --warmup-ms 5000 --duration-ms 6000
+ *   node tests/bench/runRayHypCampaign.mjs
+ *   node tests/bench/runRayHypCampaign.mjs --only BASE,H1 --runs 1
+ *   node tests/bench/runRayHypCampaign.mjs --warmup-ms 5000 --duration-ms 6000
  */
 
 import { execFileSync } from 'node:child_process';
@@ -12,20 +12,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { HYPS, applyHyp, restoreAll, PATHS } from './ray-hyps/hypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const integratedRunner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
-const microRunner = path.join(repoRoot, 'tests/bench/ray-microbench.mjs');
+const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
+const microRunner = path.join(repoRoot, 'tests/bench/rayMicrobench.mjs');
 const outDir = path.join(repoRoot, 'tests/results/ray-hyps');
 const summaryPath = path.join(outDir, 'campaign-summary.json');
 
 const SCENES = [
   {
     key: 'rayStress',
-    scene: '/tests/bench/stressScenes/RayStressScene.js',
+    scene: '/tests/bench/stressScenes/rayStressScene.js',
     exportName: 'RayStressScene',
   },
   {

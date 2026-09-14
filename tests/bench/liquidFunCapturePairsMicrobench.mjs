@@ -7,18 +7,18 @@
 // construction, so this isolates just the one WASM export call that matters.
 //
 // Usage:
-//   node tests/bench/liquidfun-capturepairs-microbench.mjs
-//   node tests/bench/liquidfun-capturepairs-microbench.mjs --group-size 4000 --reps 11 --output tests/results/liquidfun-capturepairs-micro.json
+//   node tests/bench/liquidFunCapturePairsMicrobench.mjs
+//   node tests/bench/liquidFunCapturePairsMicrobench.mjs --group-size 4000 --reps 11 --output tests/results/liquidfun-capturepairs-micro.json
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs, writeReport } from './microbench-helpers.mjs';
+import { parseArgs, writeReport } from './microbenchHelpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOX2D_DIR = path.resolve(__dirname, '../../src/box2d');
-const WASM_PATH = path.join(BOX2D_DIR, 'box2d_wasm.wasm');
-const JS_PATH = path.join(BOX2D_DIR, 'box2d_wasm.js');
+const WASM_PATH = path.join(BOX2D_DIR, 'box2dWasm.wasm');
+const JS_PATH = path.join(BOX2D_DIR, 'box2dWasm.js');
 
 const args = parseArgs();
 const GROUP_HALF_W = Number(args['half-w'] ?? 800);

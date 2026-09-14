@@ -16,8 +16,8 @@
 //     +6 cursor  (Float32) fractional sample position (worklet writes)
 //     +7 reserved
 
-import { AUDIO_DEFAULTS } from './ConfigDefaults.js';
-import { rng } from './utils.js';
+import { AUDIO_DEFAULTS } from '../util/configDefaults.js';
+import { rng } from '../util/utils.js';
 
 export class SoundManager {
   static _enabled = true;
@@ -120,7 +120,7 @@ export class SoundManager {
       const blob = new Blob([embedded], { type: 'application/javascript' });
       processorUrl = URL.createObjectURL(blob);
     } else {
-      processorUrl = new URL('../workers/AudioMixerProcessor.js', import.meta.url).href;
+      processorUrl = new URL('../workers/audioMixerProcessor.js', import.meta.url).href;
     }
     try {
       await this._audioCtx.audioWorklet.addModule(processorUrl);

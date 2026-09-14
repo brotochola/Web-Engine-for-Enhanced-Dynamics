@@ -1,6 +1,6 @@
 // Binary save body codec — sectioned little-endian payload (sole wire format).
 
-import { Layer } from '../Layer.js';
+import { Layer } from '../layer.js';
 
 export const SECTION = Object.freeze({
   META: 1,

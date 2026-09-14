@@ -135,7 +135,7 @@ Lifecycle hooks:
 Decorations parented to an entity are tracked in a **shared attachment table** (not on the pooled `GameObject` instance). You do **not** need `this._myDeco = this.addDecoration(...)` unless you prefer a cached pool index.
 
 - `addDecoration(texture, localX, localY, scaleX, scaleY, innerZ, extra?)` → decoration **pool index** (or `-1` if spawn/attach failed). Order of attachment is the order of successful `addDecoration` calls while spawned.
-- **innerZ** is signed, clamped to **`DECORATION_INNER_Z_MIN`..`DECORATION_INNER_Z_MAX`** (default scale **128** → **−127..126**). The entity sprite sorts at implicit **0**; **negative** `innerZ` draws **behind** the parent body. Constants live in `ConfigDefaults.js` / `WEED` exports (`DECORATION_Y_SORT_SCALE`, `DECORATION_INNER_Z_*`). Light glow sprites use a **separate** render path with `ENTITY_GLOW_SORT_BIAS`; the very top slot in the band is reserved for glow, not child decorations.
+- **innerZ** is signed, clamped to **`DECORATION_INNER_Z_MIN`..`DECORATION_INNER_Z_MAX`** (default scale **128** → **−127..126**). The entity sprite sorts at implicit **0**; **negative** `innerZ` draws **behind** the parent body. Constants live in `configDefaults.js` / `WEED` exports (`DECORATION_Y_SORT_SCALE`, `DECORATION_INNER_Z_*`). Light glow sprites use a **separate** render path with `ENTITY_GLOW_SORT_BIAS`; the very top slot in the band is reserved for glow, not child decorations.
 - `getAttachedDecorationCount()` → how many are attached to this entity.
 - `getAttachedDecorationIndex(slot)` → pool index at `slot` (`0` .. count−1), or `-1`.
 - `getAttachedDecoration(slot)` → `Decoration` facade for that slot, or `null` (same underlying data as `Decoration.get(poolIndex)`).
@@ -196,7 +196,7 @@ Tag components have no `ARRAY_SCHEMA` and allocate no `SharedArrayBuffer`. They 
 
 **Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration — including `isCollidingWith()`). When at least one type has the tag, logic drains the Box2D **contact ring** (begin/end + sensors), keys every live pair (Cantor `min,max`) into a per-worker Set so `isCollidingWith()` works during `tick()`, and dispatches enter/stay/exit only when at least one side listens (`collisionListenerByType`). Callback ownership is partitioned by `minEntity % totalLogicWorkers`; Set population is not. Entities need an active `Collider` (Box2D body with a shape) to show up in the ring — Collider-only entities get an **implicit static** body; RigidBody-only (shapeless) bodies never generate contacts. Toggle at runtime with `this.collider.active` / `this.rigidBody.active` (see [PHYSICS.md](./PHYSICS.md#rigidbody--collider-composition)).
 
-**Screen visibility:** resolved per-type on the `typeInfo` object. `pre_render_worker` clears `Transform.isItOnScreen` once per visual frame and each entity render pass sets it to `1` when that entity is visible. The logic worker reads that single canonical byte only for entity types that have `CameraInOutListener`, so the callback path does not need to know which render component made the entity visible.
+**Screen visibility:** resolved per-type on the `typeInfo` object. `preRenderWorker` clears `Transform.isItOnScreen` once per visual frame and each entity render pass sets it to `1` when that entity is visible. The logic worker reads that single canonical byte only for entity types that have `CameraInOutListener`, so the callback path does not need to know which render component made the entity visible.
 
 **Grab:** unlike the listener tags, pick/drag runs on the **main thread** (`GrabSystem.update` after `Scene.update`, before free-cam). Types that list `Grab` are scanned on mouse-down; explicit `RigidBody.static` bodies are skipped. Dynamic rigid bodies toss on release; Collider-only implicit-static bodies teleport via `SET_TRANSFORM`.
 
@@ -244,7 +244,7 @@ const visibleListeners = queryActiveEntitiesSlow([CameraInOutListener, SpriteRen
 ### Creating your own tag components
 
 ```javascript
-import { Component } from '/src/core/Component.js';
+import { Component } from '/src/core/component.js';
 class MyTag extends Component {}
 export { MyTag };
 ```
@@ -257,12 +257,12 @@ Add it to `static components` and use `query([MyTag])` to find entities. No regi
 
 | Worker | Count | Main Responsibility |
 |---|---:|---|
-| `spatial_worker` | 1..N | Grid rebuild + neighbor lists |
+| `spatialWorker` | 1..N | Grid rebuild + neighbor lists |
 | `physics` (classic) | 1 | Box2D 3.0 WASM host + contact/joint sync |
-| `logic_worker` | 1..N | Entity tick + callbacks + lifecycle |
-| `particle_worker` | 1 | Particles, decals, nav, visibility buffers |
-| `pre_render_worker` | 1 | Animation + render/shadow queue build |
-| `pixi_worker` | 1 | OffscreenCanvas/Pixi draw |
+| `logicWorker` | 1..N | Entity tick + callbacks + lifecycle |
+| `particleWorker` | 1 | Particles, decals, nav, visibility buffers |
+| `preRenderWorker` | 1 | Animation + render/shadow queue build |
+| `pixiWorker` | 1 | OffscreenCanvas/Pixi draw |
 | `AudioMixerProcessor` (worklet) | 1 | Real-time PCM mixing on the audio thread via SAB |
 
 ---
@@ -415,7 +415,7 @@ Renderer default is `config.renderer.backend: 'webgpu'`. Demo scenes other than 
 ### DebugUI Layer Inspector
 
 ```javascript
-import { BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } from '/src/core/ConfigDefaults.js';
+import { BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } from '/src/util/configDefaults.js';
 // or: WEED.enums.LAYER_DENSITY_SOURCE / LAYER_SPLAT_FALLOFF / LAYER_SCALE_MODE
 
 layers: {
@@ -575,7 +575,7 @@ Omit `layer`/`layers` → ENTITIES bit. See `docs/LAYER_ROUTING.md`.
 `SpriteRenderer.repeatX/Y` is the **world-px period** of one full texture repeat (`0` = stretch the atlas rect across the quad). Three modes:
 
 ```javascript
-import { SPRITE_TILE_MODE } from '/src/core/ConfigDefaults.js';
+import { SPRITE_TILE_MODE } from '/src/util/configDefaults.js';
 // or WEED.SPRITE_TILE_MODE / WEED.enums.SPRITE_TILE_MODE
 
 this.setTileWorld(128);                    // wallpaper locked to the world (caves, walls)
@@ -647,7 +647,7 @@ Layer.water.setUniform('uWaterColor', [0.05, 0.1, 0.95])
 Layer.water.getUniform('uThreshold')
 
 // Blend modes (numeric enum)
-import { BLEND_MODES } from '/src/core/ConfigDefaults.js';
+import { BLEND_MODES } from '/src/util/configDefaults.js';
 // or: const { BLEND_MODES } = WEED.enums;
 // BLEND_MODES.NORMAL (0), BLEND_MODES.ADD (2), BLEND_MODES.MULTIPLY (3), BLEND_MODES.SCREEN (4)
 // Full list: 33 modes matching PixiJS (INHERIT, DARKEN, LIGHTEN, ERASE, COLOR_DODGE, ...)
@@ -689,7 +689,7 @@ import { BLEND_MODES } from '/src/core/ConfigDefaults.js';
 - Lower `resolution` for expensive shader layers (0.25-0.5 is usually fine for soft effects). Pair with `scaleMode: LAYER_SCALE_MODE.LINEAR` (default) for soft upsample; `NEAREST` looks blocky. Neither is MSAA — the RT is just smaller then stretched.
 - Disable `ySorting` if visual order within the layer doesn't matter.
 - Uniform reads with `getUniform()` return `Float32Array.subarray()` views -- zero allocation, safe for hot paths.
-- The layer system uses the same `RenderQueueLayout.js` as the main queue. One definition, no drift.
+- The layer system uses the same `renderQueueLayout.js` as the main queue. One definition, no drift.
 
 ---
 
@@ -713,7 +713,7 @@ assets: {
 ### API
 
 ```javascript
-import { TileMap } from '/src/core/TileMap.js';
+import { TileMap } from '/src/core/tileMap.js';
 
 // Direct property access (hot path -- zero lookups, zero allocations)
 TileMap.myTilemap.grass.getTileId(entity.x, entity.y)
@@ -879,7 +879,7 @@ WEED.SoundManager.setMuted(true);
 
 Within a single page session, worker scripts are fetched once (`WORKER_CACHE_BUST` in `sceneWorkerBootstrap.js`); scene cycles reuse the browser's compiled-module cache.
 
-Smoke test: `node tests/bench/scene-cycle-smoke.mjs` (Playwright, heap + static leak checks).
+Smoke test: `node tests/bench/sceneCycleSmoke.mjs` (Playwright, heap + static leak checks).
 
 ---
 
@@ -926,7 +926,7 @@ Recommended `<head>` meta tags (add these to your HTML — the engine can't inje
 - Audio: `maxSlots = 64`, `mixGain = 0.5`, `masterVolume = 1.0`
 - Navigation: `enabled = false` by default
 
-See `src/core/ConfigDefaults.js` for the canonical defaults.
+See `src/util/configDefaults.js` for the canonical defaults.
 
 ---
 

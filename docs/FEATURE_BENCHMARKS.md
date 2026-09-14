@@ -68,23 +68,23 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 
 | Feature | Hot module | L1 | L2 stress scene | L3 demo | Primary metric |
 |---------|------------|----|-----------------|---------|----------------|
-| Grid Ray (DDA) | `src/core/Ray.js` | `ray-microbench.mjs` | `stressScenes/RayStressScene` | Predator / bullets | L1 ops/s; L2 `RAYCAST_MS` — **H6+H1 shipped** (w/ D2+P45 on Predator pick) |
-| Ray vs Box2D | `Ray.js` + `box2dRayCast` / `cast_ray_closest` | `ray-vs-box2d-microbench.mjs` | `RayVsBox2dStressScene` (weedjs/box2d × idle/busy) | — | L1 ops/s; L2 `RAYCAST_MS` under busy `BOX2D_MS` |
-| Stamp decals | `decalStamp.js`, particle_worker | `decal-microbench.mjs` | `stressScenes/DecalStampStressScene` | zenithal / Predator | `DECAL_STAMP_MS`, particle `STEP_MS` — **champion D2** |
-| Particle emit | `ParticleEmitter.js`, free list | `particle-emit-microbench.mjs` | `stressScenes/ParticleEmitStressScene` | zenithalParticleTest | emit ops/s; particle `STEP_MS` — **champion includes P5** |
-| Particle integrate | `particleIntegrate.js`, particle_worker | `particle-integrate-microbench.mjs` | `stressScenes/ParticleIntegrateStressScene` | zenithalParticleTest | `PARTICLE_PHYSICS_MS`, `BUILD_ACTIVE_VISIBLE_MS` — **champion P4+P5** |
-| Spatial rebuild + neighbors | `spatial_worker.js`, `Grid.js` | (todo) | `stressScenes/StationarySpatialScene` | Balls | `NEIGHBOR_MS`, `REBUILD_MS` |
-| Box2D step / sync | `weedjs_post.js` | semi (WASM) | Balls / BallsAndRectangles | Balls | `STEP_MS`, `BOX2D_MS`, `BODY_COUNT` |
-| LiquidFun particle step | `lf_particle_system.c` (sibling `Box2d_3.2_C_-_liquidfun`) | `liquidfun-capturepairs-microbench.mjs` (CapturePairs create-time); `liquidfun-computedepth-microbench.mjs` (first step after SOLID create) | `stressScenes/LiquidFunStressScene` | `demos/liquidFunDemoScene` + `pnpm test:visual --scene liquidfun,lfstress` (100-step exact after H10) | `LIQUIDFUN_MS` (fluid inside `step_world`); `BOX2D_MS` = full step (rigid + LiquidFun); ~10.2k water + ~2k spring/staticPressure |
+| Grid Ray (DDA) | `src/core/ray.js` | `rayMicrobench.mjs` | `stressScenes/RayStressScene` | Predator / bullets | L1 ops/s; L2 `RAYCAST_MS` — **H6+H1 shipped** (w/ D2+P45 on Predator pick) |
+| Ray vs Box2D | `ray.js` + `box2dRayCast` / `cast_ray_closest` | `rayVsBox2dMicrobench.mjs` | `RayVsBox2dStressScene` (weedjs/box2d × idle/busy) | — | L1 ops/s; L2 `RAYCAST_MS` under busy `BOX2D_MS` |
+| Stamp decals | `decalStamp.js`, particle_worker | `decalMicrobench.mjs` | `stressScenes/DecalStampStressScene` | zenithal / Predator | `DECAL_STAMP_MS`, particle `STEP_MS` — **champion D2** |
+| Particle emit | `particleEmitter.js`, free list | `particleEmitMicrobench.mjs` | `stressScenes/ParticleEmitStressScene` | zenithalParticleTest | emit ops/s; particle `STEP_MS` — **champion includes P5** |
+| Particle integrate | `particleIntegrate.js`, particle_worker | `particleIntegrateMicrobench.mjs` | `stressScenes/ParticleIntegrateStressScene` | zenithalParticleTest | `PARTICLE_PHYSICS_MS`, `BUILD_ACTIVE_VISIBLE_MS` — **champion P4+P5** |
+| Spatial rebuild + neighbors | `spatialWorker.js`, `grid.js` | (todo) | `stressScenes/StationarySpatialScene` | Balls | `NEIGHBOR_MS`, `REBUILD_MS` |
+| Box2D step / sync | `weedjsPost.js` | semi (WASM) | Balls / BallsAndRectangles | Balls | `STEP_MS`, `BOX2D_MS`, `BODY_COUNT` |
+| LiquidFun particle step | `lf_particle_system.c` (sibling `Box2d_3.2_C_-_liquidfun`) | `liquidFunCapturePairsMicrobench.mjs` (CapturePairs create-time); `liquidFunComputeDepthMicrobench.mjs` (first step after SOLID create) | `stressScenes/LiquidFunStressScene` | `demos/liquidFunDemoScene` + `pnpm test:visual --scene liquidfun,lfstress` (100-step exact after H10) | `LIQUIDFUN_MS` (fluid inside `step_world`); `BOX2D_MS` = full step (rigid + LiquidFun); ~10.2k water + ~2k spring/staticPressure |
 | LiquidFun QueryAABB / RayCast | `liquidFunQuery.js` | SAB protocol `liquidFunQuery.test.js` | `stressScenes/LiquidFunQueryStressScene` | `demos/liquidFunQueryScene` | physics + logic `STEP_MS` under sync query churn |
 | Box2D QueryAABB | `box2dQueryAabb.js` | semi | `demos/.../Box2dQueryAabbScene` | — | query / physics STEP |
-| NavGrid Dijkstra / A* | `NavGrid.js`, particle_worker | (todo) | (todo) `NavStressScene` | car / bichos / Predator | ms/path |
-| AngularSweep visibility | `AngularSweep.js` | (todo) | (todo) | Predator | ms/polygon |
-| TileMap SAB queries | `TileMap.js` | (todo) | low value | tile demos | ns/`getTileId` |
-| QuerySystem publish | `QuerySystem.js` | (todo) | `stressScenes/QueryChurnScene` | — | publish / churn |
-| Pre-render cull + queue | `pre_render_worker` | `sr-flags-microbench.mjs` (7 Uint8 vs packed — **kill** L1+L3: cull kernel wins, queue noise, dirty RMW loses; Predator `preRender.STEP_MS` in noise vs 7 columns) | `stressScenes/RenderQueueStressScene` | Predator | L1 packed/strided; L3 `COLLECT_MS`/`EMIT_MS`/`STEP_MS` |
-| Compute layer (pack + dispatch) | `ComputeLayer.js`, `Box2dBodyPack.js` | `compute-pack-microbench.mjs` | `stressScenes/ComputeStressScene` (256², iterate 20, WebGPU) | burningBoxes | L1 pack ms; L2 `CUSTOM_LAYERS_MS` (headed) |
-| DecorationsSpatial | `DecorationSpatial.js` | (todo) | (todo) | zenithal | `queryCircle` ms |
+| NavGrid Dijkstra / A* | `navGrid.js`, particle_worker | (todo) | (todo) `NavStressScene` | car / bichos / Predator | ms/path |
+| AngularSweep visibility | `angularSweep.js` | (todo) | (todo) | Predator | ms/polygon |
+| TileMap SAB queries | `tileMap.js` | (todo) | low value | tile demos | ns/`getTileId` |
+| QuerySystem publish | `querySystem.js` | (todo) | `stressScenes/QueryChurnScene` | — | publish / churn |
+| Pre-render cull + queue | `preRenderWorker` | `srFlagsMicrobench.mjs` (7 Uint8 vs packed — **kill** L1+L3: cull kernel wins, queue noise, dirty RMW loses; Predator `preRender.STEP_MS` in noise vs 7 columns) | `stressScenes/RenderQueueStressScene` | Predator | L1 packed/strided; L3 `COLLECT_MS`/`EMIT_MS`/`STEP_MS` |
+| Compute layer (pack + dispatch) | `computeLayer.js`, `box2dBodyPack.js` | `computePackMicrobench.mjs` | `stressScenes/ComputeStressScene` (256², iterate 20, WebGPU) | burningBoxes | L1 pack ms; L2 `CUSTOM_LAYERS_MS` (headed) |
+| DecorationsSpatial | `decorationSpatial.js` | (todo) | (todo) | zenithal | `queryCircle` ms |
 | Bullet tick + Ray | `BulletPool`, particle_worker | (todo) | can share RayStress | Predator | particle `STEP_MS` |
 | Treiber free list / rings | `atomicFreeList`, rings | (todo) | (todo) spawn-storm | Balls spawn | pop/push/s |
 
@@ -94,7 +94,7 @@ See [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md) for hyp summaries per w
 
 ## L1 scaffold
 
-Shared helpers: [`tests/bench/microbench-helpers.mjs`](../tests/bench/microbench-helpers.mjs) (`mulberry32`, `timeIt`, `writeReport`, `parseArgs`). Tournament helpers: [`tests/bench/feature-tournament-lib.mjs`](../tests/bench/feature-tournament-lib.mjs).
+Shared helpers: [`tests/bench/microbenchHelpers.mjs`](../tests/bench/microbenchHelpers.mjs) (`mulberry32`, `timeIt`, `writeReport`, `parseArgs`). Tournament helpers: [`tests/bench/featureTournamentLib.mjs`](../tests/bench/featureTournamentLib.mjs).
 
 Microbenches import production `src/...` code (no algorithm copies). Run a correctness gate before timing.
 
@@ -102,20 +102,20 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 
 | Scene | Path | Stresses |
 |-------|------|----------|
-| RayStressScene | `/tests/bench/stressScenes/RayStressScene.js` | Many deterministic raycasts/tick → `RAYCAST_MS` |
-| DecalStampStressScene | `/tests/bench/stressScenes/DecalStampStressScene.js` | Deterministic `stampDecal` storm → `DECAL_STAMP_MS` |
-| ParticleEmitStressScene | `/tests/bench/stressScenes/ParticleEmitStressScene.js` | Fixed-rate `emitFlat` → emit / STEP |
-| ParticleIntegrateStressScene | `/tests/bench/stressScenes/ParticleIntegrateStressScene.js` | Heighted churn → `PARTICLE_PHYSICS_MS`, lists |
-| StationarySpatialScene | `/tests/bench/stressScenes/StationarySpatialScene.js` | Stationary neighbor reuse |
-| QueryChurnScene | `/tests/bench/stressScenes/QueryChurnScene.js` | Spawn/despawn + query publication |
-| RenderQueueStressScene | `/tests/bench/stressScenes/RenderQueueStressScene.js` | Cull / Y-sort / render queue |
-| LiquidFunStressScene | `/tests/bench/stressScenes/LiquidFunStressScene.js` | ~10.2k water + ~2k spring/staticPressure → `lfParticleSystem_Step` cost |
-| LiquidFunQueryStressScene | `/tests/bench/stressScenes/LiquidFunQueryStressScene.js` | Dense fluid + per-frame sync `LiquidFun.queryAABB` / `rayCast` |
-| ComputeStressScene | `/tests/bench/stressScenes/ComputeStressScene.js` | 256² ping-pong, 20 iterate+swap, 64 fed boxes → `CUSTOM_LAYERS_MS` (WebGPU) |
+| RayStressScene | `/tests/bench/stressScenes/rayStressScene.js` | Many deterministic raycasts/tick → `RAYCAST_MS` |
+| DecalStampStressScene | `/tests/bench/stressScenes/decalStampStressScene.js` | Deterministic `stampDecal` storm → `DECAL_STAMP_MS` |
+| ParticleEmitStressScene | `/tests/bench/stressScenes/particleEmitStressScene.js` | Fixed-rate `emitFlat` → emit / STEP |
+| ParticleIntegrateStressScene | `/tests/bench/stressScenes/particleIntegrateStressScene.js` | Heighted churn → `PARTICLE_PHYSICS_MS`, lists |
+| StationarySpatialScene | `/tests/bench/stressScenes/stationarySpatialScene.js` | Stationary neighbor reuse |
+| QueryChurnScene | `/tests/bench/stressScenes/queryChurnScene.js` | Spawn/despawn + query publication |
+| RenderQueueStressScene | `/tests/bench/stressScenes/renderQueueStressScene.js` | Cull / Y-sort / render queue |
+| LiquidFunStressScene | `/tests/bench/stressScenes/liquidFunStressScene.js` | ~10.2k water + ~2k spring/staticPressure → `lfParticleSystem_Step` cost |
+| LiquidFunQueryStressScene | `/tests/bench/stressScenes/liquidFunQueryStressScene.js` | Dense fluid + per-frame sync `LiquidFun.queryAABB` / `rayCast` |
+| ComputeStressScene | `/tests/bench/stressScenes/computeStressScene.js` | 256² ping-pong, 20 iterate+swap, 64 fed boxes → `CUSTOM_LAYERS_MS` (WebGPU) |
 
 ```bash
-node tests/bench/run-integrated-worker-benchmark.mjs --headed \
-  --scene /tests/bench/stressScenes/StationarySpatialScene.js \
+node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
+  --scene /tests/bench/stressScenes/stationarySpatialScene.js \
   --scene-export StationarySpatialScene \
   --output tests/results/stationary-spatial-headed.json
 ```

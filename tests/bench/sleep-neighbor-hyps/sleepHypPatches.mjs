@@ -10,12 +10,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 
 export const PATHS = {
-  spatial: path.join(repoRoot, 'src/workers/spatial_worker.js'),
+  spatial: path.join(repoRoot, 'src/workers/spatialWorker.js'),
   balls: path.join(repoRoot, 'demos/ballsScene/ballsScene.js'),
   predator: path.join(repoRoot, 'demos/predatorScene/predatorScene.js'),
-  baselineSpatial: path.join(here, 'baseline_spatial_worker.js'),
-  baselineBalls: path.join(here, 'baseline_BallsScene.js'),
-  baselinePredator: path.join(here, 'baseline_PredatorScene.js'),
+  baselineSpatial: path.join(here, 'baselineSpatialWorker.js'),
+  baselineBalls: path.join(here, 'baselineBallsScene.js'),
+  baselinePredator: path.join(here, 'baselinePredatorScene.js'),
 };
 
 export function restoreAll() {
@@ -139,9 +139,9 @@ function applyS3() {
   let s = readSpatial();
   s = replaceOnce(
     s,
-    `import { SpriteRenderer } from '../components/SpriteRenderer.js';`,
-    `import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { RigidBody } from '../components/RigidBody.js';`,
+    `import { SpriteRenderer } from '../components/spriteRenderer.js';`,
+    `import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { RigidBody } from '../components/rigidBody.js';`,
     'S3'
   );
   s = injectHelper(s, 'S3');

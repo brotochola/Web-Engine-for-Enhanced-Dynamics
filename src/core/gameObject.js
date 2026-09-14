@@ -2,28 +2,28 @@
 // Entities are composed of components (Transform, RigidBody, Collider, etc.)
 
 import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
-import { LightEmitter } from '../components/LightEmitter.js';
-import { ShadowCaster } from '../components/ShadowCaster.js';
-import { FlashComponent } from '../components/FlashComponent.js';
-import { LightOccluder } from '../components/LightOccluder.js';
-import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { Layer } from './Layer.js';
-import { syncColliderFeed } from './layerFeed.js';
-import { Grid } from './Grid.js';
-import { Joint } from './Joint.js';
-import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from './ConfigDefaults.js';
-import { collectComponents, cantorPair, distanceSq2D } from './utils.js';
+import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
+import { Collider } from '../components/collider.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
+import { LightEmitter } from '../components/lightEmitter.js';
+import { ShadowCaster } from '../components/shadowCaster.js';
+import { FlashComponent } from '../components/flashComponent.js';
+import { LightOccluder } from '../components/lightOccluder.js';
+import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { Layer } from './layer.js';
+import { syncColliderFeed } from '../util/layerFeed.js';
+import { Grid } from './grid.js';
+import { Joint } from './joint.js';
+import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
+import { collectComponents, cantorPair, distanceSq2D } from '../util/utils.js';
 import {
   resetFreeList,
   popFreeIndex,
   pushFreeIndex,
   getFreeListCount,
-} from './atomicFreeList.js';
+} from '../util/atomicFreeList.js';
 import { applyEntitySaveRestore } from './save/entitySaveSnapshot.js';
 import {
   addToActiveEntities,
@@ -34,12 +34,12 @@ import {
   removeFromTypeActiveList,
   clearTypeActiveList,
   addToTypeActiveList,
-} from './gameObjectActiveState.js';
-import Keyboard from './Keyboard.js';
-import { DecorationPool } from './DecorationPool.js';
-import { Decoration } from './Decoration.js';
-import { AdobeAnimRegistry } from './AdobeAnimRegistry.js';
-import { SceneBridge } from './SceneBridge.js';
+} from '../util/gameObjectActiveState.js';
+import Keyboard from './keyboard.js';
+import { DecorationPool } from './decorationPool.js';
+import { Decoration } from './decoration.js';
+import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
+import { SceneBridge } from './sceneBridge.js';
 import {
   enqueueSetTransform,
   enqueueSetVelocity,

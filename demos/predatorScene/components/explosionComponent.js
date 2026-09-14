@@ -1,7 +1,7 @@
 // ExplosionComponent.js - Data for explosion entities
 // Tracks lifecycle, intensity, radius growth/shrink, and visual state
 
-import { Component } from '/src/core/Component.js';
+import { Component } from '/src/core/component.js';
 
 export class ExplosionComponent extends Component {
   static ARRAY_SCHEMA = {

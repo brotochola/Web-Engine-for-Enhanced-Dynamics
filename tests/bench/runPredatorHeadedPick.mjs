@@ -4,8 +4,8 @@
  *
  * Primary: min median of max(logic0..2 STEP_MS); tie-break particle STEP_MS, then physics STEP_MS.
  *
- *   node tests/bench/run-predator-headed-pick.mjs
- *   node tests/bench/run-predator-headed-pick.mjs --runs 3
+ *   node tests/bench/runPredatorHeadedPick.mjs
+ *   node tests/bench/runPredatorHeadedPick.mjs --runs 3
  */
 
 import { execFileSync } from 'node:child_process';
@@ -13,14 +13,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { applyCombo as applyRay, restoreAll as restoreRay } from './ray-hyps/hypPatches.mjs';
 import { applyCombo as applyDecal, restoreAll as restoreDecal } from './decal-hyps/hypPatches.mjs';
 import { applyCombo as applyParticle, restoreAll as restoreParticle } from './particle-hyps/hypPatches.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const integratedRunner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outDir = path.join(repoRoot, 'tests/results/predator-headed-pick');
 
 function parseArgs(argv) {

@@ -1,6 +1,6 @@
 // NavDebugRenderer.js — Draws navigation debug overlays (walkability grid, flowfields, paths)
 
-import { NavGrid } from '../../NavGrid.js';
+import { NavGrid } from '../../navGrid.js';
 
 export class NavDebugRenderer {
   constructor() {

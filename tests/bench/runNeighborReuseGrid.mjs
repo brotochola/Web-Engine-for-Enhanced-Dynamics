@@ -2,7 +2,7 @@
 /**
  * Grid sweep: neighborReuseSkin × neighborReuseMaxFrames on Balls + Predator.
  *
- *   node tests/bench/run-neighbor-reuse-grid.mjs
+ *   node tests/bench/runNeighborReuseGrid.mjs
  */
 
 import { execFileSync } from 'node:child_process';
@@ -10,11 +10,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
-const defaultsPath = path.join(repoRoot, 'src/core/ConfigDefaults.js');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
+const defaultsPath = path.join(repoRoot, 'src/util/configDefaults.js');
 const outDir = path.join(repoRoot, 'tests/results/neighbor-reuse');
 const summaryPath = path.join(outDir, 'skin-frames-grid.json');
 

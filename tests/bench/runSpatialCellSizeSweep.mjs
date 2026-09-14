@@ -2,8 +2,8 @@
 /**
  * Sweep spatial.cellSize on BallsScene + PredatorScene (headed), restore configs after.
  *
- *   node tests/bench/run-spatial-cellsize-sweep.mjs
- *   node tests/bench/run-spatial-cellsize-sweep.mjs --sizes 64,100,128,256 --runs 2
+ *   node tests/bench/runSpatialCellSizeSweep.mjs
+ *   node tests/bench/runSpatialCellSizeSweep.mjs --sizes 64,100,128,256 --runs 2
  */
 
 import { execFileSync } from 'node:child_process';
@@ -11,11 +11,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workerLoadPct } from '../../src/workers/workers-utils.js';
+import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const runner = path.join(repoRoot, 'tests/bench/run-integrated-worker-benchmark.mjs');
+const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
 const outReport = path.join(repoRoot, 'tests/results', 'spatial-cellsize-sweep.json');
 
 const SCENES = [

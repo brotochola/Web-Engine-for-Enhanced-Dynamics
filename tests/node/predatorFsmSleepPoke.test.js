@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const files = [
-  'demos/predatorScene/fsm/soldierBehaviorFSM.js',
-  'demos/predatorScene/fsm/civilianBehaviorFSM.js',
+  'demos/predatorScene/fsm/soldierBehaviorFsm.js',
+  'demos/predatorScene/fsm/civilianBehaviorFsm.js',
 ];
 
 test('predator behavior FSMs do not poke RigidBody.sleeping', () => {

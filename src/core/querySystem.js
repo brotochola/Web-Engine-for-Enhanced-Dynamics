@@ -13,8 +13,8 @@
  *   const activeLights = queryActiveEntities([LightEmitter]); // Only active entities
  */
 
-import { collectComponents, countTrailingZeros } from './utils.js';
-import { Transform } from '../components/Transform.js';
+import { collectComponents, countTrailingZeros } from '../util/utils.js';
+import { Transform } from '../components/transform.js';
 import { GameObject } from './gameObject.js';
 
 // =============================================================================
