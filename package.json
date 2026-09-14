@@ -12,17 +12,10 @@
       "import": "./dist/weed.bundle.esm.min.js",
       "require": "./dist/weed.bundle.min.js",
       "default": "./dist/weed.bundle.min.js"
-    },
-    "./src": {
-      "types": "./types/weed.d.ts",
-      "import": "./src/index.js",
-      "default": "./src/index.js"
-    },
-    "./src/*": "./src/*"
+    }
   },
   "files": [
-    "src",
-    "dist",
+    "dist/*.min.js",
     "types",
     "README.md",
     "LICENSE"

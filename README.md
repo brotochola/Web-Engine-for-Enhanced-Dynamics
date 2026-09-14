@@ -14,7 +14,7 @@ Live demo: https://multithreaded-game-engine.vercel.app/demos
 
 WeedJS is designed for developers who want the strengths of the browser as a game platform: open standards, instant URL-based distribution, inspectable source, and a runtime players already have installed.
 
-The engine works with plain JavaScript and browser-native ES modules. The demos can run directly from `src/` during development, while the npm package also ships bundled `dist/` builds for consumers who prefer package imports.
+The engine works with plain JavaScript and browser-native ES modules. Clone the repo and run `npm run dev` to load demos from `src/`. `npm i @weed.js/engine` installs only the bundled `dist/` builds.
 
 ---
 
@@ -78,12 +78,6 @@ npm i @weed.js/engine
 import WEED from '@weed.js/engine';
 
 const { GameEngine, Scene, GameObject, RigidBody, Collider, SpriteRenderer } = WEED;
-```
-
-For local experiments or advanced integrations, the package also exposes the unbundled source modules:
-
-```javascript
-import { Scene, GameObject } from '@weed.js/engine/src';
 ```
 
 ### CDN (jsDelivr)
@@ -286,11 +280,9 @@ Start with `docs/README.md` for the full docs index.
 
 ## Package Entry Points
 
-| Import                  | Resolves to                   |
-| ----------------------- | ----------------------------- |
-| `@weed.js/engine`       | Bundled `dist` build          |
-| `@weed.js/engine/src`   | Unbundled source entry        |
-| `@weed.js/engine/src/*` | Direct source subpath imports |
+| Import            | Resolves to          |
+| ----------------- | -------------------- |
+| `@weed.js/engine` | Bundled `dist` build |
 
 ---
 
