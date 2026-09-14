@@ -76,6 +76,16 @@ function finiteOrZero(n) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Instanced Mesh with instanceCount 0 still GPU-draws if visible / used as RT root. */
+function emptyInstancedMesh(obj) {
+  return !!(obj && obj.geometry && (obj.geometry.instanceCount | 0) === 0);
+}
+
+function setDisplayVisible(obj, on) {
+  if (!obj) return;
+  obj.visible = !!on && !emptyInstancedMesh(obj);
+}
+
 function makeBatchViews() {
   return {
     count: 0,
@@ -551,6 +561,7 @@ class PixiRenderer extends AbstractWorker {
       worldH: 0,
     };
     this._clearTransparent = [0, 0, 0, 0];
+    this._rtEmptyContainer = new Container();
     this._entityUploadQ = makeBatchViews();
     this._entityUploadOpts = {
       space: BATCH_SPACE.WORLD,
@@ -2584,7 +2595,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.shadowBatch.upload(q, opts);
 
     const rtOpts = this._rtRenderOpts;
-    rtOpts.container = this.shadowBatch.mesh;
+    rtOpts.container = emptyInstancedMesh(this.shadowBatch.mesh)
+      ? this._rtEmptyContainer
+      : this.shadowBatch.mesh;
     rtOpts.target = this.shadowRT;
     rtOpts.clear = true;
     rtOpts.clearColor = this._clearTransparent;
@@ -2884,10 +2897,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     if (visible !== undefined && displayObject) {
-      displayObject.visible = visible;
+      setDisplayVisible(displayObject, visible);
       if (layer === 'ENTITIES') {
-        if (this.spriteParticleMesh) this.spriteParticleMesh.visible = visible;
-        if (this.spriteGlowMesh) this.spriteGlowMesh.visible = visible;
+        setDisplayVisible(this.spriteParticleMesh, visible);
+        setDisplayVisible(this.spriteGlowMesh, visible);
       }
     }
 
@@ -3137,7 +3150,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!layer) return;
     displayObject.zIndex = layer.zIndex;
     displayObject.alpha = layer.alpha;
-    displayObject.visible = layer.visible;
+    setDisplayVisible(displayObject, layer.visible);
     displayObject.blendMode = forceContainerBlend ? layer.containerBlendMode : layer.blendMode;
   }
 
@@ -3148,10 +3161,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const on = Layer._visible[i] === 1;
       const name = Layer.getName(i);
       const displayObj = name ? this._layerRuntime[name] : null;
-      if (displayObj) displayObj.visible = on;
+      if (displayObj) setDisplayVisible(displayObj, on);
       if (i === Layer.ENTITIES_ID) {
-        if (this.spriteParticleMesh) this.spriteParticleMesh.visible = on;
-        if (this.spriteGlowMesh) this.spriteGlowMesh.visible = on;
+        setDisplayVisible(this.spriteParticleMesh, on);
+        setDisplayVisible(this.spriteGlowMesh, on);
       }
     }
   }
@@ -4550,7 +4563,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
 
       if (cl.rt && densityMesh) {
-        rtOpts.container = densityMesh;
+        rtOpts.container = emptyInstancedMesh(densityMesh)
+          ? this._rtEmptyContainer
+          : densityMesh;
         rtOpts.target = cl.rt;
         rtOpts.clear = true;
         rtOpts.clearColor = this._clearTransparent;

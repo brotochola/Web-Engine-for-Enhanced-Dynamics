@@ -66,6 +66,38 @@ test('ctor sets State.depthMask; upload excludeType0/1; indices skip filter', ()
 
 const pixiSrc = readFileSync(join(dir, '../../src/workers/pixi_worker.js'), 'utf8');
 
+test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', () => {
+  assert.match(pixiSrc, /function emptyInstancedMesh\(obj\)/);
+  assert.match(pixiSrc, /setDisplayVisible\(this\.spriteParticleMesh, on\)/);
+  assert.match(pixiSrc, /setDisplayVisible\(this\.spriteGlowMesh, on\)/);
+  assert.match(pixiSrc, /this\._rtEmptyContainer = new Container\(\)/);
+  assert.match(pixiSrc, /emptyInstancedMesh\(this\.shadowBatch\.mesh\)/);
+  assert.match(pixiSrc, /emptyInstancedMesh\(densityMesh\)/);
+
+  const start = pixiSrc.indexOf('function emptyInstancedMesh');
+  const end = pixiSrc.indexOf('function makeBatchViews');
+  assert.ok(start >= 0 && end > start);
+  const box = {};
+  new Function(`${pixiSrc.slice(start, end)}; this.emptyInstancedMesh = emptyInstancedMesh; this.setDisplayVisible = setDisplayVisible`).call(box);
+
+  assert.equal(box.emptyInstancedMesh(null), false);
+  assert.equal(box.emptyInstancedMesh({}), false);
+  assert.equal(box.emptyInstancedMesh({ geometry: { instanceCount: 1 } }), false);
+  assert.equal(box.emptyInstancedMesh({ geometry: { instanceCount: 0 } }), true);
+
+  const sprite = { visible: true };
+  box.setDisplayVisible(sprite, true);
+  assert.equal(sprite.visible, true);
+  const emptyMesh = { visible: true, geometry: { instanceCount: 0 } };
+  box.setDisplayVisible(emptyMesh, true);
+  assert.equal(emptyMesh.visible, false);
+  const filled = { visible: false, geometry: { instanceCount: 4 } };
+  box.setDisplayVisible(filled, true);
+  assert.equal(filled.visible, true);
+  box.setDisplayVisible(filled, false);
+  assert.equal(filled.visible, false);
+});
+
 test('particle batch: no Z write, no alpha discard; main queue partitions type 1/3', () => {
   assert.match(pixiSrc, /t === 1\) idxP\[np\+\+\]/);
   assert.match(pixiSrc, /t === 3\) idxG\[ng\+\+\]/);
