@@ -1422,13 +1422,17 @@ class PreRenderWorker extends AbstractWorker {
             mask = Layer.entitiesMask();
         }
 
+        // Bit-scan only the sprite-queue bits (precomputed; density/compute-only bits
+        // in `mask` are never set here) — popcount(mask) iterations, no per-bit
+        // Layer method calls, instead of looping 0..Layer.count every renderable.
         let wroteSprite = false;
-        for (let layerId = 0; layerId < Layer.count; layerId++) {
-            if (!(mask & (1 << layerId))) continue;
-            if (Layer.isLiquidFunDensityLayer(layerId)) continue;
-            if (!Layer.hasSpriteQueue(layerId)) continue;
+        let bits = mask & Layer._spriteQueueBits;
+        while (bits) {
+            const lsb = bits & -bits;
+            const layerId = 31 - Math.clz32(lsb);
             this._writeRenderable(type, index, y, layerId);
             wroteSprite = true;
+            bits ^= lsb;
         }
         if (!wroteSprite && !isParticle) {
             this._writeRenderable(type, index, y, Layer.ENTITIES_ID);

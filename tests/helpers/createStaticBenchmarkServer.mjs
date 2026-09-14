@@ -31,6 +31,13 @@ export async function createStaticBenchmarkServer(rootDirectory, preferredPort =
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://127.0.0.1');
+      if (url.pathname === '/favicon.ico') {
+        // Every browser auto-requests this; repo has no favicon. 204 keeps
+        // headless benchmark console output free of spurious 404 noise.
+        res.writeHead(204);
+        res.end();
+        return;
+      }
       const relativePath = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
       const candidatePath = path.resolve(normalizedRoot, '.' + relativePath);
 
@@ -63,6 +70,16 @@ export async function createStaticBenchmarkServer(rootDirectory, preferredPort =
       res.end(content);
     } catch (error) {
       const code = error?.code === 'ENOENT' ? 404 : 500;
+      if (code === 404) {
+        const pathname = (() => {
+          try {
+            return new URL(req.url, 'http://127.0.0.1').pathname;
+          } catch {
+            return req.url;
+          }
+        })();
+        console.error(`[static-bench] 404 ${pathname}`);
+      }
       res.writeHead(code, { 'Content-Type': 'text/plain' });
       res.end(code === 404 ? 'Not Found' : `Server error: ${error?.message || error}`);
     }

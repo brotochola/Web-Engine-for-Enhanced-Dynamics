@@ -103,8 +103,14 @@ export class Layer {
     static _visible = null;           // Uint8Array[MAX_LAYERS]  (mutable via Atomics)
     static _feederKind = null;        // Uint8Array[MAX_LAYERS]  (LAYER_FEEDER_KIND)
     static _visibleDirty = null;      // Int32Array[MAX_LAYERS]  (dirty flag for visible)
+    // Plain (non-SAB) per-realm cache: OR of `1<<id` for every id where hasSpriteQueue(id)
+    // is true. Recomputed locally after _feederKind/_hasRenderQueue are known (init or
+    // initializeFromBuffers) — lets collectRenderable bit-scan `mask & _spriteQueueBits`
+    // instead of looping 0..MAX_LAYERS and calling hasSpriteQueue/isLiquidFunDensityLayer
+    // per bit.
+    static _spriteQueueBits = 0;
 
-    /** Per-layer compute feeder lists (SAB). */
+    /** Per-layer compute feeder lists (SAB) — Collider pool indices subscribed to a compute layer. */
     static _feedCountSAB = null;
     static _feedCount = null; // Int32Array[MAX_LAYERS]
     static _feedLock = null; // Int32Array[MAX_LAYERS] spinlocks (same SAB, second half)
@@ -112,6 +118,15 @@ export class Layer {
     static _feedIndices = [];
     static _feedMax = [];
     static _feedOverflowWarned = 0;
+
+    /** Same shape as above, for ParticleComponent pool indices (density + compute-particle layers). */
+    static _particleFeedCountSAB = null;
+    static _particleFeedCount = null; // Int32Array[MAX_LAYERS]
+    static _particleFeedLock = null; // Int32Array[MAX_LAYERS] spinlocks (same SAB, second half)
+    static _particleFeedIndexSABs = [];
+    static _particleFeedIndices = [];
+    static _particleFeedMax = [];
+    static _particleFeedOverflowWarned = 0;
 
     // Per-layer uniform SABs (only for layers with shaders)
     static _uniformSABs = [];     // SharedArrayBuffer[] indexed by layer id
@@ -565,12 +580,17 @@ export class Layer {
         this._feedIndices = [];
         this._feedMax = [];
         this._feedOverflowWarned = 0;
+        this._particleFeedIndexSABs = [];
+        this._particleFeedIndices = [];
+        this._particleFeedMax = [];
+        this._particleFeedOverflowWarned = 0;
         this._defaultYSorting = !!defaultYSorting;
 
         // Allocate config SAB
         this._configSAB = new SharedArrayBuffer(this._getConfigSABSize());
         this._createConfigViews(this._configSAB);
         this._bindFeedCountSAB(new SharedArrayBuffer(this.MAX_LAYERS * 8));
+        this._bindParticleFeedCountSAB(new SharedArrayBuffer(this.MAX_LAYERS * 8));
 
         // Register built-in layers (BACKGROUND, DECALS, CASTED_SHADOWS, ENTITIES, LIGHTING)
         for (const [name, config] of Object.entries(builtInLayers)) {
@@ -615,6 +635,29 @@ export class Layer {
                 this._feedMax[layer.id] = maxBodies;
             }
 
+            // Density-splat layers and compute layers with maxParticles > 0 (e.g. a
+            // BOX2D_BODIES compute layer that also packs LiquidFun/CPU particles for
+            // its own heat/fuel pass) both need a dense ParticleComponent feed list.
+            // `compute.maxParticles` already threads an explicit `shader.maxParticles`
+            // through regardless of computeSource; density-only layers have no
+            // `compute` block at all, so fall back to an explicit value or the shared
+            // default cap.
+            const explicitMaxParticles =
+                Number.isFinite(config.shader?.maxParticles) && config.shader.maxParticles > 0
+                    ? (config.shader.maxParticles | 0)
+                    : 0;
+            const needsParticleFeed =
+                densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN || (compute && compute.maxParticles > 0);
+            if (needsParticleFeed) {
+                const maxParticles = compute && compute.maxParticles > 0
+                    ? compute.maxParticles
+                    : (explicitMaxParticles || COMPUTE_LAYER_DEFAULT_MAX_PARTICLES);
+                const psab = new SharedArrayBuffer(maxParticles * 4);
+                this._particleFeedIndexSABs[layer.id] = psab;
+                this._particleFeedIndices[layer.id] = new Uint32Array(psab);
+                this._particleFeedMax[layer.id] = maxParticles;
+            }
+
             if (config.shader) {
                 this._allocateUniformSAB(
                     layer.id,
@@ -625,6 +668,7 @@ export class Layer {
 
         this.initialized = true;
         for (let i = 0; i < this.count; i++) this._writeFeederKind(i);
+        this._computeSpriteQueueBits();
         this._buildMetadata(layersConfig, builtInLayers);
         return this;
     }
@@ -854,6 +898,18 @@ export class Layer {
         }
     }
 
+    /** Same shape as {@link Layer._bindFeedCountSAB}, for the ParticleComponent feed lists. */
+    static _bindParticleFeedCountSAB(sab) {
+        this._particleFeedCountSAB = sab || null;
+        this._particleFeedCount = null;
+        this._particleFeedLock = null;
+        if (!sab) return;
+        this._particleFeedCount = new Int32Array(sab, 0, this.MAX_LAYERS);
+        if (sab.byteLength >= this.MAX_LAYERS * 8) {
+            this._particleFeedLock = new Int32Array(sab, this.MAX_LAYERS * 4, this.MAX_LAYERS);
+        }
+    }
+
     static _normalizeMaxBodies(shader) {
         const n = shader?.maxBodies;
         return Number.isFinite(n) && n > 0 ? (n | 0) : COMPUTE_LAYER_DEFAULT_MAX_BODIES;
@@ -939,6 +995,20 @@ export class Layer {
         if (id < 0 || id >= this.MAX_LAYERS) return false;
         if (this._hasRenderQueue && this._hasRenderQueue[id] === 1) return true;
         return id === this.ENTITIES_ID;
+    }
+
+    /**
+     * Recompute {@link Layer._spriteQueueBits} from the current `_hasRenderQueue`/
+     * `ENTITIES_ID`. Call once per realm after those are known (init or
+     * initializeFromBuffers) — not SAB-shared, every worker computes its own copy
+     * from the shared config it just bound.
+     */
+    static _computeSpriteQueueBits() {
+        let bits = 0;
+        for (let id = 0; id < this.count; id++) {
+            if (this.hasSpriteQueue(id)) bits |= 1 << id;
+        }
+        this._spriteQueueBits = bits;
     }
 
     static _resolveOneSubscription(entry, kind) {
@@ -1309,6 +1379,9 @@ export class Layer {
             feedCountSAB: this._feedCountSAB,
             feedIndexSABs: this._feedIndexSABs,
             feedMax: this._feedMax,
+            particleFeedCountSAB: this._particleFeedCountSAB,
+            particleFeedIndexSABs: this._particleFeedIndexSABs,
+            particleFeedMax: this._particleFeedMax,
         };
     }
 
@@ -1329,6 +1402,10 @@ export class Layer {
         this._feedIndices = [];
         this._feedMax = [];
         this._feedOverflowWarned = 0;
+        this._particleFeedIndexSABs = [];
+        this._particleFeedIndices = [];
+        this._particleFeedMax = [];
+        this._particleFeedOverflowWarned = 0;
 
         // Create typed views over the shared config SAB
         this._configSAB = data.configSAB;
@@ -1389,7 +1466,18 @@ export class Layer {
             if (sab) this._feedIndices[i] = new Uint32Array(sab);
         }
 
+        this._particleFeedCountSAB = data.particleFeedCountSAB || null;
+        this._bindParticleFeedCountSAB(this._particleFeedCountSAB);
+        this._particleFeedIndexSABs = data.particleFeedIndexSABs || [];
+        this._particleFeedMax = data.particleFeedMax || [];
+        this._particleFeedIndices = [];
+        for (let i = 0; i < this._particleFeedIndexSABs.length; i++) {
+            const sab = this._particleFeedIndexSABs[i];
+            if (sab) this._particleFeedIndices[i] = new Uint32Array(sab);
+        }
+
         this.initialized = true;
+        this._computeSpriteQueueBits();
     }
 
     // ========================================
@@ -1428,12 +1516,19 @@ export class Layer {
         this._visible = null;
         this._feederKind = null;
         this._visibleDirty = null;
+        this._spriteQueueBits = 0;
         this._feedCountSAB = null;
         this._feedCount = null;
         this._feedLock = null;
         this._feedIndexSABs = [];
         this._feedIndices = [];
         this._feedMax = [];
+        this._particleFeedCountSAB = null;
+        this._particleFeedCount = null;
+        this._particleFeedLock = null;
+        this._particleFeedIndexSABs = [];
+        this._particleFeedIndices = [];
+        this._particleFeedMax = [];
         this._uniformSABs = [];
         this._uniformFloats = [];
         this._uniformDirty = [];

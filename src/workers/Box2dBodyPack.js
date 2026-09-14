@@ -10,6 +10,7 @@ import { Collider } from '../components/Collider.js';
 import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 import { MAX_POLYGON_VERTICES, ShapeType, COMPUTE_FLAG_STATIC, COMPUTE_FLAG_SWEEP } from '../core/ConfigDefaults.js';
+import { snapshotColliderFeed } from '../core/layerFeed.js';
 
 export const BODY_FLOATS = 16;
 export const BODY_STRIDE_BYTES = BODY_FLOATS * 4;
@@ -91,11 +92,15 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
   const polyVY = Collider.polyVertexY;
   const feedBits = Collider.feedBits;
   const layerMask = Collider.layerMask;
-  const n = collActive ? collActive.length : 0;
-
   let overflow = false;
-  for (let i = 0; i < n; i++) {
-    if (!collActive[i]) continue;
+  const snap = snapshotColliderFeed(layerId);
+  const useFeed = !!snap;
+  const n = useFeed ? snap.count : (collActive ? collActive.length : 0);
+  const feedIdx = useFeed ? snap.indices : null;
+
+  for (let f = 0; f < n; f++) {
+    const i = feedIdx ? feedIdx[f] : f;
+    if (!collActive || !collActive[i]) continue;
     if (layerMask && !(layerMask[i] & want)) continue;
     if (bodyCount >= cap) {
       overflow = true;
@@ -180,7 +185,10 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
 
     const ddx = worldX - prevPx;
     const ddy = worldY - prevPy;
-    if (bodyCount >= cap) break;
+    if (bodyCount >= cap) {
+      overflow = true;
+      break;
+    }
     bodyCount = writeBody(bodyData, bodyCount, worldX, worldY, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount, prevPx, prevPy);
 
     if (!sweep || !canSweep || (isStatic && isStatic[i])) continue;
@@ -196,7 +204,10 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
       const t = k / samples;
       const sx = sweepFromX + dx * t;
       const sy = sweepFromY + dy * t;
-      if (bodyCount >= cap) break;
+      if (bodyCount >= cap) {
+        overflow = true;
+        break;
+      }
       bodyCount = writeBody(bodyData, bodyCount, sx, sy, sweepC, sweepS, hw, hh, kind, sweepFlags, velx, vely, w, vStart, vCount, sx - ddx, sy - ddy);
     }
   }

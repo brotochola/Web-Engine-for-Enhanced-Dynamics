@@ -6,8 +6,8 @@ import { Collider } from '../../src/components/Collider.js';
 import { Transform } from '../../src/components/Transform.js';
 import { RigidBody } from '../../src/components/RigidBody.js';
 import { Layer } from '../../src/core/Layer.js';
-import { feedLayerAt } from '../../src/core/computeFeed.js';
 import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
+import { syncColliderFeed } from '../../src/core/layerFeed.js';
 import { ShapeType } from '../../src/core/ConfigDefaults.js';
 
 const N = 256;
@@ -43,7 +43,8 @@ for (let i = 0; i < N; i++) {
   Transform.rotS[i] = 0;
   RigidBody.vx[i] = 1;
   RigidBody.vy[i] = 0;
-  feedLayerAt(i, layerId);
+  Collider.layerMask[i] = 1 << layerId;
+  syncColliderFeed(i, 0, 1 << layerId);
 }
 
 const bodies = new Float32Array(N * BODY_FLOATS);

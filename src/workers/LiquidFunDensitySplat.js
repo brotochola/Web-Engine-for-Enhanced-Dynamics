@@ -17,6 +17,7 @@ import {
 } from '../lib/pixi_8.16_.min.js';
 import { packLiquidFunLightSlabs } from '../core/liquidFunLightSplat.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
+import { snapshotParticleFeed } from '../core/layerFeed.js';
 
 export const LF_SPLAT_FLOATS = 4;
 export const LF_SPLAT_STRIDE = LF_SPLAT_FLOATS * 4;
@@ -166,8 +167,12 @@ export class LiquidFunDensitySplat {
       const cpuMask = ParticleComponent.layerMask;
       const cpuTint = ParticleComponent.tint;
       const cpuAlpha = ParticleComponent.alpha;
-      const n = active.length;
-      for (let i = 0; i < n && this._out < maxOut; i++) {
+      const snap = snapshotParticleFeed(opts.layerId | 0);
+      const useFeed = !!snap;
+      const cpuN = useFeed ? snap.count : active.length;
+      const feedIdx = useFeed ? snap.indices : null;
+      for (let f = 0; f < cpuN && this._out < maxOut; f++) {
+        const i = feedIdx ? feedIdx[f] : f;
         if (!active[i]) continue;
         if (cpuMask && !(cpuMask[i] & want)) continue;
         this._writeInst(px[i], py[i], cpuTint ? cpuTint[i] : 0, cpuAlpha ? cpuAlpha[i] : 1);

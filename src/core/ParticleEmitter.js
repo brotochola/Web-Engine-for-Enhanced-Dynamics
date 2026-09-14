@@ -46,6 +46,7 @@ import { SharedAtomicPool } from './SharedAtomicPool.js';
 import { CAMERA_TYPES, PARTICLE_EASE } from './ConfigDefaults.js';
 import { randomRange, randomColor, rng } from './utils.js';
 import { Layer } from './Layer.js';
+import { syncParticleFeed } from './layerFeed.js';
 import {
   PARTICLE_TWEEN,
   resolveParticleOp,
@@ -83,6 +84,18 @@ export class ParticleEmitter extends SharedAtomicPool {
     // Call base class initialize with the count
     super.initialize(maxParticles);
     this._warnedPoolExhausted = false;
+  }
+
+  static returnToPool(index) {
+    const i = index | 0;
+    if (ParticleComponent.layerMask) {
+      const old = ParticleComponent.layerMask[i] | 0;
+      if (old) {
+        ParticleComponent.layerMask[i] = 0;
+        syncParticleFeed(i, old, 0);
+      }
+    }
+    super.returnToPool(index);
   }
 
   /**
@@ -425,7 +438,10 @@ export class ParticleEmitter extends SharedAtomicPool {
       despawnOnGroundContact[i] = flatMode ? 0 : (cfg.despawnOnGroundContact ? 1 : 0);
 
       blendMode[i] = cfg.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
-      if (layerMask) layerMask[i] = subMask;
+      if (layerMask) {
+        layerMask[i] = subMask;
+        syncParticleFeed(i, 0, subMask);
+      }
 
       flat[i] = flatMode;
       viewModeArr[i] = viewMode;

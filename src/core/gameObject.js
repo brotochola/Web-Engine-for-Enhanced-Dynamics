@@ -13,6 +13,7 @@ import { FlashComponent } from '../components/FlashComponent.js';
 import { LightOccluder } from '../components/LightOccluder.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Layer } from './Layer.js';
+import { syncColliderFeed } from './layerFeed.js';
 import { Grid } from './Grid.js';
 import { Joint } from './Joint.js';
 import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from './ConfigDefaults.js';
@@ -935,7 +936,11 @@ export class GameObject {
       AdobeAnimComponent.layerMask[i] = m;
     }
     if (this._hasComponents.Collider && Collider.layerMask) {
-      Collider.layerMask[i] = m;
+      const old = Collider.layerMask[i] | 0;
+      if (old !== m) {
+        Collider.layerMask[i] = m;
+        syncColliderFeed(i, old, m);
+      }
     }
   }
 
@@ -1722,7 +1727,11 @@ export class GameObject {
       this.onDespawned();
     }
 
-    if (this._hasComponents?.Collider && Collider.layerMask) Collider.layerMask[i] = 0;
+    if (this._hasComponents?.Collider && Collider.layerMask) {
+      const old = Collider.layerMask[i] | 0;
+      Collider.layerMask[i] = 0;
+      if (old) syncColliderFeed(i, old, 0);
+    }
 
     DecorationPool.clearAttachedAndDespawnAll(i);
 
@@ -2178,7 +2187,11 @@ export class GameObject {
       Collider.polyCount[i] = 0;
       Collider.polyCentroidX[i] = 0;
       Collider.polyCentroidY[i] = 0;
-      if (Collider.layerMask) Collider.layerMask[i] = 0;
+      if (Collider.layerMask) {
+        const old = Collider.layerMask[i] | 0;
+        Collider.layerMask[i] = 0;
+        if (old) syncColliderFeed(i, old, 0);
+      }
       if (Collider.feedBits) Collider.feedBits[i] = 0;
     }
 

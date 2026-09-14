@@ -5,8 +5,8 @@ import { Transform } from '../../src/components/Transform.js';
 import { RigidBody } from '../../src/components/RigidBody.js';
 import { Layer } from '../../src/core/Layer.js';
 import { ShapeType, COMPUTE_FLAG_STATIC } from '../../src/core/ConfigDefaults.js';
-import { feedLayerAt } from '../../src/core/computeFeed.js';
 import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
+import { syncColliderFeed } from '../../src/core/layerFeed.js';
 import { parseArgs, timeIt, writeReport } from './microbench-helpers.mjs';
 
 const args = parseArgs();
@@ -58,7 +58,8 @@ function setup(n, { moving }) {
     RigidBody.static[i] = moving ? 0 : 1;
     RigidBody.px[i] = Transform.x[i] - (moving ? 40 : 0);
     RigidBody.py[i] = Transform.y[i];
-    feedLayerAt(i, id);
+    Collider.layerMask[i] = 1 << id;
+    syncColliderFeed(i, 0, 1 << id);
   }
   return id;
 }

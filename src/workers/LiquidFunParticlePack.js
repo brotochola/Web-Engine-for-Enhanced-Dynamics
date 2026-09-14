@@ -3,6 +3,7 @@
  */
 import { LiquidFun } from '../core/LiquidFun.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
+import { snapshotParticleFeed } from '../core/layerFeed.js';
 
 export const PARTICLE_FLOATS = 4;
 export const PARTICLE_STRIDE_BYTES = PARTICLE_FLOATS * 4;
@@ -69,8 +70,12 @@ export function packLiquidFunParticles(layerId, particleData, maxParticles) {
     const cpuMask = ParticleComponent.layerMask;
     const cpuVx = ParticleComponent.vx;
     const cpuVy = ParticleComponent.vy;
-    const n = active.length;
-    for (let i = 0; i < n; i++) {
+    const snap = snapshotParticleFeed(layerId);
+    const useFeed = !!snap;
+    const cpuN = useFeed ? snap.count : active.length;
+    const feedIdx = useFeed ? snap.indices : null;
+    for (let f = 0; f < cpuN; f++) {
+      const i = feedIdx ? feedIdx[f] : f;
       if (!active[i]) continue;
       if (cpuMask && !(cpuMask[i] & want)) continue;
       if (written >= cap) {

@@ -84,6 +84,7 @@
     "bench:micro:par-cam": "node tests/bench/par-cam-microbench.mjs",
     "bench:micro:pre-anim": "node tests/bench/pre-anim-microbench.mjs",
     "bench:micro:pre-hot": "node tests/bench/pre-hot-microbench.mjs",
+    "bench:micro:layer-collect": "node tests/bench/layer-collect-microbench.mjs",
     "bench:micro:instanced-pack": "node tests/bench/instanced-pack-microbench.mjs",
     "bench:micro:sr-flags": "node tests/bench/sr-flags-microbench.mjs",
     "bench:micro:hyp-wins": "node tests/bench/run-hyp-wins-microbenches.mjs",

@@ -67,9 +67,7 @@ export class ComputeStressScene extends Scene {
   };
 
   static assets = {
-    textures: {
-      ball: '/demos/img/bola.png',
-    },
+    textures: {},
     shaders: {
       computeStressLook: '/tests/bench/stressScenes/compute/computeStressLook.wgsl',
       computeStressSim: '/tests/bench/stressScenes/compute/computeStressSim.wgsl',

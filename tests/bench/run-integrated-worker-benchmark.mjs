@@ -224,6 +224,11 @@ async function main() {
     page.on('pageerror', (error) => {
       console.error('[benchmark page error]', error);
     });
+    page.on('requestfailed', (request) => {
+      const failure = request.failure();
+      const status = failure?.errorText || 'failed';
+      console.error(`[page requestfailed] ${request.method()} ${request.url()} ${status}`);
+    });
     page.on('console', (msg) => {
       const text = msg.text();
       if (

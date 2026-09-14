@@ -29,9 +29,13 @@ import { LiquidFun } from '../../src/core/LiquidFun.js';
 import { liquidFunRenderByteSize } from '../../src/core/liquidFunRender.js';
 import { packLiquidFunParticles, PARTICLE_FLOATS } from '../../src/workers/LiquidFunParticlePack.js';
 import { ParticleComponent } from '../../src/components/ParticleComponent.js';
+import { syncColliderFeed } from '../../src/core/layerFeed.js';
 
 function subscribeCollider(index, layerId) {
-  Collider.layerMask[index] = 1 << (layerId | 0);
+  const bit = 1 << (layerId | 0);
+  const old = Collider.layerMask[index] | 0;
+  Collider.layerMask[index] = bit;
+  syncColliderFeed(index, old, bit);
 }
 
 const BUILT_IN_LAYERS = {
@@ -139,14 +143,16 @@ test('packBox2dBodies scans Collider.layerMask bits', () => {
     Transform.rotC[1] = 1;
     Transform.rotC[2] = 1;
     Transform.rotC[3] = 1;
-    Collider.layerMask[1] = bit;
-    Collider.layerMask[2] = bit;
-    Collider.layerMask[3] = bit;
+    subscribeCollider(1, id);
+    subscribeCollider(2, id);
+    subscribeCollider(3, id);
     const bodies = new Float32Array(8 * BODY_FLOATS);
     const verts = new Float32Array(64);
     let packed = packBox2dBodies(id, bodies, verts, 8, { sweep: false });
     assert.equal(packed.bodyCount, 3);
+    const old1 = Collider.layerMask[1] | 0;
     Collider.layerMask[1] = 0;
+    syncColliderFeed(1, old1, 0);
     packed = packBox2dBodies(id, bodies, verts, 8, { sweep: false });
     assert.equal(packed.bodyCount, 2);
   } finally {
@@ -961,12 +967,16 @@ test('Collider.layerMask can subscribe one body to two compute layers', () => {
     Collider.shapeType[0] = ShapeType.Box;
     Collider.width[0] = 16;
     Collider.height[0] = 16;
-    Collider.layerMask[0] = (1 << simId) | (1 << fireId);
+    const both = (1 << simId) | (1 << fireId);
+    Collider.layerMask[0] = both;
+    syncColliderFeed(0, 0, both);
     const bodies = new Float32Array(8 * BODY_FLOATS);
     const verts = new Float32Array(64);
     assert.equal(packBox2dBodies(simId, bodies, verts, 8, { sweep: false }).bodyCount, 1);
     assert.equal(packBox2dBodies(fireId, bodies, verts, 8, { sweep: false }).bodyCount, 1);
-    Collider.layerMask[0] = 1 << simId;
+    const onlySim = 1 << simId;
+    Collider.layerMask[0] = onlySim;
+    syncColliderFeed(0, both, onlySim);
     assert.equal(packBox2dBodies(fireId, bodies, verts, 8, { sweep: false }).bodyCount, 0);
   } finally {
     Layer.reset();
