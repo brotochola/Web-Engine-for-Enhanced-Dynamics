@@ -133,6 +133,7 @@
   let sleepingU8 = null;
   let statsF32 = null;
   let collectDetailedStats = false;
+  let publishContactRing = true;
 
   // Published pose double-buffer (render-queue style): visuals read post-step snapshot
   let poseSync = null; // Int32Array [readyFrame, consumedFrame]
@@ -1299,6 +1300,7 @@
   }
 
   function publishContactRingFromWasm() {
+    if (!publishContactRing) return;
     if (!world || !contactRingI32) return;
     const hdr = world._eventHeader;
     if (!hdr) return;
@@ -1315,6 +1317,7 @@
   }
 
   function publishHitsFromWasm() {
+    if (!publishContactRing) return;
     if (!world || !hitRingBound) return;
     const hdr = world._eventHeader;
     const hits = world._contactHit;
@@ -1910,6 +1913,7 @@
     const maxBodies = data.maxBodies | 0;
     verdletSubSteps = Math.max(1, data.subSteps | 0 || 4);
     sleepingEnabled = data.sleeping !== false;
+    publishContactRing = data.publishContactRing !== false;
     liquidFunWorldW = data.worldWidth | 0;
     liquidFunWorldH = data.worldHeight | 0;
     world = new PhysicsWorld(data.gravityX || 0, data.gravityY || 0, {
@@ -2259,6 +2263,9 @@
     }
     if (data.hitEventThreshold != null && world) {
       world.setHitEventThreshold(data.hitEventThreshold);
+    }
+    if (data.publishContactRing !== undefined) {
+      publishContactRing = data.publishContactRing !== false;
     }
   }
 

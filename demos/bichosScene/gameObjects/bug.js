@@ -5,6 +5,7 @@ const { Mouse, distanceSq2D, GameObject, Collider, SpriteRenderer, rng, RigidBod
 export class Bug extends GameObject {
     static ANIMATION_SPEED_MULTIPLIER = 0.007
     static MOVE_SPEED_THRESHOLD = 0.1;
+    static deriveSpeed = true;
     // Auto-detected by GameEngine
     static scriptUrl = import.meta.url;
     static sqDistToFollow = 500 ** 2;

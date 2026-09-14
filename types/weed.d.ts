@@ -822,6 +822,8 @@ export declare class GameObject {
   static startIndex: number;
   static poolSize: number;
   static tickInterval: number;
+  /** Particle worker fills RigidBody.speed when any registered type sets this true. */
+  static deriveSpeed: boolean;
   static entityType: number | null;
   static scene: Scene | null;
   static instances: GameObject[];

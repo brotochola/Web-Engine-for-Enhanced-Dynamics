@@ -326,7 +326,7 @@ export class PhysicsDebugRenderer {
 
   // ------- sleeping entities -------
 
-  drawSleepingEntities(ctx, canvas, camera, zoom) {
+  drawSleepingEntities(ctx, canvas, camera, zoom, pose) {
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
@@ -342,32 +342,46 @@ export class PhysicsDebugRenderer {
     const height = Collider.height;
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
-    const rotation = Transform.rotation;
+    const poseX = pose ? pose.x : null;
+    const poseY = pose ? pose.y : null;
+    const poseRotC = pose ? pose.rotC : null;
+    const poseRotS = pose ? pose.rotS : null;
     const n = Math.min(active.length, x.length);
+
+    const viewLeft = camera.x - 100;
+    const viewRight = camera.x + canvas.width / zoom + 100;
+    const viewTop = camera.y - 100;
+    const viewBottom = camera.y + canvas.height / zoom + 100;
 
     ctx.strokeStyle = 'rgba(255, 0, 255, 0.8)';
     ctx.fillStyle = 'rgba(255, 0, 255, 0.2)';
     ctx.lineWidth = 3 / zoom;
 
     for (let i = 0; i < n; i++) {
-      if (!active[i] || !isOnScreen[i]) continue;
+      if (!active[i]) continue;
       if (!rigidBodyActive[i] || !sleeping[i]) continue;
       if (colActive && !colActive[i]) continue;
+
+      const usePose = !!(poseX && rigidBodyActive[i]);
+      const entityX = usePose ? poseX[i] : x[i];
+      const entityY = usePose ? (poseY ? poseY[i] : y[i]) : y[i];
+      const onScreen = isOnScreen[i] || (entityX >= viewLeft && entityX <= viewRight && entityY >= viewTop && entityY <= viewBottom);
+      if (!onScreen) continue;
 
       const ox = offsetX?.[i] || 0;
       const oy = offsetY?.[i] || 0;
       const shape = shapeType?.[i];
-      const c = Transform.rotC ? Transform.rotC[i] : 1;
-      const s = Transform.rotS ? Transform.rotS[i] : 0;
+      const c = usePose && poseRotC ? poseRotC[i] : (Transform.rotC ? Transform.rotC[i] : 1);
+      const s = usePose && poseRotS ? poseRotS[i] : (Transform.rotS ? Transform.rotS[i] : 0);
 
       let posX;
       let posY;
       if (shape === ShapeType.Circle) {
-        posX = x[i] + ox;
-        posY = y[i] + oy;
+        posX = entityX + ox;
+        posY = entityY + oy;
       } else {
-        posX = x[i] + c * ox - s * oy;
-        posY = y[i] + s * ox + c * oy;
+        posX = entityX + c * ox - s * oy;
+        posY = entityY + s * ox + c * oy;
       }
       const sx = (posX - camera.x) * zoom;
       const sy = (posY - camera.y) * zoom;

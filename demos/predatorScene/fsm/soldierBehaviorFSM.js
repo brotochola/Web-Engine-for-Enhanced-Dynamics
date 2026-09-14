@@ -10,7 +10,7 @@ import { PersonComponent, DIRECTION_NAMES } from '../components/personComponent.
 
 import { LootableComponent } from '../components/lootableComponent.js';
 
-const { distanceSq2D, Ray, DebugDraw, FSM, FSMState, Transform, RigidBody, GameObject, Collider } = WEED;
+const { distanceSq2D, Ray, DebugDraw, FSM, FSMState, Transform, GameObject, Collider } = WEED;
 
 // ==========================================
 // REUSABLE OBJECTS - Zero allocation
@@ -227,10 +227,6 @@ class IdleSoldierState extends FSMState {
 // ==========================================
 
 class GoingToDestinationState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    RigidBody.sleeping[i] = 0;
-  }
-
   static onUpdate(owner, i, dt) {
     const dest = getDestination();
 

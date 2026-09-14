@@ -54,7 +54,8 @@ class Ball extends GameObject {
     const actualBallSize = 14; //png width
     const ballRadius = spawnConfig.radius || rng() * 20 + 10;
     this.collider.radius = ballRadius; // Mass auto-computed from area (π * r²)
-    this.collider.visualRange = spawnConfig.visualRange || ballRadius * 3;
+    // Tick never reads neighbors; spatial skips visualRange <= 0.
+    this.collider.visualRange = spawnConfig.visualRange ?? 0;
     // this.setFixedRotation(1);
 
     const scale = (ballRadius * 2) / actualBallSize;

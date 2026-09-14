@@ -605,6 +605,7 @@
       hitSab: state.hitSab,
       jointBreakSab: state.jointBreakSab,
       hitEventThreshold: s.hitEventThreshold,
+      publishContactRing: (state.config.physics || {}).publishContactRing !== false,
       liquidFun: s.liquidFun,
       stats: state.stats ? packView(state.stats) : null,
       collectDetailedStats: !!state.collectDetailedStats,
@@ -775,6 +776,7 @@
         subSteps: state.settings.subStepCount,
         sleeping: state.sleepingEnabled !== false,
         hitEventThreshold: state.settings.hitEventThreshold,
+        publishContactRing: (state.config.physics || {}).publishContactRing !== false,
       });
     }
   }

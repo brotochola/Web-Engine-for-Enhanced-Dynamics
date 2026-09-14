@@ -73,6 +73,9 @@ export class GameObject {
   // tickInterval = 10 means entity ticks every 10 frames (spread across frames via index offset)
   static tickInterval = 1; // Default: tick every frame (no decimation)
 
+  /** Particle worker fills `RigidBody.speed` only if some registered type sets this true. */
+  static deriveSpeed = false;
+
   // Neighbor data (from spatial worker)
   static neighborData = null;
 
@@ -597,7 +600,10 @@ export class GameObject {
     }
   }
 
-  /** Speed (magnitude of velocity) - read-only, computed by physics worker */
+  /**
+   * Speed (px/s). Particle worker writes `RigidBody.speed` only when a registered
+   * type sets `static deriveSpeed = true`.
+   */
   get speed() {
     if (!this._hasComponents.RigidBody) return 0;
     return RigidBody.speed[this.index];
@@ -1742,6 +1748,7 @@ export class GameObject {
     Transform.active[i] = 0;
     if (this.rigidBody) {
       RigidBody.active[i] = 0;
+      // HEAP slot hygiene — destroy is markBodyDirty. Do not setAwake.
       RigidBody.sleeping[i] = 0;
     }
     if (this.collider) Collider.active[i] = 0;

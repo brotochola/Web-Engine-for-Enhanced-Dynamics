@@ -50,6 +50,7 @@ function getAngleKeys(spritesheet) {
 
 export class Car extends GameObject {
     static scriptUrl = import.meta.url;
+    static deriveSpeed = true;
 
     static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, CarComponent];
 

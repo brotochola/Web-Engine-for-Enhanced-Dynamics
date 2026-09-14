@@ -362,6 +362,7 @@ class ParticleWorker extends AbstractWorker {
     // Derived properties
     this.globalEntityCount = 0;
     this._queryRigidBody = null;
+    this.deriveSpeed = false;
 
     this._rbActive = null;
 
@@ -510,6 +511,7 @@ class ParticleWorker extends AbstractWorker {
 
     // Sway decimation config
     this.swayDecimation = data.config?.decoration?.swayDecimation ?? DECORATION_DEFAULTS.swayDecimation;
+    this.deriveSpeed = data.config?.particle?.deriveSpeed === true;
 
     // Screen visibility config
     this.canvasWidth = this.config.canvasWidth || 800;
@@ -1765,6 +1767,7 @@ class ParticleWorker extends AbstractWorker {
   // ========================================
 
   updateDerivedProperties() {
+    if (!this.deriveSpeed) return;
     if (this.globalEntityCount === 0 || !RigidBody.vx || !this._queryRigidBody) return;
 
     const rigidBodyActive = RigidBody.active;

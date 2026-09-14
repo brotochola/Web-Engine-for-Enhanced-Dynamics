@@ -300,9 +300,10 @@ export class AbstractWorker {
     this.frameNumber++;
     const timing = this.updateFrameTiming();
 
-    // Snapshot keyboard / gamepad press edges once per frame for the current worker.
-    Keyboard.updateEdgeFlags();
-    Gamepad.updateEdgeFlags();
+    if (this.needsGameScripts) {
+      Keyboard.updateEdgeFlags();
+      Gamepad.updateEdgeFlags();
+    }
 
     // Call the worker-specific update logic; STEP_MS = wall time of that work only
     const t0 = performance.now();

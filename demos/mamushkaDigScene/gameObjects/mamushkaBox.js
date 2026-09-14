@@ -233,7 +233,7 @@ export function weldTouchingMamushkas() {
   }
 }
 
-/** Sleep dynamic boxes far from the player. Statics stay cheap without this. */
+/** Sleep far dynamics via setAwake. Not rigidBody.static (type change, frozen walls, weld anchors). Island/weld can re-wake; expected. Packed roots already static. */
 export function sleepFarMamushkaBoxes(px, py) {
   const start = MamushkaBox.startIndex | 0;
   const end = start + (MamushkaBox.poolSize | 0);

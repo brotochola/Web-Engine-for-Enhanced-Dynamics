@@ -8,7 +8,7 @@ import { MySoldier } from '../gameObjects/mySoldier.js';
 import { CivilianComponent } from '../components/civilianComponent.js';
 import { SoldierBehaviorFSM } from './soldierBehaviorFSM.js';
 
-const { FSM, FSMState, Transform, RigidBody } = WEED;
+const { FSM, FSMState, Transform } = WEED;
 
 /** Attacking soldier → panic (updates origin). Returns true if panic handled. */
 function tryPanicFromAttackingSoldier(owner, i, neighborIndex, soldierType) {
@@ -60,10 +60,6 @@ class IdleCivilianBehaviorState extends FSMState {
 // ==========================================
 
 class FleeingCivilianBehaviorState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    RigidBody.sleeping[i] = 0;
-  }
-
   static onUpdate(owner, i, dt) {
     // const playerEntityType = Player.entityType;
     const mySoldierEntityType = MySoldier.entityType;
@@ -115,10 +111,6 @@ class FleeingCivilianBehaviorState extends FSMState {
 const PANIC_DURATION_MS = 20_000;
 
 class PanicCivilianBehaviorState extends FSMState {
-  static onEnter(owner, i, fromState) {
-    RigidBody.sleeping[i] = 0;
-  }
-
   static onUpdate(owner, i, dt, totalTime) {
     if (totalTime >= PANIC_DURATION_MS) {
       this.fsm.changeState(i, this.fsm.states.IDLE);

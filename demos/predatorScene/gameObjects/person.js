@@ -27,6 +27,7 @@ const { RigidBody, Collider, SpriteRenderer, ShadowCaster, Transform, rng } = WE
 
 export class Person extends Lootable {
   static scriptUrl = import.meta.url;
+  static deriveSpeed = true;
   static defaultFriction = 0.005;
 
   static punchRangeSq = 30 ** 2; // Distance to start punching

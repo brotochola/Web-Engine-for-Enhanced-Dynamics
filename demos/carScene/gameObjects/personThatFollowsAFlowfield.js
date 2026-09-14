@@ -12,6 +12,7 @@ const _navVec = { x: 0, y: 0 };
 
 export class PersonThatFollowsAFlowfield extends GameObject {
   static scriptUrl = import.meta.url;
+  static deriveSpeed = true;
   static tickInterval = 4; // match MySoldier
 
   static components = [

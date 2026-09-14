@@ -335,8 +335,10 @@ export class DebugCanvas {
       this.physics.drawEntityIndices(ctx, canvas, camera, zoom);
 
     // 11. Sleeping entities
-    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES))
-      this.physics.drawSleepingEntities(ctx, canvas, camera, zoom);
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES)) {
+      this._pinDisplayPose(this._queuePoseReady);
+      this.physics.drawSleepingEntities(ctx, canvas, camera, zoom, this._colliderPose);
+    }
 
     // 12. Joints
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_JOINTS))

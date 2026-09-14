@@ -210,6 +210,12 @@ function buildComponentPoolsInfo(scene) {
 }
 
 function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
+  if (scene.config.physics) {
+    scene.config.physics.publishContactRing = scene._anyCollisionListener === true;
+  }
+  if (scene.config.particle) {
+    scene.config.particle.deriveSpeed = scene._anyDeriveSpeed === true;
+  }
   return {
     msg: 'init',
     pageOrigin: typeof window !== 'undefined' ? window.location.origin : '',

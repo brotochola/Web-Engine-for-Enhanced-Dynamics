@@ -8,6 +8,7 @@ const { GameObject, RigidBody, Collider, CollisionListener, Transform, ParticleE
 
 export class CarPart extends GameObject {
     static scriptUrl = import.meta.url;
+    static deriveSpeed = true;
 
     // No SpriteRenderer - this is an invisible physics body
     static components = [RigidBody, Collider, CollisionListener];

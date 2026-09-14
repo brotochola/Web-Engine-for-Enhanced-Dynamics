@@ -352,6 +352,8 @@ class Scene {
     this.totalEntityCount = 0;
     this.grabByType = [];
     this._anyGrabType = false;
+    this._anyCollisionListener = false;
+    this._anyDeriveSpeed = false;
     /** @type {Map<number, GameObject>} */
     this._entityViewCache = new Map();
 
@@ -492,6 +494,7 @@ class Scene {
     const startIndex = this.totalEntityCount;
     const entityTypeId = this.registeredClasses.length;
     EntityClass.entityType = entityTypeId;
+    if (EntityClass.deriveSpeed === true) this._anyDeriveSpeed = true;
 
     // Register custom components and assign componentId IDs
     for (const ComponentClass of components) {
@@ -499,6 +502,9 @@ class Scene {
       if (ComponentClass === Grab) {
         this.grabByType[entityTypeId] = 1;
         this._anyGrabType = true;
+      }
+      if (ComponentClass === CollisionListener) {
+        this._anyCollisionListener = true;
       }
     }
 
