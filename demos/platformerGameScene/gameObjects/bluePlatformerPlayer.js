@@ -50,7 +50,7 @@ export class BluePlatformerPlayer extends GameObject {
       lifespan: { min: 100, max: 500 },
       angleXY: { min: -180, max: 180 },
       speed: { min: 3, max: 5 },
-
+      layer: 'bloom',
     });
   }
 
@@ -175,7 +175,7 @@ export class BluePlatformerPlayer extends GameObject {
         lifespan: 300,
         angleXY: randomOffset,
         speed: { min: 0, max: -this.vx * 0.01 },
-
+        layer: 'bloom',
       });
     }
   }
@@ -192,7 +192,7 @@ export class BluePlatformerPlayer extends GameObject {
       lifespan: 300,
       angleXY: 0,
       speed: 0,
-
+      layer: 'bloom',
     });
 
   }
