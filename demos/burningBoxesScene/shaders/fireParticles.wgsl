@@ -29,10 +29,11 @@ fn raster_particles(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (i >= n) { return; }
   let p = particles[i];
   let heat = (f32(p.userData & 0xFFu) / 255.0) * clamp(frame.uLfHeat, 0.0, 1.0);
-  if (heat <= 0.0) { return; }
   let h = cell_h();
-  let r = max(frame.uLfRadius, h);
-  let reach = i32(ceil(r / h));
+  let rSolid = max(frame.uLfRadius, h);
+  let rOuter = rSolid + h;
+  let rMax = select(rSolid, rOuter, heat > 0.0);
+  let reach = i32(ceil(rMax / h));
   let cx = i32(floor(p.x / h));
   let cy = i32(floor(p.y / h));
   for (var oy = -reach; oy <= reach; oy++) {
@@ -42,8 +43,10 @@ fn raster_particles(@builtin(global_invocation_id) gid: vec3<u32>) {
       let wpos = (vec2<f32>(id) + vec2<f32>(0.5)) * h;
       let dx = wpos.x - p.x;
       let dy = wpos.y - p.y;
-      if (dx * dx + dy * dy > r * r) { continue; }
-      textureStore(fuelWrite, id, vec4<f32>(heat, p.vx, p.vy, 1.0));
+      let d2 = dx * dx + dy * dy;
+      if (d2 > rMax * rMax) { continue; }
+      let occ = select(0.0, 1.0, d2 <= rSolid * rSolid);
+      textureStore(fuelWrite, id, vec4<f32>(heat, p.vx, p.vy, occ));
     }
   }
 }

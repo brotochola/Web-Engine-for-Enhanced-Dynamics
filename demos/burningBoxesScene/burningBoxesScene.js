@@ -200,7 +200,7 @@ export class BurningBoxesScene extends WEED.Scene {
             uFireScroll2: { value: 18.0, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Fire n3', tip: 'Fine fire octave crawl.' },
             uFireAlpha: { value: 1.0, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Fire alpha', tip: 'Flame opacity.' },
             uFireNoise: { value: 0.22, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Fire noise', tip: 'How hard FBM wriggles flame bands and punches dark patches. 0 = smooth fill.' },
-            uLfRadius: { value: FIRE_LF_RADIUS, type: 'f32', min: 1, max: 40, step: 0.5, label: 'LF radius', tip: 'LiquidFun fuel splat radius in world units.' },
+            uLfRadius: { value: FIRE_LF_RADIUS, type: 'f32', min: 1, max: 40, step: 0.5, label: 'LF radius', tip: 'LiquidFun solid splat radius in world units. Occupied cells block fire/smoke. Hot particles also ignite a one-cell ring outside this radius.' },
             uLfHeat: { value: 1, type: 'f32', min: 0, max: 1, step: 0.01, label: 'LF heat', tip: 'Heat stamped at each LiquidFun particle. 0 = particles do not fuel the fire.' },
             uLfDrive: { value: 0.65, type: 'f32', min: 0, max: 1, step: 0.01, label: 'LF drive', tip: 'How much particle velocity is mixed into the Eulerian air.' },
             uBlowForce: { value: 900, type: 'f32', min: 0, max: 4000, step: 10, label: 'Blow force', tip: 'Wind speed written in front of blower bodies (local +X).' },
@@ -269,7 +269,7 @@ export class BurningBoxesScene extends WEED.Scene {
       posY,
       halfWidth,
       halfHeight,
-      layers: ['oil'],
+      layers: ['oil', 'fire'],
     });
   }
 
@@ -341,7 +341,7 @@ export class BurningBoxesScene extends WEED.Scene {
       posX: x,
       posY: y,
       radius,
-      layers: burning ? ['fire'] : ['oil'],
+      layers: burning ? ['fire'] : ['oil', 'fire'],
     });
   }
 

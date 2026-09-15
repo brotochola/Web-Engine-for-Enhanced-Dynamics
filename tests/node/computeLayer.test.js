@@ -939,13 +939,23 @@ test('packLiquidFunParticles: layerMask bit match; CPU particles; cap overflow',
   }
 });
 
-test('fireParticles writes fuel.a; apply_stamp ignites on fuel.a not fuel.r', () => {
+test('fireParticles occupancy on fuel.a; apply_stamp ignites on fuel.r', () => {
   const particles = readFileSync(join(SHADER_DIR, 'fireParticles.wgsl'), 'utf8');
   const fluid = readFileSync(join(SHADER_DIR, 'fireFluid.wgsl'), 'utf8');
-  assert.match(particles, /textureStore\(fuelWrite, id, vec4<f32>\(heat, p\.vx, p\.vy, 1\.0\)\)/);
+  const pack = readFileSync(join(SHADER_DIR, 'firePack.wgsl'), 'utf8');
+  assert.equal(/if \(heat <= 0\.0\) \{ return; \}/.test(particles), false);
+  assert.match(particles, /let occ = select\(0\.0, 1\.0, d2 <= rSolid \* rSolid\)/);
+  assert.match(particles, /textureStore\(fuelWrite, id, vec4<f32>\(heat, p\.vx, p\.vy, occ\)\)/);
+  const openFn = fluid.slice(fluid.indexOf('fn open_cell('), fluid.indexOf('fn inert_solid('));
+  assert.match(openFn, /textureLoad\(fuelTex/);
+  assert.match(openFn, /\.a > 0\.5/);
   const stampFn = fluid.slice(fluid.indexOf('fn apply_stamp('), fluid.indexOf('fn apply_body_vel('));
   assert.match(stampFn, /fuel\.a > 0\.5/);
-  assert.equal(/fuel\.r > 0\.5/.test(stampFn), false);
+  assert.match(stampFn, /fuel\.r > 0\.0/);
+  const advectT = fluid.slice(fluid.indexOf('fn advect_temperature('), fluid.indexOf('fn cool_rise('));
+  assert.match(advectT, /load_t\(id\)/);
+  assert.equal(/fuelTex/.test(pack), false);
+  assert.match(pack, /if \(mark\.r < 0\.5\)/);
 });
 
 test('ComputeLayer ends the compute pass when the layout changes', () => {
@@ -965,7 +975,8 @@ test('burningBoxesScene: landscape bg + particle fuel pass', () => {
   assert.match(scene, /dispatchFrom: 'particles'/);
   assert.match(scene, /maxParticles: FIRE_LF_MAX/);
   assert.match(scene, /densitySource: LAYER_DENSITY_SOURCE.LIQUID_FUN/);
-  assert.match(scene, /layers: burning \? \['fire'\] : \['oil'\]/);
+  assert.match(scene, /layers: burning \? \['fire'\] : \['oil', 'fire'\]/);
+  assert.match(scene, /layers: \['oil', 'fire'\]/);
   assert.match(scene, /Keyboard\.q \|\| Keyboard\.e/);
   assert.match(scene, /OIL_DRIP_MS/);
 });
