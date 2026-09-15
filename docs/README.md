@@ -31,7 +31,9 @@ This folder contains the engine notes that are closest to the code. The docs are
 | [`TILEMAP.md`](./TILEMAP.md)                           | Tiled JSON loading, SAB tile data, queries, viewport chunk streaming                  |
 | [`RAYCASTING.md`](./RAYCASTING.md)                     | DDA grid raycasts, line-of-sight checks, and layer-mask filtering                     |
 | [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md)             | Ray perf hypotheses H1–H6 + headless L1/L2/L3 campaign                                |
-| [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)     | L1 isolated / L2 stressScenes / L3 demo pyramid; feature catalog + commands           |
+| [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)     | Kernel / stress scene / gameplay catalog; scoreboard is `pnpm bench:scoreboard`        |
+| [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md)             | Speed protocol: worker step time, same load ±5% and cv < 50%, keep/drop, scoreboard   |
+| [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md)             | Living log of measured claims — read before reimplementing a speed idea               |
 
 ## Related Project Areas
 

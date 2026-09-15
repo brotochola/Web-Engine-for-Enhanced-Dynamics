@@ -42,8 +42,9 @@ for (const [srcKey, baselineKey] of [
 export const CANONICAL_ORDER = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
 
 export function restoreAll() {
-  // Baselines are pre-P2/P6. Running the old tournament overwrites shipped src.
-  // Always restoreAll() in a finally, or re-checkout those four files after.
+  // Historical fold base for applyCombo only. Do NOT use this as process
+  // cleanup — pre-P2/P6 baselines overwrite shipped src. Tournaments restore
+  // a work-tree snapshot from measureLib instead.
   fs.copyFileSync(PATHS.baselineParticleEmitter, PATHS.particleEmitter);
   fs.copyFileSync(PATHS.baselineParticleIntegrate, PATHS.particleIntegrate);
   fs.copyFileSync(PATHS.baselineSharedAtomicPool, PATHS.sharedAtomicPool);

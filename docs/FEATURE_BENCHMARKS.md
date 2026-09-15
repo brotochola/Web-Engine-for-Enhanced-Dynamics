@@ -1,26 +1,38 @@
-# Feature benchmarks (3-layer pyramid)
+# Feature benchmarks
 
-When changing a hot algorithm in WeedJS, measure at three layers. Do not jump straight to a real demo.
+When changing a hot algorithm in WeedJS, measure in this order. Do not jump straight to a real demo.
+
+The machine-readable catalog (one row per hot engine feature, with kernel, scene that actually runs the code, primary workers, and load keys) is [`tests/bench/engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). Compare the current tree to a git rev with:
+
+```bash
+pnpm bench:scoreboard --vs 0695a8d
+```
+
+That writes [`tests/results/scoreboard/report.md`](../tests/results/scoreboard/report.md) and updates [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). Artistic demos are not scoreboard rows. Vis-poly uses `visPolyStressScene` (`lighting.raycasted: true`). Combat-class particle + spatial load uses `steadyCombatScene` (seeded, constant emit). Do not patch `demos/predatorScene` so a bench can close.
+
+First smoke versus `0695a8d` (5 rows: emit, spatial, box2d, visPoly, steadyCombat) is in that report. Load closed on every row, including the new bench scenes. The tree is **not** claimed faster than main: box2d and visPoly were WORSE on n=1 smoke. Re-run without `--smoke` / `--only` before a product claim.
+
+Older docs said **L1 / L2 / L3**. Those names mean **kernel / stress scene / gameplay**. The keep/drop rules live in [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). Already-tried claims live in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
 
 | Layer | What it measures | How | When |
 |-------|------------------|-----|------|
-| **L1 isolated** | Algorithm throughput (ops/s, ms/N) + correctness | `node tests/bench/<feature>-microbench.mjs` — no workers, fake SoA/SAB | Changed DDA / Dijkstra / query math / grid loop |
-| **L2 intermediate** | Feature inside the engine (workers, real grid, SAB stats) on a synthetic scene | Playwright `run-integrated-worker-benchmark.mjs --scene /tests/bench/stressScenes/...` | Validate the win survives integration |
-| **L3 demo** | Real gameplay load | `demos/<demo>/` (Balls, Predator, …) | End-to-end regression only |
+| **Kernel microbenchmark** | Algorithm throughput (ops/s, ms) plus correctness | `node tests/bench/<feature>-microbench.mjs` — no workers, fake SoA/SAB | Changed DDA / Dijkstra / query math / grid loop / emit |
+| **Stress scene** | Feature inside the engine (workers, real grid, SAB stats) on a synthetic scene | Playwright `runIntegratedWorkerBenchmark.mjs --scene /tests/bench/stressScenes/...` | Does the win survive integration? Headless is fine for screening |
+| **Gameplay scene** | Real gameplay load | `demos/<demo>/` (Balls, Predator, …), Chromium with a visible window, 5 runs | End-to-end claim that a demo got cheaper |
 
-Always compare with the **same flags**, prefer `pnpm bench:headed:median` (≥5 runs), and check workload equivalence (entity count, casts/frame, `BODY_COUNT`).
+Always compare with the **same flags**, prefer `pnpm bench:headed:median` (5 runs, warmup 25 s, measure 18 s), and check load (`BODY_COUNT`, and `ACTIVE_PARTICLES` on Predator) within 5 percent.
 
-L2 scenes live only under [`tests/bench/stressScenes/`](../tests/bench/stressScenes/). Demos stay in `demos/<demoName>/`.
+Stress scenes live only under [`tests/bench/stressScenes/`](../tests/bench/stressScenes/). Demos stay in `demos/<demoName>/`.
 
 Methodology for the integrated harness: [`tests/bench/BENCHMARK_METHODOLOGY.md`](../tests/bench/BENCHMARK_METHODOLOGY.md).
 
 ## Workflow
 
 ```text
-baseline L1 → patch → L1
-baseline L2 → patch → L2 (feature metric + STEP_MS, same workload)
+baseline kernel → patch → kernel
+baseline stress scene → patch → stress scene (feature metric + STEP_MS, same load)
 pnpm test
-L3 only if the change can affect real demo load / other workers
+gameplay scene only if the change can affect a real demo / other workers
 ```
 
 ## Commands (Ray / Decals / Particles — headless)
@@ -100,7 +112,7 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | LiquidFun QueryAABB / RayCast | `liquidFunQuery.js` | SAB protocol `liquidFunQuery.test.js` | `stressScenes/LiquidFunQueryStressScene` | `demos/liquidFunQueryScene` | physics + logic `STEP_MS` under sync query churn |
 | Box2D QueryAABB | `box2dQueryAabb.js` | `queryAabbBurst.test.js` (protocol) | `stressScenes/QueryAabbStressScene` + demo self-check | — | burst 1024 / physics STEP |
 | NavGrid Dijkstra / A* | `navGrid.js`, particle_worker | `navGridMicrobench.mjs` | `stressScenes/NavStressScene` | car / bichos / Predator | ms/path; respects `maxProcessingMsPerFrame` |
-| AngularSweep visibility | `angularSweep.js` | `angularSweepMicrobench.mjs` | Predator (L3) | Predator | polygons/s + winding |
+| AngularSweep visibility | `angularSweep.js` | `angularSweepMicrobench.mjs` | `visPolyStressScene` (`raycasted: true`) | not Predator default (raycasted off) | polygons/s + `VISIBILITY_MS` / pre-render `STEP_MS` |
 | TileMap SAB queries | `tileMap.js` | `tileMapMicrobench.mjs` | low value | tile demos | ns/`getTileId` |
 | QuerySystem publish | `querySystem.js` | `querySystemMicrobench.mjs` | `stressScenes/QueryChurnScene` | — | `QUERY_PUBLISH_MS` (gated) / skip-if-unchanged |
 | Pre-render cull + queue | `preRenderWorker` | `srFlagsMicrobench.mjs` (7 Uint8 vs packed — **kill** L1+L3: cull kernel wins, queue noise, dirty RMW loses; Predator `preRender.STEP_MS` in noise vs 7 columns) | `stressScenes/RenderQueueStressScene` | Predator | L1 packed/strided; L3 `COLLECT_MS`/`EMIT_MS`/`STEP_MS` |
@@ -138,6 +150,8 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 | LiquidFunManyShapesStressScene | `/tests/bench/stressScenes/liquidFunManyShapesStressScene.js` | ~8k water + 180 static platforms, `liquidFun.subSteps:2` → OverlapAABB across sub-steps (H26) |
 | LiquidFunQueryStressScene | `/tests/bench/stressScenes/liquidFunQueryStressScene.js` | Dense fluid + per-frame sync `LiquidFun.queryAABB` / `rayCast` |
 | ComputeStressScene | `/tests/bench/stressScenes/computeStressScene.js` | 256² ping-pong, 20 iterate+swap, 64 fed boxes → `CUSTOM_LAYERS_MS` (WebGPU) |
+| VisPolyStressScene | `/tests/bench/stressScenes/visPolyStressScene.js` | Seeded lights + occluders, `lighting.raycasted: true` → `VISIBILITY_MS` |
+| SteadyCombatScene | `/tests/bench/stressScenes/steadyCombatScene.js` | Fixed boxes + movers + constant `emitFlat` → stable `BODY_COUNT` / `ACTIVE_PARTICLES` |
 
 ```bash
 node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \

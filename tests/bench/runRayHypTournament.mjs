@@ -21,6 +21,13 @@ import {
   sortHypIds,
   HYPS,
 } from './ray-hyps/hypPatches.mjs';
+import { restoreSnapshot, snapshotFiles } from './measureLib.mjs';
+
+const RAY_TOUCHED = ['src/core/ray.js', 'src/util/utils.js'];
+const rayWorkSnap = snapshotFiles(RAY_TOUCHED);
+function restoreWorkTree() {
+  restoreSnapshot(rayWorkSnap);
+}
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
@@ -294,8 +301,8 @@ function dryApplyAll() {
   }
   applyCombo(CANONICAL_ORDER);
   execFileSync(process.execPath, ['--check', PATHS.ray], { stdio: 'pipe' });
-  restoreAll();
-  console.log('Dry-apply: all singles + FULL stack OK');
+  restoreWorkTree();
+  console.log('Dry-apply: all singles + FULL stack OK; work tree restored');
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -463,6 +470,6 @@ try {
     console.log('Champion ids saved for merge step');
   }
 } finally {
-  restoreAll();
-  console.log('Restored baselines');
+  restoreWorkTree();
+  console.log('Restored work tree (not historical ray baselines).');
 }

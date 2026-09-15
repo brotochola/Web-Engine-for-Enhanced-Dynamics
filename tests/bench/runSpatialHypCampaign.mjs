@@ -15,6 +15,17 @@ import { fileURLToPath } from 'node:url';
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { HYPS, applyHyp, restoreAll, PATHS } from './spatial-hyps/hypPatches.mjs';
+import { restoreSnapshot, snapshotFiles } from './measureLib.mjs';
+
+const SPATIAL_TOUCHED = [
+  'src/workers/spatialWorker.js',
+  'demos/ballsScene/ballsScene.js',
+  'demos/predatorScene/predatorScene.js',
+];
+const spatialWorkSnap = snapshotFiles(SPATIAL_TOUCHED);
+function restoreWorkTree() {
+  restoreSnapshot(spatialWorkSnap);
+}
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
@@ -141,8 +152,8 @@ function dryApplyAll() {
     }
     // scene files are always valid JS when only number patches
   }
-  restoreAll();
-  console.log('Dry-apply: all hyps syntax OK');
+  restoreWorkTree();
+  console.log('Dry-apply: all hyps syntax OK; work tree restored');
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -216,8 +227,8 @@ try {
     fs.writeFileSync(summaryPath, JSON.stringify(campaign, null, 2) + '\n');
   }
 } finally {
-  restoreAll();
-  console.log('\nRestored baseline sources.');
+  restoreWorkTree();
+  console.log('\nRestored work tree (not historical spatial baselines).');
 }
 
 // Attach deltas vs BASE

@@ -1955,8 +1955,28 @@
     jointSyncChanges,
     commandCount,
   ) {
-    if (!statsF32 || !collectDetailedStats) return;
+    if (!statsF32) return;
     statsF32[PS.BODY_COUNT] = denseCount;
+    const movedViewsEarly =
+      typeof Box2dMovedBodies !== 'undefined' && Box2dMovedBodies.getMovedBodiesViews
+        ? Box2dMovedBodies.getMovedBodiesViews()
+        : null;
+    statsF32[PS.BODY_MOVED_COUNT] = movedViewsEarly ? movedViewsEarly.count | 0 : 0;
+    if (world && typeof world._getAwakeBodyCount === 'function') {
+      statsF32[PS.AWAKE_COUNT] = world._getAwakeBodyCount(world.worldId) | 0;
+    } else {
+      statsF32[PS.AWAKE_COUNT] = 0;
+    }
+    if (typeof weedjsHeapBytesUsed === 'function') {
+      const usedKbEarly = ((weedjsHeapBytesUsed() | 0) / 1024) | 0;
+      if (usedKbEarly > heapHighWaterKb) heapHighWaterKb = usedKbEarly;
+      statsF32[PS.HEAP_USED_KB] = usedKbEarly;
+      statsF32[PS.HEAP_HIGH_WATER_KB] = heapHighWaterKb;
+    } else {
+      statsF32[PS.HEAP_USED_KB] = 0;
+      statsF32[PS.HEAP_HIGH_WATER_KB] = heapHighWaterKb;
+    }
+    if (!collectDetailedStats) return;
     statsF32[PS.JOINT_COUNT] = world ? world.getJointCount() : 0;
     statsF32[PS.BODY_SYNC_MS] = bodySyncMs;
     statsF32[PS.JOINT_SYNC_MS] = jointSyncMs;
@@ -2082,6 +2102,7 @@
       world.step(dt, solverSteps);
       maybePublishPose(entityCount);
       afterStep();
+      writePhysicsStats(0, 0, 0, 0, 0, 0, 0, 0, 0);
       return;
     }
     const t0 = performance.now();

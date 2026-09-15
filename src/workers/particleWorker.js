@@ -1879,8 +1879,9 @@ class ParticleWorker extends AbstractWorker {
     if (!this.stats) return;
     this.stats[PARTICLE_STATS.FPS] = this.currentFPS;
     this.stats[PARTICLE_STATS.STEP_MS] = this.stepTimeThisFrame;
-    if (!this.collectDetailedStats) return;
     this.stats[PARTICLE_STATS.ACTIVE_PARTICLES] = this.activeParticleCount;
+    this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
+    if (!this.collectDetailedStats) return;
     this.stats[PARTICLE_STATS.TOTAL_PARTICLES] = this.maxParticles;
     this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
     this.stats[PARTICLE_STATS.DECAL_STAMP_MS] = this.decalStampTimeThisFrame;

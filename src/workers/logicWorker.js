@@ -1273,8 +1273,8 @@ class LogicWorker extends AbstractWorker {
     if (!this.stats) return;
     this.stats[LOGIC_STATS.FPS] = this.currentFPS;
     this.stats[LOGIC_STATS.STEP_MS] = this.stepTimeThisFrame;
-    if (!this.collectDetailedStats) return;
     this.stats[LOGIC_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
+    if (!this.collectDetailedStats) return;
     this.stats[LOGIC_STATS.SYSTEMS_EXECUTED] = this.systemsExecutedThisFrame;
     this.stats[LOGIC_STATS.MSG_MS] = this.messageTimeThisFrame;
     this.stats[LOGIC_STATS.RAYCAST_MS] = this.raycastMsThisFrame || 0;

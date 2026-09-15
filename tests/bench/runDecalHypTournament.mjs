@@ -25,6 +25,17 @@ import {
   sortHypIds,
 } from './featureTournamentLib.mjs';
 import { applyCombo, applyHyp, restoreAll, PATHS, CANONICAL_ORDER, HYPS } from './decal-hyps/hypPatches.mjs';
+import { restoreSnapshot, snapshotFiles } from './measureLib.mjs';
+
+const DECAL_TOUCHED = [
+  'src/util/decalStamp.js',
+  'src/core/particleEmitter.js',
+  'src/workers/particleWorker.js',
+];
+const decalWorkSnap = snapshotFiles(DECAL_TOUCHED);
+function restoreWorkTree() {
+  restoreSnapshot(decalWorkSnap);
+}
 
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)), '..');
 const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
@@ -111,8 +122,8 @@ function dryApplyAll() {
   execFileSync(process.execPath, ['--check', PATHS.decalStamp], { stdio: 'pipe' });
   execFileSync(process.execPath, ['--check', PATHS.particleEmitter], { stdio: 'pipe' });
   execFileSync(process.execPath, ['--check', PATHS.particleWorker], { stdio: 'pipe' });
-  restoreAll();
-  console.log('Dry-apply: all singles + FULL stack OK');
+  restoreWorkTree();
+  console.log('Dry-apply: all singles + FULL stack OK; work tree restored');
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -283,14 +294,12 @@ try {
 
   if (leaderboard.champion?.ids?.length) {
     writeJson(path.join(outDir, 'champion-ids.json'), leaderboard.champion);
-    console.log('Champion ids saved — leaving champion combo applied to src/.');
-    applyCombo(leaderboard.champion.ids);
-  } else {
-    restoreAll();
-    console.log('No accepted champion — restored baselines.');
+    console.log('Champion ids saved.');
   }
+  restoreWorkTree();
+  console.log('Restored work tree (not historical decal baselines).');
 } catch (err) {
-  restoreAll();
-  console.error('Tournament failed, restored baselines:', err);
+  restoreWorkTree();
+  console.error('Tournament failed, restored work tree:', err);
   throw err;
 }

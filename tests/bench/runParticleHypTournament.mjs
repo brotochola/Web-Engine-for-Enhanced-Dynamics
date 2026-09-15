@@ -27,6 +27,18 @@ import {
   sortHypIds,
 } from './featureTournamentLib.mjs';
 import { applyCombo, applyHyp, restoreAll, PATHS, CANONICAL_ORDER, HYPS } from './particle-hyps/hypPatches.mjs';
+import { restoreSnapshot, snapshotFiles } from './measureLib.mjs';
+
+const PARTICLE_TOUCHED = [
+  'src/core/particleEmitter.js',
+  'src/util/particleIntegrate.js',
+  'src/core/sharedAtomicPool.js',
+  'src/util/atomicFreeList.js',
+];
+const particleWorkSnap = snapshotFiles(PARTICLE_TOUCHED);
+function restoreWorkTree() {
+  restoreSnapshot(particleWorkSnap);
+}
 
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)), '..');
 const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
@@ -122,11 +134,19 @@ function dryApplyAll() {
   execFileSync(process.execPath, ['--check', PATHS.particleIntegrate], { stdio: 'pipe' });
   execFileSync(process.execPath, ['--check', PATHS.sharedAtomicPool], { stdio: 'pipe' });
   execFileSync(process.execPath, ['--check', PATHS.atomicFreeList], { stdio: 'pipe' });
-  restoreAll();
-  console.log('Dry-apply: all singles + FULL stack OK');
+  restoreWorkTree();
+  console.log('Dry-apply: all singles + FULL stack OK; work tree restored');
 }
 
 const args = parseArgs(process.argv.slice(2));
+if (!args.dryApply && !process.argv.includes('--i-know-this-uses-snapshots')) {
+  console.error(
+    'bench:particle:tournament overwrites src/ with old baselines. Refusing.\n' +
+      'Pass --i-know-this-uses-snapshots if you really want a historical replay.\n' +
+      'Use pnpm bench:scoreboard for current-tree vs git rev.'
+  );
+  process.exit(2);
+}
 fs.mkdirSync(outDir, { recursive: true });
 
 if (args.dryApply) {
@@ -294,14 +314,12 @@ try {
 
   if (leaderboard.champion?.ids?.length) {
     writeJson(path.join(outDir, 'champion-ids.json'), leaderboard.champion);
-    console.log('Champion ids saved — leaving champion combo applied to src/.');
-    applyCombo(leaderboard.champion.ids);
-  } else {
-    restoreAll();
-    console.log('No accepted champion — restored baselines.');
+    console.log('Champion ids saved.');
   }
+  restoreWorkTree();
+  console.log('Restored work tree (not pre-P2 baselines).');
 } catch (err) {
-  restoreAll();
-  console.error('Tournament failed, restored baselines:', err);
+  restoreWorkTree();
+  console.error('Tournament failed, restored work tree:', err);
   throw err;
 }
