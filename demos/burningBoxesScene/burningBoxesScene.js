@@ -179,7 +179,7 @@ export class BurningBoxesScene extends WEED.Scene {
             uBodyDrive: { value: 0, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Body drive', tip: 'Extra air drag near crates. 0 = walls still push (MAC faces). 1 = glue nearby air to the crate (shrinks fire on still crates).' },
             uSwirlDamp: { value: 15.5, type: 'f32', min: 0, max: 40, step: 0.5, label: 'Swirl damp', tip: 'How fast swirl spin fades. High = a quick kick, then gone.' },
             uStampPad: { value: -1.1, type: 'f32', min: -30, max: 30, step: 0.25, label: 'Stamp pad', tip: 'Solid stamp inset/outset for floors and unlit boxes, in grid cells. 0 = collider edge. Burning boxes use Stamp inner/outer instead.' },
-            uSolidPush: { value: 4000, type: 'f32', min: 0, max: 100000, step: 10, label: 'Solid push', tip: 'Outward kick from floors (static). Flying crates skip this. Burning bodies skip this so they do not blow their own flames away. 0 = off.' },
+            uSolidPush: { value: 4000, type: 'f32', min: 0, max: 100000, step: 10, label: 'Solid push', tip: 'Outward kick from floors (static), mid-edge only — corners do not jet. Flying crates skip this. Burning bodies skip this so they do not blow their own flames away. 0 = off.' },
             uSwirlChance: { value: 0.8, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Swirl chance', tip: 'How often a burning body spawns a swirl eddy.' },
             uSwirlSpin: { value: 28, type: 'f32', min: 0, max: 80, step: 1, label: 'Swirl spin', tip: 'How hard spawned swirls rotate.' },
             uSwirlLife: { value: 2.5, type: 'f32', min: 0, max: 5, step: 0.1, label: 'Swirl life', tip: 'Seconds a swirl lives before it dies.' },

@@ -625,8 +625,13 @@ test('fire stamp: burning crust is live fluid; inert solids push; ember overlays
   const applyStart = fluid.indexOf('fn apply_body_vel(');
   const applyNext = fluid.indexOf('\n@compute', applyStart + 1);
   const applyBody = fluid.slice(applyStart, applyNext === -1 ? undefined : applyNext);
-  assert.match(applyBody, /velL/);
-  assert.match(applyBody, /velT/);
+  assert.match(fluid, /fn pin_face_u/);
+  assert.match(fluid, /fn pin_face_v/);
+  assert.match(fluid, /fn inert_wall_mid/);
+  assert.match(fluid, /fn inert_corner_air/);
+  assert.match(applyBody, /pin_face_u/);
+  assert.match(applyBody, /pin_face_v/);
+  assert.match(applyBody, /inert_corner_air/);
   assert.equal(/velR/.test(applyBody), false);
   assert.equal(/velU/.test(applyBody), false);
 
@@ -639,20 +644,41 @@ test('fire stamp: burning crust is live fluid; inert solids push; ember overlays
   assert.match(look, /let ember = heat\.a/);
   assert.match(look, /eRgb \* eA \+ premul/);
 
-  const pushNormal = (l, r, d, u) => {
+  const inertWallMid = (at, tx, ty, ax, ay) => at(tx, ty) && at(tx + ax, ty + ay) && at(tx - ax, ty - ay);
+  const pushAt = (solid, x, y) => {
+    const at = (dx, dy) => !!solid(x + dx, y + dy);
     let nx = 0;
     let ny = 0;
-    if (l) nx += 1;
-    if (r) nx -= 1;
-    if (d) ny += 1;
-    if (u) ny -= 1;
+    if (inertWallMid(at, -1, 0, 0, 1)) nx += 1;
+    if (inertWallMid(at, 1, 0, 0, 1)) nx -= 1;
+    if (inertWallMid(at, 0, -1, 1, 0)) ny += 1;
+    if (inertWallMid(at, 0, 1, 1, 0)) ny -= 1;
     const len = Math.hypot(nx, ny);
     if (len <= 1e-4) return { nx: 0, ny: 0 };
     return { nx: nx / len, ny: ny / len };
   };
-  const one = pushNormal(true, false, false, false);
-  assert.ok(Math.abs(one.nx - 1) < 1e-9 && Math.abs(one.ny) < 1e-9);
-  const burnNeighbor = pushNormal(false, false, false, false);
+  const box = (x0, y0, x1, y1) => (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  const midTop = pushAt(box(2, 2, 5, 5), 3, 1);
+  assert.ok(Math.abs(midTop.nx) < 1e-9 && Math.abs(midTop.ny + 1) < 1e-9);
+  const midLeft = pushAt(box(2, 2, 5, 5), 1, 3);
+  assert.ok(Math.abs(midLeft.nx + 1) < 1e-9 && Math.abs(midLeft.ny) < 1e-9);
+  const corner = pushAt(box(2, 2, 5, 5), 2, 1);
+  assert.equal(corner.nx, 0);
+  assert.equal(corner.ny, 0);
+  const inertCornerAir = (solid, x, y) => {
+    const at = (dx, dy) => !!solid(x + dx, y + dy);
+    const mid = (tx, ty, ax, ay) => at(tx, ty) && at(tx + ax, ty + ay) && at(tx - ax, ty - ay);
+    if (at(-1, 0) || at(1, 0) || at(0, -1) || at(0, 1)) {
+      return !mid(-1, 0, 0, 1) && !mid(1, 0, 0, 1) && !mid(0, -1, 1, 0) && !mid(0, 1, 1, 0);
+    }
+    return [at(-1, -1), at(1, -1), at(-1, 1), at(1, 1)].filter(Boolean).length === 1;
+  };
+  const plat = box(2, 2, 5, 5);
+  assert.equal(inertCornerAir(plat, 3, 1), false, 'mid-top is not a corner');
+  assert.equal(inertCornerAir(plat, 2, 1), true, 'top-left edge end');
+  assert.equal(inertCornerAir(plat, 1, 1), true, 'diagonal outside vertex');
+  assert.equal(inertCornerAir(plat, 0, 0), false, 'open field');
+  const burnNeighbor = pushAt(() => false, 0, 0);
   assert.equal(burnNeighbor.nx, 0);
   assert.equal(burnNeighbor.ny, 0);
 
@@ -669,14 +695,17 @@ test('fire stamp: burning crust is live fluid; inert solids push; ember overlays
   assert.equal(closed(-10, 0, false, 64), true);
 
   // MAC left face of an air cell is the right wall of a solid on the left.
+  // Closed neighbor pins the face: body vel if moving, 0 if static.
   const sharedFaceU = (closedSelf, bodySelf, closedLeft, bodyLeft, vx, airU) => {
     if (closedSelf && bodySelf) return vx;
-    if (!closedSelf && closedLeft && bodyLeft) return vx;
+    if (closedSelf && !bodySelf) return 0;
+    if (!closedSelf && closedLeft) return bodyLeft ? vx : 0;
     return airU;
   };
   assert.equal(sharedFaceU(false, false, true, true, 400, 0), 400);
   assert.equal(sharedFaceU(true, true, false, false, 400, 0), 400);
   assert.equal(sharedFaceU(false, false, false, false, 400, 0), 0);
+  assert.equal(sharedFaceU(false, false, true, false, 400, 50), 0);
 });
 
 test("burningBoxesScene: fire layer sizes compute.size from world dims via FIRE_CELL_SIZE (demo math, not an engine mode)", () => {

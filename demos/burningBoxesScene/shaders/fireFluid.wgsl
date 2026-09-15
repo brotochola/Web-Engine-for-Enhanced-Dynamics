@@ -108,6 +108,47 @@ fn solid_vel(c: vec2<i32>) -> vec4<f32> {
   return vec4<f32>(0.0);
 }
 
+// MAC: this cell's u is the left face, v the top face. Closed neighbor
+// across that face owns the wall — pin to solid_vel (body / LF / 0).
+fn pin_face_u(id: vec2<i32>, u: f32) -> f32 {
+  let n = id + vec2<i32>(-1, 0);
+  if (open_cell(n) < 0.5) { return solid_vel(n).x; }
+  return u;
+}
+
+fn pin_face_v(id: vec2<i32>, v: f32) -> f32 {
+  let n = id + vec2<i32>(0, -1);
+  if (open_cell(n) < 0.5) { return solid_vel(n).y; }
+  return v;
+}
+
+// Flat wall only. Convex corners (one along-neighbor missing) skip —
+// two orthogonal kicks + projection turn those cells into a nozzle.
+fn inert_wall_mid(id: vec2<i32>, toward: vec2<i32>, along: vec2<i32>) -> bool {
+  return inert_solid(id + toward)
+    && inert_solid(id + toward + along)
+    && inert_solid(id + toward - along);
+}
+
+fn inert_corner_air(id: vec2<i32>) -> bool {
+  let l = inert_solid(id + vec2<i32>(-1, 0));
+  let r = inert_solid(id + vec2<i32>(1, 0));
+  let t = inert_solid(id + vec2<i32>(0, -1));
+  let b = inert_solid(id + vec2<i32>(0, 1));
+  if (l || r || t || b) {
+    return !inert_wall_mid(id, vec2<i32>(-1, 0), vec2<i32>(0, 1))
+      && !inert_wall_mid(id, vec2<i32>(1, 0), vec2<i32>(0, 1))
+      && !inert_wall_mid(id, vec2<i32>(0, -1), vec2<i32>(1, 0))
+      && !inert_wall_mid(id, vec2<i32>(0, 1), vec2<i32>(1, 0));
+  }
+  var d = 0;
+  if (inert_solid(id + vec2<i32>(-1, -1))) { d++; }
+  if (inert_solid(id + vec2<i32>(1, -1))) { d++; }
+  if (inert_solid(id + vec2<i32>(-1, 1))) { d++; }
+  if (inert_solid(id + vec2<i32>(1, 1))) { d++; }
+  return d == 1;
+}
+
 fn interior(id: vec2<i32>) -> bool {
   let nx = i32(frame.texW);
   let ny = i32(frame.texH);
@@ -244,17 +285,8 @@ fn project_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (id.y > 0 && open_cell(id + vec2<i32>(0, -1)) > 0.5) {
     v -= (p - load_p(id + vec2<i32>(0, -1)));
   }
-  // This cell's u is the left face, v the top face. If the neighbor across
-  // that face is a moving solid, the face is the solid's missing right/bottom
-  // wall — pin it to body vel or the solid is a sink on the front.
-  let velL = solid_vel(id + vec2<i32>(-1, 0));
-  let velT = solid_vel(id + vec2<i32>(0, -1));
-  if (open_cell(id + vec2<i32>(-1, 0)) < 0.5 && velL.z > 0.5) {
-    u = velL.x;
-  }
-  if (open_cell(id + vec2<i32>(0, -1)) < 0.5 && velT.z > 0.5) {
-    v = velT.y;
-  }
+  u = pin_face_u(id, u);
+  v = pin_face_v(id, v);
   textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));
   textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));
 }
@@ -448,8 +480,6 @@ fn apply_body_vel(@builtin(global_invocation_id) gid: vec3<u32>) {
     textureStore(vWrite, id, vec4<f32>(0.0));
     return;
   }
-  let velL = solid_vel(id + vec2<i32>(-1, 0));
-  let velT = solid_vel(id + vec2<i32>(0, -1));
   let source = textureLoad(stampTex, id, 0).g > 0.5;
   let k = clamp(frame.uBodyDrive, 0.0, 1.0);
   let wind = body0.z > 0.5 && body0.w > 1.5;
@@ -457,11 +487,11 @@ fn apply_body_vel(@builtin(global_invocation_id) gid: vec3<u32>) {
     u = vel0.x;
     v = vel0.y;
   } else {
-    if (open_cell(id + vec2<i32>(-1, 0)) < 0.5 && velL.z > 0.5) {
-      u = velL.x;
-    }
-    if (open_cell(id + vec2<i32>(0, -1)) < 0.5 && velT.z > 0.5) {
-      v = velT.y;
+    u = pin_face_u(id, u);
+    v = pin_face_v(id, v);
+    if (!wind && inert_corner_air(id)) {
+      u *= 0.15;
+      v *= 0.15;
     }
     if (wind) {
       u = body0.x;
@@ -497,10 +527,10 @@ fn push_from_solid(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (open_cell(id) > 0.5 && push > 0.0 && t > 0.0) {
     var nx = 0.0;
     var ny = 0.0;
-    if (inert_solid(id + vec2<i32>(-1, 0))) { nx += 1.0; }
-    if (inert_solid(id + vec2<i32>(1, 0))) { nx -= 1.0; }
-    if (inert_solid(id + vec2<i32>(0, -1))) { ny += 1.0; }
-    if (inert_solid(id + vec2<i32>(0, 1))) { ny -= 1.0; }
+    if (inert_wall_mid(id, vec2<i32>(-1, 0), vec2<i32>(0, 1))) { nx += 1.0; }
+    if (inert_wall_mid(id, vec2<i32>(1, 0), vec2<i32>(0, 1))) { nx -= 1.0; }
+    if (inert_wall_mid(id, vec2<i32>(0, -1), vec2<i32>(1, 0))) { ny += 1.0; }
+    if (inert_wall_mid(id, vec2<i32>(0, 1), vec2<i32>(1, 0))) { ny -= 1.0; }
     let len = sqrt(nx * nx + ny * ny);
     if (len > 1e-4) {
       let k = push * frame.dt / len;
