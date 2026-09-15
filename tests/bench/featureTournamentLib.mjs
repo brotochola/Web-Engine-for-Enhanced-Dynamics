@@ -92,6 +92,7 @@ export function statsFromReport(j, workerPreferIds) {
     NEIGHBOR_MS: avg.NEIGHBOR_MS ?? 0,
     REBUILD_MS: avg.REBUILD_MS ?? 0,
     VISIBILITY_MS: avg.VISIBILITY_MS ?? 0,
+    QUERY_PUBLISH_MS: avg.QUERY_PUBLISH_MS ?? 0,
     loadPct: workerLoadPct(avg.STEP_MS ?? 0),
     averageFPS: w?.averageFPS ?? 0,
     raw: avg,

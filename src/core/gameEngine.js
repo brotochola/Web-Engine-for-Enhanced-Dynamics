@@ -5,6 +5,7 @@ import { DebugUI } from './debug/debugUi.js';
 import { Mouse } from './mouse.js';
 import { SoundManager } from './soundManager.js';
 import { printLogo } from '../util/utils.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 import { DEBUG_DEFAULTS, ENGINE_DEFAULTS } from '../util/configDefaults.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
@@ -226,7 +227,7 @@ class GameEngine {
 
       // Destroy current scene
       if (this.currentScene) {
-        console.log(`📤 Unloading scene: ${this.currentScene.constructor.name}`);
+        debugWorkerLog(`📤 Unloading scene: ${this.currentScene.constructor.name}`);
         await this.currentScene.destroy();
         this.currentScene = null;
 
@@ -238,7 +239,7 @@ class GameEngine {
       }
 
       // Create and initialize new scene
-      console.log(`📥 Loading scene: ${SceneClass.name}`);
+      debugWorkerLog(`📥 Loading scene: ${SceneClass.name}`);
       this.currentScene = new SceneClass(this);
       if (restorePayload) {
         this.currentScene._restorePayload = restorePayload;
@@ -408,7 +409,7 @@ class GameEngine {
     }
 
     this.state = GameEngine.states.READY;
-    console.log('🔴 GameEngine destroyed');
+    debugWorkerLog('🔴 GameEngine destroyed');
   }
 }
 

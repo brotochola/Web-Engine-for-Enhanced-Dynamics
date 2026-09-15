@@ -670,6 +670,14 @@ class PreRenderWorker extends AbstractWorker {
             this._vpOutX = new Float32Array(maxVerts);
             this._vpOutY = new Float32Array(maxVerts);
 
+            // Change-detection cache: copy hits into the current write slot.
+            this._vpCacheLightIdx = new Int32Array(maxLts);
+            this._vpCacheHash = new Uint32Array(maxLts);
+            this._vpCacheVertCount = new Int32Array(maxLts);
+            this._vpCacheX = new Float32Array(maxLts * maxVerts);
+            this._vpCacheY = new Float32Array(maxLts * maxVerts);
+            this._vpCacheLightIdx.fill(-1);
+
             // Self-lit queue (entity under own occluder fill)
             this._selfLitMax = data.visibilityPolygons.maxOccluderSelfLit || 512;
             this._selfLitItemBytes = 28;
@@ -3235,6 +3243,7 @@ class PreRenderWorker extends AbstractWorker {
             let occCount = 0;
             let vertPool = 0;
             let occluderLimitHit = false;
+            let occHash = 2166136261;
 
             if (neighborData && stride > 0) {
                 const offset = lightIdx * stride;
@@ -3314,6 +3323,10 @@ class PreRenderWorker extends AbstractWorker {
 
                     if (!packed) continue;
 
+                    occHash = Math.imul(occHash ^ (nIdx + 1), 16777619) >>> 0;
+                    occHash = Math.imul(occHash ^ ((wx * 64) | 0), 16777619) >>> 0;
+                    occHash = Math.imul(occHash ^ ((wy * 64) | 0), 16777619) >>> 0;
+
                     // Self-lit queue: bake display pose (frame-locked with sprites / umbra)
                     if (selfLitI32 && selfLitCount < maxSelfLit) {
                         const byteOff = 4 + selfLitCount * selfLitItemBytes;
@@ -3342,22 +3355,70 @@ class PreRenderWorker extends AbstractWorker {
                 );
             }
 
-            const vertCount = buildVisibilityPolygon(
-                lx, ly, influenceRadius,
-                kind, cX, cY, cR, vertStart, vertCountArr, vertsX, vertsY,
-                occCount, outX, outY, maxVerts
-            );
+            const poseGen = this.poseSync ? (Atomics.load(this.poseSync, 0) | 0) : 0;
+            let visHash = poseGen >>> 0;
+            visHash = Math.imul(visHash ^ (lightIdx + 1), 16777619) >>> 0;
+            visHash = Math.imul(visHash ^ ((lx * 64) | 0), 16777619) >>> 0;
+            visHash = Math.imul(visHash ^ ((ly * 64) | 0), 16777619) >>> 0;
+            visHash = Math.imul(visHash ^ (occCount + 1), 16777619) >>> 0;
+            visHash = Math.imul(visHash ^ occHash, 16777619) >>> 0;
+            visHash = Math.imul(visHash ^ ((influenceRadius * 16) | 0), 16777619) >>> 0;
+
+            const cacheLight = this._vpCacheLightIdx;
+            let cacheSlot = -1;
+            if (cacheLight) {
+                for (let s = 0; s < maxLts; s++) {
+                    if (cacheLight[s] === lightIdx) {
+                        cacheSlot = s;
+                        break;
+                    }
+                }
+                if (cacheSlot < 0) {
+                    for (let s = 0; s < maxLts; s++) {
+                        if (cacheLight[s] < 0) {
+                            cacheSlot = s;
+                            break;
+                        }
+                    }
+                    if (cacheSlot < 0) cacheSlot = lightsWritten % maxLts;
+                }
+            }
+
+            let vertCount = 0;
+            const cacheHit = cacheSlot >= 0
+                && cacheLight[cacheSlot] === lightIdx
+                && this._vpCacheHash[cacheSlot] === visHash;
 
             // Layout: [lightIdx:i32, lightX:f32, lightY:f32, vertexCount:i32, x[N]:f32, y[N]:f32]
             const baseIndex = (4 + lightsWritten * slotBytes) >> 2;
             i32[baseIndex] = lightIdx;
             f32[baseIndex + 1] = lx;
             f32[baseIndex + 2] = ly;
-            i32[baseIndex + 3] = vertCount;
-
             const xStart = baseIndex + 4;
-            f32.set(outX.subarray(0, vertCount), xStart);
-            f32.set(outY.subarray(0, vertCount), xStart + maxVerts);
+
+            if (cacheHit) {
+                vertCount = this._vpCacheVertCount[cacheSlot];
+                const src = cacheSlot * maxVerts;
+                f32.set(this._vpCacheX.subarray(src, src + vertCount), xStart);
+                f32.set(this._vpCacheY.subarray(src, src + vertCount), xStart + maxVerts);
+            } else {
+                vertCount = buildVisibilityPolygon(
+                    lx, ly, influenceRadius,
+                    kind, cX, cY, cR, vertStart, vertCountArr, vertsX, vertsY,
+                    occCount, outX, outY, maxVerts
+                );
+                f32.set(outX.subarray(0, vertCount), xStart);
+                f32.set(outY.subarray(0, vertCount), xStart + maxVerts);
+                if (cacheSlot >= 0) {
+                    cacheLight[cacheSlot] = lightIdx;
+                    this._vpCacheHash[cacheSlot] = visHash;
+                    this._vpCacheVertCount[cacheSlot] = vertCount;
+                    const dst = cacheSlot * maxVerts;
+                    this._vpCacheX.set(outX.subarray(0, vertCount), dst);
+                    this._vpCacheY.set(outY.subarray(0, vertCount), dst);
+                }
+            }
+            i32[baseIndex + 3] = vertCount;
 
             lightsWritten++;
         }

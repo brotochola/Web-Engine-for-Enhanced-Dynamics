@@ -24,15 +24,15 @@ Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../tests/bench/featureT
 | **Done** | Grid Ray | H6+H1 shipped (headed Predator pick w/ D2+P45) | `RAYCAST_MS` | Predator |
 | **A** | Stamp decals | Champion **D2** merged (UV DDA) | `DECAL_STAMP_MS` / particle `STEP_MS` | zenithal / Predator |
 | **B** | Particle emit + integrate | Champion **P4+P5** merged | `PARTICLE_PHYSICS_MS`, `BUILD_ACTIVE_VISIBLE_MS` | zenithalParticleTest |
-| C | Spatial neighbors | Next | `NEIGHBOR_MS` | Balls |
-| D | AngularSweep | Next | polygons/s | Predator |
-| E | NavGrid | Next | ms/flowfield | car / Predator |
-| F | QuerySystem | Next | publish ms | — |
-| G | DecorationsSpatial | Next | queryCircle ops/s | zenithal |
-| H | Pre-render cull | Next | `VISIBILITY_MS` | Predator |
-| I | Treiber / rings | Next | pop-push/s | Balls |
-| J | Bullet tick | Next | particle STEP | Predator |
-| K | TileMap queries | L1 only | ns/getTileId | — |
+| C | Spatial neighbors | Verlet + stagger shipped; L1 + formal BASE tournament; **no** H1–H15 / S2–S3 / scan partition. C16 flat cache L1-only; dead dep-hash removed | `NEIGHBOR_MS` | Balls |
+| D | AngularSweep | L1 + winding assert | polygons/s | Predator |
+| E | NavGrid | L1 Dijkstra + `NavStressScene` | ms/flowfield | car / Predator |
+| F | QuerySystem | L1 publish / skip / bitset; skip-publish already in logic0 | `QUERY_PUBLISH_MS` | — |
+| G | DecorationsSpatial | L1 `queryCircle` | queryCircle ops/s | zenithal |
+| H | Pre-render / lights | Skip pixi light re-cull; vis-poly cache copies into write slot | `VISIBILITY_MS` | Predator |
+| I | Treiber / rings | L1 pop-push; ECB = batched `spawnDespawnBatch` | pop-push/s | Balls |
+| J | Bullet tick | Compact active list shipped | particle STEP | Predator |
+| K | TileMap queries | L1 `getTileId` | ns/getTileId | — |
 | **L** | LiquidFun particle step | H1–H4, H6–H14, H16, H21, **H26** shipped; H5 / H15 / H17–H20 / H22 / H24–H25 / H27–H29 rejected; H23 docs | `physics.LIQUIDFUN_MS` / `BOX2D_MS` | `pnpm test:visual --scene liquidfun,lfstress` |
 
 Skip: full rigid-body Box2D WASM step (LiquidFun's *particle* step is in scope — see Wave L).
@@ -123,6 +123,56 @@ pnpm bench:micro:liquidfun-bodycouple
 pnpm bench:micro:liquidfun-overlap-substep
 pnpm bench:micro:liquidfun-strict-contact
 pnpm bench:micro:liquidfun-pass-profile
+```
+
+## Wave C — Spatial (2026-09 program)
+
+Production already has Verlet skin (`neighborReuseSkin: 0.04`) and neighbor stagger. **Do not reopen H1–H15.** Sleep-neighbor S2/S3 and partitioning `activeEntitiesData` across spatial workers are out of this program.
+
+| ID | Claim | Status |
+|----|-------|--------|
+| C16 | `_getNeighborCells` miss: flat table vs `Map`+`subarray` | L1 **reject** (flat −67% vs Map) — keep `Map` |
+| C17 | Cell-version dependency hash on Verlet path | Dead in prod (skin+age only). Hash walk removed from rebuild store |
+
+```bash
+pnpm bench:micro:spatial
+pnpm bench:spatial:campaign
+pnpm bench:spatial:tournament -- --l1-only
+pnpm bench:feature:spatial
+```
+
+## Wave 0 — QueryAABB burst
+
+`servicePendingQueryBurst` mirrors ray burst (1024, spin + `Atomics.wait`). Shipped in `weedjsPost.serviceQueryAabb`.
+
+```bash
+pnpm test:node -- tests/node/queryAabbBurst.test.js
+pnpm bench:feature:query-aabb
+```
+
+## Wave F / I / J leftovers
+
+- Skip-publish if active lists unchanged: already in logic0; `QUERY_PUBLISH_MS` only when `collectDetailedStats`.
+- P2 `_cfgFieldList` + P6 `popFreeIndices` + `expectedActive` + compact bullets: shipped. Old `bench:particle:tournament` still patches from **pre-opt baselines** — it overwrites src; restore those four files after.
+- Spawn ECB: main queues, one `spawnDespawnBatch` per frame.
+- Monomorphic `tickFn` cache on logic typeInfo.
+- Display interpolation already exists (`preRender.interpolation`).
+- Dirty-pose skip-emit: L1 only (`poseSkipMicrobench.mjs`), not merged.
+
+```bash
+pnpm bench:micro:query
+pnpm bench:micro:angular-sweep
+pnpm bench:micro:decoration-spatial
+pnpm bench:micro:nav
+pnpm bench:micro:tilemap
+pnpm bench:micro:treiber
+pnpm bench:micro:pose-skip
+pnpm bench:feature:query-churn
+pnpm bench:feature:spawn-storm
+pnpm bench:feature:nav
+pnpm bench:micro:skip-work
+pnpm bench:micro:body-pack
+pnpm bench:micro:particle-l1
 ```
 
 ## Related

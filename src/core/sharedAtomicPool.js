@@ -15,9 +15,11 @@
 import {
   resetFreeList,
   popFreeIndex,
+  popFreeIndices,
   pushFreeIndex,
   getFreeListCount,
 } from '../util/atomicFreeList.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 
 /**
  * Base class for atomic object pools backed by SharedArrayBuffer.
@@ -61,7 +63,7 @@ export class SharedAtomicPool {
     static initialize(maxCount) {
         this.maxCount = maxCount;
         this.initialized = true;
-        console.log(
+        debugWorkerLog(
             `${this.poolName}: Initialized with ${maxCount} items (indices 0-${maxCount - 1})`
         );
     }
@@ -75,7 +77,7 @@ export class SharedAtomicPool {
     static initializeFreeList(freeListBuffer, freeListTopBuffer) {
         this.freeList = new Uint16Array(freeListBuffer);
         this.freeListTop = new Int32Array(freeListTopBuffer);
-        console.log(
+        debugWorkerLog(
             `${this.poolName}: Free list initialized (free: ${getFreeListCount(this.freeListTop)})`
         );
     }
@@ -91,6 +93,16 @@ export class SharedAtomicPool {
             return -1;
         }
         return popFreeIndex(this.freeListTop, this.freeList);
+    }
+
+    /**
+     * Batch acquire. Returns how many indices were written into outArray.
+     */
+    static acquireIndices(maxToPop, outArray, outOffset = 0) {
+        if (!this.initialized || !this.freeList || !this.freeListTop || maxToPop <= 0) {
+            return 0;
+        }
+        return popFreeIndices(this.freeListTop, this.freeList, maxToPop, outArray, outOffset);
     }
 
     /**

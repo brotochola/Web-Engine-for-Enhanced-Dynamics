@@ -131,6 +131,8 @@ const DIR_TO_VEC = Object.freeze([
  * - If data not ready, returns fallback (0,0 or current position)
  * - Particle worker computes in background, next frame will have data
  */
+import { debugWorkerLog } from '../util/debugLog.js';
+
 export class NavGrid {
   // =========================================================
   // Static state (shared across all instances in a worker)
@@ -335,7 +337,7 @@ export class NavGrid {
     const worldW = sceneWorldWidth || Infinity;
     const worldH = sceneWorldHeight || Infinity;
 
-    console.log(`[NavGrid] Loading ${Object.keys(flowfieldUrls).length} static flowfields...`);
+    debugWorkerLog(`[NavGrid] Loading ${Object.keys(flowfieldUrls).length} static flowfields...`);
 
     for (const [name, url] of Object.entries(flowfieldUrls)) {
       try {
@@ -365,7 +367,7 @@ export class NavGrid {
         }
 
         this._staticFlowfields.set(name, { gridWidth: clippedW, gridHeight: clippedH, cellSize, vectors });
-        console.log(`[NavGrid]   Loaded flowfield: ${name} (${clippedW}x${clippedH}, cellSize=${cellSize})`);
+        debugWorkerLog(`[NavGrid]   Loaded flowfield: ${name} (${clippedW}x${clippedH}, cellSize=${cellSize})`);
       } catch (error) {
         console.error(`[NavGrid] Failed to load flowfield "${name}":`, error);
       }

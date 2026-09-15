@@ -109,7 +109,6 @@ class SpatialWorker extends AbstractWorker {
     this._entityLastVisualRange = null;
     this._entityLastCellIndex = null;
     this._entityLastCellRadius = null;
-    this._entityLastDependencyHash = null;
     this._entityReuseInitialized = null;
 
     this._maxCellRadius = 12; // Support visual ranges up to ~1500px with cellSize=128
@@ -214,7 +213,6 @@ class SpatialWorker extends AbstractWorker {
     this._entityLastVisualRange = new Float32Array(this.globalEntityCount);
     this._entityLastCellIndex = new Uint32Array(this.globalEntityCount);
     this._entityLastCellRadius = new Uint16Array(this.globalEntityCount);
-    this._entityLastDependencyHash = new Uint32Array(this.globalEntityCount);
     this._entityReuseInitialized = new Uint8Array(this.globalEntityCount);
 
     const spatialCfg = this.config?.spatial || {};
@@ -518,23 +516,12 @@ class SpatialWorker extends AbstractWorker {
    * "home row" (the row containing its center Y position). This prevents race
    * conditions when entities span multiple rows due to their bounding box.
    */
-  _computeDependencyHash(neighborCells) {
-    const versions = Grid._cellVersionData;
-    if (!versions) return 0;
-
-    let hash = 2166136261;
-    for (let i = 0; i < neighborCells.length; i++) {
-      const cellIndex = neighborCells[i];
-      hash = Math.imul(hash ^ versions[cellIndex], 16777619) >>> 0;
-    }
-    return hash;
-  }
-
   /**
    * Verlet-style reuse: A within skin of build position, same vr/extent,
    * and list age below cap (bounds B drift without cell-hash thrashing).
+   * Cell-version dependency hash is unused (skin + age already gate reuse).
    */
-  _canReuseNeighbors(entityId, myX, myY, myHalfExtent, myVisualRange, entityCellIndex, cellRadius, dependencyHash) {
+  _canReuseNeighbors(entityId, myX, myY, myHalfExtent, myVisualRange) {
     if (this._entityReuseInitialized[entityId] !== 1) return false;
     if (this._neighborCandidateTruncated[entityId]) return false;
     if (this._entityLastHalfExtent[entityId] !== myHalfExtent) return false;
@@ -548,7 +535,7 @@ class SpatialWorker extends AbstractWorker {
     return dx * dx + dy * dy <= skinSq;
   }
 
-  _storeNeighborReuseSignature(entityId, myX, myY, myHalfExtent, myVisualRange, entityCellIndex, cellRadius, dependencyHash) {
+  _storeNeighborReuseSignature(entityId, myX, myY, myHalfExtent, myVisualRange, entityCellIndex, cellRadius) {
     this._entityReuseInitialized[entityId] = 1;
     this._entityLastX[entityId] = myX;
     this._entityLastY[entityId] = myY;
@@ -556,7 +543,6 @@ class SpatialWorker extends AbstractWorker {
     this._entityLastVisualRange[entityId] = myVisualRange;
     this._entityLastCellIndex[entityId] = entityCellIndex;
     this._entityLastCellRadius[entityId] = cellRadius;
-    this._entityLastDependencyHash[entityId] = dependencyHash;
     this._entityFramesSinceBuild[entityId] = 0;
   }
 
@@ -710,10 +696,7 @@ class SpatialWorker extends AbstractWorker {
               myX,
               myY,
               myHalfExtent,
-              myVisualRange,
-              entityCellIndex,
-              cellRadius,
-              0
+              myVisualRange
             );
 
           if (skinCanReuse) {
@@ -732,7 +715,6 @@ class SpatialWorker extends AbstractWorker {
           } else {
             const neighborCells = this._getNeighborCells(entityCellIndex, cellRadius, homeRow, homeCol);
             const neighborCellsLength = neighborCells.length;
-            const dependencyHash = this._computeDependencyHash(neighborCells);
 
             // Miss: rebuild expanded candidate list at searchRange
             const candBase = entityA * candStride;
@@ -797,8 +779,7 @@ class SpatialWorker extends AbstractWorker {
                 myHalfExtent,
                 myVisualRange,
                 entityCellIndex,
-                cellRadius,
-                dependencyHash
+                cellRadius
               );
             } else {
               // Skin reuse stays off (incomplete list), but schedule stagger needs age reset

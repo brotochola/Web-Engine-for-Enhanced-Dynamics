@@ -24,7 +24,7 @@ import { AbstractWorker } from './abstractWorker.js';
 
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
-import { _cantorResult } from '../util/utils.js';
+import { _cantorResult, collisionPairKey, collisionPairUnpack } from '../util/utils.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
@@ -51,16 +51,6 @@ import {
   initialJointBreakCursor,
 } from '../box2d/box2dJointBreakRing.js';
 import { bindBodySyncBuffers } from '../box2d/box2dBodySync.js';
-
-/** Pair key for entity indices < 65536. Replaces Cantor on contact hot path (LOG-PAIR). */
-function collisionPairKey(minE, maxE) {
-  return ((minE & 0xffff) << 16) | (maxE & 0xffff);
-}
-function collisionPairUnpack(key, out) {
-  out.a = (key >>> 16) & 0xffff;
-  out.b = key & 0xffff;
-  return out;
-}
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -91,6 +81,7 @@ class LogicWorker extends AbstractWorker {
     this.entitiesProcessedThisFrame = 0; // Track actual entities processed
     this.systemsExecutedThisFrame = 0; // Track number of distinct update phases executed
     this.frameStartTime = 0; // For timing diagnostics
+    this.queryPublishMsThisFrame = 0;
 
     // Collision tracking (Unity-style Enter/Stay/Exit from Box2D contacts)
 
@@ -334,6 +325,9 @@ class LogicWorker extends AbstractWorker {
               tickInterval,
               startIndex,
               needsScreenCallbacks,
+              tickFn: typeof EntityClass.prototype.tick === 'function'
+                ? EntityClass.prototype.tick
+                : null,
             });
           } else {
             // Non-decimated type: simple loop, zero overhead
@@ -342,6 +336,9 @@ class LogicWorker extends AbstractWorker {
               activeList: EntityClass._activeList,
               startIndex,
               needsScreenCallbacks,
+              tickFn: typeof EntityClass.prototype.tick === 'function'
+                ? EntityClass.prototype.tick
+                : null,
             });
           }
         }
@@ -413,7 +410,13 @@ class LogicWorker extends AbstractWorker {
     }
 
     if (activeQueryPopulationChanged && this._publishPrecomputedActiveQueries) {
-      this._publishPrecomputedActiveQueries(this.frameNumber);
+      if (this.collectDetailedStats) {
+        const t0 = performance.now();
+        this._publishPrecomputedActiveQueries(this.frameNumber);
+        this.queryPublishMsThisFrame += performance.now() - t0;
+      } else {
+        this._publishPrecomputedActiveQueries(this.frameNumber);
+      }
     }
   }
 
@@ -494,7 +497,7 @@ class LogicWorker extends AbstractWorker {
   }
 
   update(deltaTime, dtRatio, resuming) {
-    this.frameStartTime = performance.now();
+    if (this.collectDetailedStats) this.frameStartTime = performance.now();
     this._latchDisplayPose();
 
     // Reset stats for this frame
@@ -505,6 +508,7 @@ class LogicWorker extends AbstractWorker {
     this.raycastCountThisFrame = 0;
     this.decimateMsThisFrame = 0;
     this.tickMsThisFrame = 0;
+    this.queryPublishMsThisFrame = 0;
     if (this.collectDetailedStats) Ray.beginFrame();
 
     // Process bullet impacts from particle_worker (SAB poll - no message needed)
@@ -585,17 +589,21 @@ class LogicWorker extends AbstractWorker {
         if (transformActive[entityIndex] === 0) continue;
 
         const obj = gameObjects[entityIndex];
-        if (!obj || typeof obj.tick !== 'function') continue;
+        if (!obj) continue;
+        const tickFn = typeInfo.tickFn && obj.tick === typeInfo.tickFn
+          ? typeInfo.tickFn
+          : obj.tick;
+        if (typeof tickFn !== 'function') continue;
 
         activeCount++;
         this.entitiesProcessedThisFrame++;
 
         if (collectDetailed) {
           const tTick0 = performance.now();
-          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+          tickFn.call(obj, dtRatio, deltaTime, accTime, frameNum);
           tickMs += performance.now() - tTick0;
         } else {
-          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+          tickFn.call(obj, dtRatio, deltaTime, accTime, frameNum);
         }
 
         if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
@@ -631,7 +639,11 @@ class LogicWorker extends AbstractWorker {
           if (transformActive[entityIndex] === 0) continue;
 
           const obj = gameObjects[entityIndex];
-          if (!obj || typeof obj.tick !== 'function') continue;
+          if (!obj) continue;
+          const tickFn = typeInfo.tickFn && obj.tick === typeInfo.tickFn
+            ? typeInfo.tickFn
+            : obj.tick;
+          if (typeof tickFn !== 'function') continue;
 
           activeCount++;
           this.entitiesProcessedThisFrame++;
@@ -649,7 +661,7 @@ class LogicWorker extends AbstractWorker {
           nextTick[entityIndex] = tickInterval;
 
           // Tick entity logic
-          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+          tickFn.call(obj, dtRatio, deltaTime, accTime, frameNum);
 
           // ACCELERATION SCALING: Compensate for tick decimation
           // Scale acceleration by tickInterval so physics integrates same total impulse
@@ -1040,53 +1052,27 @@ class LogicWorker extends AbstractWorker {
         }
         break;
       }
+      case 'spawnDespawnBatch': {
+        if (this.workerIndex !== 0) break;
+        const batchDespawns = data.despawns || [];
+        for (let i = 0; i < batchDespawns.length; i++) {
+          this._mainThreadDespawn(batchDespawns[i]);
+        }
+        const batchSpawns = data.spawns || [];
+        for (let i = 0; i < batchSpawns.length; i++) {
+          this._mainThreadSpawn(batchSpawns[i]);
+        }
+        break;
+      }
       case 'spawn': {
-        // Only worker 0 handles spawn messages to avoid race conditions
-        // All workers receive the broadcast, but only worker 0 actually spawns
-        if (this.workerIndex !== 0) {
-          break; // Ignore spawn messages on other workers
-        }
-
-        const { className, spawnConfig, entityIndex } = data;
-        const EntityClass = self[className];
-
-        if (!EntityClass) {
-          console.error(
-            `LOGIC WORKER ${this.workerIndex}: Cannot spawn ${className} - class not found!`
-          );
-          return;
-        }
-
-        // If entityIndex is provided, use pre-assigned index from main thread
-        // Otherwise, let GameObject.spawn acquire a new index
-        const instance = GameObject.spawn(EntityClass, spawnConfig, entityIndex);
-        if (!instance) {
-          console.warn(
-            `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`
-          );
-        }
+        if (this.workerIndex !== 0) break;
+        this._mainThreadSpawn(data);
         break;
       }
 
       case 'despawn': {
-        // Only worker 0 handles despawn messages from main thread
-        if (this.workerIndex !== 0) {
-          break;
-        }
-
-        const { entityIndex } = data;
-
-        // Basic validation
-        if (entityIndex < 0 || entityIndex >= this.globalEntityCount) {
-          break;
-        }
-
-        // Get the instance and despawn it
-        // Note: despawn() internally checks Transform.active to prevent double-despawn
-        const instance = this.gameObjects[entityIndex];
-        if (instance && instance.despawn) {
-          instance.despawn();
-        }
+        if (this.workerIndex !== 0) break;
+        this._mainThreadDespawn(data.entityIndex);
         break;
       }
 
@@ -1255,6 +1241,31 @@ class LogicWorker extends AbstractWorker {
     }
   }
 
+  _mainThreadSpawn(entry) {
+    const className = entry.className;
+    const spawnConfig = entry.spawnConfig;
+    const entityIndex = entry.entityIndex;
+    const EntityClass = self[className];
+    if (!EntityClass) {
+      console.error(
+        `LOGIC WORKER ${this.workerIndex}: Cannot spawn ${className} - class not found!`
+      );
+      return;
+    }
+    const instance = GameObject.spawn(EntityClass, spawnConfig, entityIndex);
+    if (!instance) {
+      console.warn(
+        `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`
+      );
+    }
+  }
+
+  _mainThreadDespawn(entityIndex) {
+    if (entityIndex < 0 || entityIndex >= this.globalEntityCount) return;
+    const instance = this.gameObjects[entityIndex];
+    if (instance && instance.despawn) instance.despawn();
+  }
+
   /**
    * Override reportFPS to write stats to SharedArrayBuffer
    */
@@ -1271,6 +1282,7 @@ class LogicWorker extends AbstractWorker {
     this.stats[LOGIC_STATS.ENTITY_MS] = this.entityTimeThisFrame || 0;
     this.stats[LOGIC_STATS.DECIMATE_MS] = this.decimateMsThisFrame || 0;
     this.stats[LOGIC_STATS.TICK_MS] = this.tickMsThisFrame || 0;
+    this.stats[LOGIC_STATS.QUERY_PUBLISH_MS] = this.queryPublishMsThisFrame || 0;
   }
 }
 

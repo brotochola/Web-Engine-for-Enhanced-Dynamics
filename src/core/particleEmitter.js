@@ -64,6 +64,16 @@ export class ParticleEmitter extends SharedAtomicPool {
 
   // Hot-path scratches (per-worker module instance; emit is sync/non-reentrant)
   static _cfgScratch = Object.create(null);
+  static _cfgFieldList = [
+    'count', 'flat', 'viewMode', 'texture', 'spritesheet', 'animation', 'frame',
+    'x', 'y', 'z', 'dirX', 'dirY', 'speed', 'spread', 'angleXY',
+    'vx', 'vy', 'vz', 'lifespan', 'gravity',
+    'scale', 'scaleX', 'scaleY', 'alpha', 'tint',
+    'rotC', 'rotS', 'rotation', 'flipX', 'flipY',
+    'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact',
+    'blendMode', 'layerId',
+  ];
+  static _acquireBatch = new Uint16Array(256);
   static _topdownOverrides = { flat: 0, viewMode: CAMERA_TYPES.TOPDOWN };
   static _zenithalOverrides = { flat: 0, viewMode: CAMERA_TYPES.ZENITHAL };
   static _flatOverrides = {
@@ -163,12 +173,20 @@ export class ParticleEmitter extends SharedAtomicPool {
     return spawned;
   }
 
-  /** Merge config + overrides into reusable scratch (clears stale keys). */
+  /**
+   * Merge config + overrides into reusable scratch (stable shape — see _cfgFieldList).
+   * Assign each known field instead of delete-all + for-in (V8 dictionary mode).
+   */
   static _mergeCfg(config, modeOverrides) {
     const s = this._cfgScratch;
-    for (const k in s) delete s[k];
-    for (const k in config) s[k] = config[k];
-    for (const k in modeOverrides) s[k] = modeOverrides[k];
+    const fields = this._cfgFieldList;
+    for (let f = 0; f < fields.length; f++) {
+      const k = fields[f];
+      s[k] = config[k];
+    }
+    if (modeOverrides) {
+      for (const k in modeOverrides) s[k] = modeOverrides[k];
+    }
     return s;
   }
 
@@ -271,10 +289,13 @@ export class ParticleEmitter extends SharedAtomicPool {
     }
 
     while (spawned < count) {
-      const i = this.acquireIndex();
-      if (i < 0) {
+      const want = Math.min(count - spawned, this._acquireBatch.length);
+      const got = this.acquireIndices(want, this._acquireBatch, 0);
+      if (got <= 0) {
         break;
       }
+      for (let b = 0; b < got; b++) {
+      const i = this._acquireBatch[b];
 
       x[i] = randomRange(cfg.x);
       y[i] = randomRange(cfg.y);
@@ -449,6 +470,7 @@ export class ParticleEmitter extends SharedAtomicPool {
       active[i] = 1;
 
       spawned++;
+      }
     }
 
     if (spawned < count && !this._warnedPoolExhausted) {

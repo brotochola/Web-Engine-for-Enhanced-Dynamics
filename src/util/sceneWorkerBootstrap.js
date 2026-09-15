@@ -1,4 +1,5 @@
 import { getPortTransferables, postWorkerInitMessage } from './utils.js';
+import { debugWorkerLog } from './debugLog.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { Flash } from '../core/flash.js';
@@ -267,6 +268,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     bulletFreeList: scene.buffers.bulletFreeList || null,
     bulletFreeListTop: scene.buffers.bulletFreeListTop || null,
     activeBulletsData: scene.buffers.activeBulletsData || null,
+    activeBulletsLock: scene.buffers.activeBulletsLock || null,
     visibleBulletsData: scene.buffers.visibleBulletsData || null,
     impactBuffer: scene.buffers.impactBuffer || null,
     totalLogicWorkers: scene.numberOfLogicWorkers,
@@ -365,10 +367,10 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
   const logicStartIndex = numberOfSpatialWorkers + 3;
   const spatialStartIndex = 0;
 
-  console.log('[Scene] 📤 Sending init messages to workers...');
+  debugWorkerLog('[Scene] 📤 Sending init messages to workers...');
 
   for (let i = 0; i < numberOfSpatialWorkers; i++) {
-    console.log(`[Scene]   → Initializing spatial worker ${i}...`);
+    debugWorkerLog(`[Scene]   → Initializing spatial worker ${i}...`);
     postWorkerInitMessage(scene.workers.spatialWorkers[i], initData, {
       frameRateIndex: spatialStartIndex + i,
       workerIndex: i,
@@ -377,7 +379,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
   }
 
   for (let i = 0; i < scene.numberOfLogicWorkers; i++) {
-    console.log(`[Scene]   → Initializing logic worker ${i}...`);
+    debugWorkerLog(`[Scene]   → Initializing logic worker ${i}...`);
     const logicPorts = workerPorts[`logic${i}`];
     postWorkerInitMessage(
       scene.workers.logicWorkers[i],
@@ -392,7 +394,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     );
   }
 
-  console.log('[Scene]   → Initializing physics worker...');
+  debugWorkerLog('[Scene]   → Initializing physics worker...');
   const physicsExtra = {
     workerPorts: workerPorts.physics,
     frameRateIndex: physicsIndex,
@@ -404,7 +406,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     getPortTransferables(workerPorts.physics)
   );
 
-  console.log('[Scene]   → Initializing particle worker...');
+  debugWorkerLog('[Scene]   → Initializing particle worker...');
   const mainToParticleChannel = new MessageChannel();
   const mainThreadNavPort = mainToParticleChannel.port1;
   const particleWorkerNavPort = mainToParticleChannel.port2;
@@ -426,7 +428,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     mainThreadNavPort.start();
   }
 
-  console.log('[Scene]   → Initializing pre-render worker...');
+  debugWorkerLog('[Scene]   → Initializing pre-render worker...');
   const preRenderIndex = logicStartIndex + scene.numberOfLogicWorkers;
   postWorkerInitMessage(scene.workers.preRender, initData, {
     buffers: {
@@ -436,7 +438,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     frameRateIndex: preRenderIndex,
   });
 
-  console.log('[Scene]   → Initializing renderer worker...');
+  debugWorkerLog('[Scene]   → Initializing renderer worker...');
   const offscreenCanvas = scene.canvas.transferControlToOffscreen();
   const tilesetBitmaps = {};
   for (const [id, loaded] of Object.entries(scene.loadedTilemaps || {})) {
@@ -466,15 +468,15 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     transferables
   );
 
-  console.log('[Scene] ✅ All init messages sent to workers');
+  debugWorkerLog('[Scene] ✅ All init messages sent to workers');
 }
 
 function attachSceneWorkerRuntimeHandlers(scene) {
   const allWorkers = scene.getAllWorkers();
 
-  console.log(`[Scene] 📨 Setting up message handlers for ${allWorkers.length} workers...`);
+  debugWorkerLog(`[Scene] 📨 Setting up message handlers for ${allWorkers.length} workers...`);
   for (const worker of allWorkers) {
-    console.log(`[Scene]   → Setting up handlers for ${worker.name}`);
+    debugWorkerLog(`[Scene]   → Setting up handlers for ${worker.name}`);
     worker.onmessage = (e) => {
       scene.handleMessageFromWorker(e);
     };
@@ -488,7 +490,7 @@ function attachSceneWorkerRuntimeHandlers(scene) {
       );
     };
   }
-  console.log('[Scene] ✅ Message handlers set up');
+  debugWorkerLog('[Scene] ✅ Message handlers set up');
 }
 
 export async function createSceneWorkers(scene) {
@@ -500,7 +502,7 @@ export async function createSceneWorkers(scene) {
     if (typeof window.WEED.ensureEmbeddedSources === 'function') {
       await window.WEED.ensureEmbeddedSources();
     }
-    console.log('[Scene] Using inline workers (single-file bundle mode)');
+    debugWorkerLog('[Scene] Using inline workers (single-file bundle mode)');
   }
 
   const makeWorker = createSceneWorkerFactory(useInlineWorkers, cacheBust);

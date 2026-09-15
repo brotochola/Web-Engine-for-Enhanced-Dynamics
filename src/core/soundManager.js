@@ -18,6 +18,7 @@
 
 import { AUDIO_DEFAULTS } from '../util/configDefaults.js';
 import { rng } from '../util/utils.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 
 export class SoundManager {
   static _enabled = true;
@@ -159,7 +160,7 @@ export class SoundManager {
       processMsSab: this._processMsSab,
     });
 
-    console.log(
+    debugWorkerLog(
       `[SoundManager] AudioWorklet mixer initialized (${maxSlots} slots, mixGain=${mixGain}, masterVol=${masterVolume})`
     );
     return true;
@@ -213,7 +214,7 @@ export class SoundManager {
     this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
     this._muted = false;
 
-    console.log(
+    debugWorkerLog(
       `[SoundManager] AudioWorklet reconfigured for new scene (${maxSlots} slots, mixGain=${mixGain}, masterVol=${masterVolume})`
     );
   }

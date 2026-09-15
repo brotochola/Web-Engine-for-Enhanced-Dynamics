@@ -98,6 +98,33 @@ export function popFreeIndex(top, links, startIndex = 0) {
 }
 
 /**
+ * Batch pop — walk up to maxToPop links with plain reads, publish with one CAS.
+ * @returns {number} Number of indices popped (0..maxToPop)
+ */
+export function popFreeIndices(top, links, maxToPop, outArray, outOffset = 0, startIndex = 0) {
+  if (maxToPop <= 0) return 0;
+  for (;;) {
+    const head = Atomics.load(top, 0);
+    let plusOne = head & 0xffff;
+    if (plusOne === 0) return 0;
+
+    let popped = 0;
+    let cur = plusOne;
+    while (cur !== 0 && popped < maxToPop) {
+      outArray[outOffset + popped] = startIndex + (cur - 1);
+      cur = links[cur - 1];
+      popped++;
+    }
+
+    const newHead = ((head + 0x10000) & ~0xffff) | cur;
+    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
+      Atomics.sub(top, 1, popped);
+      return popped;
+    }
+  }
+}
+
+/**
  * Atomically push an index back to the free list. Lock-free; safe from any
  * thread. Caller must guarantee the index is not double-freed (pools guard
  * this with their per-slot active flags).

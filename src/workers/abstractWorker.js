@@ -43,6 +43,7 @@ import { DecorationComponent } from '../components/decorationComponent.js';
 import { Joint } from '../core/joint.js';
 import { SoundManager } from '../core/soundManager.js';
 import { createWorkerQueryFunctions } from '../core/querySystem.js';
+import { setVerboseWorkers, installQuietConsoleLog } from '../util/debugLog.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
@@ -185,7 +186,7 @@ export class AbstractWorker {
         const e = this._pendingMessages[this._pendingMessageReadIndex++];
 
         try {
-          const shouldProfileMessages = !!this.stats;
+          const shouldProfileMessages = !!this.collectDetailedStats;
           const startTime = shouldProfileMessages ? performance.now() : 0;
 
           await this.handleMessage(e);
@@ -395,6 +396,8 @@ export class AbstractWorker {
 
     // Fine worker subtimers + SAB detail fields (config.debug.collectDetailedStats)
     this.collectDetailedStats = !!(this.config.debug?.collectDetailedStats);
+    setVerboseWorkers(!!this.config.debug?.verboseWorkers);
+    installQuietConsoleLog();
     Ray.collectDetailedStats = this.collectDetailedStats;
     Ray.assertRotCSUnit = !!(this.config.debug?.assertRotCSUnit);
     setAssertRotCSUnit(!!this.config.debug?.assertRotCSUnit);
@@ -549,6 +552,7 @@ export class AbstractWorker {
       }
       if (data.activeBulletsData) {
         this.activeBulletsData = new Uint16Array(data.activeBulletsData);
+        BulletPool.initializeActiveList(data.activeBulletsData, data.activeBulletsLock || null);
       }
       if (data.visibleBulletsData) {
         this.visibleBulletsData = new Uint16Array(data.visibleBulletsData);

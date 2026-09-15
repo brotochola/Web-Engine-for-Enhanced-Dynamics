@@ -762,6 +762,15 @@ Winner: **findContacts**. H17 died (weight ~1%). H18 died (staticPressure ~8%, n
 
 **Next if another campaign:** change *how* neighbors are enumerated (SoA lists / fewer hash probes), not SIMD on the linked-list walk. `FindParticleContacts` is still ~60% of `LIQUIDFUN_MS`.
 
+## Fase C (future — sibling C only, not this JS program)
+
+Do **not** edit `Box2d_3.2_C_-_liquidfun` in the current WeedJS speed program. When that campaign opens:
+
+1. Re-read `lf_particle_system.c` `FindParticleContacts` (not this paragraph).
+2. Next hill is **dense per-cell neighbor lists** (SoA / fewer hash probes), not another SIMD `distSqr` (H29 rejected, +1.6% L1).
+3. Lockstep gate: `pnpm test:visual --scene liquidfun,lfstress`.
+4. No second pthread pool. In-step `lfParallelFor` stays on the existing Box2D worker count.
+
 ## Related
 
 - Feature pyramid: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md), [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)

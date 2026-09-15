@@ -12,6 +12,7 @@ import { LightEmitter } from '../components/lightEmitter.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { Transform } from '../components/transform.js';
 import { Camera } from './camera.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 
 export class Flash extends GameObject {
   // Flash is an internal engine class - no user script needed
@@ -47,7 +48,7 @@ export class Flash extends GameObject {
   static initialize(maxFlashes) {
     this.maxFlashes = maxFlashes;
     this.initialized = true;
-    console.log(
+    debugWorkerLog(
       `⚡ Flash: Initialized with ${maxFlashes} flashes (indices ${this.startIndex
       }-${this.startIndex + maxFlashes - 1})`
     );

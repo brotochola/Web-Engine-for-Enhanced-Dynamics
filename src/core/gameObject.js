@@ -17,7 +17,7 @@ import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
 import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
-import { collectComponents, cantorPair, distanceSq2D } from '../util/utils.js';
+import { collectComponents, collisionPairKey, distanceSq2D } from '../util/utils.js';
 import {
   resetFreeList,
   popFreeIndex,
@@ -1632,11 +1632,10 @@ export class GameObject {
     }
 
     // Collision keys are stored ONCE per pair, normalized as (min, max).
-    // Cantor pairing is order-sensitive, so normalize before keying.
     const a = this.index;
     const minE = a < otherIndex ? a : otherIndex;
     const maxE = a < otherIndex ? otherIndex : a;
-    const key = cantorPair(minE, maxE);
+    const key = collisionPairKey(minE, maxE);
 
     // frameCollisions always points at the latest completed frame's pair set
     return logicWorker.frameCollisions.has(key);

@@ -42,6 +42,8 @@ for (const [srcKey, baselineKey] of [
 export const CANONICAL_ORDER = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
 
 export function restoreAll() {
+  // Baselines are pre-P2/P6. Running the old tournament overwrites shipped src.
+  // Always restoreAll() in a finally, or re-checkout those four files after.
   fs.copyFileSync(PATHS.baselineParticleEmitter, PATHS.particleEmitter);
   fs.copyFileSync(PATHS.baselineParticleIntegrate, PATHS.particleIntegrate);
   fs.copyFileSync(PATHS.baselineSharedAtomicPool, PATHS.sharedAtomicPool);

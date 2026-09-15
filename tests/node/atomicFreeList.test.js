@@ -5,6 +5,7 @@ import { Worker } from 'node:worker_threads';
 import {
   resetFreeList,
   popFreeIndex,
+  popFreeIndices,
   pushFreeIndex,
   getFreeListCount,
 } from '../../src/util/atomicFreeList.js';
@@ -53,6 +54,28 @@ test('push/pop are LIFO and maintain the free count', () => {
 
   assert.equal(popFreeIndex(top, links), a);
   assert.equal(popFreeIndex(top, links), b);
+});
+
+test('popFreeIndices batch matches sequential pops and one CAS', () => {
+  const { top, links } = makeList(8);
+  resetFreeList(top, links, 8, 1);
+
+  const sequential = [];
+  for (let i = 0; i < 3; i++) sequential.push(popFreeIndex(top, links));
+
+  resetFreeList(top, links, 8, 1);
+  const batched = new Int32Array(3);
+  const n = popFreeIndices(top, links, 3, batched, 0, 0);
+  assert.equal(n, 3);
+  assert.deepEqual(Array.from(batched), sequential);
+  assert.equal(getFreeListCount(top), 5);
+  assert.equal(popFreeIndices(top, links, 0, batched), 0);
+
+  const rest = new Int32Array(16);
+  const leftover = popFreeIndices(top, links, 16, rest);
+  assert.equal(leftover, 5);
+  assert.equal(getFreeListCount(top), 0);
+  assert.equal(popFreeIndices(top, links, 4, rest), 0);
 });
 
 test('startIndex offsets pops and pushes (entity pools)', () => {

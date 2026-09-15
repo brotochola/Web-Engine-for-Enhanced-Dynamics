@@ -84,6 +84,7 @@ import {
   ASSETS_DEFAULTS,
   DEFAULT_LAYERS,
 } from '../util/configDefaults.js';
+import { setVerboseWorkers, debugWorkerLog } from '../util/debugLog.js';
 import { Sun } from './sun.js';
 import { Layer } from './layer.js';
 import { TileMap } from './tileMap.js';
@@ -406,6 +407,8 @@ class Scene {
 
     // Frame timing
     this.lastFrameTime = performance.now();
+    this._pendingLogicSpawns = [];
+    this._pendingLogicDespawns = [];
     this.updateRate = 1000 / 60;
     this.animationFrameId = null; // Store RAF ID so we can cancel it
 
@@ -703,6 +706,7 @@ class Scene {
       ...DEBUG_DEFAULTS,
       ...(this.config.debug || {}),
     };
+    setVerboseWorkers(!!this.config.debug.verboseWorkers);
 
     // Layers defaults (custom layers are user-defined, empty by default)
     if (!this.config.layers) {
@@ -903,7 +907,7 @@ class Scene {
 
   // Initialize everything
   async init() {
-    console.log(`🎬 Scene ${this.constructor.name}: Initializing...`);
+    debugWorkerLog(`🎬 Scene ${this.constructor.name}: Initializing...`);
 
     // Check SharedArrayBuffer support
     if (typeof SharedArrayBuffer === 'undefined') {
@@ -1344,7 +1348,7 @@ class Scene {
     }
     if (shaderAssetPromises.length > 0) {
       await Promise.all(shaderAssetPromises);
-      console.log(`[Scene] Loaded ${shaderAssetPromises.length} shader asset(s)`);
+      debugWorkerLog(`[Scene] Loaded ${shaderAssetPromises.length} shader asset(s)`);
     }
 
     if (this.config.layers) {
@@ -1395,7 +1399,7 @@ class Scene {
     const atlasPromise = (async () => {
       try {
         if (bakedBigAtlas?.json && bakedBigAtlas?.png) {
-          console.log('[Scene] Loading prebaked bigAtlas...');
+          debugWorkerLog('[Scene] Loading prebaked bigAtlas...');
           return await this._loadBakedBigAtlas(bakedBigAtlas);
         }
         const spritesheets = {
@@ -1653,7 +1657,7 @@ class Scene {
         waiter.resolve();
       }
     } else if (e.data.msg === 'workerReady') {
-      console.log(`[Scene] 📬 Received 'workerReady' message from ${e.currentTarget.name}`);
+      debugWorkerLog(`[Scene] 📬 Received 'workerReady' message from ${e.currentTarget.name}`);
       this.handleWorkerReady(e.currentTarget.name);
     } else if (e.data.msg === 'error') {
       const { title, message, stack } = e.data;
@@ -1762,7 +1766,7 @@ class Scene {
       );
     } else {
       // Log unexpected messages for debugging
-      console.log(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);
+      debugWorkerLog(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);
     }
   }
 
@@ -1816,11 +1820,11 @@ class Scene {
   }
 
   handleWorkerReady(workerName) {
-    console.log(`[Scene] ✅ Worker "${workerName}" is ready!`);
+    debugWorkerLog(`[Scene] ✅ Worker "${workerName}" is ready!`);
     this.workerReadyStates[workerName] = true;
 
     if (workerName === 'physics' && this.pendingPhysicsUpdates.length) {
-      console.log(`[Scene] 📤 Sending ${this.pendingPhysicsUpdates.length} pending physics updates...`);
+      debugWorkerLog(`[Scene] 📤 Sending ${this.pendingPhysicsUpdates.length} pending physics updates...`);
       this.pendingPhysicsUpdates.forEach((update) => {
         this.workers.physics.postMessage({
           msg: 'updatePhysicsConfig',
@@ -1833,22 +1837,22 @@ class Scene {
     // Log current ready states
     const readyCount = Object.values(this.workerReadyStates).filter((ready) => ready).length;
     const totalWorkers = Object.keys(this.workerReadyStates).length;
-    console.log(`[Scene] 📊 Workers ready: ${readyCount}/${totalWorkers}`);
+    debugWorkerLog(`[Scene] 📊 Workers ready: ${readyCount}/${totalWorkers}`);
 
     // Log which workers are still waiting
     const waitingWorkers = Object.entries(this.workerReadyStates)
       .filter(([name, ready]) => !ready)
       .map(([name]) => name);
     if (waitingWorkers.length > 0) {
-      console.log(`[Scene] ⏳ Still waiting for: ${waitingWorkers.join(', ')}`);
+      debugWorkerLog(`[Scene] ⏳ Still waiting for: ${waitingWorkers.join(', ')}`);
     }
 
     const allReady = Object.values(this.workerReadyStates).every((ready) => ready);
 
     if (allReady) {
-      console.log(`[Scene] 🎉 All workers are ready!`);
+      debugWorkerLog(`[Scene] 🎉 All workers are ready!`);
       if (this.resolveReady) {
-        console.log(`[Scene] ✅ Resolving ready promise`);
+        debugWorkerLog(`[Scene] ✅ Resolving ready promise`);
         this.resolveReady();
       }
     }
@@ -1861,14 +1865,15 @@ class Scene {
   startAllWorkers() {
     const allWorkers = this.getAllWorkers();
 
-    console.log(`[Scene] 🚀 Starting ${allWorkers.filter(w => w).length} workers...`);
+    debugWorkerLog(`[Scene] 🚀 Starting ${allWorkers.filter(w => w).length} workers...`);
     for (const worker of allWorkers) {
       if (worker) {
-        console.log(`[Scene]   → Sending 'start' message to ${worker.name}`);
+        debugWorkerLog(`[Scene]   → Sending 'start' message to ${worker.name}`);
         worker.postMessage({ msg: 'start' });
       }
     }
-    console.log(`[Scene] ✅ All start messages sent`);
+    debugWorkerLog(`[Scene] ✅ All start messages sent`);
+    this._flushLogicSpawnDespawn();
   }
 
   /**
@@ -2218,6 +2223,21 @@ class Scene {
     // Reset per-frame input state (after update so devs can read it)
     Mouse.wheel = 0;
     Mouse.snapshotPreviousFrame();
+    this._flushLogicSpawnDespawn();
+  }
+
+  _flushLogicSpawnDespawn() {
+    const worker0 = this.workers.logicWorkers?.[0];
+    const spawns = this._pendingLogicSpawns;
+    const despawns = this._pendingLogicDespawns;
+    if (!worker0 || (!spawns.length && !despawns.length)) return;
+    worker0.postMessage({
+      msg: 'spawnDespawnBatch',
+      spawns,
+      despawns,
+    });
+    this._pendingLogicSpawns = [];
+    this._pendingLogicDespawns = [];
   }
 
   /**
@@ -2242,7 +2262,7 @@ class Scene {
   }
 
   async destroy() {
-    console.log(`🔴 Scene ${this.constructor.name}: Destroying...`);
+    debugWorkerLog(`🔴 Scene ${this.constructor.name}: Destroying...`);
 
     Camera.setFree(false);
     GrabSystem.reset();
@@ -2282,7 +2302,7 @@ class Scene {
 
     this._releaseBootAssets();
 
-    console.log(`✅ Scene ${this.constructor.name}: Destroyed!`);
+    debugWorkerLog(`✅ Scene ${this.constructor.name}: Destroyed!`);
   }
 
   /**
@@ -2430,15 +2450,11 @@ class Scene {
     // - Sets up all component data
     // - Calls lifecycle hooks (setup, onSpawned)
     // - Queues list updates for processing at start of next frame
-    const worker0 = this.workers.logicWorkers?.[0];
-    if (worker0) {
-      worker0.postMessage({
-        msg: 'spawn',
-        className: className,
-        spawnConfig: spawnConfig,
-        entityIndex: entityIndex, // Pre-assigned index
-      });
-    }
+    this._pendingLogicSpawns.push({
+      className,
+      spawnConfig,
+      entityIndex,
+    });
 
     // Return a simple object with the index for immediate use
     // (e.g., creating constraints between spawned entities)
@@ -2449,14 +2465,7 @@ class Scene {
   }
 
   despawnEntity(entityIndex) {
-    // Only worker 0 handles despawn messages
-    const worker0 = this.workers.logicWorkers?.[0];
-    if (worker0) {
-      worker0.postMessage({
-        msg: 'despawn',
-        entityIndex: entityIndex,
-      });
-    }
+    this._pendingLogicDespawns.push(entityIndex);
   }
 
   despawnAllEntities(className) {

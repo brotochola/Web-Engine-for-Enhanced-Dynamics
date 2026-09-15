@@ -14,6 +14,7 @@
  */
 
 import { collectComponents, countTrailingZeros } from '../util/utils.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 import { Transform } from '../components/transform.js';
 import { GameObject } from './gameObject.js';
 
@@ -348,7 +349,7 @@ export class QuerySystem {
    * @param {Array} registeredClasses - Array of {class, count, startIndex, entityType}
    */
   buildQueries(registeredClasses) {
-    console.log('[QuerySystem] Building queries with bitmask optimization...');
+    debugWorkerLog('[QuerySystem] Building queries with bitmask optimization...');
 
     // Store metadata for each entity class with componentMask
     this.entityMetadata = registeredClasses.map(
@@ -494,10 +495,10 @@ export class QuerySystem {
       resultOffset += resultBufferSize;
     }
 
-    console.log(`[QuerySystem] Defined ${this.precomputedQueries.length} pre-computed queries:`);
+    debugWorkerLog(`[QuerySystem] Defined ${this.precomputedQueries.length} pre-computed queries:`);
     for (const q of this.precomputedQueries) {
       const matchingTypes = this._getMatchingTypeNames(q.typeMask);
-      console.log(`  - ${q.name}: matches [${matchingTypes.join(', ')}]`);
+      debugWorkerLog(`  - ${q.name}: matches [${matchingTypes.join(', ')}]`);
     }
   }
 
@@ -540,15 +541,15 @@ export class QuerySystem {
     this.queryResultsSAB = new SharedArrayBuffer(queryResultsSize);
     this._initializeQueryResultViews();
 
-    console.log(`[QuerySystem] Created SABs:`);
-    console.log(`  - entityMetadataSAB: ${entityMetadataSize} bytes (${numTypes} types)`);
-    console.log(
+    debugWorkerLog(`[QuerySystem] Created SABs:`);
+    debugWorkerLog(`  - entityMetadataSAB: ${entityMetadataSize} bytes (${numTypes} types)`);
+    debugWorkerLog(
       `  - queryCacheSAB: ${queryCacheSize} bytes (${numPrecomputed}/${MAX_PRECOMPUTED_QUERIES} queries)`
     );
-    console.log(
+    debugWorkerLog(
       `  - queryResultsSAB: ${queryResultsSize} bytes (${numPrecomputed} result buffers × ${this.queryEntityCapacity} entity cap)`
     );
-    console.log(`  - queryVersionSAB: ${QUERY_VERSION_BUFFER_SIZE} bytes (shared invalidation counter)`);
+    debugWorkerLog(`  - queryVersionSAB: ${QUERY_VERSION_BUFFER_SIZE} bytes (shared invalidation counter)`);
 
     return {
       entityMetadataSAB: this.entityMetadataSAB,
@@ -907,13 +908,13 @@ export class QuerySystem {
    */
   _logStatistics() {
     const totalEntities = this.entityMetadata.reduce((sum, meta) => sum + meta.poolSize, 0);
-    console.log(
+    debugWorkerLog(
       `[QuerySystem] Built metadata for ${this.entityMetadata.length} entity types (${totalEntities} total entities)`
     );
 
     for (const meta of this.entityMetadata) {
       const componentNames = meta.components.map((c) => c.name).join(', ');
-      console.log(
+      debugWorkerLog(
         `  - ${meta.className}: [${componentNames}] (mask: 0x${meta.componentMask.toString(16)})`
       );
     }

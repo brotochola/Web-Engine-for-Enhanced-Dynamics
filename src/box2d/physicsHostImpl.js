@@ -849,6 +849,9 @@
     state.globalEntityCount = data.globalEntityCount | 0;
     state.posePublish = data.posePublish || null;
     state.collectDetailedStats = !!(state.config.debug && state.config.debug.collectDetailedStats);
+    if (!(state.config.debug && state.config.debug.verboseWorkers) && typeof console !== 'undefined') {
+      console.log = function () {};
+    }
 
     if (data.buffers && data.buffers.physicsStats) {
       state.stats = new Float32Array(data.buffers.physicsStats);
@@ -1025,7 +1028,7 @@
   self.onmessage = function (event) {
     var data = event.data;
     if (!data || !data.msg) return;
-    var t0 = performance.now();
+    var t0 = state.collectDetailedStats ? performance.now() : 0;
     try {
       if (data.msg === 'init') {
         state.isPaused = true;
@@ -1079,7 +1082,9 @@
       console.error('[physics_host]', err);
       reportError('Physics host message failed', err);
     }
-    state.messageTimeThisFrame += performance.now() - t0;
+    if (state.collectDetailedStats) {
+      state.messageTimeThisFrame += performance.now() - t0;
+    }
   };
 
   self.postMessage({

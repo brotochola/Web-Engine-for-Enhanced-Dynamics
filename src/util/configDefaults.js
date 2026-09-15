@@ -625,6 +625,11 @@ export const DEBUG_DEFAULTS = Object.freeze({
    * Opt in per scene: debug: { collectDetailedStats: true }.
    */
   collectDetailedStats: false,
+  /**
+   * Init / worker console.log spam (Scene bootstrap, pool init, atlas bake).
+   * Independent of collectDetailedStats. Default off.
+   */
+  verboseWorkers: false,
   /** Warn when cmd-ring / Ray get non-unit (rotC,rotS) or dir. Off in prod. */
   assertRotCSUnit: false,
   /** DebugUI poll ms. GameEngine constructor override: debugUpdateInterval. */

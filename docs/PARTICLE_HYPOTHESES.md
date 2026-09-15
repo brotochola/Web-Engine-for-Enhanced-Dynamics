@@ -52,6 +52,8 @@ Round1 winners: **P2, P4, P5, P6** (P1/P3 reject).
 
 **Champion: P4+P5** (flat/heighted two-pass integrate + skip unused flat z/vz writes) — merged into `src/util/particleIntegrate.js` + `src/core/particleEmitter.js`. Baselines in `tests/bench/particle-hyps/` remain pre-opt for patch replay.
 
+**Later singles (2026-09):** P2 and P6 (ACCEPT as singles in the 2026-08 tournament; stacks with P4+P5 lost) are now also in production. `expectedActive` uses `getActiveCount()+32`. Wave J compact bullet list is in `BulletPool`. Re-running `pnpm bench:particle:tournament` still `restoreAll()` to **pre-opt** sources — do not leave that dirty.
+
 ## Hypotheses
 
 | ID | Claim | Change | L1 target | L2 target |

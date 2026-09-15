@@ -1,3 +1,4 @@
+import { debugWorkerLog } from './debugLog.js';
 import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -296,6 +297,8 @@ function initializeBulletBuffers(scene) {
   resetFreeList(freeListTop, freeList, maxBullets, 1);
 
   createCompactUint16ListPair(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
+  buffers.activeBulletsLock = new SharedArrayBuffer(4);
+  BulletPool.initializeActiveList(buffers.activeBulletsData, buffers.activeBulletsLock);
 
   // Header: [0]=count (Int32), [1]=batch sequence (Int32). Impact data starts at byte 8.
   // The sequence lets logic workers detect new batches and avoid double-processing
@@ -360,7 +363,7 @@ export function resolveMaxVisibleRenderables(scene) {
   if (maxVisibleRenderables == null || maxVisibleRenderables <= 0) {
     maxVisibleRenderables = computeAutoMaxVisibleRenderables(scene);
     config.renderer.maxVisibleRenderables = maxVisibleRenderables;
-    console.log(
+    debugWorkerLog(
       `[Scene] renderer.maxVisibleRenderables auto = ${maxVisibleRenderables}`
     );
   }

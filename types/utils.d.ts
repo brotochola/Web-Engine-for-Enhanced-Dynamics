@@ -77,6 +77,11 @@ export function randomColor(value: unknown, defaultVal?: number): number;
 export function distanceSq2D(x1: number, y1: number, x2: number, y2: number): number;
 export function cantorPair(a: number, b: number): number;
 export function cantorUnpair(z: number, result?: { a: number; b: number }): { a: number; b: number };
+export function collisionPairKey(minE: number, maxE: number): number;
+export function collisionPairUnpack(
+  key: number,
+  out: { a: number; b: number },
+): { a: number; b: number };
 export const _cantorResult: { a: number; b: number };
 export const _rgbResult: { r: number; g: number; b: number };
 export function updateMassFromCircle(index: number, radius: number, RigidBody: unknown): void;

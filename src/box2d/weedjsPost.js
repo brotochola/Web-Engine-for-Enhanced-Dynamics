@@ -1284,7 +1284,7 @@
 
   function serviceQueryAabb() {
     if (!world || !world._querySlots) return;
-    Box2dQueryAabb.servicePendingQuery(function (
+    var overlapFn = function (
       x0,
       y0,
       x1,
@@ -1305,7 +1305,12 @@
         results[i] = slots[i] | 0;
       }
       return n | 0;
-    });
+    };
+    if (typeof Box2dQueryAabb.servicePendingQueryBurst === 'function') {
+      Box2dQueryAabb.servicePendingQueryBurst(overlapFn, 1024);
+    } else {
+      Box2dQueryAabb.servicePendingQuery(overlapFn);
+    }
   }
 
   function serviceRayCast() {

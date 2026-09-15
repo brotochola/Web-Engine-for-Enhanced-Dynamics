@@ -59,6 +59,26 @@ pnpm bench:particle:tournament
 pnpm bench:micro:compute-pack
 pnpm bench:feature:compute
 pnpm bench:feature:compute:headed
+
+# Waves C–K + leftovers (L1 always; L2 needs Playwright)
+pnpm bench:micro:spatial
+pnpm bench:spatial:campaign
+pnpm bench:spatial:tournament
+pnpm bench:feature:spatial
+pnpm bench:micro:query
+pnpm bench:feature:query-churn
+pnpm bench:feature:query-aabb
+pnpm bench:micro:angular-sweep
+pnpm bench:micro:decoration-spatial
+pnpm bench:micro:nav
+pnpm bench:feature:nav
+pnpm bench:micro:tilemap
+pnpm bench:micro:treiber
+pnpm bench:feature:spawn-storm
+pnpm bench:micro:pose-skip
+pnpm bench:micro:skip-work
+pnpm bench:micro:body-pack
+pnpm bench:micro:particle-l1
 ```
 
 Hypothesis index + fill order: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md).
@@ -73,21 +93,21 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | Stamp decals | `decalStamp.js`, particle_worker | `decalMicrobench.mjs` | `stressScenes/DecalStampStressScene` | zenithal / Predator | `DECAL_STAMP_MS`, particle `STEP_MS` — **champion D2** |
 | Particle emit | `particleEmitter.js`, free list | `particleEmitMicrobench.mjs` | `stressScenes/ParticleEmitStressScene` | zenithalParticleTest | emit ops/s; particle `STEP_MS` — **champion includes P5** |
 | Particle integrate | `particleIntegrate.js`, particle_worker | `particleIntegrateMicrobench.mjs` | `stressScenes/ParticleIntegrateStressScene` | zenithalParticleTest | `PARTICLE_PHYSICS_MS`, `BUILD_ACTIVE_VISIBLE_MS` — **champion P4+P5** |
-| Spatial rebuild + neighbors | `spatialWorker.js`, `grid.js` | (todo) | `stressScenes/StationarySpatialScene` | Balls | `NEIGHBOR_MS`, `REBUILD_MS` |
+| Spatial rebuild + neighbors | `spatialWorker.js`, `grid.js` | `spatialMicrobench.mjs` | `stressScenes/StationarySpatialScene` | Balls | `NEIGHBOR_MS`, `REBUILD_MS` — Verlet + stagger shipped; H1–H15 / S2–S3 closed |
 | Box2D step / sync | `weedjsPost.js` | semi (WASM) | Balls / BallsAndRectangles | Balls | `STEP_MS`, `BOX2D_MS`, `BODY_COUNT` |
 | LiquidFun particle step | `lf_particle_system.c` (sibling `Box2d_3.2_C_-_liquidfun`) | `liquidFunCapturePairsMicrobench.mjs` (CapturePairs create-time); `liquidFunComputeDepthMicrobench.mjs` (first step after SOLID create); extract / reactive / sparse-step / rigid-damping; **`liquidFunPassProfileMicrobench.mjs`** (8-bucket pass split) | `stressScenes/LiquidFunStressScene` | `demos/liquidFunDemoScene` + `pnpm test:visual --scene liquidfun,lfstress` (100-step exact after H10) | `LIQUIDFUN_MS` (fluid inside `step_world`); `BOX2D_MS` = full step (rigid + LiquidFun); ~10.2k water + ~2k spring/staticPressure. Pass HUD slots 37–44 (`LF_PASS_*_MS`). **H29 rejected.** |
 | LiquidFun ↔ Box2D coupling | `lf_particle_system.c` public Box2D API (impulse / OverlapAABB / body props / strict qsort) | `liquidFunBodyCoupleMicrobench.mjs`; `liquidFunOverlapSubstepMicrobench.mjs`; `liquidFunStrictContactMicrobench.mjs` | `LiquidFunBodyCoupleStressScene` (100 dynamics); `LiquidFunManyShapesStressScene` (`subSteps:2`, 180 statics) | same L3 as particle step (H26 no-op at `subSteps=1` on lfstress). Do **not** add coupling scenes to exact lockstep catalog. | `LIQUIDFUN_MS` + `BOX2D_MS`; WASM counters `get_lf_*`. **H26 shipped** (reuse query across sub-steps). H24/H25/H27/H28 rejected (&lt;3% ceiling). |
 | LiquidFun QueryAABB / RayCast | `liquidFunQuery.js` | SAB protocol `liquidFunQuery.test.js` | `stressScenes/LiquidFunQueryStressScene` | `demos/liquidFunQueryScene` | physics + logic `STEP_MS` under sync query churn |
-| Box2D QueryAABB | `box2dQueryAabb.js` | semi | `demos/.../Box2dQueryAabbScene` | — | query / physics STEP |
-| NavGrid Dijkstra / A* | `navGrid.js`, particle_worker | (todo) | (todo) `NavStressScene` | car / bichos / Predator | ms/path |
-| AngularSweep visibility | `angularSweep.js` | (todo) | (todo) | Predator | ms/polygon |
-| TileMap SAB queries | `tileMap.js` | (todo) | low value | tile demos | ns/`getTileId` |
-| QuerySystem publish | `querySystem.js` | (todo) | `stressScenes/QueryChurnScene` | — | publish / churn |
+| Box2D QueryAABB | `box2dQueryAabb.js` | `queryAabbBurst.test.js` (protocol) | `stressScenes/QueryAabbStressScene` + demo self-check | — | burst 1024 / physics STEP |
+| NavGrid Dijkstra / A* | `navGrid.js`, particle_worker | `navGridMicrobench.mjs` | `stressScenes/NavStressScene` | car / bichos / Predator | ms/path; respects `maxProcessingMsPerFrame` |
+| AngularSweep visibility | `angularSweep.js` | `angularSweepMicrobench.mjs` | Predator (L3) | Predator | polygons/s + winding |
+| TileMap SAB queries | `tileMap.js` | `tileMapMicrobench.mjs` | low value | tile demos | ns/`getTileId` |
+| QuerySystem publish | `querySystem.js` | `querySystemMicrobench.mjs` | `stressScenes/QueryChurnScene` | — | `QUERY_PUBLISH_MS` (gated) / skip-if-unchanged |
 | Pre-render cull + queue | `preRenderWorker` | `srFlagsMicrobench.mjs` (7 Uint8 vs packed — **kill** L1+L3: cull kernel wins, queue noise, dirty RMW loses; Predator `preRender.STEP_MS` in noise vs 7 columns) | `stressScenes/RenderQueueStressScene` | Predator | L1 packed/strided; L3 `COLLECT_MS`/`EMIT_MS`/`STEP_MS` |
 | Compute layer (pack + dispatch) | `computeLayer.js`, `box2dBodyPack.js` | `computePackMicrobench.mjs` | `stressScenes/ComputeStressScene` (256², iterate 20, WebGPU) | burningBoxes | L1 pack ms; L2 `CUSTOM_LAYERS_MS` (headed) |
-| DecorationsSpatial | `decorationSpatial.js` | (todo) | (todo) | zenithal | `queryCircle` ms |
-| Bullet tick + Ray | `BulletPool`, particle_worker | (todo) | can share RayStress | Predator | particle `STEP_MS` |
-| Treiber free list / rings | `atomicFreeList`, rings | (todo) | (todo) spawn-storm | Balls spawn | pop/push/s |
+| DecorationsSpatial | `decorationSpatial.js` | `decorationSpatialMicrobench.mjs` | zenithal-style (L3) | zenithal | `queryCircle` ops/s |
+| Bullet tick + Ray | `BulletPool`, particle_worker | compact list (prod) | can share RayStress | Predator | particle `STEP_MS` |
+| Treiber free list / rings | `atomicFreeList`, rings | `treiberMicrobench.mjs` | `stressScenes/SpawnStormScene` | Balls spawn | pop/push/s; batched `postMessage` spawn |
 
 Fill order after Decals + Particles: **C Spatial L1 + formal tournament** → D AngularSweep → E NavGrid → F QuerySystem L1 → G DecorationsSpatial → H Pre-render cull → I Treiber/rings → J Bullet → K TileMap L1.
 
@@ -109,6 +129,9 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 | ParticleIntegrateStressScene | `/tests/bench/stressScenes/particleIntegrateStressScene.js` | Heighted churn → `PARTICLE_PHYSICS_MS`, lists |
 | StationarySpatialScene | `/tests/bench/stressScenes/stationarySpatialScene.js` | Stationary neighbor reuse |
 | QueryChurnScene | `/tests/bench/stressScenes/queryChurnScene.js` | Spawn/despawn + query publication |
+| QueryAabbStressScene | `/tests/bench/stressScenes/queryAabbStressScene.js` | Per-tick `box2dQueryAABB` burst |
+| SpawnStormScene | `/tests/bench/stressScenes/spawnStormScene.js` | Batched spawn/despawn |
+| NavStressScene | `/tests/bench/stressScenes/navStressScene.js` | Many unique flowfield targets |
 | RenderQueueStressScene | `/tests/bench/stressScenes/renderQueueStressScene.js` | Cull / Y-sort / render queue |
 | LiquidFunStressScene | `/tests/bench/stressScenes/liquidFunStressScene.js` | ~10.2k water + ~2k spring/staticPressure → `lfParticleSystem_Step` cost (`subSteps:1`, 3 floors — blinds H24–H28) |
 | LiquidFunBodyCoupleStressScene | `/tests/bench/stressScenes/liquidFunBodyCoupleStressScene.js` | ~8k water + 100 dynamic boxes, `sleeping:true` → impulse / body-prop / wake cost |

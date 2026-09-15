@@ -234,6 +234,46 @@
     return true;
   }
 
+  /**
+   * Drain a burst of single-flight AABB queries within one physics step.
+   * Mirrors servicePendingRayCastBurst (spin + timed wait after the first hit).
+   * @returns {number} queries serviced
+   */
+  function servicePendingQueryBurst(overlapFn, maxQueries) {
+    if (!i32 || typeof overlapFn !== 'function') return 0;
+    var max = maxQueries | 0;
+    if (max <= 0) max = 1;
+    var serviced = 0;
+    while (serviced < max) {
+      if (servicePendingQuery(overlapFn)) {
+        serviced++;
+        continue;
+      }
+      if (serviced === 0) break;
+
+      var found = false;
+      for (var spin = 0; spin < 100000; spin++) {
+        var s = Atomics.load(i32, HDR_STATUS) | 0;
+        if (s === STATUS_PENDING) {
+          found = true;
+          break;
+        }
+      }
+      if (found) continue;
+
+      var s2 = Atomics.load(i32, HDR_STATUS) | 0;
+      if (s2 === STATUS_PENDING) continue;
+      if (s2 === STATUS_CLAIMED) {
+        Atomics.wait(i32, HDR_STATUS, STATUS_CLAIMED, 2.0);
+        continue;
+      }
+      Atomics.wait(i32, HDR_STATUS, s2, 2.0);
+      var s3 = Atomics.load(i32, HDR_STATUS) | 0;
+      if (s3 !== STATUS_PENDING && s3 !== STATUS_CLAIMED) break;
+    }
+    return serviced;
+  }
+
   global.Box2dQueryAabb = {
     STATUS_IDLE: STATUS_IDLE,
     STATUS_PENDING: STATUS_PENDING,
@@ -247,5 +287,6 @@
     box2dQueryAABB: box2dQueryAABB,
     box2dQueryAABBAsync: box2dQueryAABBAsync,
     servicePendingQuery: servicePendingQuery,
+    servicePendingQueryBurst: servicePendingQueryBurst,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

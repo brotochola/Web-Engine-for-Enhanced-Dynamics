@@ -2370,16 +2370,17 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
       const x = worldX[i];
       const yForLight = worldY[i] - (lightHeight[i] || 0);
 
-      // Viewport culling: shared lightInfluenceRadius(sqrtIntensity)
-      const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[i]);
-
-      if (
-        x + influenceRadius < cameraX ||
-        x - influenceRadius > viewRight ||
-        yForLight + influenceRadius < cameraY ||
-        yForLight - influenceRadius > viewBottom
-      ) {
-        continue;
+      // Viewport culling: pre_render already culled visibleLightsData.
+      if (!useSharedBuffer) {
+        const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[i]);
+        if (
+          x + influenceRadius < cameraX ||
+          x - influenceRadius > viewRight ||
+          yForLight + influenceRadius < cameraY ||
+          yForLight - influenceRadius > viewBottom
+        ) {
+          continue;
+        }
       }
 
       // Distance squared to camera center (for prioritization)

@@ -13,6 +13,8 @@ export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';
   static _warnedPoolExhausted = false;
   static _warnedMissingTextures = new Set();
+  static activeBulletsData = null;
+  static _activeListLock = null;
 
   static get maxBullets() {
     return this.maxCount;
@@ -147,7 +149,50 @@ export class BulletPool extends SharedAtomicPool {
     BulletComponent.isItOnScreen[i] = 0;
     BulletComponent.active[i] = 1;
 
+    if (this.activeBulletsData) {
+      this._lockActiveList();
+      try {
+        const slot = this.activeBulletsData[0];
+        this.activeBulletsData[1 + slot] = i;
+        this.activeBulletsData[0] = slot + 1;
+      } finally {
+        this._unlockActiveList();
+      }
+    }
+
     return i;
+  }
+
+  static _lockActiveList() {
+    const lock = this._activeListLock;
+    if (!lock) return;
+    while (Atomics.compareExchange(lock, 0, 0, 1) !== 0) {
+      // Compact-list metadata only.
+    }
+  }
+
+  static _unlockActiveList() {
+    if (this._activeListLock) Atomics.store(this._activeListLock, 0, 0);
+  }
+
+  static copyActiveSnapshot(out) {
+    const data = this.activeBulletsData;
+    if (!data || !out) return 0;
+    this._lockActiveList();
+    try {
+      const count = Math.min(data[0], out.length);
+      for (let i = 0; i < count; i++) {
+        out[i] = data[1 + i];
+      }
+      return count;
+    } finally {
+      this._unlockActiveList();
+    }
+  }
+
+  static initializeActiveList(buffer, lockBuffer = null) {
+    if (buffer) this.activeBulletsData = new Uint16Array(buffer);
+    this._activeListLock = lockBuffer ? new Int32Array(lockBuffer) : null;
   }
 
   /**
@@ -157,6 +202,23 @@ export class BulletPool extends SharedAtomicPool {
     if (i < 0 || i >= this.maxCount) return;
     if (BulletComponent.active[i] === 0) return;
     BulletComponent.active[i] = 0;
+    if (this.activeBulletsData) {
+      this._lockActiveList();
+      try {
+        const count = this.activeBulletsData[0];
+        for (let n = 0; n < count; n++) {
+          if (this.activeBulletsData[1 + n] === i) {
+            const last = count - 1;
+            this.activeBulletsData[1 + n] = this.activeBulletsData[1 + last];
+            this.activeBulletsData[1 + last] = 0;
+            this.activeBulletsData[0] = last;
+            break;
+          }
+        }
+      } finally {
+        this._unlockActiveList();
+      }
+    }
     this.returnToPool(i);
   }
 
@@ -164,5 +226,7 @@ export class BulletPool extends SharedAtomicPool {
     super.reset();
     this._warnedPoolExhausted = false;
     this._warnedMissingTextures.clear();
+    this.activeBulletsData = null;
+    this._activeListLock = null;
   }
 }

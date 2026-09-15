@@ -149,6 +149,8 @@ export const LOGIC_STATS = Object.freeze({
   ENTITY_MS: 7,
   DECIMATE_MS: 8,
   TICK_MS: 9,
+  /** logic0 precomputed query snapshot publish. Written only when collectDetailedStats. */
+  QUERY_PUBLISH_MS: 10,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });
@@ -314,6 +316,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'ENTITY_MS', label: 'Entity', format: fmtMs },
       { key: 'DECIMATE_MS', label: 'Decim', format: fmtMs },
       { key: 'TICK_MS', label: 'Tick', format: fmtMs },
+      { key: 'QUERY_PUBLISH_MS', label: 'QueryPub', format: fmtMs },
     ],
   },
   preRender: {

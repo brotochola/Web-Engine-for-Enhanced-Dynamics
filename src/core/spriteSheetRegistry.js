@@ -11,6 +11,7 @@ import {
   METABALL_TEXTURE_RADIUS,
 } from '../util/utils.js';
 import { ASSETS_DEFAULTS } from '../util/configDefaults.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 
 /**
  * MaxRectsPacker - Rectangle packing algorithm for texture atlas generation
@@ -250,7 +251,7 @@ class SpriteSheetRegistry {
     // Auto-register spritesheet ID for per-instance switching
     this.registerSpritesheetId(name);
 
-    console.log(`✅ Registered spritesheet "${name}": ${currentIndex} animations`);
+    debugWorkerLog(`✅ Registered spritesheet "${name}": ${currentIndex} animations`);
   }
 
   /**
@@ -452,7 +453,7 @@ class SpriteSheetRegistry {
       currentOffset += frameCount;
     }
 
-    console.log(`[SpriteSheetRegistry] Built frame dimension arrays: ${totalFrames} frames`);
+    debugWorkerLog(`[SpriteSheetRegistry] Built frame dimension arrays: ${totalFrames} frames`);
     return { frameWidth, frameHeight, totalFrames };
   }
 
@@ -560,7 +561,7 @@ class SpriteSheetRegistry {
       this.decalFrameNameToId = serialized.decalFrameNameToId;
     }
 
-    console.log(`✅ Deserialized ${this.spritesheets.size} spritesheets in worker`);
+    debugWorkerLog(`✅ Deserialized ${this.spritesheets.size} spritesheets in worker`);
   }
 
   /**
@@ -769,9 +770,9 @@ class SpriteSheetRegistry {
       heuristic = ASSETS_DEFAULTS.heuristic,
     } = options;
 
-    console.log('🎨 Creating BigAtlas from assets...');
+    debugWorkerLog('🎨 Creating BigAtlas from assets...');
     if (trimImages) {
-      console.log(`  📐 Trimming enabled (alpha threshold: ${trimAlphaThreshold})`);
+      debugWorkerLog(`  📐 Trimming enabled (alpha threshold: ${trimAlphaThreshold})`);
     }
 
     const maxWidth = maxAtlasWidth;
@@ -807,18 +808,18 @@ class SpriteSheetRegistry {
                 width = trimResult.bounds.width;
                 height = trimResult.bounds.height;
                 trimInfo = trimResult.bounds;
-                console.log(
+                debugWorkerLog(
                   `  ✅ Loaded image: ${name} (${img.width}x${img.height} → ${width}x${height} trimmed)`
                 );
               } else {
-                console.log(`  ✅ Loaded image: ${name} (${img.width}x${img.height})`);
+                debugWorkerLog(`  ✅ Loaded image: ${name} (${img.width}x${img.height})`);
               }
             } else {
               // Fully transparent image - still add it but warn
               console.warn(`  ⚠️ Image "${name}" is fully transparent`);
             }
           } else {
-            console.log(`  ✅ Loaded image: ${name} (${img.width}x${img.height})`);
+            debugWorkerLog(`  ✅ Loaded image: ${name} (${img.width}x${img.height})`);
           }
 
           imagesToPack.push({
@@ -970,11 +971,11 @@ class SpriteSheetRegistry {
             const totalFrames = requiredFrames.size;
             const savedKB = Math.round(savedPixels * 4 / 1024); // 4 bytes per pixel (RGBA)
             if (trimImages && trimmedCount > 0) {
-              console.log(
+              debugWorkerLog(
                 `  ✅ Loaded spritesheet: ${sheetName} (${totalFrames} frames, ${trimmedCount} trimmed, ~${savedKB}KB saved)`
               );
             } else {
-              console.log(
+              debugWorkerLog(
                 `  ✅ Loaded spritesheet: ${sheetName} (${totalFrames}/${Object.keys(jsonData.frames).length
                 } frames, ${animationsToProcess.length} animations)`
               );
@@ -1007,7 +1008,7 @@ class SpriteSheetRegistry {
       sourceHeight: 1,
       isSpritesheetFrame: false,
     });
-    console.log(`  ✅ Generated built-in: _empty (1x1 transparent)`);
+    debugWorkerLog(`  ✅ Generated built-in: _empty (1x1 transparent)`);
 
     // Light glow gradient (200px diameter white radial gradient)
     const lightGradientCanvas = createCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff);
@@ -1024,7 +1025,7 @@ class SpriteSheetRegistry {
       isSpritesheetFrame: false,
     });
     animations['_lightGradient'] = ['_lightGradient'];
-    console.log(
+    debugWorkerLog(
       `  ✅ Generated built-in: _lightGradient (${lightGradientCanvas.width}x${lightGradientCanvas.height})`
     );
 
@@ -1043,7 +1044,7 @@ class SpriteSheetRegistry {
       isSpritesheetFrame: false,
     });
     animations['_metaball'] = ['_metaball'];
-    console.log(
+    debugWorkerLog(
       `  ✅ Generated built-in: _metaball (${metaballCanvas.width}x${metaballCanvas.height})`
     );
 
@@ -1062,7 +1063,7 @@ class SpriteSheetRegistry {
       isSpritesheetFrame: false,
     });
     animations['_bulletTrail'] = ['_bulletTrail'];
-    console.log(
+    debugWorkerLog(
       `  ✅ Generated built-in: _bulletTrail (${bulletTrailCanvas.width}x${bulletTrailCanvas.height})`
     );
 
@@ -1084,7 +1085,7 @@ class SpriteSheetRegistry {
       isSpritesheetFrame: false,
     });
     animations['_white'] = ['_white'];
-    console.log(`  ✅ Generated built-in: _white (8x8)`);
+    debugWorkerLog(`  ✅ Generated built-in: _white (8x8)`);
 
     // White circle (radius 4px - used for particles, bullets, etc.)
     const whiteCircleCanvas = create2dCanvas(8, 8);
@@ -1107,7 +1108,7 @@ class SpriteSheetRegistry {
     });
     animations['_whiteCircle'] = ['_whiteCircle'];
 
-    console.log(`  ✅ Generated built-in: _whiteCircle (8x8, radius 4px)`);
+    debugWorkerLog(`  ✅ Generated built-in: _whiteCircle (8x8, radius 4px)`);
 
     /// bigger white circle:
 
@@ -1138,7 +1139,7 @@ class SpriteSheetRegistry {
     // No need to wait for intermediate images anymore!
     // We now store references to source images and draw directly to final atlas.
 
-    console.log(`🎨 Packing ${imagesToPack.length} images into atlas...`);
+    debugWorkerLog(`🎨 Packing ${imagesToPack.length} images into atlas...`);
 
     // Pack all images
     let actualWidth = 0;
@@ -1252,12 +1253,12 @@ class SpriteSheetRegistry {
     const savedKB = Math.round(totalPixelsSaved * 4 / 1024); // 4 bytes per RGBA pixel
 
     if (trimImages && totalTrimmed > 0) {
-      console.log(
+      debugWorkerLog(
         `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${frameCount} frames, ${animCount} animations\n` +
         `   📐 Trimming: ${totalTrimmed}/${frameCount} frames trimmed, ~${savedKB}KB saved`
       );
     } else {
-      console.log(
+      debugWorkerLog(
         `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${frameCount} frames, ${animCount} animations`
       );
     }
@@ -1453,7 +1454,7 @@ class SpriteSheetRegistry {
     // Auto-register spritesheet ID for per-instance switching
     this.registerSpritesheetId(sheetName);
 
-    console.log(`  🔗 Registered proxy sheet: ${sheetName} → bigAtlas`);
+    debugWorkerLog(`  🔗 Registered proxy sheet: ${sheetName} → bigAtlas`);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -5,6 +5,7 @@
 
 import { PHYSICS_DEFAULTS } from './configDefaults.js';
 import { GameObject } from '../core/gameObject.js';
+import { debugWorkerLog } from './debugLog.js';
 
 // ============================================================================
 // MATH UTILITIES
@@ -506,6 +507,20 @@ export function dot2(ax, ay, bx, by) {
  */
 export function cantorPair(a, b) {
   return ((a + b) * (a + b + 1)) / 2 + b;
+}
+
+/**
+ * Unordered pair key for entity indices < 65536.
+ * Same packing as logicWorker contact drain / isCollidingWith.
+ */
+export function collisionPairKey(minE, maxE) {
+  return ((minE & 0xffff) << 16) | (maxE & 0xffff);
+}
+
+export function collisionPairUnpack(key, out) {
+  out.a = (key >>> 16) & 0xffff;
+  out.b = key & 0xffff;
+  return out;
 }
 
 /**
@@ -1430,7 +1445,7 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
     self.location && self.location.href && self.location.href.startsWith('blob:');
 
   if (verbose) {
-    console.log(`📦 ${contextName}: Loading ${scriptsToLoad.length} entity scripts...`);
+    debugWorkerLog(`📦 ${contextName}: Loading ${scriptsToLoad.length} entity scripts...`);
   }
 
   // Blob: DFS then retry (Function eval, missing sibling on globalThis).
@@ -1486,7 +1501,7 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
   }
 
   if (verbose) {
-    console.log(
+    debugWorkerLog(
       `✅ ${contextName}: Loaded ${Object.keys(loadedClasses).length} entity classes globally`
     );
   }
@@ -1623,7 +1638,7 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
       globalContext[key] = module[key];
       loadedClasses[key] = module[key];
       if (verbose) {
-        console.log(`  ✓ Registered ${key} from ${scriptPath}`);
+        debugWorkerLog(`  ✓ Registered ${key} from ${scriptPath}`);
       }
     });
     return true; // Success
@@ -1785,7 +1800,7 @@ export function urlToPath(url) {
 }
 
 export function printLogo() {
-  console.log(
+  debugWorkerLog(
     `%c
   +%                                           :
   *@             .                            +@-
