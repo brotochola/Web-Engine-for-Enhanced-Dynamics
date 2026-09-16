@@ -67,6 +67,7 @@ export class BulletPool extends SharedAtomicPool {
     const prevY = BulletComponent.prevY;
     const vx = BulletComponent.vx;
     const vy = BulletComponent.vy;
+    const speed = BulletComponent.speed;
     const damage = BulletComponent.damage;
     const ownerId = BulletComponent.ownerId;
     const shooterEntityType = BulletComponent.shooterEntityType;
@@ -124,9 +125,11 @@ export class BulletPool extends SharedAtomicPool {
         const inv = 1 / Math.sqrt(speedSq);
         bulletRotC[i] = config.vx * inv;
         bulletRotS[i] = config.vy * inv;
+        speed[i] = speedSq * inv;
       } else {
         bulletRotC[i] = 1;
         bulletRotS[i] = 0;
+        speed[i] = 0;
       }
     }
     if (config.spriteRotC != null && config.spriteRotS != null) {

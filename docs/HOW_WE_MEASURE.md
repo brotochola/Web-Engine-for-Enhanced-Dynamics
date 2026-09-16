@@ -46,7 +46,7 @@ Use this when you claim a real game got cheaper. A kernel win that the demo neve
 - Claim “emit is cheaper”: the kernel must win, and the demo must not get **3 percent** worse. Claim “Predator spatial is cheaper”: it has to show up on the Predator gameplay scene.
 - **Report:** full prose in the user's language. A table of plus/minus signs is not enough. Every campaign report (scoreboard, product confirm, isolation) must say: the hypothesis in one sentence; what kernel and/or scene actually ran; both sides' medians with cv and the sample list when n>1; load keys and whether the pair exists; each primary worker in milliseconds (or ops/s); why the verdict is KEPT / TIE / WORSE / FAIL in words a junior can read; what you learned. Then update [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). The scoreboard writer in `tests/bench/runScoreboard.mjs` is the template — do not ship a summary-only report again.
 
-Production stats already write load counts (`BODY_COUNT`, `AWAKE_COUNT`, `BODY_MOVED_COUNT`, `ACTIVE_PARTICLES`, `PARTICLES_STAMPED`) and the heap count `HEAP_USED_KB`. Sub-timers (`BOX2D_MS`, `PARTICLE_PHYSICS_MS`, and the rest) stay behind `collectDetailedStats`. Product confirms and the scoreboard run with detailed stats **off**.
+Production stats already write load counts (`BODY_COUNT`, `AWAKE_COUNT`, `BODY_MOVED_COUNT`, `ACTIVE_PARTICLES`, `ACTIVE_BULLETS`, `PARTICLES_STAMPED`) and the heap count `HEAP_USED_KB`. Sub-timers (`BOX2D_MS`, `PARTICLE_PHYSICS_MS`, and the rest) stay behind `collectDetailedStats`. Product confirms and the scoreboard run with detailed stats **off**.
 
 The single feature catalog is [`tests/bench/engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). To claim “this tree is faster than a git rev” on the engine, run `pnpm bench:scoreboard --vs <rev>`. Every catalog row must be **KEPT** or a tie (inside 3 percent) and **none** WORSE or FAIL. Until that board is green, do not call the tree the fastest WeedJS.
 
@@ -70,11 +70,13 @@ pnpm bench:product-confirm
 # Kernel examples
 pnpm bench:micro:particle-emit
 pnpm bench:micro:particle-integrate
+pnpm bench:micro:bullets
 pnpm bench:micro:spatial
 
 # Stress-scene examples (headless screening)
 pnpm bench:feature:query-aabb
 pnpm bench:feature:spawn-storm
+pnpm bench:feature:bullets
 ```
 
 Do **not** run `pnpm bench:particle:tournament` as a source of truth. That script overwrites `src/` with old particle baselines and now **aborts** unless you pass `--i-know-this-uses-snapshots`. Ray / decal / spatial writers restore a work-tree snapshot on exit; they must not leave a champion on `src/` and they must never copy pre-P2 baselines back as “restore.” Use the scoreboard against a git rev instead.

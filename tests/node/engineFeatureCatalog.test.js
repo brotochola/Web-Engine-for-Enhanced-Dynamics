@@ -74,6 +74,23 @@ test('steadyCombat is a seeded bench scene, not demos/predator', () => {
   assert.doesNotMatch(src, /predatorScene/);
 });
 
+test('bullets row uses BulletStressScene and a kernel, not RayStress', () => {
+  const row = getFeature('bullets');
+  assert.match(row.scene.path, /bulletStressScene/);
+  assert.equal(row.scene.exportName, 'BulletStressScene');
+  assert.equal(row.kernel.script, 'tests/bench/bulletTickMicrobench.mjs');
+  assert.ok(row.load.includes('ACTIVE_BULLETS'));
+  assert.equal(row.load.includes('BODY_COUNT'), false);
+  const src = fs.readFileSync(path.join(root, 'tests/bench/stressScenes/bulletStressScene.js'), 'utf8');
+  assert.match(src, /maxBullets/);
+  assert.match(src, /seed:/);
+  const driver = fs.readFileSync(
+    path.join(root, 'tests/bench/stressScenes/bullets/bulletStressDriver.js'),
+    'utf8'
+  );
+  assert.match(driver, /BulletPool\.spawn/);
+});
+
 test('filterFeatures --only keeps the named subset', () => {
   const rows = filterFeatures(['box2d', 'emit']);
   assert.deepEqual(rows.map((r) => r.id), ['emit', 'box2d']);

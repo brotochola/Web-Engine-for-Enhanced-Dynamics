@@ -421,6 +421,7 @@ export class Ray {
   /**
    * Linecast with pre-normalized unit dir + length (skip sqrt).
    * Caller must pass unit (dirX,dirY) and rayLength > 0.
+   * `excludeEntities` may be a Set, an array, or a single entity index (number).
    */
   static linecastDir(x1, y1, dirX, dirY, rayLength, excludeEntities = null, mask = 0xFFFFFFFF, out = null) {
     Ray._enterStats();
@@ -438,18 +439,29 @@ export class Ray {
       }
       const x2 = x1 + dirX * rayLength;
       const y2 = y1 + dirY * rayLength;
-      return Ray._linecastDirImpl(x1, y1, x2, y2, dirX, dirY, rayLength, excludeEntities, mask, result);
+      let excludeA = -1;
+      let excludeObj = excludeEntities;
+      if (typeof excludeEntities === 'number') {
+        excludeA = excludeEntities;
+        excludeObj = null;
+      }
+      return Ray._linecastDirImpl(
+        x1, y1, x2, y2, dirX, dirY, rayLength, excludeObj, mask, result, excludeA
+      );
     } finally {
       Ray._leaveStats();
     }
   }
 
   /** @private */
-  static _linecastDirImpl(x1, y1, x2, y2, dirX, dirY, rayLength, excludeEntities, mask, result) {
+  static _linecastDirImpl(
+    x1, y1, x2, y2, dirX, dirY, rayLength, excludeEntities, mask, result, excludeA = -1, excludeB = -1
+  ) {
     const hitResult = Ray._traverseGrid(
       x1, y1, x2, y2,
       dirX, dirY, rayLength, rayLength,
-      excludeEntities, mask
+      excludeEntities, mask,
+      excludeA, excludeB
     );
     if (hitResult.entityIndex !== -1) {
       result.blocked = true;

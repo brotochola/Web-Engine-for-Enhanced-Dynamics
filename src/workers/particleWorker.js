@@ -15,7 +15,6 @@ import {
 } from '../util/decorationSway.js';
 import { BulletPool } from '../core/bulletPool.js';
 import { BulletComponent } from '../components/bulletComponent.js';
-import { Ray } from '../core/ray.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
@@ -29,6 +28,7 @@ import {
   screenBoundsToWorldBounds,
 } from '../util/utils.js';
 import { stampParticleToTileBuffers } from '../util/decalStamp.js';
+import { tickBulletsBuffers } from '../util/bulletTick.js';
 import {
   updateParticlePhysicsBuffers,
   buildActiveListBuffers,
@@ -395,7 +395,6 @@ class ParticleWorker extends AbstractWorker {
     this._impactHeader = null; // Int32Array view: [0]=count, [1]=batch sequence
     this._impactData = null;
     this._maxImpactsPerFrame = 0;
-    this._bulletExcludeSet = new Set();
   }
 
   /**
@@ -930,87 +929,38 @@ class ParticleWorker extends AbstractWorker {
    */
   tickAllBullets(deltaTime, dtRatio) {
     const maxBullets = this.maxBullets;
-    const active = BulletComponent.active;
     const x = BulletComponent.x;
     const y = BulletComponent.y;
-    const prevX = BulletComponent.prevX;
-    const prevY = BulletComponent.prevY;
-    const vx = BulletComponent.vx;
-    const vy = BulletComponent.vy;
-    const bulletRotC = BulletComponent.bulletRotC;
-    const bulletRotS = BulletComponent.bulletRotS;
-    const damage = BulletComponent.damage;
-    const ownerId = BulletComponent.ownerId;
-    const shooterEntityType = BulletComponent.shooterEntityType;
     const isItOnScreen = BulletComponent.isItOnScreen;
 
     const activeData = this.activeBulletsData;
     const visibleData = this.visibleBulletsData;
-    const impactHeader = this._impactHeader;
-    const impactData = this._impactData;
-    const dt = dtRatio * (1 / 60);
-    const excludeSet = this._bulletExcludeSet;
 
-    let activeWrite = 1;
-    let impactWrite = 0;
-    const maxImpacts = this._maxImpactsPerFrame;
+    const { activeCount } = tickBulletsBuffers({
+      maxBullets,
+      dtRatio,
+      active: BulletComponent.active,
+      x,
+      y,
+      prevX: BulletComponent.prevX,
+      prevY: BulletComponent.prevY,
+      vx: BulletComponent.vx,
+      vy: BulletComponent.vy,
+      speed: BulletComponent.speed,
+      bulletRotC: BulletComponent.bulletRotC,
+      bulletRotS: BulletComponent.bulletRotS,
+      damage: BulletComponent.damage,
+      ownerId: BulletComponent.ownerId,
+      shooterEntityType: BulletComponent.shooterEntityType,
+      activeData,
+      impactHeader: this._impactHeader,
+      impactData: this._impactData,
+      maxImpacts: this._maxImpactsPerFrame,
+      excludeSet: null,
+      onDespawn: (i) => BulletPool.returnToPool(i),
+    });
 
-    for (let i = 0; i < maxBullets; i++) {
-      if (!active[i]) continue;
-
-      const px = x[i];
-      const py = y[i];
-      prevX[i] = px;
-      prevY[i] = py;
-
-      const dx = vx[i] * dt;
-      const dy = vy[i] * dt;
-      const nx = px + dx;
-      const ny = py + dy;
-      x[i] = nx;
-      y[i] = ny;
-
-      const lenSq = dx * dx + dy * dy;
-      excludeSet.clear();
-      excludeSet.add(ownerId[i]);
-      if (lenSq > 1e-12) {
-        const len = Math.sqrt(lenSq);
-        // Flight dir already in bulletRotC/S — one sqrt (was: linecast sqrt + hit sqrt)
-        const hit = Ray.linecastDir(px, py, bulletRotC[i], bulletRotS[i], len, excludeSet);
-        if (hit.blocked && hit.entityIndex >= 0) {
-          const t = Math.min(hit.distance / len, 1);
-          const hitX = px + dx * t;
-          const hitY = py + dy * t;
-
-          if (impactHeader && impactWrite < maxImpacts) {
-            const base = impactWrite * 6;
-            impactData[base] = hit.entityIndex;
-            impactData[base + 1] = damage[i];
-            impactData[base + 2] = hitX;
-            impactData[base + 3] = hitY;
-            impactData[base + 4] = ownerId[i];
-            impactData[base + 5] = shooterEntityType[i];
-            impactWrite++;
-          }
-          active[i] = 0;
-          BulletPool.returnToPool(i);
-          continue;
-        }
-      }
-
-      activeData[activeWrite++] = i;
-    }
-
-    activeData[0] = activeWrite - 1;
-    if (impactHeader) {
-      // Publish order matters: impact data (plain writes) -> count -> sequence bump.
-      // Logic workers gate on the sequence, so the Atomics edge guarantees they
-      // see the full batch and never re-process the same one twice.
-      Atomics.store(impactHeader, 0, impactWrite);
-      Atomics.add(impactHeader, 1, 1);
-    }
-
-    if (activeWrite <= 1 || !this.cameraData || !visibleData) return;
+    if (activeCount <= 0 || !this.cameraData || !visibleData) return;
 
     const cameraBounds = this._frameCameraBounds();
     if (!cameraBounds) return;
@@ -1023,7 +973,6 @@ class ParticleWorker extends AbstractWorker {
     const maxY = cameraBounds.maxY;
 
     let visibleCount = 0;
-    const activeCount = activeWrite - 1;
     for (let idx = 0; idx < activeCount; idx++) {
       const i = activeData[1 + idx];
       const sx = x[i] * camZoom - camOffX;
@@ -1868,6 +1817,7 @@ class ParticleWorker extends AbstractWorker {
     this.stats[PARTICLE_STATS.STEP_MS] = this.stepTimeThisFrame;
     this.stats[PARTICLE_STATS.ACTIVE_PARTICLES] = this.activeParticleCount;
     this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
+    this.stats[PARTICLE_STATS.ACTIVE_BULLETS] = this.activeBulletsData ? this.activeBulletsData[0] : 0;
     if (!this.collectDetailedStats) return;
     this.stats[PARTICLE_STATS.TOTAL_PARTICLES] = this.maxParticles;
     this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;

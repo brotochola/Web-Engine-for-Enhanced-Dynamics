@@ -286,17 +286,17 @@ export const ENGINE_FEATURES = [
   {
     id: 'bullets',
     name: 'Bullet tick',
-    module: 'src/core/bulletPool.js',
-    kernel: null,
+    module: 'src/util/bulletTick.js',
+    kernel: { script: 'tests/bench/bulletTickMicrobench.mjs', opsKey: 'cases.tickCrowded.opsPerSec' },
     scene: {
-      key: 'rayStress',
-      path: '/tests/bench/stressScenes/rayStressScene.js',
-      exportName: 'RayStressScene',
+      key: 'bulletStress',
+      path: '/tests/bench/stressScenes/bulletStressScene.js',
+      exportName: 'BulletStressScene',
       headed: false,
       kind: 'stress',
     },
     primary: ['particle_STEP_MS'],
-    load: ['BODY_COUNT'],
+    load: ['ACTIVE_BULLETS'],
   },
   {
     id: 'spawn',

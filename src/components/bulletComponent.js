@@ -18,6 +18,8 @@ export class BulletComponent extends Component {
 
     vx: Float32Array,
     vy: Float32Array,
+    /** |v| at spawn. Straight bullets never change it; tick uses speed * dt. */
+    speed: Float32Array,
     /** Facing of velocity / trail (cos, sin of atan2(vy,vx)). */
     bulletRotC: Float32Array,
     bulletRotS: Float32Array,

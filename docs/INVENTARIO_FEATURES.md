@@ -164,9 +164,9 @@ Esta noche: kernel sí; zenithal **como estrés**, no cinco corridas headed. Sin
 
 ### bullets — Tick de balas
 
-Módulo: `src/core/bulletPool.js`. Comparte `RayStressScene` con ray. Primaria: `particle_STEP_MS`. Carga: `BODY_COUNT`.
+Módulo: `src/util/bulletTick.js`. Kernel: `bulletTickMicrobench.mjs` (`cases.tickCrowded.opsPerSec`; también reporta `tickOpen` / hypot). Escena: `BulletStressScene` (pool 2048, paredes, spawn fijo). Primaria: `particle_STEP_MS`. Carga: `ACTIVE_BULLETS`.
 
-Lista compacta de balas **descartada** (+1.9%, no cruzó 3%). Esta noche: estrés compartido (cache de escena). Sin reabrir BULLET.
+Lista compacta de balas **descartada** (+1.9%). No reabrir. Speed cache al spawn: `len = speed * dt` + exclude escalar.
 
 ### spawn — Tormenta Treiber / spawn
 

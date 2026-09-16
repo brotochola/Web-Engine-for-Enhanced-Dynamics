@@ -37,13 +37,14 @@ test('physics writes BODY_COUNT / AWAKE / MOVED before the detailed-stats gate',
   assert.match(fn.slice(0, gate), /if \(!statsF32\) return;/);
 });
 
-test('particle writes ACTIVE_PARTICLES and PARTICLES_STAMPED before the detailed-stats gate', () => {
+test('particle writes ACTIVE_PARTICLES, PARTICLES_STAMPED, and ACTIVE_BULLETS before the detailed-stats gate', () => {
   const block = reportBlock(readSrc('src/workers/particleWorker.js'), 'reportFPS() {');
   const active = block.indexOf('PARTICLE_STATS.ACTIVE_PARTICLES');
   const stamped = block.indexOf('PARTICLE_STATS.PARTICLES_STAMPED');
+  const bullets = block.indexOf('PARTICLE_STATS.ACTIVE_BULLETS');
   const gate = block.indexOf('if (!this.collectDetailedStats) return;');
-  assert.ok(active >= 0 && stamped >= 0 && gate >= 0);
-  assert.ok(active < gate && stamped < gate);
+  assert.ok(active >= 0 && stamped >= 0 && bullets >= 0 && gate >= 0);
+  assert.ok(active < gate && stamped < gate && bullets < gate);
 });
 
 test('physics writes HEAP_USED_KB before the detailed-stats gate', () => {
@@ -66,6 +67,15 @@ test('spatial writes NEIGHBORS_REUSED before the detailed-stats gate', () => {
   const reused = block.indexOf('SPATIAL_STATS.NEIGHBORS_REUSED');
   const gate = block.indexOf('if (!this.collectDetailedStats) return;');
   assert.ok(reused >= 0 && gate >= 0 && reused < gate);
+});
+
+test('scoreboard load gate fails when ACTIVE_BULLETS median is 0', async () => {
+  const { workloadOk } = await import('../bench/measureLib.mjs');
+  const zero = { ACTIVE_BULLETS: { median: 0, cv: 0 } };
+  const other = { ACTIVE_BULLETS: { median: 2048, cv: 0 } };
+  const miss = workloadOk(zero, other, ['ACTIVE_BULLETS']);
+  assert.equal(miss.ok, false);
+  assert.ok(miss.drifts.some((d) => d.key === 'ACTIVE_BULLETS'));
 });
 
 test('scoreboard load gate fails when Balls-equivalent BODY_COUNT median is 0', async () => {

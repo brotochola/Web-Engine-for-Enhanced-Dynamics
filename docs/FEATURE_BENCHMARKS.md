@@ -107,6 +107,7 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | Stamp decals | `decalStamp.js`, particle_worker | `decalMicrobench.mjs` | `stressScenes/DecalStampStressScene` | zenithal / Predator | `DECAL_STAMP_MS`, particle `STEP_MS` — **champion D2** |
 | Particle emit | `particleEmitter.js`, free list | `particleEmitMicrobench.mjs` | `stressScenes/ParticleEmitStressScene` | zenithalParticleTest | emit ops/s; particle `STEP_MS` — **champion includes P5** |
 | Particle integrate | `particleIntegrate.js`, particle_worker | `particleIntegrateMicrobench.mjs` | `stressScenes/ParticleIntegrateStressScene` | zenithalParticleTest | `PARTICLE_PHYSICS_MS`, `BUILD_ACTIVE_VISIBLE_MS` — **champion P4+P5** |
+| Bullet tick | `bulletTick.js`, `bulletPool.js` | `bulletTickMicrobench.mjs` | `stressScenes/BulletStressScene` | Predator | particle `STEP_MS`; load `ACTIVE_BULLETS`. Speed cache + scalar exclude **kept** (kernel +87%). Compact list dropped. |
 | Spatial rebuild + neighbors | `spatialWorker.js`, `grid.js` | `spatialMicrobench.mjs` | `stressScenes/StationarySpatialScene` | Balls | `NEIGHBOR_MS`, `REBUILD_MS` — Verlet + stagger shipped; H1–H15 / S2–S3 closed |
 | Box2D step / sync | `weedjsPost.js` | semi (WASM) | Balls / BallsAndRectangles | Balls | `STEP_MS`, `BOX2D_MS`, `BODY_COUNT` |
 | LiquidFun particle step | `lf_particle_system.c` (sibling `Box2d_3.2_C_-_liquidfun`) | `liquidFunCapturePairsMicrobench.mjs` (CapturePairs create-time); `liquidFunComputeDepthMicrobench.mjs` (first step after SOLID create); extract / reactive / sparse-step / rigid-damping; **`liquidFunPassProfileMicrobench.mjs`** (8-bucket pass split) | `stressScenes/LiquidFunStressScene` | `demos/liquidFunDemoScene` + `pnpm test:visual --scene liquidfun,lfstress` (100-step exact after H10) | `LIQUIDFUN_MS` (fluid inside `step_world`); `BOX2D_MS` = full step (rigid + LiquidFun); ~10.2k water + ~2k spring/staticPressure. Pass HUD slots 37–44 (`LF_PASS_*_MS`). **H29 rejected.** |
@@ -138,6 +139,7 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 | Scene | Path | Stresses |
 |-------|------|----------|
 | RayStressScene | `/tests/bench/stressScenes/rayStressScene.js` | Many deterministic raycasts/tick → `RAYCAST_MS` |
+| BulletStressScene | `/tests/bench/stressScenes/bulletStressScene.js` | ~2k live bullets, walls, spawn storm → particle `STEP_MS`, `ACTIVE_BULLETS` |
 | DecalStampStressScene | `/tests/bench/stressScenes/decalStampStressScene.js` | Deterministic `stampDecal` storm → `DECAL_STAMP_MS` |
 | ParticleEmitStressScene | `/tests/bench/stressScenes/particleEmitStressScene.js` | Fixed-rate `emitFlat` → emit / STEP |
 | ParticleIntegrateStressScene | `/tests/bench/stressScenes/particleIntegrateStressScene.js` | Heighted churn → `PARTICLE_PHYSICS_MS`, lists |

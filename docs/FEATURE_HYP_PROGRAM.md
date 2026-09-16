@@ -169,6 +169,8 @@ pnpm bench:micro:treiber
 pnpm bench:micro:pose-skip
 pnpm bench:feature:query-churn
 pnpm bench:feature:spawn-storm
+pnpm bench:micro:bullets
+pnpm bench:feature:bullets
 pnpm bench:feature:nav
 pnpm bench:micro:skip-work
 pnpm bench:micro:body-pack

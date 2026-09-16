@@ -129,6 +129,10 @@ export function workloadOk(baseSum, hypSum, keys) {
       drifts.push({ key, pct: null, reason: `baseline ${key} median is ${b?.median}` });
       continue;
     }
+    if (key === 'ACTIVE_BULLETS' && !(b?.median > 0)) {
+      drifts.push({ key, pct: null, reason: `baseline ${key} median is ${b?.median}` });
+      continue;
+    }
     if ((b?.cv ?? 0) >= LOAD_CV_FAIL || (h?.cv ?? 0) >= LOAD_CV_FAIL) {
       drifts.push({
         key,
@@ -174,6 +178,7 @@ export function extractMetrics(report) {
     HEAP_USED_KB: physics.HEAP_USED_KB ?? 0,
     ACTIVE_PARTICLES: particle.ACTIVE_PARTICLES ?? 0,
     PARTICLES_STAMPED: particle.PARTICLES_STAMPED ?? 0,
+    ACTIVE_BULLETS: particle.ACTIVE_BULLETS ?? 0,
     ENTITIES_PROCESSED: logic0.ENTITIES_PROCESSED ?? 0,
     NEIGHBORS_REUSED: spatialMax?.NEIGHBORS_REUSED ?? 0,
     physics_STEP_MS: physics.STEP_MS ?? 0,
@@ -337,6 +342,7 @@ const COUNT_KEYS = new Set([
   'BODY_MOVED_COUNT',
   'ACTIVE_PARTICLES',
   'PARTICLES_STAMPED',
+  'ACTIVE_BULLETS',
   'ENTITIES_PROCESSED',
   'NEIGHBORS_REUSED',
   'HEAP_USED_KB',
@@ -410,6 +416,7 @@ export function sceneMetricKeys(feature, scenePair) {
     'AWAKE_COUNT',
     'ACTIVE_PARTICLES',
     'PARTICLES_STAMPED',
+    'ACTIVE_BULLETS',
     'ENTITIES_PROCESSED',
     'NEIGHBORS_REUSED',
     'HEAP_USED_KB',
