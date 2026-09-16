@@ -407,8 +407,6 @@ class Scene {
 
     // Frame timing
     this.lastFrameTime = performance.now();
-    this._pendingLogicSpawns = [];
-    this._pendingLogicDespawns = [];
     this.updateRate = 1000 / 60;
     this.animationFrameId = null; // Store RAF ID so we can cancel it
 
@@ -1873,7 +1871,6 @@ class Scene {
       }
     }
     debugWorkerLog(`[Scene] ✅ All start messages sent`);
-    this._flushLogicSpawnDespawn();
   }
 
   /**
@@ -2223,21 +2220,6 @@ class Scene {
     // Reset per-frame input state (after update so devs can read it)
     Mouse.wheel = 0;
     Mouse.snapshotPreviousFrame();
-    this._flushLogicSpawnDespawn();
-  }
-
-  _flushLogicSpawnDespawn() {
-    const worker0 = this.workers.logicWorkers?.[0];
-    const spawns = this._pendingLogicSpawns;
-    const despawns = this._pendingLogicDespawns;
-    if (!worker0 || (!spawns.length && !despawns.length)) return;
-    worker0.postMessage({
-      msg: 'spawnDespawnBatch',
-      spawns,
-      despawns,
-    });
-    this._pendingLogicSpawns = [];
-    this._pendingLogicDespawns = [];
   }
 
   /**
@@ -2450,11 +2432,15 @@ class Scene {
     // - Sets up all component data
     // - Calls lifecycle hooks (setup, onSpawned)
     // - Queues list updates for processing at start of next frame
-    this._pendingLogicSpawns.push({
-      className,
-      spawnConfig,
-      entityIndex,
-    });
+    const worker0 = this.workers.logicWorkers?.[0];
+    if (worker0) {
+      worker0.postMessage({
+        msg: 'spawn',
+        className: className,
+        spawnConfig: spawnConfig,
+        entityIndex: entityIndex, // Pre-assigned index
+      });
+    }
 
     // Return a simple object with the index for immediate use
     // (e.g., creating constraints between spawned entities)
@@ -2465,7 +2451,14 @@ class Scene {
   }
 
   despawnEntity(entityIndex) {
-    this._pendingLogicDespawns.push(entityIndex);
+    // Only worker 0 handles despawn messages
+    const worker0 = this.workers.logicWorkers?.[0];
+    if (worker0) {
+      worker0.postMessage({
+        msg: 'despawn',
+        entityIndex: entityIndex,
+      });
+    }
   }
 
   despawnAllEntities(className) {

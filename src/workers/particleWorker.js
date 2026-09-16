@@ -704,9 +704,7 @@ class ParticleWorker extends AbstractWorker {
     const maxParticles = this.maxParticles;
 
     // CPU emitter pool only. LiquidFun lives on its own render SAB.
-    // Overestimate live count so a stale free-list read cannot skip actives.
-    const live = ParticleEmitter.getActiveCount();
-    const expectedActive = live <= 0 ? maxParticles : Math.min(maxParticles, live + 32);
+    const expectedActive = maxParticles;
 
     // Early exit if camera not ready (can't calculate visibility)
     if (!this.cameraData) {
@@ -953,22 +951,11 @@ class ParticleWorker extends AbstractWorker {
     const dt = dtRatio * (1 / 60);
     const excludeSet = this._bulletExcludeSet;
 
+    let activeWrite = 1;
     let impactWrite = 0;
     const maxImpacts = this._maxImpactsPerFrame;
-    const survivors = this._bulletSurvivors || (this._bulletSurvivors = new Uint16Array(maxBullets));
-    let survivorCount = 0;
 
-    if (!this._bulletScratch || this._bulletScratch.length < maxBullets) {
-      this._bulletScratch = new Uint16Array(maxBullets);
-    }
-    const compactCount = BulletPool.activeBulletsData
-      ? BulletPool.copyActiveSnapshot(this._bulletScratch)
-      : 0;
-    const useCompact = compactCount > 0 || (BulletPool.activeBulletsData && BulletPool.activeBulletsData[0] === 0);
-
-    const iterCount = useCompact ? compactCount : maxBullets;
-    for (let n = 0; n < iterCount; n++) {
-      const i = useCompact ? this._bulletScratch[n] : n;
+    for (let i = 0; i < maxBullets; i++) {
       if (!active[i]) continue;
 
       const px = x[i];
@@ -1005,18 +992,16 @@ class ParticleWorker extends AbstractWorker {
             impactData[base + 5] = shooterEntityType[i];
             impactWrite++;
           }
-          BulletPool.despawn(i);
+          active[i] = 0;
+          BulletPool.returnToPool(i);
           continue;
         }
       }
 
-      survivors[survivorCount++] = i;
+      activeData[activeWrite++] = i;
     }
 
-    if (!useCompact && activeData) {
-      activeData[0] = survivorCount;
-      for (let s = 0; s < survivorCount; s++) activeData[1 + s] = survivors[s];
-    }
+    activeData[0] = activeWrite - 1;
     if (impactHeader) {
       // Publish order matters: impact data (plain writes) -> count -> sequence bump.
       // Logic workers gate on the sequence, so the Atomics edge guarantees they
@@ -1025,7 +1010,7 @@ class ParticleWorker extends AbstractWorker {
       Atomics.add(impactHeader, 1, 1);
     }
 
-    if (survivorCount <= 0 || !this.cameraData || !visibleData) return;
+    if (activeWrite <= 1 || !this.cameraData || !visibleData) return;
 
     const cameraBounds = this._frameCameraBounds();
     if (!cameraBounds) return;
@@ -1038,8 +1023,9 @@ class ParticleWorker extends AbstractWorker {
     const maxY = cameraBounds.maxY;
 
     let visibleCount = 0;
-    for (let idx = 0; idx < survivorCount; idx++) {
-      const i = survivors[idx];
+    const activeCount = activeWrite - 1;
+    for (let idx = 0; idx < activeCount; idx++) {
+      const i = activeData[1 + idx];
       const sx = x[i] * camZoom - camOffX;
       const sy = y[i] * camZoom - camOffY;
       const onScreen = sx > minX && sx < maxX && sy > minY && sy < maxY;

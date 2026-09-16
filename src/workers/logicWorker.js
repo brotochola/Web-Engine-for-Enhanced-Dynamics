@@ -325,9 +325,6 @@ class LogicWorker extends AbstractWorker {
               tickInterval,
               startIndex,
               needsScreenCallbacks,
-              tickFn: typeof EntityClass.prototype.tick === 'function'
-                ? EntityClass.prototype.tick
-                : null,
             });
           } else {
             // Non-decimated type: simple loop, zero overhead
@@ -336,9 +333,6 @@ class LogicWorker extends AbstractWorker {
               activeList: EntityClass._activeList,
               startIndex,
               needsScreenCallbacks,
-              tickFn: typeof EntityClass.prototype.tick === 'function'
-                ? EntityClass.prototype.tick
-                : null,
             });
           }
         }
@@ -589,21 +583,17 @@ class LogicWorker extends AbstractWorker {
         if (transformActive[entityIndex] === 0) continue;
 
         const obj = gameObjects[entityIndex];
-        if (!obj) continue;
-        const tickFn = typeInfo.tickFn && obj.tick === typeInfo.tickFn
-          ? typeInfo.tickFn
-          : obj.tick;
-        if (typeof tickFn !== 'function') continue;
+        if (!obj || typeof obj.tick !== 'function') continue;
 
         activeCount++;
         this.entitiesProcessedThisFrame++;
 
         if (collectDetailed) {
           const tTick0 = performance.now();
-          tickFn.call(obj, dtRatio, deltaTime, accTime, frameNum);
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
           tickMs += performance.now() - tTick0;
         } else {
-          tickFn.call(obj, dtRatio, deltaTime, accTime, frameNum);
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
         }
 
         if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
@@ -639,11 +629,7 @@ class LogicWorker extends AbstractWorker {
           if (transformActive[entityIndex] === 0) continue;
 
           const obj = gameObjects[entityIndex];
-          if (!obj) continue;
-          const tickFn = typeInfo.tickFn && obj.tick === typeInfo.tickFn
-            ? typeInfo.tickFn
-            : obj.tick;
-          if (typeof tickFn !== 'function') continue;
+          if (!obj || typeof obj.tick !== 'function') continue;
 
           activeCount++;
           this.entitiesProcessedThisFrame++;
@@ -661,7 +647,7 @@ class LogicWorker extends AbstractWorker {
           nextTick[entityIndex] = tickInterval;
 
           // Tick entity logic
-          tickFn.call(obj, dtRatio, deltaTime, accTime, frameNum);
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
 
           // ACCELERATION SCALING: Compensate for tick decimation
           // Scale acceleration by tickInterval so physics integrates same total impulse
@@ -1049,18 +1035,6 @@ class LogicWorker extends AbstractWorker {
           console.log(
             `LOGIC WORKER ${this.workerIndex}: GameObjects created after box2dReady, workerReady sent`
           );
-        }
-        break;
-      }
-      case 'spawnDespawnBatch': {
-        if (this.workerIndex !== 0) break;
-        const batchDespawns = data.despawns || [];
-        for (let i = 0; i < batchDespawns.length; i++) {
-          this._mainThreadDespawn(batchDespawns[i]);
-        }
-        const batchSpawns = data.spawns || [];
-        for (let i = 0; i < batchSpawns.length; i++) {
-          this._mainThreadSpawn(batchSpawns[i]);
         }
         break;
       }

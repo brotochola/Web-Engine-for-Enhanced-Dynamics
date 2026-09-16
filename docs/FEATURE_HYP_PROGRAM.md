@@ -29,9 +29,9 @@ Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../tests/bench/featureT
 | E | NavGrid | L1 Dijkstra + `NavStressScene` | ms/flowfield | car / Predator |
 | F | QuerySystem | L1 publish / skip / bitset; skip-publish already in logic0 | `QUERY_PUBLISH_MS` | — |
 | G | DecorationsSpatial | L1 `queryCircle` | queryCircle ops/s | zenithal |
-| H | Pre-render / lights | Skip pixi light re-cull; vis-poly cache copies into write slot | `VISIBILITY_MS` | Predator |
-| I | Treiber / rings | L1 pop-push; ECB = batched `spawnDespawnBatch` | pop-push/s | Balls |
-| J | Bullet tick | Compact active list shipped | particle STEP | Predator |
+| H | Pre-render / lights | Skip pixi light re-cull and vis-poly cache **dropped** (see `HYPOTHESIS_LOG`) | `VISIBILITY_MS` | Predator |
+| I | Treiber / rings | L1 pop-push; ECB batched `spawnDespawnBatch` **dropped** (below 3%) | pop-push/s | Balls |
+| J | Bullet tick | Compact active list **dropped** (+1.9%, no 3% win); tick scans pool | particle STEP | Predator |
 | K | TileMap queries | L1 `getTileId` + `TilemapStressScene` | ns/getTileId; logic0 STEP | — |
 | **L** | LiquidFun particle step | H1–H4, H6–H14, H16, H21, **H26** shipped; H5 / H15 / H17–H20 / H22 / H24–H25 / H27–H29 rejected; H23 docs | `physics.LIQUIDFUN_MS` / `BOX2D_MS` | `pnpm test:visual --scene liquidfun,lfstress` |
 
@@ -153,9 +153,9 @@ pnpm bench:feature:query-aabb
 ## Wave F / I / J leftovers
 
 - Skip-publish if active lists unchanged: already in logic0; `QUERY_PUBLISH_MS` only when `collectDetailedStats`.
-- P2 `_cfgFieldList` + P6 `popFreeIndices` + `expectedActive` + compact bullets: shipped. Old `bench:particle:tournament` still patches from **pre-opt baselines** — it overwrites src; restore those four files after.
-- Spawn ECB: main queues, one `spawnDespawnBatch` per frame.
-- Monomorphic `tickFn` cache on logic typeInfo.
+- P2 `_cfgFieldList` + P6 `popFreeIndices` **kept**. PACT `expectedActive` and compact bullets **dropped** (not in tree). Old `bench:particle:tournament` still patches from **pre-opt baselines** — it overwrites src; do not use as truth.
+- Spawn ECB: **dropped**. Main thread uses immediate `spawn` / `despawn` `postMessage` (no `spawnDespawnBatch` queue).
+- Monomorphic `tickFn` cache on logic typeInfo: **dropped** (Balls logic0 +27%). Hot path calls `obj.tick`.
 - Display interpolation already exists (`preRender.interpolation`).
 - Dirty-pose skip-emit: L1 only (`poseSkipMicrobench.mjs`), not merged.
 

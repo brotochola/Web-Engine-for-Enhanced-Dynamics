@@ -162,5 +162,25 @@ Keep como paquete (headed 5 corridas): emit KEPT, box2d TIE, steadyCombat KEPT. 
 
 ---
 
+## Pre-merge strip (2026-09-16)
+
+**Qué se hizo.** El log decía “Left reverted” pero el árbol todavía tenía TICK, ECB, PACT, BULLET compact, LIGHT skip, VP cache y la API muerta `servicePendingQueryBurst`. Se alineó `src/` al keep documentado. `test:node` 438/438. Lockstep visual **ok** (el `spawn timeout` de Balls desapareció con el strip de ECB).
+
+**Remedida.**
+
+```bash
+pnpm bench:scoreboard --vs 0695a8d --only queryAabb --skip-node --skip-lockstep --skip-kernels
+pnpm bench:scoreboard --vs 0695a8d --only box2d,emit,steadyCombat --headed-only box2d,steadyCombat
+```
+
+- queryAabb: physics +6.3% (0.201→0.213 ms) WORSE de protocolo; **no** +miles %. Copia: `tests/results/scoreboard/queryaabb-after-strip/`.
+- emit KEPT; box2d KEPT (logic0 −51% tras sacar TICK); steadyCombat WORSE por spatialMax +3.5% (logic0 −16.9%). Copia: `tests/results/scoreboard/keep-bundle-after-strip/`.
+
+**Merge.** Keep set + plataforma de benches. No afirmar WeedJS más rápida que main. Al mergear: squash a dos commits lógicos (`feat(bench): measurement platform` + `perf: keep set …`), no el pile `micro opts`.
+
+PR body sugerido: medición + keep parcial (HASH/P2/P6/hygiene/collide/load/N2); stack y product-confirm **no** ganan; ver `HYPOTHESIS_LOG` y esta sección.
+
+---
+
 
 

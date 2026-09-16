@@ -5,6 +5,10 @@
  * Exclusive files overlay HEAD; mixed files get surgical transforms so
  * hyps do not drag siblings along (logicWorker = COLLIDE/TICK/ECB/HYGIENE).
  *
+ * Dropped hyps (AABB/PACT/BULLET/LIGHT/VP/TICK/ECB) are historical A/B
+ * patches only — they are NOT present in the merge-ready tree after the
+ * 2026-09-16 pre-merge strip. Do not treat applyHyp('TICK') as “current src”.
+ *
  * Always call restoreHead() in a finally so main is not left checked out.
  */
 import { execFileSync } from 'node:child_process';

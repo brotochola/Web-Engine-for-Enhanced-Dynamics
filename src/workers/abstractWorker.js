@@ -552,7 +552,6 @@ export class AbstractWorker {
       }
       if (data.activeBulletsData) {
         this.activeBulletsData = new Uint16Array(data.activeBulletsData);
-        BulletPool.initializeActiveList(data.activeBulletsData, data.activeBulletsLock || null);
       }
       if (data.visibleBulletsData) {
         this.visibleBulletsData = new Uint16Array(data.visibleBulletsData);

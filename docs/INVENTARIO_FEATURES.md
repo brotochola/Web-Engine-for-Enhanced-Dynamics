@@ -184,9 +184,9 @@ Sustituye a Predator emergente para el scoreboard. Smoke: KEPT (partículas −1
 
 ## Paquete keep de esta rama
 
-HASH + P2 + P6 + higiene (`debugLog`) + colisión (par key) + contadores de carga siempre encendidos. **No** PACT, LIGHT, AABB, TICK, VP, BULLET, ECB.
+HASH + P2 + P6 + higiene (`debugLog`) + colisión (par key) + contadores de carga siempre encendidos + Nav N2. **No** PACT, LIGHT, AABB burst, TICK, VP, BULLET compact, ECB — stripped del árbol 2026-09-16 (antes el log mentía “reverted”).
 
-Se mide **como paquete**, no cinco isolations headed. Si una fila pierde con carga comparable, el informe lo dice; no hay tiempo de bisecar.
+Se mide **como paquete**, no cinco isolations headed. Remedida post-strip: emit/box2d KEPT; steadyCombat WORSE (spatial +3.5%). No se afirma producto más rápido que main.
 
 ## Fuera de estas 10–11 horas
 

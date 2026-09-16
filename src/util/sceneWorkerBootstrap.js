@@ -268,7 +268,6 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     bulletFreeList: scene.buffers.bulletFreeList || null,
     bulletFreeListTop: scene.buffers.bulletFreeListTop || null,
     activeBulletsData: scene.buffers.activeBulletsData || null,
-    activeBulletsLock: scene.buffers.activeBulletsLock || null,
     visibleBulletsData: scene.buffers.visibleBulletsData || null,
     impactBuffer: scene.buffers.impactBuffer || null,
     totalLogicWorkers: scene.numberOfLogicWorkers,
