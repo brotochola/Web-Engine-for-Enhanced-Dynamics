@@ -25,7 +25,7 @@ export class BulletStressScene extends Scene {
     },
     logic: {
       noLimitFPS: false,
-      numberOfLogicWorkers: 1,
+      numberOfLogicWorkers: 3,
       staggeredUpdates: false,
     },
     physics: {
@@ -49,7 +49,7 @@ export class BulletStressScene extends Scene {
 
   static entities = [
     [RayStressEntity, INTERIOR + 4],
-    [BulletStressDriver, 1],
+    [BulletStressDriver, 8],
   ];
 
   create() {
@@ -103,7 +103,9 @@ export class BulletStressScene extends Scene {
       });
     }
 
-    this.spawnEntity(BulletStressDriver, { seed: SEED });
+    for (let s = 0; s < 8; s++) {
+      this.spawnEntity(BulletStressDriver, { seed: SEED + s * 97, spawnPerTick: 40 });
+    }
 
     Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);
     Camera.setZoom(0.28);

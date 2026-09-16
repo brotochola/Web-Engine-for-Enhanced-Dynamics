@@ -164,9 +164,9 @@ Esta noche: kernel sí; zenithal **como estrés**, no cinco corridas headed. Sin
 
 ### bullets — Tick de balas
 
-Módulo: `src/util/bulletTick.js`. Kernel: `bulletTickMicrobench.mjs` (`cases.tickCrowded.opsPerSec`; también reporta `tickOpen` / hypot). Escena: `BulletStressScene` (pool 2048, paredes, spawn fijo). Primaria: `particle_STEP_MS`. Carga: `ACTIVE_BULLETS`.
+Módulo: `src/util/bulletTick.js`. Kernel: `bulletTickMicrobench.mjs` (`cases.tickCrowded.opsPerSec`; también scan vs compact sparse). Escena: `BulletStressScene` (pool 2048, 3 logic workers, 8 shooters × 40 spawn/tick, paredes). Gameplay: Predator headed. Primaria: `particle_STEP_MS`. Carga: `ACTIVE_BULLETS`.
 
-Lista compacta de balas **descartada** (+1.9%). No reabrir. Speed cache al spawn: `len = speed * dt` + exclude escalar.
+Pirámide 2026-09-16: speed-cache **kept en kernel** (`tickCrowded` hypot→cached; Predator headed TIE con ~2 balas vivas — no se vende como Predator). Compact **dropped** para el motor: kernel sparse gana ops/s (hasta +100% en 256/8192), estrés **WORSE** (+7.6% particle, carga OK), Predator compact **FAIL** (cv `ACTIVE_BULLETS` ≥ 50% + crash Chromium). Isolation vieja (+1.9%) se queda. Scan de `maxBullets`; no `activeBulletsLock`.
 
 ### spawn — Tormenta Treiber / spawn
 

@@ -129,10 +129,10 @@ export const HYP_CATALOG = [
     id: 'BULLET',
     kind: 'speed',
     l3: ['predator'],
-    l2: [],
+    l2: ['bulletStress'],
     l1: [],
     detailedStats: false,
-    primary: { predator: 'particle_STEP_MS' },
+    primary: { predator: 'particle_STEP_MS', bulletStress: 'particle_STEP_MS' },
   },
   {
     id: 'LIGHT',
@@ -698,7 +698,132 @@ function applyPact() {
 }
 
 function applyBullet() {
-  overlayHead(['src/core/bulletPool.js']);
+  overlayHead([
+    'src/core/bulletPool.js',
+    'src/workers/particleWorker.js',
+    'src/workers/abstractWorker.js',
+    'src/util/sceneSharedBuffers.js',
+    'src/util/sceneWorkerBootstrap.js',
+  ]);
+  patchRel(
+    'src/core/bulletPool.js',
+    (src, hyp) => {
+      let out = insertOnce(
+        src,
+        `  static _warnedMissingTextures = new Set();\n`,
+        `  static activeBulletsData = null;\n  static _activeListLock = null;\n`,
+        hyp
+      );
+      out = insertOnce(
+        out,
+        `    this._warnedMissingTextures.clear();
+  }
+`,
+        `
+  static _lockActiveList() {
+    const lock = this._activeListLock;
+    if (!lock) return;
+    while (Atomics.compareExchange(lock, 0, 0, 1) !== 0) {}
+  }
+
+  static _unlockActiveList() {
+    if (this._activeListLock) Atomics.store(this._activeListLock, 0, 0);
+  }
+
+  static initializeActiveList(buffer, lockBuffer = null) {
+    if (buffer) this.activeBulletsData = new Uint16Array(buffer);
+    this._activeListLock = lockBuffer ? new Int32Array(lockBuffer) : null;
+  }
+
+  static copyActiveSnapshot(out) {
+    const data = this.activeBulletsData;
+    if (!data || !out) return 0;
+    this._lockActiveList();
+    try {
+      const count = Math.min(data[0], out.length);
+      for (let i = 0; i < count; i++) out[i] = data[1 + i];
+      return count;
+    } finally {
+      this._unlockActiveList();
+    }
+  }
+
+  static removeFromActiveList(index) {
+    const data = this.activeBulletsData;
+    if (!data) return;
+    this._lockActiveList();
+    try {
+      const count = data[0];
+      for (let i = 0; i < count; i++) {
+        if (data[1 + i] === index) {
+          const last = count - 1;
+          data[1 + i] = data[1 + last];
+          data[1 + last] = 0;
+          data[0] = last;
+          break;
+        }
+      }
+    } finally {
+      this._unlockActiveList();
+    }
+  }
+`,
+        hyp
+      );
+      out = replaceOnce(
+        out,
+        `    BulletComponent.isItOnScreen[i] = 0;
+    BulletComponent.active[i] = 1;
+
+    return i;`,
+        `    BulletComponent.isItOnScreen[i] = 0;
+    BulletComponent.active[i] = 1;
+
+    if (this.activeBulletsData) {
+      this._lockActiveList();
+      try {
+        const slot = this.activeBulletsData[0];
+        this.activeBulletsData[1 + slot] = i;
+        this.activeBulletsData[0] = slot + 1;
+      } finally {
+        this._unlockActiveList();
+      }
+    }
+
+    return i;`,
+        hyp
+      );
+      out = replaceOnce(
+        out,
+        `    if (BulletComponent.active[i] === 0) return;
+    BulletComponent.active[i] = 0;
+    this.returnToPool(i);`,
+        `    if (BulletComponent.active[i] === 0) return;
+    BulletComponent.active[i] = 0;
+    this.removeFromActiveList(i);
+    this.returnToPool(i);`,
+        hyp
+      );
+      out = replaceOnce(
+        out,
+        `  static reset() {
+    super.reset();
+    this._warnedPoolExhausted = false;
+    this._warnedMissingTextures.clear();
+  }`,
+        `  static reset() {
+    super.reset();
+    this._warnedPoolExhausted = false;
+    this._warnedMissingTextures.clear();
+    this.activeBulletsData = null;
+    this._activeListLock = null;
+  }`,
+        hyp
+      );
+      return out;
+    },
+    'BULLET'
+  );
   patchRel(
     'src/workers/abstractWorker.js',
     (src, hyp) =>
@@ -751,86 +876,108 @@ function applyBullet() {
     (src, hyp) =>
       replaceOnce(
         src,
-        `    let activeWrite = 1;
-    let impactWrite = 0;
-    const maxImpacts = this._maxImpactsPerFrame;
+        `    const activeData = this.activeBulletsData;
+    const visibleData = this.visibleBulletsData;
 
-    for (let i = 0; i < maxBullets; i++) {
-      if (!active[i]) continue;`,
-        `    let impactWrite = 0;
-    const maxImpacts = this._maxImpactsPerFrame;
-    const survivors = this._bulletSurvivors || (this._bulletSurvivors = new Uint16Array(maxBullets));
-    let survivorCount = 0;
-
+    const { activeCount } = tickBulletsBuffers({
+      maxBullets,
+      dtRatio,
+      active: BulletComponent.active,
+      x,
+      y,
+      prevX: BulletComponent.prevX,
+      prevY: BulletComponent.prevY,
+      vx: BulletComponent.vx,
+      vy: BulletComponent.vy,
+      speed: BulletComponent.speed,
+      bulletRotC: BulletComponent.bulletRotC,
+      bulletRotS: BulletComponent.bulletRotS,
+      damage: BulletComponent.damage,
+      ownerId: BulletComponent.ownerId,
+      shooterEntityType: BulletComponent.shooterEntityType,
+      activeData,
+      impactHeader: this._impactHeader,
+      impactData: this._impactData,
+      maxImpacts: this._maxImpactsPerFrame,
+      excludeSet: null,
+      onDespawn: (i) => BulletPool.returnToPool(i),
+    });`,
+        `    const visibleData = this.visibleBulletsData;
     if (!this._bulletScratch || this._bulletScratch.length < maxBullets) {
       this._bulletScratch = new Uint16Array(maxBullets);
     }
-    const compactCount = BulletPool.activeBulletsData
-      ? BulletPool.copyActiveSnapshot(this._bulletScratch)
-      : 0;
-    const useCompact = compactCount > 0 || (BulletPool.activeBulletsData && BulletPool.activeBulletsData[0] === 0);
+    if (!this._bulletSurvivors || this._bulletSurvivors.length < 1 + maxBullets) {
+      this._bulletSurvivors = new Uint16Array(1 + maxBullets);
+    }
+    const liveCount = BulletPool.copyActiveSnapshot(this._bulletScratch);
+    const activeData = this._bulletSurvivors;
 
-    const iterCount = useCompact ? compactCount : maxBullets;
-    for (let n = 0; n < iterCount; n++) {
-      const i = useCompact ? this._bulletScratch[n] : n;
-      if (!active[i]) continue;`,
+    const { activeCount } = tickBulletsBuffers({
+      maxBullets,
+      dtRatio,
+      active: BulletComponent.active,
+      x,
+      y,
+      prevX: BulletComponent.prevX,
+      prevY: BulletComponent.prevY,
+      vx: BulletComponent.vx,
+      vy: BulletComponent.vy,
+      speed: BulletComponent.speed,
+      bulletRotC: BulletComponent.bulletRotC,
+      bulletRotS: BulletComponent.bulletRotS,
+      damage: BulletComponent.damage,
+      ownerId: BulletComponent.ownerId,
+      shooterEntityType: BulletComponent.shooterEntityType,
+      activeData,
+      impactHeader: this._impactHeader,
+      impactData: this._impactData,
+      maxImpacts: this._maxImpactsPerFrame,
+      excludeSet: null,
+      liveIndices: this._bulletScratch,
+      liveCount,
+      onDespawn: (i) => {
+        BulletPool.removeFromActiveList(i);
+        BulletPool.returnToPool(i);
+      },
+    });`,
         hyp
       ),
     'BULLET'
   );
+}
+
+function applyBulletHypot() {
+  overlayHead(['src/workers/particleWorker.js']);
   patchRel(
     'src/workers/particleWorker.js',
     (src, hyp) =>
       replaceOnce(
         src,
-        `          active[i] = 0;
-          BulletPool.returnToPool(i);
-          continue;
-        }
-      }
-
-      activeData[activeWrite++] = i;
-    }
-
-    activeData[0] = activeWrite - 1;`,
-        `          BulletPool.despawn(i);
-          continue;
-        }
-      }
-
-      survivors[survivorCount++] = i;
-    }
-
-    if (!useCompact && activeData) {
-      activeData[0] = survivorCount;
-      for (let s = 0; s < survivorCount; s++) activeData[1 + s] = survivors[s];
-    }`,
+        `      speed: BulletComponent.speed,
+      bulletRotC: BulletComponent.bulletRotC,
+      bulletRotS: BulletComponent.bulletRotS,
+      damage: BulletComponent.damage,
+      ownerId: BulletComponent.ownerId,
+      shooterEntityType: BulletComponent.shooterEntityType,
+      activeData,
+      impactHeader: this._impactHeader,
+      impactData: this._impactData,
+      maxImpacts: this._maxImpactsPerFrame,
+      excludeSet: null,`,
+        `      speed: null,
+      bulletRotC: BulletComponent.bulletRotC,
+      bulletRotS: BulletComponent.bulletRotS,
+      damage: BulletComponent.damage,
+      ownerId: BulletComponent.ownerId,
+      shooterEntityType: BulletComponent.shooterEntityType,
+      activeData,
+      impactHeader: this._impactHeader,
+      impactData: this._impactData,
+      maxImpacts: this._maxImpactsPerFrame,
+      excludeSet: this._bulletExcludeSet || (this._bulletExcludeSet = new Set()),`,
         hyp
       ),
-    'BULLET'
-  );
-  patchRel(
-    'src/workers/particleWorker.js',
-    (src, hyp) => {
-      let out = replaceOnce(
-        src,
-        `    if (activeWrite <= 1 || !this.cameraData || !visibleData) return;`,
-        `    if (survivorCount <= 0 || !this.cameraData || !visibleData) return;`,
-        hyp
-      );
-      return replaceOnce(
-        out,
-        `    let visibleCount = 0;
-    const activeCount = activeWrite - 1;
-    for (let idx = 0; idx < activeCount; idx++) {
-      const i = activeData[1 + idx];`,
-        `    let visibleCount = 0;
-    for (let idx = 0; idx < survivorCount; idx++) {
-      const i = survivors[idx];`,
-        hyp
-      );
-    },
-    'BULLET'
+    'BHYPOT'
   );
 }
 
@@ -1179,6 +1326,7 @@ const TRANSFORMS = {
   P6: applyP6,
   PACT: applyPact,
   BULLET: applyBullet,
+  BHYPOT: applyBulletHypot,
   LIGHT: applyLight,
   VP: applyVp,
   TICK: applyTick,

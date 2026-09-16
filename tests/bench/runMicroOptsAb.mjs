@@ -80,6 +80,14 @@ const SCENES = {
     headed: false,
     workload: ['BODY_COUNT'],
   },
+  bulletStress: {
+    key: 'bulletStress',
+    scene: '/tests/bench/stressScenes/bulletStressScene.js',
+    exportName: 'BulletStressScene',
+    layer: 'l2',
+    headed: false,
+    workload: ['ACTIVE_BULLETS'],
+  },
 };
 
 function parseArgs(argv) {
@@ -169,6 +177,7 @@ export function extractMetrics(report) {
   return {
     BODY_COUNT: physics.BODY_COUNT ?? 0,
     ACTIVE_PARTICLES: particle.ACTIVE_PARTICLES ?? 0,
+    ACTIVE_BULLETS: particle.ACTIVE_BULLETS ?? 0,
     physics_STEP_MS: physics.STEP_MS ?? 0,
     logic0_STEP_MS: logic0.STEP_MS ?? 0,
     particle_STEP_MS: particle.STEP_MS ?? 0,

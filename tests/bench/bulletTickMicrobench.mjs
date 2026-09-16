@@ -1,7 +1,9 @@
 // Microbenchmark + correctness for src/util/bulletTick.js (Node, no workers).
 //
-// One op = one tick of N live bullets (move + linecastDir).
-// tickOpen: empty grid (hypot vs cached speed). tickCrowded: ~2000 colliders.
+// One op = one tick of the live set (move + linecastDir).
+// tickOpen / tickCrowded: hypot vs cached speed (pool full).
+// Scan vs compact: optional liveIndices, no lock (single thread).
+// Sparse cases show empty-slot scan cost (256 live / 2048 and 256 / 8192).
 //
 //   node tests/bench/bulletTickMicrobench.mjs
 //   node tests/bench/bulletTickMicrobench.mjs --bullets 2048 --steps 800 --output tests/results/bullet-tick-micro.json
@@ -21,12 +23,16 @@ const CELL_SIZE = Number(args['cell-size'] ?? 128);
 const MAX_PER_CELL = 64;
 const ENTITY_COUNT = Number(args.entities ?? 2000);
 const BULLET_COUNT = Number(args.bullets ?? 2048);
+const SPARSE_LIVE = Number(args['sparse-live'] ?? 256);
+const SPARSE_POOL_BIG = Number(args['sparse-pool'] ?? 8192);
 const STEPS_OPEN = Number(args['steps-open'] ?? args.steps ?? 2000);
 const STEPS_CROWDED = Number(args['steps-crowded'] ?? args.steps ?? 800);
+const STEPS_SPARSE = Number(args['steps-sparse'] ?? args.steps ?? 800);
 const SEED = Number(args.seed ?? 0xc0ffee);
 const MARGIN = 64;
 const OUTPUT = args.output ? String(args.output) : null;
 const BULLET_SPEED = 1500;
+const KEEP_OPS_PCT = 3;
 
 const gridCols = Math.ceil(WORLD_W / CELL_SIZE);
 const gridRows = Math.ceil(WORLD_H / CELL_SIZE);
@@ -104,55 +110,68 @@ function setupGrid(entityCount, rng) {
   }
 }
 
-function setupBullets() {
-  const sab = new SharedArrayBuffer(BulletComponent.getBufferSize(BULLET_COUNT));
-  BulletComponent.initializeArrays(sab, BULLET_COUNT);
-  BulletComponent.bulletCount = BULLET_COUNT;
+function setupBullets(poolSize) {
+  const sab = new SharedArrayBuffer(BulletComponent.getBufferSize(poolSize));
+  BulletComponent.initializeArrays(sab, poolSize);
+  BulletComponent.bulletCount = poolSize;
 }
 
-function fillBullets(rng, originX, originY) {
-  const active = BulletComponent.active;
-  const x = BulletComponent.x;
-  const y = BulletComponent.y;
-  const prevX = BulletComponent.prevX;
-  const prevY = BulletComponent.prevY;
-  const vx = BulletComponent.vx;
-  const vy = BulletComponent.vy;
-  const speed = BulletComponent.speed;
-  const rotC = BulletComponent.bulletRotC;
-  const rotS = BulletComponent.bulletRotS;
-  const damage = BulletComponent.damage;
-  const ownerId = BulletComponent.ownerId;
-  const shooter = BulletComponent.shooterEntityType;
+function fillBulletSlot(i, rng, originX, originY) {
+  const ang = rng() * Math.PI * 2;
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  BulletComponent.active[i] = 1;
+  BulletComponent.x[i] = originX;
+  BulletComponent.y[i] = originY;
+  BulletComponent.prevX[i] = originX;
+  BulletComponent.prevY[i] = originY;
+  BulletComponent.vx[i] = c * BULLET_SPEED;
+  BulletComponent.vy[i] = s * BULLET_SPEED;
+  BulletComponent.speed[i] = BULLET_SPEED;
+  BulletComponent.bulletRotC[i] = c;
+  BulletComponent.bulletRotS[i] = s;
+  BulletComponent.damage[i] = 1;
+  BulletComponent.ownerId[i] = 0;
+  BulletComponent.shooterEntityType[i] = 0;
+}
 
-  active.fill(0);
-  for (let i = 0; i < BULLET_COUNT; i++) {
-    const ang = rng() * Math.PI * 2;
-    const c = Math.cos(ang);
-    const s = Math.sin(ang);
-    active[i] = 1;
-    x[i] = originX;
-    y[i] = originY;
-    prevX[i] = originX;
-    prevY[i] = originY;
-    vx[i] = c * BULLET_SPEED;
-    vy[i] = s * BULLET_SPEED;
-    speed[i] = BULLET_SPEED;
-    rotC[i] = c;
-    rotS[i] = s;
-    damage[i] = 1;
-    ownerId[i] = 0;
-    shooter[i] = 0;
+function fillBulletsDense(rng, originX, originY, poolSize) {
+  BulletComponent.active.fill(0);
+  for (let i = 0; i < poolSize; i++) {
+    fillBulletSlot(i, rng, originX, originY);
   }
 }
 
-function snapshotLive() {
+function fillBulletsSparse(rng, originX, originY, poolSize, liveCount) {
+  BulletComponent.active.fill(0);
+  const stride = Math.max(1, (poolSize / liveCount) | 0);
+  const live = [];
+  for (let i = 0; i < poolSize && live.length < liveCount; i += stride) {
+    fillBulletSlot(i, rng, originX, originY);
+    live.push(i);
+  }
+  if (live.length !== liveCount) {
+    throw new Error(`sparse fill got ${live.length}, want ${liveCount}`);
+  }
+  return new Uint16Array(live);
+}
+
+function collectLiveIndices(poolSize) {
+  const live = [];
+  const active = BulletComponent.active;
+  for (let i = 0; i < poolSize; i++) {
+    if (active[i]) live.push(i);
+  }
+  return new Uint16Array(live);
+}
+
+function snapshotLive(poolSize) {
   return {
-    active: BulletComponent.active.slice(),
-    x: BulletComponent.x.slice(),
-    y: BulletComponent.y.slice(),
-    prevX: BulletComponent.prevX.slice(),
-    prevY: BulletComponent.prevY.slice(),
+    active: BulletComponent.active.slice(0, poolSize),
+    x: BulletComponent.x.slice(0, poolSize),
+    y: BulletComponent.y.slice(0, poolSize),
+    prevX: BulletComponent.prevX.slice(0, poolSize),
+    prevY: BulletComponent.prevY.slice(0, poolSize),
   };
 }
 
@@ -164,9 +183,9 @@ function restoreLive(snap) {
   BulletComponent.prevY.set(snap.prevY);
 }
 
-function tickArgs(useCached, excludeSet, activeData) {
+function tickArgs(useCached, excludeSet, activeData, poolSize, liveIndices) {
   return {
-    maxBullets: BULLET_COUNT,
+    maxBullets: poolSize,
     dtRatio: 1,
     active: BulletComponent.active,
     x: BulletComponent.x,
@@ -186,6 +205,8 @@ function tickArgs(useCached, excludeSet, activeData) {
     impactData: null,
     maxImpacts: 0,
     excludeSet: useCached ? null : excludeSet,
+    liveIndices: liveIndices || null,
+    liveCount: liveIndices ? liveIndices.length : 0,
     onDespawn: null,
   };
 }
@@ -196,15 +217,28 @@ function assertApprox(actual, expected, eps, msg) {
   }
 }
 
-Ray._rayGenStamp = new Uint32Array(Math.max(ENTITY_COUNT, 1));
+function opsDeltaPct(compactOps, scanOps) {
+  if (!(scanOps > 0)) return null;
+  return ((compactOps - scanOps) / scanOps) * 100;
+}
 
-setupBullets();
-const activeData = new Uint16Array(1 + BULLET_COUNT);
+function checksumX(liveIndices) {
+  let sum = 0;
+  for (let n = 0; n < liveIndices.length; n++) {
+    sum += BulletComponent.x[liveIndices[n]];
+  }
+  return sum;
+}
+
+Ray._rayGenStamp = new Uint32Array(Math.max(ENTITY_COUNT, SPARSE_POOL_BIG, 1));
+
+setupBullets(BULLET_COUNT);
+let activeData = new Uint16Array(1 + BULLET_COUNT);
 const excludeSet = new Set();
 const rngOpen = mulberry32(SEED);
 
 setupGrid(0, rngOpen);
-fillBullets(rngOpen, WORLD_W * 0.5, WORLD_H * 0.5);
+fillBulletsDense(rngOpen, WORLD_W * 0.5, WORLD_H * 0.5, BULLET_COUNT);
 
 for (let i = 0; i < BULLET_COUNT; i++) {
   assertApprox(BulletComponent.speed[i], BULLET_SPEED, 1e-3, `speed[${i}]`);
@@ -216,15 +250,15 @@ const x0 = BulletComponent.x[0];
 const y0 = BulletComponent.y[0];
 const vx0 = BulletComponent.vx[0];
 const vy0 = BulletComponent.vy[0];
-tickBulletsBuffers(tickArgs(true, excludeSet, activeData));
+tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
 assertApprox(BulletComponent.x[0], x0 + vx0 / 60, 1e-3, 'open step x');
 assertApprox(BulletComponent.y[0], y0 + vy0 / 60, 1e-3, 'open step y');
 if (activeData[0] !== BULLET_COUNT) {
   throw new Error(`open field lost bullets: ${activeData[0]}`);
 }
 
-fillBullets(mulberry32(SEED), WORLD_W * 0.5, WORLD_H * 0.5);
-const openSnap = snapshotLive();
+fillBulletsDense(mulberry32(SEED), WORLD_W * 0.5, WORLD_H * 0.5, BULLET_COUNT);
+const openSnap = snapshotLive(BULLET_COUNT);
 const cases = {};
 
 cases.tickOpenHypot = timeIt(
@@ -232,7 +266,7 @@ cases.tickOpenHypot = timeIt(
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(openSnap);
-      tickBulletsBuffers(tickArgs(false, excludeSet, activeData));
+      tickBulletsBuffers(tickArgs(false, excludeSet, activeData, BULLET_COUNT, null));
     }
   },
   { iterations: STEPS_OPEN }
@@ -243,7 +277,7 @@ cases.tickOpen = timeIt(
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(openSnap);
-      tickBulletsBuffers(tickArgs(true, excludeSet, activeData));
+      tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
     }
   },
   { iterations: STEPS_OPEN }
@@ -251,15 +285,15 @@ cases.tickOpen = timeIt(
 
 const rngCrowd = mulberry32(SEED ^ 1);
 setupGrid(ENTITY_COUNT, rngCrowd);
-fillBullets(rngCrowd, MARGIN + 40, WORLD_H * 0.5);
-const crowdSnap = snapshotLive();
+fillBulletsDense(rngCrowd, MARGIN + 40, WORLD_H * 0.5, BULLET_COUNT);
+const crowdSnap = snapshotLive(BULLET_COUNT);
 
 cases.tickCrowdedHypot = timeIt(
   `tickCrowded hypot (${BULLET_COUNT} bullets, ${ENTITY_COUNT} colliders)`,
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(crowdSnap);
-      tickBulletsBuffers(tickArgs(false, excludeSet, activeData));
+      tickBulletsBuffers(tickArgs(false, excludeSet, activeData, BULLET_COUNT, null));
     }
   },
   { iterations: STEPS_CROWDED }
@@ -270,11 +304,124 @@ cases.tickCrowded = timeIt(
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(crowdSnap);
-      tickBulletsBuffers(tickArgs(true, excludeSet, activeData));
+      tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
     }
   },
   { iterations: STEPS_CROWDED }
 );
+
+const denseLive = collectLiveIndices(BULLET_COUNT);
+if (denseLive.length !== BULLET_COUNT) {
+  throw new Error(`dense live ${denseLive.length} != ${BULLET_COUNT}`);
+}
+
+restoreLive(crowdSnap);
+tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
+const scanChecksum = checksumX(denseLive);
+restoreLive(crowdSnap);
+tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, denseLive));
+assertApprox(checksumX(denseLive), scanChecksum, 1e-3, 'dense compact checksum');
+
+cases.tickCrowdedScan = timeIt(
+  `tickCrowded scan (${BULLET_COUNT}/${BULLET_COUNT})`,
+  (iters) => {
+    for (let s = 0; s < iters; s++) {
+      restoreLive(crowdSnap);
+      tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
+    }
+  },
+  { iterations: STEPS_CROWDED }
+);
+
+cases.tickCrowdedCompact = timeIt(
+  `tickCrowded compact (${BULLET_COUNT}/${BULLET_COUNT})`,
+  (iters) => {
+    for (let s = 0; s < iters; s++) {
+      restoreLive(crowdSnap);
+      tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, denseLive));
+    }
+  },
+  { iterations: STEPS_CROWDED }
+);
+
+function runSparsePair(label, poolSize, liveCount, crowded, steps) {
+  setupBullets(poolSize);
+  activeData = new Uint16Array(1 + poolSize);
+  const rng = mulberry32(SEED ^ poolSize ^ liveCount);
+  if (crowded) {
+    setupGrid(ENTITY_COUNT, mulberry32(SEED ^ 1));
+  } else {
+    setupGrid(0, rng);
+  }
+  const originX = crowded ? MARGIN + 40 : WORLD_W * 0.5;
+  const originY = WORLD_H * 0.5;
+  const live = fillBulletsSparse(rng, originX, originY, poolSize, liveCount);
+  const snap = snapshotLive(poolSize);
+  const i0 = live[0];
+  const xBefore = BulletComponent.x[i0];
+  const vx = BulletComponent.vx[i0];
+  if (!crowded) {
+    tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+    assertApprox(BulletComponent.x[i0], xBefore + vx / 60, 1e-3, `${label} scan step x`);
+    restoreLive(snap);
+  }
+  restoreLive(snap);
+  tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+  const scanSum = checksumX(live);
+  const scanCount = activeData[0];
+  restoreLive(snap);
+  tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, live));
+  assertApprox(checksumX(live), scanSum, 1e-3, `${label} compact checksum`);
+  if (activeData[0] !== scanCount) {
+    throw new Error(`${label} compact vs scan live ${activeData[0]} != ${scanCount}`);
+  }
+
+  const scan = timeIt(
+    `${label} scan (${liveCount}/${poolSize})`,
+    (iters) => {
+      for (let s = 0; s < iters; s++) {
+        restoreLive(snap);
+        tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+      }
+    },
+    { iterations: steps }
+  );
+  const compact = timeIt(
+    `${label} compact (${liveCount}/${poolSize})`,
+    (iters) => {
+      for (let s = 0; s < iters; s++) {
+        restoreLive(snap);
+        tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, live));
+      }
+    },
+    { iterations: steps }
+  );
+  return { scan, compact, liveCount, poolSize };
+}
+
+const sparseOpen2048 = runSparsePair('tickSparseOpen2048', BULLET_COUNT, SPARSE_LIVE, false, STEPS_SPARSE);
+const sparseCrowd2048 = runSparsePair('tickSparseCrowded2048', BULLET_COUNT, SPARSE_LIVE, true, STEPS_SPARSE);
+const sparseOpen8192 = runSparsePair('tickSparseOpen8192', SPARSE_POOL_BIG, SPARSE_LIVE, false, STEPS_SPARSE);
+const sparseCrowd8192 = runSparsePair('tickSparseCrowded8192', SPARSE_POOL_BIG, SPARSE_LIVE, true, STEPS_SPARSE);
+
+cases.tickSparseOpen2048Scan = sparseOpen2048.scan;
+cases.tickSparseOpen2048Compact = sparseOpen2048.compact;
+cases.tickSparseCrowded2048Scan = sparseCrowd2048.scan;
+cases.tickSparseCrowded2048Compact = sparseCrowd2048.compact;
+cases.tickSparseOpen8192Scan = sparseOpen8192.scan;
+cases.tickSparseOpen8192Compact = sparseOpen8192.compact;
+cases.tickSparseCrowded8192Scan = sparseCrowd8192.scan;
+cases.tickSparseCrowded8192Compact = sparseCrowd8192.compact;
+
+const compactPairs = {
+  denseCrowded: opsDeltaPct(cases.tickCrowdedCompact.opsPerSec, cases.tickCrowdedScan.opsPerSec),
+  sparseOpen2048: opsDeltaPct(sparseOpen2048.compact.opsPerSec, sparseOpen2048.scan.opsPerSec),
+  sparseCrowded2048: opsDeltaPct(sparseCrowd2048.compact.opsPerSec, sparseCrowd2048.scan.opsPerSec),
+  sparseOpen8192: opsDeltaPct(sparseOpen8192.compact.opsPerSec, sparseOpen8192.scan.opsPerSec),
+  sparseCrowded8192: opsDeltaPct(sparseCrowd8192.compact.opsPerSec, sparseCrowd8192.scan.opsPerSec),
+};
+
+const compactKernelKeep = Object.values(compactPairs).some((d) => d != null && d >= KEEP_OPS_PCT);
 
 const caseSummary = {};
 for (const [key, result] of Object.entries(cases)) {
@@ -291,6 +438,22 @@ console.log(
 console.log(
   `tickCrowded hypot→cached: ${Math.round(cases.tickCrowdedHypot.opsPerSec)} → ${Math.round(cases.tickCrowded.opsPerSec)} ops/s`
 );
+console.log(
+  `dense scan→compact: ${Math.round(cases.tickCrowdedScan.opsPerSec)} → ${Math.round(cases.tickCrowdedCompact.opsPerSec)} ops/s (${compactPairs.denseCrowded.toFixed(1)}%)`
+);
+console.log(
+  `sparse 256/2048 open scan→compact: ${Math.round(sparseOpen2048.scan.opsPerSec)} → ${Math.round(sparseOpen2048.compact.opsPerSec)} ops/s (${compactPairs.sparseOpen2048.toFixed(1)}%)`
+);
+console.log(
+  `sparse 256/2048 crowded scan→compact: ${Math.round(sparseCrowd2048.scan.opsPerSec)} → ${Math.round(sparseCrowd2048.compact.opsPerSec)} ops/s (${compactPairs.sparseCrowded2048.toFixed(1)}%)`
+);
+console.log(
+  `sparse 256/8192 open scan→compact: ${Math.round(sparseOpen8192.scan.opsPerSec)} → ${Math.round(sparseOpen8192.compact.opsPerSec)} ops/s (${compactPairs.sparseOpen8192.toFixed(1)}%)`
+);
+console.log(
+  `sparse 256/8192 crowded scan→compact: ${Math.round(sparseCrowd8192.scan.opsPerSec)} → ${Math.round(sparseCrowd8192.compact.opsPerSec)} ops/s (${compactPairs.sparseCrowded8192.toFixed(1)}%)`
+);
+console.log(`compact kernel keep (≥${KEEP_OPS_PCT}% ops/s on any sparse/dense pair): ${compactKernelKeep ? 'YES' : 'NO'}`);
 
 if (OUTPUT) {
   writeReport(OUTPUT, {
@@ -298,8 +461,12 @@ if (OUTPUT) {
     layer: 'L1',
     seed: SEED,
     bulletCount: BULLET_COUNT,
+    sparseLive: SPARSE_LIVE,
+    sparsePoolBig: SPARSE_POOL_BIG,
     entityCount: ENTITY_COUNT,
     cellSize: CELL_SIZE,
+    compactPairs,
+    compactKernelKeep,
     cases: caseSummary,
   });
 }

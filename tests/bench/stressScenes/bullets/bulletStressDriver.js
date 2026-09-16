@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 
 const { GameObject, BulletPool } = WEED;
 
-const SPAWN_PER_TICK = 320;
+const DEFAULT_SPAWN_PER_TICK = 40;
 const POSITION_SLOTS = 256;
 const SPEED = 1500;
 const WORLD_W = 4000;
@@ -12,15 +12,17 @@ const MARGIN = 200;
 /**
  * Fires a fixed-rate bullet burst from cycling origins toward random unit dirs.
  * Walls in BulletStressScene keep them in-world; pool stays full after warmup.
+ * Several drivers share the 320/tick storm so spawn can contend with a compact lock.
  */
 export class BulletStressDriver extends GameObject {
   static scriptUrl = import.meta.url;
   static components = [];
 
-  onSpawned({ seed = 0xb011e7 } = {}) {
+  onSpawned({ seed = 0xb011e7, spawnPerTick = DEFAULT_SPAWN_PER_TICK } = {}) {
     this.x = -10000;
     this.y = -10000;
     this._seed = seed >>> 0;
+    this._spawnPerTick = spawnPerTick | 0;
     this._cursor = 0;
     this._sink = 0;
     this._positions = new Float32Array(POSITION_SLOTS * 2);
@@ -52,7 +54,7 @@ export class BulletStressDriver extends GameObject {
     const ownerId = this.index;
     let cursor = this._cursor;
     let spawned = 0;
-    for (let n = 0; n < SPAWN_PER_TICK; n++) {
+    for (let n = 0; n < this._spawnPerTick; n++) {
       const slot = cursor % POSITION_SLOTS;
       const i = BulletPool.spawn({
         x: positions[slot * 2],

@@ -29,6 +29,8 @@ import { Ray } from '../core/ray.js';
  * @param {Float32Array|null} p.impactData
  * @param {number} p.maxImpacts
  * @param {Set<number>|null} p.excludeSet - reused Set; if null, ownerId is passed as scalar excludeA
+ * @param {Uint16Array|null} [p.liveIndices] - if set, tick only these slots (compact; no lock)
+ * @param {number} [p.liveCount] - length of liveIndices
  * @param {(index: number) => void} [p.onDespawn]
  * @returns {{ activeCount: number, impactWrite: number }}
  */
@@ -53,6 +55,8 @@ export function tickBulletsBuffers({
   impactData,
   maxImpacts,
   excludeSet,
+  liveIndices = null,
+  liveCount = 0,
   onDespawn,
 }) {
   const dt = dtRatio * (1 / 60);
@@ -60,8 +64,11 @@ export function tickBulletsBuffers({
   let impactWrite = 0;
   const impactCap = maxImpacts | 0;
   const useSpeed = speed != null;
+  const useLive = liveIndices != null;
+  const iterCount = useLive ? liveCount | 0 : maxBullets;
 
-  for (let i = 0; i < maxBullets; i++) {
+  for (let n = 0; n < iterCount; n++) {
+    const i = useLive ? liveIndices[n] : n;
     if (!active[i]) continue;
 
     const px = x[i];

@@ -154,3 +154,45 @@ test('tickBulletsBuffers open field moves x += vx/60 at dtRatio 1', () => {
     restore();
   }
 });
+
+test('tickBulletsBuffers liveIndices skips holes in a sparse pool', () => {
+  const restore = setupPool(16);
+  try {
+    const a = BulletPool.spawn({ x: 10, y: 0, vx: 600, vy: 0, damage: 1, ownerId: 0 });
+    const b = BulletPool.spawn({ x: 20, y: 0, vx: 600, vy: 0, damage: 1, ownerId: 0 });
+    const c = BulletPool.spawn({ x: 30, y: 0, vx: 600, vy: 0, damage: 1, ownerId: 0 });
+    BulletComponent.active[b] = 0;
+    const live = new Uint16Array([a, c]);
+    const activeData = new Uint16Array(17);
+    tickBulletsBuffers({
+      maxBullets: 16,
+      dtRatio: 1,
+      active: BulletComponent.active,
+      x: BulletComponent.x,
+      y: BulletComponent.y,
+      prevX: BulletComponent.prevX,
+      prevY: BulletComponent.prevY,
+      vx: BulletComponent.vx,
+      vy: BulletComponent.vy,
+      speed: BulletComponent.speed,
+      bulletRotC: BulletComponent.bulletRotC,
+      bulletRotS: BulletComponent.bulletRotS,
+      damage: BulletComponent.damage,
+      ownerId: BulletComponent.ownerId,
+      shooterEntityType: BulletComponent.shooterEntityType,
+      activeData,
+      impactHeader: null,
+      impactData: null,
+      maxImpacts: 0,
+      excludeSet: null,
+      liveIndices: live,
+      liveCount: 2,
+    });
+    assertApprox(BulletComponent.x[a], 10 + 600 / 60);
+    assertApprox(BulletComponent.x[c], 30 + 600 / 60);
+    assertApprox(BulletComponent.x[b], 20);
+    assert.equal(activeData[0], 2);
+  } finally {
+    restore();
+  }
+});
