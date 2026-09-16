@@ -363,6 +363,7 @@ class ParticleWorker extends AbstractWorker {
     this.globalEntityCount = 0;
     this._queryRigidBody = null;
     this.deriveSpeed = false;
+    this.deriveSpeedByType = null;
 
     this._rbActive = null;
 
@@ -511,6 +512,11 @@ class ParticleWorker extends AbstractWorker {
     // Sway decimation config
     this.swayDecimation = data.config?.decoration?.swayDecimation ?? DECORATION_DEFAULTS.swayDecimation;
     this.deriveSpeed = data.config?.particle?.deriveSpeed === true;
+    const registered = this.registeredClasses || [];
+    this.deriveSpeedByType = new Uint8Array(registered.length);
+    for (const classInfo of registered) {
+      if (classInfo.deriveSpeed === true) this.deriveSpeedByType[classInfo.entityType] = 1;
+    }
 
     // Screen visibility config
     this.canvasWidth = this.config.canvasWidth || 800;
@@ -1725,6 +1731,8 @@ class ParticleWorker extends AbstractWorker {
     const vy = RigidBody.vy;
     const speed = RigidBody.speed;
     const isStatic = RigidBody.static;
+    const entityType = Transform.entityType;
+    const deriveSpeedByType = this.deriveSpeedByType;
 
     const physicsEntities = this.queryActiveEntities(this._queryRigidBody);
 
@@ -1732,6 +1740,7 @@ class ParticleWorker extends AbstractWorker {
       const i = physicsEntities[idx];
       if (!rigidBodyActive[i]) continue;
       if (isStatic[i]) continue;
+      if (!deriveSpeedByType[entityType[i]]) continue;
 
       // speed only — facing/cardinals use getDirectionFromVector(vx,vy); no per-body atan2
       speed[i] = calculateSpeed(vx[i], vy[i]);

@@ -194,6 +194,7 @@ function buildRegisteredClassesInfo(scene) {
     startIndex: r.startIndex,
     endIndex: r.startIndex + r.count,
     entityType: r.entityType,
+    deriveSpeed: r.class.deriveSpeed === true,
     components: r.components.map((c) => c.name),
   }));
 }

@@ -73,7 +73,10 @@ export class GameObject {
   // tickInterval = 10 means entity ticks every 10 frames (spread across frames via index offset)
   static tickInterval = 1; // Default: tick every frame (no decimation)
 
-  /** Particle worker fills `RigidBody.speed` only if some registered type sets this true. */
+  /**
+   * Particle worker fills `RigidBody.speed` for this entityType when true.
+   * Scene gate: if no registered type opts in, the hypot loop does not run.
+   */
   static deriveSpeed = false;
 
   // Neighbor data (from spatial worker)
@@ -601,8 +604,8 @@ export class GameObject {
   }
 
   /**
-   * Speed (px/s). Particle worker writes `RigidBody.speed` only when a registered
-   * type sets `static deriveSpeed = true`.
+   * Speed (px/s). Particle worker writes `RigidBody.speed` for types that set
+   * `static deriveSpeed = true`. Other types in the same scene stay 0/stale.
    */
   get speed() {
     if (!this._hasComponents.RigidBody) return 0;

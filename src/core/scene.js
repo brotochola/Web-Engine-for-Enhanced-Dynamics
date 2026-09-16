@@ -875,6 +875,7 @@ class Scene {
 
         const entityTypeId = this.registeredClasses.length;
         ParentClass.entityType = entityTypeId;
+        if (ParentClass.deriveSpeed === true) this._anyDeriveSpeed = true;
 
         // Auto-detect script path from parent class (for worker script loading)
         const parentScriptPath = ParentClass.scriptUrl ? urlToPath(ParentClass.scriptUrl) : null;

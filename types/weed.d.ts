@@ -822,7 +822,10 @@ export declare class GameObject {
   static startIndex: number;
   static poolSize: number;
   static tickInterval: number;
-  /** Particle worker fills RigidBody.speed when any registered type sets this true. */
+  /**
+   * Particle worker fills RigidBody.speed for this entityType when true.
+   * Scene gate skips the hypot loop if no registered type opts in.
+   */
   static deriveSpeed: boolean;
   static entityType: number | null;
   static scene: Scene | null;
