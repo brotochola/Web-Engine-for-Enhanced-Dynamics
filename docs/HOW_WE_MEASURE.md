@@ -6,6 +6,8 @@ Older notes in this repo called the three layers **L1 / L2 / L3** and pairwise r
 
 Living memory of what was already tried lives in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). Read that file before you reimplement an old idea.
 
+The per-feature map (what each catalog row is, what was already measured, how to measure it against its own champion) is [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md). A night of scoreboard work also writes a diary in [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md). Expect a **map per row**, not a single “best WeedJS” medal.
+
 ## Three layers
 
 ### 1. Kernel microbenchmark
@@ -57,6 +59,10 @@ pnpm bench:headed:median
 # Engine feature scoreboard versus a git rev (default main 0695a8d)
 pnpm bench:scoreboard --vs 0695a8d
 pnpm bench:scoreboard --only box2d,emit,spatial,visPoly,steadyCombat --smoke
+pnpm bench:scoreboard --vs 0695a8d --headed-only box2d,visPoly,steadyCombat
+
+# Do not use product-confirm for the keep-set vs main claim: it still runs Predator.
+# Use --only box2d,emit,steadyCombat --headed-only box2d,steadyCombat instead.
 
 # Product confirm for the current keep set versus main (Balls + Predator pair)
 pnpm bench:product-confirm

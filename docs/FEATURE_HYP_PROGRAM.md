@@ -32,7 +32,7 @@ Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../tests/bench/featureT
 | H | Pre-render / lights | Skip pixi light re-cull; vis-poly cache copies into write slot | `VISIBILITY_MS` | Predator |
 | I | Treiber / rings | L1 pop-push; ECB = batched `spawnDespawnBatch` | pop-push/s | Balls |
 | J | Bullet tick | Compact active list shipped | particle STEP | Predator |
-| K | TileMap queries | L1 `getTileId` | ns/getTileId | — |
+| K | TileMap queries | L1 `getTileId` + `TilemapStressScene` | ns/getTileId; logic0 STEP | — |
 | **L** | LiquidFun particle step | H1–H4, H6–H14, H16, H21, **H26** shipped; H5 / H15 / H17–H20 / H22 / H24–H25 / H27–H29 rejected; H23 docs | `physics.LIQUIDFUN_MS` / `BOX2D_MS` | `pnpm test:visual --scene liquidfun,lfstress` |
 
 Skip: full rigid-body Box2D WASM step (LiquidFun's *particle* step is in scope — see Wave L).
@@ -143,7 +143,7 @@ pnpm bench:feature:spatial
 
 ## Wave 0 — QueryAABB burst
 
-`servicePendingQueryBurst` mirrors ray burst (1024, spin + `Atomics.wait`). Shipped in `weedjsPost.serviceQueryAabb`.
+`servicePendingQueryBurst` was tried. **Dropped.** Isolation on `QueryAabbStressScene`: physics step **+835%**. Do not reintroduce the burst. See [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
 
 ```bash
 pnpm test:node -- tests/node/queryAabbBurst.test.js

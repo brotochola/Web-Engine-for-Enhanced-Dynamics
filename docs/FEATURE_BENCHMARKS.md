@@ -8,9 +8,11 @@ The machine-readable catalog (one row per hot engine feature, with kernel, scene
 pnpm bench:scoreboard --vs 0695a8d
 ```
 
-That writes [`tests/results/scoreboard/report.md`](../tests/results/scoreboard/report.md) and updates [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). Artistic demos are not scoreboard rows. Vis-poly uses `visPolyStressScene` (`lighting.raycasted: true`). Combat-class particle + spatial load uses `steadyCombatScene` (seeded, constant emit). Do not patch `demos/predatorScene` so a bench can close.
+That writes [`tests/results/scoreboard/report.md`](../tests/results/scoreboard/report.md) and updates [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). Artistic demos are not scoreboard rows. Vis-poly uses `visPolyStressScene` (`lighting.raycasted: true`). Combat-class particle + spatial load uses `steadyCombatScene` (seeded, constant emit). Do not patch `demos/predatorScene` so a bench can close. Human map of each row: [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md). Night diary: [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md).
 
-First smoke versus `0695a8d` (5 rows: emit, spatial, box2d, visPoly, steadyCombat) is in that report. Load closed on every row, including the new bench scenes. The tree is **not** claimed faster than main: box2d and visPoly were WORSE on n=1 smoke. Re-run without `--smoke` / `--only` before a product claim.
+`--headed-only box2d,visPoly,steadyCombat` opens a window only for those ids (5 × 25 s / 18 s). Compute and zenithal stay on the stress protocol even though the catalog marks them headed. A scoreboard with **no** flags would head those GPU scenes; `--headless` would un-head Balls and vis-poly too.
+
+First smoke versus `0695a8d` (5 rows: emit, spatial, box2d, visPoly, steadyCombat) is in that report. Load closed on every row, including the new bench scenes. The tree is **not** claimed faster than main: box2d and visPoly were WORSE on n=1 smoke. That smoke **does not** override the headed 5-run Balls confirm (physics −5.2%, `BODY_COUNT` 9004/9004). Re-run without `--smoke` before a product claim.
 
 Older docs said **L1 / L2 / L3**. Those names mean **kernel / stress scene / gameplay**. The keep/drop rules live in [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). Already-tried claims live in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
 
@@ -113,7 +115,7 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | Box2D QueryAABB | `box2dQueryAabb.js` | `queryAabbBurst.test.js` (protocol) | `stressScenes/QueryAabbStressScene` + demo self-check | — | burst 1024 / physics STEP |
 | NavGrid Dijkstra / A* | `navGrid.js`, particle_worker | `navGridMicrobench.mjs` | `stressScenes/NavStressScene` | car / bichos / Predator | ms/path; respects `maxProcessingMsPerFrame` |
 | AngularSweep visibility | `angularSweep.js` | `angularSweepMicrobench.mjs` | `visPolyStressScene` (`raycasted: true`) | not Predator default (raycasted off) | polygons/s + `VISIBILITY_MS` / pre-render `STEP_MS` |
-| TileMap SAB queries | `tileMap.js` | `tileMapMicrobench.mjs` | low value | tile demos | ns/`getTileId` |
+| TileMap SAB queries | `tileMap.js` | `tileMapMicrobench.mjs` | `stressScenes/TilemapStressScene` (fixed-rate `getTileId`) | tile demos | ns/`getTileId`; logic0 `STEP_MS` |
 | QuerySystem publish | `querySystem.js` | `querySystemMicrobench.mjs` | `stressScenes/QueryChurnScene` | — | `QUERY_PUBLISH_MS` (gated) / skip-if-unchanged |
 | Pre-render cull + queue | `preRenderWorker` | `srFlagsMicrobench.mjs` (7 Uint8 vs packed — **kill** L1+L3: cull kernel wins, queue noise, dirty RMW loses; Predator `preRender.STEP_MS` in noise vs 7 columns) | `stressScenes/RenderQueueStressScene` | Predator | L1 packed/strided; L3 `COLLECT_MS`/`EMIT_MS`/`STEP_MS` |
 | Compute layer (pack + dispatch) | `computeLayer.js`, `box2dBodyPack.js` | `computePackMicrobench.mjs` | `stressScenes/ComputeStressScene` (256², iterate 20, WebGPU) | burningBoxes | L1 pack ms; L2 `CUSTOM_LAYERS_MS` (headed) |
@@ -152,6 +154,7 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 | ComputeStressScene | `/tests/bench/stressScenes/computeStressScene.js` | 256² ping-pong, 20 iterate+swap, 64 fed boxes → `CUSTOM_LAYERS_MS` (WebGPU) |
 | VisPolyStressScene | `/tests/bench/stressScenes/visPolyStressScene.js` | Seeded lights + occluders, `lighting.raycasted: true` → `VISIBILITY_MS` |
 | SteadyCombatScene | `/tests/bench/stressScenes/steadyCombatScene.js` | Fixed boxes + movers + constant `emitFlat` → stable `BODY_COUNT` / `ACTIVE_PARTICLES` |
+| TilemapStressScene | `/tests/bench/stressScenes/tilemapStressScene.js` | Seeded `getTileId` at a fixed rate → logic0 `STEP_MS` |
 
 ```bash
 node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \

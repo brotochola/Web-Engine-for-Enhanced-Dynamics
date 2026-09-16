@@ -92,6 +92,23 @@ test('scoreboard load gate fails when a load key cv is 50% or higher', async () 
   assert.ok(miss.drifts.some((d) => d.key === 'ACTIVE_PARTICLES' && /cv too high/.test(d.reason || '')));
 });
 
+test('--headed-only forces headed only for named feature ids', async () => {
+  const { parseMeasureArgs, sceneWantsHeaded } = await import('../bench/measureLib.mjs');
+  const args = parseMeasureArgs(['--headed-only', 'box2d,steadyCombat']);
+  assert.deepEqual(args.headedOnly, ['box2d', 'steadyCombat']);
+  const headedScene = { headed: true };
+  const stressScene = { headed: false };
+  assert.equal(sceneWantsHeaded(headedScene, args, 'box2d'), true);
+  assert.equal(sceneWantsHeaded(headedScene, args, 'compute'), false);
+  assert.equal(sceneWantsHeaded(headedScene, args, 'decorations'), false);
+  assert.equal(sceneWantsHeaded(stressScene, args, 'emit'), false);
+  const allHeaded = parseMeasureArgs([]);
+  assert.equal(allHeaded.headedOnly, null);
+  assert.equal(sceneWantsHeaded(headedScene, allHeaded, 'compute'), true);
+  const headless = parseMeasureArgs(['--headless', '--headed-only', 'box2d']);
+  assert.equal(sceneWantsHeaded(headedScene, headless, 'box2d'), false);
+});
+
 test('explainHit names both sides and the 3% rule for a slower physics step', async () => {
   const { explainHit } = await import('../bench/measureLib.mjs');
   const text = explainHit({

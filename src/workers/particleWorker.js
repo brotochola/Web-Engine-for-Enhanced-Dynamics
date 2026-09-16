@@ -1418,6 +1418,7 @@ class ParticleWorker extends AbstractWorker {
 
     const walkability = NavGrid.getWalkabilityArray();
     const gridWidth = this.gridWidth;
+    const gridHeight = this.gridHeight;
     const totalCells = this.totalCells;
 
     scratch.distance.fill(65535);
@@ -1446,7 +1447,7 @@ class ParticleWorker extends AbstractWorker {
         const nx = cellX + NAV_DX[dir];
         const ny = cellY + NAV_DY[dir];
 
-        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= this.gridHeight) continue;
+        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
 
         const neighbor = ny * gridWidth + nx;
 
@@ -1477,7 +1478,7 @@ class ParticleWorker extends AbstractWorker {
         const nx = cellX + NAV_DX[dir];
         const ny = cellY + NAV_DY[dir];
 
-        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= this.gridHeight) continue;
+        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
 
         const neighbor = ny * gridWidth + nx;
 

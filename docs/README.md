@@ -34,6 +34,8 @@ This folder contains the engine notes that are closest to the code. The docs are
 | [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)     | Kernel / stress scene / gameplay catalog; scoreboard is `pnpm bench:scoreboard`        |
 | [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md)             | Speed protocol: worker step time, same load ±5% and cv < 50%, keep/drop, scoreboard   |
 | [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md)             | Living log of measured claims — read before reimplementing a speed idea               |
+| [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md)   | Per-catalog-row map: champion, already measured, how to re-measure                    |
+| [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md) | Diary of the overnight scoreboard campaign (not the auto `report.md`)          |
 
 ## Related Project Areas
 

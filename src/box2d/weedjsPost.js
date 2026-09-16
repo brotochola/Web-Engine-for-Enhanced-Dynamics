@@ -1306,9 +1306,7 @@
       }
       return n | 0;
     };
-    if (typeof Box2dQueryAabb.servicePendingQueryBurst === 'function') {
-      Box2dQueryAabb.servicePendingQueryBurst(overlapFn, 1024);
-    } else {
+    if (typeof Box2dQueryAabb.servicePendingQuery === 'function') {
       Box2dQueryAabb.servicePendingQuery(overlapFn);
     }
   }

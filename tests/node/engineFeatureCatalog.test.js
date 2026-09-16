@@ -79,6 +79,28 @@ test('filterFeatures --only keeps the named subset', () => {
   assert.deepEqual(rows.map((r) => r.id), ['emit', 'box2d']);
 });
 
+test('preRender load key is entities processed, not BODY_COUNT', () => {
+  const row = getFeature('preRender');
+  assert.ok(row.load.includes('ENTITIES_PROCESSED'));
+  assert.equal(row.load.includes('BODY_COUNT'), false);
+});
+
+test('tilemap has a seeded stress scene with primary and load', () => {
+  const row = getFeature('tilemap');
+  assert.ok(row.scene, 'tilemap scene');
+  assert.match(row.scene.path, /tilemapStressScene/);
+  assert.equal(row.scene.exportName, 'TilemapStressScene');
+  assert.deepEqual(row.primary, ['logic0_STEP_MS']);
+  assert.ok(row.load.includes('ENTITIES_PROCESSED'));
+  const src = fs.readFileSync(path.join(root, 'tests/bench/stressScenes/tilemapStressScene.js'), 'utf8');
+  assert.match(src, /seed:/);
+  const querier = fs.readFileSync(
+    path.join(root, 'tests/bench/stressScenes/tilemapStress/tilemapStressQuerier.js'),
+    'utf8'
+  );
+  assert.match(querier, /getTileId/);
+});
+
 test('particle tournament aborts unless the snapshot flag is passed', () => {
   const script = path.join(root, 'tests/bench/runParticleHypTournament.mjs');
   const r = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });

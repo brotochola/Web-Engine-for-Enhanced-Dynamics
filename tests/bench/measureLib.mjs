@@ -225,12 +225,20 @@ export function runIntegratedWithRetry(scene, outPath, opts) {
   }
 }
 
-export function measureSceneSide(label, scene, args, outDir) {
-  const headed = scene.headed && !args.headlessAll;
+/** Headed 5×25/18 only if the feature id is in --headed-only; else catalog scene.headed. */
+export function sceneWantsHeaded(scene, args, featureId) {
+  if (!scene) return false;
+  if (args.headlessAll) return false;
+  if (args.headedOnly) return args.headedOnly.includes(featureId);
+  return Boolean(scene.headed);
+}
+
+export function measureSceneSide(label, scene, args, outDir, featureId) {
+  const headed = sceneWantsHeaded(scene, args, featureId);
   const runs = headed ? args.runs : args.stressRuns;
   const warmupMs = headed ? args.warmupMs : args.stressWarmupMs;
   const durationMs = headed ? args.durationMs : args.stressDurationMs;
-  const benchOpts = { warmupMs, durationMs, headed, detailedStats: false };
+  const benchOpts = { warmupMs, durationMs, headed, detailedStats: Boolean(args.detailedStats) };
   const rows = [];
   for (let r = 0; r < runs; r++) {
     const out = path.join(outDir, `${label}-r${r}.json`);
@@ -289,6 +297,8 @@ export function parseMeasureArgs(argv, extras = {}) {
     skipLockstep: false,
     skipNode: false,
     headlessAll: false,
+    headedOnly: null,
+    detailedStats: false,
     smoke: false,
     ...extras,
   };
@@ -298,6 +308,8 @@ export function parseMeasureArgs(argv, extras = {}) {
     else if (a === '--vs' && argv[i + 1]) out.vs = String(argv[++i]);
     else if (a === '--only' && argv[i + 1]) {
       out.only = String(argv[++i]).split(',').map((s) => s.trim()).filter(Boolean);
+    } else if (a === '--headed-only' && argv[i + 1]) {
+      out.headedOnly = String(argv[++i]).split(',').map((s) => s.trim()).filter(Boolean);
     } else if (a === '--warmup-ms' && argv[i + 1]) out.warmupMs = parseInt(argv[++i], 10) || out.warmupMs;
     else if (a === '--duration-ms' && argv[i + 1]) out.durationMs = parseInt(argv[++i], 10) || out.durationMs;
     else if (a === '--skip-kernels') out.skipKernels = true;
@@ -305,6 +317,7 @@ export function parseMeasureArgs(argv, extras = {}) {
     else if (a === '--skip-lockstep') out.skipLockstep = true;
     else if (a === '--skip-node') out.skipNode = true;
     else if (a === '--headless') out.headlessAll = true;
+    else if (a === '--detailed-stats') out.detailedStats = true;
     else if (a === '--smoke') {
       out.smoke = true;
       out.runs = 1;

@@ -4,6 +4,7 @@
  *
  *   pnpm bench:scoreboard --vs 0695a8d
  *   pnpm bench:scoreboard --only box2d,emit,spatial --smoke
+ *   pnpm bench:scoreboard --vs 0695a8d --headed-only box2d,visPoly,steadyCombat
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -26,6 +27,7 @@ import {
   restoreSrcTree,
   runKernelScript,
   sceneMetricKeys,
+  sceneWantsHeaded,
   snapshotSrcTree,
   workloadOk,
   writeJson,
@@ -245,6 +247,16 @@ export function writeReport(payload) {
   lines.push(
     `Gameplay headed ${payload.args.runs} × ${payload.args.warmupMs}/${payload.args.durationMs} ms. Stress headless ${payload.args.stressRuns} × ${payload.args.stressWarmupMs}/${payload.args.stressDurationMs} ms.`
   );
+  if (payload.args?.headedOnly) {
+    lines.push(
+      `Esta corrida usó \`--headed-only ${payload.args.headedOnly.join(',')}\`: solo esas filas abren ventana y corren el protocolo de cinco corridas. El resto de escenas (aunque el catálogo marque headed) usan el protocolo de estrés sin ventana.`
+    );
+  } else if (payload.args.headlessAll) {
+    lines.push('Esta corrida usó `--headless`: ninguna escena abre ventana.');
+  }
+  if (payload.args?.detailedStats) {
+    lines.push('Esta corrida pidió `--detailed-stats`: sub-timers (`VISIBILITY_MS`, etc.) encendidos. No es un confirm de producto.');
+  }
   lines.push(
     'Stats detalladas apagadas (los contadores de carga sí se publican). Carga comparable si la mediana queda en ±5% y el cv de cada clave es menor a 50%. Velocidad keep si una primaria baja al menos 3% en ms (o el kernel sube 3% en ops/s) y ninguna primaria de la fila empeora 3%.'
   );
@@ -363,14 +375,15 @@ function main() {
       }
 
       if (!args.skipScenes && feature.scene) {
-        const cacheKey = `${feature.scene.key}|${feature.scene.headed}|${args.smoke}`;
+        const headed = sceneWantsHeaded(feature.scene, args, feature.id);
+        const cacheKey = `${feature.scene.key}|${headed ? 1 : 0}|${args.smoke}`;
         if (!sceneCache.has(cacheKey)) {
           const sdir = path.join(outRoot, feature.scene.key);
           fs.mkdirSync(sdir, { recursive: true });
           applyBaselineRev(args.vs);
-          const base = measureSceneSide(`${feature.scene.key}-BASE`, feature.scene, args, sdir);
+          const base = measureSceneSide(`${feature.scene.key}-BASE`, feature.scene, args, sdir, feature.id);
           restoreSrcTree(snap);
-          const hyp = measureSceneSide(`${feature.scene.key}-KEEP`, feature.scene, args, sdir);
+          const hyp = measureSceneSide(`${feature.scene.key}-KEEP`, feature.scene, args, sdir, feature.id);
           sceneCache.set(cacheKey, {
             ok: base.ok && hyp.ok,
             error: base.ok ? hyp.error : base.error,
