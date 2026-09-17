@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Ray } from '../../src/core/ray.js';
+import { Box2d } from '../../src/core/box2d.js';
 
 test('Ray beginFrame / consumeStats track outermost calls', () => {
   const prev = Ray.collectDetailedStats;
@@ -28,8 +29,7 @@ test('Ray beginFrame / consumeStats track outermost calls', () => {
   }
 });
 
-test('Ray work does not increment Box2d ray stats', async () => {
-  const { Box2d } = await import('../../src/core/box2d.js');
+test('Ray work does not increment Box2d ray stats', () => {
   const prevRay = Ray.collectDetailedStats;
   const prevBox = Box2d.collectDetailedStats;
   Ray.collectDetailedStats = true;

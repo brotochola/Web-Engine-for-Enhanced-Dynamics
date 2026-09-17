@@ -217,6 +217,7 @@ import { BigAtlasInspector } from './core/bigAtlasInspector.js';
 import { SoundManager } from './core/soundManager.js';
 import * as SaveGameNS from './core/save/saveGame.js';
 import { SaveStore } from './core/save/saveStore.js';
+import * as utilsNS from './util/utils.js';
 import {
   containerRadius,
   distanceSq2D,
@@ -240,7 +241,16 @@ import { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from './core/liquid
 import { Box2d } from './core/box2d.js';
 import { Decal } from './core/decal.js';
 import { Query } from './core/query.js';
-import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from './core/decorationPool.js';
+import {
+  DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
+  DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
+  DECORATION_NO_PARENT,
+  SWAY_OFF,
+  SWAY_LOOP,
+  SWAY_IMPULSE,
+} from './core/decorationPool.js';
 import { Decoration } from './core/decoration.js';
 import { DecorationSpatial } from './core/decorationSpatial.js';
 import { BulletPool } from './core/bulletPool.js';
@@ -336,6 +346,17 @@ const enums = Object.freeze({
 });
 
 const WEED = Object.freeze({
+  ...utilsNS,
+  ...enums,
+  ...SaveGameNS,
+
+  DEBUG_FLAGS,
+  DEBUG_SELECTED_ENTITY_OFFSET,
+  DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
+  DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
+  DECORATION_NO_PARENT,
 
   // Core
   GameEngine,

@@ -3384,7 +3384,11 @@ export interface WeedEnums {
   DEBUG_SELECTED_ENTITY_OFFSET: typeof DEBUG_SELECTED_ENTITY_OFFSET;
 }
 
-export interface WeedNamespace {
+export interface WeedNamespace extends WeedEnums {
+  mixSeed: typeof import('./utils').mixSeed;
+  seededRandom: typeof import('./utils').seededRandom;
+  collisionPairKey: typeof import('./utils').collisionPairKey;
+  setupWorkerCommunication: typeof import('./utils').setupWorkerCommunication;
   GameEngine: typeof GameEngine;
   Scene: typeof Scene;
   GameObject: typeof GameObject;
