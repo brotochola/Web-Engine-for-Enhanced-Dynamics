@@ -180,8 +180,9 @@ On-demand Box2D broadphase query for entity ids (parallel to spatial `neighborDa
 | Logic | `Box2d.castRayAll(ox, oy, dx, dy, out?, filter?)` | Sync; borrowed `{ entityIndex, fraction, hitX, hitY }[]` |
 | Scene (main) | `Box2d.castRayAllAsync(...)` | Async |
 
-- `out` must be `Int32Array`. Return value = full hit count; written slots = `min(count, out.length)`.
-- Single-flight SAB (`box2dQueryAabb`): one outstanding query process-wide; concurrent callers serialize.
+- `out` must be `Int32Array` (`queryAABB` / `overlapCircle`). Return value = full hit count; written slots = `min(count, out.length)`.
+- `overlapCircle` / `castRayAll` fill the WASM query slots / hits (same buffers as closest ray). `castRayAll` copies the first four floats per hit (`entity`, `fraction`, `hitX`, `hitY`).
+- Single-flight SAB (`box2dQueryAabb` / overlap / castAll): one outstanding query of each kind process-wide; concurrent callers serialize.
 - Physics services pending queries in `doStep` after command drain (and when `dt==0` so paused worlds still answer).
 - Optional `filter`: `{ categoryBits, maskBits }` (defaults match `physics-api` overlap filters).
 - `Box2d.queryAABB` is Box2D fixtures. `Query.query` is ECS component bitmasks. Different systems.

@@ -46,6 +46,7 @@ export class Box2dQueryAabbProbe extends GameObject {
     this._queried = false;
     this._out = new Int32Array(64);
     this._circleOut = new Int32Array(64);
+    this._rayOut = [];
   }
 
   tick() {
@@ -61,6 +62,7 @@ export class Box2dQueryAabbProbe extends GameObject {
         this._out,
       );
       const circleCount = Box2d.overlapCircle(this.x, this.y, half, this._circleOut);
+      const rayHits = Box2d.castRayAll(this.x - half, this.y, half * 2, 0, this._rayOut);
 
       let foundSelf = false;
       for (let i = 0; i < Math.min(count, this._out.length); i++) {
@@ -70,18 +72,22 @@ export class Box2dQueryAabbProbe extends GameObject {
       for (let i = 0; i < Math.min(circleCount, this._circleOut.length); i++) {
         if (this._circleOut[i] === this.index) foundSelfCircle = true;
       }
+      let foundRay = false;
+      for (let i = 0; i < rayHits.length; i++) {
+        if ((rayHits[i].entityIndex | 0) >= 0) foundRay = true;
+      }
 
       // Bodies may not exist on the first frame — retry until hits appear.
       if (count < this._expectedMin) return;
 
       this._queried = true;
-      const ok = foundSelf && foundSelfCircle;
+      const ok = foundSelf && foundSelfCircle && foundRay;
       console.log(
-        `[Box2dQueryAabbProbe] count=${count} circle=${circleCount} foundSelf=${foundSelf} foundSelfCircle=${foundSelfCircle} ok=${ok}`,
+        `[Box2dQueryAabbProbe] count=${count} circle=${circleCount} rays=${rayHits.length} foundSelf=${foundSelf} foundSelfCircle=${foundSelfCircle} foundRay=${foundRay} ok=${ok}`,
       );
       if (!ok) {
         console.error(
-          `[Box2dQueryAabbProbe] FAIL expectedMin=${this._expectedMin} count=${count} circle=${circleCount} foundSelf=${foundSelf} foundSelfCircle=${foundSelfCircle}`,
+          `[Box2dQueryAabbProbe] FAIL expectedMin=${this._expectedMin} count=${count} circle=${circleCount} rays=${rayHits.length} foundSelf=${foundSelf} foundSelfCircle=${foundSelfCircle} foundRay=${foundRay}`,
         );
       }
       this.sendMessageToScene({
@@ -89,6 +95,8 @@ export class Box2dQueryAabbProbe extends GameObject {
         ok,
         count,
         foundSelf,
+        circleCount,
+        rayCount: rayHits.length,
       });
     } catch (err) {
       // SAB not bound yet (pre-box2dReady) — retry next tick.

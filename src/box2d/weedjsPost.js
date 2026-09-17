@@ -2736,4 +2736,8 @@
   };
 
   Module.onRuntimeInitialized = notifyModuleReady;
-  // Defer so weed_post can
+  // Defer so weed_post can importScripts(physics_host) and set hostMode first.
+  if (typeof Module !== 'undefined' && Module.calledRun) {
+    setTimeout(notifyModuleReady, 0);
+  }
+})();

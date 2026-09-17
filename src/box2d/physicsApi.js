@@ -2279,4 +2279,5 @@ function createPhysicsApi(Module) {
 
   }
 
-  ret
+  return { PhysicsWorld, BodyHandle, JointHandle };
+}

@@ -198,3 +198,4 @@
     box2dCastRayAllAsync: box2dCastRayAllAsync,
     servicePendingCastRayAll: servicePendingCastRayAll,
   };
+})(typeof globalThis !== 'undefined' ? globalThis : self);
