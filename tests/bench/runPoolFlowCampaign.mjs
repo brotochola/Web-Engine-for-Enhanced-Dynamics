@@ -23,6 +23,8 @@ import {
   restoreSnapshot,
   runKernelScript,
   snapshotFiles,
+  stepMsFloorOk,
+  usesStressStepFloor,
   workloadOk,
   writeJson,
 } from './measureLib.mjs';
@@ -243,6 +245,9 @@ function measurePair(tag, cell, args, snap, applyHypFace) {
   if (!hypSide.ok) return { ok: false, error: hypSide.error, cell: cell.id, tag };
 
   const work = workloadOk(baseSide.summary, hypSide.summary, cell.load);
+  const floor = usesStressStepFloor(cell.scene)
+    ? stepMsFloorOk(baseSide.summary, hypSide.summary, [cell.primary])
+    : { ok: true, hits: [], reason: '' };
   const speed = decideMs(baseSide.summary[cell.primary], hypSide.summary[cell.primary], cell.primary);
   let secondary = null;
   const secKey = cell.secondary?.[0];
@@ -250,7 +255,7 @@ function measurePair(tag, cell, args, snap, applyHypFace) {
     secondary = decideMs(baseSide.summary[secKey], hypSide.summary[secKey], secKey);
   }
   let verdict = 'FAIL';
-  if (!work.ok) verdict = 'FAIL';
+  if (!work.ok || !floor.ok) verdict = 'FAIL';
   else if (speed.verdict === 'KEEP' && secondary && secondary.verdict === 'WORSE') {
     verdict = 'TIE';
   } else verdict = speed.verdict;
@@ -267,6 +272,7 @@ function measurePair(tag, cell, args, snap, applyHypFace) {
     base: baseSide.summary,
     hyp: hypSide.summary,
     workload: work,
+    floor,
     speed,
     secondary,
     verdict,
@@ -302,7 +308,7 @@ function pairSection(title, pair, extraKeys) {
     `Carga: ${fmtDrift(pair.workload)}.`,
     '',
     pair.verdict === 'FAIL'
-      ? `Veredicto de esta cara: **FAIL**. ${fmtDrift(pair.workload)}. No se usa el delta como keep/drop.`
+      ? `Veredicto de esta cara: **FAIL**. ${!pair.floor?.ok ? pair.floor.reason : fmtDrift(pair.workload)}. No se usa el delta como keep/drop.`
       : `Veredicto de esta cara: **${pair.verdict}**. ${pair.speed?.reason || ''}`,
     '',
   ];

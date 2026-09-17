@@ -3,6 +3,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { STEP_MS_FLOOR } from './benchmarkDefaults.mjs';
+
+const TIMEIT_MAX_ITERATIONS = 50_000_000;
+
 /** Deterministic PRNG so before/after runs see identical scenarios. */
 export function mulberry32(seed) {
   let a = seed >>> 0;
@@ -17,30 +21,70 @@ export function mulberry32(seed) {
 
 /**
  * Time `fn(iterations)` over `reps` runs; return median ms and ops/s.
+ * Each sample must last at least `STEP_MS_FLOOR` ms (same 3 ms noise floor as
+ * stress STEP_MS). If the median is cheaper, iterations grow up to
+ * TIMEIT_MAX_ITERATIONS. Arity-0 `fn` is invoked that many times per sample.
+ * Pass `minMs: 0` to skip the floor (unit tests / one-shot probes).
  * @param {string} label
  * @param {(iterations: number) => void} fn
- * @param {{ iterations?: number, warmup?: number, reps?: number, silent?: boolean }} [opts]
+ * @param {{ iterations?: number, warmup?: number, reps?: number, silent?: boolean, minMs?: number, maxIterations?: number }} [opts]
  */
 export function timeIt(label, fn, opts = {}) {
-  const iterations = opts.iterations ?? 100000;
-  const warmup = opts.warmup ?? Math.min(2000, iterations);
+  const minMs = opts.minMs === undefined ? STEP_MS_FLOOR : Number(opts.minMs);
+  const maxIterations = opts.maxIterations ?? TIMEIT_MAX_ITERATIONS;
   const reps = opts.reps ?? 5;
-  fn(warmup);
-  const times = [];
-  for (let r = 0; r < reps; r++) {
-    const t0 = performance.now();
-    fn(iterations);
-    times.push(performance.now() - t0);
+  const loopArity0 = fn.length === 0;
+  let iterations = opts.iterations ?? (loopArity0 ? 1 : 100000);
+  const startIterations = iterations;
+  const invoke = (n) => {
+    if (loopArity0) {
+      for (let i = 0; i < n; i++) fn();
+    } else {
+      fn(n);
+    }
+  };
+
+  const runReps = (n) => {
+    const warmup = opts.warmup ?? Math.min(2000, n);
+    invoke(warmup);
+    const times = [];
+    for (let r = 0; r < reps; r++) {
+      const t0 = performance.now();
+      invoke(n);
+      times.push(performance.now() - t0);
+    }
+    times.sort((x, y) => x - y);
+    return times[(times.length / 2) | 0];
+  };
+
+  let ms = runReps(iterations);
+  while (minMs > 0 && ms < minMs && iterations < maxIterations) {
+    const next = Math.min(
+      maxIterations,
+      Math.max(iterations + 1, Math.ceil((iterations * minMs) / Math.max(ms, 1e-6) * 1.15))
+    );
+    if (next === iterations) break;
+    if (!opts.silent) {
+      console.log(
+        `${label}: sample ${ms.toFixed(3)} ms < ${minMs} ms floor; iterations ${iterations} → ${next}`
+      );
+    }
+    iterations = next;
+    ms = runReps(iterations);
   }
-  times.sort((x, y) => x - y);
-  const ms = times[(times.length / 2) | 0];
-  const opsPerSec = (iterations / ms) * 1000;
-  if (!opts.silent) {
-    console.log(
-      `${label}: median ${ms.toFixed(1)} ms for ${iterations} ops -> ${Math.round(opsPerSec).toLocaleString()} ops/s`
+  if (minMs > 0 && ms < minMs) {
+    throw new Error(
+      `${label}: timeIt sample still ${ms.toFixed(3)} ms after ${iterations} iterations (floor ${minMs} ms)`
     );
   }
-  return { label, ms, opsPerSec, iterations, reps };
+  const opsPerSec = (iterations / ms) * 1000;
+  if (!opts.silent) {
+    const scaled = iterations !== startIterations ? ` (scaled from ${startIterations})` : '';
+    console.log(
+      `${label}: median ${ms.toFixed(1)} ms for ${iterations} ops${scaled} -> ${Math.round(opsPerSec).toLocaleString()} ops/s`
+    );
+  }
+  return { label, ms, opsPerSec, iterations, reps, startIterations };
 }
 
 /**

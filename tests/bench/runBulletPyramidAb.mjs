@@ -24,6 +24,8 @@ import {
   restoreSrcTree,
   runKernelScript,
   snapshotSrcTree,
+  stepMsFloorOk,
+  usesStressStepFloor,
   workloadOk,
   writeJson,
 } from './measureLib.mjs';
@@ -89,9 +91,12 @@ function measurePair(tag, scene, args, applyBase, applyHypFace) {
 
   const loadKeys = scene.key === 'predator' ? ['ACTIVE_BULLETS', 'BODY_COUNT'] : ['ACTIVE_BULLETS'];
   const work = workloadOk(baseSide.summary, hypSide.summary, loadKeys);
+  const floor = usesStressStepFloor(scene)
+    ? stepMsFloorOk(baseSide.summary, hypSide.summary, ['particle_STEP_MS'])
+    : { ok: true, hits: [], reason: '' };
   const speed = decideMs(baseSide.summary.particle_STEP_MS, hypSide.summary.particle_STEP_MS, 'particle_STEP_MS');
   let verdict = 'FAIL';
-  if (!work.ok) verdict = 'FAIL';
+  if (!work.ok || !floor.ok) verdict = 'FAIL';
   else verdict = speed.verdict;
   return {
     ok: true,
@@ -104,6 +109,7 @@ function measurePair(tag, scene, args, applyBase, applyHypFace) {
     base: baseSide.summary,
     hyp: hypSide.summary,
     workload: work,
+    floor,
     speed,
     verdict,
   };
@@ -138,7 +144,7 @@ function pairSection(title, pair, extraKeys) {
     `Carga: ${fmtDrift(pair.workload)}.`,
     '',
     pair.verdict === 'FAIL'
-      ? `Veredicto de esta cara: **FAIL**. ${fmtDrift(pair.workload)}. No se usa el delta de \`particle_STEP_MS\` como keep/drop.`
+      ? `Veredicto de esta cara: **FAIL**. ${!pair.floor?.ok ? pair.floor.reason : fmtDrift(pair.workload)}. No se usa el delta de \`particle_STEP_MS\` como keep/drop.`
       : `Veredicto de esta cara: **${pair.verdict}**. ${pair.speed?.reason || ''}`,
     '',
   ];

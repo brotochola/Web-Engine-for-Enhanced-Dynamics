@@ -20,6 +20,7 @@ import {
   SPEED_PCT,
   workloadOk,
   writeJson,
+  stepMsFloorOk,
 } from './measureLib.mjs';
 
 const outDir = path.join(repoRoot, 'tests/results/nav-hyps');
@@ -73,6 +74,8 @@ function decide(base, hyp, loadKeys) {
   });
   if (!base.ok || !hyp.ok) return { verdict: 'FAIL', load, hits, error: base.error || hyp.error };
   if (!load.ok) return { verdict: 'FAIL', load, hits };
+  const floor = stepMsFloorOk(base.summary, hyp.summary, ['particle_STEP_MS']);
+  if (!floor.ok) return { verdict: 'FAIL', load, hits, floor };
   const particle = hits[0];
   if (particle.deltaPct >= SPEED_PCT) return { verdict: 'WORSE', load, hits };
   if (particle.deltaPct <= -SPEED_PCT) return { verdict: 'KEPT', load, hits };
@@ -136,6 +139,7 @@ function main() {
         `- particle_STEP_MS ${p.base?.toFixed?.(3)} → ${p.hyp?.toFixed?.(3)} ms (${p.deltaPct >= 0 ? '+' : ''}${p.deltaPct?.toFixed?.(1)}%)`,
         `- logic0_STEP_MS ${l.base?.toFixed?.(3)} → ${l.hyp?.toFixed?.(3)} ms (${l.deltaPct >= 0 ? '+' : ''}${l.deltaPct?.toFixed?.(1)}%)`,
         `- carga: ${r.decision.load.ok ? 'OK' : 'NO'}`,
+        ...(r.decision.floor && !r.decision.floor.ok ? [`- ${r.decision.floor.reason}`] : []),
         '',
       ];
     }),

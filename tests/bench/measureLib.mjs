@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { workerLoadPct } from '../../src/util/workersUtils.js';
-import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
+import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS, STEP_MS_FLOOR } from './benchmarkDefaults.mjs';
 import { median, pctDelta, writeJson } from './featureTournamentLib.mjs';
 import { applyWorkloadCounts } from './micro-opts-hyps/hypPatches.mjs';
 
@@ -17,6 +17,53 @@ const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBen
 export const LOAD_CV_FAIL = 0.5;
 export const LOAD_PCT_FAIL = 5;
 export const SPEED_PCT = 3;
+export { STEP_MS_FLOOR };
+
+function isMsPrimaryMetric(key) {
+  return typeof key === 'string' && /_MS$/i.test(key);
+}
+
+/**
+ * Stress keep/drop only. Gameplay (`kind: 'gameplay'`, or a demo path) skips the 3 ms floor.
+ * Campaigns that omit `kind` still count as stress when the path is under stressScenes.
+ */
+export function usesStressStepFloor(scene) {
+  if (!scene) return false;
+  if (scene.kind === 'gameplay') return false;
+  if (scene.kind === 'stress') return true;
+  const p = String(scene.path || '');
+  if (p.includes('/demos/')) return false;
+  return p.includes('/stressScenes/') || scene.headed === false;
+}
+
+function stepMsFloorHits(summary, primaryKeys) {
+  const hits = [];
+  for (const key of primaryKeys || []) {
+    if (!isMsPrimaryMetric(key)) continue;
+    const med = summary?.[key]?.median;
+    if (!Number.isFinite(med)) continue;
+    if (med < STEP_MS_FLOOR) hits.push({ key, median: med });
+  }
+  return hits;
+}
+
+export function explainStepMsFloor(hits) {
+  if (!hits?.length) return '';
+  const bits = hits.map((h) => `${h.side} ${h.key}=${h.median.toFixed(3)} ms`);
+  return (
+    `step floor: primaria de estrés bajo ${STEP_MS_FLOOR} ms (${bits.join('; ')}). ` +
+    'Subí la perilla de esa escena (más partículas, balas, decorations, cuerpos, stamps, mapa o rays). ' +
+    'El delta no cuenta como keep/drop.'
+  );
+}
+
+/** Both sides must have every ms primary ≥ STEP_MS_FLOOR or the pair is not comparable. */
+export function stepMsFloorOk(baseSum, hypSum, primaryKeys) {
+  const baseHits = stepMsFloorHits(baseSum, primaryKeys).map((h) => ({ ...h, side: 'baseline' }));
+  const hypHits = stepMsFloorHits(hypSum, primaryKeys).map((h) => ({ ...h, side: 'hyp' }));
+  const hits = [...baseHits, ...hypHits];
+  return { ok: hits.length === 0, hits, reason: explainStepMsFloor(hits) };
+}
 
 function walkFiles(dir, acc = []) {
   if (!fs.existsSync(dir)) return acc;

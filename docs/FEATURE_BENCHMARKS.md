@@ -24,6 +24,8 @@ Older docs said **L1 / L2 / L3**. Those names mean **kernel / stress scene / gam
 
 Always compare with the **same flags**, prefer `pnpm bench:headed:median` (5 runs, warmup 25 s, measure 18 s), and check load (`BODY_COUNT`, and `ACTIVE_PARTICLES` on Predator) within 5 percent.
 
+A stress A/B whose primary median is **below 3 ms** is not comparable. The harness fails the row (`step floor:`). Raise that scene's load before reading keep/drop. Gameplay rows skip the floor. Kernel samples use the same 3 ms `timeIt` floor. Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
+
 Stress scenes live only under [`tests/bench/stressScenes/`](../tests/bench/stressScenes/). Demos stay in `demos/<demoName>/`.
 
 Methodology for the integrated harness: [`tests/bench/BENCHMARK_METHODOLOGY.md`](../tests/bench/BENCHMARK_METHODOLOGY.md).
@@ -32,7 +34,7 @@ Methodology for the integrated harness: [`tests/bench/BENCHMARK_METHODOLOGY.md`]
 
 ```text
 baseline kernel → patch → kernel
-baseline stress scene → patch → stress scene (feature metric + STEP_MS, same load)
+baseline stress scene → patch → stress scene (feature metric + STEP_MS, same load, primary ≥ 3 ms)
 pnpm test
 gameplay scene only if the change can affect a real demo / other workers
 ```

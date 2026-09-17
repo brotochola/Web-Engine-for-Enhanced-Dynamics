@@ -29,6 +29,8 @@ import {
   sceneMetricKeys,
   sceneWantsHeaded,
   snapshotSrcTree,
+  stepMsFloorOk,
+  usesStressStepFloor,
   workloadOk,
   writeJson,
 } from './measureLib.mjs';
@@ -63,6 +65,10 @@ function decideRow(feature, kernel, scenePair) {
         .join(', ')}`
     );
   }
+  if (usesStressStepFloor(feature.scene) && scenePair?.ok && scenePair.base && scenePair.hyp) {
+    const floor = stepMsFloorOk(scenePair.base, scenePair.hyp, feature.primary);
+    if (!floor.ok) reasons.push(floor.reason);
+  }
 
   const hits = [];
   if (kernel?.baseOps != null && kernel?.hypOps != null) {
@@ -91,6 +97,7 @@ function decideRow(feature, kernel, scenePair) {
         r.startsWith('load') ||
         r.startsWith('scene failed') ||
         r.startsWith('kernel failed') ||
+        r.startsWith('step floor:') ||
         r.includes('BODY_COUNT')
     )
   ) {
@@ -203,13 +210,14 @@ function writeFeatureSection(row, payload) {
   }
 
   const hits = row.decision.hits || [];
+  if (row.decision.reasons?.length) {
+    lines.push(`Motivo: ${row.decision.reasons.join(' ')}`);
+    lines.push('');
+  }
   if (hits.length) {
     lines.push('Por qué el veredicto:');
     lines.push('');
     for (const hit of hits) lines.push(`- ${explainHit(hit)}`);
-    lines.push('');
-  } else if (row.decision.reasons?.length) {
-    lines.push(`Motivo: ${row.decision.reasons.join(' ')}`);
     lines.push('');
   }
 
