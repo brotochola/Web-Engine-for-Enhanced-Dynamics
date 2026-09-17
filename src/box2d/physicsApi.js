@@ -1224,14 +1224,25 @@ function createPhysicsApi(Module) {
 
     castRayClosest(ox, oy, dx, dy, filter = {}) {
       const f = filterArgs(filter);
-      return castRayClosestFn(
-        this.worldId,
+      return this.castRayClosestBits(
         ox,
         oy,
         dx,
         dy,
         f.categoryBits,
         f.maskBits,
+      );
+    }
+
+    castRayClosestBits(ox, oy, dx, dy, categoryBits, maskBits) {
+      return castRayClosestFn(
+        this.worldId,
+        ox,
+        oy,
+        dx,
+        dy,
+        categoryBits,
+        maskBits,
       );
     }
 

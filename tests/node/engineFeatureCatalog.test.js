@@ -174,6 +174,9 @@ test('box2dRayJs uses BoxBusy scene and box2dCastRayClosest', () => {
     'utf8'
   );
   assert.match(driver, /box2dCastRayClosest/);
+  const post = fs.readFileSync(path.join(root, 'src/box2d/weedjsPost.js'), 'utf8');
+  assert.match(post, /function serviceRayCastClosest\(/);
+  assert.match(post, /castRayClosestBits/);
 });
 
 test('particle tournament aborts unless the snapshot flag is passed', () => {

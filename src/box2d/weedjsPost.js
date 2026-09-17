@@ -1311,37 +1311,26 @@
     }
   }
 
+  var rayHitScratch = {
+    hit: false,
+    entityIndex: -1,
+    fraction: 0,
+    hitX: 0,
+    hitY: 0,
+  };
+
+  function serviceRayCastClosest(ox, oy, dx, dy, categoryBits, maskBits) {
+    var n = world.castRayClosestBits(ox, oy, dx, dy, categoryBits, maskBits);
+    return Box2dRayCast.fillRayCastHit(n, world._queryHits, rayHitScratch);
+  }
+
   function serviceRayCast() {
     if (!world || typeof Box2dRayCast === 'undefined') return;
-    var castFn = function (
-      ox,
-      oy,
-      dx,
-      dy,
-      categoryBits,
-      maskBits,
-    ) {
-      var n = world.castRayClosest(ox, oy, dx, dy, {
-        categoryBits: categoryBits,
-        maskBits: maskBits,
-      });
-      if (!(n > 0) || !world._queryHits) {
-        return { hit: false, entityIndex: -1, fraction: 0, hitX: 0, hitY: 0 };
-      }
-      var hits = world._queryHits;
-      return {
-        hit: true,
-        entityIndex: hits[0] | 0,
-        fraction: hits[1],
-        hitX: hits[2],
-        hitY: hits[3],
-      };
-    };
     // Burst: sync logic can post many single-flight casts per its tick.
     if (typeof Box2dRayCast.servicePendingRayCastBurst === 'function') {
-      Box2dRayCast.servicePendingRayCastBurst(castFn, 1024);
+      Box2dRayCast.servicePendingRayCastBurst(serviceRayCastClosest, 1024);
     } else {
-      Box2dRayCast.servicePendingRayCast(castFn);
+      Box2dRayCast.servicePendingRayCast(serviceRayCastClosest);
     }
   }
 

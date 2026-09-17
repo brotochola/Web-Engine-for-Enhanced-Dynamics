@@ -71,6 +71,25 @@
     };
   }
 
+  /** Pack WASM closest-hit floats into the object the SAB ring already reads. */
+  function fillRayCastHit(n, hits, out) {
+    var dest = ensureOut(out);
+    if (!(n > 0) || !hits) {
+      dest.hit = false;
+      dest.entityIndex = -1;
+      dest.fraction = 0;
+      dest.hitX = 0;
+      dest.hitY = 0;
+      return dest;
+    }
+    dest.hit = true;
+    dest.entityIndex = hits[0] | 0;
+    dest.fraction = hits[1];
+    dest.hitX = hits[2];
+    dest.hitY = hits[3];
+    return dest;
+  }
+
   function writeRequest(ox, oy, dx, dy, filter) {
     f32[RAY_F32] = ox;
     f32[RAY_F32 + 1] = oy;
@@ -295,6 +314,7 @@
     isRayCastBound: isRayCastBound,
     box2dCastRayClosest: box2dCastRayClosest,
     box2dCastRayClosestAsync: box2dCastRayClosestAsync,
+    fillRayCastHit: fillRayCastHit,
     servicePendingRayCast: servicePendingRayCast,
     servicePendingRayCastBurst: servicePendingRayCastBurst,
   };
