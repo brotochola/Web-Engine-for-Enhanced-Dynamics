@@ -1,7 +1,43 @@
 // VisualAidsPanel.js — Toggle buttons for debug flags (colliders, velocity, etc.)
 
 import { DEBUG_FLAGS } from '../debugFlags.js';
-import { createPanel, createRow, createDivider } from '../ui/debugDom.js';
+import { createPanel, createRow, createDivider, createButton } from '../ui/debugDom.js';
+
+const VISUAL_METHOD = {
+  colliders: 'showColliders',
+  velocity: 'showVelocity',
+  acceleration: 'showAcceleration',
+  neighbors: 'showNeighbors',
+  spatialGrid: 'showSpatialGrid',
+  entityIndices: 'showEntityIndices',
+  debugDraws: 'showDebugDraws',
+  sleepingEntities: 'showSleepingEntities',
+  sleepingCells: 'showSleepingCells',
+  joints: 'showJoints',
+  entityOrigins: 'showEntityOrigins',
+  entityInfo: 'showEntityInfo',
+  activeOnly: 'showActiveOnly',
+  lights: 'showLights',
+  fpsGraph: 'showFPSGraph',
+};
+
+const VISUAL_FLAG = {
+  colliders: DEBUG_FLAGS.SHOW_COLLIDERS,
+  velocity: DEBUG_FLAGS.SHOW_VELOCITY,
+  acceleration: DEBUG_FLAGS.SHOW_ACCELERATION,
+  neighbors: DEBUG_FLAGS.SHOW_NEIGHBORS,
+  spatialGrid: DEBUG_FLAGS.SHOW_SPATIAL_GRID,
+  entityIndices: DEBUG_FLAGS.SHOW_ENTITY_INDICES,
+  debugDraws: DEBUG_FLAGS.SHOW_DEBUG_DRAWS,
+  sleepingEntities: DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES,
+  sleepingCells: DEBUG_FLAGS.SHOW_SLEEPING_CELLS,
+  joints: DEBUG_FLAGS.SHOW_JOINTS,
+  entityOrigins: DEBUG_FLAGS.SHOW_ENTITY_ORIGINS,
+  entityInfo: DEBUG_FLAGS.SHOW_ENTITY_INFO,
+  activeOnly: DEBUG_FLAGS.SHOW_ACTIVE_ONLY,
+  lights: DEBUG_FLAGS.SHOW_LIGHTS,
+  fpsGraph: DEBUG_FLAGS.SHOW_FPS_GRAPH,
+};
 
 export class VisualAidsPanel {
   constructor(debugUI) {
@@ -10,12 +46,10 @@ export class VisualAidsPanel {
     this.panel = null;
   }
 
-  // ------- DOM creation -------
-
   create() {
     this.panel = createPanel();
-    const row = createRow();
 
+    const row = createRow();
     const visualAids = [
       { key: 'colliders', label: 'Colliders', shortcut: '1' },
       { key: 'velocity', label: 'Velocity', shortcut: '2' },
@@ -34,12 +68,14 @@ export class VisualAidsPanel {
       const btn = document.createElement('button');
       btn.className = 'debug-ui-btn';
       btn.textContent = `[${aid.shortcut}] ${aid.label}`;
+      if (aid.key === 'acceleration') {
+        btn.title = 'Impulse applied this step (Box2D clears ax/ay after integrate)';
+      }
       btn.onclick = () => this.toggleVisualAid(aid.key);
       this.elements.visualToggles[aid.key] = btn;
       row.appendChild(btn);
     }
 
-    // Disable all
     const disableBtn = document.createElement('button');
     disableBtn.className = 'debug-ui-btn danger';
     disableBtn.textContent = '[0] Off';
@@ -47,44 +83,60 @@ export class VisualAidsPanel {
       const flags = this.debugUI.debugFlags;
       if (flags) {
         flags.disableAll();
+        flags.showDebugDraws(true);
         this.updateState();
         this.debugUI.canvas.syncLoop();
       }
     };
     row.appendChild(disableBtn);
+    this.panel.appendChild(row);
 
-    row.appendChild(createDivider());
-
-    // Inspector toggle
+    const row2 = createRow('margin-top:8px');
+    const extras = [
+      { key: 'entityInfo', label: 'Hover info' },
+      { key: 'activeOnly', label: 'Selected only' },
+      { key: 'lights', label: 'Lights' },
+      { key: 'fpsGraph', label: 'FPS graph' },
+    ];
+    for (const aid of extras) {
+      const btn = document.createElement('button');
+      btn.className = 'debug-ui-btn';
+      btn.textContent = aid.label;
+      btn.onclick = () => this.toggleVisualAid(aid.key);
+      this.elements.visualToggles[aid.key] = btn;
+      row2.appendChild(btn);
+    }
+    row2.appendChild(createDivider());
     this.elements.inspectorBtn = document.createElement('button');
     this.elements.inspectorBtn.className = 'debug-ui-btn tool';
     this.elements.inspectorBtn.textContent = '[I] Inspect';
-    this.elements.inspectorBtn.title = 'Click on an entity to inspect its components';
-    this.elements.inspectorBtn.onclick = () => this.debugUI.tools.toggleInspector();
-    row.appendChild(this.elements.inspectorBtn);
+    this.elements.inspectorBtn.title = 'Shift+I — click an entity to inspect';
+    this.elements.inspectorBtn.onclick = () => this.debugUI.tools.toggleInspector('entity');
+    row2.appendChild(this.elements.inspectorBtn);
+    this.panel.appendChild(row2);
 
-    this.panel.appendChild(row);
+    const presets = createRow('margin-top:8px');
+    presets.appendChild(createButton('Physics', '', () => this._preset('physics')));
+    presets.appendChild(createButton('AI', '', () => this._preset('ai')));
+    presets.appendChild(createButton('Perf', '', () => this._preset('perf')));
+    this.panel.appendChild(presets);
+
     return this.panel;
   }
-
-  // ------- lifecycle -------
 
   attach() {
     this.updateState();
   }
 
-  update() { /* toggles are event-driven, no per-tick work */ }
-
-  // ------- public -------
+  update() { /* toggles are event-driven */ }
 
   updateState() {
     const flags = this.debugUI.debugFlags;
     if (!flags) return;
-    const state = flags.getState();
-    for (const [key, btn] of Object.entries(this.elements.visualToggles)) {
-      if (btn && state[key] !== undefined) {
-        btn.classList.toggle('active', state[key]);
-      }
+    const toggles = this.elements.visualToggles;
+    for (const key in VISUAL_FLAG) {
+      const btn = toggles[key];
+      if (btn) btn.classList.toggle('active', flags.isEnabled(VISUAL_FLAG[key]));
     }
   }
 
@@ -94,35 +146,26 @@ export class VisualAidsPanel {
     }
   }
 
+  _preset(name) {
+    const flags = this.debugUI.debugFlags;
+    if (!flags) return;
+    if (name === 'physics') flags.enablePhysicsDebug();
+    else if (name === 'ai') flags.enableAIDebug();
+    else flags.enablePerformanceDebug();
+    flags.showDebugDraws(true);
+    this.updateState();
+    this.debugUI.canvas.syncLoop();
+    if (name === 'perf') this.debugUI._toggleSection('performance');
+  }
+
   toggleVisualAid(key) {
     const flags = this.debugUI.debugFlags;
     if (!flags) return;
 
-    const methodMap = {
-      colliders: 'showColliders',
-      velocity: 'showVelocity',
-      acceleration: 'showAcceleration',
-      neighbors: 'showNeighbors',
-      spatialGrid: 'showSpatialGrid',
-      entityIndices: 'showEntityIndices',
-      debugDraws: 'showDebugDraws',
-      sleepingEntities: 'showSleepingEntities',
-      sleepingCells: 'showSleepingCells',
-      joints: 'showJoints',
-      entityOrigins: 'showEntityOrigins',
-    };
-
-    const method = methodMap[key];
+    const method = VISUAL_METHOD[key];
     if (!method || !flags[method]) return;
 
-    let flagName = `SHOW_${key.toUpperCase().replace('GRID', '_GRID').replace('INDICES', '_INDICES')}`;
-    if (key === 'debugDraws') flagName = 'SHOW_DEBUG_DRAWS';
-    else if (key === 'sleepingEntities') flagName = 'SHOW_SLEEPING_ENTITIES';
-    else if (key === 'sleepingCells') flagName = 'SHOW_SLEEPING_CELLS';
-    else if (key === 'joints') flagName = 'SHOW_JOINTS';
-    else if (key === 'entityOrigins') flagName = 'SHOW_ENTITY_ORIGINS';
-
-    flags[method](!flags.isEnabled(DEBUG_FLAGS[flagName]));
+    flags[method](!flags.isEnabled(VISUAL_FLAG[key]));
     this.updateState();
     this.debugUI.canvas.syncLoop();
   }

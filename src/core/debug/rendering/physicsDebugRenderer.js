@@ -5,21 +5,142 @@ import { Transform } from '../../../components/transform.js';
 import { RigidBody } from '../../../components/rigidBody.js';
 import { Collider } from '../../../components/collider.js';
 import { SpriteRenderer } from '../../../components/spriteRenderer.js';
+import { LightEmitter } from '../../../components/lightEmitter.js';
+import { DecorationComponent } from '../../../components/decorationComponent.js';
+import { ParticleComponent } from '../../../components/particleComponent.js';
+import { BulletComponent } from '../../../components/bulletComponent.js';
 import { Mouse } from '../../mouse.js';
 import { Grid } from '../../grid.js';
 import { Joint } from '../../joint.js';
 import { DebugDraw } from '../debugDraw.js';
-import { distanceSq2D } from '../../../util/utils.js';
+import { DEBUG_FLAGS } from '../debugFlags.js';
+import { distanceSq2D, lightInfluenceRadius } from '../../../util/utils.js';
 import { ShapeType } from '../../../util/configDefaults.js';
 import { getColliderBounds, _boundsResult } from '../../../util/colliderUtils.js';
+import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
+
+const DECORATION_NO_PARENT = 0xffff;
+const EMPTY_DASH = [];
+const DASH_DECO_PARENT = [4, 3];
 
 export class PhysicsDebugRenderer {
   constructor() {
     this.scene = null;
+    this._pos = { x: 0, y: 0 };
+    this._worldA = { x: 0, y: 0 };
+    this._worldB = { x: 0, y: 0 };
+    this._filter = { selectedOnly: false, selectedIdx: -1 };
+    this._indexLabels = [];
+    this._indexWidths = [];
+    this._typeNames = [];
+    this._hoverIdx = -1;
+    this._hoverSpeedI = -1;
+    this._hoverLabel = '';
+    this._hoverWidth = 0;
+    this._velSpeedI = -1;
+    this._velLabel = '';
+    this._selLabelIdx = -1;
+    this._selLabelWidth = 0;
+    this._ddRgb = new Map();
+    this._ddRgba30 = new Map();
+    this._ddText = [];
+    this._ddTextHash = [];
+    this._ddTextWidth = [];
+    this._jointKey = 0x7fffffff;
+    this._jointCss = '';
+    this._jointFillCss = '';
+    this._decoSize = { w: 20, h: 20 };
+    this._decoSizeTex = -1;
+    this._decoSizeW = 20;
+    this._decoSizeH = 20;
   }
 
   attach(scene) {
     this.scene = scene;
+    const names = this._typeNames;
+    names.length = 0;
+    const regs = scene?.registeredClasses;
+    if (regs) {
+      for (let i = 0; i < regs.length; i++) {
+        names[regs[i].entityType] = regs[i].class.name;
+      }
+    }
+  }
+
+  _indexLabel(i) {
+    const labels = this._indexLabels;
+    let s = labels[i];
+    if (s === undefined) {
+      s = '' + i;
+      labels[i] = s;
+    }
+    return s;
+  }
+
+  _skipUnselected(i, selectedOnly, selectedIdx) {
+    return selectedOnly && selectedIdx >= 0 && i !== selectedIdx;
+  }
+
+  _worldXY(i, pose, out) {
+    const rb = RigidBody.active;
+    if (pose && pose.x && rb && rb[i]) {
+      out.x = pose.x[i];
+      out.y = pose.y ? pose.y[i] : Transform.y[i];
+    } else {
+      out.x = Transform.x[i];
+      out.y = Transform.y[i];
+    }
+    return out;
+  }
+
+  _selectedFilter(flags) {
+    const f = this._filter;
+    f.selectedOnly = !!(flags && flags.isEnabled(DEBUG_FLAGS.SHOW_ACTIVE_ONLY));
+    f.selectedIdx = flags ? flags.getSelectedEntity() : -1;
+    return f;
+  }
+
+  _cssRgb(colorInt) {
+    const key = colorInt & 0xffffff;
+    let s = this._ddRgb.get(key);
+    if (s === undefined) {
+      s = 'rgb(' + ((key >> 16) & 255) + ',' + ((key >> 8) & 255) + ',' + (key & 255) + ')';
+      this._ddRgb.set(key, s);
+    }
+    return s;
+  }
+
+  _cssRgba30(colorInt) {
+    const key = colorInt & 0xffffff;
+    let s = this._ddRgba30.get(key);
+    if (s === undefined) {
+      s = 'rgba(' + ((key >> 16) & 255) + ',' + ((key >> 8) & 255) + ',' + (key & 255) + ',0.3)';
+      this._ddRgba30.set(key, s);
+    }
+    return s;
+  }
+
+  _ddTextAt(slot, buf, off) {
+    const len = buf[off + 7] | 0;
+    let hash = len;
+    for (let c = 0; c < len; c++) hash = (Math.imul(hash, 31) + (buf[off + 8 + c] | 0)) | 0;
+    if (this._ddTextHash[slot] === hash) return this._ddText[slot];
+    this._ddTextHash[slot] = hash;
+    let text = '';
+    for (let c = 0; c < len; c++) text += String.fromCharCode(buf[off + 8 + c]);
+    this._ddText[slot] = text;
+    this._ddTextWidth[slot] = -1;
+    return text;
+  }
+
+  _indexWidth(ctx, i) {
+    const widths = this._indexWidths;
+    let w = widths[i];
+    if (w === undefined) {
+      w = ctx.measureText(this._indexLabel(i)).width;
+      widths[i] = w;
+    }
+    return w;
   }
 
   // ------- spatial grid -------
@@ -98,7 +219,7 @@ export class PhysicsDebugRenderer {
 
   // ------- colliders -------
 
-  drawColliders(ctx, canvas, camera, zoom, pose) {
+  drawColliders(ctx, canvas, camera, zoom, pose, flags) {
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
@@ -112,10 +233,12 @@ export class PhysicsDebugRenderer {
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
     const rbActive = RigidBody.active;
+    const rbStatic = RigidBody.static;
     const poseX = pose ? pose.x : null;
     const poseY = pose ? pose.y : null;
     const poseRotC = pose ? pose.rotC : null;
     const poseRotS = pose ? pose.rotS : null;
+    const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
     const n = Math.min(active.length, x.length);
 
     const viewLeft = camera.x - 100;
@@ -127,6 +250,7 @@ export class PhysicsDebugRenderer {
 
     for (let i = 0; i < n; i++) {
       if (!active[i] || !colActive?.[i]) continue;
+      if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
       const usePose = !!(poseX && rbActive && rbActive[i]);
       const entityX = usePose ? poseX[i] : x[i];
       const entityY = usePose ? (poseY ? poseY[i] : y[i]) : y[i];
@@ -153,7 +277,9 @@ export class PhysicsDebugRenderer {
       const sx = (posX - camera.x) * zoom;
       const sy = (posY - camera.y) * zoom;
 
-      ctx.strokeStyle = isTrigger[i] ? 'rgba(255, 255, 0, 0.8)' : 'rgba(0, 255, 0, 0.8)';
+      ctx.strokeStyle = isTrigger[i]
+        ? 'rgba(255, 255, 0, 0.8)'
+        : (rbStatic && rbStatic[i] ? 'rgba(180, 180, 180, 0.85)' : 'rgba(0, 255, 0, 0.8)');
 
       if (shape === ShapeType.Circle) {
         const r = radius[i];
@@ -213,20 +339,21 @@ export class PhysicsDebugRenderer {
 
   // ------- entity origins -------
 
-  drawEntityOrigins(ctx, canvas, camera, zoom, flags) {
+  drawEntityOrigins(ctx, canvas, camera, zoom, flags, pose) {
     const active = Transform.active;
-    const x = Transform.x;
-    const y = Transform.y;
     const isOnScreen = SpriteRenderer.isItOnScreen;
-    const selectedIdx = flags?.getSelectedEntity?.() ?? -1;
+    const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
+    const pos = this._pos;
 
     const crossSize = 4;
     const selectedCrossSize = 8;
 
     for (let i = 0; i < active.length; i++) {
       if (!active[i] || !isOnScreen[i]) continue;
-      const sx = (x[i] - camera.x) * zoom;
-      const sy = (y[i] - camera.y) * zoom;
+      if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
+      this._worldXY(i, pose, pos);
+      const sx = (pos.x - camera.x) * zoom;
+      const sy = (pos.y - camera.y) * zoom;
       const isSelected = i === selectedIdx;
       const size = isSelected ? selectedCrossSize : crossSize;
 
@@ -247,26 +374,28 @@ export class PhysicsDebugRenderer {
 
   // ------- velocity -------
 
-  drawVelocityVectors(ctx, canvas, camera, zoom) {
+  drawVelocityVectors(ctx, canvas, camera, zoom, flags, pose) {
+    if (!RigidBody.vx || !RigidBody.vy) return;
     const active = Transform.active;
-    const x = Transform.x;
-    const y = Transform.y;
     const isOnScreen = SpriteRenderer.isItOnScreen;
     const vx = RigidBody.vx;
     const vy = RigidBody.vy;
-    // vx/vy are px/s; draw scale 0.05
+    const angVel = RigidBody.angularVelocity;
     const scale = 0.05;
+    const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
+    const pos = this._pos;
 
     ctx.save();
     ctx.strokeStyle = 'rgba(0, 136, 255, 0.9)';
     ctx.lineWidth = 2;
     ctx.lineCap = 'butt';
     ctx.lineJoin = 'miter';
-    ctx.setLineDash([]);
+    ctx.setLineDash(EMPTY_DASH);
     const maxLen = 80;
     ctx.beginPath();
     for (let i = 0; i < active.length; i++) {
       if (!active[i] || !isOnScreen[i]) continue;
+      if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
       const velX = vx[i];
       const velY = vy[i];
       if (Math.abs(velX) < 0.01 && Math.abs(velY) < 0.01) continue;
@@ -276,36 +405,82 @@ export class PhysicsDebugRenderer {
       const len = Math.sqrt(dx * dx + dy * dy);
       if (len > maxLen) { const s = maxLen / len; dx *= s; dy *= s; }
 
-      const sx = (x[i] - camera.x) * zoom;
-      const sy = (y[i] - camera.y) * zoom;
+      this._worldXY(i, pose, pos);
+      const sx = (pos.x - camera.x) * zoom;
+      const sy = (pos.y - camera.y) * zoom;
       ctx.moveTo(sx, sy);
       ctx.lineTo(sx + dx, sy + dy);
     }
     ctx.stroke();
+
+    if (selectedIdx >= 0 && active[selectedIdx] && isOnScreen[selectedIdx]) {
+      this._worldXY(selectedIdx, pose, pos);
+      const sx = (pos.x - camera.x) * zoom;
+      const sy = (pos.y - camera.y) * zoom;
+      const velX = vx[selectedIdx];
+      const velY = vy[selectedIdx];
+      if (Math.abs(velX) >= 0.01 || Math.abs(velY) >= 0.01) {
+        let dx = velX * scale * zoom;
+        let dy = velY * scale * zoom;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > maxLen) { const s = maxLen / len; dx *= s; dy *= s; }
+        if (len > 4) {
+          const inv = 1 / (len > maxLen ? maxLen : len);
+          const ux = dx * inv;
+          const uy = dy * inv;
+          const ah = 7;
+          ctx.beginPath();
+          ctx.moveTo(sx + dx, sy + dy);
+          ctx.lineTo(sx + dx - ux * ah + uy * ah * 0.5, sy + dy - uy * ah - ux * ah * 0.5);
+          ctx.moveTo(sx + dx, sy + dy);
+          ctx.lineTo(sx + dx - ux * ah - uy * ah * 0.5, sy + dy - uy * ah + ux * ah * 0.5);
+          ctx.stroke();
+        }
+        const speedI = (Math.sqrt(velX * velX + velY * velY) * 10) | 0;
+        if (this._velSpeedI !== speedI) {
+          this._velSpeedI = speedI;
+          this._velLabel = (speedI / 10).toFixed(1) + ' px/s';
+        }
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(0, 136, 255, 0.95)';
+        ctx.fillText(this._velLabel, sx + 8, sy - 8);
+      }
+      const w = angVel ? angVel[selectedIdx] : 0;
+      if (Math.abs(w) > 0.02) {
+        const r = 14;
+        ctx.strokeStyle = 'rgba(180, 120, 255, 0.9)';
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.min(Math.PI * 1.6, Math.abs(w) * 0.4));
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   }
 
   // ------- acceleration -------
 
-  drawAccelerationVectors(ctx, canvas, camera, zoom) {
+  drawAccelerationVectors(ctx, canvas, camera, zoom, flags, pose) {
     const active = Transform.active;
-    const x = Transform.x;
-    const y = Transform.y;
     const isOnScreen = SpriteRenderer.isItOnScreen;
     const ax = RigidBody.ax;
     const ay = RigidBody.ay;
+    if (!ax || !ay) return;
     const scale = 50;
+    const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
+    const pos = this._pos;
 
     ctx.save();
     ctx.strokeStyle = 'rgba(255, 0, 68, 0.9)';
     ctx.lineWidth = 2;
     ctx.lineCap = 'butt';
     ctx.lineJoin = 'miter';
-    ctx.setLineDash([]);
+    ctx.setLineDash(EMPTY_DASH);
     const maxLen = 80;
     ctx.beginPath();
     for (let i = 0; i < active.length; i++) {
       if (!active[i] || !isOnScreen[i]) continue;
+      if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
       const accX = ax[i];
       const accY = ay[i];
       if (Math.abs(accX) < 0.01 && Math.abs(accY) < 0.01) continue;
@@ -315,8 +490,9 @@ export class PhysicsDebugRenderer {
       const len = Math.sqrt(dx * dx + dy * dy);
       if (len > maxLen) { const s = maxLen / len; dx *= s; dy *= s; }
 
-      const sx = (x[i] - camera.x) * zoom;
-      const sy = (y[i] - camera.y) * zoom;
+      this._worldXY(i, pose, pos);
+      const sx = (pos.x - camera.x) * zoom;
+      const sy = (pos.y - camera.y) * zoom;
       ctx.moveTo(sx, sy);
       ctx.lineTo(sx + dx, sy + dy);
     }
@@ -486,10 +662,7 @@ export class PhysicsDebugRenderer {
       }
 
       const colorInt = buf[off + 5] | 0;
-      const r = (colorInt >> 16) & 0xFF;
-      const g = (colorInt >> 8)  & 0xFF;
-      const b =  colorInt        & 0xFF;
-      const rgb = `rgb(${r},${g},${b})`;
+      const rgb = this._cssRgb(colorInt);
 
       switch (type) {
         case DebugDraw.TYPE_LINE: {
@@ -534,15 +707,17 @@ export class PhysicsDebugRenderer {
         case DebugDraw.TYPE_TEXT: {
           const tx = (buf[off + 1] - camera.x) * zoom;
           const ty = (buf[off + 2] - camera.y) * zoom;
-          const len = buf[off + 7] | 0;
-          let text = '';
-          for (let c = 0; c < len; c++) text += String.fromCharCode(buf[off + 8 + c]);
+          const text = this._ddTextAt(i, buf, off);
           ctx.font = '12px monospace';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'bottom';
-          const m = ctx.measureText(text);
+          let tw = this._ddTextWidth[i];
+          if (!(tw >= 0)) {
+            tw = ctx.measureText(text).width;
+            this._ddTextWidth[i] = tw;
+          }
           ctx.fillStyle = 'rgba(0,0,0,0.7)';
-          ctx.fillRect(tx - m.width / 2 - 2, ty - 12, m.width + 4, 14);
+          ctx.fillRect(tx - tw / 2 - 2, ty - 12, tw + 4, 14);
           ctx.fillStyle = rgb;
           ctx.fillText(text, tx, ty);
           break;
@@ -554,7 +729,7 @@ export class PhysicsDebugRenderer {
           const scx = (cx - camera.x) * zoom;
           const scy = (cy - camera.y) * zoom;
           const scs = cellSize * zoom;
-          ctx.fillStyle = `rgba(${r},${g},${b},0.3)`;
+          ctx.fillStyle = this._cssRgba30(colorInt);
           ctx.fillRect(scx, scy, scs, scs);
           ctx.strokeStyle = rgb;
           ctx.lineWidth = 2;
@@ -576,26 +751,28 @@ export class PhysicsDebugRenderer {
 
   // ------- entity indices -------
 
-  drawEntityIndices(ctx, canvas, camera, zoom) {
+  drawEntityIndices(ctx, canvas, camera, zoom, flags, pose) {
     const active = Transform.active;
-    const x = Transform.x;
-    const y = Transform.y;
     const isOnScreen = SpriteRenderer.isItOnScreen;
+    const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
+    const pos = this._pos;
 
-    ctx.font = `10px monospace`;
+    ctx.font = '10px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
 
     for (let i = 0; i < active.length; i++) {
       if (!active[i] || !isOnScreen[i]) continue;
-      const sx = (x[i] - camera.x) * zoom;
-      const sy = (y[i] - camera.y) * zoom - 15;
-      const text = String(i);
-      const metrics = ctx.measureText(text);
+      if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
+      this._worldXY(i, pose, pos);
+      const sx = (pos.x - camera.x) * zoom;
+      const sy = (pos.y - camera.y) * zoom - 15;
+      const text = this._indexLabel(i);
+      const tw = this._indexWidth(ctx, i);
       const pad = 2;
 
       ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(sx - metrics.width / 2 - pad, sy - 12, metrics.width + pad * 2, 14);
+      ctx.fillRect(sx - tw / 2 - pad, sy - 12, tw + pad * 2, 14);
       ctx.fillStyle = 'rgba(255, 255, 255, 1.0)';
       ctx.fillText(text, sx, sy);
     }
@@ -612,8 +789,9 @@ export class PhysicsDebugRenderer {
     return out;
   }
 
-  drawJoints(ctx, canvas, camera, zoom) {
+  drawJoints(ctx, canvas, camera, zoom, flags) {
     if (!Joint.initialized || !Joint.pairs || !Joint.active) return;
+    const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
 
     const pairs = Joint.pairs;
     const restLength = Joint.length;
@@ -627,8 +805,8 @@ export class PhysicsDebugRenderer {
     const lbX = Joint.localAnchorBX;
     const lbY = Joint.localAnchorBY;
 
-    const worldA = { x: 0, y: 0 };
-    const worldB = { x: 0, y: 0 };
+    const worldA = this._worldA;
+    const worldB = this._worldB;
 
     ctx.lineWidth = 2;
 
@@ -639,6 +817,7 @@ export class PhysicsDebugRenderer {
       const entityA = packed >>> 16;
       const entityB = packed & 0xFFFF;
       if (!entityActive[entityA] || !entityActive[entityB]) continue;
+      if (selectedOnly && selectedIdx >= 0 && entityA !== selectedIdx && entityB !== selectedIdx) continue;
 
       this._localAnchorToWorld(entityA, laX[i], laY[i], worldA);
       this._localAnchorToWorld(entityB, lbX[i], lbY[i], worldB);
@@ -671,10 +850,16 @@ export class PhysicsDebugRenderer {
         }
 
         const alpha = Joint.enableSpring[i] ? 0.55 : 0.9;
-        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        const key = (r << 24) | (g << 16) | (b << 8) | ((alpha * 20) | 0);
+        if (key !== this._jointKey) {
+          this._jointKey = key;
+          this._jointCss = 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+          this._jointFillCss = 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha + 0.2) + ')';
+        }
+        ctx.strokeStyle = this._jointCss;
         ctx.beginPath(); ctx.moveTo(sax, say); ctx.lineTo(sbx, sby); ctx.stroke();
 
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha + 0.2})`;
+        ctx.fillStyle = this._jointFillCss;
         ctx.beginPath(); ctx.arc(sax, say, 3, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(sbx, sby, 3, 0, Math.PI * 2); ctx.fill();
         continue;
@@ -719,12 +904,14 @@ export class PhysicsDebugRenderer {
 
   // ------- selected entity -------
 
-  drawSelectedEntity(ctx, canvas, camera, zoom, flags) {
-    const selectedIdx = flags?.getSelectedEntity?.() ?? -1;
+  drawSelectedEntity(ctx, canvas, camera, zoom, flags, pose) {
+    const selectedIdx = flags ? flags.getSelectedEntity() : -1;
     if (selectedIdx < 0 || !Transform.active[selectedIdx]) return;
 
-    const posX = Transform.x[selectedIdx];
-    const posY = Transform.y[selectedIdx];
+    const pos = this._pos;
+    this._worldXY(selectedIdx, pose, pos);
+    const posX = pos.x;
+    const posY = pos.y;
 
     const width = SpriteRenderer.getOriginalWidth(selectedIdx) || 20;
     const height = SpriteRenderer.getOriginalHeight(selectedIdx) || 20;
@@ -749,19 +936,211 @@ export class PhysicsDebugRenderer {
 
     const cornerSize = 6;
     ctx.fillStyle = 'rgba(255, 200, 100, 0.8)';
-    for (const [cx, cy] of [[sLeft, sTop], [sLeft + sWidth, sTop], [sLeft, sTop + sHeight], [sLeft + sWidth, sTop + sHeight]]) {
-      ctx.beginPath(); ctx.arc(cx, cy, cornerSize, 0, Math.PI * 2); ctx.fill();
-    }
+    ctx.beginPath(); ctx.arc(sLeft, sTop, cornerSize, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sLeft + sWidth, sTop, cornerSize, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sLeft, sTop + sHeight, cornerSize, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sLeft + sWidth, sTop + sHeight, cornerSize, 0, Math.PI * 2); ctx.fill();
 
     const sx = (posX - camera.x) * zoom;
     const labelY = sTop - 15;
-    const text = String(selectedIdx);
+    const text = this._indexLabel(selectedIdx);
     ctx.font = '12px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    const metrics = ctx.measureText(text);
+    if (this._selLabelIdx !== selectedIdx) {
+      this._selLabelIdx = selectedIdx;
+      this._selLabelWidth = ctx.measureText(text).width;
+    }
+    const tw = this._selLabelWidth;
     ctx.fillStyle = 'rgba(255, 200, 100, 0.9)';
-    ctx.fillRect(sx - metrics.width / 2 - 4, labelY - 12, metrics.width + 8, 16);
+    ctx.fillRect(sx - tw / 2 - 4, labelY - 12, tw + 8, 16);
     ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
     ctx.fillText(text, sx, labelY);
+  }
+
+  drawLights(ctx, canvas, camera, zoom, flags, pose, visPoly) {
+    const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
+    const pos = this._pos;
+    const active = LightEmitter.active;
+    if (active) {
+      const n = active.length;
+      ctx.strokeStyle = 'rgba(255, 220, 80, 0.7)';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < n; i++) {
+        if (!active[i] || !Transform.active[i]) continue;
+        if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
+        this._worldXY(i, pose, pos);
+        const sx = (pos.x - camera.x) * zoom;
+        const sy = (pos.y - camera.y) * zoom;
+        ctx.fillStyle = 'rgba(255, 220, 80, 0.95)';
+        ctx.beginPath();
+        ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+        ctx.fill();
+        const range = Collider.visualRange?.[i] || 0;
+        const influence = lightInfluenceRadius(LightEmitter.sqrtLightIntensity?.[i] || 0);
+        const r = (range > influence ? range : influence) * zoom;
+        if (r > 2) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, r, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+    }
+
+    if (!visPoly || !visPoly.buf || visPoly.lightCount < 1) return;
+    const f32 = visPoly.buf.f32;
+    const i32 = visPoly.buf.i32;
+    const maxVerts = visPoly.maxVerts;
+    const slotBytes = visPoly.slotBytes;
+    const lightCount = visPoly.lightCount;
+    ctx.strokeStyle = 'rgba(255, 180, 40, 0.85)';
+    ctx.lineWidth = 1.5;
+    for (let li = 0; li < lightCount; li++) {
+      const baseIndex = (4 + li * slotBytes) >> 2;
+      const vertCount = i32[baseIndex + 3];
+      if (vertCount < 3) continue;
+      const xStart = baseIndex + 4;
+      const yStart = xStart + maxVerts;
+      ctx.beginPath();
+      for (let v = 0; v < vertCount; v++) {
+        const wx = (f32[xStart + v] - camera.x) * zoom;
+        const wy = (f32[yStart + v] - camera.y) * zoom;
+        if (v === 0) ctx.moveTo(wx, wy);
+        else ctx.lineTo(wx, wy);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+
+  drawEntityInfo(ctx, canvas, camera, zoom, pose) {
+    if (!Mouse.isPresent) return;
+    const closest = this._findClosestEntity(Mouse.x, Mouse.y, 80);
+    if (closest < 0) return;
+    this._worldXY(closest, pose, this._pos);
+    const sx = (this._pos.x - camera.x) * zoom;
+    const sy = (this._pos.y - camera.y) * zoom;
+    const vx = RigidBody.vx ? RigidBody.vx[closest] : 0;
+    const vy = RigidBody.vy ? RigidBody.vy[closest] : 0;
+    const speedI = (Math.sqrt(vx * vx + vy * vy) * 10) | 0;
+    if (this._hoverIdx !== closest || this._hoverSpeedI !== speedI) {
+      this._hoverIdx = closest;
+      this._hoverSpeedI = speedI;
+      const name = this._typeNames[Transform.entityType[closest]] || 'Entity';
+      this._hoverLabel = name + ' #' + closest + '  ' + (speedI / 10).toFixed(1) + ' px/s';
+      this._hoverWidth = -1;
+    }
+    const text = this._hoverLabel;
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    if (this._hoverWidth < 0) this._hoverWidth = ctx.measureText(text).width;
+    const w = this._hoverWidth;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+    ctx.fillRect(sx - w * 0.5 - 4, sy - 28, w + 8, 16);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillText(text, sx, sy - 14);
+  }
+
+  drawPoolSelection(ctx, canvas, camera, zoom, kind, index) {
+    if (index < 0 || !kind) return;
+    let x = 0;
+    let y = 0;
+    let w = 16;
+    let h = 16;
+    if (kind === 'decoration') {
+      if (!DecorationComponent.active || !DecorationComponent.active[index]) return;
+      x = DecorationComponent.x[index];
+      y = DecorationComponent.y[index];
+      const size = this._decorationTextureSize(index);
+      w = size.w * Math.abs(DecorationComponent.scaleX[index] || 1);
+      h = size.h * Math.abs(DecorationComponent.scaleY[index] || 1);
+      const ax = DecorationComponent.anchorX ? DecorationComponent.anchorX[index] : 0.5;
+      const ay = DecorationComponent.anchorY ? DecorationComponent.anchorY[index] : 0.5;
+      const c = DecorationComponent.rotC ? DecorationComponent.rotC[index] : 1;
+      const s = DecorationComponent.rotS ? DecorationComponent.rotS[index] : 0;
+      const ox = (0.5 - ax) * w;
+      const oy = (0.5 - ay) * h;
+      const cx = x + c * ox - s * oy;
+      const cy = y + s * ox + c * oy;
+      const sx0 = (cx - camera.x) * zoom;
+      const sy0 = (cy - camera.y) * zoom;
+      ctx.strokeStyle = 'rgba(80, 220, 140, 1)';
+      ctx.lineWidth = 2;
+      this._strokeOrientedBox(ctx, sx0, sy0, w * zoom, h * zoom, c, s);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      ctx.arc((x - camera.x) * zoom, (y - camera.y) * zoom, 3, 0, Math.PI * 2);
+      ctx.fill();
+      if (DecorationComponent.parentEntityIndex) {
+        const p = DecorationComponent.parentEntityIndex[index];
+        if (p !== DECORATION_NO_PARENT && Transform.active[p]) {
+          const px = (Transform.x[p] - camera.x) * zoom;
+          const py = (Transform.y[p] - camera.y) * zoom;
+          ctx.setLineDash(DASH_DECO_PARENT);
+          ctx.beginPath();
+          ctx.moveTo((x - camera.x) * zoom, (y - camera.y) * zoom);
+          ctx.lineTo(px, py);
+          ctx.stroke();
+          ctx.setLineDash(EMPTY_DASH);
+        }
+      }
+      return;
+    } else if (kind === 'particle') {
+      if (!ParticleComponent.active || !ParticleComponent.active[index]) return;
+      x = ParticleComponent.x[index];
+      y = ParticleComponent.y[index];
+      w = 12 * Math.abs(ParticleComponent.scaleX[index] || 1);
+      h = 12 * Math.abs(ParticleComponent.scaleY[index] || 1);
+    } else if (kind === 'bullet') {
+      if (!BulletComponent.active || !BulletComponent.active[index]) return;
+      x = BulletComponent.x[index];
+      y = BulletComponent.y[index];
+      w = 16 * (BulletComponent.scale[index] || 1);
+      h = 8;
+    } else {
+      return;
+    }
+    const sx = (x - camera.x) * zoom;
+    const sy = (y - camera.y) * zoom;
+    ctx.strokeStyle = kind === 'bullet' ? 'rgba(255, 160, 60, 1)' : 'rgba(250, 140, 220, 1)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx - w * 0.5 * zoom, sy - h * 0.5 * zoom, w * zoom, h * zoom);
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _decorationTextureSize(index) {
+    const texId = DecorationComponent.textureId[index] | 0;
+    if (texId === this._decoSizeTex) {
+      this._decoSize.w = this._decoSizeW;
+      this._decoSize.h = this._decoSizeH;
+      return this._decoSize;
+    }
+    let w = 0;
+    let h = 0;
+    const meta = this.scene?.textureMetadata;
+    const start = meta?.animationFrameStart ? meta.animationFrameStart[texId] : undefined;
+    if (start != null && meta.frameWidth && meta.frameHeight) {
+      w = meta.frameWidth[start] | 0;
+      h = meta.frameHeight[start] | 0;
+    }
+    if (!(w > 0) || !(h > 0)) {
+      const name = SpriteSheetRegistry.getAnimationName('bigAtlas', texId);
+      const dims = name ? SpriteSheetRegistry.getFrameDimensions('bigAtlas', name) : null;
+      if (dims) {
+        w = dims.w | 0;
+        h = dims.h | 0;
+      }
+    }
+    if (!(w > 0)) w = 20;
+    if (!(h > 0)) h = 20;
+    this._decoSizeTex = texId;
+    this._decoSizeW = w;
+    this._decoSizeH = h;
+    this._decoSize.w = w;
+    this._decoSize.h = h;
+    return this._decoSize;
   }
 
   // ------- internal helpers -------

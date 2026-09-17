@@ -48,7 +48,9 @@ export class ScenePanel {
     this.updateSceneList();
   }
 
-  update() { /* no-op — scene list only changes on switch */ }
+  update() {
+    this._updatePlayPauseState();
+  }
 
   // ------- scene list -------
 

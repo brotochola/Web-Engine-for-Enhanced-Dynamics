@@ -16,11 +16,22 @@ import { ScenePanel } from './panels/scenePanel.js';
 import { PerformancePanel } from './panels/performancePanel.js';
 import { VisualAidsPanel } from './panels/visualAidsPanel.js';
 import { EntitiesPanel } from './panels/entitiesPanel.js';
-import { DecorationsPanel } from './panels/decorationsPanel.js';
+import { PoolsPanel } from './panels/poolsPanel.js';
 import { LayersPanel } from './panels/layersPanel.js';
 import { NavigationPanel } from './panels/navigationPanel.js';
 import { MemoryPanel } from './panels/memoryPanel.js';
 import { SavesPanel } from './panels/savesPanel.js';
+
+const VISUAL_DIGIT_MAP = {
+  1: 'colliders',
+  2: 'velocity',
+  3: 'acceleration',
+  4: 'neighbors',
+  5: 'spatialGrid',
+  6: 'entityIndices',
+  7: 'debugDraws',
+  8: 'sleepingEntities',
+};
 
 /**
  * DebugUI — Self-contained debug overlay managed by GameEngine.
@@ -59,10 +70,21 @@ export class DebugUI {
       saves: new SavesPanel(this),
       visual: new VisualAidsPanel(this),
       entities: new EntitiesPanel(this),
-      decorations: new DecorationsPanel(this),
+      pools: new PoolsPanel(this),
       layers: new LayersPanel(this),
       navigation: new NavigationPanel(this),
     };
+    this._panelList = [
+      this.panels.scene,
+      this.panels.performance,
+      this.panels.memory,
+      this.panels.saves,
+      this.panels.visual,
+      this.panels.entities,
+      this.panels.pools,
+      this.panels.layers,
+      this.panels.navigation,
+    ];
 
     // Build DOM
     injectStyles();
@@ -85,16 +107,19 @@ export class DebugUI {
     this.scene = scene;
     this.debugFlags = scene.debugFlags;
 
-    if (this.debugFlags) this.debugFlags.disableAll();
+    if (this.debugFlags) {
+      this.debugFlags.disableAll();
+      this.debugFlags.showDebugDraws(true);
+    }
 
     this.stats.attach(scene);
     this.canvas.attach(scene);
     this.tools.attach();
 
-    for (const panel of Object.values(this.panels)) {
-      panel.attach();
-    }
+    const list = this._panelList;
+    for (let i = 0; i < list.length; i++) list[i].attach();
 
+    this.canvas.syncLoop();
     this.start();
   }
 
@@ -130,7 +155,13 @@ export class DebugUI {
     if (!this.scene) return false;
     if (!this.container?.classList.contains('hidden')) return true;
     const tools = this.tools;
-    return !!(tools.inspectorActive || tools.activeSpawnerType || tools.eraserActive);
+    return !!(
+      tools.inspectorActive ||
+      tools.activeSpawnerType ||
+      tools.eraserActive ||
+      tools.poolPaintKind ||
+      tools.poolEraserKind
+    );
   }
 
   /** Restart the RAF loop after hide/toggle if work resumed. */
@@ -179,8 +210,8 @@ export class DebugUI {
   _tick() {
     if (!this.scene) return;
 
-    for (const panel of Object.values(this.panels)) {
-      panel.update();
+    if (this.openSection && !this.container?.classList.contains('hidden')) {
+      this.panels[this.openSection].update();
     }
 
     this.tools.update();
@@ -204,7 +235,7 @@ export class DebugUI {
       ['💿', 'Saves', 'saves'],
       ['👁', 'Visual', 'visual'],
       ['📦', 'Entities', 'entities'],
-      ['🌿', 'Decorations', 'decorations'],
+      ['🌿', 'Pools', 'pools'],
       ['📚', 'Layers', 'layers'],
       ['🧭', 'Nav', 'navigation'],
     ];
@@ -223,7 +254,7 @@ export class DebugUI {
     // Toggle hint
     const toggleHint = document.createElement('div');
     toggleHint.className = 'debug-ui-toggle';
-    toggleHint.textContent = '[H] Toggle';
+    toggleHint.textContent = 'Shift+H Toggle';
     toggleHint.onclick = () => this.toggle();
     header.appendChild(toggleHint);
 
@@ -254,6 +285,7 @@ export class DebugUI {
       if (this.sections[sectionId].panel) this.sections[sectionId].panel.classList.add('open');
 
       if (sectionId === 'navigation') this.panels.navigation.onOpen();
+      this.panels[sectionId].update();
     } else {
       this.openSection = null;
       if (sectionId === 'navigation') this.panels.navigation.onClose();
@@ -287,8 +319,10 @@ export class DebugUI {
       } else if (e.code >= 'Digit1' && e.code <= 'Digit8') {
         e.preventDefault();
         const digit = e.code.charAt(5);
-        const map = { 1: 'colliders', 2: 'velocity', 3: 'acceleration', 4: 'neighbors', 5: 'spatialGrid', 6: 'entityIndices', 7: 'debugDraws', 8: 'sleepingEntities' };
-        this.panels.visual.toggleVisualAid(map[digit]);
+        this.panels.visual.toggleVisualAid(VISUAL_DIGIT_MAP[digit]);
+      } else if (key === 's') {
+        e.preventDefault();
+        this.panels.visual.toggleVisualAid('sleepingCells');
       } else if (key === 'k') {
         e.preventDefault();
         this.panels.visual.toggleVisualAid('joints');
@@ -299,6 +333,7 @@ export class DebugUI {
         e.preventDefault();
         if (this.debugFlags) {
           this.debugFlags.disableAll();
+          this.debugFlags.showDebugDraws(true);
           this.panels.visual.updateState();
           this.canvas.syncLoop();
         }

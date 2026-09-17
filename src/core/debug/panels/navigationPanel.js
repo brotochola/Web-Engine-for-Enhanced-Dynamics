@@ -63,7 +63,7 @@ export class NavigationPanel {
   }
 
   onClose() {
-    this._clearVisualization();
+    /* keep nav overlay when switching tabs — only Clear All wipes it */
   }
 
   // ------- list rendering -------

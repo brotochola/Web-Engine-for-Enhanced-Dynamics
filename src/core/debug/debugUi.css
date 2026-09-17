@@ -17,6 +17,8 @@
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   height: 32px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .debug-ui-tab {
@@ -29,6 +31,8 @@
   cursor: pointer;
   border-right: 1px solid rgba(255, 255, 255, 0.05);
   transition: all 0.15s ease;
+  flex: none;
+  white-space: nowrap;
 }
 
 .debug-ui-tab:hover {
@@ -509,22 +513,96 @@
   color: #ffc864;
 }
 
-/* Inspector Panel Scrollbar */
-.debug-ui-inspector-panel::-webkit-scrollbar {
+.debug-ui-inspector-panel {
+  border-color: rgba(255, 200, 100, 0.35);
+}
+
+.debug-ui-inspector-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.debug-ui-inspector-body::-webkit-scrollbar {
   width: 6px;
 }
 
-.debug-ui-inspector-panel::-webkit-scrollbar-track {
+.debug-ui-inspector-body::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.3);
 }
 
-.debug-ui-inspector-panel::-webkit-scrollbar-thumb {
+.debug-ui-inspector-body::-webkit-scrollbar-thumb {
   background: rgba(255, 200, 100, 0.3);
   border-radius: 3px;
 }
 
-.debug-ui-inspector-panel::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 200, 100, 0.5);
+.debug-ui-inspector-info {
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.28);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #aaa;
+  flex: none;
+}
+
+.debug-ui-inspector-sections {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.debug-ui-inspector-section {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left-width: 3px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.debug-ui-inspector-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  font-size: 11px;
+  text-align: left;
+  color: inherit;
+}
+
+.debug-ui-inspector-chevron {
+  flex: none;
+  width: 10px;
+  opacity: 0.75;
+}
+
+.debug-ui-inspector-props {
+  padding: 2px 0 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.debug-ui-inspector-prop {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.debug-ui-inspector-prop-label {
+  color: #888;
+  font-size: 12px;
+}
+
+.debug-ui-inspector-prop-value {
+  color: #fff;
+  font-size: 12px;
+  font-family: monospace;
 }
 
 /* Navigation Panel Styles */
@@ -746,4 +824,67 @@
 
 .debug-ui-range:disabled::-moz-range-thumb {
   background: rgba(255, 255, 255, 0.3);
+}
+
+.debug-ui-type-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  max-height: 22vh;
+  overflow-y: auto;
+}
+
+.debug-ui-type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  max-width: 100%;
+}
+
+.debug-ui-type-chip .debug-ui-btn {
+  padding: 2px 7px;
+  font-size: 9px;
+  border-radius: 999px;
+}
+
+.debug-ui-type-name {
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 600;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 110px;
+}
+
+.debug-ui-type-count {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10px;
+  flex: none;
+}
+
+.debug-ui-bulk-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.debug-ui-pool-block {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.debug-ui-pool-block:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
 }

@@ -116,10 +116,14 @@ class GameEngine {
 
   _setupWindowListeners() {
     this._keydownHandler = (e) => {
-      if (this.preventDefaultKeys && PREVENT_DEFAULT_KEYS.has(e.key.toLowerCase())) {
+      const key = e.key.toLowerCase();
+      if (this.preventDefaultKeys && PREVENT_DEFAULT_KEYS.has(key)) {
         e.preventDefault();
       }
-      this.currentScene?.onKeyDown(e.key.toLowerCase());
+      if (this.debugEnabled && e.shiftKey && (key === 'h' || key === 'i' || key === 'k' || key === 'o' || key === 's')) {
+        return;
+      }
+      this.currentScene?.onKeyDown(key);
     };
 
     this._keyupHandler = (e) => {

@@ -1950,6 +1950,23 @@ export function getComponentPropertyNames(ComponentClass) {
   });
 }
 
+/** HEAP-backed RigidBody fields (not in ARRAY_SCHEMA). Inspect only. */
+const RIGID_BODY_HEAP_PROPS = ['vx', 'vy', 'angularVelocity', 'sleeping'];
+
+/**
+ * Schema props plus bound HEAP extras (vx/vy/ω/sleeping).
+ * Allocates — call on inspect populate, not per tick.
+ */
+export function getInspectorPropertyNames(ComponentClass) {
+  const names = getComponentPropertyNames(ComponentClass);
+  if (!ComponentClass || ComponentClass.name !== 'RigidBody') return names;
+  for (let i = 0; i < RIGID_BODY_HEAP_PROPS.length; i++) {
+    const key = RIGID_BODY_HEAP_PROPS[i];
+    if (ComponentClass[key]) names.push(key);
+  }
+  return names;
+}
+
 // ============================================================================
 // DECAL/TILE STAMPING UTILITIES
 // Pure functions for calculating tile regions when stamping decals
@@ -2132,6 +2149,13 @@ export const _tileClipRegion = {
  */
 export function formatComponentValue(propName, value) {
   if (value === undefined || value === null) return 'N/A';
+
+  if (propName === 'collisionMask' && typeof value === 'number') {
+    return '0x' + (value >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  }
+  if (propName === 'collisionLayer' && typeof value === 'number') {
+    return String(value | 0);
+  }
 
   // Detect color properties (tint, baseTint, color)
   const isColor =

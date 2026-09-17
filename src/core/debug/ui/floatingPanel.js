@@ -9,7 +9,7 @@
 // panel (dragging a slider, scrolling a list) doesn't fight the free camera's
 // pan/zoom.
 
-let zCounter = 950;
+let zCounter = 10002;
 
 export class FloatingPanel {
   /**
@@ -18,9 +18,10 @@ export class FloatingPanel {
    * @param {number} [opts.left=12]
    * @param {number} [opts.top=48]
    * @param {number} [opts.width=300]
+   * @param {string} [opts.className]
    * @param {() => void} [opts.onClose] Called once, right before the panel is removed from the DOM.
    */
-  constructor({ title = '', left = 12, top = 48, width = 300, onClose = null } = {}) {
+  constructor({ title = '', left = 12, top = 48, width = 300, className = '', onClose = null } = {}) {
     this.onClose = onClose;
     this._dragOffset = null;
     this._onPointerMove = (e) => this._handleDragMove(e);
@@ -32,6 +33,7 @@ export class FloatingPanel {
       'display:flex;flex-direction:column;overflow:hidden;color:#e8e8e8;font:12px/1.35 system-ui,sans-serif;' +
       'background:rgba(12,14,20,0.92);border:1px solid #3a4254;border-radius:10px;' +
       'box-shadow:0 8px 28px rgba(0,0,0,0.45);';
+    if (className) el.className = className;
     el.addEventListener('wheel', (e) => e.stopPropagation());
     el.addEventListener('pointerdown', (e) => e.stopPropagation());
 
@@ -71,6 +73,18 @@ export class FloatingPanel {
 
   setTitle(text) {
     this.titleEl.textContent = text;
+  }
+
+  show() {
+    if (!this.el.parentNode) this.mount();
+    else this.el.style.display = 'flex';
+    this._bringToFront();
+    return this;
+  }
+
+  hide() {
+    this.el.style.display = 'none';
+    return this;
   }
 
   /** Append to the DOM and bring to front. Returns `this` for chaining. */

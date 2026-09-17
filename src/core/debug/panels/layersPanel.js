@@ -55,6 +55,7 @@ export class LayersPanel {
     };
     this.panel = null;
     this._shaderOptionsSynced = false;
+    this._layerOrder = [];
     // Floating popups, one per kind ('uniforms' | 'compute'), independent of each other.
     this._floats = { uniforms: null, compute: null };
   }
@@ -68,6 +69,7 @@ export class LayersPanel {
     for (const layerName of Object.keys(DEFAULT_LAYERS)) {
       this._createLayerRow(layerName, this.panel);
     }
+    this._sortLayerRows();
 
     return this.panel;
   }
@@ -121,6 +123,13 @@ export class LayersPanel {
     delete this.elements.layerRows[layerName];
     delete this.elements.layerControls[layerName];
     delete this.elements.layerUniformInputs[layerName];
+    const order = this._layerOrder;
+    for (let i = 0; i < order.length; i++) {
+      if (order[i] === layerName) {
+        order.splice(i, 1);
+        break;
+      }
+    }
   }
 
   _createLayerRow(layerName, panel) {
@@ -223,7 +232,10 @@ export class LayersPanel {
       'width:100%;font-size:10px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;' +
       'border:1px solid rgba(255,255,255,0.3);border-radius:3px';
     zInput.title = 'Z-index — draw order relative to other layers';
-    zInput.onchange = () => this._setLayerProp(layerName, 'zIndex', parseInt(zInput.value));
+    zInput.onchange = () => {
+      this._setLayerProp(layerName, 'zIndex', parseInt(zInput.value, 10) || 0);
+      this._sortLayerRows();
+    };
     row.appendChild(zInput);
 
     // Uniforms popup — only shown when the layer has a shader with uniforms
@@ -276,6 +288,7 @@ export class LayersPanel {
 
     wrapper.appendChild(metaRow);
     panel.appendChild(wrapper);
+    wrapper.dataset.layerName = layerName;
 
     this.elements.layerControls[layerName] = {
       visible: visibleCb, alpha: alphaSlider, alphaValue: alphaVal,
@@ -284,6 +297,7 @@ export class LayersPanel {
       resolution: resVal, zIndex: zInput, computeVal, uniformsBtn, computeBtn,
     };
     this.elements.layerRows[layerName] = wrapper;
+    this._layerOrder.push(layerName);
   }
 
   // ------- floating popups (uniforms / compute, independent) -------
@@ -582,6 +596,8 @@ export class LayersPanel {
       }
     }
 
+    this._sortLayerRows();
+
     // Tag-at-load: compute-only WGSL assets never appear as look-shader choices.
     const computeNames = scene._computeShaderNames || null;
     const shaderNames = scene._loadedShaderSources
@@ -680,6 +696,43 @@ export class LayersPanel {
       for (const l of Layer.getCustomLayers()) available.add(l.name);
     }
     return available;
+  }
+
+  _layerZ(name) {
+    const input = this.elements.layerControls[name]?.zIndex;
+    if (input) {
+      const z = parseInt(input.value, 10);
+      if (!Number.isNaN(z)) return z;
+    }
+    const layer = Layer.initialized ? Layer.get(name) : null;
+    if (layer && Layer._zIndex) return Layer._zIndex[layer.id];
+    return DEFAULT_LAYERS[name]?.zIndex ?? 0;
+  }
+
+  /** Photoshop-style: highest z-index at the top of the list. */
+  _sortLayerRows() {
+    const panel = this.panel;
+    if (!panel) return;
+    const header = panel.firstChild;
+    const names = this._layerOrder;
+    names.sort((a, b) => {
+      const dz = this._layerZ(b) - this._layerZ(a);
+      return dz !== 0 ? dz : (a < b ? -1 : a > b ? 1 : 0);
+    });
+    let child = header ? header.nextSibling : panel.firstChild;
+    let dirty = false;
+    for (let i = 0; i < names.length; i++) {
+      if (this.elements.layerRows[names[i]] !== child) {
+        dirty = true;
+        break;
+      }
+      child = child ? child.nextSibling : null;
+    }
+    if (!dirty) return;
+    for (let i = 0; i < names.length; i++) {
+      const el = this.elements.layerRows[names[i]];
+      if (el) panel.appendChild(el);
+    }
   }
 
   _setLayerProp(layer, prop, value) {

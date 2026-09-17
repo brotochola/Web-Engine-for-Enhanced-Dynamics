@@ -5,6 +5,7 @@ import { NavDebugRenderer } from './navDebugRenderer.js';
 import { PhysicsDebugRenderer } from './physicsDebugRenderer.js';
 import { bindBox2dHotFields, isBox2dHotFieldsBound } from '../../../box2d/box2dHotFields.js';
 import { createRenderQueueCameraViews } from '../../../render/renderQueueLayout.js';
+import { Mouse } from '../../mouse.js';
 
 /**
  * Owns the <canvas> overlay that sits above the game viewport.
@@ -36,6 +37,22 @@ export class DebugCanvas {
 
     this.nav = new NavDebugRenderer();
     this.physics = new PhysicsDebugRenderer();
+
+    this._vpBuf = [null, null];
+    this._vpMaxVerts = 0;
+    this._vpSlotBytes = 0;
+    this._visPolyScratch = { buf: null, lightCount: 0, maxVerts: 0, slotBytes: 0 };
+
+    this._fpsHist = new Float32Array(120);
+    this._fpsHistI = 0;
+    this._fpsHistN = 0;
+    this._hudMx = 0x7fffffff;
+    this._hudMy = 0x7fffffff;
+    this._hudCx = 0;
+    this._hudCy = 0;
+    this._hudCz = 0;
+    this._hudLine1 = '';
+    this._hudLine2 = '';
   }
 
   // ------- canvas management -------
@@ -75,6 +92,7 @@ export class DebugCanvas {
     this.physics.attach(scene);
     this._bindRenderQueueCamera(scene);
     this._bindDisplayPose(scene);
+    this._bindVisPoly(scene);
   }
 
   detach() {
@@ -96,6 +114,8 @@ export class DebugCanvas {
     this._colliderPose.y = null;
     this._colliderPose.rotC = null;
     this._colliderPose.rotS = null;
+    this._vpBuf[0] = null;
+    this._vpBuf[1] = null;
   }
 
   /** Cache SAB views once (no per-frame alloc). */
@@ -164,6 +184,22 @@ export class DebugCanvas {
     pose.y = buf.y;
     pose.rotC = buf.rotC;
     pose.rotS = buf.rotS;
+  }
+
+  _bindVisPoly(scene) {
+    const buffers = scene?.buffers;
+    const a = buffers?.visibilityPolygonDataA;
+    const b = buffers?.visibilityPolygonDataB;
+    if (!a || !b) {
+      this._vpBuf[0] = null;
+      this._vpBuf[1] = null;
+      return;
+    }
+    const maxVerts = scene.maxPolygonVertices || scene.config?.lighting?.maxPolygonVertices || 128;
+    this._vpMaxVerts = maxVerts;
+    this._vpSlotBytes = 16 + maxVerts * 8;
+    this._vpBuf[0] = { header: new Int32Array(a, 0, 1), i32: new Int32Array(a), f32: new Float32Array(a) };
+    this._vpBuf[1] = { header: new Int32Array(b, 0, 1), i32: new Int32Array(b), f32: new Float32Array(b) };
   }
 
   /**
@@ -249,7 +285,11 @@ export class DebugCanvas {
       flags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_JOINTS) ||
-      flags.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS)
+      flags.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS) ||
+      flags.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INFO) ||
+      flags.isEnabled(DEBUG_FLAGS.SHOW_LIGHTS) ||
+      flags.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH) ||
+      !!this.debugUI.tools?.selectedPoolKind
     );
   }
 
@@ -280,73 +320,144 @@ export class DebugCanvas {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Spatial grid
+    this._pinDisplayPose(this._queuePoseReady);
+    const pose = this._colliderPose;
+
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID))
       this.physics.drawSpatialGrid(ctx, canvas, camera, zoom);
 
-    // 1.5. Sleeping cells
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS))
       this.physics.drawSleepingCells(ctx, canvas, camera, zoom);
 
-    // 2. Nav walkability
     if (this.nav.showWalkabilityGrid)
       this.nav.drawWalkabilityGrid(ctx, canvas, camera, zoom);
 
-    // 3. Dynamic flowfield
     if (this.nav.selectedFlowfieldSlot >= 0)
       this.nav.drawFlowfield(ctx, canvas, camera, zoom, this.nav.selectedFlowfieldSlot);
 
-    // 3.5 Static flowfield
     if (this.nav.selectedStaticFlowfield !== null)
       this.nav.drawStaticFlowfield(ctx, canvas, camera, zoom, this.nav.selectedStaticFlowfield);
 
-    // 4. Path
     if (this.nav.selectedPathSlot >= 0)
       this.nav.drawPath(ctx, canvas, camera, zoom, this.nav.selectedPathSlot);
 
-    // 5. Colliders — same stamped poseReady as sprites / compute pack
-    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS)) {
-      this._pinDisplayPose(this._queuePoseReady);
-      this.physics.drawColliders(ctx, canvas, camera, zoom, this._colliderPose);
-    }
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS))
+      this.physics.drawColliders(ctx, canvas, camera, zoom, pose, flags);
 
-    // 5.5 Entity origins
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS))
-      this.physics.drawEntityOrigins(ctx, canvas, camera, zoom, flags);
+      this.physics.drawEntityOrigins(ctx, canvas, camera, zoom, flags, pose);
 
-    // 6. Velocity
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_VELOCITY))
-      this.physics.drawVelocityVectors(ctx, canvas, camera, zoom);
+      this.physics.drawVelocityVectors(ctx, canvas, camera, zoom, flags, pose);
 
-    // 7. Acceleration
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ACCELERATION))
-      this.physics.drawAccelerationVectors(ctx, canvas, camera, zoom);
+      this.physics.drawAccelerationVectors(ctx, canvas, camera, zoom, flags, pose);
 
-    // 8. Neighbors
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_NEIGHBORS))
       this.physics.drawNeighborConnections(ctx, canvas, camera, zoom);
 
-    // 9. Debug draw primitives (lines, circles, text, etc. via DebugDraw API)
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_DEBUG_DRAWS))
       this.physics.drawDebugPrimitives(ctx, canvas, camera, zoom);
 
-    // 10. Entity indices
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES))
-      this.physics.drawEntityIndices(ctx, canvas, camera, zoom);
+      this.physics.drawEntityIndices(ctx, canvas, camera, zoom, flags, pose);
 
-    // 11. Sleeping entities
-    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES)) {
-      this._pinDisplayPose(this._queuePoseReady);
-      this.physics.drawSleepingEntities(ctx, canvas, camera, zoom, this._colliderPose);
-    }
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES))
+      this.physics.drawSleepingEntities(ctx, canvas, camera, zoom, pose);
 
-    // 12. Joints
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_JOINTS))
-      this.physics.drawJoints(ctx, canvas, camera, zoom);
+      this.physics.drawJoints(ctx, canvas, camera, zoom, flags);
 
-    // 13. Selected entity (always on top)
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_LIGHTS))
+      this.physics.drawLights(ctx, canvas, camera, zoom, flags, pose, this._visPolyFrame());
+
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INFO))
+      this.physics.drawEntityInfo(ctx, canvas, camera, zoom, pose);
+
+    const tools = this.debugUI.tools;
+    if (tools?.selectedPoolKind)
+      this.physics.drawPoolSelection(ctx, canvas, camera, zoom, tools.selectedPoolKind, tools.selectedPoolIndex);
+
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY))
-      this.physics.drawSelectedEntity(ctx, canvas, camera, zoom, flags);
+      this.physics.drawSelectedEntity(ctx, canvas, camera, zoom, flags, pose);
+
+    this._drawHud(ctx, canvas, camera, zoom);
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH))
+      this._drawFpsGraph(ctx, canvas, scene);
+  }
+
+  _visPolyFrame() {
+    const scratch = this._visPolyScratch;
+    scratch.buf = null;
+    scratch.lightCount = 0;
+    scratch.maxVerts = this._vpMaxVerts;
+    scratch.slotBytes = this._vpSlotBytes;
+    if (!this._vpBuf[0] || !this._rqSync) return scratch;
+    const ready = Atomics.load(this._rqSync, 0);
+    if (!(ready > 0)) return scratch;
+    const slot = (ready - 1) & 1;
+    const buf = this._vpBuf[slot];
+    if (!buf) return scratch;
+    scratch.buf = buf;
+    scratch.lightCount = buf.header[0] | 0;
+    return scratch;
+  }
+
+  _drawHud(ctx, canvas, camera, zoom) {
+    const mx = Mouse.isPresent ? (Mouse.x * 10) | 0 : 0x7fffffff;
+    const my = Mouse.isPresent ? (Mouse.y * 10) | 0 : 0x7fffffff;
+    const cx = (camera.x * 10) | 0;
+    const cy = (camera.y * 10) | 0;
+    const cz = (zoom * 100) | 0;
+    if (mx !== this._hudMx || my !== this._hudMy || cx !== this._hudCx || cy !== this._hudCy || cz !== this._hudCz) {
+      this._hudMx = mx;
+      this._hudMy = my;
+      this._hudCx = cx;
+      this._hudCy = cy;
+      this._hudCz = cz;
+      if (Mouse.isPresent) {
+        this._hudLine1 = 'mouse ' + (mx / 10).toFixed(1) + ', ' + (my / 10).toFixed(1);
+      } else {
+        this._hudLine1 = 'mouse --';
+      }
+      this._hudLine2 = 'cam ' + (cx / 10).toFixed(1) + ', ' + (cy / 10).toFixed(1) + '  z' + (cz / 100).toFixed(2);
+    }
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(8, canvas.height - 36, 220, 28);
+    ctx.fillStyle = 'rgba(220, 220, 220, 0.9)';
+    ctx.fillText(this._hudLine1, 12, canvas.height - 32);
+    ctx.fillText(this._hudLine2, 12, canvas.height - 18);
+  }
+
+  _drawFpsGraph(ctx, canvas, scene) {
+    const fps = scene?.mainFPS || 0;
+    const hist = this._fpsHist;
+    hist[this._fpsHistI] = fps;
+    this._fpsHistI = (this._fpsHistI + 1) % hist.length;
+    if (this._fpsHistN < hist.length) this._fpsHistN++;
+
+    const w = 120;
+    const h = 36;
+    const x0 = canvas.width - w - 12;
+    const y0 = 40;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(x0, y0, w, h);
+    ctx.strokeStyle = 'rgba(74, 222, 128, 0.9)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const n = this._fpsHistN;
+    const start = (this._fpsHistI - n + hist.length) % hist.length;
+    for (let i = 0; i < n; i++) {
+      const v = hist[(start + i) % hist.length];
+      const x = x0 + (i / (hist.length - 1)) * w;
+      const y = y0 + h - Math.max(0, Math.min(1, v / 60)) * (h - 4) - 2;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
   }
 
   /** Re-bind HEAP views if WASM memory growth detached TypedArrays. */

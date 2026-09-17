@@ -376,6 +376,7 @@ export class Grid {
    */
   static _queryResults = new Uint16Array(16384); // Pre-allocated results buffer (Uint16 since entity IDs < 65536)
   static _queryResultCount = 0;
+  static _queryResultBox = { count: 0, entities: null };
 
   // Zero-GC marker array for deduplication (lazy-initialized)
   static _markerArray = null; // Int32Array for marking processed entities
@@ -403,7 +404,10 @@ export class Grid {
     const transformActive = Transform?.active;
     if (!transformX || !transformY || !transformActive) {
       Grid._queryResultCount = 0;
-      return { count: 0, entities: results };
+      const box = Grid._queryResultBox;
+      box.count = 0;
+      box.entities = results;
+      return box;
     }
 
     // Track processed entities to avoid duplicates (entities can span multiple cells)
@@ -440,7 +444,10 @@ export class Grid {
     }
 
     Grid._queryResultCount = count;
-    return { count, entities: results };
+    const box = Grid._queryResultBox;
+    box.count = count;
+    box.entities = results;
+    return box;
   }
 
   // =============================================================================

@@ -85,14 +85,6 @@ export class PerformancePanel {
     summary.appendChild(poolRow);
     container.appendChild(summary);
 
-    const jobRow = document.createElement('div');
-    jobRow.className = 'debug-ui-row';
-    this.elements.jobStealing = createStat('Jobs: --', 'jobs');
-    jobRow.appendChild(this.elements.jobStealing);
-    jobRow.style.display = 'none';
-    this.elements.jobStealingRow = jobRow;
-    container.appendChild(jobRow);
-
     this.elements.workerStatsContainer = document.createElement('div');
     this.elements.workerStatsContainer.className = 'debug-ui-worker-list';
     container.appendChild(this.elements.workerStatsContainer);
