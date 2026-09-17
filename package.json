@@ -86,6 +86,8 @@
     "bench:micro:particle-ease": "node tests/bench/particleEaseMicrobench.mjs",
     "bench:micro:particle-integrate": "node tests/bench/particleIntegrateMicrobench.mjs",
     "bench:micro:bullets": "node tests/bench/bulletTickMicrobench.mjs",
+    "bench:micro:deco-sway": "node tests/bench/decorationSwayMicrobench.mjs",
+    "bench:pool-flow": "node tests/bench/runPoolFlowCampaign.mjs",
     "bench:bullets:pyramid": "node tests/bench/runBulletPyramidAb.mjs",
     "bench:feature:particle-emit": "node tests/bench/runIntegratedWorkerBenchmark.mjs --scene /tests/bench/stressScenes/particleEmitStressScene.js --scene-export ParticleEmitStressScene --output tests/results/particle-emit-stress.json",
     "bench:feature:particle-integrate": "node tests/bench/runIntegratedWorkerBenchmark.mjs --scene /tests/bench/stressScenes/particleIntegrateStressScene.js --scene-export ParticleIntegrateStressScene --output tests/results/particle-integrate-stress.json",

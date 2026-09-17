@@ -1827,6 +1827,7 @@ class ParticleWorker extends AbstractWorker {
     this.stats[PARTICLE_STATS.ACTIVE_PARTICLES] = this.activeParticleCount;
     this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
     this.stats[PARTICLE_STATS.ACTIVE_BULLETS] = this.activeBulletsData ? this.activeBulletsData[0] : 0;
+    this.stats[PARTICLE_STATS.ACTIVE_DECORATIONS] = this._activeDecorationSnapshotCount || 0;
     if (!this.collectDetailedStats) return;
     this.stats[PARTICLE_STATS.TOTAL_PARTICLES] = this.maxParticles;
     this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;

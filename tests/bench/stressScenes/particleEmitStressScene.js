@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { ParticleEmitDriver } from './particles/particleEmitDriver.js';
+import { ParticleEmitDriver, ParticleEmitDriver32 } from './particles/particleEmitDriver.js';
 
 const { Scene, Camera } = WEED;
 
@@ -47,6 +47,26 @@ export class ParticleEmitStressScene extends Scene {
   create() {
     this.spawnEntity(ParticleEmitDriver, { seed: SEED });
 
+    Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
+    Camera.setZoom(0.3);
+  }
+}
+
+export class ParticleEmitStressScene3W extends Scene {
+  static config = {
+    ...ParticleEmitStressScene.config,
+    logic: {
+      ...ParticleEmitStressScene.config.logic,
+      numberOfLogicWorkers: 3,
+    },
+  };
+
+  static entities = [[ParticleEmitDriver32, 4]];
+
+  create() {
+    for (let i = 0; i < 4; i++) {
+      this.spawnEntity(ParticleEmitDriver32, { seed: SEED + i * 17, emitPerTick: 32 });
+    }
     Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
     Camera.setZoom(0.3);
   }

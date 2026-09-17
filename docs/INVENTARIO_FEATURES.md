@@ -162,11 +162,15 @@ Módulo: `src/core/decorationSpatial.js`. Kernel: `decorationSpatialMicrobench.m
 
 Esta noche: kernel sí; zenithal **como estrés**, no cinco corridas headed. Sin escena `queryCircle` a tasa fija.
 
+Pool-flow 2026-09-16 (otra pregunta, mismo worker de partículas): sway con `copyActiveSnapshot` vs scan de `maxDecorations`. Carga `ACTIVE_DECORATIONS` (slot 13 always-on). Escenas `DecoFixedStressScene` (12000) y `DecoChurnStressScene` (~4000). Kernel a 10% ocupación: snapshot **+79%** ops/s. Scan en estrés **dropped** (fija 1W +3.4%, churn +16.6% / +6.1%). Fija 3W headless KEEP de scan (−4.2%) no se confirmó headed (TIE −1.5%). Snapshot se queda. Informe: [`tests/results/pool-flow/report.md`](../tests/results/pool-flow/report.md).
+
 ### bullets — Tick de balas
 
 Módulo: `src/util/bulletTick.js`. Kernel: `bulletTickMicrobench.mjs` (`cases.tickCrowded.opsPerSec`; también scan vs compact sparse). Escena: `BulletStressScene` (pool 2048, 3 logic workers, 8 shooters × 40 spawn/tick, paredes). Gameplay: Predator headed. Primaria: `particle_STEP_MS`. Carga: `ACTIVE_BULLETS`.
 
 Pirámide 2026-09-16: speed-cache **kept en kernel** (`tickCrowded` hypot→cached; Predator headed TIE con ~2 balas vivas — no se vende como Predator). Compact **dropped** para el motor: kernel sparse gana ops/s (hasta +100% en 256/8192), estrés **WORSE** (+7.6% particle, carga OK), Predator compact **FAIL** (cv `ACTIVE_BULLETS` ≥ 50% + crash Chromium). Isolation vieja (+1.9%) se queda. Scan de `maxBullets`; no `activeBulletsLock`.
+
+Pool-flow 2026-09-16: storm 8192 (`BulletStormScene1W/3W`, ~8040 vivas). Two-pass **dropped** (kernel 10% 2048 +7.8%, 10% 8192 −3.7%; storm 1W +3.1% WORSE, 3W +2.9% TIE). Compact+lock **dropped** otra vez (1W +39.0%, 3W +35.3%). Predator no entra. Informe: [`tests/results/pool-flow/report.md`](../tests/results/pool-flow/report.md).
 
 ### spawn — Tormenta Treiber / spawn
 

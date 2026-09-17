@@ -9,18 +9,27 @@ const WORLD_H = 3000;
 const MARGIN = 64;
 
 /**
- * Fires a fixed-rate emitFlat burst every tick at seeded, cycling positions.
- * Short lifespan keeps the pool recycling continuously so emit stays the
- * bottleneck (not pool exhaustion).
+ * Fixed-rate emitFlat burst. Scratch is per-worker: logic0 gets onSpawned,
+ * other logic workers lazy-init in tick from `this.index` + static emitPerTick.
  */
 export class ParticleEmitDriver extends GameObject {
   static scriptUrl = import.meta.url;
   static components = [];
+  static emitPerTick = EMIT_PER_TICK;
 
-  onSpawned({ seed = 0xc0de1234 } = {}) {
+  onSpawned({ seed, emitPerTick } = {}) {
     this.x = -10000;
     this.y = -10000;
-    this._seed = seed >>> 0;
+    this._initScratch({
+      seed: seed != null ? seed : this.index,
+      emitPerTick: emitPerTick != null ? emitPerTick : this.constructor.emitPerTick,
+    });
+  }
+
+  _initScratch({ seed, emitPerTick } = {}) {
+    if (this._positions) return;
+    this._seed = (seed != null ? seed : this.index) >>> 0;
+    this._emitPerTick = (emitPerTick != null ? emitPerTick : this.constructor.emitPerTick) | 0;
     this._cursor = 0;
     this._sink = 0;
     this._positions = new Float32Array(POSITION_SLOTS * 2);
@@ -43,6 +52,7 @@ export class ParticleEmitDriver extends GameObject {
   }
 
   tick() {
+    this._initScratch();
     const positions = this._positions;
     const cursor = this._cursor;
     const k = (cursor % POSITION_SLOTS) * 2;
@@ -50,7 +60,7 @@ export class ParticleEmitDriver extends GameObject {
     const cy = positions[k + 1];
 
     this._sink += ParticleEmitter.emitFlat({
-      count: EMIT_PER_TICK,
+      count: this._emitPerTick,
       x: { min: cx - 40, max: cx + 40 },
       y: { min: cy - 40, max: cy + 40 },
       vx: { min: -30, max: 30 },
@@ -61,4 +71,8 @@ export class ParticleEmitDriver extends GameObject {
 
     this._cursor = cursor + 1;
   }
+}
+
+export class ParticleEmitDriver32 extends ParticleEmitDriver {
+  static emitPerTick = 32;
 }

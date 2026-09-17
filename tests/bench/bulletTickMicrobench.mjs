@@ -13,7 +13,7 @@ import { Grid } from '../../src/core/grid.js';
 import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { BulletComponent } from '../../src/components/bulletComponent.js';
-import { tickBulletsBuffers } from '../../src/util/bulletTick.js';
+import { collectLiveBulletIndices, tickBulletsBuffers } from '../../src/util/bulletTick.js';
 import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
@@ -455,6 +455,111 @@ console.log(
 );
 console.log(`compact kernel keep (≥${KEEP_OPS_PCT}% ops/s on any sparse/dense pair): ${compactKernelKeep ? 'YES' : 'NO'}`);
 
+const OCCUPANCY = [10, 50, 95];
+const OCC_POOLS = [BULLET_COUNT, SPARSE_POOL_BIG];
+const STEPS_OCC = Number(args['steps-occ'] ?? args.steps ?? 400);
+const occupancyPairs = {};
+
+function twoPassTick(poolSize, scratch, args) {
+  const n = collectLiveBulletIndices(BulletComponent.active, poolSize, scratch);
+  tickBulletsBuffers({ ...args, liveIndices: scratch, liveCount: n });
+}
+
+function runOccupancy(poolSize, occPct, steps) {
+  const liveCount = Math.max(1, Math.round((poolSize * occPct) / 100));
+  setupBullets(poolSize);
+  activeData = new Uint16Array(1 + poolSize);
+  const scratch = new Uint16Array(poolSize);
+  const rng = mulberry32(SEED ^ poolSize ^ occPct);
+  setupGrid(ENTITY_COUNT, mulberry32(SEED ^ 1));
+  const live = fillBulletsSparse(rng, MARGIN + 40, WORLD_H * 0.5, poolSize, liveCount);
+  const snap = snapshotLive(poolSize);
+  const label = `occ${occPct}_${poolSize}`;
+
+  restoreLive(snap);
+  tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+  const fusedSum = checksumX(live);
+  const fusedCount = activeData[0];
+
+  restoreLive(snap);
+  twoPassTick(poolSize, scratch, tickArgs(true, excludeSet, activeData, poolSize, null));
+  assertApprox(checksumX(live), fusedSum, 1e-3, `${label} two-pass checksum`);
+  if (activeData[0] !== fusedCount) {
+    throw new Error(`${label} two-pass vs fused live ${activeData[0]} != ${fusedCount}`);
+  }
+
+  restoreLive(snap);
+  tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, live));
+  assertApprox(checksumX(live), fusedSum, 1e-3, `${label} live-given checksum`);
+  if (activeData[0] !== fusedCount) {
+    throw new Error(`${label} live-given vs fused live ${activeData[0]} != ${fusedCount}`);
+  }
+
+  const fused = timeIt(
+    `${label} fused (${liveCount}/${poolSize})`,
+    (iters) => {
+      for (let s = 0; s < iters; s++) {
+        restoreLive(snap);
+        tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+      }
+    },
+    { iterations: steps }
+  );
+  const twoPass = timeIt(
+    `${label} two-pass (${liveCount}/${poolSize})`,
+    (iters) => {
+      for (let s = 0; s < iters; s++) {
+        restoreLive(snap);
+        twoPassTick(poolSize, scratch, tickArgs(true, excludeSet, activeData, poolSize, null));
+      }
+    },
+    { iterations: steps }
+  );
+  const given = timeIt(
+    `${label} live-given (${liveCount}/${poolSize})`,
+    (iters) => {
+      for (let s = 0; s < iters; s++) {
+        restoreLive(snap);
+        tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, live));
+      }
+    },
+    { iterations: steps }
+  );
+  return { fused, twoPass, given, liveCount, poolSize, occPct };
+}
+
+for (const poolSize of OCC_POOLS) {
+  for (const occ of OCCUPANCY) {
+    const row = runOccupancy(poolSize, occ, STEPS_OCC);
+    const key = `occ${occ}_${poolSize}`;
+    cases[`${key}Fused`] = row.fused;
+    cases[`${key}TwoPass`] = row.twoPass;
+    cases[`${key}Given`] = row.given;
+    occupancyPairs[key] = {
+      twoPassVsFused: opsDeltaPct(row.twoPass.opsPerSec, row.fused.opsPerSec),
+      givenVsFused: opsDeltaPct(row.given.opsPerSec, row.fused.opsPerSec),
+      liveCount: row.liveCount,
+      poolSize,
+      occPct: occ,
+    };
+    console.log(
+      `occ ${occ}% ${row.liveCount}/${poolSize} fused→two-pass→given: ${Math.round(row.fused.opsPerSec)} → ${Math.round(row.twoPass.opsPerSec)} → ${Math.round(row.given.opsPerSec)} ops/s (${occupancyPairs[key].twoPassVsFused.toFixed(1)}% / ${occupancyPairs[key].givenVsFused.toFixed(1)}%)`
+    );
+  }
+}
+
+const twoPassSparseKeep = Object.entries(occupancyPairs).some(
+  ([key, row]) => row.occPct <= 10 && row.twoPassVsFused != null && row.twoPassVsFused >= KEEP_OPS_PCT
+);
+
+for (const [key, result] of Object.entries(cases)) {
+  caseSummary[key] = {
+    ms: result.ms,
+    opsPerSec: result.opsPerSec,
+    iterations: result.iterations,
+  };
+}
+
 if (OUTPUT) {
   writeReport(OUTPUT, {
     feature: 'bullets',
@@ -463,6 +568,9 @@ if (OUTPUT) {
     bulletCount: BULLET_COUNT,
     sparseLive: SPARSE_LIVE,
     sparsePoolBig: SPARSE_POOL_BIG,
+    occupancy: OCCUPANCY,
+    occupancyPairs,
+    twoPassSparseKeep,
     entityCount: ENTITY_COUNT,
     cellSize: CELL_SIZE,
     compactPairs,

@@ -189,6 +189,7 @@ console.log(`config: maxParticles=${MAX_PARTICLES} steps=${STEPS} seed=${SEED}`)
 // ============================================================================
 const PARTICLES_PER_CASE = Math.min(2048, MAX_PARTICLES);
 const cases = {};
+let occupancyMeta = null;
 
 function resetLife(indices) {
   for (const i of indices) components.currentLife[i] = 0;
@@ -388,6 +389,103 @@ function resetLife(indices) {
   activeArr.fill(0);
 }
 
+// Occupancy: flag scan + physics at 10/50/95% of the pool.
+{
+  const STEPS_OCC = Number(args['steps-occ'] ?? Math.min(STEPS, 800));
+  const occupancy = {};
+  const localIndices = new Uint16Array(MAX_PARTICLES);
+  const componentsOcc = {
+    active: ParticleComponent.active,
+    x: ParticleComponent.x,
+    y: ParticleComponent.y,
+    z: ParticleComponent.z,
+    vx: ParticleComponent.vx,
+    vy: ParticleComponent.vy,
+    vz: ParticleComponent.vz,
+    lifespan: ParticleComponent.lifespan,
+    currentLife: ParticleComponent.currentLife,
+    gravity: ParticleComponent.gravity,
+    alpha: ParticleComponent.alpha,
+    fadeOnTheFloor: ParticleComponent.fadeOnTheFloor,
+    timeOnFloor: ParticleComponent.timeOnFloor,
+    initialAlpha: ParticleComponent.initialAlpha,
+    stayOnTheFloor: ParticleComponent.stayOnTheFloor,
+    despawnOnGroundContact: ParticleComponent.despawnOnGroundContact,
+    flat: ParticleComponent.flat,
+  };
+
+  function resetPool() {
+    ParticleComponent.active.fill(0);
+    ParticleEmitter.resetFreeListInterleaved();
+  }
+
+  for (const occ of [10, 50, 95]) {
+    resetPool();
+    const liveCount = Math.max(1, Math.round((MAX_PARTICLES * occ) / 100));
+    const indices = spawnDirect(liveCount, {
+      flat: true,
+      x0: 0,
+      y0: 0,
+      vx0: 12,
+      vy0: 0,
+      lifespan: 65535,
+    });
+    const key = `occ${occ}`;
+    cases[`${key}_build`] = timeIt(
+      `occ ${occ}% buildActiveListBuffers (${liveCount}/${MAX_PARTICLES})`,
+      (iters) => {
+        for (let n = 0; n < iters; n++) {
+          buildActiveListBuffers({
+            maxParticles: MAX_PARTICLES,
+            active: ParticleComponent.active,
+            localIndices,
+            activeData: null,
+            expectedActive: liveCount,
+          });
+        }
+      },
+      { iterations: STEPS_OCC }
+    );
+    cases[`${key}_integrate`] = timeIt(
+      `occ ${occ}% build+physics (${liveCount}/${MAX_PARTICLES})`,
+      (iters) => {
+        for (let n = 0; n < iters; n++) {
+          const count = buildActiveListBuffers({
+            maxParticles: MAX_PARTICLES,
+            active: ParticleComponent.active,
+            localIndices,
+            activeData: null,
+            expectedActive: liveCount,
+          });
+          updateParticlePhysicsBuffers({
+            activeIndices: localIndices,
+            count,
+            deltaTime: DT,
+            dtRatio: DT_RATIO,
+            decalsEnabled: false,
+            particlesToStamp: null,
+            components: componentsOcc,
+          });
+          for (const i of indices) {
+            ParticleComponent.currentLife[i] = 0;
+            ParticleComponent.x[i] = 0;
+          }
+        }
+      },
+      { iterations: STEPS_OCC }
+    );
+    occupancy[key] = {
+      liveCount,
+      pool: MAX_PARTICLES,
+      occPct: occ,
+      buildOps: cases[`${key}_build`].opsPerSec,
+      integrateOps: cases[`${key}_integrate`].opsPerSec,
+    };
+    despawnIndices(indices);
+  }
+  occupancyMeta = occupancy;
+}
+
 if (OUTPUT) {
   const caseSummary = {};
   for (const [key, result] of Object.entries(cases)) {
@@ -404,6 +502,7 @@ if (OUTPUT) {
     maxParticles: MAX_PARTICLES,
     particlesPerCase: PARTICLES_PER_CASE,
     steps: STEPS,
+    occupancy: occupancyMeta,
     cases: caseSummary,
   });
 }

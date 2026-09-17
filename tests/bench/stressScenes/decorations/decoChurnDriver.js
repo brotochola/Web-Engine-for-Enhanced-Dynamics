@@ -1,48 +1,42 @@
 import WEED from '/src/index.js';
 
-const { GameObject, BulletPool } = WEED;
+const { GameObject, DecorationPool } = WEED;
 
-const DEFAULT_SPAWN_PER_TICK = 40;
 const POSITION_SLOTS = 256;
-const SPEED = 1500;
 const WORLD_W = 4000;
 const WORLD_H = 3000;
-const MARGIN = 200;
+const MARGIN = 80;
 
 /**
- * Fires a fixed-rate bullet burst from cycling origins toward random unit dirs.
- * Instance fields are per-worker: spawn/onSpawned only runs on logic0, so tick
- * lazy-inits from `this.index` + static defaults on the other logic workers.
+ * Fixed-rate deco spawn/despawn so the compact-list CAS contends with copyActiveSnapshot.
+ * Scratch is per-worker (onSpawned is logic0-only). Fill to liveCap, then churn.
  */
-export class BulletStressDriver extends GameObject {
+export class DecoChurnDriver extends GameObject {
   static scriptUrl = import.meta.url;
   static components = [];
-  static spawnPerTick = DEFAULT_SPAWN_PER_TICK;
+  static spawnPerTick = 8;
+  static despawnPerTick = 8;
+  static liveCap = 500;
 
-  onSpawned({ seed, spawnPerTick } = {}) {
+  onSpawned({ seed, spawnPerTick, despawnPerTick, liveCap } = {}) {
     this.x = -10000;
     this.y = -10000;
-    this._initScratch({
-      seed: seed != null ? seed : this.index,
-      spawnPerTick: spawnPerTick != null ? spawnPerTick : this.constructor.spawnPerTick,
-    });
+    this._initScratch({ seed, spawnPerTick, despawnPerTick, liveCap });
   }
 
-  _initScratch({ seed, spawnPerTick } = {}) {
+  _initScratch({ seed, spawnPerTick, despawnPerTick, liveCap } = {}) {
     if (this._positions) return;
     this._seed = (seed != null ? seed : this.index) >>> 0;
     this._spawnPerTick = (spawnPerTick != null ? spawnPerTick : this.constructor.spawnPerTick) | 0;
+    this._despawnPerTick = (despawnPerTick != null ? despawnPerTick : this.constructor.despawnPerTick) | 0;
+    this._liveCap = (liveCap != null ? liveCap : this.constructor.liveCap) | 0;
     this._cursor = 0;
-    this._sink = 0;
+    this._live = [];
     this._positions = new Float32Array(POSITION_SLOTS * 2);
-    this._dirs = new Float32Array(POSITION_SLOTS * 2);
     const rng = this._mulberry32(this._seed);
     for (let i = 0; i < POSITION_SLOTS; i++) {
       this._positions[i * 2] = MARGIN + rng() * (WORLD_W - 2 * MARGIN);
       this._positions[i * 2 + 1] = MARGIN + rng() * (WORLD_H - 2 * MARGIN);
-      const ang = rng() * Math.PI * 2;
-      this._dirs[i * 2] = Math.cos(ang);
-      this._dirs[i * 2 + 1] = Math.sin(ang);
     }
   }
 
@@ -59,31 +53,35 @@ export class BulletStressDriver extends GameObject {
 
   tick() {
     this._initScratch();
+    const live = this._live;
+    if (live.length >= this._liveCap) {
+      for (let n = 0; n < this._despawnPerTick; n++) {
+        if (!live.length) break;
+        DecorationPool.despawn(live.pop());
+      }
+    }
     const positions = this._positions;
-    const dirs = this._dirs;
-    const ownerId = this.index;
     let cursor = this._cursor;
-    let spawned = 0;
     for (let n = 0; n < this._spawnPerTick; n++) {
+      if (live.length >= this._liveCap) break;
       const slot = cursor % POSITION_SLOTS;
-      const i = BulletPool.spawn({
+      const i = DecorationPool.spawn({
         x: positions[slot * 2],
         y: positions[slot * 2 + 1],
-        vx: dirs[slot * 2] * SPEED,
-        vy: dirs[slot * 2 + 1] * SPEED,
-        damage: 1,
-        ownerId,
-        shooterEntityType: 0,
+        texture: 'ball',
+        scaleX: 0.2,
+        scaleY: 0.2,
+        alpha: 0.9,
+        anchorX: 0.5,
+        anchorY: 1,
+        sway: true,
+        swayAmplitude: 0.05,
+        swayFrequency: 1.4,
       });
       if (i < 0) break;
-      spawned++;
+      live.push(i);
       cursor++;
     }
     this._cursor = cursor;
-    this._sink += spawned;
   }
-}
-
-export class BulletStormDriver extends BulletStressDriver {
-  static spawnPerTick = 80;
 }

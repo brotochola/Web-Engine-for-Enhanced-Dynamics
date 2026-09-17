@@ -4,6 +4,18 @@
 import { Ray } from '../core/ray.js';
 
 /**
+ * Fill `out` with indices where `active[i]` is set. Lock-free; this-frame flags.
+ * @returns {number} live count
+ */
+export function collectLiveBulletIndices(active, maxBullets, out) {
+  let n = 0;
+  for (let i = 0; i < maxBullets; i++) {
+    if (active[i]) out[n++] = i;
+  }
+  return n;
+}
+
+/**
  * Advance every active bullet one step: integrate, raycast prev→next, write
  * impacts, despawn on hit. Writes activeData[0] = live count.
  *
