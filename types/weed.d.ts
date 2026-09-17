@@ -3,12 +3,28 @@
  * Source of truth for behavior: JavaScript sources under ../src/
  */
 
-export * from './utils';
+export {
+  mixSeed,
+  seededRandom,
+  collisionPairKey,
+  setupWorkerCommunication,
+  containerRadius,
+  distanceSq2D,
+  getDirectionFromAngle,
+  getDirectionFromVector,
+  getDirection8FromVector,
+  mixTint,
+  randomColor,
+  rng,
+} from './utils';
 
 // --- Config / enums (from ConfigDefaults.js) ---
 
 export const ShapeType: Readonly<{ Box: 0; Circle: 1; Polygon: 2 }>;
 export const MAX_POLYGON_VERTICES: 8;
+export const Box2dBodyType: Readonly<Record<string, number>>;
+export const STATE_CHANNELS: Readonly<Record<string, number>>;
+export const COMPUTE_FLAG_STATIC: 2;
 export const BLEND_MODES: Readonly<Record<string, number>>;
 
 /** How a shader layer builds density RT before the look fragment. Ints; config still accepts old strings. */
@@ -992,6 +1008,125 @@ export declare class QuerySystem {
   publishPrecomputedActiveQueries(frameNumber?: number): void;
   serialize(): Record<string, unknown>;
   getPrecomputedQueryCount(): number;
+}
+
+export declare class Query {
+  static reset(): unknown;
+  static ensureSystem(): QuerySystem;
+  static bindSystem(system: QuerySystem): void;
+  static bindWorker(fns: {
+    query: (componentClasses: ReadonlyArray<typeof Component>) => Uint16Array;
+    queryActiveEntities: (componentClasses: ReadonlyArray<typeof Component>) => Uint16Array;
+    queryActiveEntitiesSlow: (componentClasses: ReadonlyArray<typeof Component>) => Uint16Array;
+  }): void;
+  static buildQueries(registeredClasses: SceneRegisteredClassEntry[]): void;
+  static definePrecomputedQueries(
+    componentClasses: QuerySystemPrecomputeComponentMap,
+    sceneQueries?: ReadonlyArray<SceneQueryTuple>
+  ): void;
+  static createSharedBuffers(): QuerySystemSharedBuffersResult;
+  static serialize(): Record<string, unknown>;
+  static readonly queryResultViews: unknown[] | undefined;
+  static readonly queryEntityCapacity: number;
+  static getPrecomputedQueryCount(): number;
+  static query(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
+  static queryActiveEntities(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
+  static queryActiveEntitiesSlow(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
+}
+
+export declare class Box2d {
+  static collectDetailedStats: boolean;
+  static beginFrame(): void;
+  static consumeStats(): { ms: number; count: number };
+  static queryAABB(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    out?: unknown,
+    filter?: unknown,
+  ): unknown;
+  static queryAABBAsync(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    out?: unknown,
+    filter?: unknown,
+  ): Promise<unknown>;
+  static overlapCircle(
+    cx: number,
+    cy: number,
+    radius: number,
+    out?: unknown,
+    filter?: unknown,
+  ): unknown;
+  static overlapCircleAsync(
+    cx: number,
+    cy: number,
+    radius: number,
+    out?: unknown,
+    filter?: unknown,
+  ): Promise<unknown>;
+  static castRayClosest(
+    ox: number,
+    oy: number,
+    dx: number,
+    dy: number,
+    out?: unknown,
+    filter?: unknown,
+  ): unknown;
+  static castRayClosestAsync(
+    ox: number,
+    oy: number,
+    dx: number,
+    dy: number,
+    out?: unknown,
+    filter?: unknown,
+  ): Promise<unknown>;
+  static castRayAll(
+    ox: number,
+    oy: number,
+    dx: number,
+    dy: number,
+    out?: unknown,
+    filter?: unknown,
+  ): unknown;
+  static castRayAllAsync(
+    ox: number,
+    oy: number,
+    dx: number,
+    dy: number,
+    out?: unknown,
+    filter?: unknown,
+  ): Promise<unknown>;
+  static explode(opts: {
+    x: number;
+    y: number;
+    radius: number;
+    impulsePerLength: number;
+    maskBits?: number;
+  }): void;
+  static getMovedBodies(): {
+    list: Uint32Array;
+    count: number;
+    bits: Uint8Array | null;
+    generation: number;
+    fellAsleep: Uint8Array | null;
+  };
+}
+
+export declare class Decal {
+  static bindStampApply(fn: ((...args: number[]) => void) | null): void;
+  static bindAtlas(opts: {
+    tilesSab: SharedArrayBuffer;
+    tileSize: number;
+    tilePixelSize: number;
+    tilesX: number;
+    tilesY: number;
+  } | null): void;
+  static getColor(x: number, y: number): number;
+  static stamp(config: Record<string, unknown>): void;
 }
 
 export declare class Scene {
@@ -2294,10 +2429,6 @@ export function loadGame(
 export function buildSavePayload(scene: Scene, globals?: Record<string, unknown>): unknown;
 export function encodeSave(payload: unknown): Promise<Uint8Array>;
 export function decodeSave(blob: Uint8Array): Promise<unknown>;
-export function collectSerializableEntities(scene: Scene): unknown;
-export function isEntityClassSerializable(EntityClass: typeof GameObject): boolean;
-export function shouldSaveEntity(...args: unknown[]): boolean;
-export function applyEntitySaveRestore(...args: unknown[]): void;
 
 export const SaveGame: {
   SaveStore: typeof SaveStore;
@@ -2306,10 +2437,6 @@ export const SaveGame: {
   buildSavePayload: typeof buildSavePayload;
   encodeSave: typeof encodeSave;
   decodeSave: typeof decodeSave;
-  collectSerializableEntities: typeof collectSerializableEntities;
-  isEntityClassSerializable: typeof isEntityClassSerializable;
-  shouldSaveEntity: typeof shouldSaveEntity;
-  applyEntitySaveRestore: typeof applyEntitySaveRestore;
 };
 
 /**
@@ -3220,78 +3347,6 @@ export declare class Joint extends SharedAtomicPool {
   static reset(): void;
 }
 
-export function getMovedBodiesViews(): unknown;
-export function bindMovedBodies(sab: SharedArrayBuffer | null): void;
-export function isMovedBodiesBound(): boolean;
-
-export function box2dQueryAABB(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  out?: unknown,
-  filter?: unknown,
-): unknown;
-export function box2dQueryAABBAsync(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  out?: unknown,
-  filter?: unknown,
-): Promise<unknown>;
-export function bindQueryAabbSab(sab: SharedArrayBuffer | null): void;
-export function isQueryAabbBound(): boolean;
-
-export function box2dCastRayClosest(
-  ox: number,
-  oy: number,
-  dx: number,
-  dy: number,
-  out?: unknown,
-  filter?: unknown,
-): unknown;
-export function box2dCastRayClosestAsync(
-  ox: number,
-  oy: number,
-  dx: number,
-  dy: number,
-  out?: unknown,
-  filter?: unknown,
-): Promise<unknown>;
-export function bindRayCastSab(sab: SharedArrayBuffer | null): void;
-export function isRayCastBound(): boolean;
-
-export function liquidFunQueryAABB(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  out?: unknown,
-): unknown;
-export function liquidFunQueryAABBAsync(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  out?: unknown,
-): Promise<unknown>;
-export function liquidFunRayCast(
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  out?: unknown,
-): unknown;
-export function liquidFunRayCastAsync(
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  out?: unknown,
-): Promise<unknown>;
-export function bindLiquidFunQuerySab(sab: SharedArrayBuffer | null): void;
-
 export declare class Flash extends GameObject {
   static scriptUrl: null;
   static readonly components: ReadonlyArray<typeof LightEmitter | typeof FlashComponent>;
@@ -3308,77 +3363,25 @@ export declare class Flash extends GameObject {
   tick(dtRatio: number, deltaTime: number): void;
 }
 
-export declare class AbstractWorker {
-  self: DedicatedWorkerGlobalScope;
-  constructor(selfRef: DedicatedWorkerGlobalScope);
-  frameNumber: number;
-  lastFrameTime: number;
-  accumulatedTime: number;
-  currentFPS: number;
-  stats: Float32Array | null;
-  isPaused: boolean;
-  globalEntityCount: number;
-  config: Record<string, unknown>;
-  usesCustomScheduler: boolean;
-  noLimitFPS: boolean;
-  timeoutId: ReturnType<typeof setTimeout> | null;
-  needsGameScripts: boolean;
-  inputData: Int32Array | null;
-  cameraData: Float32Array | null;
-  neighborData: Uint16Array | null;
-  activeEntitiesData: Uint16Array | null;
-  frameRateData: Float32Array | null;
-  frameRateIndex: number;
-  frameRateStride: number;
-  registeredClasses: SceneRegisteredClassEntry[];
-  queryVersionData: Int32Array | null;
-  messageTimeThisFrame: number;
-  workerPorts: Map<string, MessagePort>;
-  updateFrameTiming(): { deltaTime: number; dtRatio: number };
-  reportFPS(): void;
-  reportLog(message: unknown): void;
-  postMessageToScene(data: unknown): void;
-  reportError(title: string, error: unknown): void;
-  gameLoop(resuming?: boolean): void;
-  scheduleNextFrame(): void;
-  startGameLoop(): void;
-  onCustomSchedulerStart(): void;
-  initializeCommonBuffers(data: Record<string, unknown>): Promise<void>;
-  registerCoreClasses(): void;
-  initializeAllComponents(data: Record<string, unknown>): void;
-  initSeededRandom(seed: number, workerId?: number | string): void;
-  handleMessage(e: MessageEvent): Promise<void> | void;
-  reportReady(): void;
-  initializeWorkerPorts(ports: Record<string, MessagePort> | null | undefined): void;
-  sendDataToWorker(workerName: string, data: unknown): boolean;
-  handleWorkerMessage(fromWorker: string, data: unknown): void;
-  pause(): void;
-  resume(): void;
-  getActiveEntityCount(): number;
-  getActiveEntityIndex(activeIndex: number): number;
-  query(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
-  queryActiveEntities(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
-  queryActiveEntitiesSlow(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
-  initialize(data: Record<string, unknown>): Promise<void>;
-  update(deltaTime: number, dtRatio: number, resuming: boolean): void;
-  onResize(width: number, height: number): void;
-  handleCustomMessage(data: unknown): void;
-}
-
 // --- Default namespace export ---
 
 export interface WeedEnums {
   ShapeType: typeof ShapeType;
+  MAX_POLYGON_VERTICES: typeof MAX_POLYGON_VERTICES;
+  Box2dBodyType: typeof Box2dBodyType;
+  STATE_CHANNELS: typeof STATE_CHANNELS;
   BLEND_MODES: typeof BLEND_MODES;
   LAYER_DENSITY_SOURCE: typeof LAYER_DENSITY_SOURCE;
   LAYER_COMPUTE_SOURCE: typeof LAYER_COMPUTE_SOURCE;
   LAYER_FEEDER_KIND: typeof LAYER_FEEDER_KIND;
   LAYER_SUBSCRIBE_KIND: typeof LAYER_SUBSCRIBE_KIND;
+  COMPUTE_FLAG_STATIC: typeof COMPUTE_FLAG_STATIC;
   LAYER_SPLAT_FALLOFF: typeof LAYER_SPLAT_FALLOFF;
   LAYER_SCALE_MODE: typeof LAYER_SCALE_MODE;
   SPRITE_TILE_MODE: typeof SPRITE_TILE_MODE;
   DEFAULT_LAYERS: typeof DEFAULT_LAYERS;
   CAMERA_TYPES: typeof CAMERA_TYPES;
+  PARTICLE_EASE: typeof PARTICLE_EASE;
   DECAL_STAMPS_BLEND_MODE: typeof DECAL_STAMPS_BLEND_MODE;
   DEBUG_FLAGS: typeof DEBUG_FLAGS;
   DEBUG_SELECTED_ENTITY_OFFSET: typeof DEBUG_SELECTED_ENTITY_OFFSET;
@@ -3416,6 +3419,11 @@ export interface WeedNamespace extends WeedEnums {
   SoundManager: typeof SoundManager;
   SaveGame: typeof SaveGame;
   SaveStore: typeof SaveStore;
+  saveGame: typeof saveGame;
+  loadGame: typeof loadGame;
+  buildSavePayload: typeof buildSavePayload;
+  encodeSave: typeof encodeSave;
+  decodeSave: typeof decodeSave;
   Transform: typeof Transform;
   RigidBody: typeof RigidBody;
   Collider: typeof Collider;
@@ -3436,7 +3444,9 @@ export interface WeedNamespace extends WeedEnums {
   LiquidFun: typeof LiquidFun;
   LIQUIDFUN_FLAGS: typeof LIQUIDFUN_FLAGS;
   LIQUIDFUN_GROUP_FLAGS: typeof LIQUIDFUN_GROUP_FLAGS;
-  DecorationPool: typeof DecorationPool;
+  Box2d: typeof Box2d;
+  Decal: typeof Decal;
+  Query: typeof Query;
   Decoration: typeof Decoration;
   DecorationComponent: typeof DecorationComponent;
   DecorationSpatial: typeof DecorationSpatial;
@@ -3447,24 +3457,7 @@ export interface WeedNamespace extends WeedEnums {
   BulletComponent: typeof BulletComponent;
   Joint: typeof Joint;
   SharedAtomicPool: typeof SharedAtomicPool;
-  getMovedBodiesViews: typeof getMovedBodiesViews;
-  bindMovedBodies: typeof bindMovedBodies;
-  isMovedBodiesBound: typeof isMovedBodiesBound;
-  box2dQueryAABB: typeof box2dQueryAABB;
-  box2dQueryAABBAsync: typeof box2dQueryAABBAsync;
-  bindQueryAabbSab: typeof bindQueryAabbSab;
-  isQueryAabbBound: typeof isQueryAabbBound;
-  box2dCastRayClosest: typeof box2dCastRayClosest;
-  box2dCastRayClosestAsync: typeof box2dCastRayClosestAsync;
-  bindRayCastSab: typeof bindRayCastSab;
-  isRayCastBound: typeof isRayCastBound;
-  liquidFunQueryAABB: typeof liquidFunQueryAABB;
-  liquidFunQueryAABBAsync: typeof liquidFunQueryAABBAsync;
-  liquidFunRayCast: typeof liquidFunRayCast;
-  liquidFunRayCastAsync: typeof liquidFunRayCastAsync;
-  bindLiquidFunQuerySab: typeof bindLiquidFunQuerySab;
   Flash: typeof Flash;
-  AbstractWorker: typeof AbstractWorker;
   containerRadius: typeof import('./utils').containerRadius;
   distanceSq2D: typeof import('./utils').distanceSq2D;
   getDirectionFromAngle: typeof import('./utils').getDirectionFromAngle;

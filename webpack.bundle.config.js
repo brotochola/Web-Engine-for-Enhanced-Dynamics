@@ -101,7 +101,10 @@ const umdConfig = {
                     compress: {
                         drop_console: false,
                         drop_debugger: true,
-                        pure_funcs: ['console.debug']
+                        // Keep console.warn/error — Layer and others use them as API.
+                        pure_funcs: isProd
+                            ? ['console.debug', 'console.log']
+                            : ['console.debug']
                     },
                     mangle: {
                         reserved: [

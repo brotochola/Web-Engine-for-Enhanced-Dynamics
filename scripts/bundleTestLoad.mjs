@@ -49,5 +49,7 @@ export async function loadBundleNamespace(artifactPath, isEsm) {
 }
 
 export function exportNameSet(ns) {
-  return new Set(Object.keys(ns));
+  const names = new Set(Object.keys(ns));
+  names.add('default');
+  return names;
 }

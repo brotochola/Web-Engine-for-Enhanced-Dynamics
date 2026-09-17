@@ -3,11 +3,19 @@
   "version": "0.7.25",
   "description": "A multithreaded 2D web game engine for high-entity-count browser games",
   "type": "module",
-  "main": "dist/weed.bundle.min.js",
-  "module": "dist/weed.bundle.esm.min.js",
+  "main": "dist/weed.prod.bundle.min.js",
+  "module": "dist/weed.prod.bundle.esm.min.js",
   "types": "./types/weed.d.ts",
+  "unpkg": "dist/weed.prod.bundle.min.js",
+  "jsdelivr": "dist/weed.prod.bundle.min.js",
   "exports": {
     ".": {
+      "types": "./types/weed.d.ts",
+      "import": "./dist/weed.prod.bundle.esm.min.js",
+      "require": "./dist/weed.prod.bundle.min.js",
+      "default": "./dist/weed.prod.bundle.min.js"
+    },
+    "./debug": {
       "types": "./types/weed.d.ts",
       "import": "./dist/weed.bundle.esm.min.js",
       "require": "./dist/weed.bundle.min.js",

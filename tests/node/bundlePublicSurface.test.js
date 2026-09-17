@@ -1,15 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { GameEngine } from '../../src/core/gameEngine.js';
-import { Query } from '../../src/core/query.js';
-import { Box2d } from '../../src/core/box2d.js';
-import { Decal } from '../../src/core/decal.js';
-import { Flash } from '../../src/core/flash.js';
-import { Decoration } from '../../src/core/decoration.js';
-import { DEBUG_FLAGS } from '../../src/core/debug/debugFlags.js';
-import { ShapeType } from '../../src/util/configDefaults.js';
-import { mixSeed } from '../../src/util/utils.js';
+import WEED, {
+  GameEngine,
+  Query,
+  Box2d,
+  Decal,
+  Flash,
+  Decoration,
+  mixSeed,
+  saveGame,
+  DEBUG_FLAGS,
+  ShapeType,
+} from '../../src/index.js';
 
 test('public barrel symbols stay callable', () => {
   assert.equal(typeof GameEngine, 'function');
@@ -24,4 +27,12 @@ test('public barrel symbols stay callable', () => {
   assert.equal(ShapeType.Box, 0);
   assert.equal(typeof mixSeed, 'function');
   assert.equal(typeof mixSeed(1, 2), 'number');
+  assert.equal(typeof saveGame, 'function');
+  assert.equal(WEED.GameEngine, GameEngine);
+  assert.equal(WEED.Query, Query);
+  assert.equal(WEED.Box2d, Box2d);
+  assert.equal(WEED.saveGame, saveGame);
+  assert.equal(WEED.bindMovedBodies, undefined);
+  assert.equal(WEED.collectSerializableEntities, undefined);
+  assert.equal(WEED.AbstractWorker, undefined);
 });

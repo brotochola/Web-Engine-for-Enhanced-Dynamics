@@ -254,6 +254,7 @@ function writeBundleEntry({
     audioWorkletSource,
     debugUICSS,
     compressed,
+    prod,
 }) {
     const embeddedWorkers = {};
     for (const name of WORKER_NAMES) {
@@ -262,7 +263,7 @@ function writeBundleEntry({
     const embeddedCommon = embedPayload(workerCommon, compressed);
     const embeddedBox2d = embedPayload(box2dWorkerSource, compressed);
     const embeddedAudio = embedPayload(audioWorkletSource, compressed);
-    const embeddedCss = embedPayload(debugUICSS, compressed);
+    const embeddedCss = prod ? '' : embedPayload(debugUICSS, compressed);
 
     const workerSourceLines = WORKER_NAMES.map(
         (name) => `  ${name}: ${JSON.stringify(embeddedWorkers[name])},`,
@@ -423,6 +424,7 @@ function webpackBundle({ prod, compressed, workers, workerCommon, box2dWorkerSou
             audioWorkletSource,
             debugUICSS,
             compressed,
+            prod,
         }),
     );
 

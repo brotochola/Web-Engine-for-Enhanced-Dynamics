@@ -80,6 +80,14 @@ import WEED from '@weed.js/engine';
 const { GameEngine, Scene, GameObject, RigidBody, Collider, SpriteRenderer } = WEED;
 ```
 
+That default import is the **production** build: no debug overlay, smaller file. Develop with the debug build (panel, flags, `DebugDraw`), then switch before you ship:
+
+```javascript
+import WEED from '@weed.js/engine/debug';
+```
+
+Or, if you load a `<script>` / CDN URL, change `weed.bundle*.min.js` to `weed.prod.bundle*.min.js`. Same `WEED` gameplay API either way; `new GameEngine({ debug: true })` is a no-op overlay on prod.
+
 The published bundle is a **default export only**. Destructure from `WEED`. `import { Scene } from '@weed.js/engine'` may type-check (the `.d.ts` also exports class names) but fails at runtime.
 
 `SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game.
@@ -102,7 +110,7 @@ Or a classic script tag (UMD, sets `window.WEED`):
 <script src="https://cdn.jsdelivr.net/npm/@weed.js/engine/dist/weed.prod.bundle.min.js"></script>
 ```
 
-Pin a version for real apps (`@0.7.14/...`). Bare `/npm/@weed.js/engine/...` tracks latest. Debug builds (debug UI included) use `weed.bundle*.min.js` instead of `weed.prod.bundle*.min.js`. Gzip-embedded worker variants add `.compressed` before `.min.js` (smaller disk, inflate on first load). `package.json` `main` / `module` stay uncompressed.
+Pin a version for real apps (`@0.7.14/...`). Bare `/npm/@weed.js/engine/...` tracks latest. `package.json` `main` / `module` / `exports["."]` are the uncompressed **prod** files. Debug is `exports["./debug"]` or `weed.bundle*.min.js` on the CDN. Gzip-embedded worker variants add `.compressed` before `.min.js` (smaller disk, inflate on first load).
 
 ---
 

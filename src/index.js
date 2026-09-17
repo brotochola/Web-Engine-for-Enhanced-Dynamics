@@ -32,7 +32,20 @@ export { SpriteSheetRegistry } from './core/spriteSheetRegistry.js';
 export { AdobeAnimRegistry } from './core/adobeAnimRegistry.js';
 export { BigAtlasInspector } from './core/bigAtlasInspector.js';
 export { SoundManager } from './core/soundManager.js';
-export * from './util/utils.js';
+export {
+  mixSeed,
+  seededRandom,
+  collisionPairKey,
+  setupWorkerCommunication,
+  containerRadius,
+  distanceSq2D,
+  getDirectionFromAngle,
+  getDirectionFromVector,
+  getDirection8FromVector,
+  mixTint,
+  randomColor,
+  rng,
+} from './util/utils.js';
 export {
   SaveStore,
   saveGame,
@@ -40,12 +53,7 @@ export {
   buildSavePayload,
   encodeSave,
   decodeSave,
-  collectSerializableEntities,
-  isEntityClassSerializable,
-  shouldSaveEntity,
-  applyEntitySaveRestore,
 } from './core/save/saveGame.js';
-export * as SaveGame from './core/save/saveGame.js';
 
 // ============================================================================
 // COMPONENTS
@@ -106,61 +114,18 @@ export { BulletComponent } from './components/bulletComponent.js';
 // ============================================================================
 // CONSTRAINTS
 // ============================================================================
-// Distance constraints for position-based dynamics (ropes, springs, rigid connections)
 export { Joint } from './core/joint.js';
 export { SharedAtomicPool } from './core/sharedAtomicPool.js';
-export {
-  bindMovedBodies,
-  isMovedBodiesBound,
-} from './box2d/box2dMovedBodies.js';
-export {
-  bindQueryAabbSab,
-  isQueryAabbBound,
-} from './box2d/box2dQueryAabb.js';
-export {
-  bindOverlapCircleSab,
-  isOverlapCircleBound,
-} from './box2d/box2dOverlapCircle.js';
-export {
-  bindRayCastSab,
-  isRayCastBound,
-} from './box2d/box2dRayCast.js';
-export {
-  bindCastRayAllSab,
-  isCastRayAllBound,
-} from './box2d/box2dCastRayAll.js';
-export {
-  liquidFunQueryAABB,
-  liquidFunQueryAABBAsync,
-  liquidFunRayCast,
-  liquidFunRayCastAsync,
-  bindLiquidFunQuerySab,
-} from './box2d/liquidFunQuery.js';
-export {
-  liquidFunExtract,
-  liquidFunExtractAsync,
-  bindLiquidFunExtractSab,
-} from './box2d/liquidFunExtract.js';
 
 // ============================================================================
 // FLASHES
 // ============================================================================
-// Note: Flashes ARE GameObjects (auto-registered) with LightEmitter + FlashComponent
 export { Flash } from './core/flash.js';
 export { Query } from './core/query.js';
 
 // ============================================================================
-// QUERY (Scene and GameObject)
+// ENUMS
 // ============================================================================
-// Query.query / queryActiveEntities / queryActiveEntitiesSlow — ECS bitmasks.
-// Box2d.queryAABB is fixtures, not this.
-
-// ============================================================================
-// WORKERS
-// ============================================================================
-// Note: Workers are typically loaded as separate files via new Worker()
-// but we export them here for bundling purposes
-export { AbstractWorker } from './workers/abstractWorker.js';
 export {
   ShapeType,
   MAX_POLYGON_VERTICES,
@@ -180,18 +145,9 @@ export {
   PARTICLE_EASE,
 } from './util/configDefaults.js';
 
-// Worker files (logicWorker, pixiWorker, spatialWorker, …)
-// Physics = classic src/box2d/box2dWasm.js + physicsHostImpl.js (not ESM).
-// are designed to be loaded as Web Workers and don't have default exports,
-// but you can import them as modules if needed for bundling:
-// import './workers/logicWorker.js';
-// import './workers/pixiWorker.js';
-// import './workers/spatialWorker.js';
-
 // ============================================================================
 // WEED NAMESPACE - PIXI-style usage 🌿
 // ============================================================================
-// Import everything we need for the namespace
 import { GameEngine } from './core/gameEngine.js';
 import { Scene } from './core/scene.js';
 import { GameObject, Keyboard, SceneBridge } from './core/gameObject.js';
@@ -215,10 +171,19 @@ import { SpriteSheetRegistry } from './core/spriteSheetRegistry.js';
 import { AdobeAnimRegistry } from './core/adobeAnimRegistry.js';
 import { BigAtlasInspector } from './core/bigAtlasInspector.js';
 import { SoundManager } from './core/soundManager.js';
-import * as SaveGameNS from './core/save/saveGame.js';
-import { SaveStore } from './core/save/saveStore.js';
-import * as utilsNS from './util/utils.js';
 import {
+  SaveStore,
+  saveGame,
+  loadGame,
+  buildSavePayload,
+  encodeSave,
+  decodeSave,
+} from './core/save/saveGame.js';
+import {
+  mixSeed,
+  seededRandom,
+  collisionPairKey,
+  setupWorkerCommunication,
   containerRadius,
   distanceSq2D,
   getDirectionFromAngle,
@@ -271,39 +236,6 @@ import { CollisionListener } from './components/collisionListener.js';
 import { JointBreakListener } from './components/jointBreakListener.js';
 import { Grab } from './components/grab.js';
 import { Joint } from './core/joint.js';
-import { AbstractWorker } from './workers/abstractWorker.js';
-import {
-  bindMovedBodies,
-  isMovedBodiesBound,
-} from './box2d/box2dMovedBodies.js';
-import {
-  bindQueryAabbSab,
-  isQueryAabbBound,
-} from './box2d/box2dQueryAabb.js';
-import {
-  bindOverlapCircleSab,
-  isOverlapCircleBound,
-} from './box2d/box2dOverlapCircle.js';
-import {
-  bindRayCastSab,
-  isRayCastBound,
-} from './box2d/box2dRayCast.js';
-import {
-  bindCastRayAllSab,
-  isCastRayAllBound,
-} from './box2d/box2dCastRayAll.js';
-import {
-  liquidFunQueryAABB,
-  liquidFunQueryAABBAsync,
-  liquidFunRayCast,
-  liquidFunRayCastAsync,
-  bindLiquidFunQuerySab,
-} from './box2d/liquidFunQuery.js';
-import {
-  liquidFunExtract,
-  liquidFunExtractAsync,
-  bindLiquidFunExtractSab,
-} from './box2d/liquidFunExtract.js';
 import {
   ShapeType,
   MAX_POLYGON_VERTICES,
@@ -345,10 +277,19 @@ const enums = Object.freeze({
   DEBUG_SELECTED_ENTITY_OFFSET,
 });
 
+const SaveGame = Object.freeze({
+  SaveStore,
+  saveGame,
+  loadGame,
+  buildSavePayload,
+  encodeSave,
+  decodeSave,
+});
+
+export { SaveGame };
+
 const WEED = Object.freeze({
-  ...utilsNS,
   ...enums,
-  ...SaveGameNS,
 
   DEBUG_FLAGS,
   DEBUG_SELECTED_ENTITY_OFFSET,
@@ -384,8 +325,13 @@ const WEED = Object.freeze({
   AdobeAnimRegistry,
   BigAtlasInspector,
   SoundManager,
-  SaveGame: SaveGameNS,
+  SaveGame,
   SaveStore,
+  saveGame,
+  loadGame,
+  buildSavePayload,
+  encodeSave,
+  decodeSave,
 
   // Components
   Transform,
@@ -432,35 +378,14 @@ const WEED = Object.freeze({
   // Pool base class
   SharedAtomicPool,
 
-  // Box2D SAB bind (engine bootstrap; gameplay uses Box2d.*)
-  bindMovedBodies,
-  isMovedBodiesBound,
-  bindQueryAabbSab,
-  isQueryAabbBound,
-  bindOverlapCircleSab,
-  isOverlapCircleBound,
-  bindRayCastSab,
-  isRayCastBound,
-  bindCastRayAllSab,
-  isCastRayAllBound,
-
-  // LiquidFun QueryAABB / RayCast (logic sync / Scene async)
-  liquidFunQueryAABB,
-  liquidFunQueryAABBAsync,
-  liquidFunRayCast,
-  liquidFunRayCastAsync,
-  bindLiquidFunQuerySab,
-  liquidFunExtract,
-  liquidFunExtractAsync,
-  bindLiquidFunExtractSab,
-
   // Flashes
   Flash,
 
-  // Workers
-  AbstractWorker,
-
   // Public utility helpers
+  mixSeed,
+  seededRandom,
+  collisionPairKey,
+  setupWorkerCommunication,
   containerRadius,
   distanceSq2D,
   getDirectionFromAngle,
