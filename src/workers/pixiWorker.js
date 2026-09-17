@@ -3457,21 +3457,35 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const cfg = this._coverBackground;
     if (!sprite || !cfg) return;
     const tex = sprite.texture;
-    const t = coverBackgroundTransform({
-      canvasW: this.canvasWidth,
-      canvasH: this.canvasHeight,
-      texW: tex?.width || 1,
-      texH: tex?.height || 1,
-      zoom: this._renderZoom,
-      cameraX: this._renderCameraX,
-      cameraY: this._renderCameraY,
-      worldW: this.worldWidth,
-      worldH: this.worldHeight,
-      parallaxX: cfg.parallaxX,
-      parallaxY: cfg.parallaxY,
-      margin: cfg.margin,
-      zoomParallax: cfg.zoomParallax,
+    const args = this._coverBgArgs || (this._coverBgArgs = {
+      canvasW: 0,
+      canvasH: 0,
+      texW: 1,
+      texH: 1,
+      zoom: 1,
+      cameraX: 0,
+      cameraY: 0,
+      worldW: 0,
+      worldH: 0,
+      parallaxX: 0,
+      parallaxY: 0,
+      margin: 0,
+      zoomParallax: 0,
     });
+    args.canvasW = this.canvasWidth;
+    args.canvasH = this.canvasHeight;
+    args.texW = tex?.width || 1;
+    args.texH = tex?.height || 1;
+    args.zoom = this._renderZoom;
+    args.cameraX = this._renderCameraX;
+    args.cameraY = this._renderCameraY;
+    args.worldW = this.worldWidth;
+    args.worldH = this.worldHeight;
+    args.parallaxX = cfg.parallaxX;
+    args.parallaxY = cfg.parallaxY;
+    args.margin = cfg.margin;
+    args.zoomParallax = cfg.zoomParallax;
+    const t = coverBackgroundTransform(args, this._coverBgOut || (this._coverBgOut = { scale: 1, x: 0, y: 0 }));
     sprite.scale.set(t.scale);
     sprite.x = t.x;
     sprite.y = t.y;

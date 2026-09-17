@@ -106,16 +106,15 @@ export function updateParticlePhysicsBuffers(
       continue;
     }
 
-    {
+    const mask = tweenMask ? tweenMask[i] : 0;
+    const spinning = !!(hasAngularVel && hasAngularVel[i]);
+    const cycling = !!(animMode && animMode[i]);
+    if (mask || spinning || cycling) {
       const lifeProgress = lifespan[i] > 0 ? currentLife[i] / lifespan[i] : 1;
-      const mask = tweenMask ? tweenMask[i] : 0;
-      const needEase =
-        mask ||
-        (hasAngularVel && hasAngularVel[i]) ||
-        (animMode && animMode[i]);
-      const eased = needEase
-        ? applyParticleEase(lifeProgress, easeId ? easeId[i] : 0)
-        : lifeProgress;
+      const eased =
+        mask || spinning
+          ? applyParticleEase(lifeProgress, easeId ? easeId[i] : 0)
+          : lifeProgress;
 
       if (mask & PARTICLE_TWEEN.ALPHA) {
         alpha[i] = alphaFrom[i] + (alphaTo[i] - alphaFrom[i]) * eased;
@@ -132,21 +131,21 @@ export function updateParticlePhysicsBuffers(
         baseTint[i] = c;
       }
 
-      let angleDeg = rotFrom ? rotFrom[i] : 0;
+      // rotFrom/rotTo/angularVel* are radians (converted at spawn).
+      let angle = rotFrom ? rotFrom[i] : 0;
       if (mask & PARTICLE_TWEEN.ROT) {
-        angleDeg = rotFrom[i] + (rotTo[i] - rotFrom[i]) * eased;
+        angle = rotFrom[i] + (rotTo[i] - rotFrom[i]) * eased;
       }
-      if (hasAngularVel && hasAngularVel[i]) {
+      if (spinning) {
         const av = angularVelFrom[i] + (angularVelTo[i] - angularVelFrom[i]) * eased;
-        angleDeg += av * currentLife[i];
+        angle += av * currentLife[i];
       }
-      if ((mask & PARTICLE_TWEEN.ROT) || (hasAngularVel && hasAngularVel[i])) {
-        const rad = (angleDeg * Math.PI) / 180;
-        rotC[i] = Math.cos(rad);
-        rotS[i] = Math.sin(rad);
+      if ((mask & PARTICLE_TWEEN.ROT) || spinning) {
+        rotC[i] = Math.cos(angle);
+        rotS[i] = Math.sin(angle);
       }
 
-      if (animMode && animMode[i] === 1 && animCount && animCount[i] > 0) {
+      if (cycling && animMode[i] === 1 && animCount && animCount[i] > 0) {
         const n = animCount[i];
         let fi = (lifeProgress * n) | 0;
         if (fi >= n) fi = n - 1;

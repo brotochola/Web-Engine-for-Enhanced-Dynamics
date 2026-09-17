@@ -15,6 +15,7 @@ import {
   buildActiveListBuffers,
   buildActiveAndVisibleListBuffers,
 } from '../../src/util/particleIntegrate.js';
+import { PARTICLE_TWEEN } from '../../src/util/particleTween.js';
 import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
@@ -107,7 +108,11 @@ function spawnDirect(n, { flat, x0, y0, vx0, vy0, z0 = 0, vz0 = 0, gravity = 0, 
     components.timeOnFloor[i] = 0;
     components.initialAlpha[i] = 0;
     components.stayOnTheFloor[i] = stayOnTheFloor ? 1 : 0;
-    components.despawnOnGroundContact[i] = despawnOnGroundContact ? 1 : 0;    components.flat[i] = flat ? 1 : 0;
+    components.despawnOnGroundContact[i] = despawnOnGroundContact ? 1 : 0;
+    components.flat[i] = flat ? 1 : 0;
+    ParticleComponent.tweenMask[i] = 0;
+    ParticleComponent.hasAngularVel[i] = 0;
+    ParticleComponent.animMode[i] = 0;
     indices.push(i);
   }
   return indices;
@@ -321,6 +326,33 @@ function resetLife(indices) {
   );
 
   despawnIndices(allIndices);
+}
+
+// --- rot_tween_N: rotation from/to in radians (same storage spawn writes) ---
+{
+  const N = PARTICLES_PER_CASE;
+  const indices = spawnDirect(N, { flat: true, x0: 0, y0: 0, vx0: 0, vy0: 0, lifespan: 65535 });
+  const toRad = Math.PI;
+  for (const i of indices) {
+    ParticleComponent.tweenMask[i] = PARTICLE_TWEEN.ROT;
+    ParticleComponent.rotFrom[i] = 0;
+    ParticleComponent.rotTo[i] = toRad;
+    ParticleComponent.easeId[i] = 0;
+  }
+  const activeIndices = new Uint16Array(indices);
+
+  cases.rot_tween_N = timeIt(
+    `rot_tween_N physics (${N} particles/step, rotation from→to)`,
+    (steps) => {
+      resetLife(indices);
+      for (let s = 0; s < steps; s++) {
+        physics(activeIndices, N);
+      }
+    },
+    { iterations: STEPS }
+  );
+
+  despawnIndices(indices);
 }
 
 // --- build_lists_N: active-list scan cost alone (no physics), ~30% of the pool active ---

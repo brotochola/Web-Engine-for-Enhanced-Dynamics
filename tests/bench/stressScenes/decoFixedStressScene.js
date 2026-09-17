@@ -6,8 +6,8 @@ const { Scene, Camera, Decoration } = WEED;
 const SEED = 0xdec0f1;
 const WORLD_W = 4000;
 const WORLD_H = 3000;
-const MAX_DECORATIONS = 20000;
-const PLANT = 12000;
+const MAX_DECORATIONS = 65535;
+const PLANT = 64000;
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -29,7 +29,7 @@ function decoFixedConfig(numberOfLogicWorkers) {
       numberOfSpatialWorkers: 1,
       cellSize: 128,
       maxNeighbors: 64,
-      maxEntitiesPerCell: 96,
+      maxEntitiesPerCell: 255,
       noLimitFPS: false,
     },
     logic: {
@@ -67,12 +67,12 @@ function plantFixedDecos(scene) {
       anchorX: 0.5,
       anchorY: 1,
       sway: true,
-      swayAmplitude: 0.05 + rng() * 0.03,
+      swayAmplitude: 0.22 + rng() * 0.18,
       swayFrequency: 1 + rng() * 2,
     });
   }
   Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);
-  Camera.setZoom(0.18);
+  Camera.setZoom(1.5);
 }
 
 export class DecoFixedStressScene1W extends Scene {

@@ -20,7 +20,7 @@ test('usesStressStepFloor follows catalog kind', () => {
   assert.equal(usesStressStepFloor(getFeature('box2d').scene), false);
   assert.equal(usesStressStepFloor(getFeature('steadyCombat').scene), false);
   assert.equal(usesStressStepFloor(getFeature('visPoly').scene), false);
-  assert.equal(usesStressStepFloor(getFeature('decorations').scene), false);
+  assert.equal(usesStressStepFloor(getFeature('decorations').scene), true);
   assert.equal(usesStressStepFloor({ path: '/demos/predatorScene/predatorScene.js', headed: true }), false);
   assert.equal(
     usesStressStepFloor({

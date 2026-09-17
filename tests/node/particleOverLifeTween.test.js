@@ -77,3 +77,74 @@ test('alpha/scale from→to lerp at mid-life', () => {
     cleanup();
   }
 });
+
+test('rotation from→to lerp stores radians and hits 90° at mid-life', () => {
+  const cleanup = setupPool(4);
+  try {
+    const n = ParticleEmitter.emitFlat({
+      count: 1,
+      x: 0,
+      y: 0,
+      texture: '_whiteCircle',
+      lifespan: 1000,
+      gravity: 0,
+      rotation: { from: 0, to: 180 },
+    });
+    assert.equal(n, 1);
+
+    let i = -1;
+    for (let k = 0; k < 4; k++) {
+      if (ParticleComponent.active[k]) {
+        i = k;
+        break;
+      }
+    }
+    assert.ok(i >= 0);
+    assert.ok(Math.abs(ParticleComponent.rotFrom[i]) < 1e-5);
+    assert.ok(Math.abs(ParticleComponent.rotTo[i] - Math.PI) < 1e-5);
+    assert.ok(Math.abs(ParticleComponent.rotC[i] - 1) < 1e-5);
+    assert.ok(Math.abs(ParticleComponent.rotS[i]) < 1e-5);
+
+    updateParticlePhysicsBuffers(
+      ParticleComponent,
+      new Uint16Array([i]),
+      1,
+      500,
+      1,
+      false,
+      null,
+    );
+
+    assert.ok(Math.abs(ParticleComponent.rotC[i]) < 1e-5);
+    assert.ok(Math.abs(ParticleComponent.rotS[i] - 1) < 1e-5);
+  } finally {
+    cleanup();
+  }
+});
+
+test('emitAlongLine places count samples between the endpoints', () => {
+  const cleanup = setupPool(16);
+  try {
+    const n = ParticleEmitter.emitAlongLine({
+      x0: 0,
+      y0: 0,
+      x1: 100,
+      y1: 0,
+      count: 4,
+      texture: '_whiteCircle',
+      lifespan: 1000,
+      gravity: 0,
+    });
+    assert.equal(n, 4);
+    const xs = [];
+    for (let k = 0; k < 16; k++) {
+      if (ParticleComponent.active[k]) xs.push(ParticleComponent.x[k]);
+    }
+    xs.sort((a, b) => a - b);
+    assert.equal(xs.length, 4);
+    assert.ok(xs[0] > 0 && xs[3] < 100);
+    for (let i = 1; i < xs.length; i++) assert.ok(xs[i] > xs[i - 1]);
+  } finally {
+    cleanup();
+  }
+});

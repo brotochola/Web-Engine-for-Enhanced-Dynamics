@@ -1038,23 +1038,29 @@ export class NavGrid {
     let lruSlot = 0;
     let lruFrame = Infinity;
 
+    const u32 = this._u32;
+    const baseIndex = this._flowfieldHeadersOffset >> 2;
+    const slotStride = slotSize >> 2;
+
     for (let i = 0; i < this._maxFlowfields; i++) {
-      const offset = this._flowfieldHeadersOffset + i * slotSize;
-      const view = new Uint32Array(this._sab, offset, 3);
+      const idx = baseIndex + i * slotStride;
+      const slotTarget = u32[idx];
+      const slotLru = u32[idx + 1];
+      const slotStatus = u32[idx + 2];
 
       // Already exists for this target? Reuse the slot.
-      if (view[0] === targetCell) {
+      if (slotTarget === targetCell) {
         return i;
       }
 
       // Empty slot? Remember the first one.
-      if (view[2] === FLOWFIELD_STATUS.EMPTY && emptySlot < 0) {
+      if (slotStatus === FLOWFIELD_STATUS.EMPTY && emptySlot < 0) {
         emptySlot = i;
       }
 
       // Track LRU (only for non-empty slots)
-      if (view[2] !== FLOWFIELD_STATUS.EMPTY && view[1] < lruFrame) {
-        lruFrame = view[1];
+      if (slotStatus !== FLOWFIELD_STATUS.EMPTY && slotLru < lruFrame) {
+        lruFrame = slotLru;
         lruSlot = i;
       }
     }
@@ -1065,7 +1071,6 @@ export class NavGrid {
     // Initialize slot header. Status goes through Atomics so readers never
     // see READY while the slot is being repurposed.
     const idx = (this._flowfieldHeadersOffset + slot * slotSize) >> 2;
-    const u32 = this._u32;
     Atomics.store(u32, idx + 2, FLOWFIELD_STATUS.COMPUTING);
     u32[idx] = targetCell;
     u32[idx + 1] = this.lruNow();

@@ -52,40 +52,26 @@ test('logic worker keeps pending list updates when forwarding to logic0 fails', 
     class SpawnEntity {}
     class DespawnEntity {}
 
-    worker.pendingSpawnListUpdates.length = 0;
-    worker.pendingDespawnListUpdates.length = 0;
+    worker._spawnN = 0;
+    worker._despawnN = 0;
     worker._spawnSerializedBuffer.length = 0;
     worker._despawnSerializedBuffer.length = 0;
     worker.workerPorts = new Map();
 
-    worker.pendingSpawnListUpdates.push({
-      entityIndex: 11,
-      entityType: 2,
-      EntityClass: SpawnEntity,
-    });
-    worker.pendingDespawnListUpdates.push({
-      entityIndex: 17,
-      entityType: 4,
-      EntityClass: DespawnEntity,
-    });
+    worker.queueSpawnListUpdate(11, 2, SpawnEntity);
+    worker.queueDespawnListUpdate(17, 4, DespawnEntity);
 
     const sent = worker.sendListUpdatesToLogic0();
 
     assert.equal(sent, false);
-    assert.deepEqual(worker.pendingSpawnListUpdates, [
-      {
-        entityIndex: 11,
-        entityType: 2,
-        EntityClass: SpawnEntity,
-      },
-    ]);
-    assert.deepEqual(worker.pendingDespawnListUpdates, [
-      {
-        entityIndex: 17,
-        entityType: 4,
-        EntityClass: DespawnEntity,
-      },
-    ]);
+    assert.equal(worker._spawnN, 1);
+    assert.equal(worker._spawnIdx[0], 11);
+    assert.equal(worker._spawnType[0], 2);
+    assert.equal(worker._spawnClass[0], SpawnEntity);
+    assert.equal(worker._despawnN, 1);
+    assert.equal(worker._despawnIdx[0], 17);
+    assert.equal(worker._despawnType[0], 4);
+    assert.equal(worker._despawnClass[0], DespawnEntity);
     assert.deepEqual(worker._spawnSerializedBuffer, [
       {
         entityIndex: 11,

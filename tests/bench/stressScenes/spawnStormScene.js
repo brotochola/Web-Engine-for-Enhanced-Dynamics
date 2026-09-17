@@ -39,14 +39,14 @@ export class SpawnStormScene extends Scene {
 
   static entities = [
     [SpawnStormDriver, 1],
-    [SpawnStormEntity, 2048],
+    [SpawnStormEntity, 8192],
   ];
 
   static queries = [[SpriteRenderer]];
 
   create() {
     this.spawnEntity(SpawnStormDriver, {});
-    for (let i = 0; i < 256; i++) {
+    for (let i = 0; i < 2000; i++) {
       this.spawnEntity(SpawnStormEntity, {
         x: 200 + (i % 32) * 36,
         y: 200 + ((i / 32) | 0) * 36,

@@ -150,12 +150,20 @@ class LogicWorker extends AbstractWorker {
     // Any worker can spawn/despawn (atomic freeList ops), but list updates are queued
     // and processed by logic0 at the START of each frame (before any ticks).
     // This eliminates race conditions in sorted list insertions/removals.
-    this.pendingSpawnListUpdates = [];   // [{entityIndex, entityType, EntityClass}, ...]
-    this.pendingDespawnListUpdates = []; // [{entityIndex, entityType, EntityClass}, ...]
     this.receivedListUpdates = [];       // Batch updates received from other workers
     /** @internal Reused by sendListUpdatesToLogic0 to avoid .map() allocation */
     this._spawnSerializedBuffer = [];
     this._despawnSerializedBuffer = [];
+    this._spawnCap = 256;
+    this._spawnIdx = new Int32Array(256);
+    this._spawnType = new Int32Array(256);
+    this._spawnClass = new Array(256);
+    this._spawnN = 0;
+    this._despawnCap = 256;
+    this._despawnIdx = new Int32Array(256);
+    this._despawnType = new Int32Array(256);
+    this._despawnClass = new Array(256);
+    this._despawnN = 0;
   }
 
   /**
@@ -362,8 +370,38 @@ class LogicWorker extends AbstractWorker {
    * Queue a spawn list update (called by GameObject.spawn)
    * The actual list insertion will be done by logic0 at start of frame
    */
+  _growPending(kind) {
+    const capKey = kind === 'spawn' ? '_spawnCap' : '_despawnCap';
+    const next = this[capKey] * 2;
+    const idx = new Int32Array(next);
+    const type = new Int32Array(next);
+    const classes = new Array(next);
+    const oldIdx = kind === 'spawn' ? this._spawnIdx : this._despawnIdx;
+    const oldType = kind === 'spawn' ? this._spawnType : this._despawnType;
+    const oldClass = kind === 'spawn' ? this._spawnClass : this._despawnClass;
+    idx.set(oldIdx);
+    type.set(oldType);
+    for (let i = 0; i < this[capKey]; i++) classes[i] = oldClass[i];
+    if (kind === 'spawn') {
+      this._spawnIdx = idx;
+      this._spawnType = type;
+      this._spawnClass = classes;
+      this._spawnCap = next;
+    } else {
+      this._despawnIdx = idx;
+      this._despawnType = type;
+      this._despawnClass = classes;
+      this._despawnCap = next;
+    }
+  }
+
   queueSpawnListUpdate(entityIndex, entityType, EntityClass) {
-    this.pendingSpawnListUpdates.push({ entityIndex, entityType, EntityClass });
+    let n = this._spawnN;
+    if (n === this._spawnCap) this._growPending('spawn');
+    this._spawnIdx[n] = entityIndex;
+    this._spawnType[n] = entityType;
+    this._spawnClass[n] = EntityClass;
+    this._spawnN = n + 1;
   }
 
   /**
@@ -371,7 +409,12 @@ class LogicWorker extends AbstractWorker {
    * The actual list removal will be done by logic0 at start of frame
    */
   queueDespawnListUpdate(entityIndex, entityType, EntityClass) {
-    this.pendingDespawnListUpdates.push({ entityIndex, entityType, EntityClass });
+    let n = this._despawnN;
+    if (n === this._despawnCap) this._growPending('despawn');
+    this._despawnIdx[n] = entityIndex;
+    this._despawnType[n] = entityType;
+    this._despawnClass[n] = EntityClass;
+    this._despawnN = n + 1;
   }
 
   /**
@@ -387,11 +430,13 @@ class LogicWorker extends AbstractWorker {
 
     // Process own pending updates
     activeQueryPopulationChanged =
-      this._processDespawnUpdates(this.pendingDespawnListUpdates) || activeQueryPopulationChanged;
+      this._processDespawnSoA(this._despawnIdx, this._despawnClass, this._despawnN) ||
+      activeQueryPopulationChanged;
     activeQueryPopulationChanged =
-      this._processSpawnUpdates(this.pendingSpawnListUpdates) || activeQueryPopulationChanged;
-    this.pendingDespawnListUpdates.length = 0;
-    this.pendingSpawnListUpdates.length = 0;
+      this._processSpawnSoA(this._spawnIdx, this._spawnClass, this._spawnN) ||
+      activeQueryPopulationChanged;
+    this._despawnN = 0;
+    this._spawnN = 0;
 
     // Process updates received from other workers (same order)
     for (const batch of this.receivedListUpdates) {
@@ -425,7 +470,22 @@ class LogicWorker extends AbstractWorker {
   /**
    * Process spawn list updates - add entities to active lists
    */
+  _processSpawnSoA(idx, classes, n) {
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      const entityIndex = idx[i];
+      const EntityClass = classes[i];
+      if (Transform.active[entityIndex] === 1) {
+        GameObject._addToActiveEntities(entityIndex);
+        GameObject._addToTypeActiveList(EntityClass, entityIndex);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   _processSpawnUpdates(updates) {
+    if (!updates || updates.length === 0) return false;
     let changed = false;
     for (const update of updates) {
       const { entityIndex, EntityClass } = update;
@@ -444,6 +504,17 @@ class LogicWorker extends AbstractWorker {
    * No active-state guard: despawns are processed BEFORE spawns, so a re-spawned
    * entity will be re-added in the subsequent spawn pass (with dedup protection).
    */
+  _processDespawnSoA(idx, classes, n) {
+    if (n === 0) return false;
+    for (let i = 0; i < n; i++) {
+      const entityIndex = idx[i];
+      const EntityClass = classes[i];
+      GameObject._removeFromActiveEntities(entityIndex);
+      GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
+    }
+    return true;
+  }
+
   _processDespawnUpdates(updates) {
     if (!updates || updates.length === 0) {
       return false;
@@ -461,22 +532,37 @@ class LogicWorker extends AbstractWorker {
    * Send pending list updates to logic0 (called at end of frame by non-logic0 workers)
    */
   sendListUpdatesToLogic0() {
-    if (this.pendingSpawnListUpdates.length === 0 && this.pendingDespawnListUpdates.length === 0) {
+    if (this._spawnN === 0 && this._despawnN === 0) {
       return true;
     }
 
     // Serialize EntityClass to class name for message passing (reuse buffers to avoid .map() allocation)
     const spawns = this._spawnSerializedBuffer;
     const despawns = this._despawnSerializedBuffer;
-    spawns.length = 0;
-    despawns.length = 0;
-
-    for (const u of this.pendingSpawnListUpdates) {
-      spawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, className: u.EntityClass.name });
+    const sn = this._spawnN;
+    const dn = this._despawnN;
+    for (let i = 0; i < sn; i++) {
+      let o = spawns[i];
+      if (!o) {
+        o = { entityIndex: 0, entityType: 0, className: '' };
+        spawns[i] = o;
+      }
+      o.entityIndex = this._spawnIdx[i];
+      o.entityType = this._spawnType[i];
+      o.className = this._spawnClass[i].name;
     }
-    for (const u of this.pendingDespawnListUpdates) {
-      despawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, className: u.EntityClass.name });
+    spawns.length = sn;
+    for (let i = 0; i < dn; i++) {
+      let o = despawns[i];
+      if (!o) {
+        o = { entityIndex: 0, entityType: 0, className: '' };
+        despawns[i] = o;
+      }
+      o.entityIndex = this._despawnIdx[i];
+      o.entityType = this._despawnType[i];
+      o.className = this._despawnClass[i].name;
     }
+    despawns.length = dn;
 
     const sent = this.sendDataToWorker('logic0', {
       msg: 'listUpdates',
@@ -485,8 +571,8 @@ class LogicWorker extends AbstractWorker {
     });
 
     if (sent) {
-      this.pendingSpawnListUpdates.length = 0;
-      this.pendingDespawnListUpdates.length = 0;
+      this._spawnN = 0;
+      this._despawnN = 0;
     }
 
     return sent;

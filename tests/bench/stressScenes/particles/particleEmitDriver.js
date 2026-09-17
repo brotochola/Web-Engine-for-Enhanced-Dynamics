@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 
 const { GameObject, ParticleEmitter } = WEED;
 
-const EMIT_PER_TICK = 128;
+const EMIT_PER_TICK = 3600;
 const POSITION_SLOTS = 2048;
 const WORLD_W = 4000;
 const WORLD_H = 3000;

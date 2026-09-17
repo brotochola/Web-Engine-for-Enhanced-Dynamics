@@ -43,6 +43,9 @@ export class Camera {
     width: 0,
     height: 0,
   };
+  static _followTargetScratch = { x: 0, y: 0 };
+  static _worldToScreenScratch = { x: 0, y: 0 };
+  static _screenToWorldScratch = { x: 0, y: 0 };
 
   // Zoom limits
   static _maxZoom = 50;
@@ -620,9 +623,10 @@ export class Camera {
   /**
    * Get the current follow target position (if any)
    * Reads from SharedArrayBuffer for cross-thread access
+   * @param {{x?: number, y?: number}|null} [out]
    * @returns {{x: number, y: number} | null} Follow target or null if not following
    */
-  static getFollowTarget() {
+  static getFollowTarget(out = null) {
     if (!this._data) return null;
 
     // Buffer layout: [zoom, x, y, followTargetX, followTargetY, targetZoom]
@@ -631,7 +635,10 @@ export class Camera {
 
     // NaN indicates no target set
     if (!Number.isNaN(targetX) && !Number.isNaN(targetY)) {
-      return { x: targetX, y: targetY };
+      const dest = out || Camera._followTargetScratch;
+      dest.x = targetX;
+      dest.y = targetY;
+      return dest;
     }
     return null;
   }
@@ -708,34 +715,34 @@ export class Camera {
    * Convert world coordinates to screen coordinates
    * @param {number} worldX - X in world space
    * @param {number} worldY - Y in world space
+   * @param {{x?: number, y?: number}|null} [out]
    * @returns {{x: number, y: number}} Screen coordinates
    */
-  static worldToScreen(worldX, worldY) {
+  static worldToScreen(worldX, worldY, out = null) {
     const zoom = this._data ? this._data[0] : 1;
     const cameraX = this._data ? this._data[1] : 0;
     const cameraY = this._data ? this._data[2] : 0;
-
-    return {
-      x: (worldX - cameraX) * zoom,
-      y: (worldY - cameraY) * zoom,
-    };
+    const dest = out || Camera._worldToScreenScratch;
+    dest.x = (worldX - cameraX) * zoom;
+    dest.y = (worldY - cameraY) * zoom;
+    return dest;
   }
 
   /**
    * Convert screen coordinates to world coordinates
    * @param {number} screenX - X in screen space
    * @param {number} screenY - Y in screen space
+   * @param {{x?: number, y?: number}|null} [out]
    * @returns {{x: number, y: number}} World coordinates
    */
-  static screenToWorld(screenX, screenY) {
+  static screenToWorld(screenX, screenY, out = null) {
     const zoom = this._data ? this._data[0] : 1;
     const cameraX = this._data ? this._data[1] : 0;
     const cameraY = this._data ? this._data[2] : 0;
-
-    return {
-      x: screenX / zoom + cameraX,
-      y: screenY / zoom + cameraY,
-    };
+    const dest = out || Camera._screenToWorldScratch;
+    dest.x = screenX / zoom + cameraX;
+    dest.y = screenY / zoom + cameraY;
+    return dest;
   }
 
   /**

@@ -479,6 +479,7 @@ export class GameObject {
   }
   set x(value) {
     const i = this.index;
+    if (Transform.x[i] === value) return;
     Transform.x[i] = value;
     if (isCommandRingBound() && this._hasBox2dBody()) {
       enqueueSetTransform(
@@ -499,6 +500,7 @@ export class GameObject {
   }
   set y(value) {
     const i = this.index;
+    if (Transform.y[i] === value) return;
     Transform.y[i] = value;
     if (isCommandRingBound() && this._hasBox2dBody()) {
       enqueueSetTransform(
@@ -517,6 +519,7 @@ export class GameObject {
   }
   set rotation(value) {
     const i = this.index;
+    if (Transform.rotation && Transform.rotation[i] === value) return;
     if (Transform.rotation) Transform.rotation[i] = value;
     syncRotCSFromAngle(i, value);
     if (isCommandRingBound() && this._hasComponents.RigidBody) {
@@ -540,6 +543,7 @@ export class GameObject {
   set vx(value) {
     if (this._hasComponents.RigidBody) {
       const i = this.index;
+      if (RigidBody.vx[i] === value) return;
       RigidBody.vx[i] = value;
       if (isCommandRingBound()) {
         enqueueSetVelocity(i, value, RigidBody.vy[i]);
@@ -555,6 +559,7 @@ export class GameObject {
   set vy(value) {
     if (this._hasComponents.RigidBody) {
       const i = this.index;
+      if (RigidBody.vy[i] === value) return;
       RigidBody.vy[i] = value;
       if (isCommandRingBound()) {
         enqueueSetVelocity(i, RigidBody.vx[i], value);
@@ -570,6 +575,7 @@ export class GameObject {
   set angularVelocity(value) {
     if (this._hasComponents.RigidBody) {
       const i = this.index;
+      if (RigidBody.angularVelocity[i] === value) return;
       RigidBody.angularVelocity[i] = value;
       if (isCommandRingBound()) {
         enqueueSetAngularVelocity(i, value);
@@ -1145,6 +1151,7 @@ export class GameObject {
    */
   setPosition(x, y) {
     const i = this.index;
+    if (Transform.x[i] === x && Transform.y[i] === y) return this;
     Transform.x[i] = x;
     Transform.y[i] = y;
     if (isCommandRingBound() && this._hasBox2dBody()) {
@@ -1168,6 +1175,7 @@ export class GameObject {
   setVelocity(vx, vy) {
     if (this._hasComponents.RigidBody) {
       const i = this.index;
+      if (RigidBody.vx[i] === vx && RigidBody.vy[i] === vy) return this;
       RigidBody.vx[i] = vx;
       RigidBody.vy[i] = vy;
       if (isCommandRingBound()) {

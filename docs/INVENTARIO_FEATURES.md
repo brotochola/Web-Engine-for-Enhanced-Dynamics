@@ -76,13 +76,15 @@ Módulo: `src/core/particleEmitter.js`. Kernel: `particleEmitMicrobench.mjs`. Es
 
 **Ya medido.** En main: P4+P5. En esta rama, aislados: P2 (lista de campos, keep, kernel +7.2%) y P6 (pop de free-list, keep de **kernel** ~+27%, no venderlo como win de Predator). Smoke scoreboard: emit KEPT, kernel +23.4%, `particle_STEP_MS` −9.6%, carga OK. Bloque C de esta noche: kernel de emisión otra vez, n de producto no smoke.
 
+Skip-work C (no zero `animFrames` sin array) **kept** 2026-09-17 (kernel +4%, estrés TIE). Escena calibrada a 3600 emit/tick y `maxParticles` 60000 (piso 2 ms).
+
 **Cómo medir.** Fila `emit` en el scoreboard. P6 sigue siendo claim de kernel si el gameplay de partículas no cruza 3%.
 
 ### integrate — Integración de partículas
 
 Módulo: `src/util/particleIntegrate.js`. Kernel: `particleIntegrateMicrobench.mjs`. Escena: `ParticleIntegrateStressScene`. Primaria: `particle_STEP_MS`. Carga: `ACTIVE_PARTICLES`.
 
-**Ya medido** P4+P5 en main. PACT (expectedActive) **descartado** (carga +86%). Esta noche: kernel + estrés. Sin PACT.
+**Ya medido** P4+P5 en main. PACT (expectedActive) **descartado** (carga +86%). Skip-work B (early-out tween + radianes en spawn) **kept** 2026-09-17. Escena calibrada a `maxParticles` 55000 / burst 50000 (piso 2 ms; 4 ms no cabe en índices Uint16).
 
 ### spatial — Vecinos espaciales
 
@@ -170,9 +172,9 @@ Esta noche: kernel sí; escena **como estrés** (`--headed-only` no incluye `com
 
 ### decorations — Espacial de decoraciones
 
-Módulo: `src/core/decorationSpatial.js`. Kernel: `decorationSpatialMicrobench.mjs`. Escena: `ZenithalParticleTestScene` (catálogo headed). Primaria: `pixi_STEP_MS`. Carga: `BODY_COUNT`.
+Módulo: `src/core/decorationSpatial.js`. Kernel: `decorationSpatialMicrobench.mjs`. Escena: `DecoQueryCircleStressScene` (8000 decorations, 4300 `queryCircle`/tick). Primaria: `logic0_STEP_MS`. Carga: `ACTIVE_DECORATIONS`.
 
-Esta noche: kernel sí; zenithal **como estrés**, no cinco corridas headed. Sin escena `queryCircle` a tasa fija.
+Stamp de generación (skip-work L, 2026-09-17) **dropped**: kernel −30.1%, estrés +14.2%. Cada decoration está en una sola celda. Informe: [`tests/results/skip-work-hyps/hyp-L-querycircle/report.md`](../tests/results/skip-work-hyps/hyp-L-querycircle/report.md).
 
 Pool-flow 2026-09-16 (otra pregunta, mismo worker de partículas): sway con `copyActiveSnapshot` vs scan de `maxDecorations`. Carga `ACTIVE_DECORATIONS` (slot 13 always-on). Escenas `DecoFixedStressScene` (12000) y `DecoChurnStressScene` (~4000). Kernel a 10% ocupación: snapshot **+79%** ops/s. Scan en estrés **dropped** (fija 1W +3.4%, churn +16.6% / +6.1%). Fija 3W headless KEEP de scan (−4.2%) no se confirmó headed (TIE −1.5%). Snapshot se queda. Informe: [`tests/results/pool-flow/report.md`](../tests/results/pool-flow/report.md).
 

@@ -171,6 +171,28 @@ cases.emit_zenithal_burst = timeIt(
   { iterations: BURSTS }
 );
 
+cases.emitAlongLine_burst = timeIt(
+  `emitAlongLine burst (${BURST_SIZE} samples, recycled)`,
+  (iters) => {
+    for (let b = 0; b < iters; b++) {
+      sink += ParticleEmitter.emitAlongLine({
+        x0: 0,
+        y0: 0,
+        x1: 800,
+        y1: 600,
+        count: BURST_SIZE,
+        vx: { min: -40, max: 40 },
+        vy: { min: -40, max: 40 },
+        lifespan: { min: 400, max: 1200 },
+        scale: { min: 0.5, max: 1.5 },
+        alpha: 1,
+      });
+      recycleAllActive();
+    }
+  },
+  { iterations: BURSTS }
+);
+
 cases.acquire_only = timeIt(
   `acquireIndex+returnToPool (${BURST_SIZE}/burst, no field writes)`,
   (iters) => {

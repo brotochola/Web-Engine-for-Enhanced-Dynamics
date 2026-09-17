@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 
 const { GameObject, TileMap } = WEED;
 
-const QUERIES_PER_TICK = 64;
+const QUERIES_PER_TICK = 16500;
 const MAP_PX = 64 * 32;
 
 export class TilemapStressQuerier extends GameObject {

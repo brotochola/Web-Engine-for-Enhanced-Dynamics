@@ -57,9 +57,10 @@ export function normalizeCoverBackgroundOptions(opts) {
  *   margin: number,
  *   zoomParallax?: number,
  * }} p
+ * @param {{ scale?: number, x?: number, y?: number }|null} [out]
  * @returns {{ scale: number, x: number, y: number }}
  */
-export function coverBackgroundTransform(p) {
+export function coverBackgroundTransform(p, out = null) {
   const tw = Math.max(p.texW, 1e-6);
   const th = Math.max(p.texH, 1e-6);
   const cw = Math.max(p.canvasW, 1);
@@ -95,5 +96,9 @@ export function coverBackgroundTransform(p) {
   else if (x > 0) x = 0;
   if (y < minY) y = minY;
   else if (y > 0) y = 0;
-  return { scale, x, y };
+  const dest = out || { scale: 0, x: 0, y: 0 };
+  dest.scale = scale;
+  dest.x = x;
+  dest.y = y;
+  return dest;
 }

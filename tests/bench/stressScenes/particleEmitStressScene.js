@@ -29,13 +29,13 @@ export class ParticleEmitStressScene extends Scene {
       gravity: { x: 0, y: 0 },
     },
     particle: {
-      maxParticles: 20000,
+      maxParticles: 60000,
       decals: false,
     },
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      maxVisibleRenderables: 20000,
+      maxVisibleRenderables: 60000,
     },
     lighting: {
       enabled: false,

@@ -203,28 +203,39 @@ export class Joint extends SharedAtomicPool {
     if (this.revision) Atomics.add(this.revision, idx, 1);
   }
 
-  static _worldToLocal(entity, wx, wy) {
+  static _w2lA = { x: 0, y: 0 };
+  static _w2lB = { x: 0, y: 0 };
+  static _anchorsScratch = { ax: 0, ay: 0, bx: 0, by: 0 };
+
+  static _worldToLocal(entity, wx, wy, out) {
     const x = Transform.x[entity];
     const y = Transform.y[entity];
     const c = Transform.rotC ? Transform.rotC[entity] : 1;
     const s = Transform.rotS ? Transform.rotS[entity] : 0;
     const dx = wx - x;
     const dy = wy - y;
-    return { x: dx * c + dy * s, y: -dx * s + dy * c };
+    const dest = out || this._w2lA;
+    dest.x = dx * c + dy * s;
+    dest.y = -dx * s + dy * c;
+    return dest;
   }
 
   static _resolveLocalAnchors(opts, entityA, entityB) {
+    const dest = this._anchorsScratch;
     if (opts.worldAnchorX !== undefined && opts.worldAnchorY !== undefined) {
-      const la = this._worldToLocal(entityA, opts.worldAnchorX, opts.worldAnchorY);
-      const lb = this._worldToLocal(entityB, opts.worldAnchorX, opts.worldAnchorY);
-      return { ax: la.x, ay: la.y, bx: lb.x, by: lb.y };
+      const la = this._worldToLocal(entityA, opts.worldAnchorX, opts.worldAnchorY, this._w2lA);
+      const lb = this._worldToLocal(entityB, opts.worldAnchorX, opts.worldAnchorY, this._w2lB);
+      dest.ax = la.x;
+      dest.ay = la.y;
+      dest.bx = lb.x;
+      dest.by = lb.y;
+      return dest;
     }
-    return {
-      ax: opts.localAnchorAX ?? 0,
-      ay: opts.localAnchorAY ?? 0,
-      bx: opts.localAnchorBX ?? 0,
-      by: opts.localAnchorBY ?? 0,
-    };
+    dest.ax = opts.localAnchorAX ?? 0;
+    dest.ay = opts.localAnchorAY ?? 0;
+    dest.bx = opts.localAnchorBX ?? 0;
+    dest.by = opts.localAnchorBY ?? 0;
+    return dest;
   }
 
   static _nextOnEntity(jointIdx, entity) {

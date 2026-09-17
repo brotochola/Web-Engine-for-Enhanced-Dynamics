@@ -75,6 +75,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact',
     'blendMode', 'layerId',
   ];
+  static _alongLineScratch = Object.create(null);
   static _acquireBatch = new Uint16Array(256);
   static _topdownOverrides = { flat: 0, viewMode: CAMERA_TYPES.TOPDOWN };
   static _zenithalOverrides = { flat: 0, viewMode: CAMERA_TYPES.ZENITHAL };
@@ -151,24 +152,28 @@ export class ParticleEmitter extends SharedAtomicPool {
    * @returns {number}
    */
   static emitAlongLine(config) {
-    const { x0, y0, x1, y1, count = 8, ...rest } = config;
-    const n = Math.max(1, Math.round(randomRange(count, 8)));
+    const x0 = config.x0;
+    const y0 = config.y0;
+    const x1 = config.x1;
+    const y1 = config.y1;
+    const n = Math.max(1, Math.round(randomRange(config.count ?? 8, 8)));
     const dx = x1 - x0;
     const dy = y1 - y0;
     const o = this._flatOverrides;
-    o.gravity = rest.gravity ?? 0;
+    o.gravity = config.gravity ?? 0;
+    const bag = this._alongLineScratch;
+    const fields = this._cfgFieldList;
+    for (let f = 0; f < fields.length; f++) {
+      const k = fields[f];
+      bag[k] = config[k];
+    }
+    bag.count = 1;
     let spawned = 0;
     for (let i = 1; i <= n; i++) {
       const t = i / (n + 1);
-      spawned += this._spawn(
-        {
-          ...rest,
-          count: 1,
-          x: x0 + dx * t,
-          y: y0 + dy * t,
-        },
-        o
-      );
+      bag.x = x0 + dx * t;
+      bag.y = y0 + dy * t;
+      spawned += this._spawn(bag, o);
     }
     return spawned;
   }
@@ -397,18 +402,20 @@ export class ParticleEmitter extends SharedAtomicPool {
         rotTo[i] = 0;
       } else {
         const or = resolveParticleOp(cfg.rotation, 0, this._opA);
-        rotFrom[i] = or.from;
-        rotTo[i] = or.to;
-        const rad = (or.from * Math.PI) / 180;
-        rotC[i] = Math.cos(rad);
-        rotS[i] = Math.sin(rad);
+        const fromRad = (or.from * Math.PI) / 180;
+        const toRad = (or.to * Math.PI) / 180;
+        rotFrom[i] = fromRad;
+        rotTo[i] = toRad;
+        rotC[i] = Math.cos(fromRad);
+        rotS[i] = Math.sin(fromRad);
         if (or.tween) { mask |= PARTICLE_TWEEN.ROT; ease = or.ease; }
       }
 
       if (cfg.angularVelocity != null) {
         const ov = resolveParticleOp(cfg.angularVelocity, 0, this._opA);
-        angularVelFrom[i] = ov.from;
-        angularVelTo[i] = ov.tween ? ov.to : ov.from;
+        const fromRad = (ov.from * Math.PI) / 180;
+        angularVelFrom[i] = fromRad;
+        angularVelTo[i] = ov.tween ? (ov.to * Math.PI) / 180 : fromRad;
         hasAngularVel[i] = 1;
         if (ov.tween) ease = ov.ease;
       } else {
@@ -428,10 +435,9 @@ export class ParticleEmitter extends SharedAtomicPool {
 
       animCountArr[i] = 0;
       animModeArr[i] = 0;
-      const animBase = i * 8;
-      for (let f = 0; f < 8; f++) animFrames[animBase + f] = 0;
 
       if (Array.isArray(cfg.frame) && cfg.spritesheet && cfg.animation !== undefined) {
+        const animBase = i * 8;
         const frames = cfg.frame;
         const n = Math.min(8, frames.length);
         let wrote = 0;

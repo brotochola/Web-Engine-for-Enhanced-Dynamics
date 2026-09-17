@@ -65,9 +65,9 @@ export class ParticleComponent extends Component {
     scaleYTo: Float32Array,
     tintFrom: Uint32Array,
     tintTo: Uint32Array,
-    rotFrom: Float32Array, // degrees
+    rotFrom: Float32Array, // radians (API still takes degrees)
     rotTo: Float32Array,
-    // Angular velocity (deg per ms) — constant or from/to over life
+    // Angular velocity (rad per ms) — constant or from/to over life
     angularVelFrom: Float32Array,
     angularVelTo: Float32Array,
     hasAngularVel: Uint8Array,

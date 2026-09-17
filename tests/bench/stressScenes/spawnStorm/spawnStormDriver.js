@@ -15,12 +15,12 @@ export class SpawnStormDriver extends GameObject {
 
   tick() {
     const live = Query.queryActiveEntities([SpriteRenderer]) || [];
-    const kill = Math.min(48, live.length);
+    const kill = Math.min(1800, live.length);
     for (let i = 0; i < kill; i++) {
       const entity = GameObject.get(live[i]);
       if (entity) entity.despawn();
     }
-    for (let i = 0; i < 48; i++) {
+    for (let i = 0; i < 1800; i++) {
       const n = this._n++;
       SpawnStormEntity.spawn({
         x: 200 + (n % 80) * 36,

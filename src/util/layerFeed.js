@@ -157,6 +157,8 @@ function snapshotList(indices, counts, lock, layerId, scratchRef) {
 
 const _colliderScratchRef = { buf: new Uint32Array(0) };
 const _particleScratchRef = { buf: new Uint32Array(0) };
+const _colliderSnap = { indices: null, count: 0 };
+const _particleSnap = { indices: null, count: 0 };
 
 /**
  * Copy collider feed indices out from under the layer spinlock.
@@ -173,7 +175,9 @@ export function snapshotColliderFeed(layerId) {
     _colliderScratchRef,
   );
   if (n == null) return null;
-  return { indices: _colliderScratchRef.buf, count: n };
+  _colliderSnap.indices = _colliderScratchRef.buf;
+  _colliderSnap.count = n;
+  return _colliderSnap;
 }
 
 /**
@@ -191,7 +195,9 @@ export function snapshotParticleFeed(layerId) {
     _particleScratchRef,
   );
   if (n == null) return null;
-  return { indices: _particleScratchRef.buf, count: n };
+  _particleSnap.indices = _particleScratchRef.buf;
+  _particleSnap.count = n;
+  return _particleSnap;
 }
 
 /**

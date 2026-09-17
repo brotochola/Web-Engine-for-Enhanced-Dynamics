@@ -44,24 +44,68 @@ export const LIQUIDFUN_GROUP_FLAGS = Object.freeze({
   CAN_BE_EMPTY: 1 << 2,
 });
 
-function resolveLifespanSec(lifespan) {
-  if (lifespan == null) return { minSec: 0, maxSec: 0 };
+const _lifeScratch = { minSec: 0, maxSec: 0 };
+const _scaleScratch = { min: 1, max: 1 };
+const _alphaScratch = { min: 1, max: 1 };
+const _emitScratch = {
+  posX: 0,
+  posY: 0,
+  halfWidth: 0,
+  halfHeight: 0,
+  radius: 0,
+  systemId: 0,
+  flags: 0,
+  spacing: 0,
+  strength: 0,
+  viscousScale: 1,
+  trackGroup: false,
+  lightIntensity: 0,
+  groupFlags: 0,
+  tint: 0,
+  textureId: 0,
+  lifetimeMinSec: 0,
+  lifetimeMaxSec: 0,
+  fadeToAlpha0: false,
+  scale: null,
+  alpha: null,
+  layerMask: 0,
+  hasSprite: false,
+  userData: 0,
+  color: 0,
+  vx: 0,
+  vy: 0,
+  omega: 0,
+};
+
+function resolveLifespanSec(lifespan, out) {
+  const dest = out || _lifeScratch;
+  if (lifespan == null) {
+    dest.minSec = 0;
+    dest.maxSec = 0;
+    return dest;
+  }
   if (typeof lifespan === 'number') {
     const sec = lifespan * 0.001;
-    return { minSec: sec, maxSec: sec };
+    dest.minSec = sec;
+    dest.maxSec = sec;
+    return dest;
   }
-  return {
-    minSec: lifespan.min != null ? lifespan.min * 0.001 : 0,
-    maxSec: lifespan.max != null ? lifespan.max * 0.001 : 0,
-  };
+  dest.minSec = lifespan.min != null ? lifespan.min * 0.001 : 0;
+  dest.maxSec = lifespan.max != null ? lifespan.max * 0.001 : 0;
+  return dest;
 }
 
-function resolveRange(value, defaultVal = 1) {
+function resolveRange(value, defaultVal, out) {
   if (value == null) return null;
-  if (typeof value === 'number') return { min: value, max: value };
-  const min = value.min != null ? value.min : defaultVal;
-  const max = value.max != null ? value.max : min;
-  return { min, max };
+  const dest = out || _scaleScratch;
+  if (typeof value === 'number') {
+    dest.min = value;
+    dest.max = value;
+    return dest;
+  }
+  dest.min = value.min != null ? value.min : defaultVal;
+  dest.max = value.max != null ? value.max : dest.min;
+  return dest;
 }
 
 function resolveEmit(options) {
@@ -70,39 +114,39 @@ function resolveEmit(options) {
   if (!textureId && o.texture) {
     textureId = SpriteSheetRegistry.getTextureId(o.texture) | 0;
   }
-  const life = resolveLifespanSec(o.lifespan);
+  const life = resolveLifespanSec(o.lifespan, _lifeScratch);
   const viscousScale = o.viscousScale != null ? o.viscousScale : 1;
   const lightIntensity = o.lightIntensity > 0 ? +o.lightIntensity : 0;
   const layerMask = Layer.resolveSubscriptions(o);
-  return {
-    posX: o.posX,
-    posY: o.posY,
-    halfWidth: o.halfWidth,
-    halfHeight: o.halfHeight,
-    radius: o.radius,
-    systemId: o.systemId || 0,
-    flags: o.flags != null ? o.flags : LIQUIDFUN_FLAGS.WATER,
-    spacing: o.spacing != null ? o.spacing : 0,
-    strength: o.strength != null ? o.strength : 0,
-    viscousScale: viscousScale > 0 ? viscousScale : 1,
-    trackGroup: !!o.trackGroup || lightIntensity > 0,
-    lightIntensity,
-    groupFlags: o.groupFlags != null ? o.groupFlags >>> 0 : 0,
-    tint: o.tint != null ? o.tint : 0,
-    textureId,
-    lifetimeMinSec: life.minSec,
-    lifetimeMaxSec: life.maxSec,
-    fadeToAlpha0: !!o.fadeToAlpha0,
-    scale: resolveRange(o.scale, 1),
-    alpha: resolveRange(o.alpha, 1),
-    layerMask,
-    hasSprite: o.scale != null || o.alpha != null,
-    userData: o.userData != null ? o.userData >>> 0 : 0,
-    color: o.color != null ? o.color >>> 0 : 0,
-    vx: o.vx || 0,
-    vy: o.vy || 0,
-    omega: o.omega || 0,
-  };
+  const dest = _emitScratch;
+  dest.posX = o.posX;
+  dest.posY = o.posY;
+  dest.halfWidth = o.halfWidth;
+  dest.halfHeight = o.halfHeight;
+  dest.radius = o.radius;
+  dest.systemId = o.systemId || 0;
+  dest.flags = o.flags != null ? o.flags : LIQUIDFUN_FLAGS.WATER;
+  dest.spacing = o.spacing != null ? o.spacing : 0;
+  dest.strength = o.strength != null ? o.strength : 0;
+  dest.viscousScale = viscousScale > 0 ? viscousScale : 1;
+  dest.trackGroup = !!o.trackGroup || lightIntensity > 0;
+  dest.lightIntensity = lightIntensity;
+  dest.groupFlags = o.groupFlags != null ? o.groupFlags >>> 0 : 0;
+  dest.tint = o.tint != null ? o.tint : 0;
+  dest.textureId = textureId;
+  dest.lifetimeMinSec = life.minSec;
+  dest.lifetimeMaxSec = life.maxSec;
+  dest.fadeToAlpha0 = !!o.fadeToAlpha0;
+  dest.scale = resolveRange(o.scale, 1, _scaleScratch);
+  dest.alpha = resolveRange(o.alpha, 1, _alphaScratch);
+  dest.layerMask = layerMask;
+  dest.hasSprite = o.scale != null || o.alpha != null;
+  dest.userData = o.userData != null ? o.userData >>> 0 : 0;
+  dest.color = o.color != null ? o.color >>> 0 : 0;
+  dest.vx = o.vx || 0;
+  dest.vy = o.vy || 0;
+  dest.omega = o.omega || 0;
+  return dest;
 }
 
 function enqueueEmitParams(resolved) {

@@ -5,8 +5,8 @@ import { VisPolyOccluder } from './visPoly/visPolyOccluder.js';
 const { Scene, Camera } = WEED;
 
 const SEED = 0x51f01;
-const LIGHTS = 8;
-const OCCLUDERS = 48;
+const LIGHTS = 360;
+const OCCLUDERS = 700;
 
 /** Bench scene: raycasted lights + occluders. Predator default leaves this path off. */
 export class VisPolyStressScene extends Scene {
@@ -17,8 +17,8 @@ export class VisPolyStressScene extends Scene {
     spatial: {
       numberOfSpatialWorkers: 1,
       cellSize: 128,
-      maxNeighbors: 64,
-      maxEntitiesPerCell: 96,
+      maxNeighbors: 256,
+      maxEntitiesPerCell: 255,
       noLimitFPS: false,
     },
     logic: { noLimitFPS: false, numberOfLogicWorkers: 1 },
@@ -28,7 +28,7 @@ export class VisPolyStressScene extends Scene {
     lighting: {
       enabled: true,
       baseAmbient: 0.2,
-      maxLights: 20,
+      maxLights: 360,
       shadowsEnabled: true,
       raycasted: true,
       maxPolygonVertices: 5000,

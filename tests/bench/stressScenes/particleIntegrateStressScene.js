@@ -29,13 +29,13 @@ export class ParticleIntegrateStressScene extends Scene {
       gravity: { x: 0, y: 0 },
     },
     particle: {
-      maxParticles: 20000,
+      maxParticles: 55000,
       decals: false,
     },
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      maxVisibleRenderables: 20000,
+      maxVisibleRenderables: 55000,
     },
     lighting: {
       enabled: false,

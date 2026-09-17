@@ -3257,6 +3257,21 @@ class PreRenderWorker extends AbstractWorker {
                     const shape = shapeType[nIdx];
                     const ox = colOffX[nIdx] || 0;
                     const oy = colOffY[nIdx] || 0;
+                    const occX = wx + ox;
+                    const occY = wy + oy;
+                    const dx = occX - lx;
+                    const dy = occY - ly;
+                    let reach = 0;
+                    if (shape === ShapeType.Circle) {
+                        reach = colRadius[nIdx] || 0;
+                    } else {
+                        const hw = (colWidth[nIdx] || 0) * 0.5;
+                        const hh = (colHeight[nIdx] || 0) * 0.5;
+                        reach = Math.hypot(hw, hh);
+                    }
+                    const maxReach = influenceRadius + reach;
+                    if (dx * dx + dy * dy > maxReach * maxReach) continue;
+
                     let packed = false;
 
                     if (shape === ShapeType.Circle) {

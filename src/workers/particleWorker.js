@@ -1098,12 +1098,14 @@ class ParticleWorker extends AbstractWorker {
     const swayBaseAngle = this.accumulatedTime * SWAY_ANGLE_PER_MS;
 
     const parentEntityIndex = DecorationComponent.parentEntityIndex;
+    const isItOnScreen = DecorationComponent.isItOnScreen;
 
     // OPTIMIZED: Iterate over the stable active snapshot instead of maxDecorations.
     for (let idx = 0; idx < activeCount; idx++) {
       const i = activeData[idx];
       if (!active[i]) continue;
       if (parentEntityIndex[i] !== DECORATION_NO_PARENT) continue;
+      if (!isItOnScreen[i]) continue;
 
       const mode = sway[i];
       if (mode === SWAY_OFF) continue;
@@ -1165,6 +1167,12 @@ class ParticleWorker extends AbstractWorker {
   _processNextFlowfieldRequest() {
     const targetCell = this.flowfieldRequests.dequeue();
     if (targetCell < 0) return false;
+
+    const existingSlot = this._findExistingFlowfieldSlot(targetCell);
+    if (existingSlot >= 0) {
+      this._updateFlowfieldLRU(existingSlot);
+      return true;
+    }
 
     this.computeFlowfield(targetCell);
     this.flowfieldsComputedThisFrame++;
