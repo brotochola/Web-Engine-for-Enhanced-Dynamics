@@ -910,12 +910,12 @@ export class GameObject {
     } else if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerMask) {
       mask = AdobeAnimComponent.layerMask[this.index] | 0;
     }
-    if (!mask) return Layer.getName(Layer.ENTITIES_ID);
+    if (!mask) return Layer.getName(Layer.entitiesId);
     for (let id = 0; id < Layer.MAX_LAYERS; id++) {
       if (!(mask & (1 << id))) continue;
       if (Layer.feederKind(id) === LAYER_FEEDER_KIND.SPRITES) return Layer.getName(id);
     }
-    return Layer.getName(Layer.ENTITIES_ID);
+    return Layer.getName(Layer.entitiesId);
   }
 
   /**

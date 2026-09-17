@@ -11,11 +11,10 @@ import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 
 const BUILT_IN_LAYERS = {
-  BACKGROUND: {},
-  DECALS: {},
-  CASTED_SHADOWS: {},
-  ENTITIES: {},
-  LIGHTING: {},
+  decals: {},
+  castedShadows: {},
+  entities: {},
+  lighting: {},
 };
 
 function assertApprox(actual, expected, epsilon = 1e-4) {

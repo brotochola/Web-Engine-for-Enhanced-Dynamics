@@ -105,6 +105,51 @@ export const LAYER_FEEDER_KIND = Object.freeze({
 });
 
 /**
+ * Layer content / pipeline kind. Scene config: `kind: LAYER_KIND.TILEMAP` (value is `'tilemap'`).
+ * @readonly
+ * @enum {string}
+ */
+export const LAYER_KIND = Object.freeze({
+  SPRITES: 'sprites',
+  COVER: 'cover',
+  STATIC: 'static',
+  TILING: 'tiling',
+  TILEMAP: 'tilemap',
+  DENSITY: 'density',
+  COMPUTE: 'compute',
+  DECALS: 'decals',
+  SHADOWS: 'shadows',
+  LIGHTING: 'lighting',
+});
+
+const SCENERY_KIND_SET = new Set([
+  LAYER_KIND.COVER,
+  LAYER_KIND.STATIC,
+  LAYER_KIND.TILING,
+  LAYER_KIND.TILEMAP,
+]);
+
+const SKIP_SUBSCRIBE_KIND_SET = new Set([
+  LAYER_KIND.COVER,
+  LAYER_KIND.STATIC,
+  LAYER_KIND.TILING,
+  LAYER_KIND.TILEMAP,
+  LAYER_KIND.DECALS,
+  LAYER_KIND.SHADOWS,
+  LAYER_KIND.LIGHTING,
+]);
+
+/** @param {string|null|undefined} kind */
+export function isSceneryKind(kind) {
+  return SCENERY_KIND_SET.has(kind);
+}
+
+/** @param {string|null|undefined} kind */
+export function isSkipSubscribeKind(kind) {
+  return SKIP_SUBSCRIBE_KIND_SET.has(kind);
+}
+
+/**
  * `Layer.resolveSubscriptions` kind.
  * @readonly
  * @enum {number}
@@ -166,41 +211,36 @@ export const SPRITE_TILE_MODE = Object.freeze({
 });
 
 /**
- * Built-in layer definitions. Same shape as scene config.layers entries.
- * ySorting is false for all built-in layers; ENTITIES gets overridden
+ * Built-in pipeline layers. Same shape as scene config.layers entries.
+ * ySorting is false for all built-in layers; entities gets overridden
  * at runtime by the scene's renderer.ySorting config.
+ * Scenery (cover / tiling / tilemap) is scene-owned — not listed here.
  * @readonly
  */
 export const DEFAULT_LAYERS = Object.freeze({
-  BACKGROUND: {
-    zIndex: 0,
-    blendMode: BLEND_MODES.NORMAL,
-    ySorting: false,
-    layerType: 'background',
-  },
-  DECALS: {
+  decals: {
     zIndex: 1,
     blendMode: BLEND_MODES.NORMAL,
     ySorting: false,
-    layerType: 'decals',
+    kind: LAYER_KIND.DECALS,
   },
-  CASTED_SHADOWS: {
+  castedShadows: {
     zIndex: 2,
     blendMode: BLEND_MODES.MULTIPLY,
     ySorting: false,
-    layerType: 'shadows',
+    kind: LAYER_KIND.SHADOWS,
   },
-  ENTITIES: {
+  entities: {
     zIndex: 3,
     blendMode: BLEND_MODES.NORMAL,
     ySorting: false,
-    layerType: 'world',
+    kind: LAYER_KIND.SPRITES,
   },
-  LIGHTING: {
+  lighting: {
     zIndex: 4,
     blendMode: BLEND_MODES.MULTIPLY,
     ySorting: false,
-    layerType: 'lighting',
+    kind: LAYER_KIND.LIGHTING,
   },
 });
 

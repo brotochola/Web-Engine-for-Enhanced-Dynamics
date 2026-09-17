@@ -1,44 +1,58 @@
-# Layer Routing & Background API
+# Layer Routing & Scenery API
 
-How any renderable type (entity, particle, decoration, bullet, light glow) can target any rendering layer, and how backgrounds are now managed through the Layer API.
+How any renderable type (entity, particle, decoration, bullet, light glow) can target any rendering layer, and how scenery (cover, tiling, tilemap) is a scene-owned layer kind.
 
 ---
 
-## Background: Layer-Owned Backgrounds
+## Scenery: scene-owned layers
 
-Backgrounds are configured through `Scene.setBackground` (viewport-cover + parallax) or Layer instance methods (world-stretch static, tiling, tilemap). Cover mode posts through `Layer.BACKGROUND`.
+There is no default `BACKGROUND` slot. A scene that needs a sky, a tiled ground, or a repeating wallpaper declares a layer with a scenery `kind`. `Scene` applies that config after workers are ready and before `preload()`.
 
 ### API
 
+Use `LAYER_KIND` from `WEED` / `WEED.enums` (same habit as `BLEND_MODES`). The stored value is still the string (`LAYER_KIND.COVER === 'cover'`).
+
 ```javascript
-import { Layer } from '/src/core/layer.js';
+static config = {
+  layers: {
+    sky: {
+      kind: LAYER_KIND.COVER,
+      texture: 'landscape',
+      parallax: 0.15,
+      zoomParallax: 0.35,
+      margin: 0.2,
+      zIndex: 0,
+    },
+    ground: {
+      kind: LAYER_KIND.TILEMAP,
+      tilemap: 'myTilemap',
+      scale: 1,
+      zIndex: 0.5,
+    },
+  },
+};
 
-this.setBackground({
-  texture: 'landscape',
-  parallax: 0.15,
-  zoomParallax: 0.35,
-  margin: 0.2,
-});
+// Runtime override (optional; preload or later):
+Layer.sky.setCover({ texture: 'dusk', parallax: 0.1 });
+Layer.clouds.setTiling('clouds', { tileScale: 0.5, parallax: 0.35 });
+Layer.ground.setStatic('sky_texture');
+await Layer.ground.setTilemap('dungeon', { scale: 1 });
+Layer.sky.clear();
 
-await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
-Layer.BACKGROUND.setStaticBackground('sky_texture');
-Layer.BACKGROUND.setTilingBackground('clouds', 0.5);
-Layer.BACKGROUND.clearBackground();
-
-// Built-in layers accessible as static properties:
-// Layer.BACKGROUND, Layer.DECALS, Layer.CASTED_SHADOWS, Layer.ENTITIES, Layer.LIGHTING
-// Custom layers also become properties after init: Layer.water, Layer.lava, etc.
+// Pipeline builtins:
+// Layer.entities, Layer.decals, Layer.castedShadows, Layer.lighting
+// Custom gameplay layers: Layer.water, Layer.lava, etc.
 ```
 
-`setTilemapBackground` returns a Promise that resolves after the renderer builds the tilemap and completes a warm-up render pass (GPU shader compilation). The other methods are fire-and-forget. Background requests are tagged with a request id, so overlapping background changes resolve the correct Promise instead of sharing one global pending slot.
+`setTilemap` returns a Promise that resolves after the renderer builds the tilemap and completes a warm-up render. Other methods are fire-and-forget. Requests carry a `requestId` so overlapping changes resolve the correct Promise.
 
 ### How It Works
 
-1. Layer instance methods post a message to the renderer worker via `Layer._postToRenderer` (a callback wired by Scene during init).
-2. The renderer worker (`pixiWorker.js`) receives the `setBackground` message, creates the appropriate display object, and sends `backgroundReady` back with the same `requestId`.
-3. Scene forwards the `backgroundReady` message to `Layer.resolveBackgroundReady(layerId, requestId)`, which resolves the matching Promise.
+1. Layer instance methods post `setLayerContent` to the renderer via `Layer._postToRenderer`.
+2. The renderer worker creates a display object **for that `layerId` only** and sends `layerContentReady`.
+3. Scene forwards `layerContentReady` to `Layer.resolveLayerContentReady(layerId, requestId)`.
 
-The `layerId` is included in the message for future multi-background-layer support.
+Parallax is a property (0 = glued to camera, 1 = world), not a kind. Cover keeps its existing defaults; static / tiling / tilemap default to 1.
 
 ---
 
@@ -46,19 +60,19 @@ The `layerId` is included in the message for future multi-background-layer suppo
 
 Every renderable carries a **Uint16 `layerMask`**: bit `i` means subscribed to layer `i`. `Layer.resolveSubscriptions({ layer }` / `{ layers })` builds that mask. Each layer still decides what the bit means (sprite queue, density splat, compute pack).
 
-Omit `layer`/`layers` → ENTITIES bit. `layers: []` on particles → mask 0. GameObject `setLayers([])` → ENTITIES sprite, no compute.
+Omit `layer`/`layers` → entities bit. `layers: []` on particles → mask 0. GameObject `setLayers([])` → entities sprite, no compute.
 
 ### Renderable Types
 
 | Type | Renderable | Mask source | Omit |
 |------|-----------|-------------|------|
-| 0 | Entity | `SpriteRenderer.layerMask` | ENTITIES bit (`setLayer` also ORs ENTITIES if no sprite-queue bit) |
-| 1 | Particle | `ParticleComponent.layerMask` | ENTITIES bit |
-| 2 | Decoration | `DecorationComponent.layerMask` | ENTITIES bit |
-| 3 | Light Glow | `LightEmitter.layerIdOfGlowSprite` (legacy id) or entity `layerMask` | ENTITIES |
-| 4 | Bullet | `BulletComponent.layerMask` | ENTITIES bit |
-| 5 | Bullet Trail | same as parent bullet | ENTITIES bit |
-| 7 | LiquidFun | thin SAB `layerMask` | ENTITIES bit |
+| 0 | Entity | `SpriteRenderer.layerMask` | entities bit (`setLayer` also ORs entities if no sprite-queue bit) |
+| 1 | Particle | `ParticleComponent.layerMask` | entities bit |
+| 2 | Decoration | `DecorationComponent.layerMask` | entities bit |
+| 3 | Light Glow | `LightEmitter.layerIdOfGlowSprite` (legacy id) or entity `layerMask` | entities |
+| 4 | Bullet | `BulletComponent.layerMask` | entities bit |
+| 5 | Bullet Trail | same as parent bullet | entities bit |
+| 7 | LiquidFun | thin SAB `layerMask` | entities bit |
 
 Sprite-queue bits: collect **once per bit**. Density bits: splat pose, no type-7/type-1 into that layer's sprite queue. Compute bits: pack particles (`x,y,vx,vy`) and/or colliders. See [COMPUTE_LAYERS.md](./COMPUTE_LAYERS.md).
 
@@ -101,8 +115,8 @@ BulletPool.spawn({
 **Entities:**
 ```javascript
 this.setLayer('water');
-this.setLayer('fire');                // sprite stays ENTITIES; collider packed into fire
-this.setLayers(['ENTITIES', 'fire']); // same, explicit
+this.setLayer('fire');                // sprite stays entities; collider packed into fire
+this.setLayers(['entities', 'fire']); // same, explicit
 this.setTileWorld(128); // optional: world-lock atlas tiling on this sprite
 ```
 
@@ -189,7 +203,7 @@ layers: {
 
 - Items routed to a custom layer only Y-sort with other items in that same layer. A particle on a custom layer won't interleave with entities on the ENTITIES layer -- it renders at the custom layer's zIndex.
 - Decal stamping (`stayOnTheFloor`) always stamps to the built-in DECALS layer, regardless of the particle's `layerMask`. The particle's mask controls where it renders while alive; the decal destination is independent.
-- BACKGROUND / DECALS / CASTED_SHADOWS / LIGHTING are not subscription targets (`Layer.resolveSubscriptions` warns and skips).
+- Scenery kinds and pipeline builtins except `entities` (`decals`, `castedShadows`, `lighting`) are not subscription targets (`Layer.resolveSubscriptions` warns and skips).
 - `LAYER_DENSITY_SOURCE.LIQUID_FUN` layers have **no** sprite render queue; subscribe particles with `layer: 'oil'` for density splat (LiquidFun HEAP and CPU ParticleEmitter). Density / compute / scale / feeder-kind enums are **ints** (`LAYER_FEEDER_KIND` lives in the layer config SAB).
 - `Layer.MAX_LAYERS = 16`, so valid IDs are 0-15. Mask is `Uint16`.
 - Shader-layer density RTs are viewport-sized. The worker may convert instance XY to screen pixels for that pass; tiling still uses world coordinates (`uTileWorld`). There is no public `space` / `uploadSpace` layer config.

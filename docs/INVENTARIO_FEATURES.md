@@ -142,7 +142,7 @@ Módulo: `src/core/tileMap.js`. Kernel: `tileMapMicrobench.mjs`. Escena **nueva*
 
 ### tilemapCull — Cull de chunks de fondo
 
-Módulo: `src/render/tilemapCull.js`. Kernel: `tilemapCullMicrobench.mjs` (`listVisibleChunks`). Escena: `TilemapCullStressScene` (`setTilemapBackground` + cámara en círculo, `chunkTiles: 8`). Primaria: `pixi_STEP_MS`. Carga: `ENTITIES_PROCESSED`. No reusa `TilemapStressScene` (`getTileId`).
+Módulo: `src/render/tilemapCull.js`. Kernel: `tilemapCullMicrobench.mjs` (`listVisibleChunks`). Escena: `TilemapCullStressScene` (`kind: 'tilemap'` + cámara en círculo, `chunkTiles: 8`). Primaria: `pixi_STEP_MS`. Carga: `ENTITIES_PROCESSED`. No reusa `TilemapStressScene` (`getTileId`).
 
 ### contactDrain — Drain de contactos Box2D
 

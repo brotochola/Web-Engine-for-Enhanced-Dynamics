@@ -2,7 +2,6 @@
 // Demonstrates the new Scene-based architecture for WeedJS
 
 import WEED from '/src/index.js';
-import { Layer } from '/src/core/layer.js';
 import { TileMap } from '/src/core/tileMap.js';
 
 // import { Player } from "/demos/predatorScene/gameObjects/player.js";
@@ -28,7 +27,7 @@ import { CameraController } from '/demos/predatorScene/gameObjects/cameraControl
 import { Trash } from '/demos/predatorScene/gameObjects/trash.js';
 import { Bug } from './gameObjects/bug.js';
 
-const { Decoration, Mouse, Camera } = WEED;
+const { Decoration, Mouse, Camera, LAYER_KIND } = WEED;
 
 export class BichosScene extends WEED.Scene {
   // ========================================
@@ -105,6 +104,15 @@ export class BichosScene extends WEED.Scene {
       maxFlowfields: 16,
       maxPaths: 64,
       maxPathLength: 128,
+    },
+
+    layers: {
+      ground: {
+        kind: LAYER_KIND.TILEMAP,
+        tilemap: 'myTilemap',
+        scale: 1,
+        zIndex: 0.5,
+      },
     },
   };
 
@@ -188,10 +196,6 @@ export class BichosScene extends WEED.Scene {
     super(game);
 
     this.frameCount = 0;
-  }
-
-  async preload() {
-    await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
   }
 
   create() {

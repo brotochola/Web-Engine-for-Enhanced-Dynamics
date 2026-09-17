@@ -1,13 +1,12 @@
-// Layer.js - Rendering layer system for custom shader pipelines and backgrounds
+// Layer.js - Rendering layer system: ordered slots with a kind
 // Static class with facade instances, backed by SharedArrayBuffer
 //
 // ARCHITECTURE:
-// - Built-in layers (BACKGROUND, DECALS, etc.) registered by engine at init
-// - Custom layers defined in scene config.layers
+// - Built-in pipeline layers (entities, decals, castedShadows, lighting)
+// - Custom layers in scene config.layers (sprites, density, compute, or scenery)
+// - Scenery kinds (cover / static / tiling / tilemap) are scene-owned — no default background
 // - Each Layer instance is a lightweight facade over SAB arrays (like GameObject)
 // - Layer.water.setUniform('uThreshold', 0.4) works from any thread
-// - Cover background: prefer Scene.setBackground() (Layer.BACKGROUND.setCoverBackground)
-// - Tilemap / static / tiling backgrounds: Layer.BACKGROUND.setTilemapBackground / setStaticBackground / setTilingBackground
 //
 // LAYER ROUTING:
 // - Renderables subscribe via layerMask (Uint16, bit = Layer.id). See Layer.resolveSubscriptions.
@@ -27,11 +26,17 @@ import {
     LAYER_SCALE_MODE,
     LAYER_COMPUTE_SOURCE,
     LAYER_FEEDER_KIND,
+    LAYER_KIND,
     LAYER_SUBSCRIBE_KIND,
     COMPUTE_LAYER_DEFAULT_MAX_BODIES,
     COMPUTE_LAYER_DEFAULT_MAX_PARTICLES,
+    isSceneryKind,
+    isSkipSubscribeKind,
 } from '../util/configDefaults.js';
-import { normalizeCoverBackgroundOptions } from '../render/coverBackground.js';
+import {
+    normalizeCoverBackgroundOptions,
+    normalizeWorldParallax,
+} from '../render/coverBackground.js';
 
 /**
  * Engine-reserved look uniforms, auto-declared on every custom shader layer
@@ -74,12 +79,15 @@ export function reservedLookUniformFloatCount() {
 /** Panel hint keys carried into metadata (LayersPanel widgets). */
 const UNIFORM_HINT_KEYS = ['min', 'max', 'step', 'label', 'tip', 'negate', 'widget'];
 
-const SKIP_SUBSCRIBE = new Set(['BACKGROUND', 'DECALS', 'CASTED_SHADOWS', 'LIGHTING']);
 const LEGACY_FEED_NONE = 255;
+
+function isAllCapsName(name) {
+    return typeof name === 'string' && name.length > 1 && name === name.toUpperCase() && /[A-Z]/.test(name);
+}
 
 export class Layer {
     static MAX_LAYERS = 16;
-    static ENTITIES_ID = -1; // Set during init when ENTITIES is registered
+    static entitiesId = -1; // Set during init when entities is registered
     static _defaultYSorting = true;
 
     // Registry
@@ -167,13 +175,14 @@ export class Layer {
      * using one global slot.
      * @type {Map<number, function>}
      */
-    static _backgroundReadyResolvers = new Map();
-    static _nextBackgroundRequestId = 1;
+    static _contentReadyResolvers = new Map();
+    static _nextContentRequestId = 1;
 
     constructor(id, name) {
         this.id = id;
         this.name = name;
-        this._layerType = 'world';
+        this._kind = LAYER_KIND.SPRITES;
+        this._content = null;
     }
 
     // ========================================
@@ -217,7 +226,7 @@ export class Layer {
     get containerBlendModeId() { return Layer._containerBlendId[this.id]; }
     get hasRenderQueue() { return Layer._hasRenderQueue[this.id] === 1; }
     get builtIn() { return this._builtIn; }
-    get layerType() { return this._layerType; }
+    get kind() { return this._kind; }
     /** {@link LAYER_DENSITY_SOURCE} value (`SPRITES` or `LIQUID_FUN`). */
     get densitySource() { return this._densitySource ?? LAYER_DENSITY_SOURCE.SPRITES; }
     /** {@link LAYER_COMPUTE_SOURCE} or null. */
@@ -295,50 +304,51 @@ export class Layer {
     }
 
     // ========================================
-    // BACKGROUND CONTROL (instance methods)
+    // SCENERY CONTROL (instance methods)
     // ========================================
 
     /**
-     * Set a static background on this layer (simple Sprite, does not tile)
-     * @param {string} textureId - ID of texture in assets.textures
+     * World-stretch sprite (does not tile).
+     * @param {string} textureId
+     * @param {{parallax?:number|{x?:number,y?:number}}|number} [opts]
      */
-    setStaticBackground(textureId) {
-        if (!Layer._ensureBackgroundLayer(this)) {
-            return;
-        }
+    setStatic(textureId, opts) {
+        if (!Layer._canHostScenery(this)) return;
         if (!Layer._postToRenderer) {
             console.warn('Layer: renderer not connected');
             return;
         }
-        Layer._postBackgroundCommand({
-            msg: 'setBackground',
-            type: 'static',
+        const p = normalizeWorldParallax(typeof opts === 'number' ? opts : opts?.parallax);
+        this._kind = LAYER_KIND.STATIC;
+        Layer._postContentCommand({
+            msg: 'setLayerContent',
+            type: LAYER_KIND.STATIC,
             layerId: this.id,
             textureId,
+            parallaxX: p.x,
+            parallaxY: p.y,
         });
     }
 
     /**
-     * Viewport-cover background (always fills the canvas, scales with zoom, optional pan/zoom parallax).
-     * Prefer Scene.setBackground() from scenes.
+     * Viewport-cover image (fills the canvas, optional pan/zoom parallax).
      * @param {string|{texture?:string,textureId?:string,parallax?:number|{x?:number,y?:number},margin?:number,zoomParallax?:number}} textureOrOpts
      */
-    setCoverBackground(textureOrOpts) {
-        if (!Layer._ensureBackgroundLayer(this)) {
-            return;
-        }
+    setCover(textureOrOpts) {
+        if (!Layer._canHostScenery(this)) return;
         if (!Layer._postToRenderer) {
             console.warn('Layer: renderer not connected');
             return;
         }
         const opts = normalizeCoverBackgroundOptions(textureOrOpts);
         if (!opts.texture) {
-            console.warn('Layer.setCoverBackground: texture is required');
+            console.warn('Layer.setCover: texture is required');
             return;
         }
-        Layer._postBackgroundCommand({
-            msg: 'setBackground',
-            type: 'cover',
+        this._kind = LAYER_KIND.COVER;
+        Layer._postContentCommand({
+            msg: 'setLayerContent',
+            type: LAYER_KIND.COVER,
             layerId: this.id,
             textureId: opts.texture,
             parallaxX: opts.parallaxX,
@@ -349,65 +359,71 @@ export class Layer {
     }
 
     /**
-     * Set a tiling background on this layer (TilingSprite - repeats pattern)
-     * @param {string} textureId - ID of texture in assets.textures
-     * @param {number} [tileScale=1] - Scale of tiles
+     * Repeating TilingSprite.
+     * @param {string} textureId
+     * @param {number|{tileScale?:number,parallax?:number|{x?:number,y?:number}}} [tileScaleOrOpts=1]
      */
-    setTilingBackground(textureId, tileScale = 1) {
-        if (!Layer._ensureBackgroundLayer(this)) {
-            return;
-        }
+    setTiling(textureId, tileScaleOrOpts = 1) {
+        if (!Layer._canHostScenery(this)) return;
         if (!Layer._postToRenderer) {
             console.warn('Layer: renderer not connected');
             return;
         }
-        Layer._postBackgroundCommand({
-            msg: 'setBackground',
-            type: 'tiling',
+        const opts = typeof tileScaleOrOpts === 'object' && tileScaleOrOpts
+            ? tileScaleOrOpts
+            : { tileScale: tileScaleOrOpts };
+        const tileScale = Number.isFinite(opts.tileScale) ? opts.tileScale : 1;
+        const p = normalizeWorldParallax(opts.parallax);
+        this._kind = LAYER_KIND.TILING;
+        Layer._postContentCommand({
+            msg: 'setLayerContent',
+            type: LAYER_KIND.TILING,
             layerId: this.id,
             textureId,
             tileScale,
+            parallaxX: p.x,
+            parallaxY: p.y,
         });
     }
 
     /**
-     * Set a tilemap background on this layer (@pixi/tilemap - varied tiles from Tiled editor)
-     * @param {string} tilemapId - ID of tilemap in assets.tilemaps
-     * @param {object} [options={}] - Options: { layers: [...], scale: 1 }
-     * @returns {Promise<void>} Resolves when tilemap is built and warm-up render is complete
+     * Tiled map (@pixi/tilemap). Resolves after build + warm-up render.
+     * @param {string} tilemapId
+     * @param {object} [options={}] scale, layers, parallax
+     * @returns {Promise<void>}
      */
-    setTilemapBackground(tilemapId, options = {}) {
-        if (!Layer._ensureBackgroundLayer(this)) {
+    setTilemap(tilemapId, options = {}) {
+        if (!Layer._canHostScenery(this)) {
             return Promise.resolve();
         }
         if (!Layer._postToRenderer) {
             console.warn('Layer: renderer not connected');
             return Promise.resolve();
         }
+        const p = normalizeWorldParallax(options.parallax);
+        this._kind = LAYER_KIND.TILEMAP;
         return new Promise((resolve) => {
-            Layer._postBackgroundCommand({
-                msg: 'setBackground',
-                type: 'tilemap',
+            Layer._postContentCommand({
+                msg: 'setLayerContent',
+                type: LAYER_KIND.TILEMAP,
                 layerId: this.id,
                 tilemapId,
                 options,
+                parallaxX: p.x,
+                parallaxY: p.y,
             }, resolve);
         });
     }
 
-    /**
-     * Remove the current background from this layer
-     */
-    clearBackground() {
-        if (!Layer._ensureBackgroundLayer(this)) {
-            return;
-        }
+    /** Remove scenery content from this layer. */
+    clear() {
+        if (!Layer._canHostScenery(this)) return;
         if (!Layer._postToRenderer) {
             console.warn('Layer: renderer not connected');
             return;
         }
-        Layer._postBackgroundCommand({
-            msg: 'setBackground',
+        Layer._postContentCommand({
+            msg: 'setLayerContent',
             type: 'none',
             layerId: this.id,
         });
@@ -417,11 +433,10 @@ export class Layer {
     // BUILT-IN LAYER SHORTCUTS
     // ========================================
 
-    /** @returns {Layer} */ static get BACKGROUND() { return this._byName['BACKGROUND']; }
-    /** @returns {Layer} */ static get DECALS() { return this._byName['DECALS']; }
-    /** @returns {Layer} */ static get CASTED_SHADOWS() { return this._byName['CASTED_SHADOWS']; }
-    /** @returns {Layer} */ static get ENTITIES() { return this._byName['ENTITIES']; }
-    /** @returns {Layer} */ static get LIGHTING() { return this._byName['LIGHTING']; }
+    /** @returns {Layer} */ static get decals() { return this._byName['decals']; }
+    /** @returns {Layer} */ static get castedShadows() { return this._byName['castedShadows']; }
+    /** @returns {Layer} */ static get entities() { return this._byName['entities']; }
+    /** @returns {Layer} */ static get lighting() { return this._byName['lighting']; }
 
     // ========================================
     // STATIC API
@@ -472,48 +487,96 @@ export class Layer {
     }
 
     /**
-     * Scene-defined custom layers (not BACKGROUND / DECALS / built-ins).
+     * Scene-defined custom layers (not pipeline builtins).
      * @returns {Layer[]}
      */
     static getCustomLayers() {
-        // All scene-defined custom layers (incl. densitySource:'liquidFun' with no sprite queue).
         return this._byId.filter((l) => l && !l._builtIn);
     }
 
-    static _ensureBackgroundLayer(layer) {
-        if (layer?.name === 'BACKGROUND') {
+    static _canHostScenery(layer) {
+        if (!layer) return false;
+        if (layer._builtIn) {
+            console.warn(`Layer scenery APIs are not supported on pipeline layer "${layer.name}"`);
+            return false;
+        }
+        if (isSceneryKind(layer._kind)) return true;
+        if (
+            layer._kind === LAYER_KIND.SPRITES
+            && !layer.hasShader
+            && (!this._hasRenderQueue || this._hasRenderQueue[layer.id] !== 1)
+        ) {
             return true;
         }
-        console.warn('Layer background APIs are only supported on Layer.BACKGROUND');
+        console.warn(
+            `Layer scenery APIs are not supported on "${layer.name}" (kind ${layer._kind})`
+        );
         return false;
     }
 
-    static _createBackgroundRequestId() {
-        const id = this._nextBackgroundRequestId;
-        this._nextBackgroundRequestId =
-            this._nextBackgroundRequestId >= 0x7fffffff ? 1 : this._nextBackgroundRequestId + 1;
+    static _createContentRequestId() {
+        const id = this._nextContentRequestId;
+        this._nextContentRequestId =
+            this._nextContentRequestId >= 0x7fffffff ? 1 : this._nextContentRequestId + 1;
         return id;
     }
 
-    static _postBackgroundCommand(payload, resolve = null) {
-        const requestId = this._createBackgroundRequestId();
+    static _postContentCommand(payload, resolve = null) {
+        const requestId = this._createContentRequestId();
         if (resolve) {
-            this._backgroundReadyResolvers.set(requestId, resolve);
+            this._contentReadyResolvers.set(requestId, resolve);
         }
         this._postToRenderer({ ...payload, requestId });
         return requestId;
     }
 
     /**
-     * Resolve the pending background-ready promise for a specific request.
-     * Called by Scene on `backgroundReady` from the renderer worker.
+     * Resolve the pending content-ready promise for a specific request.
+     * Called by Scene on `layerContentReady` from the renderer worker.
      */
-    static resolveBackgroundReady(layerId, requestId) {
+    static resolveLayerContentReady(layerId, requestId) {
         if (requestId == null) return;
-        const resolve = this._backgroundReadyResolvers.get(requestId);
+        const resolve = this._contentReadyResolvers.get(requestId);
         if (!resolve) return;
-        this._backgroundReadyResolvers.delete(requestId);
+        this._contentReadyResolvers.delete(requestId);
         resolve();
+    }
+
+    /**
+     * Apply scenery declared in config.layers (cover / static / tiling / tilemap).
+     * Called by Scene after workers are ready, before preload().
+     * @returns {Promise<void>}
+     */
+    static async applyConfiguredContent() {
+        const waits = [];
+        for (let i = 0; i < this.count; i++) {
+            const layer = this._byId[i];
+            if (!layer || layer._builtIn || !isSceneryKind(layer._kind)) continue;
+            const content = layer._content || {};
+            const kind = layer._kind;
+            if (kind === LAYER_KIND.COVER && content.texture) {
+                layer.setCover({
+                    texture: content.texture,
+                    parallax: content.parallax,
+                    margin: content.margin,
+                    zoomParallax: content.zoomParallax,
+                });
+            } else if (kind === LAYER_KIND.STATIC && content.texture) {
+                layer.setStatic(content.texture, { parallax: content.parallax });
+            } else if (kind === LAYER_KIND.TILING && content.texture) {
+                layer.setTiling(content.texture, {
+                    tileScale: content.tileScale,
+                    parallax: content.parallax,
+                });
+            } else if (kind === LAYER_KIND.TILEMAP && content.tilemap) {
+                waits.push(layer.setTilemap(content.tilemap, {
+                    scale: content.scale,
+                    layers: content.layers,
+                    parallax: content.parallax,
+                }));
+            }
+        }
+        if (waits.length) await Promise.all(waits);
     }
 
     // ========================================
@@ -631,15 +694,17 @@ export class Layer {
         this._bindFeedCountSAB(new SharedArrayBuffer(this.MAX_LAYERS * 8));
         this._bindParticleFeedCountSAB(new SharedArrayBuffer(this.MAX_LAYERS * 8));
 
-        // Register built-in layers (BACKGROUND, DECALS, CASTED_SHADOWS, ENTITIES, LIGHTING)
+        // Register built-in pipeline layers (decals, castedShadows, entities, lighting)
         for (const [name, config] of Object.entries(builtInLayers)) {
+            const kind = config.kind || this._deriveKind(name, true, config);
             const layer = this._register(name, {
                 ...config,
                 _builtIn: true,
-                _layerType: config.layerType || this._deriveLayerType(name, true, !!config.shader),
+                _kind: kind,
             });
-            if (name === 'ENTITIES') {
-                this.ENTITIES_ID = layer.id;
+            if (!layer) continue;
+            if (name === 'entities') {
+                this.entitiesId = layer.id;
                 this._hasRenderQueue[layer.id] = 1;
             }
         }
@@ -648,10 +713,11 @@ export class Layer {
         for (const [name, config] of Object.entries(layersConfig)) {
             const densitySource = Layer._normalizeDensitySource(config.shader);
             const compute = Layer._normalizeCompute(config.shader);
+            const kind = this._deriveKind(name, false, config, densitySource, compute);
             const layer = this._register(name, {
                 ...config,
                 _builtIn: false,
-                _layerType: config.layerType || this._deriveLayerType(name, false, !!config.shader),
+                _kind: kind,
                 _densitySource: densitySource,
                 _compute: compute,
                 _computeSource: compute
@@ -660,10 +726,14 @@ export class Layer {
                 _splat: densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                     ? Layer._normalizeSplat(config.shader, densitySource)
                     : null,
+                _content: this._extractContent(config),
             });
-            // LF density and compute layers skip the sprite render queue.
+            if (!layer) continue;
+            // LF density, compute, and scenery skip the sprite render queue.
             this._hasRenderQueue[layer.id] = (
-                densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN || compute
+                densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
+                || compute
+                || isSceneryKind(kind)
             ) ? 0 : 1;
 
             if (compute) {
@@ -712,15 +782,56 @@ export class Layer {
         return this;
     }
 
-    static _deriveLayerType(name, builtIn = false, hasShader = false) {
+    /**
+     * @param {string} name
+     * @param {boolean} builtIn
+     * @param {object} config
+     * @param {string} [densitySource]
+     * @param {object|null} [compute]
+     */
+    static _deriveKind(name, builtIn, config = {}, densitySource = null, compute = null) {
+        if (config.kind) return this._normalizeKind(config.kind, builtIn, name);
         if (builtIn) {
-            if (name === 'BACKGROUND') return 'background';
-            if (name === 'DECALS') return 'decals';
-            if (name === 'CASTED_SHADOWS') return 'shadows';
-            if (name === 'ENTITIES') return 'world';
-            if (name === 'LIGHTING') return 'lighting';
+            if (name === 'decals') return LAYER_KIND.DECALS;
+            if (name === 'castedShadows') return LAYER_KIND.SHADOWS;
+            if (name === 'entities') return LAYER_KIND.SPRITES;
+            if (name === 'lighting') return LAYER_KIND.LIGHTING;
+            return LAYER_KIND.SPRITES;
         }
-        return hasShader ? 'screenRT' : 'world';
+        if (compute) return LAYER_KIND.COMPUTE;
+        if (densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN) return LAYER_KIND.DENSITY;
+        return LAYER_KIND.SPRITES;
+    }
+
+    static _normalizeKind(raw, builtIn, name) {
+        const kind = typeof raw === 'string' ? raw : '';
+        if (kind === LAYER_KIND.COVER || kind === LAYER_KIND.STATIC
+            || kind === LAYER_KIND.TILING || kind === LAYER_KIND.TILEMAP
+            || kind === LAYER_KIND.SPRITES || kind === LAYER_KIND.DENSITY
+            || kind === LAYER_KIND.COMPUTE || kind === LAYER_KIND.DECALS
+            || kind === LAYER_KIND.SHADOWS || kind === LAYER_KIND.LIGHTING) {
+            if (isSceneryKind(kind) && builtIn) {
+                console.warn(`Layer: builtin "${name}" cannot use scenery kind "${kind}"`);
+                return LAYER_KIND.SPRITES;
+            }
+            return kind;
+        }
+        console.warn(`Layer: unknown kind "${raw}" on "${name}", using sprites`);
+        return LAYER_KIND.SPRITES;
+    }
+
+    static _extractContent(config = {}) {
+        return {
+            texture: typeof config.texture === 'string' ? config.texture
+                : (typeof config.textureId === 'string' ? config.textureId : null),
+            tilemap: typeof config.tilemap === 'string' ? config.tilemap : null,
+            parallax: config.parallax,
+            margin: config.margin,
+            zoomParallax: config.zoomParallax,
+            tileScale: config.tileScale,
+            scale: config.scale,
+            layers: config.layers,
+        };
     }
 
     /** @param {object|null|undefined} shader */
@@ -1006,7 +1117,8 @@ export class Layer {
         const layer = this._byId[id | 0];
         if (!layer || !this._feederKind) return;
         let kind = LAYER_FEEDER_KIND.BUILTIN;
-        if (layer._compute) kind = LAYER_FEEDER_KIND.COMPUTE;
+        if (isSceneryKind(layer._kind)) kind = LAYER_FEEDER_KIND.NONE;
+        else if (layer._compute) kind = LAYER_FEEDER_KIND.COMPUTE;
         else if (layer._densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN) kind = LAYER_FEEDER_KIND.DENSITY;
         else if (this._hasRenderQueue && this._hasRenderQueue[id] === 1) kind = LAYER_FEEDER_KIND.SPRITES;
         this._feederKind[id] = kind;
@@ -1019,9 +1131,9 @@ export class Layer {
         return 1 << i;
     }
 
-    /** ENTITIES bit after initializeFromConfig. 0 if not registered. */
+    /** entities bit after initializeFromConfig. 0 if not registered. */
     static entitiesMask() {
-        const id = this.ENTITIES_ID | 0;
+        const id = this.entitiesId | 0;
         return id >= 0 ? (1 << id) : 0;
     }
 
@@ -1033,12 +1145,12 @@ export class Layer {
         const id = layerId | 0;
         if (id < 0 || id >= this.MAX_LAYERS) return false;
         if (this._hasRenderQueue && this._hasRenderQueue[id] === 1) return true;
-        return id === this.ENTITIES_ID;
+        return id === this.entitiesId;
     }
 
     /**
      * Recompute {@link Layer._spriteQueueBits} from the current `_hasRenderQueue`/
-     * `ENTITIES_ID`. Call once per realm after those are known (init or
+     * `entitiesId`. Call once per realm after those are known (init or
      * initializeFromBuffers) — not SAB-shared, every worker computes its own copy
      * from the shared config it just bound.
      */
@@ -1069,7 +1181,7 @@ export class Layer {
         }
         const layer = this.getById(id);
         const name = layer ? layer.name : null;
-        if (name && SKIP_SUBSCRIBE.has(name)) {
+        if (layer && isSkipSubscribeKind(layer._kind)) {
             console.warn(`layer: Layer "${name}" is not a subscription target`);
             return -1;
         }
@@ -1212,10 +1324,19 @@ export class Layer {
             return null;
         }
 
+        if (isAllCapsName(name)) {
+            console.warn(`Layer: "${name}" is ALL_CAPS; prefer camelCase (entities, sky, ground)`);
+        }
+        if (this._byName[name]) {
+            console.error(`Layer: "${name}" already registered`);
+            return null;
+        }
+
         const id = this.count++;
         const layer = new Layer(id, name);
         layer._builtIn = !!config._builtIn;
-        layer._layerType = config._layerType || this._deriveLayerType(name, layer._builtIn, !!config.shader);
+        layer._kind = config._kind || this._deriveKind(name, layer._builtIn, config);
+        layer._content = config._content || (isSceneryKind(layer._kind) ? this._extractContent(config) : null);
         layer._densitySource = config._densitySource ?? LAYER_DENSITY_SOURCE.SPRITES;
         layer._compute = config._compute || null;
         layer._computeSource = config._computeSource ?? null;
@@ -1329,7 +1450,7 @@ export class Layer {
     static _buildMetadata(layersConfig, builtInLayers) {
         this._metadata = {
             count: this.count,
-            entitiesId: this.ENTITIES_ID,
+            entitiesId: this.entitiesId,
             layers: new Array(this.count),
         };
 
@@ -1351,7 +1472,8 @@ export class Layer {
                 id: layer.id,
                 name,
                 builtIn: isBuiltIn,
-                layerType: layer._layerType,
+                kind: layer._kind,
+                content: layer._content || null,
                 zIndex: this._zIndex[i],
                 blendMode: this._BLEND_MODE_STRINGS[this._blendModeId[i]] || 'normal',
                 containerBlendMode: this._BLEND_MODE_STRINGS[this._containerBlendId[i]] || 'normal',
@@ -1362,7 +1484,9 @@ export class Layer {
                 alpha: this._alpha[i],
                 hasRenderQueue: this._hasRenderQueue[i] === 1,
                 feederKind: this._feederKind[i] | 0,
-                maxItems: isBuiltIn || densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
+                maxItems: isBuiltIn
+                    || densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
+                    || isSceneryKind(layer._kind)
                     ? 0
                     : (config.maxItems || LAYER_DEFAULTS.maxItemsPerLayer),
                 uniformMap: this._uniformMaps[layer.id] || null,
@@ -1453,7 +1577,7 @@ export class Layer {
         // Reconstruct registry from metadata
         const meta = data.metadata;
         this.count = meta.count;
-        this.ENTITIES_ID = meta.entitiesId;
+        this.entitiesId = meta.entitiesId;
         this._metadata = meta;
 
         for (let i = 0; i < meta.count; i++) {
@@ -1461,7 +1585,8 @@ export class Layer {
             if (!layerMeta) continue;
             const layer = new Layer(i, layerMeta.name);
             layer._builtIn = !!layerMeta.builtIn;
-            layer._layerType = layerMeta.layerType || 'world';
+            layer._kind = layerMeta.kind || LAYER_KIND.SPRITES;
+            layer._content = layerMeta.content || null;
             layer._densitySource = layerMeta.densitySource ?? LAYER_DENSITY_SOURCE.SPRITES;
             layer._compute = layerMeta.compute || null;
             layer._computeSource = layerMeta.computeSource ?? null;
@@ -1524,10 +1649,10 @@ export class Layer {
     // ========================================
 
     static reset() {
-        for (const resolve of this._backgroundReadyResolvers.values()) {
+        for (const resolve of this._contentReadyResolvers.values()) {
             resolve();
         }
-        this._backgroundReadyResolvers.clear();
+        this._contentReadyResolvers.clear();
 
         // Remove dynamic custom layer properties from previous scene
         for (const name of Object.keys(this._byName)) {
@@ -1540,7 +1665,7 @@ export class Layer {
         this._byId = [];
         this.count = 0;
         this.initialized = false;
-        this.ENTITIES_ID = -1;
+        this.entitiesId = -1;
         this._configSAB = null;
         this._zIndex = null;
         this._blendModeId = null;
@@ -1576,6 +1701,6 @@ export class Layer {
         this._allCache = [];
         this._allCacheCount = -1;
         this._postToRenderer = null;
-        this._nextBackgroundRequestId = 1;
+        this._nextContentRequestId = 1;
     }
 }

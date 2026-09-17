@@ -491,7 +491,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   const previousLayerGetId = Layer.getId;
   const previousLayerGetById = Layer.getById;
   const previousFeederKind = Layer.feederKind;
-  const previousEntitiesId = Layer.ENTITIES_ID;
+  const previousEntitiesId = Layer.entitiesId;
 
   const spriteBoundsUpdates = [];
   const adobeBoundsUpdates = [];
@@ -520,7 +520,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   Layer.getId = (name) => (name === 'fx' ? 9 : -1);
   Layer.getById = (id) => ({ name: `layer-${id}` });
   Layer.feederKind = () => LAYER_FEEDER_KIND.SPRITES;
-  Layer.ENTITIES_ID = 4;
+  Layer.entitiesId = 4;
 
   const adobeOnly = Object.create(GameObject.prototype);
   adobeOnly.index = 0;
@@ -592,7 +592,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
     Layer.getId = previousLayerGetId;
     Layer.getById = previousLayerGetById;
     Layer.feederKind = previousFeederKind;
-    Layer.ENTITIES_ID = previousEntitiesId;
+    Layer.entitiesId = previousEntitiesId;
   }
 });
 
@@ -625,7 +625,7 @@ test('setLayer(fire) keeps ENTITIES sprite bit and packs collider into fire', ()
     Layer.reset();
     Layer.initializeFromConfig(
       { fire: { shader: { fragment: 'f', compute: 's' } } },
-      { BACKGROUND: {}, DECALS: {}, CASTED_SHADOWS: {}, ENTITIES: {}, LIGHTING: {} },
+      { decals: {}, castedShadows: {}, entities: {}, lighting: {} },
       true
     );
     const fireId = Layer.getId('fire');
@@ -640,7 +640,7 @@ test('setLayer(fire) keeps ENTITIES sprite bit and packs collider into fire', ()
     assert.equal(SpriteRenderer.layerMask[0] & entities, entities);
     assert.equal(SpriteRenderer.layerMask[0] & (1 << fireId), 1 << fireId);
     assert.equal(Collider.layerMask[0] & (1 << fireId), 1 << fireId);
-    assert.equal(go.layerName, 'ENTITIES');
+    assert.equal(go.layerName, 'entities');
   } finally {
     Layer.reset();
     SpriteRenderer.layerMask = previousSpriteMask;

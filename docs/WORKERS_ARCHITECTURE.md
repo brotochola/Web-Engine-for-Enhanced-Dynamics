@@ -432,7 +432,7 @@ Not a Web Worker — an `AudioWorkletProcessor` running on the browser's **audio
 | `despawnAll`          | Logic 0     | `{ className }`                                                                   |
 | `clearAll`            | Logic 0     | --                                                                                |
 | `updatePhysicsConfig` | Physics     | `{ config }`                                                                      |
-| `setBackground`       | Pixi        | `{ type: static\|cover\|tiling\|tilemap\|none, textureId, parallaxX, parallaxY, margin, zoomParallax, tileScale, tilemapId, options }` |
+| `setLayerContent`     | Pixi        | `{ type: static\|cover\|tiling\|tilemap\|none, layerId, textureId, parallaxX, parallaxY, margin, zoomParallax, tileScale, tilemapId, options }` |
 
 ### Main Thread → AudioWorklet
 

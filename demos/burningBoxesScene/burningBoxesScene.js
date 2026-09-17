@@ -7,6 +7,7 @@ import {
   BLEND_MODES,
   LAYER_COMPUTE_SOURCE,
   LAYER_DENSITY_SOURCE,
+  LAYER_KIND,
   LAYER_SPLAT_FALLOFF,
   LAYER_SCALE_MODE,
 } from '/src/util/configDefaults.js';
@@ -108,6 +109,14 @@ export class BurningBoxesScene extends WEED.Scene {
     },
 
     layers: {
+      sky: {
+        kind: LAYER_KIND.COVER,
+        texture: 'landscape',
+        parallax: 0.15,
+        zoomParallax: 0.35,
+        margin: 0.2,
+        zIndex: 0,
+      },
       oil: {
         zIndex: 3.4,
         blendMode: BLEND_MODES.NORMAL,
@@ -234,10 +243,6 @@ export class BurningBoxesScene extends WEED.Scene {
     [RocketBox, 16],
   ];
 
-  preload() {
-    this.setBackground({ texture: 'landscape', parallax: 0.15, zoomParallax: 0.35, margin: 0.2 });
-  }
-
   create() {
     this.spawnFloorAndLedges();
     const cx = this.config.worldWidth / 2;
@@ -291,10 +296,10 @@ export class BurningBoxesScene extends WEED.Scene {
     const w = this.config.worldWidth;
     const h = this.config.worldHeight;
     const floorY = h * 0.72;
-    this.spawnEntity(Floor, { x: w / 2, y: floorY, width: 6800, height: 80, sprite: '_white', tint: 0x3a322c, layers: ['ENTITIES', 'fire'] });
-    this.spawnEntity(Floor, { x: w / 2 - 420, y: floorY - 220, width: 380, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['ENTITIES', 'fire'] });
-    this.spawnEntity(Floor, { x: w / 2 + 380, y: floorY - 340, width: 320, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['ENTITIES', 'fire'] });
-    // this.spawnEntity(Floor, { x: this.config.worldWidth / 2 - 80, y: floorY - 480, width: 36, height: 70, sprite: '_white', tint: 0x2c2622, layers: ['ENTITIES', 'fire'] });
+    this.spawnEntity(Floor, { x: w / 2, y: floorY, width: 6800, height: 80, sprite: '_white', tint: 0x3a322c, layers: ['entities', 'fire'] });
+    this.spawnEntity(Floor, { x: w / 2 - 420, y: floorY - 220, width: 380, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
+    this.spawnEntity(Floor, { x: w / 2 + 380, y: floorY - 340, width: 320, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
+    // this.spawnEntity(Floor, { x: this.config.worldWidth / 2 - 80, y: floorY - 480, width: 36, height: 70, sprite: '_white', tint: 0x2c2622, layers: ['entities', 'fire'] });
   }
 
   spawnCrates() {

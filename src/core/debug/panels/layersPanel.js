@@ -670,11 +670,11 @@ export class LayersPanel {
   }
 
   _getAvailableLayers(config) {
-    const available = new Set(['ENTITIES', 'BACKGROUND']);
-    if (config.particle?.decals) available.add('DECALS');
+    const available = new Set(['entities']);
+    if (config.particle?.decals) available.add('decals');
     if (config.lighting?.enabled) {
-      available.add('LIGHTING');
-      if (config.lighting?.shadowsEnabled) available.add('CASTED_SHADOWS');
+      available.add('lighting');
+      if (config.lighting?.shadowsEnabled) available.add('castedShadows');
     }
     if (Layer.initialized) {
       for (const l of Layer.getCustomLayers()) available.add(l.name);

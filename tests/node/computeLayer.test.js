@@ -39,11 +39,10 @@ function subscribeCollider(index, layerId) {
 }
 
 const BUILT_IN_LAYERS = {
-  BACKGROUND: {},
-  DECALS: {},
-  CASTED_SHADOWS: {},
-  ENTITIES: {},
-  LIGHTING: {},
+  decals: {},
+  castedShadows: {},
+  entities: {},
+  lighting: {},
 };
 
 test('compute layer metadata: no sprite queue, BOX2D_BODIES default, maxBodies 512', () => {
@@ -998,7 +997,8 @@ test('burningBoxesScene: landscape bg + particle fuel pass', () => {
     join(SHADER_DIR, '../burningBoxesScene.js'),
     'utf8'
   );
-  assert.match(scene, /setBackground\(\{ texture: 'landscape'/);
+  assert.match(scene, /kind: LAYER_KIND.COVER/);
+  assert.match(scene, /texture: 'landscape'/);
   assert.match(scene, /zoomParallax: 0\.35/);
   assert.match(scene, /background_lanscape\.jpg/);
   assert.match(scene, /dispatchFrom: 'particles'/);

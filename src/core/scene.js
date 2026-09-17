@@ -902,8 +902,11 @@ class Scene {
     // Expose scene and component references globally for console access
     this.exposeGlobalReferences();
 
+    // Scenery declared in config.layers (cover / tiling / tilemap) before preload().
+    await Layer.applyConfiguredContent();
+
     // LIFECYCLE PHASE 1: preload()
-    // Scene infrastructure setup (tilemap background, camera, nav grid).
+    // Scene infrastructure setup (camera, nav grid, dynamic scenery overrides).
     // Messages sent here are processed by workers while they are still paused,
     // so the renderer can build the tilemap and warm up the GPU before the first frame.
     await this.preload();
@@ -1026,8 +1029,7 @@ class Scene {
   /**
    * Called after all workers are initialized but BEFORE the game loop starts.
    * Use this for scene infrastructure that workers need on their first frame:
-   * - setBackground() / Layer.BACKGROUND.setCoverBackground()
-   * - Layer.BACKGROUND.setTilemapBackground() (Tiled tilemaps)
+   * - Layer.sky.setCover() / Layer.ground.setTilemap() (or declare in config.layers)
    * - Camera.centerOn()
    * - NavGrid setup
    *
@@ -1036,14 +1038,6 @@ class Scene {
    */
   preload() {
     // Override this for scene infrastructure setup
-  }
-
-  /**
-   * Viewport-cover background (fills the canvas, extra size at zoom=1, optional pan/zoom parallax).
-   * @param {string|{texture?:string,textureId?:string,parallax?:number|{x?:number,y?:number},margin?:number,zoomParallax?:number}} textureOrOpts
-   */
-  setBackground(textureOrOpts) {
-    Layer.BACKGROUND.setCoverBackground(textureOrOpts);
   }
 
   /**
@@ -1724,8 +1718,8 @@ class Scene {
           worker.postMessage(payload);
         }
       }
-    } else if (e.data.msg === 'backgroundReady') {
-      Layer.resolveBackgroundReady(e.data.layerId, e.data.requestId);
+    } else if (e.data.msg === 'layerContentReady') {
+      Layer.resolveLayerContentReady(e.data.layerId, e.data.requestId);
     } else if (e.data.msg === 'restoreSaveComplete') {
       const pending = this._pendingRestoreComplete;
       this._pendingRestoreComplete = null;

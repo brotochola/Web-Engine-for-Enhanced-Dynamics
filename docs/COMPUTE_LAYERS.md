@@ -95,7 +95,7 @@ Live packed count is `frame.particleCount` (FrameData prefix slot 15).
 One mask. Layer config picks the pipeline.
 
 ```javascript
-this.setLayer('fire'); // crate sprite stays ENTITIES; collider packed into fire
+this.setLayer('fire'); // crate sprite stays entities; collider packed into fire
 LiquidFun.emit({ layers: ['oil', 'fire'] }); // density splat + compute SSBO
 ParticleEmitter.emit({ layer: 'fire' }); // same compute SSBO (aesthetic CPU fuel)
 ```

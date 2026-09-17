@@ -4,11 +4,10 @@ import { Layer } from '../../src/core/layer.js';
 import { LAYER_DENSITY_SOURCE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../../src/util/configDefaults.js';
 
 const BUILT_IN_LAYERS = {
-  BACKGROUND: {},
-  DECALS: {},
-  CASTED_SHADOWS: {},
-  ENTITIES: {},
-  LIGHTING: {},
+  decals: {},
+  castedShadows: {},
+  entities: {},
+  lighting: {},
 };
 
 function withLayers(custom, fn) {

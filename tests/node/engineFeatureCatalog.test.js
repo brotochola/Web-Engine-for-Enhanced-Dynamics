@@ -131,7 +131,7 @@ test('tilemapCull is a distinct scene from getTileId tilemap', () => {
   assert.equal(row.kernel.script, 'tests/bench/tilemapCullMicrobench.mjs');
   const src = fs.readFileSync(path.join(root, 'tests/bench/stressScenes/tilemapCullStressScene.js'), 'utf8');
   assert.match(src, /seed:/);
-  assert.match(src, /setTilemapBackground/);
+  assert.match(src, /kind: LAYER_KIND.TILEMAP/);
   assert.match(src, /chunkTiles/);
   const driver = fs.readFileSync(
     path.join(root, 'tests/bench/stressScenes/tilemapCull/tilemapCullPanDriver.js'),
@@ -142,7 +142,8 @@ test('tilemapCull is a distinct scene from getTileId tilemap', () => {
   assert.match(cullSrc, /<< 16/);
   assert.match(cullSrc, /out\.count/);
   const pixi = fs.readFileSync(path.join(root, 'src/workers/pixiWorker.js'), 'utf8');
-  assert.match(pixi, /_tilemapVisArgs/);
+  assert.match(pixi, /_createTilemapRuntime/);
+  assert.match(pixi, /visArgs/);
   assert.doesNotMatch(pixi, /key "cx,cy"/);
 });
 

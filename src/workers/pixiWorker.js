@@ -325,8 +325,11 @@ class PixiRenderer extends AbstractWorker {
     this._rqIdxEntity = null;
     this._rqIdxParticle = null;
     this._rqIdxGlow = null;
-    this.backgroundSprite = null;
-    this._coverBackground = null;
+    /** @type {Array<{kind:string, displayObject:*, parallaxX:number, parallaxY:number, cover?:object, tilemap?:object}|null>} */
+    this._scenery = [];
+    this._tilemapCullDefaults = { ...TILEMAP_CULL_DEFAULTS, frozenW: -1, frozenH: -1 };
+    this._coverBgArgs = null;
+    this._coverBgOut = null;
 
     /** From renderer.autoGenerateMipmaps (default false) — applied at ImageSource create */
     this.autoGenerateMipmaps = RENDERER_DEFAULTS.autoGenerateMipmaps;
@@ -335,39 +338,6 @@ class PixiRenderer extends AbstractWorker {
     this.textures = {}; // Store simple PIXI textures by name
     this.spritesheets = {}; // Store loaded spritesheets by name
     this.tilemaps = {}; // Store PIXI tileset textures by tilemap name (tile data comes from TileMap SAB)
-    this.currentTilemap = null; // Tilemap root Container (camera transform)
-    this.tilemapScale = { x: 1, y: 1 }; // Base scale for tilemap (renders at scan * zoom)
-    this._tilemapId = null;
-    this._tilemapBuildOptions = null; // layers filter etc. for chunk builds
-    this._tilemapTilesetTexture = null;
-    this._tilemapChunks = new Map(); // packed chunkKey → { mesh, cx, cy }
-    this._tilemapBuildQueue = [];
-    this._tilemapQueuedKeys = new Set();
-    this._tilemapVisArgs = {
-      viewMinX: 0,
-      viewMinY: 0,
-      viewMaxX: 0,
-      viewMaxY: 0,
-      chunkW: 1,
-      chunkH: 1,
-      mapW: 1,
-      mapH: 1,
-    };
-    this._tilemapVisList = { chunks: [], count: 0 };
-    this._tilemapKeepList = { chunks: [], count: 0 };
-    this._tilemapVisKeys = new Set();
-    this._tilemapKeepKeys = new Set();
-    this._tilemapEvictKeys = [];
-    this._tilemapChunkRect = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-    this._tilemapCull = {
-      frozenW: -1,
-      frozenH: -1,
-      chunkGrid: TILEMAP_CULL_DEFAULTS.chunkGrid,
-      cacheGrid: TILEMAP_CULL_DEFAULTS.cacheGrid,
-      safetyMarginTiles: TILEMAP_CULL_DEFAULTS.safetyMarginTiles,
-      chunkTiles: TILEMAP_CULL_DEFAULTS.chunkTiles,
-      maxChunkBuildsPerFrame: TILEMAP_CULL_DEFAULTS.maxChunkBuildsPerFrame,
-    };
 
     // Per-frame subtimers (ms) — written to RENDERER_STATS in reportFPS
     this.lightsTimeThisFrame = 0;
@@ -951,24 +921,7 @@ class PixiRenderer extends AbstractWorker {
       this.spriteGlowMesh.zIndex = lightZ + 0.001;
     }
 
-    // Apply camera state to background (not a child of spriteMesh / stage entity batches)
-    if (this.backgroundSprite) {
-      if (this._coverBackground) {
-        this._applyCoverBackgroundTransform();
-      } else {
-        this.backgroundSprite.scale.set(zoom);
-        this.backgroundSprite.x = -cameraX * zoom;
-        this.backgroundSprite.y = -cameraY * zoom;
-      }
-    }
-
-    // Apply camera state to tilemap background
-    if (this.currentTilemap) {
-      this.currentTilemap.scale.set(zoom * this.tilemapScale.x, zoom * this.tilemapScale.y);
-      this.currentTilemap.x = -cameraX * zoom;
-      this.currentTilemap.y = -cameraY * zoom;
-      this.updateTilemapViewportCull();
-    }
+    this._applySceneryCamera(zoom, cameraX, cameraY);
 
     // Apply camera state to decal tile container
     if (this.decalTileContainer) {
@@ -1000,7 +953,7 @@ class PixiRenderer extends AbstractWorker {
    */
   updateSpritesFromRenderQueue() {
     if (!this.renderQueueEnabled || !this.entitiesBatch) return;
-    if (!layerIsVisible(Layer.ENTITIES_ID)) {
+    if (!layerIsVisible(Layer.entitiesId)) {
       this.entitiesBatch.mesh.visible = false;
       if (this.entitiesParticleBatch) this.entitiesParticleBatch.mesh.visible = false;
       if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
@@ -1415,7 +1368,7 @@ class PixiRenderer extends AbstractWorker {
       if (this._visPolyEnabled) {
         // Raycasted lighting: render visibility polygon meshes
         this.renderVisibilityLighting();
-      } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.LIGHTING?.id)) {
+      } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.lighting?.id)) {
         // Standard lighting: render full-screen shader
         const rtOpts = this._rtRenderOpts;
         rtOpts.container = this.lightingMesh;
@@ -1672,14 +1625,14 @@ LIGHTING SYSTEM SETUP
       this.lightingDisplaySprite.anchor.set(0, 0); // Ensure top-left anchor
       this.lightingDisplaySprite.position.set(0, 0); // Position at top-left of screen
       this.lightingDisplaySprite.scale.set(1.0 / this.lightingResolution);
-      this._registerLayerDisplayObject('LIGHTING', this.lightingDisplaySprite);
+      this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);
       this.pixiApp.stage.addChild(this.lightingDisplaySprite);
 
       console.log(
         `PIXI WORKER: Lighting RenderTexture created (${this.lightingRT.width}x${this.lightingRT.height})`
       );
     } else {
-      this._registerLayerDisplayObject('LIGHTING', this.lightingMesh);
+      this._registerLayerDisplayObject('lighting', this.lightingMesh);
       this.pixiApp.stage.addChild(this.lightingMesh);
     }
   }
@@ -1796,7 +1749,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     } else if (this.lightingMesh) {
       this.pixiApp.stage.removeChild(this.lightingMesh);
     }
-    this._registerLayerDisplayObject('LIGHTING', this._visPolyDisplaySprite);
+    this._registerLayerDisplayObject('lighting', this._visPolyDisplaySprite);
     this.pixiApp.stage.addChild(this._visPolyDisplaySprite);
 
     // Visibility polygons already do attenuation + occlusion. CASTED_SHADOWS
@@ -2571,7 +2524,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.shadowDisplaySprite.anchor.set(0, 0);
     this.shadowDisplaySprite.position.set(0, 0);
     this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
-    this._registerLayerDisplayObject('CASTED_SHADOWS', this.shadowDisplaySprite);
+    this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
     this.pixiApp.stage.addChild(this.shadowDisplaySprite);
 
     console.log(
@@ -2585,7 +2538,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   updateShadowSprites() {
     if (!this.shadowSpritesEnabled || !this.shadowRenderQueueCount) return;
     if (!this.shadowBatch || !this.shadowRT) return;
-    if (!layerIsVisible(Layer.CASTED_SHADOWS?.id)) return;
+    if (!layerIsVisible(Layer.castedShadows?.id)) return;
 
     const q = this._shadowUploadQ;
     q.count = this.shadowRenderQueueCount[0];
@@ -2890,8 +2843,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (msg === 'liquidFunCleared') return;
     console.log(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
 
-    if (msg === 'setBackground') {
-      this.handleSetBackground(data);
+    if (msg === 'setLayerContent') {
+      this.handleSetLayerContent(data);
     } else if (msg === 'setLayerProps') {
       this.handleSetLayerProps(data);
     } else {
@@ -2917,7 +2870,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     if (visible !== undefined && displayObject) {
       setDisplayVisible(displayObject, visible);
-      if (layer === 'ENTITIES') {
+      if (layer === 'entities') {
         setDisplayVisible(this.spriteParticleMesh, visible);
         setDisplayVisible(this.spriteGlowMesh, visible);
       }
@@ -2953,7 +2906,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     if (zIndex !== undefined && displayObject) {
       displayObject.zIndex = zIndex;
-      if (layer === 'ENTITIES') {
+      if (layer === 'entities') {
         if (this.spriteParticleMesh) this.spriteParticleMesh.zIndex = zIndex + 0.0005;
         if (this.spriteGlowMesh) this.spriteGlowMesh.zIndex = zIndex + 0.001;
       }
@@ -3181,7 +3134,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const name = Layer.getName(i);
       const displayObj = name ? this._layerRuntime[name] : null;
       if (displayObj) setDisplayVisible(displayObj, on);
-      if (i === Layer.ENTITIES_ID) {
+      if (i === Layer.entitiesId) {
         setDisplayVisible(this.spriteParticleMesh, on);
         setDisplayVisible(this.spriteGlowMesh, on);
       }
@@ -3310,79 +3263,46 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._resizeCustomLayerRTs(this._customLayerList[i], width, height);
     }
 
-    if (this._coverBackground) this._applyCoverBackgroundTransform();
+    this._applyCoverSceneryTransforms();
 
     console.log(`PIXI WORKER: Resized to ${width}x${height}`);
   }
 
   /**
-   * Handle background change requests from Layer
-   * Supports: static, cover, tiling, tilemap, or none
-   * @param {object} data - { type, layerId, requestId, textureId, tileScale, tilemapId, options, parallaxX, parallaxY, margin, zoomParallax }
+   * Scenery content for one layer (cover / static / tiling / tilemap / none).
+   * @param {object} data
    */
-  handleSetBackground(data) {
-    console.log(`PIXI WORKER: handleSetBackground called with:`, data);
+  handleSetLayerContent(data) {
     const { type, layerId, requestId, textureId, tileScale, tilemapId, options, parallaxX, parallaxY, margin, zoomParallax } = data;
-    const targetLayerName = Layer.getName(layerId) || 'BACKGROUND';
-
-    if (targetLayerName !== 'BACKGROUND') {
-      console.warn(
-        `PIXI WORKER: Background commands only support Layer.BACKGROUND (got "${targetLayerName}")`
-      );
-      self.postMessage({ msg: 'backgroundReady', layerId, requestId });
+    const layer = Layer.getById(layerId);
+    const layerName = layer?.name;
+    if (!layer || !layerName) {
+      console.warn(`PIXI WORKER: setLayerContent unknown layerId ${layerId}`);
+      self.postMessage({ msg: 'layerContentReady', layerId, requestId });
       return;
     }
 
-    // Remove existing background if any
-    if (this.backgroundSprite) {
-      console.log(`PIXI WORKER: Removing existing backgroundSprite`);
-      this.pixiApp.stage.removeChild(this.backgroundSprite);
-      this.backgroundSprite.destroy();
-      this.backgroundSprite = null;
-    }
-    this._coverBackground = null;
+    this._destroyScenery(layerId);
 
-    // Remove existing tilemap if any
-    if (this.currentTilemap) {
-      console.log(`PIXI WORKER: Removing existing tilemap`);
-      this.pixiApp.stage.removeChild(this.currentTilemap);
-      this._destroyTilemapChunks();
-      this.currentTilemap.destroy({ children: true });
-      this.currentTilemap = null;
-      this._tilemapId = null;
-      this._tilemapBuildOptions = null;
-      this._tilemapTilesetTexture = null;
-      this._resetTilemapCull();
-    }
-
-    // Create new background based on type
-    console.log(`PIXI WORKER: Creating background of type: ${type}`);
     switch (type) {
       case 'static':
-        this.createStaticBackground(textureId);
+        this._createStaticScenery(layerId, layerName, textureId, parallaxX, parallaxY);
         break;
       case 'cover':
-        this.createCoverBackground(textureId, { parallaxX, parallaxY, margin, zoomParallax });
+        this._createCoverScenery(layerId, layerName, textureId, { parallaxX, parallaxY, margin, zoomParallax });
         break;
       case 'tiling':
-        this.createTilingBackground(textureId, tileScale);
+        this._createTilingScenery(layerId, layerName, textureId, tileScale, parallaxX, parallaxY);
         break;
       case 'tilemap':
-        this.createTilemapBackground(tilemapId, options);
+        this._createTilemapScenery(layerId, layerName, tilemapId, options, parallaxX, parallaxY);
         break;
       case 'none':
-        // No background
-        console.log(`PIXI WORKER: No background`);
         break;
       default:
-        console.warn(`PIXI WORKER: Unknown background type: ${type}`);
+        console.warn(`PIXI WORKER: Unknown scenery type: ${type}`);
     }
 
-    // Update layer refs after background change
-    this._updateBackgroundLayerRef();
-
-    // Apply the current camera transform immediately so the warm-up render
-    // doesn't flash the new background at the origin for one frame.
     if (!this._cameraInitialized && this.cameraData) {
       this._renderZoom = this.cameraData[0];
       this._renderCameraX = this.cameraData[1];
@@ -3391,69 +3311,122 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     this.updateCameraTransform();
 
-    // Warm-up render: force GPU to compile shaders and upload geometry/textures now,
-    // rather than causing a frame spike on the first visible frame.
     if (this.pixiApp && this.pixiApp.renderer) {
       this.pixiApp.renderer.render(this.pixiApp.stage);
-      console.log(`PIXI WORKER: Warm-up render completed (GPU shaders/geometry uploaded)`);
     }
 
-    self.postMessage({ msg: 'backgroundReady', layerId, requestId });
+    self.postMessage({ msg: 'layerContentReady', layerId, requestId });
   }
 
-  /**
-   * Update the BACKGROUND layer reference after background changes
-   */
-  _updateBackgroundLayerRef() {
-    if (this.currentTilemap) {
-      this._registerLayerDisplayObject('BACKGROUND', this.currentTilemap);
-    } else if (this.backgroundSprite) {
-      this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
-    } else {
-      delete this._layerRuntime.BACKGROUND;
+  _destroyScenery(layerId) {
+    const s = this._scenery[layerId];
+    if (!s) return;
+    if (s.tilemap) this._destroyTilemapChunks(s.tilemap);
+    if (s.displayObject) {
+      if (s.displayObject.parent) s.displayObject.parent.removeChild(s.displayObject);
+      s.displayObject.destroy({ children: true });
+    }
+    const name = Layer.getName(layerId);
+    if (name) delete this._layerRuntime[name];
+    this._scenery[layerId] = null;
+    this._syncLayerRefsFromRuntime();
+  }
+
+  _bindScenery(layerId, layerName, entry) {
+    this._scenery[layerId] = entry;
+    if (entry.displayObject) {
+      this._registerLayerDisplayObject(layerName, entry.displayObject);
+      this.pixiApp.stage.addChild(entry.displayObject);
     }
     this._syncLayerRefsFromRuntime();
   }
 
-  /**
-   * Create a static background (simple Sprite, does not tile)
-   */
-  createStaticBackground(textureId) {
+  _createStaticScenery(layerId, layerName, textureId, parallaxX, parallaxY) {
     const texture = this.textures[textureId];
     if (!texture) {
-      console.warn(`PIXI WORKER: Texture "${textureId}" not found for static background`);
+      console.warn(`PIXI WORKER: Texture "${textureId}" not found for static scenery`);
       return;
     }
-
-    this.backgroundSprite = new PIXI.Sprite(texture);
-    this.backgroundSprite.width = this.worldWidth;
-    this.backgroundSprite.height = this.worldHeight;
-    this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
-    this.pixiApp.stage.addChild(this.backgroundSprite);
-
-    console.log(`PIXI WORKER: Static background set to "${textureId}"`);
+    const sprite = new PIXI.Sprite(texture);
+    sprite.width = this.worldWidth;
+    sprite.height = this.worldHeight;
+    this._bindScenery(layerId, layerName, {
+      kind: 'static',
+      displayObject: sprite,
+      parallaxX: Number.isFinite(parallaxX) ? parallaxX : 1,
+      parallaxY: Number.isFinite(parallaxY) ? parallaxY : 1,
+    });
   }
 
-  /**
-   * Viewport-cover background: fills the canvas, extra size at zoom=1, scales with zoom.
-   */
-  createCoverBackground(textureId, { parallaxX, parallaxY, margin, zoomParallax } = {}) {
+  _createCoverScenery(layerId, layerName, textureId, { parallaxX, parallaxY, margin, zoomParallax } = {}) {
     const texture = this.textures[textureId];
     if (!texture) {
-      console.warn(`PIXI WORKER: Texture "${textureId}" not found for cover background`);
+      console.warn(`PIXI WORKER: Texture "${textureId}" not found for cover scenery`);
       return;
     }
-    this._coverBackground = { parallaxX, parallaxY, margin, zoomParallax };
-    this.backgroundSprite = new PIXI.Sprite(texture);
-    this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
-    this.pixiApp.stage.addChild(this.backgroundSprite);
-    this._applyCoverBackgroundTransform();
-    console.log(`PIXI WORKER: Cover background set to "${textureId}"`);
+    const sprite = new PIXI.Sprite(texture);
+    const entry = {
+      kind: 'cover',
+      displayObject: sprite,
+      parallaxX: Number.isFinite(parallaxX) ? parallaxX : 0,
+      parallaxY: Number.isFinite(parallaxY) ? parallaxY : 0,
+      cover: { parallaxX, parallaxY, margin, zoomParallax },
+    };
+    this._bindScenery(layerId, layerName, entry);
+    this._applyCoverTransform(entry);
   }
 
-  _applyCoverBackgroundTransform() {
-    const sprite = this.backgroundSprite;
-    const cfg = this._coverBackground;
+  _createTilingScenery(layerId, layerName, textureId, tileScale = 1, parallaxX, parallaxY) {
+    const texture = this.textures[textureId];
+    if (!texture) {
+      console.warn(`PIXI WORKER: Texture "${textureId}" not found for tiling scenery`);
+      return;
+    }
+    const sprite = new PIXI.TilingSprite({
+      texture,
+      width: this.worldWidth,
+      height: this.worldHeight,
+    });
+    const scale = Number.isFinite(tileScale) ? tileScale : 1;
+    sprite.tileScale.set(scale, scale);
+    sprite.tilePosition.set(0, 0);
+    this._bindScenery(layerId, layerName, {
+      kind: 'tiling',
+      displayObject: sprite,
+      parallaxX: Number.isFinite(parallaxX) ? parallaxX : 1,
+      parallaxY: Number.isFinite(parallaxY) ? parallaxY : 1,
+    });
+  }
+
+  _applySceneryCamera(zoom, cameraX, cameraY) {
+    for (let i = 0; i < this._scenery.length; i++) {
+      const s = this._scenery[i];
+      if (!s?.displayObject) continue;
+      if (s.kind === 'cover' && s.cover) {
+        this._applyCoverTransform(s);
+        continue;
+      }
+      const px = Number.isFinite(s.parallaxX) ? s.parallaxX : 1;
+      const py = Number.isFinite(s.parallaxY) ? s.parallaxY : 1;
+      const sx = s.tilemap?.scale.x ?? 1;
+      const sy = s.tilemap?.scale.y ?? 1;
+      s.displayObject.scale.set(zoom * sx, zoom * sy);
+      s.displayObject.x = -cameraX * zoom * px;
+      s.displayObject.y = -cameraY * zoom * py;
+      if (s.tilemap) this.updateTilemapViewportCull(s.tilemap);
+    }
+  }
+
+  _applyCoverSceneryTransforms() {
+    for (let i = 0; i < this._scenery.length; i++) {
+      const s = this._scenery[i];
+      if (s?.kind === 'cover') this._applyCoverTransform(s);
+    }
+  }
+
+  _applyCoverTransform(entry) {
+    const sprite = entry?.displayObject;
+    const cfg = entry?.cover;
     if (!sprite || !cfg) return;
     const tex = sprite.texture;
     const args = this._coverBgArgs || (this._coverBgArgs = {
@@ -3490,51 +3463,67 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     sprite.y = t.y;
   }
 
-  /**
-   * Create a tiling background (TilingSprite - repeats pattern)
-   */
-  createTilingBackground(textureId, tileScale = 1) {
-    const texture = this.textures[textureId];
-    if (!texture) {
-      console.warn(`PIXI WORKER: Texture "${textureId}" not found for tiling background`);
-      return;
-    }
-
-    this.backgroundSprite = new PIXI.TilingSprite({
-      texture: texture,
-      width: this.worldWidth,
-      height: this.worldHeight,
-    });
-    this.backgroundSprite.tileScale.set(tileScale, tileScale);
-    this.backgroundSprite.tilePosition.set(0, 0);
-    this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
-    this.pixiApp.stage.addChild(this.backgroundSprite);
-
-    console.log(`PIXI WORKER: Tiling background set to "${textureId}" (scale: ${tileScale})`);
+  _createTilemapRuntime() {
+    const d = this._tilemapCullDefaults;
+    return {
+      container: null,
+      tilemapId: null,
+      buildOptions: null,
+      tilesetTexture: null,
+      chunks: new Map(),
+      buildQueue: [],
+      queuedKeys: new Set(),
+      visArgs: {
+        viewMinX: 0,
+        viewMinY: 0,
+        viewMaxX: 0,
+        viewMaxY: 0,
+        chunkW: 1,
+        chunkH: 1,
+        mapW: 1,
+        mapH: 1,
+      },
+      visList: { chunks: [], count: 0 },
+      keepList: { chunks: [], count: 0 },
+      visKeys: new Set(),
+      keepKeys: new Set(),
+      evictKeys: [],
+      chunkRect: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
+      cull: {
+        frozenW: -1,
+        frozenH: -1,
+        chunkGrid: d.chunkGrid,
+        cacheGrid: d.cacheGrid,
+        safetyMarginTiles: d.safetyMarginTiles,
+        chunkTiles: d.chunkTiles,
+        maxChunkBuildsPerFrame: d.maxChunkBuildsPerFrame,
+      },
+      scale: { x: 1, y: 1 },
+    };
   }
 
-  _resetTilemapCull() {
-    const cull = this._tilemapCull;
-    cull.frozenW = -1;
-    cull.frozenH = -1;
-    this._tilemapBuildQueue.length = 0;
-    this._tilemapQueuedKeys.clear();
+  _resetTilemapCull(tm) {
+    tm.cull.frozenW = -1;
+    tm.cull.frozenH = -1;
+    tm.buildQueue.length = 0;
+    tm.queuedKeys.clear();
   }
 
-  _destroyTilemapChunks() {
-    for (const entry of this._tilemapChunks.values()) {
+  _destroyTilemapChunks(tm) {
+    if (!tm) return;
+    for (const entry of tm.chunks.values()) {
       if (entry.mesh.parent) entry.mesh.parent.removeChild(entry.mesh);
       entry.mesh.destroy();
     }
-    this._tilemapChunks.clear();
-    this._tilemapBuildQueue.length = 0;
-    this._tilemapQueuedKeys.clear();
+    tm.chunks.clear();
+    tm.buildQueue.length = 0;
+    tm.queuedKeys.clear();
   }
 
-  _buildTilemapChunk(tileMapData, key) {
+  _buildTilemapChunk(tm, tileMapData, key) {
     const cx = chunkKeyCx(key);
     const cy = chunkKeyCy(key);
-    const args = this._tilemapVisArgs;
+    const args = tm.visArgs;
     const tileRect = chunkTileRect(
       cx,
       cy,
@@ -3542,58 +3531,59 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       args.chunkH,
       args.mapW,
       args.mapH,
-      this._tilemapChunkRect
+      tm.chunkRect
     );
-    const mesh = new CompositeTilemap([this._tilemapTilesetTexture]);
-    const opts = this._tilemapBuildOptions || {};
+    const mesh = new CompositeTilemap([tm.tilesetTexture]);
+    const opts = tm.buildOptions || {};
     tileMapData.buildCompositeTilemap(mesh, {
       layers: opts.layers,
       tileRect,
     });
     mesh.visible = true;
     mesh.renderable = true;
-    this.currentTilemap.addChild(mesh);
-    this._tilemapChunks.set(key, { mesh, cx, cy });
+    tm.container.addChild(mesh);
+    tm.chunks.set(key, { mesh, cx, cy });
   }
 
-  _enqueueKeepChunks(keepList) {
+  _enqueueKeepChunks(tm, keepList) {
     const chunks = keepList.chunks;
     const n = keepList.count;
-    this._tilemapBuildQueue.length = 0;
-    this._tilemapQueuedKeys.clear();
+    tm.buildQueue.length = 0;
+    tm.queuedKeys.clear();
     for (let i = 0; i < n; i++) {
       const key = chunks[i].key;
-      if (this._tilemapChunks.has(key)) continue;
-      this._tilemapQueuedKeys.add(key);
-      this._tilemapBuildQueue.push(key);
+      if (tm.chunks.has(key)) continue;
+      tm.queuedKeys.add(key);
+      tm.buildQueue.push(key);
     }
   }
 
   _drainTilemapChunkBuilds(maxCount) {
-    if (!this.currentTilemap || !this._tilemapId) return;
-    const tileMapData = TileMap.get(this._tilemapId);
+    for (let i = 0; i < this._scenery.length; i++) {
+      const tm = this._scenery[i]?.tilemap;
+      if (tm) this._drainOneTilemap(tm, maxCount);
+    }
+  }
+
+  _drainOneTilemap(tm, maxCount) {
+    if (!tm.container || !tm.tilemapId) return;
+    const tileMapData = TileMap.get(tm.tilemapId);
     if (!tileMapData) return;
     const budget =
       maxCount != null
         ? maxCount
-        : (this._tilemapCull.maxChunkBuildsPerFrame | 0) || 1;
+        : (tm.cull.maxChunkBuildsPerFrame | 0) || 1;
     let built = 0;
-    while (built < budget && this._tilemapBuildQueue.length) {
-      const key = this._tilemapBuildQueue.shift();
-      this._tilemapQueuedKeys.delete(key);
-      if (this._tilemapChunks.has(key)) continue;
-      this._buildTilemapChunk(tileMapData, key);
+    while (built < budget && tm.buildQueue.length) {
+      const key = tm.buildQueue.shift();
+      tm.queuedKeys.delete(key);
+      if (tm.chunks.has(key)) continue;
+      this._buildTilemapChunk(tm, tileMapData, key);
       built++;
     }
   }
 
-  /**
-   * Create a tilemap background using @pixi/tilemap (Tiled editor format).
-   * Per-chunk CompositeTilemaps live under a Container; camera moves the root.
-   */
-  createTilemapBackground(tilemapId, options = {}) {
-    console.log(`PIXI WORKER: createTilemapBackground called with "${tilemapId}"`);
-
+  _createTilemapScenery(layerId, layerName, tilemapId, options = {}, parallaxX, parallaxY) {
     const texEntry = this.tilemaps[tilemapId];
     if (!texEntry || !texEntry.tilesetTexture) {
       console.warn(`PIXI WORKER: Tileset texture for "${tilemapId}" not found`);
@@ -3606,62 +3596,56 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
 
-    this.currentTilemap = new PIXI.Container();
-    this._tilemapId = tilemapId;
-    this._tilemapBuildOptions = options || {};
-    this._tilemapTilesetTexture = texEntry.tilesetTexture;
-    this._destroyTilemapChunks();
-    this._resetTilemapCull();
+    const tm = this._createTilemapRuntime();
+    tm.container = new PIXI.Container();
+    tm.tilemapId = tilemapId;
+    tm.buildOptions = options || {};
+    tm.tilesetTexture = texEntry.tilesetTexture;
+    this._destroyTilemapChunks(tm);
+    this._resetTilemapCull(tm);
 
-    // Parse scale option
     if (options.scale !== undefined) {
       if (typeof options.scale === 'number') {
-        this.tilemapScale = { x: options.scale, y: options.scale };
+        tm.scale = { x: options.scale, y: options.scale };
       } else if (typeof options.scale === 'object' && options.scale.x !== undefined) {
-        this.tilemapScale = {
+        tm.scale = {
           x: options.scale.x,
           y: options.scale.y !== undefined ? options.scale.y : options.scale.x,
         };
       }
-    } else {
-      this.tilemapScale = { x: 1, y: 1 };
     }
 
-    console.log(
-      `PIXI WORKER: Tilemap "${tilemapId}" ready for chunk cull (scale: ${this.tilemapScale.x}x${this.tilemapScale.y})`
-    );
+    this._bindScenery(layerId, layerName, {
+      kind: 'tilemap',
+      displayObject: tm.container,
+      parallaxX: Number.isFinite(parallaxX) ? parallaxX : 1,
+      parallaxY: Number.isFinite(parallaxY) ? parallaxY : 1,
+      tilemap: tm,
+    });
 
-    this._registerLayerDisplayObject('BACKGROUND', this.currentTilemap);
-    this.pixiApp.stage.addChild(this.currentTilemap);
-
-    this.currentTilemap.scale.set(
-      this.cameraData ? this.cameraData[0] * this.tilemapScale.x : this.tilemapScale.x,
-      this.cameraData ? this.cameraData[0] * this.tilemapScale.y : this.tilemapScale.y
-    );
-
-    this.updateTilemapViewportCull(true);
-    console.log(`PIXI WORKER: Tilemap background "${tilemapId}" added to stage`);
+    const zoom = this.cameraData ? this.cameraData[0] : 1;
+    tm.container.scale.set(zoom * tm.scale.x, zoom * tm.scale.y);
+    this.updateTilemapViewportCull(tm, true);
   }
 
   /**
    * Show/hide prebuilt chunk meshes and enqueue keep-set builds.
    * Does not build on the camera/present path except fillAll (create/warmup).
    */
-  updateTilemapViewportCull(fillAll = false) {
-    if (!this.currentTilemap || !this._tilemapId) return;
+  updateTilemapViewportCull(tm, fillAll = false) {
+    if (!tm?.container || !tm.tilemapId) return;
     if (!(this.canvasWidth > 0) || !(this.canvasHeight > 0)) return;
 
-    const tileMapData = TileMap.get(this._tilemapId);
+    const tileMapData = TileMap.get(tm.tilemapId);
     if (!tileMapData) return;
 
     const zoom = this._renderZoom > 0 ? this._renderZoom : 1;
-    const sx = this.tilemapScale.x || 1;
-    const sy = this.tilemapScale.y || 1;
+    const sx = tm.scale.x || 1;
+    const sy = tm.scale.y || 1;
     const tw = tileMapData.tileWidth || 1;
     const th = tileMapData.tileHeight || 1;
-    const cull = this._tilemapCull;
+    const cull = tm.cull;
 
-    // Display: local * (zoom*scale) - camera*zoom → local = camera/scale
     const localX0 = this._renderCameraX / sx;
     const localY0 = this._renderCameraY / sy;
     const viewW = this.canvasWidth / (zoom * sx);
@@ -3689,7 +3673,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       cull.frozenH = chunkH;
     }
 
-    const visArgs = this._tilemapVisArgs;
+    const visArgs = tm.visArgs;
     visArgs.viewMinX = viewMinX;
     visArgs.viewMinY = viewMinY;
     visArgs.viewMaxX = viewMaxX;
@@ -3699,31 +3683,31 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     visArgs.mapW = tileMapData.mapWidth;
     visArgs.mapH = tileMapData.mapHeight;
 
-    const visible = listVisibleChunks(visArgs, chunkRing(cull.chunkGrid), this._tilemapVisList);
-    const keep = listVisibleChunks(visArgs, chunkRing(cull.cacheGrid), this._tilemapKeepList);
+    const visible = listVisibleChunks(visArgs, chunkRing(cull.chunkGrid), tm.visList);
+    const keep = listVisibleChunks(visArgs, chunkRing(cull.cacheGrid), tm.keepList);
 
-    const visKeys = this._tilemapVisKeys;
+    const visKeys = tm.visKeys;
     visKeys.clear();
     const visChunks = visible.chunks;
     const visCount = visible.count;
     for (let i = 0; i < visCount; i++) visKeys.add(visChunks[i].key);
 
-    const keepKeys = this._tilemapKeepKeys;
+    const keepKeys = tm.keepKeys;
     keepKeys.clear();
     const keepChunks = keep.chunks;
     const keepCount = keep.count;
     for (let i = 0; i < keepCount; i++) keepKeys.add(keepChunks[i].key);
 
-    const evict = listEvictChunkKeys(this._tilemapChunks.keys(), keepKeys, this._tilemapEvictKeys);
+    const evict = listEvictChunkKeys(tm.chunks.keys(), keepKeys, tm.evictKeys);
     for (let i = 0; i < evict.length; i++) {
-      const entry = this._tilemapChunks.get(evict[i]);
+      const entry = tm.chunks.get(evict[i]);
       if (!entry) continue;
       if (entry.mesh.parent) entry.mesh.parent.removeChild(entry.mesh);
       entry.mesh.destroy();
-      this._tilemapChunks.delete(evict[i]);
+      tm.chunks.delete(evict[i]);
     }
 
-    for (const [key, entry] of this._tilemapChunks) {
+    for (const [key, entry] of tm.chunks) {
       const on = visKeys.has(key);
       entry.mesh.visible = on;
       entry.mesh.renderable = on;
@@ -3732,12 +3716,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (fillAll) {
       for (let i = 0; i < visCount; i++) {
         const key = visChunks[i].key;
-        if (this._tilemapChunks.has(key)) continue;
-        this._buildTilemapChunk(tileMapData, key);
+        if (tm.chunks.has(key)) continue;
+        this._buildTilemapChunk(tm, tileMapData, key);
       }
     }
 
-    this._enqueueKeepChunks(keep);
+    this._enqueueKeepChunks(tm, keep);
   }
 
   /**
@@ -3887,12 +3871,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       ...TILEMAP_CULL_DEFAULTS,
       ...(rendererConfig.tilemapCull || {}),
     };
-    this._tilemapCull.chunkGrid = cullCfg.chunkGrid;
-    this._tilemapCull.cacheGrid = cullCfg.cacheGrid;
-    this._tilemapCull.safetyMarginTiles = cullCfg.safetyMarginTiles;
-    this._tilemapCull.chunkTiles = cullCfg.chunkTiles | 0;
-    this._tilemapCull.maxChunkBuildsPerFrame = cullCfg.maxChunkBuildsPerFrame | 0;
-    this._resetTilemapCull();
+    this._tilemapCullDefaults = {
+      frozenW: -1,
+      frozenH: -1,
+      chunkGrid: cullCfg.chunkGrid,
+      cacheGrid: cullCfg.cacheGrid,
+      safetyMarginTiles: cullCfg.safetyMarginTiles,
+      chunkTiles: cullCfg.chunkTiles | 0,
+      maxChunkBuildsPerFrame: cullCfg.maxChunkBuildsPerFrame | 0,
+    };
 
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
     // This includes Transform, RigidBody, SpriteRenderer, and all custom components
@@ -4022,7 +4009,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Create decal tile container (renders between background and entities)
       this.decalTileContainer = new PIXI.Container();
-      this._registerLayerDisplayObject('DECALS', this.decalTileContainer);
+      this._registerLayerDisplayObject('decals', this.decalTileContainer);
 
       // Create sprites for each tile
       this.createDecalTileSprites();
@@ -4084,7 +4071,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
     if (this.renderQueueEnabled) {
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
-      this._registerLayerDisplayObject('ENTITIES', this.spriteMesh);
+      this._registerLayerDisplayObject('entities', this.spriteMesh);
       this.pixiApp.stage.addChild(this.spriteMesh);
       if (this.spriteParticleMesh) {
         this.spriteParticleMesh.zIndex = (this.spriteMesh.zIndex || 0) + 0.0005;
@@ -4652,16 +4639,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Called after all layers are initialized
    */
   buildLayerRefsMap() {
-    if (this.currentTilemap) this._registerLayerDisplayObject('BACKGROUND', this.currentTilemap);
-    else if (this.backgroundSprite) this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
-    if (this.decalTileContainer) this._registerLayerDisplayObject('DECALS', this.decalTileContainer);
-    if (this.shadowDisplaySprite) this._registerLayerDisplayObject('CASTED_SHADOWS', this.shadowDisplaySprite);
-    if (this.spriteMesh) {
-      this._registerLayerDisplayObject('ENTITIES', this.spriteMesh);
+    for (let i = 0; i < this._scenery.length; i++) {
+      const s = this._scenery[i];
+      const name = Layer.getName(i);
+      if (s?.displayObject && name) this._registerLayerDisplayObject(name, s.displayObject);
     }
-    if (this._visPolyDisplaySprite) this._registerLayerDisplayObject('LIGHTING', this._visPolyDisplaySprite);
-    else if (this.lightingDisplaySprite) this._registerLayerDisplayObject('LIGHTING', this.lightingDisplaySprite);
-    else if (this.lightingMesh) this._registerLayerDisplayObject('LIGHTING', this.lightingMesh);
+    if (this.decalTileContainer) this._registerLayerDisplayObject('decals', this.decalTileContainer);
+    if (this.shadowDisplaySprite) this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
+    if (this.spriteMesh) {
+      this._registerLayerDisplayObject('entities', this.spriteMesh);
+    }
+    if (this._visPolyDisplaySprite) this._registerLayerDisplayObject('lighting', this._visPolyDisplaySprite);
+    else if (this.lightingDisplaySprite) this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);
+    else if (this.lightingMesh) this._registerLayerDisplayObject('lighting', this.lightingMesh);
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       this._registerLayerDisplayObject(cl.layerName, cl.displaySprite || cl.batch?.mesh, !cl.displaySprite);

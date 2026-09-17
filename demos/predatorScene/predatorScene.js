@@ -31,7 +31,7 @@ const {
   Sun,
   TileMap,
   containerRadius,
-  enums: { BLEND_MODES },
+  enums: { BLEND_MODES, LAYER_KIND },
 } = WEED;
 
 const excludedLPCAnimations = [
@@ -171,6 +171,12 @@ export class PredatorScene extends WEED.Scene {
     },
 
     layers: {
+      ground: {
+        kind: LAYER_KIND.TILEMAP,
+        tilemap: 'myTilemap',
+        scale: 1,
+        zIndex: 0.5,
+      },
       clouds: {
         alpha: 0.5,
         zIndex: 3.5,
@@ -346,10 +352,6 @@ export class PredatorScene extends WEED.Scene {
     // this.playerEntity = null;
 
     this.frameCount = 0;
-  }
-
-  async preload() {
-    await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
   }
 
   create() {

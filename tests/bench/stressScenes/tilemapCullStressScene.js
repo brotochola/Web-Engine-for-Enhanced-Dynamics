@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 import { TilemapCullPanDriver } from './tilemapCull/tilemapCullPanDriver.js';
 
-const { Scene, Camera, Layer } = WEED;
+const { Scene, Camera, LAYER_KIND } = WEED;
 
 const SEED = 0x711e;
 const MAP_PX = 64 * 32;
@@ -36,6 +36,14 @@ export class TilemapCullStressScene extends Scene {
       },
     },
     lighting: { enabled: false },
+    layers: {
+      ground: {
+        kind: LAYER_KIND.TILEMAP,
+        tilemap: 'benchMap',
+        scale: 1,
+        zIndex: 0.5,
+      },
+    },
   };
 
   static assets = {
@@ -48,10 +56,6 @@ export class TilemapCullStressScene extends Scene {
   };
 
   static entities = [[TilemapCullPanDriver, 1]];
-
-  async preload() {
-    await Layer.BACKGROUND.setTilemapBackground('benchMap', { scale: 1 });
-  }
 
   create() {
     this.spawnEntity(TilemapCullPanDriver, { seed: SEED });

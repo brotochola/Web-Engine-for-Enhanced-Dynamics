@@ -471,7 +471,7 @@ function initializeLightingAndRenderBuffers(scene) {
   for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
     builtInLayers[name] = {
       ...defaults,
-      ySorting: name === 'ENTITIES' ? defaultYSorting : defaults.ySorting,
+      ySorting: name === 'entities' ? defaultYSorting : defaults.ySorting,
     };
   }
   Layer.initializeFromConfig(config.layers, builtInLayers, defaultYSorting);
@@ -481,7 +481,7 @@ function initializeLightingAndRenderBuffers(scene) {
   const layerMetas = Layer._metadata?.layers || [];
   for (let i = 0; i < layerMetas.length; i++) {
     const meta = layerMetas[i];
-    if (!meta || meta.builtIn || !meta.hasRenderQueue || meta.id === Layer.ENTITIES_ID) continue;
+    if (!meta || meta.builtIn || !meta.hasRenderQueue || meta.id === Layer.entitiesId) continue;
 
     const layer = Layer.getById(meta.id);
     if (!layer) continue;

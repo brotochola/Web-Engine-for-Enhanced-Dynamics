@@ -28,7 +28,7 @@ Layer.initializeFromConfig(
       shader: { fragment: 'f', compute: 's', maxBodies: N },
     },
   },
-  { BACKGROUND: {}, DECALS: {}, CASTED_SHADOWS: {}, ENTITIES: {}, LIGHTING: {} },
+  { decals: {}, castedShadows: {}, entities: {}, lighting: {} },
   true
 );
 const layerId = Layer.get('fire').id;

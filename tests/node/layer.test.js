@@ -7,17 +7,13 @@ import {
   LAYER_SPLAT_FALLOFF,
   LAYER_SCALE_MODE,
   LAYER_FEEDER_KIND,
+  LAYER_KIND,
+  DEFAULT_LAYERS,
 } from '../../src/util/configDefaults.js';
 
-const BUILT_IN_LAYERS = {
-  BACKGROUND: {},
-  DECALS: {},
-  CASTED_SHADOWS: {},
-  ENTITIES: {},
-  LIGHTING: {},
-};
+const BUILT_IN_LAYERS = DEFAULT_LAYERS;
 
-test('background commands are only posted for Layer.BACKGROUND', async () => {
+test('scenery commands post for scenery layers, not pipeline', async () => {
   const previousWarn = console.warn;
   const warnings = [];
   const posted = [];
@@ -26,35 +22,42 @@ test('background commands are only posted for Layer.BACKGROUND', async () => {
 
   try {
     Layer.reset();
-    Layer.initializeFromConfig({}, BUILT_IN_LAYERS, true);
+    Layer.initializeFromConfig(
+      {
+        sky: { kind: LAYER_KIND.COVER, zIndex: 0 },
+        ground: { kind: LAYER_KIND.TILEMAP, zIndex: 0.5 },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
     Layer._postToRenderer = (msg) => posted.push(msg);
 
-    Layer.BACKGROUND.setStaticBackground('sky');
-    Layer.BACKGROUND.setCoverBackground({
+    Layer.sky.setStatic('sky');
+    Layer.sky.setCover({
       texture: 'landscape',
       parallax: { x: 0.2, y: 0.1 },
       margin: 0.25,
       zoomParallax: 0.35,
     });
-    Layer.BACKGROUND.setTilingBackground('clouds', 0.5);
-    const pendingBackgroundPromise = Layer.BACKGROUND.setTilemapBackground('roads', { scale: 1 });
-    Layer.BACKGROUND.clearBackground();
+    Layer.sky.setTiling('clouds', 0.5);
+    const pendingTilemap = Layer.ground.setTilemap('roads', { scale: 1 });
+    Layer.sky.clear();
 
-    Layer.ENTITIES.setStaticBackground('bad');
-    Layer.ENTITIES.setTilingBackground('bad', 2);
-    await Layer.ENTITIES.setTilemapBackground('bad-map', { scale: 3 });
-    Layer.ENTITIES.clearBackground();
+    Layer.entities.setStatic('bad');
+    Layer.entities.setTiling('bad', 2);
+    await Layer.entities.setTilemap('bad-map', { scale: 3 });
+    Layer.entities.clear();
 
     assert.equal(posted.length, 5);
-    assert.ok(pendingBackgroundPromise instanceof Promise);
+    assert.ok(pendingTilemap instanceof Promise);
     assert.deepEqual(
-      posted.map((msg) => ({ type: msg.type, layerId: msg.layerId })),
+      posted.map((msg) => ({ msg: msg.msg, type: msg.type, layerId: msg.layerId })),
       [
-        { type: 'static', layerId: Layer.BACKGROUND.id },
-        { type: 'cover', layerId: Layer.BACKGROUND.id },
-        { type: 'tiling', layerId: Layer.BACKGROUND.id },
-        { type: 'tilemap', layerId: Layer.BACKGROUND.id },
-        { type: 'none', layerId: Layer.BACKGROUND.id },
+        { msg: 'setLayerContent', type: LAYER_KIND.STATIC, layerId: Layer.sky.id },
+        { msg: 'setLayerContent', type: LAYER_KIND.COVER, layerId: Layer.sky.id },
+        { msg: 'setLayerContent', type: LAYER_KIND.TILING, layerId: Layer.sky.id },
+        { msg: 'setLayerContent', type: LAYER_KIND.TILEMAP, layerId: Layer.ground.id },
+        { msg: 'setLayerContent', type: 'none', layerId: Layer.sky.id },
       ]
     );
     assert.equal(posted[1].textureId, 'landscape');
@@ -63,9 +66,52 @@ test('background commands are only posted for Layer.BACKGROUND', async () => {
     assert.equal(posted[1].margin, 0.25);
     assert.equal(posted[1].zoomParallax, 0.35);
     assert.equal(warnings.length, 4);
-    assert.ok(warnings.every((message) => message.includes('Layer.BACKGROUND')));
+    assert.ok(warnings.every((message) => message.includes('pipeline layer')));
+    assert.equal(Layer.sky.kind, LAYER_KIND.TILING);
+    assert.equal(Layer.ground.kind, LAYER_KIND.TILEMAP);
   } finally {
     console.warn = previousWarn;
+    Layer.reset();
+  }
+});
+
+test('applyConfiguredContent posts cover and tilemap from config', async () => {
+  const posted = [];
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        sky: {
+          kind: LAYER_KIND.COVER,
+          texture: 'landscape',
+          parallax: 0.15,
+          zoomParallax: 0.35,
+          margin: 0.2,
+          zIndex: 0,
+        },
+        ground: {
+          kind: LAYER_KIND.TILEMAP,
+          tilemap: 'myTilemap',
+          scale: 1,
+          zIndex: 0.5,
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    Layer._postToRenderer = (msg) => {
+      posted.push(msg);
+      if (msg.msg === 'setLayerContent' && msg.type === 'tilemap') {
+        Layer.resolveLayerContentReady(msg.layerId, msg.requestId);
+      }
+    };
+    await Layer.applyConfiguredContent();
+    assert.equal(posted.length, 2);
+    assert.equal(posted[0].type, 'cover');
+    assert.equal(posted[0].textureId, 'landscape');
+    assert.equal(posted[1].type, 'tilemap');
+    assert.equal(posted[1].tilemapId, 'myTilemap');
+  } finally {
     Layer.reset();
   }
 });
@@ -194,12 +240,12 @@ test('feederKind is an int enum; visible SAB round-trips', () => {
       BUILT_IN_LAYERS,
       true
     );
-    assert.equal(Layer.feederKind(Layer.ENTITIES_ID), LAYER_FEEDER_KIND.SPRITES);
+    assert.equal(Layer.feederKind(Layer.entitiesId), LAYER_FEEDER_KIND.SPRITES);
     assert.equal(Layer.feederKind(Layer.getId('oil')), LAYER_FEEDER_KIND.DENSITY);
     assert.equal(Layer.feederKind(Layer.getId('fire')), LAYER_FEEDER_KIND.COMPUTE);
     assert.equal(Layer.feederKind(Layer.getId('fx')), LAYER_FEEDER_KIND.SPRITES);
-    assert.equal(Layer.feederKind(Layer.BACKGROUND.id), LAYER_FEEDER_KIND.BUILTIN);
-    assert.equal(typeof Layer.feederKind(Layer.ENTITIES_ID), 'number');
+    assert.equal(Layer.feederKind(Layer.decals.id), LAYER_FEEDER_KIND.BUILTIN);
+    assert.equal(typeof Layer.feederKind(Layer.entitiesId), 'number');
 
     const oil = Layer.get('oil');
     assert.equal(oil.visible, true);

@@ -14,11 +14,10 @@ import {
 } from '../../src/util/layerFeed.js';
 
 const BUILT_IN = {
-  BACKGROUND: {},
-  DECALS: {},
-  CASTED_SHADOWS: {},
-  ENTITIES: {},
-  LIGHTING: {},
+  decals: {},
+  castedShadows: {},
+  entities: {},
+  lighting: {},
 };
 
 function withLayers(custom, fn) {

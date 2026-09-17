@@ -1437,12 +1437,12 @@ class PreRenderWorker extends AbstractWorker {
             bits ^= lsb;
         }
         if (!wroteSprite && !isParticle) {
-            this._writeRenderable(type, index, y, Layer.ENTITIES_ID);
+            this._writeRenderable(type, index, y, Layer.entitiesId);
         }
     }
 
     _writeRenderable(type, index, y, layerId) {
-        if (this._customLayerCollectors && layerId !== 0 && layerId !== Layer.ENTITIES_ID) {
+        if (this._customLayerCollectors && layerId !== Layer.entitiesId) {
             const collector = this._customLayerCollectors[layerId];
             if (collector) {
                 if (collector.count < collector.maxItems) {
@@ -1838,7 +1838,7 @@ class PreRenderWorker extends AbstractWorker {
         const collectorIndex = this._renderableIndex;
 
         // Y-order via GPU depth + composite sortKey (instanced path always on).
-        // No CPU heapsort when Layer.ENTITIES.ySorting — pixi depthMode sortKey.
+        // No CPU heapsort when Layer.entities.ySorting — pixi depthMode sortKey.
         const detail = this.collectDetailedStats;
         if (detail) this.sortTimeThisFrame = 0;
         const tEmit = detail ? performance.now() : 0;

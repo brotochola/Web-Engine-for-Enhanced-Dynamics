@@ -13,11 +13,10 @@ import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.
 import { Layer } from '../../src/core/layer.js';
 
 const BUILT_IN_LAYERS = {
-  BACKGROUND: {},
-  DECALS: {},
-  CASTED_SHADOWS: {},
-  ENTITIES: {},
-  LIGHTING: {},
+  decals: {},
+  castedShadows: {},
+  entities: {},
+  lighting: {},
 };
 
 /** Pre-refactor loop shape (0..Layer.count, two Layer method calls per set bit). */

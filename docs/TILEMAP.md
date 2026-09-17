@@ -153,7 +153,7 @@ The `data` array stores raw GIDs with flags intact. `getTileId()` / `getTileIdAt
 
 Pixi does **not** put the full map in one `CompositeTilemap`. The background is a parent `Container` of **chunk** meshes. Camera transform hits the parent; children stay in map-local pixels.
 
-On `setTilemapBackground`, the worker builds every chunk that currently intersects the view (`fillAll`). After that:
+On `Layer.ground.setTilemap` / config `kind: LAYER_KIND.TILEMAP`, the worker builds every chunk that currently intersects the view (`fillAll`). After that:
 
 1. **Show/hide** chunks that overlap the view (+ `chunkGrid` ring). No `clear()` of live meshes.
 2. **Keep** built meshes out to `cacheGrid` (hidden). Outside that, destroy.

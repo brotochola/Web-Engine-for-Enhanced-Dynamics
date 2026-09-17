@@ -120,13 +120,15 @@ test('pixi_worker: cover type + look RT transparent clear', () => {
     'utf8'
   );
   assert.match(pixi, /case 'cover':/);
-  assert.match(pixi, /createCoverBackground/);
-  assert.match(pixi, /_applyCoverBackgroundTransform/);
+  assert.match(pixi, /_createCoverScenery/);
+  assert.match(pixi, /_applyCoverTransform/);
   assert.match(pixi, /_clearTransparent = \[0, 0, 0, 0\]/);
   assert.match(pixi, /clearColor: this\._clearTransparent/);
 });
 
-test('Scene.setBackground is a prototype method', async () => {
+test('Scene.applyConfiguredContent is wired; setBackground is gone', async () => {
   const { Scene } = await import('../../src/core/scene.js');
-  assert.equal(typeof Scene.prototype.setBackground, 'function');
+  assert.equal(Scene.prototype.setBackground, undefined);
+  const src = readFileSync(new URL('../../src/core/scene.js', import.meta.url), 'utf8');
+  assert.match(src, /Layer\.applyConfiguredContent/);
 });

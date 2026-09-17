@@ -13,11 +13,10 @@ const args = parseArgs();
 const OUTPUT = args.output ? String(args.output) : 'tests/results/compute-pack-micro.json';
 
 const BUILT_IN = {
-  BACKGROUND: {},
-  DECALS: {},
-  CASTED_SHADOWS: {},
-  ENTITIES: {},
-  LIGHTING: {},
+  decals: {},
+  castedShadows: {},
+  entities: {},
+  lighting: {},
 };
 
 function setup(n, { moving }) {

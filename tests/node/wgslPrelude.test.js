@@ -11,11 +11,10 @@ import {
 } from '../../src/render/webgpu/wgslPrelude.js';
 
 const BUILT_IN_LAYERS = {
-  BACKGROUND: {},
-  DECALS: {},
-  CASTED_SHADOWS: {},
-  ENTITIES: {},
-  LIGHTING: {},
+  decals: {},
+  castedShadows: {},
+  entities: {},
+  lighting: {},
 };
 
 test('compute prelude: FrameData prefix fields + frame binding + Body', () => {

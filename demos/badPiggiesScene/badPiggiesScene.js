@@ -9,6 +9,7 @@ import { Camera } from '/src/core/camera.js';
 import {
   BLEND_MODES,
   LAYER_DENSITY_SOURCE,
+  LAYER_KIND,
   LAYER_SCALE_MODE,
   LAYER_SPLAT_FALLOFF,
 } from '/src/util/configDefaults.js';
@@ -122,6 +123,14 @@ export class BadPiggiesScene extends Scene {
     lighting: { enabled: false },
 
     layers: {
+      sky: {
+        kind: LAYER_KIND.COVER,
+        texture: 'landscape',
+        parallax: 0.15,
+        zoomParallax: 0.35,
+        margin: 0.2,
+        zIndex: 0,
+      },
       smoke: {
         zIndex: 3.4,
         blendMode: BLEND_MODES.NORMAL,
@@ -261,10 +270,6 @@ export class BadPiggiesScene extends Scene {
     this._createFollowToggle();
     this._createHud();
     this._refreshHud();
-  }
-
-  preload() {
-    this.setBackground({ texture: 'landscape', parallax: 0.15, zoomParallax: 0.35, margin: 0.2 });
   }
 
   onLoadGame(_payload) {

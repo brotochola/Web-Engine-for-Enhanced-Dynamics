@@ -80,8 +80,8 @@ test('shouldSaveEntity requires serializable + active', () => {
   assert.equal(shouldSaveEntity(OtherEntity, 1, { active }), false);
 });
 
-test('SAVE_FORMAT_VERSION is 4', () => {
-  assert.equal(SAVE_FORMAT_VERSION, 4);
+test('SAVE_FORMAT_VERSION is 5', () => {
+  assert.equal(SAVE_FORMAT_VERSION, 5);
 });
 
 test('binary uncompressed roundtrip', () => {
@@ -89,7 +89,7 @@ test('binary uncompressed roundtrip', () => {
   const bytes = encodeSaveUncompressed(payload);
   const decoded = decodeSaveUncompressed(bytes);
   assert.equal(decoded.magic, SAVE_MAGIC);
-  assert.equal(decoded.formatVersion, 4);
+  assert.equal(decoded.formatVersion, 5);
   assert.equal(decoded.sceneName, 'TestScene');
   assert.equal(decoded.entities.length, 1);
   assert.equal(decoded.entities[0].entityIndex, 7);
@@ -107,7 +107,7 @@ test('binary deflate roundtrip', async () => {
   assert.ok(compressed.byteLength > 0);
   const decoded = await decodeSave(compressed);
   assert.equal(decoded.entities[0].typeName, 'A');
-  assert.equal(decoded.formatVersion, 4);
+  assert.equal(decoded.formatVersion, 5);
 });
 
 test('applyEntitySaveRestore writes SoA fields', () => {
@@ -178,7 +178,7 @@ test('joints + entityIndex binary roundtrip', () => {
   });
   const bytes = encodeSaveUncompressed(payload);
   const decoded = decodeSaveUncompressed(bytes);
-  assert.equal(decoded.formatVersion, 4);
+  assert.equal(decoded.formatVersion, 5);
   assert.equal(decoded.entities[0].entityIndex, 7);
   assert.equal(decoded.joints.length, 1);
   assert.equal(decoded.joints[0].entityA, 7);

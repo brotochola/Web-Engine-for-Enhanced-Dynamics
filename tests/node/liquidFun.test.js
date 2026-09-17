@@ -643,11 +643,10 @@ test('LiquidFun enqueues SET_LIQUIDFUN_LAYERS for layer/layers', () => {
     Layer.initializeFromConfig({
       fire: { shader: { fragment: 'f', compute: 's' } },
     }, {
-      BACKGROUND: {},
-      DECALS: {},
-      CASTED_SHADOWS: {},
-      ENTITIES: {},
-      LIGHTING: {},
+      decals: {},
+      castedShadows: {},
+      entities: {},
+      lighting: {},
     }, true);
     const fireId = Layer.getId('fire');
     assert.ok(fireId >= 0);

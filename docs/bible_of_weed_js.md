@@ -65,7 +65,8 @@ After workers are ready, `Scene.init()` calls hooks in this order (workers still
 ```javascript
 class MyScene extends WEED.Scene {
   async preload() {
-    await WEED.Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
+    // scenery is declared in config.layers (LAYER_KIND.TILEMAP / COVER) or:
+    await WEED.Layer.ground.setTilemap('myTilemap', { scale: 1 });
   }
 
   create() {
@@ -320,19 +321,18 @@ Use collision **callbacks** for edge-triggered logic (enter/exit). Use `isCollid
 
 ## Layer System
 
-The engine renders everything through **layers**. Five built-in layers handle the default pipeline. Custom layers let you render groups of entities with their own sorting, blend mode, and optional fragment shader (the two-RT pipeline).
+The engine renders everything through **layers**. Four built-in pipeline layers handle the default services. Custom layers add sprites, density, compute, or scenery (cover / tiling / tilemap). There is no default background slot — the scene declares scenery if it needs it.
 
 ### Built-in Layers
 
 | Name | zIndex | Purpose |
 |---|---|---|
-| `BACKGROUND` | 0 | Background image / tilemap |
-| `DECALS` | 1 | Blood tiles, floor stains |
-| `CASTED_SHADOWS` | 2 | Entity shadow projections |
-| `ENTITIES` | 3 | Default entity rendering (main render queue) |
-| `LIGHTING` | 4 | Point lights, ambient overlay |
+| `decals` | 1 | Blood tiles, floor stains |
+| `castedShadows` | 2 | Entity shadow projections |
+| `entities` | 3 | Default entity rendering (main render queue) |
+| `lighting` | 4 | Point lights, ambient overlay |
 
-All renderables (entities, particles, decorations, bullets) render on `ENTITIES` by default. You don't need to touch layers for most games.
+All renderables (entities, particles, decorations, bullets) render on `entities` by default. You don't need to touch layers for most games.
 
 ### Defining Custom Layers
 
@@ -473,6 +473,7 @@ Layer.get('dulceDeLeche').setSplatRadius(56); // live kernel size
 | `LAYER_SPLAT_FALLOFF` | `QUADRATIC` (`0` active), `SMOOTHSTEP` / `GAUSSIAN` (reserved; normalize accepts, splat FS still uses quadratic in v1) | Soft-disk alpha curve |
 | `LAYER_SCALE_MODE` | `LINEAR` (`0`), `NEAREST` (`1`) — Pixi string only at RT create | Pixi upsample filter when `resolution < 1` (not MSAA/FXAA) |
 | `LAYER_FEEDER_KIND` | `NONE` `BUILTIN` `SPRITES` `DENSITY` `COMPUTE` — `Uint8` in layer config SAB | How a layer consumes subscriptions |
+| `LAYER_KIND` | `sprites` `cover` `static` `tiling` `tilemap` `density` `compute` `decals` `shadows` `lighting` | Layer content / pipeline kind |
 
 v1 is an LF-only density layer (mixed sprites on the same layer are ignored). Debug Layers panel shows **Density: liquidFun**; shader `(none)` still bypasses the look pass and shows the raw density RT.
 
@@ -499,46 +500,55 @@ Tuning order that usually works: set `uCutoff` so the silhouette matches the phy
 
 Open the **Layers** tab in the debug overlay. Each layer shows visibility, alpha, blend mode, and z-index controls. Click a layer name to expand its detail panel:
 
-- **Type** -- `world` or `screenRT` (shader), with a badge
+- **Type** -- layer `kind` (`sprites`, `cover`, `tilemap`, `compute`, …), with a badge
 - **Shader** -- asset name (e.g. `metaball`) + container blend mode
 - **Resolution**, **Y-Sorting**, **maxItems**
 - **Live uniform editors** -- number inputs for every uniform, updated in real-time from SAB. Edit a value and it calls `setUniform()` immediately
 
-### Backgrounds
+### Scenery (cover / tiling / tilemap)
 
-Viewport-cover image (fills the canvas, extra size at zoom=1, optional pan/zoom parallax):
-
-```javascript
-this.setBackground({
-  texture: 'landscape',
-  parallax: 0.15,          // or { x: 0.15, y: 0.1 }; 0 = glued to camera, 1 = full overscan pan
-  zoomParallax: 0.35,     // 0 = no zoom, 1 = same as camera (default)
-  margin: 0.2,            // extra 20% beyond cover-fit at zoom = 1
-});
-// this.setBackground('landscape') uses the same defaults
-```
-
-Tilemap / world-stretch / tiling still go through Layer:
+Declare scenery in `config.layers`. The engine applies it after workers are ready. No `Scene.setBackground`, no default background layer.
 
 ```javascript
-await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
-Layer.BACKGROUND.setStaticBackground('sky');
-Layer.BACKGROUND.setTilingBackground('clouds', 0.5);
-Layer.BACKGROUND.clearBackground();
+static config = {
+  layers: {
+    sky: {
+      kind: LAYER_KIND.COVER,
+      texture: 'landscape',
+      parallax: 0.15,          // or { x: 0.15, y: 0.1 }; 0 = glued to camera
+      zoomParallax: 0.35,
+      margin: 0.2,
+      zIndex: 0,
+    },
+    ground: {
+      kind: LAYER_KIND.TILEMAP,
+      tilemap: 'myTilemap',
+      scale: 1,
+      zIndex: 0.5,
+    },
+  },
+};
+
+// Runtime:
+Layer.sky.setCover({ texture: 'dusk', parallax: 0.1 });
+Layer.clouds.setTiling('clouds', { tileScale: 0.5, parallax: 0.35 });
+Layer.ground.setStatic('sky');
+await Layer.ground.setTilemap('myTilemap', { scale: 1 });
+Layer.sky.clear();
 ```
 
-Any layer can own a background. `setTilemapBackground` returns a request-scoped Promise (warm-up render), so overlapping background changes do not steal each other's completion signal.
+`setTilemap` returns a request-scoped Promise (warm-up render).
 
 ### Assigning Entities to Layers
 
 ```javascript
 // Inside entity tick() or onSpawned()
 this.setLayer('water');        // route to the 'water' custom layer
-this.setLayer('ENTITIES');     // ENTITIES only
-this.setLayer('fire');        // sprite stays ENTITIES; collider packed into fire
+this.setLayer('entities');     // entities only
+this.setLayer('fire');        // sprite stays entities; collider packed into fire
 
 // Read-only
-const name = this.layerName;   // 'water', 'ENTITIES', etc.
+const name = this.layerName;   // 'water', 'entities', etc.
 ```
 
 ### Routing Particles, Decorations, and Bullets to Layers
@@ -568,7 +578,7 @@ WEED.BulletPool.spawn({
 LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('GLOW_LAYER');
 ```
 
-Omit `layer`/`layers` → ENTITIES bit. See `docs/LAYER_ROUTING.md`.
+Omit `layer`/`layers` → entities bit. See `docs/LAYER_ROUTING.md`.
 
 ### Sprite tiling (`setTileWorld` / `setTileLocal`)
 
@@ -622,25 +632,26 @@ The pixi worker picks up dirty uniforms each frame via an atomic flag.
 
 ```javascript
 // Direct property access (built-in + custom layers)
-Layer.BACKGROUND              // built-in layer (static getter)
-Layer.ENTITIES                // built-in layer (static getter)
+Layer.entities                // built-in pipeline layer
+Layer.decals
 Layer.water                   // custom layer (dynamic property, set during init)
 Layer.lava                    // custom layer (dynamic property, set during init)
+Layer.sky                     // scenery layer if declared in config
 
 // Fallback lookup (for dynamic/variable names)
 Layer.get('water')            // Layer instance or null
 Layer.getById(5)              // by numeric id
 Layer.getAll()                // all registered layers (cached)
-Layer.getCustomLayers()       // only layers with their own render queue (excludes ENTITIES)
+Layer.getCustomLayers()       // scene-defined layers (not pipeline builtins)
 Layer.getId('water')          // numeric id or -1
 Layer.getName(5)              // name string or null
 
-// Background (instance methods -- any layer can own a background)
-Layer.BACKGROUND.setCoverBackground({ texture, parallax, zoomParallax, margin })
-Layer.BACKGROUND.setStaticBackground(textureId)
-Layer.BACKGROUND.setTilingBackground(textureId, tileScale)
-await Layer.BACKGROUND.setTilemapBackground(tilemapId, options)
-Layer.BACKGROUND.clearBackground()
+// Scenery (instance methods — scenery kinds only)
+Layer.sky.setCover({ texture, parallax, zoomParallax, margin })
+Layer.ground.setStatic(textureId)
+Layer.clouds.setTiling(textureId, { tileScale, parallax })
+await Layer.ground.setTilemap(tilemapId, options)
+Layer.sky.clear()
 
 // Uniforms (cross-worker safe)
 Layer.water.setUniform('uWaterColor', [0.05, 0.1, 0.95])

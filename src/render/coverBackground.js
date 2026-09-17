@@ -11,6 +11,21 @@ export const COVER_BG_DEFAULT_ZOOM_PARALLAX = 1;
  * @param {number|{x?:number,y?:number}|null|undefined} parallax
  * @returns {{x:number,y:number}}
  */
+/**
+ * World-locked scenery (static / tiling / tilemap). Default 1 = follow the world.
+ * @param {number|{x?:number,y?:number}|null|undefined} parallax
+ * @returns {{x:number,y:number}}
+ */
+export function normalizeWorldParallax(parallax) {
+  if (parallax != null && typeof parallax === 'object') {
+    const x = Number.isFinite(parallax.x) ? parallax.x : 1;
+    const y = Number.isFinite(parallax.y) ? parallax.y : x;
+    return { x, y };
+  }
+  const n = Number.isFinite(parallax) ? parallax : 1;
+  return { x: n, y: n };
+}
+
 export function normalizeCoverParallax(parallax) {
   if (parallax != null && typeof parallax === 'object') {
     const x = Number.isFinite(parallax.x) ? parallax.x : COVER_BG_DEFAULT_PARALLAX;
