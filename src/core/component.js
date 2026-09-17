@@ -37,7 +37,7 @@ export class Component {
 
   /**
    * Initialize static arrays from SharedArrayBuffer
-   * Called by GameEngine and by each worker
+   * Called by Scene and by each worker
    *
    * @param {SharedArrayBuffer} buffer - The shared memory
    * @param {number} count - Total number of component instances

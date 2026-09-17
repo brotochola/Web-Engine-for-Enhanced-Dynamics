@@ -1,4 +1,4 @@
-// ESM facade over box2dContactRing.impl.js
+// ESM facade over box2dContactRingImpl.js
 import './box2dContactRingImpl.js';
 
 const R = globalThis.Box2dContactRing;

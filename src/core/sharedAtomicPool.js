@@ -1,5 +1,5 @@
 // SharedAtomicPool.js - Base class for thread-safe object pools
-// Provides atomic free list operations shared by ParticleEmitter and DecorationPool
+// Provides atomic free list operations shared by ParticleEmitter, DecorationPool, BulletPool, Joint
 //
 // THREAD SAFETY:
 // - freeList and freeListTop are backed by SharedArrayBuffer

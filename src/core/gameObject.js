@@ -80,7 +80,7 @@ export class GameObject {
   // Neighbor data (from spatial worker)
   static neighborData = null;
 
-  // Active entities list (built by particle_worker each frame)
+  // Active entity list, maintained incrementally on spawn/despawn (logic0 owns list updates)
   // Layout: [count, entityIdx0, entityIdx1, ...]
   static activeEntitiesData = null;
 
@@ -89,11 +89,10 @@ export class GameObject {
   static nextTick = null;
 
   // Camera data (shared with main thread)
-  static cameraData = null; // Float32Array [zoom, x, y]
+  static cameraData = null; // Float32Array [zoom, x, y, followTargetX, followTargetY, targetZoom]
 
-  // Entity type ID (auto-assigned during registration)
-  // Note: entityType moved to Transform component for pure ECS architecture
-  static entityType = null; // Numeric ID assigned by GameEngine
+  // Per-entity type id is Transform.entityType[i]; class id is EntityClass.entityType
+  static entityType = null; // Numeric ID assigned by Scene during entity registration
 
   static globalEntityCount = 0;
 
@@ -305,7 +304,7 @@ export class GameObject {
   /**
    * Constructor - stores entity index
    * @param {number} index - Entity index (unique across all entities)
-   * @param {Object} config - Configuration object from GameEngine
+   * @param {Object} config - Spawn/view config for this entity slot
    * @param {Object} logicWorker - Logic worker reference
    * @param {Object} [options]
    * @param {boolean} [options.view] - Main-thread view: do not touch pool Transform.active / instances / setup()
@@ -373,10 +372,15 @@ export class GameObject {
     }
   }
 
+  /** Worker→Scene postMessage helper (`SceneBridge`). */
   get sceneBridge() {
     return SceneBridge;
   }
 
+  /**
+   * Post a message from this entity to Scene.onMessageFromGameObject on the main thread.
+   * @param {*} data
+   */
   sendMessageToScene(data) {
     return SceneBridge.sendMessageToScene(data, this);
   }
@@ -1893,7 +1897,7 @@ export class GameObject {
    *
    * @param {number} dtRatio - Delta time ratio normalized to 60fps (1.0 = 16.67ms frame)
    * @param {number} deltaTime - Actual time since last frame in milliseconds
-   * @param {number} accumulatedTime - Total time elapsed since game start in seconds
+   * @param {number} accumulatedTime - Total time elapsed since worker start (ms)
    * @param {number} frameNumber - Current frame number (starts at 1)
    *
    * Example:
@@ -1904,8 +1908,8 @@ export class GameObject {
    *     // Use deltaTime (ms) for precise timing calculations
    *     this.elapsedMs += deltaTime;
    *
-   *     // Use accumulatedTime (seconds) for animations synced to game time
-   *     this.alpha = Math.sin(accumulatedTime * 2) * 0.5 + 0.5;
+   *     // Use accumulatedTime (ms) for animations synced to game time
+   *     this.alpha = Math.sin(accumulatedTime * 0.002) * 0.5 + 0.5;
    *
    *     // Use frameNumber for frame-based logic
    *     if (frameNumber % 60 === 0) this.doSomethingEverySecond();
@@ -1991,8 +1995,7 @@ export class GameObject {
    * SPAWNING SYSTEM: Reset free list for an entity class (used by despawnAll)
    * Repopulates the SAB-backed free list with interleaved ordering
    *
-   * NOTE: Free lists are now SAB-backed and initialized by Scene.js
-   * This method is only called by despawnAll() to reset after bulk despawn
+   * SAB free lists are created in Scene buffer setup; this only resets after despawnAll.
    *
    * Uses interleaved index ordering to reduce CPU cache contention between
    * logic workers. See inline comments for details.
@@ -2052,13 +2055,13 @@ export class GameObject {
   static spawn(EntityClassOrConfig, spawnConfig = {}, preAssignedIndex = -1) {
     // Support two calling conventions:
     // 1. GameObject.spawn(EntityClass, config) - for dynamic class spawning
-    // 2. Prey.spawn(config) - cleaner API when calling on the class directly
+    // 2. Ball.spawn(config) - `this` is the EntityClass
     let EntityClass;
     if (typeof EntityClassOrConfig === 'function') {
-      // Traditional: GameObject.spawn(EntityClass, config)
+      // GameObject.spawn(EntityClass, config)
       EntityClass = EntityClassOrConfig;
     } else {
-      // New: Prey.spawn(config) - use `this` as the EntityClass
+      // Ball.spawn(config) — `this` is the EntityClass
       EntityClass = this;
       spawnConfig = EntityClassOrConfig || {};
     }
@@ -2565,7 +2568,7 @@ export class GameObject {
    * Get active entity indices for this entity type.
    *
    * When called on GameObject: returns ALL active entities from global list.
-   * When called on a subclass (e.g., Prey.getAllActive()): returns per-type active list.
+   * When called on a subclass (e.g., Ball.getAllActive()): returns per-type active list.
    *
    * @returns {Uint16Array} Active entity indices (view into SAB, do not modify)
    *

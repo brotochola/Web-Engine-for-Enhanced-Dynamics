@@ -326,6 +326,11 @@ export class Joint extends SharedAtomicPool {
     this.localAnchorBY[idx] = anchors.by;
   }
 
+  /**
+   * Distance joint between two entities. Returns pool index, or -1 if exhausted.
+   * @param {{entityA:number, entityB:number, length?:number, enableSpring?:boolean, hertz?:number, dampingRatio?:number, forceThreshold?:number, torqueThreshold?:number, ax?:number, ay?:number, bx?:number, by?:number}} [opts]
+   * @returns {number}
+   */
   static addDistance(opts = {}) {
     const entityA = opts.entityA | 0;
     const entityB = opts.entityB | 0;
@@ -345,6 +350,11 @@ export class Joint extends SharedAtomicPool {
     return idx;
   }
 
+  /**
+   * Revolute (hinge) joint. Returns pool index, or -1 if exhausted.
+   * @param {{entityA:number, entityB:number, enableLimit?:boolean, lowerAngle?:number, upperAngle?:number, enableMotor?:boolean, motorSpeed?:number, maxMotorTorque?:number, forceThreshold?:number, torqueThreshold?:number}} [opts]
+   * @returns {number}
+   */
   static addRevolute(opts = {}) {
     const entityA = opts.entityA | 0;
     const entityB = opts.entityB | 0;
@@ -366,6 +376,11 @@ export class Joint extends SharedAtomicPool {
     return idx;
   }
 
+  /**
+   * Weld (rigid) joint. Returns pool index, or -1 if exhausted.
+   * @param {{entityA:number, entityB:number, linearHertz?:number, angularHertz?:number, linearDampingRatio?:number, angularDampingRatio?:number, forceThreshold?:number, torqueThreshold?:number}} [opts]
+   * @returns {number}
+   */
   static addWeld(opts = {}) {
     const entityA = opts.entityA | 0;
     const entityB = opts.entityB | 0;
@@ -385,6 +400,10 @@ export class Joint extends SharedAtomicPool {
     return idx;
   }
 
+  /**
+   * Return a joint slot to the pool.
+   * @param {number} idx
+   */
   static remove(idx) {
     if (idx < 0 || idx >= this.maxCount) return;
     if (!this.active[idx]) return;
@@ -517,6 +536,10 @@ export class Joint extends SharedAtomicPool {
     return idx >= 0 && idx < this.maxCount && this.active[idx] === 1;
   }
 
+  /**
+   * Remove every joint attached to an entity.
+   * @param {number} entityIdx
+   */
   static removeAllForEntity(entityIdx) {
     if (this.head && entityIdx >= 0 && entityIdx < this._entityCount) {
       const inv = this.INVALID_INDEX;

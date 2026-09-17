@@ -1,4 +1,4 @@
-// ESM facade over box2dConstants.impl.js (one logic source for importScripts + import).
+// ESM facade over box2dConstantsImpl.js (one logic source for importScripts + import).
 import './box2dConstantsImpl.js';
 
 const C = globalThis.Box2dConstants;

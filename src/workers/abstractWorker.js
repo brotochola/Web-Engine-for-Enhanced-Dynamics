@@ -386,7 +386,7 @@ export class AbstractWorker {
 
   /**
    * Initialize common buffers
-   * @param {Object} data - Initialization data from main thread
+   * @param {Object} data - Initialization data from Scene
    */
   async initializeCommonBuffers(data) {
     // console.log(
@@ -749,8 +749,7 @@ export class AbstractWorker {
     this.reportLog('finished initializing common buffers');
 
     // Keep a reference to neighbor data for easy access (already set above, but also from GameObject)
-    // NOTE: With double buffering, these will point to the initial read buffer (A)
-    // Workers should prefer Grid.neighborData getter for dynamic access to current read buffer
+    // neighborData is a single SAB (row ownership). Prefer Grid.neighborData.
     if (GameObject.neighborData) {
       this.neighborData = GameObject.neighborData;
     }
@@ -910,7 +909,7 @@ export class AbstractWorker {
   /**
    * Initialize ALL components by collecting them from entity classes
    * This runs in ALL workers, making all components available everywhere with SharedArrayBuffer connections
-   * Handles both core (Transform, RigidBody) and custom (FlockingBehavior, PredatorBehavior) components
+   * Handles core components (Transform, RigidBody) and custom scene components
    * @param {Object} data - Initialization data containing componentPools and buffers
    */
   initializeAllComponents(data) {
@@ -997,7 +996,7 @@ export class AbstractWorker {
     this.poseCapacity = n;
     this.poseSync = new Int32Array(pose.sync);
     const sabs = [pose.dataA, pose.dataB];
-    // 4 channels: x,y,rotC,rotS - must mirror weedjs_post.js bindPosePublish
+    // 4 channels: x,y,rotC,rotS - must mirror weedjsPost.js bindPosePublish
     // (physics-worker-side writer of this same SAB layout).
     for (let i = 0; i < 2; i++) {
       const sab = sabs[i];
@@ -1059,7 +1058,7 @@ export class AbstractWorker {
   }
 
   /**
-   * Handle incoming messages from main thread
+   * Handle incoming messages from Scene
    * @param {MessageEvent} e - Message event
    */
   async handleMessage(e) {
@@ -1148,7 +1147,7 @@ export class AbstractWorker {
   }
 
   /**
-   * Report to main thread that this worker is ready
+   * Report to Scene that this worker is ready
    * Called automatically after initialization completes (unless deferred)
    */
   reportReady() {
@@ -1159,7 +1158,7 @@ export class AbstractWorker {
 
   /**
    * Initialize MessagePorts for direct worker-to-worker communication
-   * Called during init with ports object from main thread
+   * Called during init with ports object from Scene
    * @param {Object} ports - Object mapping worker names to MessagePorts
    */
   initializeWorkerPorts(ports) {
@@ -1193,7 +1192,7 @@ export class AbstractWorker {
   /**
    * Send data directly to another worker via MessagePort
    * This bypasses the main thread for faster communication
-   * @param {string} workerName - Target worker name ('renderer', 'logic', 'physics', etc.)
+   * @param {string} workerName - Target worker name ('renderer', 'logic0', 'particle', 'physics', …)
    * @param {Object} data - Data to send
    * @returns {boolean} True when the message was posted, false when no port exists
    */
@@ -1277,7 +1276,7 @@ export class AbstractWorker {
   // ==========================================
 
   /**
-   * Initialize the worker with data from main thread
+   * Initialize the worker with data from Scene
    * @abstract
    * @param {Object} data - Initialization data
    */

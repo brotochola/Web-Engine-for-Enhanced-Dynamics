@@ -1,3 +1,4 @@
+// ESM facade over liquidFunUserDataListImpl.js (one logic source for importScripts + import).
 import './liquidFunUserDataListImpl.js';
 
 const R = globalThis.LiquidFunUserDataList;

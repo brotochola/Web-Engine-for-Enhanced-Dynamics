@@ -23,7 +23,7 @@ export class Flash extends GameObject {
   // No RigidBody or SpriteRenderer needed
   static components = [LightEmitter, FlashComponent];
 
-  // Pool tracking (set by gameEngine during auto-registration)
+  // Pool tracking (set by Scene when lighting.maxFlashes > 0)
   static maxFlashes = 0;
   static initialized = false;
 
@@ -42,7 +42,7 @@ export class Flash extends GameObject {
 
   /**
    * Initialize Flash system with pool size
-   * Called by gameEngine during initialization
+   * Called by Scene during scene init
    * @param {number} maxFlashes - Number of flashes in pool
    */
   static initialize(maxFlashes) {

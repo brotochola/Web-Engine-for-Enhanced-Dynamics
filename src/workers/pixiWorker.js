@@ -4,8 +4,7 @@ self.postMessage({
   when: Date.now(),
 });
 
-// pixi_worker.js - Rendering worker using PixiJS with AnimatedSprite support
-// Reads GameObject arrays and renders sprites with animations
+// pixi_worker.js - PixiJS instanced renderer. Consumes pre_render render-queue SAB.
 
 // Import engine dependencies
 
@@ -402,9 +401,8 @@ class PixiRenderer extends AbstractWorker {
     this.visibleParticleCount = 0;
 
     // ========================================
-    // Y-SORTING POOL (GC optimization)
+    // Y-SORTING POOL (unused leftover; y-sort happens in pre_render)
     // ========================================
-    // Reusable pool of objects for Y-sorting to avoid per-frame allocations
     this._ySortPool = [];
     this._ySortPoolSize = 0;
 
@@ -413,7 +411,7 @@ class PixiRenderer extends AbstractWorker {
     // ========================================
     // Pre-sorted, screen-visible renderables from pre_render_worker
     // pixi_worker NEVER waits - always reads from latest ready buffer
-    // pre_render_worker waits if >1 frame ahead (to avoid overwriting unread data)
+    // pre_render skips a frame if >1 ahead (backpressure)
     this.renderQueueEnabled = false;
     this.renderQueueMaxItems = 0;
 
@@ -427,6 +425,7 @@ class PixiRenderer extends AbstractWorker {
     this.lastReadFrame = -1; // Last frame we read (to signal consumption)
 
     // Current read buffer reference (set each frame based on readyFrame)
+    // Tile fields (tileMode / tileOffset / tileMul): see renderQueueLayout.js
     this.renderQueueCount = null;  // Int32Array[1] - current item count
     this.renderQueueX = null;      // Float32Array - interpolated X
     this.renderQueueY = null;      // Float32Array - interpolated Y
@@ -460,13 +459,14 @@ class PixiRenderer extends AbstractWorker {
     // FLAT TEXTURE LOOKUP (Zero-cost texture resolution)
     // ========================================
     // All textures flattened into single array for O(1) lookup
-    // Index = globalTextureId computed by particle_worker
+    // Index = globalTextureId from pre_render_worker
     this.flatTextures = [];           // PIXI.Texture[] indexed by globalTextureId
     this.animationFrameStart = [];    // Starting index in flatTextures for each animation
     this.animationFrameCount = [];    // Number of frames per animation
 
     // ========================================
-    // decal DECALS TILEMAP SYSTEM
+    // BLOOD DECAL SPLAT GRID (SAB tiles, not TileMap background)
+    // ========================================
     // ========================================
     // Renders decal splats stamped by particle_worker onto tile sprites
     this.decalsEnabled = false;
@@ -921,7 +921,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Update camera transform on particle container, background, and decal tiles
+   * Update camera on instanced meshes, background, tilemap root, decals
    */
   updateCameraTransform() {
     const zoom = this._renderZoom;
@@ -951,7 +951,7 @@ class PixiRenderer extends AbstractWorker {
       this.spriteGlowMesh.zIndex = lightZ + 0.001;
     }
 
-    // Apply camera state to background (since it's not a child of the ENTITIES mesh)
+    // Apply camera state to background (not a child of spriteMesh / stage entity batches)
     if (this.backgroundSprite) {
       if (this._coverBackground) {
         this._applyCoverBackgroundTransform();
@@ -1377,7 +1377,7 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    // Update decal decal tiles (check for dirty tiles from particle_worker)
+    // Update blood decal splat tiles (dirty flags from particle_worker)
     // Not frame-locked: driven by particle_worker dirty flags, so always poll.
     this.updateDecalTiles();
 
@@ -1456,7 +1456,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Create sprites for each decal decal tile
+   * Create sprites for each blood decal splat tile (SAB tiles, not TileMap background)
    * Each tile is a Sprite with an initially transparent texture
    * Textures are updated when particle_worker marks tiles as dirty
    */
@@ -2753,8 +2753,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           // BUILD FLAT TEXTURE LOOKUP ARRAY
           // ========================================
           // Flatten all animation frames into single array for O(1) lookup
-          // particle_worker computes: globalTextureId = animationFrameStart[animIdx] + frameIdx
-          // pixi_worker does: sprite.texture = flatTextures[globalTextureId]
+          // pre_render writes textureId; pixi uploads via texLut / InstancedSpriteBatch
           this.flatTextures = [];
           this.animationFrameStart = [];
           this.animationFrameCount = [];
@@ -4006,7 +4005,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.reportLog('finished loading tileset textures');
 
     // ========================================
-    // decal DECALS TILEMAP - Initialize
+    // BLOOD DECAL SPLAT GRID - Initialize (SAB tiles, not TileMap background)
     // ========================================
     if (data.decals && data.decals.enabled) {
       this.decalsEnabled = true;
@@ -4141,7 +4140,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       console.log(`PIXI WORKER: Sun system initialized (enabled: ${this.sunEnabled})`);
     }
 
-    // Note: Debug visualization is now handled by DebugUI on main thread
+    // Debug visualization is handled by DebugUI on the page thread
     // This removes ~400 lines of debug rendering code from pixi_worker
 
     // Entity / particle / decoration sprites come from the render queue
@@ -4162,7 +4161,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       `PIXI WORKER: Instanced rendering ready (entities: ${this.globalEntityCount} slots, particles: ${this.maxParticles} slots, decorations: ${this.maxDecorations} slots)`
     );
 
-    // Note: Game loop will start when "start" message is received from main thread
+    // Note: Game loop will start when "start" message is received from Scene
   }
 
   // ========================================

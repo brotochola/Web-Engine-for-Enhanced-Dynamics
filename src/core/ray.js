@@ -1,6 +1,6 @@
 // Ray.js - Raycasting system using spatial grid
 // Uses DDA (Digital Differential Analyzer) to traverse only cells the ray passes through
-// Now uses Grid class for spatial data and utils for geometric intersections
+// Uses Grid class for spatial data and utils for geometric intersections
 
 import { Transform } from '../components/transform.js';
 import { Collider } from '../components/collider.js';

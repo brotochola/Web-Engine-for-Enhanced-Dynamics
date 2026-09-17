@@ -1,9 +1,9 @@
 /**
  * Thin LiquidFun render SAB. Not ParticleComponent. Size = physics.liquidFun.maxCount.
- * px/py are the previous-frame position (snapshotted in weedjs_post.js's
+ * px/py are the previous-frame position (snapshotted in weedjsPost.js's
  * syncLiquidFunParticlesToSharedBuffers right before x/y get overwritten with
  * this step's new values) - they feed preRender.interpolation 'interpolate'
- * (ConfigDefaults.js). This SAB is single-buffered (overwritten in place every
+ * (configDefaults.js PRE_RENDER_DEFAULTS.interpolation). This SAB is single-buffered (overwritten in place every
  * step) unlike poseDataA/B, so px/py are a real snapshot, not a second buffer.
  *
  * alpha = WASM life-fade (1→0 when fadeToAlpha0). baseAlpha = emit opacity

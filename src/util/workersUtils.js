@@ -1,4 +1,4 @@
-// workers-utils.js - Shared utilities and schemas for worker statistics
+// workersUtils.js - Shared utilities and schemas for worker statistics
 // Single source of truth for stat buffer layouts across all workers
 
 /**

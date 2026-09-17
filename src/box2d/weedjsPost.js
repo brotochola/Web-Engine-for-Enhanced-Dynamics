@@ -45,7 +45,7 @@
 
   let world = null;
   let verdletSubSteps = 4;
-  /** Set by physics_host before init (weedjsEnableHostMode). */
+  /** Set by physicsHostImpl before init (weedjsEnableHostMode). */
   let hostMode = false;
   let hostEntityCount = 0;
   let hostSubSteps = 4;
@@ -77,10 +77,7 @@
   let liquidFunXFloatOffset = 0;
   let liquidFunYFloatOffset = 0;
   let liquidFunAlphaFloatOffset = 0;
-  // How many particles' px/py were populated as of the last sync - the
-  // "existing vs newly-appeared" boundary for the previous-position snapshot
-  // below. Reset to 0 whenever the particle system (re)creates, same sites
-  // as the X/Y offsets.
+  // Written on (re)create / restore / sync; unused leftover (no snapshot reader).
   let liquidFunPrevSyncedCount = 0;
   /** High-water of painted thin-SAB emit slots; wipe only this range on clear. */
   let liquidFunPaintedHighWater = 0;
@@ -151,7 +148,7 @@
 
   // Published pose double-buffer (render-queue style): visuals read post-step snapshot
   let poseSync = null; // Int32Array [readyFrame, consumedFrame]
-  let poseBuffers = [null, null]; // { x, y, rotation } Float32Array views
+  let poseBuffers = [null, null]; // { x, y, rotC, rotS } Float32Array views
   let poseCapacity = 0;
   let poseFrame = 0;
 
@@ -2736,7 +2733,7 @@
   };
 
   Module.onRuntimeInitialized = notifyModuleReady;
-  // Defer so weed_post can importScripts(physics_host) and set hostMode first.
+  // Defer so weedjsPost can importScripts(physicsHostImpl) and set hostMode first.
   if (typeof Module !== 'undefined' && Module.calledRun) {
     setTimeout(notifyModuleReady, 0);
   }

@@ -1,7 +1,7 @@
 // DecorationComponent.js - Self-contained decoration data
 // Decorations are NOT GameObjects - they have their own separate pool
 // This component contains ALL data needed for static decorations (position, visuals)
-// Decorations are static sprites with configurable anchor - no animation, no physics, no lighting
+// Decorations are static sprites with optional sway - no physics, no lighting
 
 import { Component } from '../core/component.js';
 

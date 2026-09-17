@@ -1,5 +1,5 @@
-// physics-api.js — thin ergonomic layer over wasm cwrap.
-// Requires: box2d_wasm.js loaded first (Module global).
+// physicsApi.js — thin ergonomic layer over wasm cwrap.
+// Requires: box2dWasm.js loaded first (Module global).
 
 function createPhysicsApi(Module) {
   const wrap = (name, ret, args) => Module.cwrap(name, ret, args);
@@ -1021,7 +1021,7 @@ function createPhysicsApi(Module) {
       this._buffersBound = bindGameBuffers(maxBodies) === 1;
       if (!this._buffersBound) {
         throw new Error(
-          `bindBuffers failed: WASM malloc for ${maxBodies} bodies (rebuild box2d_wasm after source changes)`,
+          `bindBuffers failed: WASM malloc for ${maxBodies} bodies (rebuild box2dWasm after source changes)`,
         );
       }
       bindQueryViews(this);

@@ -1,5 +1,5 @@
 // LiquidFun extract request/response SAB — single-flight (query pattern).
-// Writer fills indices[0..count), stores PENDING, waits DONE.
+// Writer CAS IDLE→CLAIMED, fills indices[0..count), stores PENDING; physics waits DONE.
 // Physics copies indices into WASM, ExtractParticles, writes newGroupId.
 
 (function (global) {

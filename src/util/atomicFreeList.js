@@ -1,7 +1,7 @@
 // atomicFreeList.js - Lock-free MPMC free list (Treiber stack with ABA tag)
 //
 // Shared by ALL pool free lists in the engine (entity pools, particles,
-// decorations, bullets, constraints). Any worker or the main thread can
+// decorations, bullets, joints). Any worker or the main thread can
 // pop (spawn) and push (despawn) concurrently.
 //
 // ============================================================================

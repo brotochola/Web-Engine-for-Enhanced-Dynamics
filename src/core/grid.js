@@ -32,7 +32,7 @@ import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 // =============================================================================
 // These are defaults - actual values come from metadata.maxEntitiesPerCell and metadata.maxNeighbors
 
-const DEFAULT_MAX_NEIGHBORS = SPATIAL_DEFAULTS.maxNeighbors; // Max neighbors per entity (matches ConfigDefaults.js)
+const DEFAULT_MAX_NEIGHBORS = SPATIAL_DEFAULTS.maxNeighbors; // Max neighbors per entity (matches configDefaults.js)
 
 /**
  * Grid - Static class for row-based spatial partitioning

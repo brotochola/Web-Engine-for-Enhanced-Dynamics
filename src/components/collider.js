@@ -1,5 +1,5 @@
 // Collider.js - Collision shapes for Box2D sync + spatial/Ray queries
-// Supports circles, AABB boxes, and convex polygons (max 8 verts)
+// Supports circles, oriented boxes, convex polygons (max 8 verts)
 //
 // CUSTOM SETTERS FOR MASS AUTO-COMPUTATION:
 // radius / width / height setters recompute RigidBody.mass / invMass.

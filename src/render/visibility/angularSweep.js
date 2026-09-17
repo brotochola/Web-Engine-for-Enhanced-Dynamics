@@ -1,4 +1,4 @@
-// AngularSweep.js - Visibility polygon for circle + convex polygon occluders
+// angularSweep.js - Visibility polygon for circle + convex polygon occluders
 //
 // Computes the area visible from a light source, blocked by occluders.
 // Circles use analytical tangents; boxes/polygons use silhouette vertex events

@@ -1,6 +1,6 @@
 // Box2D QueryAABB request/response SAB — single-flight (one outstanding query).
 // ESM: imported as side-effect by box2dQueryAabb.js
-// Classic: importScripts from weedjs_post.js
+// Classic: importScripts from weedjsPost.js
 // Writers: logic / GameObject / Scene (main async). Reader+filler: weedjs_post doStep.
 //
 // STATUS: IDLE=0 PENDING=1 DONE=2 ERROR=3 CLAIMED=4

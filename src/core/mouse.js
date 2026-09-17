@@ -259,8 +259,7 @@ export class Mouse {
    * Position prev values are NOT updated here — call snapshotPreviousFrame()
    * at the end of the frame so x - prevX reflects movement since last frame.
    *
-   * Replaces the old updatePreviousValues() — works correctly across all
-   * logic workers, not just worker 0.
+   * Edge flags via SAB counters; call snapshotPreviousFrame() for prev position.
    */
   static updateEdgeFlags() {
     if (!this._data) return;

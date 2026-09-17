@@ -1,6 +1,6 @@
 // Box2D castRayClosest request/response SAB — single-flight (one outstanding cast).
 // ESM: imported as side-effect by box2dRayCast.js
-// Classic: importScripts from weedjs_post.js
+// Classic: importScripts from weedjsPost.js
 // Writers: logic / GameObject / Scene (main async). Reader+filler: weedjs_post doStep.
 //
 // STATUS: IDLE=0 PENDING=1 DONE=2 ERROR=3 CLAIMED=4
@@ -71,7 +71,7 @@
     };
   }
 
-  /** Pack WASM closest-hit floats into the object the SAB ring already reads. */
+  /** Pack WASM closest-hit into a JS out object (caller/SAB service copies fields). */
   function fillRayCastHit(n, hits, out) {
     var dest = ensureOut(out);
     if (!(n > 0) || !hits) {

@@ -112,8 +112,9 @@ export { BulletPool } from './core/bulletPool.js';
 export { BulletComponent } from './components/bulletComponent.js';
 
 // ============================================================================
-// CONSTRAINTS
+// JOINTS
 // ============================================================================
+// Box2D joints (distance / revolute / weld) synced to WASM via command ring
 export { Joint } from './core/joint.js';
 export { SharedAtomicPool } from './core/sharedAtomicPool.js';
 

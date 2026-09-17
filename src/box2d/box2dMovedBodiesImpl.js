@@ -98,7 +98,7 @@
    * @param {number} wasmCount
    * @param {Uint32Array|null} teleportList
    * @param {number} teleportCount
-   * @param {Uint8Array|null} teleportBits optional skip-dup when OR-ing teleports
+   * @param {Uint8Array|null} teleportBits unused (reserved; skip-dup uses movedBits)
    */
   function publishMovedBodies(
     wasmSlots,

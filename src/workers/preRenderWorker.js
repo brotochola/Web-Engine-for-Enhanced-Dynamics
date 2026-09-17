@@ -91,7 +91,7 @@ const Y_SORT_K = DECORATION_Y_SORT_SCALE;
  * PreRenderWorker - Handles all visual pre-calculations before rendering
  *
  * Responsibilities:
- * 1. Screen visibility for entities, particles, and decorations
+ * 1. Entity visibility; consume particle/decoration visible lists from particle_worker
  * 2. Animation frame advancement for entities
  * 3. Building main render queue (Y-sorted)
  * 4. Building shadow render queue (light cookies + black shadow sprites)
@@ -152,7 +152,7 @@ class PreRenderWorker extends AbstractWorker {
         // RENDER QUEUE SYSTEM (DOUBLE BUFFERED)
         // ========================================
         // Two buffers: pre_render writes to back buffer while pixi reads from front
-        // pixi_worker never waits; pre_render_worker waits if >1 frame ahead
+        // pixi_worker never waits; pre_render skips a frame if >1 ahead (backpressure)
         this.renderQueueEnabled = false;
         this.renderQueueMaxItems = 0;
 
@@ -167,6 +167,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueFrame = 0; // Current frame counter (increments each update)
 
         // Current write buffer reference (set each frame based on frame counter)
+        // Tile fields (tileMode / tileOffset / tileMul): see renderQueueLayout.js
         this.renderQueueCount = null;
         this.renderQueueX = null;
         this.renderQueueY = null;
@@ -362,7 +363,7 @@ class PreRenderWorker extends AbstractWorker {
         }
         this.backpressure = preRenderConfig.backpressure !== false;
 
-        // Pose smoothing when physics runs slower than render (see ConfigDefaults PRE_RENDER_DEFAULTS.interpolation).
+        // Pose smoothing when physics runs slower than render (see configDefaults PRE_RENDER_DEFAULTS.interpolation).
         const interpConfig = preRenderConfig.interpolation || {};
         this.interpolationMode = interpConfig.mode ?? PRE_RENDER_DEFAULTS.interpolation.mode;
 
@@ -612,7 +613,7 @@ class PreRenderWorker extends AbstractWorker {
         // SUN SYSTEM - Initialize
         // ========================================
         // Note: Sun static class is initialized by AbstractWorker.initializeCommonBuffers()
-        // Shadow values are precomputed in Sun.setTimeOfDay() on main thread
+        // Shadow values are precomputed in Sun.setTimeOfDay (Scene advances time)
         if (Sun.isInitialized) {
             this.sunEnabled = Sun.enabled;
             console.log(`[PRE_RENDER WORKER] Sun system initialized (enabled: ${this.sunEnabled})`);
@@ -916,7 +917,7 @@ class PreRenderWorker extends AbstractWorker {
         if (this.renderQueueSync) {
             this.renderQueueFrame++;
             Atomics.store(this.renderQueueSync, 0, this.renderQueueFrame);
-            // Wake pixi_worker if it was waiting (it shouldn't be, but just in case)
+            // Notify (pixi does not wait; harmless)
             Atomics.notify(this.renderQueueSync, 0, 1);
         }
     }

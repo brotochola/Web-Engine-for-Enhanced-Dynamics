@@ -4,7 +4,7 @@ self.postMessage({
   when: Date.now(),
 });
 // logic_worker.js - Calculates game logic using GameObject pattern
-// This worker runs independently, calculating accelerations for all entities
+// Runs GameObject.tick / AI; steering writes RigidBody accel fields for Box2D
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
@@ -1078,7 +1078,7 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
-   * Handle custom messages from main thread or other workers
+   * Handle custom messages from Scene or other workers
    * Implements spawning and despawning commands
    */
   handleCustomMessage(data) {
@@ -1172,8 +1172,7 @@ class LogicWorker extends AbstractWorker {
         break;
       }
 
-      // NOTE: spawnRequest and despawnRequest handlers removed
-      // Entity spawn/despawn now uses atomic SAB-backed free lists
+      // Entity spawn/despawn uses atomic SAB-backed free lists
       // Any worker can spawn/despawn directly without routing to worker-0
 
       case 'despawnAll': {

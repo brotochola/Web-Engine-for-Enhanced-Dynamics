@@ -254,7 +254,7 @@ export class PhysicsDebugRenderer {
     const isOnScreen = SpriteRenderer.isItOnScreen;
     const vx = RigidBody.vx;
     const vy = RigidBody.vy;
-    // vx/vy are px/s (Box2D); old scale=10 assumed tiny frame units
+    // vx/vy are px/s; draw scale 0.05
     const scale = 0.05;
 
     ctx.save();

@@ -492,7 +492,7 @@ export function dot2(ax, ay, bx, by) {
 /**
  * Generate a unique numeric key for an ordered pair using Cantor pairing function
  * Maps two natural numbers to a single unique natural number.
- * Used for collision tracking to avoid string allocation.
+ * Generic ordered-pair key (not the engine collision path — use collisionPairKey).
  *
  * Note: cantorPair(a, b) !== cantorPair(b, a) - the order matters!
  * For unordered pairs, ensure consistent ordering (e.g., always min first).
@@ -500,10 +500,6 @@ export function dot2(ax, ay, bx, by) {
  * @param {number} a - First number (must be non-negative integer)
  * @param {number} b - Second number (must be non-negative integer)
  * @returns {number} Unique numeric key
- *
- * @example
- *   const key = cantorPair(entityA, entityB);
- *   collisionSet.add(key);
  */
 export function cantorPair(a, b) {
   return ((a + b) * (a + b + 1)) / 2 + b;
@@ -526,7 +522,6 @@ export function collisionPairUnpack(key, out) {
 /**
  * Inverse of Cantor pairing function - recovers (a, b) from a Cantor key
  * ZERO ALLOCATION: Mutates the result object instead of creating a new one
- * Used for collision exit events to recover entity IDs without a lookup Map
  *
  * Mathematical inverse:
  * - w = floor((sqrt(8z + 1) - 1) / 2)

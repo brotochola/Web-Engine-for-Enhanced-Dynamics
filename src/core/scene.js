@@ -1,6 +1,6 @@
 // Scene.js - Scene management with workers and entity pools
 // Handles workers, SharedArrayBuffers, entity registration, and scene lifecycle
-// This was previously GameEngine.js - renamed to better reflect its role
+// GameEngine owns canvas / page lifecycle; Scene owns the running world.
 
 import { GameObject } from './gameObject.js';
 import { popFreeIndex } from '../util/atomicFreeList.js';
@@ -112,8 +112,8 @@ import {
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
-  // NOTE: Spatial workers now occupy indices 0 to N-1 (where N = numberOfSpatialWorkers)
-  // Other worker indices are calculated dynamically based on numberOfSpatialWorkers
+  // Spatial workers use indices 0..N-1 (N = numberOfSpatialWorkers).
+  // Other roles offset by numberOfSpatialWorkers.
   static WORKER_INDICES = {
     SPATIAL_START: 0, // First spatial worker index
     // Dynamic indices (calculated at runtime):
@@ -345,7 +345,7 @@ class Scene {
       this.workerStats.logic.push({ fps: 0, active: 0 });
     }
 
-    // Canvas - now provided by GameEngine
+    // Canvas owned by GameEngine (`game.canvas`)
     this.canvas = game.canvas;
 
     // Entity registration
@@ -530,7 +530,7 @@ class Scene {
     EntityClass.endIndex = startIndex + count;
 
     // Pre-computed typed array of all entity indices for this class
-    // Enables zero-allocation iteration: Prey.entityIndices.forEach(...)
+    // Enables zero-allocation iteration: EntityClass.entityIndices.forEach(...)
     EntityClass.entityIndices = new Uint16Array(count);
     for (let i = 0; i < count; i++) {
       EntityClass.entityIndices[i] = startIndex + i;
@@ -1026,7 +1026,8 @@ class Scene {
   /**
    * Called after all workers are initialized but BEFORE the game loop starts.
    * Use this for scene infrastructure that workers need on their first frame:
-   * - setTilemapBackground()
+   * - setBackground() / Layer.BACKGROUND.setCoverBackground()
+   * - Layer.BACKGROUND.setTilemapBackground() (Tiled tilemaps)
    * - Camera.centerOn()
    * - NavGrid setup
    *
@@ -1083,13 +1084,21 @@ class Scene {
    *
    * @param {number} dtRatio - The delta time ratio normalized to 60fps (1.0 = 16.67ms frame).
    * @param {number} deltaTime - The time elapsed since the last frame (ms).
-   * @param {number} accumulatedTime - The total time elapsed since the game started (ms).
-   * @param {number} frameNumber - The current frame number
+   * @param {number} accumulatedTime - `performance.now()` at call time (ms since navigation).
+   * @param {number} frameNumber - The current main-thread frame number
    */
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
     // Override this for per-frame scene logic
   }
 
+  /**
+   * Worker → main: entity posted via `GameObject.sendMessageToScene` / SceneBridge.
+   * @param {*} data
+   * @param {number} entityIndex
+   * @param {string} className
+   * @param {string} workerName
+   * @param {number} workerIndex
+   */
   onMessageFromGameObject(data, entityIndex, className, workerName, workerIndex) {
     // Override this in scenes that want to react to worker-side entity messages.
   }
@@ -1102,8 +1111,7 @@ class Scene {
     for (const registration of this.registeredClasses) {
       const { class: EntityClass, startIndex, count } = registration;
       if (count <= 0) continue;
-      // Entity pools are registered as contiguous ranges, so one native fill
-      // replaces the old entity-by-registration scan.
+      // Contiguous pools: one fill per registered range.
       Transform.entityType.fill(EntityClass.entityType, startIndex, startIndex + count);
     }
   }
@@ -2005,6 +2013,10 @@ class Scene {
     };
   }
 
+  /**
+   * Merge physics config and post it to the physics worker (or queue until ready).
+   * @param {object} [partialConfig]
+   */
   updatePhysicsConfig(partialConfig = {}) {
     if (!partialConfig || typeof partialConfig !== 'object') return;
 
@@ -2105,7 +2117,7 @@ class Scene {
         this.mainFPS = 1000 / averageFrameTime;
       }
 
-      // mainFPS is now read directly by DebugUI
+      // DebugUI reads mainFPS from this field
 
       // Store the RAF ID so we can cancel it later
       this.animationFrameId = requestAnimationFrame(loop);
@@ -2133,15 +2145,12 @@ class Scene {
     audioMetrics.outputLatency = am.outputLatency;
     audioMetrics.processMs = am.processMs || 0;
 
-    // Note: Camera following is now handled in Player.tick() which writes directly to cameraData SharedArrayBuffer
-    // Main thread reads from cameraData and syncs to this.camera in updateCameraBuffer()
+    // Camera pose comes from Camera SAB getters (workers call Camera.follow*).
     this.updateCameraBuffer();
 
     // Update sun day cycle (if enabled)
     // Sun writes to SharedArrayBuffer, workers read it
     this.updateSunDayCycle(deltaTime);
-
-    // Visible/active units are now read directly by DebugUI from Transform/SpriteRenderer arrays
 
     // Update input edge flags on the main thread so Scene.update() can use them
     // the same way entity tick() does in workers.
@@ -2315,6 +2324,12 @@ class Scene {
     return loadGame(this.game, this.constructor, slotId);
   }
 
+  /**
+   * Main-thread spawn: CAS-pop a pool index, then ask logic0 to finish setup.
+   * @param {Function|string} EntityClassOrName
+   * @param {object} [spawnConfig]
+   * @returns {{index:number}|null}
+   */
   spawnEntity(EntityClassOrName, spawnConfig = {}) {
     // Accept either a class or a string name
     let EntityClass;
@@ -2333,7 +2348,7 @@ class Scene {
     // ========================================
     // ATOMIC SPAWN: Reserve index on main thread
     // ========================================
-    // This enables immediate use of entity index (e.g., for constraints)
+    // This enables immediate use of entity index (e.g., for joints)
     // Worker 0 receives the pre-assigned index and:
     // 1. Sets up component data and calls lifecycle hooks
     // 2. Queues list updates (activeEntities, perTypeActive, queries)
@@ -2355,7 +2370,7 @@ class Scene {
         // Setting it here would cause spatial_worker to add entity to Grid
         // before it's in the active list (so it would never tick/despawn).
         //
-        // We only set position so constraints can use the index immediately.
+        // We only set position so joints can use the index immediately.
         Transform.x[entityIndex] = spawnConfig.x ?? 0;
         Transform.y[entityIndex] = spawnConfig.y ?? 0;
       } else {
@@ -2384,13 +2399,17 @@ class Scene {
     }
 
     // Return a simple object with the index for immediate use
-    // (e.g., creating constraints between spawned entities)
+    // (e.g., creating joints between spawned entities)
     if (entityIndex >= 0) {
       return { index: entityIndex };
     }
     return null;
   }
 
+  /**
+   * Ask logic0 to despawn a global entity index.
+   * @param {number} entityIndex
+   */
   despawnEntity(entityIndex) {
     // Only worker 0 handles despawn messages
     const worker0 = this.workers.logicWorkers?.[0];

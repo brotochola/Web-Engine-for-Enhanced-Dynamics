@@ -1,6 +1,6 @@
 // Box2D command ring — single logic source (no export/import).
 // ESM: imported as side-effect by box2dCommandRing.js
-// Classic: importScripts from weedjs_post.js
+// Classic: importScripts from weedjsPost.js
 // Writers: GameObject / logic / main (MPSC). Reader: weedjs_post drain pre-step (SPSC consumer).
 // Units: px, px/s; facing as unit complex (rotC, rotS); angular vel rad/s.
 //
@@ -12,7 +12,7 @@
   var BOX2D_CMD = Object.freeze({
     SET_TRANSFORM: 1, // entity, x, y, rotC, rotS
     SET_VELOCITY: 2, // entity, vx, vy
-    SET_ROT_CS: 3, // entity, rotC, rotS (opcode 3; was SET_ANGLE)
+    SET_ROT_CS: 3, // entity, rotC, rotS
     SET_ANGULAR_VELOCITY: 4, // entity, w
     SET_FIXED_ROTATION: 5, // entity, flag (0|1)
     EXPLODE: 6, // maskBits as entity, x, y, radius, impulsePerLength (falloff=0.5*radius)
@@ -25,7 +25,7 @@
     SET_LIQUIDFUN_EMIT: 13, // entity=textureId|(trackGroup<<16); spacing, strength, tintBits, viscousScale
     SET_LIQUIDFUN_LIFESPAN: 14, // lifetimeMinSec, lifetimeMaxSec, fadeToAlpha0 (0|1); next create consumes; 0,0 = no lifespan
     SET_LIQUIDFUN_SCALE: 15, // scaleMin, scaleMax, alphaMin, alphaMax (next create)
-    SET_PARTICLE_TUNING: 16, // entity=phase 0|1|2; four floats per phase (see enqueueSetParticleTuning)
+    SET_PARTICLE_TUNING: 16, // entity=phase 0|1|2|3; four floats per phase (see enqueueSetParticleTuning)
     SET_GROUP_VISCOUS_SCALE: 17, // entity=groupId, a=viscousScale
     JOIN_PARTICLE_GROUPS: 18, // entity=groupA, a=groupB
     SPLIT_PARTICLE_GROUP: 19, // entity=groupId
@@ -246,7 +246,7 @@
     return enqueue(BOX2D_CMD.SET_LIQUIDFUN_LAYERS, mask & 0xffff, 0, 0, 0, 0);
   }
 
-  /** Apply system def coeffs. Three ring slots (phase 0/1/2). */
+  /** Apply system def coeffs. Four ring slots (phase 0/1/2/3). */
   function enqueueSetParticleTuning(t) {
     var o = t || {};
     var ok = enqueue(

@@ -1,4 +1,4 @@
-// ESM facade over box2dRayCast.impl.js (one logic source for importScripts + import).
+// ESM facade over box2dRayCastImpl.js (one logic source for importScripts + import).
 import './box2dRayCastImpl.js';
 
 const R = globalThis.Box2dRayCast;

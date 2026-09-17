@@ -1,4 +1,4 @@
-// ESM facade over box2dCommandRing.impl.js (one logic source for importScripts + import).
+// ESM facade over box2dCommandRingImpl.js (one logic source for importScripts + import).
 import './box2dCommandRingImpl.js';
 
 const R = globalThis.Box2dCommandRing;

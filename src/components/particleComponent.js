@@ -27,7 +27,7 @@ export class ParticleComponent extends Component {
     // === Physics ===
     gravity: Float32Array, // Per-particle gravity strength
 
-    // === Visuals (simplified - static sprites only) ===
+    // === Visuals (sprites + optional life-progress frame cycle) ===
     scaleX: Float32Array, // Horizontal scale
     scaleY: Float32Array, // Vertical scale
     alpha: Float32Array, // Opacity (0-1)
@@ -44,7 +44,7 @@ export class ParticleComponent extends Component {
     timeOnFloor: Uint16Array, // Tracks how long particle has been on floor
     initialAlpha: Float32Array, // Alpha when particle hit the floor (for fade calculation)
 
-    // === Blood Decals System ===
+    // === Floor decals (stamp on ground hit) ===
     // When stayOnTheFloor=1, particle will stamp a decal on the tilemap when hitting floor
     // The particle is then immediately despawned (no fade animation)
     stayOnTheFloor: Uint8Array, // 0 = normal behavior, 1 = stamp decal on floor hit

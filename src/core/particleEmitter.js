@@ -88,7 +88,7 @@ export class ParticleEmitter extends SharedAtomicPool {
   };
   /**
    * Initialize the emitter with particle pool size
-   * Called automatically by logic worker during init
+   * Called during Scene buffer setup and again when workers bind SABs
    * @param {number} maxParticles - Number of particles in pool
    */
   static initialize(maxParticles) {

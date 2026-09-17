@@ -65,7 +65,7 @@ export function buildComputePrelude(uniformMap, uniformTypes) {
   s += tailLines(uniformMap, uniformTypes, '  ', true);
   s += '}\n';
   s += '@group(0) @binding(0) var<uniform> frame: FrameData;\n\n';
-  // Matches BODY_FLOATS pack in Box2dBodyPack.js (16 floats).
+  // Matches BODY_FLOATS pack in box2dBodyPack.js (16 floats).
   s += 'struct Body {\n';
   s += '  posX: f32,\n  posY: f32,\n  cosA: f32,\n  sinA: f32,\n';
   s += '  halfW: f32,\n  halfH: f32,\n  shapeKind: f32,\n  flags: f32,\n';
@@ -73,7 +73,7 @@ export function buildComputePrelude(uniformMap, uniformTypes) {
   s += '  vertStart: f32,\n  vertCount: f32,\n';
   s += '  prevX: f32,\n  prevY: f32,\n  pad: f32,\n';
   s += '}\n\n';
-  // Matches PARTICLE_FLOATS pack in LiquidFunParticlePack.js (8 floats / 32 bytes).
+  // Matches PARTICLE_FLOATS pack in liquidFunParticlePack.js (8 floats / 32 bytes).
   s += 'struct LfParticle {\n';
   s += '  x: f32,\n  y: f32,\n  vx: f32,\n  vy: f32,\n';
   s += '  userData: u32,\n  _pad0: u32,\n  _pad1: u32,\n  _pad2: u32,\n';
@@ -84,7 +84,7 @@ export function buildComputePrelude(uniformMap, uniformTypes) {
 /**
  * Look (fullscreen fragment) header: Pixi mesh groups 0/1, CustomUniforms
  * from the uniform map, fixed group(2) bindings, VertexOut matching
- * fullscreen_look.vert.wgsl.
+ * fullscreenLook.vert.wgsl.
  */
 export function buildLookPrelude(uniformMap, uniformTypes) {
   let s = 'struct GlobalUniforms {\n';

@@ -1,4 +1,4 @@
-// ESM facade over box2dJointBreakRing.impl.js
+// ESM facade over box2dJointBreakRingImpl.js
 import './box2dJointBreakRingImpl.js';
 
 const R = globalThis.Box2dJointBreakRing;

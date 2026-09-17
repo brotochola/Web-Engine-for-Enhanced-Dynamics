@@ -6,8 +6,8 @@
 // - Custom layers defined in scene config.layers
 // - Each Layer instance is a lightweight facade over SAB arrays (like GameObject)
 // - Layer.water.setUniform('uThreshold', 0.4) works from any thread
-// - Background ownership: Layer.BACKGROUND.setTilemapBackground(...)
-//   replaces the old Scene.setTilemapBackground() API
+// - Cover background: prefer Scene.setBackground() (Layer.BACKGROUND.setCoverBackground)
+// - Tilemap / static / tiling backgrounds: Layer.BACKGROUND.setTilemapBackground / setStaticBackground / setTilingBackground
 //
 // LAYER ROUTING:
 // - Renderables subscribe via layerMask (Uint16, bit = Layer.id). See Layer.resolveSubscriptions.
@@ -134,7 +134,7 @@ export class Layer {
     static _uniformDirty = [];    // Int32Array[1][] indexed by layer id
     static _uniformMaps = [];     // { name: { offset, size } }[] indexed by layer id
 
-    // Blend mode ID -> PixiJS string. Indices match BLEND_MODES enum in ConfigDefaults.js.
+    // Blend mode ID -> PixiJS string. Indices match BLEND_MODES enum in configDefaults.js.
     static _BLEND_MODE_STRINGS = [
         'normal', 'inherit', 'add', 'multiply', 'screen', 'darken', 'lighten', 'erase',
         'color-dodge', 'color-burn', 'linear-burn', 'linear-dodge', 'linear-light',
@@ -254,6 +254,12 @@ export class Layer {
     // UNIFORM ACCESS (cross-worker safe via SAB + Atomics)
     // ========================================
 
+    /**
+     * Write a shader uniform on this layer (any thread; dirty flag for pixi).
+     * @param {string} name
+     * @param {number|number[]} value
+     * @returns {Layer}
+     */
     setUniform(name, value) {
         const map = Layer._uniformMaps[this.id];
         if (!map) return this;
@@ -272,6 +278,11 @@ export class Layer {
         return this;
     }
 
+    /**
+     * Read a shader uniform (number or subarray).
+     * @param {string} name
+     * @returns {number|Float32Array|undefined}
+     */
     getUniform(name) {
         const map = Layer._uniformMaps[this.id];
         if (!map) return undefined;
@@ -416,8 +427,22 @@ export class Layer {
     // STATIC API
     // ========================================
 
+    /**
+     * Layer facade by name, or null.
+     * @param {string} name
+     * @returns {Layer|null}
+     */
     static get(name) { return this._byName[name] || null; }
+    /**
+     * Layer facade by id, or null.
+     * @param {number} id
+     * @returns {Layer|null}
+     */
     static getById(id) { return this._byId[id] || null; }
+    /**
+     * All registered layers (built-in + custom).
+     * @returns {Layer[]}
+     */
     static getAll() {
         if (this._allCacheCount !== this.count) {
             this._allCache = this._byId.filter(Boolean);
@@ -426,16 +451,30 @@ export class Layer {
         return this._allCache;
     }
 
+    /**
+     * Layer id for a name, or -1.
+     * @param {string} name
+     * @returns {number}
+     */
     static getId(name) {
         const layer = this._byName[name];
         return layer ? layer.id : -1;
     }
 
+    /**
+     * Layer name for an id, or null.
+     * @param {number} id
+     * @returns {string|null}
+     */
     static getName(id) {
         const layer = this._byId[id];
         return layer ? layer.name : null;
     }
 
+    /**
+     * Scene-defined custom layers (not BACKGROUND / DECALS / built-ins).
+     * @returns {Layer[]}
+     */
     static getCustomLayers() {
         // All scene-defined custom layers (incl. densitySource:'liquidFun' with no sprite queue).
         return this._byId.filter((l) => l && !l._builtIn);

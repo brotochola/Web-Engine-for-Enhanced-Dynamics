@@ -22,9 +22,9 @@
 // - Distance checks filter any out-of-range neighbors
 // - Transform.active[] check handles despawned entities
 //
-// IMPORTANT: Entity ownership (home row) must be determined from Transform.x/y,
-// NOT from entityPosData, because entityPosData is written by the owning worker
-// and may be stale/zero if read by a different worker before it runs.
+// IMPORTANT: Home row uses entityPosData latched this frame in rebuild
+// (from collider bounds / Transform). Skip if that row is not ours.
+// Do not trust another worker's entityPosData (may be stale/zero).
 //
 // =============================================================================
 
@@ -146,7 +146,7 @@ class SpatialWorker extends AbstractWorker {
 
   /**
    * Initialize spatial worker
-   * @param {Object} data - Initialization data from main thread
+   * @param {Object} data - Initialization data from Scene
    */
   initialize(data) {
     // Set worker identity
@@ -510,7 +510,7 @@ class SpatialWorker extends AbstractWorker {
    * - Iterates through all owned cells
    * - For each entity, checks if this worker owns it (based on entity's home row)
    * - Only processes entities whose center Y falls in a row owned by this worker
-   * - Searches 3x3+ neighborhood (can read ANY cell) and writes neighbor data
+   * - Searches cells in visualRange (+ skin) radius (can read ANY cell) and writes neighbor data
    *
    * ENTITY OWNERSHIP: Each entity is owned by exactly ONE worker based on its
    * "home row" (the row containing its center Y position). This prevents race

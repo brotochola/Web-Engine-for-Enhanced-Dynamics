@@ -1,7 +1,7 @@
 // particleIntegrate.js - Pure particle physics integration + active/visible list building
-// Extracted from particle_worker.js (same pattern as decalStamp.js) so the hot per-particle
+// Extracted from particleWorker.js so the hot per-particle
 // loops can be exercised from Node (tests/bench) without instantiating workers.
-// particle_worker.js calls these as thin wrappers (this.* -> plain params).
+// particleWorker.js calls these as thin wrappers (this.* -> plain params).
 
 import { ParticleEmitter } from '../core/particleEmitter.js';
 import {

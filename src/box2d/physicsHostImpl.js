@@ -19,7 +19,7 @@
   var MAX_POLYGON_VERTICES = 8;
   var MAX_BODIES_HINT = 65535;
 
-  // ponytail: classic IIFE cannot import ConfigDefaults.js — keep in sync with PHYSICS_DEFAULTS (upgrade: shared JSON/module).
+  // ponytail: classic IIFE cannot import configDefaults.js — keep in sync with PHYSICS_DEFAULTS (upgrade: shared JSON/module).
   var PHYSICS_DEFAULTS = {
     subStepCount: 4,
     contactHertz: 30,
@@ -33,7 +33,7 @@
     commandRingCapacity: 4096,
     sleeping: true,
     hitEventThreshold: 0,
-    // ponytail: keep in sync with ConfigDefaults PHYSICS_DEFAULTS.liquidFun.
+    // ponytail: keep in sync with configDefaults PHYSICS_DEFAULTS.liquidFun.
     liquidFun: {
       enabled: false,
       radius: 10,
@@ -56,7 +56,7 @@
     },
   };
 
-  // Mirrors PHYSICS_STATS (workers-utils.js) — host writes FPS / STEP_MS / MSG_MS.
+  // Mirrors PHYSICS_STATS (workersUtils.js) — host writes FPS / STEP_MS / MSG_MS.
   var PS = {
     FPS: 0,
     STEP_MS: 1,

@@ -454,7 +454,7 @@ class ParticleWorker extends AbstractWorker {
     }
 
     // ========================================
-    // BLOOD DECALS TILEMAP - Initialize SABs
+    // BLOOD DECAL SPLAT GRID - Initialize SABs (not TileMap background)
     // ========================================
     if (data.decals && data.decals.enabled) {
       // console.log('[PARTICLE WORKER] Initializing decals system...');
@@ -723,8 +723,7 @@ class ParticleWorker extends AbstractWorker {
    * - isItOnScreen[i] flags for each particle
    * - this.activeParticleIndices (local copy for physics update)
    *
-   * This replaces the old separate buildActiveParticleList() and updateParticleScreenVisibility()
-   * methods, reducing iterations over maxParticles from 2 to 1.
+   * Fused pass: one scan of maxParticles instead of separate active + visibility loops.
    */
   buildActiveAndVisibleParticleLists() {
     if (this.maxParticles === 0) return;
@@ -1794,7 +1793,7 @@ class ParticleWorker extends AbstractWorker {
     this.stats[PARTICLE_STATS.TOTAL_PARTICLES] = this.maxParticles;
     this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
     this.stats[PARTICLE_STATS.DECAL_STAMP_MS] = this.decalStampTimeThisFrame;
-    this.stats[PARTICLE_STATS.FLASHES_UPDATED] = 0; // Flashes now handled elsewhere
+    this.stats[PARTICLE_STATS.FLASHES_UPDATED] = 0; // Flash.tick runs on logic workers
     this.stats[PARTICLE_STATS.ACTIVE_ENTITIES] = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
     this.stats[PARTICLE_STATS.TOTAL_ENTITIES] = this.globalEntityCount || 0;
     this.stats[PARTICLE_STATS.MSG_MS] = this.messageTimeThisFrame;

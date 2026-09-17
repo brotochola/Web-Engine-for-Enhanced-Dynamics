@@ -386,10 +386,12 @@ export class LiquidFun {
     return _groupsViews;
   }
 
+  /** Create a LiquidFun particle system (command ring). */
   static createSystem({ radius = 10, maxCount = 10000, subSteps = 1, systemId = 0, strictContactCheck = false } = {}) {
     Box2dCommandRing.enqueueCreateParticleSystem(systemId, radius, maxCount, subSteps, strictContactCheck);
   }
 
+  /** Apply particle-system def coeffs (4 command-ring phases). */
   static setTuning(tuning) {
     Box2dCommandRing.enqueueSetParticleTuning(tuning || {});
   }
@@ -487,6 +489,7 @@ export class LiquidFun {
     }
   }
 
+  /** Box particle group via command ring. */
   static createParticleBox(options) {
     const r = resolveEmit(options);
     enqueueEmitParams(r);
@@ -500,16 +503,19 @@ export class LiquidFun {
     );
   }
 
+  /** Circle particle group via command ring. */
   static createParticleCircle(options) {
     const r = resolveEmit(options);
     enqueueEmitParams(r);
     Box2dCommandRing.enqueueCreateParticleGroupCircle(r.systemId, r.posX, r.posY, r.radius, r.flags);
   }
 
+  /** Destroy one particle group. */
   static destroyGroup(groupId, systemId = 0) {
     Box2dCommandRing.enqueueDestroyParticleGroup(systemId, groupId);
   }
 
+  /** Destroy a particle system. */
   static destroySystem(systemId = 0) {
     Box2dCommandRing.enqueueDestroyParticleSystem(systemId);
   }
@@ -539,6 +545,7 @@ export class LiquidFun {
     return liquidFunRayCastAsync(x1, y1, x2, y2, out);
   }
 
+  /** Packed userData bits on one particle. */
   static setUserData(index, bits) {
     Box2dCommandRing.enqueueSetParticleUserData(index, bits);
   }
@@ -563,6 +570,7 @@ export class LiquidFun {
     Box2dCommandRing.enqueueSetParticleUserDataRange(first, last, bits);
   }
 
+  /** Packed RGBA on one particle. */
   static setColor(index, rgba) {
     Box2dCommandRing.enqueueSetParticleColor(index, rgba);
   }
@@ -572,6 +580,7 @@ export class LiquidFun {
     Box2dCommandRing.enqueueSetParticleColorRange(first, last, rgba);
   }
 
+  /** Particle flags (LIQUIDFUN_FLAGS bits). */
   static setFlags(index, bits) {
     Box2dCommandRing.enqueueSetParticleFlags(index, bits);
   }
@@ -589,10 +598,12 @@ export class LiquidFun {
     Box2dCommandRing.enqueueSetGroupFlags(groupId, flags);
   }
 
+  /** Destroy one particle. */
   static destroyParticle(index) {
     Box2dCommandRing.enqueueDestroyParticle(index);
   }
 
+  /** Spawn a single particle via command ring. */
   static createParticle(options) {
     const o = options || {};
     Box2dCommandRing.enqueueSetLiquidFunPayload(

@@ -42,7 +42,7 @@ export class RigidBody extends Component {
     // Computed values
     speed: Float32Array,
 
-    // Linear sleep speed threshold (m/s). 0 = Box2D default (~0.05 * lengthUnits)
+    // Linear sleep speed (length units/s ≈ px/s). 0 = Box2D default
     sleepThreshold: Float32Array,
   };
 

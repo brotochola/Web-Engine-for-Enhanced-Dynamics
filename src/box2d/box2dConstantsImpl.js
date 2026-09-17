@@ -96,7 +96,7 @@
     DEFAULT_FILTER_MASK: DEFAULT_FILTER_MASK,
   };
 
-  // Classic globals (weedjs_post / physics-api importScripts)
+  // Classic globals (weedjsPost / physicsApi importScripts)
   global.ShapeType = ShapeType;
   global.Box2dBodyType = Box2dBodyType;
   global.BODY_TYPE = BODY_TYPE;

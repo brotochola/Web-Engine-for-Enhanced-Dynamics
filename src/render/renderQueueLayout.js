@@ -1,7 +1,7 @@
 // RenderQueueLayout.js - Single source of truth for render queue SAB memory layout
 //
 // RENDER QUEUE PIPELINE:
-//   Scene.js       allocates SABs using computeBufferSize()
+//   sceneSharedBuffers.js (via Scene.init) allocates SABs using computeBufferSize()
 //   pre_render_worker  creates write-views using createViews()
 //   pixi_worker        creates read-views using createViews()
 //
@@ -9,7 +9,7 @@
 //   1. pre_render_worker collects visible entities assigned to the layer
 //   2. Resolves textures/animation, writes composite sortKey + pose to layer SAB
 //   3. pixi_worker uploads InstancedSpriteBatch (GPU depth when layer.ySorting)
-//   4. Shader layers: instanced Mesh → raw density RT → fullscreen threshold → output RT
+//   4. Shader layers: instanced Mesh → raw density RT → fullscreen look pass → output RT
 //   5. Output RT (or mesh) displayed on stage at the layer's zIndex
 //
 // Adding a new field: add it to FIELDS, bump version. All consumers update automatically.

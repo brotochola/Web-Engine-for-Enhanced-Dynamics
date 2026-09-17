@@ -1,6 +1,7 @@
 import { Component } from '../core/component.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 
+/** Adobe Animate timeline on an entity (clip playback, SoA pose/tint/layerMask). */
 export class AdobeAnimComponent extends Component {
   static _emptyOptions = Object.freeze({});
 
