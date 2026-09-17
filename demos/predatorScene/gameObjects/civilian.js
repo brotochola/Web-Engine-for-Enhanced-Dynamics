@@ -10,7 +10,7 @@ export class Civilian extends Person {
   static scriptUrl = import.meta.url;
   /** Opt into sparse SaveGame (active instances only). */
   static serializable = true;
-  static tickInterval = 4; // match MySoldier so force×tickInterval impulse matches
+  static tickInterval = 4;
 
   static components = [...Person.components, CivilianBehaviorFSM, CivilianComponent];
 

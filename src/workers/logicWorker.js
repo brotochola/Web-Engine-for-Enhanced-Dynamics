@@ -566,6 +566,11 @@ class LogicWorker extends AbstractWorker {
     let decimateMs = 0;
     let tickMs = 0;
 
+    // Physics applies ax every step until the next tick; replace here so off-ticks keep last steering.
+    const rbAx = RigidBody.ax;
+    const rbAy = RigidBody.ay;
+    const rbAa = RigidBody.angularAccel;
+
     // ========================================
     // PHASE 1: NON-DECIMATED ENTITIES (FAST PATH)
     // ========================================
@@ -593,6 +598,10 @@ class LogicWorker extends AbstractWorker {
         activeCount++;
         this.entitiesProcessedThisFrame++;
 
+        rbAx[entityIndex] = 0;
+        rbAy[entityIndex] = 0;
+        rbAa[entityIndex] = 0;
+
         if (collectDetailed) {
           const tTick0 = performance.now();
           obj.tick(dtRatio, deltaTime, accTime, frameNum);
@@ -615,10 +624,6 @@ class LogicWorker extends AbstractWorker {
     const nextTick = GameObject.nextTick; // Cache the typed array reference
 
     if (decimatedCount > 0 && nextTick) {
-      // Cache RigidBody arrays for acceleration scaling
-      const rbAx = RigidBody.ax;
-      const rbAy = RigidBody.ay;
-
       for (let t = 0; t < decimatedCount; t++) {
         const typeInfo = decimatedTypes[t];
         const activeList = typeInfo.activeList;
@@ -651,13 +656,11 @@ class LogicWorker extends AbstractWorker {
           // Reset countdown for next cycle
           nextTick[entityIndex] = tickInterval;
 
-          // Tick entity logic
-          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+          rbAx[entityIndex] = 0;
+          rbAy[entityIndex] = 0;
+          rbAa[entityIndex] = 0;
 
-          // ACCELERATION SCALING: Compensate for tick decimation
-          // Scale acceleration by tickInterval so physics integrates same total impulse
-          rbAx[entityIndex] *= tickInterval;
-          rbAy[entityIndex] *= tickInterval;
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
 
           if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
           if (collectDetailed) tickMs += performance.now() - tVisit0;

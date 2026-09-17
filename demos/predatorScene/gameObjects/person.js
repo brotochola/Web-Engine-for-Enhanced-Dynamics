@@ -190,7 +190,7 @@ export class Person extends Lootable {
     // When shooting: don't run (no acceleration from behavior) but allow being pushed.
     // We skip keepWithinBounds and low-speed zero so external pushes (knockback, collisions) work.
     if (!isShooting) {
-      this.keepWithinBounds(dtRatio);
+      this.keepWithinBounds();
       if (RigidBody.speed[this.index] < 0.166) {
         const i = this.index;
         if (RigidBody.vx[i] !== 0 || RigidBody.vy[i] !== 0) {
@@ -599,7 +599,7 @@ export class Person extends Lootable {
   /**
    * Keep entity within world boundaries
    */
-  keepWithinBounds(dtRatio) {
+  keepWithinBounds() {
     const margin = 50;
     const turnFactor = 360; // px/s²
     const i = this.index;
@@ -610,16 +610,16 @@ export class Person extends Lootable {
     const worldHeight = this.config.worldHeight || 1000;
 
     if (x < margin) {
-      this.addAcceleration(turnFactor * dtRatio, 0);
+      this.addAcceleration(turnFactor, 0);
     }
     if (x > worldWidth - margin) {
-      this.addAcceleration(-turnFactor * dtRatio, 0);
+      this.addAcceleration(-turnFactor, 0);
     }
     if (y < margin) {
-      this.addAcceleration(0, turnFactor * dtRatio);
+      this.addAcceleration(0, turnFactor);
     }
     if (y > worldHeight - margin) {
-      this.addAcceleration(0, -turnFactor * dtRatio);
+      this.addAcceleration(0, -turnFactor);
     }
   }
 

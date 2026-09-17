@@ -38,10 +38,6 @@ export class CarPart extends GameObject {
         // Cleanup handled by Car parent
     }
     onCollisionEnter(otherEntityIndex) {
-        // Soften acceleration on impact (was zeroing - too abrupt)
-        this.rigidBody.ax *= 0.3;
-        this.rigidBody.ay *= 0.3;
-
         // Emit sparks at collision point (midpoint between this part and other)
         const hitX = (this.x + Transform.x[otherEntityIndex]) / 2;
         const hitY = (this.y + Transform.y[otherEntityIndex]) / 2;

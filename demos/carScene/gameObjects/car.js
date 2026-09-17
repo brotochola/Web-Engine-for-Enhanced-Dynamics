@@ -238,9 +238,6 @@ export class Car extends GameObject {
     }
 
     onCollisionEnter(otherEntityIndex) {
-        this.rigidBody.ax *= 0.3;
-        this.rigidBody.ay *= 0.3;
-
         const hitX = (this.x + Transform.x[otherEntityIndex]) / 2;
         const hitY = (this.y + Transform.y[otherEntityIndex]) / 2;
         const halfDiag = this._halfDiag;

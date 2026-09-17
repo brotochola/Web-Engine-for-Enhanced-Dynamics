@@ -1402,9 +1402,7 @@
       if (aa !== 0 && !isFixedRotation(i)) {
         bodyApplyTorqueFn(i, aa * mass, 1);
       }
-      views.ax[i] = 0;
-      views.ay[i] = 0;
-      views.angularAccel[i] = 0;
+      // Keep ax/ay/angularAccel: logic replaces them on the entity's next tick.
     }
   }
 

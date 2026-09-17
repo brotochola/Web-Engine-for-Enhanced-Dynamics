@@ -105,7 +105,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 
 **Collision callback partition:** enter/stay/exit dispatch runs only on the worker where `minEntity % totalWorkers === myIndex`. Listener gating (`collisionListenerByType`) applies to callbacks only, not to Set population.
 
-**Tick decimation:** entities with `tickInterval > 1` use `nextTickData[entityIndex]` countdown. When tick fires, `RigidBody.ax/ay` is scaled by `tickInterval` to compensate for skipped frames.
+**Tick decimation:** entities with `tickInterval > 1` use `nextTickData[entityIndex]` countdown. Logic zeros `RigidBody.ax/ay/angularAccel` only when a tick actually runs, then the entity writes the desired px/s². Off-tick frames leave the last values so Box2D keeps applying them every physics step. One-shot kicks belong in `addVelocity` (impact/collision callbacks run before tick and would be wiped by the zero).
 
 | Buffer                   | Access                               | Notes                                                                                  |
 | ------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------- |

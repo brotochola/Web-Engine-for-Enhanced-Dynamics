@@ -1247,9 +1247,11 @@ export class GameObject {
   }
 
   /**
-   * Add acceleration (additive) - applied by physics integration
-   * @param {number} x - Acceleration X
-   * @param {number} y - Acceleration Y
+   * Add acceleration (px/s²). Logic zeros ax/ay at the start of this entity's
+   * next tick; physics applies the current value every Box2D step until then.
+   * One-shot kicks (shots, explosions) should use addVelocity, not this.
+   * @param {number} x - Acceleration X (px/s²)
+   * @param {number} y - Acceleration Y (px/s²)
    * @returns {this} For chaining
    */
   addAcceleration(x, y) {

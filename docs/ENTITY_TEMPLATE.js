@@ -38,7 +38,7 @@ class MyEntity extends GameObject {
 
     // Keyboard — true every frame while held
     if (WEED.Keyboard.isDown('arrowup')) {
-      RigidBody.ay[i] -= 0.5 * dtRatio;
+      RigidBody.ay[i] -= 0.5; // px/s²; physics integrates dt — do not multiply by dtRatio
     }
 
     // Mouse — held state (true every frame while button is down)
@@ -57,8 +57,8 @@ class MyEntity extends GameObject {
 
     // Gamepad — pad 0 ergonomics (also Gamepad.isButtonDown(pad, Gamepad.A), getAxis, …)
     if (Gamepad.isConnected()) {
-      RigidBody.ax[i] += Gamepad.leftX * 0.5 * dtRatio;
-      RigidBody.ay[i] += Gamepad.leftY * 0.5 * dtRatio;
+      RigidBody.ax[i] += Gamepad.leftX * 0.5; // px/s²
+      RigidBody.ay[i] += Gamepad.leftY * 0.5;
       if (Gamepad.isAPressed) {
         // jump / once-per-press action
       }

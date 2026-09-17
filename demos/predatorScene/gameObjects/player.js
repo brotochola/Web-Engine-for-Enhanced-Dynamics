@@ -167,7 +167,7 @@ export class Player extends GameObject {
       this.testPathFinding();
     } else {
       // Handle WASD input for movement
-      this.handleMovement(i, dtRatio);
+      this.handleMovement();
     }
 
     // Update camera to follow player
@@ -180,35 +180,13 @@ export class Player extends GameObject {
     Mouse.isButton0Down && this.shoot(Mouse.x, Mouse.y);
   }
 
-  /**
-   * Handle WASD keyboard input for player movement
-   * @param {number} i - Entity index
-   * @param {number} dtRatio - Delta time ratio (for frame-rate independence)
-   */
-  handleMovement(i, dtRatio) {
-    // Cache array references
-    const rbAX = RigidBody.ax;
-    const rbAY = RigidBody.ay;
+  handleMovement() {
+    const moveForce = this.moveAcceleration;
 
-    // Reset acceleration
-    rbAX[i] = 0;
-    rbAY[i] = 0;
-
-    // WASD movement (applied as acceleration)
-    const moveForce = this.moveAcceleration * dtRatio;
-
-    if (Keyboard.isDown('w')) {
-      rbAY[i] -= moveForce;
-    }
-    if (Keyboard.isDown('s')) {
-      rbAY[i] += moveForce;
-    }
-    if (Keyboard.isDown('a')) {
-      rbAX[i] -= moveForce;
-    }
-    if (Keyboard.isDown('d')) {
-      rbAX[i] += moveForce;
-    }
+    if (Keyboard.isDown('w')) this.addAcceleration(0, -moveForce);
+    if (Keyboard.isDown('s')) this.addAcceleration(0, moveForce);
+    if (Keyboard.isDown('a')) this.addAcceleration(-moveForce, 0);
+    if (Keyboard.isDown('d')) this.addAcceleration(moveForce, 0);
   }
 
   /**
