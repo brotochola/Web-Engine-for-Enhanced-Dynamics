@@ -1463,6 +1463,14 @@ export function hypTouchedFiles(id) {
  * Safe to call on a tree that already writes counts (no-op).
  */
 export function applyWorkloadCounts() {
+  const particleSrc = readRel('src/workers/particleWorker.js');
+  // Always-on counts already shipped (main 6d404db+). Old 0695a8d still needs the patch.
+  if (
+    particleSrc.includes('this.stats[PARTICLE_STATS.ACTIVE_DECORATIONS]') &&
+    particleSrc.includes('this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;')
+  ) {
+    return;
+  }
   patchRel(
     'src/box2d/weedjsPost.js',
     (src) => {
