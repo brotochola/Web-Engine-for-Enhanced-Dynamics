@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { BulletPool } from '../../src/core/bulletPool.js';
 import { Layer } from '../../src/core/layer.js';
-import { tickBulletsBuffers } from '../../src/util/bulletTick.js';
 import { resetFreeList } from '../../src/util/atomicFreeList.js';
 import { Ray } from '../../src/core/ray.js';
 import { Grid } from '../../src/core/grid.js';
@@ -110,7 +109,7 @@ test('BulletPool.spawn writes speed = hypot(vx,vy) and a unit rot', () => {
   }
 });
 
-test('tickBulletsBuffers open field moves x += vx/60 at dtRatio 1', () => {
+test('BulletPool.tick open field moves x += vx/60 at dtRatio 1', () => {
   const restore = setupPool(8);
   try {
     const vx = 600;
@@ -124,28 +123,7 @@ test('tickBulletsBuffers open field moves x += vx/60 at dtRatio 1', () => {
       ownerId: 3,
     });
     const activeData = new Uint16Array(9);
-    tickBulletsBuffers({
-      maxBullets: 8,
-      dtRatio: 1,
-      active: BulletComponent.active,
-      x: BulletComponent.x,
-      y: BulletComponent.y,
-      prevX: BulletComponent.prevX,
-      prevY: BulletComponent.prevY,
-      vx: BulletComponent.vx,
-      vy: BulletComponent.vy,
-      speed: BulletComponent.speed,
-      bulletRotC: BulletComponent.bulletRotC,
-      bulletRotS: BulletComponent.bulletRotS,
-      damage: BulletComponent.damage,
-      ownerId: BulletComponent.ownerId,
-      shooterEntityType: BulletComponent.shooterEntityType,
-      activeData,
-      impactHeader: null,
-      impactData: null,
-      maxImpacts: 0,
-      excludeSet: null,
-    });
+    BulletPool.tick(1, activeData, null, null, 0);
     assertApprox(BulletComponent.x[i], 100 + vx / 60);
     assertApprox(BulletComponent.y[i], 50);
     assert.equal(activeData[0], 1);
@@ -155,7 +133,7 @@ test('tickBulletsBuffers open field moves x += vx/60 at dtRatio 1', () => {
   }
 });
 
-test('tickBulletsBuffers liveIndices skips holes in a sparse pool', () => {
+test('BulletPool.tick liveIndices skips holes in a sparse pool', () => {
   const restore = setupPool(16);
   try {
     const a = BulletPool.spawn({ x: 10, y: 0, vx: 600, vy: 0, damage: 1, ownerId: 0 });
@@ -164,30 +142,7 @@ test('tickBulletsBuffers liveIndices skips holes in a sparse pool', () => {
     BulletComponent.active[b] = 0;
     const live = new Uint16Array([a, c]);
     const activeData = new Uint16Array(17);
-    tickBulletsBuffers({
-      maxBullets: 16,
-      dtRatio: 1,
-      active: BulletComponent.active,
-      x: BulletComponent.x,
-      y: BulletComponent.y,
-      prevX: BulletComponent.prevX,
-      prevY: BulletComponent.prevY,
-      vx: BulletComponent.vx,
-      vy: BulletComponent.vy,
-      speed: BulletComponent.speed,
-      bulletRotC: BulletComponent.bulletRotC,
-      bulletRotS: BulletComponent.bulletRotS,
-      damage: BulletComponent.damage,
-      ownerId: BulletComponent.ownerId,
-      shooterEntityType: BulletComponent.shooterEntityType,
-      activeData,
-      impactHeader: null,
-      impactData: null,
-      maxImpacts: 0,
-      excludeSet: null,
-      liveIndices: live,
-      liveCount: 2,
-    });
+    BulletPool.tick(1, activeData, null, null, 0, { liveIndices: live, liveCount: 2 });
     assertApprox(BulletComponent.x[a], 10 + 600 / 60);
     assertApprox(BulletComponent.x[c], 30 + 600 / 60);
     assertApprox(BulletComponent.x[b], 20);

@@ -1,4 +1,4 @@
-// Microbenchmark + correctness for src/util/bulletTick.js (Node, no workers).
+// Microbenchmark + correctness for BulletPool.tick (Node, no workers).
 //
 // One op = one tick of the live set (move + linecastDir).
 // tickOpen / tickCrowded: hypot vs cached speed (pool full).
@@ -13,7 +13,7 @@ import { Grid } from '../../src/core/grid.js';
 import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { BulletComponent } from '../../src/components/bulletComponent.js';
-import { collectLiveBulletIndices, tickBulletsBuffers } from '../../src/util/bulletTick.js';
+import { BulletPool } from '../../src/core/bulletPool.js';
 import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
@@ -114,6 +114,8 @@ function setupBullets(poolSize) {
   const sab = new SharedArrayBuffer(BulletComponent.getBufferSize(poolSize));
   BulletComponent.initializeArrays(sab, poolSize);
   BulletComponent.bulletCount = poolSize;
+  BulletPool.reset();
+  BulletPool.initialize(poolSize);
 }
 
 function fillBulletSlot(i, rng, originX, originY) {
@@ -183,32 +185,19 @@ function restoreLive(snap) {
   BulletComponent.prevY.set(snap.prevY);
 }
 
-function tickArgs(useCached, excludeSet, activeData, poolSize, liveIndices) {
-  return {
-    maxBullets: poolSize,
-    dtRatio: 1,
-    active: BulletComponent.active,
-    x: BulletComponent.x,
-    y: BulletComponent.y,
-    prevX: BulletComponent.prevX,
-    prevY: BulletComponent.prevY,
-    vx: BulletComponent.vx,
-    vy: BulletComponent.vy,
-    speed: useCached ? BulletComponent.speed : null,
-    bulletRotC: BulletComponent.bulletRotC,
-    bulletRotS: BulletComponent.bulletRotS,
-    damage: BulletComponent.damage,
-    ownerId: BulletComponent.ownerId,
-    shooterEntityType: BulletComponent.shooterEntityType,
-    activeData,
-    impactHeader: null,
-    impactData: null,
-    maxImpacts: 0,
-    excludeSet: useCached ? null : excludeSet,
-    liveIndices: liveIndices || null,
-    liveCount: liveIndices ? liveIndices.length : 0,
-    onDespawn: null,
-  };
+const _tickOpts = {
+  speed: null,
+  excludeSet: null,
+  liveIndices: null,
+  liveCount: 0,
+};
+
+function tick(useCached, excludeSet, activeData, liveIndices, liveCount) {
+  _tickOpts.speed = useCached ? BulletComponent.speed : null;
+  _tickOpts.excludeSet = useCached ? null : excludeSet;
+  _tickOpts.liveIndices = liveIndices || null;
+  _tickOpts.liveCount = liveCount != null ? liveCount : liveIndices ? liveIndices.length : 0;
+  return BulletPool.tick(1, activeData, null, null, 0, _tickOpts);
 }
 
 function assertApprox(actual, expected, eps, msg) {
@@ -250,7 +239,7 @@ const x0 = BulletComponent.x[0];
 const y0 = BulletComponent.y[0];
 const vx0 = BulletComponent.vx[0];
 const vy0 = BulletComponent.vy[0];
-tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
+tick(true, excludeSet, activeData, null);
 assertApprox(BulletComponent.x[0], x0 + vx0 / 60, 1e-3, 'open step x');
 assertApprox(BulletComponent.y[0], y0 + vy0 / 60, 1e-3, 'open step y');
 if (activeData[0] !== BULLET_COUNT) {
@@ -266,7 +255,7 @@ cases.tickOpenHypot = timeIt(
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(openSnap);
-      tickBulletsBuffers(tickArgs(false, excludeSet, activeData, BULLET_COUNT, null));
+      tick(false, excludeSet, activeData, null);
     }
   },
   { iterations: STEPS_OPEN }
@@ -277,7 +266,7 @@ cases.tickOpen = timeIt(
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(openSnap);
-      tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
+      tick(true, excludeSet, activeData, null);
     }
   },
   { iterations: STEPS_OPEN }
@@ -293,7 +282,7 @@ cases.tickCrowdedHypot = timeIt(
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(crowdSnap);
-      tickBulletsBuffers(tickArgs(false, excludeSet, activeData, BULLET_COUNT, null));
+      tick(false, excludeSet, activeData, null);
     }
   },
   { iterations: STEPS_CROWDED }
@@ -304,7 +293,7 @@ cases.tickCrowded = timeIt(
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(crowdSnap);
-      tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
+      tick(true, excludeSet, activeData, null);
     }
   },
   { iterations: STEPS_CROWDED }
@@ -316,10 +305,10 @@ if (denseLive.length !== BULLET_COUNT) {
 }
 
 restoreLive(crowdSnap);
-tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
+tick(true, excludeSet, activeData, null);
 const scanChecksum = checksumX(denseLive);
 restoreLive(crowdSnap);
-tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, denseLive));
+tick(true, excludeSet, activeData, denseLive);
 assertApprox(checksumX(denseLive), scanChecksum, 1e-3, 'dense compact checksum');
 
 cases.tickCrowdedScan = timeIt(
@@ -327,7 +316,7 @@ cases.tickCrowdedScan = timeIt(
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(crowdSnap);
-      tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, null));
+      tick(true, excludeSet, activeData, null);
     }
   },
   { iterations: STEPS_CROWDED }
@@ -338,7 +327,7 @@ cases.tickCrowdedCompact = timeIt(
   (iters) => {
     for (let s = 0; s < iters; s++) {
       restoreLive(crowdSnap);
-      tickBulletsBuffers(tickArgs(true, excludeSet, activeData, BULLET_COUNT, denseLive));
+      tick(true, excludeSet, activeData, denseLive);
     }
   },
   { iterations: STEPS_CROWDED }
@@ -361,16 +350,16 @@ function runSparsePair(label, poolSize, liveCount, crowded, steps) {
   const xBefore = BulletComponent.x[i0];
   const vx = BulletComponent.vx[i0];
   if (!crowded) {
-    tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+    tick(true, excludeSet, activeData, null);
     assertApprox(BulletComponent.x[i0], xBefore + vx / 60, 1e-3, `${label} scan step x`);
     restoreLive(snap);
   }
   restoreLive(snap);
-  tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+  tick(true, excludeSet, activeData, null);
   const scanSum = checksumX(live);
   const scanCount = activeData[0];
   restoreLive(snap);
-  tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, live));
+  tick(true, excludeSet, activeData, live);
   assertApprox(checksumX(live), scanSum, 1e-3, `${label} compact checksum`);
   if (activeData[0] !== scanCount) {
     throw new Error(`${label} compact vs scan live ${activeData[0]} != ${scanCount}`);
@@ -381,7 +370,7 @@ function runSparsePair(label, poolSize, liveCount, crowded, steps) {
     (iters) => {
       for (let s = 0; s < iters; s++) {
         restoreLive(snap);
-        tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+        tick(true, excludeSet, activeData, null);
       }
     },
     { iterations: steps }
@@ -391,7 +380,7 @@ function runSparsePair(label, poolSize, liveCount, crowded, steps) {
     (iters) => {
       for (let s = 0; s < iters; s++) {
         restoreLive(snap);
-        tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, live));
+        tick(true, excludeSet, activeData, live);
       }
     },
     { iterations: steps }
@@ -460,9 +449,9 @@ const OCC_POOLS = [BULLET_COUNT, SPARSE_POOL_BIG];
 const STEPS_OCC = Number(args['steps-occ'] ?? args.steps ?? 400);
 const occupancyPairs = {};
 
-function twoPassTick(poolSize, scratch, args) {
-  const n = collectLiveBulletIndices(BulletComponent.active, poolSize, scratch);
-  tickBulletsBuffers({ ...args, liveIndices: scratch, liveCount: n });
+function twoPassTick(scratch, activeData) {
+  const n = BulletPool.collectLiveIndices(scratch);
+  tick(true, excludeSet, activeData, scratch, n);
 }
 
 function runOccupancy(poolSize, occPct, steps) {
@@ -477,19 +466,19 @@ function runOccupancy(poolSize, occPct, steps) {
   const label = `occ${occPct}_${poolSize}`;
 
   restoreLive(snap);
-  tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+  tick(true, excludeSet, activeData, null);
   const fusedSum = checksumX(live);
   const fusedCount = activeData[0];
 
   restoreLive(snap);
-  twoPassTick(poolSize, scratch, tickArgs(true, excludeSet, activeData, poolSize, null));
+  twoPassTick(scratch, activeData);
   assertApprox(checksumX(live), fusedSum, 1e-3, `${label} two-pass checksum`);
   if (activeData[0] !== fusedCount) {
     throw new Error(`${label} two-pass vs fused live ${activeData[0]} != ${fusedCount}`);
   }
 
   restoreLive(snap);
-  tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, live));
+  tick(true, excludeSet, activeData, live);
   assertApprox(checksumX(live), fusedSum, 1e-3, `${label} live-given checksum`);
   if (activeData[0] !== fusedCount) {
     throw new Error(`${label} live-given vs fused live ${activeData[0]} != ${fusedCount}`);
@@ -500,7 +489,7 @@ function runOccupancy(poolSize, occPct, steps) {
     (iters) => {
       for (let s = 0; s < iters; s++) {
         restoreLive(snap);
-        tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, null));
+        tick(true, excludeSet, activeData, null);
       }
     },
     { iterations: steps }
@@ -510,7 +499,7 @@ function runOccupancy(poolSize, occPct, steps) {
     (iters) => {
       for (let s = 0; s < iters; s++) {
         restoreLive(snap);
-        twoPassTick(poolSize, scratch, tickArgs(true, excludeSet, activeData, poolSize, null));
+        twoPassTick(scratch, activeData);
       }
     },
     { iterations: steps }
@@ -520,7 +509,7 @@ function runOccupancy(poolSize, occPct, steps) {
     (iters) => {
       for (let s = 0; s < iters; s++) {
         restoreLive(snap);
-        tickBulletsBuffers(tickArgs(true, excludeSet, activeData, poolSize, live));
+        tick(true, excludeSet, activeData, live);
       }
     },
     { iterations: steps }

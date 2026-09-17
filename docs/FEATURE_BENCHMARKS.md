@@ -107,7 +107,7 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | Stamp decals | `decalStamp.js`, particle_worker | `decalMicrobench.mjs` | `stressScenes/DecalStampStressScene` | zenithal / Predator | `DECAL_STAMP_MS`, particle `STEP_MS` — **champion D2** |
 | Particle emit | `particleEmitter.js`, free list | `particleEmitMicrobench.mjs` | `stressScenes/ParticleEmitStressScene` | zenithalParticleTest | emit ops/s; particle `STEP_MS` — **champion includes P5** |
 | Particle integrate | `particleIntegrate.js`, particle_worker | `particleIntegrateMicrobench.mjs` | `stressScenes/ParticleIntegrateStressScene` | zenithalParticleTest | `PARTICLE_PHYSICS_MS`, `BUILD_ACTIVE_VISIBLE_MS` — **champion P4+P5** |
-| Bullet tick | `bulletTick.js`, `bulletPool.js` | `bulletTickMicrobench.mjs` | `stressScenes/BulletStressScene` | Predator | particle `STEP_MS`; load `ACTIVE_BULLETS`. Speed cache **kept** (kernel). Compact retest 2026-09-16: kernel sparse win, estrés WORSE, Predator FAIL. Compact stays dropped. |
+| Bullet tick | `bulletPool.js` (`BulletPool.tick`) | `bulletTickMicrobench.mjs` | `stressScenes/BulletStressScene` | Predator | particle `STEP_MS`; load `ACTIVE_BULLETS`. Speed cache **kept** (kernel). Compact retest 2026-09-16: kernel sparse win, estrés WORSE, Predator FAIL. Compact stays dropped. |
 | Spatial rebuild + neighbors | `spatialWorker.js`, `grid.js` | `spatialMicrobench.mjs` | `stressScenes/StationarySpatialScene` | Balls | `NEIGHBOR_MS`, `REBUILD_MS` — Verlet + stagger shipped; H1–H15 / S2–S3 closed |
 | Box2D step / sync | `weedjsPost.js` | semi (WASM) | Balls / BallsAndRectangles | Balls | `STEP_MS`, `BOX2D_MS`, `BODY_COUNT` |
 | LiquidFun particle step | `lf_particle_system.c` (sibling `Box2d_3.2_C_-_liquidfun`) | `liquidFunCapturePairsMicrobench.mjs` (CapturePairs create-time); `liquidFunComputeDepthMicrobench.mjs` (first step after SOLID create); extract / reactive / sparse-step / rigid-damping; **`liquidFunPassProfileMicrobench.mjs`** (8-bucket pass split) | `stressScenes/LiquidFunStressScene` | `demos/liquidFunDemoScene` + `pnpm test:visual --scene liquidfun,lfstress` (100-step exact after H10) | `LIQUIDFUN_MS` (fluid inside `step_world`); `BOX2D_MS` = full step (rigid + LiquidFun); ~10.2k water + ~2k spring/staticPressure. Pass HUD slots 37–44 (`LF_PASS_*_MS`). **H29 rejected.** |
@@ -117,6 +117,9 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | NavGrid Dijkstra / A* | `navGrid.js`, particle_worker | `navGridMicrobench.mjs` | `stressScenes/NavStressScene` | car / bichos / Predator | ms/path; respects `maxProcessingMsPerFrame` |
 | AngularSweep visibility | `angularSweep.js` | `angularSweepMicrobench.mjs` | `visPolyStressScene` (`raycasted: true`) | not Predator default (raycasted off) | polygons/s + `VISIBILITY_MS` / pre-render `STEP_MS` |
 | TileMap SAB queries | `tileMap.js` | `tileMapMicrobench.mjs` | `stressScenes/TilemapStressScene` (fixed-rate `getTileId`) | tile demos | ns/`getTileId`; logic0 `STEP_MS` |
+| Tilemap viewport cull | `tilemapCull.js` | `tilemapCullMicrobench.mjs` | `TilemapCullStressScene` (background + pan) | Predator tilemap | pixi `STEP_MS` |
+| Contact drain | `logicWorker.js` | — | `ContactDrainStressScene` (`CollisionListener` pile) | — | logic0 `STEP_MS`; `BODY_COUNT` |
+| Box2D ray JS service | `weedjsPost.js` `serviceRayCast` | — | `RayVsBox2dBoxBusyScene` | — | physics `STEP_MS`; `RAYCAST_MS` |
 | QuerySystem publish | `querySystem.js` | `querySystemMicrobench.mjs` | `stressScenes/QueryChurnScene` | — | `QUERY_PUBLISH_MS` (gated) / skip-if-unchanged |
 | Pre-render cull + queue | `preRenderWorker` | `srFlagsMicrobench.mjs` (7 Uint8 vs packed — **kill** L1+L3: cull kernel wins, queue noise, dirty RMW loses; Predator `preRender.STEP_MS` in noise vs 7 columns) | `stressScenes/RenderQueueStressScene` | Predator | L1 packed/strided; L3 `COLLECT_MS`/`EMIT_MS`/`STEP_MS` |
 | Compute layer (pack + dispatch) | `computeLayer.js`, `box2dBodyPack.js` | `computePackMicrobench.mjs` | `stressScenes/ComputeStressScene` (256², iterate 20, WebGPU) | burningBoxes | L1 pack ms; L2 `CUSTOM_LAYERS_MS` (headed) |
@@ -157,6 +160,8 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 | VisPolyStressScene | `/tests/bench/stressScenes/visPolyStressScene.js` | Seeded lights + occluders, `lighting.raycasted: true` → `VISIBILITY_MS` |
 | SteadyCombatScene | `/tests/bench/stressScenes/steadyCombatScene.js` | Fixed boxes + movers + constant `emitFlat` → stable `BODY_COUNT` / `ACTIVE_PARTICLES` |
 | TilemapStressScene | `/tests/bench/stressScenes/tilemapStressScene.js` | Seeded `getTileId` at a fixed rate → logic0 `STEP_MS` |
+| TilemapCullStressScene | `/tests/bench/stressScenes/tilemapCullStressScene.js` | Tilemap background + pan → pixi `STEP_MS` |
+| ContactDrainStressScene | `/tests/bench/stressScenes/contactDrainStressScene.js` | `CollisionListener` pile → logic0 `STEP_MS` |
 
 ```bash
 node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \

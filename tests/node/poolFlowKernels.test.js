@@ -5,7 +5,7 @@ import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
-import { collectLiveBulletIndices, tickBulletsBuffers } from '../../src/util/bulletTick.js';
+import { BulletPool } from '../../src/core/bulletPool.js';
 import { buildActiveListBuffers, updateParticlePhysicsBuffers } from '../../src/util/particleIntegrate.js';
 import { Grid } from '../../src/core/grid.js';
 import { Transform } from '../../src/components/transform.js';
@@ -47,32 +47,15 @@ function emptyGrid() {
   Ray._rayGenStamp = new Uint32Array(1);
 }
 
-function bulletArgs(pool, liveIndices, liveCount) {
-  return {
-    maxBullets: pool,
-    dtRatio: 1,
-    active: BulletComponent.active,
-    x: BulletComponent.x,
-    y: BulletComponent.y,
-    prevX: BulletComponent.prevX,
-    prevY: BulletComponent.prevY,
-    vx: BulletComponent.vx,
-    vy: BulletComponent.vy,
-    speed: BulletComponent.speed,
-    bulletRotC: BulletComponent.bulletRotC,
-    bulletRotS: BulletComponent.bulletRotS,
-    damage: BulletComponent.damage,
-    ownerId: BulletComponent.ownerId,
-    shooterEntityType: BulletComponent.shooterEntityType,
-    activeData: new Uint16Array(1 + pool),
-    impactHeader: null,
-    impactData: null,
-    maxImpacts: 0,
-    excludeSet: null,
-    liveIndices: liveIndices || null,
-    liveCount: liveCount || 0,
-    onDespawn: null,
-  };
+function tickBullets(pool, liveIndices, liveCount) {
+  BulletPool.initialize(pool);
+  const activeData = new Uint16Array(1 + pool);
+  const opts =
+    liveIndices != null
+      ? { liveIndices, liveCount: liveCount || 0 }
+      : undefined;
+  BulletPool.tick(1, activeData, null, null, 0, opts);
+  return activeData;
 }
 
 test('two-pass bullet collect matches fused scan checksum', () => {
@@ -97,7 +80,7 @@ test('two-pass bullet collect matches fused scan checksum', () => {
     BulletComponent.damage[i] = 1;
   }
   const xBefore = liveSlots.map((i) => BulletComponent.x[i]);
-  tickBulletsBuffers(bulletArgs(pool, null, 0));
+  tickBullets(pool, null, 0);
   const fusedX = liveSlots.map((i) => BulletComponent.x[i]);
   for (let n = 0; n < liveSlots.length; n++) {
     assertApprox(fusedX[n], xBefore[n] + 600 / 60, 1e-4, `fused x[${liveSlots[n]}]`);
@@ -105,16 +88,16 @@ test('two-pass bullet collect matches fused scan checksum', () => {
 
   for (const i of liveSlots) BulletComponent.x[i] = 10 + i;
   const scratch = new Uint16Array(pool);
-  const n = collectLiveBulletIndices(BulletComponent.active, pool, scratch);
+  const n = BulletPool.collectLiveIndices(scratch);
   assert.equal(n, liveSlots.length);
-  tickBulletsBuffers(bulletArgs(pool, scratch, n));
+  tickBullets(pool, scratch, n);
   for (let k = 0; k < liveSlots.length; k++) {
     assertApprox(BulletComponent.x[liveSlots[k]], fusedX[k], 1e-4, `two-pass x[${liveSlots[k]}]`);
   }
 
   for (const i of liveSlots) BulletComponent.x[i] = 10 + i;
   const given = new Uint16Array(liveSlots);
-  tickBulletsBuffers(bulletArgs(pool, given, given.length));
+  tickBullets(pool, given, given.length);
   for (let k = 0; k < liveSlots.length; k++) {
     assertApprox(BulletComponent.x[liveSlots[k]], fusedX[k], 1e-4, `live-given x[${liveSlots[k]}]`);
   }
@@ -195,41 +178,17 @@ test('particle occupancy two-pass: flag scan then physics', () => {
     live.push(idx);
   }
   const localIndices = new Uint16Array(max);
-  const built = buildActiveListBuffers({
-    maxParticles: max,
-    active: ParticleComponent.active,
-    localIndices,
-    activeData: null,
-    expectedActive: live.length,
-  });
+  const built = buildActiveListBuffers(max, ParticleComponent.active, localIndices, null, live.length);
   assert.equal(built, live.length);
-  updateParticlePhysicsBuffers({
-    activeIndices: localIndices,
-    count: built,
-    deltaTime: 1000 / 60,
-    dtRatio: 1,
-    decalsEnabled: false,
-    particlesToStamp: null,
-    components: {
-      active: ParticleComponent.active,
-      x: ParticleComponent.x,
-      y: ParticleComponent.y,
-      z: ParticleComponent.z,
-      vx: ParticleComponent.vx,
-      vy: ParticleComponent.vy,
-      vz: ParticleComponent.vz,
-      lifespan: ParticleComponent.lifespan,
-      currentLife: ParticleComponent.currentLife,
-      gravity: ParticleComponent.gravity,
-      alpha: ParticleComponent.alpha,
-      fadeOnTheFloor: ParticleComponent.fadeOnTheFloor,
-      timeOnFloor: ParticleComponent.timeOnFloor,
-      initialAlpha: ParticleComponent.initialAlpha,
-      stayOnTheFloor: ParticleComponent.stayOnTheFloor,
-      despawnOnGroundContact: ParticleComponent.despawnOnGroundContact,
-      flat: ParticleComponent.flat,
-    },
-  });
+  updateParticlePhysicsBuffers(
+    ParticleComponent,
+    localIndices,
+    built,
+    1000 / 60,
+    1,
+    false,
+    null,
+  );
   for (const i of live) {
     assertApprox(ParticleComponent.x[i], 10 + 60, 1e-3, `particle x[${i}]`);
   }

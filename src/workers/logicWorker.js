@@ -94,8 +94,13 @@ class LogicWorker extends AbstractWorker {
     // (which run after processCollisionCallbacks) must query through this alias.
     this.frameCollisions = this.currentCollisions;
     this._beginSet = new Set();
-    /** @type {Map<number, bigint>} collisionPairKey → packed gens */
-    this._collisionGens = new Map();
+    /** @type {Map<number, number>} collisionPairKey → genA uint32 */
+    this._collisionGenA = new Map();
+    /** @type {Map<number, number>} collisionPairKey → genB uint32 */
+    this._collisionGenB = new Map();
+    this._onContactRingEvent = this._onContactRingEvent.bind(this);
+    this._onHitRingEvent = this._onHitRingEvent.bind(this);
+    this._onJointBreakRingEvent = this._onJointBreakRingEvent.bind(this);
 
     // Box2D sequenced contact ring (msg box2dReady)
     this.box2dContactRingI32 = null;
@@ -744,28 +749,27 @@ class LogicWorker extends AbstractWorker {
    * partition + gen-validation rules as begin/end contacts.
    */
   _processBox2dHitCallbacks() {
-    const totalWorkers = this.totalLogicWorkers;
-    const myIndex = this.workerIndex;
-    const gameObjects = this.gameObjects;
-    const entityType = Transform.entityType;
-    const collisionFlags = this.collisionListenerByType;
-
     const result = drainContactHitRing(
       this.box2dHitRingI32,
       this.box2dHitRingF32,
       this.box2dHitCursor,
-      (a, b, genA, genB, px, py, nx, ny, speed) => {
-        if (this._entityGen(a) !== (genA | 0) || this._entityGen(b) !== (genB | 0)) return;
-        if (!Transform.active[a] || !Transform.active[b]) return;
-        const minE = a < b ? a : b;
-        if (minE % totalWorkers !== myIndex) return;
-        const aListens = collisionFlags[entityType[a]];
-        const bListens = collisionFlags[entityType[b]];
-        if (aListens) gameObjects[a]?.onCollisionHit(b, px, py, nx, ny, speed);
-        if (bListens) gameObjects[b]?.onCollisionHit(a, px, py, -nx, -ny, speed);
-      },
+      this._onHitRingEvent,
     );
     this.box2dHitCursor = result.nextCursor;
+  }
+
+  _onHitRingEvent(a, b, genA, genB, px, py, nx, ny, speed) {
+    if (this._entityGen(a) !== (genA | 0) || this._entityGen(b) !== (genB | 0)) return;
+    if (!Transform.active[a] || !Transform.active[b]) return;
+    const minE = a < b ? a : b;
+    if (minE % this.totalLogicWorkers !== this.workerIndex) return;
+    const entityType = Transform.entityType;
+    const collisionFlags = this.collisionListenerByType;
+    const gameObjects = this.gameObjects;
+    const aListens = collisionFlags[entityType[a]];
+    const bListens = collisionFlags[entityType[b]];
+    if (aListens) gameObjects[a]?.onCollisionHit(b, px, py, nx, ny, speed);
+    if (bListens) gameObjects[b]?.onCollisionHit(a, px, py, -nx, -ny, speed);
   }
 
   /**
@@ -773,32 +777,42 @@ class LogicWorker extends AbstractWorker {
    * Dispatch only to entity types with JointBreakListener.
    */
   _processBox2dJointBreakCallbacks() {
-    const totalWorkers = this.totalLogicWorkers;
-    const myIndex = this.workerIndex;
-    const gameObjects = this.gameObjects;
-    const entityType = Transform.entityType;
-    const jointBreakFlags = this.jointBreakListenerByType;
-
     const result = drainJointBreakRing(
       this.box2dJointBreakRingI32,
       this.box2dJointBreakCursor,
-      (jointIndex, entityA, entityB, genA, genB) => {
-        if (this._entityGen(entityA) !== (genA | 0) || this._entityGen(entityB) !== (genB | 0)) return;
-        if (!Transform.active[entityA] || !Transform.active[entityB]) return;
-        const minE = entityA < entityB ? entityA : entityB;
-        if (minE % totalWorkers !== myIndex) return;
-        const aListens = jointBreakFlags[entityType[entityA]];
-        const bListens = jointBreakFlags[entityType[entityB]];
-        if (!aListens && !bListens) return;
-        if (aListens) gameObjects[entityA]?.onJointBreak(jointIndex, entityA, entityB);
-        if (bListens) gameObjects[entityB]?.onJointBreak(jointIndex, entityA, entityB);
-      },
+      this._onJointBreakRingEvent,
     );
     this.box2dJointBreakCursor = result.nextCursor;
   }
 
-  _packGens(genA, genB) {
-    return (BigInt(genA >>> 0) << 32n) | BigInt(genB >>> 0);
+  _onJointBreakRingEvent(jointIndex, entityA, entityB, genA, genB) {
+    if (this._entityGen(entityA) !== (genA | 0) || this._entityGen(entityB) !== (genB | 0)) return;
+    if (!Transform.active[entityA] || !Transform.active[entityB]) return;
+    const minE = entityA < entityB ? entityA : entityB;
+    if (minE % this.totalLogicWorkers !== this.workerIndex) return;
+    const entityType = Transform.entityType;
+    const jointBreakFlags = this.jointBreakListenerByType;
+    const gameObjects = this.gameObjects;
+    const aListens = jointBreakFlags[entityType[entityA]];
+    const bListens = jointBreakFlags[entityType[entityB]];
+    if (!aListens && !bListens) return;
+    if (aListens) gameObjects[entityA]?.onJointBreak(jointIndex, entityA, entityB);
+    if (bListens) gameObjects[entityB]?.onJointBreak(jointIndex, entityA, entityB);
+  }
+
+  _setCollisionGens(key, genA, genB) {
+    this._collisionGenA.set(key, genA >>> 0);
+    this._collisionGenB.set(key, genB >>> 0);
+  }
+
+  _deleteCollisionGens(key) {
+    this._collisionGenA.delete(key);
+    this._collisionGenB.delete(key);
+  }
+
+  _clearCollisionGens() {
+    this._collisionGenA.clear();
+    this._collisionGenB.clear();
   }
 
   _entityGen(i) {
@@ -806,9 +820,9 @@ class LogicWorker extends AbstractWorker {
   }
 
   _gensMatch(key, genA, genB) {
-    const packed = this._collisionGens.get(key);
-    if (packed === undefined) return false;
-    return packed === this._packGens(genA, genB);
+    const storedA = this._collisionGenA.get(key);
+    if (storedA === undefined) return false;
+    return storedA === (genA >>> 0) && this._collisionGenB.get(key) === (genB >>> 0);
   }
 
   _pairStillValid(minE, maxE, key) {
@@ -820,7 +834,7 @@ class LogicWorker extends AbstractWorker {
 
   _clearContactState(reason) {
     this.previousCollisions.clear();
-    this._collisionGens.clear();
+    this._clearCollisionGens();
     this._beginSet.clear();
     if (reason) {
       console.warn(`LOGIC WORKER ${this.workerIndex}: contact state cleared (${reason})`);
@@ -834,11 +848,11 @@ class LogicWorker extends AbstractWorker {
     if (!this.previousCollisions.has(key)) return;
     if (!this._gensMatch(key, genA, genB)) {
       this.previousCollisions.delete(key);
-      this._collisionGens.delete(key);
+      this._deleteCollisionGens(key);
       return;
     }
     this.previousCollisions.delete(key);
-    this._collisionGens.delete(key);
+    this._deleteCollisionGens(key);
     if (minE % this.totalLogicWorkers !== this.workerIndex) return;
     const entityType = Transform.entityType;
     const collisionFlags = this.collisionListenerByType;
@@ -861,7 +875,7 @@ class LogicWorker extends AbstractWorker {
     const key = collisionPairKey(minE, maxE);
     const isNew = !this.previousCollisions.has(key);
     this.previousCollisions.add(key);
-    this._collisionGens.set(key, this._packGens(genA, genB));
+    this._setCollisionGens(key, genA, genB);
     this._beginSet.add(key);
     if (!isNew) return;
     if (minE % this.totalLogicWorkers !== this.workerIndex) return;
@@ -875,6 +889,15 @@ class LogicWorker extends AbstractWorker {
     if (bListens) gameObjects[rawB]?.onCollisionEnter(rawA);
   }
 
+  _onContactRingEvent(kind, a, b, genA, genB) {
+    const KIND = BOX2D_CONTACT_KIND;
+    if (kind === KIND.CONTACT_END || kind === KIND.SENSOR_END) {
+      this._applyContactEnd(a, b, genA, genB);
+    } else if (kind === KIND.CONTACT_BEGIN || kind === KIND.SENSOR_BEGIN) {
+      this._applyContactBegin(a, b, genA, genB);
+    }
+  }
+
   _processBox2dCollisionCallbacks() {
     if (!this.useBox2dContacts || !this.box2dContactRingI32) return;
 
@@ -885,26 +908,19 @@ class LogicWorker extends AbstractWorker {
     const beginSet = this._beginSet;
     const entityType = Transform.entityType;
     const collisionFlags = this.collisionListenerByType;
-    const KIND = BOX2D_CONTACT_KIND;
 
     beginSet.clear();
 
     const result = drainContactRing(
       this.box2dContactRingI32,
       this.box2dContactCursor,
-      (kind, a, b, genA, genB) => {
-        if (kind === KIND.CONTACT_END || kind === KIND.SENSOR_END) {
-          this._applyContactEnd(a, b, genA, genB);
-        } else if (kind === KIND.CONTACT_BEGIN || kind === KIND.SENSOR_BEGIN) {
-          this._applyContactBegin(a, b, genA, genB);
-        }
-      },
+      this._onContactRingEvent,
     );
     this.box2dContactCursor = result.nextCursor;
     if (result.overrun) {
       // Cold start: no tracked pairs — catch up silently (common when first
       // physics steps flood the ring before logic drains).
-      if (active.size === 0 && this._collisionGens.size === 0) {
+      if (active.size === 0 && this._collisionGenA.size === 0) {
         this.frameCollisions = active;
         return;
       }
@@ -920,7 +936,7 @@ class LogicWorker extends AbstractWorker {
       const maxE = _cantorResult.b;
       if (!this._pairStillValid(minE, maxE, key)) {
         active.delete(key);
-        this._collisionGens.delete(key);
+        this._deleteCollisionGens(key);
         continue;
       }
       if (beginSet.has(key)) continue;

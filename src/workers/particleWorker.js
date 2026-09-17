@@ -28,7 +28,6 @@ import {
   screenBoundsToWorldBounds,
 } from '../util/utils.js';
 import { stampParticleToTileBuffers } from '../util/decalStamp.js';
-import { tickBulletsBuffers } from '../util/bulletTick.js';
 import {
   updateParticlePhysicsBuffers,
   buildActiveListBuffers,
@@ -396,6 +395,25 @@ class ParticleWorker extends AbstractWorker {
     this._impactHeader = null; // Int32Array view: [0]=count, [1]=batch sequence
     this._impactData = null;
     this._maxImpactsPerFrame = 0;
+    this._stampArgs = {
+      worldX: 0,
+      worldY: 0,
+      tint: 0,
+      scaleX: 1,
+      scaleY: 1,
+      alpha: 1,
+      blendMode: 0,
+      textureRgba: null,
+      texWidth: 0,
+      texHeight: 0,
+      decalsTiles: null,
+      decalsTilesDirty: null,
+      decalsTileSize: 0,
+      decalsTilePixelSize: 0,
+      decalsTilesX: 0,
+      decalsTilesY: 0,
+      decalsResolution: 0,
+    };
   }
 
   /**
@@ -713,42 +731,29 @@ class ParticleWorker extends AbstractWorker {
 
     // Early exit if camera not ready (can't calculate visibility)
     if (!this.cameraData) {
-      this.activeParticleCount = buildActiveListBuffers({
+      this.activeParticleCount = buildActiveListBuffers(
         maxParticles,
         active,
         localIndices,
         activeData,
         expectedActive,
-      });
+      );
       if (visibleData) visibleData[0] = 0;
       return;
     }
 
-    // Calculate camera bounds
     const cameraBounds = this._frameCameraBounds();
     if (!cameraBounds) return;
-    const zoom = this._frameCamZoom;
-    const cameraX = this._frameCamX;
-    const cameraY = this._frameCamY;
 
-    const { activeCount } = buildActiveAndVisibleListBuffers({
+    const { activeCount } = buildActiveAndVisibleListBuffers(
+      ParticleComponent,
       maxParticles,
-      active,
-      x: ParticleComponent.x,
-      y: ParticleComponent.y,
-      isItOnScreen: ParticleComponent.isItOnScreen,
       localIndices,
       activeData,
       visibleData,
       expectedActive,
-      camZoom: cameraBounds.zoom,
-      camOffX: cameraBounds.cameraOffsetX,
-      camOffY: cameraBounds.cameraOffsetY,
-      camMinX: cameraBounds.minX,
-      camMaxX: cameraBounds.maxX,
-      camMinY: cameraBounds.minY,
-      camMaxY: cameraBounds.maxY,
-    });
+      cameraBounds,
+    );
 
     this.activeParticleCount = activeCount;
     // if (activeCount !== this._lastLoggedActiveCount) {
@@ -934,7 +939,6 @@ class ParticleWorker extends AbstractWorker {
    * Builds activeBulletsData and visibleBulletsData. Logic workers poll impactBuffer at frame start.
    */
   tickAllBullets(deltaTime, dtRatio) {
-    const maxBullets = this.maxBullets;
     const x = BulletComponent.x;
     const y = BulletComponent.y;
     const isItOnScreen = BulletComponent.isItOnScreen;
@@ -942,29 +946,13 @@ class ParticleWorker extends AbstractWorker {
     const activeData = this.activeBulletsData;
     const visibleData = this.visibleBulletsData;
 
-    const { activeCount } = tickBulletsBuffers({
-      maxBullets,
+    const { activeCount } = BulletPool.tick(
       dtRatio,
-      active: BulletComponent.active,
-      x,
-      y,
-      prevX: BulletComponent.prevX,
-      prevY: BulletComponent.prevY,
-      vx: BulletComponent.vx,
-      vy: BulletComponent.vy,
-      speed: BulletComponent.speed,
-      bulletRotC: BulletComponent.bulletRotC,
-      bulletRotS: BulletComponent.bulletRotS,
-      damage: BulletComponent.damage,
-      ownerId: BulletComponent.ownerId,
-      shooterEntityType: BulletComponent.shooterEntityType,
       activeData,
-      impactHeader: this._impactHeader,
-      impactData: this._impactData,
-      maxImpacts: this._maxImpactsPerFrame,
-      excludeSet: null,
-      onDespawn: (i) => BulletPool.returnToPool(i),
-    });
+      this._impactHeader,
+      this._impactData,
+      this._maxImpactsPerFrame
+    );
 
     if (activeCount <= 0 || !this.cameraData || !visibleData) return;
 
@@ -999,58 +987,15 @@ class ParticleWorker extends AbstractWorker {
   updateParticlePhysics(deltaTime, dtRatio) {
     if (this.maxParticles === 0) return 0;
 
-    const { activeCount, stampedCount } = updateParticlePhysicsBuffers({
-      activeIndices: this.activeParticleIndices,
-      count: this.activeParticleCount,
+    const { activeCount, stampedCount } = updateParticlePhysicsBuffers(
+      ParticleComponent,
+      this.activeParticleIndices,
+      this.activeParticleCount,
       deltaTime,
       dtRatio,
-      decalsEnabled: this.decalsEnabled,
-      particlesToStamp: this.particlesToStamp,
-      components: {
-        active: ParticleComponent.active,
-        x: ParticleComponent.x,
-        y: ParticleComponent.y,
-        z: ParticleComponent.z,
-        vx: ParticleComponent.vx,
-        vy: ParticleComponent.vy,
-        vz: ParticleComponent.vz,
-        lifespan: ParticleComponent.lifespan,
-        currentLife: ParticleComponent.currentLife,
-        gravity: ParticleComponent.gravity,
-        alpha: ParticleComponent.alpha,
-        fadeOnTheFloor: ParticleComponent.fadeOnTheFloor,
-        timeOnFloor: ParticleComponent.timeOnFloor,
-        initialAlpha: ParticleComponent.initialAlpha,
-        stayOnTheFloor: ParticleComponent.stayOnTheFloor,
-        despawnOnGroundContact: ParticleComponent.despawnOnGroundContact,
-        flat: ParticleComponent.flat,
-        tweenMask: ParticleComponent.tweenMask,
-        easeId: ParticleComponent.easeId,
-        alphaFrom: ParticleComponent.alphaFrom,
-        alphaTo: ParticleComponent.alphaTo,
-        scaleX: ParticleComponent.scaleX,
-        scaleY: ParticleComponent.scaleY,
-        scaleXFrom: ParticleComponent.scaleXFrom,
-        scaleXTo: ParticleComponent.scaleXTo,
-        scaleYFrom: ParticleComponent.scaleYFrom,
-        scaleYTo: ParticleComponent.scaleYTo,
-        tint: ParticleComponent.tint,
-        baseTint: ParticleComponent.baseTint,
-        tintFrom: ParticleComponent.tintFrom,
-        tintTo: ParticleComponent.tintTo,
-        rotC: ParticleComponent.rotC,
-        rotS: ParticleComponent.rotS,
-        rotFrom: ParticleComponent.rotFrom,
-        rotTo: ParticleComponent.rotTo,
-        angularVelFrom: ParticleComponent.angularVelFrom,
-        angularVelTo: ParticleComponent.angularVelTo,
-        hasAngularVel: ParticleComponent.hasAngularVel,
-        animCount: ParticleComponent.animCount,
-        animMode: ParticleComponent.animMode,
-        animFrames: ParticleComponent.animFrames,
-        textureId: ParticleComponent.textureId,
-      },
-    });
+      this.decalsEnabled,
+      this.particlesToStamp,
+    );
 
     this.particlesToStampCount = stampedCount;
     return activeCount;
@@ -1099,25 +1044,25 @@ class ParticleWorker extends AbstractWorker {
     const texture = this.decalTextures[textureId];
     if (!texture) return;
 
-    stampParticleToTileBuffers({
-      worldX,
-      worldY,
-      tint,
-      scaleX,
-      scaleY,
-      alpha,
-      blendMode,
-      textureRgba: texture.rgba,
-      texWidth: texture.width,
-      texHeight: texture.height,
-      decalsTiles: this.decalsTilesRGBA,
-      decalsTilesDirty: this.decalsTilesDirty,
-      decalsTileSize: this.decalsTileSize,
-      decalsTilePixelSize: this.decalsTilePixelSize,
-      decalsTilesX: this.decalsTilesX,
-      decalsTilesY: this.decalsTilesY,
-      decalsResolution: this.decalsResolution,
-    });
+    const p = this._stampArgs;
+    p.worldX = worldX;
+    p.worldY = worldY;
+    p.tint = tint;
+    p.scaleX = scaleX;
+    p.scaleY = scaleY;
+    p.alpha = alpha;
+    p.blendMode = blendMode;
+    p.textureRgba = texture.rgba;
+    p.texWidth = texture.width;
+    p.texHeight = texture.height;
+    p.decalsTiles = this.decalsTilesRGBA;
+    p.decalsTilesDirty = this.decalsTilesDirty;
+    p.decalsTileSize = this.decalsTileSize;
+    p.decalsTilePixelSize = this.decalsTilePixelSize;
+    p.decalsTilesX = this.decalsTilesX;
+    p.decalsTilesY = this.decalsTilesY;
+    p.decalsResolution = this.decalsResolution;
+    stampParticleToTileBuffers(p);
   }
 
   // ========================================

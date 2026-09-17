@@ -15,6 +15,8 @@ import {
 // Sized to the particle index type range (Uint16 free-list links).
 const _flatScratch = new Uint16Array(65536);
 const _heightedScratch = new Uint16Array(65536);
+const _physicsResult = { activeCount: 0, stampedCount: 0 };
+const _listResult = { activeCount: 0, visibleCount: 0 };
 
 /**
  * Advance physics for the currently active particle list: lifetime, gravity, ground
@@ -23,28 +25,24 @@ const _heightedScratch = new Uint16Array(65536);
  * stayOnTheFloor stamps: those indices stay allocated until the caller reads SoA
  * and returnToPool's them (else logic can reuse the slot mid-stamp).
  *
- * @param {Object} p
- * @param {Uint16Array} p.activeIndices - Local index buffer (built by buildActiveListBuffers /
- *   buildActiveAndVisibleListBuffers)
- * @param {number} p.count - Valid entries in activeIndices
- * @param {number} p.deltaTime - Frame delta time (ms)
- * @param {number} p.dtRatio - Fixed-step delta ratio
- * @param {boolean} p.decalsEnabled
- * @param {Uint16Array|null} p.particlesToStamp - Output buffer for stayOnTheFloor indices (may be null)
- * @param {Object} p.components - ParticleComponent-shaped SoA views: active, x, y, z, vx, vy, vz,
- *   lifespan, currentLife, gravity, alpha, fadeOnTheFloor, timeOnFloor, initialAlpha,
- *   stayOnTheFloor, despawnOnGroundContact, flat
+ * @param {typeof ParticleComponent} pc
+ * @param {Uint16Array} activeIndices
+ * @param {number} count
+ * @param {number} deltaTime
+ * @param {number} dtRatio
+ * @param {boolean} decalsEnabled
+ * @param {Uint16Array|null} particlesToStamp
  * @returns {{ activeCount: number, stampedCount: number }}
  */
-export function updateParticlePhysicsBuffers({
+export function updateParticlePhysicsBuffers(
+  pc,
   activeIndices,
   count,
   deltaTime,
   dtRatio,
   decalsEnabled,
   particlesToStamp,
-  components,
-}) {
+) {
   const {
     active,
     x,
@@ -88,7 +86,7 @@ export function updateParticlePhysicsBuffers({
     animMode,
     animFrames,
     textureId,
-  } = components;
+  } = pc;
 
   let stampedCount = 0;
 
@@ -228,7 +226,9 @@ export function updateParticlePhysicsBuffers({
     heightedSurvivors++;
   }
 
-  return { activeCount: flatCount + heightedSurvivors, stampedCount };
+  _physicsResult.activeCount = flatCount + heightedSurvivors;
+  _physicsResult.stampedCount = stampedCount;
+  return _physicsResult;
 }
 
 /**
@@ -243,7 +243,7 @@ export function updateParticlePhysicsBuffers({
  * @param {number} p.expectedActive - Free-list-derived upper bound (early exit)
  * @returns {number} activeCount
  */
-export function buildActiveListBuffers({ maxParticles, active, localIndices, activeData, expectedActive }) {
+export function buildActiveListBuffers(maxParticles, active, localIndices, activeData, expectedActive) {
   let count = 0;
   let i = 0;
 
@@ -289,43 +289,35 @@ export function buildActiveListBuffers({ maxParticles, active, localIndices, act
  * Fused active-list + screen-visibility build (camera-ready path). Camera bounds must
  * already be resolved to scalar screen-space min/max (see utils.calculateCameraScreenBounds).
  *
- * @param {Object} p
- * @param {number} p.maxParticles
- * @param {Uint8Array} p.active
- * @param {Float32Array} p.x
- * @param {Float32Array} p.y
- * @param {Uint8Array} p.isItOnScreen - Written per-particle
- * @param {Uint16Array} p.localIndices - Output: local active index buffer
- * @param {Int32Array|null} [p.activeData]
- * @param {Int32Array|null} [p.visibleData]
- * @param {number} p.expectedActive
- * @param {number} p.camZoom
- * @param {number} p.camOffX
- * @param {number} p.camOffY
- * @param {number} p.camMinX
- * @param {number} p.camMaxX
- * @param {number} p.camMinY
- * @param {number} p.camMaxY
+ * @param {typeof ParticleComponent} pc
+ * @param {number} maxParticles
+ * @param {Uint16Array} localIndices
+ * @param {Int32Array|null} activeData
+ * @param {Int32Array|null} visibleData
+ * @param {number} expectedActive
+ * @param {{ zoom: number, cameraOffsetX: number, cameraOffsetY: number, minX: number, maxX: number, minY: number, maxY: number }} cameraBounds
  * @returns {{ activeCount: number, visibleCount: number }}
  */
-export function buildActiveAndVisibleListBuffers({
+export function buildActiveAndVisibleListBuffers(
+  pc,
   maxParticles,
-  active,
-  x,
-  y,
-  isItOnScreen,
   localIndices,
   activeData,
   visibleData,
   expectedActive,
-  camZoom,
-  camOffX,
-  camOffY,
-  camMinX,
-  camMaxX,
-  camMinY,
-  camMaxY,
-}) {
+  cameraBounds,
+) {
+  const active = pc.active;
+  const x = pc.x;
+  const y = pc.y;
+  const isItOnScreen = pc.isItOnScreen;
+  const camZoom = cameraBounds.zoom;
+  const camOffX = cameraBounds.cameraOffsetX;
+  const camOffY = cameraBounds.cameraOffsetY;
+  const camMinX = cameraBounds.minX;
+  const camMaxX = cameraBounds.maxX;
+  const camMinY = cameraBounds.minY;
+  const camMaxY = cameraBounds.maxY;
   let activeCount = 0;
   let visibleCount = 0;
   let i = 0;
@@ -426,5 +418,7 @@ export function buildActiveAndVisibleListBuffers({
   if (activeData) activeData[0] = activeCount;
   if (visibleData) visibleData[0] = visibleCount;
 
-  return { activeCount, visibleCount };
+  _listResult.activeCount = activeCount;
+  _listResult.visibleCount = visibleCount;
+  return _listResult;
 }

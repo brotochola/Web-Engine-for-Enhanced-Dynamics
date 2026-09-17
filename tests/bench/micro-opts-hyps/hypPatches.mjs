@@ -881,67 +881,31 @@ export function applyBullet(opts = {}) {
         `    const activeData = this.activeBulletsData;
     const visibleData = this.visibleBulletsData;
 
-    const { activeCount } = tickBulletsBuffers({
-      maxBullets,
+    const { activeCount } = BulletPool.tick(
       dtRatio,
-      active: BulletComponent.active,
-      x,
-      y,
-      prevX: BulletComponent.prevX,
-      prevY: BulletComponent.prevY,
-      vx: BulletComponent.vx,
-      vy: BulletComponent.vy,
-      speed: BulletComponent.speed,
-      bulletRotC: BulletComponent.bulletRotC,
-      bulletRotS: BulletComponent.bulletRotS,
-      damage: BulletComponent.damage,
-      ownerId: BulletComponent.ownerId,
-      shooterEntityType: BulletComponent.shooterEntityType,
       activeData,
-      impactHeader: this._impactHeader,
-      impactData: this._impactData,
-      maxImpacts: this._maxImpactsPerFrame,
-      excludeSet: null,
-      onDespawn: (i) => BulletPool.returnToPool(i),
-    });`,
+      this._impactHeader,
+      this._impactData,
+      this._maxImpactsPerFrame
+    );`,
         `    const visibleData = this.visibleBulletsData;
-    if (!this._bulletScratch || this._bulletScratch.length < maxBullets) {
-      this._bulletScratch = new Uint16Array(maxBullets);
+    if (!this._bulletScratch || this._bulletScratch.length < this.maxBullets) {
+      this._bulletScratch = new Uint16Array(this.maxBullets);
     }
-    if (!this._bulletSurvivors || this._bulletSurvivors.length < 1 + maxBullets) {
-      this._bulletSurvivors = new Uint16Array(1 + maxBullets);
+    if (!this._bulletSurvivors || this._bulletSurvivors.length < 1 + this.maxBullets) {
+      this._bulletSurvivors = new Uint16Array(1 + this.maxBullets);
     }
     const liveCount = BulletPool.copyActiveSnapshot(this._bulletScratch);
     const activeData = this._bulletSurvivors;
 
-    const { activeCount } = tickBulletsBuffers({
-      maxBullets,
+    const { activeCount } = BulletPool.tick(
       dtRatio,
-      active: BulletComponent.active,
-      x,
-      y,
-      prevX: BulletComponent.prevX,
-      prevY: BulletComponent.prevY,
-      vx: BulletComponent.vx,
-      vy: BulletComponent.vy,
-      speed: BulletComponent.speed,
-      bulletRotC: BulletComponent.bulletRotC,
-      bulletRotS: BulletComponent.bulletRotS,
-      damage: BulletComponent.damage,
-      ownerId: BulletComponent.ownerId,
-      shooterEntityType: BulletComponent.shooterEntityType,
       activeData,
-      impactHeader: this._impactHeader,
-      impactData: this._impactData,
-      maxImpacts: this._maxImpactsPerFrame,
-      excludeSet: null,
-      liveIndices: this._bulletScratch,
-      liveCount,
-      onDespawn: (i) => {
-        BulletPool.removeFromActiveList(i);
-        BulletPool.returnToPool(i);
-      },
-    });`,
+      this._impactHeader,
+      this._impactData,
+      this._maxImpactsPerFrame,
+      { liveIndices: this._bulletScratch, liveCount }
+    );`,
         hyp
       ),
     'BULLET'
@@ -951,76 +915,30 @@ export function applyBullet(opts = {}) {
 export function applyBulletTwoPass() {
   patchRel(
     'src/workers/particleWorker.js',
-    (src, hyp) => {
-      let out = replaceOnce(
+    (src, hyp) =>
+      replaceOnce(
         src,
-        `import { tickBulletsBuffers } from '../util/bulletTick.js';`,
-        `import { tickBulletsBuffers, collectLiveBulletIndices } from '../util/bulletTick.js';`,
-        hyp
-      );
-      return replaceOnce(
-        out,
-        `    const activeData = this.activeBulletsData;
-    const visibleData = this.visibleBulletsData;
-
-    const { activeCount } = tickBulletsBuffers({
-      maxBullets,
+        `    const { activeCount } = BulletPool.tick(
       dtRatio,
-      active: BulletComponent.active,
-      x,
-      y,
-      prevX: BulletComponent.prevX,
-      prevY: BulletComponent.prevY,
-      vx: BulletComponent.vx,
-      vy: BulletComponent.vy,
-      speed: BulletComponent.speed,
-      bulletRotC: BulletComponent.bulletRotC,
-      bulletRotS: BulletComponent.bulletRotS,
-      damage: BulletComponent.damage,
-      ownerId: BulletComponent.ownerId,
-      shooterEntityType: BulletComponent.shooterEntityType,
       activeData,
-      impactHeader: this._impactHeader,
-      impactData: this._impactData,
-      maxImpacts: this._maxImpactsPerFrame,
-      excludeSet: null,
-      onDespawn: (i) => BulletPool.returnToPool(i),
-    });`,
-        `    const activeData = this.activeBulletsData;
-    const visibleData = this.visibleBulletsData;
-    if (!this._bulletTwoPassScratch || this._bulletTwoPassScratch.length < maxBullets) {
-      this._bulletTwoPassScratch = new Uint16Array(maxBullets);
+      this._impactHeader,
+      this._impactData,
+      this._maxImpactsPerFrame
+    );`,
+        `    if (!this._bulletTwoPassScratch || this._bulletTwoPassScratch.length < this.maxBullets) {
+      this._bulletTwoPassScratch = new Uint16Array(this.maxBullets);
     }
-    const liveCount = collectLiveBulletIndices(BulletComponent.active, maxBullets, this._bulletTwoPassScratch);
-
-    const { activeCount } = tickBulletsBuffers({
-      maxBullets,
+    const liveCount = BulletPool.collectLiveIndices(this._bulletTwoPassScratch);
+    const { activeCount } = BulletPool.tick(
       dtRatio,
-      active: BulletComponent.active,
-      x,
-      y,
-      prevX: BulletComponent.prevX,
-      prevY: BulletComponent.prevY,
-      vx: BulletComponent.vx,
-      vy: BulletComponent.vy,
-      speed: BulletComponent.speed,
-      bulletRotC: BulletComponent.bulletRotC,
-      bulletRotS: BulletComponent.bulletRotS,
-      damage: BulletComponent.damage,
-      ownerId: BulletComponent.ownerId,
-      shooterEntityType: BulletComponent.shooterEntityType,
       activeData,
-      impactHeader: this._impactHeader,
-      impactData: this._impactData,
-      maxImpacts: this._maxImpactsPerFrame,
-      excludeSet: null,
-      liveIndices: this._bulletTwoPassScratch,
-      liveCount,
-      onDespawn: (i) => BulletPool.returnToPool(i),
-    });`,
+      this._impactHeader,
+      this._impactData,
+      this._maxImpactsPerFrame,
+      { liveIndices: this._bulletTwoPassScratch, liveCount }
+    );`,
         hyp
-      );
-    },
+      ),
     'BTWOPASS'
   );
 }

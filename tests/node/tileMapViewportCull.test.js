@@ -8,7 +8,10 @@ import {
   listVisibleChunks,
   listEvictChunkKeys,
   chunkKey,
+  chunkKeyCx,
+  chunkKeyCy,
   chunkRing,
+  CHUNK_KEY_AXIS_MAX,
 } from '../../src/render/tilemapCull.js';
 
 function makeMap(w, h) {
@@ -166,31 +169,73 @@ test('chunkGrid 3 union spans 3x chunk size (clamped at map edge)', () => {
   assert.equal(corner.tileRect.minY, 0);
 });
 
-function keysOf(chunks) {
-  return chunks.map((c) => c.key).sort();
+function listed(list) {
+  return list.chunks.slice(0, list.count);
 }
+
+function keysOf(list) {
+  return listed(list).map((c) => c.key).sort((a, b) => a - b);
+}
+
+test('chunkKey packs cx<<16|cy as uint32 within 16-bit ceiling', () => {
+  assert.equal(CHUNK_KEY_AXIS_MAX, 65535);
+  assert.equal(typeof chunkKey(2, 3), 'number');
+  assert.equal(chunkKey(2, 3), ((2 << 16) | 3) >>> 0);
+  assert.equal(chunkKeyCx(chunkKey(2, 3)), 2);
+  assert.equal(chunkKeyCy(chunkKey(2, 3)), 3);
+  const k = chunkKey(65535, 1);
+  assert.equal(chunkKeyCx(k), 65535);
+  assert.equal(chunkKeyCy(k), 1);
+});
+
+test('listVisibleChunks fills the same out pool', () => {
+  const out = { chunks: [], count: 0 };
+  const view = {
+    viewMinX: 25, viewMinY: 40, viewMaxX: 45, viewMaxY: 55,
+    chunkW: 20, chunkH: 15, mapW: 200, mapH: 200,
+  };
+  const first = listVisibleChunks(view, 1, out);
+  assert.equal(first, out);
+  assert.ok(out.count > 0);
+  const slot = out.chunks[0];
+  listVisibleChunks(view, 1, out);
+  assert.equal(out.chunks[0], slot);
+});
+
+test('two outs keep vis and keep lists without clobber', () => {
+  const visOut = { chunks: [], count: 0 };
+  const keepOut = { chunks: [], count: 0 };
+  const view = {
+    viewMinX: 30, viewMinY: 30, viewMaxX: 90, viewMaxY: 90,
+    chunkW: 20, chunkH: 20, mapW: 200, mapH: 200,
+  };
+  listVisibleChunks(view, chunkRing(3), visOut);
+  listVisibleChunks(view, chunkRing(5), keepOut);
+  assert.ok(keepOut.count >= visOut.count);
+  assert.notEqual(visOut.chunks, keepOut.chunks);
+});
 
 test('small camera move inside a chunk keeps the same visible keys', () => {
   const a = listVisibleChunks({
     viewMinX: 25, viewMinY: 40, viewMaxX: 45, viewMaxY: 55,
-    chunkW: 20, chunkH: 15, ring: 1, mapW: 200, mapH: 200,
-  });
+    chunkW: 20, chunkH: 15, mapW: 200, mapH: 200,
+  }, 1, { chunks: [], count: 0 });
   const b = listVisibleChunks({
     viewMinX: 26, viewMinY: 41, viewMaxX: 46, viewMaxY: 56,
-    chunkW: 20, chunkH: 15, ring: 1, mapW: 200, mapH: 200,
-  });
+    chunkW: 20, chunkH: 15, mapW: 200, mapH: 200,
+  }, 1, { chunks: [], count: 0 });
   assert.deepEqual(keysOf(a), keysOf(b));
 });
 
 test('crossing a chunk adds new keys; ring keeps the old ones', () => {
   const inside = listVisibleChunks({
     viewMinX: 21, viewMinY: 40, viewMaxX: 39, viewMaxY: 55,
-    chunkW: 20, chunkH: 20, ring: 1, mapW: 200, mapH: 200,
-  });
+    chunkW: 20, chunkH: 20, mapW: 200, mapH: 200,
+  }, 1, { chunks: [], count: 0 });
   const crossed = listVisibleChunks({
     viewMinX: 41, viewMinY: 40, viewMaxX: 59, viewMaxY: 55,
-    chunkW: 20, chunkH: 20, ring: 1, mapW: 200, mapH: 200,
-  });
+    chunkW: 20, chunkH: 20, mapW: 200, mapH: 200,
+  }, 1, { chunks: [], count: 0 });
   const insideKeys = new Set(keysOf(inside));
   const crossedKeys = new Set(keysOf(crossed));
   assert.ok(insideKeys.has(chunkKey(1, 2)));
@@ -203,15 +248,15 @@ test('crossing a chunk adds new keys; ring keeps the old ones', () => {
 test('zoom-out view lists more keys; tileRect for a chunk stays fixed', () => {
   const zoomedIn = listVisibleChunks({
     viewMinX: 50, viewMinY: 50, viewMaxX: 70, viewMaxY: 70,
-    chunkW: 20, chunkH: 20, ring: 1, mapW: 200, mapH: 200,
-  });
+    chunkW: 20, chunkH: 20, mapW: 200, mapH: 200,
+  }, 1, { chunks: [], count: 0 });
   const zoomedOut = listVisibleChunks({
     viewMinX: 20, viewMinY: 20, viewMaxX: 100, viewMaxY: 100,
-    chunkW: 20, chunkH: 20, ring: 1, mapW: 200, mapH: 200,
-  });
-  assert.ok(zoomedOut.length > zoomedIn.length);
-  const a = zoomedIn.find((c) => c.key === chunkKey(2, 2));
-  const b = zoomedOut.find((c) => c.key === chunkKey(2, 2));
+    chunkW: 20, chunkH: 20, mapW: 200, mapH: 200,
+  }, 1, { chunks: [], count: 0 });
+  assert.ok(zoomedOut.count > zoomedIn.count);
+  const a = listed(zoomedIn).find((c) => c.key === chunkKey(2, 2));
+  const b = listed(zoomedOut).find((c) => c.key === chunkKey(2, 2));
   assert.ok(a && b);
   assert.deepEqual(a.tileRect, b.tileRect);
   assert.deepEqual(a.tileRect, { minX: 40, minY: 40, maxX: 60, maxY: 60 });
@@ -222,14 +267,15 @@ test('listEvictChunkKeys drops keys outside the cache keep set', () => {
     viewMinX: 40, viewMinY: 40, viewMaxX: 60, viewMaxY: 60,
     chunkW: 20, chunkH: 20, mapW: 200, mapH: 200,
   };
-  const visible = listVisibleChunks({ ...view, ring: chunkRing(3) });
-  const keep = listVisibleChunks({ ...view, ring: chunkRing(5) });
-  const keepKeys = keep.map((c) => c.key);
+  const visible = listVisibleChunks(view, chunkRing(3), { chunks: [], count: 0 });
+  const keep = listVisibleChunks(view, chunkRing(5), { chunks: [], count: 0 });
+  const keepKeys = listed(keep).map((c) => c.key);
   const cached = [...keepKeys, chunkKey(8, 8), chunkKey(9, 9)];
-  const evict = listEvictChunkKeys(cached, keepKeys);
-  assert.deepEqual(evict.sort(), [chunkKey(8, 8), chunkKey(9, 9)].sort());
-  for (const c of visible) {
-    assert.ok(keepKeys.includes(c.key));
+  const evict = listEvictChunkKeys(cached, keepKeys, []);
+  assert.deepEqual(evict.slice().sort((a, b) => a - b), [chunkKey(8, 8), chunkKey(9, 9)].sort((a, b) => a - b));
+  const keepSet = new Set(keepKeys);
+  for (const c of listed(visible)) {
+    assert.ok(keepSet.has(c.key));
   }
 });
 
@@ -238,11 +284,11 @@ test('cache ring keep set is a superset of visible keys', () => {
     viewMinX: 30, viewMinY: 30, viewMaxX: 90, viewMaxY: 90,
     chunkW: 20, chunkH: 20, mapW: 200, mapH: 200,
   };
-  const visible = listVisibleChunks({ ...view, ring: chunkRing(3) });
-  const keep = listVisibleChunks({ ...view, ring: chunkRing(5) });
+  const visible = listVisibleChunks(view, chunkRing(3), { chunks: [], count: 0 });
+  const keep = listVisibleChunks(view, chunkRing(5), { chunks: [], count: 0 });
   const keepKeys = new Set(keysOf(keep));
-  assert.ok(keep.length >= visible.length);
-  for (const c of visible) {
+  assert.ok(keep.count >= visible.count);
+  for (const c of listed(visible)) {
     assert.ok(keepKeys.has(c.key), `keep missing visible ${c.key}`);
   }
 });

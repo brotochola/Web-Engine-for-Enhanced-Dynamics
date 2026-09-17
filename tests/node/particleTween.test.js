@@ -20,6 +20,15 @@ import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
   assert.strictEqual(a.tween, false);
 }
 
+{
+  const out = { from: 0, to: 0, tween: false, ease: 0 };
+  const a = resolveParticleOp({ from: 1, to: 0 }, 1, out);
+  assert.strictEqual(a, out);
+  assert.strictEqual(out.from, 1);
+  assert.strictEqual(out.to, 0);
+  assert.strictEqual(out.tween, true);
+}
+
 // from/to fixed
 {
   const a = resolveParticleOp({ from: 1, to: 0 }, 1);

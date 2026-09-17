@@ -9,6 +9,7 @@
   var HDR_WRITE = 0;
   var HDR_CAP = 1;
   var HDR_OVERFLOW = 2;
+  var _drainResult = { nextCursor: 0, count: 0, overrun: false };
 
   var ringI32 = null;
   var capacity = 0;
@@ -60,16 +61,25 @@
 
   function drainJointBreakRing(i32, consumerCursor, onBreak) {
     if (!i32 || !onBreak) {
-      return { nextCursor: consumerCursor | 0, count: 0, overrun: false };
+      _drainResult.nextCursor = consumerCursor | 0;
+      _drainResult.count = 0;
+      _drainResult.overrun = false;
+      return _drainResult;
     }
     var cap = i32[HDR_CAP] | 0;
     if (!(cap > 0)) {
-      return { nextCursor: consumerCursor | 0, count: 0, overrun: false };
+      _drainResult.nextCursor = consumerCursor | 0;
+      _drainResult.count = 0;
+      _drainResult.overrun = false;
+      return _drainResult;
     }
     var write = Atomics.load(i32, HDR_WRITE) | 0;
     var read = consumerCursor | 0;
     if (write - read > cap) {
-      return { nextCursor: write, count: 0, overrun: true };
+      _drainResult.nextCursor = write;
+      _drainResult.count = 0;
+      _drainResult.overrun = true;
+      return _drainResult;
     }
     var n = 0;
     while (read < write) {
@@ -85,7 +95,10 @@
       read++;
       n++;
     }
-    return { nextCursor: read, count: n, overrun: false };
+    _drainResult.nextCursor = read;
+    _drainResult.count = n;
+    _drainResult.overrun = false;
+    return _drainResult;
   }
 
   function initialJointBreakCursor(i32) {

@@ -33,53 +33,6 @@ function setupPool(max) {
   };
 }
 
-function components() {
-  return {
-    active: ParticleComponent.active,
-    x: ParticleComponent.x,
-    y: ParticleComponent.y,
-    z: ParticleComponent.z,
-    vx: ParticleComponent.vx,
-    vy: ParticleComponent.vy,
-    vz: ParticleComponent.vz,
-    lifespan: ParticleComponent.lifespan,
-    currentLife: ParticleComponent.currentLife,
-    gravity: ParticleComponent.gravity,
-    alpha: ParticleComponent.alpha,
-    fadeOnTheFloor: ParticleComponent.fadeOnTheFloor,
-    timeOnFloor: ParticleComponent.timeOnFloor,
-    initialAlpha: ParticleComponent.initialAlpha,
-    stayOnTheFloor: ParticleComponent.stayOnTheFloor,
-    despawnOnGroundContact: ParticleComponent.despawnOnGroundContact,
-    flat: ParticleComponent.flat,
-    tweenMask: ParticleComponent.tweenMask,
-    easeId: ParticleComponent.easeId,
-    alphaFrom: ParticleComponent.alphaFrom,
-    alphaTo: ParticleComponent.alphaTo,
-    scaleX: ParticleComponent.scaleX,
-    scaleY: ParticleComponent.scaleY,
-    scaleXFrom: ParticleComponent.scaleXFrom,
-    scaleXTo: ParticleComponent.scaleXTo,
-    scaleYFrom: ParticleComponent.scaleYFrom,
-    scaleYTo: ParticleComponent.scaleYTo,
-    tint: ParticleComponent.tint,
-    baseTint: ParticleComponent.baseTint,
-    tintFrom: ParticleComponent.tintFrom,
-    tintTo: ParticleComponent.tintTo,
-    rotC: ParticleComponent.rotC,
-    rotS: ParticleComponent.rotS,
-    rotFrom: ParticleComponent.rotFrom,
-    rotTo: ParticleComponent.rotTo,
-    angularVelFrom: ParticleComponent.angularVelFrom,
-    angularVelTo: ParticleComponent.angularVelTo,
-    hasAngularVel: ParticleComponent.hasAngularVel,
-    animCount: ParticleComponent.animCount,
-    animMode: ParticleComponent.animMode,
-    animFrames: ParticleComponent.animFrames,
-    textureId: ParticleComponent.textureId,
-  };
-}
-
 test('alpha/scale from→to lerp at mid-life', () => {
   const cleanup = setupPool(4);
   try {
@@ -107,15 +60,15 @@ test('alpha/scale from→to lerp at mid-life', () => {
     assert.equal(ParticleComponent.scaleX[i], 2);
     assert.equal(ParticleComponent.easeId[i], PARTICLE_EASE.LERP);
 
-    updateParticlePhysicsBuffers({
-      activeIndices: new Uint16Array([i]),
-      count: 1,
-      deltaTime: 500,
-      dtRatio: 1,
-      decalsEnabled: false,
-      particlesToStamp: null,
-      components: components(),
-    });
+    updateParticlePhysicsBuffers(
+      ParticleComponent,
+      new Uint16Array([i]),
+      1,
+      500,
+      1,
+      false,
+      null,
+    );
 
     assert.ok(Math.abs(ParticleComponent.alpha[i] - 0.5) < 1e-5);
     assert.ok(Math.abs(ParticleComponent.scaleX[i] - 1) < 1e-5);

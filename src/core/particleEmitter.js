@@ -61,6 +61,8 @@ export class ParticleEmitter extends SharedAtomicPool {
   // Pool name for logging (used by base class)
   static poolName = 'ParticleEmitter';
   static _warnedPoolExhausted = false;
+  static _opA = { from: 0, to: 0, tween: false, ease: 0 };
+  static _opB = { from: 0, to: 0, tween: false, ease: 0 };
 
   // Hot-path scratches (per-worker module instance; emit is sync/non-reentrant)
   static _cfgScratch = Object.create(null);
@@ -353,8 +355,8 @@ export class ParticleEmitter extends SharedAtomicPool {
       let ease = PARTICLE_EASE.LERP;
 
       if (cfg.scale == null && cfg.scaleX != null && cfg.scaleY != null) {
-        const ox = resolveParticleOp(cfg.scaleX, 1);
-        const oy = resolveParticleOp(cfg.scaleY, 1);
+        const ox = resolveParticleOp(cfg.scaleX, 1, this._opA);
+        const oy = resolveParticleOp(cfg.scaleY, 1, this._opB);
         scaleX[i] = ox.from;
         scaleY[i] = oy.from;
         scaleXFrom[i] = ox.from;
@@ -364,7 +366,7 @@ export class ParticleEmitter extends SharedAtomicPool {
         if (ox.tween) { mask |= PARTICLE_TWEEN.SCALEX; ease = ox.ease; }
         if (oy.tween) { mask |= PARTICLE_TWEEN.SCALEY; ease = oy.ease; }
       } else {
-        const os = resolveParticleOp(cfg.scale ?? cfg.scaleX ?? cfg.scaleY, 1);
+        const os = resolveParticleOp(cfg.scale ?? cfg.scaleX ?? cfg.scaleY, 1, this._opA);
         scaleX[i] = os.from;
         scaleY[i] = os.from;
         scaleXFrom[i] = os.from;
@@ -377,13 +379,13 @@ export class ParticleEmitter extends SharedAtomicPool {
         }
       }
 
-      const oa = resolveParticleOp(cfg.alpha, 1);
+      const oa = resolveParticleOp(cfg.alpha, 1, this._opA);
       alpha[i] = oa.from;
       alphaFrom[i] = oa.from;
       alphaTo[i] = oa.to;
       if (oa.tween) { mask |= PARTICLE_TWEEN.ALPHA; ease = oa.ease; }
 
-      const oc = resolveParticleColorOp(cfg.tint, 0xffffff);
+      const oc = resolveParticleColorOp(cfg.tint, 0xffffff, this._opA);
       tint[i] = oc.from;
       baseTint[i] = oc.from;
       tintFrom[i] = oc.from;
@@ -396,7 +398,7 @@ export class ParticleEmitter extends SharedAtomicPool {
         rotFrom[i] = 0;
         rotTo[i] = 0;
       } else {
-        const or = resolveParticleOp(cfg.rotation, 0);
+        const or = resolveParticleOp(cfg.rotation, 0, this._opA);
         rotFrom[i] = or.from;
         rotTo[i] = or.to;
         const rad = (or.from * Math.PI) / 180;
@@ -406,7 +408,7 @@ export class ParticleEmitter extends SharedAtomicPool {
       }
 
       if (cfg.angularVelocity != null) {
-        const ov = resolveParticleOp(cfg.angularVelocity, 0);
+        const ov = resolveParticleOp(cfg.angularVelocity, 0, this._opA);
         angularVelFrom[i] = ov.from;
         angularVelTo[i] = ov.tween ? ov.to : ov.from;
         hasAngularVel[i] = 1;

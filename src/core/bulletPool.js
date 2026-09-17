@@ -8,11 +8,13 @@ import { BulletComponent } from '../components/bulletComponent.js';
 import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
 import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { Layer } from './layer.js';
+import { Ray } from './ray.js';
 
 export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';
   static _warnedPoolExhausted = false;
   static _warnedMissingTextures = new Set();
+  static _tickResult = { activeCount: 0, impactWrite: 0 };
 
   static get maxBullets() {
     return this.maxCount;
@@ -161,6 +163,126 @@ export class BulletPool extends SharedAtomicPool {
     if (BulletComponent.active[i] === 0) return;
     BulletComponent.active[i] = 0;
     this.returnToPool(i);
+  }
+
+  /**
+   * Fill `out` with indices where `active[i]` is set. Kernel override only.
+   * @param {Uint16Array} out
+   * @returns {number} live count
+   */
+  static collectLiveIndices(out) {
+    const active = BulletComponent.active;
+    const maxBullets = this.maxCount;
+    let n = 0;
+    for (let i = 0; i < maxBullets; i++) {
+      if (active[i]) out[n++] = i;
+    }
+    return n;
+  }
+
+  /**
+   * Advance every active bullet one step: integrate, raycast prev→next, write
+   * impacts, despawn on hit. Writes activeData[0] = live count.
+   *
+   * @param {number} dtRatio
+   * @param {Uint16Array} activeData
+   * @param {Int32Array|null} impactHeader
+   * @param {Float32Array|null} impactData
+   * @param {number} maxImpacts
+   * @param {{ speed?: Float32Array|null, excludeSet?: Set<number>|null, liveIndices?: Uint16Array|null, liveCount?: number }} [opts] kernel-only
+   * @returns {{ activeCount: number, impactWrite: number }}
+   */
+  static tick(dtRatio, activeData, impactHeader, impactData, maxImpacts, opts) {
+    const bc = BulletComponent;
+    const maxBullets = this.maxCount;
+    const active = bc.active;
+    const x = bc.x;
+    const y = bc.y;
+    const prevX = bc.prevX;
+    const prevY = bc.prevY;
+    const vx = bc.vx;
+    const vy = bc.vy;
+    const bulletRotC = bc.bulletRotC;
+    const bulletRotS = bc.bulletRotS;
+    const damage = bc.damage;
+    const ownerId = bc.ownerId;
+    const shooterEntityType = bc.shooterEntityType;
+    const speed = opts && Object.prototype.hasOwnProperty.call(opts, 'speed') ? opts.speed : bc.speed;
+    const excludeSet = opts && opts.excludeSet != null ? opts.excludeSet : null;
+    const liveIndices = opts && opts.liveIndices != null ? opts.liveIndices : null;
+    const liveCount = opts && opts.liveCount ? opts.liveCount : 0;
+
+    const dt = dtRatio * (1 / 60);
+    let activeWrite = 1;
+    let impactWrite = 0;
+    const impactCap = maxImpacts | 0;
+    const useSpeed = speed != null;
+    const useLive = liveIndices != null;
+    const iterCount = useLive ? liveCount | 0 : maxBullets;
+
+    for (let n = 0; n < iterCount; n++) {
+      const i = useLive ? liveIndices[n] : n;
+      if (!active[i]) continue;
+
+      const px = x[i];
+      const py = y[i];
+      prevX[i] = px;
+      prevY[i] = py;
+
+      const dx = vx[i] * dt;
+      const dy = vy[i] * dt;
+      x[i] = px + dx;
+      y[i] = py + dy;
+
+      let len;
+      if (useSpeed) {
+        len = speed[i] * dt;
+      } else {
+        const lenSq = dx * dx + dy * dy;
+        len = lenSq > 1e-12 ? Math.sqrt(lenSq) : 0;
+      }
+
+      if (len > 1e-6) {
+        let exclude = ownerId[i];
+        if (excludeSet) {
+          excludeSet.clear();
+          excludeSet.add(ownerId[i]);
+          exclude = excludeSet;
+        }
+        const hit = Ray.linecastDir(px, py, bulletRotC[i], bulletRotS[i], len, exclude);
+        if (hit.blocked && hit.entityIndex >= 0) {
+          const t = Math.min(hit.distance / len, 1);
+          const hitX = px + dx * t;
+          const hitY = py + dy * t;
+
+          if (impactHeader && impactWrite < impactCap) {
+            const base = impactWrite * 6;
+            impactData[base] = hit.entityIndex;
+            impactData[base + 1] = damage[i];
+            impactData[base + 2] = hitX;
+            impactData[base + 3] = hitY;
+            impactData[base + 4] = ownerId[i];
+            impactData[base + 5] = shooterEntityType[i];
+            impactWrite++;
+          }
+          active[i] = 0;
+          this.returnToPool(i);
+          continue;
+        }
+      }
+
+      activeData[activeWrite++] = i;
+    }
+
+    activeData[0] = activeWrite - 1;
+    if (impactHeader) {
+      Atomics.store(impactHeader, 0, impactWrite);
+      Atomics.add(impactHeader, 1, 1);
+    }
+
+    this._tickResult.activeCount = activeWrite - 1;
+    this._tickResult.impactWrite = impactWrite;
+    return this._tickResult;
   }
 
   static reset() {

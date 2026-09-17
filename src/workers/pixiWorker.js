@@ -47,6 +47,9 @@ import {
   listVisibleChunks,
   listEvictChunkKeys,
   chunkRing,
+  chunkTileRect,
+  chunkKeyCx,
+  chunkKeyCy,
 } from '../render/tilemapCull.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
@@ -337,9 +340,25 @@ class PixiRenderer extends AbstractWorker {
     this._tilemapId = null;
     this._tilemapBuildOptions = null; // layers filter etc. for chunk builds
     this._tilemapTilesetTexture = null;
-    this._tilemapChunks = new Map(); // key "cx,cy" → { mesh, cx, cy }
+    this._tilemapChunks = new Map(); // packed chunkKey → { mesh, cx, cy }
     this._tilemapBuildQueue = [];
     this._tilemapQueuedKeys = new Set();
+    this._tilemapVisArgs = {
+      viewMinX: 0,
+      viewMinY: 0,
+      viewMaxX: 0,
+      viewMaxY: 0,
+      chunkW: 1,
+      chunkH: 1,
+      mapW: 1,
+      mapH: 1,
+    };
+    this._tilemapVisList = { chunks: [], count: 0 };
+    this._tilemapKeepList = { chunks: [], count: 0 };
+    this._tilemapVisKeys = new Set();
+    this._tilemapKeepKeys = new Set();
+    this._tilemapEvictKeys = [];
+    this._tilemapChunkRect = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
     this._tilemapCull = {
       frozenW: -1,
       frozenH: -1,
@@ -3498,27 +3517,41 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._tilemapQueuedKeys.clear();
   }
 
-  _buildTilemapChunk(tileMapData, chunk) {
+  _buildTilemapChunk(tileMapData, key) {
+    const cx = chunkKeyCx(key);
+    const cy = chunkKeyCy(key);
+    const args = this._tilemapVisArgs;
+    const tileRect = chunkTileRect(
+      cx,
+      cy,
+      args.chunkW,
+      args.chunkH,
+      args.mapW,
+      args.mapH,
+      this._tilemapChunkRect
+    );
     const mesh = new CompositeTilemap([this._tilemapTilesetTexture]);
     const opts = this._tilemapBuildOptions || {};
     tileMapData.buildCompositeTilemap(mesh, {
       layers: opts.layers,
-      tileRect: chunk.tileRect,
+      tileRect,
     });
     mesh.visible = true;
     mesh.renderable = true;
     this.currentTilemap.addChild(mesh);
-    this._tilemapChunks.set(chunk.key, { mesh, cx: chunk.cx, cy: chunk.cy });
+    this._tilemapChunks.set(key, { mesh, cx, cy });
   }
 
-  _enqueueKeepChunks(keep) {
+  _enqueueKeepChunks(keepList) {
+    const chunks = keepList.chunks;
+    const n = keepList.count;
     this._tilemapBuildQueue.length = 0;
     this._tilemapQueuedKeys.clear();
-    for (let i = 0; i < keep.length; i++) {
-      const chunk = keep[i];
-      if (this._tilemapChunks.has(chunk.key)) continue;
-      this._tilemapQueuedKeys.add(chunk.key);
-      this._tilemapBuildQueue.push(chunk);
+    for (let i = 0; i < n; i++) {
+      const key = chunks[i].key;
+      if (this._tilemapChunks.has(key)) continue;
+      this._tilemapQueuedKeys.add(key);
+      this._tilemapBuildQueue.push(key);
     }
   }
 
@@ -3532,10 +3565,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         : (this._tilemapCull.maxChunkBuildsPerFrame | 0) || 1;
     let built = 0;
     while (built < budget && this._tilemapBuildQueue.length) {
-      const chunk = this._tilemapBuildQueue.shift();
-      this._tilemapQueuedKeys.delete(chunk.key);
-      if (this._tilemapChunks.has(chunk.key)) continue;
-      this._buildTilemapChunk(tileMapData, chunk);
+      const key = this._tilemapBuildQueue.shift();
+      this._tilemapQueuedKeys.delete(key);
+      if (this._tilemapChunks.has(key)) continue;
+      this._buildTilemapChunk(tileMapData, key);
       built++;
     }
   }
@@ -3642,24 +3675,32 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       cull.frozenH = chunkH;
     }
 
-    const visArgs = {
-      viewMinX,
-      viewMinY,
-      viewMaxX,
-      viewMaxY,
-      chunkW,
-      chunkH,
-      mapW: tileMapData.mapWidth,
-      mapH: tileMapData.mapHeight,
-    };
-    const visible = listVisibleChunks({ ...visArgs, ring: chunkRing(cull.chunkGrid) });
-    const keep = listVisibleChunks({ ...visArgs, ring: chunkRing(cull.cacheGrid) });
-    const visKeys = new Set();
-    for (let i = 0; i < visible.length; i++) visKeys.add(visible[i].key);
-    const keepKeys = new Set();
-    for (let i = 0; i < keep.length; i++) keepKeys.add(keep[i].key);
+    const visArgs = this._tilemapVisArgs;
+    visArgs.viewMinX = viewMinX;
+    visArgs.viewMinY = viewMinY;
+    visArgs.viewMaxX = viewMaxX;
+    visArgs.viewMaxY = viewMaxY;
+    visArgs.chunkW = chunkW;
+    visArgs.chunkH = chunkH;
+    visArgs.mapW = tileMapData.mapWidth;
+    visArgs.mapH = tileMapData.mapHeight;
 
-    const evict = listEvictChunkKeys(this._tilemapChunks.keys(), keepKeys);
+    const visible = listVisibleChunks(visArgs, chunkRing(cull.chunkGrid), this._tilemapVisList);
+    const keep = listVisibleChunks(visArgs, chunkRing(cull.cacheGrid), this._tilemapKeepList);
+
+    const visKeys = this._tilemapVisKeys;
+    visKeys.clear();
+    const visChunks = visible.chunks;
+    const visCount = visible.count;
+    for (let i = 0; i < visCount; i++) visKeys.add(visChunks[i].key);
+
+    const keepKeys = this._tilemapKeepKeys;
+    keepKeys.clear();
+    const keepChunks = keep.chunks;
+    const keepCount = keep.count;
+    for (let i = 0; i < keepCount; i++) keepKeys.add(keepChunks[i].key);
+
+    const evict = listEvictChunkKeys(this._tilemapChunks.keys(), keepKeys, this._tilemapEvictKeys);
     for (let i = 0; i < evict.length; i++) {
       const entry = this._tilemapChunks.get(evict[i]);
       if (!entry) continue;
@@ -3675,10 +3716,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     if (fillAll) {
-      for (let i = 0; i < visible.length; i++) {
-        const chunk = visible[i];
-        if (this._tilemapChunks.has(chunk.key)) continue;
-        this._buildTilemapChunk(tileMapData, chunk);
+      for (let i = 0; i < visCount; i++) {
+        const key = visChunks[i].key;
+        if (this._tilemapChunks.has(key)) continue;
+        this._buildTilemapChunk(tileMapData, key);
       }
     }
 

@@ -33,33 +33,15 @@ function setupPool(max) {
 }
 
 function integrate(indices, dtRatio = 1) {
-  return updateParticlePhysicsBuffers({
-    activeIndices: indices,
-    count: indices.length,
-    deltaTime: 16.67,
+  return updateParticlePhysicsBuffers(
+    ParticleComponent,
+    indices,
+    indices.length,
+    16.67,
     dtRatio,
-    decalsEnabled: false,
-    particlesToStamp: null,
-    components: {
-      active: ParticleComponent.active,
-      x: ParticleComponent.x,
-      y: ParticleComponent.y,
-      z: ParticleComponent.z,
-      vx: ParticleComponent.vx,
-      vy: ParticleComponent.vy,
-      vz: ParticleComponent.vz,
-      lifespan: ParticleComponent.lifespan,
-      currentLife: ParticleComponent.currentLife,
-      gravity: ParticleComponent.gravity,
-      alpha: ParticleComponent.alpha,
-      fadeOnTheFloor: ParticleComponent.fadeOnTheFloor,
-      timeOnFloor: ParticleComponent.timeOnFloor,
-      initialAlpha: ParticleComponent.initialAlpha,
-      stayOnTheFloor: ParticleComponent.stayOnTheFloor,
-      despawnOnGroundContact: ParticleComponent.despawnOnGroundContact,
-      flat: ParticleComponent.flat,
-    },
-  });
+    false,
+    null,
+  );
 }
 
 function spawnFlat(i, { gravity, vy = 0 } = {}) {

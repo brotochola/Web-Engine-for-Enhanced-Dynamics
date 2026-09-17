@@ -25,6 +25,31 @@ const OUTPUT = args.output ? String(args.output) : null;
 
 const DT = 1000 / 60; // ms, fixed-step frame
 const DT_RATIO = 1;
+const _camBounds = {
+  zoom: 1,
+  cameraOffsetX: 0,
+  cameraOffsetY: 0,
+  minX: -1e6,
+  maxX: 1e6,
+  minY: -1e6,
+  maxY: 1e6,
+};
+
+function physics(activeIndices, count, decalsEnabled = false, particlesToStamp = null) {
+  return updateParticlePhysicsBuffers(
+    ParticleComponent,
+    activeIndices,
+    count,
+    DT,
+    DT_RATIO,
+    decalsEnabled,
+    particlesToStamp,
+  );
+}
+
+function buildList(maxP, active, localIndices, activeData, expectedActive) {
+  return buildActiveListBuffers(maxP, active, localIndices, activeData, expectedActive);
+}
 
 // ============================================================================
 // SETUP
@@ -132,22 +157,8 @@ function check(cond, msg) {
 
   for (let step = 0; step < CORRECTNESS_STEPS; step++) {
     const expectedActive = ParticleEmitter.getActiveCount();
-    const count = buildActiveListBuffers({
-      maxParticles: MAX_PARTICLES,
-      active: components.active,
-      localIndices: activeIndices,
-      activeData: null,
-      expectedActive,
-    });
-    const { stampedCount } = updateParticlePhysicsBuffers({
-      activeIndices,
-      count,
-      deltaTime: DT,
-      dtRatio: DT_RATIO,
-      decalsEnabled: true,
-      particlesToStamp: stampScratch,
-      components,
-    });
+    const count = buildList(MAX_PARTICLES, components.active, activeIndices, null, expectedActive);
+    const { stampedCount } = physics(activeIndices, count, true, stampScratch);
     totalStamped += stampedCount;
     for (let s = 0; s < stampedCount; s++) {
       ParticleEmitter.returnToPool(stampScratch[s]);
@@ -217,15 +228,7 @@ function resetLife(indices) {
     (steps) => {
       resetLife(indices);
       for (let s = 0; s < steps; s++) {
-        updateParticlePhysicsBuffers({
-          activeIndices,
-          count: N,
-          deltaTime: DT,
-          dtRatio: DT_RATIO,
-          decalsEnabled: false,
-          particlesToStamp: null,
-          components,
-        });
+        physics(activeIndices, N);
       }
     },
     { iterations: STEPS }
@@ -264,15 +267,7 @@ function resetLife(indices) {
     (steps) => {
       resetLife(indices);
       for (let s = 0; s < steps; s++) {
-        updateParticlePhysicsBuffers({
-          activeIndices,
-          count: N,
-          deltaTime: DT,
-          dtRatio: DT_RATIO,
-          decalsEnabled: false,
-          particlesToStamp: null,
-          components,
-        });
+        physics(activeIndices, N);
       }
     },
     { iterations: STEPS }
@@ -319,15 +314,7 @@ function resetLife(indices) {
     (steps) => {
       resetLife(allIndices);
       for (let s = 0; s < steps; s++) {
-        updateParticlePhysicsBuffers({
-          activeIndices,
-          count: totalN,
-          deltaTime: DT,
-          dtRatio: DT_RATIO,
-          decalsEnabled: false,
-          particlesToStamp: null,
-          components,
-        });
+        physics(activeIndices, totalN);
       }
     },
     { iterations: STEPS }
@@ -353,38 +340,22 @@ function resetLife(indices) {
     `buildActiveListBuffers (${MAX_PARTICLES} maxParticles, ~${targetActive} active)`,
     (iters) => {
       for (let n = 0; n < iters; n++) {
-        buildActiveListBuffers({
-          maxParticles: MAX_PARTICLES,
-          active: activeArr,
-          localIndices,
-          activeData: null,
-          expectedActive: targetActive,
-        });
+        buildList(MAX_PARTICLES, activeArr, localIndices, null, targetActive);
       }
     },
     { iterations: STEPS }
   );
 
   // Also exercise the camera-fused variant once so it's known to run cleanly (not separately timed).
-  const isItOnScreen = ParticleComponent.isItOnScreen;
-  buildActiveAndVisibleListBuffers({
-    maxParticles: MAX_PARTICLES,
-    active: activeArr,
-    x: components.x,
-    y: components.y,
-    isItOnScreen,
+  buildActiveAndVisibleListBuffers(
+    ParticleComponent,
+    MAX_PARTICLES,
     localIndices,
-    activeData: null,
-    visibleData: null,
-    expectedActive: targetActive,
-    camZoom: 1,
-    camOffX: 0,
-    camOffY: 0,
-    camMinX: -1e6,
-    camMaxX: 1e6,
-    camMinY: -1e6,
-    camMaxY: 1e6,
-  });
+    null,
+    null,
+    targetActive,
+    _camBounds,
+  );
 
   activeArr.fill(0);
 }
@@ -435,13 +406,7 @@ function resetLife(indices) {
       `occ ${occ}% buildActiveListBuffers (${liveCount}/${MAX_PARTICLES})`,
       (iters) => {
         for (let n = 0; n < iters; n++) {
-          buildActiveListBuffers({
-            maxParticles: MAX_PARTICLES,
-            active: ParticleComponent.active,
-            localIndices,
-            activeData: null,
-            expectedActive: liveCount,
-          });
+          buildList(MAX_PARTICLES, ParticleComponent.active, localIndices, null, liveCount);
         }
       },
       { iterations: STEPS_OCC }
@@ -450,22 +415,8 @@ function resetLife(indices) {
       `occ ${occ}% build+physics (${liveCount}/${MAX_PARTICLES})`,
       (iters) => {
         for (let n = 0; n < iters; n++) {
-          const count = buildActiveListBuffers({
-            maxParticles: MAX_PARTICLES,
-            active: ParticleComponent.active,
-            localIndices,
-            activeData: null,
-            expectedActive: liveCount,
-          });
-          updateParticlePhysicsBuffers({
-            activeIndices: localIndices,
-            count,
-            deltaTime: DT,
-            dtRatio: DT_RATIO,
-            decalsEnabled: false,
-            particlesToStamp: null,
-            components: componentsOcc,
-          });
+          const count = buildList(MAX_PARTICLES, ParticleComponent.active, localIndices, null, liveCount);
+          physics(localIndices, count);
           for (const i of indices) {
             ParticleComponent.currentLife[i] = 0;
             ParticleComponent.x[i] = 0;

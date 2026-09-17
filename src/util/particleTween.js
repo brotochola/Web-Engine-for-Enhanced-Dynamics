@@ -114,26 +114,37 @@ export function sampleNum(v, defaultVal = 0) {
  * @param {number} defaultVal
  * @returns {ParticleTweenResult}
  */
-export function resolveParticleOp(value, defaultVal = 0) {
+export function resolveParticleOp(value, defaultVal = 0, out) {
+  if (!out) out = { from: 0, to: 0, tween: false, ease: PARTICLE_EASE.LERP };
   if (value === undefined || value === null) {
-    return { from: defaultVal, to: defaultVal, tween: false, ease: PARTICLE_EASE.LERP };
+    out.from = defaultVal;
+    out.to = defaultVal;
+    out.tween = false;
+    out.ease = PARTICLE_EASE.LERP;
+    return out;
   }
   if (typeof value === 'number') {
-    return { from: value, to: value, tween: false, ease: PARTICLE_EASE.LERP };
+    out.from = value;
+    out.to = value;
+    out.tween = false;
+    out.ease = PARTICLE_EASE.LERP;
+    return out;
   }
   if (isFromToObject(value)) {
     const fromRaw = value.from ?? value.start ?? defaultVal;
     const toRaw = value.to ?? value.end ?? defaultVal;
-    return {
-      from: sampleNum(fromRaw, defaultVal),
-      to: sampleNum(toRaw, defaultVal),
-      tween: true,
-      ease: resolveEaseId(value.ease),
-    };
+    out.from = sampleNum(fromRaw, defaultVal);
+    out.to = sampleNum(toRaw, defaultVal);
+    out.tween = true;
+    out.ease = resolveEaseId(value.ease);
+    return out;
   }
-  // Spawn-only {min,max}
   const v = randomRange(value, defaultVal);
-  return { from: v, to: v, tween: false, ease: PARTICLE_EASE.LERP };
+  out.from = v;
+  out.to = v;
+  out.tween = false;
+  out.ease = PARTICLE_EASE.LERP;
+  return out;
 }
 
 /**
@@ -142,23 +153,37 @@ export function resolveParticleOp(value, defaultVal = 0) {
  * @param {number} defaultVal
  * @returns {ParticleColorTweenResult}
  */
-export function resolveParticleColorOp(value, defaultVal = 0xffffff) {
+export function resolveParticleColorOp(value, defaultVal = 0xffffff, out) {
+  if (!out) out = { from: 0, to: 0, tween: false, ease: PARTICLE_EASE.LERP };
   if (value === undefined || value === null) {
-    return { from: defaultVal, to: defaultVal, tween: false, ease: PARTICLE_EASE.LERP };
+    out.from = defaultVal;
+    out.to = defaultVal;
+    out.tween = false;
+    out.ease = PARTICLE_EASE.LERP;
+    return out;
   }
   if (typeof value === 'number') {
-    return { from: value, to: value, tween: false, ease: PARTICLE_EASE.LERP };
+    out.from = value;
+    out.to = value;
+    out.tween = false;
+    out.ease = PARTICLE_EASE.LERP;
+    return out;
   }
   if (isFromToObject(value)) {
     const fromRaw = value.from ?? value.start ?? defaultVal;
     const toRaw = value.to ?? value.end ?? defaultVal;
-    const from =
-      typeof fromRaw === 'number' ? fromRaw : randomColor(fromRaw, defaultVal);
-    const to = typeof toRaw === 'number' ? toRaw : randomColor(toRaw, defaultVal);
-    return { from, to, tween: true, ease: resolveEaseId(value.ease) };
+    out.from = typeof fromRaw === 'number' ? fromRaw : randomColor(fromRaw, defaultVal);
+    out.to = typeof toRaw === 'number' ? toRaw : randomColor(toRaw, defaultVal);
+    out.tween = true;
+    out.ease = resolveEaseId(value.ease);
+    return out;
   }
   const c = randomColor(value, defaultVal);
-  return { from: c, to: c, tween: false, ease: PARTICLE_EASE.LERP };
+  out.from = c;
+  out.to = c;
+  out.tween = false;
+  out.ease = PARTICLE_EASE.LERP;
+  return out;
 }
 
 /**

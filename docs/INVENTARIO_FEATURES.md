@@ -138,6 +138,18 @@ Módulo: `src/core/tileMap.js`. Kernel: `tileMapMicrobench.mjs`. Escena **nueva*
 
 **Hueco de escena** hasta esta noche (antes solo kernel). Sin hipótesis nuevas de tilemap más allá de enganchar la escena. Cómo medir: fila `tilemap` del scoreboard.
 
+### tilemapCull — Cull de chunks de fondo
+
+Módulo: `src/render/tilemapCull.js`. Kernel: `tilemapCullMicrobench.mjs` (`listVisibleChunks`). Escena: `TilemapCullStressScene` (`setTilemapBackground` + cámara en círculo, `chunkTiles: 8`). Primaria: `pixi_STEP_MS`. Carga: `ENTITIES_PROCESSED`. No reusa `TilemapStressScene` (`getTileId`).
+
+### contactDrain — Drain de contactos Box2D
+
+Módulo: `src/workers/logicWorker.js`. Sin kernel. Escena: `ContactDrainStressScene` (pile 256 + paredes, `CollisionListener`, gravity, sleeping off, 1 logic worker). Primaria: `logic0_STEP_MS`. Carga: `BODY_COUNT`.
+
+### box2dRayJs — Servicio JS de castRayClosest
+
+Módulo: `src/box2d/weedjsPost.js` (`serviceRayCast`). Sin kernel WASM (ese no ve el bag JS). Escena: `RayVsBox2dBoxBusyScene`. Primarias: `physics_STEP_MS`, `logic0_RAYCAST_MS`. Carga: `BODY_COUNT`, `logic0_RAYCAST_COUNT`.
+
 ### queryPublish — Publicación QuerySystem
 
 Módulo: `src/core/querySystem.js`. Kernel: `querySystemMicrobench.mjs`. Escena: `QueryChurnScene`. Primaria: `logic0_STEP_MS`. Carga: `ENTITIES_PROCESSED`.
@@ -166,7 +178,7 @@ Pool-flow 2026-09-16 (otra pregunta, mismo worker de partículas): sway con `cop
 
 ### bullets — Tick de balas
 
-Módulo: `src/util/bulletTick.js`. Kernel: `bulletTickMicrobench.mjs` (`cases.tickCrowded.opsPerSec`; también scan vs compact sparse). Escena: `BulletStressScene` (pool 2048, 3 logic workers, 8 shooters × 40 spawn/tick, paredes). Gameplay: Predator headed. Primaria: `particle_STEP_MS`. Carga: `ACTIVE_BULLETS`.
+Módulo: `src/core/bulletPool.js` (`BulletPool.tick`). Kernel: `bulletTickMicrobench.mjs` (`cases.tickCrowded.opsPerSec`; también scan vs compact sparse). Escena: `BulletStressScene` (pool 2048, 3 logic workers, 8 shooters × 40 spawn/tick, paredes). Gameplay: Predator headed. Primaria: `particle_STEP_MS`. Carga: `ACTIVE_BULLETS`.
 
 Pirámide 2026-09-16: speed-cache **kept en kernel** (`tickCrowded` hypot→cached; Predator headed TIE con ~2 balas vivas — no se vende como Predator). Compact **dropped** para el motor: kernel sparse gana ops/s (hasta +100% en 256/8192), estrés **WORSE** (+7.6% particle, carga OK), Predator compact **FAIL** (cv `ACTIVE_BULLETS` ≥ 50% + crash Chromium). Isolation vieja (+1.9%) se queda. Scan de `maxBullets`; no `activeBulletsLock`.
 

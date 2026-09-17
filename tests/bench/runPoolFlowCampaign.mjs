@@ -36,7 +36,6 @@ const HYP_FILES = [
   'src/workers/abstractWorker.js',
   'src/util/sceneSharedBuffers.js',
   'src/util/sceneWorkerBootstrap.js',
-  'src/util/bulletTick.js',
 ];
 
 const CELLS = [

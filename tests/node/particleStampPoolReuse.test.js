@@ -65,33 +65,15 @@ test('stayOnTheFloor stamp holds the pool slot until the caller recycles', { con
 
     const activeIndices = new Uint16Array([i]);
     const particlesToStamp = new Uint16Array(MAX);
-    const { stampedCount } = updateParticlePhysicsBuffers({
+    const { stampedCount } = updateParticlePhysicsBuffers(
+      ParticleComponent,
       activeIndices,
-      count: 1,
-      deltaTime: 16.67,
-      dtRatio: 1,
-      decalsEnabled: true,
+      1,
+      16.67,
+      1,
+      true,
       particlesToStamp,
-      components: {
-        active: ParticleComponent.active,
-        x: ParticleComponent.x,
-        y: ParticleComponent.y,
-        z: ParticleComponent.z,
-        vx: ParticleComponent.vx,
-        vy: ParticleComponent.vy,
-        vz: ParticleComponent.vz,
-        lifespan: ParticleComponent.lifespan,
-        currentLife: ParticleComponent.currentLife,
-        gravity: ParticleComponent.gravity,
-        alpha: ParticleComponent.alpha,
-        fadeOnTheFloor: ParticleComponent.fadeOnTheFloor,
-        timeOnFloor: ParticleComponent.timeOnFloor,
-        initialAlpha: ParticleComponent.initialAlpha,
-        stayOnTheFloor: ParticleComponent.stayOnTheFloor,
-        despawnOnGroundContact: ParticleComponent.despawnOnGroundContact,
-        flat: ParticleComponent.flat,
-      },
-    });
+    );
 
     assert.equal(stampedCount, 1);
     assert.equal(particlesToStamp[0], i);
@@ -111,33 +93,15 @@ test('stayOnTheFloor without a stamp list still returns the slot', { concurrency
   try {
     const i = spawnFloorStamp();
     const activeIndices = new Uint16Array([i]);
-    const { stampedCount } = updateParticlePhysicsBuffers({
+    const { stampedCount } = updateParticlePhysicsBuffers(
+      ParticleComponent,
       activeIndices,
-      count: 1,
-      deltaTime: 16.67,
-      dtRatio: 1,
-      decalsEnabled: false,
-      particlesToStamp: null,
-      components: {
-        active: ParticleComponent.active,
-        x: ParticleComponent.x,
-        y: ParticleComponent.y,
-        z: ParticleComponent.z,
-        vx: ParticleComponent.vx,
-        vy: ParticleComponent.vy,
-        vz: ParticleComponent.vz,
-        lifespan: ParticleComponent.lifespan,
-        currentLife: ParticleComponent.currentLife,
-        gravity: ParticleComponent.gravity,
-        alpha: ParticleComponent.alpha,
-        fadeOnTheFloor: ParticleComponent.fadeOnTheFloor,
-        timeOnFloor: ParticleComponent.timeOnFloor,
-        initialAlpha: ParticleComponent.initialAlpha,
-        stayOnTheFloor: ParticleComponent.stayOnTheFloor,
-        despawnOnGroundContact: ParticleComponent.despawnOnGroundContact,
-        flat: ParticleComponent.flat,
-      },
-    });
+      1,
+      16.67,
+      1,
+      false,
+      null,
+    );
 
     assert.equal(stampedCount, 0);
     assert.equal(ParticleComponent.active[i], 0);
