@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, enums } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, Box2d, enums } = WEED;
 const { ShapeType } = enums;
 
 /**
@@ -28,7 +28,7 @@ export class Box2dQueryAabbTarget extends GameObject {
 }
 
 /**
- * Runs one sync box2dQueryAABB and asserts known targets are found.
+ * Runs one sync Box2d.queryAABB and asserts known targets are found.
  * ponytail: smallest runnable check for QueryAABB gameplay API.
  */
 export class Box2dQueryAabbProbe extends GameObject {
@@ -52,7 +52,7 @@ export class Box2dQueryAabbProbe extends GameObject {
 
     try {
       const half = 120;
-      const count = this.box2dQueryAABB(
+      const count = Box2d.queryAABB(
         this.x - half,
         this.y - half,
         this.x + half,

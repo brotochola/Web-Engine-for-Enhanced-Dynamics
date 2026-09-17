@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 import { SpawnStormEntity } from './spawnStormEntity.js';
 
-const { GameObject, SpriteRenderer } = WEED;
+const { GameObject, SpriteRenderer, Query } = WEED;
 
 export class SpawnStormDriver extends GameObject {
   static scriptUrl = import.meta.url;
@@ -14,7 +14,7 @@ export class SpawnStormDriver extends GameObject {
   }
 
   tick() {
-    const live = queryActiveEntities([SpriteRenderer]) || [];
+    const live = Query.queryActiveEntities([SpriteRenderer]) || [];
     const kill = Math.min(48, live.length);
     for (let i = 0; i < kill; i++) {
       const entity = GameObject.get(live[i]);

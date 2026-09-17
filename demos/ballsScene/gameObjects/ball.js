@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
-const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer, rng } = WEED;
+const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer, rng, Query } = WEED;
 
 class Ball extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -110,6 +110,10 @@ class Ball extends GameObject {
 
       // Apply repulsion (px/s²)
       this.addAcceleration(Ball.mousePower * (dx / dist2), Ball.mousePower * (dy / dist2));
+    }
+
+    if (this.index === this.constructor.startIndex) {
+      Query.queryActiveEntities([RigidBody]);
     }
 
     if (Keyboard.m) {

@@ -15,6 +15,7 @@ import { ShadowCaster } from '../components/shadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { AbstractWorker } from './abstractWorker.js';
+import { Query } from '../core/query.js';
 import {
     buildVisibilityPolygon,
     OCC_CIRCLE,
@@ -858,7 +859,7 @@ class PreRenderWorker extends AbstractWorker {
         if (this._frameCameraBoundsValid) this.calculateCameraBounds();
         // Optional SoA: skip Adobe query when scene never allocated AdobeAnimComponent
         this._frameAdobeEntities = AdobeAnimComponent.active
-            ? this.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent])
+            ? Query.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent])
             : (this._emptyAdobeEntities || (this._emptyAdobeEntities = []));
 
         this.collectTimeThisFrame = 0;
@@ -1049,7 +1050,7 @@ class PreRenderWorker extends AbstractWorker {
         // Normalized to (array, base offset) instead of a per-frame closure so the
         // hot loop below stays allocation-free and the index load stays inlineable.
         let iterCount, iterSource, iterBase;
-        const spriteEntities = this.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
+        const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
         if (spriteEntities && spriteEntities.length > 0) {
             iterCount = spriteEntities.length;
             iterSource = spriteEntities;
@@ -1210,7 +1211,7 @@ class PreRenderWorker extends AbstractWorker {
 
         // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
         if (this._queryLightEmitter && LightEmitter.active && LightEmitter.hasGlowSprite) {
-            const lights = this.queryActiveEntities(this._queryLightEmitter);
+            const lights = Query.queryActiveEntities(this._queryLightEmitter);
             if (lights && lights.length > 0) {
                 const leActive = LightEmitter.active;
                 const leGlow = LightEmitter.hasGlowSprite;
@@ -2740,7 +2741,7 @@ class PreRenderWorker extends AbstractWorker {
             persistScratch.length = 0;
             flashScratch.length = 0;
 
-            const lightEntitiesRaw = this.queryActiveEntities(this._queryLightEmitter);
+            const lightEntitiesRaw = Query.queryActiveEntities(this._queryLightEmitter);
             for (let i = 0; i < lightEntitiesRaw.length; i++) {
                 const lightIdx = lightEntitiesRaw[i];
                 if (!lightEnabled[lightIdx]) continue;

@@ -8,20 +8,16 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
+import { Box2d } from './box2d.js';
+import { Decal } from './decal.js';
 import { LiquidFun } from './liquidFun.js';
-import { bindCommandRing, enqueueExplode } from '../box2d/box2dCommandRing.js';
-import {
-  bindQueryAabbSab,
-  box2dQueryAABBAsync,
-} from '../box2d/box2dQueryAabb.js';
-import {
-  bindRayCastSab,
-  box2dCastRayClosestAsync,
-} from '../box2d/box2dRayCast.js';
+import { bindCommandRing } from '../box2d/box2dCommandRing.js';
+import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
+import { bindRayCastSab } from '../box2d/box2dRayCast.js';
 import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
 import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
-import { bindMovedBodies, getMovedBodiesViews } from '../box2d/box2dMovedBodies.js';
+import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { ParticleComponent } from '../components/particleComponent.js';
@@ -64,7 +60,7 @@ import {
 } from '../util/sceneBufferMemory.js';
 import { createSceneSharedBuffers, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
 import { createSceneWorkers } from '../util/sceneWorkerBootstrap.js';
-import { QuerySystem } from './querySystem.js';
+import { Query } from './query.js';
 import { GrabSystem } from './grabSystem.js';
 import {
   SCENE_DEFAULTS,
@@ -177,8 +173,8 @@ class Scene {
       preRender: null, // Pre-render worker for visibility, animation, render queues
     };
 
-    // Query system for component-based entity filtering
-    this.querySystem = new QuerySystem();
+    // Query system for component-based entity filtering (owned by Query facade)
+    Query.reset();
 
     this.pendingPhysicsUpdates = [];
 
@@ -722,42 +718,6 @@ class Scene {
     return this.config.logic.numberOfLogicWorkers;
   }
 
-  /**
-   * Entity indices that moved in the last physics step (live SAB subarray).
-   * @returns {Uint32Array}
-   */
-  get bodiesThatMoved() {
-    const v = getMovedBodiesViews();
-    if (!v || !v.movedList) return new Uint32Array(0);
-    const count = v.count | 0;
-    return count > 0 ? v.movedList.subarray(0, count) : new Uint32Array(0);
-  }
-
-  /**
-   * Full moved-body views for the last physics step.
-   * @returns {{ list: Uint32Array, count: number, bits: Uint8Array|null, generation: number, fellAsleep: Uint8Array|null }}
-   */
-  getBodiesThatMoved() {
-    const v = getMovedBodiesViews();
-    if (!v || !v.movedList) {
-      return {
-        list: new Uint32Array(0),
-        count: 0,
-        bits: null,
-        generation: 0,
-        fellAsleep: null,
-      };
-    }
-    const count = v.count | 0;
-    return {
-      list: count > 0 ? v.movedList.subarray(0, count) : new Uint32Array(0),
-      count,
-      bits: v.movedBits,
-      generation: v.generation | 0,
-      fellAsleep: v.fellAsleep,
-    };
-  }
-
   /** @returns {boolean} Whether particles are enabled */
   get hasParticles() {
     return this.config.particle.maxParticles > 0;
@@ -1046,7 +1006,9 @@ class Scene {
     window.Flash = Flash;
     window.NavGrid = NavGrid;
     window.Grid = Grid;
-    window.DecorationPool = DecorationPool;
+    window.Box2d = Box2d;
+    window.Decal = Decal;
+    window.Query = Query;
     window.BulletPool = BulletPool;
     window.BulletComponent = BulletComponent;
     window.SoundManager = SoundManager;
@@ -2031,38 +1993,6 @@ class Scene {
       logic: multi(this.buffers.logicStats, LOGIC_STATS, logicCount),
       main: this.mainStepMs || 0,
     };
-  }
-
-  /**
-   * Box2D radial explosion — applies falling-off impulse to bodies within radius
-   * (falloff = 0.5 * radius, handled by the physics worker).
-   * @param {{x:number, y:number, radius:number, impulsePerLength:number, maskBits?:number}} opts
-   */
-  explode({ x, y, radius, impulsePerLength, maskBits = 0xffffffff }) {
-    enqueueExplode(maskBits >>> 0, x, y, radius, impulsePerLength);
-  }
-
-  /**
-   * Box2D QueryAABB from main thread (async — Atomics.waitAsync).
-   * Logic / GameObject should use sync `box2dQueryAABB` instead.
-   * @param {number} x0
-   * @param {number} y0
-   * @param {number} x1
-   * @param {number} y1
-   * @param {Int32Array} out
-   * @param {{categoryBits?:number, maskBits?:number}} [filter]
-   * @returns {Promise<number>} full hit count (may exceed out.length)
-   */
-  box2dQueryAABB(x0, y0, x1, y1, out, filter) {
-    return box2dQueryAABBAsync(x0, y0, x1, y1, out, filter);
-  }
-
-  /**
-   * Box2D castRayClosest from main thread (async — Atomics.waitAsync).
-   * Logic / GameObject should use sync `box2dCastRayClosest` instead.
-   */
-  box2dCastRayClosest(ox, oy, dx, dy, out, filter) {
-    return box2dCastRayClosestAsync(ox, oy, dx, dy, out, filter);
   }
 
   updatePhysicsConfig(partialConfig = {}) {

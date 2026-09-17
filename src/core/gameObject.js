@@ -49,8 +49,6 @@ import {
   enqueueSetAwake,
   isCommandRingBound,
 } from '../box2d/box2dCommandRing.js';
-import { box2dQueryAABB as runBox2dQueryAABB } from '../box2d/box2dQueryAabb.js';
-import { box2dCastRayClosest as runBox2dCastRayClosest } from '../box2d/box2dRayCast.js';
 import {
   bumpBodyGeneration,
   markBodyDirty,
@@ -1815,34 +1813,6 @@ export class GameObject {
    */
   getNeighbor(i) {
     return this._neighbors[i];
-  }
-
-  /**
-   * Box2D QueryAABB (sync, logic workers only). Blocks until physics fills hits.
-   * Single-flight across the process — concurrent callers serialize.
-   * @param {number} x0
-   * @param {number} y0
-   * @param {number} x1
-   * @param {number} y1
-   * @param {Int32Array} out - entity ids written here
-   * @param {{categoryBits?:number, maskBits?:number}} [filter]
-   * @returns {number} full hit count (may exceed out.length)
-   */
-  box2dQueryAABB(x0, y0, x1, y1, out, filter) {
-    return runBox2dQueryAABB(x0, y0, x1, y1, out, filter);
-  }
-
-  /**
-   * Sync Box2D castRayClosest (logic workers). Blocks with Atomics.wait.
-   * @param {number} ox
-   * @param {number} oy
-   * @param {number} dx displacement X
-   * @param {number} dy displacement Y
-   * @param {{ hit?: boolean, entityIndex?: number, fraction?: number, hitX?: number, hitY?: number }} [out]
-   * @param {{ categoryBits?: number, maskBits?: number }} [filter]
-   */
-  box2dCastRayClosest(ox, oy, dx, dy, out, filter) {
-    return runBox2dCastRayClosest(ox, oy, dx, dy, out, filter);
   }
 
   /**

@@ -2,6 +2,7 @@ import { getPortTransferables, postWorkerInitMessage } from './utils.js';
 import { debugWorkerLog } from './debugLog.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
+import { Query } from '../core/query.js';
 import { Flash } from '../core/flash.js';
 import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
@@ -337,7 +338,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
             startIndex: Flash.startIndex,
           }
         : null,
-    queries: scene.querySystem.serialize(),
+    queries: Query.serialize(),
     staticFlowfields: NavGrid.serializeStaticFlowfields(),
     joints: scene.config.physics.maxJoints > 0
       ? {

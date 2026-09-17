@@ -20,6 +20,7 @@ import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { AbstractWorker } from './abstractWorker.js';
+import { Query } from '../core/query.js';
 import { Grid } from '../core/grid.js';
 import { NavGrid, DIRECTION, DIR_TO_VEC } from '../core/navGrid.js';
 import {
@@ -1679,7 +1680,7 @@ class ParticleWorker extends AbstractWorker {
     const entityType = Transform.entityType;
     const deriveSpeedByType = this.deriveSpeedByType;
 
-    const physicsEntities = this.queryActiveEntities(this._queryRigidBody);
+        const physicsEntities = Query.queryActiveEntities(this._queryRigidBody);
 
     for (let idx = 0; idx < physicsEntities.length; idx++) {
       const i = physicsEntities[idx];

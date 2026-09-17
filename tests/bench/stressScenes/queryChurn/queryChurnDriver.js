@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 import { QueryChurnTag } from './queryChurnTag.js';
 import { QueryChurnEntity } from './queryChurnEntity.js';
 
-const { GameObject, SpriteRenderer } = WEED;
+const { GameObject, SpriteRenderer, Query } = WEED;
 
 export class QueryChurnDriver extends GameObject {
   static scriptUrl = import.meta.url;
@@ -17,7 +17,7 @@ export class QueryChurnDriver extends GameObject {
   }
 
   tick() {
-    const active = queryActiveEntities([QueryChurnTag, SpriteRenderer]);
+    const active = Query.queryActiveEntities([QueryChurnTag, SpriteRenderer]);
     this._lastActiveCount = active.length;
 
     if (active.length > 0) {

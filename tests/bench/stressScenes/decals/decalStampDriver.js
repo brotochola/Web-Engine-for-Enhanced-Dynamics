@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, ParticleEmitter, enums } = WEED;
+const { GameObject, Decal, enums } = WEED;
 const { DECAL_STAMPS_BLEND_MODE } = enums;
 
 const STAMPS_PER_TICK = 64;
@@ -8,7 +8,7 @@ const WORLD_W = 1920;
 const WORLD_H = 1080;
 
 /**
- * Fires a fixed-size, seeded burst of ParticleEmitter.stampDecal calls each
+ * Fires a fixed-size, seeded burst of Decal.stamp calls each
  * tick — deterministic workload so DECAL_STAMP_MS / STEP_MS stay comparable
  * across runs. Mixes blend modes, tint, scale and alpha.
  */
@@ -44,7 +44,7 @@ export class DecalStampDriver extends GameObject {
       const tint = ((this._rng() * 0xffffff) | 0) >>> 0;
       const blendMode = i % 3 === 0 ? DECAL_STAMPS_BLEND_MODE.multiply : DECAL_STAMPS_BLEND_MODE.normal;
 
-      sink += ParticleEmitter.stampDecal({
+      sink += Decal.stamp({
         texture: 'blood',
         x,
         y,

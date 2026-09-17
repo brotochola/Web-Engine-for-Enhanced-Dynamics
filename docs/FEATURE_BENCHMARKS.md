@@ -145,12 +145,12 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 |-------|------|----------|
 | RayStressScene | `/tests/bench/stressScenes/rayStressScene.js` | Many deterministic raycasts/tick → `RAYCAST_MS` |
 | BulletStressScene | `/tests/bench/stressScenes/bulletStressScene.js` | ~2k live bullets, walls, spawn storm → particle `STEP_MS`, `ACTIVE_BULLETS` |
-| DecalStampStressScene | `/tests/bench/stressScenes/decalStampStressScene.js` | Deterministic `stampDecal` storm → `DECAL_STAMP_MS` |
+| DecalStampStressScene | `/tests/bench/stressScenes/decalStampStressScene.js` | Deterministic `Decal.stamp` storm → `DECAL_STAMP_MS` |
 | ParticleEmitStressScene | `/tests/bench/stressScenes/particleEmitStressScene.js` | Fixed-rate `emitFlat` → emit / STEP |
 | ParticleIntegrateStressScene | `/tests/bench/stressScenes/particleIntegrateStressScene.js` | Heighted churn → `PARTICLE_PHYSICS_MS`, lists |
 | StationarySpatialScene | `/tests/bench/stressScenes/stationarySpatialScene.js` | Stationary neighbor reuse |
 | QueryChurnScene | `/tests/bench/stressScenes/queryChurnScene.js` | Spawn/despawn + query publication |
-| QueryAabbStressScene | `/tests/bench/stressScenes/queryAabbStressScene.js` | Per-tick `box2dQueryAABB` burst |
+| QueryAabbStressScene | `/tests/bench/stressScenes/queryAabbStressScene.js` | Per-tick `Box2d.queryAABB` burst |
 | SpawnStormScene | `/tests/bench/stressScenes/spawnStormScene.js` | Batched spawn/despawn |
 | NavStressScene | `/tests/bench/stressScenes/navStressScene.js` | Many unique flowfield targets |
 | RenderQueueStressScene | `/tests/bench/stressScenes/renderQueueStressScene.js` | Cull / Y-sort / render queue |

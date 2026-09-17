@@ -189,3 +189,19 @@ test('queryCircle caps results to out.length', { concurrency: false }, () => {
     restore();
   }
 });
+
+test('Decoration.spawn and DecorationPool.spawn share the same pool indices', { concurrency: false }, () => {
+  const restore = setupDecorationPool(4);
+  try {
+    const viaFacade = Decoration.spawn({ x: 10, y: 20 });
+    const viaPool = DecorationPool.spawn({ x: 30, y: 40 });
+    assert.ok(viaFacade >= 0);
+    assert.ok(viaPool >= 0);
+    assert.notEqual(viaFacade, viaPool);
+    Decoration.despawn(viaFacade);
+    const recycled = Decoration.spawn({ x: 1, y: 1 });
+    assert.equal(recycled, viaFacade);
+  } finally {
+    restore();
+  }
+});

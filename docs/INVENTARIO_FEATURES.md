@@ -60,7 +60,7 @@ Módulo: `src/core/ray.js`. Kernel: `rayMicrobench.mjs`. Escena: `RayStressScene
 
 ### rayVsBox2d — Rayo WeedJS versus Box2D ocupado
 
-Módulo: `src/core/ray.js` (más `box2dCastRayClosest`). Kernel: `rayVsBox2dMicrobench.mjs`. Escena: `RayVsBox2dWeedBusyScene`. Primarias: `logic0_RAYCAST_MS`, `physics_STEP_MS`. Carga: `BODY_COUNT`.
+Módulo: `src/core/ray.js` (más `Box2d.castRayClosest`). Kernel: `rayVsBox2dMicrobench.mjs`. Escena: `RayVsBox2dWeedBusyScene`. Primarias: `logic0_RAYCAST_MS`, `physics_STEP_MS`. Carga: `BODY_COUNT`.
 
 **Ya medido** el contraste idle/busy (el DDA de lógica no debería subir cuando física satura; el rayo sync de Box2D sí). Esta noche: kernel + estrés. Sin hipótesis nuevas.
 

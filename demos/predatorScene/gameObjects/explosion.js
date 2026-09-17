@@ -4,6 +4,7 @@ import { ExplosionComponent } from '../components/explosionComponent.js';
 const {
   SoundManager,
   ParticleEmitter,
+  Decal,
   GameObject,
   Collider,
   SpriteRenderer,
@@ -133,7 +134,7 @@ export class Explosion extends GameObject {
   }
 
   stampDecalToFloor() {
-    ParticleEmitter.stampDecal({
+    Decal.stamp({
       texture: 'explosion_decal',
       x: this.x,
       y: this.y,

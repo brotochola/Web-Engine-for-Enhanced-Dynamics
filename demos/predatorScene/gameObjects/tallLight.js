@@ -80,7 +80,7 @@ export class TallLight extends GameObject {
       despawnOnGroundContact: true,
     });
 
-    Flash.create({
+    Flash.spawn({
       x: hitX,
       y: hitY,
       lifespan: 18,

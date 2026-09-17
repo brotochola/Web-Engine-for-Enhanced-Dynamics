@@ -64,7 +64,7 @@ export class House extends GameObject {
       despawnOnGroundContact: true,
     });
 
-    Flash.create({
+    Flash.spawn({
       x: hitX,
       y: hitY,
       lifespan: 18,

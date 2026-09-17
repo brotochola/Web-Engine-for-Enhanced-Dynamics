@@ -3,7 +3,7 @@ import { DIRECTION_DOWN, PersonComponent } from '/demos/predatorScene/components
 import { PersonAnimationFSM } from '/demos/predatorScene/fsm/personAnimationFsm.js';
 import { LootableComponent } from '/demos/predatorScene/components/lootableComponent.js';
 import { CarComponent } from '../components/carComponent.js';
-import { ParticleEmitter, SpriteSheetRegistry, SoundManager } from '/src/index.js';
+import { ParticleEmitter, Decal, SpriteSheetRegistry, SoundManager } from '/src/index.js';
 
 const { rng, GameObject, RigidBody, Collider, CollisionListener, SpriteRenderer, NavGrid, Transform } = WEED;
 
@@ -159,7 +159,7 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     const spritesheetId = this.spriteRenderer.spritesheetId;
     const spritesheetName = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
 
-    ParticleEmitter.stampDecal({
+    Decal.stamp({
       spritesheet: spritesheetName,
       animation: 'hurt',
       frame: -1,

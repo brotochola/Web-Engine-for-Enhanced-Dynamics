@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, Ray, Transform, Collider, RigidBody, box2dCastRayClosest } = WEED;
+const { GameObject, Ray, Transform, Collider, RigidBody, Box2d } = WEED;
 
 const CASTS_PER_TICK = 512;
 const PAIR_COUNT = 1024;
@@ -11,7 +11,7 @@ const MARGIN = 64;
 
 /**
  * Fires a fixed mix of casts each tick against static obstacles.
- * backend: 'weedjs' (default) uses Ray.*; 'box2d' uses sync box2dCastRayClosest SAB.
+ * backend: 'weedjs' (default) uses Ray.*; 'box2d' uses sync Box2d.castRayClosest SAB.
  * Workload is seeded/cyclic so RAYCAST_MS stays comparable across runs.
  */
 export class RayStressDriver extends GameObject {
@@ -80,7 +80,7 @@ export class RayStressDriver extends GameObject {
 
   _box2dClosest(ox, oy, ex, ey) {
     const out = this._rayOut;
-    box2dCastRayClosest(ox, oy, ex - ox, ey - oy, out);
+    Box2d.castRayClosest(ox, oy, ex - ox, ey - oy, out);
     return out.hit ? out.entityIndex : -1;
   }
 

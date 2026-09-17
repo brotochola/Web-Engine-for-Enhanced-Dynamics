@@ -140,7 +140,7 @@ Decorations parented to an entity are tracked in a **shared attachment table** (
 - `getAttachedDecorationIndex(slot)` → pool index at `slot` (`0` .. count−1), or `-1`.
 - `getAttachedDecoration(slot)` → `Decoration` facade for that slot, or `null` (same underlying data as `Decoration.get(poolIndex)`).
 
-Scene config: `decoration.maxAttachedDecorationsPerEntity` caps attachments per entity (default clamped by the engine). To remove one decoration early, call `DecorationPool.despawn(poolIndex)` (it detaches from the parent automatically).
+Scene config: `decoration.maxAttachedDecorationsPerEntity` caps attachments per entity (default clamped by the engine). To remove one decoration early, call `Decoration.despawn(poolIndex)` (it detaches from the parent automatically).
 
 `Decoration.get(poolIndex)` returns a lightweight facade for the current pool slot generation. If you keep a facade after its decoration despawns and that pool index is reused, the old facade becomes inactive and will not mutate the new decoration. Store pool indices for long-lived references, and call `Decoration.get(index)` again when you need the current facade.
 
@@ -236,9 +236,9 @@ Entity types without the tag component can still define `onCollisionEnter` etc. 
 Tag components participate in the query system like any other component:
 
 ```javascript
-const listeners = query([CollisionListener]); // all matching slots, including inactive pooled ones
-const listenerSlots = queryActiveEntities([CameraInOutListener]); // active precomputed query
-const visibleListeners = queryActiveEntitiesSlow([CameraInOutListener, SpriteRenderer]); // explicit slow path
+const listeners = Query.query([CollisionListener]); // all matching slots, including inactive pooled ones
+const listenerSlots = Query.queryActiveEntities([CameraInOutListener]); // active precomputed query
+const visibleListeners = Query.queryActiveEntitiesSlow([CameraInOutListener, SpriteRenderer]); // explicit slow path
 ```
 
 ### Creating your own tag components
@@ -249,7 +249,7 @@ class MyTag extends Component {}
 export { MyTag };
 ```
 
-Add it to `static components` and use `query([MyTag])` to find entities. No registration in Scene.js is needed for user-defined tags -- the engine auto-registers any component found in a registered entity's `static components`.
+Add it to `static components` and use `Query.query([MyTag])` to find entities. No registration in Scene.js is needed for user-defined tags -- the engine auto-registers any component found in a registered entity's `static components`.
 
 ---
 
@@ -552,7 +552,7 @@ WEED.ParticleEmitter.emit({
   layer: 'FOREGROUND_FX',
 });
 
-WEED.DecorationPool.spawn({
+WEED.Decoration.spawn({
   x: 100, y: 200,
   texture: 'tree_canopy',
   layer: 'CANOPY',
@@ -832,7 +832,7 @@ WEED.ParticleEmitter.emitZenithal({
 
 // Flashes — pooled LightEmitter + FlashComponent (see docs/FLASHES.md)
 // Needs lighting.maxFlashes > 0. Shares lighting.maxLights with persistent lights.
-WEED.Flash.create({
+WEED.Flash.spawn({
   x: this.x,
   y: this.y,
   z: 30,
@@ -842,12 +842,12 @@ WEED.Flash.create({
   castShadows: false, // default true; false = lighting only (cheap muzzle)
 });
 
-// Query helpers (worker context)
-const all = query([WEED.Transform, WEED.Collider]); // all matching slots, active or inactive
-const activeSprites = queryActiveEntities([WEED.SpriteRenderer]); // active precomputed query
-const customActive = queryActiveEntitiesSlow([WEED.Transform, WEED.SpriteRenderer]); // explicit slow path
+// Query (same call from Scene and GameObject). Box2d.queryAABB is fixtures; Query.query is ECS.
+const all = Query.query([WEED.Transform, WEED.Collider]); // all matching slots, active or inactive
+const activeSprites = Query.queryActiveEntities([WEED.SpriteRenderer]); // active precomputed query
+const customActive = Query.queryActiveEntitiesSlow([WEED.Transform, WEED.SpriteRenderer]); // explicit slow path
 
-Built-in single-component entity queries are precomputed by the engine. Add scene-specific hot combinations with `static queries = [[ComponentA, ComponentB], ...]`. Active precomputed queries are published as complete snapshots by logic0: a reader may see a slightly stale result, but never a half-shifted list. `queryActiveEntities()` only accepts precomputed combinations. Use `queryActiveEntitiesSlow()` for deliberate ad hoc active component queries; do not put that path in hot loops unless benchmarked.
+Built-in single-component entity queries are precomputed by the engine. Add scene-specific hot combinations with `static queries = [[ComponentA, ComponentB], ...]`. Active precomputed queries are published as complete snapshots by logic0: a reader may see a slightly stale result, but never a half-shifted list. `Query.queryActiveEntities()` only accepts precomputed combinations. Use `Query.queryActiveEntitiesSlow()` for deliberate ad hoc active component queries; do not put that path in hot loops unless benchmarked.
 
 // Public utility helpers intentionally exposed on WEED
 WEED.rng()
@@ -950,7 +950,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 - Use `tickInterval > 1` for heavy AI and enable `logic.staggeredUpdates`.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
-- Flash pool is finite (`lighting.maxFlashes`). Flashes also compete for `lighting.maxLights`; persistent lights win when the list is capped. Short muzzle flashes should use `Flash.create({ castShadows: false })` so they light without point-shadow grid work.
+- Flash pool is finite (`lighting.maxFlashes`). Flashes also compete for `lighting.maxLights`; persistent lights win when the list is capped. Short muzzle flashes should use `Flash.spawn({ castShadows: false })` so they light without point-shadow grid work.
 - Rendering caps are finite too. One-shot pre-render warnings for visible lights, shadow queues, shadow sprites, and visibility polygon occluders mean the scene is truncating work. Tune `lighting.maxLights`, `lighting.maxFlashes`, `lighting.maxShadowCastingLights`, `lighting.maxShadowsPerLight`, `lighting.maxShadowSprites`, or reduce light/occluder density.
 - Sound slots are finite (default 64). One-shot SFX are cheap; don't forget `stop()` on loops.
 - Spatial sound culls anything a full viewport-width outside the camera. Keep that in mind for ambient loops.

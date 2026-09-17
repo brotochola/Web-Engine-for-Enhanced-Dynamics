@@ -11,7 +11,7 @@ Mode is chosen at the call site via `emit` / `emitZenithal` / `emitFlat`.
 | `ParticleEmitter.emit(config)` | Heighted: `z`, gravity on `vz`, floor flags | `screenY = y + z` (topdown / iso) |
 | `ParticleEmitter.emitZenithal(config)` | Same heighted physics | XY on floor plane; scale (+ optional alpha) from `-z` |
 | `ParticleEmitter.emitFlat(config)` | No ground; XY + gravity on `vy` | `screenY = y` (ignore `z`) |
-| `ParticleEmitter.stampDecal(config)` | Instant floor stamp via heighted `emit` | Decal on tilemap |
+| `Decal.stamp(config)` | Instant floor stamp via heighted particle | Decal on tilemap |
 | `LiquidFun.emit(config)` | Box2D liquidfun-c (physics worker WASM) | Same XY as rigid bodies; see [LiquidFun](./LIQUIDFUN.md) |
 
 Per-particle flags written at spawn:
@@ -126,7 +126,7 @@ Same as before: `texture` name, or `spritesheet` + `animation` + `frame`. Resolv
 ## Pipeline
 
 ```
-emit / emitFlat / emitZenithal / stampDecal
+emit / emitFlat / emitZenithal / Decal.stamp
   → ParticleComponent SAB (incl. flat, viewMode)
 particleWorker
   → physics + ground / decals + visibleParticlesData
@@ -138,6 +138,7 @@ pixiWorker
 
 ## Related
 
+- [`decal.js`](../src/core/decal.js)
 - [`particleEmitter.js`](../src/core/particleEmitter.js)
 - [`particleComponent.js`](../src/components/particleComponent.js)
 - [`particleWorker.js`](../src/workers/particleWorker.js)

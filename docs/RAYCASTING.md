@@ -146,6 +146,6 @@ The ray checks `(1 << (entity.collisionLayer & 31)) & mask` per entity -- one bi
 - Correctness + throughput regression: `node tests/bench/rayMicrobench.mjs` (20k brute-force comparisons + timed workloads).
 - WeedJS vs Box2D kernel A/B (idle Node): `pnpm bench:micro:ray-vs-box2d`. Soft hit/miss agreement only — filters/math differ.
 - Busy-physics hyp (logic DDA vs physics-thread SAB cast): `pnpm bench:feature:ray-vs-box2d:weedjs:busy` vs `…:box2d:busy`. Read `RAYCAST_MS` + physics `STEP_MS`/`BOX2D_MS`. WeedJS ray is **logic-thread DDA**, not a dedicated ray worker.
-- Public sync API for Box2D closest ray: `box2dCastRayClosest(ox, oy, dx, dy, out?, filter?)` (SAB, single-flight; same pattern as QueryAABB).
+- Public sync API for Box2D closest ray: `Box2d.castRayClosest(ox, oy, dx, dy, out?, filter?)` (SAB, single-flight; same pattern as QueryAABB). Main thread: `Box2d.castRayClosestAsync`.
 - Optimization hypotheses + headless L1/L2/L3 campaign: `[RAY_HYPOTHESES.md](./RAY_HYPOTHESES.md)`.
 - Production Ray path includes tournament champion **H6+H1** (stamp dedup + `castAll` top-N early-out).

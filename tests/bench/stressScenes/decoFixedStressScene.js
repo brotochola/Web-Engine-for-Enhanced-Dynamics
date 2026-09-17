@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 import { DecoFixedAnchor } from './decorations/decoFixedAnchor.js';
 
-const { Scene, Camera, DecorationPool } = WEED;
+const { Scene, Camera, Decoration } = WEED;
 
 const SEED = 0xdec0f1;
 const WORLD_W = 4000;
@@ -57,7 +57,7 @@ function plantFixedDecos(scene) {
   const rng = mulberry32(SEED);
   scene.spawnEntity(DecoFixedAnchor, { x: -10000, y: -10000 });
   for (let i = 0; i < PLANT; i++) {
-    DecorationPool.spawn({
+    Decoration.spawn({
       x: 64 + rng() * (WORLD_W - 128),
       y: 64 + rng() * (WORLD_H - 128),
       texture: 'ball',

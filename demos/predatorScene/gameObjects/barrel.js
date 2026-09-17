@@ -84,7 +84,7 @@ export class Barrel extends GameObject {
 
     this.addVelocity((hitX - this.x) * 60, (hitY - this.y) * 60);
 
-    Flash.create({
+    Flash.spawn({
       x: hitX,
       y: hitY,
       lifespan: 18,

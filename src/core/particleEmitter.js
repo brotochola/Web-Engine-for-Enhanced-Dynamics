@@ -31,11 +31,11 @@
 //
 // 3. Specific frame names:
 //    emit({ texture: "civil1_hurt_5" })
-//    stampDecal({ texture: "civil1_hurt_5" })
+//    Decal.stamp({ texture: "civil1_hurt_5" })
 //
 // 4. Helper syntax for animation frames (recommended):
 //    emit({ spritesheet: "civil1", animation: "hurt", frame: -1 })
-//    stampDecal({ spritesheet: "civil1", animation: "hurt", frame: -1 })
+//    Decal.stamp({ spritesheet: "civil1", animation: "hurt", frame: -1 })
 //
 // The helper syntax resolves to the frame name automatically.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -85,8 +85,6 @@ export class ParticleEmitter extends SharedAtomicPool {
     z: 0,
     vz: 0,
   };
-  static _stampScratch = Object.create(null);
-
   /**
    * Initialize the emitter with particle pool size
    * Called automatically by logic worker during init
@@ -484,29 +482,6 @@ export class ParticleEmitter extends SharedAtomicPool {
     }
 
     return spawned;
-  }
-
-  /**
-   * Stamp a decal directly onto the floor tilemap.
-   * Convenience wrapper that creates an "instant stamp" particle.
-   *
-   * @param {Object} config - Decal configuration
-   * @returns {number} - Number of decals actually spawned
-   */
-  static stampDecal(config) {
-    const s = this._stampScratch;
-    for (const k in s) delete s[k];
-    for (const k in config) s[k] = config[k];
-    s.z = 0;
-    s.lifespan = 100;
-    s.stayOnTheFloor = true;
-    s.vx = 0;
-    s.vy = 0;
-    s.vz = 0;
-    s.gravity = 1;
-    s.flat = 0;
-    s.viewMode = CAMERA_TYPES.TOPDOWN;
-    return this._spawn(s, null);
   }
 
   /**

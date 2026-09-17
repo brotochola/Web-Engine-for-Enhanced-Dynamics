@@ -54,6 +54,7 @@ import { liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from './liquidFunGroups
 import { LiquidFun } from '../core/liquidFun.js';
 import { Joint } from '../core/joint.js';
 import { SoundManager } from '../core/soundManager.js';
+import { Query } from '../core/query.js';
 import { MAX_COMPONENTS, MAX_ENTITIES, MAX_ENTITY_TYPES } from '../core/querySystem.js';
 import {
   BODY_DIRTY,
@@ -491,7 +492,7 @@ function initializeLightingAndRenderBuffers(scene) {
 }
 
 function initializeNavigationAndQueryBuffers(scene) {
-  const { buffers, config, registeredClasses, querySystem } = scene;
+  const { buffers, config, registeredClasses } = scene;
 
   if (config.navigation.enabled) {
     const navConfig = config.navigation;
@@ -527,8 +528,8 @@ function initializeNavigationAndQueryBuffers(scene) {
 
   scene.preInitializeEntityTypeArrays();
 
-  querySystem.buildQueries(registeredClasses);
-  querySystem.definePrecomputedQueries({
+  Query.buildQueries(registeredClasses);
+  Query.definePrecomputedQueries({
     Transform,
     RigidBody,
     Collider,
@@ -543,7 +544,7 @@ function initializeNavigationAndQueryBuffers(scene) {
     Grab,
   }, scene.constructor.queries || []);
 
-  const querySABs = querySystem.createSharedBuffers();
+  const querySABs = Query.createSharedBuffers();
   buffers.queryEntityMetadata = querySABs.entityMetadataSAB;
   buffers.queryCache = querySABs.queryCacheSAB;
   buffers.queryResults = querySABs.queryResultsSAB;
@@ -781,8 +782,8 @@ export function teardownSceneSharedState(scene) {
     GameObject.activeEntitiesData[0] = 0;
   }
 
-  if (scene.querySystem && scene.querySystem.queryResultViews) {
-    for (const view of scene.querySystem.queryResultViews) {
+  if (Query.queryResultViews) {
+    for (const view of Query.queryResultViews) {
       // Snapshot views are { header, snapshots, ... }; published count lives at header[1].
       Atomics.store(view.header, 1, 0);
       for (const snapshot of view.snapshots) snapshot[0] = 0;

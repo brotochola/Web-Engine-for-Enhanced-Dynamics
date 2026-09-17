@@ -4,7 +4,7 @@
 import WEED from '/src/index.js';
 
 import { Mouse } from '/src/core/mouse.js';
-import { containerRadius, DecorationPool, Decoration } from '/src/index.js';
+import { containerRadius } from '/src/index.js';
 import { MySoldier } from './mySoldier.js';
 
 const {

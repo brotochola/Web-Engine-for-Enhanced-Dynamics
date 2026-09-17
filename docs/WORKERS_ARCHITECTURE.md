@@ -135,7 +135,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 - All logic workers call `Mouse.updateEdgeFlags()` before entity ticks (per-worker edge detection for `isButton0Pressed` etc.) and `Mouse.snapshotPreviousFrame()` after ticks
 - All workers call `Gamepad.updateEdgeFlags()` once per frame in `AbstractWorker.gameLoop` (same SAB counter pattern as Keyboard/Mouse). Main thread polls `navigator.getGamepads()` in `Scene.updateInternal` before edge flags.
 
-**Active query snapshots:** pre-computed `queryActiveEntities()` results use complete published snapshots in `queryResultsSAB`. Readers may see a slightly stale active-query result, but they do not observe logic0 shifting the same list in place.
+**Active query snapshots:** pre-computed `Query.queryActiveEntities()` results use complete published snapshots in `queryResultsSAB`. Readers may see a slightly stale active-query result, but they do not observe logic0 shifting the same list in place.
 
 ---
 

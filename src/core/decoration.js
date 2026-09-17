@@ -4,7 +4,7 @@ import { DecorationComponent } from '../components/decorationComponent.js';
 import { ensureDecorationFacade, evictDecorationFacade } from '../util/decorationFacades.js';
 import { DECORATION_INNER_Z_MIN, DECORATION_INNER_Z_MAX } from '../util/configDefaults.js';
 import { DecorationSpatial } from './decorationSpatial.js';
-import { DECORATION_NO_PARENT } from './decorationPool.js';
+import { DecorationPool, DECORATION_NO_PARENT } from './decorationPool.js';
 import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from '../util/decorationSway.js';
 
 export { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from '../util/decorationSway.js';
@@ -45,6 +45,25 @@ export class Decoration {
    */
   static queryCircle(x, y, radius, out) {
     return DecorationSpatial.queryCircle(x, y, radius, out);
+  }
+
+  /** Spawn one decoration. Returns pool index, or -1 if the pool is full. */
+  static spawn(config) {
+    return DecorationPool.spawn(config);
+  }
+
+  /** Spawn `config.count` decorations (same fields as spawn). Returns how many spawned. */
+  static spawnMany(config) {
+    return DecorationPool.spawnMany(config);
+  }
+
+  /** Despawn by pool index. */
+  static despawn(index) {
+    return DecorationPool.despawn(index);
+  }
+
+  static despawnAll() {
+    return DecorationPool.despawnAll();
   }
 
   _isCurrent() {

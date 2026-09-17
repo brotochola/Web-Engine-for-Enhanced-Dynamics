@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, DecorationPool } = WEED;
+const { GameObject, Decoration } = WEED;
 
 const POSITION_SLOTS = 256;
 const WORLD_W = 4000;
@@ -57,7 +57,7 @@ export class DecoChurnDriver extends GameObject {
     if (live.length >= this._liveCap) {
       for (let n = 0; n < this._despawnPerTick; n++) {
         if (!live.length) break;
-        DecorationPool.despawn(live.pop());
+        Decoration.despawn(live.pop());
       }
     }
     const positions = this._positions;
@@ -65,7 +65,7 @@ export class DecoChurnDriver extends GameObject {
     for (let n = 0; n < this._spawnPerTick; n++) {
       if (live.length >= this._liveCap) break;
       const slot = cursor % POSITION_SLOTS;
-      const i = DecorationPool.spawn({
+      const i = Decoration.spawn({
         x: positions[slot * 2],
         y: positions[slot * 2 + 1],
         texture: 'ball',

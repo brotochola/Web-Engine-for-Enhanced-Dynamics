@@ -1476,7 +1476,7 @@ class SpriteSheetRegistry {
   // USAGE SCENARIOS:
   // 1. Static sprite: setSprite("rock1") → uses "rock1" animation (1 frame)
   // 2. Specific frame: setSprite("civil1", "hurt", -1) → resolves to "civil1_hurt_5"
-  // 3. Decal stamp: stampDecal({ texture: "civil1_hurt_5" }) → stamps that exact frame
+  // 3. Decal stamp: Decal.stamp({ texture: "civil1_hurt_5" }) → stamps that exact frame
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**

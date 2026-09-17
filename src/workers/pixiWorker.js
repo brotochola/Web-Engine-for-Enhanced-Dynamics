@@ -17,6 +17,7 @@ import { DecorationComponent } from '../components/decorationComponent.js';
 import { DecorationPool } from '../core/decorationPool.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { AbstractWorker } from './abstractWorker.js';
+import { Query } from '../core/query.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 
@@ -2373,7 +2374,7 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     // Use pre_render's visible lights buffer when available (avoids duplicate queryActiveEntities)
     const useSharedBuffer = !!this.visibleLightsData;
     const lightCount = useSharedBuffer ? this.visibleLightsData[0] : 0;
-    const lightEntities = useSharedBuffer ? null : this.queryActiveEntities(QUERY_LIGHT_EMITTER);
+    const lightEntities = useSharedBuffer ? null : Query.queryActiveEntities(QUERY_LIGHT_EMITTER);
 
     // Reset pool
     this._visibleLightsAllCount = 0;

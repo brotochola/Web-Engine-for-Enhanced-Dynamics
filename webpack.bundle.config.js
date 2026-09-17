@@ -115,6 +115,7 @@ const umdConfig = {
                             'ShadowCaster', 'FlashComponent',
                             // Systems
                             'ParticleEmitter', 'DecorationPool', 'Flash', 'QuerySystem',
+                            'Box2d', 'Decal', 'Query', 'LiquidFun', 'Decoration',
                             // Workers
                             'AbstractWorker',
                             // Enums

@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider } = WEED;
+const { GameObject, RigidBody, Collider, Box2d } = WEED;
 
 export class QueryAabbChurnProbe extends GameObject {
   static scriptUrl = import.meta.url;
@@ -20,7 +20,7 @@ export class QueryAabbChurnProbe extends GameObject {
     try {
       const t = this.scene?.mainFrameNumber || 0;
       const half = 180 + (t % 40);
-      this._hits = this.box2dQueryAABB(
+      this._hits = Box2d.queryAABB(
         this.x - half,
         this.y - half,
         this.x + half,

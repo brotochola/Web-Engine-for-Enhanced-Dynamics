@@ -5,7 +5,7 @@ import { Ball } from './gameObjects/ball.js';
 import { Floor } from './gameObjects/floor.js';
 
 import WEED from '/src/index.js';
-const { Scene, Camera } = WEED;
+const { Scene, Camera, Keyboard, Mouse, Box2d, Query, RigidBody } = WEED;
 
 export class BallsScene extends Scene {
   // ========================================
@@ -110,9 +110,15 @@ export class BallsScene extends Scene {
   }
 
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
-    // if (frameNumber % (60 * 5) === 0) {
-    //   this.printFPS()
-    // }
+    if (Keyboard.isPressed('e')) {
+      Box2d.explode({
+        x: Mouse.x,
+        y: Mouse.y,
+        radius: 400,
+        impulsePerLength: 12,
+      });
+    }
+    Query.queryActiveEntities([RigidBody]);
   }
 
   // ========================================

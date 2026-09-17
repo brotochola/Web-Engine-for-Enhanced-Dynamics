@@ -161,7 +161,7 @@ test('contactDrain scene uses CollisionListener pile', () => {
   assert.match(body, /CollisionListener/);
 });
 
-test('box2dRayJs uses BoxBusy scene and box2dCastRayClosest', () => {
+test('box2dRayJs uses BoxBusy scene and Box2d.castRayClosest', () => {
   const row = getFeature('box2dRayJs');
   assert.equal(row.scene.exportName, 'RayVsBox2dBoxBusyScene');
   assert.match(row.scene.path, /rayVsBox2dStressScene/);
@@ -173,7 +173,7 @@ test('box2dRayJs uses BoxBusy scene and box2dCastRayClosest', () => {
     path.join(root, 'tests/bench/stressScenes/ray/rayStressDriver.js'),
     'utf8'
   );
-  assert.match(driver, /box2dCastRayClosest/);
+  assert.match(driver, /Box2d\.castRayClosest/);
   const post = fs.readFileSync(path.join(root, 'src/box2d/weedjsPost.js'), 'utf8');
   assert.match(post, /function serviceRayCastClosest\(/);
   assert.match(post, /castRayClosestBits/);

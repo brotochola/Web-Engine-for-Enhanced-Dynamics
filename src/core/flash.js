@@ -27,7 +27,7 @@ export class Flash extends GameObject {
   static maxFlashes = 0;
   static initialized = false;
 
-  // Reused spawn payload (per-worker module instance; create is sync/non-reentrant)
+  // Reused spawn payload (per-worker module instance; spawn is sync/non-reentrant)
   static _spawnScratch = {
     x: 0,
     y: 0,
@@ -67,8 +67,8 @@ export class Flash extends GameObject {
   }
 
   /**
-   * Create a flash at the specified position
-   * Uses standard spawn() pattern like all other GameObjects
+   * Spawn a flash at the specified position.
+   * Calls GameObject.spawn (not this.spawn) so Flash.spawn does not recurse.
    *
    * @param {Object} config - Flash configuration
    * @param {number} config.x - X position in world coordinates
@@ -79,11 +79,10 @@ export class Flash extends GameObject {
    * @param {number} [config.intensity=10000] - Initial light intensity
    * @param {number} [config.hasGlowSprite=1] - Whether to render glow sprite (0 = no, 1 = yes)
    * @param {boolean|number} [config.castShadows=true] - Point shadows (false/0 = lighting only)
-   * @returns {Flash|null} - The created flash instance, or null if pool exhausted/routed
+   * @returns {Flash|null} - The spawned flash instance, or null if pool exhausted/off-screen
    *
    * @example
-   * // Muzzle flash (no shadows)
-   * Flash.create({
+   * Flash.spawn({
    *   x: gun.x + 20,
    *   y: gun.y,
    *   z: 30,
@@ -93,9 +92,9 @@ export class Flash extends GameObject {
    *   castShadows: false,
    * });
    */
-  static create(config) {
+  static spawn(config) {
     if (!this.initialized) {
-      console.warn('Flash.create() called before initialization');
+      console.warn('Flash.spawn() called before initialization');
       return null;
     }
 
@@ -116,8 +115,7 @@ export class Flash extends GameObject {
     s.castShadows =
       config.castShadows !== 0 && config.castShadows !== false ? 1 : 0;
 
-    // Use standard spawn() - handles free list, active entity tracking, and query updates
-    return this.spawn(s);
+    return GameObject.spawn(this, s);
   }
 
   /**
@@ -130,7 +128,7 @@ export class Flash extends GameObject {
 
   /**
    * LIFECYCLE: Called when flash is spawned from pool
-   * @param {Object} spawnConfig - Spawn configuration from Flash.create()
+   * @param {Object} spawnConfig - Spawn configuration from Flash.spawn()
    */
   onSpawned(spawnConfig = {}) {
     // Set position

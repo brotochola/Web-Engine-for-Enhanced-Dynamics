@@ -28,7 +28,7 @@ import { CameraController } from '/demos/predatorScene/gameObjects/cameraControl
 import { Trash } from '/demos/predatorScene/gameObjects/trash.js';
 import { Bug } from './gameObjects/bug.js';
 
-const { DecorationPool, Mouse, Camera } = WEED;
+const { Decoration, Mouse, Camera } = WEED;
 
 export class BichosScene extends WEED.Scene {
   // ========================================
@@ -177,7 +177,7 @@ export class BichosScene extends WEED.Scene {
     [Bug, 10000],
     // [CameraController, 1],
     // [Trash, 100]
-    // Grass now uses DecorationPool instead of GameObject
+    // Grass now uses Decoration instead of GameObject
   ];
 
   // ========================================
@@ -197,16 +197,12 @@ export class BichosScene extends WEED.Scene {
   create() {
     this.spawnGrass(20000);
 
-
   }
-
-  
 
   createNewGame() {
     this.spawnLights(100);
     this.spawnBugs(10000);
     this.spawnRocks(500);
-
 
   }
 
@@ -405,7 +401,7 @@ export class BichosScene extends WEED.Scene {
     // Get valid positions from the "pasto" layer
     const validPositions = this.computeGrassPositions();
 
-    // Spawn grass using DecorationPool (lightweight, no GameObject overhead)
+    // Spawn grass using Decoration (lightweight, no GameObject overhead)
     for (let i = 0; i < count; i++) {
       let x, y;
 
@@ -423,7 +419,7 @@ export class BichosScene extends WEED.Scene {
 
       const scale = 0.2 + this.rng() * 0.1;
       const grassType = Math.floor(this.rng() * 8) + 1; // grass1 to grass9
-      DecorationPool.spawn({
+      Decoration.spawn({
         x,
         y,
         texture: 'grass' + grassType,

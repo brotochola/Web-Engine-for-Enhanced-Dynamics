@@ -1023,64 +1023,6 @@ export function rng() {
   return globalThis.rng();
 }
 
-/**
- * Query entities by component combination - wrapper that accesses globalThis.query
- * This allows entity code to use query() which gets initialized in all workers.
- * query() returns ALL matching entity slots for matching entity types, including inactive pooled slots.
- *
- * @param {Array<Component>} componentClasses - Array of component classes to query
- * @returns {Uint16Array} - Indices of entities that have ALL specified components
- *
- * @example
- * // Inside entity code (Prey.tick(), etc.):
- * const allPredators = query([RigidBody, PredatorBehavior]);
- * const activeSprites = queryActiveEntities([SpriteRenderer]);
- *
- * // Query helpers are worker globals, not part of the public WEED namespace.
- */
-export function query(componentClasses) {
-  if (typeof globalThis.query === 'function') {
-    return globalThis.query(componentClasses);
-  }
-
-  // Not available in main thread context
-  console.warn('[query] Query system only available in worker context');
-  return new Uint16Array(0);
-}
-
-/**
- * Query ACTIVE entities by component combination - wrapper that accesses globalThis.queryActiveEntities
- * This allows entity code to use queryActiveEntities() in any worker context.
- * Requires a precomputed active query.
- *
- * @param {Array<Component>} componentClasses - Array of component classes to query
- * @returns {Uint16Array} - Active entity indices
- */
-export function queryActiveEntities(componentClasses) {
-  if (typeof globalThis.queryActiveEntities === 'function') {
-    return globalThis.queryActiveEntities(componentClasses);
-  }
-
-  console.warn('[queryActiveEntities] Query system only available in worker context');
-  return new Uint16Array(0);
-}
-
-/**
- * Explicit slow active query path for ad hoc component combinations.
- * Prefer GameObject/type APIs or precomputed queries in hot code.
- *
- * @param {Array<Component>} componentClasses - Array of component classes to query
- * @returns {Uint16Array} - Active entity indices
- */
-export function queryActiveEntitiesSlow(componentClasses) {
-  if (typeof globalThis.queryActiveEntitiesSlow === 'function') {
-    return globalThis.queryActiveEntitiesSlow(componentClasses);
-  }
-
-  console.warn('[queryActiveEntitiesSlow] Query system only available in worker context');
-  return new Uint16Array(0);
-}
-
 // ============================================================================
 // TEXTURE GENERATION UTILITIES
 // ============================================================================
@@ -1298,6 +1240,7 @@ const BLOB_SCRIPT_PARAM_NAMES = new Set([
   'exports', 'WEED', 'GameObject', 'Component', 'FSM', 'FSMState', 'Transform', 'RigidBody',
   'Collider', 'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter',
   'FlashComponent', 'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash',
+  'Box2d', 'Decal', 'Query', 'LiquidFun', 'Decoration',
   'Mouse', 'Camera', 'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D',
   'getDirectionFromAngle', 'getDirection8FromVector', 'containerRadius', 'SpriteSheetRegistry',
   'Keyboard', 'SoundManager', 'CollisionListener', 'CameraInOutListener', 'JointBreakListener',
@@ -1560,7 +1503,7 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
         'exports', 'WEED',
         'GameObject', 'Component', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
         'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter', 'FlashComponent',
-        'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Mouse', 'Camera',
+        'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Box2d', 'Decal', 'Query', 'LiquidFun', 'Decoration', 'Mouse', 'Camera',
         'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle', 'getDirection8FromVector',
         'containerRadius', 'SpriteSheetRegistry', 'Keyboard', 'SoundManager',
         'CollisionListener', 'CameraInOutListener', 'JointBreakListener', 'Grab',
@@ -1596,6 +1539,11 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
           g.ParticleEmitter || WEED.ParticleEmitter,
           g.DecorationPool || WEED.DecorationPool,
           g.Flash || WEED.Flash,
+          g.Box2d || WEED.Box2d,
+          g.Decal || WEED.Decal,
+          g.Query || WEED.Query,
+          g.LiquidFun || WEED.LiquidFun,
+          g.Decoration || WEED.Decoration,
           g.Mouse || WEED.Mouse,
           g.Camera || WEED.Camera,
           g.NavGrid || WEED.NavGrid,

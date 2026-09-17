@@ -113,7 +113,7 @@ export class Player extends GameObject {
       1500 // max distance
     );
 
-    Flash.create({
+    Flash.spawn({
       x: this.x + (this.vx > 0 ? 35 : -35),
       y: this.y - 35,
       z: 0, // height

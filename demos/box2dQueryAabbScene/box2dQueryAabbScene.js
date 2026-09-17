@@ -7,7 +7,7 @@ import {
 const { Scene, Camera } = WEED;
 
 /**
- * Minimal scene: 3 static boxes + probe that runs sync box2dQueryAABB once.
+ * Minimal scene: 3 static boxes + probe that runs sync Box2d.queryAABB once.
  * Open in demos and check console / scene message for ok=true.
  */
 export class Box2dQueryAabbScene extends Scene {

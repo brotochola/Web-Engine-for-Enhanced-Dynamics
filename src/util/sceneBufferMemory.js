@@ -4,6 +4,7 @@ import {
   calculateQueryResultsSABSize,
   getQuerySnapshotElements,
 } from '../core/querySystem.js';
+import { Query } from '../core/query.js';
 import { STATE_CHANNEL_COUNT } from '../box2d/box2dConstants.js';
 import { PHYSICS_STATS } from './workersUtils.js';
 
@@ -243,10 +244,9 @@ function buildCapacityInsights(scene) {
   }
 
   const queryBytes = scene.buffers?.queryResults?.byteLength || 0;
-  const querySystem = scene.querySystem;
   if (queryBytes > 0) {
-    const capacity = querySystem?.queryEntityCapacity || N || MAX_ENTITIES;
-    const numQueries = querySystem?.getPrecomputedQueryCount?.() || 0;
+    const capacity = Query.queryEntityCapacity || N || MAX_ENTITIES;
+    const numQueries = Query.getPrecomputedQueryCount();
     const fullCapBytes = calculateQueryResultsSABSize(numQueries || 1, MAX_ENTITIES);
     const scaledBytes = calculateQueryResultsSABSize(numQueries || 1, capacity);
     const savedVsMax =

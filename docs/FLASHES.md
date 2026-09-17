@@ -22,7 +22,7 @@ lighting: {
 ## Spawn API
 
 ```javascript
-Flash.create({
+Flash.spawn({
   x,
   y,
   z: 30,              // light height (also glowHeightOffset)
@@ -51,7 +51,7 @@ Returns a `Flash` instance, or `null` if the pool is exhausted, not initialized,
 Short muzzle flashes burn shadow budget for almost no visible benefit. Prefer lighting-only:
 
 ```javascript
-Flash.create({
+Flash.spawn({
   x: muzzleX,
   y: muzzleY,
   z: 30,
@@ -66,7 +66,7 @@ Keep `castShadows: true` (default) for longer / dramatic flashes (explosions, li
 
 ## Lifecycle
 
-1. `Flash.create` fills an internal spawn scratch and calls `spawn`.
+1. `Flash.spawn` fills an internal spawn scratch and calls `GameObject.spawn` (not `this.spawn`, which would recurse).
 2. `onSpawned` writes `LightEmitter` + `FlashComponent` (including `castShadows`).
 3. Logic `tick` advances `currentLife`, sets `lightIntensity = initialIntensity * (1 - life/lifespan)`, despawns when expired.
 4. `onDespawned` clears light/flash active flags; pool clear also zeros SoA fields (`castShadows` → `0`).
@@ -93,7 +93,7 @@ So `castShadows: false` is “light without shadow cost,” not “invisible fla
 ## Pipeline
 
 ```
-Flash.create(config)
+Flash.spawn(config)
   → Flash GameObject pool (LightEmitter + FlashComponent)
 logic tick
   → fade intensity / despawn

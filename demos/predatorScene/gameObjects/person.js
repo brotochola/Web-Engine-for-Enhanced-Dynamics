@@ -18,7 +18,7 @@ import {
   SoundManager,
   getDirectionFromVector,
   GameObject,
-  DecorationPool,
+  Decal,
   BulletPool,
   randomColor,
 } from '/src/index.js';
@@ -494,7 +494,7 @@ export class Person extends Lootable {
       speed: 0
     })
 
-    Flash.create({
+    Flash.spawn({
       x: muzzleX,
       y: muzzleY,
       z: -muzzleHeightPx,
@@ -670,7 +670,7 @@ export class Person extends Lootable {
 
     // Stamp the last frame of the hurt animation as a dead body decal
     // Using the new helper params: (spritesheet, animation, frame)
-    ParticleEmitter.stampDecal({
+    Decal.stamp({
       spritesheet: spritesheetName,
       animation: 'hurt',
       frame: -1, // Last frame = death pose

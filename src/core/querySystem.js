@@ -9,8 +9,9 @@
  * - Lazy computation for developer-defined component queries
  *
  * Usage:
- *   const allLights = query([LightEmitter]);                // All matching entity slots, active or inactive
- *   const activeLights = queryActiveEntities([LightEmitter]); // Only active entities
+ *   const allLights = Query.query([LightEmitter]);                // All matching entity slots, active or inactive
+ *   const activeLights = Query.queryActiveEntities([LightEmitter]); // Only active entities
+ * Box2d.queryAABB is fixtures; Query.query is ECS.
  */
 
 import { collectComponents, countTrailingZeros } from '../util/utils.js';

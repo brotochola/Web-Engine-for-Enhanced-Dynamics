@@ -75,7 +75,7 @@ LiquidFun.emit({ layers: ['oil', 'fire'] });
 
 **Decorations:**
 ```javascript
-DecorationPool.spawn({
+Decoration.spawn({
   x: 100,
   y: 200,
   texture: 'tree_canopy',

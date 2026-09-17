@@ -14,7 +14,7 @@ import { FlashComponent } from '../../src/components/flashComponent.js';
 import { LightOccluder } from '../../src/components/lightOccluder.js';
 import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
 import { Scene } from '../../src/core/scene.js';
-import { QuerySystem } from '../../src/core/querySystem.js';
+import { Query } from '../../src/core/query.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 
@@ -84,7 +84,7 @@ test('ensureOptionalComponentPools only seeds from lighting/flash flags', () => 
   resetOptionalComponentIds();
 });
 
-test('Balls-like scene allocates dense cores only (no optional lighting/Adobe SABs)', () => {
+test('Balls-like scene allocates dense cores only (no optional lighting/Adobe SABs)', { concurrency: false }, () => {
   resetOptionalComponentIds();
   Transform.componentId = 0;
   RigidBody.componentId = 1;
@@ -101,10 +101,10 @@ test('Balls-like scene allocates dense cores only (no optional lighting/Adobe SA
   const previousLog = console.log;
   console.log = () => {};
   try {
+    Query.reset();
     const scene = {
       totalEntityCount: 11000,
       nextComponentId: 6,
-      querySystem: new QuerySystem(),
       registeredClasses: [
         { class: BallLike, count: 10000, startIndex: 0, entityType: 0, components: BallLike.components },
         { class: FloorLike, count: 1000, startIndex: 10000, entityType: 1, components: FloorLike.components },
@@ -175,7 +175,7 @@ test('Balls-like scene allocates dense cores only (no optional lighting/Adobe SA
   }
 });
 
-test('entity-listed ShadowCaster/LightEmitter allocate when lighting flags off', () => {
+test('entity-listed ShadowCaster/LightEmitter allocate when lighting flags off', { concurrency: false }, () => {
   resetOptionalComponentIds();
   Transform.componentId = 0;
   RigidBody.componentId = 1;
@@ -192,10 +192,10 @@ test('entity-listed ShadowCaster/LightEmitter allocate when lighting flags off',
   const previousLog = console.log;
   console.log = () => {};
   try {
+    Query.reset();
     const scene = {
       totalEntityCount: 20,
       nextComponentId: 8,
-      querySystem: new QuerySystem(),
       registeredClasses: [
         { class: LitProp, count: 20, startIndex: 0, entityType: 0, components: LitProp.components },
       ],

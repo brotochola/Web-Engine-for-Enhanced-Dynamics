@@ -76,13 +76,14 @@ export { Grab } from './components/grab.js';
 // Note: Particles are NOT GameObjects - they use ParticleComponent directly
 export { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/particleEmitter.js';
 export { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from './core/liquidFun.js';
+export { Box2d } from './core/box2d.js';
+export { Decal } from './core/decal.js';
 
 // ============================================================================
 // DECORATIONS
 // ============================================================================
 // Note: Decorations are NOT GameObjects - they use DecorationComponent directly
 export {
-  DecorationPool,
   DECORATION_Y_SORT_SCALE,
   DECORATION_INNER_Z_MIN,
   DECORATION_INNER_Z_MAX,
@@ -109,19 +110,14 @@ export { BulletComponent } from './components/bulletComponent.js';
 export { Joint } from './core/joint.js';
 export { SharedAtomicPool } from './core/sharedAtomicPool.js';
 export {
-  getMovedBodiesViews,
   bindMovedBodies,
   isMovedBodiesBound,
 } from './box2d/box2dMovedBodies.js';
 export {
-  box2dQueryAABB,
-  box2dQueryAABBAsync,
   bindQueryAabbSab,
   isQueryAabbBound,
 } from './box2d/box2dQueryAabb.js';
 export {
-  box2dCastRayClosest,
-  box2dCastRayClosestAsync,
   bindRayCastSab,
   isRayCastBound,
 } from './box2d/box2dRayCast.js';
@@ -143,16 +139,13 @@ export {
 // ============================================================================
 // Note: Flashes ARE GameObjects (auto-registered) with LightEmitter + FlashComponent
 export { Flash } from './core/flash.js';
+export { Query } from './core/query.js';
 
 // ============================================================================
-// QUERY SYSTEM (Worker Context Only)
+// QUERY (Scene and GameObject)
 // ============================================================================
-// Note: The query helpers are available globally in all workers for
-// component-based entity filtering:
-//   const allPredators = query([RigidBody, PredatorBehavior]);              // all matching slots
-//   const visibleEntities = queryActiveEntities([SpriteRenderer]);          // active precomputed only
-//   const customActive = queryActiveEntitiesSlow([RigidBody, EnemyTag]);    // explicit slow path
-// These are NOT available in main thread context, only in workers.
+// Query.query / queryActiveEntities / queryActiveEntitiesSlow — ECS bitmasks.
+// Box2d.queryAABB is fixtures, not this.
 
 // ============================================================================
 // WORKERS
@@ -236,7 +229,10 @@ import { ParticleComponent } from './components/particleComponent.js';
 
 import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/particleEmitter.js';
 import { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from './core/liquidFun.js';
-import { DecorationPool, SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from './core/decorationPool.js';
+import { Box2d } from './core/box2d.js';
+import { Decal } from './core/decal.js';
+import { Query } from './core/query.js';
+import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from './core/decorationPool.js';
 import { Decoration } from './core/decoration.js';
 import { DecorationSpatial } from './core/decorationSpatial.js';
 import { BulletPool } from './core/bulletPool.js';
@@ -259,19 +255,14 @@ import { Grab } from './components/grab.js';
 import { Joint } from './core/joint.js';
 import { AbstractWorker } from './workers/abstractWorker.js';
 import {
-  getMovedBodiesViews,
   bindMovedBodies,
   isMovedBodiesBound,
 } from './box2d/box2dMovedBodies.js';
 import {
-  box2dQueryAABB,
-  box2dQueryAABBAsync,
   bindQueryAabbSab,
   isQueryAabbBound,
 } from './box2d/box2dQueryAabb.js';
 import {
-  box2dCastRayClosest,
-  box2dCastRayClosestAsync,
   bindRayCastSab,
   isRayCastBound,
 } from './box2d/box2dRayCast.js';
@@ -382,9 +373,11 @@ const WEED = Object.freeze({
   LiquidFun,
   LIQUIDFUN_FLAGS,
   LIQUIDFUN_GROUP_FLAGS,
+  Box2d,
+  Decal,
+  Query,
 
   // Decorations
-  DecorationPool,
   Decoration,
   DecorationComponent,
   DecorationSpatial,
@@ -402,20 +395,11 @@ const WEED = Object.freeze({
   // Pool base class
   SharedAtomicPool,
 
-  // Box2D movers SAB (last physics step)
-  getMovedBodiesViews,
+  // Box2D SAB bind (engine bootstrap; gameplay uses Box2d.*)
   bindMovedBodies,
   isMovedBodiesBound,
-
-  // Box2D QueryAABB (logic sync / Scene async)
-  box2dQueryAABB,
-  box2dQueryAABBAsync,
   bindQueryAabbSab,
   isQueryAabbBound,
-
-  // Box2D castRayClosest (logic sync / Scene async)
-  box2dCastRayClosest,
-  box2dCastRayClosestAsync,
   bindRayCastSab,
   isRayCastBound,
 

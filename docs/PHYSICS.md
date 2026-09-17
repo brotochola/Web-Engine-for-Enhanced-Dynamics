@@ -173,13 +173,14 @@ On-demand Box2D broadphase query for entity ids (parallel to spatial `neighborDa
 
 | Caller | API | Blocking |
 |--------|-----|----------|
-| Logic / `GameObject` | `box2dQueryAABB(x0, y0, x1, y1, out, filter?)` | Sync (`Atomics.wait`) |
-| Scene (main) | `scene.box2dQueryAABB(...)` → Promise | Async (`Atomics.waitAsync`) |
+| Logic / `GameObject` | `Box2d.queryAABB(x0, y0, x1, y1, out, filter?)` | Sync (`Atomics.wait`) |
+| Scene (main) | `Box2d.queryAABBAsync(...)` → Promise | Async (`Atomics.waitAsync`) |
 
 - `out` must be `Int32Array`. Return value = full hit count; written slots = `min(count, out.length)`.
 - Single-flight SAB (`box2dQueryAabb`): one outstanding query process-wide; concurrent callers serialize.
 - Physics services pending queries in `doStep` after command drain (and when `dt==0` so paused worlds still answer).
 - Optional `filter`: `{ categoryBits, maskBits }` (defaults match `physics-api` overlap filters).
+- `Box2d.queryAABB` is Box2D fixtures. `Query.query` is ECS component bitmasks. Different systems.
 - Demo self-check: [`demos/box2dQueryAabbScene/box2dQueryAabbScene.js`](../demos/box2dQueryAabbScene/box2dQueryAabbScene.js).
 
 ### LiquidFun QueryAABB / RayCast
@@ -250,7 +251,7 @@ Physics sync iterates the dense active list (`activeIndices` / `activeCount`), n
 
 ### Explosions
 
-`Scene.explode({ x, y, radius, impulsePerLength, maskBits })` enqueues a radial impulse command (`Box2dCommandRing.enqueueExplode`); the physics worker applies it via `PhysicsWorld.explode` with `falloff = 0.5 * radius`.
+`Box2d.explode({ x, y, radius, impulsePerLength, maskBits })` enqueues a radial impulse command (`Box2dCommandRing.enqueueExplode`); the physics worker applies it via `PhysicsWorld.explode` with `falloff = 0.5 * radius`. `Box2d.getMovedBodies()` returns live SAB views of entities that moved last physics step.
 
 ---
 

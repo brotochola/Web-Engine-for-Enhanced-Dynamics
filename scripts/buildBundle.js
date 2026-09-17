@@ -138,7 +138,7 @@ function buildBox2dWorkerSource() {
 
     console.log(
         `   Box2D wasm: ${kb(wasmBytes.length)} raw → ${kb(gzipped.length)} gzip → ` +
-            `${kb(Buffer.byteLength(box2dWasmGzipB64, 'utf8'))} base64`,
+        `${kb(Buffer.byteLength(box2dWasmGzipB64, 'utf8'))} base64`,
     );
     console.log(`   Box2D siblings: ${siblingNames.join(', ')}`);
 

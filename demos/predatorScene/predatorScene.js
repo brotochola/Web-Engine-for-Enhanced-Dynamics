@@ -25,7 +25,7 @@ import { Trash } from './gameObjects/trash.js';
 import { Cloud } from './gameObjects/cloud.js';
 
 const {
-  DecorationPool,
+  Decoration,
   Layer,
   NavGrid,
   Sun,
@@ -326,7 +326,7 @@ export class PredatorScene extends WEED.Scene {
     [DropShotgun, 1000],
     [CameraController, 1],
     [Trash, 100]
-    // Grass now uses DecorationPool instead of GameObject
+    // Grass now uses Decoration instead of GameObject
   ];
 
   // ========================================
@@ -594,7 +594,7 @@ export class PredatorScene extends WEED.Scene {
     // Get valid positions from the "pasto" layer
     const validPositions = this.computeGrassPositions();
 
-    // Spawn grass using DecorationPool (lightweight, no GameObject overhead)
+    // Spawn grass using Decoration (lightweight, no GameObject overhead)
     for (let i = 0; i < count; i++) {
       let x, y;
 
@@ -612,7 +612,7 @@ export class PredatorScene extends WEED.Scene {
 
       const scale = 0.2 + this.rng() * 0.1;
       const grassType = Math.floor(this.rng() * 8) + 1; // grass1 to grass9
-      DecorationPool.spawn({
+      Decoration.spawn({
         x,
         y,
         texture: 'grass' + grassType,

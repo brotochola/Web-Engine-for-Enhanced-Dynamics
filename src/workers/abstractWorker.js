@@ -43,6 +43,9 @@ import { DecorationComponent } from '../components/decorationComponent.js';
 import { Joint } from '../core/joint.js';
 import { SoundManager } from '../core/soundManager.js';
 import { createWorkerQueryFunctions } from '../core/querySystem.js';
+import { Query } from '../core/query.js';
+import { Box2d } from '../core/box2d.js';
+import { Decal } from '../core/decal.js';
 import { setVerboseWorkers, installQuietConsoleLog } from '../util/debugLog.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
@@ -707,21 +710,11 @@ export class AbstractWorker {
         this.queryVersionData
       );
 
-      this._queryFn = queryFunctions.query;
-      this._queryActiveEntitiesFn = queryFunctions.queryActiveEntities;
-      this._queryActiveEntitiesSlowFn = queryFunctions.queryActiveEntitiesSlow;
       this._publishPrecomputedActiveQueries = queryFunctions.publishPrecomputedActiveQueries;
       this._precomputedQueries = queryFunctions._precomputedQueries;
       this._queryEntityMetadata = queryFunctions._entityMetadata;
 
-      // Expose query helpers globally in every worker so entity code can use the
-      // same `query()` / `queryActiveEntities()` syntax regardless of worker type.
-      self.query = queryFunctions.query;
-      globalThis.query = queryFunctions.query;
-      self.queryActiveEntities = queryFunctions.queryActiveEntities;
-      globalThis.queryActiveEntities = queryFunctions.queryActiveEntities;
-      self.queryActiveEntitiesSlow = queryFunctions.queryActiveEntitiesSlow;
-      globalThis.queryActiveEntitiesSlow = queryFunctions.queryActiveEntitiesSlow;
+      Query.bindWorker(queryFunctions);
 
       this.reportLog(
         `initialized query system with ${this._precomputedQueries?.length || 0} pre-computed queries`
@@ -856,6 +849,10 @@ export class AbstractWorker {
     self.Layer = Layer;
     self.SceneBridge = SceneBridge;
     self.Gamepad = Gamepad;
+    self.Box2d = Box2d;
+    self.Decal = Decal;
+    self.Query = Query;
+    self.LiquidFun = LiquidFun;
 
     // Components (required for blob worker entity script evaluation)
     self.Transform = Transform;
@@ -1254,54 +1251,6 @@ export class AbstractWorker {
     const count = this.activeEntitiesData[0];
     if (activeIndex < 0 || activeIndex >= count) return -1;
     return this.activeEntitiesData[1 + activeIndex];
-  }
-
-  /**
-   * Query entities by component combination
-   * Returns indices of ALL entities that have ALL specified components (regardless of active state)
-   *
-   * @param {Array<Component>} componentClasses - Array of component classes to query
-   * @returns {Uint16Array} - Indices of matching entities (may be shared, do not modify)
-   *
-   * @example
-   * const rigidBodies = this.query([RigidBody]);
-   * const physicsObjects = this.query([RigidBody, Collider]);
-   */
-  query(componentClasses) {
-    if (!this._queryFn) {
-      console.warn(`[${this.constructor.name}] Query system not initialized!`);
-      return this._emptyUint16Array;
-    }
-    return this._queryFn(componentClasses);
-  }
-
-  /**
-   * Query for ACTIVE entities with specified components
-   * Requires a precomputed active query. Use queryActiveEntitiesSlow()
-   * explicitly for ad hoc combinations.
-   *
-   * @param {Array<Component>} componentClasses - Array of component classes to query
-   * @returns {Uint16Array} - Active entity indices (view into SAB, do not modify)
-   *
-   * @example
-   * const activeLights = this.queryActiveEntities([LightEmitter]);
-   * const activePhysics = this.queryActiveEntities([RigidBody]); // precomputed
-   * const custom = this.queryActiveEntitiesSlow([RigidBody, MyCustomComponent]);
-   */
-  queryActiveEntities(componentClasses) {
-    if (!this._queryActiveEntitiesFn) {
-      console.warn(`[${this.constructor.name}] Active query system not initialized!`);
-      return this._emptyUint16Array;
-    }
-    return this._queryActiveEntitiesFn(componentClasses);
-  }
-
-  queryActiveEntitiesSlow(componentClasses) {
-    if (!this._queryActiveEntitiesSlowFn) {
-      console.warn(`[${this.constructor.name}] Active query system not initialized!`);
-      return this._emptyUint16Array;
-    }
-    return this._queryActiveEntitiesSlowFn(componentClasses);
   }
 
   // ==========================================
