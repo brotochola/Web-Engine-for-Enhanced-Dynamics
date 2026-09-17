@@ -182,6 +182,8 @@ function buildSceneSharedBuffers(scene) {
     bodyGeneration: scene.buffers.bodyGeneration,
     liquidFunRender: scene.buffers.liquidFunRender || null,
     liquidFunGroups: scene.buffers.liquidFunGroups || null,
+    decalStampRing: scene.buffers.decalStampRing || null,
+    decalsTilesRGBA: scene.buffers.decalsTilesRGBA || null,
     perTypeActiveLists: scene.buffers.perTypeActiveLists,
     entityFreeLists: scene.buffers.entityFreeLists,
     entityFreeListTops: scene.buffers.entityFreeListTops,
@@ -301,6 +303,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           totalTiles: scene.decalsTotalTiles,
           tilesRGBA: scene.buffers.decalsTilesRGBA,
           tilesDirty: scene.buffers.decalsTilesDirty,
+          stampRing: scene.buffers.decalStampRing,
           textures: scene.decalTextureData,
         }
       : null,

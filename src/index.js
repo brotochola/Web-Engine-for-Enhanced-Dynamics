@@ -118,9 +118,17 @@ export {
   isQueryAabbBound,
 } from './box2d/box2dQueryAabb.js';
 export {
+  bindOverlapCircleSab,
+  isOverlapCircleBound,
+} from './box2d/box2dOverlapCircle.js';
+export {
   bindRayCastSab,
   isRayCastBound,
 } from './box2d/box2dRayCast.js';
+export {
+  bindCastRayAllSab,
+  isCastRayAllBound,
+} from './box2d/box2dCastRayAll.js';
 export {
   liquidFunQueryAABB,
   liquidFunQueryAABBAsync,
@@ -263,9 +271,17 @@ import {
   isQueryAabbBound,
 } from './box2d/box2dQueryAabb.js';
 import {
+  bindOverlapCircleSab,
+  isOverlapCircleBound,
+} from './box2d/box2dOverlapCircle.js';
+import {
   bindRayCastSab,
   isRayCastBound,
 } from './box2d/box2dRayCast.js';
+import {
+  bindCastRayAllSab,
+  isCastRayAllBound,
+} from './box2d/box2dCastRayAll.js';
 import {
   liquidFunQueryAABB,
   liquidFunQueryAABBAsync,
@@ -400,8 +416,12 @@ const WEED = Object.freeze({
   isMovedBodiesBound,
   bindQueryAabbSab,
   isQueryAabbBound,
+  bindOverlapCircleSab,
+  isOverlapCircleBound,
   bindRayCastSab,
   isRayCastBound,
+  bindCastRayAllSab,
+  isCastRayAllBound,
 
   // LiquidFun QueryAABB / RayCast (logic sync / Scene async)
   liquidFunQueryAABB,

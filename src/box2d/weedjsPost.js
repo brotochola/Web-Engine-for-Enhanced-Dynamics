@@ -16,7 +16,9 @@
     'box2dJointBreakRingImpl.js',
     'box2dMovedBodiesImpl.js',
     'box2dQueryAabbImpl.js',
+    'box2dOverlapCircleImpl.js',
     'box2dRayCastImpl.js',
+    'box2dCastRayAllImpl.js',
     'liquidFunQueryImpl.js',
     'liquidFunExtractImpl.js',
     'liquidFunUserDataListImpl.js',
@@ -1311,6 +1313,55 @@
     }
   }
 
+  function serviceOverlapCircle() {
+    if (!world || !world._querySlots) return;
+    var overlapFn = function (cx, cy, radius, categoryBits, maskBits, results, cap) {
+      var n = world.overlapCircle(cx, cy, radius, {
+        categoryBits: categoryBits,
+        maskBits: maskBits,
+      });
+      var write = n < cap ? n : cap;
+      var slots = world._querySlots;
+      if (write > slots.length) write = slots.length;
+      for (var i = 0; i < write; i++) {
+        results[i] = slots[i] | 0;
+      }
+      return n | 0;
+    };
+    if (typeof Box2dOverlapCircle !== 'undefined' && Box2dOverlapCircle.servicePendingOverlapCircle) {
+      Box2dOverlapCircle.servicePendingOverlapCircle(overlapFn);
+    }
+  }
+
+  function serviceCastRayAll() {
+    if (!world || !world._queryHits) return;
+    var fillRayAllHits = function (ox, oy, dx, dy, categoryBits, maskBits, hits, cap) {
+      var n = world.castRayAll(ox, oy, dx, dy, {
+        categoryBits: categoryBits,
+        maskBits: maskBits,
+      });
+      // WASM query hits are 8 floats; gameplay SAB keeps 4 (entity, fraction, hitX, hitY).
+      var srcStride = (world._queryHitStride | 0) || 8;
+      var dstStride = 4;
+      var src = world._queryHits;
+      var write = n < cap ? n : cap;
+      var maxHits = (src.length / srcStride) | 0;
+      if (write > maxHits) write = maxHits;
+      for (var i = 0; i < write; i++) {
+        var s = i * srcStride;
+        var d = i * dstStride;
+        hits[d] = src[s];
+        hits[d + 1] = src[s + 1];
+        hits[d + 2] = src[s + 2];
+        hits[d + 3] = src[s + 3];
+      }
+      return n | 0;
+    };
+    if (typeof Box2dCastRayAll !== 'undefined' && Box2dCastRayAll.servicePendingCastRayAll) {
+      Box2dCastRayAll.servicePendingCastRayAll(fillRayAllHits);
+    }
+  }
+
   var rayHitScratch = {
     hit: false,
     entityIndex: -1,
@@ -2068,7 +2119,9 @@
     // Service even when dt==0 / paused so sync query callers do not hang.
     if (!(dt > 0)) {
       serviceQueryAabb();
+      serviceOverlapCircle();
       serviceRayCast();
+      serviceCastRayAll();
       serviceLiquidFunQuery();
       serviceLiquidFunExtract();
       return;
@@ -2078,7 +2131,9 @@
       drainCommands();
       syncJoints();
       serviceQueryAabb();
+      serviceOverlapCircle();
       serviceRayCast();
+      serviceCastRayAll();
       serviceLiquidFunQuery();
       serviceLiquidFunExtract();
       snapshotPrevPose(entityCount);
@@ -2098,7 +2153,9 @@
     const jointSyncChanges = syncJoints();
     const t3 = performance.now();
     serviceQueryAabb();
+    serviceOverlapCircle();
     serviceRayCast();
+    serviceCastRayAll();
     serviceLiquidFunQuery();
     serviceLiquidFunExtract();
     snapshotPrevPose(entityCount);
@@ -2247,8 +2304,14 @@
     if (data.queryAabbSab) {
       Box2dQueryAabb.bindQueryAabbSab(data.queryAabbSab);
     }
+    if (data.overlapCircleSab && typeof Box2dOverlapCircle !== 'undefined') {
+      Box2dOverlapCircle.bindOverlapCircleSab(data.overlapCircleSab);
+    }
     if (data.rayCastSab) {
       Box2dRayCast.bindRayCastSab(data.rayCastSab);
+    }
+    if (data.castRayAllSab && typeof Box2dCastRayAll !== 'undefined') {
+      Box2dCastRayAll.bindCastRayAllSab(data.castRayAllSab);
     }
     if (data.liquidFunQuerySab) {
       LiquidFunQuery.bindLiquidFunQuerySab(data.liquidFunQuerySab);
@@ -2673,8 +2736,4 @@
   };
 
   Module.onRuntimeInitialized = notifyModuleReady;
-  // Defer so weed_post can importScripts(physics_host) and set hostMode first.
-  if (typeof Module !== 'undefined' && Module.calledRun) {
-    setTimeout(notifyModuleReady, 0);
-  }
-})();
+  // Defer so weed_post can

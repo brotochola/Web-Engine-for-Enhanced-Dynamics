@@ -227,7 +227,7 @@ ParticleEmitter.emit({
 });
 
 // Flashes (see docs/FLASHES.md on GitHub) — castShadows defaults true; false = light only
-Flash.create({
+Flash.spawn({
   x: this.x,
   y: this.y,
   z: 30,
@@ -238,9 +238,9 @@ Flash.create({
 });
 
 // Queries inside worker/entity code
-const allEnemies = query([RigidBody, EnemyComponent]);
-const activeBodies = queryActiveEntities([RigidBody]);
-const activeEnemies = queryActiveEntitiesSlow([RigidBody, EnemyComponent]);
+const allEnemies = Query.query([RigidBody, EnemyComponent]);
+const activeBodies = Query.queryActiveEntities([RigidBody]);
+const activeEnemies = Query.queryActiveEntitiesSlow([RigidBody, EnemyComponent]);
 ```
 
 ---
@@ -275,7 +275,7 @@ Docs live in the GitHub repo, not in the npm tarball. Start with the [docs index
 | [docs/LAYER_ROUTING.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/LAYER_ROUTING.md) | Render layers, backgrounds, custom layer routing |
 | [docs/COMPUTE_LAYERS.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/COMPUTE_LAYERS.md) | WebGPU compute layers, Box2D/LiquidFun GPU packing, WGSL passes |
 | [docs/PARTICLES.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/PARTICLES.md) | ParticleEmitter modes and physics vs view |
-| [docs/FLASHES.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/FLASHES.md) | Flash.create, castShadows, light budget |
+| [docs/FLASHES.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/FLASHES.md) | Flash.spawn, castShadows, light budget |
 | [docs/TILEMAP.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/TILEMAP.md) | SAB-backed Tiled map API |
 | [docs/RAYCASTING.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/RAYCASTING.md) | Grid-based raycast API |
 | [docs/ENTITY_TEMPLATE.js](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/ENTITY_TEMPLATE.js) | Copy-paste entity starter |

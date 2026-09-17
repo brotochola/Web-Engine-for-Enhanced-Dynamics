@@ -22,7 +22,7 @@ import {
   requestLiquidFunSnapshot,
   requestLiquidFunRestore,
 } from './liquidFunSave.js';
-import { packDecalSnapshot, applyDecalSnapshot } from './decalSave.js';
+import { Decal } from '../decal.js';
 import { VERSION } from '../../version.js';
 
 export {
@@ -59,7 +59,7 @@ export async function saveGame(scene, slotId) {
   }
   let decals = null;
   try {
-    decals = await packDecalSnapshot(scene);
+    decals = await Decal.packSnapshot(scene);
   } catch (err) {
     console.warn('[SaveGame] Decal snapshot failed:', err);
   }
@@ -157,7 +157,7 @@ export function applySavePayloadToScene(scene, payload) {
     }
     if (payload.decals) {
       try {
-        await applyDecalSnapshot(scene, payload.decals);
+        await Decal.applySnapshot(scene, payload.decals);
       } catch (err) {
         console.warn('[SaveGame] Decal restore failed:', err);
       }

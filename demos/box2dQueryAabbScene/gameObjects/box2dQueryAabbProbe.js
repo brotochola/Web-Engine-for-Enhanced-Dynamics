@@ -45,6 +45,7 @@ export class Box2dQueryAabbProbe extends GameObject {
     this._expectedMin = expectedMin | 0;
     this._queried = false;
     this._out = new Int32Array(64);
+    this._circleOut = new Int32Array(64);
   }
 
   tick() {
@@ -59,23 +60,28 @@ export class Box2dQueryAabbProbe extends GameObject {
         this.y + half,
         this._out,
       );
+      const circleCount = Box2d.overlapCircle(this.x, this.y, half, this._circleOut);
 
       let foundSelf = false;
       for (let i = 0; i < Math.min(count, this._out.length); i++) {
         if (this._out[i] === this.index) foundSelf = true;
+      }
+      let foundSelfCircle = false;
+      for (let i = 0; i < Math.min(circleCount, this._circleOut.length); i++) {
+        if (this._circleOut[i] === this.index) foundSelfCircle = true;
       }
 
       // Bodies may not exist on the first frame — retry until hits appear.
       if (count < this._expectedMin) return;
 
       this._queried = true;
-      const ok = foundSelf;
+      const ok = foundSelf && foundSelfCircle;
       console.log(
-        `[Box2dQueryAabbProbe] count=${count} foundSelf=${foundSelf} ok=${ok}`,
+        `[Box2dQueryAabbProbe] count=${count} circle=${circleCount} foundSelf=${foundSelf} foundSelfCircle=${foundSelfCircle} ok=${ok}`,
       );
       if (!ok) {
         console.error(
-          `[Box2dQueryAabbProbe] FAIL expectedMin=${this._expectedMin} count=${count} foundSelf=${foundSelf}`,
+          `[Box2dQueryAabbProbe] FAIL expectedMin=${this._expectedMin} count=${count} circle=${circleCount} foundSelf=${foundSelf} foundSelfCircle=${foundSelfCircle}`,
         );
       }
       this.sendMessageToScene({

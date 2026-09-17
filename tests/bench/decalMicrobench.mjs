@@ -3,7 +3,7 @@
 //
 // Sets up a small fake tile atlas + a handful of fake textures (dense/sparse/
 // solid alpha), then:
-//   1. Verifies stampParticleToTileBuffers against an independent nearest-
+//   1. Verifies Decal.stampToTileBuffers against an independent nearest-
 //      neighbor + blend reference (reuses the tile-bounds/clip geometry
 //      helpers, but reimplements the sampling + blend math from scratch so
 //      future hot-loop patches (D1/D2 hyps) are still caught).
@@ -14,7 +14,7 @@
 //   node tests/bench/decalMicrobench.mjs
 //   node tests/bench/decalMicrobench.mjs --stamps 5000 --seed 12648430 --output tests/results/decal-micro.json
 
-import { stampParticleToTileBuffers } from '../../src/util/decalStamp.js';
+import { Decal } from '../../src/core/decal.js';
 import {
   calculateDecalTileBounds,
   calculateTileClipRegion,
@@ -149,7 +149,7 @@ function paramsFromPool(pool, idx) {
 
 function stampFromPool(tiles, pool, idx) {
   const p = paramsFromPool(pool, idx);
-  stampParticleToTileBuffers({
+  Decal.stampToTileBuffers({
     ...p,
     decalsTiles: tiles.rgba,
     decalsTilesDirty: tiles.dirty,
@@ -308,7 +308,7 @@ function runCorrectnessCheck() {
     const pool = useSolid ? solidPool : pools[caseNames[i % caseNames.length]];
     const params = paramsFromPool(pool, i);
 
-    stampParticleToTileBuffers({
+    Decal.stampToTileBuffers({
       ...params,
       decalsTiles: actualTiles.rgba,
       decalsTilesDirty: actualTiles.dirty,

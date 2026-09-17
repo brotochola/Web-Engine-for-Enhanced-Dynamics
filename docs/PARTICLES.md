@@ -11,7 +11,7 @@ Mode is chosen at the call site via `emit` / `emitZenithal` / `emitFlat`.
 | `ParticleEmitter.emit(config)` | Heighted: `z`, gravity on `vz`, floor flags | `screenY = y + z` (topdown / iso) |
 | `ParticleEmitter.emitZenithal(config)` | Same heighted physics | XY on floor plane; scale (+ optional alpha) from `-z` |
 | `ParticleEmitter.emitFlat(config)` | No ground; XY + gravity on `vy` | `screenY = y` (ignore `z`) |
-| `Decal.stamp(config)` | Instant floor stamp via heighted particle | Decal on tilemap |
+| `Decal.stamp(config)` | Particle worker blends now; logic / main enqueue the stamp ring | Decal on tilemap |
 | `LiquidFun.emit(config)` | Box2D liquidfun-c (physics worker WASM) | Same XY as rigid bodies; see [LiquidFun](./LIQUIDFUN.md) |
 
 Per-particle flags written at spawn:
@@ -126,19 +126,26 @@ Same as before: `texture` name, or `spritesheet` + `animation` + `frame`. Resolv
 ## Pipeline
 
 ```
-emit / emitFlat / emitZenithal / Decal.stamp
+ParticleEmitter.emit / emitFlat / emitZenithal
   → ParticleComponent SAB (incl. flat, viewMode)
+Decal.stamp
+  → particle worker: `stampToTileBuffers` now (no ring hop)
+  → logic / main: stamp ring SAB (no particle slot)
 particleWorker
-  → physics + ground / decals + visibleParticlesData
+  → physics + ground (`stayOnTheFloor` blood that lands)
+  → drain stamp ring + `Decal.stampToTileBuffers`
+  → visibleParticlesData
 preRenderWorker
   → render queue pose from viewMode / flat
 pixiWorker
-  → draw
+  → draw (decal atlas dirty tiles)
 ```
+
+`Decal.stamp` from logic / main is not sync with the atlas — blend is the next particle tick. From the particle worker the atlas is current when the call returns. `Decal.getColor(x, y)` reads the atlas (packed `0xRRGGBBAA`, or `0` if empty / decals off). Pixi upload follows dirty tiles.
 
 ## Related
 
-- [`decal.js`](../src/core/decal.js)
+- [`decal.js`](../src/core/decal.js) — `Decal.stamp` (juego) y atlas (`stampToTileBuffers`, save). El loop de píxeles no es API de escena.
 - [`particleEmitter.js`](../src/core/particleEmitter.js)
 - [`particleComponent.js`](../src/components/particleComponent.js)
 - [`particleWorker.js`](../src/workers/particleWorker.js)

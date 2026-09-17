@@ -265,10 +265,10 @@ test('liquidFun typed-array pack + binary roundtrip', async () => {
 });
 
 test('decal pack/apply raw bytes + binary roundtrip', async () => {
-  const { packDecalSnapshot, applyDecalSnapshot } = await import('../../src/core/save/decalSave.js');
+  const { Decal } = await import('../../src/core/decal.js');
 
   const emptyScene = { config: { particle: { decals: false } }, buffers: {} };
-  assert.equal(await packDecalSnapshot(emptyScene), null);
+  assert.equal(await Decal.packSnapshot(emptyScene), null);
 
   const tilesX = 2;
   const tilesY = 2;
@@ -298,7 +298,7 @@ test('decal pack/apply raw bytes + binary roundtrip', async () => {
     decalsTotalTiles: totalTiles,
   };
 
-  const packed = await packDecalSnapshot(scene);
+  const packed = await Decal.packSnapshot(scene);
   assert.ok(packed);
   assert.equal(packed.tiles.length, 1);
   assert.equal(packed.tiles[0].i, 1);
@@ -321,7 +321,7 @@ test('decal pack/apply raw bytes + binary roundtrip', async () => {
     decalsTotalTiles: totalTiles,
   };
 
-  const result = await applyDecalSnapshot(scene2, packed);
+  const result = await Decal.applySnapshot(scene2, packed);
   assert.equal(result.ok, true);
   assert.equal(result.restored, 1);
   const out = new Uint8ClampedArray(rgbaSab2);

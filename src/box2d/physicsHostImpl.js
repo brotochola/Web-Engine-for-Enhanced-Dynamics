@@ -476,7 +476,9 @@
     frameRateStride: 1,
     commandSab: null,
     queryAabbSab: null,
+    overlapCircleSab: null,
     rayCastSab: null,
+    castRayAllSab: null,
     liquidFunQuerySab: null,
     liquidFunExtractSab: null,
     liquidFunUserDataListSab: null,
@@ -545,7 +547,9 @@
       sleepingByteOffset: ready.sleepingByteOffset,
       commandSab: state.commandSab,
       queryAabbSab: state.queryAabbSab,
+      overlapCircleSab: state.overlapCircleSab,
       rayCastSab: state.rayCastSab,
+      castRayAllSab: state.castRayAllSab,
       liquidFunQuerySab: state.liquidFunQuerySab,
       liquidFunExtractSab: state.liquidFunExtractSab,
       liquidFunUserDataListSab: state.liquidFunUserDataListSab,
@@ -584,8 +588,12 @@
     Box2dCommandRing.bindCommandRing(state.commandSab);
     state.queryAabbSab = Box2dQueryAabb.createQueryAabbSab();
     Box2dQueryAabb.bindQueryAabbSab(state.queryAabbSab);
+    state.overlapCircleSab = Box2dOverlapCircle.createOverlapCircleSab();
+    Box2dOverlapCircle.bindOverlapCircleSab(state.overlapCircleSab);
     state.rayCastSab = Box2dRayCast.createRayCastSab();
     Box2dRayCast.bindRayCastSab(state.rayCastSab);
+    state.castRayAllSab = Box2dCastRayAll.createCastRayAllSab();
+    Box2dCastRayAll.bindCastRayAllSab(state.castRayAllSab);
     state.liquidFunQuerySab = LiquidFunQuery.createLiquidFunQuerySab();
     LiquidFunQuery.bindLiquidFunQuerySab(state.liquidFunQuerySab);
     state.liquidFunExtractSab = LiquidFunExtract.createLiquidFunExtractSab();
@@ -624,7 +632,9 @@
       worldHeight: state.config.worldHeight | 0,
       commandSab: state.commandSab,
       queryAabbSab: state.queryAabbSab,
+      overlapCircleSab: state.overlapCircleSab,
       rayCastSab: state.rayCastSab,
+      castRayAllSab: state.castRayAllSab,
       liquidFunQuerySab: state.liquidFunQuerySab,
       liquidFunExtractSab: state.liquidFunExtractSab,
       liquidFunUserDataListSab: state.liquidFunUserDataListSab,

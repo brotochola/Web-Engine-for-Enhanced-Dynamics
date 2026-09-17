@@ -115,13 +115,6 @@ export class Ray {
     return out;
   }
 
-  /** Fold external cast time (e.g. Box2D SAB ray) into RAYCAST_MS for L2 A/B. */
-  static noteExternalWork(ms, count = 1) {
-    if (!this.collectDetailedStats) return;
-    this._statsMs += ms;
-    this._statsCount += count;
-  }
-
   static _enterStats() {
     if (!this.collectDetailedStats) return;
     if (this._statsDepth++ === 0) this._statsT0 = performance.now();

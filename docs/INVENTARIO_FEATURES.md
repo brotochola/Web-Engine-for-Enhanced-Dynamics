@@ -60,13 +60,13 @@ Módulo: `src/core/ray.js`. Kernel: `rayMicrobench.mjs`. Escena: `RayStressScene
 
 ### rayVsBox2d — Rayo WeedJS versus Box2D ocupado
 
-Módulo: `src/core/ray.js` (más `Box2d.castRayClosest`). Kernel: `rayVsBox2dMicrobench.mjs`. Escena: `RayVsBox2dWeedBusyScene`. Primarias: `logic0_RAYCAST_MS`, `physics_STEP_MS`. Carga: `BODY_COUNT`.
+Módulo: `src/core/ray.js` (más `Box2d.castRayClosest`). Kernel: `rayVsBox2dMicrobench.mjs`. Escena: `RayVsBox2dWeedBusyScene`. Primarias: `logic0_RAYCAST_MS`, `physics_STEP_MS`. Carga: `BODY_COUNT`. La fila Box2D (`box2dRayJs`) usa `logic0_BOX2D_RAYCAST_MS`.
 
 **Ya medido** el contraste idle/busy (el DDA de lógica no debería subir cuando física satura; el rayo sync de Box2D sí). Esta noche: kernel + estrés. Sin hipótesis nuevas.
 
 ### decals — Sello de decales
 
-Módulo: `src/util/decalStamp.js`. Kernel: `decalMicrobench.mjs`. Escena: `DecalStampStressScene`. Primaria: `particle_STEP_MS`. Carga: `PARTICLES_STAMPED`.
+Módulo: `src/core/decal.js`. Kernel: `decalMicrobench.mjs`. Escena: `DecalStampStressScene`. Primaria: `particle_STEP_MS`. Carga: `PARTICLES_STAMPED`.
 
 **Ya medido.** Campeón D2 (UV DDA) en main. D1/D3–D6 rechazadas. Esta noche: kernel + estrés. No reabrir el torneo histórico.
 
@@ -148,7 +148,7 @@ Módulo: `src/workers/logicWorker.js`. Sin kernel. Escena: `ContactDrainStressSc
 
 ### box2dRayJs — Servicio JS de castRayClosest
 
-Módulo: `src/box2d/weedjsPost.js` (`serviceRayCast`). Sin kernel WASM (ese no ve el bag JS). Escena: `RayVsBox2dBoxBusyScene`. Primarias: `physics_STEP_MS`, `logic0_RAYCAST_MS`. Carga: `BODY_COUNT`, `logic0_RAYCAST_COUNT`.
+Módulo: `src/box2d/weedjsPost.js` (`serviceRayCast`). Sin kernel WASM (ese no ve el bag JS). Escena: `RayVsBox2dBoxBusyScene`. Primarias: `physics_STEP_MS`, `logic0_BOX2D_RAYCAST_MS`. Carga: `BODY_COUNT`, `logic0_BOX2D_RAYCAST_COUNT`.
 
 ### queryPublish — Publicación QuerySystem
 

@@ -56,7 +56,7 @@ pnpm bench:feature:ray-vs-box2d:box2d:idle
 pnpm bench:feature:ray-vs-box2d:box2d:busy
 ```
 
-**Hyp read:** WeedJS `Ray` runs on the **logic** thread (DDA over Grid SAB). Box2D `castRayClosest` runs on the **physics** thread (sync SAB wait from logic). Compare `RAYCAST_MS` + physics `STEP_MS` / `BOX2D_MS` idle vs busy. Expect WeedJS ray wall time to stay flat when physics is saturated; Box2D sync path climbs. L1 (`bench:micro:ray-vs-box2d`) is idle-kernel only — not the contention hyp.
+**Hyp read:** WeedJS `Ray` runs on the **logic** thread (DDA over Grid SAB). Box2D `castRayClosest` waits on a SAB from logic (`BOX2D_RAYCAST_MS`); the WASM cast itself is physics `STEP_MS`. Compare WeedJS `RAYCAST_MS` vs Box2D `BOX2D_RAYCAST_MS` + physics `STEP_MS` / `BOX2D_MS` idle vs busy. Expect WeedJS ray wall time to stay flat when physics is saturated; Box2D sync path climbs. L1 (`bench:micro:ray-vs-box2d`) is idle-kernel only — not the contention hyp.
 
 ```bash
 # Decals Wave A (champion D2 merged — UV DDA)
@@ -105,8 +105,8 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | Feature | Hot module | L1 | L2 stress scene | L3 demo | Primary metric |
 |---------|------------|----|-----------------|---------|----------------|
 | Grid Ray (DDA) | `src/core/ray.js` | `rayMicrobench.mjs` | `stressScenes/RayStressScene` | Predator / bullets | L1 ops/s; L2 `RAYCAST_MS` — **H6+H1 shipped** (w/ D2+P45 on Predator pick) |
-| Ray vs Box2D | `ray.js` + `box2dRayCast` / `cast_ray_closest` | `rayVsBox2dMicrobench.mjs` | `RayVsBox2dStressScene` (weedjs/box2d × idle/busy) | — | L1 ops/s; L2 `RAYCAST_MS` under busy `BOX2D_MS` |
-| Stamp decals | `decalStamp.js`, particle_worker | `decalMicrobench.mjs` | `stressScenes/DecalStampStressScene` | zenithal / Predator | `DECAL_STAMP_MS`, particle `STEP_MS` — **champion D2** |
+| Ray vs Box2D | `ray.js` + `box2dRayCast` / `cast_ray_closest` | `rayVsBox2dMicrobench.mjs` | `RayVsBox2dStressScene` (weedjs/box2d × idle/busy) | — | L1 ops/s; L2 WeedJS `RAYCAST_MS` / Box2D `BOX2D_RAYCAST_MS` under busy `BOX2D_MS` |
+| Stamp decals | `decal.js` (`Decal.stampToTileBuffers`), particle_worker | `decalMicrobench.mjs` | `stressScenes/DecalStampStressScene` | zenithal / Predator | `DECAL_STAMP_MS`, particle `STEP_MS` — **champion D2** |
 | Particle emit | `particleEmitter.js`, free list | `particleEmitMicrobench.mjs` | `stressScenes/ParticleEmitStressScene` | zenithalParticleTest | emit ops/s; particle `STEP_MS` — **champion includes P5** |
 | Particle integrate | `particleIntegrate.js`, particle_worker | `particleIntegrateMicrobench.mjs` | `stressScenes/ParticleIntegrateStressScene` | zenithalParticleTest | `PARTICLE_PHYSICS_MS`, `BUILD_ACTIVE_VISIBLE_MS` — **champion P4+P5** |
 | Bullet tick | `bulletPool.js` (`BulletPool.tick`) | `bulletTickMicrobench.mjs` | `stressScenes/BulletStressScene` | Predator | particle `STEP_MS`; load `ACTIVE_BULLETS`. Speed cache **kept** (kernel). Compact retest 2026-09-16: kernel sparse win, estrés WORSE, Predator FAIL. Compact stays dropped. |
@@ -121,7 +121,7 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | TileMap SAB queries | `tileMap.js` | `tileMapMicrobench.mjs` | `stressScenes/TilemapStressScene` (fixed-rate `getTileId`) | tile demos | ns/`getTileId`; logic0 `STEP_MS` |
 | Tilemap viewport cull | `tilemapCull.js` | `tilemapCullMicrobench.mjs` | `TilemapCullStressScene` (background + pan) | Predator tilemap | pixi `STEP_MS` |
 | Contact drain | `logicWorker.js` | — | `ContactDrainStressScene` (`CollisionListener` pile) | — | logic0 `STEP_MS`; `BODY_COUNT` |
-| Box2D ray JS service | `weedjsPost.js` `serviceRayCast` | — | `RayVsBox2dBoxBusyScene` | — | physics `STEP_MS`; `RAYCAST_MS` |
+| Box2D ray JS service | `weedjsPost.js` `serviceRayCast` | — | `RayVsBox2dBoxBusyScene` | — | physics `STEP_MS`; `BOX2D_RAYCAST_MS` |
 | QuerySystem publish | `querySystem.js` | `querySystemMicrobench.mjs` | `stressScenes/QueryChurnScene` | — | `QUERY_PUBLISH_MS` (gated) / skip-if-unchanged |
 | Pre-render cull + queue | `preRenderWorker` | `srFlagsMicrobench.mjs` (7 Uint8 vs packed — **kill** L1+L3: cull kernel wins, queue noise, dirty RMW loses; Predator `preRender.STEP_MS` in noise vs 7 columns) | `stressScenes/RenderQueueStressScene` | Predator | L1 packed/strided; L3 `COLLECT_MS`/`EMIT_MS`/`STEP_MS` |
 | Compute layer (pack + dispatch) | `computeLayer.js`, `box2dBodyPack.js` | `computePackMicrobench.mjs` | `stressScenes/ComputeStressScene` (256², iterate 20, WebGPU) | burningBoxes | L1 pack ms; L2 `CUSTOM_LAYERS_MS` (headed) |

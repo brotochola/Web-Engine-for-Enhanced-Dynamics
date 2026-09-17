@@ -58,7 +58,7 @@ Save code lives under `src/core/save/`:
 - `entitySaveSnapshot.js` ? entity SoA pack/unpack + outer encode/decode
 - `binarySaveCodec.js` ? sectioned little-endian body (sole wire codec)
 - `liquidFunSave.js` ? LiquidFun typed-array snapshot helpers
-- `decalSave.js` ? sparse DECALS tile pack/unpack
+- `Decal.packSnapshot` / `Decal.applySnapshot` — sparse DECALS tile pack/unpack
 
 ## Storage
 

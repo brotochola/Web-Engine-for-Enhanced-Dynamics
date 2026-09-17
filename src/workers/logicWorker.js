@@ -24,11 +24,14 @@ import { AbstractWorker } from './abstractWorker.js';
 
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
+import { Box2d } from '../core/box2d.js';
 import { _cantorResult, collisionPairKey, collisionPairUnpack } from '../util/utils.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
+import { bindOverlapCircleSab } from '../box2d/box2dOverlapCircle.js';
 import { bindRayCastSab } from '../box2d/box2dRayCast.js';
+import { bindCastRayAllSab } from '../box2d/box2dCastRayAll.js';
 import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
 import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
@@ -505,10 +508,15 @@ class LogicWorker extends AbstractWorker {
     this.entityTimeThisFrame = 0;
     this.raycastMsThisFrame = 0;
     this.raycastCountThisFrame = 0;
+    this.box2dRaycastMsThisFrame = 0;
+    this.box2dRaycastCountThisFrame = 0;
     this.decimateMsThisFrame = 0;
     this.tickMsThisFrame = 0;
     this.queryPublishMsThisFrame = 0;
-    if (this.collectDetailedStats) Ray.beginFrame();
+    if (this.collectDetailedStats) {
+      Ray.beginFrame();
+      Box2d.beginFrame();
+    }
 
     // Process bullet impacts from particle_worker (SAB poll - no message needed)
     // Gated on the batch sequence so each batch is processed exactly once,
@@ -675,6 +683,9 @@ class LogicWorker extends AbstractWorker {
       const rayStats = Ray.consumeStats();
       this.raycastMsThisFrame = rayStats.ms;
       this.raycastCountThisFrame = rayStats.count;
+      const box2dRayStats = Box2d.consumeStats();
+      this.box2dRaycastMsThisFrame = box2dRayStats.ms;
+      this.box2dRaycastCountThisFrame = box2dRayStats.count;
     }
 
     // Entity processing system executed
@@ -996,8 +1007,14 @@ class LogicWorker extends AbstractWorker {
         if (data.queryAabbSab) {
           bindQueryAabbSab(data.queryAabbSab);
         }
+        if (data.overlapCircleSab) {
+          bindOverlapCircleSab(data.overlapCircleSab);
+        }
         if (data.rayCastSab) {
           bindRayCastSab(data.rayCastSab);
+        }
+        if (data.castRayAllSab) {
+          bindCastRayAllSab(data.castRayAllSab);
         }
         if (data.liquidFunQuerySab) {
           bindLiquidFunQuerySab(data.liquidFunQuerySab);
@@ -1272,6 +1289,8 @@ class LogicWorker extends AbstractWorker {
     this.stats[LOGIC_STATS.MSG_MS] = this.messageTimeThisFrame;
     this.stats[LOGIC_STATS.RAYCAST_MS] = this.raycastMsThisFrame || 0;
     this.stats[LOGIC_STATS.RAYCAST_COUNT] = this.raycastCountThisFrame || 0;
+    this.stats[LOGIC_STATS.BOX2D_RAYCAST_MS] = this.box2dRaycastMsThisFrame || 0;
+    this.stats[LOGIC_STATS.BOX2D_RAYCAST_COUNT] = this.box2dRaycastCountThisFrame || 0;
     this.stats[LOGIC_STATS.ENTITY_MS] = this.entityTimeThisFrame || 0;
     this.stats[LOGIC_STATS.DECIMATE_MS] = this.decimateMsThisFrame || 0;
     this.stats[LOGIC_STATS.TICK_MS] = this.tickMsThisFrame || 0;

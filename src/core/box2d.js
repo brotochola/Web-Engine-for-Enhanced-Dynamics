@@ -3,7 +3,9 @@
 
 import { enqueueExplode } from '../box2d/box2dCommandRing.js';
 import { box2dQueryAABB, box2dQueryAABBAsync } from '../box2d/box2dQueryAabb.js';
+import { box2dOverlapCircle, box2dOverlapCircleAsync } from '../box2d/box2dOverlapCircle.js';
 import { box2dCastRayClosest, box2dCastRayClosestAsync } from '../box2d/box2dRayCast.js';
+import { box2dCastRayAll, box2dCastRayAllAsync } from '../box2d/box2dCastRayAll.js';
 import { getMovedBodiesViews } from '../box2d/box2dMovedBodies.js';
 
 const EMPTY_MOVED = Object.freeze({
@@ -14,7 +16,27 @@ const EMPTY_MOVED = Object.freeze({
   fellAsleep: null,
 });
 
+const box2dRayStatsOut = { ms: 0, count: 0 };
+
 export class Box2d {
+  static collectDetailedStats = false;
+  static _rayStatsMs = 0;
+  static _rayStatsCount = 0;
+
+  static beginFrame() {
+    this._rayStatsMs = 0;
+    this._rayStatsCount = 0;
+  }
+
+  /** @returns {{ ms: number, count: number }} borrowed — consume before next consumeStats */
+  static consumeStats() {
+    box2dRayStatsOut.ms = this._rayStatsMs;
+    box2dRayStatsOut.count = this._rayStatsCount;
+    this._rayStatsMs = 0;
+    this._rayStatsCount = 0;
+    return box2dRayStatsOut;
+  }
+
   /** Sync QueryAABB (logic workers). Fills `out` with entity ids. */
   static queryAABB(x0, y0, x1, y1, out, filter) {
     return box2dQueryAABB(x0, y0, x1, y1, out, filter);
@@ -25,14 +47,41 @@ export class Box2d {
     return box2dQueryAABBAsync(x0, y0, x1, y1, out, filter);
   }
 
+  /** Sync overlapCircle (logic). Fills `out` with entity ids. */
+  static overlapCircle(cx, cy, radius, out, filter) {
+    return box2dOverlapCircle(cx, cy, radius, out, filter);
+  }
+
+  /** Async overlapCircle (Scene / main). */
+  static overlapCircleAsync(cx, cy, radius, out, filter) {
+    return box2dOverlapCircleAsync(cx, cy, radius, out, filter);
+  }
+
   /** Sync castRayClosest (logic workers). `dx,dy` is displacement, not a point. */
   static castRayClosest(ox, oy, dx, dy, out, filter) {
-    return box2dCastRayClosest(ox, oy, dx, dy, out, filter);
+    if (!this.collectDetailedStats) {
+      return box2dCastRayClosest(ox, oy, dx, dy, out, filter);
+    }
+    const t0 = performance.now();
+    const hit = box2dCastRayClosest(ox, oy, dx, dy, out, filter);
+    this._rayStatsMs += performance.now() - t0;
+    this._rayStatsCount++;
+    return hit;
   }
 
   /** Async castRayClosest (Scene / main). */
   static castRayClosestAsync(ox, oy, dx, dy, out, filter) {
     return box2dCastRayClosestAsync(ox, oy, dx, dy, out, filter);
+  }
+
+  /** Sync castRayAll (logic). Fills borrowed `out` with `{ entityIndex, fraction, hitX, hitY }`. */
+  static castRayAll(ox, oy, dx, dy, out, filter) {
+    return box2dCastRayAll(ox, oy, dx, dy, out, filter);
+  }
+
+  /** Async castRayAll (Scene / main). */
+  static castRayAllAsync(ox, oy, dx, dy, out, filter) {
+    return box2dCastRayAllAsync(ox, oy, dx, dy, out, filter);
   }
 
   /**

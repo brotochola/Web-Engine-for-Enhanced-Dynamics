@@ -111,9 +111,7 @@ export class RayStressDriver extends GameObject {
   }
 
   _tickBox2d(pairs, rays, cursor, half) {
-    const t0 = performance.now();
     let sink = this._sink;
-    let casts = 0;
     for (let i = 0; i < half; i++) {
       const k = ((cursor + i) % PAIR_COUNT) * 2;
       const a = pairs[k];
@@ -124,24 +122,19 @@ export class RayStressDriver extends GameObject {
       const by = Transform.y[b];
       // Two closest casts ≈ LOS + linecastBetweenEntities cost shape.
       const h1 = this._box2dClosest(ax, ay, bx, by);
-      casts++;
       if (h1 === -1) sink++;
       const h2 = this._box2dClosest(ax, ay, bx, by);
-      casts++;
       if (h2 !== -1) sink++;
     }
     for (let i = 0; i < half; i++) {
       const k = ((cursor + i) % LONG_RAY_COUNT) * 4;
       const hit = this._box2dClosest(rays[k], rays[k + 1], rays[k + 2], rays[k + 3]);
-      casts++;
       sink += hit;
       // Second cast stands in for castAll(maxHits=4) volume (closest-only API).
       const hit2 = this._box2dClosest(rays[k], rays[k + 1], rays[k + 2], rays[k + 3]);
-      casts++;
       if (hit2 !== -1) sink++;
     }
     this._sink = sink;
-    Ray.noteExternalWork(performance.now() - t0, casts);
   }
 
   tick() {

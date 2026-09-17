@@ -153,6 +153,9 @@ export const LOGIC_STATS = Object.freeze({
   TICK_MS: 9,
   /** logic0 precomputed query snapshot publish. Written only when collectDetailedStats. */
   QUERY_PUBLISH_MS: 10,
+  /** Sync Box2d.castRayClosest SAB wait on logic. Not Ray.* DDA. */
+  BOX2D_RAYCAST_MS: 11,
+  BOX2D_RAYCAST_COUNT: 12,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });
@@ -315,6 +318,8 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'ENTITIES_PROCESSED', label: 'Entities', format: fmtNum },
       { key: 'RAYCAST_MS', label: 'Ray', format: fmtMs },
       { key: 'RAYCAST_COUNT', label: 'Rays', format: fmtNum },
+      { key: 'BOX2D_RAYCAST_MS', label: 'Box2dRay', format: fmtMs },
+      { key: 'BOX2D_RAYCAST_COUNT', label: 'Box2dRays', format: fmtNum },
       { key: 'ENTITY_MS', label: 'Entity', format: fmtMs },
       { key: 'DECIMATE_MS', label: 'Decim', format: fmtMs },
       { key: 'TICK_MS', label: 'Tick', format: fmtMs },

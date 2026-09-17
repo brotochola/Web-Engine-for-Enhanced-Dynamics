@@ -13,7 +13,9 @@ import { Decal } from './decal.js';
 import { LiquidFun } from './liquidFun.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
+import { bindOverlapCircleSab } from '../box2d/box2dOverlapCircle.js';
 import { bindRayCastSab } from '../box2d/box2dRayCast.js';
+import { bindCastRayAllSab } from '../box2d/box2dCastRayAll.js';
 import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
 import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
@@ -1640,7 +1642,9 @@ class Scene {
         sleepingByteOffset: e.data.sleepingByteOffset,
         commandSab: e.data.commandSab,
         queryAabbSab: e.data.queryAabbSab || null,
+        overlapCircleSab: e.data.overlapCircleSab || null,
         rayCastSab: e.data.rayCastSab || null,
+        castRayAllSab: e.data.castRayAllSab || null,
         liquidFunQuerySab: e.data.liquidFunQuerySab || null,
         liquidFunExtractSab: e.data.liquidFunExtractSab || null,
         liquidFunUserDataListSab: e.data.liquidFunUserDataListSab || null,
@@ -1670,8 +1674,14 @@ class Scene {
       if (payload.queryAabbSab) {
         bindQueryAabbSab(payload.queryAabbSab);
       }
+      if (payload.overlapCircleSab) {
+        bindOverlapCircleSab(payload.overlapCircleSab);
+      }
       if (payload.rayCastSab) {
         bindRayCastSab(payload.rayCastSab);
+      }
+      if (payload.castRayAllSab) {
+        bindCastRayAllSab(payload.castRayAllSab);
       }
       if (payload.liquidFunQuerySab) {
         bindLiquidFunQuerySab(payload.liquidFunQuerySab);

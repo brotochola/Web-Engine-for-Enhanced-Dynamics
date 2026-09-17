@@ -50,7 +50,9 @@ import { setVerboseWorkers, installQuietConsoleLog } from '../util/debugLog.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
+import { bindOverlapCircleSab } from '../box2d/box2dOverlapCircle.js';
 import { bindRayCastSab } from '../box2d/box2dRayCast.js';
+import { bindCastRayAllSab } from '../box2d/box2dCastRayAll.js';
 import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
 import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
@@ -393,6 +395,22 @@ export class AbstractWorker {
     this.reportLog('initializing common buffers');
     this.globalEntityCount = data.globalEntityCount;
     this.bodySyncViews = bindBodySyncBuffers(data.buffers);
+    Decal.bindStampRing(data.buffers?.decalStampRing || null);
+    {
+      const p = data.config?.particle;
+      if (data.buffers?.decalsTilesRGBA && p?.decals) {
+        const tileSize = p.decalsTileSize;
+        Decal.bindAtlas({
+          tilesSab: data.buffers.decalsTilesRGBA,
+          tileSize,
+          tilePixelSize: p.decalsTilePixelSize,
+          tilesX: Math.ceil(data.config.worldWidth / tileSize),
+          tilesY: Math.ceil(data.config.worldHeight / tileSize),
+        });
+      } else {
+        Decal.bindAtlas(null);
+      }
+    }
 
     // Store config for worker access
     this.config = data.config || {};
@@ -402,6 +420,7 @@ export class AbstractWorker {
     setVerboseWorkers(!!this.config.debug?.verboseWorkers);
     installQuietConsoleLog();
     Ray.collectDetailedStats = this.collectDetailedStats;
+    Box2d.collectDetailedStats = this.collectDetailedStats;
     Ray.assertRotCSUnit = !!(this.config.debug?.assertRotCSUnit);
     setAssertRotCSUnit(!!this.config.debug?.assertRotCSUnit);
 
@@ -1300,8 +1319,14 @@ export class AbstractWorker {
       if (data.queryAabbSab) {
         bindQueryAabbSab(data.queryAabbSab);
       }
+      if (data.overlapCircleSab) {
+        bindOverlapCircleSab(data.overlapCircleSab);
+      }
       if (data.rayCastSab) {
         bindRayCastSab(data.rayCastSab);
+      }
+      if (data.castRayAllSab) {
+        bindCastRayAllSab(data.castRayAllSab);
       }
       if (data.liquidFunQuerySab) {
         bindLiquidFunQuerySab(data.liquidFunQuerySab);

@@ -28,7 +28,7 @@ import {
   calculateCameraScreenBounds,
   screenBoundsToWorldBounds,
 } from '../util/utils.js';
-import { stampParticleToTileBuffers } from '../util/decalStamp.js';
+import { Decal } from '../core/decal.js';
 import {
   updateParticlePhysicsBuffers,
   buildActiveListBuffers,
@@ -468,6 +468,8 @@ class ParticleWorker extends AbstractWorker {
 
       this.decalsTilesRGBA = new Uint8ClampedArray(data.decals.tilesRGBA);
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
+      Decal.bindStampRing(data.decals.stampRing || data.buffers?.decalStampRing || null);
+      Decal.bindStampApply(this.stampParticleToTile.bind(this));
 
       if (data.decals.textures) {
         for (const [textureId, textureData] of Object.entries(data.decals.textures)) {
@@ -479,6 +481,8 @@ class ParticleWorker extends AbstractWorker {
         }
       }
       // console.log('[PARTICLE WORKER] Decals system initialized');
+    } else {
+      Decal.bindStampApply(null);
     }
 
     // ========================================
@@ -641,6 +645,10 @@ class ParticleWorker extends AbstractWorker {
     // Stamp collected particles onto blood decal tiles
     startTime = shouldProfile ? performance.now() : 0;
     this.stampCollectedParticles();
+    const ringStamps = Decal.drainStampRing((x, y, tint, scaleX, scaleY, textureId, alpha, blendMode) => {
+      this.stampParticleToTile(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode);
+    });
+    this.particlesStampedThisFrame += ringStamps;
     if (shouldProfile) {
       this.decalStampTimeThisFrame += performance.now() - startTime;
     }
@@ -1063,7 +1071,7 @@ class ParticleWorker extends AbstractWorker {
     p.decalsTilesX = this.decalsTilesX;
     p.decalsTilesY = this.decalsTilesY;
     p.decalsResolution = this.decalsResolution;
-    stampParticleToTileBuffers(p);
+    Decal.stampToTileBuffers(p);
   }
 
   // ========================================

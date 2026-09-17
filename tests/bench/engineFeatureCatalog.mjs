@@ -38,7 +38,7 @@ export const ENGINE_FEATURES = [
   {
     id: 'decals',
     name: 'Decal stamp',
-    module: 'src/util/decalStamp.js',
+    module: 'src/core/decal.js',
     kernel: { script: 'tests/bench/decalMicrobench.mjs', opsKey: 'cases.normal_multitile_large.opsPerSec' },
     scene: {
       key: 'decalStamp',
@@ -265,8 +265,8 @@ export const ENGINE_FEATURES = [
       headed: false,
       kind: 'stress',
     },
-    primary: ['physics_STEP_MS', 'logic0_RAYCAST_MS'],
-    load: ['BODY_COUNT', 'logic0_RAYCAST_COUNT'],
+    primary: ['physics_STEP_MS', 'logic0_BOX2D_RAYCAST_MS'],
+    load: ['BODY_COUNT', 'logic0_BOX2D_RAYCAST_COUNT'],
   },
   {
     id: 'queryPublish',

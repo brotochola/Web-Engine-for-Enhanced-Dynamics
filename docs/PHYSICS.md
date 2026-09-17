@@ -175,6 +175,10 @@ On-demand Box2D broadphase query for entity ids (parallel to spatial `neighborDa
 |--------|-----|----------|
 | Logic / `GameObject` | `Box2d.queryAABB(x0, y0, x1, y1, out, filter?)` | Sync (`Atomics.wait`) |
 | Scene (main) | `Box2d.queryAABBAsync(...)` → Promise | Async (`Atomics.waitAsync`) |
+| Logic | `Box2d.overlapCircle(cx, cy, radius, out, filter?)` | Sync (`Atomics.wait`) |
+| Scene (main) | `Box2d.overlapCircleAsync(...)` | Async |
+| Logic | `Box2d.castRayAll(ox, oy, dx, dy, out?, filter?)` | Sync; borrowed `{ entityIndex, fraction, hitX, hitY }[]` |
+| Scene (main) | `Box2d.castRayAllAsync(...)` | Async |
 
 - `out` must be `Int32Array`. Return value = full hit count; written slots = `min(count, out.length)`.
 - Single-flight SAB (`box2dQueryAabb`): one outstanding query process-wide; concurrent callers serialize.

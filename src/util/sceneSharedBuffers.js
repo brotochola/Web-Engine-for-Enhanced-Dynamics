@@ -55,6 +55,7 @@ import { LiquidFun } from '../core/liquidFun.js';
 import { Joint } from '../core/joint.js';
 import { SoundManager } from '../core/soundManager.js';
 import { Query } from '../core/query.js';
+import { Decal } from '../core/decal.js';
 import { MAX_COMPONENTS, MAX_ENTITIES, MAX_ENTITY_TYPES } from '../core/querySystem.js';
 import {
   BODY_DIRTY,
@@ -427,6 +428,15 @@ function initializeLightingAndRenderBuffers(scene) {
 
     buffers.decalsTilesRGBA = new SharedArrayBuffer(totalTiles * bytesPerTile);
     buffers.decalsTilesDirty = new SharedArrayBuffer(totalTiles);
+    buffers.decalStampRing = Decal.createStampRingSab();
+    Decal.bindStampRing(buffers.decalStampRing);
+    Decal.bindAtlas({
+      tilesSab: buffers.decalsTilesRGBA,
+      tileSize,
+      tilePixelSize,
+      tilesX,
+      tilesY,
+    });
     scene.decalsTilesX = tilesX;
     scene.decalsTilesY = tilesY;
     scene.decalsTotalTiles = totalTiles;
@@ -839,6 +849,9 @@ export function teardownSceneSharedState(scene) {
   Joint.reset();
   TileMap.reset();
   ParticleEmitter.reset();
+  Decal.bindStampRing(null);
+  Decal.bindStampApply(null);
+  Decal.bindAtlas(null);
   LiquidFun.unbindSabs();
   DecorationPool.reset();
   BulletPool.reset();

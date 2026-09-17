@@ -145,7 +145,7 @@ The ray checks `(1 << (entity.collisionLayer & 31)) & mask` per entity -- one bi
 - `castAll` reuses a pool of hit objects; only allocates new ones if the pool grows (one-time cost).
 - Correctness + throughput regression: `node tests/bench/rayMicrobench.mjs` (20k brute-force comparisons + timed workloads).
 - WeedJS vs Box2D kernel A/B (idle Node): `pnpm bench:micro:ray-vs-box2d`. Soft hit/miss agreement only — filters/math differ.
-- Busy-physics hyp (logic DDA vs physics-thread SAB cast): `pnpm bench:feature:ray-vs-box2d:weedjs:busy` vs `…:box2d:busy`. Read `RAYCAST_MS` + physics `STEP_MS`/`BOX2D_MS`. WeedJS ray is **logic-thread DDA**, not a dedicated ray worker.
-- Public sync API for Box2D closest ray: `Box2d.castRayClosest(ox, oy, dx, dy, out?, filter?)` (SAB, single-flight; same pattern as QueryAABB). Main thread: `Box2d.castRayClosestAsync`.
+- Busy-physics hyp (logic DDA vs physics-thread SAB cast): `pnpm bench:feature:ray-vs-box2d:weedjs:busy` vs `…:box2d:busy`. Read WeedJS `RAYCAST_MS` or Box2D `BOX2D_RAYCAST_MS` + physics `STEP_MS`/`BOX2D_MS`. WeedJS ray is **logic-thread DDA**, not a dedicated ray worker. `serviceRayCast` inside physics is still `STEP_MS`.
+- Public sync API for Box2D closest ray: `Box2d.castRayClosest(ox, oy, dx, dy, out?, filter?)` (SAB, single-flight; same pattern as QueryAABB). Main thread: `Box2d.castRayClosestAsync`. All hits: `Box2d.castRayAll` / `castRayAllAsync` (borrowed `{ entityIndex, fraction, hitX, hitY }[]`).
 - Optimization hypotheses + headless L1/L2/L3 campaign: `[RAY_HYPOTHESES.md](./RAY_HYPOTHESES.md)`.
 - Production Ray path includes tournament champion **H6+H1** (stamp dedup + `castAll` top-N early-out).

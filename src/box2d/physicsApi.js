@@ -848,8 +848,9 @@ function createPhysicsApi(Module) {
       getCountersByteOffset(),
       counterInts,
     );
-    // Stashed so callers can decode world._contactHit records without re-querying WASM.
+    // Stashed so callers can decode world._contactHit / _queryHits without re-querying WASM.
     world._contactHitStride = queryHitStride;
+    world._queryHitStride = queryHitStride;
     world._jointEvents = new Int32Array(
       sab,
       getJointEventsByteOffset(),
@@ -2278,5 +2279,4 @@ function createPhysicsApi(Module) {
 
   }
 
-  return { PhysicsWorld, BodyHandle, JointHandle };
-}
+  ret
