@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { VERSION, SharedAtomicPool, DEBUG_SELECTED_ENTITY_OFFSET } from '../../src/index.js';
+import { VERSION } from '../../src/version.js';
+import { SharedAtomicPool } from '../../src/core/sharedAtomicPool.js';
+import { DEBUG_SELECTED_ENTITY_OFFSET } from '../../src/core/debug/debugFlags.js';
 
 test('WEED namespace keeps version and bullet APIs aligned', { concurrency: false }, async () => {
   const packageJson = JSON.parse(

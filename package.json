@@ -32,7 +32,7 @@
     "dev": "node server/node_server.js",
     "pretest:node": "node scripts/syncVersion.js",
     "test": "npm run test:node",
-    "test:node": "node --test tests/node/*.test.js",
+    "test:node": "node --test --test-concurrency=4 tests/node/*.test.js",
     "test:bundle": "node scripts/smokeBundleEmbed.mjs && node scripts/smokeBundleBrowser.mjs",
     "test:bundle:build": "npm run make_bundle && npm run test:bundle",
     "test:all": "npm run test:node && npm run test:browser",

@@ -158,7 +158,7 @@ test('buildSceneMemoryUsageReport reads Box2D HEAP used from physics stats', () 
   f32[PHYSICS_STATS.HEAP_USED_KB] = 48 * 1024; // 48 MB
   f32[PHYSICS_STATS.HEAP_HIGH_WATER_KB] = 64 * 1024; // 64 MB
 
-  const sab = new SharedArrayBuffer(512 * 1024 * 1024);
+  const sab = new SharedArrayBuffer(64 * 1024);
   const report = buildSceneMemoryUsageReport({
     totalEntityCount: 0,
     config: {},

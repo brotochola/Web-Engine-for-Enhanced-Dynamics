@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Scene } from '../../src/core/scene.js';
 import {
   normalizeRendererBackend,
   assertSceneRendererConfig,
@@ -17,15 +16,6 @@ import {
 
 const WGSL_LOOK = `@fragment fn mainFrag() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }`;
 const GLSL_LOOK = `precision mediump float;\nvoid main() { gl_FragColor = vec4(1.0); }`;
-
-function applyRendererDefaults(config) {
-  const scene = Object.create(Scene.prototype);
-  scene.game = {};
-  scene.constructor = { config };
-  scene.config = { ...config };
-  scene._applyConfigDefaults();
-  return scene.config;
-}
 
 test('normalizeRendererBackend defaults to webgpu', () => {
   assert.equal(normalizeRendererBackend(undefined), 'webgpu');
@@ -51,21 +41,20 @@ test('webgl plus compute throws before workers', () => {
   );
 });
 
-test('Scene merge rejects invalid backend and webgl+compute', () => {
+test('assertSceneRendererConfig rejects invalid backend and webgl+compute', () => {
   assert.throws(
-    () => applyRendererDefaults({ renderer: { backend: 'metal' } }),
+    () => assertSceneRendererConfig({ renderer: { backend: 'metal' } }),
     /must be "webgl" or "webgpu"/
   );
   assert.throws(
     () =>
-      applyRendererDefaults({
+      assertSceneRendererConfig({
         renderer: { backend: 'webgl' },
         layers: { fire: { shader: { compute: 'sim' } } },
       }),
     /Layer "fire" uses a compute shader/
   );
-  const cfg = applyRendererDefaults({});
-  assert.equal(cfg.renderer.backend, 'webgpu');
+  assert.equal(assertSceneRendererConfig({}), 'webgpu');
 });
 
 test('look WGSL on webgl throws; GLSL on webgpu throws', () => {

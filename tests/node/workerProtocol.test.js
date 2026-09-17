@@ -46,9 +46,7 @@ test('logic worker keeps pending list updates when forwarding to logic0 fails', 
   console.warn = (...args) => warnings.push(args.map(String).join(' '));
 
   try {
-    const logicWorkerUrl = new URL('../../src/workers/logicWorker.js', import.meta.url);
-    logicWorkerUrl.searchParams.set('workerProtocolTest', `${Date.now()}-${Math.random()}`);
-    await import(logicWorkerUrl.href);
+    await import(new URL('../../src/workers/logicWorker.js', import.meta.url).href);
 
     const worker = globalThis.self.logicWorker;
     class SpawnEntity {}
