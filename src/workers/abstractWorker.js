@@ -466,7 +466,9 @@ export class AbstractWorker {
     GameObject.initializeArrays(
       this.globalEntityCount,
       data.buffers?.neighborData,
-      data.buffers?.nextTickData
+      data.buffers?.nextTickData,
+      data.buffers?.logicWorkerData,
+      data.buffers?.logicWorkerTypePin
     );
 
     // Initialize ParticleComponent arrays (separate particle pool system)

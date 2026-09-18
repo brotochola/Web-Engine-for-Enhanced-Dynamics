@@ -25,7 +25,10 @@ test('seeded rectangle is one static-sized island with CCW tris', () => {
     const islands = WorldGrid.extractIslands();
     assert.equal(islands.length, 1);
     assert.ok(islands[0].areaCells > 20);
-    assert.ok(islands[0].nodes.every((n) => WorldGrid.node(n.x, n.y) >= ISO));
+    const isl = islands[0];
+    for (let i = 0; i < isl.nodeCount; i++) {
+      assert.ok(WorldGrid.amount[isl.nodeIdx[isl.nodeStart + i]] >= ISO);
+    }
 
     const built = WorldGrid.buildContourFixtures(islands[0], 3);
     assert.ok(built.polys.length >= 1);
@@ -47,11 +50,12 @@ test('paint erase splits or shrinks the island', () => {
     makeFilledRect(20, 12, 8, 2, 5, 18, 8);
     const before = WorldGrid.extractIslands();
     assert.equal(before.length, 1);
+    const beforeArea = before[0].areaCells;
     WorldGrid.paint(10 * 8, 6.5 * 8, 3, 1, 1, true, MAT_DIRT);
     const after = WorldGrid.extractIslands();
     assert.ok(after.length >= 1);
     const areaAfter = after.reduce((s, i) => s + i.areaCells, 0);
-    assert.ok(areaAfter < before[0].areaCells - 1);
+    assert.ok(areaAfter < beforeArea - 1);
   } finally {
     teardown();
   }
@@ -78,6 +82,33 @@ test('setAmount writes the bound SAB', () => {
     assert.equal(WorldGrid.setAmount(1, 1, 0.5, MAT_DIRT), true);
     assert.equal(WorldGrid.amount[1 * 4 + 1], 0.5);
     assert.equal(WorldGrid.material[1 * 4 + 1], MAT_DIRT);
+    assert.ok(WorldGrid.hasDirty());
+    const box = WorldGrid.consumeDirty(0);
+    assert.equal(box.minX, 1);
+    assert.equal(box.minY, 1);
+    assert.equal(box.maxX, 1);
+    assert.equal(box.maxY, 1);
+    assert.equal(WorldGrid.hasDirty(), false);
+  } finally {
+    teardown();
+  }
+});
+
+test('extractIslands(box) returns only the island that touches dirty', () => {
+  try {
+    WorldGrid.attach(24, 12, 8);
+    for (let y = 2; y < 5; y++) {
+      for (let x = 2; x < 6; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    for (let y = 2; y < 5; y++) {
+      for (let x = 14; x < 18; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    WorldGrid.resetDirty();
+    const all = WorldGrid.extractIslands();
+    assert.equal(all.length, 2);
+    const local = WorldGrid.extractIslands({ minX: 1, minY: 1, maxX: 7, maxY: 6 });
+    assert.equal(local.length, 1);
+    assert.ok(local[0].maxX < 10);
   } finally {
     teardown();
   }

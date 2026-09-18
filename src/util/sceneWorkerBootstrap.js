@@ -194,6 +194,8 @@ function buildSceneSharedBuffers(scene) {
     logicStats: scene.buffers.logicStats,
     navigationData: scene.buffers.navigationData || null,
     nextTickData: scene.buffers.nextTickData || null,
+    logicWorkerData: scene.buffers.logicWorkerData || null,
+    logicWorkerTypePin: scene.buffers.logicWorkerTypePin || null,
     mouseData: scene.buffers.mouseData,
     gamepadData: scene.buffers.gamepadData,
     queryEntityMetadata: scene.buffers.queryEntityMetadata,

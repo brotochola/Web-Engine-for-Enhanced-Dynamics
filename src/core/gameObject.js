@@ -56,6 +56,7 @@ import {
   markBodyDirty,
   withBodyDirtyDeferred,
 } from '../box2d/box2dBodySync.js';
+import { LOGIC_WORKER_UNPINNED, resolveLogicWorker } from '../util/logicOwner.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
@@ -72,6 +73,15 @@ export class GameObject {
   // Tick decimation - override in subclasses to reduce tick frequency
   // tickInterval = 10 means entity ticks every 10 frames (spread across frames via index offset)
   static tickInterval = 1; // Default: tick every frame (no decimation)
+
+  // Per-instance logic-worker pin. Number on a subclass is the spawn default.
+  // After initializeArrays, GameObject.logicWorker is the Int8 SoA (not a default).
+  static logicWorker = null;
+
+  /** Uint8 per entityType: 1 after any instance of that type was pinned. */
+  static typeHasPin = null;
+
+  static TYPE_PIN_COUNT = 256;
 
   /**
    * Particle worker fills `RigidBody.speed` for this entityType when true.
@@ -150,11 +160,15 @@ export class GameObject {
    * @param {number} count - Total number of entities
    * @param {SharedArrayBuffer} [neighborBuffer] - Neighbor data buffer from spatial worker
    * @param {SharedArrayBuffer} [nextTickBuffer] - Tick decimation countdown buffer (1 byte per entity)
+   * @param {SharedArrayBuffer} [logicWorkerBuffer] - Int8 pin per entity (-1 = unpinned)
+   * @param {SharedArrayBuffer} [typeHasPinBuffer] - Uint8 per entityType
    */
   static initializeArrays(
     count,
     neighborBuffer = null,
-    nextTickBuffer = null
+    nextTickBuffer = null,
+    logicWorkerBuffer = null,
+    typeHasPinBuffer = null
   ) {
     this.globalEntityCount = count;
 
@@ -167,6 +181,26 @@ export class GameObject {
     // Initialize tick decimation buffer if provided (staggeredUpdates enabled)
     if (nextTickBuffer) {
       this.nextTick = new Uint8Array(nextTickBuffer);
+    }
+
+    this.logicWorker = logicWorkerBuffer ? new Int8Array(logicWorkerBuffer) : null;
+    this.typeHasPin = typeHasPinBuffer ? new Uint8Array(typeHasPinBuffer) : null;
+  }
+
+  /**
+   * @param {number} entityIndex
+   * @param {number} entityType
+   * @param {number} pin
+   */
+  static writeLogicPin(entityIndex, entityType, pin) {
+    if (this.logicWorker) this.logicWorker[entityIndex] = pin;
+    if (
+      pin >= 0 &&
+      this.typeHasPin &&
+      entityType >= 0 &&
+      entityType < this.typeHasPin.length
+    ) {
+      this.typeHasPin[entityType] = 1;
     }
   }
 
@@ -1833,6 +1867,8 @@ export class GameObject {
     // ========================================
     // Lock-free CAS push (Treiber stack) - safe against concurrent
     // spawns/despawns from any worker or the main thread
+    if (GameObject.logicWorker) GameObject.logicWorker[i] = LOGIC_WORKER_UNPINNED;
+
     if (EntityClass.freeList && EntityClass.freeListTop) {
       pushFreeIndex(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
     }
@@ -2161,6 +2197,32 @@ export class GameObject {
       return null;
     }
 
+    const requestedPin =
+      spawnConfig && typeof spawnConfig.logicWorker === 'number'
+        ? spawnConfig.logicWorker
+        : typeof EntityClass.logicWorker === 'number'
+          ? EntityClass.logicWorker
+          : LOGIC_WORKER_UNPINNED;
+    const logicWorkerCtx = typeof self !== 'undefined' ? self.logicWorker : null;
+    const totalLogic = logicWorkerCtx ? logicWorkerCtx.totalLogicWorkers : 1;
+    const pin = resolveLogicWorker(requestedPin, totalLogic);
+    GameObject.writeLogicPin(i, EntityClass.entityType, pin);
+
+    if (
+      pin >= 0 &&
+      logicWorkerCtx &&
+      logicWorkerCtx.workerIndex !== pin &&
+      typeof logicWorkerCtx.sendDataToWorker === 'function'
+    ) {
+      const sent = logicWorkerCtx.sendDataToWorker(`logic${pin}`, {
+        msg: 'spawn',
+        className: EntityClass.name,
+        spawnConfig,
+        entityIndex: i,
+      });
+      if (sent) return instance;
+    }
+
     // ========================================
     // COMPONENT DATA SETUP (SAFE - unique index)
     // ========================================
@@ -2338,7 +2400,8 @@ export class GameObject {
           key === 'height' ||
           key === 'radius' ||
           key === 'layer' ||
-          key === 'layers'
+          key === 'layers' ||
+          key === 'logicWorker'
         ) {
           continue;
         }
@@ -2556,6 +2619,7 @@ export class GameObject {
 
         // Deactivate all component active flags
         transformActive[i] = 0;
+        if (GameObject.logicWorker) GameObject.logicWorker[i] = LOGIC_WORKER_UNPINNED;
         if (rigidBodyActive) rigidBodyActive[i] = 0;
         if (rigidBodySleeping) rigidBodySleeping[i] = 0;
         if (colliderActive) colliderActive[i] = 0;

@@ -4,6 +4,7 @@
 
 import { GameObject } from './gameObject.js';
 import { popFreeIndex } from '../util/atomicFreeList.js';
+import { resolveLogicWorker } from '../util/logicOwner.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
@@ -2387,16 +2388,22 @@ class Scene {
     }
 
     // ========================================
-    // NOTIFY WORKER 0
+    // NOTIFY OWNER WORKER
     // ========================================
-    // Worker 0 calls GameObject.spawn() with preAssignedIndex which:
-    // - Skips freeList pop (already done above)
-    // - Sets up all component data
-    // - Calls lifecycle hooks (setup, onSpawned)
-    // - Queues list updates for processing at start of next frame
-    const worker0 = this.workers.logicWorkers?.[0];
-    if (worker0) {
-      worker0.postMessage({
+    // The pin worker runs setup/onSpawned so heap state lives with tick.
+    const requestedPin =
+      typeof spawnConfig.logicWorker === 'number'
+        ? spawnConfig.logicWorker
+        : typeof EntityClass?.logicWorker === 'number'
+          ? EntityClass.logicWorker
+          : -1;
+    const pin = resolveLogicWorker(requestedPin, this.numberOfLogicWorkers);
+    if (entityIndex >= 0) {
+      GameObject.writeLogicPin(entityIndex, EntityClass?.entityType, pin);
+    }
+    const targetWorker = this.workers.logicWorkers?.[pin >= 0 ? pin : 0];
+    if (targetWorker) {
+      targetWorker.postMessage({
         msg: 'spawn',
         className: className,
         spawnConfig: spawnConfig,

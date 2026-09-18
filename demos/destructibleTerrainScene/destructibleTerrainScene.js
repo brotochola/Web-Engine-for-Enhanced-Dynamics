@@ -27,6 +27,7 @@ export class DestructibleTerrainScene extends Scene {
 
     logic: {
       noLimitFPS: false,
+      numberOfLogicWorkers: 2,
     },
 
     particle: {
@@ -99,10 +100,10 @@ export class DestructibleTerrainScene extends Scene {
   }
 
   createNewGame() {
-    this.spawnEntity(WorldGridManager);
+    this.spawnEntity(WorldGridManager, { logicWorker: 1 });
     const spawned = this.spawnEntity(Ship, {
       x: WORLD_W * 0.5,
-      y: WORLD_H * 0.72,
+      y: WORLD_H * 0.5,
     });
     this.shipIndex = spawned ? spawned.index : -1;
   }

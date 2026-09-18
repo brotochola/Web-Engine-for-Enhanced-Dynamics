@@ -155,10 +155,16 @@ function initializeCoreEntityAndComponentBuffers(scene) {
     buffers.nextTickData = new SharedArrayBuffer(totalEntityCount);
   }
 
+  buffers.logicWorkerData = new SharedArrayBuffer(totalEntityCount);
+  new Int8Array(buffers.logicWorkerData).fill(-1);
+  buffers.logicWorkerTypePin = new SharedArrayBuffer(GameObject.TYPE_PIN_COUNT);
+
   GameObject.initializeArrays(
     totalEntityCount,
     buffers.neighborData,
-    buffers.nextTickData || null
+    buffers.nextTickData || null,
+    buffers.logicWorkerData,
+    buffers.logicWorkerTypePin
   );
 
   for (const [componentName, pool] of Object.entries(componentPools)) {
@@ -870,6 +876,8 @@ export function teardownSceneSharedState(scene) {
   }
 
   GameObject.activeEntitiesData = null;
+  GameObject.logicWorker = null;
+  GameObject.typeHasPin = null;
   bindBodySyncBuffers(null);
   GameObject.instances = [];
   GameObject._globalAnimationCache = {};

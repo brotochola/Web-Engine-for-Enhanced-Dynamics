@@ -21,6 +21,7 @@ import { JointBreakListener } from '../components/jointBreakListener.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
 import { AbstractWorker } from './abstractWorker.js';
+import { logicOwner } from '../util/logicOwner.js';
 
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
@@ -340,6 +341,7 @@ class LogicWorker extends AbstractWorker {
               activeList: EntityClass._activeList,
               tickInterval,
               startIndex,
+              entityType,
               needsScreenCallbacks,
             });
           } else {
@@ -348,6 +350,7 @@ class LogicWorker extends AbstractWorker {
               EntityClass,
               activeList: EntityClass._activeList,
               startIndex,
+              entityType,
               needsScreenCallbacks,
             });
           }
@@ -672,39 +675,39 @@ class LogicWorker extends AbstractWorker {
     // This is the common case for most entity types
     const nonDecimatedTypes = this.nonDecimatedTypes;
     const nonDecimatedCount = nonDecimatedTypes.length;
+    const pins = GameObject.logicWorker;
+    const typePin = GameObject.typeHasPin;
 
     for (let t = 0; t < nonDecimatedCount; t++) {
       const typeInfo = nonDecimatedTypes[t];
       const activeList = typeInfo.activeList;
       const count = Math.min(activeList[0], activeList.length - 1);
       const needsScreenCallbacks = typeInfo.needsScreenCallbacks;
+      const typePinned = !!(typePin && typePin[typeInfo.entityType]);
 
-      // Worker partitioning within this type's active list
-      for (let idx = myIndex; idx < count; idx += totalWorkers) {
-        const entityIndex = activeList[1 + idx];
-
-        // Skip despawned entities (may still be in list until logic0 processes removal)
-        if (transformActive[entityIndex] === 0) continue;
-
-        const obj = gameObjects[entityIndex];
-        if (!obj || typeof obj.tick !== 'function') continue;
-
-        activeCount++;
-        this.entitiesProcessedThisFrame++;
-
-        rbAx[entityIndex] = 0;
-        rbAy[entityIndex] = 0;
-        rbAa[entityIndex] = 0;
-
-        if (collectDetailed) {
-          const tTick0 = performance.now();
-          obj.tick(dtRatio, deltaTime, accTime, frameNum);
-          tickMs += performance.now() - tTick0;
-        } else {
-          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+      if (typePinned && pins && totalWorkers > 1) {
+        for (let idx = 0; idx < count; idx++) {
+          const entityIndex = activeList[1 + idx];
+          if (logicOwner(idx, entityIndex, totalWorkers, pins) !== myIndex) continue;
+          const n = this._tickNonDecimatedOne(
+            entityIndex, dtRatio, deltaTime, accTime, frameNum,
+            needsScreenCallbacks, transformActive, gameObjects,
+            rbAx, rbAy, rbAa, collectDetailed
+          );
+          activeCount += n;
+          if (collectDetailed) tickMs += this._lastTickMs;
         }
-
-        if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
+      } else {
+        for (let idx = myIndex; idx < count; idx += totalWorkers) {
+          const entityIndex = activeList[1 + idx];
+          const n = this._tickNonDecimatedOne(
+            entityIndex, dtRatio, deltaTime, accTime, frameNum,
+            needsScreenCallbacks, transformActive, gameObjects,
+            rbAx, rbAy, rbAa, collectDetailed
+          );
+          activeCount += n;
+          if (collectDetailed) tickMs += this._lastTickMs;
+        }
       }
     }
 
@@ -724,40 +727,37 @@ class LogicWorker extends AbstractWorker {
         const count = Math.min(activeList[0], activeList.length - 1);
         const tickInterval = typeInfo.tickInterval; // Pre-cached, no prototype lookup
         const needsScreenCallbacks = typeInfo.needsScreenCallbacks;
+        const typePinned = !!(typePin && typePin[typeInfo.entityType]);
 
-        // Worker partitioning within this type's active list
-        for (let idx = myIndex; idx < count; idx += totalWorkers) {
-          const entityIndex = activeList[1 + idx];
-
-          // Skip despawned entities (may still be in list until logic0 processes removal)
-          if (transformActive[entityIndex] === 0) continue;
-
-          const obj = gameObjects[entityIndex];
-          if (!obj || typeof obj.tick !== 'function') continue;
-
-          activeCount++;
-          this.entitiesProcessedThisFrame++;
-
-          const tVisit0 = collectDetailed ? performance.now() : 0;
-
-          // TICK DECIMATION: Check countdown
-          if (--nextTick[entityIndex] > 0) {
-            if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
-            if (collectDetailed) decimateMs += performance.now() - tVisit0;
-            continue;
+        if (typePinned && pins && totalWorkers > 1) {
+          for (let idx = 0; idx < count; idx++) {
+            const entityIndex = activeList[1 + idx];
+            if (logicOwner(idx, entityIndex, totalWorkers, pins) !== myIndex) continue;
+            const n = this._tickDecimatedOne(
+              entityIndex, dtRatio, deltaTime, accTime, frameNum,
+              tickInterval, needsScreenCallbacks, transformActive, gameObjects,
+              rbAx, rbAy, rbAa, nextTick, collectDetailed
+            );
+            activeCount += n;
+            if (collectDetailed) {
+              decimateMs += this._lastDecimateMs;
+              tickMs += this._lastTickMs;
+            }
           }
-
-          // Reset countdown for next cycle
-          nextTick[entityIndex] = tickInterval;
-
-          rbAx[entityIndex] = 0;
-          rbAy[entityIndex] = 0;
-          rbAa[entityIndex] = 0;
-
-          obj.tick(dtRatio, deltaTime, accTime, frameNum);
-
-          if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
-          if (collectDetailed) tickMs += performance.now() - tVisit0;
+        } else {
+          for (let idx = myIndex; idx < count; idx += totalWorkers) {
+            const entityIndex = activeList[1 + idx];
+            const n = this._tickDecimatedOne(
+              entityIndex, dtRatio, deltaTime, accTime, frameNum,
+              tickInterval, needsScreenCallbacks, transformActive, gameObjects,
+              rbAx, rbAy, rbAa, nextTick, collectDetailed
+            );
+            activeCount += n;
+            if (collectDetailed) {
+              decimateMs += this._lastDecimateMs;
+              tickMs += this._lastTickMs;
+            }
+          }
         }
       }
     }
@@ -791,6 +791,77 @@ class LogicWorker extends AbstractWorker {
     }
 
     Mouse.snapshotPreviousFrame();
+  }
+
+  _tickNonDecimatedOne(
+    entityIndex,
+    dtRatio,
+    deltaTime,
+    accTime,
+    frameNum,
+    needsScreenCallbacks,
+    transformActive,
+    gameObjects,
+    rbAx,
+    rbAy,
+    rbAa,
+    collectDetailed
+  ) {
+    this._lastTickMs = 0;
+    if (transformActive[entityIndex] === 0) return 0;
+    const obj = gameObjects[entityIndex];
+    if (!obj || typeof obj.tick !== 'function') return 0;
+    rbAx[entityIndex] = 0;
+    rbAy[entityIndex] = 0;
+    rbAa[entityIndex] = 0;
+    if (collectDetailed) {
+      const tTick0 = performance.now();
+      obj.tick(dtRatio, deltaTime, accTime, frameNum);
+      this._lastTickMs = performance.now() - tTick0;
+    } else {
+      obj.tick(dtRatio, deltaTime, accTime, frameNum);
+    }
+    if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
+    this.entitiesProcessedThisFrame++;
+    return 1;
+  }
+
+  _tickDecimatedOne(
+    entityIndex,
+    dtRatio,
+    deltaTime,
+    accTime,
+    frameNum,
+    tickInterval,
+    needsScreenCallbacks,
+    transformActive,
+    gameObjects,
+    rbAx,
+    rbAy,
+    rbAa,
+    nextTick,
+    collectDetailed
+  ) {
+    this._lastTickMs = 0;
+    this._lastDecimateMs = 0;
+    if (transformActive[entityIndex] === 0) return 0;
+    const obj = gameObjects[entityIndex];
+    if (!obj || typeof obj.tick !== 'function') return 0;
+    this.entitiesProcessedThisFrame++;
+    const tVisit0 = collectDetailed ? performance.now() : 0;
+    if (--nextTick[entityIndex] > 0) {
+      if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
+      if (collectDetailed) this._lastDecimateMs = performance.now() - tVisit0;
+      return 1;
+    }
+    nextTick[entityIndex] = tickInterval;
+    rbAx[entityIndex] = 0;
+    rbAy[entityIndex] = 0;
+    rbAa[entityIndex] = 0;
+    obj.tick(dtRatio, deltaTime, accTime, frameNum);
+    if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
+    if (collectDetailed) this._lastTickMs = performance.now() - tVisit0;
+    return 1;
   }
 
   /**
@@ -1161,7 +1232,6 @@ class LogicWorker extends AbstractWorker {
         break;
       }
       case 'spawn': {
-        if (this.workerIndex !== 0) break;
         this._mainThreadSpawn(data);
         break;
       }

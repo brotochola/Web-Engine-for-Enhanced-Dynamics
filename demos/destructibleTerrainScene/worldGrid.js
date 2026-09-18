@@ -16,6 +16,17 @@ export const MAT_ROCK = 2;
 export const MAT_TINT = [0, 0xc4a574, 0x8a9099];
 export const LAYER_STATIC = 1;
 export const RAY_MASK_NO_STATIC = 0xffffffff ^ (1 << LAYER_STATIC);
+export const SHOT_POWER = 0.4;
+export const SHOT_RADIUS = 2;
+export const SHOT_FALLOFF = 1;
+
+const DIRTY_FLAG = 0;
+const DIRTY_MIN_X = 1;
+const DIRTY_MIN_Y = 2;
+const DIRTY_MAX_X = 3;
+const DIRTY_MAX_Y = 4;
+const _dirtyBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+const _islandsOut = [];
 
 const CLIP_SIMPLIFY_TOL = 4;
 
@@ -36,11 +47,11 @@ export class WorldGrid extends SharedResource {
   static cols = COLS;
   static rows = ROWS;
   static cellSize = CELL;
-  static dirty = false;
-  static dirtyMinX = COLS;
-  static dirtyMinY = ROWS;
-  static dirtyMaxX = -1;
-  static dirtyMaxY = -1;
+  static _visited = null;
+  static _queue = null;
+  static _nodeIdx = null;
+  static _scratchCells = 0;
+  static _visitGen = 1;
 
   static get msCols() {
     return this.cols - 1;
@@ -54,7 +65,13 @@ export class WorldGrid extends SharedResource {
     return {
       amount: { type: Float32Array, length: cols * rows },
       material: { type: Uint8Array, length: cols * rows },
+      dirtyRect: { type: Int32Array, length: 5 },
     };
+  }
+
+  static initialize(buffer, schema) {
+    super.initialize(buffer, schema);
+    this.resetDirty();
   }
 
   /** Node tests: bind a local SAB. Scene bind uses Scene.sharedResources. */
@@ -62,18 +79,24 @@ export class WorldGrid extends SharedResource {
     this.cols = cols;
     this.rows = rows;
     this.cellSize = cellSize;
-    this.resetDirty();
     const schema = this.schemaFor(cols, rows);
     this.initialize(new SharedArrayBuffer(SharedResource.getBufferSize(schema)), schema);
     return this;
   }
 
   static resetDirty() {
-    this.dirty = false;
-    this.dirtyMinX = this.cols;
-    this.dirtyMinY = this.rows;
-    this.dirtyMaxX = -1;
-    this.dirtyMaxY = -1;
+    const d = this.dirtyRect;
+    if (!d) return;
+    Atomics.store(d, DIRTY_FLAG, 0);
+    Atomics.store(d, DIRTY_MIN_X, this.cols);
+    Atomics.store(d, DIRTY_MIN_Y, this.rows);
+    Atomics.store(d, DIRTY_MAX_X, -1);
+    Atomics.store(d, DIRTY_MAX_Y, -1);
+  }
+
+  static hasDirty() {
+    const d = this.dirtyRect;
+    return !!(d && Atomics.load(d, DIRTY_FLAG));
   }
 
   static idx(x, y) {
@@ -85,31 +108,41 @@ export class WorldGrid extends SharedResource {
   }
 
   static markDirty(x, y) {
-    this.dirty = true;
-    if (x < this.dirtyMinX) this.dirtyMinX = x;
-    if (y < this.dirtyMinY) this.dirtyMinY = y;
-    if (x > this.dirtyMaxX) this.dirtyMaxX = x;
-    if (y > this.dirtyMaxY) this.dirtyMaxY = y;
+    const d = this.dirtyRect;
+    if (!d) return;
+    atomicMin(d, DIRTY_MIN_X, x);
+    atomicMin(d, DIRTY_MIN_Y, y);
+    atomicMax(d, DIRTY_MAX_X, x);
+    atomicMax(d, DIRTY_MAX_Y, y);
+    Atomics.store(d, DIRTY_FLAG, 1);
   }
 
   static markAllDirty() {
-    this.dirty = true;
-    this.dirtyMinX = 0;
-    this.dirtyMinY = 0;
-    this.dirtyMaxX = this.cols - 1;
-    this.dirtyMaxY = this.rows - 1;
+    const d = this.dirtyRect;
+    if (!d) return;
+    Atomics.store(d, DIRTY_MIN_X, 0);
+    Atomics.store(d, DIRTY_MIN_Y, 0);
+    Atomics.store(d, DIRTY_MAX_X, this.cols - 1);
+    Atomics.store(d, DIRTY_MAX_Y, this.rows - 1);
+    Atomics.store(d, DIRTY_FLAG, 1);
   }
 
   static consumeDirty(pad = 1) {
-    if (!this.dirty) return null;
-    const box = {
-      minX: Math.max(0, this.dirtyMinX - pad),
-      minY: Math.max(0, this.dirtyMinY - pad),
-      maxX: Math.min(this.cols - 1, this.dirtyMaxX + pad),
-      maxY: Math.min(this.rows - 1, this.dirtyMaxY + pad),
-    };
-    this.resetDirty();
-    return box;
+    const d = this.dirtyRect;
+    if (!d || Atomics.exchange(d, DIRTY_FLAG, 0) === 0) return null;
+    const minX = Atomics.load(d, DIRTY_MIN_X);
+    const minY = Atomics.load(d, DIRTY_MIN_Y);
+    const maxX = Atomics.load(d, DIRTY_MAX_X);
+    const maxY = Atomics.load(d, DIRTY_MAX_Y);
+    Atomics.store(d, DIRTY_MIN_X, this.cols);
+    Atomics.store(d, DIRTY_MIN_Y, this.rows);
+    Atomics.store(d, DIRTY_MAX_X, -1);
+    Atomics.store(d, DIRTY_MAX_Y, -1);
+    _dirtyBox.minX = Math.max(0, minX - pad);
+    _dirtyBox.minY = Math.max(0, minY - pad);
+    _dirtyBox.maxX = Math.min(this.cols - 1, maxX + pad);
+    _dirtyBox.maxY = Math.min(this.rows - 1, maxY + pad);
+    return _dirtyBox;
   }
 
   static setAmount(x, y, value, material) {
@@ -125,12 +158,14 @@ export class WorldGrid extends SharedResource {
     return true;
   }
 
-  static clearIslandNodes(nodes) {
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      const idx = n.y * this.cols + n.x;
-      this.amount[idx] = 0;
-      this.material[idx] = MAT_NONE;
+  static clearIslandNodes(island) {
+    const idx = island.nodeIdx;
+    const start = island.nodeStart;
+    const n = island.nodeCount;
+    for (let i = 0; i < n; i++) {
+      const p = idx[start + i];
+      this.amount[p] = 0;
+      this.material[p] = MAT_NONE;
     }
   }
 
@@ -241,8 +276,8 @@ export class WorldGrid extends SharedResource {
     return miss;
   }
 
-  static extractIslands() {
-    return extractIslands(this);
+  static extractIslands(box) {
+    return extractIslands(this, box);
   }
 
   static buildContourFixtures(island, simplifyTol) {
@@ -1016,60 +1051,124 @@ function polysToLocal(polys, ox, oy) {
   return out;
 }
 
-function dominantMaterial(field, nodes) {
+function atomicMin(arr, i, v) {
+  let cur = Atomics.load(arr, i);
+  while (v < cur) {
+    const prev = Atomics.compareExchange(arr, i, cur, v);
+    if (prev === cur) return;
+    cur = prev;
+  }
+}
+
+function atomicMax(arr, i, v) {
+  let cur = Atomics.load(arr, i);
+  while (v > cur) {
+    const prev = Atomics.compareExchange(arr, i, cur, v);
+    if (prev === cur) return;
+    cur = prev;
+  }
+}
+
+function ensureExtractScratch(field, n) {
+  if (field._scratchCells >= n && field._visited) return;
+  field._visited = new Uint32Array(n);
+  field._queue = new Int32Array(n);
+  field._nodeIdx = new Int32Array(n);
+  field._scratchCells = n;
+  field._visitGen = 1;
+}
+
+function dominantMaterial(field, nodeIdx, nodeStart, nodeCount) {
   let dirt = 0;
   let rock = 0;
-  for (let i = 0; i < nodes.length; i++) {
-    const m = field.material[nodes[i].y * field.cols + nodes[i].x];
+  for (let i = 0; i < nodeCount; i++) {
+    const m = field.material[nodeIdx[nodeStart + i]];
     if (m === MAT_ROCK) rock++;
     else if (m === MAT_DIRT) dirt++;
   }
   return rock > dirt ? MAT_ROCK : MAT_DIRT;
 }
 
-function extractIslands(field) {
+function extractIslands(field, box) {
   const { cols, rows, cellSize, msCols, msRows } = field;
-  const visited = new Uint8Array(cols * rows);
-  const islands = [];
-  const queue = [];
+  const n = cols * rows;
+  ensureExtractScratch(field, n);
+  const visited = field._visited;
+  const queue = field._queue;
+  const nodeIdx = field._nodeIdx;
+  const amount = field.amount;
 
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
+  if (field._visitGen > 0x7f000000) {
+    visited.fill(0);
+    field._visitGen = 1;
+  }
+  const extractStart = field._visitGen;
+
+  const seedMinX = box ? box.minX : 0;
+  const seedMinY = box ? box.minY : 0;
+  const seedMaxX = box ? box.maxX : cols - 1;
+  const seedMaxY = box ? box.maxY : rows - 1;
+
+  let islandCount = 0;
+  let nodeFill = 0;
+
+  for (let y = seedMinY; y <= seedMaxY; y++) {
+    for (let x = seedMinX; x <= seedMaxX; x++) {
       const start = y * cols + x;
-      if (visited[start] || field.amount[start] < ISO) continue;
+      if (visited[start] >= extractStart || amount[start] < ISO) continue;
 
-      const nodes = [];
-      queue.length = 0;
-      queue.push(x, y);
-      visited[start] = 1;
+      const floodId = field._visitGen++;
       let qh = 0;
+      let qt = 0;
+      queue[qt++] = start;
+      visited[start] = floodId;
+      const nodeStart = nodeFill;
       let minX = x;
       let maxX = x;
       let minY = y;
       let maxY = y;
 
-      while (qh < queue.length) {
-        const cx = queue[qh++];
-        const cy = queue[qh++];
-        nodes.push({ x: cx, y: cy });
+      while (qh < qt) {
+        const packed = queue[qh++];
+        nodeIdx[nodeFill++] = packed;
+        const cx = packed % cols;
+        const cy = (packed / cols) | 0;
         if (cx < minX) minX = cx;
         if (cx > maxX) maxX = cx;
         if (cy < minY) minY = cy;
         if (cy > maxY) maxY = cy;
-        const nbs = [cx + 1, cy, cx - 1, cy, cx, cy + 1, cx, cy - 1];
-        for (let k = 0; k < 8; k += 2) {
-          const nx = nbs[k];
-          const ny = nbs[k + 1];
-          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
-          const nIdx = ny * cols + nx;
-          if (visited[nIdx] || field.amount[nIdx] < ISO) continue;
-          visited[nIdx] = 1;
-          queue.push(nx, ny);
+
+        if (cx + 1 < cols) {
+          const nIdx = packed + 1;
+          if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
+            visited[nIdx] = floodId;
+            queue[qt++] = nIdx;
+          }
+        }
+        if (cx > 0) {
+          const nIdx = packed - 1;
+          if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
+            visited[nIdx] = floodId;
+            queue[qt++] = nIdx;
+          }
+        }
+        if (cy + 1 < rows) {
+          const nIdx = packed + cols;
+          if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
+            visited[nIdx] = floodId;
+            queue[qt++] = nIdx;
+          }
+        }
+        if (cy > 0) {
+          const nIdx = packed - cols;
+          if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
+            visited[nIdx] = floodId;
+            queue[qt++] = nIdx;
+          }
         }
       }
 
-      const nodeSet = new Set();
-      for (let i = 0; i < nodes.length; i++) nodeSet.add(`${nodes[i].x},${nodes[i].y}`);
+      const nodeCount = nodeFill - nodeStart;
 
       const polys = [];
       const segments = [];
@@ -1088,8 +1187,8 @@ function extractIslands(field) {
             const part = parts[p];
             let owned = true;
             for (let s = 0; s < part.solidNodes.length; s++) {
-              const n = part.solidNodes[s];
-              if (!nodeSet.has(`${n.x},${n.y}`)) {
+              const sn = part.solidNodes[s];
+              if (visited[sn.y * cols + sn.x] !== floodId) {
                 owned = false;
                 break;
               }
@@ -1156,25 +1255,32 @@ function extractIslands(field) {
         ], cellCx, cellCy);
       }
 
-      islands.push({
-        nodes,
-        polys,
-        cellsMeta,
-        contour,
-        loops,
-        areaPx,
-        areaCells: areaPx / (cellSize * cellSize),
-        cellCx,
-        cellCy,
-        minX,
-        minY,
-        maxX,
-        maxY,
-        material: dominantMaterial(field, nodes),
-      });
+      let rec = _islandsOut[islandCount];
+      if (!rec) {
+        rec = {};
+        _islandsOut[islandCount] = rec;
+      }
+      rec.nodeIdx = nodeIdx;
+      rec.nodeStart = nodeStart;
+      rec.nodeCount = nodeCount;
+      rec.polys = polys;
+      rec.cellsMeta = cellsMeta;
+      rec.contour = contour;
+      rec.loops = loops;
+      rec.areaPx = areaPx;
+      rec.areaCells = areaPx / (cellSize * cellSize);
+      rec.cellCx = cellCx;
+      rec.cellCy = cellCy;
+      rec.minX = minX;
+      rec.minY = minY;
+      rec.maxX = maxX;
+      rec.maxY = maxY;
+      rec.material = dominantMaterial(field, nodeIdx, nodeStart, nodeCount);
+      islandCount++;
     }
   }
-  return islands;
+  _islandsOut.length = islandCount;
+  return _islandsOut;
 }
 
 function aabbOverlaps(a, b) {

@@ -1,7 +1,6 @@
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { TerrainIsland } from './terrainIsland.js';
-import { WorldGridManager } from './worldGridManager.js';
-import { WorldGrid, RAY_MASK_NO_STATIC } from '../worldGrid.js';
+import { WorldGrid, RAY_MASK_NO_STATIC, SHOT_POWER, SHOT_RADIUS, SHOT_FALLOFF } from '../worldGrid.js';
 import WEED from '/src/index.js';
 
 const {
@@ -22,7 +21,7 @@ const HALF_H = 14;
 const THRUST_ACCEL = 3100;
 const LOOK_AHEAD = 0.2;
 const CAM_SMOOTH = 0.12;
-const SHOT_COOLDOWN_MS = 12;
+const SHOT_COOLDOWN_MS = 20;
 const MUZZLE_PAD = Math.hypot(HALF_W, HALF_H) + 4;
 
 export class Ship extends GameObject {
@@ -111,15 +110,14 @@ export class Ship extends GameObject {
 
     this._emitLaser(ox, oy, hx, hy, useGrid || useBody);
     if (useGrid) {
-      const mgr = WorldGridManager.instances[0];
-      if (mgr) mgr.applyDamage(hx, hy);
+      WorldGrid.damage(hx, hy, SHOT_RADIUS, SHOT_POWER, SHOT_FALLOFF);
       return;
     }
     if (!useBody) return;
 
     const type = Transform.entityType ? Transform.entityType[bodyHit.entityIndex] : -1;
     if (type === Floor.entityType || type !== TerrainIsland.entityType) return;
-    const island = TerrainIsland.instances[bodyHit.entityIndex - TerrainIsland.startIndex];
+    const island = TerrainIsland.get(bodyHit.entityIndex);
     if (island) island.takeHit(bodyHit);
   }
 

@@ -53,6 +53,16 @@ export class TerrainIsland extends GameObject {
     this.collider.visualRange = Math.hypot(hw, hh) + 80;
   }
 
+  /** Same entity, new mesh. Avoids despawn flicker. */
+  retarget(x, y, local) {
+    this.x = x;
+    this.y = y;
+    if (!local || !local.length || !this.collider.replacePolygons(local)) return false;
+    if (MeshRenderer.renderDirty) MeshRenderer.renderDirty[this.index] = 1;
+    this._refreshVisualRange();
+    return true;
+  }
+
   /**
    * Laser hit from Ship.tick. Dynamic only: circle-diff. Static hits go through WorldGrid.castRay.
    * @param {{ hitX: number, hitY: number, fixtureIndex?: number }} hit
