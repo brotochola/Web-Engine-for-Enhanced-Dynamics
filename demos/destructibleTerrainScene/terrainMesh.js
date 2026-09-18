@@ -223,6 +223,91 @@ export function polygonArea(vertices) {
   return Math.abs(area) * 0.5;
 }
 
+/** Point-in-convex. Works for CW or CCW. On-edge counts as inside. */
+export function pointInConvex(pts, x, y) {
+  const n = pts ? pts.length : 0;
+  if (n < 3) return false;
+  let sign = 0;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    const cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+    if (cross > -1e-8 && cross < 1e-8) continue;
+    const s = cross > 0 ? 1 : -1;
+    if (!sign) sign = s;
+    else if (s !== sign) return false;
+  }
+  return true;
+}
+
+/**
+ * Recurse-split a convex poly until each piece area <= minArea or dest hits maxOut.
+ * Tris split at midpoints (4 kids). 4+ verts split on a diagonal.
+ */
+export function subdivideConvex(poly, minArea, maxOut, out) {
+  const dest = out || [];
+  if (!poly || poly.length < 3 || dest.length >= maxOut) return dest;
+  _subdivideConvex(poly, minArea, maxOut, dest);
+  return dest;
+}
+
+/**
+ * Split a convex poly; the child that contains (x,y) goes to drop, the rest to keep.
+ * If the point misses every child (edge cases), first child is dropped.
+ */
+export function splitConvexAtPoint(poly, x, y, minArea, maxOut) {
+  const kids = [];
+  subdivideConvex(poly, minArea, maxOut, kids);
+  const keep = [];
+  const drop = [];
+  for (let i = 0; i < kids.length; i++) {
+    const kid = kids[i];
+    if (!drop.length && pointInConvex(kid, x, y)) drop.push(kid);
+    else keep.push(kid);
+  }
+  if (!drop.length && kids.length) {
+    drop.push(kids[0]);
+    if (keep.length && keep[0] === kids[0]) keep.shift();
+  }
+  return { keep, drop };
+}
+
+function _subdivideConvex(poly, minArea, maxOut, dest) {
+  if (dest.length >= maxOut) return;
+  const area = polygonArea(poly);
+  if (!(area > minArea) || poly.length < 3) {
+    dest.push(poly);
+    return;
+  }
+  if (poly.length === 3) {
+    if (maxOut - dest.length < 4) {
+      dest.push(poly);
+      return;
+    }
+    const a = poly[0];
+    const b = poly[1];
+    const c = poly[2];
+    const ab = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+    const bc = { x: (b.x + c.x) * 0.5, y: (b.y + c.y) * 0.5 };
+    const ca = { x: (c.x + a.x) * 0.5, y: (c.y + a.y) * 0.5 };
+    _subdivideConvex([a, ab, ca], minArea, maxOut, dest);
+    _subdivideConvex([ab, b, bc], minArea, maxOut, dest);
+    _subdivideConvex([ca, bc, c], minArea, maxOut, dest);
+    _subdivideConvex([ab, bc, ca], minArea, maxOut, dest);
+    return;
+  }
+  if (maxOut - dest.length < 2) {
+    dest.push(poly);
+    return;
+  }
+  const mid = poly.length >> 1;
+  const left = poly.slice(0, mid + 1);
+  const right = poly.slice(mid);
+  right.push(poly[0]);
+  _subdivideConvex(left, minArea, maxOut, dest);
+  _subdivideConvex(right, minArea, maxOut, dest);
+}
+
 function signedArea(pts) {
   let a = 0;
   for (let i = 0; i < pts.length; i++) {

@@ -51,14 +51,16 @@ export class Ray {
   static SHAPE_POLYGON = ShapeType.Polygon;
 
   // GC Optimization: Reusable objects to avoid GC pressure
-  static _tempResult = { entityIndex: -1, distance: Infinity };
+  static _tempResult = { entityIndex: -1, distance: Infinity, fixtureIndex: -1 };
   static _tempHitInfo = {
     hit: false,
     entityIndex: -1,
     distance: Infinity,
     hitX: 0,
     hitY: 0,
+    fixtureIndex: -1,
   };
+  static _lastFixtureIndex = -1;
   static _tempLinecastResult = {
     blocked: false,
     entityIndex: -1,
@@ -69,7 +71,7 @@ export class Ray {
   static _tempAllHitsCount = 0; // Reused counter to avoid allocations
   static _tempAllHitsFarthest = -1; // H1: farthest distance among top-N castAll hits
   static _checkedEntities = new Set(); // Reused Set for castAll
-  static _traverseResult = { entityIndex: -1, distance: Infinity }; // Reused by _traverseGrid
+  static _traverseResult = { entityIndex: -1, distance: Infinity, fixtureIndex: -1 };
   // Per-cast generation stamp (skip entities already shape-tested this ray)
   static _rayGen = 1;
   static _rayGenStamp = new Uint32Array(0);
@@ -309,7 +311,8 @@ export class Ray {
    * @param {number} maxDist - Maximum ray distance (optional)
    * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
    * @param {Object} [out] - Optional stable output object. Defaults to a borrowed static object.
-   * @returns {Object} { hit: boolean, entityIndex: number, distance: number, hitX: number, hitY: number }
+   * @returns {Object} { hit, entityIndex, distance, hitX, hitY, fixtureIndex }
+   *   fixtureIndex is the closest ColliderFixture, or -1 if the hit is the primary shape.
    *   Borrowed by default: consume immediately or pass `out` if you need to store it.
    *
    * @example
@@ -329,6 +332,7 @@ export class Ray {
       info.distance = Infinity;
       info.hitX = xTo;
       info.hitY = yTo;
+      info.fixtureIndex = -1;
 
       // Calculate ray direction and length
       const dx = xTo - xFrom;
@@ -356,6 +360,7 @@ export class Ray {
         info.distance = result.distance;
         info.hitX = xFrom + dirX * result.distance;
         info.hitY = yFrom + dirY * result.distance;
+        info.fixtureIndex = result.fixtureIndex;
       }
 
       return info;
@@ -787,6 +792,7 @@ export class Ray {
 
     let closestHit = -1;
     let closestDist = maxDist;
+    let closestFi = -1;
 
     const maxSteps = gridCols + gridRows;
     let steps = 0;
@@ -819,6 +825,7 @@ export class Ray {
         if (result.entityIndex !== -1) {
           closestHit = result.entityIndex;
           closestDist = result.distance;
+          closestFi = result.fixtureIndex;
         }
       }
 
@@ -845,6 +852,7 @@ export class Ray {
     const out = Ray._traverseResult;
     out.entityIndex = closestHit;
     out.distance = closestDist;
+    out.fixtureIndex = closestFi;
     return out;
   }
 
@@ -853,6 +861,7 @@ export class Ray {
    * @private
    */
   static _shapeRayDistance(entityIndex, rayX, rayY, dirX, dirY, rayLength) {
+    Ray._lastFixtureIndex = -1;
     const shapeType = Collider.shapeType[entityIndex];
     const ox = Collider.offsetX[entityIndex] || 0;
     const oy = Collider.offsetY[entityIndex] || 0;
@@ -867,6 +876,7 @@ export class Ray {
       const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[entityIndex] : 0;
       if (fixtureCount > 0 && ColliderFixture.active) {
         let best = -1;
+        let bestFi = -1;
         ColliderFixture.forEach(entityIndex, (fi) => {
           const count = ColliderFixture.vertCount[fi] | 0;
           if (count < 3) return;
@@ -878,8 +888,12 @@ export class Ray {
             ColliderFixture.normalX, ColliderFixture.normalY,
             count, base, rayLength
           );
-          if (d >= 0 && (best < 0 || d < best)) best = d;
+          if (d >= 0 && (best < 0 || d < best)) {
+            best = d;
+            bestFi = fi;
+          }
         });
+        Ray._lastFixtureIndex = bestFi;
         return best;
       }
       const count = Collider.polyCount[entityIndex];
@@ -1039,6 +1053,7 @@ export class Ray {
   ) {
     Ray._tempResult.entityIndex = -1;
     Ray._tempResult.distance = Infinity;
+    Ray._tempResult.fixtureIndex = -1;
 
     const count = Grid.getCellCount(cellIndex);
     if (count === 0) {
@@ -1054,6 +1069,7 @@ export class Ray {
 
     let closestIndex = -1;
     let closestDist = currentClosest;
+    let closestFi = -1;
 
     const useScalarExclude = excludeA >= 0 || excludeB >= 0;
     let excludeSet = null;
@@ -1086,10 +1102,12 @@ export class Ray {
       if (distance >= 0 && distance < closestDist) {
         closestDist = distance;
         closestIndex = entityIndex;
+        closestFi = Ray._lastFixtureIndex;
       }
     }
 
     Ray._tempResult.entityIndex = closestIndex;
     Ray._tempResult.distance = closestDist;
+    Ray._tempResult.fixtureIndex = closestFi;
   }
 }

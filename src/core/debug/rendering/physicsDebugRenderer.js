@@ -966,20 +966,35 @@ export class PhysicsDebugRenderer {
 
     const pos = this._pos;
     this._worldXY(selectedIdx, pose, pos);
-    const posX = pos.x;
-    const posY = pos.y;
+    let posX = pos.x;
+    let posY = pos.y;
+    let left;
+    let top;
+    let w;
+    let h;
 
-    const width = SpriteRenderer.getOriginalWidth(selectedIdx) || 20;
-    const height = SpriteRenderer.getOriginalHeight(selectedIdx) || 20;
-    const scaleX = SpriteRenderer.scaleX?.[selectedIdx] || 1;
-    const scaleY = SpriteRenderer.scaleY?.[selectedIdx] || 1;
-    const anchorX = SpriteRenderer.anchorX?.[selectedIdx] || 0.5;
-    const anchorY = SpriteRenderer.anchorY?.[selectedIdx] || 0.5;
-
-    const w = width * Math.abs(scaleX);
-    const h = height * Math.abs(scaleY);
-    const left = posX - w * anchorX;
-    const top = posY - h * anchorY;
+    if (Collider.active && Collider.active[selectedIdx]) {
+      getColliderBounds(selectedIdx, _boundsResult);
+      const hw = _boundsResult.halfW;
+      const hh = _boundsResult.halfH;
+      posX = _boundsResult.posX;
+      posY = _boundsResult.posY;
+      w = hw * 2;
+      h = hh * 2;
+      left = posX - hw;
+      top = posY - hh;
+    } else {
+      const width = SpriteRenderer.getOriginalWidth(selectedIdx) || 20;
+      const height = SpriteRenderer.getOriginalHeight(selectedIdx) || 20;
+      const scaleX = SpriteRenderer.scaleX?.[selectedIdx] || 1;
+      const scaleY = SpriteRenderer.scaleY?.[selectedIdx] || 1;
+      const anchorX = SpriteRenderer.anchorX?.[selectedIdx] || 0.5;
+      const anchorY = SpriteRenderer.anchorY?.[selectedIdx] || 0.5;
+      w = width * Math.abs(scaleX);
+      h = height * Math.abs(scaleY);
+      left = posX - w * anchorX;
+      top = posY - h * anchorY;
+    }
 
     const sLeft = (left - camera.x) * zoom;
     const sTop = (top - camera.y) * zoom;

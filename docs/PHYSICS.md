@@ -268,7 +268,7 @@ Physics sync iterates the dense active list (`activeIndices` / `activeCount`), n
 
 ### Explosions
 
-`Box2d.explode({ x, y, radius, impulsePerLength, maskBits })` enqueues a radial impulse command (`Box2dCommandRing.enqueueExplode`); the physics worker applies it via `PhysicsWorld.explode` with `falloff = 0.5 * radius`. `Box2d.getMovedBodies()` returns live SAB views of entities that moved last physics step.
+`Box2d.explode({ x, y, radius, impulsePerLength, maskBits })` or positional `(x, y, radius, impulsePerLength, maskBits?)` enqueues a radial impulse (`Box2dCommandRing.enqueueExplode`); the physics worker applies it via `PhysicsWorld.explode` with `falloff = 0.5 * radius`. Non-finite values / `radius <= 0` are a no-op — a number passed as the first argument used to destructure into `undefined` and write **NaN** into the command ring, which Box2D turns into a melted solver (`contact buffer exceeded`, bodies at NaN, objects vanish). WASM correctness: `tests/node/worldExplode.wasm.test.js`. `Box2d.getMovedBodies()` returns live SAB views of entities that moved last physics step.
 
 ---
 

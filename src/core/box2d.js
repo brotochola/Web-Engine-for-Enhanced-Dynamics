@@ -86,10 +86,37 @@ export class Box2d {
 
   /**
    * Radial impulse. Physics worker applies falloff = 0.5 * radius.
-   * @param {{x:number, y:number, radius:number, impulsePerLength:number, maskBits?:number}} opts
+   * Object: `{ x, y, radius, impulsePerLength, maskBits? }`
+   * Positional: `(x, y, radius, impulsePerLength, maskBits?)`
+   * Non-finite / radius≤0 is a no-op (NaN would melt the WASM solver).
    */
-  static explode({ x, y, radius, impulsePerLength, maskBits = 0xffffffff }) {
-    enqueueExplode(maskBits >>> 0, x, y, radius, impulsePerLength);
+  static explode(xOrOpts, y, radius, impulsePerLength, maskBits) {
+    let x;
+    let r;
+    let impulse;
+    let mask;
+    if (xOrOpts != null && typeof xOrOpts === 'object') {
+      x = xOrOpts.x;
+      y = xOrOpts.y;
+      r = xOrOpts.radius;
+      impulse = xOrOpts.impulsePerLength;
+      mask = xOrOpts.maskBits;
+    } else {
+      x = xOrOpts;
+      r = radius;
+      impulse = impulsePerLength;
+      mask = maskBits;
+    }
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(r) ||
+      !(r > 0) ||
+      !Number.isFinite(impulse)
+    ) {
+      return false;
+    }
+    return enqueueExplode((mask == null ? 0xffffffff : mask) >>> 0, x, y, r, impulse);
   }
 
   /**

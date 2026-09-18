@@ -42,16 +42,24 @@ function mockCtx() {
   let strokes = 0;
   return {
     get strokes() { return strokes; },
+    lastRect: null,
     beginPath() {},
     moveTo() {},
     lineTo() {},
     closePath() {},
     stroke() { strokes++; },
+    strokeRect(x, y, w, h) { this.lastRect = { x, y, w, h }; },
+    fillRect() {},
+    fillText() {},
+    measureText() { return { width: 10 }; },
     fill() {},
     arc() {},
     lineWidth: 1,
     strokeStyle: '',
     fillStyle: '',
+    font: '',
+    textAlign: '',
+    textBaseline: '',
   };
 }
 
@@ -89,6 +97,21 @@ test('SHOW_COLLIDERS strokes ColliderFixture polys even if shapeType is Box', ()
   const camera = { x: 400, y: 400 };
   dbg.drawColliders(ctx, canvas, camera, 1, null, null);
   assert.equal(ctx.strokes, 2);
+});
+
+test('drawSelectedEntity strokes collider AABB, not the 20x20 sprite fallback', () => {
+  initSoA();
+  const dbg = new PhysicsDebugRenderer();
+  assert.ok(Collider.replacePolygons(0, [
+    [{ x: 0, y: 0 }, { x: 800, y: 0 }, { x: 0, y: 800 }],
+    [{ x: 800, y: 0 }, { x: 800, y: 800 }, { x: 0, y: 800 }],
+  ]));
+  const ctx = mockCtx();
+  const flags = { getSelectedEntity() { return 0; } };
+  dbg.drawSelectedEntity(ctx, { width: 900, height: 900 }, { x: 0, y: 0 }, 1, flags, null);
+  assert.ok(ctx.lastRect);
+  assert.ok(ctx.lastRect.w > 100, `AABB width should follow fixtures, got ${ctx.lastRect.w}`);
+  assert.ok(ctx.lastRect.h > 100, `AABB height should follow fixtures, got ${ctx.lastRect.h}`);
 });
 
 test('collider debug uses Transform when pose SAB is still zeros', () => {

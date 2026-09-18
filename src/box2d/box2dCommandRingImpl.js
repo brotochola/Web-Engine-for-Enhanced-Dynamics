@@ -173,14 +173,17 @@
   }
 
   function enqueueExplode(maskBits, x, y, radius, impulsePerLength) {
-    return enqueue(
-      BOX2D_CMD.EXPLODE,
-      maskBits | 0,
-      x,
-      y,
-      radius,
-      impulsePerLength == null ? 0 : impulsePerLength,
-    );
+    var impulse = impulsePerLength == null ? 0 : impulsePerLength;
+    if (
+      !isFinite(x) ||
+      !isFinite(y) ||
+      !isFinite(radius) ||
+      !(radius > 0) ||
+      !isFinite(impulse)
+    ) {
+      return false;
+    }
+    return enqueue(BOX2D_CMD.EXPLODE, maskBits | 0, x, y, radius, impulse);
   }
 
   function enqueueSetSleepThreshold(entity, threshold) {

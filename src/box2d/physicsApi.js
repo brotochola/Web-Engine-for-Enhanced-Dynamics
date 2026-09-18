@@ -1492,6 +1492,16 @@ function createPhysicsApi(Module) {
     }
 
     explode(x, y, radius, falloff, impulsePerLength, maskBits = DEFAULT_FILTER_MASK) {
+      if (
+        !Number.isFinite(x) ||
+        !Number.isFinite(y) ||
+        !Number.isFinite(radius) ||
+        !(radius > 0) ||
+        !Number.isFinite(falloff) ||
+        !Number.isFinite(impulsePerLength)
+      ) {
+        return;
+      }
       worldExplode(
         this.worldId,
         x,

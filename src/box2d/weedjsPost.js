@@ -1129,6 +1129,15 @@
     },
     explode(maskBits, x, y, radius, impulsePerLength) {
       if (!world) return;
+      if (
+        !Number.isFinite(x) ||
+        !Number.isFinite(y) ||
+        !Number.isFinite(radius) ||
+        !(radius > 0) ||
+        !Number.isFinite(impulsePerLength)
+      ) {
+        return;
+      }
       world.explode(x, y, radius, radius * 0.5, impulsePerLength, maskBits >>> 0);
     },
     setSleepThreshold(entity, threshold) {

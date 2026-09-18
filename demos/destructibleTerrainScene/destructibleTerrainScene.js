@@ -1,5 +1,5 @@
 // Destructible terrain — marching squares + simplify + earcut compounds.
-// Z draw · X erase · C laser · [ ] brush · A/D thrusters · click uses tool.
+// Z draw · X erase · C laser · V shatter · [ ] brush · A/D thrusters · click uses tool.
 // No harpoon.
 
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
@@ -16,11 +16,27 @@ import {
   aabbOverlaps,
   paintBrush,
   damageKernel,
-  castRayGrid,
+  pointInConvex,
+  subdivideConvex,
+  MAT_NONE,
 } from './terrainMesh.js';
 import WEED from '/src/index.js';
 
-const { Scene, Camera, Keyboard, Mouse, DebugDraw, Transform, LAYER_KIND } = WEED;
+const {
+  Scene,
+  Camera,
+  Keyboard,
+  Mouse,
+  DebugDraw,
+  Transform,
+  RigidBody,
+  Collider,
+  ColliderFixture,
+  MeshRenderer,
+  Box2d,
+  LAYER_KIND,
+  BLEND_MODES,
+} = WEED;
 
 const CELL = 16;
 const COLS = 140;
@@ -30,10 +46,14 @@ const WORLD_H = ROWS * CELL;
 const AREA_THRESHOLD = 80;
 const SIMPLIFY_TOL = 4;
 const BRUSH_STRENGTH = 0.35;
-const SHOT_COOLDOWN_MS = 120;
 const SHOT_POWER = 0.4;
 const SHOT_RADIUS = 2;
 const SHOT_FALLOFF = 1;
+const SHATTER_MAX = 24;
+const SHATTER_MIN_AREA = CELL * CELL * 0.35;
+const EXPLODE_IMPULSE = 1500;
+const _scratchVerts = [];
+const _scratchLocal = { x: 0, y: 0 };
 
 export class DestructibleTerrainScene extends Scene {
   static config = {
@@ -53,7 +73,7 @@ export class DestructibleTerrainScene extends Scene {
 
     particle: {
       noLimitFPS: false,
-      maxParticles: 0,
+      maxParticles: 4000,
       decals: false,
     },
 
@@ -80,6 +100,12 @@ export class DestructibleTerrainScene extends Scene {
         kind: LAYER_KIND.MESH,
         zIndex: 2.9,
       },
+      fx: {
+        zIndex: 4.5,
+        blendMode: BLEND_MODES.ADD,
+        maxItems: 4000,
+        ySorting: false,
+      },
     },
 
     debug: {
@@ -92,7 +118,7 @@ export class DestructibleTerrainScene extends Scene {
   };
 
   static entities = [
-    [TerrainIsland, 160],
+    [TerrainIsland, 320],
     [Ship, 2],
     [Floor, 8],
   ];
@@ -106,8 +132,6 @@ export class DestructibleTerrainScene extends Scene {
     this.staticIslands = [];
     this.dynamicIslands = [];
     this.shipIndex = -1;
-    this.shotCooldownMs = 0;
-    this.shotFx = null;
   }
 
   create() {
@@ -130,20 +154,29 @@ export class DestructibleTerrainScene extends Scene {
     this.shipIndex = spawned ? spawned.index : -1;
   }
 
+  onMessageFromGameObject(data) {
+    if (!data || data.type !== 'damageField' || !this.field) return;
+    const gx = Math.floor(data.x / CELL);
+    const gy = Math.floor(data.y / CELL);
+    if (damageKernel(this.field, gx, gy, SHOT_RADIUS, SHOT_POWER, SHOT_FALLOFF)) {
+      this._rebuildTerrain(false);
+    }
+  }
+
   update(dtRatio, deltaTime) {
     if (!this.field) return;
 
     if (Keyboard.isPressed('z')) this.tool = 'draw';
     if (Keyboard.isPressed('x')) this.tool = 'erase';
     if (Keyboard.isPressed('c')) this.tool = 'shoot';
+    if (Keyboard.isPressed('v')) this.tool = 'shatter';
     if (Keyboard.isPressed('[')) this.brushRadius = Math.max(1, this.brushRadius - 1);
     if (Keyboard.isPressed(']')) this.brushRadius = Math.min(12, this.brushRadius + 1);
 
     if (!Mouse.isDebugToolActive) {
-      if (this.tool === 'shoot') {
-        this.shotCooldownMs -= deltaTime;
-        if (Mouse.isButton0Down && this.shotCooldownMs <= 0) this._tryShoot();
-      } else if (Mouse.isButton0Down) {
+      if (this.tool === 'shatter') {
+        if (Mouse.isButton0Pressed) this._tryShatter();
+      } else if (this.tool !== 'shoot' && Mouse.isButton0Down) {
         paintBrush(
           this.field,
           Mouse.x,
@@ -155,14 +188,13 @@ export class DestructibleTerrainScene extends Scene {
           MAT_DIRT,
         );
       }
-      if (Mouse.isButton0Released && this.field.dirty && this.tool !== 'shoot') {
+      if (Mouse.isButton0Released && this.field.dirty && this.tool !== 'shoot' && this.tool !== 'shatter') {
         this._rebuildTerrain(false);
       }
     }
 
     this._cullDynamics();
     this._drawHud();
-    this._drawShotFx();
   }
 
   _spawnWalls() {
@@ -259,67 +291,128 @@ export class DestructibleTerrainScene extends Scene {
     }
   }
 
-  _tryShoot() {
-    if (this.shipIndex < 0 || !Transform.active || !Transform.active[this.shipIndex]) return;
-    const ox0 = Transform.x[this.shipIndex];
-    const oy0 = Transform.y[this.shipIndex];
-    let dx = Mouse.x - ox0;
-    let dy = Mouse.y - oy0;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 1e-6) return;
-    const ux = dx / dist;
-    const uy = dy / dist;
-    const pad = 16;
-    const ox = ox0 + ux * pad;
-    const oy = oy0 + uy * pad;
-    const rayLen = Math.max(WORLD_W, WORLD_H) * 1.5;
-    const cast = castRayGrid(this.field, ox, oy, ux, uy, rayLen);
-    this.shotFx = {
-      ox,
-      oy,
-      hx: cast.point.x,
-      hy: cast.point.y,
-      hit: cast.hit,
-      until: performance.now() + 140,
-    };
-    this.shotCooldownMs = SHOT_COOLDOWN_MS;
-    if (!cast.hit) return;
-    if (damageKernel(this.field, cast.gx, cast.gy, SHOT_RADIUS, SHOT_POWER, SHOT_FALLOFF)) {
-      this._rebuildTerrain(false);
+  _tryShatter() {
+    const picked = this._pickTerrainAt(Mouse.x, Mouse.y);
+    if (!picked) return;
+    const idx = picked.idx;
+    const tint = MeshRenderer.tint ? MeshRenderer.tint[idx] : 0x88aa66;
+    const vx = picked.dynamic && RigidBody.vx ? RigidBody.vx[idx] : 0;
+    const vy = picked.dynamic && RigidBody.vy ? RigidBody.vy[idx] : 0;
+    const cx = Transform.x[idx];
+    const cy = Transform.y[idx];
+    const vr = Collider.visualRange ? Collider.visualRange[idx] : 80;
+
+    const world = [];
+    ColliderFixture.forEach(idx, (fi) => {
+      TerrainIsland.readLocalFixture(fi, _scratchVerts);
+      world.push(TerrainIsland.localToWorldPoly(idx, _scratchVerts));
+    });
+    const shards = [];
+    for (let i = 0; i < world.length && shards.length < SHATTER_MAX; i++) {
+      subdivideConvex(world[i], SHATTER_MIN_AREA, SHATTER_MAX, shards);
+    }
+
+    if (!picked.dynamic && picked.rec) this._clearStaticField(picked.rec);
+    this.despawnEntity(idx);
+    this._removeDynamic(idx);
+    this._removeStatic(idx);
+    TerrainIsland.spawnShardsFromWorld(shards, tint, vx, vy);
+    Box2d.explode({
+      x: cx,
+      y: cy,
+      radius: Math.max(vr, 48),
+      impulsePerLength: EXPLODE_IMPULSE,
+    });
+  }
+
+  _pickTerrainAt(wx, wy) {
+    let found = null;
+    this._eachIsland((idx) => {
+      if (!this._islandContains(idx, wx, wy)) return;
+      const dynamic = !RigidBody.static[idx];
+      found = { idx, dynamic, rec: dynamic ? null : this._staticRec(idx) };
+    });
+    return found;
+  }
+
+  _eachIsland(fn) {
+    const start = TerrainIsland.startIndex | 0;
+    const end = TerrainIsland.endIndex | 0;
+    for (let idx = start; idx < end; idx++) {
+      if (!Transform.active?.[idx]) continue;
+      fn(idx);
     }
   }
 
-  _cullDynamics() {
-    let w = 0;
-    for (let i = 0; i < this.dynamicIslands.length; i++) {
-      const idx = this.dynamicIslands[i];
-      if (!Transform.active || !Transform.active[idx]) continue;
-      if (Transform.y[idx] > WORLD_H + 240) {
-        this.despawnEntity(idx);
-        continue;
-      }
-      this.dynamicIslands[w++] = idx;
+  _staticRec(idx) {
+    const arr = this.staticIslands;
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i].index === idx) return arr[i];
     }
-    this.dynamicIslands.length = w;
+    return null;
+  }
+
+  _islandContains(idx, wx, wy) {
+    if (!Collider.active?.[idx]) return false;
+    TerrainIsland.worldToLocal(idx, wx, wy, _scratchLocal);
+    const lx = _scratchLocal.x;
+    const ly = _scratchLocal.y;
+    let inside = false;
+    ColliderFixture.forEach(idx, (fi) => {
+      if (inside) return;
+      TerrainIsland.readLocalFixture(fi, _scratchVerts);
+      if (pointInConvex(_scratchVerts, lx, ly)) inside = true;
+    });
+    return inside;
+  }
+
+  _clearStaticField(rec) {
+    const field = this.field;
+    if (!field || !rec) return;
+    const x0 = Math.max(0, rec.minX);
+    const y0 = Math.max(0, rec.minY);
+    const x1 = Math.min(field.cols - 1, rec.maxX);
+    const y1 = Math.min(field.rows - 1, rec.maxY);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const i = y * field.cols + x;
+        field.amount[i] = 0;
+        field.material[i] = MAT_NONE;
+      }
+    }
+    field.markDirty(x0, y0);
+    field.markDirty(x1, y1);
+  }
+
+  _removeDynamic(idx) {
+    const arr = this.dynamicIslands;
+    let w = 0;
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i] !== idx) arr[w++] = arr[i];
+    }
+    arr.length = w;
+  }
+
+  _removeStatic(idx) {
+    const arr = this.staticIslands;
+    let w = 0;
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i].index !== idx) arr[w++] = arr[i];
+    }
+    arr.length = w;
+  }
+
+  _cullDynamics() {
+    this._eachIsland((idx) => {
+      if (RigidBody.static[idx]) return;
+      if (Transform.y[idx] > WORLD_H + 240) this.despawnEntity(idx);
+    });
   }
 
   _drawHud() {
     const x = Camera.x - 220 / (Camera.zoom || 1);
     const y = Camera.y - 180 / (Camera.zoom || 1);
     DebugDraw.drawText(x, y, `tool ${this.tool} r${this.brushRadius}`, 0xe8e8e8, 0);
-    DebugDraw.drawText(x, y + 18 / (Camera.zoom || 1), 'Z draw X erase C laser', 0xa0aec0, 0);
-  }
-
-  _drawShotFx() {
-    if (!this.shotFx) return;
-    if (performance.now() > this.shotFx.until) {
-      this.shotFx = null;
-      return;
-    }
-    const c = this.shotFx.hit ? 0xffdc50 : 0xa0b4c8;
-    DebugDraw.drawLine(this.shotFx.ox, this.shotFx.oy, this.shotFx.hx, this.shotFx.hy, c, 0);
-    if (this.shotFx.hit) {
-      DebugDraw.drawCircle(this.shotFx.hx, this.shotFx.hy, 5, 0xff6b6b, 0);
-    }
+    DebugDraw.drawText(x, y + 18 / (Camera.zoom || 1), 'Z draw X erase C laser V shatter', 0xa0aec0, 0);
   }
 }
