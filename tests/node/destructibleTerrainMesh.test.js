@@ -323,6 +323,105 @@ test('seedWorld(7) has solid, a cave, and sky spawn in empty', () => {
   }
 });
 
+test('isGrounded: wall-touching mass stays; cut cap is loose', () => {
+  try {
+    WorldGrid.attach(40, 24, 8);
+    for (let y = 16; y < 22; y++) {
+      for (let x = 0; x < 40; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    for (let y = 10; y < 16; y++) {
+      for (let x = 19; x < 21; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    for (let y = 4; y < 10; y++) {
+      for (let x = 14; x < 26; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    const whole = WorldGrid.extractIslandAt(20, 18);
+    assert.ok(whole);
+    assert.equal(WorldGrid.isGrounded(whole), true);
+
+    for (let y = 10; y < 16; y++) {
+      for (let x = 19; x < 21; x++) WorldGrid.setAmount(x, y, 0);
+    }
+    const floor = WorldGrid.extractIslandAt(20, 18);
+    assert.ok(floor);
+    assert.equal(WorldGrid.isGrounded(floor), true);
+    const cap = WorldGrid.extractIslandAt(20, 6);
+    assert.ok(cap);
+    assert.equal(WorldGrid.isGrounded(cap), false);
+  } finally {
+    teardown();
+  }
+});
+
+test('isGrounded: thin column on a wall floor stays until the base is cut', () => {
+  try {
+    WorldGrid.attach(24, 20, 8);
+    for (let y = 16; y < 20; y++) {
+      for (let x = 0; x < 24; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    for (let y = 4; y < 16; y++) {
+      for (let x = 11; x < 13; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    const col = WorldGrid.extractIslandAt(11, 10);
+    assert.ok(col);
+    assert.equal(WorldGrid.isGrounded(col), true);
+
+    WorldGrid.setAmount(11, 15, 0);
+    WorldGrid.setAmount(12, 15, 0);
+    const hang = WorldGrid.extractIslandAt(11, 10);
+    assert.ok(hang);
+    assert.equal(WorldGrid.isGrounded(hang), false);
+    const ground = WorldGrid.extractIslandAt(2, 17);
+    assert.ok(ground);
+    assert.equal(WorldGrid.isGrounded(ground), true);
+  } finally {
+    teardown();
+  }
+});
+
+test('seedWorld sky stamp is an ungrounded island', () => {
+  try {
+    WorldGrid.attach(80, 80, 10);
+    WorldGrid.seedWorld(7);
+    const fx = (80 * 0.72) | 0;
+    const blob = WorldGrid.extractIslandAt(fx + 2, 3);
+    assert.ok(blob);
+    assert.equal(WorldGrid.isGrounded(blob), false);
+  } finally {
+    teardown();
+  }
+});
+
+test('isGrounded: floating rect is not grounded', () => {
+  try {
+    makeFilledRect(20, 16, 8, 6, 4, 14, 10);
+    const real = WorldGrid.extractIslandAt(8, 6);
+    assert.ok(real);
+    assert.equal(WorldGrid.isGrounded(real), false);
+  } finally {
+    teardown();
+  }
+});
+
+test('meshNodes of a crumb stays inside the mask', () => {
+  try {
+    makeFilledRect(16, 16, 8, 0, 0, 8, 8);
+    const packed = [];
+    for (let y = 2; y < 5; y++) {
+      for (let x = 2; x < 5; x++) packed.push(y * 16 + x);
+    }
+    const list = WorldGrid.meshNodes(packed);
+    assert.equal(list.length, 1);
+    assert.equal(list[0].nodeCount, 9);
+    assert.equal(list[0].minX, 2);
+    assert.equal(list[0].maxX, 4);
+    assert.equal(list[0].minY, 2);
+    assert.equal(list[0].maxY, 4);
+  } finally {
+    teardown();
+  }
+});
+
 test('second WorldGrid.initialize keeps tune and dirty', () => {
   try {
     makeFilledRect(8, 8, 10, 2, 2, 4, 4);

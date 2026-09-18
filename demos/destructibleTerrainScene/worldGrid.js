@@ -30,17 +30,16 @@ export const TUNE = {
   SHOT_FALLOFF: 5,
   SHOT_COOLDOWN: 6,
   MIN_TRI_AREA: 7,
-  AREA_THRESHOLD: 8,
-  SIMPLIFY_TOL: 9,
-  FIXTURE_CAP: 10,
-  CLIP_RADIUS: 11,
-  MIN_KEEP_AREA: 12,
-  UI_BLOCK: 13,
-  CHUNK: 14,
-  SIMPLIFY_MAX: 15,
-  AREA_RATIO_MIN: 16,
+  SIMPLIFY_TOL: 8,
+  FIXTURE_CAP: 9,
+  CLIP_RADIUS: 10,
+  MIN_KEEP_AREA: 11,
+  UI_BLOCK: 12,
+  CHUNK: 13,
+  SIMPLIFY_MAX: 14,
+  AREA_RATIO_MIN: 15,
 };
-export const TUNE_COUNT = 17;
+export const TUNE_COUNT = 16;
 export const TUNE_DEFAULTS = [
   3,
   0.35,
@@ -50,7 +49,6 @@ export const TUNE_DEFAULTS = [
   SHOT_FALLOFF,
   60,
   CELL * CELL * 0.25,
-  500,
   4,
   512,
   CELL * 2,
@@ -60,6 +58,8 @@ export const TUNE_DEFAULTS = [
   16,
   0.72,
 ];
+/** Ungrounded crumbs smaller than this vanish instead of becoming a body. */
+export const DROP_MIN_CELLS = 4;
 const AREA_RATIO_MAX = 1.2;
 const SEED_SCALE = 0.055;
 const SEED_THRESHOLD = 0.12;
@@ -356,6 +356,34 @@ export class WorldGrid extends SharedResource {
     return m;
   }
 
+  static copyIslandNodes(island) {
+    return copyIslandNodes(island);
+  }
+
+  static packedBox(packed) {
+    return packedBox(this, packed);
+  }
+
+  /** True if any cell touches left, right, or bottom of the grid (bedrock). */
+  static isGrounded(island) {
+    return isGrounded(this, island);
+  }
+
+  static meshNodes(packed) {
+    return meshNodes(this, packed);
+  }
+
+  static clearPackedNodes(packed) {
+    if (!packed) return;
+    const amount = this.amount;
+    const material = this.material;
+    for (let i = 0; i < packed.length; i++) {
+      const p = packed[i];
+      amount[p] = 0;
+      material[p] = MAT_NONE;
+    }
+  }
+
   static buildContourFixtures(island, simplifyTol) {
     return buildContourFixtures(island, this, simplifyTol);
   }
@@ -392,10 +420,18 @@ function interp(x0, y0, v0, x1, y1, v1) {
   return { x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t };
 }
 
+function nodeSolidAt(field, idx) {
+  if (field.amount[idx] < ISO) return false;
+  const mask = field._extractMask;
+  return !mask || mask[idx] !== 0;
+}
+
 function nodeAmount(field, x, y, clip) {
   if (clip && (x < clip.minX || x > clip.maxX || y < clip.minY || y > clip.maxY)) return 0;
   if (x < 0 || y < 0 || x >= field.cols || y >= field.rows) return 0;
-  return field.amount[y * field.cols + x];
+  const i = y * field.cols + x;
+  if (field._extractMask && field._extractMask[i] === 0) return 0;
+  return field.amount[i];
 }
 
 function cellCorners(field, cx, cy, clip) {
@@ -1262,7 +1298,6 @@ function extractIslands(field, box, opts) {
   const visited = field._visited;
   const queue = field._queue;
   const nodeIdx = field._nodeIdx;
-  const amount = field.amount;
   const clipOn = !!(opts && opts.clip && box);
   const clip = clipOn ? box : null;
 
@@ -1287,7 +1322,7 @@ function extractIslands(field, box, opts) {
   for (let y = seedMinY; y <= seedMaxY; y++) {
     for (let x = seedMinX; x <= seedMaxX; x++) {
       const start = y * cols + x;
-      if (visited[start] >= extractStart || amount[start] < ISO) continue;
+      if (visited[start] >= extractStart || !nodeSolidAt(field, start)) continue;
 
       const floodId = field._visitGen++;
       let qh = 0;
@@ -1312,28 +1347,28 @@ function extractIslands(field, box, opts) {
 
         if (cx + 1 <= floodMaxX) {
           const nIdx = packed + 1;
-          if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
+          if (visited[nIdx] < extractStart && nodeSolidAt(field, nIdx)) {
             visited[nIdx] = floodId;
             queue[qt++] = nIdx;
           }
         }
         if (cx - 1 >= floodMinX) {
           const nIdx = packed - 1;
-          if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
+          if (visited[nIdx] < extractStart && nodeSolidAt(field, nIdx)) {
             visited[nIdx] = floodId;
             queue[qt++] = nIdx;
           }
         }
         if (cy + 1 <= floodMaxY) {
           const nIdx = packed + cols;
-          if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
+          if (visited[nIdx] < extractStart && nodeSolidAt(field, nIdx)) {
             visited[nIdx] = floodId;
             queue[qt++] = nIdx;
           }
         }
         if (cy - 1 >= floodMinY) {
           const nIdx = packed - cols;
-          if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
+          if (visited[nIdx] < extractStart && nodeSolidAt(field, nIdx)) {
             visited[nIdx] = floodId;
             queue[qt++] = nIdx;
           }
@@ -1552,7 +1587,51 @@ function seedWorld(field, seed) {
       material[i] = mat;
     }
   }
+  stampDemoShapes(field);
   field.markAllDirty();
+}
+
+function stampFilled(field, x0, y0, x1, y1, mat) {
+  const cols = field.cols;
+  const rows = field.rows;
+  const amount = field.amount;
+  const material = field.material;
+  const xa = x0 < 0 ? 0 : x0 | 0;
+  const ya = y0 < 0 ? 0 : y0 | 0;
+  const xb = x1 > cols ? cols : x1 | 0;
+  const yb = y1 > rows ? rows : y1 | 0;
+  for (let y = ya; y < yb; y++) {
+    for (let x = xa; x < xb; x++) {
+      const i = y * cols + x;
+      amount[i] = 1;
+      material[i] = mat;
+    }
+  }
+}
+
+/** Floating boulder in the sky band (drops on load) + a grounded column. */
+function stampDemoShapes(field) {
+  const cols = field.cols;
+  const rows = field.rows;
+  const amount = field.amount;
+  const skyEnd = Math.max(2, Math.floor(rows * SEED_SKY_FRAC));
+  const fh = Math.min(10, skyEnd - 2);
+  if (fh >= 4) {
+    const fx = Math.max(2, (cols * 0.72) | 0);
+    stampFilled(field, fx, 1, fx + 16, 1 + fh, MAT_DIRT);
+  }
+
+  const cx = Math.max(4, (cols * 0.22) | 0);
+  let groundY = -1;
+  for (let y = 0; y < rows; y++) {
+    if (amount[y * cols + cx] >= ISO) {
+      groundY = y;
+      break;
+    }
+  }
+  if (groundY > 24) {
+    stampFilled(field, cx - 1, groundY - 36, cx + 2, groundY, MAT_DIRT);
+  }
 }
 
 function findSkySpawn(field) {
@@ -1661,6 +1740,102 @@ function damageKernel(field, cx, cy, radius, power, falloff) {
     }
   }
   return changed;
+}
+
+function ensureMaskStore(field, n) {
+  if (field._maskStore && field._maskStore.length >= n) return;
+  field._maskStore = new Uint8Array(n);
+}
+
+function copyIslandNodes(island) {
+  if (!island || !island.nodeCount) return new Int32Array(0);
+  const n = island.nodeCount;
+  const out = new Int32Array(n);
+  out.set(island.nodeIdx.subarray(island.nodeStart, island.nodeStart + n));
+  return out;
+}
+
+function packedBox(field, packed) {
+  const cols = field.cols;
+  const box = { minX: 0, minY: 0, maxX: -1, maxY: -1 };
+  if (!packed || !packed.length) return box;
+  let minX = 1e9;
+  let minY = 1e9;
+  let maxX = -1;
+  let maxY = -1;
+  for (let i = 0; i < packed.length; i++) {
+    const p = packed[i];
+    const x = p % cols;
+    const y = (p / cols) | 0;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  box.minX = minX;
+  box.minY = minY;
+  box.maxX = maxX;
+  box.maxY = maxY;
+  return box;
+}
+
+function isGrounded(field, island) {
+  if (!island || !island.nodeCount) return false;
+  const cols = field.cols;
+  const lastX = cols - 1;
+  const lastY = field.rows - 1;
+  const packed = island.nodeIdx;
+  const start = island.nodeStart;
+  const count = island.nodeCount;
+  for (let i = 0; i < count; i++) {
+    const p = packed[start + i];
+    const x = p % cols;
+    const y = (p / cols) | 0;
+    if (x === 0 || x === lastX || y === lastY) return true;
+  }
+  return false;
+}
+
+function meshNodes(field, packed) {
+  if (!packed || !packed.length) return [];
+  const n = field.cols * field.rows;
+  ensureMaskStore(field, n);
+  const mask = field._maskStore;
+  mask.fill(0);
+  const box = packedBox(field, packed);
+  for (let i = 0; i < packed.length; i++) mask[packed[i]] = 1;
+  field._extractMask = mask;
+  try {
+    const list = extractIslands(field, box, { clip: false });
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+      const rec = list[i];
+      const nodes = rec.nodeCount
+        ? rec.nodeIdx.slice(rec.nodeStart, rec.nodeStart + rec.nodeCount)
+        : new Int32Array(0);
+      out.push({
+        nodeIdx: nodes,
+        nodeStart: 0,
+        nodeCount: nodes.length,
+        polys: rec.polys,
+        cellsMeta: rec.cellsMeta,
+        contour: rec.contour,
+        loops: rec.loops,
+        areaPx: rec.areaPx,
+        areaCells: rec.areaCells,
+        cellCx: rec.cellCx,
+        cellCy: rec.cellCy,
+        minX: rec.minX,
+        minY: rec.minY,
+        maxX: rec.maxX,
+        maxY: rec.maxY,
+        material: rec.material,
+      });
+    }
+    return out;
+  } finally {
+    field._extractMask = null;
+  }
 }
 
 WorldGrid.polygonArea = polygonArea;

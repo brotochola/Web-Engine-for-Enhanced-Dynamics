@@ -6,6 +6,7 @@ import {
   MAT_DIRT,
   MAT_TINT,
   TUNE,
+  DROP_MIN_CELLS,
 } from '../worldGrid.js';
 import { TerrainIsland } from './terrainIsland.js';
 import { Ship } from './ship.js';
@@ -25,7 +26,6 @@ const {
 } = WEED;
 
 const SHATTER_MAX = 24;
-const SHATTER_MIN_AREA = CELL * CELL * 0.35;
 const EXPLODE_IMPULSE = 1500;
 const WORLD_H = ROWS * CELL;
 const _scratchVerts = [];
@@ -144,12 +144,7 @@ export class WorldGridManager extends GameObject {
       rec.maxY = s.maxY;
     }
 
-    if (this.tool !== 'draw') {
-      const seen = this._crumbSeen;
-      for (const k in seen) delete seen[k];
-      const n0 = snap.length;
-      for (let s = 0; s < n0; s++) this._dropCrumbsInShard(snap[s], snap);
-    }
+    if (full || this.tool !== 'draw') this._promoteDirty(snap);
 
     const keep = [];
     const live = this.staticIslands;
@@ -203,55 +198,64 @@ export class WorldGridManager extends GameObject {
     }
   }
 
-  _dropCrumbsInShard(shard, snap) {
-    const clipped = WorldGrid.extractIslands(shard, { clip: true });
+  _promoteDirty(snap) {
+    const seen = this._crumbSeen;
+    for (const k in seen) delete seen[k];
     const seeds = this._crumbSeeds;
     seeds.length = 0;
     const cols = WorldGrid.cols;
-    for (let i = 0; i < clipped.length; i++) {
-      const island = clipped[i];
-      if (!island.nodeCount) continue;
-      const packed = island.nodeIdx[island.nodeStart];
-      seeds.push(packed % cols, (packed / cols) | 0);
+    const n0 = snap.length;
+    for (let s = 0; s < n0; s++) {
+      const clipped = WorldGrid.extractIslands(snap[s], { clip: true });
+      for (let i = 0; i < clipped.length; i++) {
+        const island = clipped[i];
+        if (!island.nodeCount) continue;
+        const packed = island.nodeIdx[island.nodeStart];
+        seeds.push(packed % cols, (packed / cols) | 0);
+      }
     }
-    const threshold = WorldGrid.tuneGet(TUNE.AREA_THRESHOLD);
-    const seen = this._crumbSeen;
     for (let i = 0; i < seeds.length; i += 2) {
       const real = WorldGrid.extractIslandAt(seeds[i], seeds[i + 1]);
-      if (!real || !(real.areaCells < threshold)) continue;
+      if (!real) continue;
       const key = WorldGrid.islandKey(real);
       if (key < 0 || seen[key]) continue;
-      const extraBox = {
-        minX: real.minX,
-        minY: real.minY,
-        maxX: real.maxX,
-        maxY: real.maxY,
-      };
-      if (!this._spawnDynamic(real)) continue;
       seen[key] = 1;
-      this._addShardsOverlapping(extraBox, snap);
+      if (WorldGrid.isGrounded(real)) continue;
+      const nodes = WorldGrid.copyIslandNodes(real);
+      const box = WorldGrid.packedBox(nodes);
+      this._spawnLooseIsland(nodes, real.material);
+      this._addShardsOverlapping(box, snap);
     }
   }
 
-  _spawnDynamic(island) {
-    const built = WorldGrid.buildContourFixtures(island, WorldGrid.tuneGet(TUNE.SIMPLIFY_TOL));
-    if (!built.polys || !built.polys.length) return false;
-    const cen = WorldGrid.centroidFromPolys(built.polys);
-    if (!cen) return false;
-    const local = WorldGrid.polysToLocal(built.polys, cen.x, cen.y);
-    if (!local.length) return false;
-    const spawned = TerrainIsland.spawn({
-      x: cen.x,
-      y: cen.y,
-      isStatic: false,
-      polys: local,
-      tint: MAT_TINT[island.material] || 0x88aa66,
-      layer: 'terrain',
-    });
-    if (!spawned) return false;
-    WorldGrid.clearIslandNodes(island);
-    this.dynamicIslands.push(spawned.index);
-    return true;
+  _spawnLooseIsland(nodes, material) {
+    const islands = WorldGrid.meshNodes(nodes);
+    const tint = MAT_TINT[material] || 0x88aa66;
+    if (!islands.length) {
+      WorldGrid.clearPackedNodes(nodes);
+      return;
+    }
+    for (let i = 0; i < islands.length; i++) {
+      const island = islands[i];
+      if ((island.nodeCount || 0) < DROP_MIN_CELLS) continue;
+      const built = WorldGrid.buildContourFixtures(island, WorldGrid.tuneGet(TUNE.SIMPLIFY_TOL));
+      if (!built.polys || !built.polys.length) continue;
+      const cen = WorldGrid.centroidFromPolys(built.polys);
+      if (!cen) continue;
+      const local = WorldGrid.polysToLocal(built.polys, cen.x, cen.y);
+      if (!local.length) continue;
+      const spawned = TerrainIsland.spawn({
+        x: cen.x,
+        y: cen.y,
+        isStatic: false,
+        polys: local,
+        tint,
+        layer: 'terrain',
+      });
+      if (!spawned) continue;
+      this.dynamicIslands.push(spawned.index);
+    }
+    WorldGrid.clearPackedNodes(nodes);
   }
 
   _remeshShard(shard, keep) {

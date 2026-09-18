@@ -8,7 +8,6 @@ const {
   ColliderFixture,
   MeshRenderer,
   Transform,
-  Box2d,
 } = WEED;
 
 const CLIP_RADIUS = CELL * 2;

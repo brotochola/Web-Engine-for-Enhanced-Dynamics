@@ -1,4 +1,5 @@
 // Destructible terrain — WorldGrid SAB + WorldGridManager in logic.
+// Loose dirt (not touching left/right/bottom) falls as one body. No welds.
 // Z draw · X erase · C laser · V shatter · [ ] brush · A/D thrusters · click uses tool.
 
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
@@ -25,7 +26,6 @@ const SLIDERS = [
   ['Shot falloff', TUNE.SHOT_FALLOFF, 0.2, 4, 0.1, 'Cómo cae el daño hacia el borde. 1 = lineal. Más alto = solo el centro duele.'],
   ['Shot cooldown ms', TUNE.SHOT_COOLDOWN, 4, 200, 1, 'Milisegundos mínimos entre disparos del láser (C).'],
   ['Min tri area', TUNE.MIN_TRI_AREA, 1, 200, 1, 'Tira triángulos más chicos que esto (px²) al armar el mesh. Subí si hay basura chica.'],
-  ['Drop area cells', TUNE.AREA_THRESHOLD, 10, 400, 5, 'Si la isla real del grid (flood sin clip de chunk) es más chica, cae dinámica. Unida al macizo: queda estática. Draw no tira.'],
   ['Simplify tol', TUNE.SIMPLIFY_TOL, 1, 12, 0.5, 'Tolerancia inicial al simplificar el contorno. Más alto = menos vértices, mesh más tosco, menos fixtures.'],
   ['Simplify max', TUNE.SIMPLIFY_MAX, 6, 24, 1, 'Tope de la escalera de simplify si Delaunay falla o se pasa el fixture cap.'],
   ['Fixture cap', TUNE.FIXTURE_CAP, 32, 2048, 16, 'Máximo de polígonos Box2D por cuerpo. Si se pasa: fallback por celda o split del chunk.'],
@@ -67,7 +67,7 @@ export class DestructibleTerrainScene extends Scene {
       noLimitFPS: false,
       gravity: { x: 0, y: 1800 },
       maxFixturePoolSize: 65535,
-      sleeping: false,
+      sleeping: true,
     },
 
     renderer: {
@@ -178,7 +178,7 @@ export class DestructibleTerrainScene extends Scene {
   _drawHud() {
     const x = Camera.x - 220 / (Camera.zoom || 1);
     const y = Camera.y - 180 / (Camera.zoom || 1);
-    DebugDraw.drawText(x, y, 'Z draw X erase C laser V shatter', 0xe8e8e8, 0);
+    DebugDraw.drawText(x, y, 'Z draw X erase C laser V shatter · loose dirt falls', 0xe8e8e8, 0);
   }
 
   _buildPanel() {
