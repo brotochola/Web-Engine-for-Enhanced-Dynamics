@@ -75,7 +75,13 @@ import {
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
 import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
-import { ColliderFillBatch, packColliderFill } from '../render/colliderFillBatch.js';
+import {
+  ColliderFillBatch,
+  packColliderFill,
+  colliderFillCanSkipPack,
+  copyMeshFillPoseScratch,
+  COLLIDER_FILL_PACK_FIRST_FRAME,
+} from '../render/colliderFillBatch.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
@@ -657,6 +663,9 @@ class PixiRenderer extends AbstractWorker {
     this._selfLitBoxScratchX = new Float32Array(8);
     this._selfLitBoxScratchY = new Float32Array(8);
     this._colliderFillViews = null;
+    // Per MESH layer: last packed ColliderFixture.revision + pose scratch.
+    // ponytail: first frame / replace / moving mesh always pack; skip keeps instanceCount.
+    this._colliderFillSkip = [];
 
     // Reusable matrices for low-res rendering
     this._shadowTransform = new PIXI.Matrix();
@@ -927,8 +936,16 @@ class PixiRenderer extends AbstractWorker {
     v.rotS = Transform.rotS;
     v.offsetX = Collider.offsetX;
     v.offsetY = Collider.offsetY;
+    v.primaryShapeType = Collider.shapeType;
+    v.primaryPolyCount = Collider.polyCount;
+    v.primaryPolyVertexX = Collider.polyVertexX;
+    v.primaryPolyVertexY = Collider.polyVertexY;
+    v.primaryWidth = Collider.width;
+    v.primaryHeight = Collider.height;
+    v.primaryRadius = Collider.radius;
     v.meshBits = this._colliderFillMeshBits();
     v.maxFixtures = ColliderFixture.maxCount | 0;
+    v.fixtureRevision = ColliderFixture.revision;
     return v;
   }
 
@@ -4351,10 +4368,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       let fillBatch = null;
       if (isMesh) {
         const maxFx =
+          (data.config?.physics?.maxFixturePoolSize | 0) ||
+          (this.config?.physics?.maxFixturePoolSize | 0) ||
           (data.config?.physics?.maxFixtures | 0) ||
           (this.config?.physics?.maxFixtures | 0);
+        const entitySlots = this.globalEntityCount | 0;
+        // Fixtures or one primary shape per entity; each convex is at most 6 fans (8-2).
         fillBatch = new ColliderFillBatch({
-          capacity: Math.max(1, maxFx * (MAX_POLYGON_VERTICES - 2)),
+          capacity: Math.max(1, Math.max(maxFx, entitySlots) * (MAX_POLYGON_VERTICES - 2)),
           label: `mesh-layer-${layerName}`,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
@@ -4693,9 +4714,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       } else if (cl.fillBatch) {
         const views = this._ensureColliderFillViews();
         views.outU32 = cl.fillBatch.dataU32;
-        const packed = packColliderFill(cl.fillBatch.data, cl.fillBatch.capacity, cl.layerId, views);
-        cl.fillBatch.upload(packed);
-        cl.prevCount = packed;
+        let skip = this._colliderFillSkip[cl.layerId];
+        if (!skip) {
+          skip = this._colliderFillSkip[cl.layerId] = {
+            lastRevision: COLLIDER_FILL_PACK_FIRST_FRAME,
+            prevPose: {},
+          };
+        }
+        // First frame and any fixture replace always pack; moving mesh always pack.
+        if (!colliderFillCanSkipPack(views, skip.lastRevision, skip.prevPose)) {
+          const packed = packColliderFill(cl.fillBatch.data, cl.fillBatch.capacity, cl.layerId, views);
+          cl.fillBatch.upload(packed);
+          cl.prevCount = packed;
+          copyMeshFillPoseScratch(views, skip.prevPose);
+          skip.lastRevision = views.fixtureRevision ? (views.fixtureRevision[0] | 0) : 0;
+        }
         densityMesh = cl.fillBatch.mesh;
       } else {
         continue;

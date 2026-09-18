@@ -6,6 +6,7 @@
 import { PHYSICS_DEFAULTS } from './configDefaults.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
+export { debugWorkerLog };
 
 // ============================================================================
 // MATH UTILITIES

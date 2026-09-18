@@ -149,6 +149,7 @@ function buildSharedResourcesInit(scene) {
     name: rec.name,
     sab: sabs[rec.name],
     schema: SharedResource.serializeSchema(rec.schema),
+    scriptUrl: rec.scriptUrl || null,
   }));
 }
 
@@ -194,8 +195,9 @@ function buildSceneSharedBuffers(scene) {
     logicStats: scene.buffers.logicStats,
     navigationData: scene.buffers.navigationData || null,
     nextTickData: scene.buffers.nextTickData || null,
-    logicWorkerData: scene.buffers.logicWorkerData || null,
-    logicWorkerTypePin: scene.buffers.logicWorkerTypePin || null,
+    forceProcessOnLogicWorkerData: scene.buffers.forceProcessOnLogicWorkerData || null,
+    entityTypeHasForcedLogicWorker: scene.buffers.entityTypeHasForcedLogicWorker || null,
+    entityTypeForcedLogicWorkerCount: scene.buffers.entityTypeForcedLogicWorkerCount || null,
     mouseData: scene.buffers.mouseData,
     gamepadData: scene.buffers.gamepadData,
     queryEntityMetadata: scene.buffers.queryEntityMetadata,
@@ -380,10 +382,10 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           freeListTop: scene.buffers.jointFreeListTop,
         }
       : null,
-    fixtures: scene.config.physics.maxFixtures > 0
+    fixtures: scene.config.physics.maxFixturePoolSize > 0
       ? {
           enabled: true,
-          maxFixtures: scene.config.physics.maxFixtures,
+          maxFixturePoolSize: scene.config.physics.maxFixturePoolSize,
           entityCount: scene.totalEntityCount,
           data: scene.buffers.colliderFixtureData,
           freeList: scene.buffers.colliderFixtureFreeList,

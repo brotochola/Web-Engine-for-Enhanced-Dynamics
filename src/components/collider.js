@@ -181,7 +181,9 @@ class Collider extends Component {
   }
 
   /**
-   * Compound body: N convex local polygons (3..8 verts, CCW) as Box2D fixtures.
+   * Replace every extra convex piece on this body (3..8 CCW verts each).
+   * Zeros the primary polyCount. Requires physics.maxFixturePoolSize > 0.
+   * Prefer replacePolygonsFlat when the caller already has SoA data.
    * @param {number} index
    * @param {Array<ArrayLike<{x:number,y:number}|number>>} polys
    * @returns {boolean}
@@ -191,7 +193,22 @@ class Collider extends Component {
   }
 
   /**
-   * Drop extra fixtures; body falls back to the single Collider shape (or none).
+   * Same contract as replacePolygons, from packed x,y + per-poly counts.
+   * vertexXY is caller-owned (no slice). Prefer this when the caller already has SoA.
+   * @param {number} index
+   * @param {Float32Array|ArrayLike<number>} vertexXY
+   * @param {Uint8Array|ArrayLike<number>} vertexCounts
+   * @param {number} polygonCount
+   * @returns {boolean}
+   */
+  static replacePolygonsFlat(index, vertexXY, vertexCounts, polygonCount) {
+    return ColliderFixture.replaceForEntityFlat(index, vertexXY, vertexCounts, polygonCount);
+  }
+
+  /**
+   * Drop extra fixtures. If polyCount is 0 the body is shapeless until
+   * makePolygon / box / circle setters restore a primary shape. Leftover
+   * width/height from the compound AABB are not a box.
    * @param {number} index
    */
   static clearFixtures(index) {
@@ -259,6 +276,10 @@ class Collider extends Component {
 
   replacePolygons(polys) {
     return Collider.replacePolygons(this.index, polys);
+  }
+
+  replacePolygonsFlat(vertexXY, vertexCounts, polygonCount) {
+    return Collider.replacePolygonsFlat(this.index, vertexXY, vertexCounts, polygonCount);
   }
 
   clearFixtures() {

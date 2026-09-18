@@ -320,7 +320,12 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   /** Soft contact damping ratio ζ → b2WorldDef.contactDampingRatio. */
   contactDampingRatio: 0.7,
   maxJoints: 0,
-  /** Extra convex shapes per body (ColliderFixture pool). 0 = off. */
+  /**
+   * Global ColliderFixture pool size for the whole scene (not per body). 0 = off.
+   * `maxFixtures` is a one-release alias copied onto this field in Scene._applyConfigDefaults.
+   */
+  maxFixturePoolSize: 0,
+  /** @deprecated Use maxFixturePoolSize. Accepted as an alias when the new key is 0. */
   maxFixtures: 0,
   /** Gravity (px/s²). */
   gravity: Object.freeze({ x: 0, y: 0 }),

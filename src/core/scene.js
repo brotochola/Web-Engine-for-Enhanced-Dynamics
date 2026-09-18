@@ -4,7 +4,7 @@
 
 import { GameObject } from './gameObject.js';
 import { popFreeIndex } from '../util/atomicFreeList.js';
-import { resolveLogicWorker } from '../util/logicOwner.js';
+import { resolveForceProcessOnLogicWorker } from '../util/logicOwner.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
@@ -612,6 +612,15 @@ class Scene {
     // Ensure gravity is synced
     this.config.physics.gravity = this.config.physics.gravity || this.config.gravity;
     this.config.gravity = this.config.physics.gravity;
+    if (
+      (this.config.physics.maxFixturePoolSize | 0) === 0 &&
+      (this.config.physics.maxFixtures | 0) > 0
+    ) {
+      this.config.physics.maxFixturePoolSize = this.config.physics.maxFixtures | 0;
+      debugWorkerLog(
+        'WeedJS: physics.maxFixtures is an alias; use physics.maxFixturePoolSize (global fixture pool, not per body)',
+      );
+    }
 
     // Spatial defaults from centralized config
     this.config.spatial = {
@@ -2390,18 +2399,25 @@ class Scene {
     // ========================================
     // NOTIFY OWNER WORKER
     // ========================================
-    // The pin worker runs setup/onSpawned so heap state lives with tick.
-    const requestedPin =
-      typeof spawnConfig.logicWorker === 'number'
-        ? spawnConfig.logicWorker
-        : typeof EntityClass?.logicWorker === 'number'
-          ? EntityClass.logicWorker
+    // The forced worker runs setup/onSpawned so heap state lives with tick.
+    const requestedForceProcessOnLogicWorker =
+      typeof spawnConfig.forceProcessOnLogicWorker === 'number'
+        ? spawnConfig.forceProcessOnLogicWorker
+        : typeof EntityClass?.forceProcessOnLogicWorker === 'number'
+          ? EntityClass.forceProcessOnLogicWorker
           : -1;
-    const pin = resolveLogicWorker(requestedPin, this.numberOfLogicWorkers);
+    const forcedLogicWorker = resolveForceProcessOnLogicWorker(
+      requestedForceProcessOnLogicWorker,
+      this.numberOfLogicWorkers,
+    );
     if (entityIndex >= 0) {
-      GameObject.writeLogicPin(entityIndex, EntityClass?.entityType, pin);
+      GameObject.writeForceProcessOnLogicWorker(
+        entityIndex,
+        EntityClass?.entityType,
+        forcedLogicWorker,
+      );
     }
-    const targetWorker = this.workers.logicWorkers?.[pin >= 0 ? pin : 0];
+    const targetWorker = this.workers.logicWorkers?.[forcedLogicWorker >= 0 ? forcedLogicWorker : 0];
     if (targetWorker) {
       targetWorker.postMessage({
         msg: 'spawn',

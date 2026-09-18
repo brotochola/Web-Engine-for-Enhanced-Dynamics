@@ -48,6 +48,13 @@ function makeViews(rng) {
     offsetY: new Float32Array(n),
     meshBits: 1,
     maxFixtures: fx,
+    primaryShapeType: new Uint8Array(n),
+    primaryPolyCount: new Uint8Array(n),
+    primaryPolyVertexX: new Float32Array(n * 8),
+    primaryPolyVertexY: new Float32Array(n * 8),
+    primaryWidth: new Float32Array(n),
+    primaryHeight: new Float32Array(n),
+    primaryRadius: new Float32Array(n),
   };
   views.meshActive.fill(1);
   views.meshVisible.fill(1);
@@ -219,6 +226,92 @@ const payload = {
   H1: { claim: 'B >= 3% more ops/s than A', delta: v.h1, status: v.h1Status },
   H2: { claim: 'C >= 3% more ops/s than B', delta: v.h2, status: v.h2Status },
 };
+
+function makePrimaryViews(kind) {
+  const n = BODIES;
+  const views = {
+    entityCount: n,
+    meshActive: new Uint8Array(n),
+    meshVisible: new Uint8Array(n),
+    meshLayerMask: new Uint16Array(n),
+    meshTint: new Uint32Array(n),
+    meshAlpha: new Float32Array(n),
+    fixtureCount: new Uint16Array(n),
+    fixtureHead: new Uint16Array(1),
+    fixtureNext: new Uint16Array(1),
+    fixtureActive: new Uint8Array(1),
+    vertCount: new Uint8Array(1),
+    vertexX: new Float32Array(8),
+    vertexY: new Float32Array(8),
+    x: new Float32Array(n),
+    y: new Float32Array(n),
+    rotC: new Float32Array(n),
+    rotS: new Float32Array(n),
+    offsetX: new Float32Array(n),
+    offsetY: new Float32Array(n),
+    meshBits: 1,
+    maxFixtures: 0,
+    primaryShapeType: new Uint8Array(n),
+    primaryPolyCount: new Uint8Array(n),
+    primaryPolyVertexX: new Float32Array(n * 8),
+    primaryPolyVertexY: new Float32Array(n * 8),
+    primaryWidth: new Float32Array(n),
+    primaryHeight: new Float32Array(n),
+    primaryRadius: new Float32Array(n),
+  };
+  views.meshActive.fill(1);
+  views.meshVisible.fill(1);
+  views.meshLayerMask.fill(1);
+  views.meshTint.fill(0x88aa66);
+  views.meshAlpha.fill(1);
+  views.rotC.fill(1);
+  views.fixtureHead.fill(INV);
+  for (let i = 0; i < n; i++) {
+    views.x[i] = i * 3;
+    views.y[i] = i * 2;
+    if (kind === 'primary_box') {
+      views.primaryShapeType[i] = 0;
+      views.primaryWidth[i] = 16;
+      views.primaryHeight[i] = 10;
+    } else if (kind === 'primary_polygon') {
+      views.primaryShapeType[i] = 2;
+      views.primaryPolyCount[i] = 3;
+      const b = i * 8;
+      views.primaryPolyVertexX[b] = 0;
+      views.primaryPolyVertexY[b] = 0;
+      views.primaryPolyVertexX[b + 1] = 8;
+      views.primaryPolyVertexY[b + 1] = 0;
+      views.primaryPolyVertexX[b + 2] = 0;
+      views.primaryPolyVertexY[b + 2] = 6;
+    } else {
+      views.primaryShapeType[i] = 1;
+      views.primaryRadius[i] = 8;
+    }
+  }
+  return views;
+}
+
+const primaryKinds = ['primary_box', 'primary_polygon', 'primary_circle'];
+const primaryResults = {};
+for (const kind of primaryKinds) {
+  const pv = makePrimaryViews(kind);
+  const pout = new Float32Array(BODIES * 8 * COLLIDER_FILL_FLOATS);
+  pv.outU32 = new Uint32Array(pout.buffer);
+  const count = packColliderFill(pout, BODIES * 8, 0, pv);
+  const expected =
+    kind === 'primary_box' ? BODIES * 2 : kind === 'primary_polygon' ? BODIES : BODIES * 6;
+  if (count !== expected) throw new Error(`${kind} count ${count} expected ${expected}`);
+  const timed = timeIt(kind, (iterations) => {
+    for (let i = 0; i < iterations; i++) packColliderFill(pout, BODIES * 8, 0, pv);
+  }, { iterations: 80, warmup: 8, reps: 5 });
+  primaryResults[kind] = {
+    ...timed,
+    instanceCount: count,
+    first: pout[0],
+    last: pout[(count - 1) * COLLIDER_FILL_FLOATS],
+  };
+}
+payload.primary = primaryResults;
 
 writeReport(path.join(reportDir, 'kernel.json'), payload);
 

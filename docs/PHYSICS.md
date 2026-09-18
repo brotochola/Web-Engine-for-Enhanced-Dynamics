@@ -36,19 +36,38 @@ this.collider.active = 0;  // RB stays: body kept, shapes cleared (no contacts)
 this.collider.active = 1;  // restore shape on existing body
 this.rigidBody.active = 0; // Collider stays: implicit static body + shape
 this.rigidBody.active = 1; // restore dynamic/static from rigidBody.static
-this.collider.replacePolygons(tris); // compound: N convex fixtures (3..8 verts), scene physics.maxFixtures
-this.collider.clearFixtures();       // back to the single Collider shape
+this.collider.replacePolygons(tris); // compound: N convex fixtures (3..8 local CCW verts)
+this.collider.replacePolygonsFlat(xy, counts, n); // same writer, packed SoA, no {x,y}
+this.collider.clearFixtures();       // extras gone; shapeless if polyCount is already 0
 this.meshRenderer.tint = 0x88aa66;   // MeshRenderer + LAYER_KIND.MESH (not Collider)
 this.setLayer('terrain');
 ```
 
-`replacePolygons` writes the [`ColliderFixture`](../src/core/colliderFixture.js) pool (intrusive list per entity). Host `clear_shapes` + `body_add_shape_polygon` on `GEOMETRY` dirty. Mass is the sum of fixture areas. Contacts still key by entity. `Ray` / spatial / debug walk every fixture. Light occluders still use the primary Collider shape only.
+A junior can get a visible MESH body without fixtures:
+
+```js
+static config = {
+  physics: { maxFixturePoolSize: 0 },
+  layers: { terrain: { kind: LAYER_KIND.MESH, zIndex: 2.9 } },
+};
+
+// onSpawned
+this.collider.shapeType = WEED.ShapeType.Box;
+this.collider.width = 48;
+this.collider.height = 32;
+this.meshRenderer.tint = 0x88aa66;
+this.setLayer('terrain');
+```
+
+`replacePolygons` / `replacePolygonsFlat` write the [`ColliderFixture`](../src/core/colliderFixture.js) pool (intrusive list per entity). Host `clear_shapes` + `body_add_shape_polygon` on `GEOMETRY` dirty. Mass is the sum of fixture areas. Contacts still key by entity. `Ray` / spatial / debug walk every fixture. Light occluders still use the **primary** Collider shape only (feature gap: they do not walk fixtures).
+
+A SharedResource (one writer per field) pins its owner with `forceProcessOnLogicWorker: 1` so only `logic1` runs that entity’s `tick` / callbacks / `onSpawned`.
 
 `physicsHostImpl.js` `COLLIDER_SCHEMA` must stay in lockstep with `Collider.ARRAY_SCHEMA` (including trailing `layerMask` / `feedBits` / `fixtureCount`). The host binds SoA by walking that list; a missing tail field makes `views.fixtureCount` null, so `createBody` treats a compound island as a 0-vert polygon and logs `createBody failed; wait for next dirty`.
 
-Solid fill is a **render** component: `MeshRenderer` + a config layer with `kind: LAYER_KIND.MESH`. The packer reads `MeshRenderer.layerMask` (not `Collider.layerMask`) and fans each convex fixture into one instanced draw per MESH slot. Requires `physics.maxFixtures > 0`.
+Solid fill is a **render** component: `MeshRenderer` + a config layer with `kind: LAYER_KIND.MESH`. The packer reads `MeshRenderer.layerMask` (not `Collider.layerMask`) and fans fixtures first, else the primary polygon / box (two tris) / display regular 8-gon for a physics circle. Circle physics stays a true circle.
 
-Scene knob: `physics.maxFixtures` (default `0`, same opt-in as `maxJoints`).
+Scene knob: `physics.maxFixturePoolSize` (default `0`, same opt-in as `maxJoints`). This is the **global** extra-convex-shape pool for the whole scene, not “per body”. `physics.maxFixtures` is a one-release alias.
 
 Setters write SoA and `markBodyDirty` with `LIFECYCLE|GEOMETRY|MASS` (Collider) or `LIFECYCLE|BODY_TYPE|MASS` (RigidBody) so `syncBodySlot` runs property sync (not LIFECYCLE-only, which only create/destroys).
 

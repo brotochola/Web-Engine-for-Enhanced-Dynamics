@@ -165,6 +165,28 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 | TilemapCullStressScene | `/tests/bench/stressScenes/tilemapCullStressScene.js` | Tilemap background + pan → pixi `STEP_MS` |
 | ContactDrainStressScene | `/tests/bench/stressScenes/contactDrainStressScene.js` | `CollisionListener` pile → logic0 `STEP_MS` |
 
+## Isolation: multi-fixture (not catalog rows)
+
+These scripts stay off [`engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs) until `main` also has the scenes. Isolation uses `--src`, same pattern as `tests/results/hot-path-alloc/`. Do not run `--vs main`.
+
+```bash
+pnpm bench:micro:collider-fixture-bounds
+pnpm bench:micro:replace-polygons
+pnpm bench:feature:compound-spatial
+pnpm bench:feature:compound-geom-dirty
+pnpm bench:feature:mesh-fill-static
+pnpm bench:feature:mesh-fill-moving
+```
+
+| Scene | Path | Primary | Load |
+|-------|------|---------|------|
+| CompoundFixtureSpatialScene | `/tests/bench/stressScenes/compoundFixtureSpatialScene.js` | `spatialMax_STEP_MS` | `BODY_COUNT` |
+| CompoundGeometryDirtyScene | `/tests/bench/stressScenes/compoundGeometryDirtyScene.js` | `physics_STEP_MS` (MF3) / `logic0_STEP_MS` (MF5 flat) | `BODY_COUNT` |
+| MeshFillStaticScene | `/tests/bench/stressScenes/meshFillStaticScene.js` | `pixi_STEP_MS` | `BODY_COUNT` |
+| MeshFillMovingScene | `/tests/bench/stressScenes/meshFillMovingScene.js` | `pixi_STEP_MS` | `BODY_COUNT` |
+
+Reports live under [`tests/results/multi-fixture/`](../tests/results/multi-fixture/). Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
+
 ```bash
 node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
   --scene /tests/bench/stressScenes/stationarySpatialScene.js \

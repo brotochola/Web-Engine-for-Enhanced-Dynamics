@@ -1,0 +1,26 @@
+{
+  "name": "collider-fixture-bounds",
+  "bodies": 64,
+  "tris": 8,
+  "checksum": {
+    "extent": 4185.376762917265,
+    "hits": -1
+  },
+  "getColliderBounds": {
+    "label": "getColliderBounds",
+    "ms": 8.359300000000019,
+    "opsPerSec": 47850.89660617505,
+    "iterations": 400,
+    "reps": 5,
+    "startIterations": 400
+  },
+  "pointInCollider": {
+    "label": "pointInCollider",
+    "ms": 49.40300000000002,
+    "opsPerSec": 1619.334858206991,
+    "iterations": 80,
+    "reps": 5,
+    "startIterations": 80
+  },
+  "generatedAt": "2026-09-18T18:48:17.217Z"
+}

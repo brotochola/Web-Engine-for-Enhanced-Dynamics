@@ -66,7 +66,7 @@ export class DestructibleTerrainScene extends Scene {
       subStepCount: 4,
       noLimitFPS: false,
       gravity: { x: 0, y: 1800 },
-      maxFixtures: 8192,
+      maxFixturePoolSize: 8192,
       sleeping: false,
     },
 
@@ -132,7 +132,7 @@ export class DestructibleTerrainScene extends Scene {
   }
 
   createNewGame() {
-    this.spawnEntity(WorldGridManager, { logicWorker: 1 });
+    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
     const spawned = this.spawnEntity(Ship, {
       x: WORLD_W * 0.5,
       y: WORLD_H * 0.5,

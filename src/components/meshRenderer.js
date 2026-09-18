@@ -1,19 +1,31 @@
-// MeshRenderer — solid fill of Collider fixtures (LAYER_KIND.MESH).
+// MeshRenderer — solid fill of this entity's collider (LAYER_KIND.MESH).
+// Packs ColliderFixture fans, or the primary box / makePolygon / display 8-gon.
 // Color and layer live here, not on Collider. Pose is Transform + local verts.
 
 import { Component } from '../core/component.js';
 
-let _warnedMaxFixtures = false;
+let _warnedDrawable = false;
 
 export function resetMeshRendererFixtureWarn() {
-  _warnedMaxFixtures = false;
+  _warnedDrawable = false;
 }
 
-/** Once: MeshRenderer.active needs a ColliderFixture pool. */
+export function resetMeshRendererDrawableWarn() {
+  _warnedDrawable = false;
+}
+
+/** Once: MeshRenderer is on but the collider has nothing to fill. */
+export function warnMeshRendererNeedsDrawableCollider() {
+  if (_warnedDrawable) return;
+  _warnedDrawable = true;
+  console.warn(
+    'WeedJS: MeshRenderer has no drawable collider (fixtures or primary box/circle/polygon)',
+  );
+}
+
+/** @deprecated use warnMeshRendererNeedsDrawableCollider */
 export function warnMeshRendererNeedsFixtures() {
-  if (_warnedMaxFixtures) return;
-  _warnedMaxFixtures = true;
-  console.warn('WeedJS: MeshRenderer requires physics.maxFixtures > 0');
+  warnMeshRendererNeedsDrawableCollider();
 }
 
 export class MeshRenderer extends Component {

@@ -1,12 +1,14 @@
-// ColliderFixture.js — extra convex shapes on one entity's Box2D body.
+// ColliderFixture — extra convex shapes on one entity's Box2D body.
 // SharedAtomicPool + intrusive list per entity (same idea as Joint.head).
 // Gameplay: Collider.replacePolygons / clearFixtures. Do not call WASM addShape.
+// Pool size is scene physics.maxFixturePoolSize (global slots, not per body).
 
 import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { Collider } from '../components/collider.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 
 const INV = 0xffff;
 const V = MAX_POLYGON_VERTICES;
@@ -27,6 +29,21 @@ export class ColliderFixture extends SharedAtomicPool {
   static revision = null;
   static _entityCount = 0;
   static _acquireScratch = null;
+  /** Grown when replacePolygons packs a {x,y} graph into replaceForEntityFlat. */
+  static _polygonUnpackScratch = null;
+  static _polygonCountScratch = null;
+  /** Reused; success path does not allocate. code: cw-or-degenerate | vert-count | pool-exhausted | not-initialized */
+  static lastReplaceError = { code: '', entityIndex: -1, polyIndex: -1 };
+
+  static _setReplaceError(code, entityIndex, polyIndex) {
+    const err = this.lastReplaceError;
+    err.code = code;
+    err.entityIndex = entityIndex | 0;
+    err.polyIndex = polyIndex | 0;
+    debugWorkerLog(
+      `Collider.replacePolygons failed entity=${err.entityIndex} poly=${err.polyIndex} reason=${err.code}`,
+    );
+  }
 
   static getBufferSize(maxFixtures, entityCount = 0) {
     let offset = 0;
@@ -104,6 +121,8 @@ export class ColliderFixture extends SharedAtomicPool {
     this.revision = null;
     this._entityCount = 0;
     this._acquireScratch = null;
+    this._polygonUnpackScratch = null;
+    this._polygonCountScratch = null;
   }
 
   static bumpRevision() {
@@ -120,8 +139,10 @@ export class ColliderFixture extends SharedAtomicPool {
   }
 
   /**
+   * Gameplay walk. Spatial / ray / point queries inline head/next instead
+   * (they cannot afford the visitor call). Return false from fn to stop.
    * @param {number} entityIdx
-   * @param {(idx: number) => void} fn
+   * @param {(idx: number) => boolean|void} fn
    */
   static forEach(entityIdx, fn) {
     if (!this.head || !this.active) return;
@@ -129,7 +150,7 @@ export class ColliderFixture extends SharedAtomicPool {
     let guard = 0;
     const max = this.maxCount | 0;
     while (cur !== INV && guard++ < max) {
-      if (this.active[cur]) fn(cur);
+      if (this.active[cur] && fn(cur) === false) return;
       cur = this.next[cur];
     }
   }
@@ -157,29 +178,41 @@ export class ColliderFixture extends SharedAtomicPool {
     return sum;
   }
 
-  /** Unit-density inertia about body origin (0,0), then scaled by mass/area. */
+  /**
+   * Compound I about body origin (0,0), not polygon centroid. One walk for area and I.
+   * Then scaled by mass/area.
+   */
   static inertiaAboutOrigin(entityIdx, mass) {
-    const area = this.areaSum(entityIdx);
-    if (!(area > 1e-12) || !(mass > 0)) return 0;
+    if (!(mass > 0) || !this.head || !this.active) return 0;
+    let areaTwice = 0;
     let I = 0;
-    this.forEach(entityIdx, (idx) => {
-      const count = this.vertCount[idx] | 0;
-      if (count < 3) return;
-      const base = this.vertBase(idx);
-      const vx = this.vertexX;
-      const vy = this.vertexY;
-      for (let i = 0; i < count; i++) {
-        const j = i + 1 < count ? i + 1 : 0;
-        const ax = vx[base + i];
-        const ay = vy[base + i];
-        const bx = vx[base + j];
-        const by = vy[base + j];
-        const cross = ax * by - ay * bx;
-        I += cross * (ax * ax + ay * ay + ax * bx + ay * by + bx * bx + by * by);
+    let cur = this.headOf(entityIdx);
+    let guard = 0;
+    const max = this.maxCount | 0;
+    const vx = this.vertexX;
+    const vy = this.vertexY;
+    while (cur !== INV && guard++ < max) {
+      if (this.active[cur]) {
+        const count = this.vertCount[cur] | 0;
+        if (count >= 3) {
+          const base = this.vertBase(cur);
+          for (let i = 0; i < count; i++) {
+            const j = i + 1 < count ? i + 1 : 0;
+            const ax = vx[base + i];
+            const ay = vy[base + i];
+            const bx = vx[base + j];
+            const by = vy[base + j];
+            const cross = ax * by - ay * bx;
+            areaTwice += cross;
+            I += cross * (ax * ax + ay * ay + ax * bx + ay * by + bx * bx + by * by);
+          }
+        }
       }
-    });
-    const unitI = I / 12;
-    return (mass / area) * unitI;
+      cur = this.next[cur];
+    }
+    const area = areaTwice * 0.5;
+    if (!(area > 1e-12)) return 0;
+    return (mass / area) * (I / 12);
   }
 
   static _freeFixtureChain(headIdx) {
@@ -212,43 +245,26 @@ export class ColliderFixture extends SharedAtomicPool {
     this._freeFixtureChain(old);
   }
 
-  /**
-   * Parse one poly to flat verts. Returns null if invalid.
-   * @param {ArrayLike<{x:number,y:number}|number>} poly
-   * @returns {number[]|null}
-   */
-  static _flattenPoly(poly) {
-    const flat = [];
-    if (!poly || !poly.length) return null;
-    if (typeof poly[0] === 'number') {
-      for (let i = 0; i + 1 < poly.length; i += 2) flat.push(poly[i], poly[i + 1]);
-    } else {
-      for (let i = 0; i < poly.length; i++) {
-        const p = poly[i];
-        flat.push(p.x, p.y);
-      }
-    }
-    const count = (flat.length / 2) | 0;
-    if (count < 3 || count > V) return null;
+  static _areaTwiceXY(xy, offset, count) {
     let twice = 0;
     for (let i = 0; i < count; i++) {
       const j = i + 1 < count ? i + 1 : 0;
-      twice += flat[i * 2] * flat[j * 2 + 1] - flat[j * 2] * flat[i * 2 + 1];
+      const ix = offset + i * 2;
+      const jx = offset + j * 2;
+      twice += xy[ix] * xy[jx + 1] - xy[jx] * xy[ix + 1];
     }
-    if (!(twice > 1e-8)) return null;
-    return flat;
+    return twice;
   }
 
-  static _writePoly(idx, flat) {
-    const count = (flat.length / 2) | 0;
+  static _writePolyFromXY(idx, xy, offset, count) {
     const base = this.vertBase(idx);
     const vx = this.vertexX;
     const vy = this.vertexY;
     const nx = this.normalX;
     const ny = this.normalY;
     for (let i = 0; i < count; i++) {
-      vx[base + i] = flat[i * 2];
-      vy[base + i] = flat[i * 2 + 1];
+      vx[base + i] = xy[offset + i * 2];
+      vy[base + i] = xy[offset + i * 2 + 1];
     }
     for (let i = 0; i < count; i++) {
       const j = i + 1 < count ? i + 1 : 0;
@@ -267,16 +283,21 @@ export class ColliderFixture extends SharedAtomicPool {
   }
 
   /**
-   * Replace all extra fixtures with convex local CCW polygons (3..8 verts).
+   * Replace extras from packed SoA. vertexXY is caller-owned (no slice).
+   * vertexCounts[i] is 3..8. Same fail-closed rules as replaceForEntity.
    * @param {number} entityIdx
-   * @param {Array<ArrayLike<{x:number,y:number}|number>>} polys
+   * @param {Float32Array|ArrayLike<number>} vertexXY
+   * @param {Uint8Array|ArrayLike<number>} vertexCounts
+   * @param {number} polygonCount
    * @returns {boolean}
    */
-  static replaceForEntity(entityIdx, polys) {
+  static replaceForEntityFlat(entityIdx, vertexXY, vertexCounts, polygonCount) {
     if (!this.initialized || !this.head || entityIdx < 0 || entityIdx >= this._entityCount) {
+      this._setReplaceError('not-initialized', entityIdx, -1);
       return false;
     }
-    if (!Array.isArray(polys) || !polys.length) {
+    const n = polygonCount | 0;
+    if (!vertexXY || !vertexCounts || n <= 0) {
       this.removeAllForEntity(entityIdx);
       Collider.polyCount[entityIdx] = 0;
       Collider.shapeType[entityIdx] = ShapeType.Polygon;
@@ -285,27 +306,42 @@ export class ColliderFixture extends SharedAtomicPool {
       return true;
     }
 
-    const flats = [];
+    let needed = 0;
+    for (let p = 0; p < n; p++) {
+      const count = vertexCounts[p] | 0;
+      if (count < 3 || count > V) {
+        this._setReplaceError('vert-count', entityIdx, p);
+        return false;
+      }
+      needed += count * 2;
+    }
+    if (vertexXY.length < needed) {
+      this._setReplaceError('vert-count', entityIdx, 0);
+      return false;
+    }
+
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
     let maxY = -Infinity;
-    for (let p = 0; p < polys.length; p++) {
-      const flat = this._flattenPoly(polys[p]);
-      if (!flat) return false;
-      flats.push(flat);
-      const count = (flat.length / 2) | 0;
+    let offset = 0;
+    for (let p = 0; p < n; p++) {
+      const count = vertexCounts[p] | 0;
+      if (!(this._areaTwiceXY(vertexXY, offset, count) > 1e-8)) {
+        this._setReplaceError('cw-or-degenerate', entityIdx, p);
+        return false;
+      }
       for (let i = 0; i < count; i++) {
-        const x = flat[i * 2];
-        const y = flat[i * 2 + 1];
+        const x = vertexXY[offset + i * 2];
+        const y = vertexXY[offset + i * 2 + 1];
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
       }
+      offset += count * 2;
     }
 
-    const n = flats.length;
     let scratch = this._acquireScratch;
     if (!scratch || scratch.length < n) {
       scratch = new Uint16Array(n);
@@ -314,12 +350,15 @@ export class ColliderFixture extends SharedAtomicPool {
     const got = this.acquireIndices(n, scratch, 0);
     if (got < n) {
       for (let i = 0; i < got; i++) this.returnToPool(scratch[i]);
+      this._setReplaceError('pool-exhausted', entityIdx, n);
       return false;
     }
 
+    offset = 0;
     for (let i = 0; i < n; i++) {
       const idx = scratch[i];
-      if (!this._writePoly(idx, flats[i])) {
+      const count = vertexCounts[i] | 0;
+      if (!this._writePolyFromXY(idx, vertexXY, offset, count)) {
         for (let k = 0; k < n; k++) {
           this.active[scratch[k]] = 0;
           this.next[scratch[k]] = INV;
@@ -327,11 +366,13 @@ export class ColliderFixture extends SharedAtomicPool {
           this.vertCount[scratch[k]] = 0;
           this.returnToPool(scratch[k]);
         }
+        this._setReplaceError('cw-or-degenerate', entityIdx, i);
         return false;
       }
       this.entity[idx] = entityIdx;
       this.active[idx] = 1;
       this.next[idx] = i + 1 < n ? scratch[i + 1] : INV;
+      offset += count * 2;
     }
 
     const oldHead = this.head[entityIdx];
@@ -349,5 +390,65 @@ export class ColliderFixture extends SharedAtomicPool {
     RigidBody.syncMassFromCollider(entityIdx);
     markBodyDirty(entityIdx, BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS);
     return true;
+  }
+
+  /**
+   * Replace all extra fixtures with convex local CCW polygons (3..8 verts).
+   * @param {number} entityIdx
+   * @param {Array<ArrayLike<{x:number,y:number}|number>>} polys
+   * @returns {boolean}
+   */
+  static replaceForEntity(entityIdx, polys) {
+    if (!this.initialized || !this.head || entityIdx < 0 || entityIdx >= this._entityCount) {
+      this._setReplaceError('not-initialized', entityIdx, -1);
+      return false;
+    }
+    if (!Array.isArray(polys) || !polys.length) {
+      return this.replaceForEntityFlat(entityIdx, null, null, 0);
+    }
+
+    const n = polys.length;
+    if (!this._polygonCountScratch || this._polygonCountScratch.length < n) {
+      this._polygonCountScratch = new Uint8Array(n);
+    }
+    const counts = this._polygonCountScratch;
+    let floats = 0;
+    for (let p = 0; p < n; p++) {
+      const raw = polys[p];
+      if (!raw || !raw.length) {
+        this._setReplaceError('vert-count', entityIdx, p);
+        return false;
+      }
+      const isNum = typeof raw[0] === 'number';
+      const countGuess = isNum ? (raw.length / 2) | 0 : raw.length | 0;
+      if (countGuess < 3 || countGuess > V) {
+        this._setReplaceError('vert-count', entityIdx, p);
+        return false;
+      }
+      counts[p] = countGuess;
+      floats += countGuess * 2;
+    }
+    if (!this._polygonUnpackScratch || this._polygonUnpackScratch.length < floats) {
+      this._polygonUnpackScratch = new Float32Array(floats);
+    }
+    const xy = this._polygonUnpackScratch;
+    let o = 0;
+    for (let p = 0; p < n; p++) {
+      const raw = polys[p];
+      const isNum = typeof raw[0] === 'number';
+      const count = counts[p];
+      if (isNum) {
+        for (let i = 0; i < count; i++) {
+          xy[o++] = raw[i * 2];
+          xy[o++] = raw[i * 2 + 1];
+        }
+      } else {
+        for (let i = 0; i < count; i++) {
+          xy[o++] = raw[i].x;
+          xy[o++] = raw[i].y;
+        }
+      }
+    }
+    return this.replaceForEntityFlat(entityIdx, xy, counts, n);
   }
 }

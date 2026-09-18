@@ -1,6 +1,8 @@
 // SharedResource — one SAB of world data per class (not SoA × entityCount).
 // Scene declares the schema; this class is the name + optional helpers.
 // Fields are raw TypedArrays: WorldGrid.cells[i] = v. No Atomics. No FieldView.
+// One writer per field. Force that writer with forceProcessOnLogicWorker.
+// Workers need static scriptUrl or the class stays unbound.
 
 const TYPED_ARRAYS = Object.freeze({
   Int8Array,
@@ -155,15 +157,22 @@ export class SharedResource {
     return out;
   }
 
-  /** Worker: bind `{ name, sab, schema }` onto `globalRef[name]` after scriptUrl import. */
+  /**
+   * Worker: bind `{ name, sab, schema, scriptUrl }` onto `globalRef[name]` after scriptUrl import.
+   * Missing class is a hard fail: one writer per field only works if the class loaded.
+   */
   static bindFromInit(recs, globalRef = globalThis) {
     if (!recs) return;
     for (let i = 0; i < recs.length; i++) {
       const rec = recs[i];
       const C = globalRef[rec.name];
       if (!C || typeof C.initialize !== 'function') {
-        console.warn(`SharedResource: class ${rec.name} not loaded (set static scriptUrl)`);
-        continue;
+        if (rec.scriptUrl) {
+          throw new Error(
+            `SharedResource: class ${rec.name} not loaded after scriptUrl ${rec.scriptUrl}`,
+          );
+        }
+        throw new Error(`SharedResource: set static scriptUrl on ${rec.name}`);
       }
       C.initialize(rec.sab, rec.schema);
     }

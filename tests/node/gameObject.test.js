@@ -656,14 +656,14 @@ test('onSpawned despawn aborts before Transform.active=1', { concurrency: false 
   const previousTransformX = Transform.x;
   const previousTransformY = Transform.y;
   const previousTransformRotation = Transform.rotation;
-  const previousLogicWorker = GameObject.logicWorker;
+  const previousForceProcessOnLogicWorker = GameObject.forceProcessOnLogicWorker;
   const previousNextTick = GameObject.nextTick;
 
   Transform.active = new Uint8Array([0]);
   Transform.x = new Float32Array([9]);
   Transform.y = new Float32Array([8]);
   Transform.rotation = new Float32Array([7]);
-  GameObject.logicWorker = null;
+  GameObject.forceProcessOnLogicWorker = null;
   GameObject.nextTick = null;
 
   const freeListTopSAB = new SharedArrayBuffer(2 * Int32Array.BYTES_PER_ELEMENT);
@@ -699,7 +699,65 @@ test('onSpawned despawn aborts before Transform.active=1', { concurrency: false 
     Transform.x = previousTransformX;
     Transform.y = previousTransformY;
     Transform.rotation = previousTransformRotation;
-    GameObject.logicWorker = previousLogicWorker;
+    GameObject.forceProcessOnLogicWorker = previousForceProcessOnLogicWorker;
     GameObject.nextTick = previousNextTick;
+  }
+});
+
+test('spawn with forceProcessOnLogicWorker on another worker returns null', { concurrency: false }, () => {
+  class ForcedForwardEntity extends GameObject {}
+
+  const previousSelf = globalThis.self;
+  const previousForce = GameObject.forceProcessOnLogicWorker;
+  const previousTypeFlag = GameObject.entityTypeHasForcedLogicWorker;
+  const previousTypeCount = GameObject.entityTypeForcedLogicWorkerCount;
+  const previousTransformActive = Transform.active;
+  const forwarded = [];
+
+  GameObject.forceProcessOnLogicWorker = new Int16Array(1);
+  GameObject.forceProcessOnLogicWorker[0] = -1;
+  GameObject.entityTypeHasForcedLogicWorker = new Uint8Array(8);
+  GameObject.entityTypeForcedLogicWorkerCount = new Uint16Array(8);
+  Transform.active = new Uint8Array(1);
+
+  const freeListTopSAB = new SharedArrayBuffer(2 * Int32Array.BYTES_PER_ELEMENT);
+  const freeListTop = new Int32Array(freeListTopSAB);
+  const freeListLinks = new Uint16Array(1);
+  resetFreeList(freeListTop, freeListLinks, 1, 1);
+
+  ForcedForwardEntity.startIndex = 0;
+  ForcedForwardEntity.poolSize = 1;
+  ForcedForwardEntity.entityType = 0;
+  ForcedForwardEntity.freeList = freeListLinks;
+  ForcedForwardEntity.freeListTop = freeListTop;
+  ForcedForwardEntity.instances = [{ index: 0, _hasComponents: {} }];
+  ForcedForwardEntity._componentClassMap = {};
+
+  globalThis.self = {
+    logicWorker: {
+      workerIndex: 0,
+      totalLogicWorkers: 2,
+      sendDataToWorker(workerName, data) {
+        forwarded.push({ workerName, data });
+        return true;
+      },
+    },
+  };
+
+  try {
+    const spawned = GameObject.spawn(ForcedForwardEntity, { forceProcessOnLogicWorker: 1 });
+    assert.equal(spawned, null);
+    assert.equal(forwarded.length, 1);
+    assert.equal(forwarded[0].workerName, 'logic1');
+    assert.equal(forwarded[0].data.msg, 'spawn');
+    assert.equal(forwarded[0].data.entityIndex, 0);
+    assert.equal(GameObject.forceProcessOnLogicWorker[0], 1);
+  } finally {
+    GameObject.forceProcessOnLogicWorker = previousForce;
+    GameObject.entityTypeHasForcedLogicWorker = previousTypeFlag;
+    GameObject.entityTypeForcedLogicWorkerCount = previousTypeCount;
+    Transform.active = previousTransformActive;
+    if (previousSelf === undefined) delete globalThis.self;
+    else globalThis.self = previousSelf;
   }
 });

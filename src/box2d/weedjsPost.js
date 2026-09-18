@@ -137,6 +137,9 @@
   let jointCapacityWarn = false;
   let fixtureViews = null;
   let maxFixtures = 0;
+  // Lifetime = physics worker. Not a JS new Float32Array per fixture.
+  let polygonVertexHeapPointer = 0;
+  let polygonVertexHeapFloatIndex = 0;
   let pxChan = null;
   let pyChan = null;
   let rotChan = null;
@@ -512,6 +515,22 @@
     return area;
   }
 
+  function ensurePolygonVertexScratch() {
+    if (polygonVertexHeapPointer) return;
+    polygonVertexHeapPointer = Module._malloc(MAX_POLY_VERTS * 2 * 4);
+    polygonVertexHeapFloatIndex = polygonVertexHeapPointer >> 2;
+  }
+
+  function writePolygonToHeapScratch(srcX, srcY, base, count) {
+    ensurePolygonVertexScratch();
+    const heapBase = polygonVertexHeapFloatIndex;
+    for (let v = 0; v < count; v++) {
+      Module.HEAPF32[heapBase + v * 2] = srcX[base + v];
+      Module.HEAPF32[heapBase + v * 2 + 1] = srcY[base + v];
+    }
+    return polygonVertexHeapPointer;
+  }
+
   function addAllFixtures(entityIdx) {
     const F = fixtureViews;
     if (!F || !F.head || !bodyAddShapePolygonFn) return 0;
@@ -525,19 +544,10 @@
       if (F.active[cur]) {
         const count = F.vertCount[cur] | 0;
         if (count >= 3) {
-          const ptr = Module._malloc(count * 2 * 4);
-          try {
-            const heapBase = ptr >> 2;
-            const base = cur * MAX_POLY_VERTS;
-            for (let v = 0; v < count; v++) {
-              Module.HEAPF32[heapBase + v * 2] = F.vertexX[base + v];
-              Module.HEAPF32[heapBase + v * 2 + 1] = F.vertexY[base + v];
-            }
-            bodyAddShapePolygonFn(entityIdx, ptr, count, ox, oy);
-            n++;
-          } finally {
-            Module._free(ptr);
-          }
+          const base = cur * MAX_POLY_VERTS;
+          const ptr = writePolygonToHeapScratch(F.vertexX, F.vertexY, base, count);
+          bodyAddShapePolygonFn(entityIdx, ptr, count, ox, oy);
+          n++;
         }
       }
       cur = F.next[cur];
@@ -683,19 +693,13 @@
       }
     } else if (shape === ShapeType.Polygon) {
       const count = views.polyCount[i] | 0;
-      if (count < 3) return;
-      const ptr = Module._malloc(count * 2 * 4);
-      try {
-        const base = i * MAX_POLY_VERTS;
-        const heapBase = ptr >> 2;
-        for (let v = 0; v < count; v++) {
-          Module.HEAPF32[heapBase + v * 2] = views.polyVertexX[base + v];
-          Module.HEAPF32[heapBase + v * 2 + 1] = views.polyVertexY[base + v];
-        }
-        bodySetShapePolygonFn(i, ptr, count, offsetX, offsetY);
-      } finally {
-        Module._free(ptr);
+      if (count < 3) {
+        if (bodyClearShapesFn) bodyClearShapesFn(i);
+        return;
       }
+      const base = i * MAX_POLY_VERTS;
+      const ptr = writePolygonToHeapScratch(views.polyVertexX, views.polyVertexY, base, count);
+      bodySetShapePolygonFn(i, ptr, count, offsetX, offsetY);
     }
   }
 
@@ -2402,6 +2406,7 @@
       'number',
       'number',
     ]);
+    ensurePolygonVertexScratch();
     bodyAddShapePolygonFn = Module.cwrap('body_add_shape_polygon', null, [
       'number',
       'number',
@@ -2485,7 +2490,7 @@
       throw new Error('[weedjs-box2d] WEEDJS_INIT missing bodySync dirty buffers');
     }
     bindJointViews(data.jointViews, data.maxJoints | 0);
-    bindFixtureViews(data.fixtureViews, data.maxFixtures | 0);
+    bindFixtureViews(data.fixtureViews, data.maxFixturePoolSize | data.maxFixtures | 0);
     if (data.liquidFunViews) {
       liquidFunViews = {
         count: data.liquidFunViews.count

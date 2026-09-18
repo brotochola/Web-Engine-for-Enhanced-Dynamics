@@ -94,7 +94,12 @@ function validateSceneSharedBufferConfig(scene) {
   assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_ENTITIES);
   assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES);
   assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, MAX_ENTITIES);
-  assertIntegerInRange('physics.maxFixtures', config.physics.maxFixtures || 0, 0, MAX_ENTITIES);
+  assertIntegerInRange(
+    'physics.maxFixturePoolSize',
+    config.physics.maxFixturePoolSize || config.physics.maxFixtures || 0,
+    0,
+    MAX_ENTITIES,
+  );
   assertIntegerInRange('spatial.maxNeighbors', config.spatial.maxNeighbors, 0, MAX_ENTITIES);
   assertIntegerInRange('spatial.maxEntitiesPerCell', config.spatial.maxEntitiesPerCell, 1, 255);
 
@@ -155,16 +160,22 @@ function initializeCoreEntityAndComponentBuffers(scene) {
     buffers.nextTickData = new SharedArrayBuffer(totalEntityCount);
   }
 
-  buffers.logicWorkerData = new SharedArrayBuffer(totalEntityCount);
-  new Int8Array(buffers.logicWorkerData).fill(-1);
-  buffers.logicWorkerTypePin = new SharedArrayBuffer(GameObject.TYPE_PIN_COUNT);
+  buffers.forceProcessOnLogicWorkerData = new SharedArrayBuffer(totalEntityCount * 2);
+  new Int16Array(buffers.forceProcessOnLogicWorkerData).fill(-1);
+  buffers.entityTypeHasForcedLogicWorker = new SharedArrayBuffer(
+    GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT,
+  );
+  buffers.entityTypeForcedLogicWorkerCount = new SharedArrayBuffer(
+    GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT * 2,
+  );
 
   GameObject.initializeArrays(
     totalEntityCount,
     buffers.neighborData,
     buffers.nextTickData || null,
-    buffers.logicWorkerData,
-    buffers.logicWorkerTypePin
+    buffers.forceProcessOnLogicWorkerData,
+    buffers.entityTypeHasForcedLogicWorker,
+    buffers.entityTypeForcedLogicWorkerCount
   );
 
   for (const [componentName, pool] of Object.entries(componentPools)) {
@@ -610,21 +621,21 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
   }
 
   ColliderFixture.reset();
-  const maxFixtures = config.physics.maxFixtures || 0;
-  if (maxFixtures > 0) {
-    const fixtureBufferSize = ColliderFixture.getBufferSize(maxFixtures, totalEntityCount);
+  const maxFixturePoolSize = config.physics.maxFixturePoolSize || 0;
+  if (maxFixturePoolSize > 0) {
+    const fixtureBufferSize = ColliderFixture.getBufferSize(maxFixturePoolSize, totalEntityCount);
     buffers.colliderFixtureData = new SharedArrayBuffer(fixtureBufferSize);
-    ColliderFixture.initializeArrays(buffers.colliderFixtureData, maxFixtures, totalEntityCount);
+    ColliderFixture.initializeArrays(buffers.colliderFixtureData, maxFixturePoolSize, totalEntityCount);
 
     const { freeList, freeListTop } = createUint16FreeListBuffers(
       buffers,
       'colliderFixtureFreeList',
       'colliderFixtureFreeListTop',
-      maxFixtures
+      maxFixturePoolSize
     );
-    resetFreeList(freeListTop, freeList, maxFixtures, 1);
+    resetFreeList(freeListTop, freeList, maxFixturePoolSize, 1);
 
-    ColliderFixture.initialize(maxFixtures);
+    ColliderFixture.initialize(maxFixturePoolSize);
     ColliderFixture.initializeFreeList(
       buffers.colliderFixtureFreeList,
       buffers.colliderFixtureFreeListTop,
@@ -876,8 +887,9 @@ export function teardownSceneSharedState(scene) {
   }
 
   GameObject.activeEntitiesData = null;
-  GameObject.logicWorker = null;
-  GameObject.typeHasPin = null;
+  GameObject.forceProcessOnLogicWorker = null;
+  GameObject.entityTypeHasForcedLogicWorker = null;
+  GameObject.entityTypeForcedLogicWorkerCount = null;
   bindBodySyncBuffers(null);
   GameObject.instances = [];
   GameObject._globalAnimationCache = {};

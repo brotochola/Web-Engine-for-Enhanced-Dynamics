@@ -21,7 +21,7 @@ import { JointBreakListener } from '../components/jointBreakListener.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
 import { AbstractWorker } from './abstractWorker.js';
-import { logicOwner } from '../util/logicOwner.js';
+import { logicWorkerThatShouldTick } from '../util/logicOwner.js';
 
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
@@ -675,20 +675,31 @@ class LogicWorker extends AbstractWorker {
     // This is the common case for most entity types
     const nonDecimatedTypes = this.nonDecimatedTypes;
     const nonDecimatedCount = nonDecimatedTypes.length;
-    const pins = GameObject.logicWorker;
-    const typePin = GameObject.typeHasPin;
+    const forceProcessOnLogicWorker = GameObject.forceProcessOnLogicWorker;
+    const entityTypeHasForcedLogicWorker = GameObject.entityTypeHasForcedLogicWorker;
 
     for (let t = 0; t < nonDecimatedCount; t++) {
       const typeInfo = nonDecimatedTypes[t];
       const activeList = typeInfo.activeList;
       const count = Math.min(activeList[0], activeList.length - 1);
       const needsScreenCallbacks = typeInfo.needsScreenCallbacks;
-      const typePinned = !!(typePin && typePin[typeInfo.entityType]);
+      const typeForced = !!(
+        entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
+      );
 
-      if (typePinned && pins && totalWorkers > 1) {
+      if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
         for (let idx = 0; idx < count; idx++) {
           const entityIndex = activeList[1 + idx];
-          if (logicOwner(idx, entityIndex, totalWorkers, pins) !== myIndex) continue;
+          if (
+            logicWorkerThatShouldTick(
+              idx,
+              entityIndex,
+              totalWorkers,
+              forceProcessOnLogicWorker,
+            ) !== myIndex
+          ) {
+            continue;
+          }
           const n = this._tickNonDecimatedOne(
             entityIndex, dtRatio, deltaTime, accTime, frameNum,
             needsScreenCallbacks, transformActive, gameObjects,
@@ -727,12 +738,23 @@ class LogicWorker extends AbstractWorker {
         const count = Math.min(activeList[0], activeList.length - 1);
         const tickInterval = typeInfo.tickInterval; // Pre-cached, no prototype lookup
         const needsScreenCallbacks = typeInfo.needsScreenCallbacks;
-        const typePinned = !!(typePin && typePin[typeInfo.entityType]);
+        const typeForced = !!(
+          entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
+        );
 
-        if (typePinned && pins && totalWorkers > 1) {
+        if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
           for (let idx = 0; idx < count; idx++) {
             const entityIndex = activeList[1 + idx];
-            if (logicOwner(idx, entityIndex, totalWorkers, pins) !== myIndex) continue;
+            if (
+              logicWorkerThatShouldTick(
+                idx,
+                entityIndex,
+                totalWorkers,
+                forceProcessOnLogicWorker,
+              ) !== myIndex
+            ) {
+              continue;
+            }
             const n = this._tickDecimatedOne(
               entityIndex, dtRatio, deltaTime, accTime, frameNum,
               tickInterval, needsScreenCallbacks, transformActive, gameObjects,

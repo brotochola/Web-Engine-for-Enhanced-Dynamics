@@ -186,6 +186,7 @@ export class RigidBody extends Component {
     } else if (shapeType === ShapeType.Polygon) {
       const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[index] : 0;
       if (mass > 0) {
+        // Compound I is about body origin (0,0), not each polygon centroid.
         inertia = fixtureCount > 0
           ? ColliderFixture.inertiaAboutOrigin(index, mass)
           : Collider.polygonInertia(index, mass);

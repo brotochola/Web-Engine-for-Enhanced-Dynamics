@@ -786,7 +786,7 @@
 
     if (state.fixturesEnabled && state.fixtureViews) {
       var F = state.fixtureViews;
-      initPayload.maxFixtures = state.maxFixtures;
+      initPayload.maxFixturePoolSize = state.maxFixtures;
       initPayload.fixtureViews = {
         active: packView(F.active),
         entity: packView(F.entity),
@@ -1004,7 +1004,7 @@
 
     if (data.fixtures && data.fixtures.enabled) {
       state.fixturesEnabled = true;
-      state.maxFixtures = data.fixtures.maxFixtures | 0;
+      state.maxFixtures = data.fixtures.maxFixturePoolSize | data.fixtures.maxFixtures | 0;
       state.fixtureViews = bindFixtureViews(
         data.fixtures.data,
         state.maxFixtures,

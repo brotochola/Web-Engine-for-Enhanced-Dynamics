@@ -18,6 +18,7 @@ Engine-focused notes for the current `src/` architecture.
 | Collision layers | `32` (Uint32 bitmask) |
 | Audio mixer slots | `64` default (`maxSlots` param) |
 | Max rendering layers | `16` (`Layer.MAX_LAYERS`) |
+| ColliderFixture pool | `physics.maxFixturePoolSize` (global Uint16 slots, default `0`) |
 | Default custom layer maxItems | `5000` |
 | Audio playback rate range | `0.25..4` |
 | Sound ID type | `Int32` (index into per-name ID map) |
@@ -195,7 +196,9 @@ Some lifecycle callbacks are expensive to check every frame for every entity. Th
 
 Tag components have no `ARRAY_SCHEMA` and allocate no `SharedArrayBuffer`. They exist purely as a declaration in `static components`. The logic worker reads this once at startup and stores per-type flags. The hot loop checks these flags -- not per-entity, but per-type -- so the branch predictor handles it with near-zero overhead.
 
-**Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration — including `isCollidingWith()`). When at least one type has the tag, logic drains the Box2D **contact ring** (begin/end + sensors), keys every live pair (Cantor `min,max`) into a per-worker Set so `isCollidingWith()` works during `tick()`, and dispatches enter/stay/exit only when at least one side listens (`collisionListenerByType`). Callback ownership is partitioned by `minEntity % totalLogicWorkers`; Set population is not. Entities need an active `Collider` (Box2D body with a shape) to show up in the ring — Collider-only entities get an **implicit static** body; RigidBody-only (shapeless) bodies never generate contacts. Toggle at runtime with `this.collider.active` / `this.rigidBody.active` (see [PHYSICS.md](./PHYSICS.md#rigidbody--collider-composition)).
+**Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration — including `isCollidingWith()`). When at least one type has the tag, logic drains the Box2D **contact ring** (begin/end + sensors), keys every live pair (Cantor `min,max`) into a per-worker Set so `isCollidingWith()` works during `tick()`, and dispatches enter/stay/exit only when at least one side listens (`collisionListenerByType`). Callback ownership is partitioned by `minEntity % totalLogicWorkers`; Set population is not. Entities need an active `Collider` (Box2D body with a shape) to show up in the ring — Collider-only entities get an **implicit static** body; RigidBody-only (shapeless) bodies never generate contacts. Toggle at runtime with `this.collider.active` / `this.rigidBody.active` (see [PHYSICS.md](./PHYSICS.md#rigidbody--collider-composition)). Compound extras use `Collider.replacePolygons` / `replacePolygonsFlat` and `physics.maxFixturePoolSize`. Contacts stay entity-keyed. Light occluders stay primary-shape only.
+
+**Forced logic worker:** `static forceProcessOnLogicWorker = 1` (or the spawn field) makes `tick` / callbacks / `onSpawned` run only on that worker so a `SharedResource` has one writer. SoA is `GameObject.forceProcessOnLogicWorker` (`Int16`, −1 = stride). Not `this.logicWorker` (the API object).
 
 **Screen visibility:** resolved per-type on the `typeInfo` object. `preRenderWorker` clears `Transform.isItOnScreen` once per visual frame and each entity render pass sets it to `1` when that entity is visible. The logic worker reads that single canonical byte only for entity types that have `CameraInOutListener`, so the callback path does not need to know which render component made the entity visible.
 
@@ -527,7 +530,7 @@ static config = {
       zIndex: 0.5,
     },
     terrain: {
-      kind: LAYER_KIND.MESH,
+      kind: LAYER_KIND.MESH, // fixtures or primary box / polygon / display 8-gon
       zIndex: 2.9,
     },
   },

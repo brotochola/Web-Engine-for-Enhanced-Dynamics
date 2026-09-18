@@ -6,7 +6,7 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
-import { MeshRenderer, warnMeshRendererNeedsFixtures } from '../components/meshRenderer.js';
+import { MeshRenderer } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
@@ -19,7 +19,7 @@ import { Grid } from './grid.js';
 import { Joint } from './joint.js';
 import { ColliderFixture } from './colliderFixture.js';
 import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
-import { collectComponents, collisionPairKey, distanceSq2D } from '../util/utils.js';
+import { collectComponents, collisionPairKey, distanceSq2D, debugWorkerLog } from '../util/utils.js';
 import {
   resetFreeList,
   popFreeIndex,
@@ -56,7 +56,10 @@ import {
   markBodyDirty,
   withBodyDirtyDeferred,
 } from '../box2d/box2dBodySync.js';
-import { LOGIC_WORKER_UNPINNED, resolveLogicWorker } from '../util/logicOwner.js';
+import {
+  FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
+  resolveForceProcessOnLogicWorker,
+} from '../util/logicOwner.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
@@ -74,14 +77,20 @@ export class GameObject {
   // tickInterval = 10 means entity ticks every 10 frames (spread across frames via index offset)
   static tickInterval = 1; // Default: tick every frame (no decimation)
 
-  // Per-instance logic-worker pin. Number on a subclass is the spawn default.
-  // After initializeArrays, GameObject.logicWorker is the Int8 SoA (not a default).
-  static logicWorker = null;
+  /**
+   * After initializeArrays: Int16 per entity. Worker index that must run this
+   * entity’s logic. FORCE_PROCESS_ON_LOGIC_WORKER_NONE (−1) means do not force:
+   * use stride activeListSlot % logicWorkerCount. Not the LogicWorker instance.
+   */
+  static forceProcessOnLogicWorker = null;
 
-  /** Uint8 per entityType: 1 after any instance of that type was pinned. */
-  static typeHasPin = null;
+  /** 1 while any live instance of that entityType has a forced worker. */
+  static entityTypeHasForcedLogicWorker = null;
 
-  static TYPE_PIN_COUNT = 256;
+  /** Uint16 live forced-instance count per entityType. Flag is count > 0. */
+  static entityTypeForcedLogicWorkerCount = null;
+
+  static ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT = 256;
 
   /**
    * Particle worker fills `RigidBody.speed` for this entityType when true.
@@ -160,15 +169,17 @@ export class GameObject {
    * @param {number} count - Total number of entities
    * @param {SharedArrayBuffer} [neighborBuffer] - Neighbor data buffer from spatial worker
    * @param {SharedArrayBuffer} [nextTickBuffer] - Tick decimation countdown buffer (1 byte per entity)
-   * @param {SharedArrayBuffer} [logicWorkerBuffer] - Int8 pin per entity (-1 = unpinned)
-   * @param {SharedArrayBuffer} [typeHasPinBuffer] - Uint8 per entityType
+   * @param {SharedArrayBuffer} [forceProcessOnLogicWorkerBuffer] - Int16 per entity (−1 = not forced)
+   * @param {SharedArrayBuffer} [entityTypeHasForcedLogicWorkerBuffer] - Uint8 per entityType
+   * @param {SharedArrayBuffer} [entityTypeForcedLogicWorkerCountBuffer] - Uint16 per entityType
    */
   static initializeArrays(
     count,
     neighborBuffer = null,
     nextTickBuffer = null,
-    logicWorkerBuffer = null,
-    typeHasPinBuffer = null
+    forceProcessOnLogicWorkerBuffer = null,
+    entityTypeHasForcedLogicWorkerBuffer = null,
+    entityTypeForcedLogicWorkerCountBuffer = null
   ) {
     this.globalEntityCount = count;
 
@@ -183,25 +194,41 @@ export class GameObject {
       this.nextTick = new Uint8Array(nextTickBuffer);
     }
 
-    this.logicWorker = logicWorkerBuffer ? new Int8Array(logicWorkerBuffer) : null;
-    this.typeHasPin = typeHasPinBuffer ? new Uint8Array(typeHasPinBuffer) : null;
+    this.forceProcessOnLogicWorker = forceProcessOnLogicWorkerBuffer
+      ? new Int16Array(forceProcessOnLogicWorkerBuffer)
+      : null;
+    this.entityTypeHasForcedLogicWorker = entityTypeHasForcedLogicWorkerBuffer
+      ? new Uint8Array(entityTypeHasForcedLogicWorkerBuffer)
+      : null;
+    this.entityTypeForcedLogicWorkerCount = entityTypeForcedLogicWorkerCountBuffer
+      ? new Uint16Array(entityTypeForcedLogicWorkerCountBuffer)
+      : null;
   }
 
   /**
    * @param {number} entityIndex
    * @param {number} entityType
-   * @param {number} pin
+   * @param {number} workerIndex FORCE_PROCESS_ON_LOGIC_WORKER_NONE or 0..logicWorkerCount-1
    */
-  static writeLogicPin(entityIndex, entityType, pin) {
-    if (this.logicWorker) this.logicWorker[entityIndex] = pin;
-    if (
-      pin >= 0 &&
-      this.typeHasPin &&
-      entityType >= 0 &&
-      entityType < this.typeHasPin.length
-    ) {
-      this.typeHasPin[entityType] = 1;
+  static writeForceProcessOnLogicWorker(entityIndex, entityType, workerIndex) {
+    if (!this.forceProcessOnLogicWorker) return;
+    const next = workerIndex | 0;
+    const prev = this.forceProcessOnLogicWorker[entityIndex] | 0;
+    if (prev === next) return;
+    this.forceProcessOnLogicWorker[entityIndex] = next;
+
+    const counts = this.entityTypeForcedLogicWorkerCount;
+    const flags = this.entityTypeHasForcedLogicWorker;
+    if (!counts || entityType < 0 || entityType >= counts.length) {
+      if (next >= 0 && flags && entityType >= 0 && entityType < flags.length) {
+        flags[entityType] = 1;
+      }
+      return;
     }
+    if (prev >= 0 && counts[entityType] > 0) counts[entityType] = (counts[entityType] - 1) & 0xffff;
+    // ponytail: Uint16 count; 65535 live forced instances of one type is the ceiling.
+    if (next >= 0 && counts[entityType] < 0xffff) counts[entityType] = (counts[entityType] + 1) & 0xffff;
+    if (flags && entityType < flags.length) flags[entityType] = counts[entityType] > 0 ? 1 : 0;
   }
 
   // ===========================================================================
@@ -353,6 +380,7 @@ export class GameObject {
   constructor(index, config = {}, logicWorker = null, options = {}) {
     this.index = index;
     this.config = config;
+    // LogicWorker API object (postMessage, queues). Not forceProcessOnLogicWorker.
     this.logicWorker = logicWorker;
     this.bindToEntitySlot({ view: options.view === true });
   }
@@ -1870,7 +1898,7 @@ export class GameObject {
     // ========================================
     // Lock-free CAS push (Treiber stack) - safe against concurrent
     // spawns/despawns from any worker or the main thread
-    if (GameObject.logicWorker) GameObject.logicWorker[i] = LOGIC_WORKER_UNPINNED;
+    GameObject.writeForceProcessOnLogicWorker(i, entityType, FORCE_PROCESS_ON_LOGIC_WORKER_NONE);
 
     if (EntityClass.freeList && EntityClass.freeListTop) {
       pushFreeIndex(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
@@ -2202,30 +2230,38 @@ export class GameObject {
 
     instance._spawnAborted = false;
 
-    const requestedPin =
-      spawnConfig && typeof spawnConfig.logicWorker === 'number'
-        ? spawnConfig.logicWorker
-        : typeof EntityClass.logicWorker === 'number'
-          ? EntityClass.logicWorker
-          : LOGIC_WORKER_UNPINNED;
+    const requestedForceProcessOnLogicWorker =
+      spawnConfig && typeof spawnConfig.forceProcessOnLogicWorker === 'number'
+        ? spawnConfig.forceProcessOnLogicWorker
+        : typeof EntityClass.forceProcessOnLogicWorker === 'number'
+          ? EntityClass.forceProcessOnLogicWorker
+          : FORCE_PROCESS_ON_LOGIC_WORKER_NONE;
     const logicWorkerCtx = typeof self !== 'undefined' ? self.logicWorker : null;
     const totalLogic = logicWorkerCtx ? logicWorkerCtx.totalLogicWorkers : 1;
-    const pin = resolveLogicWorker(requestedPin, totalLogic);
-    GameObject.writeLogicPin(i, EntityClass.entityType, pin);
+    const forcedLogicWorker = resolveForceProcessOnLogicWorker(
+      requestedForceProcessOnLogicWorker,
+      totalLogic,
+    );
+    GameObject.writeForceProcessOnLogicWorker(i, EntityClass.entityType, forcedLogicWorker);
 
     if (
-      pin >= 0 &&
+      forcedLogicWorker >= 0 &&
       logicWorkerCtx &&
-      logicWorkerCtx.workerIndex !== pin &&
+      logicWorkerCtx.workerIndex !== forcedLogicWorker &&
       typeof logicWorkerCtx.sendDataToWorker === 'function'
     ) {
-      const sent = logicWorkerCtx.sendDataToWorker(`logic${pin}`, {
+      const sent = logicWorkerCtx.sendDataToWorker(`logic${forcedLogicWorker}`, {
         msg: 'spawn',
         className: EntityClass.name,
         spawnConfig,
         entityIndex: i,
       });
-      if (sent) return instance;
+      if (sent) {
+        debugWorkerLog(
+          `GameObject.spawn: forwarded ${EntityClass.name}[${i}] to logic${forcedLogicWorker}; caller must not use a half-built instance`,
+        );
+        return null;
+      }
     }
 
     // ========================================
@@ -2330,9 +2366,6 @@ export class GameObject {
       MeshRenderer.renderVisible[i] = 1;
       MeshRenderer.layerMask[i] = 0;
       MeshRenderer.renderDirty[i] = 1;
-      if (!ColliderFixture.initialized || (ColliderFixture.maxCount | 0) === 0) {
-        warnMeshRendererNeedsFixtures();
-      }
     }
 
     if (has.SpriteRenderer) {
@@ -2406,7 +2439,7 @@ export class GameObject {
           key === 'radius' ||
           key === 'layer' ||
           key === 'layers' ||
-          key === 'logicWorker'
+          key === 'forceProcessOnLogicWorker'
         ) {
           continue;
         }
@@ -2474,7 +2507,7 @@ export class GameObject {
       if (has.Collider) Collider.active[i] = 0;
       if (has.MeshRenderer) MeshRenderer.active[i] = 0;
       if (has.SpriteRenderer) SpriteRenderer.active[i] = 0;
-      if (GameObject.logicWorker) GameObject.logicWorker[i] = LOGIC_WORKER_UNPINNED;
+      GameObject.writeForceProcessOnLogicWorker(i, EntityClass.entityType, FORCE_PROCESS_ON_LOGIC_WORKER_NONE);
       if (EntityClass.freeList && EntityClass.freeListTop) {
         pushFreeIndex(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
       }
@@ -2649,7 +2682,7 @@ export class GameObject {
 
         // Deactivate all component active flags
         transformActive[i] = 0;
-        if (GameObject.logicWorker) GameObject.logicWorker[i] = LOGIC_WORKER_UNPINNED;
+        GameObject.writeForceProcessOnLogicWorker(i, EntityClass.entityType, FORCE_PROCESS_ON_LOGIC_WORKER_NONE);
         if (rigidBodyActive) rigidBodyActive[i] = 0;
         if (rigidBodySleeping) rigidBodySleeping[i] = 0;
         if (colliderActive) colliderActive[i] = 0;

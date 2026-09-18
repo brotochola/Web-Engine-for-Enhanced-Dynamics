@@ -880,22 +880,35 @@ export class Ray {
       if (fixtureCount > 0 && ColliderFixture.active) {
         let best = -1;
         let bestFi = -1;
-        ColliderFixture.forEach(entityIndex, (fi) => {
-          const count = ColliderFixture.vertCount[fi] | 0;
-          if (count < 3) return;
-          const base = ColliderFixture.vertBase(fi);
-          const d = rayPolygonIntersect(
-            rayX, rayY, dirX, dirY,
-            entityX, entityY, c, s,
-            ColliderFixture.vertexX, ColliderFixture.vertexY,
-            ColliderFixture.normalX, ColliderFixture.normalY,
-            count, base, rayLength
-          );
-          if (d >= 0 && (best < 0 || d < best)) {
-            best = d;
-            bestFi = fi;
+        const fxActive = ColliderFixture.active;
+        const fxNext = ColliderFixture.next;
+        const fxVertCount = ColliderFixture.vertCount;
+        const vx = ColliderFixture.vertexX;
+        const vy = ColliderFixture.vertexY;
+        const nx = ColliderFixture.normalX;
+        const ny = ColliderFixture.normalY;
+        const fxMax = ColliderFixture.maxCount | 0;
+        let fi = ColliderFixture.headOf(entityIndex);
+        let guard = 0;
+        while (fi !== 0xffff && guard++ < fxMax) {
+          if (fxActive[fi]) {
+            const count = fxVertCount[fi] | 0;
+            if (count >= 3) {
+              const base = fi * MAX_POLYGON_VERTICES;
+              const d = rayPolygonIntersect(
+                rayX, rayY, dirX, dirY,
+                entityX, entityY, c, s,
+                vx, vy, nx, ny,
+                count, base, rayLength
+              );
+              if (d >= 0 && (best < 0 || d < best)) {
+                best = d;
+                bestFi = fi;
+              }
+            }
           }
-        });
+          fi = fxNext[fi];
+        }
         Ray._lastFixtureIndex = bestFi;
         return best;
       }

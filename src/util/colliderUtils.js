@@ -56,33 +56,22 @@ export function getColliderBounds(idx, result) {
     const originY = ty + s * ox + c * oy;
 
     const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[idx] : 0;
-    if (fixtureCount > 0 && ColliderFixture.active) {
+    if (fixtureCount > 0) {
+      // Cheap OBB for spatial cells only. Local AABB from replacePolygons
+      // (Collider.width/height + polyCentroid) plus the same ac/as expansion
+      // as the box path. Ray and pointInCollider still walk fixtures.
       const skin = Collider.radius[idx] || 0;
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minY = Infinity;
-      let maxY = -Infinity;
-      ColliderFixture.forEach(idx, (fi) => {
-        const count = ColliderFixture.vertCount[fi] | 0;
-        const base = ColliderFixture.vertBase(fi);
-        const vx = ColliderFixture.vertexX;
-        const vy = ColliderFixture.vertexY;
-        for (let i = 0; i < count; i++) {
-          const wx = originX + c * vx[base + i] - s * vy[base + i];
-          const wy = originY + s * vx[base + i] + c * vy[base + i];
-          if (wx < minX) minX = wx;
-          if (wx > maxX) maxX = wx;
-          if (wy < minY) minY = wy;
-          if (wy > maxY) maxY = wy;
-        }
-      });
-      if (minX !== Infinity) {
-        result.posX = (minX + maxX) * 0.5;
-        result.posY = (minY + maxY) * 0.5;
-        result.halfW = (maxX - minX) * 0.5 + skin;
-        result.halfH = (maxY - minY) * 0.5 + skin;
-        return result;
-      }
+      const lcx = Collider.polyCentroidX ? Collider.polyCentroidX[idx] : 0;
+      const lcy = Collider.polyCentroidY ? Collider.polyCentroidY[idx] : 0;
+      result.posX = originX + c * lcx - s * lcy;
+      result.posY = originY + s * lcx + c * lcy;
+      const hw = (Collider.width[idx] || 0) * 0.5;
+      const hh = (Collider.height[idx] || 0) * 0.5;
+      const ac = c < 0 ? -c : c;
+      const as = s < 0 ? -s : s;
+      result.halfW = ac * hw + as * hh + skin;
+      result.halfH = as * hw + ac * hh + skin;
+      return result;
     }
 
     const count = Collider.polyCount[idx];
@@ -174,30 +163,42 @@ export function pointInCollider(idx, x, y) {
   if (shape === SHAPE_POLYGON) {
     const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[idx] : 0;
     if (fixtureCount > 0 && ColliderFixture.active) {
-      let hit = false;
-      ColliderFixture.forEach(idx, (fi) => {
-        if (hit) return;
-        const count = ColliderFixture.vertCount[fi] | 0;
-        if (count < 3) return;
-        const base = ColliderFixture.vertBase(fi);
-        const vx = ColliderFixture.vertexX;
-        const vy = ColliderFixture.vertexY;
-        let sign = 0;
-        for (let i = 0; i < count; i++) {
-          const x0 = vx[base + i];
-          const y0 = vy[base + i];
-          const i1 = (i + 1) % count;
-          const x1 = vx[base + i1];
-          const y1 = vy[base + i1];
-          const cross = (x1 - x0) * (ly - y0) - (y1 - y0) * (lx - x0);
-          if (cross === 0) continue;
-          const next = cross > 0 ? 1 : -1;
-          if (sign === 0) sign = next;
-          else if (next !== sign) return;
+      const fxActive = ColliderFixture.active;
+      const fxNext = ColliderFixture.next;
+      const fxVertCount = ColliderFixture.vertCount;
+      const vx = ColliderFixture.vertexX;
+      const vy = ColliderFixture.vertexY;
+      const fxMax = ColliderFixture.maxCount | 0;
+      let fi = ColliderFixture.headOf(idx);
+      let guard = 0;
+      while (fi !== 0xffff && guard++ < fxMax) {
+        if (fxActive[fi]) {
+          const count = fxVertCount[fi] | 0;
+          if (count >= 3) {
+            const base = fi * MAX_POLYGON_VERTICES;
+            let sign = 0;
+            let inside = true;
+            for (let i = 0; i < count; i++) {
+              const x0 = vx[base + i];
+              const y0 = vy[base + i];
+              const i1 = i + 1 < count ? i + 1 : 0;
+              const x1 = vx[base + i1];
+              const y1 = vy[base + i1];
+              const cross = (x1 - x0) * (ly - y0) - (y1 - y0) * (lx - x0);
+              if (cross === 0) continue;
+              const next = cross > 0 ? 1 : -1;
+              if (sign === 0) sign = next;
+              else if (next !== sign) {
+                inside = false;
+                break;
+              }
+            }
+            if (inside && sign !== 0) return true;
+          }
         }
-        if (sign !== 0) hit = true;
-      });
-      return hit;
+        fi = fxNext[fi];
+      }
+      return false;
     }
     const count = Collider.polyCount[idx] | 0;
     if (count < 3) return false;

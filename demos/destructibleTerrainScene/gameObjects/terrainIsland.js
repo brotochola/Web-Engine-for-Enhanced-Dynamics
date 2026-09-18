@@ -16,6 +16,29 @@ const MIN_KEEP_AREA = CELL * CELL;
 const _scratchVerts = [];
 const _scratchCS = { c: 1, s: 0 };
 const _scratchLocal = { x: 0, y: 0 };
+const _flatPack = { xy: new Float32Array(256), counts: new Uint8Array(32) };
+
+function applyPolysFlat(collider, polys) {
+  if (!polys || !polys.length) return false;
+  const n = polys.length;
+  if (_flatPack.counts.length < n) _flatPack.counts = new Uint8Array(n);
+  let floats = 0;
+  for (let i = 0; i < n; i++) {
+    const c = polys[i].length | 0;
+    _flatPack.counts[i] = c;
+    floats += c * 2;
+  }
+  if (_flatPack.xy.length < floats) _flatPack.xy = new Float32Array(floats);
+  let o = 0;
+  for (let i = 0; i < n; i++) {
+    const p = polys[i];
+    for (let v = 0; v < p.length; v++) {
+      _flatPack.xy[o++] = p[v].x;
+      _flatPack.xy[o++] = p[v].y;
+    }
+  }
+  return collider.replacePolygonsFlat(_flatPack.xy, _flatPack.counts, n);
+}
 
 export class TerrainIsland extends GameObject {
   static scriptUrl = import.meta.url;
@@ -37,7 +60,7 @@ export class TerrainIsland extends GameObject {
     if (!spawnConfig.isStatic) this.rigidBody.sleepThreshold = 25;
 
     const polys = spawnConfig.polys;
-    if (!polys || !polys.length || !this.collider.replacePolygons(polys)) {
+    if (!polys || !polys.length || !applyPolysFlat(this.collider, polys)) {
       this.despawn();
       return;
     }
@@ -57,7 +80,7 @@ export class TerrainIsland extends GameObject {
   retarget(x, y, local) {
     this.x = x;
     this.y = y;
-    if (!local || !local.length || !this.collider.replacePolygons(local)) return false;
+    if (!local || !local.length || !applyPolysFlat(this.collider, local)) return false;
     if (MeshRenderer.renderDirty) MeshRenderer.renderDirty[this.index] = 1;
     this._refreshVisualRange();
     return true;
@@ -126,7 +149,7 @@ export class TerrainIsland extends GameObject {
       TerrainIsland.spawnIslandFromWorldPolys(world, tint, vx0, vy0);
     }
 
-    if (!this.collider.replacePolygons(islands[best])) {
+    if (!applyPolysFlat(this.collider, islands[best])) {
       this.despawn();
       return;
     }

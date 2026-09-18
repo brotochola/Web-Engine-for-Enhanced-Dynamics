@@ -149,6 +149,11 @@ export {
   CAMERA_TYPES,
   PARTICLE_EASE,
 } from './util/configDefaults.js';
+export {
+  FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
+  resolveForceProcessOnLogicWorker,
+  logicWorkerThatShouldTick,
+} from './util/logicOwner.js';
 
 // ============================================================================
 // WEED NAMESPACE - PIXI-style usage 🌿
@@ -263,6 +268,11 @@ import {
   CAMERA_TYPES,
   PARTICLE_EASE,
 } from './util/configDefaults.js';
+import {
+  FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
+  resolveForceProcessOnLogicWorker,
+  logicWorkerThatShouldTick,
+} from './util/logicOwner.js';
 
 const enums = Object.freeze({
   ShapeType,
@@ -393,6 +403,10 @@ const WEED = Object.freeze({
 
   // Flashes
   Flash,
+
+  FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
+  resolveForceProcessOnLogicWorker,
+  logicWorkerThatShouldTick,
 
   // Public utility helpers
   mixSeed,

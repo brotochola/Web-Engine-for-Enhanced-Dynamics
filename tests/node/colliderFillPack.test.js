@@ -9,7 +9,7 @@ import {
   COLLIDER_FILL_FLOATS,
   resetColliderFillMeshLayerWarn,
 } from '../../src/render/colliderFillBatch.js';
-import { resetMeshRendererFixtureWarn, warnMeshRendererNeedsFixtures } from '../../src/components/meshRenderer.js';
+import { resetMeshRendererDrawableWarn, warnMeshRendererNeedsDrawableCollider } from '../../src/components/meshRenderer.js';
 import { Collider } from '../../src/components/collider.js';
 
 const INV = 0xffff;
@@ -39,6 +39,13 @@ function makeViews({ entities, fixtures }) {
     offsetY: new Float32Array(n),
     meshBits: 1,
     maxFixtures: fx,
+    primaryShapeType: new Uint8Array(n),
+    primaryPolyCount: new Uint8Array(n),
+    primaryPolyVertexX: new Float32Array(n * 8),
+    primaryPolyVertexY: new Float32Array(n * 8),
+    primaryWidth: new Float32Array(n),
+    primaryHeight: new Float32Array(n),
+    primaryRadius: new Float32Array(n),
   };
   views.meshVisible.fill(1);
   views.meshAlpha.fill(1);
@@ -147,19 +154,19 @@ test('packer skips spawn-in-progress MeshRenderer (active, no layer, no fixtures
   }
 });
 
-test('MeshRenderer warns once when maxFixtures is 0', () => {
-  resetMeshRendererFixtureWarn();
+test('MeshRenderer warns once when collider is not drawable', () => {
+  resetMeshRendererDrawableWarn();
   const warnings = [];
   const prev = console.warn;
   console.warn = (msg) => warnings.push(String(msg));
   try {
-    warnMeshRendererNeedsFixtures();
-    warnMeshRendererNeedsFixtures();
+    warnMeshRendererNeedsDrawableCollider();
+    warnMeshRendererNeedsDrawableCollider();
     assert.equal(warnings.length, 1);
-    assert.match(warnings[0], /WeedJS: MeshRenderer requires physics.maxFixtures > 0/);
+    assert.match(warnings[0], /WeedJS: MeshRenderer has no drawable collider/);
   } finally {
     console.warn = prev;
-    resetMeshRendererFixtureWarn();
+    resetMeshRendererDrawableWarn();
   }
 });
 

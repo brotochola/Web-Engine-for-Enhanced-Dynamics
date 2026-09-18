@@ -116,7 +116,23 @@ export interface DefaultLayerEntry {
 export const DEFAULT_LAYERS: Readonly<Record<string, DefaultLayerEntry>>;
 export const CAMERA_TYPES: Readonly<Record<string, number>>;
 
-export type SpawnConfig = Record<string, unknown>;
+export type SpawnConfig = Record<string, unknown> & {
+  /** Worker index that must run this entity’s logic. Omit or −1 to keep stride. */
+  forceProcessOnLogicWorker?: number;
+};
+
+/** Do not force this entity onto one worker: use stride `activeListSlot % logicWorkerCount`. */
+export const FORCE_PROCESS_ON_LOGIC_WORKER_NONE: -1;
+export function resolveForceProcessOnLogicWorker(
+  requestedWorkerIndex: number,
+  logicWorkerCount: number,
+): number;
+export function logicWorkerThatShouldTick(
+  activeListSlot: number,
+  entityIndex: number,
+  logicWorkerCount: number,
+  forceProcessOnLogicWorker: Int16Array,
+): number;
 
 export interface GameEngineConfig {
   autoResize?: boolean;
@@ -239,7 +255,14 @@ export type SceneEntityDefinitionTuple = [typeof GameObject, number];
 export type SceneQueryTuple = readonly (typeof Component)[];
 
 /** Merged runtime scene config (static defaults + `Scene.config` + nested worker blocks). */
-export type SceneConfig = Record<string, unknown>;
+export type SceneConfig = Record<string, unknown> & {
+  physics?: Record<string, unknown> & {
+    /** Global ColliderFixture slot count for the scene (not per body). */
+    maxFixturePoolSize?: number;
+    /** @deprecated one-release alias of maxFixturePoolSize */
+    maxFixtures?: number;
+  };
+};
 
 export interface DebugFlagConstants {
   readonly SHOW_COLLIDERS: 0;
@@ -363,6 +386,8 @@ export interface RayHitInfo {
   distance: number;
   hitX: number;
   hitY: number;
+  /** ColliderFixture index, or −1 when the hit is the primary shape. */
+  fixtureIndex?: number;
 }
 
 export interface RayLinecastResult {
@@ -376,6 +401,7 @@ export interface RayMultiHitEntry {
   distance: number;
   hitX: number;
   hitY: number;
+  fixtureIndex?: number;
 }
 
 export interface NavGridSABConfig {
@@ -851,6 +877,21 @@ export declare class Component {
   static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
 }
 
+/**
+ * One SAB of world data per class (not SoA × entityCount).
+ * Scene.static.sharedResources binds it. Workers need static scriptUrl.
+ */
+export declare class SharedResource {
+  static scriptUrl: string | null;
+  static sharedBuffer: SharedArrayBuffer | null;
+  static initialize(buffer: SharedArrayBuffer, schema: Record<string, unknown>): void;
+  static schemaFor(schema: Record<string, unknown>): Record<string, unknown>;
+  static bindFromInit(
+    entries: Array<{ className?: string; scriptUrl?: string; buffer: SharedArrayBuffer; schema: Record<string, unknown> }>,
+    scope?: unknown,
+  ): void;
+}
+
 export declare class GameObject {
   static startIndex: number;
   static poolSize: number;
@@ -860,6 +901,19 @@ export declare class GameObject {
    * Scene gate skips the hypot loop if no registered type opts in.
    */
   static deriveSpeed: boolean;
+  /**
+   * After initializeArrays: Int16 per entity. Worker index that must run this
+   * entity’s logic. FORCE_PROCESS_ON_LOGIC_WORKER_NONE (−1) means stride.
+   * Not the LogicWorker instance (`this.logicWorker`).
+   */
+  static forceProcessOnLogicWorker: Int16Array | null;
+  static entityTypeHasForcedLogicWorker: Uint8Array | null;
+  static entityTypeForcedLogicWorkerCount: Uint16Array | null;
+  static writeForceProcessOnLogicWorker(
+    entityIndex: number,
+    entityType: number,
+    workerIndex: number,
+  ): void;
   static entityType: number | null;
   static scene: Scene | null;
   static instances: GameObject[];
@@ -1118,13 +1172,21 @@ export declare class Box2d {
     out?: unknown,
     filter?: unknown,
   ): Promise<unknown>;
-  static explode(opts: {
-    x: number;
-    y: number;
-    radius: number;
-    impulsePerLength: number;
-    maskBits?: number;
-  }): void;
+  static explode(
+    optsOrX:
+      | {
+          x: number;
+          y: number;
+          radius: number;
+          impulsePerLength: number;
+          maskBits?: number;
+        }
+      | number,
+    y?: number,
+    radius?: number,
+    impulsePerLength?: number,
+    maskBits?: number,
+  ): void;
   static getMovedBodies(): {
     list: Uint32Array;
     count: number;
@@ -1153,6 +1215,7 @@ export declare class Scene {
   static assets: SceneAssetsManifest;
   static audios: string[];
   static entities: SceneEntityDefinitionTuple[];
+  static sharedResources: Array<[typeof SharedResource, Record<string, unknown>]>;
   static queries: SceneQueryTuple[];
   game: GameEngine;
   loadedTextures: unknown;
@@ -2597,12 +2660,44 @@ export declare class Collider extends Component {
     index: number,
     polys: Array<ArrayLike<{ x: number; y: number } | number>>,
   ): boolean;
+  static replacePolygonsFlat(
+    index: number,
+    vertexXY: Float32Array | ArrayLike<number>,
+    vertexCounts: Uint8Array | ArrayLike<number>,
+    polygonCount: number,
+  ): boolean;
   static clearFixtures(index: number): void;
   static fixtureCount: Uint16Array;
   makePolygon(points: ArrayLike<{ x: number; y: number } | number> | number[]): boolean;
   replacePolygons(polys: Array<ArrayLike<{ x: number; y: number } | number>>): boolean;
+  replacePolygonsFlat(
+    vertexXY: Float32Array | ArrayLike<number>,
+    vertexCounts: Uint8Array | ArrayLike<number>,
+    polygonCount: number,
+  ): boolean;
   clearFixtures(): void;
   get fixtureCount(): number;
+}
+
+/**
+ * Extra convex shapes on one entity's Box2D body.
+ * Pool size is scene physics.maxFixturePoolSize (global slots, not per body).
+ */
+export declare class ColliderFixture {
+  static readonly INVALID_INDEX: number;
+  static readonly poolName: string;
+  static active: Uint8Array | null;
+  static entity: Uint16Array | null;
+  static next: Uint16Array | null;
+  static vertCount: Uint8Array | null;
+  static vertexX: Float32Array | null;
+  static vertexY: Float32Array | null;
+  static head: Uint16Array | null;
+  static revision: Uint32Array | null;
+  static lastReplaceError: { code: string; entityIndex: number; polyIndex: number };
+  static forEach(entityIdx: number, fn: (idx: number) => boolean | void): void;
+  static headOf(entityIdx: number): number;
+  static vertBase(idx: number): number;
 }
 
 export declare class MeshRenderer extends Component {
@@ -3511,6 +3606,11 @@ export interface WeedNamespace extends WeedEnums {
   BulletPool: typeof BulletPool;
   BulletComponent: typeof BulletComponent;
   Joint: typeof Joint;
+  SharedResource: typeof SharedResource;
+  ColliderFixture: typeof ColliderFixture;
+  FORCE_PROCESS_ON_LOGIC_WORKER_NONE: typeof FORCE_PROCESS_ON_LOGIC_WORKER_NONE;
+  resolveForceProcessOnLogicWorker: typeof resolveForceProcessOnLogicWorker;
+  logicWorkerThatShouldTick: typeof logicWorkerThatShouldTick;
   SharedAtomicPool: typeof SharedAtomicPool;
   Flash: typeof Flash;
   containerRadius: typeof import('./utils').containerRadius;

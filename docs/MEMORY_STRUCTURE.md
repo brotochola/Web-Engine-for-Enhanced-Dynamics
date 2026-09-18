@@ -33,7 +33,7 @@ all X values packed together, then all Y values, etc. No per-entity objects on t
 | **RigidBody**           | SoA: `active`, `static`, `fixedRotation` (Uint8); `ax`, `ay`, `px`, `py`, `pRotation`, `angularAccel`, `mass`, `invMass`, `inertia`, `invInertia`, `linearDamping`, `angularDamping`, `speed`, `sleepThreshold`. HEAP-only: `vx`, `vy`, `angularVelocity`, `sleeping`. `px/py/pRotation` = prev sim pose (snapshot before `world.step`). |
 | **Collider**            | `active`, `shapeType` (0=Box, 1=Circle, 2=Polygon — WASM C), `isTrigger` (Uint8); `offsetX`, `offsetY`, `radius`, `width`, `height`, `visualRange`, `friction` (Float32; Box2D fixture μ, pair = min); `polyCount` (Uint8); `polyCentroidX/Y` (Float32); strided `polyVertexX/Y`, `polyNormalX/Y` (length entityCount×8); `collisionLayer` (Uint8, index 0-31); `collisionMask` (Uint32, bitmask -- 32 collision layers max); `collisionGroupIndex` (Int32, Box2D-style group: 0 = layer/mask only, same negative = never collide, same positive = always collide); `layerMask` (Uint16, bit i = Layer.id); `feedBits` (Uint8, opaque compute flags); `fixtureCount` (Uint16, compound extras). Physics host `COLLIDER_SCHEMA` in `physicsHostImpl.js` must list the same keys in order — otherwise `createBody` never sees fixtures. |
 | **SpriteRenderer**      | `active`, `textureId`, animation fields, flip flags, etc.                                                                                                                                                                                                                                                                                   |
-| **MeshRenderer**        | `active`, `tint` (Uint32 0xRRGGBB), `alpha` (Float32), `layerMask` (Uint16, bit = Layer.id), `renderVisible`, `renderDirty`. Fill of `ColliderFixture` fans on `LAYER_KIND.MESH`. |
+| **MeshRenderer**        | `active`, `tint` (Uint32 0xRRGGBB), `alpha` (Float32), `layerMask` (Uint16, bit = Layer.id), `renderVisible`, `renderDirty`. Fill of `ColliderFixture` fans **or** the primary box / makePolygon / display 8-gon on `LAYER_KIND.MESH`. |
 | **ParticleComponent**   | `active`, `x`, `y`, `z`, `vx`, `vy`, `vz`, `lifespan`, `currentLife`, `gravity`, `scaleX/Y`, `alpha`, `tint`, `baseTint`, `textureId`, `rotation`, `flipX/Y`, `fadeOnTheFloor`, `timeOnFloor`, `initialAlpha`, `stayOnTheFloor`, `despawnOnGroundContact`, `alpha: { from, to: 0 }`, `isItOnScreen`, `blendMode` (mixed Uint8/Uint16/Float32/Uint32) |
 | **DecorationComponent** | `active`, `x`, `y`, `offsetX/Y`, `textureId`, `scaleX/Y`, `baseRotation`, `rotation`, `alpha`, `tint`, `anchorX/Y`, `isItOnScreen`, `sway`, `swayAmplitude`, `swayFrequency`                                                                                                                                                                |
 | **BulletComponent**     | `active`, `startX/Y`, `trailWidth`, `x`, `y`, `prevX/Y`, `vx`, `vy`, `bulletAngle`, `damage`, `ownerId`, `shooterEntityType`, `textureId`, `scale`, `alpha`, `tint`, `spriteRotation`, `anchorX/Y`, `offsetY`, `isItOnScreen`                                                                                                               |
@@ -61,7 +61,7 @@ Bare ctor = length 1. `WorldGrid.cells` **is** the TypedArray (`WorldGrid.cells[
 | --- | --- |
 | Whoever the scene says (typically logic `tick` or `scene.update`) | All threads that imported the class |
 
-`static scriptUrl` on the subclass so workers `import()` it; otherwise `WorldGrid.cells` stays null in logic.
+`static scriptUrl` on the subclass so workers `import()` it. Scene init **throws** if the class is missing after `scriptUrl` (`bindFromInit`). Pin the single writer with `forceProcessOnLogicWorker` (Int16 SoA; `FORCE_PROCESS_ON_LOGIC_WORKER_NONE` = −1). `entityTypeForcedLogicWorkerCount` (Uint16 per type) drives `entityTypeHasForcedLogicWorker` so a type can return to stride when the last forced instance despawns.
 
 ---
 
@@ -189,7 +189,7 @@ Box2D still writes begin/end into WASM HEAP buffers each step. Nested `weedjsPos
 
 ### `colliderFixtureData`
 
-Pool of extra convex shapes on a body (`physics.maxFixtures`). Layout: `ColliderFixture.getBufferSize(maxFixtures, entityCount)` — active, entity, next, vertCount, verts/normals (stride 8), `head[entity]`, revision.
+Global pool of extra convex shapes (`physics.maxFixturePoolSize`, not per body). Layout: `ColliderFixture.getBufferSize(maxFixturePoolSize, entityCount)` — active, entity, next, vertCount, verts/normals (stride 8), `head[entity]`, revision.
 
 ### `colliderFixtureFreeList` / `colliderFixtureFreeListTop`
 
@@ -197,7 +197,7 @@ Same Treiber stack as joints.
 
 | Writer | Reader |
 | ------ | ------ |
-| Logic (`replacePolygons`) | Physics host, pixi fill, spatial / Ray / debug |
+| Logic (`replacePolygons` / `replacePolygonsFlat`) | Physics host, pixi fill, spatial / Ray / debug |
 
 ---
 
@@ -624,6 +624,9 @@ The worklet stores assets in a `Map<id, { ch, len, nCh }>`. Only slot state trav
 | `sunData`          | 64 bytes                    | Mixed Uint8/Float32/Uint32 (see `Sun.OFFSETS`)                                         | Main thread               | All workers               |
 | `syncData`         | 20 bytes (5 × Int32)        | `Int32Array[5]`                                                                        | Main thread               | All workers               |
 | `nextTickData`     | `totalEntityCount` bytes    | 1 byte/entity (tick decimation countdown)                                              | Logic workers             | Logic workers             |
+| `forceProcessOnLogicWorkerData` | `totalEntityCount * 2` | Int16 per entity; −1 = stride `slot % workerCount` | Logic spawn/despawn | Logic tick |
+| `entityTypeHasForcedLogicWorker` | 256 bytes | Uint8 flag per entityType; 1 while any live instance is forced | Logic spawn/despawn | Logic tick |
+| `entityTypeForcedLogicWorkerCount` | 512 bytes | Uint16 live forced count per entityType | Logic spawn/despawn | Logic (via the flag) |
 
 ---
 

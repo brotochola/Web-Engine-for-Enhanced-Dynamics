@@ -467,8 +467,9 @@ export class AbstractWorker {
       this.globalEntityCount,
       data.buffers?.neighborData,
       data.buffers?.nextTickData,
-      data.buffers?.logicWorkerData,
-      data.buffers?.logicWorkerTypePin
+      data.buffers?.forceProcessOnLogicWorkerData,
+      data.buffers?.entityTypeHasForcedLogicWorker,
+      data.buffers?.entityTypeForcedLogicWorkerCount
     );
 
     // Initialize ParticleComponent arrays (separate particle pool system)
@@ -606,14 +607,16 @@ export class AbstractWorker {
     }
 
     if (data.fixtures && data.fixtures.enabled) {
+      const maxFixturePoolSize =
+        data.fixtures.maxFixturePoolSize | data.fixtures.maxFixtures | 0;
       ColliderFixture.initializeArrays(
         data.fixtures.data,
-        data.fixtures.maxFixtures,
+        maxFixturePoolSize,
         data.fixtures.entityCount || 0
       );
-      ColliderFixture.initialize(data.fixtures.maxFixtures);
+      ColliderFixture.initialize(maxFixturePoolSize);
       ColliderFixture.initializeFreeList(data.fixtures.freeList, data.fixtures.freeListTop);
-      this.reportLog(`initialized ColliderFixture pool for ${data.fixtures.maxFixtures} fixtures`);
+      this.reportLog(`initialized ColliderFixture pool for ${maxFixturePoolSize} fixtures`);
     }
 
     // Initialize particle compact lists (for optimized iteration)
