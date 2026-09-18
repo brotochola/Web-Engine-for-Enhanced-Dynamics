@@ -9,22 +9,32 @@ import { Mouse } from './mouse.js';
 
 /**
  * Static Camera class for managing viewport state
- * Camera data is stored in a SharedArrayBuffer Float32Array[6]:
- * [zoom, x, y, followTargetX, followTargetY, targetZoom]
+ * Camera data is stored in a SharedArrayBuffer Float32Array[9]:
+ * [zoom, x, y, followTargetX, followTargetY, targetZoom,
+ *  followEntityIndex, followUsedX, followUsedY]
+ *
+ * followEntityIndex is 0 = none, else entityIndex+1 (0 is a valid entity).
+ * followUsedX/Y are the entity pose xy followEntity read (not look-ahead).
+ * Pre_render slides the queue camera by (latchedPose - followUsed) so the
+ * packed sprite and camera share one pose generation.
  *
  * Recommended threading model:
  * - Single writer for Camera.follow/centerOn/setPosition/setZoom
  * - Multiple readers in pre_render, pixi, main thread UI/debug
  */
 export class Camera {
-  // SharedArrayBuffer view: Float32Array [zoom, x, y, followTargetX, followTargetY, targetZoom]
+  // SharedArrayBuffer view: Float32Array[9]
   static _data = null;
+  static FLOAT_COUNT = 9;
   static IDX_ZOOM = 0;
   static IDX_X = 1;
   static IDX_Y = 2;
   static IDX_FOLLOW_X = 3;
   static IDX_FOLLOW_Y = 4;
   static IDX_TARGET_ZOOM = 5;
+  static IDX_FOLLOW_ENTITY = 6;
+  static IDX_FOLLOW_USED_X = 7;
+  static IDX_FOLLOW_USED_Y = 8;
 
   // Canvas dimensions (needed for centering calculations)
   static _canvasWidth = 0;
@@ -44,6 +54,7 @@ export class Camera {
     height: 0,
   };
   static _followTargetScratch = { x: 0, y: 0 };
+  static _alignCamScratch = { x: 0, y: 0 };
   static _worldToScreenScratch = { x: 0, y: 0 };
   static _screenToWorldScratch = { x: 0, y: 0 };
 
@@ -85,7 +96,7 @@ export class Camera {
 
   /**
    * Initialize camera with shared data buffer
-   * @param {Float32Array} data - Float32Array view [zoom, x, y, followTargetX, followTargetY, targetZoom]
+   * @param {Float32Array} data - Float32Array view (see FLOAT_COUNT)
    * @param {number} canvasWidth - Canvas width in pixels
    * @param {number} canvasHeight - Canvas height in pixels
    */
@@ -357,6 +368,46 @@ export class Camera {
     this._data[2] = Math.max(0, Math.min(this._data[2], maxY));
   }
 
+  static _hasFollowEntityStamp() {
+    return !!(this._data && this._data.length > this.IDX_FOLLOW_USED_Y);
+  }
+
+  static _clearFollowEntityStamp() {
+    if (!this._hasFollowEntityStamp()) return;
+    this._data[this.IDX_FOLLOW_ENTITY] = 0;
+  }
+
+  static _stampFollowEntity(index, x, y) {
+    if (!this._hasFollowEntityStamp()) return;
+    this._data[this.IDX_FOLLOW_ENTITY] = (index | 0) + 1;
+    this._data[this.IDX_FOLLOW_USED_X] = x;
+    this._data[this.IDX_FOLLOW_USED_Y] = y;
+  }
+
+  /**
+   * Slide a camera top-left so it matches a later latched pose of the
+   * followEntity target. No-op if follow() wrote last (slot 0) or pose missing.
+   * @param {number} camX
+   * @param {number} camY
+   * @param {Float32Array|null} poseX
+   * @param {Float32Array|null} poseY
+   * @param {{x?: number, y?: number}|null} [out]
+   * @returns {{x: number, y: number}}
+   */
+  static alignFollowCameraToLatchedPose(camX, camY, poseX, poseY, out) {
+    const dest = out || this._alignCamScratch;
+    dest.x = camX;
+    dest.y = camY;
+    if (!this._hasFollowEntityStamp() || !poseX || !poseY) return dest;
+    const slot = this._data[this.IDX_FOLLOW_ENTITY] | 0;
+    if (slot <= 0) return dest;
+    const i = slot - 1;
+    if (i < 0 || i >= poseX.length) return dest;
+    dest.x = camX + (poseX[i] - this._data[this.IDX_FOLLOW_USED_X]);
+    dest.y = camY + (poseY[i] - this._data[this.IDX_FOLLOW_USED_Y]);
+    return dest;
+  }
+
   /**
    * Smoothly follow a target position (centers target on screen)
    * Also lerps zoom toward targetZoom if set
@@ -366,6 +417,11 @@ export class Camera {
    * @param {number} [dtRatio] - Delta time ratio for frame-rate-independent smoothing
    */
   static follow(targetX, targetY, smoothing, dtRatio) {
+    this._clearFollowEntityStamp();
+    this._applyFollow(targetX, targetY, smoothing, dtRatio);
+  }
+
+  static _applyFollow(targetX, targetY, smoothing, dtRatio) {
     if (!this._data) return;
 
     this._data[3] = targetX;
@@ -500,7 +556,8 @@ export class Camera {
       vx = RigidBody.vx ? RigidBody.vx[i] : 0;
       vy = RigidBody.vy ? RigidBody.vy[i] : 0;
     }
-    this.follow(x + vx * look, y + vy * look, smoothing, dtRatio);
+    this._stampFollowEntity(i, x, y);
+    this._applyFollow(x + vx * look, y + vy * look, smoothing, dtRatio);
   }
 
   /**
@@ -651,6 +708,7 @@ export class Camera {
     // Set to NaN to indicate no target
     this._data[3] = Number.NaN;
     this._data[4] = Number.NaN;
+    this._clearFollowEntityStamp();
   }
 
   /**
@@ -660,6 +718,7 @@ export class Camera {
    */
   static centerOn(targetX, targetY) {
     if (!this._data) return;
+    this._clearFollowEntityStamp();
 
     const zoom = this._data[0];
 
@@ -678,6 +737,7 @@ export class Camera {
    */
   static setPosition(x, y) {
     if (!this._data) return;
+    this._clearFollowEntityStamp();
     this._data[1] = x;
     this._data[2] = y;
 

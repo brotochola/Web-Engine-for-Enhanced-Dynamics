@@ -500,8 +500,9 @@ export const LOGIC_DEFAULTS = Object.freeze({
  * Tilemap background streaming (pixi). Each chunk is a CompositeTilemap.
  * Visible chunks: view overlap expanded by chunkRing(chunkGrid).
  * Cached chunks: same with cacheGrid (hidden, not destroyed, until they leave).
- * New meshes are built at the start of the pixi tick (not on the camera present).
- * Override per scene: config.renderer.tilemapCull = { ... }.
+ * New meshes are built on an idle timeout after the ticker present, with a
+ * short budget from *now* (not leftover of the last present — a full 16 ms
+ * frame was starving the queue). Override per scene: config.renderer.tilemapCull.
  *
  * Grid values are forced odd (even bumps up). ring = (grid - 1) / 2.
  * Keep cacheGrid >= chunkGrid or visible meshes get evicted.

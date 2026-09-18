@@ -118,11 +118,13 @@ Sprites use latched pose xy. `Camera.followEntity` used to add **live HEAP** `Ri
 
 **Correct:** resample HEAP vx/vy only when that entity's **pose xy** changes (first sample copy, later EMA). Hold until the next pose publish. Same clock as sprites.
 
+Logic and pre_render still latch `poseSync` independently. `followEntity` stamps the pose xy it used on the camera SAB. Pre_render slides `renderQueueCamera` by `(latchedPose - stamped)` so the packed sprite and camera share one generation. `Camera.follow(x,y)` clears the stamp (HEAP follow stays a demo clock split). MESH fill in pixi uses the queue-stamped pose latch, not live HEAP.
+
 Speed zoom: write `Camera.targetZoom` **then** `followEntity`. `follow()` lerps zoom and keeps screen-center. `setZoom` every tick snaps zoom without that pan and fights the lerp.
 
 Debug colliders and the pixi compute pack follow **stamped `poseReady`** on the render-queue camera SAB (same generation sprites packed), not live HEAP / latest pose. Overlay clock, not the gameplay hitch above.
 
-Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.test.js` (`followEntity look-ahead ignores live vx…`).
+Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.test.js` (`followEntity look-ahead ignores live vx…`, `alignFollowCameraToLatchedPose slides queue cam`).
 
 ### Soft contact knobs
 

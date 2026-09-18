@@ -1,7 +1,8 @@
 /**
  * Instanced solid fill of this entity's collider.
  * Fixtures first; else primary polygon / box / display 8-gon for a physics circle.
- * One PIXI.Mesh per LAYER_KIND.MESH slot. VS applies Transform pose.
+ * One PIXI.Mesh per LAYER_KIND.MESH slot. VS applies packed pose
+ * (published display pose when pixi latched it, else live Transform).
  * Pixi can skip pack+upload when ColliderFixture.revision and mesh pose match last frame.
  *
  * Instance floats (12): v0, v1, v2, xy, rotCS, tintBits, depth.

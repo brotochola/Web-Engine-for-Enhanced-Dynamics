@@ -110,7 +110,7 @@ export class GameObject {
   static nextTick = null;
 
   // Camera data (shared with main thread)
-  static cameraData = null; // Float32Array [zoom, x, y, followTargetX, followTargetY, targetZoom]
+  static cameraData = null; // Float32Array Camera.FLOAT_COUNT (zoom, x, y, follow, targetZoom, followEntity stamp)
 
   // Per-entity type id is Transform.entityType[i]; class id is EntityClass.entityType
   static entityType = null; // Numeric ID assigned by Scene during entity registration

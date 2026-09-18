@@ -702,7 +702,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   Keyboard.initialize(views.input, scene.keyMap);
   scene.updateKeyboardBuffer();
 
-  buffers.cameraData = new SharedArrayBuffer(6 * 4);
+  buffers.cameraData = new SharedArrayBuffer(Camera.FLOAT_COUNT * 4);
   views.camera = new Float32Array(buffers.cameraData);
   views.camera[0] = scene.camera.zoom;
   views.camera[3] = Number.NaN;

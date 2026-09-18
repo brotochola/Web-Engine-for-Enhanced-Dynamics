@@ -12,7 +12,7 @@ const ZOOM_AT_MIN_SPEED = 1.0;
 const ZOOM_AT_MAX_SPEED = 0.5;
 const SPEED_FOR_MIN_ZOOM = 0;
 const SPEED_FOR_MAX_ZOOM = 1200; // px/s
-const LOOK_AHEAD_SEC = 0.33;
+const LOOK_AHEAD_SEC = 0//0.33;
 const CAMERA_FOLLOW_SMOOTH = 0.1;
 
 export class PlayerCar extends Car {

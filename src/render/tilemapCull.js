@@ -253,3 +253,21 @@ export function computeChunkTileRect({
     tileRect: { minX, minY, maxX, maxY },
   };
 }
+
+/** Max ms of chunk tile()+destroy after paint (setTimeout 0). Not leftover of the last present. */
+export const TILEMAP_IDLE_BUDGET_MS = 4;
+
+/**
+ * Deadline for idle tilemap work starting at `nowMs`.
+ * After present the last frame is already spent — do not subtract it or
+ * streaming starves on full 16 ms presents and hitches on the next short frame.
+ * @param {number} nowMs
+ * @param {number} [budgetMs]
+ * @returns {number}
+ */
+export function tilemapIdleWorkDeadline(nowMs, budgetMs = TILEMAP_IDLE_BUDGET_MS) {
+  const now = +nowMs;
+  const budget = +budgetMs;
+  if (!(now >= 0) || !(budget > 0)) return 0;
+  return now + budget;
+}

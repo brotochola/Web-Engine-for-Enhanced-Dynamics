@@ -12,6 +12,8 @@ import {
   chunkKeyCy,
   chunkRing,
   CHUNK_KEY_AXIS_MAX,
+  tilemapIdleWorkDeadline,
+  TILEMAP_IDLE_BUDGET_MS,
 } from '../../src/render/tilemapCull.js';
 
 function makeMap(w, h) {
@@ -75,6 +77,11 @@ test('deriveViewportChunkSize uses ceil of view tiles', () => {
 
 test('deriveViewportChunkSize fixed chunkTiles overrides view', () => {
   assert.deepEqual(deriveViewportChunkSize(40, 30, 16), { chunkW: 16, chunkH: 16 });
+});
+
+test('tilemapIdleWorkDeadline is leftover-from-now, not last present', () => {
+  assert.equal(tilemapIdleWorkDeadline(1000, TILEMAP_IDLE_BUDGET_MS), 1000 + TILEMAP_IDLE_BUDGET_MS);
+  assert.equal(tilemapIdleWorkDeadline(1000, 0), 0);
 });
 
 test('normalizeChunkGrid forces odd positive', () => {

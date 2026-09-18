@@ -6,7 +6,7 @@ import { Mouse } from '../../src/core/mouse.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 
 function setupCamera({ zoom = 1, cx = 400, cy = 300, canvasW = 800, canvasH = 600 } = {}) {
-  const data = new Float32Array(6);
+  const data = new Float32Array(Camera.FLOAT_COUNT);
   data[0] = zoom;
   data[1] = cx - canvasW / (2 * zoom);
   data[2] = cy - canvasH / (2 * zoom);
@@ -144,6 +144,36 @@ test('followEntity look-ahead ignores live vx until pose xy publishes', () => {
   const moved = Camera.getFollowTarget();
   assert.ok(Math.abs(moved.x - (12 + emaVx * look)) < 1e-6);
   assert.equal(moved.y, 20);
+
+  stub.restore();
+});
+
+test('alignFollowCameraToLatchedPose slides queue cam by pack-vs-follow pose delta', () => {
+  const data = setupCamera({ zoom: 1, cx: 10, cy: 20 });
+  const stub = stubPoseBody({ x: 10, y: 20, vx: 0, vy: 0 });
+
+  Camera.followEntity(0, 0, 1, 1);
+  const camX = Camera.x;
+  const camY = Camera.y;
+  assert.equal(data[Camera.IDX_FOLLOW_ENTITY], 1);
+  assert.equal(data[Camera.IDX_FOLLOW_USED_X], 10);
+  assert.equal(data[Camera.IDX_FOLLOW_USED_Y], 20);
+
+  stub.poseX[0] = 40;
+  stub.poseY[0] = 25;
+  const aligned = Camera.alignFollowCameraToLatchedPose(camX, camY, stub.poseX, stub.poseY);
+  assert.equal(aligned.x, camX + 30);
+  assert.equal(aligned.y, camY + 5);
+
+  const same = Camera.alignFollowCameraToLatchedPose(camX, camY, new Float32Array([10]), new Float32Array([20]));
+  assert.equal(same.x, camX);
+  assert.equal(same.y, camY);
+
+  Camera.follow(10, 20, 1, 1);
+  assert.equal(data[Camera.IDX_FOLLOW_ENTITY], 0);
+  const raw = Camera.alignFollowCameraToLatchedPose(camX, camY, stub.poseX, stub.poseY);
+  assert.equal(raw.x, camX);
+  assert.equal(raw.y, camY);
 
   stub.restore();
 });

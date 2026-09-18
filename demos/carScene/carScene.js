@@ -92,6 +92,12 @@ export class CarScene extends WEED.Scene {
             hideDecorationsAtZoom: 0.25,
             // fixedFps: 60,
             // backpressure: false
+            tilemapCull: {
+                chunkTiles: 32,
+                maxChunkBuildsPerFrame: 1,
+                chunkGrid: 3,
+                cacheGrid: 5,
+            }
         },
 
         preRender: {

@@ -15,6 +15,7 @@ import { ShadowCaster } from '../components/shadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { AbstractWorker } from './abstractWorker.js';
+import { Camera } from '../core/camera.js';
 import { Query } from '../core/query.js';
 import {
     buildVisibilityPolygon,
@@ -812,6 +813,14 @@ class PreRenderWorker extends AbstractWorker {
             this._frameCameraZoom = this.cameraData[0];
             this._frameCameraX = this.cameraData[1];
             this._frameCameraY = this.cameraData[2];
+
+            // followEntity ran on logic's pose latch. Slide to this pack's pose
+            // so the queue camera and _displayPose share one generation.
+            const aligned = Camera.alignFollowCameraToLatchedPose(
+                this._frameCameraX, this._frameCameraY, this._poseX, this._poseY
+            );
+            this._frameCameraX = aligned.x;
+            this._frameCameraY = aligned.y;
 
             // Re-clamp position for the latched zoom to guard against the SAB
             // race where the logic worker wrote a new zoom but hasn't finished

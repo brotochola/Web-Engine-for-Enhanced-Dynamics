@@ -618,7 +618,7 @@ The worklet stores assets in a `Map<id, { ch, len, nCh }>`. Only slot state trav
 | `inputData`        | `inputBufferSize * 8` bytes | `[heldState[keyCount], pressCount[keyCount]]` as `Int32`                               | Main thread               | Main thread + all workers |
 | `mouseData`        | 52 bytes (13 × Float32)     | `[x, y, btn0, btn1, btn2, isPresent, wheel, press0, rel0, press1, rel1, press2, rel2]` | Main thread               | All workers               |
 | `gamepadData`      | 624 bytes (4 × 39 × Float32)| Per pad: `[connected, axes[4], buttons[17], pressCounts[17]]`                          | Main thread (poll)        | All workers               |
-| `cameraData`       | 24 bytes (6 × Float32)      | `[zoom, x, y, followTargetX, followTargetY, targetZoom]`                               | Main thread + Player.tick | All workers               |
+| `cameraData`       | 36 bytes (9 × Float32)      | `[zoom, x, y, followTargetX, followTargetY, targetZoom, followEntity+1, followUsedX, followUsedY]` | Logic `follow*` | All workers               |
 | `debugData`        | 32 bytes                    | `[flagBytes[0..17]: Uint8, pad[18..19], selectedEntityIndex: Int32 @ 20..23]`          | Main thread               | All workers               |
 | `raycastDebugData` | `(1 + 100*7) * 4` bytes     | `[count, per-ray: startX, startY, endX, endY, hitX, hitY, hit]` Float32                | Logic workers             | Main thread               |
 | `sunData`          | 64 bytes                    | Mixed Uint8/Float32/Uint32 (see `Sun.OFFSETS`)                                         | Main thread               | All workers               |

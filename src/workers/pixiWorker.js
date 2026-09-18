@@ -54,6 +54,8 @@ import {
   chunkTileRect,
   chunkKeyCx,
   chunkKeyCy,
+  tilemapIdleWorkDeadline,
+  TILEMAP_IDLE_BUDGET_MS,
 } from '../render/tilemapCull.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
@@ -339,6 +341,7 @@ class PixiRenderer extends AbstractWorker {
     /** @type {Array<{kind:string, displayObject:*, parallaxX:number, parallaxY:number, cover?:object, tilemap?:object}|null>} */
     this._scenery = [];
     this._tilemapCullDefaults = { ...TILEMAP_CULL_DEFAULTS, frozenW: -1, frozenH: -1 };
+    this._tilemapIdleScheduled = false;
     this._coverBgArgs = null;
     this._coverBgOut = null;
 
@@ -930,10 +933,17 @@ class PixiRenderer extends AbstractWorker {
     v.vertCount = ColliderFixture.vertCount;
     v.vertexX = ColliderFixture.vertexX;
     v.vertexY = ColliderFixture.vertexY;
-    v.x = Transform.x;
-    v.y = Transform.y;
-    v.rotC = Transform.rotC;
-    v.rotS = Transform.rotS;
+    if (this._poseX) {
+      v.x = this._poseX;
+      v.y = this._poseY;
+      v.rotC = this._poseRotC;
+      v.rotS = this._poseRotS;
+    } else {
+      v.x = Transform.x;
+      v.y = Transform.y;
+      v.rotC = Transform.rotC;
+      v.rotS = Transform.rotS;
+    }
     v.offsetX = Collider.offsetX;
     v.offsetY = Collider.offsetY;
     v.primaryShapeType = Collider.shapeType;
@@ -1296,9 +1306,6 @@ class PixiRenderer extends AbstractWorker {
    */
   update(deltaTime, dtRatio, resuming) {
     this._lastDt = deltaTime > 0 ? deltaTime / 1000 : 1 / 60;
-    // Prefetch tilemap chunks from last frame's keep-set BEFORE consuming camera
-    // so a build hitch is not paired with applying a new camera snapshot.
-    this._drainTilemapChunkBuilds();
 
     // ========================================
     // DOUBLE BUFFER SYNC: Select read buffer
@@ -1444,6 +1451,9 @@ class PixiRenderer extends AbstractWorker {
     }
 
     this._applyLayerVisibility();
+    // After ticker present (setTimeout 0), not in this update: first GPU upload
+    // of a new chunk must not share the vsync with camera/sprite sync.
+    this._scheduleTilemapChunkIdle();
   }
 
   /**
@@ -1468,6 +1478,7 @@ class PixiRenderer extends AbstractWorker {
       app.ticker.stop();
     }
     app.renderer.render(app.stage);
+    this._scheduleTilemapChunkIdle();
   }
 
   /**
@@ -1705,9 +1716,9 @@ LIGHTING SYSTEM SETUP
     const shaders = this._useWebGpu
       ? { lfSplat: this._engineShaders.lfLightSplat }
       : {
-          lfSplatVert: this._engineShaders.lfLightSplatVert,
-          lfSplatFrag: this._engineShaders.lfLightSplatFrag,
-        };
+        lfSplatVert: this._engineShaders.lfLightSplatVert,
+        lfSplatFrag: this._engineShaders.lfLightSplatFrag,
+      };
     if (this._useWebGpu && !shaders.lfSplat) return;
     if (!this._useWebGpu && (!shaders.lfSplatVert || !shaders.lfSplatFrag)) return;
     this._lfLightSplat = new LiquidFunDensitySplat({
@@ -3554,6 +3565,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       visKeys: new Set(),
       keepKeys: new Set(),
       evictKeys: [],
+      pendingDestroy: new Map(),
       chunkRect: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
       cull: {
         frozenW: -1,
@@ -3573,6 +3585,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     tm.cull.frozenH = -1;
     tm.buildQueue.length = 0;
     tm.queuedKeys.clear();
+    tm.pendingDestroy?.clear();
   }
 
   _destroyTilemapChunks(tm) {
@@ -3582,6 +3595,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       entry.mesh.destroy();
     }
     tm.chunks.clear();
+    if (tm.pendingDestroy) {
+      for (const entry of tm.pendingDestroy.values()) {
+        if (entry.mesh.parent) entry.mesh.parent.removeChild(entry.mesh);
+        entry.mesh.destroy();
+      }
+      tm.pendingDestroy.clear();
+    }
     tm.buildQueue.length = 0;
     tm.queuedKeys.clear();
   }
@@ -3614,36 +3634,79 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _enqueueKeepChunks(tm, keepList) {
     const chunks = keepList.chunks;
     const n = keepList.count;
+    const pending = tm.pendingDestroy;
     tm.buildQueue.length = 0;
     tm.queuedKeys.clear();
     for (let i = 0; i < n; i++) {
       const key = chunks[i].key;
+      if (pending && pending.has(key)) {
+        const entry = pending.get(key);
+        pending.delete(key);
+        tm.chunks.set(key, entry);
+        continue;
+      }
       if (tm.chunks.has(key)) continue;
       tm.queuedKeys.add(key);
       tm.buildQueue.push(key);
     }
   }
 
-  _drainTilemapChunkBuilds(maxCount) {
+  _hasTilemapBuildWork() {
     for (let i = 0; i < this._scenery.length; i++) {
       const tm = this._scenery[i]?.tilemap;
-      if (tm) this._drainOneTilemap(tm, maxCount);
+      if (tm?.buildQueue?.length) return true;
+      if (tm?.pendingDestroy?.size) return true;
+    }
+    return false;
+  }
+
+  _scheduleTilemapChunkIdle() {
+    if (this._tilemapIdleScheduled || !this._hasTilemapBuildWork()) return;
+    this._tilemapIdleScheduled = true;
+    setTimeout(() => {
+      this._tilemapIdleScheduled = false;
+      this._drainTilemapChunksIdle();
+    }, 0);
+  }
+
+  _drainTilemapChunksIdle() {
+    const deadline = tilemapIdleWorkDeadline(performance.now(), TILEMAP_IDLE_BUDGET_MS);
+    if (!(deadline > 0)) return;
+    for (let i = 0; i < this._scenery.length; i++) {
+      const tm = this._scenery[i]?.tilemap;
+      if (tm) this._drainOneTilemapUntil(tm, deadline);
     }
   }
 
-  _drainOneTilemap(tm, maxCount) {
+  _drainPendingDestroyUntil(tm, deadlineMs) {
+    const pending = tm.pendingDestroy;
+    if (!pending || !pending.size) return;
+    for (const [key, entry] of pending) {
+      if (performance.now() >= deadlineMs) return;
+      if (entry.mesh.parent) entry.mesh.parent.removeChild(entry.mesh);
+      entry.mesh.destroy();
+      pending.delete(key);
+    }
+  }
+
+  _drainOneTilemapUntil(tm, deadlineMs) {
     if (!tm.container || !tm.tilemapId) return;
+    this._drainPendingDestroyUntil(tm, deadlineMs);
     const tileMapData = TileMap.get(tm.tilemapId);
     if (!tileMapData) return;
-    const budget =
-      maxCount != null
-        ? maxCount
-        : (tm.cull.maxChunkBuildsPerFrame | 0) || 1;
+    const budget = (tm.cull.maxChunkBuildsPerFrame | 0) || 1;
     let built = 0;
     while (built < budget && tm.buildQueue.length) {
+      if (performance.now() >= deadlineMs) break;
       const key = tm.buildQueue.shift();
       tm.queuedKeys.delete(key);
       if (tm.chunks.has(key)) continue;
+      if (tm.pendingDestroy?.has(key)) {
+        const entry = tm.pendingDestroy.get(key);
+        tm.pendingDestroy.delete(key);
+        tm.chunks.set(key, entry);
+        continue;
+      }
       this._buildTilemapChunk(tm, tileMapData, key);
       built++;
     }
@@ -3765,12 +3828,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0; i < keepCount; i++) keepKeys.add(keepChunks[i].key);
 
     const evict = listEvictChunkKeys(tm.chunks.keys(), keepKeys, tm.evictKeys);
+    const pending = tm.pendingDestroy;
     for (let i = 0; i < evict.length; i++) {
-      const entry = tm.chunks.get(evict[i]);
+      const key = evict[i];
+      const entry = tm.chunks.get(key);
       if (!entry) continue;
-      if (entry.mesh.parent) entry.mesh.parent.removeChild(entry.mesh);
-      entry.mesh.destroy();
-      tm.chunks.delete(evict[i]);
+      entry.mesh.visible = false;
+      entry.mesh.renderable = false;
+      tm.chunks.delete(key);
+      if (pending) pending.set(key, entry);
     }
 
     for (const [key, entry] of tm.chunks) {
