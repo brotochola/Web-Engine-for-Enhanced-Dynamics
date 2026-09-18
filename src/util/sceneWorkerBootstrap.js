@@ -353,6 +353,16 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           freeListTop: scene.buffers.jointFreeListTop,
         }
       : null,
+    fixtures: scene.config.physics.maxFixtures > 0
+      ? {
+          enabled: true,
+          maxFixtures: scene.config.physics.maxFixtures,
+          entityCount: scene.totalEntityCount,
+          data: scene.buffers.colliderFixtureData,
+          freeList: scene.buffers.colliderFixtureFreeList,
+          freeListTop: scene.buffers.colliderFixtureFreeListTop,
+        }
+      : null,
     audio: {
       soundIdMap: SoundManager.exportSoundIdMap(),
       slotSAB: SoundManager.getSlotSABConfig(),

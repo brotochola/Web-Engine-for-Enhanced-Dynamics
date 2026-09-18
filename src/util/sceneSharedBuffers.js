@@ -4,6 +4,7 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { MeshRenderer } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
@@ -53,6 +54,7 @@ import { liquidFunRenderByteSize } from '../render/liquidFunRender.js';
 import { liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from './liquidFunGroups.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { Joint } from '../core/joint.js';
+import { ColliderFixture } from '../core/colliderFixture.js';
 import { SoundManager } from '../core/soundManager.js';
 import { Query } from '../core/query.js';
 import { Decal } from '../core/decal.js';
@@ -91,6 +93,7 @@ function validateSceneSharedBufferConfig(scene) {
   assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_ENTITIES);
   assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES);
   assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, MAX_ENTITIES);
+  assertIntegerInRange('physics.maxFixtures', config.physics.maxFixtures || 0, 0, MAX_ENTITIES);
   assertIntegerInRange('spatial.maxNeighbors', config.spatial.maxNeighbors, 0, MAX_ENTITIES);
   assertIntegerInRange('spatial.maxEntitiesPerCell', config.spatial.maxEntitiesPerCell, 1, 255);
 
@@ -544,6 +547,7 @@ function initializeNavigationAndQueryBuffers(scene) {
     RigidBody,
     Collider,
     SpriteRenderer,
+    MeshRenderer,
     AdobeAnimComponent,
     LightEmitter,
     ShadowCaster,
@@ -596,6 +600,28 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
 
     Joint.initialize(maxJoints);
     Joint.initializeFreeList(buffers.jointFreeList, buffers.jointFreeListTop);
+  }
+
+  ColliderFixture.reset();
+  const maxFixtures = config.physics.maxFixtures || 0;
+  if (maxFixtures > 0) {
+    const fixtureBufferSize = ColliderFixture.getBufferSize(maxFixtures, totalEntityCount);
+    buffers.colliderFixtureData = new SharedArrayBuffer(fixtureBufferSize);
+    ColliderFixture.initializeArrays(buffers.colliderFixtureData, maxFixtures, totalEntityCount);
+
+    const { freeList, freeListTop } = createUint16FreeListBuffers(
+      buffers,
+      'colliderFixtureFreeList',
+      'colliderFixtureFreeListTop',
+      maxFixtures
+    );
+    resetFreeList(freeListTop, freeList, maxFixtures, 1);
+
+    ColliderFixture.initialize(maxFixtures);
+    ColliderFixture.initializeFreeList(
+      buffers.colliderFixtureFreeList,
+      buffers.colliderFixtureFreeListTop,
+    );
   }
 
   const sunConfig = { ...SUN_DEFAULTS, ...config.lighting?.sun };
@@ -787,6 +813,7 @@ export function teardownSceneSharedState(scene) {
   clearActiveFlags(RigidBody.active, scene.totalEntityCount);
   clearActiveFlags(Collider.active, scene.totalEntityCount);
   clearActiveFlags(SpriteRenderer.active, scene.totalEntityCount);
+  clearActiveFlags(MeshRenderer.active, scene.totalEntityCount);
 
   if (GameObject.activeEntitiesData) {
     GameObject.activeEntitiesData[0] = 0;
@@ -847,6 +874,7 @@ export function teardownSceneSharedState(scene) {
   NavGrid.reset();
   Grid.reset();
   Joint.reset();
+  ColliderFixture.reset();
   TileMap.reset();
   ParticleEmitter.reset();
   Decal.bindStampRing(null);

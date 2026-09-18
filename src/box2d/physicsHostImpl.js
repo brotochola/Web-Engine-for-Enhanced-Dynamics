@@ -113,6 +113,10 @@
     polyVertexY: { type: Float32Array, length: MAX_POLYGON_VERTICES },
     polyNormalX: { type: Float32Array, length: MAX_POLYGON_VERTICES },
     polyNormalY: { type: Float32Array, length: MAX_POLYGON_VERTICES },
+    // Append-only tail — must match Collider.ARRAY_SCHEMA or fixtureCount binds at the wrong offset.
+    layerMask: Uint16Array,
+    feedBits: Uint8Array,
+    fixtureCount: Uint16Array,
   };
 
   // Mirrors src/render/liquidFunRender.js bindLiquidFunRender (nested classic
@@ -465,6 +469,50 @@
     };
   }
 
+  // Mirrors ColliderFixture.initializeArrays
+  function bindFixtureViews(buffer, maxFixtures, entityCount) {
+    var n = maxFixtures | 0;
+    var e = entityCount | 0;
+    var V = MAX_POLYGON_VERTICES;
+    var offset = 0;
+    var align4 = function (o) {
+      return Math.ceil(o / 4) * 4;
+    };
+    var active = new Uint8Array(buffer, offset, n);
+    offset = align4(offset + n);
+    var entity = new Uint16Array(buffer, offset, n);
+    offset += n * 2;
+    var next = new Uint16Array(buffer, offset, n);
+    offset += n * 2;
+    var vertCount = new Uint8Array(buffer, offset, n);
+    offset = align4(offset + n);
+    var vertexX = new Float32Array(buffer, offset, n * V);
+    offset += n * V * 4;
+    var vertexY = new Float32Array(buffer, offset, n * V);
+    offset += n * V * 4;
+    var normalX = new Float32Array(buffer, offset, n * V);
+    offset += n * V * 4;
+    var normalY = new Float32Array(buffer, offset, n * V);
+    offset += n * V * 4;
+    offset = align4(offset);
+    var head = e > 0 ? new Uint16Array(buffer, offset, e) : null;
+    offset += e * 2;
+    offset = align4(offset);
+    var revision = new Uint32Array(buffer, offset, 1);
+    return {
+      active: active,
+      entity: entity,
+      next: next,
+      vertCount: vertCount,
+      vertexX: vertexX,
+      vertexY: vertexY,
+      normalX: normalX,
+      normalY: normalY,
+      head: head,
+      revision: revision,
+    };
+  }
+
   var state = {
     config: {},
     settings: null,
@@ -493,6 +541,9 @@
     jointsEnabled: false,
     maxJoints: 0,
     jointViews: null,
+    fixturesEnabled: false,
+    maxFixtures: 0,
+    fixtureViews: null,
     box2dReady: false,
     isPaused: true,
     lastFrameTime: 0,
@@ -694,6 +745,7 @@
         polyCount: packView(C.polyCount),
         polyVertexX: packView(C.polyVertexX),
         polyVertexY: packView(C.polyVertexY),
+        fixtureCount: C.fixtureCount ? packView(C.fixtureCount) : null,
       },
     };
 
@@ -729,6 +781,21 @@
         activeCount: packView(J.activeCount),
         activeListLock: packView(J.activeListLock),
         revision: packView(J.revision),
+      };
+    }
+
+    if (state.fixturesEnabled && state.fixtureViews) {
+      var F = state.fixtureViews;
+      initPayload.maxFixtures = state.maxFixtures;
+      initPayload.fixtureViews = {
+        active: packView(F.active),
+        entity: packView(F.entity),
+        next: packView(F.next),
+        vertCount: packView(F.vertCount),
+        vertexX: packView(F.vertexX),
+        vertexY: packView(F.vertexY),
+        head: F.head ? packView(F.head) : null,
+        revision: packView(F.revision),
       };
     }
 
@@ -933,6 +1000,16 @@
       state.jointsEnabled = true;
       state.maxJoints = data.joints.maxJoints | 0;
       state.jointViews = bindJointViews(data.joints.data, state.maxJoints);
+    }
+
+    if (data.fixtures && data.fixtures.enabled) {
+      state.fixturesEnabled = true;
+      state.maxFixtures = data.fixtures.maxFixtures | 0;
+      state.fixtureViews = bindFixtureViews(
+        data.fixtures.data,
+        state.maxFixtures,
+        data.fixtures.entityCount | 0,
+      );
     }
 
     initializeWorkerPorts(data.workerPorts);

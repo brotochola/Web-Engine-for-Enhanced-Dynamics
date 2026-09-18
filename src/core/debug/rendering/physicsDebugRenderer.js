@@ -12,6 +12,7 @@ import { BulletComponent } from '../../../components/bulletComponent.js';
 import { Mouse } from '../../mouse.js';
 import { Grid } from '../../grid.js';
 import { Joint } from '../../joint.js';
+import { ColliderFixture } from '../../colliderFixture.js';
 import { DebugDraw } from '../debugDraw.js';
 import { DEBUG_FLAGS } from '../debugFlags.js';
 import { distanceSq2D, lightInfluenceRadius } from '../../../util/utils.js';
@@ -81,9 +82,17 @@ export class PhysicsDebugRenderer {
     return selectedOnly && selectedIdx >= 0 && i !== selectedIdx;
   }
 
+  /** Pose SAB starts as zeros. Unpublished slot: rotC=rotS=0. Published identity: rotC=1. */
+  _posePublished(i, poseRotC, poseRotS) {
+    if (!poseRotC) return false;
+    const c = poseRotC[i];
+    const s = poseRotS ? poseRotS[i] : 0;
+    return c * c + s * s > 0.25;
+  }
+
   _worldXY(i, pose, out) {
     const rb = RigidBody.active;
-    if (pose && pose.x && rb && rb[i]) {
+    if (pose && pose.x && rb && rb[i] && this._posePublished(i, pose.rotC, pose.rotS)) {
       out.x = pose.x[i];
       out.y = pose.y ? pose.y[i] : Transform.y[i];
     } else {
@@ -98,6 +107,23 @@ export class PhysicsDebugRenderer {
     f.selectedOnly = !!(flags && flags.isEnabled(DEBUG_FLAGS.SHOW_ACTIVE_ONLY));
     f.selectedIdx = flags ? flags.getSelectedEntity() : -1;
     return f;
+  }
+
+  /**
+   * MeshRenderer-only bodies never get SpriteRenderer.isItOnScreen.
+   * Compound terrain also sits far from the body origin — pad by local AABB.
+   */
+  _colliderDebugInView(i, entityX, entityY, viewLeft, viewRight, viewTop, viewBottom) {
+    const spriteOn = SpriteRenderer.isItOnScreen;
+    if (spriteOn && spriteOn[i]) return true;
+    const w = Collider.width ? Collider.width[i] : 0;
+    const h = Collider.height ? Collider.height[i] : 0;
+    const vr = Collider.visualRange ? Collider.visualRange[i] : 0;
+    const cx = Collider.polyCentroidX ? Collider.polyCentroidX[i] : 0;
+    const cy = Collider.polyCentroidY ? Collider.polyCentroidY[i] : 0;
+    const pad = Math.max(Math.abs(cx) + w * 0.5, Math.abs(cy) + h * 0.5, vr, 32);
+    return entityX + pad >= viewLeft && entityX - pad <= viewRight &&
+      entityY + pad >= viewTop && entityY - pad <= viewBottom;
   }
 
   _cssRgb(colorInt) {
@@ -223,7 +249,6 @@ export class PhysicsDebugRenderer {
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
-    const isOnScreen = SpriteRenderer.isItOnScreen;
     const colActive = Collider.active;
     const shapeType = Collider.shapeType;
     const isTrigger = Collider.isTrigger;
@@ -251,11 +276,10 @@ export class PhysicsDebugRenderer {
     for (let i = 0; i < n; i++) {
       if (!active[i] || !colActive?.[i]) continue;
       if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
-      const usePose = !!(poseX && rbActive && rbActive[i]);
+      const usePose = !!(poseX && rbActive && rbActive[i] && this._posePublished(i, poseRotC, poseRotS));
       const entityX = usePose ? poseX[i] : x[i];
       const entityY = usePose ? (poseY ? poseY[i] : y[i]) : y[i];
-      const onScreen = isOnScreen[i] || (entityX >= viewLeft && entityX <= viewRight && entityY >= viewTop && entityY <= viewBottom);
-      if (!onScreen) continue;
+      if (!this._colliderDebugInView(i, entityX, entityY, viewLeft, viewRight, viewTop, viewBottom)) continue;
 
       const ox = offsetX?.[i] || 0;
       const oy = offsetY?.[i] || 0;
@@ -280,6 +304,12 @@ export class PhysicsDebugRenderer {
       ctx.strokeStyle = isTrigger[i]
         ? 'rgba(255, 255, 0, 0.8)'
         : (rbStatic && rbStatic[i] ? 'rgba(180, 180, 180, 0.85)' : 'rgba(0, 255, 0, 0.8)');
+
+      const extras = Collider.fixtureCount ? (Collider.fixtureCount[i] | 0) : 0;
+      if (extras > 0 && ColliderFixture.head) {
+        this._strokeFixtures(ctx, i, sx, sy, c, s, zoom, false);
+        continue;
+      }
 
       if (shape === ShapeType.Circle) {
         const r = radius[i];
@@ -317,6 +347,28 @@ export class PhysicsDebugRenderer {
         }
       }
     }
+  }
+
+  _strokeFixtures(ctx, entityIdx, sx, sy, c, s, zoom, fill) {
+    ColliderFixture.forEach(entityIdx, (fi) => {
+      const count = ColliderFixture.vertCount[fi] | 0;
+      if (count < 3) return;
+      const base = ColliderFixture.vertBase(fi);
+      const vx = ColliderFixture.vertexX;
+      const vy = ColliderFixture.vertexY;
+      ctx.beginPath();
+      for (let v = 0; v < count; v++) {
+        const lx = vx[base + v];
+        const ly = vy[base + v];
+        const wx = sx + (c * lx - s * ly) * zoom;
+        const wy = sy + (s * lx + c * ly) * zoom;
+        if (v === 0) ctx.moveTo(wx, wy);
+        else ctx.lineTo(wx, wy);
+      }
+      ctx.closePath();
+      if (fill) ctx.fill();
+      ctx.stroke();
+    });
   }
 
   /** Stroke a width×height box centered at (sx,sy), oriented by cos/sin. */
@@ -506,7 +558,6 @@ export class PhysicsDebugRenderer {
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
-    const isOnScreen = SpriteRenderer.isItOnScreen;
     const rigidBodyActive = RigidBody.active;
     const sleeping = RigidBody.sleeping;
     if (!sleeping) return;
@@ -538,11 +589,10 @@ export class PhysicsDebugRenderer {
       if (!rigidBodyActive[i] || !sleeping[i]) continue;
       if (colActive && !colActive[i]) continue;
 
-      const usePose = !!(poseX && rigidBodyActive[i]);
+      const usePose = !!(poseX && rigidBodyActive[i] && this._posePublished(i, poseRotC, poseRotS));
       const entityX = usePose ? poseX[i] : x[i];
       const entityY = usePose ? (poseY ? poseY[i] : y[i]) : y[i];
-      const onScreen = isOnScreen[i] || (entityX >= viewLeft && entityX <= viewRight && entityY >= viewTop && entityY <= viewBottom);
-      if (!onScreen) continue;
+      if (!this._colliderDebugInView(i, entityX, entityY, viewLeft, viewRight, viewTop, viewBottom)) continue;
 
       const ox = offsetX?.[i] || 0;
       const oy = offsetY?.[i] || 0;
@@ -561,6 +611,12 @@ export class PhysicsDebugRenderer {
       }
       const sx = (posX - camera.x) * zoom;
       const sy = (posY - camera.y) * zoom;
+
+      const extras = Collider.fixtureCount ? (Collider.fixtureCount[i] | 0) : 0;
+      if (extras > 0 && ColliderFixture.head) {
+        this._strokeFixtures(ctx, i, sx, sy, c, s, zoom, true);
+        continue;
+      }
 
       if (shape === ShapeType.Circle) {
         const r = radius?.[i] || 10;

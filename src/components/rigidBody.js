@@ -5,6 +5,7 @@
 
 import { Component } from '../core/component.js';
 import { Collider } from './collider.js';
+import { ColliderFixture } from '../core/colliderFixture.js';
 import { updateMassFromCircle, updateMassFromBox } from '../util/utils.js';
 import { ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
@@ -129,8 +130,10 @@ export class RigidBody extends Component {
           massInitialized = true;
         }
       } else if (shapeType === ShapeType.Polygon) {
-        // Convex polygon — shoelace area
-        const area = Collider.polygonArea(index);
+        const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[index] : 0;
+        const area = fixtureCount > 0
+          ? ColliderFixture.areaSum(index)
+          : Collider.polygonArea(index);
         if (area > 0) {
           RigidBody.mass[index] = area;
           RigidBody.invMass[index] = isStatic ? 0 : 1 / area;
@@ -181,7 +184,12 @@ export class RigidBody extends Component {
       const h = Collider.height[index];
       if (w > 0 && h > 0 && mass > 0) inertia = (mass * (w * w + h * h)) / 12;
     } else if (shapeType === ShapeType.Polygon) {
-      if (mass > 0) inertia = Collider.polygonInertia(index, mass);
+      const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[index] : 0;
+      if (mass > 0) {
+        inertia = fixtureCount > 0
+          ? ColliderFixture.inertiaAboutOrigin(index, mass)
+          : Collider.polygonInertia(index, mass);
+      }
     }
 
     RigidBody.inertia[index] = inertia;

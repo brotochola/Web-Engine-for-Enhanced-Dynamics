@@ -472,8 +472,8 @@ Layer.get('dulceDeLeche').setSplatRadius(56); // live kernel size
 | `LAYER_DENSITY_SOURCE` | `SPRITES` (`0`), `LIQUID_FUN` (`1`) — ints; config still accepts `'sprites'` / `'liquidFun'` | Who fills the density RT |
 | `LAYER_SPLAT_FALLOFF` | `QUADRATIC` (`0` active), `SMOOTHSTEP` / `GAUSSIAN` (reserved; normalize accepts, splat FS still uses quadratic in v1) | Soft-disk alpha curve |
 | `LAYER_SCALE_MODE` | `LINEAR` (`0`), `NEAREST` (`1`) — Pixi string only at RT create | Pixi upsample filter when `resolution < 1` (not MSAA/FXAA) |
-| `LAYER_FEEDER_KIND` | `NONE` `BUILTIN` `SPRITES` `DENSITY` `COMPUTE` — `Uint8` in layer config SAB | How a layer consumes subscriptions |
-| `LAYER_KIND` | `sprites` `cover` `static` `tiling` `tilemap` `density` `compute` `decals` `shadows` `lighting` | Layer content / pipeline kind |
+| `LAYER_FEEDER_KIND` | `NONE` `BUILTIN` `SPRITES` `DENSITY` `COMPUTE` `MESH` — `Uint8` in layer config SAB | How a layer consumes subscriptions |
+| `LAYER_KIND` | `sprites` `cover` `static` `tiling` `tilemap` `density` `compute` `mesh` `decals` `shadows` `lighting` | Layer content / pipeline kind |
 
 v1 is an LF-only density layer (mixed sprites on the same layer are ignored). Debug Layers panel shows **Density: liquidFun**; shader `(none)` still bypasses the look pass and shows the raw density RT.
 
@@ -525,6 +525,10 @@ static config = {
       tilemap: 'myTilemap',
       scale: 1,
       zIndex: 0.5,
+    },
+    terrain: {
+      kind: LAYER_KIND.MESH,
+      zIndex: 2.9,
     },
   },
 };

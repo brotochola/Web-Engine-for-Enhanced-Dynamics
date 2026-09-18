@@ -6,6 +6,7 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { MeshRenderer, warnMeshRendererNeedsFixtures } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
@@ -16,6 +17,7 @@ import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
+import { ColliderFixture } from './colliderFixture.js';
 import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
 import { collectComponents, collisionPairKey, distanceSq2D } from '../util/utils.js';
 import {
@@ -667,6 +669,7 @@ export class GameObject {
   get alpha() {
     if (this._hasComponents.SpriteRenderer) return SpriteRenderer.alpha[this.index];
     if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.alpha[this.index];
+    if (this._hasComponents.MeshRenderer) return MeshRenderer.alpha[this.index];
     return 1;
   }
   set alpha(value) {
@@ -677,12 +680,17 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.alpha[this.index] = value;
     }
+    if (this._hasComponents.MeshRenderer && MeshRenderer.alpha[this.index] !== value) {
+      MeshRenderer.alpha[this.index] = value;
+      MeshRenderer.renderDirty[this.index] = 1;
+    }
   }
 
   /** Tint color (0xRRGGBB) */
   get tint() {
     if (this._hasComponents.SpriteRenderer) return SpriteRenderer.baseTint[this.index]; // Return user-facing RGB value
     if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.tint[this.index];
+    if (this._hasComponents.MeshRenderer) return MeshRenderer.tint[this.index] >>> 0;
     return 0xffffff;
   }
   set tint(value) {
@@ -696,12 +704,17 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.tint[this.index] = value;
     }
+    if (this._hasComponents.MeshRenderer && MeshRenderer.tint[this.index] !== (value >>> 0)) {
+      MeshRenderer.tint[this.index] = value >>> 0;
+      MeshRenderer.renderDirty[this.index] = 1;
+    }
   }
 
   /** Visibility flag */
   get visible() {
     if (this._hasComponents.SpriteRenderer) return SpriteRenderer.renderVisible[this.index] === 1;
     if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.renderVisible[this.index] === 1;
+    if (this._hasComponents.MeshRenderer) return MeshRenderer.renderVisible[this.index] === 1;
     return false;
   }
   set visible(value) {
@@ -712,6 +725,10 @@ export class GameObject {
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
+    }
+    if (this._hasComponents.MeshRenderer && MeshRenderer.renderVisible[this.index] !== v) {
+      MeshRenderer.renderVisible[this.index] = v;
+      MeshRenderer.renderDirty[this.index] = 1;
     }
   }
 
@@ -863,6 +880,10 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.alpha[this.index] !== value) {
       AdobeAnimComponent.alpha[this.index] = value;
     }
+    if (this._hasComponents.MeshRenderer && MeshRenderer.alpha[this.index] !== value) {
+      MeshRenderer.alpha[this.index] = value;
+      MeshRenderer.renderDirty[this.index] = 1;
+    }
     return this;
   }
 
@@ -882,6 +903,10 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.tint[this.index] = value;
     }
+    if (this._hasComponents.MeshRenderer && MeshRenderer.tint[this.index] !== (value >>> 0)) {
+      MeshRenderer.tint[this.index] = value >>> 0;
+      MeshRenderer.renderDirty[this.index] = 1;
+    }
     return this;
   }
 
@@ -899,6 +924,10 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
     }
+    if (this._hasComponents.MeshRenderer && MeshRenderer.renderVisible[this.index] !== v) {
+      MeshRenderer.renderVisible[this.index] = v;
+      MeshRenderer.renderDirty[this.index] = 1;
+    }
     return this;
   }
 
@@ -909,6 +938,8 @@ export class GameObject {
       mask = SpriteRenderer.layerMask[this.index] | 0;
     } else if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerMask) {
       mask = AdobeAnimComponent.layerMask[this.index] | 0;
+    } else if (this._hasComponents.MeshRenderer && MeshRenderer.layerMask) {
+      mask = MeshRenderer.layerMask[this.index] | 0;
     }
     if (!mask) return Layer.getName(Layer.entitiesId);
     for (let id = 0; id < Layer.MAX_LAYERS; id++) {
@@ -951,6 +982,12 @@ export class GameObject {
     }
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerMask) {
       AdobeAnimComponent.layerMask[i] = m;
+    }
+    if (this._hasComponents.MeshRenderer && MeshRenderer.layerMask) {
+      if (MeshRenderer.layerMask[i] !== m) {
+        MeshRenderer.layerMask[i] = m;
+        MeshRenderer.renderDirty[i] = 1;
+      }
     }
     if (this._hasComponents.Collider && Collider.layerMask) {
       const old = Collider.layerMask[i] | 0;
@@ -1754,6 +1791,7 @@ export class GameObject {
     }
 
     DecorationPool.clearAttachedAndDespawnAll(i);
+    ColliderFixture.removeAllForEntity(i);
 
     // ========================================
     // COMPONENT DEACTIVATION (SAFE - unique index)
@@ -1767,6 +1805,7 @@ export class GameObject {
     }
     if (this.collider) Collider.active[i] = 0;
     if (this.spriteRenderer) SpriteRenderer.active[i] = 0;
+    if (this.meshRenderer) MeshRenderer.active[i] = 0;
     if (this.adobeAnimComponent) AdobeAnimComponent.active[i] = 0;
     if (this.lightEmitter) {
       LightEmitter.active[i] = 0;
@@ -2185,6 +2224,7 @@ export class GameObject {
         if (old) syncColliderFeed(i, old, 0);
       }
       if (Collider.feedBits) Collider.feedBits[i] = 0;
+      if (Collider.fixtureCount) Collider.fixtureCount[i] = 0;
     }
 
     if (has.LightEmitter) {
@@ -2214,6 +2254,18 @@ export class GameObject {
     if (has.LightOccluder) {
       LightOccluder.active[i] = 1;
       LightOccluder.maskMode[i] = 0; // LIGHT_OCCLUDER_MASK_COLLIDER
+    }
+
+    if (has.MeshRenderer) {
+      MeshRenderer.active[i] = 1;
+      MeshRenderer.tint[i] = 0xffffff;
+      MeshRenderer.alpha[i] = 1;
+      MeshRenderer.renderVisible[i] = 1;
+      MeshRenderer.layerMask[i] = 0;
+      MeshRenderer.renderDirty[i] = 1;
+      if (!ColliderFixture.initialized || (ColliderFixture.maxCount | 0) === 0) {
+        warnMeshRendererNeedsFixtures();
+      }
     }
 
     if (has.SpriteRenderer) {
@@ -2456,6 +2508,7 @@ export class GameObject {
     const rigidBodySleeping = RigidBody.sleeping;
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
+    const meshRendererActive = MeshRenderer.active;
     const adobeAnimActive = AdobeAnimComponent.active;
     const lightEmitterActive = LightEmitter.active;
     const lightEmitterColor = LightEmitter.lightColor;
@@ -2481,6 +2534,7 @@ export class GameObject {
         (rigidBodyActive && rigidBodyActive[i]) ||
         (colliderActive && colliderActive[i]) ||
         (spriteRendererActive && spriteRendererActive[i]) ||
+        (meshRendererActive && meshRendererActive[i]) ||
         (adobeAnimActive && adobeAnimActive[i]) ||
         (lightEmitterActive && lightEmitterActive[i]) ||
         (shadowCasterActive && shadowCasterActive[i]) ||
@@ -2506,6 +2560,7 @@ export class GameObject {
         if (rigidBodySleeping) rigidBodySleeping[i] = 0;
         if (colliderActive) colliderActive[i] = 0;
         if (spriteRendererActive) spriteRendererActive[i] = 0;
+        if (meshRendererActive) meshRendererActive[i] = 0;
         if (adobeAnimActive) adobeAnimActive[i] = 0;
         if (lightEmitterActive) lightEmitterActive[i] = 0;
         if (lightEmitterColor) lightEmitterColor[i] = 0xffffff;

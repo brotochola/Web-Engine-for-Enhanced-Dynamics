@@ -133,6 +133,7 @@
     "bench:micro:sr-flags": "node tests/bench/srFlagsMicrobench.mjs",
     "bench:micro:hyp-wins": "node tests/bench/runHypWinsMicrobenches.mjs",
     "bench:micro:compute-pack": "node tests/bench/computePackMicrobench.mjs",
+    "bench:micro:collider-fill-pack": "node tests/bench/colliderFillPackMicrobench.mjs",
     "bench:feature:compute": "node tests/bench/runIntegratedWorkerBenchmark.mjs --scene /tests/bench/stressScenes/computeStressScene.js --scene-export ComputeStressScene --output tests/results/compute-stress.json",
     "bench:feature:compute:headed": "node tests/bench/runIntegratedWorkerBenchmark.mjs --headed --scene /tests/bench/stressScenes/computeStressScene.js --scene-export ComputeStressScene --output tests/results/compute-stress-headed.json",
     "verify:pose-interpolation": "node tests/bench/poseInterpolationVerify.mjs",

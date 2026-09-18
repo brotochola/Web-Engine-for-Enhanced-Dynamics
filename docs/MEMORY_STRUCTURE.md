@@ -31,8 +31,9 @@ all X values packed together, then all Y values, etc. No per-entity objects on t
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Transform**           | SoA: `active` (Uint8), `entityType` (Uint8), `isItOnScreen` (Uint8). Pose `x`/`y`/`rotation` (Float32) live **only** on Box2D WASM HEAP — bound via `bindBox2dHotFields` after `box2dReady`. Visuals latch **pose publish** instead of sampling HEAP mid-step. |
 | **RigidBody**           | SoA: `active`, `static`, `fixedRotation` (Uint8); `ax`, `ay`, `px`, `py`, `pRotation`, `angularAccel`, `mass`, `invMass`, `inertia`, `invInertia`, `linearDamping`, `angularDamping`, `speed`, `sleepThreshold`. HEAP-only: `vx`, `vy`, `angularVelocity`, `sleeping`. `px/py/pRotation` = prev sim pose (snapshot before `world.step`). |
-| **Collider**            | `active`, `shapeType` (0=Box, 1=Circle, 2=Polygon — WASM C), `isTrigger` (Uint8); `offsetX`, `offsetY`, `radius`, `width`, `height`, `visualRange`, `friction` (Float32; Box2D fixture μ, pair = min); `polyCount` (Uint8); `polyCentroidX/Y` (Float32); strided `polyVertexX/Y`, `polyNormalX/Y` (length entityCount×8); `collisionLayer` (Uint8, index 0-31); `collisionMask` (Uint32, bitmask -- 32 collision layers max); `collisionGroupIndex` (Int32, Box2D-style group: 0 = layer/mask only, same negative = never collide, same positive = always collide); `layerMask` (Uint16, bit i = Layer.id); `feedBits` (Uint8, opaque compute flags) |
+| **Collider**            | `active`, `shapeType` (0=Box, 1=Circle, 2=Polygon — WASM C), `isTrigger` (Uint8); `offsetX`, `offsetY`, `radius`, `width`, `height`, `visualRange`, `friction` (Float32; Box2D fixture μ, pair = min); `polyCount` (Uint8); `polyCentroidX/Y` (Float32); strided `polyVertexX/Y`, `polyNormalX/Y` (length entityCount×8); `collisionLayer` (Uint8, index 0-31); `collisionMask` (Uint32, bitmask -- 32 collision layers max); `collisionGroupIndex` (Int32, Box2D-style group: 0 = layer/mask only, same negative = never collide, same positive = always collide); `layerMask` (Uint16, bit i = Layer.id); `feedBits` (Uint8, opaque compute flags); `fixtureCount` (Uint16, compound extras). Physics host `COLLIDER_SCHEMA` in `physicsHostImpl.js` must list the same keys in order — otherwise `createBody` never sees fixtures. |
 | **SpriteRenderer**      | `active`, `textureId`, animation fields, flip flags, etc.                                                                                                                                                                                                                                                                                   |
+| **MeshRenderer**        | `active`, `tint` (Uint32 0xRRGGBB), `alpha` (Float32), `layerMask` (Uint16, bit = Layer.id), `renderVisible`, `renderDirty`. Fill of `ColliderFixture` fans on `LAYER_KIND.MESH`. |
 | **ParticleComponent**   | `active`, `x`, `y`, `z`, `vx`, `vy`, `vz`, `lifespan`, `currentLife`, `gravity`, `scaleX/Y`, `alpha`, `tint`, `baseTint`, `textureId`, `rotation`, `flipX/Y`, `fadeOnTheFloor`, `timeOnFloor`, `initialAlpha`, `stayOnTheFloor`, `despawnOnGroundContact`, `alpha: { from, to: 0 }`, `isItOnScreen`, `blendMode` (mixed Uint8/Uint16/Float32/Uint32) |
 | **DecorationComponent** | `active`, `x`, `y`, `offsetX/Y`, `textureId`, `scaleX/Y`, `baseRotation`, `rotation`, `alpha`, `tint`, `anchorX/Y`, `isItOnScreen`, `sway`, `swayAmplitude`, `swayFrequency`                                                                                                                                                                |
 | **BulletComponent**     | `active`, `startX/Y`, `trailWidth`, `x`, `y`, `prevX/Y`, `vx`, `vy`, `bulletAngle`, `damage`, `ownerId`, `shooterEntityType`, `textureId`, `scale`, `alpha`, `tint`, `spriteRotation`, `anchorX/Y`, `offsetY`, `isItOnScreen`                                                                                                               |
@@ -160,6 +161,22 @@ Box2D still writes begin/end into WASM HEAP buffers each step. Nested `weedjsPos
 | Writer                                           | Reader         |
 | ------------------------------------------------ | -------------- |
 | Logic workers (create), physics (resolve + free) | Logic, physics |
+
+---
+
+## 5b. ColliderFixture buffers
+
+### `colliderFixtureData`
+
+Pool of extra convex shapes on a body (`physics.maxFixtures`). Layout: `ColliderFixture.getBufferSize(maxFixtures, entityCount)` — active, entity, next, vertCount, verts/normals (stride 8), `head[entity]`, revision.
+
+### `colliderFixtureFreeList` / `colliderFixtureFreeListTop`
+
+Same Treiber stack as joints.
+
+| Writer | Reader |
+| ------ | ------ |
+| Logic (`replacePolygons`) | Physics host, pixi fill, spatial / Ray / debug |
 
 ---
 

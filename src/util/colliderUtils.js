@@ -7,6 +7,7 @@
 
 import { Transform } from '../components/transform.js';
 import { Collider } from '../components/collider.js';
+import { ColliderFixture } from '../core/colliderFixture.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from './configDefaults.js';
 
 /**
@@ -53,6 +54,36 @@ export function getColliderBounds(idx, result) {
     const s = Transform.rotS ? Transform.rotS[idx] : 0;
     const originX = tx + c * ox - s * oy;
     const originY = ty + s * ox + c * oy;
+
+    const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[idx] : 0;
+    if (fixtureCount > 0 && ColliderFixture.active) {
+      const skin = Collider.radius[idx] || 0;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      ColliderFixture.forEach(idx, (fi) => {
+        const count = ColliderFixture.vertCount[fi] | 0;
+        const base = ColliderFixture.vertBase(fi);
+        const vx = ColliderFixture.vertexX;
+        const vy = ColliderFixture.vertexY;
+        for (let i = 0; i < count; i++) {
+          const wx = originX + c * vx[base + i] - s * vy[base + i];
+          const wy = originY + s * vx[base + i] + c * vy[base + i];
+          if (wx < minX) minX = wx;
+          if (wx > maxX) maxX = wx;
+          if (wy < minY) minY = wy;
+          if (wy > maxY) maxY = wy;
+        }
+      });
+      if (minX !== Infinity) {
+        result.posX = (minX + maxX) * 0.5;
+        result.posY = (minY + maxY) * 0.5;
+        result.halfW = (maxX - minX) * 0.5 + skin;
+        result.halfH = (maxY - minY) * 0.5 + skin;
+        return result;
+      }
+    }
 
     const count = Collider.polyCount[idx];
     const skin = Collider.radius[idx] || 0;
@@ -141,6 +172,33 @@ export function pointInCollider(idx, x, y) {
   const ly = -s * wx + c * wy;
 
   if (shape === SHAPE_POLYGON) {
+    const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[idx] : 0;
+    if (fixtureCount > 0 && ColliderFixture.active) {
+      let hit = false;
+      ColliderFixture.forEach(idx, (fi) => {
+        if (hit) return;
+        const count = ColliderFixture.vertCount[fi] | 0;
+        if (count < 3) return;
+        const base = ColliderFixture.vertBase(fi);
+        const vx = ColliderFixture.vertexX;
+        const vy = ColliderFixture.vertexY;
+        let sign = 0;
+        for (let i = 0; i < count; i++) {
+          const x0 = vx[base + i];
+          const y0 = vy[base + i];
+          const i1 = (i + 1) % count;
+          const x1 = vx[base + i1];
+          const y1 = vy[base + i1];
+          const cross = (x1 - x0) * (ly - y0) - (y1 - y0) * (lx - x0);
+          if (cross === 0) continue;
+          const next = cross > 0 ? 1 : -1;
+          if (sign === 0) sign = next;
+          else if (next !== sign) return;
+        }
+        if (sign !== 0) hit = true;
+      });
+      return hit;
+    }
     const count = Collider.polyCount[idx] | 0;
     if (count < 3) return false;
     const base = idx * MAX_POLYGON_VERTICES;

@@ -29,6 +29,10 @@ static config = {
       scale: 1,
       zIndex: 0.5,
     },
+    terrain: {
+      kind: LAYER_KIND.MESH,
+      zIndex: 2.9,
+    },
   },
 };
 
@@ -66,7 +70,7 @@ Omit `layer`/`layers` → entities bit. `layers: []` on particles → mask 0. Ga
 
 | Type | Renderable | Mask source | Omit |
 |------|-----------|-------------|------|
-| 0 | Entity | `SpriteRenderer.layerMask` | entities bit (`setLayer` also ORs entities if no sprite-queue bit) |
+| 0 | Entity | `SpriteRenderer.layerMask` (sprites) / `MeshRenderer.layerMask` (MESH fill) | entities bit (`setLayer` also ORs entities if feeder is not SPRITES) |
 | 1 | Particle | `ParticleComponent.layerMask` | entities bit |
 | 2 | Decoration | `DecorationComponent.layerMask` | entities bit |
 | 3 | Light Glow | `LightEmitter.layerIdOfGlowSprite` (legacy id) or entity `layerMask` | entities |
@@ -75,6 +79,8 @@ Omit `layer`/`layers` → entities bit. `layers: []` on particles → mask 0. Ga
 | 7 | LiquidFun | thin SAB `layerMask` | entities bit |
 
 Sprite-queue bits: collect **once per bit**. Density bits: splat pose, no type-7/type-1 into that layer's sprite queue. Compute bits: pack particles (`x,y,vx,vy`) and/or colliders. See [COMPUTE_LAYERS.md](./COMPUTE_LAYERS.md).
+
+`kind: LAYER_KIND.MESH` (`'mesh'`) is a custom slot with **no sprite queue**. `setLayer('terrain')` writes `MeshRenderer.layerMask` (and still ORs the entities bit for any sprite). Pixi packs `ColliderFixture` fans into one instanced `PIXI.Mesh` per MESH layer. Color is `MeshRenderer.tint` / `alpha`, not Collider.
 
 **LiquidFun / CPU particles** are the same mask inputs. Density splat and compute pack both. Only the simulator differs.
 

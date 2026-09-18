@@ -63,6 +63,7 @@ Open `http://localhost:8000/demos/`, or use the port printed by the server if `8
 - 💧 **Water & Boxes** — custom-layer metaball water (additive blend + threshold shader) next to regular Box2D boxes; CPU sprite density, no LiquidFun involved.
 - 🐺 **Predators**, 🐦 **Boids**, 🐜 **Ants** — large-population entity/AI demos exercising spatial hashing and neighbor queries.
 - 🚗 **Car**, 🔗 **Constraints**, 🐷 **Bad Piggies**, 🧱 **Mamushka Dig** — Box2D joints, constraint rigs, and destructible/dig terrain.
+- ⛰️ **Destructible Terrain** — material+amount grid, marching squares, simplify + earcut, one Box2D body per island (`replacePolygons`). Ship, brush, laser. No harpoon. [`demos/destructibleTerrainScene`](https://github.com/brotochola/MultithreadedGameEngine/tree/main/demos/destructibleTerrainScene)
 
 The same picker also has Adobe Animate playback, tilemap navigation, ray casting, and `QueryAABB` demos.
 

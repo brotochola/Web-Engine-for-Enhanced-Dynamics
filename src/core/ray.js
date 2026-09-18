@@ -4,6 +4,7 @@
 
 import { Transform } from '../components/transform.js';
 import { Collider } from '../components/collider.js';
+import { ColliderFixture } from './colliderFixture.js';
 import { Grid } from './grid.js';
 import { rayCircleIntersect, rayBoxIntersect, rayPolygonIntersect } from '../util/utils.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
@@ -863,6 +864,24 @@ export class Ray {
       const s = Transform.rotS ? Transform.rotS[entityIndex] : 0;
       const entityX = tx + c * ox - s * oy;
       const entityY = ty + s * ox + c * oy;
+      const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[entityIndex] : 0;
+      if (fixtureCount > 0 && ColliderFixture.active) {
+        let best = -1;
+        ColliderFixture.forEach(entityIndex, (fi) => {
+          const count = ColliderFixture.vertCount[fi] | 0;
+          if (count < 3) return;
+          const base = ColliderFixture.vertBase(fi);
+          const d = rayPolygonIntersect(
+            rayX, rayY, dirX, dirY,
+            entityX, entityY, c, s,
+            ColliderFixture.vertexX, ColliderFixture.vertexY,
+            ColliderFixture.normalX, ColliderFixture.normalY,
+            count, base, rayLength
+          );
+          if (d >= 0 && (best < 0 || d < best)) best = d;
+        });
+        return best;
+      }
       const count = Collider.polyCount[entityIndex];
       if (count < 3) return -1;
       const base = entityIndex * MAX_POLYGON_VERTICES;

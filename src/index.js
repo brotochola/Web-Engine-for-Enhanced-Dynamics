@@ -62,6 +62,7 @@ export { Transform } from './components/transform.js';
 export { RigidBody } from './components/rigidBody.js';
 export { Collider } from './components/collider.js';
 export { SpriteRenderer } from './components/spriteRenderer.js';
+export { MeshRenderer } from './components/meshRenderer.js';
 export { AdobeAnimComponent } from './components/adobeAnimComponent.js';
 export { ParticleComponent } from './components/particleComponent.js';
 export { DecorationComponent } from './components/decorationComponent.js';
@@ -116,6 +117,7 @@ export { BulletComponent } from './components/bulletComponent.js';
 // ============================================================================
 // Box2D joints (distance / revolute / weld) synced to WASM via command ring
 export { Joint } from './core/joint.js';
+export { ColliderFixture } from './core/colliderFixture.js';
 export { SharedAtomicPool } from './core/sharedAtomicPool.js';
 
 // ============================================================================
@@ -200,6 +202,7 @@ import { Transform } from './components/transform.js';
 import { RigidBody } from './components/rigidBody.js';
 import { Collider } from './components/collider.js';
 import { SpriteRenderer } from './components/spriteRenderer.js';
+import { MeshRenderer } from './components/meshRenderer.js';
 import { AdobeAnimComponent } from './components/adobeAnimComponent.js';
 import { ParticleComponent } from './components/particleComponent.js';
 
@@ -238,6 +241,7 @@ import { CollisionListener } from './components/collisionListener.js';
 import { JointBreakListener } from './components/jointBreakListener.js';
 import { Grab } from './components/grab.js';
 import { Joint } from './core/joint.js';
+import { ColliderFixture } from './core/colliderFixture.js';
 import {
   ShapeType,
   MAX_POLYGON_VERTICES,
@@ -342,6 +346,7 @@ const WEED = Object.freeze({
   RigidBody,
   Collider,
   SpriteRenderer,
+  MeshRenderer,
   AdobeAnimComponent,
   ParticleComponent,
   LightEmitter,
@@ -378,6 +383,7 @@ const WEED = Object.freeze({
 
   // Joints (Box2D-mapped)
   Joint,
+  ColliderFixture,
 
   // Pool base class
   SharedAtomicPool,

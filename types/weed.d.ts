@@ -46,6 +46,22 @@ export const LAYER_FEEDER_KIND: Readonly<{
   SPRITES: 2;
   DENSITY: 3;
   COMPUTE: 4;
+  MESH: 5;
+}>;
+
+/** Layer content / pipeline kind. Stored value is the string. */
+export const LAYER_KIND: Readonly<{
+  SPRITES: 'sprites';
+  COVER: 'cover';
+  STATIC: 'static';
+  TILING: 'tiling';
+  TILEMAP: 'tilemap';
+  DENSITY: 'density';
+  COMPUTE: 'compute';
+  MESH: 'mesh';
+  DECALS: 'decals';
+  SHADOWS: 'shadows';
+  LIGHTING: 'lighting';
 }>;
 
 /** {@link Layer.resolveSubscriptions} kind. */
@@ -296,6 +312,7 @@ export interface QuerySystemPrecomputeComponentMap {
   RigidBody: typeof RigidBody;
   Collider: typeof Collider;
   SpriteRenderer: typeof SpriteRenderer;
+  MeshRenderer: typeof MeshRenderer;
   AdobeAnimComponent: typeof AdobeAnimComponent;
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
@@ -851,6 +868,7 @@ export declare class GameObject {
   get rigidBody(): RigidBody | null;
   get collider(): Collider | null;
   get spriteRenderer(): SpriteRenderer | null;
+  get meshRenderer(): MeshRenderer | null;
   get adobeAnimComponent(): AdobeAnimComponent | null;
   get lightEmitter(): LightEmitter | null;
   get flashComponent(): FlashComponent | null;
@@ -2571,6 +2589,41 @@ export declare class Collider extends Component {
   addLayerToMask(layer: number): void;
   removeLayerFromMask(layer: number): void;
   collidesWithLayer(layer: number): boolean;
+  static makePolygon(
+    index: number,
+    points: ArrayLike<{ x: number; y: number } | number> | number[],
+  ): boolean;
+  static replacePolygons(
+    index: number,
+    polys: Array<ArrayLike<{ x: number; y: number } | number>>,
+  ): boolean;
+  static clearFixtures(index: number): void;
+  static fixtureCount: Uint16Array;
+  makePolygon(points: ArrayLike<{ x: number; y: number } | number> | number[]): boolean;
+  replacePolygons(polys: Array<ArrayLike<{ x: number; y: number } | number>>): boolean;
+  clearFixtures(): void;
+  get fixtureCount(): number;
+}
+
+export declare class MeshRenderer extends Component {
+  static readonly ARRAY_SCHEMA: {
+    active: typeof Uint8Array;
+    tint: typeof Uint32Array;
+    alpha: typeof Float32Array;
+    layerMask: typeof Uint16Array;
+    renderVisible: typeof Uint8Array;
+    renderDirty: typeof Uint8Array;
+  };
+  static active: Uint8Array;
+  static tint: Uint32Array;
+  static alpha: Float32Array;
+  static layerMask: Uint16Array;
+  static renderVisible: Uint8Array;
+  static renderDirty: Uint8Array;
+  get tint(): number;
+  set tint(value: number);
+  get alpha(): number;
+  set alpha(value: number);
 }
 
 export declare class SpriteRenderer extends Component {
@@ -3374,6 +3427,7 @@ export interface WeedEnums {
   LAYER_DENSITY_SOURCE: typeof LAYER_DENSITY_SOURCE;
   LAYER_COMPUTE_SOURCE: typeof LAYER_COMPUTE_SOURCE;
   LAYER_FEEDER_KIND: typeof LAYER_FEEDER_KIND;
+  LAYER_KIND: typeof LAYER_KIND;
   LAYER_SUBSCRIBE_KIND: typeof LAYER_SUBSCRIBE_KIND;
   COMPUTE_FLAG_STATIC: typeof COMPUTE_FLAG_STATIC;
   LAYER_SPLAT_FALLOFF: typeof LAYER_SPLAT_FALLOFF;
@@ -3428,6 +3482,7 @@ export interface WeedNamespace extends WeedEnums {
   RigidBody: typeof RigidBody;
   Collider: typeof Collider;
   SpriteRenderer: typeof SpriteRenderer;
+  MeshRenderer: typeof MeshRenderer;
   AdobeAnimComponent: typeof AdobeAnimComponent;
   ParticleComponent: typeof ParticleComponent;
   LightEmitter: typeof LightEmitter;

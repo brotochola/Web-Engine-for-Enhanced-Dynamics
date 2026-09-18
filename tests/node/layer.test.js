@@ -260,6 +260,27 @@ test('feederKind is an int enum; visible SAB round-trips', () => {
   }
 });
 
+test('kind mesh has MESH feeder and no sprite queue', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        terrain: { kind: LAYER_KIND.MESH, zIndex: 2.9 },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const terrain = Layer.get('terrain');
+    assert.equal(terrain.kind, LAYER_KIND.MESH);
+    assert.equal(Layer.feederKind(terrain.id), LAYER_FEEDER_KIND.MESH);
+    assert.equal(terrain.hasRenderQueue, false);
+    assert.equal(Layer._metadata.layers[terrain.id].maxItems, 0);
+    assert.equal(Layer._metadata.layers[terrain.id].kind, LAYER_KIND.MESH);
+  } finally {
+    Layer.reset();
+  }
+});
+
 test('densitySource string alias liquidFun still normalizes to int enum', () => {
   try {
     Layer.reset();

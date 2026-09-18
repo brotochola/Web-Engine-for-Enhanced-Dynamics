@@ -41,6 +41,7 @@ import { NavGrid } from '../core/navGrid.js';
 import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
 import { Joint } from '../core/joint.js';
+import { ColliderFixture } from '../core/colliderFixture.js';
 import { SoundManager } from '../core/soundManager.js';
 import { createWorkerQueryFunctions } from '../core/querySystem.js';
 import { Query } from '../core/query.js';
@@ -66,6 +67,7 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { MeshRenderer } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
@@ -596,6 +598,17 @@ export class AbstractWorker {
       this.reportLog(`initialized Joint system for ${data.joints.maxJoints} joints`);
     }
 
+    if (data.fixtures && data.fixtures.enabled) {
+      ColliderFixture.initializeArrays(
+        data.fixtures.data,
+        data.fixtures.maxFixtures,
+        data.fixtures.entityCount || 0
+      );
+      ColliderFixture.initialize(data.fixtures.maxFixtures);
+      ColliderFixture.initializeFreeList(data.fixtures.freeList, data.fixtures.freeListTop);
+      this.reportLog(`initialized ColliderFixture pool for ${data.fixtures.maxFixtures} fixtures`);
+    }
+
     // Initialize particle compact lists (for optimized iteration)
     if (data.maxParticles && data.maxParticles > 0) {
       // activeParticlesData: rebuilt each frame by particle_worker
@@ -877,6 +890,7 @@ export class AbstractWorker {
     self.RigidBody = RigidBody;
     self.Collider = Collider;
     self.SpriteRenderer = SpriteRenderer;
+    self.MeshRenderer = MeshRenderer;
     self.AdobeAnimComponent = AdobeAnimComponent;
     self.ParticleComponent = ParticleComponent;
     self.LightEmitter = LightEmitter;
@@ -943,7 +957,7 @@ export class AbstractWorker {
     // Workers receive componentPools as { name: { count, componentId } } (no ComponentClass ref).
     // Without this, scenes whose entities don't use RigidBody/Collider crash in spatial/physics/logic
     // because those workers access .active, pose/vel fields etc. which are undefined typed arrays.
-    const coreComponents = [Transform, RigidBody, Collider, SpriteRenderer, AdobeAnimComponent];
+    const coreComponents = [Transform, RigidBody, Collider, SpriteRenderer, MeshRenderer, AdobeAnimComponent];
     for (const ComponentClass of coreComponents) {
       const name = ComponentClass.name;
       const buffer = componentData?.[name];

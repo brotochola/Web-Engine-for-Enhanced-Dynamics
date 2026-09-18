@@ -135,6 +135,8 @@
   let jointLive = null; // Uint8Array scratch (dense-sized marks only)
   let maxJoints = 0;
   let jointCapacityWarn = false;
+  let fixtureViews = null;
+  let maxFixtures = 0;
   let pxChan = null;
   let pyChan = null;
   let rotChan = null;
@@ -252,6 +254,25 @@
       polyCount: viewFromDesc(desc.polyCount, Uint8Array),
       polyVertexX: viewFromDesc(desc.polyVertexX, Float32Array),
       polyVertexY: viewFromDesc(desc.polyVertexY, Float32Array),
+      fixtureCount: desc.fixtureCount ? viewFromDesc(desc.fixtureCount, Uint16Array) : null,
+    };
+  }
+
+  function bindFixtureViews(desc, maxF) {
+    if (!desc || !(maxF > 0)) {
+      fixtureViews = null;
+      maxFixtures = 0;
+      return;
+    }
+    maxFixtures = maxF | 0;
+    fixtureViews = {
+      active: viewFromDesc(desc.active, Uint8Array),
+      entity: viewFromDesc(desc.entity, Uint16Array),
+      next: viewFromDesc(desc.next, Uint16Array),
+      vertCount: viewFromDesc(desc.vertCount, Uint8Array),
+      vertexX: viewFromDesc(desc.vertexX, Float32Array),
+      vertexY: viewFromDesc(desc.vertexY, Float32Array),
+      head: desc.head ? viewFromDesc(desc.head, Uint16Array) : null,
     };
   }
 
@@ -463,6 +484,67 @@
     return layer <= 31 ? 1 << layer : 1;
   }
 
+  function fixtureAreaSum(entityIdx) {
+    const F = fixtureViews;
+    if (!F || !F.head) return 0;
+    const inv = 0xffff;
+    let cur = F.head[entityIdx];
+    let area = 0;
+    let guard = 0;
+    while (cur !== inv && guard++ < maxFixtures) {
+      if (F.active[cur]) {
+        const count = F.vertCount[cur] | 0;
+        if (count >= 3) {
+          const base = cur * MAX_POLY_VERTS;
+          let twice = 0;
+          for (let v = 0; v < count; v++) {
+            const n = v + 1 < count ? v + 1 : 0;
+            twice +=
+              F.vertexX[base + v] * F.vertexY[base + n] -
+              F.vertexX[base + n] * F.vertexY[base + v];
+          }
+          const a = twice * 0.5;
+          if (a > 0) area += a;
+        }
+      }
+      cur = F.next[cur];
+    }
+    return area;
+  }
+
+  function addAllFixtures(entityIdx) {
+    const F = fixtureViews;
+    if (!F || !F.head || !bodyAddShapePolygonFn) return 0;
+    const inv = 0xffff;
+    let cur = F.head[entityIdx];
+    let n = 0;
+    let guard = 0;
+    const ox = views.offsetX[entityIdx] || 0;
+    const oy = views.offsetY[entityIdx] || 0;
+    while (cur !== inv && guard++ < maxFixtures) {
+      if (F.active[cur]) {
+        const count = F.vertCount[cur] | 0;
+        if (count >= 3) {
+          const ptr = Module._malloc(count * 2 * 4);
+          try {
+            const heapBase = ptr >> 2;
+            const base = cur * MAX_POLY_VERTS;
+            for (let v = 0; v < count; v++) {
+              Module.HEAPF32[heapBase + v * 2] = F.vertexX[base + v];
+              Module.HEAPF32[heapBase + v * 2 + 1] = F.vertexY[base + v];
+            }
+            bodyAddShapePolygonFn(entityIdx, ptr, count, ox, oy);
+            n++;
+          } finally {
+            Module._free(ptr);
+          }
+        }
+      }
+      cur = F.next[cur];
+    }
+    return n;
+  }
+
   function densityForEntity(i, shape) {
     let area = 0;
     if (shape === ShapeType.Circle) {
@@ -471,16 +553,21 @@
     } else if (shape === ShapeType.Box) {
       area = views.width[i] * views.height[i];
     } else if (shape === ShapeType.Polygon) {
-      const count = views.polyCount[i] | 0;
-      const base = i * MAX_POLY_VERTS;
-      let twiceArea = 0;
-      for (let v = 0; v < count; v++) {
-        const next = v + 1 < count ? v + 1 : 0;
-        twiceArea +=
-          views.polyVertexX[base + v] * views.polyVertexY[base + next] -
-          views.polyVertexX[base + next] * views.polyVertexY[base + v];
+      const extras = views.fixtureCount ? views.fixtureCount[i] | 0 : 0;
+      if (extras > 0) {
+        area = fixtureAreaSum(i);
+      } else {
+        const count = views.polyCount[i] | 0;
+        const base = i * MAX_POLY_VERTS;
+        let twiceArea = 0;
+        for (let v = 0; v < count; v++) {
+          const next = v + 1 < count ? v + 1 : 0;
+          twiceArea +=
+            views.polyVertexX[base + v] * views.polyVertexY[base + next] -
+            views.polyVertexX[base + next] * views.polyVertexY[base + v];
+        }
+        area = Math.abs(twiceArea) * 0.5;
       }
-      area = Math.abs(twiceArea) * 0.5;
     }
     const mass = views.mass[i];
     return mass > 0 && area > 0 ? mass / area : 1;
@@ -532,6 +619,19 @@
         return true;
       }
       if (!col) return false;
+      const extras = views.fixtureCount ? views.fixtureCount[i] | 0 : 0;
+      if (extras > 0) {
+        world.create(opts);
+        if (!addAllFixtures(i)) {
+          try {
+            world.destroyBody(i);
+          } catch (_) {
+            /* slot may already be clear */
+          }
+          return false;
+        }
+        return true;
+      }
       if (shape === ShapeType.Circle) {
         const r = views.radius[i];
         if (!(r > 0)) return false;
@@ -561,6 +661,12 @@
   }
 
   function syncBodyGeometry(i) {
+    const extras = views.fixtureCount ? views.fixtureCount[i] | 0 : 0;
+    if (extras > 0) {
+      if (bodyClearShapesFn) bodyClearShapesFn(i);
+      addAllFixtures(i);
+      return;
+    }
     const shape = views.shapeType[i] | 0;
     const offsetX = views.offsetX[i];
     const offsetY = views.offsetY[i];
@@ -958,6 +1064,7 @@
   let bodySetShapeBoxFn = null;
   let bodySetShapeCircleFn = null;
   let bodySetShapePolygonFn = null;
+  let bodyAddShapePolygonFn = null;
   let bodyClearShapesFn = null;
 
   // Teleports skip b2BodyMoveEvent — accumulate and merge into moved SAB after step
@@ -2286,6 +2393,13 @@
       'number',
       'number',
     ]);
+    bodyAddShapePolygonFn = Module.cwrap('body_add_shape_polygon', null, [
+      'number',
+      'number',
+      'number',
+      'number',
+      'number',
+    ]);
     bodyClearShapesFn = Module.cwrap('body_clear_shapes', null, ['number']);
     weedjsHeapBytesUsed =
       typeof Module._weedjs_heap_bytes_used === 'function'
@@ -2362,6 +2476,7 @@
       throw new Error('[weedjs-box2d] WEEDJS_INIT missing bodySync dirty buffers');
     }
     bindJointViews(data.jointViews, data.maxJoints | 0);
+    bindFixtureViews(data.fixtureViews, data.maxFixtures | 0);
     if (data.liquidFunViews) {
       liquidFunViews = {
         count: data.liquidFunViews.count

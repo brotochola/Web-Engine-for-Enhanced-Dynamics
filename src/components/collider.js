@@ -11,6 +11,7 @@
 
 import { Component } from '../core/component.js';
 import { RigidBody } from './rigidBody.js';
+import { ColliderFixture } from '../core/colliderFixture.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 
@@ -68,11 +69,15 @@ class Collider extends Component {
     // Compute-layer feed (append-only so prior field offsets stay stable)
     layerMask: Uint16Array, // bit i = Layer.id; compute pack uses matching bits
     feedBits: Uint8Array, // opaque shader flags; engine ORs COMPUTE_FLAG_STATIC at pack
+
+    // Compound extras (ColliderFixture pool). 0 = single-shape path.
+    fixtureCount: Uint16Array,
   };
 
   static initializeArrays(buffer, count) {
     super.initializeArrays(buffer, count);
     if (this.layerMask) this.layerMask.fill(0);
+    if (this.fixtureCount) this.fixtureCount.fill(0);
   }
 
   /** @type {number} */
@@ -162,6 +167,7 @@ class Collider extends Component {
       ny[base + i] = nny * inv;
     }
 
+    ColliderFixture.removeAllForEntity(index);
     Collider.polyCount[index] = count;
     Collider.polyCentroidX[index] = cx;
     Collider.polyCentroidY[index] = cy;
@@ -172,6 +178,26 @@ class Collider extends Component {
     RigidBody.syncMassFromCollider(index);
     markBodyDirty(index, BODY_DIRTY.GEOMETRY);
     return true;
+  }
+
+  /**
+   * Compound body: N convex local polygons (3..8 verts, CCW) as Box2D fixtures.
+   * @param {number} index
+   * @param {Array<ArrayLike<{x:number,y:number}|number>>} polys
+   * @returns {boolean}
+   */
+  static replacePolygons(index, polys) {
+    return ColliderFixture.replaceForEntity(index, polys);
+  }
+
+  /**
+   * Drop extra fixtures; body falls back to the single Collider shape (or none).
+   * @param {number} index
+   */
+  static clearFixtures(index) {
+    ColliderFixture.removeAllForEntity(index);
+    RigidBody.syncMassFromCollider(index);
+    markBodyDirty(index, BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS);
   }
 
   /**
@@ -231,6 +257,14 @@ class Collider extends Component {
     return Collider.makePolygon(this.index, points);
   }
 
+  replacePolygons(polys) {
+    return Collider.replacePolygons(this.index, polys);
+  }
+
+  clearFixtures() {
+    Collider.clearFixtures(this.index);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // CUSTOM GETTERS/SETTERS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -245,6 +279,7 @@ class Collider extends Component {
   set active(value) {
     const next = value ? 1 : 0;
     if (Collider.active[this.index] === next) return;
+    if (!next) ColliderFixture.removeAllForEntity(this.index);
     Collider.active[this.index] = next;
     markBodyDirty(
       this.index,
@@ -372,6 +407,10 @@ class Collider extends Component {
 
   collidesWithLayer(layer) {
     return !!(Collider.collisionMask[this.index] & (1 << (layer & 31)));
+  }
+
+  get fixtureCount() {
+    return Collider.fixtureCount ? Collider.fixtureCount[this.index] | 0 : 0;
   }
 }
 

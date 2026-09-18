@@ -3,7 +3,7 @@
 //
 // ARCHITECTURE:
 // - Built-in pipeline layers (entities, decals, castedShadows, lighting)
-// - Custom layers in scene config.layers (sprites, density, compute, or scenery)
+// - Custom layers in scene config.layers (sprites, density, compute, mesh, or scenery)
 // - Scenery kinds (cover / static / tiling / tilemap) are scene-owned — no default background
 // - Each Layer instance is a lightweight facade over SAB arrays (like GameObject)
 // - Layer.water.setUniform('uThreshold', 0.4) works from any thread
@@ -733,6 +733,7 @@ export class Layer {
             this._hasRenderQueue[layer.id] = (
                 densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                 || compute
+                || kind === LAYER_KIND.MESH
                 || isSceneryKind(kind)
             ) ? 0 : 1;
 
@@ -808,7 +809,8 @@ export class Layer {
         if (kind === LAYER_KIND.COVER || kind === LAYER_KIND.STATIC
             || kind === LAYER_KIND.TILING || kind === LAYER_KIND.TILEMAP
             || kind === LAYER_KIND.SPRITES || kind === LAYER_KIND.DENSITY
-            || kind === LAYER_KIND.COMPUTE || kind === LAYER_KIND.DECALS
+            || kind === LAYER_KIND.COMPUTE || kind === LAYER_KIND.MESH
+            || kind === LAYER_KIND.DECALS
             || kind === LAYER_KIND.SHADOWS || kind === LAYER_KIND.LIGHTING) {
             if (isSceneryKind(kind) && builtIn) {
                 console.warn(`Layer: builtin "${name}" cannot use scenery kind "${kind}"`);
@@ -1118,6 +1120,7 @@ export class Layer {
         if (!layer || !this._feederKind) return;
         let kind = LAYER_FEEDER_KIND.BUILTIN;
         if (isSceneryKind(layer._kind)) kind = LAYER_FEEDER_KIND.NONE;
+        else if (layer._kind === LAYER_KIND.MESH) kind = LAYER_FEEDER_KIND.MESH;
         else if (layer._compute) kind = LAYER_FEEDER_KIND.COMPUTE;
         else if (layer._densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN) kind = LAYER_FEEDER_KIND.DENSITY;
         else if (this._hasRenderQueue && this._hasRenderQueue[id] === 1) kind = LAYER_FEEDER_KIND.SPRITES;
@@ -1486,6 +1489,7 @@ export class Layer {
                 feederKind: this._feederKind[i] | 0,
                 maxItems: isBuiltIn
                     || densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
+                    || layer._kind === LAYER_KIND.MESH
                     || isSceneryKind(layer._kind)
                     ? 0
                     : (config.maxItems || LAYER_DEFAULTS.maxItemsPerLayer),

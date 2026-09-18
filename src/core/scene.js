@@ -21,6 +21,7 @@ import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
 import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { MeshRenderer } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
@@ -234,6 +235,7 @@ class Scene {
         RigidBody: null,
         Collider: null,
         SpriteRenderer: null,
+        MeshRenderer: null,
       },
       // Spatial grid buffers (for raycasting)
       gridEntities: null,
@@ -265,6 +267,7 @@ class Scene {
       RigidBody: { ComponentClass: RigidBody },
       Collider: { ComponentClass: Collider },
       SpriteRenderer: { ComponentClass: SpriteRenderer },
+      MeshRenderer: { ComponentClass: MeshRenderer },
       CameraInOutListener: { ComponentClass: CameraInOutListener },
       CollisionListener: { ComponentClass: CollisionListener },
       JointBreakListener: { ComponentClass: JointBreakListener },
@@ -276,6 +279,7 @@ class Scene {
     RigidBody.componentId = this.nextComponentId++;
     Collider.componentId = this.nextComponentId++;
     SpriteRenderer.componentId = this.nextComponentId++;
+    MeshRenderer.componentId = this.nextComponentId++;
     CameraInOutListener.componentId = this.nextComponentId++;
     CollisionListener.componentId = this.nextComponentId++;
     JointBreakListener.componentId = this.nextComponentId++;

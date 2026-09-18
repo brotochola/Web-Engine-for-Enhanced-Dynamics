@@ -102,6 +102,7 @@ export const LAYER_FEEDER_KIND = Object.freeze({
   SPRITES: 2,
   DENSITY: 3,
   COMPUTE: 4,
+  MESH: 5,
 });
 
 /**
@@ -117,6 +118,7 @@ export const LAYER_KIND = Object.freeze({
   TILEMAP: 'tilemap',
   DENSITY: 'density',
   COMPUTE: 'compute',
+  MESH: 'mesh',
   DECALS: 'decals',
   SHADOWS: 'shadows',
   LIGHTING: 'lighting',
@@ -318,6 +320,8 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   /** Soft contact damping ratio ζ → b2WorldDef.contactDampingRatio. */
   contactDampingRatio: 0.7,
   maxJoints: 0,
+  /** Extra convex shapes per body (ColliderFixture pool). 0 = off. */
+  maxFixtures: 0,
   /** Gravity (px/s²). */
   gravity: Object.freeze({ x: 0, y: 0 }),
   /** Pixels treated as 1 meter for Box2D scale-dependent thresholds. */

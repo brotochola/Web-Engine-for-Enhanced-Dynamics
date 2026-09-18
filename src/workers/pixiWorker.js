@@ -11,6 +11,7 @@ self.postMessage({
 import { Transform } from '../components/transform.js';
 
 import { Collider } from '../components/collider.js';
+import { ColliderFixture } from '../core/colliderFixture.js';
 import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
 import { DecorationPool } from '../core/decorationPool.js';
@@ -23,6 +24,7 @@ import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { MeshRenderer } from '../components/meshRenderer.js';
 import { Sun } from '../core/sun.js';
 
 import {
@@ -33,6 +35,8 @@ import {
   ShapeType,
   MAX_POLYGON_VERTICES,
   LAYER_DENSITY_SOURCE,
+  LAYER_FEEDER_KIND,
+  LAYER_KIND,
   LAYER_SCALE_MODE,
 } from '../util/configDefaults.js';
 import {
@@ -71,6 +75,7 @@ import {
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
 import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
+import { ColliderFillBatch, packColliderFill } from '../render/colliderFillBatch.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
@@ -651,6 +656,7 @@ class PixiRenderer extends AbstractWorker {
     this._selfLitIdxScratch = null;
     this._selfLitBoxScratchX = new Float32Array(8);
     this._selfLitBoxScratchY = new Float32Array(8);
+    this._colliderFillViews = null;
 
     // Reusable matrices for low-res rendering
     this._shadowTransform = new PIXI.Matrix();
@@ -890,6 +896,42 @@ class PixiRenderer extends AbstractWorker {
     this.drawCallCount = 0;
   }
 
+  _colliderFillMeshBits() {
+    let bits = 0;
+    const n = Layer.count | 0;
+    for (let id = 0; id < n; id++) {
+      if (Layer.feederKind(id) === LAYER_FEEDER_KIND.MESH) bits |= 1 << id;
+    }
+    return bits;
+  }
+
+  _ensureColliderFillViews() {
+    let v = this._colliderFillViews;
+    if (!v) v = this._colliderFillViews = {};
+    v.entityCount = MeshRenderer.active ? MeshRenderer.active.length : 0;
+    v.meshActive = MeshRenderer.active;
+    v.meshVisible = MeshRenderer.renderVisible;
+    v.meshLayerMask = MeshRenderer.layerMask;
+    v.meshTint = MeshRenderer.tint;
+    v.meshAlpha = MeshRenderer.alpha;
+    v.fixtureCount = Collider.fixtureCount;
+    v.fixtureHead = ColliderFixture.head;
+    v.fixtureNext = ColliderFixture.next;
+    v.fixtureActive = ColliderFixture.active;
+    v.vertCount = ColliderFixture.vertCount;
+    v.vertexX = ColliderFixture.vertexX;
+    v.vertexY = ColliderFixture.vertexY;
+    v.x = Transform.x;
+    v.y = Transform.y;
+    v.rotC = Transform.rotC;
+    v.rotS = Transform.rotS;
+    v.offsetX = Collider.offsetX;
+    v.offsetY = Collider.offsetY;
+    v.meshBits = this._colliderFillMeshBits();
+    v.maxFixtures = ColliderFixture.maxCount | 0;
+    return v;
+  }
+
   /**
    * Update camera on instanced meshes, background, tilemap root, decals
    */
@@ -935,10 +977,13 @@ class PixiRenderer extends AbstractWorker {
     // Apply camera to custom layer meshes (non-shader layers only)
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
-      if (!cl.rt && cl.batch?.mesh) {
-        cl.batch.mesh.scale.set(zoom);
-        cl.batch.mesh.x = -cameraX * zoom;
-        cl.batch.mesh.y = -cameraY * zoom;
+      if (!cl.rt) {
+        const mesh = cl.batch?.mesh || cl.fillBatch?.mesh;
+        if (mesh) {
+          mesh.scale.set(zoom);
+          mesh.x = -cameraX * zoom;
+          mesh.y = -cameraY * zoom;
+        }
       }
     }
   }
@@ -2887,6 +2932,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (cl?.batch?.mesh) {
           cl.batch.mesh.blendMode = containerBlendMode;
         }
+        if (cl?.fillBatch?.mesh) {
+          cl.fillBatch.mesh.blendMode = containerBlendMode;
+        }
         if (cl?.splatBatch?.mesh) {
           cl.splatBatch.mesh.blendMode = containerBlendMode;
         }
@@ -3033,6 +3081,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const w = this.canvasWidth * resolution;
     const h = this.canvasHeight * resolution;
     if (cl.batch?.mesh?.parent) cl.batch.mesh.parent.removeChild(cl.batch.mesh);
+    if (cl.fillBatch?.mesh?.parent) cl.fillBatch.mesh.parent.removeChild(cl.fillBatch.mesh);
     if (!cl.rt) cl.rt = PIXI.RenderTexture.create({ width: w, height: h });
     if (!cl.rtOut) cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
     this._applyCustomLayerScaleMode(cl);
@@ -3753,6 +3802,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/lightingBasic.wgsl').then((s) => {
           sh.lightingFrag = s;
+        }),
+        fetchEngineShader('/src/shaders/colliderFill.wgsl').then((s) => {
+          sh.colliderFill = s;
         })
       );
     } else {
@@ -3786,6 +3838,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/lightingBasic.frag.glsl').then((s) => {
           sh.lightingFrag = s;
+        }),
+        fetchEngineShader('/src/shaders/colliderFill.vert.glsl').then((s) => {
+          sh.colliderFillVert = s;
+        }),
+        fetchEngineShader('/src/shaders/colliderFill.frag.glsl').then((s) => {
+          sh.colliderFillFrag = s;
         })
       );
     }
@@ -4270,12 +4328,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       const isLfDensity = config.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN;
       const isCompute = !!config.compute;
-      if (!config.hasRenderQueue && !isLfDensity && !isCompute) continue;
+      const isMesh = config.kind === LAYER_KIND.MESH;
+      if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh) continue;
 
       const layerId = config.id;
       const layerName = config.name;
       const lrq = queues[layerId];
-      if (!isLfDensity && !isCompute && !lrq) continue;
+      if (!isLfDensity && !isCompute && !isMesh && !lrq) continue;
 
       const layerObj = Layer.getById(layerId);
       if (!layerObj) continue;
@@ -4289,6 +4348,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       let buffers = null;
       let batch = null;
+      let fillBatch = null;
+      if (isMesh) {
+        const maxFx =
+          (data.config?.physics?.maxFixtures | 0) ||
+          (this.config?.physics?.maxFixtures | 0);
+        fillBatch = new ColliderFillBatch({
+          capacity: Math.max(1, maxFx * (MAX_POLYGON_VERTICES - 2)),
+          label: `mesh-layer-${layerName}`,
+          useWebGpu: this._useWebGpu,
+          shaders: this._engineShaders,
+        });
+        fillBatch.mesh.blendMode = containerBlend;
+      }
       if (lrq && maxItems > 0) {
         buffers = [
           createRenderQueueViews(lrq.dataA, maxItems),
@@ -4329,6 +4401,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         readRef: buffers ? buffers[0] : null,
         prevCount: 0,
         batch,
+        fillBatch,
         splatBatch,
         densitySource: isLfDensity ? LAYER_DENSITY_SOURCE.LIQUID_FUN : LAYER_DENSITY_SOURCE.SPRITES,
         splat: splatCfg ? { ...splatCfg } : null,
@@ -4460,6 +4533,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         console.log(
           `PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h}${densLabel})`
         );
+      } else if (fillBatch) {
+        this._registerLayerDisplayObject(layerName, fillBatch.mesh, true);
+        this.pixiApp.stage.addChild(fillBatch.mesh);
+        console.log(`PIXI WORKER: Custom MESH layer "${layerName}" initialized`);
       } else if (batch) {
         this._registerLayerDisplayObject(layerName, batch.mesh, true);
         this.pixiApp.stage.addChild(batch.mesh);
@@ -4613,6 +4690,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
         cl.batch.upload(q, opts);
         densityMesh = cl.batch.mesh;
+      } else if (cl.fillBatch) {
+        const views = this._ensureColliderFillViews();
+        views.outU32 = cl.fillBatch.dataU32;
+        const packed = packColliderFill(cl.fillBatch.data, cl.fillBatch.capacity, cl.layerId, views);
+        cl.fillBatch.upload(packed);
+        cl.prevCount = packed;
+        densityMesh = cl.fillBatch.mesh;
       } else {
         continue;
       }
@@ -4654,7 +4738,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     else if (this.lightingMesh) this._registerLayerDisplayObject('lighting', this.lightingMesh);
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
-      this._registerLayerDisplayObject(cl.layerName, cl.displaySprite || cl.batch?.mesh, !cl.displaySprite);
+      this._registerLayerDisplayObject(
+        cl.layerName,
+        cl.displaySprite || cl.batch?.mesh || cl.fillBatch?.mesh,
+        !cl.displaySprite
+      );
     }
     this._syncLayerRefsFromRuntime();
 

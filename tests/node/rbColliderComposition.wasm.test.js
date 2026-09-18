@@ -37,6 +37,7 @@ function instantiateBox2dWasm() {
   assert.ok(names.create_world, 'create_world export map missing — rebuild box2d_wasm.js');
   assert.ok(names.create_body, 'create_body export missing — rebuild after shapeless body patch');
   assert.ok(names.body_add_shape_box, 'body_add_shape_box export missing');
+  assert.ok(names.body_add_shape_polygon, 'body_add_shape_polygon export missing');
   assert.ok(names.body_clear_shapes, 'body_clear_shapes export missing');
 
   const wasmModule = new WebAssembly.Module(wasmBuffer);
@@ -331,4 +332,63 @@ test('attach shape to shapeless body starts contacts; clearShapes stops them', (
   }
   assert.equal(contacts, 0, 'after clear_shapes contacts must be zero');
   assert.ok(bodyX(ghost) > 8, `should pass wall after clear (x=${bodyX(ghost)})`);
+});
+
+function addPolygon(fn, memory, slot, verts) {
+  const malloc = fn('malloc');
+  const free = fn('free');
+  const add = fn('body_add_shape_polygon');
+  const count = (verts.length / 2) | 0;
+  const ptr = malloc(count * 8);
+  assert.ok(ptr, 'malloc for polygon verts failed');
+  new Float32Array(memory.buffer, ptr, count * 2).set(verts);
+  add(slot, ptr, count, 0, 0);
+  free(ptr);
+}
+
+test('three polygon fixtures on one body block a dynamic box', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const { worldId, bodyX, contactBeginCount } = makeWorld(fn, memory);
+  const stepWorld = fn('step_world');
+
+  const wall = createShapeless(fn, worldId, {
+    type: BODY_STATIC,
+    x: 10,
+    y: 0,
+    entityIndex: 0,
+  });
+  addPolygon(fn, memory, wall, [-1, -6, 1, -6, 1, -2, -1, -2]);
+  addPolygon(fn, memory, wall, [-1, -2, 1, -2, 1, 2, -1, 2]);
+  addPolygon(fn, memory, wall, [-1, 2, 1, 2, 1, 6, -1, 6]);
+
+  const ball = createBox(fn, worldId, {
+    type: BODY_DYNAMIC,
+    x: 0,
+    y: 0,
+    hx: 0.5,
+    hy: 0.5,
+    vx: 40,
+    restitution: 0,
+    entityIndex: 1,
+  });
+
+  let contacts = 0;
+  for (let i = 0; i < 90; i++) {
+    stepWorld(worldId, 1 / 60, 4);
+    contacts += contactBeginCount();
+  }
+  assert.ok(contacts > 0, 'box should hit the compound wall');
+  assert.ok(bodyX(ball) < 10, `box should not pass compound wall (x=${bodyX(ball)})`);
+
+  fn('body_clear_shapes')(wall);
+  fn('body_add_shape_box')(wall, 1, 6, 0, 0);
+  fn('body_set_transform')(ball, 0, 0, 1, 0);
+  fn('body_set_linear_velocity')(ball, 40, 0);
+  contacts = 0;
+  for (let i = 0; i < 90; i++) {
+    stepWorld(worldId, 1 / 60, 4);
+    contacts += contactBeginCount();
+  }
+  assert.ok(contacts > 0, 'box should still hit after clear+box');
+  assert.ok(bodyX(ball) < 10, `box should not pass rebuilt wall (x=${bodyX(ball)})`);
 });

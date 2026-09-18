@@ -53,8 +53,9 @@ Fluids: `liquidfun-c` is compiled into this WASM. Integration and SAB rules: [`d
 Wrapper exports (sibling `box2d/src/wasm_wrapper.c`):
 
 - `create_body` — body, no shapes (RigidBody-only path)
-- `body_add_shape_box` / `circle` / `polygon` — create shape if missing, else `Set*`
-- `body_set_shape_*` — aliases of add (sync path)
-- `body_clear_shapes` — destroy shapes; body remains (unit mass if dynamic)
+- `body_add_shape_box` / `circle` / `polygon` — **append** a new shape (compound bodies)
+- `body_set_shape_*` — replace the first shape, or create if the body is shapeless
+- `body_clear_shapes` — destroy **all** shapes; body remains (unit mass if dynamic)
+- `body_set_density` / `filter` / `friction` / `restitution` — apply to every shape on the body
 
 Weed host wiring and product semantics: [`docs/PHYSICS.md`](../../docs/PHYSICS.md#rigidbody--collider-composition). Node gate: `tests/node/rbColliderComposition.wasm.test.js`.
