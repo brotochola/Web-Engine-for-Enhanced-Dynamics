@@ -44,6 +44,27 @@ all X values packed together, then all Y values, etc. No per-entity objects on t
 
 ---
 
+## 1b. SharedResource (world blobs)
+
+Not a Component. One SAB per **class**, sized by the schema in `Scene.static.sharedResources` — not `totalEntityCount`.
+
+```js
+static sharedResources = [
+  [WorldGrid, { cells: { type: Float32Array, length: 1000 } }],
+  [GameState, { score: Int32Array, flags: { type: Uint8Array, length: 32 } }],
+];
+```
+
+Bare ctor = length 1. `WorldGrid.cells` **is** the TypedArray (`WorldGrid.cells[i] = v`) on main and every worker after bind. Same one-writer-per-region rule as Mouse / Transform. No Atomics in v1.
+
+| Writer | Reader |
+| --- | --- |
+| Whoever the scene says (typically logic `tick` or `scene.update`) | All threads that imported the class |
+
+`static scriptUrl` on the subclass so workers `import()` it; otherwise `WorldGrid.cells` stays null in logic.
+
+---
+
 ## 2. Spatial Grid + Neighbor Buffers
 
 ### `gridBuffer` -- Spatial Hash Grid
@@ -639,6 +660,7 @@ The big picture. Who writes what, who reads what.
 | Query results                                 | Logic worker 0                                                                               | Logic, pre_render                            |
 | Audio mixer SAB (slot array)                  | Any thread (`SoundManager.play`) + worklet (`cursor`, `state` free)                          | `AudioMixerProcessor` worklet (audio thread) |
 | Input/mouse/gamepad/camera/debug              | Main thread                                                                                  | All workers                                  |
+| SharedResource SABs (`buffers.sharedResources`) | Scene-defined (one writer per field)                                                      | All threads that bound the class             |
 
 ---
 

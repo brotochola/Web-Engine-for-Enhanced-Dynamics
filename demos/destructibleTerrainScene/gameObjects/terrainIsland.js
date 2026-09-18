@@ -66,10 +66,10 @@ export class TerrainIsland extends GameObject {
     if (!hit || !this.active) return;
     const hx = hit.hitX;
     const hy = hit.hitY;
-    // if (this.isStatic) {
-    //   this.sendMessageToScene({ type: 'damageField', x: hx, y: hy });
-    //   return;
-    // }
+    if (this.isStatic) {
+      this.sendMessageToScene({ type: 'damageField', x: hx, y: hy });
+      return;
+    }
 
     const idx = this.index;
     TerrainIsland.worldToLocal(idx, hx, hy, _scratchLocal);

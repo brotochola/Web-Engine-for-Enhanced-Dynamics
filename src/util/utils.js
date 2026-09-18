@@ -1496,7 +1496,7 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
       // even after we strip their `const { X } = enums;` line above.
       const moduleWrapper = new Function(
         'exports', 'WEED',
-        'GameObject', 'Component', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
+        'GameObject', 'Component', 'SharedResource', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
         'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter', 'FlashComponent',
         'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Box2d', 'Decal', 'Query', 'LiquidFun', 'Decoration', 'Mouse', 'Camera',
         'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle', 'getDirection8FromVector',
@@ -1520,6 +1520,7 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
           exports, WEED,
           g.GameObject || WEED.GameObject,
           g.Component || WEED.Component,
+          g.SharedResource || WEED.SharedResource,
           g.FSM || WEED.FSM,
           g.FSMState || WEED.FSMState,
           g.Transform || WEED.Transform,

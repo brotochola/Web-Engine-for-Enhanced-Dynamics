@@ -57,6 +57,7 @@ import { Joint } from '../core/joint.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
 import { SoundManager } from '../core/soundManager.js';
 import { Query } from '../core/query.js';
+import { SharedResource } from '../core/sharedResource.js';
 import { Decal } from '../core/decal.js';
 import { MAX_COMPONENTS, MAX_ENTITIES, MAX_ENTITY_TYPES } from '../core/querySystem.js';
 import {
@@ -782,6 +783,20 @@ export function createSceneSharedBuffers(scene) {
   initializeNavigationAndQueryBuffers(scene);
   initializeCollisionConstraintSunAndTrackingBuffers(scene);
   initializeInputCameraDebugSpatialAndStatsBuffers(scene);
+  initializeSharedResourceBuffers(scene);
+}
+
+function initializeSharedResourceBuffers(scene) {
+  SharedResource.resetAll();
+  const rows = SharedResource.parseRows(scene.constructor.sharedResources);
+  scene.sharedResourceRegs = rows;
+  scene.buffers.sharedResources = {};
+  for (let i = 0; i < rows.length; i++) {
+    const rec = rows[i];
+    const sab = new SharedArrayBuffer(SharedResource.getBufferSize(rec.schema));
+    rec.class.initialize(sab, rec.schema);
+    scene.buffers.sharedResources[rec.name] = sab;
+  }
 }
 
 export function teardownSceneSharedState(scene) {
@@ -887,6 +902,8 @@ export function teardownSceneSharedState(scene) {
   // terminated renderer Worker), resolves pending background promises,
   // and drops SAB-backed config/uniform views from the previous scene.
   Layer.reset();
+  SharedResource.resetAll();
+  if (scene.sharedResourceRegs) scene.sharedResourceRegs = [];
   SpriteSheetRegistry.clearForSceneUnload();
   AdobeAnimRegistry.clearForSceneUnload();
 

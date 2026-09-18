@@ -35,6 +35,7 @@ import { Ray } from '../core/ray.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { SceneBridge } from '../core/sceneBridge.js';
+import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
 import { Grid } from '../core/grid.js';
 import { NavGrid } from '../core/navGrid.js';
@@ -458,6 +459,10 @@ export class AbstractWorker {
       await loadEntityScripts(data.scriptsToLoad);
     }
 
+    if (data.sharedResources && data.sharedResources.length > 0) {
+      SharedResource.bindFromInit(data.sharedResources, self);
+    }
+
     GameObject.initializeArrays(
       this.globalEntityCount,
       data.buffers?.neighborData,
@@ -862,6 +867,7 @@ export class AbstractWorker {
   registerCoreClasses() {
     self.GameObject = GameObject;
     self.Component = Component;
+    self.SharedResource = SharedResource;
     self.FSM = FSM;
     self.FSMState = FSMState;
     self.Mouse = Mouse;

@@ -8,6 +8,7 @@ import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { NavGrid } from '../core/navGrid.js';
 import { SoundManager } from '../core/soundManager.js';
+import { SharedResource } from '../core/sharedResource.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
 // code, but cycling scenes within a session reuses the browser's HTTP and
@@ -129,6 +130,28 @@ function toAbsoluteScriptUrl(path, origin) {
   return new URL(path, origin).href;
 }
 
+function collectSharedResourceScriptUrls(scene, origin = '') {
+  const regs = scene.sharedResourceRegs || [];
+  return [
+    ...new Set(
+      regs
+        .map((r) => r.scriptUrl)
+        .filter((url) => url)
+        .map((url) => toAbsoluteScriptUrl(url, origin))
+    ),
+  ];
+}
+
+function buildSharedResourcesInit(scene) {
+  const regs = scene.sharedResourceRegs || [];
+  const sabs = scene.buffers.sharedResources || {};
+  return regs.map((rec) => ({
+    name: rec.name,
+    sab: sabs[rec.name],
+    schema: SharedResource.serializeSchema(rec.schema),
+  }));
+}
+
 export function collectSceneWorkerScriptUrls(registeredClasses, origin = '') {
   // Module workers import() this list as entries. Auto-registered parents
   // (count 0) first poisons cyclic ESM (Lootable → Drop → MySoldier → Person).
@@ -187,6 +210,7 @@ function buildSceneSharedBuffers(scene) {
     perTypeActiveLists: scene.buffers.perTypeActiveLists,
     entityFreeLists: scene.buffers.entityFreeLists,
     entityFreeListTops: scene.buffers.entityFreeListTops,
+    sharedResources: scene.buffers.sharedResources || null,
   };
 }
 
@@ -233,6 +257,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     scriptsToLoad,
     registeredClasses: buildRegisteredClassesInfo(scene),
     componentPools: buildComponentPoolsInfo(scene),
+    sharedResources: buildSharedResourcesInit(scene),
     keyIndexMap: scene.createKeyIndexMap(),
     spritesheetMetadata: SpriteSheetRegistry.serialize(),
     adobeAnimateMetadata: AdobeAnimRegistry.serialize(),
@@ -531,7 +556,10 @@ export async function createSceneWorkers(scene) {
   injectLoadedShaderSources(scene);
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const scriptsToLoad = collectSceneWorkerScriptUrls(scene.registeredClasses, origin);
+  const scriptsToLoad = [
+    ...collectSceneWorkerScriptUrls(scene.registeredClasses, origin),
+    ...collectSharedResourceScriptUrls(scene, origin),
+  ];
   const workerPorts = scene.setupWorkerCommunication();
   const sharedBuffers = buildSceneSharedBuffers(scene);
   const initData = buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad);

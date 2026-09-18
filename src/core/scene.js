@@ -103,6 +103,7 @@ import {
 import { ParticleEmitter } from './particleEmitter.js';
 import { Joint } from './joint.js';
 import { SoundManager } from './soundManager.js';
+import { SharedResource } from './sharedResource.js';
 import { Decoration } from './decoration.js';
 import {
   assertSceneRendererConfig,
@@ -130,6 +131,7 @@ class Scene {
   static assets = {};
   static audios = [];
   static entities = []; // [[EntityClass, poolSize], ...]
+  static sharedResources = []; // [[SharedResourceClass, schema], ...]
   static queries = []; // [[ComponentClass, ...], ...] custom active queries to precompute
 
   constructor(game) {
@@ -1025,6 +1027,12 @@ class Scene {
     window.Decoration = Decoration;
     window.Joint = Joint;
     window.LiquidFun = LiquidFun;
+    window.SharedResource = SharedResource;
+    const resourceRegs = this.sharedResourceRegs || [];
+    for (let i = 0; i < resourceRegs.length; i++) {
+      const rec = resourceRegs[i];
+      if (rec?.class?.name) window[rec.name] = rec.class;
+    }
     GameObject.scene = this;
   }
 

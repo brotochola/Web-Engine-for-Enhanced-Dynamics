@@ -5,6 +5,7 @@
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { TerrainIsland } from './gameObjects/terrainIsland.js';
 import { Ship } from './gameObjects/ship.js';
+import { WorldGrid } from './worldGrid.js';
 import {
   TerrainField,
   MAT_DIRT,
@@ -121,6 +122,10 @@ export class DestructibleTerrainScene extends Scene {
     [TerrainIsland, 320],
     [Ship, 2],
     [Floor, 8],
+  ];
+
+  static sharedResources = [
+    [WorldGrid, { cells: { type: Float32Array, length: 1000 } }],
   ];
 
   constructor(game) {

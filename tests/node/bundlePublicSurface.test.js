@@ -8,6 +8,7 @@ import WEED, {
   Decal,
   Flash,
   Decoration,
+  SharedResource,
   mixSeed,
   saveGame,
   DEBUG_FLAGS,
@@ -23,6 +24,8 @@ test('public barrel symbols stay callable', () => {
   assert.equal(typeof Flash.spawn, 'function');
   assert.equal(Flash.create, undefined);
   assert.equal(typeof Decoration, 'function');
+  assert.equal(typeof SharedResource, 'function');
+  assert.equal(WEED.SharedResource, SharedResource);
   assert.equal(typeof DEBUG_FLAGS.SHOW_JOINTS, 'number');
   assert.equal(ShapeType.Box, 0);
   assert.equal(typeof mixSeed, 'function');
