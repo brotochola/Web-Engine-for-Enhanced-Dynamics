@@ -1,6 +1,7 @@
 // Density SAB + mesh statics (marching squares, simplify2, Delaunay, Martinez).
 // Solid node: amount >= ISO.
 
+import { Noise2D } from '../../src/core/noise2D.js';
 import { SharedResource } from '../../src/core/sharedResource.js';
 import Delaunator from './vendor/delaunator.js';
 import { diff as martinezDiff, union as martinezUnion } from './vendor/martinez.js';
@@ -16,7 +17,7 @@ export const MAT_ROCK = 2;
 export const MAT_TINT = [0, 0xc4a574, 0x8a9099];
 export const LAYER_STATIC = 1;
 export const RAY_MASK_NO_STATIC = 0xffffffff ^ (1 << LAYER_STATIC);
-export const SHOT_POWER = 0.4;
+export const SHOT_POWER = 2;
 export const SHOT_RADIUS = 2;
 export const SHOT_FALLOFF = 1;
 
@@ -47,9 +48,9 @@ export const TUNE_DEFAULTS = [
   SHOT_POWER,
   SHOT_RADIUS,
   SHOT_FALLOFF,
-  20,
+  60,
   CELL * CELL * 0.25,
-  80,
+  500,
   4,
   512,
   CELL * 2,
@@ -60,6 +61,12 @@ export const TUNE_DEFAULTS = [
   0.72,
 ];
 const AREA_RATIO_MAX = 1.2;
+const SEED_SCALE = 0.055;
+const SEED_THRESHOLD = 0.12;
+const SEED_Y_BIAS = 0.55;
+const SEED_OCTAVES = 3;
+const SEED_STONE_FRAC = 0.55;
+const SEED_SKY_FRAC = 0.12;
 
 const DIRTY_FLAG = 0;
 const DIRTY_MIN_X = 1;
@@ -253,34 +260,12 @@ export class WorldGrid extends SharedResource {
     this.markDirty(x1, y1);
   }
 
-  static seedPlatforms() {
-    this.amount.fill(0);
-    this.material.fill(0);
-    const thick = Math.max(3, Math.floor(this.rows * 0.04));
-    const y1 = this.rows - 2;
-    const y0 = Math.max(0, y1 - thick);
-    const margin = Math.max(2, Math.floor(this.cols * 0.05));
-    for (let y = y0; y < y1; y++) {
-      for (let x = margin; x < this.cols - margin; x++) {
-        this.amount[y * this.cols + x] = 1;
-        this.material[y * this.cols + x] = MAT_DIRT;
-      }
-    }
-    const midY = Math.floor(this.rows * 0.55);
-    for (let y = midY; y < midY + 2; y++) {
-      for (let x = Math.floor(this.cols * 0.2); x < Math.floor(this.cols * 0.45); x++) {
-        this.amount[y * this.cols + x] = 1;
-        this.material[y * this.cols + x] = MAT_ROCK;
-      }
-    }
-    const midY2 = Math.floor(this.rows * 0.35);
-    for (let y = midY2; y < midY2 + 2; y++) {
-      for (let x = Math.floor(this.cols * 0.55); x < Math.floor(this.cols * 0.8); x++) {
-        this.amount[y * this.cols + x] = 1;
-        this.material[y * this.cols + x] = MAT_DIRT;
-      }
-    }
-    this.markAllDirty();
+  static seedWorld(seed = 7) {
+    seedWorld(this, seed | 0);
+  }
+
+  static findSkySpawn() {
+    return findSkySpawn(this);
   }
 
   static paint(wx, wy, radius, hardness, strength, erase, material) {
@@ -346,6 +331,29 @@ export class WorldGrid extends SharedResource {
 
   static extractIslands(box, opts) {
     return extractIslands(this, box, opts);
+  }
+
+  /** Flood the connected solid that owns cell (x,y). No chunk clip. */
+  static extractIslandAt(x, y) {
+    x = x | 0;
+    y = y | 0;
+    if (x < 0 || y < 0 || x >= this.cols || y >= this.rows) return null;
+    if (this.amount[y * this.cols + x] < ISO) return null;
+    const list = extractIslands(this, { minX: x, minY: y, maxX: x, maxY: y }, { clip: false });
+    return list.length ? list[0] : null;
+  }
+
+  static islandKey(island) {
+    if (!island || !island.nodeCount) return -1;
+    const idx = island.nodeIdx;
+    const start = island.nodeStart;
+    const n = island.nodeCount;
+    let m = idx[start];
+    for (let i = 1; i < n; i++) {
+      const p = idx[start + i];
+      if (p < m) m = p;
+    }
+    return m;
   }
 
   static buildContourFixtures(island, simplifyTol) {
@@ -1104,13 +1112,11 @@ function buildContourFixtures(island, field, simplifyTol) {
     }
   }
 
-  const threshold = WorldGrid.tuneGet(TUNE.AREA_THRESHOLD);
-  if (!(island.areaCells > threshold)) {
-    const fb = buildCellTriangleFixtures(island, field.cellSize);
-    const cap = WorldGrid.tuneGet(TUNE.FIXTURE_CAP) | 0;
-    if (fb.polys.length && (cap <= 0 || fb.polys.length <= cap)) return fb;
-  }
-  return { polys: [], fallback: false };
+  const fb = buildCellTriangleFixtures(island, field.cellSize);
+  if (!fb.polys.length) return { polys: [], fallback: false };
+  const cap = WorldGrid.tuneGet(TUNE.FIXTURE_CAP) | 0;
+  if (cap <= 0 || fb.polys.length <= cap) return fb;
+  return { polys: [], fallback: true };
 }
 
 function centroidFromPolys(polys) {
@@ -1482,6 +1488,104 @@ function chunksOverlapping(field, dirty) {
   }
   _chunksOut.length = n;
   return _chunksOut;
+}
+
+function smoothOccupancy(solid, cols, rows, passes = 2) {
+  let cur = solid;
+  for (let p = 0; p < passes; p++) {
+    const next = new Uint8Array(cols * rows);
+    for (let gy = 0; gy < rows; gy++) {
+      for (let gx = 0; gx < cols; gx++) {
+        let n = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const x = gx + dx;
+            const y = gy + dy;
+            if (x < 0 || y < 0 || x >= cols || y >= rows) continue;
+            n += cur[y * cols + x];
+          }
+        }
+        next[gy * cols + gx] = n >= 5 ? 1 : 0;
+      }
+    }
+    cur = next;
+  }
+  return cur;
+}
+
+function seedWorld(field, seed) {
+  const cols = field.cols;
+  const rows = field.rows;
+  const amount = field.amount;
+  const material = field.material;
+  amount.fill(0);
+  material.fill(0);
+  const noise = new Noise2D(seed);
+  const skyEnd = Math.max(2, Math.floor(rows * SEED_SKY_FRAC));
+  const raw = new Uint8Array(cols * rows);
+  for (let y = skyEnd; y < rows; y++) {
+    const depth = rows > 1 ? (y - skyEnd) / Math.max(1, rows - 1 - skyEnd) : 1;
+    for (let x = 0; x < cols; x++) {
+      const n = noise.fbm(
+        (x + 0.5) * SEED_SCALE,
+        (y + 0.5) * SEED_SCALE,
+        SEED_OCTAVES,
+        1,
+        1,
+        2,
+        0.5,
+      );
+      if (n + SEED_Y_BIAS * depth > SEED_THRESHOLD) raw[y * cols + x] = 1;
+    }
+  }
+  const solid = smoothOccupancy(raw, cols, rows, 2);
+  for (let y = 0; y < skyEnd; y++) {
+    solid.fill(0, y * cols, y * cols + cols);
+  }
+  for (let y = 0; y < rows; y++) {
+    const depth = rows > 1 ? y / (rows - 1) : 1;
+    const mat = depth >= SEED_STONE_FRAC ? MAT_ROCK : MAT_DIRT;
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      if (!solid[i]) continue;
+      amount[i] = 1;
+      material[i] = mat;
+    }
+  }
+  field.markAllDirty();
+}
+
+function findSkySpawn(field) {
+  const cols = field.cols;
+  const rows = field.rows;
+  const cs = field.cellSize;
+  const gx = (cols * 0.5) | 0;
+  const amount = field.amount;
+  const minGy = 4;
+  let solidY = -1;
+  for (let y = 0; y < rows; y++) {
+    if (amount[y * cols + gx] >= ISO) {
+      solidY = y;
+      break;
+    }
+  }
+  let gy = solidY < 0 ? Math.max(minGy, (rows * 0.2) | 0) : solidY - 4;
+  if (gy < minGy) gy = minGy;
+  if (gy >= rows) gy = rows - 1;
+  if (amount[gy * cols + gx] < ISO) {
+    return { x: (gx + 0.5) * cs, y: (gy + 0.5) * cs };
+  }
+  for (let y = minGy; y < rows; y++) {
+    if (amount[y * cols + gx] < ISO) {
+      return { x: (gx + 0.5) * cs, y: (y + 0.5) * cs };
+    }
+  }
+  for (let x = 0; x < cols; x++) {
+    if (amount[minGy * cols + x] < ISO) {
+      return { x: (x + 0.5) * cs, y: (minGy + 0.5) * cs };
+    }
+  }
+  return { x: (gx + 0.5) * cs, y: (minGy + 0.5) * cs };
 }
 
 function splitBoxQuads(box) {

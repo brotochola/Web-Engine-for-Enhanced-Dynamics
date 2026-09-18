@@ -155,6 +155,44 @@ test('extractIslands clip does not flood past the box', () => {
   }
 });
 
+test('extractIslandAt floods the real island past the clip box', () => {
+  try {
+    makeFilledRect(40, 10, 8, 0, 2, 40, 6);
+    const clipped = WorldGrid.extractIslands({ minX: 0, minY: 0, maxX: 15, maxY: 9 }, { clip: true });
+    assert.ok(clipped.length >= 1);
+    const clippedMaxX = clipped[0].maxX;
+    const clippedArea = clipped[0].areaCells;
+    assert.ok(clippedMaxX <= 15);
+    const real = WorldGrid.extractIslandAt(2, 3);
+    assert.ok(real);
+    assert.ok(real.maxX > 15);
+    assert.ok(real.areaCells > clippedArea + 10);
+    assert.equal(WorldGrid.islandKey(real), WorldGrid.islandKey(WorldGrid.extractIslandAt(30, 4)));
+  } finally {
+    teardown();
+  }
+});
+
+test('extractIslandAt on a pebble stays small next to a massif', () => {
+  try {
+    makeFilledRect(40, 12, 8, 20, 2, 38, 10);
+    for (let y = 2; y < 5; y++) {
+      for (let x = 2; x < 5; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    const pebble = WorldGrid.extractIslandAt(3, 3);
+    assert.ok(pebble);
+    const pebbleNodes = pebble.nodeCount;
+    const pebbleKey = WorldGrid.islandKey(pebble);
+    const massif = WorldGrid.extractIslandAt(24, 5);
+    assert.ok(massif);
+    assert.equal(pebbleNodes, 9);
+    assert.ok(massif.nodeCount > 80);
+    assert.notEqual(pebbleKey, WorldGrid.islandKey(massif));
+  } finally {
+    teardown();
+  }
+});
+
 test('no loops does not invent an AABB contour', () => {
   try {
     WorldGrid.attach(16, 12, 8);
@@ -211,6 +249,75 @@ test('chunksOverlapping of a small dirty is 1-4 shards', () => {
     const a = WorldGrid.chunkRect(0, 0);
     const b = WorldGrid.chunkRect(1, 0);
     assert.ok(a.maxX < b.minX);
+  } finally {
+    teardown();
+  }
+});
+
+test('large island without contour still gets cell-tri fallback', () => {
+  try {
+    WorldGrid.attach(16, 12, 8);
+    const cellsMeta = [];
+    for (let cy = 0; cy < 8; cy++) {
+      for (let cx = 0; cx < 8; cx++) {
+        cellsMeta.push({ cx, cy, caseId: 15, parts: [] });
+      }
+    }
+    const built = WorldGrid.buildContourFixtures({
+      loops: [],
+      contour: [],
+      areaPx: 8000,
+      areaCells: 200,
+      cellCx: 40,
+      cellCy: 40,
+      cellsMeta,
+    }, 3);
+    assert.equal(built.fallback, true);
+    assert.ok(built.polys.length >= 1);
+  } finally {
+    teardown();
+  }
+});
+
+test('seedWorld(7) has solid, a cave, and sky spawn in empty', () => {
+  try {
+    WorldGrid.attach(80, 40, 10);
+    WorldGrid.seedWorld(7);
+    const cols = WorldGrid.cols;
+    const rows = WorldGrid.rows;
+    let solid = 0;
+    let empty = 0;
+    for (let i = 0; i < WorldGrid.amount.length; i++) {
+      if (WorldGrid.amount[i] >= ISO) solid++;
+      else empty++;
+    }
+    assert.ok(solid > 80);
+    assert.ok(empty > 80);
+
+    const skyRows = Math.max(2, Math.floor(rows * 0.12));
+    let cave = false;
+    for (let y = skyRows; y < rows - 1 && !cave; y++) {
+      for (let x = 1; x < cols - 1; x++) {
+        if (WorldGrid.amount[y * cols + x] >= ISO) continue;
+        const n =
+          (WorldGrid.amount[y * cols + x - 1] >= ISO ? 1 : 0) +
+          (WorldGrid.amount[y * cols + x + 1] >= ISO ? 1 : 0) +
+          (WorldGrid.amount[(y - 1) * cols + x] >= ISO ? 1 : 0) +
+          (WorldGrid.amount[(y + 1) * cols + x] >= ISO ? 1 : 0);
+        if (n >= 1) {
+          cave = true;
+          break;
+        }
+      }
+    }
+    assert.equal(cave, true);
+
+    const sky = WorldGrid.findSkySpawn();
+    assert.ok(sky.x > 0 && sky.y >= WorldGrid.cellSize * 4);
+    const gx = Math.floor(sky.x / WorldGrid.cellSize);
+    const gy = Math.floor(sky.y / WorldGrid.cellSize);
+    assert.ok(gx >= 0 && gx < cols && gy >= 0 && gy < rows);
+    assert.ok(WorldGrid.amount[gy * cols + gx] < ISO);
   } finally {
     teardown();
   }

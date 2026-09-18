@@ -806,9 +806,15 @@
           views.px[i] = views.x[i];
           views.py[i] = views.y[i];
         }
-      } else if (!createFailed[i]) {
-        createFailed[i] = 1;
-        console.warn('[weedjs-box2d] createBody failed; wait for next dirty', i);
+      } else {
+        if (!createFailed[i]) {
+          createFailed[i] = 1;
+          console.warn('[weedjs-box2d] createBody failed; retry next step', i);
+        }
+        if (bodyDirtyFlags && bodyDirtyWords) {
+          Atomics.or(bodyDirtyFlags, i, BODY_DIRTY.LIFECYCLE);
+          Atomics.or(bodyDirtyWords, i >>> 5, 1 << (i & 31));
+        }
       }
     }
     // LIFECYCLE alone = create/destroy above. Property sync (clear shapes /

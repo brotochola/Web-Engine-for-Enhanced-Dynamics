@@ -17,22 +17,22 @@ const PANEL_CSS =
   'padding:10px 12px 16px;box-shadow:0 8px 28px rgba(0,0,0,0.45);';
 
 const SLIDERS = [
-  ['Brush radius', TUNE.BRUSH_RADIUS, 1, 12, 1],
-  ['Brush hardness', TUNE.BRUSH_HARDNESS, 0, 1, 0.01],
-  ['Brush strength', TUNE.BRUSH_STRENGTH, 0.05, 1, 0.01],
-  ['Shot power', TUNE.SHOT_POWER, 0.05, 1.5, 0.05],
-  ['Shot radius', TUNE.SHOT_RADIUS, 0.5, 8, 0.5],
-  ['Shot falloff', TUNE.SHOT_FALLOFF, 0.2, 4, 0.1],
-  ['Shot cooldown ms', TUNE.SHOT_COOLDOWN, 4, 200, 1],
-  ['Min tri area', TUNE.MIN_TRI_AREA, 1, 200, 1],
-  ['Dynamic area cells', TUNE.AREA_THRESHOLD, 10, 400, 5],
-  ['Simplify tol', TUNE.SIMPLIFY_TOL, 1, 12, 0.5],
-  ['Simplify max', TUNE.SIMPLIFY_MAX, 6, 24, 1],
-  ['Fixture cap', TUNE.FIXTURE_CAP, 32, 2048, 16],
-  ['Clip radius', TUNE.CLIP_RADIUS, 4, 80, 1],
-  ['Min keep area', TUNE.MIN_KEEP_AREA, 10, 400, 5],
-  ['Chunk cells', TUNE.CHUNK, 8, 64, 8],
-  ['Area ratio min', TUNE.AREA_RATIO_MIN, 0.5, 0.9, 0.02],
+  ['Brush radius', TUNE.BRUSH_RADIUS, 1, 12, 1, 'Radio del pincel Z/X, en celdas del grid.'],
+  ['Brush hardness', TUNE.BRUSH_HARDNESS, 0, 1, 0.01, 'Borde del pincel. 0 = suave, 1 = disco duro (todo o nada).'],
+  ['Brush strength', TUNE.BRUSH_STRENGTH, 0.05, 1, 0.01, 'Cuánto amount suma o resta por stroke. Más alto pinta o borra más rápido.'],
+  ['Shot power', TUNE.SHOT_POWER, 0.05, 1.5, 0.05, 'Daño en el centro del impacto del láser. Resta amount en el grid.'],
+  ['Shot radius', TUNE.SHOT_RADIUS, 0.5, 8, 0.5, 'Radio del cráter del láser, en celdas.'],
+  ['Shot falloff', TUNE.SHOT_FALLOFF, 0.2, 4, 0.1, 'Cómo cae el daño hacia el borde. 1 = lineal. Más alto = solo el centro duele.'],
+  ['Shot cooldown ms', TUNE.SHOT_COOLDOWN, 4, 200, 1, 'Milisegundos mínimos entre disparos del láser (C).'],
+  ['Min tri area', TUNE.MIN_TRI_AREA, 1, 200, 1, 'Tira triángulos más chicos que esto (px²) al armar el mesh. Subí si hay basura chica.'],
+  ['Drop area cells', TUNE.AREA_THRESHOLD, 10, 400, 5, 'Si la isla real del grid (flood sin clip de chunk) es más chica, cae dinámica. Unida al macizo: queda estática. Draw no tira.'],
+  ['Simplify tol', TUNE.SIMPLIFY_TOL, 1, 12, 0.5, 'Tolerancia inicial al simplificar el contorno. Más alto = menos vértices, mesh más tosco, menos fixtures.'],
+  ['Simplify max', TUNE.SIMPLIFY_MAX, 6, 24, 1, 'Tope de la escalera de simplify si Delaunay falla o se pasa el fixture cap.'],
+  ['Fixture cap', TUNE.FIXTURE_CAP, 32, 2048, 16, 'Máximo de polígonos Box2D por cuerpo. Si se pasa: fallback por celda o split del chunk.'],
+  ['Clip radius', TUNE.CLIP_RADIUS, 4, 80, 1, 'Radio del recorte circular cuando el láser pega una isla ya dinámica (no el grid estático).'],
+  ['Min keep area', TUNE.MIN_KEEP_AREA, 10, 400, 5, 'Área mínima (px²) para no tirar un pedazo al recortar o shatter una isla dinámica.'],
+  ['Chunk cells', TUNE.CHUNK, 8, 64, 8, 'Lado del tile de dirty/remesh, en celdas. No corta la isla real; solo marca qué remeshear.'],
+  ['Area ratio min', TUNE.AREA_RATIO_MIN, 0.5, 0.9, 0.02, 'Delaunay se acepta solo si (área de tris / área de la isla) ≥ esto. Más alto = más estricto, más fallback.'],
 ];
 
 const WORLD_W = COLS * CELL;
@@ -66,7 +66,7 @@ export class DestructibleTerrainScene extends Scene {
       subStepCount: 4,
       noLimitFPS: false,
       gravity: { x: 0, y: 1800 },
-      maxFixturePoolSize: 8192,
+      maxFixturePoolSize: 65535,
       sleeping: false,
     },
 
@@ -103,7 +103,7 @@ export class DestructibleTerrainScene extends Scene {
 
   static entities = [
     [WorldGridManager, 1],
-    [TerrainIsland, 768],
+    [TerrainIsland, 2048],
     [Ship, 2],
     [Floor, 8],
   ];
@@ -114,7 +114,6 @@ export class DestructibleTerrainScene extends Scene {
 
   constructor(game) {
     super(game);
-    this.shipIndex = -1;
     this._sliderRows = [];
   }
 
@@ -122,7 +121,7 @@ export class DestructibleTerrainScene extends Scene {
     this._spawnWalls();
     Camera.setFree(false);
     Camera.setZoom(0.5);
-    Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.55);
+    Camera.centerOn(WORLD_W * 0.5, Math.max(48, WORLD_H * 0.08));
     this._buildPanel();
   }
 
@@ -132,12 +131,11 @@ export class DestructibleTerrainScene extends Scene {
   }
 
   createNewGame() {
-    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
-    const spawned = this.spawnEntity(Ship, {
+    this.spawnEntity(Ship, {
       x: WORLD_W * 0.5,
-      y: WORLD_H * 0.5,
+      y: Math.max(48, WORLD_H * 0.08),
     });
-    this.shipIndex = spawned ? spawned.index : -1;
+    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
   }
 
   update() {
@@ -202,9 +200,17 @@ export class DestructibleTerrainScene extends Scene {
 
     this._sliderRows = [];
     for (let i = 0; i < SLIDERS.length; i++) {
-      const [label, idx, min, max, step] = SLIDERS[i];
-      panel.appendChild(this._sliderRow(label, idx, min, max, step));
+      const [label, idx, min, max, step, tip] = SLIDERS[i];
+      panel.appendChild(this._sliderRow(label, idx, min, max, step, tip));
     }
+
+    const tip = document.createElement('div');
+    tip.style.cssText =
+      'margin:10px 0 0;padding:8px 0 0;border-top:1px solid #3a4254;' +
+      'color:#b8c0d0;font:11px/1.4 system-ui;min-height:3.2em;';
+    tip.textContent = 'Pasá el mouse por un slider para ver qué hace.';
+    panel.appendChild(tip);
+    this._tipEl = tip;
 
     document.body.appendChild(panel);
     this._panel = panel;
@@ -221,14 +227,20 @@ export class DestructibleTerrainScene extends Scene {
     }
   }
 
-  _sliderRow(label, idx, min, max, step) {
+  _sliderRow(label, idx, min, max, step, tip) {
     const row = document.createElement('div');
     row.style.cssText = 'display:grid;grid-template-columns:1fr 48px;gap:6px;align-items:center;margin:4px 0;';
+    if (tip) {
+      row.title = tip;
+      row.addEventListener('pointerenter', () => {
+        if (this._tipEl) this._tipEl.textContent = tip;
+      });
+    }
     const wrap = document.createElement('label');
     wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
     const name = document.createElement('span');
     name.textContent = label;
-    name.style.opacity = '0.85';
+    name.style.cssText = 'opacity:0.85;cursor:help;border-bottom:1px dotted #6a7388;width:fit-content;';
     const input = document.createElement('input');
     input.type = 'range';
     input.min = String(min);
@@ -259,6 +271,7 @@ export class DestructibleTerrainScene extends Scene {
     const panel = this._panel || leftover;
     if (panel?.parentNode) panel.parentNode.removeChild(panel);
     this._panel = null;
+    this._tipEl = null;
     this._sliderRows = [];
     WorldGrid.tuneSet(TUNE.UI_BLOCK, 0);
   }
