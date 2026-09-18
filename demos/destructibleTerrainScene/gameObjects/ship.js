@@ -1,5 +1,7 @@
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { TerrainIsland } from './terrainIsland.js';
+import { WorldGridManager } from './worldGridManager.js';
+import { WorldGrid, RAY_MASK_NO_STATIC } from '../worldGrid.js';
 import WEED from '/src/index.js';
 
 const {
@@ -87,38 +89,38 @@ export class Ship extends GameObject {
   }
 
   _tryShoot() {
-    const ox0 = this.x;
-    const oy0 = this.y;
-    let dx = Mouse.x - ox0;
-    let dy = Mouse.y - oy0;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 1e-6) return;
-    const ux = dx / dist;
-    const uy = dy / dist;
-    const ox = ox0 + ux * MUZZLE_PAD;
-    const oy = oy0 + uy * MUZZLE_PAD;
+    const dx = Mouse.x - this.x;
+    const dy = Mouse.y - this.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq < 1e-12) return;
+    const inv = 1 / Math.sqrt(distSq);
+    const ux = dx * inv;
+    const uy = dy * inv;
+    const ox = this.x + ux * MUZZLE_PAD;
+    const oy = this.y + uy * MUZZLE_PAD;
     const rayLen = Math.max(this.config.worldWidth, this.config.worldHeight) * 1.5;
 
-    const hit = Ray.castWithInfo(ox, oy, ox + ux * rayLen, oy + uy * rayLen, rayLen, 0xFFFFFFFF, null, this.index);
-    const skip = !hit.hit;
-    const hx = skip ? ox + ux * rayLen : hit.hitX;
-    const hy = skip ? oy + uy * rayLen : hit.hitY;
-    this._emitLaser(ox, oy, hx, hy, !skip);
+    const gridHit = WorldGrid.castRay(ox, oy, ux, uy, rayLen);
+    const bodyHit = Ray.castWithInfo(
+      ox, oy, ox + ux * rayLen, oy + uy * rayLen, rayLen, RAY_MASK_NO_STATIC, null, this.index
+    );
+    const useGrid = gridHit.hit && (!bodyHit.hit || gridHit.distance <= bodyHit.distance);
+    const useBody = bodyHit.hit && !useGrid;
+    const hx = useGrid ? gridHit.x : useBody ? bodyHit.hitX : ox + ux * rayLen;
+    const hy = useGrid ? gridHit.y : useBody ? bodyHit.hitY : oy + uy * rayLen;
 
-    if (skip) return;
-    const type = Transform.entityType ? Transform.entityType[hit.entityIndex] : -1;
-    if (type === Floor.entityType) return;
-    if (type !== TerrainIsland.entityType) return;
-    const start = TerrainIsland.startIndex | 0;
-    const island =
-      TerrainIsland.instances[hit.entityIndex - start] || GameObject.get(hit.entityIndex);
-    if (island && typeof island.takeHit === 'function') {
-      island.takeHit({
-        hitX: hit.hitX,
-        hitY: hit.hitY,
-        fixtureIndex: hit.fixtureIndex,
-      });
+    this._emitLaser(ox, oy, hx, hy, useGrid || useBody);
+    if (useGrid) {
+      const mgr = WorldGridManager.instances[0];
+      if (mgr) mgr.applyDamage(hx, hy);
+      return;
     }
+    if (!useBody) return;
+
+    const type = Transform.entityType ? Transform.entityType[bodyHit.entityIndex] : -1;
+    if (type === Floor.entityType || type !== TerrainIsland.entityType) return;
+    const island = TerrainIsland.instances[bodyHit.entityIndex - TerrainIsland.startIndex];
+    if (island) island.takeHit(bodyHit);
   }
 
   _emitLaser(ox, oy, hx, hy, didHit) {

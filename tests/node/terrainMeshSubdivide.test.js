@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
+import { WorldGrid } from '../../demos/destructibleTerrainScene/worldGrid.js';
+
+const {
   buildCellTriangleFixtures,
   buildContourFixtures,
   carveConvexAtPoint,
@@ -12,7 +14,7 @@ import {
   recenterPolys,
   splitConvexAtPoint,
   subdivideConvex,
-} from '../../demos/destructibleTerrainScene/terrainMesh.js';
+} = WorldGrid;
 
 const SQUARE = [
   { x: 0, y: 0 },
@@ -184,7 +186,7 @@ test('clipIslandAtPoint: center hole stays solid, hole centroid uncovered', () =
 });
 
 test('buildContourFixtures fallback emits only tris', () => {
-  const field = { cellSize: 16 };
+  WorldGrid.cellSize = 16;
   const island = {
     loops: [],
     contour: null,
@@ -193,7 +195,7 @@ test('buildContourFixtures fallback emits only tris', () => {
       { cx: 0, cy: 1, caseId: 15, parts: [] },
     ],
   };
-  const built = buildContourFixtures(island, field, 3);
+  const built = WorldGrid.buildContourFixtures(island, 3);
   assert.equal(built.fallback, true);
   assert.equal(built.polys.length, 4);
   for (const poly of built.polys) {

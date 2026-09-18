@@ -1,9 +1,4 @@
-import {
-  centroidFromPolys,
-  clipIslandAtPoint,
-  polygonArea,
-  polysToLocal,
-} from '../terrainMesh.js';
+import { WorldGrid, CELL, LAYER_STATIC } from '../worldGrid.js';
 import WEED from '/src/index.js';
 
 const {
@@ -16,7 +11,6 @@ const {
   Box2d,
 } = WEED;
 
-const CELL = 16;
 const CLIP_RADIUS = CELL * 2;
 const MIN_KEEP_AREA = CELL * CELL;
 const _scratchVerts = [];
@@ -39,6 +33,7 @@ export class TerrainIsland extends GameObject {
     this.isStatic = !!spawnConfig.isStatic;
     this.rigidBody.linearDamping = spawnConfig.isStatic ? 0 : 0.4;
     this.rigidBody.angularDamping = spawnConfig.isStatic ? 0 : 0.8;
+    if (spawnConfig.isStatic) this.collider.collisionLayer = LAYER_STATIC;
     if (!spawnConfig.isStatic) this.rigidBody.sleepThreshold = 25;
 
     const polys = spawnConfig.polys;
@@ -59,17 +54,14 @@ export class TerrainIsland extends GameObject {
   }
 
   /**
-   * Laser hit from Ship.tick. Dynamic: circle-diff the whole island. Static: SceneBridge to the field.
+   * Laser hit from Ship.tick. Dynamic only: circle-diff. Static hits go through WorldGrid.castRay.
    * @param {{ hitX: number, hitY: number, fixtureIndex?: number }} hit
    */
   takeHit(hit) {
     if (!hit || !this.active) return;
     const hx = hit.hitX;
     const hy = hit.hitY;
-    if (this.isStatic) {
-      this.sendMessageToScene({ type: 'damageField', x: hx, y: hy });
-      return;
-    }
+    if (this.isStatic) return;
 
     const idx = this.index;
     TerrainIsland.worldToLocal(idx, hx, hy, _scratchLocal);
@@ -86,7 +78,7 @@ export class TerrainIsland extends GameObject {
       if (localCopy.length >= 3) fixtures.push(localCopy);
     });
 
-    const { islands } = clipIslandAtPoint(fixtures, lx, ly, CLIP_RADIUS, MIN_KEEP_AREA);
+    const { islands } = WorldGrid.clipIslandAtPoint(fixtures, lx, ly, CLIP_RADIUS, MIN_KEEP_AREA);
     if (!islands.length) {
       this.despawn();
       return;
@@ -96,7 +88,7 @@ export class TerrainIsland extends GameObject {
     let bestA = 0;
     for (let i = 0; i < islands.length; i++) {
       let a = 0;
-      for (let t = 0; t < islands[i].length; t++) a += polygonArea(islands[i][t]);
+      for (let t = 0; t < islands[i].length; t++) a += WorldGrid.polygonArea(islands[i][t]);
       if (a > bestA) {
         bestA = a;
         best = i;
@@ -138,9 +130,9 @@ export class TerrainIsland extends GameObject {
 
   static spawnIslandFromWorldPolys(worldPolys, tint, vx, vy) {
     if (!worldPolys || !worldPolys.length) return;
-    const cen = centroidFromPolys(worldPolys);
+    const cen = WorldGrid.centroidFromPolys(worldPolys);
     if (!cen) return;
-    const local = polysToLocal(worldPolys, cen.x, cen.y);
+    const local = WorldGrid.polysToLocal(worldPolys, cen.x, cen.y);
     if (!local.length) return;
     const spawned = TerrainIsland.spawn({
       x: cen.x,
@@ -159,10 +151,10 @@ export class TerrainIsland extends GameObject {
     if (!worldPolys) return;
     for (let i = 0; i < worldPolys.length; i++) {
       const poly = worldPolys[i];
-      if (polygonArea(poly) < MIN_KEEP_AREA) continue;
-      const cen = centroidFromPolys([poly]);
+      if (WorldGrid.polygonArea(poly) < MIN_KEEP_AREA) continue;
+      const cen = WorldGrid.centroidFromPolys([poly]);
       if (!cen) continue;
-      const local = polysToLocal([poly], cen.x, cen.y);
+      const local = WorldGrid.polysToLocal([poly], cen.x, cen.y);
       if (!local.length) continue;
       const spawned = TerrainIsland.spawn({
         x: cen.x,
