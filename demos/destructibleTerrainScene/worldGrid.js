@@ -32,14 +32,13 @@ export const TUNE = {
   MIN_TRI_AREA: 7,
   SIMPLIFY_TOL: 8,
   FIXTURE_CAP: 9,
-  CLIP_RADIUS: 10,
-  MIN_KEEP_AREA: 11,
-  UI_BLOCK: 12,
-  CHUNK: 13,
-  SIMPLIFY_MAX: 14,
-  AREA_RATIO_MIN: 15,
+  MIN_KEEP_AREA: 10,
+  UI_BLOCK: 11,
+  CHUNK: 12,
+  SIMPLIFY_MAX: 13,
+  AREA_RATIO_MIN: 14,
 };
-export const TUNE_COUNT = 16;
+export const TUNE_COUNT = 15;
 export const TUNE_DEFAULTS = [
   3,
   0.35,
@@ -51,7 +50,6 @@ export const TUNE_DEFAULTS = [
   CELL * CELL * 0.25,
   4,
   512,
-  CELL * 2,
   CELL * CELL,
   0,
   32,
@@ -60,6 +58,8 @@ export const TUNE_DEFAULTS = [
 ];
 /** Ungrounded crumbs smaller than this vanish instead of becoming a body. */
 export const DROP_MIN_CELLS = 4;
+/** Per-cell fallback only for crumbs. Bigger failures return empty so remesh can quad-split. */
+export const FALLBACK_MAX_TRIS = 24;
 const AREA_RATIO_MAX = 1.2;
 const SEED_SCALE = 0.055;
 const SEED_THRESHOLD = 0.12;
@@ -67,6 +67,12 @@ const SEED_Y_BIAS = 0.55;
 const SEED_OCTAVES = 3;
 const SEED_STONE_FRAC = 0.55;
 const SEED_SKY_FRAC = 0.12;
+export const SEED_STAMP = {
+  boulderX: 0.72,
+  columnX: 0.22,
+  peninsulaX: 0.38,
+  archX: 0.55,
+};
 
 const DIRTY_FLAG = 0;
 const DIRTY_MIN_X = 1;
@@ -202,6 +208,16 @@ export class WorldGrid extends SharedResource {
     Atomics.store(d, DIRTY_FLAG, 1);
   }
 
+  static peekDirty(pad = 0) {
+    const d = this.dirtyRect;
+    if (!d || Atomics.load(d, DIRTY_FLAG) === 0) return null;
+    _dirtyBox.minX = Math.max(0, Atomics.load(d, DIRTY_MIN_X) - pad);
+    _dirtyBox.minY = Math.max(0, Atomics.load(d, DIRTY_MIN_Y) - pad);
+    _dirtyBox.maxX = Math.min(this.cols - 1, Atomics.load(d, DIRTY_MAX_X) + pad);
+    _dirtyBox.maxY = Math.min(this.rows - 1, Atomics.load(d, DIRTY_MAX_Y) + pad);
+    return _dirtyBox;
+  }
+
   static consumeDirty(pad = 1) {
     const d = this.dirtyRect;
     if (!d || Atomics.exchange(d, DIRTY_FLAG, 0) === 0) return null;
@@ -262,6 +278,10 @@ export class WorldGrid extends SharedResource {
 
   static seedWorld(seed = 7) {
     seedWorld(this, seed | 0);
+  }
+
+  static stampDemoShapes() {
+    stampDemoShapes(this);
   }
 
   static findSkySpawn() {
@@ -1150,9 +1170,8 @@ function buildContourFixtures(island, field, simplifyTol) {
 
   const fb = buildCellTriangleFixtures(island, field.cellSize);
   if (!fb.polys.length) return { polys: [], fallback: false };
-  const cap = WorldGrid.tuneGet(TUNE.FIXTURE_CAP) | 0;
-  if (cap <= 0 || fb.polys.length <= cap) return fb;
-  return { polys: [], fallback: true };
+  if (fb.polys.length > FALLBACK_MAX_TRIS) return { polys: [], fallback: true };
+  return fb;
 }
 
 function centroidFromPolys(polys) {
@@ -1215,7 +1234,7 @@ function fanToTris(verts, out) {
   }
 }
 
-/** Fallback: 2 tris per solid cell, edge loops fanned to tris. No greedy quads. */
+/** Crumb fallback only: 2 tris per solid cell. Large islands must not use this. */
 function buildCellTriangleFixtures(island, cellSize) {
   const meta = island.cellsMeta || [];
   const polys = [];
@@ -1609,28 +1628,88 @@ function stampFilled(field, x0, y0, x1, y1, mat) {
   }
 }
 
-/** Floating boulder in the sky band (drops on load) + a grounded column. */
-function stampDemoShapes(field) {
+function markGroundedMask(field) {
   const cols = field.cols;
   const rows = field.rows;
+  const n = cols * rows;
   const amount = field.amount;
-  const skyEnd = Math.max(2, Math.floor(rows * SEED_SKY_FRAC));
+  let mask = field._grounded;
+  if (!mask || mask.length < n) mask = field._grounded = new Uint8Array(n);
+  else mask.fill(0);
+  let q = field._groundQ;
+  if (!q || q.length < n) q = field._groundQ = new Int32Array(n);
+  let qt = 0;
+  const lastX = cols - 1;
+  const lastY = rows - 1;
+  const trySeed = (x, y) => {
+    const i = y * cols + x;
+    if (amount[i] < ISO || mask[i]) return;
+    mask[i] = 1;
+    q[qt++] = i;
+  };
+  for (let x = 0; x < cols; x++) trySeed(x, lastY);
+  for (let y = 0; y < lastY; y++) {
+    trySeed(0, y);
+    trySeed(lastX, y);
+  }
+  let qh = 0;
+  while (qh < qt) {
+    const i = q[qh++];
+    const x = i % cols;
+    const y = (i / cols) | 0;
+    if (x + 1 <= lastX) trySeed(x + 1, y);
+    if (x > 0) trySeed(x - 1, y);
+    if (y + 1 <= lastY) trySeed(x, y + 1);
+    if (y > 0) trySeed(x, y - 1);
+  }
+  return mask;
+}
+
+function firstGroundedSurfaceY(field, x, mask) {
+  const cols = field.cols;
+  const rows = field.rows;
+  const gx = x | 0;
+  if (gx < 0 || gx >= cols) return -1;
+  for (let y = 0; y < rows; y++) {
+    if (mask[y * cols + gx]) return y;
+  }
+  return -1;
+}
+
+/** Sky boulder (drops) + grounded column, peninsula, arch. */
+function stampDemoShapes(field) {
+  const cols = field.cols;
+  const skyEnd = Math.max(2, Math.floor(field.rows * SEED_SKY_FRAC));
   const fh = Math.min(10, skyEnd - 2);
   if (fh >= 4) {
-    const fx = Math.max(2, (cols * 0.72) | 0);
+    const fx = Math.max(2, (cols * SEED_STAMP.boulderX) | 0);
     stampFilled(field, fx, 1, fx + 16, 1 + fh, MAT_DIRT);
   }
 
-  const cx = Math.max(4, (cols * 0.22) | 0);
-  let groundY = -1;
-  for (let y = 0; y < rows; y++) {
-    if (amount[y * cols + cx] >= ISO) {
-      groundY = y;
-      break;
-    }
+  const grounded = markGroundedMask(field);
+  const cx = Math.max(4, (cols * SEED_STAMP.columnX) | 0);
+  const columnY = firstGroundedSurfaceY(field, cx, grounded);
+  if (columnY > skyEnd + 8) {
+    const h = columnY - skyEnd - 1;
+    const colH = h < 36 ? h : 36;
+    stampFilled(field, cx - 1, columnY - colH, cx + 2, columnY, MAT_DIRT);
   }
-  if (groundY > 24) {
-    stampFilled(field, cx - 1, groundY - 36, cx + 2, groundY, MAT_DIRT);
+
+  const px = Math.max(8, (cols * SEED_STAMP.peninsulaX) | 0);
+  const py = firstGroundedSurfaceY(field, px, grounded);
+  if (py > skyEnd + 12) {
+    stampFilled(field, px - 2, py - 8, px + 6, py, MAT_DIRT);
+    stampFilled(field, px - 30, py - 11, px + 6, py - 8, MAT_DIRT);
+  }
+
+  const ax = Math.max(20, (cols * SEED_STAMP.archX) | 0);
+  const yL = firstGroundedSurfaceY(field, ax, grounded);
+  const yR = firstGroundedSurfaceY(field, ax + 18, grounded);
+  if (yL > skyEnd + 16 && yR > skyEnd + 16) {
+    const top = (yL < yR ? yL : yR) - 14;
+    stampFilled(field, ax, top, ax + 3, yL, MAT_DIRT);
+    stampFilled(field, ax + 16, top, ax + 19, yR, MAT_DIRT);
+    stampFilled(field, ax, top - 4, ax + 19, top, MAT_DIRT);
   }
 }
 

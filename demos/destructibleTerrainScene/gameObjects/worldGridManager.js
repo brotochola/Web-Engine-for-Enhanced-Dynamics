@@ -55,6 +55,7 @@ export class WorldGridManager extends GameObject {
     this._shardJobs = [];
     this._crumbSeen = Object.create(null);
     this._crumbSeeds = [];
+    this._paintBox = null;
   }
 
   onSpawned() {
@@ -66,6 +67,7 @@ export class WorldGridManager extends GameObject {
     this._shardJobs = [];
     this._crumbSeen = Object.create(null);
     this._crumbSeeds = [];
+    this._paintBox = null;
     WorldGrid.cols = COLS;
     WorldGrid.rows = ROWS;
     WorldGrid.cellSize = CELL;
@@ -75,6 +77,7 @@ export class WorldGridManager extends GameObject {
   }
 
   tick() {
+    const prevTool = this.tool;
     if (Keyboard.isPressed('z')) this.tool = 'draw';
     if (Keyboard.isPressed('x')) this.tool = 'erase';
     if (Keyboard.isPressed('c')) this.tool = 'shoot';
@@ -85,6 +88,7 @@ export class WorldGridManager extends GameObject {
     if (Keyboard.isPressed(']')) {
       WorldGrid.tuneSet(TUNE.BRUSH_RADIUS, Math.min(12, WorldGrid.tuneGet(TUNE.BRUSH_RADIUS) + 1));
     }
+    if (prevTool === 'draw' && this.tool !== 'draw') this._settlePaint();
 
     const uiBlock = WorldGrid.tuneGet(TUNE.UI_BLOCK) > 0.5;
     if (!Mouse.isDebugToolActive && !uiBlock) {
@@ -102,7 +106,10 @@ export class WorldGridManager extends GameObject {
         );
       }
     }
-    if (!Mouse.isDebugToolActive && WorldGrid.hasDirty()) this.rebuild(false);
+    if (!Mouse.isDebugToolActive && WorldGrid.hasDirty()) {
+      if (this.tool === 'draw') this._unionPaintDirty();
+      this.rebuild(false);
+    }
 
     this._cullDynamics();
   }
@@ -158,6 +165,26 @@ export class WorldGridManager extends GameObject {
     for (let s = 0; s < snap.length; s++) this._remeshShard(snap[s], keep);
     this.staticIslands = keep;
     this._dirtyStaticBodies();
+  }
+
+  _unionPaintDirty() {
+    const d = WorldGrid.peekDirty(1);
+    if (!d) return;
+    let box = this._paintBox;
+    if (!box) box = this._paintBox = { minX: d.minX, minY: d.minY, maxX: d.maxX, maxY: d.maxY };
+    if (d.minX < box.minX) box.minX = d.minX;
+    if (d.minY < box.minY) box.minY = d.minY;
+    if (d.maxX > box.maxX) box.maxX = d.maxX;
+    if (d.maxY > box.maxY) box.maxY = d.maxY;
+  }
+
+  _settlePaint() {
+    const box = this._paintBox;
+    this._paintBox = null;
+    if (!box || box.maxX < box.minX) return;
+    WorldGrid.markDirty(box.minX, box.minY);
+    WorldGrid.markDirty(box.maxX, box.maxY);
+    this.rebuild(false);
   }
 
   _dirtyStaticBodies() {
@@ -238,24 +265,57 @@ export class WorldGridManager extends GameObject {
     for (let i = 0; i < islands.length; i++) {
       const island = islands[i];
       if ((island.nodeCount || 0) < DROP_MIN_CELLS) continue;
-      const built = WorldGrid.buildContourFixtures(island, WorldGrid.tuneGet(TUNE.SIMPLIFY_TOL));
-      if (!built.polys || !built.polys.length) continue;
-      const cen = WorldGrid.centroidFromPolys(built.polys);
-      if (!cen) continue;
-      const local = WorldGrid.polysToLocal(built.polys, cen.x, cen.y);
-      if (!local.length) continue;
-      const spawned = TerrainIsland.spawn({
-        x: cen.x,
-        y: cen.y,
-        isStatic: false,
-        polys: local,
-        tint,
-        layer: 'terrain',
-      });
-      if (!spawned) continue;
-      this.dynamicIslands.push(spawned.index);
+      if (this._spawnLooseMesh(island, tint)) continue;
+      this._spawnLooseSplit({
+        minX: island.minX,
+        minY: island.minY,
+        maxX: island.maxX,
+        maxY: island.maxY,
+      }, tint, 0);
     }
     WorldGrid.clearPackedNodes(nodes);
+  }
+
+  _spawnLooseMesh(island, tint) {
+    const built = WorldGrid.buildContourFixtures(island, WorldGrid.tuneGet(TUNE.SIMPLIFY_TOL));
+    if (!built.polys || !built.polys.length) return false;
+    const cen = WorldGrid.centroidFromPolys(built.polys);
+    if (!cen) return false;
+    const local = WorldGrid.polysToLocal(built.polys, cen.x, cen.y);
+    if (!local.length) return false;
+    const spawned = TerrainIsland.spawn({
+      x: cen.x,
+      y: cen.y,
+      isStatic: false,
+      polys: local,
+      tint,
+      layer: 'terrain',
+    });
+    if (!spawned) return false;
+    this.dynamicIslands.push(spawned.index);
+    return true;
+  }
+
+  _spawnLooseSplit(box, tint, depth) {
+    const w = box.maxX - box.minX + 1;
+    const h = box.maxY - box.minY + 1;
+    if (depth > 10 || (w <= 1 && h <= 1)) return;
+    const quads = WorldGrid.splitBoxQuads(box);
+    if (quads.length <= 1) return;
+    for (let q = 0; q < quads.length; q++) {
+      const parts = WorldGrid.extractIslands(quads[q], { clip: true });
+      for (let i = 0; i < parts.length; i++) {
+        const island = parts[i];
+        if ((island.nodeCount || 0) < DROP_MIN_CELLS) continue;
+        if (this._spawnLooseMesh(island, tint)) continue;
+        this._spawnLooseSplit({
+          minX: island.minX,
+          minY: island.minY,
+          maxX: island.maxX,
+          maxY: island.maxY,
+        }, tint, depth + 1);
+      }
+    }
   }
 
   _remeshShard(shard, keep) {

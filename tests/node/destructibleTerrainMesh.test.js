@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SharedResource } from '../../src/core/sharedResource.js';
-import { WorldGrid, ISO, MAT_DIRT, TUNE } from '../../demos/destructibleTerrainScene/worldGrid.js';
+import { WorldGrid, ISO, MAT_DIRT, TUNE, SEED_STAMP } from '../../demos/destructibleTerrainScene/worldGrid.js';
 
 function makeFilledRect(cols, rows, cell, x0, y0, x1, y1) {
   WorldGrid.attach(cols, rows, cell);
@@ -254,7 +254,7 @@ test('chunksOverlapping of a small dirty is 1-4 shards', () => {
   }
 });
 
-test('large island without contour still gets cell-tri fallback', () => {
+test('large island without contour does not emit a cell-tri soup', () => {
   try {
     WorldGrid.attach(16, 12, 8);
     const cellsMeta = [];
@@ -273,7 +273,7 @@ test('large island without contour still gets cell-tri fallback', () => {
       cellsMeta,
     }, 3);
     assert.equal(built.fallback, true);
-    assert.ok(built.polys.length >= 1);
+    assert.equal(built.polys.length, 0);
   } finally {
     teardown();
   }
@@ -383,10 +383,62 @@ test('seedWorld sky stamp is an ungrounded island', () => {
   try {
     WorldGrid.attach(80, 80, 10);
     WorldGrid.seedWorld(7);
-    const fx = (80 * 0.72) | 0;
+    const fx = (80 * SEED_STAMP.boulderX) | 0;
     const blob = WorldGrid.extractIslandAt(fx + 2, 3);
     assert.ok(blob);
     assert.equal(WorldGrid.isGrounded(blob), false);
+  } finally {
+    teardown();
+  }
+});
+
+test('seed stamps on a flat floor stay grounded; sky boulder is loose', () => {
+  try {
+    WorldGrid.attach(80, 80, 10);
+    const cols = 80;
+    const rows = 80;
+    for (let y = 50; y < rows; y++) {
+      for (let x = 0; x < cols; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    WorldGrid.stampDemoShapes();
+
+    const fx = (cols * SEED_STAMP.boulderX) | 0;
+    const boulder = WorldGrid.extractIslandAt(fx + 2, 3);
+    assert.ok(boulder);
+    assert.equal(WorldGrid.isGrounded(boulder), false);
+
+    const cx = (cols * SEED_STAMP.columnX) | 0;
+    const col = WorldGrid.extractIslandAt(cx, 27);
+    assert.ok(col);
+    assert.equal(WorldGrid.isGrounded(col), true);
+
+    const px = (cols * SEED_STAMP.peninsulaX) | 0;
+    const pen = WorldGrid.extractIslandAt(px - 15, 40);
+    assert.ok(pen);
+    assert.equal(WorldGrid.isGrounded(pen), true);
+
+    const ax = (cols * SEED_STAMP.archX) | 0;
+    const arch = WorldGrid.extractIslandAt(ax + 8, 34);
+    assert.ok(arch);
+    assert.equal(WorldGrid.isGrounded(arch), true);
+  } finally {
+    teardown();
+  }
+});
+
+test('peekDirty sees the box; consumeDirty clears it', () => {
+  try {
+    WorldGrid.attach(12, 8, 8);
+    WorldGrid.setAmount(3, 2, 1, MAT_DIRT);
+    const peek = WorldGrid.peekDirty(0);
+    assert.ok(peek);
+    assert.equal(peek.minX, 3);
+    assert.equal(peek.minY, 2);
+    assert.equal(WorldGrid.hasDirty(), true);
+    const eaten = WorldGrid.consumeDirty(0);
+    assert.equal(eaten.minX, 3);
+    assert.equal(WorldGrid.hasDirty(), false);
+    assert.equal(WorldGrid.peekDirty(0), null);
   } finally {
     teardown();
   }

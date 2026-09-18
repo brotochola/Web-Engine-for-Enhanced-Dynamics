@@ -18,21 +18,12 @@ const PANEL_CSS =
   'padding:10px 12px 16px;box-shadow:0 8px 28px rgba(0,0,0,0.45);';
 
 const SLIDERS = [
-  ['Brush radius', TUNE.BRUSH_RADIUS, 1, 12, 1, 'Radio del pincel Z/X, en celdas del grid.'],
-  ['Brush hardness', TUNE.BRUSH_HARDNESS, 0, 1, 0.01, 'Borde del pincel. 0 = suave, 1 = disco duro (todo o nada).'],
-  ['Brush strength', TUNE.BRUSH_STRENGTH, 0.05, 1, 0.01, 'Cuánto amount suma o resta por stroke. Más alto pinta o borra más rápido.'],
-  ['Shot power', TUNE.SHOT_POWER, 0.05, 1.5, 0.05, 'Daño en el centro del impacto del láser. Resta amount en el grid.'],
-  ['Shot radius', TUNE.SHOT_RADIUS, 0.5, 8, 0.5, 'Radio del cráter del láser, en celdas.'],
-  ['Shot falloff', TUNE.SHOT_FALLOFF, 0.2, 4, 0.1, 'Cómo cae el daño hacia el borde. 1 = lineal. Más alto = solo el centro duele.'],
-  ['Shot cooldown ms', TUNE.SHOT_COOLDOWN, 4, 200, 1, 'Milisegundos mínimos entre disparos del láser (C).'],
-  ['Min tri area', TUNE.MIN_TRI_AREA, 1, 200, 1, 'Tira triángulos más chicos que esto (px²) al armar el mesh. Subí si hay basura chica.'],
-  ['Simplify tol', TUNE.SIMPLIFY_TOL, 1, 12, 0.5, 'Tolerancia inicial al simplificar el contorno. Más alto = menos vértices, mesh más tosco, menos fixtures.'],
-  ['Simplify max', TUNE.SIMPLIFY_MAX, 6, 24, 1, 'Tope de la escalera de simplify si Delaunay falla o se pasa el fixture cap.'],
-  ['Fixture cap', TUNE.FIXTURE_CAP, 32, 2048, 16, 'Máximo de polígonos Box2D por cuerpo. Si se pasa: fallback por celda o split del chunk.'],
-  ['Clip radius', TUNE.CLIP_RADIUS, 4, 80, 1, 'Radio del recorte circular cuando el láser pega una isla ya dinámica (no el grid estático).'],
-  ['Min keep area', TUNE.MIN_KEEP_AREA, 10, 400, 5, 'Área mínima (px²) para no tirar un pedazo al recortar o shatter una isla dinámica.'],
-  ['Chunk cells', TUNE.CHUNK, 8, 64, 8, 'Lado del tile de dirty/remesh, en celdas. No corta la isla real; solo marca qué remeshear.'],
-  ['Area ratio min', TUNE.AREA_RATIO_MIN, 0.5, 0.9, 0.02, 'Delaunay se acepta solo si (área de tris / área de la isla) ≥ esto. Más alto = más estricto, más fallback.'],
+  ['Brush radius', TUNE.BRUSH_RADIUS, 1, 12, 1, 'Radio del pincel Z/X, en celdas.'],
+  ['Brush hardness', TUNE.BRUSH_HARDNESS, 0, 1, 0.01, 'Borde. 0 = suave, 1 = disco duro.'],
+  ['Brush strength', TUNE.BRUSH_STRENGTH, 0.05, 1, 0.01, 'Cuánto pinta o borra por stroke.'],
+  ['Shot power', TUNE.SHOT_POWER, 0.05, 1.5, 0.05, 'Daño en el centro del láser.'],
+  ['Shot radius', TUNE.SHOT_RADIUS, 0.5, 8, 0.5, 'Radio del cráter, en celdas. Igual en grid y en islas dinámicas.'],
+  ['Shot cooldown ms', TUNE.SHOT_COOLDOWN, 4, 200, 1, 'Mínimo entre disparos (C).'],
 ];
 
 const WORLD_W = COLS * CELL;
@@ -178,7 +169,7 @@ export class DestructibleTerrainScene extends Scene {
   _drawHud() {
     const x = Camera.x - 220 / (Camera.zoom || 1);
     const y = Camera.y - 180 / (Camera.zoom || 1);
-    DebugDraw.drawText(x, y, 'Z draw X erase C laser V shatter · loose dirt falls', 0xe8e8e8, 0);
+    DebugDraw.drawText(x, y, 'Z draw  X erase  C laser  V shatter', 0xe8e8e8, 0);
   }
 
   _buildPanel() {
@@ -195,7 +186,7 @@ export class DestructibleTerrainScene extends Scene {
 
     const title = document.createElement('div');
     title.style.cssText = 'font:600 14px/1.2 system-ui;margin:0 0 8px;color:#fff;';
-    title.textContent = 'Terrain tunables';
+    title.textContent = 'Terrain';
     panel.appendChild(title);
 
     this._sliderRows = [];
@@ -208,7 +199,7 @@ export class DestructibleTerrainScene extends Scene {
     tip.style.cssText =
       'margin:10px 0 0;padding:8px 0 0;border-top:1px solid #3a4254;' +
       'color:#b8c0d0;font:11px/1.4 system-ui;min-height:3.2em;';
-    tip.textContent = 'Pasá el mouse por un slider para ver qué hace.';
+    tip.textContent = 'Suelto (sin tocar pared o piso) cae entero. Z no tira hasta X/C/V.';
     panel.appendChild(tip);
     this._tipEl = tip;
 

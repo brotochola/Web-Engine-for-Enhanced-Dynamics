@@ -10,7 +10,6 @@ const {
   Transform,
 } = WEED;
 
-const CLIP_RADIUS = CELL * 2;
 const MIN_KEEP_AREA = CELL * CELL;
 const _scratchVerts = [];
 const _scratchCS = { c: 1, s: 0 };
@@ -114,7 +113,7 @@ export class TerrainIsland extends GameObject {
       fixtures,
       lx,
       ly,
-      WorldGrid.tuneGet(TUNE.CLIP_RADIUS) || CLIP_RADIUS,
+      (WorldGrid.tuneGet(TUNE.SHOT_RADIUS) || 2) * (WorldGrid.cellSize || CELL),
       WorldGrid.tuneGet(TUNE.MIN_KEEP_AREA) || MIN_KEEP_AREA,
     );
     if (!islands.length) {
