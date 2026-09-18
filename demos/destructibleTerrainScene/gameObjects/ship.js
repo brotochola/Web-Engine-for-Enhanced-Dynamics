@@ -20,8 +20,8 @@ const HALF_H = 14;
 const THRUST_ACCEL = 3100;
 const LOOK_AHEAD = 0.2;
 const CAM_SMOOTH = 0.12;
-const SHOT_COOLDOWN_MS = 120;
-const MUZZLE_PAD = 16;
+const SHOT_COOLDOWN_MS = 12;
+const MUZZLE_PAD = Math.hypot(HALF_W, HALF_H) + 4;
 
 export class Ship extends GameObject {
   static scriptUrl = import.meta.url;
@@ -99,8 +99,8 @@ export class Ship extends GameObject {
     const oy = oy0 + uy * MUZZLE_PAD;
     const rayLen = Math.max(this.config.worldWidth, this.config.worldHeight) * 1.5;
 
-    const hit = Ray.castWithInfo(ox, oy, ox + ux * rayLen, oy + uy * rayLen, rayLen);
-    const skip = !hit.hit || hit.entityIndex === this.index;
+    const hit = Ray.castWithInfo(ox, oy, ox + ux * rayLen, oy + uy * rayLen, rayLen, 0xFFFFFFFF, null, this.index);
+    const skip = !hit.hit;
     const hx = skip ? ox + ux * rayLen : hit.hitX;
     const hy = skip ? oy + uy * rayLen : hit.hitY;
     this._emitLaser(ox, oy, hx, hy, !skip);

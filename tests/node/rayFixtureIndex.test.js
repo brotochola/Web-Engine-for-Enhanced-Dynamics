@@ -57,3 +57,22 @@ test('castWithInfo scratch includes fixtureIndex -1 on miss', () => {
   const r = Ray.castWithInfo(0, 0, 0, 0, 10, 0xffffffff, out);
   assert.equal(r.fixtureIndex, -1);
 });
+
+test('castWithInfo forwards excludeEntity to _traverseGrid', () => {
+  const orig = Ray._traverseGrid;
+  const seen = [];
+  Ray._traverseGrid = (...args) => {
+    seen.push(args[10]);
+    const out = Ray._traverseResult;
+    out.entityIndex = -1;
+    out.distance = Infinity;
+    out.fixtureIndex = -1;
+    return out;
+  };
+  try {
+    Ray.castWithInfo(0, 0, 10, 0, 10, 0xffffffff, null, 7);
+    assert.equal(seen[0], 7);
+  } finally {
+    Ray._traverseGrid = orig;
+  }
+});

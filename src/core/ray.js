@@ -20,7 +20,7 @@ import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
  * Methods:
  *   - cast(x1, y1, x2, y2, maxDist, mask)              → entityIndex or -1
  *   - castDir(x, y, dirX, dirY, maxDist, mask)         → entityIndex or -1 (unit dir; skip sqrt)
- *   - castWithInfo(x1, y1, x2, y2, maxDist, mask, out)  → { hit, entityIndex, distance, hitX, hitY }
+ *   - castWithInfo(x1, y1, x2, y2, maxDist, mask, out, exclude)  → { hit, entityIndex, distance, hitX, hitY }
  *   - castAll(x1, y1, x2, y2, maxDist, maxHits, mask, out) → Array<{ entityIndex, distance, hitX, hitY }>
  *   - linecast(x1, y1, x2, y2, exclude, mask, out)      → { blocked, entityIndex, distance }
  *   - linecastDir(x1, y1, dirX, dirY, len, exclude, mask, out) → same; skip sqrt when dir is unit
@@ -311,6 +311,7 @@ export class Ray {
    * @param {number} maxDist - Maximum ray distance (optional)
    * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
    * @param {Object} [out] - Optional stable output object. Defaults to a borrowed static object.
+   * @param {number} [excludeEntity=-1] - Entity index to ignore (shooter).
    * @returns {Object} { hit, entityIndex, distance, hitX, hitY, fixtureIndex }
    *   fixtureIndex is the closest ColliderFixture, or -1 if the hit is the primary shape.
    *   Borrowed by default: consume immediately or pass `out` if you need to store it.
@@ -322,7 +323,7 @@ export class Ray {
    *     damageEntity(result.entityIndex);
    *   }
    */
-  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF, out = null) {
+  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF, out = null, excludeEntity = -1) {
     Ray._enterStats();
     try {
       // Reset temp result
@@ -352,7 +353,9 @@ export class Ray {
       const dirY = dy / rayLength;
 
       // Use internal traversal
-      const result = Ray._traverseGrid(xFrom, yFrom, xTo, yTo, dirX, dirY, rayLength, maxDist, null, mask);
+      const result = Ray._traverseGrid(
+        xFrom, yFrom, xTo, yTo, dirX, dirY, rayLength, maxDist, null, mask, excludeEntity
+      );
 
       if (result.entityIndex !== -1) {
         info.hit = true;

@@ -1,9 +1,11 @@
-// Marching squares + island BFS + simplify + earcut (contour mode from the HTML prototype).
+// Marching squares + island BFS + simplify2 + Delaunay (contour mode from the HTML prototype).
 // Grid is material (uint8) + amount (float 0..1). Solid node: amount >= ISO.
 
-import earcut from './vendor/earcut.js';
 import Delaunator from './vendor/delaunator.js';
 import { diff as martinezDiff, union as martinezUnion } from './vendor/martinez.js';
+import simplify2 from './vendor/simplify2.js';
+
+const CLIP_SIMPLIFY_TOL = 4;
 
 export const ISO = 0.1;
 export const MAT_NONE = 0;
@@ -540,7 +542,7 @@ function pointInSolid(px, py, outer, holes) {
   return true;
 }
 
-export function circleRing(cx, cy, r, n = 16) {
+export function circleRing(cx, cy, r, n = 8) {
   const ring = [];
   const sides = n < 8 ? 8 : n;
   for (let i = 0; i < sides; i++) {
@@ -572,7 +574,7 @@ export function unionConvexPolys(polys) {
   return asMulti(acc);
 }
 
-export function diffCircle(outline, cx, cy, r, sides = 16) {
+export function diffCircle(outline, cx, cy, r, sides = 8) {
   const multi = asMulti(outline);
   if (!multi.length || !(r > 0)) return [];
   const clip = [circleRing(cx, cy, r, sides)];
@@ -637,11 +639,11 @@ export function clipIslandAtPoint(fixturePolys, x, y, r, minArea = 256) {
   for (let i = 0; i < leftover.length; i++) {
     const poly = leftover[i];
     if (gjPolygonArea(poly) < minArea) continue;
-    const outer = ringToPts(poly[0]);
+    const outer = simplifyRing(ringToPts(poly[0]), CLIP_SIMPLIFY_TOL);
     if (outer.length < 3) continue;
     const holes = [];
     for (let h = 1; h < poly.length; h++) {
-      const hp = ringToPts(poly[h]);
+      const hp = simplifyRing(ringToPts(poly[h]), CLIP_SIMPLIFY_TOL);
       if (hp.length >= 3) holes.push(hp);
     }
     const tris = triangulateDelaunay(outer, holes);
@@ -718,144 +720,11 @@ function classifyLoops(loops, solidX, solidY, cellSize) {
   return { outer, holes };
 }
 
-function sqSegDist(p, a, b) {
-  let x = a.x;
-  let y = a.y;
-  let dx = b.x - x;
-  let dy = b.y - y;
-  if (dx !== 0 || dy !== 0) {
-    const t = ((p.x - x) * dx + (p.y - y) * dy) / (dx * dx + dy * dy);
-    if (t > 1) {
-      x = b.x;
-      y = b.y;
-    } else if (t > 0) {
-      x += dx * t;
-      y += dy * t;
-    }
-  }
-  dx = p.x - x;
-  dy = p.y - y;
-  return dx * dx + dy * dy;
-}
-
-function simplifyDP(pts, first, last, sqTol, out) {
-  let maxSq = 0;
-  let index = 0;
-  for (let i = first + 1; i < last; i++) {
-    const d = sqSegDist(pts[i], pts[first], pts[last]);
-    if (d > maxSq) {
-      index = i;
-      maxSq = d;
-    }
-  }
-  if (maxSq > sqTol) {
-    if (index - first > 1) simplifyDP(pts, first, index, sqTol, out);
-    out.push(pts[index]);
-    if (last - index > 1) simplifyDP(pts, index, last, sqTol, out);
-  }
-}
-
 function simplifyRing(pts, tol) {
   if (!pts || pts.length < 3) return pts || [];
   if (!(tol > 0)) return pts;
-  const sqTol = tol * tol;
-  const out = [pts[0]];
-  simplifyDP(pts, 0, pts.length - 1, sqTol, out);
-  out.push(pts[pts.length - 1]);
-  return out.length >= 3 ? out : pts;
-}
-
-function triangulateWithHoles(outer, holes) {
-  if (!outer || outer.length < 3) return [];
-  const data = [];
-  const holeIndices = [];
-  for (let i = 0; i < outer.length; i++) data.push(outer[i].x, outer[i].y);
-  for (let h = 0; h < holes.length; h++) {
-    const hole = holes[h];
-    if (!hole || hole.length < 3) continue;
-    holeIndices.push(data.length / 2);
-    for (let i = 0; i < hole.length; i++) data.push(hole[i].x, hole[i].y);
-  }
-  let idx;
-  try {
-    idx = earcut(data, holeIndices.length ? holeIndices : undefined, 2);
-  } catch {
-    return [];
-  }
-  if (!idx || !idx.length) return [];
-  const tris = [];
-  for (let i = 0; i < idx.length; i += 3) {
-    const a = idx[i];
-    const b = idx[i + 1];
-    const c = idx[i + 2];
-    tris.push([
-      { x: data[a * 2], y: data[a * 2 + 1] },
-      { x: data[b * 2], y: data[b * 2 + 1] },
-      { x: data[c * 2], y: data[c * 2 + 1] },
-    ]);
-  }
-  return tris;
-}
-
-function pointInTri(p, a, b, c) {
-  const ax = a.x;
-  const ay = a.y;
-  const bx = b.x - ax;
-  const by = b.y - ay;
-  const cx = c.x - ax;
-  const cy = c.y - ay;
-  const px = p.x - ax;
-  const py = p.y - ay;
-  const den = bx * cy - cx * by;
-  if (Math.abs(den) < 1e-12) return false;
-  const u = (px * cy - cx * py) / den;
-  const v = (bx * py - px * by) / den;
-  return u >= -1e-9 && v >= -1e-9 && u + v <= 1 + 1e-9;
-}
-
-function triangulateContour(contour) {
-  let pts = cleanContour(contour);
-  if (pts.length < 3) return [];
-  if (signedArea(pts) > 0) pts = pts.slice().reverse();
-
-  const idx = pts.map((_, i) => i);
-  const tris = [];
-  let guard = 0;
-  while (idx.length > 3 && guard++ < 10000) {
-    let ear = -1;
-    const n = idx.length;
-    for (let i = 0; i < n; i++) {
-      const i0 = idx[(i + n - 1) % n];
-      const i1 = idx[i];
-      const i2 = idx[(i + 1) % n];
-      const a = pts[i0];
-      const b = pts[i1];
-      const c = pts[i2];
-      const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-      if (cross <= 0) continue;
-      let inside = false;
-      for (let j = 0; j < n; j++) {
-        const k = idx[j];
-        if (k === i0 || k === i1 || k === i2) continue;
-        if (pointInTri(pts[k], a, b, c)) {
-          inside = true;
-          break;
-        }
-      }
-      if (!inside) {
-        ear = i;
-        break;
-      }
-    }
-    if (ear < 0) break;
-    const i0 = idx[(ear + n - 1) % n];
-    const i1 = idx[ear];
-    const i2 = idx[(ear + 1) % n];
-    tris.push([pts[i0], pts[i1], pts[i2]]);
-    idx.splice(ear, 1);
-  }
-  if (idx.length === 3) tris.push([pts[idx[0]], pts[idx[1]], pts[idx[2]]]);
-  return tris;
+  const out = simplify2.douglasPeucker(pts, tol);
+  return out && out.length >= 3 ? out : pts;
 }
 
 function hasUnstitchedEmpty(field, outer, holes) {
@@ -928,8 +797,7 @@ export function buildContourFixtures(island, field, simplifyTol) {
     return s;
   }).filter((h) => h.length >= 3);
 
-  let tris = triangulateWithHoles(outer, holes);
-  if (!tris.length && !holes.length) tris = triangulateContour(outer);
+  const tris = triangulateDelaunay(outer, holes);
   if (!tris.length) return fallback();
   return { polys: tris, fallback: false };
 }

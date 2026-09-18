@@ -1,4 +1,4 @@
-// Destructible terrain — marching squares + simplify + earcut compounds.
+// Destructible terrain — marching squares + simplify2 + Delaunay compounds.
 // Z draw · X erase · C laser · V shatter · [ ] brush · A/D thrusters · click uses tool.
 // No harpoon.
 
@@ -38,9 +38,9 @@ const {
   BLEND_MODES,
 } = WEED;
 
-const CELL = 16;
-const COLS = 140;
-const ROWS = 80;
+const CELL = 10;
+const COLS = 640;
+const ROWS = 200;
 const WORLD_W = COLS * CELL;
 const WORLD_H = ROWS * CELL;
 const AREA_THRESHOLD = 80;
@@ -83,7 +83,7 @@ export class DestructibleTerrainScene extends Scene {
       noLimitFPS: false,
       gravity: { x: 0, y: 1800 },
       maxFixtures: 8192,
-      sleeping: true,
+      sleeping: false,
     },
 
     renderer: {
