@@ -1,8 +1,8 @@
 import {
   centroidFromPolys,
-  pointInConvex,
+  clipIslandAtPoint,
+  polygonArea,
   polysToLocal,
-  splitConvexAtPoint,
 } from '../terrainMesh.js';
 import WEED from '/src/index.js';
 
@@ -17,9 +17,8 @@ const {
 } = WEED;
 
 const CELL = 16;
-const SHATTER_MAX = 24;
-const SHATTER_MIN_AREA = CELL * CELL * 0.35;
-const EXPLODE_IMPULSE = 1500;
+const CLIP_RADIUS = CELL * 2;
+const MIN_KEEP_AREA = CELL * CELL;
 const _scratchVerts = [];
 const _scratchCS = { c: 1, s: 0 };
 const _scratchLocal = { x: 0, y: 0 };
@@ -33,13 +32,14 @@ export class TerrainIsland extends GameObject {
   setup() {
     this.collider.visualRange = 0;
     this.collider.friction = 0.5;
-    this.collider.restitution = 0.05;
+    this.collider.restitution = 0;
   }
 
   onSpawned(spawnConfig = {}) {
     this.isStatic = !!spawnConfig.isStatic;
-    this.rigidBody.linearDamping = spawnConfig.isStatic ? 0 : 0.15;
-    this.rigidBody.angularDamping = spawnConfig.isStatic ? 0 : 0.2;
+    this.rigidBody.linearDamping = spawnConfig.isStatic ? 0 : 0.4;
+    this.rigidBody.angularDamping = spawnConfig.isStatic ? 0 : 0.8;
+    if (!spawnConfig.isStatic) this.rigidBody.sleepThreshold = 25;
 
     const polys = spawnConfig.polys;
     if (!polys || !polys.length || !this.collider.replacePolygons(polys)) {
@@ -59,7 +59,7 @@ export class TerrainIsland extends GameObject {
   }
 
   /**
-   * Laser hit from Ship.tick. Dynamic: split the fixture (SoA). Static: SceneBridge to the field.
+   * Laser hit from Ship.tick. Dynamic: circle-diff the whole island. Static: SceneBridge to the field.
    * @param {{ hitX: number, hitY: number, fixtureIndex?: number }} hit
    */
   takeHit(hit) {
@@ -72,63 +72,94 @@ export class TerrainIsland extends GameObject {
     }
 
     const idx = this.index;
-    const fiHit = hit.fixtureIndex >= 0 ? hit.fixtureIndex | 0 : -1;
     TerrainIsland.worldToLocal(idx, hx, hy, _scratchLocal);
     const lx = _scratchLocal.x;
     const ly = _scratchLocal.y;
 
-    const keep = [];
-    const drop = [];
-    let hitLocal = null;
-
+    const fixtures = [];
     ColliderFixture.forEach(idx, (fi) => {
       TerrainIsland.readLocalFixture(fi, _scratchVerts);
       const localCopy = [];
       for (let v = 0; v < _scratchVerts.length; v++) {
         localCopy.push({ x: _scratchVerts[v].x, y: _scratchVerts[v].y });
       }
-      const named = fiHit >= 0 && fi === fiHit;
-      const inside = !hitLocal && pointInConvex(localCopy, lx, ly);
-      if (!hitLocal && (named || inside)) {
-        hitLocal = localCopy;
-        return;
-      }
-      keep.push(localCopy);
+      if (localCopy.length >= 3) fixtures.push(localCopy);
     });
 
-    if (hitLocal) {
-      const hitWorld = TerrainIsland.localToWorldPoly(idx, hitLocal);
-      const split = splitConvexAtPoint(hitWorld, hx, hy, SHATTER_MIN_AREA, SHATTER_MAX);
-      for (let i = 0; i < split.keep.length; i++) {
-        keep.push(TerrainIsland.worldPolyToLocal(idx, split.keep[i]));
+    const { islands } = clipIslandAtPoint(fixtures, lx, ly, CLIP_RADIUS, MIN_KEEP_AREA);
+    if (!islands.length) {
+      this.despawn();
+      return;
+    }
+
+    let best = 0;
+    let bestA = 0;
+    for (let i = 0; i < islands.length; i++) {
+      let a = 0;
+      for (let t = 0; t < islands[i].length; t++) a += polygonArea(islands[i][t]);
+      if (a > bestA) {
+        bestA = a;
+        best = i;
       }
-      for (let i = 0; i < split.drop.length; i++) drop.push(split.drop[i]);
     }
 
     const tint = MeshRenderer.tint ? MeshRenderer.tint[idx] : 0x88aa66;
-    const vx = RigidBody.vx ? RigidBody.vx[idx] : 0;
-    const vy = RigidBody.vy ? RigidBody.vy[idx] : 0;
+    const vx0 = RigidBody.vx ? RigidBody.vx[idx] : 0;
+    const vy0 = RigidBody.vy ? RigidBody.vy[idx] : 0;
+    const w0 = RigidBody.angularVelocity ? RigidBody.angularVelocity[idx] : 0;
+    const resting = vx0 * vx0 + vy0 * vy0 < 60 * 60 && Math.abs(w0) < 0.5;
 
-    if (!keep.length) {
-      this.despawn();
-    } else if (!this.collider.replacePolygons(keep)) {
-      this.despawn();
-    } else {
-      this._refreshVisualRange();
+    for (let i = 0; i < islands.length; i++) {
+      if (i === best) continue;
+      const world = [];
+      for (let t = 0; t < islands[i].length; t++) {
+        world.push(TerrainIsland.localToWorldPoly(idx, islands[i][t]));
+      }
+      TerrainIsland.spawnIslandFromWorldPolys(world, tint, vx0, vy0);
     }
-    TerrainIsland.spawnShardsFromWorld(drop, tint, vx, vy);
-    Box2d.explode({
-      x: hx,
-      y: hy,
-      radius: Math.max(CELL * 4, 48),
-      impulsePerLength: EXPLODE_IMPULSE,
+
+    if (!this.collider.replacePolygons(islands[best])) {
+      this.despawn();
+      return;
+    }
+    if (MeshRenderer.renderDirty) MeshRenderer.renderDirty[idx] = 1;
+    this._refreshVisualRange();
+    if (resting) {
+      this.setVelocity(0, 0);
+      this.angularVelocity = 0;
+    }
+    // Box2d.explode({
+    //   x: hx,
+    //   y: hy,
+    //   radius: Math.max(CELL * 4, 48),
+    //   impulsePerLength: EXPLODE_IMPULSE,
+    // });
+  }
+
+  static spawnIslandFromWorldPolys(worldPolys, tint, vx, vy) {
+    if (!worldPolys || !worldPolys.length) return;
+    const cen = centroidFromPolys(worldPolys);
+    if (!cen) return;
+    const local = polysToLocal(worldPolys, cen.x, cen.y);
+    if (!local.length) return;
+    const spawned = TerrainIsland.spawn({
+      x: cen.x,
+      y: cen.y,
+      isStatic: false,
+      polys: local,
+      tint,
     });
+    if (!spawned) return;
+    const si = spawned.index;
+    if (RigidBody.vx) RigidBody.vx[si] = vx || 0;
+    if (RigidBody.vy) RigidBody.vy[si] = vy || 0;
   }
 
   static spawnShardsFromWorld(worldPolys, tint, vx, vy) {
     if (!worldPolys) return;
     for (let i = 0; i < worldPolys.length; i++) {
       const poly = worldPolys[i];
+      if (polygonArea(poly) < MIN_KEEP_AREA) continue;
       const cen = centroidFromPolys([poly]);
       if (!cen) continue;
       const local = polysToLocal([poly], cen.x, cen.y);
@@ -211,5 +242,5 @@ export class TerrainIsland extends GameObject {
     return out;
   }
 
-  tick() {}
+  tick() { }
 }

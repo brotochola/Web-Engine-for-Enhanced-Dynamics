@@ -2,6 +2,8 @@
 // Grid is material (uint8) + amount (float 0..1). Solid node: amount >= ISO.
 
 import earcut from './vendor/earcut.js';
+import Delaunator from './vendor/delaunator.js';
+import { diff as martinezDiff, union as martinezUnion } from './vendor/martinez.js';
 
 export const ISO = 0.1;
 export const MAT_NONE = 0;
@@ -251,6 +253,90 @@ export function subdivideConvex(poly, minArea, maxOut, out) {
   return dest;
 }
 
+const CARVE_MAX_DEPTH = 16;
+
+function dist2(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function copyPt(p) {
+  return { x: p.x, y: p.y };
+}
+
+function midPt(a, b) {
+  return { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+}
+
+function splitTriLongestEdge(tri) {
+  const a = tri[0];
+  const b = tri[1];
+  const c = tri[2];
+  const ab = dist2(a, b);
+  const bc = dist2(b, c);
+  const ca = dist2(c, a);
+  if (ab >= bc && ab >= ca) {
+    const m = midPt(a, b);
+    return [[copyPt(a), m, copyPt(c)], [copyPt(m), copyPt(b), copyPt(c)]];
+  }
+  if (bc >= ca) {
+    const m = midPt(b, c);
+    return [[copyPt(b), m, copyPt(a)], [copyPt(m), copyPt(c), copyPt(a)]];
+  }
+  const m = midPt(c, a);
+  return [[copyPt(c), m, copyPt(b)], [copyPt(m), copyPt(a), copyPt(b)]];
+}
+
+function splitPoly2(poly) {
+  if (poly.length === 3) return splitTriLongestEdge(poly);
+  const ear = [copyPt(poly[0]), copyPt(poly[1]), copyPt(poly[2])];
+  const rest = [copyPt(poly[0]), copyPt(poly[2])];
+  for (let i = 3; i < poly.length; i++) rest.push(copyPt(poly[i]));
+  return [ear, rest];
+}
+
+/**
+ * Mamushka carve: bisect only the child that contains (x,y) until that leaf
+ * is below vanishArea. Siblings stay. Hit leaf goes to drop.
+ */
+export function carveConvexAtPoint(poly, x, y, vanishArea) {
+  const keep = [];
+  const drop = [];
+  _carveConvexAtPoint(poly, x, y, vanishArea, 0, keep, drop);
+  return { keep, drop };
+}
+
+function _carveConvexAtPoint(poly, x, y, vanishArea, depth, keep, drop) {
+  if (!poly || poly.length < 3) return;
+  const area = polygonArea(poly);
+  if (area <= 1e-8) return;
+  if (area < vanishArea) {
+    drop.push(poly);
+    return;
+  }
+  if (depth >= CARVE_MAX_DEPTH) {
+    keep.push(poly);
+    return;
+  }
+  const kids = splitPoly2(poly);
+  let hitIdx = -1;
+  for (let i = 0; i < kids.length; i++) {
+    if (pointInConvex(kids[i], x, y)) {
+      hitIdx = i;
+      break;
+    }
+  }
+  if (hitIdx < 0) hitIdx = 0;
+  for (let i = 0; i < kids.length; i++) {
+    const kid = kids[i];
+    const a = polygonArea(kid);
+    if (a <= 1e-8) continue;
+    if (i === hitIdx) _carveConvexAtPoint(kid, x, y, vanishArea, depth + 1, keep, drop);
+    else keep.push(kid);
+  }
+}
+
 /**
  * Split a convex poly; the child that contains (x,y) goes to drop, the rest to keep.
  * If the point misses every child (edge cases), first child is dropped.
@@ -411,6 +497,161 @@ function pointInPolygon(px, py, pts) {
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+function closedRing(pts) {
+  const ring = [];
+  for (let i = 0; i < pts.length; i++) ring.push([pts[i].x, pts[i].y]);
+  if (!ring.length) return ring;
+  const a = ring[0];
+  const b = ring[ring.length - 1];
+  if (a[0] !== b[0] || a[1] !== b[1]) ring.push([a[0], a[1]]);
+  return ring;
+}
+
+function ringToPts(ring) {
+  const pts = [];
+  if (!ring || ring.length < 2) return pts;
+  const last = ring.length - 1;
+  const closed = ring[0][0] === ring[last][0] && ring[0][1] === ring[last][1];
+  const n = closed ? last : ring.length;
+  for (let i = 0; i < n; i++) pts.push({ x: ring[i][0], y: ring[i][1] });
+  return pts;
+}
+
+function asMulti(geom) {
+  if (!geom || !geom.length) return [];
+  if (typeof geom[0][0][0] === 'number') return [geom];
+  return geom;
+}
+
+function gjPolygonArea(poly) {
+  if (!poly || !poly.length) return 0;
+  let a = polygonArea(ringToPts(poly[0]));
+  for (let i = 1; i < poly.length; i++) a -= polygonArea(ringToPts(poly[i]));
+  return a;
+}
+
+function pointInSolid(px, py, outer, holes) {
+  if (!pointInPolygon(px, py, outer)) return false;
+  for (let i = 0; i < holes.length; i++) {
+    if (pointInPolygon(px, py, holes[i])) return false;
+  }
+  return true;
+}
+
+export function circleRing(cx, cy, r, n = 16) {
+  const ring = [];
+  const sides = n < 8 ? 8 : n;
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * Math.PI * 2;
+    ring.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+  }
+  ring.push([ring[0][0], ring[0][1]]);
+  return ring;
+}
+
+export function unionConvexPolys(polys) {
+  if (!polys || !polys.length) return [];
+  let acc = null;
+  for (let i = 0; i < polys.length; i++) {
+    const pts = polys[i];
+    if (!pts || pts.length < 3) continue;
+    const next = [closedRing(pts)];
+    if (!acc) {
+      acc = next;
+      continue;
+    }
+    try {
+      acc = martinezUnion(acc, next);
+    } catch {
+      return [];
+    }
+    if (!acc || !acc.length) return [];
+  }
+  return asMulti(acc);
+}
+
+export function diffCircle(outline, cx, cy, r, sides = 16) {
+  const multi = asMulti(outline);
+  if (!multi.length || !(r > 0)) return [];
+  const clip = [circleRing(cx, cy, r, sides)];
+  let out;
+  try {
+    out = martinezDiff(multi, clip);
+  } catch {
+    return [];
+  }
+  return asMulti(out);
+}
+
+export function triangulateDelaunay(outerPts, holesPts) {
+  const holes = holesPts || [];
+  const pts = [];
+  const seen = new Set();
+  const pushPt = (p) => {
+    const k = `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    pts.push([p.x, p.y]);
+  };
+  for (let i = 0; i < outerPts.length; i++) pushPt(outerPts[i]);
+  for (let h = 0; h < holes.length; h++) {
+    for (let i = 0; i < holes[h].length; i++) pushPt(holes[h][i]);
+  }
+  if (pts.length < 3) return [];
+  let del;
+  try {
+    del = Delaunator.from(pts);
+  } catch {
+    return [];
+  }
+  const idx = del.triangles;
+  const tris = [];
+  for (let i = 0; i < idx.length; i += 3) {
+    const a = pts[idx[i]];
+    const b = pts[idx[i + 1]];
+    const c = pts[idx[i + 2]];
+    const mx = (a[0] + b[0] + c[0]) / 3;
+    const my = (a[1] + b[1] + c[1]) / 3;
+    if (!pointInSolid(mx, my, outerPts, holes)) continue;
+    const tri = ensureCcw([
+      { x: a[0], y: a[1] },
+      { x: b[0], y: b[1] },
+      { x: c[0], y: c[1] },
+    ]);
+    if (polygonArea(tri) > 1e-8) tris.push(tri);
+  }
+  return tris;
+}
+
+/**
+ * Union fixtures, subtract a circle, remesh each leftover island to tris.
+ * @returns {{ islands: {x:number,y:number}[][][] }}
+ */
+export function clipIslandAtPoint(fixturePolys, x, y, r, minArea = 256) {
+  const outline = unionConvexPolys(fixturePolys);
+  if (!outline.length) return { islands: [] };
+  const leftover = diffCircle(outline, x, y, r);
+  const islands = [];
+  for (let i = 0; i < leftover.length; i++) {
+    const poly = leftover[i];
+    if (gjPolygonArea(poly) < minArea) continue;
+    const outer = ringToPts(poly[0]);
+    if (outer.length < 3) continue;
+    const holes = [];
+    for (let h = 1; h < poly.length; h++) {
+      const hp = ringToPts(poly[h]);
+      if (hp.length >= 3) holes.push(hp);
+    }
+    const tris = triangulateDelaunay(outer, holes);
+    if (!tris.length) continue;
+    let ta = 0;
+    for (let t = 0; t < tris.length; t++) ta += polygonArea(tris[t]);
+    if (ta < minArea) continue;
+    islands.push(tris);
+  }
+  return { islands };
 }
 
 function orientContourSolidInside(contour, solidX, solidY) {
@@ -654,66 +895,6 @@ function hasUnstitchedEmpty(field, outer, holes) {
   return false;
 }
 
-function expandRect(full, used, cx, cy, primary, maxW, maxH) {
-  let w = 1;
-  let h = 1;
-  if (primary === 'h') {
-    while (w < maxW && full.has(`${cx + w},${cy}`) && !used.has(`${cx + w},${cy}`)) w++;
-    outerH: while (h < maxH) {
-      for (let dx = 0; dx < w; dx++) {
-        const k = `${cx + dx},${cy + h}`;
-        if (!full.has(k) || used.has(k)) break outerH;
-      }
-      h++;
-    }
-  } else {
-    while (h < maxH && full.has(`${cx},${cy + h}`) && !used.has(`${cx},${cy + h}`)) h++;
-    outerV: while (w < maxW) {
-      for (let dy = 0; dy < h; dy++) {
-        const k = `${cx + w},${cy + dy}`;
-        if (!full.has(k) || used.has(k)) break outerV;
-      }
-      w++;
-    }
-  }
-  return { cx, cy, w, h, area: w * h };
-}
-
-function greedyRectsFromCells(cellsMeta, cellSize) {
-  const full = new Set();
-  for (let i = 0; i < cellsMeta.length; i++) {
-    if (cellsMeta[i].caseId === 15) full.add(`${cellsMeta[i].cx},${cellsMeta[i].cy}`);
-  }
-  const used = new Set();
-  const rects = [];
-  const seeds = [];
-  for (const key of full) {
-    const comma = key.indexOf(',');
-    seeds.push({ cx: +key.slice(0, comma), cy: +key.slice(comma + 1) });
-  }
-  seeds.sort((a, b) => a.cy - b.cy || a.cx - b.cx);
-  for (let s = 0; s < seeds.length; s++) {
-    const start = seeds[s];
-    const key0 = `${start.cx},${start.cy}`;
-    if (used.has(key0)) continue;
-    const rh = expandRect(full, used, start.cx, start.cy, 'h', 1e9, 1e9);
-    const rv = expandRect(full, used, start.cx, start.cy, 'v', 1e9, 1e9);
-    const best = rh.area >= rv.area ? rh : rv;
-    for (let dy = 0; dy < best.h; dy++) {
-      for (let dx = 0; dx < best.w; dx++) used.add(`${best.cx + dx},${best.cy + dy}`);
-    }
-    const x0 = best.cx * cellSize;
-    const y0 = best.cy * cellSize;
-    const x1 = x0 + best.w * cellSize;
-    const y1 = y0 + best.h * cellSize;
-    rects.push([
-      { x: x0, y: y0 }, { x: x1, y: y0 },
-      { x: x1, y: y1 }, { x: x0, y: y1 },
-    ]);
-  }
-  return rects;
-}
-
 function edgePolysFromCells(cellsMeta) {
   const polys = [];
   for (let i = 0; i < cellsMeta.length; i++) {
@@ -726,12 +907,6 @@ function edgePolysFromCells(cellsMeta) {
   return polys;
 }
 
-function buildGreedyFixtures(island, cellSize) {
-  const rects = greedyRectsFromCells(island.cellsMeta || [], cellSize);
-  const edges = edgePolysFromCells(island.cellsMeta || []);
-  return { polys: rects.concat(edges), fallback: true };
-}
-
 export function buildContourFixtures(island, field, simplifyTol) {
   const sx = island.cellCx ?? 0;
   const sy = island.cellCy ?? 0;
@@ -739,7 +914,7 @@ export function buildContourFixtures(island, field, simplifyTol) {
     ? island.loops
     : (island.contour ? [island.contour] : []);
   let { outer, holes } = classifyLoops(rawLoops, sx, sy, field.cellSize);
-  const fallback = () => buildGreedyFixtures(island, field.cellSize);
+  const fallback = () => buildCellTriangleFixtures(island, field.cellSize);
 
   if (!outer || outer.length < 3) return fallback();
   if (rawLoops.length > 1 && !holes.length) return fallback();
@@ -783,9 +958,63 @@ export function centroidFromPolys(polys) {
   return { x: cx / wSum, y: cy / wSum };
 }
 
+/** Shift polys so area centroid sits at origin. Returns the old centroid, or null. */
+export function recenterPolys(polys) {
+  const cen = centroidFromPolys(polys);
+  if (!cen) return null;
+  if (cen.x * cen.x + cen.y * cen.y < 1e-12) return { x: 0, y: 0 };
+  for (let i = 0; i < polys.length; i++) {
+    const poly = polys[i];
+    for (let v = 0; v < poly.length; v++) {
+      poly[v].x -= cen.x;
+      poly[v].y -= cen.y;
+    }
+  }
+  return cen;
+}
+
 function ensureCcw(pts) {
   if (signedArea(pts) <= 1e-8) return pts.slice().reverse();
   return pts;
+}
+
+function pushTri(out, a, b, c) {
+  const t = ensureCcw([a, b, c]);
+  if (polygonArea(t) > 1e-8) out.push(t);
+}
+
+function fanToTris(verts, out) {
+  if (!verts || verts.length < 3) return;
+  if (verts.length === 3) {
+    pushTri(out, verts[0], verts[1], verts[2]);
+    return;
+  }
+  for (let i = 1; i + 1 < verts.length; i++) {
+    pushTri(out, verts[0], verts[i], verts[i + 1]);
+  }
+}
+
+/** Fallback: 2 tris per solid cell, edge loops fanned to tris. No greedy quads. */
+export function buildCellTriangleFixtures(island, cellSize) {
+  const meta = island.cellsMeta || [];
+  const polys = [];
+  for (let i = 0; i < meta.length; i++) {
+    const c = meta[i];
+    if (c.caseId !== 15) continue;
+    const x0 = c.cx * cellSize;
+    const y0 = c.cy * cellSize;
+    const x1 = x0 + cellSize;
+    const y1 = y0 + cellSize;
+    const tl = { x: x0, y: y0 };
+    const tr = { x: x1, y: y0 };
+    const br = { x: x1, y: y1 };
+    const bl = { x: x0, y: y1 };
+    pushTri(polys, tl, tr, br);
+    pushTri(polys, tl, br, bl);
+  }
+  const edges = edgePolysFromCells(meta);
+  for (let i = 0; i < edges.length; i++) fanToTris(edges[i], polys);
+  return { polys, fallback: true };
 }
 
 export function polysToLocal(polys, ox, oy) {
