@@ -5,6 +5,7 @@ import {
   ROWS,
   MAT_DIRT,
   MAT_TINT,
+  TUNE,
 } from '../worldGrid.js';
 import { TerrainIsland } from './terrainIsland.js';
 import WEED from '/src/index.js';
@@ -21,9 +22,6 @@ const {
   Box2d,
 } = WEED;
 
-const AREA_THRESHOLD = 80;
-const SIMPLIFY_TOL = 4;
-const BRUSH_STRENGTH = 0.35;
 const SHATTER_MAX = 24;
 const SHATTER_MIN_AREA = CELL * CELL * 0.35;
 const EXPLODE_IMPULSE = 1500;
@@ -48,18 +46,20 @@ export class WorldGridManager extends GameObject {
 
   setup() {
     this.tool = 'draw';
-    this.brushRadius = 13;
-    this.brushHardness = 0.35;
     this.staticIslands = [];
     this.dynamicIslands = [];
+    this._shardSnap = [];
+    this._shardPool = [];
+    this._shardJobs = [];
   }
 
   onSpawned() {
     this.tool = 'draw';
-    this.brushRadius = 3;
-    this.brushHardness = 0.35;
     this.staticIslands = [];
     this.dynamicIslands = [];
+    this._shardSnap = [];
+    this._shardPool = [];
+    this._shardJobs = [];
     WorldGrid.cols = COLS;
     WorldGrid.rows = ROWS;
     WorldGrid.cellSize = CELL;
@@ -72,29 +72,30 @@ export class WorldGridManager extends GameObject {
     if (Keyboard.isPressed('x')) this.tool = 'erase';
     if (Keyboard.isPressed('c')) this.tool = 'shoot';
     if (Keyboard.isPressed('v')) this.tool = 'shatter';
-    if (Keyboard.isPressed('[')) this.brushRadius = Math.max(1, this.brushRadius - 1);
-    if (Keyboard.isPressed(']')) this.brushRadius = Math.min(12, this.brushRadius + 1);
+    if (Keyboard.isPressed('[')) {
+      WorldGrid.tuneSet(TUNE.BRUSH_RADIUS, Math.max(1, WorldGrid.tuneGet(TUNE.BRUSH_RADIUS) - 1));
+    }
+    if (Keyboard.isPressed(']')) {
+      WorldGrid.tuneSet(TUNE.BRUSH_RADIUS, Math.min(12, WorldGrid.tuneGet(TUNE.BRUSH_RADIUS) + 1));
+    }
 
-    if (!Mouse.isDebugToolActive) {
+    const uiBlock = WorldGrid.tuneGet(TUNE.UI_BLOCK) > 0.5;
+    if (!Mouse.isDebugToolActive && !uiBlock) {
       if (this.tool === 'shatter') {
         if (Mouse.isButton0Pressed) this._tryShatter();
       } else if (this.tool !== 'shoot' && Mouse.isButton0Down) {
         WorldGrid.paint(
           Mouse.x,
           Mouse.y,
-          this.brushRadius,
-          this.brushHardness,
-          BRUSH_STRENGTH,
+          WorldGrid.tuneGet(TUNE.BRUSH_RADIUS),
+          WorldGrid.tuneGet(TUNE.BRUSH_HARDNESS),
+          WorldGrid.tuneGet(TUNE.BRUSH_STRENGTH),
           this.tool === 'erase',
           MAT_DIRT,
         );
       }
-      if (WorldGrid.hasDirty()) {
-        if (this.tool === 'shoot' || this.tool === 'shatter' || !Mouse.isButton0Down) {
-          this.rebuild(false);
-        }
-      }
     }
+    if (!Mouse.isDebugToolActive && WorldGrid.hasDirty()) this.rebuild(false);
 
     this._cullDynamics();
   }
@@ -106,20 +107,54 @@ export class WorldGridManager extends GameObject {
     if (!dirty) return;
     if (full) WorldGrid.consumeDirty(0);
 
-    const keep = [];
-    const pool = [];
-    for (let i = 0; i < this.staticIslands.length; i++) {
-      const rec = this.staticIslands[i];
-      if (!full && !WorldGrid.aabbOverlaps(rec, dirty)) keep.push(rec);
-      else pool.push(rec);
-    }
-    if (full) {
-      for (let i = 0; i < pool.length; i++) this._despawnIndex(pool[i].index);
-      pool.length = 0;
+    const src = WorldGrid.chunksOverlapping(dirty);
+    const snap = this._shardSnap;
+    snap.length = src.length;
+    for (let i = 0; i < src.length; i++) {
+      const s = src[i];
+      let rec = snap[i];
+      if (!rec) rec = snap[i] = {};
+      rec.chunkX = s.chunkX;
+      rec.chunkY = s.chunkY;
+      rec.minX = s.minX;
+      rec.minY = s.minY;
+      rec.maxX = s.maxX;
+      rec.maxY = s.maxY;
     }
 
-    const jobs = [];
-    const islands = full ? WorldGrid.extractIslands() : WorldGrid.extractIslands(dirty);
+    const keep = [];
+    const live = this.staticIslands;
+    for (let i = 0; i < live.length; i++) {
+      const rec = live[i];
+      if (this._recInShards(rec, snap)) continue;
+      if (full) this._despawnIndex(rec.index);
+      else keep.push(rec);
+    }
+
+    for (let s = 0; s < snap.length; s++) this._remeshShard(snap[s], keep);
+    this.staticIslands = keep;
+  }
+
+  _recInShards(rec, shards) {
+    for (let i = 0; i < shards.length; i++) {
+      if (rec.chunkX === shards[i].chunkX && rec.chunkY === shards[i].chunkY) return true;
+    }
+    return false;
+  }
+
+  _remeshShard(shard, keep) {
+    const pool = this._shardPool;
+    pool.length = 0;
+    const live = this.staticIslands;
+    for (let i = 0; i < live.length; i++) {
+      const rec = live[i];
+      if (rec.chunkX === shard.chunkX && rec.chunkY === shard.chunkY) pool.push(rec);
+    }
+
+    const jobs = this._shardJobs;
+    jobs.length = 0;
+    const islands = WorldGrid.extractIslands(shard, { clip: true });
+    const failed = [];
     for (let i = 0; i < islands.length; i++) {
       const island = islands[i];
       const islandBox = {
@@ -128,37 +163,33 @@ export class WorldGridManager extends GameObject {
         maxX: island.maxX,
         maxY: island.maxY,
       };
-      const isDynamic = island.areaCells < AREA_THRESHOLD;
-      if (!isDynamic && !full && !WorldGrid.aabbOverlaps(islandBox, dirty)) continue;
-
-      const built = WorldGrid.buildContourFixtures(island, SIMPLIFY_TOL);
-      const polys = built.polys;
-      if (!polys || !polys.length) continue;
-      const cen = WorldGrid.centroidFromPolys(polys);
-      if (!cen) continue;
-      const local = WorldGrid.polysToLocal(polys, cen.x, cen.y);
-      if (!local.length) continue;
-
-      const tint = MAT_TINT[island.material] || 0x88aa66;
+      const isDynamic =
+        this.tool !== 'draw' && island.areaCells < WorldGrid.tuneGet(TUNE.AREA_THRESHOLD);
+      const built = WorldGrid.buildContourFixtures(island, WorldGrid.tuneGet(TUNE.SIMPLIFY_TOL));
       if (isDynamic) {
-        const spawned = TerrainIsland.spawn({
-          x: cen.x,
-          y: cen.y,
-          isStatic: false,
-          polys: local,
-          tint,
-          layer: 'terrain',
-        });
-        if (!spawned) continue;
-        WorldGrid.clearIslandNodes(island);
-        this.dynamicIslands.push(spawned.index);
+        if (!this._spawnDynamic(island, built.polys)) continue;
         continue;
       }
-
-      jobs.push({ island, islandBox, cen, local, tint });
+      if (!built.polys || !built.polys.length) {
+        failed.push({
+          minX: islandBox.minX,
+          minY: islandBox.minY,
+          maxX: islandBox.maxX,
+          maxY: islandBox.maxY,
+          areaCells: island.areaCells,
+        });
+        continue;
+      }
+      this._pushStaticJob(jobs, island, islandBox, built.polys, shard, -1);
     }
 
-    jobs.sort((a, b) => b.island.areaCells - a.island.areaCells);
+    for (let f = 0; f < failed.length; f++) {
+      if (!this._tryQuadSplit(failed[f], shard, jobs, pool, keep)) {
+        this._keepOverlapping(pool, keep, failed[f]);
+      }
+    }
+
+    jobs.sort((a, b) => b.areaCells - a.areaCells);
     for (let j = 0; j < jobs.length; j++) {
       const job = jobs[j];
       let bestI = -1;
@@ -172,10 +203,13 @@ export class WorldGridManager extends GameObject {
       }
       if (bestI >= 0 && this._retargetStatic(pool[bestI], job)) {
         const rec = pool[bestI];
-        rec.minX = job.island.minX;
-        rec.minY = job.island.minY;
-        rec.maxX = job.island.maxX;
-        rec.maxY = job.island.maxY;
+        rec.minX = job.islandBox.minX;
+        rec.minY = job.islandBox.minY;
+        rec.maxX = job.islandBox.maxX;
+        rec.maxY = job.islandBox.maxY;
+        rec.chunkX = job.chunkX;
+        rec.chunkY = job.chunkY;
+        rec.quad = job.quad;
         keep.push(rec);
         pool[bestI] = pool[pool.length - 1];
         pool.pop();
@@ -189,18 +223,116 @@ export class WorldGridManager extends GameObject {
         tint: job.tint,
         layer: 'terrain',
       });
-      if (!spawned) continue;
+      if (!spawned) {
+        this._keepOverlapping(pool, keep, job.islandBox);
+        continue;
+      }
       keep.push({
         index: spawned.index,
-        minX: job.island.minX,
-        minY: job.island.minY,
-        maxX: job.island.maxX,
-        maxY: job.island.maxY,
+        minX: job.islandBox.minX,
+        minY: job.islandBox.minY,
+        maxX: job.islandBox.maxX,
+        maxY: job.islandBox.maxY,
+        chunkX: job.chunkX,
+        chunkY: job.chunkY,
+        quad: job.quad,
       });
     }
 
     for (let i = 0; i < pool.length; i++) this._despawnIndex(pool[i].index);
-    this.staticIslands = keep;
+  }
+
+  _pushStaticJob(jobs, island, islandBox, polys, shard, quad) {
+    const cen = WorldGrid.centroidFromPolys(polys);
+    if (!cen) return false;
+    const local = WorldGrid.polysToLocal(polys, cen.x, cen.y);
+    if (!local.length) return false;
+    jobs.push({
+      areaCells: island.areaCells,
+      islandBox,
+      cen,
+      local,
+      tint: MAT_TINT[island.material] || 0x88aa66,
+      chunkX: shard.chunkX,
+      chunkY: shard.chunkY,
+      quad,
+    });
+    return true;
+  }
+
+  _spawnDynamic(island, polys) {
+    if (!polys || !polys.length) return false;
+    const cen = WorldGrid.centroidFromPolys(polys);
+    if (!cen) return false;
+    const local = WorldGrid.polysToLocal(polys, cen.x, cen.y);
+    if (!local.length) return false;
+    const spawned = TerrainIsland.spawn({
+      x: cen.x,
+      y: cen.y,
+      isStatic: false,
+      polys: local,
+      tint: MAT_TINT[island.material] || 0x88aa66,
+      layer: 'terrain',
+    });
+    if (!spawned) return false;
+    WorldGrid.clearIslandNodes(island);
+    this.dynamicIslands.push(spawned.index);
+    return true;
+  }
+
+  _tryQuadSplit(failed, shard, jobs, pool, keep) {
+    const w = failed.maxX - failed.minX + 1;
+    const h = failed.maxY - failed.minY + 1;
+    if (w < 4 || h < 4) return false;
+    const quads = WorldGrid.splitBoxQuads(failed);
+    let any = false;
+    for (let q = 0; q < quads.length; q++) {
+      const quad = quads[q];
+      const parts = WorldGrid.extractIslands(quad, { clip: true });
+      let quadHit = false;
+      for (let i = 0; i < parts.length; i++) {
+        const island = parts[i];
+        const islandBox = {
+          minX: island.minX,
+          minY: island.minY,
+          maxX: island.maxX,
+          maxY: island.maxY,
+        };
+        const isDynamic =
+          this.tool !== 'draw' && island.areaCells < WorldGrid.tuneGet(TUNE.AREA_THRESHOLD);
+        const built = WorldGrid.buildContourFixtures(island, WorldGrid.tuneGet(TUNE.SIMPLIFY_TOL));
+        if (isDynamic) {
+          if (this._spawnDynamic(island, built.polys)) {
+            any = true;
+            quadHit = true;
+          }
+          continue;
+        }
+        if (built.polys && built.polys.length && this._pushStaticJob(jobs, island, islandBox, built.polys, shard, quad.quad)) {
+          any = true;
+          quadHit = true;
+          continue;
+        }
+      }
+      if (!quadHit) this._keepOverlapping(pool, keep, quad);
+    }
+    return any;
+  }
+
+  _keepOverlapping(pool, keep, islandBox) {
+    let bestI = -1;
+    let bestA = 0;
+    for (let p = 0; p < pool.length; p++) {
+      const a = aabbOverlapCells(pool[p], islandBox);
+      if (a > bestA) {
+        bestA = a;
+        bestI = p;
+      }
+    }
+    if (bestI < 0) return;
+    keep.push(pool[bestI]);
+    pool[bestI] = pool[pool.length - 1];
+    pool.pop();
   }
 
   _retargetStatic(rec, job) {
@@ -227,7 +359,7 @@ export class WorldGridManager extends GameObject {
     });
     const shards = [];
     for (let i = 0; i < world.length && shards.length < SHATTER_MAX; i++) {
-      WorldGrid.subdivideConvex(world[i], SHATTER_MIN_AREA, SHATTER_MAX, shards);
+      WorldGrid.subdivideConvex(world[i], WorldGrid.tuneGet(TUNE.MIN_KEEP_AREA) * 0.35, SHATTER_MAX, shards);
     }
 
     if (!picked.dynamic && picked.rec) this._clearStaticField(picked.rec);

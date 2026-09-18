@@ -182,13 +182,9 @@ export class ColliderFixture extends SharedAtomicPool {
     return (mass / area) * unitI;
   }
 
-  static removeAllForEntity(entityIdx) {
-    if (!this.head || !this.active || entityIdx < 0 || entityIdx >= this._entityCount) {
-      if (Collider.fixtureCount) Collider.fixtureCount[entityIdx] = 0;
-      return;
-    }
-    let cur = this.head[entityIdx];
-    this.head[entityIdx] = INV;
+  static _freeFixtureChain(headIdx) {
+    if (!this.active) return 0;
+    let cur = headIdx;
     let n = 0;
     const max = this.maxCount | 0;
     while (cur !== INV && n < max) {
@@ -201,8 +197,19 @@ export class ColliderFixture extends SharedAtomicPool {
       cur = nxt;
       n++;
     }
-    if (Collider.fixtureCount) Collider.fixtureCount[entityIdx] = 0;
     if (n) this.bumpRevision();
+    return n;
+  }
+
+  static removeAllForEntity(entityIdx) {
+    if (!this.head || !this.active || entityIdx < 0 || entityIdx >= this._entityCount) {
+      if (Collider.fixtureCount) Collider.fixtureCount[entityIdx] = 0;
+      return;
+    }
+    const old = this.head[entityIdx];
+    this.head[entityIdx] = INV;
+    if (Collider.fixtureCount) Collider.fixtureCount[entityIdx] = 0;
+    this._freeFixtureChain(old);
   }
 
   /**
@@ -310,23 +317,25 @@ export class ColliderFixture extends SharedAtomicPool {
       return false;
     }
 
-    this.removeAllForEntity(entityIdx);
-
-    let prev = INV;
     for (let i = 0; i < n; i++) {
       const idx = scratch[i];
       if (!this._writePoly(idx, flats[i])) {
-        for (let k = i; k < n; k++) this.returnToPool(scratch[k]);
-        this.removeAllForEntity(entityIdx);
+        for (let k = 0; k < n; k++) {
+          this.active[scratch[k]] = 0;
+          this.next[scratch[k]] = INV;
+          this.entity[scratch[k]] = 0;
+          this.vertCount[scratch[k]] = 0;
+          this.returnToPool(scratch[k]);
+        }
         return false;
       }
       this.entity[idx] = entityIdx;
       this.active[idx] = 1;
-      this.next[idx] = INV;
-      if (prev === INV) this.head[entityIdx] = idx;
-      else this.next[prev] = idx;
-      prev = idx;
+      this.next[idx] = i + 1 < n ? scratch[i + 1] : INV;
     }
+
+    const oldHead = this.head[entityIdx];
+    this.head[entityIdx] = scratch[0];
 
     Collider.fixtureCount[entityIdx] = n;
     Collider.polyCount[entityIdx] = 0;
@@ -335,6 +344,7 @@ export class ColliderFixture extends SharedAtomicPool {
     Collider.height[entityIdx] = maxY - minY;
     Collider.polyCentroidX[entityIdx] = (minX + maxX) * 0.5;
     Collider.polyCentroidY[entityIdx] = (minY + maxY) * 0.5;
+    this._freeFixtureChain(oldHead);
     this.bumpRevision();
     RigidBody.syncMassFromCollider(entityIdx);
     markBodyDirty(entityIdx, BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS);

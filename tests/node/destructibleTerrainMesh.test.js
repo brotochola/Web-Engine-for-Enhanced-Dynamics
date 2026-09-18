@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SharedResource } from '../../src/core/sharedResource.js';
-import { WorldGrid, ISO, MAT_DIRT } from '../../demos/destructibleTerrainScene/worldGrid.js';
+import { WorldGrid, ISO, MAT_DIRT, TUNE } from '../../demos/destructibleTerrainScene/worldGrid.js';
 
 function makeFilledRect(cols, rows, cell, x0, y0, x1, y1) {
   WorldGrid.attach(cols, rows, cell);
@@ -109,6 +109,121 @@ test('extractIslands(box) returns only the island that touches dirty', () => {
     const local = WorldGrid.extractIslands({ minX: 1, minY: 1, maxX: 7, maxY: 6 });
     assert.equal(local.length, 1);
     assert.ok(local[0].maxX < 10);
+  } finally {
+    teardown();
+  }
+});
+
+test('crater remesh stays contour tris, not per-cell fallback', () => {
+  try {
+    makeFilledRect(28, 16, 8, 4, 4, 24, 12);
+    for (let y = 7; y < 10; y++) {
+      for (let x = 12; x < 16; x++) WorldGrid.setAmount(x, y, 0);
+    }
+    const islands = WorldGrid.extractIslands();
+    assert.equal(islands.length, 1);
+    const built = WorldGrid.buildContourFixtures(islands[0], 3);
+    assert.equal(built.fallback, false);
+    assert.ok(built.polys.length >= 1);
+    assert.ok(built.polys.length < 200);
+    let triArea = 0;
+    for (let i = 0; i < built.polys.length; i++) triArea += WorldGrid.polygonArea(built.polys[i]);
+    const ratio = triArea / islands[0].areaPx;
+    assert.ok(ratio >= 0.72 && ratio <= 1.2);
+    const hx = 14 * 8;
+    const hy = 8.5 * 8;
+    let coversHole = false;
+    for (let i = 0; i < built.polys.length; i++) {
+      if (WorldGrid.pointInPolygon(hx, hy, built.polys[i])) coversHole = true;
+    }
+    assert.equal(coversHole, false);
+  } finally {
+    teardown();
+  }
+});
+
+test('extractIslands clip does not flood past the box', () => {
+  try {
+    makeFilledRect(40, 10, 8, 0, 2, 40, 6);
+    const left = WorldGrid.extractIslands({ minX: 0, minY: 0, maxX: 15, maxY: 9 }, { clip: true });
+    assert.ok(left.length >= 1);
+    for (let i = 0; i < left.length; i++) {
+      assert.ok(left[i].maxX <= 15);
+    }
+  } finally {
+    teardown();
+  }
+});
+
+test('no loops does not invent an AABB contour', () => {
+  try {
+    WorldGrid.attach(16, 12, 8);
+    const island = {
+      loops: [],
+      contour: [],
+      areaPx: 8000,
+      areaCells: 200,
+      cellCx: 40,
+      cellCy: 40,
+      cellsMeta: [],
+    };
+    const built = WorldGrid.buildContourFixtures(island, 3);
+    assert.equal(built.fallback, false);
+    assert.equal(built.polys.length, 0);
+  } finally {
+    teardown();
+  }
+});
+
+test('simplify ladder accepts tris when low tol exceeds fixture cap', () => {
+  try {
+    makeFilledRect(28, 16, 8, 4, 4, 24, 12);
+    for (let y = 7; y < 10; y++) {
+      for (let x = 12; x < 16; x++) WorldGrid.setAmount(x, y, 0);
+    }
+    const islands = WorldGrid.extractIslands();
+    assert.equal(islands.length, 1);
+    WorldGrid.tuneSet(TUNE.FIXTURE_CAP, 20);
+    WorldGrid.tuneSet(TUNE.SIMPLIFY_TOL, 1);
+    WorldGrid.tuneSet(TUNE.SIMPLIFY_MAX, 16);
+    const built = WorldGrid.buildContourFixtures(islands[0], 1);
+    assert.ok(built.polys.length >= 1);
+    assert.ok(built.polys.length <= 20);
+    assert.equal(built.fallback, false);
+  } finally {
+    teardown();
+  }
+});
+
+test('chunksOverlapping of a small dirty is 1-4 shards', () => {
+  try {
+    WorldGrid.attach(80, 20, 10);
+    const one = WorldGrid.chunksOverlapping({ minX: 2, minY: 2, maxX: 6, maxY: 5 });
+    assert.ok(one.length >= 1 && one.length <= 4);
+    assert.equal(one[0].chunkX, 0);
+    const two = WorldGrid.chunksOverlapping({ minX: 30, minY: 2, maxX: 40, maxY: 5 });
+    assert.ok(two.length >= 1);
+    const xs = [];
+    for (let i = 0; i < two.length; i++) xs.push(two[i].chunkX);
+    assert.ok(xs.includes(0) && xs.includes(1));
+    const quads = WorldGrid.splitBoxQuads({ minX: 0, minY: 0, maxX: 31, maxY: 31 });
+    assert.equal(quads.length, 4);
+    const a = WorldGrid.chunkRect(0, 0);
+    const b = WorldGrid.chunkRect(1, 0);
+    assert.ok(a.maxX < b.minX);
+  } finally {
+    teardown();
+  }
+});
+
+test('second WorldGrid.initialize keeps tune and dirty', () => {
+  try {
+    makeFilledRect(8, 8, 10, 2, 2, 4, 4);
+    WorldGrid.tuneSet(0, 7);
+    assert.equal(WorldGrid.hasDirty(), true);
+    WorldGrid.initialize(WorldGrid.sharedBuffer, WorldGrid._schema);
+    assert.equal(WorldGrid.tuneGet(0), 7);
+    assert.equal(WorldGrid.hasDirty(), true);
   } finally {
     teardown();
   }

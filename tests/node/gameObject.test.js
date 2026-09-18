@@ -648,3 +648,58 @@ test('setLayer(fire) keeps ENTITIES sprite bit and packs collider into fire', ()
     Collider.layerMask = previousColliderMask;
   }
 });
+
+test('onSpawned despawn aborts before Transform.active=1', { concurrency: false }, () => {
+  class AbortSpawnEntity extends GameObject {}
+
+  const previousTransformActive = Transform.active;
+  const previousTransformX = Transform.x;
+  const previousTransformY = Transform.y;
+  const previousTransformRotation = Transform.rotation;
+  const previousLogicWorker = GameObject.logicWorker;
+  const previousNextTick = GameObject.nextTick;
+
+  Transform.active = new Uint8Array([0]);
+  Transform.x = new Float32Array([9]);
+  Transform.y = new Float32Array([8]);
+  Transform.rotation = new Float32Array([7]);
+  GameObject.logicWorker = null;
+  GameObject.nextTick = null;
+
+  const freeListTopSAB = new SharedArrayBuffer(2 * Int32Array.BYTES_PER_ELEMENT);
+  const freeListTop = new Int32Array(freeListTopSAB);
+  const freeListLinks = new Uint16Array(1);
+  resetFreeList(freeListTop, freeListLinks, 1, 1);
+
+  const pooledInstance = {
+    index: 0,
+    _hasComponents: {},
+    despawn: GameObject.prototype.despawn,
+    onSpawned() {
+      this.despawn();
+    },
+  };
+
+  AbortSpawnEntity.startIndex = 0;
+  AbortSpawnEntity.poolSize = 1;
+  AbortSpawnEntity.entityType = 0;
+  AbortSpawnEntity.freeList = freeListLinks;
+  AbortSpawnEntity.freeListTop = freeListTop;
+  AbortSpawnEntity.instances = [pooledInstance];
+  AbortSpawnEntity._componentClassMap = {};
+
+  try {
+    const spawned = GameObject.spawn(AbortSpawnEntity, {});
+    assert.equal(spawned, null);
+    assert.equal(Transform.active[0], 0);
+    assert.equal(pooledInstance._spawnAborted, false);
+    assert.equal(freeListTop[1], 1);
+  } finally {
+    Transform.active = previousTransformActive;
+    Transform.x = previousTransformX;
+    Transform.y = previousTransformY;
+    Transform.rotation = previousTransformRotation;
+    GameObject.logicWorker = previousLogicWorker;
+    GameObject.nextTick = previousNextTick;
+  }
+});

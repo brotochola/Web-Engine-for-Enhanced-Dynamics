@@ -1,4 +1,4 @@
-import { WorldGrid, CELL, LAYER_STATIC } from '../worldGrid.js';
+import { WorldGrid, CELL, LAYER_STATIC, TUNE } from '../worldGrid.js';
 import WEED from '/src/index.js';
 
 const {
@@ -88,7 +88,13 @@ export class TerrainIsland extends GameObject {
       if (localCopy.length >= 3) fixtures.push(localCopy);
     });
 
-    const { islands } = WorldGrid.clipIslandAtPoint(fixtures, lx, ly, CLIP_RADIUS, MIN_KEEP_AREA);
+    const { islands } = WorldGrid.clipIslandAtPoint(
+      fixtures,
+      lx,
+      ly,
+      WorldGrid.tuneGet(TUNE.CLIP_RADIUS) || CLIP_RADIUS,
+      WorldGrid.tuneGet(TUNE.MIN_KEEP_AREA) || MIN_KEEP_AREA,
+    );
     if (!islands.length) {
       this.despawn();
       return;

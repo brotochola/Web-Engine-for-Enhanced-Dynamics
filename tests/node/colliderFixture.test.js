@@ -85,3 +85,20 @@ test('replacePolygons rejects a CW / degenerate poly and keeps the old list', ()
   assert.equal(Collider.replacePolygons(0, [[{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }]]), false);
   assert.equal(Collider.fixtureCount[0], 1);
 });
+
+test('replacePolygons swaps new fixtures then frees old', () => {
+  initPool();
+  assert.ok(Collider.replacePolygons(0, [TRI_A]));
+  const oldHead = ColliderFixture.headOf(0);
+  assert.ok(Collider.replacePolygons(0, [TRI_A, TRI_B]));
+  assert.equal(Collider.fixtureCount[0], 2);
+  assert.notEqual(ColliderFixture.headOf(0), oldHead);
+  assert.equal(ColliderFixture.active[oldHead], 0);
+});
+
+test('replacePolygons acquire miss keeps old fixtures', () => {
+  initPool(4, 2);
+  assert.ok(Collider.replacePolygons(0, [TRI_A, TRI_B]));
+  assert.equal(Collider.replacePolygons(0, [TRI_A, TRI_B, TRI_A]), false);
+  assert.equal(Collider.fixtureCount[0], 2);
+});

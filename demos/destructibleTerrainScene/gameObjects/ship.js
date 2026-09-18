@@ -1,6 +1,6 @@
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { TerrainIsland } from './terrainIsland.js';
-import { WorldGrid, RAY_MASK_NO_STATIC, SHOT_POWER, SHOT_RADIUS, SHOT_FALLOFF } from '../worldGrid.js';
+import { WorldGrid, RAY_MASK_NO_STATIC, TUNE } from '../worldGrid.js';
 import WEED from '/src/index.js';
 
 const {
@@ -21,7 +21,6 @@ const HALF_H = 14;
 const THRUST_ACCEL = 3100;
 const LOOK_AHEAD = 0.2;
 const CAM_SMOOTH = 0.12;
-const SHOT_COOLDOWN_MS = 20;
 const MUZZLE_PAD = Math.hypot(HALF_W, HALF_H) + 4;
 
 export class Ship extends GameObject {
@@ -75,9 +74,14 @@ export class Ship extends GameObject {
       this.angularVelocity = 0;
     }
 
-    if (this._laserOn && !Mouse.isDebugToolActive && Mouse.isButton0Down) {
+    if (
+      this._laserOn &&
+      !Mouse.isDebugToolActive &&
+      WorldGrid.tuneGet(TUNE.UI_BLOCK) < 0.5 &&
+      Mouse.isButton0Down
+    ) {
       const now = accumulatedTime || 0;
-      if (now - this._lastFireAt >= SHOT_COOLDOWN_MS) {
+      if (now - this._lastFireAt >= WorldGrid.tuneGet(TUNE.SHOT_COOLDOWN)) {
         this._lastFireAt = now;
         this._tryShoot();
       }
@@ -110,7 +114,12 @@ export class Ship extends GameObject {
 
     this._emitLaser(ox, oy, hx, hy, useGrid || useBody);
     if (useGrid) {
-      WorldGrid.damage(hx, hy, SHOT_RADIUS, SHOT_POWER, SHOT_FALLOFF);
+      WorldGrid.damage(
+        hx, hy,
+        WorldGrid.tuneGet(TUNE.SHOT_RADIUS),
+        WorldGrid.tuneGet(TUNE.SHOT_POWER),
+        WorldGrid.tuneGet(TUNE.SHOT_FALLOFF),
+      );
       return;
     }
     if (!useBody) return;

@@ -74,9 +74,12 @@ export function packColliderFill(out, cap, layerId, views) {
   for (let i = 0; i < entityCount; i++) {
     if (!meshActive[i] || !meshVisible[i]) continue;
     const mask = meshMask[i] | 0;
-    if (!_warnedMeshLayer && !(mask & meshBits)) {
-      _warnedMeshLayer = true;
-      console.warn('WeedJS: MeshRenderer requires setLayer on a LAYER_KIND.MESH layer');
+    if (!(mask & meshBits)) {
+      if (!_warnedMeshLayer && (fixtureCount[i] | 0) >= 1) {
+        _warnedMeshLayer = true;
+        console.warn('WeedJS: MeshRenderer requires setLayer on a LAYER_KIND.MESH layer');
+      }
+      continue;
     }
     if (!(mask & bit)) continue;
     if ((fixtureCount[i] | 0) < 1) continue;

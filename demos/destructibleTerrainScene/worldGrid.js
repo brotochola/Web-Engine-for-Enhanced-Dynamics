@@ -20,6 +20,47 @@ export const SHOT_POWER = 0.4;
 export const SHOT_RADIUS = 2;
 export const SHOT_FALLOFF = 1;
 
+export const TUNE = {
+  BRUSH_RADIUS: 0,
+  BRUSH_HARDNESS: 1,
+  BRUSH_STRENGTH: 2,
+  SHOT_POWER: 3,
+  SHOT_RADIUS: 4,
+  SHOT_FALLOFF: 5,
+  SHOT_COOLDOWN: 6,
+  MIN_TRI_AREA: 7,
+  AREA_THRESHOLD: 8,
+  SIMPLIFY_TOL: 9,
+  FIXTURE_CAP: 10,
+  CLIP_RADIUS: 11,
+  MIN_KEEP_AREA: 12,
+  UI_BLOCK: 13,
+  CHUNK: 14,
+  SIMPLIFY_MAX: 15,
+  AREA_RATIO_MIN: 16,
+};
+export const TUNE_COUNT = 17;
+export const TUNE_DEFAULTS = [
+  3,
+  0.35,
+  0.35,
+  SHOT_POWER,
+  SHOT_RADIUS,
+  SHOT_FALLOFF,
+  20,
+  CELL * CELL * 0.25,
+  80,
+  4,
+  512,
+  CELL * 2,
+  CELL * CELL,
+  0,
+  32,
+  16,
+  0.72,
+];
+const AREA_RATIO_MAX = 1.2;
+
 const DIRTY_FLAG = 0;
 const DIRTY_MIN_X = 1;
 const DIRTY_MIN_Y = 2;
@@ -27,6 +68,7 @@ const DIRTY_MAX_X = 3;
 const DIRTY_MAX_Y = 4;
 const _dirtyBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 const _islandsOut = [];
+const _chunksOut = [];
 
 const CLIP_SIMPLIFY_TOL = 4;
 
@@ -66,12 +108,38 @@ export class WorldGrid extends SharedResource {
       amount: { type: Float32Array, length: cols * rows },
       material: { type: Uint8Array, length: cols * rows },
       dirtyRect: { type: Int32Array, length: 5 },
+      tune: { type: Float32Array, length: TUNE_COUNT },
     };
   }
 
   static initialize(buffer, schema) {
     super.initialize(buffer, schema);
-    this.resetDirty();
+    const d = this.dirtyRect;
+    if (d) {
+      const virgin =
+        Atomics.load(d, DIRTY_FLAG) === 0 &&
+        Atomics.load(d, DIRTY_MIN_X) === 0 &&
+        Atomics.load(d, DIRTY_MIN_Y) === 0 &&
+        Atomics.load(d, DIRTY_MAX_X) === 0 &&
+        Atomics.load(d, DIRTY_MAX_Y) === 0;
+      if (virgin) this.resetDirty();
+    }
+    this.applyTuneDefaults();
+  }
+
+  static applyTuneDefaults() {
+    const t = this.tune;
+    if (!t || t[TUNE.BRUSH_RADIUS] !== 0) return;
+    for (let i = 0; i < TUNE_COUNT; i++) t[i] = TUNE_DEFAULTS[i];
+  }
+
+  static tuneGet(i) {
+    const t = this.tune;
+    return t ? t[i] : TUNE_DEFAULTS[i];
+  }
+
+  static tuneSet(i, value) {
+    if (this.tune) this.tune[i] = value;
   }
 
   /** Node tests: bind a local SAB. Scene bind uses Scene.sharedResources. */
@@ -276,12 +344,28 @@ export class WorldGrid extends SharedResource {
     return miss;
   }
 
-  static extractIslands(box) {
-    return extractIslands(this, box);
+  static extractIslands(box, opts) {
+    return extractIslands(this, box, opts);
   }
 
   static buildContourFixtures(island, simplifyTol) {
     return buildContourFixtures(island, this, simplifyTol);
+  }
+
+  static chunkCells() {
+    return chunkCells(this);
+  }
+
+  static chunkRect(cx, cy) {
+    return chunkRect(this, cx, cy);
+  }
+
+  static chunksOverlapping(dirty) {
+    return chunksOverlapping(this, dirty);
+  }
+
+  static splitBoxQuads(box) {
+    return splitBoxQuads(box);
   }
 }
 
@@ -300,16 +384,22 @@ function interp(x0, y0, v0, x1, y1, v1) {
   return { x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t };
 }
 
-function cellCorners(field, cx, cy) {
+function nodeAmount(field, x, y, clip) {
+  if (clip && (x < clip.minX || x > clip.maxX || y < clip.minY || y > clip.maxY)) return 0;
+  if (x < 0 || y < 0 || x >= field.cols || y >= field.rows) return 0;
+  return field.amount[y * field.cols + x];
+}
+
+function cellCorners(field, cx, cy, clip) {
   const cs = field.cellSize;
   const x0 = cx * cs;
   const y0 = cy * cs;
   const x1 = x0 + cs;
   const y1 = y0 + cs;
-  const tl = field.node(cx, cy);
-  const tr = field.node(cx + 1, cy);
-  const br = field.node(cx + 1, cy + 1);
-  const bl = field.node(cx, cy + 1);
+  const tl = nodeAmount(field, cx, cy, clip);
+  const tr = nodeAmount(field, cx + 1, cy, clip);
+  const br = nodeAmount(field, cx + 1, cy + 1, clip);
+  const bl = nodeAmount(field, cx, cy + 1, clip);
   const a = tl >= ISO ? 1 : 0;
   const b = tr >= ISO ? 1 : 0;
   const c = br >= ISO ? 1 : 0;
@@ -331,8 +421,8 @@ function cellCorners(field, cx, cy) {
   };
 }
 
-function cellSolidParts(field, cx, cy) {
-  const c = cellCorners(field, cx, cy);
+function cellSolidParts(field, cx, cy, clip) {
+  const c = cellCorners(field, cx, cy, clip);
   const { caseId, edges, TL, TR, BR, BL } = c;
   const [T, R, B, L] = edges;
   const nTL = { x: cx, y: cy };
@@ -361,8 +451,8 @@ function cellSolidParts(field, cx, cy) {
   }
 }
 
-function cellSegments(field, cx, cy) {
-  const c = cellCorners(field, cx, cy);
+function cellSegments(field, cx, cy, clip) {
+  const c = cellCorners(field, cx, cy, clip);
   const segs = MS_CASES[c.caseId] || [];
   return segs.map(([i, j]) => [c.edges[i], c.edges[j]]);
 }
@@ -773,7 +863,7 @@ function triangulateDelaunay(outerPts, holesPts) {
       { x: b[0], y: b[1] },
       { x: c[0], y: c[1] },
     ]);
-    if (polygonArea(tri) > 1e-8) tris.push(tri);
+    if (polygonArea(tri) > WorldGrid.tuneGet(TUNE.MIN_TRI_AREA)) tris.push(tri);
   }
   return tris;
 }
@@ -927,30 +1017,100 @@ function edgePolysFromCells(cellsMeta) {
   return polys;
 }
 
+function triAreaSum(tris) {
+  let a = 0;
+  for (let i = 0; i < tris.length; i++) a += polygonArea(tris[i]);
+  return a;
+}
+
+function anyTriCoversEmpty(field, island, tris) {
+  if (island.minX == null || island.maxX == null) return false;
+  const cs = field.cellSize;
+  const cx0 = Math.max(0, (island.minX | 0) - 1);
+  const cy0 = Math.max(0, (island.minY | 0) - 1);
+  const cx1 = Math.min(field.msCols - 1, island.maxX | 0);
+  const cy1 = Math.min(field.msRows - 1, island.maxY | 0);
+  for (let cy = cy0; cy <= cy1; cy++) {
+    for (let cx = cx0; cx <= cx1; cx++) {
+      if (cellCorners(field, cx, cy).caseId !== 0) continue;
+      const px = (cx + 0.5) * cs;
+      const py = (cy + 0.5) * cs;
+      for (let t = 0; t < tris.length; t++) {
+        if (pointInPolygon(px, py, tris[t])) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function acceptDelaunay(island, field, outer, holes, tris) {
+  const cap = WorldGrid.tuneGet(TUNE.FIXTURE_CAP) | 0;
+  if (!tris || !tris.length) return 'empty';
+  if (cap > 0 && tris.length > cap) return 'many';
+  const areaPx = island.areaPx || 0;
+  if (areaPx > 1e-6) {
+    const ratio = triAreaSum(tris) / areaPx;
+    const minR = WorldGrid.tuneGet(TUNE.AREA_RATIO_MIN);
+    if (!(ratio >= minR) || ratio > AREA_RATIO_MAX) return 'area';
+  }
+  if (anyTriCoversEmpty(field, island, tris)) return 'hole';
+  return 'ok';
+}
+
+function simplifyHoles(holes0, tol) {
+  const holes = [];
+  for (let i = 0; i < holes0.length; i++) {
+    const c = loopCentroid(holes0[i]);
+    let s = simplifyRing(holes0[i], tol);
+    if (s.length < 3) continue;
+    if (!pointInPolygon(c.x, c.y, s)) s = s.slice().reverse();
+    if (s.length >= 3) holes.push(s);
+  }
+  return holes;
+}
+
+function tryDelaunayAtTol(island, field, outer0, holes0, tol) {
+  const sx = island.cellCx ?? 0;
+  const sy = island.cellCy ?? 0;
+  const outer = orientContourSolidInside(simplifyRing(outer0, tol), sx, sy);
+  if (!outer || outer.length < 3) return { reason: 'empty', tris: [], outer, holes: [] };
+  const holes = simplifyHoles(holes0, tol);
+  const tris = triangulateDelaunay(outer, holes);
+  return { reason: acceptDelaunay(island, field, outer, holes, tris), tris, outer, holes };
+}
+
 function buildContourFixtures(island, field, simplifyTol) {
   const sx = island.cellCx ?? 0;
   const sy = island.cellCy ?? 0;
-  const rawLoops = (island.loops && island.loops.length)
-    ? island.loops
-    : (island.contour ? [island.contour] : []);
-  let { outer, holes } = classifyLoops(rawLoops, sx, sy, field.cellSize);
-  const fallback = () => buildCellTriangleFixtures(island, field.cellSize);
+  const rawLoops = island.loops && island.loops.length ? island.loops : [];
+  const classified = classifyLoops(rawLoops, sx, sy, field.cellSize);
+  const outer0 = classified.outer;
+  const holes0 = classified.holes;
 
-  if (!outer || outer.length < 3) return fallback();
-  if (rawLoops.length > 1 && !holes.length) return fallback();
-  if (hasUnstitchedEmpty(field, outer, holes)) return fallback();
+  if (outer0 && outer0.length >= 3) {
+    const baseTol = simplifyTol > 0 ? simplifyTol : WorldGrid.tuneGet(TUNE.SIMPLIFY_TOL);
+    const maxTol = WorldGrid.tuneGet(TUNE.SIMPLIFY_MAX);
+    let triedHalf = false;
+    for (let tol = baseTol; tol <= maxTol + 1e-6; tol += 2) {
+      const attempt = tryDelaunayAtTol(island, field, outer0, holes0, tol);
+      if (attempt.reason === 'ok') return { polys: attempt.tris, fallback: false };
+      if (attempt.reason === 'many' || attempt.reason === 'empty') continue;
+      if (!triedHalf) {
+        triedHalf = true;
+        const half = tryDelaunayAtTol(island, field, outer0, holes0, Math.max(1, tol * 0.5));
+        if (half.reason === 'ok') return { polys: half.tris, fallback: false };
+      }
+      break;
+    }
+  }
 
-  outer = orientContourSolidInside(simplifyRing(outer, simplifyTol), sx, sy);
-  holes = holes.map((h) => {
-    const c = loopCentroid(h);
-    let s = simplifyRing(h, simplifyTol);
-    if (!pointInPolygon(c.x, c.y, s)) s = s.slice().reverse();
-    return s;
-  }).filter((h) => h.length >= 3);
-
-  const tris = triangulateDelaunay(outer, holes);
-  if (!tris.length) return fallback();
-  return { polys: tris, fallback: false };
+  const threshold = WorldGrid.tuneGet(TUNE.AREA_THRESHOLD);
+  if (!(island.areaCells > threshold)) {
+    const fb = buildCellTriangleFixtures(island, field.cellSize);
+    const cap = WorldGrid.tuneGet(TUNE.FIXTURE_CAP) | 0;
+    if (fb.polys.length && (cap <= 0 || fb.polys.length <= cap)) return fb;
+  }
+  return { polys: [], fallback: false };
 }
 
 function centroidFromPolys(polys) {
@@ -999,7 +1159,7 @@ function ensureCcw(pts) {
 
 function pushTri(out, a, b, c) {
   const t = ensureCcw([a, b, c]);
-  if (polygonArea(t) > 1e-8) out.push(t);
+  if (polygonArea(t) > WorldGrid.tuneGet(TUNE.MIN_TRI_AREA)) out.push(t);
 }
 
 function fanToTris(verts, out) {
@@ -1089,7 +1249,7 @@ function dominantMaterial(field, nodeIdx, nodeStart, nodeCount) {
   return rock > dirt ? MAT_ROCK : MAT_DIRT;
 }
 
-function extractIslands(field, box) {
+function extractIslands(field, box, opts) {
   const { cols, rows, cellSize, msCols, msRows } = field;
   const n = cols * rows;
   ensureExtractScratch(field, n);
@@ -1097,6 +1257,8 @@ function extractIslands(field, box) {
   const queue = field._queue;
   const nodeIdx = field._nodeIdx;
   const amount = field.amount;
+  const clipOn = !!(opts && opts.clip && box);
+  const clip = clipOn ? box : null;
 
   if (field._visitGen > 0x7f000000) {
     visited.fill(0);
@@ -1108,6 +1270,10 @@ function extractIslands(field, box) {
   const seedMinY = box ? box.minY : 0;
   const seedMaxX = box ? box.maxX : cols - 1;
   const seedMaxY = box ? box.maxY : rows - 1;
+  const floodMinX = clipOn ? seedMinX : 0;
+  const floodMinY = clipOn ? seedMinY : 0;
+  const floodMaxX = clipOn ? seedMaxX : cols - 1;
+  const floodMaxY = clipOn ? seedMaxY : rows - 1;
 
   let islandCount = 0;
   let nodeFill = 0;
@@ -1138,28 +1304,28 @@ function extractIslands(field, box) {
         if (cy < minY) minY = cy;
         if (cy > maxY) maxY = cy;
 
-        if (cx + 1 < cols) {
+        if (cx + 1 <= floodMaxX) {
           const nIdx = packed + 1;
           if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
             visited[nIdx] = floodId;
             queue[qt++] = nIdx;
           }
         }
-        if (cx > 0) {
+        if (cx - 1 >= floodMinX) {
           const nIdx = packed - 1;
           if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
             visited[nIdx] = floodId;
             queue[qt++] = nIdx;
           }
         }
-        if (cy + 1 < rows) {
+        if (cy + 1 <= floodMaxY) {
           const nIdx = packed + cols;
           if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
             visited[nIdx] = floodId;
             queue[qt++] = nIdx;
           }
         }
-        if (cy > 0) {
+        if (cy - 1 >= floodMinY) {
           const nIdx = packed - cols;
           if (visited[nIdx] < extractStart && amount[nIdx] >= ISO) {
             visited[nIdx] = floodId;
@@ -1180,7 +1346,7 @@ function extractIslands(field, box) {
 
       for (let cy = cy0; cy <= cy1; cy++) {
         for (let cx = cx0; cx <= cx1; cx++) {
-          const parts = cellSolidParts(field, cx, cy);
+          const parts = cellSolidParts(field, cx, cy, clip);
           if (!parts.length) continue;
           const ownedParts = [];
           for (let p = 0; p < parts.length; p++) {
@@ -1188,6 +1354,9 @@ function extractIslands(field, box) {
             let owned = true;
             for (let s = 0; s < part.solidNodes.length; s++) {
               const sn = part.solidNodes[s];
+              if (clip && (sn.x < clip.minX || sn.x > clip.maxX || sn.y < clip.minY || sn.y > clip.maxY)) {
+                continue;
+              }
               if (visited[sn.y * cols + sn.x] !== floodId) {
                 owned = false;
                 break;
@@ -1199,10 +1368,10 @@ function extractIslands(field, box) {
             }
           }
           if (!ownedParts.length) continue;
-          const caseId = cellCorners(field, cx, cy).caseId;
+          const caseId = cellCorners(field, cx, cy, clip).caseId;
           cellsMeta.push({ cx, cy, caseId, parts: ownedParts });
           if (parts.length === ownedParts.length && caseId > 0 && caseId < 15) {
-            const segs = cellSegments(field, cx, cy);
+            const segs = cellSegments(field, cx, cy, clip);
             for (let s = 0; s < segs.length; s++) segments.push(segs[s]);
           }
         }
@@ -1224,35 +1393,16 @@ function extractIslands(field, box) {
 
       let cellCx = 0;
       let cellCy = 0;
-      if (cellsMeta.length) {
-        for (let i = 0; i < cellsMeta.length; i++) {
-          cellCx += (cellsMeta[i].cx + 0.5) * cellSize;
-          cellCy += (cellsMeta[i].cy + 0.5) * cellSize;
-        }
-        cellCx /= cellsMeta.length;
-        cellCy /= cellsMeta.length;
+      if (nodeCount) {
+        const packed = nodeIdx[nodeStart];
+        cellCx = ((packed % cols) + 0.5) * cellSize;
+        cellCy = (((packed / cols) | 0) + 0.5) * cellSize;
+      } else if (cellsMeta.length) {
+        cellCx = (cellsMeta[0].cx + 0.5) * cellSize;
+        cellCy = (cellsMeta[0].cy + 0.5) * cellSize;
       }
       if (contour.length >= 3) {
         contour = orientContourSolidInside(contour, cellCx, cellCy);
-      } else if (polys.length) {
-        let mnX = Infinity;
-        let mnY = Infinity;
-        let mxX = -Infinity;
-        let mxY = -Infinity;
-        for (let i = 0; i < polys.length; i++) {
-          const poly = polys[i];
-          for (let v = 0; v < poly.length; v++) {
-            const p = poly[v];
-            if (p.x < mnX) mnX = p.x;
-            if (p.y < mnY) mnY = p.y;
-            if (p.x > mxX) mxX = p.x;
-            if (p.y > mxY) mxY = p.y;
-          }
-        }
-        contour = orientContourSolidInside([
-          { x: mnX, y: mnY }, { x: mxX, y: mnY },
-          { x: mxX, y: mxY }, { x: mnX, y: mxY },
-        ], cellCx, cellCy);
       }
 
       let rec = _islandsOut[islandCount];
@@ -1285,6 +1435,70 @@ function extractIslands(field, box) {
 
 function aabbOverlaps(a, b) {
   return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+}
+
+function chunkCells(field) {
+  const n = WorldGrid.tuneGet(TUNE.CHUNK) | 0;
+  return n < 8 ? 8 : n;
+}
+
+function chunkRect(field, cx, cy, dest) {
+  const ch = chunkCells(field);
+  const rec = dest || {};
+  rec.chunkX = cx;
+  rec.chunkY = cy;
+  rec.minX = cx * ch;
+  rec.minY = cy * ch;
+  rec.maxX = Math.min(field.cols - 1, rec.minX + ch - 1);
+  rec.maxY = Math.min(field.rows - 1, rec.minY + ch - 1);
+  return rec;
+}
+
+function chunksOverlapping(field, dirty) {
+  const ch = chunkCells(field);
+  const x0 = Math.max(0, dirty.minX | 0);
+  const y0 = Math.max(0, dirty.minY | 0);
+  const x1 = Math.min(field.cols - 1, dirty.maxX | 0);
+  const y1 = Math.min(field.rows - 1, dirty.maxY | 0);
+  if (x1 < x0 || y1 < y0) {
+    _chunksOut.length = 0;
+    return _chunksOut;
+  }
+  const cx0 = (x0 / ch) | 0;
+  const cy0 = (y0 / ch) | 0;
+  const cx1 = (x1 / ch) | 0;
+  const cy1 = (y1 / ch) | 0;
+  let n = 0;
+  for (let cy = cy0; cy <= cy1; cy++) {
+    for (let cx = cx0; cx <= cx1; cx++) {
+      let rec = _chunksOut[n];
+      if (!rec) {
+        rec = {};
+        _chunksOut[n] = rec;
+      }
+      chunkRect(field, cx, cy, rec);
+      n++;
+    }
+  }
+  _chunksOut.length = n;
+  return _chunksOut;
+}
+
+function splitBoxQuads(box) {
+  const midX = (box.minX + box.maxX) >> 1;
+  const midY = (box.minY + box.maxY) >> 1;
+  const out = [
+    { minX: box.minX, minY: box.minY, maxX: midX, maxY: midY, quad: 0 },
+    { minX: midX + 1, minY: box.minY, maxX: box.maxX, maxY: midY, quad: 1 },
+    { minX: box.minX, minY: midY + 1, maxX: midX, maxY: box.maxY, quad: 2 },
+    { minX: midX + 1, minY: midY + 1, maxX: box.maxX, maxY: box.maxY, quad: 3 },
+  ];
+  let w = 0;
+  for (let i = 0; i < 4; i++) {
+    if (out[i].maxX >= out[i].minX && out[i].maxY >= out[i].minY) out[w++] = out[i];
+  }
+  out.length = w;
+  return out;
 }
 
 function smoothstep01(t) {
@@ -1346,6 +1560,7 @@ function damageKernel(field, cx, cy, radius, power, falloff) {
 }
 
 WorldGrid.polygonArea = polygonArea;
+WorldGrid.pointInPolygon = pointInPolygon;
 WorldGrid.pointInConvex = pointInConvex;
 WorldGrid.subdivideConvex = subdivideConvex;
 WorldGrid.carveConvexAtPoint = carveConvexAtPoint;

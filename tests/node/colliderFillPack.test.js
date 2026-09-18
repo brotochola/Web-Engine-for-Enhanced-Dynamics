@@ -125,6 +125,28 @@ test('packer warns once when MeshRenderer has no MESH layer bit', () => {
   }
 });
 
+test('packer skips spawn-in-progress MeshRenderer (active, no layer, no fixtures)', () => {
+  resetColliderFillMeshLayerWarn();
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshVisible[0] = 1;
+  views.meshLayerMask[0] = 0;
+  views.meshBits = 1;
+
+  const warnings = [];
+  const prev = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+    const n = packColliderFill(out, 4, 0, views);
+    assert.equal(n, 0);
+    assert.equal(warnings.length, 0);
+  } finally {
+    console.warn = prev;
+    resetColliderFillMeshLayerWarn();
+  }
+});
+
 test('MeshRenderer warns once when maxFixtures is 0', () => {
   resetMeshRendererFixtureWarn();
   const warnings = [];

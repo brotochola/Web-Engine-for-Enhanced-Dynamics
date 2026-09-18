@@ -1801,8 +1801,11 @@ export class GameObject {
     const i = this.index;
     const activeState = Transform.active[i];
     // Prevent double-despawn which corrupts the free list
-    // 0 = inactive, 1 = active
-    if (activeState === 0) return;
+    // 0 = inactive, 1 = active. During spawn, onSpawned may reject before activate.
+    if (activeState === 0) {
+      this._spawnAborted = true;
+      return;
+    }
 
     const EntityClass = this.constructor;
     const entityType = EntityClass.entityType;
@@ -2197,6 +2200,8 @@ export class GameObject {
       return null;
     }
 
+    instance._spawnAborted = false;
+
     const requestedPin =
       spawnConfig && typeof spawnConfig.logicWorker === 'number'
         ? spawnConfig.logicWorker
@@ -2319,7 +2324,7 @@ export class GameObject {
     }
 
     if (has.MeshRenderer) {
-      MeshRenderer.active[i] = 1;
+      MeshRenderer.active[i] = 0;
       MeshRenderer.tint[i] = 0xffffff;
       MeshRenderer.alpha[i] = 1;
       MeshRenderer.renderVisible[i] = 1;
@@ -2410,6 +2415,12 @@ export class GameObject {
         }
       }
 
+      if (spawnConfig.layers) {
+        instance.setLayers(spawnConfig.layers);
+      } else if (spawnConfig.layer != null) {
+        instance.setLayer(spawnConfig.layer);
+      }
+
       if (instance.setup) {
         instance.setup();
       }
@@ -2452,9 +2463,28 @@ export class GameObject {
       }
     }
 
+    if (instance._spawnAborted) {
+      instance._spawnAborted = false;
+      ColliderFixture.removeAllForEntity(i);
+      Transform.active[i] = 0;
+      if (has.RigidBody) {
+        RigidBody.active[i] = 0;
+        RigidBody.sleeping[i] = 0;
+      }
+      if (has.Collider) Collider.active[i] = 0;
+      if (has.MeshRenderer) MeshRenderer.active[i] = 0;
+      if (has.SpriteRenderer) SpriteRenderer.active[i] = 0;
+      if (GameObject.logicWorker) GameObject.logicWorker[i] = LOGIC_WORKER_UNPINNED;
+      if (EntityClass.freeList && EntityClass.freeListTop) {
+        pushFreeIndex(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
+      }
+      return null;
+    }
+
     // Activate the entity - this enables spatial_worker to add it to Grid
     // and physics to process it. Must happen AFTER component setup.
     Transform.active[i] = 1;
+    if (has.MeshRenderer) MeshRenderer.active[i] = 1;
     if (has.RigidBody || has.Collider) {
       bumpBodyGeneration(i);
     }
