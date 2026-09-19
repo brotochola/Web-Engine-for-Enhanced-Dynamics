@@ -1,5 +1,7 @@
 // Sparse lifecycle/config synchronization from Weed workers to nested Box2D.
 // Writers coalesce per-entity flags, then publish one bit in the dirty-word set.
+// During spawn defer, marks are saved here (pendingFlags) and published on
+// bump after activate — physics never sees the reset Box 0×0.
 
 export const BODY_DIRTY = Object.freeze({
   LIFECYCLE: 1,
@@ -14,6 +16,7 @@ export const BODY_DIRTY = Object.freeze({
 let dirtyFlags = null;
 let dirtyWords = null;
 let generation = null;
+let pendingFlags = null;
 let dirtyDeferDepth = 0;
 
 export function bindBodySyncBuffers(buffers) {
@@ -25,12 +28,14 @@ export function bindBodySyncBuffers(buffers) {
     dirtyFlags = null;
     dirtyWords = null;
     generation = null;
+    pendingFlags = null;
     return null;
   }
 
   dirtyFlags = new Int32Array(buffers.bodyDirtyFlags);
   dirtyWords = new Int32Array(buffers.bodyDirtyWords);
   generation = new Int32Array(buffers.bodyGeneration);
+  pendingFlags = new Int32Array(dirtyFlags.length);
   return { dirtyFlags, dirtyWords, generation };
 }
 
@@ -43,14 +48,31 @@ export function withBodyDirtyDeferred(fn) {
   }
 }
 
+function publishBodyDirty(i, flags) {
+  let extra = 0;
+  if (pendingFlags && i < pendingFlags.length) {
+    extra = pendingFlags[i];
+    pendingFlags[i] = 0;
+  }
+  Atomics.or(dirtyFlags, i, (flags | extra) | 0);
+  Atomics.or(dirtyWords, i >>> 5, 1 << (i & 31));
+  return true;
+}
+
+/**
+ * `force` publishes even inside `withBodyDirtyDeferred` (child bump while
+ * the parent spawn window is still open). Game code does not pass `force`.
+ */
 export function markBodyDirty(entityIndex, flags = BODY_DIRTY.LIFECYCLE, force = false) {
-  if (dirtyDeferDepth > 0 && !force) return false;
   if (!dirtyFlags || !dirtyWords) return false;
   const i = entityIndex | 0;
   if (i < 0 || i >= dirtyFlags.length) return false;
-  Atomics.or(dirtyFlags, i, flags | 0);
-  Atomics.or(dirtyWords, i >>> 5, 1 << (i & 31));
-  return true;
+  if (dirtyDeferDepth > 0 && !force) {
+    if (!pendingFlags || i >= pendingFlags.length) return false;
+    pendingFlags[i] |= flags | 0;
+    return true;
+  }
+  return publishBodyDirty(i, flags);
 }
 
 export function bumpBodyGeneration(entityIndex) {
@@ -58,8 +80,8 @@ export function bumpBodyGeneration(entityIndex) {
   const i = entityIndex | 0;
   if (i < 0 || i >= generation.length) return 0;
   const next = (Atomics.add(generation, i, 1) + 1) >>> 0;
-  // Parent onSpawned stays inside withBodyDirtyDeferred. Child spawn still
-  // needs this publish or Box2D never creates the body.
+  // Parent onSpawned may still be deferred. Publish this entity's saved
+  // marks plus LIFECYCLE so the child body is created with the real shape.
   markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);
   return next;
 }

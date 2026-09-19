@@ -30,7 +30,7 @@ test('body dirty: coalesces flags and publishes dirty words', () => {
   assert.ok(words[0] & (1 << 5));
 });
 
-test('body dirty: defer swallows marks until bump after activate', () => {
+test('body dirty: defer saves marks; bump publishes them with lifecycle', () => {
   const entityCount = 16;
   const buffers = {
     bodyDirtyFlags: new SharedArrayBuffer(entityCount * 4),
@@ -42,18 +42,19 @@ test('body dirty: defer swallows marks until bump after activate', () => {
   const words = new Int32Array(buffers.bodyDirtyWords);
 
   withBodyDirtyDeferred(() => {
-    markBodyDirty(5, BODY_DIRTY.GEOMETRY);
-    markBodyDirty(5, BODY_DIRTY.DAMPING);
+    assert.equal(markBodyDirty(5, BODY_DIRTY.GEOMETRY), true);
+    assert.equal(markBodyDirty(5, BODY_DIRTY.DAMPING), true);
   });
   assert.equal(flags[5], 0);
   assert.equal(words[0], 0);
 
   assert.equal(bumpBodyGeneration(5), 1);
-  assert.equal(flags[5] & BODY_DIRTY.LIFECYCLE, BODY_DIRTY.LIFECYCLE);
+  const want = BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY | BODY_DIRTY.DAMPING;
+  assert.equal(flags[5] & want, want);
   assert.ok(words[0] & (1 << 5));
 });
 
-test('body dirty: child bump inside parent defer still publishes lifecycle', () => {
+test('body dirty: child bump inside parent defer publishes saved geometry', () => {
   const entityCount = 16;
   const buffers = {
     bodyDirtyFlags: new SharedArrayBuffer(entityCount * 4),
@@ -70,12 +71,62 @@ test('body dirty: child bump inside parent defer still publishes lifecycle', () 
     assert.equal(words[0], 0);
 
     assert.equal(bumpBodyGeneration(7), 1);
-    assert.equal(flags[7] & BODY_DIRTY.LIFECYCLE, BODY_DIRTY.LIFECYCLE);
+    const want = BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY;
+    assert.equal(flags[7] & want, want);
     assert.ok(words[0] & (1 << 7));
 
     assert.equal(markBodyDirty(7, BODY_DIRTY.FILTER, true), true);
     assert.equal(flags[7] & BODY_DIRTY.FILTER, BODY_DIRTY.FILTER);
   });
+});
+
+test('body dirty: bump of one entity does not publish the other', () => {
+  const entityCount = 16;
+  const buffers = {
+    bodyDirtyFlags: new SharedArrayBuffer(entityCount * 4),
+    bodyDirtyWords: new SharedArrayBuffer(4),
+    bodyGeneration: new SharedArrayBuffer(entityCount * 4),
+  };
+  bindBodySyncBuffers(buffers);
+  const flags = new Int32Array(buffers.bodyDirtyFlags);
+  const words = new Int32Array(buffers.bodyDirtyWords);
+
+  withBodyDirtyDeferred(() => {
+    markBodyDirty(4, BODY_DIRTY.GEOMETRY);
+    markBodyDirty(9, BODY_DIRTY.FILTER);
+    assert.equal(bumpBodyGeneration(4), 1);
+  });
+
+  const want4 = BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY;
+  assert.equal(flags[4] & want4, want4);
+  assert.equal(flags[9], 0);
+  assert.ok(words[0] & (1 << 4));
+  assert.equal(words[0] & (1 << 9), 0);
+
+  assert.equal(bumpBodyGeneration(9), 1);
+  const want9 = BODY_DIRTY.LIFECYCLE | BODY_DIRTY.FILTER;
+  assert.equal(flags[9] & want9, want9);
+  assert.ok(words[0] & (1 << 9));
+});
+
+test('body dirty: mark outside defer publishes leftover saved flags', () => {
+  const entityCount = 16;
+  const buffers = {
+    bodyDirtyFlags: new SharedArrayBuffer(entityCount * 4),
+    bodyDirtyWords: new SharedArrayBuffer(4),
+    bodyGeneration: new SharedArrayBuffer(entityCount * 4),
+  };
+  bindBodySyncBuffers(buffers);
+  const flags = new Int32Array(buffers.bodyDirtyFlags);
+
+  withBodyDirtyDeferred(() => {
+    markBodyDirty(2, BODY_DIRTY.GEOMETRY);
+  });
+  assert.equal(flags[2], 0);
+
+  assert.equal(markBodyDirty(2, BODY_DIRTY.MASS), true);
+  const want = BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS;
+  assert.equal(flags[2] & want, want);
 });
 
 test('body generation: bump increments and marks lifecycle dirty', () => {

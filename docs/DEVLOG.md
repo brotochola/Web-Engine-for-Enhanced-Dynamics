@@ -6,11 +6,9 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
----
-
 ## Saturday 19 September 2026 — The Tilemap Was Smooth. The Car Wasn't
 
-The want was simple once the GID pages were in: drive a police car across a 50,000-pixel map at 1200 px/s and have the *car* stay glued to the road. The background had just become honest — one camera matrix, no chunk stream. Then the sprite started hitching every four seconds, straight and fast, while the tilemap kept sliding.
+The want was simple once the GID pages were in: drive a police car across a 50,000-pixel map at 1200 px/s and have the _car_ stay glued to the road. The background had just become honest — one camera matrix, no chunk stream. Then the sprite started hitching every four seconds, straight and fast, while the tilemap kept sliding.
 
 Two `requestAnimationFrame` loops. Physics publishes a pose. Logic follows it. Pre-render packs the sprite from the same latch. When the clocks lap — 60 against something like 59.75 is about four seconds — physics skips a publish so it will not overwrite the slot pre-render is still reading. The sprite freezes on the last snapshot. `followEntity` did not. It kept easing the camera toward that frozen point. The tilemap is the camera. The car is the sprite. The world slid under a parked drawing.
 
@@ -222,7 +220,7 @@ That question is the whole next chapter. I didn't know it yet, sitting there tha
 
 Went digging through `phaser-box2d`'s own OBB and collision code, comparing it against mine, hoping to borrow enough to stop the shaking. It didn't go well. "boxes dont even stack now! and they vibrate all over." Tried again — the balls started vibrating too, and they'd been fine. "still very wrong!" Tried a third time and lost ground I'd already had: "ahora se rompio todo y volvimos a antes q vibran en el piso sin colisiones!" — now everything's broken and we're back to before, vibrating on the floor with no real collision at all. By the end of one session I was asking out loud whether the boxes' center of mass was even computed right, because nothing else explained what I was seeing.
 
-In the middle of all that, a real fork in the road: given how complex OBB and friction were turning out to be, and given that the old circles-plus-constraints trick in `ConstraintBoxScene` was working *better* than the real oriented boxes I was trying to build — what if I just kept not thinking about angular velocity at all? The problem with that answer was obvious too: circles don't stack. They're round. A box made of circles drifts until the curves find a compromise instead of sitting flat.
+In the middle of all that, a real fork in the road: given how complex OBB and friction were turning out to be, and given that the old circles-plus-constraints trick in `ConstraintBoxScene` was working _better_ than the real oriented boxes I was trying to build — what if I just kept not thinking about angular velocity at all? The problem with that answer was obvious too: circles don't stack. They're round. A box made of circles drifts until the curves find a compromise instead of sitting flat.
 
 I asked which existing 2D engine would be easiest to bolt onto this architecture. The next evening, half-serious, I asked for a plan to bring in Rapier instead of fixing what I had.
 
@@ -435,7 +433,7 @@ class CivilianBehaviorFSM extends FSM {
 }
 ```
 
-And transitions don't happen the instant you ask for them. `changeState(i, this.fsm.states.FLEEING)` just writes an index into `nextState[i]` — a request, not an action. The actual `onExit`/`onEnter` pair runs at the top of the *next* tick, before that state's `onUpdate`. Queuing it that way means a state can never trigger its own exit mid-update by accident, and the write pattern stays exactly as boring and cache-friendly as every other array write in this engine.
+And transitions don't happen the instant you ask for them. `changeState(i, this.fsm.states.FLEEING)` just writes an index into `nextState[i]` — a request, not an action. The actual `onExit`/`onEnter` pair runs at the top of the _next_ tick, before that state's `onUpdate`. Queuing it that way means a state can never trigger its own exit mid-update by accident, and the write pattern stays exactly as boring and cache-friendly as every other array write in this engine.
 
 Ten thousand civilians ran on it the same day, as the real test. Not ten. Ten thousand — because that's the number that tells you whether a state machine design actually holds at engine scale or just looks nice in a demo with five guys standing around.
 

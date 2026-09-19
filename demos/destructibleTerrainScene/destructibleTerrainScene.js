@@ -1,5 +1,6 @@
 // Destructible terrain — WorldGrid SAB. Ship on logic0 (rays). Manager on logic1 (grid write).
 // Loose dirt (not touching left/right/bottom) falls as one body. No welds.
+// Ship followEntity: LOOK_AHEAD=0. Drawn cam is renderQueueCamera (PHYSICS.md).
 // Z draw · X erase · C laser · V shatter · [ ] brush · A/D thrusters · click uses tool.
 
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';

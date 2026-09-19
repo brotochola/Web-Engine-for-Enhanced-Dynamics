@@ -2421,8 +2421,10 @@ export class GameObject {
       AdobeAnimComponent.screenY[i] = 0;
     }
 
-    // Swallow markBodyDirty from setters/setup/onSpawned. Physics must not
-    // see want=1 with spawn-reset Box 0×0. One bump after activate.
+    // Save markBodyDirty from setters/setup/onSpawned. Physics must not
+    // see want=1 with spawn-reset Box 0×0. bumpBodyGeneration after activate
+    // publishes the saved marks so a child spawn from parent onSpawned gets
+    // a body with the real shape.
     withBodyDirtyDeferred(() => {
       // Size before other spawnConfig keys (and before setup damping/static).
       // Skip active — Transform.active stays 0 until the bump below.

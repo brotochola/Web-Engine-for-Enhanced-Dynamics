@@ -1,6 +1,4 @@
 import { WorldGrid, CELL, LAYER_STATIC, TUNE } from '../worldGrid.js';
-import { BODY_DIRTY, markBodyDirty } from '/src/box2d/box2dBodySync.js';
-import { enqueueSetAwake } from '/src/box2d/box2dCommandRing.js';
 import WEED from '/src/index.js';
 
 const {
@@ -70,26 +68,13 @@ export class TerrainIsland extends GameObject {
     this.meshRenderer.tint = spawnConfig.tint ?? 0x88aa66;
     this.setLayer('terrain');
     this._refreshVisualRange();
+    if (!spawnConfig.isStatic) this.setAwake(true);
   }
 
   _refreshVisualRange() {
     const hw = (this.collider.width || 0) * 0.5;
     const hh = (this.collider.height || 0) * 0.5;
     this.collider.visualRange = Math.hypot(hw, hh) + 80;
-  }
-
-  /**
-   * After GameObject.spawn. Force-mark: parent onSpawned is still deferred.
-   */
-  static syncPhysics(index, wake) {
-    markBodyDirty(
-      index,
-      BODY_DIRTY.GEOMETRY | BODY_DIRTY.BODY_TYPE | BODY_DIRTY.MASS | BODY_DIRTY.FILTER,
-      true,
-    );
-    if (!wake) return;
-    if (RigidBody.sleeping) RigidBody.sleeping[index] = 0;
-    enqueueSetAwake(index, 1);
   }
 
   /**
@@ -175,10 +160,11 @@ export class TerrainIsland extends GameObject {
     }
     if (MeshRenderer.renderDirty) MeshRenderer.renderDirty[idx] = 1;
     this._refreshVisualRange();
-    TerrainIsland.syncPhysics(idx, !resting);
     if (resting) {
       this.setVelocity(0, 0);
       this.angularVelocity = 0;
+    } else {
+      this.setAwake(true);
     }
     // Box2d.explode({
     //   x: hx,
@@ -203,7 +189,6 @@ export class TerrainIsland extends GameObject {
     });
     if (!spawned) return;
     const si = spawned.index;
-    TerrainIsland.syncPhysics(si, true);
     if (RigidBody.vx) RigidBody.vx[si] = vx || 0;
     if (RigidBody.vy) RigidBody.vy[si] = vy || 0;
   }
@@ -226,7 +211,6 @@ export class TerrainIsland extends GameObject {
       });
       if (!spawned) continue;
       const si = spawned.index;
-      TerrainIsland.syncPhysics(si, true);
       if (RigidBody.vx) RigidBody.vx[si] = vx || 0;
       if (RigidBody.vy) RigidBody.vy[si] = vy || 0;
     }

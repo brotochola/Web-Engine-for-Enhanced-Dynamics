@@ -349,7 +349,6 @@ export class WorldGridManager extends GameObject {
       layer: 'terrain',
     });
     if (!spawned) return false;
-    TerrainIsland.syncPhysics(spawned.index, true);
     this.dynamicIslands.push(spawned.index);
     return true;
   }
@@ -461,7 +460,6 @@ export class WorldGridManager extends GameObject {
         this._keepOverlapping(pool, keep, job.islandBox);
         continue;
       }
-      TerrainIsland.syncPhysics(spawned.index, false);
       keep.push({
         index: spawned.index,
         minX: job.islandBox.minX,

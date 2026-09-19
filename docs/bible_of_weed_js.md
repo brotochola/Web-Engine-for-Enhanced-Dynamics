@@ -839,7 +839,9 @@ WEED.Camera.setZoom(1.5);     // snap zoom (do not call every tick while followi
 // getViewportBounds(out?) — pass a stable object if you need to store bounds;
 // the no-arg form reuses an internal scratch object (consume immediately).
 // High-speed follow hitch: docs/PHYSICS.md “Display pose publish”.
-// followEntity holds pan when poseReady is unchanged (publish skip); do not ease under a frozen sprite.
+// followEntity holds SAB pan when poseReady is unchanged (publish skip).
+// Drawn cam = packed pose + look-ahead lead (renderQueueCamera), not eased Camera.x/y.
+// lookAheadSec is seconds × vy — 1 at fall speed is a huge Y slam.
 
 // Particles — pick mode at call site (see docs/PARTICLES.md)
 // emit: heighted, screenY = y + z

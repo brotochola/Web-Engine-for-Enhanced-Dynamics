@@ -71,6 +71,8 @@ Scene knob: `physics.maxFixturePoolSize` (default `0`, same opt-in as `maxJoints
 
 Setters write SoA and `markBodyDirty` with `LIFECYCLE|GEOMETRY|MASS` (Collider) or `LIFECYCLE|BODY_TYPE|MASS` (RigidBody) so `syncBodySlot` runs property sync (not LIFECYCLE-only, which only create/destroys).
 
+`GameObject.spawn` wraps setup/`onSpawned` in `withBodyDirtyDeferred` so mid-setup Box 0×0 never creates a body. `bumpBodyGeneration` after activate **always** publishes `LIFECYCLE`, even if a parent `onSpawned` is still deferred (child spawn). `markBodyDirty(..., force)` is the same escape hatch for post-spawn `GEOMETRY|BODY_TYPE|FILTER` (demo: `TerrainIsland.syncPhysics`). Host `syncBodySlot`: if flags are more than `LIFECYCLE` alone, run `syncBodyProperties` on the create frame too — otherwise multi-fixture islands stay shapeless until a later remesh.
+
 WASM sibling (`Box2d_3.2_C_-_liquidfun`): `create_body`, `body_add_shape_{box,circle,polygon}`, `body_clear_shapes`. Rebuild: `weedjs\build_for_weed.bat` → copies into `src/box2d/`. Correctness: `tests/node/rbColliderComposition.wasm.test.js` (WASM attach/detach); dirty-flag publish: `tests/node/box2dBodyJointSync.test.js`.
 
 **Not in v1:** kinematic type exposure (enum exists, Weed still passes static/dynamic only); Collider as Weed-grid-only without a Box2D body (would let dynamics tunnel “walls”).
@@ -120,15 +122,17 @@ Sprites use latched pose xy. `Camera.followEntity` used to add **live HEAP** `Ri
 
 #### Camera pan must hold when the pose generation is unchanged
 
-A skipped publish freezes the sprite. If `followEntity` still eases the camera toward that frozen xy, the tilemap (or MESH fill) slides under the car. Logic passes `poseReady` into `Camera.bindDisplayPose`. When that generation matches the last follow, `followEntity` stamps `followUsed` and **does not** call `_applyFollow`. Pre-render's slide is then a no-op. Next publish, both move together. Tests: `followEntity holds pan when pose generation is unchanged` in `tests/node/cameraFreeZoom.test.js`.
+A skipped publish freezes the sprite. If `followEntity` still eases the SAB camera toward that frozen xy, the tilemap (or MESH fill) slides under the car. Logic passes `poseReady` into `Camera.bindDisplayPose`. When that generation matches the last follow, `followEntity` stamps `followUsed` and **does not** call `_applyFollow`. Next publish, both move together. Tests: `followEntity holds pan when pose generation is unchanged` in `tests/node/cameraFreeZoom.test.js`.
 
-Logic and pre_render still latch `poseSync` independently. `followEntity` stamps the pose xy it used on the camera SAB. Pre_render slides `renderQueueCamera` by `(latchedPose - stamped)` so the packed sprite and camera share one generation. `Camera.follow(x,y)` clears the stamp (HEAP follow stays a demo clock split). MESH fill in pixi uses the queue-stamped pose latch, not live HEAP.
+Logic and pre_render still latch `poseSync` independently. `followEntity` stamps the pose xy it used (`followUsed`) and writes look-ahead into `followTarget` (`pose + vel * lookAheadSec`). Pre_render **snaps** `renderQueueCamera` to `packedPose + (followTarget - followUsed) - halfViewport`. It does **not** add `(packed - followUsed)` onto the eased SAB cam — that double-hit (ease + slide) made MESH terrain hitch in Y when falling. `Camera.x/y` on the SAB may still ease; the drawn camera is the queue. `Camera.follow(x,y)` clears the stamp (HEAP follow stays a demo clock split). MESH fill in pixi uses the queue-stamped pose latch, not live HEAP.
+
+`lookAheadSec` is seconds of held velocity. `1` at fall speed (`vy` ~ gravity) is thousands of pixels of lead — not a “bit of padding”.
 
 Speed zoom: write `Camera.targetZoom` **then** `followEntity`. `follow()` lerps zoom and keeps screen-center. `setZoom` every tick snaps zoom without that pan and fights the lerp.
 
 Debug colliders and the pixi compute pack follow **stamped `poseReady`** on the render-queue camera SAB (same generation sprites packed), not live HEAP / latest pose. Overlay clock, not the gameplay hitch above.
 
-Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.test.js` (`followEntity look-ahead ignores live vx…`, `alignFollowCameraToLatchedPose slides queue cam`, `followEntity holds pan when pose generation is unchanged`).
+Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.test.js` (`followEntity look-ahead ignores live vx…`, `alignFollowCameraToLatchedPose snaps queue cam…`, `alignFollowCameraToLatchedPose ignores ease lag on SAB cam`, `followEntity holds pan when pose generation is unchanged`).
 
 ### Soft contact knobs
 

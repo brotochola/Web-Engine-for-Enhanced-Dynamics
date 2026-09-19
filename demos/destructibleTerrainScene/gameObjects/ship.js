@@ -19,7 +19,7 @@ const {
 const HALF_W = 11;
 const HALF_H = 14;
 const THRUST_ACCEL = 3100;
-const LOOK_AHEAD = 0;
+const LOOK_AHEAD = 0.02;
 const CAM_SMOOTH = 0.12;
 const MUZZLE_PAD = Math.hypot(HALF_W, HALF_H) + 4;
 
