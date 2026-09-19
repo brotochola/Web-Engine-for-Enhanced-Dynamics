@@ -92,6 +92,64 @@ test('packColliderFill filters MeshRenderer.layerMask', () => {
   assert.equal(n1, 1);
 });
 
+test('packColliderFill keeps world verts (camera is RT transform)', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.x[0] = 100;
+  views.y[0] = 50;
+  addTri(views, 0, 0, 0, 0, 10, 0, 0, 10);
+
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(out[0], 0);
+  assert.equal(out[1], 0);
+  assert.equal(out[2], 10);
+  assert.equal(out[3], 0);
+  assert.equal(out[4], 0);
+  assert.equal(out[5], 10);
+  assert.equal(out[6], 100);
+  assert.equal(out[7], 50);
+});
+
+test('visualOutset inflates local verts along normalize(local)', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.meshVisualOutset = new Float32Array([2]);
+  addTri(views, 0, 0, 0, 0, 10, 0, 0, 10);
+
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(out[0], 0);
+  assert.equal(out[1], 0);
+  assert.equal(out[2], 12);
+  assert.equal(out[3], 0);
+  assert.equal(out[4], 0);
+  assert.equal(out[5], 12);
+});
+
+test('WORLD tile packs +1/period and animationFrameStart as flat texId', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.meshTextureId = new Uint16Array([2]);
+  views.meshTileMode = new Uint8Array([1]);
+  views.meshRepeatX = new Uint16Array([128]);
+  views.meshRepeatY = new Uint16Array([64]);
+  views.animationFrameStart = [0, 0, 7];
+  addTri(views, 0, 0, 0, 0, 4, 0, 0, 4);
+
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(out[12], 7);
+  assert.ok(Math.abs(out[13] - 1 / 128) < 1e-6);
+  assert.ok(Math.abs(out[14] - 1 / 64) < 1e-6);
+});
+
 test('two islands share one instanceCount sum', () => {
   const views = makeViews({ entities: 2, fixtures: 2 });
   views.meshActive[0] = 1;
@@ -233,7 +291,24 @@ test('destructibleTerrainScene declares LAYER_KIND.MESH', () => {
     'utf8'
   );
   assert.match(scene, /kind:\s*LAYER_KIND\.MESH/);
+  assert.match(scene, /fragment:\s*'rockContour'/);
+  assert.match(scene, /rockContour:\s*'\/demos\/shaders\/rockContour\.frag'/);
+  assert.match(scene, /rocky:\s*'\/demos\/img\/rocky\.jpg'/);
   assert.match(island, /MeshRenderer/);
+  assert.match(island, /setTexture\('rocky'\)/);
+  assert.match(island, /setTileWorld\(128\)/);
+  assert.match(island, /visualOutset\s*=\s*2/);
   assert.equal(island.includes('SpriteRenderer'), false);
   assert.equal(island.includes('fillTint'), false);
+});
+
+test('MESH look path is one RT, no fillSpace / SCREEN bake', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const src = fs.readFileSync(path.join(here, '../../src/workers/pixiWorker.js'), 'utf8');
+  assert.equal(src.includes('fillSpace'), false);
+  assert.match(src, /_renderMeshFillToRt/);
+  assert.match(src, /if\s*\(\s*!isMesh\s*\)/);
+  assert.match(src, /cl\.rtOut\s*=/);
+  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*isMesh\)/);
+  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*!!cl\.fillBatch\)/);
 });

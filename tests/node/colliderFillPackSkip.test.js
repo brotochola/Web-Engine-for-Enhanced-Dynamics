@@ -150,6 +150,20 @@ test('moving one entity forces pack', () => {
   assert.equal(colliderFillCanSkipPack(views, 4, prevPose), false);
 });
 
+test('renderDirty paint forces pack', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.meshDirty = new Uint8Array(1);
+  addTri(views, 0, 0, 0, 0, 2, 0, 0, 2);
+  views.fixtureRevision[0] = 1;
+  const prevPose = {};
+  copyMeshFillPoseScratch(views, prevPose);
+  assert.equal(colliderFillCanSkipPack(views, 1, prevPose), true);
+  views.meshDirty[0] = 1;
+  assert.equal(colliderFillCanSkipPack(views, 1, prevPose), false);
+});
+
 test('presence change (hide mesh) forces pack', () => {
   const views = makeViews({ entities: 1, fixtures: 1 });
   views.meshActive[0] = 1;

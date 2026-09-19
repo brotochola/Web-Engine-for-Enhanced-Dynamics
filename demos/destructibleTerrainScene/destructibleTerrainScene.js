@@ -75,6 +75,19 @@ export class DestructibleTerrainScene extends Scene {
       terrain: {
         kind: LAYER_KIND.MESH,
         zIndex: 2.9,
+        blendMode: BLEND_MODES.NORMAL,
+        resolution: 1,
+        ySorting: false,
+        shader: {
+          fragment: 'rockContour',
+          containerBlend: BLEND_MODES.NORMAL,
+          uniforms: {
+            uCutoff: { value: 0.08, type: 'f32' },
+            uRimWidth: { value: 0.0018, type: 'f32' },
+            uRimColor: { value: [1, 1, 1], type: 'vec3<f32>' },
+            uRimAlpha: { value: 0.85, type: 'f32' },
+          },
+        },
       },
       fx: {
         zIndex: 4.5,
@@ -90,7 +103,12 @@ export class DestructibleTerrainScene extends Scene {
   };
 
   static assets = {
-    textures: {},
+    textures: {
+      rocky: '/demos/img/rocky.jpg',
+    },
+    shaders: {
+      rockContour: '/demos/shaders/rockContour.frag',
+    },
   };
 
   static entities = [

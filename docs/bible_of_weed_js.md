@@ -517,6 +517,8 @@ Pipeline reminder:
 1. Splat pass: each particle adds a soft disk → `cl.rt` (density).
 2. Look pass: fullscreen frag samples density → colors + alpha → `cl.rtOut` → stage.
 
+MESH + look shader skips step 2's second RT: fill fans render to `cl.rt` in **world** space (camera is the reused RT transform), then the same NDC fullscreen look mesh sits on the stage and samples `cl.rt`. Sprites / density / compute keep the two-RT path.
+
 Tuning order that usually works: set `uCutoff` so the silhouette matches the physics blob, then `uRim` for edge width, then `uDepth` for core softness, then `uBodyAlpha` / `uEdgeAlpha` for transparency.
 
 ### DebugUI Layer Inspector

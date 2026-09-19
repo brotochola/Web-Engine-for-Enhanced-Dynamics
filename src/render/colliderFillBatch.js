@@ -1,12 +1,13 @@
 /**
- * Instanced solid fill of this entity's collider.
+ * Instanced fill of this entity's collider (LAYER_KIND.MESH).
  * Fixtures first; else primary polygon / box / display 8-gon for a physics circle.
- * One PIXI.Mesh per LAYER_KIND.MESH slot. VS applies packed pose
- * (published display pose when pixi latched it, else live Transform).
+ * One PIXI.Mesh per MESH slot. VS applies packed pose (published display pose
+ * when pixi latched it, else live Transform).
  * Static bodies pack live Transform: pose lags a remesh/spawn and the island snaps.
- * Pixi can skip pack+upload when ColliderFixture.revision and mesh pose match last frame.
+ * Pixi skips pack+upload when ColliderFixture.revision, mesh pose, and paint match.
  *
- * Instance floats (12): v0, v1, v2, xy, rotCS, tintBits, depth.
+ * Instance floats (17): v0, v1, v2, xy, rotCS, tintBits, depth, texId, tileInv, tileOff.
+ * World verts. Camera is the RT render root, not baked here.
  */
 
 import {
@@ -18,19 +19,24 @@ import {
   Buffer,
   BufferUsage,
   State,
+  Texture,
 } from '../vendor/pixi.min.js';
 
-import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
+import { MAX_POLYGON_VERTICES, ShapeType, SPRITE_TILE_MODE } from '../util/configDefaults.js';
 import { colliderFillGpuProgram } from './webgpu/colliderFillWgsl.js';
 import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
+import { dummyLutSource } from './instancedSpriteBatch.js';
+import { MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 
-export const COLLIDER_FILL_FLOATS = 12;
+export const COLLIDER_FILL_FLOATS = 17;
 export const COLLIDER_FILL_STRIDE = COLLIDER_FILL_FLOATS * 4;
 /** lastRevision < 0 means no packed frame yet (always pack). */
 export const COLLIDER_FILL_PACK_FIRST_FRAME = -1;
 
 const INV = 0xffff;
 const TWO_PI = Math.PI * 2;
+const STRETCH = SPRITE_TILE_MODE.STRETCH;
+const WORLD = SPRITE_TILE_MODE.WORLD;
 
 let _warnedMeshLayer = false;
 let _warnedNoDrawable = false;
@@ -55,6 +61,61 @@ function entityHasDrawableCollider(i, views) {
   return false;
 }
 
+const _paint = { texId: -1, tix: 0, tiy: 0, tou: 0, tov: 0 };
+let _outset = 0;
+let _ox = 0;
+let _oy = 0;
+
+function radialOutset(x, y, outset) {
+  if (!(outset > 0)) {
+    _ox = x;
+    _oy = y;
+    return;
+  }
+  const len = Math.hypot(x, y);
+  if (len < 1e-6) {
+    _ox = x;
+    _oy = y;
+    return;
+  }
+  const k = 1 + outset / len;
+  _ox = x * k;
+  _oy = y * k;
+}
+
+function bindMeshPaint(i, views) {
+  const tex = views.meshTextureId;
+  const anim = tex ? tex[i] : MESH_NO_TEXTURE;
+  const hasTex = anim !== MESH_NO_TEXTURE;
+  const starts = views.animationFrameStart;
+  if (!hasTex) {
+    _paint.texId = -1;
+  } else if (starts) {
+    const s = starts[anim];
+    _paint.texId = s == null ? -1 : +s;
+  } else {
+    _paint.texId = anim;
+  }
+  const mode = views.meshTileMode ? views.meshTileMode[i] : 0;
+  const rx = views.meshRepeatX ? views.meshRepeatX[i] : 0;
+  const ry = views.meshRepeatY ? views.meshRepeatY[i] : 0;
+  if (!hasTex || mode === STRETCH || (rx <= 0 && ry <= 0)) {
+    _paint.tix = 0;
+    _paint.tiy = 0;
+  } else if (mode === WORLD) {
+    _paint.tix = rx > 0 ? 1 / rx : 0;
+    _paint.tiy = ry > 0 ? 1 / ry : 0;
+  } else {
+    _paint.tix = rx > 0 ? -(1 / rx) : 0;
+    _paint.tiy = ry > 0 ? -(1 / ry) : 0;
+  }
+  const ou = views.meshTileOffU;
+  const ov = views.meshTileOffV;
+  _paint.tou = ou ? (ou[i] & 65535) / 65535 : 0;
+  _paint.tov = ov ? (ov[i] & 65535) / 65535 : 0;
+  _outset = views.meshVisualOutset ? views.meshVisualOutset[i] : 0;
+}
+
 /**
  * Write one fan triangle. Returns new written count, or -1 if cap hit.
  */
@@ -72,6 +133,11 @@ function writeFillTri(out, outU32, base, written, maxOut, depthDenom, x0, y0, x1
   out[base + 9] = s;
   outU32[base + 10] = packed >>> 0;
   out[base + 11] = 1.0 - (written + 1) / depthDenom;
+  out[base + 12] = _paint.texId;
+  out[base + 13] = _paint.tix;
+  out[base + 14] = _paint.tiy;
+  out[base + 15] = _paint.tou;
+  out[base + 16] = _paint.tov;
   return written + 1;
 }
 
@@ -94,14 +160,19 @@ function packOutU32(out, views) {
   return _packOutU32;
 }
 
-function fanLocalVerts(out, outU32, base, written, maxOut, depthDenom, vx, vy, vb, n, wx, wy, c, s, packed) {
-  const x0 = vx[vb];
-  const y0 = vy[vb];
+function fanLocalVerts(out, outU32, base, written, maxOut, depthDenom, vx, vy, vb, n, wx, wy, c, s, packed, outset) {
+  radialOutset(vx[vb], vy[vb], outset);
+  const x0 = _ox;
+  const y0 = _oy;
   const fans = n - 2;
   for (let t = 0; t < fans; t++) {
+    radialOutset(vx[vb + t + 1], vy[vb + t + 1], outset);
+    const x1 = _ox;
+    const y1 = _oy;
+    radialOutset(vx[vb + t + 2], vy[vb + t + 2], outset);
     const next = writeFillTri(
       out, outU32, base, written, maxOut, depthDenom,
-      x0, y0, vx[vb + t + 1], vy[vb + t + 1], vx[vb + t + 2], vy[vb + t + 2],
+      x0, y0, x1, y1, _ox, _oy,
       wx, wy, c, s, packed,
     );
     if (next < 0) {
@@ -218,13 +289,28 @@ export function meshFillPoseOrPresenceChanged(views, prevPose) {
   return false;
 }
 
+export function meshFillPaintDirty(views) {
+  const d = views.meshDirty;
+  if (!d) return false;
+  const n = views.entityCount | 0;
+  for (let i = 0; i < n; i++) {
+    if (d[i]) return true;
+  }
+  return false;
+}
+
+export function clearMeshFillPaintDirty(views) {
+  const d = views.meshDirty;
+  if (d) d.fill(0);
+}
+
 function readFixtureRevision(views) {
   return views.fixtureRevision ? (views.fixtureRevision[0] | 0) : 0;
 }
 
 /**
  * True when pack+upload can be skipped.
- * ponytail: first frame and any fixture replace always pack; moving mesh always pack.
+ * ponytail: first frame and any fixture replace / pose / paint always pack.
  * @param {object} views
  * @param {number} lastRevision
  * @param {object} prevPose
@@ -232,6 +318,7 @@ function readFixtureRevision(views) {
 export function colliderFillCanSkipPack(views, lastRevision, prevPose) {
   if ((lastRevision | 0) < 0 || !prevPose) return false;
   if (readFixtureRevision(views) !== (lastRevision | 0)) return false;
+  if (meshFillPaintDirty(views)) return false;
   return !meshFillPoseOrPresenceChanged(views, prevPose);
 }
 
@@ -300,6 +387,8 @@ export function packColliderFill(out, cap, layerId, views) {
       continue;
     }
 
+    bindMeshPaint(i, views);
+    const outset = _outset;
     const c = meshFillRotC(i, views);
     const s = meshFillRotS(i, views);
     const ox = offsetX ? offsetX[i] : 0;
@@ -328,7 +417,7 @@ export function packColliderFill(out, cap, layerId, views) {
         }
         const fan = fanLocalVerts(
           out, outU32, base, written, maxOut, depthDenom,
-          vx, vy, cur * MAX_POLYGON_VERTICES, n, wx, wy, c, s, packed,
+          vx, vy, cur * MAX_POLYGON_VERTICES, n, wx, wy, c, s, packed, outset,
         );
         written = fan.written;
         base = fan.base;
@@ -344,7 +433,7 @@ export function packColliderFill(out, cap, layerId, views) {
       const fan = fanLocalVerts(
         out, outU32, base, written, maxOut, depthDenom,
         primaryPolyVertexX, primaryPolyVertexY, i * MAX_POLYGON_VERTICES, n,
-        wx, wy, c, s, packed,
+        wx, wy, c, s, packed, outset,
       );
       written = fan.written;
       base = fan.base;
@@ -356,16 +445,28 @@ export function packColliderFill(out, cap, layerId, views) {
       const hw = primaryWidth[i] * 0.5;
       const hh = primaryHeight[i] * 0.5;
       if (hw > 0 && hh > 0) {
+        radialOutset(-hw, -hh, outset);
+        const x0 = _ox;
+        const y0 = _oy;
+        radialOutset(hw, -hh, outset);
+        const x1 = _ox;
+        const y1 = _oy;
+        radialOutset(hw, hh, outset);
+        const x2 = _ox;
+        const y2 = _oy;
+        radialOutset(-hw, hh, outset);
+        const x3 = _ox;
+        const y3 = _oy;
         let nextW = writeFillTri(
           out, outU32, base, written, maxOut, depthDenom,
-          -hw, -hh, hw, -hh, hw, hh, wx, wy, c, s, packed,
+          x0, y0, x1, y1, x2, y2, wx, wy, c, s, packed,
         );
         if (nextW < 0) return written;
         written = nextW;
         base += COLLIDER_FILL_FLOATS;
         nextW = writeFillTri(
           out, outU32, base, written, maxOut, depthDenom,
-          -hw, -hh, hw, hh, -hw, hh, wx, wy, c, s, packed,
+          x0, y0, x2, y2, x3, y3, wx, wy, c, s, packed,
         );
         if (nextW < 0) return written;
         written = nextW;
@@ -377,17 +478,17 @@ export function packColliderFill(out, cap, layerId, views) {
     if (st === ShapeType.Circle && primaryRadius) {
       const r = primaryRadius[i];
       if (r > 0) {
-        // Display regular 8-gon. Physics stays a true circle.
         const n = MAX_POLYGON_VERTICES;
         const step = TWO_PI / n;
-        const x0 = r;
+        const sr = r + (outset > 0 ? outset : 0);
+        const x0 = sr;
         const y0 = 0;
         for (let t = 0; t < n - 2; t++) {
           const a1 = (t + 1) * step;
           const a2 = (t + 2) * step;
           const nextW = writeFillTri(
             out, outU32, base, written, maxOut, depthDenom,
-            x0, y0, r * Math.cos(a1), r * Math.sin(a1), r * Math.cos(a2), r * Math.sin(a2),
+            x0, y0, sr * Math.cos(a1), sr * Math.sin(a1), sr * Math.cos(a2), sr * Math.sin(a2),
             wx, wy, c, s, packed,
           );
           if (nextW < 0) return written;
@@ -408,8 +509,10 @@ export class ColliderFillBatch {
    * @param {string} [opts.label]
    * @param {boolean} [opts.useWebGpu=true]
    * @param {object} opts.shaders
+   * @param {import('../vendor/pixi.min.js').TextureSource} [opts.atlasSource]
+   * @param {import('../vendor/pixi.min.js').TextureSource} [opts.lutSource]
    */
-  constructor({ capacity, label, useWebGpu = true, shaders = null }) {
+  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null }) {
     this.capacity = Math.max(1, capacity | 0);
     this.data = new Float32Array(this.capacity * COLLIDER_FILL_FLOATS);
     this.dataU32 = new Uint32Array(this.data.buffer);
@@ -433,14 +536,25 @@ export class ColliderFillBatch {
         aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: 32, instance: true },
         aInstTintBits: { buffer: buf, format: 'float32', stride, offset: 40, instance: true },
         aInstDepth: { buffer: buf, format: 'float32', stride, offset: 44, instance: true },
+        aInstTexId: { buffer: buf, format: 'float32', stride, offset: 48, instance: true },
+        aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
+        aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 60, instance: true },
       },
     });
     this.geometry.instanceCount = 0;
 
+    const atlas = atlasSource || Texture.WHITE.source;
+    const lut = lutSource || dummyLutSource(useWebGpu);
+    const resources = {
+      uTexture: atlas,
+      uSampler: atlas.style,
+      uTexLut: lut,
+    };
+
     const name = label || 'collider-fill';
     if (useWebGpu) {
       const gpuProgram = colliderFillGpuProgram(GpuProgram, shaders?.colliderFill, name);
-      this.shader = new Shader({ gpuProgram, resources: {} });
+      this.shader = new Shader({ gpuProgram, resources });
     } else {
       const glProgram = colliderFillGlProgram(
         GlProgram,
@@ -448,7 +562,7 @@ export class ColliderFillBatch {
         shaders?.colliderFillFrag,
         name
       );
-      this.shader = new Shader({ glProgram, resources: {} });
+      this.shader = new Shader({ glProgram, resources });
     }
 
     const state = new State();
@@ -467,6 +581,16 @@ export class ColliderFillBatch {
     this.mesh.blendMode = 'normal';
     this.mesh.visible = false;
     this.mesh.cullable = false;
+  }
+
+  setAtlasSource(source) {
+    if (!source) return;
+    this.shader.resources.uTexture = source;
+    this.shader.resources.uSampler = source.style;
+  }
+
+  setLutSource(source) {
+    if (source) this.shader.resources.uTexLut = source;
   }
 
   /**

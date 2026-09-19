@@ -2703,17 +2703,39 @@ export declare class MeshRenderer extends Component {
     layerMask: typeof Uint16Array;
     renderVisible: typeof Uint8Array;
     renderDirty: typeof Uint8Array;
+    textureId: typeof Uint16Array;
+    tileMode: typeof Uint8Array;
+    repeatX: typeof Uint16Array;
+    repeatY: typeof Uint16Array;
+    tileOffsetU: typeof Uint16Array;
+    tileOffsetV: typeof Uint16Array;
+    visualOutset: typeof Float32Array;
   };
+  static readonly NO_TEXTURE: number;
   static active: Uint8Array;
   static tint: Uint32Array;
   static alpha: Float32Array;
   static layerMask: Uint16Array;
   static renderVisible: Uint8Array;
   static renderDirty: Uint8Array;
+  static textureId: Uint16Array;
+  static tileMode: Uint8Array;
+  static repeatX: Uint16Array;
+  static repeatY: Uint16Array;
+  static tileOffsetU: Uint16Array;
+  static tileOffsetV: Uint16Array;
+  static visualOutset: Float32Array;
   get tint(): number;
   set tint(value: number);
   get alpha(): number;
   set alpha(value: number);
+  get textureId(): number;
+  set textureId(value: number);
+  get tileMode(): number;
+  set tileMode(value: number);
+  get visualOutset(): number;
+  set visualOutset(value: number);
+  setTexture(name: string | null | undefined): this;
 }
 
 export declare class SpriteRenderer extends Component {

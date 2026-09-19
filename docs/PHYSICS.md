@@ -40,7 +40,11 @@ this.collider.replacePolygons(tris); // compound: N convex fixtures (3..8 local 
 this.collider.replacePolygonsFlat(xy, counts, n); // same writer, packed SoA, no {x,y}
 this.collider.clearFixtures();       // extras gone; shapeless if polyCount is already 0
 this.meshRenderer.tint = 0x88aa66;   // MeshRenderer + LAYER_KIND.MESH (not Collider)
+this.meshRenderer.setTexture('rocky');
+this.setTileWorld(128);
+this.meshRenderer.visualOutset = 2;  // draw inflate only
 this.setLayer('terrain');
+this.bakeWorldTileToLocal();         // when the island goes dynamic
 ```
 
 A junior can get a visible MESH body without fixtures:
@@ -65,7 +69,7 @@ A SharedResource (one writer per field) pins its owner with `forceProcessOnLogic
 
 `physicsHostImpl.js` `COLLIDER_SCHEMA` must stay in lockstep with `Collider.ARRAY_SCHEMA` (including trailing `layerMask` / `feedBits` / `fixtureCount`). The host binds SoA by walking that list; a missing tail field makes `views.fixtureCount` null, so `createBody` treats a compound island as a 0-vert polygon and logs `createBody failed; wait for next dirty`.
 
-Solid fill is a **render** component: `MeshRenderer` + a config layer with `kind: LAYER_KIND.MESH`. The packer reads `MeshRenderer.layerMask` (not `Collider.layerMask`) and fans fixtures first, else the primary polygon / box (two tris) / display regular 8-gon for a physics circle. Circle physics stays a true circle.
+Solid fill is a **render** component: `MeshRenderer` + a config layer with `kind: LAYER_KIND.MESH`. The packer reads `MeshRenderer.layerMask` (not `Collider.layerMask`) and fans fixtures first, else the primary polygon / box (two tris) / display regular 8-gon for a physics circle. Circle physics stays a true circle. Tint multiplies an optional atlas tile (`setTexture` + `setTileWorld` / `setTileLocal`). `visualOutset` grows only the draw fan. Look-shader MESH: one RT, world verts, camera on the RT transform — skip-pack still holds when the camera follows.
 
 Scene knob: `physics.maxFixturePoolSize` (default `0`, same opt-in as `maxJoints`). This is the **global** extra-convex-shape pool for the whole scene, not “per body”. `physics.maxFixtures` is a one-release alias.
 

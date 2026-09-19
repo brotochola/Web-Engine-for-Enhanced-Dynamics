@@ -944,6 +944,7 @@ export class Layer {
      * Density RT (`rt`) and look output (`rtOut`) follow the canvas.
      * Compute storage textures do not — they use {@link computeTextureExtent}.
      * Compute look layers have `rtOut` only (`rt` stays null).
+     * MESH look layers have `rt` only (`rtOut` stays null; NDC look mesh is on stage).
      * @param {{rt?: unknown, rtOut?: unknown}|null|undefined} cl
      */
     static customLayerNeedsViewportResize(cl) {

@@ -66,9 +66,15 @@ export class TerrainIsland extends GameObject {
     }
 
     this.meshRenderer.tint = spawnConfig.tint ?? 0x88aa66;
+    this.meshRenderer.setTexture('rocky');
+    this.setTileWorld(128);
+    this.meshRenderer.visualOutset = 2;
     this.setLayer('terrain');
     this._refreshVisualRange();
-    if (!spawnConfig.isStatic) this.setAwake(true);
+    if (!spawnConfig.isStatic) {
+      this.bakeWorldTileToLocal();
+      this.setAwake(true);
+    }
   }
 
   _refreshVisualRange() {

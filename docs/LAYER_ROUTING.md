@@ -82,7 +82,7 @@ Omit `layer`/`layers` → entities bit. `layers: []` on particles → mask 0. Ga
 
 Sprite-queue bits: collect **once per bit**. Density bits: splat pose, no type-7/type-1 into that layer's sprite queue. Compute bits: pack particles (`x,y,vx,vy`) and/or colliders. See [COMPUTE_LAYERS.md](./COMPUTE_LAYERS.md).
 
-`kind: LAYER_KIND.MESH` (`'mesh'`) is a custom slot with **no sprite queue**. `setLayer('terrain')` writes `MeshRenderer.layerMask` (and still ORs the entities bit for any sprite). Pixi packs `ColliderFixture` fans first, else the primary polygon / box / display regular 8-gon for a physics circle, into one instanced `PIXI.Mesh` per MESH layer. Color is `MeshRenderer.tint` / `alpha`, not Collider. A fixture-pool of 0 is enough for primary-shape fill.
+`kind: LAYER_KIND.MESH` (`'mesh'`) is a custom slot with **no sprite queue**. `setLayer('terrain')` writes `MeshRenderer.layerMask` (and still ORs the entities bit for any sprite). Pixi packs `ColliderFixture` fans first, else the primary polygon / box / display regular 8-gon for a physics circle, into one instanced `PIXI.Mesh` per MESH layer. Color is `MeshRenderer.tint` / `alpha`. Atlas paint is `meshRenderer.setTexture(name)` plus `setTileWorld` / `setTileLocal` / `clearTile` (same as sprites). `meshRenderer.visualOutset` inflates draw verts in world px; physics stays the collider. A look-shader MESH layer uses **one** fill RT (`cl.rt`) and puts the NDC fullscreen look mesh on the stage — no `rtOut`. Fill verts stay in world space; camera is the reused RT render transform. A fixture-pool of 0 is enough for primary-shape fill.
 
 **LiquidFun / CPU particles** are the same mask inputs. Density splat and compute pack both. Only the simulator differs.
 

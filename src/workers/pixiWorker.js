@@ -78,6 +78,7 @@ import {
   packColliderFill,
   colliderFillCanSkipPack,
   copyMeshFillPoseScratch,
+  clearMeshFillPaintDirty,
   COLLIDER_FILL_PACK_FIRST_FRAME,
 } from '../render/colliderFillBatch.js';
 import { LiquidFun } from '../core/liquidFun.js';
@@ -552,6 +553,9 @@ class PixiRenderer extends AbstractWorker {
     };
     this._clearTransparent = [0, 0, 0, 0];
     this._rtEmptyContainer = new Container();
+    this._meshRtRoot = new Container();
+    this._meshRtRoot.eventMode = 'none';
+    this._meshRtRoot.cullable = false;
     this._entityUploadQ = makeBatchViews();
     this._entityUploadOpts = {
       space: BATCH_SPACE.WORLD,
@@ -617,6 +621,7 @@ class PixiRenderer extends AbstractWorker {
     this._rtRenderOpts = {
       container: null,
       target: null,
+      transform: null,
       clear: true,
       clearColor: this._clearTransparent,
     };
@@ -658,7 +663,8 @@ class PixiRenderer extends AbstractWorker {
 
     // Reusable matrices for low-res rendering
     this._shadowTransform = new PIXI.Matrix();
-    this._lightingTransform = new PIXI.Matrix(); // NDC mesh doesn't really need it but good to have
+    this._lightingTransform = new PIXI.Matrix();
+    this._meshRtTransform = new PIXI.Matrix();
 
   }
 
@@ -912,6 +918,15 @@ class PixiRenderer extends AbstractWorker {
     v.meshLayerMask = MeshRenderer.layerMask;
     v.meshTint = MeshRenderer.tint;
     v.meshAlpha = MeshRenderer.alpha;
+    v.meshDirty = MeshRenderer.renderDirty;
+    v.meshTextureId = MeshRenderer.textureId;
+    v.meshTileMode = MeshRenderer.tileMode;
+    v.meshRepeatX = MeshRenderer.repeatX;
+    v.meshRepeatY = MeshRenderer.repeatY;
+    v.meshTileOffU = MeshRenderer.tileOffsetU;
+    v.meshTileOffV = MeshRenderer.tileOffsetV;
+    v.meshVisualOutset = MeshRenderer.visualOutset;
+    v.animationFrameStart = this.animationFrameStart;
     v.fixtureCount = Collider.fixtureCount;
     v.fixtureHead = ColliderFixture.head;
     v.fixtureNext = ColliderFixture.next;
@@ -992,7 +1007,8 @@ class PixiRenderer extends AbstractWorker {
 
     // Shadow sprites render in screen space directly to shadowRT (no camera transform needed here)
 
-    // Apply camera to custom layer meshes (non-shader layers only)
+    // Apply camera to custom layer meshes (non-shader layers only).
+    // Look-shader MESH keeps world verts; camera is the reused RT Container.
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       if (!cl.rt) {
@@ -1204,6 +1220,7 @@ class PixiRenderer extends AbstractWorker {
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       if (cl.batch) cl.batch.setLutSource(lut);
+      if (cl.fillBatch) cl.fillBatch.setLutSource(lut);
     }
   }
 
@@ -1234,6 +1251,7 @@ class PixiRenderer extends AbstractWorker {
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       if (cl.batch) cl.batch.setAtlasSource(src);
+      if (cl.fillBatch) cl.fillBatch.setAtlasSource(src);
     }
     this._bindLutToBatches();
   }
@@ -1431,6 +1449,7 @@ class PixiRenderer extends AbstractWorker {
       } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.lighting?.id)) {
         // Standard lighting: render full-screen shader
         const rtOpts = this._rtRenderOpts;
+        rtOpts.transform = null;
         rtOpts.container = this.lightingMesh;
         rtOpts.target = this.lightingRT;
         rtOpts.clear = true;
@@ -3001,14 +3020,66 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return uniformDefs;
   }
 
-  _createLayerFullscreenGeometry() {
+  _createLayerFullscreenGeometry(flipV) {
+    // Look-to-rtOut + Sprite already flips V (GL RT write). Look on stage
+    // samples the fill RT directly — NDC Y-up vs Pixi RT top-origin needs this.
+    const uv = flipV
+      ? new Float32Array([0, 1, 1, 1, 1, 0, 0, 0])
+      : new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
     return new Geometry({
       attributes: {
         aPosition: { buffer: new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]), format: 'float32x2' },
-        aUV: { buffer: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), format: 'float32x2' },
+        aUV: { buffer: uv, format: 'float32x2' },
       },
       indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
     });
+  }
+
+  _makeLookShaderMesh(shader, flipV) {
+    const state = new State();
+    state.blend = true;
+    state.depthTest = false;
+    state.depthMask = false;
+    state.culling = false;
+    const mesh = new Mesh({
+      geometry: this._createLayerFullscreenGeometry(!!flipV),
+      shader,
+      state,
+    });
+    mesh.eventMode = 'none';
+    mesh.cullable = false;
+    return mesh;
+  }
+
+  /**
+   * World verts + camera on a reused Container. Pixi 8 ignores Mesh x/y/scale
+   * when that Mesh is the RT render root.
+   */
+  _renderMeshFillToRt(cl, fillMesh) {
+    const z = this._renderZoom * (cl.resolution || 1);
+    const mx = this._meshRtTransform;
+    mx.set(z, 0, 0, z, -this._renderCameraX * z, -this._renderCameraY * z);
+    const root = this._meshRtRoot;
+    if (fillMesh.parent !== root) {
+      if (fillMesh.parent) fillMesh.parent.removeChild(fillMesh);
+      root.addChild(fillMesh);
+    }
+    fillMesh.x = 0;
+    fillMesh.y = 0;
+    fillMesh.scale.set(1);
+    root.x = 0;
+    root.y = 0;
+    root.scale.set(1);
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = emptyInstancedMesh(fillMesh)
+      ? this._rtEmptyContainer
+      : root;
+    rtOpts.target = cl.rt;
+    rtOpts.clear = true;
+    rtOpts.clearColor = this._clearTransparent;
+    rtOpts.transform = mx;
+    this.pixiApp.renderer.render(rtOpts);
+    rtOpts.transform = null;
   }
 
   _destroyCustomLayerPostProcess(cl) {
@@ -3103,15 +3174,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (cl.batch?.mesh?.parent) cl.batch.mesh.parent.removeChild(cl.batch.mesh);
     if (cl.fillBatch?.mesh?.parent) cl.fillBatch.mesh.parent.removeChild(cl.fillBatch.mesh);
     if (!cl.rt) cl.rt = PIXI.RenderTexture.create({ width: w, height: h });
-    if (!cl.rtOut) cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
+    const meshLook = !!cl.fillBatch;
+    if (!meshLook && !cl.rtOut) cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
     this._applyCustomLayerScaleMode(cl);
+    if (meshLook && !cl.shaderBypass) return;
+    const tex = (meshLook || cl.shaderBypass || !cl.rtOut) ? cl.rt : cl.rtOut;
     if (!cl.displaySprite) {
-      cl.displaySprite = new PIXI.Sprite(cl.rtOut);
+      cl.displaySprite = new PIXI.Sprite(tex);
       cl.displaySprite.anchor.set(0, 0);
       cl.displaySprite.position.set(0, 0);
       cl.displaySprite.scale.set(1.0 / resolution);
       this.pixiApp.stage.addChild(cl.displaySprite);
     } else {
+      cl.displaySprite.texture = tex;
       cl.displaySprite.scale.set(1.0 / resolution);
       if (!cl.displaySprite.parent) this.pixiApp.stage.addChild(cl.displaySprite);
     }
@@ -3126,7 +3201,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const layerObj = Layer.get(layerName);
     if (!layerObj || layerObj.builtIn) return;
     const cl = this._customLayers[layerObj.id];
-    if (!cl || (!cl.batch && !cl.splatBatch && !cl.compute)) return;
+    if (!cl || (!cl.batch && !cl.splatBatch && !cl.compute && !cl.fillBatch)) return;
 
     const meta = Layer._metadata?.layers?.[layerObj.id];
     if (meta) {
@@ -3136,14 +3211,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     const resolution = cl.resolution || 1.0;
 
-    // (none): keep half-res density RT, skip fullscreen frag, show raw cl.rt
+    // (none): keep density RT, skip fullscreen frag, show raw cl.rt
     if (!fragmentSource) {
       if (!cl.compute && !cl.rt) this._ensureCustomLayerDensityRT(cl);
       this._destroyCustomLayerPostProcess(cl);
       cl.shaderBypass = true;
-      if (cl.displaySprite && cl.rt) {
+      if (cl.fillBatch && cl.rt && !cl.displaySprite) {
+        cl.displaySprite = new PIXI.Sprite(cl.rt);
+        cl.displaySprite.anchor.set(0, 0);
+        cl.displaySprite.position.set(0, 0);
+        cl.displaySprite.scale.set(1.0 / resolution);
+        this.pixiApp.stage.addChild(cl.displaySprite);
+      } else if (cl.displaySprite && cl.rt) {
         cl.displaySprite.texture = cl.rt;
         cl.displaySprite.scale.set(1.0 / resolution);
+        if (!cl.displaySprite.parent) this.pixiApp.stage.addChild(cl.displaySprite);
       }
       this._registerLayerDisplayObject(layerName, cl.displaySprite);
       this.pixiApp.stage.sortChildren();
@@ -3167,16 +3249,25 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const lookSource = cl.lookSource || cl.rt.source;
       cl.shader = this._createLookShader(fragmentSource, lookSource, uniformDefs, shaderName || 'look', layerName);
       cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
-      cl.shaderMesh = new Mesh({ geometry: this._createLayerFullscreenGeometry(), shader: cl.shader });
-      cl.shaderMesh.eventMode = 'none';
+      cl.shaderMesh = this._makeLookShaderMesh(cl.shader, !!cl.fillBatch);
     } catch (err) {
       if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
       throw errorCompileFailed('look', shaderName || 'look', layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
     }
 
-    cl.displaySprite.texture = cl.rtOut;
-    cl.displaySprite.scale.set(1.0 / resolution);
-    this._registerLayerDisplayObject(layerName, cl.displaySprite);
+    if (cl.fillBatch) {
+      cl.meshLook = true;
+      if (cl.displaySprite) {
+        cl.displaySprite.visible = false;
+        if (cl.displaySprite.parent) cl.displaySprite.parent.removeChild(cl.displaySprite);
+      }
+      if (!cl.shaderMesh.parent) this.pixiApp.stage.addChild(cl.shaderMesh);
+      this._registerLayerDisplayObject(layerName, cl.shaderMesh, true);
+    } else {
+      cl.displaySprite.texture = cl.rtOut;
+      cl.displaySprite.scale.set(1.0 / resolution);
+      this._registerLayerDisplayObject(layerName, cl.displaySprite);
+    }
     this.pixiApp.stage.sortChildren();
     this._syncLayerRefsFromRuntime();
 
@@ -4316,6 +4407,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           label: `mesh-layer-${layerName}`,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
+          atlasSource: this._resolveAtlasSource(),
+          lutSource: this._texLutSource,
         });
         fillBatch.mesh.blendMode = containerBlend;
       }
@@ -4374,6 +4467,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
         uniformStore: null,
         shaderBypass: false,
+        meshLook: false,
         compute: null,
         lookSource: null,
       };
@@ -4430,16 +4524,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (!isCompute) {
           cl.rt = PIXI.RenderTexture.create({ width: w, height: h });
         }
-        cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
+        if (!isMesh) {
+          cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
+        }
         this._applyCustomLayerScaleMode(cl);
-
-        const geometry = new Geometry({
-          attributes: {
-            aPosition: { buffer: new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]), format: 'float32x2' },
-            aUV: { buffer: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), format: 'float32x2' },
-          },
-          indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
-        });
 
         const uniformDefs = {};
         if (config.uniformMap) {
@@ -4466,9 +4554,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             layerName
           );
           cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
-
-          cl.shaderMesh = new Mesh({ geometry, shader: cl.shader });
-          cl.shaderMesh.eventMode = 'none';
+          cl.shaderMesh = this._makeLookShaderMesh(cl.shader, isMesh);
         } catch (err) {
           if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
           throw errorCompileFailed(
@@ -4480,17 +4566,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           );
         }
 
-        cl.displaySprite = new PIXI.Sprite(cl.rtOut);
-        cl.displaySprite.anchor.set(0, 0);
-        cl.displaySprite.position.set(0, 0);
-        cl.displaySprite.scale.set(1.0 / resolution);
-        this._registerLayerDisplayObject(layerName, cl.displaySprite);
+        if (isMesh) {
+          cl.meshLook = true;
+          this._registerLayerDisplayObject(layerName, cl.shaderMesh, true);
+          this.pixiApp.stage.addChild(cl.shaderMesh);
+          console.log(
+            `PIXI WORKER: Custom MESH look layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h})`
+          );
+        } else {
+          cl.displaySprite = new PIXI.Sprite(cl.rtOut);
+          cl.displaySprite.anchor.set(0, 0);
+          cl.displaySprite.position.set(0, 0);
+          cl.displaySprite.scale.set(1.0 / resolution);
+          this._registerLayerDisplayObject(layerName, cl.displaySprite);
 
-        this.pixiApp.stage.addChild(cl.displaySprite);
-        const densLabel = isLfDensity ? ', densitySource=liquidFun' : '';
-        console.log(
-          `PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h}${densLabel})`
-        );
+          this.pixiApp.stage.addChild(cl.displaySprite);
+          const densLabel = isLfDensity ? ', densitySource=liquidFun' : '';
+          console.log(
+            `PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h}${densLabel})`
+          );
+        }
       } else if (fillBatch) {
         this._registerLayerDisplayObject(layerName, fillBatch.mesh, true);
         this.pixiApp.stage.addChild(fillBatch.mesh);
@@ -4658,13 +4753,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             prevPose: {},
           };
         }
-        // First frame and any fixture replace always pack; moving mesh always pack.
         if (!colliderFillCanSkipPack(views, skip.lastRevision, skip.prevPose)) {
-          const packed = packColliderFill(cl.fillBatch.data, cl.fillBatch.capacity, cl.layerId, views);
+          const packed = packColliderFill(
+            cl.fillBatch.data,
+            cl.fillBatch.capacity,
+            cl.layerId,
+            views,
+          );
           cl.fillBatch.upload(packed);
           cl.prevCount = packed;
           copyMeshFillPoseScratch(views, skip.prevPose);
           skip.lastRevision = views.fixtureRevision ? (views.fixtureRevision[0] | 0) : 0;
+          clearMeshFillPaintDirty(views);
         }
         densityMesh = cl.fillBatch.mesh;
       } else {
@@ -4672,17 +4772,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
 
       if (cl.rt && densityMesh) {
-        rtOpts.container = emptyInstancedMesh(densityMesh)
-          ? this._rtEmptyContainer
-          : densityMesh;
-        rtOpts.target = cl.rt;
-        rtOpts.clear = true;
-        rtOpts.clearColor = this._clearTransparent;
-        this.pixiApp.renderer.render(rtOpts);
-        if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
-          rtOpts.container = cl.shaderMesh;
-          rtOpts.target = cl.rtOut;
+        if (cl.fillBatch) {
+          this._renderMeshFillToRt(cl, densityMesh);
+        } else {
+          rtOpts.transform = null;
+          rtOpts.container = emptyInstancedMesh(densityMesh)
+            ? this._rtEmptyContainer
+            : densityMesh;
+          rtOpts.target = cl.rt;
+          rtOpts.clear = true;
+          rtOpts.clearColor = this._clearTransparent;
           this.pixiApp.renderer.render(rtOpts);
+          if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
+            rtOpts.container = cl.shaderMesh;
+            rtOpts.target = cl.rtOut;
+            this.pixiApp.renderer.render(rtOpts);
+          }
         }
       }
     }
@@ -4710,7 +4815,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const cl = this._customLayerList[i];
       this._registerLayerDisplayObject(
         cl.layerName,
-        cl.displaySprite || cl.batch?.mesh || cl.fillBatch?.mesh,
+        cl.displaySprite || cl.shaderMesh || cl.batch?.mesh || cl.fillBatch?.mesh,
         !cl.displaySprite
       );
     }

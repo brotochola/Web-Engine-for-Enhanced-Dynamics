@@ -1,4 +1,4 @@
-import { gpuStageVF } from './pixiMeshWgsl.js';
+import { gpuStageF, gpuStageVF } from './pixiMeshWgsl.js';
 
 export function colliderFillGpuProgram(GpuProgram, source, name) {
   if (!source) {
@@ -7,6 +7,7 @@ export function colliderFillGpuProgram(GpuProgram, source, name) {
     );
   }
   const vf = gpuStageVF();
+  const f = gpuStageF();
   return GpuProgram.from({
     name,
     vertex: { source, entryPoint: 'mainVert' },
@@ -14,10 +15,19 @@ export function colliderFillGpuProgram(GpuProgram, source, name) {
     layout: {
       0: { globalUniforms: 0 },
       1: { localUniforms: 0 },
+      2: { uTexture: 0, uSampler: 1, uTexLut: 2 },
     },
     gpuLayout: [
       [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
       [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      [
+        { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
+        { binding: 1, visibility: f, sampler: { type: 'filtering' } },
+        {
+          binding: 2,
+          visibility: vf,
+          texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
+      ],
     ],
   });
 }

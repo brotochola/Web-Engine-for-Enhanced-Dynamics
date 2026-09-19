@@ -146,7 +146,7 @@ export function packTextureLutRgba(lut, count) {
 
 let _dummyLutGpu = null;
 let _dummyLutGl = null;
-function dummyLutSource(useWebGpu) {
+export function dummyLutSource(useWebGpu) {
   if (useWebGpu) {
     if (_dummyLutGpu) return _dummyLutGpu;
     _dummyLutGpu = TextureSource.from({

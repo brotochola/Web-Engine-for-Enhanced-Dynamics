@@ -1088,16 +1088,27 @@ export class GameObject {
    * @returns {this}
    */
   setTileWorld(periodX, periodY, u0 = 0, v0 = 0) {
-    if (!this._hasComponents.SpriteRenderer) return this;
     const i = this.index;
     const px = periodX | 0;
     const py = (periodY == null ? periodX : periodY) | 0;
-    SpriteRenderer.repeatX[i] = px < 0 ? 0 : px > 65535 ? 65535 : px;
-    SpriteRenderer.repeatY[i] = py < 0 ? 0 : py > 65535 ? 65535 : py;
-    SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.WORLD;
-    SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
-    SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
-    SpriteRenderer.renderDirty[i] = 1;
+    const rx = px < 0 ? 0 : px > 65535 ? 65535 : px;
+    const ry = py < 0 ? 0 : py > 65535 ? 65535 : py;
+    if (this._hasComponents.SpriteRenderer) {
+      SpriteRenderer.repeatX[i] = rx;
+      SpriteRenderer.repeatY[i] = ry;
+      SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.WORLD;
+      SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
+      SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
+      SpriteRenderer.renderDirty[i] = 1;
+    }
+    if (this._hasComponents.MeshRenderer) {
+      MeshRenderer.repeatX[i] = rx;
+      MeshRenderer.repeatY[i] = ry;
+      MeshRenderer.tileMode[i] = SPRITE_TILE_MODE.WORLD;
+      MeshRenderer.tileOffsetU[i] = MeshRenderer.packTileOffset01(u0);
+      MeshRenderer.tileOffsetV[i] = MeshRenderer.packTileOffset01(v0);
+      MeshRenderer.renderDirty[i] = 1;
+    }
     return this;
   }
 
@@ -1110,29 +1121,49 @@ export class GameObject {
    * @returns {this}
    */
   setTileLocal(periodX, periodY, u0 = 0, v0 = 0) {
-    if (!this._hasComponents.SpriteRenderer) return this;
     const i = this.index;
     const px = periodX | 0;
     const py = (periodY == null ? periodX : periodY) | 0;
-    SpriteRenderer.repeatX[i] = px < 0 ? 0 : px > 65535 ? 65535 : px;
-    SpriteRenderer.repeatY[i] = py < 0 ? 0 : py > 65535 ? 65535 : py;
-    SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
-    SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
-    SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
-    SpriteRenderer.renderDirty[i] = 1;
+    const rx = px < 0 ? 0 : px > 65535 ? 65535 : px;
+    const ry = py < 0 ? 0 : py > 65535 ? 65535 : py;
+    if (this._hasComponents.SpriteRenderer) {
+      SpriteRenderer.repeatX[i] = rx;
+      SpriteRenderer.repeatY[i] = ry;
+      SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
+      SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
+      SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
+      SpriteRenderer.renderDirty[i] = 1;
+    }
+    if (this._hasComponents.MeshRenderer) {
+      MeshRenderer.repeatX[i] = rx;
+      MeshRenderer.repeatY[i] = ry;
+      MeshRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
+      MeshRenderer.tileOffsetU[i] = MeshRenderer.packTileOffset01(u0);
+      MeshRenderer.tileOffsetV[i] = MeshRenderer.packTileOffset01(v0);
+      MeshRenderer.renderDirty[i] = 1;
+    }
     return this;
   }
 
-  /** Stretch UV across the quad (default). */
+  /** Stretch UV across the quad / mesh (default). */
   clearTile() {
-    if (!this._hasComponents.SpriteRenderer) return this;
     const i = this.index;
-    SpriteRenderer.repeatX[i] = 0;
-    SpriteRenderer.repeatY[i] = 0;
-    SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.STRETCH;
-    SpriteRenderer.tileOffsetU[i] = 0;
-    SpriteRenderer.tileOffsetV[i] = 0;
-    SpriteRenderer.renderDirty[i] = 1;
+    if (this._hasComponents.SpriteRenderer) {
+      SpriteRenderer.repeatX[i] = 0;
+      SpriteRenderer.repeatY[i] = 0;
+      SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.STRETCH;
+      SpriteRenderer.tileOffsetU[i] = 0;
+      SpriteRenderer.tileOffsetV[i] = 0;
+      SpriteRenderer.renderDirty[i] = 1;
+    }
+    if (this._hasComponents.MeshRenderer) {
+      MeshRenderer.repeatX[i] = 0;
+      MeshRenderer.repeatY[i] = 0;
+      MeshRenderer.tileMode[i] = SPRITE_TILE_MODE.STRETCH;
+      MeshRenderer.tileOffsetU[i] = 0;
+      MeshRenderer.tileOffsetV[i] = 0;
+      MeshRenderer.renderDirty[i] = 1;
+    }
     return this;
   }
 
@@ -1142,25 +1173,47 @@ export class GameObject {
    * @returns {this}
    */
   bakeWorldTileToLocal() {
-    if (!this._hasComponents.SpriteRenderer) return this;
     const i = this.index;
-    const px = SpriteRenderer.repeatX[i];
-    const py = SpriteRenderer.repeatY[i];
-    if (px <= 0 && py <= 0) return this;
-    const visX = SpriteRenderer.boundsHalfW[i] * 2;
-    const visY = SpriteRenderer.boundsHalfH[i] * 2;
-    SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
-    if (px > 0) {
-      SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(
-        SpriteRenderer.bakeLocalOffsetFromWorld(this.x, px, visX)
-      );
+    if (this._hasComponents.SpriteRenderer) {
+      const px = SpriteRenderer.repeatX[i];
+      const py = SpriteRenderer.repeatY[i];
+      if (px > 0 || py > 0) {
+        const visX = SpriteRenderer.boundsHalfW[i] * 2;
+        const visY = SpriteRenderer.boundsHalfH[i] * 2;
+        SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
+        if (px > 0) {
+          SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(
+            SpriteRenderer.bakeLocalOffsetFromWorld(this.x, px, visX)
+          );
+        }
+        if (py > 0) {
+          SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(
+            SpriteRenderer.bakeLocalOffsetFromWorld(this.y, py, visY)
+          );
+        }
+        SpriteRenderer.renderDirty[i] = 1;
+      }
     }
-    if (py > 0) {
-      SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(
-        SpriteRenderer.bakeLocalOffsetFromWorld(this.y, py, visY)
-      );
+    if (this._hasComponents.MeshRenderer) {
+      const px = MeshRenderer.repeatX[i];
+      const py = MeshRenderer.repeatY[i];
+      if (px > 0 || py > 0) {
+        const visX = Collider.width ? Collider.width[i] : 1;
+        const visY = Collider.height ? Collider.height[i] : 1;
+        MeshRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
+        if (px > 0) {
+          MeshRenderer.tileOffsetU[i] = MeshRenderer.packTileOffset01(
+            SpriteRenderer.bakeLocalOffsetFromWorld(this.x, px, visX || 1)
+          );
+        }
+        if (py > 0) {
+          MeshRenderer.tileOffsetV[i] = MeshRenderer.packTileOffset01(
+            SpriteRenderer.bakeLocalOffsetFromWorld(this.y, py, visY || 1)
+          );
+        }
+        MeshRenderer.renderDirty[i] = 1;
+      }
     }
-    SpriteRenderer.renderDirty[i] = 1;
     return this;
   }
 
