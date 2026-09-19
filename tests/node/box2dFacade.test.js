@@ -8,6 +8,7 @@ import {
 } from '../../src/box2d/box2dCommandRing.js';
 import { bindMovedBodies } from '../../src/box2d/box2dMovedBodies.js';
 import { Box2d } from '../../src/core/box2d.js';
+import { Ray } from '../../src/core/ray.js';
 
 test('Box2d.explode enqueues EXPLODE on the command ring', { concurrency: false }, () => {
   const ring = createCommandRingSab(32);
@@ -76,6 +77,27 @@ test('Box2d.explode rejects a lone number (old console footgun) and NaN', { conc
     explode() { calls++; },
   });
   assert.equal(calls, 0);
+});
+
+test('Ray work does not increment Box2d ray stats', { concurrency: false }, () => {
+  const prevRay = Ray.collectDetailedStats;
+  const prevBox = Box2d.collectDetailedStats;
+  Ray.collectDetailedStats = true;
+  Box2d.collectDetailedStats = true;
+  try {
+    Ray.beginFrame();
+    Box2d.beginFrame();
+    Ray._enterStats();
+    Ray._leaveStats();
+    const ray = Ray.consumeStats();
+    const box = Box2d.consumeStats();
+    assert.equal(ray.count, 1);
+    assert.equal(box.count, 0);
+    assert.equal(box.ms, 0);
+  } finally {
+    Ray.collectDetailedStats = prevRay;
+    Box2d.collectDetailedStats = prevBox;
+  }
 });
 
 test('Box2d.getMovedBodies without bind returns empty list', { concurrency: false }, () => {

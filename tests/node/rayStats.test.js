@@ -2,9 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Ray } from '../../src/core/ray.js';
-import { Box2d } from '../../src/core/box2d.js';
 
-test('Ray beginFrame / consumeStats track outermost calls', () => {
+test('Ray beginFrame / consumeStats track outermost calls', { concurrency: false }, () => {
   const prev = Ray.collectDetailedStats;
   Ray.collectDetailedStats = true;
   try {
@@ -29,28 +28,7 @@ test('Ray beginFrame / consumeStats track outermost calls', () => {
   }
 });
 
-test('Ray work does not increment Box2d ray stats', () => {
-  const prevRay = Ray.collectDetailedStats;
-  const prevBox = Box2d.collectDetailedStats;
-  Ray.collectDetailedStats = true;
-  Box2d.collectDetailedStats = true;
-  try {
-    Ray.beginFrame();
-    Box2d.beginFrame();
-    Ray._enterStats();
-    Ray._leaveStats();
-    const ray = Ray.consumeStats();
-    const box = Box2d.consumeStats();
-    assert.equal(ray.count, 1);
-    assert.equal(box.count, 0);
-    assert.equal(box.ms, 0);
-  } finally {
-    Ray.collectDetailedStats = prevRay;
-    Box2d.collectDetailedStats = prevBox;
-  }
-});
-
-test('Ray.consumeStats clears accumulators', () => {
+test('Ray.consumeStats clears accumulators', { concurrency: false }, () => {
   const prev = Ray.collectDetailedStats;
   Ray.collectDetailedStats = true;
   try {

@@ -34,6 +34,11 @@ const REQUIRED = [
   'bullets',
   'spawn',
   'steadyCombat',
+  'decalBlit',
+  'sceneryCam',
+  'meshFillMoving',
+  'meshFillPan',
+  'meshFillLook',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {
