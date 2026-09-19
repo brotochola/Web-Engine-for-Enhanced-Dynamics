@@ -45,6 +45,7 @@ import {
 } from '../render/visibility/angularSweep.js';
 import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
+import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { TileMap } from '../core/tileMap.js';
 import {
   listGidPages,
@@ -451,6 +452,10 @@ class PixiRenderer extends AbstractWorker {
     this.decalsTotalTiles = 0;
     this.maxDecalTileUploadsPerFrame = RENDERER_DEFAULTS.maxDecalTileUploadsPerFrame;
     this._nextDecalTileScanIndex = 0;
+    this._decalTilesDirtyThisFrame = 0;
+    this._decalTilesUploadedThisFrame = 0;
+    this._meshFillInstancesThisFrame = 0;
+    this._meshRtDrawsThisFrame = 0;
 
     // SharedArrayBuffer views (shared with particle_worker)
     this.decalsTilesRGBA = null; // Uint8ClampedArray - RGBA pixel data
@@ -872,6 +877,18 @@ class PixiRenderer extends AbstractWorker {
     if (this.stats) {
       this.stats[RENDERER_STATS.FPS] = this.currentFPS;
       this.stats[RENDERER_STATS.STEP_MS] = this.stepTimeThisFrame;
+      this.stats[RENDERER_STATS.DECAL_TILES_DIRTY] = this._decalTilesDirtyThisFrame;
+      this.stats[RENDERER_STATS.DECAL_TILES_UPLOADED] = this._decalTilesUploadedThisFrame;
+      let sceneryN = 0;
+      const sc = this._scenery;
+      if (sc) {
+        for (let i = 0; i < sc.length; i++) {
+          if (sc[i]?.displayObject) sceneryN++;
+        }
+      }
+      this.stats[RENDERER_STATS.SCENERY_COUNT] = sceneryN;
+      this.stats[RENDERER_STATS.MESH_FILL_INSTANCES] = this._meshFillInstancesThisFrame;
+      this.stats[RENDERER_STATS.MESH_RT_DRAWS] = this._meshRtDrawsThisFrame;
       if (this.collectDetailedStats) {
         this.stats[RENDERER_STATS.DRAW_CALLS] = this.drawCallCount;
 
@@ -1392,6 +1409,10 @@ class PixiRenderer extends AbstractWorker {
     this.spritesTimeThisFrame = 0;
     this.customLayersTimeThisFrame = 0;
     this.miscTimeThisFrame = 0;
+    this._decalTilesDirtyThisFrame = 0;
+    this._decalTilesUploadedThisFrame = 0;
+    this._meshFillInstancesThisFrame = 0;
+    this._meshRtDrawsThisFrame = 0;
 
     const detail = this.collectDetailedStats;
     let t0 = 0;
@@ -1552,6 +1573,11 @@ class PixiRenderer extends AbstractWorker {
     if (totalTiles <= 0) return;
 
     const maxUploads = Math.min(this.maxDecalTileUploadsPerFrame || totalTiles, totalTiles);
+    let dirtyN = 0;
+    for (let i = 0; i < totalTiles; i++) {
+      if (this.decalsTilesDirty[i]) dirtyN++;
+    }
+    this._decalTilesDirtyThisFrame = dirtyN;
     let processed = 0;
     let scanned = 0;
     let tileIndex = this._nextDecalTileScanIndex % totalTiles;
@@ -1619,6 +1645,7 @@ class PixiRenderer extends AbstractWorker {
     }
 
     this._nextDecalTileScanIndex = tileIndex;
+    this._decalTilesUploadedThisFrame = processed;
   }
 
   /* =====================
@@ -3041,9 +3068,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _createLayerFullscreenGeometry(flipV) {
     // Look-to-rtOut + Sprite already flips V (GL RT write). Look on stage
     // samples the fill RT directly. Flip is backend-specific (_meshLookFlipV).
-    const uv = flipV
-      ? new Float32Array([0, 1, 1, 1, 1, 0, 0, 0])
-      : new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
+    const uv = meshLookFullscreenUvs(flipV);
     return new Geometry({
       attributes: {
         aPosition: { buffer: new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]), format: 'float32x2' },
@@ -4811,6 +4836,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           packedThisFrame = true;
         }
         densityMesh = cl.fillBatch.mesh;
+        this._meshFillInstancesThisFrame += cl.prevCount | 0;
         const camChanged =
           skip.camX !== this._renderCameraX ||
           skip.camY !== this._renderCameraY ||
@@ -4825,6 +4851,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const skipRt = this._colliderFillSkip[cl.layerId];
           if (!skipRt || !skipRt._skipRt) {
             this._renderMeshFillToRt(cl, densityMesh);
+            this._meshRtDrawsThisFrame++;
             if (skipRt) {
               skipRt.camX = this._renderCameraX;
               skipRt.camY = this._renderCameraY;

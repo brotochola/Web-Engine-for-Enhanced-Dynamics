@@ -25,6 +25,23 @@ test('single-worker stats readers share the same buffer layout', () => {
   assert.equal(reader[RENDERER_STATS.MSG_MS], 2.5);
 });
 
+test('RENDERER_STATS peel load keys sit inside stride 24', () => {
+  assert.equal(RENDERER_STATS.DECAL_TILES_DIRTY, 16);
+  assert.equal(RENDERER_STATS.DECAL_TILES_UPLOADED, 17);
+  assert.equal(RENDERER_STATS.SCENERY_COUNT, 18);
+  assert.equal(RENDERER_STATS.MESH_FILL_INSTANCES, 19);
+  assert.equal(RENDERER_STATS.MESH_RT_DRAWS, 20);
+  assert.equal(RENDERER_STATS.STRIDE_FLOATS, 24);
+  assert.equal(RENDERER_STATS.BUFFER_SIZE, 24 * 4);
+  const buffer = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);
+  const writer = createStatsWriter(buffer, RENDERER_STATS);
+  const reader = createStatsReader(buffer, RENDERER_STATS);
+  writer[RENDERER_STATS.DECAL_TILES_UPLOADED] = 48;
+  writer[RENDERER_STATS.MESH_RT_DRAWS] = 1;
+  assert.equal(reader[RENDERER_STATS.DECAL_TILES_UPLOADED], 48);
+  assert.equal(reader[RENDERER_STATS.MESH_RT_DRAWS], 1);
+});
+
 test('multi-worker stats views stay isolated by worker stride', () => {
   const workerCount = 2;
   const buffer = new SharedArrayBuffer(

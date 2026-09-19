@@ -198,6 +198,26 @@ Módulo: `src/workers/particleWorker.js` (la fila es de carga, no de un algoritm
 
 Sustituye a Predator emergente para el scoreboard. Smoke: KEPT (partículas −17.8%, logic0 −19.4%, carga OK, n=1). Product confirm con Predator **no cerró** `ACTIVE_PARTICLES` (+8.8%, cv ~75–80%). Esta noche: headed 5×25/18 en el bloque C. Si no cierra carga, FAIL, no se inventa el delta.
 
+### decalBlit — Blit de tiles de decal
+
+Módulo: `src/render/decalBlitPack.js` + `pixiWorker.updateDecalTiles`. Kernel: `decalBlitPackMicrobench.mjs`. Escena: `DecalBlitStressScene`. Primaria: `pixi_STEP_MS`. Carga: `DECAL_TILES_UPLOADED` (control `DECAL_TILES_DIRTY`). No es la fila `decals` (stamp / `particle_STEP_MS`). Hipótesis H1a: **dropped** (cacería 2026-09-19). 16k sprites + 32 uploads = 0.90 ms; 1024 uploads = 8.56 ms — la primaria es `ImageBitmap`, no el blit. No se implementó `InstancedSpriteBatch`.
+
+### sceneryCam — Cámara de scenery
+
+Módulo: `src/render/sceneryCamPack.js`. Kernel: `sceneryCamMicrobench.mjs`. Escena: `SceneryCamStressScene`. Primaria: `pixi_STEP_MS`. Carga: `SCENERY_COUNT`. Techo del engine: `Layer.MAX_LAYERS` 16 (4 built-in), 12 capas custom. No subir a 64–256 sin cambiar `MAX_LAYERS`. Hipótesis H1c: **dropped** — 12 capas, pixi 0.08 ms, FAIL / sin señal.
+
+### meshFillMoving — Pack MESH en movimiento
+
+Módulo: `src/render/colliderFillBatch.js`. Kernel: `colliderFillPackMicrobench.mjs` (B). Escena: `MeshFillMovingScene`. Primaria: `pixi_STEP_MS`. Carga: `BODY_COUNT`. Control: H2/H3 no pueden empeorar esta fila 3%.
+
+### meshFillPan — Fill MESH + cámara en órbita
+
+Módulo: `src/render/meshFillCamera.js`. Kernel: `meshCameraUniformMicrobench.mjs` (contrato, no medalla). Escena: `MeshFillPanScene` (islas estáticas; look **passthrough** porque sin shader no hay RT). Primaria: `pixi_STEP_MS`. Carga: `BODY_COUNT`, `MESH_FILL_INSTANCES`, `MESH_RT_DRAWS` (mediana ~1 o la fila midió skip RT). Hipótesis H2: **dropped** — draws 1, pixi 0.47 ms, FAIL / sin señal. No se implementó el uniform.
+
+### meshFillLook — Look MESH + cámara en órbita
+
+Módulo: `src/render/meshLookUv.js`. Sin kernel de velocidad. Escena: `MeshFillLookPanScene` (look `rockContour`). Primaria: `pixi_STEP_MS`. Carga: igual que `meshFillPan`. Hipótesis H3: **dropped** — pixi 0.46 ms. Contrato UV: `tests/node/meshLookUv.test.js`. Headed Y: `pnpm bench:mesh-look-uv` si se reabre.
+
 ---
 
 ## Fuera del catálogo: isolation multi-fixture

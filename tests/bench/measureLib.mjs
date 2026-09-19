@@ -242,6 +242,11 @@ export function extractMetrics(report) {
     preRender_STEP_MS: preRender.STEP_MS ?? 0,
     VISIBILITY_MS: preRender.VISIBILITY_MS ?? 0,
     pixi_STEP_MS: pixi.STEP_MS ?? 0,
+    DECAL_TILES_DIRTY: pixi.DECAL_TILES_DIRTY ?? 0,
+    DECAL_TILES_UPLOADED: pixi.DECAL_TILES_UPLOADED ?? 0,
+    SCENERY_COUNT: pixi.SCENERY_COUNT ?? 0,
+    MESH_FILL_INSTANCES: pixi.MESH_FILL_INSTANCES ?? 0,
+    MESH_RT_DRAWS: pixi.MESH_RT_DRAWS ?? 0,
     spatialMax_STEP_MS: spatialMax?.STEP_MS ?? 0,
     spatialMax_NEIGHBOR_MS: spatialMax?.NEIGHBOR_MS ?? 0,
     physics_loadPct: workerLoadPct(physics.STEP_MS ?? 0),
@@ -481,6 +486,11 @@ export function sceneMetricKeys(feature, scenePair) {
     'preRender_STEP_MS',
     'VISIBILITY_MS',
     'pixi_STEP_MS',
+    'DECAL_TILES_DIRTY',
+    'DECAL_TILES_UPLOADED',
+    'SCENERY_COUNT',
+    'MESH_FILL_INSTANCES',
+    'MESH_RT_DRAWS',
     'physics_loadPct',
   ];
   const want = [...(feature?.load || []), ...(feature?.primary || []), ...extra];

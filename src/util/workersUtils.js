@@ -33,8 +33,18 @@ export const RENDERER_STATS = Object.freeze({
   SPRITES_MS: 13,
   CUSTOM_LAYERS_MS: 14,
   MISC_MS: 15,
-  STRIDE_FLOATS: 16,
-  BUFFER_SIZE: 16 * 4,
+  /** Dirty decal tiles seen this frame (always on). */
+  DECAL_TILES_DIRTY: 16,
+  /** Decal tile ImageBitmap uploads this frame (always on). */
+  DECAL_TILES_UPLOADED: 17,
+  /** Live cover/static/tiling scenery display objects (always on). */
+  SCENERY_COUNT: 18,
+  /** Packed MESH fill instances last upload (always on). */
+  MESH_FILL_INSTANCES: 19,
+  /** MESH fill RT draws this frame; 0 means skip-RT (always on). */
+  MESH_RT_DRAWS: 20,
+  STRIDE_FLOATS: 24,
+  BUFFER_SIZE: 24 * 4,
 });
 
 /**
