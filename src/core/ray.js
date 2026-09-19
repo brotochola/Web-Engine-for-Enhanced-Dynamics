@@ -198,6 +198,7 @@ export class Ray {
   }
 
   static _castUnitDir(xFrom, yFrom, xTo, yTo, dirX, dirY, rayLength, mask) {
+    Ray._beginRayGen();
     // Get grid data from Grid class
     const invCellSize = Grid.invCellSize;
     const gridCols = Grid.gridWidth;
@@ -755,6 +756,7 @@ export class Ray {
     excludeA = -1,
     excludeB = -1
   ) {
+    Ray._beginRayGen();
     const invCellSize = Grid.invCellSize;
     const gridCols = Grid.gridWidth;
     const gridRows = Grid.gridHeight;
@@ -1095,8 +1097,14 @@ export class Ray {
       else if (Array.isArray(excludeEntities)) excludeArr = excludeEntities;
     }
 
+    const stamp = Ray._rayGenStamp;
+    const gen = Ray._rayGen;
+
     for (let i = 0; i < count; i++) {
       const entityIndex = gridEntities[cellBase + i];
+
+      if (stamp[entityIndex] === gen) continue;
+      stamp[entityIndex] = gen;
 
       if (useScalarExclude) {
         if (entityIndex === excludeA || entityIndex === excludeB) continue;

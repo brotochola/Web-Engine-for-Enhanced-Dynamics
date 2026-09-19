@@ -148,9 +148,11 @@ test('followEntity look-ahead ignores live vx until pose xy publishes', () => {
   stub.restore();
 });
 
-test('alignFollowCameraToLatchedPose slides queue cam by pack-vs-follow pose delta', () => {
-  const data = setupCamera({ zoom: 1, cx: 10, cy: 20 });
+test('alignFollowCameraToLatchedPose snaps queue cam to packed pose, not eased SAB + delta', () => {
+  const data = setupCamera({ zoom: 1, cx: 10, cy: 20, canvasW: 800, canvasH: 600 });
   const stub = stubPoseBody({ x: 10, y: 20, vx: 0, vy: 0 });
+  const halfW = 400;
+  const halfH = 300;
 
   Camera.followEntity(0, 0, 1, 1);
   const camX = Camera.x;
@@ -162,12 +164,12 @@ test('alignFollowCameraToLatchedPose slides queue cam by pack-vs-follow pose del
   stub.poseX[0] = 40;
   stub.poseY[0] = 25;
   const aligned = Camera.alignFollowCameraToLatchedPose(camX, camY, stub.poseX, stub.poseY);
-  assert.equal(aligned.x, camX + 30);
-  assert.equal(aligned.y, camY + 5);
+  assert.equal(aligned.x, 40 - halfW);
+  assert.equal(aligned.y, 25 - halfH);
 
   const same = Camera.alignFollowCameraToLatchedPose(camX, camY, new Float32Array([10]), new Float32Array([20]));
-  assert.equal(same.x, camX);
-  assert.equal(same.y, camY);
+  assert.equal(same.x, 10 - halfW);
+  assert.equal(same.y, 20 - halfH);
 
   Camera.follow(10, 20, 1, 1);
   assert.equal(data[Camera.IDX_FOLLOW_ENTITY], 0);
@@ -175,6 +177,40 @@ test('alignFollowCameraToLatchedPose slides queue cam by pack-vs-follow pose del
   assert.equal(raw.x, camX);
   assert.equal(raw.y, camY);
 
+  stub.restore();
+});
+
+test('alignFollowCameraToLatchedPose ignores ease lag on SAB cam', () => {
+  setupCamera({ zoom: 1, cx: 400, cy: 300, canvasW: 800, canvasH: 600 });
+  const stub = stubPoseBody({ x: 800, y: 300, vx: 0, vy: 0 });
+  Camera.bindDisplayPose(stub.poseX, stub.poseY, new Float32Array([1]), new Float32Array([0]), 1);
+
+  Camera.followEntity(0, 0, 0.1, 1);
+  const easedX = Camera.x;
+  const easedY = Camera.y;
+  const targetCamX = 800 - 400;
+  assert.ok(Math.abs(easedX - targetCamX) > 1e-3, 'SAB still easing');
+
+  stub.poseX[0] = 830;
+  stub.poseY[0] = 310;
+  const aligned = Camera.alignFollowCameraToLatchedPose(easedX, easedY, stub.poseX, stub.poseY);
+  assert.ok(Math.abs(aligned.x - (830 - 400)) < 1e-6);
+  assert.ok(Math.abs(aligned.y - (310 - 300)) < 1e-6);
+  assert.ok(Math.abs(aligned.x - (easedX + 30)) > 1e-3, 'must not be eased + pose delta');
+
+  stub.restore();
+});
+
+test('alignFollowCameraToLatchedPose keeps look-ahead lead on packed pose', () => {
+  setupCamera({ zoom: 1, cx: 10, cy: 20, canvasW: 800, canvasH: 600 });
+  const stub = stubPoseBody({ x: 10, y: 20, vx: 100, vy: 50 });
+  const look = 0.33;
+  Camera.followEntity(0, look, 1, 1);
+  stub.poseX[0] = 40;
+  stub.poseY[0] = 25;
+  const aligned = Camera.alignFollowCameraToLatchedPose(Camera.x, Camera.y, stub.poseX, stub.poseY);
+  assert.ok(Math.abs(aligned.x - (40 + 100 * look - 400)) < 1e-6);
+  assert.ok(Math.abs(aligned.y - (25 + 50 * look - 300)) < 1e-6);
   stub.restore();
 });
 

@@ -537,3 +537,56 @@ test('second WorldGrid.initialize keeps tune and dirty', () => {
     teardown();
   }
 });
+
+test('stopIfGrounded wall mass is grounded without marching squares', () => {
+  try {
+    makeFilledRect(40, 24, 8, 0, 16, 40, 22);
+    const hit = WorldGrid.extractIslandAt(20, 18, { mesh: false, stopIfGrounded: true });
+    assert.ok(hit);
+    assert.equal(hit.grounded, true);
+    assert.equal(hit.loops.length, 0);
+    assert.equal(hit.cellsMeta.length, 0);
+    const full = WorldGrid.extractIslandAt(20, 18);
+    assert.ok(full);
+    assert.equal(WorldGrid.isGrounded(full), true);
+    assert.ok(full.nodeCount >= 200);
+  } finally {
+    teardown();
+  }
+});
+
+test('clipped pebble inside a box does not touch chunk edge', () => {
+  try {
+    makeFilledRect(24, 20, 8, 4, 4, 7, 7);
+    const box = { minX: 0, minY: 0, maxX: 15, maxY: 15 };
+    const clipped = WorldGrid.extractIslands(box, { clip: true });
+    assert.equal(clipped.length, 1);
+    assert.equal(clipped[0].nodeCount, 9);
+    assert.equal(WorldGrid.touchesChunkEdge(clipped[0], box), false);
+    assert.equal(WorldGrid.isGrounded(clipped[0]), false);
+  } finally {
+    teardown();
+  }
+});
+
+test('stopIfGrounded massif next to pebble skips mesh; pebble stays small', () => {
+  try {
+    makeFilledRect(40, 16, 8, 0, 8, 40, 16);
+    for (let y = 2; y < 5; y++) {
+      for (let x = 2; x < 5; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+    }
+    const pebble = WorldGrid.extractIslandAt(3, 3);
+    assert.equal(pebble.nodeCount, 9);
+    assert.equal(WorldGrid.isGrounded(pebble), false);
+    const massif = WorldGrid.extractIslandAt(20, 10, { mesh: false, stopIfGrounded: true });
+    assert.ok(massif);
+    assert.equal(massif.grounded, true);
+    assert.equal(massif.loops.length, 0);
+    const meshed = WorldGrid.extractIslandAt(20, 10);
+    assert.ok(meshed);
+    assert.equal(WorldGrid.isGrounded(meshed), true);
+    assert.ok(meshed.nodeCount > 80);
+  } finally {
+    teardown();
+  }
+});

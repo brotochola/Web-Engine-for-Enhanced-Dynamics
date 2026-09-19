@@ -275,18 +275,32 @@ export class WorldGridManager extends GameObject {
     const cols = WorldGrid.cols;
     const n0 = snap.length;
     for (let s = 0; s < n0; s++) {
-      const clipped = WorldGrid.extractIslands(snap[s], { clip: true });
+      const shard = snap[s];
+      const clipped = WorldGrid.extractIslands(shard, { clip: true });
       for (let i = 0; i < clipped.length; i++) {
         const island = clipped[i];
         if (!island.nodeCount) continue;
+        if (WorldGrid.isGrounded(island)) continue;
+        if (!WorldGrid.touchesChunkEdge(island, shard)) {
+          const key = WorldGrid.islandKey(island);
+          if (key < 0 || seen[key]) continue;
+          seen[key] = 1;
+          const nodes = WorldGrid.copyIslandNodes(island);
+          const box = WorldGrid.packedBox(nodes);
+          this._spawnLooseIsland(nodes, island.material);
+          this._addShardsOverlapping(box, snap);
+          continue;
+        }
         const packed = island.nodeIdx[island.nodeStart];
         seeds.push(packed % cols, (packed / cols) | 0);
       }
     }
     for (let i = 0; i < seeds.length; i += 2) {
-      if (WorldGrid.isGroundedAt(seeds[i], seeds[i + 1])) continue;
-      const real = WorldGrid.extractIslandAt(seeds[i], seeds[i + 1]);
-      if (!real) continue;
+      const real = WorldGrid.extractIslandAt(seeds[i], seeds[i + 1], {
+        mesh: false,
+        stopIfGrounded: true,
+      });
+      if (!real || real.grounded) continue;
       const key = WorldGrid.islandKey(real);
       if (key < 0 || seen[key]) continue;
       seen[key] = 1;
@@ -335,6 +349,7 @@ export class WorldGridManager extends GameObject {
       layer: 'terrain',
     });
     if (!spawned) return false;
+    TerrainIsland.syncPhysics(spawned.index, true);
     this.dynamicIslands.push(spawned.index);
     return true;
   }
@@ -446,6 +461,7 @@ export class WorldGridManager extends GameObject {
         this._keepOverlapping(pool, keep, job.islandBox);
         continue;
       }
+      TerrainIsland.syncPhysics(spawned.index, false);
       keep.push({
         index: spawned.index,
         minX: job.islandBox.minX,

@@ -19,7 +19,7 @@ const {
 const HALF_W = 11;
 const HALF_H = 14;
 const THRUST_ACCEL = 3100;
-const LOOK_AHEAD = 0// 0.2;
+const LOOK_AHEAD = 0;
 const CAM_SMOOTH = 0.12;
 const MUZZLE_PAD = Math.hypot(HALF_W, HALF_H) + 4;
 
@@ -29,6 +29,8 @@ export class Ship extends GameObject {
   static instances = [];
   static components = [RigidBody, Collider, SpriteRenderer];
   static forceProcessOnLogicWorker = 0;
+
+  static noHit = { hit: false, distance: Infinity, hitX: 0, hitY: 0, entityIndex: -1 };
 
   setup() {
     this.collider.visualRange = 80;
@@ -102,12 +104,15 @@ export class Ship extends GameObject {
     const uy = dy * inv;
     const ox = this.x + ux * MUZZLE_PAD;
     const oy = this.y + uy * MUZZLE_PAD;
-    const rayLen = 1000 // Math.max(this.config.worldWidth, this.config.worldHeight) * 1.5;
+    const rayLen = Math.max(this.config.worldWidth, this.config.worldHeight) * 1.5;
 
     const gridHit = WorldGrid.castRay(ox, oy, ux, uy, rayLen);
-    const bodyHit = Ray.castWithInfo(
-      ox, oy, ox + ux * rayLen, oy + uy * rayLen, rayLen, RAY_MASK_NO_STATIC, null, this.index
-    );
+    const bodyMax = gridHit.hit ? gridHit.distance : rayLen;
+    const bodyHit = bodyMax > 1e-6
+      ? Ray.castWithInfo(
+        ox, oy, ox + ux * bodyMax, oy + uy * bodyMax, bodyMax, RAY_MASK_NO_STATIC, null, this.index
+      )
+      : Ship.noHit;
     const useGrid = gridHit.hit && (!bodyHit.hit || gridHit.distance <= bodyHit.distance);
     const useBody = bodyHit.hit && !useGrid;
     const hx = useGrid ? gridHit.x : useBody ? bodyHit.hitX : ox + ux * rayLen;

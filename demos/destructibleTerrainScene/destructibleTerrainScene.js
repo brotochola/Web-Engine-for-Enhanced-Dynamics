@@ -111,7 +111,7 @@ export class DestructibleTerrainScene extends Scene {
   create() {
     this._spawnWalls();
     Camera.setFree(false);
-    Camera.setZoom(0.5);
+    Camera.setZoom(0.9);
     Camera.centerOn(WORLD_W * 0.5, Math.max(48, WORLD_H * 0.08));
     this._buildPanel();
   }
@@ -143,6 +143,7 @@ export class DestructibleTerrainScene extends Scene {
       width: WORLD_W + t * 2,
       height: t,
       tint: 0x2d2d2d,
+      visualRange: t,
     });
     this.spawnEntity(Floor, {
       x: WORLD_W * 0.5,
@@ -150,6 +151,7 @@ export class DestructibleTerrainScene extends Scene {
       width: WORLD_W + t * 2,
       height: t,
       tint: 0x2d2d2d,
+      visualRange: t,
     });
     this.spawnEntity(Floor, {
       x: -t * 0.5 + 8,
@@ -157,6 +159,7 @@ export class DestructibleTerrainScene extends Scene {
       width: t,
       height: WORLD_H,
       tint: 0x2d2d2d,
+      visualRange: t,
     });
     this.spawnEntity(Floor, {
       x: WORLD_W + t * 0.5 - 8,
@@ -164,6 +167,7 @@ export class DestructibleTerrainScene extends Scene {
       width: t,
       height: WORLD_H,
       tint: 0x2d2d2d,
+      visualRange: t,
     });
   }
 

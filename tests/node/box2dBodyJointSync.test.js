@@ -53,6 +53,31 @@ test('body dirty: defer swallows marks until bump after activate', () => {
   assert.ok(words[0] & (1 << 5));
 });
 
+test('body dirty: child bump inside parent defer still publishes lifecycle', () => {
+  const entityCount = 16;
+  const buffers = {
+    bodyDirtyFlags: new SharedArrayBuffer(entityCount * 4),
+    bodyDirtyWords: new SharedArrayBuffer(4),
+    bodyGeneration: new SharedArrayBuffer(entityCount * 4),
+  };
+  bindBodySyncBuffers(buffers);
+  const flags = new Int32Array(buffers.bodyDirtyFlags);
+  const words = new Int32Array(buffers.bodyDirtyWords);
+
+  withBodyDirtyDeferred(() => {
+    markBodyDirty(7, BODY_DIRTY.GEOMETRY);
+    assert.equal(flags[7], 0);
+    assert.equal(words[0], 0);
+
+    assert.equal(bumpBodyGeneration(7), 1);
+    assert.equal(flags[7] & BODY_DIRTY.LIFECYCLE, BODY_DIRTY.LIFECYCLE);
+    assert.ok(words[0] & (1 << 7));
+
+    assert.equal(markBodyDirty(7, BODY_DIRTY.FILTER, true), true);
+    assert.equal(flags[7] & BODY_DIRTY.FILTER, BODY_DIRTY.FILTER);
+  });
+});
+
 test('body generation: bump increments and marks lifecycle dirty', () => {
   const entityCount = 16;
   const buffers = {

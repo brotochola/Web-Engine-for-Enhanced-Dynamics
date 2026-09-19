@@ -15,9 +15,10 @@ import { Mouse } from './mouse.js';
  *
  * followEntityIndex is 0 = none, else entityIndex+1 (0 is a valid entity).
  * followUsedX/Y are the entity pose xy followEntity read (not look-ahead).
- * Pre_render slides the queue camera by (latchedPose - followUsed) so the
- * packed sprite and camera share one pose generation.
- * followEntity holds pan when the latched pose generation is unchanged
+ * followTarget is pose + look-ahead. Pre_render snaps the queue camera to
+ * packed pose + (followTarget - followUsed) so MESH/tilemap do not get
+ * ease-on-SAB plus a pose-delta slide (double Y hitch when falling).
+ * followEntity holds SAB pan when the latched pose generation is unchanged
  * (physics skipped a publish). Otherwise the tilemap eases under a frozen car.
  *
  * Recommended threading model:
@@ -393,8 +394,10 @@ export class Camera {
   }
 
   /**
-   * Slide a camera top-left so it matches a later latched pose of the
-   * followEntity target. No-op if follow() wrote last (slot 0) or pose missing.
+   * Queue camera top-left for the packed followEntity pose.
+   * Snaps to packed + look-ahead lead. Ignores eased SAB cam so a newer
+   * pack does not add a pose-delta on top of an in-flight ease.
+   * No-op if follow() wrote last (slot 0) or pose missing.
    * @param {number} camX
    * @param {number} camY
    * @param {Float32Array|null} poseX
@@ -411,8 +414,20 @@ export class Camera {
     if (slot <= 0) return dest;
     const i = slot - 1;
     if (i < 0 || i >= poseX.length) return dest;
-    dest.x = camX + (poseX[i] - this._data[this.IDX_FOLLOW_USED_X]);
-    dest.y = camY + (poseY[i] - this._data[this.IDX_FOLLOW_USED_Y]);
+    const usedX = this._data[this.IDX_FOLLOW_USED_X];
+    const usedY = this._data[this.IDX_FOLLOW_USED_Y];
+    const leadX = this._data[this.IDX_FOLLOW_X] - usedX;
+    const leadY = this._data[this.IDX_FOLLOW_Y] - usedY;
+    const zoom = this._data[this.IDX_ZOOM] || 1;
+    const cw = this._canvasWidth;
+    const ch = this._canvasHeight;
+    if (!(cw > 0 && ch > 0 && zoom > 0)) {
+      dest.x = camX + (poseX[i] - usedX);
+      dest.y = camY + (poseY[i] - usedY);
+      return dest;
+    }
+    dest.x = poseX[i] + leadX - cw / (2 * zoom);
+    dest.y = poseY[i] + leadY - ch / (2 * zoom);
     return dest;
   }
 

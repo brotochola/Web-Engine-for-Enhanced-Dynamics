@@ -817,10 +817,12 @@
         }
       }
     }
-    // LIFECYCLE alone = create/destroy above. Property sync (clear shapes /
-    // BODY_TYPE / mass) needs other dirty bits — collider/rb `.active` setters
-    // publish LIFECYCLE|GEOMETRY|MASS or LIFECYCLE|BODY_TYPE|MASS so this runs.
-    if (hasBody[i] && !created && flags !== BODY_DIRTY.LIFECYCLE) {
+    // LIFECYCLE alone = create/destroy above. Extra bits (GEOMETRY / BODY_TYPE /
+    // FILTER / …) still need property sync — including the create frame.
+    // Spawn swallows markBodyDirty inside withBodyDirtyDeferred, then bumps
+    // LIFECYCLE; callers that OR GEOMETRY after spawn were ignored when
+    // created===true, so multi-fixture islands stayed shapeless until a later remesh.
+    if (hasBody[i] && flags !== BODY_DIRTY.LIFECYCLE) {
       syncBodyProperties(i, flags);
     }
     return changes;

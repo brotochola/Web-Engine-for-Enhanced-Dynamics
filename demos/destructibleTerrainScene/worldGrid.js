@@ -409,13 +409,19 @@ export class WorldGrid extends SharedResource {
     return extractIslands(this, box, opts);
   }
 
-  /** Flood the connected solid that owns cell (x,y). No chunk clip. */
-  static extractIslandAt(x, y) {
+  /**
+   * Flood the connected solid that owns cell (x,y). No chunk clip.
+   * @param {{ mesh?: boolean, stopIfGrounded?: boolean }} [opts]
+   */
+  static extractIslandAt(x, y, opts) {
     x = x | 0;
     y = y | 0;
     if (x < 0 || y < 0 || x >= this.cols || y >= this.rows) return null;
     if (this.amount[y * this.cols + x] < ISO) return null;
-    const list = extractIslands(this, { minX: x, minY: y, maxX: x, maxY: y }, { clip: false });
+    const merged = opts
+      ? { clip: false, mesh: opts.mesh, stopIfGrounded: opts.stopIfGrounded }
+      : { clip: false };
+    const list = extractIslands(this, { minX: x, minY: y, maxX: x, maxY: y }, merged);
     return list.length ? list[0] : null;
   }
 
@@ -443,6 +449,11 @@ export class WorldGrid extends SharedResource {
   /** True if any cell touches left, right, or bottom of the grid (bedrock). */
   static isGrounded(island) {
     return isGrounded(this, island);
+  }
+
+  /** True if a node sits on a box edge that is not world bedrock (island may continue). */
+  static touchesChunkEdge(island, box) {
+    return touchesChunkEdge(this, island, box);
   }
 
   /**
@@ -1387,6 +1398,10 @@ function extractIslands(field, box, opts) {
   const nodeIdx = field._nodeIdx;
   const clipOn = !!(opts && opts.clip && box);
   const clip = clipOn ? box : null;
+  const wantMesh = !(opts && opts.mesh === false);
+  const stopIfGrounded = !!(opts && opts.stopIfGrounded);
+  const lastX = cols - 1;
+  const lastY = rows - 1;
 
   if (field._visitGen > 0x7f000000) {
     visited.fill(0);
@@ -1421,6 +1436,7 @@ function extractIslands(field, box, opts) {
       let maxX = x;
       let minY = y;
       let maxY = y;
+      let grounded = false;
 
       while (qh < qt) {
         const packed = queue[qh++];
@@ -1431,6 +1447,11 @@ function extractIslands(field, box, opts) {
         if (cx > maxX) maxX = cx;
         if (cy < minY) minY = cy;
         if (cy > maxY) maxY = cy;
+
+        if (stopIfGrounded && (cx === 0 || cx === lastX || cy === lastY)) {
+          grounded = true;
+          break;
+        }
 
         if (cx + 1 <= floodMaxX) {
           const nIdx = packed + 1;
@@ -1463,6 +1484,41 @@ function extractIslands(field, box, opts) {
       }
 
       const nodeCount = nodeFill - nodeStart;
+      if (!grounded) {
+        grounded = isGroundedNodes(cols, lastX, lastY, nodeIdx, nodeStart, nodeCount);
+      }
+
+      let rec = _islandsOut[islandCount];
+      if (!rec) {
+        rec = {};
+        _islandsOut[islandCount] = rec;
+      }
+      rec.nodeIdx = nodeIdx;
+      rec.nodeStart = nodeStart;
+      rec.nodeCount = nodeCount;
+      rec.minX = minX;
+      rec.minY = minY;
+      rec.maxX = maxX;
+      rec.maxY = maxY;
+      rec.material = dominantMaterial(field, nodeIdx, nodeStart, nodeCount);
+      rec.grounded = grounded;
+      rec.cellCx = nodeCount
+        ? ((nodeIdx[nodeStart] % cols) + 0.5) * cellSize
+        : 0;
+      rec.cellCy = nodeCount
+        ? (((nodeIdx[nodeStart] / cols) | 0) + 0.5) * cellSize
+        : 0;
+
+      if (!wantMesh || (stopIfGrounded && grounded)) {
+        rec.polys = [];
+        rec.cellsMeta = [];
+        rec.contour = [];
+        rec.loops = [];
+        rec.areaPx = 0;
+        rec.areaCells = 0;
+        islandCount++;
+        continue;
+      }
 
       const polys = [];
       const segments = [];
@@ -1519,41 +1575,20 @@ function extractIslands(field, box, opts) {
         }
       }
 
-      let cellCx = 0;
-      let cellCy = 0;
-      if (nodeCount) {
-        const packed = nodeIdx[nodeStart];
-        cellCx = ((packed % cols) + 0.5) * cellSize;
-        cellCy = (((packed / cols) | 0) + 0.5) * cellSize;
-      } else if (cellsMeta.length) {
-        cellCx = (cellsMeta[0].cx + 0.5) * cellSize;
-        cellCy = (cellsMeta[0].cy + 0.5) * cellSize;
+      if (!rec.cellCx && cellsMeta.length) {
+        rec.cellCx = (cellsMeta[0].cx + 0.5) * cellSize;
+        rec.cellCy = (cellsMeta[0].cy + 0.5) * cellSize;
       }
       if (contour.length >= 3) {
-        contour = orientContourSolidInside(contour, cellCx, cellCy);
+        contour = orientContourSolidInside(contour, rec.cellCx, rec.cellCy);
       }
 
-      let rec = _islandsOut[islandCount];
-      if (!rec) {
-        rec = {};
-        _islandsOut[islandCount] = rec;
-      }
-      rec.nodeIdx = nodeIdx;
-      rec.nodeStart = nodeStart;
-      rec.nodeCount = nodeCount;
       rec.polys = polys;
       rec.cellsMeta = cellsMeta;
       rec.contour = contour;
       rec.loops = loops;
       rec.areaPx = areaPx;
       rec.areaCells = areaPx / (cellSize * cellSize);
-      rec.cellCx = cellCx;
-      rec.cellCy = cellCy;
-      rec.minX = minX;
-      rec.minY = minY;
-      rec.maxX = maxX;
-      rec.maxY = maxY;
-      rec.material = dominantMaterial(field, nodeIdx, nodeStart, nodeCount);
       islandCount++;
     }
   }
@@ -1932,8 +1967,25 @@ function packedBox(field, packed) {
   return box;
 }
 
+function isGroundedNodes(cols, lastX, lastY, packed, start, count) {
+  for (let i = 0; i < count; i++) {
+    const p = packed[start + i];
+    const x = p % cols;
+    const y = (p / cols) | 0;
+    if (x === 0 || x === lastX || y === lastY) return true;
+  }
+  return false;
+}
+
 function isGrounded(field, island) {
   if (!island || !island.nodeCount) return false;
+  if (island.grounded) return true;
+  const cols = field.cols;
+  return isGroundedNodes(cols, cols - 1, field.rows - 1, island.nodeIdx, island.nodeStart, island.nodeCount);
+}
+
+function touchesChunkEdge(field, island, box) {
+  if (!island || !island.nodeCount || !box) return false;
   const cols = field.cols;
   const lastX = cols - 1;
   const lastY = field.rows - 1;
@@ -1944,7 +1996,10 @@ function isGrounded(field, island) {
     const p = packed[start + i];
     const x = p % cols;
     const y = (p / cols) | 0;
-    if (x === 0 || x === lastX || y === lastY) return true;
+    if (x === box.minX && box.minX > 0) return true;
+    if (x === box.maxX && box.maxX < lastX) return true;
+    if (y === box.minY && box.minY > 0) return true;
+    if (y === box.maxY && box.maxY < lastY) return true;
   }
   return false;
 }

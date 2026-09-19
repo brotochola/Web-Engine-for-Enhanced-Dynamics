@@ -28,7 +28,9 @@ class Floor extends GameObject {
         this.rotation = config.rotation ?? 0;
 
         const halfDiagonal = Math.hypot(width, height) / 2;
-        this.collider.visualRange = halfDiagonal + 200;
+        this.collider.visualRange = config.visualRange != null
+          ? config.visualRange
+          : halfDiagonal + 200;
 
         const sprite = config.sprite || '_white';
         this.setSprite(sprite);

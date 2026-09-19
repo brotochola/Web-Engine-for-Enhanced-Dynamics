@@ -814,8 +814,8 @@ class PreRenderWorker extends AbstractWorker {
             this._frameCameraX = this.cameraData[1];
             this._frameCameraY = this.cameraData[2];
 
-            // followEntity ran on logic's pose latch. Slide to this pack's pose
-            // so the queue camera and _displayPose share one generation.
+            // followEntity: snap queue cam to this pack's pose + look-ahead
+            // lead. Do not add (pack - followUsed) onto the eased SAB cam.
             const aligned = Camera.alignFollowCameraToLatchedPose(
                 this._frameCameraX, this._frameCameraY, this._poseX, this._poseY
             );

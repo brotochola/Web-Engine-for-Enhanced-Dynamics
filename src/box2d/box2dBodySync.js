@@ -43,8 +43,8 @@ export function withBodyDirtyDeferred(fn) {
   }
 }
 
-export function markBodyDirty(entityIndex, flags = BODY_DIRTY.LIFECYCLE) {
-  if (dirtyDeferDepth > 0) return false;
+export function markBodyDirty(entityIndex, flags = BODY_DIRTY.LIFECYCLE, force = false) {
+  if (dirtyDeferDepth > 0 && !force) return false;
   if (!dirtyFlags || !dirtyWords) return false;
   const i = entityIndex | 0;
   if (i < 0 || i >= dirtyFlags.length) return false;
@@ -58,6 +58,8 @@ export function bumpBodyGeneration(entityIndex) {
   const i = entityIndex | 0;
   if (i < 0 || i >= generation.length) return 0;
   const next = (Atomics.add(generation, i, 1) + 1) >>> 0;
-  markBodyDirty(i, BODY_DIRTY.LIFECYCLE);
+  // Parent onSpawned stays inside withBodyDirtyDeferred. Child spawn still
+  // needs this publish or Box2D never creates the body.
+  markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);
   return next;
 }
