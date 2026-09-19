@@ -372,6 +372,53 @@ test('seedWorld(7) has solid, a cave, and sky spawn in empty', () => {
   }
 });
 
+test('asymmetric amounts make a corner contour that is not 45°', () => {
+  try {
+    WorldGrid.attach(3, 3, 10);
+    WorldGrid.setAmount(0, 0, 0.9, MAT_DIRT);
+    WorldGrid.setAmount(1, 0, 0.02);
+    WorldGrid.setAmount(0, 1, 0.08);
+    WorldGrid.setAmount(1, 1, 0);
+    const islands = WorldGrid.extractIslands();
+    assert.equal(islands.length, 1);
+    const parts = islands[0].cellsMeta[0] && islands[0].cellsMeta[0].parts;
+    assert.ok(parts && parts[0] && parts[0].verts.length >= 3);
+    const verts = parts[0].verts;
+    let found = false;
+    for (let i = 0; i < verts.length; i++) {
+      for (let j = i + 1; j < verts.length; j++) {
+        const dx = Math.abs(verts[j].x - verts[i].x);
+        const dy = Math.abs(verts[j].y - verts[i].y);
+        if (dx < 1e-6 || dy < 1e-6) continue;
+        assert.ok(Math.abs(dx - dy) > 1e-3);
+        found = true;
+      }
+    }
+    assert.equal(found, true);
+  } finally {
+    teardown();
+  }
+});
+
+test('seedWorld writes density on both sides of ISO', () => {
+  try {
+    WorldGrid.attach(80, 40, 10);
+    WorldGrid.seedWorld(7);
+    let midSolid = false;
+    let midEmpty = false;
+    for (let i = 0; i < WorldGrid.amount.length; i++) {
+      const a = WorldGrid.amount[i];
+      if (a > ISO && a < 1) midSolid = true;
+      if (a > 0 && a < ISO) midEmpty = true;
+      if (midSolid && midEmpty) break;
+    }
+    assert.equal(midSolid, true);
+    assert.equal(midEmpty, true);
+  } finally {
+    teardown();
+  }
+});
+
 test('isGrounded: wall-touching mass stays; cut cap is loose', () => {
   try {
     WorldGrid.attach(40, 24, 8);

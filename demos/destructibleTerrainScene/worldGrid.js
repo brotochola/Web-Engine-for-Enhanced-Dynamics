@@ -71,6 +71,9 @@ const SEED_SCALE = 0.055;
 const SEED_THRESHOLD = 0.12;
 const SEED_Y_BIAS = 0.55;
 const SEED_OCTAVES = 3;
+const SEED_BAND = 0.3;
+const SEED_JITTER = 0.25;
+const ISO_EMPTY = ISO - 1e-4;
 const SEED_STONE_FRAC = 0.55;
 const SEED_SKY_FRAC = 0.12;
 export const SEED_STAMP = {
@@ -1676,6 +1679,41 @@ function smoothOccupancy(solid, cols, rows, passes = 2) {
   return cur;
 }
 
+function seedFbm(noise, x, y) {
+  return noise.fbm(
+    (x + 0.5) * SEED_SCALE,
+    (y + 0.5) * SEED_SCALE,
+    SEED_OCTAVES,
+    1,
+    1,
+    2,
+    0.5,
+  );
+}
+
+/** Rewrite amount from occupancy + noise. Solid stays >= ISO; empty stays < ISO. */
+function writeClampedDensity(field, occ, noise) {
+  const cols = field.cols;
+  const rows = field.rows;
+  const amount = field.amount;
+  const skyEnd = Math.max(2, Math.floor(rows * SEED_SKY_FRAC));
+  const depthDen = Math.max(1, rows - 1 - skyEnd);
+  for (let y = 0; y < rows; y++) {
+    const depth = rows > 1 ? (y - skyEnd) / depthDen : 1;
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      const n = seedFbm(noise, x, y);
+      const n01 = clamp01(0.5 + 0.5 * n);
+      const signed = n + SEED_Y_BIAS * depth - SEED_THRESHOLD;
+      if (occ[i]) {
+        amount[i] = clamp(ISO + (1 - ISO) * clamp01(signed / SEED_BAND + SEED_JITTER * n01), ISO, 1);
+      } else {
+        amount[i] = clamp(ISO_EMPTY * clamp01(-signed / SEED_BAND + SEED_JITTER * n01), 0, ISO_EMPTY);
+      }
+    }
+  }
+}
+
 function seedWorld(field, seed) {
   const cols = field.cols;
   const rows = field.rows;
@@ -1689,15 +1727,7 @@ function seedWorld(field, seed) {
   for (let y = skyEnd; y < rows; y++) {
     const depth = rows > 1 ? (y - skyEnd) / Math.max(1, rows - 1 - skyEnd) : 1;
     for (let x = 0; x < cols; x++) {
-      const n = noise.fbm(
-        (x + 0.5) * SEED_SCALE,
-        (y + 0.5) * SEED_SCALE,
-        SEED_OCTAVES,
-        1,
-        1,
-        2,
-        0.5,
-      );
+      const n = seedFbm(noise, x, y);
       if (n + SEED_Y_BIAS * depth > SEED_THRESHOLD) raw[y * cols + x] = 1;
     }
   }
@@ -1716,6 +1746,9 @@ function seedWorld(field, seed) {
     }
   }
   stampDemoShapes(field);
+  const occ = new Uint8Array(cols * rows);
+  for (let i = 0; i < occ.length; i++) occ[i] = amount[i] >= ISO ? 1 : 0;
+  writeClampedDensity(field, occ, noise);
   field.markAllDirty();
 }
 
