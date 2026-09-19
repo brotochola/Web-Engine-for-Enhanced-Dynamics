@@ -49,6 +49,7 @@ import {
   listGidPages,
   gidPageSize,
   gidPageByteLength,
+  gidPageHasTile,
   packGidPageRgba8,
 } from '../render/tilemapGid.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
@@ -320,6 +321,12 @@ class PixiRenderer extends AbstractWorker {
     /** @type {Array<{kind:string, displayObject:*, parallaxX:number, parallaxY:number, cover?:object, tilemap?:object}|null>} */
     this._scenery = [];
     this._tilemapGidProgramOpts = null;
+    this._sceneryCamDirty = true;
+    this._sceneryCamZoom = NaN;
+    this._sceneryCamX = NaN;
+    this._sceneryCamY = NaN;
+    this._sceneryCamCw = -1;
+    this._sceneryCamCh = -1;
     this._coverBgArgs = null;
     this._coverBgOut = null;
 
@@ -3389,7 +3396,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _bindScenery(layerId, layerName, entry) {
+    const tmScale = entry.tilemap && entry.tilemap.scale;
+    entry.sx = tmScale ? +tmScale.x || 1 : 1;
+    entry.sy = tmScale ? +tmScale.y || 1 : 1;
+    entry.px = Number.isFinite(entry.parallaxX) ? entry.parallaxX : 1;
+    entry.py = Number.isFinite(entry.parallaxY) ? entry.parallaxY : 1;
     this._scenery[layerId] = entry;
+    this._sceneryCamDirty = true;
     if (entry.displayObject) {
       this._registerLayerDisplayObject(layerName, entry.displayObject);
       this.pixiApp.stage.addChild(entry.displayObject);
@@ -3455,20 +3468,34 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _applySceneryCamera(zoom, cameraX, cameraY) {
+    const cw = this.canvasWidth;
+    const ch = this.canvasHeight;
+    if (
+      !this._sceneryCamDirty &&
+      zoom === this._sceneryCamZoom &&
+      cameraX === this._sceneryCamX &&
+      cameraY === this._sceneryCamY &&
+      cw === this._sceneryCamCw &&
+      ch === this._sceneryCamCh
+    ) {
+      return;
+    }
+    this._sceneryCamDirty = false;
+    this._sceneryCamZoom = zoom;
+    this._sceneryCamX = cameraX;
+    this._sceneryCamY = cameraY;
+    this._sceneryCamCw = cw;
+    this._sceneryCamCh = ch;
     for (let i = 0; i < this._scenery.length; i++) {
       const s = this._scenery[i];
-      if (!s?.displayObject) continue;
+      if (!s || !s.displayObject) continue;
       if (s.kind === 'cover' && s.cover) {
         this._applyCoverTransform(s);
         continue;
       }
-      const px = Number.isFinite(s.parallaxX) ? s.parallaxX : 1;
-      const py = Number.isFinite(s.parallaxY) ? s.parallaxY : 1;
-      const sx = s.tilemap?.scale.x ?? 1;
-      const sy = s.tilemap?.scale.y ?? 1;
-      s.displayObject.scale.set(zoom * sx, zoom * sy);
-      s.displayObject.x = -cameraX * zoom * px;
-      s.displayObject.y = -cameraY * zoom * py;
+      s.displayObject.scale.set(zoom * s.sx, zoom * s.sy);
+      s.displayObject.x = -cameraX * zoom * s.px;
+      s.displayObject.y = -cameraY * zoom * s.py;
     }
   }
 
@@ -3605,6 +3632,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const page = pages[pi];
         const { pageW, pageH } = gidPageSize(page);
         if (pageW <= 0 || pageH <= 0) continue;
+        if (!gidPageHasTile(layer.data, tileMapData.mapWidth, page)) continue;
         const bytes = new Uint8Array(gidPageByteLength(pageW, pageH));
         packGidPageRgba8(layer.data, tileMapData.mapWidth, page, bytes);
         const gidSource = TextureSource.from({
@@ -3617,6 +3645,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           autoGenerateMipmaps: false,
           alphaMode: 'no-premultiply-alpha',
         });
+        gidSource.autoGarbageCollect = false;
         if (gidSource.style) {
           gidSource.style.scaleMode = 'nearest';
           gidSource.style.addressMode = 'clamp-to-edge';

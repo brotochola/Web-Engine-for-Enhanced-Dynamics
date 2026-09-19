@@ -2,7 +2,7 @@
 precision highp float;
 precision highp int;
 
-in vec2 vWorld;
+in vec2 vPageUv;
 uniform vec2 uTileSize;
 uniform vec2 uPageOrigin;
 uniform vec2 uPageSize;
@@ -25,9 +25,12 @@ uint unpackGid(vec4 c) {
 void main() {
   vec2 tileSize = uTileSize;
   if (tileSize.x <= 0.0 || tileSize.y <= 0.0) discard;
-  ivec2 mapTile = ivec2(floor(vWorld / tileSize));
-  ivec2 local = mapTile - ivec2(uPageOrigin);
-  ivec2 page = ivec2(uPageSize);
+  vec2 pageSize = uPageSize;
+  if (pageSize.x <= 0.0 || pageSize.y <= 0.0) discard;
+
+  vec2 tileF = vPageUv * pageSize + 1e-5;
+  ivec2 local = ivec2(floor(tileF));
+  ivec2 page = ivec2(pageSize);
   if (local.x < 0 || local.y < 0 || local.x >= page.x || local.y >= page.y) discard;
 
   uint raw = unpackGid(texelFetch(uGid, local, 0));
@@ -41,7 +44,7 @@ void main() {
   int tileId = int(gid) - firstGid;
   if (tileId < 0) discard;
 
-  vec2 localUv = fract(vWorld / tileSize);
+  vec2 localUv = fract(tileF);
   if (flipD) {
     localUv = localUv.yx;
   }

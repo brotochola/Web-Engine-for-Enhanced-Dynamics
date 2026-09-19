@@ -29,7 +29,7 @@ struct TilemapUniforms {
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
-  @location(0) vWorld: vec2<f32>,
+  @location(0) vPageUv: vec2<f32>,
 }
 
 fn unpackGid(c: vec4<f32>) -> u32 {
@@ -43,7 +43,13 @@ fn unpackGid(c: vec4<f32>) -> u32 {
 @vertex
 fn mainVert(@location(0) aPosition: vec2<f32>) -> VertexOut {
   var out: VertexOut;
-  out.vWorld = aPosition;
+  let tileSize = uniforms.uTileSize;
+  let pageSize = uniforms.uPageSize;
+  if (tileSize.x > 0.0 && tileSize.y > 0.0 && pageSize.x > 0.0 && pageSize.y > 0.0) {
+    out.vPageUv = (aPosition / tileSize - uniforms.uPageOrigin) / pageSize;
+  } else {
+    out.vPageUv = vec2<f32>(0.0);
+  }
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(aPosition, 1.0);
   out.position = vec4<f32>(clip.xy, 0.0, 1.0);
@@ -54,9 +60,12 @@ fn mainVert(@location(0) aPosition: vec2<f32>) -> VertexOut {
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let tileSize = uniforms.uTileSize;
   if (tileSize.x <= 0.0 || tileSize.y <= 0.0) { discard; }
-  let mapTile = vec2<i32>(floor(in.vWorld / tileSize));
-  let local = mapTile - vec2<i32>(uniforms.uPageOrigin);
-  let page = vec2<i32>(uniforms.uPageSize);
+  let pageSize = uniforms.uPageSize;
+  if (pageSize.x <= 0.0 || pageSize.y <= 0.0) { discard; }
+
+  let tileF = in.vPageUv * pageSize + vec2<f32>(1e-5);
+  let local = vec2<i32>(floor(tileF));
+  let page = vec2<i32>(pageSize);
   if (local.x < 0 || local.y < 0 || local.x >= page.x || local.y >= page.y) { discard; }
 
   let raw = unpackGid(textureLoad(uGid, local, 0));
@@ -69,7 +78,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let tileId = i32(gid) - i32(uniforms.uFirstGid);
   if (tileId < 0) { discard; }
 
-  var localUv = fract(in.vWorld / tileSize);
+  var localUv = fract(tileF);
   if (flipD) {
     localUv = localUv.yx;
   }

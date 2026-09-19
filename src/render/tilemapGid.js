@@ -4,7 +4,12 @@
  * decodes flip flags the same way the GLSL/WGSL fragment shaders do.
  */
 
-/** WebGL2 minimum MAX_TEXTURE_SIZE. One Mesh + GID texture per page. */
+/**
+ * One Mesh + GID texture per page.
+ * Stay at WebGL2's portable max (2048). Do not raise to the GPU's MAX_TEXTURE_SIZE:
+ * a map like carScene (2082 wide) would become one NPOT 2082 texture (driver hitch)
+ * and WebGPU row bytes 2082*4 are not a multiple of 256.
+ */
 export const TILEMAP_GID_PAGE_TILES = 2048;
 
 export const TILED_FLIP_H = 0x80000000;
@@ -50,6 +55,29 @@ export function gidPageByteLength(pageW, pageH) {
 }
 
 /**
+ * True if any GID in the page rect is non-zero. Early-outs on the first hit.
+ * Load-only. Used so empty pages never get a Mesh / texture.
+ * @param {ArrayLike<number>} layerInt32
+ * @param {number} mapW
+ * @param {{ minX: number, minY: number, maxX: number, maxY: number }} pageRect
+ */
+export function gidPageHasTile(layerInt32, mapW, pageRect) {
+  const mw = mapW | 0;
+  const minX = pageRect.minX | 0;
+  const minY = pageRect.minY | 0;
+  const maxX = pageRect.maxX | 0;
+  const maxY = pageRect.maxY | 0;
+  if (maxX <= minX || maxY <= minY) return false;
+  for (let y = minY; y < maxY; y++) {
+    const row = y * mw;
+    for (let x = minX; x < maxX; x++) {
+      if (layerInt32[row + x]) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Pack a map-local tile rect into RGBA8 (byte-identical to Int32 little-endian).
  * @param {ArrayLike<number>} layerInt32 row-major mapW * mapH
  * @param {number} mapW
@@ -70,6 +98,17 @@ export function packGidPageRgba8(layerInt32, mapW, pageRect, outUint8) {
     throw new Error(`packGidPageRgba8: out needs ${need} bytes`);
   }
   if (pageW <= 0 || pageH <= 0) return 0;
+  const cells = pageW * pageH;
+  if ((outUint8.byteOffset & 3) === 0 && typeof layerInt32.subarray === 'function') {
+    const out32 = new Uint32Array(outUint8.buffer, outUint8.byteOffset, cells);
+    let dest = 0;
+    for (let y = minY; y < maxY; y++) {
+      const row = y * mw + minX;
+      out32.set(layerInt32.subarray(row, row + pageW), dest);
+      dest += pageW;
+    }
+    return cells * 4;
+  }
   let o = 0;
   for (let y = minY; y < maxY; y++) {
     const row = y * mw;
@@ -97,6 +136,32 @@ export function decodeTiledGid(raw) {
     flipH: (u & TILED_FLIP_H) !== 0,
     flipV: (u & TILED_FLIP_V) !== 0,
     flipD: (u & TILED_FLIP_D) !== 0,
+  };
+}
+
+/** Same epsilon the GID shaders add before floor/fract on page UV. */
+export const TILEMAP_GID_PAGE_UV_EPS = 1e-5;
+
+/**
+ * Page UV (0..1, corners of the page quad) → local tile + UV inside that tile.
+ * Matches the GLSL/WGSL fragment: interpolate 0..1, not world pixels (those lose
+ * precision across a 2048-tile quad and the ground looks like a lower FPS).
+ * @param {number} pageU
+ * @param {number} pageV
+ * @param {number} pageW
+ * @param {number} pageH
+ * @returns {{ localX: number, localY: number, localU: number, localV: number }}
+ */
+export function pageUvToLocalTile(pageU, pageV, pageW, pageH) {
+  const fx = +pageU * +pageW + TILEMAP_GID_PAGE_UV_EPS;
+  const fy = +pageV * +pageH + TILEMAP_GID_PAGE_UV_EPS;
+  const localX = Math.floor(fx);
+  const localY = Math.floor(fy);
+  return {
+    localX,
+    localY,
+    localU: fx - localX,
+    localV: fy - localY,
   };
 }
 

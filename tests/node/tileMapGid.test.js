@@ -9,11 +9,13 @@ import {
   listGidPages,
   gidPageSize,
   gidPageByteLength,
+  gidPageHasTile,
   packGidPageRgba8,
   unpackGidRgba8,
   decodeTiledGid,
   applyTiledLocalUv,
   tiledGidAtlasUv,
+  pageUvToLocalTile,
 } from '../../src/render/tilemapGid.js';
 
 test('TILEMAP_GID_PAGE_TILES is WebGL2 minimum max texture size', () => {
@@ -30,6 +32,13 @@ test('listGidPages one page when the map fits', () => {
   const pages = listGidPages(32, 16, 2048);
   assert.equal(pages.length, 1);
   assert.deepEqual(pages[0], { minX: 0, minY: 0, maxX: 32, maxY: 16 });
+});
+
+test('gidPageHasTile early-outs and ignores empty cells', () => {
+  const data = new Int32Array(8);
+  data[5] = TILED_FLIP_H | 3;
+  assert.equal(gidPageHasTile(data, 4, { minX: 0, minY: 0, maxX: 2, maxY: 1 }), false);
+  assert.equal(gidPageHasTile(data, 4, { minX: 0, minY: 1, maxX: 4, maxY: 2 }), true);
 });
 
 test('listGidPages splits a map that does not divide the page size', () => {
@@ -71,6 +80,14 @@ test('packGidPageRgba8 is byte-exact little-endian with the SAB Int32', () => {
   assert.equal(at(2, 1), data[1 * mapW + 2] >>> 0);
   assert.equal(at(2, 1), (7 | TILED_FLIP_H) >>> 0);
   assert.equal(at(3, 2), 0);
+});
+
+test('packGidPageRgba8 unaligned out uses the byte fallback', () => {
+  const data = new Int32Array([1, 2, 3, 4]);
+  const out = new Uint8Array(new ArrayBuffer(17), 1, 16);
+  assert.equal(packGidPageRgba8(data, 2, { minX: 0, minY: 0, maxX: 2, maxY: 2 }, out), 16);
+  assert.equal(unpackGidRgba8(out[0], out[1], out[2], out[3]), 1);
+  assert.equal(unpackGidRgba8(out[12], out[13], out[14], out[15]), 4);
 });
 
 test('packGidPageRgba8 throws if the out buffer is short', () => {
@@ -129,4 +146,18 @@ test('tiledGidAtlasUv inset 0.5 and flag remaps match the shader contract', () =
   // H: local u 0 → 1; px = 0.5 + 1*15 = 15.5
   assert.equal(flipped.u, 15.5 / 128);
   assert.equal(flipped.v, 0.5 / 64);
+});
+
+test('pageUvToLocalTile matches shader floor/fract on 0..1 page UV', () => {
+  const mid = pageUvToLocalTile(0.5, 0.25, 2048, 416);
+  assert.equal(mid.localX, 1024);
+  assert.equal(mid.localY, 104);
+  assert.ok(Math.abs(mid.localU - 0.0) < 1e-4);
+  assert.ok(Math.abs(mid.localV - 0.0) < 1e-4);
+
+  const inside = pageUvToLocalTile((10 + 0.3) / 2048, (5 + 0.8) / 416, 2048, 416);
+  assert.equal(inside.localX, 10);
+  assert.equal(inside.localY, 5);
+  assert.ok(Math.abs(inside.localU - 0.3) < 1e-4);
+  assert.ok(Math.abs(inside.localV - 0.8) < 1e-4);
 });
