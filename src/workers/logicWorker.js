@@ -584,7 +584,13 @@ class LogicWorker extends AbstractWorker {
   /** Read-only pose latch for Camera.followEntity. Pre_render owns sync[1]. */
   _latchDisplayPose() {
     this._latchPose(false);
-    Camera.bindDisplayPose(this._poseX, this._poseY, this._poseRotC, this._poseRotS);
+    Camera.bindDisplayPose(
+      this._poseX,
+      this._poseY,
+      this._poseRotC,
+      this._poseRotS,
+      this._poseReadyFrame
+    );
   }
 
   update(deltaTime, dtRatio, resuming) {

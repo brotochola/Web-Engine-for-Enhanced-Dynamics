@@ -177,3 +177,25 @@ test('alignFollowCameraToLatchedPose slides queue cam by pack-vs-follow pose del
 
   stub.restore();
 });
+
+test('followEntity holds pan when pose generation is unchanged', () => {
+  const data = setupCamera({ zoom: 1, cx: 400, cy: 300, canvasW: 800, canvasH: 600 });
+  const stub = stubPoseBody({ x: 800, y: 300, vx: 0, vy: 0 });
+  Camera.bindDisplayPose(stub.poseX, stub.poseY, new Float32Array([1]), new Float32Array([0]), 1);
+
+  Camera.followEntity(0, 0, 0.1, 1);
+  const xAfterFirst = data[1];
+  const yAfterFirst = data[2];
+  const targetCamX = 800 - 400;
+  assert.ok(Math.abs(xAfterFirst - targetCamX) > 1e-3, 'first follow only eases part way');
+
+  Camera.followEntity(0, 0, 0.1, 1);
+  assert.equal(data[1], xAfterFirst);
+  assert.equal(data[2], yAfterFirst);
+
+  Camera.bindDisplayPose(stub.poseX, stub.poseY, new Float32Array([1]), new Float32Array([0]), 2);
+  Camera.followEntity(0, 0, 0.1, 1);
+  assert.notEqual(data[1], xAfterFirst);
+
+  stub.restore();
+});

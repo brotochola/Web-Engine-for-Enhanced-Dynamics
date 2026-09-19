@@ -17,6 +17,8 @@ import { Mouse } from './mouse.js';
  * followUsedX/Y are the entity pose xy followEntity read (not look-ahead).
  * Pre_render slides the queue camera by (latchedPose - followUsed) so the
  * packed sprite and camera share one pose generation.
+ * followEntity holds pan when the latched pose generation is unchanged
+ * (physics skipped a publish). Otherwise the tilemap eases under a frozen car.
  *
  * Recommended threading model:
  * - Single writer for Camera.follow/centerOn/setPosition/setZoom
@@ -69,6 +71,10 @@ export class Camera {
   static _poseY = null;
   static _poseRotC = null;
   static _poseRotS = null;
+  /** poseSync readyFrame from the last bindDisplayPose (0 = unknown). */
+  static _poseReadyFrame = 0;
+  /** readyFrame followEntity last eased against. */
+  static _followPoseReady = 0;
 
   // Look-ahead vel frozen to pose-xy publishes (live HEAP vx wanders between publishes).
   static _lookHoldIdx = -1;
@@ -104,6 +110,8 @@ export class Camera {
     this._data = data;
     this._canvasWidth = canvasWidth;
     this._canvasHeight = canvasHeight;
+    this._poseReadyFrame = 0;
+    this._followPoseReady = 0;
     if (this._data && this._data.length > this.IDX_TARGET_ZOOM) {
       // Keep buffer fields in a valid state for readers across workers.
       this._data[this.IDX_TARGET_ZOOM] = this._data[this.IDX_TARGET_ZOOM] > 0
@@ -478,13 +486,18 @@ export class Camera {
    * @param {Float32Array|null} y
    * @param {Float32Array|null} rotC
    * @param {Float32Array|null} rotS
+   * @param {number} [readyFrame=0] - poseSync readyFrame for this latch
    */
-  static bindDisplayPose(x, y, rotC, rotS) {
+  static bindDisplayPose(x, y, rotC, rotS, readyFrame) {
     this._poseX = x || null;
     this._poseY = y || null;
     this._poseRotC = rotC || null;
     this._poseRotS = rotS || null;
-    if (!this._poseX) this._clearLookHold();
+    this._poseReadyFrame = this._poseX ? (readyFrame | 0) : 0;
+    if (!this._poseX) {
+      this._clearLookHold();
+      this._followPoseReady = 0;
+    }
   }
 
   static _clearLookHold() {
@@ -557,6 +570,12 @@ export class Camera {
       vy = RigidBody.vy ? RigidBody.vy[i] : 0;
     }
     this._stampFollowEntity(i, x, y);
+    const ready = this._poseReadyFrame | 0;
+    const publishFrozen = ready > 0 && ready === this._followPoseReady;
+    this._followPoseReady = ready;
+    // Same pose snapshot as last follow: sprite is frozen. Do not ease the
+    // camera or the tilemap slides under the car (high-speed rAF lap hitch).
+    if (publishFrozen) return;
     this._applyFollow(x + vx * look, y + vy * look, smoothing, dtRatio);
   }
 
