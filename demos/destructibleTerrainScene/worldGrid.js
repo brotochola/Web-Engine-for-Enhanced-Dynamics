@@ -39,6 +39,12 @@ export const TUNE = {
   AREA_RATIO_MIN: 14,
 };
 export const TUNE_COUNT = 15;
+export const SHOT_KIND_GRID = 1;
+export const SHOT_KIND_BODY = 2;
+export const SHOT_CAP = 32;
+const SHOT_STRIDE = 5;
+const SHOT_HEAD = 0;
+const SHOT_TAIL = 1;
 export const TUNE_DEFAULTS = [
   3,
   0.35,
@@ -80,8 +86,15 @@ const DIRTY_MIN_Y = 2;
 const DIRTY_MAX_X = 3;
 const DIRTY_MAX_Y = 4;
 const _dirtyBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+const _shotOut = { kind: 0, x: 0, y: 0, entityIndex: -1, fixtureIndex: -1 };
 const _islandsOut = [];
 const _chunksOut = [];
+let _smoothA = null;
+let _smoothB = null;
+const _stitchAdj = new Map();
+const _stitchPoints = new Map();
+const _stitchUsed = new Set();
+const _triSeen = new Set();
 
 const CLIP_SIMPLIFY_TOL = 4;
 
@@ -122,6 +135,8 @@ export class WorldGrid extends SharedResource {
       material: { type: Uint8Array, length: cols * rows },
       dirtyRect: { type: Int32Array, length: 5 },
       tune: { type: Float32Array, length: TUNE_COUNT },
+      shotMeta: { type: Int32Array, length: 2 },
+      shotData: { type: Float32Array, length: SHOT_CAP * SHOT_STRIDE },
     };
   }
 
@@ -299,6 +314,47 @@ export class WorldGrid extends SharedResource {
   }
 
   /**
+   * SPSC: ship (reader worker) enqueues; manager (grid writer) drains.
+   * Do not call damage() from the ray worker.
+   */
+  static pushHit(kind, x, y, entityIndex, fixtureIndex) {
+    const meta = this.shotMeta;
+    const data = this.shotData;
+    if (!meta || !data) return false;
+    const head = Atomics.load(meta, SHOT_HEAD);
+    const tail = Atomics.load(meta, SHOT_TAIL);
+    const next = head + 1 < SHOT_CAP ? head + 1 : 0;
+    if (next === tail) return false;
+    const o = head * SHOT_STRIDE;
+    data[o] = kind;
+    data[o + 1] = x;
+    data[o + 2] = y;
+    data[o + 3] = entityIndex;
+    data[o + 4] = fixtureIndex;
+    Atomics.store(meta, SHOT_HEAD, next);
+    return true;
+  }
+
+  static shiftHit(out) {
+    const dest = out || _shotOut;
+    const meta = this.shotMeta;
+    const data = this.shotData;
+    if (!meta || !data) return null;
+    const tail = Atomics.load(meta, SHOT_TAIL);
+    const head = Atomics.load(meta, SHOT_HEAD);
+    if (tail === head) return null;
+    const o = tail * SHOT_STRIDE;
+    dest.kind = data[o] | 0;
+    dest.x = data[o + 1];
+    dest.y = data[o + 2];
+    dest.entityIndex = data[o + 3] | 0;
+    dest.fixtureIndex = data[o + 4] | 0;
+    const next = tail + 1 < SHOT_CAP ? tail + 1 : 0;
+    Atomics.store(meta, SHOT_TAIL, next);
+    return dest;
+  }
+
+  /**
    * DDA on amount. Origin in solid is skipped until the ray leaves, then next solid hits.
    * @returns {{ hit: boolean, gx: number, gy: number, x: number, y: number, distance: number }}
    */
@@ -387,6 +443,14 @@ export class WorldGrid extends SharedResource {
   /** True if any cell touches left, right, or bottom of the grid (bedrock). */
   static isGrounded(island) {
     return isGrounded(this, island);
+  }
+
+  /**
+   * Flood from a seed. Hits bedrock (left/right/bottom) → true.
+   * Does not run marching squares. Early-outs on a wall.
+   */
+  static isGroundedAt(x, y) {
+    return isGroundedAt(this, x | 0, y | 0);
   }
 
   static meshNodes(packed) {
@@ -716,8 +780,10 @@ function ptKey(p) {
 
 function stitchContours(segments) {
   if (!segments.length) return [];
-  const adj = new Map();
-  const points = new Map();
+  const adj = _stitchAdj;
+  const points = _stitchPoints;
+  adj.clear();
+  points.clear();
   const addEdge = (a, b) => {
     const ka = ptKey(a);
     const kb = ptKey(b);
@@ -733,7 +799,8 @@ function stitchContours(segments) {
     addEdge(a, b);
   }
 
-  const used = new Set();
+  const used = _stitchUsed;
+  used.clear();
   const loops = [];
   for (const startKey of adj.keys()) {
     const neighs = adj.get(startKey);
@@ -895,7 +962,8 @@ function diffCircle(outline, cx, cy, r, sides = 8) {
 function triangulateDelaunay(outerPts, holesPts) {
   const holes = holesPts || [];
   const pts = [];
-  const seen = new Set();
+  const seen = _triSeen;
+  seen.clear();
   const pushPt = (p) => {
     const k = `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)}`;
     if (seen.has(k)) return;
@@ -1324,7 +1392,7 @@ function extractIslands(field, box, opts) {
     visited.fill(0);
     field._visitGen = 1;
   }
-  const extractStart = field._visitGen;
+  const extractStart = field._visitGen++;
 
   const seedMinX = box ? box.minX : 0;
   const seedMinY = box ? box.minY : 0;
@@ -1545,24 +1613,30 @@ function chunksOverlapping(field, dirty) {
 }
 
 function smoothOccupancy(solid, cols, rows, passes = 2) {
+  const n = cols * rows;
+  if (!_smoothA || _smoothA.length < n) {
+    _smoothA = new Uint8Array(n);
+    _smoothB = new Uint8Array(n);
+  }
   let cur = solid;
+  let dest = _smoothA;
   for (let p = 0; p < passes; p++) {
-    const next = new Uint8Array(cols * rows);
     for (let gy = 0; gy < rows; gy++) {
       for (let gx = 0; gx < cols; gx++) {
-        let n = 0;
+        let neighbors = 0;
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
             const x = gx + dx;
             const y = gy + dy;
             if (x < 0 || y < 0 || x >= cols || y >= rows) continue;
-            n += cur[y * cols + x];
+            neighbors += cur[y * cols + x];
           }
         }
-        next[gy * cols + gx] = n >= 5 ? 1 : 0;
+        dest[gy * cols + gx] = neighbors >= 5 ? 1 : 0;
       }
     }
-    cur = next;
+    cur = dest;
+    dest = cur === _smoothA ? _smoothB : _smoothA;
   }
   return cur;
 }
@@ -1871,6 +1945,70 @@ function isGrounded(field, island) {
     const x = p % cols;
     const y = (p / cols) | 0;
     if (x === 0 || x === lastX || y === lastY) return true;
+  }
+  return false;
+}
+
+function isGroundedAt(field, sx, sy) {
+  const cols = field.cols;
+  const rows = field.rows;
+  const amount = field.amount;
+  if (!amount || sx < 0 || sy < 0 || sx >= cols || sy >= rows) return false;
+  if (amount[sy * cols + sx] < ISO) return false;
+  const lastX = cols - 1;
+  const lastY = rows - 1;
+  if (sx === 0 || sx === lastX || sy === lastY) return true;
+  let yDown = sy;
+  while (yDown < lastY && amount[(yDown + 1) * cols + sx] >= ISO) yDown++;
+  if (yDown === lastY) return true;
+
+  const n = cols * rows;
+  ensureExtractScratch(field, n);
+  const visited = field._visited;
+  const queue = field._queue;
+  if (field._visitGen > 0x7f000000) {
+    visited.fill(0);
+    field._visitGen = 1;
+  }
+  const floodId = field._visitGen++;
+  let qh = 0;
+  let qt = 0;
+  const start = sy * cols + sx;
+  queue[qt++] = start;
+  visited[start] = floodId;
+  while (qh < qt) {
+    const packed = queue[qh++];
+    const x = packed % cols;
+    const y = (packed / cols) | 0;
+    if (x === 0 || x === lastX || y === lastY) return true;
+    if (x + 1 <= lastX) {
+      const nIdx = packed + 1;
+      if (visited[nIdx] !== floodId && amount[nIdx] >= ISO) {
+        visited[nIdx] = floodId;
+        queue[qt++] = nIdx;
+      }
+    }
+    if (x - 1 >= 0) {
+      const nIdx = packed - 1;
+      if (visited[nIdx] !== floodId && amount[nIdx] >= ISO) {
+        visited[nIdx] = floodId;
+        queue[qt++] = nIdx;
+      }
+    }
+    if (y + 1 <= lastY) {
+      const nIdx = packed + cols;
+      if (visited[nIdx] !== floodId && amount[nIdx] >= ISO) {
+        visited[nIdx] = floodId;
+        queue[qt++] = nIdx;
+      }
+    }
+    if (y - 1 >= 0) {
+      const nIdx = packed - cols;
+      if (visited[nIdx] !== floodId && amount[nIdx] >= ISO) {
+        visited[nIdx] = floodId;
+        queue[qt++] = nIdx;
+      }
+    }
   }
   return false;
 }

@@ -3,14 +3,15 @@ import {
   CELL,
   COLS,
   ROWS,
+  ISO,
   MAT_DIRT,
   MAT_TINT,
   TUNE,
   DROP_MIN_CELLS,
+  SHOT_KIND_GRID,
+  SHOT_KIND_BODY,
 } from '../worldGrid.js';
 import { TerrainIsland } from './terrainIsland.js';
-import { Ship } from './ship.js';
-import { BODY_DIRTY, markBodyDirty } from '/src/box2d/box2dBodySync.js';
 import WEED from '/src/index.js';
 
 const {
@@ -45,6 +46,7 @@ export class WorldGridManager extends GameObject {
   static serializable = false;
   static instances = [];
   static components = [];
+  static forceProcessOnLogicWorker = 1;
 
   setup() {
     this.tool = 'draw';
@@ -56,6 +58,11 @@ export class WorldGridManager extends GameObject {
     this._crumbSeen = Object.create(null);
     this._crumbSeeds = [];
     this._paintBox = null;
+    this._keepIslands = [];
+    this._fullDirtyBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    this._extraShardBag = [];
+    this._hitScratch = { kind: 0, x: 0, y: 0, entityIndex: -1, fixtureIndex: -1 };
+    this._bodyHit = { hitX: 0, hitY: 0, fixtureIndex: -1, entityIndex: -1 };
   }
 
   onSpawned() {
@@ -68,15 +75,21 @@ export class WorldGridManager extends GameObject {
     this._crumbSeen = Object.create(null);
     this._crumbSeeds = [];
     this._paintBox = null;
+    this._keepIslands = [];
+    this._fullDirtyBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    this._extraShardBag = [];
+    this._hitScratch = { kind: 0, x: 0, y: 0, entityIndex: -1, fixtureIndex: -1 };
+    this._bodyHit = { hitX: 0, hitY: 0, fixtureIndex: -1, entityIndex: -1 };
     WorldGrid.cols = COLS;
     WorldGrid.rows = ROWS;
     WorldGrid.cellSize = CELL;
     WorldGrid.seedWorld(this.config?.seed ?? 7);
-    this._placeShip();
+    // this._placeShip();
     this.rebuild(true);
   }
 
   tick() {
+    this._drainHits();
     const prevTool = this.tool;
     if (Keyboard.isPressed('z')) this.tool = 'draw';
     if (Keyboard.isPressed('x')) this.tool = 'erase';
@@ -114,25 +127,58 @@ export class WorldGridManager extends GameObject {
     this._cullDynamics();
   }
 
-  _placeShip() {
-    const sky = WorldGrid.findSkySpawn();
-    const start = Ship.startIndex | 0;
-    const end = Ship.endIndex | 0;
-    for (let i = start; i < end; i++) {
-      const inst = Ship.instances[i - start];
-      if (inst && inst.active) {
-        inst.setPosition(sky.x, sky.y);
-        inst.setVelocity(0, 0);
-        return;
+  _drainHits() {
+    const hit = this._hitScratch;
+    while (WorldGrid.shiftHit(hit)) {
+      if (hit.kind === SHOT_KIND_GRID) {
+        WorldGrid.damage(
+          hit.x,
+          hit.y,
+          WorldGrid.tuneGet(TUNE.SHOT_RADIUS),
+          WorldGrid.tuneGet(TUNE.SHOT_POWER),
+          WorldGrid.tuneGet(TUNE.SHOT_FALLOFF),
+        );
+        continue;
       }
+      if (hit.kind !== SHOT_KIND_BODY) continue;
+      const island = TerrainIsland.get(hit.entityIndex);
+      if (!island) continue;
+      const body = this._bodyHit;
+      body.hitX = hit.x;
+      body.hitY = hit.y;
+      body.fixtureIndex = hit.fixtureIndex;
+      body.entityIndex = hit.entityIndex;
+      island.takeHit(body);
     }
-    Ship.spawn({ x: sky.x, y: sky.y });
   }
 
-  rebuild(full) {
-    const dirty = full
-      ? { minX: 0, minY: 0, maxX: COLS - 1, maxY: ROWS - 1 }
-      : WorldGrid.consumeDirty(1);
+  // _placeShip() {
+  //   const sky = WorldGrid.findSkySpawn();
+  //   const start = Ship.startIndex | 0;
+  //   const end = Ship.endIndex | 0;
+  //   for (let i = start; i < end; i++) {
+  //     const inst = Ship.instances[i - start];
+  //     if (inst && inst.active) {
+  //       inst.setPosition(sky.x, sky.y);
+  //       inst.setVelocity(0, 0);
+  //       return;
+  //     }
+  //   }
+  //   Ship.spawn({ x: sky.x, y: sky.y });
+  // }
+
+  rebuild(full, allowPromote) {
+    let dirty;
+    if (full) {
+      const box = this._fullDirtyBox;
+      box.minX = 0;
+      box.minY = 0;
+      box.maxX = COLS - 1;
+      box.maxY = ROWS - 1;
+      dirty = box;
+    } else {
+      dirty = WorldGrid.consumeDirty(1);
+    }
     if (!dirty) return;
     if (full) WorldGrid.consumeDirty(0);
 
@@ -151,9 +197,10 @@ export class WorldGridManager extends GameObject {
       rec.maxY = s.maxY;
     }
 
-    if (full || this.tool !== 'draw') this._promoteDirty(snap);
+    if (allowPromote !== false && (full || this.tool !== 'draw')) this._promoteDirty(snap);
 
-    const keep = [];
+    const keep = this._keepIslands;
+    keep.length = 0;
     const live = this.staticIslands;
     for (let i = 0; i < live.length; i++) {
       const rec = live[i];
@@ -164,7 +211,7 @@ export class WorldGridManager extends GameObject {
 
     for (let s = 0; s < snap.length; s++) this._remeshShard(snap[s], keep);
     this.staticIslands = keep;
-    this._dirtyStaticBodies();
+    this._keepIslands = live;
   }
 
   _unionPaintDirty() {
@@ -184,14 +231,7 @@ export class WorldGridManager extends GameObject {
     if (!box || box.maxX < box.minX) return;
     WorldGrid.markDirty(box.minX, box.minY);
     WorldGrid.markDirty(box.maxX, box.maxY);
-    this.rebuild(false);
-  }
-
-  _dirtyStaticBodies() {
-    const arr = this.staticIslands;
-    for (let i = 0; i < arr.length; i++) {
-      markBodyDirty(arr[i].index, BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY);
-    }
+    this.rebuild(false, false);
   }
 
   _recInShards(rec, shards) {
@@ -214,14 +254,16 @@ export class WorldGridManager extends GameObject {
         }
       }
       if (found) continue;
-      snap.push({
-        chunkX: s.chunkX,
-        chunkY: s.chunkY,
-        minX: s.minX,
-        minY: s.minY,
-        maxX: s.maxX,
-        maxY: s.maxY,
-      });
+      const bag = this._extraShardBag;
+      let rec = bag[snap.length];
+      if (!rec) rec = bag[snap.length] = {};
+      rec.chunkX = s.chunkX;
+      rec.chunkY = s.chunkY;
+      rec.minX = s.minX;
+      rec.minY = s.minY;
+      rec.maxX = s.maxX;
+      rec.maxY = s.maxY;
+      snap.push(rec);
     }
   }
 
@@ -242,6 +284,7 @@ export class WorldGridManager extends GameObject {
       }
     }
     for (let i = 0; i < seeds.length; i += 2) {
+      if (WorldGrid.isGroundedAt(seeds[i], seeds[i + 1])) continue;
       const real = WorldGrid.extractIslandAt(seeds[i], seeds[i + 1]);
       if (!real) continue;
       const key = WorldGrid.islandKey(real);
@@ -359,6 +402,11 @@ export class WorldGridManager extends GameObject {
       }
     }
 
+    if (!jobs.length && this._shardHasSolid(shard)) {
+      for (let i = 0; i < pool.length; i++) keep.push(pool[i]);
+      return;
+    }
+
     jobs.sort((a, b) => b.areaCells - a.areaCells);
     for (let j = 0; j < jobs.length; j++) {
       const job = jobs[j];
@@ -371,8 +419,9 @@ export class WorldGridManager extends GameObject {
           bestI = p;
         }
       }
-      if (bestI >= 0 && this._retargetStatic(pool[bestI], job)) {
+      if (bestI >= 0) {
         const rec = pool[bestI];
+        this._retargetStatic(rec, job);
         rec.minX = job.islandBox.minX;
         rec.minY = job.islandBox.minY;
         rec.maxX = job.islandBox.maxX;
@@ -410,6 +459,21 @@ export class WorldGridManager extends GameObject {
     }
 
     for (let i = 0; i < pool.length; i++) this._despawnIndex(pool[i].index);
+  }
+
+  _shardHasSolid(shard) {
+    const amount = WorldGrid.amount;
+    if (!amount) return false;
+    const cols = WorldGrid.cols;
+    const x1 = shard.maxX;
+    const y1 = shard.maxY;
+    for (let y = shard.minY; y <= y1; y++) {
+      const row = y * cols;
+      for (let x = shard.minX; x <= x1; x++) {
+        if (amount[row + x] >= ISO) return true;
+      }
+    }
+    return false;
   }
 
   _pushStaticJob(jobs, island, islandBox, polys, shard, quad) {

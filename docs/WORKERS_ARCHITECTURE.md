@@ -21,6 +21,8 @@ Each worker owns its data region so hot paths can avoid broad locking and per-fr
 
 All workers live in `src/workers/`. They are bootstrapped by `src/util/sceneWorkerBootstrap.js`, invoked from `src/core/scene.js` (`createWorkers()`).
 
+`Scene.static.sharedResources` is allocated in `sceneSharedBuffers.js` (`buffers.sharedResources[ClassName]`). The init payload carries `{ name, sab, schema, scriptUrl }[]`. After each worker `import()`s `scriptUrl`, `SharedResource.bindFromInit` attaches typed views on the class (`WorldGrid.cells`). Missing class after `scriptUrl` throws. Teardown calls `SharedResource.resetAll()`. Layout: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b.
+
 ---
 
 ## Per-Worker Detail
@@ -47,6 +49,7 @@ Each worker writes only its own rows. No overlap.
 | `entityPosData`                     | **Write**                          | Cached `[x, y, halfExtent, pad]` per entity  |
 | `activeEntitiesData`                | Read                               | Knows which entities exist                   |
 | Transform, Collider, SpriteRenderer | Read                               | Source positions, radii, visual ranges       |
+| `colliderFixtureData`               | Read                               | Compound extras: cheap OBB for cells; tight verts for point queries |
 | `spatialStats`                      | **Write**                          | FPS, neighbor checks, cells checked          |
 | `frameRateData`                     | **Write**                          | Own slot                                     |
 
@@ -73,6 +76,7 @@ Spatial `neighborData` is visual-range only — Box2D does narrowphase itself.
 | Transform / RigidBody hot fields   | **Write** HEAP | `x,y,rotation,vx,vy,ω,sleeping` — HEAP only after `box2dReady` (`bindBox2dHotFields`) |
 | `poseDataA/B` + `poseSync`         | **Write**      | Post-step display snapshot for pre_render / particle (not mid-step HEAP)             |
 | Collider                           | Read (sync)    | Shapes, radii, `friction`, layers/masks/`groupIndex`                                 |
+| `colliderFixtureData`              | Read (sync)    | Extra convex polys on the same body (`replacePolygons*`); default pool size 0        |
 | `neighborData`                     | Read           | Visual-range neighbors — not the contact source                                      |
 | Command ring (`commandSab`)        | **Write** (logic/main) / drain (Box2D) | MPSC sequence-slot pose/vel commands                            |
 | Contact ring (`contactSab`)        | **Write** (Box2D) / read (logic) | Begin/end + sensor events with body generations                             |
@@ -122,6 +126,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 | `queryResultsSAB`        | Read, **published write** (logic 0)  | Triple-buffered pre-computed active query snapshots                                    |
 | `queryVersionSAB`        | Read/**Write** (logic 0 maintenance) | Shared invalidation counter for cached non-precomputed active queries                  |
 | `Joint` SAB              | **Write**                            | Create joints via `Joint.addDistance` / `addRevolute` / `addWeld`                      |
+| `colliderFixtureData`    | Read                                 | Logic rays (`Ray.castWithInfo`) walk extras; `fixtureIndex` −1 = primary               |
 | `raycastDebugData`       | **Write**                            | Debug ray visualization                                                                |
 | `logicStats`             | **Write**                            | FPS, entities processed                                                                |
 | `frameRateData`          | **Write**                            | Own slot                                                                               |
@@ -248,6 +253,7 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
      - If the layer has **no shader**: render the `ParticleContainer` directly to screen at its `zIndex`
      - If the layer has a **shader**: run the two-RT pipeline (see below)
    - Check `Atomics.load(uniformDirty, 0)` for each shader layer; if dirty, upload new uniform values to the GPU shader and clear the flag
+   - `LAYER_KIND.MESH` packs `ColliderFixture` fans (else the primary collider) via `packColliderFill`
 
 **It never waits** on pre_render. Pre-render is the worker that may block when it is more than one frame ahead.
 

@@ -8,6 +8,46 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Saturday 19 September 2026 — The Tilemap Was Smooth. The Car Wasn't
+
+The want was simple once the GID pages were in: drive a police car across a 50,000-pixel map at 1200 px/s and have the *car* stay glued to the road. The background had just become honest — one camera matrix, no chunk stream. Then the sprite started hitching every four seconds, straight and fast, while the tilemap kept sliding.
+
+Two `requestAnimationFrame` loops. Physics publishes a pose. Logic follows it. Pre-render packs the sprite from the same latch. When the clocks lap — 60 against something like 59.75 is about four seconds — physics skips a publish so it will not overwrite the slot pre-render is still reading. The sprite freezes on the last snapshot. `followEntity` did not. It kept easing the camera toward that frozen point. The tilemap is the camera. The car is the sprite. The world slid under a parked drawing.
+
+Look-ahead had already learned this lesson: freeze HEAP velocity until pose xy actually publishes. The missing half was the pan. Logic now stamps the pose generation it latched. If `poseReady` has not moved, `followEntity` holds the camera and still stamps `followUsed` so pre-render's slide is a no-op. Next publish, both jump together. The ship in the terrain demo uses the same call. The contract lives in [PHYSICS.md](./PHYSICS.md#display-pose-publish). The test is `followEntity holds pan when pose generation is unchanged`.
+
+## Saturday 19 September 2026 — I Didn't Want a Tile Library
+
+CarScene at full speed used to hitch every time `@pixi/tilemap` built another chunk. `CompositeTilemap.tile()` on the CPU, then the first GPU upload on present. `STEP_MS` stayed under a millisecond and the frame still stuttered, because the cost was not in `update()`. Every `tilemapCull` knob we tried moved the hitch; none of them deleted it.
+
+The want was a Tiled map that is already a texture. Raw GIDs in the SAB — flags and all — packed once into RGBA8 pages, 2048 tiles on a side because that is WebGL2's portable max. One world-space quad per non-empty page. A shader that does `page UV → tile → texelFetch → atlas`, same contract in GLSL and WGSL. After create, the pixi worker only moves the parent container. Empty GID 0 discards. We do not raise the page size to `MAX_TEXTURE_SIZE`: carScene is 2082 tiles wide, and a 2082-wide NPOT page hitchs the driver the same way the chunks did.
+
+`pixiTilemapModule.js` is gone. `tilemapCull.js` is gone. `config.renderer.tilemapCull` is ignored if a scene still sends it. The query API (`getTileId`, `hasTile`) did not change. The old Hyp 7 cull scratch is a measurement of a path that no longer exists; do not reimplement `listVisibleChunks`. Spec: [TILEMAP.md](./TILEMAP.md).
+
+## Friday 18 September 2026 — A Grid Is Not a Component
+
+I wanted a world that is a field of cells, not ten thousand entities with an `x` and a `y`. Amount, material, a marching-squares mesh — that is one blob, sized by the map, shared with every worker. `Component` is the wrong shape. Components are SoA × `entityCount`. This is one SAB per class.
+
+`SharedResource` is the name plus the schema. The scene declares it:
+
+```js
+static sharedResources = [
+  [WorldGrid, { cells: { type: Float32Array, length: COLS * ROWS } }],
+];
+```
+
+`WorldGrid.cells[i] = v` on main and on every worker after bind. No Atomics. No FieldView. One writer per field, same rule as Mouse. The subclass needs `static scriptUrl` or the worker cannot `import()` it and `bindFromInit` throws — better a boot failure than two threads writing the same cells. Pin the writer with `forceProcessOnLogicWorker` so `tick` does not stride across logic workers.
+
+The destructible terrain demo is how this got tested: one `WorldGrid`, one manager forced onto a logic worker, carve and fall. The demo is not the product. The product is a typed array that is not pretending to be an entity. Layout: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b.
+
+## Friday 18 September 2026 — One Body, Many Shapes
+
+Worms-style dirt is not one box. It is an island: one rigid body, N convex polygons, and you replace the list when the player carves. The primary `Collider` slot is one shape. That was the whole API until this week.
+
+`ColliderFixture` is a global pool (`physics.maxFixturePoolSize`, default 0 — opt in or the replace calls no-op). Intrusive list per entity. `replacePolygons` / `replacePolygonsFlat` / `clearFixtures`. WASM adds every fixture to the same body. Mass sums. Spatial uses a cheap oriented box so the grid does not transform every vertex; rays and `pointInCollider` stay tight and report `fixtureIndex` (−1 is the primary). MESH fill fans the fixtures, or the primary box / polygon / display octagon if the pool is empty. Light occluders still see only the primary. That is a known hole, not a forgotten one.
+
+The terrain demo is the champion scene, not a special case inside the engine. Isolation work for the pool (MF1–MF5) is in [HYPOTHESIS_LOG.md](./HYPOTHESIS_LOG.md). The API is in [PHYSICS.md](./PHYSICS.md).
+
 ## Monday 14 September 2026 (evening) — The Fire Was There. The Light Wasn't
 
 The want was a drip of fire that lights the cave the same way a crate does. Burning Boxes already had the pieces: Q writes LiquidFun onto the fire compute layer, `lightIntensity` on the emit, a group splat ADD into `lightingRT`. The crates shoved. The compute fire showed up. The landscape stayed black. Turning the intensity from 50 to 5330 did nothing. The instinct was the shader, or a missing uniform, or to cheat and also splat Q onto oil. That last one is a demo hat pretending to be an engine fix.

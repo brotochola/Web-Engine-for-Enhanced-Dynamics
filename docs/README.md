@@ -12,7 +12,7 @@ This folder contains the engine notes that are closest to the code. The docs are
 | [`DEVLOG.md`](./DEVLOG.md)                             | Dated project journal (stories, not specs). Newest first. Fill gaps freely. |
 | [`SAVE_GAME.md`](./SAVE_GAME.md)                       | Sparse save/load, `create` / `createNewGame` / `onLoadGame`, IndexedDB slots, DebugUI Saves tab                                      |
 | [`WORKERS_ARCHITECTURE.md`](./WORKERS_ARCHITECTURE.md) | Worker roles, data flow, scaling rules, and message protocols                                                                        |
-| [`MEMORY_STRUCTURE.md`](./MEMORY_STRUCTURE.md)         | SharedArrayBuffer layouts, ownership, and writer/reader map                                                                          |
+| [`MEMORY_STRUCTURE.md`](./MEMORY_STRUCTURE.md)         | SharedArrayBuffer layouts, ownership, writer/reader map, and SharedResource world blobs (§1b)                                        |
 | [`ENTITY_TEMPLATE.js`](./ENTITY_TEMPLATE.js)           | Minimal entity starter with worker-safe imports and lifecycle hooks                                                                  |
 
 ## Subsystem Guides
@@ -21,14 +21,14 @@ This folder contains the engine notes that are closest to the code. The docs are
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | [`COMPONENT_STORAGE.md`](./COMPONENT_STORAGE.md)       | Dense component storage policy and when to consider sparse storage                    |
 | [`SPATIAL_HASHING.md`](./SPATIAL_HASHING.md)           | Spatial worker grid rebuilds, neighbor reuse, and collision-candidate lists           |
-| [`PHYSICS.md`](./PHYSICS.md)                           | Box2D 3.0 nested WASM worker, RigidBody/Collider composition, contacts, joints, sleep |
+| [`PHYSICS.md`](./PHYSICS.md)                           | Box2D 3.0 WASM, RigidBody/Collider composition, compound `ColliderFixture` pool (`physics.maxFixturePoolSize`, default 0), `replacePolygons*`, contacts, joints, sleep |
 | [`LIQUIDFUN.md`](./LIQUIDFUN.md)                       | liquidfun-c on Box2D 3 C, WASM/SAB fluids, flags, body collision                      |
 | [`PHYSICS_KERNEL_STUDY.md`](./PHYSICS_KERNEL_STUDY.md) | Historical JS kernel microbench (pre–Box2D 3.0)                                       |
 | [`LAYER_ROUTING.md`](./LAYER_ROUTING.md)               | Render layer routing, layer-owned backgrounds, and custom layer constraints           |
 | [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md)             | WebGPU compute layers, `setLayer`/`layers` mask, Box2D body pack, pass layouts                     |
 | [`PARTICLES.md`](./PARTICLES.md)                       | ParticleEmitter emit / emitFlat / emitZenithal, physics vs view, decals               |
 | [`FLASHES.md`](./FLASHES.md)                           | Flash.spawn, castShadows, lighting budget vs persistent lights                       |
-| [`TILEMAP.md`](./TILEMAP.md)                           | Tiled JSON loading, SAB tile data, queries, viewport chunk streaming                  |
+| [`TILEMAP.md`](./TILEMAP.md)                           | Tiled JSON, SAB tile data, queries, native GID page meshes (no chunk stream; `tilemapCull` ignored) |
 | [`RAYCASTING.md`](./RAYCASTING.md)                     | DDA grid raycasts, line-of-sight checks, and layer-mask filtering                     |
 | [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md)             | Ray perf hypotheses H1–H6 + headless L1/L2/L3 campaign                                |
 | [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)     | Kernel / stress scene / gameplay catalog; scoreboard is `pnpm bench:scoreboard`        |

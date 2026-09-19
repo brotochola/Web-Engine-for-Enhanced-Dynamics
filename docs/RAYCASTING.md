@@ -26,7 +26,7 @@ const hit = Ray.cast(x, y, tx, ty, Infinity, 1 << 4);
 
 ### `Ray.castWithInfo(xFrom, yFrom, xTo, yTo, maxDist?, mask?, out?)`
 
-Returns `{ hit, entityIndex, distance, hitX, hitY }`. Without `out`, the object is reused on the next `Ray.castWithInfo()` call.
+Returns `{ hit, entityIndex, distance, hitX, hitY, fixtureIndex }`. `fixtureIndex` is the closest `ColliderFixture` slot, or `-1` if the hit is the primary collider shape (or a miss). Without `out`, the object is reused on the next `Ray.castWithInfo()` call. Compound bodies: the DDA still keys the **entity**; the fixture walk picks the closest extra polygon when `Collider.fixtureCount > 0`.
 
 ```javascript
 const r = Ray.castWithInfo(gun.x, gun.y, targetX, targetY);
@@ -36,7 +36,7 @@ if (r.hit) {
 }
 
 // Stable result storage with no allocation:
-const out = { hit: false, entityIndex: -1, distance: Infinity, hitX: 0, hitY: 0 };
+const out = { hit: false, entityIndex: -1, distance: Infinity, hitX: 0, hitY: 0, fixtureIndex: -1 };
 Ray.castWithInfo(gun.x, gun.y, targetX, targetY, Infinity, 0xffffffff, out);
 ```
 

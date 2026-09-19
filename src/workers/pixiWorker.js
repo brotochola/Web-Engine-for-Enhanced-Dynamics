@@ -9,6 +9,7 @@ self.postMessage({
 // Import engine dependencies
 
 import { Transform } from '../components/transform.js';
+import { RigidBody } from '../components/rigidBody.js';
 
 import { Collider } from '../components/collider.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
@@ -929,6 +930,11 @@ class PixiRenderer extends AbstractWorker {
       v.rotC = Transform.rotC;
       v.rotS = Transform.rotS;
     }
+    v.liveX = Transform.x;
+    v.liveY = Transform.y;
+    v.liveRotC = Transform.rotC;
+    v.liveRotS = Transform.rotS;
+    v.rbStatic = RigidBody.static;
     v.offsetX = Collider.offsetX;
     v.offsetY = Collider.offsetY;
     v.primaryShapeType = Collider.shapeType;

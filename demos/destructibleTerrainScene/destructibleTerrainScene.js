@@ -1,4 +1,4 @@
-// Destructible terrain — WorldGrid SAB + WorldGridManager in logic.
+// Destructible terrain — WorldGrid SAB. Ship on logic0 (rays). Manager on logic1 (grid write).
 // Loose dirt (not touching left/right/bottom) falls as one body. No welds.
 // Z draw · X erase · C laser · V shatter · [ ] brush · A/D thrusters · click uses tool.
 
@@ -125,6 +125,7 @@ export class DestructibleTerrainScene extends Scene {
     this.spawnEntity(Ship, {
       x: WORLD_W * 0.5,
       y: Math.max(48, WORLD_H * 0.08),
+      forceProcessOnLogicWorker: 0,
     });
     this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
   }

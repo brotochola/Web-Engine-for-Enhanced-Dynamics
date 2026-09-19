@@ -118,13 +118,17 @@ Sprites use latched pose xy. `Camera.followEntity` used to add **live HEAP** `Ri
 
 **Correct:** resample HEAP vx/vy only when that entity's **pose xy** changes (first sample copy, later EMA). Hold until the next pose publish. Same clock as sprites.
 
+#### Camera pan must hold when the pose generation is unchanged
+
+A skipped publish freezes the sprite. If `followEntity` still eases the camera toward that frozen xy, the tilemap (or MESH fill) slides under the car. Logic passes `poseReady` into `Camera.bindDisplayPose`. When that generation matches the last follow, `followEntity` stamps `followUsed` and **does not** call `_applyFollow`. Pre-render's slide is then a no-op. Next publish, both move together. Tests: `followEntity holds pan when pose generation is unchanged` in `tests/node/cameraFreeZoom.test.js`.
+
 Logic and pre_render still latch `poseSync` independently. `followEntity` stamps the pose xy it used on the camera SAB. Pre_render slides `renderQueueCamera` by `(latchedPose - stamped)` so the packed sprite and camera share one generation. `Camera.follow(x,y)` clears the stamp (HEAP follow stays a demo clock split). MESH fill in pixi uses the queue-stamped pose latch, not live HEAP.
 
 Speed zoom: write `Camera.targetZoom` **then** `followEntity`. `follow()` lerps zoom and keeps screen-center. `setZoom` every tick snaps zoom without that pan and fights the lerp.
 
 Debug colliders and the pixi compute pack follow **stamped `poseReady`** on the render-queue camera SAB (same generation sprites packed), not live HEAP / latest pose. Overlay clock, not the gameplay hitch above.
 
-Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.test.js` (`followEntity look-ahead ignores live vx…`, `alignFollowCameraToLatchedPose slides queue cam`).
+Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.test.js` (`followEntity look-ahead ignores live vx…`, `alignFollowCameraToLatchedPose slides queue cam`, `followEntity holds pan when pose generation is unchanged`).
 
 ### Soft contact knobs
 

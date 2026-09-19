@@ -200,6 +200,12 @@ Sustituye a Predator emergente para el scoreboard. Smoke: KEPT (partículas −1
 
 ---
 
+## Fuera del catálogo: isolation multi-fixture
+
+No hay fila `colliderFixture` en [`engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). El pool y `replacePolygons*` se midieron como isolation MF1–MF5 (walk inline, OBB espacial, scratch WASM, skip de pack MESH, replace flat). Campeón de escena: `CompoundFixtureSpatialScene` / `CompoundGeometryDirtyScene` / `meshFillStaticScene`. Diario: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) § Isolation multi-fixture. Status: [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) filas MF1–MF5. No inventar una id de scoreboard aquí.
+
+---
+
 ## Paquete keep de esta rama
 
 HASH + P2 + P6 + higiene (`debugLog`) + colisión (par key) + contadores de carga siempre encendidos + Nav N2. **No** PACT, LIGHT, AABB burst, TICK, VP, BULLET compact, ECB — stripped del árbol 2026-09-16 (antes el log mentía “reverted”).

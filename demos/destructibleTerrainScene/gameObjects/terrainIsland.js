@@ -16,9 +16,11 @@ const _scratchCS = { c: 1, s: 0 };
 const _scratchLocal = { x: 0, y: 0 };
 const _flatPack = { xy: new Float32Array(256), counts: new Uint8Array(32) };
 
-function applyPolysFlat(collider, polys) {
+function applyPolysFlat(collider, polys, dx, dy) {
   if (!polys || !polys.length) return false;
   const n = polys.length;
+  const ox = dx || 0;
+  const oy = dy || 0;
   if (_flatPack.counts.length < n) _flatPack.counts = new Uint8Array(n);
   let floats = 0;
   for (let i = 0; i < n; i++) {
@@ -31,8 +33,8 @@ function applyPolysFlat(collider, polys) {
   for (let i = 0; i < n; i++) {
     const p = polys[i];
     for (let v = 0; v < p.length; v++) {
-      _flatPack.xy[o++] = p[v].x;
-      _flatPack.xy[o++] = p[v].y;
+      _flatPack.xy[o++] = p[v].x + ox;
+      _flatPack.xy[o++] = p[v].y + oy;
     }
   }
   return collider.replacePolygonsFlat(_flatPack.xy, _flatPack.counts, n);
@@ -43,6 +45,7 @@ export class TerrainIsland extends GameObject {
   static serializable = false;
   static instances = [];
   static components = [RigidBody, Collider, MeshRenderer];
+  // static forceProcessOnLogicWorker = 1;
 
   setup() {
     this.collider.visualRange = 0;
@@ -74,11 +77,15 @@ export class TerrainIsland extends GameObject {
     this.collider.visualRange = Math.hypot(hw, hh) + 80;
   }
 
-  /** Same entity, new mesh. Avoids despawn flicker. */
+  /**
+   * Same entity, new mesh. Avoids despawn flicker.
+   * Keep Transform. MESH fill reads latched pose; moving the origin here
+   * draws new local verts at the old pose until the next publish (chunk snap).
+   * `local` is relative to (x, y); rebase onto the current body origin.
+   */
   retarget(x, y, local) {
-    this.x = x;
-    this.y = y;
-    if (!local || !local.length || !applyPolysFlat(this.collider, local)) return false;
+    if (!local || !local.length) return false;
+    if (!applyPolysFlat(this.collider, local, x - this.x, y - this.y)) return false;
     if (MeshRenderer.renderDirty) MeshRenderer.renderDirty[this.index] = 1;
     this._refreshVisualRange();
     return true;

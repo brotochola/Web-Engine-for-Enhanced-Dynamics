@@ -50,6 +50,8 @@ Layer.sky.clear();
 
 `setTilemap` returns a Promise that resolves after the renderer builds the tilemap and completes a warm-up render. Other methods are fire-and-forget. Requests carry a `requestId` so overlapping changes resolve the correct Promise.
 
+Tilemap layers upload native GID page meshes once (see [TILEMAP.md Rendering](./TILEMAP.md#rendering-pixi-worker)). There is no chunk stream. `config.renderer.tilemapCull` is ignored.
+
 ### How It Works
 
 1. Layer instance methods post `setLayerContent` to the renderer via `Layer._postToRenderer`.

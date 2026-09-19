@@ -34,6 +34,7 @@ Every scene defines:
 - `static audios` (optional)
 - `static entities = [[EntityClass, poolSize], ...]`
 - `static queries = [[ComponentClass, ...], ...]` (optional hot active query combinations)
+- `static sharedResources = [[SharedResourceClass, schema], ...]` (optional world blobs — not SoA × entityCount)
 
 ```javascript
 class MyScene extends WEED.Scene {
@@ -199,6 +200,25 @@ Tag components have no `ARRAY_SCHEMA` and allocate no `SharedArrayBuffer`. They 
 **Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration — including `isCollidingWith()`). When at least one type has the tag, logic drains the Box2D **contact ring** (begin/end + sensors), keys every live pair (Cantor `min,max`) into a per-worker Set so `isCollidingWith()` works during `tick()`, and dispatches enter/stay/exit only when at least one side listens (`collisionListenerByType`). Callback ownership is partitioned by `minEntity % totalLogicWorkers`; Set population is not. Entities need an active `Collider` (Box2D body with a shape) to show up in the ring — Collider-only entities get an **implicit static** body; RigidBody-only (shapeless) bodies never generate contacts. Toggle at runtime with `this.collider.active` / `this.rigidBody.active` (see [PHYSICS.md](./PHYSICS.md#rigidbody--collider-composition)). Compound extras use `Collider.replacePolygons` / `replacePolygonsFlat` and `physics.maxFixturePoolSize`. Contacts stay entity-keyed. Light occluders stay primary-shape only.
 
 **Forced logic worker:** `static forceProcessOnLogicWorker = 1` (or the spawn field) makes `tick` / callbacks / `onSpawned` run only on that worker so a `SharedResource` has one writer. SoA is `GameObject.forceProcessOnLogicWorker` (`Int16`, −1 = stride). Not `this.logicWorker` (the API object).
+
+### SharedResource (world blobs)
+
+Not a Component. One SAB per **class**, sized by the schema in `Scene.static.sharedResources`, not by `totalEntityCount`. Fields are raw TypedArrays on the class (`WorldGrid.cells[i] = v`) after bind. Same one-writer-per-field rule as Mouse. No Atomics in v1.
+
+```javascript
+class WorldGrid extends WEED.SharedResource {
+  static scriptUrl = import.meta.url; // workers import() this or bindFromInit throws
+}
+
+class DigScene extends WEED.Scene {
+  static sharedResources = [
+    [WorldGrid, { cells: { type: Float32Array, length: COLS * ROWS } }],
+    [GameState, { score: Int32Array }], // bare ctor = length 1
+  ];
+}
+```
+
+Subclass must set `static scriptUrl`. Pin the single writer with `forceProcessOnLogicWorker` on the entity that mutates the blob. Layout, bind, and teardown: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b. Worker init: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md).
 
 **Screen visibility:** resolved per-type on the `typeInfo` object. `preRenderWorker` clears `Transform.isItOnScreen` once per visual frame and each entity render pass sets it to `1` when that entity is visible. The logic worker reads that single canonical byte only for entity types that have `CameraInOutListener`, so the callback path does not need to know which render component made the entity visible.
 
@@ -819,6 +839,7 @@ WEED.Camera.setZoom(1.5);     // snap zoom (do not call every tick while followi
 // getViewportBounds(out?) — pass a stable object if you need to store bounds;
 // the no-arg form reuses an internal scratch object (consume immediately).
 // High-speed follow hitch: docs/PHYSICS.md “Display pose publish”.
+// followEntity holds pan when poseReady is unchanged (publish skip); do not ease under a frozen sprite.
 
 // Particles — pick mode at call site (see docs/PARTICLES.md)
 // emit: heighted, screenY = y + z

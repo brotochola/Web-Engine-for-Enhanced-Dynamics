@@ -108,6 +108,46 @@ test('two islands share one instanceCount sum', () => {
   assert.equal(out[COLLIDER_FILL_FLOATS], 1);
 });
 
+test('static mesh fill packs live Transform, not stale pose', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.x[0] = 10;
+  views.y[0] = 20;
+  views.liveX = new Float32Array([40]);
+  views.liveY = new Float32Array([80]);
+  views.liveRotC = new Float32Array([1]);
+  views.liveRotS = new Float32Array([0]);
+  views.rbStatic = new Uint8Array([1]);
+  addTri(views, 0, 0, 0, 0, 4, 0, 0, 4);
+
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(out[6], 40);
+  assert.equal(out[7], 80);
+});
+
+test('dynamic mesh fill packs live Transform when pose is leftover', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.x[0] = 0;
+  views.y[0] = 0;
+  views.liveX = new Float32Array([400]);
+  views.liveY = new Float32Array([220]);
+  views.liveRotC = new Float32Array([1]);
+  views.liveRotS = new Float32Array([0]);
+  views.rbStatic = new Uint8Array([0]);
+  addTri(views, 0, 0, 0, 0, 4, 0, 0, 4);
+
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(out[6], 400);
+  assert.equal(out[7], 220);
+});
+
 test('packer warns once when MeshRenderer has no MESH layer bit', () => {
   resetColliderFillMeshLayerWarn();
   const views = makeViews({ entities: 1, fixtures: 1 });

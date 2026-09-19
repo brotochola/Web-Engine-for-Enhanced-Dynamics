@@ -1,6 +1,6 @@
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { TerrainIsland } from './terrainIsland.js';
-import { WorldGrid, RAY_MASK_NO_STATIC, TUNE } from '../worldGrid.js';
+import { WorldGrid, RAY_MASK_NO_STATIC, TUNE, SHOT_KIND_GRID, SHOT_KIND_BODY } from '../worldGrid.js';
 import WEED from '/src/index.js';
 
 const {
@@ -19,7 +19,7 @@ const {
 const HALF_W = 11;
 const HALF_H = 14;
 const THRUST_ACCEL = 3100;
-const LOOK_AHEAD = 0.2;
+const LOOK_AHEAD = 0// 0.2;
 const CAM_SMOOTH = 0.12;
 const MUZZLE_PAD = Math.hypot(HALF_W, HALF_H) + 4;
 
@@ -28,6 +28,7 @@ export class Ship extends GameObject {
   static serializable = false;
   static instances = [];
   static components = [RigidBody, Collider, SpriteRenderer];
+  static forceProcessOnLogicWorker = 0;
 
   setup() {
     this.collider.visualRange = 80;
@@ -101,7 +102,7 @@ export class Ship extends GameObject {
     const uy = dy * inv;
     const ox = this.x + ux * MUZZLE_PAD;
     const oy = this.y + uy * MUZZLE_PAD;
-    const rayLen = Math.max(this.config.worldWidth, this.config.worldHeight) * 1.5;
+    const rayLen = 1000 // Math.max(this.config.worldWidth, this.config.worldHeight) * 1.5;
 
     const gridHit = WorldGrid.castRay(ox, oy, ux, uy, rayLen);
     const bodyHit = Ray.castWithInfo(
@@ -114,20 +115,20 @@ export class Ship extends GameObject {
 
     this._emitLaser(ox, oy, hx, hy, useGrid || useBody);
     if (useGrid) {
-      WorldGrid.damage(
-        hx, hy,
-        WorldGrid.tuneGet(TUNE.SHOT_RADIUS),
-        WorldGrid.tuneGet(TUNE.SHOT_POWER),
-        WorldGrid.tuneGet(TUNE.SHOT_FALLOFF),
-      );
+      WorldGrid.pushHit(SHOT_KIND_GRID, hx, hy, -1, -1);
       return;
     }
     if (!useBody) return;
 
     const type = Transform.entityType ? Transform.entityType[bodyHit.entityIndex] : -1;
     if (type === Floor.entityType || type !== TerrainIsland.entityType) return;
-    const island = TerrainIsland.get(bodyHit.entityIndex);
-    if (island) island.takeHit(bodyHit);
+    WorldGrid.pushHit(
+      SHOT_KIND_BODY,
+      bodyHit.hitX,
+      bodyHit.hitY,
+      bodyHit.entityIndex,
+      bodyHit.fixtureIndex == null ? -1 : bodyHit.fixtureIndex,
+    );
   }
 
   _emitLaser(ox, oy, hx, hy, didHit) {

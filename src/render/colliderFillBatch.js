@@ -3,6 +3,7 @@
  * Fixtures first; else primary polygon / box / display 8-gon for a physics circle.
  * One PIXI.Mesh per LAYER_KIND.MESH slot. VS applies packed pose
  * (published display pose when pixi latched it, else live Transform).
+ * Static bodies pack live Transform: pose lags a remesh/spawn and the island snaps.
  * Pixi can skip pack+upload when ColliderFixture.revision and mesh pose match last frame.
  *
  * Instance floats (12): v0, v1, v2, xy, rotCS, tintBits, depth.
@@ -76,6 +77,23 @@ function writeFillTri(out, outU32, base, written, maxOut, depthDenom, x0, y0, x1
 
 const _fanOut = { written: 0, base: 0, full: false };
 
+/** Reused when the caller omits views.outU32 (tests / kernel). Pixi passes dataU32. */
+let _packOutU32 = null;
+
+function packOutU32(out, views) {
+  if (views.outU32) return views.outU32;
+  if (
+    _packOutU32 &&
+    _packOutU32.buffer === out.buffer &&
+    _packOutU32.byteOffset === out.byteOffset &&
+    _packOutU32.length === out.length
+  ) {
+    return _packOutU32;
+  }
+  _packOutU32 = new Uint32Array(out.buffer, out.byteOffset, out.length);
+  return _packOutU32;
+}
+
 function fanLocalVerts(out, outU32, base, written, maxOut, depthDenom, vx, vy, vb, n, wx, wy, c, s, packed) {
   const x0 = vx[vb];
   const y0 = vy[vb];
@@ -124,6 +142,34 @@ export function ensureMeshFillPoseScratch(prevPose, entityCount) {
  * @param {object} views
  * @param {object} prevPose
  */
+const MESH_LIVE_POSE_SLACK_SQ = 48 * 48;
+
+function meshFillUsesLive(i, views) {
+  if (!views.liveX || !views.liveY) return false;
+  if (views.rbStatic && views.rbStatic[i]) return true;
+  const dx = views.liveX[i] - views.x[i];
+  const dy = views.liveY[i] - views.y[i];
+  return dx * dx + dy * dy > MESH_LIVE_POSE_SLACK_SQ;
+}
+
+function meshFillX(i, views) {
+  return meshFillUsesLive(i, views) ? views.liveX[i] : views.x[i];
+}
+
+function meshFillY(i, views) {
+  return meshFillUsesLive(i, views) ? views.liveY[i] : views.y[i];
+}
+
+function meshFillRotC(i, views) {
+  if (meshFillUsesLive(i, views) && views.liveRotC) return views.liveRotC[i];
+  return views.rotC ? views.rotC[i] : 1;
+}
+
+function meshFillRotS(i, views) {
+  if (meshFillUsesLive(i, views) && views.liveRotS) return views.liveRotS[i];
+  return views.rotS ? views.rotS[i] : 0;
+}
+
 export function copyMeshFillPoseScratch(views, prevPose) {
   const n = views.entityCount | 0;
   ensureMeshFillPoseScratch(prevPose, n);
@@ -133,17 +179,13 @@ export function copyMeshFillPoseScratch(views, prevPose) {
   const ps = prevPose.rotS;
   const pa = prevPose.active;
   const pv = prevPose.visible;
-  const x = views.x;
-  const y = views.y;
-  const c = views.rotC;
-  const s = views.rotS;
   const active = views.meshActive;
   const visible = views.meshVisible;
   for (let i = 0; i < n; i++) {
-    px[i] = x[i];
-    py[i] = y[i];
-    pc[i] = c ? c[i] : 1;
-    ps[i] = s ? s[i] : 0;
+    px[i] = meshFillX(i, views);
+    py[i] = meshFillY(i, views);
+    pc[i] = meshFillRotC(i, views);
+    ps[i] = meshFillRotS(i, views);
     pa[i] = active[i];
     pv[i] = visible[i];
   }
@@ -165,19 +207,13 @@ export function meshFillPoseOrPresenceChanged(views, prevPose) {
   const pv = prevPose.visible;
   const active = views.meshActive;
   const visible = views.meshVisible;
-  const x = views.x;
-  const y = views.y;
-  const c = views.rotC;
-  const s = views.rotS;
   for (let i = 0; i < n; i++) {
     const a = active[i] | 0;
     const vis = visible[i] | 0;
     if ((pa[i] | 0) !== a || (pv[i] | 0) !== vis) return true;
     if (!a || !vis) continue;
-    if (x[i] !== px[i] || y[i] !== py[i]) return true;
-    const rc = c ? c[i] : 1;
-    const rs = s ? s[i] : 0;
-    if (rc !== pc[i] || rs !== ps[i]) return true;
+    if (meshFillX(i, views) !== px[i] || meshFillY(i, views) !== py[i]) return true;
+    if (meshFillRotC(i, views) !== pc[i] || meshFillRotS(i, views) !== ps[i]) return true;
   }
   return false;
 }
@@ -226,10 +262,6 @@ export function packColliderFill(out, cap, layerId, views) {
   const vertCount = views.vertCount;
   const vx = views.vertexX;
   const vy = views.vertexY;
-  const tx = views.x;
-  const ty = views.y;
-  const rotC = views.rotC;
-  const rotS = views.rotS;
   const offsetX = views.offsetX;
   const offsetY = views.offsetY;
   const meshBits = views.meshBits | 0;
@@ -241,7 +273,7 @@ export function packColliderFill(out, cap, layerId, views) {
   const primaryWidth = views.primaryWidth;
   const primaryHeight = views.primaryHeight;
   const primaryRadius = views.primaryRadius;
-  const outU32 = views.outU32 || new Uint32Array(out.buffer, out.byteOffset, out.length);
+  const outU32 = packOutU32(out, views);
 
   const bit = 1 << (layerId | 0);
   const depthDenom = maxOut + 1;
@@ -268,12 +300,12 @@ export function packColliderFill(out, cap, layerId, views) {
       continue;
     }
 
-    const c = rotC ? rotC[i] : 1;
-    const s = rotS ? rotS[i] : 0;
+    const c = meshFillRotC(i, views);
+    const s = meshFillRotS(i, views);
     const ox = offsetX ? offsetX[i] : 0;
     const oy = offsetY ? offsetY[i] : 0;
-    const wx = tx[i] + c * ox - s * oy;
-    const wy = ty[i] + s * ox + c * oy;
+    const wx = meshFillX(i, views) + c * ox - s * oy;
+    const wy = meshFillY(i, views) + s * ox + c * oy;
 
     let a = meshAlpha ? meshAlpha[i] : 1;
     if (a < 0) a = 0;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SharedResource } from '../../src/core/sharedResource.js';
-import { WorldGrid, ISO, MAT_DIRT, TUNE, SEED_STAMP } from '../../demos/destructibleTerrainScene/worldGrid.js';
+import { WorldGrid, ISO, MAT_DIRT, TUNE, SEED_STAMP, SHOT_KIND_GRID, SHOT_KIND_BODY, SHOT_CAP } from '../../demos/destructibleTerrainScene/worldGrid.js';
 
 function makeFilledRect(cols, rows, cell, x0, y0, x1, y1) {
   WorldGrid.attach(cols, rows, cell);
@@ -94,6 +94,34 @@ test('setAmount writes the bound SAB', () => {
   }
 });
 
+test('shot ring: ship push, manager drain, full drops', () => {
+  try {
+    WorldGrid.attach(4, 3, 8);
+    assert.equal(WorldGrid.shiftHit(), null);
+    assert.equal(WorldGrid.pushHit(SHOT_KIND_GRID, 12, 24, -1, -1), true);
+    assert.equal(WorldGrid.pushHit(SHOT_KIND_BODY, 1, 2, 7, 3), true);
+    const a = WorldGrid.shiftHit();
+    assert.equal(a.kind, SHOT_KIND_GRID);
+    assert.equal(a.x, 12);
+    assert.equal(a.y, 24);
+    const b = WorldGrid.shiftHit();
+    assert.equal(b.kind, SHOT_KIND_BODY);
+    assert.equal(b.entityIndex, 7);
+    assert.equal(b.fixtureIndex, 3);
+    assert.equal(WorldGrid.shiftHit(), null);
+
+    let n = 0;
+    while (WorldGrid.pushHit(SHOT_KIND_GRID, n, 0, -1, -1)) n++;
+    assert.equal(n, SHOT_CAP - 1);
+    assert.equal(WorldGrid.pushHit(SHOT_KIND_GRID, 99, 0, -1, -1), false);
+    let drained = 0;
+    while (WorldGrid.shiftHit()) drained++;
+    assert.equal(drained, SHOT_CAP - 1);
+  } finally {
+    teardown();
+  }
+});
+
 test('extractIslands(box) returns only the island that touches dirty', () => {
   try {
     WorldGrid.attach(24, 12, 8);
@@ -139,6 +167,27 @@ test('crater remesh stays contour tris, not per-cell fallback', () => {
     assert.equal(coversHole, false);
   } finally {
     teardown();
+  }
+});
+
+test('retarget rebase onto an old origin keeps world verts', () => {
+  const world = [
+    [
+      { x: 100, y: 40 },
+      { x: 160, y: 40 },
+      { x: 160, y: 90 },
+      { x: 100, y: 90 },
+    ],
+  ];
+  const cen = WorldGrid.centroidFromPolys(world);
+  const local = WorldGrid.polysToLocal(world, cen.x, cen.y);
+  const originX = cen.x - 12;
+  const originY = cen.y + 7;
+  const dx = cen.x - originX;
+  const dy = cen.y - originY;
+  for (let i = 0; i < world[0].length; i++) {
+    assert.ok(Math.abs(originX + local[0][i].x + dx - world[0][i].x) < 1e-6);
+    assert.ok(Math.abs(originY + local[0][i].y + dy - world[0][i].y) < 1e-6);
   }
 });
 
@@ -374,6 +423,8 @@ test('isGrounded: thin column on a wall floor stays until the base is cut', () =
     const ground = WorldGrid.extractIslandAt(2, 17);
     assert.ok(ground);
     assert.equal(WorldGrid.isGrounded(ground), true);
+    assert.equal(WorldGrid.isGroundedAt(11, 10), false);
+    assert.equal(WorldGrid.isGroundedAt(2, 17), true);
   } finally {
     teardown();
   }
