@@ -895,7 +895,13 @@ export declare class SharedResource {
 export declare class GameObject {
   static startIndex: number;
   static poolSize: number;
+  /**
+   * 0 = logic workers never visit this type (unless CameraInOutListener).
+   * 1 = every frame. >1 = every N frames when logic.staggeredUpdates is on.
+   */
   static tickInterval: number;
+  /** False if the type has no tick override or tickInterval is 0. */
+  static typeNeedsLogicTick(EntityClass?: typeof GameObject): boolean;
   /**
    * Particle worker fills RigidBody.speed for this entityType when true.
    * Scene gate skips the hypot loop if no registered type opts in.

@@ -74,8 +74,20 @@ export class GameObject {
   static components = []; // By default, only Transform (added automatically)
 
   // Tick decimation - override in subclasses to reduce tick frequency
-  // tickInterval = 10 means entity ticks every 10 frames (spread across frames via index offset)
-  static tickInterval = 1; // Default: tick every frame (no decimation)
+  // 0 = logic workers never visit this type (unless CameraInOutListener)
+  // 1 = every frame; >1 = every N frames when logic.staggeredUpdates is on
+  static tickInterval = 1;
+
+  /**
+   * False if logic workers should skip this type's active list.
+   * tickInterval 0, or tick still GameObject.prototype.tick.
+   * CameraInOutListener still visits even when this is false.
+   */
+  static typeNeedsLogicTick(EntityClass) {
+    const Type = EntityClass || this;
+    if ((Type.tickInterval | 0) === 0) return false;
+    return Type.prototype.tick !== GameObject.prototype.tick;
+  }
 
   /**
    * After initializeArrays: Int16 per entity. Worker index that must run this
@@ -2047,9 +2059,9 @@ export class GameObject {
   }
 
   /**
-   * LIFECYCLE: Main update - called EVERY frame while entity is active
-   * Override this in subclasses to define entity behavior
-   * (AI, physics forces, animations, input handling, etc.)
+   * LIFECYCLE: Main update — called every frame while this type is on a tick list.
+   * Omit the override (or set tickInterval = 0) so logic workers skip the type.
+   * Do not write an empty tick(){}. Do not assign this.tick on an instance.
    *
    * Note: this._neighbors and this.neighborCount are updated before this is called
    * Input is available via this.mouse and this.keyboard

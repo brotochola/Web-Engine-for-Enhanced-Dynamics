@@ -3,7 +3,7 @@ import { makeIslandPolys } from './makeIslandPolys.js';
 
 const { GameObject, RigidBody, Collider, MeshRenderer } = WEED;
 
-/** MESH fill island. Static or spinning; packer reads fixtures or primary shape. */
+/** MESH fill island. No tick — static terrain. Spinner subclass for moving. */
 export class MeshFillIsland extends GameObject {
   static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, MeshRenderer];
@@ -40,6 +40,11 @@ export class MeshFillIsland extends GameObject {
     }
     this._spin = spin;
   }
+}
+
+/** Same island with per-frame rotation. Moving MESH stress uses this. */
+export class MeshFillSpinner extends MeshFillIsland {
+  static scriptUrl = import.meta.url;
 
   tick() {
     if (this._spin) this.rotation += this._spin;

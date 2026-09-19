@@ -1,9 +1,9 @@
 /**
- * Moving MESH fill stress. Same entity as static; per-tick rotation.
+ * Moving MESH fill stress. MeshFillSpinner ticks rotation.
  * Primary: pixi_STEP_MS. Must still pack every frame (MF4 must-not-regress).
  */
 import WEED from '/src/index.js';
-import { MeshFillIsland } from './compoundFixture/meshFillIsland.js';
+import { MeshFillSpinner } from './compoundFixture/meshFillIsland.js';
 
 const { Scene, Camera, LAYER_KIND } = WEED;
 
@@ -42,7 +42,7 @@ export class MeshFillMovingScene extends Scene {
 
   static assets = { textures: {} };
 
-  static entities = [[MeshFillIsland, ISLAND_COUNT]];
+  static entities = [[MeshFillSpinner, ISLAND_COUNT]];
 
   create() {
     const cols = 64;
@@ -52,7 +52,7 @@ export class MeshFillMovingScene extends Scene {
     for (let i = 0; i < ISLAND_COUNT; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(MeshFillIsland, {
+      this.spawnEntity(MeshFillSpinner, {
         x: startX + col * spacing,
         y: startY + row * spacing,
         triangles: TRIANGLES_PER_ISLAND,

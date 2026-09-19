@@ -12,6 +12,8 @@ class MyEntity extends GameObject {
 
   // Optional: reduce logic frequency when staggered updates are enabled
   // static tickInterval = 2;
+  // static tickInterval = 0; // never visit (or just omit tick() entirely)
+  // Do not write an empty tick(){} — that still counts as an override.
 
   setup() {
     // Runs once per pooled instance

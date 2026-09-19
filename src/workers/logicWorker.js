@@ -137,10 +137,10 @@ class LogicWorker extends AbstractWorker {
     // ========================================
     // TICK DECIMATION OPTIMIZATION
     // ========================================
-    // Entity types are separated into two groups at initialization:
-    // - nonDecimatedTypes: tickInterval === 1 (most entities) → simple loop, zero overhead
-    // - decimatedTypes: tickInterval > 1 → full countdown logic
-    // This eliminates per-entity checks for the common case (no decimation)
+    // Entity types are separated at initialization:
+    // - skipped: no tick override (or tickInterval === 0) and no CameraInOutListener
+    // - nonDecimatedTypes: tickInterval === 1 (most entities) → simple loop
+    // - decimatedTypes: tickInterval > 1 → countdown
     this.nonDecimatedTypes = []; // Array of {EntityClass, activeList} for tickInterval === 1
     this.decimatedTypes = [];    // Array of {EntityClass, activeList, tickInterval} for tickInterval > 1
 
@@ -332,27 +332,31 @@ class LogicWorker extends AbstractWorker {
         // Separate into decimated vs non-decimated for optimized update loops
         // Only classify if this type has entities (poolSize > 0)
         if (poolSize > 0) {
-          const tickInterval = EntityClass.tickInterval || 1;
-
-          if (tickInterval > 1 && GameObject.nextTick) {
-            // Decimated type: needs full countdown logic
-            this.decimatedTypes.push({
-              EntityClass,
-              activeList: EntityClass._activeList,
-              tickInterval,
-              startIndex,
-              entityType,
-              needsScreenCallbacks,
-            });
+          const needsTick = GameObject.typeNeedsLogicTick(EntityClass);
+          if (!needsTick && !needsScreenCallbacks) {
+            // Tickless: stay on active lists for queries/spatial/physics/render.
           } else {
-            // Non-decimated type: simple loop, zero overhead
-            this.nonDecimatedTypes.push({
-              EntityClass,
-              activeList: EntityClass._activeList,
-              startIndex,
-              entityType,
-              needsScreenCallbacks,
-            });
+            const rawInterval = EntityClass.tickInterval;
+            const tickInterval = rawInterval == null ? 1 : (rawInterval | 0);
+
+            if (needsTick && tickInterval > 1 && GameObject.nextTick) {
+              this.decimatedTypes.push({
+                EntityClass,
+                activeList: EntityClass._activeList,
+                tickInterval,
+                startIndex,
+                entityType,
+                needsScreenCallbacks,
+              });
+            } else {
+              this.nonDecimatedTypes.push({
+                EntityClass,
+                activeList: EntityClass._activeList,
+                startIndex,
+                entityType,
+                needsScreenCallbacks,
+              });
+            }
           }
         }
       } else {

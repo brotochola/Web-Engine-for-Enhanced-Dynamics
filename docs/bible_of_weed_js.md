@@ -991,6 +991,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 - Prefer component-array reads in hot loops.
 - Keep `collider.visualRange` tight to reduce neighbor pressure.
 - Use `tickInterval > 1` for heavy AI and enable `logic.staggeredUpdates`.
+- Do not write an empty `tick(){}`. If the type has no tick override, or `static tickInterval = 0`, logic workers skip that type's active list. `CameraInOutListener` still visits. Collision / hit / impact callbacks still run. Do not assign `this.tick` on an instance.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Flash pool is finite (`lighting.maxFlashes`). Flashes also compete for `lighting.maxLights`; persistent lights win when the list is capped. Short muzzle flashes should use `Flash.spawn({ castShadows: false })` so they light without point-shadow grid work.
