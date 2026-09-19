@@ -90,6 +90,15 @@ export class GameObject {
   }
 
   /**
+   * Own static tickAll(list, count, dtRatio). Do not also override tick()
+   * if the type should use this path.
+   */
+  static typeHasTickAll(EntityClass) {
+    const Type = EntityClass || this;
+    return typeof Type.tickAll === 'function';
+  }
+
+  /**
    * After initializeArrays: Int16 per entity. Worker index that must run this
    * entity’s logic. FORCE_PROCESS_ON_LOGIC_WORKER_NONE (−1) means do not force:
    * use stride activeListSlot % logicWorkerCount. Not the LogicWorker instance.

@@ -111,6 +111,8 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 
 **Tickless types:** if `GameObject.typeNeedsLogicTick(EntityClass)` is false and the type has no `CameraInOutListener`, that type is not pushed onto `nonDecimatedTypes` / `decimatedTypes`. Active lists, queries, spatial, physics, render, and collision / impact callbacks stay. `tickInterval === 0` is the explicit opt-out for an empty `tick(){}` override.
 
+**tickAll:** if the class defines `static tickAll` and does not override `tick()`, logic packs live indices (stride / forced worker) into a scratch `Uint16Array` and calls `EntityClass.tickAll(list, count, dtRatio)` once per type. RigidBody accel is zeroed only when the type has `RigidBody`.
+
 **Tick decimation:** entities with `tickInterval > 1` use `nextTickData[entityIndex]` countdown. Logic zeros `RigidBody.ax/ay/angularAccel` only when a tick actually runs, then the entity writes the desired px/s². Off-tick frames leave the last values so Box2D keeps applying them every physics step. One-shot kicks belong in `addVelocity` (impact/collision callbacks run before tick and would be wiped by the zero).
 
 | Buffer                   | Access                               | Notes                                                                                  |

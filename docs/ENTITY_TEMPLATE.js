@@ -14,6 +14,7 @@ class MyEntity extends GameObject {
   // static tickInterval = 2;
   // static tickInterval = 0; // never visit (or just omit tick() entirely)
   // Do not write an empty tick(){} — that still counts as an override.
+  // static tickAll(list, count, dtRatio) { /* SoA batch; do not also override tick() */ }
 
   setup() {
     // Runs once per pooled instance

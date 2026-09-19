@@ -143,6 +143,7 @@ class LogicWorker extends AbstractWorker {
     // - decimatedTypes: tickInterval > 1 → countdown
     this.nonDecimatedTypes = []; // Array of {EntityClass, activeList} for tickInterval === 1
     this.decimatedTypes = [];    // Array of {EntityClass, activeList, tickInterval} for tickInterval > 1
+    this.tickAllTypes = [];      // static tickAll, no tick() override
 
     // ========================================
     // SPAWN/DESPAWN LIST UPDATE QUEUES
@@ -292,10 +293,12 @@ class LogicWorker extends AbstractWorker {
         let needsScreenCallbacks = false;
         let needsCollisionCallbacks = false;
         let needsJointBreakCallbacks = false;
+        let hasRigidBody = false;
         for (const ComponentClass of components) {
           if (ComponentClass === CameraInOutListener) needsScreenCallbacks = true;
           if (ComponentClass === CollisionListener) needsCollisionCallbacks = true;
           if (ComponentClass === JointBreakListener) needsJointBreakCallbacks = true;
+          if (ComponentClass === RigidBody) hasRigidBody = true;
         }
 
         if (needsCollisionCallbacks) {
@@ -333,7 +336,16 @@ class LogicWorker extends AbstractWorker {
         // Only classify if this type has entities (poolSize > 0)
         if (poolSize > 0) {
           const needsTick = GameObject.typeNeedsLogicTick(EntityClass);
-          if (!needsTick && !needsScreenCallbacks) {
+          const hasTickAll = GameObject.typeHasTickAll(EntityClass);
+          if (hasTickAll && !needsTick && !needsScreenCallbacks) {
+            this.tickAllTypes.push({
+              EntityClass,
+              activeList: EntityClass._activeList,
+              startIndex,
+              entityType,
+              hasRigidBody,
+            });
+          } else if (!needsTick && !needsScreenCallbacks) {
             // Tickless: stay on active lists for queries/spatial/physics/render.
           } else {
             const rawInterval = EntityClass.tickInterval;
@@ -347,6 +359,7 @@ class LogicWorker extends AbstractWorker {
                 startIndex,
                 entityType,
                 needsScreenCallbacks,
+                hasRigidBody,
               });
             } else {
               this.nonDecimatedTypes.push({
@@ -355,6 +368,7 @@ class LogicWorker extends AbstractWorker {
                 startIndex,
                 entityType,
                 needsScreenCallbacks,
+                hasRigidBody,
               });
             }
           }
@@ -367,6 +381,7 @@ class LogicWorker extends AbstractWorker {
     // Scene-level kill switches: skip drain paths when no type opts in
     this.anyTypeNeedsCollisions = this.collisionListenerByType.includes(1);
     this.anyTypeNeedsJointBreaks = this.jointBreakListenerByType.includes(1);
+    this._tickAllScratch = new Uint16Array(this.globalEntityCount || 1);
   }
 
   // ========================================
@@ -794,6 +809,8 @@ class LogicWorker extends AbstractWorker {
       }
     }
 
+    activeCount += this._runTickAllTypes(dtRatio, transformActive, rbAx, rbAy, rbAa);
+
     if (collectDetailed) {
       this.entityTimeThisFrame = performance.now() - tEntity0;
       this.decimateMsThisFrame = decimateMs;
@@ -823,6 +840,67 @@ class LogicWorker extends AbstractWorker {
     }
 
     Mouse.snapshotPreviousFrame();
+  }
+
+  _runTickAllTypes(dtRatio, transformActive, rbAx, rbAy, rbAa) {
+    const types = this.tickAllTypes;
+    const typeCount = types.length;
+    if (typeCount === 0) return 0;
+    let packed = 0;
+
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+    const scratch = this._tickAllScratch;
+    const forceProcessOnLogicWorker = GameObject.forceProcessOnLogicWorker;
+    const entityTypeHasForcedLogicWorker = GameObject.entityTypeHasForcedLogicWorker;
+
+    for (let t = 0; t < typeCount; t++) {
+      const typeInfo = types[t];
+      const activeList = typeInfo.activeList;
+      const count = Math.min(activeList[0], activeList.length - 1);
+      const hasRigidBody = typeInfo.hasRigidBody;
+      const typeForced = !!(
+        entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
+      );
+      let n = 0;
+      if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
+        for (let idx = 0; idx < count; idx++) {
+          const entityIndex = activeList[1 + idx];
+          if (
+            logicWorkerThatShouldTick(
+              idx,
+              entityIndex,
+              totalWorkers,
+              forceProcessOnLogicWorker,
+            ) !== myIndex
+          ) {
+            continue;
+          }
+          if (transformActive[entityIndex] === 0) continue;
+          if (hasRigidBody) {
+            rbAx[entityIndex] = 0;
+            rbAy[entityIndex] = 0;
+            rbAa[entityIndex] = 0;
+          }
+          scratch[n++] = entityIndex;
+        }
+      } else {
+        for (let idx = myIndex; idx < count; idx += totalWorkers) {
+          const entityIndex = activeList[1 + idx];
+          if (transformActive[entityIndex] === 0) continue;
+          if (hasRigidBody) {
+            rbAx[entityIndex] = 0;
+            rbAy[entityIndex] = 0;
+            rbAa[entityIndex] = 0;
+          }
+          scratch[n++] = entityIndex;
+        }
+      }
+      if (n > 0) typeInfo.EntityClass.tickAll(scratch, n, dtRatio);
+      this.entitiesProcessedThisFrame += n;
+      packed += n;
+    }
+    return packed;
   }
 
   _tickNonDecimatedOne(

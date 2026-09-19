@@ -903,6 +903,12 @@ export declare class GameObject {
   /** False if the type has no tick override or tickInterval is 0. */
   static typeNeedsLogicTick(EntityClass?: typeof GameObject): boolean;
   /**
+   * Optional SoA batch. If defined and tick() is not overridden, the logic
+   * worker calls this once with packed entity indices instead of obj.tick.
+   */
+  static tickAll?(list: ArrayLike<number>, count: number, dtRatio: number): void;
+  static typeHasTickAll(EntityClass?: typeof GameObject): boolean;
+  /**
    * Particle worker fills RigidBody.speed for this entityType when true.
    * Scene gate skips the hypot loop if no registered type opts in.
    */

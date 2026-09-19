@@ -32,3 +32,15 @@ test('typeNeedsLogicTick is true when tick has work', () => {
   }
   assert.equal(GameObject.typeNeedsLogicTick(RealTick), true);
 });
+
+test('typeHasTickAll is true only when the class defines tickAll', () => {
+  class NoAll extends GameObject {}
+  class WithAll extends GameObject {
+    static tickAll(list, count) {
+      return count;
+    }
+  }
+  assert.equal(GameObject.typeHasTickAll(NoAll), false);
+  assert.equal(GameObject.typeHasTickAll(WithAll), true);
+  assert.equal(GameObject.typeNeedsLogicTick(WithAll), false);
+});
