@@ -44,8 +44,15 @@ function resolveMeshTextureId(name) {
   return MESH_NO_TEXTURE;
 }
 
+function bumpPaintEpoch() {
+  const ep = MeshRenderer.paintEpoch;
+  if (ep) ep[0] = (ep[0] + 1) >>> 0;
+}
+
 function markPaint(i) {
+  if (MeshRenderer.renderDirty[i]) return;
   MeshRenderer.renderDirty[i] = 1;
+  bumpPaintEpoch();
 }
 
 export class MeshRenderer extends Component {
@@ -65,6 +72,10 @@ export class MeshRenderer extends Component {
     visualOutset: Float32Array,
   };
 
+  static getBufferSize(count) {
+    return super.getBufferSize(count) + 4;
+  }
+
   static initializeArrays(buffer, count) {
     super.initializeArrays(buffer, count);
     if (this.layerMask) this.layerMask.fill(0);
@@ -73,13 +84,21 @@ export class MeshRenderer extends Component {
     if (this.renderVisible) this.renderVisible.fill(1);
     if (this.renderDirty) this.renderDirty.fill(1);
     if (this.textureId) this.textureId.fill(MESH_NO_TEXTURE);
+    this.paintEpoch = new Uint32Array(buffer, super.getBufferSize(count), 1);
+  }
+
+  static clearArrays() {
+    super.clearArrays();
+    this.paintEpoch = null;
   }
 
   get tint() {
     return MeshRenderer.tint[this.index] >>> 0;
   }
   set tint(value) {
-    MeshRenderer.tint[this.index] = value >>> 0;
+    const v = value >>> 0;
+    if (MeshRenderer.tint[this.index] === v) return;
+    MeshRenderer.tint[this.index] = v;
     markPaint(this.index);
   }
 
@@ -90,6 +109,7 @@ export class MeshRenderer extends Component {
     let a = +value;
     if (a < 0) a = 0;
     else if (a > 1) a = 1;
+    if (MeshRenderer.alpha[this.index] === a) return;
     MeshRenderer.alpha[this.index] = a;
     markPaint(this.index);
   }
@@ -98,7 +118,9 @@ export class MeshRenderer extends Component {
     return MeshRenderer.textureId[this.index];
   }
   set textureId(value) {
-    MeshRenderer.textureId[this.index] = value & 0xffff;
+    const v = value & 0xffff;
+    if (MeshRenderer.textureId[this.index] === v) return;
+    MeshRenderer.textureId[this.index] = v;
     markPaint(this.index);
   }
 
@@ -106,7 +128,9 @@ export class MeshRenderer extends Component {
     return MeshRenderer.tileMode[this.index];
   }
   set tileMode(value) {
-    MeshRenderer.tileMode[this.index] = value & 255;
+    const v = value & 255;
+    if (MeshRenderer.tileMode[this.index] === v) return;
+    MeshRenderer.tileMode[this.index] = v;
     markPaint(this.index);
   }
 
@@ -115,7 +139,9 @@ export class MeshRenderer extends Component {
   }
   set repeatX(value) {
     const v = value | 0;
-    MeshRenderer.repeatX[this.index] = v < 0 ? 0 : v > 65535 ? 65535 : v;
+    const n = v < 0 ? 0 : v > 65535 ? 65535 : v;
+    if (MeshRenderer.repeatX[this.index] === n) return;
+    MeshRenderer.repeatX[this.index] = n;
     markPaint(this.index);
   }
 
@@ -124,7 +150,9 @@ export class MeshRenderer extends Component {
   }
   set repeatY(value) {
     const v = value | 0;
-    MeshRenderer.repeatY[this.index] = v < 0 ? 0 : v > 65535 ? 65535 : v;
+    const n = v < 0 ? 0 : v > 65535 ? 65535 : v;
+    if (MeshRenderer.repeatY[this.index] === n) return;
+    MeshRenderer.repeatY[this.index] = n;
     markPaint(this.index);
   }
 
@@ -132,7 +160,9 @@ export class MeshRenderer extends Component {
     return unpackTileOffset01(MeshRenderer.tileOffsetU[this.index]);
   }
   set tileOffsetU(value) {
-    MeshRenderer.tileOffsetU[this.index] = packTileOffset01(value);
+    const p = packTileOffset01(value);
+    if (MeshRenderer.tileOffsetU[this.index] === p) return;
+    MeshRenderer.tileOffsetU[this.index] = p;
     markPaint(this.index);
   }
 
@@ -140,7 +170,9 @@ export class MeshRenderer extends Component {
     return unpackTileOffset01(MeshRenderer.tileOffsetV[this.index]);
   }
   set tileOffsetV(value) {
-    MeshRenderer.tileOffsetV[this.index] = packTileOffset01(value);
+    const p = packTileOffset01(value);
+    if (MeshRenderer.tileOffsetV[this.index] === p) return;
+    MeshRenderer.tileOffsetV[this.index] = p;
     markPaint(this.index);
   }
 
@@ -150,6 +182,7 @@ export class MeshRenderer extends Component {
   set visualOutset(value) {
     let v = +value;
     if (!(v > 0)) v = 0;
+    if (MeshRenderer.visualOutset[this.index] === v) return;
     MeshRenderer.visualOutset[this.index] = v;
     markPaint(this.index);
   }
@@ -160,7 +193,9 @@ export class MeshRenderer extends Component {
    * @returns {this}
    */
   setTexture(name) {
-    MeshRenderer.textureId[this.index] = resolveMeshTextureId(name);
+    const id = resolveMeshTextureId(name);
+    if (MeshRenderer.textureId[this.index] === id) return this;
+    MeshRenderer.textureId[this.index] = id;
     markPaint(this.index);
     return this;
   }

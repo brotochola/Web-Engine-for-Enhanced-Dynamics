@@ -2,6 +2,7 @@
 // Loose dirt (not touching left/right/bottom) falls as one body. No welds.
 // Ship followEntity: LOOK_AHEAD=0. Drawn cam is renderQueueCamera (PHYSICS.md).
 // Z draw · X erase · C laser · V shatter · [ ] brush · A/D thrusters · click uses tool.
+// Headed bench: ?benchRemesh=1 holds laser straight down (no C+mouse).
 
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { TerrainIsland } from './gameObjects/terrainIsland.js';
@@ -11,6 +12,28 @@ import { WorldGrid, CELL, COLS, ROWS, TUNE } from './worldGrid.js';
 import WEED from '/src/index.js';
 
 const { Scene, Camera, DebugDraw, LAYER_KIND, BLEND_MODES } = WEED;
+
+/** Dual-map look: query `?backend=webgl|webgpu` overrides. Missing GPUDevice stays a hard error. */
+function terrainSearchParam(name) {
+  const search = globalThis.location && globalThis.location.search;
+  if (typeof search !== 'string') return null;
+  return new URLSearchParams(search).get(name);
+}
+
+function terrainRendererBackend() {
+  const q = terrainSearchParam('backend');
+  if (q === 'webgl' || q === 'webgpu') return q;
+  return 'webgpu';
+}
+
+/** Headed benches: ship lasers straight down so the MESH remesh path actually runs. */
+function terrainBenchRemesh() {
+  const q = terrainSearchParam('benchRemesh');
+  if (q === '1') return true;
+  if (q === '0') return false;
+  const path = globalThis.location && globalThis.location.pathname;
+  return typeof path === 'string' && path.includes('integratedWorkerBenchmark');
+}
 
 const PANEL_CSS =
   'position:fixed;right:12px;top:56px;width:280px;z-index:950;max-height:calc(100vh - 72px);' +
@@ -63,7 +86,7 @@ export class DestructibleTerrainScene extends Scene {
     },
 
     renderer: {
-      backend: 'webgl',
+      backend: terrainRendererBackend(),
       noLimitFPS: false,
     },
 
@@ -107,7 +130,10 @@ export class DestructibleTerrainScene extends Scene {
       rocky: '/demos/img/rocky.jpg',
     },
     shaders: {
-      rockContour: '/demos/shaders/rockContour.frag',
+      rockContour: {
+        webgl: '/demos/shaders/rockContour.frag',
+        webgpu: '/demos/shaders/rockContour.wgsl',
+      },
     },
   };
 
@@ -141,10 +167,13 @@ export class DestructibleTerrainScene extends Scene {
   }
 
   createNewGame() {
+    const bench = terrainBenchRemesh();
     this.spawnEntity(Ship, {
       x: WORLD_W * 0.5,
-      y: Math.max(48, WORLD_H * 0.08),
+      // In-solid spawn makes castRay skip the local rock and hit the far wall.
+      y: bench ? WORLD_H * 0.26 : Math.max(48, WORLD_H * 0.08),
       forceProcessOnLogicWorker: 0,
+      benchRemesh: bench,
     });
     this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
   }

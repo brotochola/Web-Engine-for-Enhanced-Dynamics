@@ -150,6 +150,21 @@ test('moving one entity forces pack', () => {
   assert.equal(colliderFillCanSkipPack(views, 4, prevPose), false);
 });
 
+test('paintEpoch O(1) forces pack without scanning renderDirty', () => {
+  const views = makeViews({ entities: 4, fixtures: 4 });
+  views.meshActive.fill(1);
+  views.meshLayerMask.fill(1);
+  addTri(views, 0, 0, 0, 0, 2, 0, 0, 2);
+  views.fixtureRevision[0] = 1;
+  views.paintEpoch = new Uint32Array([3]);
+  views.lastPaintEpoch = 3;
+  const prevPose = {};
+  copyMeshFillPoseScratch(views, prevPose);
+  assert.equal(colliderFillCanSkipPack(views, 1, prevPose), true);
+  views.paintEpoch[0] = 4;
+  assert.equal(colliderFillCanSkipPack(views, 1, prevPose), false);
+});
+
 test('renderDirty paint forces pack', () => {
   const views = makeViews({ entities: 1, fixtures: 1 });
   views.meshActive[0] = 1;

@@ -9,6 +9,7 @@ const { Scene, Camera, LAYER_KIND } = WEED;
 
 export const ISLAND_COUNT = 6500;
 export const TRIANGLES_PER_ISLAND = 8;
+export const VERTS_PER_POLY = 8;
 export const WORLD_W = 12000;
 export const WORLD_H = 12000;
 
@@ -55,6 +56,7 @@ export class MeshFillMovingScene extends Scene {
         x: startX + col * spacing,
         y: startY + row * spacing,
         triangles: TRIANGLES_PER_ISLAND,
+        vertsPerPoly: VERTS_PER_POLY,
         tint: 0xaa7744,
         spin: 0.04,
       });

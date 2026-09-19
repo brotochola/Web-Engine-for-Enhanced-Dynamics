@@ -6,10 +6,16 @@ import { fileURLToPath } from 'node:url';
 
 import {
   packColliderFill,
+  packColliderFillPoseOnly,
   COLLIDER_FILL_FLOATS,
   resetColliderFillMeshLayerWarn,
 } from '../../src/render/colliderFillBatch.js';
-import { resetMeshRendererDrawableWarn, warnMeshRendererNeedsDrawableCollider } from '../../src/components/meshRenderer.js';
+import {
+  MeshRenderer,
+  MESH_NO_TEXTURE,
+  resetMeshRendererDrawableWarn,
+  warnMeshRendererNeedsDrawableCollider,
+} from '../../src/components/meshRenderer.js';
 import { Collider } from '../../src/components/collider.js';
 
 const INV = 0xffff;
@@ -90,6 +96,51 @@ test('packColliderFill filters MeshRenderer.layerMask', () => {
   assert.equal(n0, 2);
   const n1 = packColliderFill(out, 16, 1, views);
   assert.equal(n1, 1);
+});
+
+test('packColliderFillPoseOnly matches full pack after pose/paint move', () => {
+  const views = makeViews({ entities: 2, fixtures: 2 });
+  views.meshActive[0] = 1;
+  views.meshActive[1] = 1;
+  views.meshLayerMask[0] = 1;
+  views.meshLayerMask[1] = 1;
+  views.x[0] = 10;
+  views.y[0] = 20;
+  views.x[1] = 40;
+  views.y[1] = 50;
+  views.offsetX[1] = 3;
+  views.offsetY[1] = 4;
+  addTri(views, 0, 0, 0, 0, 8, 0, 0, 8);
+  addTri(views, 1, 1, 1, 1, 5, 1, 1, 5);
+
+  const cap = 8;
+  const out = new Float32Array(cap * COLLIDER_FILL_FLOATS);
+  views.instanceEntity = new Uint32Array(cap);
+  const n0 = packColliderFill(out, cap, 0, views);
+  assert.equal(n0, 2);
+  assert.equal(views.instanceEntity[0], 0);
+  assert.equal(views.instanceEntity[1], 1);
+
+  views.x[0] = 100;
+  views.y[1] = 70;
+  views.rotC[1] = 0;
+  views.rotS[1] = 1;
+  views.meshTint[0] = 0x112233;
+  views.meshAlpha[1] = 0.5;
+
+  const nPose = packColliderFillPoseOnly(out, cap, n0, views.instanceEntity, views);
+  assert.equal(nPose, 2);
+
+  const full = new Float32Array(cap * COLLIDER_FILL_FLOATS);
+  views.outU32 = null;
+  const n1 = packColliderFill(full, cap, 0, views);
+  assert.equal(n1, 2);
+  for (let i = 0; i < n1 * COLLIDER_FILL_FLOATS; i++) {
+    assert.ok(
+      Math.abs(out[i] - full[i]) < 1e-5,
+      `float ${i} pose-only ${out[i]} full ${full[i]}`,
+    );
+  }
 });
 
 test('packColliderFill keeps world verts (camera is RT transform)', () => {
@@ -292,7 +343,11 @@ test('destructibleTerrainScene declares LAYER_KIND.MESH', () => {
   );
   assert.match(scene, /kind:\s*LAYER_KIND\.MESH/);
   assert.match(scene, /fragment:\s*'rockContour'/);
-  assert.match(scene, /rockContour:\s*'\/demos\/shaders\/rockContour\.frag'/);
+  assert.match(scene, /webgl:\s*'\/demos\/shaders\/rockContour\.frag'/);
+  assert.match(scene, /webgpu:\s*'\/demos\/shaders\/rockContour\.wgsl'/);
+  assert.match(scene, /terrainRendererBackend/);
+  assert.match(scene, /benchRemesh/);
+  assert.equal(scene.includes('fillSpace'), false);
   assert.match(scene, /rocky:\s*'\/demos\/img\/rocky\.jpg'/);
   assert.match(island, /MeshRenderer/);
   assert.match(island, /setTexture\('rocky'\)/);
@@ -302,6 +357,16 @@ test('destructibleTerrainScene declares LAYER_KIND.MESH', () => {
   assert.equal(island.includes('fillTint'), false);
 });
 
+test('colliderFill.wgsl samples the atlas in uniform control flow', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const wgsl = fs.readFileSync(path.join(here, '../../src/shaders/colliderFill.wgsl'), 'utf8');
+  const frag = wgsl.slice(wgsl.indexOf('fn mainFrag'));
+  const sampleAt = frag.indexOf('textureSample');
+  const branchAt = frag.indexOf('vHasTex');
+  assert.ok(sampleAt >= 0, 'mainFrag samples uTexture');
+  assert.ok(branchAt < 0 || sampleAt < branchAt, 'textureSample must precede any vHasTex branch');
+});
+
 test('MESH look path is one RT, no fillSpace / SCREEN bake', () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const src = fs.readFileSync(path.join(here, '../../src/workers/pixiWorker.js'), 'utf8');
@@ -309,6 +374,39 @@ test('MESH look path is one RT, no fillSpace / SCREEN bake', () => {
   assert.match(src, /_renderMeshFillToRt/);
   assert.match(src, /if\s*\(\s*!isMesh\s*\)/);
   assert.match(src, /cl\.rtOut\s*=/);
-  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*isMesh\)/);
-  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*!!cl\.fillBatch\)/);
+  assert.match(src, /_meshLookFlipV\(\)/);
+  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*isMesh\s*&&\s*this\._meshLookFlipV\(\)\)/);
+  assert.match(src, /_makeLookShaderMesh\(cl\.shader,\s*!!cl\.fillBatch\s*&&\s*this\._meshLookFlipV\(\)\)/);
+  assert.match(src, /return !this\._useWebGpu/);
+  assert.match(src, /skip\._skipRt/);
+  assert.match(src, /paintEpoch/);
+  assert.match(src, /packColliderFillPoseOnly/);
+  assert.match(src, /meshFillPresenceChanged/);
+});
+
+test('MeshRenderer paintEpoch bumps once per dirty burst', () => {
+  const n = 2;
+  const buf = new ArrayBuffer(MeshRenderer.getBufferSize(n));
+  MeshRenderer.initializeArrays(buf, n);
+  MeshRenderer.renderDirty[0] = 0;
+  const mr = new MeshRenderer(0);
+  mr.tint = 0xff0000;
+  const ep = MeshRenderer.paintEpoch[0];
+  mr.tint = 0xff0000;
+  assert.equal(MeshRenderer.paintEpoch[0], ep);
+  mr.tint = 0x00ff00;
+  assert.equal(MeshRenderer.paintEpoch[0], ep);
+  MeshRenderer.renderDirty[0] = 0;
+  mr.tint = 0x0000ff;
+  assert.equal(MeshRenderer.paintEpoch[0], (ep + 1) >>> 0);
+  MeshRenderer.clearArrays();
+});
+
+test('spawn path resets mesh tile / texture / outset', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const src = fs.readFileSync(path.join(here, '../../src/core/gameObject.js'), 'utf8');
+  assert.match(src, /MESH_NO_TEXTURE/);
+  assert.match(src, /visualOutset\[i\]\s*=\s*0/);
+  assert.match(src, /paintEpoch/);
+  assert.equal(MESH_NO_TEXTURE, 0xffff);
 });

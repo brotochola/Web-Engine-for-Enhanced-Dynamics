@@ -186,9 +186,13 @@ async function main() {
 
   const server = await createStaticBenchmarkServer(repoRoot);
   const srcModules = Boolean(cliArgs.src);
+  const extraQuery = typeof cliArgs.query === 'string' ? cliArgs.query.replace(/^\?/, '') : '';
+  const qs = [];
+  if (srcModules) qs.push('src=1');
+  if (extraQuery) qs.push(extraQuery);
   const benchmarkUrl =
     `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html` +
-    (srcModules ? '?src=1' : '');
+    (qs.length ? `?${qs.join('&')}` : '');
   if (srcModules) {
     console.log('Benchmark: live /src modules (not dist bundle).');
   }

@@ -37,6 +37,7 @@ function parseArgs(argv) {
     scene: null,
     sceneExport: null,
     src: false,
+    query: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -47,6 +48,7 @@ function parseArgs(argv) {
     else if (a === '--scene' && argv[i + 1]) out.scene = argv[++i];
     else if (a === '--scene-export' && argv[i + 1]) out.sceneExport = argv[++i];
     else if (a === '--src') out.src = true;
+    else if (a === '--query' && argv[i + 1]) out.query = argv[++i];
   }
   return out;
 }
@@ -90,6 +92,33 @@ function summaryForSeries(values, runs) {
     cv: cv(values),
     ...minMax(values),
   };
+}
+
+function recordWorkersFromReport(j, workerAcc) {
+  for (const w of j.workers || []) {
+    if (!workerAcc[w.id]) workerAcc[w.id] = { fps: [], stepMs: [], bodyCount: [] };
+    workerAcc[w.id].fps.push(w.averageFPS || 0);
+    const s = w.statsSamplesAverage;
+    if (s) {
+      workerAcc[w.id].stepMs.push(s.STEP_MS || 0);
+      if (s.BODY_COUNT != null) workerAcc[w.id].bodyCount.push(s.BODY_COUNT || 0);
+    }
+  }
+}
+
+function printWorkerStepSummary(workerAcc, runs) {
+  const ids = Object.keys(workerAcc).sort();
+  if (ids.length === 0) return;
+  console.log('\n--- Summary (all workers STEP_MS) ---');
+  for (const id of ids) {
+    const a = workerAcc[id];
+    const stepS = summaryForSeries(a.stepMs, a.stepMs.length);
+    if (!stepS) continue;
+    console.log(
+      `${id} STEP_MS: median ${stepS.median.toFixed(3)} | mean ${stepS.mean.toFixed(3)} | CV ${fmtPct(stepS.cv)}` +
+        ` | Load ${formatLoadPct(stepS.median)} (vs 60 Hz)`
+    );
+  }
 }
 
 function recordSpatialFromReport(j, spatialAcc) {
@@ -212,12 +241,13 @@ function printPhysicsDiagnostics(accumulator, runs) {
   }
 }
 
-function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sceneExport, src) {
+function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sceneExport, src, query) {
   const physicsFps = [];
   const bodyCounts = [];
   const stepMs = [];
   const physicsStats = Object.create(null);
   const spatialAcc = Object.create(null);
+  const workerAcc = Object.create(null);
   let runsCompleted = 0;
   let attempts = 0;
   const maxAttempts = runs + 3;
@@ -238,6 +268,7 @@ function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sc
     if (scene) args.push('--scene', scene);
     if (sceneExport) args.push('--scene-export', sceneExport);
     if (src) args.push('--src');
+    if (query) args.push('--query', query);
     try {
       execFileSync(process.execPath, args, { stdio: 'inherit', cwd: repoRoot });
     } catch (err) {
@@ -255,6 +286,7 @@ function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sc
       break;
     }
     recordSpatialFromReport(j, spatialAcc);
+    recordWorkersFromReport(j, workerAcc);
     physicsFps.push(ph.averageFPS);
     if (ph.statsSamplesAverage) {
       bodyCounts.push(ph.statsSamplesAverage.BODY_COUNT || 0);
@@ -285,10 +317,10 @@ function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sc
     console.log(line);
   }
 
-  return { physicsFps, bodyCounts, stepMs, physicsStats, spatialAcc, runsCompleted };
+  return { physicsFps, bodyCounts, stepMs, physicsStats, spatialAcc, workerAcc, runsCompleted };
 }
 
-const { runs, warmupMs, durationMs, jsonOut, scene, sceneExport, src } = parseArgs(process.argv.slice(2));
+const { runs, warmupMs, durationMs, jsonOut, scene, sceneExport, src, query } = parseArgs(process.argv.slice(2));
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-bench-'));
 let exitCode = 0;
@@ -308,6 +340,7 @@ try {
     scene,
     sceneExport,
     src,
+    query,
   );
   if (block.physicsFps.length === 0) exitCode = 1;
   else {
@@ -318,6 +351,7 @@ try {
     printPhysicsSummary(block.physicsFps, block.bodyCounts, block.stepMs, block.runsCompleted);
     printPhysicsDiagnostics(block.physicsStats, block.runsCompleted);
     printSpatialSummary(block.spatialAcc, block.runsCompleted);
+    printWorkerStepSummary(block.workerAcc, block.runsCompleted);
 
     if (jsonOut) {
       const single = {
@@ -335,6 +369,17 @@ try {
         stepMs: block.stepMs,
         physicsStatsPerRun: block.physicsStats,
         spatialPerRun: block.spatialAcc,
+        workersPerRun: block.workerAcc,
+        workers: Object.fromEntries(
+          Object.entries(block.workerAcc).map(([id, acc]) => [
+            id,
+            {
+              averageFPS: summaryForSeries(acc.fps, acc.fps.length),
+              STEP_MS: summaryForSeries(acc.stepMs, acc.stepMs.length),
+              BODY_COUNT: summaryForSeries(acc.bodyCount, acc.bodyCount.length),
+            },
+          ])
+        ),
         summary: {
           physics: {
             averageFPS: summaryForSeries(block.physicsFps, block.runsCompleted),

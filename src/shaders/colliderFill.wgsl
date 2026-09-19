@@ -96,12 +96,11 @@ fn mainVert(
 
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
-  if (in.vHasTex < 0.5) {
-    if (in.vColor.a < 0.01) { discard; }
-    return vec4<f32>(in.vColor.rgb * in.vColor.a, in.vColor.a);
-  }
+  // Sample first: WGSL forbids textureSample after a non-uniform vHasTex branch.
   let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
-  let a = t.a * in.vColor.a;
+  let useTex = in.vHasTex >= 0.5;
+  let a = select(in.vColor.a, t.a * in.vColor.a, useTex);
+  let rgb = select(in.vColor.rgb * in.vColor.a, t.rgb * in.vColor.rgb * in.vColor.a, useTex);
   if (a < 0.01) { discard; }
-  return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a, a);
+  return vec4<f32>(rgb, a);
 }

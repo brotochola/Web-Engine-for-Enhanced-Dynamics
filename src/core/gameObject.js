@@ -6,7 +6,7 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
-import { MeshRenderer } from '../components/meshRenderer.js';
+import { MeshRenderer, MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
@@ -2418,7 +2418,17 @@ export class GameObject {
       MeshRenderer.alpha[i] = 1;
       MeshRenderer.renderVisible[i] = 1;
       MeshRenderer.layerMask[i] = 0;
+      MeshRenderer.textureId[i] = MESH_NO_TEXTURE;
+      MeshRenderer.tileMode[i] = 0;
+      MeshRenderer.repeatX[i] = 0;
+      MeshRenderer.repeatY[i] = 0;
+      MeshRenderer.tileOffsetU[i] = 0;
+      MeshRenderer.tileOffsetV[i] = 0;
+      MeshRenderer.visualOutset[i] = 0;
       MeshRenderer.renderDirty[i] = 1;
+      if (MeshRenderer.paintEpoch) {
+        MeshRenderer.paintEpoch[0] = (MeshRenderer.paintEpoch[0] + 1) >>> 0;
+      }
     }
 
     if (has.SpriteRenderer) {

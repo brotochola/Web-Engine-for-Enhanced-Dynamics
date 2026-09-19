@@ -130,8 +130,29 @@ export function errorCompileFailed(kind, asset, layerName, backendLabel, origina
   );
 }
 
-export function resolveShaderPath(asset, shaderAssets) {
-  if (shaderAssets && typeof shaderAssets[asset] === 'string') return shaderAssets[asset];
+export function errorShaderMapMissingBackend(asset, backend) {
+  return new Error(
+    `WeedJS: Shader asset "${asset}" has no path for renderer.backend "${backend}". Use a string path or { webgl, webgpu }.`
+  );
+}
+
+/**
+ * Resolve a shader asset to a fetch path.
+ * `shaderAssets[name]` may be a string or `{ webgl, webgpu }`.
+ */
+export function resolveShaderPath(asset, shaderAssets, backend) {
+  const entry = shaderAssets && shaderAssets[asset];
+  if (typeof entry === 'string') return entry;
+  if (entry && typeof entry === 'object') {
+    const key =
+      backend === RENDERER_BACKEND_WEBGL
+        ? 'webgl'
+        : backend === RENDERER_BACKEND_WEBGPU
+          ? 'webgpu'
+          : null;
+    if (key && typeof entry[key] === 'string' && entry[key]) return entry[key];
+    throw errorShaderMapMissingBackend(asset, backend || 'unspecified');
+  }
   if (typeof asset === 'string' && (asset.includes('/') || asset.includes('.'))) return asset;
   return asset;
 }
@@ -222,7 +243,7 @@ export function assertLoadedShadersCompatible({ backend, layers, shaderAssets, l
     if (!shader) continue;
     const look = shader.fragment;
     if (look) {
-      const path = resolveShaderPath(look, assets);
+      const path = resolveShaderPath(look, assets, backend);
       const source = loaded[look];
       if (!source) throw errorLookMissing(layerName, look);
       assertLookShaderCompatible({ backend, layerName, asset: look, path, source });
@@ -231,7 +252,7 @@ export function assertLoadedShadersCompatible({ backend, layers, shaderAssets, l
       const names = collectComputeAssetNames(shader);
       for (let i = 0; i < names.length; i++) {
         const asset = names[i];
-        const path = resolveShaderPath(asset, assets);
+        const path = resolveShaderPath(asset, assets, backend);
         const source = loaded[asset];
         if (!source) throw errorComputeMissing(layerName, asset);
         assertComputeShaderCompatible({ layerName, asset, path, source });

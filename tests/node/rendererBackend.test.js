@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   normalizeRendererBackend,
@@ -7,6 +10,7 @@ import {
   assertLookShaderCompatible,
   assertComputeShaderCompatible,
   assertLoadedShadersCompatible,
+  resolveShaderPath,
   resolveShaderDialect,
   detectShaderDialectFromPath,
   detectShaderDialectFromSource,
@@ -133,6 +137,81 @@ test('loaded look/compute assets are checked against backend', () => {
       }),
     /look shader "fireLook" was not loaded/
   );
+});
+
+test('resolveShaderPath accepts a string or a webgl/webgpu map', () => {
+  const assets = {
+    rock: {
+      webgl: '/demos/shaders/rockContour.frag',
+      webgpu: '/demos/shaders/rockContour.wgsl',
+    },
+    fire: '/demos/shaders/fire.wgsl',
+  };
+  assert.equal(resolveShaderPath('rock', assets, 'webgl'), '/demos/shaders/rockContour.frag');
+  assert.equal(resolveShaderPath('rock', assets, 'webgpu'), '/demos/shaders/rockContour.wgsl');
+  assert.equal(resolveShaderPath('fire', assets, 'webgpu'), '/demos/shaders/fire.wgsl');
+  assert.throws(
+    () => resolveShaderPath('rock', { rock: { webgl: '/x.frag' } }, 'webgpu'),
+    /has no path for renderer\.backend "webgpu"/
+  );
+});
+
+test('loaded dual-map look uses the backend dialect', () => {
+  const assets = {
+    rockContour: {
+      webgl: '/demos/shaders/rockContour.frag',
+      webgpu: '/demos/shaders/rockContour.wgsl',
+    },
+  };
+  assert.equal(
+    assertLoadedShadersCompatible({
+      backend: 'webgl',
+      layers: { terrain: { shader: { fragment: 'rockContour' } } },
+      shaderAssets: assets,
+      loadedSources: { rockContour: GLSL_LOOK },
+    }),
+    undefined
+  );
+  assert.throws(
+    () =>
+      assertLoadedShadersCompatible({
+        backend: 'webgpu',
+        layers: { terrain: { shader: { fragment: 'rockContour' } } },
+        shaderAssets: { rockContour: { webgl: '/x.frag', webgpu: '/x.frag' } },
+        loadedSources: { rockContour: GLSL_LOOK },
+      }),
+    /look shader "rockContour" is GLSL/
+  );
+});
+
+test('rockContour assets match backend dialect and the terrain map', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const frag = fs.readFileSync(path.join(here, '../../demos/shaders/rockContour.frag'), 'utf8');
+  const wgsl = fs.readFileSync(path.join(here, '../../demos/shaders/rockContour.wgsl'), 'utf8');
+  assert.equal(detectShaderDialectFromSource(frag), 'glsl');
+  assert.equal(detectShaderDialectFromSource(wgsl), 'wgsl');
+  const assets = {
+    rockContour: {
+      webgl: '/demos/shaders/rockContour.frag',
+      webgpu: '/demos/shaders/rockContour.wgsl',
+    },
+  };
+  assert.equal(resolveShaderPath('rockContour', assets, 'webgl'), '/demos/shaders/rockContour.frag');
+  assert.equal(resolveShaderPath('rockContour', assets, 'webgpu'), '/demos/shaders/rockContour.wgsl');
+  assertLookShaderCompatible({
+    backend: 'webgl',
+    layerName: 'terrain',
+    asset: 'rockContour',
+    path: assets.rockContour.webgl,
+    source: frag,
+  });
+  assertLookShaderCompatible({
+    backend: 'webgpu',
+    layerName: 'terrain',
+    asset: 'rockContour',
+    path: assets.rockContour.webgpu,
+    source: wgsl,
+  });
 });
 
 test('detect dialect from path and source', () => {

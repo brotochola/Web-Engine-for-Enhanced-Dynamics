@@ -8,11 +8,14 @@ import { MeshFillIsland } from './compoundFixture/meshFillIsland.js';
 
 const { Scene, Camera, LAYER_KIND } = WEED;
 
-export const ISLAND_COUNT = 6500;
-export const TRIANGLES_PER_ISLAND = 8;
-export const USE_PRIMARY_BOX = false;
-export const WORLD_W = 12000;
-export const WORLD_H = 12000;
+/** Skip-pack + skip-RT leave only the pose scan. 6500 stays ~0.25 ms — raise bodies to the Uint16 cap. */
+export const ISLAND_COUNT = 60000;
+export const TRIANGLES_PER_ISLAND = 1;
+export const VERTS_PER_POLY = 8;
+/** Primary box: 60k fixtures would sit on the Uint16 cap; skip-path cost is entity pose scan. */
+export const USE_PRIMARY_BOX = true;
+export const WORLD_W = 22000;
+export const WORLD_H = 22000;
 
 export class MeshFillStaticScene extends Scene {
   static config = {
@@ -22,6 +25,7 @@ export class MeshFillStaticScene extends Scene {
     spatial: {
       numberOfSpatialWorkers: 1,
       cellSize: 160,
+      maxEntitiesPerCell: 32,
       maxNeighbors: 32,
       noLimitFPS: false,
     },
@@ -46,8 +50,8 @@ export class MeshFillStaticScene extends Scene {
   static entities = [[MeshFillIsland, ISLAND_COUNT]];
 
   create() {
-    const cols = 64;
-    const spacing = 150;
+    const cols = 256;
+    const spacing = 80;
     const startX = 280;
     const startY = 280;
     for (let i = 0; i < ISLAND_COUNT; i++) {
@@ -57,6 +61,7 @@ export class MeshFillStaticScene extends Scene {
         x: startX + col * spacing,
         y: startY + row * spacing,
         triangles: TRIANGLES_PER_ISLAND,
+        vertsPerPoly: VERTS_PER_POLY,
         tint: 0x88aa66,
         spin: 0,
         usePrimaryBox: USE_PRIMARY_BOX,

@@ -12,6 +12,7 @@ export class MeshFillIsland extends GameObject {
     x = 0,
     y = 0,
     triangles = 8,
+    vertsPerPoly = 3,
     cell = 12,
     tint = 0x88aa66,
     spin = 0,
@@ -34,7 +35,7 @@ export class MeshFillIsland extends GameObject {
       this.collider.width = width;
       this.collider.height = height;
     } else {
-      const polys = makeIslandPolys(triangles, cell);
+      const polys = makeIslandPolys(triangles, cell, vertsPerPoly);
       if (!this.collider.replacePolygons(polys)) this.despawn();
     }
     this._spin = spin;

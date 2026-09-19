@@ -138,8 +138,12 @@ function writeFillTri(out, outU32, base, written, maxOut, depthDenom, x0, y0, x1
   out[base + 14] = _paint.tiy;
   out[base + 15] = _paint.tou;
   out[base + 16] = _paint.tov;
+  if (_instanceEntity) _instanceEntity[written] = _packEntity;
   return written + 1;
 }
+
+let _instanceEntity = null;
+let _packEntity = 0;
 
 const _fanOut = { written: 0, base: 0, full: false };
 
@@ -223,22 +227,33 @@ function meshFillUsesLive(i, views) {
   return dx * dx + dy * dy > MESH_LIVE_POSE_SLACK_SQ;
 }
 
+const _livePose = { x: 0, y: 0, c: 1, s: 0 };
+
+function readMeshFillPose(i, views, live) {
+  const useLive = live === true;
+  _livePose.x = useLive ? views.liveX[i] : views.x[i];
+  _livePose.y = useLive ? views.liveY[i] : views.y[i];
+  if (useLive && views.liveRotC) _livePose.c = views.liveRotC[i];
+  else _livePose.c = views.rotC ? views.rotC[i] : 1;
+  if (useLive && views.liveRotS) _livePose.s = views.liveRotS[i];
+  else _livePose.s = views.rotS ? views.rotS[i] : 0;
+  return _livePose;
+}
+
 function meshFillX(i, views) {
-  return meshFillUsesLive(i, views) ? views.liveX[i] : views.x[i];
+  return readMeshFillPose(i, views, meshFillUsesLive(i, views)).x;
 }
 
 function meshFillY(i, views) {
-  return meshFillUsesLive(i, views) ? views.liveY[i] : views.y[i];
+  return readMeshFillPose(i, views, meshFillUsesLive(i, views)).y;
 }
 
 function meshFillRotC(i, views) {
-  if (meshFillUsesLive(i, views) && views.liveRotC) return views.liveRotC[i];
-  return views.rotC ? views.rotC[i] : 1;
+  return readMeshFillPose(i, views, meshFillUsesLive(i, views)).c;
 }
 
 function meshFillRotS(i, views) {
-  if (meshFillUsesLive(i, views) && views.liveRotS) return views.liveRotS[i];
-  return views.rotS ? views.rotS[i] : 0;
+  return readMeshFillPose(i, views, meshFillUsesLive(i, views)).s;
 }
 
 export function copyMeshFillPoseScratch(views, prevPose) {
@@ -253,10 +268,11 @@ export function copyMeshFillPoseScratch(views, prevPose) {
   const active = views.meshActive;
   const visible = views.meshVisible;
   for (let i = 0; i < n; i++) {
-    px[i] = meshFillX(i, views);
-    py[i] = meshFillY(i, views);
-    pc[i] = meshFillRotC(i, views);
-    ps[i] = meshFillRotS(i, views);
+    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    px[i] = pose.x;
+    py[i] = pose.y;
+    pc[i] = pose.c;
+    ps[i] = pose.s;
     pa[i] = active[i];
     pv[i] = visible[i];
   }
@@ -283,13 +299,15 @@ export function meshFillPoseOrPresenceChanged(views, prevPose) {
     const vis = visible[i] | 0;
     if ((pa[i] | 0) !== a || (pv[i] | 0) !== vis) return true;
     if (!a || !vis) continue;
-    if (meshFillX(i, views) !== px[i] || meshFillY(i, views) !== py[i]) return true;
-    if (meshFillRotC(i, views) !== pc[i] || meshFillRotS(i, views) !== ps[i]) return true;
+    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    if (pose.x !== px[i] || pose.y !== py[i] || pose.c !== pc[i] || pose.s !== ps[i]) return true;
   }
   return false;
 }
 
 export function meshFillPaintDirty(views) {
+  const ep = views.paintEpoch;
+  if (ep) return (ep[0] | 0) !== (views.lastPaintEpoch | 0);
   const d = views.meshDirty;
   if (!d) return false;
   const n = views.entityCount | 0;
@@ -318,7 +336,11 @@ function readFixtureRevision(views) {
 export function colliderFillCanSkipPack(views, lastRevision, prevPose) {
   if ((lastRevision | 0) < 0 || !prevPose) return false;
   if (readFixtureRevision(views) !== (lastRevision | 0)) return false;
-  if (meshFillPaintDirty(views)) return false;
+  if (views.paintEpoch) {
+    if ((views.paintEpoch[0] | 0) !== (views.lastPaintEpoch | 0)) return false;
+  } else if (meshFillPaintDirty(views)) {
+    return false;
+  }
   return !meshFillPoseOrPresenceChanged(views, prevPose);
 }
 
@@ -361,6 +383,7 @@ export function packColliderFill(out, cap, layerId, views) {
   const primaryHeight = views.primaryHeight;
   const primaryRadius = views.primaryRadius;
   const outU32 = packOutU32(out, views);
+  _instanceEntity = views.instanceEntity || null;
 
   const bit = 1 << (layerId | 0);
   const depthDenom = maxOut + 1;
@@ -368,6 +391,7 @@ export function packColliderFill(out, cap, layerId, views) {
   let base = 0;
 
   for (let i = 0; i < entityCount; i++) {
+    _packEntity = i;
     if (!meshActive[i] || !meshVisible[i]) continue;
     const mask = meshMask[i] | 0;
     const drawable = entityHasDrawableCollider(i, views);
@@ -389,12 +413,13 @@ export function packColliderFill(out, cap, layerId, views) {
 
     bindMeshPaint(i, views);
     const outset = _outset;
-    const c = meshFillRotC(i, views);
-    const s = meshFillRotS(i, views);
+    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    const c = pose.c;
+    const s = pose.s;
     const ox = offsetX ? offsetX[i] : 0;
     const oy = offsetY ? offsetY[i] : 0;
-    const wx = meshFillX(i, views) + c * ox - s * oy;
-    const wy = meshFillY(i, views) + s * ox + c * oy;
+    const wx = pose.x + c * ox - s * oy;
+    const wy = pose.y + s * ox + c * oy;
 
     let a = meshAlpha ? meshAlpha[i] : 1;
     if (a < 0) a = 0;
@@ -499,7 +524,67 @@ export function packColliderFill(out, cap, layerId, views) {
     }
   }
 
+  _instanceEntity = null;
   return written;
+}
+
+/** Prior full pack wrote instance→entity, so pose-only refill is legal. */
+export function meshFillHasLocals(views) {
+  return !!(views && views.instanceEntity);
+}
+
+export function meshFillPresenceChanged(views, prevPose) {
+  const n = views.entityCount | 0;
+  const pa = prevPose && prevPose.active;
+  if (!pa || pa.length < n) return true;
+  const pv = prevPose.visible;
+  const active = views.meshActive;
+  const visible = views.meshVisible;
+  for (let i = 0; i < n; i++) {
+    if ((pa[i] | 0) !== (active[i] | 0) || (pv[i] | 0) !== (visible[i] | 0)) return true;
+  }
+  return false;
+}
+
+/**
+ * Rewrite pose/paint on already-packed local tris. Fixture topology must match.
+ * @returns {number} instance count (same as `count`)
+ */
+export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, views) {
+  const n = count | 0;
+  if (!out || n <= 0 || !entityOfInstance) return 0;
+  const outU32 = packOutU32(out, views);
+  const offsetX = views.offsetX;
+  const offsetY = views.offsetY;
+  const meshTint = views.meshTint;
+  const meshAlpha = views.meshAlpha;
+  const depthDenom = (cap | 0) + 1;
+  for (let k = 0; k < n; k++) {
+    const i = entityOfInstance[k] | 0;
+    bindMeshPaint(i, views);
+    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    const c = pose.c;
+    const s = pose.s;
+    const ox = offsetX ? offsetX[i] : 0;
+    const oy = offsetY ? offsetY[i] : 0;
+    const base = k * COLLIDER_FILL_FLOATS;
+    out[base + 6] = pose.x + c * ox - s * oy;
+    out[base + 7] = pose.y + s * ox + c * oy;
+    out[base + 8] = c;
+    out[base + 9] = s;
+    let a = meshAlpha ? meshAlpha[i] : 1;
+    if (a < 0) a = 0;
+    else if (a > 1) a = 1;
+    const a8 = (a * 255 + 0.5) | 0;
+    outU32[base + 10] = ((a8 & 255) << 24) | ((meshTint[i] >>> 0) & 0xffffff);
+    out[base + 11] = 1.0 - (k + 1) / depthDenom;
+    out[base + 12] = _paint.texId;
+    out[base + 13] = _paint.tix;
+    out[base + 14] = _paint.tiy;
+    out[base + 15] = _paint.tou;
+    out[base + 16] = _paint.tov;
+  }
+  return n;
 }
 
 export class ColliderFillBatch {

@@ -1,6 +1,6 @@
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { TerrainIsland } from './terrainIsland.js';
-import { WorldGrid, RAY_MASK_NO_STATIC, TUNE, SHOT_KIND_GRID, SHOT_KIND_BODY } from '../worldGrid.js';
+import { WorldGrid, RAY_MASK_NO_STATIC, TUNE, SHOT_KIND_GRID, SHOT_KIND_BODY, ISO } from '../worldGrid.js';
 import WEED from '/src/index.js';
 
 const {
@@ -36,6 +36,7 @@ export class Ship extends GameObject {
     this.collider.visualRange = 80;
     this._lastFireAt = 0;
     this._laserOn = 0;
+    this._benchRemesh = 0;
   }
 
   onSpawned(spawnConfig = {}) {
@@ -57,6 +58,7 @@ export class Ship extends GameObject {
     this.setScale((HALF_W * 2) / orig, (HALF_H * 2) / orig);
     this._lastFireAt = 0;
     this._laserOn = 0;
+    this._benchRemesh = !!spawnConfig.benchRemesh;
   }
 
   tick(dtRatio, _deltaTime, accumulatedTime) {
@@ -64,6 +66,7 @@ export class Ship extends GameObject {
     if (Keyboard.a) this.addAcceleration(-THRUST_ACCEL * 0.25, 0);
     if (Keyboard.d) this.addAcceleration(THRUST_ACCEL * 0.25, 0);
 
+    if (this._benchRemesh) this._laserOn = 1;
     if (Keyboard.isPressed('c')) this._laserOn = 1;
     if (Keyboard.isPressed('z') || Keyboard.isPressed('x') || Keyboard.isPressed('v')) this._laserOn = 0;
 
@@ -81,7 +84,7 @@ export class Ship extends GameObject {
       this._laserOn &&
       !Mouse.isDebugToolActive &&
       WorldGrid.tuneGet(TUNE.UI_BLOCK) < 0.5 &&
-      Mouse.isButton0Down
+      (this._benchRemesh || Mouse.isButton0Down)
     ) {
       const now = accumulatedTime || 0;
       if (now - this._lastFireAt >= WorldGrid.tuneGet(TUNE.SHOT_COOLDOWN)) {
@@ -94,7 +97,43 @@ export class Ship extends GameObject {
     Camera.followEntity(this.index, LOOK_AHEAD, CAM_SMOOTH, dtRatio);
   }
 
+  _benchShootNearest() {
+    const cs = WorldGrid.cellSize;
+    const cols = WorldGrid.cols;
+    const rows = WorldGrid.rows;
+    const amount = WorldGrid.amount;
+    if (!amount || !(cs > 0)) return false;
+    const gx = Math.floor(this.x / cs);
+    const gy = Math.floor(this.y / cs);
+    let bestHx = 0;
+    let bestHy = 0;
+    let bestD = Infinity;
+    for (let j = 0; j <= 8; j++) {
+      for (let i = -6; i <= 6; i++) {
+        const x = gx + i;
+        const y = gy + j;
+        if (x < 0 || y < 0 || x >= cols || y >= rows) continue;
+        if (amount[y * cols + x] < ISO) continue;
+        const hx = (x + 0.5) * cs;
+        const hy = (y + 0.5) * cs;
+        const dx = hx - this.x;
+        const dy = hy - this.y;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) {
+          bestD = d;
+          bestHx = hx;
+          bestHy = hy;
+        }
+      }
+    }
+    if (!(bestD < Infinity)) return false;
+    this._emitLaser(this.x, this.y, bestHx, bestHy, true);
+    WorldGrid.pushHit(SHOT_KIND_GRID, bestHx, bestHy, -1, -1);
+    return true;
+  }
+
   _tryShoot() {
+    if (this._benchRemesh && this._benchShootNearest()) return;
     const dx = Mouse.x - this.x;
     const dy = Mouse.y - this.y;
     const distSq = dx * dx + dy * dy;

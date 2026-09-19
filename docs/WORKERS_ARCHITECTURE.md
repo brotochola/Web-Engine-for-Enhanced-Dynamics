@@ -253,7 +253,7 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
      - If the layer has **no shader**: render the `ParticleContainer` directly to screen at its `zIndex`
      - If the layer has a **shader**: run the two-RT pipeline (see below)
    - Check `Atomics.load(uniformDirty, 0)` for each shader layer; if dirty, upload new uniform values to the GPU shader and clear the flag
-   - `LAYER_KIND.MESH` packs `ColliderFixture` fans (else the primary collider) via `packColliderFill` in world space. A look-shader MESH layer writes `cl.rt` only and puts the NDC look mesh on the stage.
+   - `LAYER_KIND.MESH` packs `ColliderFixture` fans (else the primary collider) via `packColliderFill` in world space. Same fixture revision and presence: `packColliderFillPoseOnly` rewrites pose/paint on the resident 17-float tris. A look-shader MESH layer writes `cl.rt` only and puts the NDC look mesh on the stage.
 
 **It never waits** on pre_render. Pre-render is the worker that may block when it is more than one frame ahead.
 

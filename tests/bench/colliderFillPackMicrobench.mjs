@@ -9,7 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { mulberry32, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
   packColliderFill,
+  packColliderFillPoseOnly,
   COLLIDER_FILL_FLOATS,
+  colliderFillCanSkipPack,
+  copyMeshFillPoseScratch,
   resetColliderFillMeshLayerWarn,
 } from '../../src/render/colliderFillBatch.js';
 
@@ -190,6 +193,7 @@ const pose = new Float32Array(BODIES * 4);
 views.outU32 = new Uint32Array(inst.buffer);
 
 const nA = packWorldA(world, views);
+views.instanceEntity = new Uint32Array(INSTANCES);
 const nB = packColliderFill(inst, INSTANCES, 0, views);
 const nC = packPoseC(pose, views);
 if (nA !== INSTANCES || nB !== INSTANCES || nC !== BODIES) {
@@ -199,6 +203,30 @@ const checksumOk = checksumAB(world, inst, INSTANCES);
 if (!checksumOk) {
   throw new Error('collider-fill-pack checksum failed; times do not count');
 }
+
+views.x[0] += 1.25;
+views.y[1] += 0.75;
+const instPose = new Float32Array(inst);
+const nPose = packColliderFillPoseOnly(instPose, INSTANCES, nB, views.instanceEntity, views);
+const instFull = new Float32Array(INSTANCES * COLLIDER_FILL_FLOATS);
+views.outU32 = new Uint32Array(instFull.buffer);
+const nFull = packColliderFill(instFull, INSTANCES, 0, views);
+if (nPose !== nB || nFull !== nB) {
+  throw new Error(`pose-only count ${nPose} full ${nFull} expected ${nB}`);
+}
+let poseChecksumOk = true;
+for (let i = 0; i < nB * COLLIDER_FILL_FLOATS; i++) {
+  if (Math.abs(instPose[i] - instFull[i]) > EPS) {
+    poseChecksumOk = false;
+    break;
+  }
+}
+if (!poseChecksumOk) {
+  throw new Error('packColliderFillPoseOnly checksum failed; times do not count');
+}
+views.x[0] -= 1.25;
+views.y[1] -= 0.75;
+views.outU32 = new Uint32Array(inst.buffer);
 
 const a = timeIt('A world-space', (iterations) => {
   for (let i = 0; i < iterations; i++) packWorldA(world, views);
@@ -212,6 +240,12 @@ const c = timeIt('C pose-per-body', (iterations) => {
   for (let i = 0; i < iterations; i++) packPoseC(pose, views);
 }, { iterations: 400, warmup: 40, reps: 5 });
 
+const cLite = timeIt('C-lite pose-only refill', (iterations) => {
+  for (let i = 0; i < iterations; i++) {
+    packColliderFillPoseOnly(inst, INSTANCES, nB, views.instanceEntity, views);
+  }
+}, { iterations: 40, warmup: 4, reps: 5 });
+
 const v = verdict(a.opsPerSec, b.opsPerSec, c.opsPerSec);
 
 const payload = {
@@ -220,9 +254,11 @@ const payload = {
   trisPerBody: TRIS_PER_BODY,
   instances: INSTANCES,
   checksumOk,
+  poseChecksumOk,
   A: a,
   B: b,
   C: c,
+  CLite: cLite,
   H1: { claim: 'B >= 3% more ops/s than A', delta: v.h1, status: v.h1Status },
   H2: { claim: 'C >= 3% more ops/s than B', delta: v.h2, status: v.h2Status },
 };
@@ -313,7 +349,53 @@ for (const kind of primaryKinds) {
 }
 payload.primary = primaryResults;
 
+const SKIP_N = 6500;
+const skipViews = {
+  entityCount: SKIP_N,
+  meshActive: new Uint8Array(SKIP_N),
+  meshVisible: new Uint8Array(SKIP_N),
+  meshDirty: new Uint8Array(SKIP_N),
+  x: new Float32Array(SKIP_N),
+  y: new Float32Array(SKIP_N),
+  rotC: new Float32Array(SKIP_N),
+  rotS: new Float32Array(SKIP_N),
+  fixtureRevision: new Uint32Array(1),
+};
+skipViews.meshActive.fill(1);
+skipViews.meshVisible.fill(1);
+skipViews.rotC.fill(1);
+skipViews.fixtureRevision[0] = 7;
+const skipPrev = {};
+copyMeshFillPoseScratch(skipViews, skipPrev);
+if (!colliderFillCanSkipPack(skipViews, 7, skipPrev)) {
+  throw new Error('skip kernel expected a clean skip');
+}
+const skipTimed = timeIt('colliderFillCanSkipPack_6500', (iterations) => {
+  for (let i = 0; i < iterations; i++) colliderFillCanSkipPack(skipViews, 7, skipPrev);
+}, { iterations: 400, warmup: 40, reps: 5 });
+payload.skip = { pool: SKIP_N, ...skipTimed };
+
+skipViews.paintEpoch = new Uint32Array([7]);
+skipViews.lastPaintEpoch = 7;
+if (!colliderFillCanSkipPack(skipViews, 7, skipPrev)) {
+  throw new Error('skip kernel expected a clean paintEpoch skip');
+}
+const skipEpochTimed = timeIt('colliderFillCanSkipPack_6500_epoch', (iterations) => {
+  for (let i = 0; i < iterations; i++) colliderFillCanSkipPack(skipViews, 7, skipPrev);
+}, { iterations: 400, warmup: 40, reps: 5 });
+payload.skipEpoch = { pool: SKIP_N, ...skipEpochTimed };
+
+const POSE_C_FLOATS = 12;
+payload.uploadBytes = {
+  B_instance: INSTANCES * COLLIDER_FILL_FLOATS * 4,
+  C_pose: BODIES * POSE_C_FLOATS * 4,
+  C_localRemesh: INSTANCES * 6 * 4,
+};
+
 writeReport(path.join(reportDir, 'kernel.json'), payload);
+const h2cDir = path.resolve(here, '../results/mesh-renderer-arch/h2c');
+fs.mkdirSync(h2cDir, { recursive: true });
+writeReport(path.join(h2cDir, 'kernel.json'), payload);
 
 const pct = (x) => `${(x * 100).toFixed(1)}%`;
 const report = `# Pack instanced (B) es más barato que transformar vértices a world en CPU (A)
@@ -331,6 +413,9 @@ Kernel Node, sin workers. \`timeIt\` con piso de 3 ms. Carga fija: **${BODIES}**
 - Checksum: ${checksumOk ? 'OK' : 'FAIL'}
 - H1 B vs A: ${pct(v.h1)} → **${v.h1Status}**
 - H2 C vs B: ${pct(v.h2)} → **${v.h2Status}**
+- Skip pack limpio (${SKIP_N} bodies): mediana ${skipTimed.ms.toFixed(3)} ms / ${skipTimed.iterations} ops → **${Math.round(skipTimed.opsPerSec).toLocaleString()} ops/s**
+- Skip paintEpoch (${SKIP_N}): mediana ${skipEpochTimed.ms.toFixed(3)} ms / ${skipEpochTimed.iterations} ops → **${Math.round(skipEpochTimed.opsPerSec).toLocaleString()} ops/s**
+- Upload sintético: B ${payload.uploadBytes.B_instance} bytes/frame; C pose ${payload.uploadBytes.C_pose} bytes/frame; C remesh local ${payload.uploadBytes.C_localRemesh} bytes
 
 ## Verdict
 H1 ${v.h1Status}: B ${v.h1Status === 'KEEP' ? 'justifica' : v.h1Status === 'TIE' ? 'no cruza el 3% contra' : 'no gana contra'} matar el world-space en CPU. Este PR siempre mergea B.
@@ -343,4 +428,8 @@ Separar forma local de pose evita reescribir 3 vértices world por triángulo. I
 fs.mkdirSync(reportDir, { recursive: true });
 fs.writeFileSync(path.join(reportDir, 'report.md'), report);
 console.log(`H1 ${v.h1Status} (${pct(v.h1)})  H2 ${v.h2Status} (${pct(v.h2)})`);
+console.log(`C-lite ${Math.round(cLite.opsPerSec).toLocaleString()} ops/s vs B ${Math.round(b.opsPerSec).toLocaleString()}`);
+console.log(`skip ${Math.round(skipTimed.opsPerSec).toLocaleString()} ops/s`);
+console.log(`skipEpoch ${Math.round(skipEpochTimed.opsPerSec).toLocaleString()} ops/s`);
 console.log(`wrote ${path.join(reportDir, 'report.md')}`);
+fs.copyFileSync(path.join(reportDir, 'report.md'), path.join(h2cDir, 'kernel.md'));

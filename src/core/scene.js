@@ -111,6 +111,7 @@ import {
   assertLoadedShadersCompatible,
   collectComputeAssetNames,
   errorShaderFetchFailed,
+  resolveShaderPath,
 } from '../render/rendererBackend.js';
 
 class Scene {
@@ -1321,7 +1322,9 @@ class Scene {
     }
     const shaderAssets = imageUrls?.shaders || {};
     const shaderAssetPromises = [];
-    for (const [shaderName, shaderPath] of Object.entries(shaderAssets)) {
+    const backend = this.config.renderer.backend;
+    for (const shaderName of Object.keys(shaderAssets)) {
+      const shaderPath = resolveShaderPath(shaderName, shaderAssets, backend);
       shaderAssetPromises.push(
         fetch(shaderPath)
           .then((res) => {

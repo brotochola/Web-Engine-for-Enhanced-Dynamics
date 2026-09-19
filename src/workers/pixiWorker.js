@@ -76,9 +76,11 @@ import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
 import {
   ColliderFillBatch,
   packColliderFill,
+  packColliderFillPoseOnly,
   colliderFillCanSkipPack,
   copyMeshFillPoseScratch,
   clearMeshFillPaintDirty,
+  meshFillPresenceChanged,
   COLLIDER_FILL_PACK_FIRST_FRAME,
 } from '../render/colliderFillBatch.js';
 import { LiquidFun } from '../core/liquidFun.js';
@@ -657,6 +659,8 @@ class PixiRenderer extends AbstractWorker {
     this._selfLitBoxScratchX = new Float32Array(8);
     this._selfLitBoxScratchY = new Float32Array(8);
     this._colliderFillViews = null;
+    this._colliderFillMeshBitsCached = 0;
+    this._colliderFillLayerCount = -1;
     // Per MESH layer: last packed ColliderFixture.revision + pose scratch.
     // ponytail: first frame / replace / moving mesh always pack; skip keeps instanceCount.
     this._colliderFillSkip = [];
@@ -911,29 +915,44 @@ class PixiRenderer extends AbstractWorker {
 
   _ensureColliderFillViews() {
     let v = this._colliderFillViews;
-    if (!v) v = this._colliderFillViews = {};
+    if (!v || !v.meshActive) {
+      v = this._colliderFillViews = {};
+      v.meshActive = MeshRenderer.active;
+      v.meshVisible = MeshRenderer.renderVisible;
+      v.meshLayerMask = MeshRenderer.layerMask;
+      v.meshTint = MeshRenderer.tint;
+      v.meshAlpha = MeshRenderer.alpha;
+      v.meshDirty = MeshRenderer.renderDirty;
+      v.meshTextureId = MeshRenderer.textureId;
+      v.meshTileMode = MeshRenderer.tileMode;
+      v.meshRepeatX = MeshRenderer.repeatX;
+      v.meshRepeatY = MeshRenderer.repeatY;
+      v.meshTileOffU = MeshRenderer.tileOffsetU;
+      v.meshTileOffV = MeshRenderer.tileOffsetV;
+      v.meshVisualOutset = MeshRenderer.visualOutset;
+      v.fixtureCount = Collider.fixtureCount;
+      v.fixtureHead = ColliderFixture.head;
+      v.fixtureNext = ColliderFixture.next;
+      v.fixtureActive = ColliderFixture.active;
+      v.vertCount = ColliderFixture.vertCount;
+      v.vertexX = ColliderFixture.vertexX;
+      v.vertexY = ColliderFixture.vertexY;
+      v.rbStatic = RigidBody.static;
+      v.offsetX = Collider.offsetX;
+      v.offsetY = Collider.offsetY;
+      v.primaryShapeType = Collider.shapeType;
+      v.primaryPolyCount = Collider.polyCount;
+      v.primaryPolyVertexX = Collider.polyVertexX;
+      v.primaryPolyVertexY = Collider.polyVertexY;
+      v.primaryWidth = Collider.width;
+      v.primaryHeight = Collider.height;
+      v.primaryRadius = Collider.radius;
+      v.maxFixtures = ColliderFixture.maxCount | 0;
+      v.fixtureRevision = ColliderFixture.revision;
+      v.paintEpoch = MeshRenderer.paintEpoch;
+    }
     v.entityCount = MeshRenderer.active ? MeshRenderer.active.length : 0;
-    v.meshActive = MeshRenderer.active;
-    v.meshVisible = MeshRenderer.renderVisible;
-    v.meshLayerMask = MeshRenderer.layerMask;
-    v.meshTint = MeshRenderer.tint;
-    v.meshAlpha = MeshRenderer.alpha;
-    v.meshDirty = MeshRenderer.renderDirty;
-    v.meshTextureId = MeshRenderer.textureId;
-    v.meshTileMode = MeshRenderer.tileMode;
-    v.meshRepeatX = MeshRenderer.repeatX;
-    v.meshRepeatY = MeshRenderer.repeatY;
-    v.meshTileOffU = MeshRenderer.tileOffsetU;
-    v.meshTileOffV = MeshRenderer.tileOffsetV;
-    v.meshVisualOutset = MeshRenderer.visualOutset;
     v.animationFrameStart = this.animationFrameStart;
-    v.fixtureCount = Collider.fixtureCount;
-    v.fixtureHead = ColliderFixture.head;
-    v.fixtureNext = ColliderFixture.next;
-    v.fixtureActive = ColliderFixture.active;
-    v.vertCount = ColliderFixture.vertCount;
-    v.vertexX = ColliderFixture.vertexX;
-    v.vertexY = ColliderFixture.vertexY;
     if (this._poseX) {
       v.x = this._poseX;
       v.y = this._poseY;
@@ -949,19 +968,12 @@ class PixiRenderer extends AbstractWorker {
     v.liveY = Transform.y;
     v.liveRotC = Transform.rotC;
     v.liveRotS = Transform.rotS;
-    v.rbStatic = RigidBody.static;
-    v.offsetX = Collider.offsetX;
-    v.offsetY = Collider.offsetY;
-    v.primaryShapeType = Collider.shapeType;
-    v.primaryPolyCount = Collider.polyCount;
-    v.primaryPolyVertexX = Collider.polyVertexX;
-    v.primaryPolyVertexY = Collider.polyVertexY;
-    v.primaryWidth = Collider.width;
-    v.primaryHeight = Collider.height;
-    v.primaryRadius = Collider.radius;
-    v.meshBits = this._colliderFillMeshBits();
-    v.maxFixtures = ColliderFixture.maxCount | 0;
-    v.fixtureRevision = ColliderFixture.revision;
+    const layerN = Layer.count | 0;
+    if (this._colliderFillLayerCount !== layerN) {
+      this._colliderFillLayerCount = layerN;
+      this._colliderFillMeshBitsCached = this._colliderFillMeshBits();
+    }
+    v.meshBits = this._colliderFillMeshBitsCached;
     return v;
   }
 
@@ -3020,9 +3032,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return uniformDefs;
   }
 
+  _meshLookFlipV() {
+    // WebGL RT is top-origin; look-on-stage needs V flip.
+    // WebGPU RT origin matches NDC — the same flip inverts terrain.
+    return !this._useWebGpu;
+  }
+
   _createLayerFullscreenGeometry(flipV) {
     // Look-to-rtOut + Sprite already flips V (GL RT write). Look on stage
-    // samples the fill RT directly — NDC Y-up vs Pixi RT top-origin needs this.
+    // samples the fill RT directly. Flip is backend-specific (_meshLookFlipV).
     const uv = flipV
       ? new Float32Array([0, 1, 1, 1, 1, 0, 0, 0])
       : new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
@@ -3066,10 +3084,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     fillMesh.x = 0;
     fillMesh.y = 0;
-    fillMesh.scale.set(1);
+    if (fillMesh.scale.x !== 1 || fillMesh.scale.y !== 1) fillMesh.scale.set(1);
     root.x = 0;
     root.y = 0;
-    root.scale.set(1);
+    if (root.scale.x !== 1 || root.scale.y !== 1) root.scale.set(1);
     const rtOpts = this._rtRenderOpts;
     rtOpts.container = emptyInstancedMesh(fillMesh)
       ? this._rtEmptyContainer
@@ -3249,7 +3267,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const lookSource = cl.lookSource || cl.rt.source;
       cl.shader = this._createLookShader(fragmentSource, lookSource, uniformDefs, shaderName || 'look', layerName);
       cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
-      cl.shaderMesh = this._makeLookShaderMesh(cl.shader, !!cl.fillBatch);
+      cl.shaderMesh = this._makeLookShaderMesh(cl.shader, !!cl.fillBatch && this._meshLookFlipV());
     } catch (err) {
       if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
       throw errorCompileFailed('look', shaderName || 'look', layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
@@ -4554,7 +4572,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             layerName
           );
           cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
-          cl.shaderMesh = this._makeLookShaderMesh(cl.shader, isMesh);
+          cl.shaderMesh = this._makeLookShaderMesh(cl.shader, isMesh && this._meshLookFlipV());
         } catch (err) {
           if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
           throw errorCompileFailed(
@@ -4750,30 +4768,71 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (!skip) {
           skip = this._colliderFillSkip[cl.layerId] = {
             lastRevision: COLLIDER_FILL_PACK_FIRST_FRAME,
+            lastPaintEpoch: -1,
             prevPose: {},
+            camX: NaN,
+            camY: NaN,
+            zoom: NaN,
+            rtReady: false,
           };
         }
+        views.lastPaintEpoch = skip.lastPaintEpoch;
+        let packedThisFrame = false;
         if (!colliderFillCanSkipPack(views, skip.lastRevision, skip.prevPose)) {
-          const packed = packColliderFill(
-            cl.fillBatch.data,
-            cl.fillBatch.capacity,
-            cl.layerId,
-            views,
-          );
+          const cap = cl.fillBatch.capacity;
+          if (!skip.instanceEntity || skip.instanceEntity.length < cap) {
+            skip.instanceEntity = new Uint32Array(cap);
+          }
+          views.instanceEntity = skip.instanceEntity;
+          const lastPacked = cl.prevCount | 0;
+          const rev = views.fixtureRevision ? (views.fixtureRevision[0] | 0) : 0;
+          const canPoseOnly =
+            lastPacked > 0 &&
+            skip.localsReady &&
+            rev === (skip.lastRevision | 0) &&
+            skip.lastRevision !== COLLIDER_FILL_PACK_FIRST_FRAME &&
+            !meshFillPresenceChanged(views, skip.prevPose);
+          const packed = canPoseOnly
+            ? packColliderFillPoseOnly(
+              cl.fillBatch.data,
+              cap,
+              lastPacked,
+              skip.instanceEntity,
+              views,
+            )
+            : packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
+          if (!canPoseOnly) skip.localsReady = packed > 0;
           cl.fillBatch.upload(packed);
           cl.prevCount = packed;
           copyMeshFillPoseScratch(views, skip.prevPose);
-          skip.lastRevision = views.fixtureRevision ? (views.fixtureRevision[0] | 0) : 0;
+          skip.lastRevision = rev;
+          skip.lastPaintEpoch = views.paintEpoch ? (views.paintEpoch[0] | 0) : 0;
           clearMeshFillPaintDirty(views);
+          packedThisFrame = true;
         }
         densityMesh = cl.fillBatch.mesh;
+        const camChanged =
+          skip.camX !== this._renderCameraX ||
+          skip.camY !== this._renderCameraY ||
+          skip.zoom !== this._renderZoom;
+        skip._skipRt = !packedThisFrame && !camChanged && skip.rtReady;
       } else {
         continue;
       }
 
       if (cl.rt && densityMesh) {
         if (cl.fillBatch) {
-          this._renderMeshFillToRt(cl, densityMesh);
+          const skipRt = this._colliderFillSkip[cl.layerId];
+          if (!skipRt || !skipRt._skipRt) {
+            this._renderMeshFillToRt(cl, densityMesh);
+            if (skipRt) {
+              skipRt.camX = this._renderCameraX;
+              skipRt.camY = this._renderCameraY;
+              skipRt.zoom = this._renderZoom;
+              skipRt.rtReady = true;
+              skipRt._skipRt = false;
+            }
+          }
         } else {
           rtOpts.transform = null;
           rtOpts.container = emptyInstancedMesh(densityMesh)
