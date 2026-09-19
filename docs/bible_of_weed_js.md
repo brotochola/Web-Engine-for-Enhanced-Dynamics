@@ -773,7 +773,7 @@ TileMap.myTilemap.heightPx   // mapHeight * tileHeight
 
 Tile GIDs include Tiled flip flags in the top 3 bits. Strip with `gid & 0x1FFFFFFF`. GID `0` = empty.
 
-Pixi streams the background as viewport **chunks** (`config.renderer.tilemapCull` / `TILEMAP_CULL_DEFAULTS`): show a ring around the view, keep a larger ring in memory, build missing meshes a few per frame. Full knob table: `docs/TILEMAP.md` (Rendering).
+Pixi draws the background with native **GID page** meshes (shader, WebGL and WebGPU). The camera only transforms the parent container; tiles are not streamed as `CompositeTilemap` chunks. See `docs/TILEMAP.md` (Rendering).
 
 See `docs/TILEMAP.md` for memory layout, lifecycle, and queries.
 

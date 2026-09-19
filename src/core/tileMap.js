@@ -13,11 +13,6 @@
 // - All workers share the same SharedArrayBuffer memory -- zero duplication
 // - No Atomics needed since data is immutable after initialization
 
-const FLIPPED_H = 0x80000000;
-const FLIPPED_V = 0x40000000;
-const FLIPPED_D = 0x20000000;
-const FLAG_MASK = ~(FLIPPED_H | FLIPPED_V | FLIPPED_D);
-
 /**
  * A single tile layer within a TileMap.
  * Backed by an Int32Array view into a SharedArrayBuffer.
@@ -242,86 +237,6 @@ export class TileMap {
         out.x = tileX * this.tileWidth + this.tileWidth * 0.5;
         out.y = tileY * this.tileHeight + this.tileHeight * 0.5;
         return out;
-    }
-
-    // ========================================
-    // COMPOSITE TILEMAP BUILDER (pixi worker)
-    // ========================================
-
-    /**
-     * Populate a @pixi/tilemap CompositeTilemap from this TileMap's SAB data.
-     * Handles tile flip flags and converts GIDs to tileset UV coordinates.
-     * @param {*} compositeTilemap - A @pixi/tilemap CompositeTilemap instance
-     * @param {Object} [options]
-     * @param {string[]} [options.layers] - Layer names to render (null = all visible)
-     * @param {{ minX: number, minY: number, maxX: number, maxY: number }} [options.tileRect]
-     *   Tile range to emit (max exclusive). Omit for the full map.
-     */
-    buildCompositeTilemap(compositeTilemap, options) {
-        const { tileWidth, tileHeight, mapWidth, mapHeight, tilesets } = this;
-        const tileset = tilesets[0];
-        const tilesetColumns = tileset.columns;
-        const firstGid = tileset.firstgid;
-        const layers = this._layers;
-        const layersFilter = options && options.layers;
-        const rect = options && options.tileRect;
-
-        let x0 = 0;
-        let y0 = 0;
-        let x1 = mapWidth;
-        let y1 = mapHeight;
-        if (rect) {
-            x0 = Math.max(0, rect.minX | 0);
-            y0 = Math.max(0, rect.minY | 0);
-            x1 = Math.min(mapWidth, rect.maxX | 0);
-            y1 = Math.min(mapHeight, rect.maxY | 0);
-            if (x0 >= x1 || y0 >= y1) return;
-        }
-
-        for (let li = 0; li < layers.length; li++) {
-            const layer = layers[li];
-            if (layersFilter && !layersFilter.includes(layer.name)) continue;
-            if (!layer.visible) continue;
-
-            const layerData = layer.data;
-            const layerOpacity = layer.opacity;
-
-            for (let y = y0; y < y1; y++) {
-                const row = y * mapWidth;
-                for (let x = x0; x < x1; x++) {
-                    let gid = layerData[row + x];
-                    if (gid === 0) continue;
-
-                    const fH = (gid & FLIPPED_H) !== 0;
-                    const fV = (gid & FLIPPED_V) !== 0;
-                    const fD = (gid & FLIPPED_D) !== 0;
-                    gid = gid & FLAG_MASK;
-
-                    const tileId = gid - firstGid;
-                    if (tileId < 0) continue;
-
-                    let rotation = 0;
-                    if (fD) {
-                        rotation = (fH && fV) ? 2 : fH ? 6 : fV ? 2 : 6;
-                    } else if (fH && fV) {
-                        rotation = 4;
-                    } else if (fH) {
-                        rotation = 12;
-                    } else if (fV) {
-                        rotation = 8;
-                    }
-
-                    compositeTilemap.tile(0, x * tileWidth, y * tileHeight, {
-                        u: (tileId % tilesetColumns) * tileWidth,
-                        v: ((tileId / tilesetColumns) | 0) * tileHeight,
-                        tileWidth,
-                        tileHeight,
-                        rotate: rotation,
-                        alpha: layerOpacity,
-                    });
-                }
-            }
-        }
     }
 
     // ========================================

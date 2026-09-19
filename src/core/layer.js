@@ -387,7 +387,7 @@ export class Layer {
     }
 
     /**
-     * Tiled map (@pixi/tilemap). Resolves after build + warm-up render.
+     * Tiled map (native GPU GID pages). Resolves after the pixi worker uploads pages.
      * @param {string} tilemapId
      * @param {object} [options={}] scale, layers, parallax
      * @returns {Promise<void>}

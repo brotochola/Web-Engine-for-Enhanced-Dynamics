@@ -224,12 +224,12 @@ export const ENGINE_FEATURES = [
     load: ['ENTITIES_PROCESSED'],
   },
   {
-    id: 'tilemapCull',
-    name: 'Tilemap viewport chunk cull',
-    module: 'src/render/tilemapCull.js',
-    kernel: { script: 'tests/bench/tilemapCullMicrobench.mjs', opsKey: 'cases.listVisibleChunks.opsPerSec' },
+    id: 'tilemapGid',
+    name: 'Tilemap GPU GID pages',
+    module: 'src/render/tilemapGid.js',
+    kernel: { script: 'tests/bench/tilemapGidMicrobench.mjs', opsKey: 'cases.listGidPages.opsPerSec' },
     scene: {
-      key: 'tilemapCull',
+      key: 'tilemapGid',
       path: '/tests/bench/stressScenes/tilemapCullStressScene.js',
       exportName: 'TilemapCullStressScene',
       headed: false,

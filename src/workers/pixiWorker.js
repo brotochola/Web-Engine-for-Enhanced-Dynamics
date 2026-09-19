@@ -30,7 +30,6 @@ import { Sun } from '../core/sun.js';
 import {
   DEFAULT_LAYERS,
   RENDERER_DEFAULTS,
-  TILEMAP_CULL_DEFAULTS,
   LIGHTING_DEFAULTS,
   ShapeType,
   MAX_POLYGON_VERTICES,
@@ -47,16 +46,11 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { TileMap } from '../core/tileMap.js';
 import {
-  deriveViewportChunkSize,
-  listVisibleChunks,
-  listEvictChunkKeys,
-  chunkRing,
-  chunkTileRect,
-  chunkKeyCx,
-  chunkKeyCy,
-  tilemapIdleWorkDeadline,
-  TILEMAP_IDLE_BUDGET_MS,
-} from '../render/tilemapCull.js';
+  listGidPages,
+  gidPageSize,
+  gidPageByteLength,
+  packGidPageRgba8,
+} from '../render/tilemapGid.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
   sortByY,
@@ -239,7 +233,6 @@ import {
   GpuProgram,
   GlProgram,
   State,
-  extensions,
   RendererType,
   RenderTexture,
   // Web Worker adapter - REQUIRED for PixiJS 8 in workers
@@ -254,20 +247,6 @@ DOMAdapter.set(WebWorkerAdapter);
 function gpuFromWgsl(source, name) {
   return gpuProgramFromWgsl(GpuProgram, source, name);
 }
-
-// Import @pixi/tilemap for efficient tilemap rendering
-import {
-  CompositeTilemap,
-  TilemapPipe,
-  settings as tilemapSettings,
-} from '../vendor/pixiTilemapModule.js';
-
-// Enable 32-bit indices for large tilemaps (>16K tiles)
-// Without this, only ~16,383 tiles can be rendered due to 16-bit index limit
-tilemapSettings.use32bitIndex = true;
-
-// Register @pixi/tilemap extension
-extensions.add(TilemapPipe);
 
 // Create PIXI-like namespace for compatibility with existing code patterns
 const PIXI = Object.freeze({
@@ -340,8 +319,7 @@ class PixiRenderer extends AbstractWorker {
     this._rqIdxGlow = null;
     /** @type {Array<{kind:string, displayObject:*, parallaxX:number, parallaxY:number, cover?:object, tilemap?:object}|null>} */
     this._scenery = [];
-    this._tilemapCullDefaults = { ...TILEMAP_CULL_DEFAULTS, frozenW: -1, frozenH: -1 };
-    this._tilemapIdleScheduled = false;
+    this._tilemapGidProgramOpts = null;
     this._coverBgArgs = null;
     this._coverBgOut = null;
 
@@ -1451,9 +1429,6 @@ class PixiRenderer extends AbstractWorker {
     }
 
     this._applyLayerVisibility();
-    // After ticker present (setTimeout 0), not in this update: first GPU upload
-    // of a new chunk must not share the vsync with camera/sprite sync.
-    this._scheduleTilemapChunkIdle();
   }
 
   /**
@@ -1478,7 +1453,6 @@ class PixiRenderer extends AbstractWorker {
       app.ticker.stop();
     }
     app.renderer.render(app.stage);
-    this._scheduleTilemapChunkIdle();
   }
 
   /**
@@ -2884,8 +2858,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       try {
         const source = new PIXI.ImageSource({
           resource: bitmap,
-          autoGenerateMipmaps: this.autoGenerateMipmaps,
+          autoGenerateMipmaps: false,
+          scaleMode: 'nearest',
         });
+        if (source.style) {
+          source.style.scaleMode = 'nearest';
+          source.style.addressMode = 'clamp-to-edge';
+        }
         const tilesetTexture = new PIXI.Texture({ source });
 
         this.tilemaps[tilemapId] = { tilesetTexture };
@@ -3398,7 +3377,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _destroyScenery(layerId) {
     const s = this._scenery[layerId];
     if (!s) return;
-    if (s.tilemap) this._destroyTilemapChunks(s.tilemap);
+    if (s.tilemap) this._destroyTilemapPages(s.tilemap);
     if (s.displayObject) {
       if (s.displayObject.parent) s.displayObject.parent.removeChild(s.displayObject);
       s.displayObject.destroy({ children: true });
@@ -3490,7 +3469,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       s.displayObject.scale.set(zoom * sx, zoom * sy);
       s.displayObject.x = -cameraX * zoom * px;
       s.displayObject.y = -cameraY * zoom * py;
-      if (s.tilemap) this.updateTilemapViewportCull(s.tilemap);
     }
   }
 
@@ -3541,174 +3519,136 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _createTilemapRuntime() {
-    const d = this._tilemapCullDefaults;
     return {
       container: null,
       tilemapId: null,
       buildOptions: null,
       tilesetTexture: null,
-      chunks: new Map(),
-      buildQueue: [],
-      queuedKeys: new Set(),
-      visArgs: {
-        viewMinX: 0,
-        viewMinY: 0,
-        viewMaxX: 0,
-        viewMaxY: 0,
-        chunkW: 1,
-        chunkH: 1,
-        mapW: 1,
-        mapH: 1,
-      },
-      visList: { chunks: [], count: 0 },
-      keepList: { chunks: [], count: 0 },
-      visKeys: new Set(),
-      keepKeys: new Set(),
-      evictKeys: [],
-      pendingDestroy: new Map(),
-      chunkRect: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
-      cull: {
-        frozenW: -1,
-        frozenH: -1,
-        chunkGrid: d.chunkGrid,
-        cacheGrid: d.cacheGrid,
-        safetyMarginTiles: d.safetyMarginTiles,
-        chunkTiles: d.chunkTiles,
-        maxChunkBuildsPerFrame: d.maxChunkBuildsPerFrame,
-      },
+      pages: [],
       scale: { x: 1, y: 1 },
     };
   }
 
-  _resetTilemapCull(tm) {
-    tm.cull.frozenW = -1;
-    tm.cull.frozenH = -1;
-    tm.buildQueue.length = 0;
-    tm.queuedKeys.clear();
-    tm.pendingDestroy?.clear();
-  }
-
-  _destroyTilemapChunks(tm) {
-    if (!tm) return;
-    for (const entry of tm.chunks.values()) {
-      if (entry.mesh.parent) entry.mesh.parent.removeChild(entry.mesh);
-      entry.mesh.destroy();
-    }
-    tm.chunks.clear();
-    if (tm.pendingDestroy) {
-      for (const entry of tm.pendingDestroy.values()) {
+  _destroyTilemapPages(tm) {
+    if (!tm?.pages) return;
+    for (let i = 0; i < tm.pages.length; i++) {
+      const entry = tm.pages[i];
+      if (entry.mesh) {
         if (entry.mesh.parent) entry.mesh.parent.removeChild(entry.mesh);
         entry.mesh.destroy();
       }
-      tm.pendingDestroy.clear();
+      if (entry.gidSource && typeof entry.gidSource.destroy === 'function') {
+        entry.gidSource.destroy();
+      }
     }
-    tm.buildQueue.length = 0;
-    tm.queuedKeys.clear();
+    tm.pages.length = 0;
   }
 
-  _buildTilemapChunk(tm, tileMapData, key) {
-    const cx = chunkKeyCx(key);
-    const cy = chunkKeyCy(key);
-    const args = tm.visArgs;
-    const tileRect = chunkTileRect(
-      cx,
-      cy,
-      args.chunkW,
-      args.chunkH,
-      args.mapW,
-      args.mapH,
-      tm.chunkRect
-    );
-    const mesh = new CompositeTilemap([tm.tilesetTexture]);
-    const opts = tm.buildOptions || {};
-    tileMapData.buildCompositeTilemap(mesh, {
-      layers: opts.layers,
-      tileRect,
+  _initTilemapGidProgram() {
+    if (this._tilemapGidProgramOpts) return;
+    if (this._useWebGpu) {
+      const src = this._engineShaders?.tilemapGid;
+      if (!src) {
+        throw new Error('WeedJS: tilemapGid.wgsl was not loaded before tilemap creation.');
+      }
+      this._tilemapGidProgramOpts = { gpuProgram: gpuFromWgsl(src, 'tilemap-gid') };
+      return;
+    }
+    const vert = this._engineShaders?.tilemapGidVert;
+    const frag = this._engineShaders?.tilemapGidFrag;
+    if (!vert || !frag) {
+      throw new Error('WeedJS: tilemapGid GLSL was not loaded before tilemap creation.');
+    }
+    this._tilemapGidProgramOpts = {
+      glProgram: new GlProgram({ vertex: vert, fragment: frag, name: 'tilemap-gid' }),
+    };
+  }
+
+  _createTilemapGidShader(gidSource, tilesetSource, uniforms) {
+    this._initTilemapGidProgram();
+    const resources = this._useWebGpu
+      ? {
+        uGid: gidSource,
+        uTileset: tilesetSource,
+        uTilesetSampler: tilesetSource.style,
+        uniforms,
+      }
+      : {
+        uGid: gidSource,
+        uTileset: tilesetSource,
+        uniforms,
+      };
+    return new Shader({
+      ...this._tilemapGidProgramOpts,
+      resources,
     });
-    mesh.visible = true;
-    mesh.renderable = true;
-    tm.container.addChild(mesh);
-    tm.chunks.set(key, { mesh, cx, cy });
   }
 
-  _enqueueKeepChunks(tm, keepList) {
-    const chunks = keepList.chunks;
-    const n = keepList.count;
-    const pending = tm.pendingDestroy;
-    tm.buildQueue.length = 0;
-    tm.queuedKeys.clear();
-    for (let i = 0; i < n; i++) {
-      const key = chunks[i].key;
-      if (pending && pending.has(key)) {
-        const entry = pending.get(key);
-        pending.delete(key);
-        tm.chunks.set(key, entry);
-        continue;
+  _fillTilemapPages(tm, tileMapData) {
+    this._destroyTilemapPages(tm);
+    const tileset = tileMapData.tilesets && tileMapData.tilesets[0];
+    if (!tileset || !tm.tilesetTexture) return;
+    const atlas = tm.tilesetTexture;
+    const atlasSource = atlas.source || atlas;
+    const atlasW = atlas.width || atlasSource.width || 1;
+    const atlasH = atlas.height || atlasSource.height || 1;
+    const tw = tileMapData.tileWidth || 1;
+    const th = tileMapData.tileHeight || 1;
+    const pages = listGidPages(tileMapData.mapWidth, tileMapData.mapHeight);
+    const layersFilter = tm.buildOptions && tm.buildOptions.layers;
+    const layers = tileMapData.getLayers();
+    for (let li = 0; li < layers.length; li++) {
+      const layer = layers[li];
+      if (layersFilter && !layersFilter.includes(layer.name)) continue;
+      if (!layer.visible) continue;
+      for (let pi = 0; pi < pages.length; pi++) {
+        const page = pages[pi];
+        const { pageW, pageH } = gidPageSize(page);
+        if (pageW <= 0 || pageH <= 0) continue;
+        const bytes = new Uint8Array(gidPageByteLength(pageW, pageH));
+        packGidPageRgba8(layer.data, tileMapData.mapWidth, page, bytes);
+        const gidSource = TextureSource.from({
+          resource: bytes,
+          width: pageW,
+          height: pageH,
+          format: 'rgba8unorm',
+          scaleMode: 'nearest',
+          addressMode: 'clamp-to-edge',
+          autoGenerateMipmaps: false,
+          alphaMode: 'no-premultiply-alpha',
+        });
+        if (gidSource.style) {
+          gidSource.style.scaleMode = 'nearest';
+          gidSource.style.addressMode = 'clamp-to-edge';
+        }
+        const x0 = page.minX * tw;
+        const y0 = page.minY * th;
+        const x1 = page.maxX * tw;
+        const y1 = page.maxY * th;
+        const geometry = new Geometry({
+          attributes: {
+            aPosition: {
+              buffer: new Float32Array([x0, y0, x1, y0, x1, y1, x0, y1]),
+              format: 'float32x2',
+            },
+          },
+          indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
+        });
+        const uniforms = {
+          uTileSize: { value: new Float32Array([tw, th]), type: 'vec2<f32>' },
+          uPageOrigin: { value: new Float32Array([page.minX, page.minY]), type: 'vec2<f32>' },
+          uPageSize: { value: new Float32Array([pageW, pageH]), type: 'vec2<f32>' },
+          uFirstGid: { value: tileset.firstgid || 1, type: 'f32' },
+          uColumns: { value: tileset.columns || 1, type: 'f32' },
+          uAtlasSize: { value: new Float32Array([atlasW, atlasH]), type: 'vec2<f32>' },
+          uOpacity: { value: layer.opacity !== undefined ? +layer.opacity : 1, type: 'f32' },
+        };
+        const shader = this._createTilemapGidShader(gidSource, atlasSource, uniforms);
+        const mesh = new Mesh({ geometry, shader });
+        mesh.eventMode = 'none';
+        tm.container.addChild(mesh);
+        tm.pages.push({ mesh, gidSource });
       }
-      if (tm.chunks.has(key)) continue;
-      tm.queuedKeys.add(key);
-      tm.buildQueue.push(key);
-    }
-  }
-
-  _hasTilemapBuildWork() {
-    for (let i = 0; i < this._scenery.length; i++) {
-      const tm = this._scenery[i]?.tilemap;
-      if (tm?.buildQueue?.length) return true;
-      if (tm?.pendingDestroy?.size) return true;
-    }
-    return false;
-  }
-
-  _scheduleTilemapChunkIdle() {
-    if (this._tilemapIdleScheduled || !this._hasTilemapBuildWork()) return;
-    this._tilemapIdleScheduled = true;
-    setTimeout(() => {
-      this._tilemapIdleScheduled = false;
-      this._drainTilemapChunksIdle();
-    }, 0);
-  }
-
-  _drainTilemapChunksIdle() {
-    const deadline = tilemapIdleWorkDeadline(performance.now(), TILEMAP_IDLE_BUDGET_MS);
-    if (!(deadline > 0)) return;
-    for (let i = 0; i < this._scenery.length; i++) {
-      const tm = this._scenery[i]?.tilemap;
-      if (tm) this._drainOneTilemapUntil(tm, deadline);
-    }
-  }
-
-  _drainPendingDestroyUntil(tm, deadlineMs) {
-    const pending = tm.pendingDestroy;
-    if (!pending || !pending.size) return;
-    for (const [key, entry] of pending) {
-      if (performance.now() >= deadlineMs) return;
-      if (entry.mesh.parent) entry.mesh.parent.removeChild(entry.mesh);
-      entry.mesh.destroy();
-      pending.delete(key);
-    }
-  }
-
-  _drainOneTilemapUntil(tm, deadlineMs) {
-    if (!tm.container || !tm.tilemapId) return;
-    this._drainPendingDestroyUntil(tm, deadlineMs);
-    const tileMapData = TileMap.get(tm.tilemapId);
-    if (!tileMapData) return;
-    const budget = (tm.cull.maxChunkBuildsPerFrame | 0) || 1;
-    let built = 0;
-    while (built < budget && tm.buildQueue.length) {
-      if (performance.now() >= deadlineMs) break;
-      const key = tm.buildQueue.shift();
-      tm.queuedKeys.delete(key);
-      if (tm.chunks.has(key)) continue;
-      if (tm.pendingDestroy?.has(key)) {
-        const entry = tm.pendingDestroy.get(key);
-        tm.pendingDestroy.delete(key);
-        tm.chunks.set(key, entry);
-        continue;
-      }
-      this._buildTilemapChunk(tm, tileMapData, key);
-      built++;
     }
   }
 
@@ -3730,8 +3670,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     tm.tilemapId = tilemapId;
     tm.buildOptions = options || {};
     tm.tilesetTexture = texEntry.tilesetTexture;
-    this._destroyTilemapChunks(tm);
-    this._resetTilemapCull(tm);
+    this._destroyTilemapPages(tm);
 
     if (options.scale !== undefined) {
       if (typeof options.scale === 'number') {
@@ -3754,106 +3693,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     const zoom = this.cameraData ? this.cameraData[0] : 1;
     tm.container.scale.set(zoom * tm.scale.x, zoom * tm.scale.y);
-    this.updateTilemapViewportCull(tm, true);
-  }
-
-  /**
-   * Show/hide prebuilt chunk meshes and enqueue keep-set builds.
-   * Does not build on the camera/present path except fillAll (create/warmup).
-   */
-  updateTilemapViewportCull(tm, fillAll = false) {
-    if (!tm?.container || !tm.tilemapId) return;
-    if (!(this.canvasWidth > 0) || !(this.canvasHeight > 0)) return;
-
-    const tileMapData = TileMap.get(tm.tilemapId);
-    if (!tileMapData) return;
-
-    const zoom = this._renderZoom > 0 ? this._renderZoom : 1;
-    const sx = tm.scale.x || 1;
-    const sy = tm.scale.y || 1;
-    const tw = tileMapData.tileWidth || 1;
-    const th = tileMapData.tileHeight || 1;
-    const cull = tm.cull;
-
-    const localX0 = this._renderCameraX / sx;
-    const localY0 = this._renderCameraY / sy;
-    const viewW = this.canvasWidth / (zoom * sx);
-    const viewH = this.canvasHeight / (zoom * sy);
-    const margin = cull.safetyMarginTiles | 0;
-
-    const viewMinX = localX0 / tw - margin;
-    const viewMinY = localY0 / th - margin;
-    const viewMaxX = (localX0 + viewW) / tw + margin;
-    const viewMaxY = (localY0 + viewH) / th + margin;
-
-    let chunkW;
-    let chunkH;
-    if (cull.chunkTiles > 0) {
-      chunkW = cull.chunkTiles;
-      chunkH = cull.chunkTiles;
-    } else if (cull.frozenW > 0 && cull.frozenH > 0) {
-      chunkW = cull.frozenW;
-      chunkH = cull.frozenH;
-    } else {
-      const desired = deriveViewportChunkSize(viewW / tw, viewH / th, 0);
-      chunkW = desired.chunkW;
-      chunkH = desired.chunkH;
-      cull.frozenW = chunkW;
-      cull.frozenH = chunkH;
-    }
-
-    const visArgs = tm.visArgs;
-    visArgs.viewMinX = viewMinX;
-    visArgs.viewMinY = viewMinY;
-    visArgs.viewMaxX = viewMaxX;
-    visArgs.viewMaxY = viewMaxY;
-    visArgs.chunkW = chunkW;
-    visArgs.chunkH = chunkH;
-    visArgs.mapW = tileMapData.mapWidth;
-    visArgs.mapH = tileMapData.mapHeight;
-
-    const visible = listVisibleChunks(visArgs, chunkRing(cull.chunkGrid), tm.visList);
-    const keep = listVisibleChunks(visArgs, chunkRing(cull.cacheGrid), tm.keepList);
-
-    const visKeys = tm.visKeys;
-    visKeys.clear();
-    const visChunks = visible.chunks;
-    const visCount = visible.count;
-    for (let i = 0; i < visCount; i++) visKeys.add(visChunks[i].key);
-
-    const keepKeys = tm.keepKeys;
-    keepKeys.clear();
-    const keepChunks = keep.chunks;
-    const keepCount = keep.count;
-    for (let i = 0; i < keepCount; i++) keepKeys.add(keepChunks[i].key);
-
-    const evict = listEvictChunkKeys(tm.chunks.keys(), keepKeys, tm.evictKeys);
-    const pending = tm.pendingDestroy;
-    for (let i = 0; i < evict.length; i++) {
-      const key = evict[i];
-      const entry = tm.chunks.get(key);
-      if (!entry) continue;
-      entry.mesh.visible = false;
-      entry.mesh.renderable = false;
-      tm.chunks.delete(key);
-      if (pending) pending.set(key, entry);
-    }
-
-    for (const [key, entry] of tm.chunks) {
-      const on = visKeys.has(key);
-      entry.mesh.visible = on;
-      entry.mesh.renderable = on;
-    }
-
-    if (fillAll) {
-      for (let i = 0; i < visCount; i++) {
-        const key = visChunks[i].key;
-        if (tm.chunks.has(key)) continue;
-        this._buildTilemapChunk(tm, tileMapData, key);
-      }
-    }
-
-    this._enqueueKeepChunks(tm, keep);
+    this._fillTilemapPages(tm, tileMapData);
   }
 
   /**
@@ -3888,6 +3728,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/colliderFill.wgsl').then((s) => {
           sh.colliderFill = s;
+        }),
+        fetchEngineShader('/src/shaders/tilemapGid.wgsl').then((s) => {
+          sh.tilemapGid = s;
         })
       );
     } else {
@@ -3927,6 +3770,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/colliderFill.frag.glsl').then((s) => {
           sh.colliderFillFrag = s;
+        }),
+        fetchEngineShader('/src/shaders/tilemapGid.vert.glsl').then((s) => {
+          sh.tilemapGidVert = s;
+        }),
+        fetchEngineShader('/src/shaders/tilemapGid.frag.glsl').then((s) => {
+          sh.tilemapGidFrag = s;
         })
       );
     }
@@ -3958,6 +3807,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
     await Promise.all(shaderFetches);
+    this._initTilemapGidProgram();
 
     // Initialize stats buffer for writing metrics
     if (data.buffers.rendererStats) {
@@ -4007,20 +3857,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       Number.isFinite(maxDecalUploads) && maxDecalUploads > 0
         ? maxDecalUploads
         : RENDERER_DEFAULTS.maxDecalTileUploadsPerFrame;
-
-    const cullCfg = {
-      ...TILEMAP_CULL_DEFAULTS,
-      ...(rendererConfig.tilemapCull || {}),
-    };
-    this._tilemapCullDefaults = {
-      frozenW: -1,
-      frozenH: -1,
-      chunkGrid: cullCfg.chunkGrid,
-      cacheGrid: cullCfg.cacheGrid,
-      safetyMarginTiles: cullCfg.safetyMarginTiles,
-      chunkTiles: cullCfg.chunkTiles | 0,
-      maxChunkBuildsPerFrame: cullCfg.maxChunkBuildsPerFrame | 0,
-    };
 
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
     // This includes Transform, RigidBody, SpriteRenderer, and all custom components

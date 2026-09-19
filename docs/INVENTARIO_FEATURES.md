@@ -140,9 +140,9 @@ Módulo: `src/core/tileMap.js`. Kernel: `tileMapMicrobench.mjs`. Escena **nueva*
 
 **Hueco de escena** hasta esta noche (antes solo kernel). Sin hipótesis nuevas de tilemap más allá de enganchar la escena. Cómo medir: fila `tilemap` del scoreboard.
 
-### tilemapCull — Cull de chunks de fondo
+### tilemapGid — Tilemap GPU (páginas GID)
 
-Módulo: `src/render/tilemapCull.js`. Kernel: `tilemapCullMicrobench.mjs` (`listVisibleChunks`). Escena: `TilemapCullStressScene` (`kind: 'tilemap'` + cámara en círculo, `chunkTiles: 8`). Primaria: `pixi_STEP_MS`. Carga: `ENTITIES_PROCESSED`. No reusa `TilemapStressScene` (`getTileId`).
+Módulo: `src/render/tilemapGid.js`. Kernel: `tilemapGidMicrobench.mjs` (`listGidPages` / `packGidPageRgba8`). Escena: `TilemapCullStressScene` (`kind: 'tilemap'` + cámara en círculo). Primaria: `pixi_STEP_MS`. Carga: `ENTITIES_PROCESSED`. No reusa `TilemapStressScene` (`getTileId`).
 
 ### contactDrain — Drain de contactos Box2D
 

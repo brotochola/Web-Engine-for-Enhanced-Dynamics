@@ -151,41 +151,17 @@ The `data` array stores raw GIDs with flags intact. `getTileId()` / `getTileIdAt
 
 ## Rendering (Pixi Worker)
 
-Pixi does **not** put the full map in one `CompositeTilemap`. The background is a parent `Container` of **chunk** meshes. Camera transform hits the parent; children stay in map-local pixels.
+The pixi worker uploads each Tiled layer once as **GID pages** (RGBA8, 2048 tiles on a side — WebGL2’s portable max texture size). Each page is a world-space quad plus a nearest GID texture. The parent `Container` still gets camera / zoom / parallax; children stay in map-local pixels.
 
-On `Layer.ground.setTilemap` / config `kind: LAYER_KIND.TILEMAP`, the worker builds every chunk that currently intersects the view (`fillAll`). After that:
+On `Layer.ground.setTilemap` / config `kind: LAYER_KIND.TILEMAP`:
 
-1. **Show/hide** chunks that overlap the view (+ `chunkGrid` ring). No `clear()` of live meshes.
-2. **Keep** built meshes out to `cacheGrid` (hidden). Outside that, destroy.
-3. **Stream** missing keep-set chunks, at most `maxChunkBuildsPerFrame` per pixi tick, **before** applying the new camera snapshot (so a build hitch is not paired with camera motion).
+1. Pack each visible layer (`options.layers` filters names) through [`src/render/tilemapGid.js`](../src/render/tilemapGid.js).
+2. Create one `Mesh` per page with the native shader (`tilemapGid` GLSL or WGSL, same contract).
+3. Every frame only the camera matrix moves. The fragment does `world → tile → texelFetch(GID) → atlas UV` (Tiled H/V/D flags, 0.5 px inset). Empty GID `0` discards.
 
-Override defaults with `config.renderer.tilemapCull` (merged over `TILEMAP_CULL_DEFAULTS` in [`configDefaults.js`](../src/util/configDefaults.js)):
+There is no chunk stream and no `renderer.tilemapCull`. `config.renderer.tilemapCull` is ignored if a scene still sends it.
 
-```javascript
-renderer: {
-  tilemapCull: {
-    chunkTiles: 64,              // square chunk in tiles
-    chunkGrid: 3,                // show view + 1 ring
-    cacheGrid: 5,                // keep ±2 rings (hidden)
-    safetyMarginTiles: 0,
-    maxChunkBuildsPerFrame: 1,
-  },
-},
-```
-
-| Knob | What it changes | If you raise it | If you lower it |
-| ---- | ---------------- | --------------- | --------------- |
-| `chunkTiles` | Size of each mesh (tiles). `0` = first viewport, then freeze. | Fewer objects, heavier each build | Cheaper builds, more crossings |
-| `chunkGrid` | Odd. Visible neighborhood around the view. `1` = view overlap only. | Fewer holes at the edge, more GPU | Holes if the camera outruns the stream |
-| `cacheGrid` | Odd. Keep built meshes (must be ≥ `chunkGrid`). | Less rebuild when turning; more VRAM | Destroy/rebuild when you return |
-| `safetyMarginTiles` | Extra tiles on the view rect before overlap. | Safer with `chunkGrid: 1` + zoom jitter | `0` if a ring already covers bleed |
-| `maxChunkBuildsPerFrame` | New meshes per frame after warmup. | Cache fills fast; those frames cost CPU/GPU | Smoother frames; empty edges if too slow |
-
-Even grid values bump to the next odd (`chunkRing`: ring = (grid−1)/2). A huge `cacheGrid` (e.g. 128) is “keep almost the whole map” on typical Tiled sizes.
-
-`buildCompositeTilemap(composite, { layers, tileRect })` still fills one mesh; `tileRect` is max-exclusive. The worker calls it per chunk, not for the full map.
-
-Tileset PNGs go to the pixi worker as `ImageBitmap`s (not SAB). `@pixi/tilemap` owns UVs.
+Both `renderer.backend: 'webgl'` and `'webgpu'` use the same paging and unpack. Tileset PNGs stay out of the BigAtlas (nearest + clamp on their own `ImageSource`). v1 uses `tilesets[0]` only; Tiled animations and live SAB writes are not implemented.
 
 ---
 
@@ -237,4 +213,4 @@ Each `TileMapLayer.data` is an `Int32Array` view into the corresponding region. 
 - **Zero allocation queries**: `getAllTileIds()` returns a borrowed pre-allocated object; copy values if you need to store them. `worldToTile()` and `tileToWorld()` require caller-owned output objects so stored references stay safe.
 - **Direct property access**: `TileMap.myTilemap.sidewalk` is a V8 hidden-class property read. No dictionary lookup, no string hashing.
 - **No Atomics**: Tile data is immutable after init. Plain typed array reads are sufficient.
-- **Tileset images not in BigAtlas**: `@pixi/tilemap` manages its own texture UVs. Merging tileset PNGs into the BigAtlas would break UV assumptions with no perf benefit.
+- **Tileset images not in BigAtlas**: the GID shader samples the tileset `ImageSource` with its own UVs. Merging tileset PNGs into the BigAtlas would fight those UVs for no gain.

@@ -2088,6 +2088,13 @@ export interface LayerBuiltInConfigEntry {
   resolution?: number;
   alpha?: number;
   shader?: LayerSceneConfigEntry['shader'];
+  /** Scenery kind, e.g. {@link LAYER_KIND}.TILEMAP. */
+  kind?: string;
+  tilemap?: string;
+  texture?: string;
+  scale?: number | { x?: number; y?: number };
+  layers?: string[];
+  parallax?: number | { x?: number; y?: number };
 }
 
 export interface LayerUniformMapEntry {
@@ -2198,6 +2205,15 @@ export declare class Layer {
         }
   ): void;
   setTilingBackground(textureId: string, tileScale?: number): void;
+  /** Tiled map as native GPU GID pages. Resolves after the pixi worker uploads pages. */
+  setTilemap(
+    tilemapId: string,
+    options?: {
+      scale?: number | { x: number; y?: number };
+      layers?: string[];
+      parallax?: number | { x?: number; y?: number };
+    }
+  ): Promise<void>;
   setTilemapBackground(tilemapId: string, options?: Record<string, unknown>): Promise<void>;
   clearBackground(): void;
 
@@ -2252,23 +2268,6 @@ export declare class TileMapLayer {
   getTileIdAt(tileX: number, tileY: number): number;
   hasTile(worldX: number, worldY: number): boolean;
   hasTileAt(tileX: number, tileY: number): boolean;
-}
-
-/** Minimal `@pixi/tilemap` CompositeTilemap surface used by {@link TileMap.buildCompositeTilemap}. */
-export interface PixiCompositeTilemap {
-  tile(
-    tilesetUid: number,
-    x: number,
-    y: number,
-    frame: {
-      u: number;
-      v: number;
-      tileWidth: number;
-      tileHeight: number;
-      rotate?: number;
-      alpha?: number;
-    }
-  ): void;
 }
 
 export interface SpriteFrameDimensions {
@@ -2337,10 +2336,6 @@ export declare class TileMap {
     out: { tileX: number; tileY: number }
   ): { tileX: number; tileY: number };
   tileToWorld(tileX: number, tileY: number, out: Vec2Mutable): Vec2Mutable;
-  buildCompositeTilemap(
-    compositeTilemap: PixiCompositeTilemap,
-    options?: { layers?: string[] | null }
-  ): void;
 
   static count: number;
   static initialized: boolean;

@@ -6,7 +6,7 @@ const { Scene, Camera, LAYER_KIND } = WEED;
 const SEED = 0x711e;
 const MAP_PX = 64 * 32;
 
-/** Viewport-chunk cull: tilemap background + moving camera. Not getTileId (that's TilemapStressScene). */
+/** GPU GID tilemap + moving camera. Not getTileId (that's TilemapStressScene). */
 export class TilemapCullStressScene extends Scene {
   static config = {
     worldWidth: MAP_PX,
@@ -28,12 +28,6 @@ export class TilemapCullStressScene extends Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      tilemapCull: {
-        chunkGrid: 3,
-        cacheGrid: 5,
-        safetyMarginTiles: 0,
-        chunkTiles: 8,
-      },
     },
     lighting: { enabled: false },
     layers: {

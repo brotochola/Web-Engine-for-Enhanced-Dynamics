@@ -24,7 +24,7 @@ const REQUIRED = [
   'nav',
   'visPoly',
   'tilemap',
-  'tilemapCull',
+  'tilemapGid',
   'contactDrain',
   'box2dRayJs',
   'queryPublish',
@@ -121,30 +121,29 @@ test('tilemap has a seeded stress scene with primary and load', () => {
   assert.match(querier, /getTileId/);
 });
 
-test('tilemapCull is a distinct scene from getTileId tilemap', () => {
-  const row = getFeature('tilemapCull');
+test('tilemapGid is a distinct scene from getTileId tilemap', () => {
+  const row = getFeature('tilemapGid');
   assert.match(row.scene.path, /tilemapCullStressScene/);
   assert.equal(row.scene.exportName, 'TilemapCullStressScene');
   assert.doesNotMatch(row.scene.path, /tilemapStressScene\.js$/);
   assert.deepEqual(row.primary, ['pixi_STEP_MS']);
   assert.ok(row.load.includes('ENTITIES_PROCESSED'));
-  assert.equal(row.kernel.script, 'tests/bench/tilemapCullMicrobench.mjs');
+  assert.equal(row.kernel.script, 'tests/bench/tilemapGidMicrobench.mjs');
   const src = fs.readFileSync(path.join(root, 'tests/bench/stressScenes/tilemapCullStressScene.js'), 'utf8');
   assert.match(src, /seed:/);
   assert.match(src, /kind: LAYER_KIND.TILEMAP/);
-  assert.match(src, /chunkTiles/);
   const driver = fs.readFileSync(
     path.join(root, 'tests/bench/stressScenes/tilemapCull/tilemapCullPanDriver.js'),
     'utf8'
   );
   assert.match(driver, /Camera\.centerOn/);
-  const cullSrc = fs.readFileSync(path.join(root, 'src/render/tilemapCull.js'), 'utf8');
-  assert.match(cullSrc, /<< 16/);
-  assert.match(cullSrc, /out\.count/);
+  const gidSrc = fs.readFileSync(path.join(root, 'src/render/tilemapGid.js'), 'utf8');
+  assert.match(gidSrc, /TILEMAP_GID_PAGE_TILES/);
+  assert.match(gidSrc, /packGidPageRgba8/);
   const pixi = fs.readFileSync(path.join(root, 'src/workers/pixiWorker.js'), 'utf8');
-  assert.match(pixi, /_createTilemapRuntime/);
-  assert.match(pixi, /visArgs/);
-  assert.doesNotMatch(pixi, /key "cx,cy"/);
+  assert.match(pixi, /_fillTilemapPages/);
+  assert.match(pixi, /tilemapGid/);
+  assert.doesNotMatch(pixi, /CompositeTilemap/);
 });
 
 test('contactDrain scene uses CollisionListener pile', () => {

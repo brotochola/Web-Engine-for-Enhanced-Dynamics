@@ -119,7 +119,7 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | NavGrid Dijkstra / A* | `navGrid.js`, particle_worker | `navGridMicrobench.mjs` | `stressScenes/NavStressScene` | car / bichos / Predator | ms/path; respects `maxProcessingMsPerFrame` |
 | AngularSweep visibility | `angularSweep.js` | `angularSweepMicrobench.mjs` | `visPolyStressScene` (`raycasted: true`) | not Predator default (raycasted off) | polygons/s + `VISIBILITY_MS` / pre-render `STEP_MS` |
 | TileMap SAB queries | `tileMap.js` | `tileMapMicrobench.mjs` | `stressScenes/TilemapStressScene` (fixed-rate `getTileId`) | tile demos | ns/`getTileId`; logic0 `STEP_MS` |
-| Tilemap viewport cull | `tilemapCull.js` | `tilemapCullMicrobench.mjs` | `TilemapCullStressScene` (background + pan) | Predator tilemap | pixi `STEP_MS` |
+| Tilemap GPU GID pages | `tilemapGid.js` | `tilemapGidMicrobench.mjs` | `TilemapCullStressScene` (background + pan) | carScene / tile demos | pixi `STEP_MS` |
 | Contact drain | `logicWorker.js` | — | `ContactDrainStressScene` (`CollisionListener` pile) | — | logic0 `STEP_MS`; `BODY_COUNT` |
 | Box2D ray JS service | `weedjsPost.js` `serviceRayCast` | — | `RayVsBox2dBoxBusyScene` | — | physics `STEP_MS`; `BOX2D_RAYCAST_MS` |
 | QuerySystem publish | `querySystem.js` | `querySystemMicrobench.mjs` | `stressScenes/QueryChurnScene` | — | `QUERY_PUBLISH_MS` (gated) / skip-if-unchanged |
@@ -162,7 +162,7 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 | VisPolyStressScene | `/tests/bench/stressScenes/visPolyStressScene.js` | Seeded lights + occluders, `lighting.raycasted: true` → `VISIBILITY_MS` |
 | SteadyCombatScene | `/tests/bench/stressScenes/steadyCombatScene.js` | Fixed boxes + movers + constant `emitFlat` → stable `BODY_COUNT` / `ACTIVE_PARTICLES` |
 | TilemapStressScene | `/tests/bench/stressScenes/tilemapStressScene.js` | Seeded `getTileId` at a fixed rate → logic0 `STEP_MS` |
-| TilemapCullStressScene | `/tests/bench/stressScenes/tilemapCullStressScene.js` | Tilemap background + pan → pixi `STEP_MS` |
+| TilemapCullStressScene | `/tests/bench/stressScenes/tilemapCullStressScene.js` | GPU GID tilemap + pan → pixi `STEP_MS` |
 | ContactDrainStressScene | `/tests/bench/stressScenes/contactDrainStressScene.js` | `CollisionListener` pile → logic0 `STEP_MS` |
 
 ## Isolation: multi-fixture (not catalog rows)

@@ -47,12 +47,9 @@ const TILEMAP_CULL_SCENE = {
 function raiseTilemapCullLoad() {
   const abs = path.join(repoRoot, SCENE_REL);
   let src = fs.readFileSync(abs, 'utf8');
-  src = src.replace('chunkTiles: 8', 'chunkTiles: 4');
-  src = src.replace('cacheGrid: 5', 'cacheGrid: 11');
-  src = src.replace('chunkGrid: 3', 'chunkGrid: 5');
   src = src.replace('Camera.setZoom(0.55)', 'Camera.setZoom(0.30)');
-  if (!src.includes('chunkTiles: 4') || !src.includes('Camera.setZoom(0.30)')) {
-    throw new Error('raiseTilemapCullLoad: knobs not patched');
+  if (!src.includes('Camera.setZoom(0.30)')) {
+    throw new Error('raiseTilemapCullLoad: zoom not patched');
   }
   fs.writeFileSync(abs, src);
 }
@@ -120,7 +117,7 @@ function writeReport(payload) {
 
   if (payload.kernel) {
     const k = payload.kernel;
-    lines.push('### Kernel `listVisibleChunks`');
+    lines.push('### Kernel `listGidPages`');
     lines.push('');
     lines.push(
       `ops/s baseline ${k.baseOps} → tratamiento ${k.hypOps} (${fmtDeltaPct(k.deltaPct)}). ${k.verdict}. ${k.hits?.map((h) => explainHit(h)).join(' ') || ''}`
@@ -142,7 +139,7 @@ function writeReport(payload) {
     lines.push('');
     for (const hit of row.hits || []) lines.push(explainHit(hit));
     lines.push('');
-    lines.push(`Veredicto tilemapCull: **${row.verdict}**.`);
+    lines.push(`Veredicto tilemapGid: **${row.verdict}**.`);
     if (row.note) lines.push(row.note);
     lines.push('');
   }
@@ -231,13 +228,13 @@ function writeReport(payload) {
   lines.push('## Verdict');
   lines.push('');
   lines.push(
-    `Mapa de esta sentada: kernel primer A/B **${payload.kernel?.verdict ?? 'n/a'}** (control, mismo \`tilemapCull.js\`; ver repeats), tilemapCull **${payload.tilemapCull?.verdict ?? 'n/a'}**, preRender 16k **${payload.preRender?.verdict ?? 'n/a'}**, preRender 24k **${payload.preRender24k?.verdict ?? 'n/a'}**, preRender 28k **${payload.preRender28k?.verdict ?? 'n/a'}**, preRender floor **${payload.preRenderFloor?.verdict ?? 'n/a'}**. Higiene: se queda el API nuevo salvo que una primaria de estrés sea ≥3% más cara con carga comparable y piso de 3 ms. No es un claim de “WeedJS más rápida”.`
+    `Mapa de esta sentada: kernel primer A/B **${payload.kernel?.verdict ?? 'n/a'}** (control, mismo \`tilemapGid.js\`; ver repeats), tilemapGid **${payload.tilemapCull?.verdict ?? 'n/a'}**, preRender 16k **${payload.preRender?.verdict ?? 'n/a'}**, preRender 24k **${payload.preRender24k?.verdict ?? 'n/a'}**, preRender 28k **${payload.preRender28k?.verdict ?? 'n/a'}**, preRender floor **${payload.preRenderFloor?.verdict ?? 'n/a'}**. Higiene: se queda el API nuevo salvo que una primaria de estrés sea ≥3% más cara con carga comparable y piso de 3 ms. No es un claim de “WeedJS más rápida”.`
   );
   lines.push('');
   lines.push('## What we learned');
   lines.push('');
   lines.push(
-    'Un A/B que solo restaura `src/` y deja la escena nueva contra el engine viejo no corre tilemap (no existe `applyConfiguredContent` / `BACKGROUND`). Hay que emparejar escena y engine. El cull por layer no se mide con el knob del catálogo: hay que subir chunks visibles hasta el piso de 3 ms.'
+    'Un A/B que solo restaura `src/` y deja la escena nueva contra el engine viejo no corre tilemap (no existe `applyConfiguredContent` / `BACKGROUND`). Hay que emparejar escena y engine. El path GID no tiene knobs de stream: el zoom de la escena es el knob de carga (píxeles de pantalla × layers).'
   );
   lines.push('');
   fs.writeFileSync(path.join(outDir, 'report.md'), `${lines.join('\n')}\n`);
@@ -255,25 +252,25 @@ function main() {
   const payload = { head, args, startedAt: new Date().toISOString() };
 
   try {
-    console.log(`\n======== kernel tilemap-cull BASE ${head} ========`);
+    console.log(`\n======== kernel tilemap-gid BASE ${head} ========`);
     applyBaselineRev('HEAD');
     const kernelBase = runKernelScript(
-      'tests/bench/tilemapCullMicrobench.mjs',
+      'tests/bench/tilemapGidMicrobench.mjs',
       path.join(outDir, 'kernel-BASE.json')
     );
     restoreSrcTree(srcSnap);
-    console.log('\n======== kernel tilemap-cull KEEP working tree ========');
+    console.log('\n======== kernel tilemap-gid KEEP working tree ========');
     const kernelHyp = runKernelScript(
-      'tests/bench/tilemapCullMicrobench.mjs',
+      'tests/bench/tilemapGidMicrobench.mjs',
       path.join(outDir, 'kernel-KEEP.json')
     );
-    const baseOps = kernelBase?.cases?.listVisibleChunks?.opsPerSec;
-    const hypOps = kernelHyp?.cases?.listVisibleChunks?.opsPerSec;
+    const baseOps = kernelBase?.cases?.listGidPages?.opsPerSec;
+    const hypOps = kernelHyp?.cases?.listGidPages?.opsPerSec;
     payload.kernel = decideRow({
       ok: Number.isFinite(baseOps) && Number.isFinite(hypOps),
-      base: { listVisibleChunks_ops: { median: baseOps, cv: 0, samples: [baseOps] } },
-      hyp: { listVisibleChunks_ops: { median: hypOps, cv: 0, samples: [hypOps] } },
-      primary: ['listVisibleChunks_ops'],
+      base: { listGidPages_ops: { median: baseOps, cv: 0, samples: [baseOps] } },
+      hyp: { listGidPages_ops: { median: hypOps, cv: 0, samples: [hypOps] } },
+      primary: ['listGidPages_ops'],
       loadKeys: [],
       kind: 'ops',
     });
@@ -281,7 +278,7 @@ function main() {
     payload.kernel.hypOps = hypOps;
     payload.kernel.deltaPct = pctDelta(hypOps, baseOps);
 
-    const cullFeature = getFeature('tilemapCull');
+    const cullFeature = getFeature('tilemapGid');
     console.log(`\n======== tilemapCull BASE ${head} + HEAD scene ========`);
     applyBaseline(srcSnap, sceneSnap);
     const cullBase = measureSceneSide('tilemapCull-BASE', TILEMAP_CULL_SCENE, args, outDir, 'tilemapCull');
@@ -394,14 +391,14 @@ function pass2() {
     restoreSnapshot(rqSnap);
   }
 
-  console.log('\n======== kernel variance on working tree (same tilemapCull.js) ========');
+  console.log('\n======== kernel variance on working tree (same tilemapGid.js) ========');
   const repeats = [];
   for (let i = 0; i < 3; i++) {
     const json = runKernelScript(
-      'tests/bench/tilemapCullMicrobench.mjs',
+      'tests/bench/tilemapGidMicrobench.mjs',
       path.join(outDir, `kernel-KEEP-repeat${i}.json`)
     );
-    repeats.push(json?.cases?.listVisibleChunks?.opsPerSec);
+    repeats.push(json?.cases?.listGidPages?.opsPerSec);
   }
   payload.kernelRepeats = repeats;
   payload.pass2FinishedAt = new Date().toISOString();

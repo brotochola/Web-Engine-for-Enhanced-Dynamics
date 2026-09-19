@@ -496,51 +496,6 @@ export const LOGIC_DEFAULTS = Object.freeze({
 // RENDERER DEFAULTS
 // ============================================================================
 
-/**
- * Tilemap background streaming (pixi). Each chunk is a CompositeTilemap.
- * Visible chunks: view overlap expanded by chunkRing(chunkGrid).
- * Cached chunks: same with cacheGrid (hidden, not destroyed, until they leave).
- * New meshes are built on an idle timeout after the ticker present, with a
- * short budget from *now* (not leftover of the last present — a full 16 ms
- * frame was starving the queue). Override per scene: config.renderer.tilemapCull.
- *
- * Grid values are forced odd (even bumps up). ring = (grid - 1) / 2.
- * Keep cacheGrid >= chunkGrid or visible meshes get evicted.
- */
-export const TILEMAP_CULL_DEFAULTS = Object.freeze({
-  /**
-   * Odd. How far past the view we SHOW chunks.
-   * 1 = only chunks that intersect the viewport (holes if you outrun the stream).
-   * 3 = +1 chunk ring (neighbors on-screen-ready before they enter).
-   * Bigger = more GPU draw of off-screen tiles, fewer edge holes.
-   */
-  chunkGrid: 1,
-  /**
-   * Odd. How far past the view we KEEP built meshes (visible=false).
-   * Turning around reuses them. Bigger = more VRAM / more CompositeTilemaps.
-   * Very large (e.g. 128) ≈ keep the whole map for typical Tiled sizes.
-   */
-  cacheGrid: 32,
-  /**
-   * Extra tiles added to the view rect before chunk overlap (not a chunk ring).
-   * Use for subpixel / zoom jitter when chunkGrid is 1. 0 if a ring already covers bleed.
-   */
-  safetyMarginTiles: 0,
-  /**
-   * Square chunk size in tiles. Pixel size = this * tileWidth.
-   * Larger: fewer meshes, each build heavier (hitch if streamed on the hot path).
-   * Smaller: cheaper builds, more crossings, more objects.
-   * 0 = first viewport size, then freeze (zoom later does not resize existing chunks).
-   */
-  chunkTiles: 128,
-  /**
-   * Max NEW chunk meshes built per pixi frame after the initial fillAll.
-   * 1 = smoothest, may lag behind a fast camera (empty edges with chunkGrid 1).
-   * High = fills cache quickly; those frames pay the tile() + GPU upload cost.
-   */
-  maxChunkBuildsPerFrame: 2,
-});
-
 export const RENDERER_DEFAULTS = Object.freeze({
   /** Pixi init preference. Compute layers require 'webgpu'. */
   backend: 'webgpu',
@@ -555,11 +510,6 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxDecalTileUploadsPerFrame: 32,
   /** Pixi ImageSource mip chain for atlases/textures/tilesets. Off by default (VRAM + atlas bleed risk; STEP flat in benches). */
   autoGenerateMipmaps: false,
-  /**
-   * Viewport chunk streaming for tilemap backgrounds. See TILEMAP_CULL_DEFAULTS.
-   * Scene override: config.renderer.tilemapCull.
-   */
-  tilemapCull: TILEMAP_CULL_DEFAULTS,
 });
 
 // ============================================================================
