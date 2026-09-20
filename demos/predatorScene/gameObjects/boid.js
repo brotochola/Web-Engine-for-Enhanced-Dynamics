@@ -9,7 +9,7 @@ class Boid extends GameObject {
   static scriptUrl = import.meta.url;
   static deriveSpeed = true;
 
-  static tickInterval = 14;
+  static tickInterval = 30;
   static protectedRangeSq = 50 * 50;
   static centeringFactor = 1;
   static avoidFactor = 5;

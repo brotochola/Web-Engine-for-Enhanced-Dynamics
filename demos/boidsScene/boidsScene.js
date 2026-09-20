@@ -45,7 +45,7 @@ export class BoidsScene extends Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      maxVisibleRenderables: 11000,
+      maxVisibleRenderables: 65530,
       ySorting: false,
     },
 
@@ -61,7 +61,7 @@ export class BoidsScene extends Scene {
   };
 
   static entities = [
-    [Boid, 50000],
+    [Boid, 65000],
   ];
 
   constructor(game) {
@@ -77,7 +77,7 @@ export class BoidsScene extends Scene {
   }
 
   createNewGame() {
-    this.spawnBoids(10000);
+    this.spawnBoids(40000);
   }
 
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {

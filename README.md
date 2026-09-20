@@ -181,6 +181,36 @@ const game = new WEED.GameEngine({ debug: true });
 await game.loadScene(ZombieScene);
 ```
 
+Keeping `Zombie` and `ZombieScene` in one file is fine for a small game.
+
+---
+
+## Loading scenes
+
+`loadScene` takes a **class**, not a URL. `game.loadScene('/foo.js')` does not exist. Resolve the module in your app, then pass the class.
+
+Import **the scene you are about to run**. Do not barrel every level in `main` the way an old demo menu did (static `import` of 20 scenes just to draw buttons). That downloads and evaluates GameObject graphs you never spawn.
+
+One level, already in the same file: `await game.loadScene(ZombieScene)` as above.
+
+Several levels — dynamic `import()` with a **static** specifier so Vite/Rollup emit a chunk:
+
+```javascript
+const { DungeonScene } = await import('./scenes/dungeonScene.js');
+await game.loadScene(DungeonScene);
+```
+
+Several scenes in the debug overlay: register `{ name, load }` (same shape as `demos/index.html`). The first click caches the class.
+
+```javascript
+game.debugUI.registerScenes([
+  { name: 'Dungeon', load: () => import('./scenes/dungeonScene.js').then((m) => m.DungeonScene) },
+  { name: 'Town', load: () => import('./scenes/townScene.js').then((m) => m.TownScene) },
+]);
+```
+
+ESM modules already visited stay in the heap until reload. `destroy()` on a scene switch frees workers, shared buffers, and GPU resources — not the JS class. Cross-folder imports inside **your** scene (one level pulling entities from another) still load that subgraph; that is game code, not the catalog.
+
 ---
 
 ## What's Included

@@ -94,6 +94,11 @@ export class DebugUI {
   // PUBLIC API (called by GameEngine)
   // ========================================
 
+  /**
+   * Scene switcher entries. Each row is `{ name, class }` or `{ name, load }`.
+   * `load` should return a Scene class; the first resolve caches it on `class`.
+   * @param {{ name: string, class?: Function, load?: () => Promise<Function>|Function }[]} scenes
+   */
   registerScenes(scenes) {
     this.registeredScenes = scenes;
     this.panels.scene.updateSceneList();

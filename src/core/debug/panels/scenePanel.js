@@ -2,6 +2,15 @@
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
 
+async function resolveRegisteredScene(entry) {
+  if (entry.class) return entry.class;
+  if (typeof entry.load === 'function') {
+    entry.class = await entry.load();
+    return entry.class;
+  }
+  throw new Error(`registerScenes: "${entry.name}" needs class or load()`);
+}
+
 export class ScenePanel {
   constructor(debugUI) {
     this.debugUI = debugUI;
@@ -72,9 +81,10 @@ export class ScenePanel {
         btn.classList.add('active');
       }
       btn.onclick = async () => {
-        if (this.debugUI.gameEngine && scene?.constructor !== sceneConfig.class) {
-          await this.debugUI.gameEngine.loadScene(sceneConfig.class);
-        }
+        if (!this.debugUI.gameEngine) return;
+        const SceneClass = await resolveRegisteredScene(sceneConfig);
+        if (this.debugUI.scene?.constructor === SceneClass) return;
+        await this.debugUI.gameEngine.loadScene(SceneClass);
       };
       container.appendChild(btn);
     }
