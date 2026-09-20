@@ -4,7 +4,7 @@ import { BunnySpawner } from './gameObjects/bunnySpawner.js';
 
 const { Scene, Camera, GameObject } = WEED;
 
-const INITIAL_BUNNIES = 20000;
+const INITIAL_BUNNIES = 65000;
 
 const HUD_CSS =
     'position:fixed;left:12px;bottom:12px;z-index:940;pointer-events:none;' +
