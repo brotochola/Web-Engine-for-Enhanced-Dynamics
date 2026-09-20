@@ -482,10 +482,6 @@ class PreRenderWorker extends AbstractWorker {
             this._renderablePy = new Float32Array(maxItems);
             this._renderableRotC = new Float32Array(maxItems);
             this._renderableRotS = new Float32Array(maxItems);
-            this._persistEntity = [new Int32Array(maxItems), new Int32Array(maxItems)];
-            this._persistType = [new Uint8Array(maxItems), new Uint8Array(maxItems)];
-            this._persistFrame = [new Uint16Array(maxItems), new Uint16Array(maxItems)];
-            this._persistCount = [0, 0];
 
             // Pre-allocate query arrays
             this._queryLightEmitter = [LightEmitter];
@@ -1272,7 +1268,8 @@ class PreRenderWorker extends AbstractWorker {
             } else {
                 const sx = x[i] * camZoom - cameraOffsetX;
                 const sy = y[i] * camZoom - cameraOffsetY;
-                // B: SpriteRenderer.screenX/Y have no readers
+                screenX[i] = sx;
+                screenY[i] = sy;
 
                 // Use cached bounds (updated on scale/animation change)
                 let halfExtent = 0;
@@ -1408,7 +1405,8 @@ class PreRenderWorker extends AbstractWorker {
             } else {
                 const sx = x[i] * camZoom - cameraOffsetX;
                 const sy = y[i] * camZoom - cameraOffsetY;
-                // B: AdobeAnimComponent.screenX/Y have no readers
+                screenX[i] = sx;
+                screenY[i] = sy;
 
                 const extent = (halfW[i] > halfH[i] ? halfW[i] : halfH[i]) * camZoom;
                 const onScreen =
@@ -1531,63 +1529,6 @@ class PreRenderWorker extends AbstractWorker {
         }
         if (!wroteSprite && !isParticle) {
             this._writeRenderable(type, index, y, Layer.entitiesId);
-        }
-    }
-
-    _type0PersistHit(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity || this._persistCount[bufIdx] !== count) return false;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            if (prevT[i] !== type || prevE[i] !== idx) return false;
-            if (type !== 0) continue;
-            if (dirty && dirty[idx]) return false;
-            if (frameIndex && prevF[i] !== (frameIndex[idx] | 0)) return false;
-        }
-        return true;
-    }
-
-    _rememberType0Set(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity) return;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            prevT[i] = type;
-            prevE[i] = idx;
-            prevF[i] = frameIndex ? (frameIndex[idx] | 0) : 0;
-            if (type === 0 && dirty) dirty[idx] = 0;
-        }
-        this._persistCount[bufIdx] = count;
-    }
-
-    _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs) {
-        const rqX = this.renderQueueX;
-        const rqY = this.renderQueueY;
-        const rqRotC = this.renderQueueRotC;
-        const rqRotS = this.renderQueueRotS;
-        const rqSortKey = this.renderQueueSortKey;
-        const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
-        const inherit = SpriteRenderer.inheritTransformRotation;
-        for (let i = 0; i < count; i++) {
-            if (collectorType[i] !== 0) continue;
-            const idx = collectorIndex[i];
-            rqX[i] = stashPx[i];
-            rqY[i] = stashPy[i];
-            if (inherit && inherit[idx]) {
-                rqRotC[i] = stashRc[i];
-                rqRotS[i] = stashRs[i];
-            }
-            if (writeSortKey) rqSortKey[i] = collectorY[i];
         }
     }
 
@@ -2122,22 +2063,11 @@ class PreRenderWorker extends AbstractWorker {
         const stashRc = this._renderableRotC;
         const stashRs = this._renderableRotS;
         const stashPose = this._displayPoseOut;
-        const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
-        const persistBuf = this.renderQueueFrame % 2;
-        const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
-        if (persistHit) {
-            this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs);
-        }
 
         for (let i = 0; i < count && writeCount < this.renderQueueMaxItems; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
             const sk = collectorY[i];
-
-            if (persistHit && type === 0) {
-                writeCount++;
-                continue;
-            }
 
             if (type === 6) {
                 stashPose.x = stashPx[i];
@@ -2149,12 +2079,10 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             const out = writeCount++;
-            if (writeSortKey) rqSortKey[out] = sk;
-            if (type !== 0) {
-                if (rqRepeatX) rqRepeatX[out] = 0;
-                if (rqRepeatY) rqRepeatY[out] = 0;
-                clearTileFields(ref, out);
-            }
+            if (rqSortKey) rqSortKey[out] = sk;
+            if (rqRepeatX) rqRepeatX[out] = 0;
+            if (rqRepeatY) rqRepeatY[out] = 0;
+            clearTileFields(ref, out);
 
             if (type === 0) {
                 // === ENTITY === (pose stashed at collect)
@@ -2176,22 +2104,13 @@ class PreRenderWorker extends AbstractWorker {
                 rqTint[out] = srTint[idx];
                 rqAnchorX[out] = srAnchorX[idx];
                 rqAnchorY[out] = srAnchorY[idx];
-                const rx0 = srRepeatX[idx];
-                const ry0 = srRepeatY[idx];
-                if (rx0 !== 0 || ry0 !== 0) {
-                    if (rqRepeatX) rqRepeatX[out] = rx0;
-                    if (rqRepeatY) rqRepeatY[out] = ry0;
-                    writeEntityTileFields(
-                        ref, out, idx,
-                        srTileMode, srTileOffsetU, srTileOffsetV,
-                        srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
-                    );
-                } else {
-                    if (rqRepeatX) rqRepeatX[out] = 0;
-                    if (rqRepeatY) rqRepeatY[out] = 0;
-                    if (rqTileMulX) rqTileMulX[out] = 0;
-                    if (rqTileMulY) rqTileMulY[out] = 0;
-                }
+                if (rqRepeatX) rqRepeatX[out] = srRepeatX[idx];
+                if (rqRepeatY) rqRepeatY[out] = srRepeatY[idx];
+                writeEntityTileFields(
+                    ref, out, idx,
+                    srTileMode, srTileOffsetU, srTileOffsetV,
+                    srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
+                );
 
                 rqType[out] = 0;
                 rqEntityIndex[out] = idx;
@@ -2430,7 +2349,6 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
-        if (!persistHit) this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
         this.renderQueueCount[0] = writeCount;
         this._renderableCount = 0;
     }
@@ -2593,7 +2511,6 @@ class PreRenderWorker extends AbstractWorker {
             layerRef.tileMulX = rqTileMulX; layerRef.tileMulY = rqTileMulY;
 
             let writeCount = 0;
-            const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[entry.layerId]);
 
             for (let i = 0; i < layerCount && writeCount < collector.maxItems; i++) {
                 const type = cType[i];
@@ -2606,12 +2523,10 @@ class PreRenderWorker extends AbstractWorker {
                 }
 
                 const out = writeCount++;
-                if (writeSortKey) rqSortKey[out] = sk;
-                if (type !== 0) {
-                    if (rqRepeatX) rqRepeatX[out] = 0;
-                    if (rqRepeatY) rqRepeatY[out] = 0;
-                    clearTileFields(layerRef, out);
-                }
+                if (rqSortKey) rqSortKey[out] = sk;
+                if (rqRepeatX) rqRepeatX[out] = 0;
+                if (rqRepeatY) rqRepeatY[out] = 0;
+                clearTileFields(layerRef, out);
 
                 if (type === 0) {
                     // === ENTITY ===
@@ -2632,22 +2547,13 @@ class PreRenderWorker extends AbstractWorker {
                     rqTint[out] = srTint[idx];
                     rqAnchorX[out] = srAnchorX[idx];
                     rqAnchorY[out] = srAnchorY[idx];
-                    const rx0 = srRepeatX[idx];
-                    const ry0 = srRepeatY[idx];
-                    if (rx0 !== 0 || ry0 !== 0) {
-                        if (rqRepeatX) rqRepeatX[out] = rx0;
-                        if (rqRepeatY) rqRepeatY[out] = ry0;
-                        writeEntityTileFields(
-                            layerRef, out, idx,
-                            srTileMode, srTileOffsetU, srTileOffsetV,
-                            srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
-                        );
-                    } else {
-                        if (rqRepeatX) rqRepeatX[out] = 0;
-                        if (rqRepeatY) rqRepeatY[out] = 0;
-                        if (rqTileMulX) rqTileMulX[out] = 0;
-                        if (rqTileMulY) rqTileMulY[out] = 0;
-                    }
+                    if (rqRepeatX) rqRepeatX[out] = srRepeatX[idx];
+                    if (rqRepeatY) rqRepeatY[out] = srRepeatY[idx];
+                    writeEntityTileFields(
+                        layerRef, out, idx,
+                        srTileMode, srTileOffsetU, srTileOffsetV,
+                        srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
+                    );
                     rqType[out] = 0;
                     rqEntityIndex[out] = idx;
 

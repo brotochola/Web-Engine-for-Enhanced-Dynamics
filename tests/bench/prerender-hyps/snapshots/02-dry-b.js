@@ -482,10 +482,6 @@ class PreRenderWorker extends AbstractWorker {
             this._renderablePy = new Float32Array(maxItems);
             this._renderableRotC = new Float32Array(maxItems);
             this._renderableRotS = new Float32Array(maxItems);
-            this._persistEntity = [new Int32Array(maxItems), new Int32Array(maxItems)];
-            this._persistType = [new Uint8Array(maxItems), new Uint8Array(maxItems)];
-            this._persistFrame = [new Uint16Array(maxItems), new Uint16Array(maxItems)];
-            this._persistCount = [0, 0];
 
             // Pre-allocate query arrays
             this._queryLightEmitter = [LightEmitter];
@@ -1534,63 +1530,6 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
-    _type0PersistHit(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity || this._persistCount[bufIdx] !== count) return false;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            if (prevT[i] !== type || prevE[i] !== idx) return false;
-            if (type !== 0) continue;
-            if (dirty && dirty[idx]) return false;
-            if (frameIndex && prevF[i] !== (frameIndex[idx] | 0)) return false;
-        }
-        return true;
-    }
-
-    _rememberType0Set(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity) return;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            prevT[i] = type;
-            prevE[i] = idx;
-            prevF[i] = frameIndex ? (frameIndex[idx] | 0) : 0;
-            if (type === 0 && dirty) dirty[idx] = 0;
-        }
-        this._persistCount[bufIdx] = count;
-    }
-
-    _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs) {
-        const rqX = this.renderQueueX;
-        const rqY = this.renderQueueY;
-        const rqRotC = this.renderQueueRotC;
-        const rqRotS = this.renderQueueRotS;
-        const rqSortKey = this.renderQueueSortKey;
-        const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
-        const inherit = SpriteRenderer.inheritTransformRotation;
-        for (let i = 0; i < count; i++) {
-            if (collectorType[i] !== 0) continue;
-            const idx = collectorIndex[i];
-            rqX[i] = stashPx[i];
-            rqY[i] = stashPy[i];
-            if (inherit && inherit[idx]) {
-                rqRotC[i] = stashRc[i];
-                rqRotS[i] = stashRs[i];
-            }
-            if (writeSortKey) rqSortKey[i] = collectorY[i];
-        }
-    }
-
     _writeRenderable(type, index, y, layerId) {
         if (this._customLayerCollectors && layerId !== Layer.entitiesId) {
             const collector = this._customLayerCollectors[layerId];
@@ -2123,21 +2062,11 @@ class PreRenderWorker extends AbstractWorker {
         const stashRs = this._renderableRotS;
         const stashPose = this._displayPoseOut;
         const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
-        const persistBuf = this.renderQueueFrame % 2;
-        const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
-        if (persistHit) {
-            this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs);
-        }
 
         for (let i = 0; i < count && writeCount < this.renderQueueMaxItems; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
             const sk = collectorY[i];
-
-            if (persistHit && type === 0) {
-                writeCount++;
-                continue;
-            }
 
             if (type === 6) {
                 stashPose.x = stashPx[i];
@@ -2430,7 +2359,6 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
-        if (!persistHit) this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
         this.renderQueueCount[0] = writeCount;
         this._renderableCount = 0;
     }

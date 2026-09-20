@@ -482,10 +482,6 @@ class PreRenderWorker extends AbstractWorker {
             this._renderablePy = new Float32Array(maxItems);
             this._renderableRotC = new Float32Array(maxItems);
             this._renderableRotS = new Float32Array(maxItems);
-            this._persistEntity = [new Int32Array(maxItems), new Int32Array(maxItems)];
-            this._persistType = [new Uint8Array(maxItems), new Uint8Array(maxItems)];
-            this._persistFrame = [new Uint16Array(maxItems), new Uint16Array(maxItems)];
-            this._persistCount = [0, 0];
 
             // Pre-allocate query arrays
             this._queryLightEmitter = [LightEmitter];
@@ -927,6 +923,7 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) t0 = performance.now();
         this.advanceAdobeAnimations(deltaTime);
         if (detail) this.adobeTimeThisFrame = performance.now() - t0;
+        this._frameDeltaSeconds = deltaTime / 1000;
 
         // Collect visible renderables for render queue (entities + sun shadows fused in one pass)
         if (detail) t0 = performance.now();
@@ -1534,63 +1531,6 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
-    _type0PersistHit(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity || this._persistCount[bufIdx] !== count) return false;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            if (prevT[i] !== type || prevE[i] !== idx) return false;
-            if (type !== 0) continue;
-            if (dirty && dirty[idx]) return false;
-            if (frameIndex && prevF[i] !== (frameIndex[idx] | 0)) return false;
-        }
-        return true;
-    }
-
-    _rememberType0Set(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity) return;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            prevT[i] = type;
-            prevE[i] = idx;
-            prevF[i] = frameIndex ? (frameIndex[idx] | 0) : 0;
-            if (type === 0 && dirty) dirty[idx] = 0;
-        }
-        this._persistCount[bufIdx] = count;
-    }
-
-    _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs) {
-        const rqX = this.renderQueueX;
-        const rqY = this.renderQueueY;
-        const rqRotC = this.renderQueueRotC;
-        const rqRotS = this.renderQueueRotS;
-        const rqSortKey = this.renderQueueSortKey;
-        const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
-        const inherit = SpriteRenderer.inheritTransformRotation;
-        for (let i = 0; i < count; i++) {
-            if (collectorType[i] !== 0) continue;
-            const idx = collectorIndex[i];
-            rqX[i] = stashPx[i];
-            rqY[i] = stashPy[i];
-            if (inherit && inherit[idx]) {
-                rqRotC[i] = stashRc[i];
-                rqRotS[i] = stashRs[i];
-            }
-            if (writeSortKey) rqSortKey[i] = collectorY[i];
-        }
-    }
-
     _writeRenderable(type, index, y, layerId) {
         if (this._customLayerCollectors && layerId !== Layer.entitiesId) {
             const collector = this._customLayerCollectors[layerId];
@@ -1620,7 +1560,11 @@ class PreRenderWorker extends AbstractWorker {
         this._renderableY[writeIdx] = y;
         this._renderableType[writeIdx] = type;
         this._renderableIndex[writeIdx] = index;
-        if (type === 0 || type === 6) {
+        if (type === 0) {
+            const pose = this._displayPoseOut;
+            this._displayPose(index, pose);
+            this._emitType0At(writeIdx, index, y, pose);
+        } else if (type === 6) {
             const pose = this._displayPoseOut;
             this._displayPose(index, pose);
             this._renderablePx[writeIdx] = pose.x;
@@ -1636,6 +1580,116 @@ class PreRenderWorker extends AbstractWorker {
             this._renderableRotS[writeIdx] = DecorationComponent.rotS[index];
         }
         this._renderableCount = writeIdx + 1;
+    }
+
+    _emitType0At(out, idx, sk, pose) {
+        const rqX = this.renderQueueX;
+        const rqY = this.renderQueueY;
+        const rqScaleX = this.renderQueueScaleX;
+        const rqScaleY = this.renderQueueScaleY;
+        const rqRotC = this.renderQueueRotC;
+        const rqRotS = this.renderQueueRotS;
+        const rqAlpha = this.renderQueueAlpha;
+        const rqTint = this.renderQueueTint;
+        const rqTextureId = this.renderQueueTextureId;
+        const rqAnchorX = this.renderQueueAnchorX;
+        const rqAnchorY = this.renderQueueAnchorY;
+        const rqType = this.renderQueueType;
+        const rqEntityIndex = this.renderQueueEntityIndex;
+        const rqSortKey = this.renderQueueSortKey;
+        const rqRepeatX = this.renderQueueRepeatX;
+        const rqRepeatY = this.renderQueueRepeatY;
+        const rqTileMulX = this.renderQueueTileMulX;
+        const rqTileMulY = this.renderQueueTileMulY;
+        const ref = this._emitRef;
+        ref.tileMode = this.renderQueueTileMode;
+        ref.tileOffsetU = this.renderQueueTileOffsetU;
+        ref.tileOffsetV = this.renderQueueTileOffsetV;
+        ref.tileMulX = rqTileMulX;
+        ref.tileMulY = rqTileMulY;
+
+        if (rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]) rqSortKey[out] = sk;
+
+        rqX[out] = pose.x;
+        rqY[out] = pose.y;
+        rqScaleX[out] = SpriteRenderer.scaleX[idx];
+        rqScaleY[out] = SpriteRenderer.scaleY[idx];
+        if (SpriteRenderer.inheritTransformRotation[idx]) {
+            rqRotC[out] = pose.rotC;
+            rqRotS[out] = pose.rotS;
+        } else {
+            rqRotC[out] = SpriteRenderer.spriteRotC[idx];
+            rqRotS[out] = SpriteRenderer.spriteRotS[idx];
+        }
+        rqAlpha[out] = SpriteRenderer.alpha[idx];
+        rqTint[out] = SpriteRenderer.tint[idx];
+        rqAnchorX[out] = SpriteRenderer.anchorX[idx];
+        rqAnchorY[out] = SpriteRenderer.anchorY[idx];
+        const rx0 = SpriteRenderer.repeatX[idx];
+        const ry0 = SpriteRenderer.repeatY[idx];
+        if (rx0 !== 0 || ry0 !== 0) {
+            if (rqRepeatX) rqRepeatX[out] = rx0;
+            if (rqRepeatY) rqRepeatY[out] = ry0;
+            writeEntityTileFields(
+                ref, out, idx,
+                SpriteRenderer.tileMode, SpriteRenderer.tileOffsetU, SpriteRenderer.tileOffsetV,
+                SpriteRenderer.repeatX, SpriteRenderer.repeatY,
+                SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH
+            );
+        } else {
+            if (rqRepeatX) rqRepeatX[out] = 0;
+            if (rqRepeatY) rqRepeatY[out] = 0;
+            if (rqTileMulX) rqTileMulX[out] = 0;
+            if (rqTileMulY) rqTileMulY[out] = 0;
+        }
+
+        rqType[out] = 0;
+        rqEntityIndex[out] = idx;
+
+        const frameIndex = this.entityFrameIndex;
+        const frameAccum = this.entityFrameAccumulator;
+        const entityLastTextureId = this.entityLastTextureId;
+        const sheetId = SpriteRenderer.spritesheetId[idx];
+        const animState = SpriteRenderer.animationState[idx];
+        const proxyMap = this.proxyToGlobalAnim?.[sheetId];
+        const globalAnimIdx = proxyMap?.[animState];
+
+        if (globalAnimIdx !== undefined) {
+            const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+            if (frameIndex[idx] >= animFrameCount) {
+                frameIndex[idx] = 0;
+            }
+
+            if (SpriteRenderer.isAnimated[idx] && animFrameCount > 1) {
+                frameAccum[idx] += this._frameDeltaSeconds;
+                const frameDuration = 1 / (SpriteRenderer.animationSpeed[idx] * 60);
+                if (frameAccum[idx] >= frameDuration) {
+                    frameAccum[idx] -= frameDuration;
+                    const currentFrame = frameIndex[idx];
+                    const isLastFrame = currentFrame >= animFrameCount - 1;
+                    const shouldLoop = SpriteRenderer.loop[idx] === 1;
+                    if (shouldLoop || !isLastFrame) {
+                        frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+                        if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
+                            const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
+                            const origW = this.frameWidth[texId] || 0;
+                            const origH = this.frameHeight[texId] || 0;
+                            const sx = SpriteRenderer.scaleX[idx] || 1;
+                            const sy = SpriteRenderer.scaleY[idx] || 1;
+                            SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
+                            SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
+                        }
+                    }
+                }
+            }
+
+            const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
+            const globalTextureId = animStart + frameIndex[idx];
+            rqTextureId[out] = globalTextureId;
+            if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
+        } else {
+            rqTextureId[out] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
+        }
     }
 
     _resolveAdobeFrameIndex(entityIndex) {
@@ -2123,18 +2177,13 @@ class PreRenderWorker extends AbstractWorker {
         const stashRs = this._renderableRotS;
         const stashPose = this._displayPoseOut;
         const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
-        const persistBuf = this.renderQueueFrame % 2;
-        const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
-        if (persistHit) {
-            this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs);
-        }
 
         for (let i = 0; i < count && writeCount < this.renderQueueMaxItems; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
             const sk = collectorY[i];
 
-            if (persistHit && type === 0) {
+            if (type === 0) {
                 writeCount++;
                 continue;
             }
@@ -2150,102 +2199,11 @@ class PreRenderWorker extends AbstractWorker {
 
             const out = writeCount++;
             if (writeSortKey) rqSortKey[out] = sk;
-            if (type !== 0) {
-                if (rqRepeatX) rqRepeatX[out] = 0;
-                if (rqRepeatY) rqRepeatY[out] = 0;
-                clearTileFields(ref, out);
-            }
+            if (rqRepeatX) rqRepeatX[out] = 0;
+            if (rqRepeatY) rqRepeatY[out] = 0;
+            clearTileFields(ref, out);
 
-            if (type === 0) {
-                // === ENTITY === (pose stashed at collect)
-                const currX = stashPx[i];
-                const currY = stashPy[i];
-
-                rqX[out] = currX;
-                rqY[out] = currY;
-                rqScaleX[out] = srScaleX[idx];
-                rqScaleY[out] = srScaleY[idx];
-                if (srInheritTransformRotation[idx]) {
-                    rqRotC[out] = stashRc[i];
-                    rqRotS[out] = stashRs[i];
-                } else {
-                    rqRotC[out] = srSpriteRotC[idx];
-                    rqRotS[out] = srSpriteRotS[idx];
-                }
-                rqAlpha[out] = srAlpha[idx];
-                rqTint[out] = srTint[idx];
-                rqAnchorX[out] = srAnchorX[idx];
-                rqAnchorY[out] = srAnchorY[idx];
-                const rx0 = srRepeatX[idx];
-                const ry0 = srRepeatY[idx];
-                if (rx0 !== 0 || ry0 !== 0) {
-                    if (rqRepeatX) rqRepeatX[out] = rx0;
-                    if (rqRepeatY) rqRepeatY[out] = ry0;
-                    writeEntityTileFields(
-                        ref, out, idx,
-                        srTileMode, srTileOffsetU, srTileOffsetV,
-                        srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
-                    );
-                } else {
-                    if (rqRepeatX) rqRepeatX[out] = 0;
-                    if (rqRepeatY) rqRepeatY[out] = 0;
-                    if (rqTileMulX) rqTileMulX[out] = 0;
-                    if (rqTileMulY) rqTileMulY[out] = 0;
-                }
-
-                rqType[out] = 0;
-                rqEntityIndex[out] = idx;
-
-                const sheetId = srSpritesheetId[idx];
-                const animState = srAnimState[idx];
-
-                const proxyMap = this.proxyToGlobalAnim?.[sheetId];
-                const globalAnimIdx = proxyMap?.[animState];
-
-                if (globalAnimIdx !== undefined) {
-                    const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
-                    if (frameIndex[idx] >= animFrameCount) {
-                        frameIndex[idx] = 0;
-                    }
-
-                    if (srIsAnimated[idx] && animFrameCount > 1) {
-                        frameAccum[idx] += deltaSeconds;
-                        const frameDuration = 1 / (srAnimSpeed[idx] * 60);
-
-                        if (frameAccum[idx] >= frameDuration) {
-                            frameAccum[idx] -= frameDuration;
-
-                            const currentFrame = frameIndex[idx];
-                            const isLastFrame = currentFrame >= animFrameCount - 1;
-                            const shouldLoop = srLoop[idx] === 1;
-
-                            if (shouldLoop || !isLastFrame) {
-                                frameIndex[idx] = (currentFrame + 1) % animFrameCount;
-                                // Bounds may change (variable frame sizes)
-                                if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
-                                    const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
-                                    const origW = this.frameWidth[texId] || 0;
-                                    const origH = this.frameHeight[texId] || 0;
-                                    const sx = srScaleX[idx] || 1;
-                                    const sy = srScaleY[idx] || 1;
-                                    SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
-                                    SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
-                                }
-                            }
-                        }
-                    }
-
-                    const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
-                    const globalTextureId = animStart + frameIndex[idx];
-                    rqTextureId[out] = globalTextureId;
-
-                    if (entityLastTextureId) {
-                        entityLastTextureId[idx] = globalTextureId;
-                    }
-                } else {
-                    rqTextureId[out] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
-                }
-            } else if (type === 1) {
+            if (type === 1) {
                 // === PARTICLE ===
                 rqX[out] = particleX[idx];
                 // Zenithal: height → scale (and alpha). Never fold z into Y.
@@ -2430,7 +2388,6 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
-        if (!persistHit) this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
         this.renderQueueCount[0] = writeCount;
         this._renderableCount = 0;
     }

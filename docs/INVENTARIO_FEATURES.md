@@ -162,7 +162,7 @@ Skip-publish si las listas no cambian ya está en logic0. `QUERY_PUBLISH_MS` sol
 
 Módulo: `src/workers/preRenderWorker.js`. Kernel: `srFlagsMicrobench.mjs`. Escena: `RenderQueueStressScene`. Primaria: `preRender_STEP_MS`. Carga: `BODY_COUNT`.
 
-Packed vs 7 columnas Uint8 ya se midió (cull gana en kernel; cola ruidosa). `preRender.skipCull` (2026-09-20, **mixed**): opt-in, default false. Bunny 65k todos visibles: `preRender_STEP_MS` −4.5% (KEPT). Zoom alto: cola 640→16000 (CULL_PAYS). No default. Informe: [`tests/results/skip-cull/report.md`](../tests/results/skip-cull/report.md).
+Packed vs 7 columnas Uint8 ya se midió (cull gana en kernel; cola ruidosa). `preRender.skipCull` (2026-09-20, **mixed**): opt-in, default false. Bunny 65k todos visibles: `preRender_STEP_MS` −4.5% (KEPT). Zoom alto: cola 640→16000 (CULL_PAYS). No default. Informe: [`tests/results/skip-cull/report.md`](../tests/results/skip-cull/report.md). DRY un loop + `_writeFusedSunShadow` (2026-09-20, **kept** higiene): bunny 8.350→8.274 (−0.9% TIE). B campos muertos (2026-09-20, **kept**): bunny 8.284→7.620 (−8.0%). A fuse type 0 **dropped** (+20.8%). C persist estáticas (**kept**, smoke): 7.395→5.978 (−19.2%), EMIT −60.8%. Informes: [`tests/results/prerender-hyps/`](../tests/results/prerender-hyps/).
 
 ### compute — Pack WebGPU
 

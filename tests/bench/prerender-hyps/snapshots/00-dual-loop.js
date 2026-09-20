@@ -211,41 +211,6 @@ class PreRenderWorker extends AbstractWorker {
         // _latchPose(), consumed per-entity in _displayPose()/LiquidFun collect.
         this.interpolationMode = 'off';
         this.skipCull = false;
-        this._fusedSunShadow = {
-            writeIdx: 0,
-            count: 0,
-            maxItems: 0,
-            maxShadowSprites: 0,
-            maxShadowsPerEntity: 0,
-            viewMinX: 0,
-            viewMaxX: 0,
-            viewMinY: 0,
-            viewMaxY: 0,
-            sunShadowRotC: 1,
-            sunShadowRotS: 0,
-            sunShadowAlpha: 1,
-            rqX: null,
-            rqY: null,
-            rqScaleX: null,
-            rqScaleY: null,
-            rqRotC: null,
-            rqRotS: null,
-            rqAlpha: null,
-            rqTint: null,
-            rqTextureId: null,
-            rqAnchorX: null,
-            rqAnchorY: null,
-            shadowCasterActive: null,
-            shadowHeightMultiplier: null,
-            shadowAnchorOffsetX: null,
-            shadowAnchorOffsetY: null,
-            transformActive: null,
-            spriteScaleY: null,
-            spriteAnchorX: null,
-            spriteAnchorY: null,
-            entityShadowCounts: null,
-            toClear: null,
-        };
         this._poseLastSeenReadyFrame = 0;
         this._poseLastChangeWallClock = 0;
         this._poseMeasuredIntervalMs = 0;
@@ -482,10 +447,6 @@ class PreRenderWorker extends AbstractWorker {
             this._renderablePy = new Float32Array(maxItems);
             this._renderableRotC = new Float32Array(maxItems);
             this._renderableRotS = new Float32Array(maxItems);
-            this._persistEntity = [new Int32Array(maxItems), new Int32Array(maxItems)];
-            this._persistType = [new Uint8Array(maxItems), new Uint8Array(maxItems)];
-            this._persistFrame = [new Uint16Array(maxItems), new Uint16Array(maxItems)];
-            this._persistCount = [0, 0];
 
             // Pre-allocate query arrays
             this._queryLightEmitter = [LightEmitter];
@@ -1068,48 +1029,6 @@ class PreRenderWorker extends AbstractWorker {
      * Iterates activeEntitiesData (or all entities), viewport culling, sets isItOnScreen/screenX/screenY,
      * adds visible to queue. When shadows enabled, also writes sun shadows in same pass.
      */
-    _writeFusedSunShadow(i, renderVisibleI) {
-        const s = this._fusedSunShadow;
-        if (s.writeIdx >= s.maxItems || s.count >= s.maxShadowSprites) return;
-        if (!s.shadowCasterActive[i] || !s.transformActive[i]) return;
-        const heightMult = s.shadowHeightMultiplier[i];
-        if (!(heightMult > 0 && (s.maxShadowsPerEntity <= 0 || (s.entityShadowCounts[i] ?? 0) < s.maxShadowsPerEntity))) return;
-
-        const pose = this._displayPoseOut;
-        if (!renderVisibleI) this._displayPose(i, pose);
-        const casterX = pose.x;
-        const casterY = pose.y;
-        const textureId = this.entityLastTextureId ? this.entityLastTextureId[i] : INVALID_TEXTURE_ID;
-        if (textureId === INVALID_TEXTURE_ID) return;
-        const entityScaleY = Math.abs(s.spriteScaleY[i]) || 1;
-        const anchorX = s.spriteAnchorX[i] ?? 0.5;
-        const anchorY = s.spriteAnchorY[i] ?? 0.95;
-        const lengthScale = -entityScaleY * heightMult * Sun.shadowLengthRatio;
-        const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
-        const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
-        if (casterX + shadowExtent < s.viewMinX || casterX - shadowExtent > s.viewMaxX ||
-            casterY + shadowExtent < s.viewMinY || casterY - shadowExtent > s.viewMaxY) return;
-
-        const wi = s.writeIdx;
-        s.rqX[wi] = casterX;
-        s.rqY[wi] = casterY;
-        s.rqScaleX[wi] = 1;
-        s.rqScaleY[wi] = lengthScale;
-        s.rqRotC[wi] = s.sunShadowRotC;
-        s.rqRotS[wi] = s.sunShadowRotS;
-        s.rqAlpha[wi] = s.sunShadowAlpha;
-        s.rqTint[wi] = 0x000000;
-        s.rqTextureId[wi] = textureId;
-        s.rqAnchorX[wi] = anchorX + (s.shadowAnchorOffsetX[i] || 0);
-        s.rqAnchorY[wi] = anchorY + (s.shadowAnchorOffsetY[i] || 0);
-        s.writeIdx = wi + 1;
-        s.count++;
-        if (s.maxShadowsPerEntity > 0 && s.entityShadowCounts && s.toClear) {
-            s.entityShadowCounts[i] = (s.entityShadowCounts[i] ?? 0) + 1;
-            s.toClear[this._entityShadowIndicesToClearCount++] = i;
-        }
-    }
-
     collectVisibleEntities() {
         if (this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen || !this.cameraData) return;
 
@@ -1159,6 +1078,8 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         // Sun shadows (fused): write during same pass when enabled
+        let sunShadowWriteIdx = 0;
+        let sunShadowCount = 0;
         const doSunShadows = this.shadowsEnabled &&
             Sun.isInitialized && Sun.enabled && Sun.intensity > 0.1 &&
             this.shadowRenderQueueX && this.maxShadowRenderItems > 0 &&
@@ -1222,44 +1143,65 @@ class PreRenderWorker extends AbstractWorker {
 
         const maxItems = this.maxShadowRenderItems ?? 0;
         const maxShadowSprites = this.maxShadowSprites ?? 0;
-        if (doSunShadows) {
-            const s = this._fusedSunShadow;
-            s.writeIdx = 0;
-            s.count = 0;
-            s.maxItems = maxItems;
-            s.maxShadowSprites = maxShadowSprites;
-            s.maxShadowsPerEntity = maxShadowsPerEntity;
-            s.viewMinX = viewMinX;
-            s.viewMaxX = viewMaxX;
-            s.viewMinY = viewMinY;
-            s.viewMaxY = viewMaxY;
-            s.sunShadowRotC = sunShadowRotC;
-            s.sunShadowRotS = sunShadowRotS;
-            s.sunShadowAlpha = sunShadowAlpha;
-            s.rqX = rqX;
-            s.rqY = rqY;
-            s.rqScaleX = rqScaleX;
-            s.rqScaleY = rqScaleY;
-            s.rqRotC = rqRotC;
-            s.rqRotS = rqRotS;
-            s.rqAlpha = rqAlpha;
-            s.rqTint = rqTint;
-            s.rqTextureId = rqTextureId;
-            s.rqAnchorX = rqAnchorX;
-            s.rqAnchorY = rqAnchorY;
-            s.shadowCasterActive = shadowCasterActive;
-            s.shadowHeightMultiplier = shadowHeightMultiplier;
-            s.shadowAnchorOffsetX = shadowAnchorOffsetX;
-            s.shadowAnchorOffsetY = shadowAnchorOffsetY;
-            s.transformActive = transformActive;
-            s.spriteScaleY = spriteScaleY;
-            s.spriteAnchorX = spriteAnchorX;
-            s.spriteAnchorY = spriteAnchorY;
-            s.entityShadowCounts = entityShadowCounts;
-            s.toClear = toClear;
-        }
 
-        for (let idx = 0; idx < iterCount; idx++) {
+        if (this.skipCull) {
+            for (let idx = 0; idx < iterCount; idx++) {
+                const i = iterSource ? iterSource[iterBase + idx] : idx;
+                if (!active[i]) {
+                    if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
+                    continue;
+                }
+                if (!spriteRendererActive || !spriteRendererActive[i]) continue;
+
+                isItOnScreen[i] = 1;
+                entityIsItOnScreen[i] = 1;
+
+                if (renderVisible[i]) {
+                    this.collectRenderable(0, i, y[i] * Y_SORT_K);
+                    this.visibleEntitiesCount++;
+                }
+
+                if (doSunShadows && sunShadowWriteIdx < maxItems && sunShadowCount < maxShadowSprites) {
+                    if (shadowCasterActive[i] && transformActive[i]) {
+                        const heightMult = shadowHeightMultiplier[i];
+                        if (heightMult > 0 && (maxShadowsPerEntity <= 0 || (entityShadowCounts[i] ?? 0) < maxShadowsPerEntity)) {
+                            const pose = this._displayPoseOut;
+                            if (!renderVisible[i]) this._displayPose(i, pose);
+                            const casterX = pose.x;
+                            const casterY = pose.y;
+                            const textureId = this.entityLastTextureId ? this.entityLastTextureId[i] : INVALID_TEXTURE_ID;
+                            if (textureId === INVALID_TEXTURE_ID) continue;
+                            const entityScaleY = Math.abs(spriteScaleY[i]) || 1;
+                            const anchorX = spriteAnchorX[i] ?? 0.5;
+                            const anchorY = spriteAnchorY[i] ?? 0.95;
+                            const lengthScale = -entityScaleY * heightMult * Sun.shadowLengthRatio;
+                            const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
+                            const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
+                            if (!(casterX + shadowExtent < viewMinX || casterX - shadowExtent > viewMaxX ||
+                                casterY + shadowExtent < viewMinY || casterY - shadowExtent > viewMaxY)) {
+                                rqX[sunShadowWriteIdx] = casterX;
+                                rqY[sunShadowWriteIdx] = casterY;
+                                rqScaleX[sunShadowWriteIdx] = 1;
+                                rqScaleY[sunShadowWriteIdx] = lengthScale;
+                                rqRotC[sunShadowWriteIdx] = sunShadowRotC;
+                                rqRotS[sunShadowWriteIdx] = sunShadowRotS;
+                                rqAlpha[sunShadowWriteIdx] = sunShadowAlpha;
+                                rqTint[sunShadowWriteIdx] = 0x000000;
+                                rqTextureId[sunShadowWriteIdx] = textureId;
+                                rqAnchorX[sunShadowWriteIdx] = anchorX + (shadowAnchorOffsetX[i] || 0);
+                                rqAnchorY[sunShadowWriteIdx] = anchorY + (shadowAnchorOffsetY[i] || 0);
+                                sunShadowWriteIdx++;
+                                sunShadowCount++;
+                                if (maxShadowsPerEntity > 0 && entityShadowCounts && toClear) {
+                                    entityShadowCounts[i] = (entityShadowCounts[i] ?? 0) + 1;
+                                    toClear[this._entityShadowIndicesToClearCount++] = i;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else for (let idx = 0; idx < iterCount; idx++) {
             const i = iterSource ? iterSource[iterBase + idx] : idx;
             if (!active[i]) {
                 if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
@@ -1267,28 +1209,24 @@ class PreRenderWorker extends AbstractWorker {
             }
             if (!spriteRendererActive || !spriteRendererActive[i]) continue;
 
-            if (this.skipCull) {
-                // skip AABB + screenXY
-            } else {
-                const sx = x[i] * camZoom - cameraOffsetX;
-                const sy = y[i] * camZoom - cameraOffsetY;
-                // B: SpriteRenderer.screenX/Y have no readers
+            const sx = x[i] * camZoom - cameraOffsetX;
+            const sy = y[i] * camZoom - cameraOffsetY;
+            screenX[i] = sx;
+            screenY[i] = sy;
 
-                // Use cached bounds (updated on scale/animation change)
-                let halfExtent = 0;
-                const halfW = SpriteRenderer.boundsHalfW?.[i] ?? 0;
-                const halfH = SpriteRenderer.boundsHalfH?.[i] ?? 0;
-                if (halfW > 0 || halfH > 0) halfExtent = halfW > halfH ? halfW : halfH;
-                if (halfExtent <= 0) halfExtent = visualRange[i] || 0;
-                const extent = halfExtent * camZoom;
-                const onScreen = sx >= screenMinX - extent && sx <= screenMaxX + extent &&
-                    sy >= screenMinY - extent && sy <= screenMaxY + extent;
-                if (!onScreen) {
-                    isItOnScreen[i] = 0;
-                    continue;
-                }
+            // Use cached bounds (updated on scale/animation change)
+            let halfExtent = 0;
+            const halfW = SpriteRenderer.boundsHalfW?.[i] ?? 0;
+            const halfH = SpriteRenderer.boundsHalfH?.[i] ?? 0;
+            if (halfW > 0 || halfH > 0) halfExtent = halfW > halfH ? halfW : halfH;
+            if (halfExtent <= 0) halfExtent = visualRange[i] || 0;
+            const extent = halfExtent * camZoom;
+            const onScreen = sx >= screenMinX - extent && sx <= screenMaxX + extent &&
+                sy >= screenMinY - extent && sy <= screenMaxY + extent;
+            if (!onScreen) {
+                isItOnScreen[i] = 0;
+                continue;
             }
-
             isItOnScreen[i] = 1;
             entityIsItOnScreen[i] = 1;
 
@@ -1297,7 +1235,47 @@ class PreRenderWorker extends AbstractWorker {
                 this.visibleEntitiesCount++;
             }
 
-            if (doSunShadows) this._writeFusedSunShadow(i, renderVisible[i]);
+            // Sun shadows (fused)
+            if (doSunShadows && sunShadowWriteIdx < maxItems && sunShadowCount < maxShadowSprites) {
+                if (shadowCasterActive[i] && transformActive[i]) {
+                    const heightMult = shadowHeightMultiplier[i];
+                    if (heightMult > 0 && (maxShadowsPerEntity <= 0 || (entityShadowCounts[i] ?? 0) < maxShadowsPerEntity)) {
+                        // Reuse pose from collectRenderable(0) when we just stashed it
+                        const pose = this._displayPoseOut;
+                        if (!renderVisible[i]) this._displayPose(i, pose);
+                        const casterX = pose.x;
+                        const casterY = pose.y;
+                        const textureId = this.entityLastTextureId ? this.entityLastTextureId[i] : INVALID_TEXTURE_ID;
+                        if (textureId === INVALID_TEXTURE_ID) continue;
+                        const entityScaleY = Math.abs(spriteScaleY[i]) || 1;
+                        const anchorX = spriteAnchorX[i] ?? 0.5;
+                        const anchorY = spriteAnchorY[i] ?? 0.95;
+                        const lengthScale = -entityScaleY * heightMult * Sun.shadowLengthRatio;
+                        const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
+                        const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
+                        if (!(casterX + shadowExtent < viewMinX || casterX - shadowExtent > viewMaxX ||
+                            casterY + shadowExtent < viewMinY || casterY - shadowExtent > viewMaxY)) {
+                            rqX[sunShadowWriteIdx] = casterX;
+                            rqY[sunShadowWriteIdx] = casterY;
+                            rqScaleX[sunShadowWriteIdx] = 1;
+                            rqScaleY[sunShadowWriteIdx] = lengthScale;
+                            rqRotC[sunShadowWriteIdx] = sunShadowRotC;
+                            rqRotS[sunShadowWriteIdx] = sunShadowRotS;
+                            rqAlpha[sunShadowWriteIdx] = sunShadowAlpha;
+                            rqTint[sunShadowWriteIdx] = 0x000000;
+                            rqTextureId[sunShadowWriteIdx] = textureId;
+                            rqAnchorX[sunShadowWriteIdx] = anchorX + (shadowAnchorOffsetX[i] || 0);
+                            rqAnchorY[sunShadowWriteIdx] = anchorY + (shadowAnchorOffsetY[i] || 0);
+                            sunShadowWriteIdx++;
+                            sunShadowCount++;
+                            if (maxShadowsPerEntity > 0 && entityShadowCounts && toClear) {
+                                entityShadowCounts[i] = (entityShadowCounts[i] ?? 0) + 1;
+                                toClear[this._entityShadowIndicesToClearCount++] = i;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
@@ -1321,8 +1299,8 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         if (doSunShadows) {
-            this._sunShadowWriteIdx = this._fusedSunShadow.writeIdx;
-            this._sunShadowCount = this._fusedSunShadow.count;
+            this._sunShadowWriteIdx = sunShadowWriteIdx;
+            this._sunShadowCount = sunShadowCount;
         }
     }
 
@@ -1396,6 +1374,23 @@ class PreRenderWorker extends AbstractWorker {
         const adobeEntities = this._frameAdobeEntities;
         if (!adobeEntities || adobeEntities.length === 0) return;
 
+        if (this.skipCull) {
+            for (let idx = 0; idx < adobeEntities.length; idx++) {
+                const i = adobeEntities[idx];
+                if (!active[i] || !adobeActive[i]) {
+                    if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
+                    continue;
+                }
+                isItOnScreen[i] = 1;
+                entityIsItOnScreen[i] = 1;
+                if (renderVisible[i]) {
+                    this.collectRenderable(6, i, y[i] * Y_SORT_K);
+                    this.visibleEntitiesCount++;
+                }
+            }
+            return;
+        }
+
         for (let idx = 0; idx < adobeEntities.length; idx++) {
             const i = adobeEntities[idx];
             if (!active[i] || !adobeActive[i]) {
@@ -1403,24 +1398,21 @@ class PreRenderWorker extends AbstractWorker {
                 continue;
             }
 
-            if (this.skipCull) {
-                // skip AABB + screenXY
-            } else {
-                const sx = x[i] * camZoom - cameraOffsetX;
-                const sy = y[i] * camZoom - cameraOffsetY;
-                // B: AdobeAnimComponent.screenX/Y have no readers
+            const sx = x[i] * camZoom - cameraOffsetX;
+            const sy = y[i] * camZoom - cameraOffsetY;
+            screenX[i] = sx;
+            screenY[i] = sy;
 
-                const extent = (halfW[i] > halfH[i] ? halfW[i] : halfH[i]) * camZoom;
-                const onScreen =
-                    sx >= screenMinX - extent &&
-                    sx <= screenMaxX + extent &&
-                    sy >= screenMinY - extent &&
-                    sy <= screenMaxY + extent;
+            const extent = (halfW[i] > halfH[i] ? halfW[i] : halfH[i]) * camZoom;
+            const onScreen =
+                sx >= screenMinX - extent &&
+                sx <= screenMaxX + extent &&
+                sy >= screenMinY - extent &&
+                sy <= screenMaxY + extent;
 
-                if (!onScreen) {
-                    isItOnScreen[i] = 0;
-                    continue;
-                }
+            if (!onScreen) {
+                isItOnScreen[i] = 0;
+                continue;
             }
 
             isItOnScreen[i] = 1;
@@ -1531,63 +1523,6 @@ class PreRenderWorker extends AbstractWorker {
         }
         if (!wroteSprite && !isParticle) {
             this._writeRenderable(type, index, y, Layer.entitiesId);
-        }
-    }
-
-    _type0PersistHit(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity || this._persistCount[bufIdx] !== count) return false;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            if (prevT[i] !== type || prevE[i] !== idx) return false;
-            if (type !== 0) continue;
-            if (dirty && dirty[idx]) return false;
-            if (frameIndex && prevF[i] !== (frameIndex[idx] | 0)) return false;
-        }
-        return true;
-    }
-
-    _rememberType0Set(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity) return;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            prevT[i] = type;
-            prevE[i] = idx;
-            prevF[i] = frameIndex ? (frameIndex[idx] | 0) : 0;
-            if (type === 0 && dirty) dirty[idx] = 0;
-        }
-        this._persistCount[bufIdx] = count;
-    }
-
-    _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs) {
-        const rqX = this.renderQueueX;
-        const rqY = this.renderQueueY;
-        const rqRotC = this.renderQueueRotC;
-        const rqRotS = this.renderQueueRotS;
-        const rqSortKey = this.renderQueueSortKey;
-        const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
-        const inherit = SpriteRenderer.inheritTransformRotation;
-        for (let i = 0; i < count; i++) {
-            if (collectorType[i] !== 0) continue;
-            const idx = collectorIndex[i];
-            rqX[i] = stashPx[i];
-            rqY[i] = stashPy[i];
-            if (inherit && inherit[idx]) {
-                rqRotC[i] = stashRc[i];
-                rqRotS[i] = stashRs[i];
-            }
-            if (writeSortKey) rqSortKey[i] = collectorY[i];
         }
     }
 
@@ -2122,22 +2057,11 @@ class PreRenderWorker extends AbstractWorker {
         const stashRc = this._renderableRotC;
         const stashRs = this._renderableRotS;
         const stashPose = this._displayPoseOut;
-        const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
-        const persistBuf = this.renderQueueFrame % 2;
-        const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
-        if (persistHit) {
-            this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs);
-        }
 
         for (let i = 0; i < count && writeCount < this.renderQueueMaxItems; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
             const sk = collectorY[i];
-
-            if (persistHit && type === 0) {
-                writeCount++;
-                continue;
-            }
 
             if (type === 6) {
                 stashPose.x = stashPx[i];
@@ -2149,12 +2073,10 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             const out = writeCount++;
-            if (writeSortKey) rqSortKey[out] = sk;
-            if (type !== 0) {
-                if (rqRepeatX) rqRepeatX[out] = 0;
-                if (rqRepeatY) rqRepeatY[out] = 0;
-                clearTileFields(ref, out);
-            }
+            if (rqSortKey) rqSortKey[out] = sk;
+            if (rqRepeatX) rqRepeatX[out] = 0;
+            if (rqRepeatY) rqRepeatY[out] = 0;
+            clearTileFields(ref, out);
 
             if (type === 0) {
                 // === ENTITY === (pose stashed at collect)
@@ -2176,22 +2098,13 @@ class PreRenderWorker extends AbstractWorker {
                 rqTint[out] = srTint[idx];
                 rqAnchorX[out] = srAnchorX[idx];
                 rqAnchorY[out] = srAnchorY[idx];
-                const rx0 = srRepeatX[idx];
-                const ry0 = srRepeatY[idx];
-                if (rx0 !== 0 || ry0 !== 0) {
-                    if (rqRepeatX) rqRepeatX[out] = rx0;
-                    if (rqRepeatY) rqRepeatY[out] = ry0;
-                    writeEntityTileFields(
-                        ref, out, idx,
-                        srTileMode, srTileOffsetU, srTileOffsetV,
-                        srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
-                    );
-                } else {
-                    if (rqRepeatX) rqRepeatX[out] = 0;
-                    if (rqRepeatY) rqRepeatY[out] = 0;
-                    if (rqTileMulX) rqTileMulX[out] = 0;
-                    if (rqTileMulY) rqTileMulY[out] = 0;
-                }
+                if (rqRepeatX) rqRepeatX[out] = srRepeatX[idx];
+                if (rqRepeatY) rqRepeatY[out] = srRepeatY[idx];
+                writeEntityTileFields(
+                    ref, out, idx,
+                    srTileMode, srTileOffsetU, srTileOffsetV,
+                    srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
+                );
 
                 rqType[out] = 0;
                 rqEntityIndex[out] = idx;
@@ -2430,7 +2343,6 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
-        if (!persistHit) this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
         this.renderQueueCount[0] = writeCount;
         this._renderableCount = 0;
     }
@@ -2593,7 +2505,6 @@ class PreRenderWorker extends AbstractWorker {
             layerRef.tileMulX = rqTileMulX; layerRef.tileMulY = rqTileMulY;
 
             let writeCount = 0;
-            const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[entry.layerId]);
 
             for (let i = 0; i < layerCount && writeCount < collector.maxItems; i++) {
                 const type = cType[i];
@@ -2606,12 +2517,10 @@ class PreRenderWorker extends AbstractWorker {
                 }
 
                 const out = writeCount++;
-                if (writeSortKey) rqSortKey[out] = sk;
-                if (type !== 0) {
-                    if (rqRepeatX) rqRepeatX[out] = 0;
-                    if (rqRepeatY) rqRepeatY[out] = 0;
-                    clearTileFields(layerRef, out);
-                }
+                if (rqSortKey) rqSortKey[out] = sk;
+                if (rqRepeatX) rqRepeatX[out] = 0;
+                if (rqRepeatY) rqRepeatY[out] = 0;
+                clearTileFields(layerRef, out);
 
                 if (type === 0) {
                     // === ENTITY ===
@@ -2632,22 +2541,13 @@ class PreRenderWorker extends AbstractWorker {
                     rqTint[out] = srTint[idx];
                     rqAnchorX[out] = srAnchorX[idx];
                     rqAnchorY[out] = srAnchorY[idx];
-                    const rx0 = srRepeatX[idx];
-                    const ry0 = srRepeatY[idx];
-                    if (rx0 !== 0 || ry0 !== 0) {
-                        if (rqRepeatX) rqRepeatX[out] = rx0;
-                        if (rqRepeatY) rqRepeatY[out] = ry0;
-                        writeEntityTileFields(
-                            layerRef, out, idx,
-                            srTileMode, srTileOffsetU, srTileOffsetV,
-                            srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
-                        );
-                    } else {
-                        if (rqRepeatX) rqRepeatX[out] = 0;
-                        if (rqRepeatY) rqRepeatY[out] = 0;
-                        if (rqTileMulX) rqTileMulX[out] = 0;
-                        if (rqTileMulY) rqTileMulY[out] = 0;
-                    }
+                    if (rqRepeatX) rqRepeatX[out] = srRepeatX[idx];
+                    if (rqRepeatY) rqRepeatY[out] = srRepeatY[idx];
+                    writeEntityTileFields(
+                        layerRef, out, idx,
+                        srTileMode, srTileOffsetU, srTileOffsetV,
+                        srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
+                    );
                     rqType[out] = 0;
                     rqEntityIndex[out] = idx;
 
