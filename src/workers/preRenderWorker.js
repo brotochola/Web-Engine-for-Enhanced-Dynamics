@@ -1139,7 +1139,7 @@ class PreRenderWorker extends AbstractWorker {
         const screenMinY = cameraBounds.minY;
         const screenMaxY = cameraBounds.maxY;
 
-        // Iteration source: queryActiveEntities([SpriteRenderer]) for only sprite entities, else fallback.
+        // Iteration source: published sprite query, else full index scan (not the live SAB list).
         // Normalized to (array, base offset) instead of a per-frame closure so the
         // hot loop below stays allocation-free and the index load stays inlineable.
         let iterCount, iterSource, iterBase;
@@ -1148,13 +1148,12 @@ class PreRenderWorker extends AbstractWorker {
             iterCount = spriteEntities.length;
             iterSource = spriteEntities;
             iterBase = 0;
-        } else if (this.activeEntitiesData && this.activeEntitiesData[0] > 0) {
-            iterSource = this.activeEntitiesData;
-            iterCount = iterSource[0];
-            iterBase = 1;
         } else {
+            // Do not walk live activeEntitiesData — logic0 may be mid-merge
+            // with count=1. Empty published query falls back to a full scan
+            // (inactive slots skip). create() drain publishes before start.
             iterCount = this.globalEntityCount;
-            iterSource = null; // identity: entity index == loop index
+            iterSource = null;
             iterBase = 0;
         }
 

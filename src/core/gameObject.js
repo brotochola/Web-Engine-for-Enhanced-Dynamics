@@ -60,6 +60,8 @@ import {
   FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
   resolveForceProcessOnLogicWorker,
 } from '../util/logicOwner.js';
+import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
+import { isSpawnCommandRingBound, tryPushSpawn } from '../util/spawnCommandRing.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
@@ -2322,6 +2324,16 @@ export class GameObject {
       logicWorkerCtx.workerIndex !== forcedLogicWorker &&
       typeof logicWorkerCtx.sendDataToWorker === 'function'
     ) {
+      const sx = spawnConfig.x ?? 0;
+      const sy = spawnConfig.y ?? 0;
+      if (
+        !logicWorkerCtx._drainingSpawnRing &&
+        isXyOnlySpawnConfig(spawnConfig) &&
+        isSpawnCommandRingBound() &&
+        tryPushSpawn(EntityClass.entityType | 0, i, sx, sy)
+      ) {
+        return null;
+      }
       const sent = logicWorkerCtx.sendDataToWorker(`logic${forcedLogicWorker}`, {
         msg: 'spawn',
         className: EntityClass.name,

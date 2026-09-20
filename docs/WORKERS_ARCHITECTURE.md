@@ -139,9 +139,11 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 
 **Logic 0 special duties:**
 
-- Receives spawn/despawn messages from main thread
+- Receives leftover spawn/despawn `postMessage` escapes (ring full or unbound)
 - Receives `listUpdates` from logic workers 1..N
-- Runs `processListUpdates()` before any ticks (despawns first, spawns second)
+- **SAB spawn command ring** (MPSC, like Box2D): main and non-owner workers `tryPushSpawn` / `tryPushDespawn`. Indices are **Uint16 today** (`MAX_ENTITIES` 65535); slot `entityIndex` is already i32 so a later Uint32 pool does not change the protocol. Capacity is `totalEntityCount`. Owner-thread `Type.spawn` / `despawn()` stay in-place — no ring hop (SpawnStorm / BunnySpawner).
+- `create()` / `createNewGame()` push the ring (xy-only stays on the slot / Transform SAB). One `drainSpawnCommands` + extras sidecar for non-xy configs. Logic0 runs `onSpawned`, then `processListUpdates()` (O(n) merge, count written last) and acks `drainSpawnCommandsComplete`. Scene waits that ack — same barrier as `restoreSaveComplete` — before `start` / the first `stepFrame`.
+- Phase 0: drain the ring, then `processListUpdates()` before any ticks (despawns first, spawns second)
 - Updates `activeEntitiesData` and per-type active lists, then publishes complete pre-computed active query snapshots
 - All logic workers call `Mouse.updateEdgeFlags()` before entity ticks (per-worker edge detection for `isButton0Pressed` etc.) and `Mouse.snapshotPreviousFrame()` after ticks
 - All workers call `Gamepad.updateEdgeFlags()` once per frame in `AbstractWorker.gameLoop` (same SAB counter pattern as Keyboard/Mouse). Main thread polls `navigator.getGamepads()` in `Scene.updateInternal` before edge flags.

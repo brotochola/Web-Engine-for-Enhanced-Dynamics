@@ -217,6 +217,7 @@ function buildSceneSharedBuffers(scene) {
     liquidFunRender: scene.buffers.liquidFunRender || null,
     liquidFunGroups: scene.buffers.liquidFunGroups || null,
     decalStampRing: scene.buffers.decalStampRing || null,
+    spawnCommandRing: scene.buffers.spawnCommandRing || null,
     decalsTilesRGBA: scene.buffers.decalsTilesRGBA || null,
     perTypeActiveLists: scene.buffers.perTypeActiveLists,
     entityFreeLists: scene.buffers.entityFreeLists,

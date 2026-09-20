@@ -14,6 +14,12 @@ import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { Collider } from '../../src/components/collider.js';
 import { FlashComponent } from '../../src/components/flashComponent.js';
 import { resetFreeList } from '../../src/util/atomicFreeList.js';
+import {
+  createSpawnCommandRingSab,
+  bindSpawnCommandRing,
+  drainSpawnCommands,
+  SPAWN_CMD_KIND,
+} from '../../src/util/spawnCommandRing.js';
 
 test('Scene.preInitializeEntityTypeArrays fills registered ranges directly', { concurrency: false }, () => {
   class RangeFillA extends GameObject {}
@@ -704,7 +710,7 @@ test('onSpawned despawn aborts before Transform.active=1', { concurrency: false 
   }
 });
 
-test('spawn with forceProcessOnLogicWorker on another worker returns null', { concurrency: false }, () => {
+test('spawn with forceProcessOnLogicWorker on another worker pushes the ring', { concurrency: false }, () => {
   class ForcedForwardEntity extends GameObject {}
 
   const previousSelf = globalThis.self;
@@ -713,6 +719,8 @@ test('spawn with forceProcessOnLogicWorker on another worker returns null', { co
   const previousTypeCount = GameObject.entityTypeForcedLogicWorkerCount;
   const previousTransformActive = Transform.active;
   const forwarded = [];
+  const sab = createSpawnCommandRingSab(4);
+  bindSpawnCommandRing(sab);
 
   GameObject.forceProcessOnLogicWorker = new Int16Array(1);
   GameObject.forceProcessOnLogicWorker[0] = -1;
@@ -745,14 +753,21 @@ test('spawn with forceProcessOnLogicWorker on another worker returns null', { co
   };
 
   try {
-    const spawned = GameObject.spawn(ForcedForwardEntity, { forceProcessOnLogicWorker: 1 });
+    const spawned = GameObject.spawn(ForcedForwardEntity, { x: 3, y: 4, forceProcessOnLogicWorker: 1 });
     assert.equal(spawned, null);
-    assert.equal(forwarded.length, 1);
-    assert.equal(forwarded[0].workerName, 'logic1');
-    assert.equal(forwarded[0].data.msg, 'spawn');
-    assert.equal(forwarded[0].data.entityIndex, 0);
+    assert.equal(forwarded.length, 0);
+    const drained = [];
+    drainSpawnCommands((kind, typeId, entityIndex, x, y) => {
+      drained.push({ kind, typeId, entityIndex, x, y });
+    });
+    assert.equal(drained.length, 1);
+    assert.equal(drained[0].kind, SPAWN_CMD_KIND.SPAWN);
+    assert.equal(drained[0].entityIndex, 0);
+    assert.equal(drained[0].x, 3);
+    assert.equal(drained[0].y, 4);
     assert.equal(GameObject.forceProcessOnLogicWorker[0], 1);
   } finally {
+    bindSpawnCommandRing(null);
     GameObject.forceProcessOnLogicWorker = previousForce;
     GameObject.entityTypeHasForcedLogicWorker = previousTypeFlag;
     GameObject.entityTypeForcedLogicWorkerCount = previousTypeCount;

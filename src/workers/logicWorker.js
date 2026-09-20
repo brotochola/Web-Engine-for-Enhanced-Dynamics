@@ -55,6 +55,12 @@ import {
   initialJointBreakCursor,
 } from '../box2d/box2dJointBreakRing.js';
 import { bindBodySyncBuffers } from '../box2d/box2dBodySync.js';
+import { mergeSortedIntoActiveList } from '../util/gameObjectActiveState.js';
+import {
+  SPAWN_CMD_KIND,
+  drainSpawnCommands,
+  isSpawnCommandRingBound,
+} from '../util/spawnCommandRing.js';
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -160,7 +166,15 @@ class LogicWorker extends AbstractWorker {
     this._spawnIdx = new Int32Array(256);
     this._spawnType = new Int32Array(256);
     this._spawnClass = new Array(256);
+    this._spawnPerm = new Int32Array(256);
+    this._spawnSorted = new Int32Array(256);
+    this._spawnSortedClass = new Array(256);
     this._spawnN = 0;
+    this._spawnXyScratch = { x: 0, y: 0 };
+    this._listMergeScratch = null;
+    this._entityClassByType = [];
+    this._drainingSpawnRing = false;
+    this._pendingDrainExtras = null;
     this._despawnCap = 256;
     this._despawnIdx = new Int32Array(256);
     this._despawnType = new Int32Array(256);
@@ -229,6 +243,7 @@ class LogicWorker extends AbstractWorker {
     // console.log("LOGIC WORKER: Initializing with component system");
 
     // Initialize screen visibility tracking array
+    this._listMergeScratch = new Uint16Array(1 + (this.globalEntityCount || 1));
     this.previousScreenVisibility = new Uint8Array(data.globalEntityCount);
     // Initialize to 0 (off-screen) - first frame will trigger onScreenEnter for visible entities
     this.previousScreenVisibility.fill(0);
@@ -266,6 +281,7 @@ class LogicWorker extends AbstractWorker {
     this.collisionListenerByType = new Uint8Array(numTypes);
     this.jointBreakListenerByType = new Uint8Array(numTypes);
     this.markActiveTypes = [];
+    this._entityClassByType = [];
 
     for (const classInfo of this.registeredClasses) {
       const { name, poolSize, startIndex, endIndex, entityType } = classInfo;
@@ -278,6 +294,7 @@ class LogicWorker extends AbstractWorker {
         EntityClass.poolSize = poolSize;
         EntityClass.endIndex = endIndex;
         EntityClass.entityType = entityType; // Auto-assigned entity type ID
+        this._entityClassByType[entityType] = EntityClass;
 
         // Pre-computed typed array of all entity indices for this class
         // Uses Uint16 since max entities = 65535 (fits in 16 bits)
@@ -415,6 +432,9 @@ class LogicWorker extends AbstractWorker {
       this._spawnIdx = idx;
       this._spawnType = type;
       this._spawnClass = classes;
+      this._spawnPerm = new Int32Array(next);
+      this._spawnSorted = new Int32Array(next);
+      this._spawnSortedClass = new Array(next);
       this._spawnCap = next;
     } else {
       this._despawnIdx = idx;
@@ -453,11 +473,32 @@ class LogicWorker extends AbstractWorker {
   processListUpdates() {
     let activeQueryPopulationChanged = false;
 
+    // Fold port batches into the SoA queues so one despawn-then-spawn pass
+    // can merge O(n) instead of insert-per-entity.
+    const received = this.receivedListUpdates;
+    for (let b = 0; b < received.length; b++) {
+      const batch = received[b];
+      const despawns = batch.despawns;
+      if (despawns) {
+        for (let i = 0; i < despawns.length; i++) {
+          const u = despawns[i];
+          this.queueDespawnListUpdate(u.entityIndex, u.entityType, u.EntityClass);
+        }
+      }
+      const spawns = batch.spawns;
+      if (spawns) {
+        for (let i = 0; i < spawns.length; i++) {
+          const u = spawns[i];
+          this.queueSpawnListUpdate(u.entityIndex, u.entityType, u.EntityClass);
+        }
+      }
+    }
+    received.length = 0;
+
     // ORDERING: Despawns first, then spawns.
     // This ensures rapid despawn→re-spawn cycles at the same index resolve correctly:
     // the old entry is removed before the new one is added (with dedup preventing duplicates).
 
-    // Process own pending updates
     activeQueryPopulationChanged =
       this._processDespawnSoA(this._despawnIdx, this._despawnClass, this._despawnN) ||
       activeQueryPopulationChanged;
@@ -466,19 +507,6 @@ class LogicWorker extends AbstractWorker {
       activeQueryPopulationChanged;
     this._despawnN = 0;
     this._spawnN = 0;
-
-    // Process updates received from other workers (same order)
-    for (const batch of this.receivedListUpdates) {
-      if (batch.despawns) {
-        activeQueryPopulationChanged =
-          this._processDespawnUpdates(batch.despawns) || activeQueryPopulationChanged;
-      }
-      if (batch.spawns) {
-        activeQueryPopulationChanged =
-          this._processSpawnUpdates(batch.spawns) || activeQueryPopulationChanged;
-      }
-    }
-    this.receivedListUpdates.length = 0;
 
     // Invalidate cached non-precomputed active queries once after the full batch.
     if (activeQueryPopulationChanged && this.queryVersionData) {
@@ -500,17 +528,56 @@ class LogicWorker extends AbstractWorker {
    * Process spawn list updates - add entities to active lists
    */
   _processSpawnSoA(idx, classes, n) {
-    let changed = false;
-    for (let i = 0; i < n; i++) {
-      const entityIndex = idx[i];
-      const EntityClass = classes[i];
-      if (Transform.active[entityIndex] === 1) {
-        GameObject._addToActiveEntities(entityIndex);
-        GameObject._addToTypeActiveList(EntityClass, entityIndex);
-        changed = true;
-      }
+    if (n <= 0) return false;
+
+    const active = GameObject.activeEntitiesData;
+    const destEmpty = !active || active[0] === 0;
+    if (n === 1 && !destEmpty) {
+      const entityIndex = idx[0];
+      const EntityClass = classes[0];
+      if (Transform.active[entityIndex] !== 1) return false;
+      GameObject._addToActiveEntities(entityIndex);
+      GameObject._addToTypeActiveList(EntityClass, entityIndex);
+      return true;
     }
-    return changed;
+
+    const perm = this._spawnPerm;
+    const sorted = this._spawnSorted;
+    const sortedClass = this._spawnSortedClass;
+    const transformActive = Transform.active;
+    for (let i = 0; i < n; i++) perm[i] = i;
+    perm.subarray(0, n).sort((a, b) => idx[a] - idx[b]);
+
+    let m = 0;
+    for (let i = 0; i < n; i++) {
+      const src = perm[i];
+      const entityIndex = idx[src];
+      if (transformActive[entityIndex] !== 1) continue;
+      sorted[m] = entityIndex;
+      sortedClass[m] = classes[src];
+      m++;
+    }
+    if (m === 0) return false;
+
+    const scratch = this._listMergeScratch;
+    if (active) mergeSortedIntoActiveList(active, sorted, m, scratch);
+
+    let runStart = 0;
+    while (runStart < m) {
+      const EntityClass = sortedClass[runStart];
+      let runEnd = runStart + 1;
+      while (runEnd < m && sortedClass[runEnd] === EntityClass) runEnd++;
+      if (EntityClass?._activeList) {
+        mergeSortedIntoActiveList(
+          EntityClass._activeList,
+          sorted.subarray(runStart, runEnd),
+          runEnd - runStart,
+          scratch,
+        );
+      }
+      runStart = runEnd;
+    }
+    return true;
   }
 
   _processSpawnUpdates(updates) {
@@ -658,6 +725,7 @@ class LogicWorker extends AbstractWorker {
     // All spawn/despawn list updates are queued and processed here BEFORE any ticks.
     // This ensures single-threaded list operations, avoiding race conditions.
     if (this.workerIndex === 0) {
+      this._drainSpawnCommandRing();
       this.processListUpdates();
     }
 
@@ -1348,6 +1416,20 @@ class LogicWorker extends AbstractWorker {
         }
         break;
       }
+      case 'drainSpawnCommands': {
+        if (this.workerIndex !== 0) break;
+        if (data.extras && data.extras.length) {
+          const extras = new Map();
+          for (let i = 0; i < data.extras.length; i++) {
+            extras.set(data.extras[i].entityIndex, data.extras[i]);
+          }
+          this._pendingDrainExtras = extras;
+        }
+        this._drainSpawnCommandRing();
+        this.processListUpdates();
+        self.postMessage({ msg: 'drainSpawnCommandsComplete', workerIndex: 0 });
+        break;
+      }
       case 'spawn': {
         this._mainThreadSpawn(data);
         break;
@@ -1540,6 +1622,47 @@ class LogicWorker extends AbstractWorker {
         `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`
       );
     }
+  }
+
+  _drainSpawnCommandRing() {
+    if (!isSpawnCommandRingBound()) return 0;
+    this._drainingSpawnRing = true;
+    const extras = this._pendingDrainExtras;
+    const xy = this._spawnXyScratch;
+    const byType = this._entityClassByType;
+    const n = drainSpawnCommands((kind, typeId, entityIndex, x, y) => {
+      if (kind === SPAWN_CMD_KIND.DESPAWN) {
+        this._mainThreadDespawn(entityIndex);
+        return;
+      }
+      const extra = extras ? extras.get(entityIndex) : null;
+      let EntityClass;
+      let cfg;
+      if (extra) {
+        EntityClass = extra.className ? self[extra.className] : byType[typeId];
+        cfg = extra.spawnConfig;
+      } else {
+        EntityClass = byType[typeId];
+        xy.x = x;
+        xy.y = y;
+        cfg = xy;
+      }
+      if (!EntityClass) {
+        console.error(
+          `LOGIC WORKER ${this.workerIndex}: ring spawn type ${typeId} not found`,
+        );
+        return;
+      }
+      const instance = GameObject.spawn(EntityClass, cfg, entityIndex);
+      if (!instance) {
+        console.warn(
+          `LOGIC WORKER ${this.workerIndex}: Failed ring spawn ${EntityClass.name}`,
+        );
+      }
+    });
+    this._pendingDrainExtras = null;
+    this._drainingSpawnRing = false;
+    return n;
   }
 
   _mainThreadDespawn(entityIndex) {

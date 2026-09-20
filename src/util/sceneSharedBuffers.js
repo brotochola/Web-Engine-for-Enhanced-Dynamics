@@ -64,6 +64,7 @@ import {
   BODY_DIRTY,
   bindBodySyncBuffers,
 } from '../box2d/box2dBodySync.js';
+import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
 
 function assertIntegerInRange(label, value, min, max) {
   if (!Number.isInteger(value) || value < min || value > max) {
@@ -814,6 +815,8 @@ export function createSceneSharedBuffers(scene) {
   initializeCollisionConstraintSunAndTrackingBuffers(scene);
   initializeInputCameraDebugSpatialAndStatsBuffers(scene);
   initializeSharedResourceBuffers(scene);
+  scene.buffers.spawnCommandRing = createSpawnCommandRingSab(scene.totalEntityCount);
+  bindSpawnCommandRing(scene.buffers.spawnCommandRing);
 }
 
 function initializeSharedResourceBuffers(scene) {
@@ -899,6 +902,7 @@ export function teardownSceneSharedState(scene) {
     globalThis.rng = null;
   }
 
+  bindSpawnCommandRing(null);
   GameObject.activeEntitiesData = null;
   GameObject.forceProcessOnLogicWorker = null;
   GameObject.entityTypeHasForcedLogicWorker = null;

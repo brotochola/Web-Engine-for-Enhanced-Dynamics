@@ -96,3 +96,49 @@ export function addToTypeActiveList(typeList, entityIndex) {
   typeList[insertPos] = entityIndex;
   typeList[0] = count + 1;
 }
+
+/**
+ * Merge sorted incoming indices into a [count, idx...] list.
+ * Writes `list[0]` last so concurrent readers never see a short live count.
+ * `scratch` is required when the dest already has entries (no alloc here).
+ * @param {Uint16Array|Int32Array} list
+ * @param {ArrayLike<number>} incoming
+ * @param {number} n
+ * @param {Uint16Array|Int32Array} [scratch]
+ */
+export function mergeSortedIntoActiveList(list, incoming, n, scratch) {
+  if (!list || n <= 0) return;
+  const oldCount = list[0];
+  if (oldCount === 0) {
+    for (let i = 0; i < n; i++) list[i + 1] = incoming[i];
+    list[0] = n;
+    return;
+  }
+  if (!scratch) {
+    // ponytail: tests / unexpected call; logic0 always passes init scratch
+    scratch = new Uint16Array(1 + oldCount + n);
+  }
+  let i = 1;
+  let j = 0;
+  let w = 1;
+  while (i <= oldCount && j < n) {
+    const a = list[i];
+    const b = incoming[j];
+    if (a < b) {
+      scratch[w++] = a;
+      i++;
+    } else if (b < a) {
+      scratch[w++] = b;
+      j++;
+    } else {
+      scratch[w++] = a;
+      i++;
+      j++;
+    }
+  }
+  while (i <= oldCount) scratch[w++] = list[i++];
+  while (j < n) scratch[w++] = incoming[j++];
+  const newCount = w - 1;
+  for (let k = 1; k <= newCount; k++) list[k] = scratch[k];
+  list[0] = newCount;
+}

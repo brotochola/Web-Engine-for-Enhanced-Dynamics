@@ -48,6 +48,7 @@ import { createWorkerQueryFunctions } from '../core/querySystem.js';
 import { Query } from '../core/query.js';
 import { Box2d } from '../core/box2d.js';
 import { Decal } from '../core/decal.js';
+import { bindSpawnCommandRing } from '../util/spawnCommandRing.js';
 import { setVerboseWorkers, installQuietConsoleLog } from '../util/debugLog.js';
 import { bindBox2dHotFields, bindWeedPoseFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
@@ -399,6 +400,7 @@ export class AbstractWorker {
     this.globalEntityCount = data.globalEntityCount;
     this.bodySyncViews = bindBodySyncBuffers(data.buffers);
     Decal.bindStampRing(data.buffers?.decalStampRing || null);
+    bindSpawnCommandRing(data.buffers?.spawnCommandRing || null);
     {
       const p = data.config?.particle;
       if (data.buffers?.decalsTilesRGBA && p?.decals) {

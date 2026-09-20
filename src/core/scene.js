@@ -113,6 +113,12 @@ import {
   errorShaderFetchFailed,
   resolveShaderPath,
 } from '../render/rendererBackend.js';
+import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
+import {
+  isSpawnCommandRingBound,
+  tryPushDespawn,
+  tryPushSpawn,
+} from '../util/spawnCommandRing.js';
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -201,6 +207,12 @@ class Scene {
 
     this._stepSeq = 0;
     this._stepWaiters = new Map();
+
+    // create()/createNewGame() push spawnEntity onto the SAB ring; one drain+ack.
+    this._spawnBatchOpen = true;
+    this._createSpawnExtras = [];
+    this._createRingPushes = 0;
+    this._pendingSpawnBatch = null;
 
     // Worker synchronization
     this.workerReadyStates = {
@@ -945,14 +957,19 @@ class Scene {
     // LIFECYCLE PHASE 2b: new game vs save restore
     // Restore awaits logic0 restoreSaveComplete so entities are in the scene
     // before play starts (workers stay paused until start below).
+    // drainSpawnCommands ack is the same barrier for main-thread create() spawns.
     if (this._restorePayload) {
+      await this._flushCreateSpawns();
       const payload = this._restorePayload;
       const { applySavePayloadToScene } = await import('./save/saveGame.js');
       await applySavePayloadToScene(this, payload);
       await this.onLoadGame(payload);
+      await this._flushCreateSpawns();
     } else {
       await this.createNewGame();
+      await this._flushCreateSpawns();
     }
+    this._spawnBatchOpen = false;
 
     // LIFECYCLE PHASE 3: Start everything.
     // Main thread loop first (for input handling), then worker game loops.
@@ -1775,6 +1792,16 @@ class Scene {
           failed: e.data.failed || 0,
         });
       }
+    } else if (
+      e.data.msg === 'drainSpawnCommandsComplete' ||
+      e.data.msg === 'spawnBatchComplete'
+    ) {
+      const workerIndex = e.data.workerIndex | 0;
+      const pending = this._pendingSpawnBatch?.get(workerIndex);
+      if (pending) {
+        this._pendingSpawnBatch.delete(workerIndex);
+        pending.resolve();
+      }
     } else if (e.data.msg === 'messageFromGameObject') {
       this.onMessageFromGameObject(
         e.data.data,
@@ -2365,6 +2392,31 @@ class Scene {
   }
 
   /**
+   * One drain of the SAB spawn ring on logic0. Extras sidecar only for
+   * non-xy create configs. Lists flush before start / stepFrame.
+   */
+  async _flushCreateSpawns() {
+    const extras = this._createSpawnExtras;
+    this._createSpawnExtras = [];
+    const pushed = this._createRingPushes;
+    this._createRingPushes = 0;
+    if (pushed === 0 && extras.length === 0) return;
+
+    const worker = this.workers.logicWorkers?.[0];
+    if (!worker) return;
+
+    if (!this._pendingSpawnBatch) this._pendingSpawnBatch = new Map();
+    const done = new Promise((resolve, reject) => {
+      this._pendingSpawnBatch.set(0, { resolve, reject });
+    });
+    worker.postMessage({
+      msg: 'drainSpawnCommands',
+      extras: extras.length ? extras : undefined,
+    });
+    await done;
+  }
+
+  /**
    * Main-thread spawn: CAS-pop a pool index, then ask logic0 to finish setup.
    * @param {Function|string} EntityClassOrName
    * @param {object} [spawnConfig]
@@ -2389,10 +2441,10 @@ class Scene {
     // ATOMIC SPAWN: Reserve index on main thread
     // ========================================
     // This enables immediate use of entity index (e.g., for joints)
-    // Worker 0 receives the pre-assigned index and:
+    // Owner worker receives the pre-assigned index (ring drain or spawn escape) and:
     // 1. Sets up component data and calls lifecycle hooks
     // 2. Queues list updates (activeEntities, perTypeActive, queries)
-    // 3. List updates are processed at start of next frame by logic0
+    // 3. create() batches flush lists before start; runtime flushes next logic0 frame
     let entityIndex = -1;
 
     if (EntityClass && EntityClass.freeList && EntityClass.freeListTop) {
@@ -2423,7 +2475,7 @@ class Scene {
     // ========================================
     // NOTIFY OWNER WORKER
     // ========================================
-    // The forced worker runs setup/onSpawned so heap state lives with tick.
+    // Ring (or leftover postMessage escape) finishes setup on the owner.
     const requestedForceProcessOnLogicWorker =
       typeof spawnConfig.forceProcessOnLogicWorker === 'number'
         ? spawnConfig.forceProcessOnLogicWorker
@@ -2441,22 +2493,33 @@ class Scene {
         forcedLogicWorker,
       );
     }
-    const targetWorker = this.workers.logicWorkers?.[forcedLogicWorker >= 0 ? forcedLogicWorker : 0];
+
+    if (entityIndex < 0) return null;
+
+    const x = spawnConfig.x ?? 0;
+    const y = spawnConfig.y ?? 0;
+    const typeId = EntityClass?.entityType | 0;
+    if (isSpawnCommandRingBound() && tryPushSpawn(typeId, entityIndex, x, y)) {
+      if (this._spawnBatchOpen) {
+        this._createRingPushes++;
+        if (!isXyOnlySpawnConfig(spawnConfig)) {
+          this._createSpawnExtras.push({ entityIndex, className, spawnConfig });
+        }
+      }
+      return { index: entityIndex };
+    }
+
+    const workerIndex = forcedLogicWorker >= 0 ? forcedLogicWorker : 0;
+    const targetWorker = this.workers.logicWorkers?.[workerIndex];
     if (targetWorker) {
       targetWorker.postMessage({
         msg: 'spawn',
-        className: className,
-        spawnConfig: spawnConfig,
-        entityIndex: entityIndex, // Pre-assigned index
+        className,
+        spawnConfig,
+        entityIndex,
       });
     }
-
-    // Return a simple object with the index for immediate use
-    // (e.g., creating joints between spawned entities)
-    if (entityIndex >= 0) {
-      return { index: entityIndex };
-    }
-    return null;
+    return { index: entityIndex };
   }
 
   /**
@@ -2464,7 +2527,7 @@ class Scene {
    * @param {number} entityIndex
    */
   despawnEntity(entityIndex) {
-    // Only worker 0 handles despawn messages
+    if (isSpawnCommandRingBound() && tryPushDespawn(entityIndex)) return;
     const worker0 = this.workers.logicWorkers?.[0];
     if (worker0) {
       worker0.postMessage({
