@@ -22,17 +22,6 @@ import { NavigationPanel } from './panels/navigationPanel.js';
 import { MemoryPanel } from './panels/memoryPanel.js';
 import { SavesPanel } from './panels/savesPanel.js';
 
-const VISUAL_DIGIT_MAP = {
-  1: 'colliders',
-  2: 'velocity',
-  3: 'acceleration',
-  4: 'neighbors',
-  5: 'spatialGrid',
-  6: 'entityIndices',
-  7: 'debugDraws',
-  8: 'sleepingEntities',
-};
-
 /**
  * DebugUI — Self-contained debug overlay managed by GameEngine.
  * Orchestrates panels, tools, stats, and a debug canvas overlay.
@@ -42,6 +31,15 @@ export class DebugUI {
     this.scene = null;
     this.debugFlags = null;
     this.gameEngine = null;
+    this.caps = {
+      physics: true,
+      spatial: true,
+      particles: false,
+      bullets: false,
+      nav: false,
+      lighting: false,
+      joints: false,
+    };
 
     this.updateInterval = options.updateInterval ?? DEBUG_DEFAULTS.updateInterval;
     this._rafId = null;
@@ -89,7 +87,6 @@ export class DebugUI {
     // Build DOM
     injectStyles();
     this._createUI();
-    this._setupKeyboardShortcuts();
     this.tools.init();
   }
 
@@ -106,6 +103,7 @@ export class DebugUI {
     this.gameEngine = gameEngine;
     this.scene = scene;
     this.debugFlags = scene.debugFlags;
+    this.refreshCaps();
 
     if (this.debugFlags) {
       this.debugFlags.disableAll();
@@ -130,6 +128,7 @@ export class DebugUI {
     this.stats.detach();
     this.scene = null;
     this.debugFlags = null;
+    this.refreshCaps();
   }
 
   start() {
@@ -195,8 +194,6 @@ export class DebugUI {
     this.canvas.destroy();
     this.tools.destroy();
 
-    if (this._keyHandler) window.removeEventListener('keydown', this._keyHandler);
-
     if (this.container?.parentNode) this.container.parentNode.removeChild(this.container);
 
     const styles = document.getElementById('debug-ui-styles');
@@ -254,7 +251,7 @@ export class DebugUI {
     // Toggle hint
     const toggleHint = document.createElement('div');
     toggleHint.className = 'debug-ui-toggle';
-    toggleHint.textContent = 'Shift+H Toggle';
+    toggleHint.textContent = 'Hide';
     toggleHint.onclick = () => this.toggle();
     header.appendChild(toggleHint);
 
@@ -270,7 +267,38 @@ export class DebugUI {
     document.body.appendChild(this.container);
   }
 
+  refreshCaps() {
+    const s = this.scene;
+    const cfg = s?.config;
+    const physics = !!(s && s._physicsEnabled);
+    this.caps = {
+      physics,
+      spatial: !!(s && (s.numberOfSpatialWorkers | 0) > 0),
+      particles: (cfg?.particle?.maxParticles | 0) > 0,
+      bullets: (cfg?.bullet?.maxBullets | 0) > 0,
+      nav: !!cfg?.navigation?.enabled,
+      lighting: cfg?.lighting?.enabled === true,
+      joints: physics && (cfg?.physics?.maxJoints | 0) > 0,
+    };
+    this._applyNavTabCap();
+  }
+
+  _applyNavTabCap() {
+    const tab = this.sections?.navigation?.tab;
+    if (!tab) return;
+    const on = this.caps.nav;
+    tab.classList.toggle('disabled', !on);
+    tab.title = on ? '' : 'Requires config.navigation.enabled';
+    if (!on && this.openSection === 'navigation') {
+      this.openSection = null;
+      tab.classList.remove('active');
+      if (this.sections.navigation.panel) this.sections.navigation.panel.classList.remove('open');
+      this.panels.navigation.onClose?.();
+    }
+  }
+
   _toggleSection(sectionId) {
+    if (sectionId === 'navigation' && !this.caps.nav) return;
     const wasOpen = this.openSection === sectionId;
 
     // Close all
@@ -292,56 +320,6 @@ export class DebugUI {
     }
   }
 
-  // ========================================
-  // KEYBOARD SHORTCUTS
-  // ========================================
-
-  _setupKeyboardShortcuts() {
-    this._keyHandler = (e) => {
-
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
-      if (e.key === 'Escape') {
-        this.tools.deactivateAll();
-        return;
-      }
-
-      if (!e.shiftKey) return;
-
-      const key = e.key.toLowerCase();
-
-      if (key === 'h') {
-        e.preventDefault();
-        this.toggle();
-      } else if (key === 'i') {
-        e.preventDefault();
-        this.tools.toggleInspector();
-      } else if (e.code >= 'Digit1' && e.code <= 'Digit8') {
-        e.preventDefault();
-        const digit = e.code.charAt(5);
-        this.panels.visual.toggleVisualAid(VISUAL_DIGIT_MAP[digit]);
-      } else if (key === 's') {
-        e.preventDefault();
-        this.panels.visual.toggleVisualAid('sleepingCells');
-      } else if (key === 'k') {
-        e.preventDefault();
-        this.panels.visual.toggleVisualAid('joints');
-      } else if (key === 'o') {
-        e.preventDefault();
-        this.panels.visual.toggleVisualAid('entityOrigins');
-      } else if (e.code === 'Digit0') {
-        e.preventDefault();
-        if (this.debugFlags) {
-          this.debugFlags.disableAll();
-          this.debugFlags.showDebugDraws(true);
-          this.panels.visual.updateState();
-          this.canvas.syncLoop();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', this._keyHandler);
-  }
 }
 
 // Static draw API — delegates to DebugDraw so the same call works on workers

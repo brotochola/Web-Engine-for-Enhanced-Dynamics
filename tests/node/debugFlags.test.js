@@ -9,6 +9,11 @@ import {
 } from '../../src/core/debug/debugFlags.js';
 import { getInspectorPropertyNames } from '../../src/util/utils.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
+import { Transform } from '../../src/components/transform.js';
+import {
+  createWeedPosePayload,
+  bindWeedPoseFields,
+} from '../../src/box2d/box2dHotFields.js';
 
 test('selected entity storage does not alias joint and origin flags', () => {
   const debugBuffer = new SharedArrayBuffer(32);
@@ -77,5 +82,24 @@ test('getInspectorPropertyNames lists RigidBody HEAP extras when bound', () => {
     RigidBody.vy = null;
     RigidBody.angularVelocity = null;
     RigidBody.sleeping = null;
+  }
+});
+
+test('getInspectorPropertyNames lists Transform pose when bound', () => {
+  const names = getInspectorPropertyNames(Transform);
+  assert.ok(!names.includes('x'));
+  assert.ok(!names.includes('active'));
+
+  const payload = createWeedPosePayload(2);
+  bindWeedPoseFields(payload);
+  try {
+    const withPose = getInspectorPropertyNames(Transform);
+    assert.ok(withPose.includes('x'));
+    assert.ok(withPose.includes('y'));
+    assert.ok(withPose.includes('rotation'));
+    assert.ok(withPose.includes('rotC'));
+    assert.ok(withPose.includes('rotS'));
+  } finally {
+    Transform.clearArrays();
   }
 });

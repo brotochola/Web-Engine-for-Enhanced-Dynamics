@@ -1952,16 +1952,27 @@ export function getComponentPropertyNames(ComponentClass) {
   });
 }
 
+/** HEAP / Weed-SAB pose (not in ARRAY_SCHEMA). Inspect only. */
+const TRANSFORM_POSE_PROPS = ['x', 'y', 'rotation', 'rotC', 'rotS'];
 /** HEAP-backed RigidBody fields (not in ARRAY_SCHEMA). Inspect only. */
 const RIGID_BODY_HEAP_PROPS = ['vx', 'vy', 'angularVelocity', 'sleeping'];
 
 /**
- * Schema props plus bound HEAP extras (vx/vy/ω/sleeping).
+ * Schema props plus bound pose/HEAP extras.
  * Allocates — call on inspect populate, not per tick.
  */
 export function getInspectorPropertyNames(ComponentClass) {
   const names = getComponentPropertyNames(ComponentClass);
-  if (!ComponentClass || ComponentClass.name !== 'RigidBody') return names;
+  if (!ComponentClass) return names;
+  if (ComponentClass.name === 'Transform') {
+    if (ComponentClass.x) {
+      for (let i = 0; i < TRANSFORM_POSE_PROPS.length; i++) {
+        names.push(TRANSFORM_POSE_PROPS[i]);
+      }
+    }
+    return names;
+  }
+  if (ComponentClass.name !== 'RigidBody') return names;
   for (let i = 0; i < RIGID_BODY_HEAP_PROPS.length; i++) {
     const key = RIGID_BODY_HEAP_PROPS[i];
     if (ComponentClass[key]) names.push(key);

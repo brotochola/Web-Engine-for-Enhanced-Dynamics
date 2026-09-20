@@ -39,6 +39,31 @@ const VISUAL_FLAG = {
   fpsGraph: DEBUG_FLAGS.SHOW_FPS_GRAPH,
 };
 
+const TIP_PHYSICS = 'Requires config.physics.enabled';
+const TIP_SPATIAL = 'Requires spatial.numberOfSpatialWorkers > 0';
+const TIP_LIGHTING = 'Requires config.lighting.enabled';
+const TIP_JOINTS = 'Requires config.physics.enabled and physics.maxJoints > 0';
+
+const VISUAL_CAP = {
+  colliders: 'physics',
+  velocity: 'physics',
+  acceleration: 'physics',
+  sleepingEntities: 'physics',
+  joints: 'joints',
+  neighbors: 'spatial',
+  spatialGrid: 'spatial',
+  sleepingCells: 'spatial',
+  entityInfo: 'spatial',
+  lights: 'lighting',
+};
+
+const VISUAL_TIP = {
+  physics: TIP_PHYSICS,
+  spatial: TIP_SPATIAL,
+  lighting: TIP_LIGHTING,
+  joints: TIP_JOINTS,
+};
+
 export class VisualAidsPanel {
   constructor(debugUI) {
     this.debugUI = debugUI;
@@ -51,23 +76,23 @@ export class VisualAidsPanel {
 
     const row = createRow();
     const visualAids = [
-      { key: 'colliders', label: 'Colliders', shortcut: '1' },
-      { key: 'velocity', label: 'Velocity', shortcut: '2' },
-      { key: 'acceleration', label: 'Accel', shortcut: '3' },
-      { key: 'neighbors', label: 'Neighbors', shortcut: '4' },
-      { key: 'spatialGrid', label: 'Grid', shortcut: '5' },
-      { key: 'entityIndices', label: 'Indices', shortcut: '6' },
-      { key: 'debugDraws', label: 'Draws', shortcut: '7' },
-      { key: 'sleepingEntities', label: 'Sleeping', shortcut: '8' },
-      { key: 'sleepingCells', label: 'Sleep Cells', shortcut: 'S' },
-      { key: 'joints', label: 'Joints', shortcut: 'K' },
-      { key: 'entityOrigins', label: 'Origins', shortcut: 'O' },
+      { key: 'colliders', label: 'Colliders' },
+      { key: 'velocity', label: 'Velocity' },
+      { key: 'acceleration', label: 'Accel' },
+      { key: 'neighbors', label: 'Neighbors' },
+      { key: 'spatialGrid', label: 'Grid' },
+      { key: 'entityIndices', label: 'Indices' },
+      { key: 'debugDraws', label: 'Draws' },
+      { key: 'sleepingEntities', label: 'Sleeping' },
+      { key: 'sleepingCells', label: 'Sleep Cells' },
+      { key: 'joints', label: 'Joints' },
+      { key: 'entityOrigins', label: 'Origins' },
     ];
 
     for (const aid of visualAids) {
       const btn = document.createElement('button');
       btn.className = 'debug-ui-btn';
-      btn.textContent = `[${aid.shortcut}] ${aid.label}`;
+      btn.textContent = aid.label;
       if (aid.key === 'acceleration') {
         btn.title = 'Impulse applied this step (Box2D clears ax/ay after integrate)';
       }
@@ -78,7 +103,7 @@ export class VisualAidsPanel {
 
     const disableBtn = document.createElement('button');
     disableBtn.className = 'debug-ui-btn danger';
-    disableBtn.textContent = '[0] Off';
+    disableBtn.textContent = 'Off';
     disableBtn.onclick = () => {
       const flags = this.debugUI.debugFlags;
       if (flags) {
@@ -109,22 +134,26 @@ export class VisualAidsPanel {
     row2.appendChild(createDivider());
     this.elements.inspectorBtn = document.createElement('button');
     this.elements.inspectorBtn.className = 'debug-ui-btn tool';
-    this.elements.inspectorBtn.textContent = '[I] Inspect';
-    this.elements.inspectorBtn.title = 'Shift+I — click an entity to inspect';
+    this.elements.inspectorBtn.textContent = 'Inspect';
+    this.elements.inspectorBtn.title = 'Click an entity to inspect';
     this.elements.inspectorBtn.onclick = () => this.debugUI.tools.toggleInspector('entity');
     row2.appendChild(this.elements.inspectorBtn);
     this.panel.appendChild(row2);
 
     const presets = createRow('margin-top:8px');
-    presets.appendChild(createButton('Physics', '', () => this._preset('physics')));
-    presets.appendChild(createButton('AI', '', () => this._preset('ai')));
-    presets.appendChild(createButton('Perf', '', () => this._preset('perf')));
+    this.elements.presetPhysics = createButton('Physics', '', () => this._preset('physics'));
+    this.elements.presetAI = createButton('AI', '', () => this._preset('ai'));
+    this.elements.presetPerf = createButton('Perf', '', () => this._preset('perf'));
+    presets.appendChild(this.elements.presetPhysics);
+    presets.appendChild(this.elements.presetAI);
+    presets.appendChild(this.elements.presetPerf);
     this.panel.appendChild(presets);
 
     return this.panel;
   }
 
   attach() {
+    this._applyCaps();
     this.updateState();
   }
 
@@ -146,12 +175,57 @@ export class VisualAidsPanel {
     }
   }
 
+  _applyCaps() {
+    const caps = this.debugUI.caps || {};
+    const toggles = this.elements.visualToggles;
+    for (const key in VISUAL_CAP) {
+      const btn = toggles[key];
+      if (!btn) continue;
+      const cap = VISUAL_CAP[key];
+      const on = !!caps[cap];
+      btn.disabled = !on;
+      if (!on) {
+        btn.title = VISUAL_TIP[cap];
+        btn.classList.remove('active');
+      } else if (key === 'acceleration') {
+        btn.title = 'Impulse applied this step (Box2D clears ax/ay after integrate)';
+      } else {
+        btn.title = '';
+      }
+    }
+
+    if (this.elements.presetPhysics) {
+      this.elements.presetPhysics.disabled = !caps.physics;
+      this.elements.presetPhysics.title = caps.physics ? '' : TIP_PHYSICS;
+    }
+    if (this.elements.presetAI) {
+      this.elements.presetAI.disabled = !caps.spatial;
+      this.elements.presetAI.title = caps.spatial ? '' : TIP_SPATIAL;
+    }
+  }
+
+  _aidEnabled(key) {
+    const cap = VISUAL_CAP[key];
+    if (!cap) return true;
+    return !!(this.debugUI.caps && this.debugUI.caps[cap]);
+  }
+
   _preset(name) {
     const flags = this.debugUI.debugFlags;
     if (!flags) return;
-    if (name === 'physics') flags.enablePhysicsDebug();
-    else if (name === 'ai') flags.enableAIDebug();
-    else flags.enablePerformanceDebug();
+    const caps = this.debugUI.caps || {};
+    if (name === 'physics') {
+      if (!caps.physics) return;
+      flags.enablePhysicsDebug();
+    } else if (name === 'ai') {
+      if (!caps.spatial) return;
+      flags.enableAIDebug();
+    } else {
+      flags.enable({
+        fpsGraph: true,
+        spatialGrid: !!caps.spatial,
+      });
+    }
     flags.showDebugDraws(true);
     this.updateState();
     this.debugUI.canvas.syncLoop();
@@ -159,6 +233,7 @@ export class VisualAidsPanel {
   }
 
   toggleVisualAid(key) {
+    if (!this._aidEnabled(key)) return;
     const flags = this.debugUI.debugFlags;
     if (!flags) return;
 

@@ -97,6 +97,13 @@ export class PerformancePanel {
 
   attach() {
     this._createWorkerStatElements();
+    const caps = this.debugUI.caps || {};
+    if (this.elements.perfParticles) {
+      this.elements.perfParticles.style.display = caps.particles ? '' : 'none';
+    }
+    if (this.elements.perfFlash) {
+      this.elements.perfFlash.style.display = caps.particles ? '' : 'none';
+    }
   }
 
   update() {
@@ -122,7 +129,10 @@ export class PerformancePanel {
       }),
     );
 
+    const caps = this.debugUI.caps || {};
     for (const type of WORKER_ROW_ORDER) {
+      if (type === 'physics' && !caps.physics) continue;
+      if (type === 'spatial' && !caps.spatial) continue;
       if (type === 'spatial' || type === 'logic') {
         const views = stats.workerStatViews[type];
         if (!views || views.length === 0) continue;

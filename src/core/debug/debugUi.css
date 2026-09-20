@@ -58,6 +58,16 @@
   transform: rotate(180deg);
 }
 
+.debug-ui-tab.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.debug-ui-tab.disabled:hover {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .debug-ui-spacer {
   flex: 1;
 }
@@ -401,6 +411,15 @@
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.2);
   color: white;
+}
+
+.debug-ui-btn:disabled,
+.debug-ui-btn:disabled:hover {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .debug-ui-btn.active {
