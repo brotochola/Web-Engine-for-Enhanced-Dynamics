@@ -6,6 +6,18 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Sunday 20 September 2026 — I Wanted this.x = 10 Without a Solver
+
+The want was a board game. Cards. A mark of 65k sprites that write `this.x` themselves. I did not want a Box2D world sitting next to that, compiling WASM, spinning a worker, and stepping an empty solver so a typed array could exist.
+
+`config.physics.enabled` defaults true. That is still the engine. `false` is the opt-in: no `box2dWasm.js`, no physics worker, no HEAP bind. Pose is five float channels on a Weed SAB. `bindWeedPoseFields` runs once at init. After that `Transform.x` is a `Float32Array` and the hot loop does not ask which buffer it is. Pre-render already reads live `Transform` when pose publish never ticks — same path as a sprite with no `RigidBody`.
+
+Queries and `explode` throw if you forgot the flag and called a solver API. `this.vx` stays unbound. A null-check on the getter would tax every scene that does use Box2D. Do not.
+
+We measured it as Bunny Mark C against A. `logic0_STEP_MS` did not move a clean 3% — both sides were under the 3 ms floor. The win is boot, not the frame. The playable mark now sets the flag. Stress A still boots WASM beside the same `tickAll` so we can measure the tax. D, the solver moving the bunnies, stays dropped.
+
+Contract: [PHYSICS.md](./PHYSICS.md#scenes-without-box2d). Numbers: [HYPOTHESIS_LOG.md](./HYPOTHESIS_LOG.md), [`tests/results/bunny-mover/report.md`](../tests/results/bunny-mover/report.md).
+
 ## Saturday 19 September 2026 — The Tilemap Was Smooth. The Car Wasn't
 
 The want was simple once the GID pages were in: drive a police car across a 50,000-pixel map at 1200 px/s and have the _car_ stay glued to the road. The background had just become honest — one camera matrix, no chunk stream. Then the sprite started hitching every four seconds, straight and fast, while the tilemap kept sliding.

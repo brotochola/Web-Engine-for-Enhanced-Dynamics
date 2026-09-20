@@ -1,7 +1,8 @@
-// Bind Weed Transform / RigidBody hot views onto Box2D WASM HEAP channels.
-// Sole owner of Transform.x/y/rotation/rotC/rotS and RigidBody.vx/vy/angularVelocity/sleeping
-// after box2dReady. Logic constructs GameObjects only after this bind.
-// Units: px, px/s, rad, rad/s (Box2D native).
+// Bind Transform / RigidBody hot views. Two boot paths, one loop:
+//   physics on  — bindBox2dHotFields (HEAP after box2dReady); also vx/vy/ω/sleeping
+//   physics off — bindWeedPoseFields (Weed SAB at init); pose only, no vel
+// After bind, Transform.x is a Float32Array. Hot loops do not branch on which SAB.
+// Units: px, px/s, rad, rad/s.
 
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -52,7 +53,7 @@ export function isBox2dHotFieldsBound(payload) {
   return !!(payload?.sab && Transform.x?.buffer === payload.sab);
 }
 
-/** Five float channels: x, y, rotation, rotC, rotS. Used when physics.enabled === false. */
+/** Weed pose SAB layout when physics.enabled === false: x, y, rotation, rotC, rotS. */
 export const WEED_POSE_CHANNEL_COUNT = 5;
 
 export function createWeedPosePayload(entityCount) {

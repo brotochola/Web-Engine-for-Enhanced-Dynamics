@@ -686,28 +686,34 @@ export class ToolManager {
     return this._typeNameById[entityType] || '';
   }
 
+  _tryPickHit(id, mx, my, r2) {
+    if (!Transform.active?.[id]) return false;
+    if (this._internalEntitiesSet.has(this._classNameForType(Transform.entityType[id]))) return false;
+    if (Collider.active && Collider.active[id] && pointInCollider(id, mx, my)) return true;
+    const dx = mx - Transform.x[id];
+    const dy = my - Transform.y[id];
+    return dx * dx + dy * dy < r2;
+  }
+
   _pickEntity(mx, my, radius, cycle) {
     const { count, entities } = Grid.getEntitiesInRadius(mx, my, radius);
     const hits = this._pickHits;
     let n = 0;
     const r2 = radius * radius;
 
-    for (let i = 0; i < count; i++) {
-      const id = entities[i];
-      if (!Transform.active[id]) continue;
-      if (this._internalEntitiesSet.has(this._classNameForType(Transform.entityType[id]))) continue;
-
-      let hit = false;
-      if (Collider.active && Collider.active[id]) {
-        hit = pointInCollider(id, mx, my);
+    if (count > 0) {
+      for (let i = 0; i < count; i++) {
+        const id = entities[i];
+        if (this._tryPickHit(id, mx, my, r2) && n < PICK_CAP) hits[n++] = id;
       }
-      if (!hit) {
-        const dx = mx - Transform.x[id];
-        const dy = my - Transform.y[id];
-        hit = dx * dx + dy * dy < r2;
+    } else {
+      // No spatial grid (0 workers) or empty cells — click-only scan, not hover.
+      const active = Transform.active;
+      const xs = Transform.x;
+      const nEntities = active && xs ? active.length : 0;
+      for (let id = 0; id < nEntities && n < PICK_CAP; id++) {
+        if (this._tryPickHit(id, mx, my, r2)) hits[n++] = id;
       }
-      if (!hit) continue;
-      if (n < PICK_CAP) hits[n++] = id;
     }
     this._pickHitCount = n;
     if (n === 0) return -1;

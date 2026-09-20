@@ -152,9 +152,13 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   buffers.gamepadData = new SharedArrayBuffer(Gamepad.BUFFER_SIZE);
   Gamepad.initialize(buffers.gamepadData);
 
+  const spatialOn = (config.spatial.numberOfSpatialWorkers | 0) > 0;
   const maxNeighbors = config.spatial.maxNeighbors;
-  const neighborBufferSize = totalEntityCount * (1 + maxNeighbors) * 2;
-  buffers.neighborData = new SharedArrayBuffer(neighborBufferSize);
+  if (spatialOn) {
+    buffers.neighborData = new SharedArrayBuffer(totalEntityCount * (1 + maxNeighbors) * 2);
+  } else {
+    buffers.neighborData = null;
+  }
 
   if (config.logic.staggeredUpdates) {
     buffers.nextTickData = new SharedArrayBuffer(totalEntityCount);
@@ -730,47 +734,56 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   views.frameRate = new Float32Array(buffers.frameRateData);
 
   const maxNeighbors = config.spatial.maxNeighbors;
-  const cellSize = config.spatial?.cellSize || config.cellSize;
-  const gridCols = Math.ceil(config.worldWidth / cellSize);
-  const gridRows = Math.ceil(config.worldHeight / cellSize);
-  const totalCells = gridCols * gridRows;
-  const maxEntitiesPerCell = config.spatial.maxEntitiesPerCell;
-  const cellByteSize = 4 + maxEntitiesPerCell * 2; // [count:u8][pad:3][entities:u16×mec]
+  if ((numberOfSpatialWorkers | 0) > 0) {
+    const cellSize = config.spatial?.cellSize || config.cellSize;
+    const gridCols = Math.ceil(config.worldWidth / cellSize);
+    const gridRows = Math.ceil(config.worldHeight / cellSize);
+    const totalCells = gridCols * gridRows;
+    const maxEntitiesPerCell = config.spatial.maxEntitiesPerCell;
+    const cellByteSize = 4 + maxEntitiesPerCell * 2; // [count:u8][pad:3][entities:u16×mec]
 
-  buffers.gridBuffer = new SharedArrayBuffer(totalCells * cellByteSize);
-  buffers.cellSleepingBuffer = new SharedArrayBuffer(totalCells);
-  buffers.cellVersionBuffer = new SharedArrayBuffer(totalCells * 4);
-  buffers.entityPosData = new SharedArrayBuffer(totalEntityCount * 4 * 4);
+    buffers.gridBuffer = new SharedArrayBuffer(totalCells * cellByteSize);
+    buffers.cellSleepingBuffer = new SharedArrayBuffer(totalCells);
+    buffers.cellVersionBuffer = new SharedArrayBuffer(totalCells * 4);
+    buffers.entityPosData = new SharedArrayBuffer(totalEntityCount * 4 * 4);
 
-  scene.gridMetadata = {
-    cellSize,
-    invCellSize: 1 / cellSize,
-    gridCols,
-    gridRows,
-    totalCells,
-    maxEntitiesPerCell,
-    maxNeighbors,
-    rowsPerBlock: config.spatial.rowsPerBlock,
-  };
-
-  Grid.initialize(
-    {
-      gridBuffer: buffers.gridBuffer,
-      neighborBuffer: buffers.neighborData,
-      cellSleepingBuffer: buffers.cellSleepingBuffer,
-      cellVersionBuffer: buffers.cellVersionBuffer,
-    },
-    {
+    scene.gridMetadata = {
       cellSize,
       invCellSize: 1 / cellSize,
-      gridWidth: gridCols,
-      gridHeight: gridRows,
+      gridCols,
+      gridRows,
       totalCells,
       maxEntitiesPerCell,
       maxNeighbors,
       rowsPerBlock: config.spatial.rowsPerBlock,
-    }
-  );
+    };
+
+    Grid.initialize(
+      {
+        gridBuffer: buffers.gridBuffer,
+        neighborBuffer: buffers.neighborData,
+        cellSleepingBuffer: buffers.cellSleepingBuffer,
+        cellVersionBuffer: buffers.cellVersionBuffer,
+      },
+      {
+        cellSize,
+        invCellSize: 1 / cellSize,
+        gridWidth: gridCols,
+        gridHeight: gridRows,
+        totalCells,
+        maxEntitiesPerCell,
+        maxNeighbors,
+        rowsPerBlock: config.spatial.rowsPerBlock,
+      }
+    );
+  } else {
+    buffers.gridBuffer = null;
+    buffers.cellSleepingBuffer = null;
+    buffers.cellVersionBuffer = null;
+    buffers.entityPosData = null;
+    scene.gridMetadata = null;
+    Grid.reset();
+  }
 
   buffers.rendererStats = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);
   buffers.particleStats = new SharedArrayBuffer(PARTICLE_STATS.BUFFER_SIZE);

@@ -11,6 +11,7 @@ import { Box2d } from '../../src/core/box2d.js';
 import { Ray } from '../../src/core/ray.js';
 
 test('Box2d.explode enqueues EXPLODE on the command ring', { concurrency: false }, () => {
+  Box2d.physicsWorkerAbsent = false;
   const ring = createCommandRingSab(32);
   bindCommandRing(ring);
   const i32 = new Int32Array(ring);
@@ -41,6 +42,7 @@ test('Box2d.explode enqueues EXPLODE on the command ring', { concurrency: false 
 });
 
 test('Box2d.explode accepts positional x,y,radius,impulse', { concurrency: false }, () => {
+  Box2d.physicsWorkerAbsent = false;
   const ring = createCommandRingSab(32);
   bindCommandRing(ring);
   const i32 = new Int32Array(ring);
@@ -63,6 +65,7 @@ test('Box2d.explode accepts positional x,y,radius,impulse', { concurrency: false
 });
 
 test('Box2d.explode rejects a lone number (old console footgun) and NaN', { concurrency: false }, () => {
+  Box2d.physicsWorkerAbsent = false;
   const ring = createCommandRingSab(32);
   bindCommandRing(ring);
   const i32 = new Int32Array(ring);

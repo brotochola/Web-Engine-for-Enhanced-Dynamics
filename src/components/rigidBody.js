@@ -12,7 +12,8 @@ import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 
 export class RigidBody extends Component {
   // SoA fields only. vx/vy/angularVelocity/sleeping live on Box2D HEAP
-  // (bound via bindBox2dHotFields after box2dReady) — not allocated here.
+  // (bindBox2dHotFields after box2dReady). Stay null if physics.enabled === false —
+  // do not read this.vx on that path (a null-check here would tax the default).
   static ARRAY_SCHEMA = {
     active: Uint8Array, // 0 = entity doesn't have this component, 1 = active
     static: Uint8Array, // 0 = dynamic, 1 = static

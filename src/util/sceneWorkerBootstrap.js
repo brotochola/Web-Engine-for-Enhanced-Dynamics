@@ -49,7 +49,8 @@ function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBu
     scene.workers.logicWorkers.push(logicWorker);
   }
 
-  if (scene._physicsEnabled !== false) {
+  // Boot: no box2dWasm.js when config.physics.enabled === false.
+  if (scene._physicsEnabled) {
     scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust);
     scene.workers.physics.name = 'physics';
   } else {
@@ -405,6 +406,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     layerData: Layer.getSerializableData(),
     tilemapData: TileMap.getSerializableData(),
     customLayerRenderQueues: scene.customLayerRenderQueues,
+    // Boot payload: pose SAB when physics is off. Workers bind once; ticks do not re-read this.
     weedPose: scene.weedPose || null,
   };
 }

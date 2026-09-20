@@ -1,7 +1,8 @@
-// Transform.js - Entity state SoA + HEAP-bound pose views
+// Transform.js - Entity state SoA + pose views (not in ARRAY_SCHEMA)
 // SoA: active / entityType / isItOnScreen
-// Pose (x/y/rotation/rotC/rotS): Box2D WASM HEAP only — bound via bindBox2dHotFields after box2dReady
-// (logic constructs GameObjects after that bind so setup() can write this.x)
+// Pose (x/y/rotation/rotC/rotS): Box2D HEAP after box2dReady, or a Weed SAB when
+// config.physics.enabled === false (bindWeedPoseFields at init). Same Float32Array
+// views either way — hot loops read Transform.x[i], no architecture branch.
 
 import { Component } from '../core/component.js';
 
@@ -21,7 +22,7 @@ export class Transform extends Component {
     Transform.rotS = null;
   }
 
-  // HEAP-bound (not in ARRAY_SCHEMA) — instance accessors for entity.transform.x etc.
+  // Pose views (HEAP or Weed SAB) — instance accessors for entity.transform.x etc.
   get x() {
     return Transform.x[this.index];
   }

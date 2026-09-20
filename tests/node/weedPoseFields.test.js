@@ -32,3 +32,16 @@ test('Box2d.queryAABB throws a clear error when the physics worker is absent', (
     Box2d.physicsWorkerAbsent = prev;
   }
 });
+
+test('Box2d.explode throws when the physics worker is absent', () => {
+  const prev = Box2d.physicsWorkerAbsent;
+  Box2d.physicsWorkerAbsent = true;
+  try {
+    assert.throws(
+      () => Box2d.explode({ x: 0, y: 0, radius: 10, impulsePerLength: 1 }),
+      /physics worker absent/,
+    );
+  } finally {
+    Box2d.physicsWorkerAbsent = prev;
+  }
+});

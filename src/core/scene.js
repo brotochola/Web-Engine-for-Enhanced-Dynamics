@@ -169,6 +169,8 @@ class Scene {
 
     /** @type {object|null} Last box2dReady payload (HEAP sab + channelOffsets) */
     this.box2dHotFields = null;
+    /** @type {object|null} Weed pose SAB when physics.enabled === false (5 float channels). */
+    this.weedPose = null;
 
     // Workers
     this.workers = {
@@ -225,6 +227,7 @@ class Scene {
       this.numberOfSpatialWorkers +
       numberOfLogicWorkers;
 
+    // Boot only: false skips box2dWasm.js. Hot loops bind pose once and do not re-read this.
     this._physicsEnabled = this.config.physics.enabled !== false;
     Box2d.physicsWorkerAbsent = !this._physicsEnabled;
     if (!this._physicsEnabled) {
@@ -1013,7 +1016,7 @@ class Scene {
       this.totalEntityCount
     );
 
-    // Pose/vel live on Box2D HEAP only — bind after SoA init (box2dReady precedes readyPromise).
+    // Pose views: HEAP after box2dReady, or Weed SAB when physics is off. Bind once.
     if (this.box2dHotFields?.sab) {
       bindBox2dHotFields(this.box2dHotFields);
     } else if (this.weedPose?.sab) {
@@ -1131,7 +1134,7 @@ class Scene {
 
   createSharedBuffers() {
     createSceneSharedBuffers(this);
-    if (this._physicsEnabled === false) {
+    if (!this._physicsEnabled) {
       this.weedPose = createWeedPosePayload(this.totalEntityCount);
       initWeedPoseDefaults(this.weedPose);
     } else {
@@ -1621,7 +1624,7 @@ class Scene {
 
   setupWorkerCommunication() {
     const connections = [];
-    if (this._physicsEnabled !== false) {
+    if (this._physicsEnabled) {
       connections.push({ from: 'physics', to: 'renderer' });
     }
 

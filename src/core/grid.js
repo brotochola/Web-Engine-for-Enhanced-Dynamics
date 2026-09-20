@@ -384,6 +384,13 @@ export class Grid {
 
   static getEntitiesInRadius(x, y, radius) {
     const results = Grid._queryResults;
+    if (!Grid._gridCounts) {
+      Grid._queryResultCount = 0;
+      const box = Grid._queryResultBox;
+      box.count = 0;
+      box.entities = results;
+      return box;
+    }
     let count = 0;
     const maxResults = results.length;
     const radiusSq = radius * radius;

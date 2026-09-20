@@ -43,7 +43,7 @@ class MyScene extends WEED.Scene {
     worldHeight: 2000,
     spatial: { cellSize: 128, numberOfSpatialWorkers: 1 },
     logic: { numberOfLogicWorkers: 1, staggeredUpdates: false },
-    physics: { subStepCount: 4 },
+    physics: { subStepCount: 4 }, // enabled defaults true; false skips Box2D WASM
     particle: { maxParticles: 2000 },
     decoration: { maxDecorations: 1000 },
   };

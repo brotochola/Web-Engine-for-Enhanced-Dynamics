@@ -17,6 +17,7 @@ export class BunnyMarkScene extends Scene {
         worldHeight: 1080,
         seed: 1,
         spatial: {
+            // 0 = no spatial worker and no grid SAB. Inspect picks via click scan.
             numberOfSpatialWorkers: 0,
             cellSize: 1024,
             maxNeighbors: 0,
@@ -27,6 +28,7 @@ export class BunnyMarkScene extends Scene {
             noLimitFPS: false,
         },
         physics: {
+            enabled: false,
             gravity: { x: 0, y: 0 },
             noLimitFPS: false,
         },

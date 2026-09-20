@@ -1,12 +1,34 @@
 # Physics pipeline
 
-Weed runs **Box2D 3.0** (the real C library, WASM + SIMD + pthreads) as Scene’s physics worker: classic `src/box2d/box2dWasm.js` + [`physicsHostImpl.js`](../src/box2d/physicsHostImpl.js) + [`weedjsPost.js`](../src/box2d/weedjsPost.js). After `box2dReady`, `bindBox2dHotFields` points `Transform.x/y/rotation/rotC/rotS` and `RigidBody.vx/vy/angularVelocity/sleeping` at WASM HEAP — those fields are not in Weed SoA. **Facing truth is `Transform.rotC` / `Transform.rotS`** (native `b2Rot`); `Transform.rotation` is a derived angle (atan2) for API convenience — hot paths must not `Math.cos/sin(rotation)`. The `GameObject.rotation` setter is the radians **write boundary** (`syncRotCSFromAngle` + cmd-ring `SET_ROT_CS`); the ring never takes radians. Visual consumers (pre_render, particle parent-follow) do **not** sample live HEAP mid-step; they latch a post-step **pose publish** SAB (`poseDataA/B` + `poseSync`).
+Weed runs **Box2D 3.0** (the real C library, WASM + SIMD + pthreads) as Scene’s physics worker when `config.physics.enabled` is not `false` (the default): classic `src/box2d/box2dWasm.js` + [`physicsHostImpl.js`](../src/box2d/physicsHostImpl.js) + [`weedjsPost.js`](../src/box2d/weedjsPost.js). After `box2dReady`, `bindBox2dHotFields` points `Transform.x/y/rotation/rotC/rotS` and `RigidBody.vx/vy/angularVelocity/sleeping` at WASM HEAP — those fields are not in Weed SoA. **Facing truth is `Transform.rotC` / `Transform.rotS`** (native `b2Rot`); `Transform.rotation` is a derived angle (atan2) for API convenience — hot paths must not `Math.cos/sin(rotation)`. The `GameObject.rotation` setter is the radians **write boundary** (`syncRotCSFromAngle` + cmd-ring `SET_ROT_CS`); the ring never takes radians. Visual consumers (pre_render, particle parent-follow) do **not** sample live HEAP mid-step; they latch a post-step **pose publish** SAB (`poseDataA/B` + `poseSync`).
+
+Scenes that never need a solver set `physics.enabled: false` and skip WASM entirely — see [Scenes without Box2D](#scenes-without-box2d). Pose still binds once onto `Transform.x`; hot loops do not branch on the flag.
 
 Bundle builds (`npm run make_bundle`) shove glue + `.wasm` + the `importScripts` siblings into `WEED.Box2dWorkerSource` so npm consumers don’t fetch a separate `dist/box2d/`. Rebuild notes: [src/box2d/README.md](../src/box2d/README.md).
 
 This doc is about the **pipeline** (step, contacts, joints, invariants). Implementation: `src/box2d/physicsHostImpl.js`, `src/box2d/weedjsPost.js`, `src/components/rigidBody.js`, `src/core/gameObject.js`, `src/core/joint.js`.
 
 Related: [Spatial hashing & neighbors](./SPATIAL_HASHING.md), [Workers architecture](./WORKERS_ARCHITECTURE.md), [Memory structure](./MEMORY_STRUCTURE.md), [LiquidFun fluids](./LIQUIDFUN.md).
+
+---
+
+## Scenes without Box2D
+
+`config.physics.enabled` defaults **true**. `false` skips `box2dWasm.js`: no physics worker, no WASM HEAP, no physics→renderer port.
+
+```js
+static config = {
+  physics: { enabled: false },
+};
+```
+
+`this.x` / `Transform.x|y|rotation|rotC|rotS` bind **once** to a Weed SAB (`createWeedPosePayload` / `bindWeedPoseFields` in `box2dHotFields.js`, five float channels). After that bind, `Transform.x` is a `Float32Array`. Tick, `tickAll`, pre-render pack, and pixi pack read `Transform.x[i]` — they do not `if (physics.enabled)`. Pre-render already falls back to live `Transform` when `poseSync` never advances (`_latchPose` leaves `_poseX` null). That is the same path as a sprite with no `RigidBody` while physics is on.
+
+Still need the default (or `enabled: true`): `RigidBody` velocity HEAP (`vx/vy/ω/sleeping` stay `null`), `Collider`, `Joint`, `LiquidFun`, `Box2d.query*` / `explode`. Those APIs throw `physics worker absent`. Do not null-check `this.vx` in engine getters — that would tax every physics scene.
+
+This is not “skip `world.step` if nobody has a body”. An empty world with the default still boots WASM.
+
+Playable `bunnyMarkScene` sets the flag. Stress A (WASM beside `tickAll`) and D (solver tax) stay in `tests/bench/stressScenes/bunnyMarkStressScene.js`.
 
 ---
 

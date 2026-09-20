@@ -20,13 +20,14 @@ const box2dRayStatsOut = { ms: 0, count: 0 };
 
 export class Box2d {
   static collectDetailedStats = false;
+  /** True when config.physics.enabled === false — no WASM worker. Boot flag, not a hot-loop gate. */
   static physicsWorkerAbsent = false;
   static _rayStatsMs = 0;
   static _rayStatsCount = 0;
 
   static _assertPhysicsWorker() {
     if (this.physicsWorkerAbsent) {
-      throw new Error('Box2d.query*: physics worker absent (config.physics.enabled === false)');
+      throw new Error('Box2d: physics worker absent (config.physics.enabled === false)');
     }
   }
 
@@ -106,6 +107,7 @@ export class Box2d {
    * Non-finite / radius≤0 is a no-op (NaN would melt the WASM solver).
    */
   static explode(xOrOpts, y, radius, impulsePerLength, maskBits) {
+    this._assertPhysicsWorker();
     let x;
     let r;
     let impulse;

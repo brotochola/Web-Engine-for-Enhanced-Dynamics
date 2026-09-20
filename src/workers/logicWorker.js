@@ -245,8 +245,7 @@ class LogicWorker extends AbstractWorker {
     this.gameObjects = new Array(this.globalEntityCount).fill(null);
     this._gameObjectInstancesCreated = false;
 
-    // GameObject construction waits for box2dReady so setup() can write Transform.x on HEAP.
-    // reportReady is deferred until then unless weed pose is already bound (no WASM).
+    // setup() writes Transform.x. With WASM, wait for box2dReady. With weed pose, bind already ran.
     if (this._weedPoseBound && !this._gameObjectInstancesCreated) {
       this.createGameObjectInstances();
       this._gameObjectInstancesCreated = true;
@@ -260,7 +259,7 @@ class LogicWorker extends AbstractWorker {
   /**
    * Create GameObject instances for all registered entity classes - dynamically
    * DENSE ALLOCATION: entityIndex === componentIndex for all components
-   * Call only after bindBox2dHotFields (box2dReady).
+   * Call after pose bind (box2dReady HEAP, or weed pose at init when physics is off).
    */
   createGameObjectInstances() {
     const numTypes = this.registeredClasses.length;

@@ -206,9 +206,7 @@ export class GameObject {
 
     // Initialize neighbor data if provided
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
-    if (neighborBuffer) {
-      this.neighborData = new Uint16Array(neighborBuffer);
-    }
+    this.neighborData = neighborBuffer ? new Uint16Array(neighborBuffer) : null;
 
     // Initialize tick decimation buffer if provided (staggeredUpdates enabled)
     if (nextTickBuffer) {
@@ -1995,7 +1993,7 @@ export class GameObject {
    * @returns {number} Number of neighbors
    */
   get neighborCount() {
-    return Grid.neighborData[this._neighborOffset];
+    return Grid.neighborData ? Grid.neighborData[this._neighborOffset] : 0;
   }
 
   /**

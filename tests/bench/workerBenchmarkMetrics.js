@@ -120,7 +120,7 @@ function getSceneWorkerCounts(scene) {
   return {
     spatialWorkerCount: scene?.config?.spatial?.numberOfSpatialWorkers || 0,
     logicWorkerCount: scene?.numberOfLogicWorkers ?? scene?.config?.logic?.numberOfLogicWorkers ?? 1,
-    physicsEnabled: scene?.config?.physics?.enabled !== false && scene?._physicsEnabled !== false,
+    physicsEnabled: scene?._physicsEnabled !== false,
   };
 }
 

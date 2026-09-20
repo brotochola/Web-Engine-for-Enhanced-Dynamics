@@ -11,8 +11,8 @@ Each worker owns its data region so hot paths can avoid broad locking and per-fr
 
 | Worker                | Count | Scalable | Runs Entity Scripts | Primary Job                                              |
 | --------------------- | ----: | -------- | ------------------- | -------------------------------------------------------- |
-| `spatialWorker`      |  1..N | Yes      | No                  | Spatial hash grid + neighbor lists                       |
-| `physics` (classic)   |     1 | No       | No                  | Box2D 3.0 WASM host (`box2dWasm` + `physicsHost`), contacts, joints |
+| `spatialWorker`      |  0..N | Yes      | No                  | Spatial hash grid + neighbor lists. **0** skips worker and grid/neighbor SABs |
+| `physics` (classic)   |  0..1 | No       | No                  | Box2D 3.0 WASM host (`box2dWasm` + `physicsHost`), contacts, joints. **0** when `config.physics.enabled === false` |
 | `logicWorker`        |  1..N | Yes      | **Yes**             | Entity `tick()`, callbacks, lifecycle                    |
 | `particleWorker`     |     1 | No       | No                  | Particles, bullets, decals, navigation, visibility lists |
 | `preRenderWorker`   |     1 | No       | No                  | Animation, Y-sort, render + shadow queue assembly        |
@@ -30,6 +30,8 @@ All workers live in `src/workers/`. They are bootstrapped by `src/util/sceneWork
 ### Spatial Worker (1..N)
 
 Rebuilds the spatial hash grid and computes neighbor lists. The foundation everything else reads from.
+
+`numberOfSpatialWorkers === 0` creates no spatial worker and does not allocate `gridBuffer`, `neighborData`, `entityPosData`, or cell sleep/version SABs. Debug Inspect then picks with a click-time scan of `Transform` (not the hover overlay, which stays grid-only).
 
 **What it does each frame:**
 
@@ -59,7 +61,7 @@ Details: [SPATIAL_HASHING.md](./SPATIAL_HASHING.md)
 
 ### Physics Worker (1)
 
-Owns the Box2D tick. Scene’s `workers.physics` **is** the classic `box2dWasm.js` worker (`physicsHostImpl.js` + `weedjsPost.js`); steps via in-process `weedjsDoStep` (no nested ESM / Atomics handshake).
+Owns the Box2D tick. Scene’s `workers.physics` **is** the classic `box2dWasm.js` worker (`physicsHostImpl.js` + `weedjsPost.js`); steps via in-process `weedjsDoStep` (no nested ESM / Atomics handshake). Omitted entirely when `config.physics.enabled === false` — see [PHYSICS.md scenes without Box2D](./PHYSICS.md#scenes-without-box2d). Pose then binds at init to a Weed SAB; ticks do not test the flag.
 
 **What it does each frame:**
 
@@ -73,7 +75,7 @@ Spatial `neighborData` is visual-range only — Box2D does narrowphase itself.
 
 | Buffer / channel                   | Access         | Notes                                                                                |
 | ---------------------------------- | -------------- | ------------------------------------------------------------------------------------ |
-| Transform / RigidBody hot fields   | **Write** HEAP | `x,y,rotation,vx,vy,ω,sleeping` — HEAP only after `box2dReady` (`bindBox2dHotFields`) |
+| Transform / RigidBody hot fields   | **Write** HEAP | `x,y,rotation,vx,vy,ω,sleeping` — HEAP after `box2dReady` (`bindBox2dHotFields`). If physics is off, pose is a Weed SAB at init (`bindWeedPoseFields`); vel stays unbound |
 | `poseDataA/B` + `poseSync`         | **Write**      | Post-step display snapshot for pre_render / particle (not mid-step HEAP)             |
 | Collider                           | Read (sync)    | Shapes, radii, `friction`, layers/masks/`groupIndex`                                 |
 | `colliderFixtureData`              | Read (sync)    | Extra convex polys on the same body (`replacePolygons*`); default pool size 0        |

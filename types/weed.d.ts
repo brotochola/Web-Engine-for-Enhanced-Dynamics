@@ -257,6 +257,11 @@ export type SceneQueryTuple = readonly (typeof Component)[];
 /** Merged runtime scene config (static defaults + `Scene.config` + nested worker blocks). */
 export type SceneConfig = Record<string, unknown> & {
   physics?: Record<string, unknown> & {
+    /**
+     * Default true. false = do not create the Box2D WASM worker;
+     * Transform pose binds to a Weed SAB. RigidBody vel / Collider / LiquidFun / Box2d queries need true.
+     */
+    enabled?: boolean;
     /** Global ColliderFixture slot count for the scene (not per body). */
     maxFixturePoolSize?: number;
     /** @deprecated one-release alias of maxFixturePoolSize */
@@ -1120,6 +1125,8 @@ export declare class Query {
 
 export declare class Box2d {
   static collectDetailedStats: boolean;
+  /** True when `config.physics.enabled === false` — query/explode throw. */
+  static physicsWorkerAbsent: boolean;
   static beginFrame(): void;
   static consumeStats(): { ms: number; count: number };
   static queryAABB(

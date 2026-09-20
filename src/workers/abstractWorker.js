@@ -429,6 +429,7 @@ export class AbstractWorker {
 
     this._bindPosePublish(data.posePublish);
 
+    // Boot: query/explode throw if no WASM worker. Not a per-tick gate.
     Box2d.physicsWorkerAbsent = data.config?.physics?.enabled === false;
 
     // Check nested config for fixedFps / noLimitFPS (class name → config key)
@@ -792,6 +793,7 @@ export class AbstractWorker {
     // even when no entity classes are registered (e.g. particle-only scenes)
     this.initializeAllComponents(data);
 
+    // Boot bind: same Transform.x views as HEAP. Logic uses _weedPoseBound only for reportReady.
     if (data.weedPose?.sab) {
       bindWeedPoseFields(data.weedPose);
       this._weedPoseBound = true;
