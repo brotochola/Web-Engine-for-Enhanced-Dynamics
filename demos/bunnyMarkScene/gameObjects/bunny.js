@@ -6,7 +6,7 @@ const { GameObject, SpriteRenderer, Transform, Camera, rng } = WEED;
 const GRAVITY = 0.75;
 const BUNNY_SCALE = 2;
 const HALF_SIZE = 8;
-const FLOOR_DAMP = 0.999;
+// const FLOOR_DAMP = 0.999;
 
 export class Bunny extends GameObject {
     static scriptUrl = import.meta.url;
@@ -19,7 +19,7 @@ export class Bunny extends GameObject {
         this.setTint((rng() * 0xffffff) | 0);
         this.x = spawnConfig.x ?? 0;
         this.y = spawnConfig.y ?? 0;
-        this.bunnyMotion.vx = rng() * 10;
+        this.bunnyMotion.vx = rng() * 10 - 5;
         this.bunnyMotion.vy = rng() * 10 - 5;
     }
 
@@ -54,7 +54,7 @@ export class Bunny extends GameObject {
                 vy = -vy;
             } else if (y > bottom) {
                 y = bottom;
-                vy = -vy * FLOOR_DAMP;
+                vy = -vy //* FLOOR_DAMP;
             }
 
             xs[i] = x;

@@ -61,7 +61,10 @@ export class BunnyMarkScene extends Scene {
         this._buildHud();
 
         for (let i = 0; i < INITIAL_BUNNIES; i++) {
-            this.spawnEntity(Bunny, { x: cx, y: cy });
+            this.spawnEntity(Bunny, {
+                x: this.config.worldWidth * rng(),
+                y: this.config.worldHeight * rng()
+            });
         }
         this.spawnEntity(BunnySpawner, { x: cx, y: cy });
         this._setCount(GameObject.getPoolStats(Bunny).active);
