@@ -8,7 +8,7 @@ import { resolveForceProcessOnLogicWorker } from '../util/logicOwner.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
-import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
+import { bindBox2dHotFields, bindWeedPoseFields, createWeedPosePayload, initWeedPoseDefaults } from '../box2d/box2dHotFields.js';
 import { Box2d } from './box2d.js';
 import { Decal } from './decal.js';
 import { LiquidFun } from './liquidFun.js';
@@ -224,6 +224,13 @@ class Scene {
       4 +
       this.numberOfSpatialWorkers +
       numberOfLogicWorkers;
+
+    this._physicsEnabled = this.config.physics.enabled !== false;
+    Box2d.physicsWorkerAbsent = !this._physicsEnabled;
+    if (!this._physicsEnabled) {
+      delete this.workerReadyStates.physics;
+      this.totalWorkers -= 1;
+    }
 
     // Shared buffers
     this.buffers = {
@@ -1009,6 +1016,8 @@ class Scene {
     // Pose/vel live on Box2D HEAP only — bind after SoA init (box2dReady precedes readyPromise).
     if (this.box2dHotFields?.sab) {
       bindBox2dHotFields(this.box2dHotFields);
+    } else if (this.weedPose?.sab) {
+      bindWeedPoseFields(this.weedPose);
     }
 
     // Expose all components globally (both core and custom)
@@ -1122,6 +1131,12 @@ class Scene {
 
   createSharedBuffers() {
     createSceneSharedBuffers(this);
+    if (this._physicsEnabled === false) {
+      this.weedPose = createWeedPosePayload(this.totalEntityCount);
+      initWeedPoseDefaults(this.weedPose);
+    } else {
+      this.weedPose = null;
+    }
   }
 
   preInitializeEntityTypeArrays() {
@@ -1605,7 +1620,10 @@ class Scene {
   }
 
   setupWorkerCommunication() {
-    const connections = [{ from: 'physics', to: 'renderer' }];
+    const connections = [];
+    if (this._physicsEnabled !== false) {
+      connections.push({ from: 'physics', to: 'renderer' });
+    }
 
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
       connections.push({ from: `logic${i}`, to: 'renderer' });

@@ -246,11 +246,15 @@ class LogicWorker extends AbstractWorker {
     this._gameObjectInstancesCreated = false;
 
     // GameObject construction waits for box2dReady so setup() can write Transform.x on HEAP.
-    // reportReady is deferred until then (shouldReportReadyAfterInit → false).
+    // reportReady is deferred until then unless weed pose is already bound (no WASM).
+    if (this._weedPoseBound && !this._gameObjectInstancesCreated) {
+      this.createGameObjectInstances();
+      this._gameObjectInstancesCreated = true;
+    }
   }
 
   shouldReportReadyAfterInit() {
-    return false;
+    return this._weedPoseBound === true;
   }
 
   /**
@@ -262,6 +266,7 @@ class LogicWorker extends AbstractWorker {
     const numTypes = this.registeredClasses.length;
     this.collisionListenerByType = new Uint8Array(numTypes);
     this.jointBreakListenerByType = new Uint8Array(numTypes);
+    this.markActiveTypes = [];
 
     for (const classInfo of this.registeredClasses) {
       const { name, poolSize, startIndex, endIndex, entityType } = classInfo;
@@ -306,6 +311,9 @@ class LogicWorker extends AbstractWorker {
         }
         if (needsJointBreakCallbacks) {
           this.jointBreakListenerByType[entityType] = 1;
+        }
+        if (EntityClass.reportMarkActive) {
+          this.markActiveTypes.push(EntityClass);
         }
 
         // Special initialization for internal engine classes
@@ -1549,6 +1557,15 @@ class LogicWorker extends AbstractWorker {
     this.stats[LOGIC_STATS.FPS] = this.currentFPS;
     this.stats[LOGIC_STATS.STEP_MS] = this.stepTimeThisFrame;
     this.stats[LOGIC_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
+    let markActive = 0;
+    const markTypes = this.markActiveTypes;
+    if (markTypes) {
+      for (let i = 0; i < markTypes.length; i++) {
+        const list = markTypes[i]._activeList;
+        if (list) markActive += list[0] | 0;
+      }
+    }
+    this.stats[LOGIC_STATS.MARK_ACTIVE] = markActive;
     if (!this.collectDetailedStats) return;
     this.stats[LOGIC_STATS.SYSTEMS_EXECUTED] = this.systemsExecutedThisFrame;
     this.stats[LOGIC_STATS.MSG_MS] = this.messageTimeThisFrame;

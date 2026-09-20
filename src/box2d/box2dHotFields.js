@@ -52,6 +52,45 @@ export function isBox2dHotFieldsBound(payload) {
   return !!(payload?.sab && Transform.x?.buffer === payload.sab);
 }
 
+/** Five float channels: x, y, rotation, rotC, rotS. Used when physics.enabled === false. */
+export const WEED_POSE_CHANNEL_COUNT = 5;
+
+export function createWeedPosePayload(entityCount) {
+  const n = entityCount | 0;
+  if (!(n > 0)) {
+    throw new Error('createWeedPosePayload: entityCount must be > 0');
+  }
+  const sab = new SharedArrayBuffer(n * WEED_POSE_CHANNEL_COUNT * 4);
+  return {
+    sab,
+    channelOffsets: [0, n, n * 2, n * 3, n * 4],
+    bodyCapacity: n,
+  };
+}
+
+export function bindWeedPoseFields(payload) {
+  const sab = payload.sab;
+  const off = payload.channelOffsets;
+  const n = payload.bodyCapacity | 0;
+  if (!sab || !off || !(n > 0)) {
+    throw new Error('bindWeedPoseFields: invalid payload');
+  }
+  Transform.x = new Float32Array(sab, off[0] << 2, n);
+  Transform.y = new Float32Array(sab, off[1] << 2, n);
+  Transform.rotation = new Float32Array(sab, off[2] << 2, n);
+  Transform.rotC = new Float32Array(sab, off[3] << 2, n);
+  Transform.rotS = new Float32Array(sab, off[4] << 2, n);
+}
+
+export function initWeedPoseDefaults(payload) {
+  bindWeedPoseFields(payload);
+  Transform.x.fill(0);
+  Transform.y.fill(0);
+  Transform.rotation.fill(0);
+  Transform.rotC.fill(1);
+  Transform.rotS.fill(0);
+}
+
 /** Keep rotC/rotS coherent when JS writes an angle before the next physics export. */
 export function syncRotCSFromAngle(index, angle) {
   if (!Transform.rotC || !Transform.rotS) return;

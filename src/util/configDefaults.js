@@ -313,6 +313,8 @@ export const ENGINE_DEFAULTS = Object.freeze({
 // ============================================================================
 
 export const PHYSICS_DEFAULTS = Object.freeze({
+  /** false = do not create box2dWasm.js; pose lives on a Weed SAB. Isolated opt-in. */
+  enabled: true,
   /** Solver steps per physics tick (maps to Box2D world.step subStep). */
   subStepCount: 4,
   /** Soft contact spring frequency (Hz) → b2WorldDef.contactHertz. */

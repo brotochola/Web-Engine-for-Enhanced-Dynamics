@@ -166,6 +166,8 @@ export const LOGIC_STATS = Object.freeze({
   /** Sync Box2d.castRayClosest SAB wait on logic. Not Ray.* DDA. */
   BOX2D_RAYCAST_MS: 11,
   BOX2D_RAYCAST_COUNT: 12,
+  /** Always-on load key for Bunny Mark (and similar toy movers). */
+  MARK_ACTIVE: 13,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });
@@ -334,6 +336,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'DECIMATE_MS', label: 'Decim', format: fmtMs },
       { key: 'TICK_MS', label: 'Tick', format: fmtMs },
       { key: 'QUERY_PUBLISH_MS', label: 'QueryPub', format: fmtMs },
+      { key: 'MARK_ACTIVE', label: 'Mark', format: fmtNum },
     ],
   },
   preRender: {

@@ -49,7 +49,7 @@ import { Query } from '../core/query.js';
 import { Box2d } from '../core/box2d.js';
 import { Decal } from '../core/decal.js';
 import { setVerboseWorkers, installQuietConsoleLog } from '../util/debugLog.js';
-import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
+import { bindBox2dHotFields, bindWeedPoseFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
 import { bindOverlapCircleSab } from '../box2d/box2dOverlapCircle.js';
@@ -429,6 +429,8 @@ export class AbstractWorker {
 
     this._bindPosePublish(data.posePublish);
 
+    Box2d.physicsWorkerAbsent = data.config?.physics?.enabled === false;
+
     // Check nested config for fixedFps / noLimitFPS (class name → config key)
     const workerType = this.constructor.name.replace('Worker', '').toLowerCase();
     const configKeyAliases = {
@@ -789,6 +791,13 @@ export class AbstractWorker {
     // Always called: core components (Transform, RigidBody, etc.) need SAB views
     // even when no entity classes are registered (e.g. particle-only scenes)
     this.initializeAllComponents(data);
+
+    if (data.weedPose?.sab) {
+      bindWeedPoseFields(data.weedPose);
+      this._weedPoseBound = true;
+    } else {
+      this._weedPoseBound = false;
+    }
 
     // Attach per-type active list views to EntityClasses
     // Now that scripts are loaded and components initialized, EntityClasses are on self

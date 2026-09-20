@@ -49,12 +49,16 @@ function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBu
     scene.workers.logicWorkers.push(logicWorker);
   }
 
-  scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust);
+  if (scene._physicsEnabled !== false) {
+    scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust);
+    scene.workers.physics.name = 'physics';
+  } else {
+    scene.workers.physics = null;
+  }
   scene.workers.renderer = makeWorker('pixiWorker');
   scene.workers.particle = makeWorker('particleWorker');
   scene.workers.preRender = makeWorker('preRenderWorker');
 
-  scene.workers.physics.name = 'physics';
   scene.workers.renderer.name = 'renderer';
   scene.workers.particle.name = 'particle';
   scene.workers.preRender.name = 'preRender';
@@ -70,7 +74,9 @@ function attachEarlyWorkerErrorHandlers(scene) {
     );
   };
 
-  scene.workers.physics.onerror = earlyErrorHandler('physics');
+  if (scene.workers.physics) {
+    scene.workers.physics.onerror = earlyErrorHandler('physics');
+  }
   scene.workers.renderer.onerror = earlyErrorHandler('renderer');
   scene.workers.particle.onerror = earlyErrorHandler('particle');
   scene.workers.preRender.onerror = earlyErrorHandler('preRender');
@@ -399,6 +405,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     layerData: Layer.getSerializableData(),
     tilemapData: TileMap.getSerializableData(),
     customLayerRenderQueues: scene.customLayerRenderQueues,
+    weedPose: scene.weedPose || null,
   };
 }
 
@@ -437,17 +444,19 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     );
   }
 
-  debugWorkerLog('[Scene]   → Initializing physics worker...');
-  const physicsExtra = {
-    workerPorts: workerPorts.physics,
-    frameRateIndex: physicsIndex,
-  };
-  postWorkerInitMessage(
-    scene.workers.physics,
-    initData,
-    physicsExtra,
-    getPortTransferables(workerPorts.physics)
-  );
+  if (scene.workers.physics) {
+    debugWorkerLog('[Scene]   → Initializing physics worker...');
+    const physicsExtra = {
+      workerPorts: workerPorts.physics,
+      frameRateIndex: physicsIndex,
+    };
+    postWorkerInitMessage(
+      scene.workers.physics,
+      initData,
+      physicsExtra,
+      getPortTransferables(workerPorts.physics)
+    );
+  }
 
   debugWorkerLog('[Scene]   → Initializing particle worker...');
   const mainToParticleChannel = new MessageChannel();

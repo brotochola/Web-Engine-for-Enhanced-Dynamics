@@ -58,6 +58,7 @@ function averageStatFieldMaps(statMaps) {
 export function getWorkerFrameRateLayout({
   spatialWorkerCount = 0,
   logicWorkerCount = 0,
+  physicsEnabled = true,
 } = {}) {
   const layout = [];
 
@@ -75,12 +76,14 @@ export function getWorkerFrameRateLayout({
   const particleIndex = spatialWorkerCount + 2;
   const logicStartIndex = spatialWorkerCount + 3;
 
-  layout.push({
-    id: 'physics',
-    type: 'physics',
-    workerIndex: 0,
-    frameRateIndex: physicsIndex,
-  });
+  if (physicsEnabled !== false) {
+    layout.push({
+      id: 'physics',
+      type: 'physics',
+      workerIndex: 0,
+      frameRateIndex: physicsIndex,
+    });
+  }
   layout.push({
     id: 'renderer',
     type: 'renderer',
@@ -117,6 +120,7 @@ function getSceneWorkerCounts(scene) {
   return {
     spatialWorkerCount: scene?.config?.spatial?.numberOfSpatialWorkers || 0,
     logicWorkerCount: scene?.numberOfLogicWorkers ?? scene?.config?.logic?.numberOfLogicWorkers ?? 1,
+    physicsEnabled: scene?.config?.physics?.enabled !== false && scene?._physicsEnabled !== false,
   };
 }
 

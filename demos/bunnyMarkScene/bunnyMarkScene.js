@@ -17,9 +17,9 @@ export class BunnyMarkScene extends Scene {
         worldHeight: 1080,
         seed: 1,
         spatial: {
-            numberOfSpatialWorkers: 1,
+            numberOfSpatialWorkers: 0,
             cellSize: 1024,
-            maxNeighbors: 8,
+            maxNeighbors: 0,
             noLimitFPS: false,
         },
         logic: {
@@ -60,6 +60,7 @@ export class BunnyMarkScene extends Scene {
 
         this._buildHud();
 
+        const rng = globalThis.rng;
         for (let i = 0; i < INITIAL_BUNNIES; i++) {
             this.spawnEntity(Bunny, {
                 x: this.config.worldWidth * rng(),

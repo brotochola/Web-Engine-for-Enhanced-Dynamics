@@ -20,8 +20,15 @@ const box2dRayStatsOut = { ms: 0, count: 0 };
 
 export class Box2d {
   static collectDetailedStats = false;
+  static physicsWorkerAbsent = false;
   static _rayStatsMs = 0;
   static _rayStatsCount = 0;
+
+  static _assertPhysicsWorker() {
+    if (this.physicsWorkerAbsent) {
+      throw new Error('Box2d.query*: physics worker absent (config.physics.enabled === false)');
+    }
+  }
 
   static beginFrame() {
     this._rayStatsMs = 0;
@@ -39,26 +46,31 @@ export class Box2d {
 
   /** Sync QueryAABB (logic workers). Fills `out` with entity ids. */
   static queryAABB(x0, y0, x1, y1, out, filter) {
+    this._assertPhysicsWorker();
     return box2dQueryAABB(x0, y0, x1, y1, out, filter);
   }
 
   /** Async QueryAABB (Scene / main). */
   static queryAABBAsync(x0, y0, x1, y1, out, filter) {
+    this._assertPhysicsWorker();
     return box2dQueryAABBAsync(x0, y0, x1, y1, out, filter);
   }
 
   /** Sync overlapCircle (logic). Fills `out` with entity ids. */
   static overlapCircle(cx, cy, radius, out, filter) {
+    this._assertPhysicsWorker();
     return box2dOverlapCircle(cx, cy, radius, out, filter);
   }
 
   /** Async overlapCircle (Scene / main). */
   static overlapCircleAsync(cx, cy, radius, out, filter) {
+    this._assertPhysicsWorker();
     return box2dOverlapCircleAsync(cx, cy, radius, out, filter);
   }
 
   /** Sync castRayClosest (logic workers). `dx,dy` is displacement, not a point. */
   static castRayClosest(ox, oy, dx, dy, out, filter) {
+    this._assertPhysicsWorker();
     if (!this.collectDetailedStats) {
       return box2dCastRayClosest(ox, oy, dx, dy, out, filter);
     }
@@ -71,16 +83,19 @@ export class Box2d {
 
   /** Async castRayClosest (Scene / main). */
   static castRayClosestAsync(ox, oy, dx, dy, out, filter) {
+    this._assertPhysicsWorker();
     return box2dCastRayClosestAsync(ox, oy, dx, dy, out, filter);
   }
 
   /** Sync castRayAll (logic). Fills borrowed `out` with `{ entityIndex, fraction, hitX, hitY }`. */
   static castRayAll(ox, oy, dx, dy, out, filter) {
+    this._assertPhysicsWorker();
     return box2dCastRayAll(ox, oy, dx, dy, out, filter);
   }
 
   /** Async castRayAll (Scene / main). */
   static castRayAllAsync(ox, oy, dx, dy, out, filter) {
+    this._assertPhysicsWorker();
     return box2dCastRayAllAsync(ox, oy, dx, dy, out, filter);
   }
 
