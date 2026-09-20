@@ -51,25 +51,66 @@ export class RenderQueueStressScene extends Scene {
   static entities = [[RenderQueueStressEntity, 16000]];
 
   create() {
-    const cols = 160;
-    const spacingX = 24;
-    const spacingY = 22;
-    const startX = 220;
-    const startY = 220;
-    const palette = [0xffffff, 0xffd166, 0x06d6a0, 0x118ab2, 0xef476f];
-
-    for (let i = 0; i < 16000; i++) {
-      const col = i % cols;
-      const row = (i / cols) | 0;
-      this.spawnEntity(RenderQueueStressEntity, {
-        x: startX + col * spacingX,
-        y: startY + row * spacingY,
-        scale: 0.75 + (i % 5) * 0.06,
-        tint: palette[i % palette.length],
-      });
-    }
-
-    Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
+    spawnRenderQueueGrid(this);
     Camera.setZoom(0.5);
+  }
+}
+
+const HIGH_REJECT_ZOOM = 3;
+
+function spawnRenderQueueGrid(scene) {
+  const cols = 160;
+  const spacingX = 24;
+  const spacingY = 22;
+  const startX = 220;
+  const startY = 220;
+  const palette = [0xffffff, 0xffd166, 0x06d6a0, 0x118ab2, 0xef476f];
+
+  for (let i = 0; i < 16000; i++) {
+    const col = i % cols;
+    const row = (i / cols) | 0;
+    scene.spawnEntity(RenderQueueStressEntity, {
+      x: startX + col * spacingX,
+      y: startY + row * spacingY,
+      scale: 0.75 + (i % 5) * 0.06,
+      tint: palette[i % palette.length],
+    });
+  }
+
+  Camera.centerOn(scene.config.worldWidth * 0.5, scene.config.worldHeight * 0.5);
+}
+
+/** Control 2: same 16k grid, zoom in so cull rejects. Catalog scene stays at zoom 0.5. */
+export class RenderQueueHighRejectStressScene extends Scene {
+  static config = {
+    ...RenderQueueStressScene.config,
+    preRender: {
+      noLimitFPS: false,
+      skipCull: false,
+    },
+  };
+  static assets = RenderQueueStressScene.assets;
+  static entities = [[RenderQueueStressEntity, 16000]];
+
+  create() {
+    spawnRenderQueueGrid(this);
+    Camera.setZoom(HIGH_REJECT_ZOOM);
+  }
+}
+
+export class RenderQueueHighRejectSkipCullScene extends Scene {
+  static config = {
+    ...RenderQueueStressScene.config,
+    preRender: {
+      noLimitFPS: false,
+      skipCull: true,
+    },
+  };
+  static assets = RenderQueueStressScene.assets;
+  static entities = [[RenderQueueStressEntity, 16000]];
+
+  create() {
+    spawnRenderQueueGrid(this);
+    Camera.setZoom(HIGH_REJECT_ZOOM);
   }
 }

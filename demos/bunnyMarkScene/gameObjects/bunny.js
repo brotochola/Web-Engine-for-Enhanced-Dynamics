@@ -10,7 +10,7 @@ import {
 
 const { GameObject, SpriteRenderer, Transform } = WEED;
 
-const BUNNY_SCALE = 2;
+const BUNNY_SCALE = 0.5;
 
 export class Bunny extends GameObject {
   static scriptUrl = import.meta.url;

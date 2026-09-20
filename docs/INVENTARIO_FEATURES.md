@@ -162,7 +162,7 @@ Skip-publish si las listas no cambian ya está en logic0. `QUERY_PUBLISH_MS` sol
 
 Módulo: `src/workers/preRenderWorker.js`. Kernel: `srFlagsMicrobench.mjs`. Escena: `RenderQueueStressScene`. Primaria: `preRender_STEP_MS`. Carga: `BODY_COUNT`.
 
-Packed vs 7 columnas Uint8 ya se midió (cull gana en kernel; cola ruidosa). Esta noche: kernel + estrés. Sin hipótesis nuevas de cola.
+Packed vs 7 columnas Uint8 ya se midió (cull gana en kernel; cola ruidosa). `preRender.skipCull` (2026-09-20, **mixed**): opt-in, default false. Bunny 65k todos visibles: `preRender_STEP_MS` −4.5% (KEPT). Zoom alto: cola 640→16000 (CULL_PAYS). No default. Informe: [`tests/results/skip-cull/report.md`](../tests/results/skip-cull/report.md).
 
 ### compute — Pack WebGPU
 

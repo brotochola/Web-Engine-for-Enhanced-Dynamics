@@ -89,6 +89,44 @@ export class BunnyMarkStressCScene extends Scene {
   }
 }
 
+/** Control 1: same C pose path, N at playable mark. skipCull off. */
+export const BUNNY_COUNT_SKIPCULL = 65000;
+
+const SHARED_SKIPCULL = {
+  ...SHARED,
+  physics: {
+    enabled: false,
+    gravity: { x: 0, y: 0 },
+    noLimitFPS: false,
+  },
+};
+
+export class BunnyMarkStressCSkipCullOffScene extends Scene {
+  static config = {
+    ...SHARED_SKIPCULL,
+    preRender: { skipCull: false },
+  };
+  static assets = { textures: {} };
+  static entities = [[Bunny, BUNNY_COUNT_SKIPCULL]];
+
+  create() {
+    spawnBunnies(this, Bunny, BUNNY_COUNT_SKIPCULL);
+  }
+}
+
+export class BunnyMarkStressCSkipCullOnScene extends Scene {
+  static config = {
+    ...SHARED_SKIPCULL,
+    preRender: { skipCull: true },
+  };
+  static assets = { textures: {} };
+  static entities = [[Bunny, BUNNY_COUNT_SKIPCULL]];
+
+  create() {
+    spawnBunnies(this, Bunny, BUNNY_COUNT_SKIPCULL);
+  }
+}
+
 /** Same mark, Box2D integrates. No BunnyMotion. No tick. */
 export class BunnyMarkStressDScene extends Scene {
   static config = {

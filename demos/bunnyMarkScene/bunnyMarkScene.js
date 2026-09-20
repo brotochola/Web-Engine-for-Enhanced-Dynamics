@@ -13,8 +13,8 @@ const HUD_CSS =
 
 export class BunnyMarkScene extends Scene {
     static config = {
-        worldWidth: 1920,
-        worldHeight: 1080,
+        worldWidth: window.innerWidth,
+        worldHeight: window.innerHeight,
         seed: 1,
         spatial: {
             // 0 = no spatial worker and no grid SAB. Inspect picks via click scan.
@@ -41,6 +41,9 @@ export class BunnyMarkScene extends Scene {
             noLimitFPS: false,
             ySorting: false,
             maxVisibleRenderables: 65535,
+        },
+        preRender: {
+            skipCull: true,
         },
         lighting: { enabled: false },
     };

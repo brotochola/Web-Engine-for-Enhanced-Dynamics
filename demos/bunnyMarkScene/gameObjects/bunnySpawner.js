@@ -15,20 +15,17 @@ export class BunnySpawner extends GameObject {
     }
 
     tick() {
-        if (Mouse.isButton0Pressed) {
-            this._holdFrames = 0;
-            this._spawnBatch();
-            return;
-        }
+        // if (Mouse.isButton0Pressed) {
+        //     this._holdFrames = 0;
+        //     this._spawnBatch();
+        //     return;
+        // }
         if (Mouse.isButton0Down) {
-            this._holdFrames++;
-            if (this._holdFrames >= HOLD_EVERY) {
-                this._holdFrames = 0;
-                this._spawnBatch();
-            }
-            return;
+
+            this._spawnBatch();
+
         }
-        this._holdFrames = 0;
+        // this._holdFrames = 0;
     }
 
     _spawnBatch() {

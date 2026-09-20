@@ -589,6 +589,14 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
   /** When true, skip packing if >1 frame ahead of pixi (Atomics sync). */
   backpressure: true,
   /**
+   * Skip entity viewport AABB and screenX/Y. Every active renderVisible
+   * sprite (and adobe) is queued; CameraInOutListener / isOnScreen treat
+   * them as on camera. Off-screen worlds grow RENDER_QUEUE_SIZE and pixi.
+   * Particles, decorations, bullets, lights, and shadow gather still cull.
+   * Default false — opt-in when the world is the viewport (bunny mark).
+   */
+  skipCull: false,
+  /**
    * Smooth visuals when physics runs slower than render (e.g. physics.fixedFps
    * below the display rate). 'interpolate' blends between the last two
    * published physics frames (bodies and LiquidFun particles both have a real
