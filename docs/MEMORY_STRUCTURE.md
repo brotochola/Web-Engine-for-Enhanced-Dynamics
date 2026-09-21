@@ -51,15 +51,16 @@ Not a Component. One SAB per **class**, sized by the schema in `Scene.static.sha
 ```js
 static sharedResources = [
   [WorldGrid, { cells: { type: Float32Array, length: 1000 } }],
-  [GameState, { score: Int32Array, flags: { type: Uint8Array, length: 32 } }],
+  [GameState, { score: { type: Int32Array, mailbox: true }, flags: { type: Uint8Array, length: 32 } }],
 ];
 ```
 
-Bare ctor = length 1. `WorldGrid.cells` **is** the TypedArray (`WorldGrid.cells[i] = v`) on main and every worker after bind. Same one-writer-per-region rule as Mouse / Transform. No Atomics in v1.
+Bare ctor = length 1, not a mailbox. Unmarked fields are TypedArrays (`WorldGrid.amount[i] = v`) — one writer, same rule as Mouse / Transform. `atomic: true` / `mailbox: true` binds a `SharedResourceMailbox` (`GameState.score.add(1)`, `.load`, `.store`, `.exchange`, `.compareExchange`). Raw integer view: `GameState.score.view`. Do not treat `amount[i] = v` as atomic.
 
-| Writer | Reader |
-| --- | --- |
-| Whoever the scene says (typically logic `tick` or `scene.update`) | All threads that imported the class |
+| Field | Writer | Reader |
+| --- | --- | --- |
+| Unmarked | Whoever the scene says (typically logic `tick` or `scene.update`) | All threads that imported the class |
+| `atomic: true` / `mailbox: true` | Any thread via `GameState.score.add` / `.load` / `.store` (or `Atomics.*` on `.view`) | Same |
 
 Workers `import()` the scene module URL from `loadScene`; the SharedResource class must be imported by that file. Scene init **throws** if the class is missing after that import (`bindFromInit`). Pin the single writer with `forceProcessOnLogicWorker` (Int16 SoA; `FORCE_PROCESS_ON_LOGIC_WORKER_NONE` = −1). `entityTypeForcedLogicWorkerCount` (Uint16 per type) drives `entityTypeHasForcedLogicWorker` so a type can return to stride when the last forced instance despawns.
 
@@ -663,7 +664,7 @@ The big picture. Who writes what, who reads what.
 | Query results                                 | Logic worker 0                                                                               | Logic, pre_render                            |
 | Audio mixer SAB (slot array)                  | Any thread (`SoundManager.play`) + worklet (`cursor`, `state` free)                          | `AudioMixerProcessor` worklet (audio thread) |
 | Input/mouse/gamepad/camera/debug              | Main thread                                                                                  | All workers                                  |
-| SharedResource SABs (`buffers.sharedResources`) | Scene-defined (one writer per field)                                                      | All threads that bound the class             |
+| SharedResource SABs (`buffers.sharedResources`) | Scene-defined (one writer per unmarked field; mailbox via `.add` / `.store`)              | All threads that bound the class             |
 
 ---
 

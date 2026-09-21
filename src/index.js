@@ -120,7 +120,7 @@ export { BulletComponent } from './components/bulletComponent.js';
 export { Joint } from './core/joint.js';
 export { ColliderFixture } from './core/colliderFixture.js';
 export { SharedAtomicPool } from './core/sharedAtomicPool.js';
-export { SharedResource } from './core/sharedResource.js';
+export { SharedResource, SharedResourceMailbox } from './core/sharedResource.js';
 
 // ============================================================================
 // FLASHES
@@ -233,7 +233,7 @@ import { Decoration } from './core/decoration.js';
 import { DecorationSpatial } from './core/decorationSpatial.js';
 import { BulletPool } from './core/bulletPool.js';
 import { SharedAtomicPool } from './core/sharedAtomicPool.js';
-import { SharedResource } from './core/sharedResource.js';
+import { SharedResource, SharedResourceMailbox } from './core/sharedResource.js';
 import { DecorationComponent } from './components/decorationComponent.js';
 import { BulletComponent } from './components/bulletComponent.js';
 import { LightEmitter } from './components/lightEmitter.js';
@@ -403,6 +403,7 @@ const WEED = Object.freeze({
   // Pool base class
   SharedAtomicPool,
   SharedResource,
+  SharedResourceMailbox,
 
   // Flashes
   Flash,

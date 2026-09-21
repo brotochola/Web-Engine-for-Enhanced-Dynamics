@@ -9,6 +9,7 @@ import WEED, {
   Flash,
   Decoration,
   SharedResource,
+  SharedResourceMailbox,
   ColliderFixture,
   FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
   resolveForceProcessOnLogicWorker,
@@ -30,6 +31,8 @@ test('public barrel symbols stay callable', () => {
   assert.equal(typeof Decoration, 'function');
   assert.equal(typeof SharedResource, 'function');
   assert.equal(WEED.SharedResource, SharedResource);
+  assert.equal(typeof SharedResourceMailbox, 'function');
+  assert.equal(WEED.SharedResourceMailbox, SharedResourceMailbox);
   assert.equal(typeof ColliderFixture.forEach, 'function');
   assert.equal(WEED.ColliderFixture, ColliderFixture);
   assert.equal(FORCE_PROCESS_ON_LOGIC_WORKER_NONE, -1);

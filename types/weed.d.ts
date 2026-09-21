@@ -883,8 +883,27 @@ export declare class Component {
 }
 
 /**
+ * Integer SharedResource mailbox. Bound when a field is `atomic: true` / `mailbox: true`.
+ * Index last; default 0. Raw TypedArray: `view`.
+ */
+export declare class SharedResourceMailbox {
+  view: Int32Array | Uint32Array | Int16Array | Uint16Array | Int8Array | Uint8Array | BigInt64Array | BigUint64Array;
+  length: number;
+  add(delta: number | bigint, index?: number): number | bigint;
+  load(index?: number): number | bigint;
+  store(value: number | bigint, index?: number): number | bigint;
+  exchange(value: number | bigint, index?: number): number | bigint;
+  compareExchange(
+    expected: number | bigint,
+    replacement: number | bigint,
+    index?: number,
+  ): number | bigint;
+}
+
+/**
  * One SAB of world data per class (not SoA × entityCount).
  * Scene.static.sharedResources binds it. Workers load the scene module; leftover scriptUrl is optional.
+ * Unmarked fields are TypedArrays (one writer). `atomic: true` / `mailbox: true` binds SharedResourceMailbox.
  */
 export declare class SharedResource {
   static scriptUrl?: string | null;

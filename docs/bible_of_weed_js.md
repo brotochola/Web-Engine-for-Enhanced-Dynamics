@@ -203,7 +203,7 @@ Tag components have no `ARRAY_SCHEMA` and allocate no `SharedArrayBuffer`. They 
 
 ### SharedResource (world blobs)
 
-Not a Component. One SAB per **class**, sized by the schema in `Scene.static.sharedResources`, not by `totalEntityCount`. Fields are raw TypedArrays on the class (`WorldGrid.cells[i] = v`) after bind. Same one-writer-per-field rule as Mouse. No Atomics in v1.
+Not a Component. One SAB per **class**, sized by the schema in `Scene.static.sharedResources`, not by `totalEntityCount`. Unmarked fields are raw TypedArrays (`WorldGrid.amount[i] = v`). One writer — pin it with `forceProcessOnLogicWorker`. `atomic: true` or `mailbox: true` binds an integer **mailbox** (`GameState.score.add(1)`), not a TypedArray. Raw view: `GameState.score.view`. Bracket assign is not intercepted. Rejected on `Float32Array` / `Float64Array` / `Uint8ClampedArray`.
 
 ```javascript
 class WorldGrid extends WEED.SharedResource {}
@@ -211,12 +211,22 @@ class WorldGrid extends WEED.SharedResource {}
 class DigScene extends WEED.Scene {
   static sharedResources = [
     [WorldGrid, { cells: { type: Float32Array, length: COLS * ROWS } }],
-    [GameState, { score: Int32Array }], // bare ctor = length 1
+    [GameState, { score: { type: Int32Array, mailbox: true } }], // Int32 mailbox; bare ctor = length 1, not a mailbox
   ];
 }
 ```
 
-Import `WorldGrid` from the scene module (`game.loadScene('/path/to/digScene.js')`). Workers `import()` that file and `bindFromInit` attaches the views. Pin the single writer with `forceProcessOnLogicWorker` on the entity that mutates the blob. Layout, bind, and teardown: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b. Worker init: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md).
+```javascript
+GameState.score.add(1);                 // Atomics.add(score.view, 0, 1)
+GameState.lives.add(1, 3);              // slot 3
+GameState.score.load();
+GameState.score.store(0);
+GameState.dirty.exchange(0);            // consume flag; returns previous
+GameState.head.compareExchange(cur, next);
+GameState.score.view                    // raw Int32Array
+```
+
+Import `WorldGrid` from the scene module (`game.loadScene('/path/to/digScene.js')`). Workers `import()` that file and `bindFromInit` attaches the views. Layout, bind, and teardown: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b. Worker init: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md).
 
 **Screen visibility:** resolved per-type on the `typeInfo` object. `preRenderWorker` clears `Transform.isItOnScreen` once per visual frame and each entity render pass sets it to `1` when that entity is visible. The logic worker reads that single canonical byte only for entity types that have `CameraInOutListener`, so the callback path does not need to know which render component made the entity visible.
 

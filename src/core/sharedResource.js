@@ -1,8 +1,9 @@
 // SharedResource — one SAB of world data per class (not SoA × entityCount).
 // Scene declares the schema; this class is the name + optional helpers.
-// Fields are raw TypedArrays: WorldGrid.cells[i] = v. No Atomics. No FieldView.
-// One writer per field. Force that writer with forceProcessOnLogicWorker.
-// Workers bind this class after the scene module import() (or leftover scriptUrl).
+// Unmarked fields: raw TypedArray, one writer. Pin with forceProcessOnLogicWorker.
+// atomic: true / mailbox: true: integer mailbox object (add/load/store/exchange/
+// compareExchange). Raw TypedArray on mailbox.view. No FieldView. No [] intercept.
+// Workers bind after the scene module import.
 
 const TYPED_ARRAYS = Object.freeze({
   Int8Array,
@@ -18,8 +19,50 @@ const TYPED_ARRAYS = Object.freeze({
   BigUint64Array,
 });
 
+const ATOMIC_TYPES = new Set([
+  Int8Array,
+  Uint8Array,
+  Int16Array,
+  Uint16Array,
+  Int32Array,
+  Uint32Array,
+  BigInt64Array,
+  BigUint64Array,
+]);
+
 /** @type {Function[]} */
 const live = [];
+
+/** Integer SAB mailbox. Index last; default 0. */
+export class SharedResourceMailbox {
+  /**
+   * @param {Int8Array|Uint8Array|Int16Array|Uint16Array|Int32Array|Uint32Array|BigInt64Array|BigUint64Array} view
+   */
+  constructor(view) {
+    this.view = view;
+    this.length = view.length;
+  }
+
+  add(delta, index = 0) {
+    return Atomics.add(this.view, index | 0, delta);
+  }
+
+  load(index = 0) {
+    return Atomics.load(this.view, index | 0);
+  }
+
+  store(value, index = 0) {
+    return Atomics.store(this.view, index | 0, value);
+  }
+
+  exchange(value, index = 0) {
+    return Atomics.exchange(this.view, index | 0, value);
+  }
+
+  compareExchange(expected, replacement, index = 0) {
+    return Atomics.compareExchange(this.view, index | 0, expected, replacement);
+  }
+}
 
 export class SharedResource {
   static sharedBuffer = null;
@@ -27,18 +70,19 @@ export class SharedResource {
   static _schema = null;
 
   /**
-   * Resolve a schema entry: TypedArray ctor, ctor name, or `{ type, length }`.
-   * Bare ctor / name → length 1.
-   * @returns {{ type: Function, length: number }}
+   * Resolve a schema entry: TypedArray ctor, ctor name, or `{ type, length, atomic|mailbox }`.
+   * Bare ctor / name → length 1, not a mailbox.
+   * @returns {{ type: Function, length: number, atomic: boolean }}
    */
   static _schemaEntry(typeOrSpec) {
     if (typeOrSpec && typeof typeOrSpec === 'object' && typeOrSpec.type) {
       return {
         type: SharedResource._resolveType(typeOrSpec.type),
         length: Math.max(0, typeOrSpec.length | 0) || 1,
+        atomic: typeOrSpec.atomic === true || typeOrSpec.mailbox === true,
       };
     }
-    return { type: SharedResource._resolveType(typeOrSpec), length: 1 };
+    return { type: SharedResource._resolveType(typeOrSpec), length: 1, atomic: false };
   }
 
   static _resolveType(typeOrName) {
@@ -53,15 +97,34 @@ export class SharedResource {
     );
   }
 
+  static _assertAtomicType(name, type, atomic) {
+    if (!atomic) return;
+    if (!ATOMIC_TYPES.has(type)) {
+      throw new TypeError(
+        `SharedResource: field "${name}" atomic:true needs an integer TypedArray (Atomics), got ${type.name}`,
+      );
+    }
+  }
+
+  static _validateSchema(schema) {
+    for (const [name, spec] of Object.entries(schema)) {
+      const { type, atomic } = SharedResource._schemaEntry(spec);
+      SharedResource._assertAtomicType(name, type, atomic);
+    }
+  }
+
   /**
    * Structured-cloneable schema (type names, not ctors) for worker init.
    * @param {Object} schema
    */
   static serializeSchema(schema) {
+    SharedResource._validateSchema(schema);
     const out = {};
     for (const [name, spec] of Object.entries(schema)) {
-      const { type, length } = SharedResource._schemaEntry(spec);
-      out[name] = { type: type.name, length };
+      const { type, length, atomic } = SharedResource._schemaEntry(spec);
+      out[name] = atomic
+        ? { type: type.name, length, atomic: true }
+        : { type: type.name, length };
     }
     return out;
   }
@@ -71,6 +134,7 @@ export class SharedResource {
    * @returns {number} bytes, aligned per field
    */
   static getBufferSize(schema) {
+    SharedResource._validateSchema(schema);
     let offset = 0;
     for (const spec of Object.values(schema)) {
       const { type, length } = SharedResource._schemaEntry(spec);
@@ -84,23 +148,26 @@ export class SharedResource {
 
   /**
    * Bind this class's fields to a SAB. Same schema on every thread.
+   * Unmarked fields are TypedArrays. Mailbox fields are SharedResourceMailbox.
    * @param {SharedArrayBuffer} buffer
    * @param {Object} schema
    */
   static initialize(buffer, schema) {
     this.reset();
     if (!buffer || !schema) return;
+    SharedResource._validateSchema(schema);
     this.sharedBuffer = buffer;
     this._schema = schema;
     this._fieldNames = [];
 
     let offset = 0;
     for (const [name, spec] of Object.entries(schema)) {
-      const { type, length } = SharedResource._schemaEntry(spec);
+      const { type, length, atomic } = SharedResource._schemaEntry(spec);
       const bytesPerElement = type.BYTES_PER_ELEMENT;
       const remainder = offset % bytesPerElement;
       if (remainder !== 0) offset += bytesPerElement - remainder;
-      this[name] = new type(buffer, offset, length);
+      const view = new type(buffer, offset, length);
+      this[name] = atomic ? new SharedResourceMailbox(view) : view;
       this._fieldNames.push(name);
       offset += length * bytesPerElement;
     }
@@ -158,8 +225,7 @@ export class SharedResource {
   }
 
   /**
-   * Worker: bind `{ name, sab, schema, scriptUrl }` onto `globalRef[name]`.
-   * Class is usually already on globalRef after the scene module import().
+   * Worker: bind `{ name, sab, schema, scriptUrl }` onto `globalRef[name]` after scene import.
    * Missing class is a hard fail: one writer per field only works if the class loaded.
    */
   static bindFromInit(recs, globalRef = globalThis) {
@@ -168,8 +234,12 @@ export class SharedResource {
       const rec = recs[i];
       const C = globalRef[rec.name];
       if (!C || typeof C.initialize !== 'function') {
-        const hint = rec.scriptUrl ? ` after scriptUrl ${rec.scriptUrl}` : '';
-        throw new Error(`SharedResource: class ${rec.name} not loaded${hint}`);
+        if (rec.scriptUrl) {
+          throw new Error(
+            `SharedResource: class ${rec.name} not loaded after scriptUrl ${rec.scriptUrl}`,
+          );
+        }
+        throw new Error(`SharedResource: class ${rec.name} not loaded`);
       }
       C.initialize(rec.sab, rec.schema);
     }

@@ -135,23 +135,23 @@ export class WorldGrid extends SharedResource {
     return {
       amount: { type: Float32Array, length: cols * rows },
       material: { type: Uint8Array, length: cols * rows },
-      dirtyRect: { type: Int32Array, length: 5 },
+      dirtyRect: { type: Int32Array, length: 5, mailbox: true },
       tune: { type: Float32Array, length: TUNE_COUNT },
-      shotMeta: { type: Int32Array, length: 2 },
+      shotMeta: { type: Int32Array, length: 2, mailbox: true },
       shotData: { type: Float32Array, length: SHOT_CAP * SHOT_STRIDE },
     };
   }
 
   static initialize(buffer, schema) {
     super.initialize(buffer, schema);
-    const d = this.dirtyRect;
-    if (d) {
+    const dirty = this.dirtyRect;
+    if (dirty) {
       const virgin =
-        Atomics.load(d, DIRTY_FLAG) === 0 &&
-        Atomics.load(d, DIRTY_MIN_X) === 0 &&
-        Atomics.load(d, DIRTY_MIN_Y) === 0 &&
-        Atomics.load(d, DIRTY_MAX_X) === 0 &&
-        Atomics.load(d, DIRTY_MAX_Y) === 0;
+        dirty.load(DIRTY_FLAG) === 0 &&
+        dirty.load(DIRTY_MIN_X) === 0 &&
+        dirty.load(DIRTY_MIN_Y) === 0 &&
+        dirty.load(DIRTY_MAX_X) === 0 &&
+        dirty.load(DIRTY_MAX_Y) === 0;
       if (virgin) this.resetDirty();
     }
     this.applyTuneDefaults();
@@ -183,18 +183,36 @@ export class WorldGrid extends SharedResource {
   }
 
   static resetDirty() {
-    const d = this.dirtyRect;
-    if (!d) return;
-    Atomics.store(d, DIRTY_FLAG, 0);
-    Atomics.store(d, DIRTY_MIN_X, this.cols);
-    Atomics.store(d, DIRTY_MIN_Y, this.rows);
-    Atomics.store(d, DIRTY_MAX_X, -1);
-    Atomics.store(d, DIRTY_MAX_Y, -1);
+    const dirty = this.dirtyRect;
+    if (!dirty) return;
+    dirty.store(0, DIRTY_FLAG);
+    dirty.store(this.cols, DIRTY_MIN_X);
+    dirty.store(this.rows, DIRTY_MIN_Y);
+    dirty.store(-1, DIRTY_MAX_X);
+    dirty.store(-1, DIRTY_MAX_Y);
   }
 
   static hasDirty() {
-    const d = this.dirtyRect;
-    return !!(d && Atomics.load(d, DIRTY_FLAG));
+    const dirty = this.dirtyRect;
+    return !!(dirty && dirty.load(DIRTY_FLAG));
+  }
+
+  static _atomicMin(box, i, v) {
+    let cur = box.load(i);
+    while (v < cur) {
+      const prev = box.compareExchange(cur, v, i);
+      if (prev === cur) return;
+      cur = prev;
+    }
+  }
+
+  static _atomicMax(box, i, v) {
+    let cur = box.load(i);
+    while (v > cur) {
+      const prev = box.compareExchange(cur, v, i);
+      if (prev === cur) return;
+      cur = prev;
+    }
   }
 
   static idx(x, y) {
@@ -206,46 +224,46 @@ export class WorldGrid extends SharedResource {
   }
 
   static markDirty(x, y) {
-    const d = this.dirtyRect;
-    if (!d) return;
-    atomicMin(d, DIRTY_MIN_X, x);
-    atomicMin(d, DIRTY_MIN_Y, y);
-    atomicMax(d, DIRTY_MAX_X, x);
-    atomicMax(d, DIRTY_MAX_Y, y);
-    Atomics.store(d, DIRTY_FLAG, 1);
+    const dirty = this.dirtyRect;
+    if (!dirty) return;
+    this._atomicMin(dirty, DIRTY_MIN_X, x);
+    this._atomicMin(dirty, DIRTY_MIN_Y, y);
+    this._atomicMax(dirty, DIRTY_MAX_X, x);
+    this._atomicMax(dirty, DIRTY_MAX_Y, y);
+    dirty.store(1, DIRTY_FLAG);
   }
 
   static markAllDirty() {
-    const d = this.dirtyRect;
-    if (!d) return;
-    Atomics.store(d, DIRTY_MIN_X, 0);
-    Atomics.store(d, DIRTY_MIN_Y, 0);
-    Atomics.store(d, DIRTY_MAX_X, this.cols - 1);
-    Atomics.store(d, DIRTY_MAX_Y, this.rows - 1);
-    Atomics.store(d, DIRTY_FLAG, 1);
+    const dirty = this.dirtyRect;
+    if (!dirty) return;
+    dirty.store(0, DIRTY_MIN_X);
+    dirty.store(0, DIRTY_MIN_Y);
+    dirty.store(this.cols - 1, DIRTY_MAX_X);
+    dirty.store(this.rows - 1, DIRTY_MAX_Y);
+    dirty.store(1, DIRTY_FLAG);
   }
 
   static peekDirty(pad = 0) {
-    const d = this.dirtyRect;
-    if (!d || Atomics.load(d, DIRTY_FLAG) === 0) return null;
-    _dirtyBox.minX = Math.max(0, Atomics.load(d, DIRTY_MIN_X) - pad);
-    _dirtyBox.minY = Math.max(0, Atomics.load(d, DIRTY_MIN_Y) - pad);
-    _dirtyBox.maxX = Math.min(this.cols - 1, Atomics.load(d, DIRTY_MAX_X) + pad);
-    _dirtyBox.maxY = Math.min(this.rows - 1, Atomics.load(d, DIRTY_MAX_Y) + pad);
+    const dirty = this.dirtyRect;
+    if (!dirty || dirty.load(DIRTY_FLAG) === 0) return null;
+    _dirtyBox.minX = Math.max(0, dirty.load(DIRTY_MIN_X) - pad);
+    _dirtyBox.minY = Math.max(0, dirty.load(DIRTY_MIN_Y) - pad);
+    _dirtyBox.maxX = Math.min(this.cols - 1, dirty.load(DIRTY_MAX_X) + pad);
+    _dirtyBox.maxY = Math.min(this.rows - 1, dirty.load(DIRTY_MAX_Y) + pad);
     return _dirtyBox;
   }
 
   static consumeDirty(pad = 1) {
-    const d = this.dirtyRect;
-    if (!d || Atomics.exchange(d, DIRTY_FLAG, 0) === 0) return null;
-    const minX = Atomics.load(d, DIRTY_MIN_X);
-    const minY = Atomics.load(d, DIRTY_MIN_Y);
-    const maxX = Atomics.load(d, DIRTY_MAX_X);
-    const maxY = Atomics.load(d, DIRTY_MAX_Y);
-    Atomics.store(d, DIRTY_MIN_X, this.cols);
-    Atomics.store(d, DIRTY_MIN_Y, this.rows);
-    Atomics.store(d, DIRTY_MAX_X, -1);
-    Atomics.store(d, DIRTY_MAX_Y, -1);
+    const dirty = this.dirtyRect;
+    if (!dirty || dirty.exchange(0, DIRTY_FLAG) === 0) return null;
+    const minX = dirty.load(DIRTY_MIN_X);
+    const minY = dirty.load(DIRTY_MIN_Y);
+    const maxX = dirty.load(DIRTY_MAX_X);
+    const maxY = dirty.load(DIRTY_MAX_Y);
+    dirty.store(this.cols, DIRTY_MIN_X);
+    dirty.store(this.rows, DIRTY_MIN_Y);
+    dirty.store(-1, DIRTY_MAX_X);
+    dirty.store(-1, DIRTY_MAX_Y);
     _dirtyBox.minX = Math.max(0, minX - pad);
     _dirtyBox.minY = Math.max(0, minY - pad);
     _dirtyBox.maxX = Math.min(this.cols - 1, maxX + pad);
@@ -323,8 +341,8 @@ export class WorldGrid extends SharedResource {
     const meta = this.shotMeta;
     const data = this.shotData;
     if (!meta || !data) return false;
-    const head = Atomics.load(meta, SHOT_HEAD);
-    const tail = Atomics.load(meta, SHOT_TAIL);
+    const head = meta.load(SHOT_HEAD);
+    const tail = meta.load(SHOT_TAIL);
     const next = head + 1 < SHOT_CAP ? head + 1 : 0;
     if (next === tail) return false;
     const o = head * SHOT_STRIDE;
@@ -333,7 +351,7 @@ export class WorldGrid extends SharedResource {
     data[o + 2] = y;
     data[o + 3] = entityIndex;
     data[o + 4] = fixtureIndex;
-    Atomics.store(meta, SHOT_HEAD, next);
+    meta.store(next, SHOT_HEAD);
     return true;
   }
 
@@ -342,8 +360,8 @@ export class WorldGrid extends SharedResource {
     const meta = this.shotMeta;
     const data = this.shotData;
     if (!meta || !data) return null;
-    const tail = Atomics.load(meta, SHOT_TAIL);
-    const head = Atomics.load(meta, SHOT_HEAD);
+    const tail = meta.load(SHOT_TAIL);
+    const head = meta.load(SHOT_HEAD);
     if (tail === head) return null;
     const o = tail * SHOT_STRIDE;
     dest.kind = data[o] | 0;
@@ -352,7 +370,7 @@ export class WorldGrid extends SharedResource {
     dest.entityIndex = data[o + 3] | 0;
     dest.fixtureIndex = data[o + 4] | 0;
     const next = tail + 1 < SHOT_CAP ? tail + 1 : 0;
-    Atomics.store(meta, SHOT_TAIL, next);
+    meta.store(next, SHOT_TAIL);
     return dest;
   }
 
@@ -1351,24 +1369,6 @@ function polysToLocal(polys, ox, oy) {
     if (signedArea(ccw) > 1e-8) out.push(ccw);
   }
   return out;
-}
-
-function atomicMin(arr, i, v) {
-  let cur = Atomics.load(arr, i);
-  while (v < cur) {
-    const prev = Atomics.compareExchange(arr, i, cur, v);
-    if (prev === cur) return;
-    cur = prev;
-  }
-}
-
-function atomicMax(arr, i, v) {
-  let cur = Atomics.load(arr, i);
-  while (v > cur) {
-    const prev = Atomics.compareExchange(arr, i, cur, v);
-    if (prev === cur) return;
-    cur = prev;
-  }
 }
 
 function ensureExtractScratch(field, n) {

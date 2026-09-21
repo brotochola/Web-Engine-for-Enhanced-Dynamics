@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SharedResource } from '../../src/core/sharedResource.js';
+import { SharedResource, SharedResourceMailbox } from '../../src/core/sharedResource.js';
 
 class WorldGrid extends SharedResource {}
 class GameState extends SharedResource {}
@@ -35,9 +35,13 @@ test('serializeSchema uses type names for worker postMessage', () => {
   const packed = SharedResource.serializeSchema({
     flags: { type: Uint8Array, length: 32 },
     score: Int32Array,
+    mail: { type: Int32Array, mailbox: true },
   });
   assert.deepEqual(packed.flags, { type: 'Uint8Array', length: 32 });
   assert.deepEqual(packed.score, { type: 'Int32Array', length: 1 });
+  assert.deepEqual(packed.mail, { type: 'Int32Array', length: 1, atomic: true });
+  assert.equal('atomic' in packed.flags, false);
+  assert.equal('atomic' in packed.score, false);
 
   class Other extends SharedResource {}
   const sab = new SharedArrayBuffer(SharedResource.getBufferSize(packed));
@@ -83,5 +87,70 @@ test('bindFromInit binds a loaded class', () => {
   );
   LoadedGrid.n[0] = 9;
   assert.equal(LoadedGrid.n[0], 9);
+  SharedResource.resetAll();
+});
+
+test('atomic:true on Float32Array throws', () => {
+  const schema = { cells: { type: Float32Array, length: 4, atomic: true } };
+  assert.throws(() => SharedResource.serializeSchema(schema), {
+    name: 'TypeError',
+    message: /field "cells" atomic:true/,
+  });
+  assert.throws(() => SharedResource.getBufferSize(schema), {
+    name: 'TypeError',
+    message: /field "cells" atomic:true/,
+  });
+});
+
+test('atomic:true on Uint8ClampedArray throws', () => {
+  assert.throws(
+    () => SharedResource.getBufferSize({ pix: { type: Uint8ClampedArray, atomic: true } }),
+    /field "pix" atomic:true/,
+  );
+});
+
+test('two class views add the same mailbox', () => {
+  class MailA extends SharedResource {}
+  class MailB extends SharedResource {}
+  const schema = { score: { type: Int32Array, atomic: true } };
+  const sab = new SharedArrayBuffer(SharedResource.getBufferSize(schema));
+  MailA.initialize(sab, schema);
+  MailB.initialize(sab, schema);
+
+  assert.ok(MailA.score instanceof SharedResourceMailbox);
+  assert.equal(MailA.score.add(3), 0);
+  assert.equal(MailB.score.add(4), 3);
+  assert.equal(MailA.score.load(), 7);
+  MailB.score.store(11);
+  assert.equal(MailA.score.view[0], 11);
+  assert.equal(MailA.score.exchange(0), 11);
+  assert.equal(MailB.score.load(), 0);
+  assert.equal(MailA.score.compareExchange(0, 5), 0);
+  assert.equal(MailB.score.load(), 5);
+  assert.equal(MailA.score.compareExchange(0, 9), 5);
+  assert.equal(MailB.score.load(), 5);
+
+  SharedResource.resetAll();
+});
+
+test('mailbox:true is the same as atomic:true', () => {
+  class Slots extends SharedResource {}
+  const schema = { lives: { type: Uint32Array, length: 10, mailbox: true } };
+  Slots.initialize(new SharedArrayBuffer(SharedResource.getBufferSize(schema)), schema);
+  assert.equal(Slots.lives.length, 10);
+  assert.equal(Slots.lives.add(2, 3), 0);
+  assert.equal(Slots.lives.load(3), 2);
+  SharedResource.resetAll();
+});
+
+test('unmarked Int32Array is a typed array, not a mailbox', () => {
+  class Plain extends SharedResource {}
+  const schema = { score: Int32Array };
+  const sab = new SharedArrayBuffer(SharedResource.getBufferSize(schema));
+  Plain.initialize(sab, schema);
+  assert.equal(Plain.score instanceof SharedResourceMailbox, false);
+  assert.equal(Plain.score instanceof Int32Array, true);
+  Plain.score[0] = 2;
+  assert.equal(Plain.score[0], 2);
   SharedResource.resetAll();
 });
