@@ -4,7 +4,6 @@ const { GameObject, Collider, SpriteRenderer, enums, ShadowCaster, RigidBody } =
 const { ShapeType } = enums;
 
 export class Platform extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [Collider, SpriteRenderer, ShadowCaster, RigidBody];
 
   setup() {

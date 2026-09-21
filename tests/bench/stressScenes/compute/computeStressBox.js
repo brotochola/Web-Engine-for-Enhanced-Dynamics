@@ -5,7 +5,6 @@ const { ShapeType } = enums;
 
 /** Fed collider for ComputeStressScene (no tick work). */
 export class ComputeStressBox extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, SpriteRenderer];
   static tickInterval = 16;
 

@@ -3,7 +3,6 @@ import WEED from '/src/index.js';
 const { GameObject, Collider, SpriteRenderer } = WEED;
 
 export class SpawnStormEntity extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [Collider, SpriteRenderer];
   static tickInterval = 8;
 

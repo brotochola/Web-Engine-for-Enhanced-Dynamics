@@ -95,9 +95,9 @@ export class DebugUI {
   // ========================================
 
   /**
-   * Scene switcher entries. Each row is `{ name, class }` or `{ name, load }`.
-   * `load` should return a Scene class; the first resolve caches it on `class`.
-   * @param {{ name: string, class?: Function, load?: () => Promise<Function>|Function }[]} scenes
+   * Scene switcher entries. `{ name, url }` preferred (workers import that module).
+   * Also `{ name, class }` or `{ name, load }`.
+   * @param {{ name: string, url?: string, export?: string, class?: Function, load?: () => Promise<Function>|Function }[]} scenes
    */
   registerScenes(scenes) {
     this.registeredScenes = scenes;

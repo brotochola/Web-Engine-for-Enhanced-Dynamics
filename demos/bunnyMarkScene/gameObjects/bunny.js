@@ -13,7 +13,6 @@ const { GameObject, SpriteRenderer, Transform } = WEED;
 const BUNNY_SCALE = 0.5;
 
 export class Bunny extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [SpriteRenderer, BunnyMotion];
   static reportMarkActive = true;
 

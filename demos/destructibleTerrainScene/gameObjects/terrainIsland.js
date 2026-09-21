@@ -41,7 +41,6 @@ function applyPolysFlat(collider, polys, dx, dy) {
 }
 
 export class TerrainIsland extends GameObject {
-  static scriptUrl = import.meta.url;
   static serializable = false;
   static instances = [];
   static components = [RigidBody, Collider, MeshRenderer];

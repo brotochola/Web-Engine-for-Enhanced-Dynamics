@@ -61,7 +61,7 @@ Bare ctor = length 1. `WorldGrid.cells` **is** the TypedArray (`WorldGrid.cells[
 | --- | --- |
 | Whoever the scene says (typically logic `tick` or `scene.update`) | All threads that imported the class |
 
-`static scriptUrl` on the subclass so workers `import()` it. Scene init **throws** if the class is missing after `scriptUrl` (`bindFromInit`). Pin the single writer with `forceProcessOnLogicWorker` (Int16 SoA; `FORCE_PROCESS_ON_LOGIC_WORKER_NONE` = −1). `entityTypeForcedLogicWorkerCount` (Uint16 per type) drives `entityTypeHasForcedLogicWorker` so a type can return to stride when the last forced instance despawns.
+Workers `import()` the scene module URL from `loadScene`; the SharedResource class must be imported by that file. Scene init **throws** if the class is missing after that import (`bindFromInit`). Pin the single writer with `forceProcessOnLogicWorker` (Int16 SoA; `FORCE_PROCESS_ON_LOGIC_WORKER_NONE` = −1). `entityTypeForcedLogicWorkerCount` (Uint16 per type) drives `entityTypeHasForcedLogicWorker` so a type can return to stride when the last forced instance despawns.
 
 ---
 

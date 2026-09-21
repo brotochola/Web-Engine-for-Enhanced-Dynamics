@@ -2,13 +2,31 @@
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
 
-async function resolveRegisteredScene(entry) {
-  if (entry.class) return entry.class;
+function sceneEntryIsActive(scene, entry) {
+  if (!scene) return false;
+  if (entry.class && scene.constructor === entry.class) return true;
+  if (entry.url && scene.sceneScriptUrl) {
+    return scene.sceneScriptUrl.includes(entry.url) || entry.url.includes(scene.sceneScriptUrl);
+  }
+  return false;
+}
+
+async function loadRegisteredScene(gameEngine, entry) {
+  if (entry.url) {
+    await gameEngine.loadScene(entry.url, { export: entry.export });
+    entry.class = gameEngine.currentScene && gameEngine.currentScene.constructor;
+    return;
+  }
+  if (entry.class) {
+    await gameEngine.loadScene(entry.class);
+    return;
+  }
   if (typeof entry.load === 'function') {
     entry.class = await entry.load();
-    return entry.class;
+    await gameEngine.loadScene(entry.class);
+    return;
   }
-  throw new Error(`registerScenes: "${entry.name}" needs class or load()`);
+  throw new Error(`registerScenes: "${entry.name}" needs url, class, or load()`);
 }
 
 export class ScenePanel {
@@ -77,14 +95,13 @@ export class ScenePanel {
       const btn = document.createElement('button');
       btn.className = 'debug-ui-btn scene-btn';
       btn.textContent = sceneConfig.name;
-      if (scene && scene.constructor === sceneConfig.class) {
+      if (sceneEntryIsActive(scene, sceneConfig)) {
         btn.classList.add('active');
       }
       btn.onclick = async () => {
         if (!this.debugUI.gameEngine) return;
-        const SceneClass = await resolveRegisteredScene(sceneConfig);
-        if (this.debugUI.scene?.constructor === SceneClass) return;
-        await this.debugUI.gameEngine.loadScene(SceneClass);
+        if (sceneEntryIsActive(this.debugUI.scene, sceneConfig)) return;
+        await loadRegisteredScene(this.debugUI.gameEngine, sceneConfig);
       };
       container.appendChild(btn);
     }

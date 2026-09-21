@@ -16,7 +16,6 @@ const LOOK_AHEAD_SEC = 0//0.33;
 const CAMERA_FOLLOW_SMOOTH = 0.1;
 
 export class PlayerCar extends Car {
-    static scriptUrl = import.meta.url;
 
     static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, CarComponent];
 

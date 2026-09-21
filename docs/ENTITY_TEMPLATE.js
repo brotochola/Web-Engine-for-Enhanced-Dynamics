@@ -4,9 +4,6 @@ import WEED from '/src/index.js';
 const { GameObject, RigidBody, Collider, SpriteRenderer, SoundManager, Mouse, Gamepad } = WEED;
 
 class MyEntity extends GameObject {
-  // Required for script auto-loading in worker contexts
-  static scriptUrl = import.meta.url;
-
   // Required: fixed component set for this entity type
   static components = [RigidBody, Collider, SpriteRenderer];
 

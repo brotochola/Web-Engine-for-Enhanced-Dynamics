@@ -4,9 +4,17 @@
 import { DebugUI } from './debug/debugUi.js';
 import { Mouse } from './mouse.js';
 import { SoundManager } from './soundManager.js';
+import { Scene } from './scene.js';
 import { printLogo } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { DEBUG_DEFAULTS, ENGINE_DEFAULTS } from '../util/configDefaults.js';
+import {
+  ensureResourceTimingBuffer,
+  inferSceneScriptUrl,
+  isSceneClass,
+  pickSceneClass,
+  toAbsoluteScriptUrl,
+} from '../util/sceneScript.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
@@ -53,6 +61,8 @@ class GameEngine {
     // Browser environment hardening
     this._injectedStyle = null;
     if (this.injectStyles) this._injectBodyStyles();
+
+    ensureResourceTimingBuffer();
 
     // Create canvas immediately
     this._createCanvas();
@@ -197,25 +207,55 @@ class GameEngine {
   }
 
   /**
-   * Load and initialize a new scene
-   * Destroys the current scene if one exists
-   * @param {Class} SceneClass - Scene class to instantiate
-   * @param {{ restorePayload?: object, restoreSlot?: string }} [options]
+   * Load and initialize a new scene.
+   * String: module URL (`/demos/predatorScene/predatorScene.js`). Engine import()s it
+   * and workers load that same file (entity graph, no per-entity scriptUrl).
+   * Class: same as today; engine infers the file from loaded JS when it can.
+   * @param {string|Function} source
+   * @param {{ restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string }} [options]
    * @returns {boolean} - true if scene change accepted, false if busy
    */
-  async loadScene(SceneClass, options = {}) {
-    // Reject if already transitioning
+  async loadScene(source, options = {}) {
+    const label = typeof source === 'string' ? source : source && source.name;
     if (this.state === GameEngine.states.TRANSITIONING) {
       console.warn(
-        `⚠️ Scene transition already in progress. Ignoring request to load ${SceneClass.name}`
+        `⚠️ Scene transition already in progress. Ignoring request to load ${label}`
       );
       return false;
     }
 
-    // Set state to transitioning
     this.state = GameEngine.states.TRANSITIONING;
 
     try {
+      const origin = typeof location !== 'undefined' ? location.origin : '';
+      let SceneClass;
+      let sceneScriptUrl = null;
+
+      if (typeof source === 'string') {
+        sceneScriptUrl = toAbsoluteScriptUrl(source, origin);
+        const ns = await import(sceneScriptUrl);
+        SceneClass = pickSceneClass(ns, options.export, Scene);
+      } else if (typeof source === 'function') {
+        SceneClass = source;
+        if (options.scriptUrl) {
+          sceneScriptUrl = toAbsoluteScriptUrl(options.scriptUrl, origin);
+        } else if (SceneClass.scriptUrl) {
+          sceneScriptUrl = toAbsoluteScriptUrl(SceneClass.scriptUrl, origin);
+        } else {
+          sceneScriptUrl = await inferSceneScriptUrl(SceneClass);
+        }
+      } else {
+        throw new TypeError('loadScene expects a Scene class or module URL');
+      }
+
+      if (!isSceneClass(SceneClass, Scene) && SceneClass !== Scene) {
+        throw new TypeError(`loadScene: ${SceneClass && SceneClass.name} is not a Scene`);
+      }
+
+      if (sceneScriptUrl && !SceneClass.scriptUrl) {
+        SceneClass.scriptUrl = sceneScriptUrl;
+      }
+
       let restorePayload = options.restorePayload || null;
       if (!restorePayload && options.restoreSlot) {
         const { SaveStore, decodeSave } = await import('./save/saveGame.js');
@@ -245,6 +285,7 @@ class GameEngine {
       // Create and initialize new scene
       debugWorkerLog(`📥 Loading scene: ${SceneClass.name}`);
       this.currentScene = new SceneClass(this);
+      this.currentScene.sceneScriptUrl = sceneScriptUrl;
       if (restorePayload) {
         this.currentScene._restorePayload = restorePayload;
       }

@@ -4,7 +4,6 @@ import { SpawnStormEntity } from './spawnStormEntity.js';
 const { GameObject, SpriteRenderer, Query } = WEED;
 
 export class SpawnStormDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned() {

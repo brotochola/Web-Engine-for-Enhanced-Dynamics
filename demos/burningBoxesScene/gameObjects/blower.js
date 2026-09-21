@@ -6,7 +6,6 @@ const { ShapeType } = enums;
 const BLOW = 8;
 
 export class Blower extends GameObject {
-  static scriptUrl = import.meta.url;
   static instances = [];
   static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer];

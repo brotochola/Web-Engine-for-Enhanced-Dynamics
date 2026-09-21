@@ -5,7 +5,6 @@ const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer, rng, Q
 
 class Ball extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
-  static scriptUrl = import.meta.url;
   static serializable = true;
   // entityType auto-assigned during registration (no manual ID needed!)
   static instances = []; // Instance tracking for this class

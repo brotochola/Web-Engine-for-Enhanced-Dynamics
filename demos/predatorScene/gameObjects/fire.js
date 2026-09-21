@@ -17,7 +17,6 @@ const {
 const { ShapeType } = enums;
 
 export class Fire extends GameObject {
-  static scriptUrl = import.meta.url;
 
   // Add FireComponent for fire-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, FireComponent];

@@ -206,9 +206,7 @@ Tag components have no `ARRAY_SCHEMA` and allocate no `SharedArrayBuffer`. They 
 Not a Component. One SAB per **class**, sized by the schema in `Scene.static.sharedResources`, not by `totalEntityCount`. Fields are raw TypedArrays on the class (`WorldGrid.cells[i] = v`) after bind. Same one-writer-per-field rule as Mouse. No Atomics in v1.
 
 ```javascript
-class WorldGrid extends WEED.SharedResource {
-  static scriptUrl = import.meta.url; // workers import() this or bindFromInit throws
-}
+class WorldGrid extends WEED.SharedResource {}
 
 class DigScene extends WEED.Scene {
   static sharedResources = [
@@ -218,7 +216,7 @@ class DigScene extends WEED.Scene {
 }
 ```
 
-Subclass must set `static scriptUrl`. Pin the single writer with `forceProcessOnLogicWorker` on the entity that mutates the blob. Layout, bind, and teardown: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b. Worker init: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md).
+Import `WorldGrid` from the scene module (`game.loadScene('/path/to/digScene.js')`). Workers `import()` that file and `bindFromInit` attaches the views. Pin the single writer with `forceProcessOnLogicWorker` on the entity that mutates the blob. Layout, bind, and teardown: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b. Worker init: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md).
 
 **Screen visibility:** resolved per-type on the `typeInfo` object. `preRenderWorker` clears `Transform.isItOnScreen` once per visual frame and each entity render pass sets it to `1` when that entity is visible. The logic worker reads that single canonical byte only for entity types that have `CameraInOutListener`, so the callback path does not need to know which render component made the entity visible.
 
@@ -916,7 +914,7 @@ WEED.SoundManager.setMuted(true);
 
 ## Scene and Engine Teardown
 
-**Scene switch** (`game.loadScene(NextScene)`): the previous scene's `destroy()` runs teardown — workers terminated, shared buffers released, `Layer.reset()`, `NavGrid.reset()` (MessageChannel port closed), sprite registries cleared, boot atlases/`ImageBitmap`s closed via `_releaseBootAssets()`. `SoundManager.reset()` clears slots but **does not** close the `AudioContext` (avoids needing a new user gesture for audio on the next scene).
+**Scene switch** (`game.loadScene('/path/to/nextScene.js')` or a Scene class): the previous scene's `destroy()` runs teardown — workers terminated, shared buffers released, `Layer.reset()`, `NavGrid.reset()` (MessageChannel port closed), sprite registries cleared, boot atlases/`ImageBitmap`s closed via `_releaseBootAssets()`. `SoundManager.reset()` clears slots but **does not** close the `AudioContext` (avoids needing a new user gesture for audio on the next scene).
 
 **Engine destroy** (`await game.destroy()`): destroys the active scene, then `SoundManager.dispose()` (closes `AudioContext` and disconnects the worklet), removes the canvas.
 

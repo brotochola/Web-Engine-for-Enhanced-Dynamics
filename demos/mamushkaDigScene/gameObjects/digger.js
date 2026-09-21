@@ -36,7 +36,6 @@ const CLIPS = Object.freeze({
 });
 
 export class Digger extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [
     AdobeAnimComponent,
     RigidBody,

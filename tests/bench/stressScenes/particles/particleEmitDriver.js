@@ -13,7 +13,6 @@ const MARGIN = 64;
  * other logic workers lazy-init in tick from `this.index` + static emitPerTick.
  */
 export class ParticleEmitDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
   static emitPerTick = EMIT_PER_TICK;
 

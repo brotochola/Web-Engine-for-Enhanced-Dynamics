@@ -92,7 +92,7 @@ async function main() {
         const cyclesReport = [];
 
         for (let i = 0; i < cycles; i++) {
-          await game.loadScene(SceneClass);
+          await game.loadScene(sceneModule, { export: sceneExport });
           await sleep(2500); // let workers run for a bit
 
           const running = {

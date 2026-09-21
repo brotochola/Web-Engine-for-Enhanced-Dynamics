@@ -5,7 +5,6 @@ const { ShapeType } = enums;
 
 /** Static collider + RigidBody obstacle for Ray vs Box2D stress (circle or box). */
 export class RayStressEntity extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, SpriteRenderer];
   static tickInterval = 16;
 

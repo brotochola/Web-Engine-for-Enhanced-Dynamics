@@ -6,7 +6,6 @@ const { GameObject, RigidBody, Collider, LiquidFun } = WEED;
  * Runs sync LiquidFun.queryAABB + rayCast once particles exist.
  */
 export class LiquidFunQueryProbe extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider];
 
   onSpawned({ x = 0, y = 0, expectedMin = 10 } = {}) {

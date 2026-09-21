@@ -3,7 +3,6 @@ import WEED from '/src/index.js';
 const { GameObject, ParticleEmitter } = WEED;
 
 export class SteadyEmitter extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({ x = 0, y = 0, count = 24 } = {}) {

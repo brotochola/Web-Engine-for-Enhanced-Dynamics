@@ -7,7 +7,6 @@ const { GameObject, SpriteRenderer } = WEED;
  * Alpha is an auto SoA setter (no Box2D dirty, no mesh paint).
  */
 export class MinimalTickProp extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [SpriteRenderer];
 
   onSpawned({ x = 0, y = 0 } = {}) {
@@ -25,7 +24,6 @@ export class MinimalTickProp extends GameObject {
  * Same spawn / SoA write, no tick() override. Logic worker calls tickAll once.
  */
 export class MinimalTickAllProp extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [SpriteRenderer];
 
   onSpawned({ x = 0, y = 0 } = {}) {

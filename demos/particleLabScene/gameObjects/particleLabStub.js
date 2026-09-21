@@ -5,6 +5,5 @@ import WEED from '/src/index.js';
 const { GameObject, RigidBody, Collider } = WEED;
 
 export class ParticleLabStub extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider];
 }

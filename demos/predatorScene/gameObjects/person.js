@@ -26,7 +26,6 @@ import {
 const { RigidBody, Collider, SpriteRenderer, ShadowCaster, Transform, rng } = WEED;
 
 export class Person extends Lootable {
-  static scriptUrl = import.meta.url;
   static deriveSpeed = true;
   static defaultFriction = 0.005;
 

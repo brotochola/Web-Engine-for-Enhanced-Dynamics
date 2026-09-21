@@ -13,8 +13,8 @@ const HUD_CSS =
 
 export class BunnyMarkScene extends Scene {
     static config = {
-        worldWidth: window.innerWidth,
-        worldHeight: window.innerHeight,
+        worldWidth: typeof globalThis.innerWidth === 'number' ? globalThis.innerWidth : 1920,
+        worldHeight: typeof globalThis.innerHeight === 'number' ? globalThis.innerHeight : 1080,
         entityIdWidth: 32,
         seed: 1,
         spatial: {

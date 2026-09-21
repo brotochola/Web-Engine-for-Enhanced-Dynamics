@@ -7,7 +7,6 @@ const BATCH = 1000;
 const HOLD_EVERY = 8;
 
 export class BunnySpawner extends GameObject {
-    static scriptUrl = import.meta.url;
     static components = [];
 
     onSpawned() {

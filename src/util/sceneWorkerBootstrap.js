@@ -9,6 +9,8 @@ import { TileMap } from '../core/tileMap.js';
 import { NavGrid } from '../core/navGrid.js';
 import { SoundManager } from '../core/soundManager.js';
 import { SharedResource } from '../core/sharedResource.js';
+import { collectWorkerScriptsToLoad } from './sceneScript.js';
+export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
 // code, but cycling scenes within a session reuses the browser's HTTP and
@@ -124,30 +126,6 @@ function injectLoadedShaderSources(scene) {
   }
 }
 
-function toAbsoluteScriptUrl(path, origin) {
-  if (path.startsWith('blob:')) {
-    return path;
-  }
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return path;
-  }
-  if (path.startsWith('/')) {
-    return `${origin}${path}`;
-  }
-  return new URL(path, origin).href;
-}
-
-function collectSharedResourceScriptUrls(scene, origin = '') {
-  const regs = scene.sharedResourceRegs || [];
-  return [
-    ...new Set(
-      regs
-        .map((r) => r.scriptUrl)
-        .filter((url) => url)
-        .map((url) => toAbsoluteScriptUrl(url, origin))
-    ),
-  ];
-}
 
 function buildSharedResourcesInit(scene) {
   const regs = scene.sharedResourceRegs || [];
@@ -160,25 +138,6 @@ function buildSharedResourcesInit(scene) {
   }));
 }
 
-export function collectSceneWorkerScriptUrls(registeredClasses, origin = '') {
-  // Module workers import() this list as entries. Auto-registered parents
-  // (count 0) first poisons cyclic ESM (Lootable → Drop → MySoldier → Person).
-  // Pooled types first; parent scripts load later as cache hits onto self.
-  // Blob workers ignore this order (expandBlobEntityScripts DFS).
-  const ordered = registeredClasses.slice().sort((a, b) => {
-    const ac = a.count > 0 ? 1 : 0;
-    const bc = b.count > 0 ? 1 : 0;
-    return bc - ac;
-  });
-  return [
-    ...new Set(
-      ordered
-        .map((r) => r.scriptPath)
-        .filter((path) => path !== null && path !== undefined)
-        .map((path) => toAbsoluteScriptUrl(path, origin))
-    ),
-  ];
-}
 
 function buildSceneSharedBuffers(scene) {
   return {
@@ -234,6 +193,7 @@ function buildRegisteredClassesInfo(scene) {
     endIndex: r.startIndex + r.count,
     entityType: r.entityType,
     deriveSpeed: r.class.deriveSpeed === true,
+    engineProvided: r.class.scriptUrl === null,
     components: r.components.map((c) => c.name),
   }));
 }
@@ -267,6 +227,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     gridMetadata: scene.gridMetadata,
     maxDebugDrawEntries: scene.maxDebugDrawEntries,
     scriptsToLoad,
+    sceneScriptUrl: scene.sceneScriptUrl || null,
+    sceneClassName: scene.constructor.name,
     registeredClasses: buildRegisteredClassesInfo(scene),
     componentPools: buildComponentPoolsInfo(scene),
     sharedResources: buildSharedResourcesInit(scene),
@@ -574,10 +536,7 @@ export async function createSceneWorkers(scene) {
   injectLoadedShaderSources(scene);
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const scriptsToLoad = [
-    ...collectSceneWorkerScriptUrls(scene.registeredClasses, origin),
-    ...collectSharedResourceScriptUrls(scene, origin),
-  ];
+  const scriptsToLoad = collectWorkerScriptsToLoad(scene, origin);
   const workerPorts = scene.setupWorkerCommunication();
   const sharedBuffers = buildSceneSharedBuffers(scene);
   const initData = buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad);

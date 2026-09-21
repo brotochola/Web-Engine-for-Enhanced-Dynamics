@@ -24,7 +24,6 @@ const {
 
 export class Player extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
-  static scriptUrl = import.meta.url;
 
   // Define components this entity uses
   static components = [

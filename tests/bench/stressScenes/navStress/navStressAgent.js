@@ -3,7 +3,6 @@ import WEED from '/src/index.js';
 const { GameObject, NavGrid } = WEED;
 
 export class NavStressAgent extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({ x = 0, y = 0, tx = 0, ty = 0 } = {}) {

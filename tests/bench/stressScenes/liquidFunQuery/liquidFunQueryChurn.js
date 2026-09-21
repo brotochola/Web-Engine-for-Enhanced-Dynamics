@@ -7,7 +7,6 @@ const { GameObject, RigidBody, Collider, LiquidFun } = WEED;
  * Also one-shot self-check once particles exist.
  */
 export class LiquidFunQueryChurn extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider];
 
   onSpawned({ x = 0, y = 0 } = {}) {

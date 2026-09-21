@@ -108,7 +108,7 @@ await scene.saveGame('slot1');
 await scene.loadGame('slot1');    // remounts scene with restore
 
 // Engine
-await game.loadScene(MyScene);                           // new game
+await game.loadScene('/path/to/myScene.js');             // new game
 await game.loadScene(MyScene, { restoreSlot: 'slot1' });
 await game.loadScene(MyScene, { restorePayload: payload });
 

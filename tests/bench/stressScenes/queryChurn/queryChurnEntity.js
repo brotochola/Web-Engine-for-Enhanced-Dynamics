@@ -4,7 +4,6 @@ import { QueryChurnTag } from './queryChurnTag.js';
 const { GameObject, Collider, SpriteRenderer } = WEED;
 
 export class QueryChurnEntity extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [Collider, SpriteRenderer, QueryChurnTag];
   static tickInterval = 4;
 

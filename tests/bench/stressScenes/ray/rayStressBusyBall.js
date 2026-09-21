@@ -5,7 +5,6 @@ const { ShapeType } = enums;
 
 /** Dynamic ball pile to saturate Box2D under L2 busy-physics A/B. */
 export class RayStressBusyBall extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, SpriteRenderer];
   static tickInterval = 16;
 

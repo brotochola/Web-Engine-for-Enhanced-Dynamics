@@ -3,7 +3,6 @@ import WEED from '/src/index.js';
 const { GameObject, SpriteRenderer } = WEED;
 
 export class RenderQueueStressEntity extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [SpriteRenderer];
   static tickInterval = 16;
 

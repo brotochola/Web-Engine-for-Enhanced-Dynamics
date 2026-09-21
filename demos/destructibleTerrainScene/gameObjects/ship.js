@@ -24,7 +24,6 @@ const CAM_SMOOTH = 0.12;
 const MUZZLE_PAD = Math.hypot(HALF_W, HALF_H) + 4;
 
 export class Ship extends GameObject {
-  static scriptUrl = import.meta.url;
   static serializable = false;
   static instances = [];
   static components = [RigidBody, Collider, SpriteRenderer];

@@ -21,7 +21,7 @@ Each worker owns its data region so hot paths can avoid broad locking and per-fr
 
 All workers live in `src/workers/`. They are bootstrapped by `src/util/sceneWorkerBootstrap.js`, invoked from `src/core/scene.js` (`createWorkers()`).
 
-`Scene.static.sharedResources` is allocated in `sceneSharedBuffers.js` (`buffers.sharedResources[ClassName]`). The init payload carries `{ name, sab, schema, scriptUrl }[]`. After each worker `import()`s `scriptUrl`, `SharedResource.bindFromInit` attaches typed views on the class (`WorldGrid.cells`). Missing class after `scriptUrl` throws. Teardown calls `SharedResource.resetAll()`. Layout: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b.
+`Scene.static.sharedResources` is allocated in `sceneSharedBuffers.js` (`buffers.sharedResources[ClassName]`). The init payload carries `{ name, sab, schema, scriptUrl }[]`. Each worker `import()`s the scene module URL (`loadScene('/path/to/scene.js')`), then `SharedResource.bindFromInit` attaches typed views on the class (`WorldGrid.cells`). Missing class after that import throws. Teardown calls `SharedResource.resetAll()`. Layout: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b.
 
 ---
 

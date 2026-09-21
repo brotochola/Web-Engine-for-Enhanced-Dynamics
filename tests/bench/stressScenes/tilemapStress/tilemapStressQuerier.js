@@ -6,7 +6,6 @@ const QUERIES_PER_TICK = 16500;
 const MAP_PX = 64 * 32;
 
 export class TilemapStressQuerier extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({ x = 0, y = 0, salt = 0 } = {}) {

@@ -42,7 +42,6 @@ function aabbOverlapCells(a, b) {
 }
 
 export class WorldGridManager extends GameObject {
-  static scriptUrl = import.meta.url;
   static serializable = false;
   static instances = [];
   static components = [];

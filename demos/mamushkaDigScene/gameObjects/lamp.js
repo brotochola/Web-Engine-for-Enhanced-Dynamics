@@ -9,7 +9,6 @@ const LAMP_RADIUS = 14;
 const LAMP_RANGE = 750;
 
 export class Lamp extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [Collider, SpriteRenderer, LightEmitter, RigidBody];
 
   setup() {

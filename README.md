@@ -125,7 +125,6 @@ import WEED from '@weed.js/engine';
 const { GameObject, Scene, RigidBody, Collider, SpriteRenderer } = WEED;
 
 class Zombie extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, SpriteRenderer];
 
   setup() {
@@ -178,34 +177,39 @@ class ZombieScene extends Scene {
 }
 
 const game = new WEED.GameEngine({ debug: true });
-await game.loadScene(ZombieScene);
+await game.loadScene(import.meta.url);
 ```
 
-Keeping `Zombie` and `ZombieScene` in one file is fine for a small game.
+Keeping `Zombie` and `ZombieScene` in one file is fine for a small game. Workers `import()` that same file — no `scriptUrl` on entities.
 
 ---
 
 ## Loading scenes
 
-`loadScene` takes a **class**, not a URL. `game.loadScene('/foo.js')` does not exist. Resolve the module in your app, then pass the class.
-
-Import **the scene you are about to run**. Do not barrel every level in `main` the way an old demo menu did (static `import` of 20 scenes just to draw buttons). That downloads and evaluates GameObject graphs you never spawn.
-
-One level, already in the same file: `await game.loadScene(ZombieScene)` as above.
-
-Several levels — dynamic `import()` with a **static** specifier so Vite/Rollup emit a chunk:
+`loadScene` takes a **module URL**. Workers import that file; ESM loads every GameObject the scene already imports. Do not put `static scriptUrl = import.meta.url` on each entity.
 
 ```javascript
-const { DungeonScene } = await import('./scenes/dungeonScene.js');
-await game.loadScene(DungeonScene);
+await game.loadScene('/demos/predatorScene/predatorScene.js');
 ```
 
-Several scenes in the debug overlay: register `{ name, load }` (same shape as `demos/index.html`). The first click caches the class.
+Same file as the example above: `await game.loadScene(import.meta.url)`.
+
+Bundlers — pass a static URL so the chunk is emitted:
+
+```javascript
+await game.loadScene(new URL('./scenes/dungeonScene.js', import.meta.url).href);
+```
+
+`loadScene(DungeonScene)` still works (class sugar). The engine infers the file from loaded JS when it can.
+
+Import **the scene you are about to run**. Do not barrel every level in `main`. A menu should only `import()` / `loadScene` the URL for the level you click.
+
+Several scenes in the debug overlay: register `{ name, url }` (same shape as `demos/index.html`).
 
 ```javascript
 game.debugUI.registerScenes([
-  { name: 'Dungeon', load: () => import('./scenes/dungeonScene.js').then((m) => m.DungeonScene) },
-  { name: 'Town', load: () => import('./scenes/townScene.js').then((m) => m.TownScene) },
+  { name: 'Dungeon', url: new URL('./scenes/dungeonScene.js', import.meta.url).href },
+  { name: 'Town', url: new URL('./scenes/townScene.js', import.meta.url).href },
 ]);
 ```
 
@@ -218,7 +222,7 @@ ESM modules already visited stay in the heap until reload. `destroy()` on a scen
 WeedJS is intended to be a full 2D game runtime, not just a renderer. The major subsystems are all built around pooled objects, typed arrays, shared memory, worker ownership, and low-allocation hot paths.
 
 - **Pooled ECS-style entities**: `GameObject` instances are facades over typed arrays, with fixed component sets per entity type and reusable spawn/despawn pools.
-- **SharedResource**: one `SharedArrayBuffer` per class for world blobs (grids, scores) that are not SoA × entity count. Scene declares `static sharedResources`; workers bind via `scriptUrl`. One writer per field — pin it with `forceProcessOnLogicWorker`. Details: [`docs/MEMORY_STRUCTURE.md`](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/MEMORY_STRUCTURE.md).
+- **SharedResource**: one `SharedArrayBuffer` per class for world blobs (grids, scores) that are not SoA × entity count. Scene declares `static sharedResources`; workers bind the class after `import()` of the scene module. One writer per field — pin it with `forceProcessOnLogicWorker`. Details: [`docs/MEMORY_STRUCTURE.md`](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/MEMORY_STRUCTURE.md).
 - **Particle emitter**: `ParticleEmitter.emit()` supports sparks, smoke, blood, muzzle effects, floor decals, alpha/scale/tint controls, gravity, blending, and worker-side particle simulation.
 - **Bullets and projectile trails**: `BulletPool` and `BulletComponent` provide lightweight projectile slots, impact reporting, damage payloads, trail rendering, and visibility culling without turning every shot into a full entity.
 - **Decorations and attachments**: `DecorationPool` handles trees, rocks, props, child decorations attached to entities, sway animation, custom anchors, tint, alpha, and Y-sort ordering.

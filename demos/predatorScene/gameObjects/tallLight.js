@@ -6,7 +6,6 @@ const { ShapeType } = enums;
 
 export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
-  static scriptUrl = import.meta.url;
   static serializable = true;
   // Tall lights are simple lit props with collision, a sprite, and an emitter.
   static components = [Collider, SpriteRenderer, LightEmitter];

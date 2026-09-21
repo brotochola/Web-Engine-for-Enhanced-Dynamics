@@ -12,7 +12,6 @@ const { SpriteRenderer, RigidBody, Collider, CollisionListener } = WEED;
 const _navVec = { x: 0, y: 0 };
 
 export class AICar extends Car {
-    static scriptUrl = import.meta.url;
 
     static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, CarComponent];
 

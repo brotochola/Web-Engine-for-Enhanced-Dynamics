@@ -15,7 +15,6 @@ const MARGIN = 200;
  * lazy-inits from `this.index` + static defaults on the other logic workers.
  */
 export class BulletStressDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
   static spawnPerTick = DEFAULT_SPAWN_PER_TICK;
 

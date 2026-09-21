@@ -4,7 +4,6 @@ const { GameObject, Collider, LightEmitter, enums } = WEED;
 const { ShapeType } = enums;
 
 export class ZenithalLight extends GameObject {
-  static scriptUrl = import.meta.url;
 
   static components = [Collider, LightEmitter];
 

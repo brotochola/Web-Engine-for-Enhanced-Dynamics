@@ -5,7 +5,6 @@ import { QueryChurnEntity } from './queryChurnEntity.js';
 const { GameObject, SpriteRenderer, Query } = WEED;
 
 export class QueryChurnDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned() {

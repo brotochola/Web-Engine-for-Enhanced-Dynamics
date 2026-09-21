@@ -262,7 +262,6 @@ export function sleepFarMamushkaBoxes(px, py) {
 }
 
 export class MamushkaBox extends GameObject {
-  static scriptUrl = import.meta.url;
 
   static components = [
     RigidBody,

@@ -3,7 +3,6 @@ import WEED from '/src/index.js';
 const { GameObject, AdobeAnimComponent, AdobeAnimRegistry, RigidBody, Collider, Mouse } = WEED;
 
 export class AdobeAnimateCharacter extends GameObject {
-  static scriptUrl = import.meta.url;
 
   static components = [AdobeAnimComponent, RigidBody, Collider];
   static assetName = 'willian';

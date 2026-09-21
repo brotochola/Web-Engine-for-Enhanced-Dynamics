@@ -42,35 +42,34 @@
     window.game = game;
 
     const scenes = [
-      { name: '🐺 Predators', load: () => import('/demos/predatorScene/predatorScene.js').then((m) => m.PredatorScene) },
-      { name: '⚽ Balls', load: () => import('/demos/ballsScene/ballsScene.js').then((m) => m.BallsScene) },
-      { name: '🔗 Constraints', load: () => import('/demos/constraintsTestScene/constraintsTestScene.js').then((m) => m.ConstraintsTestScene) },
-      { name: '📦 Boxes', load: () => import('/demos/ballsAndRectanglesScene/ballsAndRectanglesScene.js').then((m) => m.BallsAndRectanglesScene) },
-      { name: '🐜 Ants', load: () => import('/demos/bichosScene/bichosScene.js').then((m) => m.BichosScene) },
-      { name: '🐦 Boids', load: () => import('/demos/boidsScene/boidsScene.js').then((m) => m.BoidsScene) },
-      { name: '🚗 Car', load: () => import('/demos/carScene/carScene.js').then((m) => m.CarScene) },
-      { name: '💧 Water & Boxes', load: () => import('/demos/waterAndBoxesScene/waterAndBoxesScene.js').then((m) => m.WaterAndBoxesScene) },
-      { name: '🔬 Zenithal Particles', load: () => import('/demos/zenithalParticleTestScene/zenithalParticleTestScene.js').then((m) => m.ZenithalParticleTestScene) },
-      { name: '✨ Particle Lab', load: () => import('/demos/particleLabScene/particleLabScene.js').then((m) => m.ParticleLabScene) },
-      { name: 'Bunny Mark', load: () => import('/demos/bunnyMarkScene/bunnyMarkScene.js').then((m) => m.BunnyMarkScene) },
-      { name: '🦴 Adobe Animate', load: () => import('/demos/adobeAnimateScene/adobeAnimateScene.js').then((m) => m.AdobeAnimateScene) },
-      { name: 'platformer game', load: () => import('/demos/platformerGameScene/platformerGameScene.js').then((m) => m.PlatformerGameScene) },
-      { name: 'Constraint Boxes', load: () => import('/demos/constraintBoxScene/constraintBoxScene.js').then((m) => m.ConstraintBoxScene) },
-      { name: 'Oriented Boxes', load: () => import('/demos/orientedBoxScene/orientedBoxScene.js').then((m) => m.OrientedBoxScene) },
-      { name: 'Weld Break', load: () => import('/demos/weldBreakScene/weldBreakScene.js').then((m) => m.WeldBreakScene) },
-      { name: 'Box2D QueryAABB', load: () => import('/demos/box2dQueryAabbScene/box2dQueryAabbScene.js').then((m) => m.Box2dQueryAabbScene) },
-      { name: '🐷 Bad Piggies', load: () => import('/demos/badPiggiesScene/badPiggiesScene.js').then((m) => m.BadPiggiesScene) },
-      { name: '🌊 LiquidFun Fluid', load: () => import('/demos/liquidFunDemoScene/liquidFunDemoScene.js').then((m) => m.LiquidFunDemoScene) },
-      { name: '🧪 LiquidFun Stress (bench)', load: () => import('/tests/bench/stressScenes/liquidFunStressScene.js').then((m) => m.LiquidFunStressScene) },
-      { name: '🧱 Mamushka Dig', load: () => import('/demos/mamushkaDigScene/mamushkaDigScene.js').then((m) => m.MamushkaDigScene) },
-      { name: '🔥 Burning Boxes', load: () => import('/demos/burningBoxesScene/burningBoxesScene.js').then((m) => m.BurningBoxesScene) },
-      { name: '⛰️ Destructible Terrain', load: () => import('/demos/destructibleTerrainScene/destructibleTerrainScene.js').then((m) => m.DestructibleTerrainScene) },
+      { name: '🐺 Predators', url: '/demos/predatorScene/predatorScene.js' },
+      { name: '⚽ Balls', url: '/demos/ballsScene/ballsScene.js' },
+      { name: '🔗 Constraints', url: '/demos/constraintsTestScene/constraintsTestScene.js' },
+      { name: '📦 Boxes', url: '/demos/ballsAndRectanglesScene/ballsAndRectanglesScene.js' },
+      { name: '🐜 Ants', url: '/demos/bichosScene/bichosScene.js' },
+      { name: '🐦 Boids', url: '/demos/boidsScene/boidsScene.js' },
+      { name: '🚗 Car', url: '/demos/carScene/carScene.js' },
+      { name: '💧 Water & Boxes', url: '/demos/waterAndBoxesScene/waterAndBoxesScene.js' },
+      { name: '🔬 Zenithal Particles', url: '/demos/zenithalParticleTestScene/zenithalParticleTestScene.js' },
+      { name: '✨ Particle Lab', url: '/demos/particleLabScene/particleLabScene.js' },
+      { name: 'Bunny Mark', url: '/demos/bunnyMarkScene/bunnyMarkScene.js' },
+      { name: '🦴 Adobe Animate', url: '/demos/adobeAnimateScene/adobeAnimateScene.js' },
+      { name: 'platformer game', url: '/demos/platformerGameScene/platformerGameScene.js' },
+      { name: 'Constraint Boxes', url: '/demos/constraintBoxScene/constraintBoxScene.js' },
+      { name: 'Oriented Boxes', url: '/demos/orientedBoxScene/orientedBoxScene.js' },
+      { name: 'Weld Break', url: '/demos/weldBreakScene/weldBreakScene.js' },
+      { name: 'Box2D QueryAABB', url: '/demos/box2dQueryAabbScene/box2dQueryAabbScene.js' },
+      { name: '🐷 Bad Piggies', url: '/demos/badPiggiesScene/badPiggiesScene.js' },
+      { name: '🌊 LiquidFun Fluid', url: '/demos/liquidFunDemoScene/liquidFunDemoScene.js' },
+      { name: '🧪 LiquidFun Stress (bench)', url: '/tests/bench/stressScenes/liquidFunStressScene.js' },
+      { name: '🧱 Mamushka Dig', url: '/demos/mamushkaDigScene/mamushkaDigScene.js' },
+      { name: '🔥 Burning Boxes', url: '/demos/burningBoxesScene/burningBoxesScene.js' },
+      { name: '⛰️ Destructible Terrain', url: '/demos/destructibleTerrainScene/destructibleTerrainScene.js' },
     ];
 
     async function startScene(entry) {
-      if (!entry.class) entry.class = await entry.load();
       document.getElementById('scene_list').style.display = 'none';
-      await game.loadScene(entry.class);
+      await game.loadScene(entry.url);
     }
 
     if (game.debugUI) {

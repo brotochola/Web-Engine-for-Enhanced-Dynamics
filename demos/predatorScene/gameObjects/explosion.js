@@ -17,7 +17,6 @@ const {
 const { ShapeType, DECAL_STAMPS_BLEND_MODE } = enums;
 
 export class Explosion extends GameObject {
-  static scriptUrl = import.meta.url;
 
   // Add ExplosionComponent for explosion-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, ExplosionComponent];

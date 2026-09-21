@@ -5,7 +5,6 @@ const { GameObject, RigidBody, Collider } = WEED;
 
 /** Dynamic compound body. Spatial walks getColliderBounds over every fixture. */
 export class CompoundSpatialIsland extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider];
 
   onSpawned({

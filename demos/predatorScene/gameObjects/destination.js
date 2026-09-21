@@ -16,7 +16,6 @@ const {
 
 export class Destination extends GameObject {
   // Auto-detected by GameEngine
-  static scriptUrl = import.meta.url;
   static serializable = true;
   // Components: basic physics + rendering + our FSM
   static components = [Collider, SpriteRenderer];

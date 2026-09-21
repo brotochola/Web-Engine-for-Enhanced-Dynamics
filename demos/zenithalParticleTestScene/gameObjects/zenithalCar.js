@@ -7,7 +7,6 @@ const {
 const { ShapeType } = enums;
 
 export class ZenithalCar extends GameObject {
-  static scriptUrl = import.meta.url;
 
   static components = [Collider, SpriteRenderer, RigidBody, LightOccluder];
 

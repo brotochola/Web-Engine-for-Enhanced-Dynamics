@@ -6,7 +6,6 @@ import { enqueueSetRotCS } from '/src/box2d/box2dCommandRing.js';
 const { enums, GameObject, RigidBody, Collider, SpriteRenderer, Mouse, Transform } = WEED;
 const { ShapeType } = enums;
 class Boid extends GameObject {
-  static scriptUrl = import.meta.url;
   static deriveSpeed = true;
 
   static tickInterval = 30;

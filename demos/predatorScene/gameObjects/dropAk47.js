@@ -9,7 +9,6 @@ import { ShadowCaster } from '/src/index.js';
 const { GameObject } = WEED;
 
 export class DropAk47 extends Drop {
-  static scriptUrl = import.meta.url;
 
   static components = [...Drop.components, DropComponent];
 

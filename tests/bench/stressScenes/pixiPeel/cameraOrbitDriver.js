@@ -15,7 +15,6 @@ export function stepCameraOrbit(t, cx, cy, radius, zoom0, zoomAmp) {
  * Pan + zoom every tick so scenery skip and MESH skip-RT cannot fire.
  */
 export class CameraOrbitDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({

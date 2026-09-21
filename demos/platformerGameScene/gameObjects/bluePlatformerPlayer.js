@@ -6,7 +6,6 @@ const { LightEmitter, GameObject, AdobeAnimComponent, ParticleEmitter, AdobeAnim
 
 export class BluePlatformerPlayer extends GameObject {
   static serializable = true;
-  static scriptUrl = import.meta.url;
   static components = [PlatformerCharacterComponent, AdobeAnimComponent, RigidBody, Collider, LightEmitter, CollisionListener];
   static assetName = 'blue_character';
 

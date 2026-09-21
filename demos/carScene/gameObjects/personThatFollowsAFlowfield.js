@@ -11,7 +11,6 @@ const { rng, GameObject, RigidBody, Collider, CollisionListener, SpriteRenderer,
 const _navVec = { x: 0, y: 0 };
 
 export class PersonThatFollowsAFlowfield extends GameObject {
-  static scriptUrl = import.meta.url;
   static deriveSpeed = true;
   static tickInterval = 4;
 

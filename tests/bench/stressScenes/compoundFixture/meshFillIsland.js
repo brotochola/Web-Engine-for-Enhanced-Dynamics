@@ -5,7 +5,6 @@ const { GameObject, RigidBody, Collider, MeshRenderer } = WEED;
 
 /** MESH fill island. No tick — static terrain. Spinner subclass for moving. */
 export class MeshFillIsland extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, MeshRenderer];
 
   onSpawned({
@@ -44,7 +43,6 @@ export class MeshFillIsland extends GameObject {
 
 /** Same island with per-frame rotation. Moving MESH stress uses this. */
 export class MeshFillSpinner extends MeshFillIsland {
-  static scriptUrl = import.meta.url;
 
   tick() {
     if (this._spin) this.rotation += this._spin;

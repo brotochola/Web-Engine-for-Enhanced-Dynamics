@@ -10,7 +10,6 @@ const STEP = 0.045;
 
 /** Pans the camera so pixi rebuilds vis/keep/evict chunk sets every tick. */
 export class TilemapCullPanDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({ seed = 0x711e } = {}) {

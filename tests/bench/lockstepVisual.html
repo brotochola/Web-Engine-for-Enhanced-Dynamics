@@ -57,7 +57,7 @@
       debug: false,
     });
     window.game = game;
-    await game.loadScene(SceneClass);
+    await game.loadScene(sceneModule, { export: exportName });
     const scene = game.currentScene;
 
     function hideOverlays() {

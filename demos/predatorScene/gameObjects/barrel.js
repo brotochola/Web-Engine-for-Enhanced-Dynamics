@@ -16,7 +16,6 @@ const {
 const { ShapeType } = enums;
 
 export class Barrel extends GameObject {
-  static scriptUrl = import.meta.url;
 
   // Add PreyBehavior component for prey-specific properties
   static components = [Collider, SpriteRenderer, RigidBody, ShadowCaster];

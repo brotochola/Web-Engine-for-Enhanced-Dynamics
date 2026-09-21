@@ -224,7 +224,7 @@
       });
       currentGame = game;
 
-      await game.loadScene(SceneClass);
+      await game.loadScene(config.sceneModule, { export: config.sceneExport });
       const scene = game.currentScene;
       const reader = createWorkerBenchmarkReader(scene);
 

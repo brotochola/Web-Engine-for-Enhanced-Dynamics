@@ -22,7 +22,6 @@ const RIGID = LIQUIDFUN_GROUP_FLAGS.RIGID;
 const EXTRACT_OPTS = { groupFlags: 0 };
 
 export class BurningBox extends GameObject {
-  static scriptUrl = import.meta.url;
   static instances = [];
   static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer, Grab, LightEmitter];

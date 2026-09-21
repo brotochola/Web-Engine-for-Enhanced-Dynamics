@@ -17,7 +17,6 @@ const {
 const { ShapeType } = enums;
 
 export class WeldBreakBox extends GameObject {
-  static scriptUrl = import.meta.url;
 
   static components = [
     RigidBody,

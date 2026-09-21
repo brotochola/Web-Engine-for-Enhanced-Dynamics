@@ -8,7 +8,6 @@ const JET = 16;
 const THRUST = 1400;
 
 export class RocketBox extends GameObject {
-  static scriptUrl = import.meta.url;
   static instances = [];
   static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer, Grab];

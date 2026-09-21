@@ -8,7 +8,6 @@ const { GameObject } = WEED;
 
 export class Lootable extends GameObject {
   // Auto-detected by GameEngine
-  static scriptUrl = import.meta.url;
   static resistance = 0.1
   static components = [LootableComponent];
 

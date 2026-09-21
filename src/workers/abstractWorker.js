@@ -14,6 +14,10 @@ import { BulletPool } from '../core/bulletPool.js';
 import { BulletComponent } from '../components/bulletComponent.js';
 import { Flash } from '../core/flash.js';
 import {
+  bindSceneGraph,
+  missingWorkerEntityClasses,
+} from '../util/sceneScript.js';
+import {
   seededRandom,
   loadEntityScripts,
   collectAllComponentsFromClasses,
@@ -466,6 +470,18 @@ export class AbstractWorker {
     // Uses the unified loadEntityScripts function from utils.js (auto-detects worker context)
     if (data.scriptsToLoad && data.scriptsToLoad.length > 0) {
       await loadEntityScripts(data.scriptsToLoad);
+    }
+
+    if (data.sceneClassName && self[data.sceneClassName]) {
+      bindSceneGraph(self[data.sceneClassName], self, GameObject, SharedResource);
+    }
+
+    const missingEntities = missingWorkerEntityClasses(data.registeredClasses, self);
+    if (missingEntities.length > 0) {
+      throw new Error(
+        `Worker: entity classes not loaded: ${missingEntities.join(', ')}. ` +
+          `Pass the scene module URL to loadScene() (game.loadScene('/path/to/scene.js')).`,
+      );
     }
 
     if (data.sharedResources && data.sharedResources.length > 0) {

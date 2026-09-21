@@ -146,6 +146,8 @@ class Scene {
   constructor(game) {
     this.game = game; // Reference to GameEngine orchestrator
     this.loadedTextures = null;
+    /** Absolute scene module href for workers. Set by GameEngine.loadScene. */
+    this.sceneScriptUrl = null;
 
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };

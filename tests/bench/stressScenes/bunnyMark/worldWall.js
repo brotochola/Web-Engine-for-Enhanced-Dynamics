@@ -4,7 +4,6 @@ const { GameObject, RigidBody, Collider, enums } = WEED;
 const { ShapeType } = enums;
 
 export class WorldWall extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider];
 
   onSpawned(spawnConfig = {}) {

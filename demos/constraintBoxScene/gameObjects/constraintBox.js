@@ -27,7 +27,6 @@ const EDGE_PAIRS = [
 ];
 
 export class ConstraintBox extends GameObject {
-    static scriptUrl = import.meta.url;
 
     static components = [SpriteRenderer, ConstraintBoxComponent];
 

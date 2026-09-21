@@ -16,7 +16,6 @@ const {
 const { ShapeType } = enums;
 
 export class House extends GameObject {
-  static scriptUrl = import.meta.url;
   static serializable = true;
   // Add PreyBehavior component for prey-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, RigidBody];

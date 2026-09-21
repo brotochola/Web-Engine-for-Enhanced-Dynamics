@@ -3,7 +3,6 @@ import WEED from '/src/index.js';
 const { GameObject, RigidBody, Collider, Box2d } = WEED;
 
 export class QueryAabbChurnProbe extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider];
 
   onSpawned({ x = 0, y = 0 } = {}) {

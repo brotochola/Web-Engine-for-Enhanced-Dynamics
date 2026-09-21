@@ -55,10 +55,10 @@ test('parseRows requires [Class, schema]', () => {
   });
 });
 
-test('bindFromInit throws when scriptUrl was omitted and class is missing', () => {
+test('bindFromInit throws when class is missing', () => {
   assert.throws(
     () => SharedResource.bindFromInit([{ name: 'MissingGrid', schema: { n: Int32Array } }], {}),
-    /set static scriptUrl/,
+    /class MissingGrid not loaded/,
   );
 });
 

@@ -7,7 +7,6 @@ const { ShapeType } = enums;
  * Static box for Box2dQueryAabbScene self-check.
  */
 export class Box2dQueryAabbTarget extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, SpriteRenderer];
 
   onSpawned({ x = 0, y = 0, size = 40 } = {}) {
@@ -32,7 +31,6 @@ export class Box2dQueryAabbTarget extends GameObject {
  * ponytail: smallest runnable check for QueryAABB gameplay API.
  */
 export class Box2dQueryAabbProbe extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider];
 
   onSpawned({ x = 0, y = 0, expectedMin = 3 } = {}) {

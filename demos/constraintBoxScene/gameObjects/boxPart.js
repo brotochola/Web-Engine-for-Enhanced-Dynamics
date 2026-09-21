@@ -9,7 +9,6 @@ export class BoxPart extends GameObject {
 
     static collisionDamping = 0.35;
     static collisionEnterDamping = 0.1;
-    static scriptUrl = import.meta.url;
 
     static components = [RigidBody, Collider,
         //CollisionListener

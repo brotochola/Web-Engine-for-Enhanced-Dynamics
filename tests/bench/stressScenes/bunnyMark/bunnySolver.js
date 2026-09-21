@@ -7,7 +7,6 @@ const { ShapeType } = enums;
 const BUNNY_SCALE = 2;
 
 export class BunnySolver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [SpriteRenderer, RigidBody, Collider];
   static reportMarkActive = true;
 

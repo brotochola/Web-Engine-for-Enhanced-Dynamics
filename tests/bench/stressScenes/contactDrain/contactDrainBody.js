@@ -5,7 +5,6 @@ const { ShapeType } = enums;
 
 /** Dynamic or static collider with CollisionListener so logic drains the contact ring. */
 export class ContactDrainBody extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, SpriteRenderer, CollisionListener];
   static tickInterval = 16;
 

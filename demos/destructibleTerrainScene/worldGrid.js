@@ -114,7 +114,6 @@ const MS_CASES = {
 };
 
 export class WorldGrid extends SharedResource {
-  static scriptUrl = import.meta.url;
   static cols = COLS;
   static rows = ROWS;
   static cellSize = CELL;

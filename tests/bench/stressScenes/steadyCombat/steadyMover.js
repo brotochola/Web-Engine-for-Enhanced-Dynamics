@@ -3,7 +3,6 @@ import WEED from '/src/index.js';
 const { GameObject, Collider, SpriteRenderer } = WEED;
 
 export class SteadyMover extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [Collider, SpriteRenderer];
 
   onSpawned({ x = 0, y = 0, vx = 40, vy = 0, radius = 14 } = {}) {

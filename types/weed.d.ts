@@ -884,10 +884,10 @@ export declare class Component {
 
 /**
  * One SAB of world data per class (not SoA × entityCount).
- * Scene.static.sharedResources binds it. Workers need static scriptUrl.
+ * Scene.static.sharedResources binds it. Workers load the scene module; leftover scriptUrl is optional.
  */
 export declare class SharedResource {
-  static scriptUrl: string | null;
+  static scriptUrl?: string | null;
   static sharedBuffer: SharedArrayBuffer | null;
   static initialize(buffer: SharedArrayBuffer, schema: Record<string, unknown>): void;
   static schemaFor(schema: Record<string, unknown>): Record<string, unknown>;
@@ -900,6 +900,8 @@ export declare class SharedResource {
 export declare class GameObject {
   static startIndex: number;
   static poolSize: number;
+  /** Optional leftover module URL when the scene file does not import this type. */
+  static scriptUrl?: string | null;
   /**
    * 0 = logic workers never visit this type (unless CameraInOutListener).
    * 1 = every frame. >1 = every N frames when logic.staggeredUpdates is on.
@@ -1019,7 +1021,7 @@ export declare class GameEngine {
   debugEnabled: boolean;
   debugUI: DebugUI | null;
   constructor(config?: GameEngineConfig);
-  loadScene(SceneClass: typeof Scene): Promise<boolean>;
+  loadScene(source: string | typeof Scene, options?: { restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
   pause(): void;
   resume(): void;
   spawnEntity(EntityClassOrName: string | typeof GameObject, data?: SpawnConfig): void;
@@ -1236,8 +1238,12 @@ export declare class Scene {
   static entities: SceneEntityDefinitionTuple[];
   static sharedResources: Array<[typeof SharedResource, Record<string, unknown>]>;
   static queries: SceneQueryTuple[];
+  /** Optional scene module href. `loadScene(url)` sets this when missing. */
+  static scriptUrl?: string | null;
   game: GameEngine;
   loadedTextures: unknown;
+  /** Absolute scene module href workers import(), or null when using leftover entity scriptUrl. */
+  sceneScriptUrl: string | null;
   config: SceneConfig;
   imageUrls: SceneAssetsManifest;
   audioUrls: string[];

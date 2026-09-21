@@ -15,7 +15,6 @@ const MARGIN = 64;
  * Workload is seeded/cyclic so RAYCAST_MS stays comparable across runs.
  */
 export class RayStressDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({ seed = 0xc0de1234, backend = 'weedjs' } = {}) {

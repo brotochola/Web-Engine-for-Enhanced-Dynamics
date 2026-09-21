@@ -6,7 +6,6 @@ const { GameObject, Decal, Camera } = WEED;
  * Walks unique tiles so ImageBitmap uploads stay hot. Also orbits the camera.
  */
 export class DecalBlitDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({

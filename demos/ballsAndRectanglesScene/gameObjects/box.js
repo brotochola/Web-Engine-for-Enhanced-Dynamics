@@ -6,7 +6,6 @@ const { ShapeType } = enums;
 
 class Box extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
-  static scriptUrl = import.meta.url;
 
   // entityType auto-assigned during registration (no manual ID needed!)
   static instances = []; // Instance tracking for this class

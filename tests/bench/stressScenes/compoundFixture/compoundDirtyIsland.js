@@ -8,7 +8,6 @@ const { GameObject, RigidBody, Collider } = WEED;
  * Load key is BODY_COUNT; triangle count must stay constant.
  */
 export class CompoundDirtyIsland extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider];
 
   onSpawned({

@@ -13,7 +13,6 @@ const WORLD_H = 1080;
  * across runs. Mixes blend modes, tint, scale and alpha.
  */
 export class DecalStampDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({ seed = 0xdec411 } = {}) {

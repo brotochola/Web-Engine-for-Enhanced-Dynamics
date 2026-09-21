@@ -17,7 +17,6 @@ export const DROP_TYPES = {
 };
 
 export class Drop extends GameObject {
-  static scriptUrl = import.meta.url;
 
   static components = [SpriteRenderer, Collider, CollisionListener];
 

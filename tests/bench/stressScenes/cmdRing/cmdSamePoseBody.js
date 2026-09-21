@@ -4,7 +4,6 @@ const { GameObject, RigidBody, Collider, enums } = WEED;
 const { ShapeType } = enums;
 
 export class CmdSamePoseBody extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider];
 
   onSpawned({ x = 0, y = 0 } = {}) {

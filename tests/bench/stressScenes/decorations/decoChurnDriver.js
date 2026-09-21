@@ -12,7 +12,6 @@ const MARGIN = 80;
  * Scratch is per-worker (onSpawned is logic0-only). Fill to liveCap, then churn.
  */
 export class DecoChurnDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
   static spawnPerTick = 8;
   static despawnPerTick = 8;

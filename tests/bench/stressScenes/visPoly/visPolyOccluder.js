@@ -4,7 +4,6 @@ const { GameObject, RigidBody, Collider, LightOccluder, enums } = WEED;
 const { ShapeType } = enums;
 
 export class VisPolyOccluder extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, LightOccluder];
 
   onSpawned({ x = 0, y = 0, width = 48, height = 48 } = {}) {

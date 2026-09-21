@@ -7,7 +7,6 @@ const { ShapeType } = enums;
 const BOX_TEX = 100;
 
 export class MachineBox extends GameObject {
-  static scriptUrl = import.meta.url;
   static instances = [];
   static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer];

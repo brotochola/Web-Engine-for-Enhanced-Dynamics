@@ -6,7 +6,6 @@ const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, enums } = WEED;
 const { ShapeType } = enums;
 
 export class OrientedBox extends GameObject {
-    static scriptUrl = import.meta.url;
 
     static components = [RigidBody, Collider, SpriteRenderer, Grab];
 

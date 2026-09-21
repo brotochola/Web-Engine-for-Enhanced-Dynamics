@@ -6,7 +6,6 @@ export const QUERIES_PER_TICK = 4300;
 export const QUERY_RADIUS = 160;
 
 export class DecoQueryCircleDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({ x = 0, y = 0 } = {}) {

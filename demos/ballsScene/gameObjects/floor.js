@@ -4,7 +4,6 @@ const { GameObject, RigidBody, Collider, SpriteRenderer, enums } = WEED;
 const { ShapeType } = enums;
 
 class Floor extends GameObject {
-    static scriptUrl = import.meta.url;
     static instances = [];
     static components = [RigidBody, Collider, SpriteRenderer];
 

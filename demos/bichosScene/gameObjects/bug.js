@@ -7,7 +7,6 @@ export class Bug extends GameObject {
     static MOVE_SPEED_THRESHOLD = 0.1;
     static deriveSpeed = true;
     // Auto-detected by GameEngine
-    static scriptUrl = import.meta.url;
     static sqDistToFollow = 500 ** 2;
 
     // Define components this entity uses

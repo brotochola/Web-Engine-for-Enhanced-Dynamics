@@ -3,7 +3,6 @@ import WEED from '/src/index.js';
 const { GameObject, Keyboard, Mouse, SpriteRenderer, rng } = WEED;
 
 export class Cloud extends GameObject {
-    static scriptUrl = import.meta.url;
 
     static components = [SpriteRenderer];
 

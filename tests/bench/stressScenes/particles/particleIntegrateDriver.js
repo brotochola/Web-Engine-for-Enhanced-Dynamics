@@ -16,7 +16,6 @@ const MARGIN = 64;
 
 /** Emits a large heighted population (gravity + despawnOnGroundContact) once, then trickles. */
 export class ParticleIntegrateDriver extends GameObject {
-  static scriptUrl = import.meta.url;
   static components = [];
 
   onSpawned({ seed = 0xc0de1234 } = {}) {
