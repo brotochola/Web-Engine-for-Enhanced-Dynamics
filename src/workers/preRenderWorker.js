@@ -49,7 +49,6 @@ import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
-import { decorationNoParent } from '../core/decorationPool.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 const INVALID_TEXTURE_ID = 0xFFFF;
 const TILE_MODE_LOCAL = SPRITE_TILE_MODE.LOCAL;
@@ -1453,7 +1452,7 @@ class PreRenderWorker extends AbstractWorker {
             const i = visibleData[1 + idx];
             const p = parentEntityIndex[i];
             let sortY;
-            if (p !== decorationNoParent() && tActive[p]) {
+            if (p !== this._noParent && tActive[p]) {
                 sortY = ty[p] * Y_SORT_K + innerZ[i];
             } else {
                 sortY = y[i] * Y_SORT_K + innerZ[i];
@@ -1842,7 +1841,7 @@ class PreRenderWorker extends AbstractWorker {
         const p = DecorationComponent.parentEntityIndex[decoIdx];
         const ox = DecorationComponent.offsetX[decoIdx];
         const oy = DecorationComponent.offsetY[decoIdx];
-        if (p !== decorationNoParent() && Transform.active?.[p]) {
+        if (p !== this._noParent && Transform.active?.[p]) {
             this._displayPose(p, out);
             const lx = DecorationComponent.localX[decoIdx];
             const ly = DecorationComponent.localY[decoIdx];

@@ -36,7 +36,7 @@ import { Sun } from '../core/sun.js';
 import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
-import { resetFreeList } from './atomicFreeList.js';
+import { resetFreeList, resetEntity } from './atomicFreeList.js';
 import { NavGrid } from '../core/navGrid.js';
 import { Grid } from '../core/grid.js';
 import { Ray } from '../core/ray.js';
@@ -709,7 +709,7 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
     const freeListTop = new Int32Array(freeListTopBuffer);
 
     // Interleaved ordering scatters concurrent spawns across cache lines
-    resetFreeList(freeListTop, freeList, poolSize, 8);
+    resetEntity(freeListTop, freeList, poolSize, 8);
 
     const EntityClass = registration.class;
     EntityClass.freeList = freeList;

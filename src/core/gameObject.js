@@ -22,9 +22,9 @@ import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } 
 import { collectComponents, collisionPairKey, distanceSq2D, debugWorkerLog } from '../util/utils.js';
 import { entityIdBytes, EntityIdArray } from '../util/entityIdWidth.js';
 import {
-  resetFreeList,
-  popFreeIndex,
-  pushFreeIndex,
+  resetEntity,
+  popEntity,
+  pushEntity,
   getFreeListCount,
 } from '../util/atomicFreeList.js';
 import { applyEntitySaveRestore } from './save/entitySaveSnapshot.js';
@@ -1976,7 +1976,7 @@ export class GameObject {
     GameObject.writeForceProcessOnLogicWorker(i, entityType, FORCE_PROCESS_ON_LOGIC_WORKER_NONE);
 
     if (EntityClass.freeList && EntityClass.freeListTop) {
-      pushFreeIndex(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
+      pushEntity(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
     }
 
     // ========================================
@@ -2213,7 +2213,7 @@ export class GameObject {
     // Rebuild the lock-free linked free list (all slots free, interleaved
     // pop order). Links store LOCAL slot indices; pops translate to global
     // via EntityClass.startIndex.
-    resetFreeList(EntityClass.freeListTop, EntityClass.freeList, count, interleaveFactor);
+    resetEntity(EntityClass.freeListTop, EntityClass.freeList, count, interleaveFactor);
   }
 
   /**
@@ -2287,7 +2287,7 @@ export class GameObject {
 
       // Lock-free CAS pop (Treiber stack) - safe against concurrent
       // spawns/despawns from any worker or the main thread
-      i = popFreeIndex(EntityClass.freeListTop, EntityClass.freeList, EntityClass.startIndex);
+      i = popEntity(EntityClass.freeListTop, EntityClass.freeList, EntityClass.startIndex);
 
       if (i < 0) {
         // Pool exhausted
@@ -2606,7 +2606,7 @@ export class GameObject {
       if (has.SpriteRenderer) SpriteRenderer.active[i] = 0;
       GameObject.writeForceProcessOnLogicWorker(i, EntityClass.entityType, FORCE_PROCESS_ON_LOGIC_WORKER_NONE);
       if (EntityClass.freeList && EntityClass.freeListTop) {
-        pushFreeIndex(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
+        pushEntity(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
       }
       return null;
     }

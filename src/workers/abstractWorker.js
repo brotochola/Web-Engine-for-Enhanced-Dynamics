@@ -49,7 +49,7 @@ import { Query } from '../core/query.js';
 import { Box2d } from '../core/box2d.js';
 import { Decal } from '../core/decal.js';
 import { bindSpawnCommandRing } from '../util/spawnCommandRing.js';
-import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray } from '../util/entityIdWidth.js';
+import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray, entityIdNone } from '../util/entityIdWidth.js';
 import { setVerboseWorkers, installQuietConsoleLog } from '../util/debugLog.js';
 import { bindBox2dHotFields, bindWeedPoseFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
@@ -156,6 +156,7 @@ export class AbstractWorker {
 
     // Registered entity classes information (set during initialization)
     this.registeredClasses = [];
+    this._noParent = 0xffff;
 
     // Query system cache for component-based entity filtering
     this.emptyQueryWarnings = new Set(); // Track empty query warnings (log once per query key)
@@ -421,6 +422,7 @@ export class AbstractWorker {
     // Store config for worker access
     this.config = data.config || {};
     bindEntityIdWidth(resolveEntityIdWidth(this.config));
+    this._noParent = entityIdNone;
 
     // Fine worker subtimers + SAB detail fields (config.debug.collectDetailedStats)
     this.collectDetailedStats = !!(this.config.debug?.collectDetailedStats);

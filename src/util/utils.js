@@ -6,7 +6,10 @@
 import { PHYSICS_DEFAULTS } from './configDefaults.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
-import { collisionPairKeyWide, collisionPairUnpackWide } from './entityIdWidth.js';
+export {
+  packPair as collisionPairKey,
+  unpackPair as collisionPairUnpack,
+} from './entityIdWidth.js';
 export { debugWorkerLog };
 
 // ============================================================================
@@ -508,16 +511,9 @@ export function cantorPair(a, b) {
 }
 
 /**
- * Unordered pair key for entity indices < 65536.
+ * Unordered pair key. Bound by bindEntityIdWidth: 16-bit pack, or Cantor at width 32.
  * Same packing as logicWorker contact drain / isCollidingWith.
  */
-export function collisionPairKey(minE, maxE) {
-  return collisionPairKeyWide(minE, maxE);
-}
-
-export function collisionPairUnpack(key, out) {
-  return collisionPairUnpackWide(key, out);
-}
 
 /**
  * Inverse of Cantor pairing function - recovers (a, b) from a Cantor key

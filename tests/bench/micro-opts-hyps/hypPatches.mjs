@@ -982,10 +982,10 @@ export function applyDecoScan() {
     for (let idx = 0; idx < activeCount; idx++) {
       const i = activeData[idx];
       if (!active[i]) continue;
-      if (parentEntityIndex[i] !== DECORATION_NO_PARENT) continue;`,
+      if (parentEntityIndex[i] !== this._noParent) continue;`,
         `    for (let i = 0; i < activeCount; i++) {
       if (!active[i]) continue;
-      if (parentEntityIndex[i] !== DECORATION_NO_PARENT) continue;`,
+      if (parentEntityIndex[i] !== this._noParent) continue;`,
         hyp
       );
       out = replaceOnce(
@@ -1027,11 +1027,11 @@ export function applyDecoScan() {
       const i = activeData[idx];
       if (!active[i]) continue;
       const p = parentEntityIndex[i];
-      if (p === DECORATION_NO_PARENT) continue;`,
+      if (p === this._noParent) continue;`,
         `    for (let i = 0; i < this.maxDecorations; i++) {
       if (!active[i]) continue;
       const p = parentEntityIndex[i];
-      if (p === DECORATION_NO_PARENT) continue;`,
+      if (p === this._noParent) continue;`,
         hyp
       );
       return out;

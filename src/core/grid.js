@@ -68,6 +68,8 @@ export class Grid {
 
   // Computed from maxEntitiesPerCell (set during initialize)
   static cellByteSize = 0; // Bytes per cell
+  static _cellIdStride = 0;
+  static _headerIds = 2;
   static neighborStride = 0; // Elements per entity in neighbor arrays
 
   // ===== SPATIAL GRID DATA (Single Buffer - Row Ownership) =====
@@ -130,6 +132,8 @@ export class Grid {
     Grid._idBytes = idBytes;
     // Compute derived values: 4-byte header + entity ids
     Grid.cellByteSize = 4 + Grid.maxEntitiesPerCell * idBytes;
+    Grid._cellIdStride = Grid.cellByteSize / idBytes;
+    Grid._headerIds = 4 / idBytes;
     // Stride = 1 (totalCount) + maxNeighbors
     Grid.neighborStride = 1 + Grid.maxNeighbors;
     Grid._stride = Grid.neighborStride;
@@ -258,9 +262,7 @@ export class Grid {
    * @returns {number} Base Uint16 index into gridEntities
    */
   static getCellBase(cellIndex) {
-    const byteOffset = cellIndex * Grid.cellByteSize;
-    const idBytes = Grid._idBytes || 2;
-    return (byteOffset / idBytes) + (4 / idBytes);
+    return cellIndex * Grid._cellIdStride + Grid._headerIds;
   }
 
   // =============================================================================

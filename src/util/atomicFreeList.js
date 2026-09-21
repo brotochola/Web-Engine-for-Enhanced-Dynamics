@@ -1,86 +1,24 @@
 // atomicFreeList.js - Lock-free MPMC free list (Treiber stack with ABA tag)
 //
-// Shared by ALL pool free lists in the engine (entity pools, particles,
-// decorations, bullets, joints). Any worker or the main thread can
-// pop (spawn) and push (despawn) concurrently.
+// Two concrete APIs. Hot pop/push never branches on array type.
 //
-// ============================================================================
-// WHY A LINKED STACK INSTEAD OF "ATOMIC COUNTER + ARRAY" ?
-// ============================================================================
-// The previous design used an atomic top counter over a plain index array:
-//   pop:  oldTop = Atomics.sub(top); idx = freeList[oldTop - 1]   (plain read)
-//   push: slot  = Atomics.add(top); freeList[slot] = idx          (plain write)
-// The counter updates were atomic, but the PAYLOAD accesses were not part of
-// them. A pop's read of freeList[oldTop-1] could interleave with a concurrent
-// push's write to the same slot, so a thread could be handed an index that is
-// still live (two entities sharing one slot) or a just-pushed index could be
-// handed out twice while the original entry leaked. Concurrent failed pops on
-// an exhausted pool also drove the counter negative, making concurrent pushes
-// write out of bounds and leak indices.
+// Slots (particles, decorations, bullets, joint/fixture pools): Uint16 links,
+// head Int32 (tag << 16) | (local+1). SharedAtomicPool calls popU16 / pushU16.
 //
-// A Treiber stack avoids all of this: the only shared mutable hot state is a
-// single packed head word updated by compare-exchange, and per-slot links are
-// only ever written by the slot's current owner before the CAS publishes them.
+// Entities: popEntity / pushEntity / resetEntity, bound once in bindEntityIdWidth.
+// Width 16 uses the same u16 Treiber. Width 32 uses FL4: one Int32 CAS,
+// 19-bit (local+1) + 13-bit tag. Product ceiling 300000 fits in 19 index bits.
+// Tag window is 8192 ops.
 //
-// ============================================================================
-// MEMORY LAYOUT
-// ============================================================================
-// top:   Int32Array[2] over an 8-byte SAB
-//   [0] = packed head: (tag << 16) | (localIndex + 1). Low 16 bits 0 = empty.
-//         The 16-bit tag is bumped on EVERY successful push/pop, defeating
-//         ABA (a stalled CAS can only succeed if no other op landed since
-//         its head load, modulo 65536 ops - astronomically unlikely).
-//   [1] = free count. Eventually consistent (updated AFTER the CAS), for
-//         stats / heuristics only - never used for correctness decisions.
-// links: Uint16Array[poolSize] - next pointers, value = (localIndex + 1),
-//        0 = end of chain. Slot values are LOCAL (0..poolSize-1); pool start
-//        offsets are applied via the startIndex parameter.
-//
-// Indices fit u16: MAX_ENTITIES is 65535, so localIndex + 1 <= 65535.
-//
-// Width 32 entity lists (Uint32Array links, 16-byte top):
-//   [0] = packed head FL4: 13-bit tag << 19 | (localIndex + 1). Low 19 bits 0 = empty.
-//         Tag window is 8192 ops. Contention 4 workers: 0 double-handouts.
-//   [2] = free count (same slot as the old BigInt64 champion, so getFreeListCount stays).
-//   Product ceiling 300000 fits in 19 index bits.
-
-/**
- * Reset a free list to "all free", chaining slots so that pop order matches
- * the historical array-stack order for the same interleave factor.
- *
- * INTERLEAVED ORDERING: scatter consecutive pops across the index range to
- * reduce multi-core cache-line contention (workers that spawn at the same
- * time get indices far apart). interleaveFactor = 1 gives plain sequential
- * ordering (pop yields poolSize-1, poolSize-2, ...).
- *
- * NOT thread-safe: only call while no other thread is using the list
- * (scene init / despawnAll).
- *
- * @param {Int32Array} top - Int32Array[2]: [0]=packed head, [1]=free count
- * @param {Uint16Array} links - Per-slot next pointers (length >= count)
- * @param {number} count - Number of slots in the pool
- * @param {number} [interleaveFactor=8] - Stride between consecutive pops
- */
-function isU32Links(links) {
-  return links instanceof Uint32Array;
-}
-
-function head64(top) {
-  return new BigInt64Array(top.buffer, top.byteOffset, 1);
-}
-
-/** Width-32 entity Treiber head. Shipped: FL4. `bigint64` is the measured runner-up. */
-export const U32_FREE_LIST_HEAD = 'i32-19-13';
+// top u16: Int32Array[2] over 8 bytes. [0]=packed head, [1]=free count.
+// top u32: Int32Array[4] over 16 bytes. [0]=FL4 head, [2]=free count.
+// links: next = (localIndex + 1), 0 = end. Values are LOCAL.
 
 const FL4_INDEX_BITS = 19;
 const FL4_INDEX_MASK = (1 << FL4_INDEX_BITS) - 1;
 const FL4_TAG_MASK = 0x1fff;
 
-function useFl4Head(links) {
-  return isU32Links(links) && U32_FREE_LIST_HEAD === 'i32-19-13';
-}
-
-function resetFl4Head(top, links, count, interleaveFactor) {
+function chainLinks(links, count, interleaveFactor) {
   let headPlusOne = 0;
   for (let offset = 0; offset < interleaveFactor; offset++) {
     for (let i = offset; i < count; i += interleaveFactor) {
@@ -88,11 +26,71 @@ function resetFl4Head(top, links, count, interleaveFactor) {
       headPlusOne = i + 1;
     }
   }
+  return headPlusOne;
+}
+
+export function resetU16(top, links, count, interleaveFactor = 8) {
+  const headPlusOne = chainLinks(links, count, interleaveFactor);
+  Atomics.store(top, 1, count);
+  Atomics.store(top, 0, headPlusOne);
+}
+
+export function popU16(top, links, startIndex = 0) {
+  for (;;) {
+    const head = Atomics.load(top, 0);
+    const plusOne = head & 0xffff;
+    if (plusOne === 0) return -1;
+    const local = plusOne - 1;
+    const next = links[local];
+    const newHead = ((head + 0x10000) & ~0xffff) | next;
+    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
+      Atomics.sub(top, 1, 1);
+      return startIndex + local;
+    }
+  }
+}
+
+export function popIndicesU16(top, links, maxToPop, outArray, outOffset = 0, startIndex = 0) {
+  if (maxToPop <= 0) return 0;
+  for (;;) {
+    const head = Atomics.load(top, 0);
+    let plusOne = head & 0xffff;
+    if (plusOne === 0) return 0;
+    let popped = 0;
+    let cur = plusOne;
+    while (cur !== 0 && popped < maxToPop) {
+      outArray[outOffset + popped] = startIndex + (cur - 1);
+      cur = links[cur - 1];
+      popped++;
+    }
+    const newHead = ((head + 0x10000) & ~0xffff) | cur;
+    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
+      Atomics.sub(top, 1, popped);
+      return popped;
+    }
+  }
+}
+
+export function pushU16(top, links, index, startIndex = 0) {
+  const local = index - startIndex;
+  for (;;) {
+    const head = Atomics.load(top, 0);
+    links[local] = head & 0xffff;
+    const newHead = ((head + 0x10000) & ~0xffff) | (local + 1);
+    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
+      Atomics.add(top, 1, 1);
+      return;
+    }
+  }
+}
+
+export function resetFl4(top, links, count, interleaveFactor = 8) {
+  const headPlusOne = chainLinks(links, count, interleaveFactor);
   Atomics.store(top, 2, count);
   Atomics.store(top, 0, headPlusOne & FL4_INDEX_MASK);
 }
 
-function popFl4Head(top, links, startIndex) {
+export function popFl4(top, links, startIndex = 0) {
   for (;;) {
     const head = Atomics.load(top, 0);
     const plusOne = head & FL4_INDEX_MASK;
@@ -108,7 +106,8 @@ function popFl4Head(top, links, startIndex) {
   }
 }
 
-function popFl4HeadBatch(top, links, maxToPop, outArray, outOffset, startIndex) {
+export function popIndicesFl4(top, links, maxToPop, outArray, outOffset = 0, startIndex = 0) {
+  if (maxToPop <= 0) return 0;
   for (;;) {
     const head = Atomics.load(top, 0);
     let plusOne = head & FL4_INDEX_MASK;
@@ -129,7 +128,8 @@ function popFl4HeadBatch(top, links, maxToPop, outArray, outOffset, startIndex) 
   }
 }
 
-function pushFl4Head(top, links, local) {
+export function pushFl4(top, links, index, startIndex = 0) {
+  const local = index - startIndex;
   for (;;) {
     const head = Atomics.load(top, 0);
     links[local] = head & FL4_INDEX_MASK;
@@ -142,178 +142,52 @@ function pushFl4Head(top, links, local) {
   }
 }
 
+/** Entity pools. Rebound by bindEntityFreeList. Default matches width 16. */
+export let popEntity = popU16;
+export let pushEntity = pushU16;
+export let popEntities = popIndicesU16;
+export let resetEntity = resetU16;
+
+export function bindEntityFreeList(width32) {
+  if (width32) {
+    popEntity = popFl4;
+    pushEntity = pushFl4;
+    popEntities = popIndicesFl4;
+    resetEntity = resetFl4;
+  } else {
+    popEntity = popU16;
+    pushEntity = pushU16;
+    popEntities = popIndicesU16;
+    resetEntity = resetU16;
+  }
+}
+
+/**
+ * Init / tests only. Branches once on element size, then the concrete Treiber.
+ * Entity spawn uses popEntity. Slot pools use popU16.
+ */
 export function resetFreeList(top, links, count, interleaveFactor = 8) {
-  if (useFl4Head(links)) {
-    resetFl4Head(top, links, count, interleaveFactor);
-    return;
-  }
-  if (isU32Links(links)) {
-    let headPlusOne = 0;
-    for (let offset = 0; offset < interleaveFactor; offset++) {
-      for (let i = offset; i < count; i += interleaveFactor) {
-        links[i] = headPlusOne;
-        headPlusOne = i + 1;
-      }
-    }
-    Atomics.store(top, 2, count);
-    Atomics.store(head64(top), 0, BigInt(headPlusOne));
-    return;
-  }
-  let headPlusOne = 0;
-  // Chain in the same write order as the old array fill; each element becomes
-  // the new head, so pops yield the exact same sequence as before.
-  for (let offset = 0; offset < interleaveFactor; offset++) {
-    for (let i = offset; i < count; i += interleaveFactor) {
-      links[i] = headPlusOne;
-      headPlusOne = i + 1;
-    }
-  }
-  Atomics.store(top, 1, count);
-  Atomics.store(top, 0, headPlusOne); // tag = 0
+  if (links.BYTES_PER_ELEMENT === 4) resetFl4(top, links, count, interleaveFactor);
+  else resetU16(top, links, count, interleaveFactor);
 }
 
-/**
- * Atomically pop a free index. Lock-free; safe from any thread.
- *
- * @param {Int32Array} top
- * @param {Uint16Array} links
- * @param {number} [startIndex=0] - Pool's global start offset
- * @returns {number} Global index, or -1 if the pool is exhausted
- */
 export function popFreeIndex(top, links, startIndex = 0) {
-  if (useFl4Head(links)) return popFl4Head(top, links, startIndex);
-  if (isU32Links(links)) {
-    const h = head64(top);
-    for (;;) {
-      const packed = Atomics.load(h, 0);
-      const plusOne = Number(packed & 0xffffffffn);
-      if (plusOne === 0) return -1;
-      const local = plusOne - 1;
-      const next = links[local] >>> 0;
-      const nextPacked = (((packed >> 32n) + 1n) << 32n) | BigInt(next);
-      if (Atomics.compareExchange(h, 0, packed, nextPacked) === packed) {
-        Atomics.sub(top, 2, 1);
-        return startIndex + local;
-      }
-    }
-  }
-  for (;;) {
-    const head = Atomics.load(top, 0);
-    const plusOne = head & 0xffff;
-    if (plusOne === 0) return -1; // empty
-
-    const local = plusOne - 1;
-    // Plain read is safe: if this slot was popped/re-pushed since our head
-    // load, the tag has advanced and the CAS below fails, discarding it.
-    const next = links[local];
-    const newHead = ((head + 0x10000) & ~0xffff) | next;
-
-    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
-      Atomics.sub(top, 1, 1);
-      return startIndex + local;
-    }
-    // CAS lost - another thread popped/pushed first. Retry.
-  }
+  if (links.BYTES_PER_ELEMENT === 4) return popFl4(top, links, startIndex);
+  return popU16(top, links, startIndex);
 }
 
-/**
- * Batch pop — walk up to maxToPop links with plain reads, publish with one CAS.
- * @returns {number} Number of indices popped (0..maxToPop)
- */
 export function popFreeIndices(top, links, maxToPop, outArray, outOffset = 0, startIndex = 0) {
-  if (maxToPop <= 0) return 0;
-  if (useFl4Head(links)) {
-    return popFl4HeadBatch(top, links, maxToPop, outArray, outOffset, startIndex);
+  if (links.BYTES_PER_ELEMENT === 4) {
+    return popIndicesFl4(top, links, maxToPop, outArray, outOffset, startIndex);
   }
-  if (isU32Links(links)) {
-    const h = head64(top);
-    for (;;) {
-      const packed = Atomics.load(h, 0);
-      let plusOne = Number(packed & 0xffffffffn);
-      if (plusOne === 0) return 0;
-      let popped = 0;
-      let cur = plusOne;
-      while (cur !== 0 && popped < maxToPop) {
-        outArray[outOffset + popped] = startIndex + (cur - 1);
-        cur = links[cur - 1] >>> 0;
-        popped++;
-      }
-      const nextPacked = (((packed >> 32n) + 1n) << 32n) | BigInt(cur >>> 0);
-      if (Atomics.compareExchange(h, 0, packed, nextPacked) === packed) {
-        Atomics.sub(top, 2, popped);
-        return popped;
-      }
-    }
-  }
-  for (;;) {
-    const head = Atomics.load(top, 0);
-    let plusOne = head & 0xffff;
-    if (plusOne === 0) return 0;
-
-    let popped = 0;
-    let cur = plusOne;
-    while (cur !== 0 && popped < maxToPop) {
-      outArray[outOffset + popped] = startIndex + (cur - 1);
-      cur = links[cur - 1];
-      popped++;
-    }
-
-    const newHead = ((head + 0x10000) & ~0xffff) | cur;
-    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
-      Atomics.sub(top, 1, popped);
-      return popped;
-    }
-  }
+  return popIndicesU16(top, links, maxToPop, outArray, outOffset, startIndex);
 }
 
-/**
- * Atomically push an index back to the free list. Lock-free; safe from any
- * thread. Caller must guarantee the index is not double-freed (pools guard
- * this with their per-slot active flags).
- *
- * @param {Int32Array} top
- * @param {Uint16Array} links
- * @param {number} index - Global index to return
- * @param {number} [startIndex=0] - Pool's global start offset
- */
 export function pushFreeIndex(top, links, index, startIndex = 0) {
-  const local = index - startIndex;
-  if (useFl4Head(links)) {
-    pushFl4Head(top, links, local);
-    return;
-  }
-  if (isU32Links(links)) {
-    const h = head64(top);
-    for (;;) {
-      const packed = Atomics.load(h, 0);
-      links[local] = Number(packed & 0xffffffffn);
-      const nextPacked = (((packed >> 32n) + 1n) << 32n) | BigInt((local + 1) >>> 0);
-      if (Atomics.compareExchange(h, 0, packed, nextPacked) === packed) {
-        Atomics.add(top, 2, 1);
-        return;
-      }
-    }
-  }
-  for (;;) {
-    const head = Atomics.load(top, 0);
-    // We own `local` until the CAS publishes it, so this plain write is only
-    // visible to others through the CAS (which creates the ordering edge).
-    links[local] = head & 0xffff;
-    const newHead = ((head + 0x10000) & ~0xffff) | (local + 1);
-
-    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
-      Atomics.add(top, 1, 1);
-      return;
-    }
-  }
+  if (links.BYTES_PER_ELEMENT === 4) pushFl4(top, links, index, startIndex);
+  else pushU16(top, links, index, startIndex);
 }
 
-/**
- * Approximate number of free slots (eventually consistent).
- * @param {Int32Array} top
- * @returns {number}
- */
 export function getFreeListCount(top) {
-  // u16 Treiber: Int32[2] count at [1]. u32 Treiber: Int32[4] count at [2].
   return Atomics.load(top, top.length >= 3 ? 2 : 1);
 }

@@ -7,6 +7,37 @@ import { Transform } from '../components/transform.js';
 import { JOINT_TYPE } from '../box2d/box2dConstants.js';
 import { entityIdBytes } from '../util/entityIdWidth.js';
 
+function jointGetAPacked(idx) {
+  return Joint.pairs[idx] >>> 16;
+}
+function jointGetBPacked(idx) {
+  return Joint.pairs[idx] & 0xffff;
+}
+function jointSetPacked(idx, entityA, entityB) {
+  Joint.pairs[idx] = (entityA << 16) | (entityB & 0xffff);
+}
+function jointGetAWide(idx) {
+  return Joint.entityA[idx] >>> 0;
+}
+function jointGetBWide(idx) {
+  return Joint.entityB[idx] >>> 0;
+}
+function jointSetWide(idx, entityA, entityB) {
+  Joint.entityA[idx] = entityA >>> 0;
+  Joint.entityB[idx] = entityB >>> 0;
+}
+function bindJointAccess(wide) {
+  if (wide) {
+    Joint.getEntityA = jointGetAWide;
+    Joint.getEntityB = jointGetBWide;
+    Joint.setPair = jointSetWide;
+  } else {
+    Joint.getEntityA = jointGetAPacked;
+    Joint.getEntityB = jointGetBPacked;
+    Joint.setPair = jointSetPacked;
+  }
+}
+
 /**
  * Static class for distance / revolute / weld joints between entities.
  * Attachment points are body-local (localAnchor*). Default (0,0) = COM.
@@ -116,6 +147,7 @@ export class Joint extends SharedAtomicPool {
     offset = align4(offset + n);
 
     this._widePairs = entityIdBytes() === 4;
+    bindJointAccess(this._widePairs);
     if (this._widePairs) {
       this.entityA = new Uint32Array(buffer, offset, n);
       offset += n * 4;
@@ -220,20 +252,15 @@ export class Joint extends SharedAtomicPool {
   }
 
   static getEntityA(idx) {
-    return this._widePairs ? this.entityA[idx] >>> 0 : this.pairs[idx] >>> 16;
+    return jointGetAPacked(idx);
   }
 
   static getEntityB(idx) {
-    return this._widePairs ? this.entityB[idx] >>> 0 : this.pairs[idx] & 0xffff;
+    return jointGetBPacked(idx);
   }
 
   static setPair(idx, entityA, entityB) {
-    if (this._widePairs) {
-      this.entityA[idx] = entityA >>> 0;
-      this.entityB[idx] = entityB >>> 0;
-      return;
-    }
-    this.pairs[idx] = (entityA << 16) | (entityB & 0xffff);
+    jointSetPacked(idx, entityA, entityB);
   }
 
   static bumpRevision(idx) {
@@ -815,6 +842,7 @@ export class Joint extends SharedAtomicPool {
     this.entityA = null;
     this.entityB = null;
     this._widePairs = false;
+    bindJointAccess(false);
     this.localAnchorAX = null;
     this.localAnchorAY = null;
     this.localAnchorBX = null;

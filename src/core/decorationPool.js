@@ -33,7 +33,7 @@ export {
 };
 /** Sentinel: decoration not parented. Width 16 = 0xffff; width 32 = 0xffffffff. */
 export function decorationNoParent() {
-  return entityIdNone();
+  return entityIdNone;
 }
 /** @deprecated use decorationNoParent() — live sentinel follows entityIdWidth */
 export const DECORATION_NO_PARENT = 0xffff;

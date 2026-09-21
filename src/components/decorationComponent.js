@@ -66,7 +66,7 @@ export class DecorationComponent extends Component {
     super.initializeArrays(buffer, count);
     // Fresh buffers default to 0; 0 is a valid entity index — use sentinel for "no parent"
     if (this.parentEntityIndex) {
-      this.parentEntityIndex.fill(entityIdNone());
+      this.parentEntityIndex.fill(entityIdNone);
     }
     if (this.baseRotC) this.baseRotC.fill(1);
     if (this.rotC) this.rotC.fill(1);

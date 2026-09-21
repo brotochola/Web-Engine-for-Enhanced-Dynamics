@@ -3,7 +3,7 @@
 // GameEngine owns canvas / page lifecycle; Scene owns the running world.
 
 import { GameObject } from './gameObject.js';
-import { popFreeIndex } from '../util/atomicFreeList.js';
+import { popEntity } from '../util/atomicFreeList.js';
 import { resolveForceProcessOnLogicWorker } from '../util/logicOwner.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -2452,7 +2452,7 @@ class Scene {
     if (EntityClass && EntityClass.freeList && EntityClass.freeListTop) {
       // Lock-free CAS pop (Treiber stack) - safe against concurrent
       // spawns/despawns on logic workers
-      entityIndex = popFreeIndex(
+      entityIndex = popEntity(
         EntityClass.freeListTop,
         EntityClass.freeList,
         EntityClass.startIndex

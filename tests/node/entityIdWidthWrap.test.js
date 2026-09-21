@@ -10,12 +10,16 @@ import {
   maxEntitiesForWidth,
   MAX_ENTITIES_U16,
   MAX_ENTITIES_U32,
+  packSpatialPairStamp,
+  packSpatialPairStamp16,
 } from '../../src/util/entityIdWidth.js';
 import { Joint } from '../../src/core/joint.js';
 import { ColliderFixture } from '../../src/core/colliderFixture.js';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { decorationNoParent } from '../../src/core/decorationPool.js';
-import { popFreeIndex, pushFreeIndex, resetFreeList } from '../../src/util/atomicFreeList.js';
+import { popFreeIndex, pushFreeIndex, resetFreeList, popU16, resetU16, popEntity, resetEntity } from '../../src/util/atomicFreeList.js';
+import { SharedAtomicPool } from '../../src/core/sharedAtomicPool.js';
+import { computeBufferSize, createViews } from '../../src/render/renderQueueLayout.js';
 import { validateSceneSharedBufferConfig } from '../../src/util/sceneSharedBuffers.js';
 import { Grid } from '../../src/core/grid.js';
 import { decodeBinarySaveBody, encodeBinarySaveBody } from '../../src/core/save/binarySaveCodec.js';
@@ -327,7 +331,7 @@ test('decoration parent leftover: width 32 keeps parent 70000', () => {
     DecorationComponent.initializeArrays(sab, 4);
     DecorationComponent.parentEntityIndex[0] = 70000;
     assert.equal(DecorationComponent.parentEntityIndex[0], 70000);
-    assert.equal(entityIdNone(), 0xffffffff);
+    assert.equal(entityIdNone, 0xffffffff);
     assert.notEqual(decorationNoParent(), 0xffff);
   } finally {
     bindEntityIdWidth(16);
@@ -353,6 +357,7 @@ test('fixture entity leftover: width 32 keeps entity 70000', () => {
 test('wide pair helper follows bound width', () => {
   bindEntityIdWidth(16);
   assert.equal(collisionPairKeyWide(1, 2), pair0(1, 2));
+  assert.equal(collisionPairKey(1, 2), pair0(1, 2));
   bindEntityIdWidth(32);
   try {
     const key = collisionPairKeyWide(65536, 65537);
@@ -362,6 +367,62 @@ test('wide pair helper follows bound width', () => {
     assert.equal(out.b, 65537);
     assert.notEqual(key, pair0(0, 1));
     assert.equal(key, pair3Cantor(65536, 65537));
+    assert.equal(collisionPairKey(65536, 65537), pair3Cantor(65536, 65537));
+  } finally {
+    bindEntityIdWidth(16);
+  }
+});
+
+test('spatial stamp 16 aliases 1 and 65537; 19-bit stamp does not', () => {
+  assert.equal(packSpatialPairStamp16(5, 1), packSpatialPairStamp16(5, 65537));
+  assert.notEqual(packSpatialPairStamp(5, 1), packSpatialPairStamp(5, 65537));
+  assert.equal(packSpatialPairStamp(5, 299999) & 0x7ffff, 299999);
+  assert.notEqual(packSpatialPairStamp(5, 1), packSpatialPairStamp(6, 1));
+
+  function visits(pack, entityA, entityB, marker) {
+    const stamped = pack(5, entityA);
+    if (marker[0] === stamped) return false;
+    marker[0] = stamped;
+    return entityB === 7;
+  }
+  const oldMarker = new Uint32Array(1);
+  assert.equal(visits(packSpatialPairStamp16, 1, 7, oldMarker), true);
+  assert.equal(visits(packSpatialPairStamp16, 65537, 7, oldMarker), false);
+  const neu = new Uint32Array(1);
+  assert.equal(visits(packSpatialPairStamp, 1, 7, neu), true);
+  assert.equal(visits(packSpatialPairStamp, 65537, 7, neu), true);
+});
+
+test('render queue entityIndex is still Uint16; 70000 truncates', () => {
+  // Uint32 widen measured headed bunny preRender 11.924 → 13.106 ms (+9.9%). Not shipped.
+  const n = 4;
+  const sab = new SharedArrayBuffer(computeBufferSize(n));
+  const views = createViews(sab, n);
+  assert.ok(views.entityIndex instanceof Uint16Array);
+  views.entityIndex[0] = 70000;
+  assert.equal(views.entityIndex[0], 4464);
+});
+
+test('width 32 slot pool stays Uint16 Treiber; entity popEntity is FL4', () => {
+  bindEntityIdWidth(32);
+  try {
+    class SlotPool extends SharedAtomicPool {}
+    SlotPool.poolName = 'SlotPoolHotpath';
+    SlotPool.initialize(4);
+    const links = new SharedArrayBuffer(4 * 2);
+    const top = new SharedArrayBuffer(8);
+    SlotPool.initializeFreeList(links, top);
+    SlotPool.resetFreeListInterleaved(1);
+    assert.ok(SlotPool.freeList instanceof Uint16Array);
+    assert.equal(SlotPool.acquireIndex(), 3);
+    assert.equal(popU16(SlotPool.freeListTop, SlotPool.freeList), 2);
+
+    const n = 300000;
+    const etop = new Int32Array(new SharedArrayBuffer(16));
+    const elinks = new Uint32Array(new SharedArrayBuffer(n * 4));
+    resetEntity(etop, elinks, n, 1);
+    assert.equal(popEntity(etop, elinks), 299999);
+    resetU16(new Int32Array(new SharedArrayBuffer(8)), new Uint16Array(new SharedArrayBuffer(8)), 4, 1);
   } finally {
     bindEntityIdWidth(16);
   }

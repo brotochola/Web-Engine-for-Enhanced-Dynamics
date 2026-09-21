@@ -46,7 +46,7 @@ import {
 } from '../util/workersUtils.js';
 import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
-import { EntityIdArray } from '../util/entityIdWidth.js';
+import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult } from '../util/colliderUtils.js';
 
 /**
@@ -403,6 +403,8 @@ class SpatialWorker extends AbstractWorker {
     const entityPosData = this.entityPosData;
     const gridCounts = Grid._gridCounts;
     const gridEntities = Grid._gridEntities;
+    const cellStride = Grid._cellIdStride;
+    const cellHeader = Grid._headerIds;
 
     const maxCol = gridWidth - 1;
     const maxRow = this.gridHeight - 1;
@@ -477,7 +479,7 @@ class SpatialWorker extends AbstractWorker {
           const localCount = localCounts[cellIndex];
 
           if (localCount < Grid.maxEntitiesPerCell) {
-            gridEntities[Grid.getCellBase(cellIndex) + localCount] = i;
+            gridEntities[cellIndex * cellStride + cellHeader + localCount] = i;
             localCounts[cellIndex] = localCount + 1;
             localHashes[cellIndex] = Math.imul(localHashes[cellIndex] ^ (i + 1), 16777619) >>> 0;
           }
@@ -587,6 +589,8 @@ class SpatialWorker extends AbstractWorker {
     const invCellSize = this.invCellSize;
     const maxNeighbors = Grid.maxNeighbors;
     const stride = Grid._stride;
+    const cellStride = Grid._cellIdStride;
+    const cellHeader = Grid._headerIds;
     const workerId = this.workerId;
     const skinFrac = this._neighborReuseSkin;
     const tickInterval = this._neighborTickInterval;
@@ -603,11 +607,11 @@ class SpatialWorker extends AbstractWorker {
 
     const processedMarker = this.processedMarker;
     this._processedFrameCounter++;
-    if (this._processedFrameCounter >= 65536) {
+    if (this._processedFrameCounter > SPATIAL_STAMP_FRAME_MASK) {
       this._processedFrameCounter = 1;
       processedMarker.fill(0);
     }
-    const processedFrameStamp = this._processedFrameCounter << 16;
+    const stampFrame = this._processedFrameCounter;
 
     this._entityFrameCounter++;
     const entityFrameMarker = this._entityFrameCounter;
@@ -628,7 +632,7 @@ class SpatialWorker extends AbstractWorker {
         const cellCount = gridCounts[byteOffset];
         if (cellCount === 0) continue;
 
-        const cellEntityBase = Grid.getCellBase(cellIndex);
+        const cellEntityBase = cellIndex * cellStride + cellHeader;
 
         for (let k = 0; k < cellCount; k++) {
           const entityA = gridEntities[cellEntityBase + k];
@@ -647,7 +651,7 @@ class SpatialWorker extends AbstractWorker {
 
           this.entitiesProcessedThisFrame++;
 
-          const stampedA = processedFrameStamp | entityA;
+          const stampedA = packSpatialPairStamp(stampFrame, entityA);
           const myVisualRange = visualRange[entityA];
           const neighborOffset = entityA * stride;
 
@@ -730,7 +734,7 @@ class SpatialWorker extends AbstractWorker {
               if (checkCellCount === 0) continue;
 
               this.cellsCheckedThisFrame++;
-              const checkEntityBase = Grid.getCellBase(checkCellIndex);
+              const checkEntityBase = checkCellIndex * cellStride + cellHeader;
 
               for (let j = 0; j < checkCellCount; j++) {
                 const entityB = gridEntities[checkEntityBase + j];

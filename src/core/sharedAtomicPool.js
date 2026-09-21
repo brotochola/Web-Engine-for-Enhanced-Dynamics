@@ -13,10 +13,10 @@
 // - Subclasses implement spawn() to set their specific component data
 
 import {
-  resetFreeList,
-  popFreeIndex,
-  popFreeIndices,
-  pushFreeIndex,
+  resetU16,
+  popU16,
+  popIndicesU16,
+  pushU16,
   getFreeListCount,
 } from '../util/atomicFreeList.js';
 import { debugWorkerLog } from '../util/debugLog.js';
@@ -92,7 +92,7 @@ export class SharedAtomicPool {
         if (!this.initialized || !this.freeList || !this.freeListTop) {
             return -1;
         }
-        return popFreeIndex(this.freeListTop, this.freeList);
+        return popU16(this.freeListTop, this.freeList);
     }
 
     /**
@@ -102,7 +102,7 @@ export class SharedAtomicPool {
         if (!this.initialized || !this.freeList || !this.freeListTop || maxToPop <= 0) {
             return 0;
         }
-        return popFreeIndices(this.freeListTop, this.freeList, maxToPop, outArray, outOffset);
+        return popIndicesU16(this.freeListTop, this.freeList, maxToPop, outArray, outOffset);
     }
 
     /**
@@ -114,7 +114,7 @@ export class SharedAtomicPool {
     static returnToPool(index) {
         if (!this.freeList || !this.freeListTop) return;
         if (index < 0 || index >= this.maxCount) return;
-        pushFreeIndex(this.freeListTop, this.freeList, index);
+        pushU16(this.freeListTop, this.freeList, index);
     }
 
     /**
@@ -182,6 +182,6 @@ export class SharedAtomicPool {
      */
     static resetFreeListInterleaved(interleaveFactor = 8) {
         if (!this.freeList || !this.freeListTop || this.maxCount === 0) return;
-        resetFreeList(this.freeListTop, this.freeList, this.maxCount, interleaveFactor);
+        resetU16(this.freeListTop, this.freeList, this.maxCount, interleaveFactor);
     }
 }
