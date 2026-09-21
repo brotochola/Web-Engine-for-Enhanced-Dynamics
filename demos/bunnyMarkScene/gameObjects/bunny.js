@@ -24,8 +24,8 @@ export class Bunny extends GameObject {
     this.setTint((rng() * 0xffffff) | 0);
     this.x = spawnConfig.x ?? 0;
     this.y = spawnConfig.y ?? 0;
-    this.bunnyMotion.vx = rng() * 10 - 5;
-    this.bunnyMotion.vy = rng() * 10 - 5;
+    this.bunnyMotion.vx = rng() * 1 - 0.5;
+    this.bunnyMotion.vy = rng() * 1 - 0.5;
   }
 
   static tickAll(list, count, dtRatio) {
