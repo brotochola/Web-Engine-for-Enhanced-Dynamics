@@ -98,6 +98,7 @@ export {
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
   DECORATION_NO_PARENT,
+  decorationNoParent,
   SWAY_OFF,
   SWAY_LOOP,
   SWAY_IMPULSE,
@@ -223,6 +224,7 @@ import {
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
   DECORATION_NO_PARENT,
+  decorationNoParent,
   SWAY_OFF,
   SWAY_LOOP,
   SWAY_IMPULSE,
@@ -318,6 +320,7 @@ const WEED = Object.freeze({
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
   DECORATION_NO_PARENT,
+  decorationNoParent,
 
   // Core
   GameEngine,

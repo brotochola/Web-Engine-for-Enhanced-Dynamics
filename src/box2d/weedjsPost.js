@@ -305,7 +305,9 @@
     maxJoints = maxJ | 0;
     jointViews = {
       type: viewFromDesc(desc.type, Uint8Array),
-      pairs: viewFromDesc(desc.pairs, Uint32Array),
+      pairs: desc.pairs ? viewFromDesc(desc.pairs, Uint32Array) : null,
+      entityA: desc.entityA ? viewFromDesc(desc.entityA, Uint32Array) : null,
+      entityB: desc.entityB ? viewFromDesc(desc.entityB, Uint32Array) : null,
       localAnchorAX: viewFromDesc(desc.localAnchorAX, Float32Array),
       localAnchorAY: viewFromDesc(desc.localAnchorAY, Float32Array),
       localAnchorBX: viewFromDesc(desc.localAnchorBX, Float32Array),
@@ -339,6 +341,14 @@
     jointDense = new Uint16Array(maxJoints);
     jointDenseCount = 0;
     jointLive = new Uint8Array(maxJoints);
+  }
+
+  function jointEntityA(jv, idx) {
+    return jv.entityA ? jv.entityA[idx] >>> 0 : jv.pairs[idx] >>> 16;
+  }
+
+  function jointEntityB(jv, idx) {
+    return jv.entityB ? jv.entityB[idx] >>> 0 : jv.pairs[idx] & 0xffff;
   }
 
   function bindStateChannels(ready, entityCount) {
@@ -872,12 +882,10 @@
 
   function destroyWasmJointsForEntity(entityIdx) {
     if (!jointHandle || !jointViews || entityIdx < 0) return;
-    const pairs = jointViews.pairs;
     const n = maxJoints;
     for (let idx = 0; idx < n; idx++) {
       if (jointHandle[idx] < 0) continue;
-      const packed = pairs[idx];
-      if ((packed >>> 16) === entityIdx || (packed & 0xffff) === entityIdx) {
+      if (jointEntityA(jointViews, idx) === entityIdx || jointEntityB(jointViews, idx) === entityIdx) {
         destroyJointAt(idx);
       }
     }
@@ -930,9 +938,8 @@
 
   function createJointAt(idx) {
     const jv = jointViews;
-    const packed = jv.pairs[idx];
-    const a = packed >>> 16;
-    const b = packed & 0xffff;
+    const a = jointEntityA(jv, idx);
+    const b = jointEntityB(jv, idx);
     if (a === b || !hasBody[a] || !hasBody[b]) return false;
     const rev = jointRevision(idx);
     // -2 = fail for this revision only; slot recycle bumps revision and retries
@@ -1024,9 +1031,8 @@
       const idx = jv.activeIndices[slot];
       if (idx === 0xffff || !jv.active[idx]) continue;
       jointLive[idx] = 1;
-      const packed = jv.pairs[idx];
-      const a = packed >>> 16;
-      const b = packed & 0xffff;
+      const a = jointEntityA(jv, idx);
+      const b = jointEntityB(jv, idx);
       const want = hasBody[a] && hasBody[b] ? 1 : 0;
       const have = jointHandle[idx] >= 0 ? 1 : 0;
       const rev = jointRevision(idx);
@@ -1648,9 +1654,8 @@
     for (let i = 0; i < count; i++) {
       const idx = events[i] | 0;
       if (idx < 0 || idx >= maxJoints) continue;
-      const packed = jv.pairs[idx];
-      const entityA = packed >>> 16;
-      const entityB = packed & 0xffff;
+      const entityA = jointEntityA(jv, idx);
+      const entityB = jointEntityB(jv, idx);
       destroyJointAt(idx);
       removeWeedJoint(idx);
       publishJointBreak(idx, entityA, entityB, entityGen(entityA), entityGen(entityB));

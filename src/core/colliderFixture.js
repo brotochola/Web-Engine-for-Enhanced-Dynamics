@@ -4,6 +4,7 @@
 // Pool size is scene physics.maxFixturePoolSize (global slots, not per body).
 
 import { SharedAtomicPool } from './sharedAtomicPool.js';
+import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
 import { Collider } from '../components/collider.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
@@ -51,7 +52,7 @@ export class ColliderFixture extends SharedAtomicPool {
     const e = entityCount | 0;
     const align4 = (o) => Math.ceil(o / 4) * 4;
     offset = align4(offset + n); // active
-    offset += n * 2; // entity
+    offset += n * entityIdBytes(); // entity
     offset += n * 2; // next
     offset = align4(offset + n); // vertCount
     offset += n * V * 4; // vertexX
@@ -73,8 +74,8 @@ export class ColliderFixture extends SharedAtomicPool {
     this.active = new Uint8Array(buffer, offset, n);
     offset = align4(offset + n);
 
-    this.entity = new Uint16Array(buffer, offset, n);
-    offset += n * 2;
+    this.entity = new (EntityIdArray())(buffer, offset, n);
+    offset += n * entityIdBytes();
     this.next = new Uint16Array(buffer, offset, n);
     offset += n * 2;
 

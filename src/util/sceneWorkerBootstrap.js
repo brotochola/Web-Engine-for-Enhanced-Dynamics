@@ -384,6 +384,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
       ? {
           enabled: true,
           maxJoints: scene.config.physics.maxJoints,
+          entityIdWidth: scene.config.entityIdWidth === 32 ? 32 : 16,
           entityCount: scene.totalEntityCount,
           data: scene.buffers.jointData,
           freeList: scene.buffers.jointFreeList,
@@ -394,6 +395,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
       ? {
           enabled: true,
           maxFixturePoolSize: scene.config.physics.maxFixturePoolSize,
+          entityIdWidth: scene.config.entityIdWidth === 32 ? 32 : 16,
           entityCount: scene.totalEntityCount,
           data: scene.buffers.colliderFixtureData,
           freeList: scene.buffers.colliderFixtureFreeList,

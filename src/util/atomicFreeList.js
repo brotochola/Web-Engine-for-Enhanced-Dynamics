@@ -37,6 +37,12 @@
 //        offsets are applied via the startIndex parameter.
 //
 // Indices fit u16: MAX_ENTITIES is 65535, so localIndex + 1 <= 65535.
+//
+// Width 32 entity lists (Uint32Array links, 16-byte top):
+//   [0] = packed head FL4: 13-bit tag << 19 | (localIndex + 1). Low 19 bits 0 = empty.
+//         Tag window is 8192 ops. Contention 4 workers: 0 double-handouts.
+//   [2] = free count (same slot as the old BigInt64 champion, so getFreeListCount stays).
+//   Product ceiling 300000 fits in 19 index bits.
 
 /**
  * Reset a free list to "all free", chaining slots so that pop order matches
@@ -63,7 +69,84 @@ function head64(top) {
   return new BigInt64Array(top.buffer, top.byteOffset, 1);
 }
 
+/** Width-32 entity Treiber head. Shipped: FL4. `bigint64` is the measured runner-up. */
+export const U32_FREE_LIST_HEAD = 'i32-19-13';
+
+const FL4_INDEX_BITS = 19;
+const FL4_INDEX_MASK = (1 << FL4_INDEX_BITS) - 1;
+const FL4_TAG_MASK = 0x1fff;
+
+function useFl4Head(links) {
+  return isU32Links(links) && U32_FREE_LIST_HEAD === 'i32-19-13';
+}
+
+function resetFl4Head(top, links, count, interleaveFactor) {
+  let headPlusOne = 0;
+  for (let offset = 0; offset < interleaveFactor; offset++) {
+    for (let i = offset; i < count; i += interleaveFactor) {
+      links[i] = headPlusOne;
+      headPlusOne = i + 1;
+    }
+  }
+  Atomics.store(top, 2, count);
+  Atomics.store(top, 0, headPlusOne & FL4_INDEX_MASK);
+}
+
+function popFl4Head(top, links, startIndex) {
+  for (;;) {
+    const head = Atomics.load(top, 0);
+    const plusOne = head & FL4_INDEX_MASK;
+    if (plusOne === 0) return -1;
+    const local = plusOne - 1;
+    const next = links[local] >>> 0;
+    const tag = ((head >>> FL4_INDEX_BITS) + 1) & FL4_TAG_MASK;
+    const newHead = (tag << FL4_INDEX_BITS) | (next & FL4_INDEX_MASK);
+    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
+      Atomics.sub(top, 2, 1);
+      return startIndex + local;
+    }
+  }
+}
+
+function popFl4HeadBatch(top, links, maxToPop, outArray, outOffset, startIndex) {
+  for (;;) {
+    const head = Atomics.load(top, 0);
+    let plusOne = head & FL4_INDEX_MASK;
+    if (plusOne === 0) return 0;
+    let popped = 0;
+    let cur = plusOne;
+    while (cur !== 0 && popped < maxToPop) {
+      outArray[outOffset + popped] = startIndex + (cur - 1);
+      cur = links[cur - 1] >>> 0;
+      popped++;
+    }
+    const tag = ((head >>> FL4_INDEX_BITS) + 1) & FL4_TAG_MASK;
+    const newHead = (tag << FL4_INDEX_BITS) | (cur & FL4_INDEX_MASK);
+    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
+      Atomics.sub(top, 2, popped);
+      return popped;
+    }
+  }
+}
+
+function pushFl4Head(top, links, local) {
+  for (;;) {
+    const head = Atomics.load(top, 0);
+    links[local] = head & FL4_INDEX_MASK;
+    const tag = ((head >>> FL4_INDEX_BITS) + 1) & FL4_TAG_MASK;
+    const newHead = (tag << FL4_INDEX_BITS) | ((local + 1) & FL4_INDEX_MASK);
+    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
+      Atomics.add(top, 2, 1);
+      return;
+    }
+  }
+}
+
 export function resetFreeList(top, links, count, interleaveFactor = 8) {
+  if (useFl4Head(links)) {
+    resetFl4Head(top, links, count, interleaveFactor);
+    return;
+  }
   if (isU32Links(links)) {
     let headPlusOne = 0;
     for (let offset = 0; offset < interleaveFactor; offset++) {
@@ -98,6 +181,7 @@ export function resetFreeList(top, links, count, interleaveFactor = 8) {
  * @returns {number} Global index, or -1 if the pool is exhausted
  */
 export function popFreeIndex(top, links, startIndex = 0) {
+  if (useFl4Head(links)) return popFl4Head(top, links, startIndex);
   if (isU32Links(links)) {
     const h = head64(top);
     for (;;) {
@@ -138,6 +222,9 @@ export function popFreeIndex(top, links, startIndex = 0) {
  */
 export function popFreeIndices(top, links, maxToPop, outArray, outOffset = 0, startIndex = 0) {
   if (maxToPop <= 0) return 0;
+  if (useFl4Head(links)) {
+    return popFl4HeadBatch(top, links, maxToPop, outArray, outOffset, startIndex);
+  }
   if (isU32Links(links)) {
     const h = head64(top);
     for (;;) {
@@ -191,6 +278,10 @@ export function popFreeIndices(top, links, maxToPop, outArray, outOffset = 0, st
  */
 export function pushFreeIndex(top, links, index, startIndex = 0) {
   const local = index - startIndex;
+  if (useFl4Head(links)) {
+    pushFl4Head(top, links, local);
+    return;
+  }
   if (isU32Links(links)) {
     const h = head64(top);
     for (;;) {
@@ -223,6 +314,6 @@ export function pushFreeIndex(top, links, index, startIndex = 0) {
  * @returns {number}
  */
 export function getFreeListCount(top) {
-  // u16 Treiber: Int32[2] count at [1]. u32 Treiber: Int32[4] count at [2] (head is BigInt64).
+  // u16 Treiber: Int32[2] count at [1]. u32 Treiber: Int32[4] count at [2].
   return Atomics.load(top, top.length >= 3 ? 2 : 1);
 }

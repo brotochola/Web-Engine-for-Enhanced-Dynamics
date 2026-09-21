@@ -20,7 +20,7 @@ import { ShapeType } from '../../../util/configDefaults.js';
 import { getColliderBounds, _boundsResult } from '../../../util/colliderUtils.js';
 import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
 
-const DECORATION_NO_PARENT = 0xffff;
+import { decorationNoParent } from '../../decorationPool.js';
 const EMPTY_DASH = [];
 const DASH_DECO_PARENT = [4, 3];
 
@@ -846,10 +846,9 @@ export class PhysicsDebugRenderer {
   }
 
   drawJoints(ctx, canvas, camera, zoom, flags) {
-    if (!Joint.initialized || !Joint.pairs || !Joint.active) return;
+    if (!Joint.initialized || !Joint.active || (!Joint.pairs && !Joint.entityA)) return;
     const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
 
-    const pairs = Joint.pairs;
     const restLength = Joint.length;
     const jointActive = Joint.active;
     const jointType = Joint.type;
@@ -869,9 +868,8 @@ export class PhysicsDebugRenderer {
     for (let slot = 0; slot < activeJointCount; slot++) {
       const i = activeIndices[slot];
       if (!jointActive[i]) continue;
-      const packed = pairs[i];
-      const entityA = packed >>> 16;
-      const entityB = packed & 0xFFFF;
+      const entityA = Joint.getEntityA(i);
+      const entityB = Joint.getEntityB(i);
       if (!entityActive[entityA] || !entityActive[entityB]) continue;
       if (selectedOnly && selectedIdx >= 0 && entityA !== selectedIdx && entityB !== selectedIdx) continue;
 
@@ -1143,7 +1141,7 @@ export class PhysicsDebugRenderer {
       ctx.fill();
       if (DecorationComponent.parentEntityIndex) {
         const p = DecorationComponent.parentEntityIndex[index];
-        if (p !== DECORATION_NO_PARENT && Transform.active[p]) {
+        if (p !== decorationNoParent() && Transform.active[p]) {
           const px = (Transform.x[p] - camera.x) * zoom;
           const py = (Transform.y[p] - camera.y) * zoom;
           ctx.setLineDash(DASH_DECO_PARENT);

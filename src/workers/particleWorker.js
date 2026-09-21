@@ -4,7 +4,7 @@
 import { ParticleComponent } from '../components/particleComponent.js';
 import { ParticleEmitter } from '../core/particleEmitter.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
-import { DecorationPool, DECORATION_NO_PARENT } from '../core/decorationPool.js';
+import { DecorationPool, decorationNoParent } from '../core/decorationPool.js';
 import {
   SWAY_LOOP,
   SWAY_IMPULSE,
@@ -825,7 +825,7 @@ class ParticleWorker extends AbstractWorker {
       const i = activeData[idx];
       if (!active[i]) continue;
       const p = parentEntityIndex[i];
-      if (p === DECORATION_NO_PARENT) continue;
+      if (p === decorationNoParent()) continue;
 
       if (!tActive[p]) {
         DecorationPool.despawn(i);
@@ -1103,7 +1103,7 @@ class ParticleWorker extends AbstractWorker {
     for (let idx = 0; idx < activeCount; idx++) {
       const i = activeData[idx];
       if (!active[i]) continue;
-      if (parentEntityIndex[i] !== DECORATION_NO_PARENT) continue;
+      if (parentEntityIndex[i] !== decorationNoParent()) continue;
       if (!isItOnScreen[i]) continue;
 
       const mode = sway[i];

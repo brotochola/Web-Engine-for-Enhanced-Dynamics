@@ -6,10 +6,16 @@ import {
   bindEntityIdWidth,
   collisionPairKeyWide,
   collisionPairUnpackWide,
+  entityIdNone,
   maxEntitiesForWidth,
   MAX_ENTITIES_U16,
   MAX_ENTITIES_U32,
 } from '../../src/util/entityIdWidth.js';
+import { Joint } from '../../src/core/joint.js';
+import { ColliderFixture } from '../../src/core/colliderFixture.js';
+import { DecorationComponent } from '../../src/components/decorationComponent.js';
+import { decorationNoParent } from '../../src/core/decorationPool.js';
+import { popFreeIndex, pushFreeIndex, resetFreeList } from '../../src/util/atomicFreeList.js';
 import { validateSceneSharedBufferConfig } from '../../src/util/sceneSharedBuffers.js';
 import { Grid } from '../../src/core/grid.js';
 import { decodeBinarySaveBody, encodeBinarySaveBody } from '../../src/core/save/binarySaveCodec.js';
@@ -30,6 +36,9 @@ import {
   resetFl2,
   popFl2,
   pushFl2,
+  resetFl4,
+  popFl4,
+  pushFl4,
   writeNeighbor,
   readNeighbor,
   setNeighborCount,
@@ -160,6 +169,28 @@ test('FL1 pop/push/batch-equivalent at 300000', () => {
   assert.equal(popFl1(top, links), got[0]);
 });
 
+test('production u32 free list (FL4) pops 299999', () => {
+  const n = 300000;
+  const top = new Int32Array(new SharedArrayBuffer(16));
+  const links = new Uint32Array(new SharedArrayBuffer(n * 4));
+  resetFreeList(top, links, n, 1);
+  const first = popFreeIndex(top, links);
+  assert.equal(first, 299999);
+  pushFreeIndex(top, links, first);
+  assert.equal(popFreeIndex(top, links), 299999);
+});
+
+test('FL4 19+13 pops 299999 and does not alias', () => {
+  const n = 300000;
+  const top = new Int32Array(new SharedArrayBuffer(8));
+  const links = new Uint32Array(new SharedArrayBuffer(n * 4));
+  resetFl4(top, links, n, 1);
+  const first = popFl4(top, links);
+  assert.equal(first, 299999);
+  pushFl4(top, links, first);
+  assert.equal(popFl4(top, links), 299999);
+});
+
 test('GRID0 truncates id 70000; GRID1 stores it', () => {
   const mec = 4;
   const cell0 = new ArrayBuffer(gridCellByteSize(mec, 2));
@@ -260,6 +291,63 @@ test('save codec already stores entityIndex as u32 (70000 survives)', () => {
   });
   const decoded = decodeBinarySaveBody(body);
   assert.equal(decoded.entities[0].entityIndex, 70000);
+});
+
+test('packed joint leftover aliases; width 32 two-column stores 65536', () => {
+  const packed = (10 << 16) | (65536 & 0xffff);
+  assert.equal(packed & 0xffff, 0);
+
+  bindEntityIdWidth(32);
+  try {
+    Joint.reset();
+    const maxJoints = 4;
+    const entityCount = 70000;
+    const sab = new SharedArrayBuffer(Joint.getBufferSize(maxJoints, entityCount));
+    Joint.initializeArrays(sab, maxJoints, entityCount);
+    const freeListSab = new SharedArrayBuffer(maxJoints * 2);
+    const freeListTopSab = new SharedArrayBuffer(8);
+    resetFreeList(new Int32Array(freeListTopSab), new Uint16Array(freeListSab), maxJoints, 1);
+    Joint.initialize(maxJoints);
+    Joint.initializeFreeList(freeListSab, freeListTopSab);
+    const idx = Joint.addDistance({ entityA: 10, entityB: 65536, length: 8 });
+    assert.ok(idx >= 0);
+    assert.equal(Joint.getEntityA(idx), 10);
+    assert.equal(Joint.getEntityB(idx), 65536);
+    assert.equal(Joint.hasBetween(10, 65536), true);
+  } finally {
+    Joint.reset();
+    bindEntityIdWidth(16);
+  }
+});
+
+test('decoration parent leftover: width 32 keeps parent 70000', () => {
+  bindEntityIdWidth(32);
+  try {
+    const sab = new SharedArrayBuffer(DecorationComponent.getBufferSize(4));
+    DecorationComponent.initializeArrays(sab, 4);
+    DecorationComponent.parentEntityIndex[0] = 70000;
+    assert.equal(DecorationComponent.parentEntityIndex[0], 70000);
+    assert.equal(entityIdNone(), 0xffffffff);
+    assert.notEqual(decorationNoParent(), 0xffff);
+  } finally {
+    bindEntityIdWidth(16);
+  }
+});
+
+test('fixture entity leftover: width 32 keeps entity 70000', () => {
+  bindEntityIdWidth(32);
+  try {
+    ColliderFixture.reset();
+    const n = 4;
+    const entities = 70001;
+    const sab = new SharedArrayBuffer(ColliderFixture.getBufferSize(n, entities));
+    ColliderFixture.initializeArrays(sab, n, entities);
+    ColliderFixture.entity[0] = 70000;
+    assert.equal(ColliderFixture.entity[0], 70000);
+  } finally {
+    ColliderFixture.reset();
+    bindEntityIdWidth(16);
+  }
 });
 
 test('wide pair helper follows bound width', () => {

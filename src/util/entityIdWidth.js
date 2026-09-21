@@ -1,6 +1,6 @@
 /**
  * Scene entity-id width. 16 = current Uint16 lists (max 65535).
- * 32 = compose FL1 + PAIR3 + NBR1 + GRID1 + LIST-U32 (product ceiling 300000).
+ * 32 = compose FL4 + PAIR3 + NBR1 + GRID1 + LIST-U32 (product ceiling 300000).
  * Bind once at SAB create / worker init. Do not branch === 32 in hot loops.
  */
 

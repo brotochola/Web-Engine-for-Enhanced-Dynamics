@@ -4,6 +4,7 @@
 // Decorations are static sprites with optional sway - no physics, no lighting
 
 import { Component } from '../core/component.js';
+import { EntityIdArray, entityIdNone } from '../util/entityIdWidth.js';
 
 export class DecorationComponent extends Component {
   static ARRAY_SCHEMA = {
@@ -45,7 +46,7 @@ export class DecorationComponent extends Component {
     layerMask: Uint16Array,
 
     // === Parent attachment (GameObject-owned decorations) ===
-    parentEntityIndex: Uint16Array, // 0xffff = no parent; else parent entity index (0 is valid)
+    parentEntityIndex: Uint16Array, // rebound to EntityIdArray when entityIdWidth is 32
     localX: Float32Array,
     localY: Float32Array,
     inheritParentRotation: Uint8Array, // 1 = add parent Transform.rotation to baseRotation for display
@@ -55,12 +56,17 @@ export class DecorationComponent extends Component {
   // Static pool tracking (set during initialization)
   static decorationCount = 0;
 
+  static getBufferSize(count) {
+    this.ARRAY_SCHEMA.parentEntityIndex = EntityIdArray();
+    return super.getBufferSize(count);
+  }
+
   static initializeArrays(buffer, count) {
+    this.ARRAY_SCHEMA.parentEntityIndex = EntityIdArray();
     super.initializeArrays(buffer, count);
     // Fresh buffers default to 0; 0 is a valid entity index — use sentinel for "no parent"
-    const SENT = 0xffff;
     if (this.parentEntityIndex) {
-      this.parentEntityIndex.fill(SENT);
+      this.parentEntityIndex.fill(entityIdNone());
     }
     if (this.baseRotC) this.baseRotC.fill(1);
     if (this.rotC) this.rotC.fill(1);

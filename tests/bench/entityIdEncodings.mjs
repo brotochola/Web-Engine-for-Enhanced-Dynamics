@@ -192,6 +192,96 @@ export function pushFl3(top, links, index, startIndex = 0) {
   pushFl1(top, links, index, startIndex);
 }
 
+/** FL4: one Int32 CAS. 19-bit (local+1) + 13-bit tag. Legal at 300k. */
+export const FL4_INDEX_BITS = 19;
+export const FL4_INDEX_MASK = (1 << FL4_INDEX_BITS) - 1;
+export const FL4_TAG_MASK = 0x1fff;
+
+export function resetFl4(top, links, count, interleave = 1) {
+  let headPlusOne = 0;
+  for (let offset = 0; offset < interleave; offset++) {
+    for (let i = offset; i < count; i += interleave) {
+      links[i] = headPlusOne;
+      headPlusOne = i + 1;
+    }
+  }
+  Atomics.store(top, 1, count);
+  Atomics.store(top, 0, headPlusOne & FL4_INDEX_MASK);
+}
+
+export function popFl4(top, links, startIndex = 0) {
+  for (;;) {
+    const head = Atomics.load(top, 0);
+    const plusOne = head & FL4_INDEX_MASK;
+    if (plusOne === 0) return -1;
+    const local = plusOne - 1;
+    const next = links[local] >>> 0;
+    const tag = ((head >>> FL4_INDEX_BITS) + 1) & FL4_TAG_MASK;
+    const newHead = (tag << FL4_INDEX_BITS) | (next & FL4_INDEX_MASK);
+    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
+      Atomics.sub(top, 1, 1);
+      return startIndex + local;
+    }
+  }
+}
+
+export function pushFl4(top, links, index, startIndex = 0) {
+  const local = index - startIndex;
+  for (;;) {
+    const head = Atomics.load(top, 0);
+    links[local] = head & FL4_INDEX_MASK;
+    const tag = ((head >>> FL4_INDEX_BITS) + 1) & FL4_TAG_MASK;
+    const newHead = (tag << FL4_INDEX_BITS) | ((local + 1) & FL4_INDEX_MASK);
+    if (Atomics.compareExchange(top, 0, head, newHead) === head) {
+      Atomics.add(top, 1, 1);
+      return;
+    }
+  }
+}
+
+/** FL5: CAS index only + per-slot generation. Expected ABA under contention. */
+export function resetFl5(indexTop, gens, links, count, interleave = 1) {
+  let headPlusOne = 0;
+  for (let offset = 0; offset < interleave; offset++) {
+    for (let i = offset; i < count; i += interleave) {
+      links[i] = headPlusOne;
+      headPlusOne = i + 1;
+    }
+  }
+  gens.fill(0);
+  Atomics.store(indexTop, 1, count);
+  Atomics.store(indexTop, 0, headPlusOne);
+}
+
+export function popFl5(indexTop, gens, links, startIndex = 0) {
+  for (;;) {
+    const plusOne = Atomics.load(indexTop, 0);
+    if (plusOne === 0) return -1;
+    const local = plusOne - 1;
+    const g = Atomics.load(gens, local);
+    const next = links[local] >>> 0;
+    if (Atomics.load(gens, local) !== g) continue;
+    if (Atomics.compareExchange(indexTop, 0, plusOne, next) === plusOne) {
+      Atomics.add(gens, local, 1);
+      Atomics.sub(indexTop, 1, 1);
+      return startIndex + local;
+    }
+  }
+}
+
+export function pushFl5(indexTop, gens, links, index, startIndex = 0) {
+  const local = index - startIndex;
+  for (;;) {
+    const plusOne = Atomics.load(indexTop, 0);
+    links[local] = plusOne;
+    if (Atomics.compareExchange(indexTop, 0, plusOne, local + 1) === plusOne) {
+      Atomics.add(gens, local, 1);
+      Atomics.add(indexTop, 1, 1);
+      return;
+    }
+  }
+}
+
 export function writeNeighbor(data, stride, entity, slot, id) {
   data[entity * stride + 1 + slot] = id;
 }

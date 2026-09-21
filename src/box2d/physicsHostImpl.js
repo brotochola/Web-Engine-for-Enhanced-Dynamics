@@ -377,16 +377,27 @@
     };
   }
 
-  function bindJointViews(buffer, maxJoints) {
+  function bindJointViews(buffer, maxJoints, entityIdWidth) {
     var n = maxJoints;
     var offset = 0;
     var align4 = function (o) {
       return Math.ceil(o / 4) * 4;
     };
+    var wide = (entityIdWidth | 0) === 32;
     var type = new Uint8Array(buffer, offset, n);
     offset = align4(offset + n);
-    var pairs = new Uint32Array(buffer, offset, n);
-    offset += n * 4;
+    var pairs = null;
+    var entityA = null;
+    var entityB = null;
+    if (wide) {
+      entityA = new Uint32Array(buffer, offset, n);
+      offset += n * 4;
+      entityB = new Uint32Array(buffer, offset, n);
+      offset += n * 4;
+    } else {
+      pairs = new Uint32Array(buffer, offset, n);
+      offset += n * 4;
+    }
     var localAnchorAX = new Float32Array(buffer, offset, n);
     offset += n * 4;
     var localAnchorAY = new Float32Array(buffer, offset, n);
@@ -440,6 +451,8 @@
     return {
       type: type,
       pairs: pairs,
+      entityA: entityA,
+      entityB: entityB,
       localAnchorAX: localAnchorAX,
       localAnchorAY: localAnchorAY,
       localAnchorBX: localAnchorBX,
@@ -470,7 +483,7 @@
   }
 
   // Mirrors ColliderFixture.initializeArrays
-  function bindFixtureViews(buffer, maxFixtures, entityCount) {
+  function bindFixtureViews(buffer, maxFixtures, entityCount, entityIdWidth) {
     var n = maxFixtures | 0;
     var e = entityCount | 0;
     var V = MAX_POLYGON_VERTICES;
@@ -480,8 +493,12 @@
     };
     var active = new Uint8Array(buffer, offset, n);
     offset = align4(offset + n);
-    var entity = new Uint16Array(buffer, offset, n);
-    offset += n * 2;
+    var idBytes = (entityIdWidth | 0) === 32 ? 4 : 2;
+    var entity =
+      idBytes === 4
+        ? new Uint32Array(buffer, offset, n)
+        : new Uint16Array(buffer, offset, n);
+    offset += n * idBytes;
     var next = new Uint16Array(buffer, offset, n);
     offset += n * 2;
     var vertCount = new Uint8Array(buffer, offset, n);
@@ -752,9 +769,12 @@
     if (state.jointsEnabled && state.jointViews) {
       var J = state.jointViews;
       initPayload.maxJoints = state.maxJoints;
+      initPayload.entityIdWidth = state.entityIdWidth || 16;
       initPayload.jointViews = {
         type: packView(J.type),
-        pairs: packView(J.pairs),
+        pairs: J.pairs ? packView(J.pairs) : null,
+        entityA: J.entityA ? packView(J.entityA) : null,
+        entityB: J.entityB ? packView(J.entityB) : null,
         localAnchorAX: packView(J.localAnchorAX),
         localAnchorAY: packView(J.localAnchorAY),
         localAnchorBX: packView(J.localAnchorBX),
@@ -999,7 +1019,8 @@
     if (data.joints && data.joints.enabled) {
       state.jointsEnabled = true;
       state.maxJoints = data.joints.maxJoints | 0;
-      state.jointViews = bindJointViews(data.joints.data, state.maxJoints);
+      state.entityIdWidth = data.joints.entityIdWidth | 0 || 16;
+      state.jointViews = bindJointViews(data.joints.data, state.maxJoints, state.entityIdWidth);
     }
 
     if (data.fixtures && data.fixtures.enabled) {
@@ -1009,6 +1030,7 @@
         data.fixtures.data,
         state.maxFixtures,
         data.fixtures.entityCount | 0,
+        data.fixtures.entityIdWidth | 0 || state.entityIdWidth || 16,
       );
     }
 

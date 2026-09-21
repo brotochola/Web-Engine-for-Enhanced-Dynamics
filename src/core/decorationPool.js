@@ -23,6 +23,7 @@ import {
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
 } from '../util/configDefaults.js';
+import { entityIdNone } from '../util/entityIdWidth.js';
 
 export {
   DECORATION_Y_SORT_SCALE,
@@ -30,7 +31,11 @@ export {
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
 };
-/** Uint16 sentinel: decoration not parented to any entity (entity index 0 is valid) */
+/** Sentinel: decoration not parented. Width 16 = 0xffff; width 32 = 0xffffffff. */
+export function decorationNoParent() {
+  return entityIdNone();
+}
+/** @deprecated use decorationNoParent() — live sentinel follows entityIdWidth */
 export const DECORATION_NO_PARENT = 0xffff;
 
 export {
@@ -199,7 +204,7 @@ export class DecorationPool extends SharedAtomicPool {
     for (let k = 0; k < n; k++) {
       const d = idxArr[row + k];
       idxArr[row + k] = 0;
-      DecorationComponent.parentEntityIndex[d] = DECORATION_NO_PARENT;
+      DecorationComponent.parentEntityIndex[d] = decorationNoParent();
       this._despawnDecorationCore(d);
     }
   }
@@ -346,7 +351,7 @@ export class DecorationPool extends SharedAtomicPool {
       x[i] = 0;
       y[i] = 0;
     } else {
-      parentEntityIndex[i] = DECORATION_NO_PARENT;
+      parentEntityIndex[i] = decorationNoParent();
       localX[i] = 0;
       localY[i] = 0;
       inheritParentRotation[i] = 0;
@@ -470,10 +475,10 @@ export class DecorationPool extends SharedAtomicPool {
     }
 
     const p = DecorationComponent.parentEntityIndex[index];
-    if (p !== DECORATION_NO_PARENT) {
+    if (p !== decorationNoParent()) {
       this.removeAttached(p, index);
     }
-    DecorationComponent.parentEntityIndex[index] = DECORATION_NO_PARENT;
+    DecorationComponent.parentEntityIndex[index] = decorationNoParent();
 
     return this._despawnDecorationCore(index);
   }
@@ -502,7 +507,7 @@ export class DecorationPool extends SharedAtomicPool {
     for (let i = 0; i < this.maxCount; i++) {
       active[i] = 0;
       isItOnScreen[i] = 0;
-      parentEntityIndex[i] = DECORATION_NO_PARENT;
+      parentEntityIndex[i] = decorationNoParent();
     }
 
     // Clear activeDecorationsData compact list

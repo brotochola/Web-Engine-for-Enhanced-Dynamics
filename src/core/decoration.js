@@ -4,7 +4,7 @@ import { DecorationComponent } from '../components/decorationComponent.js';
 import { ensureDecorationFacade, evictDecorationFacade } from '../util/decorationFacades.js';
 import { DECORATION_INNER_Z_MIN, DECORATION_INNER_Z_MAX } from '../util/configDefaults.js';
 import { DecorationSpatial } from './decorationSpatial.js';
-import { DecorationPool, DECORATION_NO_PARENT } from './decorationPool.js';
+import { DecorationPool, decorationNoParent } from './decorationPool.js';
 import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from '../util/decorationSway.js';
 
 export { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from '../util/decorationSway.js';
@@ -76,7 +76,7 @@ export class Decoration {
   _isWorldOwned() {
     return (
       this._isCurrent() &&
-      DecorationComponent.parentEntityIndex[this.index] === DECORATION_NO_PARENT
+      DecorationComponent.parentEntityIndex[this.index] === decorationNoParent()
     );
   }
 

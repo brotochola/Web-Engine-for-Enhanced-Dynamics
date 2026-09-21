@@ -31,6 +31,12 @@ import {
   resetFl3,
   popFl3,
   pushFl3,
+  resetFl4,
+  popFl4,
+  pushFl4,
+  resetFl5,
+  popFl5,
+  pushFl5,
   writeNeighbor,
   readNeighbor,
   setNeighborCount,
@@ -42,6 +48,7 @@ import { mulberry32, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 export const TAX_N = 65535;
 export const CAP_N = 300000;
+export const PLAY_N = 30000;
 
 function orderPair(a, b) {
   return a < b ? [a, b] : [b, a];
@@ -92,8 +99,11 @@ export function runPairKernel(opts = {}) {
   const pairCount = Number(opts.pairs ?? 200000);
   const output = opts.output ? String(opts.output) : null;
 
+  const pairsPlay = campaignPairs(PLAY_N, pairCount, 0xa11ce);
   const pairs64 = campaignPairs(n64, pairCount, 0xc0ffee);
   const pairs300 = campaignPairs(n300, pairCount, 0x51a7);
+  assertRoundtrip('PAIR1@30k', pair1, unpackPair1, pairsPlay);
+  assertRoundtrip('PAIR3@30k', pair3Cantor, unpackPair3Cantor, pairsPlay);
   assertRoundtrip('PAIR0@64k', pair0, unpackPair0, pairs64.filter(([a, b]) => a < 65536 && b < 65536));
   assertRoundtrip('PAIR1@64k', pair1, unpackPair1, pairs64);
   assertRoundtrip('PAIR3@64k', pair3Cantor, unpackPair3Cantor, pairs64);
@@ -178,6 +188,11 @@ export function runPairKernel(opts = {}) {
   const report = {
     feature: 'entity-id-pair',
     correctness: { ok: true, wrapPair0: wrap0 },
+    play30k: {
+      PAIR1: timePackHas('PAIR1_30k', pair1, pairsPlay),
+      PAIR2: timePair2('PAIR2_30k', pairsPlay),
+      PAIR3: timePackHas('PAIR3_30k', pair3Cantor, pairsPlay),
+    },
     tax64k: {
       PAIR0: timePackHas('PAIR0_64k', pair0, pairs64),
       PAIR1: timePackHas('PAIR1_64k', pair1, pairs64),
@@ -235,11 +250,29 @@ function makeFl2(n) {
   };
 }
 
+function makeFl4(n) {
+  const top = new Int32Array(new SharedArrayBuffer(8));
+  const links = new Uint32Array(new SharedArrayBuffer(n * 4));
+  return { args: [top, links], popArgs: [top, links], pushArgs: [top, links] };
+}
+
+function makeFl5(n) {
+  const idx = new Int32Array(new SharedArrayBuffer(8));
+  const gens = new Uint32Array(new SharedArrayBuffer(n * 4));
+  const links = new Uint32Array(new SharedArrayBuffer(n * 4));
+  return {
+    args: [idx, gens, links],
+    popArgs: [idx, gens, links],
+    pushArgs: [idx, gens, links],
+  };
+}
+
 async function contendFl(name, n, workers, iterations, kind) {
-  const topBytes = kind === 'FL0' ? 8 : 16;
+  const topBytes = kind === 'FL0' || kind === 'FL4' ? 8 : 16;
   const linkBytes = kind === 'FL0' ? 2 : 4;
   const topBuf = new SharedArrayBuffer(Math.max(topBytes, 16));
   const linksBuf = new SharedArrayBuffer(n * linkBytes);
+  const gensBuf = new SharedArrayBuffer(n * 4);
   const ownedBuf = new SharedArrayBuffer(n);
   const top = new Int32Array(topBuf);
   if (kind === 'FL0') {
@@ -249,6 +282,10 @@ async function contendFl(name, n, workers, iterations, kind) {
     const links = new Uint32Array(linksBuf);
     const tag = new Int32Array(topBuf, 8, 1);
     resetFl2(top, tag, links, n, 1);
+  } else if (kind === 'FL4') {
+    resetFl4(top, new Uint32Array(linksBuf), n, 1);
+  } else if (kind === 'FL5') {
+    resetFl5(top, new Uint32Array(gensBuf), new Uint32Array(linksBuf), n, 1);
   } else {
     const links = new Uint32Array(linksBuf);
     resetFl1(top, links, n, 1);
@@ -265,17 +302,30 @@ async function contendFl(name, n, workers, iterations, kind) {
         ? new Uint16Array(workerData.linksBuf)
         : new Uint32Array(workerData.linksBuf);
       const tag = new Int32Array(workerData.topBuf, 8, 1);
-      const pop = kind === 'FL0' ? enc.popFl0 : kind === 'FL2' ? enc.popFl2 : enc.popFl1;
-      const push = kind === 'FL0' ? enc.pushFl0 : kind === 'FL2' ? enc.pushFl2 : enc.pushFl1;
+      const gens = new Uint32Array(workerData.gensBuf);
+      const pop = kind === 'FL0' ? enc.popFl0
+        : kind === 'FL2' ? enc.popFl2
+        : kind === 'FL4' ? enc.popFl4
+        : kind === 'FL5' ? enc.popFl5
+        : enc.popFl1;
+      const push = kind === 'FL0' ? enc.pushFl0
+        : kind === 'FL2' ? enc.pushFl2
+        : kind === 'FL4' ? enc.pushFl4
+        : kind === 'FL5' ? enc.pushFl5
+        : enc.pushFl1;
       let doubleHandouts = 0;
       let pops = 0;
       for (let i = 0; i < workerData.iterations; i++) {
-        const idx = kind === 'FL2' ? pop(top, tag, links) : pop(top, links);
+        let idx = -1;
+        if (kind === 'FL2') idx = pop(top, tag, links);
+        else if (kind === 'FL5') idx = pop(top, gens, links);
+        else idx = pop(top, links);
         if (idx < 0) continue;
         pops++;
         if (Atomics.compareExchange(owned, idx, 0, 1) !== 0) { doubleHandouts++; continue; }
         Atomics.store(owned, idx, 0);
         if (kind === 'FL2') push(top, tag, links, idx);
+        else if (kind === 'FL5') push(top, gens, links, idx);
         else push(top, links, idx);
       }
       parentPort.postMessage({ doubleHandouts, pops });
@@ -286,7 +336,7 @@ async function contendFl(name, n, workers, iterations, kind) {
     const w = new Worker(workerSrc, {
       eval: true,
       type: 'module',
-      workerData: { encUrl, topBuf, linksBuf, ownedBuf, iterations, kind },
+      workerData: { encUrl, topBuf, linksBuf, gensBuf, ownedBuf, iterations, kind },
     });
     w.once('message', (msg) => {
       w.terminate();
@@ -301,10 +351,10 @@ async function contendFl(name, n, workers, iterations, kind) {
     doubles += r.doubleHandouts;
     pops += r.pops;
   }
-  if (kind !== 'FL2' && doubles !== 0) {
+  if (kind !== 'FL2' && kind !== 'FL5' && doubles !== 0) {
     throw new Error(`${name} contention corrupted: ${doubles} double-handouts`);
   }
-  return { doubles, pops, aba: kind === 'FL2' ? doubles > 0 : false };
+  return { doubles, pops, aba: kind === 'FL2' || kind === 'FL5' ? doubles > 0 : false };
 }
 
 export async function runFlKernel(opts = {}) {
@@ -319,25 +369,40 @@ export async function runFlKernel(opts = {}) {
     FL1: timeFlVariant('FL1', makeFl1, resetFl1, popFl1, pushFl1, n64, iters),
     FL2: timeFlVariant('FL2', makeFl2, resetFl2, popFl2, pushFl2, n64, iters),
     FL3: timeFlVariant('FL3', makeFl1, resetFl3, popFl3, pushFl3, n64, iters),
+    FL4: timeFlVariant('FL4', makeFl4, resetFl4, popFl4, pushFl4, n64, iters),
+    FL5: timeFlVariant('FL5', makeFl5, resetFl5, popFl5, pushFl5, n64, iters),
+  };
+  const play = {
+    FL1: timeFlVariant('FL1', makeFl1, resetFl1, popFl1, pushFl1, PLAY_N, iters),
+    FL4: timeFlVariant('FL4', makeFl4, resetFl4, popFl4, pushFl4, PLAY_N, iters),
   };
   const cap = {
     FL1: timeFlVariant('FL1', makeFl1, resetFl1, popFl1, pushFl1, n300, iters),
     FL2: timeFlVariant('FL2', makeFl2, resetFl2, popFl2, pushFl2, n300, iters),
     FL3: timeFlVariant('FL3', makeFl1, resetFl3, popFl3, pushFl3, n300, iters),
+    FL4: timeFlVariant('FL4', makeFl4, resetFl4, popFl4, pushFl4, n300, iters),
+    FL5: timeFlVariant('FL5', makeFl5, resetFl5, popFl5, pushFl5, n300, iters),
   };
 
   const contention = {
     FL0_64k: await contendFl('FL0', 4096, workers, 20000, 'FL0'),
     FL1_64k: await contendFl('FL1', 4096, workers, 20000, 'FL1'),
     FL2_64k: await contendFl('FL2', 4096, workers, 20000, 'FL2'),
+    FL4_64k: await contendFl('FL4', 4096, workers, 20000, 'FL4'),
+    FL5_64k: await contendFl('FL5', 4096, workers, 20000, 'FL5'),
     FL1_300k: await contendFl('FL1', 16384, workers, 20000, 'FL1'),
     FL2_300k: await contendFl('FL2', 16384, workers, 20000, 'FL2'),
+    FL4_300k: await contendFl('FL4', 16384, workers, 20000, 'FL4'),
+    FL5_300k: await contendFl('FL5', 16384, workers, 20000, 'FL5'),
   };
   if (contention.FL2_64k.aba || contention.FL2_300k.aba) {
     contention.FL2_verdict = 'rejected-in-kernel';
   }
+  if (contention.FL5_64k.aba || contention.FL5_300k.aba) {
+    contention.FL5_verdict = 'rejected-in-kernel';
+  }
 
-  const report = { feature: 'entity-id-treiber', tax64k: tax, cap300k: cap, contention };
+  const report = { feature: 'entity-id-treiber', tax64k: tax, play30k: play, cap300k: cap, contention };
   if (output) writeReport(output, report);
   return report;
 }
@@ -569,6 +634,152 @@ export function runListKernel(opts = {}) {
       }, { iterations: 20 }),
     },
     correctness: { last300k: u32cap[n300] },
+  };
+  if (output) writeReport(output, report);
+  return report;
+}
+
+export function runSignedKernel(opts = {}) {
+  const nPlay = Number(opts.nPlay ?? PLAY_N);
+  const n300 = Number(opts.n300 ?? CAP_N);
+  const output = opts.output ? String(opts.output) : null;
+
+  function scan(list) {
+    let sink = 0;
+    const count = list[0];
+    for (let i = 1; i <= count; i++) sink ^= list[i];
+    return sink;
+  }
+
+  function fillList(list, n) {
+    list[0] = n;
+    for (let i = 0; i < n; i++) list[i + 1] = i;
+    list[n] = n === n300 ? 299999 : n - 1;
+  }
+
+  function timeScan(label, Ctor, n) {
+    const list = new Ctor(1 + n);
+    fillList(list, n);
+    const a = scan(list);
+    const b = scan(list);
+    if (a !== b) throw new Error(`${label} checksum drift`);
+    return timeIt(label, (iters) => {
+      for (let i = 0; i < iters; i++) scan(list);
+    }, { iterations: 40 });
+  }
+
+  function timeNbr(label, Ctor, n) {
+    const stride = 9;
+    const data = new Ctor(n * stride);
+    for (let e = 0; e < n; e++) {
+      data[e * stride] = 8;
+      for (let k = 0; k < 8; k++) data[e * stride + 1 + k] = (e + k + 1) % n;
+    }
+    const walk = () => {
+      let sink = 0;
+      for (let e = 0; e < n; e++) {
+        const c = data[e * stride];
+        for (let k = 0; k < c; k++) sink ^= data[e * stride + 1 + k];
+      }
+      return sink;
+    };
+    const a = walk();
+    const b = walk();
+    if (a !== b) throw new Error(`${label} nbr checksum drift`);
+    return timeIt(label, (iters) => {
+      for (let i = 0; i < iters; i++) walk();
+    }, { iterations: 20 });
+  }
+
+  function timeLinks(label, LinkCtor, n) {
+    const top = new Int32Array(new SharedArrayBuffer(16));
+    const links = new LinkCtor(new SharedArrayBuffer(n * 4));
+    resetFl1(top, links, n, 1);
+    const first = popFl1(top, links);
+    pushFl1(top, links, first);
+    return timeIt(label, (iters) => {
+      for (let i = 0; i < iters; i++) {
+        const idx = popFl1(top, links);
+        pushFl1(top, links, idx);
+      }
+    }, { iterations: 200000 });
+  }
+
+  const report = {
+    feature: 'entity-id-signed',
+    play30k: {
+      LIST_U32: timeScan('LIST_U32_30k', Uint32Array, nPlay),
+      LIST_I32: timeScan('LIST_I32_30k', Int32Array, nPlay),
+      NBR_U32: timeNbr('NBR_U32_30k', Uint32Array, nPlay),
+      NBR_I32: timeNbr('NBR_I32_30k', Int32Array, nPlay),
+      LINK_U32: timeLinks('LINK_U32_30k', Uint32Array, nPlay),
+      LINK_I32: timeLinks('LINK_I32_30k', Int32Array, nPlay),
+    },
+    cap300k: {
+      LIST_U32: timeScan('LIST_U32_300k', Uint32Array, n300),
+      LIST_I32: timeScan('LIST_I32_300k', Int32Array, n300),
+      NBR_U32: timeNbr('NBR_U32_300k', Uint32Array, Math.min(n300, 131072)),
+      NBR_I32: timeNbr('NBR_I32_300k', Int32Array, Math.min(n300, 131072)),
+      LINK_U32: timeLinks('LINK_U32_300k', Uint32Array, n300),
+      LINK_I32: timeLinks('LINK_I32_300k', Int32Array, n300),
+    },
+  };
+  if (output) writeReport(output, report);
+  return report;
+}
+
+function timeNbrStrideAt(n, label) {
+  const maxN = 8;
+  const homo = new Uint32Array(n * (1 + maxN));
+  const counts = new Uint16Array(n);
+  const ids = new Uint32Array(n * maxN);
+  for (let e = 0; e < n; e++) {
+    homo[e * (1 + maxN)] = maxN;
+    counts[e] = maxN;
+    for (let k = 0; k < maxN; k++) {
+      const id = (e + k + 1) % n;
+      homo[e * (1 + maxN) + 1 + k] = id;
+      ids[e * maxN + k] = id;
+    }
+  }
+  const walkHomo = () => {
+    let s = 0;
+    for (let e = 0; e < n; e++) {
+      const c = homo[e * (1 + maxN)];
+      for (let k = 0; k < c; k++) s ^= homo[e * (1 + maxN) + 1 + k];
+    }
+    return s;
+  };
+  const walkMix = () => {
+    let s = 0;
+    for (let e = 0; e < n; e++) {
+      const c = counts[e];
+      const base = e * maxN;
+      for (let k = 0; k < c; k++) s ^= ids[base + k];
+    }
+    return s;
+  };
+  if (walkHomo() !== walkMix()) throw new Error(`NBR stride checksum mismatch @${n}`);
+  return {
+    n,
+    homo: timeIt(`NBR_homo_u32_${label}`, (iters) => {
+      for (let i = 0; i < iters; i++) walkHomo();
+    }, { iterations: 20 }),
+    mixed: timeIt(`NBR_count_u16_ids_u32_${label}`, (iters) => {
+      for (let i = 0; i < iters; i++) walkMix();
+    }, { iterations: 20 }),
+    checksum: walkHomo(),
+  };
+}
+
+export function runNbrStrideKernel(opts = {}) {
+  const nPlay = Number(opts.nPlay ?? PLAY_N);
+  const n300 = Number(opts.n300 ?? CAP_N);
+  const output = opts.output ? String(opts.output) : null;
+  const report = {
+    feature: 'entity-id-nbr-stride',
+    play30k: timeNbrStrideAt(nPlay, '30k'),
+    cap300k: timeNbrStrideAt(n300, '300k'),
   };
   if (output) writeReport(output, report);
   return report;

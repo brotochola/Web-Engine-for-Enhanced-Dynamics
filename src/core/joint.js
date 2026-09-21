@@ -5,6 +5,7 @@
 import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { Transform } from '../components/transform.js';
 import { JOINT_TYPE } from '../box2d/box2dConstants.js';
+import { entityIdBytes } from '../util/entityIdWidth.js';
 
 /**
  * Static class for distance / revolute / weld joints between entities.
@@ -19,7 +20,10 @@ export class Joint extends SharedAtomicPool {
 
   // Shared
   static type = null; // Uint8Array
-  static pairs = null; // Uint32Array (entityA << 16) | entityB
+  static pairs = null; // Uint32Array packed when width 16; null when width 32
+  static entityA = null; // Uint32Array when width 32
+  static entityB = null;
+  static _widePairs = false;
   static localAnchorAX = null; // Float32Array
   static localAnchorAY = null;
   static localAnchorBX = null;
@@ -69,7 +73,12 @@ export class Joint extends SharedAtomicPool {
     const e = entityCount | 0;
     const align4 = (o) => Math.ceil(o / 4) * 4;
     offset = align4(offset + n); // type
-    offset += n * 4; // pairs
+    if (entityIdBytes() === 4) {
+      offset += n * 4; // entityA
+      offset += n * 4; // entityB
+    } else {
+      offset += n * 4; // packed pairs
+    }
     offset += n * 4 * 4; // localAnchors
     offset += n * 4; // forceThreshold
     offset += n * 4; // torqueThreshold
@@ -106,8 +115,19 @@ export class Joint extends SharedAtomicPool {
     this.type = new Uint8Array(buffer, offset, n);
     offset = align4(offset + n);
 
-    this.pairs = new Uint32Array(buffer, offset, n);
-    offset += n * 4;
+    this._widePairs = entityIdBytes() === 4;
+    if (this._widePairs) {
+      this.entityA = new Uint32Array(buffer, offset, n);
+      offset += n * 4;
+      this.entityB = new Uint32Array(buffer, offset, n);
+      offset += n * 4;
+      this.pairs = null;
+    } else {
+      this.entityA = null;
+      this.entityB = null;
+      this.pairs = new Uint32Array(buffer, offset, n);
+      offset += n * 4;
+    }
 
     this.localAnchorAX = new Float32Array(buffer, offset, n);
     offset += n * 4;
@@ -199,6 +219,23 @@ export class Joint extends SharedAtomicPool {
     this.activeMeta[1] = 0;
   }
 
+  static getEntityA(idx) {
+    return this._widePairs ? this.entityA[idx] >>> 0 : this.pairs[idx] >>> 16;
+  }
+
+  static getEntityB(idx) {
+    return this._widePairs ? this.entityB[idx] >>> 0 : this.pairs[idx] & 0xffff;
+  }
+
+  static setPair(idx, entityA, entityB) {
+    if (this._widePairs) {
+      this.entityA[idx] = entityA >>> 0;
+      this.entityB[idx] = entityB >>> 0;
+      return;
+    }
+    this.pairs[idx] = (entityA << 16) | (entityB & 0xffff);
+  }
+
   static bumpRevision(idx) {
     if (this.revision) Atomics.add(this.revision, idx, 1);
   }
@@ -239,21 +276,20 @@ export class Joint extends SharedAtomicPool {
   }
 
   static _nextOnEntity(jointIdx, entity) {
-    const a = this.pairs[jointIdx] >>> 16;
+    const a = this.getEntityA(jointIdx);
     return a === entity ? this.nextA[jointIdx] : this.nextB[jointIdx];
   }
 
   static _setNextOnEntity(jointIdx, entity, next) {
-    const a = this.pairs[jointIdx] >>> 16;
+    const a = this.getEntityA(jointIdx);
     if (a === entity) this.nextA[jointIdx] = next;
     else this.nextB[jointIdx] = next;
   }
 
   static _linkPair(idx) {
     if (!this.head) return;
-    const packed = this.pairs[idx];
-    const a = packed >>> 16;
-    const b = packed & 0xffff;
+    const a = this.getEntityA(idx);
+    const b = this.getEntityB(idx);
     const inv = this.INVALID_INDEX;
     if (a < this._entityCount) {
       this.nextA[idx] = this.head[a];
@@ -288,9 +324,8 @@ export class Joint extends SharedAtomicPool {
 
   static _unlinkPair(idx) {
     if (!this.head) return;
-    const packed = this.pairs[idx];
-    this._unlinkEntity(packed >>> 16, idx);
-    this._unlinkEntity(packed & 0xffff, idx);
+    this._unlinkEntity(this.getEntityA(idx), idx);
+    this._unlinkEntity(this.getEntityB(idx), idx);
   }
 
   static _activate(idx) {
@@ -319,7 +354,7 @@ export class Joint extends SharedAtomicPool {
   }
 
   static _setPairAndAnchors(idx, entityA, entityB, anchors) {
-    this.pairs[idx] = (entityA << 16) | (entityB & 0xffff);
+    this.setPair(idx, entityA, entityB);
     this.localAnchorAX[idx] = anchors.ax;
     this.localAnchorAY[idx] = anchors.ay;
     this.localAnchorBX[idx] = anchors.bx;
@@ -440,10 +475,9 @@ export class Joint extends SharedAtomicPool {
   }
 
   static getEntities(idx) {
-    const packed = this.pairs[idx];
     return {
-      entityA: packed >>> 16,
-      entityB: packed & 0xffff,
+      entityA: this.getEntityA(idx),
+      entityB: this.getEntityB(idx),
     };
   }
 
@@ -545,8 +579,7 @@ export class Joint extends SharedAtomicPool {
       const inv = this.INVALID_INDEX;
       let cur = this.head[entityIdx];
       while (cur !== inv) {
-        const packed = this.pairs[cur];
-        const a = packed >>> 16;
+        const a = this.getEntityA(cur);
         const nxt = a === entityIdx ? this.nextA[cur] : this.nextB[cur];
         this.remove(cur);
         cur = nxt;
@@ -557,9 +590,8 @@ export class Joint extends SharedAtomicPool {
     for (let slot = activeCount - 1; slot >= 0; slot--) {
       const idx = this.activeIndices[slot];
       if (idx === this.INVALID_INDEX || !this.active[idx]) continue;
-      const packed = this.pairs[idx];
-      const a = packed >>> 16;
-      const b = packed & 0xffff;
+      const a = this.getEntityA(idx);
+      const b = this.getEntityB(idx);
       if (a === entityIdx || b === entityIdx) {
         this.remove(idx);
       }
@@ -573,9 +605,8 @@ export class Joint extends SharedAtomicPool {
     const inv = this.INVALID_INDEX;
     let cur = this.head[a];
     while (cur !== inv) {
-      const packed = this.pairs[cur];
-      const ea = packed >>> 16;
-      const eb = packed & 0xffff;
+      const ea = this.getEntityA(cur);
+      const eb = this.getEntityB(cur);
       if ((ea === a && eb === b) || (ea === b && eb === a)) return true;
       cur = ea === a ? this.nextA[cur] : this.nextB[cur];
     }
@@ -589,7 +620,7 @@ export class Joint extends SharedAtomicPool {
     let cur = this.head[entityIdx];
     while (cur !== inv) {
       n++;
-      const a = this.pairs[cur] >>> 16;
+      const a = this.getEntityA(cur);
       cur = a === entityIdx ? this.nextA[cur] : this.nextB[cur];
     }
     return n;
@@ -605,7 +636,7 @@ export class Joint extends SharedAtomicPool {
     while (cur !== inv) {
       if (k === i) return cur;
       k++;
-      const a = this.pairs[cur] >>> 16;
+      const a = this.getEntityA(cur);
       cur = a === entityIdx ? this.nextA[cur] : this.nextB[cur];
     }
     return -1;
@@ -616,9 +647,8 @@ export class Joint extends SharedAtomicPool {
     const inv = this.INVALID_INDEX;
     let cur = this.head[entityIdx];
     while (cur !== inv) {
-      const packed = this.pairs[cur];
-      const ea = packed >>> 16;
-      const eb = packed & 0xffff;
+      const ea = this.getEntityA(cur);
+      const eb = this.getEntityB(cur);
       const other = ea === entityIdx ? eb : ea;
       const nxt = ea === entityIdx ? this.nextA[cur] : this.nextB[cur];
       fn(cur, other);
@@ -637,12 +667,11 @@ export class Joint extends SharedAtomicPool {
     for (let slot = 0; slot < activeCount; slot++) {
       const idx = this.activeIndices[slot];
       if (idx === this.INVALID_INDEX || !this.active[idx]) continue;
-      const packed = this.pairs[idx];
       result.push({
         idx,
         type: this.type[idx],
-        entityA: packed >>> 16,
-        entityB: packed & 0xffff,
+        entityA: this.getEntityA(idx),
+        entityB: this.getEntityB(idx),
         localAnchorAX: this.localAnchorAX[idx],
         localAnchorAY: this.localAnchorAY[idx],
         localAnchorBX: this.localAnchorBX[idx],
@@ -665,12 +694,11 @@ export class Joint extends SharedAtomicPool {
     for (let slot = 0; slot < activeCount; slot++) {
       const idx = this.activeIndices[slot];
       if (idx === this.INVALID_INDEX || !this.active[idx]) continue;
-      const packed = this.pairs[idx];
       const type = this.type[idx];
       const rec = {
         type,
-        entityA: packed >>> 16,
-        entityB: packed & 0xffff,
+        entityA: this.getEntityA(idx),
+        entityB: this.getEntityB(idx),
         localAnchorAX: this.localAnchorAX[idx],
         localAnchorAY: this.localAnchorAY[idx],
         localAnchorBX: this.localAnchorBX[idx],
@@ -784,6 +812,9 @@ export class Joint extends SharedAtomicPool {
     super.reset();
     this.type = null;
     this.pairs = null;
+    this.entityA = null;
+    this.entityB = null;
+    this._widePairs = false;
     this.localAnchorAX = null;
     this.localAnchorAY = null;
     this.localAnchorBX = null;
