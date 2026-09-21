@@ -184,7 +184,7 @@ function applyComputeTexSizeUniform(cl) {
     cl.compute.numY
   );
 }
-import { writeRgba32Float } from '../render/webgpu/pinGpuTexture.js';
+import { writeRgba32Float, writeRgba8, copyPremultiplyRgba } from '../render/webgpu/pinGpuTexture.js';
 import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from '../render/webgpu/pixiMeshWgsl.js';
 import { prependLookPrelude, findWgslUseBeforeDeclare } from '../render/webgpu/wgslPrelude.js';
 import {
@@ -1589,12 +1589,6 @@ class PixiRenderer extends AbstractWorker {
    */
   createDecalTileSprites() {
     const tileSize = this.decalsTileSize;
-    const tilePixelSize = this.decalsTilePixelSize;
-
-    // Create a single shared OffscreenCanvas for synchronous bitmap generation
-    // Reused for all tiles - transferToImageBitmap is sync and zero-copy
-    this._decalTileCanvas = new OffscreenCanvas(tilePixelSize, tilePixelSize);
-    this._decalTileCtx = this._decalTileCanvas.getContext('2d', { willReadFrequently: true });
 
     for (let ty = 0; ty < this.decalsTilesY; ty++) {
       for (let tx = 0; tx < this.decalsTilesX; tx++) {
@@ -1621,8 +1615,8 @@ class PixiRenderer extends AbstractWorker {
   /**
    * Update decal tile textures for any dirty tiles
    * Called each frame to check for tiles modified by particle_worker
-   * Uses synchronous transferToImageBitmap for zero-allocation texture updates
-   * Optimized to reuse buffers, ImageData, and textures to reduce GC pressure
+   * Copies the SAB into a reused buffer and uploads with texSubImage2D / writeTexture.
+   * Bytes are premultiplied so they match ImageBitmap UNPACK_PREMULTIPLY.
    */
   updateDecalTiles() {
     if (!this.decalsEnabled) return;
@@ -1630,7 +1624,6 @@ class PixiRenderer extends AbstractWorker {
     // Use pixel size for buffer operations (not world tile size)
     const tilePixelSize = this.decalsTilePixelSize;
     const bytesPerTile = tilePixelSize * tilePixelSize * 4;
-    const ctx = this._decalTileCtx;
     const totalTiles = this.decalsTotalTiles;
     if (totalTiles <= 0) return;
 
@@ -1655,7 +1648,6 @@ class PixiRenderer extends AbstractWorker {
       // Clear dirty flag immediately (particle_worker may set it again)
       this.decalsTilesDirty[tileIndex] = 0;
 
-      // Get the RGBA data for this tile from SharedArrayBuffer
       const tileByteOffset = tileIndex * bytesPerTile;
       const tileRGBAShared = new Uint8ClampedArray(
         this.decalsTilesRGBA.buffer,
@@ -1663,43 +1655,31 @@ class PixiRenderer extends AbstractWorker {
         bytesPerTile
       );
 
-      // Reuse pre-allocated buffer and ImageData if available
       let tileRGBA = this._decalCopyBuffers?.[tileIndex];
-      let imageData = this._decalImageDatas?.[tileIndex];
-
       if (!tileRGBA) {
-        // Lazy init on first use - allocate once per tile, reuse forever
         this._decalCopyBuffers ??= [];
-        this._decalImageDatas ??= [];
         tileRGBA = new Uint8ClampedArray(bytesPerTile);
-        imageData = new ImageData(tileRGBA, tilePixelSize, tilePixelSize);
         this._decalCopyBuffers[tileIndex] = tileRGBA;
-        this._decalImageDatas[tileIndex] = imageData;
       }
-
-      // Copy data into reusable buffer
-      tileRGBA.set(tileRGBAShared);
-
-      // Synchronous bitmap creation via OffscreenCanvas - no promises, no closures
-      // putImageData + transferToImageBitmap is sync and zero-copy
-      ctx.putImageData(imageData, 0, 0);
-      const bitmap = this._decalTileCanvas.transferToImageBitmap();
+      copyPremultiplyRgba(tileRGBA, tileRGBAShared);
 
       const sprite = this.decalTileSprites[tileIndex];
-
-      // Close old bitmap to release GPU memory immediately (avoid GC delay)
-      const oldBitmap = sprite.texture?.source?.resource;
-      if (oldBitmap?.close) oldBitmap.close();
-
-      // Reuse existing texture source instead of creating new ones
-      if (sprite.texture !== PIXI.Texture.EMPTY && sprite.texture.source) {
-        sprite.texture.source.resource = bitmap;
-        sprite.texture.source.update();
-      } else {
-        const source = new PIXI.ImageSource({ resource: bitmap });
+      let source = this.decalTileTextureSources[tileIndex];
+      if (!source) {
+        source = new PIXI.ImageSource({
+          resource: tileRGBA,
+          width: tilePixelSize,
+          height: tilePixelSize,
+          format: 'rgba8unorm',
+          alphaMode: 'premultiplied-alpha',
+          autoGenerateMipmaps: false,
+        });
+        source.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
         sprite.texture = new PIXI.Texture({ source });
+        this.decalTileTextureSources[tileIndex] = source;
       }
-      sprite.visible = true; // Show the tile now that it has content
+      this._uploadDecalRgba8(source, tileRGBA, tilePixelSize, tilePixelSize);
+      sprite.visible = true;
 
       processed++;
       tileIndex = (tileIndex + 1) % totalTiles;
@@ -1708,6 +1688,33 @@ class PixiRenderer extends AbstractWorker {
 
     this._nextDecalTileScanIndex = tileIndex;
     this._decalTilesUploadedThisFrame = processed;
+  }
+
+  _uploadDecalRgba8(source, data, width, height) {
+    const renderer = this.pixiApp?.renderer;
+    if (!renderer || !source || !data) return;
+    if (this._useWebGpu) {
+      writeRgba8(renderer, source, data, width, height, 'decal-tile');
+      return;
+    }
+    const gl = renderer.gl;
+    const texSys = renderer.texture;
+    if (!gl || !texSys) return;
+    if (!source._decalGlReady) {
+      source.update();
+      source._decalGlReady = true;
+    }
+    if (typeof texSys.bind === 'function') texSys.bind(source, 0);
+    else if (typeof texSys.bindSource === 'function') texSys.bindSource(source, 0);
+    const glSource = typeof texSys.getGlSource === 'function' ? texSys.getGlSource(source) : null;
+    const target = glSource?.target || gl.TEXTURE_2D;
+    if (glSource?.texture) gl.bindTexture(target, glSource.texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    if (gl.UNPACK_FLIP_Y_WEBGL != null) gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+    if (gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL != null) {
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+    }
+    gl.texSubImage2D(target, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
   }
 
   /* =====================
@@ -2054,7 +2061,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const cameraY = this._renderCameraY;
 
     const container = this._visPolyContainer;
-    container.removeChildren();
+    let shownFrame = (this._visPolyShownFrame + 1) | 0;
+    if (shownFrame === 0) shownFrame = 1;
+    this._visPolyShownFrame = shownFrame;
 
     // LightEmitter data for color
     const lightColor = LightEmitter.lightColor;
@@ -2076,8 +2085,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const xStart = baseIndex + 4;
       const yStart = xStart + maxVerts;
 
-      // Get or create mesh for this light
-      const { mesh, geometry, shader } = this._getVisPolyMesh(li);
+      const pack = this._getVisPolyMesh(li);
+      pack.shownFrame = shownFrame;
+      const { mesh, geometry, shader } = pack;
 
       // Build triangle fan: center = light position, fan around polygon vertices
       const posBuffer = geometry.attributes.aPosition.buffer;
@@ -2107,12 +2117,23 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       indices[iCount++] = vertCount;
       indices[iCount++] = 1;
 
-      // Zero remaining indices (degenerate triangles, no visible fragments)
-      for (let j = iCount; j < indices.length; j++) indices[j] = 0;
-
-      // Push updated data to GPU
-      posBuffer.update();
-      indexBuffer.update();
+      // Pixi draws indexBuffer.data.length, not the byte count passed to update().
+      // Tail stays 0. First upload sends the whole buffer; later uploads send the fan
+      // plus any indices just cleared because the fan shrank.
+      const prev = pack.indexUsed | 0;
+      if (iCount < prev) {
+        for (let j = iCount; j < prev; j++) indices[j] = 0;
+      }
+      const uploadIndexCount = iCount > prev ? iCount : prev;
+      pack.indexUsed = iCount;
+      if (!pack.indexGpuReady) {
+        posBuffer.update();
+        indexBuffer.update();
+        pack.indexGpuReady = true;
+      } else {
+        posBuffer.update((vertCount + 1) * 8);
+        indexBuffer.update(uploadIndexCount * 2);
+      }
 
       // Update shader uniforms
       const uniforms = shader.resources.uniforms.uniforms;
@@ -2131,7 +2152,14 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       uniforms.uLightColor[1] = rgb.g;
       uniforms.uLightColor[2] = rgb.b;
 
-      container.addChild(mesh);
+      if (mesh.parent !== container) container.addChild(mesh);
+      mesh.visible = true;
+    }
+
+    const visMeshes = this._visPolyMeshes;
+    for (let mi = 0; mi < visMeshes.length; mi++) {
+      const pooled = visMeshes[mi];
+      if (pooled && pooled.shownFrame !== shownFrame) pooled.mesh.visible = false;
     }
 
     // Render to the visibility RT

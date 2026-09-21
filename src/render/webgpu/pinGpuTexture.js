@@ -4,8 +4,34 @@
  * (`gpuTexture` + `textureViews` cache).
  */
 const RGBA32_BYTES = 16;
+const RGBA8_BYTES = 4;
 
 let _padBuf = null;
+let _padU8 = null;
+
+/** Straight RGBA8 → premultiplied, matching WebGL UNPACK_PREMULTIPLY on ImageBitmap. */
+export function copyPremultiplyRgba(dst, src) {
+  const n = src.length;
+  for (let i = 0; i < n; i += 4) {
+    const a = src[i + 3];
+    if (a === 255) {
+      dst[i] = src[i];
+      dst[i + 1] = src[i + 1];
+      dst[i + 2] = src[i + 2];
+      dst[i + 3] = 255;
+    } else if (a === 0) {
+      dst[i] = 0;
+      dst[i + 1] = 0;
+      dst[i + 2] = 0;
+      dst[i + 3] = 0;
+    } else {
+      dst[i] = (src[i] * a * 257 + 32896) >> 16;
+      dst[i + 1] = (src[i + 1] * a * 257 + 32896) >> 16;
+      dst[i + 2] = (src[i + 2] * a * 257 + 32896) >> 16;
+      dst[i + 3] = a;
+    }
+  }
+}
 
 /** WebGPU writeTexture bytesPerRow must be a multiple of 256. */
 export function writeRgba32Float(renderer, source, data, width, height, label) {
@@ -35,6 +61,41 @@ export function writeRgba32Float(renderer, source, data, width, height, label) {
       padded.set(data.subarray(y * srcFloats, (y + 1) * srcFloats), y * dstFloats);
     }
     upload = padded;
+  }
+  device.queue.writeTexture(
+    { texture: gpuTex },
+    upload,
+    { bytesPerRow, rowsPerImage: height },
+    { width, height }
+  );
+}
+
+/** WebGPU writeTexture of rgba8unorm. bytesPerRow padded to 256. */
+export function writeRgba8(renderer, source, data, width, height, label) {
+  const device = renderer?.gpu?.device;
+  if (!device || !source || !data || width < 1 || height < 1) return;
+  const uid = renderer.uid;
+  let gpuTex = source._gpuData?.[uid]?.gpuTexture;
+  if (!gpuTex || gpuTex.width !== width || gpuTex.height !== height) {
+    gpuTex = device.createTexture({
+      label: label || 'rgba8unorm',
+      size: { width, height },
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
+    });
+    pinGpuTexture(renderer, source, gpuTex);
+  }
+  const unpadded = width * RGBA8_BYTES;
+  const bytesPerRow = Math.ceil(unpadded / 256) * 256;
+  let upload = data;
+  if (bytesPerRow !== unpadded) {
+    const need = bytesPerRow * height;
+    if (!_padU8 || _padU8.length < need) _padU8 = new Uint8Array(need);
+    const padded = _padU8;
+    for (let y = 0; y < height; y++) {
+      padded.set(data.subarray(y * unpadded, (y + 1) * unpadded), y * bytesPerRow);
+    }
+    upload = padded.subarray(0, need);
   }
   device.queue.writeTexture(
     { texture: gpuTex },
