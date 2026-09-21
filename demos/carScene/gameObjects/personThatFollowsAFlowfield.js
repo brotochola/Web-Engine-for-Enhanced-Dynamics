@@ -91,30 +91,50 @@ export class PersonThatFollowsAFlowfield extends GameObject {
   }
 
   onCollisionEnter(other) {
+    this._hitByCar(other, true);
+  }
+
+  onCollisionStay(other) {
+    this._hitByCar(other, false);
+  }
+
+  // Contact is read after the solver. A heavy car already matches the person's
+  // velocity, so relative speed looks tiny and the old 180 gate dropped the hit.
+  _hitByCar(other, firstContact) {
+    if (PersonComponent.dead[this.index] === 1) return;
     if (!CarComponent.active || !CarComponent.active[other]) return;
 
     const carVx = RigidBody.vx[other];
     const carVy = RigidBody.vy[other];
-    const myVx = RigidBody.vx[this.index];
-    const myVy = RigidBody.vy[this.index];
-    const dvx = carVx - myVx;
-    const dvy = carVy - myVy;
-    const impactSpeed = Math.hypot(dvx, dvy);
+    const carSpeedSq = carVx * carVx + carVy * carVy;
+    if (carSpeedSq < 40 * 40) return;
 
-    // px/s — was 3 frame-vel
-    if (impactSpeed < 180) return;
+    const now = performance.now();
+    const i = this.index;
+    if (!firstContact && now - PersonComponent.lastShotTime[i] < 200) return;
+    PersonComponent.lastShotTime[i] = now;
 
-    const damage = impactSpeed * 0.1;
-    LootableComponent.health[this.index] -= damage;
+    // max + 0.375*min, ~3% of hypot. No sqrt.
+    const adx = carVx < 0 ? -carVx : carVx;
+    const ady = carVy < 0 ? -carVy : carVy;
+    const carSpeed = adx > ady ? adx + ady * 0.375 : ady + adx * 0.375;
+    // health is 1. ~40 px/s chips, ~500 px/s kills on the bumper.
+    const damage = carSpeed * (firstContact ? 0.002 : 0.0008);
+    LootableComponent.health[i] -= damage;
 
+    if (firstContact) this.addVelocity(carVx * 0.35, carVy * 0.35);
+
+    // dir is car px/s. emit does v = dir * speed, speed is px/frame per px/s.
     ParticleEmitter.emit({
-      count: Math.floor(damage * 20),
+      count: Math.max(3, Math.floor(damage * 28)),
       texture: 'blood',
       x: this.x,
       y: this.y,
       z: -10,
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 0.7, max: 2 },
+      dirX: carVx,
+      dirY: carVy,
+      spread: 0.45,
+      speed: { min: 0.35 / 60, max: 0.9 / 60 },
       vz: { min: -4, max: 0 },
       lifespan: 2000,
       gravity: 0.15,
