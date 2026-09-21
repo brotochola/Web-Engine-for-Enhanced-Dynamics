@@ -4,8 +4,8 @@
 // (what pixi actually draws) every rAF tick, grouped by physics poseSync
 // readyFrame, and check for graduated intra-interval motion.
 //
-// LiquidFun render-queue rows always write entityIndex = -1 (pre_render_worker.js,
-// collectVisibleLiquidFun/type===7 write site) - no per-particle id to filter on.
+// The render queue has no per-sprite entity id. LiquidFun rows are type 7
+// with no per-particle id to filter on.
 // Dodge that by spawning one otherwise-empty scene's worth of particles (a
 // single coherent free-falling/settling blob) and sampling whichever type===7
 // row appears first each tick - good enough to see graduated vs frozen motion

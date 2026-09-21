@@ -182,7 +182,6 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorX = null;
         this.renderQueueAnchorY = null;
         this.renderQueueType = null;
-        this.renderQueueEntityIndex = null;
         this.renderQueueSortKey = null;
         this.renderQueueRepeatX = null;
         this.renderQueueRepeatY = null;
@@ -286,7 +285,7 @@ class PreRenderWorker extends AbstractWorker {
         this._emitRef = {
             x: null, y: null, scaleX: null, scaleY: null,
             rotC: null, rotS: null, alpha: null, tint: null, textureId: null,
-            anchorX: null, anchorY: null, type: null, entityIndex: null,
+            anchorX: null, anchorY: null, type: null,
             repeatX: null, repeatY: null,
             tileMode: null, tileOffsetU: null, tileOffsetV: null,
             tileMulX: null, tileMulY: null,
@@ -764,7 +763,6 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorX = buffer.anchorX;
         this.renderQueueAnchorY = buffer.anchorY;
         this.renderQueueType = buffer.type;
-        this.renderQueueEntityIndex = buffer.entityIndex;
         this.renderQueueSortKey = buffer.sortKey;
         this.renderQueueRepeatX = buffer.repeatX;
         this.renderQueueRepeatY = buffer.repeatY;
@@ -1958,7 +1956,6 @@ class PreRenderWorker extends AbstractWorker {
             ref.anchorX[writeIndex] = pieceAnchorX[p];
             ref.anchorY[writeIndex] = pieceAnchorY[p];
             ref.type[writeIndex] = 6;
-            ref.entityIndex[writeIndex] = entityIndex;
             if (ref.repeatX) ref.repeatX[writeIndex] = 0;
             if (ref.repeatY) ref.repeatY[writeIndex] = 0;
             clearTileFields(ref, writeIndex);
@@ -2007,7 +2004,6 @@ class PreRenderWorker extends AbstractWorker {
         const rqAnchorX = this.renderQueueAnchorX;
         const rqAnchorY = this.renderQueueAnchorY;
         const rqType = this.renderQueueType;
-        const rqEntityIndex = this.renderQueueEntityIndex;
         const rqSortKey = this.renderQueueSortKey;
         const rqRepeatX = this.renderQueueRepeatX;
         const rqRepeatY = this.renderQueueRepeatY;
@@ -2111,7 +2107,7 @@ class PreRenderWorker extends AbstractWorker {
         ref.x = rqX; ref.y = rqY; ref.scaleX = rqScaleX; ref.scaleY = rqScaleY;
         ref.rotC = rqRotC; ref.rotS = rqRotS; ref.alpha = rqAlpha; ref.tint = rqTint;
         ref.textureId = rqTextureId; ref.anchorX = rqAnchorX; ref.anchorY = rqAnchorY;
-        ref.type = rqType; ref.entityIndex = rqEntityIndex;
+        ref.type = rqType;
         ref.sortKey = rqSortKey;
         ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
         ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;
@@ -2195,8 +2191,6 @@ class PreRenderWorker extends AbstractWorker {
                 }
 
                 rqType[out] = 0;
-                rqEntityIndex[out] = idx;
-
                 const sheetId = srSpritesheetId[idx];
                 const animState = srAnimState[idx];
 
@@ -2284,7 +2278,6 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
                 rqType[out] = 1;
-                rqEntityIndex[out] = -1;
             } else if (type === 7) {
                 const lf = this.liquidFun;
                 if (
@@ -2314,7 +2307,6 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
                 rqType[out] = 1;
-                rqEntityIndex[out] = -1;
             } else if (type === 2) {
                 // === DECORATION === (world xy + facing stashed at collect)
                 rqX[out] = stashPx[i];
@@ -2330,7 +2322,6 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorX[out] = decoAnchorX[idx];
                 rqAnchorY[out] = decoAnchorY[idx];
                 rqType[out] = 2;
-                rqEntityIndex[out] = -1;
             } else if (type === 4) {
                 // === BULLET ===
                 if (!bulletActive[idx]) {
@@ -2354,7 +2345,6 @@ class PreRenderWorker extends AbstractWorker {
                     rqAnchorY[out] = bulletAnchorY[idx];
                 }
                 rqType[out] = 4;
-                rqEntityIndex[out] = -1;
             } else if (type === 5) {
                 // === BULLET TRAIL (line from start to curr, 0-alpha at start) ===
                 if (!bulletActive[idx]) {
@@ -2400,7 +2390,6 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
                 rqType[out] = 5;
-                rqEntityIndex[out] = -1;
             } else {
                 // === LIGHT GLOW (type=3) ===
                 const scale = lightGlowScale(sqrtLightIntensity[idx]);
@@ -2426,7 +2415,6 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
                 rqType[out] = 3;
-                rqEntityIndex[out] = idx;
             }
         }
 
@@ -2443,7 +2431,7 @@ class PreRenderWorker extends AbstractWorker {
      *
      * Per-type dispatch mirrors the corresponding branches in buildRenderQueue(),
      * writing the same fields (x, y, scaleX, scaleY, rotC, rotS, alpha, tint,
-     * textureId, anchorX, anchorY, type, entityIndex) into per-layer SABs.
+     * textureId, anchorX, anchorY, type) into per-layer SABs.
      * The pixi_worker reads these fields generically in updateCustomLayers().
      *
      * @param {number} deltaTime - Frame delta in milliseconds (for animation advancement)
@@ -2574,7 +2562,6 @@ class PreRenderWorker extends AbstractWorker {
             const rqAnchorX = ref.anchorX;
             const rqAnchorY = ref.anchorY;
             const rqType = ref.type;
-            const rqEntityIndex = ref.entityIndex;
             const rqSortKey = ref.sortKey;
             const rqRepeatX = ref.repeatX;
             const rqRepeatY = ref.repeatY;
@@ -2587,7 +2574,7 @@ class PreRenderWorker extends AbstractWorker {
             layerRef.x = rqX; layerRef.y = rqY; layerRef.scaleX = rqScaleX; layerRef.scaleY = rqScaleY;
             layerRef.rotC = rqRotC; layerRef.rotS = rqRotS; layerRef.alpha = rqAlpha; layerRef.tint = rqTint;
             layerRef.textureId = rqTextureId; layerRef.anchorX = rqAnchorX; layerRef.anchorY = rqAnchorY;
-            layerRef.type = rqType; layerRef.entityIndex = rqEntityIndex;
+            layerRef.type = rqType;
             layerRef.sortKey = rqSortKey;
             layerRef.repeatX = rqRepeatX; layerRef.repeatY = rqRepeatY;
             layerRef.tileMode = rqTileMode; layerRef.tileOffsetU = rqTileOffsetU; layerRef.tileOffsetV = rqTileOffsetV;
@@ -2650,8 +2637,6 @@ class PreRenderWorker extends AbstractWorker {
                         if (rqTileMulY) rqTileMulY[out] = 0;
                     }
                     rqType[out] = 0;
-                    rqEntityIndex[out] = idx;
-
                     const sheetId = srSpritesheetId[idx];
                     const animState = srAnimState[idx];
                     const proxyMap = this.proxyToGlobalAnim?.[sheetId];
@@ -2739,8 +2724,6 @@ class PreRenderWorker extends AbstractWorker {
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
                     rqType[out] = 1;
-                    rqEntityIndex[out] = -1;
-
                 } else if (type === 7) {
                     const lf = this.liquidFun;
                     if (
@@ -2770,8 +2753,6 @@ class PreRenderWorker extends AbstractWorker {
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
                     rqType[out] = 1;
-                    rqEntityIndex[out] = -1;
-
                 } else if (type === 2) {
                     // === DECORATION ===
                     const pose = this._displayPoseOut;
@@ -2789,8 +2770,6 @@ class PreRenderWorker extends AbstractWorker {
                     rqAnchorX[out] = decoAnchorX[idx];
                     rqAnchorY[out] = decoAnchorY[idx];
                     rqType[out] = 2;
-                    rqEntityIndex[out] = -1;
-
                 } else if (type === 3) {
                     // === LIGHT GLOW ===
                     const scale = lightGlowScale(sqrtLightIntensity[idx]);
@@ -2816,8 +2795,6 @@ class PreRenderWorker extends AbstractWorker {
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
                     rqType[out] = 3;
-                    rqEntityIndex[out] = idx;
-
                 } else if (type === 4) {
                     // === BULLET ===
                     if (!bulletActive[idx]) {
@@ -2841,8 +2818,6 @@ class PreRenderWorker extends AbstractWorker {
                         rqAnchorY[out] = bulletAnchorY[idx];
                     }
                     rqType[out] = 4;
-                    rqEntityIndex[out] = -1;
-
                 } else if (type === 5) {
                     // === BULLET TRAIL ===
                     if (!bulletActive[idx]) {
@@ -2887,7 +2862,6 @@ class PreRenderWorker extends AbstractWorker {
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
                     rqType[out] = 5;
-                    rqEntityIndex[out] = -1;
                 }
             }
 

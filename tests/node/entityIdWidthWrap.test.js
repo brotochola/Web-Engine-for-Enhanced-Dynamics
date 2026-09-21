@@ -393,14 +393,12 @@ test('spatial stamp 16 aliases 1 and 65537; 19-bit stamp does not', () => {
   assert.equal(visits(packSpatialPairStamp, 65537, 7, neu), true);
 });
 
-test('render queue entityIndex is still Uint16; 70000 truncates', () => {
-  // Uint32 widen measured headed bunny preRender 11.924 → 13.106 ms (+9.9%). Not shipped.
+test('render queue has no entityIndex column', () => {
+  // Uint32 widen measured headed bunny preRender 11.924 → 13.106 ms (+9.9%). Column removed: no reader in the tick.
   const n = 4;
   const sab = new SharedArrayBuffer(computeBufferSize(n));
   const views = createViews(sab, n);
-  assert.ok(views.entityIndex instanceof Uint16Array);
-  views.entityIndex[0] = 70000;
-  assert.equal(views.entityIndex[0], 4464);
+  assert.equal(views.entityIndex, undefined);
 });
 
 test('width 32 slot pool stays Uint16 Treiber; entity popEntity is FL4', () => {

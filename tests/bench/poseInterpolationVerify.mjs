@@ -38,7 +38,7 @@ async function sampleMode(browser, baseUrl, mode) {
           import('/demos/ballsScene/gameObjects/ball.js'),
           import('/src/render/renderQueueLayout.js'),
         ]);
-        const { RigidBody } = WEED;
+        const { RigidBody, SpriteRenderer } = WEED;
 
         // Deliberate, now-correctly-paced gap (dt-clamp fix): physics genuinely
         // simulates real time at fixedFps:12, renderer stays uncapped.
@@ -66,6 +66,10 @@ async function sampleMode(browser, baseUrl, mode) {
         // sample window - a clean constant-acceleration case.
         const spawned = scene.spawnEntity(Ball, { x: cx, y: cy - 400, vx: 0, vy: 0 });
         const targetIndex = spawned.index;
+        // Queue has no entity id. 2.5 is unique among Balls (default scale 1) and exact in float32.
+        const poseMarkScaleX = 2.5;
+        spawned.scaleX = poseMarkScaleX;
+        SpriteRenderer.renderDirty[targetIndex] = 1;
 
         const poseSync = scene.buffers.poseDataA && scene.buffers.poseDataB
           ? new Int32Array(scene.buffers.poseSync)
@@ -87,7 +91,7 @@ async function sampleMode(browser, baseUrl, mode) {
               const views = rqViewsByIdx[(rqReady - 1) % 2];
               const count = views.count[0] | 0;
               for (let slot = 0; slot < count; slot++) {
-                if (views.entityIndex[slot] === targetIndex) {
+                if (views.scaleX[slot] === poseMarkScaleX) {
                   samples.push({
                     t: performance.now() - start,
                     y: views.y[slot],

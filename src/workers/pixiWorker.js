@@ -424,7 +424,6 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueRepeatX = null; // Uint16Array
     this.renderQueueRepeatY = null; // Uint16Array
     this.renderQueueType = null;
-    this.renderQueueEntityIndex = null;
     this.renderQueueSortKey = null;
     this.renderQueueCamera = null; // Float32Array[3] -> [zoom, x, y]
     this.renderQueuePoseReady = null; // Int32Array[1] -> pose generation stamped with this queue slot
@@ -714,7 +713,6 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueTileMulX = buffer.tileMulX;
     this.renderQueueTileMulY = buffer.tileMulY;
     this.renderQueueType = buffer.type;
-    this.renderQueueEntityIndex = buffer.entityIndex;
     this.renderQueueSortKey = buffer.sortKey;
     this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
     this.renderQueuePoseReady = this.renderQueuePoseReadyBuffers[bufferIdx];
