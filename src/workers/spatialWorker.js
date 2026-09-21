@@ -46,6 +46,7 @@ import {
 } from '../util/workersUtils.js';
 import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
+import { EntityIdArray } from '../util/entityIdWidth.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult } from '../util/colliderUtils.js';
 
 /**
@@ -233,7 +234,7 @@ class SpatialWorker extends AbstractWorker {
       this._entityNeighborNextTick = null;
     }
     const candStride = 1 + Grid.maxNeighbors;
-    this._neighborCandidateData = new Uint16Array(this.globalEntityCount * candStride);
+    this._neighborCandidateData = new (EntityIdArray())(this.globalEntityCount * candStride);
     this._neighborCandidateTruncated = new Uint8Array(this.globalEntityCount);
     this._entityFramesSinceBuild = new Uint16Array(this.globalEntityCount);
 

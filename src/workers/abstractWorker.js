@@ -49,6 +49,7 @@ import { Query } from '../core/query.js';
 import { Box2d } from '../core/box2d.js';
 import { Decal } from '../core/decal.js';
 import { bindSpawnCommandRing } from '../util/spawnCommandRing.js';
+import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray } from '../util/entityIdWidth.js';
 import { setVerboseWorkers, installQuietConsoleLog } from '../util/debugLog.js';
 import { bindBox2dHotFields, bindWeedPoseFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
@@ -419,6 +420,7 @@ export class AbstractWorker {
 
     // Store config for worker access
     this.config = data.config || {};
+    bindEntityIdWidth(resolveEntityIdWidth(this.config));
 
     // Fine worker subtimers + SAB detail fields (config.debug.collectDetailedStats)
     this.collectDetailedStats = !!(this.config.debug?.collectDetailedStats);
@@ -697,7 +699,7 @@ export class AbstractWorker {
     // Initialize neighbor data reference (single buffer - row ownership eliminates races)
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (data.buffers?.neighborData) {
-      this.neighborData = new Uint16Array(data.buffers.neighborData);
+      this.neighborData = new (EntityIdArray())(data.buffers.neighborData);
     }
 
     // Initialize active entities list (for load-balanced processing)
@@ -705,7 +707,7 @@ export class AbstractWorker {
     // Maintained incrementally by spawn/despawn, consumed by all workers
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (data.buffers?.activeEntitiesData) {
-      this.activeEntitiesData = new Uint16Array(data.buffers.activeEntitiesData);
+      this.activeEntitiesData = new (EntityIdArray())(data.buffers.activeEntitiesData);
       // Also set on GameObject for static access via GameObject.getAllActive()
       GameObject.activeEntitiesData = this.activeEntitiesData;
     }
@@ -811,7 +813,7 @@ export class AbstractWorker {
         const EntityClass = self[registration.name];
         const sab = this.perTypeActiveLists[registration.name];
         if (EntityClass && sab) {
-          EntityClass._activeList = new Uint16Array(sab);
+          EntityClass._activeList = new (EntityIdArray())(sab);
         }
       }
     }
@@ -824,7 +826,7 @@ export class AbstractWorker {
         const freeListSAB = this.entityFreeLists[registration.name];
         const freeListTopSAB = this.entityFreeListTops[registration.name];
         if (EntityClass && freeListSAB && freeListTopSAB) {
-          EntityClass.freeList = new Uint16Array(freeListSAB);
+          EntityClass.freeList = new (EntityIdArray())(freeListSAB);
           EntityClass.freeListTop = new Int32Array(freeListTopSAB);
         }
       }

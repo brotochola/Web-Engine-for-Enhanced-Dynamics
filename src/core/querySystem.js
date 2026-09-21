@@ -18,6 +18,7 @@ import { collectComponents, countTrailingZeros } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { Transform } from '../components/transform.js';
 import { GameObject } from './gameObject.js';
+import { EntityIdArray, entityIdBytes, entityIdWidth, maxEntitiesForWidth } from '../util/entityIdWidth.js';
 
 // =============================================================================
 // CONSTANTS
@@ -54,13 +55,13 @@ const QUERY_RESULT_HEADER_BYTES = QUERY_RESULT_HEADER_INTS * Int32Array.BYTES_PE
  * @param {number} entityCapacity
  */
 export function getQuerySnapshotElements(entityCapacity) {
-  const n = Math.max(0, Math.min(entityCapacity | 0, MAX_ENTITIES));
+  const n = Math.max(0, Math.min(entityCapacity | 0, maxEntitiesForWidth()));
   return 1 + n;
 }
 
 /** Bytes for one complete snapshot at the given entity capacity. */
 export function getQuerySnapshotBytes(entityCapacity) {
-  return getQuerySnapshotElements(entityCapacity) * Uint16Array.BYTES_PER_ELEMENT;
+  return getQuerySnapshotElements(entityCapacity) * (entityIdBytes() === 4 ? 4 : 2);
 }
 
 /** Bytes per pre-computed query: atomic header + QUERY_SNAPSHOT_COUNT snapshots (4-byte aligned). */
@@ -206,7 +207,7 @@ function createCachedQueryEntry(totalEntityCount) {
   return {
     version: -1,
     count: -1,
-    buffer: new Uint16Array(totalEntityCount),
+    buffer: new (EntityIdArray())(totalEntityCount),
     subarray: EMPTY_QUERY_RESULT,
   };
 }
@@ -230,7 +231,7 @@ function createQuerySnapshotViews(sab, queryIndex, entityCapacity) {
 
   for (let i = 0; i < QUERY_SNAPSHOT_COUNT; i++) {
     const snapshotOffset = baseOffset + QUERY_RESULT_HEADER_BYTES + i * snapshotBytes;
-    snapshots.push(new Uint16Array(sab, snapshotOffset, snapshotElements));
+    snapshots.push(new (EntityIdArray())(sab, snapshotOffset, snapshotElements));
   }
 
   return {
@@ -400,7 +401,7 @@ export class QuerySystem {
 
     // Initialize reusable buffer for query() results (max size = total entities)
     const totalEntities = this.entityMetadata.reduce((sum, meta) => sum + meta.poolSize, 0);
-    this._queryResultBuffer = new Uint16Array(totalEntities);
+    this._queryResultBuffer = new (EntityIdArray())(totalEntities);
 
     this._logStatistics();
   }
@@ -471,7 +472,7 @@ export class QuerySystem {
     this.precomputedQueries = [];
     this.queryMaskToIndex.clear();
     const entityCapacity = this.entityMetadata.reduce((sum, meta) => sum + (meta.poolSize || 0), 0);
-    this.queryEntityCapacity = Math.min(entityCapacity, MAX_ENTITIES);
+    this.queryEntityCapacity = Math.min(entityCapacity, maxEntitiesForWidth());
     const resultBufferSize = calculateQueryResultBufferSize(this.queryEntityCapacity);
     let resultOffset = 0;
     const seenQueryMasks = new Set();
@@ -532,7 +533,7 @@ export class QuerySystem {
     if (!this.queryEntityCapacity) {
       this.queryEntityCapacity = Math.min(
         this.entityMetadata.reduce((sum, meta) => sum + (meta.poolSize || 0), 0),
-        MAX_ENTITIES
+        maxEntitiesForWidth()
       );
     }
     const queryResultsSize = calculateQueryResultsSABSize(
@@ -581,10 +582,15 @@ export class QuerySystem {
       const maskView = new BigUint64Array(buffer, entryOffset, 1);
       maskView[0] = meta.componentMask;
 
-      // startIndex and endIndex (Uint16 at offset 8 and 10)
-      const indexView = new Uint16Array(buffer, entryOffset + 8, 2);
-      indexView[0] = meta.startIndex;
-      indexView[1] = meta.endIndex;
+      if (entityIdWidth() === 32) {
+        const indexView = new Uint32Array(buffer, entryOffset + 8, 2);
+        indexView[0] = meta.startIndex;
+        indexView[1] = meta.endIndex;
+      } else {
+        const indexView = new Uint16Array(buffer, entryOffset + 8, 2);
+        indexView[0] = meta.startIndex;
+        indexView[1] = meta.endIndex;
+      }
     }
   }
 
@@ -993,7 +999,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   const totalEntityCount = entityMetadata.reduce((sum, m) => sum + m.poolSize, 0);
   const QUERY_BUFFER_POOL_SIZE = 4;
   const queryResultBuffers = Array.from({ length: QUERY_BUFFER_POOL_SIZE }, () =>
-    new Uint16Array(totalEntityCount)
+    new (EntityIdArray())(totalEntityCount)
   );
   let queryResultBufferIndex = 0;
 

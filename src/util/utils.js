@@ -6,6 +6,7 @@
 import { PHYSICS_DEFAULTS } from './configDefaults.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
+import { collisionPairKeyWide, collisionPairUnpackWide } from './entityIdWidth.js';
 export { debugWorkerLog };
 
 // ============================================================================
@@ -511,13 +512,11 @@ export function cantorPair(a, b) {
  * Same packing as logicWorker contact drain / isCollidingWith.
  */
 export function collisionPairKey(minE, maxE) {
-  return ((minE & 0xffff) << 16) | (maxE & 0xffff);
+  return collisionPairKeyWide(minE, maxE);
 }
 
 export function collisionPairUnpack(key, out) {
-  out.a = (key >>> 16) & 0xffff;
-  out.b = key & 0xffff;
-  return out;
+  return collisionPairUnpackWide(key, out);
 }
 
 /**

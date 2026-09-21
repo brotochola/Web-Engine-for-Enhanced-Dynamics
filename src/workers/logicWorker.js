@@ -27,6 +27,7 @@ import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.
 import { Ray } from '../core/ray.js';
 import { Box2d } from '../core/box2d.js';
 import { _cantorResult, collisionPairKey, collisionPairUnpack } from '../util/utils.js';
+import { EntityIdArray } from '../util/entityIdWidth.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
@@ -243,7 +244,7 @@ class LogicWorker extends AbstractWorker {
     // console.log("LOGIC WORKER: Initializing with component system");
 
     // Initialize screen visibility tracking array
-    this._listMergeScratch = new Uint16Array(1 + (this.globalEntityCount || 1));
+    this._listMergeScratch = new (EntityIdArray())(1 + (this.globalEntityCount || 1));
     this.previousScreenVisibility = new Uint8Array(data.globalEntityCount);
     // Initialize to 0 (off-screen) - first frame will trigger onScreenEnter for visible entities
     this.previousScreenVisibility.fill(0);
@@ -298,7 +299,7 @@ class LogicWorker extends AbstractWorker {
 
         // Pre-computed typed array of all entity indices for this class
         // Uses Uint16 since max entities = 65535 (fits in 16 bits)
-        EntityClass.entityIndices = new Uint16Array(poolSize);
+        EntityClass.entityIndices = new (EntityIdArray())(poolSize);
         for (let j = 0; j < poolSize; j++) {
           EntityClass.entityIndices[j] = startIndex + j;
         }
@@ -405,7 +406,7 @@ class LogicWorker extends AbstractWorker {
     // Scene-level kill switches: skip drain paths when no type opts in
     this.anyTypeNeedsCollisions = this.collisionListenerByType.includes(1);
     this.anyTypeNeedsJointBreaks = this.jointBreakListenerByType.includes(1);
-    this._tickAllScratch = new Uint16Array(this.globalEntityCount || 1);
+    this._tickAllScratch = new (EntityIdArray())(this.globalEntityCount || 1);
   }
 
   // ========================================

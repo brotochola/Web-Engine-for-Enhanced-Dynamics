@@ -61,6 +61,14 @@ import { SharedResource } from '../core/sharedResource.js';
 import { Decal } from '../core/decal.js';
 import { MAX_COMPONENTS, MAX_ENTITIES, MAX_ENTITY_TYPES } from '../core/querySystem.js';
 import {
+  bindEntityIdWidth,
+  entityIdBytes,
+  EntityIdArray,
+  maxEntitiesForWidth,
+  resolveEntityIdWidth,
+  MAX_ENTITIES_U16,
+} from './entityIdWidth.js';
+import {
   BODY_DIRTY,
   bindBodySyncBuffers,
 } from '../box2d/box2dBodySync.js';
@@ -72,29 +80,36 @@ function assertIntegerInRange(label, value, min, max) {
   }
 }
 
-function validateSceneSharedBufferConfig(scene) {
+export function validateSceneSharedBufferConfig(scene) {
   const { config, registeredClasses, totalEntityCount, nextComponentId } = scene;
+  const width = resolveEntityIdWidth(config);
+  const maxEnt = maxEntitiesForWidth(width);
 
-  assertIntegerInRange('totalEntityCount', totalEntityCount, 0, MAX_ENTITIES);
+  assertIntegerInRange('totalEntityCount', totalEntityCount, 0, maxEnt);
   assertIntegerInRange('registered entity type count', registeredClasses.length, 0, MAX_ENTITY_TYPES);
   assertIntegerInRange('component type count', nextComponentId, 0, MAX_COMPONENTS);
 
   for (const registration of registeredClasses) {
     const label = `entity pool "${registration.class?.name || 'unknown'}"`;
-    assertIntegerInRange(`${label} count`, registration.count, 0, MAX_ENTITIES);
-    assertIntegerInRange(`${label} startIndex`, registration.startIndex, 0, MAX_ENTITIES);
+    assertIntegerInRange(`${label} count`, registration.count, 0, maxEnt);
+    assertIntegerInRange(`${label} startIndex`, registration.startIndex, 0, maxEnt);
     assertIntegerInRange(
       `${label} endIndex`,
       registration.startIndex + registration.count,
       0,
-      MAX_ENTITIES
+      maxEnt
     );
+    if (width !== 32 && registration.count > MAX_ENTITIES_U16) {
+      throw new RangeError(
+        `${label} count ${registration.count} requires config.entityIdWidth = 32`,
+      );
+    }
   }
 
-  assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_ENTITIES);
-  assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_ENTITIES);
-  assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES);
-  assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, MAX_ENTITIES);
+  assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_ENTITIES_U16);
+  assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_ENTITIES_U16);
+  assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES_U16);
+  assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, maxEnt);
   assertIntegerInRange(
     'physics.maxFixturePoolSize',
     config.physics.maxFixturePoolSize || config.physics.maxFixtures || 0,
@@ -156,7 +171,9 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   const spatialOn = (config.spatial.numberOfSpatialWorkers | 0) > 0;
   const maxNeighbors = config.spatial.maxNeighbors;
   if (spatialOn) {
-    buffers.neighborData = new SharedArrayBuffer(totalEntityCount * (1 + maxNeighbors) * 2);
+    buffers.neighborData = new SharedArrayBuffer(
+      totalEntityCount * (1 + maxNeighbors) * entityIdBytes(),
+    );
   } else {
     buffers.neighborData = null;
   }
@@ -657,35 +674,38 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
     }
   }
 
-  const activeEntitiesBufferSize = (1 + totalEntityCount) * 2;
+  const idBytes = entityIdBytes();
+  const IdArray = EntityIdArray();
+  const activeEntitiesBufferSize = (1 + totalEntityCount) * idBytes;
   buffers.activeEntitiesData = new SharedArrayBuffer(activeEntitiesBufferSize);
-  GameObject.activeEntitiesData = new Uint16Array(buffers.activeEntitiesData);
+  GameObject.activeEntitiesData = new IdArray(buffers.activeEntitiesData);
 
   buffers.perTypeActiveLists = {};
   for (const registration of registeredClasses) {
     const typeName = registration.class.name;
-    const bufferSize = (1 + registration.count) * 2;
+    const bufferSize = (1 + registration.count) * idBytes;
     buffers.perTypeActiveLists[typeName] = new SharedArrayBuffer(bufferSize);
 
     const EntityClass = registration.class;
-    EntityClass._activeList = new Uint16Array(buffers.perTypeActiveLists[typeName]);
+    EntityClass._activeList = new IdArray(buffers.perTypeActiveLists[typeName]);
     EntityClass._activeList[0] = 0;
   }
 
   buffers.entityFreeLists = {};
   buffers.entityFreeListTops = {};
+  const topBytes = idBytes === 4 ? 16 : 8;
   for (const registration of registeredClasses) {
     const typeName = registration.class.name;
     const poolSize = registration.count;
     if (poolSize === 0) continue;
 
     // Links are LOCAL slot indices; pops translate to global via startIndex
-    const freeListBuffer = new SharedArrayBuffer(poolSize * 2);
-    const freeListTopBuffer = new SharedArrayBuffer(8);
+    const freeListBuffer = new SharedArrayBuffer(poolSize * idBytes);
+    const freeListTopBuffer = new SharedArrayBuffer(topBytes);
     buffers.entityFreeLists[typeName] = freeListBuffer;
     buffers.entityFreeListTops[typeName] = freeListTopBuffer;
 
-    const freeList = new Uint16Array(freeListBuffer);
+    const freeList = new IdArray(freeListBuffer);
     const freeListTop = new Int32Array(freeListTopBuffer);
 
     // Interleaved ordering scatters concurrent spawns across cache lines
@@ -741,7 +761,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
     const gridRows = Math.ceil(config.worldHeight / cellSize);
     const totalCells = gridCols * gridRows;
     const maxEntitiesPerCell = config.spatial.maxEntitiesPerCell;
-    const cellByteSize = 4 + maxEntitiesPerCell * 2; // [count:u8][pad:3][entities:u16×mec]
+    const cellByteSize = 4 + maxEntitiesPerCell * entityIdBytes(); // [count:u8][pad:3][entities×mec]
 
     buffers.gridBuffer = new SharedArrayBuffer(totalCells * cellByteSize);
     buffers.cellSleepingBuffer = new SharedArrayBuffer(totalCells);
@@ -757,6 +777,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
       maxEntitiesPerCell,
       maxNeighbors,
       rowsPerBlock: config.spatial.rowsPerBlock,
+      entityIdBytes: entityIdBytes(),
     };
 
     Grid.initialize(
@@ -775,6 +796,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
         maxEntitiesPerCell,
         maxNeighbors,
         rowsPerBlock: config.spatial.rowsPerBlock,
+        entityIdBytes: entityIdBytes(),
       }
     );
   } else {
@@ -804,6 +826,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
 }
 
 export function createSceneSharedBuffers(scene) {
+  bindEntityIdWidth(resolveEntityIdWidth(scene.config));
   validateSceneSharedBufferConfig(scene);
   initializeCoreEntityAndComponentBuffers(scene);
   initializeParticleBuffers(scene);
@@ -903,6 +926,7 @@ export function teardownSceneSharedState(scene) {
   }
 
   bindSpawnCommandRing(null);
+  bindEntityIdWidth(16);
   GameObject.activeEntitiesData = null;
   GameObject.forceProcessOnLogicWorker = null;
   GameObject.entityTypeHasForcedLogicWorker = null;

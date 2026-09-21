@@ -56,3 +56,10 @@ const cases = {
 
 const report = { feature: 'treiber-free-list', capacity: CAP, cases };
 if (OUTPUT) writeReport(OUTPUT, report);
+
+if (args.campaign) {
+  const { runFlKernel } = await import('./entityIdWidthKernels.mjs');
+  await runFlKernel({
+    output: args.campaignOut || 'tests/results/entity-id-width/kernel-fl.json',
+  });
+}

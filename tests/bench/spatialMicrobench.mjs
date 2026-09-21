@@ -245,3 +245,10 @@ const report = {
 if (OUTPUT) writeReport(OUTPUT, report);
 console.log(`C16 map ${Math.round(cases.c16_map.opsPerSec)} ops/s vs flat ${Math.round(cases.c16_flat.opsPerSec)} ops/s`);
 console.log(`C17 dependency hash ${Math.round(cases.c17_hash.opsPerSec)} ops/s (dead in prod Verlet path)`);
+
+if (args.campaign) {
+  const { runSpatialKernel } = await import('./entityIdWidthKernels.mjs');
+  await runSpatialKernel({
+    output: args.campaignOut || 'tests/results/entity-id-width/kernel-nbr-grid.json',
+  });
+}

@@ -239,6 +239,7 @@ async function main() {
 
   try {
     const page = await browser.newPage();
+    page.setDefaultTimeout(180000);
 
     page.on('pageerror', (error) => {
       console.error('[benchmark page error]', error);

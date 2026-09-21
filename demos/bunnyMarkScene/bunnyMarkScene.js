@@ -4,7 +4,7 @@ import { BunnySpawner } from './gameObjects/bunnySpawner.js';
 
 const { Scene, Camera, GameObject } = WEED;
 
-const INITIAL_BUNNIES = 65000;
+const INITIAL_BUNNIES = 150000;
 
 const HUD_CSS =
     'position:fixed;left:12px;bottom:12px;z-index:940;pointer-events:none;' +
@@ -15,6 +15,7 @@ export class BunnyMarkScene extends Scene {
     static config = {
         worldWidth: window.innerWidth,
         worldHeight: window.innerHeight,
+        entityIdWidth: 32,
         seed: 1,
         spatial: {
             // 0 = no spatial worker and no grid SAB. Inspect picks via click scan.
@@ -40,7 +41,7 @@ export class BunnyMarkScene extends Scene {
             backend: 'webgl',
             noLimitFPS: false,
             ySorting: false,
-            maxVisibleRenderables: 65535,
+            maxVisibleRenderables: 160_000,
         },
         preRender: {
             skipCull: true,
@@ -53,7 +54,7 @@ export class BunnyMarkScene extends Scene {
     };
 
     static entities = [
-        [Bunny, 65500],
+        [Bunny, 160_000],
         [BunnySpawner, 1],
     ];
 

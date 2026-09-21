@@ -20,6 +20,7 @@ import { Joint } from './joint.js';
 import { ColliderFixture } from './colliderFixture.js';
 import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
 import { collectComponents, collisionPairKey, distanceSq2D, debugWorkerLog } from '../util/utils.js';
+import { entityIdBytes, EntityIdArray } from '../util/entityIdWidth.js';
 import {
   resetFreeList,
   popFreeIndex,
@@ -208,7 +209,7 @@ export class GameObject {
 
     // Initialize neighbor data if provided
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
-    this.neighborData = neighborBuffer ? new Uint16Array(neighborBuffer) : null;
+    this.neighborData = neighborBuffer ? new (EntityIdArray())(neighborBuffer) : null;
 
     // Initialize tick decimation buffer if provided (staggeredUpdates enabled)
     if (nextTickBuffer) {
@@ -439,9 +440,9 @@ export class GameObject {
 
     if (Grid._stride && Grid.neighborData) {
       this._neighborOffset = index * Grid._stride;
-      this._neighbors = new Uint16Array(
+      this._neighbors = new (EntityIdArray())(
         Grid.neighborData.buffer,
-        Grid.neighborData.byteOffset + (this._neighborOffset + 1) * 2,
+        Grid.neighborData.byteOffset + (this._neighborOffset + 1) * entityIdBytes(),
         Grid.maxNeighbors
       );
     } else {

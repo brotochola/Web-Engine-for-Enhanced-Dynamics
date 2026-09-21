@@ -194,6 +194,13 @@ export function runLogPairMicrobench(cliArgs = parseArgs()) {
   );
 
   if (outputPath) writeReport(outputPath, report);
+
+  if (cliArgs.campaign) {
+    const { runPairKernel } = await import('./entityIdWidthKernels.mjs');
+    return runPairKernel({
+      output: cliArgs.campaignOut || 'tests/results/entity-id-width/kernel-pair.json',
+    });
+  }
   return report;
 }
 

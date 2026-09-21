@@ -144,3 +144,10 @@ const report = {
 if (OUTPUT) writeReport(OUTPUT, report);
 void CompA;
 void CompB;
+
+if (args.campaign) {
+  const { runListKernel } = await import('./entityIdWidthKernels.mjs');
+  await runListKernel({
+    output: args.campaignOut || 'tests/results/entity-id-width/kernel-list.json',
+  });
+}

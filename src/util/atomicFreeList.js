@@ -55,7 +55,27 @@
  * @param {number} count - Number of slots in the pool
  * @param {number} [interleaveFactor=8] - Stride between consecutive pops
  */
+function isU32Links(links) {
+  return links instanceof Uint32Array;
+}
+
+function head64(top) {
+  return new BigInt64Array(top.buffer, top.byteOffset, 1);
+}
+
 export function resetFreeList(top, links, count, interleaveFactor = 8) {
+  if (isU32Links(links)) {
+    let headPlusOne = 0;
+    for (let offset = 0; offset < interleaveFactor; offset++) {
+      for (let i = offset; i < count; i += interleaveFactor) {
+        links[i] = headPlusOne;
+        headPlusOne = i + 1;
+      }
+    }
+    Atomics.store(top, 2, count);
+    Atomics.store(head64(top), 0, BigInt(headPlusOne));
+    return;
+  }
   let headPlusOne = 0;
   // Chain in the same write order as the old array fill; each element becomes
   // the new head, so pops yield the exact same sequence as before.
@@ -78,6 +98,21 @@ export function resetFreeList(top, links, count, interleaveFactor = 8) {
  * @returns {number} Global index, or -1 if the pool is exhausted
  */
 export function popFreeIndex(top, links, startIndex = 0) {
+  if (isU32Links(links)) {
+    const h = head64(top);
+    for (;;) {
+      const packed = Atomics.load(h, 0);
+      const plusOne = Number(packed & 0xffffffffn);
+      if (plusOne === 0) return -1;
+      const local = plusOne - 1;
+      const next = links[local] >>> 0;
+      const nextPacked = (((packed >> 32n) + 1n) << 32n) | BigInt(next);
+      if (Atomics.compareExchange(h, 0, packed, nextPacked) === packed) {
+        Atomics.sub(top, 2, 1);
+        return startIndex + local;
+      }
+    }
+  }
   for (;;) {
     const head = Atomics.load(top, 0);
     const plusOne = head & 0xffff;
@@ -103,6 +138,26 @@ export function popFreeIndex(top, links, startIndex = 0) {
  */
 export function popFreeIndices(top, links, maxToPop, outArray, outOffset = 0, startIndex = 0) {
   if (maxToPop <= 0) return 0;
+  if (isU32Links(links)) {
+    const h = head64(top);
+    for (;;) {
+      const packed = Atomics.load(h, 0);
+      let plusOne = Number(packed & 0xffffffffn);
+      if (plusOne === 0) return 0;
+      let popped = 0;
+      let cur = plusOne;
+      while (cur !== 0 && popped < maxToPop) {
+        outArray[outOffset + popped] = startIndex + (cur - 1);
+        cur = links[cur - 1] >>> 0;
+        popped++;
+      }
+      const nextPacked = (((packed >> 32n) + 1n) << 32n) | BigInt(cur >>> 0);
+      if (Atomics.compareExchange(h, 0, packed, nextPacked) === packed) {
+        Atomics.sub(top, 2, popped);
+        return popped;
+      }
+    }
+  }
   for (;;) {
     const head = Atomics.load(top, 0);
     let plusOne = head & 0xffff;
@@ -136,6 +191,18 @@ export function popFreeIndices(top, links, maxToPop, outArray, outOffset = 0, st
  */
 export function pushFreeIndex(top, links, index, startIndex = 0) {
   const local = index - startIndex;
+  if (isU32Links(links)) {
+    const h = head64(top);
+    for (;;) {
+      const packed = Atomics.load(h, 0);
+      links[local] = Number(packed & 0xffffffffn);
+      const nextPacked = (((packed >> 32n) + 1n) << 32n) | BigInt((local + 1) >>> 0);
+      if (Atomics.compareExchange(h, 0, packed, nextPacked) === packed) {
+        Atomics.add(top, 2, 1);
+        return;
+      }
+    }
+  }
   for (;;) {
     const head = Atomics.load(top, 0);
     // We own `local` until the CAS publishes it, so this plain write is only
@@ -156,5 +223,6 @@ export function pushFreeIndex(top, links, index, startIndex = 0) {
  * @returns {number}
  */
 export function getFreeListCount(top) {
-  return Atomics.load(top, 1);
+  // u16 Treiber: Int32[2] count at [1]. u32 Treiber: Int32[4] count at [2] (head is BigInt64).
+  return Atomics.load(top, top.length >= 3 ? 2 : 1);
 }

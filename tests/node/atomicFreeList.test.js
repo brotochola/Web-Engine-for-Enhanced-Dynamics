@@ -78,6 +78,39 @@ test('popFreeIndices batch matches sequential pops and one CAS', () => {
   assert.equal(popFreeIndices(top, links, 4, rest), 0);
 });
 
+function makeListU32(count) {
+  const top = new Int32Array(new SharedArrayBuffer(16));
+  const links = new Uint32Array(new SharedArrayBuffer(count * 4));
+  return { top, links };
+}
+
+test('u16 Treiber wraps local+1 at pool 70000; u32 does not', () => {
+  const n = 70000;
+  const u16 = makeList(n);
+  resetFreeList(u16.top, u16.links, n, 1);
+  const first16 = popFreeIndex(u16.top, u16.links);
+  assert.notEqual(first16, n - 1, 'FL0 must not pop 69999 from a u16 link/head');
+
+  const u32 = makeListU32(n);
+  resetFreeList(u32.top, u32.links, n, 1);
+  const first32 = popFreeIndex(u32.top, u32.links);
+  assert.equal(first32, n - 1);
+  pushFreeIndex(u32.top, u32.links, first32);
+  assert.equal(getFreeListCount(u32.top), n);
+  assert.equal(popFreeIndex(u32.top, u32.links), n - 1);
+});
+
+test('u32 Treiber pop/push/batch at 300000', () => {
+  const n = 300000;
+  const { top, links } = makeListU32(n);
+  resetFreeList(top, links, n, 1);
+  const batch = new Int32Array(5);
+  assert.equal(popFreeIndices(top, links, 5, batch), 5);
+  assert.deepEqual(Array.from(batch), [299999, 299998, 299997, 299996, 299995]);
+  for (let i = 4; i >= 0; i--) pushFreeIndex(top, links, batch[i]);
+  assert.equal(popFreeIndex(top, links), 299999);
+});
+
 test('startIndex offsets pops and pushes (entity pools)', () => {
   const { top, links } = makeList(4);
   resetFreeList(top, links, 4, 1);

@@ -26,6 +26,7 @@ import { Transform } from '../components/transform.js';
 import { Collider } from '../components/collider.js';
 import { distanceSq2D } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
+import { entityIdBytes } from '../util/entityIdWidth.js';
 
 // =============================================================================
 // CONSTANTS - Configurable via scene (defaults shown)
@@ -125,8 +126,10 @@ export class Grid {
     Grid.maxEntitiesPerCell = metadata.maxEntitiesPerCell ?? SPATIAL_DEFAULTS.maxEntitiesPerCell;
     Grid.rowsPerBlock = metadata.rowsPerBlock ?? SPATIAL_DEFAULTS.rowsPerBlock;
 
-    // Compute derived values: 4-byte header + Uint16 entity ids
-    Grid.cellByteSize = 4 + Grid.maxEntitiesPerCell * 2;
+    const idBytes = metadata.entityIdBytes || entityIdBytes();
+    Grid._idBytes = idBytes;
+    // Compute derived values: 4-byte header + entity ids
+    Grid.cellByteSize = 4 + Grid.maxEntitiesPerCell * idBytes;
     // Stride = 1 (totalCount) + maxNeighbors
     Grid.neighborStride = 1 + Grid.maxNeighbors;
     Grid._stride = Grid.neighborStride;
@@ -135,14 +138,14 @@ export class Grid {
     if (buffers.gridBuffer) {
       Grid._gridBuffer = buffers.gridBuffer;
       Grid._gridCounts = new Uint8Array(buffers.gridBuffer);
-      Grid._gridEntities = new Uint16Array(buffers.gridBuffer);
+      Grid._gridEntities = new (idBytes === 4 ? Uint32Array : Uint16Array)(buffers.gridBuffer);
     }
 
     // ===== NEIGHBOR DATA (Single Buffer) =====
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (buffers.neighborBuffer) {
       Grid._neighborBuffer = buffers.neighborBuffer;
-      Grid._neighborData = new Uint16Array(buffers.neighborBuffer);
+      Grid._neighborData = new (idBytes === 4 ? Uint32Array : Uint16Array)(buffers.neighborBuffer);
     }
 
     // ===== CELL SLEEPING STATE (Single Buffer) =====
@@ -156,6 +159,11 @@ export class Grid {
     if (buffers.cellVersionBuffer) {
       Grid._cellVersionBuffer = buffers.cellVersionBuffer;
       Grid._cellVersionData = new Uint32Array(buffers.cellVersionBuffer);
+    }
+
+    const QueryArray = idBytes === 4 ? Uint32Array : Uint16Array;
+    if (!(Grid._queryResults instanceof QueryArray)) {
+      Grid._queryResults = new QueryArray(16384);
     }
   }
 
@@ -175,6 +183,7 @@ export class Grid {
     Grid._cellVersionData = null;
     Grid._markerArray = null;
     Grid._processedSet = null;
+    Grid._idBytes = 2;
   }
 
   // =============================================================================
@@ -250,7 +259,8 @@ export class Grid {
    */
   static getCellBase(cellIndex) {
     const byteOffset = cellIndex * Grid.cellByteSize;
-    return (byteOffset >> 1) + 2;
+    const idBytes = Grid._idBytes || 2;
+    return (byteOffset / idBytes) + (4 / idBytes);
   }
 
   // =============================================================================
@@ -374,7 +384,7 @@ export class Grid {
    * @param {Uint16Array|null} resultsBuffer - Pre-allocated buffer for results (optional)
    * @returns {{count: number, entities: Uint16Array}} Count and entities array
    */
-  static _queryResults = new Uint16Array(16384); // Pre-allocated results buffer (Uint16 since entity IDs < 65536)
+  static _queryResults = new Uint16Array(16384);
   static _queryResultCount = 0;
   static _queryResultBox = { count: 0, entities: null };
 

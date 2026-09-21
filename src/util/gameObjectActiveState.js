@@ -116,7 +116,7 @@ export function mergeSortedIntoActiveList(list, incoming, n, scratch) {
   }
   if (!scratch) {
     // ponytail: tests / unexpected call; logic0 always passes init scratch
-    scratch = new Uint16Array(1 + oldCount + n);
+    scratch = new (list.constructor)(1 + oldCount + n);
   }
   let i = 1;
   let j = 0;

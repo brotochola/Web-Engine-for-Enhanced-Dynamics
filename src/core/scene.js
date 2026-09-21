@@ -63,6 +63,7 @@ import {
   getSharedBufferSize as getSharedBufferSizeFromBuffers,
 } from '../util/sceneBufferMemory.js';
 import { createSceneSharedBuffers, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
+import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray } from '../util/entityIdWidth.js';
 import { createSceneWorkers } from '../util/sceneWorkerBootstrap.js';
 import { Query } from './query.js';
 import { GrabSystem } from './grabSystem.js';
@@ -158,6 +159,7 @@ class Scene {
 
     // Apply all default config values
     this._applyConfigDefaults();
+    bindEntityIdWidth(resolveEntityIdWidth(this.config));
 
     this.seed = this.config.seed;
     this.rng = seededRandom(this.seed, 'main');
@@ -561,7 +563,7 @@ class Scene {
 
     // Pre-computed typed array of all entity indices for this class
     // Enables zero-allocation iteration: EntityClass.entityIndices.forEach(...)
-    EntityClass.entityIndices = new Uint16Array(count);
+    EntityClass.entityIndices = new (EntityIdArray())(count);
     for (let i = 0; i < count; i++) {
       EntityClass.entityIndices[i] = startIndex + i;
     }
