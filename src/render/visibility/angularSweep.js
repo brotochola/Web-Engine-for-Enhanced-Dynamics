@@ -490,19 +490,15 @@ export function writeOrientedBoxVerts(
   const wx = entityX + c * offsetX - s * offsetY;
   const wy = entityY + s * offsetX + c * offsetY;
 
-  // CCW: BL, BR, TR, TL
-  const locals = [
-    -hw, -hh,
-    hw, -hh,
-    hw, hh,
-    -hw, hh,
-  ];
-  for (let i = 0; i < 4; i++) {
-    const lx = locals[i * 2];
-    const ly = locals[i * 2 + 1];
-    outX[start + i] = wx + c * lx - s * ly;
-    outY[start + i] = wy + s * lx + c * ly;
-  }
+  // CCW: BL, BR, TR, TL. No per-call array.
+  outX[start] = wx + c * -hw - s * -hh;
+  outY[start] = wy + s * -hw + c * -hh;
+  outX[start + 1] = wx + c * hw - s * -hh;
+  outY[start + 1] = wy + s * hw + c * -hh;
+  outX[start + 2] = wx + c * hw - s * hh;
+  outY[start + 2] = wy + s * hw + c * hh;
+  outX[start + 3] = wx + c * -hw - s * hh;
+  outY[start + 3] = wy + s * -hw + c * hh;
   return 4;
 }
 
