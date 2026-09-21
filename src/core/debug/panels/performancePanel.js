@@ -3,6 +3,9 @@
 import { createPanel, createStat } from '../ui/debugDom.js';
 import { formatNumber } from '../../../util/utils.js';
 import { DecorationPool } from '../../decorationPool.js';
+import { BulletPool } from '../../bulletPool.js';
+import { ParticleEmitter } from '../../particleEmitter.js';
+import { GameObject } from '../../gameObject.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -41,6 +44,11 @@ function fmtLoad(v) {
   return v == null || Number.isNaN(v) ? '—' : Math.round(v) + '%';
 }
 
+function padCount(n, width) {
+  const s = formatNumber(n);
+  return s.length >= width ? s : s.padStart(width, ' ');
+}
+
 export class PerformancePanel {
   constructor(debugUI) {
     this.debugUI = debugUI;
@@ -70,16 +78,19 @@ export class PerformancePanel {
     poolTitle.textContent = 'Pools';
     poolRow.appendChild(poolTitle);
 
-    this.elements.perfGameObjects = this._colorStat('#4ade80', 'Game objects: -- / -- (👁 --)');
+    this.elements.perfGameObjects = this._poolChip('#4ade80', 'Game objects: -- / -- (👁 --)');
     poolRow.appendChild(this.elements.perfGameObjects);
 
-    this.elements.perfParticles = this._colorStat('#fb923c', 'Particles: -- / -- (👁 --)');
+    this.elements.perfParticles = this._poolChip('#fb923c', 'Particles: -- / -- (👁 --)');
     poolRow.appendChild(this.elements.perfParticles);
 
-    this.elements.perfDecorations = this._colorStat('#34d399', 'Decorations: -- / -- (👁 --)');
+    this.elements.perfDecorations = this._poolChip('#34d399', 'Decorations: -- / -- (👁 --)');
     poolRow.appendChild(this.elements.perfDecorations);
 
-    this.elements.perfFlash = this._colorStat('#fbbf24', 'Flash: --');
+    this.elements.perfBullets = this._poolChip('#60a5fa', 'Bullets: -- / -- (👁 --)');
+    poolRow.appendChild(this.elements.perfBullets);
+
+    this.elements.perfFlash = this._poolChip('#fbbf24', 'Flash: --');
     poolRow.appendChild(this.elements.perfFlash);
 
     summary.appendChild(poolRow);
@@ -96,10 +107,15 @@ export class PerformancePanel {
   // ------- lifecycle -------
 
   attach() {
+    this._flashWidth = 5;
     this._createWorkerStatElements();
+    this._bindPoolLists();
     const caps = this.debugUI.caps || {};
     if (this.elements.perfParticles) {
       this.elements.perfParticles.style.display = caps.particles ? '' : 'none';
+    }
+    if (this.elements.perfBullets) {
+      this.elements.perfBullets.style.display = caps.bullets ? '' : 'none';
     }
     if (this.elements.perfFlash) {
       this.elements.perfFlash.style.display = caps.particles ? '' : 'none';
@@ -360,73 +376,105 @@ export class PerformancePanel {
     }
   }
 
+  _bindPoolLists() {
+    const buffers = this.debugUI.scene?.buffers;
+    const view = (sab) => (sab ? new Uint16Array(sab) : null);
+    this._activeParticles = view(buffers?.activeParticlesData);
+    this._visibleParticles = view(buffers?.visibleParticlesData);
+    this._activeBullets = view(buffers?.activeBulletsData);
+    this._visibleBullets = view(buffers?.visibleBulletsData);
+    this._visibleDecorations = view(buffers?.visibleDecorationsData);
+  }
+
+  _listCount(list) {
+    return list ? list[0] | 0 : 0;
+  }
+
+  _poolLine(label, active, total, visible) {
+    const width = formatNumber(total).length;
+    return (
+      label +
+      ': ' +
+      padCount(active, width) +
+      ' / ' +
+      padCount(total, width) +
+      ' (👁 ' +
+      padCount(visible, width) +
+      ')'
+    );
+  }
+
+  _writePoolLine(el, pv, activeKey, totalKey, visibleKey, label, active, total, visible) {
+    if (!el) return;
+    if (active === pv[activeKey] && total === pv[totalKey] && visible === pv[visibleKey]) return;
+    pv[activeKey] = active;
+    pv[totalKey] = total;
+    pv[visibleKey] = visible;
+    el.textContent = this._poolLine(label, active, total, visible);
+  }
+
   _updateSummary(stats, scene) {
     const pv = stats.prev;
     const particleView = stats.workerStatViews?.particle;
-    const rendererView = stats.workerStatViews?.renderer;
+    const preRenderView = stats.workerStatViews?.preRender;
 
-    if (particleView && this.elements.perfGameObjects) {
-      const aGO = (particleView[PARTICLE_STATS.ACTIVE_ENTITIES] || 0) | 0;
-      const tGO = (particleView[PARTICLE_STATS.TOTAL_ENTITIES] || 0) | 0;
-      const vGO = rendererView ? (rendererView[RENDERER_STATS.VISIBLE_ENTITIES] || 0) | 0 : 0;
-      if (aGO !== pv.activeGO || tGO !== pv.totalGO || vGO !== pv.visibleGO) {
-        pv.activeGO = aGO;
-        pv.totalGO = tGO;
-        pv.visibleGO = vGO;
-        this.elements.perfGameObjects.textContent =
-          'Game objects: ' +
-          formatNumber(aGO) +
-          ' / ' +
-          formatNumber(tGO) +
-          ' (👁 ' +
-          formatNumber(vGO) +
-          ')';
-      }
-    }
+    const activeEntities = GameObject.activeEntitiesData;
+    this._writePoolLine(
+      this.elements.perfGameObjects,
+      pv,
+      'activeGO',
+      'totalGO',
+      'visibleGO',
+      'Game objects',
+      activeEntities ? activeEntities[0] | 0 : 0,
+      scene.totalEntityCount | 0,
+      preRenderView ? (preRenderView[PRE_RENDER_STATS.VISIBLE_ENTITIES] || 0) | 0 : 0,
+    );
 
-    if (particleView && this.elements.perfParticles) {
-      const aP = (particleView[PARTICLE_STATS.ACTIVE_PARTICLES] || 0) | 0;
-      const tP = (particleView[PARTICLE_STATS.TOTAL_PARTICLES] || 0) | 0;
-      const vP = rendererView ? (rendererView[RENDERER_STATS.VISIBLE_PARTICLES] || 0) | 0 : 0;
-      if (aP !== pv.activeP || tP !== pv.totalP || vP !== pv.visibleP) {
-        pv.activeP = aP;
-        pv.totalP = tP;
-        pv.visibleP = vP;
-        this.elements.perfParticles.textContent =
-          'Particles: ' +
-          formatNumber(aP) +
-          ' / ' +
-          formatNumber(tP) +
-          ' (👁 ' +
-          formatNumber(vP) +
-          ')';
-      }
-    }
+    this._writePoolLine(
+      this.elements.perfParticles,
+      pv,
+      'activeP',
+      'totalP',
+      'visibleP',
+      'Particles',
+      this._listCount(this._activeParticles),
+      ParticleEmitter.maxCount | 0,
+      this._listCount(this._visibleParticles),
+    );
 
-    if (rendererView && this.elements.perfDecorations) {
-      const aD = (rendererView[RENDERER_STATS.ACTIVE_DECORATIONS] || 0) | 0;
-      const vD = (rendererView[RENDERER_STATS.VISIBLE_DECORATIONS] || 0) | 0;
-      const tD = (DecorationPool.maxCount || 0) | 0;
-      if (aD !== pv.activeD || tD !== pv.totalD || vD !== pv.visibleD) {
-        pv.activeD = aD;
-        pv.totalD = tD;
-        pv.visibleD = vD;
-        this.elements.perfDecorations.textContent =
-          'Decorations: ' +
-          formatNumber(aD) +
-          ' / ' +
-          formatNumber(tD) +
-          ' (👁 ' +
-          formatNumber(vD) +
-          ')';
-      }
-    }
+    this._writePoolLine(
+      this.elements.perfDecorations,
+      pv,
+      'activeD',
+      'totalD',
+      'visibleD',
+      'Decorations',
+      DecorationPool.getActiveCount() | 0,
+      DecorationPool.maxCount | 0,
+      this._listCount(this._visibleDecorations),
+    );
+
+    this._writePoolLine(
+      this.elements.perfBullets,
+      pv,
+      'bulletActive',
+      'bulletTotal',
+      'bulletVisible',
+      'Bullets',
+      this._listCount(this._activeBullets),
+      BulletPool.maxCount | 0,
+      this._listCount(this._visibleBullets),
+    );
 
     if (particleView && this.elements.perfFlash) {
       const flash = (particleView[PARTICLE_STATS.FLASHES_UPDATED] || 0) | 0;
       if (flash !== pv.flashUpdated) {
         pv.flashUpdated = flash;
-        this.elements.perfFlash.textContent = 'Flash: ' + formatNumber(flash) + ' updated';
+        const text = formatNumber(flash);
+        const width = text.length > (this._flashWidth || 5) ? text.length : this._flashWidth || 5;
+        this._flashWidth = width;
+        this.elements.perfFlash.textContent = 'Flash: ' + text.padStart(width, ' ') + ' updated';
       }
     }
   }
@@ -560,6 +608,12 @@ export class PerformancePanel {
   _colorStat(color, text) {
     const el = createStat(text);
     el.style.color = color;
+    return el;
+  }
+
+  _poolChip(color, text) {
+    const el = this._colorStat(color, text);
+    el.classList.add('debug-ui-pool-chip');
     return el;
   }
 }

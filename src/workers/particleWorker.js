@@ -962,10 +962,16 @@ class ParticleWorker extends AbstractWorker {
       this._maxImpactsPerFrame
     );
 
-    if (activeCount <= 0 || !this.cameraData || !visibleData) return;
+    if (activeCount <= 0 || !this.cameraData || !visibleData) {
+      if (visibleData) visibleData[0] = 0;
+      return;
+    }
 
     const cameraBounds = this._frameCameraBounds();
-    if (!cameraBounds) return;
+    if (!cameraBounds) {
+      visibleData[0] = 0;
+      return;
+    }
     const camZoom = cameraBounds.zoom;
     const camOffX = cameraBounds.cameraOffsetX;
     const camOffY = cameraBounds.cameraOffsetY;

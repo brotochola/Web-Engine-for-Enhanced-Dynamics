@@ -56,6 +56,13 @@ test('physics writes HEAP_USED_KB before the detailed-stats gate', () => {
   assert.ok(heap >= 0 && gate >= 0 && heap < gate);
 });
 
+test('preRender writes VISIBLE_ENTITIES before the detailed-stats gate', () => {
+  const block = reportBlock(readSrc('src/workers/preRenderWorker.js'), 'reportFPS() {');
+  const visible = block.indexOf('PRE_RENDER_STATS.VISIBLE_ENTITIES');
+  const gate = block.indexOf('if (!this.collectDetailedStats) return;');
+  assert.ok(visible >= 0 && gate >= 0 && visible < gate);
+});
+
 test('logic writes ENTITIES_PROCESSED before the detailed-stats gate', () => {
   const block = reportBlock(readSrc('src/workers/logicWorker.js'), 'reportFPS() {');
   const ents = block.indexOf('LOGIC_STATS.ENTITIES_PROCESSED');

@@ -17,7 +17,7 @@
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   height: 32px;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
 }
 
@@ -166,6 +166,12 @@
 .debug-ui-pool-row {
   justify-content: flex-start;
   gap: 16px;
+}
+
+.debug-ui-pool-chip {
+  flex: none;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
 }
 
 .debug-ui-pool-title {

@@ -3550,8 +3550,8 @@ class PreRenderWorker extends AbstractWorker {
         if (!this.stats) return;
         this.stats[PRE_RENDER_STATS.FPS] = this.currentFPS;
         this.stats[PRE_RENDER_STATS.STEP_MS] = this.stepTimeThisFrame;
-        if (!this.collectDetailedStats) return;
         this.stats[PRE_RENDER_STATS.VISIBLE_ENTITIES] = this.visibleEntitiesCount;
+        if (!this.collectDetailedStats) return;
         this.stats[PRE_RENDER_STATS.VISIBLE_PARTICLES] = this.visibleParticlesCount;
         this.stats[PRE_RENDER_STATS.VISIBLE_DECORATIONS] = this.visibleDecorationsCount;
         this.stats[PRE_RENDER_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;

@@ -66,6 +66,7 @@ export class StatsCollector {
       decorationSprites: -1,
       bulletActive: -1,
       bulletTotal: -1,
+      bulletVisible: -1,
     };
 
     // Per-worker previous stat cache: { workerType: { workerIndex: { statKey: prev } } }
@@ -122,7 +123,7 @@ export class StatsCollector {
     pv.activeEntities = -1; pv.totalEntities = -1; pv.visibleEntities = -1;
     pv.decorationTotal = -1; pv.decorationActive = -1;
     pv.decorationVisible = -1; pv.decorationSprites = -1;
-    pv.bulletActive = -1; pv.bulletTotal = -1;
+    pv.bulletActive = -1; pv.bulletTotal = -1; pv.bulletVisible = -1;
   }
 
   detach() {
