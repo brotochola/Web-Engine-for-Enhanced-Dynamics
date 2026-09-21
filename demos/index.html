@@ -63,13 +63,13 @@
       { name: '🌊 LiquidFun Fluid', url: '/demos/liquidFunDemoScene/liquidFunDemoScene.js' },
       { name: '🧪 LiquidFun Stress (bench)', url: '/tests/bench/stressScenes/liquidFunStressScene.js' },
       { name: '🧱 Mamushka Dig', url: '/demos/mamushkaDigScene/mamushkaDigScene.js' },
-      { name: '🔥 Burning Boxes', url: '/demos/burningBoxesScene/burningBoxesScene.js' },
+      { name: '🔥 Burning Boxes', url: '/demos/burningBoxesScene/burningBoxesScene.js', export: 'BurningBoxesScene' },
       { name: '⛰️ Destructible Terrain', url: '/demos/destructibleTerrainScene/destructibleTerrainScene.js' },
     ];
 
     async function startScene(entry) {
       document.getElementById('scene_list').style.display = 'none';
-      await game.loadScene(entry.url);
+      await game.loadScene(entry.url, { export: entry.export });
     }
 
     if (game.debugUI) {
