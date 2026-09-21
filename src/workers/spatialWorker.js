@@ -102,8 +102,6 @@ class SpatialWorker extends AbstractWorker {
     // Local cell counts for race-free grid rebuilding
     // We build counts locally, then copy to grid at the end (avoids mid-clear races)
     this._localCellCounts = null; // Uint8Array(totalCells)
-    this._localCellHashes = null; // Uint32Array(totalCells)
-    this._cellHashes = null; // Uint32Array(totalCells)
     this._entityLastX = null;
     this._entityLastY = null;
     this._entityLastHalfExtent = null;
@@ -206,8 +204,6 @@ class SpatialWorker extends AbstractWorker {
 
     // Initialize local cell counts array for race-free grid rebuilding
     this._localCellCounts = new Uint8Array(this.totalCells);
-    this._localCellHashes = new Uint32Array(this.totalCells);
-    this._cellHashes = new Uint32Array(this.totalCells);
     this._entityLastX = new Float32Array(this.globalEntityCount);
     this._entityLastY = new Float32Array(this.globalEntityCount);
     this._entityLastHalfExtent = new Float32Array(this.globalEntityCount);
@@ -414,16 +410,13 @@ class SpatialWorker extends AbstractWorker {
     const rowOwnership = this.rowOwnership;
 
     const localCounts = this._localCellCounts;
-    const localHashes = this._localCellHashes;
 
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
       const rowBase = row * gridWidth;
 
       for (let col = 0; col < gridWidth; col++) {
-        const cellIndex = rowBase + col;
-        localCounts[cellIndex] = 0;
-        localHashes[cellIndex] = 2166136261;
+        localCounts[rowBase + col] = 0;
       }
     }
 
@@ -481,7 +474,6 @@ class SpatialWorker extends AbstractWorker {
           if (localCount < Grid.maxEntitiesPerCell) {
             gridEntities[cellIndex * cellStride + cellHeader + localCount] = i;
             localCounts[cellIndex] = localCount + 1;
-            localHashes[cellIndex] = Math.imul(localHashes[cellIndex] ^ (i + 1), 16777619) >>> 0;
           }
         }
       }
@@ -490,18 +482,9 @@ class SpatialWorker extends AbstractWorker {
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
       const rowBase = row * gridWidth;
-      const cellVersions = Grid._cellVersionData;
-      const cellHashes = this._cellHashes;
-
       for (let col = 0; col < gridWidth; col++) {
         const cellIndex = rowBase + col;
         const byteOffset = cellIndex * Grid.cellByteSize;
-        const nextCount = localCounts[cellIndex];
-        const nextHash = localHashes[cellIndex];
-        if (gridCounts[byteOffset] !== nextCount || cellHashes[cellIndex] !== nextHash) {
-          cellHashes[cellIndex] = nextHash;
-          if (cellVersions) cellVersions[cellIndex] = (cellVersions[cellIndex] + 1) >>> 0;
-        }
         gridCounts[byteOffset] = localCounts[cellIndex];
       }
     }
