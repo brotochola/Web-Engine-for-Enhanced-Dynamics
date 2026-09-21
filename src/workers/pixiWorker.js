@@ -238,6 +238,8 @@ import {
   Shader,
   GpuProgram,
   GlProgram,
+  Buffer,
+  BufferUsage,
   State,
   RendererType,
   RenderTexture,
@@ -1878,6 +1880,19 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 ===================== */
 
   /**
+   * WebGL keeps the typed array (Pixi wraps it). WebGPU needs COPY_DST or WriteBuffer throws
+   * and the shadow mesh sticks on the first upload.
+   */
+  _dynBuf(data, usage) {
+    if (!this._useWebGpu) return data;
+    return new Buffer({
+      data,
+      usage: usage | BufferUsage.COPY_DST,
+      shrinkToFit: false,
+    });
+  }
+
+  /**
    * Initialize the visibility polygon rendering system.
    * Creates a Container, RenderTexture, and display sprite for rendering
    * light visibility polygons with additive blending.
@@ -1988,8 +2003,13 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const maxFillVerts = 256 * 20;
       this._selfLitMaxFillVerts = maxFillVerts;
       const geometry = new PIXI.Geometry({
-        attributes: { aPosition: { buffer: new Float32Array(maxFillVerts * 2), size: 2 } },
-        indexBuffer: new Uint16Array(maxFillVerts * 3),
+        attributes: {
+          aPosition: {
+            buffer: this._dynBuf(new Float32Array(maxFillVerts * 2), BufferUsage.VERTEX),
+            size: 2,
+          },
+        },
+        indexBuffer: this._dynBuf(new Uint16Array(maxFillVerts * 3), BufferUsage.INDEX),
       });
       const shader = new PIXI.Shader({
         ...this._visPolyProgramOpts,
@@ -2011,8 +2031,13 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     if (this._visPolyMeshes[index]) return this._visPolyMeshes[index];
 
     const geometry = new PIXI.Geometry({
-      attributes: { aPosition: { buffer: new Float32Array((this._visPolyMaxVerts + 1) * 2), size: 2 } },
-      indexBuffer: new Uint16Array(this._visPolyMaxVerts * 3),
+      attributes: {
+        aPosition: {
+          buffer: this._dynBuf(new Float32Array((this._visPolyMaxVerts + 1) * 2), BufferUsage.VERTEX),
+          size: 2,
+        },
+      },
+      indexBuffer: this._dynBuf(new Uint16Array(this._visPolyMaxVerts * 3), BufferUsage.INDEX),
     });
 
     const shader = new PIXI.Shader({
@@ -2317,11 +2342,21 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       if (idxCount > 0 && this._selfLitColliderMesh) {
         const { mesh, geometry, shader } = this._selfLitColliderMesh;
         const prevIdx = this._selfLitLastIdxCount || 0;
-        for (let k = idxCount; k < prevIdx; k++) indices[k] = 0;
+        if (idxCount < prevIdx) {
+          for (let k = idxCount; k < prevIdx; k++) indices[k] = 0;
+        }
+        const uploadIdx = idxCount > prevIdx ? idxCount : prevIdx;
         this._selfLitLastIdxCount = idxCount;
 
-        posBuf.update();
-        idxBuf.update();
+        // First write sizes the GPU buffer (tail stays 0). Later writes send only the live prefix.
+        if (!this._selfLitGpuReady) {
+          posBuf.update();
+          idxBuf.update();
+          this._selfLitGpuReady = true;
+        } else {
+          posBuf.update(vertCount * 8);
+          idxBuf.update(uploadIdx * 2);
+        }
 
         const uniforms = shader.resources.uniforms.uniforms;
         uniforms.uCameraPos[0] = cameraX;
@@ -2463,10 +2498,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     if (!this._selfLitSpriteMeshes[index]) {
       const geometry = new PIXI.Geometry({
         attributes: {
-          aPosition: { buffer: new Float32Array(8), size: 2 },
-          aUV: { buffer: new Float32Array(8), size: 2 },
+          aPosition: { buffer: this._dynBuf(new Float32Array(8), BufferUsage.VERTEX), size: 2 },
+          aUV: { buffer: this._dynBuf(new Float32Array(8), BufferUsage.VERTEX), size: 2 },
         },
-        indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
+        indexBuffer: this._dynBuf(new Uint16Array([0, 1, 2, 0, 2, 3]), BufferUsage.INDEX),
       });
 
       const shader = new PIXI.Shader({

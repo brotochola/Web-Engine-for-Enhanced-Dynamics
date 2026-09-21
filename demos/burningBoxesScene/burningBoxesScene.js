@@ -1,7 +1,7 @@
 import { BurningBox } from './gameObjects/burningBox.js';
 import { Blower } from './gameObjects/blower.js';
 import { RocketBox } from './gameObjects/rocketBox.js';
-import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
+import { OccludingFloor } from './gameObjects/occludingFloor.js';
 import { Camera } from '/src/core/camera.js';
 import {
   BLEND_MODES,
@@ -105,6 +105,10 @@ export class BurningBoxesScene extends WEED.Scene {
       baseAmbient: 0,
       maxLights: 256,
       shadowsEnabled: false,
+      raycasted: true,
+      maxPolygonVertices: 512,
+      maxOccluderSelfLit: 512,
+      resolution: 0.5,
       sun: { enabled: false },
     },
 
@@ -238,7 +242,7 @@ export class BurningBoxesScene extends WEED.Scene {
 
   static entities = [
     [BurningBox, 256],
-    [Floor, 32],
+    [OccludingFloor, 32],
     [Blower, 8],
     [RocketBox, 16],
   ];
@@ -296,10 +300,10 @@ export class BurningBoxesScene extends WEED.Scene {
     const w = this.config.worldWidth;
     const h = this.config.worldHeight;
     const floorY = h * 0.72;
-    this.spawnEntity(Floor, { x: w / 2, y: floorY, width: 6800, height: 80, sprite: '_white', tint: 0x3a322c, layers: ['entities', 'fire'] });
-    this.spawnEntity(Floor, { x: w / 2 - 420, y: floorY - 220, width: 380, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
-    this.spawnEntity(Floor, { x: w / 2 + 380, y: floorY - 340, width: 320, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
-    // this.spawnEntity(Floor, { x: this.config.worldWidth / 2 - 80, y: floorY - 480, width: 36, height: 70, sprite: '_white', tint: 0x2c2622, layers: ['entities', 'fire'] });
+    this.spawnEntity(OccludingFloor, { x: w / 2, y: floorY, width: 6800, height: 80, sprite: '_white', tint: 0x3a322c, layers: ['entities', 'fire'] });
+    this.spawnEntity(OccludingFloor, { x: w / 2 - 420, y: floorY - 220, width: 380, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
+    this.spawnEntity(OccludingFloor, { x: w / 2 + 380, y: floorY - 340, width: 320, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
+    // this.spawnEntity(OccludingFloor, { x: this.config.worldWidth / 2 - 80, y: floorY - 480, width: 36, height: 70, sprite: '_white', tint: 0x2c2622, layers: ['entities', 'fire'] });
   }
 
   spawnCrates() {

@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, Mouse, Keyboard, enums, LiquidFun, LIQUIDFUN_GROUP_FLAGS } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, LightOccluder, Mouse, Keyboard, enums, LiquidFun, LIQUIDFUN_GROUP_FLAGS } = WEED;
 const { ShapeType } = enums;
 
 const HEAT = 1;
@@ -24,7 +24,7 @@ const EXTRACT_OPTS = { groupFlags: 0 };
 export class BurningBox extends GameObject {
   static instances = [];
   static serializable = true;
-  static components = [RigidBody, Collider, SpriteRenderer, Grab, LightEmitter];
+  static components = [RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, LightOccluder];
   static _meltAcc = -1;
 
   ignite() {
@@ -33,6 +33,7 @@ export class BurningBox extends GameObject {
     this.lightEmitter.lightColor = 0xff9944;
     this.lightEmitter.lightIntensity = LIGHT_BASE;
     this.collider.visualRange = LIGHT_RANGE;
+    this.lightOccluder.active = 0
     return this;
   }
 
@@ -40,6 +41,7 @@ export class BurningBox extends GameObject {
     this.setFeedBits(this.getFeedBits() & ~HEAT);
     this.lightEmitter.lightIntensity = 0;
     this.lightEmitter.active = 0;
+    this.lightOccluder.active = 1
     return this;
   }
 
@@ -90,7 +92,13 @@ export class BurningBox extends GameObject {
 
     const dx = this.x - Mouse.x;
     const dy = this.y - Mouse.y;
-    if (dx * dx + dy * dy < IGNITE_RANGE_SQ) this.ignite();
+    if (dx * dx + dy * dy < IGNITE_RANGE_SQ) {
+      if (!this.amIBurning()) this.ignite();
+      else this.extinguish();
+    }
+  }
+  amIBurning() {
+    return this.getFeedBits() & HEAT;
   }
 
   /** One pass over RIGID slabs. Overlap any heat AABB → heat every member. */
