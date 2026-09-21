@@ -156,7 +156,7 @@ pnpm bench:feature:query-aabb
 - P2 `_cfgFieldList` + P6 `popFreeIndices` **kept**. PACT `expectedActive` and compact bullets **dropped** (not in tree). Old `bench:particle:tournament` still patches from **pre-opt baselines** — it overwrites src; do not use as truth.
 - Spawn ECB: **dropped**. Main thread uses immediate `spawn` / `despawn` `postMessage` (no `spawnDespawnBatch` queue).
 - Monomorphic `tickFn` cache on logic typeInfo: **dropped** (Balls logic0 +27%). Hot path calls `obj.tick`.
-- Display interpolation already exists (`preRender.interpolation`).
+- Physics-pose blend while packing is `preRender.interpolation` (boolean). Display-rate blend of two render queues is `renderer.interpolation`. They are not the same flag.
 - Dirty-pose skip-emit: L1 only (`poseSkipMicrobench.mjs`), not merged.
 
 ```bash

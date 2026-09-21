@@ -5,8 +5,8 @@
 // pre_render_worker/pixi_worker use, so this can't drift from the real thing)
 // every rAF tick, tagged with the concurrent physics poseSync readyFrame.
 // Grouping samples by readyFrame answers directly: does the on-screen
-// position change *between* physics publishes ('interpolate'), or stay
-// frozen until the next publish jumps it ('off')? Removes the
+// position change *between* physics publishes (interpolation true), or stay
+// frozen until the next publish jumps it (false)? Removes the
 // human-perception / zoom / velocity-magnitude variables that made the
 // LiquidFun demo (mostly-settled water, static-only bodies) a poor test case.
 //
@@ -20,7 +20,7 @@ import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkSer
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const FIXED_FPS = 12; // real physics interval ~83ms - comfortably resolved by ~60Hz rAF sampling
 const SAMPLE_MS = 900;
-const MODES = ['off', 'interpolate'];
+const MODES = [false, true];
 
 async function sampleMode(browser, baseUrl, mode) {
   const page = await browser.newPage();
@@ -45,7 +45,7 @@ async function sampleMode(browser, baseUrl, mode) {
         BallsScene.config = {
           ...BallsScene.config,
           physics: { ...BallsScene.config.physics, fixedFps },
-          preRender: { ...BallsScene.config.preRender, interpolation: { mode } },
+          preRender: { ...BallsScene.config.preRender, interpolation: mode },
         };
 
         await window.__WEED_BENCHMARK__.prepare({

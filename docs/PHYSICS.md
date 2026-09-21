@@ -343,8 +343,8 @@ Written to per-worker stats SABs via indices in `src/util/workersUtils.js`. Debu
 
 | Key | Meaning |
 | --- | --- |
-| `FPS` | Instantaneous FPS slot (via frame timing) |
-| `STEP_MS` | Wall ms for that frame’s work only (not idle to next rAF/`fixedFps`). Physics: around `weedjsDoStep`. Other workers: around `AbstractWorker.update()`. Main: around `Scene.updateInternal()` (`Scene.mainStepMs`). Audio: worklet `process()` wall ms (`SoundManager` process SAB). |
+| `FPS` | How often the loop woke up: `1000 / ms` between the start of this tick and the start of the previous one. The Performance tab averages the last 60 samples. Backpressure skips are cheap wake-ups and pull the average up. Not `1000 / STEP_MS`. |
+| `STEP_MS` | Wall ms for that frame’s work only (not idle to next rAF/`fixedFps`). Physics: around `weedjsDoStep`. Other workers: around `AbstractWorker.update()`. Main: around `Scene.updateInternal()` (`Scene.mainStepMs`). Audio: worklet `process()` wall ms (`SoundManager` process SAB). Load% is this number against 16.7 ms (a 60 Hz frame), not against the measured FPS. |
 | `MSG_MS` | Time spent handling incoming messages this frame (ms); see `AbstractWorker` |
 
 Physics-only fields on `physicsStats` (`PHYSICS_STATS`):

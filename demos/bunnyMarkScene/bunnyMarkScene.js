@@ -4,7 +4,7 @@ import { BunnySpawner } from './gameObjects/bunnySpawner.js';
 
 const { Scene, Camera, GameObject } = WEED;
 
-const INITIAL_BUNNIES = 200_000;
+const INITIAL_BUNNIES = 250_000
 
 const HUD_CSS =
     'position:fixed;left:12px;bottom:12px;z-index:940;pointer-events:none;' +
@@ -42,15 +42,18 @@ export class BunnyMarkScene extends Scene {
             noLimitFPS: false,
             ySorting: false,
             maxVisibleRenderables: INITIAL_BUNNIES,
+            interpolation: true,
         },
         preRender: {
             skipCull: true,
+            // fixedFps: 30,
+            interpolation: false,
         },
         lighting: { enabled: false },
     };
 
     static assets = {
-        textures: {},
+        textures: { "bunny": "/demos/img/bunny.png" },
     };
 
     static entities = [

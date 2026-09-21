@@ -6,6 +6,24 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Monday 21 September 2026 — 250k Bunnies, and the Sprite Shouldn't Step
+
+The mark is 250k. Physics off, ids at 32, `skipCull`, `renderer.interpolation` on. Pre-render still packs every frame. When it falls behind the display, the picture should keep moving instead of hitching on the last queue.
+
+`preRender.interpolation: true` blends the last two **physics** poses while packing. Bunny does not want it. No rigid bodies. It would only make the pack heavier.
+
+`renderer.interpolation` is the display clock. Pre-render publishes two queues. Pixi stores both x,y on the entity instance (17 floats, and only when the flag is on — everyone else stays at 15). The shader mixes them with `uPoseAlpha`. A frame where the queue did not change does not walk the sprites again. It writes the alpha. Rotation, scale, tint, and the texture stay on the new queue. If the count changes, that frame snaps. Particles, glow, shadows, and custom layers are not in this.
+
+The first time I looked, the selection box slid and the sprites stepped with the publish. The box was never the interpolation. Debug reads live `Transform`, and logic was still at 60. The sprites were the queue. The alpha was a `Float32Array`, and Pixi's WebGL path for an `f32` is `if (cv !== v) uniform1f`. Same array every frame, so it uploaded once and stuck. A new number each frame is a different `v`. Then they slide.
+
+The 0.8/0.2 in the timer is not the blend. It only smooths how long the gap between publishes was. The blend is time since the last publish, divided by that gap. If pre-render keeps up with the display, there is no in-between frame and you will not see a mix. That is fine. The flag is for when it doesn't.
+
+The Performance tab will still look wrong if you multiply the columns. Step is the last `update()`. FPS is how often the loop woke up, averaged over 60 samples, cheap backpressure skips included. Load is step against 16.7 ms. Twenty-four milliseconds next to 137 fps is those three clocks.
+
+Headed, 175k, pre-render slower than the display: pixi median 4.29 ms down to 2.32 ms. The samples split into quiet frames and upload frames, so the spread is ugly. Pre-render's own step did not get cheaper. The mark is the 250k scene, not that row.
+
+Numbers: [`tests/results/renderer-interp/report.md`](../tests/results/renderer-interp/report.md). Where it sits in the workers: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md).
+
 ## Sunday 20 September 2026 — I Wanted this.x = 10 Without a Solver
 
 The want was a board game. Cards. A mark of 65k sprites that write `this.x` themselves. I did not want a Box2D world sitting next to that, compiling WASM, spinning a worker, and stepping an empty solver so a typed array could exist.

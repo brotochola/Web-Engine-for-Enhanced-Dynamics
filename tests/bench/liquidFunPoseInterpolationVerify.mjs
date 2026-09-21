@@ -29,7 +29,7 @@ import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkSer
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const FIXED_FPS = 10; // real physics interval ~100ms
 const SAMPLE_MS = 900;
-const MODES = ['off', 'interpolate'];
+const MODES = [false, true];
 
 async function sampleMode(browser, baseUrl, mode) {
   const page = await browser.newPage();
@@ -55,7 +55,7 @@ async function sampleMode(browser, baseUrl, mode) {
           },
           preRender: {
             ...LiquidFunDemoScene.config.preRender,
-            interpolation: { mode },
+            interpolation: mode,
           },
         };
 
@@ -196,7 +196,7 @@ async function verifyReorderMitigation(browser, baseUrl) {
       LiquidFunDemoScene.config = {
         ...LiquidFunDemoScene.config,
         physics: { ...LiquidFunDemoScene.config.physics, fixedFps: 30 },
-        preRender: { ...LiquidFunDemoScene.config.preRender, interpolation: { mode: 'interpolate' } },
+        preRender: { ...LiquidFunDemoScene.config.preRender, interpolation: true },
       };
 
       await window.__WEED_BENCHMARK__.prepare({

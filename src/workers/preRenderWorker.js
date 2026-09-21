@@ -38,6 +38,7 @@ import { PRE_RENDER_STATS, createStatsWriter } from '../util/workersUtils.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
+    resolvePreRenderInterpolation,
     CAMERA_TYPES,
     DECORATION_Y_SORT_SCALE,
     ENTITY_GLOW_SORT_BIAS,
@@ -208,7 +209,7 @@ class PreRenderWorker extends AbstractWorker {
         // Pose smoothing (preRender.interpolation) - self-measured physics-step
         // timing, no cross-worker config needed. Computed once per tick in
         // _latchPose(), consumed per-entity in _displayPose()/LiquidFun collect.
-        this.interpolationMode = 'off';
+        this.interpolatePhysicsPose = false;
         this.skipCull = false;
         this._fusedSunShadow = {
             writeIdx: 0,
@@ -399,9 +400,11 @@ class PreRenderWorker extends AbstractWorker {
         }
         this.backpressure = preRenderConfig.backpressure !== false;
 
-        // Pose smoothing when physics runs slower than render (see configDefaults PRE_RENDER_DEFAULTS.interpolation).
-        const interpConfig = preRenderConfig.interpolation || {};
-        this.interpolationMode = interpConfig.mode ?? PRE_RENDER_DEFAULTS.interpolation.mode;
+        // Physics-pose blend while packing. preRender.interpolation is a boolean.
+        const interpRaw = preRenderConfig.interpolation !== undefined
+            ? preRenderConfig.interpolation
+            : PRE_RENDER_DEFAULTS.interpolation;
+        this.interpolatePhysicsPose = resolvePreRenderInterpolation(interpRaw);
         this.skipCull = preRenderConfig.skipCull === true;
 
         // Store counts
@@ -1694,7 +1697,7 @@ class PreRenderWorker extends AbstractWorker {
     _latchLiquidFunPrevPose() {
         const lf = this.liquidFun;
         if (!lf?.x || !lf?.count) return;
-        if (this.interpolationMode === 'off') return;
+        if (!this.interpolatePhysicsPose) return;
         const ready = this.poseSync ? Atomics.load(this.poseSync, 0) : 0;
         if (ready === this._lfPoseReadyFrame) return;
 
@@ -1761,7 +1764,7 @@ class PreRenderWorker extends AbstractWorker {
      * readyFrame transitions. Computed once per tick, not per entity.
      */
     _updatePoseTiming() {
-        if (this.interpolationMode === 'off') return;
+        if (!this.interpolatePhysicsPose) return;
         if (!this.poseSync) return;
         const ready = Atomics.load(this.poseSync, 0);
         const now = performance.now();
@@ -1792,7 +1795,7 @@ class PreRenderWorker extends AbstractWorker {
         const poseX = this._poseX;
         const rb = this._rbActive;
         if (poseX && rb && rb[idx]) {
-            if (this.interpolationMode === 'interpolate' && this._prevPoseX) {
+            if (this.interpolatePhysicsPose && this._prevPoseX) {
                 const alpha = this._poseAlpha;
                 const px = this._prevPoseX[idx];
                 const py = this._prevPoseY[idx];
@@ -2285,7 +2288,7 @@ class PreRenderWorker extends AbstractWorker {
             } else if (type === 7) {
                 const lf = this.liquidFun;
                 if (
-                    this.interpolationMode === 'interpolate' &&
+                    this.interpolatePhysicsPose &&
                     this._prevLfX &&
                     this._prevLfCount > idx
                 ) {
@@ -2741,7 +2744,7 @@ class PreRenderWorker extends AbstractWorker {
                 } else if (type === 7) {
                     const lf = this.liquidFun;
                     if (
-                        this.interpolationMode === 'interpolate' &&
+                        this.interpolatePhysicsPose &&
                         this._prevLfX &&
                         this._prevLfCount > idx
                     ) {

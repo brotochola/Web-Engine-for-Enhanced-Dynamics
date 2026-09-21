@@ -517,6 +517,12 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxDecalTileUploadsPerFrame: 32,
   /** Pixi ImageSource mip chain for atlases/textures/tilesets. Off by default (VRAM + atlas bleed risk; STEP flat in benches). */
   autoGenerateMipmaps: false,
+  /**
+   * Blend the last two pre-render queue publishes in the entity sprite shader.
+   * Use when preRender.fixedFps is below the display rate. Not physics-pose
+   * smoothing (that is preRender.interpolation). Both true adds a frame of lag.
+   */
+  interpolation: false,
 });
 
 // ============================================================================
@@ -599,18 +605,20 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
    */
   skipCull: false,
   /**
-   * Smooth visuals when physics runs slower than render (e.g. physics.fixedFps
-   * below the display rate). 'interpolate' blends between the last two
-   * published physics frames (bodies and LiquidFun particles both have a real
-   * previous-frame slot) - always lags true simulation time by up to one
-   * physics frame, but never guesses wrong (no collision overshoot, unlike
-   * extrapolation, which this engine deliberately does not do). Scene
-   * override: config.preRender.interpolation.
+   * Blend the last two published physics poses while packing the render queue.
+   * true lags display by up to one physics frame. Does not guess ahead
+   * (no extrapolation). Bunny-style scenes leave this false and use
+   * renderer.interpolation instead.
    */
-  interpolation: Object.freeze({
-    mode: 'off', // 'off' | 'interpolate'
-  }),
+  interpolation: false,
 });
+
+/** @param {boolean|null|undefined} value */
+export function resolvePreRenderInterpolation(value) {
+  if (value === true) return true;
+  if (value && typeof value === 'object') return value.mode === 'interpolate';
+  return false;
+}
 
 // ============================================================================
 // NAVIGATION DEFAULTS

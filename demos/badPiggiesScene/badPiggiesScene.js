@@ -115,9 +115,7 @@ export class BadPiggiesScene extends Scene {
     },
 
     preRender: {
-      // interpolation: {
-      //   mode: 'interpolate',
-      // },
+      // interpolation: true,
     },
 
     lighting: { enabled: false },

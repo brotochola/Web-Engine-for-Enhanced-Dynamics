@@ -387,6 +387,15 @@ class PixiRenderer extends AbstractWorker {
     // pixi_worker NEVER waits - always reads from latest ready buffer
     // pre_render skips a frame if >1 ahead (backpressure)
     this.renderQueueEnabled = false;
+    this._queueInterp = false;
+    this._latchedPrevX = null;
+    this._latchedPrevY = null;
+    this._latchedPrevCount = 0;
+    this._poseWall = 0;
+    this._poseInterval = 0;
+    this._poseAlpha = 1;
+    this._poseSnap = true;
+    this._posePacked = false;
     this.renderQueueMaxItems = 0;
 
     // Double buffer storage - views for both buffers
@@ -709,6 +718,23 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueSortKey = buffer.sortKey;
     this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
     this.renderQueuePoseReady = this.renderQueuePoseReadyBuffers[bufferIdx];
+  }
+
+  _notePosePublish() {
+    const now = performance.now();
+    if (this._poseWall > 0) {
+      const gap = now - this._poseWall;
+      if (gap > 0) {
+        this._poseInterval = this._poseInterval ? this._poseInterval * 0.8 + gap * 0.2 : gap;
+      }
+    }
+    this._poseWall = now;
+    this._poseAlpha = this._poseSnap ? 1 : 0;
+  }
+
+  _tickPoseAlpha() {
+    const elapsed = performance.now() - this._poseWall;
+    this._poseAlpha = this._poseInterval > 0 ? Math.min(1, elapsed / this._poseInterval) : 1;
   }
 
   /** Copy latched pose views into reused _computePose (no alloc). */
@@ -1130,7 +1156,17 @@ class PixiRenderer extends AbstractWorker {
       }
       opts.indices = idxE;
       opts.indexCount = ne;
+      if (this.entitiesBatch.poseInterp) {
+        opts.prevX = this._latchedPrevX;
+        opts.prevY = this._latchedPrevY;
+        opts.snap = this._poseSnap;
+      }
       this.visibleEntityCount = this.entitiesBatch.upload(q, opts);
+      opts.prevX = null;
+      opts.prevY = null;
+      opts.snap = false;
+      this.entitiesBatch.setPoseAlpha(this._poseAlpha);
+      this._posePacked = true;
       opts.indices = idxP;
       opts.indexCount = np;
       this.visibleParticleCount = this.entitiesParticleBatch
@@ -1146,7 +1182,17 @@ class PixiRenderer extends AbstractWorker {
 
     opts.excludeType0 = 1;
     opts.excludeType1 = 3;
+    if (this.entitiesBatch.poseInterp) {
+      opts.prevX = this._latchedPrevX;
+      opts.prevY = this._latchedPrevY;
+      opts.snap = this._poseSnap;
+    }
     this.visibleEntityCount = this.entitiesBatch.upload(q, opts);
+    opts.prevX = null;
+    opts.prevY = null;
+    opts.snap = false;
+    this.entitiesBatch.setPoseAlpha(this._poseAlpha);
+    this._posePacked = true;
     opts.excludeType0 = -1;
     opts.excludeType1 = -1;
     opts.includeType = 1;
@@ -1302,6 +1348,7 @@ class PixiRenderer extends AbstractWorker {
       premultiplyAlpha: true,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
+      poseInterp: this._queueInterp,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 
@@ -1358,6 +1405,12 @@ class PixiRenderer extends AbstractWorker {
 
       // Only switch buffers if a new frame is available (readyFrame>0 ensures at least one frame was written)
       if (readyFrame > this.lastReadFrame && readyFrame > 0) {
+        if (this._queueInterp && this.renderQueueX) {
+          this._latchedPrevX = this.renderQueueX;
+          this._latchedPrevY = this.renderQueueY;
+          this._latchedPrevCount = this.renderQueueCount[0] | 0;
+        }
+        const prevReady = this.lastReadFrame;
         consumedNewFrame = true;
         const readBufferIdx = (readyFrame - 1) % 2;
         this._setReadBuffer(readBufferIdx);
@@ -1389,6 +1442,12 @@ class PixiRenderer extends AbstractWorker {
         }
         this._latchPose(false, this.renderQueuePoseReady ? this.renderQueuePoseReady[0] : 0);
         this._syncComputePose();
+        if (this._queueInterp) {
+          const curCount = this.renderQueueCount ? this.renderQueueCount[0] | 0 : 0;
+          const consecutive = prevReady > 0 && readyFrame === prevReady + 1;
+          this._poseSnap = !consecutive || this._latchedPrevCount !== curCount;
+          this._notePosePublish();
+        }
       }
     }
 
@@ -1400,6 +1459,11 @@ class PixiRenderer extends AbstractWorker {
     // the system is loaded). Fall back to per-tick behavior before the first
     // frame (keeps lightingRT/shadowRT initialized), if the queue is absent,
     // and on resume after a pause.
+    if (!consumedNewFrame && this._queueInterp && this._posePacked && this.entitiesBatch) {
+      this._tickPoseAlpha();
+      this.entitiesBatch.setPoseAlpha(this._poseAlpha);
+    }
+
     const runFrameLockedPasses =
       consumedNewFrame || resuming || this.lastReadFrame <= 0 || !this.renderQueueSync;
 
@@ -3883,6 +3947,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/instancedSprite.wgsl').then((s) => {
           sh.sprite = s;
         }),
+        fetchEngineShader('/src/shaders/instancedSpritePose.wgsl').then((s) => {
+          sh.spritePose = s;
+        }),
         fetchEngineShader('/src/shaders/lfSplat.wgsl').then((s) => {
           sh.lfSplat = s;
         }),
@@ -3906,6 +3973,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaderFetches.push(
         fetchEngineShader('/src/shaders/instancedSprite.vert.glsl').then((s) => {
           sh.spriteVert = s;
+        }),
+        fetchEngineShader('/src/shaders/instancedSpritePose.vert.glsl').then((s) => {
+          sh.spriteVertPose = s;
         }),
         fetchEngineShader('/src/shaders/instancedSprite.frag.glsl').then((s) => {
           sh.spriteFrag = s;
@@ -3994,6 +4064,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Read renderer-specific configuration
     const rendererConfig = this.config.renderer || {};
+    this._queueInterp = rendererConfig.interpolation === true;
 
     // Configure scheduling (AbstractWorker may miss 'renderer' key before aliases)
     const fixedFps = Number(rendererConfig.fixedFps);

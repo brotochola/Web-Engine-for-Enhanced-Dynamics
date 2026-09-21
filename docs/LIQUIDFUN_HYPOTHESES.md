@@ -385,7 +385,9 @@ worker's *writer*) — the two must agree byte-for-byte on the same SAB and had
 already drifted once before (see `tests/node/gpuSortKeyNoCpuSort.test.js`
 history: a boolean `renderer.interpolation: true` existed Jan 2026, directly in
 the pre-render-queue-era `pixiWorker.js`, removed Aug 2026 as dead code when
-that pipeline was rebuilt around `preRenderWorker`). Adding vx/vy/angVel to
+that pipeline was rebuilt around `preRenderWorker`. The name came back in
+September 2026 meaning something else: lerp two pre-render queues in the
+sprite shader. This section is the August particle extrapolation, not that). Adding vx/vy/angVel to
 the writer without the reader crashed `_displayPose` at runtime
 (`this._poseAngVel[idx]` on `undefined`) — only caught by the L2 benchmark run,
 not the unit suite. Added `tests/node/poseInterpolation.test.js` to pin the

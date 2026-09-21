@@ -104,9 +104,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
     },
 
     preRender: {
-      // interpolation: {
-      //   mode: 'interpolate',
-      // },
+      // interpolation: true,
     },
 
     lighting: {

@@ -29,12 +29,15 @@ import {
   instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
+import { writePosePrev } from './poseQueueInterp.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
  *  Two extra floats vs pre-tile-offset stride — per visible instance, not per pool entity. */
 export const INSTANCED_SPRITE_FLOATS = 15;
 export const INSTANCED_SPRITE_STRIDE = INSTANCED_SPRITE_FLOATS * 4;
+export const INSTANCED_SPRITE_POSE_FLOATS = 17;
+export const INSTANCED_SPRITE_POSE_STRIDE = INSTANCED_SPRITE_POSE_FLOATS * 4;
 
 export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
 export const BATCH_DEPTH = Object.freeze({ INDEX: 0, SORT_KEY: 1 });
@@ -201,9 +204,13 @@ export class InstancedSpriteBatch {
     lutSource = null,
     useWebGpu = true,
     shaders = null,
+    poseInterp = false,
   }) {
     this.capacity = Math.max(1, capacity | 0);
-    this.data = new Float32Array(this.capacity * INSTANCED_SPRITE_FLOATS);
+    this.poseInterp = !!poseInterp;
+    this._floats = this.poseInterp ? INSTANCED_SPRITE_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
+    this._strideBytes = this._floats * 4;
+    this.data = new Float32Array(this.capacity * this._floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
     this.buffer = new Buffer({
       data: this.data,
@@ -212,22 +219,32 @@ export class InstancedSpriteBatch {
     });
 
     const quad = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
-    const stride = INSTANCED_SPRITE_STRIDE;
+    const stride = this._strideBytes;
     const buf = this.buffer;
+    const attributes = {
+      aQuad: { buffer: quad, format: 'float32x2' },
+      aInstXY: { buffer: buf, format: 'float32x2', stride, offset: 0, instance: true },
+      aInstScale: { buffer: buf, format: 'float32x2', stride, offset: 8, instance: true },
+      aInstAnchor: { buffer: buf, format: 'float32x2', stride, offset: 16, instance: true },
+      aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: 24, instance: true },
+      aInstDepth: { buffer: buf, format: 'float32', stride, offset: 32, instance: true },
+      aInstTintBits: { buffer: buf, format: 'float32', stride, offset: 36, instance: true },
+      aInstTexId: { buffer: buf, format: 'float32', stride, offset: 40, instance: true },
+      aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 44, instance: true },
+      aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
+    };
+    if (this.poseInterp) {
+      attributes.aInstPrevXY = {
+        buffer: buf,
+        format: 'float32x2',
+        stride,
+        offset: 60,
+        instance: true,
+      };
+    }
 
     this.geometry = new Geometry({
-      attributes: {
-        aQuad: { buffer: quad, format: 'float32x2' },
-        aInstXY: { buffer: buf, format: 'float32x2', stride, offset: 0, instance: true },
-        aInstScale: { buffer: buf, format: 'float32x2', stride, offset: 8, instance: true },
-        aInstAnchor: { buffer: buf, format: 'float32x2', stride, offset: 16, instance: true },
-        aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: 24, instance: true },
-        aInstDepth: { buffer: buf, format: 'float32', stride, offset: 32, instance: true },
-        aInstTintBits: { buffer: buf, format: 'float32', stride, offset: 36, instance: true },
-        aInstTexId: { buffer: buf, format: 'float32', stride, offset: 40, instance: true },
-        aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 44, instance: true },
-        aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
-      },
+      attributes,
       indexBuffer: [0, 1, 2, 0, 2, 3],
     });
     this.geometry.instanceCount = 0;
@@ -241,19 +258,27 @@ export class InstancedSpriteBatch {
     this._tileWorld[2] = 1;
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
+    const uniforms = {
+      uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
+    };
+    if (this.poseInterp) {
+      // Number, not Float32Array. Pixi's WebGL f32 sync compares the value
+      // with !==. The same array never looks changed, so the GPU stays at 0.
+      uniforms.uPoseAlpha = { value: 1, type: 'f32' };
+    }
     const resources = {
       uTexture: atlas,
       uSampler: atlas.style,
       uTexLut: lut,
-      uniforms: {
-        uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
-      },
+      uniforms,
     };
     const name = label || 'instanced-sprites';
+    const spriteSource = this.poseInterp ? shaders?.spritePose : shaders?.sprite;
+    const vertSource = this.poseInterp ? shaders?.spriteVertPose : shaders?.spriteVert;
     if (useWebGpu) {
       const gpuProgram = instancedSpriteGpuProgram(
         GpuProgram,
-        shaders?.sprite,
+        spriteSource,
         fragEntry,
         name
       );
@@ -261,7 +286,7 @@ export class InstancedSpriteBatch {
     } else {
       const glProgram = instancedSpriteGlProgram(
         GlProgram,
-        shaders?.spriteVert,
+        vertSource,
         pickInstancedSpriteFragmentGlsl(premultiplyAlpha, alphaDiscard, shaders),
         name
       );
@@ -296,6 +321,14 @@ export class InstancedSpriteBatch {
     if (source) this.shader.resources.uTexLut = source;
   }
 
+  setPoseAlpha(alpha) {
+    if (!this.poseInterp) return;
+    const group = this.shader?.resources?.uniforms;
+    if (!group?.uniforms) return;
+    group.uniforms.uPoseAlpha = alpha;
+    if (typeof group.update === 'function') group.update();
+  }
+
   /**
    * Upload SoA views into instance buffer.
    * @param {object} q - typed array views + count
@@ -319,6 +352,7 @@ export class InstancedSpriteBatch {
    * @param {number} [opts.indexCount]
    */
   upload(q, opts) {
+    if (this.poseInterp) return this._uploadPose(q, opts);
     const o = opts || EMPTY_UPLOAD_OPTS;
     const count = q.count | 0;
     const indices = o.indices;
@@ -463,6 +497,148 @@ export class InstancedSpriteBatch {
 
     this.mesh.visible = true;
     this.buffer.update(out * INSTANCED_SPRITE_STRIDE);
+    this.geometry.instanceCount = out;
+    return out;
+  }
+
+  _uploadPose(q, opts) {
+    const o = opts || EMPTY_UPLOAD_OPTS;
+    const count = q.count | 0;
+    const indices = o.indices;
+    const indexCount = o.indexCount | 0;
+    const useIndices = indices != null;
+    if ((!useIndices && count <= 0) || (useIndices && indexCount <= 0)) {
+      this.geometry.instanceCount = 0;
+      this.mesh.visible = false;
+      return 0;
+    }
+    const data = this.data;
+    const dataU32 = this.dataU32;
+    const space = o.space | 0;
+    const zoom = o.zoom ?? 1;
+    const cameraX = o.cameraX ?? 0;
+    const cameraY = o.cameraY ?? 0;
+    const resolution = o.resolution ?? 1;
+    const useScreen = space === BATCH_SPACE.SCREEN;
+    const screenScale = zoom * resolution;
+    const tw = this._tileWorld;
+    if (tw) {
+      if (useScreen) {
+        tw[0] = cameraX;
+        tw[1] = cameraY;
+        tw[2] = screenScale > 0 ? 1 / screenScale : 1;
+        tw[3] = 1;
+      } else {
+        tw[0] = 0;
+        tw[1] = 0;
+        tw[2] = 1;
+        tw[3] = 0;
+      }
+    }
+    const depthMode = o.depthMode | 0;
+    const worldHeight = o.worldHeight > 0 ? o.worldHeight : 1;
+    const typeArr = o.type || null;
+    const sortKeyArr = o.sortKey || null;
+    const includeType = o.includeType | 0;
+    const exclude0 = o.excludeType0 | 0;
+    const exclude1 = o.excludeType1 | 0;
+    const hasInclude = includeType >= 0;
+    const hasExclude = exclude0 >= 0 || exclude1 >= 0;
+    const filterTypes = !useIndices && typeArr && (hasInclude || hasExclude);
+    const depthDenom = (o.depthDenom || this.capacity) + 1;
+    const sortKeyMax = worldHeight * Y_SORT_K + GLOW_BIAS + 1;
+    const snap = !!o.snap;
+    const prevXArr = snap ? null : o.prevX;
+    const prevYArr = snap ? null : o.prevY;
+    const rqX = q.x;
+    const rqY = q.y;
+    const rqScaleX = q.scaleX;
+    const rqScaleY = q.scaleY;
+    const rqRotC = q.rotC;
+    const rqRotS = q.rotS;
+    const rqAlpha = q.alpha;
+    const rqTint = q.tint;
+    const rqTextureId = q.textureId;
+    const rqAnchorX = q.anchorX;
+    const rqAnchorY = q.anchorY;
+    const rqRepeatX = q.repeatX;
+    const rqRepeatY = q.repeatY;
+    const rqTileMulX = q.tileMulX;
+    const rqTileMulY = q.tileMulY;
+    const rqTileOffU = q.tileOffsetU;
+    const rqTileOffV = q.tileOffsetV;
+    const useSortKey = depthMode === BATCH_DEPTH.SORT_KEY && sortKeyArr;
+    const scanCount = useIndices
+      ? indexCount
+      : count > this.capacity && !filterTypes
+        ? this.capacity
+        : count;
+    let base = 0;
+    let out = 0;
+    for (let k = 0; k < scanCount; k++) {
+      const i = useIndices ? indices[k] : k;
+      if (filterTypes) {
+        const t = typeArr[i];
+        if (hasInclude && t !== includeType) continue;
+        if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
+      }
+      if (out >= this.capacity) break;
+      let x = rqX[i];
+      let y = rqY[i];
+      let px = prevXArr ? prevXArr[i] : x;
+      let py = prevYArr ? prevYArr[i] : y;
+      let sx = rqScaleX[i];
+      let sy = rqScaleY[i];
+      if (useScreen) {
+        x = (x - cameraX) * screenScale;
+        y = (y - cameraY) * screenScale;
+        px = (px - cameraX) * screenScale;
+        py = (py - cameraY) * screenScale;
+        sx *= screenScale;
+        sy *= screenScale;
+      }
+      let depth;
+      if (useSortKey) {
+        depth = 1.0 - sortKeyArr[i] / sortKeyMax;
+        depth -= (out + 1) * 1e-7;
+      } else {
+        depth = 1.0 - (out + 1) / depthDenom;
+      }
+      let a = rqAlpha[i];
+      if (a < 0) a = 0;
+      else if (a > 1) a = 1;
+      const a8 = (a * 255 + 0.5) | 0;
+      const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
+      const rx = rqRepeatX ? rqRepeatX[i] : 0;
+      const ry = rqRepeatY ? rqRepeatY[i] : 0;
+      const invX = rqTileMulX ? rqTileMulX[i] : (rx > 0 ? 1 / rx : 0);
+      const invY = rqTileMulY ? rqTileMulY[i] : (ry > 0 ? 1 / ry : 0);
+      data[base] = x;
+      data[base + 1] = y;
+      data[base + 2] = sx;
+      data[base + 3] = sy;
+      data[base + 4] = rqAnchorX[i];
+      data[base + 5] = rqAnchorY[i];
+      data[base + 6] = rqRotC[i];
+      data[base + 7] = rqRotS[i];
+      data[base + 8] = depth;
+      dataU32[base + 9] = packed >>> 0;
+      data[base + 10] = rqTextureId[i];
+      data[base + 11] = invX;
+      data[base + 12] = invY;
+      data[base + 13] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
+      data[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
+      writePosePrev(data, base, px, py);
+      base += INSTANCED_SPRITE_POSE_FLOATS;
+      out++;
+    }
+    if (out <= 0) {
+      this.geometry.instanceCount = 0;
+      this.mesh.visible = false;
+      return 0;
+    }
+    this.mesh.visible = true;
+    this.buffer.update(out * INSTANCED_SPRITE_POSE_STRIDE);
     this.geometry.instanceCount = out;
     return out;
   }

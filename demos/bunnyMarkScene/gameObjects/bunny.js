@@ -19,7 +19,7 @@ export class Bunny extends GameObject {
 
   onSpawned(spawnConfig = {}) {
     const rng = globalThis.rng;
-    this.setSprite('_whiteCircle');
+    this.setSprite('bunny');
     this.setAnchor(0.5, 0.5);
     this.setScale(BUNNY_SCALE);
     this.setTint((rng() * 0xffffff) | 0);
