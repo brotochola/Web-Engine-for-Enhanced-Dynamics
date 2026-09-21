@@ -431,15 +431,29 @@
     }
   }
 
-  /** Snapshot prev pose before world.step. */
+  /** Snapshot prev pose before world.step. Live bodies only (denseList). */
   function snapshotPrevPose(entityCount) {
     if (!views.px) return;
-    const n = entityCount | 0;
-    const rb = views.rbActive;
-    for (let i = 0; i < n; i++) {
-      if (rb && !rb[i]) continue;
-      views.px[i] = views.x[i];
-      views.py[i] = views.y[i];
+    const list = denseList;
+    const x = views.x;
+    const y = views.y;
+    const px = views.px;
+    const py = views.py;
+    if (!list) {
+      const n = entityCount | 0;
+      const rb = views.rbActive;
+      for (let i = 0; i < n; i++) {
+        if (rb && !rb[i]) continue;
+        px[i] = x[i];
+        py[i] = y[i];
+      }
+      return;
+    }
+    const n = denseCount | 0;
+    for (let d = 0; d < n; d++) {
+      const i = list[d];
+      px[i] = x[i];
+      py[i] = y[i];
     }
   }
 
