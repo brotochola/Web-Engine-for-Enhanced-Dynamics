@@ -248,6 +248,8 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
 
 **OffscreenCanvas:** transferred from main thread at init via `canvas.transferControlToOffscreen()`.
 
+**Present:** after `PIXI.Application.init`, Weed removes `app.render` from the ticker and presents itself (`_presentStage`). WebGPU swapchain `configure` lives in `_bindWebGpuSwapchain` (init, resize, `rebindSurface`). WebGL has no swapchain rebind.
+
 **What it does each frame:**
 
 1. `Atomics.load(renderQueueSync, 0)` — check for new frame
@@ -265,6 +267,18 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
    - `LAYER_KIND.MESH` packs `ColliderFixture` fans (else the primary collider) via `packColliderFill` in world space. Same fixture revision and presence: `packColliderFillPoseOnly` rewrites pose/paint on the resident 17-float tris. A look-shader MESH layer writes `cl.rt` only and puts the NDC look mesh on the stage.
 
 **It never waits** on pre_render. Pre-render is the worker that may block when it is more than one frame ahead.
+
+#### Presenting vs pause
+
+`pause` / `resume` freeze the **game**: every worker gets the message. Pixi stops its ticker (`ticker.stop()`). Debug UI Play/Pause.
+
+`setPresenting` freezes the **canvas**, not the sim. `GameEngine` listens for `visibilitychange`, `pagehide` / `pageshow`, and `blur` / `focus`. Chrome in the background with this tab still selected often stays `document.visibilityState === 'visible'`; blur is the signal that another app is in front. Default `presentWhenHidden: false` posts `{ msg: 'presenting', value: false }` to **pixi only**. Physics, logic, particle, and pre-render keep stepping.
+
+On the renderer, `presenting: false` stops the ticker (unless `pause()` already did) and the current `update()` still consumes the render queue, then returns before any GPU work: compute layers, lighting/vis-poly RTs, decal uploads, swapchain present. Skipping only the present is not enough — a WebGPU fluid dispatch in a background tab will TDR the process. `presenting: true` sends `{ msg: 'rebindSurface' }` first (WebGPU `configure`; WebGL no-op), then starts the ticker if the game is not paused.
+
+A 0×0 resize (minimize) is ignored (`usableCanvasSize`). WebGPU `device.lost` (reason other than `destroyed`) and WebGL `webglcontextlost` go through `reportError`. A hung GPU process that never returns will not log.
+
+See `GameEngine.setPresenting` / `rebindSurface` and `ENGINE_DEFAULTS.presentWhenHidden`.
 
 #### Two-RT Shader Pipeline (custom shader layers)
 
@@ -442,6 +456,8 @@ Not a Web Worker — an `AudioWorkletProcessor` running on the browser's **audio
 | `start`               | All workers | --                                                                                |
 | `pause`               | All workers | --                                                                                |
 | `resume`              | All workers | --                                                                                |
+| `presenting`          | Pixi        | `{ value }` — canvas present + GPU work on/off; other workers no-op               |
+| `rebindSurface`       | Pixi        | Reconfigure the WebGPU swapchain after the document is shown again                |
 | `spawn`               | Logic 0     | `{ className, spawnConfig, entityIndex }`                                         |
 | `despawn`             | Logic 0     | `{ entityIndex }`                                                                 |
 | `despawnAll`          | Logic 0     | `{ className }`                                                                   |

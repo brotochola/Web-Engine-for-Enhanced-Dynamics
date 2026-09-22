@@ -944,6 +944,7 @@ const game = new GameEngine({
   preventContextMenu: true,  // block right-click context menu (default: true)
   preventDefaultKeys: true,  // preventDefault on arrows, space, tab (default: true)
   injectStyles: true,        // inject body CSS reset: margin:0, overflow:hidden, etc. (default: true)
+  presentWhenHidden: false,  // skip GPU present while the tab/window is not in front (default)
   debug: true,
 });
 
@@ -951,7 +952,17 @@ const game = new GameEngine({
 await game.requestFullscreen();
 game.exitFullscreen();
 game.isFullscreen; // boolean getter
+
+// pause() freezes every worker (debug Play/Pause).
+// setPresenting() only stops the canvas/GPU; physics and logic keep running.
+game.pause();
+game.resume();
+game.setPresenting(false);
+game.presenting; // getter
+game.rebindSurface(); // WebGPU swapchain configure; usually called for you on focus
 ```
+
+Hidden tab, `pagehide`, or `window.blur` (Chrome behind another app often stays `visibilityState === 'visible'`) call `setPresenting(false)` unless `presentWhenHidden` is true. Focus / `pageshow` rebind then present again. WebGL and WebGPU both idle the renderer; only WebGPU reconfigures a swapchain. Do not use `pause()` for alt-tab.
 
 Canvas CSS (`position: fixed`, `touch-action: none`, `user-select: none`) is applied automatically by the engine on every canvas it creates. No CSS needed in your HTML for body reset or canvas styling.
 

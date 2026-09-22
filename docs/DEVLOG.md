@@ -6,6 +6,18 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Monday 21 September 2026 — I Looked Away and the Tab Died
+
+It kept happening that when I left the tab in Chrome and came back, a scene with a compute shader was hanging. The tab crashed. Not even the HTML elements worked. Burning Boxes: the fire lattice covers the whole world, Jacobi twenty times a frame, vis-poly lights on top. I would play for a minute, switch to Cursor or another tab, come back, hit F5, and Chrome was gone. The second time I did not even get to F5. I just returned and the tab was already dead. GPU memory was stuck at 51 MB the whole time, so it was not a leak filling up. It was the driver.
+
+Pixi's ticker was still calling `getCurrentTexture` after Chrome had dropped the swapchain. I first tried skipping only the present. The worker kept submitting the fluid in the background. Same hang. `pause()` was the wrong button anyway. That is the debug freeze. It did not even stop Pixi — `usesCustomScheduler` left the ticker running. I did not want the boxes to freeze when I alt-tab. I wanted the canvas to stop touching the GPU.
+
+So now there are two APIs. `pause` / `resume` stop every worker, and Pixi actually `ticker.stop()`s. `setPresenting` is just the compositor. Hidden tab, `pagehide`, or the window losing focus — Chrome behind Cursor often stays `document.visibilityState === 'visible'` — posts `{ presenting: false }` to the renderer only. The queue still consumes so pre-render does not stall. Then nothing: no fire dispatch, no lighting RT, no swapchain. Focus or `pageshow` calls `rebindSurface` (WebGPU `configure` again; WebGL has no swapchain) and starts the ticker. `presentWhenHidden: false` is the default.
+
+`device.lost` and `webglcontextlost` go through `reportError` if the driver comes back and the page is still alive. A TDR that kills the tab will never print. That is the browser.
+
+The demo found it. The contract is in the engine: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md#presenting-vs-pause).
+
 ## Monday 21 September 2026 — 250k Bunnies, and the Sprite Shouldn't Step
 
 The mark is 250k. Physics off, ids at 32, `skipCull`, `renderer.interpolation` on. Pre-render still packs every frame. When it falls behind the display, the picture should keep moving instead of hitching on the last queue.
