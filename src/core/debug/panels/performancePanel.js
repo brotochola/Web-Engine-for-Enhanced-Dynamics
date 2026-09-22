@@ -149,7 +149,7 @@ export class PerformancePanel {
     for (const type of WORKER_ROW_ORDER) {
       if (type === 'physics' && !caps.physics) continue;
       if (type === 'spatial' && !caps.spatial) continue;
-      if (type === 'spatial' || type === 'logic') {
+      if (type === 'spatial' || type === 'logic' || type === 'preRender') {
         const views = stats.workerStatViews[type];
         if (!views || views.length === 0) continue;
         this.elements.workerStats[type] = [];
@@ -305,7 +305,7 @@ export class PerformancePanel {
     const stats = this.debugUI.stats;
     const config = WORKER_DISPLAY_CONFIG[workerType];
     const count =
-      workerType === 'spatial' || workerType === 'logic'
+      workerType === 'spatial' || workerType === 'logic' || workerType === 'preRender'
         ? stats.workerStatViews[workerType].length
         : 1;
     const title = count > 1 ? `${config.label} #${workerIndex}` : config.label;
@@ -368,7 +368,7 @@ export class PerformancePanel {
     for (const type of WORKER_ROW_ORDER) {
       const schema = SCHEMA_BY_TYPE[type];
       if (!schema) continue;
-      if (type === 'spatial' || type === 'logic') {
+      if (type === 'spatial' || type === 'logic' || type === 'preRender') {
         this._updateMultiWorkerStats(type, schema, stats);
       } else {
         this._updateSingleWorkerStats(type, schema, stats);
@@ -388,6 +388,16 @@ export class PerformancePanel {
 
   _listCount(list) {
     return list ? list[0] | 0 : 0;
+  }
+
+  _preRenderVisible(views) {
+    if (!views) return 0;
+    if (!Array.isArray(views)) return (views[PRE_RENDER_STATS.VISIBLE_ENTITIES] || 0) | 0;
+    let n = 0;
+    for (let i = 0; i < views.length; i++) {
+      n += (views[i][PRE_RENDER_STATS.VISIBLE_ENTITIES] || 0) | 0;
+    }
+    return n;
   }
 
   _poolLine(label, active, total, visible) {
@@ -416,7 +426,7 @@ export class PerformancePanel {
   _updateSummary(stats, scene) {
     const pv = stats.prev;
     const particleView = stats.workerStatViews?.particle;
-    const preRenderView = stats.workerStatViews?.preRender;
+    const preRenderViews = stats.workerStatViews?.preRender;
 
     const activeEntities = GameObject.activeEntitiesData;
     this._writePoolLine(
@@ -428,7 +438,7 @@ export class PerformancePanel {
       'Game objects',
       activeEntities ? activeEntities[0] | 0 : 0,
       scene.totalEntityCount | 0,
-      preRenderView ? (preRenderView[PRE_RENDER_STATS.VISIBLE_ENTITIES] || 0) | 0 : 0,
+      this._preRenderVisible(preRenderViews),
     );
 
     this._writePoolLine(
@@ -571,7 +581,7 @@ export class PerformancePanel {
     const prevCache = stats.prevWorker[workerType][workerIndex];
 
     const smoother =
-      workerType === 'spatial' || workerType === 'logic'
+      workerType === 'spatial' || workerType === 'logic' || workerType === 'preRender'
         ? stats.fpsSmoothing[workerType][workerIndex]
         : stats.fpsSmoothing[workerType];
 

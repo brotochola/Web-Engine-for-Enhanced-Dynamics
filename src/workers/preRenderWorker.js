@@ -34,7 +34,27 @@ import {
     lightCookieScale,
     lightGlowScale,
 } from '../util/utils.js';
-import { PRE_RENDER_STATS, createStatsWriter } from '../util/workersUtils.js';
+import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
+import {
+    fillOwnedIds,
+    listSlice,
+    prefixAt,
+    sumCounts,
+    PR_JOIN_ARRIVED_A,
+    PR_JOIN_EPOCH_A,
+    PR_JOIN_ARRIVED_B,
+    PR_JOIN_EPOCH_B,
+    PR_JOIN_START,
+    PR_JOIN_POSE,
+    PR_STREAM_SPRITE,
+    PR_STREAM_SHADOW,
+    PR_STREAM_VP,
+    PR_STREAM_SELF_LIT,
+    PR_STREAM_LIGHTS,
+    PR_STREAM_CUSTOM0,
+    PR_CUSTOM_STREAMS,
+    preRenderCountSlot,
+} from '../util/preRenderOwner.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -52,6 +72,17 @@ import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 const INVALID_TEXTURE_ID = 0xFFFF;
+const EMPTY_OWNED_IDS = new Uint32Array(0);
+
+const MAIN_COLUMN_KEYS = [
+    'count', 'x', 'y', 'scaleX', 'scaleY', 'rotC', 'rotS', 'alpha', 'tint', 'textureId',
+    'anchorX', 'anchorY', 'type', 'entityIndex', 'sortKey', 'repeatX', 'repeatY',
+    'tileMode', 'tileOffsetU', 'tileOffsetV', 'tileMulX', 'tileMulY',
+];
+const SHADOW_COLUMN_KEYS = [
+    'count', 'x', 'y', 'scaleX', 'scaleY', 'rotC', 'rotS', 'alpha', 'tint',
+    'textureId', 'anchorX', 'anchorY',
+];
 const TILE_MODE_LOCAL = SPRITE_TILE_MODE.LOCAL;
 
 /** Stretch / skip tiling on non-entity queue rows (particles, adobe pieces, …). */
@@ -381,14 +412,39 @@ class PreRenderWorker extends AbstractWorker {
     async initialize(data) {
         console.log('[PRE_RENDER WORKER] Starting initialize()...');
 
-        // Initialize stats buffer
+        const preRenderConfig = this.config.preRender || {};
+        const configuredCount = preRenderConfig.numberOfPreRenderWorkers | 0;
+        this.workerCount = (data.workerCount | 0) > 0
+            ? (data.workerCount | 0)
+            : (configuredCount > 0 ? configuredCount : 1);
+        this.workerIndex = data.workerIndex | 0;
+        const configuredBlock = (data.entityBlockSize | 0) > 0
+            ? (data.entityBlockSize | 0)
+            : (preRenderConfig.entityBlockSize | 0);
+        this.entityBlockSize = configuredBlock > 0 ? configuredBlock : 256;
+        this._sharded = this.workerCount > 1;
+        this._seenStart = 0;
+        this._epochA = 0;
+        this._epochB = 0;
+        this._join = null;
+        if (this._sharded) {
+            if (!data.buffers?.preRenderJoin) {
+                throw new Error('[PRE_RENDER] numberOfPreRenderWorkers > 1 requires preRenderJoin');
+            }
+            this._join = new Int32Array(data.buffers.preRenderJoin);
+        }
+
+        // Initialize stats buffer (stride per worker; index 0 matches the old single buffer)
         if (data.buffers.preRenderStats) {
-            this.stats = createStatsWriter(data.buffers.preRenderStats, PRE_RENDER_STATS);
+            this.stats = createMultiWorkerStatsWriter(
+                data.buffers.preRenderStats,
+                PRE_RENDER_STATS,
+                this.workerIndex
+            );
             console.log('[PRE_RENDER WORKER] Stats buffer initialized');
         }
 
         // Configure scheduling from preRender config (camelCase key)
-        const preRenderConfig = this.config.preRender || {};
         const fixedFps = Number(preRenderConfig.fixedFps);
         if (fixedFps > 0) {
             this.fixedFps = fixedFps;
@@ -811,6 +867,10 @@ class PreRenderWorker extends AbstractWorker {
      * Update method called each frame
      */
     update(deltaTime, dtRatio) {
+        if (this._sharded) {
+            this._updateSharded(deltaTime, dtRatio);
+            return;
+        }
         this.skippedFramesThisFrame = 0;
 
         // ========================================
@@ -973,6 +1033,686 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
+     * N workers. Collect and emit into private buffers (adobe pieces make the
+     * slot count unknown before emit), then two joins and a packed copy into
+     * the same double-buffer pixi already reads. N=1 never enters here.
+     * Shadows read entityLastTextureId before this frame's emit, so they see
+     * the previous frame. That avoids a torn uint16 without a second texture SAB.
+     */
+    _updateSharded(deltaTime, dtRatio) {
+        this.skippedFramesThisFrame = 0;
+        const frameId = this._awaitPreRenderFrame();
+        const bufIdx = (frameId - 1) & 1;
+        this._shardBuf = bufIdx;
+
+        if (this.renderQueueEnabled) {
+            this._setWriteBuffer(bufIdx);
+            if (this.shadowsEnabled) this._setShadowWriteBuffer(bufIdx);
+            if (this.visibilityPolygonsEnabled) {
+                this._vpWriteBuffer = this._vpBuffers[bufIdx];
+                if (this._selfLitBuffers) this._selfLitWriteBuffer = this._selfLitBuffers[bufIdx];
+            }
+        }
+
+        const poseReady = Atomics.load(this._join, PR_JOIN_POSE);
+        super._latchPose(false, poseReady);
+        this._rbActive = RigidBody.active;
+        this._updatePoseTiming();
+        this._latchLiquidFunPrevPose();
+        if (this.workerIndex === 0 && this.renderQueuePoseReady) {
+            this.renderQueuePoseReady[0] = this._poseReadyFrame;
+        }
+
+        if (this.cameraData) {
+            this._frameCameraZoom = this.cameraData[0];
+            this._frameCameraX = this.cameraData[1];
+            this._frameCameraY = this.cameraData[2];
+            const aligned = Camera.alignFollowCameraToLatchedPose(
+                this._frameCameraX, this._frameCameraY, this._poseX, this._poseY
+            );
+            this._frameCameraX = aligned.x;
+            this._frameCameraY = aligned.y;
+            const ww = Camera.worldWidth;
+            const wh = Camera.worldHeight;
+            if (ww !== Infinity && wh !== Infinity && this._frameCameraZoom > 0) {
+                const vpW = Camera.canvasWidth / this._frameCameraZoom;
+                const vpH = Camera.canvasHeight / this._frameCameraZoom;
+                const maxX = Math.max(0, ww - vpW);
+                const maxY = Math.max(0, wh - vpH);
+                this._frameCameraX = Math.max(0, Math.min(this._frameCameraX, maxX));
+                this._frameCameraY = Math.max(0, Math.min(this._frameCameraY, maxY));
+            }
+            if (this.workerIndex === 0 && this.renderQueueCamera) {
+                this.renderQueueCamera[0] = this._frameCameraZoom;
+                this.renderQueueCamera[1] = this._frameCameraX;
+                this.renderQueueCamera[2] = this._frameCameraY;
+            }
+        }
+
+        this.visibleEntitiesCount = 0;
+        this.visibleParticlesCount = 0;
+        this.visibleDecorationsCount = 0;
+        this.shadowsUpdatedThisFrame = 0;
+        this._renderableCount = 0;
+        this._clearOwnedScreenFlags();
+
+        const zoom = this._frameCameraZoom;
+        if (zoom >= this.decorationFadeStartZoom) this._decorationZoomAlpha = 1;
+        else if (zoom <= this.decorationHideZoom) this._decorationZoomAlpha = 0;
+        else this._decorationZoomAlpha = (zoom - this.decorationHideZoom) / (this.decorationFadeStartZoom - this.decorationHideZoom);
+
+        this._frameCameraBoundsValid = this.cameraData !== null;
+        if (this._frameCameraBoundsValid) this.calculateCameraBounds();
+
+        this.collectTimeThisFrame = 0;
+        this.sortTimeThisFrame = 0;
+        this.emitTimeThisFrame = 0;
+        this.customLayerTimeThisFrame = 0;
+        this.shadowQTimeThisFrame = 0;
+        this.visibilityTimeThisFrame = 0;
+        this.adobeTimeThisFrame = 0;
+
+        const detail = this.collectDetailedStats;
+        let t0 = 0;
+        this._shardExpanded = 0;
+        this._emitPrefix = 0;
+        this.renderQueueFrame = frameId - 1;
+        this._ownedSpriteIter = this._ownedList(this._querySpriteRenderer || [SpriteRenderer]);
+        this._ownedLightIter = this._queryLightEmitter ? this._ownedList(this._queryLightEmitter) : null;
+        this._deferLightPublish = true;
+        if (this.shadowsEnabled) this._bindShadowPrivate();
+        if (this.visibilityPolygonsEnabled) this._bindVpPrivate();
+
+        try {
+            this._frameAdobeEntities = AdobeAnimComponent.active
+                ? this._ownedList(this._queryAdobeAnim || [AdobeAnimComponent])
+                : (this._emptyAdobeEntities || (this._emptyAdobeEntities = []));
+
+            if (detail) t0 = performance.now();
+            this.advanceAdobeAnimations(deltaTime);
+            if (detail) this.adobeTimeThisFrame = performance.now() - t0;
+
+            if (detail) t0 = performance.now();
+            this._collectListSlice('visibleParticlesData', 'collectVisibleParticles');
+            const lfCount = this.liquidFun?.count ? (this.liquidFun.count[0] | 0) : 0;
+            this._lfRange = listSlice(lfCount, this.workerIndex, this.workerCount);
+            this.collectVisibleLiquidFun();
+            this._lfRange = null;
+            this.collectVisibleEntities();
+            this.collectVisibleAdobeAnimations();
+            this._collectListSlice('visibleDecorationsData', 'collectVisibleDecorations');
+            this._collectListSlice('visibleBulletsData', 'collectVisibleBullets');
+            if (detail) this.collectTimeThisFrame = performance.now() - t0;
+
+            this._collectVisibleLights();
+            this._bindLocalLights();
+
+            if (detail) t0 = performance.now();
+            this.buildShadowRenderQueue();
+            if (detail) this.shadowQTimeThisFrame = performance.now() - t0;
+
+            if (detail) t0 = performance.now();
+            this.buildVisibilityPolygons();
+            if (detail) this.visibilityTimeThisFrame = performance.now() - t0;
+
+            this._storeShardCounts();
+        } finally {
+            this._ownedSpriteIter = null;
+            this._ownedLightIter = null;
+            this._deferLightPublish = false;
+            this._lfRange = null;
+            if (this._savedVisibleLights) {
+                this.visibleLightsData = this._savedVisibleLights;
+                this._savedVisibleLights = null;
+            }
+            if (this.renderQueueEnabled) this._setWriteBuffer(bufIdx);
+            if (this.shadowsEnabled) this._setShadowWriteBuffer(bufIdx);
+            if (this.visibilityPolygonsEnabled) {
+                this._vpWriteBuffer = this._vpBuffers[bufIdx];
+                if (this._selfLitBuffers && this._selfLitBuffers[bufIdx]) {
+                    this._selfLitWriteBuffer = this._selfLitBuffers[bufIdx];
+                }
+            }
+        }
+
+        this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
+        const detailEmit = this.collectDetailedStats;
+        const tEmit = detailEmit ? performance.now() : 0;
+        if (this._shardFrameNeedsCopy()) {
+            this._emitPrefix = -1;
+            if (this.renderQueueEnabled) {
+                this._bindMainPrivate();
+                this.buildRenderQueue(deltaTime);
+                this._bindCustomPrivate();
+                this.buildCustomLayerQueues(deltaTime);
+                this._storePrivateEmitCounts();
+            }
+            this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
+            this._copyShardOutputs(bufIdx, true);
+        } else if (this.renderQueueEnabled) {
+            this._bindDirectMain(bufIdx);
+            this.buildRenderQueue(deltaTime);
+            this._bindDirectCustom(bufIdx);
+            this.buildCustomLayerQueues(deltaTime);
+            this._copyShardOutputs(bufIdx, false);
+        } else {
+            this._copyShardOutputs(bufIdx, false);
+        }
+        if (detailEmit) this.emitTimeThisFrame += performance.now() - tEmit;
+        if (this.renderQueueBuffers) {
+            this.renderQueueCount = this.renderQueueBuffers[bufIdx].count;
+        }
+        this._frameJoin(PR_JOIN_ARRIVED_B, PR_JOIN_EPOCH_B, '_epochB', () => {
+            this._publishShardFrame(frameId, bufIdx);
+        });
+    }
+
+    _awaitPreRenderFrame() {
+        if (this.workerIndex === 0) {
+            this._waitPreRenderBackpressure();
+            const poseReady = this.poseSync ? Atomics.load(this.poseSync, 0) : 0;
+            Atomics.store(this._join, PR_JOIN_POSE, poseReady);
+            const frameId = Atomics.add(this._join, PR_JOIN_START, 1) + 1;
+            Atomics.notify(this._join, PR_JOIN_START, this.workerCount);
+            return frameId;
+        }
+        const seen = this._seenStart | 0;
+        while (Atomics.load(this._join, PR_JOIN_START) === seen) {
+            Atomics.wait(this._join, PR_JOIN_START, seen);
+        }
+        const frameId = Atomics.load(this._join, PR_JOIN_START);
+        this._seenStart = frameId;
+        return frameId;
+    }
+
+    _waitPreRenderBackpressure() {
+        if (!this.backpressure || !this.renderQueueSync) return;
+        let published = Atomics.load(this.renderQueueSync, 0);
+        if (published <= 0) return;
+        let consumed = Atomics.load(this.renderQueueSync, 1);
+        while (published > consumed + 1) {
+            Atomics.wait(this.renderQueueSync, 1, consumed);
+            consumed = Atomics.load(this.renderQueueSync, 1);
+            published = Atomics.load(this.renderQueueSync, 0);
+        }
+    }
+
+    _frameJoin(arrivedSlot, epochSlot, seenField, beforeRelease) {
+        const seen = this[seenField] | 0;
+        const ticket = Atomics.add(this._join, arrivedSlot, 1) + 1;
+        if (ticket === this.workerCount) {
+            if (beforeRelease) beforeRelease();
+            Atomics.store(this._join, arrivedSlot, 0);
+            const next = seen + 1;
+            Atomics.store(this._join, epochSlot, next);
+            Atomics.notify(this._join, epochSlot, this.workerCount);
+            this[seenField] = next;
+            return true;
+        }
+        while (Atomics.load(this._join, epochSlot) === seen) {
+            Atomics.wait(this._join, epochSlot, seen);
+        }
+        this[seenField] = Atomics.load(this._join, epochSlot);
+        return false;
+    }
+
+    _clearOwnedScreenFlags() {
+        const n = this.globalEntityCount | 0;
+        const block = this.entityBlockSize | 0;
+        const workers = this.workerCount | 0;
+        const me = this.workerIndex | 0;
+        if (n <= 0 || block <= 0 || workers <= 0) return;
+        const arrays = [Transform.isItOnScreen, SpriteRenderer.isItOnScreen];
+        if (AdobeAnimComponent.isItOnScreen) arrays.push(AdobeAnimComponent.isItOnScreen);
+        const blocks = ((n + block - 1) / block) | 0;
+        for (let b = me; b < blocks; b += workers) {
+            const start = b * block;
+            const end = start + block > n ? n : start + block;
+            for (let a = 0; a < arrays.length; a++) {
+                if (arrays[a]) arrays[a].fill(0, start, end);
+            }
+        }
+    }
+
+    _ownedList(classes) {
+        const key = classes && classes[0];
+        if (!this._ownedCache) this._ownedCache = new Map();
+        let cache = this._ownedCache.get(key);
+        if (!cache) {
+            cache = { stamp: -1, count: 0, ids: new Uint32Array(0), view: EMPTY_OWNED_IDS };
+            this._ownedCache.set(key, cache);
+        }
+        const stamp = Query.queryPublishedFrame(classes);
+        if (stamp === -1) return cache.view;
+        if (cache.stamp === stamp) return cache.view;
+        // Logic0 publishes the snapshot while we copy. A torn read must not
+        // replace the last good list with empty — that frame draws nothing.
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const stampNow = Query.queryPublishedFrame(classes);
+            if (stampNow === -1) return cache.view;
+            const all = Query.queryActiveEntities(classes);
+            const len = all ? all.length : 0;
+            const prevBuf = cache.ids;
+            if (cache.ids.length < len) cache.ids = new Uint32Array(len);
+            const n = fillOwnedIds(
+                all, len, cache.ids, this.workerIndex, this.workerCount, this.entityBlockSize
+            );
+            if (Query.queryPublishedFrame(classes) !== stampNow) continue;
+            cache.stamp = stampNow;
+            if (cache.count !== n || cache.ids !== prevBuf) {
+                cache.count = n;
+                cache.view = n === 0 ? EMPTY_OWNED_IDS : cache.ids.subarray(0, n);
+            }
+            return cache.view;
+        }
+        return cache.view;
+    }
+
+    _shardFrameNeedsCopy() {
+        if (this._streamHasNegative(PR_STREAM_SPRITE)) return true;
+        const entries = this._customLayerEntries;
+        if (!entries) return false;
+        for (let i = 0; i < entries.length; i++) {
+            const id = entries[i].layerId | 0;
+            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
+            if (this._streamHasNegative(PR_STREAM_CUSTOM0 + id)) return true;
+        }
+        return false;
+    }
+
+    _streamHasNegative(stream) {
+        const counts = this._loadStream(stream);
+        const n = this.workerCount | 0;
+        for (let i = 0; i < n; i++) if (counts[i] < 0) return true;
+        return false;
+    }
+
+    _columnWindow(full, prefix, cacheSlot, bufIdx) {
+        if (!full) return null;
+        if (!this._dummyCount) this._dummyCount = new Int32Array(1);
+        let slot = this[cacheSlot];
+        if (!slot) slot = this[cacheSlot] = [null, null];
+        const hit = slot[bufIdx];
+        if (hit && hit.prefix === prefix) return hit.views;
+        const views = { count: this._dummyCount };
+        for (let i = 0; i < MAIN_COLUMN_KEYS.length; i++) {
+            const key = MAIN_COLUMN_KEYS[i];
+            if (key === 'count') continue;
+            const arr = full[key];
+            views[key] = arr && prefix > 0 && arr.subarray ? arr.subarray(prefix) : arr;
+        }
+        slot[bufIdx] = { prefix, views };
+        return views;
+    }
+
+    _bindDirectMain(bufIdx) {
+        const fit = this._fitted(PR_STREAM_SPRITE, this.renderQueueMaxItems | 0);
+        if (fit.keep < (this._renderableCount | 0)) this._renderableCount = fit.keep;
+        this._emitPrefix = fit.prefix;
+        const views = this._columnWindow(
+            this.renderQueueBuffers[bufIdx], fit.prefix, '_mainWindows', bufIdx
+        );
+        this._applyMainColumns(views);
+        this.renderQueueCount = this._dummyCount;
+    }
+
+    _bindDirectCustom(bufIdx) {
+        const entries = this._customLayerEntries;
+        if (!entries) return;
+        if (!this._customWindows) this._customWindows = {};
+        for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
+            const id = entry.layerId | 0;
+            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
+            const max = entry.collector ? (entry.collector.maxItems | 0) : 0;
+            const fit = this._fitted(PR_STREAM_CUSTOM0 + id, max);
+            if (entry.collector && fit.keep < (entry.collector.count | 0)) entry.collector.count = fit.keep;
+            const key = '_cw' + id;
+            const views = this._columnWindow(entry.bufs[bufIdx], fit.prefix, key, bufIdx);
+            entry.ref = views;
+        }
+    }
+
+    _collectListSlice(field, method) {
+        const src = this[field];
+        if (!src) {
+            this[method]();
+            return;
+        }
+        const slice = this._takeListSlice(src);
+        this[field] = slice;
+        try {
+            this[method]();
+        } finally {
+            this[field] = src;
+        }
+    }
+
+    _takeListSlice(src) {
+        const count = src[0] | 0;
+        const { start, end } = listSlice(count, this.workerIndex, this.workerCount);
+        const n = end - start;
+        if (!this._listSlice || this._listSlice.length < n + 1) {
+            this._listSlice = new Uint16Array(n + 1 > 16 ? n + 1 : 16);
+        }
+        const dest = this._listSlice;
+        dest[0] = n;
+        for (let i = 0; i < n; i++) dest[1 + i] = src[1 + start + i];
+        return dest;
+    }
+
+    _bindLocalLights() {
+        const lights = this._sortedLightEntities;
+        const n = lights ? lights.length : 0;
+        if (!this._localLights || this._localLights.length < n + 1) {
+            this._localLights = new Uint16Array(n + 1 > 16 ? n + 1 : 16);
+        }
+        this._localLights[0] = n;
+        for (let i = 0; i < n; i++) this._localLights[1 + i] = lights[i];
+        this._savedVisibleLights = this.visibleLightsData;
+        this.visibleLightsData = this._localLights;
+    }
+
+    _cloneTypedViews(src, keys) {
+        const out = {};
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            const arr = src ? src[key] : null;
+            out[key] = arr ? new arr.constructor(arr.length) : arr;
+        }
+        return out;
+    }
+
+    _bindMainPrivate() {
+        const full = this.renderQueueBuffers && this.renderQueueBuffers[0];
+        if (!full) return;
+        if (!this._mainPrivate) this._mainPrivate = this._cloneTypedViews(full, MAIN_COLUMN_KEYS);
+        this._applyMainColumns(this._mainPrivate);
+    }
+
+    _applyMainColumns(views) {
+        if (!views) return;
+        this.renderQueueCount = views.count;
+        this.renderQueueX = views.x;
+        this.renderQueueY = views.y;
+        this.renderQueueScaleX = views.scaleX;
+        this.renderQueueScaleY = views.scaleY;
+        this.renderQueueRotC = views.rotC;
+        this.renderQueueRotS = views.rotS;
+        this.renderQueueAlpha = views.alpha;
+        this.renderQueueTint = views.tint;
+        this.renderQueueTextureId = views.textureId;
+        this.renderQueueAnchorX = views.anchorX;
+        this.renderQueueAnchorY = views.anchorY;
+        this.renderQueueType = views.type;
+        this.renderQueueSortKey = views.sortKey;
+        this.renderQueueRepeatX = views.repeatX;
+        this.renderQueueRepeatY = views.repeatY;
+        this.renderQueueTileMode = views.tileMode;
+        this.renderQueueTileOffsetU = views.tileOffsetU;
+        this.renderQueueTileOffsetV = views.tileOffsetV;
+        this.renderQueueTileMulX = views.tileMulX;
+        this.renderQueueTileMulY = views.tileMulY;
+    }
+
+    _bindCustomPrivate() {
+        const entries = this._customLayerEntries;
+        if (!entries) return;
+        if (!this._customPrivate) this._customPrivate = {};
+        for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
+            const id = entry.layerId;
+            if (!this._customPrivate[id]) {
+                this._customPrivate[id] = this._cloneTypedViews(entry.bufs[0], MAIN_COLUMN_KEYS);
+            }
+            entry.ref = this._customPrivate[id];
+        }
+    }
+
+    _bindShadowPrivate() {
+        const full = this.shadowRenderQueueBuffers && this.shadowRenderQueueBuffers[0];
+        if (!full) return;
+        if (!this._shadowPrivate) this._shadowPrivate = this._cloneTypedViews(full, SHADOW_COLUMN_KEYS);
+        const p = this._shadowPrivate;
+        if (p.count) p.count[0] = 0;
+        this.shadowRenderQueueCount = p.count;
+        this.shadowRenderQueueX = p.x;
+        this.shadowRenderQueueY = p.y;
+        this.shadowRenderQueueScaleX = p.scaleX;
+        this.shadowRenderQueueScaleY = p.scaleY;
+        this.shadowRenderQueueRotC = p.rotC;
+        this.shadowRenderQueueRotS = p.rotS;
+        this.shadowRenderQueueAlpha = p.alpha;
+        this.shadowRenderQueueTint = p.tint;
+        this.shadowRenderQueueTextureId = p.textureId;
+        this.shadowRenderQueueAnchorX = p.anchorX;
+        this.shadowRenderQueueAnchorY = p.anchorY;
+    }
+
+    _bindVpPrivate() {
+        if (!this._vpBuffers || !this._vpBuffers[0]) return;
+        if (!this._vpPrivate) {
+            const bytes = this._vpBuffers[0].i32.byteLength;
+            const buf = new ArrayBuffer(bytes);
+            this._vpPrivate = {
+                header: new Int32Array(buf, 0, 1),
+                i32: new Int32Array(buf),
+                f32: new Float32Array(buf),
+                u8: new Uint8Array(buf),
+            };
+        }
+        this._vpPrivate.header[0] = 0;
+        this._vpWriteBuffer = this._vpPrivate;
+        if (this._selfLitBuffers && this._selfLitBuffers[0]) {
+            if (!this._selfLitPrivate) {
+                const bytes = this._selfLitBuffers[0].u8.byteLength;
+                const buf = new ArrayBuffer(bytes);
+                this._selfLitPrivate = {
+                    header: new Int32Array(buf, 0, 1),
+                    i32: new Int32Array(buf),
+                    f32: new Float32Array(buf),
+                    u16: new Uint16Array(buf),
+                    u8: new Uint8Array(buf),
+                };
+            }
+            this._selfLitPrivate.header[0] = 0;
+            this._selfLitWriteBuffer = this._selfLitPrivate;
+        }
+    }
+
+    _storeShardCounts() {
+        const expanded = this._shardExpanded | 0;
+        const sprite = expanded ? -1 : (this._renderableCount | 0);
+        this._storeStream(PR_STREAM_SPRITE, sprite);
+        const shadow = this._shadowPrivate && this._shadowPrivate.count ? (this._shadowPrivate.count[0] | 0) : 0;
+        this._storeStream(PR_STREAM_SHADOW, this.shadowsEnabled ? shadow : 0);
+        const vp = this._vpPrivate ? (this._vpPrivate.header[0] | 0) : 0;
+        this._storeStream(PR_STREAM_VP, this.visibilityPolygonsEnabled ? vp : 0);
+        const selfLit = this._selfLitPrivate ? (this._selfLitPrivate.header[0] | 0) : 0;
+        this._storeStream(PR_STREAM_SELF_LIT, this._selfLitPrivate ? selfLit : 0);
+        const lights = this._sortedLightEntities ? this._sortedLightEntities.length : 0;
+        this._storeStream(PR_STREAM_LIGHTS, lights);
+        const entries = this._customLayerEntries;
+        if (!entries) return;
+        for (let i = 0; i < entries.length; i++) {
+            const id = entries[i].layerId | 0;
+            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
+            const collector = entries[i].collector;
+            const n = expanded ? -1 : (collector ? (collector.count | 0) : 0);
+            this._storeStream(PR_STREAM_CUSTOM0 + id, n);
+        }
+    }
+
+    _storePrivateEmitCounts() {
+        const sprite = this._mainPrivate && this._mainPrivate.count ? (this._mainPrivate.count[0] | 0) : 0;
+        this._storeStream(PR_STREAM_SPRITE, sprite);
+        const entries = this._customLayerEntries;
+        if (!entries) return;
+        for (let i = 0; i < entries.length; i++) {
+            const id = entries[i].layerId | 0;
+            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
+            const priv = this._customPrivate && this._customPrivate[id];
+            const n = priv && priv.count ? (priv.count[0] | 0) : 0;
+            this._storeStream(PR_STREAM_CUSTOM0 + id, n);
+        }
+    }
+
+    _storeStream(stream, value) {
+        this._join[preRenderCountSlot(stream, this.workerIndex, this.workerCount)] = value | 0;
+    }
+
+    _loadStream(stream) {
+        const n = this.workerCount | 0;
+        if (!this._streamScratch || this._streamScratch.length !== n) this._streamScratch = new Int32Array(n);
+        const scratch = this._streamScratch;
+        for (let i = 0; i < n; i++) {
+            scratch[i] = this._join[preRenderCountSlot(stream, i, n)];
+        }
+        return scratch;
+    }
+
+    _fitted(stream, maxItems) {
+        const counts = this._loadStream(stream);
+        const prefix = prefixAt(counts, this.workerIndex);
+        const mine = counts[this.workerIndex] | 0;
+        if (!(maxItems > 0) || prefix >= maxItems) return { prefix, keep: prefix >= maxItems && maxItems > 0 ? 0 : mine };
+        const room = maxItems - prefix;
+        return { prefix, keep: mine < room ? mine : room };
+    }
+
+    _copyColumns(src, dst, count, prefix) {
+        const n = count | 0;
+        const base = prefix | 0;
+        if (!src || !dst || n <= 0 || base < 0) return;
+        for (const key in src) {
+            if (key === 'count') continue;
+            const s = src[key];
+            const d = dst[key];
+            if (!s || !d || typeof s.subarray !== 'function') continue;
+            let keep = n;
+            if (base >= d.length) continue;
+            if (base + keep > d.length) keep = d.length - base;
+            if (keep <= 0) continue;
+            d.set(s.subarray(0, keep), base);
+        }
+    }
+
+    _copyPacked(srcU8, dstU8, count, itemBytes, prefix) {
+        const n = count | 0;
+        const bytes = itemBytes | 0;
+        if (!srcU8 || !dstU8 || n <= 0 || bytes <= 0) return;
+        const from = 4;
+        const to = 4 + (prefix | 0) * bytes;
+        const len = n * bytes;
+        if (to + len > dstU8.length || from + len > srcU8.length) return;
+        dstU8.set(srcU8.subarray(from, from + len), to);
+    }
+
+    _copyShardOutputs(bufIdx, copyMain) {
+        if (copyMain && this._mainPrivate && this.renderQueueBuffers) {
+            const max = this.renderQueueMaxItems | 0;
+            const fit = this._fitted(PR_STREAM_SPRITE, max);
+            if (fit.keep < (this._mainPrivate.count ? this._mainPrivate.count[0] : 0)) {
+                this._warnOnce('_shardSpriteCap', '[PRE_RENDER] sharded main queue hit maxVisibleRenderables. Raise it or the tail workers drop sprites.');
+            }
+            this._copyColumns(this._mainPrivate, this.renderQueueBuffers[bufIdx], fit.keep, fit.prefix);
+        }
+        if (this.shadowsEnabled && this._shadowPrivate && this.shadowRenderQueueBuffers) {
+            const fit = this._fitted(PR_STREAM_SHADOW, this.maxShadowRenderItems | 0);
+            this._copyColumns(this._shadowPrivate, this.shadowRenderQueueBuffers[bufIdx], fit.keep, fit.prefix);
+        }
+        if (this.visibilityPolygonsEnabled && this._vpPrivate && this._vpBuffers) {
+            const fit = this._fitted(PR_STREAM_VP, this._vpMaxLights | 0);
+            if (!this._vpDestU8) this._vpDestU8 = [null, null];
+            let destU8 = this._vpDestU8[bufIdx];
+            if (!destU8) destU8 = this._vpDestU8[bufIdx] = new Uint8Array(this._vpBuffers[bufIdx].i32.buffer);
+            this._copyPacked(this._vpPrivate.u8, destU8, fit.keep, this._vpSlotBytes | 0, fit.prefix);
+        }
+        if (this._selfLitPrivate && this._selfLitBuffers && this._selfLitBuffers[bufIdx]) {
+            const fit = this._fitted(PR_STREAM_SELF_LIT, this._selfLitMax | 0);
+            this._copyPacked(this._selfLitPrivate.u8, this._selfLitBuffers[bufIdx].u8, fit.keep, this._selfLitItemBytes | 0, fit.prefix);
+        }
+        if (this.visibleLightsData) {
+            const cap = this.visibleLightsData.length - 1;
+            const fit = this._fitted(PR_STREAM_LIGHTS, cap);
+            const src = this._sortedLightEntities;
+            if (src && fit.keep > 0) {
+                for (let i = 0; i < fit.keep; i++) this.visibleLightsData[1 + fit.prefix + i] = src[i];
+            }
+        }
+        const entries = this._customLayerEntries;
+        if (!copyMain || !entries || !this._customPrivate) return;
+        for (let i = 0; i < entries.length; i++) {
+            const id = entries[i].layerId | 0;
+            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
+            const priv = this._customPrivate[id];
+            if (!priv) continue;
+            const max = entries[i].collector ? (entries[i].collector.maxItems | 0) : 0;
+            const fit = this._fitted(PR_STREAM_CUSTOM0 + id, max);
+            this._copyColumns(priv, entries[i].bufs[bufIdx], fit.keep, fit.prefix);
+        }
+    }
+
+    _sortPublishedLights(n) {
+        if (n <= 1 || !this.visibleLightsData) return;
+        const data = this.visibleLightsData;
+        const tmp = this._lightSortTmp || (this._lightSortTmp = []);
+        tmp.length = n;
+        for (let i = 0; i < n; i++) tmp[i] = data[1 + i];
+        tmp.sort(this._lightYComparator);
+        for (let i = 0; i < n; i++) data[1 + i] = tmp[i];
+    }
+
+    _publishShardFrame(frameId, bufIdx) {
+        const n = this.workerCount | 0;
+        if (this.renderQueueEnabled && this.renderQueueBuffers) {
+            const max = this.renderQueueMaxItems | 0;
+            const sum = sumCounts(this._loadStream(PR_STREAM_SPRITE), n);
+            this.renderQueueBuffers[bufIdx].count[0] = max > 0 && sum > max ? max : sum;
+        }
+        if (this.shadowsEnabled && this.shadowRenderQueueBuffers) {
+            const max = this.maxShadowRenderItems | 0;
+            const sum = sumCounts(this._loadStream(PR_STREAM_SHADOW), n);
+            this.shadowRenderQueueBuffers[bufIdx].count[0] = max > 0 && sum > max ? max : sum;
+        }
+        if (this.visibilityPolygonsEnabled && this._vpBuffers) {
+            const max = this._vpMaxLights | 0;
+            const sum = sumCounts(this._loadStream(PR_STREAM_VP), n);
+            this._vpBuffers[bufIdx].header[0] = max > 0 && sum > max ? max : sum;
+            if (this._selfLitBuffers && this._selfLitBuffers[bufIdx]) {
+                const smax = this._selfLitMax | 0;
+                const ssum = sumCounts(this._loadStream(PR_STREAM_SELF_LIT), n);
+                this._selfLitBuffers[bufIdx].header[0] = smax > 0 && ssum > smax ? smax : ssum;
+            }
+        }
+        if (this.visibleLightsData) {
+            const cap = this.visibleLightsData.length - 1;
+            const sum = sumCounts(this._loadStream(PR_STREAM_LIGHTS), n);
+            const visible = sum > cap ? cap : sum;
+            this.visibleLightsData[0] = visible;
+            this._sortPublishedLights(visible);
+        }
+        const entries = this._customLayerEntries;
+        if (entries) {
+            for (let i = 0; i < entries.length; i++) {
+                const id = entries[i].layerId | 0;
+                if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
+                const max = entries[i].collector ? (entries[i].collector.maxItems | 0) : 0;
+                const sum = sumCounts(this._loadStream(PR_STREAM_CUSTOM0 + id), n);
+                const ref = entries[i].bufs[bufIdx];
+                if (ref && ref.count) ref.count[0] = max > 0 && sum > max ? max : sum;
+            }
+        }
+        if (this.renderQueueSync) {
+            this.renderQueueFrame = frameId;
+            Atomics.store(this.renderQueueSync, 0, frameId);
+            Atomics.notify(this.renderQueueSync, 0, 1);
+        }
+        const poseReady = Atomics.load(this._join, PR_JOIN_POSE);
+        if (this.poseSync && poseReady > 0) Atomics.store(this.poseSync, 1, poseReady);
+    }
+
+    /**
      * Calculate camera viewport bounds for screen visibility checks
      */
     calculateCameraBounds() {
@@ -1034,12 +1774,20 @@ class PreRenderWorker extends AbstractWorker {
         if (!lf) return;
         const count = lf.count[0] | 0;
         if (count <= 0) return;
+        let from = 0;
+        let to = count;
+        if (this._lfRange) {
+            from = this._lfRange.start | 0;
+            to = this._lfRange.end | 0;
+            if (from < 0) from = 0;
+            if (to > count) to = count;
+        }
 
         const x = lf.x;
         const y = lf.y;
         const bounds = this._frameCameraBoundsValid ? this.calculateCameraBounds() : null;
         if (!bounds) {
-            for (let i = 0; i < count; i++) {
+            for (let i = from; i < to; i++) {
                 this.collectRenderable(7, i, y[i] * Y_SORT_K);
                 this.visibleParticlesCount++;
             }
@@ -1053,7 +1801,7 @@ class PreRenderWorker extends AbstractWorker {
         const maxX = bounds.maxX;
         const minY = bounds.minY;
         const maxY = bounds.maxY;
-        for (let i = 0; i < count; i++) {
+        for (let i = from; i < to; i++) {
             const sx = x[i] * camZoom - camOffX;
             const sy = y[i] * camZoom - camOffY;
             if (sx > minX && sx < maxX && sy > minY && sy < maxY) {
@@ -1143,6 +1891,11 @@ class PreRenderWorker extends AbstractWorker {
         // Normalized to (array, base offset) instead of a per-frame closure so the
         // hot loop below stays allocation-free and the index load stays inlineable.
         let iterCount, iterSource, iterBase;
+        if (this._ownedSpriteIter) {
+            iterCount = this._ownedSpriteIter.length;
+            iterSource = this._ownedSpriteIter;
+            iterBase = 0;
+        } else {
         const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
         if (spriteEntities && spriteEntities.length > 0) {
             iterCount = spriteEntities.length;
@@ -1155,6 +1908,7 @@ class PreRenderWorker extends AbstractWorker {
             iterCount = this.globalEntityCount;
             iterSource = null;
             iterBase = 0;
+        }
         }
 
         // Sun shadows (fused): write during same pass when enabled
@@ -1301,7 +2055,9 @@ class PreRenderWorker extends AbstractWorker {
 
         // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
         if (this._queryLightEmitter && LightEmitter.active && LightEmitter.hasGlowSprite) {
-            const lights = Query.queryActiveEntities(this._queryLightEmitter);
+            const lights = this._ownedLightIter
+                ? this._ownedLightIter
+                : Query.queryActiveEntities(this._queryLightEmitter);
             if (lights && lights.length > 0) {
                 const leActive = LightEmitter.active;
                 const leGlow = LightEmitter.hasGlowSprite;
@@ -1426,6 +2182,7 @@ class PreRenderWorker extends AbstractWorker {
             entityIsItOnScreen[i] = 1;
             if (renderVisible[i]) {
                 this.collectRenderable(6, i, y[i] * Y_SORT_K);
+                this._shardExpanded = 1;
                 this.visibleEntitiesCount++;
             }
         }
@@ -1534,6 +2291,10 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _type0PersistHit(bufIdx, count, collectorType, collectorIndex) {
+        if (this._sharded) {
+            const prevPrefix = this._persistEmitPrefix ? (this._persistEmitPrefix[bufIdx] | 0) : 0;
+            if ((this._emitPrefix | 0) !== prevPrefix) return false;
+        }
         if (!this._persistEntity || this._persistCount[bufIdx] !== count) return false;
         const prevE = this._persistEntity[bufIdx];
         const prevT = this._persistType[bufIdx];
@@ -1567,6 +2328,10 @@ class PreRenderWorker extends AbstractWorker {
             if (type === 0 && dirty) dirty[idx] = 0;
         }
         this._persistCount[bufIdx] = count;
+        if (this._sharded) {
+            if (!this._persistEmitPrefix) this._persistEmitPrefix = [0, 0];
+            this._persistEmitPrefix[bufIdx] = this._emitPrefix | 0;
+        }
     }
 
     _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs) {
@@ -2902,8 +3667,17 @@ class PreRenderWorker extends AbstractWorker {
             persistScratch.length = 0;
             flashScratch.length = 0;
 
-            const lightEntitiesRaw = Query.queryActiveEntities(this._queryLightEmitter);
-            for (let i = 0; i < lightEntitiesRaw.length; i++) {
+            const lightEntitiesRaw = Query.queryPublishedFrame(this._queryLightEmitter) === -1
+                ? EMPTY_OWNED_IDS
+                : Query.queryActiveEntities(this._queryLightEmitter);
+            let lightFrom = 0;
+            let lightTo = lightEntitiesRaw.length;
+            if (this._sharded) {
+                const slice = listSlice(lightEntitiesRaw.length, this.workerIndex, this.workerCount);
+                lightFrom = slice.start;
+                lightTo = slice.end;
+            }
+            for (let i = lightFrom; i < lightTo; i++) {
                 const lightIdx = lightEntitiesRaw[i];
                 if (!lightEnabled[lightIdx]) continue;
 
@@ -2943,7 +3717,7 @@ class PreRenderWorker extends AbstractWorker {
             lightEntities.sort(this._lightYComparator);
         }
 
-        if (this.visibleLightsData) {
+        if (this.visibleLightsData && !this._deferLightPublish) {
             const n = lightEntities.length;
             this.visibleLightsData[0] = n;
             for (let w = 0; w < n; w++) this.visibleLightsData[1 + w] = lightEntities[w];
@@ -3210,6 +3984,7 @@ class PreRenderWorker extends AbstractWorker {
                 const heightMult = shadowHeightMultiplier[neighborIdx];
                 if (heightMult <= 0) continue;
 
+                // ponytail: cap is per prerender worker. N workers can each emit it for the same caster. Global SAB counter if a scene hits the ceiling.
                 if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) continue;
 
                 const pose = this._displayPoseOut;

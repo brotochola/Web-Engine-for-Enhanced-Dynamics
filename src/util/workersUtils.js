@@ -174,7 +174,7 @@ export const LOGIC_STATS = Object.freeze({
 
 /**
  * Pre-Render Worker Stats Schema
- * Single pre-render worker with visibility and render queue metrics
+ * One stride per pre-render worker (same layout as logic/spatial).
  */
 export const PRE_RENDER_STATS = Object.freeze({
   FPS: 0,
@@ -194,6 +194,8 @@ export const PRE_RENDER_STATS = Object.freeze({
   VISIBILITY_MS: 14,
   ADOBE_MS: 15,
   STRIDE_FLOATS: 16,
+  BUFFER_SIZE_PER_WORKER: 16 * 4,
+  /** One worker. Multi-worker buffers are BUFFER_SIZE_PER_WORKER * N. */
   BUFFER_SIZE: 16 * 4,
 });
 

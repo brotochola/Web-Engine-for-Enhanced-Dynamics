@@ -15,7 +15,7 @@ Each worker owns its data region so hot paths can avoid broad locking and per-fr
 | `physics` (classic)   |  0..1 | No       | No                  | Box2D 3.0 WASM host (`box2dWasm` + `physicsHost`), contacts, joints. **0** when `config.physics.enabled === false` |
 | `logicWorker`        |  1..N | Yes      | **Yes**             | Entity `tick()`, callbacks, lifecycle                    |
 | `particleWorker`     |     1 | No       | No                  | Particles, bullets, decals, navigation, visibility lists |
-| `preRenderWorker`   |     1 | No       | No                  | Animation, Y-sort, render + shadow queue assembly        |
+| `preRenderWorker`   |  1..N | Yes      | No                  | Animation, visibility, render + shadow queue assembly    |
 | `pixiWorker`         |     1 | No       | No                  | PixiJS on OffscreenCanvas. Draws the frame.              |
 | `audioMixerProcessor` |     1 | No       | No                  | Real-time PCM mixing on audio thread (AudioWorklet)      |
 
@@ -194,7 +194,7 @@ The multitasker. Handles particles, bullets, decals, navigation computation, vis
 
 ---
 
-### Pre-Render Worker (1)
+### Pre-Render Worker (1..N)
 
 Reads visibility lists, advances animations, builds the render and shadow queues that pixi consumes. **Sprite animation is owned entirely here** (main ENTITIES queue and custom-layer queues) — `pixiWorker` only consumes resolved `textureId` values from the render queue.
 
@@ -513,9 +513,24 @@ Not a Web Worker — an `AudioWorkletProcessor` running on the browser's **audio
 - Logic worker 0 has extra duties: list mutations, spawn/despawn processing
 - Keyboard / Mouse / Gamepad: main thread writes SAB; all workers read (Gamepad via `poll()` each frame)
 
+### Pre-Render Workers
+
+`config.preRender.numberOfPreRenderWorkers` (default 1). `1` keeps the original single-writer frame: no joins, no private queues.
+
+`N > 1` splits the frame and still publishes one queue for pixi:
+
+- An entity belongs to `floor(entityIndex / entityBlockSize) % N` (`entityBlockSize` default 256). Animation accumulators stay on that worker. `isItOnScreen` is cleared and set only on owned blocks.
+- Particles, decorations, bullets, and liquidfun are contiguous slices of the visible list. Lights, point shadows, and visibility polygons are a contiguous slice of the light list.
+- Each worker emits into private buffers. Adobe pieces make the slot count unknown before emit, so the shared queue is a packed copy after the counts are known. Prefixes are deterministic (worker 0, then 1, …). Pixi still reads one `count` and one SoA buffer.
+- Two joins per frame (`arrived` + `epoch`), plus the existing `readyFrame` / `consumedFrame`. No atomic per sprite. Worker 0 stamps the physics pose generation before the frame starts; the worker that finishes the copy join consumes `poseSync` and stores `readyFrame`.
+- Shadows read `entityLastTextureId` before this frame's emit, so they see the previous frame. That avoids a torn id without a second texture buffer.
+- `maxShadowsPerEntity` is per worker. Several workers can each emit the cap for the same caster.
+
+`STEP_MS` includes the join wait, so the frame time is the slowest worker. `COLLECT_MS` and `EMIT_MS` do not.
+
 ### Single-Instance Workers
 
-Physics, particle, pre_render, and pixi are single-owner by design. Their workloads don't partition cleanly or benefit from splitting.
+Physics, particle, and pixi stay single-owner. Their workloads don't partition cleanly or benefit from splitting.
 
 ---
 
@@ -530,9 +545,9 @@ Each worker gets a slot in `frameRateData` for aggregate FPS monitoring:
 | `N+1`          | Pixi (renderer) |
 | `N+2`          | Particle        |
 | `N+3 .. N+2+L` | Logic workers   |
-| `N+3+L`        | Pre-render      |
+| `N+3+L .. N+2+L+P` | Pre-render workers |
 
-Where `N = numberOfSpatialWorkers`, `L = numberOfLogicWorkers`.
+Where `N = numberOfSpatialWorkers`, `L = numberOfLogicWorkers`, `P = numberOfPreRenderWorkers`. One pre-render worker still occupies a single slot at `N+3+L`.
 
 ---
 

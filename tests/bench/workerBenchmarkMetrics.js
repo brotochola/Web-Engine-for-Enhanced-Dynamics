@@ -58,6 +58,7 @@ function averageStatFieldMaps(statMaps) {
 export function getWorkerFrameRateLayout({
   spatialWorkerCount = 0,
   logicWorkerCount = 0,
+  preRenderWorkerCount = 1,
   physicsEnabled = true,
 } = {}) {
   const layout = [];
@@ -106,12 +107,16 @@ export function getWorkerFrameRateLayout({
     });
   }
 
-  layout.push({
-    id: 'preRender',
-    type: 'preRender',
-    workerIndex: 0,
-    frameRateIndex: logicStartIndex + logicWorkerCount,
-  });
+  const preCount = preRenderWorkerCount > 0 ? preRenderWorkerCount : 1;
+  const preStart = logicStartIndex + logicWorkerCount;
+  for (let i = 0; i < preCount; i++) {
+    layout.push({
+      id: preCount === 1 ? 'preRender' : `preRender${i}`,
+      type: 'preRender',
+      workerIndex: i,
+      frameRateIndex: preStart + i,
+    });
+  }
 
   return layout;
 }
@@ -120,6 +125,9 @@ function getSceneWorkerCounts(scene) {
   return {
     spatialWorkerCount: scene?.config?.spatial?.numberOfSpatialWorkers || 0,
     logicWorkerCount: scene?.numberOfLogicWorkers ?? scene?.config?.logic?.numberOfLogicWorkers ?? 1,
+    preRenderWorkerCount: scene?.numberOfPreRenderWorkers
+      ?? scene?.config?.preRender?.numberOfPreRenderWorkers
+      ?? 1,
     physicsEnabled: scene?._physicsEnabled !== false,
   };
 }
@@ -139,14 +147,17 @@ function buildWorkerReaders(scene) {
     physics: buffers.physicsStats ? createStatsReader(buffers.physicsStats, PHYSICS_STATS) : null,
     renderer: buffers.rendererStats ? createStatsReader(buffers.rendererStats, RENDERER_STATS) : null,
     particle: buffers.particleStats ? createStatsReader(buffers.particleStats, PARTICLE_STATS) : null,
-    preRender: buffers.preRenderStats ? createStatsReader(buffers.preRenderStats, PRE_RENDER_STATS) : null,
   };
+  const preRenderCount = counts.preRenderWorkerCount > 0 ? counts.preRenderWorkerCount : 1;
   const multiReaders = {
     spatial: buffers.spatialStats
       ? createMultiWorkerStatsReaderArray(buffers.spatialStats, SPATIAL_STATS, counts.spatialWorkerCount)
       : [],
     logic: buffers.logicStats
       ? createMultiWorkerStatsReaderArray(buffers.logicStats, LOGIC_STATS, counts.logicWorkerCount)
+      : [],
+    preRender: buffers.preRenderStats
+      ? createMultiWorkerStatsReaderArray(buffers.preRenderStats, PRE_RENDER_STATS, preRenderCount)
       : [],
   };
 
@@ -170,7 +181,7 @@ function buildWorkerReaders(scene) {
       statsView = singleReaders.particle;
       statsSchema = PARTICLE_STATS;
     } else if (entry.type === 'preRender') {
-      statsView = singleReaders.preRender;
+      statsView = multiReaders.preRender[entry.workerIndex] || null;
       statsSchema = PRE_RENDER_STATS;
     }
 

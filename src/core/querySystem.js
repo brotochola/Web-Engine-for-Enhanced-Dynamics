@@ -792,6 +792,16 @@ export class QuerySystem {
     );
   }
 
+  /** publishedFrame of a precomputed active query. -1 if that query is not precomputed. */
+  queryPublishedFrame(componentClasses) {
+    const queryMask = this._generateQueryMask(componentClasses);
+    const queryIndex = this.queryMaskToIndex.get(queryMask);
+    if (queryIndex === undefined) return -1;
+    const header = this.queryResultViews[queryIndex]?.header;
+    if (!header) return -1;
+    return Atomics.load(header, 2);
+  }
+
   /**
    * Explicit slow active query path for ad hoc component combinations.
    * Prefer GameObject/type APIs or precomputed scene queries in hot code.
@@ -1130,6 +1140,15 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     );
   }
 
+  function queryPublishedFrame(componentClasses) {
+    const queryMask = generateQueryMask(componentClasses);
+    const queryIndex = queryMaskToIndex.get(queryMask);
+    if (queryIndex === undefined) return -1;
+    const header = queryResultViews[queryIndex]?.header;
+    if (!header) return -1;
+    return Atomics.load(header, 2);
+  }
+
   function queryActiveEntitiesSlow(componentClasses) {
     const queryMask = generateQueryMask(componentClasses);
 
@@ -1184,6 +1203,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   return {
     query,
     queryActiveEntities,
+    queryPublishedFrame,
     queryActiveEntitiesSlow,
     publishPrecomputedActiveQueries(frameNumber = 0) {
       for (let q = 0; q < precomputedQueries.length; q++) {

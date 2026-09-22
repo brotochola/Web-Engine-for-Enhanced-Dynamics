@@ -48,6 +48,8 @@ export class BunnyMarkScene extends Scene {
             skipCull: true,
             // fixedFps: 30,
             interpolation: false,
+            entityBlockSize: 256,
+            numberOfPreRenderWorkers: 2,
         },
         lighting: { enabled: false },
     };

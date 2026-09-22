@@ -133,7 +133,7 @@ class Scene {
     // RENDERER: numberOfSpatialWorkers + 1
     // PARTICLE: numberOfSpatialWorkers + 2
     // LOGIC_START: numberOfSpatialWorkers + 3
-    // PRE_RENDER: numberOfSpatialWorkers + 3 + numberOfLogicWorkers
+    // PRE_RENDER_START: numberOfSpatialWorkers + 3 + numberOfLogicWorkers
   };
 
   // Static declarations - override these in subclasses
@@ -190,7 +190,7 @@ class Scene {
       physics: null,
       renderer: null,
       particle: null,
-      preRender: null, // Pre-render worker for visibility, animation, render queues
+      preRenderWorkers: [],
     };
 
     // Query system for component-based entity filtering (owned by Query facade)
@@ -236,13 +236,16 @@ class Scene {
     // Particle worker always runs - it handles particles, decals, navigation, derived properties
     this.workerReadyStates.particle = false;
 
-    // Pre-render worker always runs - handles visibility, animation, render queues
-    this.workerReadyStates.preRender = false;
+    const numberOfPreRenderWorkers = this.numberOfPreRenderWorkers;
+    for (let i = 0; i < numberOfPreRenderWorkers; i++) {
+      this.workerReadyStates[numberOfPreRenderWorkers === 1 ? 'preRender' : `preRender${i}`] = false;
+    }
 
     this.totalWorkers =
-      4 +
+      3 +
       this.numberOfSpatialWorkers +
-      numberOfLogicWorkers;
+      numberOfLogicWorkers +
+      numberOfPreRenderWorkers;
 
     // Boot only: false skips box2dWasm.js. Hot loops bind pose once and do not re-read this.
     this._physicsEnabled = this.config.physics.enabled !== false;
@@ -762,6 +765,11 @@ class Scene {
   /** @returns {number} Number of logic workers */
   get numberOfLogicWorkers() {
     return this.config.logic.numberOfLogicWorkers;
+  }
+
+  get numberOfPreRenderWorkers() {
+    const n = this.config.preRender?.numberOfPreRenderWorkers | 0;
+    return n > 0 ? n : 1;
   }
 
   /** @returns {boolean} Whether particles are enabled */
@@ -1946,7 +1954,7 @@ class Scene {
     await this._stepWorkerGroup(this.workers.physics ? [this.workers.physics] : [], dt);
     await this._stepWorkerGroup(this.workers.spatialWorkers, dt);
     await this._stepWorkerGroup(this.workers.particle ? [this.workers.particle] : [], dt);
-    await this._stepWorkerGroup(this.workers.preRender ? [this.workers.preRender] : [], dt);
+    await this._stepWorkerGroup(this.workers.preRenderWorkers, dt);
     await this._stepWorkerGroup(this.workers.renderer ? [this.workers.renderer] : [], dt);
   }
 
@@ -2073,12 +2081,22 @@ class Scene {
       }
       return sum;
     };
+    const maxOf = (sab, schema, count) => {
+      if (!sab || count < 1) return 0;
+      const view = new Float32Array(sab);
+      let max = 0;
+      for (let i = 0; i < count; i++) {
+        const v = view[i * schema.STRIDE_FLOATS + schema.STEP_MS] || 0;
+        if (v > max) max = v;
+      }
+      return max;
+    };
     const logicCount = this.config.logic?.numberOfLogicWorkers || 1;
     return {
       physics: one(this.buffers.physicsStats, PHYSICS_STATS.STEP_MS),
       particle: one(this.buffers.particleStats, PARTICLE_STATS.STEP_MS),
       renderer: one(this.buffers.rendererStats, RENDERER_STATS.STEP_MS),
-      preRender: one(this.buffers.preRenderStats, PRE_RENDER_STATS.STEP_MS),
+      preRender: maxOf(this.buffers.preRenderStats, PRE_RENDER_STATS, this.numberOfPreRenderWorkers),
       spatial: multi(this.buffers.spatialStats, SPATIAL_STATS, this.numberOfSpatialWorkers),
       logic: multi(this.buffers.logicStats, LOGIC_STATS, logicCount),
       main: this.mainStepMs || 0,

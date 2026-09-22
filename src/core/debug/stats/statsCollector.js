@@ -28,7 +28,7 @@ export class StatsCollector {
       renderer: this._createSmoother(),
       particle: this._createSmoother(),
       physics: this._createSmoother(),
-      preRender: this._createSmoother(),
+      preRender: [],
       spatial: [],
       logic: [],
     };
@@ -81,6 +81,7 @@ export class StatsCollector {
     const buffers = scene.buffers;
     const spatialCount = scene.config.spatial.numberOfSpatialWorkers;
     const logicCount = scene.numberOfLogicWorkers;
+    const preRenderCount = scene.numberOfPreRenderWorkers || 1;
 
     this.workerStatViews = {
       renderer: buffers.rendererStats ? createStatsReader(buffers.rendererStats, RENDERER_STATS) : null,
@@ -93,8 +94,8 @@ export class StatsCollector {
         ? createMultiWorkerStatsReaderArray(buffers.logicStats, LOGIC_STATS, logicCount)
         : [],
       preRender: buffers.preRenderStats
-        ? createStatsReader(buffers.preRenderStats, PRE_RENDER_STATS)
-        : null,
+        ? createMultiWorkerStatsReaderArray(buffers.preRenderStats, PRE_RENDER_STATS, preRenderCount)
+        : [],
     };
 
     this.fpsSmoothing.spatial = [];
@@ -105,6 +106,11 @@ export class StatsCollector {
     this.fpsSmoothing.logic = [];
     for (let i = 0; i < logicCount; i++) {
       this.fpsSmoothing.logic.push(this._createSmoother());
+    }
+
+    this.fpsSmoothing.preRender = [];
+    for (let i = 0; i < preRenderCount; i++) {
+      this.fpsSmoothing.preRender.push(this._createSmoother());
     }
 
     this._prevWorkerStats = {};

@@ -130,6 +130,8 @@ export class PredatorScene extends WEED.Scene {
     },
     preRender: {
       noLimitFPS: false,
+      entityBlockSize: 512,
+      numberOfPreRenderWorkers: 2,
     },
 
     lighting: {

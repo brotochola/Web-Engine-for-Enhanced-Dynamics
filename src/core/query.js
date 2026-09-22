@@ -10,12 +10,14 @@ export class Query {
   static _query = null;
   static _queryActiveEntities = null;
   static _queryActiveEntitiesSlow = null;
+  static _queryPublishedFrame = null;
 
   static reset() {
     this._system = new QuerySystem();
     this._query = null;
     this._queryActiveEntities = null;
     this._queryActiveEntitiesSlow = null;
+    this._queryPublishedFrame = null;
     return this._system;
   }
 
@@ -30,6 +32,7 @@ export class Query {
     this._query = null;
     this._queryActiveEntities = null;
     this._queryActiveEntitiesSlow = null;
+    this._queryPublishedFrame = null;
   }
 
   /** Worker SAB closures from createWorkerQueryFunctions. */
@@ -37,6 +40,7 @@ export class Query {
     this._query = fns.query;
     this._queryActiveEntities = fns.queryActiveEntities;
     this._queryActiveEntitiesSlow = fns.queryActiveEntitiesSlow;
+    this._queryPublishedFrame = fns.queryPublishedFrame || null;
   }
 
   static buildQueries(registeredClasses) {
@@ -77,6 +81,13 @@ export class Query {
     if (this._queryActiveEntities) return this._queryActiveEntities(componentClasses);
     if (this._system) return this._system.queryActiveEntities(componentClasses);
     return EMPTY;
+  }
+
+  /** Logic frame that last published this precomputed active query. -1 if unknown. */
+  static queryPublishedFrame(componentClasses) {
+    if (this._queryPublishedFrame) return this._queryPublishedFrame(componentClasses);
+    if (this._system?.queryPublishedFrame) return this._system.queryPublishedFrame(componentClasses);
+    return -1;
   }
 
   static queryActiveEntitiesSlow(componentClasses) {

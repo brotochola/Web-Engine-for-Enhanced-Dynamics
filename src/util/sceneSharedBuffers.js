@@ -37,6 +37,7 @@ import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
+import { preRenderJoinWords } from './preRenderOwner.js';
 import { NavGrid } from '../core/navGrid.js';
 import { Grid } from '../core/grid.js';
 import { Ray } from '../core/ray.js';
@@ -749,7 +750,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   DebugDraw.initialize(buffers.debugDrawData, maxDebugDrawEntries);
 
   const numberOfSpatialWorkers = config.spatial.numberOfSpatialWorkers;
-  const maxWorkers = numberOfSpatialWorkers + 4 + scene.numberOfLogicWorkers;
+  const numberOfPreRenderWorkers = scene.numberOfPreRenderWorkers;
+  const maxWorkers = numberOfSpatialWorkers + 3 + scene.numberOfLogicWorkers + numberOfPreRenderWorkers;
   const frameRateStrideFloats = 16;
   buffers.frameRateData = new SharedArrayBuffer(maxWorkers * frameRateStrideFloats * 4);
   views.frameRate = new Float32Array(buffers.frameRateData);
@@ -817,7 +819,10 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   buffers.logicStats = new SharedArrayBuffer(
     LOGIC_STATS.BUFFER_SIZE_PER_WORKER * scene.numberOfLogicWorkers
   );
-  buffers.preRenderStats = new SharedArrayBuffer(PRE_RENDER_STATS.BUFFER_SIZE);
+  buffers.preRenderStats = new SharedArrayBuffer(
+    PRE_RENDER_STATS.BUFFER_SIZE_PER_WORKER * numberOfPreRenderWorkers
+  );
+  buffers.preRenderJoin = new SharedArrayBuffer(preRenderJoinWords(numberOfPreRenderWorkers) * 4);
 
   scene.camera.x = config.worldWidth / 2 - config.canvasWidth / 2;
   scene.camera.y = config.worldHeight / 2 - config.canvasHeight / 2;

@@ -594,6 +594,9 @@ export const LAYER_DEFAULTS = Object.freeze({
 // ============================================================================
 
 export const PRE_RENDER_DEFAULTS = Object.freeze({
+  numberOfPreRenderWorkers: 1,
+  /** Entity ids in a block share one worker. 256 keeps animation state and SoA runs together. */
+  entityBlockSize: 256,
   noLimitFPS: false,
   fixedFps: 0,
   /** When true, skip packing if >1 frame ahead of pixi (Atomics sync). */

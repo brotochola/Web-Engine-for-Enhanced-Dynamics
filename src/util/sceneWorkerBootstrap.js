@@ -9,6 +9,7 @@ import { TileMap } from '../core/tileMap.js';
 import { NavGrid } from '../core/navGrid.js';
 import { SoundManager } from '../core/soundManager.js';
 import { SharedResource } from '../core/sharedResource.js';
+import { preRenderJoinWords } from './preRenderOwner.js';
 import { collectWorkerScriptsToLoad } from './sceneScript.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
@@ -60,11 +61,15 @@ function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBu
   }
   scene.workers.renderer = makeWorker('pixiWorker');
   scene.workers.particle = makeWorker('particleWorker');
-  scene.workers.preRender = makeWorker('preRenderWorker');
+  const numberOfPreRenderWorkers = scene.numberOfPreRenderWorkers;
+  for (let i = 0; i < numberOfPreRenderWorkers; i++) {
+    const preRenderWorker = makeWorker('preRenderWorker');
+    preRenderWorker.name = numberOfPreRenderWorkers === 1 ? 'preRender' : `preRender${i}`;
+    scene.workers.preRenderWorkers.push(preRenderWorker);
+  }
 
   scene.workers.renderer.name = 'renderer';
   scene.workers.particle.name = 'particle';
-  scene.workers.preRender.name = 'preRender';
 }
 
 function attachEarlyWorkerErrorHandlers(scene) {
@@ -82,7 +87,9 @@ function attachEarlyWorkerErrorHandlers(scene) {
   }
   scene.workers.renderer.onerror = earlyErrorHandler('renderer');
   scene.workers.particle.onerror = earlyErrorHandler('particle');
-  scene.workers.preRender.onerror = earlyErrorHandler('preRender');
+  for (let i = 0; i < scene.workers.preRenderWorkers.length; i++) {
+    scene.workers.preRenderWorkers[i].onerror = earlyErrorHandler(scene.workers.preRenderWorkers[i].name);
+  }
 
   for (let i = 0; i < scene.numberOfSpatialWorkers; i++) {
     scene.workers.spatialWorkers[i].onerror = earlyErrorHandler(`spatial${i}`);
@@ -447,15 +454,23 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     mainThreadNavPort.start();
   }
 
-  debugWorkerLog('[Scene]   → Initializing pre-render worker...');
-  const preRenderIndex = logicStartIndex + scene.numberOfLogicWorkers;
-  postWorkerInitMessage(scene.workers.preRender, initData, {
-    buffers: {
-      ...sharedBuffers,
-      preRenderStats: scene.buffers.preRenderStats,
-    },
-    frameRateIndex: preRenderIndex,
-  });
+  debugWorkerLog('[Scene]   → Initializing pre-render workers...');
+  const preRenderStart = logicStartIndex + scene.numberOfLogicWorkers;
+  const preRenderCount = scene.numberOfPreRenderWorkers;
+  const blockSize = scene.config.preRender?.entityBlockSize | 0;
+  for (let i = 0; i < preRenderCount; i++) {
+    postWorkerInitMessage(scene.workers.preRenderWorkers[i], initData, {
+      buffers: {
+        ...sharedBuffers,
+        preRenderStats: scene.buffers.preRenderStats,
+        preRenderJoin: scene.buffers.preRenderJoin,
+      },
+      frameRateIndex: preRenderStart + i,
+      workerIndex: i,
+      workerCount: preRenderCount,
+      entityBlockSize: blockSize > 0 ? blockSize : 256,
+    });
+  }
 
   debugWorkerLog('[Scene]   → Initializing renderer worker...');
   const offscreenCanvas = scene.canvas.transferControlToOffscreen();
