@@ -1945,7 +1945,13 @@ export class GameObject {
       RigidBody.sleeping[i] = 0;
     }
     if (this.collider) Collider.active[i] = 0;
-    if (this.spriteRenderer) SpriteRenderer.active[i] = 0;
+    if (this.spriteRenderer) {
+      SpriteRenderer.active[i] = 0;
+      // Clear sprite so collect→emit cannot see a recycled slot mid-reset as a valid draw.
+      SpriteRenderer.renderVisible[i] = 0;
+      SpriteRenderer.spritesheetId[i] = 0;
+      SpriteRenderer.animationState[i] = -1;
+    }
     if (this.meshRenderer) MeshRenderer.active[i] = 0;
     if (this.adobeAnimComponent) AdobeAnimComponent.active[i] = 0;
     if (this.lightEmitter) {

@@ -476,6 +476,11 @@ class PreRenderWorker extends AbstractWorker {
         }
         const sheetId = SpriteRenderer.spritesheetId[i];
         const animState = SpriteRenderer.animationState[i];
+        // sheetId 0 = unset sentinel (spawn reset / collect→emit pool recycle). Not a bug.
+        if (!sheetId) {
+            if (this.entityLastTextureId) this.entityLastTextureId[i] = INVALID_TEXTURE_ID;
+            return INVALID_TEXTURE_ID;
+        }
         const proxyMap = this.proxyToGlobalAnim?.[sheetId];
         const globalAnimIdx = proxyMap?.[animState];
         if (globalAnimIdx === undefined) {
@@ -2160,7 +2165,8 @@ class PreRenderWorker extends AbstractWorker {
             isItOnScreen[i] = 1;
             entityIsItOnScreen[i] = 1;
 
-            if (renderVisible[i]) {
+            // sheetId 0 = unset (spawn reset / pool recycle). Never queue.
+            if (renderVisible[i] && SpriteRenderer.spritesheetId[i]) {
                 this.collectRenderable(0, i, y[i] * Y_SORT_K);
                 this.visibleEntitiesCount++;
             }
@@ -3138,12 +3144,15 @@ class PreRenderWorker extends AbstractWorker {
                     }
                 } else {
                     // Never reuse stale lastTextureId (pool recycle / spawn before setSprite).
-                    this._warnMissingTexture(
-                        `sprite:${sheetId}:${animState}`,
-                        `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
-                    );
                     if (entityLastTextureId) entityLastTextureId[idx] = INVALID_TEXTURE_ID;
                     rqTextureId[out] = INVALID_TEXTURE_ID;
+                    // sheetId 0 = unset sentinel — expected under collect→emit recycle. No warn.
+                    if (sheetId) {
+                        this._warnMissingTexture(
+                            `sprite:${sheetId}:${animState}`,
+                            `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
+                        );
+                    }
                 }
             } else if (type === 1) {
                 // === PARTICLE ===
@@ -3594,12 +3603,15 @@ class PreRenderWorker extends AbstractWorker {
                         }
                     } else {
                         // Never reuse stale lastTextureId (pool recycle / spawn before setSprite).
-                        this._warnMissingTexture(
-                            `sprite:${sheetId}:${animState}`,
-                            `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
-                        );
                         if (entityLastTextureId) entityLastTextureId[idx] = INVALID_TEXTURE_ID;
                         rqTextureId[out] = INVALID_TEXTURE_ID;
+                        // sheetId 0 = unset sentinel — expected under collect→emit recycle. No warn.
+                        if (sheetId) {
+                            this._warnMissingTexture(
+                                `sprite:${sheetId}:${animState}`,
+                                `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
+                            );
+                        }
                     }
 
                 } else if (type === 1) {
