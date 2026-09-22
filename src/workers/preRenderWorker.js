@@ -15,6 +15,7 @@ import { ShadowCaster } from '../components/shadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { AbstractWorker } from './abstractWorker.js';
+import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { Camera } from '../core/camera.js';
 import { Query } from '../core/query.js';
 import {
@@ -2402,6 +2403,9 @@ class PreRenderWorker extends AbstractWorker {
             this._renderablePy[writeIdx] = pose.y;
             this._renderableRotC[writeIdx] = pose.rotC;
             this._renderableRotS[writeIdx] = pose.rotS;
+            // Drawn Y is the interpolated pose. A Transform.y key sorts the
+            // body where it is going, so z-order flips every frame while it moves.
+            this._renderableY[writeIdx] = pose.y * Y_SORT_K;
         } else if (type === 2) {
             const pose = this._displayPoseOut;
             this._decorationWorldXY(index, pose);
@@ -2568,8 +2572,13 @@ class PreRenderWorker extends AbstractWorker {
     _displayPose(idx, out) {
         const poseX = this._poseX;
         const rb = this._rbActive;
-        if (poseX && rb && rb[idx]) {
-            if (this.interpolatePhysicsPose && this._prevPoseX) {
+        const live = poseX && rb && rb[idx] && poseRotationLive(this._poseRotC?.[idx] || 0, this._poseRotS?.[idx] || 0);
+        if (live) {
+            if (
+                this.interpolatePhysicsPose &&
+                this._prevPoseX &&
+                poseRotationLive(this._prevPoseRotC?.[idx] || 0, this._prevPoseRotS?.[idx] || 0)
+            ) {
                 const alpha = this._poseAlpha;
                 const px = this._prevPoseX[idx];
                 const py = this._prevPoseY[idx];

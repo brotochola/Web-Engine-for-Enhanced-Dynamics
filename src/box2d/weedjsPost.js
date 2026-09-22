@@ -479,6 +479,13 @@
     const n = denseCount;
     for (let d = 0; d < n; d++) {
       const i = list[d];
+      if (
+        bodyGeneration &&
+        seenBodyGeneration &&
+        (seenBodyGeneration[i] | 0) !== (Atomics.load(bodyGeneration, i) | 0)
+      ) {
+        continue;
+      }
       outX[i] = x[i];
       outY[i] = y[i];
       outC[i] = rotC[i];

@@ -18,6 +18,43 @@ let dirtyWords = null;
 let generation = null;
 let pendingFlags = null;
 let dirtyDeferDepth = 0;
+let poseSlots = null;
+
+/** Published pose uses a unit complex. Zeros mean this life has not been published. */
+export function poseRotationLive(rotC, rotS) {
+  return rotC * rotC + rotS * rotS > 0.25;
+}
+
+export function bindPoseSlotBuffers(pose) {
+  if (!pose?.dataA || !pose?.dataB) {
+    poseSlots = null;
+    return;
+  }
+  const n = pose.capacity | 0;
+  if (!(n > 0)) {
+    poseSlots = null;
+    return;
+  }
+  const sabs = [pose.dataA, pose.dataB];
+  poseSlots = [];
+  for (let i = 0; i < 2; i++) {
+    poseSlots.push({
+      rotC: new Float32Array(sabs[i], n * 8, n),
+      rotS: new Float32Array(sabs[i], n * 12, n),
+    });
+  }
+}
+
+function invalidatePoseSlot(i) {
+  const slots = poseSlots;
+  if (!slots || i < 0) return;
+  for (let b = 0; b < slots.length; b++) {
+    const slot = slots[b];
+    if (i >= slot.rotC.length) return;
+    slot.rotC[i] = 0;
+    slot.rotS[i] = 0;
+  }
+}
 
 export function bindBodySyncBuffers(buffers) {
   if (
@@ -29,6 +66,7 @@ export function bindBodySyncBuffers(buffers) {
     dirtyWords = null;
     generation = null;
     pendingFlags = null;
+    poseSlots = null;
     return null;
   }
 
@@ -36,6 +74,15 @@ export function bindBodySyncBuffers(buffers) {
   dirtyWords = new Int32Array(buffers.bodyDirtyWords);
   generation = new Int32Array(buffers.bodyGeneration);
   pendingFlags = new Int32Array(dirtyFlags.length);
+  poseSlots = null;
+  if (buffers.poseDataA && buffers.poseDataB) {
+    const n = (buffers.poseDataA.byteLength / 16) | 0;
+    bindPoseSlotBuffers({
+      dataA: buffers.poseDataA,
+      dataB: buffers.poseDataB,
+      capacity: n,
+    });
+  }
   return { dirtyFlags, dirtyWords, generation };
 }
 
@@ -80,6 +127,9 @@ export function bumpBodyGeneration(entityIndex) {
   const i = entityIndex | 0;
   if (i < 0 || i >= generation.length) return 0;
   const next = (Atomics.add(generation, i, 1) + 1) >>> 0;
+  // Reused slot still holds the previous body's published pose. Drop it so
+  // the first frames draw Transform until physics publishes this life.
+  invalidatePoseSlot(i);
   // Parent onSpawned may still be deferred. Publish this entity's saved
   // marks plus LIFECYCLE so the child body is created with the real shape.
   markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);

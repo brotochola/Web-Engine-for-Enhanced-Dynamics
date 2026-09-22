@@ -1242,12 +1242,17 @@ class PixiRenderer extends AbstractWorker {
     for (let i = 0; i < ne; i++) order[i] = idxE[i];
     radixSortIndicesBySortKey(order, ne, keys, this._painterScratch, this._painterHist);
     const prev = this._painterPrevKey;
+    let live = false;
     for (let i = 0; i < ne; i++) {
       const slot = order[i];
-      prev[slot] = keys[slot];
+      const key = keys[slot];
+      prev[slot] = key;
+      if (key !== 0) live = true;
     }
     this._painterN = ne;
-    this._painterReady = true;
+    // All-zero keys are an empty queue buffer. A stable radix would freeze spawn
+    // order, and reinsert would never move static sprites. Stay cold until a real Y lands.
+    this._painterReady = live;
     return order;
   }
 

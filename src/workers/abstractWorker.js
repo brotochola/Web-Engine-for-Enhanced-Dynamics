@@ -65,7 +65,7 @@ import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
 import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
-import { bindBodySyncBuffers } from '../box2d/box2dBodySync.js';
+import { bindBodySyncBuffers, bindPoseSlotBuffers } from '../box2d/box2dBodySync.js';
 
 import { Component } from '../core/component.js';
 import { FSM } from '../core/fsm.js';
@@ -1048,9 +1048,15 @@ export class AbstractWorker {
     this.poseSync = null;
     this.poseBuffers = [null, null];
     this.poseCapacity = 0;
-    if (!pose?.sync || !pose.dataA || !pose.dataB) return;
+    if (!pose?.sync || !pose.dataA || !pose.dataB) {
+      bindPoseSlotBuffers(null);
+      return;
+    }
     const n = pose.capacity | 0;
-    if (!(n > 0)) return;
+    if (!(n > 0)) {
+      bindPoseSlotBuffers(null);
+      return;
+    }
     this.poseCapacity = n;
     this.poseSync = new Int32Array(pose.sync);
     const sabs = [pose.dataA, pose.dataB];
@@ -1065,6 +1071,7 @@ export class AbstractWorker {
         rotS: new Float32Array(sab, n * 12, n),
       };
     }
+    bindPoseSlotBuffers(pose);
   }
 
   /**
