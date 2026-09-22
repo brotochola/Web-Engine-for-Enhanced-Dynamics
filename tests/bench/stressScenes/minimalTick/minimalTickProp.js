@@ -20,6 +20,22 @@ export class MinimalTickProp extends GameObject {
   }
 }
 
+/** Same write, visited only every 4th frame by the logic countdown. */
+export class MinimalTickIntervalProp extends GameObject {
+  static components = [SpriteRenderer];
+  static tickInterval = 4;
+
+  onSpawned({ x = 0, y = 0 } = {}) {
+    this.x = x;
+    this.y = y;
+    this.spriteRenderer.renderVisible = 0;
+  }
+
+  tick() {
+    this.spriteRenderer.alpha = globalThis.rng();
+  }
+}
+
 /**
  * Same spawn / SoA write, no tick() override. Logic worker calls tickAll once.
  */

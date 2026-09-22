@@ -96,7 +96,9 @@ export class CarScene extends WEED.Scene {
 
         preRender: {
             noLimitFPS: false,
-            // fixedFps: 120,
+            // fixedFps: 120
+            // entityBlockSize: 512,
+            // numberOfPreRenderWorkers: 2,
         },
 
         lighting: {

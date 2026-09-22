@@ -21,7 +21,7 @@ import { JointBreakListener } from '../components/jointBreakListener.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
 import { AbstractWorker } from './abstractWorker.js';
-import { logicWorkerThatShouldTick } from '../util/logicOwner.js';
+import { logicBlockRange, logicWorkerThatShouldTick, tickBucketPhase } from '../util/logicOwner.js';
 
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
@@ -810,7 +810,16 @@ class LogicWorker extends AbstractWorker {
           if (collectDetailed) tickMs += this._lastTickMs;
         }
       } else {
-        for (let idx = myIndex; idx < count; idx += totalWorkers) {
+        let from = myIndex;
+        let to = count;
+        let step = totalWorkers;
+        if (totalWorkers > 1) {
+          const range = logicBlockRange(count, myIndex, totalWorkers);
+          from = range.start;
+          to = range.end;
+          step = 1;
+        }
+        for (let idx = from; idx < to; idx += step) {
           const entityIndex = activeList[1 + idx];
           const n = this._tickNonDecimatedOne(
             entityIndex, dtRatio, deltaTime, accTime, frameNum,
@@ -842,6 +851,20 @@ class LogicWorker extends AbstractWorker {
         const typeForced = !!(
           entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
         );
+        if (
+          !needsScreenCallbacks &&
+          tickInterval > 1 &&
+          !typeForced &&
+          this.config.logic?.tickBuckets !== false
+        ) {
+          activeCount += this._tickIntervalBucket(
+            typeInfo, activeList, count, tickInterval, frameNum,
+            dtRatio, deltaTime, accTime, transformActive, gameObjects,
+            rbAx, rbAy, rbAa, totalWorkers, myIndex,
+            typeForced, forceProcessOnLogicWorker
+          );
+          continue;
+        }
 
         if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
           for (let idx = 0; idx < count; idx++) {
@@ -868,7 +891,16 @@ class LogicWorker extends AbstractWorker {
             }
           }
         } else {
-          for (let idx = myIndex; idx < count; idx += totalWorkers) {
+          let from = myIndex;
+          let to = count;
+          let step = totalWorkers;
+          if (totalWorkers > 1) {
+            const range = logicBlockRange(count, myIndex, totalWorkers);
+            from = range.start;
+            to = range.end;
+            step = 1;
+          }
+          for (let idx = from; idx < to; idx += step) {
             const entityIndex = activeList[1 + idx];
             const n = this._tickDecimatedOne(
               entityIndex, dtRatio, deltaTime, accTime, frameNum,
@@ -961,7 +993,16 @@ class LogicWorker extends AbstractWorker {
           scratch[n++] = entityIndex;
         }
       } else {
-        for (let idx = myIndex; idx < count; idx += totalWorkers) {
+        let from = myIndex;
+        let to = count;
+        let step = totalWorkers;
+        if (totalWorkers > 1) {
+          const range = logicBlockRange(count, myIndex, totalWorkers);
+          from = range.start;
+          to = range.end;
+          step = 1;
+        }
+        for (let idx = from; idx < to; idx += step) {
           const entityIndex = activeList[1 + idx];
           if (transformActive[entityIndex] === 0) continue;
           if (hasRigidBody) {
@@ -977,6 +1018,103 @@ class LogicWorker extends AbstractWorker {
       packed += n;
     }
     return packed;
+  }
+
+  /**
+   * tickInterval > 1 without per-frame screen callbacks: one prebuilt id list per phase.
+   * Phase matches the old countdown: first frame is frameNumber 1, entity i starts at (i % interval) + 1.
+   * Rebuild only when the active count or query version changes. No alloc on the steady frame.
+   */
+  _tickIntervalBucket(
+    typeInfo, activeList, count, interval, frameNum,
+    dtRatio, deltaTime, accTime, transformActive, gameObjects,
+    rbAx, rbAy, rbAa, totalWorkers, myIndex,
+    typeForced, forceProcessOnLogicWorker
+  ) {
+    const ver = this.queryVersionData ? Atomics.load(this.queryVersionData, 0) : 0;
+    if (
+      !typeInfo._buckets ||
+      typeInfo._bucketStampCount !== count ||
+      typeInfo._bucketStampVer !== ver
+    ) {
+      this._rebuildTickBuckets(typeInfo, activeList, count, interval);
+      typeInfo._bucketStampCount = count;
+      typeInfo._bucketStampVer = ver;
+    }
+
+    const phase = frameNum % interval;
+    const list = typeInfo._buckets[phase];
+    const nAll = typeInfo._bucketCounts[phase];
+    let from = 0;
+    let to = nAll;
+    let forcedScan = false;
+    if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
+      forcedScan = true;
+    } else if (totalWorkers > 1) {
+      const range = logicBlockRange(nAll, myIndex, totalWorkers);
+      from = range.start;
+      to = range.end;
+    }
+
+    let visited = 0;
+    if (forcedScan) {
+      for (let i = 0; i < nAll; i++) {
+        const entityIndex = list[i];
+        if (
+          logicWorkerThatShouldTick(i, entityIndex, totalWorkers, forceProcessOnLogicWorker) !==
+          myIndex
+        ) {
+          continue;
+        }
+        if (transformActive[entityIndex] === 0) continue;
+        const obj = gameObjects[entityIndex];
+        if (!obj || typeof obj.tick !== 'function') continue;
+        rbAx[entityIndex] = 0;
+        rbAy[entityIndex] = 0;
+        rbAa[entityIndex] = 0;
+        obj.tick(dtRatio, deltaTime, accTime, frameNum);
+        this.entitiesProcessedThisFrame++;
+        visited++;
+      }
+    } else {
+      for (let i = from; i < to; i++) {
+        const entityIndex = list[i];
+        if (transformActive[entityIndex] === 0) continue;
+        const obj = gameObjects[entityIndex];
+        if (!obj || typeof obj.tick !== 'function') continue;
+        rbAx[entityIndex] = 0;
+        rbAy[entityIndex] = 0;
+        rbAa[entityIndex] = 0;
+        obj.tick(dtRatio, deltaTime, accTime, frameNum);
+        this.entitiesProcessedThisFrame++;
+        visited++;
+      }
+    }
+    return visited;
+  }
+
+  _rebuildTickBuckets(typeInfo, activeList, count, interval) {
+    const cap = activeList.length > 1 ? activeList.length - 1 : 1;
+    let buckets = typeInfo._buckets;
+    let counts = typeInfo._bucketCounts;
+    if (!buckets || typeInfo._bucketInterval !== interval || cap > typeInfo._bucketCap) {
+      buckets = new Array(interval);
+      for (let b = 0; b < interval; b++) buckets[b] = new (EntityIdArray())(cap);
+      counts = new Int32Array(interval);
+      typeInfo._buckets = buckets;
+      typeInfo._bucketCounts = counts;
+      typeInfo._bucketInterval = interval;
+      typeInfo._bucketCap = cap;
+    } else {
+      counts.fill(0);
+    }
+    for (let idx = 0; idx < count; idx++) {
+      const id = activeList[1 + idx];
+      const phase = tickBucketPhase(id, interval);
+      const n = counts[phase];
+      buckets[phase][n] = id;
+      counts[phase] = n + 1;
+    }
   }
 
   _tickNonDecimatedOne(

@@ -199,6 +199,9 @@ export class BichosScene extends WEED.Scene {
   }
 
   create() {
+    Camera.setFree(true, { panSpeed: 10 });
+    Camera.setFreeTarget(this.config.worldWidth / 2, this.config.worldHeight / 2);
+    Camera.centerOn(this.config.worldWidth / 2, this.config.worldHeight / 2);
     this.spawnGrass(20000);
 
   }
@@ -284,11 +287,11 @@ export class BichosScene extends WEED.Scene {
 
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
 
-    // if (Mouse.wheel != 0) {
-    Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.01));
-    // }
+    // // if (Mouse.wheel != 0) {
+    // Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.01));
+    // // }
 
-    Camera.follow(Mouse.x, Mouse.y, 0.01);
+    // Camera.follow(Mouse.x, Mouse.y, 0.01);
 
     // if (this.keyboard) {
     //   if (this.keyboard.w) {

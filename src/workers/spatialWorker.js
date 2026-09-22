@@ -788,6 +788,7 @@ class SpatialWorker extends AbstractWorker {
     this.stats[SPATIAL_STATS.FPS] = this.currentFPS;
     this.stats[SPATIAL_STATS.STEP_MS] = this.stepTimeThisFrame;
     this.stats[SPATIAL_STATS.NEIGHBORS_REUSED] = this.neighborsReusedThisFrame;
+    this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
     if (!this.collectDetailedStats) return;
     this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
     this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;

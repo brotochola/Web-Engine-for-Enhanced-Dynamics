@@ -542,6 +542,7 @@ class PreRenderWorker extends AbstractWorker {
             this._persistEntity = [new Int32Array(maxItems), new Int32Array(maxItems)];
             this._persistType = [new Uint8Array(maxItems), new Uint8Array(maxItems)];
             this._persistFrame = [new Uint16Array(maxItems), new Uint16Array(maxItems)];
+            this._persistAnim = [new Uint16Array(maxItems), new Uint16Array(maxItems)];
             this._persistCount = [0, 0];
 
             // Pre-allocate query arrays
@@ -2299,8 +2300,10 @@ class PreRenderWorker extends AbstractWorker {
         const prevE = this._persistEntity[bufIdx];
         const prevT = this._persistType[bufIdx];
         const prevF = this._persistFrame[bufIdx];
+        const prevA = this._persistAnim[bufIdx];
         const dirty = SpriteRenderer.renderDirty;
         const frameIndex = this.entityFrameIndex;
+        const animState = SpriteRenderer.animationState;
         for (let i = 0; i < count; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
@@ -2308,6 +2311,7 @@ class PreRenderWorker extends AbstractWorker {
             if (type !== 0) continue;
             if (dirty && dirty[idx]) return false;
             if (frameIndex && prevF[i] !== (frameIndex[idx] | 0)) return false;
+            if (animState && prevA[i] !== (animState[idx] | 0)) return false;
         }
         return true;
     }
@@ -2317,14 +2321,17 @@ class PreRenderWorker extends AbstractWorker {
         const prevE = this._persistEntity[bufIdx];
         const prevT = this._persistType[bufIdx];
         const prevF = this._persistFrame[bufIdx];
+        const prevA = this._persistAnim[bufIdx];
         const dirty = SpriteRenderer.renderDirty;
         const frameIndex = this.entityFrameIndex;
+        const animState = SpriteRenderer.animationState;
         for (let i = 0; i < count; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
             prevT[i] = type;
             prevE[i] = idx;
             prevF[i] = frameIndex ? (frameIndex[idx] | 0) : 0;
+            prevA[i] = type === 0 && animState ? (animState[idx] | 0) : 0;
             if (type === 0 && dirty) dirty[idx] = 0;
         }
         this._persistCount[bufIdx] = count;

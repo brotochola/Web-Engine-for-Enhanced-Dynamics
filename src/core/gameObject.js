@@ -421,15 +421,19 @@ export class GameObject {
 
     this._isEntityView = view;
 
-    // DENSE ALLOCATION: entityIndex === componentIndex for all components
-    this._hasComponents = {};
-    const entityComponents = collectComponents(Ctor, GameObject, Transform);
-    for (const ComponentClass of entityComponents) {
-      const name = ComponentClass.name;
-      const camelCaseName = name.charAt(0).toLowerCase() + name.slice(1);
-      this._hasComponents[name] = true;
-      this._hasComponents[camelCaseName] = true;
+    // One flag object per class. Composition does not vary per instance.
+    let flags = Ctor._sharedHasComponents;
+    if (!flags) {
+      flags = {};
+      const entityComponents = collectComponents(Ctor, GameObject, Transform);
+      for (let c = 0; c < entityComponents.length; c++) {
+        const name = entityComponents[c].name;
+        flags[name] = true;
+        flags[name.charAt(0).toLowerCase() + name.slice(1)] = true;
+      }
+      Ctor._sharedHasComponents = flags;
     }
+    this._hasComponents = flags;
 
     if (!view) {
       Transform.entityType[index] = Ctor.entityType || 0;
@@ -440,11 +444,7 @@ export class GameObject {
 
     if (Grid._stride && Grid.neighborData) {
       this._neighborOffset = index * Grid._stride;
-      this._neighbors = new (EntityIdArray())(
-        Grid.neighborData.buffer,
-        Grid.neighborData.byteOffset + (this._neighborOffset + 1) * entityIdBytes(),
-        Grid.maxNeighbors
-      );
+      this._neighbors = null;
     } else {
       this._neighborOffset = -1;
       this._neighbors = null;
@@ -1996,24 +1996,27 @@ export class GameObject {
    * @returns {number} Number of neighbors
    */
   get neighborCount() {
-    return Grid.neighborData ? Grid.neighborData[this._neighborOffset] : 0;
+    return Grid.neighborData && this._neighborOffset >= 0 ? Grid.neighborData[this._neighborOffset] : 0;
   }
 
-  /**
-   * Get neighbor index at specific position
-   * @param {number} i - Index (0 to this.neighborCount - 1)
-   * @returns {number} Entity index of the neighbor
-   */
+  /** Typed view into the neighbor SAB. Created on first read, not at bind. */
+  _neighborView() {
+    if (this._neighbors) return this._neighbors;
+    if (this._neighborOffset < 0 || !Grid.neighborData) return null;
+    this._neighbors = new (EntityIdArray())(
+      Grid.neighborData.buffer,
+      Grid.neighborData.byteOffset + (this._neighborOffset + 1) * entityIdBytes(),
+      Grid.maxNeighbors
+    );
+    return this._neighbors;
+  }
+
   getNeighbor(i) {
-    return this._neighbors[i];
+    return this._neighborView()[i];
   }
 
-  /**
-   * Get all neighbor IDs as an array
-   * @returns {Uint16Array} Typed array view of valid neighbor indices (zero-alloc subarray)
-   */
   getAllNeighborIds() {
-    return this._neighbors.subarray(0, this.neighborCount);
+    return this._neighborView().subarray(0, this.neighborCount);
   }
 
   /**
@@ -2026,7 +2029,7 @@ export class GameObject {
     const count = this.neighborCount;
     const result = new Array(count);
     const entities = GameObject.instances;
-    const neighbors = this._neighbors;
+    const neighbors = this._neighborView();
 
     for (let i = 0; i < count; i++) {
       result[i] = entities[neighbors[i]];
@@ -2044,7 +2047,7 @@ export class GameObject {
   getAllNeighborInstancesMut(out) {
     const count = this.neighborCount;
     const entities = GameObject.instances;
-    const neighbors = this._neighbors;
+    const neighbors = this._neighborView();
 
     for (let i = 0; i < count; i++) {
       out[i] = entities[neighbors[i]];
