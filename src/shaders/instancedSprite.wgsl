@@ -15,6 +15,7 @@ struct LocalUniforms {
 
 struct TileUniforms {
   uTileWorld: vec4<f32>,
+  uAlphaCut: vec4<f32>,
 }
 @group(2) @binding(0) var uTexture: texture_2d<f32>;
 @group(2) @binding(1) var uSampler: sampler;
@@ -96,7 +97,9 @@ fn mainVert(
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
   let a = t.a * in.vColor.a;
-  if (a < 0.01) { discard; }
+  let cut = uniforms.uAlphaCut;
+  if (a < cut.x) { discard; }
+  if (cut.y > 0.0 && a >= cut.y) { discard; }
   return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a, a);
 }
 

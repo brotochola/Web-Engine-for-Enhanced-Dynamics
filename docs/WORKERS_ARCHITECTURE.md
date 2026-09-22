@@ -207,8 +207,8 @@ Reads visibility lists, advances animations, builds the render and shadow queues
    - ENTITIES bit → main render queue
    - other sprite-queue bits → per-layer custom collector
    - density bits skip sprite collect
-5. Build main render queue (Y-sorted, SoA packed via `renderQueueLayout.js`). Uses heapsort for >256 items, insertion sort otherwise
-6. Build per-layer custom render queues (same Y-sort + heapsort fallback). Emits `console.warn` if a layer's queue overflows `maxItems`
+5. Build main render queue (SoA packed via `renderQueueLayout.js`). Each item gets a `sortKey` (`worldY * 128`, plus `innerZ` for decorations). No CPU sort here.
+6. Build per-layer custom render queues (same `sortKey`, no CPU sort). Emits `console.warn` if a layer's queue overflows `maxItems`
 7. Build shadow/light render queue (respects `maxShadowsPerEntity` budget across sun + point lights)
 8. If more than 1 frame ahead of pixi, skip this pre-render tick and let pixi reuse the latest complete queue
 9. Write to alternating double buffer (`renderQueueFrame % 2`)
@@ -256,7 +256,7 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
 2. If new: switch read buffer to `(readyFrame - 1) % 2`, latch `renderQueueCamera`, `Atomics.store(renderQueueSync, 1, readyFrame)` + notify pre_render
 3. **Stale-frame gating:** frame-locked GPU passes (visible lights, lighting/shadow RTs, main + custom sprite queue sync, offscreen lighting mesh) run only when a new queue frame arrived, on resume, or before the first frame. When pixi outpaces pre_render, it skips redundant work that would be pixel-identical. Always-on passes: camera transform, layer alpha dirty poll, decal tile upload (driven by particle_worker dirty flags). With `renderer.interpolation: true`, a quiet frame still writes `uPoseAlpha` on the entity batch (time since the last queue publish, over the smoothed gap between publishes). The entity instance record grows to 17 floats (`prevX`, `prevY`) only on that batch. Alpha 0 is the previous queue pose, alpha 1 the new one. A count change snaps. Particles, glow, shadows, and custom layers stay on the 15-float upload and simply hold still between publishes. `uPoseAlpha` is a number, not a `Float32Array`: WebGL's `f32` sync treats the same array as unchanged.
 4. When frame-locked passes run:
-   - Sync main sprites (ENTITIES layer) from main render queue
+   - Sync main sprites (ENTITIES layer) from the main render queue. With `ySorting`, Pixi keeps last frame's order and reinserts only the slots whose `sortKey` changed, then draws them back to front in one blend. No depth, no second coverage pass. Particles, decorations, bullets, and liquid join that list. Glow stays a later ADD batch, sorted by the same key. `renderer.painterSort: 'off'` is the old two-pass depth path. `'radix'` and `'decimate'` exist for measurement; they are not the default. Without `ySorting` nothing is sorted (bunny).
    - Update shadows, lights, particles, decorations, bullets
    - **For each custom layer** (see pipeline below):
      - Read the layer's double-buffered render queue

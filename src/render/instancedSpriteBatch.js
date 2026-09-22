@@ -31,6 +31,9 @@ import {
 } from './webgl/instancedSpriteGlsl.js';
 import { writePosePrev } from './poseQueueInterp.js';
 
+/** Below this, a texel is coverage, not a Z writer. Near 1 so the AA rim blends after every opaque core. */
+export const SPRITE_OPAQUE_ALPHA = 254 / 255;
+
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
  *  Two extra floats vs pre-tile-offset stride — per visible instance, not per pool entity. */
@@ -65,6 +68,30 @@ const EMPTY_UPLOAD_OPTS = Object.freeze({
 
 const Y_SORT_K = DECORATION_Y_SORT_SCALE;
 const GLOW_BIAS = ENTITY_GLOW_SORT_BIAS;
+
+/** Nearest sampling: land the anchor on a device pixel so every sprite shares the texel phase. */
+export function snapWorldToPixel(v, cam, zoom) {
+  if (!(zoom > 0)) return v;
+  return Math.round((v - cam) * zoom) / zoom + cam;
+}
+
+const _snapXY = { x: 0, y: 0 };
+
+function snapSpritePos(x, y, o, useScreen) {
+  if (!o.pixelSnap) {
+    _snapXY.x = x;
+    _snapXY.y = y;
+    return _snapXY;
+  }
+  if (useScreen) {
+    _snapXY.x = Math.round(x);
+    _snapXY.y = Math.round(y);
+    return _snapXY;
+  }
+  _snapXY.x = snapWorldToPixel(x, o.snapCameraX, o.snapZoom);
+  _snapXY.y = snapWorldToPixel(y, o.snapCameraY, o.snapZoom);
+  return _snapXY;
+}
 
 /**
  * Per-textureId LUT: origW, origH, u0, v0, u1, v1, trimX, trimY, trimW, trimH
@@ -187,6 +214,8 @@ export class InstancedSpriteBatch {
    * @param {boolean} [opts.depthTest=true]
    * @param {boolean} [opts.depthMask=true] - false → test Z (Y-sort) without writing (soft particles)
    * @param {boolean} [opts.alphaDiscard=true] - false → blend-only fragment (no discard; soft particles)
+   * @param {Float32Array} [opts.alphaCut] - xy: discard below x, discard at/above y (y=0 off). Default 0.01 when discarding.
+   * @param {boolean} [opts.coveragePass=false] - second draw: partial alpha, depth test, no Z write
    * @param {boolean} [opts.premultiplyAlpha=true] - true → normal PMA out; false → additive (glows)
    * @param {string} [opts.blendMode='normal'] - Pixi State blend mode
    * @param {boolean} [opts.useWebGpu=true] - compile GpuProgram vs GlProgram
@@ -199,6 +228,8 @@ export class InstancedSpriteBatch {
     depthTest = true,
     depthMask = true,
     alphaDiscard = true,
+    alphaCut = null,
+    coveragePass = false,
     premultiplyAlpha = true,
     blendMode = 'normal',
     lutSource = null,
@@ -249,49 +280,18 @@ export class InstancedSpriteBatch {
     });
     this.geometry.instanceCount = 0;
 
-    let fragEntry = 'mainFragAdd';
-    if (premultiplyAlpha) {
-      fragEntry = alphaDiscard !== false ? 'mainFrag' : 'mainFragBlend';
-    }
+    this._useWebGpu = useWebGpu;
+    this._engineShaders = shaders;
+    this._premultiplyAlpha = premultiplyAlpha;
+    this._alphaDiscard = alphaDiscard !== false;
 
     this._tileWorld = new Float32Array(4);
     this._tileWorld[2] = 1;
+    const cut = alphaCut || new Float32Array(this._alphaDiscard ? [0.01, 0, 0, 0] : [0, 0, 0, 0]);
+    this._alphaCut = cut;
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
-    const uniforms = {
-      uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
-    };
-    if (this.poseInterp) {
-      // Number, not Float32Array. Pixi's WebGL f32 sync compares the value
-      // with !==. The same array never looks changed, so the GPU stays at 0.
-      uniforms.uPoseAlpha = { value: 1, type: 'f32' };
-    }
-    const resources = {
-      uTexture: atlas,
-      uSampler: atlas.style,
-      uTexLut: lut,
-      uniforms,
-    };
-    const name = label || 'instanced-sprites';
-    const spriteSource = this.poseInterp ? shaders?.spritePose : shaders?.sprite;
-    const vertSource = this.poseInterp ? shaders?.spriteVertPose : shaders?.spriteVert;
-    if (useWebGpu) {
-      const gpuProgram = instancedSpriteGpuProgram(
-        GpuProgram,
-        spriteSource,
-        fragEntry,
-        name
-      );
-      this.shader = new Shader({ gpuProgram, resources });
-    } else {
-      const glProgram = instancedSpriteGlProgram(
-        GlProgram,
-        vertSource,
-        pickInstancedSpriteFragmentGlsl(premultiplyAlpha, alphaDiscard, shaders),
-        name
-      );
-      this.shader = new Shader({ glProgram, resources });
-    }
+    this.shader = this._makeSpriteShader(atlas, lut, cut, label || 'instanced-sprites');
 
     const state = new State();
     state.blend = true;
@@ -307,18 +307,91 @@ export class InstancedSpriteBatch {
       label: label || 'instanced-sprites',
     });
     this.mesh.blendMode = state.blendMode;
-    this.mesh.visible = false;
+    this._show(false);
     this.mesh.cullable = false; // bounds ignore instance attrs; don't frustum-cull the batch
+
+    this.coverageMesh = null;
+    if (coveragePass) {
+      const partialCut = new Float32Array([0, SPRITE_OPAQUE_ALPHA, 0, 0]);
+      const partialShader = this._makeSpriteShader(
+        atlas,
+        lut,
+        partialCut,
+        (label || 'instanced-sprites') + '-partial'
+      );
+      const partialState = new State();
+      partialState.blend = true;
+      partialState.blendMode = blendMode || 'normal';
+      partialState.depthTest = true;
+      partialState.depthMask = false;
+      partialState.culling = false;
+      this.coverageMesh = new Mesh({
+        geometry: this.geometry,
+        shader: partialShader,
+        state: partialState,
+        label: (label || 'instanced-sprites') + '-partial',
+      });
+      this.coverageMesh.blendMode = partialState.blendMode;
+      this.coverageMesh.visible = false;
+      this.coverageMesh.cullable = false;
+      this._coverageShader = partialShader;
+    }
+  }
+
+  _makeSpriteShader(atlas, lut, alphaCut, name) {
+    const uniforms = {
+      uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
+      uAlphaCut: { value: alphaCut, type: 'vec4<f32>' },
+    };
+    if (this.poseInterp) {
+      // Number, not Float32Array. Pixi's WebGL f32 sync compares the value
+      // with !==. The same array never looks changed, so the GPU stays at 0.
+      uniforms.uPoseAlpha = { value: 1, type: 'f32' };
+    }
+    const resources = {
+      uTexture: atlas,
+      uSampler: atlas.style,
+      uTexLut: lut,
+      uniforms,
+    };
+    let fragEntry = 'mainFragAdd';
+    if (this._premultiplyAlpha) {
+      fragEntry = this._alphaDiscard ? 'mainFrag' : 'mainFragBlend';
+    }
+    const shaders = this._engineShaders;
+    const spriteSource = this.poseInterp ? shaders?.spritePose : shaders?.sprite;
+    const vertSource = this.poseInterp ? shaders?.spriteVertPose : shaders?.spriteVert;
+    if (this._useWebGpu) {
+      const gpuProgram = instancedSpriteGpuProgram(GpuProgram, spriteSource, fragEntry, name);
+      return new Shader({ gpuProgram, resources });
+    }
+    const glProgram = instancedSpriteGlProgram(
+      GlProgram,
+      vertSource,
+      pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders),
+      name
+    );
+    return new Shader({ glProgram, resources });
+  }
+
+  _show(on) {
+    this.mesh.visible = on;
+    if (this.coverageMesh) this.coverageMesh.visible = on;
   }
 
   setAtlasSource(source) {
     if (!source) return;
     this.shader.resources.uTexture = source;
     this.shader.resources.uSampler = source.style;
+    if (this._coverageShader) {
+      this._coverageShader.resources.uTexture = source;
+      this._coverageShader.resources.uSampler = source.style;
+    }
   }
 
   setLutSource(source) {
     if (source) this.shader.resources.uTexLut = source;
+    if (source && this._coverageShader) this._coverageShader.resources.uTexLut = source;
   }
 
   setPoseAlpha(alpha) {
@@ -327,6 +400,11 @@ export class InstancedSpriteBatch {
     if (!group?.uniforms) return;
     group.uniforms.uPoseAlpha = alpha;
     if (typeof group.update === 'function') group.update();
+    const cover = this._coverageShader?.resources?.uniforms;
+    if (cover?.uniforms) {
+      cover.uniforms.uPoseAlpha = alpha;
+      if (typeof cover.update === 'function') cover.update();
+    }
   }
 
   /**
@@ -360,7 +438,7 @@ export class InstancedSpriteBatch {
     const useIndices = indices != null;
     if ((!useIndices && count <= 0) || (useIndices && indexCount <= 0)) {
       this.geometry.instanceCount = 0;
-      this.mesh.visible = false;
+      this._show(false);
       return 0;
     }
 
@@ -421,7 +499,7 @@ export class InstancedSpriteBatch {
     const useSortKey = depthMode === BATCH_DEPTH.SORT_KEY && sortKeyArr;
     if (!useIndices && hasInclude && !typeArr) {
       this.geometry.instanceCount = 0;
-      this.mesh.visible = false;
+      this._show(false);
       return 0;
     }
     const scanCount = useIndices
@@ -451,6 +529,9 @@ export class InstancedSpriteBatch {
         sx *= screenScale;
         sy *= screenScale;
       }
+      const snapped = snapSpritePos(x, y, o, useScreen);
+      x = snapped.x;
+      y = snapped.y;
 
       let depth;
       if (useSortKey) {
@@ -491,11 +572,11 @@ export class InstancedSpriteBatch {
 
     if (out <= 0) {
       this.geometry.instanceCount = 0;
-      this.mesh.visible = false;
+      this._show(false);
       return 0;
     }
 
-    this.mesh.visible = true;
+    this._show(true);
     this.buffer.update(out * INSTANCED_SPRITE_STRIDE);
     this.geometry.instanceCount = out;
     return out;
@@ -509,7 +590,7 @@ export class InstancedSpriteBatch {
     const useIndices = indices != null;
     if ((!useIndices && count <= 0) || (useIndices && indexCount <= 0)) {
       this.geometry.instanceCount = 0;
-      this.mesh.visible = false;
+      this._show(false);
       return 0;
     }
     const data = this.data;
@@ -597,6 +678,12 @@ export class InstancedSpriteBatch {
         sx *= screenScale;
         sy *= screenScale;
       }
+      const snapped = snapSpritePos(x, y, o, useScreen);
+      x = snapped.x;
+      y = snapped.y;
+      const snappedPrev = snapSpritePos(px, py, o, useScreen);
+      px = snappedPrev.x;
+      py = snappedPrev.y;
       let depth;
       if (useSortKey) {
         depth = 1.0 - sortKeyArr[i] / sortKeyMax;
@@ -634,10 +721,10 @@ export class InstancedSpriteBatch {
     }
     if (out <= 0) {
       this.geometry.instanceCount = 0;
-      this.mesh.visible = false;
+      this._show(false);
       return 0;
     }
-    this.mesh.visible = true;
+    this._show(true);
     this.buffer.update(out * INSTANCED_SPRITE_POSE_STRIDE);
     this.geometry.instanceCount = out;
     return out;

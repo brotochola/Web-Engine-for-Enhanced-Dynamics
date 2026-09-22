@@ -6,6 +6,24 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Tuesday 22 September 2026 — Sprites Should Composite Like a PNG
+
+Stacked bugs looked wrong. A soft edge, or a fire with real alpha, would show the background color in a fringe. Zoom made it obvious. The PNG itself was fine. The draw was not.
+
+Y-sort used to stuff `sortKey` into GPU depth and, when the edge was transparent, draw the sprite twice. The almost-opaque core wrote Z. The rim blended in a second pass and did not. That is not how a PNG works. A PNG is source-over, back to front. Depth remembers one winner per pixel and forgets the sprite that should have been underneath. A linear sample on a hard-edged atlas invents alphas that were never in the file, and the 254/255 cut then threw those pixels out of the pass that paints. Sampling the whole atlas as nearest made the bugs crisp and broke everything that is actually a gradient: fire, and the radial glow on lights.
+
+Sorting every index, every frame, on the Pixi worker, was the obvious fix and it lost. On 300k static sprites Pixi went from 15.2 ms to 26.2 ms. That pair stays dropped.
+
+The version that stayed is smaller. With `ySorting`, entities, particles, decorations, bullets, and liquid share one list. Pixi keeps last frame's order and only pulls out the slots whose `sortKey` changed, then merges them back. One blend. No Z. No second mesh. Glow stays an ADD batch after that, because that blend cannot share the draw, but its own indices follow the same key.
+
+On a moving grid of 300k, 10% crossing a neighbor every frame, that reinsert landed at 30.1 ms against the two-pass at 30.6 ms. The two-pass samples were 41.6 and 19.7, so this is a tie, not a speed win. A full radix on the same scene was 38.3 ms. Sorting only every third frame was 28.0 ms and draws a stale order in between, so it is not the default. `renderer.painterSort` can still force `off`, `radix`, or `decimate`. Unset, Y-sort means reinsert. No Y-sort means no sort. Bunny does not enter this path.
+
+I tried rounding atlas frames and turning smoothing off on the pack blit, so nearest would not sit on a half pixel. It shifts every sheet that comes in with a fractional rect. Bichos and Predator already looked right without it. That rounding is gone.
+
+Checked in the demos, zoomed, with the ground and without: Bichos and Predator both composite. Fire sits on the bugs the way a PNG would.
+
+Numbers: [`tests/results/sprite-painter/move-report.md`](../tests/results/sprite-painter/move-report.md). The dropped full sort: [`tests/results/sprite-painter/report.md`](../tests/results/sprite-painter/report.md). Where the workers do it: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md).
+
 ## Monday 21 September 2026 — I Looked Away and the Tab Died
 
 It kept happening that when I left the tab in Chrome and came back, a scene with a compute shader was hanging. The tab crashed. Not even the HTML elements worked. Burning Boxes: the fire lattice covers the whole world, Jacobi twenty times a frame, vis-poly lights on top. I would play for a minute, switch to Cursor or another tab, come back, hit F5, and Chrome was gone. The second time I did not even get to F5. I just returned and the tab was already dead. GPU memory was stuck at 51 MB the whole time, so it was not a leak filling up. It was the driver.

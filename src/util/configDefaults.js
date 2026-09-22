@@ -519,6 +519,8 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxDecalTileUploadsPerFrame: 32,
   /** Pixi ImageSource mip chain for atlases/textures/tilesets. Off by default (VRAM + atlas bleed risk; STEP flat in benches). */
   autoGenerateMipmaps: false,
+  /** Sampler for the big atlas and loose textures. 'nearest' keeps binary PNG alpha. */
+  atlasScaleMode: 'linear',
   /**
    * Blend the last two pre-render queue publishes in the entity sprite shader.
    * Use when preRender.fixedFps is below the display rate. Not physics-pose

@@ -158,12 +158,12 @@ preRenderWorker:
           |       density → skip sprite collect
           |       hasSpriteQueue (incl. ENTITIES) → write that collector
           |
-  buildRenderQueue()        --> Y-sort default collector, dispatch by type, write to main SAB
-  buildCustomLayerQueues()  --> per-layer Y-sort, dispatch by type, write to per-layer SABs
+  buildRenderQueue()        --> write sortKey, dispatch by type, write to main SAB (no CPU sort)
+  buildCustomLayerQueues()  --> per-layer sortKey, dispatch by type, write to per-layer SABs
 
 pixiWorker:
-  updateSpritesFromRenderQueue()  --> read main SAB, apply to sprites
-  updateCustomLayers()            --> read each layer SAB, apply to sprites (type-agnostic)
+  updateSpritesFromRenderQueue()  --> main SAB. With ySorting, painter order (reinsert) and one blend. Particles and decorations share that list. Glow stays a later ADD batch, sorted by the same key.
+  updateCustomLayers()            --> each layer SAB. GPU depth from sortKey when that layer has ySorting.
 ```
 
 ### SAB Cost
