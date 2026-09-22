@@ -79,6 +79,8 @@ export class BurningBoxesScene extends WEED.Scene {
       maxEntitiesPerCell: 255,
     },
 
+    debug: { collectDetailedStats: true },
+
     logic: { noLimitFPS: false },
     particle: { noLimitFPS: false, maxParticles: 100, decals: false },
     physics: {
@@ -148,7 +150,7 @@ export class BurningBoxesScene extends WEED.Scene {
         },
       },
       fire: {
-        zIndex: 3.5,
+        zIndex: 5, // above lighting (4): plume draws after the vis-poly multiply
         blendMode: BLEND_MODES.NORMAL,
         resolution: 1.0,
         maxItems: 0,
@@ -202,7 +204,7 @@ export class BurningBoxesScene extends WEED.Scene {
             uFireOn: { value: 1, type: 'f32', widget: 'check', label: 'Fire', tip: 'Draw flame pixels (heat at or above the split).' },
             uView: { value: 0, type: 'f32', min: 0, max: 3, step: 1, label: 'View', tip: 'Look = composite. Heat = raw t. FBM = overlay grain (not the fluid). Flow = velocity color.' },
             uSmokeAlpha: { value: 0.77, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Smoke alpha', tip: 'Smoke opacity.' },
-            uSmokePuff: { value: 5, type: 'f32', min: 0, max: 20, step: 0.05, label: 'Smoke puff', tip: 'Wisp shape. Higher = thinner, puffier edges.' },
+            uSmokePuff: { value: 5, type: 'f32', min: 0, max: 100, step: 0.05, label: 'Smoke puff', tip: 'Wisp shape. Higher = thinner, puffier edges.' },
             uSmokeNoise: { value: 0.55, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Smoke noise', tip: 'How lumpy the smoke is. At 1, noise punches holes in the puff.' },
             uSmokeDens: { value: 1.3, type: 'f32', min: 0.4, max: 2.5, step: 0.05, label: 'Smoke density', tip: 'How thick and sooty the smoke is. Raise this for darker plumes.' },
             uSmokeScroll0: { value: 3.5, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Smoke n1', tip: 'Slow coarse smoke grain crawl. Negative = up with the plume (Y-down lattice).' },
@@ -211,8 +213,8 @@ export class BurningBoxesScene extends WEED.Scene {
             uFireScroll0: { value: 2.0, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Fire n1', tip: 'Slow coarse fire grain crawl.' },
             uFireScroll1: { value: 0.0, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Fire n2', tip: 'Mid fire octave crawl.' },
             uFireScroll2: { value: 18.0, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Fire n3', tip: 'Fine fire octave crawl.' },
-            uFireAlpha: { value: 1.0, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Fire alpha', tip: 'Flame opacity.' },
-            uFireNoise: { value: 0.22, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Fire noise', tip: 'How hard FBM wriggles flame bands and punches dark patches. 0 = smooth fill.' },
+            uFireAlpha: { value: 0.85, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Fire alpha', tip: 'Flame opacity.' },
+            uFireNoise: { value: 0.15, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Fire noise', tip: 'How hard FBM wriggles flame bands and punches dark patches. 0 = smooth fill.' },
             uLfRadius: { value: FIRE_LF_RADIUS, type: 'f32', min: 1, max: 40, step: 0.5, label: 'LF radius', tip: 'LiquidFun solid splat radius in world units. Occupied cells block fire/smoke. Hot particles also ignite a one-cell ring outside this radius.' },
             uLfHeat: { value: 1, type: 'f32', min: 0, max: 1, step: 0.01, label: 'LF heat', tip: 'Heat stamped at each LiquidFun particle. 0 = particles do not fuel the fire.' },
             uLfDrive: { value: 0.65, type: 'f32', min: 0, max: 1, step: 0.01, label: 'LF drive', tip: 'How much particle velocity is mixed into the Eulerian air.' },

@@ -56,12 +56,14 @@ fn fireRgb(f: f32) -> vec3<f32> {
     let k = f / 0.25;
     return vec3<f32>(0.45 + 0.55 * k, 0.05 + 0.12 * k, 0.02);
   }
-  if (f < 0.65) {
-    let k = (f - 0.25) / 0.40;
-    return vec3<f32>(1.0, 0.17 + 0.60 * k, 0.02 + 0.08 * k);
-  }
-  let k = (f - 0.65) / 0.35;
-  return vec3<f32>(1.0, 0.77 + 0.23 * k, 0.10 + 0.75 * k);
+  // Peak stays orange. This layer draws above lighting, so multiply no longer tints it.
+  let k = (f - 0.25) / 0.75;
+  return vec3<f32>(1.0, 0.17 + 0.28 * k, 0.02 + 0.06 * k);
+}
+
+fn emberRgb(e: f32) -> vec3<f32> {
+  let hot = smoothstep(0.82, 1.0, e);
+  return mix(fireRgb(e), vec3<f32>(1.0, 0.95, 0.82), hot);
 }
 
 fn hsv2rgb(h: f32, s: f32, v: f32) -> vec3<f32> {
@@ -119,9 +121,9 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     let grain = mix(1.0, lumps * holes, noiseAmt);
     let dens = clamp(puff * max(customUniforms.uSmokeDens, 0.0) * grain, 0.0, 1.0);
     a = customUniforms.uSmokeOn * customUniforms.uSmokeAlpha * dens;
-    let soot = vec3<f32>(0.05, 0.05, 0.055);
-    let ash = mix(vec3<f32>(0.36, 0.34, 0.32), vec3<f32>(0.5, 0.48, 0.45), n);
-    let pale = mix(vec3<f32>(0.07, 0.075, 0.08), ash, clamp(s * 1.25, 0.0, 1.0));
+    let soot = vec3<f32>(0.035, 0.022, 0.016);
+    let ash = mix(vec3<f32>(0.045, 0.030, 0.022), vec3<f32>(0.08, 0.055, 0.040), n);
+    let pale = mix(soot, ash, clamp(s * 1.25, 0.0, 1.0));
     let sootMix = clamp((customUniforms.uSmokeDens - 0.4) / 2.1, 0.0, 1.0);
     rgb = mix(pale, soot, sootMix * 0.82);
   } else if (t > cutoff && customUniforms.uFireOn > 0.5) {
@@ -139,7 +141,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   var outA = a;
   if (emberOn && ember > cutoff) {
     let eA = clamp(ember * customUniforms.uEmberAlpha, 0.0, 1.0);
-    let eRgb = fireRgb(clamp(ember, 0.0, 1.0));
+    let eRgb = emberRgb(clamp(ember, 0.0, 1.0));
     premul = eRgb * eA + premul * (1.0 - eA);
     outA = eA + outA * (1.0 - eA);
   }

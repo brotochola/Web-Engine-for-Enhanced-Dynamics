@@ -800,17 +800,82 @@ class PixiRenderer extends AbstractWorker {
     this._poseAlpha = this._poseInterval > 0 ? Math.min(1, elapsed / this._poseInterval) : 1;
   }
 
-  /** Copy latched pose views into reused _computePose (no alloc). */
-  _syncComputePose() {
+  _hasComputeLayer() {
+    const list = this._customLayerList;
+    if (!list) return false;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].compute) return true;
+    }
+    return false;
+  }
+
+  /** Private pose copies. One alloc, size poseCapacity. Compute must not read the live SAB. */
+  _ensureComputePoseSnap() {
+    const n = this.poseCapacity | 0;
+    if (!(n > 0)) return false;
+    if (this._poseSnapX && this._poseSnapX.length === n) return true;
+    this._poseSnapX = new Float32Array(n);
+    this._poseSnapY = new Float32Array(n);
+    this._poseSnapRotC = new Float32Array(n);
+    this._poseSnapRotS = new Float32Array(n);
+    this._poseSnapPrevX = new Float32Array(n);
+    this._poseSnapPrevY = new Float32Array(n);
+    this._poseSnapPrevRotC = new Float32Array(n);
+    this._poseSnapPrevRotS = new Float32Array(n);
+    return true;
+  }
+
+  /**
+   * Copy the latched pose before pre-render is woken. publishPose reuses that
+   * SAB slot once the next consume lands; the stamp must keep this frame's numbers.
+   */
+  _snapshotComputePose() {
     const computePose = this._computePose;
-    computePose.poseX = this._poseX;
-    computePose.poseY = this._poseY;
-    computePose.poseRotC = this._poseRotC;
-    computePose.poseRotS = this._poseRotS;
-    computePose.prevPoseX = this._prevPoseX;
-    computePose.prevPoseY = this._prevPoseY;
-    computePose.prevPoseRotC = this._prevPoseRotC;
-    computePose.prevPoseRotS = this._prevPoseRotS;
+    if (!this._hasComputeLayer() || !this._ensureComputePoseSnap()) {
+      computePose.poseX = this._poseX;
+      computePose.poseY = this._poseY;
+      computePose.poseRotC = this._poseRotC;
+      computePose.poseRotS = this._poseRotS;
+      computePose.prevPoseX = this._prevPoseX;
+      computePose.prevPoseY = this._prevPoseY;
+      computePose.prevPoseRotC = this._prevPoseRotC;
+      computePose.prevPoseRotS = this._prevPoseRotS;
+      return;
+    }
+    if (!this._poseX) {
+      computePose.poseX = null;
+      computePose.poseY = null;
+      computePose.poseRotC = null;
+      computePose.poseRotS = null;
+      computePose.prevPoseX = null;
+      computePose.prevPoseY = null;
+      computePose.prevPoseRotC = null;
+      computePose.prevPoseRotS = null;
+      return;
+    }
+    this._poseSnapX.set(this._poseX);
+    this._poseSnapY.set(this._poseY);
+    this._poseSnapRotC.set(this._poseRotC);
+    this._poseSnapRotS.set(this._poseRotS);
+    computePose.poseX = this._poseSnapX;
+    computePose.poseY = this._poseSnapY;
+    computePose.poseRotC = this._poseSnapRotC;
+    computePose.poseRotS = this._poseSnapRotS;
+    if (this._prevPoseX) {
+      this._poseSnapPrevX.set(this._prevPoseX);
+      this._poseSnapPrevY.set(this._prevPoseY);
+      this._poseSnapPrevRotC.set(this._prevPoseRotC);
+      this._poseSnapPrevRotS.set(this._prevPoseRotS);
+      computePose.prevPoseX = this._poseSnapPrevX;
+      computePose.prevPoseY = this._poseSnapPrevY;
+      computePose.prevPoseRotC = this._poseSnapPrevRotC;
+      computePose.prevPoseRotS = this._poseSnapPrevRotS;
+    } else {
+      computePose.prevPoseX = null;
+      computePose.prevPoseY = null;
+      computePose.prevPoseRotC = null;
+      computePose.prevPoseRotS = null;
+    }
   }
 
   /**
@@ -1489,6 +1554,12 @@ class PixiRenderer extends AbstractWorker {
           if (cl.buffers) cl.readRef = cl.buffers[readBufferIdx];
         }
 
+        // Pin the pose this queue was packed with, then copy it, then wake
+        // pre-render. publishPose may reuse the SAB slot as soon as the next
+        // consume lands; the stamp must not read that buffer live.
+        this._latchPose(false, this.renderQueuePoseReady ? this.renderQueuePoseReady[0] : 0);
+        this._snapshotComputePose();
+
         // Signal that we've consumed this frame
         // This allows pre_render_worker to reuse this buffer
         this.lastReadFrame = readyFrame;
@@ -1496,15 +1567,13 @@ class PixiRenderer extends AbstractWorker {
         // Wake pre_render_worker if it was waiting (it might be if >1 frame ahead)
         Atomics.notify(this.renderQueueSync, 1, 1);
 
-        // Frame-locked camera + pose generation from the same renderQueue slot.
+        // Frame-locked camera from the same renderQueue slot.
         if (this.renderQueueCamera) {
           this._renderZoom = this.renderQueueCamera[0];
           this._renderCameraX = this.renderQueueCamera[1];
           this._renderCameraY = this.renderQueueCamera[2];
           this._cameraInitialized = true;
         }
-        this._latchPose(false, this.renderQueuePoseReady ? this.renderQueuePoseReady[0] : 0);
-        this._syncComputePose();
         if (this._queueInterp) {
           const curCount = this.renderQueueCount ? this.renderQueueCount[0] | 0 : 0;
           const consecutive = prevReady > 0 && readyFrame === prevReady + 1;
@@ -5233,6 +5302,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       const rtOpts = this._rtRenderOpts;
       if (cl.compute) {
+        this._computePose.poseAlpha = this._poseAlpha;
         cl.compute.step(frameUniforms, this._computePose);
         applyComputeTexSizeUniform(cl);
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {

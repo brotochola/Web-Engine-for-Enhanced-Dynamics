@@ -324,6 +324,23 @@ test('packBox2dBodies uses latched pose not live Transform', () => {
       assert.notEqual(x, 999);
       assert.notEqual(y, 888);
     }
+
+    poseOpts.sweep = false;
+    poseOpts.poseAlpha = 0.5;
+    poseX[0] = 80;
+    poseY[0] = 80;
+    prevPoseX[0] = 0;
+    prevPoseY[0] = 40;
+    bodies.fill(0);
+    packed = packBox2dBodies(id, bodies, verts, 16, poseOpts);
+    assert.equal(packed.bodyCount, 1);
+    assert.equal(bodies[0], 40);
+    assert.equal(bodies[1], 60);
+    poseOpts.poseAlpha = 1;
+    bodies.fill(0);
+    packed = packBox2dBodies(id, bodies, verts, 16, poseOpts);
+    assert.equal(bodies[0], 80);
+    assert.equal(bodies[1], 80);
   } finally {
     Layer.reset();
   }

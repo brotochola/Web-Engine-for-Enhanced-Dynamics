@@ -1,10 +1,12 @@
 /**
  * Pack fed colliders into GPU Body + verts arrays (no alloc in the hot loop).
  *
- * Pose views (opts.poseX/Y/rotC/S) are the published display-pose SAB sprites
- * use. RigidBody.active + pose present → pack that clock, not live HEAP
+ * Pose views (opts.poseX/Y/rotC/S) are the frame's display pose. Pixi passes a
+ * private copy of the queue's generation, not the live SAB (publishPose reuses
+ * that slot). RigidBody.active + pose present → pack that clock, not live HEAP
  * Transform (grab writes HEAP immediately). Sweep/prev stay on the same clock:
  * previous pose slot, or HEAP px/py when packing Transform. Never mix.
+ * opts.poseAlpha < 1 lerps prev→curr (same blend as the sprite). 1 skips it.
  */
 import { Collider } from '../components/collider.js';
 import { Transform } from '../components/transform.js';
@@ -58,6 +60,8 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
   const prevPoseY = opts ? opts.prevPoseY : null;
   const prevPoseRotC = opts ? opts.prevPoseRotC : null;
   const prevPoseRotS = opts ? opts.prevPoseRotS : null;
+  const poseAlpha = opts && opts.poseAlpha < 1 && opts.poseAlpha >= 0 ? opts.poseAlpha : 1;
+  const blendPose = poseAlpha < 1 && !!(prevPoseX && prevPoseY);
   let bodyCount = 0;
   let vertCount = 0;
   const maxVerts = vertData ? (vertData.length / 2) | 0 : 0;
@@ -107,12 +111,27 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
       break;
     }
     const usePose = !!(poseX && rbActive && rbActive[i]);
-    const c = usePose && poseRotC ? poseRotC[i] : (rotC ? rotC[i] : 1);
-    const s = usePose && poseRotS ? poseRotS[i] : (rotS ? rotS[i] : 0);
+    let c = usePose && poseRotC ? poseRotC[i] : (rotC ? rotC[i] : 1);
+    let s = usePose && poseRotS ? poseRotS[i] : (rotS ? rotS[i] : 0);
     const offX = ox ? ox[i] : 0;
     const offY = oy ? oy[i] : 0;
-    const posX = usePose ? poseX[i] : tx[i];
-    const posY = usePose ? (poseY ? poseY[i] : ty[i]) : ty[i];
+    let posX = usePose ? poseX[i] : tx[i];
+    let posY = usePose ? (poseY ? poseY[i] : ty[i]) : ty[i];
+    if (blendPose && usePose) {
+      const x0 = prevPoseX[i];
+      const y0 = prevPoseY[i];
+      posX = x0 + (posX - x0) * poseAlpha;
+      posY = y0 + (posY - y0) * poseAlpha;
+      if (prevPoseRotC && prevPoseRotS) {
+        const pc = prevPoseRotC[i];
+        const ps = prevPoseRotS[i];
+        const rc = pc + (c - pc) * poseAlpha;
+        const rs = ps + (s - ps) * poseAlpha;
+        const len = Math.sqrt(rc * rc + rs * rs) || 1;
+        c = rc / len;
+        s = rs / len;
+      }
+    }
     const worldX = posX + c * offX - s * offY;
     const worldY = posY + s * offX + c * offY;
     const kind = shapeType[i] | 0;
