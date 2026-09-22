@@ -93,11 +93,6 @@ export class MovedBodiesStillNeighborsScene extends Scene {
   }
 }
 
-export class MovedBodiesStillIncrementalScene extends MovedBodiesStillScene {
-  static config = stillConfig({ incrementalMovers: true });
-  static entities = [[MovedBody, STILL_COUNT]];
-}
-
 export class MovedBodiesAwakeScene extends Scene {
   static config = stillConfig(null, { sleeping: false });
   static assets = { textures: { ball: '/demos/img/bola.png' } };
@@ -120,16 +115,6 @@ export class MovedBodiesAwakeScene extends Scene {
     Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
     Camera.setZoom(0.2);
   }
-}
-
-export class MovedBodiesAwakeIncrementalScene extends MovedBodiesAwakeScene {
-  static config = stillConfig({ incrementalMovers: true }, { sleeping: false });
-  static entities = [[MovedBody, STILL_COUNT]];
-}
-
-export class MovedBodiesStillNeighborsIdleScene extends MovedBodiesStillNeighborsScene {
-  static config = stillConfig({ skipIdleNeighbors: true });
-  static entities = [[MovedBody, STILL_NEIGHBOR_COUNT]];
 }
 
 const AWAKE_NEIGHBOR_COUNT = 22000;
@@ -158,7 +143,3 @@ export class MovedBodiesAwakeNeighborsScene extends Scene {
   }
 }
 
-export class MovedBodiesAwakeNeighborsIncrementalScene extends MovedBodiesAwakeNeighborsScene {
-  static config = stillConfig({ incrementalMovers: true }, { sleeping: false });
-  static entities = [[MovedBody, AWAKE_NEIGHBOR_COUNT]];
-}

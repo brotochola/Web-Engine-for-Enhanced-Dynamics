@@ -715,7 +715,6 @@
       liquidFun: s.liquidFun,
       stats: state.stats ? packView(state.stats) : null,
       collectDetailedStats: !!state.collectDetailedStats,
-      poseMoversOnly: !!(state.config.physics && state.config.physics.poseMoversOnly),
       posePublish: state.posePublish
         ? {
           dataA: state.posePublish.dataA,
@@ -904,7 +903,6 @@
         sleeping: state.sleepingEnabled !== false,
         hitEventThreshold: state.settings.hitEventThreshold,
         publishContactRing: (state.config.physics || {}).publishContactRing !== false,
-        poseMoversOnly: !!(state.config.physics && state.config.physics.poseMoversOnly),
       });
     }
   }

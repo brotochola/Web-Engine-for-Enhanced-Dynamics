@@ -73,10 +73,3 @@ export class MovedBodiesMixedScene extends Scene {
   }
 }
 
-export class MovedBodiesMixedDirtyScene extends MovedBodiesMixedScene {
-  static config = mixedConfig({
-    incrementalMovers: true,
-    dirtyNeighborRefresh: true,
-  });
-  static entities = [[MovedTicker, MIXED_COUNT]];
-}

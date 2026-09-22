@@ -352,8 +352,6 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   commandRingCapacity: 4096,
   /** Master switch: maps to b2World_EnableSleeping. When false, Box2D never sleeps dynamics. */
   sleeping: true,
-  /** Copy only movers into the pose double-buffer after the first full seed. */
-  poseMoversOnly: false,
   /** Min relative approach speed (px/s) to emit a Collider.enableHitEvents contact-hit. 0 = Box2D default. */
   hitEventThreshold: 0,
   noLimitFPS: false,
@@ -410,12 +408,6 @@ export const SPATIAL_DEFAULTS = Object.freeze({
    * 1 = every frame (off). >1 amortizes cell-walk like logic tickInterval.
    */
   neighborTickInterval: 1,
-  /** Rebuild the grid from the Box2D mover list instead of every active entity. */
-  incrementalMovers: false,
-  /** Skip neighbor search when the mover list and the active set are unchanged. */
-  skipIdleNeighbors: false,
-  /** Refresh neighbors only for entities that can see a cell the mover list changed. */
-  dirtyNeighborRefresh: false,
 });
 
 // ============================================================================
@@ -535,8 +527,6 @@ export const RENDERER_DEFAULTS = Object.freeze({
    * smoothing (that is preRender.interpolation). Both true adds a frame of lag.
    */
   interpolation: false,
-  /** Pose-only mesh refill writes movers, not every packed instance. */
-  packMovedMeshes: false,
 });
 
 // ============================================================================

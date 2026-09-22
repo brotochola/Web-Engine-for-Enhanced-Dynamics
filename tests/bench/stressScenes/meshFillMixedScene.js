@@ -1,7 +1,6 @@
 /**
  * Mostly static MESH islands plus a spinning minority.
- * Baseline reflows every instance once any pose changes.
- * packMovedMeshes refills only the spinners.
+ * Any pose change refills every packed instance.
  */
 import WEED from '/src/index.js';
 import { MeshFillIsland, MeshFillSpinner } from './compoundFixture/meshFillIsland.js';
@@ -15,7 +14,7 @@ const VERTS = 8;
 const WORLD_W = 12000;
 const WORLD_H = 12000;
 
-function meshConfig(packMoved) {
+function meshConfig() {
   return {
     worldWidth: WORLD_W,
     worldHeight: WORLD_H,
@@ -38,7 +37,6 @@ function meshConfig(packMoved) {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      packMovedMeshes: packMoved,
     },
     lighting: { enabled: false },
     layers: {
@@ -70,7 +68,7 @@ function place(scene) {
 }
 
 export class MeshFillMixedScene extends Scene {
-  static config = meshConfig(false);
+  static config = meshConfig();
   static assets = { textures: {} };
   static entities = [
     [MeshFillIsland, ISLAND_COUNT],
@@ -79,25 +77,5 @@ export class MeshFillMixedScene extends Scene {
   create() {
     place(this);
   }
-}
-
-export class MeshFillMixedMovedScene extends MeshFillMixedScene {
-  static config = meshConfig(true);
-  static entities = [
-    [MeshFillIsland, ISLAND_COUNT],
-    [MeshFillSpinner, ISLAND_COUNT],
-  ];
-}
-
-import { MeshFillMovingScene } from './meshFillMovingScene.js';
-
-const movingBase = MeshFillMovingScene.config;
-
-/** All-moving gate: packMovedMeshes must not make pixi 3% worse. */
-export class MeshFillMovingPackedScene extends MeshFillMovingScene {
-  static config = {
-    ...movingBase,
-    renderer: { ...movingBase.renderer, packMovedMeshes: true },
-  };
 }
 

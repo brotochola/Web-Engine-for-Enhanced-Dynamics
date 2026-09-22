@@ -148,10 +148,6 @@ export const SPATIAL_STATS = Object.freeze({
   SLEEP_NEIGHBOR_SKIPS: 9,
   /** Grid actives with a sprite and neither RigidBody nor Collider (no Box2D body). */
   NO_BODY_COUNT: 10,
-  /** Frames that applied the mover incremental grid (diagnostic). */
-  INCREMENTAL_FRAMES: 11,
-  /** Frames that skipped neighbor search because nothing was dirty. */
-  IDLE_NEIGHBOR_SKIPS: 12,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });

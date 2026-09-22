@@ -36,14 +36,14 @@ export const _cellRangeResult = { minCol: 0, maxCol: 0, minRow: 0, maxRow: 0 };
  * @param {Object} result - Result object to mutate {posX, posY, halfW, halfH}
  * @returns {Object} The result object
  */
-export function getColliderBounds(idx, result, pose) {
+export function getColliderBounds(idx, result) {
   const shape = Collider.shapeType[idx];
   const ox = Collider.offsetX[idx] || 0;
   const oy = Collider.offsetY[idx] || 0;
-  const tx = pose ? pose.x[idx] : Transform.x[idx];
-  const ty = pose ? pose.y[idx] : Transform.y[idx];
-  const rotC = pose ? pose.rotC : Transform.rotC;
-  const rotS = pose ? pose.rotS : Transform.rotS;
+  const tx = Transform.x[idx];
+  const ty = Transform.y[idx];
+  const rotC = Transform.rotC;
+  const rotS = Transform.rotS;
 
   if (shape === SHAPE_CIRCLE) {
     result.posX = tx + ox;

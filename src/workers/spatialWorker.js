@@ -49,16 +49,6 @@ import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult } from '../util/colliderUtils.js';
-import { readStableMoved } from '../box2d/box2dMovedBodies.js';
-import {
-  OCC_SPAN,
-  OCC_FAT,
-  OCC_OTHER,
-  INCREMENTAL_DIRTY_FRACTION,
-  vacateEntity,
-  occupyEntity,
-  stampAffected,
-} from '../util/spatialOccupancy.js';
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -244,45 +234,7 @@ class SpatialWorker extends AbstractWorker {
     this._neighborCandidateData = new (EntityIdArray())(this.globalEntityCount * candStride);
     this._neighborCandidateTruncated = new Uint8Array(this.globalEntityCount);
     this._entityFramesSinceBuild = new Uint16Array(this.globalEntityCount);
-    const nEnt = this.globalEntityCount;
-    this._incrementalMovers = spatialCfg.incrementalMovers === true;
-    this._skipIdleNeighbors = spatialCfg.skipIdleNeighbors === true;
-    this._dirtyNeighborRefresh = spatialCfg.dirtyNeighborRefresh === true;
-    this._occCount = new Uint8Array(nEnt);
-    this._occCells = new Uint32Array(nEnt * OCC_SPAN);
-    this._occDense = new Uint32Array(nEnt);
-    this._occDenseCount = 0;
-    this._occSeeded = false;
-    this._lastMovedGen = 0;
-    this._movedScratch = new Uint32Array(256);
-    this._dirtyIds = new Uint32Array(nEnt);
-    this._dirtyCount = 0;
-    this._dirtyBits = new Uint8Array(nEnt);
-    this._activeStamp = new Uint32Array(nEnt);
-    this._activeEpoch = 1;
-    this._noBodyIds = new Uint32Array(nEnt);
-    this._noBodyDense = 0;
-    this._cellAffected = new Uint8Array(this.totalCells);
-    this._affectedIds = new Uint32Array(this.totalCells);
-    this._affectedCount = 0;
-    this._dirtyCells = new Uint32Array(this.totalCells);
-    this._dirtyCellCount = 0;
-    this._maxVisualRange = 0;
-    this._incrementalFrames = 0;
-    this._idleNeighborSkips = 0;
     this._noBodyCount = 0;
-    this._skipNeighborsThisFrame = false;
-    this._limitNeighborsToAffected = false;
-    this._gridView = {
-      counts: Grid._gridCounts,
-      entities: Grid._gridEntities,
-      cellByteSize: Grid.cellByteSize,
-      cellIdStride: Grid._cellIdStride,
-      headerIds: Grid._headerIds,
-      maxPerCell: Grid.maxEntitiesPerCell,
-      gridWidth: this.gridWidth,
-      gridHeight: this.gridHeight,
-    };
 
     // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius)
     this._precomputeCirclePatterns();
@@ -407,337 +359,17 @@ class SpatialWorker extends AbstractWorker {
     // STEP 1: Rebuild grid (only owned rows)
     const detail = this.collectDetailedStats;
     let startTime = detail ? performance.now() : 0;
-    this._rebuildGrid();
+    this.rebuildOwnedRows();
     if (detail) {
       this.rebuildTimeThisFrame = performance.now() - startTime;
     }
 
     // STEP 2: Find neighbors (only for entities in owned rows)
     startTime = detail ? performance.now() : 0;
-    if (this._skipNeighborsThisFrame) {
-      this._idleNeighborSkips++;
-    } else {
-      this.findNeighborsForOwnedEntities();
-    }
+    this.findNeighborsForOwnedEntities();
     if (detail) {
       this.neighborSearchTimeThisFrame = performance.now() - startTime;
     }
-  }
-
-  _activeQuiet() {
-    const active = this.activeEntitiesData;
-    const n = active ? active[0] | 0 : 0;
-    let h = n >>> 0;
-    for (let i = 0; i < n; i++) h = Math.imul(h ^ (active[1 + i] | 0), 16777619) >>> 0;
-    if ((this._noBodyCount | 0) > 0) return false;
-    if (this._hasActiveSig && h === this._lastActiveSig) return true;
-    this._lastActiveSig = h;
-    this._hasActiveSig = 1;
-    return false;
-  }
-
-  _poseForBody(i) {
-    if (!this._poseX) return null;
-    const col = Collider.active;
-    const rb = RigidBody.active;
-    if (!(col && col[i]) && !(rb && rb[i])) return null;
-    return {
-      x: this._poseX,
-      y: this._poseY,
-      rotC: this._poseRotC,
-      rotS: this._poseRotS,
-    };
-  }
-
-  _readMovers() {
-    const cap = this._movedScratch.length;
-    const activeCount = this.activeEntitiesData ? this.activeEntitiesData[0] | 0 : 0;
-    if (cap < activeCount) {
-      this._movedScratch = new Uint32Array(Math.max(activeCount, cap * 2));
-    }
-    return readStableMoved(this._movedScratch);
-  }
-
-  _clearDirtyBits() {
-    const bits = this._dirtyBits;
-    const ids = this._dirtyIds;
-    const n = this._dirtyCount | 0;
-    for (let i = 0; i < n; i++) bits[ids[i]] = 0;
-    this._dirtyCount = 0;
-  }
-
-  _pushDirty(entity) {
-    const e = entity | 0;
-    if (e < 0 || e >= this._dirtyBits.length) return;
-    if (this._dirtyBits[e]) return;
-    this._dirtyBits[e] = 1;
-    this._dirtyIds[this._dirtyCount++] = e;
-  }
-
-  _noteDirtyCell(cell) {
-    const n = this._dirtyCellCount | 0;
-    if (n >= this._dirtyCells.length) return;
-    this._dirtyCells[n] = cell | 0;
-    this._dirtyCellCount = n + 1;
-  }
-
-  _seedOccupancy() {
-    const grid = this._gridView;
-    const occCount = this._occCount;
-    const occCells = this._occCells;
-    occCount.fill(0);
-    this._occDenseCount = 0;
-    this._noBodyDense = 0;
-    this._maxVisualRange = 0;
-    const ownedRows = this.ownedRows;
-    const ownedRowCount = this.ownedRowCount;
-    const gridWidth = this.gridWidth;
-    const counts = grid.counts;
-    const entities = grid.entities;
-    const cellByteSize = grid.cellByteSize;
-    const stride = grid.cellIdStride;
-    const header = grid.headerIds;
-    const visualRange = Collider.visualRange;
-    const col = Collider.active;
-    const rb = RigidBody.active;
-    const sprite = SpriteRenderer.active;
-    for (let r = 0; r < ownedRowCount; r++) {
-      const rowBase = ownedRows[r] * gridWidth;
-      for (let c = 0; c < gridWidth; c++) {
-        const cell = rowBase + c;
-        const count = counts[cell * cellByteSize] | 0;
-        const base = cell * stride + header;
-        for (let k = 0; k < count; k++) {
-          const e = entities[base + k] | 0;
-          const prev = occCount[e] | 0;
-          if (prev === OCC_FAT) continue;
-          if (prev === 0) this._occDense[this._occDenseCount++] = e;
-          if (prev >= OCC_SPAN) {
-            occCount[e] = OCC_FAT;
-            continue;
-          }
-          occCells[e * OCC_SPAN + prev] = cell;
-          occCount[e] = prev + 1;
-        }
-      }
-    }
-    const active = this.activeEntitiesData;
-    const n = active ? active[0] | 0 : 0;
-    for (let a = 0; a < n; a++) {
-      const e = active[1 + a] | 0;
-      const vr = visualRange ? visualRange[e] : 0;
-      if (vr > this._maxVisualRange) this._maxVisualRange = vr;
-      if (sprite && sprite[e] && !(col && col[e]) && !(rb && rb[e])) {
-        this._noBodyIds[this._noBodyDense++] = e;
-      }
-    }
-    this._occSeeded = true;
-  }
-
-  _collectDirty(stable, applyMovers) {
-    this._clearDirtyBits();
-    const active = this.activeEntitiesData;
-    const activeN = active ? active[0] | 0 : 0;
-    this._activeEpoch++;
-    if (this._activeEpoch > 0xfffffffe) {
-      this._activeStamp.fill(0);
-      this._activeEpoch = 1;
-    }
-    const epoch = this._activeEpoch;
-    const stamp = this._activeStamp;
-    const transformActive = Transform.active;
-    for (let a = 0; a < activeN; a++) {
-      const e = active[1 + a] | 0;
-      stamp[e] = epoch;
-      if ((this._occCount[e] | 0) === 0) this._pushDirty(e);
-    }
-    const dense = this._occDense;
-    const denseN = this._occDenseCount | 0;
-    for (let d = 0; d < denseN; d++) {
-      const e = dense[d] | 0;
-      if (!transformActive || !transformActive[e] || stamp[e] !== epoch) this._pushDirty(e);
-    }
-    if (applyMovers && stable) {
-      const list = this._movedScratch;
-      const n = stable.count | 0;
-      for (let i = 0; i < n; i++) this._pushDirty(list[i] | 0);
-    }
-    const noBody = this._noBodyIds;
-    const noN = this._noBodyDense | 0;
-    const x = Transform.x;
-    const y = Transform.y;
-    const pos = this.entityPosData;
-    for (let i = 0; i < noN; i++) {
-      const e = noBody[i] | 0;
-      if (stamp[e] !== epoch) continue;
-      const base = e * 4;
-      if (!pos || pos[base] !== x[e] || pos[base + 1] !== y[e]) this._pushDirty(e);
-    }
-  }
-
-  _applyIncremental() {
-    const n = this._dirtyCount | 0;
-    if (n === 0) return true;
-    const grid = this._gridView;
-    for (let i = 0; i < this._affectedCount; i++) this._cellAffected[this._affectedIds[i]] = 0;
-    this._affectedCount = 0;
-    this._dirtyCellCount = 0;
-    const ids = this._dirtyIds;
-    const transformActive = Transform.active;
-    const col = Collider.active;
-    const sprite = SpriteRenderer.active;
-    const visualRange = Collider.visualRange;
-    let fat = false;
-    let denseW = 0;
-    const seen = this._activeEpoch;
-    for (let d = 0; d < n; d++) {
-      const e = ids[d] | 0;
-      const span = this._occCount[e] | 0;
-      if (span === OCC_FAT) {
-        fat = true;
-        break;
-      }
-      if (span > 0) {
-        const base = e * OCC_SPAN;
-        for (let s = 0; s < span; s++) this._noteDirtyCell(this._occCells[base + s]);
-        vacateEntity(grid, this._occCount, this._occCells, e);
-      }
-      const live = transformActive && transformActive[e] && this._activeStamp[e] === seen;
-      const inGrid = live && ((col && col[e]) || (sprite && sprite[e]));
-      if (!inGrid) continue;
-      const pose = this._poseForBody(e);
-      getColliderBounds(e, _boundsResult, pose);
-      const posX = _boundsResult.posX;
-      const posY = _boundsResult.posY;
-      const halfW = _boundsResult.halfW;
-      const halfH = _boundsResult.halfH;
-      if (posX !== posX || posY !== posY) continue;
-      const maxHalf = halfW > halfH ? halfW : halfH;
-      getCellRange(
-        posX,
-        posY,
-        halfW,
-        halfH,
-        this.invCellSize,
-        this.gridWidth - 1,
-        this.gridHeight - 1,
-        _cellRangeResult,
-      );
-      const ok = occupyEntity(
-        grid,
-        this._occCount,
-        this._occCells,
-        e,
-        _cellRangeResult.minCol,
-        _cellRangeResult.maxCol,
-        _cellRangeResult.minRow,
-        _cellRangeResult.maxRow,
-        this.rowOwnership,
-        this.workerId,
-      );
-      if (!ok) {
-        fat = true;
-        break;
-      }
-      if ((this._occCount[e] | 0) === 0) this._occCount[e] = OCC_OTHER;
-      const wrote = this._occCount[e] | 0;
-      const cellBase = e * OCC_SPAN;
-      for (let s = 0; s < wrote; s++) this._noteDirtyCell(this._occCells[cellBase + s]);
-      if (this.entityPosData && wrote > 0) {
-        const p = e * 4;
-        this.entityPosData[p] = posX;
-        this.entityPosData[p + 1] = posY;
-        this.entityPosData[p + 2] = maxHalf;
-      }
-      const vr = visualRange ? visualRange[e] : 0;
-      if (vr > this._maxVisualRange) this._maxVisualRange = vr;
-    }
-    if (fat) return false;
-    const dense = this._occDense;
-    const denseN = this._occDenseCount | 0;
-    const bits = this._dirtyBits;
-    for (let i = 0; i < denseN; i++) {
-      const e = dense[i] | 0;
-      if (bits[e]) continue;
-      const span = this._occCount[e] | 0;
-      if (span > 0) dense[denseW++] = e;
-    }
-    for (let d = 0; d < n; d++) {
-      const e = ids[d] | 0;
-      const span = this._occCount[e] | 0;
-      if (span > 0 && span !== OCC_OTHER) dense[denseW++] = e;
-    }
-    this._occDenseCount = denseW;
-    if (this._dirtyNeighborRefresh && this._dirtyCellCount > 0) {
-      const radius = ((this._maxVisualRange * this.invCellSize) | 0) + 1;
-      this._affectedCount = stampAffected(
-        this._cellAffected,
-        this._affectedIds,
-        0,
-        this.gridWidth,
-        this.gridHeight,
-        this._dirtyCells,
-        this._dirtyCellCount,
-        radius,
-      );
-    }
-    return true;
-  }
-
-  _rebuildGrid() {
-    this._skipNeighborsThisFrame = false;
-    this._limitNeighborsToAffected = false;
-    const want =
-      this._incrementalMovers || this._skipIdleNeighbors || this._dirtyNeighborRefresh;
-    if (!want) {
-      this.rebuildOwnedRows();
-      return;
-    }
-    const stable = this._readMovers();
-    if (stable && stable.poseStamp > 0) this._latchPose(false, stable.poseStamp);
-    const activeCount = this.activeEntitiesData ? this.activeEntitiesData[0] | 0 : 0;
-    const trust = !!(
-      stable &&
-      stable.poseStamp > 0 &&
-      this._poseReadyFrame === (stable.poseStamp | 0)
-    );
-    const movedCount = trust ? stable.count | 0 : activeCount;
-    const frac = activeCount > 0 ? movedCount / activeCount : 1;
-    const gap =
-      trust &&
-      this._occSeeded &&
-      stable.generation > this._lastMovedGen &&
-      stable.generation > this._lastMovedGen + 2;
-    const sameGen = trust && this._occSeeded && stable.generation === this._lastMovedGen;
-    if (!this._incrementalMovers || !trust || !this._occSeeded || gap || frac > INCREMENTAL_DIRTY_FRACTION) {
-      this.rebuildOwnedRows();
-      if (this._incrementalMovers && trust && !gap && frac <= INCREMENTAL_DIRTY_FRACTION) {
-        this._seedOccupancy();
-        this._lastMovedGen = stable.generation;
-      } else if (this._incrementalMovers) {
-        this._occSeeded = false;
-      }
-      if (this._skipIdleNeighbors && trust && movedCount === 0 && this._activeQuiet()) {
-        this._skipNeighborsThisFrame = true;
-      }
-      return;
-    }
-    this._collectDirty(stable, !sameGen);
-    if (this._dirtyCount > activeCount * INCREMENTAL_DIRTY_FRACTION) {
-      this.rebuildOwnedRows();
-      this._occSeeded = false;
-      return;
-    }
-    if (!this._applyIncremental()) {
-      this.rebuildOwnedRows();
-      this._seedOccupancy();
-      this._lastMovedGen = stable.generation;
-      return;
-    }
-    this._lastMovedGen = stable.generation;
-    this._incrementalFrames++;
-    if (this._skipIdleNeighbors && this._dirtyCount === 0) this._skipNeighborsThisFrame = true;
-    if (this._dirtyNeighborRefresh && this._dirtyCount > 0) this._limitNeighborsToAffected = true;
   }
 
   /**
@@ -762,7 +394,7 @@ class SpatialWorker extends AbstractWorker {
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
     const rigidActive = RigidBody.active;
-    const countNoBody = this.collectDetailedStats || this._skipIdleNeighbors;
+    const countNoBody = this.collectDetailedStats;
     let noBody = 0;
 
     const gridWidth = this.gridWidth;
@@ -1032,13 +664,6 @@ class SpatialWorker extends AbstractWorker {
           const maxCol = gridWidth - 1;
           homeCol = homeCol < 0 ? 0 : homeCol > maxCol ? maxCol : homeCol;
           const entityCellIndex = homeRow * gridWidth + homeCol;
-          if (
-            this._limitNeighborsToAffected &&
-            !this._dirtyBits[entityA] &&
-            !this._cellAffected[entityCellIndex]
-          ) {
-            continue;
-          }
           const cellRadius = ((searchRange * invCellSize) | 0) + 1;
 
           // Schedule stagger: only ~1/tickInterval entities full-rebuild per frame
@@ -1186,8 +811,6 @@ class SpatialWorker extends AbstractWorker {
     this.stats[SPATIAL_STATS.MSG_MS] = this.messageTimeThisFrame;
     this.stats[SPATIAL_STATS.SLEEP_NEIGHBOR_SKIPS] = this.sleepNeighborSkipsThisFrame;
     this.stats[SPATIAL_STATS.NO_BODY_COUNT] = this._noBodyCount || 0;
-    this.stats[SPATIAL_STATS.INCREMENTAL_FRAMES] = this._incrementalFrames || 0;
-    this.stats[SPATIAL_STATS.IDLE_NEIGHBOR_SKIPS] = this._idleNeighborSkips || 0;
   }
 }
 
