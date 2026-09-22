@@ -1527,7 +1527,8 @@ class PixiRenderer extends AbstractWorker {
     // ========================================
     // pixi_worker NEVER waits - always reads the latest available frame
     // If pre_render hasn't written anything new, we just re-render the same buffer
-    // pre_render writes to (renderQueueFrame % 2) BEFORE incrementing, then stores sync[0]=renderQueueFrame
+    // pre_render writes _queueBuf, then increments renderQueueFrame and flips the bit.
+    // Published readyFrame is that counter. Read index is (readyFrame - 1) & 1.
     // So when sync[0]=N, the data is in buffer (N-1)%2, not N%2
     let consumedNewFrame = false;
     if (this.renderQueueSync) {
@@ -1542,7 +1543,7 @@ class PixiRenderer extends AbstractWorker {
         }
         const prevReady = this.lastReadFrame;
         consumedNewFrame = true;
-        const readBufferIdx = (readyFrame - 1) % 2;
+        const readBufferIdx = (readyFrame - 1) & 1;
         this._setReadBuffer(readBufferIdx);
 
         // Shadow queue uses same buffer index (swapped together)
@@ -2477,7 +2478,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     if (!this._visPolyEnabled) return;
 
     const syncFrame = this.renderQueueSync ? Atomics.load(this.renderQueueSync, 0) : 0;
-    const readBufferIdx = syncFrame > 0 ? (syncFrame - 1) % 2 : 0;
+    const readBufferIdx = syncFrame > 0 ? (syncFrame - 1) & 1 : 0;
     const buf = this._visPolyBuffers[readBufferIdx];
     if (!buf) return;
 

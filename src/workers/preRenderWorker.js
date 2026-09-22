@@ -197,6 +197,7 @@ class PreRenderWorker extends AbstractWorker {
         // Sync buffer for coordination: [readyFrame, consumedFrame]
         this.renderQueueSync = null;
         this.renderQueueFrame = 0; // Current frame counter (increments each update)
+        this._queueBuf = 0; // Write buffer. Flips next to renderQueueFrame++. Matches frame & 1.
 
         // Current write buffer reference (set each frame based on frame counter)
         // Tile fields (tileMode / tileOffset / tileMul): see renderQueueLayout.js
@@ -502,6 +503,7 @@ class PreRenderWorker extends AbstractWorker {
             // Initialize sync buffer for coordination with pixi_worker
             this.renderQueueSync = new Int32Array(data.renderQueue.sync);
             this.renderQueueFrame = 0;
+            this._queueBuf = 0;
 
             const maxItems = this.renderQueueMaxItems;
 
@@ -890,7 +892,7 @@ class PreRenderWorker extends AbstractWorker {
         // ========================================
         // Alternate between buffer 0 and 1 each frame
         if (this.renderQueueEnabled) {
-            const writeBufferIdx = this.renderQueueFrame % 2;
+            const writeBufferIdx = this._queueBuf;
             this._setWriteBuffer(writeBufferIdx);
 
             // Shadow queue uses same buffer index (swapped together)
@@ -1027,6 +1029,7 @@ class PreRenderWorker extends AbstractWorker {
         // Increment frame counter and notify pixi_worker
         if (this.renderQueueSync) {
             this.renderQueueFrame++;
+            this._queueBuf ^= 1;
             Atomics.store(this.renderQueueSync, 0, this.renderQueueFrame);
             // Notify (pixi does not wait; harmless)
             Atomics.notify(this.renderQueueSync, 0, 1);
@@ -1118,6 +1121,7 @@ class PreRenderWorker extends AbstractWorker {
         this._shardExpanded = 0;
         this._emitPrefix = 0;
         this.renderQueueFrame = frameId - 1;
+        this._queueBuf = bufIdx;
         this._ownedSpriteIter = this._ownedList(this._querySpriteRenderer || [SpriteRenderer]);
         this._ownedLightIter = this._queryLightEmitter ? this._ownedList(this._queryLightEmitter) : null;
         this._deferLightPublish = true;
@@ -2892,7 +2896,7 @@ class PreRenderWorker extends AbstractWorker {
         const stashRs = this._renderableRotS;
         const stashPose = this._displayPoseOut;
         const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
-        const persistBuf = this.renderQueueFrame % 2;
+        const persistBuf = this._queueBuf;
         const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
         if (persistHit) {
             this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs);
