@@ -1,70 +1,67 @@
 import { MySoldier } from './mySoldier.js';
 
 import WEED from '/src/index.js';
+
 const { Camera, Transform } = WEED;
-export class CameraController extends WEED.GameObject {
-  static components = [];
 
-  frameCount = 0;
+const PAD = 0.25;
+const SMOOTH = 0.12;
+const SHRINK = 0.08;
 
-  setup() { }
-  onSpawned(spawnConfig = {}) { }
-  onDespawned() { }
+let holdMinX = 0;
+let holdMinY = 0;
+let holdMaxX = 0;
+let holdMaxY = 0;
+let holdReady = false;
 
-  tick(dtRatio) {
-    const mySoldierIndices = MySoldier.getAllActive();
+export function resetSquadCameraHold() {
+  holdReady = false;
+}
 
-    if (mySoldierIndices.length === 0) {
-      Camera.setZoom(1);
-      return;
-    }
-    if (mySoldierIndices.length == 1) {
-      const idx = mySoldierIndices[0];
-      const x = Transform.x[idx];
-      const y = Transform.y[idx];
-      Camera.setZoom(1);
-      Camera.follow(x, y);
-      return;
-    }
-
-    let minX = 9999;
-    let minY = 9999;
-    let maxX = 0;
-    let maxY = 0;
-
-    // Find bounding box of all soldiers
-    for (let i = 0; i < mySoldierIndices.length; i++) {
-      const idx = mySoldierIndices[i];
-      const x = Transform.x[idx];
-      const y = Transform.y[idx];
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-    }
-
-    // Calculate center of all soldiers
-    const centerX = minX + (maxX - minX) / 2;
-    const centerY = minY + (maxY - minY) / 2;
-
-    // Calculate zoom to fit all soldiers with padding (percentage of screen)
-    const paddingWidthPercent = 0.25; // 20% on each side
-    const paddingHeightPercent = 0.25; // 15% on each side
-    const paddingX = Camera.canvasWidth * paddingWidthPercent;
-    const paddingY = Camera.canvasHeight * paddingHeightPercent;
-    const spreadX = maxX - minX + paddingX * 2;
-    const spreadY = maxY - minY + paddingY * 2;
-
-    // Calculate zoom so the spread fits in the viewport
-    // Lower zoom = more world visible, higher zoom = zoomed in
-    const zoomX = Camera.canvasWidth / spreadX;
-    const zoomY = Camera.canvasHeight / spreadY;
-    const zoom = Math.min(zoomX, zoomY, 1); // Cap at 2x zoom (don't zoom in too much)
-
-    // Set target zoom (will be lerped smoothly)
-    Camera.setZoom(zoom);
-
-    // Follow the center of all soldiers
-    Camera.follow(centerX, centerY);
+export function updateSquadCamera(dtRatio) {
+  const indices = MySoldier.getAllActive();
+  const n = indices ? indices.length : 0;
+  if (n === 0) {
+    holdReady = false;
+    Camera.targetZoom = 1;
+    return;
   }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const idx = indices[i];
+    const x = Transform.x[idx];
+    const y = Transform.y[idx];
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+
+  const shrink = Math.min(1, SHRINK * (dtRatio > 0 ? dtRatio : 1));
+  if (!holdReady) {
+    holdMinX = minX;
+    holdMinY = minY;
+    holdMaxX = maxX;
+    holdMaxY = maxY;
+    holdReady = true;
+  } else {
+    holdMinX = minX < holdMinX ? minX : holdMinX + (minX - holdMinX) * shrink;
+    holdMinY = minY < holdMinY ? minY : holdMinY + (minY - holdMinY) * shrink;
+    holdMaxX = maxX > holdMaxX ? maxX : holdMaxX + (maxX - holdMaxX) * shrink;
+    holdMaxY = maxY > holdMaxY ? maxY : holdMaxY + (maxY - holdMaxY) * shrink;
+  }
+
+  const spanX = Math.max(holdMaxX - holdMinX, 1);
+  const spanY = Math.max(holdMaxY - holdMinY, 1);
+  const zoomX = (Camera.canvasWidth * (1 - 2 * PAD)) / spanX;
+  const zoomY = (Camera.canvasHeight * (1 - 2 * PAD)) / spanY;
+  let zoom = Math.min(zoomX, zoomY, 1);
+  if (zoom < Camera.minZoom) zoom = Camera.minZoom;
+
+  Camera.targetZoom = zoom;
+  Camera.follow((holdMinX + holdMaxX) * 0.5, (holdMinY + holdMaxY) * 0.5, SMOOTH, dtRatio);
 }

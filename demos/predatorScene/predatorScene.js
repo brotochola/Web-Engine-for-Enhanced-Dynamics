@@ -20,11 +20,12 @@ import { DropAk47 } from './gameObjects/dropAk47.js';
 import { DropShotgun } from './gameObjects/dropShotgun.js';
 import { DropPistol } from './gameObjects/dropPistol.js';
 import { Civilian } from './gameObjects/civilian.js';
-import { CameraController } from './gameObjects/cameraController.js';
+import { resetSquadCameraHold, updateSquadCamera } from './gameObjects/cameraController.js';
 import { Trash } from './gameObjects/trash.js';
 import { Cloud } from './gameObjects/cloud.js';
 
 const {
+  Camera,
   Decoration,
   Layer,
   NavGrid,
@@ -332,7 +333,6 @@ export class PredatorScene extends WEED.Scene {
     [DropAk47, 1000],
     [DropPistol, 1000],
     [DropShotgun, 1000],
-    [CameraController, 1],
     [Trash, 100]
     // Grass now uses Decoration instead of GameObject
   ];
@@ -354,14 +354,20 @@ export class PredatorScene extends WEED.Scene {
     // this.playerEntity = null;
 
     this.frameCount = 0;
+    this._freeCam = false;
+    this._freeCamButton = null;
   }
 
   create() {
     this.cloudsLayer = Layer.get('clouds');
-
-    this.spawnEntity(CameraController);
+    this._freeCam = false;
+    this._createFreeCamButton();
     this.spawnGrass(20000);
+  }
 
+  async destroy() {
+    this._removeFreeCamButton();
+    await super.destroy();
   }
 
   onLoadGame(payload) {
@@ -464,6 +470,42 @@ export class PredatorScene extends WEED.Scene {
     if (frameNumber % 300 === 0) {
       this.createNavGridForTheFlowField()
     }
+    if (!this._freeCam) updateSquadCamera(dtRatio);
+  }
+
+  _createFreeCamButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'predator-free-cam';
+    btn.style.cssText =
+      'position:fixed;left:12px;top:62px;z-index:901;padding:8px 12px;' +
+      'border:1px solid #888;border-radius:6px;background:#222;color:#fff;' +
+      'cursor:pointer;font:14px/1 sans-serif;';
+    btn.addEventListener('click', () => {
+      this._freeCam = !this._freeCam;
+      if (this._freeCam) {
+        Camera.setFree(true, { panSpeed: 14, zoomSensitivity: 0.001, maxZoom: 2, arrows: true });
+      } else {
+        Camera.setFree(false);
+        resetSquadCameraHold();
+      }
+      this._refreshFreeCamButton();
+    });
+    document.body.appendChild(btn);
+    this._freeCamButton = btn;
+    this._refreshFreeCamButton();
+  }
+
+  _refreshFreeCamButton() {
+    if (!this._freeCamButton) return;
+    this._freeCamButton.textContent = this._freeCam ? 'Seguir escuadra' : 'Free camera';
+  }
+
+  _removeFreeCamButton() {
+    if (this._freeCamButton && this._freeCamButton.parentNode) {
+      this._freeCamButton.parentNode.removeChild(this._freeCamButton);
+    }
+    this._freeCamButton = null;
   }
 
   // ========================================

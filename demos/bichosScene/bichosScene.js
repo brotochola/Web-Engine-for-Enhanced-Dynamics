@@ -23,7 +23,6 @@ import { DropAk47 } from '/demos/predatorScene/gameObjects/dropAk47.js';
 import { DropShotgun } from '/demos/predatorScene/gameObjects/dropShotgun.js';
 import { DropPistol } from '/demos/predatorScene/gameObjects/dropPistol.js';
 import { Civilian } from '/demos/predatorScene/gameObjects/civilian.js';
-import { CameraController } from '/demos/predatorScene/gameObjects/cameraController.js';
 import { Trash } from '/demos/predatorScene/gameObjects/trash.js';
 import { Bug } from './gameObjects/bug.js';
 
@@ -185,7 +184,6 @@ export class BichosScene extends WEED.Scene {
     [Explosion, 100],
     [Destination, 1],
     [Bug, 10000],
-    // [CameraController, 1],
     // [Trash, 100]
     // Grass now uses Decoration instead of GameObject
   ];
