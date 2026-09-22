@@ -80,15 +80,19 @@ import {
   ColliderFillBatch,
   packColliderFill,
   packColliderFillPoseOnly,
+  packColliderFillPoseOnlyEntities,
+  buildMeshInstanceRanges,
   colliderFillCanSkipPack,
   copyMeshFillPoseScratch,
   clearMeshFillPaintDirty,
   meshFillPresenceChanged,
+  meshFillPaintDirty,
   COLLIDER_FILL_PACK_FIRST_FRAME,
 } from '../render/colliderFillBatch.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
+import { readStableMoved } from '../box2d/box2dMovedBodies.js';
 
 function finiteOrZero(n) {
   return Number.isFinite(n) ? n : 0;
@@ -5623,16 +5627,64 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             rev === (skip.lastRevision | 0) &&
             skip.lastRevision !== COLLIDER_FILL_PACK_FIRST_FRAME &&
             !meshFillPresenceChanged(views, skip.prevPose);
-          const packed = canPoseOnly
-            ? packColliderFillPoseOnly(
-              cl.fillBatch.data,
-              cap,
-              lastPacked,
+          const packMoved = this.config?.renderer?.packMovedMeshes === true;
+          let packed = 0;
+          let usedMoved = false;
+          if (canPoseOnly && packMoved && !meshFillPaintDirty(views)) {
+            const entityN = views.entityCount | 0;
+            if (!skip.movedScratch || skip.movedScratch.length < entityN) {
+              skip.movedScratch = new Uint32Array(entityN);
+            }
+            const stable = readStableMoved(skip.movedScratch);
+            if (
+              stable &&
+              stable.poseStamp > 0 &&
+              stable.count > 0 &&
+              stable.count * 2 < (skip.rangedEntities | 0) &&
+              skip.rangesReady
+            ) {
+              packColliderFillPoseOnlyEntities(
+                cl.fillBatch.data,
+                cap,
+                skip.movedScratch,
+                stable.count,
+                skip.instanceStart,
+                skip.instanceCount,
+                views,
+              );
+              packed = lastPacked;
+              usedMoved = true;
+            }
+          }
+          if (!usedMoved) {
+            packed = canPoseOnly
+              ? packColliderFillPoseOnly(
+                cl.fillBatch.data,
+                cap,
+                lastPacked,
+                skip.instanceEntity,
+                views,
+              )
+              : packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
+          }
+          if (!canPoseOnly) {
+            skip.localsReady = packed > 0;
+            const entityN = views.entityCount | 0;
+            if (!skip.instanceStart || skip.instanceStart.length < entityN) {
+              skip.instanceStart = new Uint32Array(entityN);
+              skip.instanceCount = new Uint32Array(entityN);
+            }
+            skip.rangesReady = buildMeshInstanceRanges(
               skip.instanceEntity,
-              views,
-            )
-            : packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
-          if (!canPoseOnly) skip.localsReady = packed > 0;
+              packed,
+              skip.instanceStart,
+              skip.instanceCount,
+            );
+            let ranged = 0;
+            const ic = skip.instanceCount;
+            for (let ei = 0; ei < entityN; ei++) if (ic[ei]) ranged++;
+            skip.rangedEntities = ranged;
+          }
           cl.fillBatch.upload(packed);
           cl.prevCount = packed;
           copyMeshFillPoseScratch(views, skip.prevPose);

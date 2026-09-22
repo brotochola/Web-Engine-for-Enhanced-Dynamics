@@ -36,12 +36,14 @@ export const _cellRangeResult = { minCol: 0, maxCol: 0, minRow: 0, maxRow: 0 };
  * @param {Object} result - Result object to mutate {posX, posY, halfW, halfH}
  * @returns {Object} The result object
  */
-export function getColliderBounds(idx, result) {
+export function getColliderBounds(idx, result, pose) {
   const shape = Collider.shapeType[idx];
   const ox = Collider.offsetX[idx] || 0;
   const oy = Collider.offsetY[idx] || 0;
-  const tx = Transform.x[idx];
-  const ty = Transform.y[idx];
+  const tx = pose ? pose.x[idx] : Transform.x[idx];
+  const ty = pose ? pose.y[idx] : Transform.y[idx];
+  const rotC = pose ? pose.rotC : Transform.rotC;
+  const rotS = pose ? pose.rotS : Transform.rotS;
 
   if (shape === SHAPE_CIRCLE) {
     result.posX = tx + ox;
@@ -50,8 +52,8 @@ export function getColliderBounds(idx, result) {
     result.halfW = r;
     result.halfH = r;
   } else if (shape === SHAPE_POLYGON) {
-    const c = Transform.rotC ? Transform.rotC[idx] : 1;
-    const s = Transform.rotS ? Transform.rotS[idx] : 0;
+    const c = rotC ? rotC[idx] : 1;
+    const s = rotS ? rotS[idx] : 0;
     const originX = tx + c * ox - s * oy;
     const originY = ty + s * ox + c * oy;
 
@@ -110,8 +112,8 @@ export function getColliderBounds(idx, result) {
     }
   } else {
     // Box — world AABB of oriented width×height (Box2D rotates boxes)
-    const c = Transform.rotC ? Transform.rotC[idx] : 1;
-    const s = Transform.rotS ? Transform.rotS[idx] : 0;
+    const c = rotC ? rotC[idx] : 1;
+    const s = rotS ? rotS[idx] : 0;
     result.posX = tx + c * ox - s * oy;
     result.posY = ty + s * ox + c * oy;
     const hw = (Collider.width[idx] || 0) * 0.5;

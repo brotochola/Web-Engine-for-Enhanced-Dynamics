@@ -113,6 +113,10 @@ export const PHYSICS_STATS = Object.freeze({
   COUNTER_ISLANDS: 33,
   COUNTER_AWAKE_CONTACTS: 34,
   COUNTER_TREE_HEIGHT: 35,
+  /** Cumulative pose publishes skipped because pre-render still holds the slot. */
+  POSE_SKIP_TOTAL: 45,
+  /** Cumulative pose publish attempts (skip + success). */
+  POSE_PUBLISH_TOTAL: 46,
   /** Wall ms of lfParticleSystem_Step + pose deinterleave inside step_world. */
   LIQUIDFUN_MS: 36,
   LF_PASS_GRID_MS: 37,
@@ -142,6 +146,12 @@ export const SPATIAL_STATS = Object.freeze({
   NEIGHBORS_REUSED: 7,
   STEP_MS: 8,
   SLEEP_NEIGHBOR_SKIPS: 9,
+  /** Grid actives with a sprite and neither RigidBody nor Collider (no Box2D body). */
+  NO_BODY_COUNT: 10,
+  /** Frames that applied the mover incremental grid (diagnostic). */
+  INCREMENTAL_FRAMES: 11,
+  /** Frames that skipped neighbor search because nothing was dirty. */
+  IDLE_NEIGHBOR_SKIPS: 12,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });

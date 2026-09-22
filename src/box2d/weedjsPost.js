@@ -156,6 +156,14 @@
   let poseBuffers = [null, null]; // { x, y, rotC, rotS } Float32Array views
   let poseCapacity = 0;
   let poseFrame = 0;
+  let posePublishTotal = 0;
+  let poseSkipTotal = 0;
+  let poseMoversOnly = false;
+  let poseSeeded = false;
+  let lastMovedScratch = null;
+  let lastMovedCount = 0;
+  /** Pose frame stored with this step's mover publish. -1 = publish skipped. */
+  let lastPoseStamp = -1;
 
   // Mirrors PHYSICS_STATS in src/util/workersUtils.js (nested classic worker — no ESM import).
   const PS = {
@@ -192,6 +200,8 @@
     COUNTER_ISLANDS: 33,
     COUNTER_AWAKE_CONTACTS: 34,
     COUNTER_TREE_HEIGHT: 35,
+    POSE_SKIP_TOTAL: 45,
+    POSE_PUBLISH_TOTAL: 46,
     LIQUIDFUN_MS: 36,
     LF_PASS_GRID_MS: 37,
     LF_PASS_FIND_CONTACTS_MS: 38,
@@ -431,9 +441,40 @@
     }
   }
 
+  function copyPoseIds(list, n, x, y, rotC, rotS, outX, outY, outC, outS) {
+    const count = n | 0;
+    if (!list || count <= 0) return;
+    for (let k = 0; k < count; k++) {
+      const i = list[k] | 0;
+      outX[i] = x[i];
+      outY[i] = y[i];
+      outC[i] = rotC[i];
+      outS[i] = rotS[i];
+    }
+  }
+
+  function snapshotSlots(list, n) {
+    const count = n | 0;
+    if (!views.px || !list || count <= 0) return;
+    const x = views.x;
+    const y = views.y;
+    const px = views.px;
+    const py = views.py;
+    for (let k = 0; k < count; k++) {
+      const i = list[k] | 0;
+      px[i] = x[i];
+      py[i] = y[i];
+    }
+  }
+
   /** Snapshot prev pose before world.step. Live bodies only (denseList). */
   function snapshotPrevPose(entityCount) {
     if (!views.px) return;
+    if (poseMoversOnly && poseSeeded && denseList) {
+      snapshotSlots(lastMovedScratch, lastMovedCount);
+      snapshotSlots(pendingTeleportList, pendingTeleportCount);
+      return;
+    }
     const list = denseList;
     const x = views.x;
     const y = views.y;
@@ -475,13 +516,43 @@
     const outS = buf.rotS;
     const list = denseList;
     const n = denseCount;
-    for (let d = 0; d < n; d++) {
-      const i = list[d];
-      outX[i] = x[i];
-      outY[i] = y[i];
-      outC[i] = rotC[i];
-      outS[i] = rotS[i];
+    if (poseMoversOnly && poseSeeded && world) {
+      const wasmN =
+        typeof world._getBodyMoveCount === 'function' ? world._getBodyMoveCount() | 0 : 0;
+      copyPoseIds(
+        world._bodyMoved,
+        wasmN,
+        x,
+        y,
+        rotC,
+        rotS,
+        outX,
+        outY,
+        outC,
+        outS,
+      );
+      copyPoseIds(
+        pendingTeleportList,
+        pendingTeleportCount,
+        x,
+        y,
+        rotC,
+        rotS,
+        outX,
+        outY,
+        outC,
+        outS,
+      );
+    } else {
+      for (let d = 0; d < n; d++) {
+        const i = list[d];
+        outX[i] = x[i];
+        outY[i] = y[i];
+        outC[i] = rotC[i];
+        outS[i] = rotS[i];
+      }
     }
+    poseSeeded = true;
     poseFrame++;
     Atomics.store(poseSync, 0, poseFrame);
     Atomics.notify(poseSync, 0, 1);
@@ -497,9 +568,23 @@
     return poseFrame > Atomics.load(poseSync, 1);
   }
 
+  function notePosePublishStats() {
+    if (!statsF32) return;
+    statsF32[PS.POSE_SKIP_TOTAL] = poseSkipTotal;
+    statsF32[PS.POSE_PUBLISH_TOTAL] = posePublishTotal;
+  }
+
   function maybePublishPose(entityCount) {
-    if (posePublishBlocked()) return;
+    posePublishTotal++;
+    if (posePublishBlocked()) {
+      poseSkipTotal++;
+      lastPoseStamp = -1;
+      notePosePublishStats();
+      return;
+    }
     publishPose(entityCount);
+    lastPoseStamp = poseFrame;
+    notePosePublishStats();
   }
 
   function isFixedRotation(i) {
@@ -822,6 +907,7 @@
         addDenseBody(i);
         created = true;
         changes++;
+        markTeleportMoved(i);
         const sleepThreshold = views.sleepThreshold ? views.sleepThreshold[i] : 0;
         if (sleepThreshold > 0) {
           bodySetSleepThresholdFn(i, sleepThreshold);
@@ -848,6 +934,9 @@
     // created===true, so multi-fixture islands stayed shapeless until a later remesh.
     if (hasBody[i] && flags !== BODY_DIRTY.LIFECYCLE) {
       syncBodyProperties(i, flags);
+    }
+    if (hasBody[i] && flags & BODY_DIRTY.GEOMETRY) {
+      markTeleportMoved(i);
     }
     return changes;
   }
@@ -2115,13 +2204,34 @@
       pendingTeleportList,
       pendingTeleportCount,
       pendingTeleportBits,
+      lastPoseStamp,
     );
+    rememberMovedForNextSnapshot();
     if (pendingTeleportCount > 0 && pendingTeleportBits) {
       for (let i = 0; i < pendingTeleportCount; i++) {
         pendingTeleportBits[pendingTeleportList[i]] = 0;
       }
       pendingTeleportCount = 0;
     }
+  }
+
+  function rememberMovedForNextSnapshot() {
+    if (!poseMoversOnly) return;
+    const v =
+      typeof Box2dMovedBodies !== 'undefined' && Box2dMovedBodies.getMovedBodiesViews
+        ? Box2dMovedBodies.getMovedBodiesViews()
+        : null;
+    if (!v || !v.movedList) {
+      lastMovedCount = 0;
+      return;
+    }
+    const n = v.count | 0;
+    if (!lastMovedScratch || lastMovedScratch.length < n) {
+      lastMovedScratch = new Uint32Array(Math.max(n, 64));
+    }
+    const src = v.movedList;
+    for (let i = 0; i < n; i++) lastMovedScratch[i] = src[i];
+    lastMovedCount = n;
   }
 
   function writePhysicsStats(
@@ -2596,6 +2706,7 @@
       statsF32 = null;
     }
     collectDetailedStats = !!data.collectDetailedStats;
+    poseMoversOnly = !!data.poseMoversOnly;
     const entityCount = data.entityCount | 0;
     hasBody = new Uint8Array(entityCount);
     createFailed = new Uint8Array(entityCount);
@@ -2688,6 +2799,9 @@
     }
     if (data.publishContactRing !== undefined) {
       publishContactRing = data.publishContactRing !== false;
+    }
+    if (data.poseMoversOnly !== undefined) {
+      poseMoversOnly = data.poseMoversOnly === true;
     }
   }
 

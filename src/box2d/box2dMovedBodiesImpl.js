@@ -3,7 +3,12 @@
 // Consumers: spatial (dirty rebuild), later anything needing movers.
 //
 // Layout:
-//   Int32 header[4]: generation, count, entityCapacity, reserved
+//   Int32 header[4]: generation, count, entityCapacity, poseStamp
+//   poseStamp: poseSync frame that matches this list, or -1 if that publish was skipped.
+//   generation is even while the list is stable. publishMovedBodies makes it odd
+//   only while rewriting the list (the tear window), then even again. It is NOT
+//   held odd across world.step: readers use the pose double-buffer, which stays
+//   stable for the whole next step, and reject an odd generation.
 //   Uint32 movedList[entityCapacity]
 //   Uint8  movedBits[entityCapacity]
 //   Uint8  fellAsleep[entityCapacity]  (parallel to list indices, not bits)
@@ -12,6 +17,7 @@
   var HDR_GEN = 0;
   var HDR_COUNT = 1;
   var HDR_CAP = 2;
+  var HDR_POSE = 3;
   var HDR_I32 = 4;
 
   var movedSab = null;
@@ -34,6 +40,7 @@
     Atomics.store(i32, HDR_GEN, 0);
     Atomics.store(i32, HDR_COUNT, 0);
     Atomics.store(i32, HDR_CAP, cap);
+    Atomics.store(i32, HDR_POSE, -1);
     return sab;
   }
 
@@ -99,6 +106,7 @@
    * @param {Uint32Array|null} teleportList
    * @param {number} teleportCount
    * @param {Uint8Array|null} teleportBits unused (reserved; skip-dup uses movedBits)
+   * @param {number} [poseStamp] poseSync frame for this list, or -1 if pose publish skipped
    */
   function publishMovedBodies(
     wasmSlots,
@@ -107,8 +115,11 @@
     teleportList,
     teleportCount,
     teleportBits,
+    poseStamp,
   ) {
     if (!hdrI32 || !movedList || !movedBits) return 0;
+    var gen = Atomics.load(hdrI32, HDR_GEN) | 0;
+    if ((gen & 1) === 0) Atomics.add(hdrI32, HDR_GEN, 1);
     var cap = entityCapacity;
     movedBits.fill(0);
     if (fellAsleep) fellAsleep.fill(0);
@@ -145,20 +156,46 @@
     }
 
     Atomics.store(hdrI32, HDR_COUNT, count);
+    Atomics.store(hdrI32, HDR_POSE, poseStamp | 0);
     Atomics.add(hdrI32, HDR_GEN, 1);
     return count;
+  }
+
+  /**
+   * Copy the stable mover list. Returns null while a publish is rewriting it
+   * (odd generation) or if the generation changes mid-copy.
+   * @param {Uint32Array} scratchList
+   */
+  function readStableMoved(scratchList) {
+    if (!hdrI32 || !movedList || !scratchList) return null;
+    var g1 = Atomics.load(hdrI32, HDR_GEN) | 0;
+    if (g1 & 1) return null;
+    var count = Atomics.load(hdrI32, HDR_COUNT) | 0;
+    var poseStamp = Atomics.load(hdrI32, HDR_POSE) | 0;
+    if (count < 0) count = 0;
+    if (count > scratchList.length) count = scratchList.length;
+    for (var i = 0; i < count; i++) scratchList[i] = movedList[i];
+    var g2 = Atomics.load(hdrI32, HDR_GEN) | 0;
+    if (g1 !== g2 || (g2 & 1)) return null;
+    return {
+      generation: g2,
+      count: count,
+      poseStamp: poseStamp,
+    };
   }
 
   var api = {
     HDR_GEN: HDR_GEN,
     HDR_COUNT: HDR_COUNT,
     HDR_CAP: HDR_CAP,
+    HDR_POSE: HDR_POSE,
     createMovedBodiesSab: createMovedBodiesSab,
     bindMovedBodies: bindMovedBodies,
     isMovedBodiesBound: isMovedBodiesBound,
     getMovedBodiesViews: getMovedBodiesViews,
     viewsFromSab: viewsFromSab,
     publishMovedBodies: publishMovedBodies,
+    readStableMoved: readStableMoved,
   };
 
   global.Box2dMovedBodies = api;
@@ -167,4 +204,5 @@
   global.isMovedBodiesBound = isMovedBodiesBound;
   global.getMovedBodiesViews = getMovedBodiesViews;
   global.publishMovedBodies = publishMovedBodies;
+  global.readStableMoved = readStableMoved;
 })(typeof globalThis !== 'undefined' ? globalThis : self);
