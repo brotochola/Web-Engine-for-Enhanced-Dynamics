@@ -1495,6 +1495,7 @@ export class GameObject {
 
     // Mark as animated
     this.spriteRenderer.isAnimated = 1;
+    this.spriteRenderer.renderVisible = 1;
 
     SpriteRenderer.updateBounds(this.index);
     this.markDirty();
@@ -2486,7 +2487,8 @@ export class GameObject {
       SpriteRenderer.tileMode[i] = 0;
       SpriteRenderer.tileOffsetU[i] = 0;
       SpriteRenderer.tileOffsetV[i] = 0;
-      SpriteRenderer.renderVisible[i] = 1;
+      // Invisible until setSprite (avoids sheetId=0 / anim=255 in queue with stale lastTexture).
+      SpriteRenderer.renderVisible[i] = 0;
       SpriteRenderer.isItOnScreen[i] = 0;
       SpriteRenderer.animationState[i] = -1;
       SpriteRenderer.spritesheetId[i] = 0;

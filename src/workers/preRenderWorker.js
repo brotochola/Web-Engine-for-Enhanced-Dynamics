@@ -408,6 +408,115 @@ class PreRenderWorker extends AbstractWorker {
         console.warn(message);
     }
 
+    /** Deduped warn for missing anim / texture resolution (avoids per-frame spam). */
+    _warnMissingTexture(key, message) {
+        if (!this._missingTextureWarns) this._missingTextureWarns = new Set();
+        if (this._missingTextureWarns.has(key)) return;
+        this._missingTextureWarns.add(key);
+        console.warn(message);
+    }
+
+    /**
+     * Resolve animationFrameStart[animIdx], or INVALID + warn.
+     * @param {number} animIdx
+     * @param {string} label
+     * @returns {number}
+     */
+    _resolveAnimFrameStart(animIdx, label) {
+        if (animIdx === undefined || animIdx === null || animIdx < 0) {
+            this._warnMissingTexture(
+                `anim:${label}`,
+                `[PRE_RENDER] missing animation "${label}" (animIdx=${animIdx})`
+            );
+            return INVALID_TEXTURE_ID;
+        }
+        const start = this.animationFrameStart?.[animIdx];
+        if (start === undefined || start === null) {
+            this._warnMissingTexture(
+                `frameStart:${label}:${animIdx}`,
+                `[PRE_RENDER] animationFrameStart missing for "${label}" (animIdx=${animIdx})`
+            );
+            return INVALID_TEXTURE_ID;
+        }
+        return start | 0;
+    }
+
+    /**
+     * Look up builtin anim by name → first frame texture id, or INVALID + warn.
+     * @param {string} name
+     * @returns {number}
+     */
+    _resolveBuiltinTextureId(name) {
+        const map = this.animationNameToIndex;
+        if (!map || map[name] === undefined) {
+            this._warnMissingTexture(
+                `name:${name}`,
+                `[PRE_RENDER] animationNameToIndex missing "${name}"`
+            );
+            return INVALID_TEXTURE_ID;
+        }
+        return this._resolveAnimFrameStart(map[name], name);
+    }
+
+    /**
+     * Resolve sprite texture for an entity (emit-equivalent). Used when
+     * entityLastTextureId is still INVALID (sharded shadows run before emit).
+     * Writes the cache on success. Warns only if resolution fails.
+     * @param {number} idx
+     * @returns {number}
+     */
+    _resolveEntitySpriteTextureId(idx) {
+        const i = idx | 0;
+        if (!SpriteRenderer.active || !SpriteRenderer.active[i]) {
+            this._warnMissingTexture(
+                `entitySprite:${i}:inactive`,
+                `[PRE_RENDER] entity=${i} has no active SpriteRenderer; cannot resolve texture`
+            );
+            return INVALID_TEXTURE_ID;
+        }
+        const sheetId = SpriteRenderer.spritesheetId[i];
+        const animState = SpriteRenderer.animationState[i];
+        const proxyMap = this.proxyToGlobalAnim?.[sheetId];
+        const globalAnimIdx = proxyMap?.[animState];
+        if (globalAnimIdx === undefined) {
+            this._warnMissingTexture(
+                `entitySprite:${sheetId}:${animState}`,
+                `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${i}`
+            );
+            if (this.entityLastTextureId) this.entityLastTextureId[i] = INVALID_TEXTURE_ID;
+            return INVALID_TEXTURE_ID;
+        }
+        const animStart = this.animationFrameStart?.[globalAnimIdx];
+        if (animStart === undefined || animStart === null) {
+            this._warnMissingTexture(
+                `animStart:${globalAnimIdx}`,
+                `[PRE_RENDER] animationFrameStart missing for globalAnimIdx=${globalAnimIdx} entity=${i}`
+            );
+            return INVALID_TEXTURE_ID;
+        }
+        const frameIndex = this.entityFrameIndex;
+        let frame = frameIndex ? (frameIndex[i] | 0) : 0;
+        const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+        if (frame < 0 || frame >= animFrameCount) frame = 0;
+        const textureId = (animStart | 0) + frame;
+        if (this.entityLastTextureId) this.entityLastTextureId[i] = textureId;
+        return textureId;
+    }
+
+    /**
+     * Cached texture or resolve-on-cold. No warn for cold cache alone.
+     * @param {number} idx
+     * @returns {number}
+     */
+    _entityTextureIdOrResolve(idx) {
+        const last = this.entityLastTextureId;
+        let textureId = last ? last[idx | 0] : INVALID_TEXTURE_ID;
+        if (textureId === INVALID_TEXTURE_ID) {
+            textureId = this._resolveEntitySpriteTextureId(idx);
+        }
+        return textureId;
+    }
+
     /**
      * Initialize the pre-render worker
      */
@@ -1833,7 +1942,7 @@ class PreRenderWorker extends AbstractWorker {
         if (!renderVisibleI) this._displayPose(i, pose);
         const casterX = pose.x;
         const casterY = pose.y;
-        const textureId = this.entityLastTextureId ? this.entityLastTextureId[i] : INVALID_TEXTURE_ID;
+        const textureId = this._entityTextureIdOrResolve(i);
         if (textureId === INVALID_TEXTURE_ID) return;
         const entityScaleY = Math.abs(s.spriteScaleY[i]) || 1;
         const anchorX = s.spriteAnchorX[i] ?? 0.5;
@@ -1902,19 +2011,19 @@ class PreRenderWorker extends AbstractWorker {
             iterSource = this._ownedSpriteIter;
             iterBase = 0;
         } else {
-        const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
-        if (spriteEntities && spriteEntities.length > 0) {
-            iterCount = spriteEntities.length;
-            iterSource = spriteEntities;
-            iterBase = 0;
-        } else {
-            // Do not walk live activeEntitiesData — logic0 may be mid-merge
-            // with count=1. Empty published query falls back to a full scan
-            // (inactive slots skip). create() drain publishes before start.
-            iterCount = this.globalEntityCount;
-            iterSource = null;
-            iterBase = 0;
-        }
+            const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
+            if (spriteEntities && spriteEntities.length > 0) {
+                iterCount = spriteEntities.length;
+                iterSource = spriteEntities;
+                iterBase = 0;
+            } else {
+                // Do not walk live activeEntitiesData — logic0 may be mid-merge
+                // with count=1. Empty published query falls back to a full scan
+                // (inactive slots skip). create() drain publishes before start.
+                iterCount = this.globalEntityCount;
+                iterSource = null;
+                iterBase = 0;
+            }
         }
 
         // Sun shadows (fused): write during same pass when enabled
@@ -2844,10 +2953,8 @@ class PreRenderWorker extends AbstractWorker {
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const glowHeightOffset = LightEmitter.glowHeightOffset;
-        const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
-        const lightGradientTextureId = this.animationFrameStart?.[lightGradientAnimIdx] ?? 0;
-        const whiteCircleAnimIdx = this.animationNameToIndex?.['_whiteCircle'] ?? -1;
-        const whiteCircleTextureId = whiteCircleAnimIdx >= 0 ? (this.animationFrameStart?.[whiteCircleAnimIdx] ?? INVALID_TEXTURE_ID) : INVALID_TEXTURE_ID;
+        const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
+        const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
 
         const decoX = DecorationComponent.x;
         const decoY = DecorationComponent.y;
@@ -2881,8 +2988,7 @@ class PreRenderWorker extends AbstractWorker {
         const bulletAnchorY = BulletComponent.anchorY;
         const bulletActive = BulletComponent.active;
 
-        const bulletTrailAnimIdx = this.animationNameToIndex?.['_bulletTrail'] ?? 0;
-        const bulletTrailTextureId = this.animationFrameStart?.[bulletTrailAnimIdx] ?? 0;
+        const bulletTrailTextureId = this._resolveBuiltinTextureId('_bulletTrail');
         const BULLET_TRAIL_MIN_LENGTH_SQ = 0.01;
 
         const frameIndex = this.entityFrameIndex;
@@ -3015,15 +3121,29 @@ class PreRenderWorker extends AbstractWorker {
                         }
                     }
 
-                    const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
-                    const globalTextureId = animStart + frameIndex[idx];
-                    rqTextureId[out] = globalTextureId;
+                    const animStart = this.animationFrameStart?.[globalAnimIdx];
+                    if (animStart === undefined) {
+                        this._warnMissingTexture(
+                            `animStart:${globalAnimIdx}`,
+                            `[PRE_RENDER] animationFrameStart missing for globalAnimIdx=${globalAnimIdx} entity=${idx}`
+                        );
+                        rqTextureId[out] = INVALID_TEXTURE_ID;
+                    } else {
+                        const globalTextureId = animStart + frameIndex[idx];
+                        rqTextureId[out] = globalTextureId;
 
-                    if (entityLastTextureId) {
-                        entityLastTextureId[idx] = globalTextureId;
+                        if (entityLastTextureId) {
+                            entityLastTextureId[idx] = globalTextureId;
+                        }
                     }
                 } else {
-                    rqTextureId[out] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
+                    // Never reuse stale lastTextureId (pool recycle / spawn before setSprite).
+                    this._warnMissingTexture(
+                        `sprite:${sheetId}:${animState}`,
+                        `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
+                    );
+                    if (entityLastTextureId) entityLastTextureId[idx] = INVALID_TEXTURE_ID;
+                    rqTextureId[out] = INVALID_TEXTURE_ID;
                 }
             } else if (type === 1) {
                 // === PARTICLE ===
@@ -3059,7 +3179,7 @@ class PreRenderWorker extends AbstractWorker {
                 const pAnimIdx = particleTextureId[idx];
                 rqTextureId[out] = pAnimIdx === 0
                     ? whiteCircleTextureId
-                    : (this.animationFrameStart?.[pAnimIdx] ?? INVALID_TEXTURE_ID);
+                    : this._resolveAnimFrameStart(pAnimIdx, `particle:${pAnimIdx}`);
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
                 rqType[out] = 1;
@@ -3088,7 +3208,7 @@ class PreRenderWorker extends AbstractWorker {
                 const lfAnimIdx = lf.textureId[idx];
                 rqTextureId[out] = lfAnimIdx === 0
                     ? whiteCircleTextureId
-                    : (this.animationFrameStart?.[lfAnimIdx] ?? INVALID_TEXTURE_ID);
+                    : this._resolveAnimFrameStart(lfAnimIdx, `liquidFun:${lfAnimIdx}`);
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
                 rqType[out] = 1;
@@ -3103,7 +3223,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqAlpha[out] = decoAlpha[idx] * this._decorationZoomAlpha;
                 rqTint[out] = decoTint[idx];
                 const dAnimIdx = decoTextureId[idx];
-                rqTextureId[out] = this.animationFrameStart?.[dAnimIdx] ?? INVALID_TEXTURE_ID;
+                rqTextureId[out] = this._resolveAnimFrameStart(dAnimIdx, `decoration:${dAnimIdx}`);
                 rqAnchorX[out] = decoAnchorX[idx];
                 rqAnchorY[out] = decoAnchorY[idx];
                 rqType[out] = 2;
@@ -3125,7 +3245,7 @@ class PreRenderWorker extends AbstractWorker {
                     rqAlpha[out] = bulletAlpha[idx];
                     rqTint[out] = bulletTint[idx];
                     const bAnimIdx = bulletTextureId[idx];
-                    rqTextureId[out] = this.animationFrameStart?.[bAnimIdx] ?? INVALID_TEXTURE_ID;
+                    rqTextureId[out] = this._resolveAnimFrameStart(bAnimIdx, `bullet:${bAnimIdx}`);
                     rqAnchorX[out] = bulletAnchorX[idx];
                     rqAnchorY[out] = bulletAnchorY[idx];
                 }
@@ -3303,8 +3423,7 @@ class PreRenderWorker extends AbstractWorker {
         const bulletAnchorY = BulletComponent.anchorY;
         const bulletActive = BulletComponent.active;
 
-        const bulletTrailAnimIdx = this.animationNameToIndex?.['_bulletTrail'] ?? 0;
-        const bulletTrailTextureId = this.animationFrameStart?.[bulletTrailAnimIdx] ?? 0;
+        const bulletTrailTextureId = this._resolveBuiltinTextureId('_bulletTrail');
         const BULLET_TRAIL_MIN_LENGTH_SQ = 0.01;
 
         // Light glow arrays
@@ -3312,10 +3431,8 @@ class PreRenderWorker extends AbstractWorker {
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const glowHeightOffset = LightEmitter.glowHeightOffset;
-        const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
-        const lightGradientTextureId = this.animationFrameStart?.[lightGradientAnimIdx] ?? 0;
-        const whiteCircleAnimIdx2 = this.animationNameToIndex?.['_whiteCircle'] ?? -1;
-        const whiteCircleTextureId2 = whiteCircleAnimIdx2 >= 0 ? (this.animationFrameStart?.[whiteCircleAnimIdx2] ?? INVALID_TEXTURE_ID) : INVALID_TEXTURE_ID;
+        const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
+        const whiteCircleTextureId2 = this._resolveBuiltinTextureId('_whiteCircle');
 
         const layerEntries = this._customLayerEntries;
         for (let li = 0; li < layerEntries.length; li++) {
@@ -3463,12 +3580,26 @@ class PreRenderWorker extends AbstractWorker {
                             }
                         }
 
-                        const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
-                        const globalTextureId = animStart + frameIndex[idx];
-                        rqTextureId[out] = globalTextureId;
-                        if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
+                        const animStart = this.animationFrameStart?.[globalAnimIdx];
+                        if (animStart === undefined) {
+                            this._warnMissingTexture(
+                                `animStart:${globalAnimIdx}`,
+                                `[PRE_RENDER] animationFrameStart missing for globalAnimIdx=${globalAnimIdx} entity=${idx}`
+                            );
+                            rqTextureId[out] = INVALID_TEXTURE_ID;
+                        } else {
+                            const globalTextureId = animStart + frameIndex[idx];
+                            rqTextureId[out] = globalTextureId;
+                            if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
+                        }
                     } else {
-                        rqTextureId[out] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
+                        // Never reuse stale lastTextureId (pool recycle / spawn before setSprite).
+                        this._warnMissingTexture(
+                            `sprite:${sheetId}:${animState}`,
+                            `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
+                        );
+                        if (entityLastTextureId) entityLastTextureId[idx] = INVALID_TEXTURE_ID;
+                        rqTextureId[out] = INVALID_TEXTURE_ID;
                     }
 
                 } else if (type === 1) {
@@ -3505,7 +3636,7 @@ class PreRenderWorker extends AbstractWorker {
                     const pAnimIdx = particleTextureId[idx];
                     rqTextureId[out] = pAnimIdx === 0
                         ? whiteCircleTextureId2
-                        : (this.animationFrameStart?.[pAnimIdx] ?? INVALID_TEXTURE_ID);
+                        : this._resolveAnimFrameStart(pAnimIdx, `particle:${pAnimIdx}`);
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
                     rqType[out] = 1;
@@ -3534,7 +3665,7 @@ class PreRenderWorker extends AbstractWorker {
                     const lfAnimIdx = lf.textureId[idx];
                     rqTextureId[out] = lfAnimIdx === 0
                         ? whiteCircleTextureId2
-                        : (this.animationFrameStart?.[lfAnimIdx] ?? INVALID_TEXTURE_ID);
+                        : this._resolveAnimFrameStart(lfAnimIdx, `liquidFun:${lfAnimIdx}`);
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
                     rqType[out] = 1;
@@ -3551,7 +3682,10 @@ class PreRenderWorker extends AbstractWorker {
                     rqAlpha[out] = decoAlpha[idx] * this._decorationZoomAlpha;
                     rqTint[out] = decoTint[idx];
                     const dAnimIdx = decoTextureId[idx];
-                    rqTextureId[out] = this.animationFrameStart?.[dAnimIdx] ?? INVALID_TEXTURE_ID;
+                    rqTextureId[out] = this._resolveAnimFrameStart(dAnimIdx, `decoration:${dAnimIdx}`);
+                    rqAnchorX[out] = decoAnchorX[idx];
+                    rqAnchorY[out] = decoAnchorY[idx];
+                    rqType[out] = 2;
                     rqAnchorX[out] = decoAnchorX[idx];
                     rqAnchorY[out] = decoAnchorY[idx];
                     rqType[out] = 2;
@@ -3598,7 +3732,7 @@ class PreRenderWorker extends AbstractWorker {
                         rqAlpha[out] = bulletAlpha[idx];
                         rqTint[out] = bulletTint[idx];
                         const bAnimIdx = bulletTextureId[idx];
-                        rqTextureId[out] = this.animationFrameStart?.[bAnimIdx] ?? INVALID_TEXTURE_ID;
+                        rqTextureId[out] = this._resolveAnimFrameStart(bAnimIdx, `bullet:${bAnimIdx}`);
                         rqAnchorX[out] = bulletAnchorX[idx];
                         rqAnchorY[out] = bulletAnchorY[idx];
                     }
@@ -3839,8 +3973,7 @@ class PreRenderWorker extends AbstractWorker {
 
         const entityLastTextureId = this.entityLastTextureId;
 
-        const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
-        const lightGradientTextureId = this.animationFrameStart?.[lightGradientAnimIdx] ?? 0;
+        const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
 
         let lightsProcessed = 0;
         const maxItems = this.maxShadowRenderItems;
@@ -4021,7 +4154,10 @@ class PreRenderWorker extends AbstractWorker {
 
                 const casterX = pose.x;
                 const casterY = pose.y;
-                const textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : INVALID_TEXTURE_ID;
+                let textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : INVALID_TEXTURE_ID;
+                if (textureId === INVALID_TEXTURE_ID) {
+                    textureId = this._resolveEntitySpriteTextureId(neighborIdx);
+                }
                 if (textureId === INVALID_TEXTURE_ID) continue;
 
                 const entityScaleY = Math.abs(spriteScaleY[neighborIdx]) || 1;
@@ -4299,7 +4435,10 @@ class PreRenderWorker extends AbstractWorker {
                         selfLitF32[i32Off + 4] = c;
                         selfLitF32[i32Off + 5] = s;
                         const u16Off = byteOff >> 1;
-                        const texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
+                        let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
+                        if (texId === INVALID_TEXTURE_ID) {
+                            texId = this._resolveEntitySpriteTextureId(nIdx);
+                        }
                         selfLitU16[u16Off + 12] = texId; // after 6×i32/f32 = 24 bytes
                         selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
                         selfLitU8[byteOff + 27] = 0;

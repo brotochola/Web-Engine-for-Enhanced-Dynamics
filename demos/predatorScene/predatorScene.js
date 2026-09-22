@@ -128,11 +128,29 @@ export class PredatorScene extends WEED.Scene {
       startFadingDecorationsAtZoom: 0.5,
       hideDecorationsAtZoom: 0.25,
       autoGenerateMipmaps: false,
+      interpolation: false,
+      painterSort: 'off',
     },
     preRender: {
       noLimitFPS: false,
       entityBlockSize: 512,
       numberOfPreRenderWorkers: 2,
+      backpressure: true,
+      /**
+       * Skip entity viewport AABB and screenX/Y. Every active renderVisible
+       * sprite (and adobe) is queued; CameraInOutListener / isOnScreen treat
+       * them as on camera. Off-screen worlds grow RENDER_QUEUE_SIZE and pixi.
+       * Particles, decorations, bullets, lights, and shadow gather still cull.
+       * Default false — opt-in when the world is the viewport (bunny mark).
+       */
+      skipCull: false,
+      /**
+       * Blend the last two published physics poses while packing the render queue.
+       * true lags display by up to one physics frame. Does not guess ahead
+       * (no extrapolation). Bunny-style scenes leave this false and use
+       * renderer.interpolation instead.
+       */
+      interpolation: false,
     },
 
     lighting: {

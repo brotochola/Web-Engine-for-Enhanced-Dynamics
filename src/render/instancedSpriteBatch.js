@@ -144,9 +144,20 @@ export function buildTextureLut(flatTextures, fallbackTexture) {
   const lut = new Float32Array(Math.max(1, n) * TEX_LUT_FLOATS);
   const fb = fallbackTexture || Texture.WHITE;
   for (let i = 0; i < n; i++) {
-    writeLutSlot(lut, i * TEX_LUT_FLOATS, flatTextures[i] || fb);
+    const tex = flatTextures[i];
+    if (!tex) {
+      console.warn(
+        `[InstancedSpriteBatch] flatTextures[${i}] missing; LUT slot falls back to WHITE`
+      );
+      writeLutSlot(lut, i * TEX_LUT_FLOATS, fb);
+    } else {
+      writeLutSlot(lut, i * TEX_LUT_FLOATS, tex);
+    }
   }
-  if (n === 0) writeLutSlot(lut, 0, fb);
+  if (n === 0) {
+    console.warn('[InstancedSpriteBatch] flatTextures empty; LUT falls back to WHITE');
+    writeLutSlot(lut, 0, fb);
+  }
   return lut;
 }
 

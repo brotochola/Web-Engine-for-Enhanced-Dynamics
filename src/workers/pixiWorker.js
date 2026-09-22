@@ -2995,7 +2995,17 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const i32Off = byteOff >> 2;
           const entityIdx = i32[i32Off];
           const texId = u16[(byteOff >> 1) + 12];
-          if (texId === 0xFFFF || !this.flatTextures || !this.flatTextures[texId]) continue;
+          if (texId === 0xFFFF || !this.flatTextures || !this.flatTextures[texId]) {
+            if (!this._missingTextureWarns) this._missingTextureWarns = new Set();
+            const key = `selfLit:${texId}`;
+            if (!this._missingTextureWarns.has(key)) {
+              this._missingTextureWarns.add(key);
+              console.warn(
+                `[PIXI] self-lit occluder missing textureId=${texId} (entity=${entityIdx}); skipping`
+              );
+            }
+            continue;
+          }
           if (!Transform.active[entityIdx] || !SpriteRenderer.active?.[entityIdx]) continue;
 
           const tex = this.flatTextures[texId];
