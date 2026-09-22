@@ -152,7 +152,8 @@ export class BurningBoxesScene extends WEED.Scene {
       fire: {
         zIndex: 5, // above lighting (4): plume draws after the vis-poly multiply
         blendMode: BLEND_MODES.NORMAL,
-        resolution: 1.0,
+        resolution: 0.33,
+        alpha: 0.9,
         maxItems: 0,
         shader: {
           fragment: 'fireLook',

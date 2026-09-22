@@ -52,13 +52,15 @@ fn fireGrain(uv: vec2<f32>) -> f32 {
 }
 
 fn fireRgb(f: f32) -> vec3<f32> {
-  if (f < 0.25) {
-    let k = f / 0.25;
-    return vec3<f32>(0.45 + 0.55 * k, 0.05 + 0.12 * k, 0.02);
-  }
-  // Peak stays orange. This layer draws above lighting, so multiply no longer tints it.
-  let k = (f - 0.25) / 0.75;
-  return vec3<f32>(1.0, 0.17 + 0.28 * k, 0.02 + 0.06 * k);
+  // Unlit layer (drawn above the vis-poly). Cool edge stays red; hot core is yellow on purpose.
+  let edge = vec3<f32>(0.62, 0.04, 0.01);
+  let body = vec3<f32>(1.00, 0.32, 0.03);
+  let mid = vec3<f32>(1.00, 0.62, 0.08);
+  let core = vec3<f32>(1.00, 0.90, 0.35);
+  let k0 = smoothstep(0.0, 0.35, f);
+  let k1 = smoothstep(0.35, 0.70, f);
+  let k2 = smoothstep(0.70, 1.0, f);
+  return mix(mix(mix(edge, body, k0), mid, k1), core, k2);
 }
 
 fn emberRgb(e: f32) -> vec3<f32> {
