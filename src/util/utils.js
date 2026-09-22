@@ -17,6 +17,16 @@ export { debugWorkerLog };
 // ============================================================================
 
 /**
+ * Canvas pixel size the GPU swapchain can use. Minimize often reports 0×0.
+ * @param {number} width
+ * @param {number} height
+ * @returns {boolean}
+ */
+export function usableCanvasSize(width, height) {
+  return Number.isFinite(width) && Number.isFinite(height) && width >= 1 && height >= 1;
+}
+
+/**
  * Convert an array of layer indices (0-31) into a 32-bit bitmask.
  * @param {number[]} layers - e.g. [0, 4, 12, 15]
  * @returns {number} Uint32 bitmask with those bits set

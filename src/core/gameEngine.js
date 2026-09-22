@@ -5,7 +5,7 @@ import { DebugUI } from './debug/debugUi.js';
 import { Mouse } from './mouse.js';
 import { SoundManager } from './soundManager.js';
 import { Scene } from './scene.js';
-import { printLogo } from '../util/utils.js';
+import { printLogo, usableCanvasSize } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { DEBUG_DEFAULTS, ENGINE_DEFAULTS } from '../util/configDefaults.js';
 import {
@@ -31,6 +31,8 @@ class GameEngine {
     this.preventContextMenu = config.preventContextMenu ?? ENGINE_DEFAULTS.preventContextMenu;
     this.preventDefaultKeys = config.preventDefaultKeys ?? ENGINE_DEFAULTS.preventDefaultKeys;
     this.injectStyles = config.injectStyles ?? ENGINE_DEFAULTS.injectStyles;
+    this.presentWhenHidden = config.presentWhenHidden ?? ENGINE_DEFAULTS.presentWhenHidden;
+    this._presenting = true;
 
     if (this.autoResize) {
       this.canvasWidth = window.innerWidth;
@@ -160,6 +162,47 @@ class GameEngine {
       }
     };
     document.addEventListener('fullscreenchange', this._fullscreenchangeHandler);
+
+    this._onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') this._onDocumentHidden();
+      else this._onDocumentVisible();
+    };
+    this._onPageHide = () => this._onDocumentHidden();
+    this._onPageShow = () => this._onDocumentVisible();
+    this._onWindowBlur = () => this._onDocumentHidden();
+    this._onWindowFocus = () => this._onDocumentVisible();
+    document.addEventListener('visibilitychange', this._onVisibilityChange);
+    window.addEventListener('pagehide', this._onPageHide);
+    window.addEventListener('pageshow', this._onPageShow);
+    // Chrome in the background with this tab still selected often stays
+    // document.visibilityState === 'visible'. Blur is the signal that the
+    // window is not in front (Cursor, another app) and the GPU must idle.
+    window.addEventListener('blur', this._onWindowBlur);
+    window.addEventListener('focus', this._onWindowFocus);
+  }
+
+  _onDocumentHidden() {
+    if (this.presentWhenHidden) return;
+    this.setPresenting(false);
+  }
+
+  _onDocumentVisible() {
+    this.setPresenting(true);
+  }
+
+  get presenting() {
+    return this._presenting;
+  }
+
+  setPresenting(on) {
+    const next = !!on;
+    if (next) this.rebindSurface();
+    this._presenting = next;
+    this.currentScene?.setPresenting(next);
+  }
+
+  rebindSurface() {
+    this.currentScene?.rebindSurface();
   }
 
   // ---------------------------------------------------------------------------
@@ -296,6 +339,7 @@ class GameEngine {
       this.currentScene.config.canvasHeight = this.canvasHeight;
 
       await this.currentScene.init();
+      if (!this._presenting) this.currentScene.setPresenting(false);
 
       // Attach debug UI to new scene
       if (this.debugUI) {
@@ -395,6 +439,7 @@ class GameEngine {
    * @param {number} height - New canvas height in pixels
    */
   resize(width, height) {
+    if (!usableCanvasSize(width, height)) return;
     this.canvasWidth = width;
     this.canvasHeight = height;
 
@@ -426,6 +471,11 @@ class GameEngine {
       window.removeEventListener('contextmenu', this._contextmenuHandler);
     }
     document.removeEventListener('fullscreenchange', this._fullscreenchangeHandler);
+    document.removeEventListener('visibilitychange', this._onVisibilityChange);
+    window.removeEventListener('pagehide', this._onPageHide);
+    window.removeEventListener('pageshow', this._onPageShow);
+    window.removeEventListener('blur', this._onWindowBlur);
+    window.removeEventListener('focus', this._onWindowFocus);
 
     // Remove injected styles
     if (this._injectedStyle && this._injectedStyle.parentNode) {

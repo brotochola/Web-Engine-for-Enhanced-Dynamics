@@ -1190,6 +1190,14 @@ export class AbstractWorker {
         break;
       }
 
+      case 'presenting':
+        this.setPresenting(!!e.data.value);
+        break;
+
+      case 'rebindSurface':
+        this.rebindSurface();
+        break;
+
       default:
         this.handleCustomMessage(e.data);
         break;
@@ -1308,6 +1316,12 @@ export class AbstractWorker {
     }
     // If using custom scheduler, it will continue calling gameLoop automatically
   }
+
+  /** Canvas present on/off. Renderer overrides; other workers no-op. */
+  setPresenting(_on) {}
+
+  /** Reconfigure the GPU swapchain. Renderer overrides; other workers no-op. */
+  rebindSurface() {}
 
   /**
    * Get the count of active entities from the shared activeEntitiesData list.

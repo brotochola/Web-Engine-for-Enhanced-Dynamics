@@ -357,6 +357,8 @@ class PixiRenderer extends AbstractWorker {
 
     // Use PIXI ticker instead of requestAnimationFrame
     this.usesCustomScheduler = true;
+    this._presenting = true;
+    this._pixiPresent = null;
 
     // Renderer configuration options (set during initialize)
     this.ySorting = false; // Enable/disable Y-sorting for depth ordering
@@ -1583,6 +1585,9 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
+    // Queue already consumed. No GPU while the canvas is not on screen.
+    if (!this._presenting) return;
+
     // STALE-FRAME GATING: every input to the sprite syncs and offscreen GPU
     // passes below is frame-locked to the render queue (sprite/shadow/custom
     // queues, camera snapshot, pre_render's visible-lights buffer). When no
@@ -1690,6 +1695,7 @@ class PixiRenderer extends AbstractWorker {
     }
 
     this._applyLayerVisibility();
+    this._presentStage();
   }
 
   /**
@@ -1708,12 +1714,65 @@ class PixiRenderer extends AbstractWorker {
 
   afterManualStep() {
     const app = this.pixiApp;
-    if (!app?.renderer || !app.stage) return;
-    if (app.ticker) {
+    if (app?.ticker) {
       app.ticker.autoStart = false;
       app.ticker.stop();
     }
+    this._presentStage();
+  }
+
+  setPresenting(on) {
+    this._presenting = !!on;
+    if (!this._presenting) {
+      this.pixiApp?.ticker?.stop();
+      this._clearFrameSchedulers();
+      return;
+    }
+    if (this.isPaused) return;
+    if (this.usesCustomScheduler) this.pixiApp?.ticker?.start();
+    else this.scheduleNextFrame();
+  }
+
+  rebindSurface() {
+    if (this._useWebGpu) this._bindWebGpuSwapchain();
+  }
+
+  pause() {
+    this.isPaused = true;
+    this._clearFrameSchedulers();
+    this.pixiApp?.ticker?.stop();
+  }
+
+  resume() {
+    this.isPaused = false;
+    this.lastFrameTime = performance.now();
+    if (this.usesCustomScheduler) {
+      this.pixiApp?.ticker?.start();
+      return;
+    }
+    this.gameLoop(true);
+  }
+
+  /** Weed owns the swapchain present. Skip when the document is hidden. */
+  _presentStage() {
+    if (!this._presenting) return;
+    const present = this._pixiPresent;
+    if (present) {
+      present();
+      return;
+    }
+    const app = this.pixiApp;
+    if (!app?.renderer || !app.stage) return;
     app.renderer.render(app.stage);
+  }
+
+  _takePresentOwnership() {
+    const app = this.pixiApp;
+    if (!app || typeof app.render !== 'function') return;
+    const original = app.render;
+    this._pixiPresent = original.bind(app);
+    if (app.ticker) app.ticker.remove(original, app);
+    app.render = () => this._presentStage();
   }
 
   /**
@@ -4094,9 +4153,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     this.updateCameraTransform();
 
-    if (this.pixiApp && this.pixiApp.renderer) {
-      this.pixiApp.renderer.render(this.pixiApp.stage);
-    }
+    this._presentStage();
 
     self.postMessage({ msg: 'layerContentReady', layerId, requestId });
   }
@@ -4715,6 +4772,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.reportError('PIXI Initialization Failed', error);
       return;
     }
+
+    this._takePresentOwnership();
 
     if (this.config?.manualStep && this.pixiApp.ticker) {
       this.pixiApp.ticker.autoStart = false;

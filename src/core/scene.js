@@ -49,6 +49,7 @@ import {
   exposeComponentsGlobally,
   exposeEntityClassesGlobally,
   urlToPath,
+  usableCanvasSize,
 } from '../util/utils.js';
 import { DebugFlags } from './debug/debugFlags.js';
 import { Mouse } from './mouse.js';
@@ -2358,6 +2359,16 @@ class Scene {
     });
   }
 
+  setPresenting(on) {
+    const worker = this.workers.renderer;
+    if (worker) worker.postMessage({ msg: 'presenting', value: !!on });
+  }
+
+  rebindSurface() {
+    const worker = this.workers.renderer;
+    if (worker) worker.postMessage({ msg: 'rebindSurface' });
+  }
+
   /**
    * Resize the canvas and propagate new dimensions to Camera and all workers
    * Called by GameEngine.resize() when the window is resized (autoResize) or manually
@@ -2365,6 +2376,7 @@ class Scene {
    * @param {number} height - New canvas height in pixels
    */
   resize(width, height) {
+    if (!usableCanvasSize(width, height)) return;
     this.config.canvasWidth = width;
     this.config.canvasHeight = height;
 

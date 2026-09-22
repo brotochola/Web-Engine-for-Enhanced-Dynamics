@@ -308,6 +308,8 @@ export const ENGINE_DEFAULTS = Object.freeze({
   /** Enable DebugUI overlay. Distinct from Scene.config.debug (DEBUG_DEFAULTS object). */
   debug: false,
   resizeDebounceMs: 150,
+  /** Keep presenting to the canvas while the document is hidden. Default off: skip swapchain present. */
+  presentWhenHidden: false,
 });
 
 // ============================================================================

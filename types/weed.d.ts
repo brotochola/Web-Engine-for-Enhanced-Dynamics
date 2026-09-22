@@ -145,6 +145,8 @@ export interface GameEngineConfig {
   debugUpdateInterval?: number;
   debugDefaultOpen?: boolean | string | null;
   transitionCooldown?: number;
+  /** Keep presenting to the canvas while the document is hidden. Default false. */
+  presentWhenHidden?: boolean;
 }
 
 /** Main-thread camera snapshot synced from {@link Camera} static state. */
@@ -1031,6 +1033,7 @@ export declare class GameEngine {
   preventContextMenu: boolean;
   preventDefaultKeys: boolean;
   injectStyles: boolean;
+  presentWhenHidden: boolean;
   canvasWidth: number;
   canvasHeight: number;
   canvas: HTMLCanvasElement | null;
@@ -1041,6 +1044,9 @@ export declare class GameEngine {
   debugUI: DebugUI | null;
   constructor(config?: GameEngineConfig);
   loadScene(source: string | typeof Scene, options?: { restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
+  readonly presenting: boolean;
+  setPresenting(on: boolean): void;
+  rebindSurface(): void;
   pause(): void;
   resume(): void;
   spawnEntity(EntityClassOrName: string | typeof GameObject, data?: SpawnConfig): void;
@@ -1382,6 +1388,8 @@ export declare class Scene {
   destroy(): Promise<void>;
   pause(): void;
   resume(): void;
+  setPresenting(on: boolean): void;
+  rebindSurface(): void;
   resize(width: number, height: number): void;
   spawnEntity(EntityClassOrName: string | typeof GameObject, spawnConfig?: SpawnConfig): void;
   despawnEntity(entityIndex: number): void;

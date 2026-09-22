@@ -5,6 +5,7 @@
 export type Vec2Like = { x: number; y: number };
 export type RectLike = { x: number; y: number; width: number; height: number };
 
+export function usableCanvasSize(width: number, height: number): boolean;
 export function layerMask(layers: unknown): number;
 export function countTrailingZeros(n: number): number;
 export function binarySearchInsertPoint(
