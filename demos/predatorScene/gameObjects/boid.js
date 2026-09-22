@@ -8,12 +8,12 @@ const { ShapeType } = enums;
 class Boid extends GameObject {
   static deriveSpeed = true;
 
-  static tickInterval = 30;
-  static protectedRangeSq = 50 * 50;
-  static centeringFactor = 1;
-  static avoidFactor = 5;
-  static matchingFactor = 2;
   static turnFactor = 10;
+  static tickInterval = 30;
+  static protectedRangeSq = 75 * 75
+  static centeringFactor = 1;
+  static avoidFactor = 18;
+  static matchingFactor = 2;
   static margin = 20;
   static mouseAvoidRangeSq = 250 * 250;
   static mouseAvoidStrength = 1000;
@@ -24,10 +24,10 @@ class Boid extends GameObject {
 
   setup() {
     this.rigidBody.linearDamping = 0.01;
-
+    this.collider.active = false;
     this.collider.width = 10;
     this.collider.height = 10;
-    this.collider.visualRange = 50;
+    this.collider.visualRange = 100;
     this.collider.collisionMask = 0;
     this.collider.shapeType = ShapeType.Box
 
@@ -53,7 +53,7 @@ class Boid extends GameObject {
     this.setSprite(spawnConfig.sprite ?? 'square');
   }
 
-  tick() {
+  tick(_dtRatio, deltaTime) {
     const i = this.index;
     const tX = Transform.x;
     const tY = Transform.y;
@@ -73,7 +73,7 @@ class Boid extends GameObject {
     let flockCount = 0;
 
     const neighborCount = this.neighborCount;
-    const nMax = neighborCount < Boid.maxNeighbors ? neighborCount : Boid.maxNeighbors;
+    const nMax = neighborCount//neighborCount < Boid.maxNeighbors ? neighborCount : Boid.maxNeighbors;
 
     for (let n = 0; n < nMax; n++) {
       const j = this.getNeighbor(n);
@@ -109,9 +109,9 @@ class Boid extends GameObject {
     }
 
     const margin = Boid.margin;
-    const turn = Boid.turnFactor;
-    const worldWidth = this.config.worldWidth || 800;
-    const worldHeight = this.config.worldHeight || 600;
+    const turn = Boid.turnFactor * 10;
+    const worldWidth = this.config.worldWidth //|| 800;
+    const worldHeight = this.config.worldHeight// || 600;
     if (myX < margin) ax += turn;
     else if (myX > worldWidth - margin) ax -= turn;
     if (myY < margin) ay += turn;

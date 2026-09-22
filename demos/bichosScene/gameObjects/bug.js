@@ -7,7 +7,7 @@ export class Bug extends GameObject {
     static MOVE_SPEED_THRESHOLD = 0.1;
     static deriveSpeed = true;
     // Auto-detected by GameEngine
-    static sqDistToFollow = 500 ** 2;
+    static sqDistToFollow = 100 ** 2;
 
     // Define components this entity uses
     static components = [Collider, SpriteRenderer, ShadowCaster, RigidBody];
@@ -51,7 +51,7 @@ export class Bug extends GameObject {
 
         this.followMouse();
 
-        const direction = getDirection8FromVector(RigidBody.vx[i], RigidBody.vy[i]);
+        const direction = getDirection8FromVector(-RigidBody.vx[i], -RigidBody.vy[i]);
 
         // Only change animation if direction changed
         if (direction !== this._facingDirection) {

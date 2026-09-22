@@ -11,7 +11,10 @@ export class BoidsScene extends Scene {
     worldWidth: 4000,
     worldHeight: 4000,
     seed: 123456,
-
+    // debug: {
+    //   maxDebugDrawEntries: 30192,
+    //   collectDetailedStats: true,
+    // },
     spatial: {
       cellSize: 20,
       maxNeighbors: 128,
@@ -48,7 +51,13 @@ export class BoidsScene extends Scene {
       maxVisibleRenderables: 65530,
       ySorting: false,
     },
-
+    preRender: {
+      // skipCull: false,
+      // fixedFps: 30,
+      interpolation: true,
+      // entityBlockSize: 256,
+      numberOfPreRenderWorkers: 1,
+    },
     lighting: {
       enabled: false,
     },
