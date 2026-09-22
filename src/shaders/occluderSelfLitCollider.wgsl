@@ -28,21 +28,37 @@ struct VisUniforms {
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
   @location(0) vWorldPos: vec2<f32>,
-  @location(1) vScale: f32,
+  @location(1) vCenter: vec2<f32>,
+  @location(2) vRadius: f32,
 }
 
 @vertex
 fn mainVert(
   @location(0) aPosition: vec2<f32>,
-  @location(1) aScale: f32,
+  @location(1) aCenterRadius: vec3<f32>,
 ) -> VertexOut {
   var out: VertexOut;
   out.vWorldPos = aPosition;
-  out.vScale = aScale;
+  out.vCenter = aCenterRadius.xy;
+  out.vRadius = aCenterRadius.z;
   let screenPos = (aPosition - uniforms.uCameraPos) * uniforms.uZoom;
   let clipPos = (screenPos / uniforms.uCanvasSize) * 2.0 - 1.0;
   out.position = vec4<f32>(clipPos.x, -clipPos.y, 0.0, 1.0);
   return out;
+}
+
+fn facingMask(world: vec2<f32>, center: vec2<f32>, bodyR: f32) -> f32 {
+  let toLight = uniforms.uLightPos - center;
+  let distL = length(toLight);
+  if (distL <= bodyR || distL <= 0.0001) {
+    return 1.0;
+  }
+  let nL = toLight / distL;
+  let toPix = world - center;
+  let pixLen = length(toPix);
+  let nP = select(nL, toPix / pixLen, pixLen > 0.0001);
+  let facing = dot(nP, nL);
+  return smoothstep(-0.15, 0.45, facing);
 }
 
 @fragment
@@ -58,6 +74,6 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let d2Scaled = dot(deltaScaled, deltaScaled);
   let intensityScaled = uniforms.uLightIntensity * DISTANCE_SCALE * DISTANCE_SCALE;
   var attenuation = intensityScaled / (intensityScaled + d2Scaled);
-  attenuation *= radial * uniforms.uAttenScale * in.vScale;
+  attenuation *= radial * uniforms.uAttenScale * facingMask(in.vWorldPos, in.vCenter, in.vRadius);
   return vec4<f32>(uniforms.uLightColor * attenuation, 1.0);
 }

@@ -3323,6 +3323,7 @@ class PreRenderWorker extends AbstractWorker {
         const transformActive = Transform.active;
         const occluderActive = LightOccluder.active;
         const occluderMaskMode = LightOccluder.maskMode;
+        const occluderBlock = LightOccluder.block;
         const colliderActive = Collider.active;
         const shapeType = Collider.shapeType;
         const colRadius = Collider.radius;
@@ -3408,6 +3409,7 @@ class PreRenderWorker extends AbstractWorker {
                     }
                     const nIdx = neighborData[offset + 1 + k];
                     if (!transformActive[nIdx] || !occluderActive[nIdx] || !colliderActive[nIdx]) continue;
+                    if (occluderBlock && !(occluderBlock[nIdx] > 0)) continue;
 
                     this._displayPose(nIdx, pose);
                     const wx = pose.x;

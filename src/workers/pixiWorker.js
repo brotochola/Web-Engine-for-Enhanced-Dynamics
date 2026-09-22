@@ -256,6 +256,64 @@ function gpuFromWgsl(source, name) {
   return gpuProgramFromWgsl(GpuProgram, source, name);
 }
 
+/** Umbra floor. Matches ShadowCaster pointShadowAlphaScale so a hard block is not pitch black. */
+const UMBRA_FLOOR = 0.33;
+/** Rest of the radial, added by the visibility fan and by the lit face. */
+const VIS_REST = 1 - UMBRA_FLOOR;
+const WEDGE_MAX_QUADS = 256;
+
+function crossOrigin(ox, oy, ax, ay, bx, by) {
+  return (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
+}
+
+function pointInConvex(px, py, xs, ys, count) {
+  let sign = 0;
+  for (let i = 0; i < count; i++) {
+    const i1 = i + 1 < count ? i + 1 : 0;
+    const c = crossOrigin(xs[i], ys[i], xs[i1], ys[i1], px, py);
+    if (c === 0) continue;
+    const s = c > 0 ? 1 : -1;
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
+  }
+  return sign !== 0;
+}
+
+/** Tangent points from an external light. Writes t0x,t0y,t1x,t1y into out. False if the light is inside. */
+function circleTangentPoints(lx, ly, cx, cy, r, out) {
+  const dx = cx - lx;
+  const dy = cy - ly;
+  const d2 = dx * dx + dy * dy;
+  const r2 = r * r;
+  if (!(d2 > r2)) return false;
+  const base = Math.atan2(dy, dx);
+  const ang = Math.asin(r / Math.sqrt(d2));
+  const touch = Math.sqrt(d2 - r2);
+  const a0 = base - ang;
+  const a1 = base + ang;
+  out[0] = lx + Math.cos(a0) * touch;
+  out[1] = ly + Math.sin(a0) * touch;
+  out[2] = lx + Math.cos(a1) * touch;
+  out[3] = ly + Math.sin(a1) * touch;
+  return true;
+}
+
+function polyTangentPoints(lx, ly, xs, ys, count, out) {
+  if (count < 3) return false;
+  if (pointInConvex(lx, ly, xs, ys, count)) return false;
+  let iLeft = 0;
+  let iRight = 0;
+  for (let i = 1; i < count; i++) {
+    if (crossOrigin(lx, ly, xs[iRight], ys[iRight], xs[i], ys[i]) > 0) iRight = i;
+    if (crossOrigin(lx, ly, xs[iLeft], ys[iLeft], xs[i], ys[i]) < 0) iLeft = i;
+  }
+  out[0] = xs[iLeft];
+  out[1] = ys[iLeft];
+  out[2] = xs[iRight];
+  out[3] = ys[iRight];
+  return true;
+}
+
 // Create PIXI-like namespace for compatibility with existing code patterns
 const PIXI = Object.freeze({
   Application,
@@ -661,6 +719,7 @@ class PixiRenderer extends AbstractWorker {
     this._visPolySlotBytes = 0;
     this._visPolyContainer = null;   // Container for light meshes
     this._visPolyMeshes = [];        // Reusable PIXI.Mesh pool
+    this._umbraDiscs = [];
     this._visPolyRT = null;          // RenderTexture for visibility lighting
     this._visPolyDisplaySprite = null; // Sprite displaying the RT with multiply blend
     this._selfLitBuffers = [null, null];
@@ -673,6 +732,10 @@ class PixiRenderer extends AbstractWorker {
     this._selfLitIdxScratch = null;
     this._selfLitBoxScratchX = new Float32Array(8);
     this._selfLitBoxScratchY = new Float32Array(8);
+    this._wedgePolyX = new Float32Array(MAX_POLYGON_VERTICES);
+    this._wedgePolyY = new Float32Array(MAX_POLYGON_VERTICES);
+    this._wedgeTan = new Float32Array(4);
+    this._wedgeVerts = 0;
     this._colliderFillViews = null;
     this._colliderFillMeshBitsCached = 0;
     this._colliderFillLayerCount = -1;
@@ -1962,23 +2025,16 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     }
     this.shadowSpritesEnabled = false;
 
-    const visPolyUniforms = {
-      uniforms: {
-        uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-        uZoom: { value: 1.0, type: 'f32' },
-        uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
-        uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-        uLightIntensity: { value: 1000, type: 'f32' },
-        uLightRadius: { value: 1e6, type: 'f32' },
-        uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
-      },
-    };
-
     if (this._useWebGpu) {
       this._visPolyProgramOpts = { gpuProgram: gpuFromWgsl(this._visPolyWgsl, 'visibility-polygon') };
       if (this._selfLitSpriteWgsl) {
         this._selfLitSpriteProgramOpts = {
           gpuProgram: gpuFromWgsl(this._selfLitSpriteWgsl, 'occluder-self-lit-sprite'),
+        };
+      }
+      if (this._selfLitColliderWgsl) {
+        this._selfLitColliderProgramOpts = {
+          gpuProgram: gpuFromWgsl(this._selfLitColliderWgsl, 'occluder-self-lit-collider'),
         };
       }
     } else {
@@ -1996,29 +2052,45 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           }),
         };
       }
+      if (this._selfLitColliderVertShader && this._selfLitColliderFragShader) {
+        this._selfLitColliderProgramOpts = {
+          glProgram: new PIXI.GlProgram({
+            vertex: this._selfLitColliderVertShader,
+            fragment: this._selfLitColliderFragShader,
+          }),
+        };
+      }
     }
 
-    // Collider self-lit reuses vis-poly program (attenuation, no texture)
+    // Collider self-lit: facing term, so it cannot share the vis-poly attribute layout.
     {
       const maxFillVerts = 256 * 20;
       this._selfLitMaxFillVerts = maxFillVerts;
+      const centerRadius = new Float32Array(maxFillVerts * 3);
+      this._selfLitCenterRadius = centerRadius;
       const geometry = new PIXI.Geometry({
         attributes: {
           aPosition: {
             buffer: this._dynBuf(new Float32Array(maxFillVerts * 2), BufferUsage.VERTEX),
             size: 2,
           },
+          aCenterRadius: {
+            buffer: this._dynBuf(centerRadius, BufferUsage.VERTEX),
+            size: 3,
+          },
         },
         indexBuffer: this._dynBuf(new Uint16Array(maxFillVerts * 3), BufferUsage.INDEX),
       });
       const shader = new PIXI.Shader({
-        ...this._visPolyProgramOpts,
-        resources: visPolyUniforms,
+        ...(this._selfLitColliderProgramOpts || this._visPolyProgramOpts),
+        resources: this._lightUniformResources(VIS_REST),
       });
       const mesh = new PIXI.Mesh({ geometry, shader });
       mesh.blendMode = 'add';
       this._selfLitColliderMesh = { mesh, geometry, shader };
     }
+
+    this._initTransmitWedge();
 
     console.log(`PIXI WORKER: Visibility polygon system initialized (${this._visPolyMaxLights} lights, ${this._visPolyMaxVerts} verts, RT: ${rtW}x${rtH})`);
   }
@@ -2030,11 +2102,17 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
   _getVisPolyMesh(index) {
     if (this._visPolyMeshes[index]) return this._visPolyMeshes[index];
 
+    const scale = new Float32Array(this._visPolyMaxVerts + 1);
+    scale.fill(1);
     const geometry = new PIXI.Geometry({
       attributes: {
         aPosition: {
           buffer: this._dynBuf(new Float32Array((this._visPolyMaxVerts + 1) * 2), BufferUsage.VERTEX),
           size: 2,
+        },
+        aScale: {
+          buffer: this._dynBuf(scale, BufferUsage.VERTEX),
+          size: 1,
         },
       },
       indexBuffer: this._dynBuf(new Uint16Array(this._visPolyMaxVerts * 3), BufferUsage.INDEX),
@@ -2042,24 +2120,224 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
     const shader = new PIXI.Shader({
       ...this._visPolyProgramOpts,
-      resources: {
-        uniforms: {
-          uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-          uZoom: { value: 1.0, type: 'f32' },
-          uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
-          uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-          uLightIntensity: { value: 1000, type: 'f32' },
-          uLightRadius: { value: 1e6, type: 'f32' },
-          uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
-        },
-      },
+      resources: this._lightUniformResources(VIS_REST),
     });
 
     const mesh = new PIXI.Mesh({ geometry, shader });
     mesh.blendMode = 'add';
+    geometry.attributes.aScale.buffer.update();
 
     this._visPolyMeshes[index] = { mesh, geometry, shader };
     return this._visPolyMeshes[index];
+  }
+
+  _lightUniformResources(attenScale) {
+    return {
+      uniforms: {
+        uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+        uZoom: { value: 1.0, type: 'f32' },
+        uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
+        uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+        uLightIntensity: { value: 1000, type: 'f32' },
+        uLightRadius: { value: 1e6, type: 'f32' },
+        uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
+        uAttenScale: { value: attenScale, type: 'f32' },
+      },
+    };
+  }
+
+  /** One quad per light. aScale stays 1. uAttenScale is the umbra floor. */
+  _getUmbraDisc(index) {
+    if (this._umbraDiscs[index]) return this._umbraDiscs[index];
+    const scale = new Float32Array(4);
+    scale.fill(1);
+    const geometry = new PIXI.Geometry({
+      attributes: {
+        aPosition: {
+          buffer: this._dynBuf(new Float32Array(8), BufferUsage.VERTEX),
+          size: 2,
+        },
+        aScale: {
+          buffer: this._dynBuf(scale, BufferUsage.VERTEX),
+          size: 1,
+        },
+      },
+      indexBuffer: this._dynBuf(new Uint16Array([0, 1, 2, 0, 2, 3]), BufferUsage.INDEX),
+    });
+    const shader = new PIXI.Shader({
+      ...this._visPolyProgramOpts,
+      resources: this._lightUniformResources(UMBRA_FLOOR),
+    });
+    const mesh = new PIXI.Mesh({ geometry, shader });
+    mesh.blendMode = 'add';
+    geometry.attributes.aScale.buffer.update();
+    this._umbraDiscs[index] = { mesh, geometry, shader };
+    return this._umbraDiscs[index];
+  }
+
+  /** Shadow wedges for block < 1. One mesh, rewritten per light. aScale carries (1-block)*VIS_REST. */
+  _initTransmitWedge() {
+    const verts = WEDGE_MAX_QUADS * 4;
+    const positions = new Float32Array(verts * 2);
+    const scales = new Float32Array(verts);
+    const indices = new Uint16Array(WEDGE_MAX_QUADS * 6);
+    for (let q = 0; q < WEDGE_MAX_QUADS; q++) {
+      const b = q * 4;
+      const i = q * 6;
+      indices[i] = b;
+      indices[i + 1] = b + 1;
+      indices[i + 2] = b + 2;
+      indices[i + 3] = b;
+      indices[i + 4] = b + 2;
+      indices[i + 5] = b + 3;
+    }
+    this._wedgePositions = positions;
+    this._wedgeScales = scales;
+    this._wedgeIndices = indices;
+    const geometry = new PIXI.Geometry({
+      attributes: {
+        aPosition: {
+          buffer: this._dynBuf(positions, BufferUsage.VERTEX),
+          size: 2,
+        },
+        aScale: {
+          buffer: this._dynBuf(scales, BufferUsage.VERTEX),
+          size: 1,
+        },
+      },
+      indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
+    });
+    const shader = new PIXI.Shader({
+      ...this._visPolyProgramOpts,
+      resources: this._lightUniformResources(1),
+    });
+    const mesh = new PIXI.Mesh({ geometry, shader });
+    mesh.blendMode = 'add';
+    this._wedgeMesh = { mesh, geometry, shader };
+    this._wedgeVerts = 0;
+    this._wedgeGpuReady = false;
+    this._wedgeLastIdx = 0;
+  }
+
+  _pushWedge(lx, ly, lightR, ax, ay, bx, by, scale) {
+    const n = this._wedgeVerts;
+    if (n + 4 > WEDGE_MAX_QUADS * 4) return;
+    let dx = ax - lx;
+    let dy = ay - ly;
+    let len = Math.hypot(dx, dy);
+    if (!(len > 1e-4)) return;
+    const e0x = lx + (dx / len) * lightR;
+    const e0y = ly + (dy / len) * lightR;
+    dx = bx - lx;
+    dy = by - ly;
+    len = Math.hypot(dx, dy);
+    if (!(len > 1e-4)) return;
+    const e1x = lx + (dx / len) * lightR;
+    const e1y = ly + (dy / len) * lightR;
+    const p = this._wedgePositions;
+    const s = this._wedgeScales;
+    const o = n * 2;
+    p[o] = ax;
+    p[o + 1] = ay;
+    p[o + 2] = e0x;
+    p[o + 3] = e0y;
+    p[o + 4] = e1x;
+    p[o + 5] = e1y;
+    p[o + 6] = bx;
+    p[o + 7] = by;
+    s[n] = scale;
+    s[n + 1] = scale;
+    s[n + 2] = scale;
+    s[n + 3] = scale;
+    const indices = this._wedgeIndices;
+    const ii = (n >> 2) * 6;
+    indices[ii] = n;
+    indices[ii + 1] = n + 1;
+    indices[ii + 2] = n + 2;
+    indices[ii + 3] = n;
+    indices[ii + 4] = n + 2;
+    indices[ii + 5] = n + 3;
+    this._wedgeVerts = n + 4;
+  }
+
+  _uploadWedge() {
+    const pack = this._wedgeMesh;
+    if (!pack || this._wedgeVerts <= 0) return;
+    const verts = this._wedgeVerts;
+    const geometry = pack.geometry;
+    const posBuf = geometry.attributes.aPosition.buffer;
+    const scaleBuf = geometry.attributes.aScale.buffer;
+    const idxBuf = geometry.indexBuffer;
+    const indices = this._wedgeIndices;
+    const idxCount = (verts >> 2) * 6;
+    const prev = this._wedgeLastIdx | 0;
+    if (idxCount < prev) {
+      for (let k = idxCount; k < prev; k++) indices[k] = 0;
+    }
+    const uploadIdx = idxCount > prev ? idxCount : prev;
+    this._wedgeLastIdx = idxCount;
+    if (!this._wedgeGpuReady) {
+      posBuf.update();
+      scaleBuf.update();
+      idxBuf.update();
+      this._wedgeGpuReady = true;
+    } else {
+      posBuf.update(verts * 8);
+      scaleBuf.update(verts * 4);
+      idxBuf.update(uploadIdx * 2);
+    }
+  }
+
+  _emitTransmitWedge(lx, ly, lightR, entityIdx, ex, ey, c, s, ox, oy, block) {
+    if (!(block < 1)) return;
+    const scale = (1 - block) * VIS_REST;
+    if (!(scale > 0)) return;
+    const tan = this._wedgeTan;
+    const shape = Collider.shapeType[entityIdx];
+    let ok = false;
+    if (shape === ShapeType.Circle) {
+      const r = Collider.radius[entityIdx];
+      if (!(r > 0)) return;
+      ok = circleTangentPoints(lx, ly, ex + ox, ey + oy, r, tan);
+    } else {
+      const xs = this._wedgePolyX;
+      const ys = this._wedgePolyY;
+      let count = 0;
+      if (shape === ShapeType.Box) {
+        const w = Collider.width[entityIdx];
+        const h = Collider.height[entityIdx];
+        if (!(w > 0) || !(h > 0)) return;
+        writeOrientedBoxVerts(xs, ys, 0, ex, ey, w, h, c, s, ox, oy);
+        count = 4;
+      } else {
+        const pc = Collider.polyCount[entityIdx] | 0;
+        if (pc >= 3 && pc <= xs.length) {
+          const base = entityIdx * MAX_POLYGON_VERTICES;
+          writePolygonVerts(
+            xs, ys, 0, ex, ey, c, s, ox, oy,
+            Collider.polyVertexX, Collider.polyVertexY, base, pc
+          );
+          count = pc;
+        } else {
+          const w = Collider.width[entityIdx];
+          const h = Collider.height[entityIdx];
+          if (!(w > 0) || !(h > 0)) return;
+          writeOrientedBoxVerts(xs, ys, 0, ex, ey, w, h, c, s, ox, oy);
+          count = 4;
+        }
+      }
+      ok = polyTangentPoints(lx, ly, xs, ys, count, tan);
+    }
+    if (!ok) return;
+    this._pushWedge(lx, ly, lightR, tan[0], tan[1], tan[2], tan[3], scale);
+  }
+
+  _stampOccluderVert(vert, cx, cy, rad) {
+    const o = vert * 3;
+    const cr = this._selfLitCenterRadius;
+    cr[o] = cx;
+    cr[o + 1] = cy;
+    cr[o + 2] = rad;
   }
 
   /**
@@ -2177,6 +2455,37 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       uniforms.uLightColor[1] = rgb.g;
       uniforms.uLightColor[2] = rgb.b;
 
+      const lightY = ly - (lightHeight[lightIdx] || 0);
+      const disc = this._getUmbraDisc(li);
+      disc.shownFrame = shownFrame;
+      const radius = uniforms.uLightRadius;
+      const discPos = disc.geometry.attributes.aPosition.buffer;
+      const dp = discPos.data;
+      dp[0] = lx - radius;
+      dp[1] = lightY - radius;
+      dp[2] = lx + radius;
+      dp[3] = lightY - radius;
+      dp[4] = lx + radius;
+      dp[5] = lightY + radius;
+      dp[6] = lx - radius;
+      dp[7] = lightY + radius;
+      discPos.update(32);
+      const du = disc.shader.resources.uniforms.uniforms;
+      du.uCameraPos[0] = cameraX;
+      du.uCameraPos[1] = cameraY;
+      du.uZoom = zoom;
+      du.uCanvasSize[0] = this.canvasWidth;
+      du.uCanvasSize[1] = this.canvasHeight;
+      du.uLightPos[0] = lx;
+      du.uLightPos[1] = lightY;
+      du.uLightIntensity = lightIntensityArr[lightIdx];
+      du.uLightRadius = radius;
+      du.uLightColor[0] = rgb.r;
+      du.uLightColor[1] = rgb.g;
+      du.uLightColor[2] = rgb.b;
+      if (disc.mesh.parent !== container) container.addChild(disc.mesh);
+      disc.mesh.visible = true;
+
       if (mesh.parent !== container) container.addChild(mesh);
       mesh.visible = true;
     }
@@ -2184,6 +2493,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const visMeshes = this._visPolyMeshes;
     for (let mi = 0; mi < visMeshes.length; mi++) {
       const pooled = visMeshes[mi];
+      if (pooled && pooled.shownFrame !== shownFrame) pooled.mesh.visible = false;
+    }
+    const discs = this._umbraDiscs;
+    for (let mi = 0; mi < discs.length; mi++) {
+      const pooled = discs[mi];
       if (pooled && pooled.shownFrame !== shownFrame) pooled.mesh.visible = false;
     }
 
@@ -2259,12 +2573,15 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const segs = this._selfLitCircleSegs;
       const boxX = this._selfLitBoxScratchX;
       const boxY = this._selfLitBoxScratchY;
+      const occluderBlock = LightOccluder.block;
+      const lightR = lightInfluenceRadius(
+        LightEmitter.sqrtLightIntensity ? LightEmitter.sqrtLightIntensity[lightIdx] : 0
+      );
+      this._wedgeVerts = 0;
 
       for (let e = i; e < j; e++) {
         const byteOff = 4 + e * itemBytes;
         const maskMode = u8[byteOff + 26];
-        if (maskMode === LIGHT_OCCLUDER_MASK_SPRITE) continue;
-
         const i32Off = byteOff >> 2;
         const entityIdx = i32[i32Off];
         if (!Transform.active[entityIdx] || !Collider.active[entityIdx]) continue;
@@ -2277,21 +2594,29 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         const ey = f32[i32Off + 3];
         const c = f32[i32Off + 4];
         const s = f32[i32Off + 5];
+        const block = occluderBlock ? occluderBlock[entityIdx] : 1;
+        this._emitTransmitWedge(lx, ly, lightR, entityIdx, ex, ey, c, s, ox, oy, block);
+        if (maskMode === LIGHT_OCCLUDER_MASK_SPRITE) continue;
 
         if (shape === ShapeType.Circle) {
           const r = Collider.radius[entityIdx];
           if (!(r > 0)) continue;
           const cx = ex + ox;
           const cy = ey + oy;
+          const ldx = lx - cx;
+          const ldy = ly - cy;
+          if (ldx * ldx + ldy * ldy <= r * r) continue;
           if (vertCount + segs + 1 > maxVerts) break;
           const center = vertCount;
           positions[vertCount * 2] = cx;
           positions[vertCount * 2 + 1] = cy;
+          this._stampOccluderVert(vertCount, cx, cy, r);
           vertCount++;
           for (let si = 0; si < segs; si++) {
             const a = (si / segs) * Math.PI * 2;
             positions[vertCount * 2] = cx + Math.cos(a) * r;
             positions[vertCount * 2 + 1] = cy + Math.sin(a) * r;
+            this._stampOccluderVert(vertCount, cx, cy, r);
             vertCount++;
           }
           for (let si = 0; si < segs; si++) {
@@ -2324,11 +2649,16 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
               vc = 4;
             }
           }
+          if (pointInConvex(lx, ly, boxX, boxY, vc)) continue;
           if (vertCount + vc > maxVerts) break;
           const baseV = vertCount;
+          const bodyCx = ex + ox;
+          const bodyCy = ey + oy;
+          const bodyR = Math.hypot((Collider.width[entityIdx] || 0) * 0.5, (Collider.height[entityIdx] || 0) * 0.5);
           for (let v = 0; v < vc; v++) {
             positions[vertCount * 2] = boxX[v];
             positions[vertCount * 2 + 1] = boxY[v];
+            this._stampOccluderVert(vertCount, bodyCx, bodyCy, bodyR);
             vertCount++;
           }
           for (let v = 1; v < vc - 1; v++) {
@@ -2339,44 +2669,66 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         }
       }
 
-      if (idxCount > 0 && this._selfLitColliderMesh) {
-        const { mesh, geometry, shader } = this._selfLitColliderMesh;
-        const prevIdx = this._selfLitLastIdxCount || 0;
-        if (idxCount < prevIdx) {
-          for (let k = idxCount; k < prevIdx; k++) indices[k] = 0;
-        }
-        const uploadIdx = idxCount > prevIdx ? idxCount : prevIdx;
-        this._selfLitLastIdxCount = idxCount;
-
-        // First write sizes the GPU buffer (tail stays 0). Later writes send only the live prefix.
-        if (!this._selfLitGpuReady) {
-          posBuf.update();
-          idxBuf.update();
-          this._selfLitGpuReady = true;
-        } else {
-          posBuf.update(vertCount * 8);
-          idxBuf.update(uploadIdx * 2);
-        }
-
-        const uniforms = shader.resources.uniforms.uniforms;
-        uniforms.uCameraPos[0] = cameraX;
-        uniforms.uCameraPos[1] = cameraY;
-        uniforms.uZoom = zoom;
-        uniforms.uCanvasSize[0] = this.canvasWidth;
-        uniforms.uCanvasSize[1] = this.canvasHeight;
-        uniforms.uLightPos[0] = lx;
-        uniforms.uLightPos[1] = ly;
-        uniforms.uLightIntensity = intensity;
-        uniforms.uLightRadius = lightInfluenceRadius(
-          LightEmitter.sqrtLightIntensity ? LightEmitter.sqrtLightIntensity[lightIdx] : 0
-        );
-        uniforms.uLightColor[0] = rgb.r;
-        uniforms.uLightColor[1] = rgb.g;
-        uniforms.uLightColor[2] = rgb.b;
-
+      const wedgeVerts = this._wedgeVerts;
+      if ((idxCount > 0 && this._selfLitColliderMesh) || wedgeVerts > 0) {
         const container = this._selfLitContainer;
         container.removeChildren();
-        container.addChild(mesh);
+
+        if (idxCount > 0 && this._selfLitColliderMesh) {
+          const { mesh, geometry, shader } = this._selfLitColliderMesh;
+          const prevIdx = this._selfLitLastIdxCount || 0;
+          if (idxCount < prevIdx) {
+            for (let k = idxCount; k < prevIdx; k++) indices[k] = 0;
+          }
+          const uploadIdx = idxCount > prevIdx ? idxCount : prevIdx;
+          this._selfLitLastIdxCount = idxCount;
+
+          // First write sizes the GPU buffer (tail stays 0). Later writes send only the live prefix.
+          const crBuf = geometry.attributes.aCenterRadius.buffer;
+          if (!this._selfLitGpuReady) {
+            posBuf.update();
+            crBuf.update();
+            idxBuf.update();
+            this._selfLitGpuReady = true;
+          } else {
+            posBuf.update(vertCount * 8);
+            crBuf.update(vertCount * 12);
+            idxBuf.update(uploadIdx * 2);
+          }
+
+          const uniforms = shader.resources.uniforms.uniforms;
+          uniforms.uCameraPos[0] = cameraX;
+          uniforms.uCameraPos[1] = cameraY;
+          uniforms.uZoom = zoom;
+          uniforms.uCanvasSize[0] = this.canvasWidth;
+          uniforms.uCanvasSize[1] = this.canvasHeight;
+          uniforms.uLightPos[0] = lx;
+          uniforms.uLightPos[1] = ly;
+          uniforms.uLightIntensity = intensity;
+          uniforms.uLightRadius = lightR;
+          uniforms.uLightColor[0] = rgb.r;
+          uniforms.uLightColor[1] = rgb.g;
+          uniforms.uLightColor[2] = rgb.b;
+          container.addChild(mesh);
+        }
+
+        if (wedgeVerts > 0 && this._wedgeMesh) {
+          this._uploadWedge();
+          const wu = this._wedgeMesh.shader.resources.uniforms.uniforms;
+          wu.uCameraPos[0] = cameraX;
+          wu.uCameraPos[1] = cameraY;
+          wu.uZoom = zoom;
+          wu.uCanvasSize[0] = this.canvasWidth;
+          wu.uCanvasSize[1] = this.canvasHeight;
+          wu.uLightPos[0] = lx;
+          wu.uLightPos[1] = ly;
+          wu.uLightIntensity = intensity;
+          wu.uLightRadius = lightR;
+          wu.uLightColor[0] = rgb.r;
+          wu.uLightColor[1] = rgb.g;
+          wu.uLightColor[2] = rgb.b;
+          container.addChild(this._wedgeMesh.mesh);
+        }
 
         this.pixiApp.renderer.render({
           container,
@@ -2475,6 +2827,37 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           uniforms.uLightColor[0] = rgb.r;
           uniforms.uLightColor[1] = rgb.g;
           uniforms.uLightColor[2] = rgb.b;
+          const bodyCx = ox + (Collider.offsetX[entityIdx] || 0);
+          const bodyCy = oy + (Collider.offsetY[entityIdx] || 0);
+          uniforms.uBodyCenter[0] = bodyCx;
+          uniforms.uBodyCenter[1] = bodyCy;
+          uniforms.uBodyRadius = Math.hypot(
+            (Collider.width[entityIdx] || 0) * 0.5,
+            (Collider.height[entityIdx] || 0) * 0.5
+          );
+          if (Collider.shapeType[entityIdx] === ShapeType.Circle) {
+            const cr = Collider.radius[entityIdx];
+            if (cr > 0) uniforms.uBodyRadius = cr;
+          }
+          let lightInside = false;
+          if (Collider.shapeType[entityIdx] === ShapeType.Circle) {
+            const sdx = lx - bodyCx;
+            const sdy = ly - bodyCy;
+            const bodyR = uniforms.uBodyRadius;
+            lightInside = sdx * sdx + sdy * sdy <= bodyR * bodyR;
+          } else {
+            const bw = Collider.width[entityIdx];
+            const bh = Collider.height[entityIdx];
+            if (bw > 0 && bh > 0) {
+              writeOrientedBoxVerts(
+                this._selfLitBoxScratchX, this._selfLitBoxScratchY, 0,
+                ox, oy, bw, bh, f32[i32Off + 4], f32[i32Off + 5],
+                Collider.offsetX[entityIdx] || 0, Collider.offsetY[entityIdx] || 0
+              );
+              lightInside = pointInConvex(lx, ly, this._selfLitBoxScratchX, this._selfLitBoxScratchY, 4);
+            }
+          }
+          if (lightInside) continue;
 
           container.addChild(mesh);
         }
@@ -2514,6 +2897,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
             uLightIntensity: { value: 1000, type: 'f32' },
             uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
+            uBodyCenter: { value: new Float32Array(2), type: 'vec2<f32>' },
+            uBodyRadius: { value: 0, type: 'f32' },
+            uAttenScale: { value: VIS_REST, type: 'f32' },
           },
           uTexture: texture.source,
           uSampler: texture.source.style,
@@ -4087,6 +4473,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }),
           fetchEngineShader('/src/shaders/occluderSelfLitSprite.wgsl').then((s) => {
             this._selfLitSpriteWgsl = s;
+          }),
+          fetchEngineShader('/src/shaders/occluderSelfLitCollider.wgsl').then((s) => {
+            this._selfLitColliderWgsl = s;
           })
         );
       } else {
@@ -4102,6 +4491,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }),
           fetchEngineShader('/src/shaders/occluderSelfLitSprite.frag.glsl').then((s) => {
             this._selfLitSpriteFragShader = s;
+          }),
+          fetchEngineShader('/src/shaders/occluderSelfLitCollider.vert.glsl').then((s) => {
+            this._selfLitColliderVertShader = s;
+          }),
+          fetchEngineShader('/src/shaders/occluderSelfLitCollider.frag.glsl').then((s) => {
+            this._selfLitColliderFragShader = s;
           })
         );
       }

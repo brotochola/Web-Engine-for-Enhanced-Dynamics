@@ -2442,6 +2442,7 @@ export class GameObject {
     if (has.LightOccluder) {
       LightOccluder.active[i] = 1;
       LightOccluder.maskMode[i] = 0; // LIGHT_OCCLUDER_MASK_COLLIDER
+      LightOccluder.block[i] = 1;
     }
 
     if (has.MeshRenderer) {

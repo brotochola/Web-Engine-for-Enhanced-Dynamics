@@ -14,9 +14,10 @@ import {
   LIGHT_OCCLUDER_MASK_SPRITE,
 } from '../../src/components/lightOccluder.js';
 
-test('LightOccluder schema has maskMode, no radius', () => {
+test('LightOccluder schema has maskMode and block, no radius', () => {
   assert.ok(LightOccluder.ARRAY_SCHEMA.active);
   assert.ok(LightOccluder.ARRAY_SCHEMA.maskMode);
+  assert.equal(LightOccluder.ARRAY_SCHEMA.block, Float32Array);
   assert.equal(LightOccluder.ARRAY_SCHEMA.radius, undefined);
   assert.equal(LIGHT_OCCLUDER_MASK_COLLIDER, 0);
   assert.equal(LIGHT_OCCLUDER_MASK_SPRITE, 1);
@@ -193,4 +194,25 @@ test('writePolygonVerts transforms local verts', () => {
   assert.equal(outY[1], 200);
   assert.equal(outX[2], 100);
   assert.equal(outY[2], 210);
+});
+
+test('AngularSweep: wide slab occludes when every corner is outside the radius', () => {
+  const outX = new Float32Array(128);
+  const outY = new Float32Array(128);
+  const vertsX = new Float32Array([-800, 800, 800, -800]);
+  const vertsY = new Float32Array([30, 30, 50, 50]);
+  const n = buildVisibilityPolygon(
+    0, 0, 100,
+    new Uint8Array([OCC_POLY]),
+    new Float32Array(1), new Float32Array(1), new Float32Array(1),
+    new Int32Array([0]), new Uint8Array([4]), vertsX, vertsY,
+    1, outX, outY, 128
+  );
+  assert.ok(n >= 3);
+  let minR = Infinity;
+  for (let i = 0; i < n; i++) {
+    const r = Math.hypot(outX[i], outY[i]);
+    if (r < minR) minR = r;
+  }
+  assert.ok(minR < 40, `edge under the light must cut the polygon, minR=${minR}`);
 });

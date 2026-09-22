@@ -3168,9 +3168,11 @@ export declare class LightOccluder extends Component {
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
     maskMode: typeof Uint8Array;
+    block: typeof Float32Array;
   };
   static active: Uint8Array;
   static maskMode: Uint8Array;
+  static block: Float32Array;
 }
 
 export declare class FlashComponent extends Component {

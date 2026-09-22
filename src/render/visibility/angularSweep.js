@@ -102,6 +102,31 @@ function pointInConvex(px, py, vertsX, vertsY, start, count) {
   return sign !== 0;
 }
 
+/** Squared distance from a point to a convex polygon. 0 if inside. Edges, not just corners. */
+function distSqToConvex(px, py, vertsX, vertsY, start, count) {
+  if (pointInConvex(px, py, vertsX, vertsY, start, count)) return 0;
+  let minSq = Infinity;
+  for (let i = 0; i < count; i++) {
+    const i0 = start + i;
+    const i1 = start + ((i + 1) % count);
+    const ax = vertsX[i0];
+    const ay = vertsY[i0];
+    const abx = vertsX[i1] - ax;
+    const aby = vertsY[i1] - ay;
+    const apx = px - ax;
+    const apy = py - ay;
+    const abLenSq = abx * abx + aby * aby;
+    let t = abLenSq > 0 ? (apx * abx + apy * aby) / abLenSq : 0;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const dx = ax + abx * t - px;
+    const dy = ay + aby * t - py;
+    const dSq = dx * dx + dy * dy;
+    if (dSq < minSq) minSq = dSq;
+  }
+  return minSq;
+}
+
 /**
  * Left/right tangent vertex indices from external point to convex poly.
  * Returns false if light is inside or poly is degenerate.
@@ -247,16 +272,10 @@ export function buildVisibilityPolygon(
       const vc = vertCount[i] | 0;
       if (vc < 3) continue;
 
-      // Skip if entirely beyond influence (compare squared — no sqrt)
-      let minDistSq = Infinity;
+      // Skip only if the whole polygon is outside the light. Corners of a long
+      // slab can all sit past the radius while an edge passes next to the light.
       const maxRadiusSq = maxRadius * maxRadius;
-      for (let v = 0; v < vc; v++) {
-        const dx = vertsX[vs + v] - lightX;
-        const dy = vertsY[vs + v] - lightY;
-        const dSq = dx * dx + dy * dy;
-        if (dSq < minDistSq) minDistSq = dSq;
-      }
-      if (minDistSq > maxRadiusSq) continue;
+      if (distSqToConvex(lightX, lightY, vertsX, vertsY, vs, vc) > maxRadiusSq) continue;
 
       if (!polyTangentIndices(lightX, lightY, vertsX, vertsY, vs, vc, _tangentOut)) {
         continue; // light inside poly

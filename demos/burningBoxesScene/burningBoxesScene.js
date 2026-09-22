@@ -202,7 +202,7 @@ export class BurningBoxesScene extends WEED.Scene {
             uFireOn: { value: 1, type: 'f32', widget: 'check', label: 'Fire', tip: 'Draw flame pixels (heat at or above the split).' },
             uView: { value: 0, type: 'f32', min: 0, max: 3, step: 1, label: 'View', tip: 'Look = composite. Heat = raw t. FBM = overlay grain (not the fluid). Flow = velocity color.' },
             uSmokeAlpha: { value: 0.77, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Smoke alpha', tip: 'Smoke opacity.' },
-            uSmokePuff: { value: 1.55, type: 'f32', min: 0.4, max: 3, step: 0.05, label: 'Smoke puff', tip: 'Wisp shape. Higher = thinner, puffier edges.' },
+            uSmokePuff: { value: 5, type: 'f32', min: 0, max: 20, step: 0.05, label: 'Smoke puff', tip: 'Wisp shape. Higher = thinner, puffier edges.' },
             uSmokeNoise: { value: 0.55, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Smoke noise', tip: 'How lumpy the smoke is. At 1, noise punches holes in the puff.' },
             uSmokeDens: { value: 1.3, type: 'f32', min: 0.4, max: 2.5, step: 0.05, label: 'Smoke density', tip: 'How thick and sooty the smoke is. Raise this for darker plumes.' },
             uSmokeScroll0: { value: 3.5, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Smoke n1', tip: 'Slow coarse smoke grain crawl. Negative = up with the plume (Y-down lattice).' },

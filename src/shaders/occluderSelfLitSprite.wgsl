@@ -20,6 +20,9 @@ struct SelfLitUniforms {
   uLightPos: vec2<f32>,
   uLightIntensity: f32,
   uLightColor: vec3<f32>,
+  uBodyCenter: vec2<f32>,
+  uBodyRadius: f32,
+  uAttenScale: f32,
 }
 @group(2) @binding(0) var<uniform> uniforms: SelfLitUniforms;
 @group(2) @binding(1) var uTexture: texture_2d<f32>;
@@ -57,6 +60,16 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let d2Scaled = dot(deltaScaled, deltaScaled);
   let intensityScaled = uniforms.uLightIntensity * DISTANCE_SCALE * DISTANCE_SCALE;
   let attenuation = intensityScaled / (intensityScaled + d2Scaled);
-  let rgb = uniforms.uLightColor * attenuation * a;
+  let toLight = uniforms.uLightPos - uniforms.uBodyCenter;
+  let distL = length(toLight);
+  var mask = 1.0;
+  if (distL > uniforms.uBodyRadius && distL > 0.0001) {
+    let nL = toLight / distL;
+    let toPix = in.vWorldPos - uniforms.uBodyCenter;
+    let pixLen = length(toPix);
+    let nP = select(nL, toPix / pixLen, pixLen > 0.0001);
+    mask = smoothstep(-0.15, 0.45, dot(nP, nL));
+  }
+  let rgb = uniforms.uLightColor * attenuation * uniforms.uAttenScale * mask * a;
   return vec4<f32>(rgb, a);
 }

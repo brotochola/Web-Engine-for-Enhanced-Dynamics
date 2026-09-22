@@ -23,18 +23,18 @@ export class OccludingFloor extends GameObject {
     // visualRange 0 skips this body's neighbor walk (a 6800-wide floor would scan the world).
     this.collider.visualRange = 0;
 
-    const sprite = config.sprite || '_white';
+    const sprite = config.sprite || 'box';
     this.setSprite(sprite);
-    const origW = this.spriteRenderer.originalWidth || (sprite === '_white' ? 8 : 554);
+    const origW = this.spriteRenderer.originalWidth || (sprite === 'box' ? 8 : 554);
     const origH = this.spriteRenderer.originalHeight || origW;
     this.setScale(width / origW, height / origH);
     this.setAnchor(0.5, 0.5);
-    this.setTint(config.tint ?? (sprite === '_white' ? 0x666666 : 0xffffff));
-    this.setAlpha(config.alpha ?? (sprite === '_white' ? 0.8 : 1));
+    this.setTint(config.tint ?? (sprite === 'box' ? 0x666666 : 0xffffff));
+    this.setAlpha(config.alpha ?? (sprite === 'box' ? 0.8 : 1));
 
-    const rx = config.repeatX != null ? config.repeatX : sprite === '_white' ? 0 : origW;
-    const ry = config.repeatY != null ? config.repeatY : sprite === '_white' ? 0 : origH;
-    this.spriteRenderer.repeatX = rx | 0;
-    this.spriteRenderer.repeatY = ry | 0;
+    // const rx = config.repeatX != null ? config.repeatX : sprite === 'box' ? 0 : origW;
+    // const ry = config.repeatY != null ? config.repeatY : sprite === 'box' ? 0 : origH;
+    // this.spriteRenderer.repeatX = rx | 0;
+    // this.spriteRenderer.repeatY = ry | 0;
   }
 }
