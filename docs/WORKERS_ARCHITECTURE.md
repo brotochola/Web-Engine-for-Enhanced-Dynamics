@@ -272,7 +272,7 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
 
 `pause` / `resume` freeze the **game**: every worker gets the message. Pixi stops its ticker (`ticker.stop()`). Debug UI Play/Pause.
 
-`setPresenting` freezes the **canvas**, not the sim. `GameEngine` listens for `visibilitychange`, `pagehide` / `pageshow`, and `blur` / `focus`. Chrome in the background with this tab still selected often stays `document.visibilityState === 'visible'`; blur is the signal that another app is in front. Default `presentWhenHidden: false` posts `{ msg: 'presenting', value: false }` to **pixi only**. Physics, logic, particle, and pre-render keep stepping.
+`setPresenting` freezes the **canvas**, not the sim. `GameEngine` listens for `visibilitychange` and `pagehide` / `pageshow`. Not `blur` / `focus`: DevTools steals window focus and would freeze the canvas. Chrome behind another app with this tab still selected may stay `document.visibilityState === 'visible'` — that is accepted. Default `presentWhenHidden: false` posts `{ msg: 'presenting', value: false }` to **pixi only**. Physics, logic, particle, and pre-render keep stepping.
 
 On the renderer, `presenting: false` stops the ticker (unless `pause()` already did) and the current `update()` still consumes the render queue, then returns before any GPU work: compute layers, lighting/vis-poly RTs, decal uploads, swapchain present. Skipping only the present is not enough — a WebGPU fluid dispatch in a background tab will TDR the process. `presenting: true` sends `{ msg: 'rebindSurface' }` first (WebGPU `configure`; WebGL no-op), then starts the ticker if the game is not paused.
 

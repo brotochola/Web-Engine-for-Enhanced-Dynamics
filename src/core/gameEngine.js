@@ -169,16 +169,9 @@ class GameEngine {
     };
     this._onPageHide = () => this._onDocumentHidden();
     this._onPageShow = () => this._onDocumentVisible();
-    this._onWindowBlur = () => this._onDocumentHidden();
-    this._onWindowFocus = () => this._onDocumentVisible();
     document.addEventListener('visibilitychange', this._onVisibilityChange);
     window.addEventListener('pagehide', this._onPageHide);
     window.addEventListener('pageshow', this._onPageShow);
-    // Chrome in the background with this tab still selected often stays
-    // document.visibilityState === 'visible'. Blur is the signal that the
-    // window is not in front (Cursor, another app) and the GPU must idle.
-    window.addEventListener('blur', this._onWindowBlur);
-    window.addEventListener('focus', this._onWindowFocus);
   }
 
   _onDocumentHidden() {
@@ -474,8 +467,6 @@ class GameEngine {
     document.removeEventListener('visibilitychange', this._onVisibilityChange);
     window.removeEventListener('pagehide', this._onPageHide);
     window.removeEventListener('pageshow', this._onPageShow);
-    window.removeEventListener('blur', this._onWindowBlur);
-    window.removeEventListener('focus', this._onWindowFocus);
 
     // Remove injected styles
     if (this._injectedStyle && this._injectedStyle.parentNode) {

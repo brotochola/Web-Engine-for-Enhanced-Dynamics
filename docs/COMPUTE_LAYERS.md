@@ -245,4 +245,4 @@ uniforms: {
 
 Engine default `renderer.backend` is `webgpu`. Compute layers require WebGPU. Look shaders must be WGSL on WebGPU and GLSL (`.frag`) on WebGL. A WebGL scene with `shader.compute` throws. Missing GPU device throws at Pixi init when the scene requested WebGPU.
 
-Compute `step()` runs on the pixi ticker. When `GameEngine.setPresenting(false)` (hidden tab, blur, `pagehide`), the renderer consumes the queue and returns before any dispatch. Leaving a heavy lattice submitting in the background TDRs Chrome. Spec: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md#presenting-vs-pause).
+Compute `step()` runs on the pixi ticker. When `GameEngine.setPresenting(false)` (hidden tab, `pagehide`), the renderer consumes the queue and returns before any dispatch. Leaving a heavy lattice submitting in the background TDRs Chrome. Spec: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md#presenting-vs-pause).

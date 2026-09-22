@@ -959,10 +959,10 @@ game.pause();
 game.resume();
 game.setPresenting(false);
 game.presenting; // getter
-game.rebindSurface(); // WebGPU swapchain configure; usually called for you on focus
+game.rebindSurface(); // WebGPU swapchain configure; usually called for you on pageshow
 ```
 
-Hidden tab, `pagehide`, or `window.blur` (Chrome behind another app often stays `visibilityState === 'visible'`) call `setPresenting(false)` unless `presentWhenHidden` is true. Focus / `pageshow` rebind then present again. WebGL and WebGPU both idle the renderer; only WebGPU reconfigures a swapchain. Do not use `pause()` for alt-tab.
+Hidden tab or `pagehide` call `setPresenting(false)` unless `presentWhenHidden` is true. Visible / `pageshow` rebind then present again. Not `window.blur`: DevTools would stop the canvas. WebGL and WebGPU both idle the renderer; only WebGPU reconfigures a swapchain. Do not use `pause()` for alt-tab.
 
 Canvas CSS (`position: fixed`, `touch-action: none`, `user-select: none`) is applied automatically by the engine on every canvas it creates. No CSS needed in your HTML for body reset or canvas styling.
 
