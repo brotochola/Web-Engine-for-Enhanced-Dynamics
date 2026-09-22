@@ -8,7 +8,7 @@ const { ShapeType } = enums;
 class Boid extends GameObject {
   static deriveSpeed = true;
 
-  static turnFactor = 10;
+  static turnFactor = 2;
   static tickInterval = 30;
   static protectedRangeSq = 75 * 75
   static centeringFactor = 1;
@@ -108,15 +108,6 @@ class Boid extends GameObject {
       ay += (avgVY * inv - rbVY[i]) * Boid.matchingFactor;
     }
 
-    const margin = Boid.margin;
-    const turn = Boid.turnFactor * 10;
-    const worldWidth = this.config.worldWidth //|| 800;
-    const worldHeight = this.config.worldHeight// || 600;
-    if (myX < margin) ax += turn;
-    else if (myX > worldWidth - margin) ax -= turn;
-    if (myY < margin) ay += turn;
-    else if (myY > worldHeight - margin) ay -= turn;
-
     if (Mouse.isDown && Mouse.isPresent) {
       const mdx = Mouse.x - myX;
       const mdy = Mouse.y - myY;
@@ -127,6 +118,59 @@ class Boid extends GameObject {
         ay -= mdy * mStr;
       }
     }
+
+    const worldWidth = this.config.worldWidth || 800;
+    const worldHeight = this.config.worldHeight || 600;
+    const frameMs = deltaTime > 0 ? deltaTime : 16.67;
+    const t = (frameMs * Boid.tickInterval) / 1000;
+    let vx = rbVX[i];
+    let vy = rbVY[i];
+    let x = myX;
+    let y = myY;
+    const reachX = Math.abs(vx) * t + Math.abs(ax) * t * t + Boid.margin;
+    const reachY = Math.abs(vy) * t + Math.abs(ay) * t * t + Boid.margin;
+    const peel = Boid.turnFactor;
+    let pos = false;
+    let vel = false;
+
+    if (vx < 0 && x <= reachX) {
+      vx = peel;
+      vel = true;
+      if (ax < 0) ax = 0;
+      if (x < 0) {
+        x = 0;
+        pos = true;
+      }
+    } else if (vx > 0 && x >= worldWidth - reachX) {
+      vx = -peel;
+      vel = true;
+      if (ax > 0) ax = 0;
+      if (x > worldWidth) {
+        x = worldWidth;
+        pos = true;
+      }
+    }
+
+    if (vy < 0 && y <= reachY) {
+      vy = peel;
+      vel = true;
+      if (ay < 0) ay = 0;
+      if (y < 0) {
+        y = 0;
+        pos = true;
+      }
+    } else if (vy > 0 && y >= worldHeight - reachY) {
+      vy = -peel;
+      vel = true;
+      if (ay > 0) ay = 0;
+      if (y > worldHeight) {
+        y = worldHeight;
+        pos = true;
+      }
+    }
+
+    if (pos) this.setPosition(x, y);
+    if (vel) this.setVelocity(vx, vy);
 
     if (ax !== 0 || ay !== 0) this.addAcceleration(ax, ay);
 
