@@ -4690,8 +4690,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (!this.pixiApp.renderer.gpu?.device) {
           throw errorMissingGpuDevice();
         }
-        this.pixiApp.renderer.gpu.device.addEventListener('uncapturederror', (ev) => {
+        const device = this.pixiApp.renderer.gpu.device;
+        device.addEventListener('uncapturederror', (ev) => {
           console.error('WebGPU uncapturederror:', ev.error?.message || String(ev.error));
+        });
+        device.lost.then((info) => {
+          if (info && info.reason === 'destroyed') return;
+          const reason = info?.reason || 'unknown';
+          const message = info?.message || 'GPU device was lost';
+          this.reportError('WebGPU device lost', new Error(`${reason}: ${message}`));
         });
         this._bindWebGpuSwapchain();
       } else {
