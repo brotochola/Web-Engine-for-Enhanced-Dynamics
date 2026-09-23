@@ -38,7 +38,7 @@ const SHARED = {
   renderer: {
     backend: 'webgl',
     noLimitFPS: false,
-    ySorting: false,
+    ySortingInCPU: false,
     maxVisibleRenderables: 65535,
   },
   lighting: { enabled: false },

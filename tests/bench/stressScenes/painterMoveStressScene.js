@@ -68,7 +68,7 @@ function painterMoveConfig() {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySorting: true,
+      ySortingInCPU: true,
       maxVisibleRenderables: N,
     },
     preRender: {

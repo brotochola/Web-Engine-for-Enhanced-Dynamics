@@ -605,6 +605,7 @@ class PreRenderWorker extends AbstractWorker {
         this.decorationHideZoom = rendererConfig.hideDecorationsAtZoom ?? RENDERER_DEFAULTS.hideDecorationsAtZoom;
         this._decorationZoomAlpha = 1;
         this._lightGlowAsSprite = (rendererConfig.lightGlow ?? RENDERER_DEFAULTS.lightGlow) === 'sprite';
+        this._useZBuffer = rendererConfig.useZBuffer === true;
         this._glowLayerAlpha = 1;
 
         console.log(`[PRE_RENDER WORKER] Entities: ${this.globalEntityCount}, Particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}`);
@@ -2464,7 +2465,7 @@ class PreRenderWorker extends AbstractWorker {
         const rqRotC = this.renderQueueRotC;
         const rqRotS = this.renderQueueRotS;
         const rqSortKey = this.renderQueueSortKey;
-        const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
+        const writeSortKey = !!(rqSortKey && (this._useZBuffer || (Layer._ySorting && Layer._ySorting[Layer.entitiesId])));
         const inherit = SpriteRenderer.inheritTransformRotation;
         for (let i = 0; i < count; i++) {
             if (collectorType[i] !== 0) continue;
@@ -3026,7 +3027,7 @@ class PreRenderWorker extends AbstractWorker {
         const stashRc = this._renderableRotC;
         const stashRs = this._renderableRotS;
         const stashPose = this._displayPoseOut;
-        const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
+        const writeSortKey = !!(rqSortKey && (this._useZBuffer || (Layer._ySorting && Layer._ySorting[Layer.entitiesId])));
         const persistBuf = this._queueBuf;
         const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
         if (persistHit) {

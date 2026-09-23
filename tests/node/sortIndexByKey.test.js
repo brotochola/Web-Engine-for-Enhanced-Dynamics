@@ -7,6 +7,7 @@ import {
   painterSameSet,
   orderPainterSlots,
   spriteYSortKey,
+  depthFromSortKey,
 } from '../../src/util/sortIndexByKey.js';
 
 function cmpFloat(a, b) {
@@ -26,6 +27,17 @@ function sortCheck(values) {
   expect.sort((a, b) => cmpFloat(keys[a], keys[b]));
   assert.deepEqual(Array.from(idx), expect);
 }
+
+test('depthFromSortKey larger key is closer', () => {
+  const h = 1000;
+  const k = 128;
+  assert.equal(depthFromSortKey(0, h, k), 1);
+  assert.equal(depthFromSortKey(h * k, h, k), 0);
+  const mid = depthFromSortKey(500 * k, h, k);
+  assert.ok(mid < 1 && mid > 0);
+  assert.equal(depthFromSortKey(-10, h, k), 1);
+  assert.equal(depthFromSortKey(h * k + 50, h, k), 0);
+});
 
 test('radix sort indices by float sortKey', () => {
   sortCheck([]);

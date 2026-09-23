@@ -510,8 +510,8 @@ function initializeLightingAndRenderBuffers(scene) {
   scene.poseCapacity = poseN;
 
   const builtInLayers = {};
-  const defaultYSorting = config.renderer?.ySorting !== undefined
-    ? !!config.renderer.ySorting
+  const defaultYSorting = config.renderer?.ySortingInCPU !== undefined
+    ? !!config.renderer.ySortingInCPU
     : true;
   const glowAsSprite = (config.renderer?.lightGlow ?? RENDERER_DEFAULTS.lightGlow) === 'sprite';
   for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {

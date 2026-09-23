@@ -11,6 +11,21 @@ export function spriteYSortKey(y, ySortK) {
   return Math.round(y) * ySortK;
 }
 
+/**
+ * Clip Z for the same key the CPU painter orders. GL depth is less-wins,
+ * so a larger key (farther down the screen, plus innerZ) maps closer to 0.
+ * @param {number} key
+ * @param {number} worldHeight
+ * @param {number} ySortK
+ */
+export function depthFromSortKey(key, worldHeight, ySortK) {
+  const span = (worldHeight > 0 ? worldHeight : 1) * (ySortK > 0 ? ySortK : 128);
+  let z = 1 - key / span;
+  if (z < 0) z = 0;
+  else if (z > 1) z = 1;
+  return z;
+}
+
 /** IEEE-754 bits → uint32 that orders like the float (negatives included). */
 export function floatBitsToOrd(bits) {
   const u = bits >>> 0;

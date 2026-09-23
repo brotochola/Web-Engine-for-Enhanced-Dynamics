@@ -34,7 +34,7 @@ export class PlatformerGameScene extends Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySorting: false,
+      ySortingInCPU: false,
       maxVisibleRenderables: 10000,
     },
     preRender: {

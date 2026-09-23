@@ -45,7 +45,7 @@ export class BunnyMarkScene extends Scene {
         renderer: {
             backend: 'webgl',
             noLimitFPS: false,
-            ySorting: false,
+            ySortingInCPU: false,
             maxVisibleRenderables: INITIAL_BUNNIES,
             interpolation: true,
         },

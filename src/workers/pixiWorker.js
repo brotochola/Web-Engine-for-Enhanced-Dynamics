@@ -362,7 +362,9 @@ class PixiRenderer extends AbstractWorker {
     this._pixiPresent = null;
 
     // Renderer configuration options (set during initialize)
-    this.ySorting = false; // Enable/disable Y-sorting for depth ordering
+    this.ySortingInCPU = false;
+    this._useZBuffer = false;
+    this._alphaCut = RENDERER_DEFAULTS.alphaCut;
     this._lightGlowAdd = true;
     this.physicsWorkerIndex = 1; // Updated during initialize() based on spatial worker count
 
@@ -1222,6 +1224,7 @@ class PixiRenderer extends AbstractWorker {
     q.tileOffsetV = src.tileOffsetV;
     q.tileMulX = src.tileMulX;
     q.tileMulY = src.tileMulY;
+    q.sortKey = src.sortKey || null;
   }
 
   _resetSpriteUploadOpts(opts) {
@@ -1232,6 +1235,7 @@ class PixiRenderer extends AbstractWorker {
     opts.indexCount = 0;
     opts.depthMode = BATCH_DEPTH.INDEX;
     opts.sortKey = null;
+    opts.useZBuffer = false;
     opts.texLut = this._texLut;
     opts.texLutCount = this._texLutCount;
     opts.textures = this.flatTextures;
@@ -1243,7 +1247,8 @@ class PixiRenderer extends AbstractWorker {
 
   /**
    * One blend, CPU order when `painter` is set. Shared by ENTITIES and every
-   * Y-sorted custom layer — no second coverage pass, no GPU sortKey depth.
+   * Y-sorted custom layer. Entity `useZBuffer` writes the queue sort key as clip Z
+   * and skips the painter.
    */
   _uploadSortedSprites(batch, q, opts, painter, keysU32, idxE, ne) {
     if (painter && keysU32 && ne >= 2) {
@@ -1260,7 +1265,11 @@ class PixiRenderer extends AbstractWorker {
       opts.indexCount = 0;
     }
     opts.depthMode = BATCH_DEPTH.INDEX;
-    opts.sortKey = null;
+    if (opts.useZBuffer && q.sortKey) opts.sortKey = q.sortKey;
+    else {
+      opts.useZBuffer = false;
+      opts.sortKey = null;
+    }
     return batch.upload(q, opts);
   }
 
@@ -1308,10 +1317,12 @@ class PixiRenderer extends AbstractWorker {
       tileOffsetV: this.renderQueueTileOffsetV,
       tileMulX: this.renderQueueTileMulX,
       tileMulY: this.renderQueueTileMulY,
+      sortKey: this.renderQueueSortKey,
     }, count);
 
     const opts = this._entityUploadOpts;
     this._resetSpriteUploadOpts(opts);
+    opts.useZBuffer = !!this._useZBuffer;
     opts.space = BATCH_SPACE.WORLD;
     opts.depthDenom = this.renderQueueMaxItems;
     opts.worldHeight = this.config?.worldHeight || 10000;
@@ -1358,6 +1369,8 @@ class PixiRenderer extends AbstractWorker {
           radixSortIndicesBySortKey(idxG, ng, this._sortKeyU32, this._painter.scratch, this._painter.hist);
           if (detail) this.sortTimeThisFrame += performance.now() - t0;
         }
+        opts.useZBuffer = false;
+        opts.sortKey = null;
         opts.indices = idxG;
         opts.indexCount = ng;
         this.entitiesGlowBatch.upload(q, opts);
@@ -1380,6 +1393,8 @@ class PixiRenderer extends AbstractWorker {
     this._posePacked = true;
     this.visibleParticleCount = 0;
     if (this._lightGlowAdd && this.lightingEnabled && this.entitiesGlowBatch) {
+      opts.useZBuffer = false;
+      opts.sortKey = null;
       opts.includeType = 3;
       this.entitiesGlowBatch.upload(q, opts);
     } else if (this.spriteGlowMesh) {
@@ -1512,19 +1527,22 @@ class PixiRenderer extends AbstractWorker {
   }
 
   createEntitiesInstancedBatch(maxItems) {
-    // One source-over draw. ySorting → CPU painter order (sortIndexByKey.js).
-    // No Z, no coverage pass, no second particle batch. Glow stays ADD.
+    // One source-over draw. ySortingInCPU → CPU painter (sortIndexByKey.js).
+    // useZBuffer writes that same sort key as clip Z and skips the painter.
+    // No coverage pass, no second particle batch. Glow stays ADD, without depth.
+    const z = !!this._useZBuffer;
     this._rqIdxEntity = new Uint32Array(maxItems);
     this._rqIdxGlow = new Uint32Array(maxItems);
-    this._painter = this.ySorting ? createPainterState(maxItems) : null;
+    this._painter = (!z && this.ySortingInCPU) ? createPainterState(maxItems) : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
-      depthTest: false,
-      depthMask: false,
-      alphaDiscard: false,
+      depthTest: z,
+      depthMask: z,
+      alphaDiscard: z,
+      alphaCut: z ? new Float32Array([this._alphaCut, 0, 0, 0]) : null,
       premultiplyAlpha: true,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
@@ -1546,6 +1564,7 @@ class PixiRenderer extends AbstractWorker {
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
       depthTest: false,
+      depthMask: false,
       premultiplyAlpha: false,
       blendMode: 'add',
       useWebGpu: this._useWebGpu,
@@ -3365,6 +3384,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
       depthTest: false,
+      depthMask: false,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
     });
@@ -4742,8 +4762,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.noLimitFPS = true;
     }
 
-    // Configure Y-sorting (default: true)
-    this.ySorting = rendererConfig.ySorting !== undefined ? rendererConfig.ySorting : true;
+    // Missing key keeps the old worker fallback (on). Scene merge supplies RENDERER_DEFAULTS.
+    this.ySortingInCPU = rendererConfig.ySortingInCPU !== undefined ? !!rendererConfig.ySortingInCPU : true;
+    this._useZBuffer = rendererConfig.useZBuffer === true;
+    const alphaCut = Number(rendererConfig.alphaCut ?? RENDERER_DEFAULTS.alphaCut);
+    this._alphaCut = alphaCut >= 0 && alphaCut <= 1 ? alphaCut : RENDERER_DEFAULTS.alphaCut;
+    if (this._useZBuffer && this.ySortingInCPU && !this._zSortWarned) {
+      this._zSortWarned = true;
+      console.warn('PIXI WORKER: useZBuffer is on, so ySortingInCPU does not run');
+    }
     this._lightGlowAdd = (rendererConfig.lightGlow ?? RENDERER_DEFAULTS.lightGlow) !== 'sprite';
 
     this.autoGenerateMipmaps =
@@ -4821,7 +4848,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         resolution: 1,
         canvas: this.canvasView, // v8 uses 'canvas' instead of 'view'
         backgroundColor: 0x000000,
-        depth: true,
+        depth: true, // root present clears color and depth (Pixi clear defaults to ALL)
         // Performance optimizations
         powerPreference: 'high-performance',
         preference: backend,
@@ -5225,6 +5252,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           atlasSource: this._resolveAtlasSource(),
           lutSource: this._texLutSource,
           depthTest: false,
+          depthMask: false,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
         });

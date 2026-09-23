@@ -52,7 +52,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySorting: false,
+      ySortingInCPU: false,
       maxVisibleRenderables: 50000,
     },
 

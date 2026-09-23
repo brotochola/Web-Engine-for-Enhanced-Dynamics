@@ -30,7 +30,7 @@ export class ZenithalParticleTestScene extends Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySorting: false,
+      ySortingInCPU: false,
       maxVisibleRenderables: 5000
     },
 

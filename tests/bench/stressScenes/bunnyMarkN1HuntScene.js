@@ -27,7 +27,7 @@ export class BunnyMarkN1HuntScene extends Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySorting: false,
+      ySortingInCPU: false,
       maxVisibleRenderables: N,
       interpolation: true,
     },
