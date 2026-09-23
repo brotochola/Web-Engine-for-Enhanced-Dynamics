@@ -1549,6 +1549,7 @@ class PixiRenderer extends AbstractWorker {
     // Published readyFrame is that counter. Read index is (readyFrame - 1) & 1.
     // So when sync[0]=N, the data is in buffer (N-1)%2, not N%2
     let consumedNewFrame = false;
+    let deferConsume = 0;
     if (this.renderQueueSync) {
       const readyFrame = Atomics.load(this.renderQueueSync, 0);
 
@@ -1576,18 +1577,19 @@ class PixiRenderer extends AbstractWorker {
           if (cl.sortKeyU32ByBuf) cl.sortKeyU32 = cl.sortKeyU32ByBuf[readBufferIdx];
         }
 
-        // Pin the pose this queue was packed with, then copy it, then wake
-        // pre-render. publishPose may reuse the SAB slot as soon as the next
-        // consume lands; the stamp must not read that buffer live.
+        // Pin the pose before pre-render can reuse that slot. The render-queue
+        // SAB stays with us until the reads below finish.
         this._latchPose(false, this.renderQueuePoseReady ? this.renderQueuePoseReady[0] : 0);
         this._snapshotComputePose();
 
-        // Signal that we've consumed this frame
-        // This allows pre_render_worker to reuse this buffer
+        // Hidden tab: release now so pre-render does not wait on a frame we will not draw.
+        // Presenting: release in the finally, after shadows, sprites, and custom layers.
         this.lastReadFrame = readyFrame;
-        Atomics.store(this.renderQueueSync, 1, readyFrame);
-        // Wake pre_render_worker if it was waiting (it might be if >1 frame ahead)
-        Atomics.notify(this.renderQueueSync, 1, 1);
+        if (this._presenting) deferConsume = readyFrame;
+        else {
+          Atomics.store(this.renderQueueSync, 1, readyFrame);
+          Atomics.notify(this.renderQueueSync, 1, 1);
+        }
 
         // Frame-locked camera from the same renderQueue slot.
         if (this.renderQueueCamera) {
@@ -1605,8 +1607,10 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    // Queue already consumed. No GPU while the canvas is not on screen.
+    // Hidden tab already released the buffer above. No GPU while the canvas is off screen.
     if (!this._presenting) return;
+
+    try {
 
     // STALE-FRAME GATING: every input to the sprite syncs and offscreen GPU
     // passes below is frame-locked to the render queue (sprite/shadow/custom
@@ -1716,6 +1720,12 @@ class PixiRenderer extends AbstractWorker {
 
     this._applyLayerVisibility();
     this._presentStage();
+    } finally {
+      if (deferConsume) {
+        Atomics.store(this.renderQueueSync, 1, deferConsume);
+        Atomics.notify(this.renderQueueSync, 1, 1);
+      }
+    }
   }
 
   /**
