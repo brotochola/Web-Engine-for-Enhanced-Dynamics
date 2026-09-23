@@ -32,6 +32,8 @@ test('RENDERER_STATS peel load keys sit inside stride 24', () => {
   assert.equal(RENDERER_STATS.MESH_FILL_INSTANCES, 19);
   assert.equal(RENDERER_STATS.MESH_RT_DRAWS, 20);
   assert.equal(RENDERER_STATS.SORT_MS, 21);
+  assert.equal(RENDERER_STATS.QUEUE_MS, 22);
+  assert.equal(RENDERER_STATS.PRESENT_MS, 23);
   assert.equal(RENDERER_STATS.STRIDE_FLOATS, 24);
   assert.equal(RENDERER_STATS.BUFFER_SIZE, 24 * 4);
   const buffer = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);

@@ -409,6 +409,8 @@ class PixiRenderer extends AbstractWorker {
     this.shadowsTimeThisFrame = 0;
     this.spritesTimeThisFrame = 0;
     this.sortTimeThisFrame = 0;
+    this.queueTimeThisFrame = 0;
+    this.presentTimeThisFrame = 0;
     this.customLayersTimeThisFrame = 0;
     this.miscTimeThisFrame = 0;
 
@@ -1069,6 +1071,8 @@ class PixiRenderer extends AbstractWorker {
         this.stats[RENDERER_STATS.SHADOWS_MS] = this.shadowsTimeThisFrame;
         this.stats[RENDERER_STATS.SPRITES_MS] = this.spritesTimeThisFrame;
         this.stats[RENDERER_STATS.SORT_MS] = this.sortTimeThisFrame;
+        this.stats[RENDERER_STATS.QUEUE_MS] = this.queueTimeThisFrame;
+        this.stats[RENDERER_STATS.PRESENT_MS] = this.presentTimeThisFrame;
         this.stats[RENDERER_STATS.CUSTOM_LAYERS_MS] = this.customLayersTimeThisFrame;
         this.stats[RENDERER_STATS.MISC_MS] = this.miscTimeThisFrame;
       }
@@ -1548,6 +1552,10 @@ class PixiRenderer extends AbstractWorker {
   update(deltaTime, dtRatio, resuming) {
     this._lastDt = deltaTime > 0 ? deltaTime / 1000 : 1 / 60;
 
+    const detail = this.collectDetailedStats;
+    let t0 = 0;
+    if (detail) t0 = performance.now();
+
     // ========================================
     // DOUBLE BUFFER SYNC: Select read buffer
     // ========================================
@@ -1615,9 +1623,13 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
+    if (detail) this.queueTimeThisFrame = performance.now() - t0;
+    this.presentTimeThisFrame = 0;
+
     // Hidden tab already released the buffer above. No GPU while the canvas is off screen.
     if (!this._presenting) return;
 
+    let timingPresent = false;
     try {
 
     // STALE-FRAME GATING: every input to the sprite syncs and offscreen GPU
@@ -1628,10 +1640,12 @@ class PixiRenderer extends AbstractWorker {
     // the system is loaded). Fall back to per-tick behavior before the first
     // frame (keeps lightingRT/shadowRT initialized), if the queue is absent,
     // and on resume after a pause.
+    if (detail) t0 = performance.now();
     if (!consumedNewFrame && this._queueInterp && this._posePacked && this.entitiesBatch) {
       this._tickPoseAlpha();
       this.entitiesBatch.setPoseAlpha(this._poseAlpha);
     }
+    const poseMs = detail ? performance.now() - t0 : 0;
 
     const runFrameLockedPasses =
       consumedNewFrame || resuming || this.lastReadFrame <= 0 || !this.renderQueueSync;
@@ -1641,15 +1655,14 @@ class PixiRenderer extends AbstractWorker {
     this.shadowsTimeThisFrame = 0;
     this.spritesTimeThisFrame = 0;
     this.sortTimeThisFrame = 0;
+    this.presentTimeThisFrame = 0;
     this.customLayersTimeThisFrame = 0;
-    this.miscTimeThisFrame = 0;
+    this.miscTimeThisFrame = poseMs;
     this._decalTilesDirtyThisFrame = 0;
     this._decalTilesUploadedThisFrame = 0;
     this._meshFillInstancesThisFrame = 0;
     this._meshRtDrawsThisFrame = 0;
 
-    const detail = this.collectDetailedStats;
-    let t0 = 0;
     if (detail) t0 = performance.now();
 
     // Camera is always provided by the pre-render worker via renderQueueCamera.
@@ -1679,10 +1692,14 @@ class PixiRenderer extends AbstractWorker {
     // Not frame-locked: driven by particle_worker dirty flags, so always poll.
     this.updateDecalTiles();
 
-    if (detail) this.miscTimeThisFrame = performance.now() - t0;
+    if (detail) this.miscTimeThisFrame += performance.now() - t0;
 
     if (runFrameLockedPasses) {
-      if (this._texLutNeedsGpuUpload) this._uploadTexLutTexture();
+      if (this._texLutNeedsGpuUpload) {
+        if (detail) t0 = performance.now();
+        this._uploadTexLutTexture();
+        if (detail) this.miscTimeThisFrame += performance.now() - t0;
+      }
       // Pre-compute visible lights once (shared by updateLighting, updateShadowSprites)
       if (detail) t0 = performance.now();
       this.computeVisibleLights();
@@ -1694,15 +1711,22 @@ class PixiRenderer extends AbstractWorker {
       this.updateShadowSprites();
       if (detail) this.shadowsTimeThisFrame = performance.now() - t0;
 
-      // Use render queue from pre_render_worker - no fallback
+      // Use render queue from pre_render_worker - no fallback.
+      // Sort time is its own chip: pull it out of Sprites and Custom.
       if (detail) t0 = performance.now();
+      const sortBeforeSprites = this.sortTimeThisFrame;
       this.updateSpritesFromRenderQueue();
-      if (detail) this.spritesTimeThisFrame = performance.now() - t0;
+      if (detail) {
+        this.spritesTimeThisFrame = performance.now() - t0 - (this.sortTimeThisFrame - sortBeforeSprites);
+      }
 
       // Update custom layer sprites and render shader layers to their RenderTextures
       if (detail) t0 = performance.now();
+      const sortBeforeCustom = this.sortTimeThisFrame;
       this.updateCustomLayers();
-      if (detail) this.customLayersTimeThisFrame = performance.now() - t0;
+      if (detail) {
+        this.customLayersTimeThisFrame = performance.now() - t0 - (this.sortTimeThisFrame - sortBeforeCustom);
+      }
 
       // ========================================
       // LOW-RES OFF-SCREEN RENDERING
@@ -1727,13 +1751,21 @@ class PixiRenderer extends AbstractWorker {
       if (detail) this.lightsTimeThisFrame += performance.now() - t0;
     }
 
+    if (detail) t0 = performance.now();
     this._applyLayerVisibility();
+    if (detail) this.miscTimeThisFrame += performance.now() - t0;
+
+    if (detail) {
+      t0 = performance.now();
+      timingPresent = true;
+    }
     this._presentStage();
     } finally {
       if (deferConsume) {
         Atomics.store(this.renderQueueSync, 1, deferConsume);
         Atomics.notify(this.renderQueueSync, 1, 1);
       }
+      if (timingPresent) this.presentTimeThisFrame = performance.now() - t0;
     }
   }
 

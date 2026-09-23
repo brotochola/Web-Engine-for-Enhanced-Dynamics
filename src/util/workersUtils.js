@@ -43,8 +43,12 @@ export const RENDERER_STATS = Object.freeze({
   MESH_FILL_INSTANCES: 19,
   /** MESH fill RT draws this frame; 0 means skip-RT (always on). */
   MESH_RT_DRAWS: 20,
-  /** CPU painter sort (orderPainterSlots + glow radix). Written only when collectDetailedStats. */
+  /** CPU painter sort, not included in SPRITES_MS or CUSTOM_LAYERS_MS. Written only when collectDetailedStats. */
   SORT_MS: 21,
+  /** Render-queue latch at the start of update(). Written only when collectDetailedStats. */
+  QUEUE_MS: 22,
+  /** Stage present plus the finally that releases the queue. Written only when collectDetailedStats. */
+  PRESENT_MS: 23,
   STRIDE_FLOATS: 24,
   BUFFER_SIZE: 24 * 4,
 });
@@ -261,12 +265,14 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'DRAW_CALLS', label: 'Draws', format: fmtNum },
       { key: 'VISIBLE_SPRITES', label: 'Sprites', format: fmtNum },
       { key: 'VISIBLE_ENTITIES', label: 'Visible', format: fmtNum },
+      { key: 'QUEUE_MS', label: 'Queue', format: fmtMs },
       { key: 'LIGHTS_MS', label: 'Lights', format: fmtMs },
       { key: 'SHADOWS_MS', label: 'Shadows', format: fmtMs },
       { key: 'SPRITES_MS', label: 'SpritesMs', format: fmtMs },
       { key: 'SORT_MS', label: 'Sort', format: fmtMs },
       { key: 'CUSTOM_LAYERS_MS', label: 'Custom', format: fmtMs },
       { key: 'MISC_MS', label: 'Misc', format: fmtMs },
+      { key: 'PRESENT_MS', label: 'Present', format: fmtMs },
     ],
   },
   particle: {
