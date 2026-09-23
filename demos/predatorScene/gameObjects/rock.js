@@ -21,23 +21,6 @@ export class Rock extends GameObject {
 
   setup() {
     this.rigidBody.static = 1;
-    this.setSprite('rock' + Math.floor(rng() * 4 + 1));
-    this.scale = rng() * 0.5 + 1;
-    this.setScale(rng() > 0.5 ? this.scale : -this.scale, this.scale);
-
-    this.collider.shapeType = ShapeType.Circle;
-    this.collider.radius = this.spriteRenderer.originalWidth * 0.4 * this.scale;
-    // this.collider.offsetY = -this.collider.radius;
-
-    this.collider.visualRange = 0;
-
-    this.shadowCaster.heightMultiplier = 2
-    this.shadowCaster.anchorOffsetY = 0.17
-
-    this.spriteRenderer.anchorY = 0.66
-    this.spriteRenderer.anchorX = 0.5
-
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
   }
 
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
@@ -66,5 +49,16 @@ export class Rock extends GameObject {
 
   }
 
-  onSpawned(spawnConfig = {}) { }
+  onSpawned(spawnConfig = {}) {
+    this.setSprite('rock' + Math.floor(rng() * 4 + 1));
+    this.scale = rng() * 0.5 + 1;
+    this.setScale(rng() > 0.5 ? this.scale : -this.scale, this.scale);
+    this.collider.shapeType = ShapeType.Circle;
+    this.collider.radius = this.spriteRenderer.originalWidth * 0.4 * this.scale;
+    this.collider.visualRange = 0;
+    this.shadowCaster.heightMultiplier = 2;
+    this.shadowCaster.anchorOffsetY = 0.17;
+    this.spriteRenderer.anchorY = 0.66;
+    this.spriteRenderer.anchorX = 0.5;
+  }
 }

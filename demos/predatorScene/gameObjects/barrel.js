@@ -11,6 +11,7 @@ const {
   randomColor,
   Flash,
   SoundManager,
+  rng,
   enums,
 } = WEED;
 const { ShapeType } = enums;
@@ -21,36 +22,17 @@ export class Barrel extends GameObject {
   static components = [Collider, SpriteRenderer, RigidBody, ShadowCaster];
 
   setup() {
-    // Override Boid's physics properties for prey behavior
     this.rigidBody.linearDamping = 0.8;
-    this.setSprite('barrel' + Math.floor(rng() * 3 + 1));
-
-    this.setScale(rng() > 0.5 ? 1 : 1);
-
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 10;
-    this.rigidBody.linearDamping = 10
+    this.rigidBody.linearDamping = 10;
     this.collider.visualRange = 50;
     this.setFixedRotation(1);
-
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
   }
 
   onSpawned(spawnConfig = {}) {
-    //  addDecoration(texture, localX, localY, scaleX, scaleY, zIndex, extra = {}) {
-
-    // Attached decoration smoke test: access via this.getAttachedDecoration(0) / getAttachedDecorationCount()
-    // this.addDecoration('_whiteCircle', 10, -10, 4, 4, 1, {
-    //   anchorX: 0.5,
-    //   anchorY: 0.5,
-    //   alpha: 0.66,
-    // });
-
-    // this.addDecoration('_whiteCircle', -10, -10, 4, 4, -1, {
-    //   anchorX: 0.5,
-    //   anchorY: 0.5,
-    //   alpha: 0.66,
-    // });
+    this.setSprite('barrel' + Math.floor(rng() * 3 + 1));
+    this.setScale(1);
   }
 
   onDespawned() {

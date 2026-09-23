@@ -1,5 +1,5 @@
 /**
- * Y-sort painter A/B. Copy of the render-queue stress row with a higher N.
+ * Y-sort painter (reinsert). Copy of the render-queue stress row with a higher N.
  * Catalog scene stays at 16k. Physics off: Box2D caps bodies at 65535.
  * skipCull keeps every sprite in the queue so Pixi sees N.
  */

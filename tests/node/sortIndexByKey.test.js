@@ -69,8 +69,8 @@ test('reinsert only the slot whose key changed', () => {
   assert.equal(reinsertChangedSlots(order, n, keysU32, prev, slotMoved, movedList, merge, scratch, hist), 0);
 });
 
-function orderCheck(keysU32, ne, idxE, state, mode) {
-  const order = orderPainterSlots(state, idxE, ne, keysU32, mode);
+function orderCheck(keysU32, ne, idxE, state) {
+  const order = orderPainterSlots(state, idxE, ne, keysU32);
   const slots = idxE ? Array.from(idxE.subarray(0, ne)) : Array.from({ length: ne }, (_, i) => i);
   const got = order ? Array.from(order.subarray(0, ne)) : slots;
   const expect = slots.slice().sort((a, b) => keysU32[a] - keysU32[b] || a - b);
@@ -92,38 +92,35 @@ test('orderPainterSlots: dense layer queue (idxE=null) sorts by key every frame'
   const state = createPainterState(cap);
 
   keys.set([50, 10, 30, 20, 40]);
-  orderCheck(keysU32, 5, null, state, 'reinsert');
+  orderCheck(keysU32, 5, null, state);
 
   // Same dense count next frame, values reshuffled — models a shard split
   // shifting while the total published count happens to stay the same.
   keys.set([15, 45, 5, 35, 25]);
-  orderCheck(keysU32, 5, null, state, 'reinsert');
+  orderCheck(keysU32, 5, null, state);
 
   // Count drops (some slot fell out of the queue): must not reuse stale order.
   keys.set([1, 2, 3, 4]);
-  orderCheck(keysU32, 4, null, state, 'reinsert');
+  orderCheck(keysU32, 4, null, state);
 
   // Count grows back past the old size.
   keys.set([9, 8, 7, 6, 5, 4]);
-  orderCheck(keysU32, 6, null, state, 'reinsert');
+  orderCheck(keysU32, 6, null, state);
 });
 
-test('orderPainterSlots: radix and decimate modes stay a valid permutation', () => {
+test('orderPainterSlots: reinsert stays a valid permutation; radix when the set changes', () => {
   const cap = 10;
   const keys = new Float32Array(cap);
   const keysU32 = new Uint32Array(keys.buffer);
-
-  const radixState = createPainterState(cap);
+  const state = createPainterState(cap);
   for (const vals of [[3, 1, 2], [1, 3, 2], [2, 2, 2]]) {
     keys.set(vals);
-    orderCheck(keysU32, vals.length, null, radixState, 'radix');
+    orderCheck(keysU32, vals.length, null, state);
   }
-
-  const decState = createPainterState(cap);
-  for (let frame = 0; frame < 6; frame++) {
-    keys.set([frame, frame * 2, frame * 3, frame * 4]);
-    orderCheck(keysU32, 4, null, decState, 'decimate');
-  }
+  keys.set([9, 8, 7, 6]);
+  orderCheck(keysU32, 4, null, state);
+  keys.set([1, 2]);
+  orderCheck(keysU32, 2, null, state);
 });
 
 test('painterSameSet: dense set (idxE=null) needs only a matching count', () => {
@@ -141,7 +138,7 @@ test('painterSameSet: filtered set (real idxE) needs matching integers, not just
   const state = createPainterState(cap);
   keys.set([10, 20, 30, 40]);
   const idxE = new Uint32Array([0, 1, 2, 3]);
-  orderPainterSlots(state, idxE, 4, keysU32, 'reinsert');
+  orderPainterSlots(state, idxE, 4, keysU32);
   // Same count, different integer set (2 swapped for 4) — must not be "same set".
   const shiftedIdxE = new Uint32Array([0, 1, 3, 4]);
   assert.equal(painterSameSet(state, shiftedIdxE, 4), false);

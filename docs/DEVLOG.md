@@ -6,6 +6,10 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 23 September 2026 — Reinsert Is the Painter
+
+`renderer.painterSort` is gone. `ySorting` is the only knob: on, reinsert (radix only when the slot set changes); off, no sort. Radix-every-frame and decimate were measurement knobs. They are not a public API. Predator no longer names a sort mode. Tree, Rock, and Barrel now call `setSprite` in `onSpawned`, so a recycled pool slot is visible again.
+
 ## Wednesday 23 September 2026 — Kill the Two-Pass
 
 The GPU two-pass is gone. One painter, ENTITIES treated as a sprite layer, no `entitiesParticleBatch`, no `coverageMesh`, no `BATCH_DEPTH.SORT_KEY`. `renderer.painterSort: 'off'` now means reinsert. Predator no longer pins the old path.

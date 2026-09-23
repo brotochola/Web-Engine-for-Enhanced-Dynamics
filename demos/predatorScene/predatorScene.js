@@ -129,7 +129,6 @@ export class PredatorScene extends WEED.Scene {
       hideDecorationsAtZoom: 0.25,
       autoGenerateMipmaps: false,
       interpolation: false,
-      painterSort: 'reinsert',
     },
     preRender: {
       noLimitFPS: false,

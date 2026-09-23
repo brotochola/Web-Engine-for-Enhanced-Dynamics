@@ -2,8 +2,8 @@
  * Y-sort painter with SHARDED pre-render (numberOfPreRenderWorkers: 2). Not the
  * catalog row. Neither painterSortStressScene.js nor painterMoveStressScene.js
  * pins more than one pre-render worker, so the reinsert A/B that shipped
- * `renderer.painterSort` never ran against a sharded queue — this scene closes
- * that gap. skipCull is OFF (unlike the other painter stress scenes) so entities
+ * never ran against a sharded queue — this scene closes that gap. skipCull is
+ * OFF (unlike the other painter stress scenes) so entities
  * drifting across the camera edge make each pre-render worker's queue slice
  * grow/shrink independently; the total published count can land on the same
  * number while the shard split underneath moved. That's the shape a `_painterSameSet`
@@ -41,7 +41,7 @@ export class PainterShardEntity extends GameObject {
   }
 }
 
-function painterShardedConfig(painterSort, numberOfPreRenderWorkers) {
+function painterShardedConfig(numberOfPreRenderWorkers) {
   return {
     worldWidth: 3000,
     worldHeight: 5000,
@@ -73,7 +73,6 @@ function painterShardedConfig(painterSort, numberOfPreRenderWorkers) {
       noLimitFPS: false,
       ySorting: true,
       maxVisibleRenderables: N,
-      painterSort,
     },
     preRender: {
       noLimitFPS: false,
@@ -117,15 +116,9 @@ class PainterShardedBase extends Scene {
   }
 }
 
-export class PainterSharded1WOffScene extends PainterShardedBase {
-  static config = painterShardedConfig('off', 1);
-}
-export class PainterSharded2WOffScene extends PainterShardedBase {
-  static config = painterShardedConfig('off', 2);
-}
 export class PainterSharded1WReinsertScene extends PainterShardedBase {
-  static config = painterShardedConfig('reinsert', 1);
+  static config = painterShardedConfig(1);
 }
 export class PainterSharded2WReinsertScene extends PainterShardedBase {
-  static config = painterShardedConfig('reinsert', 2);
+  static config = painterShardedConfig(2);
 }

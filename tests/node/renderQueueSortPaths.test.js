@@ -22,18 +22,18 @@ test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter pat
   assert.match(pixi, /createPainterState,\s*orderPainterSlots\s*}\s*from\s*'\.\.\/util\/sortIndexByKey\.js'/);
   assert.match(pixi, /this\._painter = this\.ySorting \? createPainterState\(maxItems\) : null/);
   assert.match(pixi, /_uploadSortedSprites\(/);
-  assert.match(pixi, /orderPainterSlots\(painter, idxE, ne, keysU32, this\.painterSort\)/);
+  assert.match(pixi, /orderPainterSlots\(painter, idxE, ne, keysU32\)/);
   assert.match(pixi, /painter = layerYSort \? createPainterState\(maxItems\) : null/);
   assert.match(pixi, /this\._uploadSortedSprites\(cl\.batch, q, opts, cl\.painter, cl\.sortKeyU32, null, count\)/);
 });
 
-test('pixi: GPU two-pass is gone; ySorting maps off to reinsert', () => {
+test('pixi: GPU two-pass is gone; ySorting uses reinsert with no painterSort config', () => {
   assert.doesNotMatch(pixi, /entitiesParticleBatch/);
   assert.doesNotMatch(pixi, /coveragePass/);
   assert.doesNotMatch(pixi, /BATCH_DEPTH\.SORT_KEY/);
   assert.doesNotMatch(pixi, /spriteCoverageMesh/);
   assert.doesNotMatch(pixi, /spriteParticleMesh/);
-  assert.match(pixi, /painterSort === 'radix' \|\| painterSort === 'decimate'/);
+  assert.doesNotMatch(pixi, /painterSort/);
   assert.doesNotMatch(pixi, /this\.instancedSprites\s*=/);
 });
 

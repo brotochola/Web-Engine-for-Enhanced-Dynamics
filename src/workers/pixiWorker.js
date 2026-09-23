@@ -457,7 +457,6 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueBuffers = [null, null];
     this._sortKeyU32ByBuf = [null, null];
     this._sortKeyU32 = null;
-    this.painterSort = 'off';
     this.renderQueueCameraBuffers = [null, null];
     this.renderQueuePoseReadyBuffers = [null, null];
 
@@ -1245,7 +1244,7 @@ class PixiRenderer extends AbstractWorker {
    */
   _uploadSortedSprites(batch, q, opts, painter, keysU32, idxE, ne) {
     if (painter && keysU32 && ne >= 2) {
-      opts.indices = orderPainterSlots(painter, idxE, ne, keysU32, this.painterSort);
+      opts.indices = orderPainterSlots(painter, idxE, ne, keysU32);
       opts.indexCount = ne;
     } else if (idxE) {
       opts.indices = idxE;
@@ -4691,12 +4690,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Configure Y-sorting (default: true)
     this.ySorting = rendererConfig.ySorting !== undefined ? rendererConfig.ySorting : true;
-    const painterSort = rendererConfig.painterSort;
-    // 'off' used to mean the GPU two-pass. That path is gone. Unset or 'off'
-    // with ySorting means reinsert. No ySorting means no sort (bunny).
-    this.painterSort = this.ySorting
-      ? (painterSort === 'radix' || painterSort === 'decimate' ? painterSort : 'reinsert')
-      : 'off';
 
     this.autoGenerateMipmaps =
       rendererConfig.autoGenerateMipmaps !== undefined

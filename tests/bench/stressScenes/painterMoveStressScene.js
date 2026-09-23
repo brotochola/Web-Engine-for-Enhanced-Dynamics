@@ -1,7 +1,7 @@
 /**
- * Moving Y-sort painter A/B. Not the catalog row.
+ * Moving Y-sort painter. Not the catalog row.
  * 10% of sprites cross a neighbor every swing. Physics off (Box2D cap).
- * skipCull so Pixi sees N. painterSort is ignored until the worker reads it.
+ * skipCull so Pixi sees N. ySorting uses reinsert.
  */
 import WEED from '/src/index.js';
 
@@ -38,7 +38,7 @@ export class PainterMoveEntity extends GameObject {
   }
 }
 
-function painterMoveConfig(painterSort) {
+function painterMoveConfig() {
   return {
     worldWidth: 12000,
     worldHeight: 20000,
@@ -70,7 +70,6 @@ function painterMoveConfig(painterSort) {
       noLimitFPS: false,
       ySorting: true,
       maxVisibleRenderables: N,
-      painterSort,
     },
     preRender: {
       noLimitFPS: false,
@@ -110,15 +109,6 @@ class PainterMoveBase extends Scene {
   }
 }
 
-export class PainterMoveOffScene extends PainterMoveBase {
-  static config = painterMoveConfig('off');
-}
-export class PainterMoveRadixScene extends PainterMoveBase {
-  static config = painterMoveConfig('radix');
-}
 export class PainterMoveReinsertScene extends PainterMoveBase {
-  static config = painterMoveConfig('reinsert');
-}
-export class PainterMoveDecimateScene extends PainterMoveBase {
-  static config = painterMoveConfig('decimate');
+  static config = painterMoveConfig();
 }

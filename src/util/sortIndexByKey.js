@@ -188,10 +188,9 @@ export function radixPainterOrder(state, idxE, ne, keysU32) {
  * @param {Uint32Array|null} idxE - type-filtered slot list, or null for a dense [0, ne) layer queue
  * @param {number} ne
  * @param {Uint32Array} keysU32
- * @param {'off'|'radix'|'reinsert'|'decimate'} mode
  * @returns {Uint32Array|null} the draw order (state.order), or idxE/null unchanged when ne < 2
  */
-export function orderPainterSlots(state, idxE, ne, keysU32, mode) {
+export function orderPainterSlots(state, idxE, ne, keysU32) {
   if (ne <= 0) return idxE;
   if (ne < 2) {
     if (idxE) return idxE;
@@ -199,11 +198,9 @@ export function orderPainterSlots(state, idxE, ne, keysU32, mode) {
     return state.order;
   }
   state.frame = (state.frame + 1) | 0;
-  const same = painterSameSet(state, idxE, ne);
-  if (mode === 'radix' || !same || (mode === 'decimate' && (state.frame % 3) === 1)) {
+  if (!painterSameSet(state, idxE, ne)) {
     return radixPainterOrder(state, idxE, ne, keysU32);
   }
-  if (mode === 'decimate') return state.order;
   const changed = reinsertChangedSlots(
     state.order,
     ne,
