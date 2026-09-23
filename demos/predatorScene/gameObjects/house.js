@@ -47,7 +47,7 @@ export class House extends GameObject {
       lifespan: 18,
       color: 0xffee00,
       intensity: 5000,
-      hasGlowSprite: 1,
+      hasGlowSprite: 0.5,
     });
   }
 

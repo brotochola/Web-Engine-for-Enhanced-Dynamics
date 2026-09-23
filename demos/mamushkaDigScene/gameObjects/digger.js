@@ -56,7 +56,7 @@ export class Digger extends GameObject {
     this.lightEmitter.height = 0;
     this.lightEmitter.glowHeightOffset = 10;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 1;
+    this.lightEmitter.hasGlowSprite = 0.5;
     this._grounded = 0;
     this._lastFireAt = 0;
     this._laserArmed = 0;

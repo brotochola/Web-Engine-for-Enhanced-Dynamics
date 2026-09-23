@@ -83,7 +83,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   LightEmitter.sqrtLightIntensity = new Float32Array([30, 5, 20]);
   LightEmitter.height = new Float32Array([7, 1, 9]);
   LightEmitter.glowHeightOffset = new Float32Array([3, 2, 8]);
-  LightEmitter.hasGlowSprite = new Uint8Array([0, 1, 0]);
+  LightEmitter.hasGlowSprite = new Float32Array([0, 1, 0]);
   LightEmitter.layerIdOfGlowSprite = new Uint8Array([4, 5, 6]);
   FlashComponent.active = new Uint8Array([1, 0, 1]);
   FlashComponent.lifespan = new Float32Array([90, 12, 45]);
@@ -123,7 +123,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     assert.deepEqual(Array.from(LightEmitter.sqrtLightIntensity), [0, 5, 0]);
     assert.deepEqual(Array.from(LightEmitter.height), [0, 1, 0]);
     assert.deepEqual(Array.from(LightEmitter.glowHeightOffset), [0, 2, 0]);
-    assert.deepEqual(Array.from(LightEmitter.hasGlowSprite), [1, 1, 1]);
+    assert.deepEqual(Array.from(LightEmitter.hasGlowSprite), [0.5, 1, 0.5]);
     assert.deepEqual(Array.from(LightEmitter.layerIdOfGlowSprite), [0, 5, 0]);
     assert.deepEqual(Array.from(FlashComponent.active), [0, 0, 0]);
     assert.deepEqual(Array.from(FlashComponent.lifespan), [0, 12, 0]);
@@ -177,7 +177,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
   LightEmitter.sqrtLightIntensity = new Float32Array([27.87472]);
   LightEmitter.height = new Float32Array([13]);
   LightEmitter.glowHeightOffset = new Float32Array([4]);
-  LightEmitter.hasGlowSprite = new Uint8Array([0]);
+  LightEmitter.hasGlowSprite = new Float32Array([0]);
   LightEmitter.layerIdOfGlowSprite = new Uint8Array([9]);
   FlashComponent.active = new Uint8Array([1]);
   FlashComponent.lifespan = new Float32Array([120]);
@@ -208,7 +208,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
     assert.deepEqual(Array.from(LightEmitter.sqrtLightIntensity), [0]);
     assert.deepEqual(Array.from(LightEmitter.height), [0]);
     assert.deepEqual(Array.from(LightEmitter.glowHeightOffset), [0]);
-    assert.deepEqual(Array.from(LightEmitter.hasGlowSprite), [1]);
+    assert.deepEqual(Array.from(LightEmitter.hasGlowSprite), [0.5]);
     assert.deepEqual(Array.from(LightEmitter.layerIdOfGlowSprite), [0]);
     assert.deepEqual(Array.from(FlashComponent.active), [0]);
     assert.deepEqual(Array.from(FlashComponent.lifespan), [0]);
@@ -266,7 +266,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   LightEmitter.sqrtLightIntensity = new Float32Array([23.558437]);
   LightEmitter.height = new Float32Array([17]);
   LightEmitter.glowHeightOffset = new Float32Array([6]);
-  LightEmitter.hasGlowSprite = new Uint8Array([0]);
+  LightEmitter.hasGlowSprite = new Float32Array([0]);
   LightEmitter.layerIdOfGlowSprite = new Uint8Array([7]);
   FlashComponent.active = new Uint8Array([0]);
   FlashComponent.lifespan = new Float32Array([120]);
@@ -310,7 +310,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     assert.deepEqual(Array.from(LightEmitter.sqrtLightIntensity), [0]);
     assert.deepEqual(Array.from(LightEmitter.height), [0]);
     assert.deepEqual(Array.from(LightEmitter.glowHeightOffset), [0]);
-    assert.deepEqual(Array.from(LightEmitter.hasGlowSprite), [1]);
+    assert.deepEqual(Array.from(LightEmitter.hasGlowSprite), [0.5]);
     assert.deepEqual(Array.from(LightEmitter.layerIdOfGlowSprite), [0]);
     assert.deepEqual(Array.from(FlashComponent.active), [1]);
     assert.deepEqual(Array.from(FlashComponent.lifespan), [0]);

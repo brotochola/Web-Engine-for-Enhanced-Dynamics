@@ -68,7 +68,7 @@ export class BurningBox extends GameObject {
 
     this.rigidBody.static = config.static ? 1 : 0;
     this.lightEmitter.active = 0;
-    this.lightEmitter.hasGlowSprite = 1;
+    this.lightEmitter.hasGlowSprite = 0.5;
     this.lightEmitter.height = 0;
     this.lightEmitter.glowHeightOffset = height * 0.25;
     this.lightEmitter.lightIntensity = 0;

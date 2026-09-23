@@ -54,7 +54,7 @@ export class Explosion extends GameObject {
 
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 1;
+    this.lightEmitter.hasGlowSprite = 0.5;
     this.setAlpha(0.6 + rng() * 0.2);
 
     // Animation at 30fps (animationSpeed is relative to 60fps base, so 30fps = 0.5)

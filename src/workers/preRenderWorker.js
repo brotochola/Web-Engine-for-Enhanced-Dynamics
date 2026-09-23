@@ -2968,6 +2968,7 @@ class PreRenderWorker extends AbstractWorker {
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const glowHeightOffset = LightEmitter.glowHeightOffset;
+        const glowSprite = LightEmitter.hasGlowSprite;
         const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
         const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
 
@@ -3316,7 +3317,8 @@ class PreRenderWorker extends AbstractWorker {
             } else {
                 // === LIGHT GLOW (type=3) ===
                 const scale = lightGlowScale(sqrtLightIntensity[idx]);
-                const glowAlpha = lightIntensity[idx] / 50000;
+                // hasGlowSprite 0.5 → /50000; 1 → /25000
+                const glowAlpha = lightIntensity[idx] * glowSprite[idx] * (1 / 25000);
 
                 if (scale < 0.1 || glowAlpha < 0.001) {
                     rqAlpha[out] = 0;
@@ -3451,6 +3453,7 @@ class PreRenderWorker extends AbstractWorker {
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const glowHeightOffset = LightEmitter.glowHeightOffset;
+        const glowSprite = LightEmitter.hasGlowSprite;
         const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
         const whiteCircleTextureId2 = this._resolveBuiltinTextureId('_whiteCircle');
 
@@ -3715,7 +3718,8 @@ class PreRenderWorker extends AbstractWorker {
                 } else if (type === 3) {
                     // === LIGHT GLOW ===
                     const scale = lightGlowScale(sqrtLightIntensity[idx]);
-                    const glowAlpha = lightIntensity[idx] / 20000;
+                    // hasGlowSprite 0.5 → /20000; 1 → /10000
+                    const glowAlpha = lightIntensity[idx] * glowSprite[idx] * (1 / 10000);
 
                     if (scale < 0.1 || glowAlpha < 0.001) {
                         rqAlpha[out] = 0;

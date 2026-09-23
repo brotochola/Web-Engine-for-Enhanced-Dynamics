@@ -150,7 +150,7 @@ export class BurningBoxesScene extends WEED.Scene {
         },
       },
       fire: {
-        zIndex: 5, // above lighting (4): plume draws after the vis-poly multiply
+        zIndex: 4.9, // above lighting (4): plume draws after the vis-poly multiply
         blendMode: BLEND_MODES.NORMAL,
         resolution: 1,
         alpha: 0.9,

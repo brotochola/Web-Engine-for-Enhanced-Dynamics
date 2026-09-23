@@ -36,7 +36,7 @@ export class Flash extends GameObject {
     lifespan: 100,
     color: 0xffffff,
     intensity: 10000,
-    hasGlowSprite: 1,
+    hasGlowSprite: 0.5,
     castShadows: 1,
   };
 
@@ -77,7 +77,7 @@ export class Flash extends GameObject {
    * @param {number} [config.lifespan=100] - Duration in milliseconds
    * @param {number} [config.color=0xFFFFFF] - Light color (0xRRGGBB)
    * @param {number} [config.intensity=10000] - Initial light intensity
-   * @param {number} [config.hasGlowSprite=1] - Whether to render glow sprite (0 = no, 1 = yes)
+   * @param {number} [config.hasGlowSprite=0.5] - Glow sprite strength (0 = off, 0.5 = default alpha, 1 = twice)
    * @param {boolean|number} [config.castShadows=true] - Point shadows (false/0 = lighting only)
    * @returns {Flash|null} - The spawned flash instance, or null if pool exhausted/off-screen
    *
@@ -111,7 +111,7 @@ export class Flash extends GameObject {
     s.lifespan = config.lifespan ?? 100;
     s.color = config.color ?? 0xffffff;
     s.intensity = config.intensity ?? 10000;
-    s.hasGlowSprite = config.hasGlowSprite ?? 1;
+    s.hasGlowSprite = config.hasGlowSprite ?? 0.5;
     s.castShadows =
       config.castShadows !== 0 && config.castShadows !== false ? 1 : 0;
 
@@ -133,7 +133,7 @@ export class Flash extends GameObject {
     this.lightEmitter.lightColor = spawnConfig.color ?? 0xffffff;
     this.lightEmitter.lightIntensity = spawnConfig.intensity ?? 10000;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = spawnConfig.hasGlowSprite ?? 1;
+    this.lightEmitter.hasGlowSprite = spawnConfig.hasGlowSprite ?? 0.5;
 
     // Set flash component properties
     this.flashComponent.lifespan = spawnConfig.lifespan ?? 100;

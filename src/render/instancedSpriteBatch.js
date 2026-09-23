@@ -245,42 +245,17 @@ export class InstancedSpriteBatch {
     this._strideBytes = this._floats * 4;
     this.data = new Float32Array(this.capacity * this._floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
-    this.buffer = new Buffer({
-      data: this.data,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
-      label: label || 'instanced-sprites',
-    });
-
-    const quad = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
-    const stride = this._strideBytes;
-    const buf = this.buffer;
-    const attributes = {
-      aQuad: { buffer: quad, format: 'float32x2' },
-      aInstXY: { buffer: buf, format: 'float32x2', stride, offset: 0, instance: true },
-      aInstScale: { buffer: buf, format: 'float32x2', stride, offset: 8, instance: true },
-      aInstAnchor: { buffer: buf, format: 'float32x2', stride, offset: 16, instance: true },
-      aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: 24, instance: true },
-      aInstDepth: { buffer: buf, format: 'float32', stride, offset: 32, instance: true },
-      aInstTintBits: { buffer: buf, format: 'float32', stride, offset: 36, instance: true },
-      aInstTexId: { buffer: buf, format: 'float32', stride, offset: 40, instance: true },
-      aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 44, instance: true },
-      aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
-    };
-    if (this.poseInterp) {
-      attributes.aInstPrevXY = {
-        buffer: buf,
-        format: 'float32x2',
-        stride,
-        offset: 60,
-        instance: true,
-      };
-    }
-
-    this.geometry = new Geometry({
-      attributes,
-      indexBuffer: [0, 1, 2, 0, 2, 3],
-    });
-    this.geometry.instanceCount = 0;
+    this._quad = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
+    this._index = [0, 1, 2, 0, 2, 3];
+    const labelName = label || 'instanced-sprites';
+    this._buffers = [
+      this._makeInstanceBuffer(labelName),
+      this._makeInstanceBuffer(labelName + '-ring'),
+    ];
+    this._geometries = this._buffers.map((buf) => this._geometryFor(buf));
+    this._ring = 0;
+    this.buffer = this._buffers[0];
+    this.geometry = this._geometries[0];
 
     this._useWebGpu = useWebGpu;
     this._engineShaders = shaders;
@@ -329,6 +304,42 @@ export class InstancedSpriteBatch {
       depthDenom: 1,
       scanCount: 0,
     };
+  }
+
+  _makeInstanceBuffer(label) {
+    return new Buffer({
+      data: this.data,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      label,
+    });
+  }
+
+  _geometryFor(buf) {
+    const stride = this._strideBytes;
+    const attributes = {
+      aQuad: { buffer: this._quad, format: 'float32x2' },
+      aInstXY: { buffer: buf, format: 'float32x2', stride, offset: 0, instance: true },
+      aInstScale: { buffer: buf, format: 'float32x2', stride, offset: 8, instance: true },
+      aInstAnchor: { buffer: buf, format: 'float32x2', stride, offset: 16, instance: true },
+      aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: 24, instance: true },
+      aInstDepth: { buffer: buf, format: 'float32', stride, offset: 32, instance: true },
+      aInstTintBits: { buffer: buf, format: 'float32', stride, offset: 36, instance: true },
+      aInstTexId: { buffer: buf, format: 'float32', stride, offset: 40, instance: true },
+      aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 44, instance: true },
+      aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
+    };
+    if (this.poseInterp) {
+      attributes.aInstPrevXY = {
+        buffer: buf,
+        format: 'float32x2',
+        stride,
+        offset: 60,
+        instance: true,
+      };
+    }
+    const geometry = new Geometry({ attributes, indexBuffer: this._index });
+    geometry.instanceCount = 0;
+    return geometry;
   }
 
   _makeSpriteShader(atlas, lut, alphaCut, name) {
@@ -468,8 +479,14 @@ export class InstancedSpriteBatch {
       return 0;
     }
     this._show(true);
-    this.buffer.update(out * stride);
-    this.geometry.instanceCount = out;
+    const ring = this._ring;
+    this._ring = ring ^ 1;
+    const geometry = this._geometries[ring];
+    this._buffers[ring].update(out * stride);
+    geometry.instanceCount = out;
+    this.geometry = geometry;
+    this.buffer = this._buffers[ring];
+    this.mesh.geometry = geometry;
     return out;
   }
 

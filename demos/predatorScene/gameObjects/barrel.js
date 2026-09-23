@@ -68,7 +68,7 @@ export class Barrel extends GameObject {
       lifespan: 18,
       color: 0xffee00,
       intensity: rng() * 1000 + 1000,
-      hasGlowSprite: 1,
+      hasGlowSprite: 0.5,
     });
   }
 

@@ -13,7 +13,7 @@ export class LightEmitter extends Component {
     sqrtLightIntensity: Float32Array,
     height: Float32Array,
     glowHeightOffset: Float32Array,
-    hasGlowSprite: Uint8Array, // 0 = no glow sprite, 1 = render glow sprite (default for static lights)
+    hasGlowSprite: Float32Array, // 0 = no glow; 0.5 = intensity/50000 (default); 1 = twice that alpha
     layerIdOfGlowSprite: Uint8Array, // 0 = inherit entity layerMask; non-zero = that layer id bit only
   };
 
@@ -42,6 +42,21 @@ export class LightEmitter extends Component {
 
   set lightColor(value) {
     LightEmitter.lightColor[this.index] = value;
+  }
+
+  get hasGlowSprite() {
+    return LightEmitter.hasGlowSprite[this.index];
+  }
+
+  /**
+   * Glow-sprite strength in [0, 1].
+   * 0 hides the sprite. 0.5 is intensity/50000. 1 is twice that alpha.
+   */
+  set hasGlowSprite(value) {
+    let v = +value;
+    if (!(v >= 0)) v = 0;
+    else if (v > 1) v = 1;
+    LightEmitter.hasGlowSprite[this.index] = v;
   }
 
 }

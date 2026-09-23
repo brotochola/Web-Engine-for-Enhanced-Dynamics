@@ -12,8 +12,6 @@ export class TallLight extends GameObject {
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
-  
-
   /**
    * LIFECYCLE: Called when the light is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn
@@ -32,7 +30,7 @@ export class TallLight extends GameObject {
     this.lightEmitter.glowHeightOffset = 110;
     this.lightEmitter.lightIntensity = 20000;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 1; // TallLights show the glowing sprite
+    this.lightEmitter.hasGlowSprite = 0.6// 0.5; // TallLights show the glowing sprite
 
     // Circle collider
     this.collider.shapeType = ShapeType.Circle;
@@ -81,7 +79,7 @@ export class TallLight extends GameObject {
       lifespan: 18,
       color: 0xffee00,
       intensity: 5000,
-      hasGlowSprite: 1,
+      hasGlowSprite: 0.5,
     });
   }
 

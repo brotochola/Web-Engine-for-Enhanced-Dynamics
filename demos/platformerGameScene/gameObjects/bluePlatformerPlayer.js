@@ -71,7 +71,7 @@ export class BluePlatformerPlayer extends GameObject {
     this.lightEmitter.lightIntensity = 30000;
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 1;
+    this.lightEmitter.hasGlowSprite = 0.5;
 
     this.x = spawnConfig.x ?? 100;
     this.y = spawnConfig.y ?? 100;

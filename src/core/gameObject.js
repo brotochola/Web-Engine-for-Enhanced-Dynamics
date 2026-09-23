@@ -1940,7 +1940,7 @@ export class GameObject {
       LightEmitter.sqrtLightIntensity[i] = 0;
       LightEmitter.height[i] = 0;
       LightEmitter.glowHeightOffset[i] = 0;
-      LightEmitter.hasGlowSprite[i] = 1;
+      LightEmitter.hasGlowSprite[i] = 0.5;
       LightEmitter.layerIdOfGlowSprite[i] = 0;
     }
     if (this.shadowCaster) ShadowCaster.active[i] = 0;
@@ -2411,7 +2411,7 @@ export class GameObject {
       LightEmitter.sqrtLightIntensity[i] = 0;
       LightEmitter.height[i] = 0;
       LightEmitter.glowHeightOffset[i] = 0;
-      LightEmitter.hasGlowSprite[i] = 1;
+      LightEmitter.hasGlowSprite[i] = 0.5;
       LightEmitter.layerIdOfGlowSprite[i] = 0;
     }
 
@@ -2779,7 +2779,7 @@ export class GameObject {
         if (lightEmitterSqrtIntensity) lightEmitterSqrtIntensity[i] = 0;
         if (lightEmitterHeight) lightEmitterHeight[i] = 0;
         if (lightEmitterGlowHeightOffset) lightEmitterGlowHeightOffset[i] = 0;
-        if (lightEmitterHasGlowSprite) lightEmitterHasGlowSprite[i] = 1;
+        if (lightEmitterHasGlowSprite) lightEmitterHasGlowSprite[i] = 0.5;
         if (lightEmitterGlowLayerId) lightEmitterGlowLayerId[i] = 0;
         if (shadowCasterActive) shadowCasterActive[i] = 0;
         if (flashActive) flashActive[i] = 0;

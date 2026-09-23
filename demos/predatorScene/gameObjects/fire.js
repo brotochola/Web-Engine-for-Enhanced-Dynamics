@@ -43,7 +43,7 @@ export class Fire extends GameObject {
     this.lightEmitter.glowHeightOffset = this.collider.radius * 0.5 * scale;
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 1;
+    this.lightEmitter.hasGlowSprite = 0.5;
     this.setAlpha(0.6 + rng() * 0.2);
 
     this.setSpritesheet('fire');

@@ -3122,7 +3122,7 @@ export declare class LightEmitter extends Component {
     sqrtLightIntensity: typeof Float32Array;
     height: typeof Float32Array;
     glowHeightOffset: typeof Float32Array;
-    hasGlowSprite: typeof Uint8Array;
+    hasGlowSprite: typeof Float32Array;
     layerIdOfGlowSprite: typeof Uint8Array;
   };
   static active: Uint8Array;
@@ -3131,12 +3131,15 @@ export declare class LightEmitter extends Component {
   static sqrtLightIntensity: Float32Array;
   static height: Float32Array;
   static glowHeightOffset: Float32Array;
-  static hasGlowSprite: Uint8Array;
+  static hasGlowSprite: Float32Array;
   static layerIdOfGlowSprite: Uint8Array;
   get lightIntensity(): number;
   set lightIntensity(value: number);
   get lightColor(): number;
   set lightColor(value: number);
+  /** Glow strength in [0, 1]. 0 off, 0.5 default alpha, 1 twice that alpha. */
+  get hasGlowSprite(): number;
+  set hasGlowSprite(value: number);
 }
 
 export declare class ShadowCaster extends Component {

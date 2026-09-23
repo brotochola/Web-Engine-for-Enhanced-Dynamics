@@ -29,7 +29,7 @@ Flash.spawn({
   lifespan: 100,      // ms; default 100
   color: 0xffaa00,    // 0xRRGGBB; default 0xffffff
   intensity: 10000,   // starting LightEmitter intensity; default 10000
-  hasGlowSprite: 1,   // 0 = lighting only, no glow sprite; default 1
+  hasGlowSprite: 0.5, // 0 = off; 0.5 = default alpha; 1 = twice the alpha
   castShadows: true,  // point shadows; default true
 });
 ```
@@ -41,7 +41,7 @@ Flash.spawn({
 | `lifespan` | `100` | Milliseconds until auto-despawn. |
 | `color` | `0xffffff` | Packed RGB. |
 | `intensity` | `10000` | Initial intensity; fades to 0 over lifespan. |
-| `hasGlowSprite` | `1` | Glow sprite on/off. |
+| `hasGlowSprite` | `0.5` | Glow strength `0..1`. `0` off, `0.5` current alpha (`intensity / 50000`), `1` twice that alpha. |
 | `castShadows` | `true` | `false` / `0` = still lights the scene, skips flash shadow grid work. |
 
 Returns a `Flash` instance, or `null` if the pool is exhausted, not initialized, off-screen, or spawn was routed away.
@@ -102,7 +102,7 @@ preRenderWorker
   → lighting texture
   → optional point-shadow pass (skipped when castShadows === 0)
 pixiWorker
-  → draw lighting (+ glow if hasGlowSprite)
+  → draw lighting (+ glow sprite scaled by hasGlowSprite)
 ```
 
 ## Related
