@@ -527,6 +527,11 @@ export const RENDERER_DEFAULTS = Object.freeze({
    * smoothing (that is preRender.interpolation). Both true adds a frame of lag.
    */
   interpolation: false,
+  /**
+   * Y-sort draw order when ySorting is true. Unset or 'off' means reinsert
+   * (keep last frame, reinsert changed keys). 'radix' / 'decimate' are
+   * measurement knobs. The old GPU two-pass is gone.
+   */
 });
 
 // ============================================================================

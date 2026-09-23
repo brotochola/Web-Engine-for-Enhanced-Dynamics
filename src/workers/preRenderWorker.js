@@ -2428,6 +2428,10 @@ class PreRenderWorker extends AbstractWorker {
             const type = collectorType[i];
             const idx = collectorIndex[i];
             if (prevT[i] !== type || prevE[i] !== idx) return false;
+            // Adobe (type 6) expands to N queue rows. Persist writes at the
+            // collector index, which is not the emit write index once any
+            // expanded row is in the list — skip persist for that frame.
+            if (type === 6) return false;
             if (type !== 0) continue;
             if (dirty && dirty[idx]) return false;
             if (frameIndex && prevF[i] !== (frameIndex[idx] | 0)) return false;

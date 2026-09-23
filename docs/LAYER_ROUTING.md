@@ -163,7 +163,7 @@ preRenderWorker:
 
 pixiWorker:
   updateSpritesFromRenderQueue()  --> main SAB. With ySorting, painter order (reinsert) and one blend. Particles and decorations share that list. Glow stays a later ADD batch, sorted by the same key.
-  updateCustomLayers()            --> each layer SAB. GPU depth from sortKey when that layer has ySorting.
+  updateCustomLayers()            --> each layer SAB. Same CPU painter + one blend as ENTITIES when that layer has ySorting.
 ```
 
 ### SAB Cost

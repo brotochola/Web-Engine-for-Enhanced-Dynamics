@@ -67,17 +67,14 @@ export class AdobeAnimateScene extends Scene {
     Camera.centerOn(cx, cy);
     Camera.setZoom(1.4);
 
-
+    this.createNewGame();
   }
-
-
 
   createNewGame() {
     const cx = this.config.worldWidth * 0.5;
     const cy = this.config.worldHeight * 0.5;
     const totalCharacters = 10000;
     const gridCols = Math.sqrt(totalCharacters);
-    const gridRows = gridCols;
     const spacingX = 50;
     const spacingY = 50;
     const startX = cx;
@@ -94,8 +91,6 @@ export class AdobeAnimateScene extends Scene {
         scaleY: 0.25,
       });
     }
-
-
   }
 
   update() {

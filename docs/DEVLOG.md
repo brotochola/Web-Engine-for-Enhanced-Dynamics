@@ -6,6 +6,32 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 23 September 2026 — Kill the Two-Pass
+
+The GPU two-pass is gone. One painter, ENTITIES treated as a sprite layer, no `entitiesParticleBatch`, no `coverageMesh`, no `BATCH_DEPTH.SORT_KEY`. `renderer.painterSort: 'off'` now means reinsert. Predator no longer pins the old path.
+
+What actually broke persist+Adobe was a write-index mismatch, not `_painterSameSet` and not Predator's shard count. `_type0PersistHit` used to approve a frame that still contained type 6, then `_writeType0PosesOnly` wrote at the collector index. Adobe expands one collector row into N emit rows, so those writes land on the wrong queue slots. Persist now returns false the moment type 6 is in the list. Predator itself has no Adobe; the leftover two-pass plus a hard alpha discard on the merged particle list is the more likely reason that scene needed `'off'`. Particles now share the blend batch (`alphaDiscard: false`).
+
+`updateSpritesFromRenderQueue` and `updateCustomLayers` both call `_uploadSortedSprites`. `InstancedSpriteBatch.upload` / `_uploadPose` share `_beginUpload` / `_finishUpload`. Depth is always painter index. The second `maxItems` particle buffer is gone.
+
+`painterShardedStressScene.js` already covers two pre-render workers. `painterAdobeStressScene.js` is the Adobe-piece sibling. Unit tests encode the persist type-6 guard and the missing two-pass symbols.
+
+Headless smoke (`--src`, 3s/3s), no crash: `PainterSharded2WReinsertScene` renderer 1.109 ms at 60 FPS; Bichos 1.612 ms at 60; littleCity 0.529 ms at 60; `PainterAdobe2WReinsertScene` 1.184 ms at 60; Predator 26.708 ms renderer / 36 FPS (loaded, two pre-render workers, default reinsert). No demo currently opts a custom sprite layer into `ySorting` (they pin `false` or are TILEMAP); that path is the same `_uploadSortedSprites` call the unit tests already lock. Windowed pixel check still wanted.
+
+## Wednesday 23 September 2026 — One Painter, Not Two
+
+Predator still had `renderer.painterSort: 'off'` in its config, added the same day the reinsert default shipped, with no comment saying why. Deleted it to see what would happen. Sprites disappeared, swapped texture, drew at the wrong z-order — the exact class of bug the previous entry was supposed to have killed. Put the line back.
+
+Traced the algorithm by hand first. `_painterSameSet` (now `painterSameSet` in `sortIndexByKey.js`) approves reusing last frame's order whenever the count matches and the slot-number set matches. Predator is the only Y-sorted scene running `preRender.numberOfPreRenderWorkers: 2` — each worker owns an entity-id block and writes its slice of the queue at a prefix computed fresh every frame from sibling counts. The published queue is always dense from zero, so two workers' counts can move in opposite directions and leave the total the same while every slot past the boundary holds something else. That felt like the bug. It is not, or at least not by itself: `reinsertChangedSlots` only asks whether a slot's key changed, not why, and a shard reshuffle changes the key at the boundary every time. Proved it with a unit test — dense set, same count, values reshuffled underneath, still lands sorted — and with a new stress scene, `painterShardedStressScene.js`, two pre-render workers and culling doing the reshuffling for real. No corruption in either.
+
+Checked the other two things Predator has that the stress scenes never did. Adobe piece expansion — not applicable, Predator does not use `AdobeAnimComponent`. Particle sortKey scale — same `Y_SORT_K` as entities, not it either. Found something else on the way, unrelated: `Tree`, `Rock`, and `Barrel` set their sprite once in `setup()` and do nothing in `onSpawned()`. Pool recycle zeroes `spritesheetId` and `renderVisible` on every respawn, and nothing puts them back for those three. If any of them is ever destroyed and its slot reused, the new one is invisible forever. Predates this session, independent of `painterSort` — an invisible entity never reaches the queue, sorted or not — so it does not explain what reappeared, but it is real and it is not fixed.
+
+Could not get further than that here. This sandbox has no GPU — WebGL and WebGPU both fall back to SwiftShader, and a full Predator boot (asset load plus the initial spawn) would not finish inside a two-minute budget. Even Balls, much lighter, needed over two minutes to reach 3504 of 9004 bodies. So the sharding half of the hypothesis is proven clean in isolation; the exact Predator regression — sharding plus decorations plus particles plus bullets plus glow plus lights, all sharing one painter-sorted list — is not proven either way.
+
+Shipped the part that was unambiguous: the main queue and every Y-sorted custom layer now call the same four functions (`createPainterState`, `painterSameSet`, `radixPainterOrder`, `orderPainterSlots`), instead of custom layers being stuck on the old GPU depth path unconditionally while the main queue got the fix. `renderer.painterSort: 'off'` stays as a real fallback on both paths, not deleted — Predator is still using it, and deleting it before someone with a real GPU confirms `reinsert` is correct there would be trading a documented, working escape hatch for a codebase that only looks cleaner.
+
+Numbers and the full trace: [`tests/results/painter-shard-coverage/report.md`](../tests/results/painter-shard-coverage/report.md).
+
 ## Tuesday 22 September 2026 — Sprites Should Composite Like a PNG
 
 Stacked bugs looked wrong. A soft edge, or a fire with real alpha, would show the background color in a fringe. Zoom made it obvious. The PNG itself was fine. The draw was not.

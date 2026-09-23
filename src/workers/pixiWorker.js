@@ -67,14 +67,13 @@ import {
 } from '../util/utils.js';
 import {
   InstancedSpriteBatch,
-  SPRITE_OPAQUE_ALPHA,
   BATCH_SPACE,
   BATCH_DEPTH,
   buildTextureLut,
   packTextureLutRgba,
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
-import { radixSortIndicesBySortKey, reinsertChangedSlots } from '../util/sortIndexByKey.js';
+import { radixSortIndicesBySortKey, createPainterState, orderPainterSlots } from '../util/sortIndexByKey.js';
 import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
 import {
   ColliderFillBatch,
@@ -372,20 +371,16 @@ class PixiRenderer extends AbstractWorker {
     this.entitiesBatch = null;
     /** @type {InstancedSpriteBatch|null} light-glow (type=3) ADD batch */
     this.entitiesGlowBatch = null;
-    /** @type {InstancedSpriteBatch|null} particles (type=1) Y-sort test, no Z write */
-    this.entitiesParticleBatch = null;
     /** @type {InstancedSpriteBatch|null} */
     this.shadowBatch = null;
     this.spriteMesh = null; // entitiesBatch.mesh alias for layer refs
     this.spriteGlowMesh = null; // entitiesGlowBatch.mesh
-    this.spriteParticleMesh = null; // entitiesParticleBatch.mesh
     this._texLut = null;
     this._texLutCount = 0;
     this._texLutSource = null;
     this._texLutRgba = null;
     this._texLutNeedsGpuUpload = false;
     this._rqIdxEntity = null;
-    this._rqIdxParticle = null;
     this._rqIdxGlow = null;
     /** @type {Array<{kind:string, displayObject:*, parallaxX:number, parallaxY:number, cover?:object, tilemap?:object}|null>} */
     this._scenery = [];
@@ -1059,7 +1054,6 @@ class PixiRenderer extends AbstractWorker {
 
         const instancedBatchCount =
           (this.entitiesBatch ? 1 : 0) +
-          (this.entitiesParticleBatch ? 1 : 0) +
           (this.entitiesGlowBatch ? 1 : 0) +
           (this.shadowBatch ? 1 : 0) +
           this._customLayerList.length;
@@ -1170,19 +1164,6 @@ class PixiRenderer extends AbstractWorker {
       this.spriteMesh.x = -cameraX * zoom;
       this.spriteMesh.y = -cameraY * zoom;
     }
-    if (this.spriteCoverageMesh) {
-      this.spriteCoverageMesh.scale.set(zoom);
-      this.spriteCoverageMesh.x = -cameraX * zoom;
-      this.spriteCoverageMesh.y = -cameraY * zoom;
-      this.spriteCoverageMesh.zIndex = (this.spriteMesh?.zIndex ?? 0) + 0.0002;
-    }
-    if (this.spriteParticleMesh) {
-      this.spriteParticleMesh.scale.set(zoom);
-      this.spriteParticleMesh.x = -cameraX * zoom;
-      this.spriteParticleMesh.y = -cameraY * zoom;
-      // After ENTITIES so the depth buffer already has Y-sorted opaque sprites
-      this.spriteParticleMesh.zIndex = (this.spriteMesh?.zIndex ?? 0) + 0.0005;
-    }
     if (this.spriteGlowMesh) {
       this.spriteGlowMesh.scale.set(zoom);
       this.spriteGlowMesh.x = -cameraX * zoom;
@@ -1219,81 +1200,78 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
-  _painterSameSet(idxE, ne) {
-    if (!this._painterReady || this._painterN !== ne) return false;
-    let gen = (this._painterGen + 1) | 0;
-    if (gen === 0) {
-      this._painterStamp.fill(0);
-      gen = 1;
-    }
-    this._painterGen = gen;
-    const stamp = this._painterStamp;
-    for (let i = 0; i < ne; i++) stamp[idxE[i]] = gen;
-    const order = this._painterOrder;
-    for (let i = 0; i < ne; i++) {
-      if (stamp[order[i]] !== gen) return false;
-    }
-    return true;
+  _bindSpriteQueue(q, src, count) {
+    q.count = count;
+    q.x = src.x;
+    q.y = src.y;
+    q.scaleX = src.scaleX;
+    q.scaleY = src.scaleY;
+    q.rotC = src.rotC;
+    q.rotS = src.rotS;
+    q.alpha = src.alpha;
+    q.tint = src.tint;
+    q.textureId = src.textureId;
+    q.anchorX = src.anchorX;
+    q.anchorY = src.anchorY;
+    q.repeatX = src.repeatX;
+    q.repeatY = src.repeatY;
+    q.tileMode = src.tileMode;
+    q.tileOffsetU = src.tileOffsetU;
+    q.tileOffsetV = src.tileOffsetV;
+    q.tileMulX = src.tileMulX;
+    q.tileMulY = src.tileMulY;
   }
 
-  _radixEntityOrder(idxE, ne) {
-    const order = this._painterOrder;
-    const keys = this._sortKeyU32;
-    for (let i = 0; i < ne; i++) order[i] = idxE[i];
-    radixSortIndicesBySortKey(order, ne, keys, this._painterScratch, this._painterHist);
-    const prev = this._painterPrevKey;
-    let live = false;
-    for (let i = 0; i < ne; i++) {
-      const slot = order[i];
-      const key = keys[slot];
-      prev[slot] = key;
-      if (key !== 0) live = true;
-    }
-    this._painterN = ne;
-    // All-zero keys are an empty queue buffer. A stable radix would freeze spawn
-    // order, and reinsert would never move static sprites. Stay cold until a real Y lands.
-    this._painterReady = live;
-    return order;
+  _resetSpriteUploadOpts(opts) {
+    opts.includeType = -1;
+    opts.excludeType0 = -1;
+    opts.excludeType1 = -1;
+    opts.indices = null;
+    opts.indexCount = 0;
+    opts.depthMode = BATCH_DEPTH.INDEX;
+    opts.sortKey = null;
+    opts.texLut = this._texLut;
+    opts.texLutCount = this._texLutCount;
+    opts.textures = this.flatTextures;
+    opts.pixelSnap = this.atlasScaleMode === 'nearest';
+    opts.snapZoom = this._renderZoom;
+    opts.snapCameraX = this._renderCameraX;
+    opts.snapCameraY = this._renderCameraY;
   }
 
-  _orderEntitySlots(idxE, ne) {
-    if (ne < 2 || !this._sortKeyU32 || !this._painterOrder) return idxE;
-    const mode = this.painterSort;
-    this._painterFrame = (this._painterFrame + 1) | 0;
-    const same = this._painterSameSet(idxE, ne);
-    if (mode === 'radix' || !same || (mode === 'decimate' && (this._painterFrame % 3) === 1)) {
-      return this._radixEntityOrder(idxE, ne);
+  /**
+   * One blend, CPU order when `painter` is set. Shared by ENTITIES and every
+   * Y-sorted custom layer — no second coverage pass, no GPU sortKey depth.
+   */
+  _uploadSortedSprites(batch, q, opts, painter, keysU32, idxE, ne) {
+    if (painter && keysU32 && ne >= 2) {
+      opts.indices = orderPainterSlots(painter, idxE, ne, keysU32, this.painterSort);
+      opts.indexCount = ne;
+    } else if (idxE) {
+      opts.indices = idxE;
+      opts.indexCount = ne;
+    } else {
+      opts.indices = null;
+      opts.indexCount = 0;
     }
-    if (mode === 'decimate') return this._painterOrder;
-    const changed = reinsertChangedSlots(
-      this._painterOrder,
-      ne,
-      this._sortKeyU32,
-      this._painterPrevKey,
-      this._painterSlotMoved,
-      this._painterMoved,
-      this._painterMerge,
-      this._painterScratch,
-      this._painterHist,
-    );
-    if (changed < 0) return this._radixEntityOrder(idxE, ne);
-    return this._painterOrder;
+    opts.depthMode = BATCH_DEPTH.INDEX;
+    opts.sortKey = null;
+    return batch.upload(q, opts);
   }
 
   // ========================================
   // RENDER QUEUE UPDATE (Optimized Path)
   // ========================================
   /**
-   * Upload main render queue SoA into ENTITIES + particles (no Z write) + glow (add) meshes.
-   * Type 1 = particles — own batch tests Y-sort depth, does not punch Z.
+   * Upload main render queue SoA into ENTITIES (one blend, CPU Y-order when
+   * ySorting) + glow (add). Particles, decorations, bullets, adobe pieces, and
+   * liquid share the entity list — same painter as a custom sprite layer.
    * Type 3 = light glow (_lightGradient) — separate ADD batch avoids gray halos.
    */
   updateSpritesFromRenderQueue() {
     if (!this.renderQueueEnabled || !this.entitiesBatch) return;
     if (!layerIsVisible(Layer.entitiesId)) {
       this.entitiesBatch.mesh.visible = false;
-      if (this.entitiesBatch.coverageMesh) this.entitiesBatch.coverageMesh.visible = false;
-      if (this.entitiesParticleBatch) this.entitiesParticleBatch.mesh.visible = false;
       if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
       this.visibleEntityCount = 0;
       this.visibleParticleCount = 0;
@@ -1302,99 +1280,71 @@ class PixiRenderer extends AbstractWorker {
 
     const count = this.renderQueueCount[0];
     const q = this._entityUploadQ;
-    q.count = count;
-    q.x = this.renderQueueX;
-    q.y = this.renderQueueY;
-    q.scaleX = this.renderQueueScaleX;
-    q.scaleY = this.renderQueueScaleY;
-    q.rotC = this.renderQueueRotC;
-    q.rotS = this.renderQueueRotS;
-    q.alpha = this.renderQueueAlpha;
-    q.tint = this.renderQueueTint;
-    q.textureId = this.renderQueueTextureId;
-    q.anchorX = this.renderQueueAnchorX;
-    q.anchorY = this.renderQueueAnchorY;
-    q.repeatX = this.renderQueueRepeatX;
-    q.repeatY = this.renderQueueRepeatY;
-    q.tileMode = this.renderQueueTileMode;
-    q.tileOffsetU = this.renderQueueTileOffsetU;
-    q.tileOffsetV = this.renderQueueTileOffsetV;
-    q.tileMulX = this.renderQueueTileMulX;
-    q.tileMulY = this.renderQueueTileMulY;
+    this._bindSpriteQueue(q, {
+      x: this.renderQueueX,
+      y: this.renderQueueY,
+      scaleX: this.renderQueueScaleX,
+      scaleY: this.renderQueueScaleY,
+      rotC: this.renderQueueRotC,
+      rotS: this.renderQueueRotS,
+      alpha: this.renderQueueAlpha,
+      tint: this.renderQueueTint,
+      textureId: this.renderQueueTextureId,
+      anchorX: this.renderQueueAnchorX,
+      anchorY: this.renderQueueAnchorY,
+      repeatX: this.renderQueueRepeatX,
+      repeatY: this.renderQueueRepeatY,
+      tileMode: this.renderQueueTileMode,
+      tileOffsetU: this.renderQueueTileOffsetU,
+      tileOffsetV: this.renderQueueTileOffsetV,
+      tileMulX: this.renderQueueTileMulX,
+      tileMulY: this.renderQueueTileMulY,
+    }, count);
 
-    const useSortKey = !!(this.ySorting && this.renderQueueSortKey);
     const opts = this._entityUploadOpts;
+    this._resetSpriteUploadOpts(opts);
     opts.space = BATCH_SPACE.WORLD;
-    opts.depthMode = useSortKey ? BATCH_DEPTH.SORT_KEY : BATCH_DEPTH.INDEX;
     opts.depthDenom = this.renderQueueMaxItems;
     opts.worldHeight = this.config?.worldHeight || 10000;
-    opts.sortKey = useSortKey ? this.renderQueueSortKey : null;
-    opts.texLut = this._texLut;
-    opts.texLutCount = this._texLutCount;
-    opts.textures = this.flatTextures;
     opts.type = this.renderQueueType;
     opts.zoom = 1;
     opts.cameraX = 0;
     opts.cameraY = 0;
     opts.resolution = 1;
-    opts.pixelSnap = this.atlasScaleMode === 'nearest';
-    opts.snapZoom = this._renderZoom;
-    opts.snapCameraX = this._renderCameraX;
-    opts.snapCameraY = this._renderCameraY;
-    opts.includeType = -1;
-    opts.excludeType0 = -1;
-    opts.excludeType1 = -1;
-    opts.indices = null;
-    opts.indexCount = 0;
 
     const typeArr = this.renderQueueType;
     let ne = count;
     let np = 0;
     let ng = 0;
-    if (typeArr && this._rqIdxEntity) {
-      const idxE = this._rqIdxEntity;
-      const idxP = this._rqIdxParticle;
-      const idxG = this._rqIdxGlow;
-      const painterOn = this.painterSort !== 'off';
+    const idxE = this._rqIdxEntity;
+    const idxG = this._rqIdxGlow;
+    if (typeArr && idxE) {
       ne = 0;
       for (let i = 0; i < count; i++) {
         const t = typeArr[i];
         if (t === 3) idxG[ng++] = i;
-        else if (!painterOn && t === 1) idxP[np++] = i;
-        else idxE[ne++] = i;
-      }
-      opts.indices = idxE;
-      opts.indexCount = ne;
-      const savedDepth = opts.depthMode;
-      const savedKey = opts.sortKey;
-      if (painterOn) {
-        opts.indices = this._orderEntitySlots(idxE, ne);
-        opts.depthMode = BATCH_DEPTH.INDEX;
-        opts.sortKey = null;
+        else {
+          if (t === 1) np++;
+          idxE[ne++] = i;
+        }
       }
       if (this.entitiesBatch.poseInterp) {
         opts.prevX = this._latchedPrevX;
         opts.prevY = this._latchedPrevY;
         opts.snap = this._poseSnap;
       }
-      this.visibleEntityCount = this.entitiesBatch.upload(q, opts);
+      this.visibleEntityCount = this._uploadSortedSprites(
+        this.entitiesBatch, q, opts, this._painter, this._sortKeyU32, idxE, ne,
+      );
       opts.prevX = null;
       opts.prevY = null;
       opts.snap = false;
-      if (painterOn) {
-        opts.depthMode = savedDepth;
-        opts.sortKey = savedKey;
-      }
       this.entitiesBatch.setPoseAlpha(this._poseAlpha);
       this._posePacked = true;
-      opts.indices = idxP;
-      opts.indexCount = np;
-      this.visibleParticleCount = this.entitiesParticleBatch
-        ? this.entitiesParticleBatch.upload(q, opts)
-        : 0;
+      this.visibleParticleCount = np;
       if (this.entitiesGlowBatch) {
-        if (painterOn && ng > 1 && this._sortKeyU32) {
-          radixSortIndicesBySortKey(idxG, ng, this._sortKeyU32, this._painterScratch, this._painterHist);
+        if (this._painter && ng > 1 && this._sortKeyU32) {
+          radixSortIndicesBySortKey(idxG, ng, this._sortKeyU32, this._painter.scratch, this._painter.hist);
         }
         opts.indices = idxG;
         opts.indexCount = ng;
@@ -1403,25 +1353,20 @@ class PixiRenderer extends AbstractWorker {
       return;
     }
 
-    opts.excludeType0 = 1;
-    opts.excludeType1 = 3;
     if (this.entitiesBatch.poseInterp) {
       opts.prevX = this._latchedPrevX;
       opts.prevY = this._latchedPrevY;
       opts.snap = this._poseSnap;
     }
-    this.visibleEntityCount = this.entitiesBatch.upload(q, opts);
+    this.visibleEntityCount = this._uploadSortedSprites(
+      this.entitiesBatch, q, opts, this._painter, this._sortKeyU32, null, count,
+    );
     opts.prevX = null;
     opts.prevY = null;
     opts.snap = false;
     this.entitiesBatch.setPoseAlpha(this._poseAlpha);
     this._posePacked = true;
-    opts.excludeType0 = -1;
-    opts.excludeType1 = -1;
-    opts.includeType = 1;
-    this.visibleParticleCount = this.entitiesParticleBatch
-      ? this.entitiesParticleBatch.upload(q, opts)
-      : 0;
+    this.visibleParticleCount = 0;
     if (this.entitiesGlowBatch) {
       opts.includeType = 3;
       this.entitiesGlowBatch.upload(q, opts);
@@ -1512,7 +1457,6 @@ class PixiRenderer extends AbstractWorker {
     const lut = this._texLutSource;
     if (!lut) return;
     if (this.entitiesBatch) this.entitiesBatch.setLutSource(lut);
-    if (this.entitiesParticleBatch) this.entitiesParticleBatch.setLutSource(lut);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setLutSource(lut);
     if (this.shadowBatch) this.shadowBatch.setLutSource(lut);
     for (let i = 0; i < this._customLayerList.length; i++) {
@@ -1543,7 +1487,6 @@ class PixiRenderer extends AbstractWorker {
     this._uploadTexLutTexture();
     const src = this._resolveAtlasSource();
     if (this.entitiesBatch) this.entitiesBatch.setAtlasSource(src);
-    if (this.entitiesParticleBatch) this.entitiesParticleBatch.setAtlasSource(src);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
     if (this.shadowBatch) this.shadowBatch.setAtlasSource(src);
     for (let i = 0; i < this._customLayerList.length; i++) {
@@ -1555,64 +1498,26 @@ class PixiRenderer extends AbstractWorker {
   }
 
   createEntitiesInstancedBatch(maxItems) {
-    // Painter: one source-over draw, no Z. off keeps the two-pass depth path.
-    const useGpuYSort = !!this.ySorting;
-    const painter = this.painterSort !== 'off';
-    // Uint32: queue slot indices can exceed 65535 (Adobe piece expansion).
+    // One source-over draw. ySorting → CPU painter order (sortIndexByKey.js).
+    // No Z, no coverage pass, no second particle batch. Glow stays ADD.
     this._rqIdxEntity = new Uint32Array(maxItems);
-    this._rqIdxParticle = new Uint32Array(maxItems);
     this._rqIdxGlow = new Uint32Array(maxItems);
-    if (painter) {
-      this._painterOrder = new Uint32Array(maxItems);
-      this._painterScratch = new Uint32Array(maxItems);
-      this._painterMoved = new Uint32Array(maxItems);
-      this._painterMerge = new Uint32Array(maxItems);
-      this._painterPrevKey = new Uint32Array(maxItems);
-      this._painterStamp = new Int32Array(maxItems);
-      this._painterSlotMoved = new Uint8Array(maxItems);
-      this._painterHist = new Uint32Array(256);
-      this._painterReady = false;
-      this._painterN = 0;
-      this._painterGen = 0;
-      this._painterFrame = 0;
-    }
+    this._painter = this.ySorting ? createPainterState(maxItems) : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
-      depthTest: useGpuYSort && !painter,
-      depthMask: !painter,
-      alphaCut: painter
-        ? new Float32Array([0.01, 0, 0, 0])
-        : useGpuYSort
-          ? new Float32Array([SPRITE_OPAQUE_ALPHA, 0, 0, 0])
-          : new Float32Array([0, 0, 0, 0]),
-      coveragePass: useGpuYSort && !painter,
+      depthTest: false,
+      depthMask: false,
+      alphaDiscard: false,
       premultiplyAlpha: true,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       poseInterp: this._queueInterp,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
-    this.spriteCoverageMesh = this.entitiesBatch.coverageMesh;
 
-    // Soft particles: Y-sort depth test, no Z write, blend-only frag (no discard)
-    this.entitiesParticleBatch = new InstancedSpriteBatch({
-      capacity: maxItems,
-      label: 'entities-particles-instanced',
-      atlasSource: this._resolveAtlasSource(),
-      lutSource: this._texLutSource,
-      depthTest: useGpuYSort,
-      depthMask: false,
-      alphaDiscard: false,
-      premultiplyAlpha: true,
-      useWebGpu: this._useWebGpu,
-      shaders: this._engineShaders,
-    });
-    this.spriteParticleMesh = this.entitiesParticleBatch.mesh;
-
-    // Soft light glows (type=3) on ADD batch — normal+PMA made gray doughnuts around TallLights
     this.entitiesGlowBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-glow-instanced',
@@ -1626,9 +1531,8 @@ class PixiRenderer extends AbstractWorker {
     });
     this.spriteGlowMesh = this.entitiesGlowBatch.mesh;
 
-    // Atlas may have loaded before batch existed — bind LUT/source now
     if (this.flatTextures?.length) this.rebuildInstancedTextureLut();
-    console.log(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, particles no-Z-write, glow ADD split)`);
+    console.log(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, one blend + glow ADD)`);
   }
 
   /**
@@ -1670,6 +1574,7 @@ class PixiRenderer extends AbstractWorker {
         for (let i = 0; i < this._customLayerList.length; i++) {
           const cl = this._customLayerList[i];
           if (cl.buffers) cl.readRef = cl.buffers[readBufferIdx];
+          if (cl.sortKeyU32ByBuf) cl.sortKeyU32 = cl.sortKeyU32ByBuf[readBufferIdx];
         }
 
         // Pin the pose this queue was packed with, then copy it, then wake
@@ -3763,9 +3668,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (visible !== undefined && displayObject) {
       setDisplayVisible(displayObject, visible);
       if (layer === 'entities') {
-        setDisplayVisible(this.spriteParticleMesh, visible);
         setDisplayVisible(this.spriteGlowMesh, visible);
-        setDisplayVisible(this.spriteCoverageMesh, visible);
       }
     }
 
@@ -3803,7 +3706,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (zIndex !== undefined && displayObject) {
       displayObject.zIndex = zIndex;
       if (layer === 'entities') {
-        if (this.spriteParticleMesh) this.spriteParticleMesh.zIndex = zIndex + 0.0005;
         if (this.spriteGlowMesh) this.spriteGlowMesh.zIndex = zIndex + 0.001;
       }
       this.pixiApp.stage.sortChildren();
@@ -4108,7 +4010,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const displayObj = name ? this._layerRuntime[name] : null;
       if (displayObj) setDisplayVisible(displayObj, on);
       if (i === Layer.entitiesId) {
-        setDisplayVisible(this.spriteParticleMesh, on);
         setDisplayVisible(this.spriteGlowMesh, on);
       }
     }
@@ -4791,9 +4692,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Configure Y-sorting (default: true)
     this.ySorting = rendererConfig.ySorting !== undefined ? rendererConfig.ySorting : true;
     const painterSort = rendererConfig.painterSort;
-    this.painterSort = painterSort === 'radix' || painterSort === 'reinsert' || painterSort === 'decimate' || painterSort === 'off'
-      ? painterSort
-      : (this.ySorting ? 'reinsert' : 'off');
+    // 'off' used to mean the GPU two-pass. That path is gone. Unset or 'off'
+    // with ySorting means reinsert. No ySorting means no sort (bunny).
+    this.painterSort = this.ySorting
+      ? (painterSort === 'radix' || painterSort === 'decimate' ? painterSort : 'reinsert')
+      : 'off';
 
     this.autoGenerateMipmaps =
       rendererConfig.autoGenerateMipmaps !== undefined
@@ -5025,20 +4928,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
       this._registerLayerDisplayObject('entities', this.spriteMesh);
       this.pixiApp.stage.addChild(this.spriteMesh);
-      if (this.spriteCoverageMesh) {
-        this.spriteCoverageMesh.zIndex = (this.spriteMesh.zIndex || 0) + 0.0002;
-        this.pixiApp.stage.addChild(this.spriteCoverageMesh);
-      }
-      if (this.spriteParticleMesh) {
-        this.spriteParticleMesh.zIndex = (this.spriteMesh.zIndex || 0) + 0.0005;
-        this.pixiApp.stage.addChild(this.spriteParticleMesh);
-      }
       if (this.spriteGlowMesh) {
         // Temporary; updateCameraTransform sets z above LIGHTING once that exists
         this.spriteGlowMesh.zIndex = (this.spriteMesh.zIndex || 0) + 0.001;
         this.pixiApp.stage.addChild(this.spriteGlowMesh);
       }
-      console.log('PIXI WORKER: ENTITIES layer using instanced sprite mesh (+ particles no-Z-write, glow ADD)');
+      console.log('PIXI WORKER: ENTITIES layer using instanced sprite mesh (painter + glow ADD)');
     }
 
     // ========================================
@@ -5265,17 +5160,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         });
         fillBatch.mesh.blendMode = containerBlend;
       }
+      let sortKeyU32ByBuf = null;
+      let painter = null;
       if (lrq && maxItems > 0) {
         buffers = [
           createRenderQueueViews(lrq.dataA, maxItems),
           createRenderQueueViews(lrq.dataB, maxItems),
         ];
+        sortKeyU32ByBuf = buffers.map(
+          (b) => new Uint32Array(b.sortKey.buffer, b.sortKey.byteOffset, b.sortKey.length)
+        );
+        painter = layerYSort ? createPainterState(maxItems) : null;
         batch = new InstancedSpriteBatch({
           capacity: maxItems,
           label: `custom-layer-${layerName}`,
           atlasSource: this._resolveAtlasSource(),
           lutSource: this._texLutSource,
-          depthTest: layerYSort,
+          depthTest: false,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
         });
@@ -5303,6 +5204,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         resolution,
         buffers,
         readRef: buffers ? buffers[0] : null,
+        sortKeyU32ByBuf,
+        sortKeyU32: sortKeyU32ByBuf ? sortKeyU32ByBuf[0] : null,
+        painter,
         prevCount: 0,
         batch,
         fillBatch,
@@ -5546,41 +5450,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const ref = cl.readRef;
         const count = ref.count[0];
         cl.prevCount = count;
-        const useSortKey = !!(cl.ySorting && ref.sortKey);
         const q = this._entityUploadQ;
-        q.count = count;
-        q.x = ref.x;
-        q.y = ref.y;
-        q.scaleX = ref.scaleX;
-        q.scaleY = ref.scaleY;
-        q.rotC = ref.rotC;
-        q.rotS = ref.rotS;
-        q.alpha = ref.alpha;
-        q.tint = ref.tint;
-        q.textureId = ref.textureId;
-        q.anchorX = ref.anchorX;
-        q.anchorY = ref.anchorY;
-        q.repeatX = ref.repeatX;
-        q.repeatY = ref.repeatY;
-        q.tileMode = ref.tileMode;
-        q.tileOffsetU = ref.tileOffsetU;
-        q.tileOffsetV = ref.tileOffsetV;
-        q.tileMulX = ref.tileMulX;
-        q.tileMulY = ref.tileMulY;
-
+        this._bindSpriteQueue(q, ref, count);
         const opts = this._entityUploadOpts;
-        opts.indices = null;
-        opts.indexCount = 0;
-        opts.includeType = -1;
-        opts.excludeType0 = -1;
-        opts.excludeType1 = -1;
-        opts.depthMode = useSortKey ? BATCH_DEPTH.SORT_KEY : BATCH_DEPTH.INDEX;
+        this._resetSpriteUploadOpts(opts);
         opts.depthDenom = cl.maxItems;
         opts.worldHeight = this.config?.worldHeight || 10000;
-        opts.sortKey = useSortKey ? ref.sortKey : null;
-        opts.texLut = this._texLut;
-        opts.texLutCount = this._texLutCount;
-        opts.textures = this.flatTextures;
         opts.type = ref.type;
         if (renderToRT) {
           opts.space = BATCH_SPACE.SCREEN;
@@ -5595,11 +5470,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           opts.cameraY = 0;
           opts.resolution = 1;
         }
-        opts.pixelSnap = this.atlasScaleMode === 'nearest';
-        opts.snapZoom = this._renderZoom;
-        opts.snapCameraX = this._renderCameraX;
-        opts.snapCameraY = this._renderCameraY;
-        cl.batch.upload(q, opts);
+        this._uploadSortedSprites(cl.batch, q, opts, cl.painter, cl.sortKeyU32, null, count);
         densityMesh = cl.batch.mesh;
       } else if (cl.fillBatch) {
         const views = this._ensureColliderFillViews();

@@ -20,8 +20,9 @@ test('normal fragment scales PMA rgb by instance alpha without re-multiplying te
 
 test('depth-write fragment discards clear texels; blend fragment does not', () => {
   assert.match(src, /alphaDiscard = true/);
-  assert.match(src, /alphaDiscard !== false \? 'mainFrag' : 'mainFragBlend'/);
-  assert.match(wgsl, /fn mainFrag\(in: VertexOut\)[\s\S]*?if \(a < 0\.01\) \{ discard; \}/);
+  assert.match(src, /this\._alphaDiscard = alphaDiscard !== false/);
+  assert.match(src, /fragEntry = this\._alphaDiscard \? 'mainFrag' : 'mainFragBlend'/);
+  assert.match(wgsl, /fn mainFrag\(in: VertexOut\)[\s\S]*?if \(a < cut\.x\) \{ discard; \}/);
   assert.match(wgsl, /fn mainFragBlend\(in: VertexOut\)[\s\S]*?return vec4<f32>\(t\.rgb \* in\.vColor\.rgb \* in\.vColor\.a, a\);/);
   assert.doesNotMatch(
     wgsl,
@@ -38,7 +39,7 @@ test('vertex shader uses aInstRotCS without cos/sin of angle', () => {
   assert.match(wgsl, /let c = aInstRotCS\.x;/);
   assert.doesNotMatch(wgsl, /cos\(aInstRot\)/);
   assert.match(src, /INSTANCED_SPRITE_FLOATS = 15/);
-  assert.match(src, /this\.buffer\.update\(out \* INSTANCED_SPRITE_STRIDE\)/);
+  assert.match(src, /_finishUpload\(out, INSTANCED_SPRITE_STRIDE\)/);
   assert.match(wgsl, /aInstTileInv/);
   assert.match(wgsl, /aInstTileOff/);
   assert.match(wgsl, /fract\(vWorld\.x \* vTileInv\.x \+ vTileOff\.x\)/);
@@ -68,7 +69,6 @@ const pixiSrc = readFileSync(join(dir, '../../src/workers/pixiWorker.js'), 'utf8
 
 test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', () => {
   assert.match(pixiSrc, /function emptyInstancedMesh\(obj\)/);
-  assert.match(pixiSrc, /setDisplayVisible\(this\.spriteParticleMesh, on\)/);
   assert.match(pixiSrc, /setDisplayVisible\(this\.spriteGlowMesh, on\)/);
   assert.match(pixiSrc, /this\._rtEmptyContainer = new Container\(\)/);
   assert.match(pixiSrc, /emptyInstancedMesh\(this\.shadowBatch\.mesh\)/);
@@ -98,35 +98,34 @@ test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCo
   assert.equal(filled.visible, false);
 });
 
-test('particle batch: no Z write, no alpha discard; main queue partitions type 1/3', () => {
-  assert.match(pixiSrc, /t === 1\) idxP\[np\+\+\]/);
+test('particles share the painter list; glow stays ADD; no second particle batch', () => {
+  assert.match(pixiSrc, /t === 1\) np\+\+/);
   assert.match(pixiSrc, /t === 3\) idxG\[ng\+\+\]/);
-  assert.match(pixiSrc, /opts\.indices = idxP/);
   assert.match(pixiSrc, /opts\.indices = idxG/);
-  assert.match(pixiSrc, /depthMask: false/);
   assert.match(pixiSrc, /alphaDiscard: false/);
-  assert.match(pixiSrc, /entitiesParticleBatch/);
+  assert.doesNotMatch(pixiSrc, /entitiesParticleBatch/);
+  assert.doesNotMatch(pixiSrc, /_rqIdxParticle/);
 });
 
 test('render-queue partition idx buffers are Uint32 (no Uint16 wrap past 65535)', () => {
   assert.match(pixiSrc, /_rqIdxEntity = new Uint32Array\(maxItems\)/);
-  assert.match(pixiSrc, /_rqIdxParticle = new Uint32Array\(maxItems\)/);
   assert.match(pixiSrc, /_rqIdxGlow = new Uint32Array\(maxItems\)/);
   assert.doesNotMatch(pixiSrc, /_rqIdxEntity = new Uint16Array\(maxItems\)/);
-  assert.doesNotMatch(pixiSrc, /_rqIdxParticle = new Uint16Array\(maxItems\)/);
   assert.doesNotMatch(pixiSrc, /_rqIdxGlow = new Uint16Array\(maxItems\)/);
+  assert.doesNotMatch(pixiSrc, /_rqIdxParticle/);
 });
 
 test('entity and custom-layer uploads pass queue repeatX/Y and tile fields', () => {
   assert.match(pixiSrc, /this\.renderQueueRepeatX = buffer\.repeatX/);
-  assert.match(pixiSrc, /q\.repeatX = this\.renderQueueRepeatX/);
-  assert.match(pixiSrc, /q\.repeatY = this\.renderQueueRepeatY/);
-  assert.match(pixiSrc, /q\.tileMulX = this\.renderQueueTileMulX/);
-  assert.match(pixiSrc, /q\.tileOffsetU = this\.renderQueueTileOffsetU/);
-  assert.match(pixiSrc, /q\.repeatX = ref\.repeatX/);
-  assert.match(pixiSrc, /q\.repeatY = ref\.repeatY/);
-  assert.match(pixiSrc, /q\.tileMulX = ref\.tileMulX/);
-  assert.match(pixiSrc, /q\.tileOffsetU = ref\.tileOffsetU/);
+  assert.match(pixiSrc, /repeatX: this\.renderQueueRepeatX/);
+  assert.match(pixiSrc, /repeatY: this\.renderQueueRepeatY/);
+  assert.match(pixiSrc, /tileMulX: this\.renderQueueTileMulX/);
+  assert.match(pixiSrc, /tileOffsetU: this\.renderQueueTileOffsetU/);
+  assert.match(pixiSrc, /this\._bindSpriteQueue\(q, ref, count\)/);
+  assert.match(src, /_beginUpload\(/);
+  assert.match(src, /_finishUpload\(/);
+  assert.doesNotMatch(src, /coveragePass/);
+  assert.doesNotMatch(src, /SPRITE_OPAQUE_ALPHA/);
 });
 
 test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {

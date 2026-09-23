@@ -92,3 +92,129 @@ export function reinsertChangedSlots(order, n, keysU32, prevKey, slotMoved, move
   for (let j = 0; j < m; j++) slotMoved[movedList[j]] = 0;
   return m;
 }
+
+/**
+ * Painter-sort scratch for one Y-sorted sprite queue (the main ENTITIES queue,
+ * or one custom layer). Every array is sized once, reused every frame — no
+ * per-frame allocation. `ready`/`n`/`gen`/`frame` are bookkeeping written by
+ * `orderPainterSlots` and friends; callers do not touch them directly.
+ * @param {number} maxItems
+ */
+export function createPainterState(maxItems) {
+  const n = Math.max(1, maxItems | 0);
+  return {
+    order: new Uint32Array(n),
+    scratch: new Uint32Array(n),
+    moved: new Uint32Array(n),
+    merge: new Uint32Array(n),
+    prevKey: new Uint32Array(n),
+    stamp: new Int32Array(n),
+    slotMoved: new Uint8Array(n),
+    hist: new Uint32Array(256),
+    ready: false,
+    n: 0,
+    gen: 0,
+    frame: 0,
+  };
+}
+
+/**
+ * Is `state.order` (last frame's permutation) still a valid slot set for this
+ * frame? `idxE === null` means the dense range [0, ne) with no type filter
+ * (a custom layer's queue is never split by type): same `ne` implies the same
+ * integer set, no scan needed. A real `idxE` (the main queue's type-filtered
+ * slot list, glow excluded) needs the O(n) stamp check since it is a proper
+ * subset of [0, count) whose membership can shift frame to frame.
+ * @param {ReturnType<typeof createPainterState>} state
+ * @param {Uint32Array|null} idxE
+ * @param {number} ne
+ */
+export function painterSameSet(state, idxE, ne) {
+  if (!state.ready || state.n !== ne) return false;
+  if (!idxE) return true;
+  let gen = (state.gen + 1) | 0;
+  if (gen === 0) {
+    state.stamp.fill(0);
+    gen = 1;
+  }
+  state.gen = gen;
+  const stamp = state.stamp;
+  for (let i = 0; i < ne; i++) stamp[idxE[i]] = gen;
+  const order = state.order;
+  for (let i = 0; i < ne; i++) {
+    if (stamp[order[i]] !== gen) return false;
+  }
+  return true;
+}
+
+/**
+ * Full radix rebuild into `state.order`. `idxE === null` fills the dense
+ * range [0, ne) first (custom layer); a real array copies that filtered list
+ * (main queue).
+ * @param {ReturnType<typeof createPainterState>} state
+ * @param {Uint32Array|null} idxE
+ * @param {number} ne
+ * @param {Uint32Array} keysU32
+ */
+export function radixPainterOrder(state, idxE, ne, keysU32) {
+  const order = state.order;
+  if (idxE) {
+    for (let i = 0; i < ne; i++) order[i] = idxE[i];
+  } else {
+    for (let i = 0; i < ne; i++) order[i] = i;
+  }
+  radixSortIndicesBySortKey(order, ne, keysU32, state.scratch, state.hist);
+  const prev = state.prevKey;
+  let live = false;
+  for (let i = 0; i < ne; i++) {
+    const slot = order[i];
+    const key = keysU32[slot];
+    prev[slot] = key;
+    if (key !== 0) live = true;
+  }
+  state.n = ne;
+  // All-zero keys are an empty queue buffer. A stable radix would freeze spawn
+  // order, and reinsert would never move static sprites. Stay cold until a real Y lands.
+  state.ready = live;
+  return order;
+}
+
+/**
+ * Cheapest correct draw order for this frame: reinsert only the slots whose
+ * key changed when the slot set is unchanged, full radix otherwise. Shared by
+ * the main ENTITIES queue and every Y-sorted custom layer — one algorithm,
+ * one scratch shape, no per-call-site copy.
+ * @param {ReturnType<typeof createPainterState>} state
+ * @param {Uint32Array|null} idxE - type-filtered slot list, or null for a dense [0, ne) layer queue
+ * @param {number} ne
+ * @param {Uint32Array} keysU32
+ * @param {'off'|'radix'|'reinsert'|'decimate'} mode
+ * @returns {Uint32Array|null} the draw order (state.order), or idxE/null unchanged when ne < 2
+ */
+export function orderPainterSlots(state, idxE, ne, keysU32, mode) {
+  if (ne <= 0) return idxE;
+  if (ne < 2) {
+    if (idxE) return idxE;
+    state.order[0] = 0;
+    return state.order;
+  }
+  state.frame = (state.frame + 1) | 0;
+  const same = painterSameSet(state, idxE, ne);
+  if (mode === 'radix' || !same || (mode === 'decimate' && (state.frame % 3) === 1)) {
+    return radixPainterOrder(state, idxE, ne, keysU32);
+  }
+  if (mode === 'decimate') return state.order;
+  const changed = reinsertChangedSlots(
+    state.order,
+    ne,
+    keysU32,
+    state.prevKey,
+    state.slotMoved,
+    state.moved,
+    state.merge,
+    state.scratch,
+    state.hist,
+  );
+  if (changed < 0) return radixPainterOrder(state, idxE, ne, keysU32);
+  return state.order;
+}

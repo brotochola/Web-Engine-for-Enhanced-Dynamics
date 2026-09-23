@@ -129,7 +129,7 @@ export class PredatorScene extends WEED.Scene {
       hideDecorationsAtZoom: 0.25,
       autoGenerateMipmaps: false,
       interpolation: false,
-      painterSort: 'off',
+      painterSort: 'reinsert',
     },
     preRender: {
       noLimitFPS: false,
@@ -204,7 +204,7 @@ export class PredatorScene extends WEED.Scene {
         blendMode: BLEND_MODES.MULTIPLY,     // Final display blend of the post-processed sprite
         resolution: 0.25,         // Half-res RT for performance
         maxItems: 100,
-        ySorting: false, // no need to sort water balls
+        ySorting: false, // clouds don't need Y order among themselves
       },
     },
   };

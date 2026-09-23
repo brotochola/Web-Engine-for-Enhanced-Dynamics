@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 // guarded by `typeof weedjsEnableHostMode !== 'function'` early-return at the
 // top) - not directly instantiable in a Node test the way ES-module workers
 // like AbstractWorker.js are. Source-text assertion matches the existing
-// convention for this exact situation (see gpuSortKeyNoCpuSort.test.js).
+// convention for this exact situation (see renderQueueSortPaths.test.js).
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const physicsHost = readFileSync(join(root, 'src/box2d/physicsHostImpl.js'), 'utf8');
 

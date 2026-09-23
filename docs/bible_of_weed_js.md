@@ -416,7 +416,7 @@ static config = {
 
 If `fragment` contains `/` or `.` it's treated as a direct URL (backward compat), but prefer named assets.
 
-Layers **without** a `shader` block are simple sorted ParticleContainers at their own zIndex. Layers **with** a `shader` use the two-RT pipeline (density pass + fragment shader post-process).
+Layers **without** a `shader` block are one instanced sprite batch at their own zIndex. With `ySorting`, they share ENTITIES' CPU painter (`orderPainterSlots` + one blend). Layers **with** a `shader` use the two-RT pipeline (density pass + fragment shader post-process).
 
 ### LiquidFun buffer density (`LAYER_DENSITY_SOURCE`)
 
@@ -706,9 +706,9 @@ import { BLEND_MODES } from '/src/util/configDefaults.js';
 ```
   Entities assigned to layer (e.g. water balls)
           │
-          │ Y-sort + write SoA render queue (pre_render_worker)
+          │ write SoA render queue (pre_render_worker); CPU painter if ySorting
           ▼
-  ParticleContainer (sprites)
+  Instanced sprite batch (one blend)
           │
           │ render with containerBlend (e.g. BLEND_MODES.ADD)
           ▼

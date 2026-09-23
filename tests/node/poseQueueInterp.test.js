@@ -58,8 +58,8 @@ test('pose prev floats sit after the 15-float record', () => {
 
 test('flag off keeps the 15-float upload; pose pack is a separate method', () => {
   assert.match(batchSrc, /if \(this\.poseInterp\) return this\._uploadPose/);
-  assert.match(batchSrc, /out \* INSTANCED_SPRITE_STRIDE/);
-  assert.match(batchSrc, /out \* INSTANCED_SPRITE_POSE_STRIDE/);
+  assert.match(batchSrc, /_finishUpload\(out, INSTANCED_SPRITE_STRIDE\)/);
+  assert.match(batchSrc, /_finishUpload\(out, INSTANCED_SPRITE_POSE_STRIDE\)/);
   assert.match(batchSrc, /writePosePrev\(data, base, px, py\)/);
   assert.match(batchSrc, /uniforms\.uPoseAlpha = alpha/);
   assert.match(batchSrc, /group\.update\(\)/);

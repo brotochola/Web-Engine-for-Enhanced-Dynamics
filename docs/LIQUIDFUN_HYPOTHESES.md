@@ -382,7 +382,7 @@ interleaved velocity buffer` (same shape as H8's position test) + a
 consumer worker's *reader* of the rigid-body pose SAB) is a separate,
 hand-duplicated copy of `weedjsPost.js`'s `bindPosePublish` (the physics
 worker's *writer*) — the two must agree byte-for-byte on the same SAB and had
-already drifted once before (see `tests/node/gpuSortKeyNoCpuSort.test.js`
+already drifted once before (see `tests/node/renderQueueSortPaths.test.js`
 history: a boolean `renderer.interpolation: true` existed Jan 2026, directly in
 the pre-render-queue-era `pixiWorker.js`, removed Aug 2026 as dead code when
 that pipeline was rebuilt around `preRenderWorker`. The name came back in

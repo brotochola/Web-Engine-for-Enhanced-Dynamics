@@ -21,7 +21,8 @@ test('double-buffer lock allows one unpublished frame, blocks the overwrite', ()
 
 test('physics keeps stepping; pose publish is gated, dt is not zeroed', () => {
   assert.match(weedjsPost, /function maybePublishPose\(/);
-  assert.match(weedjsPost, /if \(posePublishBlocked\(\)\) return;/);
+  assert.match(weedjsPost, /if \(posePublishBlocked\(\)\) \{/);
+  assert.match(weedjsPost, /poseSkipTotal\+\+/);
   assert.match(weedjsPost, /maybePublishPose\(entityCount\)/);
   assert.match(weedjsPost, /hostDt = dtSec;/);
   assert.doesNotMatch(
