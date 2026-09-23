@@ -43,9 +43,10 @@ export class PersonThatFollowsAFlowfield extends GameObject {
   static flowFollowStrength = 300;
   /** Match MySoldier.chaseStrength — used for car avoid 1/r */
   static avoidChaseStrength = 24500;
+  static peopleSpritesheets = ['civil1', 'civil2', 'civil3'];
 
   onSpawned(spawnConfig = {}) {
-    const spritesheets = ['civil1', 'civil2', 'civil3'];
+    const spritesheets = this.constructor.peopleSpritesheets;
     const randomSheet = spritesheets[Math.floor(rng() * spritesheets.length)];
     this.setSpritesheet(randomSheet);
     this.setAnimation('idle_down');
