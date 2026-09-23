@@ -1327,7 +1327,7 @@ class PixiRenderer extends AbstractWorker {
     let ng = 0;
     const idxE = this._rqIdxEntity;
     const idxG = this._rqIdxGlow;
-    if (this._lightGlowAdd && typeArr && idxE) {
+    if (this._lightGlowAdd && typeArr && idxE && (this._painter || this.lightingEnabled)) {
       ne = 0;
       for (let i = 0; i < count; i++) {
         const t = typeArr[i];
@@ -1379,7 +1379,7 @@ class PixiRenderer extends AbstractWorker {
     this.entitiesBatch.setPoseAlpha(this._poseAlpha);
     this._posePacked = true;
     this.visibleParticleCount = 0;
-    if (this._lightGlowAdd && this.entitiesGlowBatch) {
+    if (this._lightGlowAdd && this.lightingEnabled && this.entitiesGlowBatch) {
       opts.includeType = 3;
       this.entitiesGlowBatch.upload(q, opts);
     } else if (this.spriteGlowMesh) {

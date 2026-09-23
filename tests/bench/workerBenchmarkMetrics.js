@@ -254,6 +254,23 @@ export function summarizeWorkerBenchmarkWindow(
     const averageFPS = sampleCount > 0 ? sumFPS / sampleCount : 0;
     const statsSamplesAverage = averageStatFieldMaps(statMaps);
     const statsEnd = worker.stats || null;
+    let spritesUploadMs = null;
+    let spritesUploadSamples = 0;
+    let spritesSkipSamples = 0;
+    if (worker.type === 'renderer') {
+      let sum = 0;
+      for (const sample of effectiveSamples) {
+        const sampledWorker = sample.workers.find((candidate) => candidate.id === worker.id);
+        const sprites = sampledWorker?.stats?.SPRITES_MS;
+        if (sprites > 0) {
+          sum += sprites;
+          spritesUploadSamples++;
+        } else {
+          spritesSkipSamples++;
+        }
+      }
+      spritesUploadMs = spritesUploadSamples > 0 ? sum / spritesUploadSamples : 0;
+    }
 
     return {
       id: worker.id,
@@ -263,6 +280,9 @@ export function summarizeWorkerBenchmarkWindow(
       instantaneousFPS: worker.currentFPS,
       averageFPS,
       sampleCount,
+      ...(spritesUploadMs != null
+        ? { spritesUploadMs, spritesUploadSamples, spritesSkipSamples }
+        : {}),
       ...(statsEnd || statsSamplesAverage
         ? {
             statsEnd,
