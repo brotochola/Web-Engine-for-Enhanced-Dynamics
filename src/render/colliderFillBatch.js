@@ -240,22 +240,6 @@ function readMeshFillPose(i, views, live) {
   return _livePose;
 }
 
-function meshFillX(i, views) {
-  return readMeshFillPose(i, views, meshFillUsesLive(i, views)).x;
-}
-
-function meshFillY(i, views) {
-  return readMeshFillPose(i, views, meshFillUsesLive(i, views)).y;
-}
-
-function meshFillRotC(i, views) {
-  return readMeshFillPose(i, views, meshFillUsesLive(i, views)).c;
-}
-
-function meshFillRotS(i, views) {
-  return readMeshFillPose(i, views, meshFillUsesLive(i, views)).s;
-}
-
 export function copyMeshFillPoseScratch(views, prevPose) {
   const n = views.entityCount | 0;
   ensureMeshFillPoseScratch(prevPose, n);

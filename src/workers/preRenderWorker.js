@@ -36,6 +36,7 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
+import { spriteYSortKey } from '../util/sortIndexByKey.js';
 import {
     fillOwnedIds,
     listSlice,
@@ -126,13 +127,12 @@ const Y_SORT_K = DECORATION_Y_SORT_SCALE;
  * Responsibilities:
  * 1. Entity visibility; consume particle/decoration visible lists from particle_worker
  * 2. Animation frame advancement for entities
- * 3. Building main render queue (Y-sorted)
+ * 3. Building main render queue (sortKey for the CPU painter)
  * 4. Building shadow render queue (light cookies + black shadow sprites)
- * 5. Computing screenX/screenY for all visible renderables
  *
  * Data Flow:
  * - Reads: Transform, SpriteRenderer, ParticleComponent, DecorationComponent, LightEmitter, ShadowCaster
- * - Writes: Render queue SAB (consumed by pixi_worker), Shadow queue SAB, screenX/screenY
+ * - Writes: Render queue SAB (consumed by pixi_worker), Shadow queue SAB
  */
 class PreRenderWorker extends AbstractWorker {
     constructor(selfRef) {
@@ -1933,7 +1933,7 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Entity visibility + collect for render queue + sun shadows (fused pass)
-     * Iterates activeEntitiesData (or all entities), viewport culling, sets isItOnScreen/screenX/screenY,
+     * Iterates activeEntitiesData (or all entities), viewport culling, sets isItOnScreen,
      * adds visible to queue. When shadows enabled, also writes sun shadows in same pass.
      */
     _writeFusedSunShadow(i, renderVisibleI) {
@@ -1989,8 +1989,6 @@ class PreRenderWorker extends AbstractWorker {
         const active = Transform.active;
         const entityIsItOnScreen = Transform.isItOnScreen;
         const isItOnScreen = SpriteRenderer.isItOnScreen;
-        const screenX = SpriteRenderer.screenX;
-        const screenY = SpriteRenderer.screenY;
         const spriteRendererActive = SpriteRenderer.active;
         const renderVisible = SpriteRenderer.renderVisible;
         const visualRange = Collider.visualRange;
@@ -2140,12 +2138,9 @@ class PreRenderWorker extends AbstractWorker {
             }
             if (!spriteRendererActive || !spriteRendererActive[i]) continue;
 
-            if (this.skipCull) {
-                // skip AABB + screenXY
-            } else {
+            if (!this.skipCull) {
                 const sx = x[i] * camZoom - cameraOffsetX;
                 const sy = y[i] * camZoom - cameraOffsetY;
-                // B: SpriteRenderer.screenX/Y have no readers
 
                 // Use cached bounds (updated on scale/animation change)
                 let halfExtent = 0;
@@ -2167,7 +2162,7 @@ class PreRenderWorker extends AbstractWorker {
 
             // sheetId 0 = unset (spawn reset / pool recycle). Never queue.
             if (renderVisible[i] && SpriteRenderer.spritesheetId[i]) {
-                this.collectRenderable(0, i, y[i] * Y_SORT_K);
+                this.collectRenderable(0, i, 0);
                 this.visibleEntitiesCount++;
             }
 
@@ -2256,8 +2251,6 @@ class PreRenderWorker extends AbstractWorker {
         const adobeActive = AdobeAnimComponent.active;
         const renderVisible = AdobeAnimComponent.renderVisible;
         const isItOnScreen = AdobeAnimComponent.isItOnScreen;
-        const screenX = AdobeAnimComponent.screenX;
-        const screenY = AdobeAnimComponent.screenY;
         const halfW = AdobeAnimComponent.boundsHalfW;
         const halfH = AdobeAnimComponent.boundsHalfH;
 
@@ -2279,12 +2272,9 @@ class PreRenderWorker extends AbstractWorker {
                 continue;
             }
 
-            if (this.skipCull) {
-                // skip AABB + screenXY
-            } else {
+            if (!this.skipCull) {
                 const sx = x[i] * camZoom - cameraOffsetX;
                 const sy = y[i] * camZoom - cameraOffsetY;
-                // B: AdobeAnimComponent.screenX/Y have no readers
 
                 const extent = (halfW[i] > halfH[i] ? halfW[i] : halfH[i]) * camZoom;
                 const onScreen =
@@ -2302,7 +2292,7 @@ class PreRenderWorker extends AbstractWorker {
             isItOnScreen[i] = 1;
             entityIsItOnScreen[i] = 1;
             if (renderVisible[i]) {
-                this.collectRenderable(6, i, y[i] * Y_SORT_K);
+                this.collectRenderable(6, i, 0);
                 this._shardExpanded = 1;
                 this.visibleEntitiesCount++;
             }
@@ -2522,9 +2512,10 @@ class PreRenderWorker extends AbstractWorker {
             this._renderablePy[writeIdx] = pose.y;
             this._renderableRotC[writeIdx] = pose.rotC;
             this._renderableRotS[writeIdx] = pose.rotS;
-            // Drawn Y is the interpolated pose. A Transform.y key sorts the
-            // body where it is going, so z-order flips every frame while it moves.
-            this._renderableY[writeIdx] = pose.y * Y_SORT_K;
+            // Drawn Y, whole pixels. A raw pose.y key changes bits on a
+            // fraction of a pixel and the painter swaps two sprites that
+            // did not cross.
+            this._renderableY[writeIdx] = spriteYSortKey(pose.y, Y_SORT_K);
         } else if (type === 2) {
             const pose = this._displayPoseOut;
             this._decorationWorldXY(index, pose);
@@ -2889,8 +2880,7 @@ class PreRenderWorker extends AbstractWorker {
         const collectorType = this._renderableType;
         const collectorIndex = this._renderableIndex;
 
-        // Y-order via GPU depth + composite sortKey (instanced path always on).
-        // No CPU heapsort when Layer.entities.ySorting — pixi depthMode sortKey.
+        // sortKey is written for the CPU painter. Pixi reinserts; this pass does not sort.
         const detail = this.collectDetailedStats;
         if (detail) this.sortTimeThisFrame = 0;
         const tEmit = detail ? performance.now() : 0;
@@ -3464,7 +3454,7 @@ class PreRenderWorker extends AbstractWorker {
             const cType = collector.type;
             const cIndex = collector.index;
 
-            // Y-order via GPU depth + sortKey when layer.ySorting — no CPU heapsort.
+            // sortKey for the CPU painter when the layer y-sorts. This pass does not sort.
             const rqX = ref.x;
             const rqY = ref.y;
             const rqScaleX = ref.scaleX;

@@ -8,7 +8,7 @@
 // SHADER LAYER (two-RT) PIPELINE:
 //   1. pre_render_worker collects visible entities assigned to the layer
 //   2. Resolves textures/animation, writes composite sortKey + pose to layer SAB
-//   3. pixi_worker uploads InstancedSpriteBatch (GPU depth when layer.ySorting)
+//   3. pixi_worker uploads InstancedSpriteBatch (CPU painter order when layer.ySorting)
 //   4. Shader layers: instanced Mesh → raw density RT → fullscreen look pass → output RT
 //   5. Output RT (or mesh) displayed on stage at the layer's zIndex
 //
@@ -29,7 +29,7 @@ const FIELDS = [
     ['anchorX',     Float32Array,           4,   0],
     ['anchorY',     Float32Array,           4,   0],
     ['type',        Uint8Array,             1,   0],
-    // Composite collector key (worldY*K+innerZ / -z / glow bias) — GPU depth when CPU sort skipped
+    // Composite collector key (worldY*K+innerZ / -z / glow bias) — CPU painter when the layer y-sorts
     ['sortKey',     Float32Array,           4,   0],
     // World-space tile period in px; 0 = stretch. Packed u16 pair, then align4.
     ['repeatX',     Uint16Array,            2,   0],

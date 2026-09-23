@@ -1,3 +1,16 @@
+/**
+ * Y-sort key for a sprite or Adobe root. Rounded to a whole pixel so a
+ * sub-pixel pose tremor does not change bits. `ySortK` is the gap that
+ * leaves room for a decoration's integer innerZ inside the pixel.
+ * Same-pixel ties stay ties. A fractional entity id was measured and
+ * made PainterMove's pixi step about twice as expensive, so it is not here.
+ * @param {number} y
+ * @param {number} ySortK
+ */
+export function spriteYSortKey(y, ySortK) {
+  return Math.round(y) * ySortK;
+}
+
 /** IEEE-754 bits → uint32 that orders like the float (negatives included). */
 export function floatBitsToOrd(bits) {
   const u = bits >>> 0;

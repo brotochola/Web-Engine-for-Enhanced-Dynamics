@@ -6,6 +6,7 @@ import {
   createPainterState,
   painterSameSet,
   orderPainterSlots,
+  spriteYSortKey,
 } from '../../src/util/sortIndexByKey.js';
 
 function cmpFloat(a, b) {
@@ -129,6 +130,68 @@ test('painterSameSet: dense set (idxE=null) needs only a matching count', () => 
   state.n = 4;
   assert.equal(painterSameSet(state, null, 4), true);
   assert.equal(painterSameSet(state, null, 5), false);
+});
+
+test('spriteYSortKey: half a pixel is the same key, crossing it changes once', () => {
+  const k = 128;
+  const pixel = 2500;
+  assert.equal(spriteYSortKey(pixel + 0.4, k), pixel * k);
+  assert.equal(spriteYSortKey(pixel - 0.4, k), pixel * k);
+  assert.equal(spriteYSortKey(pixel + 0.6, k), (pixel + 1) * k);
+  assert.equal(spriteYSortKey(pixel - 0.6, k), (pixel - 1) * k);
+});
+
+test('reinsert: sub-pixel jitter does not permute quantized keys', () => {
+  const n = 8;
+  const state = createPainterState(n);
+  const base = new Float32Array(n);
+  const raw = new Float32Array(n);
+  const quant = new Float32Array(n);
+  for (let i = 0; i < n; i++) base[i] = 100 + i;
+  const rawU = new Uint32Array(raw.buffer);
+  const quantU = new Uint32Array(quant.buffer);
+  for (let i = 0; i < n; i++) {
+    raw[i] = base[i] * 128;
+    quant[i] = spriteYSortKey(base[i], 128);
+  }
+  orderPainterSlots(state, null, n, quantU);
+  const before = Array.from(state.order.subarray(0, n));
+  for (let i = 0; i < n; i += 2) {
+    raw[i] = (base[i] + 0.2) * 128;
+    quant[i] = spriteYSortKey(base[i] + 0.2, 128);
+  }
+  const changed = reinsertChangedSlots(
+    state.order, n, quantU, state.prevKey, state.slotMoved, state.moved, state.merge, state.scratch, state.hist,
+  );
+  assert.equal(changed, 0);
+  assert.deepEqual(Array.from(state.order.subarray(0, n)), before);
+  const rawChanged = reinsertChangedSlots(
+    state.order, n, rawU, state.prevKey, state.slotMoved, state.moved, state.merge, state.scratch, state.hist,
+  );
+  assert.ok(rawChanged > 0);
+});
+
+test('equal keys: a left insert that repacks two sprites flips their draw order', () => {
+  const k = spriteYSortKey(100, 128);
+  const keys = new Float32Array(4);
+  const keysU32 = new Uint32Array(keys.buffer);
+  const state = createPainterState(4);
+  keys[0] = k;
+  keys[1] = k;
+  orderPainterSlots(state, null, 2, keysU32);
+  assert.deepEqual(Array.from(state.order.subarray(0, 2)), [0, 1]);
+  // Frame 2: new sprite on the left, the two old ones swapped in the collector.
+  // Entities: slot0=5, slot1=20, slot2=10. Frame 1 was slot0=10, slot1=20.
+  const ent = [5, 20, 10];
+  keys[0] = k;
+  keys[1] = k;
+  keys[2] = k;
+  orderPainterSlots(state, null, 3, keysU32);
+  const drawn = [];
+  for (let i = 0; i < 3; i++) drawn.push(ent[state.order[i]]);
+  const i10 = drawn.indexOf(10);
+  const i20 = drawn.indexOf(20);
+  assert.ok(i20 < i10);
 });
 
 test('painterSameSet: filtered set (real idxE) needs matching integers, not just count', () => {

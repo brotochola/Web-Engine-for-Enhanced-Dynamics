@@ -6,6 +6,16 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 23 September 2026 — The Sort Key Sits on a Pixel
+
+A sprite's Y key was the raw pose times 128. Half a pixel of Box2D noise flipped two neighbors that had not crossed. `Math.round(pose.y) * 128` for sprites and Adobe pieces stops that. On the moving 300k grid, reinsert went from 205 to 1985 ops/s in the kernel because the jitter no longer counts as a change. Pixi stayed put: 23.8 ms to 24.4 ms, inside the 3% line. That is a bugfix, not a speed win.
+
+A fractional entity id inside the pixel would have kept same-pixel ties stable when the queue repacks. It doubled Pixi (24.4 ms to 50.6 ms) and pre-render spent the window in the backpressure skip. The fraction is gone. Ties on one pixel stay ties.
+
+Precomputing the float-to-ordinal once was 6.4% more ops/s in Node and 11.5% more expensive on Pixi (24.4 ms to 27.2 ms). The extra array is gone. Pixi's `Buffer.update` already uploads the same typed array. No copy to delete there.
+
+Numbers: [`tests/results/ysort-quantize/report.md`](../tests/results/ysort-quantize/report.md).
+
 ## Wednesday 23 September 2026 — One Hook, `onSpawned`
 
 `setup()` is gone from `GameObject`. Pool construct no longer runs a lifecycle hook. Spawn still applies `spawnConfig` keys first, then `onSpawned`, then `syncMassFromCollider`. Same cadence as before, one name.
