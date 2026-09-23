@@ -10,6 +10,8 @@ import { CityTree } from './gameObjects/cityTree.js';
 
 const { Camera, LAYER_KIND } = WEED;
 
+const useBaked = true;
+
 const excludedLPCAnimations = [
   'spellcast_up',
   'spellcast_left',
@@ -197,6 +199,14 @@ export class LittleCityScene extends WEED.Scene {
   };
 
   static assets = {
+    ...(useBaked
+      ? {
+          bigAtlas: {
+            json: '/demos/littleCity/baked/bigAtlas.json',
+            png: '/demos/littleCity/baked/bigAtlas.png',
+          },
+        }
+      : {}),
     textures: {
       smoke: '/demos/img/smoke.png',
       blood: '/demos/img/blood.png',
