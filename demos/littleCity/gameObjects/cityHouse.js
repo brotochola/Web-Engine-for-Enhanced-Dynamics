@@ -18,7 +18,7 @@ export class CityHouse extends GameObject {
   static components = [Collider, SpriteRenderer, LightEmitter, RigidBody];
   static houseCount = HOUSE_COUNT;
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     this.rigidBody.static = 1;
     const n = 1 + ((rng() * HOUSE_COUNT) | 0);
     const id = n < 10 ? `0${n}` : `${n}`;
@@ -39,9 +39,8 @@ export class CityHouse extends GameObject {
     this.lightEmitter.hasGlowSprite = 0;
 
     this.setScale(1, 1);
+  
   }
-
-  onSpawned(spawnConfig = {}) {}
 
   onDespawned() {}
 

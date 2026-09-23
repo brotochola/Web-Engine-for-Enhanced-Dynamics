@@ -17,10 +17,6 @@ export class Tree extends GameObject {
   static serializable = true;
   static components = [Collider, SpriteRenderer, ShadowCaster, RigidBody];
 
-  setup() {
-    this.rigidBody.static = 1;
-  }
-
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
     // const count = Math.floor(damage * 8) + 3;
     const radius = this.collider.radius;
@@ -50,6 +46,7 @@ export class Tree extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
+    this.rigidBody.static = 1;
     const whichTree = rng() > 0.5 ? 1 : 2;
     this.setSprite('tree' + whichTree);
     const scale = rng() * 0.5 + 1;

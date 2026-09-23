@@ -20,28 +20,6 @@ export class House extends GameObject {
   // Add PreyBehavior component for prey-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, RigidBody];
 
-  setup() {
-    this.rigidBody.static = 1;
-    const type = rng() > 0.5 ? 1 : 2;
-    this.setSprite('house' + type);
-
-    this.collider.shapeType = ShapeType.Box;
-    this.collider.width = 180;
-    this.collider.height = 110;
-    this.collider.offsetY = -50;
-    this.collider.offsetX = 0;
-    this.lightEmitter.lightColor = 0xffffaa;
-
-    this.lightEmitter.height = 100;
-    this.lightEmitter.lightIntensity = 4000;
-    this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0;
-
-    this.setScale(1, 1);
-    this.collider.visualRange = 300;
-
-  }
-
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
     const count = Math.floor(damage * 8) + 3;
     ParticleEmitter.emit({
@@ -73,7 +51,28 @@ export class House extends GameObject {
     });
   }
 
-  onSpawned(spawnConfig = {}) { }
+  onSpawned(spawnConfig = {}) {
+    this.rigidBody.static = 1;
+    const type = rng() > 0.5 ? 1 : 2;
+    this.setSprite('house' + type);
+
+    this.collider.shapeType = ShapeType.Box;
+    this.collider.width = 180;
+    this.collider.height = 110;
+    this.collider.offsetY = -50;
+    this.collider.offsetX = 0;
+    this.lightEmitter.lightColor = 0xffffaa;
+
+    this.lightEmitter.height = 100;
+    this.lightEmitter.lightIntensity = 4000;
+    this.lightEmitter.active = 1;
+    this.lightEmitter.hasGlowSprite = 0;
+
+    this.setScale(1, 1);
+    this.collider.visualRange = 300;
+
+  
+  }
 
   onDespawned() {
     // Could save stats, play death effects, etc.

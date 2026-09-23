@@ -392,7 +392,7 @@ export class GameObject {
    * @param {Object} config - Spawn/view config for this entity slot
    * @param {Object} logicWorker - Logic worker reference
    * @param {Object} [options]
-   * @param {boolean} [options.view] - Main-thread view: do not touch pool Transform.active / instances / setup()
+   * @param {boolean} [options.view] - Main-thread view: do not touch pool Transform.active / instances
    *
    * DENSE COMPONENT ALLOCATION:
    * All components are allocated for all entities. Entity index === component index.
@@ -409,11 +409,11 @@ export class GameObject {
 
   /**
    * Wire this instance to its dense entity index: component flags, optional pool registration,
-   * neighbor slice, accessors, and default setup().
+   * neighbor slice, accessors.
    *
    * @param {Object} opts
    * @param {boolean} [opts.view=false] - When true (main-thread view): only attach read/write
-   *   facades over existing SAB data — do not reset Transform, push into pools, or run setup().
+   *   facades over existing SAB data — do not reset Transform or push into pools.
    */
   bindToEntitySlot({ view = false } = {}) {
     const index = this.index;
@@ -452,10 +452,6 @@ export class GameObject {
 
     this._componentCache = {};
     Ctor._ensureComponentAccessors();
-
-    if (!view && this.setup) {
-      withBodyDirtyDeferred(() => this.setup());
-    }
   }
 
   /** Worker→Scene postMessage helper (`SceneBridge`). */
@@ -1715,35 +1711,18 @@ export class GameObject {
     return this;
   }
   /**
-   * LIFECYCLE: Called at the END of constructor - runs ONCE per entity lifetime
-   * Override in subclasses to configure entity TYPE properties
-   * (physics params, flocking behavior, collision settings, sprite config, etc.)
-   * All components are guaranteed to be initialized at this point
-   *
-   * Example:
-   *   setup() {
-   *     this.collider.radius = 15;
-   *     this.flocking.centeringFactor = 0.001;
-   *   }
-   */
-  setup() {
-    // Override in subclasses
-  }
-
-  /**
-   * LIFECYCLE: Called EVERY time entity is spawned from pool (or first spawn)
-   * Override in subclasses to reset/initialize instance-specific state
-   * (position, velocity, health, etc.)
+   * LIFECYCLE: Called every spawn from the pool (and the first spawn).
+   * Override to set type defaults and this life's state (sprite, pose, HP).
+   * Spawn applies `spawnConfig` keys first; this hook can override them.
    *
    * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    *
    * Example:
    *   onSpawned(spawnConfig) {
+   *     this.collider.radius = 15;
    *     this.x = spawnConfig.x ?? rng() * 800;
    *     this.y = spawnConfig.y ?? rng() * 600;
-   *     this.health = 100;
-   *     this.rigidBody.vx = 0;
-   *     this.rigidBody.vy = 0;
+   *     this.setSprite('tree1');
    *   }
    */
   onSpawned(spawnConfig = {}) {
@@ -2389,7 +2368,7 @@ export class GameObject {
     }
 
     // Transform is always present. Stay inactive until geometry exists so
-    // physics cannot createBody on Box 0×0 mid-setup.
+    // physics cannot createBody on Box 0×0 mid-onSpawned.
     Transform.active[i] = 0;
     Transform.x[i] = 0;
     Transform.y[i] = 0;
@@ -2528,12 +2507,12 @@ export class GameObject {
       AdobeAnimComponent.screenY[i] = 0;
     }
 
-    // Save markBodyDirty from setters/setup/onSpawned. Physics must not
+    // Save markBodyDirty from setters/onSpawned. Physics must not
     // see want=1 with spawn-reset Box 0×0. bumpBodyGeneration after activate
     // publishes the saved marks so a child spawn from parent onSpawned gets
     // a body with the real shape.
     withBodyDirtyDeferred(() => {
-      // Size before other spawnConfig keys (and before setup damping/static).
+      // Size before other spawnConfig keys (and before onSpawned damping/static).
       // Skip active — Transform.active stays 0 until the bump below.
       if (has.Collider) {
         if (spawnConfig.radius != null) instance.radius = spawnConfig.radius;
@@ -2563,16 +2542,12 @@ export class GameObject {
         instance.setLayer(spawnConfig.layer);
       }
 
-      if (instance.setup) {
-        instance.setup();
+      if (instance.onSpawned) {
+        instance.onSpawned(spawnConfig);
       }
 
       if (has.RigidBody && RigidBody.active[i]) {
         RigidBody.syncMassFromCollider(i);
-      }
-
-      if (instance.onSpawned) {
-        instance.onSpawned(spawnConfig);
       }
       if (spawnConfig.layers) {
         instance.setLayers(spawnConfig.layers);
@@ -2624,7 +2599,7 @@ export class GameObject {
     }
 
     // Activate the entity - this enables spatial_worker to add it to Grid
-    // and physics to process it. Must happen AFTER component setup.
+    // and physics to process it. Must happen AFTER onSpawned.
     Transform.active[i] = 1;
     if (has.MeshRenderer) MeshRenderer.active[i] = 1;
     if (has.RigidBody || has.Collider) {

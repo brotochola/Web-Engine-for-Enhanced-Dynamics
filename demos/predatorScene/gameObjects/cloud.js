@@ -6,10 +6,6 @@ export class Cloud extends GameObject {
 
     static components = [SpriteRenderer];
 
-    setup() {
-
-    }
-
     onSpawned(spawnConfig = {}) {
 
         this.spriteRenderer.anchorX = 0.5;

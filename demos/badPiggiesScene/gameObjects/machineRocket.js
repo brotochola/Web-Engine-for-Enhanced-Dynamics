@@ -9,12 +9,9 @@ export class MachineRocket extends GameObject {
   static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer];
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.5;
-  }
-
-  onSpawned(spawnConfig = {}) {
     const ghost = !!spawnConfig.ghost;
     const width = spawnConfig.width ?? ROCKET_LEN;
     const height = spawnConfig.height ?? ROCKET_H;

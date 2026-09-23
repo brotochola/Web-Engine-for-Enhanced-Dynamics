@@ -10,7 +10,7 @@ export class ZenithalCar extends GameObject {
 
   static components = [Collider, SpriteRenderer, RigidBody, LightOccluder];
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     this.setSprite('zenithal_car');
 
     this.collider.shapeType = ShapeType.Box;
@@ -21,7 +21,6 @@ export class ZenithalCar extends GameObject {
     this.rigidBody.linearDamping = 0.9;
     this.setAnchor(0.5, 0.5);
     // this.lightOccluder.maskMode = LIGHT_OCCLUDER_MASK_SPRITE
+  
   }
-
-  onSpawned(spawnConfig = {}) { }
 }

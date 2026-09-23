@@ -28,8 +28,6 @@ class WaterBall extends GameObject {
   static serializable = true;
   static components = [RigidBody, Collider, CollisionListener, SpriteRenderer];
 
-  setup() { }
-
   onSpawned(spawnConfig = {}) {
     this.rigidBody.linearDamping = 0.02
 

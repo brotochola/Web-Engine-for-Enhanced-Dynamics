@@ -271,10 +271,6 @@ export class MamushkaBox extends GameObject {
     MamushkaComponent,
   ];
 
-  setup() {
-    this.setAnchor(0.5, 0.5);
-  }
-
   onSpawned(spawnConfig = {}) {
     const level = spawnConfig.level != null ? spawnConfig.level | 0 : 0;
     const material =

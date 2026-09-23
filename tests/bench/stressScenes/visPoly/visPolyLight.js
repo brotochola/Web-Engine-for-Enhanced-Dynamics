@@ -6,7 +6,7 @@ const { ShapeType } = enums;
 export class VisPolyLight extends GameObject {
   static components = [Collider, LightEmitter];
 
-  setup() {
+  onSpawned({ x = 0, y = 0 } = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 2;
     this.collider.visualRange = 900;
@@ -15,9 +15,6 @@ export class VisPolyLight extends GameObject {
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0;
-  }
-
-  onSpawned({ x = 0, y = 0 } = {}) {
     this.x = x;
     this.y = y;
   }

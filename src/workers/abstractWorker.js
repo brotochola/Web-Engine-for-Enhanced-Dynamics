@@ -1147,7 +1147,7 @@ export class AbstractWorker {
         console.log(`[${this.constructor.name}] Worker ports initialized, calling worker-specific initialize()...`);
         await this.initialize(e.data);
         console.log(`[${this.constructor.name}] Worker-specific initialize() completed`);
-        // Logic defers reportReady until box2dReady (hot fields bound before setup()).
+        // Logic defers reportReady until box2dReady (hot fields bound before onSpawned).
         if (this.shouldReportReadyAfterInit()) {
           console.log(`[${this.constructor.name}] calling reportReady()...`);
           this.reportReady();

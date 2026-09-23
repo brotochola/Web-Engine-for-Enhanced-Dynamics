@@ -47,23 +47,6 @@ export class WorldGridManager extends GameObject {
   static components = [];
   static forceProcessOnLogicWorker = 1;
 
-  setup() {
-    this.tool = 'draw';
-    this.staticIslands = [];
-    this.dynamicIslands = [];
-    this._shardSnap = [];
-    this._shardPool = [];
-    this._shardJobs = [];
-    this._crumbSeen = Object.create(null);
-    this._crumbSeeds = [];
-    this._paintBox = null;
-    this._keepIslands = [];
-    this._fullDirtyBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-    this._extraShardBag = [];
-    this._hitScratch = { kind: 0, x: 0, y: 0, entityIndex: -1, fixtureIndex: -1 };
-    this._bodyHit = { hitX: 0, hitY: 0, fixtureIndex: -1, entityIndex: -1 };
-  }
-
   onSpawned() {
     this.tool = 'draw';
     this.staticIslands = [];

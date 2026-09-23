@@ -19,10 +19,6 @@ export class Rock extends GameObject {
   static serializable = true;
   static components = [Collider, SpriteRenderer, ShadowCaster, RigidBody];
 
-  setup() {
-    this.rigidBody.static = 1;
-  }
-
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
     const impactSound = rng() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
     SoundManager.play(impactSound, 0.55, 0.85, 1.12, 0, 0, hitX, hitY);
@@ -50,6 +46,7 @@ export class Rock extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
+    this.rigidBody.static = 1;
     this.setSprite('rock' + Math.floor(rng() * 4 + 1));
     this.scale = rng() * 0.5 + 1;
     this.setScale(rng() > 0.5 ? this.scale : -this.scale, this.scale);

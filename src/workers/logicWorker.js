@@ -261,7 +261,7 @@ class LogicWorker extends AbstractWorker {
     this.gameObjects = new Array(this.globalEntityCount).fill(null);
     this._gameObjectInstancesCreated = false;
 
-    // setup() writes Transform.x. With WASM, wait for box2dReady. With weed pose, bind already ran.
+    // onSpawned writes Transform.x. With WASM, wait for box2dReady. With weed pose, bind already ran.
     if (this._weedPoseBound && !this._gameObjectInstancesCreated) {
       this.createGameObjectInstances();
       this._gameObjectInstancesCreated = true;
@@ -1544,7 +1544,7 @@ class LogicWorker extends AbstractWorker {
           this.useBox2dJointBreaks = false;
         }
 
-        // HEAP bound — construct pools so setup() writes live Transform.x, then signal ready.
+        // HEAP bound — construct pools so onSpawned writes live Transform.x, then signal ready.
         if (!this._gameObjectInstancesCreated) {
           this.createGameObjectInstances();
           this._gameObjectInstancesCreated = true;

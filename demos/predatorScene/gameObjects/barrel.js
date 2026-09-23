@@ -21,16 +21,13 @@ export class Barrel extends GameObject {
   // Add PreyBehavior component for prey-specific properties
   static components = [Collider, SpriteRenderer, RigidBody, ShadowCaster];
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     this.rigidBody.linearDamping = 0.8;
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 10;
     this.rigidBody.linearDamping = 10;
     this.collider.visualRange = 50;
     this.setFixedRotation(1);
-  }
-
-  onSpawned(spawnConfig = {}) {
     this.setSprite('barrel' + Math.floor(rng() * 3 + 1));
     this.setScale(1);
   }

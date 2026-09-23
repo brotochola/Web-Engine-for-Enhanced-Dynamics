@@ -9,12 +9,9 @@ export class OrientedBox extends GameObject {
 
     static components = [RigidBody, Collider, SpriteRenderer, Grab];
 
-    setup() {
+    onSpawned(spawnConfig = {}) {
         this.spriteRenderer.anchorX = 0.5;
         this.spriteRenderer.anchorY = 0.5;
-    }
-
-    onSpawned(spawnConfig = {}) {
         const size = spawnConfig.size ?? 80;
         const width = spawnConfig.width ?? size;
         const height = spawnConfig.height ?? size;

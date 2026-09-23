@@ -27,10 +27,6 @@ export class WeldBreakBox extends GameObject {
     Grab,
   ];
 
-  setup() {
-    this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 0.5;
-  }
   onCollisionHit(otherIndex, px, py, nx, ny, approachSpeed) {
     // console.log('onCollisionHit', otherIndex, px, py, nx, ny, approachSpeed);
   }
@@ -48,6 +44,8 @@ export class WeldBreakBox extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 0.5;
     const size = spawnConfig.size ?? 80;
     const width = spawnConfig.width ?? size;
     const height = spawnConfig.height ?? size;

@@ -6,6 +6,10 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 23 September 2026 — One Hook, `onSpawned`
+
+`setup()` is gone from `GameObject`. Pool construct no longer runs a lifecycle hook. Spawn still applies `spawnConfig` keys first, then `onSpawned`, then `syncMassFromCollider`. Same cadence as before, one name.
+
 ## Wednesday 23 September 2026 — Reinsert Is the Painter
 
 `renderer.painterSort` is gone. `ySorting` is the only knob: on, reinsert (radix only when the slot set changes); off, no sort. Radix-every-frame and decimate were measurement knobs. They are not a public API. Predator no longer names a sort mode. Tree, Rock, and Barrel now call `setSprite` in `onSpawned`, so a recycled pool slot is visible again.

@@ -46,13 +46,10 @@ export class TerrainIsland extends GameObject {
   static components = [RigidBody, Collider, MeshRenderer];
   // static forceProcessOnLogicWorker = 1;
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     this.collider.visualRange = 0;
     this.collider.friction = 0.5;
     this.collider.restitution = 0;
-  }
-
-  onSpawned(spawnConfig = {}) {
     this.rigidBody.static = spawnConfig.isStatic ? 1 : 0;
     this.rigidBody.linearDamping = spawnConfig.isStatic ? 0 : 0.4;
     this.rigidBody.angularDamping = spawnConfig.isStatic ? 0 : 0.8;

@@ -30,12 +30,9 @@ export class ConstraintBox extends GameObject {
 
     static components = [SpriteRenderer, ConstraintBoxComponent];
 
-    setup() {
+    onSpawned(spawnConfig = {}) {
         this.spriteRenderer.anchorX = 0.5;
         this.spriteRenderer.anchorY = 0.5;
-    }
-
-    onSpawned(spawnConfig = {}) {
         const x = spawnConfig.x || 0;
         const y = spawnConfig.y || 0;
         const size = spawnConfig.size ?? CONSTRAINT_BOX_DEFAULTS.size;

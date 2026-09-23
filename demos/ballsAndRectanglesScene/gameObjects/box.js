@@ -15,22 +15,13 @@ class Box extends GameObject {
   static components = [RigidBody, Collider, SpriteRenderer];
 
   /**
-   * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
-   * All components are guaranteed to be initialized at this point
-   */
-  setup() {
-    // Configure RigidBody physics properties (same for all boxes)
-    this.rigidBody.linearDamping = 0.001; // Low damping - let boxes settle naturally
-
-    this.onSpawned();
-  }
-
-  /**
    * LIFECYCLE: Called when box is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn
    * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
   onSpawned(spawnConfig = {}) {
+    // Configure RigidBody physics properties (same for all boxes)
+    this.rigidBody.linearDamping = 0.001; // Low damping - let boxes settle naturally
     // Get config from instance
     const config = this.config || {};
     const cellSize = config.spatial?.cellSize || 80;

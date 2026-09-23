@@ -22,7 +22,7 @@ class Boid extends GameObject {
 
   static components = [RigidBody, Collider, SpriteRenderer];
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     this.rigidBody.linearDamping = 0.01;
     this.collider.active = false;
     this.collider.width = 10;
@@ -35,9 +35,6 @@ class Boid extends GameObject {
     this.spriteRenderer.scaleY = 1;
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.5;
-  }
-
-  onSpawned(spawnConfig = {}) {
     const config = this.config || {};
 
     this.x = spawnConfig.x ?? rng() * (config.worldWidth || 800);

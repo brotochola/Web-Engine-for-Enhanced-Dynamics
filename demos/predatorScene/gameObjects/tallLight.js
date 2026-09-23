@@ -12,10 +12,14 @@ export class TallLight extends GameObject {
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
+  
+
   /**
-   * LIFECYCLE: Configure this entity TYPE - runs ONCE per pooled instance
+   * LIFECYCLE: Called when the light is spawned/respawned from pool
+   * Initialize THIS instance - runs EVERY spawn
+   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
-  setup() {
+  onSpawned(spawnConfig = {}) {
     // this.rigidBody.static = 1;
     this.setSprite('tallLight');
 
@@ -35,14 +39,6 @@ export class TallLight extends GameObject {
     this.collider.radius = 17;
     this.collider.visualRange = 400; // shadow-caster / neighbor radius (not derived from intensity)
     this.collider.offsetY = -9
-  }
-
-  /**
-   * LIFECYCLE: Called when the light is spawned/respawned from pool
-   * Initialize THIS instance - runs EVERY spawn
-   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
-   */
-  onSpawned(spawnConfig = {}) {
     // Restore the sprite in case pooled reuse changed it before this slot respawned.
     this.setSprite('tallLight');
   }

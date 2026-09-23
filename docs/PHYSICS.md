@@ -97,7 +97,7 @@ Scene knob: `physics.maxFixturePoolSize` (default `0`, same opt-in as `maxJoints
 
 Setters write SoA and `markBodyDirty` with `LIFECYCLE|GEOMETRY|MASS` (Collider) or `LIFECYCLE|BODY_TYPE|MASS` (RigidBody) so `syncBodySlot` runs property sync (not LIFECYCLE-only, which only create/destroys).
 
-`GameObject.spawn` wraps setup/`onSpawned` in `withBodyDirtyDeferred` so mid-setup Box 0×0 never creates a body. `bumpBodyGeneration` after activate **always** publishes `LIFECYCLE`, even if a parent `onSpawned` is still deferred (child spawn). `markBodyDirty(..., force)` is the same escape hatch for post-spawn `GEOMETRY|BODY_TYPE|FILTER` (demo: `TerrainIsland.syncPhysics`). Host `syncBodySlot`: if flags are more than `LIFECYCLE` alone, run `syncBodyProperties` on the create frame too — otherwise multi-fixture islands stay shapeless until a later remesh.
+`GameObject.spawn` wraps `onSpawned` in `withBodyDirtyDeferred` so mid-hook Box 0×0 never creates a body. `bumpBodyGeneration` after activate **always** publishes `LIFECYCLE`, even if a parent `onSpawned` is still deferred (child spawn). `markBodyDirty(..., force)` is the same escape hatch for post-spawn `GEOMETRY|BODY_TYPE|FILTER` (demo: `TerrainIsland.syncPhysics`). Host `syncBodySlot`: if flags are more than `LIFECYCLE` alone, run `syncBodyProperties` on the create frame too — otherwise multi-fixture islands stay shapeless until a later remesh.
 
 WASM sibling (`Box2d_3.2_C_-_liquidfun`): `create_body`, `body_add_shape_{box,circle,polygon}`, `body_clear_shapes`. Rebuild: `weedjs\build_for_weed.bat` → copies into `src/box2d/`. Correctness: `tests/node/rbColliderComposition.wasm.test.js` (WASM attach/detach); dirty-flag publish: `tests/node/box2dBodyJointSync.test.js`.
 
@@ -282,7 +282,7 @@ With `debug.collectDetailedStats`, physics stats include `LIQUIDFUN_MS` (fluid s
 
 Collision response uses **inverse mass** directly (`invMass[i]`, `invMass[j]`) **without** a per-pair `|| 1` fallback.
 
-**Invariant:** For every **dynamic** body that participates in physics, `mass` and `invMass` must be valid after spawn / `setup()`:
+**Invariant:** For every **dynamic** body that participates in physics, `mass` and `invMass` must be valid after spawn / `onSpawned`:
 
 - Mass derived from collider geometry when a collider can supply it.
 - Otherwise an explicit custom `mass` is respected, or **unit mass** (`mass = 1`, `invMass = 1`) is set once by `RigidBody.syncMassFromCollider()`.
@@ -291,7 +291,7 @@ Collision response uses **inverse mass** directly (`invMass[i]`, `invMass[j]`) *
 
 **Static bodies:** `invMass` is `0` (infinite mass). Collider size changes also go through `RigidBody.syncMassFromCollider()`, so a static body keeps `invMass = 0` even if its collider geometry changes later.
 
-If custom setup changes collider geometry through direct typed-array writes instead of the `Collider` / `GameObject` setters, call:
+If `onSpawned` changes collider geometry through direct typed-array writes instead of the `Collider` / `GameObject` setters, call:
 
 ```javascript
 this.rigidBody.syncMassFromCollider();

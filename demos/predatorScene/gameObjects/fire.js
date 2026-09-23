@@ -21,7 +21,7 @@ export class Fire extends GameObject {
   // Add FireComponent for fire-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, FireComponent];
 
-  setup(spawnConfig) {
+  onSpawned(spawnConfig = {}) {
     this.fireComponent.baseScale = rng() * 0.5 + 1;
 
     if (spawnConfig && spawnConfig.scale) this.fireComponent.baseScale = spawnConfig.scale;
@@ -59,10 +59,6 @@ export class Fire extends GameObject {
 
     // Set fixed animation speed
     this.setAnimationSpeed(this.fireComponent.baseAnimationSpeed);
-  }
-
-  onSpawned(spawnConfig = {}) {
-    this.setup(spawnConfig);
     SoundManager.play('explosion_de_fuego', 0.8, 0.9, 1.1, 0, 0, this.x, this.y);
   }
 

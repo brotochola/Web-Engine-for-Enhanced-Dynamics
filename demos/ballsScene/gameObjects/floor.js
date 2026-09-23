@@ -7,12 +7,13 @@ class Floor extends GameObject {
     static instances = [];
     static components = [RigidBody, Collider, SpriteRenderer];
 
-    setup() {
-        this.spriteRenderer.active = 1;
-        this.collider.visualRange = 0;
-    }
+
 
     onSpawned(spawnConfig = {}) {
+
+        this.spriteRenderer.active = 1;
+        this.collider.visualRange = 0;
+
         const config = spawnConfig || {};
 
         const width = config.width || 100;

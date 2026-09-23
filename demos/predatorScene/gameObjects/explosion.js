@@ -21,7 +21,7 @@ export class Explosion extends GameObject {
   // Add ExplosionComponent for explosion-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, ExplosionComponent];
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     const ec = this.explosionComponent;
 
     ec.baseScale = 2;
@@ -67,9 +67,6 @@ export class Explosion extends GameObject {
     ec.lifespan = (ec.frameCount / animationFPS) * 1000;
     ec.elapsedTime = 0;
     ec.justSpawned = 1; // Flag to ensure clean state on first tick
-  }
-
-  onSpawned(spawnConfig = {}) {
     SoundManager.play('explosion_corta', 1, 0.9, 1.1, 0, 0, this.x, this.y);
 
     setTimeout(() => this.stampDecalToFloor(), 100);

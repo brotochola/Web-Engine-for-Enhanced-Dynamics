@@ -22,7 +22,7 @@ export class Trash extends Lootable {
     static serializable = true;
     static resistance = 0.5
 
-    setup() {
+    onSpawned(spawnConfig = {}) {
         this.setSprite('trash');
         this.setScale(rng() > 0.5 ? 1 : -1, 1);
 
@@ -57,6 +57,4 @@ export class Trash extends Lootable {
         this.despawn()
         this.emitSparks()
     }
-
-    // onSpawned(spawnConfig = {}) { }
 }

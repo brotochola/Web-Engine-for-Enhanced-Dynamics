@@ -14,9 +14,6 @@ export class BoxPart extends GameObject {
         //CollisionListener
     ];
 
-    setup() {
-        // Values set in onSpawned
-    }
     // onCollisionEnter() {
     //     // this.scaleVelocity(BoxPart.collisionDamping)
 

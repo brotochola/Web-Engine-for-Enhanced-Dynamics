@@ -12,10 +12,6 @@ export class CarPart extends GameObject {
     // No SpriteRenderer - this is an invisible physics body
     static components = [RigidBody, Collider, CollisionListener];
 
-    setup() {
-        // Basic setup - actual values set in onSpawned
-    }
-
     onSpawned(spawnConfig = {}) {
         const radius = spawnConfig.radius || 15;
 

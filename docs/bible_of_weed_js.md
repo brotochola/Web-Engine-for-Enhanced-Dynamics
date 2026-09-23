@@ -123,8 +123,7 @@ static assets = {
 
 Lifecycle hooks:
 
-- `setup()` once per pooled instance
-- `onSpawned(spawnConfig)` each spawn
+- `onSpawned(spawnConfig)` each spawn (`spawnConfig` keys applied first; hook may override)
 - `tick(dtRatio, deltaTime, accumulatedTime, frameNumber)` update
 - `onCollisionEnter/Stay/Exit(otherIndex)` -- requires `CollisionListener` component
 - `onCollisionHit(...)` -- requires `CollisionListener` (opt-in via `Collider.enableHitEvents`)

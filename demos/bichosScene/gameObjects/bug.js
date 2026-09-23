@@ -12,7 +12,10 @@ export class Bug extends GameObject {
     // Define components this entity uses
     static components = [Collider, SpriteRenderer, ShadowCaster, RigidBody];
 
-    setup() {
+
+
+    onSpawned(spawnConfig = {}) {
+
         // Initialize Collider
         this.collider.radius = 10;
         this.collider.visualRange = 100;
@@ -27,9 +30,7 @@ export class Bug extends GameObject {
 
         // Store current facing direction
         this._facingDirection = 's';
-    }
 
-    onSpawned(spawnConfig = {}) {
         // Set position from spawn config
         this.x = spawnConfig.x ?? 0;
         this.y = spawnConfig.y ?? 0;

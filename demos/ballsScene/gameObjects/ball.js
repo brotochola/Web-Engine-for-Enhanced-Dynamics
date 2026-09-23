@@ -13,14 +13,6 @@ class Ball extends GameObject {
   static components = [RigidBody, Collider, SpriteRenderer];
 
   /**
-   * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
-   * All components are guaranteed to be initialized at this point
-   */
-  setup() {
-
-  }
-
-  /**
    * LIFECYCLE: Called when ball is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn
    * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()

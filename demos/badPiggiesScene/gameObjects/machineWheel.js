@@ -10,12 +10,13 @@ export class MachineWheel extends GameObject {
   static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer];
 
-  setup() {
-    this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 0.5;
-  }
+
 
   onSpawned(spawnConfig = {}) {
+
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 0.5;
+
     const ghost = !!spawnConfig.ghost;
     const radius = spawnConfig.radius ?? WHEEL_RADIUS;
 

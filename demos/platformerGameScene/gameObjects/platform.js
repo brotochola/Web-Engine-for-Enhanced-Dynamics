@@ -6,15 +6,11 @@ const { ShapeType } = enums;
 export class Platform extends GameObject {
   static components = [Collider, SpriteRenderer, ShadowCaster, RigidBody];
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     this.collider.shapeType = ShapeType.Box;
     this.collider.radius = 0;
     this.collider.visualRange = 512;
     this.rigidBody.static = 1;
-
-  }
-
-  onSpawned(spawnConfig = {}) {
 
     const width = spawnConfig.width ?? 220;
     const height = spawnConfig.height ?? 36;

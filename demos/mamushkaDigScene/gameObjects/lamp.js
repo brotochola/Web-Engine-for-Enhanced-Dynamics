@@ -11,7 +11,10 @@ const LAMP_RANGE = 750;
 export class Lamp extends GameObject {
   static components = [Collider, SpriteRenderer, LightEmitter, RigidBody];
 
-  setup() {
+
+
+  onSpawned(spawnConfig = {}) {
+
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = LAMP_RADIUS;
     // this.collider.isTrigger = 1;
@@ -26,9 +29,7 @@ export class Lamp extends GameObject {
     this.lightEmitter.glowHeightOffset = 8;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1;
-  }
 
-  onSpawned(spawnConfig = {}) {
     this.x = spawnConfig.x ?? 0;
     this.y = spawnConfig.y ?? 0;
     this.setSprite('_whiteCircle');

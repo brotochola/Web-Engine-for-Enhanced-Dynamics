@@ -18,15 +18,6 @@ export class BluePlatformerPlayer extends GameObject {
     jumping: 'jumping',
   });
 
-  setup() {
-    this.rigidBody.static = 0;
-    this.rigidBody.linearDamping = 0.001;
-
-    this.collider.radius = 30;
-    this.collider.visualRange = 120;
-    this.setFixedRotation(1);
-
-  }
   onCollisionEnter(other) {
     if (Transform.entityType[other] != Platform.entityType) return;
     this.vx *= 0.5;
@@ -68,6 +59,12 @@ export class BluePlatformerPlayer extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
+    this.rigidBody.static = 0;
+    this.rigidBody.linearDamping = 0.001;
+
+    this.collider.radius = 30;
+    this.collider.visualRange = 120;
+    this.setFixedRotation(1);
     this.platformerCharacterComponent.isItStandingOnPlatform = -1
 
     this.lightEmitter.lightColor = 0xffffff;

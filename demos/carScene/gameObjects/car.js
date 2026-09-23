@@ -53,12 +53,9 @@ export class Car extends GameObject {
 
     static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, CarComponent];
 
-    setup() {
+    onSpawned(spawnConfig = {}) {
         this.spriteRenderer.anchorX = 0.5;
         this.spriteRenderer.anchorY = 0.5;
-    }
-
-    onSpawned(spawnConfig = {}) {
         const x = spawnConfig.x || 0;
         const y = spawnConfig.y || 0;
         const sprite = spawnConfig.sprite || 'car';

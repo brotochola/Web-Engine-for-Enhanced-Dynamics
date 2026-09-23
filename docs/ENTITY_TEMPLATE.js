@@ -13,18 +13,14 @@ class MyEntity extends GameObject {
   // Do not write an empty tick(){} — that still counts as an override.
   // static tickAll(list, count, dtRatio) { /* SoA batch; do not also override tick() */ }
 
-  setup() {
-    // Runs once per pooled instance
+  onSpawned(spawnConfig = {}) {
     this.rigidBody.linearDamping = 0.02;
     this.collider.radius = 12;
     this.collider.visualRange = 140;
 
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.95;
-  }
 
-  onSpawned(spawnConfig = {}) {
-    // Runs every spawn
     this.x = spawnConfig.x ?? 0;
     this.y = spawnConfig.y ?? 0;
 

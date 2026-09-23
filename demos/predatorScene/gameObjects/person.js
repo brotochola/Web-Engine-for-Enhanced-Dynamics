@@ -84,7 +84,18 @@ export class Person extends Lootable {
     },
   };
 
-  setup() {
+  getRandomTint() {
+    let r = 0.8 + rng() * 0.2;
+    let g = 0.8 + rng() * 0.2;
+    let b = 0.8 + rng() * 0.2;
+
+    return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+  }
+
+  /**
+   * LIFECYCLE: Called when spawned - runs EVERY spawn
+   */
+  onSpawned(spawnConfig = {}) {
     // Collision/perception — size before damping so Box2D never sees Circle r=0
     this.collider.radius = 10;
     this.collider.visualRange = 150;
@@ -99,20 +110,6 @@ export class Person extends Lootable {
     // Shadow uses default heightMultiplier = 1 (matches sprite scale)
 
     // Flocking and resistance now use static class properties (no per-entity arrays needed)
-  }
-
-  getRandomTint() {
-    let r = 0.8 + rng() * 0.2;
-    let g = 0.8 + rng() * 0.2;
-    let b = 0.8 + rng() * 0.2;
-
-    return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
-  }
-
-  /**
-   * LIFECYCLE: Called when spawned - runs EVERY spawn
-   */
-  onSpawned(spawnConfig = {}) {
     // this.setSpritesheet("poli");
     // this.setAnimation("idle_down");
 

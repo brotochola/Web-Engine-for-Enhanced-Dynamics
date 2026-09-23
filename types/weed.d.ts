@@ -3576,7 +3576,6 @@ export declare class Flash extends GameObject {
   static initialize(maxFlashes: number): void;
   static isOnScreen(worldX: number, worldY: number): boolean;
   static create(config: FlashCreateConfig): Flash | null;
-  setup(): void;
   onSpawned(spawnConfig?: FlashCreateConfig): void;
   onDespawned(): void;
   tick(dtRatio: number, deltaTime: number): void;

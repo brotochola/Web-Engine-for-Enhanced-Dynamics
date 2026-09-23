@@ -19,10 +19,8 @@ export class Destination extends GameObject {
   static serializable = true;
   // Components: basic physics + rendering + our FSM
   static components = [Collider, SpriteRenderer];
-  /**
-   * LIFECYCLE: Configure entity TYPE properties - runs ONCE per instance
-   */
-  setup() {
+
+  onSpawned(spawnConfig = {}) {
     // Collision/perception
     this.collider.radius = 100;
     this.collider.visualRange = 0;
@@ -35,9 +33,8 @@ export class Destination extends GameObject {
     this.y = this.config.worldHeight * 0.5;
 
     this.setSprite('target');
+  
   }
-
-  onSpawned(spawnConfig = {}) { }
 
   /**
    * LIFECYCLE: Main update loop

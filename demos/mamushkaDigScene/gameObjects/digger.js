@@ -44,7 +44,7 @@ export class Digger extends GameObject {
     LightEmitter,
   ];
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     this.rigidBody.static = 0;
     this.rigidBody.linearDamping = 0.12;
     this.collider.radius = BODY_RADIUS;
@@ -63,9 +63,6 @@ export class Digger extends GameObject {
     this._lampsCarried = 0;
     this._placeLockUntil = 0;
     this._now = 0;
-  }
-
-  onSpawned(spawnConfig = {}) {
     this._grounded = 0;
     this._lastFireAt = 0;
     this._laserArmed = Mouse.isButton0Down ? 0 : 1;

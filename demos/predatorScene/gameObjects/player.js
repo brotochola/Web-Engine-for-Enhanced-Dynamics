@@ -34,43 +34,6 @@ export class Player extends GameObject {
     // LightEmitter,
   ];
 
-  /**
-   * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
-   * All components are guaranteed to be initialized at this point
-   */
-  setup() {
-    // Initialize physics properties
-    this.rigidBody.linearDamping = 0.03; // Linear damping for smooth stopping
-
-    if (this.lightEmitter) {
-      this.lightEmitter.lightColor = 0xffffff;
-      this.lightEmitter.lightIntensity = 2000;
-      this.lightEmitter.height = 0;
-      this.lightEmitter.active = 1;
-      this.lightEmitter.hasGlowSprite = 0;
-    }
-
-    // Initialize collider
-    this.collider.radius = 15;
-    this.collider.visualRange = 100;
-
-    // Initialize sprite renderer
-    this.spriteRenderer.scaleX = 1.5;
-    this.spriteRenderer.scaleY = 1.5;
-    this.spriteRenderer.animationSpeed = 0.15;
-
-    // Set anchor for character sprite (bottom-center for ground alignment)
-    this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 1.0;
-
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
-
-    // Store last direction for idle animations
-    this.lastDirection = 'down';
-
-    // Movement acceleration (px/s²) — was 0.3 frame units
-    this.moveAcceleration = 1080;
-  }
   // Reusable vectors (zero GC)
   _flowVec = { x: 0, y: 0 };
   _nextPos = { x: 0, y: 0 };
@@ -128,6 +91,37 @@ export class Player extends GameObject {
    * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
   onSpawned(spawnConfig = {}) {
+    // Initialize physics properties
+    this.rigidBody.linearDamping = 0.03; // Linear damping for smooth stopping
+
+    if (this.lightEmitter) {
+      this.lightEmitter.lightColor = 0xffffff;
+      this.lightEmitter.lightIntensity = 2000;
+      this.lightEmitter.height = 0;
+      this.lightEmitter.active = 1;
+      this.lightEmitter.hasGlowSprite = 0;
+    }
+
+    // Initialize collider
+    this.collider.radius = 15;
+    this.collider.visualRange = 100;
+
+    // Initialize sprite renderer
+    this.spriteRenderer.scaleX = 1.5;
+    this.spriteRenderer.scaleY = 1.5;
+    this.spriteRenderer.animationSpeed = 0.15;
+
+    // Set anchor for character sprite (bottom-center for ground alignment)
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 1.0;
+
+    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
+
+    // Store last direction for idle animations
+    this.lastDirection = 'down';
+
+    // Movement acceleration (px/s²) — was 0.3 frame units
+    this.moveAcceleration = 1080;
     // Get config from instance
     const config = this.config || {};
 

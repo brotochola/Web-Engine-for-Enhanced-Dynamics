@@ -7,7 +7,7 @@ export class ZenithalLight extends GameObject {
 
   static components = [Collider, LightEmitter];
 
-  setup() {
+  onSpawned(spawnConfig = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 1;
     this.collider.visualRange = 700;
@@ -17,7 +17,6 @@ export class ZenithalLight extends GameObject {
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1;
+  
   }
-
-  onSpawned(spawnConfig = {}) { }
 }

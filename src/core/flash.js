@@ -119,14 +119,6 @@ export class Flash extends GameObject {
   }
 
   /**
-   * LIFECYCLE: Configure flash properties
-   */
-  setup() {
-    // Flashes don't need any special setup
-    // All configuration happens in onSpawned
-  }
-
-  /**
    * LIFECYCLE: Called when flash is spawned from pool
    * @param {Object} spawnConfig - Spawn configuration from Flash.spawn()
    */

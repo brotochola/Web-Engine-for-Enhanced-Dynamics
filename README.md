@@ -127,13 +127,10 @@ const { GameObject, Scene, RigidBody, Collider, SpriteRenderer } = WEED;
 class Zombie extends GameObject {
   static components = [RigidBody, Collider, SpriteRenderer];
 
-  setup() {
+  onSpawned({ x = 0, y = 0 } = {}) {
     this.collider.radius = 12;
     this.collider.visualRange = 160;
     this.rigidBody.linearDamping = 0.02;
-  }
-
-  onSpawned({ x = 0, y = 0 } = {}) {
     this.x = x;
     this.y = y;
     this.setSpritesheet('zombie');
