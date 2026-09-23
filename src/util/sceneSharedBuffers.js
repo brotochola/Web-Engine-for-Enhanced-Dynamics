@@ -31,6 +31,7 @@ import {
   SUN_DEFAULTS,
   LAYER_DEFAULTS,
   DEFAULT_LAYERS,
+  RENDERER_DEFAULTS,
 } from './configDefaults.js';
 import { Sun } from '../core/sun.js';
 import { Layer } from '../core/layer.js';
@@ -512,7 +513,9 @@ function initializeLightingAndRenderBuffers(scene) {
   const defaultYSorting = config.renderer?.ySorting !== undefined
     ? !!config.renderer.ySorting
     : true;
+  const glowAsSprite = (config.renderer?.lightGlow ?? RENDERER_DEFAULTS.lightGlow) === 'sprite';
   for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
+    if (name === 'lightGlows' && glowAsSprite) continue;
     builtInLayers[name] = {
       ...defaults,
       ySorting: name === 'entities' ? defaultYSorting : defaults.ySorting,

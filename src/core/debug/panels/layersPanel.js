@@ -66,7 +66,9 @@ export class LayersPanel {
     this.panel = createPanel();
     this.panel.appendChild(this._createHeaderRow());
 
+    const glowSprite = this.debugUI.scene?.config?.renderer?.lightGlow === 'sprite';
     for (const layerName of Object.keys(DEFAULT_LAYERS)) {
+      if (layerName === 'lightGlows' && glowSprite) continue;
       this._createLayerRow(layerName, this.panel);
     }
     this._sortLayerRows();
@@ -687,6 +689,7 @@ export class LayersPanel {
 
   _getAvailableLayers(config) {
     const available = new Set(['entities']);
+    if (Layer.initialized && Layer.get('lightGlows')) available.add('lightGlows');
     if (config.particle?.decals) available.add('decals');
     if (config.lighting?.enabled) {
       available.add('lighting');

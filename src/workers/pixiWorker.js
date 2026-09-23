@@ -363,6 +363,7 @@ class PixiRenderer extends AbstractWorker {
 
     // Renderer configuration options (set during initialize)
     this.ySorting = false; // Enable/disable Y-sorting for depth ordering
+    this._lightGlowAdd = true;
     this.physicsWorkerIndex = 1; // Updated during initialize() based on spatial worker count
 
     // PIXI application and rendering
@@ -1173,10 +1174,6 @@ class PixiRenderer extends AbstractWorker {
       this.spriteGlowMesh.scale.set(zoom);
       this.spriteGlowMesh.x = -cameraX * zoom;
       this.spriteGlowMesh.y = -cameraY * zoom;
-      // Above LIGHTING multiply so soft ADD bloom is not crushed into gray falloff
-      const lightDisp = this._visPolyDisplaySprite || this.lightingDisplaySprite || this.lightingMesh;
-      const lightZ = lightDisp?.zIndex ?? (this.spriteMesh?.zIndex ?? 0) + 1;
-      this.spriteGlowMesh.zIndex = lightZ + 0.001;
     }
 
     this._applySceneryCamera(zoom, cameraX, cameraY);
@@ -1280,10 +1277,14 @@ class PixiRenderer extends AbstractWorker {
     if (!this.renderQueueEnabled || !this.entitiesBatch) return;
     if (!layerIsVisible(Layer.entitiesId)) {
       this.entitiesBatch.mesh.visible = false;
-      if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
       this.visibleEntityCount = 0;
       this.visibleParticleCount = 0;
-      return;
+      const glowId = Layer.get('lightGlows')?.id;
+      const glowOn = this._lightGlowAdd && layerIsVisible(glowId);
+      if (!glowOn) {
+        if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
+        return;
+      }
     }
 
     const count = this.renderQueueCount[0];
@@ -1326,7 +1327,7 @@ class PixiRenderer extends AbstractWorker {
     let ng = 0;
     const idxE = this._rqIdxEntity;
     const idxG = this._rqIdxGlow;
-    if (typeArr && idxE) {
+    if (this._lightGlowAdd && typeArr && idxE) {
       ne = 0;
       for (let i = 0; i < count; i++) {
         const t = typeArr[i];
@@ -1378,9 +1379,11 @@ class PixiRenderer extends AbstractWorker {
     this.entitiesBatch.setPoseAlpha(this._poseAlpha);
     this._posePacked = true;
     this.visibleParticleCount = 0;
-    if (this.entitiesGlowBatch) {
+    if (this._lightGlowAdd && this.entitiesGlowBatch) {
       opts.includeType = 3;
       this.entitiesGlowBatch.upload(q, opts);
+    } else if (this.spriteGlowMesh) {
+      this.spriteGlowMesh.visible = false;
     }
   }
 
@@ -1528,6 +1531,14 @@ class PixiRenderer extends AbstractWorker {
       poseInterp: this._queueInterp,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
+
+    if (!this._lightGlowAdd) {
+      this.entitiesGlowBatch = null;
+      this.spriteGlowMesh = null;
+      if (this.flatTextures?.length) this.rebuildInstancedTextureLut();
+      console.log(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, one blend)`);
+      return;
+    }
 
     this.entitiesGlowBatch = new InstancedSpriteBatch({
       capacity: maxItems,
@@ -3716,10 +3727,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     if (visible !== undefined && displayObject) {
-      setDisplayVisible(displayObject, visible);
-      if (layer === 'entities') {
-        setDisplayVisible(this.spriteGlowMesh, visible);
-      }
+      const show = visible && (layer !== 'lightGlows' || this._lightGlowAdd);
+      setDisplayVisible(displayObject, show);
     }
 
     if (blendMode !== undefined && displayObject) {
@@ -3755,9 +3764,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     if (zIndex !== undefined && displayObject) {
       displayObject.zIndex = zIndex;
-      if (layer === 'entities') {
-        if (this.spriteGlowMesh) this.spriteGlowMesh.zIndex = zIndex + 0.001;
-      }
       this.pixiApp.stage.sortChildren();
     }
   }
@@ -4058,10 +4064,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const on = Layer._visible[i] === 1;
       const name = Layer.getName(i);
       const displayObj = name ? this._layerRuntime[name] : null;
-      if (displayObj) setDisplayVisible(displayObj, on);
-      if (i === Layer.entitiesId) {
-        setDisplayVisible(this.spriteGlowMesh, on);
-      }
+      if (displayObj) setDisplayVisible(displayObj, on && (name !== 'lightGlows' || this._lightGlowAdd));
     }
   }
 
@@ -4741,6 +4744,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Configure Y-sorting (default: true)
     this.ySorting = rendererConfig.ySorting !== undefined ? rendererConfig.ySorting : true;
+    this._lightGlowAdd = (rendererConfig.lightGlow ?? RENDERER_DEFAULTS.lightGlow) !== 'sprite';
 
     this.autoGenerateMipmaps =
       rendererConfig.autoGenerateMipmaps !== undefined
@@ -4973,9 +4977,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._registerLayerDisplayObject('entities', this.spriteMesh);
       this.pixiApp.stage.addChild(this.spriteMesh);
       if (this.spriteGlowMesh) {
-        // Temporary; updateCameraTransform sets z above LIGHTING once that exists
-        this.spriteGlowMesh.zIndex = (this.spriteMesh.zIndex || 0) + 0.001;
+        this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
         this.pixiApp.stage.addChild(this.spriteGlowMesh);
+        if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
       }
       console.log('PIXI WORKER: ENTITIES layer using instanced sprite mesh (painter + glow ADD)');
     }
@@ -5623,6 +5627,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.shadowDisplaySprite) this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
     if (this.spriteMesh) {
       this._registerLayerDisplayObject('entities', this.spriteMesh);
+    }
+    if (this.spriteGlowMesh) {
+      this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
+      if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
     }
     if (this._visPolyDisplaySprite) this._registerLayerDisplayObject('lighting', this._visPolyDisplaySprite);
     else if (this.lightingDisplaySprite) this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);

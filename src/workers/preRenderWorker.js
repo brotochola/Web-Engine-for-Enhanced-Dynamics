@@ -604,6 +604,8 @@ class PreRenderWorker extends AbstractWorker {
         this.decorationFadeStartZoom = rendererConfig.startFadingDecorationsAtZoom ?? RENDERER_DEFAULTS.startFadingDecorationsAtZoom;
         this.decorationHideZoom = rendererConfig.hideDecorationsAtZoom ?? RENDERER_DEFAULTS.hideDecorationsAtZoom;
         this._decorationZoomAlpha = 1;
+        this._lightGlowAsSprite = (rendererConfig.lightGlow ?? RENDERER_DEFAULTS.lightGlow) === 'sprite';
+        this._glowLayerAlpha = 1;
 
         console.log(`[PRE_RENDER WORKER] Entities: ${this.globalEntityCount}, Particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}`);
 
@@ -2170,7 +2172,8 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
-        if (this._queryLightEmitter && LightEmitter.active && LightEmitter.hasGlowSprite) {
+        this._syncGlowLayer();
+        if (this._glowEmit && this._queryLightEmitter && LightEmitter.active && LightEmitter.hasGlowSprite) {
             const lights = this._ownedLightIter
                 ? this._ownedLightIter
                 : Query.queryActiveEntities(this._queryLightEmitter);
@@ -2867,9 +2870,21 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Build the final render queue
+     * Sprite mode does not register lightGlows. Glows stay in the entity queue.
+     * Add mode: a hidden lightGlows layer skips the collect.
      */
+    _syncGlowLayer() {
+        const sprite = (this.config.renderer?.lightGlow ?? RENDERER_DEFAULTS.lightGlow) === 'sprite';
+        this._lightGlowAsSprite = sprite;
+        this._glowEmit = true;
+        this._glowLayerAlpha = 1;
+        if (sprite) return;
+        const layer = Layer.get('lightGlows');
+        if (layer && !layer.visible) this._glowEmit = false;
+    }
+
     buildRenderQueue(deltaTime) {
+        this._syncGlowLayer();
         if (!this.renderQueueEnabled || this._renderableCount === 0) {
             if (this.renderQueueCount) this.renderQueueCount[0] = 0;
             return;
@@ -3322,6 +3337,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqTextureId[out] = lightGradientTextureId;
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
+                if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
                 rqType[out] = 3;
             }
         }
@@ -3345,6 +3361,7 @@ class PreRenderWorker extends AbstractWorker {
      * @param {number} deltaTime - Frame delta in milliseconds (for animation advancement)
      */
     buildCustomLayerQueues(deltaTime) {
+        this._syncGlowLayer();
         if (!this._customLayerCollectors) return;
 
         // Entity arrays
@@ -3719,6 +3736,7 @@ class PreRenderWorker extends AbstractWorker {
                     rqTextureId[out] = lightGradientTextureId;
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
+                    if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
                     rqType[out] = 3;
                 } else if (type === 4) {
                     // === BULLET ===

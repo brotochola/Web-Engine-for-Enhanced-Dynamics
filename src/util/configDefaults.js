@@ -244,6 +244,13 @@ export const DEFAULT_LAYERS = Object.freeze({
     ySorting: false,
     kind: LAYER_KIND.LIGHTING,
   },
+  // ADD bloom mesh. Not a sprite queue. z starts above lighting so multiply does not crush it.
+  lightGlows: {
+    zIndex: 5,
+    blendMode: BLEND_MODES.ADD,
+    ySorting: false,
+    kind: LAYER_KIND.LIGHTING,
+  },
 });
 
 /**
@@ -527,6 +534,12 @@ export const RENDERER_DEFAULTS = Object.freeze({
    * smoothing (that is preRender.interpolation). Both true adds a frame of lag.
    */
   interpolation: false,
+  /**
+   * 'add' — type 3 glows go to the lightGlows ADD mesh.
+   * 'sprite' — same quads join the entity list (sort bias already above the body).
+   * Source-over, so the soft edge can gray, and lighting multiply sits on top.
+   */
+  lightGlow: 'add',
 });
 
 // ============================================================================
