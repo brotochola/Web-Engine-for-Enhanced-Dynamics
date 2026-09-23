@@ -408,6 +408,7 @@ class PixiRenderer extends AbstractWorker {
     this.lightsTimeThisFrame = 0;
     this.shadowsTimeThisFrame = 0;
     this.spritesTimeThisFrame = 0;
+    this.sortTimeThisFrame = 0;
     this.customLayersTimeThisFrame = 0;
     this.miscTimeThisFrame = 0;
 
@@ -1067,6 +1068,7 @@ class PixiRenderer extends AbstractWorker {
         this.stats[RENDERER_STATS.LIGHTS_MS] = this.lightsTimeThisFrame;
         this.stats[RENDERER_STATS.SHADOWS_MS] = this.shadowsTimeThisFrame;
         this.stats[RENDERER_STATS.SPRITES_MS] = this.spritesTimeThisFrame;
+        this.stats[RENDERER_STATS.SORT_MS] = this.sortTimeThisFrame;
         this.stats[RENDERER_STATS.CUSTOM_LAYERS_MS] = this.customLayersTimeThisFrame;
         this.stats[RENDERER_STATS.MISC_MS] = this.miscTimeThisFrame;
       }
@@ -1244,7 +1246,10 @@ class PixiRenderer extends AbstractWorker {
    */
   _uploadSortedSprites(batch, q, opts, painter, keysU32, idxE, ne) {
     if (painter && keysU32 && ne >= 2) {
+      const detail = this.collectDetailedStats;
+      const t0 = detail ? performance.now() : 0;
       opts.indices = orderPainterSlots(painter, idxE, ne, keysU32);
+      if (detail) this.sortTimeThisFrame += performance.now() - t0;
       opts.indexCount = ne;
     } else if (idxE) {
       opts.indices = idxE;
@@ -1343,7 +1348,10 @@ class PixiRenderer extends AbstractWorker {
       this.visibleParticleCount = np;
       if (this.entitiesGlowBatch) {
         if (this._painter && ng > 1 && this._sortKeyU32) {
+          const detail = this.collectDetailedStats;
+          const t0 = detail ? performance.now() : 0;
           radixSortIndicesBySortKey(idxG, ng, this._sortKeyU32, this._painter.scratch, this._painter.hist);
+          if (detail) this.sortTimeThisFrame += performance.now() - t0;
         }
         opts.indices = idxG;
         opts.indexCount = ng;
@@ -1632,6 +1640,7 @@ class PixiRenderer extends AbstractWorker {
     this.lightsTimeThisFrame = 0;
     this.shadowsTimeThisFrame = 0;
     this.spritesTimeThisFrame = 0;
+    this.sortTimeThisFrame = 0;
     this.customLayersTimeThisFrame = 0;
     this.miscTimeThisFrame = 0;
     this._decalTilesDirtyThisFrame = 0;

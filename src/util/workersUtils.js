@@ -43,6 +43,8 @@ export const RENDERER_STATS = Object.freeze({
   MESH_FILL_INSTANCES: 19,
   /** MESH fill RT draws this frame; 0 means skip-RT (always on). */
   MESH_RT_DRAWS: 20,
+  /** CPU painter sort (orderPainterSlots + glow radix). Written only when collectDetailedStats. */
+  SORT_MS: 21,
   STRIDE_FLOATS: 24,
   BUFFER_SIZE: 24 * 4,
 });
@@ -262,6 +264,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'LIGHTS_MS', label: 'Lights', format: fmtMs },
       { key: 'SHADOWS_MS', label: 'Shadows', format: fmtMs },
       { key: 'SPRITES_MS', label: 'SpritesMs', format: fmtMs },
+      { key: 'SORT_MS', label: 'Sort', format: fmtMs },
       { key: 'CUSTOM_LAYERS_MS', label: 'Custom', format: fmtMs },
       { key: 'MISC_MS', label: 'Misc', format: fmtMs },
     ],

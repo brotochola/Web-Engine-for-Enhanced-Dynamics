@@ -17,6 +17,11 @@ export class BunnyMarkScene extends Scene {
         worldHeight: typeof globalThis.innerHeight === 'number' ? globalThis.innerHeight : 1080,
         entityIdWidth: 32,
         seed: 1,
+        debug: {
+            maxDebugDrawEntries: 30192,
+            collectDetailedStats: true,
+            verboseWorkers: true,
+        },
         spatial: {
             // 0 = no spatial worker and no grid SAB. Inspect picks via click scan.
             numberOfSpatialWorkers: 0,
