@@ -40,6 +40,10 @@ const FIELDS = [
     ['tileOffsetV', Uint16Array,            2,   0],
     ['tileMulX',    Float32Array,           4,   0],
     ['tileMulY',    Float32Array,           4,   0],
+    // ShadowCaster height and anchor offsets. 0 height means this row casts nothing.
+    ['shadowH',     Float32Array,           4,   0],
+    ['shadowOffX',  Float32Array,           4,   0],
+    ['shadowOffY',  Float32Array,           4,   0],
 ];
 
 /** Sibling SAB: Float32 zoom/x/y + Int32 poseReady (not stuffed in a float). */

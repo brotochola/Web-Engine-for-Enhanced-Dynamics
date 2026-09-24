@@ -245,12 +245,12 @@ export function lightDataTextureFloatCount(maxLights) {
  * Row 0 texel i: x, y, intensity, 0
  * Row 1 texel i: r, g, b, 0
  */
-export function packLightDataTexel(data, maxLights, lightIndex, x, y, intensity, r, g, b) {
+export function packLightDataTexel(data, maxLights, lightIndex, x, y, intensity, r, g, b, rangeSq = 0) {
   const i0 = lightIndex * 4;
   data[i0] = x;
   data[i0 + 1] = y;
   data[i0 + 2] = intensity;
-  data[i0 + 3] = 0;
+  data[i0 + 3] = rangeSq;
   const i1 = maxLights * 4 + lightIndex * 4;
   data[i1] = r;
   data[i1 + 1] = g;

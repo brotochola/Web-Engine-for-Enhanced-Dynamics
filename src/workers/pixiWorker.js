@@ -785,6 +785,9 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueTileOffsetV = buffer.tileOffsetV;
     this.renderQueueTileMulX = buffer.tileMulX;
     this.renderQueueTileMulY = buffer.tileMulY;
+    this.renderQueueShadowH = buffer.shadowH;
+    this.renderQueueShadowOffX = buffer.shadowOffX;
+    this.renderQueueShadowOffY = buffer.shadowOffY;
     this.renderQueueType = buffer.type;
     this.renderQueueSortKey = buffer.sortKey;
     this._sortKeyU32 = this._sortKeyU32ByBuf[bufferIdx];
@@ -1226,6 +1229,9 @@ class PixiRenderer extends AbstractWorker {
     q.tileMulX = src.tileMulX;
     q.tileMulY = src.tileMulY;
     q.sortKey = src.sortKey || null;
+    q.shadowH = src.shadowH || null;
+    q.shadowOffX = src.shadowOffX || null;
+    q.shadowOffY = src.shadowOffY || null;
   }
 
   _resetSpriteUploadOpts(opts) {
@@ -1319,6 +1325,9 @@ class PixiRenderer extends AbstractWorker {
       tileMulX: this.renderQueueTileMulX,
       tileMulY: this.renderQueueTileMulY,
       sortKey: this.renderQueueSortKey,
+      shadowH: this.renderQueueShadowH,
+      shadowOffX: this.renderQueueShadowOffX,
+      shadowOffY: this.renderQueueShadowOffY,
     }, count);
 
     this._syncEntityOrder();
@@ -1572,6 +1581,7 @@ class PixiRenderer extends AbstractWorker {
       premultiplyAlpha: true,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
+      shadowCast: !!this.shadowSpritesEnabled,
       poseInterp: this._queueInterp,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
@@ -3341,6 +3351,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Always use world coordinates for lights (shader converts screen to world)
       // Apply height offset to position light above the entity
       extractRGBNormalizedMut(color, rgb);
+      const vr = Collider.visualRange;
+      const range = vr ? (vr[entityIndex] || 0) : 0;
       packLightDataTexel(
         lightData,
         maxLights,
@@ -3350,7 +3362,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         lightIntensity[entityIndex],
         rgb.r,
         rgb.g,
-        rgb.b
+        rgb.b,
+        range * range
       );
     }
 
@@ -3436,6 +3449,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!this.shadowBatch || !this.shadowRT) return;
     if (!layerIsVisible(Layer.castedShadows?.id)) return;
 
+    this._drawGpuCasterShadows();
+
     const q = this._shadowUploadQ;
     q.count = this.shadowRenderQueueCount[0];
     q.x = this.shadowRenderQueueX;
@@ -3468,9 +3483,87 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       ? this._rtEmptyContainer
       : this.shadowBatch.mesh;
     rtOpts.target = this.shadowRT;
-    rtOpts.clear = true;
+    rtOpts.clear = !this._gpuSunDrew;
     rtOpts.clearColor = this._clearTransparent;
     this.pixiApp.renderer.render(rtOpts);
+  }
+
+  _drawGpuCasterShadows() {
+    this._gpuSunDrew = false;
+    const batch = this.entitiesBatch;
+    const mesh = this.spriteMesh;
+    const shader = batch && batch.shadowShader;
+    if (!shader || !mesh || (mesh.geometry.instanceCount | 0) <= 0) return;
+    const group = shader.resources && shader.resources.uniforms;
+    const u = group && group.uniforms;
+    if (!u || !u.uCam || !u.uSun || !u.uLight) return;
+    const zoom = this._renderZoom || 1;
+    const res = this.shadowResolution || 1;
+    u.uCam[0] = this._renderCameraX;
+    u.uCam[1] = this._renderCameraY;
+    u.uCam[2] = zoom * res;
+    const sunOn = Sun.isInitialized && Sun.enabled && Sun.intensity > 0.1;
+    if (sunOn) {
+      u.uSun[0] = Sun.shadowDirY;
+      u.uSun[1] = -Sun.shadowDirX;
+      u.uSun[2] = Sun.shadowLengthRatio;
+      const si = Sun.intensity;
+      const len = Sun.shadowLengthRatio || 1;
+      u.uSun[3] = Sun.shadowAlpha * si * (1 - Sun.shadowStretchAlphaFactor * (1 - Sun.shadowMinLengthRatio / len));
+    } else {
+      u.uSun[3] = 0;
+    }
+    u.uLight[0] = 0;
+    u.uLight[1] = 0;
+    u.uLight[2] = 0;
+    u.uLight[3] = 0;
+    u.uPointScale = 0;
+    if (batch.setLightDataSource) batch.setLightDataSource(this._lightDataSource);
+    const prevShader = mesh.shader;
+    const px = mesh.x;
+    const py = mesh.y;
+    const psx = mesh.scale.x;
+    const psy = mesh.scale.y;
+    mesh.shader = shader;
+    mesh.position.set(0, 0);
+    mesh.scale.set(1, 1);
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = mesh;
+    rtOpts.target = this.shadowRT;
+    rtOpts.clearColor = this._clearTransparent;
+    const syncSun = () => { if (typeof group.update === 'function') group.update(); };
+    syncSun();
+    if (u.uSun[3] > 0) {
+      rtOpts.clear = true;
+      this.pixiApp.renderer.render(rtOpts);
+      this._gpuSunDrew = true;
+    }
+    const sunI = sunOn ? Sun.intensity : 0;
+    let pointScale = 0.33 * (1 - sunI * 0.9);
+    if (pointScale < 0.2) pointScale = 0.2;
+    if (LightEmitter.lightIntensity && this._visibleLightsAll) {
+      const lights = this._visibleLightsAll;
+      const n = Math.min(this._visibleLightsAllCount | 0, 48);
+      u.uPointScale = pointScale;
+      const lightData = this._lightDataFloats;
+      rtOpts.clear = !this._gpuSunDrew;
+      for (let i = 0; i < n; i++) {
+        const o = i * 4;
+        if (!lightData || !(lightData[o + 3] > 0)) continue;
+        u.uLight[0] = lightData[o];
+        u.uLight[1] = lightData[o + 1];
+        u.uLight[2] = lightData[o + 2];
+        u.uLight[3] = lightData[o + 3];
+        syncSun();
+        this.pixiApp.renderer.render(rtOpts);
+        rtOpts.clear = false;
+        this._gpuSunDrew = true;
+      }
+      u.uLight[3] = 0;
+    }
+    mesh.shader = prevShader;
+    mesh.position.set(px, py);
+    mesh.scale.set(psx, psy);
   }
 
   /**
@@ -4652,6 +4745,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/instancedSprite.wgsl').then((s) => {
           sh.sprite = s;
         }),
+        fetchEngineShader('/src/shaders/instancedSpriteShadow.wgsl').then((s) => {
+          sh.shadowWgsl = s;
+        }),
         fetchEngineShader('/src/shaders/instancedSpritePose.wgsl').then((s) => {
           sh.spritePose = s;
         }),
@@ -4678,6 +4774,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaderFetches.push(
         fetchEngineShader('/src/shaders/instancedSprite.vert.glsl').then((s) => {
           sh.spriteVert = s;
+        }),
+        fetchEngineShader('/src/shaders/instancedSpriteShadow.vert.glsl').then((s) => {
+          sh.shadowVert = s;
         }),
         fetchEngineShader('/src/shaders/instancedSpritePose.vert.glsl').then((s) => {
           sh.spriteVertPose = s;

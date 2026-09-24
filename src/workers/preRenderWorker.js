@@ -80,6 +80,7 @@ const MAIN_COLUMN_KEYS = [
     'count', 'x', 'y', 'scaleX', 'scaleY', 'rotC', 'rotS', 'alpha', 'tint', 'textureId',
     'anchorX', 'anchorY', 'type', 'entityIndex', 'sortKey', 'repeatX', 'repeatY',
     'tileMode', 'tileOffsetU', 'tileOffsetV', 'tileMulX', 'tileMulY',
+    'shadowH', 'shadowOffX', 'shadowOffY',
 ];
 const SHADOW_COLUMN_KEYS = [
     'count', 'x', 'y', 'scaleX', 'scaleY', 'rotC', 'rotS', 'alpha', 'tint',
@@ -932,6 +933,9 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueCount = buffer.count;
         this.renderQueueX = buffer.x;
         this.renderQueueY = buffer.y;
+        this.renderQueueShadowH = buffer.shadowH;
+        this.renderQueueShadowOffX = buffer.shadowOffX;
+        this.renderQueueShadowOffY = buffer.shadowOffY;
         this.renderQueueScaleX = buffer.scaleX;
         this.renderQueueScaleY = buffer.scaleY;
         this.renderQueueRotC = buffer.rotC;
@@ -1555,6 +1559,9 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTileOffsetV = views.tileOffsetV;
         this.renderQueueTileMulX = views.tileMulX;
         this.renderQueueTileMulY = views.tileMulY;
+        this.renderQueueShadowH = views.shadowH;
+        this.renderQueueShadowOffX = views.shadowOffX;
+        this.renderQueueShadowOffY = views.shadowOffY;
     }
 
     _bindCustomPrivate() {
@@ -2137,7 +2144,7 @@ class PreRenderWorker extends AbstractWorker {
                 this.visibleEntitiesCount++;
             }
 
-            if (doSunShadows) this._writeFusedSunShadow(i, renderVisible[i]);
+            // Sun shadows are a second draw of this sprite. No shadow-queue row.
         }
 
         // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
@@ -2175,10 +2182,8 @@ class PreRenderWorker extends AbstractWorker {
             }
         }
 
-        if (doSunShadows) {
-            this._sunShadowWriteIdx = this._fusedSunShadow.writeIdx;
-            this._sunShadowCount = this._fusedSunShadow.count;
-        }
+        this._sunShadowWriteIdx = 0;
+        this._sunShadowCount = 0;
     }
 
     advanceAdobeAnimations(deltaTime) {
@@ -2467,6 +2472,32 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    /**
+     * Y-sort line is the sprite's bottom edge, not the pose.
+     * Identity rotation: y + (1 - anchorY) * height * |scaleY|.
+     * Rotation uses the same local offset as the sprite vertex shader.
+     */
+    _spriteSortY(index, pose) {
+        const anchorX = SpriteRenderer.anchorX;
+        const anchorY = SpriteRenderer.anchorY;
+        const scaleX = SpriteRenderer.scaleX;
+        const scaleY = SpriteRenderer.scaleY;
+        if (!anchorX || !anchorY || !scaleX || !scaleY) {
+            return spriteYSortKey(pose.y, Y_SORT_K);
+        }
+        const textureId = this._entityTextureIdOrResolve(index);
+        let w = 0;
+        let h = 0;
+        if (textureId !== INVALID_TEXTURE_ID && this.frameWidth && this.frameHeight) {
+            w = this.frameWidth[textureId] || 0;
+            h = this.frameHeight[textureId] || 0;
+        }
+        const ox = (0.5 - anchorX[index]) * w * scaleX[index];
+        const oy = (1 - anchorY[index]) * h * Math.abs(scaleY[index]);
+        const footY = pose.y + ox * pose.rotS + oy * pose.rotC;
+        return spriteYSortKey(footY, Y_SORT_K);
+    }
+
     _writeRenderable(type, index, y, layerId) {
         if (this._customLayerCollectors && layerId !== Layer.entitiesId) {
             const collector = this._customLayerCollectors[layerId];
@@ -2506,7 +2537,7 @@ class PreRenderWorker extends AbstractWorker {
             // Drawn Y, whole pixels. A raw pose.y key changes bits on a
             // fraction of a pixel and the painter swaps two sprites that
             // did not cross.
-            this._renderableY[writeIdx] = spriteYSortKey(pose.y, Y_SORT_K);
+            this._renderableY[writeIdx] = this._spriteSortY(index, pose);
         } else if (type === 2) {
             const pose = this._displayPoseOut;
             this._decorationWorldXY(index, pose);
@@ -2879,6 +2910,9 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         const count = this._renderableCount;
+        if (this.renderQueueShadowH) this.renderQueueShadowH.fill(0, 0, count);
+        if (this.renderQueueShadowOffX) this.renderQueueShadowOffX.fill(0, 0, count);
+        if (this.renderQueueShadowOffY) this.renderQueueShadowOffY.fill(0, 0, count);
         const collectorY = this._renderableY;
         const collectorType = this._renderableType;
         const collectorIndex = this._renderableIndex;
@@ -3070,6 +3104,13 @@ class PreRenderWorker extends AbstractWorker {
                 rqTint[out] = srTint[idx];
                 rqAnchorX[out] = srAnchorX[idx];
                 rqAnchorY[out] = srAnchorY[idx];
+                const shadowH = this.renderQueueShadowH;
+                if (shadowH) {
+                    const cast = ShadowCaster.active && ShadowCaster.active[idx];
+                    shadowH[out] = cast ? ShadowCaster.heightMultiplier[idx] : 0;
+                    this.renderQueueShadowOffX[out] = cast ? (ShadowCaster.anchorOffsetX[idx] || 0) : 0;
+                    this.renderQueueShadowOffY[out] = cast ? (ShadowCaster.anchorOffsetY[idx] || 0) : 0;
+                }
                 const rx0 = srRepeatX[idx];
                 const ry0 = srRepeatY[idx];
                 if (rx0 !== 0 || ry0 !== 0) {
@@ -3905,79 +3946,24 @@ class PreRenderWorker extends AbstractWorker {
             if (this.shadowRenderQueueCount) this.shadowRenderQueueCount[0] = 0;
             return;
         }
-
-        const neighborData = Grid.neighborData;
-        const stride = Grid._stride;
-
-        if (!neighborData || Grid.maxNeighbors <= 0) {
+        const sunIntensity = Sun.isInitialized && Sun.enabled ? Sun.intensity : 0;
+        const pointScale = 0.33 * (1 - sunIntensity * 0.9);
+        if (pointScale <= 0.003 || sunIntensity >= 1 || !LightEmitter.active) {
             this.shadowRenderQueueCount[0] = 0;
+            this.shadowsUpdatedThisFrame = 0;
             return;
         }
-
+        const lightEntities = this._sortedLightEntities;
+        if (!lightEntities || !lightEntities.length) {
+            this.shadowRenderQueueCount[0] = 0;
+            this.shadowsUpdatedThisFrame = 0;
+            return;
+        }
         const worldX = Transform.x;
         const worldY = Transform.y;
-        const transformActive = Transform.active;
-        const lightEnabled = LightEmitter.active;
-        const lightIntensity = lightEnabled ? LightEmitter.lightIntensity : null;
-        const sqrtLightIntensity = lightEnabled ? LightEmitter.sqrtLightIntensity : null;
-        const lightHeight = lightEnabled ? LightEmitter.height : null;
-        const flashActive = FlashComponent.active;
-
-        // Sun shadows: use fused pass from collectVisibleEntities, or skip if not done
-        let writeIdx = this._sunShadowWriteIdx ?? 0;
-        let shadowCount = this._sunShadowCount ?? 0;
-        this._sunShadowWriteIdx = undefined;
-        this._sunShadowCount = undefined;
-
-        const zoom = this.cameraData ? this._frameCameraZoom : 1;
-        const camX = this.cameraData ? this._frameCameraX : 0;
-        const camY = this.cameraData ? this._frameCameraY : 0;
-        const screenBounds = calculateCameraScreenBounds(
-            zoom, camX, camY, this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
-        );
-        const worldBounds = screenBoundsToWorldBounds(screenBounds, 0, 0, this._worldBounds);
-        const viewMinX = worldBounds.minX;
-        const viewMaxX = worldBounds.maxX;
-        const viewMinY = worldBounds.minY;
-        const viewMaxY = worldBounds.maxY;
-
-        const lightEntities = this._sortedLightEntities;
-
-        // Point shadows suppressed when sun owns the look — before caster/neighbor work.
-        // intensity=1 still left scale≈0.033 (> old MIN 0.003) and burned light×neighbor; gate on sun too.
-        const sunIntensity = Sun.isInitialized && Sun.enabled ? Sun.intensity : 0;
-        const pointLightShadowMultiplier = 1 - (sunIntensity * 0.9);
-        const pointShadowAlphaScale = 0.33 * pointLightShadowMultiplier;
-        const MIN_POINT_SHADOW_ALPHA = 0.003;
-        if (pointShadowAlphaScale <= MIN_POINT_SHADOW_ALPHA || sunIntensity >= 1) {
-            this.shadowRenderQueueCount[0] = writeIdx;
-            this.shadowsUpdatedThisFrame = shadowCount;
-            return;
-        }
-
-        // Shadow-specific: bail if no ShadowCaster SoA (optional) or no entities
-        const shadowCasterActive = ShadowCaster.active;
-        if (!shadowCasterActive) {
-            this.shadowRenderQueueCount[0] = writeIdx;
-            this.shadowsUpdatedThisFrame = shadowCount;
-            return;
-        }
-        const shadowHeightMultiplier = ShadowCaster.heightMultiplier;
-        const shadowAnchorOffsetX = ShadowCaster.anchorOffsetX;
-        const shadowAnchorOffsetY = ShadowCaster.anchorOffsetY;
-        const spriteScaleY = SpriteRenderer.scaleY;
-        const spriteAnchorX = SpriteRenderer.anchorX;
-        const spriteAnchorY = SpriteRenderer.anchorY;
-
-        const maxShadowsPerEntity = this.maxShadowsPerEntity;
-        const entityShadowCounts = this._entityShadowCounts;
-        const toClear = this._entityShadowIndicesToClear;
-
-        // NOTE: Do NOT clear entityShadowCounts here. collectVisibleEntities()
-        // already cleared the previous frame's counts and accumulated sun shadow
-        // counts for this frame. Point light shadows must respect those counts so
-        // the total per-entity shadow budget (sun + point) is enforced correctly.
-
+        const lightIntensity = LightEmitter.lightIntensity;
+        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+        const lightHeight = LightEmitter.height;
         const rqX = this.shadowRenderQueueX;
         const rqY = this.shadowRenderQueueY;
         const rqScaleX = this.shadowRenderQueueScaleX;
@@ -3989,272 +3975,32 @@ class PreRenderWorker extends AbstractWorker {
         const rqTextureId = this.shadowRenderQueueTextureId;
         const rqAnchorX = this.shadowRenderQueueAnchorX;
         const rqAnchorY = this.shadowRenderQueueAnchorY;
-
-        const entityLastTextureId = this.entityLastTextureId;
-
         const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
-
-        let lightsProcessed = 0;
         const maxItems = this.maxShadowRenderItems;
-        const maxShadowSprites = this.maxShadowSprites;
-        const PI = Math.PI;
-
-        // ========================================
-        // POINT LIGHT SHADOWS
-        // ========================================
-
-        // Grid cell data (used for flash direct queries)
-        const gridCounts = Grid._gridCounts;
-        const gridEntities = Grid._gridEntities;
-        const cellByteSize = Grid.cellByteSize;
-        const gridWidth = Grid.gridWidth;
-        const gridHeight = Grid.gridHeight;
-        const invCellSize = Grid.invCellSize;
-        const flashCandidateBuffer = this._flashCandidateBuffer;
-        const flashDedupMarker = this._flashDedupMarker;
-        const colliderOffsetX = Collider.offsetX;
-        const colliderOffsetY = Collider.offsetY;
-        const visualRange = Collider.visualRange;
-
-        // Frame-unique dedup tag (avoids clearing the marker array each light)
-        let dedupTag = 0;
-
-        for (let i = 0; i < lightEntities.length; i++) {
-            if (writeIdx >= maxItems) {
-                this._warnOnce(
-                    '_warnedShadowRenderQueueCap',
-                    `[PRE_RENDER] shadow render queue full (${maxItems} items). Increase lighting.maxShadowSprites/maxLights or reduce shadow density.`
-                );
-                break;
-            }
-            if (lightsProcessed >= this.maxShadowCastingLights) {
-                this._warnOnce(
-                    '_warnedShadowCastingLightsCap',
-                    `[PRE_RENDER] maxShadowCastingLights reached (${this.maxShadowCastingLights}). Increase lighting.maxShadowCastingLights or reduce visible shadow-casting lights.`
-                );
-                break;
-            }
-
+        let writeIdx = 0;
+        const cap = Math.min(lightEntities.length, this.maxShadowCastingLights | 0);
+        for (let i = 0; i < cap && writeIdx < maxItems; i++) {
             const lightIdx = lightEntities[i];
             const intensity = lightIntensity[lightIdx];
-            const lightX = worldX[lightIdx];
-            const lightY = worldY[lightIdx];
-            const lightH = lightHeight[lightIdx] || 0;
-            const isFlash = flashActive ? flashActive[lightIdx] === 1 : false;
-
-            // Lighting-only flashes skip the expensive flash grid-query + shadow sprites
-            if (
-                isFlash &&
-                FlashComponent.castShadows &&
-                FlashComponent.castShadows[lightIdx] === 0
-            ) {
-                continue;
-            }
-
-            // Shadow-caster neighborhood radius: visualRange for lights; flash uses grid search R
-            const searchRangeR = isFlash
-                ? (sqrtLightIntensity[lightIdx] || 100)
-                : (visualRange[lightIdx] || 0);
-            const rangeRSq = searchRangeR * searchRangeR;
-
-            let maxShadowDistSq = pointShadowAlphaScale > MIN_POINT_SHADOW_ALPHA
-                ? intensity * ((pointShadowAlphaScale / MIN_POINT_SHADOW_ALPHA) - 1)
-                : 0;
-            if (rangeRSq > 0 && (maxShadowDistSq <= 0 || maxShadowDistSq > rangeRSq)) {
-                maxShadowDistSq = rangeRSq;
-            }
-
-            // ── Determine candidate source ────────────────────────────
-            let candidateCount = 0;
-            let candidateSource = null;   // typed array holding entity indices
-            let candidateOffset = 0;
-
-            if (isFlash && gridCounts && flashCandidateBuffer && flashDedupMarker) {
-                // FLASH PATH: circle pattern (fewer cells than rect, distance-sorted)
-                const searchRadius = searchRangeR;
-                const cellRadius = Math.min(((searchRadius * invCellSize) | 0) + 1, 6);
-                const centerCol = (lightX * invCellSize) | 0;
-                const centerRow = (lightY * invCellSize) | 0;
-                const maxCol = gridWidth - 1;
-                const maxRow = gridHeight - 1;
-                const maxCandidates = flashCandidateBuffer.length;
-
-                const pattern = this._flashCirclePatterns?.get(cellRadius);
-                if (!pattern) {
-                    candidateCount = 0;
-                    candidateSource = flashCandidateBuffer;
-                    candidateOffset = 0;
-                } else {
-                    dedupTag++;
-                    let count = 0;
-                    const patternLen = pattern.length >> 1;
-                    for (let p = 0; p < patternLen; p++) {
-                        const r = centerRow + pattern[p * 2];
-                        const c = centerCol + pattern[p * 2 + 1];
-                        if (r < 0 || r > maxRow || c < 0 || c > maxCol) continue;
-                        const cellIndex = r * gridWidth + c;
-                        const byteOff = cellIndex * cellByteSize;
-                        const cellCount = gridCounts[byteOff];
-                        if (cellCount === 0) continue;
-
-                        const entityBase = Grid.getCellBase(cellIndex);
-                        for (let j = 0; j < cellCount; j++) {
-                            const eid = gridEntities[entityBase + j];
-                            if (flashDedupMarker[eid] === dedupTag) continue;
-                            flashDedupMarker[eid] = dedupTag;
-                            if (count < maxCandidates) flashCandidateBuffer[count++] = eid;
-                        }
-                    }
-                    candidateCount = count;
-                    candidateSource = flashCandidateBuffer;
-                    candidateOffset = 0;
-                }
-            } else if (searchRangeR > 0) {
-                // REGULAR LIGHT PATH: neighbors within Collider.visualRange
-                const offset = lightIdx * stride;
-                candidateCount = neighborData[offset];
-                candidateSource = neighborData;
-                candidateOffset = offset + 1;
-            }
-
-            // ── Process candidates into shadow sprites ────────────────
-            // Reserve writeIdx for light cookie; shadows follow (interleaved per light)
-            const shadowStartIdx = writeIdx + 1;
-            let shadowsForThisLight = 0;
-
-            // Flash has no Collider offsets; regular lights may have them
-            const lightXWithOffset = isFlash ? lightX : lightX + (colliderOffsetX[lightIdx] || 0);
-            const lightYWithOffset = isFlash ? lightY : lightY + (colliderOffsetY[lightIdx] || 0);
-
-            for (let k = 0; k < candidateCount; k++) {
-                if (shadowsForThisLight >= this.maxShadowsPerLight) {
-                    this._warnOnce(
-                        '_warnedShadowSpriteCap',
-                        `[PRE_RENDER] maxShadowsPerLight reached (${this.maxShadowsPerLight}). Increase lighting.maxShadowsPerLight or reduce nearby shadow casters.`
-                    );
-                    break;
-                }
-                if (shadowCount >= maxShadowSprites) {
-                    this._warnOnce(
-                        '_warnedShadowSpriteCap',
-                        `[PRE_RENDER] maxShadowSprites reached (${maxShadowSprites}). Increase lighting.maxShadowSprites or reduce shadow density.`
-                    );
-                    break;
-                }
-                if (writeIdx + 1 + shadowsForThisLight >= maxItems) {
-                    this._warnOnce(
-                        '_warnedShadowRenderQueueCap',
-                        `[PRE_RENDER] shadow render queue full (${maxItems} items). Increase lighting.maxShadowSprites/maxLights or reduce shadow density.`
-                    );
-                    break;
-                }
-
-                const neighborIdx = candidateSource[candidateOffset + k];
-
-                if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx]) continue;
-
-                const heightMult = shadowHeightMultiplier[neighborIdx];
-                if (heightMult <= 0) continue;
-
-                // ponytail: cap is per prerender worker. N workers can each emit it for the same caster. Global SAB counter if a scene hits the ceiling.
-                if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) continue;
-
-                const pose = this._displayPoseOut;
-                this._displayPose(neighborIdx, pose);
-                const neighborX = pose.x + (colliderOffsetX[neighborIdx] || 0);
-                const neighborY = pose.y + (colliderOffsetY[neighborIdx] || 0);
-                const dx = neighborX - lightXWithOffset;
-                const dy = neighborY - lightYWithOffset;
-                const distSq = dx * dx + dy * dy;
-
-                if (distSq < 1) continue;
-                if (maxShadowDistSq > 0 && distSq > maxShadowDistSq) continue;
-                if (rangeRSq > 0 && distSq >= rangeRSq) continue;
-
-                const casterX = pose.x;
-                const casterY = pose.y;
-                let textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : INVALID_TEXTURE_ID;
-                if (textureId === INVALID_TEXTURE_ID) {
-                    textureId = this._resolveEntitySpriteTextureId(neighborIdx);
-                }
-                if (textureId === INVALID_TEXTURE_ID) continue;
-
-                const entityScaleY = Math.abs(spriteScaleY[neighborIdx]) || 1;
-                const anchorX = spriteAnchorX[neighborIdx] ?? 0.5;
-                const anchorY = spriteAnchorY[neighborIdx] ?? 0.95;
-
-                const invDist = 1 / Math.sqrt(distSq);
-                const distRatio = distSq * invDist * 0.00390625; // dist / 256
-                const clampedDistRatio = distRatio > 1 ? 1 : distRatio;
-                const lengthScale = -(0.3 + clampedDistRatio * 0.9) * entityScaleY * heightMult;
-
-                const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
-                const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
-                if (casterX + shadowExtent < viewMinX || casterX - shadowExtent > viewMaxX ||
-                    casterY + shadowExtent < viewMinY || casterY - shadowExtent > viewMaxY) continue;
-
-                // Soft fade to 0 at search range R so neighbor-list drop is not a hard pop
-                const rangeFade = rangeRSq > 0 ? (1 - distSq / rangeRSq) : 1;
-                let alpha = intensity / (intensity + distSq);
-                if (Number.isNaN(alpha)) alpha = 0;
-                if (alpha > 1) alpha = 1;
-                if (alpha < 0) alpha = 0;
-                alpha *= pointShadowAlphaScale * rangeFade;
-                if (alpha < MIN_POINT_SHADOW_ALPHA) continue;
-
-                // Facing = light→caster dir rotated -90°: cos(θ-π/2)=sin(θ)=dy/r, sin(θ-π/2)=-cos(θ)=-dx/r
-                const shadowIdx = shadowStartIdx + shadowsForThisLight;
-                rqX[shadowIdx] = casterX;
-                rqY[shadowIdx] = casterY;
-                rqScaleX[shadowIdx] = 1;
-                rqScaleY[shadowIdx] = lengthScale;
-                rqRotC[shadowIdx] = dy * invDist;
-                rqRotS[shadowIdx] = -dx * invDist;
-                rqAlpha[shadowIdx] = alpha;
-                rqTint[shadowIdx] = 0x000000;
-                rqTextureId[shadowIdx] = textureId;
-                rqAnchorX[shadowIdx] = anchorX + (shadowAnchorOffsetX[neighborIdx] || 0);
-                rqAnchorY[shadowIdx] = anchorY + (shadowAnchorOffsetY[neighborIdx] || 0);
-
-                shadowsForThisLight++;
-                shadowCount++;
-                if (maxShadowsPerEntity > 0) {
-                    entityShadowCounts[neighborIdx]++;
-                    if (toClear) toClear[this._entityShadowIndicesToClearCount++] = neighborIdx;
-                }
-            }
-
-            // Always emit light cookie (even with 0 casters) so CASTED_SHADOWS lit pools
-            // stay on-screen and other lights can attenuate prior shadows.
-            lightsProcessed++;
-
+            if (!(intensity > 0)) continue;
             const gradientScale = lightCookieScale(sqrtLightIntensity[lightIdx]);
-            const gradientAlpha = intensity / 50000;
-
-            rqX[writeIdx] = lightX;
-            rqY[writeIdx] = lightY - lightH;
+            rqX[writeIdx] = worldX[lightIdx];
+            rqY[writeIdx] = worldY[lightIdx] - (lightHeight[lightIdx] || 0);
             rqScaleX[writeIdx] = gradientScale;
             rqScaleY[writeIdx] = gradientScale;
             rqRotC[writeIdx] = 1;
             rqRotS[writeIdx] = 0;
-            rqAlpha[writeIdx] = gradientAlpha;
+            rqAlpha[writeIdx] = intensity / 50000;
             rqTint[writeIdx] = 0xFFFFFF;
             rqTextureId[writeIdx] = lightGradientTextureId;
             rqAnchorX[writeIdx] = 0.5;
             rqAnchorY[writeIdx] = 0.5;
-
-            writeIdx = shadowStartIdx + shadowsForThisLight;
+            writeIdx++;
         }
-
         this.shadowRenderQueueCount[0] = writeIdx;
-        this.shadowsUpdatedThisFrame = shadowCount;
+        this.shadowsUpdatedThisFrame = 0;
     }
 
-    /**
-     * Build visibility polygons for all visible lights (raycasted light occlusion).
-     * Collects nearby LightOccluder entities, packs Collider shapes (circle / OBB / poly),
-     * runs Angular Sweep, and writes self-lit queue entries for the lighting fill pass.
-     */
     buildVisibilityPolygons() {
         if (!this.visibilityPolygonsEnabled) return;
 

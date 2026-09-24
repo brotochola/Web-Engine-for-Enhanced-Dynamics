@@ -24,6 +24,18 @@ import { resetSquadCameraHold, updateSquadCamera } from './gameObjects/cameraCon
 import { Trash } from './gameObjects/trash.js';
 import { Cloud } from './gameObjects/cloud.js';
 
+function predatorSearchParam(name) {
+  const search = globalThis.location && globalThis.location.search;
+  if (typeof search !== 'string') return null;
+  return new URLSearchParams(search).get(name);
+}
+
+function predatorRendererBackend() {
+  const q = predatorSearchParam('backend');
+  if (q === 'webgl' || q === 'webgpu') return q;
+  return 'webgl';
+}
+
 const {
   Camera,
   Decoration,
@@ -122,7 +134,7 @@ export class PredatorScene extends WEED.Scene {
     },
 
     renderer: {
-      backend: 'webgl',
+      backend: predatorRendererBackend(),
       noLimitFPS: false,
       ySort: true,
       cullingRatio: 0.33,

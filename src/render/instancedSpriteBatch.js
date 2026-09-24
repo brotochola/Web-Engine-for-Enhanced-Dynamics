@@ -23,7 +23,7 @@ import {
   TextureSource,
 } from '../vendor/pixi.min.js';
 
-import { instancedSpriteGpuProgram } from './webgpu/instancedSpriteWgsl.js';
+import { instancedSpriteGpuProgram, instancedSpriteShadowGpuProgram } from './webgpu/instancedSpriteWgsl.js';
 import {
   instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
@@ -248,10 +248,13 @@ export class InstancedSpriteBatch {
     useWebGpu = true,
     shaders = null,
     poseInterp = false,
+    shadowCast = false,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
+    this.shadowCast = !!shadowCast && !poseInterp;
     this._floats = this.poseInterp ? INSTANCED_SPRITE_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
+    if (this.shadowCast) this._floats += 3;
     this._strideBytes = this._floats * 4;
     this.data = new Float32Array(this.capacity * this._floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
@@ -279,6 +282,40 @@ export class InstancedSpriteBatch {
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
     this.shader = this._makeSpriteShader(atlas, lut, cut, label || 'instanced-sprites');
+    this.shadowShader = null;
+    if (this.shadowCast && (shaders?.shadowVert || shaders?.shadowWgsl)) {
+      const sunUniforms = {
+        uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
+        uSun: { value: new Float32Array([1, 0, 1, 0.4]), type: 'vec4<f32>' },
+        uLight: { value: new Float32Array([-1, 0, 0, 0]), type: 'vec4<f32>' },
+        uCam: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uPointScale: { value: 0, type: 'f32' },
+      };
+      this._sunUniforms = sunUniforms;
+      const resources = {
+        uTexture: atlas,
+        uSampler: atlas.style,
+        uTexLut: lut,
+        uLightData: lut,
+        uniforms: sunUniforms,
+      };
+      if (this._useWebGpu && shaders.shadowWgsl) {
+        const gpuProgram = instancedSpriteShadowGpuProgram(
+          GpuProgram,
+          shaders.shadowWgsl,
+          (label || 'instanced-sprites') + '-sun'
+        );
+        this.shadowShader = new Shader({ gpuProgram, resources });
+      } else if (shaders.shadowVert) {
+        const glProgram = instancedSpriteGlProgram(
+          GlProgram,
+          shaders.shadowVert,
+          pickInstancedSpriteFragmentGlsl(true, false, shaders),
+          (label || 'instanced-sprites') + '-sun'
+        );
+        this.shadowShader = new Shader({ glProgram, resources });
+      }
+    }
 
     const state = new State();
     state.blend = true;
@@ -338,6 +375,9 @@ export class InstancedSpriteBatch {
       aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 44, instance: true },
       aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
     };
+    if (this.shadowCast) {
+      attributes.aInstShadow = { buffer: buf, format: 'float32x3', stride, offset: 60, instance: true };
+    }
     if (this.poseInterp) {
       attributes.aInstPrevXY = {
         buffer: buf,
@@ -379,9 +419,18 @@ export class InstancedSpriteBatch {
       const gpuProgram = instancedSpriteGpuProgram(GpuProgram, spriteSource, fragEntry, name);
       return new Shader({ gpuProgram, resources });
     }
+    let vert = vertSource;
+    if (this.shadowCast && vert) {
+      vert = vert
+        .replace('in vec2 aInstTileOff;\n', 'in vec2 aInstTileOff;\nin vec3 aInstShadow;\n')
+        .replace(
+          'gl_Position = vec4(clip.xy, aInstDepth, 1.0);',
+          'gl_Position = vec4(clip.xy, aInstDepth, 1.0);\n  if (aInstShadow.x < -1000.0) gl_Position.x += aInstShadow.y + aInstShadow.z;'
+        );
+    }
     const glProgram = instancedSpriteGlProgram(
       GlProgram,
-      vertSource,
+      vert,
       pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders),
       name
     );
@@ -396,10 +445,21 @@ export class InstancedSpriteBatch {
     if (!source) return;
     this.shader.resources.uTexture = source;
     this.shader.resources.uSampler = source.style;
+    const sh = this.shadowShader;
+    if (sh) {
+      sh.resources.uTexture = source;
+      sh.resources.uSampler = source.style;
+    }
   }
 
   setLutSource(source) {
-    if (source) this.shader.resources.uTexLut = source;
+    if (!source) return;
+    this.shader.resources.uTexLut = source;
+    if (this.shadowShader) this.shadowShader.resources.uTexLut = source;
+  }
+
+  setLightDataSource(source) {
+    if (source && this.shadowShader) this.shadowShader.resources.uLightData = source;
   }
 
   setPoseAlpha(alpha) {
@@ -612,11 +672,17 @@ export class InstancedSpriteBatch {
       data[base + 12] = invY;
       data[base + 13] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
       data[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
-      base += INSTANCED_SPRITE_FLOATS;
+      if (this.shadowCast) {
+        const sh = q.shadowH;
+        data[base + 15] = sh ? sh[i] : 0;
+        data[base + 16] = q.shadowOffX ? q.shadowOffX[i] : 0;
+        data[base + 17] = q.shadowOffY ? q.shadowOffY[i] : 0;
+      }
+      base += this._floats;
       out++;
     }
 
-    return this._finishUpload(out, INSTANCED_SPRITE_STRIDE);
+    return this._finishUpload(out, this._strideBytes);
   }
 
   _uploadPose(q, opts) {
