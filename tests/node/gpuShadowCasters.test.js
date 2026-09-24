@@ -8,6 +8,7 @@ import {
   collectLightCasters,
   resolveGpuShadowPath,
   resolveGpuShadowCookies,
+  resolveShadowUpdateInterval,
   samePackedIndices,
   writeCasterPose,
 } from '../../src/render/gpuShadowCasters.js';
@@ -87,6 +88,14 @@ test('resolveGpuShadowPath and cookies default to copy / always', () => {
   assert.equal(resolveGpuShadowCookies('night'), 'night');
   assert.equal(resolveGpuShadowCookies('always'), 'always');
   assert.equal(resolveGpuShadowCookies(''), 'always');
+});
+
+test('resolveShadowUpdateInterval is 1 unless N>1', () => {
+  assert.equal(resolveShadowUpdateInterval(undefined), 1);
+  assert.equal(resolveShadowUpdateInterval(1), 1);
+  assert.equal(resolveShadowUpdateInterval(0), 1);
+  assert.equal(resolveShadowUpdateInterval(2), 2);
+  assert.equal(resolveShadowUpdateInterval(3), 3);
 });
 
 test('samePackedIndices and writeCasterPose keep the 18-float pose slice', () => {

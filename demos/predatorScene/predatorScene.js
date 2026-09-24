@@ -42,6 +42,20 @@ function predatorNumberParam(name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function predatorHourPin() {
+  const q = predatorSearchParam('hour');
+  if (q == null || q === '') return null;
+  const n = Number(q);
+  return Number.isFinite(n) ? n : null;
+}
+
+function predatorPositiveParam(name, fallback) {
+  const n = predatorNumberParam(name, fallback);
+  return n > 0 ? n : fallback;
+}
+
+const pinHour = predatorHourPin();
+
 function predatorRendererBackend() {
   const q = predatorSearchParam('backend');
   if (q === 'webgl' || q === 'webgpu') return q;
@@ -185,14 +199,17 @@ export class PredatorScene extends WEED.Scene {
       baseAmbient: 0, // Minimum light at night (pitch black without lights)
       maxLights: 256,
       shadowsEnabled: true,
-      maxShadowCastingLights: predatorNumberParam('shadowLights', 1000),
-      maxShadowsPerLight: 512,
+
+      maxShadowCastingLights: predatorNumberParam('shadowLights', 48),
+      maxShadowsPerLight: predatorPositiveParam('shadowsPerLight', 512),
       maxShadowsPerEntity: 5,
       gpuShadowPath: predatorChoiceParam('gpuShadowPath', ['copy', 'reuse', 'queue', 'resident'], 'copy'),
       gpuShadowCookies: predatorChoiceParam('gpuShadowCookies', ['always', 'night'], 'always'),
+      shadowUpdateInterval: predatorPositiveParam('shadowInterval', 1),
       maxShadowSprites: 30000,
       maxFlashes: 200,
-      resolution: 0.25,
+      resolution: predatorPositiveParam('lightingRes', 0.5),
+      shadowResolution: predatorPositiveParam('shadowRes', 0.25),
 
       // Sun/directional light configuration
       sun: {
@@ -202,9 +219,9 @@ export class PredatorScene extends WEED.Scene {
         intensity: 1, // Light intensity (0-1), affects ambient brightness
         color: 0xffffff, // Sun color (warm white default)
         shadowAlpha: 0.25, // Base darkness of sun-cast shadows (0-1)
-        startHour: 12, // Starting hour for day cycle (0-24)
+        startHour: pinHour != null ? pinHour : 12, // Starting hour for day cycle (0-24)
         dayCycle: {
-          enabled: true, // Auto-advance time of day
+          enabled: pinHour == null, // Auto-advance time of day
           speed: 1, // Multiplier (1 = real time, 60 = 1 minute = 1 hour)
           dayDurationMinutes: 1, // Real minutes for full day (1440 = 24 real hours)
         },
@@ -404,6 +421,7 @@ export class PredatorScene extends WEED.Scene {
     this._freeCam = false;
     this._freeCamButton = null;
     this._pinZoom = predatorNumberParam('zoom', 0);
+    this._pinHour = pinHour;
   }
 
   create() {
@@ -411,6 +429,7 @@ export class PredatorScene extends WEED.Scene {
     this._freeCam = false;
     this._createFreeCamButton();
     this.spawnGrass(20000);
+    if (this._pinHour != null && Sun.isInitialized) Sun.setTimeOfDay(this._pinHour);
   }
 
   async destroy() {

@@ -94,6 +94,7 @@ import {
   compactShadowCasterIndices,
   resolveGpuShadowPath,
   resolveGpuShadowCookies,
+  resolveShadowUpdateInterval,
   samePackedIndices,
 } from '../render/gpuShadowCasters.js';
 
@@ -565,6 +566,8 @@ class PixiRenderer extends AbstractWorker {
     this.maxShadowsPerEntity = LIGHTING_DEFAULTS.maxShadowsPerEntity;
     this._gpuShadowPath = 'copy';
     this._gpuShadowCookies = 'always';
+    this._shadowUpdateInterval = 1;
+    this._shadowUpdateTick = 0;
     this._gpuResidentN = 0;
     this._lightGradientTexId = 0xffff;
     this.lightingResolution = 1.0; // Resolution multiplier for lighting (e.g. 0.5 for half res)
@@ -1110,7 +1113,7 @@ class PixiRenderer extends AbstractWorker {
       this.stats[RENDERER_STATS.GPU_PASSES] = this._gpuPassesThisFrame;
       this.stats[RENDERER_STATS.GPU_CASTERS] = this._gpuCastersThisFrame;
       this.stats[RENDERER_STATS.GPU_SHADOW_LIGHTS] = this._gpuShadowLightsThisFrame;
-      this.stats[RENDERER_STATS.GPU_FPS] = gpu.stepMs > 0.01 ? 1000 / gpu.stepMs : 0;
+      this.stats[RENDERER_STATS.GPU_FPS] = this.currentFPS;
     }
 
     // Reset draw call counter for next frame
@@ -1881,6 +1884,7 @@ class PixiRenderer extends AbstractWorker {
       this.scheduleNextFrame();
     } else {
       // Standard mode: PIXI ticker will call gameLoop on every tick (60fps)
+      if (this.pixiApp.ticker) this.pixiApp.ticker.maxFPS = 60;
       this.pixiApp.ticker.add(() => this.gameLoop());
     }
   }
@@ -3557,9 +3561,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!this.shadowBatch || !this.shadowRT) return;
     if (!layerIsVisible(Layer.castedShadows?.id)) return;
 
+    this._syncGpuShadowKnobs();
+    const interval = this._shadowUpdateInterval;
+    const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
+    this._shadowUpdateTick++;
+
     this._gpuTimer.attach(this.pixiApp?.renderer);
     this._gpuTimer.begin('shadows');
-    this._drawGpuCasterShadows();
+    if (!skip) this._drawGpuCasterShadows();
     this._gpuTimer.end();
   }
 
@@ -3567,6 +3576,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lighting = this.config.lighting || {};
     this._gpuShadowPath = resolveGpuShadowPath(lighting.gpuShadowPath);
     this._gpuShadowCookies = resolveGpuShadowCookies(lighting.gpuShadowCookies);
+    this._shadowUpdateInterval = resolveShadowUpdateInterval(lighting.shadowUpdateInterval);
   }
 
   _snapshotPackedCasters(batch, nCasters) {
@@ -3676,8 +3686,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._gpuPassesThisFrame = 0;
     this._gpuCastersThisFrame = 0;
     this._gpuShadowLightsThisFrame = 0;
-    if (!this._gpuCasterIdx || !this.gpuCasterBatch) return;
     this._syncGpuShadowKnobs();
+    if (!this._gpuCasterIdx || !this.gpuCasterBatch) return;
     const path = this._gpuShadowPath;
     const batch = this.gpuCasterBatch;
     const mesh = batch && batch.mesh;

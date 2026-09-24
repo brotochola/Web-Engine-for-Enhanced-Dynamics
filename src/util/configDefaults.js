@@ -594,6 +594,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   gpuShadowPath: 'copy',
   /** always | night (cookies only when Sun.intensity < 1). */
   gpuShadowCookies: 'always',
+  /** 1 = rebuild shadowRT every frame; N>1 reuses the last RT for N-1 frames. */
+  shadowUpdateInterval: 1,
   maxShadowSprites: 1000,
   maxFlashes: 0,
   resolution: 0.25,

@@ -24,6 +24,12 @@ export function resolveGpuShadowCookies(value) {
   return value === 'night' ? 'night' : 'always';
 }
 
+/** 1 = every frame; N>1 holds the last shadowRT for N-1 frames. */
+export function resolveShadowUpdateInterval(value) {
+  const n = value | 0;
+  return n > 1 ? n : 1;
+}
+
 export function samePackedIndices(prev, prevN, next, n) {
   if ((prevN | 0) !== (n | 0) || !prev || !next) return false;
   for (let i = 0; i < n; i++) {
