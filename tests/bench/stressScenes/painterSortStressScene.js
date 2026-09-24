@@ -41,7 +41,7 @@ export class PainterSortStressScene extends Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySortingInCPU: true,
+      ySort: true,
       maxVisibleRenderables: N,
     },
     preRender: {

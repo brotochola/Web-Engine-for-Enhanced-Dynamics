@@ -10,7 +10,7 @@ import {
 
 const { GameObject, SpriteRenderer, Transform } = WEED;
 
-const BUNNY_SCALE = 0.5;
+const BUNNY_SCALE = 1;
 
 export class Bunny extends GameObject {
   static components = [SpriteRenderer, BunnyMotion];

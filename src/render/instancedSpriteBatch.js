@@ -30,10 +30,11 @@ import {
 } from './webgl/instancedSpriteGlsl.js';
 import { writePosePrev } from './poseQueueInterp.js';
 import { DECORATION_Y_SORT_SCALE } from '../util/configDefaults.js';
-import { depthFromSortKey } from '../util/sortIndexByKey.js';
+import { depthFromOrderKey, depthFromSortKey } from '../util/sortIndexByKey.js';
 
 function instanceDepth(out, depthDenom, o, i) {
   if (o.useZBuffer && o.sortKey) {
+    if (o.keySpan > 0) return depthFromOrderKey(o.sortKey[i], o.keySpan);
     return depthFromSortKey(o.sortKey[i], o.worldHeight, DECORATION_Y_SORT_SCALE);
   }
   return 1.0 - (out + 1) / depthDenom;

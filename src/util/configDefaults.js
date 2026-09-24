@@ -215,7 +215,7 @@ export const SPRITE_TILE_MODE = Object.freeze({
 /**
  * Built-in pipeline layers. Same shape as scene config.layers entries.
  * ySorting is false for all built-in layers; entities gets overridden
- * at runtime by the scene's renderer.ySortingInCPU config.
+ * at runtime by the scene's renderer.ySort config.
  * Scenery (cover / tiling / tilemap) is scene-owned — not listed here.
  * @readonly
  */
@@ -517,11 +517,11 @@ export const RENDERER_DEFAULTS = Object.freeze({
   backend: 'webgpu',
   noLimitFPS: false,
   fixedFps: 0,
-  /** CPU painter on the entities layer. Ignored when useZBuffer is on. */
-  ySortingInCPU: false,
+  /** Y orders sprites that share a zIndex. The painter runs on the CPU unless useZBuffer is on. */
+  ySort: false,
   /**
-   * Entity batch writes the queue sort key as clip Z and depth-tests.
-   * Default off. When on, ySortingInCPU does not run.
+   * Entity batch writes the same sort key as clip Z and depth-tests.
+   * Default off. Needs ySort or a sprite zIndex. Otherwise the boot warns and Z stays off.
    * Empty texels below `alphaCut` do not write Z. A softer edge still does.
    */
   useZBuffer: false,
@@ -610,7 +610,7 @@ export const LAYER_DEFAULTS = Object.freeze({
   /** Pixi scaleMode for custom shader RT upsample. */
   scaleMode: LAYER_SCALE_MODE.LINEAR,
   // ySorting intentionally omitted: custom layers inherit the scene-level
-  // renderer.ySortingInCPU setting (Layer._defaultYSorting) when not specified.
+  // renderer.ySort setting (Layer._defaultYSorting) when not specified.
 });
 
 // ============================================================================

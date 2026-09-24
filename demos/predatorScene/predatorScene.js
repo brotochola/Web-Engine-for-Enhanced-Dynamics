@@ -124,7 +124,7 @@ export class PredatorScene extends WEED.Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySortingInCPU: true,
+      ySort: true,
       cullingRatio: 0.33,
       startFadingDecorationsAtZoom: 0.5,
       hideDecorationsAtZoom: 0.25,

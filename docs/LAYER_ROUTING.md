@@ -162,7 +162,7 @@ preRenderWorker:
   buildCustomLayerQueues()  --> per-layer sortKey, dispatch by type, write to per-layer SABs
 
 pixiWorker:
-  updateSpritesFromRenderQueue()  --> main SAB. With ySorting, painter order (reinsert) and one blend. Particles and decorations share that list. Glow stays a later ADD batch, sorted by the same key.
+  updateSpritesFromRenderQueue()  --> main SAB. Sprite zIndex is the coarse key. With renderer.ySort, Y orders inside that band and the painter reinserts. Emit order when ySort is off and every zIndex is 0. Particles and decorations share that list. Glow stays a later ADD batch, sorted by the same key. renderer.useZBuffer writes that key as clip Z and skips the painter. renderer.alphaCut (default 1/255) is the low discard; the high cut stays 0.
   updateCustomLayers()            --> each layer SAB. Same CPU painter + one blend as ENTITIES when that layer has ySorting.
 ```
 

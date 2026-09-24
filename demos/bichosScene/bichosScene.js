@@ -77,7 +77,7 @@ export class BichosScene extends WEED.Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySortingInCPU: true,
+      ySort: true,
       atlasScaleMode: 'linear',
       cullingRatio: 0.33,
       startFadingDecorationsAtZoom: 0.5,

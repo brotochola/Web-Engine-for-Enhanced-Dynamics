@@ -71,7 +71,7 @@ function painterAdobeConfig(numberOfPreRenderWorkers) {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySortingInCPU: true,
+      ySort: true,
       maxVisibleRenderables: 25000,
     },
     preRender: {

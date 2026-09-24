@@ -77,6 +77,7 @@ export class SpriteRenderer extends Component {
     isItOnScreen: Uint8Array, // Sprite-specific screen culling - updated by pre_render_worker
 
     // Performance optimization - dirty flag
+    zIndex: Int16Array, // draw order inside the layer. Larger is in front. 0 with ySort off is emit order.
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame
     screenX: Float32Array,
     screenY: Float32Array,
@@ -188,6 +189,22 @@ export class SpriteRenderer extends Component {
     SpriteRenderer.renderDirty[this.index] = 1;
   }
 
+  get zIndex() {
+    return SpriteRenderer.zIndex[this.index];
+  }
+  set zIndex(value) {
+    const i = this.index;
+    const arr = SpriteRenderer.zIndex;
+    const prev = arr[i] | 0;
+    const next = value | 0;
+    if (prev === next) return;
+    arr[i] = next;
+    const users = SpriteRenderer._zIndexUsers;
+    if (!users) return;
+    if (prev === 0) Atomics.add(users, 0, 1);
+    else if (next === 0) Atomics.add(users, 0, -1);
+  }
+
   get tileOffsetV() {
     return unpackTileOffset01(SpriteRenderer.tileOffsetV[this.index]);
   }
@@ -201,8 +218,27 @@ export class SpriteRenderer extends Component {
   static bakeLocalOffsetFromWorld = bakeLocalOffsetFromWorld;
   static fract01 = fract01;
 
+  static clearArrays() {
+    super.clearArrays();
+    this._zIndexUsers = null;
+  }
+
+  static getBufferSize(count) {
+    const base = super.getBufferSize(count);
+    const aligned = (base + 3) & ~3;
+    return aligned + 4;
+  }
+
   static initializeArrays(buffer, count) {
     super.initializeArrays(buffer, count);
     if (this.spriteRotC) this.spriteRotC.fill(1);
+    const base = super.getBufferSize(count);
+    const aligned = (base + 3) & ~3;
+    this._zIndexUsers = new Int32Array(buffer, aligned, 1);
+  }
+
+  static zIndexUsers() {
+    const u = this._zIndexUsers;
+    return u ? Atomics.load(u, 0) : 0;
   }
 }

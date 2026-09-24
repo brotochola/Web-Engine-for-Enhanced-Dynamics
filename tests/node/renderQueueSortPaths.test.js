@@ -19,8 +19,8 @@ test('preRenderWorker only writes sortKey; never CPU-sorts the queue', () => {
 });
 
 test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter path', () => {
-  assert.match(pixi, /createPainterState,\s*orderPainterSlots\s*}\s*from\s*'\.\.\/util\/sortIndexByKey\.js'/);
-  assert.match(pixi, /this\._painter = \(!z && this\.ySortingInCPU\) \? createPainterState\(maxItems\) : null/);
+  assert.match(pixi, /createPainterState, orderPainterSlots, orderKeySpan/);
+  assert.match(pixi, /this\._painter = \(!z && this\._ySort\) \? createPainterState\(maxItems\) : null/);
   assert.match(pixi, /_uploadSortedSprites\(/);
   assert.match(pixi, /orderPainterSlots\(painter, idxE, ne, keysU32\)/);
   assert.match(pixi, /painter = layerYSort \? createPainterState\(maxItems\) : null/);
@@ -29,7 +29,7 @@ test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter pat
 
 test('useZBuffer alphaCut is the low discard; the high cut stays 0', () => {
   assert.match(defaults, /alphaCut: 1 \/ 255/);
-  assert.match(pixi, /alphaCut: z \? new Float32Array\(\[this\._alphaCut, 0, 0, 0\]\) : null/);
+  assert.match(pixi, /alphaCut: this\._zBufferRequested \? new Float32Array\(\[this\._alphaCut, 0, 0, 0\]\) : null/);
   assert.match(pixi, /rendererConfig\.alphaCut \?\? RENDERER_DEFAULTS\.alphaCut/);
 });
 

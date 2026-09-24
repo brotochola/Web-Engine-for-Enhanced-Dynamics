@@ -11,6 +11,38 @@ export function spriteYSortKey(y, ySortK) {
   return Math.round(y) * ySortK;
 }
 
+/** Width of one zIndex band. Larger than any Y key inside the world. */
+export function zSortBand(worldHeight) {
+  const h = worldHeight > 0 ? worldHeight : 1;
+  return h * 128 + 128;
+}
+
+/**
+ * Coarse key is zIndex. With ySort, Y (already round(y)*128 + innerZ) sits inside the band.
+ * Without ySort the key is the integer. Larger is in front.
+ * ponytail: zIndex is int16. A Y past ±worldHeight overlaps the next band.
+ */
+export function orderSortKey(yKey, zIndex, ySort, band) {
+  const z = zIndex | 0;
+  if (!ySort) return z;
+  return z * band + yKey;
+}
+
+/** Full span of int16 zIndex bands, for clip Z. */
+export function orderKeySpan(worldHeight) {
+  return 65536 * zSortBand(worldHeight);
+}
+
+/** Larger key closer to 0. `span` covers negative and positive keys. */
+export function depthFromOrderKey(key, span) {
+  const s = span > 0 ? span : 1;
+  const half = s * 0.5;
+  let z = 1 - (key + half) / s;
+  if (z < 0) z = 0;
+  else if (z > 1) z = 1;
+  return z;
+}
+
 /**
  * Clip Z for the same key the CPU painter orders. GL depth is less-wins,
  * so a larger key (farther down the screen, plus innerZ) maps closer to 0.

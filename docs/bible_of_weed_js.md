@@ -417,6 +417,8 @@ If `fragment` contains `/` or `.` it's treated as a direct URL (backward compat)
 
 Layers **without** a `shader` block are one instanced sprite batch at their own zIndex. With `ySorting`, they share ENTITIES' CPU painter (`orderPainterSlots` + one blend). Layers **with** a `shader` use the two-RT pipeline (density pass + fragment shader post-process).
 
+The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `renderer.useZBuffer` (default false) writes that same key as clip Z and skips the painter. It needs `ySort` or a non-zero zIndex; otherwise Z stays off. `renderer.alphaCut` (default `1/255`) discards texels below that alpha so they do not write Z. The high cut stays 0. A soft edge still writes Z and hides what is behind it. Opaque cards belong on that path.
+
 ### LiquidFun buffer density (`LAYER_DENSITY_SOURCE`)
 
 Two ways to fill a shader layer’s density RT:

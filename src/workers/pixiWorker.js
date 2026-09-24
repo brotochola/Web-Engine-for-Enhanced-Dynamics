@@ -73,7 +73,7 @@ import {
   packTextureLutRgba,
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
-import { radixSortIndicesBySortKey, createPainterState, orderPainterSlots } from '../util/sortIndexByKey.js';
+import { radixSortIndicesBySortKey, createPainterState, orderPainterSlots, orderKeySpan } from '../util/sortIndexByKey.js';
 import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
 import {
   ColliderFillBatch,
@@ -362,7 +362,8 @@ class PixiRenderer extends AbstractWorker {
     this._pixiPresent = null;
 
     // Renderer configuration options (set during initialize)
-    this.ySortingInCPU = false;
+    this._ySort = false;
+    this._zBufferRequested = false;
     this._useZBuffer = false;
     this._alphaCut = RENDERER_DEFAULTS.alphaCut;
     this._lightGlowAdd = true;
@@ -1320,9 +1321,11 @@ class PixiRenderer extends AbstractWorker {
       sortKey: this.renderQueueSortKey,
     }, count);
 
+    this._syncEntityOrder();
     const opts = this._entityUploadOpts;
     this._resetSpriteUploadOpts(opts);
     opts.useZBuffer = !!this._useZBuffer;
+    opts.keySpan = this._useZBuffer ? orderKeySpan(this.config?.worldHeight || 10000) : 0;
     opts.space = BATCH_SPACE.WORLD;
     opts.depthDenom = this.renderQueueMaxItems;
     opts.worldHeight = this.config?.worldHeight || 10000;
@@ -1526,14 +1529,37 @@ class PixiRenderer extends AbstractWorker {
     this._bindLutToBatches();
   }
 
+  _entityYSort() {
+    return !!(Layer._ySorting && Layer.entitiesId != null && Layer._ySorting[Layer.entitiesId]);
+  }
+
+  _syncEntityOrder() {
+    const active = this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
+    const z = this._zBufferRequested && active;
+    if (this._zBufferRequested && !active && !this._zEmitWarned) {
+      this._zEmitWarned = true;
+      console.warn('PIXI WORKER: useZBuffer needs ySort or a sprite zIndex');
+    }
+    this._useZBuffer = z;
+    if (z || !active) this._painter = null;
+    else if (!this._painter && this.renderQueueMaxItems) {
+      this._painter = createPainterState(this.renderQueueMaxItems);
+    }
+    const state = this.entitiesBatch?.mesh?.state;
+    if (state) {
+      state.depthTest = z;
+      state.depthMask = z;
+    }
+  }
+
   createEntitiesInstancedBatch(maxItems) {
-    // One source-over draw. ySortingInCPU → CPU painter (sortIndexByKey.js).
-    // useZBuffer writes that same sort key as clip Z and skips the painter.
-    // No coverage pass, no second particle batch. Glow stays ADD, without depth.
-    const z = !!this._useZBuffer;
+    // One source-over draw. ySort or a sprite zIndex → CPU painter, unless useZBuffer
+    // writes that same key as clip Z. No coverage pass. Glow stays ADD, without depth.
+    const z = this._zBufferRequested && this._ySort;
+    this._useZBuffer = z;
     this._rqIdxEntity = new Uint32Array(maxItems);
     this._rqIdxGlow = new Uint32Array(maxItems);
-    this._painter = (!z && this.ySortingInCPU) ? createPainterState(maxItems) : null;
+    this._painter = (!z && this._ySort) ? createPainterState(maxItems) : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -1541,8 +1567,8 @@ class PixiRenderer extends AbstractWorker {
       lutSource: this._texLutSource,
       depthTest: z,
       depthMask: z,
-      alphaDiscard: z,
-      alphaCut: z ? new Float32Array([this._alphaCut, 0, 0, 0]) : null,
+      alphaDiscard: !!this._zBufferRequested,
+      alphaCut: this._zBufferRequested ? new Float32Array([this._alphaCut, 0, 0, 0]) : null,
       premultiplyAlpha: true,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
@@ -4762,15 +4788,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.noLimitFPS = true;
     }
 
-    // Missing key keeps the old worker fallback (on). Scene merge supplies RENDERER_DEFAULTS.
-    this.ySortingInCPU = rendererConfig.ySortingInCPU !== undefined ? !!rendererConfig.ySortingInCPU : true;
-    this._useZBuffer = rendererConfig.useZBuffer === true;
+    this._ySort = rendererConfig.ySort === true;
+    this._zBufferRequested = rendererConfig.useZBuffer === true;
+    this._useZBuffer = this._zBufferRequested && this._ySort;
     const alphaCut = Number(rendererConfig.alphaCut ?? RENDERER_DEFAULTS.alphaCut);
     this._alphaCut = alphaCut >= 0 && alphaCut <= 1 ? alphaCut : RENDERER_DEFAULTS.alphaCut;
-    if (this._useZBuffer && this.ySortingInCPU && !this._zSortWarned) {
-      this._zSortWarned = true;
-      console.warn('PIXI WORKER: useZBuffer is on, so ySortingInCPU does not run');
-    }
     this._lightGlowAdd = (rendererConfig.lightGlow ?? RENDERER_DEFAULTS.lightGlow) !== 'sprite';
 
     this.autoGenerateMipmaps =
@@ -5008,7 +5030,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this.pixiApp.stage.addChild(this.spriteGlowMesh);
         if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
       }
-      console.log('PIXI WORKER: ENTITIES layer using instanced sprite mesh (painter + glow ADD)');
+      const order = (this._zBufferRequested && this._ySort) ? 'z-buffer' : (this._ySort ? 'painter' : 'emit order');
+      const glow = this._lightGlowAdd ? 'glow ADD' : 'glow in entity list';
+      console.log(`PIXI WORKER: ENTITIES layer using instanced sprite mesh (${order}, ${glow})`);
     }
 
     // ========================================

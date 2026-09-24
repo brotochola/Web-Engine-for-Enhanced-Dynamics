@@ -36,7 +36,7 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { spriteYSortKey } from '../util/sortIndexByKey.js';
+import { orderSortKey, spriteYSortKey, zSortBand } from '../util/sortIndexByKey.js';
 import {
     fillOwnedIds,
     listSlice,
@@ -606,6 +606,8 @@ class PreRenderWorker extends AbstractWorker {
         this._decorationZoomAlpha = 1;
         this._lightGlowAsSprite = (rendererConfig.lightGlow ?? RENDERER_DEFAULTS.lightGlow) === 'sprite';
         this._useZBuffer = rendererConfig.useZBuffer === true;
+        this._ySort = rendererConfig.ySort === true;
+        this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
 
         console.log(`[PRE_RENDER WORKER] Entities: ${this.globalEntityCount}, Particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}`);
@@ -2360,6 +2362,22 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    _entityYSort() {
+        return !!(Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
+    }
+
+    _queueHasOrder() {
+        return this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
+    }
+
+    _orderKey(type, idx, yKey, ySort) {
+        let z = 0;
+        if ((type === 0 || type === 3 || type === 6) && SpriteRenderer.zIndex) {
+            z = SpriteRenderer.zIndex[idx] | 0;
+        }
+        return orderSortKey(yKey, z, ySort, this._zBand);
+    }
+
     /**
      * Collect a visible renderable for the render queue.
      * layerMask bits route to each sprite-queue layer. Density bits are splat, not queued.
@@ -2465,7 +2483,7 @@ class PreRenderWorker extends AbstractWorker {
         const rqRotC = this.renderQueueRotC;
         const rqRotS = this.renderQueueRotS;
         const rqSortKey = this.renderQueueSortKey;
-        const writeSortKey = !!(rqSortKey && (this._useZBuffer || (Layer._ySorting && Layer._ySorting[Layer.entitiesId])));
+        const writeSortKey = !!(rqSortKey && this._queueHasOrder());
         const inherit = SpriteRenderer.inheritTransformRotation;
         for (let i = 0; i < count; i++) {
             if (collectorType[i] !== 0) continue;
@@ -2476,7 +2494,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqRotC[i] = stashRc[i];
                 rqRotS[i] = stashRs[i];
             }
-            if (writeSortKey) rqSortKey[i] = collectorY[i];
+            if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], this._entityYSort());
         }
     }
 
@@ -3027,7 +3045,7 @@ class PreRenderWorker extends AbstractWorker {
         const stashRc = this._renderableRotC;
         const stashRs = this._renderableRotS;
         const stashPose = this._displayPoseOut;
-        const writeSortKey = !!(rqSortKey && (this._useZBuffer || (Layer._ySorting && Layer._ySorting[Layer.entitiesId])));
+        const writeSortKey = !!(rqSortKey && this._queueHasOrder());
         const persistBuf = this._queueBuf;
         const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
         if (persistHit) {
@@ -3037,7 +3055,8 @@ class PreRenderWorker extends AbstractWorker {
         for (let i = 0; i < count && writeCount < this.renderQueueMaxItems; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
-            const sk = collectorY[i];
+            const yKey = collectorY[i];
+            const sk = writeSortKey ? this._orderKey(type, idx, yKey, this._entityYSort()) : yKey;
 
             if (persistHit && type === 0) {
                 writeCount++;
@@ -3512,7 +3531,8 @@ class PreRenderWorker extends AbstractWorker {
             for (let i = 0; i < layerCount && writeCount < collector.maxItems; i++) {
                 const type = cType[i];
                 const idx = cIndex[i];
-                const sk = cY[i];
+                const yKey = cY[i];
+                const sk = writeSortKey ? this._orderKey(type, idx, yKey, true) : yKey;
 
                 if (type === 6) {
                     writeCount = this._emitAdobePieces(layerRef, writeCount, idx, sk);

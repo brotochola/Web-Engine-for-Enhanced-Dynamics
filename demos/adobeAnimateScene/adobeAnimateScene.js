@@ -29,7 +29,7 @@ export class AdobeAnimateScene extends Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySortingInCPU: true,
+      ySort: true,
       maxVisibleRenderables: 250000,
     },
     lighting: {

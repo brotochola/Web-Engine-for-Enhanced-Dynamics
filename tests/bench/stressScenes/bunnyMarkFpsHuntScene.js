@@ -31,7 +31,7 @@ export class BunnyMarkFpsHuntScene extends Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySortingInCPU: false,
+      ySort: false,
       maxVisibleRenderables: N,
     },
     preRender: { skipCull: true },

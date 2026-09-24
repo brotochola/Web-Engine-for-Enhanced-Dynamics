@@ -8,6 +8,8 @@ import {
   orderPainterSlots,
   spriteYSortKey,
   depthFromSortKey,
+  orderSortKey,
+  zSortBand,
 } from '../../src/util/sortIndexByKey.js';
 
 function cmpFloat(a, b) {
@@ -27,6 +29,15 @@ function sortCheck(values) {
   expect.sort((a, b) => cmpFloat(keys[a], keys[b]));
   assert.deepEqual(Array.from(idx), expect);
 }
+
+test('orderSortKey: zIndex band beats any Y; without ySort the key is the integer', () => {
+  const band = zSortBand(1000);
+  const farY = orderSortKey(1000 * 128, 0, true, band);
+  const front = orderSortKey(0, 1, true, band);
+  assert.ok(front > farY);
+  assert.equal(orderSortKey(99999, 4, false, band), 4);
+  assert.equal(orderSortKey(99999, 0, false, band), 0);
+});
 
 test('depthFromSortKey larger key is closer', () => {
   const h = 1000;
