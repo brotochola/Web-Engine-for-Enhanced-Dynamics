@@ -2484,6 +2484,7 @@ class PreRenderWorker extends AbstractWorker {
         const rqRotS = this.renderQueueRotS;
         const rqSortKey = this.renderQueueSortKey;
         const writeSortKey = !!(rqSortKey && this._queueHasOrder());
+        const ySort = writeSortKey && this._entityYSort();
         const inherit = SpriteRenderer.inheritTransformRotation;
         for (let i = 0; i < count; i++) {
             if (collectorType[i] !== 0) continue;
@@ -2494,7 +2495,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqRotC[i] = stashRc[i];
                 rqRotS[i] = stashRs[i];
             }
-            if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], this._entityYSort());
+            if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], ySort);
         }
     }
 
@@ -3046,6 +3047,7 @@ class PreRenderWorker extends AbstractWorker {
         const stashRs = this._renderableRotS;
         const stashPose = this._displayPoseOut;
         const writeSortKey = !!(rqSortKey && this._queueHasOrder());
+        const ySort = writeSortKey && this._entityYSort();
         const persistBuf = this._queueBuf;
         const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
         if (persistHit) {
@@ -3056,7 +3058,7 @@ class PreRenderWorker extends AbstractWorker {
             const type = collectorType[i];
             const idx = collectorIndex[i];
             const yKey = collectorY[i];
-            const sk = writeSortKey ? this._orderKey(type, idx, yKey, this._entityYSort()) : yKey;
+            const sk = writeSortKey ? this._orderKey(type, idx, yKey, ySort) : yKey;
 
             if (persistHit && type === 0) {
                 writeCount++;

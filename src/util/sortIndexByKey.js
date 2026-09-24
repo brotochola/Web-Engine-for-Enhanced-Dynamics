@@ -34,10 +34,10 @@ export function orderKeySpan(worldHeight) {
 }
 
 /** Larger key closer to 0. `span` covers negative and positive keys. */
-export function depthFromOrderKey(key, span) {
+export function depthFromOrderKey(key, span, half) {
   const s = span > 0 ? span : 1;
-  const half = s * 0.5;
-  let z = 1 - (key + half) / s;
+  const h = half > 0 ? half : s * 0.5;
+  let z = 1 - (key + h) / s;
   if (z < 0) z = 0;
   else if (z > 1) z = 1;
   return z;
