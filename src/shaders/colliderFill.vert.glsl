@@ -10,11 +10,13 @@ in float aInstDepth;
 in float aInstTexId;
 in vec2 aInstTileInv;
 in vec2 aInstTileOff;
+in float aInstBody;
 
 uniform mat3 uProjectionMatrix;
 uniform mat3 uWorldTransformMatrix;
 uniform mat3 uTransformMatrix;
 uniform sampler2D uTexLut;
+uniform sampler2D uPoseTable;
 
 out vec4 vColor;
 out vec2 vLocal;
@@ -26,10 +28,18 @@ out float vHasTex;
 
 void main() {
   vec2 local = aV0 + aTri.x * (aV1 - aV0) + aTri.y * (aV2 - aV0);
-  float c = aInstRotCS.x;
-  float s = aInstRotCS.y;
+  vec2 xy = aInstXY;
+  vec2 cs = aInstRotCS;
+  int id = int(aInstBody + 0.5);
+  vec4 pose = texelFetch(uPoseTable, ivec2(id % 256, id / 256), 0);
+  if (pose.z != 0.0 || pose.w != 0.0) {
+    xy = pose.xy;
+    cs = pose.zw;
+  }
+  float c = cs.x;
+  float s = cs.y;
   vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  vec2 world = rotated + aInstXY;
+  vec2 world = rotated + xy;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(world, 1.0);
   gl_Position = vec4(clip.xy, aInstDepth, 1.0);

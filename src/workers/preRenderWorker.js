@@ -1073,10 +1073,6 @@ class PreRenderWorker extends AbstractWorker {
         this.visibleDecorationsCount = 0;
         this.shadowsUpdatedThisFrame = 0;
         this._renderableCount = 0;
-        // Canonical entity visibility for CameraInOutListener. Native fill is
-        // cheaper than per-renderer false writes and keeps future renderers simple:
-        // any render pass only sets Transform.isItOnScreen[i] = 1 when visible.
-        if (Transform.isItOnScreen) Transform.isItOnScreen.fill(0);
 
         // Compute decoration zoom alpha (fully visible above fadeStart, fades to 0 at hideZoom)
         const zoom = this._frameCameraZoom;
@@ -1218,7 +1214,6 @@ class PreRenderWorker extends AbstractWorker {
         this.visibleDecorationsCount = 0;
         this.shadowsUpdatedThisFrame = 0;
         this._renderableCount = 0;
-        this._clearOwnedScreenFlags();
 
         const zoom = this._frameCameraZoom;
         if (zoom >= this.decorationFadeStartZoom) this._decorationZoomAlpha = 1;
@@ -1379,24 +1374,6 @@ class PreRenderWorker extends AbstractWorker {
         }
         this[seenField] = Atomics.load(this._join, epochSlot);
         return false;
-    }
-
-    _clearOwnedScreenFlags() {
-        const n = this.globalEntityCount | 0;
-        const block = this.entityBlockSize | 0;
-        const workers = this.workerCount | 0;
-        const me = this.workerIndex | 0;
-        if (n <= 0 || block <= 0 || workers <= 0) return;
-        const arrays = [Transform.isItOnScreen, SpriteRenderer.isItOnScreen];
-        if (AdobeAnimComponent.isItOnScreen) arrays.push(AdobeAnimComponent.isItOnScreen);
-        const blocks = ((n + block - 1) / block) | 0;
-        for (let b = me; b < blocks; b += workers) {
-            const start = b * block;
-            const end = start + block > n ? n : start + block;
-            for (let a = 0; a < arrays.length; a++) {
-                if (arrays[a]) arrays[a].fill(0, start, end);
-            }
-        }
     }
 
     _ownedList(classes) {
@@ -1938,7 +1915,7 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Entity visibility + collect for render queue + sun shadows (fused pass)
-     * Iterates activeEntitiesData (or all entities), viewport culling, sets isItOnScreen,
+     * Iterates activeEntitiesData (or all entities), viewport culling,
      * adds visible to queue. When shadows enabled, also writes sun shadows in same pass.
      */
     _writeFusedSunShadow(i, renderVisibleI) {
@@ -1992,8 +1969,6 @@ class PreRenderWorker extends AbstractWorker {
         const x = Transform.x;
         const y = Transform.y;
         const active = Transform.active;
-        const entityIsItOnScreen = Transform.isItOnScreen;
-        const isItOnScreen = SpriteRenderer.isItOnScreen;
         const spriteRendererActive = SpriteRenderer.active;
         const renderVisible = SpriteRenderer.renderVisible;
         const visualRange = Collider.visualRange;
@@ -2137,10 +2112,7 @@ class PreRenderWorker extends AbstractWorker {
 
         for (let idx = 0; idx < iterCount; idx++) {
             const i = iterSource ? iterSource[iterBase + idx] : idx;
-            if (!active[i]) {
-                if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
-                continue;
-            }
+            if (!active[i]) continue;
             if (!spriteRendererActive || !spriteRendererActive[i]) continue;
 
             if (!this.skipCull) {
@@ -2156,14 +2128,8 @@ class PreRenderWorker extends AbstractWorker {
                 const extent = halfExtent * camZoom;
                 const onScreen = sx >= screenMinX - extent && sx <= screenMaxX + extent &&
                     sy >= screenMinY - extent && sy <= screenMaxY + extent;
-                if (!onScreen) {
-                    isItOnScreen[i] = 0;
-                    continue;
-                }
+                if (!onScreen) continue;
             }
-
-            isItOnScreen[i] = 1;
-            entityIsItOnScreen[i] = 1;
 
             // sheetId 0 = unset (spawn reset / pool recycle). Never queue.
             if (renderVisible[i] && SpriteRenderer.spritesheetId[i]) {
@@ -2185,13 +2151,25 @@ class PreRenderWorker extends AbstractWorker {
                 const leGlow = LightEmitter.hasGlowSprite;
                 const leIntensity = LightEmitter.lightIntensity;
                 const leSqrt = LightEmitter.sqrtLightIntensity;
-                const onScreen = SpriteRenderer.isItOnScreen || Transform.isItOnScreen;
                 for (let li = 0; li < lights.length; li++) {
                     const i = lights[li];
                     if (!leActive[i] || !leGlow[i]) continue;
                     if (leIntensity[i] < MIN_GLOW_INTENSITY) continue;
                     if ((visualRange[i] || leSqrt[i] || 200) < MIN_GLOW_RANGE) continue;
-                    if (onScreen && !onScreen[i]) continue;
+                    if (!this.skipCull) {
+                        const sx = x[i] * camZoom - cameraOffsetX;
+                        const sy = y[i] * camZoom - cameraOffsetY;
+                        let halfExtent = 0;
+                        const halfW = SpriteRenderer.boundsHalfW?.[i] ?? 0;
+                        const halfH = SpriteRenderer.boundsHalfH?.[i] ?? 0;
+                        if (halfW > 0 || halfH > 0) halfExtent = halfW > halfH ? halfW : halfH;
+                        if (halfExtent <= 0) halfExtent = visualRange[i] || 0;
+                        const extent = halfExtent * camZoom;
+                        if (
+                            sx < screenMinX - extent || sx > screenMaxX + extent ||
+                            sy < screenMinY - extent || sy > screenMaxY + extent
+                        ) continue;
+                    }
                     this.collectRenderable(3, i, y[i] * Y_SORT_K + ENTITY_GLOW_SORT_BIAS);
                 }
             }
@@ -2253,10 +2231,8 @@ class PreRenderWorker extends AbstractWorker {
         const x = Transform.x;
         const y = Transform.y;
         const active = Transform.active;
-        const entityIsItOnScreen = Transform.isItOnScreen;
         const adobeActive = AdobeAnimComponent.active;
         const renderVisible = AdobeAnimComponent.renderVisible;
-        const isItOnScreen = AdobeAnimComponent.isItOnScreen;
         const halfW = AdobeAnimComponent.boundsHalfW;
         const halfH = AdobeAnimComponent.boundsHalfH;
 
@@ -2273,10 +2249,7 @@ class PreRenderWorker extends AbstractWorker {
 
         for (let idx = 0; idx < adobeEntities.length; idx++) {
             const i = adobeEntities[idx];
-            if (!active[i] || !adobeActive[i]) {
-                if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
-                continue;
-            }
+            if (!active[i] || !adobeActive[i]) continue;
 
             if (!this.skipCull) {
                 const sx = x[i] * camZoom - cameraOffsetX;
@@ -2289,14 +2262,9 @@ class PreRenderWorker extends AbstractWorker {
                     sy >= screenMinY - extent &&
                     sy <= screenMaxY + extent;
 
-                if (!onScreen) {
-                    isItOnScreen[i] = 0;
-                    continue;
-                }
+                if (!onScreen) continue;
             }
 
-            isItOnScreen[i] = 1;
-            entityIsItOnScreen[i] = 1;
             if (renderVisible[i]) {
                 this.collectRenderable(6, i, 0);
                 this._shardExpanded = 1;

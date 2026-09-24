@@ -2,6 +2,7 @@
 // Entities are composed of components (Transform, RigidBody, Collider, etc.)
 
 import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
+import { Camera } from './camera.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
@@ -848,11 +849,9 @@ export class GameObject {
     }
   }
 
-  /** Is entity currently on screen? Read-only, set by culling system */
+  /** Is this entity's position inside the camera box? */
   get isOnScreen() {
-    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.isItOnScreen[this.index] === 1;
-    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.isItOnScreen[this.index] === 1;
-    return false;
+    return Camera.isOnScreen(this.x, this.y);
   }
 
   /** Anchor X (0-1, 0.5 = center) - read-only, use setAnchor() */

@@ -14,7 +14,7 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Camera } from '../core/camera.js';
 
-import { CameraInOutListener } from '../components/cameraInOutListener.js';
+import { CameraInOutListener, noteScreenVisibility } from '../components/cameraInOutListener.js';
 import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 
@@ -1452,23 +1452,12 @@ class LogicWorker extends AbstractWorker {
    * @param {GameObject} obj - The entity instance
    */
   checkScreenVisibility(entityIndex, obj) {
-    const currentlyVisible = Transform.isItOnScreen[entityIndex];
+    const currentlyVisible = Camera.isOnScreen(
+      Transform.x[entityIndex],
+      Transform.y[entityIndex],
+    ) ? 1 : 0;
     const wasVisible = this.previousScreenVisibility[entityIndex];
-
-    // Check for visibility state transitions
-    if (currentlyVisible && !wasVisible) {
-      // Entity just entered the screen
-      // if (obj.onScreenEnter) {
-      obj.onScreenEnter();
-      // }
-    } else if (!currentlyVisible && wasVisible) {
-      // Entity just exited the screen
-      // if (obj.onScreenExit) {
-      obj.onScreenExit();
-      // }
-    }
-
-    // Update previous visibility state for next frame
+    noteScreenVisibility(currentlyVisible, wasVisible, obj);
     this.previousScreenVisibility[entityIndex] = currentlyVisible;
   }
 

@@ -16,6 +16,7 @@ struct LocalUniforms {
 @group(2) @binding(0) var uTexture: texture_2d<f32>;
 @group(2) @binding(1) var uSampler: sampler;
 @group(2) @binding(2) var uTexLut: texture_2d<f32>;
+@group(2) @binding(3) var uPoseTable: texture_2d<f32>;
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
@@ -50,13 +51,22 @@ fn mainVert(
   @location(8) aInstTexId: f32,
   @location(9) aInstTileInv: vec2<f32>,
   @location(10) aInstTileOff: vec2<f32>,
+  @location(11) aInstBody: f32,
 ) -> VertexOut {
   var out: VertexOut;
   let local = aV0 + aTri.x * (aV1 - aV0) + aTri.y * (aV2 - aV0);
-  let c = aInstRotCS.x;
-  let s = aInstRotCS.y;
+  var xy = aInstXY;
+  var cs = aInstRotCS;
+  let id = i32(aInstBody + 0.5);
+  let pose = textureLoad(uPoseTable, vec2<i32>(id % 256, id / 256), 0);
+  if (pose.z != 0.0 || pose.w != 0.0) {
+    xy = pose.xy;
+    cs = pose.zw;
+  }
+  let c = cs.x;
+  let s = cs.y;
   let rotated = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
-  let world = rotated + aInstXY;
+  let world = rotated + xy;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(world, 1.0);
   let tintBits = bitcast<u32>(aInstTintBits);

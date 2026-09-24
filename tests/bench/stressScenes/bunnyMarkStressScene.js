@@ -13,6 +13,10 @@ import { TOY_WORLD_W, TOY_WORLD_H } from '/src/util/toyWorldBounce.js';
 
 const { Scene, Camera } = WEED;
 
+const BUNNY_ASSETS = {
+  textures: { bunny: '/demos/img/bunny.png' },
+};
+
 export const BUNNY_COUNT = 20000;
 export const WORLD_W = TOY_WORLD_W;
 export const WORLD_H = TOY_WORLD_H;
@@ -64,7 +68,7 @@ export class BunnyMarkStressScene extends Scene {
       noLimitFPS: false,
     },
   };
-  static assets = { textures: {} };
+  static assets = BUNNY_ASSETS;
   static entities = [[Bunny, BUNNY_COUNT]];
 
   create() {
@@ -72,20 +76,28 @@ export class BunnyMarkStressScene extends Scene {
   }
 }
 
+/** C is the render screen. 20k and 60k left Pixi under 3 ms. */
+export const BUNNY_COUNT_C = 100000;
+
 export class BunnyMarkStressCScene extends Scene {
   static config = {
     ...SHARED,
+    entityIdWidth: 32,
     physics: {
       enabled: false,
       gravity: { x: 0, y: 0 },
       noLimitFPS: false,
     },
+    renderer: {
+      ...SHARED.renderer,
+      maxVisibleRenderables: BUNNY_COUNT_C,
+    },
   };
-  static assets = { textures: {} };
-  static entities = [[Bunny, BUNNY_COUNT]];
+  static assets = BUNNY_ASSETS;
+  static entities = [[Bunny, BUNNY_COUNT_C]];
 
   create() {
-    spawnBunnies(this, Bunny, BUNNY_COUNT);
+    spawnBunnies(this, Bunny, BUNNY_COUNT_C);
   }
 }
 
@@ -106,7 +118,7 @@ export class BunnyMarkStressCSkipCullOffScene extends Scene {
     ...SHARED_SKIPCULL,
     preRender: { skipCull: false },
   };
-  static assets = { textures: {} };
+  static assets = BUNNY_ASSETS;
   static entities = [[Bunny, BUNNY_COUNT_SKIPCULL]];
 
   create() {
@@ -119,7 +131,7 @@ export class BunnyMarkStressCSkipCullOnScene extends Scene {
     ...SHARED_SKIPCULL,
     preRender: { skipCull: true },
   };
-  static assets = { textures: {} };
+  static assets = BUNNY_ASSETS;
   static entities = [[Bunny, BUNNY_COUNT_SKIPCULL]];
 
   create() {

@@ -1,12 +1,8 @@
 import WEED from '/src/index.js';
 import { BunnyMotion } from '../components/bunnyMotion.js';
-import {
-  toyWorldBounce,
-  TOY_LEFT,
-  TOY_RIGHT,
-  TOY_TOP,
-  TOY_BOTTOM,
-} from '/src/util/toyWorldBounce.js';
+
+// Blob workers strip `/src/` imports, so tickAll cannot call toyWorldBounce.
+// Same box as toyWorldBounce.js: 1920×1080, half size 8.
 
 const { GameObject, SpriteRenderer, Transform } = WEED;
 
@@ -29,18 +25,39 @@ export class Bunny extends GameObject {
   }
 
   static tickAll(list, count, dtRatio) {
-    toyWorldBounce(
-      Transform.x,
-      Transform.y,
-      BunnyMotion.vx,
-      BunnyMotion.vy,
-      list,
-      count,
-      dtRatio,
-      TOY_LEFT,
-      TOY_RIGHT,
-      TOY_TOP,
-      TOY_BOTTOM,
-    );
+    const xs = Transform.x;
+    const ys = Transform.y;
+    const vxs = BunnyMotion.vx;
+    const vys = BunnyMotion.vy;
+    const n = count | 0;
+    const left = 8;
+    const right = 1912;
+    const top = 8;
+    const bottom = 1072;
+    for (let k = 0; k < n; k++) {
+      const i = list[k];
+      let vx = vxs[i];
+      let vy = vys[i];
+      let x = xs[i] + vx * dtRatio;
+      let y = ys[i] + vy * dtRatio;
+      if (x < left) {
+        x = left;
+        vx = -vx;
+      } else if (x > right) {
+        x = right;
+        vx = -vx;
+      }
+      if (y < top) {
+        y = top;
+        vy = -vy;
+      } else if (y > bottom) {
+        y = bottom;
+        vy = -vy;
+      }
+      xs[i] = x;
+      ys[i] = y;
+      vxs[i] = vx;
+      vys[i] = vy;
+    }
   }
 }

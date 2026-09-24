@@ -15,7 +15,7 @@ export function colliderFillGpuProgram(GpuProgram, source, name) {
     layout: {
       0: { globalUniforms: 0 },
       1: { localUniforms: 0 },
-      2: { uTexture: 0, uSampler: 1, uTexLut: 2 },
+      2: { uTexture: 0, uSampler: 1, uTexLut: 2, uPoseTable: 3 },
     },
     gpuLayout: [
       [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
@@ -25,6 +25,10 @@ export function colliderFillGpuProgram(GpuProgram, source, name) {
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },
         {
           binding: 2,
+          visibility: vf,
+          texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
+        {
+          binding: 3,
           visibility: vf,
           texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
       ],

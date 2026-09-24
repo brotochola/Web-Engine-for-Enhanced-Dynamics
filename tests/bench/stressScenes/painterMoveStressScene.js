@@ -38,6 +38,12 @@ export class PainterMoveEntity extends GameObject {
   }
 }
 
+function zBufferOn() {
+  const search = globalThis.location && globalThis.location.search;
+  if (typeof search !== 'string') return false;
+  return new URLSearchParams(search).get('useZBuffer') === '1';
+}
+
 function painterMoveConfig() {
   return {
     worldWidth: 12000,
@@ -69,6 +75,7 @@ function painterMoveConfig() {
       backend: 'webgl',
       noLimitFPS: false,
       ySort: true,
+      useZBuffer: zBufferOn(),
       maxVisibleRenderables: N,
     },
     preRender: {

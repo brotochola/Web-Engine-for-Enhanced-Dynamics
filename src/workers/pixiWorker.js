@@ -5604,17 +5604,24 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             rev === (skip.lastRevision | 0) &&
             skip.lastRevision !== COLLIDER_FILL_PACK_FIRST_FRAME &&
             !meshFillPresenceChanged(views, skip.prevPose);
-          const packed = canPoseOnly
-            ? packColliderFillPoseOnly(
-              cl.fillBatch.data,
-              cap,
-              lastPacked,
-              skip.instanceEntity,
-              views,
-            )
-            : packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
-          if (!canPoseOnly) skip.localsReady = packed > 0;
-          cl.fillBatch.upload(packed);
+          let packed = lastPacked;
+          if (canPoseOnly) {
+            packed = cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views);
+            const src = cl.fillBatch._poseSource;
+            const pose = cl.fillBatch.poseTable;
+            if (src && pose && this._useWebGpu) {
+              const renderer = this.pixiApp?.renderer;
+              if (renderer) {
+                writeRgba32Float(renderer, src, pose, cl.fillBatch._poseWidth, cl.fillBatch._poseHeight, 'mesh-pose');
+              }
+            } else if (src && pose) {
+              this._uploadRgba32FloatGl(src, pose, cl.fillBatch._poseWidth, cl.fillBatch._poseHeight);
+            }
+          } else {
+            packed = packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
+            skip.localsReady = packed > 0;
+            cl.fillBatch.upload(packed);
+          }
           cl.prevCount = packed;
           copyMeshFillPoseScratch(views, skip.prevPose);
           skip.lastRevision = rev;

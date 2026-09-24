@@ -20,6 +20,7 @@ import {
   BufferUsage,
   State,
   Texture,
+  TextureSource,
 } from '../vendor/pixi.min.js';
 
 import { MAX_POLYGON_VERTICES, ShapeType, SPRITE_TILE_MODE } from '../util/configDefaults.js';
@@ -28,7 +29,7 @@ import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
 import { MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 
-export const COLLIDER_FILL_FLOATS = 17;
+export const COLLIDER_FILL_FLOATS = 18;
 export const COLLIDER_FILL_STRIDE = COLLIDER_FILL_FLOATS * 4;
 /** lastRevision < 0 means no packed frame yet (always pack). */
 export const COLLIDER_FILL_PACK_FIRST_FRAME = -1;
@@ -138,6 +139,7 @@ function writeFillTri(out, outU32, base, written, maxOut, depthDenom, x0, y0, x1
   out[base + 14] = _paint.tiy;
   out[base + 15] = _paint.tou;
   out[base + 16] = _paint.tov;
+  out[base + 17] = _packEntity;
   if (_instanceEntity) _instanceEntity[written] = _packEntity;
   return written + 1;
 }
@@ -608,16 +610,30 @@ export class ColliderFillBatch {
         aInstTexId: { buffer: buf, format: 'float32', stride, offset: 48, instance: true },
         aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
         aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 60, instance: true },
+        aInstBody: { buffer: buf, format: 'float32', stride, offset: 68, instance: true },
       },
     });
     this.geometry.instanceCount = 0;
 
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
+    const posePx = new Float32Array(4);
+    this._poseSource = TextureSource.from({
+      resource: posePx,
+      width: 1,
+      height: 1,
+      format: 'rgba32float',
+      scaleMode: 'nearest',
+      addressMode: 'clamp-to-edge',
+      autoGenerateMipmaps: false,
+    });
+    this._poseSource.uploadMethodId = 'external';
+    this.poseTable = new Float32Array(256 * 4);
     const resources = {
       uTexture: atlas,
       uSampler: atlas.style,
       uTexLut: lut,
+      uPoseTable: this._poseSource,
     };
 
     const name = label || 'collider-fill';
@@ -676,6 +692,41 @@ export class ColliderFillBatch {
     this.mesh.visible = true;
     this.buffer.update(n * COLLIDER_FILL_STRIDE);
     this.geometry.instanceCount = n;
+    return n;
+  }
+
+  /**
+   * One texel per body: xy in rg, rot cs in ba. The fat VBO stays resident.
+   * @returns {number} instance count left on the mesh
+   */
+  uploadPoseTable(instanceEntity, count, views) {
+    const n = count | 0;
+    if (n <= 0 || !instanceEntity) return 0;
+    const entityCount = views.entityCount | 0;
+    const width = 256;
+    const height = Math.max(1, ((entityCount + width - 1) / width) | 0);
+    const need = width * height * 4;
+    if (!this.poseTable || this.poseTable.length < need) this.poseTable = new Float32Array(need);
+    if (!this._poseGen || this._poseGen.length < entityCount) this._poseGen = new Int32Array(entityCount);
+    const table = this.poseTable;
+    const gen = this._poseGen;
+    const stamp = (this._poseStamp + 1) | 0 || 1;
+    this._poseStamp = stamp;
+    for (let k = 0; k < n; k++) {
+      const i = instanceEntity[k] | 0;
+      if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
+      gen[i] = stamp;
+      const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+      const o = i * 4;
+      table[o] = pose.x;
+      table[o + 1] = pose.y;
+      table[o + 2] = pose.c;
+      table[o + 3] = pose.s;
+    }
+    this._poseWidth = width;
+    this._poseHeight = height;
+    this._poseDirty = true;
+    this.mesh.visible = true;
     return n;
   }
 }
