@@ -4161,10 +4161,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const source = new PIXI.ImageSource({
           resource: bitmap,
           autoGenerateMipmaps: false,
-          scaleMode: 'nearest',
+          scaleMode: 'linear',
         });
         if (source.style) {
-          source.style.scaleMode = 'nearest';
+          source.style.scaleMode = 'linear';
           source.style.addressMode = 'clamp-to-edge';
         }
         const tilesetTexture = new PIXI.Texture({ source });

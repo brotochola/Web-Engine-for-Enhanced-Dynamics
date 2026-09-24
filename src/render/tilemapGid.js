@@ -189,7 +189,9 @@ export function applyTiledLocalUv(localU, localV, flipH, flipV, flipD) {
 }
 
 /**
- * Atlas UV (0..1) for a Tiled GID at a local tile UV, with 0.5 px inset.
+ * Atlas UV (0..1) for a Tiled GID at a local tile UV, with a 0.5 px inset.
+ * Maps the tile onto texel centers so a linear sampler blends inside the tile
+ * and does not pull the neighbor tile in the atlas.
  * @param {number} raw
  * @param {number} localU
  * @param {number} localV

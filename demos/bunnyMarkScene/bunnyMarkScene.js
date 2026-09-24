@@ -43,7 +43,7 @@ export class BunnyMarkScene extends Scene {
             decals: false,
         },
         renderer: {
-            // backend: 'webgpu',
+            backend: 'webgl',
             noLimitFPS: false,
             ySort: false,
             useZBuffer: false,

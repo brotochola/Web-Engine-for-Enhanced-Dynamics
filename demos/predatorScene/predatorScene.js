@@ -170,7 +170,7 @@ export class PredatorScene extends WEED.Scene {
       interpolation: false,
       lightGlow: "add",
       useZBuffer: true,
-      alphaCut: 0.25
+      alphaCut: 0.5
     },
     preRender: {
       noLimitFPS: false,

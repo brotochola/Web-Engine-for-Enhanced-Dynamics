@@ -161,7 +161,7 @@ On `Layer.ground.setTilemap` / config `kind: LAYER_KIND.TILEMAP`:
 
 There is no chunk stream and no `renderer.tilemapCull`. `config.renderer.tilemapCull` is ignored if a scene still sends it.
 
-Both `renderer.backend: 'webgl'` and `'webgpu'` use the same paging and unpack. Tileset PNGs stay out of the BigAtlas (nearest + clamp on their own `ImageSource`). v1 uses `tilesets[0]` only; Tiled animations and live SAB writes are not implemented.
+Both `renderer.backend: 'webgl'` and `'webgpu'` use the same paging and unpack. Tileset PNGs stay out of the BigAtlas (linear + clamp on their own `ImageSource`). The GID page stays nearest. v1 uses `tilesets[0]` only; Tiled animations and live SAB writes are not implemented.
 
 ---
 
