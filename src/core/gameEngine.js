@@ -13,6 +13,7 @@ import {
   inferSceneScriptUrl,
   isSceneClass,
   pickSceneClass,
+  nativeImport,
   toAbsoluteScriptUrl,
 } from '../util/sceneScript.js';
 
@@ -269,7 +270,7 @@ class GameEngine {
 
       if (typeof source === 'string') {
         sceneScriptUrl = toAbsoluteScriptUrl(source, origin);
-        const ns = await import(sceneScriptUrl);
+        const ns = await nativeImport(sceneScriptUrl);
         SceneClass = pickSceneClass(ns, options.export, Scene);
       } else if (typeof source === 'function') {
         SceneClass = source;

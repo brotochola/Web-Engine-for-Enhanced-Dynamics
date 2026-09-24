@@ -2,6 +2,9 @@
 // Workers import() one scene file; ESM loads the entity graph.
 // Optional per-class scriptUrl is leftover / blob escape hatch.
 
+// Webpack turns import() into a stub that only knows bundled module ids.
+export const nativeImport = new Function('specifier', 'return import(specifier)');
+
 export function toAbsoluteScriptUrl(path, origin = '') {
   if (!path) return path;
   if (path.startsWith('blob:')) return path;

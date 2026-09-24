@@ -167,6 +167,8 @@ export class LittleCityScene extends WEED.Scene {
       backend: 'webgl',
       noLimitFPS: false,
       ySort: true,
+      // useZBuffer: true,
+      // alphaCut: 0.5,
       cullingRatio: 0.1,
       startFadingDecorationsAtZoom: 0.5,
       hideDecorationsAtZoom: 0.25,
@@ -201,11 +203,11 @@ export class LittleCityScene extends WEED.Scene {
   static assets = {
     ...(useBaked
       ? {
-          bigAtlas: {
-            json: '/demos/littleCity/baked/bigAtlas.json',
-            png: '/demos/littleCity/baked/bigAtlas.png',
-          },
-        }
+        bigAtlas: {
+          json: '/demos/littleCity/baked/bigAtlas.json',
+          png: '/demos/littleCity/baked/bigAtlas.png',
+        },
+      }
       : {}),
     textures: {
       smoke: '/demos/img/smoke.png',

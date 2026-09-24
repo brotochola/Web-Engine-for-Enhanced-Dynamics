@@ -1591,6 +1591,7 @@ class PixiRenderer extends AbstractWorker {
       lutSource: this._texLutSource,
       depthTest: false,
       depthMask: false,
+      alphaDiscard: false,
       premultiplyAlpha: false,
       blendMode: 'add',
       useWebGpu: this._useWebGpu,

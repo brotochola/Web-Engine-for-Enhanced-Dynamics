@@ -69,7 +69,7 @@ const pixiSrc = readFileSync(join(dir, '../../src/workers/pixiWorker.js'), 'utf8
 
 test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', () => {
   assert.match(pixiSrc, /function emptyInstancedMesh\(obj\)/);
-  assert.match(pixiSrc, /setDisplayVisible\(this\.spriteGlowMesh, on\)/);
+  assert.match(pixiSrc, /setDisplayVisible\(displayObj, on && \(name !== 'lightGlows'/);
   assert.match(pixiSrc, /this\._rtEmptyContainer = new Container\(\)/);
   assert.match(pixiSrc, /emptyInstancedMesh\(this\.shadowBatch\.mesh\)/);
   assert.match(pixiSrc, /emptyInstancedMesh\(densityMesh\)/);

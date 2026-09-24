@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { PHYSICS_DEFAULTS } from './configDefaults.js';
+import { nativeImport } from './sceneScript.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
 export {
@@ -1580,7 +1581,7 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
       module = exports;
     } else {
       // Standard dynamic import for module-based workers and main thread
-      module = await import(scriptPath);
+      module = await nativeImport(scriptPath);
     }
 
     // Make the exported class(es) available globally
