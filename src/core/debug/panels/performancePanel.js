@@ -16,6 +16,9 @@ import {
   WORKER_DISPLAY_CONFIG,
   WORKER_ROW_ORDER,
   workerLoadPct,
+  computeRestMs,
+  displayHeadKeys,
+  displayDetailStart,
 } from '../stats/statsCollector.js';
 
 const COMMON_KEYS = ['STEP_MS', 'LOAD', 'FPS', 'MSG_MS'];
@@ -164,6 +167,11 @@ export class PerformancePanel {
         if (!this.elements.workerStats[type]) this.elements.workerStats[type] = [];
         this.elements.workerStats[type].push(built.elements);
       }
+      if (type === 'renderer' && stats.workerStatViews.renderer) {
+        const gpu = this._createWorkerStatRow('gpu', 0);
+        list.appendChild(gpu.row);
+        this.elements.workerStats.gpu = [gpu.elements];
+      }
     }
 
     list.appendChild(this._createAudioRow());
@@ -310,8 +318,9 @@ export class PerformancePanel {
         : 1;
     const title = count > 1 ? `${config.label} #${workerIndex}` : config.label;
     const detailed = this._collectDetailedStatsEnabled();
-    const headKeys = detailed ? COMMON_KEYS : LEAN_KEYS;
-    const detailCount = detailed ? Math.max(0, config.stats.length - COMMON_KEYS.length) : 0;
+    const headKeys = displayHeadKeys(config, detailed);
+    const detailStart = displayDetailStart(config);
+    const detailCount = detailed ? Math.max(0, config.stats.length - detailStart) : 0;
     const rowId = `${workerType}:${workerIndex}`;
     const { row, metrics, loadFill, details } = this._createRowShell(rowId, config.color, title, {
       expandable: detailCount > 0,
@@ -326,10 +335,11 @@ export class PerformancePanel {
     }
 
     if (detailed) {
-      for (let s = COMMON_KEYS.length; s < config.stats.length; s++) {
+      for (let s = detailStart; s < config.stats.length; s++) {
         const stat = config.stats[s];
         const chip = document.createElement('span');
         chip.className = 'debug-ui-worker-detail';
+        if (stat.kind) chip.classList.add(`kind-${stat.kind}`);
         chip.textContent = `${stat.label}: —`;
         details.appendChild(chip);
         elements[stat.key] = chip;
@@ -374,6 +384,7 @@ export class PerformancePanel {
         this._updateSingleWorkerStats(type, schema, stats);
       }
     }
+    this._updateGpuRow(stats);
   }
 
   _bindPoolLists() {
@@ -593,6 +604,8 @@ export class PerformancePanel {
       let rawValue;
       if (stat.key === 'LOAD') {
         rawValue = workerLoadPct(view[statsSchema.STEP_MS] || 0);
+      } else if (stat.kind === 'rest') {
+        rawValue = computeRestMs(config, view, statsSchema);
       } else {
         rawValue = view[statsSchema[stat.key]];
         if (stat.key === 'FPS' && smoother) {
@@ -604,6 +617,50 @@ export class PerformancePanel {
       prevCache[stat.key] = rounded;
 
       const formatted = stat.format(rawValue);
+      if (COMMON_KEYS.includes(stat.key)) {
+        el.textContent = formatted;
+        if (stat.key === 'LOAD') this._setLoadBar(elements._loadFill, rawValue);
+      } else {
+        el.textContent = `${stat.label}: ${formatted}`;
+      }
+    }
+  }
+
+  _updateGpuRow(stats) {
+    const view = stats.workerStatViews?.renderer;
+    const elements = this.elements.workerStats?.gpu?.[0];
+    if (!view || !elements) return;
+    const config = WORKER_DISPLAY_CONFIG.gpu;
+    if (!stats.prevWorker.gpu) stats.prevWorker.gpu = {};
+    if (!stats.prevWorker.gpu[0]) stats.prevWorker.gpu[0] = {};
+    const prevCache = stats.prevWorker.gpu[0];
+    const smoother = stats.fpsSmoothing.gpu;
+
+    for (let s = 0; s < config.stats.length; s++) {
+      const stat = config.stats[s];
+      const el = elements[stat.key];
+      if (!el) continue;
+
+      let rawValue;
+      if (stat.key === 'LOAD') {
+        rawValue = workerLoadPct(view[RENDERER_STATS.GPU_STEP_MS] || 0);
+      } else if (stat.kind === 'rest') {
+        rawValue = computeRestMs(config, view, RENDERER_STATS);
+      } else if (stat.src === null) {
+        rawValue = NaN;
+      } else {
+        const srcKey = stat.src || stat.key;
+        const idx = RENDERER_STATS[srcKey];
+        rawValue = idx == null ? NaN : view[idx];
+        if (stat.key === 'FPS' && smoother) {
+          rawValue = stats.smoothFPS(rawValue || 0, smoother);
+        }
+      }
+      const rounded = Number.isNaN(rawValue) ? -1 : (rawValue * 100) | 0;
+      if (prevCache[stat.key] === rounded) continue;
+      prevCache[stat.key] = rounded;
+
+      const formatted = Number.isNaN(rawValue) ? '—' : stat.format(rawValue);
       if (COMMON_KEYS.includes(stat.key)) {
         el.textContent = formatted;
         if (stat.key === 'LOAD') this._setLoadBar(elements._loadFill, rawValue);

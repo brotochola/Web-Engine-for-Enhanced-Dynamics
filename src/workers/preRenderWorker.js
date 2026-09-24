@@ -2456,6 +2456,13 @@ class PreRenderWorker extends AbstractWorker {
         const rqRotC = this.renderQueueRotC;
         const rqRotS = this.renderQueueRotS;
         const rqSortKey = this.renderQueueSortKey;
+        const shadowH = this.renderQueueShadowH;
+        const shadowOffX = this.renderQueueShadowOffX;
+        const shadowOffY = this.renderQueueShadowOffY;
+        const casterActive = ShadowCaster.active;
+        const heightMul = ShadowCaster.heightMultiplier;
+        const aox = ShadowCaster.anchorOffsetX;
+        const aoy = ShadowCaster.anchorOffsetY;
         const writeSortKey = !!(rqSortKey && this._queueHasOrder());
         const ySort = writeSortKey && this._entityYSort();
         const inherit = SpriteRenderer.inheritTransformRotation;
@@ -2469,6 +2476,13 @@ class PreRenderWorker extends AbstractWorker {
                 rqRotS[i] = stashRs[i];
             }
             if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], ySort);
+            // buildRenderQueue zeros shadowH before persist; GPU casters need it back.
+            if (shadowH) {
+                const cast = casterActive && casterActive[idx];
+                shadowH[i] = cast ? heightMul[idx] : 0;
+                if (shadowOffX) shadowOffX[i] = cast ? (aox[idx] || 0) : 0;
+                if (shadowOffY) shadowOffY[i] = cast ? (aoy[idx] || 0) : 0;
+            }
         }
     }
 

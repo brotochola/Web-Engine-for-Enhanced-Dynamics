@@ -46,6 +46,20 @@ function formatWorkerConsoleLine(worker) {
     if (avg.AWAKE_COUNT != null) line += ` | Awake ${Number(avg.AWAKE_COUNT).toFixed(0)}`;
     if (avg.BODY_COUNT != null) line += ` | BODY_COUNT ${Number(avg.BODY_COUNT).toFixed(0)}`;
   }
+  if (worker.type === 'renderer' || worker.id === 'renderer') {
+    if (avg.SHADOWS_MS != null) line += ` | SHADOWS_MS ${Number(avg.SHADOWS_MS).toFixed(3)}`;
+    if (avg.GPU_STEP_MS != null) {
+      line +=
+        ` | GPU_STEP_MS ${Number(avg.GPU_STEP_MS).toFixed(3)}` +
+        ` | GPU_SHADOWS_MS ${Number(avg.GPU_SHADOWS_MS || 0).toFixed(3)}` +
+        ` | GPU_LIGHTS_MS ${Number(avg.GPU_LIGHTS_MS || 0).toFixed(3)}` +
+        ` | GPU_PRESENT_MS ${Number(avg.GPU_PRESENT_MS || 0).toFixed(3)}` +
+        ` | GPU_PASSES ${Number(avg.GPU_PASSES || 0).toFixed(1)}` +
+        ` | GPU_CASTERS ${Number(avg.GPU_CASTERS || 0).toFixed(0)}` +
+        ` | GPU_SHADOW_LIGHTS ${Number(avg.GPU_SHADOW_LIGHTS || 0).toFixed(1)}`;
+    }
+    if (avg.VISIBLE_ENTITIES != null) line += ` | VISIBLE_ENTITIES ${Number(avg.VISIBLE_ENTITIES).toFixed(0)}`;
+  }
   return line;
 }
 

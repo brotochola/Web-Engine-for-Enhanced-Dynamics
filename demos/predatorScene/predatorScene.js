@@ -30,6 +30,18 @@ function predatorSearchParam(name) {
   return new URLSearchParams(search).get(name);
 }
 
+function predatorChoiceParam(name, allowed, fallback) {
+  const q = predatorSearchParam(name);
+  if (q && allowed.indexOf(q) >= 0) return q;
+  return fallback;
+}
+
+function predatorNumberParam(name, fallback) {
+  const q = predatorSearchParam(name);
+  const n = q != null ? Number(q) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function predatorRendererBackend() {
   const q = predatorSearchParam('backend');
   if (q === 'webgl' || q === 'webgpu') return q;
@@ -173,9 +185,11 @@ export class PredatorScene extends WEED.Scene {
       baseAmbient: 0, // Minimum light at night (pitch black without lights)
       maxLights: 256,
       shadowsEnabled: true,
-      maxShadowCastingLights: 1000,
+      maxShadowCastingLights: predatorNumberParam('shadowLights', 1000),
       maxShadowsPerLight: 512,
       maxShadowsPerEntity: 5,
+      gpuShadowPath: predatorChoiceParam('gpuShadowPath', ['copy', 'reuse', 'queue', 'resident'], 'copy'),
+      gpuShadowCookies: predatorChoiceParam('gpuShadowCookies', ['always', 'night'], 'always'),
       maxShadowSprites: 30000,
       maxFlashes: 200,
       resolution: 0.25,
@@ -389,6 +403,7 @@ export class PredatorScene extends WEED.Scene {
     this.frameCount = 0;
     this._freeCam = false;
     this._freeCamButton = null;
+    this._pinZoom = predatorNumberParam('zoom', 0);
   }
 
   create() {
@@ -504,6 +519,7 @@ export class PredatorScene extends WEED.Scene {
       this.createNavGridForTheFlowField()
     }
     if (!this._freeCam) updateSquadCamera(dtRatio);
+    if (this._pinZoom > 0) Camera.setZoom(this._pinZoom);
   }
 
   _createFreeCamButton() {

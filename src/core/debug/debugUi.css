@@ -135,6 +135,9 @@
 .debug-ui-stat.renderer {
   color: #fbbf24;
 }
+.debug-ui-stat.gpu {
+  color: #94a3b8;
+}
 .debug-ui-stat.particle {
   color: #fb923c;
 }
@@ -215,6 +218,9 @@
 }
 .debug-ui-worker-row.renderer {
   border-left-color: #fbbf24;
+}
+.debug-ui-worker-row.gpu {
+  border-left-color: #94a3b8;
 }
 .debug-ui-worker-row.spatial {
   border-left-color: #a78bfa;
@@ -343,6 +349,9 @@
 .debug-ui-worker-row.renderer .debug-ui-worker-load-fill {
   color: #fbbf24;
 }
+.debug-ui-worker-row.gpu .debug-ui-worker-load-fill {
+  color: #94a3b8;
+}
 .debug-ui-worker-row.spatial .debug-ui-worker-load-fill {
   color: #a78bfa;
 }
@@ -388,6 +397,14 @@
 
 .debug-ui-worker-detail {
   white-space: nowrap;
+}
+
+.debug-ui-worker-detail.kind-count {
+  opacity: 0.78;
+}
+
+.debug-ui-worker-detail.kind-nested {
+  opacity: 0.62;
 }
 
 @media (max-width: 900px) {

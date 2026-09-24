@@ -584,9 +584,16 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   baseAmbient: 0.05,
   maxLights: 10,
   shadowsEnabled: false,
+  /** Cookie+shadow pairs for the N lights closest to the camera. Distinct from maxLights. */
   maxShadowCastingLights: 20,
+  /** Each of those lights draws at most N in-range casters (compact order). */
   maxShadowsPerLight: 15,
+  /** A caster joins at most N camera-sorted shadow lights (0 = every shadow-casting light). */
   maxShadowsPerEntity: 0,
+  /** copy | reuse | queue | resident — GPU caster submit path. */
+  gpuShadowPath: 'copy',
+  /** always | night (cookies only when Sun.intensity < 1). */
+  gpuShadowCookies: 'always',
   maxShadowSprites: 1000,
   maxFlashes: 0,
   resolution: 0.25,

@@ -60,6 +60,7 @@ import {
   normalizeAngleDifference,
   extractRGBNormalizedMut,
   lightInfluenceRadius,
+  lightCookieScale,
   lightDataTextureFloatCount,
   packLightDataTexel,
   clearUnusedLightDataTexels,
@@ -88,6 +89,13 @@ import {
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
+import { GpuFrameTimer } from '../render/gpuFrameTimer.js';
+import {
+  compactShadowCasterIndices,
+  resolveGpuShadowPath,
+  resolveGpuShadowCookies,
+  samePackedIndices,
+} from '../render/gpuShadowCasters.js';
 
 function finiteOrZero(n) {
   return Number.isFinite(n) ? n : 0;
@@ -417,6 +425,10 @@ class PixiRenderer extends AbstractWorker {
     this.presentTimeThisFrame = 0;
     this.customLayersTimeThisFrame = 0;
     this.miscTimeThisFrame = 0;
+    this._gpuTimer = new GpuFrameTimer();
+    this._gpuPassesThisFrame = 0;
+    this._gpuCastersThisFrame = 0;
+    this._gpuShadowLightsThisFrame = 0;
 
     // Entity / particle / decoration rendering goes through the render queue
     // (see updateSpritesFromRenderQueue). Animation/texture selection happens in
@@ -548,6 +560,13 @@ class PixiRenderer extends AbstractWorker {
     this.lightingShader = null; // Shader instance for updating uniforms
     this.baseAmbient = 0.05; // Base ambient light level (0-1), read from config (night/minimum light)
     this.maxLights = 128; // Light-data texture width / capacity (config.lighting.maxLights)
+    this.maxShadowCastingLights = LIGHTING_DEFAULTS.maxShadowCastingLights;
+    this.maxShadowsPerLight = LIGHTING_DEFAULTS.maxShadowsPerLight;
+    this.maxShadowsPerEntity = LIGHTING_DEFAULTS.maxShadowsPerEntity;
+    this._gpuShadowPath = 'copy';
+    this._gpuShadowCookies = 'always';
+    this._gpuResidentN = 0;
+    this._lightGradientTexId = 0xffff;
     this.lightingResolution = 1.0; // Resolution multiplier for lighting (e.g. 0.5 for half res)
     this.lightingRT = null; // RenderTexture for low-res lighting
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
@@ -1083,6 +1102,15 @@ class PixiRenderer extends AbstractWorker {
         this.stats[RENDERER_STATS.CUSTOM_LAYERS_MS] = this.customLayersTimeThisFrame;
         this.stats[RENDERER_STATS.MISC_MS] = this.miscTimeThisFrame;
       }
+      const gpu = this._gpuTimer;
+      this.stats[RENDERER_STATS.GPU_STEP_MS] = gpu.stepMs;
+      this.stats[RENDERER_STATS.GPU_SHADOWS_MS] = gpu.shadowsMs;
+      this.stats[RENDERER_STATS.GPU_LIGHTS_MS] = gpu.lightsMs;
+      this.stats[RENDERER_STATS.GPU_PRESENT_MS] = gpu.presentMs;
+      this.stats[RENDERER_STATS.GPU_PASSES] = this._gpuPassesThisFrame;
+      this.stats[RENDERER_STATS.GPU_CASTERS] = this._gpuCastersThisFrame;
+      this.stats[RENDERER_STATS.GPU_SHADOW_LIGHTS] = this._gpuShadowLightsThisFrame;
+      this.stats[RENDERER_STATS.GPU_FPS] = gpu.stepMs > 0.01 ? 1000 / gpu.stepMs : 0;
     }
 
     // Reset draw call counter for next frame
@@ -1500,6 +1528,7 @@ class PixiRenderer extends AbstractWorker {
     if (this.entitiesBatch) this.entitiesBatch.setLutSource(lut);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setLutSource(lut);
     if (this.shadowBatch) this.shadowBatch.setLutSource(lut);
+    if (this.gpuCasterBatch) this.gpuCasterBatch.setLutSource(lut);
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       if (cl.batch) cl.batch.setLutSource(lut);
@@ -1530,6 +1559,7 @@ class PixiRenderer extends AbstractWorker {
     if (this.entitiesBatch) this.entitiesBatch.setAtlasSource(src);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
     if (this.shadowBatch) this.shadowBatch.setAtlasSource(src);
+    if (this.gpuCasterBatch) this.gpuCasterBatch.setAtlasSource(src);
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       if (cl.batch) cl.batch.setAtlasSource(src);
@@ -1581,7 +1611,6 @@ class PixiRenderer extends AbstractWorker {
       premultiplyAlpha: true,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
-      shadowCast: !!this.shadowSpritesEnabled,
       poseInterp: this._queueInterp,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
@@ -1729,6 +1758,9 @@ class PixiRenderer extends AbstractWorker {
     this._decalTilesUploadedThisFrame = 0;
     this._meshFillInstancesThisFrame = 0;
     this._meshRtDrawsThisFrame = 0;
+    this._gpuPassesThisFrame = 0;
+    this._gpuCastersThisFrame = 0;
+    this._gpuShadowLightsThisFrame = 0;
 
     if (detail) t0 = performance.now();
 
@@ -1742,6 +1774,7 @@ class PixiRenderer extends AbstractWorker {
     }
 
     this.updateCameraTransform();
+    this._gpuTimer.attach(this.pixiApp?.renderer);
 
     // Sync mutable layer properties from SAB (cross-worker writes via Atomics)
     if (Layer._alphaDirty) {
@@ -1801,6 +1834,7 @@ class PixiRenderer extends AbstractWorker {
       // Render lighting to lower-resolution texture if configured.
       // This significantly improves performance on GPU-bound systems.
       if (detail) t0 = performance.now();
+      this._gpuTimer.begin('lights');
       if (this._visPolyEnabled) {
         // Raycasted lighting: render visibility polygon meshes
         this.renderVisibilityLighting();
@@ -1815,6 +1849,7 @@ class PixiRenderer extends AbstractWorker {
         this.pixiApp.renderer.render(rtOpts);
         this._renderLiquidFunLightingField();
       }
+      this._gpuTimer.end();
       if (detail) this.lightsTimeThisFrame += performance.now() - t0;
     }
 
@@ -1894,14 +1929,20 @@ class PixiRenderer extends AbstractWorker {
   /** Weed owns the swapchain present. Skip when the document is hidden. */
   _presentStage() {
     if (!this._presenting) return;
-    const present = this._pixiPresent;
-    if (present) {
-      present();
-      return;
+    this._gpuTimer.begin('present');
+    try {
+      const present = this._pixiPresent;
+      if (present) {
+        present();
+        return;
+      }
+      const app = this.pixiApp;
+      if (!app?.renderer || !app.stage) return;
+      app.renderer.render(app.stage);
+    } finally {
+      this._gpuTimer.end();
+      this._gpuTimer.finishFrame();
     }
-    const app = this.pixiApp;
-    if (!app?.renderer || !app.stage) return;
-    app.renderer.render(app.stage);
   }
 
   _takePresentOwnership() {
@@ -3411,7 +3452,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * - shadowDisplaySprite (multiply) darkens the scene where RT is dark
    */
   createShadowSpriteSystem() {
-    this.shadowResolution = this.config.lighting?.shadowResolution ?? LIGHTING_DEFAULTS.shadowResolution;
+    const lightingConfig = this.config.lighting || {};
+    this.shadowResolution = lightingConfig.shadowResolution ?? LIGHTING_DEFAULTS.shadowResolution;
+    if (lightingConfig.maxLights !== undefined) this.maxLights = lightingConfig.maxLights;
+    if (lightingConfig.maxShadowCastingLights !== undefined) {
+      this.maxShadowCastingLights = lightingConfig.maxShadowCastingLights;
+    }
+    if (lightingConfig.maxShadowsPerLight !== undefined) {
+      this.maxShadowsPerLight = lightingConfig.maxShadowsPerLight;
+    }
+    if (lightingConfig.maxShadowsPerEntity !== undefined) {
+      this.maxShadowsPerEntity = lightingConfig.maxShadowsPerEntity;
+    }
 
     this.shadowRT = PIXI.RenderTexture.create({
       width: this.canvasWidth * this.shadowResolution,
@@ -3429,6 +3481,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaders: this._engineShaders,
     });
 
+    const casterCap = Math.max(1, this.renderQueueMaxItems | 0);
+    this.gpuCasterBatch = new InstancedSpriteBatch({
+      capacity: casterCap,
+      label: 'gpu-casters',
+      atlasSource: this._resolveAtlasSource(),
+      lutSource: this._texLutSource,
+      depthTest: false,
+      depthMask: false,
+      useWebGpu: this._useWebGpu,
+      shaders: this._engineShaders,
+      shadowCast: true,
+    });
+    this._allocGpuCasterScratch(casterCap);
+    this._syncGpuShadowKnobs();
+
     this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
     this.shadowDisplaySprite.anchor.set(0, 0);
     this.shadowDisplaySprite.position.set(0, 0);
@@ -3436,67 +3503,199 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
     this.pixiApp.stage.addChild(this.shadowDisplaySprite);
 
+    this._gpuTimer.attach(this.pixiApp.renderer);
+
     console.log(
-      `PIXI WORKER: Shadow instanced RT (${this.maxShadowRenderItems} max, ${this.shadowRT.width}x${this.shadowRT.height})`
+      `PIXI WORKER: Shadow instanced RT (${this.maxShadowRenderItems} max, ${this.shadowRT.width}x${this.shadowRT.height}, casters ${casterCap})`
     );
+  }
+
+  _allocGpuCasterScratch(maxItems) {
+    const n = Math.max(1, maxItems | 0);
+    const maxLights = Math.max(1, this.maxLights | 0);
+    const perEntity = Math.max(0, this.maxShadowsPerEntity | 0);
+    const nodeCap = perEntity > 0 ? n * Math.min(perEntity, 64) : 1;
+    this._gpuCasterIdx = new Uint32Array(n);
+    this._gpuCasterTmp = new Uint32Array(n);
+    this._gpuCasterDist = new Float32Array(n);
+    this._gpuCasterOrder = new Uint32Array(n);
+    this._gpuLightIdx = new Uint32Array(n);
+    this._gpuLightHead = new Int32Array(maxLights);
+    this._gpuNodeNext = new Int32Array(nodeCap);
+    this._gpuNodeCaster = new Int32Array(nodeCap);
+    this._gpuClosestSlots = new Uint32Array(Math.max(1, Math.min(perEntity, 64) || 1));
+    this._gpuClosestDist = new Float32Array(this._gpuClosestSlots.length);
+    this._gpuPackedIdx = new Uint32Array(n);
+    this._gpuPackedX = new Float32Array(n);
+    this._gpuPackedY = new Float32Array(n);
+    this._gpuCasterUsed = new Uint8Array(n);
+    this._gpuCasterCount = 0;
+    this._cookieQ = {
+      count: 1,
+      x: new Float32Array(1),
+      y: new Float32Array(1),
+      scaleX: new Float32Array(1),
+      scaleY: new Float32Array(1),
+      rotC: new Float32Array([1]),
+      rotS: new Float32Array(1),
+      alpha: new Float32Array(1),
+      tint: new Uint32Array([0xffffff]),
+      textureId: new Uint16Array(1),
+      anchorX: new Float32Array([0.5]),
+      anchorY: new Float32Array([0.5]),
+    };
+    this._gpuCasterQ = makeBatchViews();
+    this._gpuCasterOpts = {};
+    this._cookieOpts = {};
   }
 
   /**
    * Upload shadow SoA → instanced Mesh → shadowRT (screen space).
    */
   updateShadowSprites() {
-    if (!this.shadowSpritesEnabled || !this.shadowRenderQueueCount) return;
+    if (!this.shadowSpritesEnabled) return;
     if (!this.shadowBatch || !this.shadowRT) return;
     if (!layerIsVisible(Layer.castedShadows?.id)) return;
 
+    this._gpuTimer.attach(this.pixiApp?.renderer);
+    this._gpuTimer.begin('shadows');
     this._drawGpuCasterShadows();
+    this._gpuTimer.end();
+  }
 
-    const q = this._shadowUploadQ;
-    q.count = this.shadowRenderQueueCount[0];
-    q.x = this.shadowRenderQueueX;
-    q.y = this.shadowRenderQueueY;
-    q.scaleX = this.shadowRenderQueueScaleX;
-    q.scaleY = this.shadowRenderQueueScaleY;
-    q.rotC = this.shadowRenderQueueRotC;
-    q.rotS = this.shadowRenderQueueRotS;
-    q.alpha = this.shadowRenderQueueAlpha;
-    q.tint = this.shadowRenderQueueTint;
-    q.textureId = this.shadowRenderQueueTextureId;
-    q.anchorX = this.shadowRenderQueueAnchorX;
-    q.anchorY = this.shadowRenderQueueAnchorY;
+  _syncGpuShadowKnobs() {
+    const lighting = this.config.lighting || {};
+    this._gpuShadowPath = resolveGpuShadowPath(lighting.gpuShadowPath);
+    this._gpuShadowCookies = resolveGpuShadowCookies(lighting.gpuShadowCookies);
+  }
 
-    const opts = this._shadowUploadOpts;
+  _snapshotPackedCasters(batch, nCasters) {
+    const f = batch._floats;
+    const need = nCasters * f;
+    if (!this._gpuPackedSnap || this._gpuPackedSnap.length < need) {
+      this._gpuPackedSnap = new Float32Array(batch.data.length);
+    }
+    this._gpuPackedSnap.set(batch.data.subarray(0, need));
+    const px = this._gpuPackedX;
+    const py = this._gpuPackedY;
+    const snap = this._gpuPackedSnap;
+    for (let c = 0; c < nCasters; c++) {
+      px[c] = snap[c * f];
+      py[c] = snap[c * f + 1];
+    }
+  }
+
+  _uploadGpuCasters(indices, indexCount) {
+    const batch = this.gpuCasterBatch;
+    const useIdx = indices != null && (indexCount | 0) > 0;
+    const qCount = this.renderQueueCount ? this.renderQueueCount[0] | 0 : 0;
+    if (!batch || (useIdx ? (indexCount | 0) <= 0 : qCount <= 0)) {
+      if (batch) batch.geometry.instanceCount = 0;
+      return 0;
+    }
+    const q = this._gpuCasterQ;
+    this._bindSpriteQueue(q, {
+      x: this.renderQueueX,
+      y: this.renderQueueY,
+      scaleX: this.renderQueueScaleX,
+      scaleY: this.renderQueueScaleY,
+      rotC: this.renderQueueRotC,
+      rotS: this.renderQueueRotS,
+      alpha: this.renderQueueAlpha,
+      tint: this.renderQueueTint,
+      textureId: this.renderQueueTextureId,
+      anchorX: this.renderQueueAnchorX,
+      anchorY: this.renderQueueAnchorY,
+      repeatX: this.renderQueueRepeatX,
+      repeatY: this.renderQueueRepeatY,
+      tileMode: this.renderQueueTileMode,
+      tileOffsetU: this.renderQueueTileOffsetU,
+      tileOffsetV: this.renderQueueTileOffsetV,
+      tileMulX: this.renderQueueTileMulX,
+      tileMulY: this.renderQueueTileMulY,
+      sortKey: this.renderQueueSortKey,
+      shadowH: this.renderQueueShadowH,
+      shadowOffX: this.renderQueueShadowOffX,
+      shadowOffY: this.renderQueueShadowOffY,
+    }, this.renderQueueCount ? this.renderQueueCount[0] : 0);
+    const opts = this._gpuCasterOpts;
+    this._resetSpriteUploadOpts(opts);
+    opts.space = BATCH_SPACE.WORLD;
+    opts.zoom = 1;
+    opts.cameraX = 0;
+    opts.cameraY = 0;
+    opts.resolution = 1;
+    opts.depthDenom = this.renderQueueMaxItems;
+    opts.worldHeight = this.config?.worldHeight || 10000;
+    opts.indices = indices;
+    opts.indexCount = indexCount;
+    return batch.upload(q, opts);
+  }
+
+  _drawLightCookie(lightIndex, clear) {
+    const texId = this._lightGradientTexId;
+    const lightData = this._lightDataFloats;
+    if (texId === 0xffff || !lightData || !this.shadowBatch) return false;
+    const o = lightIndex * 4;
+    const intensity = lightData[o + 2];
+    if (!(intensity > 0)) return false;
+    const lights = this._visibleLightsAll;
+    const entityId = lights && lights[lightIndex] ? lights[lightIndex].entityId : -1;
+    const sqrtI = entityId >= 0 && LightEmitter.sqrtLightIntensity
+      ? LightEmitter.sqrtLightIntensity[entityId]
+      : 0;
+    const q = this._cookieQ;
+    q.x[0] = lightData[o];
+    q.y[0] = lightData[o + 1];
+    const scale = lightCookieScale(sqrtI);
+    q.scaleX[0] = scale;
+    q.scaleY[0] = scale;
+    q.alpha[0] = intensity / 50000;
+    q.textureId[0] = texId;
+    const opts = this._cookieOpts;
+    this._resetSpriteUploadOpts(opts);
     opts.space = BATCH_SPACE.SCREEN;
     opts.zoom = this._renderZoom;
     opts.cameraX = this._renderCameraX;
     opts.cameraY = this._renderCameraY;
     opts.resolution = this.shadowResolution;
     opts.depthMode = BATCH_DEPTH.INDEX;
-    opts.depthDenom = this.maxShadowRenderItems;
-    opts.texLut = this._texLut;
-    opts.texLutCount = this._texLutCount;
-    opts.textures = this.flatTextures;
-    this.shadowBatch.upload(q, opts);
-
+    opts.depthDenom = 1;
+    if (!this.shadowBatch.upload(q, opts)) return false;
     const rtOpts = this._rtRenderOpts;
-    rtOpts.container = emptyInstancedMesh(this.shadowBatch.mesh)
-      ? this._rtEmptyContainer
-      : this.shadowBatch.mesh;
+    rtOpts.container = this.shadowBatch.mesh;
     rtOpts.target = this.shadowRT;
-    rtOpts.clear = !this._gpuSunDrew;
+    rtOpts.clear = clear;
     rtOpts.clearColor = this._clearTransparent;
     this.pixiApp.renderer.render(rtOpts);
+    return true;
   }
 
   _drawGpuCasterShadows() {
     this._gpuSunDrew = false;
-    const batch = this.entitiesBatch;
-    const mesh = this.spriteMesh;
+    this._gpuPassesThisFrame = 0;
+    this._gpuCastersThisFrame = 0;
+    this._gpuShadowLightsThisFrame = 0;
+    if (!this._gpuCasterIdx || !this.gpuCasterBatch) return;
+    this._syncGpuShadowKnobs();
+    const path = this._gpuShadowPath;
+    const batch = this.gpuCasterBatch;
+    const mesh = batch && batch.mesh;
     const shader = batch && batch.shadowShader;
-    if (!shader || !mesh || (mesh.geometry.instanceCount | 0) <= 0) return;
+    const count = this.renderQueueCount ? this.renderQueueCount[0] | 0 : 0;
+    const nCompact = compactShadowCasterIndices(
+      this.renderQueueShadowH,
+      this.renderQueueType,
+      count,
+      this._gpuCasterIdx
+    );
+    this._gpuCasterCount = nCompact;
+    this._gpuCastersThisFrame = path === 'queue' ? count : nCompact;
+    if (!shader || !mesh || !this.shadowRT) return;
     const group = shader.resources && shader.resources.uniforms;
     const u = group && group.uniforms;
     if (!u || !u.uCam || !u.uSun || !u.uLight) return;
+
     const zoom = this._renderZoom || 1;
     const res = this.shadowResolution || 1;
     u.uCam[0] = this._renderCameraX;
@@ -3520,50 +3719,142 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     u.uPointScale = 0;
     if (batch.setLightDataSource) batch.setLightDataSource(this._lightDataSource);
     const prevShader = mesh.shader;
-    const px = mesh.x;
-    const py = mesh.y;
-    const psx = mesh.scale.x;
-    const psy = mesh.scale.y;
     mesh.shader = shader;
     mesh.position.set(0, 0);
     mesh.scale.set(1, 1);
     const rtOpts = this._rtRenderOpts;
-    rtOpts.container = mesh;
     rtOpts.target = this.shadowRT;
     rtOpts.clearColor = this._clearTransparent;
     const syncSun = () => { if (typeof group.update === 'function') group.update(); };
-    syncSun();
-    if (u.uSun[3] > 0) {
-      rtOpts.clear = true;
+    const drawCasters = (needClear) => {
+      if ((mesh.geometry.instanceCount | 0) <= 0) return false;
+      rtOpts.container = mesh;
+      rtOpts.clear = needClear;
+      syncSun();
       this.pixiApp.renderer.render(rtOpts);
+      this._gpuPassesThisFrame++;
       this._gpuSunDrew = true;
+      return true;
+    };
+
+    const maxPerLight = this.maxShadowsPerLight | 0;
+    const maxPerEntity = this.maxShadowsPerEntity | 0;
+    const packedLights = Math.min(this._visibleLightsAllCount | 0, this.maxLights | 0);
+    const cap = Math.min(packedLights, this.maxShadowCastingLights | 0);
+    const filterPerLight = path === 'copy';
+    const reuseAll =
+      !filterPerLight ||
+      (nCompact > 0 &&
+        !(maxPerEntity > 0) &&
+        (!(maxPerLight > 0) || maxPerLight >= nCompact));
+
+    let packedN = nCompact;
+    if (path === 'queue') {
+      if (count > 0) this._uploadGpuCasters(null, 0);
+      packedN = mesh.geometry.instanceCount | 0;
+    } else if (nCompact > 0) {
+      if (
+        path === 'resident' &&
+        samePackedIndices(this._gpuPackedIdx, this._gpuResidentN, this._gpuCasterIdx, nCompact)
+      ) {
+        this._bindSpriteQueue(this._gpuCasterQ, {
+          x: this.renderQueueX,
+          y: this.renderQueueY,
+          scaleX: this.renderQueueScaleX,
+          scaleY: this.renderQueueScaleY,
+          rotC: this.renderQueueRotC,
+          rotS: this.renderQueueRotS,
+          alpha: this.renderQueueAlpha,
+          tint: this.renderQueueTint,
+          textureId: this.renderQueueTextureId,
+          anchorX: this.renderQueueAnchorX,
+          anchorY: this.renderQueueAnchorY,
+          repeatX: this.renderQueueRepeatX,
+          repeatY: this.renderQueueRepeatY,
+          tileMode: this.renderQueueTileMode,
+          tileOffsetU: this.renderQueueTileOffsetU,
+          tileOffsetV: this.renderQueueTileOffsetV,
+          tileMulX: this.renderQueueTileMulX,
+          tileMulY: this.renderQueueTileMulY,
+          sortKey: this.renderQueueSortKey,
+          shadowH: this.renderQueueShadowH,
+          shadowOffX: this.renderQueueShadowOffX,
+          shadowOffY: this.renderQueueShadowOffY,
+        }, count);
+        batch.patchCasterPoses(this._gpuCasterQ, this._gpuCasterIdx, nCompact);
+      } else {
+        this._uploadGpuCasters(this._gpuCasterIdx, nCompact);
+        this._gpuPackedIdx.set(this._gpuCasterIdx.subarray(0, nCompact));
+        this._gpuResidentN = nCompact;
+      }
+      if (filterPerLight) this._snapshotPackedCasters(batch, nCompact);
+      this._gpuCasterUsed.fill(0, 0, nCompact);
+    } else {
+      this._gpuResidentN = 0;
     }
+    const nDraw = path === 'queue' ? packedN : nCompact;
+    if (u.uSun[3] > 0 && nDraw > 0) drawCasters(true);
+
     const sunI = sunOn ? Sun.intensity : 0;
     let pointScale = 0.33 * (1 - sunI * 0.9);
     if (pointScale < 0.2) pointScale = 0.2;
-    if (LightEmitter.lightIntensity && this._visibleLightsAll) {
-      const lights = this._visibleLightsAll;
-      const n = Math.min(this._visibleLightsAllCount | 0, 48);
-      u.uPointScale = pointScale;
-      const lightData = this._lightDataFloats;
-      rtOpts.clear = !this._gpuSunDrew;
-      for (let i = 0; i < n; i++) {
+    const lightData = this._lightDataFloats;
+    const drawCookies = this._gpuShadowCookies !== 'night' || sunI < 1;
+
+    u.uPointScale = pointScale;
+    const packedSrc = { _floats: batch._floats, data: this._gpuPackedSnap };
+    const used = this._gpuCasterUsed;
+    let shadowLights = 0;
+    if (LightEmitter.lightIntensity && this._visibleLightsAll && lightData) {
+      for (let i = 0; i < cap; i++) {
         const o = i * 4;
-        if (!lightData || !(lightData[o + 3] > 0)) continue;
-        u.uLight[0] = lightData[o];
-        u.uLight[1] = lightData[o + 1];
-        u.uLight[2] = lightData[o + 2];
-        u.uLight[3] = lightData[o + 3];
-        syncSun();
-        this.pixiApp.renderer.render(rtOpts);
-        rtOpts.clear = false;
-        this._gpuSunDrew = true;
+        const rangeSq = lightData[o + 3];
+        if (!(rangeSq > 0)) continue;
+        if (drawCookies) {
+          const cookieDrew = this._drawLightCookie(i, !this._gpuSunDrew);
+          if (cookieDrew) {
+            this._gpuPassesThisFrame++;
+            this._gpuSunDrew = true;
+          }
+        }
+        let drew = nDraw;
+        if (nCompact > 0 && filterPerLight && !reuseAll) {
+          const lx = lightData[o];
+          const ly = lightData[o + 1];
+          const lim = maxPerLight > 0 ? maxPerLight : nCompact;
+          let m = 0;
+          const outIdx = this._gpuLightIdx;
+          const px = this._gpuPackedX;
+          const py = this._gpuPackedY;
+          for (let c = 0; c < nCompact && m < lim; c++) {
+            if (maxPerEntity > 0 && used[c] >= maxPerEntity) continue;
+            const dx = px[c] - lx;
+            const dy = py[c] - ly;
+            if (dx * dx + dy * dy > rangeSq) continue;
+            outIdx[m++] = c;
+            if (maxPerEntity > 0) used[c]++;
+          }
+          drew = m;
+          if (drew > 0) batch.copyInstances(packedSrc, outIdx, drew);
+        }
+        if (nDraw > 0 && drew > 0) {
+          u.uLight[0] = lightData[o];
+          u.uLight[1] = lightData[o + 1];
+          u.uLight[2] = lightData[o + 2];
+          u.uLight[3] = rangeSq;
+          drawCasters(!this._gpuSunDrew);
+        }
+        shadowLights++;
       }
       u.uLight[3] = 0;
     }
+    this._gpuShadowLightsThisFrame = shadowLights;
+    if (!this._gpuSunDrew) {
+      rtOpts.container = this._rtEmptyContainer;
+      rtOpts.clear = true;
+      this.pixiApp.renderer.render(rtOpts);
+    }
     mesh.shader = prevShader;
-    mesh.position.set(px, py);
-    mesh.scale.set(psx, psy);
   }
 
   /**
@@ -3712,6 +4003,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
             this.animationFrameStart[animIdx] = this.flatTextures.length;
             this.animationFrameCount[animIdx] = frames.length;
+            if (animName === '_lightGradient') this._lightGradientTexId = this.animationFrameStart[animIdx];
 
             for (let f = 0; f < frames.length; f++) {
               this.flatTextures.push(frames[f]);
@@ -5148,16 +5440,28 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // baseAmbient is the night/minimum light level (when sun is down)
       this.baseAmbient = lightingConfig.baseAmbient !== undefined ? lightingConfig.baseAmbient : 0.05;
       this.maxLights = lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
+      this.maxShadowCastingLights =
+        lightingConfig.maxShadowCastingLights !== undefined
+          ? lightingConfig.maxShadowCastingLights
+          : LIGHTING_DEFAULTS.maxShadowCastingLights;
+      this.maxShadowsPerLight =
+        lightingConfig.maxShadowsPerLight !== undefined
+          ? lightingConfig.maxShadowsPerLight
+          : LIGHTING_DEFAULTS.maxShadowsPerLight;
+      this.maxShadowsPerEntity =
+        lightingConfig.maxShadowsPerEntity !== undefined
+          ? lightingConfig.maxShadowsPerEntity
+          : LIGHTING_DEFAULTS.maxShadowsPerEntity;
       this.liquidFunMaxCount = data.liquidFunMaxCount | 0;
 
       // Create lighting mesh (full-screen quad with multiply blend)
-      // Shadows are now sprites, not in shader
-      this.createLightingSystem();
-      this._createLiquidFunLightSplat(this.liquidFunMaxCount);
+    // Shadows are now sprites, not in shader
+    this.createLightingSystem();
+    this._createLiquidFunLightSplat(this.liquidFunMaxCount);
 
-      console.log(
-        `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution})`
-      );
+    console.log(
+      `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, shadowLights: ${this.maxShadowCastingLights}, resolution: ${this.lightingResolution}, shadowResolution: ${this.shadowResolution})`
+    );
 
     }
 

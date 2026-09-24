@@ -11,6 +11,7 @@ import {
   LOGIC_STATS,
   PRE_RENDER_STATS,
   WORKER_DISPLAY_CONFIG,
+  computeRestMs,
 } from '../../src/util/workersUtils.js';
 import {
   getWorkerFrameRateLayout,
@@ -148,6 +149,27 @@ test('PHYSICS_STATS LF pass slots 37-44 stay inside stride 48', () => {
   assert.equal(PHYSICS_STATS.STRIDE_FLOATS, 48);
   const physicsRows = WORKER_DISPLAY_CONFIG.physics.stats;
   assert.ok(physicsRows.some((r) => r.key === 'LF_PASS_FIND_CONTACTS_MS'));
+});
+
+test('GPU row has no JsShadows and Rest is Step minus time chips', () => {
+  const gpu = WORKER_DISPLAY_CONFIG.gpu;
+  assert.equal(gpu.omitMsg, true);
+  assert.equal(gpu.stats.some((r) => r.key === 'SHADOWS_MS'), false);
+  const view = new Float32Array(RENDERER_STATS.STRIDE_FLOATS);
+  view[RENDERER_STATS.GPU_STEP_MS] = 10;
+  view[RENDERER_STATS.GPU_SHADOWS_MS] = 1;
+  view[RENDERER_STATS.GPU_LIGHTS_MS] = 2;
+  view[RENDERER_STATS.GPU_PRESENT_MS] = 4;
+  assert.equal(computeRestMs(gpu, view, RENDERER_STATS), 3);
+});
+
+test('physics Rest ignores nested LF passes', () => {
+  const view = new Float32Array(PHYSICS_STATS.STRIDE_FLOATS);
+  view[PHYSICS_STATS.STEP_MS] = 10;
+  view[PHYSICS_STATS.BOX2D_MS] = 4;
+  view[PHYSICS_STATS.LIQUIDFUN_MS] = 3;
+  view[PHYSICS_STATS.LF_PASS_GRID_MS] = 2;
+  assert.equal(computeRestMs(WORKER_DISPLAY_CONFIG.physics, view, PHYSICS_STATS), 3);
 });
 
 test('summarizeWorkerBenchmarkWindow averages stats fields across samples', () => {

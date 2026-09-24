@@ -49,8 +49,17 @@ export const RENDERER_STATS = Object.freeze({
   QUEUE_MS: 22,
   /** Stage present plus the finally that releases the queue. Written only when collectDetailedStats. */
   PRESENT_MS: 23,
-  STRIDE_FLOATS: 24,
-  BUFFER_SIZE: 24 * 4,
+  /** GPU elapsed (disjoint query, 1–2 frames late). Shadows + lighting RT + present. */
+  GPU_STEP_MS: 24,
+  GPU_SHADOWS_MS: 25,
+  GPU_LIGHTS_MS: 26,
+  GPU_PRESENT_MS: 27,
+  GPU_PASSES: 28,
+  GPU_CASTERS: 29,
+  GPU_SHADOW_LIGHTS: 30,
+  GPU_FPS: 31,
+  STRIDE_FLOATS: 32,
+  BUFFER_SIZE: 32 * 4,
 });
 
 /**
@@ -248,10 +257,66 @@ export function workerLoadPct(stepMs, { fixedFps = 0, budgetHz = 60 } = {}) {
 /** Synthetic Load column (derived from STEP_MS; not a SAB field). */
 const LOAD_STAT = Object.freeze({ key: 'LOAD', label: 'Load', format: fmtLoad });
 
+export const STAT_KIND = Object.freeze({
+  TIME: 'time',
+  COUNT: 'count',
+  NESTED: 'nested',
+  REST: 'rest',
+});
+
+/** Step minus partition time chips. Derived in the Performance panel, not a SAB field. */
+const REST_STAT = Object.freeze({
+  key: 'REST_MS',
+  label: 'Rest',
+  format: fmtMs,
+  kind: STAT_KIND.REST,
+});
+
+/**
+ * @param {{ key: string, src?: string|null }} stat
+ * @param {Float32Array} view
+ * @param {Record<string, number>} schema
+ */
+export function readDisplayStat(stat, view, schema) {
+  if (!view || !schema || stat.src === null) return NaN;
+  const key = stat.src || stat.key;
+  const idx = schema[key];
+  if (idx == null) return NaN;
+  return view[idx];
+}
+
+/** STEP_MS minus chips with kind time. Nested and counts are ignored. */
+export function computeRestMs(config, view, schema) {
+  if (!config?.stats) return 0;
+  let step = 0;
+  let sum = 0;
+  for (let i = 0; i < config.stats.length; i++) {
+    const stat = config.stats[i];
+    if (stat.key === 'STEP_MS') {
+      const v = readDisplayStat(stat, view, schema);
+      step = Number.isFinite(v) ? v : 0;
+      continue;
+    }
+    if (stat.kind !== STAT_KIND.TIME) continue;
+    const v = readDisplayStat(stat, view, schema);
+    if (Number.isFinite(v)) sum += v;
+  }
+  return step - sum;
+}
+
+export function displayHeadKeys(config, detailed) {
+  if (!detailed || config?.omitMsg) return ['STEP_MS', 'LOAD', 'FPS'];
+  return ['STEP_MS', 'LOAD', 'FPS', 'MSG_MS'];
+}
+
+export function displayDetailStart(config) {
+  return config?.omitMsg ? 3 : 4;
+}
+
 /**
  * Display configuration for worker stats.
- * First four keys (Step / Load / Fps / Msg) are common columns for alignment.
- * Remaining stats go in the Details column.
+ * First keys (Step / Load / Fps / Msg, GPU omits Msg) are common columns.
+ * Remaining stats go in Details. kind time partitions Step; Rest is derived.
  */
 export const WORKER_DISPLAY_CONFIG = Object.freeze({
   renderer: {
@@ -262,17 +327,35 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
       { key: 'MSG_MS', label: 'Msg', format: fmtMs },
-      { key: 'DRAW_CALLS', label: 'Draws', format: fmtNum },
-      { key: 'VISIBLE_SPRITES', label: 'Sprites', format: fmtNum },
-      { key: 'VISIBLE_ENTITIES', label: 'Visible', format: fmtNum },
-      { key: 'QUEUE_MS', label: 'Queue', format: fmtMs },
-      { key: 'LIGHTS_MS', label: 'Lights', format: fmtMs },
-      { key: 'SHADOWS_MS', label: 'Shadows', format: fmtMs },
-      { key: 'SPRITES_MS', label: 'SpritesMs', format: fmtMs },
-      { key: 'SORT_MS', label: 'Sort', format: fmtMs },
-      { key: 'CUSTOM_LAYERS_MS', label: 'Custom', format: fmtMs },
-      { key: 'MISC_MS', label: 'Misc', format: fmtMs },
-      { key: 'PRESENT_MS', label: 'Present', format: fmtMs },
+      { key: 'QUEUE_MS', label: 'Queue', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'LIGHTS_MS', label: 'Lights', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'SHADOWS_MS', label: 'Shadows', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'SPRITES_MS', label: 'SpritesMs', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'SORT_MS', label: 'Sort', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'CUSTOM_LAYERS_MS', label: 'Custom', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'MISC_MS', label: 'Misc', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'PRESENT_MS', label: 'Present', format: fmtMs, kind: STAT_KIND.TIME },
+      REST_STAT,
+      { key: 'DRAW_CALLS', label: 'Draws', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'VISIBLE_SPRITES', label: 'Sprites', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'VISIBLE_ENTITIES', label: 'Visible', format: fmtNum, kind: STAT_KIND.COUNT },
+    ],
+  },
+  gpu: {
+    label: 'GPU',
+    color: 'gpu',
+    omitMsg: true,
+    stats: [
+      { key: 'STEP_MS', label: 'Step', format: fmtMs, src: 'GPU_STEP_MS' },
+      LOAD_STAT,
+      { key: 'FPS', label: 'Fps', format: fmtFps, src: 'GPU_FPS' },
+      { key: 'GPU_SHADOWS_MS', label: 'Shadows', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'GPU_LIGHTS_MS', label: 'Lights', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'GPU_PRESENT_MS', label: 'Present', format: fmtMs, kind: STAT_KIND.TIME },
+      REST_STAT,
+      { key: 'GPU_PASSES', label: 'Passes', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'GPU_CASTERS', label: 'Casters', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'GPU_SHADOW_LIGHTS', label: 'ShadowLights', format: fmtNum, kind: STAT_KIND.COUNT },
     ],
   },
   particle: {
@@ -283,11 +366,12 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
       { key: 'MSG_MS', label: 'Msg', format: fmtMs },
-      { key: 'ACTIVE_PARTICLES', label: 'Active', format: fmtNum },
-      { key: 'PARTICLES_STAMPED', label: 'Stamped', format: fmtNum },
-      { key: 'DECAL_STAMP_MS', label: 'Stamp', format: fmtMs },
-      { key: 'PARTICLE_PHYSICS_MS', label: 'Sim', format: fmtMs },
-      { key: 'BUILD_ACTIVE_VISIBLE_MS', label: 'Lists', format: fmtMs },
+      { key: 'DECAL_STAMP_MS', label: 'Stamp', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'PARTICLE_PHYSICS_MS', label: 'Sim', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'BUILD_ACTIVE_VISIBLE_MS', label: 'Lists', format: fmtMs, kind: STAT_KIND.TIME },
+      REST_STAT,
+      { key: 'ACTIVE_PARTICLES', label: 'Active', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'PARTICLES_STAMPED', label: 'Stamped', format: fmtNum, kind: STAT_KIND.COUNT },
     ],
   },
   physics: {
@@ -298,26 +382,27 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
       { key: 'MSG_MS', label: 'Msg', format: fmtMs },
-      { key: 'BODY_COUNT', label: 'Bodies', format: fmtNum },
-      { key: 'AWAKE_COUNT', label: 'Awake', format: fmtNum },
-      { key: 'BODY_MOVED_COUNT', label: 'Moved', format: fmtNum },
-      { key: 'BOX2D_MS', label: 'Box2d', format: fmtMs },
-      { key: 'LIQUIDFUN_MS', label: 'LiquidFun', format: fmtMs },
-      { key: 'LF_PASS_FIND_CONTACTS_MS', label: 'LfFind', format: fmtMs },
-      { key: 'LF_PASS_CONTACT_SOLVERS_MS', label: 'LfSolv', format: fmtMs },
-      { key: 'LF_PASS_PRESSURE_MS', label: 'LfP', format: fmtMs },
-      { key: 'LF_PASS_STATIC_PRESSURE_MS', label: 'LfStatP', format: fmtMs },
-      { key: 'LF_PASS_WEIGHT_MS', label: 'LfWt', format: fmtMs },
-      { key: 'LF_PASS_BODY_MS', label: 'LfBody', format: fmtMs },
-      { key: 'LF_PASS_GRID_MS', label: 'LfGrid', format: fmtMs },
-      { key: 'LF_PASS_REST_MS', label: 'LfRest', format: fmtMs },
-      { key: 'PROFILE_COLLIDE_MS', label: 'Collide', format: fmtMs },
-      { key: 'PROFILE_SOLVE_MS', label: 'Solve', format: fmtMs },
-      { key: 'PROFILE_SLEEP_MS', label: 'Sleep', format: fmtMs },
-      { key: 'CONTACT_BEGIN', label: 'Contacts', format: fmtNum },
-      { key: 'COUNTER_ISLANDS', label: 'Islands', format: fmtNum },
-      { key: 'COUNTER_AWAKE_CONTACTS', label: 'AwakeC', format: fmtNum },
-      { key: 'WEED_JOINTS', label: 'Joints', format: fmtNum },
+      { key: 'BOX2D_MS', label: 'Box2d', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'LIQUIDFUN_MS', label: 'LiquidFun', format: fmtMs, kind: STAT_KIND.TIME },
+      REST_STAT,
+      { key: 'LF_PASS_FIND_CONTACTS_MS', label: 'LfFind', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'LF_PASS_CONTACT_SOLVERS_MS', label: 'LfSolv', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'LF_PASS_PRESSURE_MS', label: 'LfP', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'LF_PASS_STATIC_PRESSURE_MS', label: 'LfStatP', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'LF_PASS_WEIGHT_MS', label: 'LfWt', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'LF_PASS_BODY_MS', label: 'LfBody', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'LF_PASS_GRID_MS', label: 'LfGrid', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'LF_PASS_REST_MS', label: 'LfRest', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'PROFILE_COLLIDE_MS', label: 'Collide', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'PROFILE_SOLVE_MS', label: 'Solve', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'PROFILE_SLEEP_MS', label: 'Sleep', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'BODY_COUNT', label: 'Bodies', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'AWAKE_COUNT', label: 'Awake', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'BODY_MOVED_COUNT', label: 'Moved', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'CONTACT_BEGIN', label: 'Contacts', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'COUNTER_ISLANDS', label: 'Islands', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'COUNTER_AWAKE_CONTACTS', label: 'AwakeC', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'WEED_JOINTS', label: 'Joints', format: fmtNum, kind: STAT_KIND.COUNT },
     ],
   },
   spatial: {
@@ -328,12 +413,13 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
       { key: 'MSG_MS', label: 'Msg', format: fmtMs },
-      { key: 'ENTITIES_PROCESSED', label: 'Entities', format: fmtNum },
-      { key: 'NEIGHBOR_CHECKS', label: 'Neighbors', format: fmtNum },
-      { key: 'REBUILD_MS', label: 'Rebuild', format: fmtMs },
-      { key: 'NEIGHBOR_MS', label: 'Search', format: fmtMs },
-      { key: 'NEIGHBORS_REUSED', label: 'Reused', format: fmtNum },
-      { key: 'SLEEP_NEIGHBOR_SKIPS', label: 'SleepSkip', format: fmtNum },
+      { key: 'REBUILD_MS', label: 'Rebuild', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'NEIGHBOR_MS', label: 'Search', format: fmtMs, kind: STAT_KIND.TIME },
+      REST_STAT,
+      { key: 'ENTITIES_PROCESSED', label: 'Entities', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'NEIGHBOR_CHECKS', label: 'Neighbors', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'NEIGHBORS_REUSED', label: 'Reused', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'SLEEP_NEIGHBOR_SKIPS', label: 'SleepSkip', format: fmtNum, kind: STAT_KIND.COUNT },
     ],
   },
   logic: {
@@ -344,16 +430,17 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
       { key: 'MSG_MS', label: 'Msg', format: fmtMs },
-      { key: 'ENTITIES_PROCESSED', label: 'Entities', format: fmtNum },
-      { key: 'RAYCAST_MS', label: 'Ray', format: fmtMs },
-      { key: 'RAYCAST_COUNT', label: 'Rays', format: fmtNum },
-      { key: 'BOX2D_RAYCAST_MS', label: 'Box2dRay', format: fmtMs },
-      { key: 'BOX2D_RAYCAST_COUNT', label: 'Box2dRays', format: fmtNum },
-      { key: 'ENTITY_MS', label: 'Entity', format: fmtMs },
-      { key: 'DECIMATE_MS', label: 'Decim', format: fmtMs },
-      { key: 'TICK_MS', label: 'Tick', format: fmtMs },
-      { key: 'QUERY_PUBLISH_MS', label: 'QueryPub', format: fmtMs },
-      { key: 'MARK_ACTIVE', label: 'Mark', format: fmtNum },
+      { key: 'RAYCAST_MS', label: 'Ray', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'BOX2D_RAYCAST_MS', label: 'Box2dRay', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'ENTITY_MS', label: 'Entity', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'DECIMATE_MS', label: 'Decim', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'TICK_MS', label: 'Tick', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'QUERY_PUBLISH_MS', label: 'QueryPub', format: fmtMs, kind: STAT_KIND.TIME },
+      REST_STAT,
+      { key: 'ENTITIES_PROCESSED', label: 'Entities', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'RAYCAST_COUNT', label: 'Rays', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'BOX2D_RAYCAST_COUNT', label: 'Box2dRays', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'MARK_ACTIVE', label: 'Mark', format: fmtNum, kind: STAT_KIND.COUNT },
     ],
   },
   preRender: {
@@ -364,17 +451,18 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
       { key: 'MSG_MS', label: 'Msg', format: fmtMs },
-      { key: 'RENDER_QUEUE_SIZE', label: 'Queue', format: fmtNum },
-      { key: 'SKIPPED_FRAMES', label: 'Skipped', format: fmtNum },
-      { key: 'VISIBLE_ENTITIES', label: 'Visible', format: fmtNum },
-      { key: 'SHADOWS_UPDATED', label: 'Shadows', format: fmtNum },
-      { key: 'COLLECT_MS', label: 'Collect', format: fmtMs },
-      { key: 'SORT_MS', label: 'Sort', format: fmtMs },
-      { key: 'EMIT_MS', label: 'Emit', format: fmtMs },
-      { key: 'CUSTOM_LAYER_MS', label: 'Custom', format: fmtMs },
-      { key: 'SHADOW_Q_MS', label: 'ShadowQ', format: fmtMs },
-      { key: 'VISIBILITY_MS', label: 'Vis', format: fmtMs },
-      { key: 'ADOBE_MS', label: 'Adobe', format: fmtMs },
+      { key: 'COLLECT_MS', label: 'Collect', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'SORT_MS', label: 'Sort', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'EMIT_MS', label: 'Emit', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'CUSTOM_LAYER_MS', label: 'Custom', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'SHADOW_Q_MS', label: 'ShadowQ', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'VISIBILITY_MS', label: 'Vis', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'ADOBE_MS', label: 'Adobe', format: fmtMs, kind: STAT_KIND.TIME },
+      REST_STAT,
+      { key: 'RENDER_QUEUE_SIZE', label: 'Queue', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'SKIPPED_FRAMES', label: 'Skipped', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'VISIBLE_ENTITIES', label: 'Visible', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'SHADOWS_UPDATED', label: 'Shadows', format: fmtNum, kind: STAT_KIND.COUNT },
     ],
   },
 });

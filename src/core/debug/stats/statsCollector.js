@@ -12,6 +12,9 @@ import {
   createStatsReader,
   createMultiWorkerStatsReaderArray,
   workerLoadPct,
+  computeRestMs,
+  displayHeadKeys,
+  displayDetailStart,
 } from '../../../util/workersUtils.js';
 
 /**
@@ -26,6 +29,7 @@ export class StatsCollector {
     this.fpsSmoothing = {
       frameCount: 60,
       renderer: this._createSmoother(),
+      gpu: { values: new Array(60).fill(0), index: 0, sum: 0 },
       particle: this._createSmoother(),
       physics: this._createSmoother(),
       preRender: [],
@@ -170,4 +174,7 @@ export {
   WORKER_DISPLAY_CONFIG,
   WORKER_ROW_ORDER,
   workerLoadPct,
+  computeRestMs,
+  displayHeadKeys,
+  displayDetailStart,
 };
