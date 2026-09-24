@@ -23,10 +23,11 @@ import {
   TextureSource,
 } from '../vendor/pixi.min.js';
 
-import { instancedSpriteGpuProgram } from './webgpu/instancedSpriteWgsl.js';
+import { instancedSpriteGpuProgram, instancedSpriteLitGpuProgram } from './webgpu/instancedSpriteWgsl.js';
 import {
   instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
+  pickInstancedSpriteLitFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
 import { writePosePrev } from './poseQueueInterp.js';
 import { DECORATION_Y_SORT_SCALE } from '../util/configDefaults.js';
@@ -231,6 +232,8 @@ export class InstancedSpriteBatch {
    * @param {boolean} [opts.premultiplyAlpha=true] - true → normal PMA out; false → additive (glows)
    * @param {string} [opts.blendMode='normal'] - Pixi State blend mode
    * @param {boolean} [opts.useWebGpu=true] - compile GpuProgram vs GlProgram
+   * @param {boolean} [opts.bumpLit=false] - baked normals + light ratio when lighting on
+   * @param {object} [opts.bumpResources] - { normalSource, lightDataSource, maxLights, ...uniforms }
    * @param {object} opts.shaders - fetched engine sources (`sprite` or spriteVert/frag*)
    */
   constructor({
@@ -247,9 +250,13 @@ export class InstancedSpriteBatch {
     useWebGpu = true,
     shaders = null,
     poseInterp = false,
+    bumpLit = false,
+    bumpResources = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
+    this._bumpLit = !!bumpLit && !!premultiplyAlpha;
+    this._bumpResources = bumpResources || null;
     this._floats = this.poseInterp ? INSTANCED_SPRITE_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
     this._strideBytes = this._floats * 4;
     this.data = new Float32Array(this.capacity * this._floats);
@@ -367,11 +374,44 @@ export class InstancedSpriteBatch {
       uTexLut: lut,
       uniforms,
     };
+    const shaders = this._engineShaders;
+    if (this._bumpLit) {
+      const br = this._bumpResources || {};
+      const maxLights = br.maxLights | 0 || 64;
+      const sunDir = br.sunDir || new Float32Array([0, 0, 1, 0]);
+      uniforms.uSunDir = { value: sunDir, type: 'vec4<f32>' };
+      uniforms.uLightTexWidth = { value: maxLights, type: 'f32' };
+      uniforms.uLightCount = { value: 0, type: 'i32' };
+      uniforms.uBaseAmbient = { value: br.baseAmbient ?? 0.05, type: 'f32' };
+      uniforms.uSunIntensity = { value: 0, type: 'f32' };
+      uniforms.uSunR = { value: 1, type: 'f32' };
+      uniforms.uSunG = { value: 1, type: 'f32' };
+      uniforms.uSunB = { value: 1, type: 'f32' };
+      uniforms.uNormalLightZ = { value: br.normalLightZ ?? 200, type: 'f32' };
+      uniforms.uNormalStrength = { value: br.normalStrength ?? 1, type: 'f32' };
+      resources.uNormalMap = br.normalSource || Texture.WHITE.source;
+      resources.uLightData = br.lightDataSource || Texture.WHITE.source;
+
+      let fragEntry = this._alphaDiscard ? 'mainFrag' : 'mainFragBlend';
+      const spriteSource = this.poseInterp ? shaders?.spritePoseLit : shaders?.spriteLit;
+      const vertSource = this.poseInterp ? shaders?.spriteVertPoseLit : shaders?.spriteVertLit;
+      if (this._useWebGpu) {
+        const src = (spriteSource || '').replace(/MAX_LIGHTS/g, String(maxLights));
+        const gpuProgram = instancedSpriteLitGpuProgram(GpuProgram, src, fragEntry, name + '-lit');
+        return new Shader({ gpuProgram, resources });
+      }
+      const fragSrc = (pickInstancedSpriteLitFragmentGlsl(this._alphaDiscard, shaders) || '').replace(
+        /MAX_LIGHTS/g,
+        String(maxLights)
+      );
+      const glProgram = instancedSpriteGlProgram(GlProgram, vertSource, fragSrc, name + '-lit');
+      return new Shader({ glProgram, resources });
+    }
+
     let fragEntry = 'mainFragAdd';
     if (this._premultiplyAlpha) {
       fragEntry = this._alphaDiscard ? 'mainFrag' : 'mainFragBlend';
     }
-    const shaders = this._engineShaders;
     const spriteSource = this.poseInterp ? shaders?.spritePose : shaders?.sprite;
     const vertSource = this.poseInterp ? shaders?.spriteVertPose : shaders?.spriteVert;
     if (this._useWebGpu) {
@@ -385,6 +425,39 @@ export class InstancedSpriteBatch {
       name
     );
     return new Shader({ glProgram, resources });
+  }
+
+  setNormalMapSource(source) {
+    if (!this._bumpLit || !source) return;
+    this.shader.resources.uNormalMap = source;
+  }
+
+  setLightDataSource(source) {
+    if (!this._bumpLit || !source) return;
+    this.shader.resources.uLightData = source;
+  }
+
+  /** Sync bump lighting uniforms (call from updateLighting). */
+  setBumpLightingUniforms(u) {
+    if (!this._bumpLit) return;
+    const group = this.shader?.resources?.uniforms;
+    if (!group?.uniforms) return;
+    const uu = group.uniforms;
+    if (u.lightCount != null) uu.uLightCount = u.lightCount | 0;
+    if (u.baseAmbient != null) uu.uBaseAmbient = u.baseAmbient;
+    if (u.sunIntensity != null) uu.uSunIntensity = u.sunIntensity;
+    if (u.sunR != null) uu.uSunR = u.sunR;
+    if (u.sunG != null) uu.uSunG = u.sunG;
+    if (u.sunB != null) uu.uSunB = u.sunB;
+    if (u.sunDir && uu.uSunDir) {
+      uu.uSunDir[0] = u.sunDir[0];
+      uu.uSunDir[1] = u.sunDir[1];
+      uu.uSunDir[2] = u.sunDir[2];
+      if (uu.uSunDir.length > 3) uu.uSunDir[3] = 0;
+    }
+    if (u.normalLightZ != null) uu.uNormalLightZ = u.normalLightZ;
+    if (u.normalStrength != null) uu.uNormalStrength = u.normalStrength;
+    if (typeof group.update === 'function') group.update();
   }
 
   _show(on) {

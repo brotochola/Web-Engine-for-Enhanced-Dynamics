@@ -23,7 +23,7 @@ import {
 } from '../vendor/pixi.min.js';
 
 import { MAX_POLYGON_VERTICES, ShapeType, SPRITE_TILE_MODE } from '../util/configDefaults.js';
-import { colliderFillGpuProgram } from './webgpu/colliderFillWgsl.js';
+import { colliderFillGpuProgram, colliderFillLitGpuProgram } from './webgpu/colliderFillWgsl.js';
 import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
 import { MESH_NO_TEXTURE } from '../components/meshRenderer.js';
@@ -580,9 +580,21 @@ export class ColliderFillBatch {
    * @param {object} opts.shaders
    * @param {import('../vendor/pixi.min.js').TextureSource} [opts.atlasSource]
    * @param {import('../vendor/pixi.min.js').TextureSource} [opts.lutSource]
+   * @param {boolean} [opts.bumpLit=false]
+   * @param {object} [opts.bumpResources]
    */
-  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null }) {
+  constructor({
+    capacity,
+    label,
+    useWebGpu = true,
+    shaders = null,
+    atlasSource = null,
+    lutSource = null,
+    bumpLit = false,
+    bumpResources = null,
+  }) {
     this.capacity = Math.max(1, capacity | 0);
+    this._bumpLit = !!bumpLit;
     this.data = new Float32Array(this.capacity * COLLIDER_FILL_FLOATS);
     this.dataU32 = new Uint32Array(this.data.buffer);
     this.buffer = new Buffer({
@@ -621,7 +633,40 @@ export class ColliderFillBatch {
     };
 
     const name = label || 'collider-fill';
-    if (useWebGpu) {
+    if (this._bumpLit) {
+      const br = bumpResources || {};
+      const maxLights = br.maxLights | 0 || 64;
+      const sunDir = br.sunDir || new Float32Array([0, 0, 1, 0]);
+      const uniforms = {
+        uSunDir: { value: sunDir, type: 'vec4<f32>' },
+        uLightTexWidth: { value: maxLights, type: 'f32' },
+        uLightCount: { value: 0, type: 'i32' },
+        uBaseAmbient: { value: br.baseAmbient ?? 0.05, type: 'f32' },
+        uSunIntensity: { value: 0, type: 'f32' },
+        uSunR: { value: 1, type: 'f32' },
+        uSunG: { value: 1, type: 'f32' },
+        uSunB: { value: 1, type: 'f32' },
+        uNormalLightZ: { value: br.normalLightZ ?? 200, type: 'f32' },
+        uNormalStrength: { value: br.normalStrength ?? 1, type: 'f32' },
+      };
+      resources.uniforms = uniforms;
+      resources.uNormalMap = br.normalSource || Texture.WHITE.source;
+      resources.uLightData = br.lightDataSource || Texture.WHITE.source;
+      if (useWebGpu) {
+        const src = (shaders?.colliderFillLit || '').replace(/MAX_LIGHTS/g, String(maxLights));
+        const gpuProgram = colliderFillLitGpuProgram(GpuProgram, src, name + '-lit');
+        this.shader = new Shader({ gpuProgram, resources });
+      } else {
+        const frag = (shaders?.colliderFillLitFrag || '').replace(/MAX_LIGHTS/g, String(maxLights));
+        const glProgram = colliderFillGlProgram(
+          GlProgram,
+          shaders?.colliderFillLitVert,
+          frag,
+          name + '-lit'
+        );
+        this.shader = new Shader({ glProgram, resources });
+      }
+    } else if (useWebGpu) {
       const gpuProgram = colliderFillGpuProgram(GpuProgram, shaders?.colliderFill, name);
       this.shader = new Shader({ gpuProgram, resources });
     } else {
@@ -650,6 +695,38 @@ export class ColliderFillBatch {
     this.mesh.blendMode = 'normal';
     this.mesh.visible = false;
     this.mesh.cullable = false;
+  }
+
+  setNormalMapSource(source) {
+    if (!this._bumpLit || !source) return;
+    this.shader.resources.uNormalMap = source;
+  }
+
+  setLightDataSource(source) {
+    if (!this._bumpLit || !source) return;
+    this.shader.resources.uLightData = source;
+  }
+
+  setBumpLightingUniforms(u) {
+    if (!this._bumpLit) return;
+    const group = this.shader?.resources?.uniforms;
+    if (!group?.uniforms) return;
+    const uu = group.uniforms;
+    if (u.lightCount != null) uu.uLightCount = u.lightCount | 0;
+    if (u.baseAmbient != null) uu.uBaseAmbient = u.baseAmbient;
+    if (u.sunIntensity != null) uu.uSunIntensity = u.sunIntensity;
+    if (u.sunR != null) uu.uSunR = u.sunR;
+    if (u.sunG != null) uu.uSunG = u.sunG;
+    if (u.sunB != null) uu.uSunB = u.sunB;
+    if (u.sunDir && uu.uSunDir) {
+      uu.uSunDir[0] = u.sunDir[0];
+      uu.uSunDir[1] = u.sunDir[1];
+      uu.uSunDir[2] = u.sunDir[2];
+      if (uu.uSunDir.length > 3) uu.uSunDir[3] = 0;
+    }
+    if (u.normalLightZ != null) uu.uNormalLightZ = u.normalLightZ;
+    if (u.normalStrength != null) uu.uNormalStrength = u.normalStrength;
+    if (typeof group.update === 'function') group.update();
   }
 
   setAtlasSource(source) {

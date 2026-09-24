@@ -554,6 +554,11 @@ class PixiRenderer extends AbstractWorker {
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
     this.liquidFunMaxCount = 0;
     this._lfLightSplat = null;
+    this._normalAtlasSource = null;
+    this._bumpLit = false;
+    this._bumpSunDir = new Float32Array([0, 0, 1, 0]);
+    this.normalLightZ = 200;
+    this.normalStrength = 1;
 
     // ========================================
     // SUN / DIRECTIONAL LIGHT
@@ -1534,6 +1539,7 @@ class PixiRenderer extends AbstractWorker {
     this._rqIdxEntity = new Uint32Array(maxItems);
     this._rqIdxGlow = new Uint32Array(maxItems);
     this._painter = (!z && this.ySortingInCPU) ? createPainterState(maxItems) : null;
+    const bump = this._bumpResources();
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -1547,6 +1553,8 @@ class PixiRenderer extends AbstractWorker {
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       poseInterp: this._queueInterp,
+      bumpLit: this._bumpLit,
+      bumpResources: bump,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 
@@ -1574,6 +1582,64 @@ class PixiRenderer extends AbstractWorker {
 
     if (this.flatTextures?.length) this.rebuildInstancedTextureLut();
     console.log(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, one blend + glow ADD)`);
+  }
+
+  _bumpResources() {
+    if (!this._bumpLit) return null;
+    return {
+      normalSource: this._normalAtlasSource,
+      lightDataSource: this._lightDataSource,
+      maxLights: this.maxLights,
+      baseAmbient: this.baseAmbient,
+      normalLightZ: this.normalLightZ,
+      normalStrength: this.normalStrength,
+      sunDir: this._bumpSunDir,
+    };
+  }
+
+  _writeBumpSunDir() {
+    const out = this._bumpSunDir;
+    if (!Sun.isInitialized || !Sun.enabled) {
+      out[0] = 0;
+      out[1] = 0;
+      out[2] = 1;
+      out[3] = 0;
+      return out;
+    }
+    const elevRad = (Sun.elevation * Math.PI) / 180;
+    const cosE = Math.cos(elevRad);
+    const sinE = Math.sin(elevRad);
+    // Light toward sun: opposite shadowDir, lifted by elevation
+    const lx = -Sun.shadowDirX * cosE;
+    const ly = -Sun.shadowDirY * cosE;
+    const lz = sinE;
+    const len = Math.hypot(lx, ly, lz) || 1;
+    out[0] = lx / len;
+    out[1] = ly / len;
+    out[2] = lz / len;
+    out[3] = 0;
+    return out;
+  }
+
+  _syncBumpLightingToBatches(lightCount, sunIntensity, rgb) {
+    if (!this._bumpLit) return;
+    const u = {
+      lightCount,
+      baseAmbient: this.baseAmbient,
+      sunIntensity,
+      sunR: rgb?.r ?? 1,
+      sunG: rgb?.g ?? 1,
+      sunB: rgb?.b ?? 1,
+      sunDir: this._writeBumpSunDir(),
+      normalLightZ: this.normalLightZ,
+      normalStrength: this.normalStrength,
+    };
+    if (this.entitiesBatch) this.entitiesBatch.setBumpLightingUniforms(u);
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
+      if (cl.batch) cl.batch.setBumpLightingUniforms(u);
+      if (cl.fillBatch) cl.fillBatch.setBumpLightingUniforms(u);
+    }
   }
 
   /**
@@ -3340,8 +3406,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // SUN UNIFORMS
     // ========================================
     // Sun provides global ambient light that varies with time of day
+    let sunIntensity = 0;
     if (Sun.isInitialized && Sun.enabled) {
-      const sunIntensity = Sun.intensity;
+      sunIntensity = Sun.intensity;
       const sunColor = Sun.color;
 
       uniformGroup.uniforms.uSunIntensity = sunIntensity;
@@ -3354,9 +3421,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     } else {
       // Sun disabled - no sun contribution
       uniformGroup.uniforms.uSunIntensity = 0;
+      rgb.r = 1;
+      rgb.g = 1;
+      rgb.b = 1;
     }
 
     if (typeof uniformGroup.update === 'function') uniformGroup.update();
+
+    this._syncBumpLightingToBatches(countToRender, sunIntensity, rgb);
   }
 
   /**
@@ -3553,6 +3625,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (name === 'bigAtlas') {
           for (const [frameName, texture] of Object.entries(frameTextures)) {
             this.textures[frameName] = texture;
+          }
+
+          if (data.normalImageBitmap) {
+            const normalSource = new PIXI.ImageSource({
+              resource: data.normalImageBitmap,
+              autoGenerateMipmaps: false,
+              scaleMode: this.atlasScaleMode,
+              alphaMode: 'no-premultiply-alpha',
+            });
+            if (normalSource.style) {
+              normalSource.style.scaleMode = this.atlasScaleMode;
+              normalSource.style.addressMode = 'clamp-to-edge';
+            }
+            this._normalAtlasSource = normalSource;
+            console.log('PIXI WORKER: BigAtlas normal map loaded');
           }
 
           const textureKeys = Object.keys(frameTextures);
@@ -4628,6 +4715,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/instancedSpritePose.wgsl').then((s) => {
           sh.spritePose = s;
         }),
+        fetchEngineShader('/src/shaders/instancedSpriteLit.wgsl').then((s) => {
+          sh.spriteLit = s;
+        }),
+        fetchEngineShader('/src/shaders/instancedSpritePoseLit.wgsl').then((s) => {
+          sh.spritePoseLit = s;
+        }),
         fetchEngineShader('/src/shaders/lfSplat.wgsl').then((s) => {
           sh.lfSplat = s;
         }),
@@ -4643,6 +4736,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/colliderFill.wgsl').then((s) => {
           sh.colliderFill = s;
         }),
+        fetchEngineShader('/src/shaders/colliderFillLit.wgsl').then((s) => {
+          sh.colliderFillLit = s;
+        }),
         fetchEngineShader('/src/shaders/tilemapGid.wgsl').then((s) => {
           sh.tilemapGid = s;
         })
@@ -4655,6 +4751,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/instancedSpritePose.vert.glsl').then((s) => {
           sh.spriteVertPose = s;
         }),
+        fetchEngineShader('/src/shaders/instancedSpriteLit.vert.glsl').then((s) => {
+          sh.spriteVertLit = s;
+        }),
+        fetchEngineShader('/src/shaders/instancedSpritePoseLit.vert.glsl').then((s) => {
+          sh.spriteVertPoseLit = s;
+        }),
         fetchEngineShader('/src/shaders/instancedSprite.frag.glsl').then((s) => {
           sh.spriteFrag = s;
         }),
@@ -4663,6 +4765,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/instancedSpriteAdditive.frag.glsl').then((s) => {
           sh.spriteFragAdd = s;
+        }),
+        fetchEngineShader('/src/shaders/instancedSpriteLit.frag.glsl').then((s) => {
+          sh.spriteFragLit = s;
+        }),
+        fetchEngineShader('/src/shaders/instancedSpriteLitBlend.frag.glsl').then((s) => {
+          sh.spriteFragLitBlend = s;
         }),
         fetchEngineShader('/src/shaders/lfSplat.vert.glsl').then((s) => {
           sh.lfSplatVert = s;
@@ -4687,6 +4795,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/colliderFill.frag.glsl').then((s) => {
           sh.colliderFillFrag = s;
+        }),
+        fetchEngineShader('/src/shaders/colliderFillLit.vert.glsl').then((s) => {
+          sh.colliderFillLitVert = s;
+        }),
+        fetchEngineShader('/src/shaders/colliderFillLit.frag.glsl').then((s) => {
+          sh.colliderFillLitFrag = s;
         }),
         fetchEngineShader('/src/shaders/tilemapGid.vert.glsl').then((s) => {
           sh.tilemapGidVert = s;
@@ -4998,21 +5112,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ========================================
     this.createCastedShadowsSystem(data);
 
-    // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
-    if (this.renderQueueEnabled) {
-      this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
-      this._registerLayerDisplayObject('entities', this.spriteMesh);
-      this.pixiApp.stage.addChild(this.spriteMesh);
-      if (this.spriteGlowMesh) {
-        this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
-        this.pixiApp.stage.addChild(this.spriteGlowMesh);
-        if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
-      }
-      console.log('PIXI WORKER: ENTITIES layer using instanced sprite mesh (painter + glow ADD)');
-    }
-
     // ========================================
-    // LIGHTING SYSTEM - Initialize
+    // LIGHTING SYSTEM - Initialize (before entity batches so bump lit can bind light data)
     // ========================================
     const lightingConfig = this.config.lighting || {};
     if (lightingConfig.enabled && data.buffers.componentData.LightEmitter) {
@@ -5025,6 +5126,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.baseAmbient = lightingConfig.baseAmbient !== undefined ? lightingConfig.baseAmbient : 0.05;
       this.maxLights = lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
       this.liquidFunMaxCount = data.liquidFunMaxCount | 0;
+      this.normalLightZ = lightingConfig.normalLightZ !== undefined ? lightingConfig.normalLightZ : 200;
+      this.normalStrength = lightingConfig.normalStrength !== undefined ? lightingConfig.normalStrength : 1;
+      this._bumpLit = !!this._normalAtlasSource;
 
       // Create lighting mesh (full-screen quad with multiply blend)
       // Shadows are now sprites, not in shader
@@ -5032,9 +5136,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._createLiquidFunLightSplat(this.liquidFunMaxCount);
 
       console.log(
-        `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution})`
+        `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution}, bumpLit: ${this._bumpLit})`
       );
+    }
 
+    // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
+    if (this.renderQueueEnabled) {
+      this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
+      this._registerLayerDisplayObject('entities', this.spriteMesh);
+      this.pixiApp.stage.addChild(this.spriteMesh);
+      if (this.spriteGlowMesh) {
+        this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
+        this.pixiApp.stage.addChild(this.spriteGlowMesh);
+        if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
+      }
+      console.log('PIXI WORKER: ENTITIES layer using instanced sprite mesh (painter + glow ADD)');
     }
 
     // ========================================
@@ -5232,6 +5348,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           shaders: this._engineShaders,
           atlasSource: this._resolveAtlasSource(),
           lutSource: this._texLutSource,
+          bumpLit: this._bumpLit,
+          bumpResources: this._bumpResources(),
         });
         fillBatch.mesh.blendMode = containerBlend;
       }
@@ -5255,6 +5373,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           depthMask: false,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
+          bumpLit: this._bumpLit,
+          bumpResources: this._bumpResources(),
         });
         batch.mesh.blendMode = containerBlend;
       }

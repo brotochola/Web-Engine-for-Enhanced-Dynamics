@@ -595,6 +595,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxPolygonVertices: 128,
   /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
   maxOccluderSelfLit: 512,
+  /** Bevel power for baked sprite/mesh normals (normalmap23 `p`). Bake-time only. */
+  normalBevel: 64,
+  /** Point-light height in world px for bump N·L (larger = flatter). */
+  normalLightZ: 200,
+  /** Scales baked normal XY before normalize. */
+  normalStrength: 1,
   sun: SUN_DEFAULTS,
 });
 

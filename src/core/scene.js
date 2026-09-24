@@ -57,6 +57,7 @@ import { Gamepad } from './gamepad.js';
 import Keyboard from './keyboard.js';
 import { Flash } from './flash.js';
 import { BigAtlasInspector } from './bigAtlasInspector.js';
+import { bakeNormalAtlasFromCanvas } from '../render/bakeNormalAtlas.js';
 import { Camera } from './camera.js';
 import {
   buildMemoryUsageSummary,
@@ -1244,6 +1245,7 @@ class Scene {
 
   /**
    * Install a packed or prebaked bigAtlas onto the scene + registry.
+   * When lighting is on, bakes a normalmap23 atlas (same size) for sprite/mesh bump.
    * @param {{ json: object, imageBitmap: ImageBitmap, canvas: HTMLCanvasElement }} atlas
    * @param {object} [compiledAdobeAssets]
    */
@@ -1252,9 +1254,22 @@ class Scene {
     const proxySheets = json?.meta?.proxySheets || {};
     const individualTextures = json?.meta?.individualTextures || [];
 
+    let normalImageBitmap = atlas.normalImageBitmap || null;
+    let normalCanvas = atlas.normalCanvas || null;
+    if (!normalImageBitmap && canvas && this.config?.lighting?.enabled) {
+      const baked = bakeNormalAtlasFromCanvas(canvas, json, {
+        bevel: this.config.lighting.normalBevel,
+        padding: this.config.assets?.atlasPadding ?? 2,
+      });
+      normalCanvas = baked.canvas;
+      // Sync path: createImageBitmap may be async; store canvas and resolve below.
+      this._pendingNormalAtlasCanvas = normalCanvas;
+    }
+
     this.loadedSpritesheets['bigAtlas'] = {
       json,
       imageBitmap,
+      normalImageBitmap,
     };
 
     SpriteSheetRegistry.register('bigAtlas', json);
@@ -1272,6 +1287,7 @@ class Scene {
     this.bigAtlasProxySheets = proxySheets;
     this.bigAtlasCanvas = canvas;
     this.bigAtlasJson = json;
+    this.bigAtlasNormalCanvas = normalCanvas;
 
     if (this.config.particle.decals && canvas) {
       this.decalTextureData = this.extractDecalTextures(canvas, json);
@@ -1290,6 +1306,18 @@ class Scene {
         BigAtlasInspector.show(this.bigAtlasCanvas, this.bigAtlasJson);
       };
     }
+  }
+
+  /**
+   * Finish async ImageBitmap for the baked normal atlas (call before worker transfer).
+   */
+  async _ensureNormalAtlasBitmap() {
+    const sheet = this.loadedSpritesheets?.bigAtlas;
+    if (!sheet || sheet.normalImageBitmap) return;
+    const canvas = this._pendingNormalAtlasCanvas || this.bigAtlasNormalCanvas;
+    if (!canvas) return;
+    sheet.normalImageBitmap = await createImageBitmap(canvas);
+    this._pendingNormalAtlasCanvas = null;
   }
 
   /** @returns {HTMLCanvasElement} */
@@ -1476,6 +1504,7 @@ class Scene {
     ]);
 
     this._installBigAtlas(atlasResult, preparedAdobeAssets.compiledAssets);
+    await this._ensureNormalAtlasBitmap();
     this.loadedAudioNames = loadedAudioNames;
   }
 
@@ -2352,6 +2381,8 @@ class Scene {
     this.loadedAdobeAnimateAssets = {};
     this.decalTextureData = null;
     this.bigAtlasCanvas = null;
+    this.bigAtlasNormalCanvas = null;
+    this._pendingNormalAtlasCanvas = null;
     this.bigAtlasJson = null;
     this.bigAtlasProxySheets = null;
     this._loadedShaderSources = null;

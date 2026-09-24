@@ -7,6 +7,10 @@ export function pickInstancedSpriteFragmentGlsl(premultiplyAlpha, alphaDiscard, 
   return alphaDiscard !== false ? shaders?.spriteFrag : shaders?.spriteFragBlend;
 }
 
+export function pickInstancedSpriteLitFragmentGlsl(alphaDiscard, shaders) {
+  return alphaDiscard !== false ? shaders?.spriteFragLit : shaders?.spriteFragLitBlend;
+}
+
 export function instancedSpriteGlProgram(GlProgram, vertex, fragment, name) {
   if (!vertex || !fragment) {
     throw new Error(
