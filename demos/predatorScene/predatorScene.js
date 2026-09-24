@@ -202,13 +202,13 @@ export class PredatorScene extends WEED.Scene {
 
       maxShadowCastingLights: predatorNumberParam('shadowLights', 48),
       maxShadowsPerLight: predatorPositiveParam('shadowsPerLight', 512),
-      maxShadowsPerEntity: 5,
+      maxShadowsPerEntity: 3,
       gpuShadowPath: predatorChoiceParam('gpuShadowPath', ['copy', 'reuse', 'queue', 'resident'], 'copy'),
       gpuShadowCookies: predatorChoiceParam('gpuShadowCookies', ['always', 'night'], 'always'),
       shadowUpdateInterval: predatorPositiveParam('shadowInterval', 1),
       maxShadowSprites: 30000,
-      maxFlashes: 200,
-      resolution: predatorPositiveParam('lightingRes', 0.5),
+      maxFlashes: 64,
+      resolution: predatorPositiveParam('lightingRes', 1),
       shadowResolution: predatorPositiveParam('shadowRes', 0.25),
 
       // Sun/directional light configuration

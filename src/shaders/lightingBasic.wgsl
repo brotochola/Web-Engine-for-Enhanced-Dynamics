@@ -26,6 +26,7 @@ struct LightingUniforms {
   uSunR: f32,
   uSunG: f32,
   uSunB: f32,
+  uFlipY: f32,
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> uniforms: LightingUniforms;
@@ -46,7 +47,9 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   // Framebuffer origin is top-left (WebGPU + Pixi Y-down). Same as GLSL
   // gl_FragCoord / uViewport — do not invert Y (that mirrors lights).
   let vp = uniforms.uViewport;
-  let normCoord = in.position.xy / vp;
+  var y = in.position.y;
+  if (uniforms.uFlipY > 0.5) { y = vp.y - y; }
+  let normCoord = vec2<f32>(in.position.x, y) / vp;
   let screenPos = normCoord * uniforms.uFullCanvasSize;
   let fragWorld = (screenPos / uniforms.uZoom) + uniforms.uCameraPos;
   var totalLight = vec3<f32>(uniforms.uBaseAmbient);

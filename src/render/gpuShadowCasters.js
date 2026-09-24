@@ -24,10 +24,21 @@ export function resolveGpuShadowCookies(value) {
   return value === 'night' ? 'night' : 'always';
 }
 
-/** 1 = every frame; N>1 holds the last shadowRT for N-1 frames. */
+/** 1 = every frame; N>1 holds caster silhouettes for N-1 frames. Cookies still redraw. */
 export function resolveShadowUpdateInterval(value) {
   const n = value | 0;
   return n > 1 ? n : 1;
+}
+
+/** Integer RT pixels. Nominal resolution is not the framebuffer size. */
+export function rtPixelSize(canvasPx, resolution) {
+  const r = resolution > 0 ? +resolution : 1;
+  return Math.max(1, Math.round((+canvasPx || 0) * r));
+}
+
+/** RT pixels / canvas pixels. Projection and display use this, not the nominal resolution. */
+export function rtPixelScale(canvasPx, rtPx) {
+  return canvasPx > 0 ? rtPx / canvasPx : 1;
 }
 
 export function samePackedIndices(prev, prevN, next, n) {

@@ -13,9 +13,12 @@ uniform float uSunIntensity;
 uniform float uSunR;
 uniform float uSunG;
 uniform float uSunB;
+uniform float uFlipY;
 
 void main() {
-  vec2 normCoord = gl_FragCoord.xy / uViewport;
+  float y = gl_FragCoord.y;
+  if (uFlipY > 0.5) y = uViewport.y - y;
+  vec2 normCoord = vec2(gl_FragCoord.x, y) / uViewport;
   vec2 screenPos = normCoord * uFullCanvasSize;
   vec2 fragWorld = (screenPos / uZoom) + uCameraPos;
   vec3 totalLight = vec3(uBaseAmbient);

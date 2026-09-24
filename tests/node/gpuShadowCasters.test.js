@@ -9,6 +9,8 @@ import {
   resolveGpuShadowPath,
   resolveGpuShadowCookies,
   resolveShadowUpdateInterval,
+  rtPixelSize,
+  rtPixelScale,
   samePackedIndices,
   writeCasterPose,
 } from '../../src/render/gpuShadowCasters.js';
@@ -88,6 +90,14 @@ test('resolveGpuShadowPath and cookies default to copy / always', () => {
   assert.equal(resolveGpuShadowCookies('night'), 'night');
   assert.equal(resolveGpuShadowCookies('always'), 'always');
   assert.equal(resolveGpuShadowCookies(''), 'always');
+});
+
+test('rtPixelSize rounds and rtPixelScale matches the real RT', () => {
+  assert.equal(rtPixelSize(1919, 0.5), 960);
+  assert.equal(rtPixelSize(1919, 0.25), 480);
+  assert.equal(rtPixelSize(0, 0.5), 1);
+  assert.ok(Math.abs(rtPixelScale(1919, 960) - 960 / 1919) < 1e-9);
+  assert.equal(rtPixelScale(0, 10), 1);
 });
 
 test('resolveShadowUpdateInterval is 1 unless N>1', () => {

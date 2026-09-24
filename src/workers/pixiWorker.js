@@ -95,6 +95,8 @@ import {
   resolveGpuShadowPath,
   resolveGpuShadowCookies,
   resolveShadowUpdateInterval,
+  rtPixelSize,
+  rtPixelScale,
   samePackedIndices,
 } from '../render/gpuShadowCasters.js';
 
@@ -2125,10 +2127,7 @@ LIGHTING SYSTEM SETUP
         uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
         uZoom: { value: 1.0, type: 'f32' },
         uViewport: {
-          value: new Float32Array([
-            this.canvasWidth * this.lightingResolution,
-            this.canvasHeight * this.lightingResolution,
-          ]),
+          value: new Float32Array([this.canvasWidth, this.canvasHeight]),
           type: 'vec2<f32>',
         },
         uFullCanvasSize: {
@@ -2143,6 +2142,7 @@ LIGHTING SYSTEM SETUP
         uSunR: { value: 1.0, type: 'f32' },
         uSunG: { value: 1.0, type: 'f32' },
         uSunB: { value: 1.0, type: 'f32' },
+        uFlipY: { value: 0, type: 'f32' },
       },
     };
 
@@ -2180,16 +2180,16 @@ LIGHTING SYSTEM SETUP
     // Low-res lighting, or LiquidFun field splat, needs an RT target.
     const needRt = this.lightingResolution < 1.0 || this.liquidFunMaxCount > 0;
     if (needRt) {
-      this.lightingRT = PIXI.RenderTexture.create({
-        width: this.canvasWidth * this.lightingResolution,
-        height: this.canvasHeight * this.lightingResolution,
-      });
+      const lw = rtPixelSize(this.canvasWidth, this.lightingResolution);
+      const lh = rtPixelSize(this.canvasHeight, this.lightingResolution);
+      this.lightingRT = PIXI.RenderTexture.create({ width: lw, height: lh });
       this.lightingDisplaySprite = new PIXI.Sprite(this.lightingRT);
       this.lightingDisplaySprite.anchor.set(0, 0); // Ensure top-left anchor
       this.lightingDisplaySprite.position.set(0, 0); // Position at top-left of screen
-      this.lightingDisplaySprite.scale.set(1.0 / this.lightingResolution);
+      this.lightingDisplaySprite.scale.set(this.canvasWidth / lw, this.canvasHeight / lh);
       this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);
       this.pixiApp.stage.addChild(this.lightingDisplaySprite);
+      this._applyLightingViewport(this.canvasWidth, this.canvasHeight);
 
       console.log(
         `PIXI WORKER: Lighting RenderTexture created (${this.lightingRT.width}x${this.lightingRT.height})`
@@ -2235,12 +2235,12 @@ LIGHTING SYSTEM SETUP
     o.zoom = this._renderZoom;
     o.cameraX = this._renderCameraX;
     o.cameraY = this._renderCameraY;
-    o.resolution = this.lightingResolution;
+    o.resolution = this._lightingPixelScale || this.lightingResolution;
     o.canvasW = this.canvasWidth;
     o.canvasH = this.canvasHeight;
     const packed = splat.uploadLitGroups(views, groups, o);
     if (packed <= 0) return;
-    const screenScale = (this._renderZoom || 1) * (this.lightingResolution || 1);
+    const screenScale = (this._renderZoom || 1) * (o.resolution || 1);
     const u = splat.shader?.resources?.uniforms?.uniforms;
     if (u) u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
     const rtOpts = this._rtRenderOptsNoClear;
@@ -3371,13 +3371,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     uniformGroup.uniforms.uCameraPos[0] = cameraX;
     uniformGroup.uniforms.uCameraPos[1] = cameraY;
     uniformGroup.uniforms.uZoom = zoom;
-
-    // Update viewport uniform every frame (handles resizes and resolution changes)
-    uniformGroup.uniforms.uViewport[0] = this.canvasWidth * this.lightingResolution;
-    uniformGroup.uniforms.uViewport[1] = this.canvasHeight * this.lightingResolution;
-
-    uniformGroup.uniforms.uFullCanvasSize[0] = this.canvasWidth;
-    uniformGroup.uniforms.uFullCanvasSize[1] = this.canvasHeight;
+    this._applyLightingViewport(this.canvasWidth, this.canvasHeight);
 
     const lightData = this._lightDataFloats;
     const maxLights = this.maxLights;
@@ -3470,8 +3464,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     this.shadowRT = PIXI.RenderTexture.create({
-      width: this.canvasWidth * this.shadowResolution,
-      height: this.canvasHeight * this.shadowResolution,
+      width: rtPixelSize(this.canvasWidth, this.shadowResolution),
+      height: rtPixelSize(this.canvasHeight, this.shadowResolution),
     });
 
     this.shadowBatch = new InstancedSpriteBatch({
@@ -3503,7 +3497,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
     this.shadowDisplaySprite.anchor.set(0, 0);
     this.shadowDisplaySprite.position.set(0, 0);
-    this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
+    this.shadowDisplaySprite.scale.set(
+      this.canvasWidth / this.shadowRT.width,
+      this.canvasHeight / this.shadowRT.height
+    );
+    this._shadowSilhouetteRT = PIXI.RenderTexture.create({
+      width: this.shadowRT.width,
+      height: this.shadowRT.height,
+    });
+    this._shadowSilhouetteSprite = new PIXI.Sprite(this._shadowSilhouetteRT);
+    this._shadowSilhouetteSprite.anchor.set(0, 0);
     this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
     this.pixiApp.stage.addChild(this.shadowDisplaySprite);
 
@@ -3563,12 +3566,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     this._syncGpuShadowKnobs();
     const interval = this._shadowUpdateInterval;
-    const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
+    const skipCasters = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
     this._shadowUpdateTick++;
 
     this._gpuTimer.attach(this.pixiApp?.renderer);
     this._gpuTimer.begin('shadows');
-    if (!skip) this._drawGpuCasterShadows();
+    if (skipCasters) this._redrawShadowCookies();
+    else this._drawGpuCasterShadows();
     this._gpuTimer.end();
   }
 
@@ -3668,7 +3672,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     opts.zoom = this._renderZoom;
     opts.cameraX = this._renderCameraX;
     opts.cameraY = this._renderCameraY;
-    opts.resolution = this.shadowResolution;
+    opts.resolution = this._shadowPixelScale();
     opts.depthMode = BATCH_DEPTH.INDEX;
     opts.depthDenom = 1;
     if (!this.shadowBatch.upload(q, opts)) return false;
@@ -3679,6 +3683,47 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.clearColor = this._clearTransparent;
     this.pixiApp.renderer.render(rtOpts);
     return true;
+  }
+
+  /**
+   * Interval hold: cookies track the camera. Silhouettes stay in the last
+   * caster RT and are stamped back on top. No compact, no caster draw.
+   */
+  _redrawShadowCookies() {
+    this._gpuSunDrew = false;
+    this._gpuPassesThisFrame = 0;
+    this._gpuCastersThisFrame = 0;
+    this._gpuShadowLightsThisFrame = 0;
+    const lightData = this._lightDataFloats;
+    const packedLights = Math.min(this._visibleLightsAllCount | 0, this.maxLights | 0);
+    const cap = Math.min(packedLights, this.maxShadowCastingLights | 0);
+    const sunI = Sun.isInitialized && Sun.enabled ? Sun.intensity : 0;
+    const drawCookies = this._gpuShadowCookies !== 'night' || sunI < 1;
+    let shadowLights = 0;
+    if (drawCookies && lightData) {
+      for (let i = 0; i < cap; i++) {
+        if (!(lightData[i * 4 + 3] > 0)) continue;
+        if (this._drawLightCookie(i, !this._gpuSunDrew)) {
+          this._gpuPassesThisFrame++;
+          this._gpuSunDrew = true;
+        }
+        shadowLights++;
+      }
+    }
+    this._gpuShadowLightsThisFrame = shadowLights;
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.target = this.shadowRT;
+    rtOpts.clearColor = this._clearTransparent;
+    if (this._shadowSilhouetteSprite) {
+      rtOpts.container = this._shadowSilhouetteSprite;
+      rtOpts.clear = !this._gpuSunDrew;
+      this.pixiApp.renderer.render(rtOpts);
+      this._gpuPassesThisFrame++;
+    } else if (!this._gpuSunDrew) {
+      rtOpts.container = this._rtEmptyContainer;
+      rtOpts.clear = true;
+      this.pixiApp.renderer.render(rtOpts);
+    }
   }
 
   _drawGpuCasterShadows() {
@@ -3707,7 +3752,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!u || !u.uCam || !u.uSun || !u.uLight) return;
 
     const zoom = this._renderZoom || 1;
-    const res = this.shadowResolution || 1;
+    const res = this._shadowPixelScale();
     u.uCam[0] = this._renderCameraX;
     u.uCam[1] = this._renderCameraY;
     u.uCam[2] = zoom * res;
@@ -3736,12 +3781,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.target = this.shadowRT;
     rtOpts.clearColor = this._clearTransparent;
     const syncSun = () => { if (typeof group.update === 'function') group.update(); };
+    this._silhouetteNeedsClear = true;
     const drawCasters = (needClear) => {
       if ((mesh.geometry.instanceCount | 0) <= 0) return false;
       rtOpts.container = mesh;
+      rtOpts.target = this.shadowRT;
       rtOpts.clear = needClear;
       syncSun();
       this.pixiApp.renderer.render(rtOpts);
+      if (this._shadowUpdateInterval > 1 && this._shadowSilhouetteRT) {
+        rtOpts.target = this._shadowSilhouetteRT;
+        rtOpts.clear = this._silhouetteNeedsClear;
+        this._silhouetteNeedsClear = false;
+        this.pixiApp.renderer.render(rtOpts);
+        rtOpts.target = this.shadowRT;
+      }
       this._gpuPassesThisFrame++;
       this._gpuSunDrew = true;
       return true;
@@ -4361,6 +4415,32 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
+   * uViewport is the real framebuffer (gl_FragCoord). Display scale is canvas/RT
+   * so a nominal 0.5 and 0.25 still land on the same screen pixel.
+   */
+  _applyLightingViewport(canvasW, canvasH) {
+    const u = this.lightingShader && this.lightingShader.resources.uniforms.uniforms;
+    const rt = this.lightingRT;
+    const vw = rt ? rt.width : canvasW;
+    const vh = rt ? rt.height : canvasH;
+    this._lightingPixelScale = rtPixelScale(canvasW, vw);
+    if (!u) return;
+    u.uViewport[0] = vw;
+    u.uViewport[1] = vh;
+    u.uFullCanvasSize[0] = canvasW;
+    u.uFullCanvasSize[1] = canvasH;
+    u.uInvResolution = canvasW > 0 && vw > 0 ? canvasW / vw : 1;
+    // Canvas WebGL: gl_FragCoord.y is the bottom. Pixi entities are top-left.
+    // An RT sprite samples the texture flipped, so that path stays unflipped.
+    u.uFlipY = !rt && !this._useWebGpu ? 1 : 0;
+  }
+
+  _shadowPixelScale() {
+    const rt = this.shadowRT;
+    return rtPixelScale(this.canvasWidth, rt ? rt.width : rtPixelSize(this.canvasWidth, this.shadowResolution));
+  }
+
+  /**
    * Destroy+create at the new pixel size. source.resize() does not rebuild
    * the GPU framebuffer for look/lighting RTs (fire desyncs vs bodies).
    */
@@ -4588,31 +4668,40 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Viewport RTs follow canvas. Destroy+create (source.resize leaves a
     // stale GPU framebuffer). Unbind BindGroups first to avoid Pixi warns.
     if (this.lightingRT) {
+      const lw = rtPixelSize(width, this.lightingResolution);
+      const lh = rtPixelSize(height, this.lightingResolution);
       this.lightingRT = this._replaceRT(
         this.lightingRT,
-        width * this.lightingResolution,
-        height * this.lightingResolution,
+        lw,
+        lh,
         this.lightingDisplaySprite,
-        1.0 / this.lightingResolution
+        null
       );
+      if (this.lightingDisplaySprite) {
+        this.lightingDisplaySprite.scale.set(width / lw, height / lh);
+      }
     }
 
     // Sync lighting shader uniforms immediately
-    if (this.lightingShader) {
-      const u = this.lightingShader.resources.uniforms.uniforms;
-      u.uViewport[0] = width * this.lightingResolution;
-      u.uViewport[1] = height * this.lightingResolution;
-      u.uFullCanvasSize[0] = width;
-      u.uFullCanvasSize[1] = height;
-    }
+    if (this.lightingShader) this._applyLightingViewport(width, height);
 
     if (this.shadowRT) {
+      const sw = rtPixelSize(width, this.shadowResolution);
+      const sh = rtPixelSize(height, this.shadowResolution);
       this.shadowRT = this._replaceRT(
         this.shadowRT,
-        width * this.shadowResolution,
-        height * this.shadowResolution,
+        sw,
+        sh,
         this.shadowDisplaySprite,
-        1.0 / this.shadowResolution
+        null
+      );
+      if (this.shadowDisplaySprite) this.shadowDisplaySprite.scale.set(width / sw, height / sh);
+      this._shadowSilhouetteRT = this._replaceRT(
+        this._shadowSilhouetteRT,
+        sw,
+        sh,
+        this._shadowSilhouetteSprite,
+        1
       );
     }
 

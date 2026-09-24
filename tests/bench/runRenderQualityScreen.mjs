@@ -73,6 +73,16 @@ function cellsForPhase() {
         out.push([`${intName}-${zoomName}`, `${night}&${zoomQ}${extra}&${intQ}`]);
       }
     }
+  } else if (phase === 'cookie') {
+    for (const [name, q] of [
+      ['mix-i1', 'lightingRes=0.5&shadowRes=0.25&shadowInterval=1'],
+      ['mix-i2', 'lightingRes=0.5&shadowRes=0.25&shadowInterval=2'],
+      ['same-i1', 'lightingRes=0.25&shadowRes=0.25&shadowInterval=1'],
+    ]) {
+      for (const [zoomName, zoomQ] of z) {
+        out.push([`${name}-${zoomName}`, `${night}&${zoomQ}&${q}`]);
+      }
+    }
   } else if (phase === 'perlight') {
     for (const [plName, plQ] of [
       ['pl512', 'shadowsPerLight=512'],
@@ -84,7 +94,7 @@ function cellsForPhase() {
       }
     }
   } else {
-    console.error(`unknown --phase ${phase} (lights|res|interval|perlight)`);
+    console.error(`unknown --phase ${phase} (lights|res|interval|perlight|cookie)`);
     process.exit(2);
   }
   return onlyCells.length ? out.filter(([name]) => onlyCells.includes(name)) : out;
