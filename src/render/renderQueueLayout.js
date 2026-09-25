@@ -29,6 +29,8 @@ const FIELDS = [
     ['anchorX',     Float32Array,           4,   0],
     ['anchorY',     Float32Array,           4,   0],
     ['type',        Uint8Array,             1,   0],
+    ['alphaMode',   Uint8Array,             1,   0],
+    ['alphaCutOff', Uint8Array,             1,   0],
     // Composite collector key (worldY*K+innerZ / -z / glow bias) — CPU painter when the layer y-sorts
     ['sortKey',     Float32Array,           4,   0],
     // World-space tile period in px; 0 = stretch. Packed u16 pair, then align4.

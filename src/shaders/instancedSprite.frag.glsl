@@ -6,6 +6,7 @@ in vec2 vWorld;
 in vec4 vAtlasUV;
 in vec2 vTileInv;
 in vec2 vTileOff;
+in float vAlphaCut;
 uniform sampler2D uTexture;
 uniform vec4 uAlphaCut;
 out vec4 finalColor;
@@ -22,7 +23,8 @@ vec2 weedUv() {
 void main() {
   vec4 t = texture(uTexture, weedUv());
   float a = t.a * vColor.a;
-  if (a < uAlphaCut.x) discard;
+  float cutX = vAlphaCut > 0.0 ? vAlphaCut : uAlphaCut.x;
+  if (a < cutX) discard;
   if (uAlphaCut.y > 0.0 && a >= uAlphaCut.y) discard;
   finalColor = vec4(t.rgb * vColor.rgb * vColor.a, a);
 }

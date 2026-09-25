@@ -6,6 +6,7 @@ in vec2 vWorld;
 in vec4 vAtlasUV;
 in vec2 vTileInv;
 in vec2 vTileOff;
+in float vAlphaCut;
 uniform sampler2D uTexture;
 out vec4 finalColor;
 

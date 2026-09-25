@@ -65,6 +65,7 @@ import {
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
+    LIGHTING_DEFAULTS,
     resolvePreRenderInterpolation,
     CAMERA_TYPES,
     DECORATION_Y_SORT_SCALE,
@@ -72,7 +73,11 @@ import {
     ShapeType,
     MAX_POLYGON_VERTICES,
     SPRITE_TILE_MODE,
+    DEFAULT_ALPHA_CUT_OFF_U8,
 } from '../util/configDefaults.js';
+import { ySortEnabled, Y_SORT_BITONIC } from '../render/rendererBackend.js';
+import { writeRowAlphaMode, writeRowAlphaCutOff, partitionCutoutBlend } from '../render/alphaModePack.js';
+import { floatBitsToOrd } from '../util/sortIndexByKey.js';
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
@@ -81,6 +86,8 @@ import {
     GPU_SPACE_WORLD,
     GPU_SPACE_SCREEN,
     GPU_FLAG_SORTED,
+    GPU_FLAG_BITONIC,
+    packGpuSpriteFlags,
     createGpuQueueViews,
     createGpuQueueScratch,
     clearGpuQueueHeader,
@@ -106,7 +113,7 @@ const EMPTY_OWNED_IDS = new Uint32Array(0);
 
 const MAIN_COLUMN_KEYS = [
     'count', 'x', 'y', 'scaleX', 'scaleY', 'rotC', 'rotS', 'alpha', 'tint', 'textureId',
-    'anchorX', 'anchorY', 'type', 'entityIndex', 'sortKey', 'repeatX', 'repeatY',
+    'anchorX', 'anchorY', 'type', 'alphaMode', 'alphaCutOff', 'entityIndex', 'sortKey', 'repeatX', 'repeatY',
     'tileMode', 'tileOffsetU', 'tileOffsetV', 'tileMulX', 'tileMulY',
     'shadowH', 'shadowOffX', 'shadowOffY',
 ];
@@ -244,6 +251,8 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorX = null;
         this.renderQueueAnchorY = null;
         this.renderQueueType = null;
+        this.renderQueueAlphaMode = null;
+        this.renderQueueAlphaCutOff = null;
         this.renderQueueSortKey = null;
         this.renderQueueRepeatX = null;
         this.renderQueueRepeatY = null;
@@ -584,16 +593,24 @@ class PreRenderWorker extends AbstractWorker {
         // Store viewport dimensions
         this.canvasWidth = this.config.canvasWidth;
         this.canvasHeight = this.config.canvasHeight;
-        this.cullingRatio = this.config.renderer?.cullingRatio ?? RENDERER_DEFAULTS.cullingRatio;
+        const preCfg = this.config.preRender || {};
+        this.cullingRatio = preCfg.cullingRatio ?? PRE_RENDER_DEFAULTS.cullingRatio;
 
         // Decoration zoom-based fade/hide thresholds
         const rendererConfig = this.config.renderer || {};
-        this.decorationFadeStartZoom = rendererConfig.startFadingDecorationsAtZoom ?? RENDERER_DEFAULTS.startFadingDecorationsAtZoom;
-        this.decorationHideZoom = rendererConfig.hideDecorationsAtZoom ?? RENDERER_DEFAULTS.hideDecorationsAtZoom;
+        this.decorationFadeStartZoom = preCfg.startFadingDecorationsAtZoom ?? PRE_RENDER_DEFAULTS.startFadingDecorationsAtZoom;
+        this.decorationHideZoom = preCfg.hideDecorationsAtZoom ?? PRE_RENDER_DEFAULTS.hideDecorationsAtZoom;
         this._decorationZoomAlpha = 1;
-        this._lightGlowAsSprite = (rendererConfig.lightGlow ?? RENDERER_DEFAULTS.lightGlow) === 'sprite';
-        this._useZBuffer = rendererConfig.useZBuffer === true;
-        this._ySort = rendererConfig.ySort === true;
+        this._lightGlowAsSprite = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+        this._ySortMode = rendererConfig.ySort;
+        this._ySort = ySortEnabled(this._ySortMode);
+        this._bitonic = this._ySortMode === Y_SORT_BITONIC;
+        this._alphaCutOffU8 = DEFAULT_ALPHA_CUT_OFF_U8;
+        this._useZBuffer = rendererConfig.useZBuffer === true && this._ySort && !this._bitonic;
+        if (rendererConfig.useZBuffer === true && this._bitonic && !this._zBitonicWarned) {
+            this._zBitonicWarned = true;
+            console.warn('WeedJS: renderer.useZBuffer is ignored when ySort is "bitonic".');
+        }
         this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
 
@@ -722,9 +739,11 @@ class PreRenderWorker extends AbstractWorker {
                 }
                 this._stampLights = [];
                 this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
-                if (this._ySort && !this._useZBuffer) {
+                if (this._ySort && !this._useZBuffer && !this._bitonic) {
                     this._gpuPainter = createPainterState(maxItems);
                 }
+                this._gpuIdxCutout = new Uint32Array(maxItems);
+                this._gpuIdxBlend = new Uint32Array(maxItems);
                 this._atlasNearest = (rendererConfig.atlasScaleMode || RENDERER_DEFAULTS.atlasScaleMode) === 'nearest';
                 console.log(`[PRE_RENDER WORKER] GPU queues initialized (sprites ${caps.maxSprites}, stamp ${caps.maxStamp})`);
             }
@@ -976,6 +995,8 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorX = buffer.anchorX;
         this.renderQueueAnchorY = buffer.anchorY;
         this.renderQueueType = buffer.type;
+        this.renderQueueAlphaMode = buffer.alphaMode;
+        this.renderQueueAlphaCutOff = buffer.alphaCutOff;
         this.renderQueueSortKey = buffer.sortKey;
         this.renderQueueRepeatX = buffer.repeatX;
         this.renderQueueRepeatY = buffer.repeatY;
@@ -1604,6 +1625,8 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorX = views.anchorX;
         this.renderQueueAnchorY = views.anchorY;
         this.renderQueueType = views.type;
+        this.renderQueueAlphaMode = views.alphaMode;
+        this.renderQueueAlphaCutOff = views.alphaCutOff;
         this.renderQueueSortKey = views.sortKey;
         this.renderQueueRepeatX = views.repeatX;
         this.renderQueueRepeatY = views.repeatY;
@@ -2243,12 +2266,26 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    _setQueueType(ref, out, type, idx) {
+        if (ref.type) ref.type[out] = type;
+        writeRowAlphaMode(ref.alphaMode, out, type, idx, SpriteRenderer.alphaMode, ParticleComponent.alphaMode);
+        writeRowAlphaCutOff(
+            ref.alphaCutOff,
+            out,
+            type,
+            idx,
+            SpriteRenderer.alphaCutOff,
+            ParticleComponent.alphaCutOff,
+            this._alphaCutOffU8
+        );
+    }
+
     _entityYSort() {
-        return !!(Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
+        return this._bitonic || !!(Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
     }
 
     _queueHasOrder() {
-        return this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
+        return this._bitonic || this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
     }
 
     _orderKey(type, idx, yKey, ySort) {
@@ -2801,7 +2838,7 @@ class PreRenderWorker extends AbstractWorker {
             ref.textureId[writeIndex] = textureIds[p];
             ref.anchorX[writeIndex] = pieceAnchorX[p];
             ref.anchorY[writeIndex] = pieceAnchorY[p];
-            ref.type[writeIndex] = 6;
+            this._setQueueType(ref, writeIndex, 6, entityIndex);
             if (ref.repeatX) ref.repeatX[writeIndex] = 0;
             if (ref.repeatY) ref.repeatY[writeIndex] = 0;
             clearTileFields(ref, writeIndex);
@@ -2834,7 +2871,7 @@ class PreRenderWorker extends AbstractWorker {
      * Add mode: a hidden lightGlows layer skips the collect.
      */
     _syncGlowLayer() {
-        const sprite = (this.config.renderer?.lightGlow ?? RENDERER_DEFAULTS.lightGlow) === 'sprite';
+        const sprite = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
         this._lightGlowAsSprite = sprite;
         this._glowEmit = true;
         this._glowLayerAlpha = 1;
@@ -2978,6 +3015,8 @@ class PreRenderWorker extends AbstractWorker {
         ref.rotC = rqRotC; ref.rotS = rqRotS; ref.alpha = rqAlpha; ref.tint = rqTint;
         ref.textureId = rqTextureId; ref.anchorX = rqAnchorX; ref.anchorY = rqAnchorY;
         ref.type = rqType;
+        ref.alphaMode = this.renderQueueAlphaMode;
+        ref.alphaCutOff = this.renderQueueAlphaCutOff;
         ref.sortKey = rqSortKey;
         ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
         ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;
@@ -3066,7 +3105,7 @@ class PreRenderWorker extends AbstractWorker {
                     if (rqTileMulY) rqTileMulY[out] = 0;
                 }
 
-                rqType[out] = 0;
+                this._setQueueType(ref, out, 0, idx);
                 const sheetId = srSpritesheetId[idx];
                 const animState = srAnimState[idx];
 
@@ -3170,7 +3209,7 @@ class PreRenderWorker extends AbstractWorker {
                     : this._resolveAnimFrameStart(pAnimIdx, `particle:${pAnimIdx}`);
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
-                rqType[out] = 1;
+                this._setQueueType(ref, out, 1, idx);
             } else if (type === 7) {
                 const lf = this.liquidFun;
                 if (
@@ -3199,7 +3238,7 @@ class PreRenderWorker extends AbstractWorker {
                     : this._resolveAnimFrameStart(lfAnimIdx, `liquidFun:${lfAnimIdx}`);
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
-                rqType[out] = 1;
+                this._setQueueType(ref, out, 1, idx);
             } else if (type === 2) {
                 // === DECORATION === (world xy + facing stashed at collect)
                 rqX[out] = stashPx[i];
@@ -3214,7 +3253,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqTextureId[out] = this._resolveAnimFrameStart(dAnimIdx, `decoration:${dAnimIdx}`);
                 rqAnchorX[out] = decoAnchorX[idx];
                 rqAnchorY[out] = decoAnchorY[idx];
-                rqType[out] = 2;
+                this._setQueueType(ref, out, 2, idx);
             } else if (type === 4) {
                 // === BULLET ===
                 if (!bulletActive[idx]) {
@@ -3237,7 +3276,7 @@ class PreRenderWorker extends AbstractWorker {
                     rqAnchorX[out] = bulletAnchorX[idx];
                     rqAnchorY[out] = bulletAnchorY[idx];
                 }
-                rqType[out] = 4;
+                this._setQueueType(ref, out, 4, idx);
             } else if (type === 5) {
                 // === BULLET TRAIL (line from start to curr, 0-alpha at start) ===
                 if (!bulletActive[idx]) {
@@ -3282,7 +3321,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqTextureId[out] = bulletTrailTextureId;
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
-                rqType[out] = 5;
+                this._setQueueType(ref, out, 5, idx);
             } else {
                 // === LIGHT GLOW (type=3) ===
                 const scale = lightGlowScale(sqrtLightIntensity[idx]);
@@ -3309,7 +3348,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
                 if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
-                rqType[out] = 3;
+                this._setQueueType(ref, out, 3, idx);
             }
         }
 
@@ -3470,6 +3509,8 @@ class PreRenderWorker extends AbstractWorker {
             layerRef.rotC = rqRotC; layerRef.rotS = rqRotS; layerRef.alpha = rqAlpha; layerRef.tint = rqTint;
             layerRef.textureId = rqTextureId; layerRef.anchorX = rqAnchorX; layerRef.anchorY = rqAnchorY;
             layerRef.type = rqType;
+            layerRef.alphaMode = ref.alphaMode;
+            layerRef.alphaCutOff = ref.alphaCutOff;
             layerRef.sortKey = rqSortKey;
             layerRef.repeatX = rqRepeatX; layerRef.repeatY = rqRepeatY;
             layerRef.tileMode = rqTileMode; layerRef.tileOffsetU = rqTileOffsetU; layerRef.tileOffsetV = rqTileOffsetV;
@@ -3532,7 +3573,7 @@ class PreRenderWorker extends AbstractWorker {
                         if (rqTileMulX) rqTileMulX[out] = 0;
                         if (rqTileMulY) rqTileMulY[out] = 0;
                     }
-                    rqType[out] = 0;
+                    this._setQueueType(ref, out, 0, idx);
                     const sheetId = srSpritesheetId[idx];
                     const animState = srAnimState[idx];
                     const proxyMap = this.proxyToGlobalAnim?.[sheetId];
@@ -3636,7 +3677,7 @@ class PreRenderWorker extends AbstractWorker {
                         : this._resolveAnimFrameStart(pAnimIdx, `particle:${pAnimIdx}`);
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
-                    rqType[out] = 1;
+                    this._setQueueType(ref, out, 1, idx);
                 } else if (type === 7) {
                     const lf = this.liquidFun;
                     if (
@@ -3665,7 +3706,7 @@ class PreRenderWorker extends AbstractWorker {
                         : this._resolveAnimFrameStart(lfAnimIdx, `liquidFun:${lfAnimIdx}`);
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
-                    rqType[out] = 1;
+                    this._setQueueType(ref, out, 1, idx);
                 } else if (type === 2) {
                     // === DECORATION ===
                     const pose = this._displayPoseOut;
@@ -3682,10 +3723,10 @@ class PreRenderWorker extends AbstractWorker {
                     rqTextureId[out] = this._resolveAnimFrameStart(dAnimIdx, `decoration:${dAnimIdx}`);
                     rqAnchorX[out] = decoAnchorX[idx];
                     rqAnchorY[out] = decoAnchorY[idx];
-                    rqType[out] = 2;
+                    this._setQueueType(ref, out, 2, idx);
                     rqAnchorX[out] = decoAnchorX[idx];
                     rqAnchorY[out] = decoAnchorY[idx];
-                    rqType[out] = 2;
+                    this._setQueueType(ref, out, 2, idx);
                 } else if (type === 3) {
                     // === LIGHT GLOW ===
                     const scale = lightGlowScale(sqrtLightIntensity[idx]);
@@ -3712,7 +3753,7 @@ class PreRenderWorker extends AbstractWorker {
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
                     if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
-                    rqType[out] = 3;
+                    this._setQueueType(ref, out, 3, idx);
                 } else if (type === 4) {
                     // === BULLET ===
                     if (!bulletActive[idx]) {
@@ -3735,7 +3776,7 @@ class PreRenderWorker extends AbstractWorker {
                         rqAnchorX[out] = bulletAnchorX[idx];
                         rqAnchorY[out] = bulletAnchorY[idx];
                     }
-                    rqType[out] = 4;
+                    this._setQueueType(ref, out, 4, idx);
                 } else if (type === 5) {
                     // === BULLET TRAIL ===
                     if (!bulletActive[idx]) {
@@ -3779,7 +3820,7 @@ class PreRenderWorker extends AbstractWorker {
                     rqTextureId[out] = bulletTrailTextureId;
                     rqAnchorX[out] = 0.5;
                     rqAnchorY[out] = 0.5;
-                    rqType[out] = 5;
+                    this._setQueueType(ref, out, 5, idx);
                 }
             }
 
@@ -3815,6 +3856,8 @@ class PreRenderWorker extends AbstractWorker {
         q.shadowOffX = views.shadowOffX;
         q.shadowOffY = views.shadowOffY;
         q.type = views.type;
+        q.alphaMode = views.alphaMode;
+        q.alphaCutOff = views.alphaCutOff;
         return q;
     }
 
@@ -3843,6 +3886,8 @@ class PreRenderWorker extends AbstractWorker {
             shadowOffX: this.renderQueueShadowOffX,
             shadowOffY: this.renderQueueShadowOffY,
             type: this.renderQueueType,
+            alphaMode: this.renderQueueAlphaMode,
+            alphaCutOff: this.renderQueueAlphaCutOff,
         });
     }
 
@@ -3866,7 +3911,6 @@ class PreRenderWorker extends AbstractWorker {
         opts.indices = null;
         opts.indexCount = 0;
         opts.sortKey = null;
-        opts.useZBuffer = !!this._useZBuffer;
         opts.space = GPU_SPACE_WORLD;
         opts.zoom = 1;
         opts.cameraX = 0;
@@ -3879,7 +3923,8 @@ class PreRenderWorker extends AbstractWorker {
         opts.snapCameraX = this._frameCameraX;
         opts.snapCameraY = this._frameCameraY;
         opts.type = this.renderQueueType;
-        if (this._useZBuffer) {
+        opts.useZBuffer = !!(this._useZBuffer || this._bitonic);
+        if (this._useZBuffer || this._bitonic) {
             const u = SpriteRenderer._zIndexUsers;
             let zMin = 0;
             let zMax = 0;
@@ -3957,6 +4002,17 @@ class PreRenderWorker extends AbstractWorker {
         out.sort(this._stampLightCmp || (this._stampLightCmp = (a, b) => a.distSq - b.distSq || a.id - b.id));
     }
 
+    _writeSpriteKeys(dst, q, indices, start, n) {
+        const keysOut = dst.spriteKeys;
+        const sk = q.sortKey;
+        if (!keysOut || !sk || n <= 0) return;
+        const bits = this._sortKeyBits(sk);
+        for (let k = 0; k < n; k++) {
+            const i = indices[k];
+            keysOut[start + k] = floatBitsToOrd(bits[i]);
+        }
+    }
+
     _packGpuSprites(dst, q, allowPainter) {
         const caps = this.gpuQueueCaps;
         const opts = this._gpuPackOpts;
@@ -3973,6 +4029,49 @@ class PreRenderWorker extends AbstractWorker {
         }
         const idxE = this._gpuIdxEntity;
         const idxG = this._gpuIdxGlow;
+        if (this._bitonic && typeArr && this._gpuIdxCutout && this._gpuIdxBlend) {
+            const split = partitionCutoutBlend(
+                typeArr,
+                q.alpha,
+                q.alphaMode || this.renderQueueAlphaMode,
+                count,
+                glowAdd ? 3 : -1,
+                this._decorationZoomAlpha,
+                this._gpuIdxCutout,
+                this._gpuIdxBlend
+            );
+            const cutN = split.cutout;
+            const blendN = split.blend;
+            const merged = idxE;
+            let ne = 0;
+            for (let i = 0; i < cutN; i++) merged[ne++] = this._gpuIdxCutout[i];
+            for (let i = 0; i < blendN; i++) merged[ne++] = this._gpuIdxBlend[i];
+            opts.indices = merged;
+            opts.indexCount = ne;
+            opts.useZBuffer = true;
+            opts.sortKey = q.sortKey;
+            const ctx = makePackContext(q, opts, caps.maxSprites);
+            spriteN = ctx
+                ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
+                : 0;
+            particles = ctx ? (ctx.particleCount | 0) : 0;
+            this._writeSpriteKeys(dst, q, merged, 0, spriteN);
+            flags = packGpuSpriteFlags(GPU_FLAG_BITONIC, Math.min(cutN, spriteN));
+            if (glowAdd && caps.maxGlow > 0) {
+                glowN = fillQueueIndices(typeArr, count, 3, -1, idxG);
+                if (glowN > 0) {
+                    opts.useZBuffer = false;
+                    opts.sortKey = null;
+                    opts.indices = idxG;
+                    opts.indexCount = glowN;
+                    const gctx = makePackContext(q, opts, caps.maxGlow);
+                    glowN = gctx
+                        ? packInstancedRows(q, gctx, dst.glow, dst.glowU32, GPU_SPRITE_FLOATS, caps.maxGlow, false)
+                        : 0;
+                }
+            }
+            return { sprite: spriteN, glow: glowN, particle: particles, flags };
+        }
         if (glowAdd && typeArr && idxE) {
             let ne = fillQueueIndices(typeArr, count, -1, 3, idxE);
             glowN = fillQueueIndices(typeArr, count, 3, -1, idxG);

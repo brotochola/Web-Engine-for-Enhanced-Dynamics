@@ -14,8 +14,8 @@ export function poseDisplayAlpha(prevCount, curCount, rampAlpha) {
   return rampAlpha;
 }
 
-/** prevX/prevY sit after the 15-float entity record. */
-export const POSE_PREV_OFFSET = 15;
+/** prevX/prevY sit after the 16-float entity record. */
+export const POSE_PREV_OFFSET = 16;
 
 export function writePosePrev(data, base, prevX, prevY) {
   data[base + POSE_PREV_OFFSET] = prevX;

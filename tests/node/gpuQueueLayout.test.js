@@ -6,10 +6,13 @@ import {
   GPU_QUEUE_VERSION,
   GPU_HDR_SPRITE,
   GPU_HDR_VERSION,
+  GPU_FLAG_BITONIC,
   gpuQueueCaps,
   computeGpuQueueBufferSize,
   createGpuQueueViews,
   writeGpuQueueHeader,
+  packGpuSpriteFlags,
+  unpackGpuCutoutCount,
   packInstancedRows,
   makePackContext,
   fillQueueIndices,
@@ -27,13 +30,22 @@ test('gpuQueue SAB views round-trip header and packed rows', () => {
   const views = createGpuQueueViews(sab, caps);
   writeGpuQueueHeader(views.header, { sprite: 2, glow: 1, sun: 1, stamp: 0, cookie: 0, particle: 1 }, 0);
   assert.equal(views.header[GPU_HDR_SPRITE], 2);
+  assert.equal(GPU_SPRITE_FLOATS, 16);
+  assert.equal(GPU_CASTER_FLOATS, 23);
   assert.equal(views.header[GPU_HDR_VERSION], GPU_QUEUE_VERSION);
   views.sprites[0] = 9;
   copyPackedRows(views.sprites, views.glow, 1, GPU_SPRITE_FLOATS, 0);
   assert.equal(views.glow[0], 9);
+  assert.ok(views.spriteKeys.length >= caps.maxSprites);
 });
 
-test('packInstancedRows writes 15 floats and packs tint+alpha', () => {
+test('packGpuSpriteFlags stores cutout count above bitonic flag', () => {
+  const packed = packGpuSpriteFlags(GPU_FLAG_BITONIC, 12345);
+  assert.equal(packed & 0xff, GPU_FLAG_BITONIC);
+  assert.equal(unpackGpuCutoutCount(packed), 12345);
+});
+
+test('packInstancedRows writes 16 floats and packs tint+alpha+cut', () => {
   const q = {
     count: 2,
     x: new Float32Array([10, 20]),
@@ -49,6 +61,7 @@ test('packInstancedRows writes 15 floats and packs tint+alpha', () => {
     anchorY: new Float32Array([1, 1]),
     type: new Uint8Array([0, 1]),
     sortKey: new Float32Array([0, 10]),
+    alphaCutOff: new Uint8Array([1, 200]),
   };
   const dst = new Float32Array(4 * GPU_SPRITE_FLOATS);
   const dstU32 = new Uint32Array(dst.buffer);
@@ -58,6 +71,8 @@ test('packInstancedRows writes 15 floats and packs tint+alpha', () => {
   assert.equal(dst[0], 10);
   assert.equal(dst[1], 1);
   assert.equal(dst[10], 3);
+  assert.ok(Math.abs(dst[15] - 1 / 255) < 1e-6);
+  assert.ok(Math.abs(dst[GPU_SPRITE_FLOATS + 15] - 200 / 255) < 1e-6);
   const a8 = (0.5 * 255 + 0.5) | 0;
   assert.equal(dstU32[GPU_SPRITE_FLOATS + 9], (((a8 & 255) << 24) | 0x00ff00) >>> 0);
   assert.equal(ctx.particleCount, 1);
@@ -94,7 +109,8 @@ test('shadow pack writes caster extras', () => {
   const ctx = makePackContext(q, { space: 0, depthDenom: 1 }, 1);
   const n = packInstancedRows(q, ctx, dst, dstU32, GPU_CASTER_FLOATS, 1, true);
   assert.equal(n, 1);
-  assert.equal(dst[15], 2.5);
-  assert.ok(Math.abs(dst[16] - 0.1) < 1e-6);
-  assert.ok(Math.abs(dst[17] - 0.2) < 1e-6);
+  assert.equal(dst[15], 0);
+  assert.equal(dst[16], 2.5);
+  assert.ok(Math.abs(dst[17] - 0.1) < 1e-6);
+  assert.ok(Math.abs(dst[18] - 0.2) < 1e-6);
 });

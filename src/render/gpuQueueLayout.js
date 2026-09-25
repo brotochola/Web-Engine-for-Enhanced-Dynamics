@@ -3,18 +3,18 @@
  * pixi copies those bytes into the Mesh buffer and draws.
  *
  * Regions (after an 8-int header): sprites, glows, sun casters, point-light
- * stamped casters, cookies. Caster rows are the 15 sprite floats plus
- * shadowH/off and a light vec4 (22 floats). Cookies are 15-float rows already
+ * stamped casters, cookies. Caster rows are the 16 sprite floats plus
+ * shadowH/off and a light vec4 (23 floats). Cookies are 16-float rows already
  * in shadow-RT pixels.
  */
 
 import { DECORATION_Y_SORT_SCALE } from '../util/configDefaults.js';
 import { depthFromOrderKey, depthFromSortKey } from '../util/sortIndexByKey.js';
 
-export const GPU_SPRITE_FLOATS = 15;
-export const GPU_CASTER_FLOATS = 22;
+export const GPU_SPRITE_FLOATS = 16;
+export const GPU_CASTER_FLOATS = 23;
 export const GPU_HEADER_INTS = 8;
-export const GPU_QUEUE_VERSION = 1;
+export const GPU_QUEUE_VERSION = 2;
 
 export const GPU_HDR_SPRITE = 0;
 export const GPU_HDR_GLOW = 1;
@@ -26,6 +26,16 @@ export const GPU_HDR_FLAGS = 6;
 export const GPU_HDR_VERSION = 7;
 
 export const GPU_FLAG_SORTED = 1;
+export const GPU_FLAG_BITONIC = 2;
+export const GPU_FLAG_CUTOUT_SHIFT = 8;
+
+export function packGpuSpriteFlags(flags, cutoutCount) {
+  return (flags & 0xff) | ((cutoutCount | 0) << GPU_FLAG_CUTOUT_SHIFT);
+}
+
+export function unpackGpuCutoutCount(flags) {
+  return (flags >>> GPU_FLAG_CUTOUT_SHIFT) | 0;
+}
 
 export const GPU_SPACE_WORLD = 0;
 export const GPU_SPACE_SCREEN = 1;
@@ -89,6 +99,8 @@ export function computeGpuQueueBufferSize(caps) {
   offset += (c.maxCookie | 0) * GPU_SPRITE_FLOATS * 4;
   offset = align4(offset);
   offset += (c.maxStamp | 0) * 2;
+  offset = align4(offset);
+  offset += (c.maxSprites | 0) * 4;
   return align4(offset);
 }
 
@@ -119,6 +131,9 @@ export function createGpuQueueViews(sab, caps) {
   const stampN = c.maxStamp | 0;
   const stampLightIdx = stampN > 0 ? new Uint16Array(sab, offset, stampN) : new Uint16Array(0);
   offset = align4(offset + stampN * 2);
+  const keyN = c.maxSprites | 0;
+  const spriteKeys = keyN > 0 ? new Uint32Array(sab, offset, keyN) : new Uint32Array(0);
+  offset = align4(offset + keyN * 4);
   return {
     header,
     sprites: sprites.view,
@@ -132,6 +147,7 @@ export function createGpuQueueViews(sab, caps) {
     cookie: cookie.view,
     cookieU32: cookie.u32,
     stampLightIdx,
+    spriteKeys,
     caps: c,
     byteLength: offset,
   };
@@ -272,15 +288,17 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     dst[base + 12] = invY;
     dst[base + 13] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
     dst[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
+    const cutU8 = q.alphaCutOff ? q.alphaCutOff[i] | 0 : 0;
+    dst[base + 15] = cutU8 > 0 ? cutU8 * (1 / 255) : 0;
     if (shadowCast && fp >= GPU_CASTER_FLOATS) {
       const sh = q.shadowH;
-      dst[base + 15] = sh ? sh[i] : 0;
-      dst[base + 16] = q.shadowOffX ? q.shadowOffX[i] : 0;
-      dst[base + 17] = q.shadowOffY ? q.shadowOffY[i] : 0;
-      dst[base + 18] = 0;
+      dst[base + 16] = sh ? sh[i] : 0;
+      dst[base + 17] = q.shadowOffX ? q.shadowOffX[i] : 0;
+      dst[base + 18] = q.shadowOffY ? q.shadowOffY[i] : 0;
       dst[base + 19] = 0;
       dst[base + 20] = 0;
       dst[base + 21] = 0;
+      dst[base + 22] = 0;
     }
     base += fp;
     out++;

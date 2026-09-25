@@ -90,7 +90,7 @@ test('copyTypedRange copies without wrapping a view', () => {
 });
 
 test('appendStampedCasters copies subsets and stamps one light each', () => {
-  const sf = 22;
+  const sf = 23;
   const src = new Float32Array(3 * sf);
   src[0] = 10;
   src[sf] = 20;
@@ -102,17 +102,17 @@ test('appendStampedCasters copies subsets and stamps one light each', () => {
   assert.equal(wrote, 2);
   assert.equal(dst[0], 30);
   assert.equal(dst[sf], 10);
-  assert.equal(dst[18], 1);
-  assert.equal(dst[21], 4);
-  assert.equal(dst[sf + 18], 1);
-  assert.equal(dst[sf + 21], 4);
+  assert.equal(dst[CASTER_LIGHT_FLOAT], 1);
+  assert.equal(dst[CASTER_LIGHT_FLOAT + 3], 4);
+  assert.equal(dst[sf + CASTER_LIGHT_FLOAT], 1);
+  assert.equal(dst[sf + CASTER_LIGHT_FLOAT + 3], 4);
   const wroteCap = appendStampedCasters(dst, sf, 0, src, sf, idx, 2, light, 1);
   assert.equal(wroteCap, 1);
   const packed = new Float32Array([0, 0, 0, 0, 9, 8, 7, 6]);
   const wroteOff = appendStampedCasters(dst, sf, 0, src, sf, idx, 1, packed, 4, 4);
   assert.equal(wroteOff, 1);
-  assert.equal(dst[18], 9);
-  assert.equal(dst[21], 6);
+  assert.equal(dst[CASTER_LIGHT_FLOAT], 9);
+  assert.equal(dst[CASTER_LIGHT_FLOAT + 3], 6);
 });
 
 test('rtPixelSize rounds and rtPixelScale matches the real RT', () => {
@@ -123,20 +123,20 @@ test('rtPixelSize rounds and rtPixelScale matches the real RT', () => {
   assert.equal(rtPixelScale(0, 10), 1);
 });
 
-test('writeCasterPose keeps the 18-float pose slice', () => {
-  const data = new Float32Array(18);
+test('writeCasterPose writes shadow extras after alphaCut', () => {
+  const data = new Float32Array(23);
   writeCasterPose(data, 0, 10, 20, 1, 0, 2.5, 3, 4);
   assert.equal(data[0], 10);
   assert.equal(data[1], 20);
   assert.equal(data[6], 1);
   assert.equal(data[7], 0);
-  assert.equal(data[15], 2.5);
-  assert.equal(data[16], 3);
-  assert.equal(data[17], 4);
+  assert.equal(data[16], 2.5);
+  assert.equal(data[17], 3);
+  assert.equal(data[18], 4);
 });
 
 test('compactStampByLightLimit keeps the closest casters per light', () => {
-  const fp = 22;
+  const fp = 23;
   const stamp = new Float32Array(4 * fp);
   const lightIdx = new Uint16Array([0, 0, 0, 1]);
   for (let i = 0; i < 4; i++) {

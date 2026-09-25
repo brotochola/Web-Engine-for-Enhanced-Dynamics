@@ -20,7 +20,7 @@ test('preRenderWorker only writes sortKey; never CPU-sorts the queue', () => {
 
 test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter path', () => {
   assert.match(pixi, /createPainterState, orderPainterSlots/);
-  assert.match(pixi, /this\._painter = \(!z && this\._ySort\) \? createPainterState\(maxItems\) : null/);
+  assert.match(pixi, /this\._painter = \(!z && !bitonic && this\._ySort\) \? createPainterState\(maxItems\) : null/);
   assert.match(pixi, /_uploadSortedSprites\(/);
   assert.match(pixi, /orderPainterSlots\(painter, idxE, ne, keysU32\)/);
   assert.match(pixi, /painter = layerYSort \? createPainterState\(maxItems\) : null/);
@@ -28,9 +28,37 @@ test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter pat
 });
 
 test('useZBuffer alphaCut is the low discard; the high cut stays 0', () => {
-  assert.match(defaults, /alphaCut: 1 \/ 255/);
-  assert.match(pixi, /alphaCut: this\._zBufferRequested \? new Float32Array\(\[this\._alphaCut, 0, 0, 0\]\) : null/);
-  assert.match(pixi, /rendererConfig\.alphaCut \?\? RENDERER_DEFAULTS\.alphaCut/);
+  assert.match(defaults, /DEFAULT_ALPHA_CUT_OFF_U8 = 1/);
+  assert.match(pixi, /alphaCut: \(this\._zBufferRequested \|\| bitonic\) \? new Float32Array\(\[this\._alphaCut, 0, 0, 0\]\) : null/);
+  assert.match(pixi, /this\._alphaCut = DEFAULT_ALPHA_CUT_OFF_U8 \/ 255/);
+});
+
+test('pixi: WebGPU injects a device with timestamp-query and wraps beginRenderPass', () => {
+  const timer = readFileSync(join(root, 'src/render/gpuFrameTimer.js'), 'utf8');
+  const req = readFileSync(join(root, 'src/render/webgpu/requestGpuDevice.js'), 'utf8');
+  const bitonic = readFileSync(join(root, 'src/render/webgpu/bitonicSort.js'), 'utf8');
+  assert.match(req, /timestamp-query/);
+  assert.match(pixi, /requestWeedGpu/);
+  assert.match(pixi, /gpu: \{ adapter: weedGpu\.adapter, device: weedGpu\.device \}/);
+  assert.match(timer, /encoder\.renderStart/);
+  assert.match(timer, /timestampWrites/);
+  assert.doesNotMatch(timer, /renderer\?\.gpu && !renderer\.gl/);
+  assert.match(bitonic, /timer && timer\.computeStamp/);
+  assert.match(bitonic, /timer\.resolveCompute/);
+});
+
+test('pixi: lighting binds uShadowSampler to the live shadow RT, not Texture.WHITE', () => {
+  assert.match(pixi, /_lightingShadowResources\(\)/);
+  assert.match(pixi, /res\.uShadowSampler = src\.style/);
+  assert.match(pixi, /this\._unbindLightingShadowMap\(\)/);
+  assert.match(pixi, /this\._bindLightingShadowMap\(\)/);
+  assert.doesNotMatch(pixi, /uShadowMap: PIXI\.Texture\.WHITE\.source/);
+});
+
+test('pixi: bitonic cutout+blend share one entities root so layer zIndex cannot invert them', () => {
+  assert.match(pixi, /this\._entitiesRoot = new Container\(\)/);
+  assert.match(pixi, /this\._entitiesRoot\.addChild\(this\.spriteMesh\)/);
+  assert.match(pixi, /this\._registerLayerDisplayObject\('entities', this\._entitiesRoot\)/);
 });
 
 test('pixi: GPU two-pass is gone; ySorting uses reinsert with no painterSort config', () => {

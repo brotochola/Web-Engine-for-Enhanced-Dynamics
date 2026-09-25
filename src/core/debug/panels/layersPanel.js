@@ -66,7 +66,7 @@ export class LayersPanel {
     this.panel = createPanel();
     this.panel.appendChild(this._createHeaderRow());
 
-    const glowSprite = this.debugUI.scene?.config?.renderer?.lightGlow === 'sprite';
+    const glowSprite = this.debugUI.scene?.config?.lighting?.lightGlow === 'sprite';
     for (const layerName of Object.keys(DEFAULT_LAYERS)) {
       if (layerName === 'lightGlows' && glowSprite) continue;
       this._createLayerRow(layerName, this.panel);

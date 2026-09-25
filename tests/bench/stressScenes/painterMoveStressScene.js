@@ -38,10 +38,27 @@ export class PainterMoveEntity extends GameObject {
   }
 }
 
-function zBufferOn() {
+function queryParam(name) {
   const search = globalThis.location && globalThis.location.search;
-  if (typeof search !== 'string') return false;
-  return new URLSearchParams(search).get('useZBuffer') === '1';
+  if (typeof search !== 'string') return null;
+  return new URLSearchParams(search).get(name);
+}
+
+function zBufferOn() {
+  return queryParam('useZBuffer') === '1';
+}
+
+function painterYSort() {
+  const q = queryParam('ySort');
+  if (q === 'bitonic' || q === 'cpu') return q;
+  if (q === '0' || q === 'false') return false;
+  return true;
+}
+
+function painterBackend() {
+  const q = queryParam('backend');
+  if (q === 'webgl' || q === 'webgpu') return q;
+  return painterYSort() === 'bitonic' ? 'webgpu' : 'webgl';
 }
 
 function painterMoveConfig() {
@@ -72,9 +89,9 @@ function painterMoveConfig() {
       decals: false,
     },
     renderer: {
-      backend: 'webgl',
+      backend: painterBackend(),
       noLimitFPS: false,
-      ySort: true,
+      ySort: painterYSort(),
       useZBuffer: zBufferOn(),
       maxVisibleRenderables: N,
     },

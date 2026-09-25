@@ -35,7 +35,7 @@ import {
   buildActiveAndVisibleListBuffers,
 } from '../util/particleIntegrate.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
-import { NAVIGATION_DEFAULTS, RENDERER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
+import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
 import {
   getColliderBounds,
   getCellRange,
@@ -373,7 +373,7 @@ class ParticleWorker extends AbstractWorker {
     // Screen visibility (camera bounds)
     this.canvasWidth = 0;
     this.canvasHeight = 0;
-    this.cullingRatio = RENDERER_DEFAULTS.cullingRatio;
+    this.cullingRatio = PRE_RENDER_DEFAULTS.cullingRatio;
     this._cameraBounds = {
       zoom: 0,
       cameraOffsetX: 0,
@@ -544,7 +544,7 @@ class ParticleWorker extends AbstractWorker {
     // Screen visibility config
     this.canvasWidth = this.config.canvasWidth || 800;
     this.canvasHeight = this.config.canvasHeight || 600;
-    this.cullingRatio = this.config.renderer?.cullingRatio ?? RENDERER_DEFAULTS.cullingRatio;
+    this.cullingRatio = this.config.preRender?.cullingRatio ?? PRE_RENDER_DEFAULTS.cullingRatio;
 
     // console.log('[PARTICLE WORKER] ✅ Initialize() completed!');
   }

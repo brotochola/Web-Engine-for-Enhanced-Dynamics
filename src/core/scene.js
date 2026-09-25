@@ -122,6 +122,35 @@ import {
   tryPushSpawn,
 } from '../util/spawnCommandRing.js';
 
+const LEGACY_RENDERER_LIFT = [
+  ['cullingRatio', 'preRender'],
+  ['startFadingDecorationsAtZoom', 'preRender'],
+  ['hideDecorationsAtZoom', 'preRender'],
+  ['lightGlow', 'lighting'],
+];
+
+/** One-release shim: old renderer.* keys move to the bucket that consumes them. */
+function liftLegacyRendererConfig(config) {
+  const userR = config.renderer;
+  if (!userR) return;
+  let lifted = false;
+  for (let i = 0; i < LEGACY_RENDERER_LIFT.length; i++) {
+    const key = LEGACY_RENDERER_LIFT[i][0];
+    const destName = LEGACY_RENDERER_LIFT[i][1];
+    if (userR[key] == null) continue;
+    if (!config[destName]) config[destName] = {};
+    if (config[destName][key] == null) config[destName][key] = userR[key];
+    delete userR[key];
+    lifted = true;
+  }
+  if (lifted && !liftLegacyRendererConfig._warned) {
+    liftLegacyRendererConfig._warned = true;
+    console.warn(
+      'WeedJS: renderer.cullingRatio / startFadingDecorationsAtZoom / hideDecorationsAtZoom moved to preRender; renderer.lightGlow moved to lighting.'
+    );
+  }
+}
+
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
   // Spatial workers use indices 0..N-1 (N = numberOfSpatialWorkers).
@@ -626,6 +655,7 @@ class Scene {
    * Access config via this.config.section.property (e.g., this.config.lighting.maxFlashes)
    */
   _applyConfigDefaults() {
+    liftLegacyRendererConfig(this.config);
     const userLightingConfig = this.config.lighting || {};
 
     // Top-level defaults from centralized config

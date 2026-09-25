@@ -31,13 +31,14 @@ import {
   SUN_DEFAULTS,
   LAYER_DEFAULTS,
   DEFAULT_LAYERS,
-  RENDERER_DEFAULTS,
+  LIGHTING_DEFAULTS,
 } from './configDefaults.js';
 import { Sun } from '../core/sun.js';
 import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
+import { ySortEnabled } from '../render/rendererBackend.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
 import { preRenderJoinWords } from './preRenderOwner.js';
 import { NavGrid } from '../core/navGrid.js';
@@ -521,8 +522,8 @@ function initializeLightingAndRenderBuffers(scene) {
   scene.poseCapacity = poseN;
 
   const builtInLayers = {};
-  const defaultYSorting = config.renderer?.ySort === true;
-  const glowAsSprite = (config.renderer?.lightGlow ?? RENDERER_DEFAULTS.lightGlow) === 'sprite';
+  const defaultYSorting = ySortEnabled(config.renderer?.ySort);
+  const glowAsSprite = (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
   for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
     if (name === 'lightGlows' && glowAsSprite) continue;
     builtInLayers[name] = {

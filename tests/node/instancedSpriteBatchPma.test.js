@@ -22,7 +22,7 @@ test('depth-write fragment discards clear texels; blend fragment does not', () =
   assert.match(src, /alphaDiscard = true/);
   assert.match(src, /this\._alphaDiscard = alphaDiscard !== false/);
   assert.match(src, /fragEntry = this\._alphaDiscard \? 'mainFrag' : 'mainFragBlend'/);
-  assert.match(wgsl, /fn mainFrag\(in: VertexOut\)[\s\S]*?if \(a < cut\.x\) \{ discard; \}/);
+  assert.match(wgsl, /fn mainFrag\(in: VertexOut\)[\s\S]*?if \(a < cutX\) \{ discard; \}/);
   assert.match(wgsl, /fn mainFragBlend\(in: VertexOut\)[\s\S]*?return vec4<f32>\(t\.rgb \* in\.vColor\.rgb \* in\.vColor\.a, a\);/);
   assert.doesNotMatch(
     wgsl,
@@ -38,7 +38,9 @@ test('vertex shader uses aInstRotCS without cos/sin of angle', () => {
   assert.match(wgsl, /@location\(4\) aInstRotCS: vec2<f32>/);
   assert.match(wgsl, /let c = aInstRotCS\.x;/);
   assert.doesNotMatch(wgsl, /cos\(aInstRot\)/);
-  assert.match(src, /INSTANCED_SPRITE_FLOATS = 15/);
+  assert.match(src, /INSTANCED_SPRITE_FLOATS = 16/);
+  assert.match(src, /if \(!this\.shadowCast\) \{\s*attributes\.aInstAlphaCut/s);
+  assert.match(wgsl, /aInstAlphaCut/);
   assert.match(src, /_finishUpload\(out, this\._strideBytes\)/);
   assert.match(wgsl, /aInstTileInv/);
   assert.match(wgsl, /aInstTileOff/);

@@ -213,6 +213,35 @@ export const SPRITE_TILE_MODE = Object.freeze({
 });
 
 /**
+ * How a sprite composites when `renderer.ySort === 'bitonic'`.
+ * CUTOUT writes Z (binary / discarded edge). BLEND reads Z, does not write.
+ * @readonly
+ * @enum {number}
+ */
+export const SPRITE_ALPHA_MODE = Object.freeze({
+  CUTOUT: 0,
+  BLEND: 1,
+});
+
+/** Spawn / pack fallback. 1 = discard only texel alpha 0. */
+export const DEFAULT_ALPHA_CUT_OFF_U8 = 1;
+
+/** 0–1 → SoA/queue byte. 0 reserved for “use shader uAlphaCut fallback”. */
+export function packAlphaCutOff01(cut01) {
+  const n = Number(cut01);
+  if (!Number.isFinite(n)) return DEFAULT_ALPHA_CUT_OFF_U8;
+  const u = (n * 255 + 0.5) | 0;
+  if (u < 1) return DEFAULT_ALPHA_CUT_OFF_U8;
+  return u > 255 ? 255 : u;
+}
+
+/** Clamp entity/emit `alphaCutOff` (0–255). 0 means use shader uAlphaCut fallback. */
+export function clampAlphaCutOffU8(value) {
+  const v = value | 0;
+  return v < 0 ? 0 : v > 255 ? 255 : v;
+}
+
+/**
  * Built-in pipeline layers. Same shape as scene config.layers entries.
  * ySorting is false for all built-in layers; entities gets overridden
  * at runtime by the scene's renderer.ySort config.
@@ -517,19 +546,17 @@ export const RENDERER_DEFAULTS = Object.freeze({
   backend: 'webgpu',
   noLimitFPS: false,
   fixedFps: 0,
-  /** Y orders sprites that share a zIndex. The painter runs on the CPU unless useZBuffer is on. */
+  /**
+   * Y order for the entity list. `false` = emit order. `true` / `'cpu'` = CPU painter.
+   * `'bitonic'` = GPU sort + cutout/blend depth (WebGPU). `useZBuffer` only applies to `'cpu'`.
+   */
   ySort: false,
   /**
    * Entity batch writes the same sort key as clip Z and depth-tests.
    * Default off. Needs ySort or a sprite zIndex. Otherwise the boot warns and Z stays off.
-   * Empty texels below `alphaCut` do not write Z. A softer edge still does.
+   * Empty texels below the sprite `alphaCutOff` do not write Z. A softer edge still does.
    */
   useZBuffer: false,
-  /** Low discard for the entity batch while useZBuffer is on. High cut stays 0. */
-  alphaCut: 1 / 255,
-  cullingRatio: 0.1,
-  startFadingDecorationsAtZoom: 0.5,
-  hideDecorationsAtZoom: 0.25,
   /** null = auto-size main render queue at SAB alloc from pools + Adobe piece bounds */
   maxVisibleRenderables: null,
   maxDecalTileUploadsPerFrame: 32,
@@ -543,12 +570,6 @@ export const RENDERER_DEFAULTS = Object.freeze({
    * smoothing (that is preRender.interpolation). Both true adds a frame of lag.
    */
   interpolation: false,
-  /**
-   * 'add' — type 3 glows go to the lightGlows ADD mesh.
-   * 'sprite' — same quads join the entity list (sort bias already above the body).
-   * Source-over, so the soft edge can gray, and lighting multiply sits on top.
-   */
-  lightGlow: 'add',
 });
 
 // ============================================================================
@@ -598,6 +619,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxPolygonVertices: 128,
   /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
   maxOccluderSelfLit: 512,
+  /**
+   * 'add' — type 3 glows go to the lightGlows ADD mesh.
+   * 'sprite' — same quads join the entity list (sort bias already above the body).
+   * Source-over, so the soft edge can gray, and lighting multiply sits on top.
+   */
+  lightGlow: 'add',
   sun: SUN_DEFAULTS,
 });
 
@@ -643,6 +670,10 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
    * renderer.interpolation instead.
    */
   interpolation: false,
+  /** Viewport AABB margin as a fraction of canvas (pre-render + particle cull). */
+  cullingRatio: 0.1,
+  startFadingDecorationsAtZoom: 0.5,
+  hideDecorationsAtZoom: 0.25,
 });
 
 /** @param {boolean|null|undefined} value */

@@ -60,10 +60,12 @@ export const RENDERER_STATS = Object.freeze({
   GPU_FPS: 31,
   /** Custom-layer and MESH render-texture draws. */
   GPU_CUSTOM_MS: 32,
-  /** 1 when GpuFrameTimer is active. 0 on WebGPU and when the WebGL extension is missing. */
+  /** 1 when GpuFrameTimer is active (WebGL timer query or WebGPU timestamp-query). */
   GPU_TIMER: 33,
-  STRIDE_FLOATS: 34,
-  BUFFER_SIZE: 34 * 4,
+  /** GPU bitonic compute (WebGPU timestamps). 0 on WebGL / no feature. */
+  GPU_SORT_MS: 34,
+  STRIDE_FLOATS: 35,
+  BUFFER_SIZE: 35 * 4,
 });
 
 /**
@@ -357,6 +359,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'GPU_LIGHTS_MS', label: 'Lights', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'GPU_CUSTOM_MS', label: 'Custom', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'GPU_PRESENT_MS', label: 'Present', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'GPU_SORT_MS', label: 'Sort', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
       { key: 'GPU_PASSES', label: 'Passes', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'GPU_CASTERS', label: 'Casters', format: fmtNum, kind: STAT_KIND.COUNT },

@@ -27,6 +27,7 @@ const { LightOccluder, ShadowCaster, RigidBody, Collider, SpriteRenderer, Transf
 
 export class Person extends Lootable {
   static deriveSpeed = true;
+
   static defaultFriction = 0.005;
 
   static punchRangeSq = 30 ** 2; // Distance to start punching
@@ -106,6 +107,7 @@ export class Person extends Lootable {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.98;
     this.spriteRenderer.animationSpeed = 0.15;
+    this.spriteRenderer.alphaCutOff = 254;
     this.shadowCaster.heightMultiplier = 1.5
 
     // Shadow uses default heightMultiplier = 1 (matches sprite scale)

@@ -79,6 +79,9 @@ export class BichosScene extends WEED.Scene {
       noLimitFPS: false,
       ySort: true,
       atlasScaleMode: 'linear',
+    },
+
+    preRender: {
       cullingRatio: 0.33,
       startFadingDecorationsAtZoom: 0.5,
       hideDecorationsAtZoom: 0.25,

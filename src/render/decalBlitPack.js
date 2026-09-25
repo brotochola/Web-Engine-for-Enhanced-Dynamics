@@ -4,7 +4,7 @@
  */
 
 /** Same stride as InstancedSpriteBatch. Do not import that file (Pixi). */
-export const INSTANCED_SPRITE_FLOATS = 15;
+export const INSTANCED_SPRITE_FLOATS = 16;
 
 /**
  * Dummy “one PIXI.Sprite record” write: x, y, visible. Baseline for the kernel.
@@ -49,6 +49,7 @@ export function writeDecalBlitInstance(out, outU32, i, x, y, tileSize, texId, de
   out[o + 12] = 0;
   out[o + 13] = 0;
   out[o + 14] = 0;
+  out[o + 15] = 0;
 }
 
 /**

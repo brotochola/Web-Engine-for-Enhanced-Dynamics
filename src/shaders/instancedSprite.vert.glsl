@@ -8,6 +8,7 @@ in float aInstTintBits;
 in float aInstTexId;
 in vec2 aInstTileInv;
 in vec2 aInstTileOff;
+in float aInstAlphaCut;
 
 uniform mat3 uProjectionMatrix;
 uniform mat3 uWorldTransformMatrix;
@@ -21,6 +22,7 @@ out vec2 vWorld;
 out vec4 vAtlasUV;
 out vec2 vTileInv;
 out vec2 vTileOff;
+out float vAlphaCut;
 
 void main() {
   int tid = int(aInstTexId + 0.5);
@@ -60,4 +62,5 @@ void main() {
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;
   vTileOff = aInstTileOff;
+  vAlphaCut = aInstAlphaCut;
 }

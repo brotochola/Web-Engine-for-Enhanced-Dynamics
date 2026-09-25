@@ -53,7 +53,21 @@ const pinHour = predatorHourPin();
 function predatorRendererBackend() {
   const q = predatorSearchParam('backend');
   if (q === 'webgl' || q === 'webgpu') return q;
-  return 'webgl';
+  return 'webgpu';
+}
+
+function predatorYSort() {
+  const q = predatorSearchParam('ySort');
+  if (q === 'bitonic' || q === 'cpu') return q;
+  if (q === '0' || q === 'false') return false;
+  return 'bitonic';
+}
+
+function predatorUseZBuffer() {
+  const q = predatorSearchParam('useZBuffer');
+  if (q === '0' || q === 'false') return false;
+  if (q === '1' || q === 'true') return true;
+  return true;
 }
 
 const {
@@ -156,16 +170,10 @@ export class PredatorScene extends WEED.Scene {
     renderer: {
       backend: predatorRendererBackend(),
       noLimitFPS: false,
-      ySort: true,
-      cullingRatio: 0.33,
-      startFadingDecorationsAtZoom: 0.5,
-      hideDecorationsAtZoom: 0.25,
+      ySort: predatorYSort(),
+      useZBuffer: predatorUseZBuffer(),
       autoGenerateMipmaps: false,
       interpolation: false,
-      lightGlow: "add",
-      useZBuffer: true,
-      alphaCut: 200 / 255,
-      backend: "webgl",
       atlasScaleMode: 'linear',
     },
     preRender: {
@@ -173,24 +181,15 @@ export class PredatorScene extends WEED.Scene {
       entityBlockSize: 512,
       numberOfPreRenderWorkers: predatorPositiveParam('preRenderWorkers', 1),
       backpressure: true,
-      /**
-       * Skip entity viewport AABB and screenX/Y. Every active renderVisible
-       * sprite (and adobe) is queued; CameraInOutListener / isOnScreen treat
-       * them as on camera. Off-screen worlds grow RENDER_QUEUE_SIZE and pixi.
-       * Particles, decorations, bullets, lights, and shadow gather still cull.
-       * Default false — opt-in when the world is the viewport (bunny mark).
-       */
       skipCull: false,
-      /**
-       * Blend the last two published physics poses while packing the render queue.
-       * true lags display by up to one physics frame. Does not guess ahead
-       * (no extrapolation). Bunny-style scenes leave this false and use
-       * renderer.interpolation instead.
-       */
       interpolation: false,
+      cullingRatio: 0.33,
+      startFadingDecorationsAtZoom: 0.5,
+      hideDecorationsAtZoom: 0.25,
     },
 
     lighting: {
+      lightGlow: 'add',
       enabled: true,
       baseAmbient: 0, // Minimum light at night (pitch black without lights)
 

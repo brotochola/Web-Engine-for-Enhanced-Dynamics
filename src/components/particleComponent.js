@@ -4,6 +4,7 @@
 // Particles have fixed anchor (0.5, 0.5); optional over-life tweens + short frame cycle
 
 import { Component } from '../core/component.js';
+import { SPRITE_ALPHA_MODE } from '../util/configDefaults.js';
 
 export class ParticleComponent extends Component {
   static ARRAY_SCHEMA = {
@@ -31,6 +32,10 @@ export class ParticleComponent extends Component {
     scaleX: Float32Array, // Horizontal scale
     scaleY: Float32Array, // Vertical scale
     alpha: Float32Array, // Opacity (0-1)
+    // SPRITE_ALPHA_MODE: 0 cutout (write Z), 1 blend (read Z). Default blend.
+    alphaMode: Uint8Array,
+    // Texel discard 0–255. 0 = use shader uAlphaCut fallback. Default 1.
+    alphaCutOff: Uint8Array,
     tint: Uint32Array, // Color tint (0xRRGGBB) - modified by lighting
     baseTint: Uint32Array, // Original color set by emitter (preserved for lighting calculation)
     textureId: Uint16Array, // Index into texture atlas (NOT spritesheetId)
@@ -101,5 +106,7 @@ export class ParticleComponent extends Component {
   static initializeArrays(buffer, count) {
     super.initializeArrays(buffer, count);
     if (this.rotC) this.rotC.fill(1);
+    if (this.alphaMode) this.alphaMode.fill(SPRITE_ALPHA_MODE.BLEND);
+    if (this.alphaCutOff) this.alphaCutOff.fill(1);
   }
 }

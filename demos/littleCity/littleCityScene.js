@@ -168,13 +168,12 @@ export class LittleCityScene extends WEED.Scene {
       noLimitFPS: false,
       ySort: true,
       // useZBuffer: true,
-      // alphaCut: 0.5,
-      cullingRatio: 0.1,
-      startFadingDecorationsAtZoom: 0.5,
-      hideDecorationsAtZoom: 0.25,
     },
     preRender: {
       noLimitFPS: false,
+      cullingRatio: 0.1,
+      startFadingDecorationsAtZoom: 0.5,
+      hideDecorationsAtZoom: 0.25,
     },
     lighting: {
       enabled: false,

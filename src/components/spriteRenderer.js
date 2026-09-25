@@ -3,7 +3,7 @@
 
 import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
-import { SPRITE_TILE_MODE } from '../util/configDefaults.js';
+import { SPRITE_TILE_MODE, SPRITE_ALPHA_MODE, clampAlphaCutOffU8 } from '../util/configDefaults.js';
 
 /** GLSL-style fract (works for negatives). */
 export function fract01(x) {
@@ -47,6 +47,10 @@ export class SpriteRenderer extends Component {
     tint: Uint32Array, // Color tint (0xFFFFFF = white/normal) - modified by lighting
     baseTint: Uint32Array, // Original color set by game logic (preserved for lighting calculation)
     alpha: Float32Array, // Transparency (0-1)
+    // SPRITE_ALPHA_MODE: 0 cutout (write Z), 1 blend (read Z). Bitonic path.
+    alphaMode: Uint8Array,
+    // Texel discard 0–255. 0 = use shader uAlphaCut fallback. 1 = drop alpha 0 only.
+    alphaCutOff: Uint8Array,
 
     scaleX: Float32Array, // Separate X scale
     scaleY: Float32Array, // Separate Y scale
@@ -189,6 +193,26 @@ export class SpriteRenderer extends Component {
     SpriteRenderer.renderDirty[this.index] = 1;
   }
 
+  get alphaMode() {
+    return SpriteRenderer.alphaMode[this.index] | 0;
+  }
+  set alphaMode(value) {
+    const v = value | 0;
+    SpriteRenderer.alphaMode[this.index] =
+      v <= SPRITE_ALPHA_MODE.CUTOUT
+        ? SPRITE_ALPHA_MODE.CUTOUT
+        : SPRITE_ALPHA_MODE.BLEND;
+    SpriteRenderer.renderDirty[this.index] = 1;
+  }
+
+  get alphaCutOff() {
+    return SpriteRenderer.alphaCutOff[this.index] | 0;
+  }
+  set alphaCutOff(value) {
+    SpriteRenderer.alphaCutOff[this.index] = clampAlphaCutOffU8(value);
+    SpriteRenderer.renderDirty[this.index] = 1;
+  }
+
   get zIndex() {
     return SpriteRenderer.zIndex[this.index];
   }
@@ -238,6 +262,7 @@ export class SpriteRenderer extends Component {
   static initializeArrays(buffer, count) {
     super.initializeArrays(buffer, count);
     if (this.spriteRotC) this.spriteRotC.fill(1);
+    if (this.alphaCutOff) this.alphaCutOff.fill(1);
     const base = super.getBufferSize(count);
     const aligned = (base + 3) & ~3;
     // [0] users, [1] zMin, [2] zMax. Stale min/max only widen the depth span.

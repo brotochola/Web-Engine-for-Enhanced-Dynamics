@@ -15,8 +15,8 @@ export function compactShadowCasterIndices(shadowH, typeArr, count, outIdx) {
   return n;
 }
 
-/** Per-instance light sits after the 18 caster floats (xy…shadow). */
-export const CASTER_LIGHT_FLOAT = 18;
+/** Per-instance light sits after the 19 caster floats (16 sprite + shadowH/off). */
+export const CASTER_LIGHT_FLOAT = 19;
 
 /** Copy n typed-array slots. Avoids `.subarray` views in per-instance loops. */
 export function copyTypedRange(dst, d0, src, s0, n) {
@@ -67,15 +67,15 @@ export function rtPixelScale(canvasPx, rtPx) {
   return canvasPx > 0 ? rtPx / canvasPx : 1;
 }
 
-/** Pose slice of an 18-float caster instance (xy, rotCS, shadowH/off). */
+/** Pose slice of a 23-float caster instance (xy, rotCS, shadowH/off after alphaCut). */
 export function writeCasterPose(data, base, x, y, rotC, rotS, height, offX, offY) {
   data[base] = x;
   data[base + 1] = y;
   data[base + 6] = rotC;
   data[base + 7] = rotS;
-  data[base + 15] = height;
-  data[base + 16] = offX;
-  data[base + 17] = offY;
+  data[base + 16] = height;
+  data[base + 17] = offX;
+  data[base + 18] = offY;
 }
 
 export function takeClosest(tmpIdx, tmpDist, order, m, limit, outIdx) {

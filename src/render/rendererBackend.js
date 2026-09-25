@@ -6,6 +6,47 @@
 export const RENDERER_BACKEND_WEBGL = 'webgl';
 export const RENDERER_BACKEND_WEBGPU = 'webgpu';
 
+export const Y_SORT_CPU = 'cpu';
+export const Y_SORT_BITONIC = 'bitonic';
+
+export function errorYSortInvalid(value) {
+  return `WeedJS: config.renderer.ySort must be "bitonic", "cpu", or false. Got ${JSON.stringify(value)}. Using false.`;
+}
+
+export function errorYSortBitonicWebgl() {
+  return 'WeedJS: renderer.ySort "bitonic" requires renderer.backend "webgpu". This scene has "webgl". Using "cpu" instead.';
+}
+
+/**
+ * @param {unknown} value
+ * @returns {false|'cpu'|'bitonic'}
+ */
+export function normalizeYSort(value) {
+  if (value === undefined || value === null || value === '' || value === false) return false;
+  if (value === true || value === Y_SORT_CPU) return Y_SORT_CPU;
+  if (value === Y_SORT_BITONIC) return Y_SORT_BITONIC;
+  console.error(errorYSortInvalid(value));
+  return false;
+}
+
+export function ySortEnabled(mode) {
+  return mode === Y_SORT_CPU || mode === Y_SORT_BITONIC || mode === true;
+}
+
+/**
+ * @param {unknown} ySort
+ * @param {'webgl'|'webgpu'} backend
+ * @returns {false|'cpu'|'bitonic'}
+ */
+export function resolveYSort(ySort, backend) {
+  const mode = normalizeYSort(ySort);
+  if (mode === Y_SORT_BITONIC && backend === RENDERER_BACKEND_WEBGL) {
+    console.error(errorYSortBitonicWebgl());
+    return Y_SORT_CPU;
+  }
+  return mode;
+}
+
 const WGSL_RE = /@(?:vertex|fragment|compute)\b/;
 const GLSL_RE = /(?:#version\s+\d+|gl_FragColor|gl_FragCoord|gl_Position|precision\s+(?:highp|mediump|lowp)\s+float|void\s+main\s*\()/;
 
@@ -203,6 +244,9 @@ export function assertSceneRendererConfig(config) {
         throw errorWebglCompute(name);
       }
     }
+  }
+  if (config?.renderer) {
+    config.renderer.ySort = resolveYSort(config.renderer.ySort, backend);
   }
   return backend;
 }

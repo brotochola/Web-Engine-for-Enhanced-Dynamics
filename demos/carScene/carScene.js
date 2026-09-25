@@ -87,15 +87,15 @@ export class CarScene extends WEED.Scene {
             backend: 'webgl',
             noLimitFPS: false,
             ySort: true,
-            cullingRatio: 0.1,
-            startFadingDecorationsAtZoom: 0.5,
-            hideDecorationsAtZoom: 0.25,
             // fixedFps: 60,
             // backpressure: false
         },
 
         preRender: {
             noLimitFPS: false,
+            cullingRatio: 0.1,
+            startFadingDecorationsAtZoom: 0.5,
+            hideDecorationsAtZoom: 0.25,
             // fixedFps: 120
             // entityBlockSize: 512,
             // numberOfPreRenderWorkers: 2,

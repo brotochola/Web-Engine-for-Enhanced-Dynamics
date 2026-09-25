@@ -17,11 +17,11 @@ const {
 const { ShapeType, DECAL_STAMPS_BLEND_MODE } = enums;
 
 export class Explosion extends GameObject {
-
   // Add ExplosionComponent for explosion-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, ExplosionComponent];
 
   onSpawned(spawnConfig = {}) {
+    this.spriteRenderer.alphaMode = WEED.SPRITE_ALPHA_MODE.BLEND;
     const ec = this.explosionComponent;
 
     ec.baseScale = 2;
