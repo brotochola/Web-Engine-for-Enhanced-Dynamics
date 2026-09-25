@@ -36,7 +36,7 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { orderSortKey, spriteYSortKey, zSortBand } from '../util/sortIndexByKey.js';
+import { orderSortKey, spriteYSortKey, zSortBand, depthSpanForZ, createPainterState, orderPainterSlots, radixSortIndicesBySortKey } from '../util/sortIndexByKey.js';
 import {
     fillOwnedIds,
     listSlice,
@@ -55,6 +55,11 @@ import {
     PR_STREAM_LIGHTS,
     PR_STREAM_CUSTOM0,
     PR_CUSTOM_STREAMS,
+    PR_STREAM_GPU_SPRITE,
+    PR_STREAM_GPU_GLOW,
+    PR_STREAM_GPU_SUN,
+    PR_STREAM_GPU_STAMP,
+    PR_STREAM_GPU_COOKIE,
     preRenderCountSlot,
 } from '../util/preRenderOwner.js';
 import {
@@ -70,6 +75,29 @@ import {
 } from '../util/configDefaults.js';
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
+import {
+    GPU_SPRITE_FLOATS,
+    GPU_CASTER_FLOATS,
+    GPU_SPACE_WORLD,
+    GPU_SPACE_SCREEN,
+    GPU_FLAG_SORTED,
+    createGpuQueueViews,
+    createGpuQueueScratch,
+    clearGpuQueueHeader,
+    writeGpuQueueHeader,
+    packInstancedRows,
+    makePackContext,
+    fillQueueIndices,
+    copyPackedRows,
+} from '../render/gpuQueueLayout.js';
+import {
+    compactShadowCasterIndices,
+    appendStampedCasters,
+    compactStampByLightLimit,
+    takeClosest,
+    rtPixelSize,
+    rtPixelScale,
+} from '../render/gpuShadowCasters.js';
 import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
@@ -244,41 +272,6 @@ class PreRenderWorker extends AbstractWorker {
         // _latchPose(), consumed per-entity in _displayPose()/LiquidFun collect.
         this.interpolatePhysicsPose = false;
         this.skipCull = false;
-        this._fusedSunShadow = {
-            writeIdx: 0,
-            count: 0,
-            maxItems: 0,
-            maxShadowSprites: 0,
-            maxShadowsPerEntity: 0,
-            viewMinX: 0,
-            viewMaxX: 0,
-            viewMinY: 0,
-            viewMaxY: 0,
-            sunShadowRotC: 1,
-            sunShadowRotS: 0,
-            sunShadowAlpha: 1,
-            rqX: null,
-            rqY: null,
-            rqScaleX: null,
-            rqScaleY: null,
-            rqRotC: null,
-            rqRotS: null,
-            rqAlpha: null,
-            rqTint: null,
-            rqTextureId: null,
-            rqAnchorX: null,
-            rqAnchorY: null,
-            shadowCasterActive: null,
-            shadowHeightMultiplier: null,
-            shadowAnchorOffsetX: null,
-            shadowAnchorOffsetY: null,
-            transformActive: null,
-            spriteScaleY: null,
-            spriteAnchorX: null,
-            spriteAnchorY: null,
-            entityShadowCounts: null,
-            toClear: null,
-        };
         this._poseLastSeenReadyFrame = 0;
         this._poseLastChangeWallClock = 0;
         this._poseMeasuredIntervalMs = 0;
@@ -335,10 +328,6 @@ class PreRenderWorker extends AbstractWorker {
         // Visible lights SAB: written here, read by pixi (avoids duplicate query)
         this.visibleLightsData = null;
 
-        // Scratch for entityShadowCounts clear (only clear used indices)
-        this._entityShadowIndicesToClear = null;
-        this._entityShadowIndicesToClearCount = 0;
-
         // ========================================
         // SHADOW RENDER QUEUE (DOUBLE BUFFERED)
         // ========================================
@@ -367,9 +356,6 @@ class PreRenderWorker extends AbstractWorker {
         this.shadowRenderQueueTextureId = null;
         this.shadowRenderQueueAnchorX = null;
         this.shadowRenderQueueAnchorY = null;
-
-        // Per-entity shadow count tracking
-        this._entityShadowCounts = null;
 
         // GC OPTIMIZATION: Pre-allocated buffer for Y-sorted light indices
         this._sortedLightEntities = [];
@@ -690,6 +676,59 @@ class PreRenderWorker extends AbstractWorker {
 
             console.log(`[PRE_RENDER WORKER] Double-buffered render queue initialized (max ${maxItems} items)`);
 
+            if (data.gpuQueue && data.gpuQueue.dataA && data.gpuQueue.dataB && data.gpuQueue.caps) {
+                const caps = data.gpuQueue.caps;
+                this.gpuQueueCaps = caps;
+                this.gpuQueueBuffers = [
+                    createGpuQueueViews(data.gpuQueue.dataA, caps),
+                    createGpuQueueViews(data.gpuQueue.dataB, caps),
+                ];
+                this._gpuPrivate = this._sharded ? createGpuQueueScratch(caps) : null;
+                this._gpuIdxEntity = new Uint32Array(maxItems);
+                this._gpuIdxGlow = new Uint32Array(maxItems);
+                this._gpuCasterIdx = new Uint32Array(Math.max(1, caps.maxSun | 0, maxItems));
+                this._gpuStampTmp = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
+                this._gpuStampDist = new Float32Array(Math.max(1, caps.maxStamp | 0, maxItems));
+                this._gpuStampOrder = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
+                this._gpuCasterUsed = new Uint8Array(Math.max(1, caps.maxSun | 0, maxItems));
+                this._gpuKeepIdx = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
+                this._gpuKeepAll = new Uint32Array(Math.max(1, caps.maxStamp | 0));
+                this._gpuStampLightScratch = new Uint16Array(Math.max(1, caps.maxStamp | 0));
+                this._gpuStampCompact = new Float32Array(Math.max(1, (caps.maxStamp | 0) * GPU_CASTER_FLOATS));
+                this._gpuPackOpts = {};
+                this._gpuCookieQ = null;
+                const cookieN = Math.max(1, caps.maxCookie | 0);
+                if (cookieN > 0) {
+                    const cookieRot = new Float32Array(cookieN);
+                    const cookieAnchor = new Float32Array(cookieN);
+                    const cookieTint = new Uint32Array(cookieN);
+                    cookieRot.fill(1);
+                    cookieAnchor.fill(0.5);
+                    cookieTint.fill(0xffffff);
+                    this._gpuCookieQ = {
+                        count: 0,
+                        x: new Float32Array(cookieN),
+                        y: new Float32Array(cookieN),
+                        scaleX: new Float32Array(cookieN),
+                        scaleY: new Float32Array(cookieN),
+                        rotC: cookieRot,
+                        rotS: new Float32Array(cookieN),
+                        alpha: new Float32Array(cookieN),
+                        tint: cookieTint,
+                        textureId: new Uint16Array(cookieN),
+                        anchorX: cookieAnchor,
+                        anchorY: cookieAnchor,
+                    };
+                }
+                this._stampLights = [];
+                this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
+                if (this._ySort && !this._useZBuffer) {
+                    this._gpuPainter = createPainterState(maxItems);
+                }
+                this._atlasNearest = (rendererConfig.atlasScaleMode || RENDERER_DEFAULTS.atlasScaleMode) === 'nearest';
+                console.log(`[PRE_RENDER WORKER] GPU queues initialized (sprites ${caps.maxSprites}, stamp ${caps.maxStamp})`);
+            }
+
             // Initialize per-custom-layer collectors and render queue buffers
             // Indexed by layerId for O(1) lookup in collectRenderable()
             this._customLayerCollectors = {};
@@ -758,10 +797,6 @@ class PreRenderWorker extends AbstractWorker {
             this.maxShadowLights = data.shadows.maxLights || 128;
             this.maxShadowRenderItems = data.shadows.maxRenderItems;
 
-            if (this.maxShadowsPerEntity > 0 && this.globalEntityCount > 0) {
-                this._entityShadowCounts = new Uint8Array(this.globalEntityCount);
-            }
-
             const maxItems = this.maxShadowRenderItems;
 
             // Create typed array views for BOTH shadow buffers
@@ -825,11 +860,6 @@ class PreRenderWorker extends AbstractWorker {
         // Written here, read by pixi (avoids duplicate queryActiveEntities)
         if (data.buffers?.visibleLightsData) {
             this.visibleLightsData = new Uint16Array(data.buffers.visibleLightsData);
-        }
-
-        // Scratch for entityShadowCounts: only clear indices we touched (avoids full fill)
-        if (this.globalEntityCount > 0) {
-            this._entityShadowIndicesToClear = new Uint16Array(this.globalEntityCount);
         }
 
         // ========================================
@@ -1133,10 +1163,17 @@ class PreRenderWorker extends AbstractWorker {
         // cookie shadows are off (shadowsEnabled: false, raycasted: true).
         this._collectVisibleLights();
 
-        // Build shadow render queue (sun shadows already done in collectVisibleEntities)
+        if (this.gpuQueueBuffers) {
+            const packBuf = this.gpuQueueBuffers[this._queueBuf];
+            if (detail) t0 = performance.now();
+            this._packGpuQueues(packBuf);
+            if (detail) this.shadowQTimeThisFrame = performance.now() - t0;
+        }
+
+        // Cookie SoA queue is unused; GPU cookies live in gpuQueue.
         if (detail) t0 = performance.now();
         this.buildShadowRenderQueue();
-        if (detail) this.shadowQTimeThisFrame = performance.now() - t0;
+        if (detail) this.shadowQTimeThisFrame += performance.now() - t0;
 
         // Build visibility polygons for raycasted light occlusion
         if (detail) t0 = performance.now();
@@ -1311,14 +1348,25 @@ class PreRenderWorker extends AbstractWorker {
                 this.buildCustomLayerQueues(deltaTime);
                 this._storePrivateEmitCounts();
             }
+            if (this._gpuPrivate) {
+                this._packGpuQueues(this._gpuPrivate);
+                this._storeGpuStreamCounts();
+            }
             this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
             this._copyShardOutputs(bufIdx, true);
+            this._copyGpuShardOutputs(bufIdx);
         } else if (this.renderQueueEnabled) {
             this._bindDirectMain(bufIdx);
             this.buildRenderQueue(deltaTime);
             this._bindDirectCustom(bufIdx);
             this.buildCustomLayerQueues(deltaTime);
+            if (this._gpuPrivate) {
+                this._packGpuQueues(this._gpuPrivate);
+                this._storeGpuStreamCounts();
+            }
+            this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
             this._copyShardOutputs(bufIdx, false);
+            this._copyGpuShardOutputs(bufIdx);
         } else {
             this._copyShardOutputs(bufIdx, false);
         }
@@ -1813,9 +1861,12 @@ class PreRenderWorker extends AbstractWorker {
             }
         }
         if (this.renderQueueSync) {
+            this._publishGpuQueue(bufIdx);
             this.renderQueueFrame = frameId;
             Atomics.store(this.renderQueueSync, 0, frameId);
             Atomics.notify(this.renderQueueSync, 0, 1);
+        } else {
+            this._publishGpuQueue(bufIdx);
         }
         const poseReady = Atomics.load(this._join, PR_JOIN_POSE);
         if (this.poseSync && poseReady > 0) Atomics.store(this.poseSync, 1, poseReady);
@@ -1921,52 +1972,8 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Entity visibility + collect for render queue + sun shadows (fused pass)
-     * Iterates activeEntitiesData (or all entities), viewport culling,
-     * adds visible to queue. When shadows enabled, also writes sun shadows in same pass.
+     * Entity visibility + collect for the sprite queue.
      */
-    _writeFusedSunShadow(i, renderVisibleI) {
-        const s = this._fusedSunShadow;
-        if (s.writeIdx >= s.maxItems || s.count >= s.maxShadowSprites) return;
-        if (!s.shadowCasterActive[i] || !s.transformActive[i]) return;
-        const heightMult = s.shadowHeightMultiplier[i];
-        if (!(heightMult > 0 && (s.maxShadowsPerEntity <= 0 || (s.entityShadowCounts[i] ?? 0) < s.maxShadowsPerEntity))) return;
-
-        const pose = this._displayPoseOut;
-        if (!renderVisibleI) this._displayPose(i, pose);
-        const casterX = pose.x;
-        const casterY = pose.y;
-        const textureId = this._entityTextureIdOrResolve(i);
-        if (textureId === INVALID_TEXTURE_ID) return;
-        const entityScaleY = Math.abs(s.spriteScaleY[i]) || 1;
-        const anchorX = s.spriteAnchorX[i] ?? 0.5;
-        const anchorY = s.spriteAnchorY[i] ?? 0.95;
-        const lengthScale = -entityScaleY * heightMult * Sun.shadowLengthRatio;
-        const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
-        const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
-        if (casterX + shadowExtent < s.viewMinX || casterX - shadowExtent > s.viewMaxX ||
-            casterY + shadowExtent < s.viewMinY || casterY - shadowExtent > s.viewMaxY) return;
-
-        const wi = s.writeIdx;
-        s.rqX[wi] = casterX;
-        s.rqY[wi] = casterY;
-        s.rqScaleX[wi] = 1;
-        s.rqScaleY[wi] = lengthScale;
-        s.rqRotC[wi] = s.sunShadowRotC;
-        s.rqRotS[wi] = s.sunShadowRotS;
-        s.rqAlpha[wi] = s.sunShadowAlpha;
-        s.rqTint[wi] = 0x000000;
-        s.rqTextureId[wi] = textureId;
-        s.rqAnchorX[wi] = anchorX + (s.shadowAnchorOffsetX[i] || 0);
-        s.rqAnchorY[wi] = anchorY + (s.shadowAnchorOffsetY[i] || 0);
-        s.writeIdx = wi + 1;
-        s.count++;
-        if (s.maxShadowsPerEntity > 0 && s.entityShadowCounts && s.toClear) {
-            s.entityShadowCounts[i] = (s.entityShadowCounts[i] ?? 0) + 1;
-            s.toClear[this._entityShadowIndicesToClearCount++] = i;
-        }
-    }
-
     collectVisibleEntities() {
         if (this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen || !this.cameraData) return;
 
@@ -2014,107 +2021,6 @@ class PreRenderWorker extends AbstractWorker {
                 iterSource = null;
                 iterBase = 0;
             }
-        }
-
-        // Sun shadows (fused): write during same pass when enabled
-        const doSunShadows = this.shadowsEnabled &&
-            Sun.isInitialized && Sun.enabled && Sun.intensity > 0.1 &&
-            this.shadowRenderQueueX && this.maxShadowRenderItems > 0 &&
-            ShadowCaster.active;
-
-        const maxShadowsPerEntity = this.maxShadowsPerEntity ?? 0;
-        if (this.shadowsEnabled && maxShadowsPerEntity > 0 &&
-            this._entityShadowCounts && this._entityShadowIndicesToClear) {
-            const prevToClearCount = this._entityShadowIndicesToClearCount ?? 0;
-            const counts = this._entityShadowCounts;
-            const toClearBuf = this._entityShadowIndicesToClear;
-            for (let k = 0; k < prevToClearCount; k++) counts[toClearBuf[k]] = 0;
-            this._entityShadowIndicesToClearCount = 0;
-        }
-
-        let rqX, rqY, rqScaleX, rqScaleY, rqRotC, rqRotS, rqAlpha, rqTint, rqTextureId, rqAnchorX, rqAnchorY;
-        let viewMinX, viewMaxX, viewMinY, viewMaxY;
-        let sunShadowRotC, sunShadowRotS, sunShadowAlpha;
-        let shadowCasterActive, shadowHeightMultiplier, shadowAnchorOffsetX, shadowAnchorOffsetY;
-        let worldX, worldY, transformActive, spriteScaleY, spriteAnchorX, spriteAnchorY;
-        let entityShadowCounts, toClear;
-        if (doSunShadows) {
-            const screenBounds = calculateCameraScreenBounds(
-                this._frameCameraZoom, this._frameCameraX, this._frameCameraY,
-                this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
-            );
-            const worldBounds = screenBoundsToWorldBounds(screenBounds, 0, 0, this._worldBounds);
-            viewMinX = worldBounds.minX;
-            viewMaxX = worldBounds.maxX;
-            viewMinY = worldBounds.minY;
-            viewMaxY = worldBounds.maxY;
-            const si = Sun.intensity;
-            sunShadowAlpha = Sun.shadowAlpha * si * (1 - Sun.shadowStretchAlphaFactor * (1 - Sun.shadowMinLengthRatio / Sun.shadowLengthRatio));
-            // Sprite facing = shadowDir rotated -90°: cos(θ-π/2)=sin(θ)=dirY, sin(θ-π/2)=-cos(θ)=-dirX
-            sunShadowRotC = Sun.shadowDirY;
-            sunShadowRotS = -Sun.shadowDirX;
-            rqX = this.shadowRenderQueueX;
-            rqY = this.shadowRenderQueueY;
-            rqScaleX = this.shadowRenderQueueScaleX;
-            rqScaleY = this.shadowRenderQueueScaleY;
-            rqRotC = this.shadowRenderQueueRotC;
-            rqRotS = this.shadowRenderQueueRotS;
-            rqAlpha = this.shadowRenderQueueAlpha;
-            rqTint = this.shadowRenderQueueTint;
-            rqTextureId = this.shadowRenderQueueTextureId;
-            rqAnchorX = this.shadowRenderQueueAnchorX;
-            rqAnchorY = this.shadowRenderQueueAnchorY;
-            shadowCasterActive = ShadowCaster.active;
-            shadowHeightMultiplier = ShadowCaster.heightMultiplier;
-            shadowAnchorOffsetX = ShadowCaster.anchorOffsetX;
-            shadowAnchorOffsetY = ShadowCaster.anchorOffsetY;
-            worldX = Transform.x;
-            worldY = Transform.y;
-            transformActive = Transform.active;
-            spriteScaleY = SpriteRenderer.scaleY;
-            spriteAnchorX = SpriteRenderer.anchorX;
-            spriteAnchorY = SpriteRenderer.anchorY;
-            entityShadowCounts = this._entityShadowCounts;
-            toClear = this._entityShadowIndicesToClear;
-        }
-
-        const maxItems = this.maxShadowRenderItems ?? 0;
-        const maxShadowSprites = this.maxShadowSprites ?? 0;
-        if (doSunShadows) {
-            const s = this._fusedSunShadow;
-            s.writeIdx = 0;
-            s.count = 0;
-            s.maxItems = maxItems;
-            s.maxShadowSprites = maxShadowSprites;
-            s.maxShadowsPerEntity = maxShadowsPerEntity;
-            s.viewMinX = viewMinX;
-            s.viewMaxX = viewMaxX;
-            s.viewMinY = viewMinY;
-            s.viewMaxY = viewMaxY;
-            s.sunShadowRotC = sunShadowRotC;
-            s.sunShadowRotS = sunShadowRotS;
-            s.sunShadowAlpha = sunShadowAlpha;
-            s.rqX = rqX;
-            s.rqY = rqY;
-            s.rqScaleX = rqScaleX;
-            s.rqScaleY = rqScaleY;
-            s.rqRotC = rqRotC;
-            s.rqRotS = rqRotS;
-            s.rqAlpha = rqAlpha;
-            s.rqTint = rqTint;
-            s.rqTextureId = rqTextureId;
-            s.rqAnchorX = rqAnchorX;
-            s.rqAnchorY = rqAnchorY;
-            s.shadowCasterActive = shadowCasterActive;
-            s.shadowHeightMultiplier = shadowHeightMultiplier;
-            s.shadowAnchorOffsetX = shadowAnchorOffsetX;
-            s.shadowAnchorOffsetY = shadowAnchorOffsetY;
-            s.transformActive = transformActive;
-            s.spriteScaleY = spriteScaleY;
-            s.spriteAnchorX = spriteAnchorX;
-            s.spriteAnchorY = spriteAnchorY;
-            s.entityShadowCounts = entityShadowCounts;
-            s.toClear = toClear;
         }
 
         for (let idx = 0; idx < iterCount; idx++) {
@@ -2181,9 +2087,6 @@ class PreRenderWorker extends AbstractWorker {
                 }
             }
         }
-
-        this._sunShadowWriteIdx = 0;
-        this._sunShadowCount = 0;
     }
 
     advanceAdobeAnimations(deltaTime) {
@@ -2450,19 +2353,24 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    _writeQueueShadow(out, entityIndex, ref) {
+        const shadowH = (ref && ref.shadowH) || this.renderQueueShadowH;
+        if (!shadowH) return;
+        const i = entityIndex | 0;
+        const cast = ShadowCaster.active && ShadowCaster.active[i];
+        shadowH[out] = cast ? (ShadowCaster.heightMultiplier[i] || 0) : 0;
+        const offX = (ref && ref.shadowOffX) || this.renderQueueShadowOffX;
+        const offY = (ref && ref.shadowOffY) || this.renderQueueShadowOffY;
+        if (offX) offX[out] = cast ? (ShadowCaster.anchorOffsetX[i] || 0) : 0;
+        if (offY) offY[out] = cast ? (ShadowCaster.anchorOffsetY[i] || 0) : 0;
+    }
+
     _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs) {
         const rqX = this.renderQueueX;
         const rqY = this.renderQueueY;
         const rqRotC = this.renderQueueRotC;
         const rqRotS = this.renderQueueRotS;
         const rqSortKey = this.renderQueueSortKey;
-        const shadowH = this.renderQueueShadowH;
-        const shadowOffX = this.renderQueueShadowOffX;
-        const shadowOffY = this.renderQueueShadowOffY;
-        const casterActive = ShadowCaster.active;
-        const heightMul = ShadowCaster.heightMultiplier;
-        const aox = ShadowCaster.anchorOffsetX;
-        const aoy = ShadowCaster.anchorOffsetY;
         const writeSortKey = !!(rqSortKey && this._queueHasOrder());
         const ySort = writeSortKey && this._entityYSort();
         const inherit = SpriteRenderer.inheritTransformRotation;
@@ -2476,13 +2384,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqRotS[i] = stashRs[i];
             }
             if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], ySort);
-            // buildRenderQueue zeros shadowH before persist; GPU casters need it back.
-            if (shadowH) {
-                const cast = casterActive && casterActive[idx];
-                shadowH[i] = cast ? heightMul[idx] : 0;
-                if (shadowOffX) shadowOffX[i] = cast ? (aox[idx] || 0) : 0;
-                if (shadowOffY) shadowOffY[i] = cast ? (aoy[idx] || 0) : 0;
-            }
+            this._writeQueueShadow(i, idx);
         }
     }
 
@@ -2897,6 +2799,7 @@ class PreRenderWorker extends AbstractWorker {
             if (ref.repeatY) ref.repeatY[writeIndex] = 0;
             clearTileFields(ref, writeIndex);
             if (ref.sortKey) ref.sortKey[writeIndex] = sortKey;
+            this._writeQueueShadow(writeIndex, entityIndex, ref);
             writeIndex++;
         }
 
@@ -3061,6 +2964,9 @@ class PreRenderWorker extends AbstractWorker {
         ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
         ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;
         ref.tileMulX = rqTileMulX; ref.tileMulY = rqTileMulY;
+        ref.shadowH = this.renderQueueShadowH;
+        ref.shadowOffX = this.renderQueueShadowOffX;
+        ref.shadowOffY = this.renderQueueShadowOffY;
 
         let writeCount = 0;
         const stashPx = this._renderablePx;
@@ -3124,13 +3030,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqTint[out] = srTint[idx];
                 rqAnchorX[out] = srAnchorX[idx];
                 rqAnchorY[out] = srAnchorY[idx];
-                const shadowH = this.renderQueueShadowH;
-                if (shadowH) {
-                    const cast = ShadowCaster.active && ShadowCaster.active[idx];
-                    shadowH[out] = cast ? ShadowCaster.heightMultiplier[idx] : 0;
-                    this.renderQueueShadowOffX[out] = cast ? (ShadowCaster.anchorOffsetX[idx] || 0) : 0;
-                    this.renderQueueShadowOffY[out] = cast ? (ShadowCaster.anchorOffsetY[idx] || 0) : 0;
-                }
+                this._writeQueueShadow(out, idx);
                 const rx0 = srRepeatX[idx];
                 const ry0 = srRepeatY[idx];
                 if (rx0 !== 0 || ry0 !== 0) {
@@ -3869,6 +3769,442 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    _gpuSoAFromBound() {
+        if (!this._gpuSoa) this._gpuSoa = {};
+        const q = this._gpuSoa;
+        q.count = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
+        q.x = this.renderQueueX;
+        q.y = this.renderQueueY;
+        q.scaleX = this.renderQueueScaleX;
+        q.scaleY = this.renderQueueScaleY;
+        q.rotC = this.renderQueueRotC;
+        q.rotS = this.renderQueueRotS;
+        q.alpha = this.renderQueueAlpha;
+        q.tint = this.renderQueueTint;
+        q.textureId = this.renderQueueTextureId;
+        q.anchorX = this.renderQueueAnchorX;
+        q.anchorY = this.renderQueueAnchorY;
+        q.repeatX = this.renderQueueRepeatX;
+        q.repeatY = this.renderQueueRepeatY;
+        q.tileMulX = this.renderQueueTileMulX;
+        q.tileMulY = this.renderQueueTileMulY;
+        q.tileOffsetU = this.renderQueueTileOffsetU;
+        q.tileOffsetV = this.renderQueueTileOffsetV;
+        q.sortKey = this.renderQueueSortKey;
+        q.shadowH = this.renderQueueShadowH;
+        q.shadowOffX = this.renderQueueShadowOffX;
+        q.shadowOffY = this.renderQueueShadowOffY;
+        q.type = this.renderQueueType;
+        return q;
+    }
+
+    _sortKeyBits(sk) {
+        if (!sk) return null;
+        if (
+            this._sortKeyU32View &&
+            this._sortKeyU32View.buffer === sk.buffer &&
+            this._sortKeyU32View.byteOffset === sk.byteOffset
+        ) {
+            return this._sortKeyU32View;
+        }
+        this._sortKeyU32View = new Uint32Array(sk.buffer, sk.byteOffset, sk.length);
+        return this._sortKeyU32View;
+    }
+
+    _resetGpuPackOpts(opts) {
+        opts.includeType = -1;
+        opts.excludeType0 = -1;
+        opts.excludeType1 = -1;
+        opts.indices = null;
+        opts.indexCount = 0;
+        opts.sortKey = null;
+        opts.useZBuffer = !!this._useZBuffer;
+        opts.space = GPU_SPACE_WORLD;
+        opts.zoom = 1;
+        opts.cameraX = 0;
+        opts.cameraY = 0;
+        opts.resolution = 1;
+        opts.depthDenom = this.renderQueueMaxItems;
+        opts.worldHeight = this.config.worldHeight || 10000;
+        opts.pixelSnap = !!this._atlasNearest;
+        opts.snapZoom = this._frameCameraZoom;
+        opts.snapCameraX = this._frameCameraX;
+        opts.snapCameraY = this._frameCameraY;
+        opts.type = this.renderQueueType;
+        if (this._useZBuffer) {
+            const u = SpriteRenderer._zIndexUsers;
+            let zMin = 0;
+            let zMax = 0;
+            if (u && Atomics.load(u, 0) > 0) {
+                zMin = Atomics.load(u, 1);
+                zMax = Atomics.load(u, 2);
+                if (zMax < zMin) { zMin = 0; zMax = 0; }
+            }
+            const fit = depthSpanForZ(this.config?.worldHeight || 10000, zMin, zMax);
+            opts.keySpan = fit.span;
+            opts.keyHalf = fit.half;
+        } else {
+            opts.keySpan = 0;
+            opts.keyHalf = 0;
+        }
+    }
+
+    _collectStampLights() {
+        const out = this._stampLights || (this._stampLights = []);
+        let n = 0;
+        if (!LightEmitter.active || !this._queryLightEmitter) {
+            out.length = 0;
+            return;
+        }
+        const worldX = Transform.x;
+        const worldY = Transform.y;
+        const lightEnabled = LightEmitter.active;
+        const lightIntensity = LightEmitter.lightIntensity;
+        const sqrtI = LightEmitter.sqrtLightIntensity;
+        const lightHeight = LightEmitter.height;
+        const vr = Collider.visualRange;
+        const zoom = this._frameCameraZoom || 1;
+        const camX = this._frameCameraX || 0;
+        const camY = this._frameCameraY || 0;
+        const viewW = this.canvasWidth / (zoom > 0 ? zoom : 1);
+        const viewH = this.canvasHeight / (zoom > 0 ? zoom : 1);
+        const viewRight = camX + viewW;
+        const viewBottom = camY + viewH;
+        const cx = camX + viewW * 0.5;
+        const cy = camY + viewH * 0.5;
+        const raw = Query.queryPublishedFrame(this._queryLightEmitter) === -1
+            ? EMPTY_OWNED_IDS
+            : Query.queryActiveEntities(this._queryLightEmitter);
+        for (let i = 0; i < raw.length; i++) {
+            const id = raw[i];
+            if (!lightEnabled[id]) continue;
+            if (!(sqrtI[id] > 0)) continue;
+            const x = worldX[id];
+            const y = worldY[id] - (lightHeight[id] || 0);
+            const influence = lightInfluenceRadius(sqrtI[id]);
+            if (
+                x + influence < camX ||
+                x - influence > viewRight ||
+                y + influence < camY ||
+                y - influence > viewBottom
+            ) {
+                continue;
+            }
+            const dx = x - cx;
+            const dy = y - cy;
+            const range = vr ? (vr[id] || 0) : 0;
+            let slot = out[n];
+            if (!slot) slot = out[n] = {};
+            slot.id = id;
+            slot.x = x;
+            slot.y = y;
+            slot.intensity = lightIntensity[id];
+            slot.rangeSq = range * range;
+            slot.sqrtI = sqrtI[id];
+            slot.distSq = dx * dx + dy * dy;
+            n++;
+        }
+        out.length = n;
+        out.sort(this._stampLightCmp || (this._stampLightCmp = (a, b) => a.distSq - b.distSq || a.id - b.id));
+    }
+
+    _packGpuSprites(dst, q, allowPainter) {
+        const caps = this.gpuQueueCaps;
+        const opts = this._gpuPackOpts;
+        this._resetGpuPackOpts(opts);
+        const count = q.count | 0;
+        const typeArr = this.renderQueueType;
+        const glowAdd = !this._lightGlowAsSprite;
+        let spriteN = 0;
+        let glowN = 0;
+        let particles = 0;
+        let flags = 0;
+        if (count <= 0 || !caps) {
+            return { sprite: 0, glow: 0, particle: 0, flags: 0 };
+        }
+        const idxE = this._gpuIdxEntity;
+        const idxG = this._gpuIdxGlow;
+        if (glowAdd && typeArr && idxE) {
+            let ne = fillQueueIndices(typeArr, count, -1, 3, idxE);
+            glowN = fillQueueIndices(typeArr, count, 3, -1, idxG);
+            let spriteIdx = idxE;
+            if (allowPainter && this._gpuPainter && q.sortKey && ne >= 2) {
+                const keysU32 = this._sortKeyBits(q.sortKey);
+                spriteIdx = orderPainterSlots(this._gpuPainter, idxE, ne, keysU32);
+                flags |= GPU_FLAG_SORTED;
+            }
+            opts.indices = spriteIdx;
+            opts.indexCount = ne;
+            if (opts.useZBuffer) opts.sortKey = q.sortKey;
+            else {
+                opts.useZBuffer = false;
+                opts.sortKey = null;
+            }
+            const ctx = makePackContext(q, opts, caps.maxSprites);
+            spriteN = ctx
+                ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
+                : 0;
+            particles = ctx ? (ctx.particleCount | 0) : 0;
+            if (glowN > 0 && caps.maxGlow > 0) {
+                if (allowPainter && this._gpuPainter && glowN > 1 && q.sortKey) {
+                    const keysU32 = this._sortKeyBits(q.sortKey);
+                    radixSortIndicesBySortKey(idxG, glowN, keysU32, this._gpuPainter.scratch, this._gpuPainter.hist);
+                }
+                opts.useZBuffer = false;
+                opts.sortKey = null;
+                opts.indices = idxG;
+                opts.indexCount = glowN;
+                const gctx = makePackContext(q, opts, caps.maxGlow);
+                glowN = gctx
+                    ? packInstancedRows(q, gctx, dst.glow, dst.glowU32, GPU_SPRITE_FLOATS, caps.maxGlow, false)
+                    : 0;
+            } else {
+                glowN = 0;
+            }
+        } else {
+            if (allowPainter && this._gpuPainter && q.sortKey && count >= 2) {
+                const ne = fillQueueIndices(typeArr, count, -1, -1, idxE);
+                const keysU32 = this._sortKeyBits(q.sortKey);
+                opts.indices = orderPainterSlots(this._gpuPainter, idxE, ne, keysU32);
+                opts.indexCount = ne;
+                flags |= GPU_FLAG_SORTED;
+            } else {
+                opts.indices = null;
+                opts.indexCount = 0;
+            }
+            if (opts.useZBuffer) opts.sortKey = q.sortKey;
+            else {
+                opts.useZBuffer = false;
+                opts.sortKey = null;
+            }
+            const ctx = makePackContext(q, opts, caps.maxSprites);
+            spriteN = ctx
+                ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
+                : 0;
+            particles = ctx ? (ctx.particleCount | 0) : 0;
+        }
+        return { sprite: spriteN, glow: glowN, particle: particles, flags };
+    }
+
+    _packGpuShadows(dst, q) {
+        const caps = this.gpuQueueCaps;
+        if (!this.shadowsEnabled || !caps || !(caps.maxSun > 0)) {
+            return { sun: 0, stamp: 0, cookie: 0 };
+        }
+        const opts = this._gpuPackOpts;
+        const typeArr = q.type || this.renderQueueType;
+        const count = q.count | 0;
+        let sunN = compactShadowCasterIndices(q.shadowH, typeArr, count, this._gpuCasterIdx);
+        if (sunN > caps.maxSun) sunN = caps.maxSun;
+        if (sunN > 0) {
+            this._resetGpuPackOpts(opts);
+            opts.indices = this._gpuCasterIdx;
+            opts.indexCount = sunN;
+            opts.useZBuffer = false;
+            opts.sortKey = null;
+            const sctx = makePackContext(q, opts, caps.maxSun);
+            sunN = sctx
+                ? packInstancedRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
+                : 0;
+        }
+        this._collectStampLights();
+        const lights = this._stampLights;
+        const capL = Math.min(lights.length, this.maxShadowCastingLights | 0);
+        const maxPerLight = this.maxShadowsPerLight | 0;
+        const maxPerEntity = this.maxShadowsPerEntity | 0;
+        const used = this._gpuCasterUsed;
+        if (used) used.fill(0, 0, sunN);
+        if (!this._gpuLightVec) this._gpuLightVec = new Float32Array(4);
+        const lightVec = this._gpuLightVec;
+        let cursor = 0;
+        const stampCap = caps.maxStamp | 0;
+        for (let i = 0; i < capL && cursor < stampCap; i++) {
+            const L = lights[i];
+            if (!(L.rangeSq > 0) || !(L.intensity > 0)) continue;
+            const lim = maxPerLight > 0 ? maxPerLight : sunN;
+            let m = 0;
+            const tmpIdx = this._gpuStampTmp;
+            const dist = this._gpuStampDist;
+            const sun = dst.sun;
+            for (let c = 0; c < sunN; c++) {
+                if (maxPerEntity > 0 && used[c] >= maxPerEntity) continue;
+                const b = c * GPU_CASTER_FLOATS;
+                const dx = sun[b] - L.x;
+                const dy = sun[b + 1] - L.y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 > L.rangeSq) continue;
+                tmpIdx[m] = c;
+                dist[m] = d2;
+                m++;
+            }
+            if (m <= 0) continue;
+            m = takeClosest(tmpIdx, dist, this._gpuStampOrder, m, lim, this._gpuKeepIdx);
+            if (maxPerEntity > 0) {
+                for (let k = 0; k < m; k++) used[this._gpuKeepIdx[k]]++;
+            }
+            lightVec[0] = L.x;
+            lightVec[1] = L.y;
+            lightVec[2] = L.intensity;
+            lightVec[3] = L.rangeSq;
+            const next = appendStampedCasters(
+                dst.stamp, GPU_CASTER_FLOATS, cursor, dst.sun, GPU_CASTER_FLOATS,
+                this._gpuKeepIdx, m, lightVec, stampCap, 0
+            );
+            for (let k = cursor; k < next; k++) dst.stampLightIdx[k] = i;
+            cursor = next;
+        }
+        let cookieN = 0;
+        const cq = this._gpuCookieQ;
+        if ((this.workerIndex | 0) === 0 && cq && capL > 0) {
+            const texId = this._resolveBuiltinTextureId('_lightGradient');
+            let n = 0;
+            const room = cq.x.length;
+            const shadowRes = this.config.lighting?.shadowResolution;
+            const res = rtPixelScale(this.canvasWidth, rtPixelSize(this.canvasWidth, shadowRes));
+            for (let i = 0; i < capL && n < room; i++) {
+                const L = lights[i];
+                if (!(L.rangeSq > 0) || !(L.intensity > 0)) continue;
+                cq.x[n] = L.x;
+                cq.y[n] = L.y;
+                const scale = lightCookieScale(L.sqrtI);
+                cq.scaleX[n] = scale;
+                cq.scaleY[n] = scale;
+                cq.alpha[n] = L.intensity / 50000;
+                cq.textureId[n] = texId;
+                n++;
+            }
+            cq.count = n;
+            if (n > 0) {
+                this._resetGpuPackOpts(opts);
+                opts.space = GPU_SPACE_SCREEN;
+                opts.zoom = this._frameCameraZoom;
+                opts.cameraX = this._frameCameraX;
+                opts.cameraY = this._frameCameraY;
+                opts.resolution = res;
+                opts.useZBuffer = false;
+                opts.sortKey = null;
+                opts.type = null;
+                opts.depthDenom = Math.max(1, n);
+                const cctx = makePackContext(cq, opts, caps.maxCookie);
+                cookieN = cctx
+                    ? packInstancedRows(cq, cctx, dst.cookie, dst.cookieU32, GPU_SPRITE_FLOATS, caps.maxCookie, false)
+                    : 0;
+            }
+        }
+        return { sun: sunN, stamp: cursor, cookie: cookieN };
+    }
+
+    _packGpuQueues(dst) {
+        if (!dst || !this.gpuQueueCaps) return;
+        clearGpuQueueHeader(dst.header);
+        const q = this._gpuSoAFromBound();
+        const allowPainter = !this._sharded;
+        const sprites = this._packGpuSprites(dst, q, allowPainter);
+        const shadows = this._sharded
+            ? { sun: 0, stamp: 0, cookie: 0 }
+            : this._packGpuShadows(dst, q);
+        const counts = this._gpuCounts || (this._gpuCounts = {});
+        counts.sprite = sprites.sprite | 0;
+        counts.glow = sprites.glow | 0;
+        counts.particle = sprites.particle | 0;
+        counts.sun = shadows.sun | 0;
+        counts.stamp = shadows.stamp | 0;
+        counts.cookie = shadows.cookie | 0;
+        writeGpuQueueHeader(dst.header, counts, sprites.flags | 0);
+    }
+
+    _storeGpuStreamCounts() {
+        const c = this._gpuCounts || {};
+        this._storeStream(PR_STREAM_GPU_SPRITE, c.sprite | 0);
+        this._storeStream(PR_STREAM_GPU_GLOW, c.glow | 0);
+        this._storeStream(PR_STREAM_GPU_SUN, c.sun | 0);
+        this._storeStream(PR_STREAM_GPU_STAMP, c.stamp | 0);
+        this._storeStream(PR_STREAM_GPU_COOKIE, c.cookie | 0);
+    }
+
+    _copyGpuShardOutputs(bufIdx) {
+        const dst = this.gpuQueueBuffers && this.gpuQueueBuffers[bufIdx];
+        const src = this._gpuPrivate;
+        if (!dst || !src || !this.gpuQueueCaps) return;
+        const caps = this.gpuQueueCaps;
+        const fitS = this._fitted(PR_STREAM_GPU_SPRITE, caps.maxSprites);
+        copyPackedRows(src.sprites, dst.sprites, fitS.keep, GPU_SPRITE_FLOATS, fitS.prefix);
+        const fitG = this._fitted(PR_STREAM_GPU_GLOW, caps.maxGlow);
+        copyPackedRows(src.glow, dst.glow, fitG.keep, GPU_SPRITE_FLOATS, fitG.prefix);
+        const fitU = this._fitted(PR_STREAM_GPU_SUN, caps.maxSun);
+        copyPackedRows(src.sun, dst.sun, fitU.keep, GPU_CASTER_FLOATS, fitU.prefix);
+        const fitT = this._fitted(PR_STREAM_GPU_STAMP, caps.maxStamp);
+        copyPackedRows(src.stamp, dst.stamp, fitT.keep, GPU_CASTER_FLOATS, fitT.prefix);
+        if (fitT.keep > 0 && dst.stampLightIdx && src.stampLightIdx) {
+            dst.stampLightIdx.set(src.stampLightIdx.subarray(0, fitT.keep), fitT.prefix);
+        }
+        const fitC = this._fitted(PR_STREAM_GPU_COOKIE, caps.maxCookie);
+        copyPackedRows(src.cookie, dst.cookie, fitC.keep, GPU_SPRITE_FLOATS, fitC.prefix);
+    }
+
+    _publishGpuQueue(bufIdx) {
+        const dst = this.gpuQueueBuffers && this.gpuQueueBuffers[bufIdx];
+        if (!dst || !this.gpuQueueCaps) return;
+        const n = this.workerCount | 0;
+        const caps = this.gpuQueueCaps;
+        let sprite = sumCounts(this._loadStream(PR_STREAM_GPU_SPRITE), n);
+        let glow = sumCounts(this._loadStream(PR_STREAM_GPU_GLOW), n);
+        let sun = sumCounts(this._loadStream(PR_STREAM_GPU_SUN), n);
+        let stamp = sumCounts(this._loadStream(PR_STREAM_GPU_STAMP), n);
+        let cookie = sumCounts(this._loadStream(PR_STREAM_GPU_COOKIE), n);
+        if (caps.maxSprites > 0 && sprite > caps.maxSprites) sprite = caps.maxSprites;
+        if (caps.maxGlow > 0 && glow > caps.maxGlow) glow = caps.maxGlow;
+        if (caps.maxSun > 0 && sun > caps.maxSun) sun = caps.maxSun;
+        if (caps.maxStamp > 0 && stamp > caps.maxStamp) stamp = caps.maxStamp;
+        if (caps.maxCookie > 0 && cookie > caps.maxCookie) cookie = caps.maxCookie;
+        if (n > 1 && this.renderQueueBuffers) {
+            this._applyMainColumns(this.renderQueueBuffers[bufIdx]);
+            const shadows = this._packGpuShadows(dst, this._gpuSoAFromBound());
+            sun = shadows.sun;
+            stamp = shadows.stamp;
+            cookie = shadows.cookie;
+        } else if (n > 1 && (this.maxShadowsPerLight | 0) > 0 && stamp > 0) {
+            stamp = compactStampByLightLimit(
+                dst.stamp,
+                dst.stampLightIdx,
+                stamp,
+                GPU_CASTER_FLOATS,
+                this.maxShadowsPerLight,
+                this._gpuStampTmp,
+                this._gpuStampDist,
+                this._gpuStampOrder,
+                this._gpuKeepIdx,
+                this._gpuKeepAll,
+                this._gpuStampCompact,
+                this._gpuStampLightScratch
+            );
+        }
+        if (n > 1 && this._gpuPainter && this.renderQueueBuffers) {
+            this._applyMainColumns(this.renderQueueBuffers[bufIdx]);
+            const packed = this._packGpuSprites(dst, this._gpuSoAFromBound(), true);
+            sprite = packed.sprite;
+            glow = packed.glow;
+        }
+        let particles = 0;
+        const types = this.renderQueueBuffers && this.renderQueueBuffers[bufIdx]
+            ? this.renderQueueBuffers[bufIdx].type
+            : null;
+        const soaN = this.renderQueueBuffers && this.renderQueueBuffers[bufIdx]
+            ? (this.renderQueueBuffers[bufIdx].count[0] | 0)
+            : 0;
+        if (types) {
+            for (let i = 0; i < soaN; i++) if (types[i] === 1) particles++;
+        }
+        writeGpuQueueHeader(dst.header, {
+            sprite,
+            glow,
+            sun,
+            stamp,
+            cookie,
+            particle: particles,
+        }, this._gpuPainter && n > 1 ? GPU_FLAG_SORTED : 0);
+    }
+
     /**
      * LightEmitter list → visibleLightsData SAB (cookie shadows not required).
      * Independent of cookie ShadowCaster queue (raycasted lighting still needs this).
@@ -3959,65 +4295,10 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Build shadow render queue
+     * Cookie SoA is unused. GPU cookies are packed into the shared GPU queue.
      */
     buildShadowRenderQueue() {
-        if (!this.shadowsEnabled || !this.shadowRenderQueueCount) {
-            if (this.shadowRenderQueueCount) this.shadowRenderQueueCount[0] = 0;
-            return;
-        }
-        const sunIntensity = Sun.isInitialized && Sun.enabled ? Sun.intensity : 0;
-        const pointScale = 0.33 * (1 - sunIntensity * 0.9);
-        if (pointScale <= 0.003 || sunIntensity >= 1 || !LightEmitter.active) {
-            this.shadowRenderQueueCount[0] = 0;
-            this.shadowsUpdatedThisFrame = 0;
-            return;
-        }
-        const lightEntities = this._sortedLightEntities;
-        if (!lightEntities || !lightEntities.length) {
-            this.shadowRenderQueueCount[0] = 0;
-            this.shadowsUpdatedThisFrame = 0;
-            return;
-        }
-        const worldX = Transform.x;
-        const worldY = Transform.y;
-        const lightIntensity = LightEmitter.lightIntensity;
-        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
-        const lightHeight = LightEmitter.height;
-        const rqX = this.shadowRenderQueueX;
-        const rqY = this.shadowRenderQueueY;
-        const rqScaleX = this.shadowRenderQueueScaleX;
-        const rqScaleY = this.shadowRenderQueueScaleY;
-        const rqRotC = this.shadowRenderQueueRotC;
-        const rqRotS = this.shadowRenderQueueRotS;
-        const rqAlpha = this.shadowRenderQueueAlpha;
-        const rqTint = this.shadowRenderQueueTint;
-        const rqTextureId = this.shadowRenderQueueTextureId;
-        const rqAnchorX = this.shadowRenderQueueAnchorX;
-        const rqAnchorY = this.shadowRenderQueueAnchorY;
-        const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
-        const maxItems = this.maxShadowRenderItems;
-        let writeIdx = 0;
-        const cap = Math.min(lightEntities.length, this.maxShadowCastingLights | 0);
-        for (let i = 0; i < cap && writeIdx < maxItems; i++) {
-            const lightIdx = lightEntities[i];
-            const intensity = lightIntensity[lightIdx];
-            if (!(intensity > 0)) continue;
-            const gradientScale = lightCookieScale(sqrtLightIntensity[lightIdx]);
-            rqX[writeIdx] = worldX[lightIdx];
-            rqY[writeIdx] = worldY[lightIdx] - (lightHeight[lightIdx] || 0);
-            rqScaleX[writeIdx] = gradientScale;
-            rqScaleY[writeIdx] = gradientScale;
-            rqRotC[writeIdx] = 1;
-            rqRotS[writeIdx] = 0;
-            rqAlpha[writeIdx] = intensity / 50000;
-            rqTint[writeIdx] = 0xFFFFFF;
-            rqTextureId[writeIdx] = lightGradientTextureId;
-            rqAnchorX[writeIdx] = 0.5;
-            rqAnchorY[writeIdx] = 0.5;
-            writeIdx++;
-        }
-        this.shadowRenderQueueCount[0] = writeIdx;
+        if (this.shadowRenderQueueCount) this.shadowRenderQueueCount[0] = 0;
         this.shadowsUpdatedThisFrame = 0;
     }
 

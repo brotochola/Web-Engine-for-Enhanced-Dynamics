@@ -57,13 +57,12 @@ test('instancedSprites config flag removed (always instanced)', () => {
 test('visible lights SAB fills even when cookie shadows are off', () => {
   assert.match(preRender, /_collectVisibleLights\(\)/);
   const updateCall = preRender.indexOf('this._collectVisibleLights();');
+  const packCall = preRender.indexOf('this._packGpuQueues(');
   const shadowFn = preRender.indexOf('buildShadowRenderQueue() {');
-  const earlyReturn = preRender.indexOf(
-    'if (!this.shadowsEnabled || !this.shadowRenderQueueCount)',
-    shadowFn,
-  );
-  assert.ok(updateCall >= 0 && updateCall < shadowFn);
-  assert.ok(earlyReturn > shadowFn);
+  assert.ok(updateCall >= 0 && packCall >= 0 && updateCall < packCall);
+  assert.ok(shadowFn > packCall);
+  const shadowBody = preRender.slice(shadowFn, shadowFn + 280);
+  assert.match(shadowBody, /shadowRenderQueueCount\[0\] = 0/);
 });
 
 test('shadow RT clears transparent each frame (not opaque black)', () => {

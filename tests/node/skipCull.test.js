@@ -15,10 +15,10 @@ const catalogRenderQueue = renderQueue.slice(
   renderQueue.indexOf('const HIGH_REJECT_ZOOM'),
 );
 
-test('fused sun shadow write is extracted once', () => {
-  assert.match(preRender, /_writeFusedSunShadow\(/);
-  const defs = preRender.match(/_writeFusedSunShadow\(/g);
-  assert.ok(defs && defs.length >= 2);
+test('sun casters pack from sprite shadowH, not a fused CPU queue', () => {
+  assert.doesNotMatch(preRender, /_writeFusedSunShadow\(/);
+  assert.match(preRender, /compactShadowCasterIndices/);
+  assert.match(preRender, /_packGpuShadows\(/);
 });
 
 test('skipCull defaults false and is opt-in on bunny playable only', () => {
@@ -35,7 +35,7 @@ test('entity collect uses a per-frame skipCull branch; default still AABBs; B sk
   const body = preRender.slice(collect, adobe);
   const adobeBody = preRender.slice(adobe, adobeEnd);
   const skipIf = /if \(!this\.skipCull\)/g;
-  assert.equal(body.match(skipIf)?.length, 1);
+  assert.equal(body.match(skipIf)?.length, 2);
   assert.equal(adobeBody.match(skipIf)?.length, 1);
   assert.equal(body.match(/for \(let idx = 0; idx < iterCount/g)?.length, 1);
   assert.match(body, /screenMinX/);
@@ -58,6 +58,5 @@ test('persist pose rewrite also restores shadowH for GPU casters', () => {
   const start = preRender.indexOf('_writeType0PosesOnly(');
   const end = preRender.indexOf('_spriteSortY(', start);
   const body = preRender.slice(start, end);
-  assert.match(body, /renderQueueShadowH/);
-  assert.match(body, /shadowH\[i\] = cast \? heightMul\[idx\] : 0/);
+  assert.match(body, /_writeQueueShadow\(i, idx\)/);
 });

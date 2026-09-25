@@ -110,9 +110,15 @@ export const PR_STREAM_SELF_LIT = 3;
 export const PR_STREAM_LIGHTS = 4;
 export const PR_STREAM_CUSTOM0 = 5;
 export const PR_CUSTOM_STREAMS = 16;
+export const PR_STREAM_GPU_SPRITE = PR_STREAM_CUSTOM0 + PR_CUSTOM_STREAMS;
+export const PR_STREAM_GPU_GLOW = PR_STREAM_GPU_SPRITE + 1;
+export const PR_STREAM_GPU_SUN = PR_STREAM_GPU_SPRITE + 2;
+export const PR_STREAM_GPU_STAMP = PR_STREAM_GPU_SPRITE + 3;
+export const PR_STREAM_GPU_COOKIE = PR_STREAM_GPU_SPRITE + 4;
+export const PR_GPU_STREAMS = 5;
 
 export function preRenderStreamCount() {
-  return PR_STREAM_CUSTOM0 + PR_CUSTOM_STREAMS;
+  return PR_STREAM_CUSTOM0 + PR_CUSTOM_STREAMS + PR_GPU_STREAMS;
 }
 
 /**

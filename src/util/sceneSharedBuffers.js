@@ -37,6 +37,7 @@ import { Sun } from '../core/sun.js';
 import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
+import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
 import { preRenderJoinWords } from './preRenderOwner.js';
 import { NavGrid } from '../core/navGrid.js';
@@ -498,6 +499,16 @@ function initializeLightingAndRenderBuffers(scene) {
   new Int32Array(buffers.renderQueueSync)[0] = 0;
   new Int32Array(buffers.renderQueueSync)[1] = 0;
   scene.maxVisibleRenderables = maxVisibleRenderables;
+
+  const gpuCaps = gpuQueueCaps(
+    maxVisibleRenderables,
+    config.lighting,
+    scene.numberOfPreRenderWorkers
+  );
+  const gpuQueueBufferSize = computeGpuQueueBufferSize(gpuCaps);
+  buffers.gpuQueueDataA = new SharedArrayBuffer(gpuQueueBufferSize);
+  buffers.gpuQueueDataB = new SharedArrayBuffer(gpuQueueBufferSize);
+  scene.gpuQueueCaps = gpuCaps;
 
   // Physics pose publish (post-step snapshot for visuals) — SoA x,y,rotC,rotS × 2 buffers
   const poseN = scene.totalEntityCount;

@@ -30,12 +30,6 @@ function predatorSearchParam(name) {
   return new URLSearchParams(search).get(name);
 }
 
-function predatorChoiceParam(name, allowed, fallback) {
-  const q = predatorSearchParam(name);
-  if (q && allowed.indexOf(q) >= 0) return q;
-  return fallback;
-}
-
 function predatorNumberParam(name, fallback) {
   const q = predatorSearchParam(name);
   const n = q != null ? Number(q) : NaN;
@@ -171,12 +165,12 @@ export class PredatorScene extends WEED.Scene {
       lightGlow: "add",
       useZBuffer: true,
       alphaCut: 253 / 255,
-      backend: "webgl"
+      backend: "webgl",
     },
     preRender: {
       noLimitFPS: false,
       entityBlockSize: 512,
-      numberOfPreRenderWorkers: 2,
+      numberOfPreRenderWorkers: 8,
       backpressure: true,
       /**
        * Skip entity viewport AABB and screenX/Y. Every active renderVisible
@@ -198,17 +192,13 @@ export class PredatorScene extends WEED.Scene {
     lighting: {
       enabled: true,
       baseAmbient: 0, // Minimum light at night (pitch black without lights)
-      maxLights: 256,
+
       shadowsEnabled: true,
-      gpuShadowPath: 'copy',
+
       maxShadowCastingLights: predatorNumberParam('shadowLights', 48),
       maxShadowsPerLight: predatorPositiveParam('shadowsPerLight', 512),
       maxShadowsPerEntity: 3,
-      gpuShadowPath: predatorChoiceParam('gpuShadowPath', ['copy', 'reuse', 'queue', 'resident', 'batch'], 'copy'),
-      gpuShadowCookies: predatorChoiceParam('gpuShadowCookies', ['always', 'night'], 'always'),
-      shadowComposite: predatorChoiceParam('shadowComposite', ['0', '1'], '0') === '1',
-      floorOcclude: predatorChoiceParam('floorOcclude', ['0', '1'], '0') === '1',
-      shadowUpdateInterval: predatorPositiveParam('shadowInterval', 1),
+      maxLights: 256,
       maxShadowSprites: 30000,
       maxFlashes: 32,
       resolution: predatorPositiveParam('lightingRes', 0.25),

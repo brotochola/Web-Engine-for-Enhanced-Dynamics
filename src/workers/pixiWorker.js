@@ -56,11 +56,23 @@ import {
 } from '../render/tilemapGid.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
+  GPU_SPRITE_FLOATS,
+  GPU_CASTER_FLOATS,
+  GPU_HDR_SPRITE,
+  GPU_HDR_GLOW,
+  GPU_HDR_SUN,
+  GPU_HDR_STAMP,
+  GPU_HDR_COOKIE,
+  GPU_HDR_PARTICLE,
+  GPU_QUEUE_VERSION,
+  GPU_HDR_VERSION,
+  createGpuQueueViews,
+} from '../render/gpuQueueLayout.js';
+import {
   sortByY,
   normalizeAngleDifference,
   extractRGBNormalizedMut,
   lightInfluenceRadius,
-  lightCookieScale,
   lightDataTextureFloatCount,
   packLightDataTexel,
   clearUnusedLightDataTexels,
@@ -93,15 +105,8 @@ import { ComputeLayer } from '../render/webgpu/computeLayer.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
 import { GpuFrameTimer } from '../render/gpuFrameTimer.js';
 import {
-  appendStampedCasters,
-  compactShadowCasterIndices,
-  dropTinyFloorShadows,
-  resolveGpuShadowPath,
-  resolveGpuShadowCookies,
-  resolveShadowUpdateInterval,
   rtPixelSize,
   rtPixelScale,
-  samePackedIndices,
 } from '../render/gpuShadowCasters.js';
 
 function finiteOrZero(n) {
@@ -485,6 +490,8 @@ class PixiRenderer extends AbstractWorker {
 
     // Double buffer storage - views for both buffers
     this.renderQueueBuffers = [null, null];
+    this.gpuQueueBuffers = [null, null];
+    this._gpuQueueRead = null;
     this._sortKeyU32ByBuf = [null, null];
     this._sortKeyU32 = null;
     this.renderQueueCameraBuffers = [null, null];
@@ -574,11 +581,6 @@ class PixiRenderer extends AbstractWorker {
     this.maxShadowCastingLights = LIGHTING_DEFAULTS.maxShadowCastingLights;
     this.maxShadowsPerLight = LIGHTING_DEFAULTS.maxShadowsPerLight;
     this.maxShadowsPerEntity = LIGHTING_DEFAULTS.maxShadowsPerEntity;
-    this._gpuShadowPath = 'copy';
-    this._gpuShadowCookies = 'always';
-    this._shadowUpdateInterval = 1;
-    this._shadowUpdateTick = 0;
-    this._gpuResidentN = 0;
     this._lightGradientTexId = 0xffff;
     this.lightingResolution = 1.0; // Resolution multiplier for lighting (e.g. 0.5 for half res)
     this.lightingRT = null; // RenderTexture for low-res lighting
@@ -825,6 +827,7 @@ class PixiRenderer extends AbstractWorker {
     this._sortKeyU32 = this._sortKeyU32ByBuf[bufferIdx];
     this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
     this.renderQueuePoseReady = this.renderQueuePoseReadyBuffers[bufferIdx];
+    this._gpuQueueRead = this.gpuQueueBuffers ? this.gpuQueueBuffers[bufferIdx] : null;
   }
 
   _notePosePublish() {
@@ -1355,6 +1358,26 @@ class PixiRenderer extends AbstractWorker {
   // ========================================
   // RENDER QUEUE UPDATE (Optimized Path)
   // ========================================
+  _commitPackedBatch(batch, src, count, floats) {
+    if (!batch) return 0;
+    const n = count | 0;
+    if (n <= 0 || !src) {
+      if (batch.geometry) batch.geometry.instanceCount = 0;
+      if (batch.mesh) batch.mesh.visible = false;
+      return 0;
+    }
+    const cap = batch.capacity | 0;
+    const keep = n > cap ? cap : n;
+    const len = keep * (floats | 0);
+    if (len > batch.data.length) {
+      if (batch.geometry) batch.geometry.instanceCount = 0;
+      if (batch.mesh) batch.mesh.visible = false;
+      return 0;
+    }
+    batch.data.set(src.subarray(0, len));
+    return batch.commitInstances(keep);
+  }
+
   /**
    * Upload main render queue SoA into ENTITIES (one blend, CPU Y-order when
    * ySorting) + glow (add). Particles, decorations, bullets, adobe pieces, and
@@ -1373,6 +1396,44 @@ class PixiRenderer extends AbstractWorker {
         if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
         return;
       }
+    }
+
+    const gpu = this._gpuQueueRead;
+    const packedN = gpu && gpu.header ? (gpu.header[GPU_HDR_SPRITE] | 0) : 0;
+    const soaN = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
+    const packedOk = !!(
+      gpu &&
+      gpu.header &&
+      (gpu.header[GPU_HDR_VERSION] | 0) === GPU_QUEUE_VERSION &&
+      !this.entitiesBatch.poseInterp &&
+      !(packedN === 0 && soaN > 0)
+    );
+    if (packedOk) {
+      this._syncEntityOrder();
+      if (layerIsVisible(Layer.entitiesId)) {
+        this.entitiesBatch.setTargetSpace(false, 0, 0, 1);
+        this.visibleEntityCount = this._commitPackedBatch(
+          this.entitiesBatch, gpu.sprites, packedN, GPU_SPRITE_FLOATS
+        );
+      } else {
+        this.entitiesBatch.mesh.visible = false;
+        this.visibleEntityCount = 0;
+      }
+      this.visibleParticleCount = gpu.header[GPU_HDR_PARTICLE] | 0;
+      this.entitiesBatch.setPoseAlpha(this._poseAlpha);
+      this._posePacked = true;
+      const glowId = Layer.get('lightGlows')?.id;
+      const glowOn = this._lightGlowAdd && layerIsVisible(glowId);
+      if (this.entitiesGlowBatch) {
+        if (glowOn) {
+          const glowN = gpu.header[GPU_HDR_GLOW] | 0;
+          this.entitiesGlowBatch.setTargetSpace(false, 0, 0, 1);
+          this._commitPackedBatch(this.entitiesGlowBatch, gpu.glow, glowN, GPU_SPRITE_FLOATS);
+        } else {
+          this.entitiesGlowBatch.mesh.visible = false;
+        }
+      }
+      return;
     }
 
     const count = this.renderQueueCount[0];
@@ -3524,6 +3585,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * - Draw light cookies then that light's shadows (multi-light attenuation)
    * - shadowDisplaySprite (multiply) darkens the scene where RT is dark
    */
+  updateShadowSprites() {
+    if (!this.shadowSpritesEnabled) return;
+    if (!this.shadowBatch || !this.shadowRT) return;
+    if (!layerIsVisible(Layer.castedShadows?.id)) return;
+    this._gpuTimer.attach(this.pixiApp?.renderer);
+    this._gpuTimer.begin('shadows');
+    this._drawGpuCasterShadows();
+    this._gpuTimer.end();
+  }
+
   createShadowSpriteSystem() {
     const lightingConfig = this.config.lighting || {};
     this.shadowResolution = lightingConfig.shadowResolution ?? LIGHTING_DEFAULTS.shadowResolution;
@@ -3543,8 +3614,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       height: rtPixelSize(this.canvasHeight, this.shadowResolution),
     });
 
+    const gpuCaps = this.gpuQueueBuffers && this.gpuQueueBuffers[0] ? this.gpuQueueBuffers[0].caps : null;
+    const cookieCap = gpuCaps ? Math.max(1, gpuCaps.maxCookie | 0) : Math.max(1, this.maxLights | 0);
+    const casterCap = gpuCaps
+      ? Math.max(1, gpuCaps.maxSun | 0, gpuCaps.maxStamp | 0)
+      : Math.max(1, this.renderQueueMaxItems | 0);
     this.shadowBatch = new InstancedSpriteBatch({
-      capacity: this.maxShadowRenderItems || 1,
+      capacity: cookieCap,
       label: 'shadows-instanced',
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
@@ -3553,13 +3629,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
     });
-
-    const casterCap = Math.max(1, this.renderQueueMaxItems | 0);
-    const lightCap = Math.max(1, this.maxShadowCastingLights | 0);
-    const perLightCap = Math.max(1, this.maxShadowsPerLight | 0);
-    const stampCap = lightCap * Math.min(perLightCap, casterCap);
     this.gpuCasterBatch = new InstancedSpriteBatch({
-      capacity: Math.max(casterCap, stampCap),
+      capacity: casterCap,
       label: 'gpu-casters',
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
@@ -3569,8 +3640,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaders: this._engineShaders,
       shadowCast: true,
     });
-    this._allocGpuCasterScratch(casterCap);
-    this._syncGpuShadowKnobs();
 
     this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
     this.shadowDisplaySprite.anchor.set(0, 0);
@@ -3582,276 +3651,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.lightingShader) {
       this.lightingShader.resources.uShadowMap = this.shadowRT.source;
     }
-    this._shadowSilhouetteRT = PIXI.RenderTexture.create({
-      width: this.shadowRT.width,
-      height: this.shadowRT.height,
-    });
-    this._shadowSilhouetteSprite = new PIXI.Sprite(this._shadowSilhouetteRT);
-    this._shadowSilhouetteSprite.anchor.set(0, 0);
     this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
     this.pixiApp.stage.addChild(this.shadowDisplaySprite);
 
     this._gpuTimer.attach(this.pixiApp.renderer);
 
     console.log(
-      `PIXI WORKER: Shadow instanced RT (${this.maxShadowRenderItems} max, ${this.shadowRT.width}x${this.shadowRT.height}, casters ${casterCap})`
+      `PIXI WORKER: Shadow instanced RT (${this.shadowRT.width}x${this.shadowRT.height}, casters ${casterCap})`
     );
-  }
-
-  _allocGpuCasterScratch(maxItems) {
-    const n = Math.max(1, maxItems | 0);
-    const maxLights = Math.max(1, this.maxLights | 0);
-    const perEntity = Math.max(0, this.maxShadowsPerEntity | 0);
-    const nodeCap = perEntity > 0 ? n * Math.min(perEntity, 64) : 1;
-    this._gpuCasterIdx = new Uint32Array(n);
-    this._gpuCasterTmp = new Uint32Array(n);
-    this._gpuCasterDist = new Float32Array(n);
-    this._gpuCasterOrder = new Uint32Array(n);
-    this._gpuLightIdx = new Uint32Array(n);
-    this._gpuLightHead = new Int32Array(maxLights);
-    this._gpuNodeNext = new Int32Array(nodeCap);
-    this._gpuNodeCaster = new Int32Array(nodeCap);
-    this._gpuClosestSlots = new Uint32Array(Math.max(1, Math.min(perEntity, 64) || 1));
-    this._gpuClosestDist = new Float32Array(this._gpuClosestSlots.length);
-    this._gpuPackedIdx = new Uint32Array(n);
-    this._gpuPackedX = new Float32Array(n);
-    this._gpuPackedY = new Float32Array(n);
-    this._gpuCasterUsed = new Uint8Array(n);
-    this._gpuCasterCount = 0;
-    const cookieN = Math.max(1, this.maxShadowCastingLights | 0, this.maxLights | 0);
-    const cookieRot = new Float32Array(cookieN);
-    const cookieAnchor = new Float32Array(cookieN);
-    const cookieTint = new Uint32Array(cookieN);
-    cookieRot.fill(1);
-    cookieAnchor.fill(0.5);
-    cookieTint.fill(0xffffff);
-    this._cookieQ = {
-      count: 1,
-      x: new Float32Array(cookieN),
-      y: new Float32Array(cookieN),
-      scaleX: new Float32Array(cookieN),
-      scaleY: new Float32Array(cookieN),
-      rotC: cookieRot,
-      rotS: new Float32Array(cookieN),
-      alpha: new Float32Array(cookieN),
-      tint: cookieTint,
-      textureId: new Uint16Array(cookieN),
-      anchorX: cookieAnchor,
-      anchorY: cookieAnchor,
-    };
-    this._gpuCasterQ = makeBatchViews();
-    this._gpuCasterOpts = {};
-    this._cookieOpts = {};
-    this._gpuPackedSrc = { _floats: 0, data: null };
-    this._gpuStampResult = { count: 0, lights: 0 };
-  }
-
-  /**
-   * Upload shadow SoA → instanced Mesh → shadowRT (screen space).
-   */
-  updateShadowSprites() {
-    if (!this.shadowSpritesEnabled) return;
-    if (!this.shadowBatch || !this.shadowRT) return;
-    if (!layerIsVisible(Layer.castedShadows?.id)) return;
-
-    this._syncGpuShadowKnobs();
-    if (this.shadowDisplaySprite) this.shadowDisplaySprite.visible = !this._shadowComposite;
-    const uGroup = this.lightingShader?.resources?.uniforms;
-    const uLit = uGroup?.uniforms;
-    if (uLit && uLit.uShadowComposite !== undefined) {
-      uLit.uShadowComposite = this._shadowComposite ? 1 : 0;
-      if (typeof uGroup.update === 'function') uGroup.update();
-    }
-    const interval = this._shadowUpdateInterval;
-    const skipCasters = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
-    this._shadowUpdateTick++;
-
-    this._gpuTimer.attach(this.pixiApp?.renderer);
-    this._gpuTimer.begin('shadows');
-    if (skipCasters) this._redrawShadowCookies();
-    else this._drawGpuCasterShadows();
-    this._gpuTimer.end();
-  }
-
-  _syncGpuShadowKnobs() {
-    const lighting = this.config.lighting || {};
-    this._gpuShadowPath = resolveGpuShadowPath(lighting.gpuShadowPath);
-    this._shadowComposite = lighting.shadowComposite === true;
-    this._floorOcclude = lighting.floorOcclude === true;
-    this._gpuShadowCookies = resolveGpuShadowCookies(lighting.gpuShadowCookies);
-    this._shadowUpdateInterval = resolveShadowUpdateInterval(lighting.shadowUpdateInterval);
-  }
-
-  _snapshotPackedCasters(batch, nCasters) {
-    const f = batch._floats;
-    const need = nCasters * f;
-    if (!this._gpuPackedSnap || this._gpuPackedSnap.length < need) {
-      this._gpuPackedSnap = new Float32Array(batch.data.length);
-    }
-    this._gpuPackedSnap.set(batch.data.subarray(0, need));
-    const px = this._gpuPackedX;
-    const py = this._gpuPackedY;
-    const snap = this._gpuPackedSnap;
-    for (let c = 0; c < nCasters; c++) {
-      px[c] = snap[c * f];
-      py[c] = snap[c * f + 1];
-    }
-  }
-
-  _uploadGpuCasters(indices, indexCount) {
-    const batch = this.gpuCasterBatch;
-    const useIdx = indices != null && (indexCount | 0) > 0;
-    const qCount = this.renderQueueCount ? this.renderQueueCount[0] | 0 : 0;
-    if (!batch || (useIdx ? (indexCount | 0) <= 0 : qCount <= 0)) {
-      if (batch) batch.geometry.instanceCount = 0;
-      return 0;
-    }
-    const q = this._gpuCasterQ;
-    this._bindRenderQueueTo(q, this.renderQueueCount ? this.renderQueueCount[0] : 0);
-    const opts = this._gpuCasterOpts;
-    this._resetSpriteUploadOpts(opts);
-    opts.space = BATCH_SPACE.WORLD;
-    opts.zoom = 1;
-    opts.cameraX = 0;
-    opts.cameraY = 0;
-    opts.resolution = 1;
-    opts.depthDenom = this.renderQueueMaxItems;
-    opts.worldHeight = this.config?.worldHeight || 10000;
-    opts.indices = indices;
-    opts.indexCount = indexCount;
-    return batch.upload(q, opts);
-  }
-
-  _drawLightCookie(lightIndex, clear) {
-    const texId = this._lightGradientTexId;
-    const lightData = this._lightDataFloats;
-    if (texId === 0xffff || !lightData || !this.shadowBatch) return false;
-    const o = lightIndex * 4;
-    const intensity = lightData[o + 2];
-    if (!(intensity > 0)) return false;
-    const lights = this._visibleLightsAll;
-    const entityId = lights && lights[lightIndex] ? lights[lightIndex].entityId : -1;
-    const sqrtI = entityId >= 0 && LightEmitter.sqrtLightIntensity
-      ? LightEmitter.sqrtLightIntensity[entityId]
-      : 0;
-    const q = this._cookieQ;
-    q.x[0] = lightData[o];
-    q.y[0] = lightData[o + 1];
-    const scale = lightCookieScale(sqrtI);
-    q.scaleX[0] = scale;
-    q.scaleY[0] = scale;
-    q.alpha[0] = intensity / 50000;
-    q.textureId[0] = texId;
-    const opts = this._cookieOpts;
-    this._resetSpriteUploadOpts(opts);
-    opts.space = BATCH_SPACE.SCREEN;
-    opts.zoom = this._renderZoom;
-    opts.cameraX = this._renderCameraX;
-    opts.cameraY = this._renderCameraY;
-    opts.resolution = this._shadowPixelScale();
-    opts.depthMode = BATCH_DEPTH.INDEX;
-    opts.depthDenom = 1;
-    if (!this.shadowBatch.upload(q, opts)) return false;
-    const rtOpts = this._rtRenderOpts;
-    rtOpts.container = this.shadowBatch.mesh;
-    rtOpts.target = this.shadowRT;
-    rtOpts.clear = clear;
-    rtOpts.clearColor = this._clearTransparent;
-    return this._submitRender(rtOpts);
-  }
-
-  /** One upload and one render for every cookie under `cap`. Returns how many quads. */
-  _drawCookieBatch(cap, clear) {
-    const texId = this._lightGradientTexId;
-    const lightData = this._lightDataFloats;
-    const q = this._cookieQ;
-    if (texId === 0xffff || !lightData || !q || !this.shadowBatch) return 0;
-    const lights = this._visibleLightsAll;
-    const sqrtI = LightEmitter.sqrtLightIntensity;
-    let n = 0;
-    const room = q.x.length;
-    for (let i = 0; i < cap && n < room; i++) {
-      const o = i * 4;
-      const intensity = lightData[o + 2];
-      if (!(lightData[o + 3] > 0) || !(intensity > 0)) continue;
-      const entityId = lights && lights[i] ? lights[i].entityId : -1;
-      const scale = lightCookieScale(entityId >= 0 && sqrtI ? sqrtI[entityId] : 0);
-      q.x[n] = lightData[o];
-      q.y[n] = lightData[o + 1];
-      q.scaleX[n] = scale;
-      q.scaleY[n] = scale;
-      q.alpha[n] = intensity / 50000;
-      q.textureId[n] = texId;
-      n++;
-    }
-    if (n <= 0) return 0;
-    q.count = n;
-    const opts = this._cookieOpts;
-    this._resetSpriteUploadOpts(opts);
-    opts.space = BATCH_SPACE.SCREEN;
-    opts.zoom = this._renderZoom;
-    opts.cameraX = this._renderCameraX;
-    opts.cameraY = this._renderCameraY;
-    opts.resolution = this._shadowPixelScale();
-    opts.depthMode = BATCH_DEPTH.INDEX;
-    opts.depthDenom = Math.max(1, n);
-    if (!this.shadowBatch.upload(q, opts)) return 0;
-    const rtOpts = this._rtRenderOpts;
-    rtOpts.container = this.shadowBatch.mesh;
-    rtOpts.target = this.shadowRT;
-    rtOpts.clear = clear;
-    rtOpts.clearColor = this._clearTransparent;
-    return this._submitRender(rtOpts) ? n : 0;
-  }
-
-  /**
-   * Interval hold: cookies track the camera. Silhouettes stay in the last
-   * caster RT and are stamped back on top. No compact, no caster draw.
-   */
-  _redrawShadowCookies() {
-    this._gpuSunDrew = false;
-    this._gpuPassesThisFrame = 0;
-    this._gpuCastersThisFrame = 0;
-    this._gpuShadowLightsThisFrame = 0;
-    const lightData = this._lightDataFloats;
-    const packedLights = Math.min(this._visibleLightsAllCount | 0, this.maxLights | 0);
-    const cap = Math.min(packedLights, this.maxShadowCastingLights | 0);
-    const sunI = Sun.isInitialized && Sun.enabled ? Sun.intensity : 0;
-    const drawCookies = this._gpuShadowCookies !== 'night' || sunI < 1;
-    let shadowLights = 0;
-    if (drawCookies && lightData) {
-      if (this._gpuShadowPath === 'batch') {
-        const nCookies = this._drawCookieBatch(cap, !this._gpuSunDrew);
-        if (nCookies > 0) {
-          this._gpuPassesThisFrame++;
-          this._gpuSunDrew = true;
-          shadowLights = nCookies;
-        }
-      } else {
-        for (let i = 0; i < cap; i++) {
-          if (!(lightData[i * 4 + 3] > 0)) continue;
-          if (this._drawLightCookie(i, !this._gpuSunDrew)) {
-            this._gpuPassesThisFrame++;
-            this._gpuSunDrew = true;
-          }
-          shadowLights++;
-        }
-      }
-    }
-    this._gpuShadowLightsThisFrame = shadowLights;
-    const rtOpts = this._rtRenderOpts;
-    rtOpts.target = this.shadowRT;
-    rtOpts.clearColor = this._clearTransparent;
-    if (this._shadowSilhouetteSprite) {
-      rtOpts.container = this._shadowSilhouetteSprite;
-      rtOpts.clear = !this._gpuSunDrew;
-      this._submitRender(rtOpts);
-      this._gpuPassesThisFrame++;
-    } else if (!this._gpuSunDrew) {
-      rtOpts.container = this._rtEmptyContainer;
-      rtOpts.clear = true;
-      this._submitRender(rtOpts);
-    }
   }
 
   _syncUniformGroup(group) {
@@ -3866,13 +3673,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.clear = needClear;
     this._syncUniformGroup(group);
     this._submitRender(rtOpts);
-    if (this._shadowUpdateInterval > 1 && this._shadowSilhouetteRT) {
-      rtOpts.target = this._shadowSilhouetteRT;
-      rtOpts.clear = this._silhouetteNeedsClear;
-      this._silhouetteNeedsClear = false;
-      this._submitRender(rtOpts);
-      rtOpts.target = this.shadowRT;
-    }
     this._gpuPassesThisFrame++;
     this._gpuSunDrew = true;
     return true;
@@ -3883,39 +3683,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._gpuPassesThisFrame = 0;
     this._gpuCastersThisFrame = 0;
     this._gpuShadowLightsThisFrame = 0;
-    this._syncGpuShadowKnobs();
-    if (!this._gpuCasterIdx || !this.gpuCasterBatch) return;
-    const path = this._gpuShadowPath;
     const batch = this.gpuCasterBatch;
     const mesh = batch && batch.mesh;
     const shader = batch && batch.shadowShader;
-    const count = this.renderQueueCount ? this.renderQueueCount[0] | 0 : 0;
-    let nCompact = compactShadowCasterIndices(
-      this.renderQueueShadowH,
-      this.renderQueueType,
-      count,
-      this._gpuCasterIdx
-    );
-    this._gpuCasterCount = nCompact;
-    this._gpuCastersThisFrame = path === 'queue' ? count : nCompact;
     if (!shader || !mesh || !this.shadowRT) return;
     const group = shader.resources && shader.resources.uniforms;
     const u = group && group.uniforms;
     if (!u || !u.uCam || !u.uSun || !u.uLight) return;
 
+    const gpu = this._gpuQueueRead;
+    const sunN = gpu && gpu.header ? (gpu.header[GPU_HDR_SUN] | 0) : 0;
+    const stampN = gpu && gpu.header ? (gpu.header[GPU_HDR_STAMP] | 0) : 0;
+    const cookieN = gpu && gpu.header ? (gpu.header[GPU_HDR_COOKIE] | 0) : 0;
+    this._gpuCastersThisFrame = sunN;
+    this._gpuShadowLightsThisFrame = cookieN;
+
     const zoom = this._renderZoom || 1;
-    if (this._floorOcclude && nCompact > 0 && this.renderQueueScaleY && this.renderQueueShadowH) {
-      nCompact = dropTinyFloorShadows(
-        this._gpuCasterIdx,
-        nCompact,
-        this.renderQueueScaleY,
-        this.renderQueueShadowH,
-        zoom,
-        2
-      );
-      this._gpuCasterCount = nCompact;
-      this._gpuCastersThisFrame = path === 'queue' ? count : nCompact;
-    }
     const res = this._shadowPixelScale();
     u.uCam[0] = this._renderCameraX;
     u.uCam[1] = this._renderCameraY;
@@ -3944,173 +3727,47 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const rtOpts = this._rtRenderOpts;
     rtOpts.target = this.shadowRT;
     rtOpts.clearColor = this._clearTransparent;
-    this._silhouetteNeedsClear = true;
 
-    const maxPerLight = this.maxShadowsPerLight | 0;
-    const maxPerEntity = this.maxShadowsPerEntity | 0;
-    const packedLights = Math.min(this._visibleLightsAllCount | 0, this.maxLights | 0);
-    const cap = Math.min(packedLights, this.maxShadowCastingLights | 0);
-    const filterPerLight = path === 'copy' || path === 'batch';
-    const reuseAll =
-      !filterPerLight ||
-      (nCompact > 0 &&
-        !(maxPerEntity > 0) &&
-        (!(maxPerLight > 0) || maxPerLight >= nCompact));
-
-    let packedN = nCompact;
-    if (path === 'queue') {
-      if (count > 0) this._uploadGpuCasters(null, 0);
-      packedN = mesh.geometry.instanceCount | 0;
-    } else if (nCompact > 0) {
-      if (
-        path === 'resident' &&
-        samePackedIndices(this._gpuPackedIdx, this._gpuResidentN, this._gpuCasterIdx, nCompact)
-      ) {
-        this._bindRenderQueueTo(this._gpuCasterQ, count);
-        batch.patchCasterPoses(this._gpuCasterQ, this._gpuCasterIdx, nCompact);
-      } else {
-        this._uploadGpuCasters(this._gpuCasterIdx, nCompact);
-        this._gpuPackedIdx.set(this._gpuCasterIdx.subarray(0, nCompact));
-        this._gpuResidentN = nCompact;
-      }
-      if (filterPerLight) this._snapshotPackedCasters(batch, nCompact);
-      this._gpuCasterUsed.fill(0, 0, nCompact);
-    } else {
-      this._gpuResidentN = 0;
+    batch.setTargetSpace(false, 0, 0, 1);
+    if (u.uSun[3] > 0 && sunN > 0) {
+      this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
+      this._drawGpuCasterPass(mesh, group, true);
     }
-    const nDraw = path === 'queue' ? packedN : nCompact;
-    if (u.uSun[3] > 0 && nDraw > 0) this._drawGpuCasterPass(mesh, group, true);
 
     const sunI = sunOn ? Sun.intensity : 0;
     let pointScale = 0.33 * (1 - sunI * 0.9);
     if (pointScale < 0.2) pointScale = 0.2;
-    const lightData = this._lightDataFloats;
-    const drawCookies = this._gpuShadowCookies !== 'night' || sunI < 1;
-
     u.uPointScale = pointScale;
-    const packedSrc = this._gpuPackedSrc;
-    packedSrc._floats = batch._floats;
-    packedSrc.data = this._gpuPackedSnap;
-    const used = this._gpuCasterUsed;
-    let shadowLights = 0;
-    if (path === 'batch' && LightEmitter.lightIntensity && this._visibleLightsAll && lightData) {
-      if (drawCookies) {
-        const nCookies = this._drawCookieBatch(cap, !this._gpuSunDrew);
-        if (nCookies > 0) {
-          this._gpuPassesThisFrame++;
-          this._gpuSunDrew = true;
-        }
+
+    if (cookieN > 0 && this.shadowBatch && gpu.cookie) {
+      const screenScale = zoom * res;
+      this.shadowBatch.setTargetSpace(true, this._renderCameraX, this._renderCameraY, screenScale);
+      if (this._commitPackedBatch(this.shadowBatch, gpu.cookie, cookieN, GPU_SPRITE_FLOATS)) {
+        rtOpts.container = this.shadowBatch.mesh;
+        rtOpts.target = this.shadowRT;
+        rtOpts.clear = !this._gpuSunDrew;
+        rtOpts.clearColor = this._clearTransparent;
+        this._submitRender(rtOpts);
+        this._gpuPassesThisFrame++;
+        this._gpuSunDrew = true;
       }
-      const stamped = nCompact > 0 && !reuseAll
-        ? this._stampPointCasterLights(cap, lightData, nCompact, maxPerLight, maxPerEntity)
-        : 0;
-      shadowLights = stamped.lights;
-      if (stamped.count > 0) {
-        u.uLight[0] = 0;
-        u.uLight[1] = 0;
-        u.uLight[2] = 0;
-        u.uLight[3] = 0;
-        this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
-      }
-    } else if (LightEmitter.lightIntensity && this._visibleLightsAll && lightData) {
-      for (let i = 0; i < cap; i++) {
-        const o = i * 4;
-        const rangeSq = lightData[o + 3];
-        if (!(rangeSq > 0)) continue;
-        if (drawCookies) {
-          const cookieDrew = this._drawLightCookie(i, !this._gpuSunDrew);
-          if (cookieDrew) {
-            this._gpuPassesThisFrame++;
-            this._gpuSunDrew = true;
-          }
-        }
-        let drew = nDraw;
-        if (nCompact > 0 && filterPerLight && !reuseAll) {
-          const lx = lightData[o];
-          const ly = lightData[o + 1];
-          const lim = maxPerLight > 0 ? maxPerLight : nCompact;
-          let m = 0;
-          const outIdx = this._gpuLightIdx;
-          const px = this._gpuPackedX;
-          const py = this._gpuPackedY;
-          for (let c = 0; c < nCompact && m < lim; c++) {
-            if (maxPerEntity > 0 && used[c] >= maxPerEntity) continue;
-            const dx = px[c] - lx;
-            const dy = py[c] - ly;
-            if (dx * dx + dy * dy > rangeSq) continue;
-            outIdx[m++] = c;
-            if (maxPerEntity > 0) used[c]++;
-          }
-          drew = m;
-          if (drew > 0) batch.copyInstances(packedSrc, outIdx, drew);
-        }
-        if (nDraw > 0 && drew > 0) {
-          u.uLight[0] = lightData[o];
-          u.uLight[1] = lightData[o + 1];
-          u.uLight[2] = lightData[o + 2];
-          u.uLight[3] = rangeSq;
-          this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
-        }
-        shadowLights++;
-      }
-      u.uLight[3] = 0;
     }
-    this._gpuShadowLightsThisFrame = shadowLights;
+
+    if (stampN > 0) {
+      u.uLight[0] = 0;
+      u.uLight[1] = 0;
+      u.uLight[2] = 0;
+      u.uLight[3] = 0;
+      this._commitPackedBatch(batch, gpu.stamp, stampN, GPU_CASTER_FLOATS);
+      this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
+    }
+
     if (!this._gpuSunDrew) {
       rtOpts.container = this._rtEmptyContainer;
       rtOpts.clear = true;
       this._submitRender(rtOpts);
     }
     mesh.shader = prevShader;
-  }
-
-  /**
-   * One buffer of the same per-light subsets `copy` would draw, each instance
-   * carrying its light. Count must match the sum of those subsets.
-   */
-  _stampPointCasterLights(cap, lightData, nCompact, maxPerLight, maxPerEntity) {
-    const batch = this.gpuCasterBatch;
-    const src = this._gpuPackedSnap;
-    const used = this._gpuCasterUsed;
-    const px = this._gpuPackedX;
-    const py = this._gpuPackedY;
-    const outIdx = this._gpuLightIdx;
-    let cursor = 0;
-    let lights = 0;
-    let requested = 0;
-    const capInst = batch.capacity;
-    const df = batch._floats;
-    for (let i = 0; i < cap; i++) {
-      const o = i * 4;
-      const rangeSq = lightData[o + 3];
-      if (!(rangeSq > 0)) continue;
-      lights++;
-      const lx = lightData[o];
-      const ly = lightData[o + 1];
-      const lim = maxPerLight > 0 ? maxPerLight : nCompact;
-      let m = 0;
-      for (let c = 0; c < nCompact && m < lim; c++) {
-        if (maxPerEntity > 0 && used[c] >= maxPerEntity) continue;
-        const dx = px[c] - lx;
-        const dy = py[c] - ly;
-        if (dx * dx + dy * dy > rangeSq) continue;
-        outIdx[m++] = c;
-        if (maxPerEntity > 0) used[c]++;
-      }
-      if (m > lim) throw new Error('batch shadow exceeded maxShadowsPerLight');
-      requested += m;
-      cursor = appendStampedCasters(
-        batch.data, df, cursor, src, df, outIdx, m, lightData, capInst, o
-      );
-    }
-    if (cursor !== requested) {
-      throw new Error(`batch shadow stamp ${cursor} !== ${requested}`);
-    }
-    if (cursor > 0) batch.commitInstances(cursor);
-    const result = this._gpuStampResult;
-    result.count = cursor;
-    result.lights = lights;
-    return result;
   }
 
   /**
@@ -4778,8 +4435,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const on = Layer._visible[i] === 1;
       const name = Layer.getName(i);
       const displayObj = name ? this._layerRuntime[name] : null;
-      const show = on && (name !== 'lightGlows' || this._lightGlowAdd)
-        && !(name === 'castedShadows' && this._shadowComposite);
+      const show = on && (name !== 'lightGlows' || this._lightGlowAdd);
       if (displayObj) setDisplayVisible(displayObj, show);
     }
   }
@@ -4895,13 +4551,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         null
       );
       if (this.shadowDisplaySprite) this.shadowDisplaySprite.scale.set(width / sw, height / sh);
-      this._shadowSilhouetteRT = this._replaceRT(
-        this._shadowSilhouetteRT,
-        sw,
-        sh,
-        this._shadowSilhouetteSprite,
-        1
-      );
     }
 
     if (this._visPolyRT) {
@@ -5692,6 +5341,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Set initial read buffer (frame 0 uses buffer 0)
       this._setReadBuffer(0);
+
+      if (data.gpuQueue && data.gpuQueue.dataA && data.gpuQueue.dataB && data.gpuQueue.caps) {
+        const caps = data.gpuQueue.caps;
+        this.gpuQueueBuffers = [
+          createGpuQueueViews(data.gpuQueue.dataA, caps),
+          createGpuQueueViews(data.gpuQueue.dataB, caps),
+        ];
+        this._gpuQueueRead = this.gpuQueueBuffers[0];
+        console.log(`PIXI WORKER: GPU queues ready (sprites ${caps.maxSprites}, stamp ${caps.maxStamp})`);
+      }
 
       // Entity texture lookup buffer (separate SAB)
       // Maps entityIndex -> last computed globalTextureId for shadow system

@@ -48,6 +48,6 @@ test('physics_host stepOnce does not schedule the next frame', () => {
 
 test('pixi presents the canvas after a manual step', () => {
   assert.match(pixi, /afterManualStep\(\)/);
-  assert.match(pixi, /app\.renderer\.render\(app\.stage\)/);
+  assert.match(pixi, /this\._submitRender\(app\.stage\)/);
   assert.match(pixi, /this\.config\?\.manualStep && this\.pixiApp\.ticker/);
 });

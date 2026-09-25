@@ -39,7 +39,7 @@ test('vertex shader uses aInstRotCS without cos/sin of angle', () => {
   assert.match(wgsl, /let c = aInstRotCS\.x;/);
   assert.doesNotMatch(wgsl, /cos\(aInstRot\)/);
   assert.match(src, /INSTANCED_SPRITE_FLOATS = 15/);
-  assert.match(src, /_finishUpload\(out, INSTANCED_SPRITE_STRIDE\)/);
+  assert.match(src, /_finishUpload\(out, this\._strideBytes\)/);
   assert.match(wgsl, /aInstTileInv/);
   assert.match(wgsl, /aInstTileOff/);
   assert.match(wgsl, /fract\(vWorld\.x \* vTileInv\.x \+ vTileOff\.x\)/);
@@ -69,9 +69,9 @@ const pixiSrc = readFileSync(join(dir, '../../src/workers/pixiWorker.js'), 'utf8
 
 test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', () => {
   assert.match(pixiSrc, /function emptyInstancedMesh\(obj\)/);
-  assert.match(pixiSrc, /setDisplayVisible\(displayObj, on && \(name !== 'lightGlows'/);
+  assert.match(pixiSrc, /obj\.visible = !!on && !emptyInstancedMesh\(obj\)/);
   assert.match(pixiSrc, /this\._rtEmptyContainer = new Container\(\)/);
-  assert.match(pixiSrc, /emptyInstancedMesh\(this\.shadowBatch\.mesh\)/);
+  assert.match(pixiSrc, /rtOpts\.container = this\._rtEmptyContainer/);
   assert.match(pixiSrc, /emptyInstancedMesh\(densityMesh\)/);
 
   const start = pixiSrc.indexOf('function emptyInstancedMesh');
@@ -179,7 +179,7 @@ test('lighting GLSL loop bound is MAX_LIGHTS token', () => {
 test('lighting WGSL reconstructs world from framebuffer Y without flip', () => {
   const glsl = readFileSync(join(dir, '../../src/shaders/lightingBasic.frag.glsl'), 'utf8');
   const wgsl = readFileSync(join(dir, '../../src/shaders/lightingBasic.wgsl'), 'utf8');
-  assert.match(glsl, /normCoord = gl_FragCoord\.xy \/ uViewport/);
-  assert.match(wgsl, /normCoord = in\.position\.xy \/ vp/);
+  assert.match(glsl, /normCoord = vec2\(gl_FragCoord\.x, y\) \/ uViewport/);
+  assert.match(wgsl, /let normCoord = vec2<f32>\(in\.position\.x, y\) \/ vp/);
   assert.doesNotMatch(wgsl, /1\.0 - in\.position\.y/);
 });

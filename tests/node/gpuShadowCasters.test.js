@@ -2,20 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   appendStampedCasters,
-  dropTinyFloorShadows,
   compactShadowCasterIndices,
+  compactStampByLightLimit,
   takeClosest,
   selectClosestCasters,
   linkCastersToClosestLights,
   collectLightCasters,
-  resolveGpuShadowPath,
-  resolveGpuShadowCookies,
-  resolveShadowUpdateInterval,
   rtPixelSize,
   rtPixelScale,
-  samePackedIndices,
   writeCasterPose,
   copyTypedRange,
+  CASTER_LIGHT_FLOAT,
 } from '../../src/render/gpuShadowCasters.js';
 
 test('compactShadowCasterIndices keeps shadowH>0 and skips glow type 3', () => {
@@ -118,26 +115,6 @@ test('appendStampedCasters copies subsets and stamps one light each', () => {
   assert.equal(dst[21], 6);
 });
 
-test('dropTinyFloorShadows keeps shadows at least minPx tall', () => {
-  const idx = new Uint32Array([0, 1, 2]);
-  const scaleY = new Float32Array([1, 1, 10]);
-  const shadowH = new Float32Array([1, 0.5, 1]);
-  const n = dropTinyFloorShadows(idx, 3, scaleY, shadowH, 1, 2);
-  assert.equal(n, 1);
-  assert.equal(idx[0], 2);
-});
-
-test('resolveGpuShadowPath and cookies default to copy / always', () => {
-  assert.equal(resolveGpuShadowPath('reuse'), 'reuse');
-  assert.equal(resolveGpuShadowPath('queue'), 'queue');
-  assert.equal(resolveGpuShadowPath('resident'), 'resident');
-  assert.equal(resolveGpuShadowPath('batch'), 'batch');
-  assert.equal(resolveGpuShadowPath('nope'), 'copy');
-  assert.equal(resolveGpuShadowCookies('night'), 'night');
-  assert.equal(resolveGpuShadowCookies('always'), 'always');
-  assert.equal(resolveGpuShadowCookies(''), 'always');
-});
-
 test('rtPixelSize rounds and rtPixelScale matches the real RT', () => {
   assert.equal(rtPixelSize(1919, 0.5), 960);
   assert.equal(rtPixelSize(1919, 0.25), 480);
@@ -146,20 +123,7 @@ test('rtPixelSize rounds and rtPixelScale matches the real RT', () => {
   assert.equal(rtPixelScale(0, 10), 1);
 });
 
-test('resolveShadowUpdateInterval is 1 unless N>1', () => {
-  assert.equal(resolveShadowUpdateInterval(undefined), 1);
-  assert.equal(resolveShadowUpdateInterval(1), 1);
-  assert.equal(resolveShadowUpdateInterval(0), 1);
-  assert.equal(resolveShadowUpdateInterval(2), 2);
-  assert.equal(resolveShadowUpdateInterval(3), 3);
-});
-
-test('samePackedIndices and writeCasterPose keep the 18-float pose slice', () => {
-  const prev = new Uint32Array([1, 4, 9]);
-  const next = new Uint32Array([1, 4, 9]);
-  assert.equal(samePackedIndices(prev, 3, next, 3), true);
-  next[2] = 8;
-  assert.equal(samePackedIndices(prev, 3, next, 3), false);
+test('writeCasterPose keeps the 18-float pose slice', () => {
   const data = new Float32Array(18);
   writeCasterPose(data, 0, 10, 20, 1, 0, 2.5, 3, 4);
   assert.equal(data[0], 10);
@@ -169,4 +133,33 @@ test('samePackedIndices and writeCasterPose keep the 18-float pose slice', () =>
   assert.equal(data[15], 2.5);
   assert.equal(data[16], 3);
   assert.equal(data[17], 4);
+});
+
+test('compactStampByLightLimit keeps the closest casters per light', () => {
+  const fp = 22;
+  const stamp = new Float32Array(4 * fp);
+  const lightIdx = new Uint16Array([0, 0, 0, 1]);
+  for (let i = 0; i < 4; i++) {
+    stamp[i * fp] = i * 10;
+    stamp[i * fp + 1] = 0;
+    stamp[i * fp + CASTER_LIGHT_FLOAT] = 0;
+    stamp[i * fp + CASTER_LIGHT_FLOAT + 1] = 0;
+  }
+  stamp[3 * fp + CASTER_LIGHT_FLOAT] = 100;
+  const tmpIdx = new Uint32Array(8);
+  const tmpDist = new Float32Array(8);
+  const order = new Uint32Array(8);
+  const keepIdx = new Uint32Array(8);
+  const keepAll = new Uint32Array(8);
+  const scratch = new Float32Array(stamp.length);
+  const scratchLight = new Uint16Array(8);
+  const n = compactStampByLightLimit(
+    stamp, lightIdx, 4, fp, 1,
+    tmpIdx, tmpDist, order, keepIdx, keepAll, scratch, scratchLight
+  );
+  assert.equal(n, 2);
+  assert.equal(lightIdx[0], 0);
+  assert.equal(lightIdx[1], 1);
+  assert.equal(stamp[0], 0);
+  assert.equal(stamp[fp], 30);
 });

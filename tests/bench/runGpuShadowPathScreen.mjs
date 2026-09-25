@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Headed Predator gpuShadowPath cribado. Keep the Chromium window visible.
+ * Headed Predator GPU caster cribado. Alternate submit paths were stripped;
+ * this smoke is night + zoom only (pre-render packed rows).
+ *   node tests/bench/runGpuShadowPathScreen.mjs
  *   node tests/bench/runGpuShadowPathScreen.mjs
  *   node tests/bench/runGpuShadowPathScreen.mjs --confirm
  */
@@ -24,11 +26,7 @@ const zooms = [
   ['z04l20', 'zoom=0.4&shadowLights=20'],
 ];
 const paths = [
-  ['copy', 'gpuShadowPath=copy'],
-  ['reuse', 'gpuShadowPath=reuse'],
-  ['queue', 'gpuShadowPath=queue'],
-  ['resident', 'gpuShadowPath=resident'],
-  ['night', 'gpuShadowPath=copy&gpuShadowCookies=night'],
+  ['copy', 'hour=0'],
 ];
 
 const only = [];

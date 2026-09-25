@@ -4,8 +4,6 @@
  * Night is pinned with hour=0 (day cycle off).
  *   node tests/bench/runRenderQualityScreen.mjs --phase lights
  *   node tests/bench/runRenderQualityScreen.mjs --phase res --base shadowLights=48
- *   node tests/bench/runRenderQualityScreen.mjs --phase interval --base shadowLights=48
- *   node tests/bench/runRenderQualityScreen.mjs --confirm --phase interval --base shadowLights=48 --cells i1-z15,i1-z04,i2-z15,i2-z04
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -63,57 +61,10 @@ function cellsForPhase() {
         out.push([`${resName}-${zoomName}`, `${night}&${zoomQ}${extra}&${resQ}`]);
       }
     }
-  } else if (phase === 'interval') {
-    for (const [intName, intQ] of [
-      ['i1', 'shadowInterval=1'],
-      ['i2', 'shadowInterval=2'],
-      ['i3', 'shadowInterval=3'],
-    ]) {
-      for (const [zoomName, zoomQ] of z) {
-        out.push([`${intName}-${zoomName}`, `${night}&${zoomQ}${extra}&${intQ}`]);
-      }
-    }
-  } else if (phase === 'cookie') {
-    for (const [name, q] of [
-      ['mix-i1', 'lightingRes=0.5&shadowRes=0.25&shadowInterval=1'],
-      ['mix-i2', 'lightingRes=0.5&shadowRes=0.25&shadowInterval=2'],
-      ['same-i1', 'lightingRes=0.25&shadowRes=0.25&shadowInterval=1'],
-    ]) {
-      for (const [zoomName, zoomQ] of z) {
-        out.push([`${name}-${zoomName}`, `${night}&${zoomQ}&${q}`]);
-      }
-    }
-  } else if (phase === 'composite') {
-    for (const [name, q] of [
-      ['off', 'shadowComposite=0'],
-      ['on', 'shadowComposite=1'],
-    ]) {
-      for (const [zoomName, zoomQ] of z) {
-        out.push([`${name}-${zoomName}`, `${night}&${zoomQ}${extra}&${q}&gpuShadowPath=copy&lightingRes=0.25`]);
-      }
-    }
-  } else if (phase === 'floor') {
-    for (const [name, q] of [
-      ['off', 'floorOcclude=0'],
-      ['on', 'floorOcclude=1'],
-    ]) {
-      for (const [zoomName, zoomQ] of z) {
-        out.push([`${name}-${zoomName}`, `${night}&${zoomQ}${extra}&${q}&gpuShadowPath=copy&lightingRes=0.25`]);
-      }
-    }
   } else if (phase === 'lres') {
     for (const [name, q] of [
       ['r1', 'lightingRes=1'],
       ['r025', 'lightingRes=0.25'],
-    ]) {
-      for (const [zoomName, zoomQ] of z) {
-        out.push([`${name}-${zoomName}`, `${night}&${zoomQ}${extra}&${q}&gpuShadowPath=copy`]);
-      }
-    }
-  } else if (phase === 'batch') {
-    for (const [name, q] of [
-      ['copy', 'gpuShadowPath=copy'],
-      ['batch', 'gpuShadowPath=batch'],
     ]) {
       for (const [zoomName, zoomQ] of z) {
         out.push([`${name}-${zoomName}`, `${night}&${zoomQ}${extra}&${q}`]);
@@ -130,7 +81,7 @@ function cellsForPhase() {
       }
     }
   } else {
-    console.error(`unknown --phase ${phase} (lights|res|interval|perlight|cookie|batch|lres|composite|floor)`);
+    console.error(`unknown --phase ${phase} (lights|res|perlight|lres)`);
     process.exit(2);
   }
   return onlyCells.length ? out.filter(([name]) => onlyCells.includes(name)) : out;

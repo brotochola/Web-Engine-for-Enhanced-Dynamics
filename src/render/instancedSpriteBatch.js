@@ -32,6 +32,7 @@ import { writePosePrev } from './poseQueueInterp.js';
 import { DECORATION_Y_SORT_SCALE } from '../util/configDefaults.js';
 import { depthFromOrderKey, depthFromSortKey } from '../util/sortIndexByKey.js';
 import { writeCasterPose, copyTypedRange } from './gpuShadowCasters.js';
+import { packInstancedRows } from './gpuQueueLayout.js';
 
 function instanceDepth(out, depthDenom, o, i) {
   if (o.useZBuffer && o.sortKey) {
@@ -464,6 +465,24 @@ export class InstancedSpriteBatch {
     if (source && this.shadowShader) this.shadowShader.resources.uLightData = source;
   }
 
+  /** Match `_beginUpload` tileWorld when committing pre-packed rows. */
+  setTargetSpace(useScreen, cameraX, cameraY, screenScale) {
+    const tw = this._tileWorld;
+    if (!tw) return;
+    if (useScreen) {
+      tw[0] = cameraX || 0;
+      tw[1] = cameraY || 0;
+      const s = screenScale || 1;
+      tw[2] = s > 0 ? 1 / s : 1;
+      tw[3] = 1;
+    } else {
+      tw[0] = 0;
+      tw[1] = 0;
+      tw[2] = 1;
+      tw[3] = 0;
+    }
+  }
+
   setPoseAlpha(alpha) {
     if (!this.poseInterp) return;
     const group = this.shader?.resources?.uniforms;
@@ -653,106 +672,15 @@ export class InstancedSpriteBatch {
     if (this.poseInterp) return this._uploadPose(q, opts);
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
-
-    const data = this.data;
-    const dataU32 = this.dataU32;
-    const o = ctx.o;
-    const indices = ctx.indices;
-    const useIndices = ctx.useIndices;
-    const useScreen = ctx.useScreen;
-    const cameraX = ctx.cameraX;
-    const cameraY = ctx.cameraY;
-    const screenScale = ctx.screenScale;
-    const typeArr = ctx.typeArr;
-    const includeType = ctx.includeType;
-    const exclude0 = ctx.exclude0;
-    const exclude1 = ctx.exclude1;
-    const hasInclude = ctx.hasInclude;
-    const filterTypes = ctx.filterTypes;
-    const depthDenom = ctx.depthDenom;
-    const scanCount = ctx.scanCount;
-    const rqX = q.x;
-    const rqY = q.y;
-    const rqScaleX = q.scaleX;
-    const rqScaleY = q.scaleY;
-    const rqRotC = q.rotC;
-    const rqRotS = q.rotS;
-    const rqAlpha = q.alpha;
-    const rqTint = q.tint;
-    const rqTextureId = q.textureId;
-    const rqAnchorX = q.anchorX;
-    const rqAnchorY = q.anchorY;
-    const rqRepeatX = q.repeatX;
-    const rqRepeatY = q.repeatY;
-    const rqTileMulX = q.tileMulX;
-    const rqTileMulY = q.tileMulY;
-    const rqTileOffU = q.tileOffsetU;
-    const rqTileOffV = q.tileOffsetV;
-    let base = 0;
-    let out = 0;
-    for (let k = 0; k < scanCount; k++) {
-      const i = useIndices ? indices[k] : k;
-      if (filterTypes) {
-        const t = typeArr[i];
-        if (hasInclude && t !== includeType) continue;
-        if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
-      }
-      if (out >= this.capacity) break;
-
-      let x = rqX[i];
-      let y = rqY[i];
-      let sx = rqScaleX[i];
-      let sy = rqScaleY[i];
-      if (useScreen) {
-        x = (x - cameraX) * screenScale;
-        y = (y - cameraY) * screenScale;
-        sx *= screenScale;
-        sy *= screenScale;
-      }
-      const snapped = snapSpritePos(x, y, o, useScreen);
-      x = snapped.x;
-      y = snapped.y;
-      const depth = instanceDepth(out, depthDenom, o, i);
-
-      let a = rqAlpha[i];
-      if (a < 0) a = 0;
-      else if (a > 1) a = 1;
-      const a8 = (a * 255 + 0.5) | 0;
-      const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
-
-      const rx = rqRepeatX ? rqRepeatX[i] : 0;
-      const ry = rqRepeatY ? rqRepeatY[i] : 0;
-      const invX = rqTileMulX ? rqTileMulX[i] : (rx > 0 ? 1 / rx : 0);
-      const invY = rqTileMulY ? rqTileMulY[i] : (ry > 0 ? 1 / ry : 0);
-      data[base] = x;
-      data[base + 1] = y;
-      data[base + 2] = sx;
-      data[base + 3] = sy;
-      data[base + 4] = rqAnchorX[i];
-      data[base + 5] = rqAnchorY[i];
-      data[base + 6] = rqRotC[i];
-      data[base + 7] = rqRotS[i];
-      data[base + 8] = depth;
-      dataU32[base + 9] = packed >>> 0;
-      data[base + 10] = rqTextureId[i];
-      data[base + 11] = invX;
-      data[base + 12] = invY;
-      data[base + 13] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
-      data[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
-      if (this.shadowCast) {
-        const sh = q.shadowH;
-        data[base + 15] = sh ? sh[i] : 0;
-        data[base + 16] = q.shadowOffX ? q.shadowOffX[i] : 0;
-        data[base + 17] = q.shadowOffY ? q.shadowOffY[i] : 0;
-        data[base + 18] = 0;
-        data[base + 19] = 0;
-        data[base + 20] = 0;
-        data[base + 21] = 0;
-      }
-      base += this._floats;
-      out++;
-    }
-
+    const out = packInstancedRows(
+      q,
+      ctx,
+      this.data,
+      this.dataU32,
+      this._floats,
+      this.capacity,
+      this.shadowCast
+    );
     return this._finishUpload(out, this._strideBytes);
   }
 

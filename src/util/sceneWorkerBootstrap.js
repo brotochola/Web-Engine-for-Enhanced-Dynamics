@@ -291,6 +291,13 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
       maxItems: scene.maxVisibleRenderables,
       itemSize: 48,
     },
+    gpuQueue: scene.buffers.gpuQueueDataA && scene.buffers.gpuQueueDataB
+      ? {
+          dataA: scene.buffers.gpuQueueDataA,
+          dataB: scene.buffers.gpuQueueDataB,
+          caps: scene.gpuQueueCaps,
+        }
+      : null,
     posePublish: {
       dataA: scene.buffers.poseDataA,
       dataB: scene.buffers.poseDataB,

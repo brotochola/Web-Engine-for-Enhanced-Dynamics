@@ -4,21 +4,6 @@
  * casters closest to that light.
  */
 
-/** Drop casters whose shadow is under `minPx` screen pixels. Returns the new count. */
-export function dropTinyFloorShadows(idx, n, scaleY, shadowH, zoom, minPx) {
-  const z = zoom > 0 ? zoom : 1;
-  const min = minPx > 0 ? minPx : 0;
-  let w = 0;
-  const count = n | 0;
-  for (let i = 0; i < count; i++) {
-    const s = idx[i] | 0;
-    const ext = Math.abs(scaleY[s] || 1) * (shadowH[s] || 0) * z;
-    if (ext < min) continue;
-    idx[w++] = s;
-  }
-  return w;
-}
-
 export function compactShadowCasterIndices(shadowH, typeArr, count, outIdx) {
   let n = 0;
   const cap = outIdx.length;
@@ -28,11 +13,6 @@ export function compactShadowCasterIndices(shadowH, typeArr, count, outIdx) {
     if (shadowH && shadowH[i] > 0) outIdx[n++] = i;
   }
   return n;
-}
-
-export function resolveGpuShadowPath(value) {
-  if (value === 'reuse' || value === 'queue' || value === 'resident' || value === 'batch') return value;
-  return 'copy';
 }
 
 /** Per-instance light sits after the 18 caster floats (xy…shadow). */
@@ -76,16 +56,6 @@ export function appendStampedCasters(dst, dstFloats, dstBase, src, srcFloats, in
   return out;
 }
 
-export function resolveGpuShadowCookies(value) {
-  return value === 'night' ? 'night' : 'always';
-}
-
-/** 1 = every frame; N>1 holds caster silhouettes for N-1 frames. Cookies still redraw. */
-export function resolveShadowUpdateInterval(value) {
-  const n = value | 0;
-  return n > 1 ? n : 1;
-}
-
 /** Integer RT pixels. Nominal resolution is not the framebuffer size. */
 export function rtPixelSize(canvasPx, resolution) {
   const r = resolution > 0 ? +resolution : 1;
@@ -95,14 +65,6 @@ export function rtPixelSize(canvasPx, resolution) {
 /** RT pixels / canvas pixels. Projection and display use this, not the nominal resolution. */
 export function rtPixelScale(canvasPx, rtPx) {
   return canvasPx > 0 ? rtPx / canvasPx : 1;
-}
-
-export function samePackedIndices(prev, prevN, next, n) {
-  if ((prevN | 0) !== (n | 0) || !prev || !next) return false;
-  for (let i = 0; i < n; i++) {
-    if ((prev[i] | 0) !== (next[i] | 0)) return false;
-  }
-  return true;
 }
 
 /** Pose slice of an 18-float caster instance (xy, rotCS, shadowH/off). */
@@ -239,4 +201,64 @@ export function collectLightCasters(
     m++;
   }
   return takeClosest(tmpIdx, tmpDist, order, m, limit, outIdx);
+}
+
+/**
+ * After concatenating per-worker stamp blocks, keep at most `maxPerLight`
+ * closest casters per light index. Rewrites `stamp` / `lightIdx` in place.
+ * `scratchF32` must hold `count * floatsPer` floats. `scratchLight` holds `count` light ids.
+ */
+export function compactStampByLightLimit(
+  stamp,
+  lightIdx,
+  count,
+  floatsPer,
+  maxPerLight,
+  tmpIdx,
+  tmpDist,
+  order,
+  keepIdx,
+  keepAll,
+  scratchF32,
+  scratchLight
+) {
+  const n = count | 0;
+  const lim = maxPerLight | 0;
+  const fp = floatsPer | 0;
+  if (n <= 0 || !(lim > 0) || !stamp || !lightIdx || !keepAll) return n;
+  let maxL = -1;
+  for (let i = 0; i < n; i++) {
+    const L = lightIdx[i] | 0;
+    if (L > maxL) maxL = L;
+  }
+  if (maxL < 0) return 0;
+  let write = 0;
+  for (let L = 0; L <= maxL; L++) {
+    let m = 0;
+    for (let i = 0; i < n; i++) {
+      if ((lightIdx[i] | 0) !== L) continue;
+      tmpIdx[m] = i;
+      const b = i * fp;
+      const lx = stamp[b + CASTER_LIGHT_FLOAT];
+      const ly = stamp[b + CASTER_LIGHT_FLOAT + 1];
+      const dx = stamp[b] - lx;
+      const dy = stamp[b + 1] - ly;
+      tmpDist[m] = dx * dx + dy * dy;
+      m++;
+    }
+    if (m <= 0) continue;
+    const keep = takeClosest(tmpIdx, tmpDist, order, m, lim, keepIdx);
+    for (let k = 0; k < keep; k++) keepAll[write++] = keepIdx[k];
+  }
+  if (write === n) return n;
+  const need = n * fp;
+  if (!scratchF32 || scratchF32.length < need || !scratchLight) return n;
+  scratchF32.set(stamp.subarray(0, need));
+  for (let i = 0; i < n; i++) scratchLight[i] = lightIdx[i];
+  for (let k = 0; k < write; k++) {
+    const src = keepAll[k] | 0;
+    copyTypedRange(stamp, k * fp, scratchF32, src * fp, fp);
+    lightIdx[k] = scratchLight[src];
+  }
+  return write;
 }
