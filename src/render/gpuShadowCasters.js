@@ -38,27 +38,35 @@ export function resolveGpuShadowPath(value) {
 /** Per-instance light sits after the 18 caster floats (xy…shadow). */
 export const CASTER_LIGHT_FLOAT = 18;
 
+/** Copy n typed-array slots. Avoids `.subarray` views in per-instance loops. */
+export function copyTypedRange(dst, d0, src, s0, n) {
+  for (let i = 0; i < n; i++) dst[d0 + i] = src[s0 + i];
+}
+
 /**
  * Copy packed caster slots and stamp one light vec4 on each.
  * `indices` are source instance slots. Stops at `cap` instances.
+ * `lightOffset` indexes into `light` (0 when `light` is already a vec4).
  * Returns how many were written (dstBase + written).
  */
-export function appendStampedCasters(dst, dstFloats, dstBase, src, srcFloats, indices, n, light, cap) {
+export function appendStampedCasters(dst, dstFloats, dstBase, src, srcFloats, indices, n, light, cap, lightOffset) {
   const sf = srcFloats | 0;
   const df = dstFloats | 0;
   const limit = cap | 0;
   let out = dstBase | 0;
   const count = n | 0;
-  const lx = light[0];
-  const ly = light[1];
-  const lz = light[2];
-  const lw = light[3];
+  const o = lightOffset | 0;
+  const lx = light[o];
+  const ly = light[o + 1];
+  const lz = light[o + 2];
+  const lw = light[o + 3];
   const lightAt = CASTER_LIGHT_FLOAT;
+  const row = sf < df ? sf : df;
   for (let k = 0; k < count && out < limit; k++) {
     const i = indices[k] | 0;
     const s0 = i * sf;
     const d0 = out * df;
-    dst.set(src.subarray(s0, s0 + Math.min(sf, df)), d0);
+    copyTypedRange(dst, d0, src, s0, row);
     dst[d0 + lightAt] = lx;
     dst[d0 + lightAt + 1] = ly;
     dst[d0 + lightAt + 2] = lz;

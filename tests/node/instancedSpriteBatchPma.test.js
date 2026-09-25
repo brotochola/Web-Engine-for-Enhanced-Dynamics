@@ -117,10 +117,11 @@ test('render-queue partition idx buffers are Uint32 (no Uint16 wrap past 65535)'
 
 test('entity and custom-layer uploads pass queue repeatX/Y and tile fields', () => {
   assert.match(pixiSrc, /this\.renderQueueRepeatX = buffer\.repeatX/);
-  assert.match(pixiSrc, /repeatX: this\.renderQueueRepeatX/);
-  assert.match(pixiSrc, /repeatY: this\.renderQueueRepeatY/);
-  assert.match(pixiSrc, /tileMulX: this\.renderQueueTileMulX/);
-  assert.match(pixiSrc, /tileOffsetU: this\.renderQueueTileOffsetU/);
+  assert.match(pixiSrc, /src\.repeatX = this\.renderQueueRepeatX/);
+  assert.match(pixiSrc, /src\.repeatY = this\.renderQueueRepeatY/);
+  assert.match(pixiSrc, /src\.tileMulX = this\.renderQueueTileMulX/);
+  assert.match(pixiSrc, /src\.tileOffsetU = this\.renderQueueTileOffsetU/);
+  assert.match(pixiSrc, /this\._bindRenderQueueTo\(q, count\)/);
   assert.match(pixiSrc, /this\._bindSpriteQueue\(q, ref, count\)/);
   assert.match(src, /_beginUpload\(/);
   assert.match(src, /_finishUpload\(/);

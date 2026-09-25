@@ -1278,6 +1278,34 @@ class PixiRenderer extends AbstractWorker {
     q.shadowOffY = src.shadowOffY || null;
   }
 
+  _bindRenderQueueTo(q, count) {
+    let src = this._renderQueueBindSrc;
+    if (!src) src = this._renderQueueBindSrc = {};
+    src.x = this.renderQueueX;
+    src.y = this.renderQueueY;
+    src.scaleX = this.renderQueueScaleX;
+    src.scaleY = this.renderQueueScaleY;
+    src.rotC = this.renderQueueRotC;
+    src.rotS = this.renderQueueRotS;
+    src.alpha = this.renderQueueAlpha;
+    src.tint = this.renderQueueTint;
+    src.textureId = this.renderQueueTextureId;
+    src.anchorX = this.renderQueueAnchorX;
+    src.anchorY = this.renderQueueAnchorY;
+    src.repeatX = this.renderQueueRepeatX;
+    src.repeatY = this.renderQueueRepeatY;
+    src.tileMode = this.renderQueueTileMode;
+    src.tileOffsetU = this.renderQueueTileOffsetU;
+    src.tileOffsetV = this.renderQueueTileOffsetV;
+    src.tileMulX = this.renderQueueTileMulX;
+    src.tileMulY = this.renderQueueTileMulY;
+    src.sortKey = this.renderQueueSortKey;
+    src.shadowH = this.renderQueueShadowH;
+    src.shadowOffX = this.renderQueueShadowOffX;
+    src.shadowOffY = this.renderQueueShadowOffY;
+    this._bindSpriteQueue(q, src, count);
+  }
+
   _resetSpriteUploadOpts(opts) {
     opts.includeType = -1;
     opts.excludeType0 = -1;
@@ -1349,30 +1377,7 @@ class PixiRenderer extends AbstractWorker {
 
     const count = this.renderQueueCount[0];
     const q = this._entityUploadQ;
-    this._bindSpriteQueue(q, {
-      x: this.renderQueueX,
-      y: this.renderQueueY,
-      scaleX: this.renderQueueScaleX,
-      scaleY: this.renderQueueScaleY,
-      rotC: this.renderQueueRotC,
-      rotS: this.renderQueueRotS,
-      alpha: this.renderQueueAlpha,
-      tint: this.renderQueueTint,
-      textureId: this.renderQueueTextureId,
-      anchorX: this.renderQueueAnchorX,
-      anchorY: this.renderQueueAnchorY,
-      repeatX: this.renderQueueRepeatX,
-      repeatY: this.renderQueueRepeatY,
-      tileMode: this.renderQueueTileMode,
-      tileOffsetU: this.renderQueueTileOffsetU,
-      tileOffsetV: this.renderQueueTileOffsetV,
-      tileMulX: this.renderQueueTileMulX,
-      tileMulY: this.renderQueueTileMulY,
-      sortKey: this.renderQueueSortKey,
-      shadowH: this.renderQueueShadowH,
-      shadowOffX: this.renderQueueShadowOffX,
-      shadowOffY: this.renderQueueShadowOffY,
-    }, count);
+    this._bindRenderQueueTo(q, count);
 
     this._syncEntityOrder();
     const opts = this._entityUploadOpts;
@@ -3637,6 +3642,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._gpuCasterQ = makeBatchViews();
     this._gpuCasterOpts = {};
     this._cookieOpts = {};
+    this._gpuPackedSrc = { _floats: 0, data: null };
+    this._gpuStampResult = { count: 0, lights: 0 };
   }
 
   /**
@@ -3700,30 +3707,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return 0;
     }
     const q = this._gpuCasterQ;
-    this._bindSpriteQueue(q, {
-      x: this.renderQueueX,
-      y: this.renderQueueY,
-      scaleX: this.renderQueueScaleX,
-      scaleY: this.renderQueueScaleY,
-      rotC: this.renderQueueRotC,
-      rotS: this.renderQueueRotS,
-      alpha: this.renderQueueAlpha,
-      tint: this.renderQueueTint,
-      textureId: this.renderQueueTextureId,
-      anchorX: this.renderQueueAnchorX,
-      anchorY: this.renderQueueAnchorY,
-      repeatX: this.renderQueueRepeatX,
-      repeatY: this.renderQueueRepeatY,
-      tileMode: this.renderQueueTileMode,
-      tileOffsetU: this.renderQueueTileOffsetU,
-      tileOffsetV: this.renderQueueTileOffsetV,
-      tileMulX: this.renderQueueTileMulX,
-      tileMulY: this.renderQueueTileMulY,
-      sortKey: this.renderQueueSortKey,
-      shadowH: this.renderQueueShadowH,
-      shadowOffX: this.renderQueueShadowOffX,
-      shadowOffY: this.renderQueueShadowOffY,
-    }, this.renderQueueCount ? this.renderQueueCount[0] : 0);
+    this._bindRenderQueueTo(q, this.renderQueueCount ? this.renderQueueCount[0] : 0);
     const opts = this._gpuCasterOpts;
     this._resetSpriteUploadOpts(opts);
     opts.space = BATCH_SPACE.WORLD;
@@ -3870,6 +3854,30 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
   }
 
+  _syncUniformGroup(group) {
+    if (group && typeof group.update === 'function') group.update();
+  }
+
+  _drawGpuCasterPass(mesh, group, needClear) {
+    if ((mesh.geometry.instanceCount | 0) <= 0) return false;
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = mesh;
+    rtOpts.target = this.shadowRT;
+    rtOpts.clear = needClear;
+    this._syncUniformGroup(group);
+    this._submitRender(rtOpts);
+    if (this._shadowUpdateInterval > 1 && this._shadowSilhouetteRT) {
+      rtOpts.target = this._shadowSilhouetteRT;
+      rtOpts.clear = this._silhouetteNeedsClear;
+      this._silhouetteNeedsClear = false;
+      this._submitRender(rtOpts);
+      rtOpts.target = this.shadowRT;
+    }
+    this._gpuPassesThisFrame++;
+    this._gpuSunDrew = true;
+    return true;
+  }
+
   _drawGpuCasterShadows() {
     this._gpuSunDrew = false;
     this._gpuPassesThisFrame = 0;
@@ -3936,26 +3944,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const rtOpts = this._rtRenderOpts;
     rtOpts.target = this.shadowRT;
     rtOpts.clearColor = this._clearTransparent;
-    const syncSun = () => { if (typeof group.update === 'function') group.update(); };
     this._silhouetteNeedsClear = true;
-    const drawCasters = (needClear) => {
-      if ((mesh.geometry.instanceCount | 0) <= 0) return false;
-      rtOpts.container = mesh;
-      rtOpts.target = this.shadowRT;
-      rtOpts.clear = needClear;
-      syncSun();
-      this._submitRender(rtOpts);
-      if (this._shadowUpdateInterval > 1 && this._shadowSilhouetteRT) {
-        rtOpts.target = this._shadowSilhouetteRT;
-        rtOpts.clear = this._silhouetteNeedsClear;
-        this._silhouetteNeedsClear = false;
-        this._submitRender(rtOpts);
-        rtOpts.target = this.shadowRT;
-      }
-      this._gpuPassesThisFrame++;
-      this._gpuSunDrew = true;
-      return true;
-    };
 
     const maxPerLight = this.maxShadowsPerLight | 0;
     const maxPerEntity = this.maxShadowsPerEntity | 0;
@@ -3977,30 +3966,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         path === 'resident' &&
         samePackedIndices(this._gpuPackedIdx, this._gpuResidentN, this._gpuCasterIdx, nCompact)
       ) {
-        this._bindSpriteQueue(this._gpuCasterQ, {
-          x: this.renderQueueX,
-          y: this.renderQueueY,
-          scaleX: this.renderQueueScaleX,
-          scaleY: this.renderQueueScaleY,
-          rotC: this.renderQueueRotC,
-          rotS: this.renderQueueRotS,
-          alpha: this.renderQueueAlpha,
-          tint: this.renderQueueTint,
-          textureId: this.renderQueueTextureId,
-          anchorX: this.renderQueueAnchorX,
-          anchorY: this.renderQueueAnchorY,
-          repeatX: this.renderQueueRepeatX,
-          repeatY: this.renderQueueRepeatY,
-          tileMode: this.renderQueueTileMode,
-          tileOffsetU: this.renderQueueTileOffsetU,
-          tileOffsetV: this.renderQueueTileOffsetV,
-          tileMulX: this.renderQueueTileMulX,
-          tileMulY: this.renderQueueTileMulY,
-          sortKey: this.renderQueueSortKey,
-          shadowH: this.renderQueueShadowH,
-          shadowOffX: this.renderQueueShadowOffX,
-          shadowOffY: this.renderQueueShadowOffY,
-        }, count);
+        this._bindRenderQueueTo(this._gpuCasterQ, count);
         batch.patchCasterPoses(this._gpuCasterQ, this._gpuCasterIdx, nCompact);
       } else {
         this._uploadGpuCasters(this._gpuCasterIdx, nCompact);
@@ -4013,7 +3979,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._gpuResidentN = 0;
     }
     const nDraw = path === 'queue' ? packedN : nCompact;
-    if (u.uSun[3] > 0 && nDraw > 0) drawCasters(true);
+    if (u.uSun[3] > 0 && nDraw > 0) this._drawGpuCasterPass(mesh, group, true);
 
     const sunI = sunOn ? Sun.intensity : 0;
     let pointScale = 0.33 * (1 - sunI * 0.9);
@@ -4022,7 +3988,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const drawCookies = this._gpuShadowCookies !== 'night' || sunI < 1;
 
     u.uPointScale = pointScale;
-    const packedSrc = { _floats: batch._floats, data: this._gpuPackedSnap };
+    const packedSrc = this._gpuPackedSrc;
+    packedSrc._floats = batch._floats;
+    packedSrc.data = this._gpuPackedSnap;
     const used = this._gpuCasterUsed;
     let shadowLights = 0;
     if (path === 'batch' && LightEmitter.lightIntensity && this._visibleLightsAll && lightData) {
@@ -4042,7 +4010,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         u.uLight[1] = 0;
         u.uLight[2] = 0;
         u.uLight[3] = 0;
-        drawCasters(!this._gpuSunDrew);
+        this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
       }
     } else if (LightEmitter.lightIntensity && this._visibleLightsAll && lightData) {
       for (let i = 0; i < cap; i++) {
@@ -4081,7 +4049,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           u.uLight[1] = lightData[o + 1];
           u.uLight[2] = lightData[o + 2];
           u.uLight[3] = rangeSq;
-          drawCasters(!this._gpuSunDrew);
+          this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
         }
         shadowLights++;
       }
@@ -4131,16 +4099,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       if (m > lim) throw new Error('batch shadow exceeded maxShadowsPerLight');
       requested += m;
-      const light = lightData.subarray(o, o + 4);
       cursor = appendStampedCasters(
-        batch.data, df, cursor, src, df, outIdx, m, light, capInst
+        batch.data, df, cursor, src, df, outIdx, m, lightData, capInst, o
       );
     }
     if (cursor !== requested) {
       throw new Error(`batch shadow stamp ${cursor} !== ${requested}`);
     }
     if (cursor > 0) batch.commitInstances(cursor);
-    return { count: cursor, lights };
+    const result = this._gpuStampResult;
+    result.count = cursor;
+    result.lights = lights;
+    return result;
   }
 
   /**
@@ -6207,11 +6177,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   updateCustomLayers() {
     let customGpu = false;
-    const armCustomGpu = () => {
-      if (customGpu) return;
-      this._gpuTimer.begin('custom');
-      customGpu = true;
-    };
     try {
     for (let li = 0; li < this._customLayerList.length; li++) {
       const cl = this._customLayerList[li];
@@ -6233,9 +6198,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 u[uName] = floats[entry.offset];
               } else {
                 const target = u[uName];
-                if (target && typeof target.set === 'function') {
-                  target.set(floats.subarray(entry.offset, entry.offset + entry.size));
-                } else if (target && typeof target === 'object' && target.length) {
+                if (target && typeof target === 'object' && target.length) {
                   for (let k = 0; k < entry.size; k++) {
                     target[k] = floats[entry.offset + k];
                   }
@@ -6268,7 +6231,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           rtOpts.target = cl.rtOut;
           rtOpts.clear = true;
           rtOpts.clearColor = this._clearTransparent;
-          armCustomGpu();
+          if (!customGpu) { this._gpuTimer.begin('custom'); customGpu = true; }
           this._submitRender(rtOpts);
         }
       } else if (cl.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN && cl.splatBatch) {
@@ -6384,7 +6347,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (cl.fillBatch) {
           const skipRt = this._colliderFillSkip[cl.layerId];
           if (!skipRt || !skipRt._skipRt) {
-            armCustomGpu();
+            if (!customGpu) { this._gpuTimer.begin('custom'); customGpu = true; }
             this._renderMeshFillToRt(cl, densityMesh);
             this._meshRtDrawsThisFrame++;
             if (skipRt) {
@@ -6403,7 +6366,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           rtOpts.target = cl.rt;
           rtOpts.clear = true;
           rtOpts.clearColor = this._clearTransparent;
-          armCustomGpu();
+          if (!customGpu) { this._gpuTimer.begin('custom'); customGpu = true; }
           this._submitRender(rtOpts);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
             rtOpts.container = cl.shaderMesh;

@@ -15,6 +15,7 @@ import {
   rtPixelScale,
   samePackedIndices,
   writeCasterPose,
+  copyTypedRange,
 } from '../../src/render/gpuShadowCasters.js';
 
 test('compactShadowCasterIndices keeps shadowH>0 and skips glow type 3', () => {
@@ -84,6 +85,13 @@ test('selectClosestCasters and per-entity light links honor knobs', () => {
   assert.ok(n1 >= 1);
 });
 
+test('copyTypedRange copies without wrapping a view', () => {
+  const src = new Float32Array([9, 8, 7, 6, 5]);
+  const dst = new Float32Array(6);
+  copyTypedRange(dst, 1, src, 2, 3);
+  assert.deepEqual(Array.from(dst), [0, 7, 6, 5, 0, 0]);
+});
+
 test('appendStampedCasters copies subsets and stamps one light each', () => {
   const sf = 22;
   const src = new Float32Array(3 * sf);
@@ -103,6 +111,11 @@ test('appendStampedCasters copies subsets and stamps one light each', () => {
   assert.equal(dst[sf + 21], 4);
   const wroteCap = appendStampedCasters(dst, sf, 0, src, sf, idx, 2, light, 1);
   assert.equal(wroteCap, 1);
+  const packed = new Float32Array([0, 0, 0, 0, 9, 8, 7, 6]);
+  const wroteOff = appendStampedCasters(dst, sf, 0, src, sf, idx, 1, packed, 4, 4);
+  assert.equal(wroteOff, 1);
+  assert.equal(dst[18], 9);
+  assert.equal(dst[21], 6);
 });
 
 test('dropTinyFloorShadows keeps shadows at least minPx tall', () => {

@@ -31,7 +31,7 @@ import {
 import { writePosePrev } from './poseQueueInterp.js';
 import { DECORATION_Y_SORT_SCALE } from '../util/configDefaults.js';
 import { depthFromOrderKey, depthFromSortKey } from '../util/sortIndexByKey.js';
-import { writeCasterPose } from './gpuShadowCasters.js';
+import { writeCasterPose, copyTypedRange } from './gpuShadowCasters.js';
 
 function instanceDepth(out, depthDenom, o, i) {
   if (o.useZBuffer && o.sortKey) {
@@ -582,7 +582,7 @@ export class InstancedSpriteBatch {
     const count = n | 0;
     for (let k = 0; k < count && out < cap; k++) {
       const i = indices[k] | 0;
-      d.set(s.subarray(i * sf, i * sf + sf), out * sf);
+      copyTypedRange(d, out * sf, s, i * sf, sf);
       out++;
     }
     return this._finishUpload(out, this._strideBytes);
