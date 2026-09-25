@@ -156,11 +156,13 @@ test('GPU row has no JsShadows and Rest is Step minus time chips', () => {
   assert.equal(gpu.omitMsg, true);
   assert.equal(gpu.stats.some((r) => r.key === 'SHADOWS_MS'), false);
   const view = new Float32Array(RENDERER_STATS.STRIDE_FLOATS);
+  assert.equal(gpu.stats.some((r) => r.key === 'GPU_CUSTOM_MS'), true);
   view[RENDERER_STATS.GPU_STEP_MS] = 10;
   view[RENDERER_STATS.GPU_SHADOWS_MS] = 1;
   view[RENDERER_STATS.GPU_LIGHTS_MS] = 2;
+  view[RENDERER_STATS.GPU_CUSTOM_MS] = 1;
   view[RENDERER_STATS.GPU_PRESENT_MS] = 4;
-  assert.equal(computeRestMs(gpu, view, RENDERER_STATS), 3);
+  assert.equal(computeRestMs(gpu, view, RENDERER_STATS), 2);
 });
 
 test('physics Rest ignores nested LF passes', () => {

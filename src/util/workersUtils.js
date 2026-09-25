@@ -49,7 +49,7 @@ export const RENDERER_STATS = Object.freeze({
   QUEUE_MS: 22,
   /** Stage present plus the finally that releases the queue. Written only when collectDetailedStats. */
   PRESENT_MS: 23,
-  /** GPU elapsed (disjoint query, 1–2 frames late). Shadows + lighting RT + present. */
+  /** GPU elapsed (disjoint query, 1–2 frames late). Shadows + lights + custom RT + present. */
   GPU_STEP_MS: 24,
   GPU_SHADOWS_MS: 25,
   GPU_LIGHTS_MS: 26,
@@ -58,8 +58,12 @@ export const RENDERER_STATS = Object.freeze({
   GPU_CASTERS: 29,
   GPU_SHADOW_LIGHTS: 30,
   GPU_FPS: 31,
-  STRIDE_FLOATS: 32,
-  BUFFER_SIZE: 32 * 4,
+  /** Custom-layer and MESH render-texture draws. */
+  GPU_CUSTOM_MS: 32,
+  /** 1 when GpuFrameTimer is active. 0 on WebGPU and when the WebGL extension is missing. */
+  GPU_TIMER: 33,
+  STRIDE_FLOATS: 34,
+  BUFFER_SIZE: 34 * 4,
 });
 
 /**
@@ -351,6 +355,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'FPS', label: 'Fps', format: fmtFps, src: 'GPU_FPS' },
       { key: 'GPU_SHADOWS_MS', label: 'Shadows', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'GPU_LIGHTS_MS', label: 'Lights', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'GPU_CUSTOM_MS', label: 'Custom', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'GPU_PRESENT_MS', label: 'Present', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
       { key: 'GPU_PASSES', label: 'Passes', format: fmtNum, kind: STAT_KIND.COUNT },

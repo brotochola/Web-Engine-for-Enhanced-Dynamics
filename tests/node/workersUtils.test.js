@@ -25,7 +25,7 @@ test('single-worker stats readers share the same buffer layout', () => {
   assert.equal(reader[RENDERER_STATS.MSG_MS], 2.5);
 });
 
-test('RENDERER_STATS peel load keys sit inside stride 24', () => {
+test('RENDERER_STATS peel load keys sit inside stride 34', () => {
   assert.equal(RENDERER_STATS.DECAL_TILES_DIRTY, 16);
   assert.equal(RENDERER_STATS.DECAL_TILES_UPLOADED, 17);
   assert.equal(RENDERER_STATS.SCENERY_COUNT, 18);
@@ -34,8 +34,10 @@ test('RENDERER_STATS peel load keys sit inside stride 24', () => {
   assert.equal(RENDERER_STATS.SORT_MS, 21);
   assert.equal(RENDERER_STATS.QUEUE_MS, 22);
   assert.equal(RENDERER_STATS.PRESENT_MS, 23);
-  assert.equal(RENDERER_STATS.STRIDE_FLOATS, 24);
-  assert.equal(RENDERER_STATS.BUFFER_SIZE, 24 * 4);
+  assert.equal(RENDERER_STATS.GPU_CUSTOM_MS, 32);
+  assert.equal(RENDERER_STATS.GPU_TIMER, 33);
+  assert.equal(RENDERER_STATS.STRIDE_FLOATS, 34);
+  assert.equal(RENDERER_STATS.BUFFER_SIZE, 34 * 4);
   const buffer = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);
   const writer = createStatsWriter(buffer, RENDERER_STATS);
   const reader = createStatsReader(buffer, RENDERER_STATS);

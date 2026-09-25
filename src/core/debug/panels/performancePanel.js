@@ -635,14 +635,18 @@ export class PerformancePanel {
     if (!stats.prevWorker.gpu[0]) stats.prevWorker.gpu[0] = {};
     const prevCache = stats.prevWorker.gpu[0];
     const smoother = stats.fpsSmoothing.gpu;
+    const timerOn = (view[RENDERER_STATS.GPU_TIMER] || 0) > 0;
 
     for (let s = 0; s < config.stats.length; s++) {
       const stat = config.stats[s];
       const el = elements[stat.key];
       if (!el) continue;
 
+      const hideTime = !timerOn && (stat.key === 'STEP_MS' || stat.key === 'LOAD' || stat.kind === 'time' || stat.kind === 'rest');
       let rawValue;
-      if (stat.key === 'LOAD') {
+      if (hideTime) {
+        rawValue = NaN;
+      } else if (stat.key === 'LOAD') {
         rawValue = workerLoadPct(view[RENDERER_STATS.GPU_STEP_MS] || 0);
       } else if (stat.kind === 'rest') {
         rawValue = computeRestMs(config, view, RENDERER_STATS);

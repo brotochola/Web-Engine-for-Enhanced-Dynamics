@@ -1111,7 +1111,9 @@ class PixiRenderer extends AbstractWorker {
       this.stats[RENDERER_STATS.GPU_STEP_MS] = gpu.stepMs;
       this.stats[RENDERER_STATS.GPU_SHADOWS_MS] = gpu.shadowsMs;
       this.stats[RENDERER_STATS.GPU_LIGHTS_MS] = gpu.lightsMs;
+      this.stats[RENDERER_STATS.GPU_CUSTOM_MS] = gpu.customMs;
       this.stats[RENDERER_STATS.GPU_PRESENT_MS] = gpu.presentMs;
+      this.stats[RENDERER_STATS.GPU_TIMER] = gpu.active ? 1 : 0;
       this.stats[RENDERER_STATS.GPU_PASSES] = this._gpuPassesThisFrame;
       this.stats[RENDERER_STATS.GPU_CASTERS] = this._gpuCastersThisFrame;
       this.stats[RENDERER_STATS.GPU_SHADOW_LIGHTS] = this._gpuShadowLightsThisFrame;
@@ -5990,6 +5992,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * layers through the two-RT pipeline (density → threshold → display).
    */
   updateCustomLayers() {
+    let customGpu = false;
+    const armCustomGpu = () => {
+      if (customGpu) return;
+      this._gpuTimer.begin('custom');
+      customGpu = true;
+    };
+    try {
     for (let li = 0; li < this._customLayerList.length; li++) {
       const cl = this._customLayerList[li];
       if (!layerIsVisible(cl.layerId)) continue;
@@ -6045,6 +6054,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           rtOpts.target = cl.rtOut;
           rtOpts.clear = true;
           rtOpts.clearColor = this._clearTransparent;
+          armCustomGpu();
           this.pixiApp.renderer.render(rtOpts);
         }
       } else if (cl.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN && cl.splatBatch) {
@@ -6160,6 +6170,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (cl.fillBatch) {
           const skipRt = this._colliderFillSkip[cl.layerId];
           if (!skipRt || !skipRt._skipRt) {
+            armCustomGpu();
             this._renderMeshFillToRt(cl, densityMesh);
             this._meshRtDrawsThisFrame++;
             if (skipRt) {
@@ -6178,6 +6189,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           rtOpts.target = cl.rt;
           rtOpts.clear = true;
           rtOpts.clearColor = this._clearTransparent;
+          armCustomGpu();
           this.pixiApp.renderer.render(rtOpts);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
             rtOpts.container = cl.shaderMesh;
@@ -6186,6 +6198,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
         }
       }
+    }
+    } finally {
+      if (customGpu) this._gpuTimer.end();
     }
   }
 

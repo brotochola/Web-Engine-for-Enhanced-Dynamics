@@ -5,7 +5,7 @@
  */
 
 const RING = 3;
-const SLOTS = ['shadows', 'lights', 'present'];
+const SLOTS = ['shadows', 'lights', 'custom', 'present'];
 
 export class GpuFrameTimer {
   constructor() {
@@ -18,6 +18,7 @@ export class GpuFrameTimer {
     this._disabled = false;
     this.shadowsMs = 0;
     this.lightsMs = 0;
+    this.customMs = 0;
     this.presentMs = 0;
     this.stepMs = 0;
   }
