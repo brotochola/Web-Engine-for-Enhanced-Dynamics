@@ -77,11 +77,12 @@ function destroyBuf(b) {
 }
 
 export class ComputeLayer {
-  constructor({ device, meta, renderer, lookSource }) {
+  constructor({ device, meta, renderer, lookSource, live }) {
     this.device = device;
     this.meta = meta;
     this.renderer = renderer;
     this.lookSource = lookSource;
+    this._live = typeof live === 'function' ? live : null;
     this.layerId = meta.id;
     this.computeSource = meta.computeSource || null;
     this.maxBodies = (meta.maxBodies | 0) || 512;
@@ -563,9 +564,14 @@ export class ComputeLayer {
    * @param {object} frame
    * @param {{ poseX?: Float32Array|null, poseY?: Float32Array|null, poseRotC?: Float32Array|null, poseRotS?: Float32Array|null, prevPoseX?: Float32Array|null, prevPoseY?: Float32Array|null, prevPoseRotC?: Float32Array|null, prevPoseRotS?: Float32Array|null }|null} [pose]
    */
+  _isLive() {
+    return !this._live || this._live();
+  }
+
   step(frame, pose) {
     if (this._compileError || !this._ready) return false;
     this._assertAlive();
+    if (!this._isLive()) return false;
     Layer.computeTextureExtent(frame.canvasW, frame.canvasH, this._texSize, this._extent);
     this.resize(this._extent.texW, this._extent.texH);
 
@@ -665,6 +671,7 @@ export class ComputeLayer {
     }
 
     this._endStepPass();
+    if (!this._isLive()) return false;
 
     const lookGpu = this._lookGpu();
     if (lookGpu && this._lookSample) {

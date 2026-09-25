@@ -1944,7 +1944,7 @@ class PixiRenderer extends AbstractWorker {
    * Update method called each frame (implementation of AbstractWorker.update)
    */
   update(deltaTime, dtRatio, resuming) {
-    if (this._presentingFlag && Atomics.load(this._presentingFlag, 0) === 0) this._noteHidden();
+    if (this._presentingFlag && Atomics.load(this._presentingFlag, 0) === 0) this._stopGpuClock();
 
     this._lastDt = deltaTime > 0 ? deltaTime / 1000 : 1 / 60;
 
@@ -2216,20 +2216,24 @@ class PixiRenderer extends AbstractWorker {
     if (this._useWebGpu) this._bindWebGpuSwapchain();
   }
 
-  /** Main thread stores 0 on hide/pagehide. Read it before every submit. */
+  /** Main thread stores 0 on hide/unload. Read it before every submit. */
   _gpuLive() {
     const flag = this._presentingFlag;
     if (flag && Atomics.load(flag, 0) === 0) {
-      this._noteHidden();
+      this._stopGpuClock();
       return false;
     }
     return this._presenting;
   }
 
-  _noteHidden() {
+  _stopGpuClock() {
     this._presenting = false;
     this.pixiApp?.ticker?.stop();
     this._clearFrameSchedulers();
+  }
+
+  _noteHidden() {
+    this._stopGpuClock();
     this._unconfigureSurface();
   }
 
@@ -5962,6 +5966,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           meta: config,
           renderer: this.pixiApp.renderer,
           lookSource: cl.lookSource,
+          live: () => this._gpuLive(),
         });
         try {
           const ok = await cl.compute.compile();
@@ -6126,6 +6131,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       const rtOpts = this._rtRenderOpts;
       if (cl.compute) {
+        if (!this._gpuLive()) continue;
         this._computePose.poseAlpha = this._poseAlpha;
         cl.compute.step(frameUniforms, this._computePose);
         applyComputeTexSizeUniform(cl);

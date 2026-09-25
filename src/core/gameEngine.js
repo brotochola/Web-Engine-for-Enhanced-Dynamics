@@ -37,6 +37,8 @@ class GameEngine {
     // Renderer reads this between GPU passes. postMessage cannot interrupt the current frame.
     this._presentingFlag = new Int32Array(new SharedArrayBuffer(4));
     Atomics.store(this._presentingFlag, 0, 1);
+    this._hidePresentingTimer = null;
+    this._abandoned = false;
 
     if (this.autoResize) {
       this.canvasWidth = window.innerWidth;
@@ -168,22 +170,65 @@ class GameEngine {
     document.addEventListener('fullscreenchange', this._fullscreenchangeHandler);
 
     this._onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') this._onDocumentHidden();
+      if (document.visibilityState === 'hidden') this._armHidePresenting();
       else this._onDocumentVisible();
     };
-    this._onPageHide = () => this._onDocumentHidden();
+    this._onPageHide = (e) => this._handlePageHide(e);
     this._onPageShow = () => this._onDocumentVisible();
     document.addEventListener('visibilitychange', this._onVisibilityChange);
     window.addEventListener('pagehide', this._onPageHide);
     window.addEventListener('pageshow', this._onPageShow);
   }
 
+  _armHidePresenting() {
+    if (this.presentWhenHidden || this._abandoned) return;
+    // Drop the SAB now so pixi can skip remaining submits. Do not post
+    // presenting:false yet — F5 fires pagehide in this same turn, and
+    // unconfigure() on a hot WebGPU queue hangs Chrome.
+    if (this._presentingFlag) Atomics.store(this._presentingFlag, 0, 0);
+    this._presenting = false;
+    if (this._hidePresentingTimer != null) return;
+    this._hidePresentingTimer = setTimeout(() => {
+      this._hidePresentingTimer = null;
+      if (this._abandoned) return;
+      this._onDocumentHidden();
+    }, 0);
+  }
+
+  _disarmHidePresenting() {
+    if (this._hidePresentingTimer == null) return;
+    clearTimeout(this._hidePresentingTimer);
+    this._hidePresentingTimer = null;
+  }
+
+  _handlePageHide(event) {
+    if (event && event.persisted) {
+      this._disarmHidePresenting();
+      this._onDocumentHidden();
+      return;
+    }
+    this._abandonDocument();
+  }
+
+  _abandonDocument() {
+    if (this._abandoned) return;
+    this._abandoned = true;
+    this._disarmHidePresenting();
+    if (this._presentingFlag) Atomics.store(this._presentingFlag, 0, 0);
+    this._presenting = false;
+    const scene = this.currentScene;
+    this.currentScene = null;
+    scene?.killWorkers();
+  }
+
   _onDocumentHidden() {
-    if (this.presentWhenHidden) return;
+    if (this.presentWhenHidden || this._abandoned) return;
     this.setPresenting(false);
   }
 
   _onDocumentVisible() {
+    if (this._abandoned) return;
+    this._disarmHidePresenting();
     this.setPresenting(true);
   }
 
@@ -454,6 +499,8 @@ class GameEngine {
 
   // Cleanup
   async destroy() {
+    this._abandoned = true;
+    this._disarmHidePresenting();
     this.state = GameEngine.states.TRANSITIONING;
 
     if (this._onWindowResize) {

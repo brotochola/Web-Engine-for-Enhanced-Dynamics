@@ -1139,6 +1139,55 @@ test('ComputeLayer.destroy then resize throws WeedJS error', () => {
   assert.throws(() => cl.resize(32, 32), /WeedJS: ComputeLayer used after destroy/);
 });
 
+test('ComputeLayer.step skips submit when live() is false', () => {
+  globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2, STORAGE: 4 };
+  globalThis.GPUTextureUsage = {
+    TEXTURE_BINDING: 1,
+    COPY_DST: 2,
+    COPY_SRC: 4,
+    STORAGE_BINDING: 8,
+  };
+  globalThis.GPUShaderStage = { COMPUTE: 1 };
+  const submitted = [];
+  const mkBuf = () => ({ destroy() {} });
+  const device = {
+    createBuffer: () => mkBuf(),
+    createTexture: () => ({ destroy() {}, createView() { return {}; } }),
+    createBindGroupLayout: () => ({}),
+    createPipelineLayout: () => ({}),
+    createComputePipeline: () => ({}),
+    createBindGroup: () => ({}),
+    createCommandEncoder: () => {
+      throw new Error('encoder should not run when live() is false');
+    },
+    queue: { writeBuffer() {}, submit(cmds) { submitted.push(cmds); } },
+  };
+  const cl = new ComputeLayer({
+    device,
+    meta: {
+      id: 0,
+      name: 'sim',
+      compute: { passes: [], textures: [], size: { width: 16, height: 16 } },
+    },
+    renderer: {},
+    lookSource: {},
+    live: () => false,
+  });
+  cl._ready = true;
+  assert.equal(cl.step({
+    dt: 1 / 60,
+    cameraX: 0,
+    cameraY: 0,
+    canvasW: 16,
+    canvasH: 16,
+    zoom: 1,
+    time: 0,
+    worldW: 16,
+    worldH: 16,
+  }), false);
+  assert.deepEqual(submitted, []);
+});
+
 test('compute FrameData is prefix + scene uniforms, not reserved look slots', () => {
   try {
     Layer.reset();

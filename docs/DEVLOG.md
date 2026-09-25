@@ -6,6 +6,16 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Friday 25 September 2026 — F5 Is Not Alt-Tab
+
+The presenting path from 21 September kept the sim alive and only stopped the canvas. That is correct when you hide the tab. It is wrong when you hit F5. Burning Boxes is the scene that shows it: a 1000×750 fire lattice, Jacobi twenty times, vis-poly lights, OffscreenCanvas WebGPU in a worker. Play five seconds, refresh, Chrome is gone.
+
+`visibilitychange` and `pagehide` used to do the same thing: store 0 on the SAB and post `presenting: false`. The worker then called `unconfigure()` on the swapchain. That call waits for the compute queue. Chrome is already tearing the document down. The GPU process never comes back.
+
+They are split now. Hide writes the SAB immediately so the current frame can skip the rest of its submits, including `ComputeLayer.step` before `queue.submit`. The presenting post waits one turn. F5 fires `pagehide` in that same turn with `persisted === false`, cancels the post, and `terminate()`s every worker. No `unconfigure`. The bfcache case (`persisted`) still only stops presenting. Alt-tab still gets the unconfigure on the next turn, which is the TDR fix from before.
+
+The demo found it again. The contract is in the engine: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md#presenting-vs-pause).
+
 ## Wednesday 23 September 2026 — The Sort Key Sits on a Pixel
 
 A sprite's Y key was the raw pose times 128. Half a pixel of Box2D noise flipped two neighbors that had not crossed. `Math.round(pose.y) * 128` for sprites and Adobe pieces stops that. On the moving 300k grid, reinsert went from 205 to 1985 ops/s in the kernel because the jitter no longer counts as a change. Pixi stayed put: 23.8 ms to 24.4 ms, inside the 3% line. That is a bugfix, not a speed win.

@@ -2313,6 +2313,27 @@ class Scene {
     return this.keyMap;
   }
 
+  /**
+   * Sync worker kill. F5 / close must not wait for GPU unconfigure.
+   */
+  killWorkers() {
+    if (this._workersKilled) return;
+    this._workersKilled = true;
+
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    const allWorkers = this.getAllWorkers();
+    for (const worker of allWorkers) {
+      if (!worker) continue;
+      worker.onmessage = null;
+      worker.onerror = null;
+      if (typeof worker.terminate === 'function') worker.terminate();
+    }
+  }
+
   async destroy() {
     debugWorkerLog(`🔴 Scene ${this.constructor.name}: Destroying...`);
 
@@ -2330,25 +2351,7 @@ class Scene {
     }
     GameObject.scene = null;
 
-    // Stop the main loop immediately
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-
-    // Break worker handler closures BEFORE terminate (prevents scene ref retention)
-    const allWorkers = this.getAllWorkers();
-    allWorkers.forEach((worker) => {
-      if (worker) {
-        worker.onmessage = null;
-        worker.onerror = null;
-      }
-    });
-
-    // Terminate all workers
-    allWorkers.forEach((worker) => {
-      if (worker) worker.terminate();
-    });
+    this.killWorkers();
 
     teardownSceneSharedState(this);
 

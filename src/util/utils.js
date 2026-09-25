@@ -27,7 +27,7 @@ export function usableCanvasSize(width, height) {
   return Number.isFinite(width) && Number.isFinite(height) && width >= 1 && height >= 1;
 }
 
-/** True when the main thread has stored 0 on the presenting SAB (hide or pagehide). */
+/** True when the main thread has stored 0 on the presenting SAB (hide or unload). */
 export function presentingFlagHidden(flag) {
   return !!(flag && Atomics.load(flag, 0) === 0);
 }
