@@ -2,12 +2,45 @@
  * GPU elapsed time for the Performance GPU row.
  * WebGL: EXT_disjoint_timer_query_webgl2 (result 1–2 frames late).
  * WebGPU: timestamp-query on Pixi render passes (wrapped beginRenderPass)
- * plus compute stamps for bitonic (own encoders).
+ * plus compute stamps for bitonic. Resolve once in finishFrame.
  */
 
-const RING = 3;
+const RING = 6;
 const SLOTS = ['shadows', 'lights', 'custom', 'present'];
 const QUERY_COUNT = 512;
+
+function emptySlotRanges() {
+  return { shadows: null, lights: null, custom: null, present: null };
+}
+
+function sumTimestampPairs(view, startPair, count) {
+  let ns = 0n;
+  const base = startPair * 2;
+  for (let i = 0; i < count; i++) {
+    const a = view[base + i * 2];
+    const b = view[base + i * 2 + 1];
+    if (b > a) ns += b - a;
+    else if (a > 0n && i + 1 < count) {
+      const next = view[base + (i + 1) * 2];
+      if (next > a) ns += next - a;
+    }
+  }
+  return Number(ns) / 1e6;
+}
+
+function spanTimestamps(view, startTs, tsCount) {
+  let min = 0n;
+  let max = 0n;
+  let any = false;
+  for (let i = 0; i < tsCount; i++) {
+    const t = view[startTs + i];
+    if (!t) continue;
+    if (!any || t < min) min = t;
+    if (!any || t > max) max = t;
+    any = true;
+  }
+  return any && max > min ? Number(max - min) / 1e6 : 0;
+}
 
 export class GpuFrameTimer {
   constructor() {
@@ -34,6 +67,10 @@ export class GpuFrameTimer {
     this._readI = 0;
     this._renderPasses = 0;
     this._computePasses = 0;
+    this._slotStart = 0;
+    this._slotPasses = 0;
+    this._slotRanges = emptySlotRanges();
+    this._computeViewOff = QUERY_COUNT;
   }
 
   attach(renderer) {
@@ -74,10 +111,20 @@ export class GpuFrameTimer {
     this._renderer = renderer;
     this._mode = 'webgpu';
     const n = this._queryCount;
-    this._renderQuery = device.createQuerySet({ type: 'timestamp', count: n, label: 'weed-gpu-render-ts' });
-    this._computeQuery = device.createQuerySet({ type: 'timestamp', count: n, label: 'weed-gpu-compute-ts' });
+    this._computeViewOff = n;
+    this._writeQs = 0;
+    this._pendingFrame = null;
+    this._renderQueries = [
+      device.createQuerySet({ type: 'timestamp', count: n, label: 'weed-gpu-render-ts-0' }),
+      device.createQuerySet({ type: 'timestamp', count: n, label: 'weed-gpu-render-ts-1' }),
+    ];
+    this._computeQueries = [
+      device.createQuerySet({ type: 'timestamp', count: n, label: 'weed-gpu-compute-ts-0' }),
+      device.createQuerySet({ type: 'timestamp', count: n, label: 'weed-gpu-compute-ts-1' }),
+    ];
+    const bytes = n * 8 * 2;
     this._resolveBuf = device.createBuffer({
-      size: n * 8,
+      size: bytes,
       usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
       label: 'weed-gpu-ts-resolve',
     });
@@ -85,18 +132,40 @@ export class GpuFrameTimer {
     for (let i = 0; i < RING; i++) {
       this._reads.push({
         buf: device.createBuffer({
-          size: n * 8,
+          size: bytes,
           usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
           label: `weed-gpu-ts-read-${i}`,
         }),
         pending: false,
-        n: 0,
-        slot: null,
+        renderPasses: 0,
+        computePasses: 0,
+        ranges: emptySlotRanges(),
       });
     }
+    this._hookDevice(device);
     this._wrapEncoder(renderer.encoder);
+    this._resetGpuFrame();
     this.active = true;
     return true;
+  }
+
+  _hookDevice(device) {
+    if (!device || device._weedTsCreate) return;
+    device._weedTsCreate = true;
+    const orig = device.createCommandEncoder.bind(device);
+    device.createCommandEncoder = (desc) => {
+      const enc = orig(desc);
+      this._hookCommandEncoder(enc);
+      return enc;
+    };
+  }
+
+  _resetGpuFrame() {
+    this._renderPasses = 0;
+    this._computePasses = 0;
+    this._slotStart = 0;
+    this._slotPasses = 0;
+    this._slotRanges = emptySlotRanges();
   }
 
   _wrapEncoder(encoder) {
@@ -127,10 +196,11 @@ export class GpuFrameTimer {
     const i = this._renderPasses;
     if (i * 2 + 1 >= this._queryCount) return descriptor;
     this._renderPasses++;
+    this._slotPasses++;
     return {
       ...descriptor,
       timestampWrites: {
-        querySet: this._renderQuery,
+        querySet: this._renderQueries[this._writeQs],
         beginningOfPassWriteIndex: i * 2,
         endingOfPassWriteIndex: i * 2 + 1,
       },
@@ -143,22 +213,19 @@ export class GpuFrameTimer {
   }
 
   computeStamp() {
-    if (this._mode !== 'webgpu' || !this._computeQuery) return null;
+    if (this._mode !== 'webgpu' || !this._computeQueries) return null;
     const i = this._computePasses;
     if (i * 2 + 1 >= this._queryCount) return null;
     this._computePasses++;
     return {
-      querySet: this._computeQuery,
+      querySet: this._computeQueries[this._writeQs],
       beginningOfPassWriteIndex: i * 2,
       endingOfPassWriteIndex: i * 2 + 1,
     };
   }
 
-  resolveCompute() {
-    if (this._mode !== 'webgpu' || this._computePasses <= 0) return;
-    this._resolveAndRead(this._computeQuery, this._computePasses, 'sort');
-    this._computePasses = 0;
-  }
+  /** Bitonic used to resolve here; finishFrame owns the readback. */
+  resolveCompute() {}
 
   begin(name) {
     if (!this.active) return;
@@ -166,7 +233,8 @@ export class GpuFrameTimer {
     if (this._mode === 'webgpu') {
       this._wrapEncoder(this._renderer?.encoder);
       this._open = SLOTS.indexOf(name) >= 0 ? name : null;
-      this._renderPasses = 0;
+      this._slotStart = this._renderPasses;
+      this._slotPasses = 0;
       return;
     }
     const bit = 1 << SLOTS.indexOf(name);
@@ -186,11 +254,11 @@ export class GpuFrameTimer {
   end() {
     if (!this.active || !this._open) return;
     if (this._mode === 'webgpu') {
-      if (this._renderPasses > 0) {
-        this._resolveAndRead(this._renderQuery, this._renderPasses, this._open);
+      if (this._slotPasses > 0) {
+        this._slotRanges[this._open] = { start: this._slotStart, count: this._slotPasses };
       }
-      this._renderPasses = 0;
       this._open = null;
+      this._slotPasses = 0;
       return;
     }
     this.gl.endQuery(this.ext.TIME_ELAPSED_EXT);
@@ -201,38 +269,73 @@ export class GpuFrameTimer {
   finishFrame() {
     if (!this.active) return;
     if (this._open) this.end();
-    if (this._mode === 'webgpu') return;
+    if (this._mode === 'webgpu') {
+      this._resolveGpuFrame();
+      return;
+    }
     this._write = (this._write + 1) % RING;
     for (let i = 0; i < RING; i++) this._poll(i);
   }
 
-  _resolveAndRead(querySet, passCount, slotName) {
+  _resolveGpuFrame() {
     const dest = this._reads[this._readI];
-    this._readI = (this._readI + 1) % this._reads.length;
-    if (!dest || dest.pending) return;
-    const n = passCount * 2;
+    if (this._pendingFrame && dest && !dest.pending) {
+      this._submitGpuResolve(this._pendingFrame, dest);
+      this._pendingFrame = null;
+    }
+    if (!this._pendingFrame && (this._renderPasses > 0 || this._computePasses > 0)) {
+      this._pendingFrame = {
+        qi: this._writeQs,
+        renderPasses: this._renderPasses,
+        computePasses: this._computePasses,
+        ranges: this._slotRanges,
+      };
+      this._writeQs ^= 1;
+      this._resetGpuFrame();
+    }
+  }
+
+  _submitGpuResolve(prev, dest) {
+    const renderTs = prev.renderPasses * 2;
+    const computeTs = prev.computePasses * 2;
     const enc = this._device.createCommandEncoder({ label: 'weed-gpu-ts-resolve' });
-    enc.resolveQuerySet(querySet, 0, n, this._resolveBuf, 0);
-    enc.copyBufferToBuffer(this._resolveBuf, 0, dest.buf, 0, n * 8);
+    if (renderTs >= 2) {
+      enc.resolveQuerySet(this._renderQueries[prev.qi], 0, renderTs, this._resolveBuf, 0);
+    }
+    if (computeTs >= 2) {
+      enc.resolveQuerySet(this._computeQueries[prev.qi], 0, computeTs, this._resolveBuf, this._queryCount * 8);
+    }
+    enc.copyBufferToBuffer(this._resolveBuf, 0, dest.buf, 0, this._queryCount * 8 * 2);
     this._device.queue.submit([enc.finish()]);
     dest.pending = true;
-    dest.n = passCount;
-    dest.slot = slotName;
-    dest.buf
-      .mapAsync(GPUMapMode.READ)
+    dest.renderPasses = prev.renderPasses;
+    dest.computePasses = prev.computePasses;
+    dest.ranges = prev.ranges;
+    const done = this._device.queue.onSubmittedWorkDone
+      ? this._device.queue.onSubmittedWorkDone()
+      : Promise.resolve();
+    done
+      .then(() => dest.buf.mapAsync(GPUMapMode.READ))
       .then(() => {
         const view = new BigUint64Array(dest.buf.getMappedRange());
-        let ns = 0n;
-        for (let i = 0; i < dest.n; i++) {
-          const a = view[i * 2];
-          const b = view[i * 2 + 1];
-          if (b > a) ns += b - a;
+        const ranges = dest.ranges || emptySlotRanges();
+        for (let s = 0; s < SLOTS.length; s++) {
+          const name = SLOTS[s];
+          const range = ranges[name];
+          this[name + 'Ms'] = range ? sumTimestampPairs(view, range.start, range.count) : 0;
         }
-        dest.buf.unmap();
-        this[dest.slot + 'Ms'] = Number(ns) / 1e6;
+        this.sortMs = dest.computePasses > 0
+          ? sumTimestampPairs(view, this._computeViewOff / 2, dest.computePasses)
+            || spanTimestamps(view, this._computeViewOff, dest.computePasses * 2)
+          : 0;
+        const slotSum = this.shadowsMs + this.lightsMs + this.customMs + this.presentMs;
+        if (!(slotSum > 0) && dest.renderPasses > 0) {
+          const span = spanTimestamps(view, 0, dest.renderPasses * 2);
+          if (span > 0) this.presentMs = span;
+        }
         this._recomputeStep();
+        dest.buf.unmap();
         dest.pending = false;
-        dest.slot = null;
       })
       .catch(() => {
         try {
@@ -241,8 +344,8 @@ export class GpuFrameTimer {
           /* already unmapped */
         }
         dest.pending = false;
-        dest.slot = null;
       });
+    this._readI = (this._readI + 1) % this._reads.length;
   }
 
   _recomputeStep() {
@@ -275,3 +378,5 @@ export class GpuFrameTimer {
     slot.issued = 0;
   }
 }
+
+export { sumTimestampPairs };

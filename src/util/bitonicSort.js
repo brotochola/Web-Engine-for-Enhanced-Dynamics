@@ -12,6 +12,15 @@ export function nextPow2(n) {
   return v + 1;
 }
 
+/** Bitonic stages for a padded length: log2(N) * (log2(N) + 1) / 2. */
+export function bitonicStageCount(n) {
+  const N = nextPow2(n | 0);
+  if (N < 2) return 0;
+  let log = 0;
+  for (let v = N; v > 1; v >>= 1) log++;
+  return (log * (log + 1)) >> 1;
+}
+
 const SENTINEL = 0xffffffff;
 
 function keyOrd(keysU32, id, alreadyOrd) {

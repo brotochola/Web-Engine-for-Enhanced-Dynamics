@@ -9,7 +9,7 @@
  */
 
 import { DECORATION_Y_SORT_SCALE } from '../util/configDefaults.js';
-import { depthFromOrderKey, depthFromSortKey } from '../util/sortIndexByKey.js';
+import { depthFromOrderKey, depthFromSortKey, floatBitsToOrd } from '../util/sortIndexByKey.js';
 
 export const GPU_SPRITE_FLOATS = 16;
 export const GPU_CASTER_FLOATS = 23;
@@ -47,6 +47,68 @@ function align4(n) {
 function snapWorldToPixel(v, cam, zoom) {
   if (!(zoom > 0)) return v;
   return Math.round((v - cam) * zoom) / zoom + cam;
+}
+
+export function writeGpuSpriteRow(dst, dstU32, out, row, opts) {
+  const o = opts || {};
+  let x = row.x;
+  let y = row.y;
+  if (o.pixelSnap) {
+    x = snapWorldToPixel(x, o.snapCameraX || 0, o.snapZoom || 1);
+    y = snapWorldToPixel(y, o.snapCameraY || 0, o.snapZoom || 1);
+  }
+  let depth;
+  if (o.useZBuffer && row.sk != null) {
+    if (o.keySpan > 0) depth = depthFromOrderKey(row.sk, o.keySpan, o.keyHalf);
+    else depth = depthFromSortKey(row.sk, o.worldHeight, DECORATION_Y_SORT_SCALE);
+  } else {
+    depth = 1.0 - (out + 1) / ((o.depthDenom || 1) + 1);
+  }
+  let a = row.a;
+  if (a < 0) a = 0;
+  else if (a > 1) a = 1;
+  const a8 = (a * 255 + 0.5) | 0;
+  const packed = ((a8 & 255) << 24) | (row.tint & 0xffffff);
+  const base = out * GPU_SPRITE_FLOATS;
+  dst[base] = x;
+  dst[base + 1] = y;
+  dst[base + 2] = row.sx;
+  dst[base + 3] = row.sy;
+  dst[base + 4] = row.ax;
+  dst[base + 5] = row.ay;
+  dst[base + 6] = row.rc;
+  dst[base + 7] = row.rs;
+  dst[base + 8] = depth;
+  dstU32[base + 9] = packed >>> 0;
+  dst[base + 10] = row.tex;
+  dst[base + 11] = row.invX || 0;
+  dst[base + 12] = row.invY || 0;
+  dst[base + 13] = row.u || 0;
+  dst[base + 14] = row.v || 0;
+  dst[base + 15] = row.cut > 0 ? row.cut * (1 / 255) : 0;
+}
+
+export function gatherInstancedRows(src, dst, indices, n, srcFp, dstFp, shadowQ) {
+  const sn = n | 0;
+  const sfp = srcFp | 0;
+  const dfp = dstFp | 0;
+  if (!src || !dst || sn <= 0) return 0;
+  for (let k = 0; k < sn; k++) {
+    const i = indices[k] | 0;
+    const from = i * sfp;
+    const to = k * dfp;
+    dst.set(src.subarray(from, from + Math.min(16, sfp)), to);
+    if (shadowQ && dfp >= GPU_CASTER_FLOATS) {
+      dst[to + 16] = shadowQ.shadowH ? shadowQ.shadowH[i] : 0;
+      dst[to + 17] = shadowQ.shadowOffX ? shadowQ.shadowOffX[i] : 0;
+      dst[to + 18] = shadowQ.shadowOffY ? shadowQ.shadowOffY[i] : 0;
+      dst[to + 19] = 0;
+      dst[to + 20] = 0;
+      dst[to + 21] = 0;
+      dst[to + 22] = 0;
+    }
+  }
+  return sn;
 }
 
 function instanceDepth(out, depthDenom, o, i) {
@@ -290,6 +352,9 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     dst[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
     const cutU8 = q.alphaCutOff ? q.alphaCutOff[i] | 0 : 0;
     dst[base + 15] = cutU8 > 0 ? cutU8 * (1 / 255) : 0;
+    if (o.keysOut && o.keyBits && out >= (o.keyFrom | 0)) {
+      o.keysOut[out] = floatBitsToOrd(o.keyBits[i]);
+    }
     if (shadowCast && fp >= GPU_CASTER_FLOATS) {
       const sh = q.shadowH;
       dst[base + 16] = sh ? sh[i] : 0;

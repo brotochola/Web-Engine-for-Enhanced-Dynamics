@@ -19,6 +19,17 @@ fn keyOf(id: u32) -> u32 {
 }
 
 @compute @workgroup_size(256)
+fn fillIndices(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = gid.x;
+  let n = sortParams.n;
+  let valid = sortParams.valid;
+  if (i >= n) {
+    return;
+  }
+  indices[i] = select(SENTINEL, i, i < valid);
+}
+
+@compute @workgroup_size(256)
 fn bitonicPass(@builtin(global_invocation_id) gid: vec3<u32>) {
   let i = gid.x;
   let n = sortParams.n;

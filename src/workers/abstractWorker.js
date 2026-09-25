@@ -430,6 +430,7 @@ export class AbstractWorker {
 
     // Fine worker subtimers + SAB detail fields (config.debug.collectDetailedStats)
     this.collectDetailedStats = !!(this.config.debug?.collectDetailedStats);
+    this.collectGpuStats = !!(this.config.debug?.collectGpuStats);
     setVerboseWorkers(!!this.config.debug?.verboseWorkers);
     installQuietConsoleLog();
     Ray.collectDetailedStats = this.collectDetailedStats;

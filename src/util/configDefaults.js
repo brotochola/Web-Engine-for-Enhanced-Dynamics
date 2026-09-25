@@ -712,6 +712,12 @@ export const DEBUG_DEFAULTS = Object.freeze({
    */
   collectDetailedStats: false,
   /**
+   * WebGPU timestamp-query / WebGL timer-query on the pixi worker.
+   * Independent of collectDetailedStats. Default off — resolve submits are not free.
+   * Opt in per scene or bench: debug: { collectGpuStats: true }.
+   */
+  collectGpuStats: false,
+  /**
    * Init / worker console.log spam (Scene bootstrap, pool init, atlas bake).
    * Independent of collectDetailedStats. Default off.
    */

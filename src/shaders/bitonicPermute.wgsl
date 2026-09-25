@@ -19,6 +19,9 @@ fn permuteInstances(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
   let fp = permParams.floats;
   let srcI = permIndex[i];
+  if (srcI >= count) {
+    return;
+  }
   let srcOff = (permParams.srcBase + srcI) * fp;
   let dstOff = i * fp;
   for (var f = 0u; f < fp; f = f + 1u) {

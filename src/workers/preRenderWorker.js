@@ -93,6 +93,8 @@ import {
     clearGpuQueueHeader,
     writeGpuQueueHeader,
     packInstancedRows,
+    writeGpuSpriteRow,
+    gatherInstancedRows,
     makePackContext,
     fillQueueIndices,
     copyPackedRows,
@@ -605,6 +607,8 @@ class PreRenderWorker extends AbstractWorker {
         this._ySortMode = rendererConfig.ySort;
         this._ySort = ySortEnabled(this._ySortMode);
         this._bitonic = this._ySortMode === Y_SORT_BITONIC;
+        this._packKeys = rendererConfig.packKeys === true;
+        this._packDirect = rendererConfig.packDirect === true;
         this._alphaCutOffU8 = DEFAULT_ALPHA_CUT_OFF_U8;
         this._useZBuffer = rendererConfig.useZBuffer === true && this._ySort && !this._bitonic;
         if (rendererConfig.useZBuffer === true && this._bitonic && !this._zBitonicWarned) {
@@ -713,6 +717,11 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuStampLightScratch = new Uint16Array(Math.max(1, caps.maxStamp | 0));
                 this._gpuStampCompact = new Float32Array(Math.max(1, (caps.maxStamp | 0) * GPU_CASTER_FLOATS));
                 this._gpuPackOpts = {};
+                this._gpuDirectF32 = null;
+                this._gpuDirectU32 = null;
+                this._gpuDirectHit = null;
+                this._gpuDirectRow = {};
+                this._packDirectLive = false;
                 this._gpuCookieQ = null;
                 const cookieN = Math.max(1, caps.maxCookie | 0);
                 if (cookieN > 0) {
@@ -2883,6 +2892,7 @@ class PreRenderWorker extends AbstractWorker {
     buildRenderQueue(deltaTime) {
         this._syncGlowLayer();
         if (!this.renderQueueEnabled || this._renderableCount === 0) {
+            this._packDirectLive = false;
             if (this.renderQueueCount) this.renderQueueCount[0] = 0;
             return;
         }
@@ -3034,7 +3044,19 @@ class PreRenderWorker extends AbstractWorker {
         const writeSortKey = !!(rqSortKey && this._queueHasOrder());
         const ySort = writeSortKey && this._entityYSort();
         const persistBuf = this._queueBuf;
-        const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
+        const packDirectLive = this._packDirect
+            && this._bitonic
+            && !this.interpolatePhysicsPose
+            && (this.workerCount | 0) <= 1;
+        this._packDirectLive = packDirectLive;
+        if (packDirectLive) {
+            this._ensureGpuDirect(this.renderQueueMaxItems);
+            this._gpuDirectHit.fill(0);
+            this._resetGpuPackOpts(this._gpuPackOpts);
+        }
+        const persistHit = packDirectLive
+            ? false
+            : this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
         if (persistHit) {
             this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs);
         }
@@ -3055,7 +3077,9 @@ class PreRenderWorker extends AbstractWorker {
                 stashPose.y = stashPy[i];
                 stashPose.rotC = stashRc[i];
                 stashPose.rotS = stashRs[i];
+                const adobeStart = writeCount;
                 writeCount = this._emitAdobePieces(ref, writeCount, idx, sk, stashPose);
+                if (packDirectLive) this._backfillGpuDirectRange(adobeStart, writeCount);
                 continue;
             }
 
@@ -3071,43 +3095,68 @@ class PreRenderWorker extends AbstractWorker {
                 // === ENTITY === (pose stashed at collect)
                 const currX = stashPx[i];
                 const currY = stashPy[i];
-
-                rqX[out] = currX;
-                rqY[out] = currY;
-                rqScaleX[out] = srScaleX[idx];
-                rqScaleY[out] = srScaleY[idx];
+                const sx = srScaleX[idx];
+                const sy = srScaleY[idx];
+                let rc;
+                let rs;
                 if (srInheritTransformRotation[idx]) {
-                    rqRotC[out] = stashRc[i];
-                    rqRotS[out] = stashRs[i];
+                    rc = stashRc[i];
+                    rs = stashRs[i];
                 } else {
-                    rqRotC[out] = srSpriteRotC[idx];
-                    rqRotS[out] = srSpriteRotS[idx];
+                    rc = srSpriteRotC[idx];
+                    rs = srSpriteRotS[idx];
                 }
-                rqAlpha[out] = srAlpha[idx];
-                rqTint[out] = srTint[idx];
-                rqAnchorX[out] = srAnchorX[idx];
-                rqAnchorY[out] = srAnchorY[idx];
+                const a = srAlpha[idx];
+                const tint = srTint[idx];
+                const ax = srAnchorX[idx];
+                const ay = srAnchorY[idx];
+                rqAlpha[out] = a;
                 this._writeQueueShadow(out, idx);
                 const rx0 = srRepeatX[idx];
                 const ry0 = srRepeatY[idx];
+                let invX = 0;
+                let invY = 0;
+                let u = 0;
+                let v = 0;
                 if (rx0 !== 0 || ry0 !== 0) {
-                    if (rqRepeatX) rqRepeatX[out] = rx0;
-                    if (rqRepeatY) rqRepeatY[out] = ry0;
-                    writeEntityTileFields(
-                        ref, out, idx,
-                        srTileMode, srTileOffsetU, srTileOffsetV,
-                        srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
-                    );
-                } else {
+                    if (packDirectLive) {
+                        const mode = srTileMode[idx];
+                        u = srTileOffsetU[idx] * (1 / 65535);
+                        v = srTileOffsetV[idx] * (1 / 65535);
+                        if (rx0 > 0) invX = mode === TILE_MODE_LOCAL ? -(srBoundsHalfW[idx] * 2) / rx0 : 1 / rx0;
+                        if (ry0 > 0) invY = mode === TILE_MODE_LOCAL ? -(srBoundsHalfH[idx] * 2) / ry0 : 1 / ry0;
+                    } else {
+                        if (rqRepeatX) rqRepeatX[out] = rx0;
+                        if (rqRepeatY) rqRepeatY[out] = ry0;
+                        writeEntityTileFields(
+                            ref, out, idx,
+                            srTileMode, srTileOffsetU, srTileOffsetV,
+                            srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
+                        );
+                    }
+                } else if (!packDirectLive) {
                     if (rqRepeatX) rqRepeatX[out] = 0;
                     if (rqRepeatY) rqRepeatY[out] = 0;
                     if (rqTileMulX) rqTileMulX[out] = 0;
                     if (rqTileMulY) rqTileMulY[out] = 0;
                 }
 
+                if (!packDirectLive) {
+                    rqX[out] = currX;
+                    rqY[out] = currY;
+                    rqScaleX[out] = sx;
+                    rqScaleY[out] = sy;
+                    rqRotC[out] = rc;
+                    rqRotS[out] = rs;
+                    rqTint[out] = tint;
+                    rqAnchorX[out] = ax;
+                    rqAnchorY[out] = ay;
+                }
+
                 this._setQueueType(ref, out, 0, idx);
                 const sheetId = srSpritesheetId[idx];
                 const animState = srAnimState[idx];
+                let tex = INVALID_TEXTURE_ID;
 
                 const proxyMap = this.proxyToGlobalAnim?.[sheetId];
                 const globalAnimIdx = proxyMap?.[animState];
@@ -3151,19 +3200,13 @@ class PreRenderWorker extends AbstractWorker {
                             `animStart:${globalAnimIdx}`,
                             `[PRE_RENDER] animationFrameStart missing for globalAnimIdx=${globalAnimIdx} entity=${idx}`
                         );
-                        rqTextureId[out] = INVALID_TEXTURE_ID;
                     } else {
-                        const globalTextureId = animStart + frameIndex[idx];
-                        rqTextureId[out] = globalTextureId;
-
-                        if (entityLastTextureId) {
-                            entityLastTextureId[idx] = globalTextureId;
-                        }
+                        tex = animStart + frameIndex[idx];
+                        if (entityLastTextureId) entityLastTextureId[idx] = tex;
                     }
                 } else {
                     // Never reuse stale lastTextureId (pool recycle / spawn before setSprite).
                     if (entityLastTextureId) entityLastTextureId[idx] = INVALID_TEXTURE_ID;
-                    rqTextureId[out] = INVALID_TEXTURE_ID;
                     // sheetId 0 = unset sentinel — expected under collect→emit recycle. No warn.
                     if (sheetId) {
                         this._warnMissingTexture(
@@ -3171,6 +3214,29 @@ class PreRenderWorker extends AbstractWorker {
                             `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
                         );
                     }
+                }
+                if (packDirectLive) {
+                    const row = this._gpuDirectRow;
+                    row.x = currX;
+                    row.y = currY;
+                    row.sx = sx;
+                    row.sy = sy;
+                    row.ax = ax;
+                    row.ay = ay;
+                    row.rc = rc;
+                    row.rs = rs;
+                    row.a = a;
+                    row.tint = tint;
+                    row.tex = tex;
+                    row.invX = invX;
+                    row.invY = invY;
+                    row.u = u;
+                    row.v = v;
+                    row.cut = this.renderQueueAlphaCutOff ? this.renderQueueAlphaCutOff[out] : 0;
+                    row.sk = writeSortKey ? sk : null;
+                    this._writeGpuDirectFromLocals(out, row);
+                } else {
+                    rqTextureId[out] = tex;
                 }
             } else if (type === 1) {
                 // === PARTICLE ===
@@ -3350,10 +3416,13 @@ class PreRenderWorker extends AbstractWorker {
                 if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
                 this._setQueueType(ref, out, 3, idx);
             }
+            if (packDirectLive && type !== 0) this._writeGpuDirectFromSoa(out);
         }
 
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
-        if (!persistHit) this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
+        if (!persistHit && !packDirectLive) {
+            this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
+        }
         this.renderQueueCount[0] = writeCount;
         this._emitWriteCount = writeCount;
         this._renderableCount = 0;
@@ -3940,6 +4009,57 @@ class PreRenderWorker extends AbstractWorker {
             opts.keySpan = 0;
             opts.keyHalf = 0;
         }
+        opts.keysOut = null;
+        opts.keyBits = null;
+        opts.keyFrom = 0;
+    }
+
+    _ensureGpuDirect(n) {
+        const rows = Math.max(n | 0, 1);
+        const need = rows * GPU_SPRITE_FLOATS;
+        if (!this._gpuDirectF32 || this._gpuDirectF32.length < need) {
+            this._gpuDirectF32 = new Float32Array(need);
+            this._gpuDirectU32 = new Uint32Array(this._gpuDirectF32.buffer);
+            this._gpuDirectHit = new Uint8Array(rows);
+        } else if (this._gpuDirectHit.length < rows) {
+            this._gpuDirectHit = new Uint8Array(rows);
+        }
+    }
+
+    _writeGpuDirectFromLocals(out, row) {
+        writeGpuSpriteRow(this._gpuDirectF32, this._gpuDirectU32, out, row, this._gpuPackOpts);
+        if (this._gpuDirectHit) this._gpuDirectHit[out] = 1;
+    }
+
+    _writeGpuDirectFromSoa(out) {
+        const row = this._gpuDirectRow;
+        row.x = this.renderQueueX[out];
+        row.y = this.renderQueueY[out];
+        row.sx = this.renderQueueScaleX[out];
+        row.sy = this.renderQueueScaleY[out];
+        row.ax = this.renderQueueAnchorX[out];
+        row.ay = this.renderQueueAnchorY[out];
+        row.rc = this.renderQueueRotC[out];
+        row.rs = this.renderQueueRotS[out];
+        row.a = this.renderQueueAlpha[out];
+        row.tint = this.renderQueueTint[out];
+        row.tex = this.renderQueueTextureId[out];
+        const rx = this.renderQueueRepeatX ? this.renderQueueRepeatX[out] : 0;
+        const ry = this.renderQueueRepeatY ? this.renderQueueRepeatY[out] : 0;
+        row.invX = this.renderQueueTileMulX ? this.renderQueueTileMulX[out] : (rx > 0 ? 1 / rx : 0);
+        row.invY = this.renderQueueTileMulY ? this.renderQueueTileMulY[out] : (ry > 0 ? 1 / ry : 0);
+        row.u = this.renderQueueTileOffsetU ? this.renderQueueTileOffsetU[out] * (1 / 65535) : 0;
+        row.v = this.renderQueueTileOffsetV ? this.renderQueueTileOffsetV[out] * (1 / 65535) : 0;
+        row.cut = this.renderQueueAlphaCutOff ? this.renderQueueAlphaCutOff[out] : 0;
+        row.sk = this.renderQueueSortKey ? this.renderQueueSortKey[out] : null;
+        this._writeGpuDirectFromLocals(out, row);
+    }
+
+    _backfillGpuDirectRange(start, end) {
+        for (let i = start; i < end; i++) {
+            if (this._gpuDirectHit && this._gpuDirectHit[i]) continue;
+            this._writeGpuDirectFromSoa(i);
+        }
     }
 
     _collectStampLights() {
@@ -4050,12 +4170,37 @@ class PreRenderWorker extends AbstractWorker {
             opts.indexCount = ne;
             opts.useZBuffer = true;
             opts.sortKey = q.sortKey;
-            const ctx = makePackContext(q, opts, caps.maxSprites);
-            spriteN = ctx
-                ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
-                : 0;
-            particles = ctx ? (ctx.particleCount | 0) : 0;
-            this._writeSpriteKeys(dst, q, merged, 0, spriteN);
+            const take = ne > caps.maxSprites ? caps.maxSprites : ne;
+            if (this._packDirectLive && this._gpuDirectF32) {
+                spriteN = gatherInstancedRows(
+                    this._gpuDirectF32, dst.sprites, merged, take,
+                    GPU_SPRITE_FLOATS, GPU_SPRITE_FLOATS
+                );
+                for (let i = 0; i < spriteN; i++) {
+                    if (typeArr[merged[i]] === 1) particles++;
+                }
+                if (this._packKeys && dst.spriteKeys && q.sortKey) {
+                    const bits = this._sortKeyBits(q.sortKey);
+                    const keysOut = dst.spriteKeys;
+                    for (let k = cutN; k < spriteN; k++) {
+                        keysOut[k] = floatBitsToOrd(bits[merged[k]]);
+                    }
+                } else if (!this._packKeys) {
+                    this._writeSpriteKeys(dst, q, merged, 0, spriteN);
+                }
+            } else {
+                const ctx = makePackContext(q, opts, caps.maxSprites);
+                if (this._packKeys && dst.spriteKeys && q.sortKey) {
+                    opts.keysOut = dst.spriteKeys;
+                    opts.keyBits = this._sortKeyBits(q.sortKey);
+                    opts.keyFrom = cutN;
+                }
+                spriteN = ctx
+                    ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
+                    : 0;
+                particles = ctx ? (ctx.particleCount | 0) : 0;
+                if (!this._packKeys) this._writeSpriteKeys(dst, q, merged, 0, spriteN);
+            }
             flags = packGpuSpriteFlags(GPU_FLAG_BITONIC, Math.min(cutN, spriteN));
             if (glowAdd && caps.maxGlow > 0) {
                 glowN = fillQueueIndices(typeArr, count, 3, -1, idxG);
@@ -4150,10 +4295,17 @@ class PreRenderWorker extends AbstractWorker {
             opts.indexCount = sunN;
             opts.useZBuffer = false;
             opts.sortKey = null;
-            const sctx = makePackContext(q, opts, caps.maxSun);
-            sunN = sctx
-                ? packInstancedRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
-                : 0;
+            if (this._packDirectLive && this._gpuDirectF32) {
+                sunN = gatherInstancedRows(
+                    this._gpuDirectF32, dst.sun, this._gpuCasterIdx, sunN,
+                    GPU_SPRITE_FLOATS, GPU_CASTER_FLOATS, q
+                );
+            } else {
+                const sctx = makePackContext(q, opts, caps.maxSun);
+                sunN = sctx
+                    ? packInstancedRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
+                    : 0;
+            }
         }
         this._collectStampLights();
         const lights = this._stampLights;

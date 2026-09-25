@@ -72,6 +72,7 @@ export class YSortOverlayScene extends Scene {
       backend: overlayBackend(),
       ySort: overlayYSort(),
       useZBuffer: queryParam('useZBuffer') === '1',
+      bitonicEnc: queryParam('bitonicEnc') === 'one' ? 'one' : false,
     },
     preRender: { numberOfPreRenderWorkers: 1, skipCull: true },
     lighting: { enabled: false },

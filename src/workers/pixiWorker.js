@@ -400,6 +400,7 @@ class PixiRenderer extends AbstractWorker {
     this._ySort = false;
     this._ySortMode = false;
     this._bitonic = false;
+    this._bitonicOneEnc = false;
     this._zBufferRequested = false;
     this._useZBuffer = false;
     this._bitonicSorter = null;
@@ -1420,7 +1421,8 @@ class PixiRenderer extends AbstractWorker {
       this._bitonicSorter = new BitonicInstanceSorter(
         this.pixiApp.renderer.gpu.device,
         sortWgsl,
-        permWgsl
+        permWgsl,
+        { oneEncoder: this._bitonicOneEnc }
       );
     } catch (_) {
       this._bitonicSorter = null;
@@ -2075,7 +2077,7 @@ class PixiRenderer extends AbstractWorker {
     }
 
     this.updateCameraTransform();
-    this._gpuTimer.attach(this.pixiApp?.renderer);
+    this._attachGpuTimer();
 
     // Sync mutable layer properties from SAB (cross-worker writes via Atomics)
     if (Layer._alphaDirty) {
@@ -2248,6 +2250,11 @@ class PixiRenderer extends AbstractWorker {
     if (context && typeof context.unconfigure === 'function') {
       try { context.unconfigure(); } catch (_) { /* surface already gone */ }
     }
+  }
+
+  _attachGpuTimer() {
+    if (!this.collectGpuStats) return;
+    this._gpuTimer.attach(this.pixiApp?.renderer);
   }
 
   _submitRender(opts) {
@@ -3795,7 +3802,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!this.shadowSpritesEnabled) return;
     if (!this.shadowBatch || !this.shadowRT) return;
     if (!layerIsVisible(Layer.castedShadows?.id)) return;
-    this._gpuTimer.attach(this.pixiApp?.renderer);
+    this._attachGpuTimer();
     this._gpuTimer.begin('shadows');
     this._drawGpuCasterShadows();
     this._gpuTimer.end();
@@ -3858,7 +3865,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
     this.pixiApp.stage.addChild(this.shadowDisplaySprite);
 
-    this._gpuTimer.attach(this.pixiApp.renderer);
+    this._attachGpuTimer();
 
     console.log(
       `PIXI WORKER: Shadow instanced RT (${this.shadowRT.width}x${this.shadowRT.height}, casters ${casterCap})`
@@ -5367,6 +5374,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._ySortMode = rendererConfig.ySort;
     this._ySort = ySortEnabled(this._ySortMode);
     this._bitonic = this._ySortMode === Y_SORT_BITONIC;
+    this._bitonicOneEnc = rendererConfig.bitonicEnc === 'one';
     this._zBufferRequested = rendererConfig.useZBuffer === true;
     this._useZBuffer = this._zBufferRequested && this._ySort && !this._bitonic;
     if (this._zBufferRequested && this._bitonic) {

@@ -42,9 +42,15 @@ test('pixi: WebGPU injects a device with timestamp-query and wraps beginRenderPa
   assert.match(pixi, /gpu: \{ adapter: weedGpu\.adapter, device: weedGpu\.device \}/);
   assert.match(timer, /encoder\.renderStart/);
   assert.match(timer, /timestampWrites/);
+  assert.match(timer, /_resolveGpuFrame/);
   assert.doesNotMatch(timer, /renderer\?\.gpu && !renderer\.gl/);
-  assert.match(bitonic, /timer && timer\.computeStamp/);
+  assert.match(bitonic, /beginTimedCompute/);
   assert.match(bitonic, /timer\.resolveCompute/);
+  assert.match(bitonic, /oneEncoder/);
+  assert.match(bitonic, /fillIndices/);
+  assert.match(bitonic, /onSubmittedWorkDone/);
+  const perm = readFileSync(join(root, 'src/shaders/bitonicPermute.wgsl'), 'utf8');
+  assert.match(perm, /srcI >= count/);
 });
 
 test('pixi: lighting binds uShadowSampler to the live shadow RT, not Texture.WHITE', () => {
@@ -69,6 +75,21 @@ test('pixi: GPU two-pass is gone; ySorting uses reinsert with no painterSort con
   assert.doesNotMatch(pixi, /spriteParticleMesh/);
   assert.doesNotMatch(pixi, /painterSort/);
   assert.doesNotMatch(pixi, /this\.instancedSprites\s*=/);
+});
+
+test('preRender packKeys writes blend keys in the pack walk, not a second full walk', () => {
+  assert.match(preRender, /this\._packKeys = rendererConfig\.packKeys === true/);
+  assert.match(preRender, /if \(!this\._packKeys\) this\._writeSpriteKeys/);
+  assert.match(preRender, /opts\.keyFrom = cutN/);
+});
+
+test('preRender packDirect writes GPU rows in emit and skips fat type-0 SoA + persist', () => {
+  assert.match(preRender, /this\._packDirect = rendererConfig.packDirect === true/);
+  assert.match(preRender, /packDirectLive\s*\?\s*false\s*:\s*this\._type0PersistHit/);
+  assert.match(preRender, /writeGpuSpriteRow/);
+  assert.match(preRender, /gatherInstancedRows/);
+  assert.match(preRender, /if \(!packDirectLive\) \{\s+rqX\[out\] = currX/);
+  assert.match(preRender, /if \(!persistHit && !packDirectLive\)/);
 });
 
 test('preRender persist skips Adobe expansion (type 6 write-index mismatch)', () => {

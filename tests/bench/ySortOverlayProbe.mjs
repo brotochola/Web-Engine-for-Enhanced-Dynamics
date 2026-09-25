@@ -15,7 +15,7 @@ const outDir = path.join(repoRoot, 'tests/results/bitonic-ysort');
 const VARIANTS = [
   { id: 'cpu', query: 'backend=webgpu&ySort=cpu&useZBuffer=0' },
   { id: 'z', query: 'backend=webgpu&ySort=cpu&useZBuffer=1' },
-  { id: 'bitonic', query: 'backend=webgpu&ySort=bitonic' },
+  { id: 'bitonic', query: 'backend=webgpu&ySort=bitonic&bitonicEnc=one' },
 ];
 
 function colorDist(a, b) {

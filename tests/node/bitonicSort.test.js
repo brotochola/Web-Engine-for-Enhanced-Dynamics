@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bitonicSortIndices, nextPow2, permuteInstances } from '../../src/util/bitonicSort.js';
+import { bitonicSortIndices, bitonicStageCount, nextPow2, permuteInstances } from '../../src/util/bitonicSort.js';
 import {
   createPainterState,
   orderPainterSlots,
@@ -22,6 +22,21 @@ test('nextPow2', () => {
   assert.equal(nextPow2(2), 2);
   assert.equal(nextPow2(3), 4);
   assert.equal(nextPow2(300000), 524288);
+});
+
+test('bitonicStageCount is logN*(logN+1)/2', () => {
+  assert.equal(bitonicStageCount(0), 0);
+  assert.equal(bitonicStageCount(1), 0);
+  assert.equal(bitonicStageCount(2), 1);
+  assert.equal(bitonicStageCount(3), 3);
+  assert.equal(bitonicStageCount(4), 3);
+  assert.equal(bitonicStageCount(4096), 78);
+  assert.equal(bitonicStageCount(32768), 120);
+  const n = 300000;
+  const N = nextPow2(n);
+  let log = 0;
+  for (let v = N; v > 1; v >>= 1) log++;
+  assert.equal(bitonicStageCount(n), (log * (log + 1)) >> 1);
 });
 
 test('bitonic matches radix and painter on mixed keys', () => {

@@ -51,6 +51,7 @@ function formatWorkerConsoleLine(worker) {
     if (avg.GPU_STEP_MS != null) {
       line +=
         ` | GPU_STEP_MS ${Number(avg.GPU_STEP_MS).toFixed(3)}` +
+        ` | GPU_SORT_MS ${Number(avg.GPU_SORT_MS || 0).toFixed(3)}` +
         ` | GPU_SHADOWS_MS ${Number(avg.GPU_SHADOWS_MS || 0).toFixed(3)}` +
         ` | GPU_LIGHTS_MS ${Number(avg.GPU_LIGHTS_MS || 0).toFixed(3)}` +
         ` | GPU_PRESENT_MS ${Number(avg.GPU_PRESENT_MS || 0).toFixed(3)}` +
@@ -77,9 +78,11 @@ const DEFAULT_SCENE_EXPORT = 'BallsScene';
  * covered by other windows (still not a 100% guarantee — the OS can always deprioritize).
  * Opt out with `--allow-throttle` to approximate normal user behavior.
  */
-function buildChromiumLaunchArgs({ allowThrottle }) {
+function buildChromiumLaunchArgs({ allowThrottle, collectGpuStats }) {
   if (allowThrottle) {
-    return [];
+    return collectGpuStats
+      ? ['--enable-webgpu-developer-features', '--enable-dawn-features=allow_unsafe_apis']
+      : [];
   }
   const args = [
     '--disable-background-timer-throttling',
@@ -88,6 +91,10 @@ function buildChromiumLaunchArgs({ allowThrottle }) {
   ];
   if (os.platform() === 'win32') {
     args.push('--disable-features=CalculateNativeWinOcclusion');
+  }
+  if (collectGpuStats) {
+    args.push('--enable-webgpu-developer-features');
+    args.push('--enable-dawn-features=allow_unsafe_apis');
   }
   return args;
 }
@@ -145,6 +152,8 @@ function buildBenchmarkOptions(cliArgs) {
 
   // Benches default collectDetailedStats on; --no-collect-detailed-stats for lean A/B.
   const collectDetailedStats = !cliArgs['no-collect-detailed-stats'];
+  // GPU timestamps are extra submits. Off unless this campaign asks.
+  const collectGpuStats = !!cliArgs['collect-gpu-stats'];
 
   return {
     warmupMs,
@@ -154,6 +163,7 @@ function buildBenchmarkOptions(cliArgs) {
     sceneExport: cliArgs['scene-export'] || DEFAULT_SCENE_EXPORT,
     debug: Boolean(cliArgs.debug),
     collectDetailedStats,
+    collectGpuStats,
     ...(canvasWidth != null ? { canvasWidth } : {}),
     ...(canvasHeight != null ? { canvasHeight } : {}),
   };
@@ -223,7 +233,10 @@ async function main() {
     );
   }
 
-  const launchArgs = buildChromiumLaunchArgs({ allowThrottle });
+  const launchArgs = buildChromiumLaunchArgs({
+    allowThrottle,
+    collectGpuStats: benchmarkOptions.collectGpuStats,
+  });
   let browser;
 
   try {
@@ -402,6 +415,7 @@ async function main() {
       chromiumExtraArgs: launchArgs,
       gameEngineDebug: Boolean(benchmarkOptions.debug),
       collectDetailedStats: Boolean(benchmarkOptions.collectDetailedStats),
+      collectGpuStats: Boolean(benchmarkOptions.collectGpuStats),
       benchmarkNote:
         'Headed runs: keep the Chromium window visible and not minimized for comparable FPS; hidden/occluded windows can still throttle despite launch flags.',
       ...(screenshotPaths.length > 0

@@ -104,6 +104,7 @@
           options.collectDetailedStats === undefined
             ? true
             : Boolean(options.collectDetailedStats),
+        collectGpuStats: Boolean(options.collectGpuStats),
       };
     }
 
@@ -202,12 +203,13 @@
         summarizeWorkerBenchmarkWindow,
       } = await loadModules(config.sceneModule, config.sceneExport);
 
-      // Override scene debug.collectDetailedStats before Scene applies defaults / boots workers
+      // Override scene debug flags before Scene applies defaults / boots workers
       SceneClass.config = {
         ...SceneClass.config,
         debug: {
           ...(SceneClass.config.debug || {}),
           collectDetailedStats: config.collectDetailedStats,
+          collectGpuStats: config.collectGpuStats,
         },
       };
 

@@ -70,6 +70,14 @@ function predatorUseZBuffer() {
   return true;
 }
 
+function predatorBitonicEnc() {
+  return predatorSearchParam('bitonicEnc') === 'one' ? 'one' : false;
+}
+
+function predatorFlagOn(name) {
+  return predatorSearchParam(name) === '1';
+}
+
 const {
   Camera,
   Decoration,
@@ -113,7 +121,8 @@ export class PredatorScene extends WEED.Scene {
 
     debug: {
       maxDebugDrawEntries: 30192,
-      collectDetailedStats: true,
+      // collectDetailedStats: true,
+      // collectGpuStats: true, // bench --collect-gpu-stats pisa esto
       verboseWorkers: true,
     },
 
@@ -172,6 +181,9 @@ export class PredatorScene extends WEED.Scene {
       noLimitFPS: false,
       ySort: predatorYSort(),
       useZBuffer: predatorUseZBuffer(),
+      bitonicEnc: "one",//predatorBitonicEnc(),
+      packKeys: predatorFlagOn('packKeys'),
+      packDirect: predatorFlagOn('packDirect'),
       autoGenerateMipmaps: false,
       interpolation: false,
       atlasScaleMode: 'linear',
