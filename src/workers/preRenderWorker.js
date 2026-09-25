@@ -1119,6 +1119,7 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         // Cache per-frame camera bounds and adobe entity query (avoids redundant recomputation)
+        this._emitWriteCount = 0;
         this._frameCameraBoundsValid = this.cameraData !== null;
         if (this._frameCameraBoundsValid) this.calculateCameraBounds();
         // Optional SoA: skip Adobe query when scene never allocated AdobeAnimComponent
@@ -1275,6 +1276,7 @@ class PreRenderWorker extends AbstractWorker {
         const detail = this.collectDetailedStats;
         let t0 = 0;
         this._shardExpanded = 0;
+        this._emitWriteCount = 0;
         this._emitPrefix = 0;
         this.renderQueueFrame = frameId - 1;
         this._queueBuf = bufIdx;
@@ -1349,7 +1351,7 @@ class PreRenderWorker extends AbstractWorker {
                 this._storePrivateEmitCounts();
             }
             if (this._gpuPrivate) {
-                this._packGpuQueues(this._gpuPrivate);
+                this._packGpuQueues(this._gpuPrivate, true, this._mainPrivate);
                 this._storeGpuStreamCounts();
             }
             this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
@@ -1361,7 +1363,7 @@ class PreRenderWorker extends AbstractWorker {
             this._bindDirectCustom(bufIdx);
             this.buildCustomLayerQueues(deltaTime);
             if (this._gpuPrivate) {
-                this._packGpuQueues(this._gpuPrivate);
+                this._packGpuQueues(this._gpuPrivate, true);
                 this._storeGpuStreamCounts();
             }
             this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
@@ -1481,14 +1483,16 @@ class PreRenderWorker extends AbstractWorker {
         return false;
     }
 
-    _columnWindow(full, prefix, cacheSlot, bufIdx) {
+    _columnWindow(full, prefix, cacheSlot, bufIdx, countArr) {
         if (!full) return null;
         if (!this._dummyCount) this._dummyCount = new Int32Array(1);
+        if (!this._mainEmitCount) this._mainEmitCount = new Int32Array(1);
+        const count = countArr || this._dummyCount;
         let slot = this[cacheSlot];
         if (!slot) slot = this[cacheSlot] = [null, null];
         const hit = slot[bufIdx];
-        if (hit && hit.prefix === prefix) return hit.views;
-        const views = { count: this._dummyCount };
+        if (hit && hit.prefix === prefix && hit.views.count === count) return hit.views;
+        const views = { count };
         for (let i = 0; i < MAIN_COLUMN_KEYS.length; i++) {
             const key = MAIN_COLUMN_KEYS[i];
             if (key === 'count') continue;
@@ -1503,11 +1507,12 @@ class PreRenderWorker extends AbstractWorker {
         const fit = this._fitted(PR_STREAM_SPRITE, this.renderQueueMaxItems | 0);
         if (fit.keep < (this._renderableCount | 0)) this._renderableCount = fit.keep;
         this._emitPrefix = fit.prefix;
+        if (!this._mainEmitCount) this._mainEmitCount = new Int32Array(1);
         const views = this._columnWindow(
-            this.renderQueueBuffers[bufIdx], fit.prefix, '_mainWindows', bufIdx
+            this.renderQueueBuffers[bufIdx], fit.prefix, '_mainWindows', bufIdx, this._mainEmitCount
         );
         this._applyMainColumns(views);
-        this.renderQueueCount = this._dummyCount;
+        this.renderQueueCount = this._mainEmitCount;
     }
 
     _bindDirectCustom(bufIdx) {
@@ -2775,6 +2780,8 @@ class PreRenderWorker extends AbstractWorker {
         // appear mirrored to the wrong side after a horizontal flip.
         const mirrorSign = ((rootScaleX < 0) !== (rootScaleY < 0)) ? -1 : 1;
 
+        let feetSlot = -1;
+        let feetY = 0;
         let p = start;
         for (; p < end && writeIndex < maxItems; p++) {
             const localX = (pieceX[p] - pivotX) * rootScaleX;
@@ -2799,9 +2806,20 @@ class PreRenderWorker extends AbstractWorker {
             if (ref.repeatY) ref.repeatY[writeIndex] = 0;
             clearTileFields(ref, writeIndex);
             if (ref.sortKey) ref.sortKey[writeIndex] = sortKey;
-            this._writeQueueShadow(writeIndex, entityIndex, ref);
+            if (ref.shadowH) {
+                ref.shadowH[writeIndex] = 0;
+                if (ref.shadowOffX) ref.shadowOffX[writeIndex] = 0;
+                if (ref.shadowOffY) ref.shadowOffY[writeIndex] = 0;
+            }
+            const pieceWorldY = ref.y[writeIndex];
+            if (feetSlot < 0 || pieceWorldY >= feetY) {
+                feetY = pieceWorldY;
+                feetSlot = writeIndex;
+            }
             writeIndex++;
         }
+
+        if (feetSlot >= 0) this._writeQueueShadow(feetSlot, entityIndex, ref);
 
         if (p < end && !this._adobeRenderQueueOverflowWarned) {
             this._adobeRenderQueueOverflowWarned = true;
@@ -3298,6 +3316,7 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
         if (!persistHit) this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
         this.renderQueueCount[0] = writeCount;
+        this._emitWriteCount = writeCount;
         this._renderableCount = 0;
     }
 
@@ -3769,33 +3788,62 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
-    _gpuSoAFromBound() {
+    _gpuSoAFromViews(views) {
+        if (!views) return this._gpuSoAFromBound();
         if (!this._gpuSoa) this._gpuSoa = {};
         const q = this._gpuSoa;
-        q.count = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
-        q.x = this.renderQueueX;
-        q.y = this.renderQueueY;
-        q.scaleX = this.renderQueueScaleX;
-        q.scaleY = this.renderQueueScaleY;
-        q.rotC = this.renderQueueRotC;
-        q.rotS = this.renderQueueRotS;
-        q.alpha = this.renderQueueAlpha;
-        q.tint = this.renderQueueTint;
-        q.textureId = this.renderQueueTextureId;
-        q.anchorX = this.renderQueueAnchorX;
-        q.anchorY = this.renderQueueAnchorY;
-        q.repeatX = this.renderQueueRepeatX;
-        q.repeatY = this.renderQueueRepeatY;
-        q.tileMulX = this.renderQueueTileMulX;
-        q.tileMulY = this.renderQueueTileMulY;
-        q.tileOffsetU = this.renderQueueTileOffsetU;
-        q.tileOffsetV = this.renderQueueTileOffsetV;
-        q.sortKey = this.renderQueueSortKey;
-        q.shadowH = this.renderQueueShadowH;
-        q.shadowOffX = this.renderQueueShadowOffX;
-        q.shadowOffY = this.renderQueueShadowOffY;
-        q.type = this.renderQueueType;
+        q.count = views.count ? (views.count[0] | 0) : 0;
+        q.x = views.x;
+        q.y = views.y;
+        q.scaleX = views.scaleX;
+        q.scaleY = views.scaleY;
+        q.rotC = views.rotC;
+        q.rotS = views.rotS;
+        q.alpha = views.alpha;
+        q.tint = views.tint;
+        q.textureId = views.textureId;
+        q.anchorX = views.anchorX;
+        q.anchorY = views.anchorY;
+        q.repeatX = views.repeatX;
+        q.repeatY = views.repeatY;
+        q.tileMulX = views.tileMulX;
+        q.tileMulY = views.tileMulY;
+        q.tileOffsetU = views.tileOffsetU;
+        q.tileOffsetV = views.tileOffsetV;
+        q.sortKey = views.sortKey;
+        q.shadowH = views.shadowH;
+        q.shadowOffX = views.shadowOffX;
+        q.shadowOffY = views.shadowOffY;
+        q.type = views.type;
         return q;
+    }
+
+    _gpuSoAFromBound() {
+        return this._gpuSoAFromViews({
+            count: this.renderQueueCount,
+            x: this.renderQueueX,
+            y: this.renderQueueY,
+            scaleX: this.renderQueueScaleX,
+            scaleY: this.renderQueueScaleY,
+            rotC: this.renderQueueRotC,
+            rotS: this.renderQueueRotS,
+            alpha: this.renderQueueAlpha,
+            tint: this.renderQueueTint,
+            textureId: this.renderQueueTextureId,
+            anchorX: this.renderQueueAnchorX,
+            anchorY: this.renderQueueAnchorY,
+            repeatX: this.renderQueueRepeatX,
+            repeatY: this.renderQueueRepeatY,
+            tileMulX: this.renderQueueTileMulX,
+            tileMulY: this.renderQueueTileMulY,
+            tileOffsetU: this.renderQueueTileOffsetU,
+            tileOffsetV: this.renderQueueTileOffsetV,
+            sortKey: this.renderQueueSortKey,
+            shadowH: this.renderQueueShadowH,
+            shadowOffX: this.renderQueueShadowOffX,
+            shadowOffY: this.renderQueueShadowOffY,
+            type: this.renderQueueType,
+        });
     }
 
     _sortKeyBits(sk) {
@@ -3892,7 +3940,8 @@ class PreRenderWorker extends AbstractWorker {
             }
             const dx = x - cx;
             const dy = y - cy;
-            const range = vr ? (vr[id] || 0) : 0;
+            const vrRange = vr ? (vr[id] || 0) : 0;
+            const range = vrRange > 0 ? vrRange : influence;
             let slot = out[n];
             if (!slot) slot = out[n] = {};
             slot.id = id;
@@ -4094,15 +4143,16 @@ class PreRenderWorker extends AbstractWorker {
         return { sun: sunN, stamp: cursor, cookie: cookieN };
     }
 
-    _packGpuQueues(dst) {
+    _packGpuQueues(dst, withShadows = true, views = null) {
         if (!dst || !this.gpuQueueCaps) return;
         clearGpuQueueHeader(dst.header);
-        const q = this._gpuSoAFromBound();
+        const q = views ? this._gpuSoAFromViews(views) : this._gpuSoAFromBound();
+        if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
         const allowPainter = !this._sharded;
         const sprites = this._packGpuSprites(dst, q, allowPainter);
-        const shadows = this._sharded
-            ? { sun: 0, stamp: 0, cookie: 0 }
-            : this._packGpuShadows(dst, q);
+        const shadows = (withShadows && !this._sharded)
+            ? this._packGpuShadows(dst, q)
+            : { sun: 0, stamp: 0, cookie: 0 };
         const counts = this._gpuCounts || (this._gpuCounts = {});
         counts.sprite = sprites.sprite | 0;
         counts.glow = sprites.glow | 0;
@@ -4110,7 +4160,8 @@ class PreRenderWorker extends AbstractWorker {
         counts.sun = shadows.sun | 0;
         counts.stamp = shadows.stamp | 0;
         counts.cookie = shadows.cookie | 0;
-        writeGpuQueueHeader(dst.header, counts, sprites.flags | 0);
+        counts.flags = sprites.flags | 0;
+        writeGpuQueueHeader(dst.header, counts, counts.flags);
     }
 
     _storeGpuStreamCounts() {

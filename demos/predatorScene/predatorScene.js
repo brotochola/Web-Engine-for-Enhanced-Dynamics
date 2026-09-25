@@ -164,13 +164,14 @@ export class PredatorScene extends WEED.Scene {
       interpolation: false,
       lightGlow: "add",
       useZBuffer: true,
-      alphaCut: 253 / 255,
+      alphaCut: 200 / 255,
       backend: "webgl",
+      atlasScaleMode: 'linear',
     },
     preRender: {
       noLimitFPS: false,
       entityBlockSize: 512,
-      numberOfPreRenderWorkers: 8,
+      numberOfPreRenderWorkers: predatorPositiveParam('preRenderWorkers', 1),
       backpressure: true,
       /**
        * Skip entity viewport AABB and screenX/Y. Every active renderVisible

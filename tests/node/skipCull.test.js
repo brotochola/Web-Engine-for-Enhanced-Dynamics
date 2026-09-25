@@ -60,3 +60,29 @@ test('persist pose rewrite also restores shadowH for GPU casters', () => {
   const body = preRender.slice(start, end);
   assert.match(body, /_writeQueueShadow\(i, idx\)/);
 });
+
+test('adobe writes one shadow row on the lowest piece', () => {
+  const start = preRender.indexOf('_emitAdobePieces(');
+  const end = preRender.indexOf('_syncGlowLayer(', start);
+  const body = preRender.slice(start, end);
+  assert.match(body, /feetSlot/);
+  assert.match(body, /_writeQueueShadow\(feetSlot, entityIndex, ref\)/);
+  assert.equal((body.match(/_writeQueueShadow\(/g) || []).length, 1);
+});
+
+test('sharded GPU shadows skip per-worker pack; publish re-packs joined SoA', () => {
+  const packAt = preRender.lastIndexOf('_packGpuQueues(dst, withShadows = true, views = null)');
+  const pack = preRender.slice(packAt, preRender.indexOf('_storeGpuStreamCounts()', packAt));
+  assert.match(pack, /withShadows && !this\._sharded/);
+  assert.match(preRender, /_emitWriteCount/);
+  const pubAt = preRender.lastIndexOf('_publishGpuQueue(bufIdx)');
+  const pub = preRender.slice(pubAt, preRender.indexOf('_collectVisibleLights()', pubAt));
+  assert.match(pub, /_packGpuShadows\(/);
+});
+
+test('stamp light range falls back to influence when visualRange is 0', () => {
+  const start = preRender.indexOf('_collectStampLights()');
+  const end = preRender.indexOf('_packGpuSprites(', start);
+  const body = preRender.slice(start, end);
+  assert.match(body, /vrRange > 0 \? vrRange : influence/);
+});
