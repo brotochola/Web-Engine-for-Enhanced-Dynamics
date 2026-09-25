@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  appendStampedCasters,
+  dropTinyFloorShadows,
   compactShadowCasterIndices,
   takeClosest,
   selectClosestCasters,
@@ -82,10 +84,41 @@ test('selectClosestCasters and per-entity light links honor knobs', () => {
   assert.ok(n1 >= 1);
 });
 
+test('appendStampedCasters copies subsets and stamps one light each', () => {
+  const sf = 22;
+  const src = new Float32Array(3 * sf);
+  src[0] = 10;
+  src[sf] = 20;
+  src[sf * 2] = 30;
+  const dst = new Float32Array(4 * sf);
+  const idx = new Uint32Array([2, 0]);
+  const light = new Float32Array([1, 2, 3, 4]);
+  const wrote = appendStampedCasters(dst, sf, 0, src, sf, idx, 2, light, 4);
+  assert.equal(wrote, 2);
+  assert.equal(dst[0], 30);
+  assert.equal(dst[sf], 10);
+  assert.equal(dst[18], 1);
+  assert.equal(dst[21], 4);
+  assert.equal(dst[sf + 18], 1);
+  assert.equal(dst[sf + 21], 4);
+  const wroteCap = appendStampedCasters(dst, sf, 0, src, sf, idx, 2, light, 1);
+  assert.equal(wroteCap, 1);
+});
+
+test('dropTinyFloorShadows keeps shadows at least minPx tall', () => {
+  const idx = new Uint32Array([0, 1, 2]);
+  const scaleY = new Float32Array([1, 1, 10]);
+  const shadowH = new Float32Array([1, 0.5, 1]);
+  const n = dropTinyFloorShadows(idx, 3, scaleY, shadowH, 1, 2);
+  assert.equal(n, 1);
+  assert.equal(idx[0], 2);
+});
+
 test('resolveGpuShadowPath and cookies default to copy / always', () => {
   assert.equal(resolveGpuShadowPath('reuse'), 'reuse');
   assert.equal(resolveGpuShadowPath('queue'), 'queue');
   assert.equal(resolveGpuShadowPath('resident'), 'resident');
+  assert.equal(resolveGpuShadowPath('batch'), 'batch');
   assert.equal(resolveGpuShadowPath('nope'), 'copy');
   assert.equal(resolveGpuShadowCookies('night'), 'night');
   assert.equal(resolveGpuShadowCookies('always'), 'always');

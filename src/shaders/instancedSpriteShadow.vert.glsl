@@ -9,6 +9,7 @@ in float aInstTexId;
 in vec2 aInstTileInv;
 in vec2 aInstTileOff;
 in vec3 aInstShadow;
+in vec4 aInstLight;
 
 uniform mat3 uProjectionMatrix;
 uniform mat3 uWorldTransformMatrix;
@@ -59,10 +60,11 @@ void main() {
   float alpha = uSun.w;
   float c = uSun.x;
   float s = uSun.y;
-  if (uLight.w > 0.0) {
-    vec2 d = aInstXY - uLight.xy;
+  vec4 light = aInstLight.w > 0.0 ? aInstLight : uLight;
+  if (light.w > 0.0) {
+    vec2 d = aInstXY - light.xy;
     float distSq = dot(d, d);
-    float rangeSq = uLight.w;
+    float rangeSq = light.w;
     if (distSq < 1.0 || distSq > rangeSq) {
       gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
       vColor = vec4(0.0);
@@ -79,7 +81,7 @@ void main() {
     c = d.y * invDist;
     s = -d.x * invDist;
     float fade = 1.0 - distSq / rangeSq;
-    alpha = uLight.z / (uLight.z + distSq);
+    alpha = light.z / (light.z + distSq);
     alpha = clamp(alpha, 0.0, 1.0) * uPointScale * fade;
     if (alpha < 0.003) {
       gl_Position = vec4(2.0, 2.0, 0.0, 1.0);

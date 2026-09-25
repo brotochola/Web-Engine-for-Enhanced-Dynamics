@@ -42,7 +42,7 @@ export function lightingGpuProgram(GpuProgram, source, name) {
     layout: {
       0: { globalUniforms: 0 },
       1: { localUniforms: 0 },
-      2: { uLightData: 0, uniforms: 1 },
+      2: { uLightData: 0, uniforms: 1, uShadowMap: 2, uShadowSampler: 3 },
     },
     gpuLayout: [
       ...meshUniformGroups(vf),
@@ -53,6 +53,8 @@ export function lightingGpuProgram(GpuProgram, source, name) {
           texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false },
         },
         { binding: 1, visibility: vf, buffer: { type: 'uniform' } },
+        { binding: 2, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
+        { binding: 3, visibility: f, sampler: { type: 'filtering' } },
       ],
     ],
   });

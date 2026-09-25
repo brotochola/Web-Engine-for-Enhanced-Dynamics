@@ -67,6 +67,7 @@ fn mainVert(
   @location(8) aInstTileInv: vec2<f32>,
   @location(9) aInstTileOff: vec2<f32>,
   @location(10) aInstShadow: vec3<f32>,
+  @location(11) aInstLight: vec4<f32>,
 ) -> VertexOut {
   var out: VertexOut;
   let tid = i32(aInstTexId + 0.5);
@@ -92,10 +93,11 @@ fn mainVert(
   var alpha = uniforms.uSun.w;
   var c = uniforms.uSun.x;
   var s = uniforms.uSun.y;
-  if (uniforms.uLight.w > 0.0) {
-    let d = aInstXY - uniforms.uLight.xy;
+  let light = select(uniforms.uLight, aInstLight, aInstLight.w > 0.0);
+  if (light.w > 0.0) {
+    let d = aInstXY - light.xy;
     let distSq = dot(d, d);
-    let rangeSq = uniforms.uLight.w;
+    let rangeSq = light.w;
     if (distSq < 1.0 || distSq > rangeSq) {
       clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
       return out;
@@ -106,7 +108,7 @@ fn mainVert(
     c = d.y * invDist;
     s = -d.x * invDist;
     let fade = 1.0 - distSq / rangeSq;
-    alpha = clamp(uniforms.uLight.z / (uniforms.uLight.z + distSq), 0.0, 1.0) * uniforms.uPointScale * fade;
+    alpha = clamp(light.z / (light.z + distSq), 0.0, 1.0) * uniforms.uPointScale * fade;
     if (alpha < 0.003) {
       clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
       return out;

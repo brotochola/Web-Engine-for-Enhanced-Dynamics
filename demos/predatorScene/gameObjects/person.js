@@ -23,7 +23,7 @@ import {
   randomColor,
 } from '/src/index.js';
 
-const { RigidBody, Collider, SpriteRenderer, ShadowCaster, Transform, rng } = WEED;
+const { LightOccluder, ShadowCaster, RigidBody, Collider, SpriteRenderer, Transform, rng } = WEED;
 
 export class Person extends Lootable {
   static deriveSpeed = true;
@@ -53,6 +53,7 @@ export class Person extends Lootable {
     Collider,
     SpriteRenderer,
     ShadowCaster,
+    // LightOccluder,
     PersonComponent,
     PersonAnimationFSM,
   ];

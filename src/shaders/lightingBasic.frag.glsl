@@ -14,6 +14,8 @@ uniform float uSunR;
 uniform float uSunG;
 uniform float uSunB;
 uniform float uFlipY;
+uniform sampler2D uShadowMap;
+uniform float uShadowComposite;
 
 void main() {
   float y = gl_FragCoord.y;
@@ -46,6 +48,10 @@ void main() {
     }
   }
 
+  if (uShadowComposite > 0.5) {
+    vec4 sh = texture2D(uShadowMap, normCoord);
+    totalLight *= (1.0 - sh.a);
+  }
   totalLight = min(totalLight, vec3(1.0));
   gl_FragColor = vec4(totalLight, 1.0);
 }

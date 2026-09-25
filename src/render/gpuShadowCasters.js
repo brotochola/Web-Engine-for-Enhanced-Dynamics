@@ -4,6 +4,21 @@
  * casters closest to that light.
  */
 
+/** Drop casters whose shadow is under `minPx` screen pixels. Returns the new count. */
+export function dropTinyFloorShadows(idx, n, scaleY, shadowH, zoom, minPx) {
+  const z = zoom > 0 ? zoom : 1;
+  const min = minPx > 0 ? minPx : 0;
+  let w = 0;
+  const count = n | 0;
+  for (let i = 0; i < count; i++) {
+    const s = idx[i] | 0;
+    const ext = Math.abs(scaleY[s] || 1) * (shadowH[s] || 0) * z;
+    if (ext < min) continue;
+    idx[w++] = s;
+  }
+  return w;
+}
+
 export function compactShadowCasterIndices(shadowH, typeArr, count, outIdx) {
   let n = 0;
   const cap = outIdx.length;
@@ -16,8 +31,41 @@ export function compactShadowCasterIndices(shadowH, typeArr, count, outIdx) {
 }
 
 export function resolveGpuShadowPath(value) {
-  if (value === 'reuse' || value === 'queue' || value === 'resident') return value;
+  if (value === 'reuse' || value === 'queue' || value === 'resident' || value === 'batch') return value;
   return 'copy';
+}
+
+/** Per-instance light sits after the 18 caster floats (xy…shadow). */
+export const CASTER_LIGHT_FLOAT = 18;
+
+/**
+ * Copy packed caster slots and stamp one light vec4 on each.
+ * `indices` are source instance slots. Stops at `cap` instances.
+ * Returns how many were written (dstBase + written).
+ */
+export function appendStampedCasters(dst, dstFloats, dstBase, src, srcFloats, indices, n, light, cap) {
+  const sf = srcFloats | 0;
+  const df = dstFloats | 0;
+  const limit = cap | 0;
+  let out = dstBase | 0;
+  const count = n | 0;
+  const lx = light[0];
+  const ly = light[1];
+  const lz = light[2];
+  const lw = light[3];
+  const lightAt = CASTER_LIGHT_FLOAT;
+  for (let k = 0; k < count && out < limit; k++) {
+    const i = indices[k] | 0;
+    const s0 = i * sf;
+    const d0 = out * df;
+    dst.set(src.subarray(s0, s0 + Math.min(sf, df)), d0);
+    dst[d0 + lightAt] = lx;
+    dst[d0 + lightAt + 1] = ly;
+    dst[d0 + lightAt + 2] = lz;
+    dst[d0 + lightAt + 3] = lw;
+    out++;
+  }
+  return out;
 }
 
 export function resolveGpuShadowCookies(value) {

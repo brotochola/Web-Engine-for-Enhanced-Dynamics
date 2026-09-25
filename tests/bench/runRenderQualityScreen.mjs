@@ -83,6 +83,42 @@ function cellsForPhase() {
         out.push([`${name}-${zoomName}`, `${night}&${zoomQ}&${q}`]);
       }
     }
+  } else if (phase === 'composite') {
+    for (const [name, q] of [
+      ['off', 'shadowComposite=0'],
+      ['on', 'shadowComposite=1'],
+    ]) {
+      for (const [zoomName, zoomQ] of z) {
+        out.push([`${name}-${zoomName}`, `${night}&${zoomQ}${extra}&${q}&gpuShadowPath=copy&lightingRes=0.25`]);
+      }
+    }
+  } else if (phase === 'floor') {
+    for (const [name, q] of [
+      ['off', 'floorOcclude=0'],
+      ['on', 'floorOcclude=1'],
+    ]) {
+      for (const [zoomName, zoomQ] of z) {
+        out.push([`${name}-${zoomName}`, `${night}&${zoomQ}${extra}&${q}&gpuShadowPath=copy&lightingRes=0.25`]);
+      }
+    }
+  } else if (phase === 'lres') {
+    for (const [name, q] of [
+      ['r1', 'lightingRes=1'],
+      ['r025', 'lightingRes=0.25'],
+    ]) {
+      for (const [zoomName, zoomQ] of z) {
+        out.push([`${name}-${zoomName}`, `${night}&${zoomQ}${extra}&${q}&gpuShadowPath=copy`]);
+      }
+    }
+  } else if (phase === 'batch') {
+    for (const [name, q] of [
+      ['copy', 'gpuShadowPath=copy'],
+      ['batch', 'gpuShadowPath=batch'],
+    ]) {
+      for (const [zoomName, zoomQ] of z) {
+        out.push([`${name}-${zoomName}`, `${night}&${zoomQ}${extra}&${q}`]);
+      }
+    }
   } else if (phase === 'perlight') {
     for (const [plName, plQ] of [
       ['pl512', 'shadowsPerLight=512'],
@@ -94,7 +130,7 @@ function cellsForPhase() {
       }
     }
   } else {
-    console.error(`unknown --phase ${phase} (lights|res|interval|perlight|cookie)`);
+    console.error(`unknown --phase ${phase} (lights|res|interval|perlight|cookie|batch|lres|composite|floor)`);
     process.exit(2);
   }
   return onlyCells.length ? out.filter(([name]) => onlyCells.includes(name)) : out;
@@ -108,6 +144,16 @@ function pickRenderer(j) {
 
 function pickPhysics(j) {
   return (j.workers || []).find((w) => w.id === 'physics' || w.type === 'physics');
+}
+
+function pickPreRender(j) {
+  const list = (j.workers || []).filter((w) => w.id === 'preRender' || w.type === 'preRender');
+  let step = 0;
+  for (const w of list) {
+    const ms = Number((w.statsSamplesAverage || {}).STEP_MS) || 0;
+    if (ms > step) step = ms;
+  }
+  return step;
 }
 
 function lineFromJson(name, j) {
@@ -128,6 +174,7 @@ function lineFromJson(name, j) {
     shadowLights: a.GPU_SHADOW_LIGHTS,
     visible: a.VISIBLE_ENTITIES,
     bodies: b.BODY_COUNT,
+    preRender: pickPreRender(j),
   };
 }
 
@@ -181,11 +228,12 @@ for (const [name, query] of cells) {
     shadowLights: med('shadowLights'),
     visible: med('visible'),
     bodies: med('bodies'),
+    preRender: med('preRender'),
   });
 }
 
 console.log(
-  '\nname\tpixi\tSHADOWS_MS\tGPU_STEP\tGPU_SHADOWS\tGPU_LIGHTS\tGPU_PRESENT\tpasses\tcasters\tlights\tbodies'
+  '\nname\tpixi\tSHADOWS_MS\tGPU_STEP\tGPU_SHADOWS\tGPU_LIGHTS\tGPU_PRESENT\tpasses\tcasters\tlights\tbodies\tpreRender'
 );
 for (const r of rows) {
   console.log(
@@ -201,6 +249,7 @@ for (const r of rows) {
       r.casters,
       r.shadowLights,
       r.bodies,
+      r.preRender,
     ]
       .map((v) => (typeof v === 'number' ? v.toFixed(3) : v))
       .join('\t')

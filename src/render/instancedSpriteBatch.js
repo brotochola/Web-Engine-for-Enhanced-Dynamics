@@ -255,7 +255,7 @@ export class InstancedSpriteBatch {
     this.poseInterp = !!poseInterp;
     this.shadowCast = !!shadowCast && !poseInterp;
     this._floats = this.poseInterp ? INSTANCED_SPRITE_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
-    if (this.shadowCast) this._floats += 3;
+    if (this.shadowCast) this._floats += 7;
     this._strideBytes = this._floats * 4;
     this.data = new Float32Array(this.capacity * this._floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
@@ -378,6 +378,7 @@ export class InstancedSpriteBatch {
     };
     if (this.shadowCast) {
       attributes.aInstShadow = { buffer: buf, format: 'float32x3', stride, offset: 60, instance: true };
+      attributes.aInstLight = { buffer: buf, format: 'float32x4', stride, offset: 72, instance: true };
     }
     if (this.poseInterp) {
       attributes.aInstPrevXY = {
@@ -561,6 +562,11 @@ export class InstancedSpriteBatch {
     return out;
   }
 
+  /** Upload `count` instances already written into `this.data`. */
+  commitInstances(count) {
+    return this._finishUpload(count | 0, this._strideBytes);
+  }
+
   /** Copy packed instances from another same-stride batch. `indices` are source slots. */
   copyInstances(src, indices, n) {
     if (!src || this._floats !== src._floats) {
@@ -738,6 +744,10 @@ export class InstancedSpriteBatch {
         data[base + 15] = sh ? sh[i] : 0;
         data[base + 16] = q.shadowOffX ? q.shadowOffX[i] : 0;
         data[base + 17] = q.shadowOffY ? q.shadowOffY[i] : 0;
+        data[base + 18] = 0;
+        data[base + 19] = 0;
+        data[base + 20] = 0;
+        data[base + 21] = 0;
       }
       base += this._floats;
       out++;

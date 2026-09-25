@@ -170,7 +170,8 @@ export class PredatorScene extends WEED.Scene {
       interpolation: false,
       lightGlow: "add",
       useZBuffer: true,
-      alphaCut: 0.5
+      alphaCut: 253 / 255,
+      backend: "webgl"
     },
     preRender: {
       noLimitFPS: false,
@@ -199,18 +200,23 @@ export class PredatorScene extends WEED.Scene {
       baseAmbient: 0, // Minimum light at night (pitch black without lights)
       maxLights: 256,
       shadowsEnabled: true,
-
+      gpuShadowPath: 'copy',
       maxShadowCastingLights: predatorNumberParam('shadowLights', 48),
       maxShadowsPerLight: predatorPositiveParam('shadowsPerLight', 512),
       maxShadowsPerEntity: 3,
-      gpuShadowPath: predatorChoiceParam('gpuShadowPath', ['copy', 'reuse', 'queue', 'resident'], 'copy'),
+      gpuShadowPath: predatorChoiceParam('gpuShadowPath', ['copy', 'reuse', 'queue', 'resident', 'batch'], 'copy'),
       gpuShadowCookies: predatorChoiceParam('gpuShadowCookies', ['always', 'night'], 'always'),
+      shadowComposite: predatorChoiceParam('shadowComposite', ['0', '1'], '0') === '1',
+      floorOcclude: predatorChoiceParam('floorOcclude', ['0', '1'], '0') === '1',
       shadowUpdateInterval: predatorPositiveParam('shadowInterval', 1),
       maxShadowSprites: 30000,
-      maxFlashes: 64,
-      resolution: predatorPositiveParam('lightingRes', 1),
+      maxFlashes: 32,
+      resolution: predatorPositiveParam('lightingRes', 0.25),
       shadowResolution: predatorPositiveParam('shadowRes', 0.25),
-
+      // raycasted: true,
+      // maxPolygonVertices: 128,
+      // /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
+      // maxOccluderSelfLit: 512,
       // Sun/directional light configuration
       sun: {
         enabled: true, // Must be explicitly enabled

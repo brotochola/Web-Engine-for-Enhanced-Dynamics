@@ -27,9 +27,12 @@ struct LightingUniforms {
   uSunG: f32,
   uSunB: f32,
   uFlipY: f32,
+  uShadowComposite: f32,
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> uniforms: LightingUniforms;
+@group(2) @binding(2) var uShadowMap: texture_2d<f32>;
+@group(2) @binding(3) var uShadowSampler: sampler;
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
@@ -70,6 +73,10 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
       let attenuation = intensityScaled / (intensityScaled + d2Scaled);
       totalLight += col.rgb * attenuation;
     }
+  }
+  if (uniforms.uShadowComposite > 0.5) {
+    let sh = textureSample(uShadowMap, uShadowSampler, normCoord);
+    totalLight *= (1.0 - sh.a);
   }
   totalLight = min(totalLight, vec3<f32>(1.0));
   return vec4<f32>(totalLight, 1.0);
