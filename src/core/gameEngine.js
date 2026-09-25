@@ -34,6 +34,9 @@ class GameEngine {
     this.injectStyles = config.injectStyles ?? ENGINE_DEFAULTS.injectStyles;
     this.presentWhenHidden = config.presentWhenHidden ?? ENGINE_DEFAULTS.presentWhenHidden;
     this._presenting = true;
+    // Renderer reads this between GPU passes. postMessage cannot interrupt the current frame.
+    this._presentingFlag = new Int32Array(new SharedArrayBuffer(4));
+    Atomics.store(this._presentingFlag, 0, 1);
 
     if (this.autoResize) {
       this.canvasWidth = window.innerWidth;
@@ -190,6 +193,7 @@ class GameEngine {
 
   setPresenting(on) {
     const next = !!on;
+    if (this._presentingFlag) Atomics.store(this._presentingFlag, 0, next ? 1 : 0);
     if (next) this.rebindSurface();
     this._presenting = next;
     this.currentScene?.setPresenting(next);

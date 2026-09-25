@@ -65,6 +65,8 @@ import {
   packLightDataTexel,
   clearUnusedLightDataTexels,
   LIGHT_DATA_TEX_HEIGHT,
+  stashResizeWhileHidden,
+  takePendingResize,
 } from '../util/utils.js';
 import {
   InstancedSpriteBatch,
@@ -370,6 +372,10 @@ class PixiRenderer extends AbstractWorker {
     // Use PIXI ticker instead of requestAnimationFrame
     this.usesCustomScheduler = true;
     this._presenting = true;
+    this._presentingFlag = null;
+    this._pendingResizeW = null;
+    this._pendingResizeH = null;
+    this._surfaceUnconfigured = false;
     this._pixiPresent = null;
 
     // Renderer configuration options (set during initialize)
@@ -1004,6 +1010,7 @@ class PixiRenderer extends AbstractWorker {
       alphaMode: 'premultiplied',
     });
     if (source) source._gpuContext = context;
+    this._surfaceUnconfigured = false;
     const gpuRt = renderer.renderTarget.getGpuRenderTarget(viewRt);
     gpuRt.contexts[0] = context;
     if (!this._loggedSwapchainBind) {
@@ -1667,6 +1674,8 @@ class PixiRenderer extends AbstractWorker {
    * Update method called each frame (implementation of AbstractWorker.update)
    */
   update(deltaTime, dtRatio, resuming) {
+    if (this._presentingFlag && Atomics.load(this._presentingFlag, 0) === 0) this._noteHidden();
+
     this._lastDt = deltaTime > 0 ? deltaTime / 1000 : 1 / 60;
 
     const detail = this.collectDetailedStats;
@@ -1744,7 +1753,8 @@ class PixiRenderer extends AbstractWorker {
     this.presentTimeThisFrame = 0;
 
     // Hidden tab already released the buffer above. No GPU while the canvas is off screen.
-    if (!this._presenting) return;
+    // Poll the SAB here: hide/F5 can land mid-frame, before the presenting message.
+    if (!this._gpuLive()) return;
 
     let timingPresent = false;
     try {
@@ -1867,7 +1877,7 @@ class PixiRenderer extends AbstractWorker {
         rtOpts.target = this.lightingRT;
         rtOpts.clear = true;
         rtOpts.clearColor = this._clearTransparent;
-        this.pixiApp.renderer.render(rtOpts);
+        this._submitRender(rtOpts);
         this._renderLiquidFunLightingField();
       }
       this._gpuTimer.end();
@@ -1917,19 +1927,59 @@ class PixiRenderer extends AbstractWorker {
   }
 
   setPresenting(on) {
-    this._presenting = !!on;
-    if (!this._presenting) {
-      this.pixiApp?.ticker?.stop();
-      this._clearFrameSchedulers();
+    if (!on) {
+      this._noteHidden();
       return;
     }
+    this._presenting = true;
     if (this.isPaused) return;
     if (this.usesCustomScheduler) this.pixiApp?.ticker?.start();
     else this.scheduleNextFrame();
   }
 
   rebindSurface() {
+    const pending = takePendingResize(this);
+    if (pending) {
+      this._applyResize(pending.width, pending.height);
+      return;
+    }
     if (this._useWebGpu) this._bindWebGpuSwapchain();
+  }
+
+  /** Main thread stores 0 on hide/pagehide. Read it before every submit. */
+  _gpuLive() {
+    const flag = this._presentingFlag;
+    if (flag && Atomics.load(flag, 0) === 0) {
+      this._noteHidden();
+      return false;
+    }
+    return this._presenting;
+  }
+
+  _noteHidden() {
+    this._presenting = false;
+    this.pixiApp?.ticker?.stop();
+    this._clearFrameSchedulers();
+    this._unconfigureSurface();
+  }
+
+  _unconfigureSurface() {
+    if (this._surfaceUnconfigured) return;
+    this._surfaceUnconfigured = true;
+    const renderer = this.pixiApp?.renderer;
+    const viewRt = renderer?.view?.renderTarget;
+    const colorTexture = viewRt?.colorAttachments?.[0]?.texture ?? viewRt?.colorTextures?.[0];
+    const source = colorTexture?.resource ? colorTexture : colorTexture?.source;
+    const context = source?._gpuContext;
+    if (context && typeof context.unconfigure === 'function') {
+      try { context.unconfigure(); } catch (_) { /* surface already gone */ }
+    }
+  }
+
+  _submitRender(opts) {
+    if (!this._gpuLive()) return false;
+    this.pixiApp.renderer.render(opts);
+    return true;
   }
 
   pause() {
@@ -1950,7 +2000,7 @@ class PixiRenderer extends AbstractWorker {
 
   /** Weed owns the swapchain present. Skip when the document is hidden. */
   _presentStage() {
-    if (!this._presenting) return;
+    if (!this._gpuLive()) return;
     this._gpuTimer.begin('present');
     try {
       const present = this._pixiPresent;
@@ -1960,7 +2010,7 @@ class PixiRenderer extends AbstractWorker {
       }
       const app = this.pixiApp;
       if (!app?.renderer || !app.stage) return;
-      app.renderer.render(app.stage);
+      this._submitRender(app.stage);
     } finally {
       this._gpuTimer.end();
       this._gpuTimer.finishFrame();
@@ -2262,7 +2312,7 @@ LIGHTING SYSTEM SETUP
     const rtOpts = this._rtRenderOptsNoClear;
     rtOpts.container = splat.mesh;
     rtOpts.target = this.lightingRT;
-    this.pixiApp.renderer.render(rtOpts);
+    this._submitRender(rtOpts);
   }
 
   /* =====================
@@ -2834,7 +2884,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const ambient = this.baseAmbient + sunIntensity;
     const clampedAmbient = Math.min(ambient, 1.0);
 
-    this.pixiApp.renderer.render({
+    this._submitRender({
       container,
       target: this._visPolyRT,
       clear: true,
@@ -3057,7 +3107,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           container.addChild(this._wedgeMesh.mesh);
         }
 
-        this.pixiApp.renderer.render({
+        this._submitRender({
           container,
           target: this._visPolyRT,
           clear: false,
@@ -3200,7 +3250,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         }
 
         if (container.children.length > 0) {
-          this.pixiApp.renderer.render({
+          this._submitRender({
             container,
             target: this._visPolyRT,
             clear: false,
@@ -3697,8 +3747,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.target = this.shadowRT;
     rtOpts.clear = clear;
     rtOpts.clearColor = this._clearTransparent;
-    this.pixiApp.renderer.render(rtOpts);
-    return true;
+    return this._submitRender(rtOpts);
   }
 
   /**
@@ -3733,12 +3782,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this._shadowSilhouetteSprite) {
       rtOpts.container = this._shadowSilhouetteSprite;
       rtOpts.clear = !this._gpuSunDrew;
-      this.pixiApp.renderer.render(rtOpts);
+      this._submitRender(rtOpts);
       this._gpuPassesThisFrame++;
     } else if (!this._gpuSunDrew) {
       rtOpts.container = this._rtEmptyContainer;
       rtOpts.clear = true;
-      this.pixiApp.renderer.render(rtOpts);
+      this._submitRender(rtOpts);
     }
   }
 
@@ -3804,12 +3853,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       rtOpts.target = this.shadowRT;
       rtOpts.clear = needClear;
       syncSun();
-      this.pixiApp.renderer.render(rtOpts);
+      this._submitRender(rtOpts);
       if (this._shadowUpdateInterval > 1 && this._shadowSilhouetteRT) {
         rtOpts.target = this._shadowSilhouetteRT;
         rtOpts.clear = this._silhouetteNeedsClear;
         this._silhouetteNeedsClear = false;
-        this.pixiApp.renderer.render(rtOpts);
+        this._submitRender(rtOpts);
         rtOpts.target = this.shadowRT;
       }
       this._gpuPassesThisFrame++;
@@ -3932,7 +3981,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!this._gpuSunDrew) {
       rtOpts.container = this._rtEmptyContainer;
       rtOpts.clear = true;
-      this.pixiApp.renderer.render(rtOpts);
+      this._submitRender(rtOpts);
     }
     mesh.shader = prevShader;
   }
@@ -4361,7 +4410,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.clear = true;
     rtOpts.clearColor = this._clearTransparent;
     rtOpts.transform = mx;
-    this.pixiApp.renderer.render(rtOpts);
+    this._submitRender(rtOpts);
     rtOpts.transform = null;
   }
 
@@ -4667,6 +4716,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Base class (AbstractWorker) already updates canvasWidth/Height, config, and Camera.
    */
   onResize(width, height) {
+    if (stashResizeWhileHidden(this, width, height)) return;
+    this._applyResize(width, height);
+  }
+
+  _applyResize(width, height) {
     // Let PixiJS resize the renderer first (updates viewport, projection, and canvas)
     if (this.pixiApp) {
       this.pixiApp.renderer.resize(width, height);
@@ -5280,6 +5334,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.canvasWidth = data.config.canvasWidth;
     this.canvasHeight = data.config.canvasHeight;
     this.canvasView = data.view;
+    this._presentingFlag = data.presentingFlag || null;
     this.physicsWorkerIndex = data.config.spatial.numberOfSpatialWorkers;
 
     // Read renderer-specific configuration
@@ -6055,7 +6110,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           rtOpts.clear = true;
           rtOpts.clearColor = this._clearTransparent;
           armCustomGpu();
-          this.pixiApp.renderer.render(rtOpts);
+          this._submitRender(rtOpts);
         }
       } else if (cl.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN && cl.splatBatch) {
         const views = LiquidFun.getViews();
@@ -6190,11 +6245,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           rtOpts.clear = true;
           rtOpts.clearColor = this._clearTransparent;
           armCustomGpu();
-          this.pixiApp.renderer.render(rtOpts);
+          this._submitRender(rtOpts);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
             rtOpts.container = cl.shaderMesh;
             rtOpts.target = cl.rtOut;
-            this.pixiApp.renderer.render(rtOpts);
+            this._submitRender(rtOpts);
           }
         }
       }

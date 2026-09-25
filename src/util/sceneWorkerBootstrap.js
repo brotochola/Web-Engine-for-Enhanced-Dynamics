@@ -498,6 +498,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
       bigAtlasProxySheets: scene.bigAtlasProxySheets || {},
       frameRateIndex: rendererIndex,
       workerPorts: workerPorts.renderer,
+      presentingFlag: scene.game?._presentingFlag || null,
     },
     transferables
   );

@@ -27,6 +27,29 @@ export function usableCanvasSize(width, height) {
   return Number.isFinite(width) && Number.isFinite(height) && width >= 1 && height >= 1;
 }
 
+/** True when the main thread has stored 0 on the presenting SAB (hide or pagehide). */
+export function presentingFlagHidden(flag) {
+  return !!(flag && Atomics.load(flag, 0) === 0);
+}
+
+/** Stash a resize while the canvas is hidden. Returns true when GPU resize must not run. */
+export function stashResizeWhileHidden(host, width, height) {
+  if (!presentingFlagHidden(host._presentingFlag)) return false;
+  host._pendingResizeW = width;
+  host._pendingResizeH = height;
+  return true;
+}
+
+/** Pending size from a hidden resize, or null. Clears the stash. */
+export function takePendingResize(host) {
+  const w = host._pendingResizeW;
+  const h = host._pendingResizeH;
+  if (w == null || h == null) return null;
+  host._pendingResizeW = null;
+  host._pendingResizeH = null;
+  return { width: w, height: h };
+}
+
 /**
  * Convert an array of layer indices (0-31) into a 32-bit bitmask.
  * @param {number[]} layers - e.g. [0, 4, 12, 15]
