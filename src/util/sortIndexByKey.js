@@ -28,15 +28,26 @@ export function orderSortKey(yKey, zIndex, ySort, band) {
   return z * band + yKey;
 }
 
-/** Full span of int16 zIndex bands, for clip Z. */
+/** Full span of int16 zIndex bands. Too wide for a float32 clip Z: 1 px of foot collapses. */
 export function orderKeySpan(worldHeight) {
   return 65536 * zSortBand(worldHeight);
 }
 
-/** Larger key closer to 0. `span` covers negative and positive keys. */
+/**
+ * Clip Z for the zIndex bands in use. `n` is (zMax - zMin + 1).
+ * `half` is `-zMin * band`, so the low band starts at depth 1.
+ */
+export function depthSpanForZ(worldHeight, zMin, zMax) {
+  const band = zSortBand(worldHeight);
+  const n = (zMax | 0) - (zMin | 0) + 1;
+  const bands = n > 0 ? n : 1;
+  return { span: bands * band, half: -((zMin | 0) * band) };
+}
+
+/** Larger key closer to 0. `half` shifts the key (negative when min key is positive). */
 export function depthFromOrderKey(key, span, half) {
   const s = span > 0 ? span : 1;
-  const h = half > 0 ? half : s * 0.5;
+  const h = Number.isFinite(half) ? half : s * 0.5;
   let z = 1 - (key + h) / s;
   if (z < 0) z = 0;
   else if (z > 1) z = 1;

@@ -19,7 +19,7 @@ test('preRenderWorker only writes sortKey; never CPU-sorts the queue', () => {
 });
 
 test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter path', () => {
-  assert.match(pixi, /createPainterState, orderPainterSlots, orderKeySpan/);
+  assert.match(pixi, /createPainterState, orderPainterSlots/);
   assert.match(pixi, /this\._painter = \(!z && this\._ySort\) \? createPainterState\(maxItems\) : null/);
   assert.match(pixi, /_uploadSortedSprites\(/);
   assert.match(pixi, /orderPainterSlots\(painter, idxE, ne, keysU32\)/);

@@ -2518,7 +2518,13 @@ class PreRenderWorker extends AbstractWorker {
             if (collector) {
                 if (collector.count < collector.maxItems) {
                     const wi = collector.count;
-                    collector.y[wi] = y;
+                    let sortY = y;
+                    if (type === 0 || type === 6) {
+                        const pose = this._displayPoseOut;
+                        this._displayPose(index, pose);
+                        sortY = this._spriteSortY(index, pose);
+                    }
+                    collector.y[wi] = sortY;
                     collector.type[wi] = type;
                     collector.index[wi] = index;
                     collector.count = wi + 1;

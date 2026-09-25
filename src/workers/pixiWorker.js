@@ -74,7 +74,7 @@ import {
   packTextureLutRgba,
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
-import { radixSortIndicesBySortKey, createPainterState, orderPainterSlots, orderKeySpan } from '../util/sortIndexByKey.js';
+import { radixSortIndicesBySortKey, createPainterState, orderPainterSlots, depthSpanForZ } from '../util/sortIndexByKey.js';
 import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
 import {
   ColliderFillBatch,
@@ -1367,7 +1367,21 @@ class PixiRenderer extends AbstractWorker {
     const opts = this._entityUploadOpts;
     this._resetSpriteUploadOpts(opts);
     opts.useZBuffer = !!this._useZBuffer;
-    opts.keySpan = this._useZBuffer ? orderKeySpan(this.config?.worldHeight || 10000) : 0;
+    if (this._useZBuffer) {
+      const u = SpriteRenderer._zIndexUsers;
+      let zMin = 0;
+      let zMax = 0;
+      if (u && Atomics.load(u, 0) > 0) {
+        zMin = Atomics.load(u, 1);
+        zMax = Atomics.load(u, 2);
+        if (zMax < zMin) { zMin = 0; zMax = 0; }
+      }
+      const fit = depthSpanForZ(this.config?.worldHeight || 10000, zMin, zMax);
+      opts.keySpan = fit.span;
+      opts.keyHalf = fit.half;
+    } else {
+      opts.keySpan = 0;
+    }
     opts.space = BATCH_SPACE.WORLD;
     opts.depthDenom = this.renderQueueMaxItems;
     opts.worldHeight = this.config?.worldHeight || 10000;

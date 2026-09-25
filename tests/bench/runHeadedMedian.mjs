@@ -38,6 +38,7 @@ function parseArgs(argv) {
     sceneExport: null,
     src: false,
     query: null,
+    noDetailed: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -49,6 +50,7 @@ function parseArgs(argv) {
     else if (a === '--scene-export' && argv[i + 1]) out.sceneExport = argv[++i];
     else if (a === '--src') out.src = true;
     else if (a === '--query' && argv[i + 1]) out.query = argv[++i];
+    else if (a === '--no-collect-detailed-stats') out.noDetailed = true;
   }
   return out;
 }
@@ -241,7 +243,7 @@ function printPhysicsDiagnostics(accumulator, runs) {
   }
 }
 
-function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sceneExport, src, query) {
+function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sceneExport, src, query, noDetailed) {
   const physicsFps = [];
   const bodyCounts = [];
   const stepMs = [];
@@ -269,6 +271,7 @@ function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sc
     if (sceneExport) args.push('--scene-export', sceneExport);
     if (src) args.push('--src');
     if (query) args.push('--query', query);
+    if (noDetailed) args.push('--no-collect-detailed-stats');
     try {
       execFileSync(process.execPath, args, { stdio: 'inherit', cwd: repoRoot });
     } catch (err) {
@@ -320,7 +323,7 @@ function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sc
   return { physicsFps, bodyCounts, stepMs, physicsStats, spatialAcc, workerAcc, runsCompleted };
 }
 
-const { runs, warmupMs, durationMs, jsonOut, scene, sceneExport, src, query } = parseArgs(process.argv.slice(2));
+const { runs, warmupMs, durationMs, jsonOut, scene, sceneExport, src, query, noDetailed } = parseArgs(process.argv.slice(2));
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-bench-'));
 let exitCode = 0;
@@ -341,6 +344,7 @@ try {
     sceneExport,
     src,
     query,
+    noDetailed,
   );
   if (block.physicsFps.length === 0) exitCode = 1;
   else {

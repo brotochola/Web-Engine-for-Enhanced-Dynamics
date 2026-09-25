@@ -665,7 +665,6 @@ export class InstancedSpriteBatch {
     const filterTypes = ctx.filterTypes;
     const depthDenom = ctx.depthDenom;
     const scanCount = ctx.scanCount;
-    if (o.keySpan > 0) o.keyHalf = o.keySpan * 0.5;
     const rqX = q.x;
     const rqY = q.y;
     const rqScaleX = q.scaleX;
@@ -767,7 +766,6 @@ export class InstancedSpriteBatch {
     const filterTypes = ctx.filterTypes;
     const depthDenom = ctx.depthDenom;
     const scanCount = ctx.scanCount;
-    if (o.keySpan > 0) o.keyHalf = o.keySpan * 0.5;
     const snap = !!o.snap;
     const prevXArr = snap ? null : o.prevX;
     const prevYArr = snap ? null : o.prevY;
