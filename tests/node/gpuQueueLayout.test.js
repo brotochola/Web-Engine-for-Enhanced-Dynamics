@@ -1,19 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { floatBitsToOrd } from '../../src/util/sortIndexByKey.js';
 import {
   GPU_SPRITE_FLOATS,
   GPU_CASTER_FLOATS,
   GPU_QUEUE_VERSION,
   GPU_HDR_SPRITE,
   GPU_HDR_VERSION,
-  GPU_FLAG_BITONIC,
   gpuQueueCaps,
   computeGpuQueueBufferSize,
   createGpuQueueViews,
   writeGpuQueueHeader,
-  packGpuSpriteFlags,
-  unpackGpuCutoutCount,
   packInstancedRows,
   writeGpuSpriteRow,
   gatherInstancedRows,
@@ -39,13 +35,7 @@ test('gpuQueue SAB views round-trip header and packed rows', () => {
   views.sprites[0] = 9;
   copyPackedRows(views.sprites, views.glow, 1, GPU_SPRITE_FLOATS, 0);
   assert.equal(views.glow[0], 9);
-  assert.ok(views.spriteKeys.length >= caps.maxSprites);
-});
-
-test('packGpuSpriteFlags stores cutout count above bitonic flag', () => {
-  const packed = packGpuSpriteFlags(GPU_FLAG_BITONIC, 12345);
-  assert.equal(packed & 0xff, GPU_FLAG_BITONIC);
-  assert.equal(unpackGpuCutoutCount(packed), 12345);
+  assert.equal(views.byteLength, sab.byteLength);
 });
 
 test('packInstancedRows writes 16 floats and packs tint+alpha+cut', () => {
@@ -79,33 +69,6 @@ test('packInstancedRows writes 16 floats and packs tint+alpha+cut', () => {
   const a8 = (0.5 * 255 + 0.5) | 0;
   assert.equal(dstU32[GPU_SPRITE_FLOATS + 9], (((a8 & 255) << 24) | 0x00ff00) >>> 0);
   assert.equal(ctx.particleCount, 1);
-});
-
-test('packInstancedRows writes keys only from keyFrom (blend)', () => {
-  const q = {
-    count: 3,
-    x: new Float32Array([1, 2, 3]),
-    y: new Float32Array([0, 0, 0]),
-    scaleX: new Float32Array([1, 1, 1]),
-    scaleY: new Float32Array([1, 1, 1]),
-    rotC: new Float32Array([1, 1, 1]),
-    rotS: new Float32Array([0, 0, 0]),
-    alpha: new Float32Array([1, 1, 1]),
-    tint: new Uint32Array([0xffffff, 0xffffff, 0xffffff]),
-    textureId: new Uint16Array([1, 2, 3]),
-    anchorX: new Float32Array([0.5, 0.5, 0.5]),
-    anchorY: new Float32Array([1, 1, 1]),
-    sortKey: new Float32Array([10, 20, 30]),
-  };
-  const bits = new Uint32Array(q.sortKey.buffer);
-  const keysOut = new Uint32Array([0xffffffff, 0xffffffff, 0xffffffff]);
-  const dst = new Float32Array(3 * GPU_SPRITE_FLOATS);
-  const dstU32 = new Uint32Array(dst.buffer);
-  const ctx = makePackContext(q, { keysOut, keyBits: bits, keyFrom: 1 }, 3);
-  packInstancedRows(q, ctx, dst, dstU32, GPU_SPRITE_FLOATS, 3, false);
-  assert.equal(keysOut[0], 0xffffffff);
-  assert.equal(keysOut[1], floatBitsToOrd(bits[1]));
-  assert.equal(keysOut[2], floatBitsToOrd(bits[2]));
 });
 
 test('fillQueueIndices skips glow type 3', () => {
@@ -168,7 +131,7 @@ test('writeGpuSpriteRow matches packInstancedRows for one SoA row', () => {
   };
   const packed = new Float32Array(GPU_SPRITE_FLOATS);
   const packedU32 = new Uint32Array(packed.buffer);
-  const ctx = makePackContext(q, { useZBuffer: true, sortKey: q.sortKey, worldHeight: 10000 }, 1);
+  const ctx = makePackContext(q, { sortKey: q.sortKey, worldHeight: 10000, depthDenom: 2 }, 1);
   packInstancedRows(q, ctx, packed, packedU32, GPU_SPRITE_FLOATS, 1, false);
   const direct = new Float32Array(GPU_SPRITE_FLOATS);
   const directU32 = new Uint32Array(direct.buffer);
@@ -176,7 +139,7 @@ test('writeGpuSpriteRow matches packInstancedRows for one SoA row', () => {
     x: 12, y: 34, sx: 2, sy: 3, ax: 0.5, ay: 1, rc: 0.8, rs: 0.6,
     a: 0.25, tint: 0x112233, tex: 7, invX: 0.5, invY: 0.25,
     u: 32768 * (1 / 65535), v: 0, cut: 40, sk: 99,
-  }, { useZBuffer: true, worldHeight: 10000 });
+  }, { worldHeight: 10000, depthDenom: 2 });
   assert.deepEqual(Array.from(direct), Array.from(packed));
 });
 

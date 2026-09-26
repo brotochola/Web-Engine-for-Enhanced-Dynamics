@@ -125,9 +125,18 @@ export function preRenderStreamCount() {
  * @param {number} workerCount
  * @returns {number} Int32 slots
  */
+export function preRenderStreamWords(workerCount) {
+  const n = workerCount | 0;
+  return preRenderStreamCount() * (n > 0 ? n : 1);
+}
+
+export function prWinBase(workerCount) {
+  return PR_JOIN_HEADER + preRenderStreamWords(workerCount);
+}
+
 export function preRenderJoinWords(workerCount) {
   const n = workerCount | 0;
-  return PR_JOIN_HEADER + preRenderStreamCount() * (n > 0 ? n : 1);
+  return prWinBase(n) + 7 * (n > 0 ? n : 1);
 }
 
 /**
@@ -138,4 +147,17 @@ export function preRenderJoinWords(workerCount) {
  */
 export function preRenderCountSlot(stream, workerIndex, workerCount) {
   return PR_JOIN_HEADER + (stream | 0) * (workerCount | 0) + (workerIndex | 0);
+}
+
+/** Id-window mode reuses the join SAB. No barrier. Field blocks are workerCount wide. */
+export const PR_WIN_FRAME = 0;
+export const PR_WIN_SPRITE = 1;
+export const PR_WIN_GLOW = 2;
+export const PR_WIN_SUN = 3;
+export const PR_WIN_STAMP = 4;
+export const PR_WIN_COOKIE = 5;
+export const PR_WIN_POSE = 6;
+
+export function prWinSlot(field, workerIndex, workerCount) {
+  return prWinBase(workerCount) + (field | 0) * (workerCount | 0) + (workerIndex | 0);
 }

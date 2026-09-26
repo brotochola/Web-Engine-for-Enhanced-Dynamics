@@ -1,8 +1,8 @@
 /**
  * GPU elapsed time for the Performance GPU row.
  * WebGL: EXT_disjoint_timer_query_webgl2 (result 1–2 frames late).
- * WebGPU: timestamp-query on Pixi render passes (wrapped beginRenderPass)
- * plus compute stamps for bitonic. Resolve once in finishFrame.
+ * WebGPU: timestamp-query on Pixi render passes (wrapped beginRenderPass).
+ * Resolve once in finishFrame.
  */
 
 const RING = 6;

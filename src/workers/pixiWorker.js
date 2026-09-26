@@ -66,11 +66,8 @@ import {
   GPU_HDR_STAMP,
   GPU_HDR_COOKIE,
   GPU_HDR_PARTICLE,
-  GPU_HDR_FLAGS,
   GPU_QUEUE_VERSION,
   GPU_HDR_VERSION,
-  GPU_FLAG_BITONIC,
-  unpackGpuCutoutCount,
   createGpuQueueViews,
 } from '../render/gpuQueueLayout.js';
 import {
@@ -93,7 +90,7 @@ import {
   packTextureLutRgba,
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
-import { radixSortIndicesBySortKey, createPainterState, orderPainterSlots, depthSpanForZ } from '../util/sortIndexByKey.js';
+import { radixSortIndicesBySortKey, createPainterState, orderPainterSlots } from '../util/sortIndexByKey.js';
 import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
 import {
   ColliderFillBatch,
@@ -223,12 +220,8 @@ import {
   pixiRendererTypeName,
   RENDERER_BACKEND_WEBGPU,
   ySortEnabled,
-  Y_SORT_BITONIC,
 } from '../render/rendererBackend.js';
-import { BitonicInstanceSorter, pixiGpuBuffer } from '../render/webgpu/bitonicSort.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
-import { bitonicSortIndices, permuteInstances, nextPow2 } from '../util/bitonicSort.js';
-import { partitionCutoutBlend } from '../render/alphaModePack.js';
 
 function fetchEngineShader(path) {
   const slash = path.lastIndexOf('/');
@@ -399,16 +392,7 @@ class PixiRenderer extends AbstractWorker {
     // Renderer configuration options (set during initialize)
     this._ySort = false;
     this._ySortMode = false;
-    this._bitonic = false;
-    this._bitonicOneEnc = false;
-    this._zBufferRequested = false;
-    this._useZBuffer = false;
-    this._bitonicSorter = null;
-    this._entitiesBlendBatch = null;
-    this.spriteBlendMesh = null;
     this._entitiesRoot = null;
-    this._blendGpuReady = false;
-    this._blendGpuCap = 0;
     this._alphaCut = DEFAULT_ALPHA_CUT_OFF_U8 / 255;
     this._lightGlowAdd = true;
     this.physicsWorkerIndex = 1; // Updated during initialize() based on spatial worker count
@@ -1351,7 +1335,6 @@ class PixiRenderer extends AbstractWorker {
     opts.indexCount = 0;
     opts.depthMode = BATCH_DEPTH.INDEX;
     opts.sortKey = null;
-    opts.useZBuffer = false;
     opts.texLut = this._texLut;
     opts.texLutCount = this._texLutCount;
     opts.textures = this.flatTextures;
@@ -1362,9 +1345,8 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * One blend, CPU order when `painter` is set. Shared by ENTITIES and every
-   * Y-sorted custom layer. Entity `useZBuffer` writes the queue sort key as clip Z
-   * and skips the painter.
+   * CPU painter order when `painter` is set. Shared by ENTITIES and every
+   * Y-sorted custom layer.
    */
   _uploadSortedSprites(batch, q, opts, painter, keysU32, idxE, ne) {
     if (painter && keysU32 && ne >= 2) {
@@ -1381,11 +1363,7 @@ class PixiRenderer extends AbstractWorker {
       opts.indexCount = 0;
     }
     opts.depthMode = BATCH_DEPTH.INDEX;
-    if (opts.useZBuffer && q.sortKey) opts.sortKey = q.sortKey;
-    else {
-      opts.useZBuffer = false;
-      opts.sortKey = null;
-    }
+    opts.sortKey = null;
     return batch.upload(q, opts);
   }
 
@@ -1412,83 +1390,6 @@ class PixiRenderer extends AbstractWorker {
     return batch.commitInstances(keep);
   }
 
-  _ensureBitonicSorter() {
-    if (this._bitonicSorter || !this._useWebGpu || !this.pixiApp?.renderer?.gpu?.device) return;
-    const sortWgsl = this._engineShaders?.bitonicSort;
-    const permWgsl = this._engineShaders?.bitonicPermute;
-    if (!sortWgsl || !permWgsl) return;
-    try {
-      this._bitonicSorter = new BitonicInstanceSorter(
-        this.pixiApp.renderer.gpu.device,
-        sortWgsl,
-        permWgsl,
-        { oneEncoder: this._bitonicOneEnc }
-      );
-    } catch (_) {
-      this._bitonicSorter = null;
-    }
-  }
-
-  _commitBitonicPacked(gpu, packedN) {
-    const flags = gpu.header[GPU_HDR_FLAGS] | 0;
-    const bitonic = (flags & GPU_FLAG_BITONIC) !== 0;
-    let cutoutN = unpackGpuCutoutCount(flags);
-    if (!bitonic || !this._entitiesBlendBatch) {
-      return this._commitPackedBatch(this.entitiesBatch, gpu.sprites, packedN, GPU_SPRITE_FLOATS);
-    }
-    if (cutoutN > packedN) cutoutN = packedN;
-    const blendN = packedN - cutoutN;
-    this.entitiesBatch.setTargetSpace(false, 0, 0, 1);
-    this._entitiesBlendBatch.setTargetSpace(false, 0, 0, 1);
-    const cutDrawn = this._commitPackedBatch(
-      this.entitiesBatch,
-      gpu.sprites,
-      cutoutN,
-      GPU_SPRITE_FLOATS
-    );
-    if (blendN <= 0) {
-      if (this._entitiesBlendBatch.mesh) this._entitiesBlendBatch.mesh.visible = false;
-      return cutDrawn;
-    }
-    const fp = GPU_SPRITE_FLOATS;
-    const inst = gpu.sprites.subarray(cutoutN * fp, packedN * fp);
-    const keys = gpu.spriteKeys
-      ? gpu.spriteKeys.subarray(cutoutN, packedN)
-      : null;
-    this._ensureBitonicSorter();
-    let gpuOk = false;
-    if (this._bitonicSorter && keys && keys.length >= blendN) {
-      if (!this._blendGpuReady || blendN > this._blendGpuCap) {
-        this._entitiesBlendBatch.commitInstances(Math.max(1, blendN));
-        this._blendGpuReady = true;
-        this._blendGpuCap = blendN;
-      }
-      const dest = pixiGpuBuffer(this.pixiApp.renderer, this._entitiesBlendBatch.buffer);
-      if (dest) {
-        gpuOk = this._bitonicSorter.dispatch({
-          instances: inst,
-          keys,
-          count: blendN,
-          floats: fp,
-          destGpu: dest,
-          destOffset: 0,
-          timer: this._gpuTimer,
-        });
-      }
-    }
-    if (gpuOk) {
-      this._entitiesBlendBatch.geometry.instanceCount = blendN;
-      this._entitiesBlendBatch.mesh.visible = true;
-      return cutDrawn + blendN;
-    }
-    const order = this._rqIdxBlend;
-    for (let i = 0; i < blendN; i++) order[i] = i;
-    if (keys && blendN >= 2) bitonicSortIndices(order, blendN, keys, true);
-    permuteInstances(inst, this._entitiesBlendBatch.data, order, blendN, fp);
-    this._entitiesBlendBatch.commitInstances(blendN);
-    return cutDrawn + blendN;
-  }
-
   /**
    * Upload main render queue SoA into ENTITIES (one blend, CPU Y-order when
    * ySorting) + glow (add). Particles, decorations, bullets, adobe pieces, and
@@ -1499,7 +1400,6 @@ class PixiRenderer extends AbstractWorker {
     if (!this.renderQueueEnabled || !this.entitiesBatch) return;
     if (!layerIsVisible(Layer.entitiesId)) {
       this.entitiesBatch.mesh.visible = false;
-      if (this._entitiesBlendBatch?.mesh) this._entitiesBlendBatch.mesh.visible = false;
       this.visibleEntityCount = 0;
       this.visibleParticleCount = 0;
       const glowId = Layer.get('lightGlows')?.id;
@@ -1523,10 +1423,11 @@ class PixiRenderer extends AbstractWorker {
     if (packedOk) {
       this._syncEntityOrder();
       if (layerIsVisible(Layer.entitiesId)) {
-        this.visibleEntityCount = this._commitBitonicPacked(gpu, packedN);
+        this.visibleEntityCount = this._commitPackedBatch(
+          this.entitiesBatch, gpu.sprites, packedN, GPU_SPRITE_FLOATS
+        );
       } else {
         this.entitiesBatch.mesh.visible = false;
-        if (this._entitiesBlendBatch?.mesh) this._entitiesBlendBatch.mesh.visible = false;
         this.visibleEntityCount = 0;
       }
       this.visibleParticleCount = gpu.header[GPU_HDR_PARTICLE] | 0;
@@ -1553,22 +1454,6 @@ class PixiRenderer extends AbstractWorker {
     this._syncEntityOrder();
     const opts = this._entityUploadOpts;
     this._resetSpriteUploadOpts(opts);
-    opts.useZBuffer = !!this._useZBuffer;
-    if (this._useZBuffer) {
-      const u = SpriteRenderer._zIndexUsers;
-      let zMin = 0;
-      let zMax = 0;
-      if (u && Atomics.load(u, 0) > 0) {
-        zMin = Atomics.load(u, 1);
-        zMax = Atomics.load(u, 2);
-        if (zMax < zMin) { zMin = 0; zMax = 0; }
-      }
-      const fit = depthSpanForZ(this.config?.worldHeight || 10000, zMin, zMax);
-      opts.keySpan = fit.span;
-      opts.keyHalf = fit.half;
-    } else {
-      opts.keySpan = 0;
-    }
     opts.space = BATCH_SPACE.WORLD;
     opts.depthDenom = this.renderQueueMaxItems;
     opts.worldHeight = this.config?.worldHeight || 10000;
@@ -1577,70 +1462,6 @@ class PixiRenderer extends AbstractWorker {
     opts.cameraX = 0;
     opts.cameraY = 0;
     opts.resolution = 1;
-
-    if (this._bitonic && this._entitiesBlendBatch) {
-      opts.useZBuffer = true;
-      if (q.sortKey) opts.sortKey = q.sortKey;
-      const u = SpriteRenderer._zIndexUsers;
-      let zMin = 0;
-      let zMax = 0;
-      if (u && Atomics.load(u, 0) > 0) {
-        zMin = Atomics.load(u, 1);
-        zMax = Atomics.load(u, 2);
-        if (zMax < zMin) { zMin = 0; zMax = 0; }
-      }
-      const fit = depthSpanForZ(this.config?.worldHeight || 10000, zMin, zMax);
-      opts.keySpan = fit.span;
-      opts.keyHalf = fit.half;
-      const typeArr = this.renderQueueType;
-      const glowAdd = this._lightGlowAdd;
-      let ng = 0;
-      const idxG = this._rqIdxGlow;
-      if (glowAdd && typeArr) {
-        for (let i = 0; i < count; i++) if (typeArr[i] === 3) idxG[ng++] = i;
-      }
-      const zoom = this.cameraData ? this.cameraData[0] : 1;
-      let decoA = 1;
-      if (zoom <= this.decorationHideZoom) decoA = 0;
-      else if (zoom < this.decorationFadeStartZoom) {
-        decoA = (zoom - this.decorationHideZoom)
-          / (this.decorationFadeStartZoom - this.decorationHideZoom);
-      }
-      const split = partitionCutoutBlend(
-        typeArr,
-        q.alpha,
-        q.alphaMode,
-        count,
-        glowAdd ? 3 : -1,
-        decoA,
-        this._rqIdxCutout,
-        this._rqIdxBlend
-      );
-      opts.indices = this._rqIdxCutout;
-      opts.indexCount = split.cutout;
-      this.visibleEntityCount = this.entitiesBatch.upload(q, opts);
-      const blendIdx = this._rqIdxBlend;
-      const blendN = split.blend;
-      if (blendN >= 2 && q.sortKey) {
-        const bits = new Uint32Array(q.sortKey.buffer, q.sortKey.byteOffset, q.sortKey.length);
-        bitonicSortIndices(blendIdx, blendN, bits);
-      }
-      opts.indices = blendIdx;
-      opts.indexCount = blendN;
-      this.visibleEntityCount += this._entitiesBlendBatch.upload(q, opts);
-      this.entitiesBatch.setPoseAlpha(this._poseAlpha);
-      this._entitiesBlendBatch.setPoseAlpha(this._poseAlpha);
-      this._posePacked = true;
-      this.visibleParticleCount = 0;
-      if (this.entitiesGlowBatch && ng > 0) {
-        opts.useZBuffer = false;
-        opts.sortKey = null;
-        opts.indices = idxG;
-        opts.indexCount = ng;
-        this.entitiesGlowBatch.upload(q, opts);
-      }
-      return;
-    }
 
     const typeArr = this.renderQueueType;
     let ne = count;
@@ -1679,7 +1500,6 @@ class PixiRenderer extends AbstractWorker {
           radixSortIndicesBySortKey(idxG, ng, this._sortKeyU32, this._painter.scratch, this._painter.hist);
           if (detail) this.sortTimeThisFrame += performance.now() - t0;
         }
-        opts.useZBuffer = false;
         opts.sortKey = null;
         opts.indices = idxG;
         opts.indexCount = ng;
@@ -1703,7 +1523,6 @@ class PixiRenderer extends AbstractWorker {
     this._posePacked = true;
     this.visibleParticleCount = 0;
     if (this._lightGlowAdd && this.lightingEnabled && this.entitiesGlowBatch) {
-      opts.useZBuffer = false;
       opts.sortKey = null;
       opts.includeType = 3;
       this.entitiesGlowBatch.upload(q, opts);
@@ -1796,7 +1615,6 @@ class PixiRenderer extends AbstractWorker {
     const lut = this._texLutSource;
     if (!lut) return;
     if (this.entitiesBatch) this.entitiesBatch.setLutSource(lut);
-    if (this._entitiesBlendBatch) this._entitiesBlendBatch.setLutSource(lut);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setLutSource(lut);
     if (this.shadowBatch) this.shadowBatch.setLutSource(lut);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setLutSource(lut);
@@ -1828,7 +1646,6 @@ class PixiRenderer extends AbstractWorker {
     this._uploadTexLutTexture();
     const src = this._resolveAtlasSource();
     if (this.entitiesBatch) this.entitiesBatch.setAtlasSource(src);
-    if (this._entitiesBlendBatch) this._entitiesBlendBatch.setAtlasSource(src);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
     if (this.shadowBatch) this.shadowBatch.setAtlasSource(src);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setAtlasSource(src);
@@ -1845,75 +1662,32 @@ class PixiRenderer extends AbstractWorker {
   }
 
   _syncEntityOrder() {
-    const active = this._bitonic || this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
-    const bitonic = this._bitonic && active;
-    const z = this._zBufferRequested && active && !bitonic;
-    if (this._zBufferRequested && !active && !this._zEmitWarned) {
-      this._zEmitWarned = true;
-      console.warn('PIXI WORKER: useZBuffer needs ySort or a sprite zIndex');
-    }
-    this._useZBuffer = z;
-    if (z || bitonic || !active) this._painter = null;
+    const active = this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
+    if (!active) this._painter = null;
     else if (!this._painter && this.renderQueueMaxItems) {
       this._painter = createPainterState(this.renderQueueMaxItems);
-    }
-    const state = this.entitiesBatch?.mesh?.state;
-    if (state) {
-      state.depthTest = !!(z || bitonic);
-      state.depthMask = !!(z || bitonic);
-    }
-    const blendState = this._entitiesBlendBatch?.mesh?.state;
-    if (blendState) {
-      blendState.depthTest = !!bitonic;
-      blendState.depthMask = false;
     }
   }
 
   createEntitiesInstancedBatch(maxItems) {
-    // One source-over draw. ySort cpu → painter. useZBuffer writes the key as clip Z.
-    // ySort bitonic → cutout write-Z + blend read-Z after GPU sort.
-    const bitonic = this._bitonic && this._ySort;
-    const z = this._zBufferRequested && this._ySort && !bitonic;
-    this._useZBuffer = z;
     this._rqIdxEntity = new Uint32Array(maxItems);
     this._rqIdxGlow = new Uint32Array(maxItems);
-    this._rqIdxCutout = new Uint32Array(maxItems);
-    this._rqIdxBlend = new Uint32Array(nextPow2(maxItems));
-    this._painter = (!z && !bitonic && this._ySort) ? createPainterState(maxItems) : null;
+    this._painter = this._ySort ? createPainterState(maxItems) : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
-      depthTest: !!(z || bitonic),
-      depthMask: !!(z || bitonic),
-      alphaDiscard: !!(this._zBufferRequested || bitonic),
-      alphaCut: (this._zBufferRequested || bitonic) ? new Float32Array([this._alphaCut, 0, 0, 0]) : null,
+      depthTest: false,
+      depthMask: false,
+      alphaDiscard: false,
+      alphaCut: null,
       premultiplyAlpha: true,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       poseInterp: this._queueInterp,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
-    if (bitonic) {
-      this._entitiesBlendBatch = new InstancedSpriteBatch({
-        capacity: maxItems,
-        label: 'entities-blend-instanced',
-        atlasSource: this._resolveAtlasSource(),
-        lutSource: this._texLutSource,
-        depthTest: true,
-        depthMask: false,
-        alphaDiscard: false,
-        premultiplyAlpha: true,
-        useWebGpu: this._useWebGpu,
-        shaders: this._engineShaders,
-        poseInterp: this._queueInterp,
-      });
-      this.spriteBlendMesh = this._entitiesBlendBatch.mesh;
-    } else {
-      this._entitiesBlendBatch = null;
-      this.spriteBlendMesh = null;
-    }
 
     if (!this._lightGlowAdd) {
       this.entitiesGlowBatch = null;
@@ -5244,12 +5018,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/tilemapGid.wgsl').then((s) => {
           sh.tilemapGid = s;
-        }),
-        fetchEngineShader('/src/shaders/bitonicSort.wgsl').then((s) => {
-          sh.bitonicSort = s;
-        }),
-        fetchEngineShader('/src/shaders/bitonicPermute.wgsl').then((s) => {
-          sh.bitonicPermute = s;
         })
       );
     } else {
@@ -5373,13 +5141,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     this._ySortMode = rendererConfig.ySort;
     this._ySort = ySortEnabled(this._ySortMode);
-    this._bitonic = this._ySortMode === Y_SORT_BITONIC;
-    this._bitonicOneEnc = rendererConfig.bitonicEnc === 'one';
-    this._zBufferRequested = rendererConfig.useZBuffer === true;
-    this._useZBuffer = this._zBufferRequested && this._ySort && !this._bitonic;
-    if (this._zBufferRequested && this._bitonic) {
-      console.warn('WeedJS: renderer.useZBuffer is ignored when ySort is "bitonic".');
-    }
     this._alphaCut = DEFAULT_ALPHA_CUT_OFF_U8 / 255;
     this._lightGlowAdd = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite';
 
@@ -5626,7 +5387,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';
       this._entitiesRoot.addChild(this.spriteMesh);
-      if (this.spriteBlendMesh) this._entitiesRoot.addChild(this.spriteBlendMesh);
       this._registerLayerDisplayObject('entities', this._entitiesRoot);
       this.pixiApp.stage.addChild(this._entitiesRoot);
       if (this.spriteGlowMesh) {
@@ -5634,9 +5394,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this.pixiApp.stage.addChild(this.spriteGlowMesh);
         if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
       }
-      const order = this._bitonic
-        ? 'bitonic'
-        : ((this._zBufferRequested && this._ySort) ? 'z-buffer' : (this._ySort ? 'painter' : 'emit order'));
+      const order = this._ySort ? 'painter' : 'emit order';
       const glow = this._lightGlowAdd ? 'glow ADD' : 'glow in entity list';
       console.log(`PIXI WORKER: ENTITIES layer using instanced sprite mesh (${order}, ${glow})`);
     }

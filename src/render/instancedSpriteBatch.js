@@ -29,16 +29,10 @@ import {
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
 import { writePosePrev } from './poseQueueInterp.js';
-import { DECORATION_Y_SORT_SCALE } from '../util/configDefaults.js';
-import { depthFromOrderKey, depthFromSortKey } from '../util/sortIndexByKey.js';
 import { writeCasterPose, copyTypedRange } from './gpuShadowCasters.js';
 import { packInstancedRows } from './gpuQueueLayout.js';
 
-function instanceDepth(out, depthDenom, o, i) {
-  if (o.useZBuffer && o.sortKey) {
-    if (o.keySpan > 0) return depthFromOrderKey(o.sortKey[i], o.keySpan, o.keyHalf);
-    return depthFromSortKey(o.sortKey[i], o.worldHeight, DECORATION_Y_SORT_SCALE);
-  }
+function instanceDepth(out, depthDenom) {
   return 1.0 - (out + 1) / depthDenom;
 }
 

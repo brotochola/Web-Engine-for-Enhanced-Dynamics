@@ -213,8 +213,7 @@ export const SPRITE_TILE_MODE = Object.freeze({
 });
 
 /**
- * How a sprite composites when `renderer.ySort === 'bitonic'`.
- * CUTOUT writes Z (binary / discarded edge). BLEND reads Z, does not write.
+ * Stored on the sprite. The CPU painter draws one pass; it does not split on this.
  * @readonly
  * @enum {number}
  */
@@ -548,15 +547,8 @@ export const RENDERER_DEFAULTS = Object.freeze({
   fixedFps: 0,
   /**
    * Y order for the entity list. `false` = emit order. `true` / `'cpu'` = CPU painter.
-   * `'bitonic'` = GPU sort + cutout/blend depth (WebGPU). `useZBuffer` only applies to `'cpu'`.
    */
   ySort: false,
-  /**
-   * Entity batch writes the same sort key as clip Z and depth-tests.
-   * Default off. Needs ySort or a sprite zIndex. Otherwise the boot warns and Z stays off.
-   * Empty texels below the sprite `alphaCutOff` do not write Z. A softer edge still does.
-   */
-  useZBuffer: false,
   /** null = auto-size main render queue at SAB alloc from pools + Adobe piece bounds */
   maxVisibleRenderables: null,
   maxDecalTileUploadsPerFrame: 32,

@@ -50,34 +50,6 @@ function predatorPositiveParam(name, fallback) {
 
 const pinHour = predatorHourPin();
 
-function predatorRendererBackend() {
-  const q = predatorSearchParam('backend');
-  if (q === 'webgl' || q === 'webgpu') return q;
-  return 'webgpu';
-}
-
-function predatorYSort() {
-  const q = predatorSearchParam('ySort');
-  if (q === 'bitonic' || q === 'cpu') return q;
-  if (q === '0' || q === 'false') return false;
-  return 'bitonic';
-}
-
-function predatorUseZBuffer() {
-  const q = predatorSearchParam('useZBuffer');
-  if (q === '0' || q === 'false') return false;
-  if (q === '1' || q === 'true') return true;
-  return true;
-}
-
-function predatorBitonicEnc() {
-  return predatorSearchParam('bitonicEnc') === 'one' ? 'one' : false;
-}
-
-function predatorFlagOn(name) {
-  return predatorSearchParam(name) === '1';
-}
-
 const {
   Camera,
   Decoration,
@@ -121,8 +93,8 @@ export class PredatorScene extends WEED.Scene {
 
     debug: {
       maxDebugDrawEntries: 30192,
-      // collectDetailedStats: true,
-      // collectGpuStats: true, // bench --collect-gpu-stats pisa esto
+      collectDetailedStats: true,
+      collectGpuStats: true, // bench --collect-gpu-stats pisa esto
       verboseWorkers: true,
     },
 
@@ -177,13 +149,9 @@ export class PredatorScene extends WEED.Scene {
     },
 
     renderer: {
-      backend: predatorRendererBackend(),
+      backend: 'webgl',
       noLimitFPS: false,
-      ySort: predatorYSort(),
-      useZBuffer: predatorUseZBuffer(),
-      bitonicEnc: "one",//predatorBitonicEnc(),
-      packKeys: predatorFlagOn('packKeys'),
-      packDirect: predatorFlagOn('packDirect'),
+      ySort: 'cpu',
       autoGenerateMipmaps: false,
       interpolation: false,
       atlasScaleMode: 'linear',
@@ -227,9 +195,9 @@ export class PredatorScene extends WEED.Scene {
         intensity: 1, // Light intensity (0-1), affects ambient brightness
         color: 0xffffff, // Sun color (warm white default)
         shadowAlpha: 0.25, // Base darkness of sun-cast shadows (0-1)
-        startHour: pinHour != null ? pinHour : 12, // Starting hour for day cycle (0-24)
+        startHour: 12, // Starting hour for day cycle (0-24)
         dayCycle: {
-          enabled: pinHour == null, // Auto-advance time of day
+          enabled: true, // Auto-advance time of day
           speed: 1, // Multiplier (1 = real time, 60 = 1 minute = 1 hour)
           dayDurationMinutes: 1, // Real minutes for full day (1440 = 24 real hours)
         },

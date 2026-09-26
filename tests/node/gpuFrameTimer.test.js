@@ -9,7 +9,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const defaults = readFileSync(join(root, 'src/util/configDefaults.js'), 'utf8');
 const pixi = readFileSync(join(root, 'src/workers/pixiWorker.js'), 'utf8');
 const timerSrc = readFileSync(join(root, 'src/render/gpuFrameTimer.js'), 'utf8');
-const bitonic = readFileSync(join(root, 'src/render/webgpu/bitonicSort.js'), 'utf8');
 
 test('collectGpuStats defaults off and pixi attaches only when on', () => {
   assert.match(defaults, /collectGpuStats: false/);
@@ -63,10 +62,4 @@ test('pending MAP_READ keeps the parked GPU frame', () => {
 test('sumTimestampPairs adds end-start of each pass', () => {
   const view = new BigUint64Array([10n, 20n, 5n, 8n, 0n, 0n]);
   assert.ok(Math.abs(sumTimestampPairs(view, 0, 2) - 13e-6) < 1e-12);
-});
-
-test('bitonic stamps every compute pass when the timer is on', () => {
-  assert.match(bitonic, /function beginTimedCompute/);
-  const fills = bitonic.split('beginTimedCompute(').length - 1;
-  assert.ok(fills >= 4);
 });

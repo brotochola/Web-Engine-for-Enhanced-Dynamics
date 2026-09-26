@@ -20,23 +20,25 @@ test('preRenderWorker only writes sortKey; never CPU-sorts the queue', () => {
 
 test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter path', () => {
   assert.match(pixi, /createPainterState, orderPainterSlots/);
-  assert.match(pixi, /this\._painter = \(!z && !bitonic && this\._ySort\) \? createPainterState\(maxItems\) : null/);
+  assert.match(pixi, /this\._painter = this\._ySort \? createPainterState\(maxItems\) : null/);
   assert.match(pixi, /_uploadSortedSprites\(/);
   assert.match(pixi, /orderPainterSlots\(painter, idxE, ne, keysU32\)/);
   assert.match(pixi, /painter = layerYSort \? createPainterState\(maxItems\) : null/);
   assert.match(pixi, /this\._uploadSortedSprites\(cl\.batch, q, opts, cl\.painter, cl\.sortKeyU32, null, count\)/);
 });
 
-test('useZBuffer alphaCut is the low discard; the high cut stays 0', () => {
-  assert.match(defaults, /DEFAULT_ALPHA_CUT_OFF_U8 = 1/);
-  assert.match(pixi, /alphaCut: \(this\._zBufferRequested \|\| bitonic\) \? new Float32Array\(\[this\._alphaCut, 0, 0, 0\]\) : null/);
-  assert.match(pixi, /this\._alphaCut = DEFAULT_ALPHA_CUT_OFF_U8 \/ 255/);
+test('y-sort is the CPU painter; no z-buffer and no bitonic', () => {
+  assert.doesNotMatch(defaults, /useZBuffer:/);
+  assert.doesNotMatch(pixi, /_bitonic/);
+  assert.doesNotMatch(pixi, /useZBuffer/);
+  assert.doesNotMatch(preRender, /_bitonic/);
+  assert.doesNotMatch(preRender, /packDirect/);
+  assert.match(pixi, /depthTest: false/);
 });
 
 test('pixi: WebGPU injects a device with timestamp-query and wraps beginRenderPass', () => {
   const timer = readFileSync(join(root, 'src/render/gpuFrameTimer.js'), 'utf8');
   const req = readFileSync(join(root, 'src/render/webgpu/requestGpuDevice.js'), 'utf8');
-  const bitonic = readFileSync(join(root, 'src/render/webgpu/bitonicSort.js'), 'utf8');
   assert.match(req, /timestamp-query/);
   assert.match(pixi, /requestWeedGpu/);
   assert.match(pixi, /gpu: \{ adapter: weedGpu\.adapter, device: weedGpu\.device \}/);
@@ -44,13 +46,6 @@ test('pixi: WebGPU injects a device with timestamp-query and wraps beginRenderPa
   assert.match(timer, /timestampWrites/);
   assert.match(timer, /_resolveGpuFrame/);
   assert.doesNotMatch(timer, /renderer\?\.gpu && !renderer\.gl/);
-  assert.match(bitonic, /beginTimedCompute/);
-  assert.match(bitonic, /timer\.resolveCompute/);
-  assert.match(bitonic, /oneEncoder/);
-  assert.match(bitonic, /fillIndices/);
-  assert.match(bitonic, /onSubmittedWorkDone/);
-  const perm = readFileSync(join(root, 'src/shaders/bitonicPermute.wgsl'), 'utf8');
-  assert.match(perm, /srcI >= count/);
 });
 
 test('pixi: lighting binds uShadowSampler to the live shadow RT, not Texture.WHITE', () => {
@@ -61,7 +56,7 @@ test('pixi: lighting binds uShadowSampler to the live shadow RT, not Texture.WHI
   assert.doesNotMatch(pixi, /uShadowMap: PIXI\.Texture\.WHITE\.source/);
 });
 
-test('pixi: bitonic cutout+blend share one entities root so layer zIndex cannot invert them', () => {
+test('pixi: entities share one root so layer zIndex cannot invert the mesh', () => {
   assert.match(pixi, /this\._entitiesRoot = new Container\(\)/);
   assert.match(pixi, /this\._entitiesRoot\.addChild\(this\.spriteMesh\)/);
   assert.match(pixi, /this\._registerLayerDisplayObject\('entities', this\._entitiesRoot\)/);
@@ -77,19 +72,11 @@ test('pixi: GPU two-pass is gone; ySorting uses reinsert with no painterSort con
   assert.doesNotMatch(pixi, /this\.instancedSprites\s*=/);
 });
 
-test('preRender packKeys writes blend keys in the pack walk, not a second full walk', () => {
-  assert.match(preRender, /this\._packKeys = rendererConfig\.packKeys === true/);
-  assert.match(preRender, /if \(!this\._packKeys\) this\._writeSpriteKeys/);
-  assert.match(preRender, /opts\.keyFrom = cutN/);
-});
-
-test('preRender packDirect writes GPU rows in emit and skips fat type-0 SoA + persist', () => {
-  assert.match(preRender, /this\._packDirect = rendererConfig.packDirect === true/);
-  assert.match(preRender, /packDirectLive\s*\?\s*false\s*:\s*this\._type0PersistHit/);
-  assert.match(preRender, /writeGpuSpriteRow/);
-  assert.match(preRender, /gatherInstancedRows/);
-  assert.match(preRender, /if \(!packDirectLive\) \{\s+rqX\[out\] = currX/);
-  assert.match(preRender, /if \(!persistHit && !packDirectLive\)/);
+test('preRender writes the SoA row and the CPU painter packs it', () => {
+  assert.match(preRender, /rqX\[out\] = currX/);
+  assert.match(preRender, /orderPainterSlots\(this\._gpuPainter/);
+  assert.doesNotMatch(preRender, /_packDirect/);
+  assert.doesNotMatch(preRender, /_writeSpriteKeys/);
 });
 
 test('preRender persist skips Adobe expansion (type 6 write-index mismatch)', () => {

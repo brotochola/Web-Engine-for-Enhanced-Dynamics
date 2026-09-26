@@ -36,7 +36,7 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { orderSortKey, spriteYSortKey, zSortBand, depthSpanForZ, createPainterState, orderPainterSlots, radixSortIndicesBySortKey } from '../util/sortIndexByKey.js';
+import { orderSortKey, spriteYSortKey, zSortBand, createPainterState, orderPainterSlots, radixSortIndicesBySortKey } from '../util/sortIndexByKey.js';
 import {
     fillOwnedIds,
     listSlice,
@@ -75,9 +75,8 @@ import {
     SPRITE_TILE_MODE,
     DEFAULT_ALPHA_CUT_OFF_U8,
 } from '../util/configDefaults.js';
-import { ySortEnabled, Y_SORT_BITONIC } from '../render/rendererBackend.js';
-import { writeRowAlphaMode, writeRowAlphaCutOff, partitionCutoutBlend } from '../render/alphaModePack.js';
-import { floatBitsToOrd } from '../util/sortIndexByKey.js';
+import { ySortEnabled } from '../render/rendererBackend.js';
+import { writeRowAlphaMode, writeRowAlphaCutOff } from '../render/alphaModePack.js';
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
@@ -86,15 +85,11 @@ import {
     GPU_SPACE_WORLD,
     GPU_SPACE_SCREEN,
     GPU_FLAG_SORTED,
-    GPU_FLAG_BITONIC,
-    packGpuSpriteFlags,
     createGpuQueueViews,
     createGpuQueueScratch,
     clearGpuQueueHeader,
     writeGpuQueueHeader,
     packInstancedRows,
-    writeGpuSpriteRow,
-    gatherInstancedRows,
     makePackContext,
     fillQueueIndices,
     copyPackedRows,
@@ -606,15 +601,7 @@ class PreRenderWorker extends AbstractWorker {
         this._lightGlowAsSprite = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
         this._ySortMode = rendererConfig.ySort;
         this._ySort = ySortEnabled(this._ySortMode);
-        this._bitonic = this._ySortMode === Y_SORT_BITONIC;
-        this._packKeys = rendererConfig.packKeys === true;
-        this._packDirect = rendererConfig.packDirect === true;
         this._alphaCutOffU8 = DEFAULT_ALPHA_CUT_OFF_U8;
-        this._useZBuffer = rendererConfig.useZBuffer === true && this._ySort && !this._bitonic;
-        if (rendererConfig.useZBuffer === true && this._bitonic && !this._zBitonicWarned) {
-            this._zBitonicWarned = true;
-            console.warn('WeedJS: renderer.useZBuffer is ignored when ySort is "bitonic".');
-        }
         this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
 
@@ -717,11 +704,6 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuStampLightScratch = new Uint16Array(Math.max(1, caps.maxStamp | 0));
                 this._gpuStampCompact = new Float32Array(Math.max(1, (caps.maxStamp | 0) * GPU_CASTER_FLOATS));
                 this._gpuPackOpts = {};
-                this._gpuDirectF32 = null;
-                this._gpuDirectU32 = null;
-                this._gpuDirectHit = null;
-                this._gpuDirectRow = {};
-                this._packDirectLive = false;
                 this._gpuCookieQ = null;
                 const cookieN = Math.max(1, caps.maxCookie | 0);
                 if (cookieN > 0) {
@@ -748,11 +730,7 @@ class PreRenderWorker extends AbstractWorker {
                 }
                 this._stampLights = [];
                 this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
-                if (this._ySort && !this._useZBuffer && !this._bitonic) {
-                    this._gpuPainter = createPainterState(maxItems);
-                }
-                this._gpuIdxCutout = new Uint32Array(maxItems);
-                this._gpuIdxBlend = new Uint32Array(maxItems);
+                if (this._ySort) this._gpuPainter = createPainterState(maxItems);
                 this._atlasNearest = (rendererConfig.atlasScaleMode || RENDERER_DEFAULTS.atlasScaleMode) === 'nearest';
                 console.log(`[PRE_RENDER WORKER] GPU queues initialized (sprites ${caps.maxSprites}, stamp ${caps.maxStamp})`);
             }
@@ -1225,11 +1203,8 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * N workers. Collect and emit into private buffers (adobe pieces make the
-     * slot count unknown before emit), then two joins and a packed copy into
-     * the same double-buffer pixi already reads. N=1 never enters here.
-     * Shadows read entityLastTextureId before this frame's emit, so they see
-     * the previous frame. That avoids a torn uint16 without a second texture SAB.
+     * N workers. Collect and emit into private buffers, then two joins and a
+     * packed copy into the double-buffer pixi reads. N=1 never enters here.
      */
     _updateSharded(deltaTime, dtRatio) {
         this.skippedFramesThisFrame = 0;
@@ -2290,11 +2265,11 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _entityYSort() {
-        return this._bitonic || !!(Layer._ySorting && Layer._ySorting[Layer.entitiesId]);
+        return !!(Layer._ySorting && Layer.entitiesId != null && Layer._ySorting[Layer.entitiesId]);
     }
 
     _queueHasOrder() {
-        return this._bitonic || this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
+        return this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
     }
 
     _orderKey(type, idx, yKey, ySort) {
@@ -2892,7 +2867,6 @@ class PreRenderWorker extends AbstractWorker {
     buildRenderQueue(deltaTime) {
         this._syncGlowLayer();
         if (!this.renderQueueEnabled || this._renderableCount === 0) {
-            this._packDirectLive = false;
             if (this.renderQueueCount) this.renderQueueCount[0] = 0;
             return;
         }
@@ -3044,19 +3018,7 @@ class PreRenderWorker extends AbstractWorker {
         const writeSortKey = !!(rqSortKey && this._queueHasOrder());
         const ySort = writeSortKey && this._entityYSort();
         const persistBuf = this._queueBuf;
-        const packDirectLive = this._packDirect
-            && this._bitonic
-            && !this.interpolatePhysicsPose
-            && (this.workerCount | 0) <= 1;
-        this._packDirectLive = packDirectLive;
-        if (packDirectLive) {
-            this._ensureGpuDirect(this.renderQueueMaxItems);
-            this._gpuDirectHit.fill(0);
-            this._resetGpuPackOpts(this._gpuPackOpts);
-        }
-        const persistHit = packDirectLive
-            ? false
-            : this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
+        const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
         if (persistHit) {
             this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs);
         }
@@ -3077,9 +3039,7 @@ class PreRenderWorker extends AbstractWorker {
                 stashPose.y = stashPy[i];
                 stashPose.rotC = stashRc[i];
                 stashPose.rotS = stashRs[i];
-                const adobeStart = writeCount;
                 writeCount = this._emitAdobePieces(ref, writeCount, idx, sk, stashPose);
-                if (packDirectLive) this._backfillGpuDirectRange(adobeStart, writeCount);
                 continue;
             }
 
@@ -3114,44 +3074,30 @@ class PreRenderWorker extends AbstractWorker {
                 this._writeQueueShadow(out, idx);
                 const rx0 = srRepeatX[idx];
                 const ry0 = srRepeatY[idx];
-                let invX = 0;
-                let invY = 0;
-                let u = 0;
-                let v = 0;
                 if (rx0 !== 0 || ry0 !== 0) {
-                    if (packDirectLive) {
-                        const mode = srTileMode[idx];
-                        u = srTileOffsetU[idx] * (1 / 65535);
-                        v = srTileOffsetV[idx] * (1 / 65535);
-                        if (rx0 > 0) invX = mode === TILE_MODE_LOCAL ? -(srBoundsHalfW[idx] * 2) / rx0 : 1 / rx0;
-                        if (ry0 > 0) invY = mode === TILE_MODE_LOCAL ? -(srBoundsHalfH[idx] * 2) / ry0 : 1 / ry0;
-                    } else {
-                        if (rqRepeatX) rqRepeatX[out] = rx0;
-                        if (rqRepeatY) rqRepeatY[out] = ry0;
-                        writeEntityTileFields(
-                            ref, out, idx,
-                            srTileMode, srTileOffsetU, srTileOffsetV,
-                            srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
-                        );
-                    }
-                } else if (!packDirectLive) {
+                    if (rqRepeatX) rqRepeatX[out] = rx0;
+                    if (rqRepeatY) rqRepeatY[out] = ry0;
+                    writeEntityTileFields(
+                        ref, out, idx,
+                        srTileMode, srTileOffsetU, srTileOffsetV,
+                        srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
+                    );
+                } else {
                     if (rqRepeatX) rqRepeatX[out] = 0;
                     if (rqRepeatY) rqRepeatY[out] = 0;
                     if (rqTileMulX) rqTileMulX[out] = 0;
                     if (rqTileMulY) rqTileMulY[out] = 0;
                 }
 
-                if (!packDirectLive) {
-                    rqX[out] = currX;
-                    rqY[out] = currY;
-                    rqScaleX[out] = sx;
-                    rqScaleY[out] = sy;
-                    rqRotC[out] = rc;
-                    rqRotS[out] = rs;
-                    rqTint[out] = tint;
-                    rqAnchorX[out] = ax;
-                    rqAnchorY[out] = ay;
-                }
+                rqX[out] = currX;
+                rqY[out] = currY;
+                rqScaleX[out] = sx;
+                rqScaleY[out] = sy;
+                rqRotC[out] = rc;
+                rqRotS[out] = rs;
+                rqTint[out] = tint;
+                rqAnchorX[out] = ax;
+                rqAnchorY[out] = ay;
 
                 this._setQueueType(ref, out, 0, idx);
                 const sheetId = srSpritesheetId[idx];
@@ -3215,29 +3161,7 @@ class PreRenderWorker extends AbstractWorker {
                         );
                     }
                 }
-                if (packDirectLive) {
-                    const row = this._gpuDirectRow;
-                    row.x = currX;
-                    row.y = currY;
-                    row.sx = sx;
-                    row.sy = sy;
-                    row.ax = ax;
-                    row.ay = ay;
-                    row.rc = rc;
-                    row.rs = rs;
-                    row.a = a;
-                    row.tint = tint;
-                    row.tex = tex;
-                    row.invX = invX;
-                    row.invY = invY;
-                    row.u = u;
-                    row.v = v;
-                    row.cut = this.renderQueueAlphaCutOff ? this.renderQueueAlphaCutOff[out] : 0;
-                    row.sk = writeSortKey ? sk : null;
-                    this._writeGpuDirectFromLocals(out, row);
-                } else {
-                    rqTextureId[out] = tex;
-                }
+                rqTextureId[out] = tex;
             } else if (type === 1) {
                 // === PARTICLE ===
                 rqX[out] = particleX[idx];
@@ -3416,11 +3340,10 @@ class PreRenderWorker extends AbstractWorker {
                 if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
                 this._setQueueType(ref, out, 3, idx);
             }
-            if (packDirectLive && type !== 0) this._writeGpuDirectFromSoa(out);
         }
 
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
-        if (!persistHit && !packDirectLive) {
+        if (!persistHit) {
             this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
         }
         this.renderQueueCount[0] = writeCount;
@@ -3992,74 +3915,7 @@ class PreRenderWorker extends AbstractWorker {
         opts.snapCameraX = this._frameCameraX;
         opts.snapCameraY = this._frameCameraY;
         opts.type = this.renderQueueType;
-        opts.useZBuffer = !!(this._useZBuffer || this._bitonic);
-        if (this._useZBuffer || this._bitonic) {
-            const u = SpriteRenderer._zIndexUsers;
-            let zMin = 0;
-            let zMax = 0;
-            if (u && Atomics.load(u, 0) > 0) {
-                zMin = Atomics.load(u, 1);
-                zMax = Atomics.load(u, 2);
-                if (zMax < zMin) { zMin = 0; zMax = 0; }
-            }
-            const fit = depthSpanForZ(this.config?.worldHeight || 10000, zMin, zMax);
-            opts.keySpan = fit.span;
-            opts.keyHalf = fit.half;
-        } else {
-            opts.keySpan = 0;
-            opts.keyHalf = 0;
-        }
-        opts.keysOut = null;
-        opts.keyBits = null;
-        opts.keyFrom = 0;
-    }
-
-    _ensureGpuDirect(n) {
-        const rows = Math.max(n | 0, 1);
-        const need = rows * GPU_SPRITE_FLOATS;
-        if (!this._gpuDirectF32 || this._gpuDirectF32.length < need) {
-            this._gpuDirectF32 = new Float32Array(need);
-            this._gpuDirectU32 = new Uint32Array(this._gpuDirectF32.buffer);
-            this._gpuDirectHit = new Uint8Array(rows);
-        } else if (this._gpuDirectHit.length < rows) {
-            this._gpuDirectHit = new Uint8Array(rows);
-        }
-    }
-
-    _writeGpuDirectFromLocals(out, row) {
-        writeGpuSpriteRow(this._gpuDirectF32, this._gpuDirectU32, out, row, this._gpuPackOpts);
-        if (this._gpuDirectHit) this._gpuDirectHit[out] = 1;
-    }
-
-    _writeGpuDirectFromSoa(out) {
-        const row = this._gpuDirectRow;
-        row.x = this.renderQueueX[out];
-        row.y = this.renderQueueY[out];
-        row.sx = this.renderQueueScaleX[out];
-        row.sy = this.renderQueueScaleY[out];
-        row.ax = this.renderQueueAnchorX[out];
-        row.ay = this.renderQueueAnchorY[out];
-        row.rc = this.renderQueueRotC[out];
-        row.rs = this.renderQueueRotS[out];
-        row.a = this.renderQueueAlpha[out];
-        row.tint = this.renderQueueTint[out];
-        row.tex = this.renderQueueTextureId[out];
-        const rx = this.renderQueueRepeatX ? this.renderQueueRepeatX[out] : 0;
-        const ry = this.renderQueueRepeatY ? this.renderQueueRepeatY[out] : 0;
-        row.invX = this.renderQueueTileMulX ? this.renderQueueTileMulX[out] : (rx > 0 ? 1 / rx : 0);
-        row.invY = this.renderQueueTileMulY ? this.renderQueueTileMulY[out] : (ry > 0 ? 1 / ry : 0);
-        row.u = this.renderQueueTileOffsetU ? this.renderQueueTileOffsetU[out] * (1 / 65535) : 0;
-        row.v = this.renderQueueTileOffsetV ? this.renderQueueTileOffsetV[out] * (1 / 65535) : 0;
-        row.cut = this.renderQueueAlphaCutOff ? this.renderQueueAlphaCutOff[out] : 0;
-        row.sk = this.renderQueueSortKey ? this.renderQueueSortKey[out] : null;
-        this._writeGpuDirectFromLocals(out, row);
-    }
-
-    _backfillGpuDirectRange(start, end) {
-        for (let i = start; i < end; i++) {
-            if (this._gpuDirectHit && this._gpuDirectHit[i]) continue;
-            this._writeGpuDirectFromSoa(i);
-        }
+        opts.sortKey = null;
     }
 
     _collectStampLights() {
@@ -4122,17 +3978,6 @@ class PreRenderWorker extends AbstractWorker {
         out.sort(this._stampLightCmp || (this._stampLightCmp = (a, b) => a.distSq - b.distSq || a.id - b.id));
     }
 
-    _writeSpriteKeys(dst, q, indices, start, n) {
-        const keysOut = dst.spriteKeys;
-        const sk = q.sortKey;
-        if (!keysOut || !sk || n <= 0) return;
-        const bits = this._sortKeyBits(sk);
-        for (let k = 0; k < n; k++) {
-            const i = indices[k];
-            keysOut[start + k] = floatBitsToOrd(bits[i]);
-        }
-    }
-
     _packGpuSprites(dst, q, allowPainter) {
         const caps = this.gpuQueueCaps;
         const opts = this._gpuPackOpts;
@@ -4149,74 +3994,6 @@ class PreRenderWorker extends AbstractWorker {
         }
         const idxE = this._gpuIdxEntity;
         const idxG = this._gpuIdxGlow;
-        if (this._bitonic && typeArr && this._gpuIdxCutout && this._gpuIdxBlend) {
-            const split = partitionCutoutBlend(
-                typeArr,
-                q.alpha,
-                q.alphaMode || this.renderQueueAlphaMode,
-                count,
-                glowAdd ? 3 : -1,
-                this._decorationZoomAlpha,
-                this._gpuIdxCutout,
-                this._gpuIdxBlend
-            );
-            const cutN = split.cutout;
-            const blendN = split.blend;
-            const merged = idxE;
-            let ne = 0;
-            for (let i = 0; i < cutN; i++) merged[ne++] = this._gpuIdxCutout[i];
-            for (let i = 0; i < blendN; i++) merged[ne++] = this._gpuIdxBlend[i];
-            opts.indices = merged;
-            opts.indexCount = ne;
-            opts.useZBuffer = true;
-            opts.sortKey = q.sortKey;
-            const take = ne > caps.maxSprites ? caps.maxSprites : ne;
-            if (this._packDirectLive && this._gpuDirectF32) {
-                spriteN = gatherInstancedRows(
-                    this._gpuDirectF32, dst.sprites, merged, take,
-                    GPU_SPRITE_FLOATS, GPU_SPRITE_FLOATS
-                );
-                for (let i = 0; i < spriteN; i++) {
-                    if (typeArr[merged[i]] === 1) particles++;
-                }
-                if (this._packKeys && dst.spriteKeys && q.sortKey) {
-                    const bits = this._sortKeyBits(q.sortKey);
-                    const keysOut = dst.spriteKeys;
-                    for (let k = cutN; k < spriteN; k++) {
-                        keysOut[k] = floatBitsToOrd(bits[merged[k]]);
-                    }
-                } else if (!this._packKeys) {
-                    this._writeSpriteKeys(dst, q, merged, 0, spriteN);
-                }
-            } else {
-                const ctx = makePackContext(q, opts, caps.maxSprites);
-                if (this._packKeys && dst.spriteKeys && q.sortKey) {
-                    opts.keysOut = dst.spriteKeys;
-                    opts.keyBits = this._sortKeyBits(q.sortKey);
-                    opts.keyFrom = cutN;
-                }
-                spriteN = ctx
-                    ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
-                    : 0;
-                particles = ctx ? (ctx.particleCount | 0) : 0;
-                if (!this._packKeys) this._writeSpriteKeys(dst, q, merged, 0, spriteN);
-            }
-            flags = packGpuSpriteFlags(GPU_FLAG_BITONIC, Math.min(cutN, spriteN));
-            if (glowAdd && caps.maxGlow > 0) {
-                glowN = fillQueueIndices(typeArr, count, 3, -1, idxG);
-                if (glowN > 0) {
-                    opts.useZBuffer = false;
-                    opts.sortKey = null;
-                    opts.indices = idxG;
-                    opts.indexCount = glowN;
-                    const gctx = makePackContext(q, opts, caps.maxGlow);
-                    glowN = gctx
-                        ? packInstancedRows(q, gctx, dst.glow, dst.glowU32, GPU_SPRITE_FLOATS, caps.maxGlow, false)
-                        : 0;
-                }
-            }
-            return { sprite: spriteN, glow: glowN, particle: particles, flags };
-        }
         if (glowAdd && typeArr && idxE) {
             let ne = fillQueueIndices(typeArr, count, -1, 3, idxE);
             glowN = fillQueueIndices(typeArr, count, 3, -1, idxG);
@@ -4228,11 +4005,7 @@ class PreRenderWorker extends AbstractWorker {
             }
             opts.indices = spriteIdx;
             opts.indexCount = ne;
-            if (opts.useZBuffer) opts.sortKey = q.sortKey;
-            else {
-                opts.useZBuffer = false;
-                opts.sortKey = null;
-            }
+            opts.sortKey = null;
             const ctx = makePackContext(q, opts, caps.maxSprites);
             spriteN = ctx
                 ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
@@ -4243,7 +4016,6 @@ class PreRenderWorker extends AbstractWorker {
                     const keysU32 = this._sortKeyBits(q.sortKey);
                     radixSortIndicesBySortKey(idxG, glowN, keysU32, this._gpuPainter.scratch, this._gpuPainter.hist);
                 }
-                opts.useZBuffer = false;
                 opts.sortKey = null;
                 opts.indices = idxG;
                 opts.indexCount = glowN;
@@ -4265,11 +4037,7 @@ class PreRenderWorker extends AbstractWorker {
                 opts.indices = null;
                 opts.indexCount = 0;
             }
-            if (opts.useZBuffer) opts.sortKey = q.sortKey;
-            else {
-                opts.useZBuffer = false;
-                opts.sortKey = null;
-            }
+            opts.sortKey = null;
             const ctx = makePackContext(q, opts, caps.maxSprites);
             spriteN = ctx
                 ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
@@ -4293,19 +4061,11 @@ class PreRenderWorker extends AbstractWorker {
             this._resetGpuPackOpts(opts);
             opts.indices = this._gpuCasterIdx;
             opts.indexCount = sunN;
-            opts.useZBuffer = false;
             opts.sortKey = null;
-            if (this._packDirectLive && this._gpuDirectF32) {
-                sunN = gatherInstancedRows(
-                    this._gpuDirectF32, dst.sun, this._gpuCasterIdx, sunN,
-                    GPU_SPRITE_FLOATS, GPU_CASTER_FLOATS, q
-                );
-            } else {
-                const sctx = makePackContext(q, opts, caps.maxSun);
-                sunN = sctx
-                    ? packInstancedRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
-                    : 0;
-            }
+            const sctx = makePackContext(q, opts, caps.maxSun);
+            sunN = sctx
+                ? packInstancedRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
+                : 0;
         }
         this._collectStampLights();
         const lights = this._stampLights;
@@ -4381,7 +4141,6 @@ class PreRenderWorker extends AbstractWorker {
                 opts.cameraX = this._frameCameraX;
                 opts.cameraY = this._frameCameraY;
                 opts.resolution = res;
-                opts.useZBuffer = false;
                 opts.sortKey = null;
                 opts.type = null;
                 opts.depthDenom = Math.max(1, n);
@@ -4394,12 +4153,12 @@ class PreRenderWorker extends AbstractWorker {
         return { sun: sunN, stamp: cursor, cookie: cookieN };
     }
 
-    _packGpuQueues(dst, withShadows = true, views = null) {
+    _packGpuQueues(dst, withShadows = true, views = null, forcePainter = false) {
         if (!dst || !this.gpuQueueCaps) return;
         clearGpuQueueHeader(dst.header);
         const q = views ? this._gpuSoAFromViews(views) : this._gpuSoAFromBound();
         if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
-        const allowPainter = !this._sharded;
+        const allowPainter = forcePainter || !this._sharded;
         const sprites = this._packGpuSprites(dst, q, allowPainter);
         const shadows = (withShadows && !this._sharded)
             ? this._packGpuShadows(dst, q)

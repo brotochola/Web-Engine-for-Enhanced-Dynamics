@@ -107,7 +107,8 @@ export class Person extends Lootable {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.98;
     this.spriteRenderer.animationSpeed = 0.15;
-    this.spriteRenderer.alphaCutOff = 200;
+    this.spriteRenderer.alphaCutOff = 120;
+    this.spriteRenderer.alphaMode = WEED.SPRITE_ALPHA_MODE.BLEND;
     this.shadowCaster.heightMultiplier = 1.5
 
     // Shadow uses default heightMultiplier = 1 (matches sprite scale)

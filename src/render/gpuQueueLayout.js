@@ -8,13 +8,11 @@
  * in shadow-RT pixels.
  */
 
-import { DECORATION_Y_SORT_SCALE } from '../util/configDefaults.js';
-import { depthFromOrderKey, depthFromSortKey, floatBitsToOrd } from '../util/sortIndexByKey.js';
 
 export const GPU_SPRITE_FLOATS = 16;
 export const GPU_CASTER_FLOATS = 23;
 export const GPU_HEADER_INTS = 8;
-export const GPU_QUEUE_VERSION = 2;
+export const GPU_QUEUE_VERSION = 4;
 
 export const GPU_HDR_SPRITE = 0;
 export const GPU_HDR_GLOW = 1;
@@ -26,16 +24,6 @@ export const GPU_HDR_FLAGS = 6;
 export const GPU_HDR_VERSION = 7;
 
 export const GPU_FLAG_SORTED = 1;
-export const GPU_FLAG_BITONIC = 2;
-export const GPU_FLAG_CUTOUT_SHIFT = 8;
-
-export function packGpuSpriteFlags(flags, cutoutCount) {
-  return (flags & 0xff) | ((cutoutCount | 0) << GPU_FLAG_CUTOUT_SHIFT);
-}
-
-export function unpackGpuCutoutCount(flags) {
-  return (flags >>> GPU_FLAG_CUTOUT_SHIFT) | 0;
-}
 
 export const GPU_SPACE_WORLD = 0;
 export const GPU_SPACE_SCREEN = 1;
@@ -57,13 +45,7 @@ export function writeGpuSpriteRow(dst, dstU32, out, row, opts) {
     x = snapWorldToPixel(x, o.snapCameraX || 0, o.snapZoom || 1);
     y = snapWorldToPixel(y, o.snapCameraY || 0, o.snapZoom || 1);
   }
-  let depth;
-  if (o.useZBuffer && row.sk != null) {
-    if (o.keySpan > 0) depth = depthFromOrderKey(row.sk, o.keySpan, o.keyHalf);
-    else depth = depthFromSortKey(row.sk, o.worldHeight, DECORATION_Y_SORT_SCALE);
-  } else {
-    depth = 1.0 - (out + 1) / ((o.depthDenom || 1) + 1);
-  }
+  const depth = 1.0 - (out + 1) / ((o.depthDenom || 1) + 1);
   let a = row.a;
   if (a < 0) a = 0;
   else if (a > 1) a = 1;
@@ -111,11 +93,7 @@ export function gatherInstancedRows(src, dst, indices, n, srcFp, dstFp, shadowQ)
   return sn;
 }
 
-function instanceDepth(out, depthDenom, o, i) {
-  if (o.useZBuffer && o.sortKey) {
-    if (o.keySpan > 0) return depthFromOrderKey(o.sortKey[i], o.keySpan, o.keyHalf);
-    return depthFromSortKey(o.sortKey[i], o.worldHeight, DECORATION_Y_SORT_SCALE);
-  }
+function instanceDepth(out, depthDenom) {
   return 1.0 - (out + 1) / depthDenom;
 }
 
@@ -194,7 +172,7 @@ export function createGpuQueueViews(sab, caps) {
   const stampLightIdx = stampN > 0 ? new Uint16Array(sab, offset, stampN) : new Uint16Array(0);
   offset = align4(offset + stampN * 2);
   const keyN = c.maxSprites | 0;
-  const spriteKeys = keyN > 0 ? new Uint32Array(sab, offset, keyN) : new Uint32Array(0);
+  const spriteKeys = keyN > 0 ? new Float32Array(sab, offset, keyN) : new Float32Array(0);
   offset = align4(offset + keyN * 4);
   return {
     header,
@@ -352,9 +330,6 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     dst[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
     const cutU8 = q.alphaCutOff ? q.alphaCutOff[i] | 0 : 0;
     dst[base + 15] = cutU8 > 0 ? cutU8 * (1 / 255) : 0;
-    if (o.keysOut && o.keyBits && out >= (o.keyFrom | 0)) {
-      o.keysOut[out] = floatBitsToOrd(o.keyBits[i]);
-    }
     if (shadowCast && fp >= GPU_CASTER_FLOATS) {
       const sh = q.shadowH;
       dst[base + 16] = sh ? sh[i] : 0;

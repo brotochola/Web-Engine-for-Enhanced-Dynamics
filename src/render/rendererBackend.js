@@ -7,44 +7,38 @@ export const RENDERER_BACKEND_WEBGL = 'webgl';
 export const RENDERER_BACKEND_WEBGPU = 'webgpu';
 
 export const Y_SORT_CPU = 'cpu';
-export const Y_SORT_BITONIC = 'bitonic';
 
 export function errorYSortInvalid(value) {
-  return `WeedJS: config.renderer.ySort must be "bitonic", "cpu", or false. Got ${JSON.stringify(value)}. Using false.`;
-}
-
-export function errorYSortBitonicWebgl() {
-  return 'WeedJS: renderer.ySort "bitonic" requires renderer.backend "webgpu". This scene has "webgl". Using "cpu" instead.';
+  return `WeedJS: config.renderer.ySort must be true, "cpu", or false. Got ${JSON.stringify(value)}. Using false.`;
 }
 
 /**
+ * CPU painter when on. `"bitonic"` is gone: it becomes the CPU painter.
  * @param {unknown} value
- * @returns {false|'cpu'|'bitonic'}
+ * @returns {false|'cpu'}
  */
 export function normalizeYSort(value) {
   if (value === undefined || value === null || value === '' || value === false) return false;
+  if (value === 'bitonic') {
+    console.warn('WeedJS: renderer.ySort "bitonic" was removed. Using the CPU painter.');
+    return Y_SORT_CPU;
+  }
   if (value === true || value === Y_SORT_CPU) return Y_SORT_CPU;
-  if (value === Y_SORT_BITONIC) return Y_SORT_BITONIC;
   console.error(errorYSortInvalid(value));
   return false;
 }
 
 export function ySortEnabled(mode) {
-  return mode === Y_SORT_CPU || mode === Y_SORT_BITONIC || mode === true;
+  return mode === Y_SORT_CPU || mode === true;
 }
 
 /**
  * @param {unknown} ySort
- * @param {'webgl'|'webgpu'} backend
- * @returns {false|'cpu'|'bitonic'}
+ * @param {'webgl'|'webgpu'} _backend
+ * @returns {false|'cpu'}
  */
-export function resolveYSort(ySort, backend) {
-  const mode = normalizeYSort(ySort);
-  if (mode === Y_SORT_BITONIC && backend === RENDERER_BACKEND_WEBGL) {
-    console.error(errorYSortBitonicWebgl());
-    return Y_SORT_CPU;
-  }
-  return mode;
+export function resolveYSort(ySort, _backend) {
+  return normalizeYSort(ySort);
 }
 
 const WGSL_RE = /@(?:vertex|fragment|compute)\b/;
