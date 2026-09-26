@@ -66,8 +66,10 @@ import {
   GPU_HDR_STAMP,
   GPU_HDR_COOKIE,
   GPU_HDR_PARTICLE,
+  GPU_HDR_FLAGS,
   GPU_QUEUE_VERSION,
   GPU_HDR_VERSION,
+  GPU_FLAG_SORTED,
   createGpuQueueViews,
 } from '../render/gpuQueueLayout.js';
 import {
@@ -1469,12 +1471,15 @@ class PixiRenderer extends AbstractWorker {
     }
     const packedN = gpu && gpu.header ? (gpu.header[GPU_HDR_SPRITE] | 0) : 0;
     const soaN = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
+    const packedFlags = gpu && gpu.header ? (gpu.header[GPU_HDR_FLAGS] | 0) : 0;
+    const needOrder = this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
     const packedOk = !!(
       gpu &&
       gpu.header &&
       (gpu.header[GPU_HDR_VERSION] | 0) === GPU_QUEUE_VERSION &&
       !this.entitiesBatch.poseInterp &&
-      !(packedN === 0 && soaN > 0)
+      !(packedN === 0 && soaN > 0) &&
+      (!needOrder || (packedFlags & GPU_FLAG_SORTED))
     );
     if (packedOk) {
       this._syncEntityOrder();

@@ -5,6 +5,7 @@ import {
   compactShadowCasterIndices,
   compactStampByLightLimit,
   takeClosest,
+  stampLightRange,
   selectClosestCasters,
   linkCastersToClosestLights,
   collectLightCasters,
@@ -162,4 +163,46 @@ test('compactStampByLightLimit keeps the closest casters per light', () => {
   assert.equal(lightIdx[1], 1);
   assert.equal(stamp[0], 0);
   assert.equal(stamp[fp], 30);
+});
+
+test('stampLightRange stripe concat matches serial pairs when maxPerEntity is 0', () => {
+  const fp = 23;
+  const sunN = 4;
+  const sun = new Float32Array(sunN * fp);
+  sun[0] = 0; sun[1] = 0;
+  sun[fp] = 10; sun[fp + 1] = 0;
+  sun[fp * 2] = 40; sun[fp * 2 + 1] = 0;
+  sun[fp * 3] = 80; sun[fp * 3 + 1] = 0;
+  const lights = [
+    { x: 0, y: 0, intensity: 1, rangeSq: 2500 },
+    { x: 10, y: 0, intensity: 1, rangeSq: 2500 },
+    { x: 40, y: 0, intensity: 1, rangeSq: 2500 },
+    { x: 80, y: 0, intensity: 1, rangeSq: 2500 },
+  ];
+  function run(begin, stride) {
+    const stamp = new Float32Array(32 * fp);
+    const lightIdx = new Uint16Array(32);
+    const tmpIdx = new Uint32Array(8);
+    const dist = new Float32Array(8);
+    const order = new Uint32Array(8);
+    const keepIdx = new Uint32Array(8);
+    const lightVec = new Float32Array(4);
+    const n = stampLightRange({
+      sun, sunN, sunFloats: fp, lights,
+      lightBegin: begin, lightEnd: lights.length, lightStride: stride,
+      maxPerLight: 2, maxPerEntity: 0, used: null,
+      tmpIdx, dist, order, keepIdx,
+      stamp, stampFloats: fp, stampCap: 32, stampBase: 0,
+      stampLightIdx: lightIdx, lightVec,
+    });
+    const pairs = [];
+    for (let i = 0; i < n; i++) {
+      pairs.push(`${lightIdx[i]}:${stamp[i * fp]}`);
+    }
+    return pairs.sort();
+  }
+  const serial = run(0, 1);
+  const concat = run(0, 2).concat(run(1, 2)).sort();
+  assert.deepEqual(concat, serial);
+  assert.ok(serial.length >= 4);
 });

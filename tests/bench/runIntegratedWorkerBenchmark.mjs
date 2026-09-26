@@ -24,6 +24,14 @@ function formatWorkerConsoleLine(worker) {
   let line =
     `${worker.id}: STEP_MS ${step.toFixed(3)} | Load ${formatLoadPct(step)}` +
     ` | FPS ${worker.averageFPS.toFixed(2)} (inst ${worker.instantaneousFPS.toFixed(2)})`;
+  if (worker.type === 'preRender' || worker.id === 'preRender' || String(worker.id || '').startsWith('preRender')) {
+    if (avg.COLLECT_MS != null) line += ` | COLLECT_MS ${Number(avg.COLLECT_MS).toFixed(3)}`;
+    if (avg.EMIT_MS != null) line += ` | EMIT_MS ${Number(avg.EMIT_MS).toFixed(3)}`;
+    if (avg.SORT_MS != null) line += ` | SORT_MS ${Number(avg.SORT_MS).toFixed(3)}`;
+    if (avg.SHADOW_Q_MS != null) line += ` | SHADOW_Q_MS ${Number(avg.SHADOW_Q_MS).toFixed(3)}`;
+    if (avg.WAIT_MS != null) line += ` | WAIT_MS ${Number(avg.WAIT_MS).toFixed(3)}`;
+    if (avg.RENDER_QUEUE_SIZE != null) line += ` | QUEUE ${Number(avg.RENDER_QUEUE_SIZE).toFixed(0)}`;
+  }
   if (worker.type === 'physics' || worker.id === 'physics') {
     if (avg.BOX2D_MS != null) line += ` | BOX2D_MS ${Number(avg.BOX2D_MS).toFixed(3)}`;
     if (avg.LIQUIDFUN_MS != null) line += ` | LIQUIDFUN_MS ${Number(avg.LIQUIDFUN_MS).toFixed(3)}`;

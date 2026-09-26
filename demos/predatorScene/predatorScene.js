@@ -91,12 +91,12 @@ export class PredatorScene extends WEED.Scene {
     worldHeight: 5000,
     seed: 123456,
 
-    debug: {
-      maxDebugDrawEntries: 30192,
-      collectDetailedStats: true,
-      collectGpuStats: true, // bench --collect-gpu-stats pisa esto
-      verboseWorkers: true,
-    },
+    // debug: {
+    //   maxDebugDrawEntries: 30192,
+    //   collectDetailedStats: true,
+    //   collectGpuStats: true, // bench --collect-gpu-stats pisa esto
+    //   verboseWorkers: true,
+    // },
 
     // Spatial hash grid configuration
     spatial: {
@@ -159,7 +159,7 @@ export class PredatorScene extends WEED.Scene {
     preRender: {
       noLimitFPS: false,
       entityBlockSize: 512,
-      numberOfPreRenderWorkers: predatorPositiveParam('preRenderWorkers', 1),
+      numberOfPreRenderWorkers: 4,// predatorPositiveParam('preRenderWorkers', 1),
       backpressure: true,
       skipCull: false,
       interpolation: false,

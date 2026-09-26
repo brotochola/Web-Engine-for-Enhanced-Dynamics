@@ -8,7 +8,6 @@
  * in shadow-RT pixels.
  */
 
-
 export const GPU_SPRITE_FLOATS = 16;
 export const GPU_CASTER_FLOATS = 23;
 export const GPU_HEADER_INTS = 8;

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   RENDERER_STATS,
   SPATIAL_STATS,
+  PRE_RENDER_STATS,
   createStatsReader,
   createStatsWriter,
   createMultiWorkerStatsReaderArray,
@@ -72,4 +73,11 @@ test('getEntityHomeCellIndex returns -1 when out of bounds', () => {
   assert.equal(getEntityHomeCellIndex(10, 10, 0.1, 4, 4), 5);
   assert.equal(getEntityHomeCellIndex(-11, 10, 0.1, 4, 4), -1);
   assert.equal(getEntityHomeCellIndex(10, 999, 0.1, 4, 4), -1);
+});
+
+test('PRE_RENDER_STATS WAIT_MS sits inside stride 17', () => {
+  assert.equal(PRE_RENDER_STATS.ADOBE_MS, 15);
+  assert.equal(PRE_RENDER_STATS.WAIT_MS, 16);
+  assert.equal(PRE_RENDER_STATS.STRIDE_FLOATS, 17);
+  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE, 17 * 4);
 });

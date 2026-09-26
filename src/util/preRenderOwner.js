@@ -101,7 +101,8 @@ export const PR_JOIN_ARRIVED_B = 2;
 export const PR_JOIN_EPOCH_B = 3;
 export const PR_JOIN_START = 4;
 export const PR_JOIN_POSE = 5;
-export const PR_JOIN_HEADER = 6;
+export const PR_JOIN_STAMP_CUR = 6;
+export const PR_JOIN_HEADER = 7;
 
 export const PR_STREAM_SPRITE = 0;
 export const PR_STREAM_SHADOW = 1;

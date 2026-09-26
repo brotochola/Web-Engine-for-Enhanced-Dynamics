@@ -220,10 +220,11 @@ export const PRE_RENDER_STATS = Object.freeze({
   SHADOW_Q_MS: 13,
   VISIBILITY_MS: 14,
   ADOBE_MS: 15,
-  STRIDE_FLOATS: 16,
-  BUFFER_SIZE_PER_WORKER: 16 * 4,
+  WAIT_MS: 16,
+  STRIDE_FLOATS: 17,
+  BUFFER_SIZE_PER_WORKER: 17 * 4,
   /** One worker. Multi-worker buffers are BUFFER_SIZE_PER_WORKER * N. */
-  BUFFER_SIZE: 16 * 4,
+  BUFFER_SIZE: 17 * 4,
 });
 
 /**
@@ -466,6 +467,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'SHADOW_Q_MS', label: 'ShadowQ', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'VISIBILITY_MS', label: 'Vis', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'ADOBE_MS', label: 'Adobe', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
       { key: 'RENDER_QUEUE_SIZE', label: 'Queue', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'SKIPPED_FRAMES', label: 'Skipped', format: fmtNum, kind: STAT_KIND.COUNT },

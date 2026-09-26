@@ -78,6 +78,86 @@ export function writeCasterPose(data, base, x, y, rotC, rotS, height, offX, offY
   data[base + 18] = offY;
 }
 
+/**
+ * Stamp a strided light range against packed sun rows (xy in each instance).
+ * `lightBegin` + `lightStride` split `_collectStampLights` across workers.
+ * Returns the stamp instance cursor (dstBase + written).
+ * Pair set matches a serial walk when maxPerEntity is 0 (default).
+ */
+export function stampLightRange({
+  sun,
+  sunN,
+  sunFloats,
+  lights,
+  lightBegin,
+  lightEnd,
+  lightStride,
+  maxPerLight,
+  maxPerEntity,
+  used,
+  tmpIdx,
+  dist,
+  order,
+  keepIdx,
+  stamp,
+  stampFloats,
+  stampCap,
+  stampBase,
+  stampLightIdx,
+  lightVec,
+}) {
+  const nSun = sunN | 0;
+  const sf = sunFloats | 0;
+  const capL = lightEnd | 0;
+  const stride = (lightStride | 0) > 0 ? (lightStride | 0) : 1;
+  let begin = lightBegin | 0;
+  if (begin < 0) begin = 0;
+  const maxPL = maxPerLight | 0;
+  const maxPE = maxPerEntity | 0;
+  if (used && maxPE > 0 && nSun > 0) used.fill(0, 0, nSun);
+  let cursor = stampBase | 0;
+  const cap = stampCap | 0;
+  if (!sun || !stamp || nSun <= 0 || !lights || !tmpIdx || !dist || !keepIdx || !lightVec) return cursor;
+  const tmpCap = tmpIdx.length | 0;
+  for (let i = begin; i < capL && cursor < cap; i += stride) {
+    const L = lights[i];
+    if (!L || !(L.rangeSq > 0) || !(L.intensity > 0)) continue;
+    const lim = maxPL > 0 ? maxPL : nSun;
+    let m = 0;
+    const lx = L.x;
+    const ly = L.y;
+    const rangeSq = L.rangeSq;
+    for (let c = 0; c < nSun && m < tmpCap; c++) {
+      if (maxPE > 0 && used[c] >= maxPE) continue;
+      const b = c * sf;
+      const dx = sun[b] - lx;
+      const dy = sun[b + 1] - ly;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > rangeSq) continue;
+      tmpIdx[m] = c;
+      dist[m] = d2;
+      m++;
+    }
+    if (m <= 0) continue;
+    m = takeClosest(tmpIdx, dist, order, m, lim, keepIdx);
+    if (maxPE > 0) {
+      for (let k = 0; k < m; k++) used[keepIdx[k]]++;
+    }
+    lightVec[0] = lx;
+    lightVec[1] = ly;
+    lightVec[2] = L.intensity;
+    lightVec[3] = rangeSq;
+    const written = appendStampedCasters(
+      stamp, stampFloats, cursor, sun, sf, keepIdx, m, lightVec, cap, 0
+    );
+    if (stampLightIdx) {
+      for (let k = cursor; k < written; k++) stampLightIdx[k] = i;
+    }
+    cursor = written;
+  }
+  return cursor;
+}
+
 export function takeClosest(tmpIdx, tmpDist, order, m, limit, outIdx) {
   if (limit > 0 && m > limit) {
     for (let k = 0; k < m; k++) order[k] = k;

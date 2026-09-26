@@ -70,14 +70,19 @@ test('adobe writes one shadow row on the lowest piece', () => {
   assert.equal((body.match(/_writeQueueShadow\(/g) || []).length, 1);
 });
 
-test('sharded GPU shadows skip per-worker pack; publish re-packs joined SoA', () => {
-  const packAt = preRender.lastIndexOf('_packGpuQueues(dst, withShadows = true, views = null)');
-  const pack = preRender.slice(packAt, preRender.indexOf('_storeGpuStreamCounts()', packAt));
-  assert.match(pack, /withShadows && !this\._sharded/);
-  assert.match(preRender, /_emitWriteCount/);
+test('sharded GPU shadows pack sun per worker and stamp after the sun join', () => {
+  assert.match(preRender, /_stampJoinedSun\(/);
+  assert.match(preRender, /_packCopyJoinedShadows\(/);
   const pubAt = preRender.lastIndexOf('_publishGpuQueue(bufIdx)');
   const pub = preRender.slice(pubAt, preRender.indexOf('_collectVisibleLights()', pubAt));
-  assert.match(pub, /_packGpuShadows\(/);
+  assert.doesNotMatch(pub, /_packGpuShadows\(/);
+  assert.match(pub, /_packJoinedGpuSprites\(/);
+});
+
+test('sharded y-sort / zIndex re-packs sprites from the joined SoA, not per id-block', () => {
+  assert.match(preRender, /_joinedPainterNeeded\(\)/);
+  assert.match(preRender, /_packJoinedGpuSprites\(dst, views\)/);
+  assert.match(preRender, /this\._packGpuSprites\(dst, q, true\)/);
 });
 
 test('stamp light range falls back to influence when visualRange is 0', () => {

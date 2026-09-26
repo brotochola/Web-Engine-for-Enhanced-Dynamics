@@ -18,6 +18,11 @@ test('preRenderWorker only writes sortKey; never CPU-sorts the queue', () => {
   assert.doesNotMatch(preRender, /Y-sort \(per-layer policy\)/);
 });
 
+test('pixi packed GPU sprites must already be painter-sorted when ySort or zIndex is on', () => {
+  assert.match(pixi, /GPU_FLAG_SORTED/);
+  assert.match(pixi, /needOrder \|\| \(packedFlags & GPU_FLAG_SORTED\)/);
+});
+
 test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter path', () => {
   assert.match(pixi, /createPainterState, orderPainterSlots/);
   assert.match(pixi, /this\._painter = this\._ySort \? createPainterState\(maxItems\) : null/);
@@ -75,6 +80,7 @@ test('pixi: GPU two-pass is gone; ySorting uses reinsert with no painterSort con
 test('preRender writes the SoA row and the CPU painter packs it', () => {
   assert.match(preRender, /rqX\[out\] = currX/);
   assert.match(preRender, /orderPainterSlots\(this\._gpuPainter/);
+  assert.match(preRender, /_packJoinedGpuSprites\(/);
   assert.doesNotMatch(preRender, /_packDirect/);
   assert.doesNotMatch(preRender, /_writeSpriteKeys/);
 });

@@ -217,6 +217,23 @@ test('equal keys: a left insert that repacks two sprites flips their draw order'
   assert.ok(i20 < i10);
 });
 
+test('painter on each id-half then concat is not the global Y order', () => {
+  const keys = new Float32Array([10, 40, 20, 30]);
+  const keysU32 = new Uint32Array(keys.buffer);
+  const left = new Uint32Array([0, 1]);
+  const right = new Uint32Array([2, 3]);
+  const a = createPainterState(4);
+  const b = createPainterState(4);
+  const all = createPainterState(4);
+  orderPainterSlots(a, left, 2, keysU32);
+  orderPainterSlots(b, right, 2, keysU32);
+  const concat = [a.order[0], a.order[1], b.order[0], b.order[1]];
+  const idxE = new Uint32Array([0, 1, 2, 3]);
+  const global = orderPainterSlots(all, idxE, 4, keysU32);
+  assert.deepEqual(Array.from(global.subarray(0, 4)), [0, 2, 3, 1]);
+  assert.notDeepEqual(concat, Array.from(global.subarray(0, 4)));
+});
+
 test('painterSameSet: filtered set (real idxE) needs matching integers, not just count', () => {
   const cap = 8;
   const keys = new Float32Array(cap);
