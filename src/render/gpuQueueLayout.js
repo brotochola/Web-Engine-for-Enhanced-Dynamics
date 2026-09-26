@@ -70,6 +70,16 @@ export function writeGpuSpriteRow(dst, dstU32, out, row, opts) {
   dst[base + 15] = row.cut > 0 ? row.cut * (1 / 255) : 0;
 }
 
+/** Painter output index owns depth. Call after gatherInstancedRows. */
+export function rewritePackedDepth(dst, n, depthDenom, floatsPer) {
+  const fp = floatsPer > 0 ? floatsPer : GPU_SPRITE_FLOATS;
+  const denom = depthDenom > 0 ? depthDenom : 1;
+  const sn = n | 0;
+  for (let k = 0; k < sn; k++) {
+    dst[k * fp + 8] = 1.0 - (k + 1) / denom;
+  }
+}
+
 export function gatherInstancedRows(src, dst, indices, n, srcFp, dstFp, shadowQ) {
   const sn = n | 0;
   const sfp = srcFp | 0;

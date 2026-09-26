@@ -16,6 +16,7 @@ import {
   makePackContext,
   fillQueueIndices,
   copyPackedRows,
+  rewritePackedDepth,
 } from '../../src/render/gpuQueueLayout.js';
 
 test('gpuQueue SAB views round-trip header and packed rows', () => {
@@ -77,6 +78,41 @@ test('fillQueueIndices skips glow type 3', () => {
   const n = fillQueueIndices(type, 5, -1, 3, out);
   assert.equal(n, 3);
   assert.deepEqual(Array.from(out.subarray(0, n)), [0, 2, 4]);
+});
+
+test('indexed world pack matches sequential pack', () => {
+  const q = {
+    count: 2,
+    x: new Float32Array([10, 20]),
+    y: new Float32Array([1, 2]),
+    scaleX: new Float32Array([1, 1]),
+    scaleY: new Float32Array([1, 2]),
+    rotC: new Float32Array([1, 1]),
+    rotS: new Float32Array([0, 0]),
+    alpha: new Float32Array([1, 0.5]),
+    tint: new Uint32Array([0xffffff, 0x00ff00]),
+    textureId: new Uint16Array([3, 4]),
+    anchorX: new Float32Array([0.5, 0.25]),
+    anchorY: new Float32Array([1, 1]),
+    type: new Uint8Array([0, 1]),
+    sortKey: new Float32Array([0, 10]),
+    alphaCutOff: new Uint8Array([1, 200]),
+    tileMulX: new Float32Array([0, 0]),
+    tileMulY: new Float32Array([0, 0]),
+  };
+  const sequential = new Float32Array(2 * GPU_SPRITE_FLOATS);
+  const sequentialU32 = new Uint32Array(sequential.buffer);
+  const ctx = makePackContext(q, { space: 0, depthDenom: 8, worldHeight: 100, type: q.type }, 8);
+  packInstancedRows(q, ctx, sequential, sequentialU32, GPU_SPRITE_FLOATS, 8, false);
+  const indexed = new Float32Array(2 * GPU_SPRITE_FLOATS);
+  const indexedU32 = new Uint32Array(indexed.buffer);
+  const idx = new Uint32Array([0, 1]);
+  const ctxI = makePackContext(q, {
+    space: 0, depthDenom: 8, worldHeight: 100, type: q.type, indices: idx, indexCount: 2,
+  }, 8);
+  packInstancedRows(q, ctxI, indexed, indexedU32, GPU_SPRITE_FLOATS, 8, false);
+  assert.deepEqual(Array.from(indexed), Array.from(sequential));
+  assert.equal(ctxI.particleCount, 1);
 });
 
 test('shadow pack writes caster extras', () => {
@@ -162,4 +198,13 @@ test('gatherInstancedRows permutes emit rows and copies shadow extras', () => {
   assert.ok(Math.abs(dst[17] - 0.3) < 1e-6);
   assert.equal(dst[18], 6);
   assert.equal(dst[GPU_CASTER_FLOATS + 16], 1);
+});
+
+test('rewritePackedDepth writes painter-order clip Z', () => {
+  const dst = new Float32Array(2 * GPU_SPRITE_FLOATS);
+  dst[8] = 99;
+  dst[GPU_SPRITE_FLOATS + 8] = 99;
+  rewritePackedDepth(dst, 2, 3);
+  assert.ok(Math.abs(dst[8] - (1 - 1 / 3)) < 1e-6);
+  assert.ok(Math.abs(dst[GPU_SPRITE_FLOATS + 8] - (1 - 2 / 3)) < 1e-6);
 });

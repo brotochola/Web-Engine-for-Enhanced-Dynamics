@@ -48,6 +48,13 @@ import {
     PR_JOIN_EPOCH_B,
     PR_JOIN_START,
     PR_JOIN_POSE,
+    PR_WIN_FRAME,
+    PR_WIN_SPRITE,
+    PR_WIN_GLOW,
+    PR_WIN_SUN,
+    PR_WIN_STAMP,
+    PR_WIN_COOKIE,
+    prWinSlot,
     PR_STREAM_SPRITE,
     PR_STREAM_SHADOW,
     PR_STREAM_VP,
@@ -1070,6 +1077,8 @@ class PreRenderWorker extends AbstractWorker {
             }
         }
 
+        if (this._bandOn) this._bindBandColumns(this._queueBuf);
+
         // Latch published physics pose once per frame (Atomics seq, same as pixi render queue).
         this._latchPose();
         if (this.renderQueuePoseReady) this.renderQueuePoseReady[0] = this._poseReadyFrame;
@@ -1173,21 +1182,34 @@ class PreRenderWorker extends AbstractWorker {
         this._collectVisibleLights();
 
         if (this.gpuQueueBuffers) {
-            const packBuf = this.gpuQueueBuffers[this._queueBuf];
+            const packBuf = this._bandOn
+                ? this._bandGpuView(this.gpuQueueBuffers[this._queueBuf])
+                : this.gpuQueueBuffers[this._queueBuf];
             if (detail) t0 = performance.now();
-            this._packGpuQueues(packBuf);
-            if (detail) this.shadowQTimeThisFrame = performance.now() - t0;
+            const sortBefore = this.sortTimeThisFrame;
+            this._packGpuQueues(packBuf, true, null, !!this._bandOn);
+            if (detail) {
+                const packed = performance.now() - t0;
+                const sortDelta = this.sortTimeThisFrame - sortBefore;
+                this.shadowQTimeThisFrame = packed - (sortDelta > 0 ? sortDelta : 0);
+            }
         }
 
         // Cookie SoA queue is unused; GPU cookies live in gpuQueue.
+        if (!this._bandOn) {
         if (detail) t0 = performance.now();
         this.buildShadowRenderQueue();
         if (detail) this.shadowQTimeThisFrame += performance.now() - t0;
 
-        // Build visibility polygons for raycasted light occlusion
         if (detail) t0 = performance.now();
         this.buildVisibilityPolygons();
         if (detail) this.visibilityTimeThisFrame = performance.now() - t0;
+        }
+
+        if (this._bandOn) {
+            this._finishBandFrame();
+            return;
+        }
 
         // ========================================
         // SIGNAL FRAME READY
@@ -1200,6 +1222,147 @@ class PreRenderWorker extends AbstractWorker {
             // Notify (pixi does not wait; harmless)
             Atomics.notify(this.renderQueueSync, 0, 1);
         }
+    }
+
+    /**
+     * N workers. Y bands write straight into a fixed window of the shared queue.
+     * No private clone of the full queue, no wait on the other pre-renders.
+     */
+    _beginBandFrame() {
+        this.skippedFramesThisFrame = 0;
+        this._bandOn = false;
+        const pose = this.poseSync ? Atomics.load(this.poseSync, 0) : 0;
+        if (pose <= 0) return false;
+        if ((this._bandPublished | 0) > 0 && this.backpressure && this.renderQueueSync) {
+            let consumed = Atomics.load(this.renderQueueSync, 1);
+            while (pose > consumed + 1) {
+                Atomics.wait(this.renderQueueSync, 1, consumed);
+                const again = Atomics.load(this.renderQueueSync, 1);
+                if (again === consumed) {
+                    this.skippedFramesThisFrame = 1;
+                    return false;
+                }
+                consumed = again;
+            }
+        }
+        if (pose === (this._bandPose | 0)) {
+            this.skippedFramesThisFrame = 1;
+            return false;
+        }
+        this._bandPose = pose;
+        this._queueBuf = pose & 1;
+        this.renderQueueFrame = pose;
+        const n = this.workerCount | 0;
+        const i = this.workerIndex | 0;
+        const h = this.config.worldHeight > 0 ? this.config.worldHeight : 1;
+        const yLo = h * i / n;
+        const yHi = h * (i + 1) / n;
+        this._bandKeyLo = spriteYSortKey(yLo, Y_SORT_K);
+        this._bandKeyHi = i === n - 1 ? Infinity : spriteYSortKey(yHi, Y_SORT_K);
+        this._bandOn = true;
+        return true;
+    }
+
+    _bandSortKey(type, index, y) {
+        if ((type === 0 || type === 6) && this._poseY) {
+            return this._spriteSortY(index, {
+                y: this._poseY[index],
+                rotC: this._poseRotC ? this._poseRotC[index] : 1,
+                rotS: this._poseRotS ? this._poseRotS[index] : 0,
+            });
+        }
+        return y;
+    }
+
+    _bindBandColumns(bufIdx) {
+        const n = this.workerCount | 0;
+        const fullMax = this._bandSavedMax || this.renderQueueMaxItems;
+        const cap = (fullMax / n) | 0;
+        const prefix = (this.workerIndex | 0) * (cap > 0 ? cap : 1);
+        this._bandCap = cap > 0 ? cap : 1;
+        if (!this._bandSavedMax) this._bandSavedMax = this.renderQueueMaxItems;
+        const full = this.renderQueueBuffers[bufIdx];
+        if (!this._bandCount) this._bandCount = new Int32Array(1);
+        this._bandCount[0] = 0;
+        const views = { count: this._bandCount };
+        for (let k = 0; k < MAIN_COLUMN_KEYS.length; k++) {
+            const key = MAIN_COLUMN_KEYS[k];
+            if (key === 'count') continue;
+            const arr = full[key];
+            views[key] = arr && arr.subarray ? arr.subarray(prefix, prefix + this._bandCap) : arr;
+        }
+        this._applyMainColumns(views);
+        this.renderQueueCount = this._bandCount;
+        this.renderQueueMaxItems = this._bandCap;
+    }
+
+    _bandGpuView(real) {
+        const n = this.workerCount | 0;
+        const i = this.workerIndex | 0;
+        const caps = this._bandSavedGpuCaps || this.gpuQueueCaps;
+        const capS = (caps.maxSprites / n) | 0;
+        const capG = (caps.maxGlow / n) | 0;
+        const capU = (caps.maxSun / n) | 0;
+        const capT = (caps.maxStamp / n) | 0;
+        const slot = this._queueBuf & 1;
+        if (!this._bandGpuCache) this._bandGpuCache = [null, null];
+        const hit = this._bandGpuCache[slot];
+        if (hit && hit.real === real) return hit.view;
+        const rows = (arr, rowCap, floats) => {
+            if (!arr || rowCap <= 0) return { f32: new Float32Array(0), u32: new Uint32Array(0) };
+            const start = i * rowCap * floats;
+            const f32 = arr.subarray(start, start + rowCap * floats);
+            const u32 = new Uint32Array(f32.buffer, f32.byteOffset, f32.length);
+            return { f32, u32 };
+        };
+        const sprites = rows(real.sprites, capS, GPU_SPRITE_FLOATS);
+        const glow = rows(real.glow, capG, GPU_SPRITE_FLOATS);
+        const sun = rows(real.sun, capU, GPU_CASTER_FLOATS);
+        const stamp = rows(real.stamp, capT, GPU_CASTER_FLOATS);
+        const cookie = i === 0 ? real.cookie : new Float32Array(0);
+        const cookieU = i === 0 ? real.cookieU32 : new Uint32Array(0);
+        if (!this._bandHeader) this._bandHeader = new Int32Array(8);
+        const view = {
+            header: this._bandHeader,
+            sprites: sprites.f32,
+            spritesU32: sprites.u32,
+            glow: glow.f32,
+            glowU32: glow.u32,
+            sun: sun.f32,
+            sunU32: sun.u32,
+            stamp: stamp.f32,
+            stampU32: stamp.u32,
+            cookie,
+            cookieU32: cookieU,
+            stampLightIdx: real.stampLightIdx && capT > 0
+                ? real.stampLightIdx.subarray(i * capT, (i + 1) * capT)
+                : real.stampLightIdx,
+            caps: real.caps,
+            _windowSprites: capS,
+            _windowGlow: capG,
+            _windowSun: capU,
+            _windowStamp: capT,
+        };
+        this._bandGpuCache[slot] = { real, view };
+        return view;
+    }
+
+    _finishBandFrame() {
+        const n = this.workerCount | 0;
+        const i = this.workerIndex | 0;
+        const c = this._gpuCounts || {};
+        if (this._join) {
+            Atomics.store(this._join, prWinSlot(PR_WIN_SPRITE, i, n), c.sprite | 0);
+            Atomics.store(this._join, prWinSlot(PR_WIN_GLOW, i, n), c.glow | 0);
+            Atomics.store(this._join, prWinSlot(PR_WIN_SUN, i, n), c.sun | 0);
+            Atomics.store(this._join, prWinSlot(PR_WIN_STAMP, i, n), c.stamp | 0);
+            Atomics.store(this._join, prWinSlot(PR_WIN_COOKIE, i, n), i === 0 ? (c.cookie | 0) : 0);
+            Atomics.store(this._join, prWinSlot(PR_WIN_FRAME, i, n), this._bandPose | 0);
+        }
+        this._bandPublished = 1;
+        this._bandOn = false;
+        if (this._bandSavedMax) this.renderQueueMaxItems = this._bandSavedMax;
+        if (this.renderQueueSync) Atomics.notify(this.renderQueueSync, 1, 1);
     }
 
     /**
@@ -2286,6 +2449,10 @@ class PreRenderWorker extends AbstractWorker {
      */
     collectRenderable(type, index, y) {
         if (!this.renderQueueEnabled) return;
+        if (this._bandOn) {
+            const key = this._bandSortKey(type, index, y);
+            if (key < this._bandKeyLo || key >= this._bandKeyHi) return;
+        }
 
         let mask = 0;
         if (type === 0) mask = SpriteRenderer.layerMask ? SpriteRenderer.layerMask[index] | 0 : 0;
@@ -3854,33 +4021,33 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _gpuSoAFromBound() {
-        return this._gpuSoAFromViews({
-            count: this.renderQueueCount,
-            x: this.renderQueueX,
-            y: this.renderQueueY,
-            scaleX: this.renderQueueScaleX,
-            scaleY: this.renderQueueScaleY,
-            rotC: this.renderQueueRotC,
-            rotS: this.renderQueueRotS,
-            alpha: this.renderQueueAlpha,
-            tint: this.renderQueueTint,
-            textureId: this.renderQueueTextureId,
-            anchorX: this.renderQueueAnchorX,
-            anchorY: this.renderQueueAnchorY,
-            repeatX: this.renderQueueRepeatX,
-            repeatY: this.renderQueueRepeatY,
-            tileMulX: this.renderQueueTileMulX,
-            tileMulY: this.renderQueueTileMulY,
-            tileOffsetU: this.renderQueueTileOffsetU,
-            tileOffsetV: this.renderQueueTileOffsetV,
-            sortKey: this.renderQueueSortKey,
-            shadowH: this.renderQueueShadowH,
-            shadowOffX: this.renderQueueShadowOffX,
-            shadowOffY: this.renderQueueShadowOffY,
-            type: this.renderQueueType,
-            alphaMode: this.renderQueueAlphaMode,
-            alphaCutOff: this.renderQueueAlphaCutOff,
-        });
+        const v = this._gpuBoundViews || (this._gpuBoundViews = {});
+        v.count = this.renderQueueCount;
+        v.x = this.renderQueueX;
+        v.y = this.renderQueueY;
+        v.scaleX = this.renderQueueScaleX;
+        v.scaleY = this.renderQueueScaleY;
+        v.rotC = this.renderQueueRotC;
+        v.rotS = this.renderQueueRotS;
+        v.alpha = this.renderQueueAlpha;
+        v.tint = this.renderQueueTint;
+        v.textureId = this.renderQueueTextureId;
+        v.anchorX = this.renderQueueAnchorX;
+        v.anchorY = this.renderQueueAnchorY;
+        v.repeatX = this.renderQueueRepeatX;
+        v.repeatY = this.renderQueueRepeatY;
+        v.tileMulX = this.renderQueueTileMulX;
+        v.tileMulY = this.renderQueueTileMulY;
+        v.tileOffsetU = this.renderQueueTileOffsetU;
+        v.tileOffsetV = this.renderQueueTileOffsetV;
+        v.sortKey = this.renderQueueSortKey;
+        v.shadowH = this.renderQueueShadowH;
+        v.shadowOffX = this.renderQueueShadowOffX;
+        v.shadowOffY = this.renderQueueShadowOffY;
+        v.type = this.renderQueueType;
+        v.alphaMode = this.renderQueueAlphaMode;
+        v.alphaCutOff = this.renderQueueAlphaCutOff;
+        return this._gpuSoAFromViews(v);
     }
 
     _sortKeyBits(sk) {
@@ -4000,7 +4167,9 @@ class PreRenderWorker extends AbstractWorker {
             let spriteIdx = idxE;
             if (allowPainter && this._gpuPainter && q.sortKey && ne >= 2) {
                 const keysU32 = this._sortKeyBits(q.sortKey);
+                const tSort = this.collectDetailedStats ? performance.now() : 0;
                 spriteIdx = orderPainterSlots(this._gpuPainter, idxE, ne, keysU32);
+                if (tSort) this.sortTimeThisFrame += performance.now() - tSort;
                 flags |= GPU_FLAG_SORTED;
             }
             opts.indices = spriteIdx;
@@ -4030,7 +4199,9 @@ class PreRenderWorker extends AbstractWorker {
             if (allowPainter && this._gpuPainter && q.sortKey && count >= 2) {
                 const ne = fillQueueIndices(typeArr, count, -1, -1, idxE);
                 const keysU32 = this._sortKeyBits(q.sortKey);
+                const tSort = this.collectDetailedStats ? performance.now() : 0;
                 opts.indices = orderPainterSlots(this._gpuPainter, idxE, ne, keysU32);
+                if (tSort) this.sortTimeThisFrame += performance.now() - tSort;
                 opts.indexCount = ne;
                 flags |= GPU_FLAG_SORTED;
             } else {
@@ -4078,14 +4249,14 @@ class PreRenderWorker extends AbstractWorker {
         const lightVec = this._gpuLightVec;
         let cursor = 0;
         const stampCap = caps.maxStamp | 0;
+        const sun = dst.sun;
+        const tmpIdx = this._gpuStampTmp;
+        const dist = this._gpuStampDist;
         for (let i = 0; i < capL && cursor < stampCap; i++) {
             const L = lights[i];
             if (!(L.rangeSq > 0) || !(L.intensity > 0)) continue;
             const lim = maxPerLight > 0 ? maxPerLight : sunN;
             let m = 0;
-            const tmpIdx = this._gpuStampTmp;
-            const dist = this._gpuStampDist;
-            const sun = dst.sun;
             for (let c = 0; c < sunN; c++) {
                 if (maxPerEntity > 0 && used[c] >= maxPerEntity) continue;
                 const b = c * GPU_CASTER_FLOATS;
@@ -4106,12 +4277,12 @@ class PreRenderWorker extends AbstractWorker {
             lightVec[1] = L.y;
             lightVec[2] = L.intensity;
             lightVec[3] = L.rangeSq;
-            const next = appendStampedCasters(
+            const written = appendStampedCasters(
                 dst.stamp, GPU_CASTER_FLOATS, cursor, dst.sun, GPU_CASTER_FLOATS,
                 this._gpuKeepIdx, m, lightVec, stampCap, 0
             );
-            for (let k = cursor; k < next; k++) dst.stampLightIdx[k] = i;
-            cursor = next;
+            for (let k = cursor; k < written; k++) dst.stampLightIdx[k] = i;
+            cursor = written;
         }
         let cookieN = 0;
         const cq = this._gpuCookieQ;
@@ -4155,6 +4326,15 @@ class PreRenderWorker extends AbstractWorker {
 
     _packGpuQueues(dst, withShadows = true, views = null, forcePainter = false) {
         if (!dst || !this.gpuQueueCaps) return;
+        const savedCaps = this.gpuQueueCaps;
+        if ((dst._windowSprites | 0) > 0) {
+            if (!this._windowCaps) this._windowCaps = Object.assign({}, savedCaps);
+            this._windowCaps.maxSprites = dst._windowSprites | 0;
+            this._windowCaps.maxGlow = dst._windowGlow | 0;
+            this._windowCaps.maxSun = dst._windowSun | 0;
+            this._windowCaps.maxStamp = dst._windowStamp | 0;
+            this.gpuQueueCaps = this._windowCaps;
+        }
         clearGpuQueueHeader(dst.header);
         const q = views ? this._gpuSoAFromViews(views) : this._gpuSoAFromBound();
         if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
@@ -4172,6 +4352,7 @@ class PreRenderWorker extends AbstractWorker {
         counts.cookie = shadows.cookie | 0;
         counts.flags = sprites.flags | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
+        this.gpuQueueCaps = savedCaps;
     }
 
     _storeGpuStreamCounts() {
@@ -4240,12 +4421,6 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuStampLightScratch
             );
         }
-        if (n > 1 && this._gpuPainter && this.renderQueueBuffers) {
-            this._applyMainColumns(this.renderQueueBuffers[bufIdx]);
-            const packed = this._packGpuSprites(dst, this._gpuSoAFromBound(), true);
-            sprite = packed.sprite;
-            glow = packed.glow;
-        }
         let particles = 0;
         const types = this.renderQueueBuffers && this.renderQueueBuffers[bufIdx]
             ? this.renderQueueBuffers[bufIdx].type
@@ -4263,7 +4438,7 @@ class PreRenderWorker extends AbstractWorker {
             stamp,
             cookie,
             particle: particles,
-        }, this._gpuPainter && n > 1 ? GPU_FLAG_SORTED : 0);
+        }, 0);
     }
 
     /**
