@@ -6,10 +6,15 @@ const { Scene, Camera, GameObject } = WEED;
 
 const INITIAL_BUNNIES = 250_000
 
-function bunnyPositiveParam(name, fallback) {
+function bunnySearchParam(name) {
     const search = globalThis.location && globalThis.location.search;
-    if (typeof search !== 'string') return fallback;
-    const n = Number(new URLSearchParams(search).get(name));
+    if (typeof search !== 'string') return null;
+    return new URLSearchParams(search).get(name);
+}
+
+function bunnyPositiveParam(name, fallback) {
+    const q = bunnySearchParam(name);
+    const n = q != null ? Number(q) : NaN;
     return Number.isFinite(n) && n > 0 ? (n | 0) : fallback;
 }
 
@@ -59,10 +64,10 @@ export class BunnyMarkScene extends Scene {
         },
         preRender: {
             skipCull: true,
-            // fixedFps: 30,
             interpolation: false,
             entityBlockSize: 256,
-            numberOfPreRenderWorkers: bunnyPositiveParam('preRenderWorkers', 2),
+            numberOfPreRenderWorkers: bunnyPositiveParam('preRenderWorkers', 1),
+            packGpuSprites: bunnySearchParam('packGpuSprites') || 'pixi',
         },
         lighting: { enabled: false },
     };

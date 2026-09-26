@@ -82,7 +82,8 @@ test('sharded GPU shadows pack sun per worker and stamp after the sun join', () 
 test('sharded y-sort / zIndex re-packs sprites from the joined SoA, not per id-block', () => {
   assert.match(preRender, /_joinedPainterNeeded\(\)/);
   assert.match(preRender, /_packJoinedGpuSprites\(dst, views\)/);
-  assert.match(preRender, /this\._packGpuSprites\(dst, q, true\)/);
+  assert.match(preRender, /_mergePackedGpuStream\(/);
+  assert.match(preRender, /SORT_SPRITES_PRERENDER_MERGE/);
 });
 
 test('stamp light range falls back to influence when visualRange is 0', () => {
@@ -90,4 +91,9 @@ test('stamp light range falls back to influence when visualRange is 0', () => {
   const end = preRender.indexOf('_packGpuSprites(', start);
   const body = preRender.slice(start, end);
   assert.match(body, /vrRange > 0 \? vrRange : influence/);
+});
+
+test('gpu pack reuses pack context and sprite-window scratch', () => {
+  assert.match(preRender, /makePackContext\(q, opts, caps.maxSprites, this\._gpuPackCtx\)/);
+  assert.match(preRender, /this\._gpuWin \|\| \(this\._gpuWin = \{\}\)/);
 });

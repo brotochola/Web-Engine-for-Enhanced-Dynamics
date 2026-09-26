@@ -359,7 +359,7 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
 /**
  * Call-level setup matching InstancedSpriteBatch._beginUpload, without touching a Mesh.
  */
-export function makePackContext(q, opts, capacity) {
+export function makePackContext(q, opts, capacity, out) {
   const o = opts || {};
   const count = q && q.count != null ? q.count | 0 : 0;
   const indices = o.indices;
@@ -381,29 +381,29 @@ export function makePackContext(q, opts, capacity) {
   const exclude1 = o.excludeType1 == null ? -1 : o.excludeType1 | 0;
   const hasExclude = exclude0 >= 0 || exclude1 >= 0;
   const filterTypes = !useIndices && typeArr && (hasInclude || hasExclude);
-  return {
-    o,
-    indices,
-    useIndices,
-    useScreen,
-    cameraX,
-    cameraY,
-    screenScale,
-    typeArr,
-    includeType,
-    exclude0,
-    exclude1,
-    hasInclude,
-    hasExclude,
-    filterTypes,
-    depthDenom: (o.depthDenom || capacity) + 1,
-    scanCount: useIndices
-      ? indexCount
-      : count > capacity && !filterTypes
-        ? capacity
-        : count,
-    particleCount: 0,
-  };
+  const ctx = out || {};
+  ctx.o = o;
+  ctx.indices = indices;
+  ctx.useIndices = useIndices;
+  ctx.useScreen = useScreen;
+  ctx.cameraX = cameraX;
+  ctx.cameraY = cameraY;
+  ctx.screenScale = screenScale;
+  ctx.typeArr = typeArr;
+  ctx.includeType = includeType;
+  ctx.exclude0 = exclude0;
+  ctx.exclude1 = exclude1;
+  ctx.hasInclude = hasInclude;
+  ctx.hasExclude = hasExclude;
+  ctx.filterTypes = filterTypes;
+  ctx.depthDenom = (o.depthDenom || capacity) + 1;
+  ctx.scanCount = useIndices
+    ? indexCount
+    : count > capacity && !filterTypes
+      ? capacity
+      : count;
+  ctx.particleCount = 0;
+  return ctx;
 }
 
 export function fillQueueIndices(typeArr, count, includeType, excludeType, outIdx) {

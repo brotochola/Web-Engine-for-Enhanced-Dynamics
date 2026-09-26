@@ -6,6 +6,7 @@ import {
   createPainterState,
   painterSameSet,
   orderPainterSlots,
+  mergeSortedRunsBySortKey,
   spriteYSortKey,
   depthFromSortKey,
   orderSortKey,
@@ -232,6 +233,34 @@ test('painter on each id-half then concat is not the global Y order', () => {
   const global = orderPainterSlots(all, idxE, 4, keysU32);
   assert.deepEqual(Array.from(global.subarray(0, 4)), [0, 2, 3, 1]);
   assert.notDeepEqual(concat, Array.from(global.subarray(0, 4)));
+});
+
+test('k-way merge of locally painted id-halves matches the global painter', () => {
+  const keys = new Float32Array([10, 40, 20, 30]);
+  const keysU32 = new Uint32Array(keys.buffer);
+  const left = new Uint32Array([0, 1]);
+  const right = new Uint32Array([2, 3]);
+  const a = createPainterState(4);
+  const b = createPainterState(4);
+  const all = createPainterState(4);
+  orderPainterSlots(a, left, 2, keysU32);
+  orderPainterSlots(b, right, 2, keysU32);
+  const packed = new Float32Array(4);
+  packed[0] = keys[a.order[0]];
+  packed[1] = keys[a.order[1]];
+  packed[2] = keys[b.order[0]];
+  packed[3] = keys[b.order[1]];
+  const packedU32 = new Uint32Array(packed.buffer);
+  const out = new Uint32Array(4);
+  const heads = new Uint32Array(2);
+  const offsets = new Int32Array([0, 2]);
+  const lens = new Int32Array([2, 2]);
+  mergeSortedRunsBySortKey(offsets, lens, 2, packedU32, out, heads, 1, 0);
+  const mergedKeys = [packed[out[0]], packed[out[1]], packed[out[2]], packed[out[3]]];
+  const idxE = new Uint32Array([0, 1, 2, 3]);
+  const global = orderPainterSlots(all, idxE, 4, keysU32);
+  const globalKeys = [keys[global[0]], keys[global[1]], keys[global[2]], keys[global[3]]];
+  assert.deepEqual(mergedKeys, globalKeys);
 });
 
 test('painterSameSet: filtered set (real idxE) needs matching integers, not just count', () => {

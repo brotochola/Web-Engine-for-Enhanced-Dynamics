@@ -114,6 +114,7 @@ import {
   collectComputeAssetNames,
   errorShaderFetchFailed,
   resolveShaderPath,
+  resolveSpritePipeline,
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
 import {
@@ -743,6 +744,14 @@ class Scene {
       ...PRE_RENDER_DEFAULTS,
       ...(this.config.preRender || {}),
     };
+    const spritePipe = resolveSpritePipeline({
+      ySort: this.config.renderer.ySort,
+      workerCount: this.config.preRender.numberOfPreRenderWorkers,
+      packGpuSprites: this.config.preRender.packGpuSprites,
+      sortSprites: this.config.preRender.sortSprites,
+    });
+    this.config.preRender.packGpuSprites = spritePipe.packGpuSprites;
+    this.config.preRender.sortSprites = spritePipe.sortSprites;
 
     // Lighting defaults from centralized config (sun / dayCycle nested, not shallow-replaced)
     const userSun = userLightingConfig.sun || {};

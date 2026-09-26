@@ -224,6 +224,8 @@ import {
   pixiRendererTypeName,
   RENDERER_BACKEND_WEBGPU,
   ySortEnabled,
+  resolveSpritePipeline,
+  PACK_GPU_SPRITES_PIXI,
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 
@@ -1479,7 +1481,8 @@ class PixiRenderer extends AbstractWorker {
       (gpu.header[GPU_HDR_VERSION] | 0) === GPU_QUEUE_VERSION &&
       !this.entitiesBatch.poseInterp &&
       !(packedN === 0 && soaN > 0) &&
-      (!needOrder || (packedFlags & GPU_FLAG_SORTED))
+      (!needOrder || (packedFlags & GPU_FLAG_SORTED)) &&
+      this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI
     );
     if (packedOk) {
       this._syncEntityOrder();
@@ -5242,6 +5245,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     this._ySortMode = rendererConfig.ySort;
     this._ySort = ySortEnabled(this._ySortMode);
+    const preCfg = this.config.preRender || {};
+    const spritePipe = resolveSpritePipeline({
+      ySort: this._ySortMode,
+      workerCount: preCfg.numberOfPreRenderWorkers,
+      packGpuSprites: preCfg.packGpuSprites,
+      sortSprites: preCfg.sortSprites,
+    });
+    this._packGpuSpritesOn = spritePipe.packGpuSprites;
     this._alphaCut = DEFAULT_ALPHA_CUT_OFF_U8 / 255;
     this._lightGlowAdd = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite';
 
@@ -5256,7 +5267,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         ? atlasScaleMode
         : RENDERER_DEFAULTS.atlasScaleMode;
 
-    const preCfg = this.config.preRender || {};
     this.decorationFadeStartZoom =
       preCfg.startFadingDecorationsAtZoom !== undefined
         ? preCfg.startFadingDecorationsAtZoom

@@ -12,6 +12,23 @@ const { Camera, LAYER_KIND } = WEED;
 
 const useBaked = true;
 
+function littleCitySearchParam(name) {
+  const search = globalThis.location && globalThis.location.search;
+  if (typeof search !== 'string') return null;
+  return new URLSearchParams(search).get(name);
+}
+
+function littleCityNumberParam(name, fallback) {
+  const q = littleCitySearchParam(name);
+  const n = q != null ? Number(q) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function littleCityPositiveParam(name, fallback) {
+  const n = littleCityNumberParam(name, fallback);
+  return Number.isFinite(n) && n > 0 ? (n | 0) : fallback;
+}
+
 const excludedLPCAnimations = [
   'spellcast_up',
   'spellcast_left',
@@ -171,6 +188,9 @@ export class LittleCityScene extends WEED.Scene {
     },
     preRender: {
       noLimitFPS: false,
+      numberOfPreRenderWorkers: littleCityPositiveParam('preRenderWorkers', 1),
+      packGpuSprites: littleCitySearchParam('packGpuSprites') || 'pixi',
+      sortSprites: littleCitySearchParam('sortSprites') || 'pixi',
       cullingRatio: 0.1,
       startFadingDecorationsAtZoom: 0.5,
       hideDecorationsAtZoom: 0.25,
@@ -310,6 +330,8 @@ export class LittleCityScene extends WEED.Scene {
     Camera.setFree(true, { panSpeed: 14, zoomSensitivity: 0.001 });
     Camera.setFreeTarget(cx, cy);
     Camera.centerOn(cx, cy);
+    this._pinZoom = littleCityNumberParam('zoom', 0);
+    if (this._pinZoom > 0) Camera.setZoom(this._pinZoom);
 
     console.log(
       `🏙️ LittleCityScene: Preloaded — houses=${houses.length} trees=${trees.length} people=${personCount} cars=${carCount}`,
@@ -320,5 +342,7 @@ export class LittleCityScene extends WEED.Scene {
     console.log('🏙️ LittleCityScene: WASD/Arrows pan, wheel zoom. People follow sidewalks; cars follow roads.');
   }
 
-  update() { }
+  update() {
+    if (this._pinZoom > 0) Camera.setZoom(this._pinZoom);
+  }
 }

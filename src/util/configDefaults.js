@@ -662,6 +662,19 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
    * renderer.interpolation instead.
    */
   interpolation: false,
+  /**
+   * Who writes GPU sprite instance rows (16-float AoS).
+   * `preRender` = this worker packs. `pixi` = SoA only; pixi packs.
+   */
+  packGpuSprites: 'preRender',
+  /**
+   * Who runs the CPU painter (ySort / zIndex).
+   * `none` = emit order. `preRender` = one global painter (joined SoA if N>1).
+   * `preRenderMerge` = each shard paints, publisher k-way merges.
+   * `pixi` = pixi paints the concatenated SoA.
+   * Forced to `none` when renderer.ySort is off.
+   */
+  sortSprites: 'preRender',
   /** Viewport AABB margin as a fraction of canvas (pre-render + particle cull). */
   cullingRatio: 0.1,
   startFadingDecorationsAtZoom: 0.5,

@@ -21,6 +21,7 @@ test('preRenderWorker only writes sortKey; never CPU-sorts the queue', () => {
 test('pixi packed GPU sprites must already be painter-sorted when ySort or zIndex is on', () => {
   assert.match(pixi, /GPU_FLAG_SORTED/);
   assert.match(pixi, /needOrder \|\| \(packedFlags & GPU_FLAG_SORTED\)/);
+  assert.match(pixi, /PACK_GPU_SPRITES_PIXI/);
 });
 
 test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter path', () => {

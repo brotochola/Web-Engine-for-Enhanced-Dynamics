@@ -36,7 +36,7 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { orderSortKey, spriteYSortKey, zSortBand, createPainterState, orderPainterSlots, radixSortIndicesBySortKey } from '../util/sortIndexByKey.js';
+import { orderSortKey, spriteYSortKey, zSortBand, createPainterState, orderPainterSlots, radixSortIndicesBySortKey, mergeSortedRunsBySortKey } from '../util/sortIndexByKey.js';
 import {
     fillOwnedIds,
     listSlice,
@@ -76,7 +76,7 @@ import {
     SPRITE_TILE_MODE,
     DEFAULT_ALPHA_CUT_OFF_U8,
 } from '../util/configDefaults.js';
-import { ySortEnabled } from '../render/rendererBackend.js';
+import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER_MERGE } from '../render/rendererBackend.js';
 import { writeRowAlphaMode, writeRowAlphaCutOff } from '../render/alphaModePack.js';
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
@@ -94,6 +94,8 @@ import {
     makePackContext,
     fillQueueIndices,
     copyPackedRows,
+    gatherInstancedRows,
+    rewritePackedDepth,
 } from '../render/gpuQueueLayout.js';
 import {
     compactShadowCasterIndices,
@@ -602,6 +604,15 @@ class PreRenderWorker extends AbstractWorker {
         this._lightGlowAsSprite = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
         this._ySortMode = rendererConfig.ySort;
         this._ySort = ySortEnabled(this._ySortMode);
+        const spritePipe = resolveSpritePipeline({
+            ySort: this._ySortMode,
+            workerCount: this.workerCount,
+            packGpuSprites: preRenderConfig.packGpuSprites,
+            sortSprites: preRenderConfig.sortSprites,
+        });
+        this._packGpuSpritesOn = spritePipe.packGpuSprites;
+        this._sortSprites = spritePipe.sortSprites;
+        this._gpuPackCtx = {};
         this._alphaCutOffU8 = DEFAULT_ALPHA_CUT_OFF_U8;
         this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
@@ -695,6 +706,16 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuPrivate = this._sharded ? createGpuQueueScratch(caps) : null;
                 this._gpuIdxEntity = new Uint32Array(maxItems);
                 this._gpuIdxGlow = new Uint32Array(maxItems);
+                this._gpuPackCtx = {};
+                const mergeCap = Math.max(1, caps.maxSprites | 0, caps.maxGlow | 0, maxItems);
+                const mergeRuns = Math.max(16, this.workerCount | 0);
+                this._gpuMergeIdx = new Uint32Array(mergeCap);
+                this._gpuMergeHeads = new Uint32Array(mergeRuns);
+                this._gpuMergeOffsets = new Int32Array(mergeRuns);
+                this._gpuMergeLens = new Int32Array(mergeRuns);
+                this._gpuMergeScratch = new Float32Array(
+                    Math.max(1, Math.max(caps.maxSprites | 0, caps.maxGlow | 0) * GPU_SPRITE_FLOATS)
+                );
                 this._gpuCasterIdx = new Uint32Array(Math.max(1, caps.maxSun | 0, maxItems));
                 this._gpuStampTmp = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
                 this._gpuStampDist = new Float32Array(Math.max(1, caps.maxStamp | 0, maxItems));
@@ -1458,7 +1479,7 @@ class PreRenderWorker extends AbstractWorker {
         }
         this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
         this._copyShardOutputs(bufIdx, copyMain);
-        this._copyGpuShardOutputs(bufIdx, true, false, !this._joinedPainterNeeded());
+        this._copyGpuShardOutputs(bufIdx, true, false, this._copyGpuSprites());
         if (this.shadowsEnabled && this._gpuPrivate && caps && (caps.maxStamp | 0) > 0) {
             this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA', () => {
                 Atomics.store(this._join, PR_JOIN_STAMP_CUR, 0);
@@ -1475,9 +1496,16 @@ class PreRenderWorker extends AbstractWorker {
         const from = prefix * fp;
         const to = from + keep * fp;
         if (to > dst.sprites.length) return null;
-        const win = Object.assign({}, dst);
+        const win = this._gpuWin || (this._gpuWin = {});
+        win.header = dst.header;
         win.sprites = dst.sprites.subarray(from, to);
-        if (dst.spritesU32) win.spritesU32 = dst.spritesU32.subarray(from, to);
+        win.spritesU32 = dst.spritesU32 ? dst.spritesU32.subarray(from, to) : null;
+        win.glow = dst.glow;
+        win.glowU32 = dst.glowU32;
+        win.sun = dst.sun;
+        win.stamp = dst.stamp;
+        win.cookie = dst.cookie;
+        win.stampLightIdx = dst.stampLightIdx;
         win._windowSprites = keep;
         win._windowGlow = 0;
         win._windowSun = 0;
@@ -4041,7 +4069,7 @@ class PreRenderWorker extends AbstractWorker {
             opts.indices = this._gpuCasterIdx;
             opts.indexCount = sunN;
             opts.sortKey = null;
-            const sctx = makePackContext(q, opts, caps.maxSun);
+            const sctx = makePackContext(q, opts, caps.maxSun, this._gpuPackCtx);
             sunN = sctx
                 ? packInstancedRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
                 : 0;
@@ -4131,7 +4159,7 @@ class PreRenderWorker extends AbstractWorker {
         opts.sortKey = null;
         opts.type = null;
         opts.depthDenom = Math.max(1, n);
-        const cctx = makePackContext(cq, opts, caps.maxCookie);
+        const cctx = makePackContext(cq, opts, caps.maxCookie, this._gpuPackCtx);
         return cctx
             ? packInstancedRows(cq, cctx, dst.cookie, dst.cookieU32, GPU_SPRITE_FLOATS, caps.maxCookie, false)
             : 0;
@@ -4188,6 +4216,58 @@ class PreRenderWorker extends AbstractWorker {
         if (t0) this.shadowQTimeThisFrame += performance.now() - t0;
     }
 
+    _allowGpuPainter(forceJoined) {
+        if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER) return false;
+        const sort = this._sortSprites;
+        if (sort === SORT_SPRITES_PRERENDER_MERGE) return true;
+        if (sort === SORT_SPRITES_PRERENDER) return !!(forceJoined || !this._sharded);
+        return false;
+    }
+
+    _copyGpuSprites() {
+        return this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER
+            && this._sortSprites !== SORT_SPRITES_PRERENDER;
+    }
+
+    _stampPackedSortKeys(dst, n, indices, sortKey) {
+        const sn = n | 0;
+        if (!dst || !sortKey || sn <= 0) return;
+        const fp = GPU_SPRITE_FLOATS;
+        for (let i = 0; i < sn; i++) {
+            const src = indices ? indices[i] : i;
+            dst[i * fp + 8] = sortKey[src];
+        }
+    }
+
+    _mergePackedGpuStream(packed, packedU32, count, stream, maxItems) {
+        const nWorkers = this.workerCount | 0;
+        const n = count | 0;
+        if (!packed || !packedU32 || n <= 1 || nWorkers <= 1) return n;
+        const counts = this._loadStream(stream);
+        const offsets = this._gpuMergeOffsets;
+        const lens = this._gpuMergeLens;
+        let prefix = 0;
+        for (let r = 0; r < nWorkers; r++) {
+            const mine = counts[r] | 0;
+            let keep = mine;
+            if (maxItems > 0 && prefix >= maxItems) keep = 0;
+            else if (maxItems > 0 && prefix + keep > maxItems) keep = maxItems - prefix;
+            offsets[r] = prefix;
+            lens[r] = keep;
+            prefix += keep;
+        }
+        const idx = this._gpuMergeIdx;
+        const merged = mergeSortedRunsBySortKey(
+            offsets, lens, nWorkers, packedU32, idx, this._gpuMergeHeads, GPU_SPRITE_FLOATS, 8
+        );
+        if (merged <= 0) return n;
+        const scratch = this._gpuMergeScratch;
+        gatherInstancedRows(packed, scratch, idx, merged, GPU_SPRITE_FLOATS, GPU_SPRITE_FLOATS, false);
+        packed.set(scratch.subarray(0, merged * GPU_SPRITE_FLOATS));
+        rewritePackedDepth(packed, merged, (this.renderQueueMaxItems | 0) + 1, GPU_SPRITE_FLOATS);
+        return merged;
+    }
+
     _packGpuSprites(dst, q, allowPainter) {
         const caps = this.gpuQueueCaps;
         const opts = this._gpuPackOpts;
@@ -4199,11 +4279,12 @@ class PreRenderWorker extends AbstractWorker {
         let glowN = 0;
         let particles = 0;
         let flags = 0;
-        if (count <= 0 || !caps) {
+        if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
             return { sprite: 0, glow: 0, particle: 0, flags: 0 };
         }
         const idxE = this._gpuIdxEntity;
         const idxG = this._gpuIdxGlow;
+        const stampMergeKeys = this._sortSprites === SORT_SPRITES_PRERENDER_MERGE && q.sortKey;
         if (glowAdd && typeArr && idxE) {
             let ne = fillQueueIndices(typeArr, count, -1, 3, idxE);
             glowN = fillQueueIndices(typeArr, count, 3, -1, idxG);
@@ -4218,11 +4299,12 @@ class PreRenderWorker extends AbstractWorker {
             opts.indices = spriteIdx;
             opts.indexCount = ne;
             opts.sortKey = null;
-            const ctx = makePackContext(q, opts, caps.maxSprites);
+            const ctx = makePackContext(q, opts, caps.maxSprites, this._gpuPackCtx);
             spriteN = ctx
                 ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
                 : 0;
             particles = ctx ? (ctx.particleCount | 0) : 0;
+            if (stampMergeKeys && spriteN > 0) this._stampPackedSortKeys(dst.sprites, spriteN, spriteIdx, q.sortKey);
             if (glowN > 0 && caps.maxGlow > 0) {
                 if (allowPainter && this._gpuPainter && glowN > 1 && q.sortKey) {
                     const keysU32 = this._sortKeyBits(q.sortKey);
@@ -4231,10 +4313,11 @@ class PreRenderWorker extends AbstractWorker {
                 opts.sortKey = null;
                 opts.indices = idxG;
                 opts.indexCount = glowN;
-                const gctx = makePackContext(q, opts, caps.maxGlow);
+                const gctx = makePackContext(q, opts, caps.maxGlow, this._gpuPackCtx);
                 glowN = gctx
                     ? packInstancedRows(q, gctx, dst.glow, dst.glowU32, GPU_SPRITE_FLOATS, caps.maxGlow, false)
                     : 0;
+                if (stampMergeKeys && glowN > 0) this._stampPackedSortKeys(dst.glow, glowN, idxG, q.sortKey);
             } else {
                 glowN = 0;
             }
@@ -4252,11 +4335,12 @@ class PreRenderWorker extends AbstractWorker {
                 opts.indexCount = 0;
             }
             opts.sortKey = null;
-            const ctx = makePackContext(q, opts, caps.maxSprites);
+            const ctx = makePackContext(q, opts, caps.maxSprites, this._gpuPackCtx);
             spriteN = ctx
                 ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
                 : 0;
             particles = ctx ? (ctx.particleCount | 0) : 0;
+            if (stampMergeKeys && spriteN > 0) this._stampPackedSortKeys(dst.sprites, spriteN, opts.indices, q.sortKey);
         }
         return { sprite: spriteN, glow: glowN, particle: particles, flags };
     }
@@ -4276,7 +4360,7 @@ class PreRenderWorker extends AbstractWorker {
         }
         const q = views ? this._gpuSoAFromViews(views) : this._gpuSoAFromBound();
         if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
-        const allowPainter = forcePainter || !this._sharded;
+        const allowPainter = this._allowGpuPainter(forcePainter);
         const sprites = this._packGpuSprites(dst, q, allowPainter);
         let shadows = { sun: 0, stamp: 0, cookie: 0 };
         if (withShadows) {
@@ -4310,7 +4394,10 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _joinedPainterNeeded() {
-        return this._sharded && this._queueHasOrder();
+        return this._sharded
+            && this._sortSprites === SORT_SPRITES_PRERENDER
+            && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER
+            && this._queueHasOrder();
     }
 
     _copyGpuShardOutputs(bufIdx, copyPacked = true, copyStampCookie = true, copySprites = true) {
@@ -4367,7 +4454,7 @@ class PreRenderWorker extends AbstractWorker {
         let particles = 0;
         let flags = 0;
         const views = this.renderQueueBuffers && this.renderQueueBuffers[bufIdx];
-        if (n > 1 && views && this._queueHasOrder()) {
+        if (n > 1 && views && this._joinedPainterNeeded()) {
             const packed = this._packJoinedGpuSprites(dst, views);
             sprite = packed.sprite | 0;
             glow = packed.glow | 0;
@@ -4375,6 +4462,17 @@ class PreRenderWorker extends AbstractWorker {
             flags = packed.flags | 0;
             if (caps.maxSprites > 0 && sprite > caps.maxSprites) sprite = caps.maxSprites;
             if (caps.maxGlow > 0 && glow > caps.maxGlow) glow = caps.maxGlow;
+        } else if (n > 1 && this._sortSprites === SORT_SPRITES_PRERENDER_MERGE) {
+            const tSort = this.collectDetailedStats ? performance.now() : 0;
+            sprite = this._mergePackedGpuStream(dst.sprites, dst.spritesU32, sprite, PR_STREAM_GPU_SPRITE, caps.maxSprites | 0);
+            glow = this._mergePackedGpuStream(dst.glow, dst.glowU32, glow, PR_STREAM_GPU_GLOW, caps.maxGlow | 0);
+            if (tSort) this.sortTimeThisFrame += performance.now() - tSort;
+            flags = GPU_FLAG_SORTED;
+            const types = views ? views.type : null;
+            const soaN = views ? (views.count[0] | 0) : 0;
+            if (types) {
+                for (let i = 0; i < soaN; i++) if (types[i] === 1) particles++;
+            }
         } else {
             const types = views ? views.type : null;
             const soaN = views ? (views.count[0] | 0) : 0;

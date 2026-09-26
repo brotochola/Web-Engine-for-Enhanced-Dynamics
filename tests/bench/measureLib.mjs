@@ -278,6 +278,7 @@ export function runIntegratedOnce(scene, outPath, opts) {
   ];
   if (opts.headed) args.push('--headed');
   if (!opts.detailedStats) args.push('--no-collect-detailed-stats');
+  if (opts.query) args.push('--query', String(opts.query).replace(/^\?/, ''));
   execFileSync(process.execPath, args, { cwd: repoRoot, stdio: 'inherit' });
   return JSON.parse(fs.readFileSync(outPath, 'utf8'));
 }

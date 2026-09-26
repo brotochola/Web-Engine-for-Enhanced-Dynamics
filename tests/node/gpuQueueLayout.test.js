@@ -200,6 +200,31 @@ test('gatherInstancedRows permutes emit rows and copies shadow extras', () => {
   assert.equal(dst[GPU_CASTER_FLOATS + 16], 1);
 });
 
+test('makePackContext reuses the out object', () => {
+  const q = {
+    count: 1,
+    x: new Float32Array([1]),
+    y: new Float32Array([2]),
+    scaleX: new Float32Array([1]),
+    scaleY: new Float32Array([1]),
+    rotC: new Float32Array([1]),
+    rotS: new Float32Array([0]),
+    alpha: new Float32Array([1]),
+    tint: new Uint32Array([0xffffff]),
+    textureId: new Uint16Array([1]),
+    anchorX: new Float32Array([0.5]),
+    anchorY: new Float32Array([1]),
+    type: new Uint8Array([0]),
+  };
+  const out = { stale: true, particleCount: 99 };
+  const ctx = makePackContext(q, { space: 0, depthDenom: 4, type: q.type }, 4, out);
+  assert.equal(ctx, out);
+  assert.equal(ctx.particleCount, 0);
+  assert.equal(ctx.stale, true);
+  const again = makePackContext(q, { space: 0, depthDenom: 8, type: q.type }, 8, out);
+  assert.equal(again, out);
+});
+
 test('rewritePackedDepth writes painter-order clip Z', () => {
   const dst = new Float32Array(2 * GPU_SPRITE_FLOATS);
   dst[8] = 99;
