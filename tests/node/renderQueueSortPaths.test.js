@@ -14,7 +14,11 @@ test('preRenderWorker only writes sortKey; never CPU-sorts the queue', () => {
   assert.doesNotMatch(preRender, /instancedSprites\s*!==\s*false/);
   assert.match(preRender, /sortTimeThisFrame = 0/);
   assert.match(preRender, /rqSortKey\[out\] = sk/);
-  assert.match(preRender, /layerRef\.sortKey = rqSortKey/);
+  assert.match(preRender, /ref\.sortKey = rqSortKey/);
+  const custom = preRender.indexOf('buildCustomLayerQueues(deltaTime) {');
+  const customBody = preRender.slice(custom, preRender.indexOf('_gpuSoAFromViews(views)', custom));
+  assert.match(customBody, /this\.emitSpriteQueue\(deltaTime/);
+  assert.doesNotMatch(customBody, /type === 1/);
   assert.doesNotMatch(preRender, /Y-sort \(per-layer policy\)/);
 });
 

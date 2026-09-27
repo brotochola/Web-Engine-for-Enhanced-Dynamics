@@ -44,7 +44,8 @@ test('entity collect uses a per-frame skipCull branch; default still AABBs; B sk
   const entityCull = body.slice(body.indexOf('if (!this.skipCull)'), body.indexOf('isItOnScreen[i] = 1'));
   assert.match(entityCull, /screenMinX/);
   assert.doesNotMatch(entityCull, /screenX\[i\]/);
-  assert.match(preRender, /const writeSortKey = !!\(rqSortKey && Layer\._ySorting/);
+  assert.match(preRender, /const ySorting = !!\(Layer\._ySorting && Layer\._ySorting\[entry\.layerId\]\)/);
+  assert.match(preRender, /const writeSortKey = !!\(rqSortKey && source\.hasOrder\)/);
   assert.match(preRender, /rx0 !== 0 \|\| ry0 !== 0/);
 });
 

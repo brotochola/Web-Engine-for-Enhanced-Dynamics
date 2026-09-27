@@ -1475,6 +1475,35 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueShadowOffY = views.shadowOffY;
     }
 
+    _mainColumnSnapshot() {
+        return {
+            count: this.renderQueueCount,
+            x: this.renderQueueX,
+            y: this.renderQueueY,
+            scaleX: this.renderQueueScaleX,
+            scaleY: this.renderQueueScaleY,
+            rotC: this.renderQueueRotC,
+            rotS: this.renderQueueRotS,
+            alpha: this.renderQueueAlpha,
+            tint: this.renderQueueTint,
+            textureId: this.renderQueueTextureId,
+            anchorX: this.renderQueueAnchorX,
+            anchorY: this.renderQueueAnchorY,
+            type: this.renderQueueType,
+            sortKey: this.renderQueueSortKey,
+            repeatX: this.renderQueueRepeatX,
+            repeatY: this.renderQueueRepeatY,
+            tileMode: this.renderQueueTileMode,
+            tileOffsetU: this.renderQueueTileOffsetU,
+            tileOffsetV: this.renderQueueTileOffsetV,
+            tileMulX: this.renderQueueTileMulX,
+            tileMulY: this.renderQueueTileMulY,
+            shadowH: this.renderQueueShadowH,
+            shadowOffX: this.renderQueueShadowOffX,
+            shadowOffY: this.renderQueueShadowOffY,
+        };
+    }
+
     _bindCustomPrivate() {
         const entries = this._customLayerEntries;
         if (!entries) return;
@@ -2678,15 +2707,46 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         const count = this._renderableCount;
+        const hasOrder = this._queueHasOrder();
+        const writeCount = this.emitSpriteQueue(deltaTime, {
+            count,
+            maxItems: this.renderQueueMaxItems,
+            collectorY: this._renderableY,
+            collectorType: this._renderableType,
+            collectorIndex: this._renderableIndex,
+            stashX: this._renderablePx,
+            stashY: this._renderablePy,
+            stashRotC: this._renderableRotC,
+            stashRotS: this._renderableRotS,
+            persist: true,
+            hasOrder,
+            ySort: hasOrder && this._entityYSort(),
+        });
+        this.renderQueueCount[0] = writeCount;
+        this._emitWriteCount = writeCount;
+        this._renderableCount = 0;
+    }
+
+    /**
+     * Write one sprite layer from a collector into SoA columns already bound
+     * on this.renderQueue*. Main queue and custom layers share this loop.
+     */
+    emitSpriteQueue(deltaTime, source) {
+        const count = source.count;
+        const maxItems = source.maxItems;
+        const collectorY = source.collectorY;
+        const collectorType = source.collectorType;
+        const collectorIndex = source.collectorIndex;
+        const stashPx = source.stashX;
+        const stashPy = source.stashY;
+        const stashRc = source.stashRotC;
+        const stashRs = source.stashRotS;
         if (this.renderQueueShadowH) this.renderQueueShadowH.fill(0, 0, count);
         if (this.renderQueueShadowOffX) this.renderQueueShadowOffX.fill(0, 0, count);
         if (this.renderQueueShadowOffY) this.renderQueueShadowOffY.fill(0, 0, count);
-        const collectorY = this._renderableY;
-        const collectorType = this._renderableType;
-        const collectorIndex = this._renderableIndex;
 
         // sortKey is written for the CPU painter. Pixi reinserts; this pass does not sort.
-        const detail = this.collectDetailedStats;
+        const detail = source.persist && this.collectDetailedStats;
         if (detail) this.sortTimeThisFrame = 0;
         const tEmit = detail ? performance.now() : 0;
 
@@ -2814,20 +2874,18 @@ class PreRenderWorker extends AbstractWorker {
         ref.shadowOffY = this.renderQueueShadowOffY;
 
         let writeCount = 0;
-        const stashPx = this._renderablePx;
-        const stashPy = this._renderablePy;
-        const stashRc = this._renderableRotC;
-        const stashRs = this._renderableRotS;
         const stashPose = this._displayPoseOut;
-        const writeSortKey = !!(rqSortKey && this._queueHasOrder());
-        const ySort = writeSortKey && this._entityYSort();
-        const persistBuf = this._queueBuf;
-        const persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
+        const writeSortKey = !!(rqSortKey && source.hasOrder);
+        const ySort = !!source.ySort;
+        const persistBuf = source.persist ? this._queueBuf : null;
+        const persistHit = persistBuf
+            ? this._type0PersistHit(persistBuf, count, collectorType, collectorIndex)
+            : false;
         if (persistHit) {
             this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs);
         }
 
-        for (let i = 0; i < count && writeCount < this.renderQueueMaxItems; i++) {
+        for (let i = 0; i < count && writeCount < maxItems; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
             const yKey = collectorY[i];
@@ -2839,11 +2897,15 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             if (type === 6) {
-                stashPose.x = stashPx[i];
-                stashPose.y = stashPy[i];
-                stashPose.rotC = stashRc[i];
-                stashPose.rotS = stashRs[i];
-                writeCount = this._emitAdobePieces(ref, writeCount, idx, sk, stashPose);
+                if (stashPx) {
+                    stashPose.x = stashPx[i];
+                    stashPose.y = stashPy[i];
+                    stashPose.rotC = stashRc[i];
+                    stashPose.rotS = stashRs[i];
+                    writeCount = this._emitAdobePieces(ref, writeCount, idx, sk, stashPose);
+                } else {
+                    writeCount = this._emitAdobePieces(ref, writeCount, idx, sk, null);
+                }
                 continue;
             }
 
@@ -2856,20 +2918,35 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             if (type === 0) {
-                // === ENTITY === (pose stashed at collect)
-                const currX = stashPx[i];
-                const currY = stashPy[i];
-                const sx = srScaleX[idx];
-                const sy = srScaleY[idx];
+                // === ENTITY === (pose stashed at collect when the collector has it)
+                let currX;
+                let currY;
                 let rc;
                 let rs;
-                if (srInheritTransformRotation[idx]) {
-                    rc = stashRc[i];
-                    rs = stashRs[i];
+                if (stashPx) {
+                    currX = stashPx[i];
+                    currY = stashPy[i];
+                    if (srInheritTransformRotation[idx]) {
+                        rc = stashRc[i];
+                        rs = stashRs[i];
+                    } else {
+                        rc = srSpriteRotC[idx];
+                        rs = srSpriteRotS[idx];
+                    }
                 } else {
-                    rc = srSpriteRotC[idx];
-                    rs = srSpriteRotS[idx];
+                    this._displayPose(idx, stashPose);
+                    currX = stashPose.x;
+                    currY = stashPose.y;
+                    if (srInheritTransformRotation[idx]) {
+                        rc = stashPose.rotC;
+                        rs = stashPose.rotS;
+                    } else {
+                        rc = srSpriteRotC[idx];
+                        rs = srSpriteRotS[idx];
+                    }
                 }
+                const sx = srScaleX[idx];
+                const sy = srScaleY[idx];
                 const a = srAlpha[idx];
                 const tint = srTint[idx];
                 const ax = srAnchorX[idx];
@@ -3034,13 +3111,29 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorY[out] = 0.5;
                 this._setQueueType(ref, out, 1, idx);
             } else if (type === 2) {
-                // === DECORATION === (world xy + facing stashed at collect)
-                rqX[out] = stashPx[i];
-                rqY[out] = stashPy[i];
+                // === DECORATION === (world xy + facing stashed at collect when present)
+                let decoWorldX;
+                let decoWorldY;
+                let decoRotCos;
+                let decoRotSin;
+                if (stashPx) {
+                    decoWorldX = stashPx[i];
+                    decoWorldY = stashPy[i];
+                    decoRotCos = stashRc[i];
+                    decoRotSin = stashRs[i];
+                } else {
+                    this._decorationWorldXY(idx, stashPose);
+                    decoWorldX = stashPose.x;
+                    decoWorldY = stashPose.y;
+                    decoRotCos = decoRotC[idx];
+                    decoRotSin = decoRotS[idx];
+                }
+                rqX[out] = decoWorldX;
+                rqY[out] = decoWorldY;
                 rqScaleX[out] = decoScaleX[idx];
                 rqScaleY[out] = decoScaleY[idx];
-                rqRotC[out] = stashRc[i];
-                rqRotS[out] = stashRs[i];
+                rqRotC[out] = decoRotCos;
+                rqRotS[out] = decoRotSin;
                 rqAlpha[out] = decoAlpha[idx] * this._decorationZoomAlpha;
                 rqTint[out] = decoTint[idx];
                 const dAnimIdx = decoTextureId[idx];
@@ -3147,486 +3240,55 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
-        if (!persistHit) {
+        if (source.persist && !persistHit) {
             this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
         }
-        this.renderQueueCount[0] = writeCount;
-        this._emitWriteCount = writeCount;
-        this._renderableCount = 0;
+        return writeCount;
     }
 
     /**
-     * Build render queues for all custom layers.
-     * Each custom layer's collector may contain any renderable type (0-6):
-     * entities, particles, decorations, light glows, bullets, and bullet trails.
-     *
-     * Per-type dispatch mirrors the corresponding branches in buildRenderQueue(),
-     * writing the same fields (x, y, scaleX, scaleY, rotC, rotS, alpha, tint,
-     * textureId, anchorX, anchorY, type) into per-layer SABs.
-     * The pixi_worker reads these fields generically in updateCustomLayers().
-     *
-     * @param {number} deltaTime - Frame delta in milliseconds (for animation advancement)
+     * Each custom sprite layer goes through emitSpriteQueue, the same row writer
+     * as the entities queue. Type-0 persist stays on the entities queue only.
      */
     buildCustomLayerQueues(deltaTime) {
-        this._syncGlowLayer();
-        if (!this._customLayerCollectors) return;
-
-        // Entity arrays
-        const entityX = Transform.x;
-        const entityY = Transform.y;
-        const srScaleX = SpriteRenderer.scaleX;
-        const srScaleY = SpriteRenderer.scaleY;
-        const srAlpha = SpriteRenderer.alpha;
-        const srTint = SpriteRenderer.tint;
-        const srAnchorX = SpriteRenderer.anchorX;
-        const srAnchorY = SpriteRenderer.anchorY;
-        const srAnimState = SpriteRenderer.animationState;
-        const srSpritesheetId = SpriteRenderer.spritesheetId;
-        const srAnimSpeed = SpriteRenderer.animationSpeed;
-        const srLoop = SpriteRenderer.loop;
-        const srIsAnimated = SpriteRenderer.isAnimated;
-        const srInheritTransformRotation = SpriteRenderer.inheritTransformRotation;
-        const srSpriteRotC = SpriteRenderer.spriteRotC;
-        const srSpriteRotS = SpriteRenderer.spriteRotS;
-        const srRepeatX = SpriteRenderer.repeatX;
-        const srRepeatY = SpriteRenderer.repeatY;
-        const srTileMode = SpriteRenderer.tileMode;
-        const srTileOffsetU = SpriteRenderer.tileOffsetU;
-        const srTileOffsetV = SpriteRenderer.tileOffsetV;
-        const srBoundsHalfW = SpriteRenderer.boundsHalfW;
-        const srBoundsHalfH = SpriteRenderer.boundsHalfH;
-
-        const frameIndex = this.entityFrameIndex;
-        const frameAccum = this.entityFrameAccumulator;
-        const entityLastTextureId = this.entityLastTextureId;
-        const deltaSeconds = deltaTime / 1000;
-        // Particle arrays
-        const particleX = ParticleComponent.x;
-        const particleY = ParticleComponent.y;
-        const particleZ = ParticleComponent.z;
-        const particleScaleX = ParticleComponent.scaleX;
-        const particleScaleY = ParticleComponent.scaleY;
-        const particleFlipX = ParticleComponent.flipX;
-        const particleFlipY = ParticleComponent.flipY;
-        const particleRotC = ParticleComponent.rotC;
-        const particleRotS = ParticleComponent.rotS;
-        const particleAlpha = ParticleComponent.alpha;
-        const particleTint = ParticleComponent.tint;
-        const particleTextureId = ParticleComponent.textureId;
-        const particleFlat = ParticleComponent.flat;
-        const particleViewMode = ParticleComponent.viewMode;
-
-        // Decoration arrays
-        const decoX = DecorationComponent.x;
-        const decoY = DecorationComponent.y;
-        const decoOffsetX = DecorationComponent.offsetX;
-        const decoOffsetY = DecorationComponent.offsetY;
-        const decoScaleX = DecorationComponent.scaleX;
-        const decoScaleY = DecorationComponent.scaleY;
-        const decoRotC = DecorationComponent.rotC;
-        const decoRotS = DecorationComponent.rotS;
-        const decoAlpha = DecorationComponent.alpha;
-        const decoTint = DecorationComponent.tint;
-        const decoTextureId = DecorationComponent.textureId;
-        const decoAnchorX = DecorationComponent.anchorX;
-        const decoAnchorY = DecorationComponent.anchorY;
-
-        // Bullet arrays
-        const bulletX = BulletComponent.x;
-        const bulletY = BulletComponent.y;
-        const bulletStartX = BulletComponent.startX ?? BulletComponent.prevX;
-        const bulletStartY = BulletComponent.startY ?? BulletComponent.prevY;
-        const bulletOffsetY = BulletComponent.offsetY;
-        const bulletScale = BulletComponent.scale;
-        const bulletAlpha = BulletComponent.alpha;
-        const bulletTint = BulletComponent.tint;
-        const bulletTextureId = BulletComponent.textureId;
-        const bulletSpriteRotC = BulletComponent.spriteRotC;
-        const bulletSpriteRotS = BulletComponent.spriteRotS;
-        const bulletRotC = BulletComponent.bulletRotC;
-        const bulletRotS = BulletComponent.bulletRotS;
-        const bulletTrailWidth = BulletComponent.trailWidth;
-        const bulletAnchorX = BulletComponent.anchorX;
-        const bulletAnchorY = BulletComponent.anchorY;
-        const bulletActive = BulletComponent.active;
-
-        const bulletTrailTextureId = this._resolveBuiltinTextureId('_bulletTrail');
-        const BULLET_TRAIL_MIN_LENGTH_SQ = 0.01;
-
-        // Light glow arrays
-        const lightColor = LightEmitter.lightColor;
-        const lightIntensity = LightEmitter.lightIntensity;
-        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
-        const glowHeightOffset = LightEmitter.glowHeightOffset;
-        const glowSprite = LightEmitter.hasGlowSprite;
-        const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
-        const whiteCircleTextureId2 = this._resolveBuiltinTextureId('_whiteCircle');
-
-        const layerEntries = this._customLayerEntries;
-        for (let li = 0; li < layerEntries.length; li++) {
-            const entry = layerEntries[li];
-            const collector = entry.collector;
-            const layerCount = collector.count;
-            if (layerCount === 0) {
-                if (entry.ref) entry.ref.count[0] = 0;
-                continue;
-            }
-
-            const ref = entry.ref;
-            if (!ref) { collector.count = 0; continue; }
-
-            const cY = collector.y;
-            const cType = collector.type;
-            const cIndex = collector.index;
-
-            // sortKey for the CPU painter when the layer y-sorts. This pass does not sort.
-            const rqX = ref.x;
-            const rqY = ref.y;
-            const rqScaleX = ref.scaleX;
-            const rqScaleY = ref.scaleY;
-            const rqRotC = ref.rotC;
-            const rqRotS = ref.rotS;
-            const rqAlpha = ref.alpha;
-            const rqTint = ref.tint;
-            const rqTextureId = ref.textureId;
-            const rqAnchorX = ref.anchorX;
-            const rqAnchorY = ref.anchorY;
-            const rqType = ref.type;
-            const rqSortKey = ref.sortKey;
-            const rqRepeatX = ref.repeatX;
-            const rqRepeatY = ref.repeatY;
-            const rqTileMode = ref.tileMode;
-            const rqTileOffsetU = ref.tileOffsetU;
-            const rqTileOffsetV = ref.tileOffsetV;
-            const rqTileMulX = ref.tileMulX;
-            const rqTileMulY = ref.tileMulY;
-            const layerRef = this._emitRef;
-            layerRef.x = rqX; layerRef.y = rqY; layerRef.scaleX = rqScaleX; layerRef.scaleY = rqScaleY;
-            layerRef.rotC = rqRotC; layerRef.rotS = rqRotS; layerRef.alpha = rqAlpha; layerRef.tint = rqTint;
-            layerRef.textureId = rqTextureId; layerRef.anchorX = rqAnchorX; layerRef.anchorY = rqAnchorY;
-            layerRef.type = rqType;
-            layerRef.sortKey = rqSortKey;
-            layerRef.repeatX = rqRepeatX; layerRef.repeatY = rqRepeatY;
-            layerRef.tileMode = rqTileMode; layerRef.tileOffsetU = rqTileOffsetU; layerRef.tileOffsetV = rqTileOffsetV;
-            layerRef.tileMulX = rqTileMulX; layerRef.tileMulY = rqTileMulY;
-            layerRef.shadowH = ref.shadowH;
-            layerRef.shadowOffX = ref.shadowOffX;
-            layerRef.shadowOffY = ref.shadowOffY;
-            if (ref.shadowH) ref.shadowH.fill(0, 0, layerCount);
-            if (ref.shadowOffX) ref.shadowOffX.fill(0, 0, layerCount);
-            if (ref.shadowOffY) ref.shadowOffY.fill(0, 0, layerCount);
-
-            let writeCount = 0;
-            const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[entry.layerId]);
-
-            for (let i = 0; i < layerCount && writeCount < collector.maxItems; i++) {
-                const type = cType[i];
-                const idx = cIndex[i];
-                const yKey = cY[i];
-                const sk = writeSortKey ? this._orderKey(type, idx, yKey, true) : yKey;
-
-                if (type === 6) {
-                    writeCount = this._emitAdobePieces(layerRef, writeCount, idx, sk);
+        const entries = this._customLayerEntries;
+        if (!entries) return;
+        const saved = this._mainColumnSnapshot();
+        try {
+            for (let i = 0; i < entries.length; i++) {
+                const entry = entries[i];
+                const collector = entry.collector;
+                const views = entry.ref;
+                if (!collector) continue;
+                if (!views) {
+                    collector.count = 0;
                     continue;
                 }
-
-                const out = writeCount++;
-                if (writeSortKey) rqSortKey[out] = sk;
-                if (type !== 0) {
-                    if (rqRepeatX) rqRepeatX[out] = 0;
-                    if (rqRepeatY) rqRepeatY[out] = 0;
-                    clearTileFields(layerRef, out);
+                if (collector.count === 0) {
+                    if (views.count) views.count[0] = 0;
+                    continue;
                 }
-
-                if (type === 0) {
-                    // === ENTITY ===
-                    const pose = this._displayPoseOut;
-                    this._displayPose(idx, pose);
-                    rqX[out] = pose.x;
-                    rqY[out] = pose.y;
-                    rqScaleX[out] = srScaleX[idx];
-                    rqScaleY[out] = srScaleY[idx];
-                    if (srInheritTransformRotation[idx]) {
-                        rqRotC[out] = pose.rotC;
-                        rqRotS[out] = pose.rotS;
-                    } else {
-                        rqRotC[out] = srSpriteRotC[idx];
-                        rqRotS[out] = srSpriteRotS[idx];
-                    }
-                    rqAlpha[out] = srAlpha[idx];
-                    rqTint[out] = srTint[idx];
-                    this._writeQueueShadow(out, idx, layerRef);
-                    rqAnchorX[out] = srAnchorX[idx];
-                    rqAnchorY[out] = srAnchorY[idx];
-                    const rx0 = srRepeatX[idx];
-                    const ry0 = srRepeatY[idx];
-                    if (rx0 !== 0 || ry0 !== 0) {
-                        if (rqRepeatX) rqRepeatX[out] = rx0;
-                        if (rqRepeatY) rqRepeatY[out] = ry0;
-                        writeEntityTileFields(
-                            layerRef, out, idx,
-                            srTileMode, srTileOffsetU, srTileOffsetV,
-                            srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
-                        );
-                    } else {
-                        if (rqRepeatX) rqRepeatX[out] = 0;
-                        if (rqRepeatY) rqRepeatY[out] = 0;
-                        if (rqTileMulX) rqTileMulX[out] = 0;
-                        if (rqTileMulY) rqTileMulY[out] = 0;
-                    }
-                    this._setQueueType(ref, out, 0, idx);
-                    const sheetId = srSpritesheetId[idx];
-                    const animState = srAnimState[idx];
-                    const proxyMap = this.proxyToGlobalAnim?.[sheetId];
-                    const globalAnimIdx = proxyMap?.[animState];
-
-                    if (globalAnimIdx !== undefined) {
-                        const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
-                        if (frameIndex[idx] >= animFrameCount) {
-                            frameIndex[idx] = 0;
-                        }
-
-                        // Advance animation (mirrors buildRenderQueue's entity branch).
-                        // Routing is exclusive: an entity is either in the main queue or
-                        // one custom layer, so the accumulator advances once per frame.
-                        if (srIsAnimated[idx] && animFrameCount > 1) {
-                            frameAccum[idx] += deltaSeconds;
-                            const frameDuration = 1 / (srAnimSpeed[idx] * 60);
-
-                            if (frameAccum[idx] >= frameDuration) {
-                                frameAccum[idx] -= frameDuration;
-
-                                const currentFrame = frameIndex[idx];
-                                const isLastFrame = currentFrame >= animFrameCount - 1;
-                                const shouldLoop = srLoop[idx] === 1;
-
-                                if (shouldLoop || !isLastFrame) {
-                                    frameIndex[idx] = (currentFrame + 1) % animFrameCount;
-                                    // Bounds may change (variable frame sizes)
-                                    if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
-                                        const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
-                                        const origW = this.frameWidth[texId] || 0;
-                                        const origH = this.frameHeight[texId] || 0;
-                                        const sx = srScaleX[idx] || 1;
-                                        const sy = srScaleY[idx] || 1;
-                                        SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
-                                        SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
-                                    }
-                                }
-                            }
-                        }
-
-                        const animStart = this.animationFrameStart?.[globalAnimIdx];
-                        if (animStart === undefined) {
-                            this._warnMissingTexture(
-                                `animStart:${globalAnimIdx}`,
-                                `[PRE_RENDER] animationFrameStart missing for globalAnimIdx=${globalAnimIdx} entity=${idx}`
-                            );
-                            rqTextureId[out] = INVALID_TEXTURE_ID;
-                        } else {
-                            const globalTextureId = animStart + frameIndex[idx];
-                            rqTextureId[out] = globalTextureId;
-                            if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
-                        }
-                    } else {
-                        // Never reuse stale lastTextureId (pool recycle / spawn before setSprite).
-                        if (entityLastTextureId) entityLastTextureId[idx] = INVALID_TEXTURE_ID;
-                        rqTextureId[out] = INVALID_TEXTURE_ID;
-                        // sheetId 0 = unset sentinel — expected under collect→emit recycle. No warn.
-                        if (sheetId) {
-                            this._warnMissingTexture(
-                                `sprite:${sheetId}:${animState}`,
-                                `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
-                            );
-                        }
-                    }
-
-                } else if (type === 1) {
-                    // === PARTICLE ===
-                    rqX[out] = particleX[idx];
-                    // Zenithal: height → scale (and alpha). Never fold z into Y.
-                    // Flat: y only. Else (topdown): screenY = y + z.
-                    if (particleViewMode && particleViewMode[idx] === CAMERA_TYPES.ZENITHAL && !(particleFlat && particleFlat[idx])) {
-                        rqY[out] = particleY[idx];
-                        const height = -particleZ[idx];
-                        const heightFactor = 1 + (height / this.zenithalMaxHeight) * this.zenithalScaleFactor;
-                        rqScaleX[out] = particleScaleX[idx] * heightFactor * (particleFlipX[idx] ? -1 : 1);
-                        rqScaleY[out] = particleScaleY[idx] * heightFactor * (particleFlipY[idx] ? -1 : 1);
-                        let a = particleAlpha[idx];
-                        if (this.zenithalAlphaFade > 0) {
-                            const alphaFade = Math.min(1, (height / this.zenithalMaxHeight) * this.zenithalAlphaFade);
-                            a *= Math.max(0, 1 - alphaFade);
-                        }
-                        rqAlpha[out] = a;
-                    } else if (particleFlat && particleFlat[idx]) {
-                        rqY[out] = particleY[idx];
-                        rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
-                        rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
-                        rqAlpha[out] = particleAlpha[idx];
-                    } else {
-                        rqY[out] = particleY[idx] + particleZ[idx];
-                        rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
-                        rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
-                        rqAlpha[out] = particleAlpha[idx];
-                    }
-                    rqRotC[out] = particleRotC[idx];
-                    rqRotS[out] = particleRotS[idx];
-                    rqTint[out] = particleTint[idx];
-                    const pAnimIdx = particleTextureId[idx];
-                    rqTextureId[out] = pAnimIdx === 0
-                        ? whiteCircleTextureId2
-                        : this._resolveAnimFrameStart(pAnimIdx, `particle:${pAnimIdx}`);
-                    rqAnchorX[out] = 0.5;
-                    rqAnchorY[out] = 0.5;
-                    this._setQueueType(ref, out, 1, idx);
-                } else if (type === 7) {
-                    const lf = this.liquidFun;
-                    if (
-                        this.interpolatePhysicsPose &&
-                        this._prevLfX &&
-                        this._prevLfCount > idx
-                    ) {
-                        const alpha = this._poseAlpha;
-                        const px = this._prevLfX[idx];
-                        const py = this._prevLfY[idx];
-                        rqX[out] = px + (lf.x[idx] - px) * alpha;
-                        rqY[out] = py + (lf.y[idx] - py) * alpha;
-                    } else {
-                        rqX[out] = lf.x[idx];
-                        rqY[out] = lf.y[idx];
-                    }
-                    rqScaleX[out] = lf.scaleX[idx];
-                    rqScaleY[out] = lf.scaleY[idx];
-                    rqAlpha[out] = lf.alpha[idx] * (lf.baseAlpha ? lf.baseAlpha[idx] : 1);
-                    rqRotC[out] = lf.rotC[idx];
-                    rqRotS[out] = lf.rotS[idx];
-                    rqTint[out] = lf.tint[idx];
-                    const lfAnimIdx = lf.textureId[idx];
-                    rqTextureId[out] = lfAnimIdx === 0
-                        ? whiteCircleTextureId2
-                        : this._resolveAnimFrameStart(lfAnimIdx, `liquidFun:${lfAnimIdx}`);
-                    rqAnchorX[out] = 0.5;
-                    rqAnchorY[out] = 0.5;
-                    this._setQueueType(ref, out, 1, idx);
-                } else if (type === 2) {
-                    // === DECORATION ===
-                    const pose = this._displayPoseOut;
-                    this._decorationWorldXY(idx, pose);
-                    rqX[out] = pose.x;
-                    rqY[out] = pose.y;
-                    rqScaleX[out] = decoScaleX[idx];
-                    rqScaleY[out] = decoScaleY[idx];
-                    rqRotC[out] = decoRotC[idx];
-                    rqRotS[out] = decoRotS[idx];
-                    rqAlpha[out] = decoAlpha[idx] * this._decorationZoomAlpha;
-                    rqTint[out] = decoTint[idx];
-                    const dAnimIdx = decoTextureId[idx];
-                    rqTextureId[out] = this._resolveAnimFrameStart(dAnimIdx, `decoration:${dAnimIdx}`);
-                    rqAnchorX[out] = decoAnchorX[idx];
-                    rqAnchorY[out] = decoAnchorY[idx];
-                    this._setQueueType(ref, out, 2, idx);
-                    rqAnchorX[out] = decoAnchorX[idx];
-                    rqAnchorY[out] = decoAnchorY[idx];
-                    this._setQueueType(ref, out, 2, idx);
-                } else if (type === 3) {
-                    // === LIGHT GLOW ===
-                    const scale = lightGlowScale(sqrtLightIntensity[idx]);
-                    // hasGlowSprite 0.5 → /20000; 1 → /10000
-                    const glowAlpha = lightIntensity[idx] * glowSprite[idx] * (1 / 10000);
-
-                    if (scale < 0.1 || glowAlpha < 0.001) {
-                        rqAlpha[out] = 0;
-                        rqScaleX[out] = 0;
-                        rqScaleY[out] = 0;
-                        rqX[out] = -10000;
-                        rqY[out] = -10000;
-                    } else {
-                        rqX[out] = entityX[idx];
-                        rqY[out] = entityY[idx] - (glowHeightOffset[idx] || 0);
-                        rqScaleX[out] = scale;
-                        rqScaleY[out] = scale;
-                        rqAlpha[out] = glowAlpha;
-                        rqTint[out] = lightColor[idx];
-                    }
-                    rqRotC[out] = 1;
-                    rqRotS[out] = 0;
-                    rqTextureId[out] = lightGradientTextureId;
-                    rqAnchorX[out] = 0.5;
-                    rqAnchorY[out] = 0.5;
-                    if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
-                    this._setQueueType(ref, out, 3, idx);
-                } else if (type === 4) {
-                    // === BULLET ===
-                    if (!bulletActive[idx]) {
-                        rqAlpha[out] = 0;
-                        rqScaleX[out] = 0;
-                        rqScaleY[out] = 0;
-                        rqX[out] = -10000;
-                        rqY[out] = -10000;
-                    } else {
-                        rqX[out] = bulletX[idx];
-                        rqY[out] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
-                        rqScaleX[out] = bulletScale[idx];
-                        rqScaleY[out] = bulletScale[idx];
-                        rqRotC[out] = bulletSpriteRotC[idx];
-                        rqRotS[out] = bulletSpriteRotS[idx];
-                        rqAlpha[out] = bulletAlpha[idx];
-                        rqTint[out] = bulletTint[idx];
-                        const bAnimIdx = bulletTextureId[idx];
-                        rqTextureId[out] = this._resolveAnimFrameStart(bAnimIdx, `bullet:${bAnimIdx}`);
-                        rqAnchorX[out] = bulletAnchorX[idx];
-                        rqAnchorY[out] = bulletAnchorY[idx];
-                    }
-                    this._setQueueType(ref, out, 4, idx);
-                } else if (type === 5) {
-                    // === BULLET TRAIL ===
-                    if (!bulletActive[idx]) {
-                        rqAlpha[out] = 0;
-                        rqScaleX[out] = 0;
-                        rqScaleY[out] = 0;
-                        rqX[out] = -10000;
-                        rqY[out] = -10000;
-                    } else {
-                        const currX = bulletX[idx];
-                        const currY = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
-                        const startX = bulletStartX[idx];
-                        const startY = bulletStartY[idx] + (bulletOffsetY[idx] ?? 0);
-                        const dx = currX - startX;
-                        const dy = currY - startY;
-                        const lenSq = dx * dx + dy * dy;
-
-                        if (lenSq < BULLET_TRAIL_MIN_LENGTH_SQ) {
-                            rqAlpha[out] = 0;
-                            rqScaleX[out] = 0;
-                            rqScaleY[out] = 0;
-                            rqX[out] = -10000;
-                            rqY[out] = -10000;
-                        } else {
-                            const adx = dx < 0 ? -dx : dx;
-                            const ady = dy < 0 ? -dy : dy;
-                            const max = adx > ady ? adx : ady;
-                            const min = adx > ady ? ady : adx;
-                            const lengthApprox = 0.96 * max + 0.4 * min;
-
-                            rqX[out] = (startX + currX) * 0.5;
-                            rqY[out] = (startY + currY) * 0.5;
-                            rqScaleX[out] = lengthApprox / 10;
-                            rqScaleY[out] = bulletTrailWidth[idx];
-                            rqRotC[out] = bulletRotC[idx];
-                            rqRotS[out] = bulletRotS[idx];
-                            rqAlpha[out] = bulletAlpha[idx] * 0.9;
-                            rqTint[out] = 0xffffff;
-                        }
-                    }
-                    rqTextureId[out] = bulletTrailTextureId;
-                    rqAnchorX[out] = 0.5;
-                    rqAnchorY[out] = 0.5;
-                    this._setQueueType(ref, out, 5, idx);
-                }
+                this._applyMainColumns(views);
+                const ySorting = !!(Layer._ySorting && Layer._ySorting[entry.layerId]);
+                const writeCount = this.emitSpriteQueue(deltaTime, {
+                    count: collector.count,
+                    maxItems: collector.maxItems,
+                    collectorY: collector.y,
+                    collectorType: collector.type,
+                    collectorIndex: collector.index,
+                    stashX: null,
+                    stashY: null,
+                    stashRotC: null,
+                    stashRotS: null,
+                    persist: false,
+                    hasOrder: ySorting,
+                    ySort: ySorting,
+                });
+                if (views.count) views.count[0] = writeCount;
+                collector.count = 0;
             }
-
-            ref.count[0] = writeCount;
-            collector.count = 0;
+        } finally {
+            this._applyMainColumns(saved);
         }
     }
 
