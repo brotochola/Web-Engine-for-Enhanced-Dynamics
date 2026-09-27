@@ -1728,115 +1728,188 @@ class PixiRenderer extends AbstractWorker {
   /**
    * Update method called each frame (implementation of AbstractWorker.update)
    */
-  update(deltaTime, dtRatio, resuming) {
-    if (this._presentingFlag && Atomics.load(this._presentingFlag, 0) === 0) this._stopGpuClock();
+  presentationIsActive() {
+    const flag = this._presentingFlag;
+    return !(flag && Atomics.load(flag, 0) === 0);
+  }
 
+  rememberDeltaTime(deltaTime) {
     this._lastDt = deltaTime > 0 ? deltaTime / 1000 : 1 / 60;
+  }
 
-    const detail = this.collectDetailedStats;
-    let t0 = 0;
-    if (detail) t0 = performance.now();
+  gpuIsAvailable() {
+    return this._gpuLive();
+  }
 
-    // ========================================
-    // DOUBLE BUFFER SYNC: Select read buffer
-    // ========================================
-    // pixi_worker NEVER waits - always reads the latest available frame
-    // If pre_render hasn't written anything new, we just re-render the same buffer
-    // pre_render writes _queueBuf, then increments renderQueueFrame and flips the bit.
-    // Published readyFrame is that counter. Read index is (readyFrame - 1) & 1.
-    // So when sync[0]=N, the data is in buffer (N-1)%2, not N%2
+  /**
+   * Swap to the newest published render queue. Pixi never waits.
+   * Returns whether a new frame was consumed.
+   */
+  consumeLatestRenderQueue() {
+    this._deferredRenderQueueRelease = 0;
+    if (!this.renderQueueSync) return false;
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    const readyFrame = this._bandJoin
+      ? this._bandReadyFrame()
+      : Atomics.load(this.renderQueueSync, 0);
     let consumedNewFrame = false;
-    let deferConsume = 0;
-    if (this.renderQueueSync) {
-      const readyFrame = this._bandJoin
-        ? this._bandReadyFrame()
-        : Atomics.load(this.renderQueueSync, 0);
-
-      // Only switch buffers if a new frame is available (readyFrame>0 ensures at least one frame was written)
-      if (readyFrame > this.lastReadFrame && readyFrame > 0) {
-        if (this._queueInterp && this.renderQueueX) {
-          this._latchedPrevX = this.renderQueueX;
-          this._latchedPrevY = this.renderQueueY;
-          this._latchedPrevCount = this.renderQueueCount[0] | 0;
-        }
-        const prevReady = this.lastReadFrame;
-        consumedNewFrame = true;
-        const readBufferIdx = this._bandJoin ? (readyFrame & 1) : ((readyFrame - 1) & 1);
-        this._setReadBuffer(readBufferIdx);
-
-        // Custom layer queues also swap with the same frame
-        for (let i = 0; i < this._customLayerList.length; i++) {
-          const cl = this._customLayerList[i];
-          if (cl.buffers) cl.readRef = cl.buffers[readBufferIdx];
-          if (cl.sortKeyU32ByBuf) cl.sortKeyU32 = cl.sortKeyU32ByBuf[readBufferIdx];
-        }
-
-        // Pin the pose before pre-render can reuse that slot. The render-queue
-        // SAB stays with us until the reads below finish.
-        this._latchPose(false, this.renderQueuePoseReady ? this.renderQueuePoseReady[0] : 0);
-        this._snapshotComputePose();
-
-        // Hidden tab: release now so pre-render does not wait on a frame we will not draw.
-        // Presenting: release in the finally, after shadows, sprites, and custom layers.
-        this.lastReadFrame = readyFrame;
-        if (this._presenting) deferConsume = readyFrame;
-        else {
-          Atomics.store(this.renderQueueSync, 1, readyFrame);
-          Atomics.notify(this.renderQueueSync, 1, 1);
-        }
-
-        // Frame-locked camera from the same renderQueue slot.
-        if (this.renderQueueCamera) {
-          this._renderZoom = this.renderQueueCamera[0];
-          this._renderCameraX = this.renderQueueCamera[1];
-          this._renderCameraY = this.renderQueueCamera[2];
-          this._cameraInitialized = true;
-        }
-        if (this._queueInterp) {
-          const curCount = this.renderQueueCount ? this.renderQueueCount[0] | 0 : 0;
-          const consecutive = prevReady > 0 && readyFrame === prevReady + 1;
-          this._poseSnap = !consecutive || this._latchedPrevCount !== curCount;
-          this._notePosePublish();
-        }
+    if (readyFrame > this.lastReadFrame && readyFrame > 0) {
+      if (this._queueInterp && this.renderQueueX) {
+        this._latchedPrevX = this.renderQueueX;
+        this._latchedPrevY = this.renderQueueY;
+        this._latchedPrevCount = this.renderQueueCount[0] | 0;
+      }
+      const previousReady = this.lastReadFrame;
+      consumedNewFrame = true;
+      const readBufferIndex = this._bandJoin ? (readyFrame & 1) : ((readyFrame - 1) & 1);
+      this._setReadBuffer(readBufferIndex);
+      for (let i = 0; i < this._customLayerList.length; i++) {
+        const layer = this._customLayerList[i];
+        if (layer.buffers) layer.readRef = layer.buffers[readBufferIndex];
+        if (layer.sortKeyU32ByBuf) layer.sortKeyU32 = layer.sortKeyU32ByBuf[readBufferIndex];
+      }
+      this._latchPose(false, this.renderQueuePoseReady ? this.renderQueuePoseReady[0] : 0);
+      this._snapshotComputePose();
+      this.lastReadFrame = readyFrame;
+      if (this._presenting) this._deferredRenderQueueRelease = readyFrame;
+      else {
+        Atomics.store(this.renderQueueSync, 1, readyFrame);
+        Atomics.notify(this.renderQueueSync, 1, 1);
+      }
+      if (this.renderQueueCamera) {
+        this._renderZoom = this.renderQueueCamera[0];
+        this._renderCameraX = this.renderQueueCamera[1];
+        this._renderCameraY = this.renderQueueCamera[2];
+        this._cameraInitialized = true;
+      }
+      if (this._queueInterp) {
+        const currentCount = this.renderQueueCount ? this.renderQueueCount[0] | 0 : 0;
+        const consecutive = previousReady > 0 && readyFrame === previousReady + 1;
+        this._poseSnap = !consecutive || this._latchedPrevCount !== currentCount;
+        this._notePosePublish();
       }
     }
+    if (started) this.queueTimeThisFrame = performance.now() - started;
+    return consumedNewFrame;
+  }
 
-    if (detail) this.queueTimeThisFrame = performance.now() - t0;
-    this.presentTimeThisFrame = 0;
+  shouldDrawFrameLockedPasses(consumedNewFrame, resuming) {
+    return consumedNewFrame || resuming || this.lastReadFrame <= 0 || !this.renderQueueSync;
+  }
 
-    // Hidden tab already released the buffer above. No GPU while the canvas is off screen.
-    // Poll the SAB here: hide/F5 can land mid-frame, before the presenting message.
-    if (!this._gpuLive()) return;
+  tickInterpolatedPose() {
+    if (!this._queueInterp || !this._posePacked || !this.entitiesBatch) return;
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    this._tickPoseAlpha();
+    this.entitiesBatch.setPoseAlpha(this._poseAlpha);
+    if (started) this.miscTimeThisFrame += performance.now() - started;
+  }
 
-    let timingPresent = false;
-    try {
+  ensureCameraBeforeFirstFrame() {
+    if (this._cameraInitialized || !this.cameraData) return;
+    this._renderZoom = this.cameraData[0];
+    this._renderCameraX = this.cameraData[1];
+    this._renderCameraY = this.cameraData[2];
+    this._cameraInitialized = true;
+  }
 
-    // STALE-FRAME GATING: every input to the sprite syncs and offscreen GPU
-    // passes below is frame-locked to the render queue (sprite/shadow/custom
-    // queues, camera snapshot, pre_render's visible-lights buffer). When no
-    // new frame arrived, re-running them produces pixel-identical output, so
-    // skip the work (matters when pixi outpaces pre_render, i.e. exactly when
-    // the system is loaded). Fall back to per-tick behavior before the first
-    // frame (keeps lightingRT/shadowRT initialized), if the queue is absent,
-    // and on resume after a pause.
-    if (detail) t0 = performance.now();
-    if (!consumedNewFrame && this._queueInterp && this._posePacked && this.entitiesBatch) {
-      this._tickPoseAlpha();
-      this.entitiesBatch.setPoseAlpha(this._poseAlpha);
+  syncLayerAlphaFromSharedState() {
+    if (!Layer._alphaDirty) return;
+    for (let i = 0; i < Layer.count; i++) {
+      if (Atomics.load(Layer._alphaDirty, i) !== 1) continue;
+      Atomics.store(Layer._alphaDirty, i, 0);
+      const name = Layer.getName(i);
+      const displayObject = name ? this._layerRuntime[name] : null;
+      if (displayObject) displayObject.alpha = Layer._alpha[i];
     }
-    const poseMs = detail ? performance.now() - t0 : 0;
+  }
 
-    const runFrameLockedPasses =
-      consumedNewFrame || resuming || this.lastReadFrame <= 0 || !this.renderQueueSync;
+  uploadTextureLookupIfNeeded() {
+    if (!this._texLutNeedsGpuUpload) return;
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    this._uploadTexLutTexture();
+    if (started) this.miscTimeThisFrame += performance.now() - started;
+  }
 
-    // Reset subtimers every frame (stale-gated frames keep zeros for skipped work)
+  drawFrameLights() {
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    this.computeVisibleLights();
+    this.updateLighting();
+    if (started) this.lightsTimeThisFrame = performance.now() - started;
+  }
+
+  drawFrameShadows() {
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    this.updateShadowSprites();
+    if (started) this.shadowsTimeThisFrame = performance.now() - started;
+  }
+
+  drawFrameSprites() {
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    const sortBefore = this.sortTimeThisFrame;
+    this.updateSpritesFromRenderQueue();
+    if (started) this.spritesTimeThisFrame = performance.now() - started - (this.sortTimeThisFrame - sortBefore);
+  }
+
+  drawFrameCustomLayers() {
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    const sortBefore = this.sortTimeThisFrame;
+    this.updateCustomLayers();
+    if (started) this.customLayersTimeThisFrame = performance.now() - started - (this.sortTimeThisFrame - sortBefore);
+  }
+
+  renderLightingToTexture() {
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    this._gpuTimer.begin('lights');
+    if (this._visPolyEnabled) {
+      this.renderVisibilityLighting();
+    } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.lighting?.id)) {
+      const renderOptions = this._rtRenderOpts;
+      renderOptions.transform = null;
+      renderOptions.container = this.lightingMesh;
+      renderOptions.target = this.lightingRT;
+      renderOptions.clear = true;
+      renderOptions.clearColor = this._clearTransparent;
+      this._submitRender(renderOptions);
+      this._renderLiquidFunLightingField();
+    }
+    this._gpuTimer.end();
+    if (started) this.lightsTimeThisFrame += performance.now() - started;
+  }
+
+  applyLayerVisibility() {
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    this._applyLayerVisibility();
+    if (started) this.miscTimeThisFrame += performance.now() - started;
+  }
+
+  presentStage() {
+    const started = this.collectDetailedStats ? performance.now() : 0;
+    this._presentStage();
+    if (started) this.presentTimeThisFrame = performance.now() - started;
+  }
+
+  releaseRenderQueueIfHeld() {
+    const frame = this._deferredRenderQueueRelease | 0;
+    this._deferredRenderQueueRelease = 0;
+    if (!frame || !this.renderQueueSync) return;
+    Atomics.store(this.renderQueueSync, 1, frame);
+    Atomics.notify(this.renderQueueSync, 1, 1);
+  }
+
+  update(deltaTime, dtRatio, resuming) {
+    if (!this.presentationIsActive()) this._stopGpuClock();
+    this.rememberDeltaTime(deltaTime);
+    const consumedNewFrame = this.consumeLatestRenderQueue();
+    this.presentTimeThisFrame = 0;
+    if (!this.gpuIsAvailable()) return;
+
     this.lightsTimeThisFrame = 0;
     this.shadowsTimeThisFrame = 0;
     this.spritesTimeThisFrame = 0;
     this.sortTimeThisFrame = 0;
-    this.presentTimeThisFrame = 0;
     this.customLayersTimeThisFrame = 0;
-    this.miscTimeThisFrame = poseMs;
+    this.miscTimeThisFrame = 0;
     this._decalTilesDirtyThisFrame = 0;
     this._decalTilesUploadedThisFrame = 0;
     this._meshFillInstancesThisFrame = 0;
@@ -1845,112 +1918,25 @@ class PixiRenderer extends AbstractWorker {
     this._gpuCastersThisFrame = 0;
     this._gpuShadowLightsThisFrame = 0;
 
-    if (detail) t0 = performance.now();
-
-    // Camera is always provided by the pre-render worker via renderQueueCamera.
-    // Fall back to live SAB only during the very first frames before init completes.
-    if (!this._cameraInitialized && this.cameraData) {
-      this._renderZoom = this.cameraData[0];
-      this._renderCameraX = this.cameraData[1];
-      this._renderCameraY = this.cameraData[2];
-      this._cameraInitialized = true;
-    }
-
-    this.updateCameraTransform();
-    this._attachGpuTimer();
-
-    // Sync mutable layer properties from SAB (cross-worker writes via Atomics)
-    if (Layer._alphaDirty) {
-      for (let i = 0; i < Layer.count; i++) {
-        if (Atomics.load(Layer._alphaDirty, i) === 1) {
-          Atomics.store(Layer._alphaDirty, i, 0);
-          const name = Layer.getName(i);
-          const displayObj = name ? this._layerRuntime[name] : null;
-          if (displayObj) displayObj.alpha = Layer._alpha[i];
-        }
+    try {
+      if (!consumedNewFrame) this.tickInterpolatedPose();
+      this.ensureCameraBeforeFirstFrame();
+      this.updateCameraTransform();
+      this._attachGpuTimer();
+      this.syncLayerAlphaFromSharedState();
+      this.updateDecalTiles();
+      if (this.shouldDrawFrameLockedPasses(consumedNewFrame, resuming)) {
+        this.uploadTextureLookupIfNeeded();
+        this.drawFrameLights();
+        this.drawFrameShadows();
+        this.drawFrameSprites();
+        this.drawFrameCustomLayers();
+        this.renderLightingToTexture();
       }
-    }
-
-    // Update blood decal splat tiles (dirty flags from particle_worker)
-    // Not frame-locked: driven by particle_worker dirty flags, so always poll.
-    this.updateDecalTiles();
-
-    if (detail) this.miscTimeThisFrame += performance.now() - t0;
-
-    if (runFrameLockedPasses) {
-      if (this._texLutNeedsGpuUpload) {
-        if (detail) t0 = performance.now();
-        this._uploadTexLutTexture();
-        if (detail) this.miscTimeThisFrame += performance.now() - t0;
-      }
-      // Pre-compute visible lights once (shared by updateLighting, updateShadowSprites)
-      if (detail) t0 = performance.now();
-      this.computeVisibleLights();
-      this.updateLighting();
-      if (detail) this.lightsTimeThisFrame = performance.now() - t0;
-
-      // Update shadow RenderTexture with interleaved lights + shadows
-      if (detail) t0 = performance.now();
-      this.updateShadowSprites();
-      if (detail) this.shadowsTimeThisFrame = performance.now() - t0;
-
-      // Use render queue from pre_render_worker - no fallback.
-      // Sort time is its own chip: pull it out of Sprites and Custom.
-      if (detail) t0 = performance.now();
-      const sortBeforeSprites = this.sortTimeThisFrame;
-      this.updateSpritesFromRenderQueue();
-      if (detail) {
-        this.spritesTimeThisFrame = performance.now() - t0 - (this.sortTimeThisFrame - sortBeforeSprites);
-      }
-
-      // Update custom layer sprites and render shader layers to their RenderTextures
-      if (detail) t0 = performance.now();
-      const sortBeforeCustom = this.sortTimeThisFrame;
-      this.updateCustomLayers();
-      if (detail) {
-        this.customLayersTimeThisFrame = performance.now() - t0 - (this.sortTimeThisFrame - sortBeforeCustom);
-      }
-
-      // ========================================
-      // LOW-RES OFF-SCREEN RENDERING
-      // ========================================
-      // Render lighting to lower-resolution texture if configured.
-      // This significantly improves performance on GPU-bound systems.
-      if (detail) t0 = performance.now();
-      this._gpuTimer.begin('lights');
-      if (this._visPolyEnabled) {
-        // Raycasted lighting: render visibility polygon meshes
-        this.renderVisibilityLighting();
-      } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.lighting?.id)) {
-        // Standard lighting: render full-screen shader
-        const rtOpts = this._rtRenderOpts;
-        rtOpts.transform = null;
-        rtOpts.container = this.lightingMesh;
-        rtOpts.target = this.lightingRT;
-        rtOpts.clear = true;
-        rtOpts.clearColor = this._clearTransparent;
-        this._submitRender(rtOpts);
-        this._renderLiquidFunLightingField();
-      }
-      this._gpuTimer.end();
-      if (detail) this.lightsTimeThisFrame += performance.now() - t0;
-    }
-
-    if (detail) t0 = performance.now();
-    this._applyLayerVisibility();
-    if (detail) this.miscTimeThisFrame += performance.now() - t0;
-
-    if (detail) {
-      t0 = performance.now();
-      timingPresent = true;
-    }
-    this._presentStage();
+      this.applyLayerVisibility();
+      this.presentStage();
     } finally {
-      if (deferConsume) {
-        Atomics.store(this.renderQueueSync, 1, deferConsume);
-        Atomics.notify(this.renderQueueSync, 1, 1);
-      }
-      if (timingPresent) this.presentTimeThisFrame = performance.now() - t0;
+      this.releaseRenderQueueIfHeld();
     }
   }
 

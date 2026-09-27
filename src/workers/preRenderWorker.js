@@ -3309,6 +3309,12 @@ class PreRenderWorker extends AbstractWorker {
             layerRef.repeatX = rqRepeatX; layerRef.repeatY = rqRepeatY;
             layerRef.tileMode = rqTileMode; layerRef.tileOffsetU = rqTileOffsetU; layerRef.tileOffsetV = rqTileOffsetV;
             layerRef.tileMulX = rqTileMulX; layerRef.tileMulY = rqTileMulY;
+            layerRef.shadowH = ref.shadowH;
+            layerRef.shadowOffX = ref.shadowOffX;
+            layerRef.shadowOffY = ref.shadowOffY;
+            if (ref.shadowH) ref.shadowH.fill(0, 0, layerCount);
+            if (ref.shadowOffX) ref.shadowOffX.fill(0, 0, layerCount);
+            if (ref.shadowOffY) ref.shadowOffY.fill(0, 0, layerCount);
 
             let writeCount = 0;
             const writeSortKey = !!(rqSortKey && Layer._ySorting && Layer._ySorting[entry.layerId]);
@@ -3349,6 +3355,7 @@ class PreRenderWorker extends AbstractWorker {
                     }
                     rqAlpha[out] = srAlpha[idx];
                     rqTint[out] = srTint[idx];
+                    this._writeQueueShadow(out, idx, layerRef);
                     rqAnchorX[out] = srAnchorX[idx];
                     rqAnchorY[out] = srAnchorY[idx];
                     const rx0 = srRepeatX[idx];
