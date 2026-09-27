@@ -97,13 +97,24 @@ function summaryForSeries(values, runs) {
 }
 
 function recordWorkersFromReport(j, workerAcc) {
+  const extraKeys = ['GPU_CASTERS', 'GPU_SHADOW_LIGHTS', 'VISIBLE_ENTITIES', 'RENDER_QUEUE_SIZE', 'ACTIVE_PARTICLES'];
   for (const w of j.workers || []) {
-    if (!workerAcc[w.id]) workerAcc[w.id] = { fps: [], stepMs: [], bodyCount: [] };
-    workerAcc[w.id].fps.push(w.averageFPS || 0);
+    if (!workerAcc[w.id]) {
+      workerAcc[w.id] = { fps: [], stepMs: [], bodyCount: [], extra: Object.create(null) };
+    }
+    const acc = workerAcc[w.id];
+    if (!acc.extra) acc.extra = Object.create(null);
+    acc.fps.push(w.averageFPS || 0);
     const s = w.statsSamplesAverage;
     if (s) {
-      workerAcc[w.id].stepMs.push(s.STEP_MS || 0);
-      if (s.BODY_COUNT != null) workerAcc[w.id].bodyCount.push(s.BODY_COUNT || 0);
+      acc.stepMs.push(s.STEP_MS || 0);
+      if (s.BODY_COUNT != null) acc.bodyCount.push(s.BODY_COUNT || 0);
+      for (let i = 0; i < extraKeys.length; i++) {
+        const key = extraKeys[i];
+        if (s[key] == null) continue;
+        if (!acc.extra[key]) acc.extra[key] = [];
+        acc.extra[key].push(Number(s[key]) || 0);
+      }
     }
   }
 }
@@ -381,6 +392,9 @@ try {
               averageFPS: summaryForSeries(acc.fps, acc.fps.length),
               STEP_MS: summaryForSeries(acc.stepMs, acc.stepMs.length),
               BODY_COUNT: summaryForSeries(acc.bodyCount, acc.bodyCount.length),
+              extra: Object.fromEntries(
+                Object.entries(acc.extra || {}).map(([key, values]) => [key, summaryForSeries(values, values.length)])
+              ),
             },
           ])
         ),

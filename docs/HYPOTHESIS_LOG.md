@@ -12,6 +12,8 @@ Status words: `kept` · `dropped` · `screened` · `rejected-in-kernel` · `not-
 
 **Alpha cut screen (2026-09-27):** headed Predator, 2 × 5 s / 5 s, detalle off, `--src`, baseline `1982529` then `106c4f1`. Screened. Not a keep. Numbers are in the chat of that day and in `tests/results/alpha-cut-screen/`.
 
+**Pack compartido (2026-09-27):** unir el pack de sprites en `packSpriteLayer` no mueve el cuello de Predator. Headed, 5 corridas, warmup 25 s, medida 18 s, detalle apagado, `--src`. Baseline `c418c4e7` (emit ya commiteado, sin el pack) y después el árbol de trabajo. Primario `max(preRender, renderer)`: 11.854 ms → 11.675 ms (−1.5 %). Renderer 8.045 → 8.174 ms (+1.6 %). `GPU_CASTERS` 14056 → 14031 y `GPU_SHADOW_LIGHTS` 40.8 → 40.8, ambos dentro del 5 %. `VISIBLE_ENTITIES` del pre-render 16631 → 16606. `BODY_COUNT` 16626 → 16606. `ACTIVE_PARTICLES` tiene cv 86 % y 75 %, así que esa carga no cierra y no hay keep de velocidad. Higiene: el cuello no empeora 3 %. Números en `tests/results/pack-sprite-layer/`.
+
 ---
 
 ## This branch (`more_micro_opts` versus `main` `0695a8d`)

@@ -63,6 +63,7 @@ test('ctor sets State.depthMask; upload excludeType0/1; indices skip filter', ()
 });
 
 const pixiSrc = readFileSync(join(dir, '../../src/workers/pixiWorker.js'), 'utf8');
+const packLayer = readFileSync(join(dir, '../../src/render/packSpriteLayer.js'), 'utf8');
 
 test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCount 0)', () => {
   assert.match(pixiSrc, /function emptyInstancedMesh\(obj\)/);
@@ -96,12 +97,15 @@ test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCo
 });
 
 test('particles share the painter list; glow stays ADD; no second particle batch', () => {
-  assert.match(pixiSrc, /t === 1\) np\+\+/);
-  assert.match(pixiSrc, /t === 3\) idxG\[ng\+\+\]/);
-  assert.match(pixiSrc, /opts\.indices = idxG/);
+  assert.match(packLayer, /typeArr\[idxE\[k\]\] === 1/);
+  assert.match(packLayer, /fillQueueIndices\(typeArr, count, 3, -1, idxG\)/);
+  assert.match(packLayer, /opts\.indices = idxG/);
+  assert.match(pixiSrc, /splitGlow/);
+  assert.match(pixiSrc, /entitiesGlowBatch\.upload\(q, packOpts\)|glowBatch\.upload\(q, packOpts\)/);
   assert.match(pixiSrc, /alphaDiscard: false/);
   assert.doesNotMatch(pixiSrc, /entitiesParticleBatch/);
   assert.doesNotMatch(pixiSrc, /_rqIdxParticle/);
+  assert.doesNotMatch(packLayer, /entitiesParticleBatch/);
 });
 
 test('render-queue partition idx buffers are Uint32 (no Uint16 wrap past 65535)', () => {

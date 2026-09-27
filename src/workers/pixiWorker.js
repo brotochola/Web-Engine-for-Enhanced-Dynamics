@@ -91,7 +91,7 @@ import {
   packTextureLutRgba,
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
-import { radixSortIndicesBySortKey, createPainterState, orderPainterSlots } from '../util/sortIndexByKey.js';
+import { createPainterState } from '../util/sortIndexByKey.js';
 import { concatWindows } from '../render/idWindowMerge.js';
 import { prWinSlot, PR_WIN_FRAME, PR_WIN_SPRITE, PR_WIN_GLOW, PR_WIN_SUN, PR_WIN_STAMP, PR_WIN_COOKIE } from '../util/preRenderOwner.js';
 import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
@@ -227,6 +227,7 @@ import {
   PACK_GPU_SPRITES_PIXI,
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
+import { packSpriteLayer } from '../render/packSpriteLayer.js';
 
 function fetchEngineShader(path) {
   const slash = path.lastIndexOf('/');
@@ -1296,26 +1297,25 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * CPU painter order when `painter` is set. Shared by ENTITIES and every
-   * Y-sorted custom layer.
+   * One sprite batch: painter order when `painter` is set, then the mesh upload.
+   * Custom layers use this. The entities queue calls packSpriteLayer directly
+   * when it also splits the glow batch.
    */
   _uploadSortedSprites(batch, q, opts, painter, keysU32, idxE, ne) {
-    if (painter && keysU32 && ne >= 2) {
-      const detail = this.collectDetailedStats;
-      const t0 = detail ? performance.now() : 0;
-      opts.indices = orderPainterSlots(painter, idxE, ne, keysU32);
-      if (detail) this.sortTimeThisFrame += performance.now() - t0;
-      opts.indexCount = ne;
-    } else if (idxE) {
-      opts.indices = idxE;
-      opts.indexCount = ne;
-    } else {
-      opts.indices = null;
-      opts.indexCount = 0;
-    }
-    opts.depthMode = BATCH_DEPTH.INDEX;
-    opts.sortKey = null;
-    return batch.upload(q, opts);
+    const packed = packSpriteLayer({
+      count: ne | 0,
+      type: opts.type,
+      opts,
+      splitGlow: false,
+      dense: !idxE,
+      presetIndices: idxE || null,
+      painter: painter || null,
+      keysU32: keysU32 || null,
+      depthMode: BATCH_DEPTH.INDEX,
+      addSortMs: this.collectDetailedStats ? (ms) => { this.sortTimeThisFrame += ms; } : null,
+      writeSprites: (packOpts) => batch.upload(q, packOpts),
+    });
+    return packed.sprite;
   }
 
   // ========================================
@@ -1473,71 +1473,45 @@ class PixiRenderer extends AbstractWorker {
     opts.resolution = 1;
 
     const typeArr = this.renderQueueType;
-    let ne = count;
-    let np = 0;
-    let ng = 0;
     const idxE = this._rqIdxEntity;
     const idxG = this._rqIdxGlow;
-    if (this._lightGlowAdd && typeArr && idxE && (this._painter || this.lightingEnabled)) {
-      ne = 0;
-      for (let i = 0; i < count; i++) {
-        const t = typeArr[i];
-        if (t === 3) idxG[ng++] = i;
-        else {
-          if (t === 1) np++;
-          idxE[ne++] = i;
+    const splitGlow = !!(this._lightGlowAdd && typeArr && idxE && (this._painter || this.lightingEnabled));
+    const glowBatch = splitGlow
+      ? this.entitiesGlowBatch
+      : (this._lightGlowAdd && this.lightingEnabled ? this.entitiesGlowBatch : null);
+    const packed = packSpriteLayer({
+      count,
+      type: typeArr,
+      opts,
+      splitGlow,
+      idxEntity: idxE,
+      idxGlow: idxG,
+      painter: this._painter,
+      keysU32: this._sortKeyU32,
+      dense: !splitGlow,
+      timeGlowSort: true,
+      writeEmptyGlow: !!(splitGlow && this.entitiesGlowBatch),
+      glowIncludeType: !splitGlow && glowBatch ? 3 : -1,
+      addSortMs: this.collectDetailedStats ? (ms) => { this.sortTimeThisFrame += ms; } : null,
+      writeSprites: (packOpts) => {
+        if (this.entitiesBatch.poseInterp) {
+          packOpts.prevX = this._latchedPrevX;
+          packOpts.prevY = this._latchedPrevY;
+          packOpts.snap = this._poseSnap;
         }
-      }
-      if (this.entitiesBatch.poseInterp) {
-        opts.prevX = this._latchedPrevX;
-        opts.prevY = this._latchedPrevY;
-        opts.snap = this._poseSnap;
-      }
-      this.visibleEntityCount = this._uploadSortedSprites(
-        this.entitiesBatch, q, opts, this._painter, this._sortKeyU32, idxE, ne,
-      );
-      opts.prevX = null;
-      opts.prevY = null;
-      opts.snap = false;
-      this.entitiesBatch.setPoseAlpha(this._poseAlpha);
-      this._posePacked = true;
-      this.visibleParticleCount = np;
-      if (this.entitiesGlowBatch) {
-        if (this._painter && ng > 1 && this._sortKeyU32) {
-          const detail = this.collectDetailedStats;
-          const t0 = detail ? performance.now() : 0;
-          radixSortIndicesBySortKey(idxG, ng, this._sortKeyU32, this._painter.scratch, this._painter.hist);
-          if (detail) this.sortTimeThisFrame += performance.now() - t0;
-        }
-        opts.sortKey = null;
-        opts.indices = idxG;
-        opts.indexCount = ng;
-        this.entitiesGlowBatch.upload(q, opts);
-      }
-      return;
-    }
-
-    if (this.entitiesBatch.poseInterp) {
-      opts.prevX = this._latchedPrevX;
-      opts.prevY = this._latchedPrevY;
-      opts.snap = this._poseSnap;
-    }
-    this.visibleEntityCount = this._uploadSortedSprites(
-      this.entitiesBatch, q, opts, this._painter, this._sortKeyU32, null, count,
-    );
-    opts.prevX = null;
-    opts.prevY = null;
-    opts.snap = false;
-    this.entitiesBatch.setPoseAlpha(this._poseAlpha);
-    this._posePacked = true;
-    this.visibleParticleCount = 0;
-    if (this._lightGlowAdd && this.lightingEnabled && this.entitiesGlowBatch) {
-      opts.sortKey = null;
-      opts.includeType = 3;
-      this.entitiesGlowBatch.upload(q, opts);
-    } else if (this.spriteGlowMesh) {
-      this.spriteGlowMesh.visible = false;
-    }
+        const n = this.entitiesBatch.upload(q, packOpts);
+        packOpts.prevX = null;
+        packOpts.prevY = null;
+        packOpts.snap = false;
+        this.entitiesBatch.setPoseAlpha(this._poseAlpha);
+        this._posePacked = true;
+        return n;
+      },
+      writeGlow: glowBatch ? (packOpts) => glowBatch.upload(q, packOpts) : null,
+    });
+    this.visibleEntityCount = packed.sprite;
+    this.visibleParticleCount = splitGlow ? packed.splitParticles : 0;
+    if (!splitGlow && !glowBatch && this.spriteGlowMesh) this.spriteGlowMesh.visible = false;
   }
 
   /** Resolve atlas ImageSource for instanced batches. */

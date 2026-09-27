@@ -29,10 +29,12 @@ test('pixi packed GPU sprites must already be painter-sorted when ySort or zInde
 });
 
 test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter path', () => {
-  assert.match(pixi, /createPainterState, orderPainterSlots/);
+  const packLayer = readFileSync(join(root, 'src/render/packSpriteLayer.js'), 'utf8');
+  assert.match(pixi, /createPainterState/);
   assert.match(pixi, /this\._painter = this\._ySort \? createPainterState\(maxItems\) : null/);
   assert.match(pixi, /_uploadSortedSprites\(/);
-  assert.match(pixi, /orderPainterSlots\(painter, idxE, ne, keysU32\)/);
+  assert.match(pixi, /packSpriteLayer\(/);
+  assert.match(packLayer, /orderPainterSlots\(painter, dense \? null : indices, n, keysU32\)/);
   assert.match(pixi, /painter = layerYSort \? createPainterState\(maxItems\) : null/);
   assert.match(pixi, /this\._uploadSortedSprites\(cl\.batch, q, opts, cl\.painter, cl\.sortKeyU32, null, count\)/);
 });
@@ -84,7 +86,7 @@ test('pixi: GPU two-pass is gone; ySorting uses reinsert with no painterSort con
 
 test('preRender writes the SoA row and the CPU painter packs it', () => {
   assert.match(preRender, /rqX\[out\] = currX/);
-  assert.match(preRender, /orderPainterSlots\(this\._gpuPainter/);
+  assert.match(preRender, /packSpriteLayer\(/);
   assert.match(preRender, /_packJoinedGpuSprites\(/);
   assert.doesNotMatch(preRender, /_packDirect/);
   assert.doesNotMatch(preRender, /_writeSpriteKeys/);

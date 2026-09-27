@@ -35,7 +35,7 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { orderSortKey, spriteYSortKey, zSortBand, createPainterState, orderPainterSlots, radixSortIndicesBySortKey, mergeSortedRunsBySortKey } from '../util/sortIndexByKey.js';
+import { orderSortKey, spriteYSortKey, zSortBand, createPainterState, mergeSortedRunsBySortKey } from '../util/sortIndexByKey.js';
 import {
     fillOwnedIds,
     listSlice,
@@ -88,7 +88,6 @@ import {
     writeGpuQueueHeader,
     packInstancedRows,
     makePackContext,
-    fillQueueIndices,
     copyPackedRows,
     gatherInstancedRows,
     rewritePackedDepth,
@@ -99,6 +98,7 @@ import {
     rtPixelSize,
     rtPixelScale,
 } from '../render/gpuShadowCasters.js';
+import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { inViewYBand } from '../util/cameraGridCollect.js';
 import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
@@ -3662,76 +3662,49 @@ class PreRenderWorker extends AbstractWorker {
         const opts = this._gpuPackOpts;
         this._resetGpuPackOpts(opts);
         const count = q.count | 0;
-        const typeArr = this.renderQueueType;
-        const glowAdd = !this._lightGlowAsSprite;
-        let spriteN = 0;
-        let glowN = 0;
-        let particles = 0;
-        let flags = 0;
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
             return { sprite: 0, glow: 0, particle: 0, flags: 0 };
         }
-        const idxE = this._gpuIdxEntity;
-        const idxG = this._gpuIdxGlow;
+        const typeArr = this.renderQueueType;
+        const glowAdd = !this._lightGlowAsSprite;
+        const allowSort = !!(allowPainter && this._gpuPainter && q.sortKey);
         const stampMergeKeys = this._sortSprites === SORT_SPRITES_PRERENDER_MERGE && q.sortKey;
-        if (glowAdd && typeArr && idxE) {
-            let ne = fillQueueIndices(typeArr, count, -1, 3, idxE);
-            glowN = fillQueueIndices(typeArr, count, 3, -1, idxG);
-            let spriteIdx = idxE;
-            if (allowPainter && this._gpuPainter && q.sortKey && ne >= 2) {
-                const keysU32 = this._sortKeyBits(q.sortKey);
-                const tSort = this.collectDetailedStats ? performance.now() : 0;
-                spriteIdx = orderPainterSlots(this._gpuPainter, idxE, ne, keysU32);
-                if (tSort) this.sortTimeThisFrame += performance.now() - tSort;
-                flags |= GPU_FLAG_SORTED;
-            }
-            opts.indices = spriteIdx;
-            opts.indexCount = ne;
-            opts.sortKey = null;
-            const ctx = makePackContext(q, opts, caps.maxSprites, this._gpuPackCtx);
-            spriteN = ctx
-                ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
-                : 0;
-            particles = ctx ? (ctx.particleCount | 0) : 0;
-            if (stampMergeKeys && spriteN > 0) this._stampPackedSortKeys(dst.sprites, spriteN, spriteIdx, q.sortKey);
-            if (glowN > 0 && caps.maxGlow > 0) {
-                if (allowPainter && this._gpuPainter && glowN > 1 && q.sortKey) {
-                    const keysU32 = this._sortKeyBits(q.sortKey);
-                    radixSortIndicesBySortKey(idxG, glowN, keysU32, this._gpuPainter.scratch, this._gpuPainter.hist);
-                }
-                opts.sortKey = null;
-                opts.indices = idxG;
-                opts.indexCount = glowN;
-                const gctx = makePackContext(q, opts, caps.maxGlow, this._gpuPackCtx);
-                glowN = gctx
-                    ? packInstancedRows(q, gctx, dst.glow, dst.glowU32, GPU_SPRITE_FLOATS, caps.maxGlow, false)
+        let particles = 0;
+        const packed = packSpriteLayer({
+            count,
+            type: typeArr,
+            opts,
+            splitGlow: !!(glowAdd && typeArr && this._gpuIdxEntity),
+            idxEntity: this._gpuIdxEntity,
+            idxGlow: this._gpuIdxGlow,
+            painter: allowSort ? this._gpuPainter : null,
+            keysU32: allowSort ? this._sortKeyBits(q.sortKey) : null,
+            fillAll: true,
+            sortedFlag: GPU_FLAG_SORTED,
+            addSortMs: this.collectDetailedStats ? (ms) => { this.sortTimeThisFrame += ms; } : null,
+            glowCapacity: caps.maxGlow | 0,
+            writeSprites: (opts) => {
+                const ctx = makePackContext(q, opts, caps.maxSprites, this._gpuPackCtx);
+                const n = ctx
+                    ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
                     : 0;
-                if (stampMergeKeys && glowN > 0) this._stampPackedSortKeys(dst.glow, glowN, idxG, q.sortKey);
-            } else {
-                glowN = 0;
-            }
-        } else {
-            if (allowPainter && this._gpuPainter && q.sortKey && count >= 2) {
-                const ne = fillQueueIndices(typeArr, count, -1, -1, idxE);
-                const keysU32 = this._sortKeyBits(q.sortKey);
-                const tSort = this.collectDetailedStats ? performance.now() : 0;
-                opts.indices = orderPainterSlots(this._gpuPainter, idxE, ne, keysU32);
-                if (tSort) this.sortTimeThisFrame += performance.now() - tSort;
-                opts.indexCount = ne;
-                flags |= GPU_FLAG_SORTED;
-            } else {
-                opts.indices = null;
-                opts.indexCount = 0;
-            }
-            opts.sortKey = null;
-            const ctx = makePackContext(q, opts, caps.maxSprites, this._gpuPackCtx);
-            spriteN = ctx
-                ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, caps.maxSprites, false)
-                : 0;
-            particles = ctx ? (ctx.particleCount | 0) : 0;
-            if (stampMergeKeys && spriteN > 0) this._stampPackedSortKeys(dst.sprites, spriteN, opts.indices, q.sortKey);
-        }
-        return { sprite: spriteN, glow: glowN, particle: particles, flags };
+                particles = ctx ? (ctx.particleCount | 0) : 0;
+                return n;
+            },
+            writeGlow: (opts) => {
+                const ctx = makePackContext(q, opts, caps.maxGlow, this._gpuPackCtx);
+                return ctx
+                    ? packInstancedRows(q, ctx, dst.glow, dst.glowU32, GPU_SPRITE_FLOATS, caps.maxGlow, false)
+                    : 0;
+            },
+            afterSprites: (n, indices) => {
+                if (stampMergeKeys && n > 0) this._stampPackedSortKeys(dst.sprites, n, indices, q.sortKey);
+            },
+            afterGlow: (n, indices) => {
+                if (stampMergeKeys && n > 0) this._stampPackedSortKeys(dst.glow, n, indices, q.sortKey);
+            },
+        });
+        return { sprite: packed.sprite, glow: packed.glow, particle: particles, flags: packed.flags };
     }
 
     _packGpuQueues(dst, withShadows = true, views = null, forcePainter = false) {
