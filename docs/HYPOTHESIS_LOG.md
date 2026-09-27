@@ -10,6 +10,8 @@ Status words: `kept` · `dropped` · `screened` · `rejected-in-kernel` · `not-
 
 **8 ms campaign floor (2026-09-17):** isolation campaigns that judge `STEP_MS` need a baseline median of at least 8 ms before a speed keep, worse, or tie. If that median cannot be reached, the verdict is **FAIL / no signal**. Hygiene may stay if no primary is 3 percent worse. Kernel ops/s does not use this floor. Skip-work rows B and C were already measured at the old 2 ms floor. Those sittings stay as written. See [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
 
+**Alpha cut screen (2026-09-27):** headed Predator, 2 × 5 s / 5 s, detalle off, `--src`, baseline `1982529` then `106c4f1`. Screened. Not a keep. Numbers are in the chat of that day and in `tests/results/alpha-cut-screen/`.
+
 ---
 
 ## This branch (`more_micro_opts` versus `main` `0695a8d`)

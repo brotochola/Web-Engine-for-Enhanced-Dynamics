@@ -39,21 +39,21 @@ test('pose lerp is prev at 0, cur at 1, midpoint at 0.5', () => {
   assert.equal(poseLerp(0, 8, 0.25), 2);
 });
 
-test('pose prev floats sit after the 16-float record', () => {
-  assert.equal(INSTANCED_SPRITE_FLOATS, 16);
-  assert.equal(INSTANCED_SPRITE_POSE_FLOATS, 18);
-  assert.equal(POSE_PREV_OFFSET, 16);
-  const data = new Float32Array(18);
+test('pose prev floats sit after the 15-float record', () => {
+  assert.equal(INSTANCED_SPRITE_FLOATS, 15);
+  assert.equal(INSTANCED_SPRITE_POSE_FLOATS, 17);
+  assert.equal(POSE_PREV_OFFSET, 15);
+  const data = new Float32Array(17);
   data[0] = 4;
   data[1] = 6;
   writePosePrev(data, 0, 1, 2);
   assert.equal(data[0], 4);
   assert.equal(data[1], 6);
-  assert.equal(data[16], 1);
-  assert.equal(data[17], 2);
-  assert.equal(poseLerp(data[16], data[0], 0), 1);
-  assert.equal(poseLerp(data[16], data[0], 1), 4);
-  assert.equal(poseLerp(data[17], data[1], 0.5), 4);
+  assert.equal(data[15], 1);
+  assert.equal(data[16], 2);
+  assert.equal(poseLerp(data[15], data[0], 0), 1);
+  assert.equal(poseLerp(data[15], data[0], 1), 4);
+  assert.equal(poseLerp(data[16], data[1], 0.5), 4);
 });
 
 test('flag off keeps the 16-float upload; pose pack is a separate method', () => {
