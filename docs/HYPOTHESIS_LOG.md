@@ -1,16 +1,14 @@
 # Hypothesis log
 
-Living record of speed claims already measured. **Read this before you reimplement an idea.** After every measurement, add or update a row. Long essays stay in the linked docs; this file is the index.
+Living record of speed claims already measured. **Read a row before you measure that idea again.** After every measurement, add or update a row. Long essays stay in the linked docs; this file is the index.
 
-Status words: `kept` · `dropped` · `rejected-in-kernel` · `not-measured` · `superseded`.
+A row is evidence about that day, that scene, and that config. It is not a ban. Measure again when the row is old relative to the code it touched, when the test was thin or the load did not match, or when the scene and config are not the ones in the question now. A recent row on the same scene, the same config, and a protocol-compliant pair does not need a repeat unless you want a confirm. The full rules are in [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
 
-Do not reopen a `dropped` or `rejected-in-kernel` claim unless the user asks for an explicit retest with a new protocol.
+Status words: `kept` · `dropped` · `screened` · `rejected-in-kernel` · `not-measured` · `superseded` · `mixed`.
 
-Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
+**3 ms stress floor (2026-09-17):** on a stress scene, if the millisecond primary is under 3 ms on either side, the pair is **FAIL**. Three percent of 0.3 ms is timer noise. Raise that scene's own load knob. The delta is not a keep and not a drop. Gameplay (Balls, Predator, `steadyCombatScene`, zenithal, catalog `kind: 'gameplay'`) skips this floor. Kernel `timeIt` uses the same 3 ms sample floor. Constant: `STEP_MS_FLOOR` in [`tests/bench/benchmarkDefaults.mjs`](../tests/bench/benchmarkDefaults.mjs). Hot-path hypotheses 1–9 on this branch were measured before the floor existed. Leave those historical verdicts as they are. A new question about the same idea, on today’s code, is a new pair under the current protocol.
 
-**Piso de 3 ms (2026-09-17):** en estrés, si la primaria en milisegundos queda bajo 3 ms en cualquiera de los dos lados, el par es **FAIL**. Tres por ciento de 0.3 ms es ruido de timer. Hay que subir la perilla de esa escena; el delta no es keep ni drop. Gameplay (Balls, Predator, `steadyCombatScene`, zenithal, filas `kind: 'gameplay'`) no usa este piso. El kernel (`timeIt`) exige la misma muestra de 3 ms. Constante: `STEP_MS_FLOOR` en [`tests/bench/benchmarkDefaults.mjs`](../tests/bench/benchmarkDefaults.mjs). Las hyps hot-path 1–9 de esta rama se midieron **antes** del piso; no se reabren ni se remedien con esta regla.
-
-**Piso de campaña 8 ms (2026-09-17):** las campañas de aislamiento que juzgan `STEP_MS` necesitan baseline ≥ 8 ms para un keep/worse/tie de velocidad. Si no se llega, **FAIL / sin señal**; higiene puede quedarse si ninguna primaria empeora 3%. Kernel ops/s no usa este piso. B y C de skip-work ya se midieron a 2 ms: no remedir. Ver [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
+**8 ms campaign floor (2026-09-17):** isolation campaigns that judge `STEP_MS` need a baseline median of at least 8 ms before a speed keep, worse, or tie. If that median cannot be reached, the verdict is **FAIL / no signal**. Hygiene may stay if no primary is 3 percent worse. Kernel ops/s does not use this floor. Skip-work rows B and C were already measured at the old 2 ms floor. Those sittings stay as written. See [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
 
 ---
 
