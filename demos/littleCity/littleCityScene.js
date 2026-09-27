@@ -184,7 +184,6 @@ export class LittleCityScene extends WEED.Scene {
       backend: 'webgl',
       noLimitFPS: false,
       ySort: true,
-      // useZBuffer: true,
     },
     preRender: {
       noLimitFPS: false,

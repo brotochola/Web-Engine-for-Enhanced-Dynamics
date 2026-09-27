@@ -30,8 +30,8 @@ test('gpuQueue SAB views round-trip header and packed rows', () => {
   const views = createGpuQueueViews(sab, caps);
   writeGpuQueueHeader(views.header, { sprite: 2, glow: 1, sun: 1, stamp: 0, cookie: 0, particle: 1 }, 0);
   assert.equal(views.header[GPU_HDR_SPRITE], 2);
-  assert.equal(GPU_SPRITE_FLOATS, 16);
-  assert.equal(GPU_CASTER_FLOATS, 23);
+  assert.equal(GPU_SPRITE_FLOATS, 15);
+  assert.equal(GPU_CASTER_FLOATS, 22);
   assert.equal(views.header[GPU_HDR_VERSION], GPU_QUEUE_VERSION);
   views.sprites[0] = 9;
   copyPackedRows(views.sprites, views.glow, 1, GPU_SPRITE_FLOATS, 0);
@@ -39,7 +39,7 @@ test('gpuQueue SAB views round-trip header and packed rows', () => {
   assert.equal(views.byteLength, sab.byteLength);
 });
 
-test('packInstancedRows writes 16 floats and packs tint+alpha+cut', () => {
+test('packInstancedRows writes 15 floats and packs tint+alpha', () => {
   const q = {
     count: 2,
     x: new Float32Array([10, 20]),
@@ -65,8 +65,7 @@ test('packInstancedRows writes 16 floats and packs tint+alpha+cut', () => {
   assert.equal(dst[0], 10);
   assert.equal(dst[1], 1);
   assert.equal(dst[10], 3);
-  assert.ok(Math.abs(dst[15] - 1 / 255) < 1e-6);
-  assert.ok(Math.abs(dst[GPU_SPRITE_FLOATS + 15] - 200 / 255) < 1e-6);
+  assert.equal(dst.length >= GPU_SPRITE_FLOATS, true);
   const a8 = (0.5 * 255 + 0.5) | 0;
   assert.equal(dstU32[GPU_SPRITE_FLOATS + 9], (((a8 & 255) << 24) | 0x00ff00) >>> 0);
   assert.equal(ctx.particleCount, 1);
@@ -138,10 +137,9 @@ test('shadow pack writes caster extras', () => {
   const ctx = makePackContext(q, { space: 0, depthDenom: 1 }, 1);
   const n = packInstancedRows(q, ctx, dst, dstU32, GPU_CASTER_FLOATS, 1, true);
   assert.equal(n, 1);
-  assert.equal(dst[15], 0);
-  assert.equal(dst[16], 2.5);
-  assert.ok(Math.abs(dst[17] - 0.1) < 1e-6);
-  assert.ok(Math.abs(dst[18] - 0.2) < 1e-6);
+  assert.equal(dst[15], 2.5);
+  assert.ok(Math.abs(dst[16] - 0.1) < 1e-6);
+  assert.ok(Math.abs(dst[17] - 0.2) < 1e-6);
 });
 
 test('writeGpuSpriteRow matches packInstancedRows for one SoA row', () => {

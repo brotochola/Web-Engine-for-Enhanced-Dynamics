@@ -15,7 +15,6 @@ struct LocalUniforms {
 
 struct TileUniforms {
   uTileWorld: vec4<f32>,
-  uAlphaCut: vec4<f32>,
 }
 @group(2) @binding(0) var uTexture: texture_2d<f32>;
 @group(2) @binding(1) var uSampler: sampler;
@@ -30,7 +29,6 @@ struct VertexOut {
   @location(3) vAtlasUV: vec4<f32>,
   @location(4) vTileInv: vec2<f32>,
   @location(5) vTileOff: vec2<f32>,
-  @location(6) vAlphaCut: f32,
 }
 
 fn weedUv(vLocal: vec2<f32>, vWorld: vec2<f32>, vAtlasUV: vec4<f32>, vTileInv: vec2<f32>, vTileOff: vec2<f32>) -> vec2<f32> {
@@ -54,7 +52,6 @@ fn mainVert(
   @location(7) aInstTexId: f32,
   @location(8) aInstTileInv: vec2<f32>,
   @location(9) aInstTileOff: vec2<f32>,
-  @location(10) aInstAlphaCut: f32,
 ) -> VertexOut {
   var out: VertexOut;
   let tid = i32(aInstTexId + 0.5);
@@ -92,7 +89,6 @@ fn mainVert(
   out.vAtlasUV = aInstUV;
   out.vTileInv = aInstTileInv;
   out.vTileOff = aInstTileOff;
-  out.vAlphaCut = aInstAlphaCut;
   return out;
 }
 
@@ -100,10 +96,6 @@ fn mainVert(
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
   let a = t.a * in.vColor.a;
-  let cut = uniforms.uAlphaCut;
-  let cutX = select(cut.x, in.vAlphaCut, in.vAlphaCut > 0.0);
-  if (a < cutX) { discard; }
-  if (cut.y > 0.0 && a >= cut.y) { discard; }
   return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a, a);
 }
 

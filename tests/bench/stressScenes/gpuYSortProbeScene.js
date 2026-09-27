@@ -1,16 +1,10 @@
 /**
- * Two-color overlaps for painter vs useZBuffer. Layout lives in gpuYSortProbeLayout.js.
+ * Two-color overlaps for the CPU painter. Layout lives in gpuYSortProbeLayout.js.
  */
 import WEED from '/src/index.js';
 import { CASES } from './gpuYSortProbeLayout.js';
 
 const { Scene, Camera, GameObject, SpriteRenderer } = WEED;
-
-function zBufferOn() {
-  const search = globalThis.location && globalThis.location.search;
-  if (typeof search !== 'string') return false;
-  return new URLSearchParams(search).get('useZBuffer') === '1';
-}
 
 export class ProbeSprite extends GameObject {
   static components = [SpriteRenderer];
@@ -59,7 +53,6 @@ export class GpuYSortProbeScene extends Scene {
     renderer: {
       backend: 'webgl',
       ySort: true,
-      useZBuffer: zBufferOn(),
       maxVisibleRenderables: 32,
     },
     preRender: { skipCull: true, numberOfPreRenderWorkers: 1 },

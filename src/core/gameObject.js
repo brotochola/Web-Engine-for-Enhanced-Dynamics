@@ -19,7 +19,7 @@ import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
 import { ColliderFixture } from './colliderFixture.js';
-import { ShapeType, SPRITE_TILE_MODE, SPRITE_ALPHA_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND, DEFAULT_ALPHA_CUT_OFF_U8 } from '../util/configDefaults.js';
+import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
 import { collectComponents, collisionPairKey, distanceSq2D, debugWorkerLog } from '../util/utils.js';
 import { entityIdBytes, EntityIdArray } from '../util/entityIdWidth.js';
 import {
@@ -2457,8 +2457,6 @@ export class GameObject {
       SpriteRenderer.tint[i] = 0xffffff;
       SpriteRenderer.baseTint[i] = 0xffffff;
       SpriteRenderer.alpha[i] = 1.0;
-      SpriteRenderer.alphaMode[i] = SPRITE_ALPHA_MODE.CUTOUT;
-      SpriteRenderer.alphaCutOff[i] = DEFAULT_ALPHA_CUT_OFF_U8;
       SpriteRenderer.scaleX[i] = 1;
       SpriteRenderer.scaleY[i] = 1;
       SpriteRenderer.boundsHalfW[i] = 0;

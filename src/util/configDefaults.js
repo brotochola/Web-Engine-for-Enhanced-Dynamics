@@ -213,34 +213,6 @@ export const SPRITE_TILE_MODE = Object.freeze({
 });
 
 /**
- * Stored on the sprite. The CPU painter draws one pass; it does not split on this.
- * @readonly
- * @enum {number}
- */
-export const SPRITE_ALPHA_MODE = Object.freeze({
-  CUTOUT: 0,
-  BLEND: 1,
-});
-
-/** Spawn / pack fallback. 1 = discard only texel alpha 0. */
-export const DEFAULT_ALPHA_CUT_OFF_U8 = 1;
-
-/** 0–1 → SoA/queue byte. 0 reserved for “use shader uAlphaCut fallback”. */
-export function packAlphaCutOff01(cut01) {
-  const n = Number(cut01);
-  if (!Number.isFinite(n)) return DEFAULT_ALPHA_CUT_OFF_U8;
-  const u = (n * 255 + 0.5) | 0;
-  if (u < 1) return DEFAULT_ALPHA_CUT_OFF_U8;
-  return u > 255 ? 255 : u;
-}
-
-/** Clamp entity/emit `alphaCutOff` (0–255). 0 means use shader uAlphaCut fallback. */
-export function clampAlphaCutOffU8(value) {
-  const v = value | 0;
-  return v < 0 ? 0 : v > 255 ? 255 : v;
-}
-
-/**
  * Built-in pipeline layers. Same shape as scene config.layers entries.
  * ySorting is false for all built-in layers; entities gets overridden
  * at runtime by the scene's renderer.ySort config.

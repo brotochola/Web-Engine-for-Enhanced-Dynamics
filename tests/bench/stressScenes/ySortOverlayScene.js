@@ -1,12 +1,11 @@
 /**
  * Cutout body + blend quads that cross behind and in front.
- * Compare ?ySort=cpu | cpu+useZBuffer=1 | ySort=bitonic (all WebGPU).
  * `_white` is 8×8; scales below are world pixels.
  */
 import WEED from '/src/index.js';
 import { OVERLAY } from './ySortOverlayLayout.js';
 
-const { Scene, Camera, GameObject, SpriteRenderer, SPRITE_ALPHA_MODE } = WEED;
+const { Scene, Camera, GameObject, SpriteRenderer } = WEED;
 
 export { OVERLAY };
 
@@ -18,7 +17,8 @@ function queryParam(name) {
 
 function overlayYSort() {
   const q = queryParam('ySort');
-  if (q === 'bitonic' || q === 'cpu') return q;
+  if (q === 'cpu' || q === 'true') return 'cpu';
+  if (q === '0' || q === 'false') return false;
   return 'cpu';
 }
 
@@ -44,7 +44,6 @@ export class OverlayCutout extends GameObject {
 export class OverlayBlend extends GameObject {
   static components = [SpriteRenderer];
   onSpawned({ x = 400, y = 280, sx = 10, sy = 10, tint = 0xff4466 } = {}) {
-    this.spriteRenderer.alphaMode = SPRITE_ALPHA_MODE.BLEND;
     this.x = x;
     this.y = y;
     this.setSprite('_white');
@@ -71,15 +70,12 @@ export class YSortOverlayScene extends Scene {
     renderer: {
       backend: overlayBackend(),
       ySort: overlayYSort(),
-      useZBuffer: queryParam('useZBuffer') === '1',
-      bitonicEnc: queryParam('bitonicEnc') === 'one' ? 'one' : false,
     },
     preRender: { numberOfPreRenderWorkers: 1, skipCull: true },
     lighting: { enabled: false },
   };
 
   create() {
-    // Front first so useZBuffer (emit order + write Z) disagrees with the painter.
     this.spawnEntity(OverlayBlend, OVERLAY.front);
     this.spawnEntity(OverlayCutout, {});
     this.spawnEntity(OverlayBlend, OVERLAY.back);

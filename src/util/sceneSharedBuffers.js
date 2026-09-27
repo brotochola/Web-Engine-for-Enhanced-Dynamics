@@ -436,14 +436,7 @@ function initializeLightingAndRenderBuffers(scene) {
   const maxShadowSprites = config.lighting.maxShadowSprites;
   const maxLights = config.lighting.maxLights || 128;
   if (config.lighting.shadowsEnabled && maxShadowSprites > 0) {
-    const maxShadowRenderItems = maxShadowSprites + maxLights;
-    // x,y,scaleX,scaleY,rotC,rotS,alpha,tint,textureId(+pad),anchorX,anchorY
-    const shadowQueueItemSize = 44;
-    const shadowQueueBufferSize = 4 + maxShadowRenderItems * shadowQueueItemSize;
-
-    buffers.shadowRenderQueueDataA = new SharedArrayBuffer(shadowQueueBufferSize);
-    buffers.shadowRenderQueueDataB = new SharedArrayBuffer(shadowQueueBufferSize);
-    scene.maxShadowRenderItems = maxShadowRenderItems;
+    scene.maxShadowRenderItems = maxShadowSprites + maxLights;
   }
 
   if (config.lighting.enabled && config.lighting.raycasted) {

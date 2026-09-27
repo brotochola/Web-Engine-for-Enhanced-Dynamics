@@ -36,12 +36,12 @@ function instanceDepth(out, depthDenom) {
   return 1.0 - (out + 1) / depthDenom;
 }
 
-/** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff, alphaCut.
+/** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
- *  alphaCut is 0–1 (0 = use uAlphaCut). Two extra pose floats follow when interpolating. */
-export const INSTANCED_SPRITE_FLOATS = 16;
+ *  Two extra pose floats follow when interpolating. */
+export const INSTANCED_SPRITE_FLOATS = 15;
 export const INSTANCED_SPRITE_STRIDE = INSTANCED_SPRITE_FLOATS * 4;
-export const INSTANCED_SPRITE_POSE_FLOATS = 18;
+export const INSTANCED_SPRITE_POSE_FLOATS = 17;
 export const INSTANCED_SPRITE_POSE_STRIDE = INSTANCED_SPRITE_POSE_FLOATS * 4;
 
 export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
@@ -370,19 +370,16 @@ export class InstancedSpriteBatch {
       aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 44, instance: true },
       aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
     };
-    if (!this.shadowCast) {
-      attributes.aInstAlphaCut = { buffer: buf, format: 'float32', stride, offset: 60, instance: true };
-    }
     if (this.shadowCast) {
-      attributes.aInstShadow = { buffer: buf, format: 'float32x3', stride, offset: 64, instance: true };
-      attributes.aInstLight = { buffer: buf, format: 'float32x4', stride, offset: 76, instance: true };
+      attributes.aInstShadow = { buffer: buf, format: 'float32x3', stride, offset: 60, instance: true };
+      attributes.aInstLight = { buffer: buf, format: 'float32x4', stride, offset: 72, instance: true };
     }
     if (this.poseInterp) {
       attributes.aInstPrevXY = {
         buffer: buf,
         format: 'float32x2',
         stride,
-        offset: 64,
+        offset: 60,
         instance: true,
       };
     }
@@ -394,7 +391,6 @@ export class InstancedSpriteBatch {
   _makeSpriteShader(atlas, lut, alphaCut, name) {
     const uniforms = {
       uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
-      uAlphaCut: { value: alphaCut, type: 'vec4<f32>' },
     };
     if (this.poseInterp) {
       // Number, not Float32Array. Pixi's WebGL f32 sync compares the value
@@ -409,7 +405,7 @@ export class InstancedSpriteBatch {
     };
     let fragEntry = 'mainFragAdd';
     if (this._premultiplyAlpha) {
-      fragEntry = this._alphaDiscard ? 'mainFrag' : 'mainFragBlend';
+      fragEntry = 'mainFrag';
     }
     const shaders = this._engineShaders;
     const spriteSource = this.poseInterp ? shaders?.spritePose : shaders?.sprite;
@@ -771,8 +767,6 @@ export class InstancedSpriteBatch {
       data[base + 12] = invY;
       data[base + 13] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
       data[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
-      const cutU8 = q.alphaCutOff ? q.alphaCutOff[i] | 0 : 0;
-      data[base + 15] = cutU8 > 0 ? cutU8 * (1 / 255) : 0;
       writePosePrev(data, base, px, py);
       base += INSTANCED_SPRITE_POSE_FLOATS;
       out++;

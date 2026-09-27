@@ -62,7 +62,7 @@ export const RENDERER_STATS = Object.freeze({
   GPU_CUSTOM_MS: 32,
   /** 1 when GpuFrameTimer is active (WebGL timer query or WebGPU timestamp-query). */
   GPU_TIMER: 33,
-  /** GPU bitonic compute (WebGPU timestamps). 0 on WebGL / no feature. */
+  /** GPU timestamp for a sort pass, when the timer is on. 0 otherwise. */
   GPU_SORT_MS: 34,
   STRIDE_FLOATS: 35,
   BUFFER_SIZE: 35 * 4,

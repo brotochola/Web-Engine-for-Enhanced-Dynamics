@@ -31,7 +31,6 @@ import { Sun } from '../core/sun.js';
 import {
   DEFAULT_LAYERS,
   RENDERER_DEFAULTS,
-  DEFAULT_ALPHA_CUT_OFF_U8,
   PRE_RENDER_DEFAULTS,
   LIGHTING_DEFAULTS,
   ShapeType,
@@ -399,7 +398,6 @@ class PixiRenderer extends AbstractWorker {
     this._ySort = false;
     this._ySortMode = false;
     this._entitiesRoot = null;
-    this._alphaCut = DEFAULT_ALPHA_CUT_OFF_U8 / 255;
     this._lightGlowAdd = true;
     this.physicsWorkerIndex = 1; // Updated during initialize() based on spatial worker count
 
@@ -615,32 +613,8 @@ class PixiRenderer extends AbstractWorker {
     this._visibleLightsAll = [];      // All visible lights (for shader uniforms)
     this._visibleLightsAllCount = 0;
 
-    // ========================================
-    // RENDER-TEXTURE SHADOW SYSTEM (DOUBLE BUFFERED)
-    // ========================================
-    // Shadows are rendered to a RenderTexture from pre-sorted shadowRenderQueue
-    // Built by pre_render_worker: light1_gradient, light1_shadows..., light2_gradient, etc.
-    // The final texture is applied with MULTIPLY blend to darken the scene
-    // Uses same sync as main render queue (swapped together)
     this.shadowSpritesEnabled = false;
     this.maxShadowRenderItems = 0;
-
-    // Double buffer storage for shadows
-    this.shadowRenderQueueBuffers = [null, null];
-
-    // Current read buffer reference (set each frame based on readyFrame)
-    this.shadowRenderQueueCount = null;
-    this.shadowRenderQueueX = null;
-    this.shadowRenderQueueY = null;
-    this.shadowRenderQueueScaleX = null;
-    this.shadowRenderQueueScaleY = null;
-    this.shadowRenderQueueRotC = null;
-    this.shadowRenderQueueRotS = null;
-    this.shadowRenderQueueAlpha = null;
-    this.shadowRenderQueueTint = null;
-    this.shadowRenderQueueTextureId = null;
-    this.shadowRenderQueueAnchorX = null;
-    this.shadowRenderQueueAnchorY = null;
 
     // RenderTexture-based shadow compositing
     this.shadowRT = null; // RenderTexture for shadow compositing
@@ -833,8 +807,6 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueShadowOffX = buffer.shadowOffX;
     this.renderQueueShadowOffY = buffer.shadowOffY;
     this.renderQueueType = buffer.type;
-    this.renderQueueAlphaMode = buffer.alphaMode;
-    this.renderQueueAlphaCutOff = buffer.alphaCutOff;
     this.renderQueueSortKey = buffer.sortKey;
     this._sortKeyU32 = this._sortKeyU32ByBuf[bufferIdx];
     this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
@@ -935,28 +907,6 @@ class PixiRenderer extends AbstractWorker {
       computePose.prevPoseRotC = null;
       computePose.prevPoseRotS = null;
     }
-  }
-
-  /**
-   * Set the current read buffer for shadow render queue
-   * @param {number} bufferIdx - 0 or 1
-   */
-  _setShadowReadBuffer(bufferIdx) {
-    const buffer = this.shadowRenderQueueBuffers[bufferIdx];
-    if (!buffer) return;
-
-    this.shadowRenderQueueCount = buffer.count;
-    this.shadowRenderQueueX = buffer.x;
-    this.shadowRenderQueueY = buffer.y;
-    this.shadowRenderQueueScaleX = buffer.scaleX;
-    this.shadowRenderQueueScaleY = buffer.scaleY;
-    this.shadowRenderQueueRotC = buffer.rotC;
-    this.shadowRenderQueueRotS = buffer.rotS;
-    this.shadowRenderQueueAlpha = buffer.alpha;
-    this.shadowRenderQueueTint = buffer.tint;
-    this.shadowRenderQueueTextureId = buffer.textureId;
-    this.shadowRenderQueueAnchorX = buffer.anchorX;
-    this.shadowRenderQueueAnchorY = buffer.anchorY;
   }
 
   /**
@@ -1281,8 +1231,6 @@ class PixiRenderer extends AbstractWorker {
     q.rotC = src.rotC;
     q.rotS = src.rotS;
     q.alpha = src.alpha;
-    q.alphaMode = src.alphaMode;
-    q.alphaCutOff = src.alphaCutOff;
     q.type = src.type || this.renderQueueType;
     q.tint = src.tint;
     q.textureId = src.textureId;
@@ -1311,8 +1259,6 @@ class PixiRenderer extends AbstractWorker {
     src.rotC = this.renderQueueRotC;
     src.rotS = this.renderQueueRotS;
     src.alpha = this.renderQueueAlpha;
-    src.alphaMode = this.renderQueueAlphaMode;
-    src.alphaCutOff = this.renderQueueAlphaCutOff;
     src.type = this.renderQueueType;
     src.tint = this.renderQueueTint;
     src.textureId = this.renderQueueTextureId;
@@ -1326,7 +1272,6 @@ class PixiRenderer extends AbstractWorker {
     src.tileMulX = this.renderQueueTileMulX;
     src.tileMulY = this.renderQueueTileMulY;
     src.sortKey = this.renderQueueSortKey;
-    src.alphaMode = this.renderQueueAlphaMode;
     src.shadowH = this.renderQueueShadowH;
     src.shadowOffX = this.renderQueueShadowOffX;
     src.shadowOffY = this.renderQueueShadowOffY;
@@ -1818,11 +1763,6 @@ class PixiRenderer extends AbstractWorker {
         consumedNewFrame = true;
         const readBufferIdx = this._bandJoin ? (readyFrame & 1) : ((readyFrame - 1) & 1);
         this._setReadBuffer(readBufferIdx);
-
-        // Shadow queue uses same buffer index (swapped together)
-        if (this.shadowSpritesEnabled) {
-          this._setShadowReadBuffer(readBufferIdx);
-        }
 
         // Custom layer queues also swap with the same frame
         for (let i = 0; i < this._customLayerList.length; i++) {
@@ -3679,6 +3619,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lutSource: this._texLutSource,
       depthTest: false,
       depthMask: false,
+      alphaDiscard: false,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
     });
@@ -3689,6 +3630,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lutSource: this._texLutSource,
       depthTest: false,
       depthMask: false,
+      alphaDiscard: false,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       shadowCast: true,
@@ -5253,7 +5195,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       sortSprites: preCfg.sortSprites,
     });
     this._packGpuSpritesOn = spritePipe.packGpuSprites;
-    this._alphaCut = DEFAULT_ALPHA_CUT_OFF_U8 / 255;
     this._lightGlowAdd = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite';
 
     this.autoGenerateMipmaps =
@@ -5764,6 +5705,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           lutSource: this._texLutSource,
           depthTest: false,
           depthMask: false,
+          alphaDiscard: false,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
         });
@@ -6208,71 +6150,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   createCastedShadowsSystem(data) {
-    // ========================================
-    // SHADOW RENDER QUEUE - Initialize (DOUBLE BUFFERED)
-    // ========================================
-    if (data.shadows && data.shadows.enabled && data.shadows.renderQueueDataA && data.shadows.renderQueueDataB) {
+    if (data.shadows && data.shadows.enabled) {
       this.shadowSpritesEnabled = true;
       this.maxShadowRenderItems = data.shadows.maxRenderItems;
-
-      const maxItems = this.maxShadowRenderItems;
-
-      // Create typed array views for BOTH shadow buffers
-      const shadowSABs = [data.shadows.renderQueueDataA, data.shadows.renderQueueDataB];
-
-      for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
-        const sab = shadowSABs[bufIdx];
-        let offset = 0;
-
-        const buffer = {
-          count: new Int32Array(sab, offset, 1),
-        };
-        offset += 4;
-
-        buffer.x = new Float32Array(sab, offset, maxItems);
-        offset += maxItems * 4;
-
-        buffer.y = new Float32Array(sab, offset, maxItems);
-        offset += maxItems * 4;
-
-        buffer.scaleX = new Float32Array(sab, offset, maxItems);
-        offset += maxItems * 4;
-
-        buffer.scaleY = new Float32Array(sab, offset, maxItems);
-        offset += maxItems * 4;
-
-        buffer.rotC = new Float32Array(sab, offset, maxItems);
-        offset += maxItems * 4;
-
-        buffer.rotS = new Float32Array(sab, offset, maxItems);
-        offset += maxItems * 4;
-
-        buffer.alpha = new Float32Array(sab, offset, maxItems);
-        offset += maxItems * 4;
-
-        buffer.tint = new Uint32Array(sab, offset, maxItems);
-        offset += maxItems * 4;
-
-        buffer.textureId = new Uint16Array(sab, offset, maxItems);
-        offset += maxItems * 2;
-
-        offset = Math.ceil(offset / 4) * 4;
-
-        buffer.anchorX = new Float32Array(sab, offset, maxItems);
-        offset += maxItems * 4;
-
-        buffer.anchorY = new Float32Array(sab, offset, maxItems);
-
-        this.shadowRenderQueueBuffers[bufIdx] = buffer;
-      }
-
-      // Set initial read buffer (same as main queue)
-      this._setShadowReadBuffer(0);
-
-      // Create shadow RenderTexture system
       this.createShadowSpriteSystem();
-
-      console.log(`PIXI WORKER: Double-buffered shadow render queue enabled (${maxItems} max items)`);
     }
   }
 }

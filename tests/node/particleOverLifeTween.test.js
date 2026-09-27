@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { updateParticlePhysicsBuffers } from '../../src/util/particleIntegrate.js';
-import { PARTICLE_EASE, SPRITE_ALPHA_MODE } from '../../src/util/configDefaults.js';
+import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
 
 function setupPool(max) {
   const previous = {};
@@ -144,31 +144,6 @@ test('emitAlongLine places count samples between the endpoints', () => {
     assert.equal(xs.length, 4);
     assert.ok(xs[0] > 0 && xs[3] < 100);
     for (let i = 1; i < xs.length; i++) assert.ok(xs[i] > xs[i - 1]);
-  } finally {
-    cleanup();
-  }
-});
-
-test('emit without alphaMode/alphaCutOff stays blend + cut 1', () => {
-  const cleanup = setupPool(4);
-  try {
-    const n = ParticleEmitter.emitFlat({
-      count: 1,
-      x: 0,
-      y: 0,
-      texture: '_whiteCircle',
-    });
-    assert.equal(n, 1);
-    let i = -1;
-    for (let k = 0; k < 4; k++) {
-      if (ParticleComponent.active[k]) {
-        i = k;
-        break;
-      }
-    }
-    assert.ok(i >= 0);
-    assert.equal(ParticleComponent.alphaMode[i], SPRITE_ALPHA_MODE.BLEND);
-    assert.equal(ParticleComponent.alphaCutOff[i], 1);
   } finally {
     cleanup();
   }

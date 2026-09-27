@@ -101,11 +101,9 @@ test('visible lights SAB fills even when cookie shadows are off', () => {
   assert.match(preRender, /_collectVisibleLights\(\)/);
   const updateCall = preRender.indexOf('this._collectVisibleLights();');
   const packCall = preRender.indexOf('this._packGpuQueues(');
-  const shadowFn = preRender.indexOf('buildShadowRenderQueue() {');
   assert.ok(updateCall >= 0 && packCall >= 0 && updateCall < packCall);
-  assert.ok(shadowFn > packCall);
-  const shadowBody = preRender.slice(shadowFn, shadowFn + 280);
-  assert.match(shadowBody, /shadowRenderQueueCount\[0\] = 0/);
+  assert.doesNotMatch(preRender, /buildShadowRenderQueue/);
+  assert.doesNotMatch(preRender, /shadowRenderQueueCount/);
 });
 
 test('shadow RT clears transparent each frame (not opaque black)', () => {

@@ -13,16 +13,12 @@ export function errorYSortInvalid(value) {
 }
 
 /**
- * CPU painter when on. `"bitonic"` is gone: it becomes the CPU painter.
+ * CPU painter when on.
  * @param {unknown} value
  * @returns {false|'cpu'}
  */
 export function normalizeYSort(value) {
   if (value === undefined || value === null || value === '' || value === false) return false;
-  if (value === 'bitonic') {
-    console.warn('WeedJS: renderer.ySort "bitonic" was removed. Using the CPU painter.');
-    return Y_SORT_CPU;
-  }
   if (value === true || value === Y_SORT_CPU) return Y_SORT_CPU;
   console.error(errorYSortInvalid(value));
   return false;

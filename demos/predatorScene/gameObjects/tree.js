@@ -46,7 +46,6 @@ export class Tree extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
-    this.spriteRenderer.alphaMode = WEED.SPRITE_ALPHA_MODE.BLEND;
     this.rigidBody.static = 1;
     const whichTree = rng() > 0.5 ? 1 : 2;
     this.setSprite('tree' + whichTree);

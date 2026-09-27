@@ -6,8 +6,6 @@ export class Cloud extends GameObject {
     static components = [SpriteRenderer];
 
     onSpawned(spawnConfig = {}) {
-        this.spriteRenderer.alphaMode = WEED.SPRITE_ALPHA_MODE.BLEND;
-
         this.spriteRenderer.anchorX = 0.5;
         this.spriteRenderer.anchorY = 0.5;
 

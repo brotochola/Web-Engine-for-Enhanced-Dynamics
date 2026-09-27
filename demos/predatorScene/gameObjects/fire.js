@@ -21,7 +21,6 @@ export class Fire extends GameObject {
   static components = [Collider, SpriteRenderer, LightEmitter, FireComponent];
 
   onSpawned(spawnConfig = {}) {
-    this.spriteRenderer.alphaMode = WEED.SPRITE_ALPHA_MODE.BLEND;
     this.fireComponent.baseScale = rng() * 0.5 + 1;
 
     if (spawnConfig && spawnConfig.scale) this.fireComponent.baseScale = spawnConfig.scale;

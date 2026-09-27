@@ -43,7 +43,7 @@
 import { ParticleComponent } from '../components/particleComponent.js';
 import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
 import { SharedAtomicPool } from './sharedAtomicPool.js';
-import { CAMERA_TYPES, PARTICLE_EASE, SPRITE_ALPHA_MODE, clampAlphaCutOffU8 } from '../util/configDefaults.js';
+import { CAMERA_TYPES, PARTICLE_EASE } from '../util/configDefaults.js';
 import { randomRange, randomColor, rng } from '../util/utils.js';
 import { Layer } from './layer.js';
 import { syncParticleFeed } from '../util/layerFeed.js';
@@ -73,7 +73,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     'scale', 'scaleX', 'scaleY', 'alpha', 'tint',
     'rotC', 'rotS', 'rotation', 'flipX', 'flipY',
     'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact',
-    'blendMode', 'layerId', 'alphaMode', 'alphaCutOff',
+    'blendMode', 'layerId',
   ];
   static _alongLineScratch = Object.create(null);
   static _acquireBatch = new Uint16Array(256);
@@ -286,20 +286,12 @@ export class ParticleEmitter extends SharedAtomicPool {
     const subMask = Layer.resolveSubscriptions(cfg);
     const flat = ParticleComponent.flat;
     const viewModeArr = ParticleComponent.viewMode;
-    const alphaModeArr = ParticleComponent.alphaMode;
-    const alphaCutOffArr = ParticleComponent.alphaCutOff;
-    if (!flat || !viewModeArr || !alphaModeArr || !alphaCutOffArr) {
+    if (!flat || !viewModeArr) {
       console.error(
         'ParticleEmitter._spawn: ParticleComponent schema missing — hard-reload after schema change'
       );
       return 0;
     }
-    const emitAlphaMode = cfg.alphaMode == null
-      ? SPRITE_ALPHA_MODE.BLEND
-      : ((cfg.alphaMode | 0) <= SPRITE_ALPHA_MODE.CUTOUT
-        ? SPRITE_ALPHA_MODE.CUTOUT
-        : SPRITE_ALPHA_MODE.BLEND);
-    const emitAlphaCutOff = cfg.alphaCutOff == null ? 1 : clampAlphaCutOffU8(cfg.alphaCutOff);
 
     while (spawned < count) {
       const want = Math.min(count - spawned, this._acquireBatch.length);
@@ -473,8 +465,6 @@ export class ParticleEmitter extends SharedAtomicPool {
       despawnOnGroundContact[i] = flatMode ? 0 : (cfg.despawnOnGroundContact ? 1 : 0);
 
       blendMode[i] = cfg.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
-      alphaModeArr[i] = emitAlphaMode;
-      alphaCutOffArr[i] = emitAlphaCutOff;
       if (layerMask) {
         layerMask[i] = subMask;
         syncParticleFeed(i, 0, subMask);

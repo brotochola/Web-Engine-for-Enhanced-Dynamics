@@ -21,7 +21,6 @@ export class Explosion extends GameObject {
   static components = [Collider, SpriteRenderer, LightEmitter, ExplosionComponent];
 
   onSpawned(spawnConfig = {}) {
-    this.spriteRenderer.alphaMode = WEED.SPRITE_ALPHA_MODE.BLEND;
     const ec = this.explosionComponent;
 
     ec.baseScale = 2;

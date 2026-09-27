@@ -30,7 +30,6 @@ import { Sun } from '../core/sun.js';
 import {
     calculateCameraScreenBounds,
     screenBoundsToWorldBounds,
-    generateSymmetricalCirclePattern,
     lightInfluenceRadius,
     lightCookieScale,
     lightGlowScale,
@@ -50,7 +49,6 @@ import {
     PR_JOIN_POSE,
     PR_JOIN_STAMP_CUR,
     PR_STREAM_SPRITE,
-    PR_STREAM_SHADOW,
     PR_STREAM_VP,
     PR_STREAM_SELF_LIT,
     PR_STREAM_LIGHTS,
@@ -74,10 +72,8 @@ import {
     ShapeType,
     MAX_POLYGON_VERTICES,
     SPRITE_TILE_MODE,
-    DEFAULT_ALPHA_CUT_OFF_U8,
 } from '../util/configDefaults.js';
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER_MERGE } from '../render/rendererBackend.js';
-import { writeRowAlphaMode, writeRowAlphaCutOff } from '../render/alphaModePack.js';
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
@@ -112,13 +108,9 @@ const EMPTY_OWNED_IDS = new Uint32Array(0);
 
 const MAIN_COLUMN_KEYS = [
     'count', 'x', 'y', 'scaleX', 'scaleY', 'rotC', 'rotS', 'alpha', 'tint', 'textureId',
-    'anchorX', 'anchorY', 'type', 'alphaMode', 'alphaCutOff', 'entityIndex', 'sortKey', 'repeatX', 'repeatY',
+    'anchorX', 'anchorY', 'type', 'sortKey', 'repeatX', 'repeatY',
     'tileMode', 'tileOffsetU', 'tileOffsetV', 'tileMulX', 'tileMulY',
     'shadowH', 'shadowOffX', 'shadowOffY',
-];
-const SHADOW_COLUMN_KEYS = [
-    'count', 'x', 'y', 'scaleX', 'scaleY', 'rotC', 'rotS', 'alpha', 'tint',
-    'textureId', 'anchorX', 'anchorY',
 ];
 const TILE_MODE_LOCAL = SPRITE_TILE_MODE.LOCAL;
 
@@ -251,8 +243,6 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorX = null;
         this.renderQueueAnchorY = null;
         this.renderQueueType = null;
-        this.renderQueueAlphaMode = null;
-        this.renderQueueAlphaCutOff = null;
         this.renderQueueSortKey = null;
         this.renderQueueRepeatX = null;
         this.renderQueueRepeatY = null;
@@ -305,7 +295,6 @@ class PreRenderWorker extends AbstractWorker {
 
         // Pre-allocated query arrays
         this._queryLightEmitter = null;
-        this._queryShadowCaster = null;
         this._querySpriteRenderer = null;
         this._queryAdobeAnim = null;
 
@@ -327,44 +316,13 @@ class PreRenderWorker extends AbstractWorker {
             tileMulX: null, tileMulY: null,
         };
 
-        // Flash grid-query: scratch buffer for candidate shadow casters + dedup marker
-        this._flashCandidateBuffer = null;
-        this._flashDedupMarker = null;
-
-        // Precomputed circle patterns for flash grid queries (cellRadius -> Int32Array)
-        this._flashCirclePatterns = null;
-
         // Visible lights SAB: written here, read by pixi (avoids duplicate query)
         this.visibleLightsData = null;
 
-        // ========================================
-        // SHADOW RENDER QUEUE (DOUBLE BUFFERED)
-        // ========================================
-        // Uses same sync timing as main render queue (swapped together)
         this.shadowsEnabled = false;
         this.maxShadowCastingLights = 20;
         this.maxShadowsPerLight = 15;
         this.maxShadowsPerEntity = 0;
-        this.maxShadowSprites = 0;
-        this.maxShadowLights = 0;
-        this.maxShadowRenderItems = 0;
-
-        // Double buffer storage for shadows
-        this.shadowRenderQueueBuffers = [null, null];
-
-        // Current write buffer reference (set each frame based on frame counter)
-        this.shadowRenderQueueCount = null;
-        this.shadowRenderQueueX = null;
-        this.shadowRenderQueueY = null;
-        this.shadowRenderQueueScaleX = null;
-        this.shadowRenderQueueScaleY = null;
-        this.shadowRenderQueueRotC = null;
-        this.shadowRenderQueueRotS = null;
-        this.shadowRenderQueueAlpha = null;
-        this.shadowRenderQueueTint = null;
-        this.shadowRenderQueueTextureId = null;
-        this.shadowRenderQueueAnchorX = null;
-        this.shadowRenderQueueAnchorY = null;
 
         // GC OPTIMIZATION: Pre-allocated buffer for Y-sorted light indices
         this._sortedLightEntities = [];
@@ -522,8 +480,6 @@ class PreRenderWorker extends AbstractWorker {
      * Initialize the pre-render worker
      */
     async initialize(data) {
-        console.log('[PRE_RENDER WORKER] Starting initialize()...');
-
         const preRenderConfig = this.config.preRender || {};
         const configuredCount = preRenderConfig.numberOfPreRenderWorkers | 0;
         this.workerCount = (data.workerCount | 0) > 0
@@ -553,7 +509,6 @@ class PreRenderWorker extends AbstractWorker {
                 PRE_RENDER_STATS,
                 this.workerIndex
             );
-            console.log('[PRE_RENDER WORKER] Stats buffer initialized');
         }
 
         // Configure scheduling from preRender config (camelCase key)
@@ -563,7 +518,6 @@ class PreRenderWorker extends AbstractWorker {
             this.noLimitFPS = false;
         } else if (preRenderConfig.noLimitFPS === true) {
             this.noLimitFPS = true;
-            console.log('[PRE_RENDER WORKER] Running in unlimited FPS mode');
         }
         this.backpressure = preRenderConfig.backpressure !== false;
 
@@ -613,17 +567,13 @@ class PreRenderWorker extends AbstractWorker {
         this._packGpuSpritesOn = spritePipe.packGpuSprites;
         this._sortSprites = spritePipe.sortSprites;
         this._gpuPackCtx = {};
-        this._alphaCutOffU8 = DEFAULT_ALPHA_CUT_OFF_U8;
         this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
-
-        console.log(`[PRE_RENDER WORKER] Entities: ${this.globalEntityCount}, Particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}`);
 
         // ========================================
         // RENDER QUEUE - Initialize (DOUBLE BUFFERED)
         // ========================================
         if (data.renderQueue && data.renderQueue.dataA && data.renderQueue.dataB) {
-            console.log('[PRE_RENDER WORKER] Initializing double-buffered render queue system...');
             this.renderQueueEnabled = true;
             this.renderQueueMaxItems = data.renderQueue.maxItems;
 
@@ -676,25 +626,8 @@ class PreRenderWorker extends AbstractWorker {
 
             // Pre-allocate query arrays
             this._queryLightEmitter = [LightEmitter];
-            this._queryShadowCaster = [ShadowCaster];
             this._querySpriteRenderer = [SpriteRenderer];
             this._queryAdobeAnim = [AdobeAnimComponent];
-
-            // Flash grid-query buffers (shadow caster candidates for flash lights)
-            const maxCandidates = Grid.maxNeighbors || 500;
-            this._flashCandidateBuffer = new Uint16Array(maxCandidates);
-            if (this.globalEntityCount > 0) {
-                this._flashDedupMarker = new Uint32Array(this.globalEntityCount);
-            }
-
-            // Precompute circle patterns for flash grid queries (cellRadius 0..6 covers typical flash radii)
-            const cellSize = Grid.cellSize || 128;
-            this._flashCirclePatterns = new Map();
-            for (let r = 0; r <= 6; r++) {
-                this._flashCirclePatterns.set(r, generateSymmetricalCirclePattern(r, cellSize));
-            }
-
-            console.log(`[PRE_RENDER WORKER] Double-buffered render queue initialized (max ${maxItems} items)`);
 
             if (data.gpuQueue && data.gpuQueue.dataA && data.gpuQueue.dataB && data.gpuQueue.caps) {
                 const caps = data.gpuQueue.caps;
@@ -722,9 +655,6 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuStampOrder = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
                 this._gpuCasterUsed = new Uint8Array(Math.max(1, caps.maxSun | 0, maxItems));
                 this._gpuKeepIdx = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
-                this._gpuKeepAll = new Uint32Array(Math.max(1, caps.maxStamp | 0));
-                this._gpuStampLightScratch = new Uint16Array(Math.max(1, caps.maxStamp | 0));
-                this._gpuStampCompact = new Float32Array(Math.max(1, (caps.maxStamp | 0) * GPU_CASTER_FLOATS));
                 this._gpuPackOpts = {};
                 this._gpuCookieQ = null;
                 const cookieN = Math.max(1, caps.maxCookie | 0);
@@ -754,7 +684,6 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
                 if (this._ySort) this._gpuPainter = createPainterState(maxItems);
                 this._atlasNearest = (rendererConfig.atlasScaleMode || RENDERER_DEFAULTS.atlasScaleMode) === 'nearest';
-                console.log(`[PRE_RENDER WORKER] GPU queues initialized (sprites ${caps.maxSprites}, stamp ${caps.maxStamp})`);
             }
 
             // Initialize per-custom-layer collectors and render queue buffers
@@ -788,8 +717,6 @@ class PreRenderWorker extends AbstractWorker {
                     this._customLayerQueueRefs[layerId] = {};
 
                     this._customLayerEntries.push({ layerId, collector, bufs, ref: null });
-
-                    console.log(`[PRE_RENDER WORKER] Custom layer ${layerId} render queue initialized (max ${layerMax} items)`);
                 }
             }
         }
@@ -804,82 +731,17 @@ class PreRenderWorker extends AbstractWorker {
             this.animationNameToIndex = data.textureMetadata.animationNameToIndex;
             this.frameWidth = data.textureMetadata.frameWidth;   // Uint16Array[textureId]
             this.frameHeight = data.textureMetadata.frameHeight; // Uint16Array[textureId]
-            console.log(`[PRE_RENDER WORKER] Texture metadata loaded: ${data.textureMetadata.totalFrames} total frames`);
         }
 
-        // ========================================
-        // SHADOW RENDER QUEUE - Initialize (DOUBLE BUFFERED)
-        // ========================================
         if (
             data.shadows &&
             data.shadows.enabled &&
-            data.shadows.renderQueueDataA &&
-            data.shadows.renderQueueDataB &&
             data.buffers?.componentData?.ShadowCaster
         ) {
             this.shadowsEnabled = true;
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
             this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
             this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0;
-            this.maxShadowSprites = data.shadows.maxShadowSprites;
-            this.maxShadowLights = data.shadows.maxLights || 128;
-            this.maxShadowRenderItems = data.shadows.maxRenderItems;
-
-            const maxItems = this.maxShadowRenderItems;
-
-            // Create typed array views for BOTH shadow buffers
-            const shadowSABs = [data.shadows.renderQueueDataA, data.shadows.renderQueueDataB];
-
-            for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
-                const sab = shadowSABs[bufIdx];
-                let offset = 0;
-
-                const buffer = {
-                    count: new Int32Array(sab, offset, 1),
-                };
-                offset += 4;
-
-                buffer.x = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.y = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.scaleX = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.scaleY = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.rotC = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.rotS = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.alpha = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.tint = new Uint32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.textureId = new Uint16Array(sab, offset, maxItems);
-                offset += maxItems * 2;
-
-                offset = Math.ceil(offset / 4) * 4;
-
-                buffer.anchorX = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.anchorY = new Float32Array(sab, offset, maxItems);
-
-                this.shadowRenderQueueBuffers[bufIdx] = buffer;
-            }
-
-            // Set initial write buffer (will be updated each frame along with main queue)
-            this._setShadowWriteBuffer(0);
-
-            console.log(`[PRE_RENDER WORKER] Double-buffered shadow render queue initialized (${maxItems} max items)`);
         }
 
         // ========================================
@@ -897,7 +759,6 @@ class PreRenderWorker extends AbstractWorker {
         // Shadow values are precomputed in Sun.setTimeOfDay (Scene advances time)
         if (Sun.isInitialized) {
             this.sunEnabled = Sun.enabled;
-            console.log(`[PRE_RENDER WORKER] Sun system initialized (enabled: ${this.sunEnabled})`);
         }
 
         // ========================================
@@ -974,10 +835,7 @@ class PreRenderWorker extends AbstractWorker {
                 }
             }
 
-            console.log(`[PRE_RENDER WORKER] Visibility polygons initialized (max ${maxLts} lights, ${maxVerts} verts/polygon, selfLit ${this._selfLitMax})`);
         }
-
-        console.log('[PRE_RENDER WORKER] ✅ Initialize() completed!');
     }
 
     /**
@@ -1004,8 +862,6 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorX = buffer.anchorX;
         this.renderQueueAnchorY = buffer.anchorY;
         this.renderQueueType = buffer.type;
-        this.renderQueueAlphaMode = buffer.alphaMode;
-        this.renderQueueAlphaCutOff = buffer.alphaCutOff;
         this.renderQueueSortKey = buffer.sortKey;
         this.renderQueueRepeatX = buffer.repeatX;
         this.renderQueueRepeatY = buffer.repeatY;
@@ -1028,26 +884,102 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
-    /**
-     * Set the current write buffer for shadow render queue
-     * @param {number} bufferIdx - 0 or 1
-     */
-    _setShadowWriteBuffer(bufferIdx) {
-        const buffer = this.shadowRenderQueueBuffers[bufferIdx];
-        if (!buffer) return;
+    latchPhysicsPose() {
+        this._latchPose();
+        if (this.renderQueuePoseReady) this.renderQueuePoseReady[0] = this._poseReadyFrame;
+    }
 
-        this.shadowRenderQueueCount = buffer.count;
-        this.shadowRenderQueueX = buffer.x;
-        this.shadowRenderQueueY = buffer.y;
-        this.shadowRenderQueueScaleX = buffer.scaleX;
-        this.shadowRenderQueueScaleY = buffer.scaleY;
-        this.shadowRenderQueueRotC = buffer.rotC;
-        this.shadowRenderQueueRotS = buffer.rotS;
-        this.shadowRenderQueueAlpha = buffer.alpha;
-        this.shadowRenderQueueTint = buffer.tint;
-        this.shadowRenderQueueTextureId = buffer.textureId;
-        this.shadowRenderQueueAnchorX = buffer.anchorX;
-        this.shadowRenderQueueAnchorY = buffer.anchorY;
+    collectVisibleLights() {
+        this._collectVisibleLights();
+    }
+
+    pixiIsMoreThanOneFrameBehind() {
+        if (!this.backpressure || !this.renderQueueSync || this.renderQueueFrame <= 0) return false;
+        const consumedFrame = Atomics.load(this.renderQueueSync, 1);
+        return this.renderQueueFrame > consumedFrame + 1;
+    }
+
+    selectWriteBuffers() {
+        if (!this.renderQueueEnabled) return;
+        const writeBufferIndex = this._queueBuf;
+        this._setWriteBuffer(writeBufferIndex);
+        if (this.visibilityPolygonsEnabled) {
+            this._vpWriteBuffer = this._vpBuffers[writeBufferIndex];
+            if (this._selfLitBuffers) {
+                this._selfLitWriteBuffer = this._selfLitBuffers[writeBufferIndex];
+            }
+        }
+    }
+
+    latchCamera(writeQueueCamera = true) {
+        if (!this.cameraData) return;
+        this._frameCameraZoom = this.cameraData[0];
+        this._frameCameraX = this.cameraData[1];
+        this._frameCameraY = this.cameraData[2];
+        const aligned = Camera.alignFollowCameraToLatchedPose(
+            this._frameCameraX, this._frameCameraY, this._poseX, this._poseY
+        );
+        this._frameCameraX = aligned.x;
+        this._frameCameraY = aligned.y;
+        const worldWidth = Camera.worldWidth;
+        const worldHeight = Camera.worldHeight;
+        if (worldWidth !== Infinity && worldHeight !== Infinity && this._frameCameraZoom > 0) {
+            const viewWidth = Camera.canvasWidth / this._frameCameraZoom;
+            const viewHeight = Camera.canvasHeight / this._frameCameraZoom;
+            const maxX = Math.max(0, worldWidth - viewWidth);
+            const maxY = Math.max(0, worldHeight - viewHeight);
+            this._frameCameraX = Math.max(0, Math.min(this._frameCameraX, maxX));
+            this._frameCameraY = Math.max(0, Math.min(this._frameCameraY, maxY));
+        }
+        if (writeQueueCamera && this.renderQueueCamera) {
+            this.renderQueueCamera[0] = this._frameCameraZoom;
+            this.renderQueueCamera[1] = this._frameCameraX;
+            this.renderQueueCamera[2] = this._frameCameraY;
+        }
+    }
+
+    resetFrameCounters() {
+        this.visibleEntitiesCount = 0;
+        this.visibleParticlesCount = 0;
+        this.visibleDecorationsCount = 0;
+        this.shadowsUpdatedThisFrame = 0;
+        this._renderableCount = 0;
+        const zoom = this._frameCameraZoom;
+        if (zoom >= this.decorationFadeStartZoom) this._decorationZoomAlpha = 1;
+        else if (zoom <= this.decorationHideZoom) this._decorationZoomAlpha = 0;
+        else this._decorationZoomAlpha = (zoom - this.decorationHideZoom) / (this.decorationFadeStartZoom - this.decorationHideZoom);
+        this._emitWriteCount = 0;
+        this._frameCameraBoundsValid = this.cameraData !== null;
+        if (this._frameCameraBoundsValid) this.calculateCameraBounds();
+        this.collectTimeThisFrame = 0;
+        this.sortTimeThisFrame = 0;
+        this.emitTimeThisFrame = 0;
+        this.customLayerTimeThisFrame = 0;
+        this.shadowQTimeThisFrame = 0;
+        this.visibilityTimeThisFrame = 0;
+        this.adobeTimeThisFrame = 0;
+        this.waitTimeThisFrame = 0;
+    }
+
+    packSpriteAndShadowQueues() {
+        if (!this.gpuQueueBuffers) return;
+        const detail = this.collectDetailedStats;
+        const started = detail ? performance.now() : 0;
+        const sortBefore = this.sortTimeThisFrame;
+        this._packGpuQueues(this.gpuQueueBuffers[this._queueBuf], true, null, false);
+        if (detail) {
+            const packed = performance.now() - started;
+            const sortDelta = this.sortTimeThisFrame - sortBefore;
+            this.shadowQTimeThisFrame = packed - (sortDelta > 0 ? sortDelta : 0);
+        }
+    }
+
+    publishFrame() {
+        if (!this.renderQueueSync) return;
+        this.renderQueueFrame++;
+        this._queueBuf ^= 1;
+        Atomics.store(this.renderQueueSync, 0, this.renderQueueFrame);
+        Atomics.notify(this.renderQueueSync, 0, 1);
     }
 
     /**
@@ -1059,173 +991,47 @@ class PreRenderWorker extends AbstractWorker {
             return;
         }
         this.skippedFramesThisFrame = 0;
-
-        // ========================================
-        // DOUBLE BUFFER BACKPRESSURE: skip instead of waiting
-        // ========================================
-        if (this.backpressure && this.renderQueueSync && this.renderQueueFrame > 0) {
-            const consumedFrame = Atomics.load(this.renderQueueSync, 1);
-            if (this.renderQueueFrame > consumedFrame + 1) {
-                this.skippedFramesThisFrame = 1;
-                return;
-            }
+        if (this.pixiIsMoreThanOneFrameBehind()) {
+            this.skippedFramesThisFrame = 1;
+            return;
         }
-
-        // ========================================
-        // SELECT WRITE BUFFER
-        // ========================================
-        // Alternate between buffer 0 and 1 each frame
-        if (this.renderQueueEnabled) {
-            const writeBufferIdx = this._queueBuf;
-            this._setWriteBuffer(writeBufferIdx);
-
-            // Shadow queue uses same buffer index (swapped together)
-            if (this.shadowsEnabled) {
-                this._setShadowWriteBuffer(writeBufferIdx);
-            }
-            // Visibility polygon buffer uses same swap
-            if (this.visibilityPolygonsEnabled) {
-                this._vpWriteBuffer = this._vpBuffers[writeBufferIdx];
-                if (this._selfLitBuffers) {
-                    this._selfLitWriteBuffer = this._selfLitBuffers[writeBufferIdx];
-                }
-            }
-        }
-
-        // Latch published physics pose once per frame (Atomics seq, same as pixi render queue).
-        this._latchPose();
-        if (this.renderQueuePoseReady) this.renderQueuePoseReady[0] = this._poseReadyFrame;
-
-        // Latch camera once per pre-render frame to keep all culling and queue writes coherent.
-        if (this.cameraData) {
-            this._frameCameraZoom = this.cameraData[0];
-            this._frameCameraX = this.cameraData[1];
-            this._frameCameraY = this.cameraData[2];
-
-            // followEntity: snap queue cam to this pack's pose + look-ahead
-            // lead. Do not add (pack - followUsed) onto the eased SAB cam.
-            const aligned = Camera.alignFollowCameraToLatchedPose(
-                this._frameCameraX, this._frameCameraY, this._poseX, this._poseY
-            );
-            this._frameCameraX = aligned.x;
-            this._frameCameraY = aligned.y;
-
-            // Re-clamp position for the latched zoom to guard against the SAB
-            // race where the logic worker wrote a new zoom but hasn't finished
-            // clamping position yet.
-            const ww = Camera.worldWidth;
-            const wh = Camera.worldHeight;
-            if (ww !== Infinity && wh !== Infinity && this._frameCameraZoom > 0) {
-                const vpW = Camera.canvasWidth / this._frameCameraZoom;
-                const vpH = Camera.canvasHeight / this._frameCameraZoom;
-                const maxX = Math.max(0, ww - vpW);
-                const maxY = Math.max(0, wh - vpH);
-                this._frameCameraX = Math.max(0, Math.min(this._frameCameraX, maxX));
-                this._frameCameraY = Math.max(0, Math.min(this._frameCameraY, maxY));
-            }
-
-            if (this.renderQueueCamera) {
-                this.renderQueueCamera[0] = this._frameCameraZoom;
-                this.renderQueueCamera[1] = this._frameCameraX;
-                this.renderQueueCamera[2] = this._frameCameraY;
-            }
-        }
-
-        // Reset stats
-        this.visibleEntitiesCount = 0;
-        this.visibleParticlesCount = 0;
-        this.visibleDecorationsCount = 0;
-        this.shadowsUpdatedThisFrame = 0;
-        this._renderableCount = 0;
-
-        // Compute decoration zoom alpha (fully visible above fadeStart, fades to 0 at hideZoom)
-        const zoom = this._frameCameraZoom;
-        if (zoom >= this.decorationFadeStartZoom) {
-            this._decorationZoomAlpha = 1;
-        } else if (zoom <= this.decorationHideZoom) {
-            this._decorationZoomAlpha = 0;
-        } else {
-            this._decorationZoomAlpha = (zoom - this.decorationHideZoom) / (this.decorationFadeStartZoom - this.decorationHideZoom);
-        }
-
-        // Cache per-frame camera bounds and adobe entity query (avoids redundant recomputation)
-        this._emitWriteCount = 0;
-        this._frameCameraBoundsValid = this.cameraData !== null;
-        if (this._frameCameraBoundsValid) this.calculateCameraBounds();
-        // Optional SoA: skip Adobe query when scene never allocated AdobeAnimComponent
+        this.selectWriteBuffers();
+        this.latchPhysicsPose();
+        this.latchCamera();
+        this.resetFrameCounters();
         this._frameAdobeEntities = AdobeAnimComponent.active
             ? Query.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent])
             : (this._emptyAdobeEntities || (this._emptyAdobeEntities = []));
 
-        this.collectTimeThisFrame = 0;
-        this.sortTimeThisFrame = 0;
-        this.emitTimeThisFrame = 0;
-        this.customLayerTimeThisFrame = 0;
-        this.shadowQTimeThisFrame = 0;
-        this.visibilityTimeThisFrame = 0;
-        this.adobeTimeThisFrame = 0;
-        this.waitTimeThisFrame = 0;
-
         const detail = this.collectDetailedStats;
-        let t0 = 0;
-
-        if (detail) t0 = performance.now();
+        let started = 0;
+        if (detail) started = performance.now();
         this.advanceAdobeAnimations(deltaTime);
-        if (detail) this.adobeTimeThisFrame = performance.now() - t0;
+        if (detail) this.adobeTimeThisFrame = performance.now() - started;
 
-        // Collect visible renderables for render queue (entities + sun shadows fused in one pass)
-        if (detail) t0 = performance.now();
+        if (detail) started = performance.now();
         this.collectVisibleParticles();
         this.collectVisibleLiquidFun();
         this.collectVisibleEntities();
         this.collectVisibleAdobeAnimations();
         this.collectVisibleDecorations();
         this.collectVisibleBullets();
-        if (detail) this.collectTimeThisFrame = performance.now() - t0;
+        if (detail) this.collectTimeThisFrame = performance.now() - started;
 
-        // Build the final render queue (sorts by Y, writes to SAB)
         this.buildRenderQueue(deltaTime);
 
-        // Build custom layer render queues (entities routed by layerMask bits)
-        if (detail) t0 = performance.now();
+        if (detail) started = performance.now();
         this.buildCustomLayerQueues(deltaTime);
-        if (detail) this.customLayerTimeThisFrame = performance.now() - t0;
+        if (detail) this.customLayerTimeThisFrame = performance.now() - started;
 
-        // Visible lights SAB feeds lighting shader + vis-poly. Must run even when
-        // cookie shadows are off (shadowsEnabled: false, raycasted: true).
-        this._collectVisibleLights();
+        this.collectVisibleLights();
+        this.packSpriteAndShadowQueues();
 
-        if (this.gpuQueueBuffers) {
-            if (detail) t0 = performance.now();
-            const sortBefore = this.sortTimeThisFrame;
-            this._packGpuQueues(this.gpuQueueBuffers[this._queueBuf], true, null, false);
-            if (detail) {
-                const packed = performance.now() - t0;
-                const sortDelta = this.sortTimeThisFrame - sortBefore;
-                this.shadowQTimeThisFrame = packed - (sortDelta > 0 ? sortDelta : 0);
-            }
-        }
-
-        // Cookie SoA queue is unused; GPU cookies live in gpuQueue.
-        if (detail) t0 = performance.now();
-        this.buildShadowRenderQueue();
-        if (detail) this.shadowQTimeThisFrame += performance.now() - t0;
-
-        if (detail) t0 = performance.now();
+        if (detail) started = performance.now();
         this.buildVisibilityPolygons();
-        if (detail) this.visibilityTimeThisFrame = performance.now() - t0;
+        if (detail) this.visibilityTimeThisFrame = performance.now() - started;
 
-        // ========================================
-        // SIGNAL FRAME READY
-        // ========================================
-        // Increment frame counter and notify pixi_worker
-        if (this.renderQueueSync) {
-            this.renderQueueFrame++;
-            this._queueBuf ^= 1;
-            Atomics.store(this.renderQueueSync, 0, this.renderQueueFrame);
-            // Notify (pixi does not wait; harmless)
-            Atomics.notify(this.renderQueueSync, 0, 1);
-        }
+        this.publishFrame();
     }
 
     /**
@@ -1241,7 +1047,6 @@ class PreRenderWorker extends AbstractWorker {
 
         if (this.renderQueueEnabled) {
             this._setWriteBuffer(bufIdx);
-            if (this.shadowsEnabled) this._setShadowWriteBuffer(bufIdx);
             if (this.visibilityPolygonsEnabled) {
                 this._vpWriteBuffer = this._vpBuffers[bufIdx];
                 if (this._selfLitBuffers) this._selfLitWriteBuffer = this._selfLitBuffers[bufIdx];
@@ -1257,31 +1062,7 @@ class PreRenderWorker extends AbstractWorker {
             this.renderQueuePoseReady[0] = this._poseReadyFrame;
         }
 
-        if (this.cameraData) {
-            this._frameCameraZoom = this.cameraData[0];
-            this._frameCameraX = this.cameraData[1];
-            this._frameCameraY = this.cameraData[2];
-            const aligned = Camera.alignFollowCameraToLatchedPose(
-                this._frameCameraX, this._frameCameraY, this._poseX, this._poseY
-            );
-            this._frameCameraX = aligned.x;
-            this._frameCameraY = aligned.y;
-            const ww = Camera.worldWidth;
-            const wh = Camera.worldHeight;
-            if (ww !== Infinity && wh !== Infinity && this._frameCameraZoom > 0) {
-                const vpW = Camera.canvasWidth / this._frameCameraZoom;
-                const vpH = Camera.canvasHeight / this._frameCameraZoom;
-                const maxX = Math.max(0, ww - vpW);
-                const maxY = Math.max(0, wh - vpH);
-                this._frameCameraX = Math.max(0, Math.min(this._frameCameraX, maxX));
-                this._frameCameraY = Math.max(0, Math.min(this._frameCameraY, maxY));
-            }
-            if (this.workerIndex === 0 && this.renderQueueCamera) {
-                this.renderQueueCamera[0] = this._frameCameraZoom;
-                this.renderQueueCamera[1] = this._frameCameraX;
-                this.renderQueueCamera[2] = this._frameCameraY;
-            }
-        }
+        this.latchCamera(this.workerIndex === 0);
 
         this.visibleEntitiesCount = 0;
         this.visibleParticlesCount = 0;
@@ -1315,7 +1096,6 @@ class PreRenderWorker extends AbstractWorker {
         this._ownedSpriteIter = this._ownedList(this._querySpriteRenderer || [SpriteRenderer]);
         this._ownedLightIter = this._queryLightEmitter ? this._ownedList(this._queryLightEmitter) : null;
         this._deferLightPublish = true;
-        if (this.shadowsEnabled) this._bindShadowPrivate();
         if (this.visibilityPolygonsEnabled) this._bindVpPrivate();
 
         try {
@@ -1343,10 +1123,6 @@ class PreRenderWorker extends AbstractWorker {
             this._bindLocalLights();
 
             if (detail) t0 = performance.now();
-            this.buildShadowRenderQueue();
-            if (detail) this.shadowQTimeThisFrame = performance.now() - t0;
-
-            if (detail) t0 = performance.now();
             this.buildVisibilityPolygons();
             if (detail) this.visibilityTimeThisFrame = performance.now() - t0;
 
@@ -1361,7 +1137,6 @@ class PreRenderWorker extends AbstractWorker {
                 this._savedVisibleLights = null;
             }
             if (this.renderQueueEnabled) this._setWriteBuffer(bufIdx);
-            if (this.shadowsEnabled) this._setShadowWriteBuffer(bufIdx);
             if (this.visibilityPolygonsEnabled) {
                 this._vpWriteBuffer = this._vpBuffers[bufIdx];
                 if (this._selfLitBuffers && this._selfLitBuffers[bufIdx]) {
@@ -1687,8 +1462,6 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorX = views.anchorX;
         this.renderQueueAnchorY = views.anchorY;
         this.renderQueueType = views.type;
-        this.renderQueueAlphaMode = views.alphaMode;
-        this.renderQueueAlphaCutOff = views.alphaCutOff;
         this.renderQueueSortKey = views.sortKey;
         this.renderQueueRepeatX = views.repeatX;
         this.renderQueueRepeatY = views.repeatY;
@@ -1714,26 +1487,6 @@ class PreRenderWorker extends AbstractWorker {
             }
             entry.ref = this._customPrivate[id];
         }
-    }
-
-    _bindShadowPrivate() {
-        const full = this.shadowRenderQueueBuffers && this.shadowRenderQueueBuffers[0];
-        if (!full) return;
-        if (!this._shadowPrivate) this._shadowPrivate = this._cloneTypedViews(full, SHADOW_COLUMN_KEYS);
-        const p = this._shadowPrivate;
-        if (p.count) p.count[0] = 0;
-        this.shadowRenderQueueCount = p.count;
-        this.shadowRenderQueueX = p.x;
-        this.shadowRenderQueueY = p.y;
-        this.shadowRenderQueueScaleX = p.scaleX;
-        this.shadowRenderQueueScaleY = p.scaleY;
-        this.shadowRenderQueueRotC = p.rotC;
-        this.shadowRenderQueueRotS = p.rotS;
-        this.shadowRenderQueueAlpha = p.alpha;
-        this.shadowRenderQueueTint = p.tint;
-        this.shadowRenderQueueTextureId = p.textureId;
-        this.shadowRenderQueueAnchorX = p.anchorX;
-        this.shadowRenderQueueAnchorY = p.anchorY;
     }
 
     _bindVpPrivate() {
@@ -1771,8 +1524,6 @@ class PreRenderWorker extends AbstractWorker {
         const expanded = this._shardExpanded | 0;
         const sprite = expanded ? -1 : (this._renderableCount | 0);
         this._storeStream(PR_STREAM_SPRITE, sprite);
-        const shadow = this._shadowPrivate && this._shadowPrivate.count ? (this._shadowPrivate.count[0] | 0) : 0;
-        this._storeStream(PR_STREAM_SHADOW, this.shadowsEnabled ? shadow : 0);
         const vp = this._vpPrivate ? (this._vpPrivate.header[0] | 0) : 0;
         this._storeStream(PR_STREAM_VP, this.visibilityPolygonsEnabled ? vp : 0);
         const selfLit = this._selfLitPrivate ? (this._selfLitPrivate.header[0] | 0) : 0;
@@ -1864,10 +1615,6 @@ class PreRenderWorker extends AbstractWorker {
             }
             this._copyColumns(this._mainPrivate, this.renderQueueBuffers[bufIdx], fit.keep, fit.prefix);
         }
-        if (this.shadowsEnabled && this._shadowPrivate && this.shadowRenderQueueBuffers) {
-            const fit = this._fitted(PR_STREAM_SHADOW, this.maxShadowRenderItems | 0);
-            this._copyColumns(this._shadowPrivate, this.shadowRenderQueueBuffers[bufIdx], fit.keep, fit.prefix);
-        }
         if (this.visibilityPolygonsEnabled && this._vpPrivate && this._vpBuffers) {
             const fit = this._fitted(PR_STREAM_VP, this._vpMaxLights | 0);
             if (!this._vpDestU8) this._vpDestU8 = [null, null];
@@ -1916,11 +1663,6 @@ class PreRenderWorker extends AbstractWorker {
             const max = this.renderQueueMaxItems | 0;
             const sum = sumCounts(this._loadStream(PR_STREAM_SPRITE), n);
             this.renderQueueBuffers[bufIdx].count[0] = max > 0 && sum > max ? max : sum;
-        }
-        if (this.shadowsEnabled && this.shadowRenderQueueBuffers) {
-            const max = this.maxShadowRenderItems | 0;
-            const sum = sumCounts(this._loadStream(PR_STREAM_SHADOW), n);
-            this.shadowRenderQueueBuffers[bufIdx].count[0] = max > 0 && sum > max ? max : sum;
         }
         if (this.visibilityPolygonsEnabled && this._vpBuffers) {
             const max = this._vpMaxLights | 0;
@@ -1993,10 +1735,6 @@ class PreRenderWorker extends AbstractWorker {
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
-        // if (visibleCount > 0 && visibleCount !== this._lastLoggedVisibleParticles) {
-        //     this._lastLoggedVisibleParticles = visibleCount;
-        //     console.log(`[pre_render_worker] Collecting ${visibleCount} visible particles into render queue`);
-        // }
         const y = ParticleComponent.y;
         const z = ParticleComponent.z;
         const flat = ParticleComponent.flat;
@@ -2065,7 +1803,7 @@ class PreRenderWorker extends AbstractWorker {
      * Entity visibility + collect for the sprite queue.
      */
     collectVisibleEntities() {
-        if (this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen || !this.cameraData) return;
+        if (this.globalEntityCount === 0 || !SpriteRenderer.active || !this.cameraData) return;
 
         const cameraBounds = this.calculateCameraBounds();
         if (!cameraBounds) return;
@@ -2222,7 +1960,7 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     collectVisibleAdobeAnimations() {
-        if (this.globalEntityCount === 0 || !AdobeAnimComponent.isItOnScreen || !this._frameCameraBoundsValid) return;
+        if (this.globalEntityCount === 0 || !AdobeAnimComponent.active || !this._frameCameraBoundsValid) return;
 
         const cameraBounds = this._cameraBounds;
 
@@ -2328,18 +2066,8 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
-    _setQueueType(ref, out, type, idx) {
+    _setQueueType(ref, out, type) {
         if (ref.type) ref.type[out] = type;
-        writeRowAlphaMode(ref.alphaMode, out, type, idx, SpriteRenderer.alphaMode, ParticleComponent.alphaMode);
-        writeRowAlphaCutOff(
-            ref.alphaCutOff,
-            out,
-            type,
-            idx,
-            SpriteRenderer.alphaCutOff,
-            ParticleComponent.alphaCutOff,
-            this._alphaCutOffU8
-        );
     }
 
     _entityYSort() {
@@ -3077,8 +2805,6 @@ class PreRenderWorker extends AbstractWorker {
         ref.rotC = rqRotC; ref.rotS = rqRotS; ref.alpha = rqAlpha; ref.tint = rqTint;
         ref.textureId = rqTextureId; ref.anchorX = rqAnchorX; ref.anchorY = rqAnchorY;
         ref.type = rqType;
-        ref.alphaMode = this.renderQueueAlphaMode;
-        ref.alphaCutOff = this.renderQueueAlphaCutOff;
         ref.sortKey = rqSortKey;
         ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
         ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;
@@ -3579,8 +3305,6 @@ class PreRenderWorker extends AbstractWorker {
             layerRef.rotC = rqRotC; layerRef.rotS = rqRotS; layerRef.alpha = rqAlpha; layerRef.tint = rqTint;
             layerRef.textureId = rqTextureId; layerRef.anchorX = rqAnchorX; layerRef.anchorY = rqAnchorY;
             layerRef.type = rqType;
-            layerRef.alphaMode = ref.alphaMode;
-            layerRef.alphaCutOff = ref.alphaCutOff;
             layerRef.sortKey = rqSortKey;
             layerRef.repeatX = rqRepeatX; layerRef.repeatY = rqRepeatY;
             layerRef.tileMode = rqTileMode; layerRef.tileOffsetU = rqTileOffsetU; layerRef.tileOffsetV = rqTileOffsetV;
@@ -3719,8 +3443,8 @@ class PreRenderWorker extends AbstractWorker {
                         rqY[out] = particleY[idx];
                         const height = -particleZ[idx];
                         const heightFactor = 1 + (height / this.zenithalMaxHeight) * this.zenithalScaleFactor;
-                        rqScaleX[out] = particleScaleX[idx] * heightFactor;
-                        rqScaleY[out] = particleScaleY[idx] * heightFactor;
+                        rqScaleX[out] = particleScaleX[idx] * heightFactor * (particleFlipX[idx] ? -1 : 1);
+                        rqScaleY[out] = particleScaleY[idx] * heightFactor * (particleFlipY[idx] ? -1 : 1);
                         let a = particleAlpha[idx];
                         if (this.zenithalAlphaFade > 0) {
                             const alphaFade = Math.min(1, (height / this.zenithalMaxHeight) * this.zenithalAlphaFade);
@@ -3729,13 +3453,13 @@ class PreRenderWorker extends AbstractWorker {
                         rqAlpha[out] = a;
                     } else if (particleFlat && particleFlat[idx]) {
                         rqY[out] = particleY[idx];
-                        rqScaleX[out] = particleScaleX[idx];
-                        rqScaleY[out] = particleScaleY[idx];
+                        rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
+                        rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
                         rqAlpha[out] = particleAlpha[idx];
                     } else {
                         rqY[out] = particleY[idx] + particleZ[idx];
-                        rqScaleX[out] = particleScaleX[idx];
-                        rqScaleY[out] = particleScaleY[idx];
+                        rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
+                        rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
                         rqAlpha[out] = particleAlpha[idx];
                     }
                     rqRotC[out] = particleRotC[idx];
@@ -3926,8 +3650,6 @@ class PreRenderWorker extends AbstractWorker {
         q.shadowOffX = views.shadowOffX;
         q.shadowOffY = views.shadowOffY;
         q.type = views.type;
-        q.alphaMode = views.alphaMode;
-        q.alphaCutOff = views.alphaCutOff;
         return q;
     }
 
@@ -3956,8 +3678,6 @@ class PreRenderWorker extends AbstractWorker {
         v.shadowOffX = this.renderQueueShadowOffX;
         v.shadowOffY = this.renderQueueShadowOffY;
         v.type = this.renderQueueType;
-        v.alphaMode = this.renderQueueAlphaMode;
-        v.alphaCutOff = this.renderQueueAlphaCutOff;
         return this._gpuSoAFromViews(v);
     }
 
@@ -4574,14 +4294,6 @@ class PreRenderWorker extends AbstractWorker {
             this.visibleLightsData[0] = n;
             for (let w = 0; w < n; w++) this.visibleLightsData[1 + w] = lightEntities[w];
         }
-    }
-
-    /**
-     * Cookie SoA is unused. GPU cookies are packed into the shared GPU queue.
-     */
-    buildShadowRenderQueue() {
-        if (this.shadowRenderQueueCount) this.shadowRenderQueueCount[0] = 0;
-        this.shadowsUpdatedThisFrame = 0;
     }
 
     buildVisibilityPolygons() {

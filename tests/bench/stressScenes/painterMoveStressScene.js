@@ -44,13 +44,9 @@ function queryParam(name) {
   return new URLSearchParams(search).get(name);
 }
 
-function zBufferOn() {
-  return queryParam('useZBuffer') === '1';
-}
-
 function painterYSort() {
   const q = queryParam('ySort');
-  if (q === 'bitonic' || q === 'cpu') return q;
+  if (q === 'cpu') return q;
   if (q === '0' || q === 'false') return false;
   return true;
 }
@@ -58,7 +54,7 @@ function painterYSort() {
 function painterBackend() {
   const q = queryParam('backend');
   if (q === 'webgl' || q === 'webgpu') return q;
-  return painterYSort() === 'bitonic' ? 'webgpu' : 'webgl';
+  return 'webgl';
 }
 
 function painterMoveConfig() {
@@ -92,7 +88,6 @@ function painterMoveConfig() {
       backend: painterBackend(),
       noLimitFPS: false,
       ySort: painterYSort(),
-      useZBuffer: zBufferOn(),
       maxVisibleRenderables: N,
     },
     preRender: {
