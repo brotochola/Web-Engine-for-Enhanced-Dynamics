@@ -71,12 +71,14 @@ export function resolveSpritePipeline(opts) {
   if (!yOn) sort = SORT_SPRITES_NONE;
 
   if (sort === SORT_SPRITES_PIXI && pack === PACK_GPU_SPRITES_PRERENDER) {
-    console.error('WeedJS: config.preRender.sortSprites "pixi" with packGpuSprites "preRender" would pack unsorted rows that Pixi ignores. Using packGpuSprites "pixi".');
-    pack = PACK_GPU_SPRITES_PIXI;
+    throw new Error(
+      'WeedJS: config.preRender.sortSprites "pixi" needs packGpuSprites "pixi". Pre-render would pack rows that Pixi ignores.'
+    );
   }
   if (sort === SORT_SPRITES_PRERENDER && pack === PACK_GPU_SPRITES_PIXI) {
-    console.error('WeedJS: config.preRender.sortSprites "preRender" needs packGpuSprites "preRender" because the SoA is not permuted. Using packGpuSprites "preRender".');
-    pack = PACK_GPU_SPRITES_PRERENDER;
+    throw new Error(
+      'WeedJS: config.preRender.sortSprites "preRender" needs packGpuSprites "preRender". The SoA is not permuted.'
+    );
   }
 
   return { packGpuSprites: pack, sortSprites: sort };

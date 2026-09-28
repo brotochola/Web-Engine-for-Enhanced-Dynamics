@@ -611,7 +611,6 @@ class PreRenderWorker extends AbstractWorker {
                         anchorY: cookieAnchor,
                     };
                 }
-                this._stampLights = [];
                 this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
                 if (this._ySort) this._gpuPainter = createPainterState(maxItems);
                 this._atlasNearest = (rendererConfig.atlasScaleMode || RENDERER_DEFAULTS.atlasScaleMode) === 'nearest';
@@ -681,6 +680,16 @@ class PreRenderWorker extends AbstractWorker {
         // Written here, read by pixi (avoids duplicate queryActiveEntities)
         if (data.buffers?.visibleLightsData) {
             this.visibleLightsData = new Uint16Array(data.buffers.visibleLightsData);
+            const lightCap = Math.max(1, this.visibleLightsData.length - 1);
+            this._sortedLightEntities = new Array(lightCap);
+            this._lightPersistScratch = new Array(lightCap);
+            this._lightFlashScratch = new Array(lightCap);
+            this._stampLights = new Array(lightCap);
+            for (let i = 0; i < lightCap; i++) {
+                this._stampLights[i] = {
+                    id: 0, x: 0, y: 0, intensity: 0, rangeSq: 0, sqrtI: 0, distSq: 0,
+                };
+            }
         }
 
         // ========================================
@@ -2718,8 +2727,8 @@ class PreRenderWorker extends AbstractWorker {
             const dy = y - cy;
             const vrRange = vr ? (vr[id] || 0) : 0;
             const range = vrRange > 0 ? vrRange : influence;
-            let slot = out[n];
-            if (!slot) slot = out[n] = {};
+            const slot = out[n];
+            if (!slot) break;
             slot.id = id;
             slot.x = x;
             slot.y = y;
@@ -2729,8 +2738,24 @@ class PreRenderWorker extends AbstractWorker {
             slot.distSq = dx * dx + dy * dy;
             n++;
         }
-        out.length = n;
-        out.sort(this._stampLightCmp || (this._stampLightCmp = (a, b) => a.distSq - b.distSq || a.id - b.id));
+        this._stampLightCount = n;
+        if (!this._stampLightCmp) {
+            this._stampLightCmp = (a, b) => a.distSq - b.distSq || a.id - b.id;
+        }
+        this._sortPrefix(out, n, this._stampLightCmp);
+    }
+
+    _sortPrefix(arr, count, compare) {
+        const n = count | 0;
+        for (let i = 1; i < n; i++) {
+            const item = arr[i];
+            let j = i - 1;
+            while (j >= 0 && compare(arr[j], item) > 0) {
+                arr[j + 1] = arr[j];
+                j--;
+            }
+            arr[j + 1] = item;
+        }
     }
 
     _packGpuSun(dst, q) {
@@ -2772,7 +2797,7 @@ class PreRenderWorker extends AbstractWorker {
     _stampAgainstSun(dst, sun, sunN, stampBase, lightBegin, lightStride) {
         this._collectStampLights();
         const lights = this._stampLights;
-        const capL = Math.min(lights.length, this.maxShadowCastingLights | 0);
+        const capL = Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0);
         const caps = this.gpuQueueCaps;
         const stampCap = caps ? (caps.maxStamp | 0) : 0;
         this._ensureStampScratch(sunN);
@@ -2806,7 +2831,7 @@ class PreRenderWorker extends AbstractWorker {
         const caps = this.gpuQueueCaps;
         const cq = this._gpuCookieQ;
         const lights = this._stampLights;
-        const capL = lights ? Math.min(lights.length, this.maxShadowCastingLights | 0) : 0;
+        const capL = lights ? Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0) : 0;
         if (!cq || capL <= 0 || !caps || !(caps.maxCookie > 0)) return 0;
         const texId = this._resolveBuiltinTextureId('_lightGradient');
         let n = 0;
@@ -2943,7 +2968,7 @@ class PreRenderWorker extends AbstractWorker {
      */
     _collectVisibleLights() {
         const lightEntities = this._sortedLightEntities;
-        lightEntities.length = 0;
+        let written = 0;
 
         const lightEnabled = LightEmitter.active;
         if (lightEnabled && this._queryLightEmitter) {
@@ -2966,8 +2991,8 @@ class PreRenderWorker extends AbstractWorker {
 
             const persistScratch = this._lightPersistScratch;
             const flashScratch = this._lightFlashScratch;
-            persistScratch.length = 0;
-            flashScratch.length = 0;
+            let persistN = 0;
+            let flashN = 0;
 
             const lightEntitiesRaw = Query.queryPublishedFrame(this._queryLightEmitter) === -1
                 ? EMPTY_OWNED_IDS
@@ -2988,34 +3013,32 @@ class PreRenderWorker extends AbstractWorker {
                 }
 
                 const isFlash = flashActive ? flashActive[lightIdx] === 1 : false;
-                if (isFlash) flashScratch.push(lightIdx);
-                else persistScratch.push(lightIdx);
+                if (isFlash) flashScratch[flashN++] = lightIdx;
+                else persistScratch[persistN++] = lightIdx;
             }
-
             const maxWrite = this.visibleLightsData
                 ? this.visibleLightsData.length - 1
-                : persistScratch.length + flashScratch.length;
+                : persistN + flashN;
 
-            if (persistScratch.length + flashScratch.length > maxWrite) {
+            if (persistN + flashN > maxWrite) {
                 this._warnOnce(
                     '_warnedVisibleLightsCap',
                     `[PRE_RENDER] visible light list full (${maxWrite}). Increase lighting.maxLights or reduce visible lights.`
                 );
             }
 
-            persistScratch.sort(this._lightYComparator);
-            flashScratch.sort(this._lightYComparator);
-            const persistTake = Math.min(persistScratch.length, maxWrite);
-            for (let i = 0; i < persistTake; i++) lightEntities.push(persistScratch[i]);
-            const flashTake = Math.min(flashScratch.length, maxWrite - lightEntities.length);
-            for (let i = 0; i < flashTake; i++) lightEntities.push(flashScratch[i]);
-            lightEntities.sort(this._lightYComparator);
+            this._sortPrefix(persistScratch, persistN, this._lightYComparator);
+            this._sortPrefix(flashScratch, flashN, this._lightYComparator);
+            const persistTake = Math.min(persistN, maxWrite);
+            for (let i = 0; i < persistTake; i++) lightEntities[written++] = persistScratch[i];
+            const flashTake = Math.min(flashN, maxWrite - written);
+            for (let i = 0; i < flashTake; i++) lightEntities[written++] = flashScratch[i];
+            this._sortPrefix(lightEntities, written, this._lightYComparator);
         }
 
         if (this.visibleLightsData) {
-            const n = lightEntities.length;
-            this.visibleLightsData[0] = n;
-            for (let w = 0; w < n; w++) this.visibleLightsData[1 + w] = lightEntities[w];
+            this.visibleLightsData[0] = written;
+            for (let w = 0; w < written; w++) this.visibleLightsData[1 + w] = lightEntities[w];
         }
     }
 

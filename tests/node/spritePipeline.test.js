@@ -35,22 +35,15 @@ test('resolveSpritePipeline: retired preRenderMerge throws', () => {
   );
 });
 
-test('resolveSpritePipeline: pixi sort forces pixi pack', () => {
-  const errs = [];
-  const orig = console.error;
-  console.error = (m) => { errs.push(String(m)); };
-  try {
-    const pipe = resolveSpritePipeline({
+test('resolveSpritePipeline: pixi sort with preRender pack throws', () => {
+  assert.throws(
+    () => resolveSpritePipeline({
       ySort: 'cpu',
       packGpuSprites: PACK_GPU_SPRITES_PRERENDER,
       sortSprites: SORT_SPRITES_PIXI,
-    });
-    assert.equal(pipe.packGpuSprites, PACK_GPU_SPRITES_PIXI);
-    assert.equal(pipe.sortSprites, SORT_SPRITES_PIXI);
-  } finally {
-    console.error = orig;
-  }
-  assert.equal(errs.length, 1);
+    }),
+    /needs packGpuSprites "pixi"/
+  );
 });
 
 test('PRE_RENDER_DEFAULTS: pack and sort stay on preRender', () => {
@@ -60,23 +53,15 @@ test('PRE_RENDER_DEFAULTS: pack and sort stay on preRender', () => {
   assert.equal(PRE_RENDER_DEFAULTS.renderGrid, undefined);
 });
 
-test('resolveSpritePipeline: preRender sort forces preRender pack', () => {
-  const errs = [];
-  const orig = console.error;
-  console.error = (m) => { errs.push(String(m)); };
-  try {
-    const pipe = resolveSpritePipeline({
+test('resolveSpritePipeline: preRender sort with pixi pack throws', () => {
+  assert.throws(
+    () => resolveSpritePipeline({
       ySort: 'cpu',
       packGpuSprites: PACK_GPU_SPRITES_PIXI,
       sortSprites: SORT_SPRITES_PRERENDER,
-    });
-    assert.equal(pipe.packGpuSprites, PACK_GPU_SPRITES_PRERENDER);
-    assert.equal(pipe.sortSprites, SORT_SPRITES_PRERENDER);
-  } finally {
-    console.error = orig;
-  }
-  assert.equal(errs.length, 1);
-  assert.match(errs[0], /SoA is not permuted/);
+    }),
+    /SoA is not permuted/
+  );
 });
 
 test('resolveSpritePipeline: ySort off still throws on an unknown sort', () => {
