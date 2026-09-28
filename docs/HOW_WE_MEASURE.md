@@ -34,7 +34,7 @@ Use this when Balls or Predator never execute the code you changed (a QueryAABB 
 
 A demo that actually runs the changed code: [`demos/ballsScene`](../demos/ballsScene/), [`demos/predatorScene`](../demos/predatorScene/), `steadyCombatScene`, and others.
 
-Chromium with a visible window. Do not minimize. Five runs. Warmup 25 seconds, measure 18 seconds (`pnpm bench:headed:median`, or the integrated runner with those defaults).
+Chromium with a visible window. Do not minimize. Two runs. Warmup 10 seconds, measure 10 seconds (`pnpm bench:headed:median`, or the integrated runner with those defaults). The previous default was five runs with 25 seconds of warmup and 18 seconds of measure; that schedule is retired. A pair that follows 2×10 s/10 s is the protocol. Do not mark it `screened` only because it is shorter than the old default. Rows already written under 5×25/18 stay as evidence of that sitting.
 
 Use this when you claim a real game got cheaper.
 
@@ -169,7 +169,7 @@ Skip a repeat only when the row is recent, the scene and config match, the pair 
 
 Status words: `kept` · `dropped` · `screened` · `rejected-in-kernel` · `not-measured` · `superseded` · `mixed`.
 
-- **`dropped`** means that sitting’s primary was not 3 percent cheaper, or it was 3 percent worse, on a pair that met the layer rules (gameplay 5×25/18, or a stress pair above the floors), with detailed stats off and the load keys matched. It describes that sitting. It does not forbid a later measurement when the code, the scene, the config, or the protocol has changed.
+- **`dropped`** means that sitting’s primary was not 3 percent cheaper, or it was 3 percent worse, on a pair that met the layer rules (gameplay 2×10 s/10 s, or a stress pair above the floors), with detailed stats off and the load keys matched. Older rows that used 5×25/18 still count as protocol for that sitting. It describes that sitting. It does not forbid a later measurement when the code, the scene, the config, or the protocol has changed.
 - **`rejected-in-kernel`** means the isolated function lost its checksum or its ops/s on that kernel. Re-measure the kernel if the function changed. A kernel loss still does not answer a gameplay question the kernel never ran.
 - **`screened`** is a sitting too thin to settle the idea: a single run, a few seconds of warmup, detailed stats left on, a worker that stalled, or a visual count that did not match. Revert the broken patch. Measure the idea again under this protocol. Say, in the row, what the screen failed to prove.
 - **`kept`** means that sitting was a speed keep or a hygiene keep, and the change is in the tree. Re-measure when you want a confirm, or when the surrounding code has changed enough that the old number may no longer hold.

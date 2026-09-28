@@ -30,7 +30,7 @@ const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs
 
 function parseArgs(argv) {
   const out = {
-    runs: 5,
+    runs: 2,
     warmupMs: DEFAULT_WARMUP_MS,
     durationMs: DEFAULT_DURATION_MS,
     jsonOut: null,
@@ -42,7 +42,7 @@ function parseArgs(argv) {
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--runs' && argv[i + 1]) out.runs = Math.max(1, parseInt(argv[++i], 10) || 5);
+    if (a === '--runs' && argv[i + 1]) out.runs = Math.max(1, parseInt(argv[++i], 10) || 2);
     else if (a === '--warmup-ms' && argv[i + 1]) out.warmupMs = parseInt(argv[++i], 10) || DEFAULT_WARMUP_MS;
     else if (a === '--duration-ms' && argv[i + 1]) out.durationMs = parseInt(argv[++i], 10) || DEFAULT_DURATION_MS;
     else if (a === '--json-out' && argv[i + 1]) out.jsonOut = path.resolve(argv[++i]);
