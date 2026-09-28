@@ -279,11 +279,23 @@ export function stampLightRange({
   return cursor;
 }
 
+/** Dist array for the module-level order comparator (set only around native sort). */
+let _orderDist = null;
+
+function compareOrderByDist(a, b) {
+  return _orderDist[a] - _orderDist[b];
+}
+
+function sortOrderByDist(order, dist, m) {
+  for (let k = 0; k < m; k++) order[k] = k;
+  _orderDist = dist;
+  order.subarray(0, m).sort(compareOrderByDist);
+  _orderDist = null;
+}
+
 export function takeClosest(tmpIdx, tmpDist, order, m, limit, outIdx) {
   if (limit > 0 && m > limit) {
-    for (let k = 0; k < m; k++) order[k] = k;
-    const d = tmpDist;
-    order.subarray(0, m).sort((a, b) => d[a] - d[b]);
+    sortOrderByDist(order, tmpDist, m);
     for (let k = 0; k < limit; k++) outIdx[k] = tmpIdx[order[k]];
     return limit;
   }
@@ -300,9 +312,7 @@ export function selectClosestCasters(casterIdx, casterCount, qx, qy, lx, ly, lim
     tmpDist[c] = dx * dx + dy * dy;
   }
   if (limit > 0 && m > limit) {
-    for (let k = 0; k < m; k++) order[k] = k;
-    const d = tmpDist;
-    order.subarray(0, m).sort((a, b) => d[a] - d[b]);
+    sortOrderByDist(order, tmpDist, m);
     for (let k = 0; k < limit; k++) outIdx[k] = casterIdx[order[k]];
     return limit;
   }
