@@ -1128,10 +1128,6 @@ class PreRenderWorker extends AbstractWorker {
         const spriteRendererActive = SpriteRenderer.active;
         const renderVisible = SpriteRenderer.renderVisible;
         const visualRange = Collider.visualRange;
-        const srScaleX = SpriteRenderer.scaleX;
-        const srScaleY = SpriteRenderer.scaleY;
-        const MIN_GLOW_INTENSITY = 50;
-        const MIN_GLOW_RANGE = 2.5;
 
         const camZoom = cameraBounds.zoom;
         const cameraOffsetX = cameraBounds.cameraOffsetX;
@@ -1315,7 +1311,6 @@ class PreRenderWorker extends AbstractWorker {
 
             if (renderVisible[i]) {
                 this.collectRenderable(6, i, 0);
-                this._shardExpanded = 1;
                 this.visibleEntitiesCount++;
             }
         }
@@ -2792,6 +2787,14 @@ class PreRenderWorker extends AbstractWorker {
         if (n > (this._gpuKeepIdx ? this._gpuKeepIdx.length : 0)) {
             this._gpuKeepIdx = new Uint32Array(n);
         }
+        const maxCells = 128 * 128;
+        if (!this._stampGridCounts) {
+            this._stampGridCounts = new Int32Array(maxCells);
+            this._stampGridStarts = new Int32Array(maxCells + 1);
+        }
+        if (!this._stampGridItems || this._stampGridItems.length < n) {
+            this._stampGridItems = new Uint32Array(n);
+        }
     }
 
     _stampAgainstSun(dst, sun, sunN, stampBase, lightBegin, lightStride) {
@@ -2818,6 +2821,9 @@ class PreRenderWorker extends AbstractWorker {
             dist: this._gpuStampDist,
             order: this._gpuStampOrder,
             keepIdx: this._gpuKeepIdx,
+            gridCounts: this._stampGridCounts,
+            gridStarts: this._stampGridStarts,
+            gridItems: this._stampGridItems,
             stamp: dst.stamp,
             stampFloats: GPU_CASTER_FLOATS,
             stampCap,

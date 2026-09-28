@@ -206,3 +206,45 @@ test('stampLightRange stripe concat matches serial pairs when maxPerEntity is 0'
   assert.deepEqual(concat, serial);
   assert.ok(serial.length >= 4);
 });
+
+test('stamp grid matches the full scan, including a caster on the circle', () => {
+  const fp = 23;
+  const sunN = 6;
+  const sun = new Float32Array(sunN * fp);
+  const pts = [[0, 0], [100, 0], [256, 40], [300, 300], [20, 20], [1000, 1000]];
+  for (let i = 0; i < pts.length; i++) {
+    sun[i * fp] = pts[i][0];
+    sun[i * fp + 1] = pts[i][1];
+  }
+  const lights = [
+    { x: 0, y: 0, intensity: 2, rangeSq: 100 * 100 },
+    { x: 256, y: 40, intensity: 1, rangeSq: 30 * 30 },
+    { x: 1000, y: 1000, intensity: 3, rangeSq: 50 * 50 },
+  ];
+  const gridCounts = new Int32Array(128 * 128);
+  const gridStarts = new Int32Array(128 * 128 + 1);
+  const gridItems = new Uint32Array(sunN);
+  function run(useGrid) {
+    const stamp = new Float32Array(64 * fp);
+    const lightIdx = new Uint16Array(64);
+    const used = new Uint8Array(sunN);
+    const n = stampLightRange({
+      sun, sunN, sunFloats: fp, lights,
+      lightBegin: 0, lightEnd: lights.length, lightStride: 1,
+      maxPerLight: 3, maxPerEntity: 1, used,
+      tmpIdx: new Uint32Array(sunN),
+      dist: new Float32Array(sunN),
+      order: new Uint32Array(sunN),
+      keepIdx: new Uint32Array(sunN),
+      gridCounts: useGrid ? gridCounts : null,
+      gridStarts: useGrid ? gridStarts : null,
+      gridItems: useGrid ? gridItems : null,
+      stamp, stampFloats: fp, stampCap: 64, stampBase: 0,
+      stampLightIdx: lightIdx, lightVec: new Float32Array(4),
+    });
+    const pairs = [];
+    for (let i = 0; i < n; i++) pairs.push(`${lightIdx[i]}:${stamp[i * fp]},${stamp[i * fp + 1]}`);
+    return pairs;
+  }
+  assert.deepEqual(run(true), run(false));
+});
