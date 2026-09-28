@@ -88,7 +88,6 @@ function isAllCapsName(name) {
 export class Layer {
     static MAX_LAYERS = 16;
     static entitiesId = -1; // Set during init when entities is registered
-    static _defaultYSorting = true;
 
     // Registry
     static _byName = {};
@@ -669,7 +668,7 @@ export class Layer {
     // INITIALIZATION (main thread)
     // ========================================
 
-    static initializeFromConfig(layersConfig = {}, builtInLayers = {}, defaultYSorting = true) {
+    static initializeFromConfig(layersConfig = {}, builtInLayers = {}) {
         // Reset state
         this._byName = {};
         this._byId = [];
@@ -686,7 +685,6 @@ export class Layer {
         this._particleFeedIndices = [];
         this._particleFeedMax = [];
         this._particleFeedOverflowWarned = 0;
-        this._defaultYSorting = !!defaultYSorting;
 
         // Allocate config SAB
         this._configSAB = new SharedArrayBuffer(this._getConfigSABSize());
@@ -1352,9 +1350,8 @@ export class Layer {
         this._zIndex[id] = config.zIndex !== undefined ? config.zIndex : id;
         this._blendModeId[id] = config.blendMode ?? LAYER_DEFAULTS.blendMode;
         this._hasShader[id] = config.shader ? 1 : 0;
-        this._ySorting[id] = config.ySorting !== undefined
-            ? (config.ySorting ? 1 : 0)
-            : (this._defaultYSorting ? 1 : 0);
+        const ySorting = config.ySorting !== undefined ? config.ySorting : LAYER_DEFAULTS.ySorting;
+        this._ySorting[id] = ySorting ? 1 : 0;
         this._resolution[id] = config.resolution ?? LAYER_DEFAULTS.resolution;
         layer.alpha = config.alpha ?? LAYER_DEFAULTS.alpha;
         this._containerBlendId[id] = config.shader?.containerBlend ?? 0;

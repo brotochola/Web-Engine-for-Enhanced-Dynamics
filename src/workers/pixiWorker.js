@@ -1294,26 +1294,55 @@ class PixiRenderer extends AbstractWorker {
     opts.snapCameraY = this._renderCameraY;
   }
 
+  _bindPixiPackWriters() {
+    if (this._pixiLayerPack) return;
+    this._addSortMs = (ms) => { this.sortTimeThisFrame += ms; };
+    this._writeLayerSprites = (packOpts) => this._packBatch.upload(this._packQ, packOpts);
+    this._writeEntitySprites = (packOpts) => {
+      if (this.entitiesBatch.poseInterp) {
+        packOpts.prevX = this._latchedPrevX;
+        packOpts.prevY = this._latchedPrevY;
+        packOpts.snap = this._poseSnap;
+      }
+      const n = this.entitiesBatch.upload(this._packQ, packOpts);
+      packOpts.prevX = null;
+      packOpts.prevY = null;
+      packOpts.snap = false;
+      this.entitiesBatch.setPoseAlpha(this._poseAlpha);
+      this._posePacked = true;
+      return n;
+    };
+    this._writeEntityGlow = (packOpts) => this._packGlowBatch.upload(this._packQ, packOpts);
+    this._pixiLayerPack = {
+      splitGlow: false,
+      depthMode: BATCH_DEPTH.INDEX,
+      writeSprites: this._writeLayerSprites,
+    };
+    this._pixiEntityPack = {
+      timeGlowSort: true,
+      writeSprites: this._writeEntitySprites,
+    };
+  }
+
   /**
    * One sprite batch: painter order when `painter` is set, then the mesh upload.
    * Custom layers use this. The entities queue calls packSpriteLayer directly
    * when it also splits the glow batch.
    */
   _uploadSortedSprites(batch, q, opts, painter, keysU32, idxE, ne) {
-    const packed = packSpriteLayer({
-      count: ne | 0,
-      type: opts.type,
-      opts,
-      splitGlow: false,
-      dense: !idxE,
-      presetIndices: idxE || null,
-      painter: painter || null,
-      keysU32: keysU32 || null,
-      depthMode: BATCH_DEPTH.INDEX,
-      addSortMs: this.collectDetailedStats ? (ms) => { this.sortTimeThisFrame += ms; } : null,
-      writeSprites: (packOpts) => batch.upload(q, packOpts),
-    });
-    return packed.sprite;
+    this._bindPixiPackWriters();
+    this._packBatch = batch;
+    this._packQ = q;
+    const spec = this._pixiLayerPack;
+    spec.count = ne | 0;
+    spec.type = opts.type;
+    spec.opts = opts;
+    spec.dense = !idxE;
+    spec.presetIndices = idxE || null;
+    spec.painter = painter || null;
+    spec.keysU32 = keysU32 || null;
+    spec.addSortMs = this.collectDetailedStats ? this._addSortMs : null;
+    return packSpriteLayer(spec).sprite;
   }
 
   // ========================================
@@ -1423,36 +1452,24 @@ class PixiRenderer extends AbstractWorker {
     const glowBatch = splitGlow
       ? this.entitiesGlowBatch
       : (this._lightGlowAdd && this.lightingEnabled ? this.entitiesGlowBatch : null);
-    const packed = packSpriteLayer({
-      count,
-      type: typeArr,
-      opts,
-      splitGlow,
-      idxEntity: idxE,
-      idxGlow: idxG,
-      painter: this._painter,
-      keysU32: this._sortKeyU32,
-      dense: !splitGlow,
-      timeGlowSort: true,
-      writeEmptyGlow: !!(splitGlow && this.entitiesGlowBatch),
-      glowIncludeType: !splitGlow && glowBatch ? 3 : -1,
-      addSortMs: this.collectDetailedStats ? (ms) => { this.sortTimeThisFrame += ms; } : null,
-      writeSprites: (packOpts) => {
-        if (this.entitiesBatch.poseInterp) {
-          packOpts.prevX = this._latchedPrevX;
-          packOpts.prevY = this._latchedPrevY;
-          packOpts.snap = this._poseSnap;
-        }
-        const n = this.entitiesBatch.upload(q, packOpts);
-        packOpts.prevX = null;
-        packOpts.prevY = null;
-        packOpts.snap = false;
-        this.entitiesBatch.setPoseAlpha(this._poseAlpha);
-        this._posePacked = true;
-        return n;
-      },
-      writeGlow: glowBatch ? (packOpts) => glowBatch.upload(q, packOpts) : null,
-    });
+    this._bindPixiPackWriters();
+    this._packQ = q;
+    this._packGlowBatch = glowBatch;
+    const spec = this._pixiEntityPack;
+    spec.count = count;
+    spec.type = typeArr;
+    spec.opts = opts;
+    spec.splitGlow = splitGlow;
+    spec.idxEntity = idxE;
+    spec.idxGlow = idxG;
+    spec.painter = this._painter;
+    spec.keysU32 = this._sortKeyU32;
+    spec.dense = !splitGlow;
+    spec.writeEmptyGlow = !!(splitGlow && this.entitiesGlowBatch);
+    spec.glowIncludeType = !splitGlow && glowBatch ? 3 : -1;
+    spec.addSortMs = this.collectDetailedStats ? this._addSortMs : null;
+    spec.writeGlow = glowBatch ? this._writeEntityGlow : null;
+    const packed = packSpriteLayer(spec);
     this.visibleEntityCount = packed.sprite;
     this.visibleParticleCount = splitGlow ? packed.splitParticles : 0;
     if (!splitGlow && !glowBatch && this.spriteGlowMesh) this.spriteGlowMesh.visible = false;

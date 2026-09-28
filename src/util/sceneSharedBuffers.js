@@ -519,7 +519,7 @@ function initializeLightingAndRenderBuffers(scene) {
       ySorting: name === 'entities' ? defaultYSorting : defaults.ySorting,
     };
   }
-  Layer.initializeFromConfig(config.layers, builtInLayers, defaultYSorting);
+  Layer.initializeFromConfig(config.layers, builtInLayers);
   Layer._postToRenderer = (msg) => scene.workers.renderer?.postMessage(msg);
 
   scene.customLayerRenderQueues = {};

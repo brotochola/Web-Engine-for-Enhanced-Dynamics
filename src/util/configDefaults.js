@@ -603,8 +603,12 @@ export const LAYER_DEFAULTS = Object.freeze({
   blendMode: BLEND_MODES.NORMAL,
   /** Pixi scaleMode for custom shader RT upsample. */
   scaleMode: LAYER_SCALE_MODE.LINEAR,
-  // ySorting intentionally omitted: custom layers inherit the scene-level
-  // renderer.ySort setting (Layer._defaultYSorting) when not specified.
+  /**
+   * Custom layers sort by foot Y only when they set ySorting: true.
+   * Omitted means false. The entities layer is the exception: scene setup
+   * copies renderer.ySort onto it.
+   */
+  ySorting: false,
 });
 
 // ============================================================================

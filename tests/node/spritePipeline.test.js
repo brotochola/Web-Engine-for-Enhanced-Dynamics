@@ -28,21 +28,11 @@ test('resolveSpritePipeline: ySort on defaults to preRender pack and sort', () =
   assert.equal(pipe.sortSprites, SORT_SPRITES_PRERENDER);
 });
 
-test('resolveSpritePipeline: retired preRenderMerge is an unknown sort', () => {
-  const errs = [];
-  const orig = console.error;
-  console.error = (m) => { errs.push(String(m)); };
-  try {
-    const pipe = resolveSpritePipeline({
-      ySort: 'cpu',
-      sortSprites: 'preRenderMerge',
-    });
-    assert.equal(pipe.sortSprites, SORT_SPRITES_PRERENDER);
-  } finally {
-    console.error = orig;
-  }
-  assert.equal(errs.length, 1);
-  assert.equal(errs[0], errorSortSpritesInvalid('preRenderMerge'));
+test('resolveSpritePipeline: retired preRenderMerge throws', () => {
+  assert.throws(
+    () => resolveSpritePipeline({ ySort: 'cpu', sortSprites: 'preRenderMerge' }),
+    (err) => err.message === errorSortSpritesInvalid('preRenderMerge')
+  );
 });
 
 test('resolveSpritePipeline: pixi sort forces pixi pack', () => {
@@ -89,39 +79,27 @@ test('resolveSpritePipeline: preRender sort forces preRender pack', () => {
   assert.match(errs[0], /SoA is not permuted/);
 });
 
-test('resolveSpritePipeline: ySort off forces none and still rejects an unknown sort', () => {
-  const errs = [];
-  const orig = console.error;
-  console.error = (m) => { errs.push(String(m)); };
-  try {
-    const pipe = resolveSpritePipeline({
-      ySort: false,
-      sortSprites: 'preRenderMerge',
-    });
-    assert.equal(pipe.sortSprites, SORT_SPRITES_NONE);
-  } finally {
-    console.error = orig;
-  }
-  assert.equal(errs.length, 1);
-  assert.equal(errs[0], errorSortSpritesInvalid('preRenderMerge'));
+test('resolveSpritePipeline: ySort off still throws on an unknown sort', () => {
+  assert.throws(
+    () => resolveSpritePipeline({ ySort: false, sortSprites: 'preRenderMerge' }),
+    (err) => err.message === errorSortSpritesInvalid('preRenderMerge')
+  );
 });
 
-test('resolveSpritePipeline: garbage pack and sort log WeedJS errors', () => {
-  const errs = [];
-  const orig = console.error;
-  console.error = (m) => { errs.push(String(m)); };
-  try {
-    const pipe = resolveSpritePipeline({
+test('resolveSpritePipeline: unknown pack throws before sort is read', () => {
+  assert.throws(
+    () => resolveSpritePipeline({
       ySort: 'cpu',
       packGpuSprites: 'gpu',
       sortSprites: 'radix',
-    });
-    assert.equal(pipe.packGpuSprites, PACK_GPU_SPRITES_PRERENDER);
-    assert.equal(pipe.sortSprites, SORT_SPRITES_PRERENDER);
-  } finally {
-    console.error = orig;
-  }
-  assert.equal(errs.length, 2);
-  assert.equal(errs[0], errorPackGpuSpritesInvalid('gpu'));
-  assert.equal(errs[1], errorSortSpritesInvalid('radix'));
+    }),
+    (err) => err.message === errorPackGpuSpritesInvalid('gpu')
+  );
+});
+
+test('resolveSpritePipeline: unknown sort throws', () => {
+  assert.throws(
+    () => resolveSpritePipeline({ ySort: 'cpu', sortSprites: 'radix' }),
+    (err) => err.message === errorSortSpritesInvalid('radix')
+  );
 });

@@ -79,5 +79,5 @@ test('stamp light range falls back to influence when visualRange is 0', () => {
 });
 
 test('gpu pack reuses one pack context', () => {
-  assert.match(preRender, /makePackContext\(q, opts, caps.maxSprites, this\._gpuPackCtx\)/);
+  assert.match(preRender, /makePackContext\(q, opts, cap, this\._gpuPackCtx\)/);
 });

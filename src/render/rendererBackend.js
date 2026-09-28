@@ -35,11 +35,11 @@ export const SORT_SPRITES_PRERENDER = 'preRender';
 export const SORT_SPRITES_PIXI = 'pixi';
 
 export function errorPackGpuSpritesInvalid(value) {
-  return `WeedJS: config.preRender.packGpuSprites must be "preRender" or "pixi". Got ${JSON.stringify(value)}. Using "preRender".`;
+  return `WeedJS: config.preRender.packGpuSprites must be "preRender" or "pixi". Got ${JSON.stringify(value)}.`;
 }
 
 export function errorSortSpritesInvalid(value) {
-  return `WeedJS: config.preRender.sortSprites must be "none", "preRender", or "pixi". Got ${JSON.stringify(value)}. Using the default for this ySort.`;
+  return `WeedJS: config.preRender.sortSprites must be "none", "preRender", or "pixi". Got ${JSON.stringify(value)}.`;
 }
 
 /**
@@ -55,8 +55,7 @@ export function resolveSpritePipeline(opts) {
   let pack = o.packGpuSprites;
   if (pack === undefined || pack === null || pack === '') pack = PACK_GPU_SPRITES_PRERENDER;
   if (pack !== PACK_GPU_SPRITES_PRERENDER && pack !== PACK_GPU_SPRITES_PIXI) {
-    console.error(errorPackGpuSpritesInvalid(pack));
-    pack = PACK_GPU_SPRITES_PRERENDER;
+    throw new Error(errorPackGpuSpritesInvalid(pack));
   }
 
   let sort = o.sortSprites;
@@ -66,8 +65,7 @@ export function resolveSpritePipeline(opts) {
     sort !== SORT_SPRITES_PRERENDER &&
     sort !== SORT_SPRITES_PIXI
   ) {
-    console.error(errorSortSpritesInvalid(sort));
-    sort = defaultSort;
+    throw new Error(errorSortSpritesInvalid(sort));
   }
 
   if (!yOn) sort = SORT_SPRITES_NONE;

@@ -101,7 +101,7 @@ test('particles share the painter list; glow stays ADD; no second particle batch
   assert.match(packLayer, /fillQueueIndices\(typeArr, count, 3, -1, idxG\)/);
   assert.match(packLayer, /opts\.indices = idxG/);
   assert.match(pixiSrc, /splitGlow/);
-  assert.match(pixiSrc, /entitiesGlowBatch\.upload\(q, packOpts\)|glowBatch\.upload\(q, packOpts\)/);
+  assert.match(pixiSrc, /_packGlowBatch\.upload\(this\._packQ, packOpts\)/);
   assert.match(pixiSrc, /alphaDiscard: false/);
   assert.doesNotMatch(pixiSrc, /entitiesParticleBatch/);
   assert.doesNotMatch(pixiSrc, /_rqIdxParticle/);
