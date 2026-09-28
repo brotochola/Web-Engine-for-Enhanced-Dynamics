@@ -1,33 +1,37 @@
 import { fillQueueIndices } from './gpuQueueLayout.js';
 import { orderPainterSlots, radixSortIndicesBySortKey } from '../util/sortIndexByKey.js';
 
+const packResult = { sprite: 0, glow: 0, splitParticles: 0, flags: 0 };
+
+function orderSpriteIndices(opts, painter, keysU32, indices, n, dense, addSortMs, sortedFlag) {
+    if (!painter || !keysU32 || n < 2) {
+        if (indices) {
+            opts.indices = indices;
+            opts.indexCount = n;
+        } else {
+            opts.indices = null;
+            opts.indexCount = 0;
+        }
+        return 0;
+    }
+    if (addSortMs) {
+        const t0 = performance.now();
+        opts.indices = orderPainterSlots(painter, dense ? null : indices, n, keysU32);
+        addSortMs(performance.now() - t0);
+    } else {
+        opts.indices = orderPainterSlots(painter, dense ? null : indices, n, keysU32);
+    }
+    opts.indexCount = n;
+    return sortedFlag | 0;
+}
+
 /**
  * Pack one sprite layer: split light-glow rows when asked, order with the
  * painter when this layer owns one, then write sprites and glow.
  * The caller writes the destination (GPU queue or mesh buffer) and owns pose
- * interpolation.
+ * interpolation. The returned object is reused; read it before the next call.
  *
  * @param {object} spec
- * @param {number} spec.count
- * @param {Uint8Array|null} spec.type
- * @param {object} spec.opts upload options mutated in place
- * @param {boolean} spec.splitGlow pull type 3 into the glow destination
- * @param {Uint32Array|null} [spec.idxEntity]
- * @param {Uint32Array|null} [spec.idxGlow]
- * @param {object|null} [spec.painter]
- * @param {Uint32Array|null} [spec.keysU32]
- * @param {boolean} [spec.dense] order slots 0..count-1 (no index list)
- * @param {boolean} [spec.fillAll] copy every row into idxEntity, then order that list
- * @param {number} [spec.sortedFlag] or-ed into flags when the painter runs
- * @param {(ms: number) => void} [spec.addSortMs]
- * @param {boolean} [spec.timeGlowSort] glow radix is painter time too
- * @param {number|null} [spec.glowCapacity] 0 skips the glow write; null means the writer caps it
- * @param {boolean} [spec.writeEmptyGlow] still write glow when the split found none (hides the mesh)
- * @param {number} [spec.glowIncludeType] no-split glow filter, usually 3; negative skips
- * @param {(opts: object) => number} spec.writeSprites
- * @param {((opts: object) => number)|null} [spec.writeGlow]
- * @param {(count: number, indices: Uint32Array|null) => void} [spec.afterSprites]
- * @param {(count: number, indices: Uint32Array|null) => void} [spec.afterGlow]
  * @returns {{ sprite: number, glow: number, splitParticles: number, flags: number }}
  */
 export function packSpriteLayer(spec) {
@@ -37,34 +41,9 @@ export function packSpriteLayer(spec) {
     const painter = spec.painter || null;
     const keysU32 = spec.keysU32 || null;
     const canSort = !!(painter && keysU32);
+    const addSortMs = spec.addSortMs || null;
+    const sortedFlag = spec.sortedFlag | 0;
     let flags = 0;
-
-    const timed = (fn, record) => {
-        if (!record || !spec.addSortMs) return fn();
-        const t0 = performance.now();
-        const out = fn();
-        spec.addSortMs(performance.now() - t0);
-        return out;
-    };
-
-    const orderSprites = (indices, n, dense) => {
-        if (!canSort || n < 2) {
-            if (indices) {
-                opts.indices = indices;
-                opts.indexCount = n;
-            } else {
-                opts.indices = null;
-                opts.indexCount = 0;
-            }
-            return;
-        }
-        opts.indices = timed(
-            () => orderPainterSlots(painter, dense ? null : indices, n, keysU32),
-            true
-        );
-        opts.indexCount = n;
-        flags |= spec.sortedFlag | 0;
-    };
 
     opts.sortKey = null;
     if (spec.depthMode != null) opts.depthMode = spec.depthMode;
@@ -79,16 +58,19 @@ export function packSpriteLayer(spec) {
         for (let k = 0; k < ne; k++) {
             if (typeArr && typeArr[idxE[k]] === 1) splitParticles++;
         }
-        orderSprites(idxE, ne, false);
+        flags |= orderSpriteIndices(opts, painter, keysU32, idxE, ne, false, addSortMs, sortedFlag);
         const spriteN = spec.writeSprites(opts) | 0;
         if (spec.afterSprites) spec.afterSprites(spriteN, opts.indices);
         const glowOpen = spec.glowCapacity == null || spec.glowCapacity < 0 || spec.glowCapacity > 0;
         if (spec.writeGlow && glowOpen && (ng > 0 || spec.writeEmptyGlow)) {
             if (canSort && ng > 1) {
-                timed(
-                    () => radixSortIndicesBySortKey(idxG, ng, keysU32, painter.scratch, painter.hist),
-                    !!spec.timeGlowSort
-                );
+                if (spec.timeGlowSort && addSortMs) {
+                    const t0 = performance.now();
+                    radixSortIndicesBySortKey(idxG, ng, keysU32, painter.scratch, painter.hist);
+                    addSortMs(performance.now() - t0);
+                } else {
+                    radixSortIndicesBySortKey(idxG, ng, keysU32, painter.scratch, painter.hist);
+                }
             }
             opts.sortKey = null;
             opts.indices = idxG;
@@ -96,21 +78,26 @@ export function packSpriteLayer(spec) {
             glowN = spec.writeGlow(opts) | 0;
             if (spec.afterGlow) spec.afterGlow(glowN, idxG);
         }
-        return { sprite: spriteN, glow: glowN, splitParticles, flags };
+        packResult.sprite = spriteN;
+        packResult.glow = glowN;
+        packResult.splitParticles = splitParticles;
+        packResult.flags = flags;
+        return packResult;
     }
 
+    let spriteN = 0;
     if (spec.fillAll && spec.idxEntity && canSort && count >= 2) {
         const ne = fillQueueIndices(typeArr, count, -1, -1, spec.idxEntity);
-        orderSprites(spec.idxEntity, ne, false);
+        flags |= orderSpriteIndices(opts, painter, keysU32, spec.idxEntity, ne, false, addSortMs, sortedFlag);
     } else if (spec.presetIndices) {
-        orderSprites(spec.presetIndices, count, false);
+        flags |= orderSpriteIndices(opts, painter, keysU32, spec.presetIndices, count, false, addSortMs, sortedFlag);
     } else if (spec.dense) {
-        orderSprites(null, count, true);
+        flags |= orderSpriteIndices(opts, painter, keysU32, null, count, true, addSortMs, sortedFlag);
     } else {
         opts.indices = null;
         opts.indexCount = 0;
     }
-    const spriteN = spec.writeSprites(opts) | 0;
+    spriteN = spec.writeSprites(opts) | 0;
     if (spec.afterSprites) spec.afterSprites(spriteN, opts.indices);
 
     const glowType = spec.glowIncludeType | 0;
@@ -120,5 +107,9 @@ export function packSpriteLayer(spec) {
         glowN = spec.writeGlow(opts) | 0;
         opts.includeType = -1;
     }
-    return { sprite: spriteN, glow: glowN, splitParticles, flags };
+    packResult.sprite = spriteN;
+    packResult.glow = glowN;
+    packResult.splitParticles = splitParticles;
+    packResult.flags = flags;
+    return packResult;
 }
