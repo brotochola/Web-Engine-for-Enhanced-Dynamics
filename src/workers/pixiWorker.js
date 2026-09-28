@@ -243,8 +243,18 @@ function fetchEngineShader(path) {
 }
 
 // OPTIMIZED: Pre-defined comparator function for light sorting (avoids closure allocation per frame)
-function sortByDistSq(a, b) {
-  return a.distSq - b.distSq;
+function sortPrefixByDistSq(arr, count) {
+  const n = count | 0;
+  for (let i = 1; i < n; i++) {
+    const item = arr[i];
+    const dist = item.distSq;
+    let j = i - 1;
+    while (j >= 0 && arr[j].distSq > dist) {
+      arr[j + 1] = arr[j];
+      j--;
+    }
+    arr[j + 1] = item;
+  }
 }
 
 import { RENDERER_STATS, createStatsWriter } from '../util/workersUtils.js';
@@ -604,12 +614,8 @@ class PixiRenderer extends AbstractWorker {
     // Reads from SharedArrayBuffer via static Sun class (initialized by AbstractWorker)
     this.sunEnabled = false;
 
-    // Reusable pool for light sorting (GC optimization)
-    this._lightPool = [];
-    this._lightPoolSize = 0;
-
     // Pre-computed visible lights (computed once per frame, used by updateLighting shader)
-    this._visibleLightsAll = [];      // All visible lights (for shader uniforms)
+    this._visibleLightsAll = [];
     this._visibleLightsAllCount = 0;
 
     this.shadowSpritesEnabled = false;
@@ -3367,9 +3373,7 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
       this._visibleLightsAll[allIdx].distSq = distSq;
     }
 
-    // Sort by distance (closest first), truncate to active size
-    this._visibleLightsAll.length = this._visibleLightsAllCount;
-    this._visibleLightsAll.sort(sortByDistSq);
+    sortPrefixByDistSq(this._visibleLightsAll, this._visibleLightsAllCount);
   }
 
   /**
@@ -5344,6 +5348,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // baseAmbient is the night/minimum light level (when sun is down)
       this.baseAmbient = lightingConfig.baseAmbient !== undefined ? lightingConfig.baseAmbient : 0.05;
       this.maxLights = lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
+      const lightSlots = Math.max(1, this.maxLights | 0);
+      this._visibleLightsAll = new Array(lightSlots);
+      for (let i = 0; i < lightSlots; i++) {
+        this._visibleLightsAll[i] = { entityId: 0, distSq: 0 };
+      }
       this.maxShadowCastingLights =
         lightingConfig.maxShadowCastingLights !== undefined
           ? lightingConfig.maxShadowCastingLights
