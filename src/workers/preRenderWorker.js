@@ -36,6 +36,7 @@ import {
 } from '../util/utils.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { orderSortKey, spriteYSortKey, zSortBand, createPainterState, mergeSortedRunsBySortKey } from '../util/sortIndexByKey.js';
+import { viewSortKeyBand, sortKeyBelongsToBand } from '../render/viewSortKeyBands.js';
 import {
     fillOwnedIds,
     listSlice,
@@ -566,6 +567,13 @@ class PreRenderWorker extends AbstractWorker {
         });
         this._packGpuSpritesOn = spritePipe.packGpuSprites;
         this._sortSprites = spritePipe.sortSprites;
+        // Contiguous view Y-bands when N>1 and sortSprites is preRender (not merge).
+        // Default worker count stays 1 — this path is opt-in via numberOfPreRenderWorkers.
+        this._sortKeyBandsOn = this._sharded
+            && this._sortSprites === SORT_SPRITES_PRERENDER
+            && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER;
+        this._bandPixelMinimum = Number.NEGATIVE_INFINITY;
+        this._bandPixelLimit = Number.POSITIVE_INFINITY;
         this._gpuPackCtx = {};
         this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
@@ -1077,6 +1085,7 @@ class PreRenderWorker extends AbstractWorker {
 
         this._frameCameraBoundsValid = this.cameraData !== null;
         if (this._frameCameraBoundsValid) this.calculateCameraBounds();
+        this._latchViewSortKeyBand();
 
         this.collectTimeThisFrame = 0;
         this.sortTimeThisFrame = 0;
@@ -1093,30 +1102,53 @@ class PreRenderWorker extends AbstractWorker {
         this._emitPrefix = 0;
         this.renderQueueFrame = frameId - 1;
         this._queueBuf = bufIdx;
-        this._ownedSpriteIter = this._ownedList(this._querySpriteRenderer || [SpriteRenderer]);
-        this._ownedLightIter = this._queryLightEmitter ? this._ownedList(this._queryLightEmitter) : null;
+        const sortKeyBands = this._sortKeyBandsOn;
+        // Y-bands: every worker walks the camera-visible set and keeps its
+        // sort-key strip. Id-block ownership is the merge path, not this one.
+        // Adobe advance still uses ownership so playback does not tick N times.
+        this._ownedSpriteIter = sortKeyBands
+            ? null
+            : this._ownedList(this._querySpriteRenderer || [SpriteRenderer]);
+        this._ownedLightIter = sortKeyBands
+            ? null
+            : (this._queryLightEmitter ? this._ownedList(this._queryLightEmitter) : null);
         this._deferLightPublish = true;
         if (this.visibilityPolygonsEnabled) this._bindVpPrivate();
 
         try {
-            this._frameAdobeEntities = AdobeAnimComponent.active
+            const adobeOwned = AdobeAnimComponent.active
                 ? this._ownedList(this._queryAdobeAnim || [AdobeAnimComponent])
                 : (this._emptyAdobeEntities || (this._emptyAdobeEntities = []));
+            this._frameAdobeEntities = adobeOwned;
 
             if (detail) t0 = performance.now();
             this.advanceAdobeAnimations(deltaTime);
             if (detail) this.adobeTimeThisFrame = performance.now() - t0;
 
             if (detail) t0 = performance.now();
-            this._collectListSlice('visibleParticlesData', 'collectVisibleParticles');
-            const lfCount = this.liquidFun?.count ? (this.liquidFun.count[0] | 0) : 0;
-            this._lfRange = listSlice(lfCount, this.workerIndex, this.workerCount);
-            this.collectVisibleLiquidFun();
-            this._lfRange = null;
-            this.collectVisibleEntities();
-            this.collectVisibleAdobeAnimations();
-            this._collectListSlice('visibleDecorationsData', 'collectVisibleDecorations');
-            this._collectListSlice('visibleBulletsData', 'collectVisibleBullets');
+            if (sortKeyBands) {
+                this.collectVisibleParticles();
+                this._lfRange = null;
+                this.collectVisibleLiquidFun();
+                this.collectVisibleEntities();
+                this._frameAdobeEntities = AdobeAnimComponent.active
+                    ? Query.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent])
+                    : adobeOwned;
+                this.collectVisibleAdobeAnimations();
+                this._frameAdobeEntities = adobeOwned;
+                this.collectVisibleDecorations();
+                this.collectVisibleBullets();
+            } else {
+                this._collectListSlice('visibleParticlesData', 'collectVisibleParticles');
+                const lfCount = this.liquidFun?.count ? (this.liquidFun.count[0] | 0) : 0;
+                this._lfRange = listSlice(lfCount, this.workerIndex, this.workerCount);
+                this.collectVisibleLiquidFun();
+                this._lfRange = null;
+                this.collectVisibleEntities();
+                this.collectVisibleAdobeAnimations();
+                this._collectListSlice('visibleDecorationsData', 'collectVisibleDecorations');
+                this._collectListSlice('visibleBulletsData', 'collectVisibleBullets');
+            }
             if (detail) this.collectTimeThisFrame = performance.now() - t0;
 
             this._collectVisibleLights();
@@ -1754,6 +1786,48 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
+     * Latch this worker's half-open foot-pixel band for the current camera view.
+     * No-op range when Y-bands are off (N=1 or preRenderMerge).
+     */
+    _latchViewSortKeyBand() {
+        if (!this._sortKeyBandsOn || !this._frameCameraBoundsValid) {
+            this._bandPixelMinimum = Number.NEGATIVE_INFINITY;
+            this._bandPixelLimit = Number.POSITIVE_INFINITY;
+            return;
+        }
+        const world = screenBoundsToWorldBounds(this._cameraBounds, 0, 0, this._worldBounds);
+        const band = viewSortKeyBand(
+            world.minY,
+            world.maxY - world.minY,
+            this.workerIndex,
+            this.workerCount
+        );
+        this._bandPixelMinimum = band.pixelMinimum;
+        this._bandPixelLimit = band.pixelLimit;
+    }
+
+    /**
+     * Whole foot-pixel used to pick a Y-band. Matches spriteYSortKey's round(y)
+     * so innerZ of that pixel cannot cross a cut.
+     */
+    _bandMembershipPixel(type, index, y) {
+        if (type === 0 || type === 6) {
+            const pose = this._displayPoseOut;
+            this._displayPose(index, pose);
+            return this._spriteSortPixel(index, pose);
+        }
+        if (type === 2) {
+            const parent = DecorationComponent.parentEntityIndex[index];
+            if (parent !== this._noParent && Transform.active && Transform.active[parent]) {
+                return Math.round(Transform.y[parent]);
+            }
+            return Math.round(DecorationComponent.y[index]);
+        }
+        // Particles, bullets, glow, liquid: `y` is already worldY * Y_SORT_K (+ bias).
+        return Math.round(y / Y_SORT_K);
+    }
+
+    /**
      * Collect visible particles for render queue
      * Uses visibleParticlesData SAB populated by particle_worker
      */
@@ -2122,6 +2196,11 @@ class PreRenderWorker extends AbstractWorker {
     collectRenderable(type, index, y) {
         if (!this.renderQueueEnabled) return;
 
+        if (this._sortKeyBandsOn) {
+            const pixel = this._bandMembershipPixel(type, index, y);
+            if (!sortKeyBelongsToBand(pixel, this._bandPixelMinimum, this._bandPixelLimit)) return;
+        }
+
         let mask = 0;
         if (type === 0) mask = SpriteRenderer.layerMask ? SpriteRenderer.layerMask[index] | 0 : 0;
         else if (type === 1) mask = ParticleComponent.layerMask ? ParticleComponent.layerMask[index] | 0 : 0;
@@ -2249,18 +2328,26 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    _spriteSortY(index, pose) {
+        return spriteYSortKey(this._spriteSortFootY(index, pose), Y_SORT_K);
+    }
+
+    _spriteSortPixel(index, pose) {
+        return Math.round(this._spriteSortFootY(index, pose));
+    }
+
     /**
      * Y-sort line is the sprite's bottom edge, not the pose.
      * Identity rotation: y + (1 - anchorY) * height * |scaleY|.
      * Rotation uses the same local offset as the sprite vertex shader.
      */
-    _spriteSortY(index, pose) {
+    _spriteSortFootY(index, pose) {
         const anchorX = SpriteRenderer.anchorX;
         const anchorY = SpriteRenderer.anchorY;
         const scaleX = SpriteRenderer.scaleX;
         const scaleY = SpriteRenderer.scaleY;
         if (!anchorX || !anchorY || !scaleX || !scaleY) {
-            return spriteYSortKey(pose.y, Y_SORT_K);
+            return pose.y;
         }
         const textureId = this._entityTextureIdOrResolve(index);
         let w = 0;
@@ -2271,8 +2358,7 @@ class PreRenderWorker extends AbstractWorker {
         }
         const ox = (0.5 - anchorX[index]) * w * scaleX[index];
         const oy = (1 - anchorY[index]) * h * Math.abs(scaleY[index]);
-        const footY = pose.y + ox * pose.rotS + oy * pose.rotC;
-        return spriteYSortKey(footY, Y_SORT_K);
+        return pose.y + ox * pose.rotS + oy * pose.rotC;
     }
 
     _writeRenderable(type, index, y, layerId) {
@@ -3609,13 +3695,23 @@ class PreRenderWorker extends AbstractWorker {
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER) return false;
         const sort = this._sortSprites;
         if (sort === SORT_SPRITES_PRERENDER_MERGE) return true;
-        if (sort === SORT_SPRITES_PRERENDER) return !!(forceJoined || !this._sharded);
+        if (sort === SORT_SPRITES_PRERENDER) {
+            if (forceJoined || !this._sharded) return true;
+            // Each Y-band paints locally when every sprite on the layer has zIndex 0.
+            return !!(this._sortKeyBandsOn && SpriteRenderer.zIndexUsers() === 0);
+        }
         return false;
     }
 
     _copyGpuSprites() {
-        return this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER
-            && this._sortSprites !== SORT_SPRITES_PRERENDER;
+        if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER) return false;
+        if (this._sortSprites === SORT_SPRITES_PRERENDER_MERGE) return true;
+        // Prefix-concat of per-band packed rows. Joined painter path skips this copy.
+        return !!(
+            this._sortSprites === SORT_SPRITES_PRERENDER
+            && this._sortKeyBandsOn
+            && SpriteRenderer.zIndexUsers() === 0
+        );
     }
 
     _stampPackedSortKeys(dst, n, indices, sortKey) {
@@ -3759,7 +3855,8 @@ class PreRenderWorker extends AbstractWorker {
         return this._sharded
             && this._sortSprites === SORT_SPRITES_PRERENDER
             && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER
-            && this._queueHasOrder();
+            && this._queueHasOrder()
+            && !(this._sortKeyBandsOn && SpriteRenderer.zIndexUsers() === 0);
     }
 
     _copyGpuShardOutputs(bufIdx, copyPacked = true, copyStampCookie = true, copySprites = true) {
@@ -3829,6 +3926,14 @@ class PreRenderWorker extends AbstractWorker {
             sprite = this._mergePackedGpuStream(dst.sprites, dst.spritesU32, sprite, PR_STREAM_GPU_SPRITE, caps.maxSprites | 0);
             glow = this._mergePackedGpuStream(dst.glow, dst.glowU32, glow, PR_STREAM_GPU_GLOW, caps.maxGlow | 0);
             if (tSort) this.sortTimeThisFrame += performance.now() - tSort;
+            flags = GPU_FLAG_SORTED;
+            const types = views ? views.type : null;
+            const soaN = views ? (views.count[0] | 0) : 0;
+            if (types) {
+                for (let i = 0; i < soaN; i++) if (types[i] === 1) particles++;
+            }
+        } else if (n > 1 && this._sortKeyBandsOn && SpriteRenderer.zIndexUsers() === 0) {
+            // Bands already painted and copied at prefix offsets — dense concat in order.
             flags = GPU_FLAG_SORTED;
             const types = views ? views.type : null;
             const soaN = views ? (views.count[0] | 0) : 0;

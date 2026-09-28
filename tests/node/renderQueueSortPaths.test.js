@@ -92,6 +92,15 @@ test('preRender writes the SoA row and the CPU painter packs it', () => {
   assert.doesNotMatch(preRender, /_writeSpriteKeys/);
 });
 
+test('sharded preRender Y-bands paint locally; zIndex falls back to joined painter', () => {
+  assert.match(preRender, /_sortKeyBandsOn/);
+  assert.match(preRender, /_latchViewSortKeyBand/);
+  assert.match(preRender, /viewSortKeyBand\(/);
+  assert.match(preRender, /sortKeyBelongsToBand\(/);
+  assert.match(preRender, /zIndexUsers\(\) === 0/);
+  assert.match(preRender, /_joinedPainterNeeded\(\)/);
+});
+
 test('preRender persist skips Adobe expansion (type 6 write-index mismatch)', () => {
   const fn = preRender.indexOf('_type0PersistHit(');
   assert.ok(fn >= 0);

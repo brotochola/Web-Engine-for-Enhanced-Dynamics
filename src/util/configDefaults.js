@@ -641,8 +641,11 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
   packGpuSprites: 'preRender',
   /**
    * Who runs the CPU painter (ySort / zIndex).
-   * `none` = emit order. `preRender` = one global painter (joined SoA if N>1).
-   * `preRenderMerge` = each shard paints, publisher k-way merges.
+   * `none` = emit order. `preRender` = one painter when N=1; when N>1 contiguous
+   * view Y-bands each paint and the publisher concatenates by prefix count
+   * (falls back to one joined painter if any sprite has zIndex != 0).
+   * `preRenderMerge` = each shard paints, publisher k-way merges. Not used with
+   * Y-bands in the same frame.
    * `pixi` = pixi paints the concatenated SoA.
    * Forced to `none` when renderer.ySort is off.
    */
