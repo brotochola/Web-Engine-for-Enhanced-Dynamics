@@ -40,7 +40,6 @@ import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
 import { ySortEnabled } from '../render/rendererBackend.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
-import { preRenderJoinWords } from './preRenderOwner.js';
 import { NavGrid } from '../core/navGrid.js';
 import { Grid } from '../core/grid.js';
 import { Ray } from '../core/ray.js';
@@ -494,11 +493,7 @@ function initializeLightingAndRenderBuffers(scene) {
   new Int32Array(buffers.renderQueueSync)[1] = 0;
   scene.maxVisibleRenderables = maxVisibleRenderables;
 
-  const gpuCaps = gpuQueueCaps(
-    maxVisibleRenderables,
-    config.lighting,
-    scene.numberOfPreRenderWorkers
-  );
+  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
   const gpuQueueBufferSize = computeGpuQueueBufferSize(gpuCaps);
   buffers.gpuQueueDataA = new SharedArrayBuffer(gpuQueueBufferSize);
   buffers.gpuQueueDataB = new SharedArrayBuffer(gpuQueueBufferSize);
@@ -825,10 +820,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   buffers.logicStats = new SharedArrayBuffer(
     LOGIC_STATS.BUFFER_SIZE_PER_WORKER * scene.numberOfLogicWorkers
   );
-  buffers.preRenderStats = new SharedArrayBuffer(
-    PRE_RENDER_STATS.BUFFER_SIZE_PER_WORKER * numberOfPreRenderWorkers
-  );
-  buffers.preRenderJoin = new SharedArrayBuffer(preRenderJoinWords(numberOfPreRenderWorkers) * 4);
+  buffers.preRenderStats = new SharedArrayBuffer(PRE_RENDER_STATS.BUFFER_SIZE_PER_WORKER);
 
   scene.camera.x = config.worldWidth / 2 - config.canvasWidth / 2;
   scene.camera.y = config.worldHeight / 2 - config.canvasHeight / 2;

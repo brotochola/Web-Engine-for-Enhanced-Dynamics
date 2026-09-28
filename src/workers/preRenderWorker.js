@@ -35,33 +35,7 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { orderSortKey, spriteYSortKey, zSortBand, createPainterState, mergeSortedRunsBySortKey } from '../util/sortIndexByKey.js';
-import { viewSortKeyBand, sortKeyBelongsToBand } from '../render/viewSortKeyBands.js';
-import {
-    fillOwnedIds,
-    listSlice,
-    prefixAt,
-    sumCounts,
-    PR_JOIN_ARRIVED_A,
-    PR_JOIN_EPOCH_A,
-    PR_JOIN_ARRIVED_B,
-    PR_JOIN_EPOCH_B,
-    PR_JOIN_START,
-    PR_JOIN_POSE,
-    PR_JOIN_STAMP_CUR,
-    PR_STREAM_SPRITE,
-    PR_STREAM_VP,
-    PR_STREAM_SELF_LIT,
-    PR_STREAM_LIGHTS,
-    PR_STREAM_CUSTOM0,
-    PR_CUSTOM_STREAMS,
-    PR_STREAM_GPU_SPRITE,
-    PR_STREAM_GPU_GLOW,
-    PR_STREAM_GPU_SUN,
-    PR_STREAM_GPU_STAMP,
-    PR_STREAM_GPU_COOKIE,
-    preRenderCountSlot,
-} from '../util/preRenderOwner.js';
+import { orderSortKey, spriteYSortKey, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -74,7 +48,7 @@ import {
     MAX_POLYGON_VERTICES,
     SPRITE_TILE_MODE,
 } from '../util/configDefaults.js';
-import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER_MERGE } from '../render/rendererBackend.js';
+import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
@@ -84,14 +58,10 @@ import {
     GPU_SPACE_SCREEN,
     GPU_FLAG_SORTED,
     createGpuQueueViews,
-    createGpuQueueScratch,
     clearGpuQueueHeader,
     writeGpuQueueHeader,
     packInstancedRows,
     makePackContext,
-    copyPackedRows,
-    gatherInstancedRows,
-    rewritePackedDepth,
 } from '../render/gpuQueueLayout.js';
 import {
     compactShadowCasterIndices,
@@ -100,19 +70,11 @@ import {
     rtPixelScale,
 } from '../render/gpuShadowCasters.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
-import { inViewYBand } from '../util/cameraGridCollect.js';
 import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 const INVALID_TEXTURE_ID = 0xFFFF;
 const EMPTY_OWNED_IDS = new Uint32Array(0);
-
-const MAIN_COLUMN_KEYS = [
-    'count', 'x', 'y', 'scaleX', 'scaleY', 'rotC', 'rotS', 'alpha', 'tint', 'textureId',
-    'anchorX', 'anchorY', 'type', 'sortKey', 'repeatX', 'repeatY',
-    'tileMode', 'tileOffsetU', 'tileOffsetV', 'tileMulX', 'tileMulY',
-    'shadowH', 'shadowOffX', 'shadowOffY',
-];
 const TILE_MODE_LOCAL = SPRITE_TILE_MODE.LOCAL;
 
 /** Stretch / skip tiling on non-entity queue rows (particles, adobe pieces, …). */
@@ -482,33 +444,12 @@ class PreRenderWorker extends AbstractWorker {
      */
     async initialize(data) {
         const preRenderConfig = this.config.preRender || {};
-        const configuredCount = preRenderConfig.numberOfPreRenderWorkers | 0;
-        this.workerCount = (data.workerCount | 0) > 0
-            ? (data.workerCount | 0)
-            : (configuredCount > 0 ? configuredCount : 1);
-        this.workerIndex = data.workerIndex | 0;
-        const configuredBlock = (data.entityBlockSize | 0) > 0
-            ? (data.entityBlockSize | 0)
-            : (preRenderConfig.entityBlockSize | 0);
-        this.entityBlockSize = configuredBlock > 0 ? configuredBlock : 256;
-        this._sharded = this.workerCount > 1;
-        this._seenStart = 0;
-        this._epochA = 0;
-        this._epochB = 0;
-        this._join = null;
-        if (this._sharded) {
-            if (!data.buffers?.preRenderJoin) {
-                throw new Error('[PRE_RENDER] numberOfPreRenderWorkers > 1 requires preRenderJoin');
-            }
-            this._join = new Int32Array(data.buffers.preRenderJoin);
-        }
 
-        // Initialize stats buffer (stride per worker; index 0 matches the old single buffer)
         if (data.buffers.preRenderStats) {
             this.stats = createMultiWorkerStatsWriter(
                 data.buffers.preRenderStats,
                 PRE_RENDER_STATS,
-                this.workerIndex
+                0
             );
         }
 
@@ -561,19 +502,11 @@ class PreRenderWorker extends AbstractWorker {
         this._ySort = ySortEnabled(this._ySortMode);
         const spritePipe = resolveSpritePipeline({
             ySort: this._ySortMode,
-            workerCount: this.workerCount,
             packGpuSprites: preRenderConfig.packGpuSprites,
             sortSprites: preRenderConfig.sortSprites,
         });
         this._packGpuSpritesOn = spritePipe.packGpuSprites;
         this._sortSprites = spritePipe.sortSprites;
-        // Contiguous view Y-bands when N>1 and sortSprites is preRender (not merge).
-        // Default worker count stays 1 — this path is opt-in via numberOfPreRenderWorkers.
-        this._sortKeyBandsOn = this._sharded
-            && this._sortSprites === SORT_SPRITES_PRERENDER
-            && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER;
-        this._bandPixelMinimum = Number.NEGATIVE_INFINITY;
-        this._bandPixelLimit = Number.POSITIVE_INFINITY;
         this._gpuPackCtx = {};
         this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
@@ -644,19 +577,9 @@ class PreRenderWorker extends AbstractWorker {
                     createGpuQueueViews(data.gpuQueue.dataA, caps),
                     createGpuQueueViews(data.gpuQueue.dataB, caps),
                 ];
-                this._gpuPrivate = this._sharded ? createGpuQueueScratch(caps) : null;
                 this._gpuIdxEntity = new Uint32Array(maxItems);
                 this._gpuIdxGlow = new Uint32Array(maxItems);
                 this._gpuPackCtx = {};
-                const mergeCap = Math.max(1, caps.maxSprites | 0, caps.maxGlow | 0, maxItems);
-                const mergeRuns = Math.max(16, this.workerCount | 0);
-                this._gpuMergeIdx = new Uint32Array(mergeCap);
-                this._gpuMergeHeads = new Uint32Array(mergeRuns);
-                this._gpuMergeOffsets = new Int32Array(mergeRuns);
-                this._gpuMergeLens = new Int32Array(mergeRuns);
-                this._gpuMergeScratch = new Float32Array(
-                    Math.max(1, Math.max(caps.maxSprites | 0, caps.maxGlow | 0) * GPU_SPRITE_FLOATS)
-                );
                 this._gpuCasterIdx = new Uint32Array(Math.max(1, caps.maxSun | 0, maxItems));
                 this._gpuStampTmp = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
                 this._gpuStampDist = new Float32Array(Math.max(1, caps.maxStamp | 0, maxItems));
@@ -974,7 +897,7 @@ class PreRenderWorker extends AbstractWorker {
         const detail = this.collectDetailedStats;
         const started = detail ? performance.now() : 0;
         const sortBefore = this.sortTimeThisFrame;
-        this._packGpuQueues(this.gpuQueueBuffers[this._queueBuf], true, null, false);
+        this._packGpuQueues(this.gpuQueueBuffers[this._queueBuf]);
         if (detail) {
             const packed = performance.now() - started;
             const sortDelta = this.sortTimeThisFrame - sortBefore;
@@ -994,10 +917,6 @@ class PreRenderWorker extends AbstractWorker {
      * Update method called each frame
      */
     update(deltaTime, dtRatio) {
-        if (this._sharded) {
-            this._updateSharded(deltaTime, dtRatio);
-            return;
-        }
         this.skippedFramesThisFrame = 0;
         if (this.pixiIsMoreThanOneFrameBehind()) {
             this.skippedFramesThisFrame = 1;
@@ -1040,443 +959,6 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) this.visibilityTimeThisFrame = performance.now() - started;
 
         this.publishFrame();
-    }
-
-    /**
-     * N workers. Collect and emit into private buffers, then two joins and a
-     * packed copy into the double-buffer pixi reads. N=1 never enters here.
-     */
-    _updateSharded(deltaTime, dtRatio) {
-        this.skippedFramesThisFrame = 0;
-        this.waitTimeThisFrame = 0;
-        const frameId = this._awaitPreRenderFrame();
-        const bufIdx = (frameId - 1) & 1;
-        this._shardBuf = bufIdx;
-
-        if (this.renderQueueEnabled) {
-            this._setWriteBuffer(bufIdx);
-            if (this.visibilityPolygonsEnabled) {
-                this._vpWriteBuffer = this._vpBuffers[bufIdx];
-                if (this._selfLitBuffers) this._selfLitWriteBuffer = this._selfLitBuffers[bufIdx];
-            }
-        }
-
-        const poseReady = Atomics.load(this._join, PR_JOIN_POSE);
-        super._latchPose(false, poseReady);
-        this._rbActive = RigidBody.active;
-        this._updatePoseTiming();
-        this._latchLiquidFunPrevPose();
-        if (this.workerIndex === 0 && this.renderQueuePoseReady) {
-            this.renderQueuePoseReady[0] = this._poseReadyFrame;
-        }
-
-        this.latchCamera(this.workerIndex === 0);
-
-        this.visibleEntitiesCount = 0;
-        this.visibleParticlesCount = 0;
-        this.visibleDecorationsCount = 0;
-        this.shadowsUpdatedThisFrame = 0;
-        this._renderableCount = 0;
-
-        const zoom = this._frameCameraZoom;
-        if (zoom >= this.decorationFadeStartZoom) this._decorationZoomAlpha = 1;
-        else if (zoom <= this.decorationHideZoom) this._decorationZoomAlpha = 0;
-        else this._decorationZoomAlpha = (zoom - this.decorationHideZoom) / (this.decorationFadeStartZoom - this.decorationHideZoom);
-
-        this._frameCameraBoundsValid = this.cameraData !== null;
-        if (this._frameCameraBoundsValid) this.calculateCameraBounds();
-        this._latchViewSortKeyBand();
-
-        this.collectTimeThisFrame = 0;
-        this.sortTimeThisFrame = 0;
-        this.emitTimeThisFrame = 0;
-        this.customLayerTimeThisFrame = 0;
-        this.shadowQTimeThisFrame = 0;
-        this.visibilityTimeThisFrame = 0;
-        this.adobeTimeThisFrame = 0;
-
-        const detail = this.collectDetailedStats;
-        let t0 = 0;
-        this._shardExpanded = 0;
-        this._emitWriteCount = 0;
-        this._emitPrefix = 0;
-        this.renderQueueFrame = frameId - 1;
-        this._queueBuf = bufIdx;
-        const sortKeyBands = this._sortKeyBandsOn;
-        // Y-bands: every worker walks the camera-visible set and keeps its
-        // sort-key strip. Id-block ownership is the merge path, not this one.
-        // Adobe advance still uses ownership so playback does not tick N times.
-        this._ownedSpriteIter = sortKeyBands
-            ? null
-            : this._ownedList(this._querySpriteRenderer || [SpriteRenderer]);
-        this._ownedLightIter = sortKeyBands
-            ? null
-            : (this._queryLightEmitter ? this._ownedList(this._queryLightEmitter) : null);
-        this._deferLightPublish = true;
-        if (this.visibilityPolygonsEnabled) this._bindVpPrivate();
-
-        try {
-            const adobeOwned = AdobeAnimComponent.active
-                ? this._ownedList(this._queryAdobeAnim || [AdobeAnimComponent])
-                : (this._emptyAdobeEntities || (this._emptyAdobeEntities = []));
-            this._frameAdobeEntities = adobeOwned;
-
-            if (detail) t0 = performance.now();
-            this.advanceAdobeAnimations(deltaTime);
-            if (detail) this.adobeTimeThisFrame = performance.now() - t0;
-
-            if (detail) t0 = performance.now();
-            if (sortKeyBands) {
-                this.collectVisibleParticles();
-                this._lfRange = null;
-                this.collectVisibleLiquidFun();
-                this.collectVisibleEntities();
-                this._frameAdobeEntities = AdobeAnimComponent.active
-                    ? Query.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent])
-                    : adobeOwned;
-                this.collectVisibleAdobeAnimations();
-                this._frameAdobeEntities = adobeOwned;
-                this.collectVisibleDecorations();
-                this.collectVisibleBullets();
-            } else {
-                this._collectListSlice('visibleParticlesData', 'collectVisibleParticles');
-                const lfCount = this.liquidFun?.count ? (this.liquidFun.count[0] | 0) : 0;
-                this._lfRange = listSlice(lfCount, this.workerIndex, this.workerCount);
-                this.collectVisibleLiquidFun();
-                this._lfRange = null;
-                this.collectVisibleEntities();
-                this.collectVisibleAdobeAnimations();
-                this._collectListSlice('visibleDecorationsData', 'collectVisibleDecorations');
-                this._collectListSlice('visibleBulletsData', 'collectVisibleBullets');
-            }
-            if (detail) this.collectTimeThisFrame = performance.now() - t0;
-
-            this._collectVisibleLights();
-            this._bindLocalLights();
-
-            if (detail) t0 = performance.now();
-            this.buildVisibilityPolygons();
-            if (detail) this.visibilityTimeThisFrame = performance.now() - t0;
-
-            this._storeShardCounts();
-        } finally {
-            this._ownedSpriteIter = null;
-            this._ownedLightIter = null;
-            this._deferLightPublish = false;
-            this._lfRange = null;
-            if (this._savedVisibleLights) {
-                this.visibleLightsData = this._savedVisibleLights;
-                this._savedVisibleLights = null;
-            }
-            if (this.renderQueueEnabled) this._setWriteBuffer(bufIdx);
-            if (this.visibilityPolygonsEnabled) {
-                this._vpWriteBuffer = this._vpBuffers[bufIdx];
-                if (this._selfLitBuffers && this._selfLitBuffers[bufIdx]) {
-                    this._selfLitWriteBuffer = this._selfLitBuffers[bufIdx];
-                }
-            }
-        }
-
-        this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
-        const detailEmit = this.collectDetailedStats;
-        const tEmit = detailEmit ? performance.now() : 0;
-        if (this._shardFrameNeedsCopy()) {
-            this._emitPrefix = -1;
-            if (this.renderQueueEnabled) {
-                this._bindMainPrivate();
-                this.buildRenderQueue(deltaTime);
-                this._bindCustomPrivate();
-                this.buildCustomLayerQueues(deltaTime);
-                this._storePrivateEmitCounts();
-            }
-            this._packCopyJoinedShadows(bufIdx, true, this._mainPrivate);
-        } else if (this.renderQueueEnabled) {
-            this._bindDirectMain(bufIdx);
-            this.buildRenderQueue(deltaTime);
-            this._bindDirectCustom(bufIdx);
-            this.buildCustomLayerQueues(deltaTime);
-            this._packCopyJoinedShadows(bufIdx, false, null);
-        } else {
-            this._copyShardOutputs(bufIdx, false);
-        }
-        if (detailEmit) this.emitTimeThisFrame += performance.now() - tEmit;
-        if (this.renderQueueBuffers) {
-            this.renderQueueCount = this.renderQueueBuffers[bufIdx].count;
-        }
-        this._frameJoin(PR_JOIN_ARRIVED_B, PR_JOIN_EPOCH_B, '_epochB', () => {
-            this._publishShardFrame(frameId, bufIdx);
-        });
-    }
-
-    _atomicsWait(ta, index, value) {
-        const t0 = performance.now();
-        Atomics.wait(ta, index, value);
-        this.waitTimeThisFrame += performance.now() - t0;
-    }
-
-    _awaitPreRenderFrame() {
-        if (this.workerIndex === 0) {
-            this._waitPreRenderBackpressure();
-            const poseReady = this.poseSync ? Atomics.load(this.poseSync, 0) : 0;
-            Atomics.store(this._join, PR_JOIN_POSE, poseReady);
-            const frameId = Atomics.add(this._join, PR_JOIN_START, 1) + 1;
-            Atomics.notify(this._join, PR_JOIN_START, this.workerCount);
-            return frameId;
-        }
-        const seen = this._seenStart | 0;
-        while (Atomics.load(this._join, PR_JOIN_START) === seen) {
-            this._atomicsWait(this._join, PR_JOIN_START, seen);
-        }
-        const frameId = Atomics.load(this._join, PR_JOIN_START);
-        this._seenStart = frameId;
-        return frameId;
-    }
-
-    _waitPreRenderBackpressure() {
-        if (!this.backpressure || !this.renderQueueSync) return;
-        let published = Atomics.load(this.renderQueueSync, 0);
-        if (published <= 0) return;
-        let consumed = Atomics.load(this.renderQueueSync, 1);
-        while (published > consumed + 1) {
-            this._atomicsWait(this.renderQueueSync, 1, consumed);
-            consumed = Atomics.load(this.renderQueueSync, 1);
-            published = Atomics.load(this.renderQueueSync, 0);
-        }
-    }
-
-    _frameJoin(arrivedSlot, epochSlot, seenField, beforeRelease) {
-        const seen = this[seenField] | 0;
-        const ticket = Atomics.add(this._join, arrivedSlot, 1) + 1;
-        if (ticket === this.workerCount) {
-            if (beforeRelease) beforeRelease();
-            Atomics.store(this._join, arrivedSlot, 0);
-            const next = seen + 1;
-            Atomics.store(this._join, epochSlot, next);
-            Atomics.notify(this._join, epochSlot, this.workerCount);
-            this[seenField] = next;
-            return true;
-        }
-        while (Atomics.load(this._join, epochSlot) === seen) {
-            this._atomicsWait(this._join, epochSlot, seen);
-        }
-        this[seenField] = Atomics.load(this._join, epochSlot);
-        return false;
-    }
-
-    /**
-     * Pack sprites + local sun, concat, then stamp half the lights against joined sun.
-     * Cookies stay on worker 0. Does not re-pack shadows at publish.
-     * Direct emit (no SoA copy) packs GPU sprites into the shared window — bunny path.
-     */
-    _packCopyJoinedShadows(bufIdx, copyMain, packViews) {
-        const caps = this.gpuQueueCaps;
-        const dst = this.gpuQueueBuffers && this.gpuQueueBuffers[bufIdx];
-        if (!copyMain && dst && caps && !this.shadowsEnabled) {
-            const fit = this._fitted(PR_STREAM_SPRITE, caps.maxSprites);
-            const win = this._gpuSpriteWindow(dst, fit);
-            if (win) this._packGpuQueues(win, false);
-            else if (this._gpuPrivate) this._packGpuQueues(this._gpuPrivate, false);
-            this._storeGpuStreamCounts();
-            this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
-            return;
-        }
-        if (this._gpuPrivate) {
-            this._packGpuQueues(this._gpuPrivate, true, packViews);
-            this._storeGpuStreamCounts();
-        }
-        this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA');
-        this._copyShardOutputs(bufIdx, copyMain);
-        this._copyGpuShardOutputs(bufIdx, true, false, this._copyGpuSprites());
-        if (this.shadowsEnabled && this._gpuPrivate && caps && (caps.maxStamp | 0) > 0) {
-            this._frameJoin(PR_JOIN_ARRIVED_A, PR_JOIN_EPOCH_A, '_epochA', () => {
-                Atomics.store(this._join, PR_JOIN_STAMP_CUR, 0);
-            });
-            this._stampJoinedSun(bufIdx);
-        }
-    }
-
-    _gpuSpriteWindow(dst, fit) {
-        const prefix = fit.prefix | 0;
-        const keep = fit.keep | 0;
-        const fp = GPU_SPRITE_FLOATS;
-        if (!dst || !dst.sprites || keep <= 0) return null;
-        const from = prefix * fp;
-        const to = from + keep * fp;
-        if (to > dst.sprites.length) return null;
-        const win = this._gpuWin || (this._gpuWin = {});
-        win.header = dst.header;
-        win.sprites = dst.sprites.subarray(from, to);
-        win.spritesU32 = dst.spritesU32 ? dst.spritesU32.subarray(from, to) : null;
-        win.glow = dst.glow;
-        win.glowU32 = dst.glowU32;
-        win.sun = dst.sun;
-        win.stamp = dst.stamp;
-        win.cookie = dst.cookie;
-        win.stampLightIdx = dst.stampLightIdx;
-        win._windowSprites = keep;
-        win._windowGlow = 0;
-        win._windowSun = 0;
-        win._windowStamp = 0;
-        return win;
-    }
-
-    _ownedList(classes) {
-        const key = classes && classes[0];
-        if (!this._ownedCache) this._ownedCache = new Map();
-        let cache = this._ownedCache.get(key);
-        if (!cache) {
-            cache = { stamp: -1, count: 0, ids: new Uint32Array(0), view: EMPTY_OWNED_IDS };
-            this._ownedCache.set(key, cache);
-        }
-        const stamp = Query.queryPublishedFrame(classes);
-        if (stamp === -1) return cache.view;
-        if (cache.stamp === stamp) return cache.view;
-        // Logic0 publishes the snapshot while we copy. A torn read must not
-        // replace the last good list with empty — that frame draws nothing.
-        for (let attempt = 0; attempt < 3; attempt++) {
-            const stampNow = Query.queryPublishedFrame(classes);
-            if (stampNow === -1) return cache.view;
-            const all = Query.queryActiveEntities(classes);
-            const len = all ? all.length : 0;
-            const prevBuf = cache.ids;
-            if (cache.ids.length < len) cache.ids = new Uint32Array(len);
-            const n = fillOwnedIds(
-                all, len, cache.ids, this.workerIndex, this.workerCount, this.entityBlockSize
-            );
-            if (Query.queryPublishedFrame(classes) !== stampNow) continue;
-            cache.stamp = stampNow;
-            if (cache.count !== n || cache.ids !== prevBuf) {
-                cache.count = n;
-                cache.view = n === 0 ? EMPTY_OWNED_IDS : cache.ids.subarray(0, n);
-            }
-            return cache.view;
-        }
-        return cache.view;
-    }
-
-    _shardFrameNeedsCopy() {
-        if (this._streamHasNegative(PR_STREAM_SPRITE)) return true;
-        const entries = this._customLayerEntries;
-        if (!entries) return false;
-        for (let i = 0; i < entries.length; i++) {
-            const id = entries[i].layerId | 0;
-            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
-            if (this._streamHasNegative(PR_STREAM_CUSTOM0 + id)) return true;
-        }
-        return false;
-    }
-
-    _streamHasNegative(stream) {
-        const counts = this._loadStream(stream);
-        const n = this.workerCount | 0;
-        for (let i = 0; i < n; i++) if (counts[i] < 0) return true;
-        return false;
-    }
-
-    _columnWindow(full, prefix, cacheSlot, bufIdx, countArr) {
-        if (!full) return null;
-        if (!this._dummyCount) this._dummyCount = new Int32Array(1);
-        if (!this._mainEmitCount) this._mainEmitCount = new Int32Array(1);
-        const count = countArr || this._dummyCount;
-        let slot = this[cacheSlot];
-        if (!slot) slot = this[cacheSlot] = [null, null];
-        const hit = slot[bufIdx];
-        if (hit && hit.prefix === prefix && hit.views.count === count) return hit.views;
-        const views = { count };
-        for (let i = 0; i < MAIN_COLUMN_KEYS.length; i++) {
-            const key = MAIN_COLUMN_KEYS[i];
-            if (key === 'count') continue;
-            const arr = full[key];
-            views[key] = arr && prefix > 0 && arr.subarray ? arr.subarray(prefix) : arr;
-        }
-        slot[bufIdx] = { prefix, views };
-        return views;
-    }
-
-    _bindDirectMain(bufIdx) {
-        const fit = this._fitted(PR_STREAM_SPRITE, this.renderQueueMaxItems | 0);
-        if (fit.keep < (this._renderableCount | 0)) this._renderableCount = fit.keep;
-        this._emitPrefix = fit.prefix;
-        if (!this._mainEmitCount) this._mainEmitCount = new Int32Array(1);
-        const views = this._columnWindow(
-            this.renderQueueBuffers[bufIdx], fit.prefix, '_mainWindows', bufIdx, this._mainEmitCount
-        );
-        this._applyMainColumns(views);
-        this.renderQueueCount = this._mainEmitCount;
-    }
-
-    _bindDirectCustom(bufIdx) {
-        const entries = this._customLayerEntries;
-        if (!entries) return;
-        if (!this._customWindows) this._customWindows = {};
-        for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i];
-            const id = entry.layerId | 0;
-            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
-            const max = entry.collector ? (entry.collector.maxItems | 0) : 0;
-            const fit = this._fitted(PR_STREAM_CUSTOM0 + id, max);
-            if (entry.collector && fit.keep < (entry.collector.count | 0)) entry.collector.count = fit.keep;
-            const key = '_cw' + id;
-            const views = this._columnWindow(entry.bufs[bufIdx], fit.prefix, key, bufIdx);
-            entry.ref = views;
-        }
-    }
-
-    _collectListSlice(field, method) {
-        const src = this[field];
-        if (!src) {
-            this[method]();
-            return;
-        }
-        const slice = this._takeListSlice(src);
-        this[field] = slice;
-        try {
-            this[method]();
-        } finally {
-            this[field] = src;
-        }
-    }
-
-    _takeListSlice(src) {
-        const count = src[0] | 0;
-        const { start, end } = listSlice(count, this.workerIndex, this.workerCount);
-        const n = end - start;
-        if (!this._listSlice || this._listSlice.length < n + 1) {
-            this._listSlice = new Uint16Array(n + 1 > 16 ? n + 1 : 16);
-        }
-        const dest = this._listSlice;
-        dest[0] = n;
-        for (let i = 0; i < n; i++) dest[1 + i] = src[1 + start + i];
-        return dest;
-    }
-
-    _bindLocalLights() {
-        const lights = this._sortedLightEntities;
-        const n = lights ? lights.length : 0;
-        if (!this._localLights || this._localLights.length < n + 1) {
-            this._localLights = new Uint16Array(n + 1 > 16 ? n + 1 : 16);
-        }
-        this._localLights[0] = n;
-        for (let i = 0; i < n; i++) this._localLights[1 + i] = lights[i];
-        this._savedVisibleLights = this.visibleLightsData;
-        this.visibleLightsData = this._localLights;
-    }
-
-    _cloneTypedViews(src, keys) {
-        const out = {};
-        for (let i = 0; i < keys.length; i++) {
-            const key = keys[i];
-            const arr = src ? src[key] : null;
-            out[key] = arr ? new arr.constructor(arr.length) : arr;
-        }
-        return out;
-    }
-
-    _bindMainPrivate() {
-        const full = this.renderQueueBuffers && this.renderQueueBuffers[0];
-        if (!full) return;
-        if (!this._mainPrivate) this._mainPrivate = this._cloneTypedViews(full, MAIN_COLUMN_KEYS);
-        this._applyMainColumns(this._mainPrivate);
     }
 
     _applyMainColumns(views) {
@@ -1536,238 +1018,6 @@ class PreRenderWorker extends AbstractWorker {
         };
     }
 
-    _bindCustomPrivate() {
-        const entries = this._customLayerEntries;
-        if (!entries) return;
-        if (!this._customPrivate) this._customPrivate = {};
-        for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i];
-            const id = entry.layerId;
-            if (!this._customPrivate[id]) {
-                this._customPrivate[id] = this._cloneTypedViews(entry.bufs[0], MAIN_COLUMN_KEYS);
-            }
-            entry.ref = this._customPrivate[id];
-        }
-    }
-
-    _bindVpPrivate() {
-        if (!this._vpBuffers || !this._vpBuffers[0]) return;
-        if (!this._vpPrivate) {
-            const bytes = this._vpBuffers[0].i32.byteLength;
-            const buf = new ArrayBuffer(bytes);
-            this._vpPrivate = {
-                header: new Int32Array(buf, 0, 1),
-                i32: new Int32Array(buf),
-                f32: new Float32Array(buf),
-                u8: new Uint8Array(buf),
-            };
-        }
-        this._vpPrivate.header[0] = 0;
-        this._vpWriteBuffer = this._vpPrivate;
-        if (this._selfLitBuffers && this._selfLitBuffers[0]) {
-            if (!this._selfLitPrivate) {
-                const bytes = this._selfLitBuffers[0].u8.byteLength;
-                const buf = new ArrayBuffer(bytes);
-                this._selfLitPrivate = {
-                    header: new Int32Array(buf, 0, 1),
-                    i32: new Int32Array(buf),
-                    f32: new Float32Array(buf),
-                    u16: new Uint16Array(buf),
-                    u8: new Uint8Array(buf),
-                };
-            }
-            this._selfLitPrivate.header[0] = 0;
-            this._selfLitWriteBuffer = this._selfLitPrivate;
-        }
-    }
-
-    _storeShardCounts() {
-        const expanded = this._shardExpanded | 0;
-        const sprite = expanded ? -1 : (this._renderableCount | 0);
-        this._storeStream(PR_STREAM_SPRITE, sprite);
-        const vp = this._vpPrivate ? (this._vpPrivate.header[0] | 0) : 0;
-        this._storeStream(PR_STREAM_VP, this.visibilityPolygonsEnabled ? vp : 0);
-        const selfLit = this._selfLitPrivate ? (this._selfLitPrivate.header[0] | 0) : 0;
-        this._storeStream(PR_STREAM_SELF_LIT, this._selfLitPrivate ? selfLit : 0);
-        const lights = this._sortedLightEntities ? this._sortedLightEntities.length : 0;
-        this._storeStream(PR_STREAM_LIGHTS, lights);
-        const entries = this._customLayerEntries;
-        if (!entries) return;
-        for (let i = 0; i < entries.length; i++) {
-            const id = entries[i].layerId | 0;
-            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
-            const collector = entries[i].collector;
-            const n = expanded ? -1 : (collector ? (collector.count | 0) : 0);
-            this._storeStream(PR_STREAM_CUSTOM0 + id, n);
-        }
-    }
-
-    _storePrivateEmitCounts() {
-        const sprite = this._mainPrivate && this._mainPrivate.count ? (this._mainPrivate.count[0] | 0) : 0;
-        this._storeStream(PR_STREAM_SPRITE, sprite);
-        const entries = this._customLayerEntries;
-        if (!entries) return;
-        for (let i = 0; i < entries.length; i++) {
-            const id = entries[i].layerId | 0;
-            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
-            const priv = this._customPrivate && this._customPrivate[id];
-            const n = priv && priv.count ? (priv.count[0] | 0) : 0;
-            this._storeStream(PR_STREAM_CUSTOM0 + id, n);
-        }
-    }
-
-    _storeStream(stream, value) {
-        this._join[preRenderCountSlot(stream, this.workerIndex, this.workerCount)] = value | 0;
-    }
-
-    _loadStream(stream) {
-        const n = this.workerCount | 0;
-        if (!this._streamScratch || this._streamScratch.length !== n) this._streamScratch = new Int32Array(n);
-        const scratch = this._streamScratch;
-        for (let i = 0; i < n; i++) {
-            scratch[i] = this._join[preRenderCountSlot(stream, i, n)];
-        }
-        return scratch;
-    }
-
-    _fitted(stream, maxItems) {
-        const counts = this._loadStream(stream);
-        const prefix = prefixAt(counts, this.workerIndex);
-        const mine = counts[this.workerIndex] | 0;
-        if (!(maxItems > 0) || prefix >= maxItems) return { prefix, keep: prefix >= maxItems && maxItems > 0 ? 0 : mine };
-        const room = maxItems - prefix;
-        return { prefix, keep: mine < room ? mine : room };
-    }
-
-    _copyColumns(src, dst, count, prefix) {
-        const n = count | 0;
-        const base = prefix | 0;
-        if (!src || !dst || n <= 0 || base < 0) return;
-        for (const key in src) {
-            if (key === 'count') continue;
-            const s = src[key];
-            const d = dst[key];
-            if (!s || !d || typeof s.subarray !== 'function') continue;
-            let keep = n;
-            if (base >= d.length) continue;
-            if (base + keep > d.length) keep = d.length - base;
-            if (keep <= 0) continue;
-            d.set(s.subarray(0, keep), base);
-        }
-    }
-
-    _copyPacked(srcU8, dstU8, count, itemBytes, prefix) {
-        const n = count | 0;
-        const bytes = itemBytes | 0;
-        if (!srcU8 || !dstU8 || n <= 0 || bytes <= 0) return;
-        const from = 4;
-        const to = 4 + (prefix | 0) * bytes;
-        const len = n * bytes;
-        if (to + len > dstU8.length || from + len > srcU8.length) return;
-        dstU8.set(srcU8.subarray(from, from + len), to);
-    }
-
-    _copyShardOutputs(bufIdx, copyMain) {
-        if (copyMain && this._mainPrivate && this.renderQueueBuffers) {
-            const max = this.renderQueueMaxItems | 0;
-            const fit = this._fitted(PR_STREAM_SPRITE, max);
-            if (fit.keep < (this._mainPrivate.count ? this._mainPrivate.count[0] : 0)) {
-                this._warnOnce('_shardSpriteCap', '[PRE_RENDER] sharded main queue hit maxVisibleRenderables. Raise it or the tail workers drop sprites.');
-            }
-            this._copyColumns(this._mainPrivate, this.renderQueueBuffers[bufIdx], fit.keep, fit.prefix);
-        }
-        if (this.visibilityPolygonsEnabled && this._vpPrivate && this._vpBuffers) {
-            const fit = this._fitted(PR_STREAM_VP, this._vpMaxLights | 0);
-            if (!this._vpDestU8) this._vpDestU8 = [null, null];
-            let destU8 = this._vpDestU8[bufIdx];
-            if (!destU8) destU8 = this._vpDestU8[bufIdx] = new Uint8Array(this._vpBuffers[bufIdx].i32.buffer);
-            this._copyPacked(this._vpPrivate.u8, destU8, fit.keep, this._vpSlotBytes | 0, fit.prefix);
-        }
-        if (this._selfLitPrivate && this._selfLitBuffers && this._selfLitBuffers[bufIdx]) {
-            const fit = this._fitted(PR_STREAM_SELF_LIT, this._selfLitMax | 0);
-            this._copyPacked(this._selfLitPrivate.u8, this._selfLitBuffers[bufIdx].u8, fit.keep, this._selfLitItemBytes | 0, fit.prefix);
-        }
-        if (this.visibleLightsData) {
-            const cap = this.visibleLightsData.length - 1;
-            const fit = this._fitted(PR_STREAM_LIGHTS, cap);
-            const src = this._sortedLightEntities;
-            if (src && fit.keep > 0) {
-                for (let i = 0; i < fit.keep; i++) this.visibleLightsData[1 + fit.prefix + i] = src[i];
-            }
-        }
-        const entries = this._customLayerEntries;
-        if (!copyMain || !entries || !this._customPrivate) return;
-        for (let i = 0; i < entries.length; i++) {
-            const id = entries[i].layerId | 0;
-            if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
-            const priv = this._customPrivate[id];
-            if (!priv) continue;
-            const max = entries[i].collector ? (entries[i].collector.maxItems | 0) : 0;
-            const fit = this._fitted(PR_STREAM_CUSTOM0 + id, max);
-            this._copyColumns(priv, entries[i].bufs[bufIdx], fit.keep, fit.prefix);
-        }
-    }
-
-    _sortPublishedLights(n) {
-        if (n <= 1 || !this.visibleLightsData) return;
-        const data = this.visibleLightsData;
-        const tmp = this._lightSortTmp || (this._lightSortTmp = []);
-        tmp.length = n;
-        for (let i = 0; i < n; i++) tmp[i] = data[1 + i];
-        tmp.sort(this._lightYComparator);
-        for (let i = 0; i < n; i++) data[1 + i] = tmp[i];
-    }
-
-    _publishShardFrame(frameId, bufIdx) {
-        const n = this.workerCount | 0;
-        if (this.renderQueueEnabled && this.renderQueueBuffers) {
-            const max = this.renderQueueMaxItems | 0;
-            const sum = sumCounts(this._loadStream(PR_STREAM_SPRITE), n);
-            this.renderQueueBuffers[bufIdx].count[0] = max > 0 && sum > max ? max : sum;
-        }
-        if (this.visibilityPolygonsEnabled && this._vpBuffers) {
-            const max = this._vpMaxLights | 0;
-            const sum = sumCounts(this._loadStream(PR_STREAM_VP), n);
-            this._vpBuffers[bufIdx].header[0] = max > 0 && sum > max ? max : sum;
-            if (this._selfLitBuffers && this._selfLitBuffers[bufIdx]) {
-                const smax = this._selfLitMax | 0;
-                const ssum = sumCounts(this._loadStream(PR_STREAM_SELF_LIT), n);
-                this._selfLitBuffers[bufIdx].header[0] = smax > 0 && ssum > smax ? smax : ssum;
-            }
-        }
-        if (this.visibleLightsData) {
-            const cap = this.visibleLightsData.length - 1;
-            const sum = sumCounts(this._loadStream(PR_STREAM_LIGHTS), n);
-            const visible = sum > cap ? cap : sum;
-            this.visibleLightsData[0] = visible;
-            this._sortPublishedLights(visible);
-        }
-        const entries = this._customLayerEntries;
-        if (entries) {
-            for (let i = 0; i < entries.length; i++) {
-                const id = entries[i].layerId | 0;
-                if (id < 0 || id >= PR_CUSTOM_STREAMS) continue;
-                const max = entries[i].collector ? (entries[i].collector.maxItems | 0) : 0;
-                const sum = sumCounts(this._loadStream(PR_STREAM_CUSTOM0 + id), n);
-                const ref = entries[i].bufs[bufIdx];
-                if (ref && ref.count) ref.count[0] = max > 0 && sum > max ? max : sum;
-            }
-        }
-        if (this.renderQueueSync) {
-            this._publishGpuQueue(bufIdx);
-            this.renderQueueFrame = frameId;
-            Atomics.store(this.renderQueueSync, 0, frameId);
-            Atomics.notify(this.renderQueueSync, 0, 1);
-        } else {
-            this._publishGpuQueue(bufIdx);
-        }
-        const poseReady = Atomics.load(this._join, PR_JOIN_POSE);
-        if (this.poseSync && poseReady > 0) Atomics.store(this.poseSync, 1, poseReady);
-    }
-
-    /**
-     * Calculate camera viewport bounds for screen visibility checks
-     */
     calculateCameraBounds() {
         if (this.cameraData === null) return null;
         const zoom = this._frameCameraZoom;
@@ -1786,50 +1036,8 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Latch this worker's half-open foot-pixel band for the current camera view.
-     * No-op range when Y-bands are off (N=1 or preRenderMerge).
-     */
-    _latchViewSortKeyBand() {
-        if (!this._sortKeyBandsOn || !this._frameCameraBoundsValid) {
-            this._bandPixelMinimum = Number.NEGATIVE_INFINITY;
-            this._bandPixelLimit = Number.POSITIVE_INFINITY;
-            return;
-        }
-        const world = screenBoundsToWorldBounds(this._cameraBounds, 0, 0, this._worldBounds);
-        const band = viewSortKeyBand(
-            world.minY,
-            world.maxY - world.minY,
-            this.workerIndex,
-            this.workerCount
-        );
-        this._bandPixelMinimum = band.pixelMinimum;
-        this._bandPixelLimit = band.pixelLimit;
-    }
-
-    /**
-     * Whole foot-pixel used to pick a Y-band. Matches spriteYSortKey's round(y)
-     * so innerZ of that pixel cannot cross a cut.
-     */
-    _bandMembershipPixel(type, index, y) {
-        if (type === 0 || type === 6) {
-            const pose = this._displayPoseOut;
-            this._displayPose(index, pose);
-            return this._spriteSortPixel(index, pose);
-        }
-        if (type === 2) {
-            const parent = DecorationComponent.parentEntityIndex[index];
-            if (parent !== this._noParent && Transform.active && Transform.active[parent]) {
-                return Math.round(Transform.y[parent]);
-            }
-            return Math.round(DecorationComponent.y[index]);
-        }
-        // Particles, bullets, glow, liquid: `y` is already worldY * Y_SORT_K (+ bias).
-        return Math.round(y / Y_SORT_K);
-    }
-
-    /**
-     * Collect visible particles for render queue
-     * Uses visibleParticlesData SAB populated by particle_worker
+     * Collect visible particles for render queue.
+     * Uses visibleParticlesData SAB populated by particle_worker.
      */
     collectVisibleParticles() {
         if (this.maxParticles === 0) return;
@@ -1865,14 +1073,8 @@ class PreRenderWorker extends AbstractWorker {
         if (!lf) return;
         const count = lf.count[0] | 0;
         if (count <= 0) return;
-        let from = 0;
-        let to = count;
-        if (this._lfRange) {
-            from = this._lfRange.start | 0;
-            to = this._lfRange.end | 0;
-            if (from < 0) from = 0;
-            if (to > count) to = count;
-        }
+        const from = 0;
+        const to = count;
 
         const x = lf.x;
         const y = lf.y;
@@ -1933,29 +1135,21 @@ class PreRenderWorker extends AbstractWorker {
         // Iteration source: published sprite query, else full index scan (not the live SAB list).
         // Normalized to (array, base offset) instead of a per-frame closure so the
         // hot loop below stays allocation-free and the index load stays inlineable.
-        let iterCount, iterSource, iterBase;
-        if (this._ownedSpriteIter) {
-            iterCount = this._ownedSpriteIter.length;
-            iterSource = this._ownedSpriteIter;
-            iterBase = 0;
+        let iterCount, iterSource;
+        const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
+        if (spriteEntities && spriteEntities.length > 0) {
+            iterCount = spriteEntities.length;
+            iterSource = spriteEntities;
         } else {
-            const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
-            if (spriteEntities && spriteEntities.length > 0) {
-                iterCount = spriteEntities.length;
-                iterSource = spriteEntities;
-                iterBase = 0;
-            } else {
-                // Do not walk live activeEntitiesData — logic0 may be mid-merge
-                // with count=1. Empty published query falls back to a full scan
-                // (inactive slots skip). create() drain publishes before start.
-                iterCount = this.globalEntityCount;
-                iterSource = null;
-                iterBase = 0;
-            }
+            // Do not walk live activeEntitiesData — logic0 may be mid-merge
+            // with count=1. Empty published query falls back to a full scan
+            // (inactive slots skip). create() drain publishes before start.
+            iterCount = this.globalEntityCount;
+            iterSource = null;
         }
 
         for (let idx = 0; idx < iterCount; idx++) {
-            const i = iterSource ? iterSource[iterBase + idx] : idx;
+            const i = iterSource ? iterSource[idx] : idx;
             if (!active[i]) continue;
             if (!spriteRendererActive || !spriteRendererActive[i]) continue;
 
@@ -1985,11 +1179,17 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
+        this._collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+            screenMinX, screenMaxX, screenMinY, screenMaxY);
+    }
+
+    _collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+        screenMinX, screenMaxX, screenMinY, screenMaxY) {
+        const MIN_GLOW_INTENSITY = 50;
+        const MIN_GLOW_RANGE = 2.5;
         this._syncGlowLayer();
         if (this._glowEmit && this._queryLightEmitter && LightEmitter.active && LightEmitter.hasGlowSprite) {
-            const lights = this._ownedLightIter
-                ? this._ownedLightIter
-                : Query.queryActiveEntities(this._queryLightEmitter);
+            const lights = Query.queryActiveEntities(this._queryLightEmitter);
             if (lights && lights.length > 0) {
                 const leActive = LightEmitter.active;
                 const leGlow = LightEmitter.hasGlowSprite;
@@ -2113,8 +1313,10 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Collect visible decorations for render queue
-     * Uses visibleDecorationsData SAB populated by particle_worker
+     * Collect visible decorations for render queue.
+     * Uses visibleDecorationsData SAB from particle_worker.
+     * (Grid membership is maintained for light queries; collect stays on the
+     * particle visible list so decoration load matches the linear path.)
      */
     collectVisibleDecorations() {
         if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
@@ -2196,11 +1398,6 @@ class PreRenderWorker extends AbstractWorker {
     collectRenderable(type, index, y) {
         if (!this.renderQueueEnabled) return;
 
-        if (this._sortKeyBandsOn) {
-            const pixel = this._bandMembershipPixel(type, index, y);
-            if (!sortKeyBelongsToBand(pixel, this._bandPixelMinimum, this._bandPixelLimit)) return;
-        }
-
         let mask = 0;
         if (type === 0) mask = SpriteRenderer.layerMask ? SpriteRenderer.layerMask[index] | 0 : 0;
         else if (type === 1) mask = ParticleComponent.layerMask ? ParticleComponent.layerMask[index] | 0 : 0;
@@ -2240,10 +1437,6 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _type0PersistHit(bufIdx, count, collectorType, collectorIndex) {
-        if (this._sharded) {
-            const prevPrefix = this._persistEmitPrefix ? (this._persistEmitPrefix[bufIdx] | 0) : 0;
-            if ((this._emitPrefix | 0) !== prevPrefix) return false;
-        }
         if (!this._persistEntity || this._persistCount[bufIdx] !== count) return false;
         const prevE = this._persistEntity[bufIdx];
         const prevT = this._persistType[bufIdx];
@@ -2287,10 +1480,6 @@ class PreRenderWorker extends AbstractWorker {
             if (type === 0 && dirty) dirty[idx] = 0;
         }
         this._persistCount[bufIdx] = count;
-        if (this._sharded) {
-            if (!this._persistEmitPrefix) this._persistEmitPrefix = [0, 0];
-            this._persistEmitPrefix[bufIdx] = this._emitPrefix | 0;
-        }
     }
 
     _writeQueueShadow(out, entityIndex, ref) {
@@ -2330,10 +1519,6 @@ class PreRenderWorker extends AbstractWorker {
 
     _spriteSortY(index, pose) {
         return spriteYSortKey(this._spriteSortFootY(index, pose), Y_SORT_K);
-    }
-
-    _spriteSortPixel(index, pose) {
-        return Math.round(this._spriteSortFootY(index, pose));
     }
 
     /**
@@ -3575,6 +2760,7 @@ class PreRenderWorker extends AbstractWorker {
         const stampCap = caps ? (caps.maxStamp | 0) : 0;
         this._ensureStampScratch(sunN);
         if (!this._gpuLightVec) this._gpuLightVec = new Float32Array(4);
+
         return stampLightRange({
             sun,
             sunN,
@@ -3604,7 +2790,7 @@ class PreRenderWorker extends AbstractWorker {
         const cq = this._gpuCookieQ;
         const lights = this._stampLights;
         const capL = lights ? Math.min(lights.length, this.maxShadowCastingLights | 0) : 0;
-        if ((this.workerIndex | 0) !== 0 || !cq || capL <= 0 || !caps || !(caps.maxCookie > 0)) return 0;
+        if (!cq || capL <= 0 || !caps || !(caps.maxCookie > 0)) return 0;
         const texId = this._resolveBuiltinTextureId('_lightGradient');
         let n = 0;
         const room = cq.x.length;
@@ -3651,106 +2837,9 @@ class PreRenderWorker extends AbstractWorker {
         return { sun: sunN, stamp, cookie };
     }
 
-    _stampJoinedSun(bufIdx) {
-        const pub = this.gpuQueueBuffers && this.gpuQueueBuffers[bufIdx];
-        const priv = this._gpuPrivate;
-        const n = this.workerCount | 0;
-        if (!pub || !priv || !this.gpuQueueCaps) {
-            this._storeStream(PR_STREAM_GPU_STAMP, 0);
-            this._storeStream(PR_STREAM_GPU_COOKIE, 0);
-            return;
-        }
-        let sunN = sumCounts(this._loadStream(PR_STREAM_GPU_SUN), n);
-        const maxSun = this.gpuQueueCaps.maxSun | 0;
-        if (maxSun > 0 && sunN > maxSun) sunN = maxSun;
-        const t0 = this.collectDetailedStats ? performance.now() : 0;
-        const stamp = this._stampAgainstSun(
-            priv, pub.sun, sunN, 0, this.workerIndex | 0, n
-        );
-        const cookie = this._packGpuCookies(priv);
-        const maxStamp = this.gpuQueueCaps.maxStamp | 0;
-        const prefix = Atomics.add(this._join, PR_JOIN_STAMP_CUR, stamp);
-        let keep = stamp;
-        if (maxStamp > 0 && prefix >= maxStamp) keep = 0;
-        else if (maxStamp > 0 && prefix + keep > maxStamp) keep = maxStamp - prefix;
-        if (keep > 0) {
-            copyPackedRows(priv.stamp, pub.stamp, keep, GPU_CASTER_FLOATS, prefix);
-            if (pub.stampLightIdx && priv.stampLightIdx) {
-                pub.stampLightIdx.set(priv.stampLightIdx.subarray(0, keep), prefix);
-            }
-        }
-        if (cookie > 0) {
-            copyPackedRows(priv.cookie, pub.cookie, cookie, GPU_SPRITE_FLOATS, 0);
-        }
-        if (this._gpuCounts) {
-            this._gpuCounts.stamp = keep;
-            this._gpuCounts.cookie = cookie;
-        }
-        this._storeStream(PR_STREAM_GPU_STAMP, keep);
-        this._storeStream(PR_STREAM_GPU_COOKIE, cookie);
-        if (t0) this.shadowQTimeThisFrame += performance.now() - t0;
-    }
-
-    _allowGpuPainter(forceJoined) {
-        if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER) return false;
-        const sort = this._sortSprites;
-        if (sort === SORT_SPRITES_PRERENDER_MERGE) return true;
-        if (sort === SORT_SPRITES_PRERENDER) {
-            if (forceJoined || !this._sharded) return true;
-            // Each Y-band paints locally when every sprite on the layer has zIndex 0.
-            return !!(this._sortKeyBandsOn && SpriteRenderer.zIndexUsers() === 0);
-        }
-        return false;
-    }
-
-    _copyGpuSprites() {
-        if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER) return false;
-        if (this._sortSprites === SORT_SPRITES_PRERENDER_MERGE) return true;
-        // Prefix-concat of per-band packed rows. Joined painter path skips this copy.
-        return !!(
-            this._sortSprites === SORT_SPRITES_PRERENDER
-            && this._sortKeyBandsOn
-            && SpriteRenderer.zIndexUsers() === 0
-        );
-    }
-
-    _stampPackedSortKeys(dst, n, indices, sortKey) {
-        const sn = n | 0;
-        if (!dst || !sortKey || sn <= 0) return;
-        const fp = GPU_SPRITE_FLOATS;
-        for (let i = 0; i < sn; i++) {
-            const src = indices ? indices[i] : i;
-            dst[i * fp + 8] = sortKey[src];
-        }
-    }
-
-    _mergePackedGpuStream(packed, packedU32, count, stream, maxItems) {
-        const nWorkers = this.workerCount | 0;
-        const n = count | 0;
-        if (!packed || !packedU32 || n <= 1 || nWorkers <= 1) return n;
-        const counts = this._loadStream(stream);
-        const offsets = this._gpuMergeOffsets;
-        const lens = this._gpuMergeLens;
-        let prefix = 0;
-        for (let r = 0; r < nWorkers; r++) {
-            const mine = counts[r] | 0;
-            let keep = mine;
-            if (maxItems > 0 && prefix >= maxItems) keep = 0;
-            else if (maxItems > 0 && prefix + keep > maxItems) keep = maxItems - prefix;
-            offsets[r] = prefix;
-            lens[r] = keep;
-            prefix += keep;
-        }
-        const idx = this._gpuMergeIdx;
-        const merged = mergeSortedRunsBySortKey(
-            offsets, lens, nWorkers, packedU32, idx, this._gpuMergeHeads, GPU_SPRITE_FLOATS, 8
-        );
-        if (merged <= 0) return n;
-        const scratch = this._gpuMergeScratch;
-        gatherInstancedRows(packed, scratch, idx, merged, GPU_SPRITE_FLOATS, GPU_SPRITE_FLOATS, false);
-        packed.set(scratch.subarray(0, merged * GPU_SPRITE_FLOATS));
-        rewritePackedDepth(packed, merged, (this.renderQueueMaxItems | 0) + 1, GPU_SPRITE_FLOATS);
-        return merged;
+    _allowGpuPainter() {
+        return this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER
+            && this._sortSprites === SORT_SPRITES_PRERENDER;
     }
 
     _packGpuSprites(dst, q, allowPainter) {
@@ -3764,7 +2853,6 @@ class PreRenderWorker extends AbstractWorker {
         const typeArr = this.renderQueueType;
         const glowAdd = !this._lightGlowAsSprite;
         const allowSort = !!(allowPainter && this._gpuPainter && q.sortKey);
-        const stampMergeKeys = this._sortSprites === SORT_SPRITES_PRERENDER_MERGE && q.sortKey;
         let particles = 0;
         const packed = packSpriteLayer({
             count,
@@ -3793,41 +2881,17 @@ class PreRenderWorker extends AbstractWorker {
                     ? packInstancedRows(q, ctx, dst.glow, dst.glowU32, GPU_SPRITE_FLOATS, caps.maxGlow, false)
                     : 0;
             },
-            afterSprites: (n, indices) => {
-                if (stampMergeKeys && n > 0) this._stampPackedSortKeys(dst.sprites, n, indices, q.sortKey);
-            },
-            afterGlow: (n, indices) => {
-                if (stampMergeKeys && n > 0) this._stampPackedSortKeys(dst.glow, n, indices, q.sortKey);
-            },
         });
         return { sprite: packed.sprite, glow: packed.glow, particle: particles, flags: packed.flags };
     }
 
-    _packGpuQueues(dst, withShadows = true, views = null, forcePainter = false) {
+    _packGpuQueues(dst) {
         if (!dst || !this.gpuQueueCaps) return;
-        const savedCaps = this.gpuQueueCaps;
-        if ((dst._windowSprites | 0) > 0) {
-            if (!this._windowCaps) this._windowCaps = Object.assign({}, savedCaps);
-            this._windowCaps.maxSprites = dst._windowSprites | 0;
-            this._windowCaps.maxGlow = dst._windowGlow | 0;
-            this._windowCaps.maxSun = dst._windowSun | 0;
-            this._windowCaps.maxStamp = dst._windowStamp | 0;
-            this.gpuQueueCaps = this._windowCaps;
-        } else {
-            clearGpuQueueHeader(dst.header);
-        }
-        const q = views ? this._gpuSoAFromViews(views) : this._gpuSoAFromBound();
+        clearGpuQueueHeader(dst.header);
+        const q = this._gpuSoAFromBound();
         if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
-        const allowPainter = this._allowGpuPainter(forcePainter);
-        const sprites = this._packGpuSprites(dst, q, allowPainter);
-        let shadows = { sun: 0, stamp: 0, cookie: 0 };
-        if (withShadows) {
-            if (this._sharded) {
-                shadows = { sun: this._packGpuSun(dst, q), stamp: 0, cookie: 0 };
-            } else {
-                shadows = this._packGpuShadows(dst, q);
-            }
-        }
+        const sprites = this._packGpuSprites(dst, q, this._allowGpuPainter());
+        const shadows = this._packGpuShadows(dst, q);
         const counts = this._gpuCounts || (this._gpuCounts = {});
         counts.sprite = sprites.sprite | 0;
         counts.glow = sprites.glow | 0;
@@ -3836,125 +2900,7 @@ class PreRenderWorker extends AbstractWorker {
         counts.stamp = shadows.stamp | 0;
         counts.cookie = shadows.cookie | 0;
         counts.flags = sprites.flags | 0;
-        if ((dst._windowSprites | 0) === 0) {
-            writeGpuQueueHeader(dst.header, counts, counts.flags);
-        }
-        this.gpuQueueCaps = savedCaps;
-    }
-
-    _storeGpuStreamCounts() {
-        const c = this._gpuCounts || {};
-        this._storeStream(PR_STREAM_GPU_SPRITE, c.sprite | 0);
-        this._storeStream(PR_STREAM_GPU_GLOW, c.glow | 0);
-        this._storeStream(PR_STREAM_GPU_SUN, c.sun | 0);
-        this._storeStream(PR_STREAM_GPU_STAMP, c.stamp | 0);
-        this._storeStream(PR_STREAM_GPU_COOKIE, c.cookie | 0);
-    }
-
-    _joinedPainterNeeded() {
-        return this._sharded
-            && this._sortSprites === SORT_SPRITES_PRERENDER
-            && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER
-            && this._queueHasOrder()
-            && !(this._sortKeyBandsOn && SpriteRenderer.zIndexUsers() === 0);
-    }
-
-    _copyGpuShardOutputs(bufIdx, copyPacked = true, copyStampCookie = true, copySprites = true) {
-        const dst = this.gpuQueueBuffers && this.gpuQueueBuffers[bufIdx];
-        const src = this._gpuPrivate;
-        if (!dst || !src || !this.gpuQueueCaps) return;
-        const caps = this.gpuQueueCaps;
-        if (copyPacked) {
-            if (copySprites) {
-                const fitS = this._fitted(PR_STREAM_GPU_SPRITE, caps.maxSprites);
-                copyPackedRows(src.sprites, dst.sprites, fitS.keep, GPU_SPRITE_FLOATS, fitS.prefix);
-                const fitG = this._fitted(PR_STREAM_GPU_GLOW, caps.maxGlow);
-                copyPackedRows(src.glow, dst.glow, fitG.keep, GPU_SPRITE_FLOATS, fitG.prefix);
-            }
-            const fitU = this._fitted(PR_STREAM_GPU_SUN, caps.maxSun);
-            copyPackedRows(src.sun, dst.sun, fitU.keep, GPU_CASTER_FLOATS, fitU.prefix);
-        }
-        if (copyStampCookie) {
-            const fitT = this._fitted(PR_STREAM_GPU_STAMP, caps.maxStamp);
-            copyPackedRows(src.stamp, dst.stamp, fitT.keep, GPU_CASTER_FLOATS, fitT.prefix);
-            if (fitT.keep > 0 && dst.stampLightIdx && src.stampLightIdx) {
-                dst.stampLightIdx.set(src.stampLightIdx.subarray(0, fitT.keep), fitT.prefix);
-            }
-            const fitC = this._fitted(PR_STREAM_GPU_COOKIE, caps.maxCookie);
-            copyPackedRows(src.cookie, dst.cookie, fitC.keep, GPU_SPRITE_FLOATS, fitC.prefix);
-        }
-    }
-
-    _packJoinedGpuSprites(dst, views) {
-        this._applyMainColumns(views);
-        if (!this._gpuPainter && (this.renderQueueMaxItems | 0) > 0) {
-            this._gpuPainter = createPainterState(this.renderQueueMaxItems);
-        }
-        const q = this._gpuSoAFromBound();
-        q.count = views.count ? (views.count[0] | 0) : 0;
-        return this._packGpuSprites(dst, q, true);
-    }
-
-    _publishGpuQueue(bufIdx) {
-        const dst = this.gpuQueueBuffers && this.gpuQueueBuffers[bufIdx];
-        if (!dst || !this.gpuQueueCaps) return;
-        const n = this.workerCount | 0;
-        const caps = this.gpuQueueCaps;
-        let sprite = sumCounts(this._loadStream(PR_STREAM_GPU_SPRITE), n);
-        let glow = sumCounts(this._loadStream(PR_STREAM_GPU_GLOW), n);
-        let sun = sumCounts(this._loadStream(PR_STREAM_GPU_SUN), n);
-        let stamp = sumCounts(this._loadStream(PR_STREAM_GPU_STAMP), n);
-        let cookie = sumCounts(this._loadStream(PR_STREAM_GPU_COOKIE), n);
-        if (caps.maxSprites > 0 && sprite > caps.maxSprites) sprite = caps.maxSprites;
-        if (caps.maxGlow > 0 && glow > caps.maxGlow) glow = caps.maxGlow;
-        if (caps.maxSun > 0 && sun > caps.maxSun) sun = caps.maxSun;
-        if (caps.maxStamp > 0 && stamp > caps.maxStamp) stamp = caps.maxStamp;
-        if (caps.maxCookie > 0 && cookie > caps.maxCookie) cookie = caps.maxCookie;
-        let particles = 0;
-        let flags = 0;
-        const views = this.renderQueueBuffers && this.renderQueueBuffers[bufIdx];
-        if (n > 1 && views && this._joinedPainterNeeded()) {
-            const packed = this._packJoinedGpuSprites(dst, views);
-            sprite = packed.sprite | 0;
-            glow = packed.glow | 0;
-            particles = packed.particle | 0;
-            flags = packed.flags | 0;
-            if (caps.maxSprites > 0 && sprite > caps.maxSprites) sprite = caps.maxSprites;
-            if (caps.maxGlow > 0 && glow > caps.maxGlow) glow = caps.maxGlow;
-        } else if (n > 1 && this._sortSprites === SORT_SPRITES_PRERENDER_MERGE) {
-            const tSort = this.collectDetailedStats ? performance.now() : 0;
-            sprite = this._mergePackedGpuStream(dst.sprites, dst.spritesU32, sprite, PR_STREAM_GPU_SPRITE, caps.maxSprites | 0);
-            glow = this._mergePackedGpuStream(dst.glow, dst.glowU32, glow, PR_STREAM_GPU_GLOW, caps.maxGlow | 0);
-            if (tSort) this.sortTimeThisFrame += performance.now() - tSort;
-            flags = GPU_FLAG_SORTED;
-            const types = views ? views.type : null;
-            const soaN = views ? (views.count[0] | 0) : 0;
-            if (types) {
-                for (let i = 0; i < soaN; i++) if (types[i] === 1) particles++;
-            }
-        } else if (n > 1 && this._sortKeyBandsOn && SpriteRenderer.zIndexUsers() === 0) {
-            // Bands already painted and copied at prefix offsets — dense concat in order.
-            flags = GPU_FLAG_SORTED;
-            const types = views ? views.type : null;
-            const soaN = views ? (views.count[0] | 0) : 0;
-            if (types) {
-                for (let i = 0; i < soaN; i++) if (types[i] === 1) particles++;
-            }
-        } else {
-            const types = views ? views.type : null;
-            const soaN = views ? (views.count[0] | 0) : 0;
-            if (types) {
-                for (let i = 0; i < soaN; i++) if (types[i] === 1) particles++;
-            }
-        }
-        writeGpuQueueHeader(dst.header, {
-            sprite,
-            glow,
-            sun,
-            stamp,
-            cookie,
-            particle: particles,
-        }, flags);
+        writeGpuQueueHeader(dst.header, counts, counts.flags);
     }
 
     /**
@@ -3992,7 +2938,6 @@ class PreRenderWorker extends AbstractWorker {
             const lightEntitiesRaw = Query.queryPublishedFrame(this._queryLightEmitter) === -1
                 ? EMPTY_OWNED_IDS
                 : Query.queryActiveEntities(this._queryLightEmitter);
-            const viewH = this.canvasHeight / (zoom > 0 ? zoom : 1);
             for (let i = 0; i < lightEntitiesRaw.length; i++) {
                 const lightIdx = lightEntitiesRaw[i];
                 if (!lightEnabled[lightIdx]) continue;
@@ -4005,9 +2950,6 @@ class PreRenderWorker extends AbstractWorker {
                 const lightInfluenceR = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
                 if (lightX + lightInfluenceR < viewMinX || lightX - lightInfluenceR > viewMaxX ||
                     lightY + lightInfluenceR < viewMinY || lightY - lightInfluenceR > viewMaxY) {
-                    continue;
-                }
-                if (this._sharded && !inViewYBand(lightY, camY, viewH, this.workerIndex, this.workerCount)) {
                     continue;
                 }
 
@@ -4036,7 +2978,7 @@ class PreRenderWorker extends AbstractWorker {
             lightEntities.sort(this._lightYComparator);
         }
 
-        if (this.visibleLightsData && !this._deferLightPublish) {
+        if (this.visibleLightsData) {
             const n = lightEntities.length;
             this.visibleLightsData[0] = n;
             for (let w = 0; w < n; w++) this.visibleLightsData[1 + w] = lightEntities[w];

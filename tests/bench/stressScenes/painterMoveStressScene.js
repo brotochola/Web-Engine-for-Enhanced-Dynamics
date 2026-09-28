@@ -93,7 +93,6 @@ function painterMoveConfig() {
     preRender: {
       noLimitFPS: false,
       skipCull: true,
-      numberOfPreRenderWorkers: 1,
     },
     lighting: {
       enabled: false,

@@ -41,7 +41,7 @@ export class PainterAdobeEntity extends GameObject {
   }
 }
 
-function painterAdobeConfig(numberOfPreRenderWorkers) {
+function painterAdobeConfig() {
   return {
     worldWidth: 2400,
     worldHeight: 2400,
@@ -77,8 +77,6 @@ function painterAdobeConfig(numberOfPreRenderWorkers) {
     preRender: {
       noLimitFPS: false,
       skipCull: true,
-      numberOfPreRenderWorkers,
-      entityBlockSize: 64,
     },
     lighting: {
       enabled: false,
@@ -118,8 +116,5 @@ class PainterAdobeBase extends Scene {
 }
 
 export class PainterAdobe1WReinsertScene extends PainterAdobeBase {
-  static config = painterAdobeConfig(1);
-}
-export class PainterAdobe2WReinsertScene extends PainterAdobeBase {
-  static config = painterAdobeConfig(2);
+  static config = painterAdobeConfig();
 }

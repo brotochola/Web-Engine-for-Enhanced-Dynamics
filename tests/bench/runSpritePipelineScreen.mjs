@@ -68,19 +68,15 @@ const SCENES = {
 };
 
 function ySortCells() {
-  const out = [];
-  for (const n of [1, 2, 4]) {
-    out.push({ name: `n${n}-sortPR`, n, pack: 'preRender', sort: 'preRender' });
-    out.push({ name: `n${n}-sortPixi`, n, pack: 'pixi', sort: 'pixi' });
-    if (n > 1) out.push({ name: `n${n}-sortMerge`, n, pack: 'preRender', sort: 'preRenderMerge' });
-  }
-  return out;
+  return [
+    { name: 'sortPR', n: 1, pack: 'preRender', sort: 'preRender' },
+    { name: 'sortPixi', n: 1, pack: 'pixi', sort: 'pixi' },
+  ];
 }
 
 function cellQuery(scene, cell) {
   const parts = [];
   if (scene.queryBase) parts.push(scene.queryBase);
-  parts.push(`preRenderWorkers=${cell.n}`);
   parts.push(`packGpuSprites=${cell.pack}`);
   if (cell.sort && cell.sort !== 'none') parts.push(`sortSprites=${cell.sort}`);
   return parts.join('&');

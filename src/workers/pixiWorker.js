@@ -92,8 +92,6 @@ import {
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
 import { createPainterState } from '../util/sortIndexByKey.js';
-import { concatWindows } from '../render/idWindowMerge.js';
-import { prWinSlot, PR_WIN_FRAME, PR_WIN_SPRITE, PR_WIN_GLOW, PR_WIN_SUN, PR_WIN_STAMP, PR_WIN_COOKIE } from '../util/preRenderOwner.js';
 import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
 import {
   ColliderFillBatch,
@@ -1341,51 +1339,6 @@ class PixiRenderer extends AbstractWorker {
     return batch.commitInstances(keep);
   }
 
-  _bandReadyFrame() {
-    const n = this._preRenderWorkers | 0;
-    const join = this._bandJoin;
-    if (!join || n <= 1) return 0;
-    let g = 0x7fffffff;
-    for (let i = 0; i < n; i++) {
-      const f = Atomics.load(join, prWinSlot(PR_WIN_FRAME, i, n));
-      if (f < g) g = f;
-    }
-    return g === 0x7fffffff ? 0 : g;
-  }
-
-  _bandCounts(field) {
-    const n = this._preRenderWorkers | 0;
-    const counts = this._bandCountsArr;
-    for (let i = 0; i < n; i++) counts[i] = Atomics.load(this._bandJoin, prWinSlot(field, i, n));
-    return counts;
-  }
-
-  _commitBandSprites(gpu) {
-    const n = this._preRenderWorkers | 0;
-    const caps = gpu.caps;
-    const capS = (caps.maxSprites / n) | 0;
-    this.entitiesBatch.setTargetSpace(false, 0, 0, 1);
-    const drawn = concatWindows(
-      this.entitiesBatch.data, gpu.sprites, this._bandCounts(PR_WIN_SPRITE), capS, GPU_SPRITE_FLOATS
-    );
-    this.visibleEntityCount = this.entitiesBatch.commitInstances(drawn);
-    this.visibleParticleCount = 0;
-    this.entitiesBatch.setPoseAlpha(this._poseAlpha);
-    this._posePacked = true;
-    const glowId = Layer.get('lightGlows')?.id;
-    const glowOn = this._lightGlowAdd && layerIsVisible(glowId);
-    if (this.entitiesGlowBatch) {
-      if (glowOn && caps.maxGlow > 0) {
-        this.entitiesGlowBatch.setTargetSpace(false, 0, 0, 1);
-        const g = concatWindows(
-          this.entitiesGlowBatch.data, gpu.glow, this._bandCounts(PR_WIN_GLOW),
-          (caps.maxGlow / n) | 0, GPU_SPRITE_FLOATS
-        );
-        this.entitiesGlowBatch.commitInstances(g);
-      } else this.entitiesGlowBatch.mesh.visible = false;
-    }
-  }
-
   /**
    * Upload main render queue SoA into ENTITIES (one blend, CPU Y-order when
    * ySorting) + glow (add). Particles, decorations, bullets, adobe pieces, and
@@ -1407,15 +1360,6 @@ class PixiRenderer extends AbstractWorker {
     }
 
     const gpu = this._gpuQueueRead;
-    if (this._bandJoin && gpu && gpu.caps && layerIsVisible(Layer.entitiesId)) {
-      this._commitBandSprites(gpu);
-      return;
-    }
-    if (this._bandJoin && gpu) {
-      this.entitiesBatch.mesh.visible = false;
-      this.visibleEntityCount = 0;
-      return;
-    }
     const packedN = gpu && gpu.header ? (gpu.header[GPU_HDR_SPRITE] | 0) : 0;
     const soaN = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
     const packedFlags = gpu && gpu.header ? (gpu.header[GPU_HDR_FLAGS] | 0) : 0;
@@ -1723,9 +1667,7 @@ class PixiRenderer extends AbstractWorker {
     this._deferredRenderQueueRelease = 0;
     if (!this.renderQueueSync) return false;
     const started = this.collectDetailedStats ? performance.now() : 0;
-    const readyFrame = this._bandJoin
-      ? this._bandReadyFrame()
-      : Atomics.load(this.renderQueueSync, 0);
+    const readyFrame = Atomics.load(this.renderQueueSync, 0);
     let consumedNewFrame = false;
     if (readyFrame > this.lastReadFrame && readyFrame > 0) {
       if (this._queueInterp && this.renderQueueX) {
@@ -1735,7 +1677,7 @@ class PixiRenderer extends AbstractWorker {
       }
       const previousReady = this.lastReadFrame;
       consumedNewFrame = true;
-      const readBufferIndex = this._bandJoin ? (readyFrame & 1) : ((readyFrame - 1) & 1);
+      const readBufferIndex = (readyFrame - 1) & 1;
       this._setReadBuffer(readBufferIndex);
       for (let i = 0; i < this._customLayerList.length; i++) {
         const layer = this._customLayerList[i];
@@ -3681,15 +3623,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.clearColor = this._clearTransparent;
 
     batch.setTargetSpace(false, 0, 0, 1);
-    if (this._bandJoin && gpu && gpu.caps && gpu.caps.maxSun > 0) {
-      const n = this._preRenderWorkers | 0;
-      const packed = concatWindows(
-        batch.data, gpu.sun, this._bandCounts(PR_WIN_SUN), (gpu.caps.maxSun / n) | 0, GPU_CASTER_FLOATS
-      );
-      this._gpuCastersThisFrame = packed;
-      batch.commitInstances(packed);
-      if (u.uSun[3] > 0 && packed > 0) this._drawGpuCasterPass(mesh, group, true);
-    } else if (u.uSun[3] > 0 && sunN > 0) {
+    if (u.uSun[3] > 0 && sunN > 0) {
       this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
       this._drawGpuCasterPass(mesh, group, true);
     }
@@ -3699,7 +3633,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (pointScale < 0.2) pointScale = 0.2;
     u.uPointScale = pointScale;
 
-    if (cookieN > 0 && this.shadowBatch && gpu.cookie && !this._bandJoin) {
+    if (cookieN > 0 && this.shadowBatch && gpu.cookie) {
       const screenScale = zoom * res;
       this.shadowBatch.setTargetSpace(true, this._renderCameraX, this._renderCameraY, screenScale);
       if (this._commitPackedBatch(this.shadowBatch, gpu.cookie, cookieN, GPU_SPRITE_FLOATS)) {
@@ -3713,37 +3647,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
-    if (this._bandJoin && gpu && gpu.caps && gpu.caps.maxCookie > 0) {
-      const cookieBand = Atomics.load(this._bandJoin, prWinSlot(PR_WIN_COOKIE, 0, this._preRenderWorkers | 0));
-      if (cookieBand > 0 && this.shadowBatch && gpu.cookie) {
-        const screenScale = zoom * res;
-        this.shadowBatch.setTargetSpace(true, this._renderCameraX, this._renderCameraY, screenScale);
-        if (this._commitPackedBatch(this.shadowBatch, gpu.cookie, cookieBand, GPU_SPRITE_FLOATS)) {
-          rtOpts.container = this.shadowBatch.mesh;
-          rtOpts.target = this.shadowRT;
-          rtOpts.clear = !this._gpuSunDrew;
-          rtOpts.clearColor = this._clearTransparent;
-          this._submitRender(rtOpts);
-          this._gpuPassesThisFrame++;
-          this._gpuSunDrew = true;
-        }
-      }
-    }
-
-    if (this._bandJoin && gpu && gpu.caps && gpu.caps.maxStamp > 0) {
-      const n = this._preRenderWorkers | 0;
-      const packed = concatWindows(
-        batch.data, gpu.stamp, this._bandCounts(PR_WIN_STAMP), (gpu.caps.maxStamp / n) | 0, GPU_CASTER_FLOATS
-      );
-      batch.commitInstances(packed);
-      if (packed > 0) {
-        u.uLight[0] = 0;
-        u.uLight[1] = 0;
-        u.uLight[2] = 0;
-        u.uLight[3] = 0;
-        this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
-      }
-    } else if (stampN > 0) {
+    if (stampN > 0) {
       u.uLight[0] = 0;
       u.uLight[1] = 0;
       u.uLight[2] = 0;
@@ -5150,7 +5054,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const preCfg = this.config.preRender || {};
     const spritePipe = resolveSpritePipeline({
       ySort: this._ySortMode,
-      workerCount: preCfg.numberOfPreRenderWorkers,
       packGpuSprites: preCfg.packGpuSprites,
       sortSprites: preCfg.sortSprites,
     });

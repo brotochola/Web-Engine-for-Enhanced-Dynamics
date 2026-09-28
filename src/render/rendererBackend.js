@@ -32,7 +32,6 @@ export const PACK_GPU_SPRITES_PRERENDER = 'preRender';
 export const PACK_GPU_SPRITES_PIXI = 'pixi';
 export const SORT_SPRITES_NONE = 'none';
 export const SORT_SPRITES_PRERENDER = 'preRender';
-export const SORT_SPRITES_PRERENDER_MERGE = 'preRenderMerge';
 export const SORT_SPRITES_PIXI = 'pixi';
 
 export function errorPackGpuSpritesInvalid(value) {
@@ -40,18 +39,17 @@ export function errorPackGpuSpritesInvalid(value) {
 }
 
 export function errorSortSpritesInvalid(value) {
-  return `WeedJS: config.preRender.sortSprites must be "none", "preRender", "preRenderMerge", or "pixi". Got ${JSON.stringify(value)}. Using the default for this ySort.`;
+  return `WeedJS: config.preRender.sortSprites must be "none", "preRender", or "pixi". Got ${JSON.stringify(value)}. Using the default for this ySort.`;
 }
 
 /**
  * One owner for GPU sprite pack, one owner for the CPU painter. Never both sort.
- * @param {{ ySort?: unknown, workerCount?: number, packGpuSprites?: unknown, sortSprites?: unknown }} opts
- * @returns {{ packGpuSprites: 'preRender'|'pixi', sortSprites: 'none'|'preRender'|'preRenderMerge'|'pixi' }}
+ * @param {{ ySort?: unknown, packGpuSprites?: unknown, sortSprites?: unknown }} opts
+ * @returns {{ packGpuSprites: 'preRender'|'pixi', sortSprites: 'none'|'preRender'|'pixi' }}
  */
 export function resolveSpritePipeline(opts) {
   const o = opts || {};
   const yOn = ySortEnabled(o.ySort);
-  const n = Math.max(1, o.workerCount | 0);
   const defaultSort = yOn ? SORT_SPRITES_PRERENDER : SORT_SPRITES_NONE;
 
   let pack = o.packGpuSprites;
@@ -66,7 +64,6 @@ export function resolveSpritePipeline(opts) {
   if (
     sort !== SORT_SPRITES_NONE &&
     sort !== SORT_SPRITES_PRERENDER &&
-    sort !== SORT_SPRITES_PRERENDER_MERGE &&
     sort !== SORT_SPRITES_PIXI
   ) {
     console.error(errorSortSpritesInvalid(sort));
@@ -75,14 +72,6 @@ export function resolveSpritePipeline(opts) {
 
   if (!yOn) sort = SORT_SPRITES_NONE;
 
-  if (sort === SORT_SPRITES_PRERENDER_MERGE && n <= 1) {
-    console.error('WeedJS: config.preRender.sortSprites "preRenderMerge" needs numberOfPreRenderWorkers > 1. Using "preRender".');
-    sort = SORT_SPRITES_PRERENDER;
-  }
-  if (sort === SORT_SPRITES_PRERENDER_MERGE && pack === PACK_GPU_SPRITES_PIXI) {
-    console.error('WeedJS: config.preRender.sortSprites "preRenderMerge" needs packGpuSprites "preRender". Using packGpuSprites "preRender".');
-    pack = PACK_GPU_SPRITES_PRERENDER;
-  }
   if (sort === SORT_SPRITES_PIXI && pack === PACK_GPU_SPRITES_PRERENDER) {
     console.error('WeedJS: config.preRender.sortSprites "pixi" with packGpuSprites "preRender" would pack unsorted rows that Pixi ignores. Using packGpuSprites "pixi".');
     pack = PACK_GPU_SPRITES_PIXI;

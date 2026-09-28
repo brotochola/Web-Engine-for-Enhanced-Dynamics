@@ -71,22 +71,6 @@ test('adobe writes one shadow row on the lowest piece', () => {
   assert.equal((body.match(/_writeQueueShadow\(/g) || []).length, 1);
 });
 
-test('sharded GPU shadows pack sun per worker and stamp after the sun join', () => {
-  assert.match(preRender, /_stampJoinedSun\(/);
-  assert.match(preRender, /_packCopyJoinedShadows\(/);
-  const pubAt = preRender.lastIndexOf('_publishGpuQueue(bufIdx)');
-  const pub = preRender.slice(pubAt, preRender.indexOf('_collectVisibleLights()', pubAt));
-  assert.doesNotMatch(pub, /_packGpuShadows\(/);
-  assert.match(pub, /_packJoinedGpuSprites\(/);
-});
-
-test('sharded y-sort / zIndex re-packs sprites from the joined SoA, not per id-block', () => {
-  assert.match(preRender, /_joinedPainterNeeded\(\)/);
-  assert.match(preRender, /_packJoinedGpuSprites\(dst, views\)/);
-  assert.match(preRender, /_mergePackedGpuStream\(/);
-  assert.match(preRender, /SORT_SPRITES_PRERENDER_MERGE/);
-});
-
 test('stamp light range falls back to influence when visualRange is 0', () => {
   const start = preRender.indexOf('_collectStampLights()');
   const end = preRender.indexOf('_packGpuSprites(', start);
@@ -94,7 +78,6 @@ test('stamp light range falls back to influence when visualRange is 0', () => {
   assert.match(body, /vrRange > 0 \? vrRange : influence/);
 });
 
-test('gpu pack reuses pack context and sprite-window scratch', () => {
+test('gpu pack reuses one pack context', () => {
   assert.match(preRender, /makePackContext\(q, opts, caps.maxSprites, this\._gpuPackCtx\)/);
-  assert.match(preRender, /this\._gpuWin \|\| \(this\._gpuWin = \{\}\)/);
 });

@@ -55,8 +55,6 @@ export class BoidsScene extends Scene {
       // skipCull: false,
       // fixedFps: 30,
       interpolation: true,
-      // entityBlockSize: 256,
-      numberOfPreRenderWorkers: 1,
     },
     lighting: {
       enabled: false,

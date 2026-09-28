@@ -55,7 +55,7 @@ export class GpuYSortProbeScene extends Scene {
       ySort: true,
       maxVisibleRenderables: 32,
     },
-    preRender: { skipCull: true, numberOfPreRenderWorkers: 1 },
+    preRender: { skipCull: true },
     lighting: { enabled: false },
     layers: {
       pile: { zIndex: 2, ySorting: true, maxItems: 8 },

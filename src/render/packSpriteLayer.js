@@ -5,7 +5,7 @@ import { orderPainterSlots, radixSortIndicesBySortKey } from '../util/sortIndexB
  * Pack one sprite layer: split light-glow rows when asked, order with the
  * painter when this layer owns one, then write sprites and glow.
  * The caller writes the destination (GPU queue or mesh buffer) and owns pose
- * interpolation. `preRenderMerge` is not handled here.
+ * interpolation.
  *
  * @param {object} spec
  * @param {number} spec.count

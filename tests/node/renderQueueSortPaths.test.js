@@ -87,18 +87,9 @@ test('pixi: GPU two-pass is gone; ySorting uses reinsert with no painterSort con
 test('preRender writes the SoA row and the CPU painter packs it', () => {
   assert.match(preRender, /rqX\[out\] = currX/);
   assert.match(preRender, /packSpriteLayer\(/);
-  assert.match(preRender, /_packJoinedGpuSprites\(/);
+  assert.match(preRender, /_allowGpuPainter\(/);
   assert.doesNotMatch(preRender, /_packDirect/);
   assert.doesNotMatch(preRender, /_writeSpriteKeys/);
-});
-
-test('sharded preRender Y-bands paint locally; zIndex falls back to joined painter', () => {
-  assert.match(preRender, /_sortKeyBandsOn/);
-  assert.match(preRender, /_latchViewSortKeyBand/);
-  assert.match(preRender, /viewSortKeyBand\(/);
-  assert.match(preRender, /sortKeyBelongsToBand\(/);
-  assert.match(preRender, /zIndexUsers\(\) === 0/);
-  assert.match(preRender, /_joinedPainterNeeded\(\)/);
 });
 
 test('preRender persist skips Adobe expansion (type 6 write-index mismatch)', () => {

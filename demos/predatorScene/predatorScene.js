@@ -158,16 +158,14 @@ export class PredatorScene extends WEED.Scene {
     },
     preRender: {
       noLimitFPS: false,
-      entityBlockSize: 512,
-      numberOfPreRenderWorkers: predatorPositiveParam('preRenderWorkers', 1),
       packGpuSprites: predatorSearchParam('packGpuSprites') || 'pixi',
       sortSprites: predatorSearchParam('sortSprites') || 'pixi',
       backpressure: true,
       skipCull: false,
       interpolation: false,
       cullingRatio: 0.33,
-      startFadingDecorationsAtZoom: 0.5,
-      hideDecorationsAtZoom: 0.25,
+      startFadingDecorationsAtZoom: 1,
+      hideDecorationsAtZoom: 0.5,
     },
 
     lighting: {

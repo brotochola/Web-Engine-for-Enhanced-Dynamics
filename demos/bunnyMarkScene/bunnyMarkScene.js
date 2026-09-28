@@ -12,12 +12,6 @@ function bunnySearchParam(name) {
     return new URLSearchParams(search).get(name);
 }
 
-function bunnyPositiveParam(name, fallback) {
-    const q = bunnySearchParam(name);
-    const n = q != null ? Number(q) : NaN;
-    return Number.isFinite(n) && n > 0 ? (n | 0) : fallback;
-}
-
 const HUD_CSS =
     'position:fixed;left:12px;bottom:12px;z-index:940;pointer-events:none;' +
     'color:#eee;font:14px/1.45 system-ui,sans-serif;background:rgba(0,0,0,0.55);' +
@@ -64,8 +58,6 @@ export class BunnyMarkScene extends Scene {
         preRender: {
             skipCull: true,
             interpolation: false,
-            entityBlockSize: 256,
-            numberOfPreRenderWorkers: bunnyPositiveParam('preRenderWorkers', 1),
             packGpuSprites: bunnySearchParam('packGpuSprites') || 'pixi',
         },
         lighting: { enabled: false },

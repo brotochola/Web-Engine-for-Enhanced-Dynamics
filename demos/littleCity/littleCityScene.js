@@ -24,11 +24,6 @@ function littleCityNumberParam(name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function littleCityPositiveParam(name, fallback) {
-  const n = littleCityNumberParam(name, fallback);
-  return Number.isFinite(n) && n > 0 ? (n | 0) : fallback;
-}
-
 const excludedLPCAnimations = [
   'spellcast_up',
   'spellcast_left',
@@ -187,7 +182,6 @@ export class LittleCityScene extends WEED.Scene {
     },
     preRender: {
       noLimitFPS: false,
-      numberOfPreRenderWorkers: littleCityPositiveParam('preRenderWorkers', 1),
       packGpuSprites: littleCitySearchParam('packGpuSprites') || 'pixi',
       sortSprites: littleCitySearchParam('sortSprites') || 'pixi',
       cullingRatio: 0.1,

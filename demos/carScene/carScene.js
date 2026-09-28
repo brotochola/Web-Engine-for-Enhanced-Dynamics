@@ -97,8 +97,6 @@ export class CarScene extends WEED.Scene {
             startFadingDecorationsAtZoom: 0.5,
             hideDecorationsAtZoom: 0.25,
             // fixedFps: 120
-            // entityBlockSize: 512,
-            // numberOfPreRenderWorkers: 2,
         },
 
         lighting: {

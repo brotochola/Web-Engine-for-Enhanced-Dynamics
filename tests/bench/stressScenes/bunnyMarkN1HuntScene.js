@@ -34,8 +34,6 @@ export class BunnyMarkN1HuntScene extends Scene {
     preRender: {
       skipCull: true,
       interpolation: false,
-      entityBlockSize: 256,
-      numberOfPreRenderWorkers: 1,
     },
     lighting: { enabled: false },
   };

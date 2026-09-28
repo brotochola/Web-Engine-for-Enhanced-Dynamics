@@ -47,7 +47,6 @@ export class PainterSortStressScene extends Scene {
     preRender: {
       noLimitFPS: false,
       skipCull: true,
-      numberOfPreRenderWorkers: 1,
     },
     lighting: {
       enabled: false,

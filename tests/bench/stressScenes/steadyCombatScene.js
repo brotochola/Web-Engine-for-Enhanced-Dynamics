@@ -10,13 +10,6 @@ const BOXES = 180;
 const MOVERS = 24;
 const EMITTERS = 6;
 
-function combatPreRenderWorkers() {
-  const search = globalThis.location && globalThis.location.search;
-  if (typeof search !== 'string') return 1;
-  const n = Number(new URLSearchParams(search).get('preRenderWorkers'));
-  return Number.isFinite(n) && n > 0 ? n : 1;
-}
-
 /** Fixed bodies + constant emit. Load should stay inside ±5% without Predator combat RNG. */
 export class SteadyCombatScene extends Scene {
   static config = {
@@ -35,7 +28,7 @@ export class SteadyCombatScene extends Scene {
     particle: { maxParticles: 8000, decals: false },
     renderer: { backend: 'webgl', noLimitFPS: false, maxVisibleRenderables: 8000 },
     lighting: { enabled: false },
-    preRender: { numberOfPreRenderWorkers: combatPreRenderWorkers() },
+    preRender: {},
   };
 
   static assets = {

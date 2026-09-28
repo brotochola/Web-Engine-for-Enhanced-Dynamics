@@ -591,6 +591,7 @@ export class AbstractWorker {
           `initialized DecorationSpatial (${data.decorationSpatialMeta.gridWidth}x${data.decorationSpatialMeta.gridHeight})`
         );
       }
+
     }
 
     // Initialize BulletComponent arrays (separate bullet pool system)

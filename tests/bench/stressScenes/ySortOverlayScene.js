@@ -71,7 +71,7 @@ export class YSortOverlayScene extends Scene {
       backend: overlayBackend(),
       ySort: overlayYSort(),
     },
-    preRender: { numberOfPreRenderWorkers: 1, skipCull: true },
+    preRender: { skipCull: true },
     lighting: { enabled: false },
   };
 

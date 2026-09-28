@@ -266,16 +266,13 @@ class Scene {
     // Particle worker always runs - it handles particles, decals, navigation, derived properties
     this.workerReadyStates.particle = false;
 
-    const numberOfPreRenderWorkers = this.numberOfPreRenderWorkers;
-    for (let i = 0; i < numberOfPreRenderWorkers; i++) {
-      this.workerReadyStates[numberOfPreRenderWorkers === 1 ? 'preRender' : `preRender${i}`] = false;
-    }
+    this.workerReadyStates.preRender = false;
 
     this.totalWorkers =
       3 +
       this.numberOfSpatialWorkers +
       numberOfLogicWorkers +
-      numberOfPreRenderWorkers;
+      1;
 
     // Boot only: false skips box2dWasm.js. Hot loops bind pose once and do not re-read this.
     this._physicsEnabled = this.config.physics.enabled !== false;
@@ -746,7 +743,6 @@ class Scene {
     };
     const spritePipe = resolveSpritePipeline({
       ySort: this.config.renderer.ySort,
-      workerCount: this.config.preRender.numberOfPreRenderWorkers,
       packGpuSprites: this.config.preRender.packGpuSprites,
       sortSprites: this.config.preRender.sortSprites,
     });
@@ -807,8 +803,7 @@ class Scene {
   }
 
   get numberOfPreRenderWorkers() {
-    const n = this.config.preRender?.numberOfPreRenderWorkers | 0;
-    return n > 0 ? n : 1;
+    return 1;
   }
 
   /** @returns {boolean} Whether particles are enabled */

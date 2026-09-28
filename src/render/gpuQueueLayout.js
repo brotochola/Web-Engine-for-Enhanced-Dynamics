@@ -108,14 +108,12 @@ function instanceDepth(out, depthDenom) {
 /**
  * @param {number} maxSprites
  * @param {object} [lighting]
- * @param {number} [workerCount]
  */
-export function gpuQueueCaps(maxSprites, lighting, workerCount) {
+export function gpuQueueCaps(maxSprites, lighting) {
   const sprites = Math.max(1, maxSprites | 0);
   const lightsOn = !!(lighting && lighting.enabled);
   const shadowOn = !!(lighting && lighting.shadowsEnabled);
   const maxLights = Math.max(1, (lighting && lighting.maxLights) | 0 || 1);
-  const shards = Math.max(1, workerCount | 0);
   const castLights = shadowOn
     ? Math.max(1, (lighting.maxShadowCastingLights | 0) || maxLights)
     : 0;
@@ -126,7 +124,7 @@ export function gpuQueueCaps(maxSprites, lighting, workerCount) {
     const lightCap = perLight > 0 ? perLight : sprites;
     const fromLights = castLights * lightCap;
     const fromEnt = perEnt > 0 ? sprites * perEnt : sprites * castLights;
-    stamp = Math.max(1, Math.min(fromLights, fromEnt)) * shards;
+    stamp = Math.max(1, Math.min(fromLights, fromEnt));
   }
   return {
     maxSprites: sprites,
@@ -199,12 +197,6 @@ export function createGpuQueueViews(sab, caps) {
     caps: c,
     byteLength: offset,
   };
-}
-
-/** Private (non-shared) views with the same shapes as a SAB queue. */
-export function createGpuQueueScratch(caps) {
-  const size = computeGpuQueueBufferSize(caps);
-  return createGpuQueueViews(new ArrayBuffer(size), caps);
 }
 
 export function clearGpuQueueHeader(header) {
