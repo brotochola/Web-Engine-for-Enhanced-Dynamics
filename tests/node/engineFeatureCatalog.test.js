@@ -170,7 +170,7 @@ test('box2dRayJs uses BoxBusy scene and Box2d.castRayClosest', () => {
   const row = getFeature('box2dRayJs');
   assert.equal(row.scene.exportName, 'RayVsBox2dBoxBusyScene');
   assert.match(row.scene.path, /rayVsBox2dStressScene/);
-  assert.ok(row.primary.includes('physics_STEP_MS'));
+  assert.ok(row.primary.includes('logic0_STEP_MS'));
   assert.ok(row.load.includes('BODY_COUNT'));
   const scene = fs.readFileSync(path.join(root, 'tests/bench/stressScenes/rayVsBox2dStressScene.js'), 'utf8');
   assert.match(scene, /RayVsBox2dBoxBusyScene/);
