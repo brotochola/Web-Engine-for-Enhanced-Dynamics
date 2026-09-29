@@ -4,6 +4,8 @@
  * casters closest to that light.
  */
 
+import { GPU_CASTER_LIGHT_FLOAT, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
+
 export function compactShadowCasterIndices(shadowH, typeArr, count, outIdx) {
   let n = 0;
   const cap = outIdx.length;
@@ -15,8 +17,8 @@ export function compactShadowCasterIndices(shadowH, typeArr, count, outIdx) {
   return n;
 }
 
-/** Per-instance light sits after the 19 caster floats (16 sprite + shadowH/off). */
-export const CASTER_LIGHT_FLOAT = 19;
+/** Light vec4 on a caster row: x, y, intensity, rangeSq. Same slot as aInstLight. */
+export const CASTER_LIGHT_FLOAT = GPU_CASTER_LIGHT_FLOAT;
 
 /** Copy n typed-array slots. Avoids `.subarray` views in per-instance loops. */
 export function copyTypedRange(dst, d0, src, s0, n) {
@@ -149,15 +151,16 @@ export function rtPixelScale(canvasPx, rtPx) {
   return canvasPx > 0 ? rtPx / canvasPx : 1;
 }
 
-/** Pose slice of a 23-float caster instance (xy, rotCS, shadowH/off after alphaCut). */
+/** xy, rotCS, and shadowH/offX/offY. Shadow starts at the first float after the sprite row. */
 export function writeCasterPose(data, base, x, y, rotC, rotS, height, offX, offY) {
   data[base] = x;
   data[base + 1] = y;
   data[base + 6] = rotC;
   data[base + 7] = rotS;
-  data[base + 16] = height;
-  data[base + 17] = offX;
-  data[base + 18] = offY;
+  const shAt = GPU_SPRITE_FLOATS;
+  data[base + shAt] = height;
+  data[base + shAt + 1] = offX;
+  data[base + shAt + 2] = offY;
 }
 
 /**

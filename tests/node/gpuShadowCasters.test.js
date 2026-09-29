@@ -15,6 +15,7 @@ import {
   copyTypedRange,
   CASTER_LIGHT_FLOAT,
 } from '../../src/render/gpuShadowCasters.js';
+import { GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
 
 test('compactShadowCasterIndices keeps shadowH>0 and skips glow type 3', () => {
   const shadowH = new Float32Array([0, 2, 1, 0, 3]);
@@ -91,7 +92,7 @@ test('copyTypedRange copies without wrapping a view', () => {
 });
 
 test('appendStampedCasters copies subsets and stamps one light each', () => {
-  const sf = 23;
+  const sf = GPU_CASTER_FLOATS;
   const src = new Float32Array(3 * sf);
   src[0] = 10;
   src[sf] = 20;
@@ -116,6 +117,32 @@ test('appendStampedCasters copies subsets and stamps one light each', () => {
   assert.equal(dst[CASTER_LIGHT_FLOAT + 3], 6);
 });
 
+test('appendStampedCasters keeps the light vec4 inside a 22-float row', () => {
+  const fp = GPU_CASTER_FLOATS;
+  assert.equal(CASTER_LIGHT_FLOAT, GPU_CASTER_LIGHT_FLOAT);
+  assert.equal(CASTER_LIGHT_FLOAT + 3, fp - 1);
+  const src = new Float32Array(fp);
+  src[0] = 10;
+  src[1] = 20;
+  src[15] = 2.5;
+  src[16] = 0.1;
+  src[17] = 0.2;
+  const dst = new Float32Array(fp + 1);
+  dst[fp] = 12345;
+  const light = new Float32Array([4, 5, 6, 7]);
+  const n = appendStampedCasters(dst, fp, 0, src, fp, new Uint32Array([0]), 1, light, 1);
+  assert.equal(n, 1);
+  assert.equal(dst[0], 10);
+  assert.equal(dst[15], 2.5);
+  assert.ok(Math.abs(dst[16] - 0.1) < 1e-6);
+  assert.ok(Math.abs(dst[17] - 0.2) < 1e-6);
+  assert.equal(dst[18], 4);
+  assert.equal(dst[19], 5);
+  assert.equal(dst[20], 6);
+  assert.equal(dst[21], 7);
+  assert.equal(dst[fp], 12345);
+});
+
 test('rtPixelSize rounds and rtPixelScale matches the real RT', () => {
   assert.equal(rtPixelSize(1919, 0.5), 960);
   assert.equal(rtPixelSize(1919, 0.25), 480);
@@ -124,20 +151,21 @@ test('rtPixelSize rounds and rtPixelScale matches the real RT', () => {
   assert.equal(rtPixelScale(0, 10), 1);
 });
 
-test('writeCasterPose writes shadow extras after alphaCut', () => {
-  const data = new Float32Array(23);
+test('writeCasterPose writes shadow extras after the sprite row', () => {
+  const data = new Float32Array(GPU_CASTER_FLOATS);
   writeCasterPose(data, 0, 10, 20, 1, 0, 2.5, 3, 4);
   assert.equal(data[0], 10);
   assert.equal(data[1], 20);
   assert.equal(data[6], 1);
   assert.equal(data[7], 0);
-  assert.equal(data[16], 2.5);
-  assert.equal(data[17], 3);
-  assert.equal(data[18], 4);
+  assert.equal(data[15], 2.5);
+  assert.equal(data[16], 3);
+  assert.equal(data[17], 4);
+  assert.equal(data[18], 0);
 });
 
 test('compactStampByLightLimit keeps the closest casters per light', () => {
-  const fp = 23;
+  const fp = GPU_CASTER_FLOATS;
   const stamp = new Float32Array(4 * fp);
   const lightIdx = new Uint16Array([0, 0, 0, 1]);
   for (let i = 0; i < 4; i++) {
@@ -166,7 +194,7 @@ test('compactStampByLightLimit keeps the closest casters per light', () => {
 });
 
 test('stampLightRange stripe concat matches serial pairs when maxPerEntity is 0', () => {
-  const fp = 23;
+  const fp = GPU_CASTER_FLOATS;
   const sunN = 4;
   const sun = new Float32Array(sunN * fp);
   sun[0] = 0; sun[1] = 0;
@@ -208,7 +236,7 @@ test('stampLightRange stripe concat matches serial pairs when maxPerEntity is 0'
 });
 
 test('stamp grid matches the full scan, including a caster on the circle', () => {
-  const fp = 23;
+  const fp = GPU_CASTER_FLOATS;
   const sunN = 6;
   const sun = new Float32Array(sunN * fp);
   const pts = [[0, 0], [100, 0], [256, 40], [300, 300], [20, 20], [1000, 1000]];

@@ -9,7 +9,9 @@
  */
 
 export const GPU_SPRITE_FLOATS = 15;
-export const GPU_CASTER_FLOATS = 22;
+/** x, y, intensity, rangeSq. Sits after shadowH, shadowOffX, shadowOffY. */
+export const GPU_CASTER_LIGHT_FLOAT = GPU_SPRITE_FLOATS + 3;
+export const GPU_CASTER_FLOATS = GPU_CASTER_LIGHT_FLOAT + 4;
 export const GPU_HEADER_INTS = 8;
 export const GPU_QUEUE_VERSION = 5;
 
@@ -87,15 +89,18 @@ export function gatherInstancedRows(src, dst, indices, n, srcFp, dstFp, shadowQ)
     const i = indices[k] | 0;
     const from = i * sfp;
     const to = k * dfp;
-    dst.set(src.subarray(from, from + Math.min(16, sfp)), to);
+    const spriteN = sfp < GPU_SPRITE_FLOATS ? sfp : GPU_SPRITE_FLOATS;
+    dst.set(src.subarray(from, from + spriteN), to);
     if (shadowQ && dfp >= GPU_CASTER_FLOATS) {
-      dst[to + 16] = shadowQ.shadowH ? shadowQ.shadowH[i] : 0;
-      dst[to + 17] = shadowQ.shadowOffX ? shadowQ.shadowOffX[i] : 0;
-      dst[to + 18] = shadowQ.shadowOffY ? shadowQ.shadowOffY[i] : 0;
-      dst[to + 19] = 0;
-      dst[to + 20] = 0;
-      dst[to + 21] = 0;
-      dst[to + 22] = 0;
+      const shAt = GPU_SPRITE_FLOATS;
+      dst[to + shAt] = shadowQ.shadowH ? shadowQ.shadowH[i] : 0;
+      dst[to + shAt + 1] = shadowQ.shadowOffX ? shadowQ.shadowOffX[i] : 0;
+      dst[to + shAt + 2] = shadowQ.shadowOffY ? shadowQ.shadowOffY[i] : 0;
+      const lightAt = GPU_CASTER_LIGHT_FLOAT;
+      dst[to + lightAt] = 0;
+      dst[to + lightAt + 1] = 0;
+      dst[to + lightAt + 2] = 0;
+      dst[to + lightAt + 3] = 0;
     }
   }
   return sn;
@@ -330,13 +335,15 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     dst[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
     if (shadowCast && fp >= GPU_CASTER_FLOATS) {
       const sh = q.shadowH;
-      dst[base + 15] = sh ? sh[i] : 0;
-      dst[base + 16] = q.shadowOffX ? q.shadowOffX[i] : 0;
-      dst[base + 17] = q.shadowOffY ? q.shadowOffY[i] : 0;
-      dst[base + 18] = 0;
-      dst[base + 19] = 0;
-      dst[base + 20] = 0;
-      dst[base + 21] = 0;
+      const shAt = GPU_SPRITE_FLOATS;
+      dst[base + shAt] = sh ? sh[i] : 0;
+      dst[base + shAt + 1] = q.shadowOffX ? q.shadowOffX[i] : 0;
+      dst[base + shAt + 2] = q.shadowOffY ? q.shadowOffY[i] : 0;
+      const lightAt = GPU_CASTER_LIGHT_FLOAT;
+      dst[base + lightAt] = 0;
+      dst[base + lightAt + 1] = 0;
+      dst[base + lightAt + 2] = 0;
+      dst[base + lightAt + 3] = 0;
     }
     base += fp;
     out++;

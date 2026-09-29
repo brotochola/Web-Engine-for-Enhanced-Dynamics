@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   GPU_SPRITE_FLOATS,
   GPU_CASTER_FLOATS,
+  GPU_CASTER_LIGHT_FLOAT,
   GPU_QUEUE_VERSION,
   GPU_HDR_SPRITE,
   GPU_HDR_VERSION,
@@ -29,6 +30,7 @@ test('gpuQueue SAB views round-trip header and packed rows', () => {
   writeGpuQueueHeader(views.header, { sprite: 2, glow: 1, sun: 1, stamp: 0, cookie: 0, particle: 1 }, 0);
   assert.equal(views.header[GPU_HDR_SPRITE], 2);
   assert.equal(GPU_SPRITE_FLOATS, 15);
+  assert.equal(GPU_CASTER_LIGHT_FLOAT, 18);
   assert.equal(GPU_CASTER_FLOATS, 22);
   assert.equal(views.header[GPU_HDR_VERSION], GPU_QUEUE_VERSION);
   views.sprites[0] = 9;
@@ -190,10 +192,12 @@ test('gatherInstancedRows permutes emit rows and copies shadow extras', () => {
   assert.equal(n, 2);
   assert.equal(dst[0], 30);
   assert.equal(dst[GPU_CASTER_FLOATS], 10);
-  assert.equal(dst[16], 3);
-  assert.ok(Math.abs(dst[17] - 0.3) < 1e-6);
-  assert.equal(dst[18], 6);
-  assert.equal(dst[GPU_CASTER_FLOATS + 16], 1);
+  assert.equal(dst[GPU_SPRITE_FLOATS], 3);
+  assert.ok(Math.abs(dst[GPU_SPRITE_FLOATS + 1] - 0.3) < 1e-6);
+  assert.equal(dst[GPU_SPRITE_FLOATS + 2], 6);
+  assert.equal(dst[GPU_CASTER_LIGHT_FLOAT], 0);
+  assert.equal(dst[GPU_CASTER_FLOATS - 1], 0);
+  assert.equal(dst[GPU_CASTER_FLOATS + GPU_SPRITE_FLOATS], 1);
 });
 
 test('makePackContext reuses the out object', () => {
