@@ -63,6 +63,8 @@ const STAMP_CELL = 256;
 /** ponytail: above this the bin grid is skipped and the full caster scan runs. Raise the arrays if a map is wider than 128 cells. */
 const STAMP_GRID_MAX_CELLS = 128 * 128;
 
+const _stampGridResult = { minX: 0, minY: 0, gw: 0, gh: 0, cells: 0 };
+
 function buildStampGrid(sun, nSun, sf, counts, starts, items) {
   let minX = Infinity;
   let minY = Infinity;
@@ -114,7 +116,12 @@ function buildStampGrid(sun, nSun, sf, counts, starts, items) {
     const cell = row * gw + col;
     items[cursor[cell]++] = c;
   }
-  return { minX, minY, gw, gh, cells };
+  _stampGridResult.minX = minX;
+  _stampGridResult.minY = minY;
+  _stampGridResult.gw = gw;
+  _stampGridResult.gh = gh;
+  _stampGridResult.cells = cells;
+  return _stampGridResult;
 }
 
 function sortPairsByIndex(idx, distArr, count) {
