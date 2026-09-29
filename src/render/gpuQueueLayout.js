@@ -106,9 +106,6 @@ export function gatherInstancedRows(src, dst, indices, n, srcFp, dstFp, shadowQ)
   return sn;
 }
 
-function instanceDepth(out, depthDenom) {
-  return 1.0 - (out + 1) / depthDenom;
-}
 
 /**
  * @param {number} maxSprites
@@ -284,8 +281,7 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
       if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
     }
     if (out >= cap) break;
-    if (!useIndices && typeArr && typeArr[i] === 1) particles++;
-    else if (useIndices && typeArr && typeArr[i] === 1) particles++;
+    if (typeArr && typeArr[i] === 1) particles++;
 
     let x = rqX[i];
     let y = rqY[i];
@@ -306,7 +302,7 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
         y = snapWorldToPixel(y, snapCamY, snapZoom);
       }
     }
-    const depth = instanceDepth(out, depthDenom, o, i);
+    const depth = 1.0 - (out + 1) / depthDenom;
 
     let a = rqAlpha[i];
     if (a < 0) a = 0;

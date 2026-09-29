@@ -32,9 +32,6 @@ import { writePosePrev } from './poseQueueInterp.js';
 import { writeCasterPose, copyTypedRange } from './gpuShadowCasters.js';
 import { packInstancedRows } from './gpuQueueLayout.js';
 
-function instanceDepth(out, depthDenom) {
-  return 1.0 - (out + 1) / depthDenom;
-}
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -742,7 +739,7 @@ export class InstancedSpriteBatch {
       const snappedPrev = snapSpritePos(px, py, o, useScreen);
       px = snappedPrev.x;
       py = snappedPrev.y;
-      const depth = instanceDepth(out, depthDenom, o, i);
+      const depth = 1.0 - (out + 1) / depthDenom;
       let a = rqAlpha[i];
       if (a < 0) a = 0;
       else if (a > 1) a = 1;
