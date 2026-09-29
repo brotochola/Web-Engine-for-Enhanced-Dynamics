@@ -43,6 +43,9 @@ test('stepMsFloorOk fails when a ms primary is under 3 ms', () => {
   const bothOk = stepMsFloorOk(okLoad, { particle_STEP_MS: { median: 3, cv: 0 } }, ['particle_STEP_MS']);
   assert.equal(bothOk.ok, true);
 
+  const winAteFloor = stepMsFloorOk(okLoad, { particle_STEP_MS: { median: 1.2, cv: 0 } }, ['particle_STEP_MS']);
+  assert.equal(winAteFloor.ok, true);
+
   const countsIgnored = stepMsFloorOk(
     { ACTIVE_PARTICLES: { median: 12, cv: 0 } },
     { ACTIVE_PARTICLES: { median: 12, cv: 0 } },

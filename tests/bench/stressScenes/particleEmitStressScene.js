@@ -29,7 +29,7 @@ export class ParticleEmitStressScene extends Scene {
       gravity: { x: 0, y: 0 },
     },
     particle: {
-      maxParticles: 60000,
+      maxParticles: 65535,
       decals: false,
     },
     renderer: {

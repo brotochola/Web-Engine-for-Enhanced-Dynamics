@@ -30,6 +30,8 @@ function emptyGrid() {
   Grid.totalCells = 16;
   Grid.maxEntitiesPerCell = 8;
   Grid.cellByteSize = 4 + 8 * 2;
+  Grid._cellIdStride = Grid.cellByteSize / 2;
+  Grid._headerIds = 2;
   const buf = new ArrayBuffer(Grid.totalCells * Grid.cellByteSize);
   Grid._gridCounts = new Uint8Array(buf);
   Grid._gridEntities = new Uint16Array(buf);

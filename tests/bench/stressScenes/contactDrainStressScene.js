@@ -4,9 +4,9 @@ import { ContactDrainBody } from './contactDrain/contactDrainBody.js';
 const { Scene, Camera } = WEED;
 
 const SEED = 0xc0a7;
-const BALLS = 256;
-const WORLD_W = 1400;
-const WORLD_H = 1400;
+const BALLS = 2048;
+const WORLD_W = 2400;
+const WORLD_H = 2400;
 
 /** Seeded overlapping pile with CollisionListener so logic0 drains begin/stay/end every tick. */
 export class ContactDrainStressScene extends Scene {
@@ -18,6 +18,7 @@ export class ContactDrainStressScene extends Scene {
       numberOfSpatialWorkers: 1,
       cellSize: 128,
       maxNeighbors: 64,
+      maxEntitiesPerCell: 255,
       noLimitFPS: false,
     },
     logic: { noLimitFPS: false, numberOfLogicWorkers: 1 },
@@ -77,13 +78,13 @@ export class ContactDrainStressScene extends Scene {
     });
 
     const cx = WORLD_W * 0.5;
-    const pileTop = 180;
+    const pileTop = 220;
     for (let i = 0; i < BALLS; i++) {
-      const col = i % 16;
-      const row = (i / 16) | 0;
+      const col = i % 32;
+      const row = (i / 32) | 0;
       this.spawnEntity(ContactDrainBody, {
-        x: cx - 120 + col * 16 + rng() * 4,
-        y: pileTop + row * 14 + rng() * 4,
+        x: cx - 240 + col * 15 + rng() * 4,
+        y: pileTop + row * 13 + rng() * 4,
         radius: 8 + rng() * 4,
         shape: 'circle',
         isStatic: false,

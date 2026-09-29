@@ -29,7 +29,7 @@ export class ParticleIntegrateStressScene extends Scene {
       gravity: { x: 0, y: 0 },
     },
     particle: {
-      maxParticles: 55000,
+      maxParticles: 65535,
       decals: false,
     },
     renderer: {

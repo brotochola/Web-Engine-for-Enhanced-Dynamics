@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 
 const { GameObject, Ray, Transform, Collider, RigidBody, Box2d } = WEED;
 
-const CASTS_PER_TICK = 512;
+const CASTS_PER_TICK = 3072;
 const PAIR_COUNT = 1024;
 const LONG_RAY_COUNT = 512;
 const WORLD_W = 4000;

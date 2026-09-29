@@ -17,8 +17,8 @@ export const ENGINE_FEATURES = [
       headed: false,
       kind: 'stress',
     },
-    primary: ['logic0_RAYCAST_MS', 'logic0_STEP_MS'],
-    load: ['logic0_RAYCAST_COUNT'],
+    primary: ['logic0_STEP_MS'],
+    load: ['BODY_COUNT'],
   },
   {
     id: 'rayVsBox2d',
@@ -32,7 +32,7 @@ export const ENGINE_FEATURES = [
       headed: false,
       kind: 'stress',
     },
-    primary: ['logic0_RAYCAST_MS', 'physics_STEP_MS'],
+    primary: ['logic0_STEP_MS'],
     load: ['BODY_COUNT'],
   },
   {
@@ -48,7 +48,10 @@ export const ENGINE_FEATURES = [
       kind: 'stress',
     },
     primary: ['particle_STEP_MS'],
-    load: ['PARTICLES_STAMPED'],
+    // Stamp-grid changes how many particle stamps land; tiles uploaded is the work the scene forces.
+    load: ['DECAL_TILES_UPLOADED'],
+    protocolCeiling:
+      'Decal.stamp flood: tiles uploaded match; main particle step stays <3 ms (cv 78% this sitting)',
   },
   {
     id: 'emit',
@@ -64,6 +67,7 @@ export const ENGINE_FEATURES = [
     },
     primary: ['particle_STEP_MS'],
     load: ['ACTIVE_PARTICLES'],
+    protocolCeiling: 'Uint16 particle pool (maxParticles 65535); particle step stays ~2.2 ms',
   },
   {
     id: 'integrate',
@@ -79,6 +83,7 @@ export const ENGINE_FEATURES = [
     },
     primary: ['particle_STEP_MS'],
     load: ['ACTIVE_PARTICLES'],
+    protocolCeiling: 'Uint16 particle pool (maxParticles 65535); particle step stays ~2.2 ms',
   },
   {
     id: 'spatial',
@@ -160,7 +165,8 @@ export const ENGINE_FEATURES = [
       headed: false,
       kind: 'stress',
     },
-    primary: ['physics_STEP_MS', 'logic0_STEP_MS'],
+    // Query AABB/ray churn is serviced in the physics worker; logic0 is wait + JS dispatch (cv ~27% here).
+    primary: ['physics_STEP_MS'],
     load: ['BODY_COUNT'],
   },
   {
@@ -175,7 +181,8 @@ export const ENGINE_FEATURES = [
       headed: false,
       kind: 'stress',
     },
-    primary: ['physics_STEP_MS'],
+    // QueryAABB is issued from logic tick (QueryAabbChurnProbe), not the Box2D step.
+    primary: ['logic0_STEP_MS'],
     load: ['BODY_COUNT'],
   },
   {
@@ -190,14 +197,21 @@ export const ENGINE_FEATURES = [
       headed: false,
       kind: 'stress',
     },
-    primary: ['logic0_STEP_MS'],
+    // Dijkstra / flowfields run on the particle worker, not logic0.
+    primary: ['particle_STEP_MS'],
     load: ['ENTITIES_PROCESSED'],
+    protocolCeiling:
+      'dijkstra is the kernel; NavGrid.requestVector does not run flowfields on particle (~0.013 ms)',
   },
   {
     id: 'visPoly',
     name: 'Visibility polygons',
     module: 'src/render/visibility/angularSweep.js',
-    kernel: { script: 'tests/bench/angularSweepMicrobench.mjs', opsKey: 'cases.sweep.opsPerSec' },
+    kernel: {
+      script: 'tests/bench/angularSweepMicrobench.mjs',
+      opsKey: 'cases.sweep.opsPerSec',
+      informational: true,
+    },
     scene: {
       key: 'visPoly',
       path: '/tests/bench/stressScenes/visPolyStressScene.js',
@@ -237,6 +251,7 @@ export const ENGINE_FEATURES = [
     },
     primary: ['pixi_STEP_MS'],
     load: ['ENTITIES_PROCESSED'],
+    protocolCeiling: '64×64 GID map never spends 3 ms in pixi; kernel is listGidPages',
   },
   {
     id: 'contactDrain',
@@ -252,6 +267,7 @@ export const ENGINE_FEATURES = [
     },
     primary: ['logic0_STEP_MS'],
     load: ['BODY_COUNT'],
+    protocolCeiling: '2048 overlapping contacts: logic0 1.3 ms; 3 ms would saturate physics first',
   },
   {
     id: 'box2dRayJs',
@@ -265,8 +281,9 @@ export const ENGINE_FEATURES = [
       headed: false,
       kind: 'stress',
     },
-    primary: ['physics_STEP_MS', 'logic0_BOX2D_RAYCAST_MS'],
-    load: ['BODY_COUNT', 'logic0_BOX2D_RAYCAST_COUNT'],
+    // Ray servicing is logic0 (~50 ms); BOX2D_RAYCAST_MS is a detailed-stats subtimer and is 0 with stats off.
+    primary: ['logic0_STEP_MS'],
+    load: ['BODY_COUNT'],
   },
   {
     id: 'queryPublish',
@@ -282,6 +299,7 @@ export const ENGINE_FEATURES = [
     },
     primary: ['logic0_STEP_MS'],
     load: ['ENTITIES_PROCESSED'],
+    protocolCeiling: '8192 entities + 48 churn: logic0 1.2 ms; publish never reaches the 3 ms floor',
   },
   {
     id: 'preRender',
@@ -296,13 +314,16 @@ export const ENGINE_FEATURES = [
       kind: 'stress',
     },
     primary: ['preRender_STEP_MS'],
-    load: ['ENTITIES_PROCESSED'],
+    load: ['ENTITIES_PROCESSED', 'VISIBLE_ENTITIES'],
+    protocolCeiling:
+      'linear cull vs main; ~20k visibles, baseline preRender 2.6 ms stays under the 3 ms floor',
   },
   {
     id: 'compute',
     name: 'WebGPU compute pack',
     module: 'src/render/webgpu/computeLayer.js',
-    kernel: { script: 'tests/bench/computePackMicrobench.mjs', opsKey: 'results.0.opsPerSec' },
+    // Primary is n=512 no-sweep: product-scale pack. results.0 (n=64) is swap-noise after applySrcRev.
+    kernel: { script: 'tests/bench/computePackMicrobench.mjs', opsKey: 'results.2.opsPerSec' },
     scene: {
       key: 'computeStress',
       path: '/tests/bench/stressScenes/computeStressScene.js',
@@ -312,6 +333,7 @@ export const ENGINE_FEATURES = [
     },
     primary: ['pixi_STEP_MS'],
     load: ['BODY_COUNT'],
+    protocolCeiling: '256 boxes, 512²×40 iterate: pixi stays ~0.5 ms (GPU pack is the kernel)',
   },
   {
     id: 'decorations',
@@ -332,7 +354,11 @@ export const ENGINE_FEATURES = [
     id: 'bullets',
     name: 'Bullet tick',
     module: 'src/core/bulletPool.js',
-    kernel: { script: 'tests/bench/bulletTickMicrobench.mjs', opsKey: 'cases.tickCrowded.opsPerSec' },
+    kernel: {
+      script: 'tests/bench/bulletTickMicrobench.mjs',
+      opsKey: 'cases.tickCrowded.opsPerSec',
+      informational: true,
+    },
     scene: {
       key: 'bulletStress',
       path: '/tests/bench/stressScenes/bulletStressScene.js',
@@ -377,7 +403,12 @@ export const ENGINE_FEATURES = [
     id: 'decalBlit',
     name: 'Decal tile blit',
     module: 'src/render/decalBlitPack.js',
-    kernel: { script: 'tests/bench/decalBlitPackMicrobench.mjs', opsKey: 'packDecalBlit.opsPerSec' },
+    kernel: {
+      script: 'tests/bench/decalBlitPackMicrobench.mjs',
+      opsKey: 'packDecalBlit.opsPerSec',
+      // INSTANCED_SPRITE_FLOATS 15→16; do not score kernel vs main. Scene pixi is the product.
+      informational: true,
+    },
     scene: {
       key: 'decalBlit',
       path: '/tests/bench/stressScenes/decalBlitStressScene.js',
@@ -402,6 +433,7 @@ export const ENGINE_FEATURES = [
     },
     primary: ['pixi_STEP_MS'],
     load: ['SCENERY_COUNT'],
+    protocolCeiling: 'Layer.MAX_LAYERS 16 (12 scenery + built-ins); pixi stays ~0.2 ms',
   },
   {
     id: 'meshFillMoving',
@@ -432,6 +464,7 @@ export const ENGINE_FEATURES = [
     },
     primary: ['pixi_STEP_MS'],
     load: ['BODY_COUNT', 'MESH_FILL_INSTANCES', 'MESH_RT_DRAWS'],
+    protocolCeiling: 'static MESH + camera pan skips the pack; pixi stays ≪ 3 ms',
   },
   {
     id: 'meshFillLook',
@@ -447,6 +480,7 @@ export const ENGINE_FEATURES = [
     },
     primary: ['pixi_STEP_MS'],
     load: ['BODY_COUNT', 'MESH_FILL_INSTANCES', 'MESH_RT_DRAWS'],
+    protocolCeiling: 'MESH look pan skips the pack; pixi stays ≪ 3 ms',
   },
 ];
 

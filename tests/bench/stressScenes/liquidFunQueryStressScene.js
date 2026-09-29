@@ -31,12 +31,16 @@ export class LiquidFunQueryStressScene extends WEED.Scene {
       noLimitFPS: false,
       gravity: { x: 0, y: 980 },
       sleeping: false,
-      liquidFun: { enabled: true, radius: 8, maxCount: 12000, subSteps: 1, strictContactCheck: false },
+      liquidFun: { enabled: true, radius: 8, maxCount: 24000, subSteps: 1, strictContactCheck: false },
     },
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 16000,
+    },
+    preRender: {
+      packGpuSprites: 'pixi',
+      sortSprites: 'pixi',
     },
     lighting: { enabled: false },
   };
@@ -64,8 +68,8 @@ export class LiquidFunQueryStressScene extends WEED.Scene {
       shape: 'box',
       posX: 2000,
       posY: 900,
-      halfWidth: 900,
-      halfHeight: 280,
+      halfWidth: 1400,
+      halfHeight: 500,
       texture: '_whiteCircle',
     });
 

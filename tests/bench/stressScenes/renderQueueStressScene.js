@@ -6,13 +6,13 @@ const { Scene, Camera } = WEED;
 export class RenderQueueStressScene extends Scene {
   static config = {
     worldWidth: 4200,
-    worldHeight: 2600,
+    worldHeight: 7200,
     seed: 616161,
     spatial: {
       numberOfSpatialWorkers: 1,
       cellSize: 256,
       maxNeighbors: 32,
-      maxEntitiesPerCell: 128,
+      maxEntitiesPerCell: 255,
       noLimitFPS: false,
     },
     logic: {
@@ -32,10 +32,13 @@ export class RenderQueueStressScene extends Scene {
       backend: 'webgl',
       noLimitFPS: false,
       ySort: true,
-      maxVisibleRenderables: 18000,
+      maxVisibleRenderables: 52000,
     },
     preRender: {
       noLimitFPS: false,
+      // Pin owner so vs-main measures cull, not the pack/sort move (engine default is preRender).
+      packGpuSprites: 'pixi',
+      sortSprites: 'pixi',
     },
     lighting: {
       enabled: false,
@@ -48,11 +51,11 @@ export class RenderQueueStressScene extends Scene {
     },
   };
 
-  static entities = [[RenderQueueStressEntity, 16000]];
+  static entities = [[RenderQueueStressEntity, 48000]];
 
   create() {
     spawnRenderQueueGrid(this);
-    Camera.setZoom(0.5);
+    Camera.setZoom(0.22);
   }
 }
 
@@ -66,7 +69,7 @@ function spawnRenderQueueGrid(scene) {
   const startY = 220;
   const palette = [0xffffff, 0xffd166, 0x06d6a0, 0x118ab2, 0xef476f];
 
-  for (let i = 0; i < 16000; i++) {
+  for (let i = 0; i < 48000; i++) {
     const col = i % cols;
     const row = (i / cols) | 0;
     scene.spawnEntity(RenderQueueStressEntity, {
@@ -90,7 +93,7 @@ export class RenderQueueHighRejectStressScene extends Scene {
     },
   };
   static assets = RenderQueueStressScene.assets;
-  static entities = [[RenderQueueStressEntity, 16000]];
+  static entities = [[RenderQueueStressEntity, 48000]];
 
   create() {
     spawnRenderQueueGrid(this);
@@ -107,7 +110,7 @@ export class RenderQueueHighRejectSkipCullScene extends Scene {
     },
   };
   static assets = RenderQueueStressScene.assets;
-  static entities = [[RenderQueueStressEntity, 16000]];
+  static entities = [[RenderQueueStressEntity, 48000]];
 
   create() {
     spawnRenderQueueGrid(this);

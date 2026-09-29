@@ -2389,6 +2389,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       this.shadowDisplaySprite.visible = false;
     }
     this.shadowSpritesEnabled = false;
+    // Keep Layer flag off so _applyLayerVisibility does not re-show an empty cookie RT.
+    if (Layer.castedShadows) Layer.castedShadows.visible = false;
 
     if (this._useWebGpu) {
       this._visPolyProgramOpts = { gpuProgram: gpuFromWgsl(this._visPolyWgsl, 'visibility-polygon') };
@@ -4375,7 +4377,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const on = Layer._visible[i] === 1;
       const name = Layer.getName(i);
       const displayObj = name ? this._layerRuntime[name] : null;
-      const show = on && (name !== 'lightGlows' || this._lightGlowAdd);
+      // Cookie RT is empty while shadowSpritesEnabled is false; multiply would crush the frame.
+      const show =
+        on &&
+        (name !== 'lightGlows' || this._lightGlowAdd) &&
+        (name !== 'castedShadows' || this.shadowSpritesEnabled);
       if (displayObj) setDisplayVisible(displayObj, show);
     }
   }

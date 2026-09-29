@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 
 const { GameObject, BulletPool } = WEED;
 
-const DEFAULT_SPAWN_PER_TICK = 40;
+const DEFAULT_SPAWN_PER_TICK = 280;
 const POSITION_SLOTS = 256;
 const SPEED = 1500;
 const WORLD_W = 4000;

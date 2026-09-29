@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { mulberry32, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
   packColliderFill,
   packColliderFillPoseOnly,
@@ -392,7 +392,8 @@ payload.uploadBytes = {
   C_localRemesh: INSTANCES * 6 * 4,
 };
 
-writeReport(path.join(reportDir, 'kernel.json'), payload);
+const args = parseArgs();
+writeReport(args.output ? String(args.output) : path.join(reportDir, 'kernel.json'), payload);
 const h2cDir = path.resolve(here, '../results/mesh-renderer-arch/h2c');
 fs.mkdirSync(h2cDir, { recursive: true });
 writeReport(path.join(h2cDir, 'kernel.json'), payload);

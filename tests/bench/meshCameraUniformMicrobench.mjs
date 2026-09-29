@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { timeIt, writeReport } from './microbenchHelpers.mjs';
+import { parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { writeMeshFillCameraMatrix, MESH_FILL_CAMERA_FLOATS } from '../../src/render/meshFillCamera.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -26,7 +26,8 @@ const timed = timeIt('writeMeshFillCameraMatrix', (iterations) => {
   }
 }, { iterations: 200000, warmup: 2000, reps: 5 });
 
-writeReport(path.join(reportDir, 'kernel.json'), {
+const args = parseArgs();
+writeReport(args.output ? String(args.output) : path.join(reportDir, 'kernel.json'), {
   name: 'mesh-camera-uniform',
   checksumOk: true,
   expect,

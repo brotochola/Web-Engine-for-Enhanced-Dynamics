@@ -3,12 +3,12 @@ import { ComputeStressBox } from './compute/computeStressBox.js';
 
 const { Scene, Camera } = WEED;
 
-const BOX_COUNT = 64;
+const BOX_COUNT = 256;
 const SEED = 0xce11;
-const TEX = 256;
+const TEX = 512;
 
 /**
- * L2 compute stress: 256² ping-pong storage, 20 iterate+swap, 64 fed boxes.
+ * L2 compute stress: 512² ping-pong storage, 40 iterate+swap, 256 fed boxes.
  * Isolates bind-group / dispatch cost. Not a lattice; no fire shaders.
  */
 export class ComputeStressScene extends Scene {
@@ -39,7 +39,7 @@ export class ComputeStressScene extends Scene {
     renderer: {
       backend: 'webgpu',
       noLimitFPS: false,
-      maxVisibleRenderables: 256,
+      maxVisibleRenderables: 512,
     },
     lighting: {
       enabled: false,
@@ -54,13 +54,13 @@ export class ComputeStressScene extends Scene {
             source: 'computeStressSim',
             size: { width: TEX, height: TEX },
             passes: [
-              { entry: 'jacobi', source: 'computeStressSim', iterate: 20, swap: ['t'] },
+              { entry: 'jacobi', source: 'computeStressSim', iterate: 40, swap: ['t'] },
             ],
             textures: [
               { name: 't', format: 'rgba8unorm', pingPong: true, look: true },
             ],
           },
-          maxBodies: 64,
+          maxBodies: 256,
         },
       },
     },

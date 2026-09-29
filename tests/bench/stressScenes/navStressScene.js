@@ -24,9 +24,9 @@ export class NavStressScene extends Scene {
     navigation: {
       enabled: true,
       cellSize: 32,
-      maxFlowfields: 16,
-      maxPaths: 32,
-      maxProcessingMsPerFrame: 2,
+      maxFlowfields: 64,
+      maxPaths: 64,
+      maxProcessingMsPerFrame: 8,
     },
     renderer: {
       backend: 'webgl',
@@ -35,11 +35,11 @@ export class NavStressScene extends Scene {
     lighting: { enabled: false },
   };
 
-  static entities = [[NavStressAgent, 64]];
+  static entities = [[NavStressAgent, 256]];
 
   create() {
     const targets = 24;
-    for (let i = 0; i < 48; i++) {
+    for (let i = 0; i < 256; i++) {
       const t = i % targets;
       const col = t % 6;
       const row = (t / 6) | 0;

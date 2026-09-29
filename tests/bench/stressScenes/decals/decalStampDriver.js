@@ -3,7 +3,7 @@ import WEED from '/src/index.js';
 const { GameObject, Decal, enums } = WEED;
 const { DECAL_STAMPS_BLEND_MODE } = enums;
 
-const STAMPS_PER_TICK = 64;
+const STAMPS_PER_TICK = 768;
 const WORLD_W = 1920;
 const WORLD_H = 1080;
 

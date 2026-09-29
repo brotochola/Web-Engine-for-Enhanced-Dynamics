@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { VisPolyAlbedo } from './visPoly/visPolyAlbedo.js';
 import { VisPolyLight } from './visPoly/visPolyLight.js';
 import { VisPolyOccluder } from './visPoly/visPolyOccluder.js';
 
@@ -25,6 +26,11 @@ export class VisPolyStressScene extends Scene {
     physics: { subStepCount: 1, noLimitFPS: false, gravity: { x: 0, y: 0 } },
     particle: { maxParticles: 0, decals: false },
     renderer: { backend: 'webgl', noLimitFPS: false, maxVisibleRenderables: 4000 },
+    preRender: {
+      noLimitFPS: false,
+      packGpuSprites: 'pixi',
+      sortSprites: 'pixi',
+    },
     lighting: {
       enabled: true,
       baseAmbient: 0.2,
@@ -36,6 +42,7 @@ export class VisPolyStressScene extends Scene {
   };
 
   static entities = [
+    [VisPolyAlbedo, 1],
     [VisPolyLight, LIGHTS],
     [VisPolyOccluder, OCCLUDERS],
   ];
@@ -52,6 +59,8 @@ export class VisPolyStressScene extends Scene {
 
     const w = this.config.worldWidth;
     const h = this.config.worldHeight;
+    // Multiply lighting × black clear = black. One white sprite is the albedo.
+    this.spawnEntity(VisPolyAlbedo, { x: w * 0.5, y: h * 0.5, width: w, height: h });
     for (let i = 0; i < LIGHTS; i++) {
       this.spawnEntity(VisPolyLight, {
         x: 400 + rng() * (w - 800),

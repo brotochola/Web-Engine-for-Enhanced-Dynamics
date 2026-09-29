@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { mulberry32, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
   INSTANCED_SPRITE_FLOATS,
   packDecalBlit,
@@ -74,7 +74,8 @@ const payload = {
   packDecalBlit: batch,
 };
 
-writeReport(path.join(reportDir, 'kernel.json'), payload);
+const args = parseArgs();
+writeReport(args.output ? String(args.output) : path.join(reportDir, 'kernel.json'), payload);
 console.log(
   `decal-blit sprite ${Math.round(sprites.opsPerSec).toLocaleString()} ops/s  ` +
     `pack ${Math.round(batch.opsPerSec).toLocaleString()} ops/s  checksum ${checksum}`,

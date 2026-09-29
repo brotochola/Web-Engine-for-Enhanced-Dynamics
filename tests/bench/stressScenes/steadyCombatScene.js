@@ -28,7 +28,10 @@ export class SteadyCombatScene extends Scene {
     particle: { maxParticles: 8000, decals: false },
     renderer: { backend: 'webgl', noLimitFPS: false, maxVisibleRenderables: 8000 },
     lighting: { enabled: false },
-    preRender: {},
+    preRender: {
+      packGpuSprites: 'pixi',
+      sortSprites: 'pixi',
+    },
   };
 
   static assets = {

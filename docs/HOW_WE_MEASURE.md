@@ -22,6 +22,8 @@ Correctness comes first. If the checksum or assert fails, the timing does not co
 
 Use this when the claim is about a hot function in isolation.
 
+When the scoreboard (or any A/B) swaps the whole `src/` tree with `applySrcRev` before a kernel, run a **discard warmup process** and then a timed process (`runKernelScript` does this; `tests/bench/runKernelAbFresh.mjs` is the standalone). The first timed case after a full-tree swap is often cold: compute `results.0` (n=64) once looked about −30% while n=512 matched. Prefer a product-scale opsKey (for compute pack, `results.2` = n=512 no-sweep), not the smallest case.
+
 ### 2. Stress scene
 
 Scenes under [`tests/bench/stressScenes/`](../tests/bench/stressScenes/). Chromium. Headless is fine for screening.
@@ -50,7 +52,11 @@ Name the primary in the hypothesis before you run. The default primary is the st
 
 ### Stress step floor (3 ms)
 
-A stress-scene primary in milliseconds (`STEP_MS`, `RAYCAST_MS`, `VISIBILITY_MS`, and the rest of the catalog millisecond keys) must have a median of at least **3 ms** on both sides. Below that, 3 percent is timer noise: 3 percent of 0.3 ms is 9 µs. The pair **fails**. Do not keep, drop, or tie on the delta. Raise that scene's own load knob (more particles, bullets, decorations, bodies, stamps, map, rays — whichever that row actually runs) and measure again.
+A stress-scene primary in milliseconds (`STEP_MS`, `RAYCAST_MS`, `VISIBILITY_MS`, and the rest of the catalog millisecond keys) must have a **baseline** median of at least **3 ms**. Below that, 3 percent is timer noise: 3 percent of 0.3 ms is 9 µs. The pair **fails**. Do not keep, drop, or tie on the delta. Raise that scene's own load knob (more particles, bullets, decorations, bodies, stamps, map, rays — whichever that row actually runs) and measure again.
+
+If the baseline is at least 3 ms and the hyp side is cheaper, the hyp median may fall under 3 ms. That is a keep that ate the timer, not a FAIL. If the hyp side is more expensive and still under 3 ms, the pair still **fails**.
+
+Some rows cannot reach 3 ms at the engine's own ceiling (Uint16 particle/bullet/decoration pools at 65535, `Layer.MAX_LAYERS` 16, a 64×64 GID map, mesh-fill pan/look that skip the pack). Mark those catalog rows `protocolCeiling` and stop claiming them. Kernel ops/s on those rows is evidence about the kernel, not a gameplay keep.
 
 Gameplay scenes skip this floor: Balls, Predator, `steadyCombatScene`, zenithal, and catalog rows with `kind: 'gameplay'`.
 
@@ -66,7 +72,7 @@ Kernel ops/s does not use this floor.
 
 If 8 ms is unreachable without saturating 16 ms or breaking the engine (Uint16 pool caps, a hard processing deadline), the verdict is **FAIL / no signal**. Hygiene may stay if no primary is 3 percent worse. Do not sell it as faster.
 
-The 8 ms floor applies to the baseline only. The optimized side may fall under 8 ms. If the baseline median is at least 8 ms, both sides stay at least 3 ms, the load keys match, and the primary is at least 3 percent cheaper, that pair is a **speed keep**. Do not mark it FAIL because the fast side is under 8 ms. Do not raise the load until the slow side passes 16 ms just to drag the fast side back over 8. The 3 ms floor still applies to both sides.
+The 8 ms floor applies to the baseline only. The optimized side may fall under 8 ms. If the baseline median is at least 8 ms, the 3 ms rule above holds, the load keys match, and the primary is at least 3 percent cheaper, that pair is a **speed keep**. Do not mark it FAIL because the fast side is under 8 ms. Do not raise the load until the slow side passes 16 ms just to drag the fast side back over 8.
 
 Skip-work rows B and C were already measured at the old 2 ms floor. Do not remeasure them.
 

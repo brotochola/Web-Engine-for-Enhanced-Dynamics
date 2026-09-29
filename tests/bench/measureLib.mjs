@@ -57,10 +57,21 @@ export function explainStepMsFloor(hits) {
   );
 }
 
-/** Both sides must have every ms primary ≥ STEP_MS_FLOOR or the pair is not comparable. */
+/**
+ * Baseline ms primaries must be ≥ STEP_MS_FLOOR. A cheaper hyp may fall under
+ * the floor (the win ate the timer). A slower hyp still under the floor is noise.
+ */
 export function stepMsFloorOk(baseSum, hypSum, primaryKeys) {
   const baseHits = stepMsFloorHits(baseSum, primaryKeys).map((h) => ({ ...h, side: 'baseline' }));
-  const hypHits = stepMsFloorHits(hypSum, primaryKeys).map((h) => ({ ...h, side: 'hyp' }));
+  const hypHits = [];
+  for (const key of primaryKeys || []) {
+    if (!isMsPrimaryMetric(key)) continue;
+    const b = baseSum?.[key]?.median;
+    const h = hypSum?.[key]?.median;
+    if (!Number.isFinite(h) || h >= STEP_MS_FLOOR) continue;
+    if (Number.isFinite(b) && b >= STEP_MS_FLOOR && h < b) continue;
+    hypHits.push({ key, median: h, side: 'hyp' });
+  }
   const hits = [...baseHits, ...hypHits];
   return { ok: hits.length === 0, hits, reason: explainStepMsFloor(hits) };
 }
@@ -97,8 +108,28 @@ export function restoreSnapshot(files) {
   for (const [rel, buf] of files) {
     const abs = path.join(repoRoot, rel);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, buf);
+    writeFileRetry(abs, buf);
   }
+}
+
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function writeFileRetry(abs, buf, attempts = 12) {
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      fs.writeFileSync(abs, buf);
+      return;
+    } catch (e) {
+      last = e;
+      const code = e.code;
+      if (code !== 'UNKNOWN' && code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') throw e;
+      sleepMs(40 * (i + 1));
+    }
+  }
+  throw last;
 }
 
 export function restoreSrcTree(files) {
@@ -131,7 +162,7 @@ export function applySrcRev(rev) {
     });
     const abs = path.join(repoRoot, rel);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, body);
+    writeFileRetry(abs, body);
   }
 }
 
@@ -349,6 +380,11 @@ export function pickOpsWithKey(json, opsKey) {
 
 export function runKernelScript(scriptRel, outPath) {
   const script = path.join(repoRoot, scriptRel);
+  // Discard one full process after applySrcRev: the first timed case after a
+  // whole-tree swap is often cold (compute results.0 looked −30% while n=512
+  // matched). Warmup writes beside the timed output.
+  const warmPath = outPath.replace(/\.json$/i, '-warm.json');
+  execFileSync(process.execPath, [script, '--output', warmPath], { cwd: repoRoot, stdio: 'inherit' });
   execFileSync(process.execPath, [script, '--output', outPath], { cwd: repoRoot, stdio: 'inherit' });
   return JSON.parse(fs.readFileSync(outPath, 'utf8'));
 }
@@ -417,6 +453,10 @@ const COUNT_KEYS = new Set([
   'NEIGHBORS_REUSED',
   'HEAP_USED_KB',
   'logic0_RAYCAST_COUNT',
+  'DECAL_TILES_DIRTY',
+  'DECAL_TILES_UPLOADED',
+  'MESH_FILL_INSTANCES',
+  'MESH_RT_DRAWS',
 ]);
 
 export function metricKind(key) {

@@ -14,6 +14,9 @@ export class NavStressAgent extends GameObject {
   }
 
   tick() {
+    const f = (this.scene?.mainFrameNumber || 0) | 0;
+    this._tx = 400 + ((this.index + f) % 40) * 32;
+    this._ty = 400 + ((this.index * 3 + f) % 40) * 32;
     NavGrid.requestVector(this.x, this.y, this._tx, this._ty, this._vec);
   }
 }

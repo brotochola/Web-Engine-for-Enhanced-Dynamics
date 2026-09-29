@@ -14,7 +14,7 @@ export class QueryChurnScene extends Scene {
       numberOfSpatialWorkers: 2,
       cellSize: 128,
       maxNeighbors: 256,
-      maxEntitiesPerCell: 96,
+      maxEntitiesPerCell: 255,
       noLimitFPS: false,
     },
     logic: {
@@ -34,7 +34,7 @@ export class QueryChurnScene extends Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      maxVisibleRenderables: 10000,
+      maxVisibleRenderables: 20000,
     },
     lighting: {
       enabled: false,
@@ -49,7 +49,7 @@ export class QueryChurnScene extends Scene {
 
   static entities = [
     [QueryChurnDriver, 1],
-    [QueryChurnEntity, 4096],
+    [QueryChurnEntity, 8192],
   ];
 
   static queries = [[QueryChurnTag, SpriteRenderer]];
@@ -57,7 +57,7 @@ export class QueryChurnScene extends Scene {
   create() {
     this.spawnEntity(QueryChurnDriver, {});
 
-    for (let i = 0; i < 2048; i++) {
+    for (let i = 0; i < 8192; i++) {
       const col = i % 96;
       const row = (i / 96) | 0;
       this.spawnEntity(QueryChurnEntity, {

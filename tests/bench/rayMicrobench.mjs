@@ -41,6 +41,9 @@ Grid.gridHeight = gridRows;
 Grid.totalCells = totalCells;
 Grid.maxEntitiesPerCell = MAX_PER_CELL;
 Grid.cellByteSize = cellByteSize;
+// Manual harness: Grid.initialize() normally sets these. Stride 0 aliases every cell.
+Grid._cellIdStride = cellByteSize / 2;
+Grid._headerIds = 2;
 
 const gridBuffer = new ArrayBuffer(totalCells * cellByteSize);
 Grid._gridBuffer = gridBuffer;

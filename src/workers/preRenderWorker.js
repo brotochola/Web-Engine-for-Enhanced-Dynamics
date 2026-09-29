@@ -2737,20 +2737,23 @@ class PreRenderWorker extends AbstractWorker {
         if (!this._stampLightCmp) {
             this._stampLightCmp = (a, b) => a.distSq - b.distSq || a.id - b.id;
         }
-        this._sortPrefix(out, n, this._stampLightCmp);
+        // Cookie pack needs the list; dist-order is only for stamping casters.
+        if (this._stampSortLights) this._sortPrefix(out, n, this._stampLightCmp);
     }
 
     _sortPrefix(arr, count, compare) {
         const n = count | 0;
-        for (let i = 1; i < n; i++) {
-            const item = arr[i];
-            let j = i - 1;
-            while (j >= 0 && compare(arr[j], item) > 0) {
-                arr[j + 1] = arr[j];
-                j--;
-            }
-            arr[j + 1] = item;
+        if (n <= 1) return;
+        // takeClosest keep: native sort, not insertion. Prefix copy keeps pooled slots.
+        if (n === arr.length) {
+            arr.sort(compare);
+            return;
         }
+        const tmp = this._sortPrefixTmp || (this._sortPrefixTmp = []);
+        tmp.length = n;
+        for (let i = 0; i < n; i++) tmp[i] = arr[i];
+        tmp.sort(compare);
+        for (let i = 0; i < n; i++) arr[i] = tmp[i];
     }
 
     _packGpuSun(dst, q) {
@@ -2798,6 +2801,7 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _stampAgainstSun(dst, sun, sunN, stampBase, lightBegin, lightStride) {
+        this._stampSortLights = (sunN | 0) > 0;
         this._collectStampLights();
         const lights = this._stampLights;
         const capL = Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0);

@@ -34,11 +34,11 @@ export class BulletStressScene extends Scene {
       gravity: { x: 0, y: 0 },
     },
     particle: { maxParticles: 0, decals: false },
-    bullet: { maxBullets: 2048, maxImpactsPerFrame: 128 },
+    bullet: { maxBullets: 40000, maxImpactsPerFrame: 256 },
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      maxVisibleRenderables: 8000,
+      maxVisibleRenderables: 42000,
     },
     lighting: { enabled: false },
   };
@@ -104,7 +104,7 @@ export class BulletStressScene extends Scene {
     }
 
     for (let s = 0; s < 8; s++) {
-      this.spawnEntity(BulletStressDriver, { seed: SEED + s * 97, spawnPerTick: 40 });
+      this.spawnEntity(BulletStressDriver, { seed: SEED + s * 97, spawnPerTick: 180 });
     }
 
     Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);

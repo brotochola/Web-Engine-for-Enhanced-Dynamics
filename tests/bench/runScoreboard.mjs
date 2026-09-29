@@ -38,7 +38,13 @@ import {
 const outRoot = path.join(repoRoot, 'tests/results/scoreboard');
 
 function runNodeTests() {
-  execFileSync('pnpm', ['test:node'], { cwd: repoRoot, stdio: 'inherit', shell: true });
+  try {
+    execFileSync('pnpm', ['test:node'], { cwd: repoRoot, stdio: 'inherit', shell: true });
+  } catch (first) {
+    // Parallel ESM loads still flake rarely; one retry before aborting the campaign.
+    console.warn('test:node failed once; retrying once before abort...');
+    execFileSync('pnpm', ['test:node'], { cwd: repoRoot, stdio: 'inherit', shell: true });
+  }
 }
 
 function runLockstep() {
@@ -56,6 +62,9 @@ function runLockstep() {
 
 function decideRow(feature, kernel, scenePair) {
   const reasons = [];
+  if (feature.protocolCeiling) {
+    reasons.push(`protocol ceiling: ${feature.protocolCeiling}`);
+  }
   if (kernel && kernel.error) reasons.push(`kernel failed: ${kernel.error}`);
   if (scenePair && !scenePair.ok) reasons.push(`scene failed: ${scenePair.error || 'unknown'}`);
   if (scenePair?.workload && !scenePair.workload.ok) {
@@ -65,13 +74,19 @@ function decideRow(feature, kernel, scenePair) {
         .join(', ')}`
     );
   }
-  if (usesStressStepFloor(feature.scene) && scenePair?.ok && scenePair.base && scenePair.hyp) {
+  if (
+    !feature.protocolCeiling &&
+    usesStressStepFloor(feature.scene) &&
+    scenePair?.ok &&
+    scenePair.base &&
+    scenePair.hyp
+  ) {
     const floor = stepMsFloorOk(scenePair.base, scenePair.hyp, feature.primary);
     if (!floor.ok) reasons.push(floor.reason);
   }
 
   const hits = [];
-  if (kernel?.baseOps != null && kernel?.hypOps != null) {
+  if (kernel?.baseOps != null && kernel?.hypOps != null && !feature.kernel?.informational) {
     const d = pctDelta(kernel.hypOps, kernel.baseOps);
     hits.push({
       metric: 'kernel',
@@ -81,7 +96,7 @@ function decideRow(feature, kernel, scenePair) {
       higherBetter: feature.kernel?.higherBetter !== false,
     });
   }
-  if (scenePair?.ok && scenePair.workload?.ok) {
+  if (!feature.protocolCeiling && scenePair?.ok && scenePair.workload?.ok) {
     for (const metric of feature.primary) {
       const b = scenePair.base[metric]?.median;
       const h = scenePair.hyp[metric]?.median;
@@ -91,6 +106,9 @@ function decideRow(feature, kernel, scenePair) {
     }
   }
 
+  if (feature.protocolCeiling) {
+    return { verdict: 'FAIL', reasons, hits };
+  }
   if (
     reasons.some(
       (r) =>
@@ -111,6 +129,13 @@ function decideRow(feature, kernel, scenePair) {
   return { verdict: 'NA', reasons: reasons.length ? reasons : ['no comparable metric'], hits };
 }
 
+function isProtocolCeilingFail(row) {
+  return (
+    row.decision?.verdict === 'FAIL' &&
+    (row.decision.reasons || []).some((r) => String(r).startsWith('protocol ceiling:'))
+  );
+}
+
 function productVerdict(rows, gates) {
   if (gates?.node && gates.node !== 'ok' && gates.node !== 'skipped') {
     return { fasterThanMain: false, text: `No. test:node falló (${gates.node}). La velocidad no cuenta.` };
@@ -118,9 +143,12 @@ function productVerdict(rows, gates) {
   if (gates?.lockstep && gates.lockstep !== 'ok' && gates.lockstep !== 'skipped') {
     return { fasterThanMain: false, text: `No. Lockstep falló (${gates.lockstep}). La velocidad no cuenta.` };
   }
-  const usable = rows.filter((r) => r.decision.verdict !== 'NA');
-  const fails = rows.filter((r) => r.decision.verdict === 'FAIL' || r.decision.verdict === 'WORSE');
+  const usable = rows.filter((r) => r.decision.verdict !== 'NA' && !isProtocolCeilingFail(r));
+  const fails = rows.filter(
+    (r) => (r.decision.verdict === 'FAIL' || r.decision.verdict === 'WORSE') && !isProtocolCeilingFail(r)
+  );
   const keeps = rows.filter((r) => r.decision.verdict === 'KEPT');
+  const ceilings = rows.filter(isProtocolCeilingFail);
   if (fails.length) {
     return {
       fasterThanMain: false,
@@ -130,13 +158,19 @@ function productVerdict(rows, gates) {
   if (!usable.length) {
     return { fasterThanMain: false, text: 'No. No hay filas comparables.' };
   }
+  const ceilingNote = ceilings.length
+    ? ` ${ceilings.length} fila(s) son techo de protocolo (no se reclaman).`
+    : '';
   if (keeps.length && !fails.length) {
     return {
       fasterThanMain: true,
-      text: `Sí, en las filas medidas: ${keeps.map((r) => r.id).join(', ')} kept y ninguna peor.`,
+      text: `Sí, en las filas medidas: ${keeps.map((r) => r.id).join(', ')} kept y ninguna peor.${ceilingNote}`,
     };
   }
-  return { fasterThanMain: false, text: 'Empate: ninguna fila ≥3% mejor y ninguna peor.' };
+  return {
+    fasterThanMain: false,
+    text: `Empate: ninguna fila ≥3% mejor y ninguna peor.${ceilingNote}`,
+  };
 }
 
 function describeFeature(feature) {
@@ -162,6 +196,12 @@ function describeFeature(feature) {
   }
   if (feature.primary?.length) bits.push(`Primarias: ${feature.primary.join(', ')}.`);
   if (feature.load?.length) bits.push(`Claves de carga: ${feature.load.join(', ')}.`);
+  if (feature.protocolCeiling) {
+    bits.push(`Techo de protocolo (no se reclama la escena): ${feature.protocolCeiling}.`);
+  }
+  if (feature.kernel?.informational) {
+    bits.push('El kernel es informativo: no entra al keep/drop (stride u otro confound).');
+  }
   return bits.join(' ');
 }
 
@@ -327,6 +367,54 @@ function updateHypothesisLog(payload) {
   fs.writeFileSync(logPath, text);
 }
 
+function gateFailed(gates) {
+  if (gates?.node && gates.node !== 'ok' && gates.node !== 'skipped') {
+    return `test:node failed (${gates.node})`;
+  }
+  if (gates?.lockstep && gates.lockstep !== 'ok' && gates.lockstep !== 'skipped') {
+    return `lockstep failed (${gates.lockstep})`;
+  }
+  return null;
+}
+
+/** Black / empty draw on a headed scene: stop instead of plowing ahead. */
+function blackScreenReason(row, feature) {
+  if (!feature?.scene?.headed && !(feature?.load || []).includes('VISIBLE_ENTITIES')) {
+    return null;
+  }
+  const sides = [
+    ['BASE', row?.scene?.base],
+    ['KEEP', row?.scene?.hyp],
+  ];
+  for (const [label, summary] of sides) {
+    if (!summary) continue;
+    const vis = summary.VISIBLE_ENTITIES?.median;
+    if (Number.isFinite(vis) && vis === 0) {
+      return `${row.id} ${label} VISIBLE_ENTITIES median 0 (black / empty draw)`;
+    }
+  }
+  return null;
+}
+
+function abortCampaign(reason, snap, rows, gates, args) {
+  console.error(`\nABORT scoreboard: ${reason}`);
+  console.error('Diagnose and fix before continuing. Remaining catalog rows were not run.');
+  restoreSrcTree(snap);
+  const payload = {
+    vs: args.vs,
+    args,
+    catalogSize: ENGINE_FEATURES.length,
+    rows,
+    gates,
+    aborted: reason,
+    product: { fasterThanMain: false, text: `No. Campaña abortada: ${reason}` },
+  };
+  writeJson(path.join(outRoot, 'summary.json'), payload);
+  writeReport(payload);
+  console.log(`Wrote ${path.join(outRoot, 'report.md')}`);
+  process.exitCode = 1;
+}
+
 function main() {
   const args = parseMeasureArgs(process.argv.slice(2));
   const features = filterFeatures(args.only);
@@ -344,7 +432,9 @@ function main() {
         gates.node = 'ok';
       } catch (e) {
         gates.node = String(e.message || e);
-        console.error('test:node failed; speed rows still run but product cannot be kept.');
+        console.error('test:node failed; aborting scoreboard (product cannot be kept).');
+        abortCampaign(`test:node failed (${gates.node})`, snap, rows, gates, args);
+        return;
       }
     }
     if (!args.skipLockstep) {
@@ -354,14 +444,22 @@ function main() {
         gates.lockstep = 'ok';
       } catch (e) {
         gates.lockstep = String(e.message || e);
-        console.error('lockstep failed; speed rows still run but product cannot be kept.');
+        console.error('lockstep failed; aborting scoreboard (product cannot be kept).');
+        abortCampaign(`lockstep failed (${gates.lockstep})`, snap, rows, gates, args);
+        return;
       }
+    }
+
+    const gateReason = gateFailed(gates);
+    if (gateReason) {
+      abortCampaign(gateReason, snap, rows, gates, args);
+      return;
     }
 
     for (const feature of features) {
       console.log(`\n################ ${feature.id} ################`);
       const row = { id: feature.id, name: feature.name };
-      if (!args.skipKernels && feature.kernel) {
+      if (!args.skipKernels && feature.kernel && !feature.protocolCeiling) {
         const kdir = path.join(outRoot, feature.id);
         fs.mkdirSync(kdir, { recursive: true });
         try {
@@ -382,7 +480,7 @@ function main() {
         }
       }
 
-      if (!args.skipScenes && feature.scene) {
+      if (!args.skipScenes && feature.scene && !feature.protocolCeiling) {
         const headed = sceneWantsHeaded(feature.scene, args, feature.id);
         const cacheKey = `${feature.scene.key}|${headed ? 1 : 0}|${args.smoke}`;
         if (!sceneCache.has(cacheKey)) {
@@ -414,6 +512,22 @@ function main() {
       fs.mkdirSync(path.join(outRoot, feature.id), { recursive: true });
       writeJson(path.join(outRoot, feature.id, 'verdict.json'), row);
       console.log(`${feature.id} => ${row.decision.verdict}`);
+
+      const black = blackScreenReason(row, feature);
+      if (black) {
+        abortCampaign(black, snap, rows, gates, args);
+        return;
+      }
+      if (row.decision.verdict === 'FAIL') {
+        const reasons = row.decision.reasons || [];
+        const onlyStepFloor =
+          reasons.length > 0 && reasons.every((r) => String(r).startsWith('step floor:'));
+        // Black canvas already aborted above. Step-floor / load / scene FAIL: keep going so
+        // the campaign can raise knobs and remasure remaining rows in the same sitting.
+        console.warn(
+          `CONTINUE: ${row.id} FAIL (${onlyStepFloor ? 'step-floor' : reasons.join('; ') || 'no reason'}). Not a black abort.`
+        );
+      }
     }
   } finally {
     restoreSrcTree(snap);

@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { mulberry32, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
   SCENERY_CAM_FLOATS,
   packSceneryCamera,
@@ -70,7 +70,8 @@ const packT = timeIt('packSceneryCamera', (iterations) => {
   for (let i = 0; i < iterations; i++) packSceneryCamera(inst, layers, cam);
 }, { iterations: 200, warmup: 20, reps: 5 });
 
-writeReport(path.join(reportDir, 'kernel.json'), {
+const args = parseArgs();
+writeReport(args.output ? String(args.output) : path.join(reportDir, 'kernel.json'), {
   name: 'scenery-cam-pack',
   layers: N,
   checksum,

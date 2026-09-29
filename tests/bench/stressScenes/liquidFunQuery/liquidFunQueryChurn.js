@@ -27,8 +27,13 @@ export class LiquidFunQueryChurn extends GameObject {
     const cy = this.y;
     const half = 120 + (this._t % 40);
     try {
-      LiquidFun.queryAABB(cx - half, cy - half, cx + half, cy + half, this._out);
-      LiquidFun.rayCast(cx - 400, cy, cx + 400, cy + 80, this._out);
+      // Enough queries per tick that physics+logic0 clear the 3 ms stress floor.
+      for (let i = 0; i < 24; i++) {
+        const ox = ((i * 37) % 9) * 40;
+        const oy = ((i * 19) % 7) * 40;
+        LiquidFun.queryAABB(cx - half + ox, cy - half + oy, cx + half + ox, cy + half + oy, this._out);
+        LiquidFun.rayCast(cx - 400 + ox, cy + oy, cx + 400 + ox, cy + 80 + oy, this._out);
+      }
     } catch (err) {
       if (!String(err && err.message).includes('not bound')) {
         console.error('[LiquidFunQueryChurn]', err);

@@ -20,15 +20,15 @@ export class QueryChurnDriver extends GameObject {
     this._lastActiveCount = active.length;
 
     if (active.length > 0) {
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 48; i++) {
         const index = (this._despawnCursor + i) % active.length;
         const entity = GameObject.get(active[index]);
         if (entity) entity.despawn();
       }
-      this._despawnCursor = (this._despawnCursor + 12) % active.length;
+      this._despawnCursor = (this._despawnCursor + 48) % active.length;
     }
 
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 48; i++) {
       const n = this._spawnCursor++;
       const col = n % 96;
       const row = (n / 96) | 0;
