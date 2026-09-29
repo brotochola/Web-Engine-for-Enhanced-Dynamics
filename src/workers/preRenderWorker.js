@@ -2810,31 +2810,57 @@ class PreRenderWorker extends AbstractWorker {
         this._ensureStampScratch(sunN);
         if (!this._gpuLightVec) this._gpuLightVec = new Float32Array(4);
 
-        return stampLightRange({
-            sun,
-            sunN,
-            sunFloats: GPU_CASTER_FLOATS,
-            lights,
-            lightBegin,
-            lightEnd: capL,
-            lightStride,
-            maxPerLight: this.maxShadowsPerLight | 0,
-            maxPerEntity: this.maxShadowsPerEntity | 0,
-            used: this._gpuCasterUsed,
-            tmpIdx: this._gpuStampTmp,
-            dist: this._gpuStampDist,
-            order: this._gpuStampOrder,
-            keepIdx: this._gpuKeepIdx,
-            gridCounts: this._stampGridCounts,
-            gridStarts: this._stampGridStarts,
-            gridItems: this._stampGridItems,
-            stamp: dst.stamp,
-            stampFloats: GPU_CASTER_FLOATS,
-            stampCap,
-            stampBase,
-            stampLightIdx: dst.stampLightIdx,
-            lightVec: this._gpuLightVec,
-        });
+        let spec = this._stampRangeSpec;
+        if (!spec) {
+            spec = this._stampRangeSpec = {
+                sun: null,
+                sunN: 0,
+                sunFloats: GPU_CASTER_FLOATS,
+                lights: null,
+                lightBegin: 0,
+                lightEnd: 0,
+                lightStride: 1,
+                maxPerLight: 0,
+                maxPerEntity: 0,
+                used: null,
+                tmpIdx: null,
+                dist: null,
+                order: null,
+                keepIdx: null,
+                gridCounts: null,
+                gridStarts: null,
+                gridItems: null,
+                stamp: null,
+                stampFloats: GPU_CASTER_FLOATS,
+                stampCap: 0,
+                stampBase: 0,
+                stampLightIdx: null,
+                lightVec: null,
+            };
+        }
+        spec.sun = sun;
+        spec.sunN = sunN;
+        spec.lights = lights;
+        spec.lightBegin = lightBegin;
+        spec.lightEnd = capL;
+        spec.lightStride = lightStride;
+        spec.maxPerLight = this.maxShadowsPerLight | 0;
+        spec.maxPerEntity = this.maxShadowsPerEntity | 0;
+        spec.used = this._gpuCasterUsed;
+        spec.tmpIdx = this._gpuStampTmp;
+        spec.dist = this._gpuStampDist;
+        spec.order = this._gpuStampOrder;
+        spec.keepIdx = this._gpuKeepIdx;
+        spec.gridCounts = this._stampGridCounts;
+        spec.gridStarts = this._stampGridStarts;
+        spec.gridItems = this._stampGridItems;
+        spec.stamp = dst.stamp;
+        spec.stampCap = stampCap;
+        spec.stampBase = stampBase;
+        spec.stampLightIdx = dst.stampLightIdx;
+        spec.lightVec = this._gpuLightVec;
+
+        return stampLightRange(spec);
     }
 
     _packGpuCookies(dst) {
@@ -2880,13 +2906,20 @@ class PreRenderWorker extends AbstractWorker {
 
     _packGpuShadows(dst, q) {
         const caps = this.gpuQueueCaps;
+        const res = this._gpuShadowsResult || (this._gpuShadowsResult = { sun: 0, stamp: 0, cookie: 0 });
         if (!this.shadowsEnabled || !caps || !(caps.maxSun > 0)) {
-            return { sun: 0, stamp: 0, cookie: 0 };
+            res.sun = 0;
+            res.stamp = 0;
+            res.cookie = 0;
+            return res;
         }
         const sunN = this._packGpuSun(dst, q);
         const stamp = this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
         const cookie = this._packGpuCookies(dst);
-        return { sun: sunN, stamp, cookie };
+        res.sun = sunN;
+        res.stamp = stamp;
+        res.cookie = cookie;
+        return res;
     }
 
     _allowGpuPainter() {
@@ -2930,8 +2963,13 @@ class PreRenderWorker extends AbstractWorker {
         const opts = this._gpuPackOpts;
         this._resetGpuPackOpts(opts);
         const count = q.count | 0;
+        const res = this._gpuSpritesResult || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0 });
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
-            return { sprite: 0, glow: 0, particle: 0, flags: 0 };
+            res.sprite = 0;
+            res.glow = 0;
+            res.particle = 0;
+            res.flags = 0;
+            return res;
         }
         this._bindGpuPackWriters();
         const typeArr = this.renderQueueType;
@@ -2951,7 +2989,11 @@ class PreRenderWorker extends AbstractWorker {
         spec.addSortMs = this.collectDetailedStats ? this._addPackSortMs : null;
         spec.glowCapacity = caps.maxGlow | 0;
         const packed = packSpriteLayer(spec);
-        return { sprite: packed.sprite, glow: packed.glow, particle: this._packParticles | 0, flags: packed.flags };
+        res.sprite = packed.sprite;
+        res.glow = packed.glow;
+        res.particle = this._packParticles | 0;
+        res.flags = packed.flags;
+        return res;
     }
 
     _packGpuQueues(dst) {
