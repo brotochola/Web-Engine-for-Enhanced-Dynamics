@@ -28,8 +28,6 @@ import {
   instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
-import { writePosePrev } from './poseQueueInterp.js';
-import { writeCasterPose, copyTypedRange } from './gpuShadowCasters.js';
 import { packInstancedRows } from './gpuQueueLayout.js';
 
 
@@ -569,67 +567,6 @@ export class InstancedSpriteBatch {
   /** Upload `count` instances already written into `this.data`. */
   commitInstances(count) {
     return this._finishUpload(count | 0, this._strideBytes);
-  }
-
-  /** Copy packed instances from another same-stride batch. `indices` are source slots. */
-  copyInstances(src, indices, n) {
-    if (!src || this._floats !== src._floats) {
-      this.geometry.instanceCount = 0;
-      this._show(false);
-      return 0;
-    }
-    const sf = src._floats;
-    const s = src.data;
-    const d = this.data;
-    const cap = this.capacity;
-    let out = 0;
-    const count = n | 0;
-    for (let k = 0; k < count && out < cap; k++) {
-      const i = indices[k] | 0;
-      copyTypedRange(d, out * sf, s, i * sf, sf);
-      out++;
-    }
-    return this._finishUpload(out, this._strideBytes);
-  }
-
-  /**
-   * Rewrite xy / rot / shadow fields on already-packed caster instances.
-   * Call only when compact indices match the last full upload.
-   */
-  patchCasterPoses(q, indices, n) {
-    if (!this.shadowCast) return 0;
-    const count = n | 0;
-    if (count <= 0 || !q) {
-      this.geometry.instanceCount = 0;
-      this._show(false);
-      return 0;
-    }
-    const f = this._floats;
-    const data = this.data;
-    const cap = this.capacity;
-    const rqX = q.x;
-    const rqY = q.y;
-    const rqRotC = q.rotC;
-    const rqRotS = q.rotS;
-    const sh = q.shadowH;
-    const ox = q.shadowOffX;
-    const oy = q.shadowOffY;
-    const out = count > cap ? cap : count;
-    for (let k = 0; k < out; k++) {
-      const i = indices[k] | 0;
-      writeCasterPose(
-        data,
-        k * f,
-        rqX[i],
-        rqY[i],
-        rqRotC[i],
-        rqRotS[i],
-        sh ? sh[i] : 0,
-        ox ? ox[i] : 0,
-        oy ? oy[i] : 0
-      );
-    }
-    return this._finishUpload(out, this._strideBytes);
   }
 
   /**

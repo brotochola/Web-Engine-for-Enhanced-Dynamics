@@ -202,13 +202,7 @@ export class SpriteRenderer extends Component {
     const users = SpriteRenderer._zIndexUsers;
     if (!users) return;
     if (prev === 0) Atomics.add(users, 0, 1);
-    else if (next === 0 && Atomics.add(users, 0, -1) === 1) {
-      Atomics.store(users, 1, 0);
-      Atomics.store(users, 2, 0);
-      return;
-    }
-    if (next < Atomics.load(users, 1)) Atomics.store(users, 1, next);
-    if (next > Atomics.load(users, 2)) Atomics.store(users, 2, next);
+    else if (next === 0) Atomics.add(users, 0, -1);
   }
 
   get tileOffsetV() {
@@ -232,7 +226,7 @@ export class SpriteRenderer extends Component {
   static getBufferSize(count) {
     const base = super.getBufferSize(count);
     const aligned = (base + 3) & ~3;
-    return aligned + 12;
+    return aligned + 4;
   }
 
   static initializeArrays(buffer, count) {
@@ -240,10 +234,7 @@ export class SpriteRenderer extends Component {
     if (this.spriteRotC) this.spriteRotC.fill(1);
     const base = super.getBufferSize(count);
     const aligned = (base + 3) & ~3;
-    // [0] users, [1] zMin, [2] zMax. Stale min/max only widen the depth span.
-    this._zIndexUsers = new Int32Array(buffer, aligned, 3);
-    this._zIndexUsers[1] = 0;
-    this._zIndexUsers[2] = 0;
+    this._zIndexUsers = new Int32Array(buffer, aligned, 1);
   }
 
   static zIndexUsers() {
