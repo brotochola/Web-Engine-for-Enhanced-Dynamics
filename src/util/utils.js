@@ -231,8 +231,9 @@ export function calculateCameraScreenBounds(
 ) {
   const cameraOffsetX = cameraX * zoom;
   const cameraOffsetY = cameraY * zoom;
-  const marginX = canvasWidth * cullingRatio;
-  const marginY = canvasHeight * cullingRatio;
+  const marginScale = zoom < 1 ? zoom : 1;
+  const marginX = canvasWidth * cullingRatio * marginScale;
+  const marginY = canvasHeight * cullingRatio * marginScale;
 
   result.zoom = zoom;
   result.cameraOffsetX = cameraOffsetX;
