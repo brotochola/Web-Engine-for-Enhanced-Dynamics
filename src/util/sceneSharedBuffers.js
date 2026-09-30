@@ -751,8 +751,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   DebugDraw.initialize(buffers.debugDrawData, maxDebugDrawEntries);
 
   const numberOfSpatialWorkers = config.spatial.numberOfSpatialWorkers;
-  const numberOfPreRenderWorkers = scene.numberOfPreRenderWorkers;
-  const maxWorkers = numberOfSpatialWorkers + 3 + scene.numberOfLogicWorkers + numberOfPreRenderWorkers;
+  const maxWorkers = numberOfSpatialWorkers + 3 + scene.numberOfLogicWorkers + 1; // +1 preRender
   const frameRateStrideFloats = 16;
   buffers.frameRateData = new SharedArrayBuffer(maxWorkers * frameRateStrideFloats * 4);
   views.frameRate = new Float32Array(buffers.frameRateData);

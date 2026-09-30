@@ -31,13 +31,13 @@ test('normalizeYSort: garbage logs WeedJS error and falls back to false', () => 
   assert.equal(errs[1], errorYSortInvalid('bitonic'));
 });
 
-test('resolveYSort: unknown names are off on either backend', () => {
+test('resolveYSort: unknown names are off', () => {
   const errs = [];
   const orig = console.error;
   console.error = (m) => { errs.push(String(m)); };
   try {
-    assert.equal(resolveYSort('bitonic', 'webgl'), false);
-    assert.equal(resolveYSort('bitonic', 'webgpu'), false);
+    assert.equal(resolveYSort('bitonic'), false);
+    assert.equal(resolveYSort('unknown'), false);
   } finally {
     console.error = orig;
   }

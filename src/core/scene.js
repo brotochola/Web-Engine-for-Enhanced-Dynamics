@@ -123,35 +123,6 @@ import {
   tryPushSpawn,
 } from '../util/spawnCommandRing.js';
 
-const LEGACY_RENDERER_LIFT = [
-  ['cullingRatio', 'preRender'],
-  ['startFadingDecorationsAtZoom', 'preRender'],
-  ['hideDecorationsAtZoom', 'preRender'],
-  ['lightGlow', 'lighting'],
-];
-
-/** One-release shim: old renderer.* keys move to the bucket that consumes them. */
-function liftLegacyRendererConfig(config) {
-  const userR = config.renderer;
-  if (!userR) return;
-  let lifted = false;
-  for (let i = 0; i < LEGACY_RENDERER_LIFT.length; i++) {
-    const key = LEGACY_RENDERER_LIFT[i][0];
-    const destName = LEGACY_RENDERER_LIFT[i][1];
-    if (userR[key] == null) continue;
-    if (!config[destName]) config[destName] = {};
-    if (config[destName][key] == null) config[destName][key] = userR[key];
-    delete userR[key];
-    lifted = true;
-  }
-  if (lifted && !liftLegacyRendererConfig._warned) {
-    liftLegacyRendererConfig._warned = true;
-    console.warn(
-      'WeedJS: renderer.cullingRatio / startFadingDecorationsAtZoom / hideDecorationsAtZoom moved to preRender; renderer.lightGlow moved to lighting.'
-    );
-  }
-}
-
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
   // Spatial workers use indices 0..N-1 (N = numberOfSpatialWorkers).
@@ -653,7 +624,6 @@ class Scene {
    * Access config via this.config.section.property (e.g., this.config.lighting.maxFlashes)
    */
   _applyConfigDefaults() {
-    liftLegacyRendererConfig(this.config);
     const userLightingConfig = this.config.lighting || {};
 
     // Top-level defaults from centralized config
@@ -2115,22 +2085,12 @@ class Scene {
       }
       return sum;
     };
-    const maxOf = (sab, schema, count) => {
-      if (!sab || count < 1) return 0;
-      const view = new Float32Array(sab);
-      let max = 0;
-      for (let i = 0; i < count; i++) {
-        const v = view[i * schema.STRIDE_FLOATS + schema.STEP_MS] || 0;
-        if (v > max) max = v;
-      }
-      return max;
-    };
     const logicCount = this.config.logic?.numberOfLogicWorkers || 1;
     return {
       physics: one(this.buffers.physicsStats, PHYSICS_STATS.STEP_MS),
       particle: one(this.buffers.particleStats, PARTICLE_STATS.STEP_MS),
       renderer: one(this.buffers.rendererStats, RENDERER_STATS.STEP_MS),
-      preRender: maxOf(this.buffers.preRenderStats, PRE_RENDER_STATS, this.numberOfPreRenderWorkers),
+      preRender: one(this.buffers.preRenderStats, PRE_RENDER_STATS.STEP_MS),
       spatial: multi(this.buffers.spatialStats, SPATIAL_STATS, this.numberOfSpatialWorkers),
       logic: multi(this.buffers.logicStats, LOGIC_STATS, logicCount),
       main: this.mainStepMs || 0,

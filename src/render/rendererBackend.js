@@ -86,10 +86,9 @@ export function resolveSpritePipeline(opts) {
 
 /**
  * @param {unknown} ySort
- * @param {'webgl'|'webgpu'} _backend
  * @returns {false|'cpu'}
  */
-export function resolveYSort(ySort, _backend) {
+export function resolveYSort(ySort) {
   return normalizeYSort(ySort);
 }
 
@@ -292,7 +291,7 @@ export function assertSceneRendererConfig(config) {
     }
   }
   if (config?.renderer) {
-    config.renderer.ySort = resolveYSort(config.renderer.ySort, backend);
+    config.renderer.ySort = resolveYSort(config.renderer.ySort);
   }
   return backend;
 }
