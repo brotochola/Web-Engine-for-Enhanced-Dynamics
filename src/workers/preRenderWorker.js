@@ -286,6 +286,8 @@ class PreRenderWorker extends AbstractWorker {
         this.maxShadowCastingLights = 20;
         this.maxShadowsPerLight = 15;
         this.maxShadowsPerEntity = 0;
+        this.shadowUpdateInterval = 1;
+        this._shadowUpdateTick = 0;
 
         // GC OPTIMIZATION: Pre-allocated buffer for Y-sorted light indices
         this._sortedLightEntities = [];
@@ -672,6 +674,10 @@ class PreRenderWorker extends AbstractWorker {
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
             this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
             this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0;
+            this.shadowUpdateInterval = (data.shadows.shadowUpdateInterval | 0)
+                || (this.config.lighting?.shadowUpdateInterval | 0)
+                || 1;
+            this._shadowUpdateTick = 0;
         }
 
         // ========================================
@@ -2911,6 +2917,12 @@ class PreRenderWorker extends AbstractWorker {
             res.sun = 0;
             res.stamp = 0;
             res.cookie = 0;
+            return res;
+        }
+        const interval = this.shadowUpdateInterval | 0;
+        const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
+        this._shadowUpdateTick++;
+        if (skip) {
             return res;
         }
         const sunN = this._packGpuSun(dst, q);

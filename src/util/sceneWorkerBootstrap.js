@@ -323,6 +323,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           maxShadowsPerLight: scene.config.lighting.maxShadowsPerLight,
           maxShadowsPerEntity: scene.config.lighting.maxShadowsPerEntity,
           maxShadowSprites: scene.config.lighting.maxShadowSprites,
+          shadowUpdateInterval: scene.config.lighting.shadowUpdateInterval || 1,
           maxLights: scene.config.lighting.maxLights || 128,
           maxRenderItems: scene.maxShadowRenderItems,
         }
