@@ -86,6 +86,7 @@ function opsOf(json, feature) {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
+/** @returns {{ side: string, id: string, why: string }[]} */
 function preflight(sides, rows, skipWarm) {
   const missing = [];
   for (const side of sides) {
@@ -98,11 +99,11 @@ function preflight(sides, rows, skipWarm) {
           ? JSON.parse(fs.readFileSync(out, 'utf8'))
           : runScript(side.root, feature.kernel.script, out);
       } catch (e) {
-        missing.push(`${side.label} ${feature.id}: script failed (${e.message || e})`);
+        missing.push({ side: side.label, id: feature.id, why: `script failed (${e.message || e})` });
         continue;
       }
       if (opsOf(json, feature) == null) {
-        missing.push(`${side.label} ${feature.id}: no finite number at ${feature.kernel.opsKey}`);
+        missing.push({ side: side.label, id: feature.id, why: `no finite number at ${feature.kernel.opsKey}` });
       }
     }
   }
@@ -153,11 +154,16 @@ function main() {
   }
 
   const missing = preflight(sides, rows, args.skipWarm);
-  if (missing.length) {
+  const keepMissing = missing.filter((m) => m.side === 'KEEP');
+  if (keepMissing.length) {
     console.error('\nPreflight failed. Fix the kernel or its catalog opsKey:');
-    for (const m of missing) console.error(`  - ${m}`);
+    for (const m of keepMissing) console.error(`  - ${m.side} ${m.id}: ${m.why}`);
     process.exit(1);
   }
+  // A row the baseline rev cannot run (the function did not exist there) is
+  // reported as NEW, not scored, and does not stop the other rows.
+  const baseMissing = new Map(missing.filter((m) => m.side === 'BASE').map((m) => [m.id, m.why]));
+  for (const [id, why] of baseMissing) console.warn(`  baseline cannot run ${id}: ${why}`);
 
   const results = [];
   for (const feature of rows) {
@@ -173,8 +179,10 @@ function main() {
     // processes (gpuQueuePack). Alternate the order each round, keep the median.
     const rounds = args.rounds ?? (baseline ? 5 : 1);
     const perSide = { BASE: [], KEEP: [] };
+    const rowSides = baseMissing.has(feature.id) ? sides.filter((s) => s.label !== 'BASE') : sides;
+    if (rowSides !== sides) row.baseMissing = baseMissing.get(feature.id);
     for (let r = 0; r < rounds; r++) {
-      const order = r % 2 ? [...sides].reverse() : sides;
+      const order = r % 2 ? [...rowSides].reverse() : rowSides;
       for (const side of order) {
         console.log(`\n[timed ${side.label} ${r + 1}/${rounds}] ${feature.id}`);
         const json = runScript(side.root, feature.kernel.script, path.join(outRoot, side.label, `${feature.id}.json`));
@@ -188,7 +196,9 @@ function main() {
       row[`${key}Rounds`] = vals;
       row[key] = vals.includes(null) ? null : [...vals].sort((a, b) => a - b)[vals.length >> 1];
     }
-    if (baseline) {
+    if (baseline && row.baseMissing) {
+      row.verdict = 'NEW';
+    } else if (baseline) {
       row.deltaPct = pctDelta(row.ops, row.baseOps);
       if (row.ops != null && row.baseOps != null) {
         row.roundsWinFraction = roundsWinFraction(row.baseOpsRounds, row.opsRounds, row.higherBetter);
@@ -202,7 +212,7 @@ function main() {
     results.push(row);
   }
 
-  const nulls = results.filter((r) => r.ops == null || (baseline && r.baseOps == null));
+  const nulls = results.filter((r) => r.ops == null || (baseline && !r.baseMissing && r.baseOps == null));
   const summary = {
     vs: args.overlay ? `overlay:${args.overlay}` : args.vs,
     baselineSha: baseline?.sha ?? null,

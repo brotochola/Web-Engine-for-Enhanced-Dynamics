@@ -7,6 +7,7 @@
  *   node tests/bench/runPredatorAbab.mjs --name L1 \
  *     --override src/workers/logicWorker.js=tests/results/hyp-baselines/L1.logicWorker.js
  *   node tests/bench/runPredatorAbab.mjs --name X1 --override ... --pairs 4 --owner pixi
+ *   node tests/bench/runPredatorAbab.mjs --name branch-vs-main --vs main --pairs 8
  *
  * Verdict per kind: median of the paired deltas (B−A)/A. REGRESSION if any
  * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), or a load key
@@ -20,7 +21,7 @@ import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs'
 import { median, pctDelta, writeJson } from './featureTournamentLib.mjs';
 import { cv, repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
-import { ensureOverlayWorktree } from './revWorktree.mjs';
+import { ensureOverlayWorktree, ensureRevWorktree } from './revWorktree.mjs';
 
 export const PREDATOR_SCENE = {
   key: 'predator',
@@ -138,7 +139,10 @@ async function main() {
     printDecision(name, prev.decision);
     return;
   }
-  const baseline = ensureOverlayWorktree(name, parseOverrides(rawOverrides));
+  // --vs <rev>: A = src/ from that revision, everything else from the working tree.
+  const baseline = args.vs
+    ? ensureRevWorktree(String(args.vs))
+    : ensureOverlayWorktree(name, parseOverrides(rawOverrides));
   console.log(`baseline worktree ${baseline.root}`);
   // --append: add pairs to the previous sitting of the same hypothesis.
   const pairs = args.append && fs.existsSync(summaryPath) ? JSON.parse(fs.readFileSync(summaryPath, 'utf8')).pairs : [];
@@ -157,7 +161,15 @@ async function main() {
     pairs.push(pair);
   }
   const decision = decideAbab(pairs, owner);
-  const summary = { name, owner, protocol: { ...opts, pairs: pairs.length, order: 'AB BA AB BA', seed: 123456 }, overrides: baseline.overrides, pairs, decision };
+  const summary = {
+    name,
+    owner,
+    protocol: { ...opts, pairs: pairs.length, order: 'AB BA AB BA', seed: 123456 },
+    vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
+    overrides: baseline.overrides ?? null,
+    pairs,
+    decision,
+  };
   writeJson(summaryPath, summary);
   printDecision(name, decision);
 }

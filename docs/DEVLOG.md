@@ -6,6 +6,62 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 30 September 2026 — The Trace Says Where, Predator Says Whether
+
+I had a folder full of microbenchmarks and I no longer trusted most of them. Some measured hypotheses we had dropped weeks ago. Worse, a whole family of "campaign" runners worked by copying old snapshots of worker files on top of `src/`, running a scene, and copying them back. If a run crashed halfway, the working tree was left holding code nobody had written on purpose. The want was simple to say: a benchmark never edits the engine. It calls the real function, or the real worker, and it prints a number of operations per second. Then every optimization idea gets tested with that number first, and only then with a real scene.
+
+So the first day was mostly deletion. Eight campaign folders, their runners, twenty-odd one-sitting A/B scripts, a test that copied files around. Their verdicts stayed in `HYPOTHESIS_LOG.md` and their code stayed in git history. What replaced them is small. A kernel imports the actual worker module in Node with a `self` stub, sends it the same `init` message the browser sends, and times the method on that instance, with a checksum of what it produced. A hypothesis lives inside the bench as an exact textual diff over the shipped method source, compiled in memory; if the anchor text no longer matches the engine, it throws instead of quietly measuring something else. Comparing against another revision means a git worktree in a sibling folder, never swapping files in the working tree.
+
+That rule got tested the hard way. On Windows, `node_modules` in each worktree is a junction back to the real one, and `git worktree remove --force` follows junctions. It deleted every package from `@babel` to `f` in the main repo before I killed it. Now the junction is unlinked with `lstat` first, and the helper refuses to delete a worktree whose `node_modules` is a real directory.
+
+### Reading the trace like a profiler, not a spreadsheet
+
+The old trace summary counted samples per function. It could not say which thread, or how many milliseconds, or which line. The new parser streams the Chrome trace, weights every sample by the real time until the next one, splits by worker (`logic@…`, `spatial@…`, `preRender@…`), reports self and inclusive time with callers, and prints the hottest lines of each hot function with the source text next to them. A CPU-only capture preset brought the trace from 190 MB to 7 MB. One thing I could not fix: Chrome on Windows samples about every 630 µs no matter what interval you ask for.
+
+That changed the conversation. Instead of "`_gensMatch` is 30 % of logic", the trace said "62 % of that function is this line", and the line was two `Map.get` calls per contact pair per frame.
+
+### Contacts: a bug first, then two wins
+
+While building a reference model for the contact flow, I found a real bug. `_applyContactBegin` stored the two body generations in the order Box2D sent the event, and the stay pass compared them in `(min, max)` order. When the event arrived as (larger id, smaller id) and one of the bodies had respawned, the pair was purged while the bodies were still touching: no stay, no exit, `isCollidingWith` false. It is fixed, and a test pins it.
+
+Then the table itself. Tracked pairs moved from a `Set` plus two generation `Map`s to one `Map` from key to slot and four `Uint32Array` columns, deleted by swap. The stay pass walks columns and hashes nothing. The contact kernel, running the real `LogicWorker` on the pairs that actually touch in a captured Predator frame, went +84 % at contact density and +216 % in the dense regime. In Predator, logic went from 6.61 ms to 4.12 ms.
+
+The second trace, taken after that, still had the same function at 19 % of logic, and the reason was sitting in plain sight. Predator runs three logic workers. Each one validated every pair every frame, but only fires callbacks for the third it owns. The other two thirds of the work existed so that `isCollidingWith` would answer correctly on any worker. Now the foreign pairs sit in a second table and are validated when someone asks, plus a sweep every 30 frames so the table does not grow. Kernel +73 %. Predator logic 4.43 ms to 3.87 ms, no pair of the eight worse.
+
+### Audio: a full parking lot
+
+The captured Predator frame had all 2048 audio slots busy. Every `play()` walked all of them doing `compareExchange`, found nothing, and dropped the sound. A CAS takes the cache line exclusive even when it fails, and three logic workers were doing it at once. Reading the slot with a plain `Atomics.load` before trying the CAS is the old test-and-test-and-set trick. Saturated with three threads: +53 %. Empty pool: 19 % slower, which is 37 ns becoming 46 ns, against microseconds saved when the pool is full. Predator logic −6.1 %.
+
+### Spatial: one read, 29 %
+
+The hottest line in the spatial worker was `candData[candBaseA] > 0`. Predator runs 1024 max neighbors and a neighbor tick interval of 15, so almost every entity takes the "skip this frame" branch, and that single read lands at the head of a 2 KB candidate row per entity. One cache miss per entity, sixteen thousand times a frame. A dense per-entity count array holds the same number. Spatial went from 6.12 ms to 5.13 ms. Inlining the circle bounds in `rebuildOwnedRows` won 13 % in the kernel and did not move Predator by a consistent 3 %; it stays as a kernel claim.
+
+### The ones that lost
+
+This part is the reason the method exists. Giving every `GameObject` component cache the same shape per class won 8 % in its kernel and made Predator logic 4.4 % slower, six pairs out of eight. The kernel had three synthetic classes; Predator has real ones. It was reverted. A specialized `packInstancedRows` without the branches that never change per call was 24 % slower: those branches always go the same way, and the branch predictor had already made them free. Swapping distance and index together inside `takeClosest`, instead of sorting a permutation, lost 4 to 6 %: moving two arrays costs more than one indirection. Hoisting two counters and two statics out of the spatial loop gained under 3 % and did not ship.
+
+Physics was a diagnosis, not a fix. The trace showed thousands of samples in `_emscripten_get_now` and three Box2D threads at 100 %. A kernel counting WASM import calls per `step_world` found zero: the solver never asks for the time. The cost is the pthread pool spinning while it waits for work. That fix belongs in the Box2D build, not here.
+
+### The method got corrected along the way, three times
+
+The Predator gate runs A B A B, eight pairs of ten seconds against ten seconds, and watches every worker, not only the one the change touched. The first spatial sitting ran A before B every time, and every worker the change did not touch looked 2 to 6 % worse. Drift inside a pair always landed on B. The order is now counterbalanced. A regression also has to be consistent now, at least six of the eight pairs worse, because a +3 % median out of eight scattered pairs is noise.
+
+One gate read +1.8 % and was wrong: the "before" copy of the file had been saved in the same batch as the edit and already contained half of the change. Baseline copies are saved in their own step now, and checked.
+
+And at the very end, the kernel comparison against `HEAD` flagged `packInstancedRows` 11.9 % slower. The file had not changed. Five processes of the same code on the same tree gave 1875 to 2128 ops/s; one process per side cannot resolve 3 %. The comparison now runs five alternating rounds per side, takes medians, and also asks the rounds to agree: the new side has to win at least 23 of the 25 round-against-round comparisons. The same "11.9 % slower" comes out as a tie.
+
+Predator also turned out not to be deterministic across two runs of the same commit, not in pose hashes and not in pixels. Its lockstep visual check only catches a black canvas. Behavior is locked by parity tests instead: the contact table is checked against a reference model on every pair, every frame, with respawns and deactivations.
+
+After the campaign, the second trace had logic at about 305 busy ms per second, down from about 620, and spatial at about 335, down from 424. That was before the second contact change. The third trace, with it, has logic under 200.
+
+### Against main
+
+Then the whole branch against `main`, 24 commits back, which also carries the earlier pre-render, shadow and pack sessions. Every one of the 28 kernels runs on both sides. None is worse. Spatial is +36 %, the saturated audio claim +90 %, shadow stamping +41 %, decal premultiply +36 %. The contact kernel is +320 % and its checksum changed, which is exactly the bug fix and nothing else: I checked it against a build that has only the fix.
+
+In Predator, eight counterbalanced pairs, every worker kind got cheaper and not a single pair went the other way. Logic went from 5.22 ms to 2.99 ms, spatial from 4.80 to 3.88, pre-render from 8.08 to 6.00, the renderer from 4.91 to 3.66. The load gate flagged the pair anyway, and it was right to. The branch also has the adaptive shadow caster budget, so it draws 20 % fewer casters than `main`. The renderer and pre-render numbers are partly less work, not only faster work. Logic and spatial never touch a caster.
+
+The deopts I had lined up to chase next were gone. The `packInstancedRows` store that deopted 421 times in steady state deopts five times now, none of them steady, after this morning's change to that loop. The OSR exits in the neighbor search all land in the first two seconds while the world fills up. The CPU profile still shows where the time goes. The deopt log just doesn't show any of that time being wasted on deopts anymore.
+
 ## Friday 25 September 2026 — F5 Is Not Alt-Tab
 
 The presenting path from 21 September kept the sim alive and only stopped the canvas. That is correct when you hide the tab. It is wrong when you hit F5. Burning Boxes is the scene that shows it: a 1000×750 fire lattice, Jacobi twenty times, vis-poly lights, OffscreenCanvas WebGPU in a worker. Play five seconds, refresh, Chrome is gone.
