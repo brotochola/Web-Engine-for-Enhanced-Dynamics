@@ -3032,9 +3032,11 @@ class PreRenderWorker extends AbstractWorker {
             const zoom = this.cameraData ? this._frameCameraZoom : 1;
             const camX = this.cameraData ? this._frameCameraX : 0;
             const camY = this.cameraData ? this._frameCameraY : 0;
-            const screenBounds = calculateCameraScreenBounds(
-                zoom, camX, camY, this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
-            );
+            const screenBounds = this._frameCameraBoundsValid
+                ? this._cameraBounds
+                : calculateCameraScreenBounds(
+                    zoom, camX, camY, this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
+                );
             const worldBounds = screenBoundsToWorldBounds(screenBounds, 0, 0, this._worldBounds);
             const viewMinX = worldBounds.minX;
             const viewMaxX = worldBounds.maxX;
@@ -3077,14 +3079,16 @@ class PreRenderWorker extends AbstractWorker {
                     '_warnedVisibleLightsCap',
                     `[PRE_RENDER] visible light list full (${maxWrite}). Increase lighting.maxLights or reduce visible lights.`
                 );
+                this._sortPrefix(persistScratch, persistN, this._lightYComparator);
+                this._sortPrefix(flashScratch, flashN, this._lightYComparator);
+                const persistTake = Math.min(persistN, maxWrite);
+                for (let i = 0; i < persistTake; i++) lightEntities[written++] = persistScratch[i];
+                const flashTake = Math.min(flashN, maxWrite - written);
+                for (let i = 0; i < flashTake; i++) lightEntities[written++] = flashScratch[i];
+            } else {
+                for (let i = 0; i < persistN; i++) lightEntities[written++] = persistScratch[i];
+                for (let i = 0; i < flashN; i++) lightEntities[written++] = flashScratch[i];
             }
-
-            this._sortPrefix(persistScratch, persistN, this._lightYComparator);
-            this._sortPrefix(flashScratch, flashN, this._lightYComparator);
-            const persistTake = Math.min(persistN, maxWrite);
-            for (let i = 0; i < persistTake; i++) lightEntities[written++] = persistScratch[i];
-            const flashTake = Math.min(flashN, maxWrite - written);
-            for (let i = 0; i < flashTake; i++) lightEntities[written++] = flashScratch[i];
             this._sortPrefix(lightEntities, written, this._lightYComparator);
         }
 

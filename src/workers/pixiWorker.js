@@ -3560,6 +3560,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaders: this._engineShaders,
       shadowCast: true,
     });
+    if (this.gpuCasterBatch.shadowShader && this.gpuCasterBatch.mesh) {
+      this.gpuCasterBatch.mesh.shader = this.gpuCasterBatch.shadowShader;
+    }
 
     this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
     this.shadowDisplaySprite.anchor.set(0, 0);
@@ -3637,8 +3640,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     u.uLight[2] = 0;
     u.uLight[3] = 0;
     u.uPointScale = 0;
-    const prevShader = mesh.shader;
-    mesh.shader = shader;
+    if (mesh.shader !== shader) mesh.shader = shader;
     mesh.position.set(0, 0);
     mesh.scale.set(1, 1);
     const rtOpts = this._rtRenderOpts;
@@ -3684,7 +3686,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       rtOpts.clear = true;
       this._submitRender(rtOpts);
     }
-    mesh.shader = prevShader;
   }
 
   /**
