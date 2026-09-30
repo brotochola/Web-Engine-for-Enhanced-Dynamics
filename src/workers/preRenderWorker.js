@@ -1161,6 +1161,10 @@ class PreRenderWorker extends AbstractWorker {
             iterSource = null;
         }
 
+        const boundsHalfW = SpriteRenderer.boundsHalfW;
+        const boundsHalfH = SpriteRenderer.boundsHalfH;
+        const spritesheetId = SpriteRenderer.spritesheetId;
+
         for (let idx = 0; idx < iterCount; idx++) {
             const i = iterSource ? iterSource[idx] : idx;
             if (!active[i]) continue;
@@ -1172,10 +1176,13 @@ class PreRenderWorker extends AbstractWorker {
 
                 // Use cached bounds (updated on scale/animation change)
                 let halfExtent = 0;
-                const halfW = SpriteRenderer.boundsHalfW?.[i] ?? 0;
-                const halfH = SpriteRenderer.boundsHalfH?.[i] ?? 0;
-                if (halfW > 0 || halfH > 0) halfExtent = halfW > halfH ? halfW : halfH;
-                if (halfExtent <= 0) halfExtent = visualRange[i] || 0;
+                if (boundsHalfW) {
+                    const halfW = boundsHalfW[i] || 0;
+                    const halfH = boundsHalfH ? (boundsHalfH[i] || 0) : 0;
+                    if (halfW > halfH) halfExtent = halfW;
+                    else if (halfH > 0) halfExtent = halfH;
+                }
+                if (halfExtent <= 0 && visualRange) halfExtent = visualRange[i] || 0;
                 const extent = halfExtent * camZoom;
                 const onScreen = sx >= screenMinX - extent && sx <= screenMaxX + extent &&
                     sy >= screenMinY - extent && sy <= screenMaxY + extent;
@@ -1183,7 +1190,7 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             // sheetId 0 = unset (spawn reset / pool recycle). Never queue.
-            if (renderVisible[i] && SpriteRenderer.spritesheetId[i]) {
+            if (renderVisible[i] && spritesheetId && spritesheetId[i]) {
                 this.collectRenderable(0, i, 0);
                 this.visibleEntitiesCount++;
             }
@@ -1770,22 +1777,27 @@ class PreRenderWorker extends AbstractWorker {
     _displayPose(idx, out) {
         const poseX = this._poseX;
         const rb = this._rbActive;
-        const live = poseX && rb && rb[idx] && poseRotationLive(this._poseRotC?.[idx] || 0, this._poseRotS?.[idx] || 0);
+        const poseRotC = this._poseRotC;
+        const poseRotS = this._poseRotS;
+        const live = poseX && rb && rb[idx] && poseRotationLive(poseRotC ? poseRotC[idx] : 0, poseRotS ? poseRotS[idx] : 0);
         if (live) {
+            const prevPoseX = this._prevPoseX;
+            const prevPoseRotC = this._prevPoseRotC;
+            const prevPoseRotS = this._prevPoseRotS;
             if (
                 this.interpolatePhysicsPose &&
-                this._prevPoseX &&
-                poseRotationLive(this._prevPoseRotC?.[idx] || 0, this._prevPoseRotS?.[idx] || 0)
+                prevPoseX &&
+                poseRotationLive(prevPoseRotC ? prevPoseRotC[idx] : 0, prevPoseRotS ? prevPoseRotS[idx] : 0)
             ) {
                 const alpha = this._poseAlpha;
-                const px = this._prevPoseX[idx];
+                const px = prevPoseX[idx];
                 const py = this._prevPoseY[idx];
                 out.x = px + (poseX[idx] - px) * alpha;
                 out.y = py + (this._poseY[idx] - py) * alpha;
-                const pc = this._prevPoseRotC[idx];
-                const ps = this._prevPoseRotS[idx];
-                const c = this._poseRotC[idx];
-                const s = this._poseRotS[idx];
+                const pc = prevPoseRotC[idx];
+                const ps = prevPoseRotS[idx];
+                const c = poseRotC[idx];
+                const s = poseRotS[idx];
                 if (pc === c && ps === s) {
                     // Rotation unchanged this interval (fixedRotation bodies,
                     // or a rotating body momentarily still) - any alpha blend
@@ -1807,14 +1819,16 @@ class PreRenderWorker extends AbstractWorker {
             }
             out.x = poseX[idx];
             out.y = this._poseY[idx];
-            out.rotC = this._poseRotC[idx];
-            out.rotS = this._poseRotS[idx];
+            out.rotC = poseRotC[idx];
+            out.rotS = poseRotS[idx];
             return;
         }
         out.x = Transform.x[idx];
         out.y = Transform.y[idx];
-        out.rotC = Transform.rotC ? (Transform.rotC[idx] ?? 1) : 1;
-        out.rotS = Transform.rotS ? (Transform.rotS[idx] ?? 0) : 0;
+        const rotC = Transform.rotC;
+        const rotS = Transform.rotS;
+        out.rotC = rotC && rotC[idx] !== undefined ? rotC[idx] : 1;
+        out.rotS = rotS ? (rotS[idx] || 0) : 0;
     }
 
     /**
