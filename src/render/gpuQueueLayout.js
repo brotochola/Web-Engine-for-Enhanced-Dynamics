@@ -270,6 +270,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
   const snapCamX = o.snapCameraX || 0;
   const snapCamY = o.snapCameraY || 0;
   const snapZoom = o.snapZoom || 1;
+  const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
+  const INV_65535 = 1 / 65535;
   let base = 0;
   let out = 0;
   let particles = 0;
@@ -302,7 +304,7 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
         y = snapWorldToPixel(y, snapCamY, snapZoom);
       }
     }
-    const depth = 1.0 - (out + 1) / depthDenom;
+    const depth = 1.0 - (out + 1) * invDepthDenom;
 
     let a = rqAlpha[i];
     if (a < 0) a = 0;
@@ -327,8 +329,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     dst[base + 10] = rqTextureId[i];
     dst[base + 11] = invX;
     dst[base + 12] = invY;
-    dst[base + 13] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
-    dst[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
+    dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
+    dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
     if (shadowCast && fp >= GPU_CASTER_FLOATS) {
       const sh = q.shadowH;
       const shAt = GPU_SPRITE_FLOATS;
@@ -399,18 +401,58 @@ export function makePackContext(q, opts, capacity, out) {
 }
 
 export function fillQueueIndices(typeArr, count, includeType, excludeType, outIdx) {
-  let n = 0;
   const cap = outIdx.length;
   const inc = includeType | 0;
   const exc = excludeType | 0;
   const hasInc = inc >= 0;
   const hasExc = exc >= 0;
   const nSrc = count | 0;
-  for (let i = 0; i < nSrc && n < cap; i++) {
-    const t = typeArr ? typeArr[i] : 0;
-    if (hasInc && t !== inc) continue;
-    if (hasExc && t === exc) continue;
-    outIdx[n++] = i;
+  const limit = nSrc < cap ? nSrc : cap;
+  let n = 0;
+
+  if (!hasInc && !hasExc) {
+    for (let i = 0; i < limit; i++) outIdx[i] = i;
+    return limit;
+  }
+
+  if (hasInc && !hasExc) {
+    if (!typeArr) {
+      if (inc === 0) {
+        for (let i = 0; i < limit; i++) outIdx[i] = i;
+        return limit;
+      }
+      return 0;
+    }
+    for (let i = 0; i < limit; i++) {
+      if (typeArr[i] === inc) outIdx[n++] = i;
+    }
+    return n;
+  }
+
+  if (!hasInc && hasExc) {
+    if (!typeArr) {
+      if (exc !== 0) {
+        for (let i = 0; i < limit; i++) outIdx[i] = i;
+        return limit;
+      }
+      return 0;
+    }
+    for (let i = 0; i < limit; i++) {
+      if (typeArr[i] !== exc) outIdx[n++] = i;
+    }
+    return n;
+  }
+
+  if (!typeArr) {
+    if (inc === 0 && exc !== 0) {
+      for (let i = 0; i < limit; i++) outIdx[i] = i;
+      return limit;
+    }
+    return 0;
+  }
+  for (let i = 0; i < limit; i++) {
+    const t = typeArr[i];
+    if (t === inc && t !== exc) outIdx[n++] = i;
   }
   return n;
 }
