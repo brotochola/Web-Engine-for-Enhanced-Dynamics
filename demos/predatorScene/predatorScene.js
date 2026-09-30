@@ -183,7 +183,7 @@ export class PredatorScene extends WEED.Scene {
       maxFlashes: 32,
       resolution: predatorPositiveParam('lightingRes', 0.25),
       shadowResolution: predatorPositiveParam('shadowRes', 0.25),
-      shadowUpdateInterval: predatorPositiveParam('shadowInterval', 2),
+      shadowUpdateInterval: predatorPositiveParam('shadowInterval', 1),
       // raycasted: true,
       // maxPolygonVertices: 128,
       // /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
