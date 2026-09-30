@@ -3326,19 +3326,20 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const viewRight = cameraX + viewWidth;
     const viewBottom = cameraY + viewHeight;
 
-    // Viewport center for sorting by distance
-    const viewCenterX = cameraX + viewWidth / 2;
-    const viewCenterY = cameraY + viewHeight / 2;
-
-    // Use pre_render's visible lights buffer when available (avoids duplicate queryActiveEntities)
+    // Viewport center for sorting by distance (only needed if candidates exceed maxLights)
+    const maxLights = this.maxLights | 0;
     const useSharedBuffer = !!this.visibleLightsData;
     const lightCount = useSharedBuffer ? this.visibleLightsData[0] : 0;
     const lightEntities = useSharedBuffer ? null : Query.queryActiveEntities(QUERY_LIGHT_EMITTER);
+    const iterCount = useSharedBuffer ? lightCount : (lightEntities ? lightEntities.length : 0);
+
+    const needDistSort = iterCount > maxLights;
+    const viewCenterX = needDistSort ? cameraX + viewWidth * 0.5 : 0;
+    const viewCenterY = needDistSort ? cameraY + viewHeight * 0.5 : 0;
 
     // Reset pool
     this._visibleLightsAllCount = 0;
 
-    const iterCount = useSharedBuffer ? lightCount : lightEntities.length;
     for (let idx = 0; idx < iterCount; idx++) {
       const i = useSharedBuffer ? this.visibleLightsData[1 + idx] : lightEntities[idx];
       if (!lightEnabled[i]) continue;
@@ -3361,21 +3362,23 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
         continue;
       }
 
-      // Distance squared to camera center (for prioritization)
-      const dx = x - viewCenterX;
-      const dy = yForLight - viewCenterY;
-      const distSq = dx * dx + dy * dy;
-
       // Add to "all lights" pool (for shader uniforms)
       const allIdx = this._visibleLightsAllCount++;
-      if (!this._visibleLightsAll[allIdx]) {
-        this._visibleLightsAll[allIdx] = { entityId: 0, distSq: 0 };
+      let entry = this._visibleLightsAll[allIdx];
+      if (!entry) {
+        entry = this._visibleLightsAll[allIdx] = { entityId: 0, distSq: 0 };
       }
-      this._visibleLightsAll[allIdx].entityId = i;
-      this._visibleLightsAll[allIdx].distSq = distSq;
+      entry.entityId = i;
+      if (needDistSort) {
+        const dx = x - viewCenterX;
+        const dy = yForLight - viewCenterY;
+        entry.distSq = dx * dx + dy * dy;
+      }
     }
 
-    sortPrefixByDistSq(this._visibleLightsAll, this._visibleLightsAllCount);
+    if (this._visibleLightsAllCount > maxLights) {
+      sortPrefixByDistSq(this._visibleLightsAll, this._visibleLightsAllCount);
+    }
   }
 
   /**
