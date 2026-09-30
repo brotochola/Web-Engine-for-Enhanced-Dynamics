@@ -491,9 +491,10 @@ class PixiRenderer extends AbstractWorker {
     // RENDER QUEUE SYSTEM (DOUBLE BUFFERED)
     // ========================================
     // Pre-sorted, screen-visible renderables from pre_render_worker
-    // pixi_worker NEVER waits - always reads from latest ready buffer
+    // pixi_worker NEVER waits - reads the oldest unread ready buffer
     // pre_render skips a frame if >1 ahead (backpressure)
     this.renderQueueEnabled = false;
+    this._queueBackpressure = true;
     this._queueInterp = false;
     this._latchedPrevX = null;
     this._latchedPrevY = null;
@@ -1683,14 +1684,21 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Swap to the newest published render queue. Pixi never waits.
+   * Swap to the oldest unread render queue. Pixi never waits.
+   * Pre-render publishes ~2 ms into the same vsync pixi reads in. Jumping to
+   * the newest skips a queue when it wins that race, then repeats one the next
+   * frame. Backpressure keeps pre-render at most one queue ahead, so the older
+   * slot is still intact.
    * Returns whether a new frame was consumed.
    */
-  consumeLatestRenderQueue() {
+  consumeNextRenderQueue() {
     this._deferredRenderQueueRelease = 0;
     if (!this.renderQueueSync) return false;
     const started = this.collectDetailedStats ? performance.now() : 0;
-    const readyFrame = Atomics.load(this.renderQueueSync, 0);
+    let readyFrame = Atomics.load(this.renderQueueSync, 0);
+    if (this._queueBackpressure && this.lastReadFrame > 0 && readyFrame > this.lastReadFrame + 1) {
+      readyFrame = this.lastReadFrame + 1;
+    }
     let consumedNewFrame = false;
     if (readyFrame > this.lastReadFrame && readyFrame > 0) {
       if (this._queueInterp && this.renderQueueX) {
@@ -1839,7 +1847,7 @@ class PixiRenderer extends AbstractWorker {
   update(deltaTime, dtRatio, resuming) {
     if (!this.presentationIsActive()) this._stopGpuClock();
     this.rememberDeltaTime(deltaTime);
-    const consumedNewFrame = this.consumeLatestRenderQueue();
+    const consumedNewFrame = this.consumeNextRenderQueue();
     this.presentTimeThisFrame = 0;
     if (!this.gpuIsAvailable()) return;
 
@@ -1888,8 +1896,10 @@ class PixiRenderer extends AbstractWorker {
       this.usesCustomScheduler = false;
       this.scheduleNextFrame();
     } else {
-      // Standard mode: PIXI ticker will call gameLoop on every tick (60fps)
-      if (this.pixiApp.ticker) this.pixiApp.ticker.maxFPS = 60;
+      // Display rate, like every other worker's rAF. Pixi's maxFPS limiter
+      // truncates the delta to whole ms, so a 60 cap on a 59.9x Hz display
+      // drops a tick every ~0.5 s (and pre-render backpressure then skips one).
+      if (this.pixiApp.ticker) this.pixiApp.ticker.maxFPS = 0;
       this.pixiApp.ticker.add(() => this.gameLoop());
     }
   }
@@ -5100,6 +5110,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._ySortMode = rendererConfig.ySort;
     this._ySort = ySortEnabled(this._ySortMode);
     const preCfg = this.config.preRender || {};
+    this._queueBackpressure = preCfg.backpressure !== false;
     const spritePipe = resolveSpritePipeline({
       ySort: this._ySortMode,
       packGpuSprites: preCfg.packGpuSprites,
