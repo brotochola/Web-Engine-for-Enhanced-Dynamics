@@ -3509,13 +3509,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!layerIsVisible(Layer.castedShadows?.id)) return;
     this._attachGpuTimer();
     this._gpuTimer.begin('shadows');
-    this._drawGpuCasterShadows();
+    const interval = this.shadowUpdateInterval | 0;
+    const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
+    this._shadowUpdateTick++;
+    if (!skip) {
+      this._drawGpuCasterShadows();
+    }
     this._gpuTimer.end();
   }
 
   createShadowSpriteSystem() {
     const lightingConfig = this.config.lighting || {};
     this.shadowResolution = lightingConfig.shadowResolution ?? LIGHTING_DEFAULTS.shadowResolution;
+    this.shadowUpdateInterval = lightingConfig.shadowUpdateInterval ?? LIGHTING_DEFAULTS.shadowUpdateInterval ?? 1;
+    this._shadowUpdateTick = 0;
     if (lightingConfig.maxLights !== undefined) this.maxLights = lightingConfig.maxLights;
     if (lightingConfig.maxShadowCastingLights !== undefined) {
       this.maxShadowCastingLights = lightingConfig.maxShadowCastingLights;

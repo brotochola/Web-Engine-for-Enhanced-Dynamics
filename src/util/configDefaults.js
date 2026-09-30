@@ -579,6 +579,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxFlashes: 0,
   resolution: 0.25,
   shadowResolution: 0.5,
+  /** 1 = update shadowRT every frame; N > 1 reuses last shadowRT for N-1 frames. */
+  shadowUpdateInterval: 1,
   raycasted: false,
   maxPolygonVertices: 128,
   /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
