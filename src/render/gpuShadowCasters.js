@@ -124,26 +124,31 @@ function buildStampGrid(sun, nSun, sf, counts, starts, items) {
   return _stampGridResult;
 }
 
-function sortPairsByIndex(idx, distArr, count) {
+let _sortIdxRef = null;
+let _pairDistScratch = new Float32Array(0);
+
+function cmpPairByIdx(a, b) {
+  return _sortIdxRef[a] - _sortIdxRef[b];
+}
+
+/** Grid walk order → caster index order, so stripe concat matches a serial scan. */
+function sortPairsByIndex(idx, distArr, count, order, idxScratch) {
   const m = count | 0;
-  let gap = 1;
-  while (gap < m) gap = gap * 3 + 1;
-  while (gap > 1) {
-    gap = (gap / 3) | 0;
-    if (gap < 1) gap = 1;
-    for (let i = gap; i < m; i++) {
-      const ic = idx[i];
-      const id = distArr[i];
-      let j = i;
-      while (j >= gap && idx[j - gap] > ic) {
-        idx[j] = idx[j - gap];
-        distArr[j] = distArr[j - gap];
-        j -= gap;
-      }
-      idx[j] = ic;
-      distArr[j] = id;
-    }
-    if (gap === 1) break;
+  if (m < 2) return;
+  if (_pairDistScratch.length < m) _pairDistScratch = new Float32Array(m);
+  for (let i = 0; i < m; i++) order[i] = i;
+  _sortIdxRef = idx;
+  order.subarray(0, m).sort(cmpPairByIdx);
+  _sortIdxRef = null;
+  const ds = _pairDistScratch;
+  for (let i = 0; i < m; i++) {
+    const s = order[i];
+    idxScratch[i] = idx[s];
+    ds[i] = distArr[s];
+  }
+  for (let i = 0; i < m; i++) {
+    idx[i] = idxScratch[i];
+    distArr[i] = ds[i];
   }
 }
 
@@ -259,7 +264,11 @@ export function stampLightRange({
         m++;
       }
     }
-    if (grid && m > 1) sortPairsByIndex(tmpIdx, dist, m);
+    // takeClosest already sorts by dist when m > lim; index order only matters
+    // when the whole pair set is copied through (grid vs serial parity).
+    if (grid && m > 1 && !(lim > 0 && m > lim)) {
+      sortPairsByIndex(tmpIdx, dist, m, order, keepIdx);
+    }
     if (m <= 0) continue;
     m = takeClosest(tmpIdx, dist, order, m, lim, keepIdx);
     if (maxPE > 0) {

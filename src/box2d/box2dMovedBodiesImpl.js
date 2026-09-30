@@ -122,7 +122,7 @@
         if (slot < 0 || slot >= cap) continue;
         if (movedBits[slot]) continue;
         movedBits[slot] = 1;
-        movedList[count] = slot >>> 0;
+        movedList[count] = slot | 0;
         if (fellAsleep && wasmFellAsleep) {
           fellAsleep[count] = wasmFellAsleep[i] | 0;
         }
@@ -137,7 +137,7 @@
         if (e < 0 || e >= cap) continue;
         if (movedBits[e]) continue;
         movedBits[e] = 1;
-        movedList[count] = e >>> 0;
+        movedList[count] = e | 0;
         if (fellAsleep) fellAsleep[count] = 0;
         count++;
         if (count >= cap) break;

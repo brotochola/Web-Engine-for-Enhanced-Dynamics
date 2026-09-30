@@ -87,15 +87,12 @@ export class DecorationPool extends SharedAtomicPool {
     if (!data || !out) return 0;
 
     this._lockActiveList();
-    try {
-      const count = Math.min(data[0], out.length);
-      for (let i = 0; i < count; i++) {
-        out[i] = data[1 + i];
-      }
-      return count;
-    } finally {
-      this._unlockActiveList();
+    const count = Math.min(data[0], out.length);
+    for (let i = 0; i < count; i++) {
+      out[i] = data[1 + i];
     }
+    this._unlockActiveList();
+    return count;
   }
 
   /**

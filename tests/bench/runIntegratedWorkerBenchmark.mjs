@@ -86,23 +86,37 @@ const DEFAULT_SCENE_EXPORT = 'BallsScene';
  * covered by other windows (still not a 100% guarantee — the OS can always deprioritize).
  * Opt out with `--allow-throttle` to approximate normal user behavior.
  */
-function buildChromiumLaunchArgs({ allowThrottle, collectGpuStats }) {
-  if (allowThrottle) {
-    return collectGpuStats
-      ? ['--enable-webgpu-developer-features', '--enable-dawn-features=allow_unsafe_apis']
-      : [];
-  }
-  const args = [
-    '--disable-background-timer-throttling',
-    '--disable-renderer-backgrounding',
-    '--disable-backgrounding-occluded-windows',
-  ];
-  if (os.platform() === 'win32') {
-    args.push('--disable-features=CalculateNativeWinOcclusion');
+function buildChromiumLaunchArgs({
+  allowThrottle,
+  collectGpuStats,
+  jsFlags,
+  userDataDir,
+  enableLogging,
+}) {
+  const args = [];
+  if (!allowThrottle) {
+    args.push(
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows'
+    );
+    if (os.platform() === 'win32') {
+      args.push('--disable-features=CalculateNativeWinOcclusion');
+    }
   }
   if (collectGpuStats) {
     args.push('--enable-webgpu-developer-features');
     args.push('--enable-dawn-features=allow_unsafe_apis');
+  }
+  if (userDataDir) {
+    args.push(`--user-data-dir=${userDataDir}`);
+  }
+  if (jsFlags) {
+    args.push(`--js-flags=${jsFlags}`);
+  }
+  if (enableLogging) {
+    args.push('--enable-logging');
+    args.push('--v=1');
   }
   return args;
 }
@@ -121,10 +135,17 @@ function parseArgs(argv) {
       continue;
     }
 
+    const eq = arg.indexOf('=');
+    if (eq !== -1) {
+      parsed[arg.slice(2, eq)] = arg.slice(eq + 1);
+      continue;
+    }
+
     const key = arg.slice(2);
     const next = argv[i + 1];
+    const flagsThatTakeDashValues = key === 'js-flags' || key === 'channel' || key === 'v8-log-dir';
 
-    if (!next || next.startsWith('--')) {
+    if (!next || (next.startsWith('--') && !flagsThatTakeDashValues)) {
       parsed[key] = true;
       continue;
     }
@@ -134,6 +155,16 @@ function parseArgs(argv) {
   }
 
   return parsed;
+}
+
+function resolveJsFlags(cliArgs, v8LogDir) {
+  let jsFlags = typeof cliArgs['js-flags'] === 'string' ? cliArgs['js-flags'].trim() : '';
+  if (!jsFlags) return '';
+  if (v8LogDir && !/(^|\s)--logfile=/.test(jsFlags)) {
+    const logPath = path.join(v8LogDir, 'v8.log').replace(/\\/g, '/');
+    jsFlags = `--logfile=${logPath} ${jsFlags}`;
+  }
+  return jsFlags;
 }
 
 function toPositiveInteger(value, fallback) {
@@ -201,6 +232,29 @@ async function captureCanvasScreenshot(page, filePath) {
   return filePath;
 }
 
+async function collectV8LogFiles({ v8LogDir, userDataDir, repoRoot }) {
+  const names = await fs.readdir(repoRoot).catch(() => []);
+  for (const name of names) {
+    if (!/^v8.*\.log/i.test(name) && name !== 'v8.log') continue;
+    const src = path.join(repoRoot, name);
+    const dest = path.join(v8LogDir, name);
+    try {
+      await fs.copyFile(src, dest);
+      await fs.unlink(src);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (userDataDir) {
+    const debugLog = path.join(userDataDir, 'chrome_debug.log');
+    try {
+      await fs.copyFile(debugLog, path.join(v8LogDir, 'chrome_debug.log'));
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -241,26 +295,56 @@ async function main() {
     );
   }
 
+  const v8LogDir =
+    typeof cliArgs['v8-log-dir'] === 'string' ? path.resolve(cliArgs['v8-log-dir']) : null;
+  if (v8LogDir) {
+    await fs.mkdir(v8LogDir, { recursive: true });
+  }
+  const jsFlags = resolveJsFlags(cliArgs, v8LogDir);
+  if (cliArgs['js-flags'] === true) {
+    console.warn(
+      'Warning: --js-flags had no value (the next token started with --). Use --js-flags="--log-deopt --log-ic".'
+    );
+  }
+  const dumpio = Boolean(cliArgs.dumpio) || Boolean(jsFlags);
+  const userDataDir = null;
+  if (jsFlags) {
+    console.log(`V8 --js-flags: ${jsFlags}`);
+    console.log('JIT flags change STEP_MS. Do not use this run as a speed verdict.');
+  }
+
   const launchArgs = buildChromiumLaunchArgs({
     allowThrottle,
     collectGpuStats: benchmarkOptions.collectGpuStats,
+    jsFlags,
+    userDataDir,
+    enableLogging: Boolean(jsFlags) || dumpio,
   });
+  const launchOptions = {
+    headless: !headed,
+    ...(launchArgs.length > 0 ? { args: launchArgs } : {}),
+    ...(dumpio ? { dumpio: true } : {}),
+  };
+  const requestedChannel =
+    typeof cliArgs.channel === 'string' ? cliArgs.channel : jsFlags ? null : 'chrome';
   let browser;
+  let browserChannel = requestedChannel || 'chrome';
 
   try {
-    // Prefer installed Google Chrome (no `playwright install chromium` needed).
-    // Falls back to Playwright's Chromium binary if Chrome is not installed.
-    browser = await chromium.launch({
-      headless: !headed,
-      channel: 'chrome',
-      ...(launchArgs.length > 0 ? { args: launchArgs } : {}),
-    });
+    if (requestedChannel === 'chromium') {
+      browserChannel = 'chromium';
+      browser = await chromium.launch(launchOptions);
+    } else {
+      browser = await chromium.launch({
+        ...launchOptions,
+        channel: requestedChannel || 'chrome',
+      });
+      browserChannel = requestedChannel || 'chrome';
+    }
   } catch (chromeError) {
     try {
-      browser = await chromium.launch({
-        headless: !headed,
-        ...(launchArgs.length > 0 ? { args: launchArgs } : {}),
-      });
+      browserChannel = 'chromium';
+      browser = await chromium.launch(launchOptions);
     } catch (error) {
       await server.close();
       throw new Error(
@@ -271,6 +355,7 @@ async function main() {
       );
     }
   }
+  console.log(`Browser binary: ${browserChannel}`);
 
   try {
     const page = await browser.newPage();
@@ -421,6 +506,9 @@ async function main() {
       playwrightHeadless: !headed,
       chromiumBackgroundThrottleMitigation: !allowThrottle,
       chromiumExtraArgs: launchArgs,
+      browserChannel,
+      jsFlags: jsFlags || undefined,
+      v8LogDir: v8LogDir || undefined,
       gameEngineDebug: Boolean(benchmarkOptions.debug),
       collectDetailedStats: Boolean(benchmarkOptions.collectDetailedStats),
       collectGpuStats: Boolean(benchmarkOptions.collectGpuStats),
@@ -458,6 +546,10 @@ async function main() {
       await browser.close();
     }
     await server.close();
+    if (v8LogDir) {
+      await collectV8LogFiles({ v8LogDir, userDataDir, repoRoot });
+      console.log(`V8 log dir: ${v8LogDir}`);
+    }
   }
 }
 
