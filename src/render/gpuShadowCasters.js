@@ -278,23 +278,87 @@ export function stampLightRange({
   return cursor;
 }
 
-/** Dist array for the module-level order comparator (set only around native sort). */
-let _orderDist = null;
-
-function compareOrderByDist(a, b) {
-  return _orderDist[a] - _orderDist[b];
+function insertionSortOrder(order, dist, left, right) {
+  for (let i = left + 1; i <= right; i++) {
+    const cur = order[i];
+    const val = dist[cur];
+    let j = i - 1;
+    while (j >= left && dist[order[j]] > val) {
+      order[j + 1] = order[j];
+      j--;
+    }
+    order[j + 1] = cur;
+  }
 }
 
-function sortOrderByDist(order, dist, m) {
-  for (let k = 0; k < m; k++) order[k] = k;
-  _orderDist = dist;
-  order.subarray(0, m).sort(compareOrderByDist);
-  _orderDist = null;
+function partitionOrder(order, dist, left, right, pivotIdx) {
+  const pivotVal = dist[order[pivotIdx]];
+  const tmpPivot = order[pivotIdx];
+  order[pivotIdx] = order[right];
+  order[right] = tmpPivot;
+
+  let storeIdx = left;
+  for (let i = left; i < right; i++) {
+    if (dist[order[i]] < pivotVal) {
+      const t = order[storeIdx];
+      order[storeIdx] = order[i];
+      order[i] = t;
+      storeIdx++;
+    }
+  }
+  const t = order[storeIdx];
+  order[storeIdx] = order[right];
+  order[right] = t;
+  return storeIdx;
+}
+
+function quickselectOrder(order, dist, left, right, k) {
+  while (left < right) {
+    if (right - left < 16) {
+      insertionSortOrder(order, dist, left, right);
+      return;
+    }
+    const mid = (left + right) >> 1;
+    const p1 = dist[order[left]] < dist[order[mid]]
+      ? (dist[order[mid]] < dist[order[right]] ? mid : (dist[order[left]] < dist[order[right]] ? right : left))
+      : (dist[order[left]] < dist[order[right]] ? left : (dist[order[mid]] < dist[order[right]] ? right : mid));
+    const p = partitionOrder(order, dist, left, right, p1);
+    if (p === k) {
+      return;
+    } else if (k < p) {
+      right = p - 1;
+    } else {
+      left = p + 1;
+    }
+  }
+}
+
+function quicksortOrder(order, dist, left, right) {
+  while (left < right) {
+    if (right - left < 16) {
+      insertionSortOrder(order, dist, left, right);
+      return;
+    }
+    const mid = (left + right) >> 1;
+    const p1 = dist[order[left]] < dist[order[mid]]
+      ? (dist[order[mid]] < dist[order[right]] ? mid : (dist[order[left]] < dist[order[right]] ? right : left))
+      : (dist[order[left]] < dist[order[right]] ? left : (dist[order[mid]] < dist[order[right]] ? right : mid));
+    const p = partitionOrder(order, dist, left, right, p1);
+    if (p - left < right - p) {
+      quicksortOrder(order, dist, left, p - 1);
+      left = p + 1;
+    } else {
+      quicksortOrder(order, dist, p + 1, right);
+      right = p - 1;
+    }
+  }
 }
 
 export function takeClosest(tmpIdx, tmpDist, order, m, limit, outIdx) {
   if (limit > 0 && m > limit) {
-    sortOrderByDist(order, tmpDist, m);
+    for (let k = 0; k < m; k++) order[k] = k;
+    quickselectOrder(order, tmpDist, 0, m - 1, limit - 1);
+    quicksortOrder(order, tmpDist, 0, limit - 1);
     for (let k = 0; k < limit; k++) outIdx[k] = tmpIdx[order[k]];
     return limit;
   }
