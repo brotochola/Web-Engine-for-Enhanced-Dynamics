@@ -42,7 +42,8 @@ export class CarScene extends WEED.Scene {
 
         debug: {
             maxDebugDrawEntries: 30192,
-            collectDetailedStats: false,
+            collectDetailedStats: true,
+            collectGpuStats: true,
         },
         // Spatial hash grid configuration
         spatial: {

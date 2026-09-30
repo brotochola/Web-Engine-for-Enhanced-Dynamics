@@ -29,7 +29,7 @@ import {
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
 import { packInstancedRows } from './gpuQueueLayout.js';
-
+import { writePosePrev } from './poseQueueInterp.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
