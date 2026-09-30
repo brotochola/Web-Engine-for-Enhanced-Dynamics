@@ -91,7 +91,8 @@ export function radixSortIndicesBySortKey(idx, n, keysU32, scratch, hist) {
   for (let shift = 0; shift < 32; shift += 8) {
     hist.fill(0);
     for (let i = 0; i < n; i++) {
-      const ord = floatBitsToOrd(keysU32[src[i]]);
+      const u = keysU32[src[i]] >>> 0;
+      const ord = (u & 0x80000000) ? ~u : (u | 0x80000000);
       hist[(ord >>> shift) & 255]++;
     }
     let sum = 0;
@@ -102,7 +103,8 @@ export function radixSortIndicesBySortKey(idx, n, keysU32, scratch, hist) {
     }
     for (let i = 0; i < n; i++) {
       const id = src[i];
-      const ord = floatBitsToOrd(keysU32[id]);
+      const u = keysU32[id] >>> 0;
+      const ord = (u & 0x80000000) ? ~u : (u | 0x80000000);
       dst[hist[(ord >>> shift) & 255]++] = id;
     }
     const swap = src;
@@ -152,8 +154,10 @@ export function reinsertChangedSlots(order, n, keysU32, prevKey, slotMoved, move
   let b = 0;
   let o = 0;
   while (a < w && b < m) {
-    const ka = floatBitsToOrd(keysU32[order[a]]);
-    const kb = floatBitsToOrd(keysU32[movedList[b]]);
+    const ua = keysU32[order[a]] >>> 0;
+    const ka = (ua & 0x80000000) ? ~ua : (ua | 0x80000000);
+    const ub = keysU32[movedList[b]] >>> 0;
+    const kb = (ub & 0x80000000) ? ~ub : (ub | 0x80000000);
     if (ka <= kb) merge[o++] = order[a++];
     else merge[o++] = movedList[b++];
   }
