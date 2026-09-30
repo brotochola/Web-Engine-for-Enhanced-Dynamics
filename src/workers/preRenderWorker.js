@@ -287,6 +287,7 @@ class PreRenderWorker extends AbstractWorker {
         this.maxShadowsPerLight = 15;
         this.maxShadowsPerEntity = 0;
         this.shadowUpdateInterval = 1;
+        this.adaptiveShadowBudget = true;
         this._shadowUpdateTick = 0;
 
         // GC OPTIMIZATION: Pre-allocated buffer for Y-sorted light indices
@@ -677,6 +678,7 @@ class PreRenderWorker extends AbstractWorker {
             this.shadowUpdateInterval = (data.shadows.shadowUpdateInterval | 0)
                 || (this.config.lighting?.shadowUpdateInterval | 0)
                 || 1;
+            this.adaptiveShadowBudget = this.config.lighting?.adaptiveShadowBudget !== false;
             this._shadowUpdateTick = 0;
         }
 
@@ -2737,6 +2739,7 @@ class PreRenderWorker extends AbstractWorker {
             slot.rangeSq = range * range;
             slot.sqrtI = sqrtI[id];
             slot.distSq = dx * dx + dy * dy;
+            slot.maxShadows = 0;
             n++;
         }
         this._stampLightCount = n;
@@ -2813,6 +2816,22 @@ class PreRenderWorker extends AbstractWorker {
         const capL = Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0);
         const caps = this.gpuQueueCaps;
         const stampCap = caps ? (caps.maxStamp | 0) : 0;
+        const maxPL = this.maxShadowsPerLight | 0;
+        if (this.adaptiveShadowBudget !== false && maxPL > 0 && capL > 0) {
+            const zoom = this._frameCameraZoom > 0 ? this._frameCameraZoom : 1;
+            const shadowRes = this.config.lighting?.shadowResolution || 0.25;
+            const texScale = zoom * shadowRes;
+            if (texScale < 0.25) {
+                const scaleSq = texScale * texScale;
+                for (let i = 0; i < capL; i++) {
+                    const L = lights[i];
+                    if (!L || !(L.rangeSq > 0)) continue;
+                    const texArea = 3.14159 * L.rangeSq * scaleSq;
+                    const budget = Math.max(16, (texArea * 0.05 + 0.5) | 0);
+                    L.maxShadows = budget < maxPL ? budget : maxPL;
+                }
+            }
+        }
         this._ensureStampScratch(sunN);
         if (!this._gpuLightVec) this._gpuLightVec = new Float32Array(4);
 

@@ -209,7 +209,9 @@ export function stampLightRange({
   for (let i = begin; i < capL && cursor < cap; i += stride) {
     const L = lights[i];
     if (!L || !(L.rangeSq > 0) || !(L.intensity > 0)) continue;
-    const lim = maxPL > 0 ? maxPL : nSun;
+    const lim = (L.maxShadows > 0)
+      ? (maxPL > 0 ? Math.min(maxPL, L.maxShadows | 0) : (L.maxShadows | 0))
+      : (maxPL > 0 ? maxPL : nSun);
     let m = 0;
     const lx = L.x;
     const ly = L.y;

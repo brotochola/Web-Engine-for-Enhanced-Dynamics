@@ -581,6 +581,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   shadowResolution: 0.5,
   /** 1 = update shadowRT every frame; N > 1 reuses last shadowRT for N-1 frames. */
   shadowUpdateInterval: 1,
+  /** Scale shadow caster budget per light dynamically based on on-screen light radius when zoomed out. */
+  adaptiveShadowBudget: true,
   raycasted: false,
   maxPolygonVertices: 128,
   /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
