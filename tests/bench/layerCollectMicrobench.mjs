@@ -6,10 +6,7 @@
 //   node tests/bench/layerCollectMicrobench.mjs
 //   node tests/bench/layerCollectMicrobench.mjs --renderables 20000 --frames 500 --output tests/results/layer-collect-micro.json
 
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { Layer } from '../../src/core/layer.js';
 
 const BUILT_IN_LAYERS = {
@@ -146,9 +143,7 @@ export function runLayerCollectMicrobench(cliArgs = parseArgs()) {
   return report;
 }
 
-const isDirect =
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isDirect = isCli(import.meta.url);
 if (isDirect) {
   runLayerCollectMicrobench();
 }

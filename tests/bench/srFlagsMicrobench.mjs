@@ -17,10 +17,7 @@
 //   pnpm bench:micro:sr-flags
 //   node tests/bench/srFlagsMicrobench.mjs --entities 8000 --ticks 2000 --output tests/results/sr-flags-micro.json
 
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const F_ACTIVE = 1 << 0;
 const F_ANIMATED = 1 << 1;
@@ -444,9 +441,7 @@ export function runSrFlagsMicrobench(cliArgs = parseArgs()) {
   return report;
 }
 
-const isDirect =
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isDirect = isCli(import.meta.url);
 if (isDirect) {
   runSrFlagsMicrobench();
 }

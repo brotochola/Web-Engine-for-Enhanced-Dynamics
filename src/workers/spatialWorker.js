@@ -48,7 +48,7 @@ import {
 import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
-import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult } from '../util/colliderUtils.js';
+import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../util/colliderUtils.js';
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -139,6 +139,8 @@ class SpatialWorker extends AbstractWorker {
     this._entityNeighborNextTick = null;
     /** Per-entity expanded candidate lists: [count, id0, ...] stride = 1+maxNeighbors */
     this._neighborCandidateData = null;
+    /** Dense copy of each list's count: the stagger skip reads this, not the head of a 1+maxNeighbors row. */
+    this._candidateCountOf = null;
     this._neighborCandidateTruncated = null;
     this._entityFramesSinceBuild = null;
 
@@ -232,6 +234,7 @@ class SpatialWorker extends AbstractWorker {
     }
     const candStride = 1 + Grid.maxNeighbors;
     this._neighborCandidateData = new (EntityIdArray())(this.globalEntityCount * candStride);
+    this._candidateCountOf = new (EntityIdArray())(this.globalEntityCount);
     this._neighborCandidateTruncated = new Uint8Array(this.globalEntityCount);
     this._entityFramesSinceBuild = new Uint16Array(this.globalEntityCount);
     this._noBodyCount = 0;
@@ -391,6 +394,8 @@ class SpatialWorker extends AbstractWorker {
     const y = Transform.y;
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
     const rigidActive = RigidBody.active;
@@ -445,7 +450,13 @@ class SpatialWorker extends AbstractWorker {
       let posY;
       let halfW = 0;
       let halfH = 0;
-      if (colliderActive[i]) {
+      if (colliderActive[i] && shapeType[i] === SHAPE_CIRCLE) {
+        // Same math as getColliderBounds' circle branch, without the call.
+        posX = x[i] + (offsetX[i] || 0);
+        posY = y[i] + (offsetY[i] || 0);
+        halfW = radius[i] || 0;
+        halfH = halfW;
+      } else if (colliderActive[i]) {
         getColliderBounds(i, _boundsResult);
         posX = _boundsResult.posX;
         posY = _boundsResult.posY;
@@ -596,6 +607,7 @@ class SpatialWorker extends AbstractWorker {
     const framesSinceBuild = this._entityFramesSinceBuild;
     const candStride = 1 + maxNeighbors;
     const candData = this._neighborCandidateData;
+    const candCountOf = this._candidateCountOf;
 
     const neighborData = Grid.neighborData;
     const entityPosData = this.entityPosData;
@@ -676,13 +688,11 @@ class SpatialWorker extends AbstractWorker {
             }
           }
 
-          const candBaseA = entityA * candStride;
-
           // True tickInterval: off-tick keeps last neighborData (no cell-walk, no re-filter).
           // Logic already decimates AI; stale neighbors for N frames is the point.
           if (
             scheduleSkipRebuild &&
-            candData[candBaseA] > 0 &&
+            candCountOf[entityA] > 0 &&
             framesSinceBuild[entityA] < maxReuseFrames
           ) {
             this.neighborsReusedThisFrame++;
@@ -760,6 +770,7 @@ class SpatialWorker extends AbstractWorker {
             }
 
             candData[candBase] = candCount;
+            candCountOf[entityA] = candCount;
             this._neighborCandidateTruncated[entityA] = truncated ? 1 : 0;
 
             this._publishFilteredNeighbors(

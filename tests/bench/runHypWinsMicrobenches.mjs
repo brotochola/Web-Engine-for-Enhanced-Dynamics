@@ -7,7 +7,6 @@
 import { parseArgs, writeReport } from './microbenchHelpers.mjs';
 import { runLogPairMicrobench } from './logPairMicrobench.mjs';
 import { runParCamMicrobench } from './parCamMicrobench.mjs';
-import { runPreAnimMicrobench } from './preAnimMicrobench.mjs';
 import { runPreHotMicrobench } from './preHotMicrobench.mjs';
 
 const args = parseArgs();
@@ -20,9 +19,6 @@ const logPair = runLogPairMicrobench({ ...args, output: undefined });
 
 console.log('\n=== PAR-CAM ===');
 const parCam = runParCamMicrobench({ ...args, output: undefined });
-
-console.log('\n=== PRE-ANIM ===');
-const preAnim = runPreAnimMicrobench({ ...args, output: undefined });
 
 console.log('\n=== PRE-HOT ===');
 const preHot = runPreHotMicrobench({ ...args, output: undefined });
@@ -37,7 +33,6 @@ const rows = [
   { hyp: 'LOG-PAIR', metric: 'pack', ratio: logPair.ratios.pack },
   { hyp: 'LOG-PAIR', metric: 'unpack', ratio: logPair.ratios.unpack },
   { hyp: 'PAR-CAM', metric: 'overall', ratio: parCam.ratios.overall },
-  { hyp: 'PRE-ANIM', metric: 'overall', ratio: preAnim.ratios.overall },
   { hyp: 'PRE-HOT', metric: 'overall', ratio: preHot.ratios.overall },
 ];
 
@@ -51,6 +46,6 @@ for (const row of rows) {
 
 writeReport(outputPath, {
   name: 'hyp-wins-micro',
-  benches: { logPair, parCam, preAnim, preHot },
+  benches: { logPair, parCam, preHot },
   table: rows.map((r) => ({ ...r, deltaPct: deltaPct(r.ratio) })),
 });

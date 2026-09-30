@@ -9,12 +9,10 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { ENGINE_FEATURES, filterFeatures, getFeature } from './engineFeatureCatalog.mjs';
 import {
   SPEED_PCT,
-  applyBaselineRev,
   explainHit,
   fmtDeltaPct,
   fmtStat,
@@ -24,16 +22,16 @@ import {
   pickOpsWithKey,
   renderCompareTable,
   repoRoot,
-  restoreSrcTree,
   runKernelScript,
   sceneMetricKeys,
   sceneWantsHeaded,
-  snapshotSrcTree,
   stepMsFloorOk,
   usesStressStepFloor,
   workloadOk,
   writeJson,
 } from './measureLib.mjs';
+import { isCli } from './microbenchHelpers.mjs';
+import { ensureRevWorktree } from './revWorktree.mjs';
 
 const outRoot = path.join(repoRoot, 'tests/results/scoreboard');
 
@@ -309,7 +307,7 @@ export function writeReport(payload) {
     'Stats detalladas apagadas (los contadores de carga sí se publican). Carga comparable si la mediana queda en ±5% y el cv de cada clave es menor a 50%. Velocidad keep si una primaria baja al menos 3% en ms (o el kernel sube 3% en ops/s) y ninguna primaria de la fila empeora 3%.'
   );
   lines.push(
-    `Baseline: git \`${payload.vs}\` más el parche de contadores de carga (misma visibilidad, velocidad de ese rev). Tratamiento: árbol de trabajo actual. Snapshot/restore de \`src/\`, no \`git checkout\` sobre un árbol sucio.`
+    `Baseline: git \`${payload.vs}\` más el parche de contadores de carga (misma visibilidad, velocidad de ese rev). Tratamiento: árbol de trabajo actual. El baseline corre desde un worktree con solo \`src/\` de ese rev; el árbol de trabajo no se escribe.`
   );
   if (payload.args.smoke) {
     lines.push(
@@ -396,10 +394,9 @@ function blackScreenReason(row, feature) {
   return null;
 }
 
-function abortCampaign(reason, snap, rows, gates, args) {
+function abortCampaign(reason, rows, gates, args) {
   console.error(`\nABORT scoreboard: ${reason}`);
   console.error('Diagnose and fix before continuing. Remaining catalog rows were not run.');
-  restoreSrcTree(snap);
   const payload = {
     vs: args.vs,
     args,
@@ -419,12 +416,13 @@ function main() {
   const args = parseMeasureArgs(process.argv.slice(2));
   const features = filterFeatures(args.only);
   fs.mkdirSync(outRoot, { recursive: true });
-  const snap = snapshotSrcTree();
+  const baseline = ensureRevWorktree(args.vs);
+  console.log(`baseline worktree ${baseline.root} (${baseline.sha.slice(0, 8)})`);
   const rows = [];
   const sceneCache = new Map();
 
   const gates = { node: args.skipNode ? 'skipped' : null, lockstep: args.skipLockstep ? 'skipped' : null };
-  try {
+  {
     if (!args.skipNode) {
       console.log('\n======== correctness: pnpm test:node ========');
       try {
@@ -433,7 +431,7 @@ function main() {
       } catch (e) {
         gates.node = String(e.message || e);
         console.error('test:node failed; aborting scoreboard (product cannot be kept).');
-        abortCampaign(`test:node failed (${gates.node})`, snap, rows, gates, args);
+        abortCampaign(`test:node failed (${gates.node})`, rows, gates, args);
         return;
       }
     }
@@ -445,14 +443,14 @@ function main() {
       } catch (e) {
         gates.lockstep = String(e.message || e);
         console.error('lockstep failed; aborting scoreboard (product cannot be kept).');
-        abortCampaign(`lockstep failed (${gates.lockstep})`, snap, rows, gates, args);
+        abortCampaign(`lockstep failed (${gates.lockstep})`, rows, gates, args);
         return;
       }
     }
 
     const gateReason = gateFailed(gates);
     if (gateReason) {
-      abortCampaign(gateReason, snap, rows, gates, args);
+      abortCampaign(gateReason, rows, gates, args);
       return;
     }
 
@@ -464,9 +462,7 @@ function main() {
         fs.mkdirSync(kdir, { recursive: true });
         try {
           console.log(`kernel BASE ${feature.kernel.script}`);
-          applyBaselineRev(args.vs);
-          const baseJson = runKernelScript(feature.kernel.script, path.join(kdir, 'kernel-BASE.json'));
-          restoreSrcTree(snap);
+          const baseJson = runKernelScript(feature.kernel.script, path.join(kdir, 'kernel-BASE.json'), baseline.root);
           console.log(`kernel KEEP ${feature.kernel.script}`);
           const hypJson = runKernelScript(feature.kernel.script, path.join(kdir, 'kernel-KEEP.json'));
           row.kernel = {
@@ -475,7 +471,6 @@ function main() {
           };
           row.kernel.deltaPct = pctDelta(row.kernel.hypOps, row.kernel.baseOps);
         } catch (e) {
-          restoreSrcTree(snap);
           row.kernel = { error: String(e.message || e) };
         }
       }
@@ -486,9 +481,7 @@ function main() {
         if (!sceneCache.has(cacheKey)) {
           const sdir = path.join(outRoot, feature.scene.key);
           fs.mkdirSync(sdir, { recursive: true });
-          applyBaselineRev(args.vs);
-          const base = measureSceneSide(`${feature.scene.key}-BASE`, feature.scene, args, sdir, feature.id);
-          restoreSrcTree(snap);
+          const base = measureSceneSide(`${feature.scene.key}-BASE`, feature.scene, args, sdir, feature.id, baseline.root);
           const hyp = measureSceneSide(`${feature.scene.key}-KEEP`, feature.scene, args, sdir, feature.id);
           sceneCache.set(cacheKey, {
             ok: base.ok && hyp.ok,
@@ -515,7 +508,7 @@ function main() {
 
       const black = blackScreenReason(row, feature);
       if (black) {
-        abortCampaign(black, snap, rows, gates, args);
+        abortCampaign(black, rows, gates, args);
         return;
       }
       if (row.decision.verdict === 'FAIL') {
@@ -529,8 +522,6 @@ function main() {
         );
       }
     }
-  } finally {
-    restoreSrcTree(snap);
   }
 
   const payload = {
@@ -549,6 +540,4 @@ function main() {
   console.log(`Wrote ${path.join(outRoot, 'report.md')}`);
 }
 
-const isDirect =
-  process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
-if (isDirect) main();
+if (isCli(import.meta.url)) main();

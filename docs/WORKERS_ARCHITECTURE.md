@@ -107,7 +107,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 
 **Entity partition:** `for (idx = myIndex; idx < count; idx += totalWorkers)` over per-type active lists.
 
-**Collision Set:** every logic worker records **every** physics pair (Cantor key on normalized `min,max`) into `frameCollisions` so `isCollidingWith()` works during `tick()` on any worker. Skipped entirely when no entity type has `CollisionListener`.
+**Collision Set:** every logic worker records **every** physics pair (`collisionPairKey` on normalized `min,max`) so `isCollidingWith()` works during `tick()` on any worker; `frameCollisions.has(key)` is the lookup. Pairs the worker owns (see the partition below) are checked against `bodyGeneration` and `Transform.active` every frame, in the stay pass. Pairs another worker owns are checked only when `has()` asks for them, plus a sweep every 30 frames that drops stale ones. Skipped entirely when no entity type has `CollisionListener`.
 
 **Collision callback partition:** enter/stay/exit dispatch runs only on the worker where `minEntity % totalWorkers === myIndex`. Listener gating (`collisionListenerByType`) applies to callbacks only, not to Set population.
 

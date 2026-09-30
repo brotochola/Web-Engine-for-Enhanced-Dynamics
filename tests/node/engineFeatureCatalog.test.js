@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +38,11 @@ const REQUIRED = [
   'meshFillMoving',
   'meshFillPan',
   'meshFillLook',
+  'audioSlots',
+  'gameObjectAccess',
+  'shadowStamp',
+  'gpuQueuePack',
+  'decalPremultiply',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {
@@ -182,11 +186,4 @@ test('box2dRayJs uses BoxBusy scene and Box2d.castRayClosest', () => {
   const post = fs.readFileSync(path.join(root, 'src/box2d/weedjsPost.js'), 'utf8');
   assert.match(post, /function serviceRayCastClosest\(/);
   assert.match(post, /castRayClosestBits/);
-});
-
-test('particle tournament aborts unless the snapshot flag is passed', () => {
-  const script = path.join(root, 'tests/bench/runParticleHypTournament.mjs');
-  const r = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });
-  assert.equal(r.status, 2);
-  assert.match(String(r.stderr || r.stdout), /i-know-this-uses-snapshots/);
 });

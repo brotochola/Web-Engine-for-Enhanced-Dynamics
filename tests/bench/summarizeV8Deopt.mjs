@@ -6,22 +6,28 @@
  *   node tests/bench/summarizeV8Deopt.mjs tests/results/v8-deopt --trace tests/results/v8-deopt/engine_trace.json
  *
  * Frequency is the signal. Warmup-only deopts show up a handful of times;
- * a per-frame deopt shows up thousands of times.
+ * a per-frame deopt shows up thousands of times. A deopt in a cold function
+ * does not matter, so the ranking is steady-state count × that function's
+ * self ms in the CPU trace (same streaming parser as summarizeChromeCpuTrace).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+
+import { DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
+import { normalizeUrl, readCpuTrace, summarizeCpuTrace } from './cpuTraceLib.mjs';
 
 const NOISE_URL = /(?:chrome-extension:|devtools:\/\/|node:internal)/i;
 const IC_KINDS = /^(LoadIC|StoreIC|KeyedLoadIC|KeyedStoreIC|LoadGlobalIC|StoreInArrayLiteralIC),/;
 const IC_STATE_RE = /uninitialized|premonomorphic|monomorphic|polymorphic|megamorphic|recompute/i;
 
 function parseArgs(argv) {
-  const out = { dir: null, trace: null, limit: 40 };
+  const out = { dir: null, trace: null, limit: 40, warmupMs: DEFAULT_WARMUP_MS };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--trace' && argv[i + 1]) out.trace = path.resolve(argv[++i]);
     else if (a === '--limit' && argv[i + 1]) out.limit = Math.max(1, parseInt(argv[++i], 10) || 40);
+    else if (a === '--warmup-ms' && argv[i + 1]) out.warmupMs = Number(argv[++i]);
     else if (!a.startsWith('--') && !out.dir) out.dir = path.resolve(a);
   }
   return out;
@@ -77,17 +83,20 @@ function parseCodeDeopt(line) {
   if (NOISE_URL.test(loc)) return null;
   const after = line.includes('>,') ? line.slice(line.lastIndexOf('>,') + 2) : '';
   const kindMatch = line.match(/,(deopt-eager|deopt-lazy|dependency-change),/);
+  const tsUs = Number(line.split(',')[1]);
   return {
-    loc: stripHost(loc),
+    loc: normalizeUrl(stripHost(loc).replace(/:(\d+):(\d+)$/, '')) + (loc.match(/:(\d+):(\d+)$/)?.[0] ?? ''),
     reason: (after || 'unknown').trim(),
     kind: kindMatch ? kindMatch[1] : 'deopt',
+    tsUs: Number.isFinite(tsUs) ? tsUs : 0,
   };
 }
 
-async function parseTextLogs(files) {
+async function parseTextLogs(files, warmupMs) {
   const deoptByFn = new Map();
   const deoptByReason = new Map();
   const deoptByPair = new Map();
+  const steadyByPair = new Map();
   const icState = new Map();
   const megaIc = new Map();
   const sourceHits = new Map();
@@ -108,6 +117,7 @@ async function parseTextLogs(files) {
         bump(deoptByFn, fn);
         bump(deoptByReason, `${deopt.kind}: ${deopt.reason}`);
         bump(deoptByPair, `${fn} | ${deopt.kind} | ${deopt.reason}`);
+        if (deopt.tsUs >= warmupMs * 1000) bump(steadyByPair, `${fn} | ${deopt.kind} | ${deopt.reason}`);
         const src = fn.match(/(\/(?:src|demos|tests)\/[^:]+\.js)(?::(\d+))?/);
         if (src) bump(sourceHits, `${src[1]}${src[2] ? ':' + src[2] : ''}`);
         continue;
@@ -133,6 +143,7 @@ async function parseTextLogs(files) {
     deoptByFn,
     deoptByReason,
     deoptByPair,
+    steadyByPair,
     icState,
     megaIc,
     sourceHits,
@@ -142,61 +153,49 @@ async function parseTextLogs(files) {
   };
 }
 
-function collectCpuFromProfile(cpuProfile, samples) {
-  const nodes = cpuProfile.nodes || [];
-  const byId = new Map();
-  for (const n of nodes) byId.set(n.id, n);
-  const counts = new Map();
-  const sampleList = cpuProfile.samples || samples || [];
-  for (const id of sampleList) {
-    const node = byId.get(id);
-    if (!node) continue;
-    const frame = node.callFrame || node;
-    const name = frame.functionName || node.functionName || '(anonymous)';
-    const url = stripHost(frame.url || node.url || '');
-    if (NOISE_URL.test(url)) continue;
-    const line = frame.lineNumber != null ? `:${frame.lineNumber}` : '';
-    bump(counts, `${name} ${url}${line}`.trim());
+/** Self ms per function key ("name /url:startLine"), summed over every thread kind. */
+async function cpuSelfByFunction(tracePath, warmupMs) {
+  if (!tracePath || !fs.existsSync(tracePath)) return { selfMs: new Map(), note: 'no trace' };
+  const trace = await readCpuTrace(tracePath, { fromMs: warmupMs });
+  const summary = summarizeCpuTrace(trace, { limit: 400 });
+  const selfMs = new Map();
+  for (const k of Object.values(summary.kinds)) {
+    for (const r of k.self) bump(selfMs, r.key, r.ms);
   }
-  return counts;
+  return { selfMs, note: `${trace.events} events, window from ${warmupMs} ms` };
 }
 
-function mergeMaps(into, from) {
-  for (const [k, v] of from) bump(into, k, v);
+/** Deopt position "/url:line:col" → the CPU function whose start line is the closest one above. */
+function functionForDeopt(loc, byUrl) {
+  const m = loc.match(/^(.*):(\d+):(\d+)$/);
+  if (!m) return null;
+  const list = byUrl.get(m[1]);
+  if (!list) return null;
+  const line = Number(m[2]);
+  let best = null;
+  for (const f of list) {
+    if (f.line <= line && (!best || f.line > best.line)) best = f;
+  }
+  return best;
 }
 
-function parseChromeTrace(tracePath) {
-  if (!tracePath || !fs.existsSync(tracePath)) return { cpu: new Map(), note: 'no trace' };
-  const st = fs.statSync(tracePath);
-  if (st.size > 80e6) {
-    return {
-      cpu: new Map(),
-      note: `trace ${(st.size / 1e6).toFixed(1)} MB — too big to JSON.parse here; open in Perfetto`,
-    };
+function rankDeopts(steadyByPair, selfMs) {
+  const byUrl = new Map();
+  for (const [key, ms] of selfMs) {
+    const m = key.match(/^(\S+) (\/\S+):(\d+)$/);
+    if (!m) continue;
+    let list = byUrl.get(m[2]);
+    if (!list) byUrl.set(m[2], (list = []));
+    list.push({ key, line: Number(m[3]), ms });
   }
-  const raw = fs.readFileSync(tracePath, 'utf8');
-  let events;
-  try {
-    const parsed = JSON.parse(raw);
-    events = Array.isArray(parsed) ? parsed : parsed.traceEvents || [];
-  } catch (err) {
-    return { cpu: new Map(), note: `trace parse failed: ${err.message}` };
+  const rows = [];
+  for (const [pair, count] of steadyByPair) {
+    const loc = pair.split(' | ')[0];
+    const fn = functionForDeopt(loc, byUrl);
+    const ms = fn?.ms ?? 0;
+    rows.push({ pair, steadyCount: count, fn: fn?.key ?? null, selfMs: ms, score: count * ms });
   }
-  const cpu = new Map();
-  let profiles = 0;
-  for (const ev of events) {
-    const name = ev.name || '';
-    const args = ev.args || {};
-    const data = args.data || args;
-    if (name === 'ProfileChunk' || name === 'CpuProfile' || name === 'Profile') {
-      const profile = data.cpuProfile || data.profile || data;
-      if (profile && (profile.nodes || profile.samples)) {
-        profiles++;
-        mergeMaps(cpu, collectCpuFromProfile(profile, data.samples || profile.samples));
-      }
-    }
-  }
-  return { cpu, note: `${profiles} cpu profile chunks, ${(st.size / 1e6).toFixed(1)} MB` };
+  return rows.sort((a, b) => b.score - a.score || b.steadyCount - a.steadyCount);
 }
 
 function printSection(title, rows, empty) {
@@ -214,7 +213,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const dir = args.dir || path.resolve('tests/results/v8-deopt');
   const files = walkFiles(dir).filter(looksLikeLog);
-  const parsed = await parseTextLogs(files);
+  const parsed = await parseTextLogs(files, args.warmupMs);
   const tracePath =
     args.trace ||
     (fs.existsSync(path.join(path.dirname(dir), 'engine_trace.json'))
@@ -222,7 +221,8 @@ async function main() {
       : fs.existsSync(path.join(dir, 'engine_trace.json'))
         ? path.join(dir, 'engine_trace.json')
         : null);
-  const cpu = parseChromeTrace(tracePath);
+  const cpu = await cpuSelfByFunction(tracePath, args.warmupMs);
+  const ranked = rankDeopts(parsed.steadyByPair, cpu.selfMs);
 
   const report = {
     dir,
@@ -236,8 +236,10 @@ async function main() {
     icState: Object.fromEntries(topEntries(parsed.icState, args.limit)),
     megaIc: Object.fromEntries(topEntries(parsed.megaIc, args.limit)),
     sourceHits: Object.fromEntries(topEntries(parsed.sourceHits, args.limit)),
+    steadyByPair: Object.fromEntries(topEntries(parsed.steadyByPair, args.limit)),
     cpuNote: cpu.note,
-    cpuTop: Object.fromEntries(topEntries(cpu.cpu, args.limit)),
+    cpuTopSelfMs: Object.fromEntries(topEntries(cpu.selfMs, args.limit)),
+    rankedSteadyDeopts: ranked.slice(0, args.limit),
   };
 
   const outJson = path.join(dir, 'summary.json');
@@ -255,7 +257,18 @@ async function main() {
   printSection('Megamorphic ICs', topEntries(parsed.megaIc, args.limit), '(no megamorphic IC lines)');
   printSection('Source path hits in deopts', topEntries(parsed.sourceHits, args.limit));
   console.log(`\nCPU trace: ${cpu.note}`);
-  printSection('CPU samples (JS)', topEntries(cpu.cpu, args.limit), '(no JS samples in trace)');
+  printSection(
+    'CPU self ms (JS)',
+    topEntries(cpu.selfMs, args.limit).map(([k, v]) => [k, v.toFixed(1)]),
+    '(no JS samples in trace)'
+  );
+  console.log(`\n## Steady deopts (after ${args.warmupMs} ms) × self ms of the function`);
+  if (!ranked.length) console.log('(none)');
+  for (const r of ranked.slice(0, args.limit)) {
+    console.log(
+      `${r.score.toFixed(0).padStart(10)}  ${String(r.steadyCount).padStart(6)} × ${r.selfMs.toFixed(1).padStart(8)} ms  ${r.pair}  [${r.fn ?? 'no CPU match'}]`
+    );
+  }
   console.log(`\nWrote ${outJson}`);
 }
 

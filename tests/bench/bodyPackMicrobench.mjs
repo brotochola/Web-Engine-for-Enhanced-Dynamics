@@ -1,7 +1,10 @@
 /**
  * L1: Box2dBodyPack hot loop — no alloc in the pack (preallocated dest).
+ *
+ *   node tests/bench/bodyPackMicrobench.mjs
+ *   node tests/bench/bodyPackMicrobench.mjs --output tests/results/body-pack.json
  */
-import { timeIt } from './microbenchHelpers.mjs';
+import { checksumFloats, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { Collider } from '../../src/components/collider.js';
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
@@ -10,7 +13,8 @@ import { packBox2dBodies, BODY_FLOATS } from '../../src/render/box2dBodyPack.js'
 import { syncColliderFeed } from '../../src/util/layerFeed.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
 
-const N = 256;
+const args = parseArgs();
+const N = Number(args.n ?? 256);
 Collider.initializeArrays(new SharedArrayBuffer(Collider.getBufferSize(N)), N);
 Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(N)), N);
 RigidBody.initializeArrays(new SharedArrayBuffer(RigidBody.getBufferSize(N)), N);
@@ -49,7 +53,12 @@ for (let i = 0; i < N; i++) {
 
 const bodies = new Float32Array(N * BODY_FLOATS);
 const verts = new Float32Array(N * 16);
-timeIt('body-pack boxes', () => {
+const packed = packBox2dBodies(layerId, bodies, verts, N, { sweep: false });
+const checksum = checksumFloats(bodies, N * BODY_FLOATS);
+const pack = timeIt('body-pack boxes', () => {
   packBox2dBodies(layerId, bodies, verts, N, { sweep: false });
 }, { iterations: 2000, warmup: 200, reps: 5 });
 Layer.reset();
+
+const report = { feature: 'body-pack', n: N, seed: 0, packed, checksum, cases: { pack } };
+if (args.output) writeReport(String(args.output), report);

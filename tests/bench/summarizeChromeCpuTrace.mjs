@@ -1,67 +1,74 @@
 #!/usr/bin/env node
 /**
- * Stream-parse a Chrome/Playwright CPU trace (engine_trace.json) without
- * JSON.parse of the whole file. One event per line.
+ * Summarize a Chrome/Playwright CPU trace (engine_trace.json) per thread, in ms.
  *
- *   node tests/bench/summarizeChromeCpuTrace.mjs tests/results/v8-deopt/engine_trace.json
+ *   node tests/bench/summarizeChromeCpuTrace.mjs tests/results/v8-deopt/after-h9/engine_trace.json
+ *   node tests/bench/summarizeChromeCpuTrace.mjs <trace> --from-ms 10000 --duration-ms 10000
+ *   node tests/bench/summarizeChromeCpuTrace.mjs <trace> --vs tests/results/v8-deopt/after/cpu-summary.json
+ *
+ * Writes cpu-summary.json and hot-lines.md next to the trace (or --out dir).
+ * CPU samples are not STEP_MS: this says where a worker spends its busy time,
+ * the worker's STEP_MS says whether a change paid.
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import readline from 'node:readline';
+
+import { diffSummaries, readCpuTrace, summarizeCpuTrace } from './cpuTraceLib.mjs';
 
 function parseArgs(argv) {
-  const out = { file: null, limit: 30, srcOnly: false };
+  const out = { file: null, limit: 30, fromMs: undefined, durationMs: undefined, vs: null, out: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--limit' && argv[i + 1]) out.limit = Math.max(1, parseInt(argv[++i], 10) || 30);
-    else if (a === '--src-only') out.srcOnly = true;
+    else if (a === '--from-ms' && argv[i + 1]) out.fromMs = Number(argv[++i]);
+    else if (a === '--duration-ms' && argv[i + 1]) out.durationMs = Number(argv[++i]);
+    else if (a === '--vs' && argv[i + 1]) out.vs = path.resolve(argv[++i]);
+    else if (a === '--out' && argv[i + 1]) out.out = path.resolve(argv[++i]);
     else if (!a.startsWith('--') && !out.file) out.file = path.resolve(a);
   }
   return out;
 }
 
-function bump(map, key, n = 1) {
-  map.set(key, (map.get(key) || 0) + n);
-}
+const fmtMs = (v) => v.toFixed(1).padStart(9);
+const fmtPct = (v) => `${v.toFixed(1)}%`.padStart(7);
 
-function topEntries(map, limit) {
-  return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit);
-}
-
-function stripHost(url) {
-  return String(url || '')
-    .replace(/^https?:\/\/127\.0\.0\.1:\d+/, '')
-    .replace(/^https?:\/\/[^/]+/, '');
-}
-
-function workerLabel(url) {
-  const u = stripHost(url);
-  const m = u.match(/\/src\/workers\/([^/?]+)/);
-  if (m) return m[1];
-  if (u.includes('/src/box2d/')) return 'physicsWasm';
-  if (u.includes('pixi')) return 'pixi';
-  return null;
-}
-
-function parseLine(raw) {
-  let s = raw.trim();
-  if (!s || s === '{' || s === '}' || s === '[' || s === ']' || s.startsWith('{"traceEvents"')) {
-    return null;
+function hotLinesMarkdown(summary) {
+  const lines = [
+    '# Líneas calientes por hilo',
+    '',
+    `Trace: \`${summary.file}\`. Ventana desde ${summary.window.fromMs} ms${summary.window.durationMs ? `, ${summary.window.durationMs} ms` : ''}. Intervalo mediano entre muestras: ${summary.medianDeltaUs.toFixed(0)} µs.`,
+    '',
+    'Tiempo propio (self). El porcentaje de cada línea es sobre el tiempo propio de su función.',
+    '',
+  ];
+  for (const t of summary.threads) {
+    if (t.kind === 'other' || !t.hotLines.length) continue;
+    lines.push(`## ${t.label} (${t.threadName})`);
+    lines.push('');
+    lines.push(`Ocupado ${t.busyMsPerS.toFixed(0)} ms/s, GC ${t.gcMs.toFixed(0)} ms en la ventana.`);
+    lines.push('');
+    for (const h of t.hotLines) {
+      lines.push(`### ${h.fn} (${h.fnMs.toFixed(1)} ms)`);
+      lines.push('');
+      const callers = t.callers[h.fn];
+      if (callers?.length) {
+        lines.push(`Callers: ${callers.map((c) => `${c.key} ${c.pct.toFixed(0)}%`).join('; ')}`);
+        lines.push('');
+      }
+      if (!h.lines.length) {
+        lines.push('(sin muestras con línea)');
+        lines.push('');
+        continue;
+      }
+      lines.push('```text');
+      for (const l of h.lines) {
+        lines.push(`${String(l.line).padStart(5)} ${l.pctOfFn.toFixed(0).padStart(3)}%  ${l.text ?? ''}`);
+      }
+      lines.push('```');
+      lines.push('');
+    }
   }
-  if (s.endsWith(',')) s = s.slice(0, -1);
-  if (!s.startsWith('{')) return null;
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
-
-function frameKey(frame) {
-  const name = frame.functionName || '(anonymous)';
-  const url = stripHost(frame.url || '');
-  const line = frame.lineNumber != null && frame.lineNumber >= 0 ? `:${frame.lineNumber}` : '';
-  return `${name} ${url}${line}`.trim();
+  return `${lines.join('\n')}\n`;
 }
 
 async function main() {
@@ -72,139 +79,46 @@ async function main() {
     process.exitCode = 1;
     return;
   }
+  const trace = await readCpuTrace(file, { fromMs: args.fromMs, durationMs: args.durationMs });
+  const summary = summarizeCpuTrace(trace, { limit: args.limit });
+  if (args.vs) {
+    summary.vs = { file: args.vs, kinds: diffSummaries(JSON.parse(fs.readFileSync(args.vs, 'utf8')), summary) };
+  }
 
-  const threadName = new Map();
-  const profiles = new Map();
-  const eventNames = new Map();
-  let events = 0;
+  const outDir = args.out || path.dirname(file);
+  fs.mkdirSync(outDir, { recursive: true });
+  const outJson = path.join(outDir, 'cpu-summary.json');
+  const outMd = path.join(outDir, 'hot-lines.md');
+  fs.writeFileSync(outJson, JSON.stringify(summary, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(outMd, hotLinesMarkdown(summary), 'utf8');
 
-  const rl = readline.createInterface({
-    input: fs.createReadStream(file, { encoding: 'utf8' }),
-    crlfDelay: Infinity,
-  });
-
-  for await (const raw of rl) {
-    const ev = parseLine(raw);
-    if (!ev) continue;
-    events++;
-    bump(eventNames, ev.name || '(no name)');
-
-    if (ev.name === 'thread_name' && ev.args?.name != null) {
-      threadName.set(`${ev.pid}:${ev.tid}`, ev.args.name);
-    }
-
-    const data = ev.args?.data;
-    if (!data) continue;
-    const name = ev.name || '';
-    if (name !== 'Profile' && name !== 'ProfileChunk' && name !== 'CpuProfile') continue;
-
-    const key = String(ev.id ?? `${ev.pid}:${ev.tid}`);
-    let prof = profiles.get(key);
-    if (!prof) {
-      prof = {
-        pid: ev.pid,
-        tid: ev.tid,
-        nodes: new Map(),
-        samples: [],
-        urls: new Map(),
-      };
-      profiles.set(key, prof);
-    }
-    if (ev.pid != null) prof.pid = ev.pid;
-    if (ev.tid != null) prof.tid = ev.tid;
-
-    const cpu = data.cpuProfile || data.profile || null;
-    const nodes = cpu?.nodes || data.nodes || null;
-    if (nodes) {
-      for (const n of nodes) {
-        const frame = n.callFrame || n;
-        prof.nodes.set(n.id, {
-          parent: n.parent,
-          name: frame.functionName || n.functionName || '(anonymous)',
-          url: frame.url || n.url || '',
-          line: frame.lineNumber,
-        });
-        const w = workerLabel(frame.url || n.url || '');
-        if (w) bump(prof.urls, w);
+  console.log(
+    `Events ${summary.events} | window from ${summary.window.fromMs} ms | median sample interval ${summary.medianDeltaUs.toFixed(0)} µs`
+  );
+  console.log('\n## Threads (busy ms per second of window)');
+  for (const t of summary.threads) {
+    console.log(
+      `${t.label.padEnd(22)} busy ${t.busyMsPerS.toFixed(0).padStart(4)} ms/s  gc ${t.gcMs.toFixed(0).padStart(4)} ms  samples ${t.samples}  (${t.threadName})`
+    );
+  }
+  for (const [kind, k] of Object.entries(summary.kinds)) {
+    if (kind === 'other') continue;
+    console.log(`\n## ${kind} (${k.threads.length} thread${k.threads.length > 1 ? 's' : ''}, max ${k.maxThreadBusyMsPerS.toFixed(0)} ms/s busy)`);
+    console.log('   self ms   %busy   function');
+    for (const r of k.self.slice(0, 12)) console.log(`${fmtMs(r.ms)} ${fmtPct(r.pct)}   ${r.key}`);
+  }
+  if (summary.vs) {
+    console.log(`\n## vs ${summary.vs.file} (percentage points of busy time)`);
+    for (const [kind, d] of Object.entries(summary.vs.kinds)) {
+      if (kind === 'other') continue;
+      console.log(`\n${kind}: max busy ${d.busyMsPerSBase.toFixed(0)} → ${d.busyMsPerSCur.toFixed(0)} ms/s`);
+      for (const r of d.rows.slice(0, 8)) {
+        console.log(`  ${(r.deltaPts >= 0 ? '+' : '') + r.deltaPts.toFixed(1)} pts  ${r.basePct.toFixed(1)} → ${r.curPct.toFixed(1)}  ${r.key}`);
       }
     }
-    const samples = cpu?.samples || data.samples || null;
-    if (samples && samples.length) {
-      for (let i = 0; i < samples.length; i++) prof.samples.push(samples[i]);
-    }
-  }
-
-  const byThread = new Map();
-  const byWorkerGuess = new Map();
-  const globalSelf = new Map();
-  const srcSelf = new Map();
-  const perWorker = new Map();
-
-  for (const prof of profiles.values()) {
-    const tname = threadName.get(`${prof.pid}:${prof.tid}`) || `tid ${prof.tid}`;
-    const threadKey = `${tname} (pid ${prof.pid} tid ${prof.tid})`;
-    const guess = [...prof.urls.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || tname;
-    if (!perWorker.has(guess)) perWorker.set(guess, new Map());
-    const workerMap = perWorker.get(guess);
-
-    for (const id of prof.samples) {
-      const node = prof.nodes.get(id);
-      if (!node) continue;
-      const key = `${node.name} ${stripHost(node.url)}${node.line != null ? ':' + node.line : ''}`.trim();
-      bump(globalSelf, key);
-      bump(byThread, threadKey);
-      bump(byWorkerGuess, guess);
-      bump(workerMap, key);
-      const url = stripHost(node.url);
-      if (url.includes('/src/') || url.includes('/demos/')) bump(srcSelf, key);
-    }
-  }
-
-  const report = {
-    file,
-    bytes: fs.statSync(file).size,
-    events,
-    profiles: profiles.size,
-    topEventNames: Object.fromEntries(topEntries(eventNames, 25)),
-    samplesByThread: Object.fromEntries(topEntries(byThread, 40)),
-    samplesByWorkerGuess: Object.fromEntries(topEntries(byWorkerGuess, 20)),
-    topSelf: Object.fromEntries(topEntries(globalSelf, args.limit)),
-    topSrc: Object.fromEntries(topEntries(srcSelf, args.limit)),
-    perWorkerTop: Object.fromEntries(
-      [...perWorker.entries()].map(([w, m]) => [w, Object.fromEntries(topEntries(m, args.limit))])
-    ),
-  };
-
-  const outDir = path.dirname(file);
-  const outJson = path.join(outDir, 'cpu-summary.json');
-  fs.writeFileSync(outJson, JSON.stringify(report, null, 2) + '\n', 'utf8');
-
-  console.log(`Events: ${events} | profiles: ${profiles.size} | ${(report.bytes / 1e6).toFixed(1)} MB`);
-  console.log('\n## Samples by thread');
-  for (const [k, n] of topEntries(byThread, 20)) console.log(`${String(n).padStart(8)}  ${k}`);
-  console.log('\n## Samples by worker guess (from script URLs in that profile)');
-  for (const [k, n] of topEntries(byWorkerGuess, 15)) console.log(`${String(n).padStart(8)}  ${k}`);
-  console.log('\n## Self samples (all JS)');
-  for (const [k, n] of topEntries(args.srcOnly ? srcSelf : globalSelf, args.limit)) {
-    console.log(`${String(n).padStart(8)}  ${k}`);
-  }
-  console.log('\n## Self samples (/src and /demos only)');
-  for (const [k, n] of topEntries(srcSelf, args.limit)) console.log(`${String(n).padStart(8)}  ${k}`);
-  const interesting = [
-    'preRenderWorker.js',
-    'pixi',
-    'logicWorker.js',
-    'spatialWorker.js',
-    'particleWorker.js',
-    'physicsWasm',
-  ];
-  for (const w of interesting) {
-    const m = perWorker.get(w);
-    if (!m) continue;
-    console.log(`\n## ${w}`);
-    for (const [k, n] of topEntries(m, 12)) console.log(`${String(n).padStart(8)}  ${k}`);
   }
   console.log(`\nWrote ${outJson}`);
+  console.log(`Wrote ${outMd}`);
 }
 
 main().catch((err) => {

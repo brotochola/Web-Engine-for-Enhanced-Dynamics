@@ -80,6 +80,21 @@ export const LOCKSTEP_VISUAL_SCENES = [
     centerY: 1750,
     match: 'exact',
   },
+  {
+    // Product vehicle for engine hypotheses: 16k bodies, lighting, shadows,
+    // bullets, particles, decals. Three logic workers tick AI in parallel, so
+    // two runs of the same commit are not bit-identical: not-black + counts.
+    id: 'predator',
+    module: '/demos/predatorScene/predatorScene.js',
+    exportName: 'PredatorScene',
+    steps: 90,
+    dtMs: 16.67,
+    minActive: 15000,
+    minLiquidFun: 0,
+    minParticles: 0,
+    zoom: 0.4,
+    match: 'not-black',
+  },
 ];
 
 export function resolveLockstepScenes(ids) {

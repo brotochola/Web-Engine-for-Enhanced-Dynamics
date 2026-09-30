@@ -1,5 +1,8 @@
 /**
- * Shared measurement helpers: src snapshot, Playwright retry, load gate, metrics.
+ * Shared measurement helpers: Playwright retry, load gate, metrics.
+ *
+ * Nothing here writes the working tree. A baseline revision is a worktree
+ * (revWorktree.mjs); pass its `root` to run the runner or a kernel from it.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -9,10 +12,12 @@ import { fileURLToPath } from 'node:url';
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS, STEP_MS_FLOOR } from './benchmarkDefaults.mjs';
 import { median, pctDelta, writeJson } from './featureTournamentLib.mjs';
-import { applyWorkloadCounts } from './micro-opts-hyps/hypPatches.mjs';
 
 export const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const integratedRunner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
+
+function integratedRunnerAt(root) {
+  return path.join(root || repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
+}
 
 export const LOAD_CV_FAIL = 0.5;
 export const LOAD_PCT_FAIL = 5;
@@ -74,101 +79,6 @@ export function stepMsFloorOk(baseSum, hypSum, primaryKeys) {
   }
   const hits = [...baseHits, ...hypHits];
   return { ok: hits.length === 0, hits, reason: explainStepMsFloor(hits) };
-}
-
-function walkFiles(dir, acc = []) {
-  if (!fs.existsSync(dir)) return acc;
-  for (const name of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, name.name);
-    if (name.isDirectory()) walkFiles(full, acc);
-    else acc.push(full);
-  }
-  return acc;
-}
-
-export function snapshotSrcTree() {
-  const files = new Map();
-  const srcRoot = path.join(repoRoot, 'src');
-  for (const abs of walkFiles(srcRoot)) {
-    files.set(path.relative(repoRoot, abs).replace(/\\/g, '/'), fs.readFileSync(abs));
-  }
-  return files;
-}
-
-export function snapshotFiles(relPaths) {
-  const files = new Map();
-  for (const rel of relPaths) {
-    const abs = path.join(repoRoot, rel);
-    if (fs.existsSync(abs)) files.set(rel.replace(/\\/g, '/'), fs.readFileSync(abs));
-  }
-  return files;
-}
-
-export function restoreSnapshot(files) {
-  for (const [rel, buf] of files) {
-    const abs = path.join(repoRoot, rel);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    writeFileRetry(abs, buf);
-  }
-}
-
-function sleepMs(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function writeFileRetry(abs, buf, attempts = 12) {
-  let last;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      fs.writeFileSync(abs, buf);
-      return;
-    } catch (e) {
-      last = e;
-      const code = e.code;
-      if (code !== 'UNKNOWN' && code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') throw e;
-      sleepMs(40 * (i + 1));
-    }
-  }
-  throw last;
-}
-
-export function restoreSrcTree(files) {
-  const srcRoot = path.join(repoRoot, 'src');
-  const want = new Set(files.keys());
-  for (const abs of walkFiles(srcRoot)) {
-    const rel = path.relative(repoRoot, abs).replace(/\\/g, '/');
-    if (!want.has(rel)) fs.unlinkSync(abs);
-  }
-  restoreSnapshot(files);
-}
-
-export function applySrcRev(rev) {
-  const raw = execFileSync('git', ['ls-tree', '-r', '--name-only', rev, '--', 'src'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  const names = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-  const want = new Set(names);
-  const srcRoot = path.join(repoRoot, 'src');
-  for (const abs of walkFiles(srcRoot)) {
-    const rel = path.relative(repoRoot, abs).replace(/\\/g, '/');
-    if (!want.has(rel)) fs.unlinkSync(abs);
-  }
-  for (const rel of names) {
-    const body = execFileSync('git', ['show', `${rev}:${rel}`], {
-      cwd: repoRoot,
-      encoding: 'buffer',
-      maxBuffer: 32 * 1024 * 1024,
-    });
-    const abs = path.join(repoRoot, rel);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    writeFileRetry(abs, body);
-  }
-}
-
-export function applyBaselineRev(rev) {
-  applySrcRev(rev);
-  applyWorkloadCounts();
 }
 
 export function mean(arr) {
@@ -292,9 +202,11 @@ export function extractMetrics(report) {
   };
 }
 
+/** `opts.root` runs the runner from that tree (a baseline worktree); default is the working tree. */
 export function runIntegratedOnce(scene, outPath, opts) {
+  const root = opts.root || repoRoot;
   const args = [
-    integratedRunner,
+    integratedRunnerAt(root),
     '--src',
     '--scene',
     scene.path,
@@ -310,7 +222,8 @@ export function runIntegratedOnce(scene, outPath, opts) {
   if (opts.headed) args.push('--headed');
   if (!opts.detailedStats) args.push('--no-collect-detailed-stats');
   if (opts.query) args.push('--query', String(opts.query).replace(/^\?/, ''));
-  execFileSync(process.execPath, args, { cwd: repoRoot, stdio: 'inherit' });
+  if (opts.extraArgs) args.push(...opts.extraArgs);
+  execFileSync(process.execPath, args, { cwd: root, stdio: 'inherit' });
   return JSON.parse(fs.readFileSync(outPath, 'utf8'));
 }
 
@@ -335,12 +248,12 @@ export function sceneWantsHeaded(scene, args, featureId) {
   return Boolean(scene.headed);
 }
 
-export function measureSceneSide(label, scene, args, outDir, featureId) {
+export function measureSceneSide(label, scene, args, outDir, featureId, root = repoRoot) {
   const headed = sceneWantsHeaded(scene, args, featureId);
   const runs = headed ? args.runs : args.stressRuns;
   const warmupMs = headed ? args.warmupMs : args.stressWarmupMs;
   const durationMs = headed ? args.durationMs : args.stressDurationMs;
-  const benchOpts = { warmupMs, durationMs, headed, detailedStats: Boolean(args.detailedStats) };
+  const benchOpts = { warmupMs, durationMs, headed, detailedStats: Boolean(args.detailedStats), root };
   const rows = [];
   for (let r = 0; r < runs; r++) {
     const out = path.join(outDir, `${label}-r${r}.json`);
@@ -361,31 +274,28 @@ function lookupPath(obj, dotted) {
   return typeof cur === 'number' ? cur : null;
 }
 
-export function pickOps(json) {
-  if (!json) return null;
-  const direct = lookupPath(json, 'cases.emitFlat_burst.opsPerSec');
-  if (direct) return direct;
-  const cases = json.cases || {};
-  for (const c of Object.values(cases)) {
-    if (c && typeof c.opsPerSec === 'number') return c.opsPerSec;
-  }
-  return null;
-}
+export { lookupPath };
 
+/**
+ * The number at `opsKey`, or throw. No fallback to "some other case": a missing
+ * key used to score a different function without anyone noticing.
+ */
 export function pickOpsWithKey(json, opsKey) {
   const named = lookupPath(json, opsKey);
-  if (typeof named === 'number') return named;
-  return pickOps(json);
+  if (typeof named === 'number' && Number.isFinite(named)) return named;
+  throw new Error(`kernel JSON has no finite number at ${opsKey}`);
 }
 
-export function runKernelScript(scriptRel, outPath) {
-  const script = path.join(repoRoot, scriptRel);
-  // Discard one full process after applySrcRev: the first timed case after a
-  // whole-tree swap is often cold (compute results.0 looked −30% while n=512
-  // matched). Warmup writes beside the timed output.
+/**
+ * Run a kernel script from `root` (default working tree). One discarded
+ * process first: the first timed case after a cold start is often slow
+ * (compute results.0 once looked −30% while n=512 matched).
+ */
+export function runKernelScript(scriptRel, outPath, root = repoRoot, extraArgs = []) {
+  const script = path.join(root, scriptRel);
   const warmPath = outPath.replace(/\.json$/i, '-warm.json');
-  execFileSync(process.execPath, [script, '--output', warmPath], { cwd: repoRoot, stdio: 'inherit' });
-  execFileSync(process.execPath, [script, '--output', outPath], { cwd: repoRoot, stdio: 'inherit' });
+  execFileSync(process.execPath, [script, '--output', warmPath, ...extraArgs], { cwd: root, stdio: 'inherit' });
+  execFileSync(process.execPath, [script, '--output', outPath, ...extraArgs], { cwd: root, stdio: 'inherit' });
   return JSON.parse(fs.readFileSync(outPath, 'utf8'));
 }
 

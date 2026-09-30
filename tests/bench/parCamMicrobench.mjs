@@ -4,11 +4,8 @@
 //   node tests/bench/parCamMicrobench.mjs
 //   node tests/bench/parCamMicrobench.mjs --frames 200000 --output tests/results/par-cam-micro.json
 
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
 import { calculateCameraScreenBounds } from '../../src/util/utils.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 /**
  * @param {Record<string, unknown>} [cliArgs]
@@ -169,9 +166,7 @@ export function runParCamMicrobench(cliArgs = parseArgs()) {
   return report;
 }
 
-const isDirect =
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isDirect = isCli(import.meta.url);
 if (isDirect) {
   runParCamMicrobench();
 }

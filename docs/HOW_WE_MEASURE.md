@@ -22,7 +22,23 @@ Correctness comes first. If the checksum or assert fails, the timing does not co
 
 Use this when the claim is about a hot function in isolation.
 
-When the scoreboard (or any A/B) swaps the whole `src/` tree with `applySrcRev` before a kernel, run a **discard warmup process** and then a timed process (`runKernelScript` does this; `tests/bench/runKernelAbFresh.mjs` is the standalone). The first timed case after a full-tree swap is often cold: compute `results.0` (n=64) once looked about −30% while n=512 matched. Prefer a product-scale opsKey (for compute pack, `results.2` = n=512 no-sweep), not the smallest case.
+#### What a kernel is allowed to do
+
+- **A kernel never writes the working tree.** It imports `src/` and times it. No `copyFileSync`, no patch-and-restore, no `applySrcRev`. Those harnesses were deleted: an interrupted run left the engine on an old snapshot, and a node test that patched `src/` ran next to three other test files under `--test-concurrency=4`.
+- **It calls the shipped function.** When the hot code is a worker method, the kernel runs the real worker class in Node ([`tests/bench/workerHarness.mjs`](../tests/bench/workerHarness.mjs): import the worker module with a `self` stub, send a real `init` message). A loop copied into the bench measures the copy, and a local copy does not have the worker's `this`. That is how H7, H10, H11, H6 and "Stay sin sqrt" (kernel +553 %, scene +20 %) went wrong.
+- **A hypothesis variant lives in the bench file** until it is decided. For a worker method, the variant is the shipped method source plus an exact diff, compiled in memory ([`tests/bench/methodVariant.mjs`](../tests/bench/methodVariant.mjs)); an anchor that no longer matches throws. Drop it when the idea is dropped. When it is kept, it moves to `src/` and the bench calls only the shipped code.
+- **Every kernel writes** `cases.<name>.opsPerSec` (finite), `n`, `seed` and a `checksum` with `--output`. `isCli()` in [`microbenchHelpers.mjs`](../tests/bench/microbenchHelpers.mjs) is the CLI guard (the old `import.meta.url === pathToFileURL(argv[1])` check could skip `main()` on Windows).
+- **Scale comes from Predator.** [`capturePredatorFixture.mjs`](../tests/bench/capturePredatorFixture.mjs) reads one live frame from the main thread (read-only) into `tests/fixtures/predator-frame.bin`: positions, collider sizes, casters, lights, audio slot occupancy. Kernels that need a real distribution load it.
+
+#### Kernel comparisons
+
+- A variant against the shipped code: `node tests/bench/runKernelVariants.mjs --script <kernel> --variants base,<v>`. Processes alternate (base, v, base, v, …). A variant whose checksum differs from base is rejected before ops/s is read.
+- The whole catalog, or against a revision: `pnpm bench:kernels` (dump, `tests/results/kernels/kernels-dump.json`), `node tests/bench/runKernelsVsRev.mjs --vs <rev>`, `--changed` for the rows whose `module` the diff touches. The warmup process is the preflight: a row whose `opsKey` is not a finite number stops the run before the timed pass. There is no fallback to "the first case in the JSON" any more; that fallback scored a different function without anyone noticing.
+- The baseline of a revision is a **git worktree** in `../weed-ab/` ([`tests/bench/revWorktree.mjs`](../tests/bench/revWorktree.mjs)): only `src/` comes from the revision, everything else is the working tree, so both sides run the same scenes and kernels. A hypothesis still in the working tree is compared with `--overlay <name> --override <file>=<pre-hypothesis copy>` (gate 4 below). `node_modules` is a junction into the worktree; `removeRevWorktree()` unlinks it first, because `git worktree remove` follows a junction on Windows and deletes the target.
+
+Each side runs a **discard warmup process** and then the timed processes. With a baseline, `runKernelsVsRev.mjs` runs 5 timed rounds per side (`--rounds`), the order alternating each round, and compares medians. One process per side is not enough: the same `packInstancedRows` code moved between 1794 and 2165 ops/s from one process to the next, and a single pass once read −11.9 % on identical code. A kernel verdict needs both the 3 percent and **rounds won ≥ 90 %**: of the 25 (KEEP round, BASE round) comparisons, KEEP wins at least 23 (or loses 23 for WORSE). Identical code reaches that about 1.6 percent of the time; the −11.9 % case came out at 56 %, a tie.
+
+The first timed case after a cold start is often slow: compute `results.0` (n=64) once looked about −30% while n=512 matched. Prefer a product-scale opsKey (for compute pack, `results.2` = n=512 no-sweep), not the smallest case.
 
 ### 2. Stress scene
 
@@ -90,7 +106,7 @@ Physics and combat load:
 - Combat-class rows: `BODY_COUNT` and `ACTIVE_PARTICLES`, each within **5 percent**.
 - If the coefficient of variation of a load key is **50 percent or higher**, the row **fails**. Change the scene. Do not explain the noise away.
 - A gameplay report **fails** if the Balls median `BODY_COUNT` is 0. The engine writes that count in production. Zero means the bench is broken.
-- Predator combat is emergent. Use `steadyCombatScene` for a stable particle plus spatial load, not `demos/predatorScene`.
+- Predator combat is emergent. For a stable particle plus spatial load in a stress pair, use `steadyCombatScene`. For the product gate of a hypothesis, Predator runs as a paired ABAB (see [the gates](#hypotheses-from-the-trace-the-gates)): alternating sides and judging paired deltas is what makes its noise usable.
 
 Visual load, whenever the change collects, culls, sorts, packs, or draws sprites, lights, or shadows:
 
@@ -150,6 +166,43 @@ One scene does not drop both claims. If the measured run was in the wrong regime
 - **Hygiene keep:** a bugfix or a deletion of dead code stays, unless a primary worker regresses by 3 percent or more.
 
 A claim that “emit is cheaper” needs the kernel win, and the demo that runs emit must not get 3 percent worse. A claim that “Predator spatial is cheaper” has to show up on the Predator gameplay scene.
+
+### Hypotheses from the trace: the gates
+
+A micro-optimization found in the engine trace goes through these gates, in order. Stop at the first one that fails.
+
+1. **Checksum.** The kernel asserts the variant produces what the shipped code produces. If not: `rejected-in-kernel`, ops/s is not read.
+2. **The baseline is the shipped function** (or the real worker method), never a copy.
+3. **Kernel win:** at least 3 percent more ops/s, same `n` and `seed`, in the regime the trace shows (Predator saturates audio slots, runs 16k bodies, 48 shadow lights). A win outside the product regime is noted, not kept.
+4. **Re-run the kernel against the patched `src/`** (`runKernelsVsRev.mjs --overlay`). A local variant can win while the worker's hidden class eats the gain; this gate catches it before any scene.
+5. **Parity test** in `tests/node/`: the new code against a reference of the old behavior, frame by frame (for example `contactPairParity.test.js`, `soundSlotClaim.test.js`). `pnpm test:node` stays green.
+6. **Predator ABAB** ([`runPredatorAbab.mjs`](../tests/bench/runPredatorAbab.mjs)): headed, detailed stats off, `--src`, seed 123456, A = baseline worktree (the working tree with the hypothesis files swapped back), B = working tree, 8 pairs of 10 s / 10 s. The order inside a pair is counterbalanced (AB, BA, AB, …): with a fixed A-then-B order, drift inside the pair always landed on B, and S4 once showed every untouched worker +2 to +6 % in 5 of 8 pairs. Every worker kind is watched, not only the owner.
+7. **Other scenes:** `runKernelsVsRev.mjs --changed` and the catalog rows whose `module` the diff touches.
+
+The Predator verdict per worker kind is the median of the paired deltas (B − A) / A:
+
+- **Regression:** the median is at least +3 percent **and** at least 75 percent of the pairs are worse, on a kind whose coefficient of variation is at most 10 percent (or on the owner kind). Eight scattered pairs with a +3 percent median are noise; a sign that holds in six of eight is not.
+- **Load:** `BODY_COUNT`, `GPU_CASTERS`, `GPU_SHADOW_LIGHTS` within 5 percent. `ACTIVE_PARTICLES` gates only from a baseline of 1000: Predator emits about 100, and Poisson noise alone is 10 percent.
+- **Kept (product):** the owner kind is at least 3 percent cheaper with at least 75 percent of the pairs better, and nothing regresses.
+- **Kept (kernel, producto neutro):** the kernel gates passed, Predator does not regress anywhere, and the owner did not move 3 percent. The change stays. The log says it is a kernel claim.
+
+Predator is the product vehicle because it runs everything at once (16k bodies with colliders, lighting, shadows, bullets, particles, decals). It does not run LiquidFun; that is the LiquidFun stress scene.
+
+Predator is not deterministic across runs of the same commit: `runLockstepVisual.mjs --scene predator --save` then `--against` gave different pose hashes and about 96 percent of pixels differing (2026-09-30; demo randomness, Box2D pthreads, three logic workers). Its lockstep entry is `not-black`: it catches a crash or a black canvas, nothing more. Behavior parity for a Predator hypothesis comes from gate 5, not from pixels.
+
+### Reading the engine trace
+
+`pnpm bench:headed:trace-cpu --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene` records a CPU-only trace (profiler categories and thread names; about 7 MB for 20 s instead of 190 MB with the timeline categories, which also add their own cost to every task). `pnpm trace:summary <engine_trace.json>` writes `cpu-summary.json` and `hot-lines.md`:
+
+- time from `timeDeltas` in milliseconds, busy time per thread (without `(idle)`), GC per thread;
+- a window that skips the runner warmup (`--from-ms`, default 10 s);
+- one row per thread, labeled by the `/src/workers/*.js` file with the most self time (spatial threads used to show up as `abstractWorker.js`);
+- self and inclusive time, the hottest source lines of each hot function with their text (from `lines`), and the most frequent callers;
+- URLs without `?v=`, so two traces compare: `--vs <other cpu-summary.json>` prints the busy-share delta per function.
+
+`pnpm trace:deopts <v8 log dir> --trace <engine_trace.json>` ranks deopts by the count after warmup times the function's self time in the trace. A deopt loop in a cold function is not a target.
+
+On Windows the tracing profiler samples about every 630 µs; `--js-flags=--cpu-profiler-sampling-interval=100` does not change that interval. CPU samples are where time goes, not a speed verdict: the verdict is always `STEP_MS`.
 
 ## Detailed stats
 
@@ -234,6 +287,24 @@ pnpm bench:feature:spawn-storm
 pnpm bench:feature:bullets
 ```
 
-Do not run `pnpm bench:particle:tournament` as a source of truth. That script overwrites `src/` with old particle baselines and aborts unless you pass `--i-know-this-uses-snapshots`. Ray, decal, and spatial writers restore a work-tree snapshot on exit. They must not leave a champion on `src/`, and they must never copy pre-P2 baselines back as a restore. Use the scoreboard against a git rev instead.
+The particle, ray, decal, spatial, sleep-neighbor, multigrid, pre-render and micro-opts campaigns that copied old snapshots onto `src/` were deleted (2026-09-30), with the one-sitting A/B scripts that did the same. Their verdicts stay in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) and their code in git history. Compare against a revision with a worktree (`--vs`), never by swapping files in the working tree.
+
+```bash
+# Kernels
+pnpm bench:kernels                                   # dump every catalog kernel
+node tests/bench/runKernelsVsRev.mjs --vs HEAD       # working tree vs a revision
+node tests/bench/runKernelVariants.mjs --script tests/bench/contactsMicrobench.mjs --variants base,myvariant
+
+# Lockstep visual (Predator: not-black only, see above)
+node tests/bench/runLockstepVisual.mjs --scene predator
+
+# Predator product gate for one hypothesis
+node tests/bench/runPredatorAbab.mjs --name L1 --owner logic --pairs 8 \
+  --override src/workers/logicWorker.js=tests/results/hyp-baselines/L1.logicWorker.js
+
+# Trace
+pnpm bench:headed:trace-cpu --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
+pnpm trace:summary tests/results/<dir>/engine_trace.json
+```
 
 Harness defaults: [`tests/bench/BENCHMARK_METHODOLOGY.md`](../tests/bench/BENCHMARK_METHODOLOGY.md). Feature catalog: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md).

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Headed product confirm: main 0695a8d + always-on load counts
- * versus the current keep tree (HASH, P2, P6, HYGIENE, COLLIDE).
+ * Headed product confirm: a baseline rev (default main 0695a8d, plus always-on
+ * load counts inside its worktree) versus the working tree.
  *
- * Snapshots working src first so restoreMain cannot eat uncommitted work.
+ * The baseline is a worktree (revWorktree.mjs); the working tree is never written.
  *
  *   node tests/bench/runProductConfirm.mjs
- *   node tests/bench/runProductConfirm.mjs --runs 5
+ *   node tests/bench/runProductConfirm.mjs --runs 5 --vs main
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -15,20 +15,13 @@ import { fileURLToPath } from 'node:url';
 
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { pctDelta, writeJson } from './featureTournamentLib.mjs';
-import { MAIN_REV } from './micro-opts-hyps/hypPatches.mjs';
-import {
-  applyBaselineRev,
-  fmtDeltaPct,
-  measureSceneSide,
-  renderCompareTable,
-  restoreSrcTree,
-  snapshotSrcTree,
-  workloadOk,
-} from './measureLib.mjs';
+import { fmtDeltaPct, measureSceneSide, renderCompareTable, workloadOk } from './measureLib.mjs';
+import { ensureRevWorktree } from './revWorktree.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const emitMicro = path.join(repoRoot, 'tests/bench/particleEmitMicrobench.mjs');
+const EMIT_MICRO_REL = 'tests/bench/particleEmitMicrobench.mjs';
 const outRoot = path.join(repoRoot, 'tests/results/product-confirm');
+let MAIN_REV = '0695a8d';
 
 const KEEP_IDS = ['HASH', 'P2', 'P6', 'HYGIENE', 'COLLIDE'];
 const PRODUCT_WORKERS = [
@@ -71,15 +64,12 @@ function parseArgs(argv) {
     else if (a === '--duration-ms' && argv[i + 1]) out.durationMs = parseInt(argv[++i], 10) || DEFAULT_DURATION_MS;
     else if (a === '--skip-scenes') out.skipScenes = true;
     else if (a === '--skip-kernels') out.skipKernels = true;
+    else if (a === '--vs' && argv[i + 1]) out.vs = String(argv[++i]);
   }
   return out;
 }
 
-function applyBaseline() {
-  applyBaselineRev(MAIN_REV);
-}
-
-function measureScene(tag, scene, args, applyA, applyB) {
+function measureScene(tag, scene, args, baseRoot) {
   const dir = path.join(outRoot, tag);
   fs.mkdirSync(dir, { recursive: true });
   const measureArgs = {
@@ -93,13 +83,11 @@ function measureScene(tag, scene, args, applyA, applyB) {
   };
 
   console.log(`\n======== ${tag} BASE (${args.runs} × ${args.warmupMs}/${args.durationMs}ms) ========`);
-  applyA();
-  const base = measureSceneSide(`${tag}-BASE`, scene, measureArgs, dir);
+  const base = measureSceneSide(`${tag}-BASE`, scene, measureArgs, dir, scene.key, baseRoot);
   if (!base.ok) return { ok: false, error: base.error, scene: scene.key };
 
   console.log(`\n======== ${tag} KEEP (${args.runs} × ${args.warmupMs}/${args.durationMs}ms) ========`);
-  applyB();
-  const hyp = measureSceneSide(`${tag}-KEEP`, scene, measureArgs, dir);
+  const hyp = measureSceneSide(`${tag}-KEEP`, scene, measureArgs, dir, scene.key);
   if (!hyp.ok) return { ok: false, error: hyp.error, scene: scene.key };
 
   return {
@@ -113,8 +101,8 @@ function measureScene(tag, scene, args, applyA, applyB) {
   };
 }
 
-function runEmitKernel(label, outPath) {
-  execFileSync(process.execPath, [emitMicro, '--output', outPath], { cwd: repoRoot, stdio: 'inherit' });
+function runEmitKernel(root, outPath) {
+  execFileSync(process.execPath, [path.join(root, EMIT_MICRO_REL), '--output', outPath], { cwd: root, stdio: 'inherit' });
   const json = JSON.parse(fs.readFileSync(outPath, 'utf8'));
   return { ok: true, ops: json.cases?.emitFlat_burst?.opsPerSec ?? null, json };
 }
@@ -269,27 +257,23 @@ function writeSpanishReport(payload) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.vs) MAIN_REV = args.vs;
   fs.mkdirSync(outRoot, { recursive: true });
-  const snap = snapshotSrcTree();
+  const baseline = ensureRevWorktree(MAIN_REV);
+  console.log(`baseline worktree ${baseline.root} (${baseline.sha.slice(0, 8)})`);
   const scenes = {};
   let kernel = null;
-  try {
-    if (!args.skipKernels) {
-      console.log('\n======== kernel emitFlat BASE ========');
-      applyBaseline();
-      const baseK = runEmitKernel('BASE', path.join(outRoot, 'emit-BASE.json'));
-      console.log('\n======== kernel emitFlat KEEP ========');
-      restoreSrcTree(snap);
-      const hypK = runEmitKernel('KEEP', path.join(outRoot, 'emit-KEEP.json'));
-      kernel = { baseOps: baseK.ops, hypOps: hypK.ops };
-      kernel.deltaPct = pctDelta(kernel.hypOps, kernel.baseOps);
-    }
-    if (!args.skipScenes) {
-      scenes.balls = measureScene('balls', SCENES.balls, args, applyBaseline, () => restoreSrcTree(snap));
-      scenes.predator = measureScene('predator', SCENES.predator, args, applyBaseline, () => restoreSrcTree(snap));
-    }
-  } finally {
-    restoreSrcTree(snap);
+  if (!args.skipKernels) {
+    console.log('\n======== kernel emitFlat BASE ========');
+    const baseK = runEmitKernel(baseline.root, path.join(outRoot, 'emit-BASE.json'));
+    console.log('\n======== kernel emitFlat KEEP ========');
+    const hypK = runEmitKernel(repoRoot, path.join(outRoot, 'emit-KEEP.json'));
+    kernel = { baseOps: baseK.ops, hypOps: hypK.ops };
+    kernel.deltaPct = pctDelta(kernel.hypOps, kernel.baseOps);
+  }
+  if (!args.skipScenes) {
+    scenes.balls = measureScene('balls', SCENES.balls, args, baseline.root);
+    scenes.predator = measureScene('predator', SCENES.predator, args, baseline.root);
   }
 
   const decision = decideProduct(scenes, kernel);

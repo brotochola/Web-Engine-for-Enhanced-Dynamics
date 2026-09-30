@@ -26,7 +26,7 @@ import { logicBlockRange, logicWorkerThatShouldTick, tickBucketPhase } from '../
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
 import { Box2d } from '../core/box2d.js';
-import { _cantorResult, collisionPairKey, collisionPairUnpack } from '../util/utils.js';
+import { collisionPairKey } from '../util/utils.js';
 import { EntityIdArray } from '../util/entityIdWidth.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
@@ -71,6 +71,9 @@ import {
  * LogicWorker - Handles game logic and AI for all entities
  * Extends AbstractWorker for common worker functionality
  */
+/** Stale pairs owned by another logic worker are dropped at least this often. */
+const FOREIGN_SWEEP_FRAMES = 30;
+
 class LogicWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
@@ -96,19 +99,33 @@ class LogicWorker extends AbstractWorker {
 
     // Collision tracking (Unity-style Enter/Stay/Exit from Box2D contacts)
 
-    // Optimized collision tracking using numeric keys instead of strings
-    // LOG-PAIR: (min<<16)|max for entity indices < 65536 (zero GC unpack)
-    this.previousCollisions = new Set(); // Track collisions from last frame (numeric keys)
-    this.currentCollisions = new Set(); // Track collisions in current frame (numeric keys)
-    // Stable reference to the latest COMPLETED frame's collision set.
-    // previousCollisions/currentCollisions swap every frame, so entity ticks
-    // (which run after processCollisionCallbacks) must query through this alias.
-    this.frameCollisions = this.currentCollisions;
+    // Tracked contact pairs: collisionPairKey → slot in dense columns
+    // (min, max, gen of min, gen of max). Delete swaps the last slot in, so the
+    // stay loop walks the columns without iterating a Set or unpacking keys.
+    // Pairs this worker owns (minE % workers === index, the only ones it fires
+    // callbacks for) are validated every frame. Pairs another worker owns sit in
+    // the foreign columns and are validated when isCollidingWith asks, plus a
+    // sweep every FOREIGN_SWEEP_FRAMES. Map value: slot ≥ 0 own, −(slot+1) foreign.
+    /** @type {Map<number, number>} */
+    this._pairSlot = new Map();
+    this._pairCount = 0;
+    this._pairCapacity = 0;
+    this._pairMin = new Uint32Array(0);
+    this._pairMax = new Uint32Array(0);
+    this._pairGenMin = new Uint32Array(0);
+    this._pairGenMax = new Uint32Array(0);
+    this._foreignCount = 0;
+    this._foreignCapacity = 0;
+    this._foreignMin = new Uint32Array(0);
+    this._foreignMax = new Uint32Array(0);
+    this._foreignGenMin = new Uint32Array(0);
+    this._foreignGenMax = new Uint32Array(0);
+    this._foreignSweepIn = FOREIGN_SWEEP_FRAMES;
+    // Latest completed frame's pairs, for isCollidingWith (has(key)).
+    const pairView = { has: (key) => this._hasPair(key) };
+    this.frameCollisions = pairView;
+    this._pairView = pairView;
     this._beginSet = new Set();
-    /** @type {Map<number, number>} collisionPairKey → genA uint32 */
-    this._collisionGenA = new Map();
-    /** @type {Map<number, number>} collisionPairKey → genB uint32 */
-    this._collisionGenB = new Map();
     this._onContactRingEvent = this._onContactRingEvent.bind(this);
     this._onHitRingEvent = this._onHitRingEvent.bind(this);
     this._onJointBreakRingEvent = this._onJointBreakRingEvent.bind(this);
@@ -1295,41 +1312,94 @@ class LogicWorker extends AbstractWorker {
     if (bListens) gameObjects[entityB]?.onJointBreak(jointIndex, entityA, entityB);
   }
 
-  _setCollisionGens(key, genA, genB) {
-    this._collisionGenA.set(key, genA >>> 0);
-    this._collisionGenB.set(key, genB >>> 0);
-  }
-
-  _deleteCollisionGens(key) {
-    this._collisionGenA.delete(key);
-    this._collisionGenB.delete(key);
-  }
-
-  _clearCollisionGens() {
-    this._collisionGenA.clear();
-    this._collisionGenB.clear();
-  }
-
   _entityGen(i) {
     return this.bodyGeneration ? Atomics.load(this.bodyGeneration, i) | 0 : 0;
   }
 
-  _gensMatch(key, genA, genB) {
-    const storedA = this._collisionGenA.get(key);
-    if (storedA === undefined) return false;
-    return storedA === (genA >>> 0) && this._collisionGenB.get(key) === (genB >>> 0);
+  _growPairColumns() {
+    const cap = this._pairCapacity > 0 ? this._pairCapacity * 2 : 1024;
+    const grow = (old) => {
+      const next = new Uint32Array(cap);
+      next.set(old);
+      return next;
+    };
+    this._pairMin = grow(this._pairMin);
+    this._pairMax = grow(this._pairMax);
+    this._pairGenMin = grow(this._pairGenMin);
+    this._pairGenMax = grow(this._pairGenMax);
+    this._pairCapacity = cap;
   }
 
-  _pairStillValid(minE, maxE, key) {
-    if (!Transform.active[minE] || !Transform.active[maxE]) return false;
-    const ga = this._entityGen(minE);
-    const gb = this._entityGen(maxE);
-    return this._gensMatch(key, ga, gb);
+  /** Swap the last slot into `slot`. The caller continues at `slot` when walking. */
+  _removePairSlot(slot, key) {
+    const last = --this._pairCount;
+    if (slot !== last) {
+      const minE = this._pairMin[last];
+      const maxE = this._pairMax[last];
+      this._pairMin[slot] = minE;
+      this._pairMax[slot] = maxE;
+      this._pairGenMin[slot] = this._pairGenMin[last];
+      this._pairGenMax[slot] = this._pairGenMax[last];
+      this._pairSlot.set(collisionPairKey(minE, maxE), slot);
+    }
+    this._pairSlot.delete(key);
+  }
+
+  _growForeignColumns() {
+    const cap = this._foreignCapacity > 0 ? this._foreignCapacity * 2 : 1024;
+    const grow = (old) => {
+      const next = new Uint32Array(cap);
+      next.set(old);
+      return next;
+    };
+    this._foreignMin = grow(this._foreignMin);
+    this._foreignMax = grow(this._foreignMax);
+    this._foreignGenMin = grow(this._foreignGenMin);
+    this._foreignGenMax = grow(this._foreignGenMax);
+    this._foreignCapacity = cap;
+  }
+
+  _removeForeignSlot(slot, key) {
+    const last = --this._foreignCount;
+    if (slot !== last) {
+      const minE = this._foreignMin[last];
+      const maxE = this._foreignMax[last];
+      this._foreignMin[slot] = minE;
+      this._foreignMax[slot] = maxE;
+      this._foreignGenMin[slot] = this._foreignGenMin[last];
+      this._foreignGenMax[slot] = this._foreignGenMax[last];
+      this._pairSlot.set(collisionPairKey(minE, maxE), -(slot + 1));
+    }
+    this._pairSlot.delete(key);
+  }
+
+  _foreignValid(slot) {
+    const minE = this._foreignMin[slot];
+    const maxE = this._foreignMax[slot];
+    const active = Transform.active;
+    if (!active[minE] || !active[maxE]) return false;
+    const gen = this.bodyGeneration;
+    return gen
+      ? (Atomics.load(gen, minE) >>> 0) === this._foreignGenMin[slot] &&
+          (Atomics.load(gen, maxE) >>> 0) === this._foreignGenMax[slot]
+      : this._foreignGenMin[slot] === 0 && this._foreignGenMax[slot] === 0;
+  }
+
+  /** isCollidingWith: own pairs were validated this frame; foreign ones are checked here. */
+  _hasPair(key) {
+    const v = this._pairSlot.get(key);
+    if (v === undefined) return false;
+    if (v >= 0) return true;
+    const slot = -v - 1;
+    if (this._foreignValid(slot)) return true;
+    this._removeForeignSlot(slot, key);
+    return false;
   }
 
   _clearContactState(reason) {
-    this.previousCollisions.clear();
-    this._clearCollisionGens();
+    this._pairSlot.clear();
+    this._pairCount = 0;
+    this._foreignCount = 0;
     this._beginSet.clear();
     if (reason) {
       console.warn(`LOGIC WORKER ${this.workerIndex}: contact state cleared (${reason})`);
@@ -1340,14 +1410,17 @@ class LogicWorker extends AbstractWorker {
     const minE = rawA < rawB ? rawA : rawB;
     const maxE = rawA < rawB ? rawB : rawA;
     const key = collisionPairKey(minE, maxE);
-    if (!this.previousCollisions.has(key)) return;
-    if (!this._gensMatch(key, genA, genB)) {
-      this.previousCollisions.delete(key);
-      this._deleteCollisionGens(key);
+    const slot = this._pairSlot.get(key);
+    if (slot === undefined) return;
+    if (slot < 0) {
+      this._removeForeignSlot(-slot - 1, key);
       return;
     }
-    this.previousCollisions.delete(key);
-    this._deleteCollisionGens(key);
+    const match =
+      this._pairGenMin[slot] === ((rawA < rawB ? genA : genB) >>> 0) &&
+      this._pairGenMax[slot] === ((rawA < rawB ? genB : genA) >>> 0);
+    this._removePairSlot(slot, key);
+    if (!match) return;
     if (minE % this.totalLogicWorkers !== this.workerIndex) return;
     const entityType = Transform.entityType;
     const collisionFlags = this.collisionListenerByType;
@@ -1368,9 +1441,34 @@ class LogicWorker extends AbstractWorker {
     const minE = rawA < rawB ? rawA : rawB;
     const maxE = rawA < rawB ? rawB : rawA;
     const key = collisionPairKey(minE, maxE);
-    const isNew = !this.previousCollisions.has(key);
-    this.previousCollisions.add(key);
-    this._setCollisionGens(key, genA, genB);
+    if (minE % this.totalLogicWorkers !== this.workerIndex) {
+      const v = this._pairSlot.get(key);
+      let f;
+      if (v === undefined) {
+        if (this._foreignCount === this._foreignCapacity) this._growForeignColumns();
+        f = this._foreignCount++;
+        this._pairSlot.set(key, -(f + 1));
+        this._foreignMin[f] = minE;
+        this._foreignMax[f] = maxE;
+      } else {
+        f = -v - 1;
+      }
+      this._foreignGenMin[f] = (rawA < rawB ? genA : genB) >>> 0;
+      this._foreignGenMax[f] = (rawA < rawB ? genB : genA) >>> 0;
+      return;
+    }
+    let slot = this._pairSlot.get(key);
+    const isNew = slot === undefined;
+    if (isNew) {
+      if (this._pairCount === this._pairCapacity) this._growPairColumns();
+      slot = this._pairCount++;
+      this._pairSlot.set(key, slot);
+      this._pairMin[slot] = minE;
+      this._pairMax[slot] = maxE;
+    }
+    // Box2D orders the event (shapeA, shapeB); the stay loop reads gens as (min, max).
+    this._pairGenMin[slot] = (rawA < rawB ? genA : genB) >>> 0;
+    this._pairGenMax[slot] = (rawA < rawB ? genB : genA) >>> 0;
     this._beginSet.add(key);
     if (!isNew) return;
     if (minE % this.totalLogicWorkers !== this.workerIndex) return;
@@ -1396,14 +1494,7 @@ class LogicWorker extends AbstractWorker {
   _processBox2dCollisionCallbacks() {
     if (!this.useBox2dContacts || !this.box2dContactRingI32) return;
 
-    const totalWorkers = this.totalLogicWorkers;
-    const myIndex = this.workerIndex;
-    const gameObjects = this.gameObjects;
-    const active = this.previousCollisions;
     const beginSet = this._beginSet;
-    const entityType = Transform.entityType;
-    const collisionFlags = this.collisionListenerByType;
-
     beginSet.clear();
 
     const result = drainContactRing(
@@ -1412,37 +1503,53 @@ class LogicWorker extends AbstractWorker {
       this._onContactRingEvent,
     );
     this.box2dContactCursor = result.nextCursor;
+    this.frameCollisions = this._pairView;
     if (result.overrun) {
       // Cold start: no tracked pairs — catch up silently (common when first
       // physics steps flood the ring before logic drains).
-      if (active.size === 0 && this._collisionGenA.size === 0) {
-        this.frameCollisions = active;
-        return;
-      }
-      this._clearContactState('contact ring overrun');
-      this.frameCollisions = active;
+      if (this._pairCount !== 0 || this._foreignCount !== 0) this._clearContactState('contact ring overrun');
       return;
     }
 
+    if (--this._foreignSweepIn <= 0) {
+      this._foreignSweepIn = FOREIGN_SWEEP_FRAMES;
+      for (let f = 0; f < this._foreignCount; ) {
+        if (this._foreignValid(f)) f++;
+        else this._removeForeignSlot(f, collisionPairKey(this._foreignMin[f], this._foreignMax[f]));
+      }
+    }
+
+    const gameObjects = this.gameObjects;
+    const entityType = Transform.entityType;
+    const active = Transform.active;
+    const collisionFlags = this.collisionListenerByType;
+    const gen = this.bodyGeneration;
+    const pairMin = this._pairMin;
+    const pairMax = this._pairMax;
+    const genMin = this._pairGenMin;
+    const genMax = this._pairGenMax;
+
     // Purge pairs whose generation changed or entities went inactive
-    for (const key of active) {
-      collisionPairUnpack(key, _cantorResult);
-      const minE = _cantorResult.a;
-      const maxE = _cantorResult.b;
-      if (!this._pairStillValid(minE, maxE, key)) {
-        active.delete(key);
-        this._deleteCollisionGens(key);
+    for (let s = 0; s < this._pairCount; ) {
+      const minE = pairMin[s];
+      const maxE = pairMax[s];
+      const valid =
+        active[minE] &&
+        active[maxE] &&
+        (gen
+          ? (Atomics.load(gen, minE) >>> 0) === genMin[s] && (Atomics.load(gen, maxE) >>> 0) === genMax[s]
+          : genMin[s] === 0 && genMax[s] === 0);
+      if (!valid) {
+        this._removePairSlot(s, collisionPairKey(minE, maxE));
         continue;
       }
-      if (beginSet.has(key)) continue;
-      if (minE % totalWorkers !== myIndex) continue;
+      s++;
+      if (beginSet.has(collisionPairKey(minE, maxE))) continue;
       const aListens = collisionFlags[entityType[minE]];
       const bListens = collisionFlags[entityType[maxE]];
       if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
       if (bListens) gameObjects[maxE]?.onCollisionStay(minE);
     }
-
-    this.frameCollisions = active;
   }
 
   /**

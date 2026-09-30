@@ -45,13 +45,13 @@ test('two uint32 maps distinguish swapped gens', () => {
   assert.equal(gensMatch(genA, genB, 7, 3, 9), true);
 });
 
-test('logicWorker contact gens are two uint32 maps, not BigInt', () => {
+test('logicWorker contact gens are two uint32 columns, not BigInt or packed floats', () => {
   const src = fs.readFileSync(path.join(root, 'src/workers/logicWorker.js'), 'utf8');
-  assert.match(src, /this\._collisionGenA = new Map\(\)/);
-  assert.match(src, /this\._collisionGenB = new Map\(\)/);
+  assert.match(src, /this\._pairGenMin = new Uint32Array\(0\)/);
+  assert.match(src, /this\._pairGenMax = new Uint32Array\(0\)/);
   assert.doesNotMatch(src, /_packGens/);
   assert.doesNotMatch(src, /_collisionGens/);
-  const packSlice = src.slice(src.indexOf('_setCollisionGens'), src.indexOf('_processBox2dCollisionCallbacks'));
+  const packSlice = src.slice(src.indexOf('_growPairColumns'), src.indexOf('_onContactRingEvent'));
   assert.doesNotMatch(packSlice, /BigInt/);
   assert.doesNotMatch(packSlice, /Float64|Float64Array/);
 });

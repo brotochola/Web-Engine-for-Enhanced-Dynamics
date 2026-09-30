@@ -464,26 +464,32 @@ export class SoundManager {
   // ─── Private ──────────────────────────────────────────────────────────────
 
   static _writeSlot(audioId, volume, pitch, pan, loop) {
-    if (!this._i32) return -1;
+    const i32 = this._i32;
+    if (!i32) return -1;
 
     const H = this.HEADER_SIZE;
     const S = this.SLOT_SIZE;
+    const max = this._maxSlots;
+    const FREE = this.STATE_FREE;
 
-    for (let s = 0; s < this._maxSlots; s++) {
+    // Plain load first: a CAS takes the cache line exclusive even when it fails,
+    // and with every slot busy each play() would do that for all of them.
+    for (let s = 0; s < max; s++) {
       const b = H + s * S;
-      if (Atomics.compareExchange(this._i32, b, this.STATE_FREE, this.STATE_CLAIMING) === this.STATE_FREE) {
-        this._i32[b + 1] = audioId;
-        this._f32[b + 2] = pitch;
-        this._f32[b + 3] = pan;
-        this._f32[b + 4] = volume;
-        this._i32[b + 5] = loop ? 1 : 0;
-        this._f32[b + 6] = 0;
-        this._i32[b + 7] = 0;
-        Atomics.store(this._i32, b, this.STATE_PLAYING);
+      if (Atomics.load(i32, b) === FREE && Atomics.compareExchange(i32, b, FREE, this.STATE_CLAIMING) === FREE) {
+        const f32 = this._f32;
+        i32[b + 1] = audioId;
+        f32[b + 2] = pitch;
+        f32[b + 3] = pan;
+        f32[b + 4] = volume;
+        i32[b + 5] = loop ? 1 : 0;
+        f32[b + 6] = 0;
+        i32[b + 7] = 0;
+        Atomics.store(i32, b, this.STATE_PLAYING);
         return s;
       }
     }
-    Atomics.add(this._i32, this.HEADER_DROPPED, 1);
+    Atomics.add(i32, this.HEADER_DROPPED, 1);
     return -1;
   }
 

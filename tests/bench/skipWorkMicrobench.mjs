@@ -4,12 +4,9 @@
 //   node tests/bench/skipWorkMicrobench.mjs
 //   node tests/bench/skipWorkMicrobench.mjs --output tests/results/skip-work-hyps/B0-micro.json
 
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
 import { Keyboard } from '../../src/core/keyboard.js';
 import { calculateSpeed } from '../../src/util/utils.js';
-import { parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 function publishPairs(pairs, gen, out) {
   let n = 0;
@@ -132,9 +129,7 @@ export function runSkipWorkMicrobench(cliArgs = parseArgs()) {
   };
 }
 
-const isDirect =
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isDirect = isCli(import.meta.url);
 if (isDirect) {
   const args = parseArgs();
   const report = runSkipWorkMicrobench(args);

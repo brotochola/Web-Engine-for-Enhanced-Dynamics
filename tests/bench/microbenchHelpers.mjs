@@ -2,10 +2,45 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { STEP_MS_FLOOR } from './benchmarkDefaults.mjs';
 
 const TIMEIT_MAX_ITERATIONS = 50_000_000;
+
+/**
+ * True when this module is the script node was started with. Compares resolved
+ * paths, not hrefs: on Windows argv[1] and import.meta.url differ in slashes
+ * and drive-letter case.
+ */
+export function isCli(importMetaUrl) {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const norm = (p) => {
+    const abs = path.resolve(p);
+    return process.platform === 'win32' ? abs.toLowerCase() : abs;
+  };
+  return norm(fileURLToPath(importMetaUrl)) === norm(entry);
+}
+
+/** FNV-1a over the first `n` integers of an array (ids, orders, u32 bits). */
+export function checksumInts(arr, n = arr.length) {
+  let h = 2166136261;
+  for (let i = 0; i < n; i++) h = Math.imul(h ^ (arr[i] >>> 0), 16777619) >>> 0;
+  return h >>> 0;
+}
+
+/** FNV-1a over float32 bit patterns: exact, so a reordering or rounding change shows. */
+const _f32 = new Float32Array(1);
+const _u32 = new Uint32Array(_f32.buffer);
+export function checksumFloats(arr, n = arr.length) {
+  let h = 2166136261;
+  for (let i = 0; i < n; i++) {
+    _f32[0] = arr[i];
+    h = Math.imul(h ^ _u32[0], 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
 
 /** Deterministic PRNG so before/after runs see identical scenarios. */
 export function mulberry32(seed) {

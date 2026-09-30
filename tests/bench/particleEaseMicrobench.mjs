@@ -4,12 +4,9 @@
 //   node tests/bench/particleEaseMicrobench.mjs
 //   node tests/bench/particleEaseMicrobench.mjs --iters 1000000 --output tests/results/particle-ease-micro.json
 
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
 import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
 import { applyParticleEase } from '../../src/util/particleTween.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 /** @param {number} t */
 function easeExpoOut(t) {
@@ -279,9 +276,7 @@ export function runParticleEaseMicrobench(cliArgs = parseArgs()) {
   return report;
 }
 
-const isDirect =
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isDirect = isCli(import.meta.url);
 if (isDirect) {
   runParticleEaseMicrobench();
 }

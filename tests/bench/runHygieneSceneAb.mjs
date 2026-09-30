@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Hygiene A/B: current src tree versus a git rev (default main).
- * Four scenes the user named. Same scene files on both sides (only src/ swaps).
+ * Same scene files on both sides: the baseline is a worktree with only src/
+ * from that rev (revWorktree.mjs). The working tree is never written.
  *
  *   node tests/bench/runHygieneSceneAb.mjs --vs main
  *   node tests/bench/runHygieneSceneAb.mjs --vs main --only steadyCombat
@@ -11,7 +12,6 @@ import path from 'node:path';
 
 import {
   SPEED_PCT,
-  applyBaselineRev,
   explainHit,
   fmtDeltaPct,
   fmtStat,
@@ -20,14 +20,13 @@ import {
   pctDelta,
   renderCompareTable,
   repoRoot,
-  restoreSrcTree,
   sceneMetricKeys,
-  snapshotSrcTree,
   stepMsFloorOk,
   usesStressStepFloor,
   workloadOk,
   writeJson,
 } from './measureLib.mjs';
+import { ensureRevWorktree } from './revWorktree.mjs';
 
 const outRoot = path.join(repoRoot, 'tests/results/hygiene-vs-main');
 
@@ -179,7 +178,7 @@ function writeReport(payload, reportPath = path.join(outRoot, 'report.md')) {
   lines.push('## What changed');
   lines.push('');
   lines.push(
-    'Solo se intercambia `src/` (`applyBaselineRev`). Las cuatro escenas son idénticas a `main`. Las cuatro tienen física encendida y spatial workers > 0: no entran al path Weed-pose ni al skip de grilla.'
+    'El baseline es un worktree con solo `src/` de esa revisión; las escenas son las del árbol de trabajo en los dos lados. Las cuatro tienen física encendida y spatial workers > 0: no entran al path Weed-pose ni al skip de grilla.'
   );
   lines.push('');
   lines.push('## Setup');
@@ -259,19 +258,17 @@ function main() {
     throw new Error(`--only matched nothing. ids: ${ROWS.map((r) => r.id).join(', ')}`);
   }
   fs.mkdirSync(outRoot, { recursive: true });
-  const snap = snapshotSrcTree();
+  const baseline = ensureRevWorktree(args.vs);
+  console.log(`baseline worktree ${baseline.root} (${baseline.sha.slice(0, 8)})`);
   const rows = [];
 
-  try {
-    for (const feature of selected) {
+  for (const feature of selected) {
       console.log(`\n################ ${feature.id} ################`);
       const sdir = path.join(outRoot, feature.scene.key);
       fs.mkdirSync(sdir, { recursive: true });
 
       console.log(`\n======== ${feature.id} BASE ${args.vs} ========`);
-      applyBaselineRev(args.vs);
-      const base = measureSceneSide(`${feature.scene.key}-BASE`, feature.scene, args, sdir, feature.id);
-      restoreSrcTree(snap);
+      const base = measureSceneSide(`${feature.scene.key}-BASE`, feature.scene, args, sdir, feature.id, baseline.root);
 
       console.log(`\n======== ${feature.id} KEEP ========`);
       const hyp = measureSceneSide(`${feature.scene.key}-KEEP`, feature.scene, args, sdir, feature.id);
@@ -307,9 +304,6 @@ function main() {
           console.log(`  ${key}: ${fmtStat(b, metricKind(key))} -> ${fmtStat(h, metricKind(key))} (${fmtDeltaPct(d)})`);
         }
       }
-    }
-  } finally {
-    restoreSrcTree(snap);
   }
 
   const payload = {

@@ -4,10 +4,7 @@
 //   node tests/bench/preHotMicrobench.mjs
 //   node tests/bench/preHotMicrobench.mjs --entities 12000 --lights 80 --frames 2000 --output tests/results/pre-hot-micro.json
 
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const MIN_GLOW_INTENSITY = 0.05;
 const MIN_GLOW_RANGE = 10;
@@ -146,9 +143,7 @@ export function runPreHotMicrobench(cliArgs = parseArgs()) {
   return report;
 }
 
-const isDirect =
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isDirect = isCli(import.meta.url);
 if (isDirect) {
   runPreHotMicrobench();
 }

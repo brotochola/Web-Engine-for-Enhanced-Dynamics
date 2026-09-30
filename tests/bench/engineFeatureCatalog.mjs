@@ -73,7 +73,9 @@ export const ENGINE_FEATURES = [
     id: 'integrate',
     name: 'Particle integrate',
     module: 'src/util/particleIntegrate.js',
-    kernel: { script: 'tests/bench/particleIntegrateMicrobench.mjs', opsKey: 'cases.buildActiveListBuffers.opsPerSec' },
+    // build + updateParticlePhysicsBuffers at 50% pool occupancy. The old key
+    // (cases.buildActiveListBuffers) never existed in the JSON.
+    kernel: { script: 'tests/bench/particleIntegrateMicrobench.mjs', opsKey: 'cases.occ50_integrate.opsPerSec' },
     scene: {
       key: 'particleIntegrate',
       path: '/tests/bench/stressScenes/particleIntegrateStressScene.js',
@@ -89,7 +91,8 @@ export const ENGINE_FEATURES = [
     id: 'spatial',
     name: 'Spatial neighbors',
     module: 'src/workers/spatialWorker.js',
-    kernel: { script: 'tests/bench/spatialMicrobench.mjs', opsKey: 'cases.c17_hash.opsPerSec' },
+    // Shipped SpatialWorker.rebuildOwnedRows + findNeighborsForOwnedEntities, 3 workers, Predator config.
+    kernel: { script: 'tests/bench/spatialWorkerMicrobench.mjs', opsKey: 'cases.frame.opsPerSec' },
     scene: {
       key: 'stationarySpatial',
       path: '/tests/bench/stressScenes/stationarySpatialScene.js',
@@ -241,7 +244,8 @@ export const ENGINE_FEATURES = [
     id: 'tilemapGid',
     name: 'Tilemap GPU GID pages',
     module: 'src/render/tilemapGid.js',
-    kernel: { script: 'tests/bench/tilemapGidMicrobench.mjs', opsKey: 'cases.listGidPages.opsPerSec' },
+    // packGidPageRgba8 is the GPU work per page; listGidPages is the cheap index walk.
+    kernel: { script: 'tests/bench/tilemapGidMicrobench.mjs', opsKey: 'cases.packGidPageRgba8.opsPerSec' },
     scene: {
       key: 'tilemapGid',
       path: '/tests/bench/stressScenes/tilemapCullStressScene.js',
@@ -251,13 +255,14 @@ export const ENGINE_FEATURES = [
     },
     primary: ['pixi_STEP_MS'],
     load: ['ENTITIES_PROCESSED'],
-    protocolCeiling: '64×64 GID map never spends 3 ms in pixi; kernel is listGidPages',
+    protocolCeiling: '64×64 GID map never spends 3 ms in pixi; kernel is packGidPageRgba8',
   },
   {
     id: 'contactDrain',
     name: 'Box2D contact drain',
     module: 'src/workers/logicWorker.js',
-    kernel: null,
+    // Real LogicWorker drain + stay; dense = Predator fixture pairs with sensor-like reach.
+    kernel: { script: 'tests/bench/contactsMicrobench.mjs', opsKey: 'cases.dense.opsPerSec' },
     scene: {
       key: 'contactDrain',
       path: '/tests/bench/stressScenes/contactDrainStressScene.js',
@@ -305,7 +310,9 @@ export const ENGINE_FEATURES = [
     id: 'preRender',
     name: 'Pre-render cull',
     module: 'src/workers/preRenderWorker.js',
-    kernel: { script: 'tests/bench/srFlagsMicrobench.mjs', opsKey: 'timings.cull.packed.opsPerSec' },
+    // Flag bitpack variant, not the shipped cull; the pre-render product kernels
+    // are the gpuQueue / shadowStamp / painterOrder rows.
+    kernel: { script: 'tests/bench/srFlagsMicrobench.mjs', opsKey: 'timings.cull.packed.opsPerSec', informational: true },
     scene: {
       key: 'renderQueue',
       path: '/tests/bench/stressScenes/renderQueueStressScene.js',
@@ -322,7 +329,7 @@ export const ENGINE_FEATURES = [
     id: 'compute',
     name: 'WebGPU compute pack',
     module: 'src/render/webgpu/computeLayer.js',
-    // Primary is n=512 no-sweep: product-scale pack. results.0 (n=64) is swap-noise after applySrcRev.
+    // Primary is n=512 no-sweep: product-scale pack. results.0 (n=64) was cold-start noise.
     kernel: { script: 'tests/bench/computePackMicrobench.mjs', opsKey: 'results.2.opsPerSec' },
     scene: {
       key: 'computeStress',
@@ -481,6 +488,54 @@ export const ENGINE_FEATURES = [
     primary: ['pixi_STEP_MS'],
     load: ['BODY_COUNT', 'MESH_FILL_INSTANCES', 'MESH_RT_DRAWS'],
     protocolCeiling: 'MESH look pan skips the pack; pixi stays ≪ 3 ms',
+  },
+  // Kernel-only rows: no stress scene reaches their regime; the product gate is
+  // Predator ABAB (runPredatorAbab.mjs) on the worker named in `primary`.
+  {
+    id: 'audioSlots',
+    name: 'SoundManager slot claim',
+    module: 'src/core/soundManager.js',
+    // Predator saturates all 2048 slots; 3 logic workers claim at once.
+    kernel: { script: 'tests/bench/audioSlotMicrobench.mjs', opsKey: 'cases.occ100x3.opsPerSec' },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'gameObjectAccess',
+    name: 'GameObject component and neighbor access',
+    module: 'src/core/gameObject.js',
+    kernel: { script: 'tests/bench/gameObjectAccessMicrobench.mjs', opsKey: 'cases.tick.opsPerSec' },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'shadowStamp',
+    name: 'Shadow caster stamp',
+    module: 'src/render/gpuShadowCasters.js',
+    kernel: { script: 'tests/bench/shadowStampMicrobench.mjs', opsKey: 'cases.stamp.opsPerSec' },
+    scene: null,
+    primary: ['preRender_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'gpuQueuePack',
+    name: 'GPU queue instance pack',
+    module: 'src/render/gpuQueueLayout.js',
+    kernel: { script: 'tests/bench/gpuQueuePackMicrobench.mjs', opsKey: 'cases.sprites.opsPerSec' },
+    scene: null,
+    primary: ['pixi_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'decalPremultiply',
+    name: 'Decal tile premultiply',
+    module: 'src/render/webgpu/pinGpuTexture.js',
+    kernel: { script: 'tests/bench/premultiplyMicrobench.mjs', opsKey: 'cases.tiles.opsPerSec' },
+    scene: null,
+    primary: ['pixi_STEP_MS'],
+    load: [],
   },
 ];
 

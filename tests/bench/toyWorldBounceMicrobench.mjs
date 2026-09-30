@@ -1,4 +1,4 @@
-import { timeIt, mulberry32 } from './microbenchHelpers.mjs';
+import { timeIt, mulberry32, parseArgs, writeReport } from './microbenchHelpers.mjs';
 import {
   toyWorldBounce,
   toyWorldBounceChecksum,
@@ -74,15 +74,14 @@ const timed = timeIt(
   },
 );
 
-console.log(
-  JSON.stringify(
-    {
-      checksum: checksumA,
-      n: N,
-      steps: STEPS,
-      ...timed,
-    },
-    null,
-    2,
-  ),
-);
+const report = {
+  feature: 'toy-world-bounce',
+  n: N,
+  seed: SEED,
+  steps: STEPS,
+  checksum: checksumA,
+  cases: { bounce: timed },
+};
+const args = parseArgs();
+if (args.output) writeReport(String(args.output), report);
+else console.log(JSON.stringify(report, null, 2));

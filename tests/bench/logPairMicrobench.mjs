@@ -4,11 +4,8 @@
 //   node tests/bench/logPairMicrobench.mjs
 //   node tests/bench/logPairMicrobench.mjs --pairs 200000 --contacts 50000 --output tests/results/log-pair-micro.json
 
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
 import { cantorPair, cantorUnpair } from '../../src/util/utils.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 function collisionPairKey(minE, maxE) {
   return ((minE & 0xffff) << 16) | (maxE & 0xffff);
@@ -204,9 +201,7 @@ export function runLogPairMicrobench(cliArgs = parseArgs()) {
   return report;
 }
 
-const isDirect =
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isDirect = isCli(import.meta.url);
 if (isDirect) {
   runLogPairMicrobench();
 }
