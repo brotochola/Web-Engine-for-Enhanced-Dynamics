@@ -86,6 +86,13 @@ function clearTileFields(ref, out) {
     if (ref.tileMulY) ref.tileMulY[out] = 0;
 }
 
+/** Non-caster rows: zero stamp extras instead of fill() of the whole prefix. */
+function clearQueueShadow(ref, out) {
+    if (ref.shadowH) ref.shadowH[out] = 0;
+    if (ref.shadowOffX) ref.shadowOffX[out] = 0;
+    if (ref.shadowOffY) ref.shadowOffY[out] = 0;
+}
+
 /**
  * Copy SoA tile fields and resolve signed GPU mul:
  * WORLD (or legacy repeatX with mode 0): +1/period
@@ -2055,9 +2062,6 @@ class PreRenderWorker extends AbstractWorker {
         const stashPy = source.stashY;
         const stashRc = source.stashRotC;
         const stashRs = source.stashRotS;
-        if (this.renderQueueShadowH) this.renderQueueShadowH.fill(0, 0, count);
-        if (this.renderQueueShadowOffX) this.renderQueueShadowOffX.fill(0, 0, count);
-        if (this.renderQueueShadowOffY) this.renderQueueShadowOffY.fill(0, 0, count);
 
         // sortKey is written for the CPU painter. Pixi reinserts; this pass does not sort.
         const detail = source.persist && this.collectDetailedStats;
@@ -2229,6 +2233,7 @@ class PreRenderWorker extends AbstractWorker {
                 if (rqRepeatX) rqRepeatX[out] = 0;
                 if (rqRepeatY) rqRepeatY[out] = 0;
                 clearTileFields(ref, out);
+                clearQueueShadow(ref, out);
             }
 
             if (type === 0) {
