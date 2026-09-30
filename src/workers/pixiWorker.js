@@ -2063,6 +2063,11 @@ class PixiRenderer extends AbstractWorker {
       if (this.decalsTilesDirty[i]) dirtyN++;
     }
     this._decalTilesDirtyThisFrame = dirtyN;
+    if (dirtyN === 0) {
+      this._decalTilesUploadedThisFrame = 0;
+      return;
+    }
+
     let processed = 0;
     let scanned = 0;
     let tileIndex = this._nextDecalTileScanIndex % totalTiles;
@@ -2079,11 +2084,16 @@ class PixiRenderer extends AbstractWorker {
       this.decalsTilesDirty[tileIndex] = 0;
 
       const tileByteOffset = tileIndex * bytesPerTile;
-      const tileRGBAShared = new Uint8ClampedArray(
-        this.decalsTilesRGBA.buffer,
-        tileByteOffset,
-        bytesPerTile
-      );
+      let tileRGBAShared = this._decalSharedBuffers?.[tileIndex];
+      if (!tileRGBAShared) {
+        this._decalSharedBuffers ??= [];
+        tileRGBAShared = new Uint8ClampedArray(
+          this.decalsTilesRGBA.buffer,
+          tileByteOffset,
+          bytesPerTile
+        );
+        this._decalSharedBuffers[tileIndex] = tileRGBAShared;
+      }
 
       let tileRGBA = this._decalCopyBuffers?.[tileIndex];
       if (!tileRGBA) {
