@@ -22,7 +22,7 @@ import { DropPistol } from './gameObjects/dropPistol.js';
 import { Civilian } from './gameObjects/civilian.js';
 import { resetSquadCameraHold, updateSquadCamera } from './gameObjects/cameraController.js';
 import { Trash } from './gameObjects/trash.js';
-import { Cloud } from './gameObjects/cloud.js';
+// import { Cloud } from './gameObjects/cloud.js';
 
 function predatorSearchParam(name) {
   const search = globalThis.location && globalThis.location.search;
@@ -150,7 +150,7 @@ export class PredatorScene extends WEED.Scene {
     },
 
     renderer: {
-      backend: 'webgl',
+      backend: 'webgpu',
       noLimitFPS: false,
       ySort: 'cpu',
       autoGenerateMipmaps: false,
@@ -222,14 +222,14 @@ export class PredatorScene extends WEED.Scene {
         scale: 1,
         zIndex: 0.5,
       },
-      clouds: {
-        alpha: 0.5,
-        zIndex: 3.5,
-        blendMode: BLEND_MODES.MULTIPLY,     // Final display blend of the post-processed sprite
-        resolution: 0.25,         // Half-res RT for performance
-        maxItems: 100,
-        ySorting: false, // clouds don't need Y order among themselves
-      },
+      // clouds: {
+      //   alpha: 0.5,
+      //   zIndex: 3.5,
+      //   blendMode: BLEND_MODES.MULTIPLY,     // Final display blend of the post-processed sprite
+      //   resolution: 0.25,         // Half-res RT for performance
+      //   maxItems: 100,
+      //   ySorting: false, // clouds don't need Y order among themselves
+      // },
     },
   };
 
@@ -243,7 +243,7 @@ export class PredatorScene extends WEED.Scene {
       png: '/demos/img/baked/PredatorScene/bigAtlas.png',
     },
     textures: {
-      cloud: '/demos/img/cloud.png',
+      // cloud: '/demos/img/cloud.png',
       bullet: '/demos/img/bullet.png',
       muzzle1: '/demos/img/muzzle1.png',
       muzzle2: '/demos/img/muzzle2.png',
@@ -369,7 +369,7 @@ export class PredatorScene extends WEED.Scene {
     [Fire, 100],
     [Explosion, 100],
     [MySoldier, 10000],
-    [Cloud, 100],
+    // [Cloud, 100],
     [Destination, 1],
     [DropMoney, 1000],
     [DropAk47, 1000],
@@ -403,7 +403,7 @@ export class PredatorScene extends WEED.Scene {
   }
 
   create() {
-    this.cloudsLayer = Layer.get('clouds');
+    // this.cloudsLayer = Layer.get('clouds');
     this._freeCam = false;
     this._createFreeCamButton();
     this.spawnGrass(20000);
@@ -510,7 +510,7 @@ export class PredatorScene extends WEED.Scene {
     // if (frameNumber % (60 * 10) === 0) {
     //   this.printFPS()
     // }
-    this.cloudsLayer.alpha = Sun.intensity * 0.5;
+    // this.cloudsLayer.alpha = Sun.intensity * 0.5;
     // // console.log(dtRatio, deltaTime, accumulatedTime, frameNumber)
     if (frameNumber % 300 === 0) {
       this.createNavGridForTheFlowField()
@@ -606,16 +606,15 @@ export class PredatorScene extends WEED.Scene {
     }
   }
 
-  spawnClouds(count) {
+  // spawnClouds(count) {
 
-    for (let i = 0; i < count; i++) {
-
-      this.spawnEntity(Cloud, {
-        x: this.rng() * this.config.worldWidth,
-        y: this.rng() * this.config.worldHeight,
-      });
-    }
-  }
+  //   for (let i = 0; i < count; i++) {
+  //     this.spawnEntity(Cloud, {
+  //       x: this.rng() * this.config.worldWidth,
+  //       y: this.rng() * this.config.worldHeight,
+  //     });
+  //   }
+  // }
 
   spawnRocks(count) {
     for (let i = 0; i < count; i++) {
@@ -714,6 +713,7 @@ export class PredatorScene extends WEED.Scene {
         anchorX: 0.5,
         anchorY: 1.0, // Bottom anchor for grass
         sway: true,
+        swaySkew: true,
         swayAmplitude: 0.05 + this.rng() * 0.03,
         swayFrequency: 1 + this.rng() * 2,
       });

@@ -575,7 +575,7 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxShadowCastingLights: 20,
   /** Each of those lights draws at most N in-range casters (compact order). */
   maxShadowsPerLight: 15,
-  /** A caster joins at most N camera-sorted shadow lights (0 = every shadow-casting light). */
+  /** A caster keeps the N lights closest to it (0 = every light in range). */
   maxShadowsPerEntity: 0,
   maxShadowSprites: 1000,
   maxFlashes: 0,
