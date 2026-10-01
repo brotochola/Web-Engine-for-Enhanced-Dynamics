@@ -1981,7 +1981,9 @@ export class GameObject {
    * @returns {number} Number of neighbors
    */
   get neighborCount() {
-    return Grid.neighborData && this._neighborOffset >= 0 ? Grid.neighborData[this._neighborOffset] : 0;
+    const nd = Grid._neighborData;
+    const o = this._neighborOffset;
+    return nd !== null && o >= 0 ? nd[o] : 0;
   }
 
   /** Typed view into the neighbor SAB. Created on first read, not at bind. */
@@ -1996,8 +1998,9 @@ export class GameObject {
     return this._neighbors;
   }
 
+  /** Valid for 0 ≤ i < neighborCount; past that it reads the next entity's row. */
   getNeighbor(i) {
-    return this._neighborView()[i];
+    return Grid._neighborData[this._neighborOffset + 1 + i];
   }
 
   getAllNeighborIds() {

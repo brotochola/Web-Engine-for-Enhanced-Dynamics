@@ -6,6 +6,24 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 30 September 2026 (night) — The Kernel Said 138 %. Predator Said Nothing
+
+Second round, same night, same rules: kernel first, then the patched `src/` in a worktree, then a parity test, then eight counterbalanced Predator pairs. Six ideas went in. Two changed the scene, two only changed their kernel, two got thrown out. The ones that got thrown out taught me the most.
+
+The best result came from the one I almost dropped. The spatial worker walked every cell of its rows, read every cell count, and kept a per-entity marker so an entity spanning two cells ran once. But `rebuildOwnedRows` already touches every entity with its position a few microseconds earlier. It can just write down which ones live in this worker's rows, and the neighbor search walks that list. In the kernel this tied, dead even. In Predator spatial went from 4.18 ms to 3.46 ms, every pair better. The kernel runs the three spatial workers one after another on one thread; the browser runs them at the same time over one shared grid, and that is where walking cells and stamping markers actually hurt. It also fixed a bug nobody had hit: an entity whose home cell was full never got its neighbors refreshed again.
+
+The neighbor getters on `GameObject` went the other way. Reading `Grid._neighborData` directly instead of building a view and calling through it was 28 % faster in the kernel. The first eight Predator pairs said −5.7 % for logic, but only five of eight agreed, so I added eight more. Sixteen pairs: −0.1 %. It stays, as a kernel claim, because nothing got worse.
+
+Then the pack. Pixi spends 38 % of its time in `packInstancedRows`, and its lines are all first reads of each column through the painter's index list, which looks like random access. Invert the list once, read the queue in order, write each row where the painter wants it. The kernel said +145 %. On the way there, the kernel itself turned out to be wrong: with sprites and casters timed in the same process, the function had seen both kinds of call before the clock started and ran almost twice as fast as it does in an engine worker, where it only ever sees one. Each case now gets its own `worker_thread`. That also reproduced the deopt I thought was gone, an OSR'd loop bailing out on a property store after the loop, though fixing that store alone changed nothing. With the kernel fixed, the patched `src/` was still +138 %.
+
+Predator: the renderer didn't move, and pre-render got 5 % slower in eight pairs out of eight. A trace with the change in it showed the new function at 36 % of Pixi, about where the old one was. It runs; it just isn't faster. The queue it reads was written by pre-render on another core a moment earlier, so every cache line has to come over from that core no matter what order you ask for it in. In the kernel the data sits warm in the core's own cache, and order looks like everything. Reverted.
+
+The query copy got thrown out too, more strangely. A per-element copy loop became one `TypedArray.set`: +21 % in the kernel even with the lists in shared memory like the engine has them. Predator regressed twice in a row, on workers that never run that copy. I ran an A/A sitting, the same code on both sides, to make sure the harness wasn't tilting things. It wasn't. I can't explain Q1, so it doesn't ship.
+
+The painter's radix sort did the four histograms in one read of the keys and skipped any pass whose byte is the same for every key. Sprite keys are `round(y) * 128`, so the low byte never changes. That was +48 % in the kernel, identical order against a reference radix, and −2.9 % on the renderer in Predator, a hair under the line. It stays.
+
+What's left needs tools that don't exist yet: a pre-render kernel built from the real worker, and a physics harness that can reach code living inside the Emscripten post-js. One idea, a faster sine for decoration sway, isn't a measurement question at all, because it changes the numbers you see on screen.
+
 ## Wednesday 30 September 2026 — The Trace Says Where, Predator Says Whether
 
 I had a folder full of microbenchmarks and I no longer trusted most of them. Some measured hypotheses we had dropped weeks ago. Worse, a whole family of "campaign" runners worked by copying old snapshots of worker files on top of `src/`, running a scene, and copying them back. If a run crashed halfway, the working tree was left holding code nobody had written on purpose. The want was simple to say: a benchmark never edits the engine. It calls the real function, or the real worker, and it prints a number of operations per second. Then every optimization idea gets tested with that number first, and only then with a real scene.

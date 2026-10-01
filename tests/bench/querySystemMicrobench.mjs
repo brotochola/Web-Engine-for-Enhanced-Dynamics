@@ -11,11 +11,12 @@ import {
   calculateQueryResultsSABSize,
 } from '../../src/core/querySystem.js';
 import { GameObject } from '../../src/core/gameObject.js';
-import { parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { checksumInts, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
 const OUTPUT = args.output ? String(args.output) : null;
-const ACTIVE = Number(args.active ?? 2048);
+// Predator publishes ~16.5k actives (2048 was the old default; --active 2048 for that regime).
+const ACTIVE = Number(args.active ?? 16384);
 
 class CompA {}
 CompA.componentId = 0;
@@ -25,8 +26,9 @@ CompB.componentId = 1;
 class TypeA {}
 class TypeB {}
 
+// Per-type active lists live in a SharedArrayBuffer in the engine, like the snapshots.
 function makeActiveList(ids) {
-  const view = new Uint16Array(1 + ids.length);
+  const view = new Uint16Array(new SharedArrayBuffer(2 * (1 + ids.length)));
   view[0] = ids.length;
   view.set(ids, 1);
   return view;
@@ -135,10 +137,20 @@ const cases = {
   }, { iterations: Number(args.bitIters ?? 4000) }),
 };
 
+// Published ids of every query, in order: what readers of the snapshot see.
+let checksum = 2166136261;
+for (const view of querySystem.queryResultViews) {
+  const snap = view.snapshots[Atomics.load(view.header, 0)];
+  const count = Atomics.load(view.header, 1);
+  checksum = Math.imul(checksum ^ checksumInts(snap.subarray(1, 1 + count), count), 16777619) >>> 0;
+}
+
 const report = {
   feature: 'query-system-publish',
+  functions: ['QuerySystem.publishPrecomputedActiveQueries', 'copyActiveMatchesToBuffer', 'copyTypeActiveListToBuffer'],
   active: ACTIVE,
   publishedCount,
+  checksum,
   cases,
 };
 if (OUTPUT) writeReport(OUTPUT, report);

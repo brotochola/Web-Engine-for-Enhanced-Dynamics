@@ -19,6 +19,8 @@ import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Grid } from '../../src/core/grid.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
+import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../../src/util/entityIdWidth.js';
+import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../../src/util/colliderUtils.js';
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
   bindPoseColumns,
@@ -42,7 +44,24 @@ const PREDATOR_SPATIAL = {
   neighborTickInterval: 15,
 };
 
-// Hypotheses: variantClass(Base, edits, scope) from methodVariant.mjs.
+/** Module identifiers the SpatialWorker methods use (for methodVariant patches). */
+export const SCOPE = {
+  Transform,
+  RigidBody,
+  Collider,
+  SpriteRenderer,
+  Grid,
+  EntityIdArray,
+  packSpatialPairStamp,
+  SPATIAL_STAMP_FRAME_MASK,
+  getColliderBounds,
+  getCellRange,
+  _boundsResult,
+  _cellRangeResult,
+  SHAPE_CIRCLE,
+};
+
+// Hypotheses: variantClass(Base, edits, SCOPE) from methodVariant.mjs.
 const SPATIAL_VARIANTS = { base: (Base) => Base };
 
 /**
@@ -50,9 +69,9 @@ const SPATIAL_VARIANTS = { base: (Base) => Base };
  * the class from that instance. All kernel workers are built from it (or from
  * a variant subclass) and share one Grid and one neighbor SAB like the scene.
  */
-async function loadSpatialWorkers(count, variant) {
+async function loadSpatialWorkers(count, variant, makeOverride) {
   const first = await loadWorker('spatialWorker.js', 'spatialWorker');
-  const make = SPATIAL_VARIANTS[variant];
+  const make = makeOverride || SPATIAL_VARIANTS[variant];
   if (!make) throw new Error(`unknown variant ${variant}`);
   const Ctor = make(first.constructor);
   const workers = [];
@@ -68,7 +87,7 @@ export async function setupSpatialKernel(opts = {}) {
   const { buffers, gridMetadata } = spatialBuffers(cfg, n);
   buffers.componentData = coreComponentData(n);
 
-  const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base');
+  const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base', opts.make);
   for (let w = 0; w < workers.length; w++) {
     await initWorker(workers[w], {
       config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg },

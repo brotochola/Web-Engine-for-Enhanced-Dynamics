@@ -8,6 +8,9 @@
  *
  *   node tests/bench/gameObjectAccessMicrobench.mjs
  *   node tests/bench/gameObjectAccessMicrobench.mjs --output out.json
+ *
+ * Cases: `tick` (components + short neighbor lists) and `neighbors` (Predator
+ * neighbor layout: maxNeighbors 1024, lists up to 120, type test per neighbor).
  */
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
@@ -20,9 +23,11 @@ import { spatialBuffers } from './workerHarness.mjs';
 
 const VARIANTS = { base: (B) => B };
 
-export function setupAccess(variant, n, seed) {
+export function setupAccess(variant, n, seed, opts = {}) {
   for (const C of [Transform, RigidBody, Collider, SpriteRenderer]) C.initializeArrays(new SharedArrayBuffer(C.getBufferSize(n)), n);
-  const cfg = { worldWidth: 10000, worldHeight: 5000, cellSize: 128, maxEntitiesPerCell: 128, maxNeighbors: 64 };
+  const maxNeighbors = opts.maxNeighbors ?? 64;
+  const maxCount = opts.maxCount ?? 30;
+  const cfg = { worldWidth: 10000, worldHeight: 5000, cellSize: 128, maxEntitiesPerCell: 128, maxNeighbors };
   const { buffers, gridMetadata } = spatialBuffers(cfg, n);
   Grid.reset();
   Grid.initialize(
@@ -72,9 +77,21 @@ export function setupAccess(variant, n, seed) {
     RigidBody.vx[i] = rng();
     Collider.radius[i] = 8;
     SpriteRenderer.alpha[i] = 1;
-    const count = (rng() * 30) | 0;
+    Transform.entityType[i] = 1 + (i % 3);
+    const count = (rng() * maxCount) | 0;
     nd[i * stride] = count;
     for (let k = 0; k < count; k++) nd[i * stride + 1 + k] = (rng() * n) | 0;
+  }
+  // Predator's soldier scan (findACivilianToShoot): walk every neighbor, test its type.
+  function scan() {
+    const type = Transform.entityType;
+    let found = 0;
+    for (let i = 0; i < n; i++) {
+      const o = objects[i];
+      const c = o.neighborCount;
+      for (let k = 0; k < c; k++) if (type[o.getNeighbor(k)] === 1) found++;
+    }
+    return found;
   }
   // Demo tick shape: own components, then walk neighbors and read theirs.
   function frame() {
@@ -87,7 +104,7 @@ export function setupAccess(variant, n, seed) {
     }
     return acc;
   }
-  return { frame, objects, n };
+  return { frame, scan, objects, n };
 }
 
 async function main() {
@@ -97,10 +114,17 @@ async function main() {
   const n = Number(args.n ?? 16384);
   const seed = 0x60ac;
   const k = setupAccess(variant, n, seed);
-  const checksum = Math.round(k.frame() * 1000) >>> 0;
+  let checksum = Math.round(k.frame() * 1000) >>> 0;
   const cases = {
     tick: timeIt(`GameObject access ${variant} (${n} entities)`, () => k.frame(), { iterations: 20, warmup: 20 }),
   };
+  // Predator layout: maxNeighbors 1024 (rows of 1025 ids), lists up to 120.
+  const p = setupAccess(variant, n, seed, { maxNeighbors: 1024, maxCount: 120 });
+  checksum = (Math.imul(checksum, 31) + p.scan()) >>> 0;
+  cases.neighbors = timeIt(`neighbor scan ${variant} (${n} entities, maxNeighbors 1024)`, () => p.scan(), {
+    iterations: 20,
+    warmup: 20,
+  });
   const report = {
     feature: 'gameobject-access',
     functions: ['GameObject component getters', 'GameObject.neighborCount', 'GameObject.getNeighbor'],

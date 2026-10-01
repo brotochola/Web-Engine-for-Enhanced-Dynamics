@@ -26,9 +26,17 @@ Use this when the claim is about a hot function in isolation.
 
 - **A kernel never writes the working tree.** It imports `src/` and times it. No `copyFileSync`, no patch-and-restore, no `applySrcRev`. Those harnesses were deleted: an interrupted run left the engine on an old snapshot, and a node test that patched `src/` ran next to three other test files under `--test-concurrency=4`.
 - **It calls the shipped function.** When the hot code is a worker method, the kernel runs the real worker class in Node ([`tests/bench/workerHarness.mjs`](../tests/bench/workerHarness.mjs): import the worker module with a `self` stub, send a real `init` message). A loop copied into the bench measures the copy, and a local copy does not have the worker's `this`. That is how H7, H10, H11, H6 and "Stay sin sqrt" (kernel +553 %, scene +20 %) went wrong.
-- **A hypothesis variant lives in the bench file** until it is decided. For a worker method, the variant is the shipped method source plus an exact diff, compiled in memory ([`tests/bench/methodVariant.mjs`](../tests/bench/methodVariant.mjs)); an anchor that no longer matches throws. Drop it when the idea is dropped. When it is kept, it moves to `src/` and the bench calls only the shipped code.
+- **A hypothesis variant lives in the bench file** until it is decided. For a worker method, the variant is the shipped method source plus an exact diff, compiled in memory ([`tests/bench/methodVariant.mjs`](../tests/bench/methodVariant.mjs); `patchFunction` does the same for a module-level function); an anchor that no longer matches throws. A module-private function the kernel cannot reach is measured with gate 4 directly. Drop it when the idea is dropped. When it is kept, it moves to `src/` and the bench calls only the shipped code.
 - **Every kernel writes** `cases.<name>.opsPerSec` (finite), `n`, `seed` and a `checksum` with `--output`. `isCli()` in [`microbenchHelpers.mjs`](../tests/bench/microbenchHelpers.mjs) is the CLI guard (the old `import.meta.url === pathToFileURL(argv[1])` check could skip `main()` on Windows).
-- **Scale comes from Predator.** [`capturePredatorFixture.mjs`](../tests/bench/capturePredatorFixture.mjs) reads one live frame from the main thread (read-only) into `tests/fixtures/predator-frame.bin`: positions, collider sizes, casters, lights, audio slot occupancy. Kernels that need a real distribution load it.
+- **Scale comes from Predator.** [`capturePredatorFixture.mjs`](../tests/bench/capturePredatorFixture.mjs) reads one live frame from the main thread (read-only) into `tests/fixtures/predator-frame.bin`: positions, collider sizes, casters, lights, audio slot occupancy. Kernels that need a real distribution load it. Match the storage too: per-type active lists live in a `SharedArrayBuffer` in the engine, so the query kernel builds them there, at Predator's ~16k actives.
+- **One case per JIT when the engine uses the function one way per worker.** `packInstancedRows` warmed with sprites and then casters ran casters 1.6–1.8× faster than a function that has only ever seen casters, which is pre-render's case (Pixi only packs sprites). A kernel whose cases share one process measures a JIT state no worker has. `gpuQueuePackMicrobench.mjs` runs each case in its own `worker_thread`.
+- **Choose at the caller, not inside the hot loop.** A variant that falls back to the shipped function from inside its own big loop function ran that fallback 46 % slower (X2, and X5's first draft): the call site had no feedback when it was finally taken. Dispatch before either loop.
+
+What a kernel cannot show, and the scene can:
+
+- **Data another worker just wrote.** A kernel holds its arrays hot in one core's cache. In the engine the render queue was written by pre-render on another core a moment before Pixi reads it, and most of the cost is moving those cache lines. X5 (read the queue in slot order) was +73 to +145 % in the kernel and nothing in Predator, where the same function still took 36 % of Pixi. A memory-order hypothesis on cross-worker data needs the scene before anyone believes it.
+- **Workers running at once.** Kernels run the three spatial workers one after the other on one thread. S6 tied in the kernel and cut spatial `STEP_MS` 17 % in Predator, where the three walk the shared grid in parallel.
+- **A regression on workers the change cannot reach.** Run an A/A sitting (same code on both sides) before blaming the harness; one on 2026-09-30 came out clean, with a 6 % paired swing on logic that the 6-of-8 rule filtered. Q1 then regressed in two sittings on spatial, renderer and particle, which never run the changed copy, and was dropped anyway.
 
 #### Kernel comparisons
 
@@ -185,6 +193,8 @@ The Predator verdict per worker kind is the median of the paired deltas (B − A
 - **Load:** `BODY_COUNT`, `GPU_CASTERS`, `GPU_SHADOW_LIGHTS` within 5 percent. `ACTIVE_PARTICLES` gates only from a baseline of 1000: Predator emits about 100, and Poisson noise alone is 10 percent.
 - **Kept (product):** the owner kind is at least 3 percent cheaper with at least 75 percent of the pairs better, and nothing regresses.
 - **Kept (kernel, producto neutro):** the kernel gates passed, Predator does not regress anywhere, and the owner did not move 3 percent. The change stays. The log says it is a kernel claim.
+- **More pairs, said up front:** when the owner's median clears 3 percent but the pairs do not (G1: −5.7 %, 5 of 8), `--append --pairs 8` adds eight more and the verdict is read on all sixteen (12 of 16 for consistency). G1 came out at −0.1 %. The log records that the sitting was extended.
+- **A second sitting for a regression the change cannot explain:** decide the rule before looking — if it repeats, the change goes. Q1 repeated and went.
 
 Predator is the product vehicle because it runs everything at once (16k bodies with colliders, lighting, shadows, bullets, particles, decals). It does not run LiquidFun; that is the LiquidFun stress scene.
 
@@ -297,6 +307,9 @@ node tests/bench/runKernelVariants.mjs --script tests/bench/contactsMicrobench.m
 
 # Lockstep visual (Predator: not-black only, see above)
 node tests/bench/runLockstepVisual.mjs --scene predator
+
+# Predator branch against a revision (A = src/ from the rev)
+node tests/bench/runPredatorAbab.mjs --name branch-vs-main --vs main --pairs 8
 
 # Predator product gate for one hypothesis
 node tests/bench/runPredatorAbab.mjs --name L1 --owner logic --pairs 8 \

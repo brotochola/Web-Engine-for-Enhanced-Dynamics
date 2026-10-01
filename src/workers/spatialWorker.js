@@ -93,13 +93,6 @@ class SpatialWorker extends AbstractWorker {
     // Upper 16 bits = frame counter, lower 16 bits = entityA. Avoids fill() every frame.
     this.processedMarker = null; // Uint32Array
     this._processedFrameCounter = 0;
-
-    // O(1) deduplication for entityA (source entity) - prevents processing same entity twice
-    // when it appears in multiple cells owned by this worker
-    // Uses frame counter approach to avoid fill() every frame
-    this._entityProcessedMarker = null; // Uint32Array
-    this._entityFrameCounter = 0;
-
     // Local cell counts for race-free grid rebuilding
     // We build counts locally, then copy to grid at the end (avoids mid-clear races)
     this._localCellCounts = null; // Uint8Array(totalCells)
@@ -141,6 +134,9 @@ class SpatialWorker extends AbstractWorker {
     this._neighborCandidateData = null;
     /** Dense copy of each list's count: the stagger skip reads this, not the head of a 1+maxNeighbors row. */
     this._candidateCountOf = null;
+    /** Entities whose home row is this worker's, listed by rebuildOwnedRows for findNeighbors. */
+    this._ownedEntityList = null;
+    this._ownedEntityCount = 0;
     this._neighborCandidateTruncated = null;
     this._entityFramesSinceBuild = null;
 
@@ -201,10 +197,6 @@ class SpatialWorker extends AbstractWorker {
     // Uint32Array: upper 16 bits = frame counter, lower 16 bits = entityA
     this.processedMarker = new Uint32Array(this.globalEntityCount);
 
-    // Initialize deduplication marker for source entities (entityA)
-    // Prevents same entity from being processed multiple times when it spans multiple cells
-    this._entityProcessedMarker = new Uint32Array(this.globalEntityCount);
-
     // Initialize local cell counts array for race-free grid rebuilding
     this._localCellCounts = new Uint8Array(this.totalCells);
     this._entityLastX = new Float32Array(this.globalEntityCount);
@@ -235,6 +227,8 @@ class SpatialWorker extends AbstractWorker {
     const candStride = 1 + Grid.maxNeighbors;
     this._neighborCandidateData = new (EntityIdArray())(this.globalEntityCount * candStride);
     this._candidateCountOf = new (EntityIdArray())(this.globalEntityCount);
+    this._ownedEntityList = new (EntityIdArray())(this.globalEntityCount);
+    this._ownedEntityCount = 0;
     this._neighborCandidateTruncated = new Uint8Array(this.globalEntityCount);
     this._entityFramesSinceBuild = new Uint16Array(this.globalEntityCount);
     this._noBodyCount = 0;
@@ -420,6 +414,8 @@ class SpatialWorker extends AbstractWorker {
     const rowOwnership = this.rowOwnership;
 
     const localCounts = this._localCellCounts;
+    const ownedList = this._ownedEntityList;
+    let ownedCount = 0;
 
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
@@ -470,6 +466,10 @@ class SpatialWorker extends AbstractWorker {
       if (posX !== posX || posY !== posY) continue;
 
       const maxHalfExtent = halfW > halfH ? halfW : halfH;
+      // Home row from the Float32 Y that findNeighbors reads back from entityPosData.
+      let homeRow = (Math.fround(posY) * invCellSize) | 0;
+      homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
+      if (rowOwnership[homeRow] === workerId) ownedList[ownedCount++] = i;
 
       getCellRange(posX, posY, halfW, halfH, invCellSize, maxCol, maxRow, _cellRangeResult);
       const minCol = _cellRangeResult.minCol;
@@ -513,14 +513,14 @@ class SpatialWorker extends AbstractWorker {
       }
     }
     this._noBodyCount = noBody;
+    this._ownedEntityCount = ownedCount;
   }
 
   /**
    * STEP 2: Find neighbors for all entities owned by this worker
    *
-   * - Iterates through all owned cells
-   * - For each entity, checks if this worker owns it (based on entity's home row)
-   * - Only processes entities whose center Y falls in a row owned by this worker
+   * - Walks the list rebuildOwnedRows made: entities whose center Y falls in a row
+   *   owned by this worker, each once (no per-cell walk, no dedupe)
    * - Searches cells in visualRange (+ skin) radius (can read ANY cell) and writes neighbor data
    *
    * ENTITY OWNERSHIP: Each entity is owned by exactly ONE worker based on its
@@ -622,184 +622,163 @@ class SpatialWorker extends AbstractWorker {
     }
     const stampFrame = this._processedFrameCounter;
 
-    this._entityFrameCounter++;
-    const entityFrameMarker = this._entityFrameCounter;
-    const entityProcessedMarker = this._entityProcessedMarker;
-
-    const ownedRows = this.ownedRows;
-    const ownedRowCount = this.ownedRowCount;
-    const rowOwnership = this.rowOwnership;
     const maxRow = gridHeight - 1;
 
-    for (let r = 0; r < ownedRowCount; r++) {
-      const row = ownedRows[r];
-      const rowBase = row * gridWidth;
+    // Built by rebuildOwnedRows this frame: each entity once, home row owned here.
+    const ownedList = this._ownedEntityList;
+    const ownedCount = this._ownedEntityCount;
+    for (let oi = 0; oi < ownedCount; oi++) {
+      const entityA = ownedList[oi];
+      if (!active[entityA]) continue;
 
-      for (let col = 0; col < gridWidth; col++) {
-        const cellIndex = rowBase + col;
-        const byteOffset = cellIndex * Grid.cellByteSize;
-        const cellCount = gridCounts[byteOffset];
-        if (cellCount === 0) continue;
+      const baseIdxA = entityA * 4;
+      const myX = entityPosData[baseIdxA];
+      const myY = entityPosData[baseIdxA + 1];
+      const myHalfExtent = entityPosData[baseIdxA + 2];
 
-        const cellEntityBase = cellIndex * cellStride + cellHeader;
+      let homeRow = (myY * invCellSize) | 0;
+      homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
 
-        for (let k = 0; k < cellCount; k++) {
-          const entityA = gridEntities[cellEntityBase + k];
-          if (!active[entityA]) continue;
-          if (entityProcessedMarker[entityA] === entityFrameMarker) continue;
-          entityProcessedMarker[entityA] = entityFrameMarker;
+      this.entitiesProcessedThisFrame++;
 
-          const baseIdxA = entityA * 4;
-          const myX = entityPosData[baseIdxA];
-          const myY = entityPosData[baseIdxA + 1];
-          const myHalfExtent = entityPosData[baseIdxA + 2];
+      const stampedA = packSpatialPairStamp(stampFrame, entityA);
+      const myVisualRange = visualRange[entityA];
+      const neighborOffset = entityA * stride;
 
-          let homeRow = (myY * invCellSize) | 0;
-          homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
-          if (rowOwnership[homeRow] !== workerId) continue;
+      if (myVisualRange <= 0) {
+        neighborData[neighborOffset] = 0;
+        continue;
+      }
 
-          this.entitiesProcessedThisFrame++;
+      const skin = myVisualRange * skinFrac;
+      const searchRange = myVisualRange + 2 * skin;
 
-          const stampedA = packSpatialPairStamp(stampFrame, entityA);
-          const myVisualRange = visualRange[entityA];
-          const neighborOffset = entityA * stride;
+      let homeCol = (myX * invCellSize) | 0;
+      const maxCol = gridWidth - 1;
+      homeCol = homeCol < 0 ? 0 : homeCol > maxCol ? maxCol : homeCol;
+      const entityCellIndex = homeRow * gridWidth + homeCol;
+      const cellRadius = ((searchRange * invCellSize) | 0) + 1;
 
-          if (myVisualRange <= 0) {
-            neighborData[neighborOffset] = 0;
-            continue;
-          }
+      // Schedule stagger: only ~1/tickInterval entities full-rebuild per frame
+      let scheduleSkipRebuild = false;
+      if (tickInterval > 1) {
+        if (--nextTick[entityA] > 0) {
+          scheduleSkipRebuild = true;
+        } else {
+          nextTick[entityA] = tickInterval;
+        }
+      }
 
-          const skin = myVisualRange * skinFrac;
-          const searchRange = myVisualRange + 2 * skin;
+      // True tickInterval: off-tick keeps last neighborData (no cell-walk, no re-filter).
+      // Logic already decimates AI; stale neighbors for N frames is the point.
+      if (
+        scheduleSkipRebuild &&
+        candCountOf[entityA] > 0 &&
+        framesSinceBuild[entityA] < maxReuseFrames
+      ) {
+        this.neighborsReusedThisFrame++;
+        framesSinceBuild[entityA]++;
+        continue;
+      }
 
-          let homeCol = (myX * invCellSize) | 0;
-          const maxCol = gridWidth - 1;
-          homeCol = homeCol < 0 ? 0 : homeCol > maxCol ? maxCol : homeCol;
-          const entityCellIndex = homeRow * gridWidth + homeCol;
-          const cellRadius = ((searchRange * invCellSize) | 0) + 1;
+      // Verlet skin reuse: re-filter expanded candidates into published set
+      const skinCanReuse =
+        skinFrac > 0 &&
+        this._canReuseNeighbors(
+          entityA,
+          myX,
+          myY,
+          myHalfExtent,
+          myVisualRange
+        );
 
-          // Schedule stagger: only ~1/tickInterval entities full-rebuild per frame
-          let scheduleSkipRebuild = false;
-          if (tickInterval > 1) {
-            if (--nextTick[entityA] > 0) {
-              scheduleSkipRebuild = true;
-            } else {
-              nextTick[entityA] = tickInterval;
-            }
-          }
+      if (skinCanReuse) {
+        this.neighborsReusedThisFrame++;
+        framesSinceBuild[entityA]++;
+        this._publishFilteredNeighbors(
+          entityA,
+          myX,
+          myY,
+          myVisualRange,
+          neighborOffset,
+          maxNeighbors,
+          entityPosData,
+          neighborData
+        );
+      } else {
+        const neighborCells = this._getNeighborCells(entityCellIndex, cellRadius, homeRow, homeCol);
+        const neighborCellsLength = neighborCells.length;
 
-          // True tickInterval: off-tick keeps last neighborData (no cell-walk, no re-filter).
-          // Logic already decimates AI; stale neighbors for N frames is the point.
-          if (
-            scheduleSkipRebuild &&
-            candCountOf[entityA] > 0 &&
-            framesSinceBuild[entityA] < maxReuseFrames
-          ) {
-            this.neighborsReusedThisFrame++;
-            framesSinceBuild[entityA]++;
-            continue;
-          }
+        // Miss: rebuild expanded candidate list at searchRange
+        const candBase = entityA * candStride;
+        let candCount = 0;
+        let truncated = false;
+        const searchRangeWithExtentBase = searchRange;
 
-          // Verlet skin reuse: re-filter expanded candidates into published set
-          const skinCanReuse =
-            skinFrac > 0 &&
-            this._canReuseNeighbors(
-              entityA,
-              myX,
-              myY,
-              myHalfExtent,
-              myVisualRange
-            );
+        for (let i = 0; i < neighborCellsLength; i++) {
+          const checkCellIndex = neighborCells[i];
+          const checkByteOffset = checkCellIndex * Grid.cellByteSize;
+          const checkCellCount = gridCounts[checkByteOffset];
+          if (checkCellCount === 0) continue;
 
-          if (skinCanReuse) {
-            this.neighborsReusedThisFrame++;
-            framesSinceBuild[entityA]++;
-            this._publishFilteredNeighbors(
-              entityA,
-              myX,
-              myY,
-              myVisualRange,
-              neighborOffset,
-              maxNeighbors,
-              entityPosData,
-              neighborData
-            );
-          } else {
-            const neighborCells = this._getNeighborCells(entityCellIndex, cellRadius, homeRow, homeCol);
-            const neighborCellsLength = neighborCells.length;
+          this.cellsCheckedThisFrame++;
+          const checkEntityBase = checkCellIndex * cellStride + cellHeader;
 
-            // Miss: rebuild expanded candidate list at searchRange
-            const candBase = entityA * candStride;
-            let candCount = 0;
-            let truncated = false;
-            const searchRangeWithExtentBase = searchRange;
+          for (let j = 0; j < checkCellCount; j++) {
+            const entityB = gridEntities[checkEntityBase + j];
+            if (entityA === entityB) continue;
+            if (processedMarker[entityB] === stampedA) continue;
+            processedMarker[entityB] = stampedA;
 
-            for (let i = 0; i < neighborCellsLength; i++) {
-              const checkCellIndex = neighborCells[i];
-              const checkByteOffset = checkCellIndex * Grid.cellByteSize;
-              const checkCellCount = gridCounts[checkByteOffset];
-              if (checkCellCount === 0) continue;
-
-              this.cellsCheckedThisFrame++;
-              const checkEntityBase = checkCellIndex * cellStride + cellHeader;
-
-              for (let j = 0; j < checkCellCount; j++) {
-                const entityB = gridEntities[checkEntityBase + j];
-                if (entityA === entityB) continue;
-                if (processedMarker[entityB] === stampedA) continue;
-                processedMarker[entityB] = stampedA;
-
-                const baseIdxB = entityB * 4;
-                const bX = entityPosData[baseIdxB];
-                const bY = entityPosData[baseIdxB + 1];
-                const bHalfExtent = entityPosData[baseIdxB + 2];
-                const dxAB = bX - myX;
-                const dyAB = bY - myY;
-                const effectiveRange = searchRangeWithExtentBase + bHalfExtent;
-                if (dxAB * dxAB + dyAB * dyAB < effectiveRange * effectiveRange) {
-                  if (candCount < maxNeighbors) {
-                    candData[candBase + 1 + candCount] = entityB;
-                    candCount++;
-                  } else {
-                    truncated = true;
-                    break;
-                  }
-                }
+            const baseIdxB = entityB * 4;
+            const bX = entityPosData[baseIdxB];
+            const bY = entityPosData[baseIdxB + 1];
+            const bHalfExtent = entityPosData[baseIdxB + 2];
+            const dxAB = bX - myX;
+            const dyAB = bY - myY;
+            const effectiveRange = searchRangeWithExtentBase + bHalfExtent;
+            if (dxAB * dxAB + dyAB * dyAB < effectiveRange * effectiveRange) {
+              if (candCount < maxNeighbors) {
+                candData[candBase + 1 + candCount] = entityB;
+                candCount++;
+              } else {
+                truncated = true;
+                break;
               }
-              if (truncated) break;
-            }
-
-            candData[candBase] = candCount;
-            candCountOf[entityA] = candCount;
-            this._neighborCandidateTruncated[entityA] = truncated ? 1 : 0;
-
-            this._publishFilteredNeighbors(
-              entityA,
-              myX,
-              myY,
-              myVisualRange,
-              neighborOffset,
-              maxNeighbors,
-              entityPosData,
-              neighborData
-            );
-
-            if (!truncated) {
-              this._storeNeighborReuseSignature(
-                entityA,
-                myX,
-                myY,
-                myHalfExtent,
-                myVisualRange,
-                entityCellIndex,
-                cellRadius
-              );
-            } else {
-              // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
-              this._entityReuseInitialized[entityA] = 0;
-              framesSinceBuild[entityA] = 0;
             }
           }
+          if (truncated) break;
+        }
+
+        candData[candBase] = candCount;
+        candCountOf[entityA] = candCount;
+        this._neighborCandidateTruncated[entityA] = truncated ? 1 : 0;
+
+        this._publishFilteredNeighbors(
+          entityA,
+          myX,
+          myY,
+          myVisualRange,
+          neighborOffset,
+          maxNeighbors,
+          entityPosData,
+          neighborData
+        );
+
+        if (!truncated) {
+          this._storeNeighborReuseSignature(
+            entityA,
+            myX,
+            myY,
+            myHalfExtent,
+            myVisualRange,
+            entityCellIndex,
+            cellRadius
+          );
+        } else {
+          // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
+          this._entityReuseInitialized[entityA] = 0;
+          framesSinceBuild[entityA] = 0;
         }
       }
     }

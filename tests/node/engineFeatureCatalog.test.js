@@ -43,6 +43,7 @@ const REQUIRED = [
   'shadowStamp',
   'gpuQueuePack',
   'decalPremultiply',
+  'painterRadix',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {

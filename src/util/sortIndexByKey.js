@@ -84,33 +84,49 @@ export function floatBitsToOrd(bits) {
  * @param {Uint32Array} scratch
  * @param {Uint32Array} hist
  */
+const radixHist4 = new Uint32Array(1024);
+
 export function radixSortIndicesBySortKey(idx, n, keysU32, scratch, hist) {
   if ((n | 0) < 2) return;
+  // All four byte histograms in one read of the keys. A pass whose byte is the
+  // same for every key keeps the order (LSD radix is stable), so it is skipped:
+  // round(y) * 128 keys have a constant low byte. `hist` is kept for callers.
+  void hist;
+  const h = radixHist4;
+  h.fill(0);
+  for (let i = 0; i < n; i++) {
+    const u = keysU32[idx[i]] >>> 0;
+    const ord = (u & 0x80000000) ? ~u : (u | 0x80000000);
+    h[ord & 255]++;
+    h[256 + ((ord >>> 8) & 255)]++;
+    h[512 + ((ord >>> 16) & 255)]++;
+    h[768 + (ord >>> 24)]++;
+  }
   let src = idx;
   let dst = scratch;
-  for (let shift = 0; shift < 32; shift += 8) {
-    hist.fill(0);
-    for (let i = 0; i < n; i++) {
-      const u = keysU32[src[i]] >>> 0;
-      const ord = (u & 0x80000000) ? ~u : (u | 0x80000000);
-      hist[(ord >>> shift) & 255]++;
-    }
+  for (let pass = 0; pass < 4; pass++) {
+    const off = pass << 8;
+    const shift = pass << 3;
     let sum = 0;
+    let constant = false;
     for (let bin = 0; bin < 256; bin++) {
-      const c = hist[bin];
-      hist[bin] = sum;
+      const c = h[off + bin];
+      if (c === n) constant = true;
+      h[off + bin] = sum;
       sum += c;
     }
+    if (constant) continue;
     for (let i = 0; i < n; i++) {
       const id = src[i];
       const u = keysU32[id] >>> 0;
       const ord = (u & 0x80000000) ? ~u : (u | 0x80000000);
-      dst[hist[(ord >>> shift) & 255]++] = id;
+      dst[h[off + ((ord >>> shift) & 255)]++] = id;
     }
     const swap = src;
     src = dst;
     dst = swap;
   }
+  if (src !== idx) idx.set(src.subarray(0, n));
 }
 
 /**

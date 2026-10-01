@@ -537,6 +537,15 @@ export const ENGINE_FEATURES = [
     primary: ['pixi_STEP_MS'],
     load: [],
   },
+  {
+    id: 'painterRadix',
+    name: 'Painter radix rebuild',
+    module: 'src/util/sortIndexByKey.js',
+    kernel: { script: 'tests/bench/painterRadixMicrobench.mjs', opsKey: 'cases.mixed.opsPerSec' },
+    scene: null,
+    primary: ['pixi_STEP_MS'],
+    load: [],
+  },
 ];
 
 export function getFeature(id) {

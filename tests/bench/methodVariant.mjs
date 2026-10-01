@@ -30,6 +30,29 @@ export function patchMethod(Ctor, name, edits, scope) {
 }
 
 /**
+ * Patched copy of a module-level function declaration (same edit format as
+ * patchMethod). Extra declarations can be appended with `{ append: src }`.
+ * @param {Function} fn
+ * @param {Array<[string, string] | { append: string }>} edits
+ * @param {Record<string, unknown>} scope
+ */
+export function patchFunction(fn, edits, scope) {
+  let src = fn.toString();
+  let extra = '';
+  for (const edit of edits) {
+    if (Array.isArray(edit)) {
+      const [from, to] = edit;
+      if (!src.includes(from)) throw new Error(`${fn.name}: anchor not found: ${from.slice(0, 120)}`);
+      src = src.split(from).join(to);
+    } else if (edit.append) {
+      extra += `\n${edit.append}`;
+    }
+  }
+  const keys = Object.keys(scope);
+  return new Function(...keys, `${src}${extra}\nreturn ${fn.name};`)(...keys.map((k) => scope[k]));
+}
+
+/**
  * Subclass of `Ctor` whose listed methods are patched copies.
  * @param {Function} Ctor
  * @param {Array<{ method: string, edits: Array }>} patches

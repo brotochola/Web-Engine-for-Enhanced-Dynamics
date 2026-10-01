@@ -20,12 +20,26 @@ import {
 import { checksumFloats, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
 
-const PACK = { base: packInstancedRows };
+// Hypotheses: { sprites, casters } pack functions per variant. Sprite rows are
+// what InstancedSpriteBatch.upload packs (Pixi), caster rows what pre-render's
+// _packGpuSun packs. In the engine the queue was just written by pre-render on
+// another core; here it is hot in this core's cache, so a memory-order gain
+// shows bigger here than in a scene (X5: +73–138 % here, nothing in Predator).
+const PACK = { base: { sprites: packInstancedRows, casters: packInstancedRows } };
 
-export function buildQueue(fx, rows) {
+/**
+ * queueOrder 'entity': queue rows in entity-index order (random against Y).
+ * queueOrder 'cells': rows in the order pre-render's cull walks the grid
+ * (128 px cells, row by row), which is what Pixi gets in a real scene.
+ */
+export function buildQueue(fx, rows, queueOrder = 'entity') {
   const { x, y, rotC, rotS, active, shadowH, shadowActive } = fx.arrays;
   const ids = [];
   for (let i = 0; i < fx.meta.n && ids.length < rows; i++) if (active[i]) ids.push(i);
+  if (queueOrder === 'cells') {
+    const cell = (i) => ((y[i] / 128) | 0) * 100000 + ((x[i] / 128) | 0);
+    ids.sort((a, b) => cell(a) - cell(b) || a - b);
+  }
   const n = ids.length;
   const rng = mulberry32(0x9ac4);
   const f32 = () => new Float32Array(n);
@@ -74,60 +88,81 @@ export function buildQueue(fx, rows) {
   return { q, painter: Uint32Array.from(order) };
 }
 
-async function main() {
-  const args = parseArgs();
-  const variant = String(args.variant || 'base');
+/**
+ * One case on a JIT that has only seen that case, like the engine: Pixi packs
+ * sprite rows, pre-render packs caster rows (_packGpuSun). Warming the same
+ * function with sprites first made the caster pack 1.6–1.8× faster than it
+ * is when casters are all the function ever sees.
+ */
+function runCase(name, variant, rows, queueOrder) {
   const pack = PACK[variant];
   if (!pack) throw new Error(`unknown variant ${variant}`);
   const fx = loadPredatorFixture();
   if (!fx) throw new Error('missing tests/fixtures/predator-frame.bin (run capturePredatorFixture.mjs)');
-  const rows = Number(args.rows ?? 16384);
-  const { q, painter } = buildQueue(fx, rows);
+  const { q, painter } = buildQueue(fx, rows, queueOrder);
   const n = q.count;
-
-  const spriteDst = new Float32Array(n * GPU_SPRITE_FLOATS);
-  const spriteU32 = new Uint32Array(spriteDst.buffer);
-  const spriteOpts = { indices: painter, indexCount: n, space: GPU_SPACE_WORLD, zoom: 0.4, cameraX: 0, cameraY: 0, type: q.type };
-  const spriteCtx = {};
-  const packSprites = () => {
-    const ctx = makePackContext(q, spriteOpts, n, spriteCtx);
-    return pack(q, ctx, spriteDst, spriteU32, GPU_SPRITE_FLOATS, n, false);
-  };
-
-  const casterIdx = new Uint32Array(n);
-  const casterDst = new Float32Array(n * GPU_CASTER_FLOATS);
-  const casterU32 = new Uint32Array(casterDst.buffer);
-  const casterCtx = {};
-  const packCasters = () => {
-    let m = 0;
-    for (let r = 0; r < n; r++) if (q.shadowH[r] > 0) casterIdx[m++] = r;
-    const ctx = makePackContext(q, { indices: casterIdx, indexCount: m, space: GPU_SPACE_WORLD, type: q.type }, n, casterCtx);
-    return pack(q, ctx, casterDst, casterU32, GPU_CASTER_FLOATS, n, true);
-  };
-
+  if (name === 'sprites') {
+    const dst = new Float32Array(n * GPU_SPRITE_FLOATS);
+    const u32 = new Uint32Array(dst.buffer);
+    const opts = { indices: painter, indexCount: n, space: GPU_SPACE_WORLD, zoom: 0.4, cameraX: 0, cameraY: 0, type: q.type };
+    const ctxOut = {};
+    const run = () => pack.sprites(q, makePackContext(q, opts, n, ctxOut), dst, u32, GPU_SPRITE_FLOATS, n, false);
+    const out = run();
+    const checksum = checksumFloats(dst, out * GPU_SPRITE_FLOATS);
+    return { rows: out, checksum, result: timeIt(`packInstancedRows ${variant} sprites (${out} rows)`, run, { iterations: 50, warmup: 50 }) };
+  }
+  if (name === 'casters') {
+    const idx = new Uint32Array(n);
+    const dst = new Float32Array(n * GPU_CASTER_FLOATS);
+    const u32 = new Uint32Array(dst.buffer);
+    const ctxOut = {};
+    const run = () => {
+      let m = 0;
+      for (let r = 0; r < n; r++) if (q.shadowH[r] > 0) idx[m++] = r;
+      const ctx = makePackContext(q, { indices: idx, indexCount: m, space: GPU_SPACE_WORLD, type: q.type }, n, ctxOut);
+      return pack.casters(q, ctx, dst, u32, GPU_CASTER_FLOATS, n, true);
+    };
+    const out = run();
+    const checksum = checksumFloats(dst, out * GPU_CASTER_FLOATS);
+    return { rows: out, checksum, result: timeIt(`packInstancedRows ${variant} casters (${out} rows)`, run, { iterations: 50, warmup: 50 }) };
+  }
   const fillIdx = new Uint32Array(n);
-  const sprites = packSprites();
-  const casters = packCasters();
-  const checksum =
-    (Math.imul(checksumFloats(spriteDst, sprites * GPU_SPRITE_FLOATS), 16777619) ^
-      checksumFloats(casterDst, casters * GPU_CASTER_FLOATS)) >>>
-    0;
-
-  const cases = {
-    sprites: timeIt(`packInstancedRows ${variant} sprites (${sprites} rows)`, () => packSprites(), { iterations: 50, warmup: 50 }),
-    casters: timeIt(`packInstancedRows ${variant} casters (${casters} rows)`, () => packCasters(), { iterations: 50, warmup: 50 }),
-    fillQueueIndices: timeIt('fillQueueIndices exclude glow', () => fillQueueIndices(q.type, n, -1, 3, fillIdx), {
-      iterations: 200,
-      warmup: 50,
-    }),
+  const count = fillQueueIndices(q.type, n, -1, 3, fillIdx);
+  return {
+    rows: count,
+    checksum: count,
+    result: timeIt('fillQueueIndices exclude glow', () => fillQueueIndices(q.type, n, -1, 3, fillIdx), { iterations: 200, warmup: 50 }),
   };
+}
+
+async function main() {
+  const args = parseArgs();
+  const variant = String(args.variant || 'base');
+  if (!PACK[variant]) throw new Error(`unknown variant ${variant}`);
+  const rows = Number(args.rows ?? 16384);
+  const queueOrder = String(args['queue-order'] || 'entity');
+  const { Worker } = await import('node:worker_threads');
+  const cases = {};
+  const counts = {};
+  let checksum = 2166136261;
+  for (const name of ['sprites', 'casters', 'fillQueueIndices']) {
+    const res = await new Promise((resolve, reject) => {
+      const w = new Worker(new URL(import.meta.url), { workerData: { role: 'case', name, variant, rows, queueOrder } });
+      w.once('message', resolve);
+      w.once('error', reject);
+    });
+    cases[name] = res.result;
+    counts[name] = res.rows;
+    checksum = Math.imul(checksum ^ res.checksum, 16777619) >>> 0;
+  }
   const report = {
     feature: 'gpu-queue-pack',
     functions: ['packInstancedRows', 'makePackContext', 'fillQueueIndices'],
     variant,
-    n,
+    n: rows,
     seed: 0x9ac4,
-    rows: { sprites, casters },
+    rows: counts,
+    note: 'each case runs in its own worker thread (fresh JIT feedback)',
     checksum,
     cases,
   };
@@ -135,4 +170,7 @@ async function main() {
   else console.log(JSON.stringify(report.rows), checksum);
 }
 
-if (isCli(import.meta.url)) await main();
+const { isMainThread, workerData, parentPort } = await import('node:worker_threads');
+if (!isMainThread && workerData?.role === 'case') {
+  parentPort.postMessage(runCase(workerData.name, workerData.variant, workerData.rows, workerData.queueOrder));
+} else if (isCli(import.meta.url)) await main();

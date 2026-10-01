@@ -398,6 +398,34 @@ test('precomputed active queries read only published complete snapshots', () => 
   }
 });
 
+test('publish with more matches than snapshot room keeps the prefix and does not throw', () => {
+  const installed = installWorkerActiveListGlobals();
+  const previousWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const querySystem = new QuerySystem();
+    querySystem.entityMetadata = createFallbackMetadata().map((meta) => ({
+      ...meta,
+      entityClass: globalThis[meta.className],
+    }));
+    const queryMask = 3n;
+    querySystem.precomputedQueries = [{ name: 'A+B', componentClasses: [QueryTestComponentA, QueryTestComponentB], queryMask, typeMask: 3n, resultOffset: 0 }];
+    querySystem.queryMaskToIndex.set(queryMask, 0);
+    querySystem.queryToTypeMask.set(queryMask, 3n);
+    querySystem.queryEntityCapacity = 3;
+    querySystem.queryResultsSAB = new SharedArrayBuffer(calculateQueryResultsSABSize(1, 3));
+    querySystem._initializeQueryResultViews();
+
+    assert.doesNotThrow(() => querySystem.publishPrecomputedActiveQueries(1));
+    const got = Array.from(querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]));
+    assert.ok(got.length <= 3);
+    assert.deepEqual(got, [2, 7, 999, 1001, 1500].slice(0, got.length));
+  } finally {
+    console.warn = previousWarn;
+    restoreWorkerActiveListGlobals(installed.previous);
+  }
+});
+
 test('worker queryActiveEntities requires precomputed queries', () => {
   const queryFunctions = createWorkerQueryFunctions(
     {
