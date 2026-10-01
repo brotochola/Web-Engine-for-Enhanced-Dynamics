@@ -48,16 +48,13 @@ test('y-sort is the CPU painter; no z-buffer and no bitonic', () => {
   assert.match(pixi, /depthTest: false/);
 });
 
-test('pixi: WebGPU injects a device with timestamp-query and wraps beginRenderPass', () => {
-  const timer = readFileSync(join(root, 'src/render/gpuFrameTimer.js'), 'utf8');
+test('pixi: WebGPU injects a device with timestamp-query', () => {
   const req = readFileSync(join(root, 'src/render/webgpu/requestGpuDevice.js'), 'utf8');
   assert.match(req, /timestamp-query/);
   assert.match(pixi, /requestWeedGpu/);
   assert.match(pixi, /gpu: \{ adapter: weedGpu\.adapter, device: weedGpu\.device \}/);
-  assert.match(timer, /encoder\.renderStart/);
-  assert.match(timer, /timestampWrites/);
-  assert.match(timer, /_resolveGpuFrame/);
-  assert.doesNotMatch(timer, /renderer\?\.gpu && !renderer\.gl/);
+  assert.doesNotMatch(pixi, /GpuFrameTimer/);
+  assert.doesNotMatch(pixi, /onSubmittedWorkDone/);
 });
 
 test('pixi: lighting binds uShadowSampler to the live shadow RT, not Texture.WHITE', () => {

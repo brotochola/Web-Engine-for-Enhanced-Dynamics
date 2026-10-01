@@ -106,7 +106,6 @@ import {
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
-import { GpuFrameTimer } from '../render/gpuFrameTimer.js';
 import {
   rtPixelSize,
   rtPixelScale,
@@ -460,7 +459,6 @@ class PixiRenderer extends AbstractWorker {
     this.presentTimeThisFrame = 0;
     this.customLayersTimeThisFrame = 0;
     this.miscTimeThisFrame = 0;
-    this._gpuTimer = new GpuFrameTimer();
     this._gpuPassesThisFrame = 0;
     this._gpuCastersThisFrame = 0;
     this._gpuShadowLightsThisFrame = 0;
@@ -1091,14 +1089,6 @@ class PixiRenderer extends AbstractWorker {
         this.stats[RENDERER_STATS.CUSTOM_LAYERS_MS] = this.customLayersTimeThisFrame;
         this.stats[RENDERER_STATS.MISC_MS] = this.miscTimeThisFrame;
       }
-      const gpu = this._gpuTimer;
-      this.stats[RENDERER_STATS.GPU_STEP_MS] = gpu.stepMs;
-      this.stats[RENDERER_STATS.GPU_SHADOWS_MS] = gpu.shadowsMs;
-      this.stats[RENDERER_STATS.GPU_LIGHTS_MS] = gpu.lightsMs;
-      this.stats[RENDERER_STATS.GPU_CUSTOM_MS] = gpu.customMs;
-      this.stats[RENDERER_STATS.GPU_PRESENT_MS] = gpu.presentMs;
-      this.stats[RENDERER_STATS.GPU_SORT_MS] = gpu.sortMs;
-      this.stats[RENDERER_STATS.GPU_TIMER] = gpu.active ? 1 : 0;
       this.stats[RENDERER_STATS.GPU_PASSES] = this._gpuPassesThisFrame;
       this.stats[RENDERER_STATS.GPU_CASTERS] = this._gpuCastersThisFrame;
       this.stats[RENDERER_STATS.GPU_SHADOW_LIGHTS] = this._gpuShadowLightsThisFrame;
@@ -1814,7 +1804,6 @@ class PixiRenderer extends AbstractWorker {
 
   renderLightingToTexture() {
     const started = this.collectDetailedStats ? performance.now() : 0;
-    this._gpuTimer.begin('lights');
     if (this._visPolyEnabled) {
       this.renderVisibilityLighting();
     } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.lighting?.id)) {
@@ -1827,7 +1816,6 @@ class PixiRenderer extends AbstractWorker {
       this._submitRender(renderOptions);
       this._renderLiquidFunLightingField();
     }
-    this._gpuTimer.end();
     if (started) this.lightsTimeThisFrame += performance.now() - started;
   }
 
@@ -1877,7 +1865,6 @@ class PixiRenderer extends AbstractWorker {
       if (!consumedNewFrame) this.tickInterpolatedPose();
       this.ensureCameraBeforeFirstFrame();
       this.updateCameraTransform();
-      this._attachGpuTimer();
       this.syncLayerAlphaFromSharedState();
       this.updateDecalTiles();
       if (this.shouldDrawFrameLockedPasses(consumedNewFrame, resuming)) {
@@ -1975,11 +1962,6 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
-  _attachGpuTimer() {
-    if (!this.collectGpuStats) return;
-    this._gpuTimer.attach(this.pixiApp?.renderer);
-  }
-
   _submitRender(opts) {
     if (!this._gpuLive()) return false;
     this.pixiApp.renderer.render(opts);
@@ -2005,20 +1987,14 @@ class PixiRenderer extends AbstractWorker {
   /** Weed owns the swapchain present. Skip when the document is hidden. */
   _presentStage() {
     if (!this._gpuLive()) return;
-    this._gpuTimer.begin('present');
-    try {
-      const present = this._pixiPresent;
-      if (present) {
-        present();
-        return;
-      }
-      const app = this.pixiApp;
-      if (!app?.renderer || !app.stage) return;
-      this._submitRender(app.stage);
-    } finally {
-      this._gpuTimer.end();
-      this._gpuTimer.finishFrame();
+    const present = this._pixiPresent;
+    if (present) {
+      present();
+      return;
     }
+    const app = this.pixiApp;
+    if (!app?.renderer || !app.stage) return;
+    this._submitRender(app.stage);
   }
 
   _takePresentOwnership() {
@@ -3538,15 +3514,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!this.shadowSpritesEnabled) return;
     if (!this.shadowBatch || !this.shadowRT) return;
     if (!layerIsVisible(Layer.castedShadows?.id)) return;
-    this._attachGpuTimer();
-    this._gpuTimer.begin('shadows');
     const interval = this.shadowUpdateInterval | 0;
     const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
     this._shadowUpdateTick++;
     if (!skip) {
       this._drawGpuCasterShadows();
     }
-    this._gpuTimer.end();
   }
 
   createShadowSpriteSystem() {
@@ -3612,8 +3585,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._bindLightingShadowMap();
     this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
     this.pixiApp.stage.addChild(this.shadowDisplaySprite);
-
-    this._attachGpuTimer();
 
     console.log(
       `PIXI WORKER: Shadow instanced RT (${this.shadowRT.width}x${this.shadowRT.height}, casters ${casterCap})`
@@ -5839,8 +5810,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * layers through the two-RT pipeline (density → threshold → display).
    */
   updateCustomLayers() {
-    let customGpu = false;
-    try {
     for (let li = 0; li < this._customLayerList.length; li++) {
       const cl = this._customLayerList[li];
       if (!layerIsVisible(cl.layerId)) continue;
@@ -5895,7 +5864,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           rtOpts.target = cl.rtOut;
           rtOpts.clear = true;
           rtOpts.clearColor = this._clearTransparent;
-          if (!customGpu) { this._gpuTimer.begin('custom'); customGpu = true; }
           this._submitRender(rtOpts);
         }
       } else if (cl.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN && cl.splatBatch) {
@@ -6019,7 +5987,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (cl.fillBatch) {
           const skipRt = this._colliderFillSkip[cl.layerId];
           if (!skipRt || !skipRt._skipRt) {
-            if (!customGpu) { this._gpuTimer.begin('custom'); customGpu = true; }
             this._renderMeshFillToRt(cl, densityMesh);
             this._meshRtDrawsThisFrame++;
             if (skipRt) {
@@ -6038,7 +6005,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           rtOpts.target = cl.rt;
           rtOpts.clear = true;
           rtOpts.clearColor = this._clearTransparent;
-          if (!customGpu) { this._gpuTimer.begin('custom'); customGpu = true; }
           this._submitRender(rtOpts);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
             rtOpts.container = cl.shaderMesh;
@@ -6047,9 +6013,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
         }
       }
-    }
-    } finally {
-      if (customGpu) this._gpuTimer.end();
     }
   }
 

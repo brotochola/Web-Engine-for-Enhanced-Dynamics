@@ -60,7 +60,7 @@ export const RENDERER_STATS = Object.freeze({
   GPU_FPS: 31,
   /** Custom-layer and MESH render-texture draws. */
   GPU_CUSTOM_MS: 32,
-  /** 1 when GpuFrameTimer is active (WebGL timer query or WebGPU timestamp-query). */
+  /** Unused. The GPU clock was removed; it wedged Chrome and WebGL queries came back empty. */
   GPU_TIMER: 33,
   /** GPU timestamp for a sort pass, when the timer is on. 0 otherwise. */
   GPU_SORT_MS: 34,
@@ -359,15 +359,6 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
     label: 'GPU',
     color: 'gpu',
     stats: [
-      { key: 'STEP_MS', label: 'Step', format: fmtMs, src: 'GPU_STEP_MS' },
-      LOAD_STAT,
-      { key: 'FPS', label: 'Fps', format: fmtFps, src: 'GPU_FPS' },
-      { key: 'GPU_SHADOWS_MS', label: 'Shadows', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'GPU_LIGHTS_MS', label: 'Lights', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'GPU_CUSTOM_MS', label: 'Custom', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'GPU_PRESENT_MS', label: 'Present', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'GPU_SORT_MS', label: 'Sort', format: fmtMs, kind: STAT_KIND.TIME },
-      REST_STAT,
       { key: 'GPU_PASSES', label: 'Passes', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'GPU_CASTERS', label: 'Casters', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'GPU_SHADOW_LIGHTS', label: 'ShadowLights', format: fmtNum, kind: STAT_KIND.COUNT },

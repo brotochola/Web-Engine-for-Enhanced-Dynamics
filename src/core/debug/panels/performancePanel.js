@@ -317,9 +317,10 @@ export class PerformancePanel {
         : 1;
     const title = count > 1 ? `${config.label} #${workerIndex}` : config.label;
     const detailed = this._collectDetailedStatsEnabled();
-    const headKeys = displayHeadKeys(config, detailed);
-    const detailStart = displayDetailStart(config);
-    const detailCount = detailed ? Math.max(0, config.stats.length - detailStart) : 0;
+    const hasClock = config.stats.some((s) => s.key === 'STEP_MS');
+    const headKeys = hasClock ? displayHeadKeys(config, detailed) : [];
+    const detailStart = hasClock ? displayDetailStart(config) : 0;
+    const detailCount = hasClock ? Math.max(0, config.stats.length - detailStart) : 0;
     const rowId = `${workerType}:${workerIndex}`;
     const { row, metrics, loadFill, details } = this._createRowShell(rowId, config.color, title, {
       expandable: detailCount > 0,
@@ -333,7 +334,15 @@ export class PerformancePanel {
       elements[key] = cell;
     }
 
-    if (detailed) {
+    if (!hasClock) {
+      for (let s = 0; s < config.stats.length; s++) {
+        const stat = config.stats[s];
+        const cell = this._metricCell(config.color, stat.key);
+        cell.textContent = `${stat.label}: —`;
+        metrics.appendChild(cell);
+        elements[stat.key] = cell;
+      }
+    } else if (detailed) {
       for (let s = detailStart; s < config.stats.length; s++) {
         const stat = config.stats[s];
         const chip = document.createElement('span');

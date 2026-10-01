@@ -694,9 +694,8 @@ export const DEBUG_DEFAULTS = Object.freeze({
    */
   collectDetailedStats: false,
   /**
-   * WebGPU timestamp-query / WebGL timer-query on the pixi worker.
-   * Independent of collectDetailedStats. Default off — resolve submits are not free.
-   * Opt in per scene or bench: debug: { collectGpuStats: true }.
+   * Ignored. A GPU clock (timestamp queries or onSubmittedWorkDone) wedges Chrome's
+   * GPU process, and WebGL timer queries come back empty. The debug GPU row is counts only.
    */
   collectGpuStats: false,
   /**
