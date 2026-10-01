@@ -94,7 +94,7 @@ export class PredatorScene extends WEED.Scene {
     debug: {
       maxDebugDrawEntries: 30192,
       collectDetailedStats: true,
-      collectGpuStats: true, // bench --collect-gpu-stats pisa esto
+      // collectGpuStats: true, // bench --collect-gpu-stats pisa esto
       verboseWorkers: true,
     },
 
