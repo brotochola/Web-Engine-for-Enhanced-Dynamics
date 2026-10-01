@@ -102,8 +102,8 @@ export class PredatorScene extends WEED.Scene {
     spatial: {
       cellSize: 128,
       maxNeighbors: 1024,
-      maxEntitiesPerCell: 128, //this is very important!!
-      numberOfSpatialWorkers: 3, // Multiple workers for parallel neighbor detection
+      maxEntitiesPerCell: 32, //this is very important!!
+      numberOfSpatialWorkers: 2, // Multiple workers for parallel neighbor detection
       noLimitFPS: false,
       // Dense/fast flocks: smaller skin + longer reuse than engine defaults (0.04 / 15)
       neighborReuseSkin: 0.01,
@@ -136,7 +136,7 @@ export class PredatorScene extends WEED.Scene {
     // Logic configuration
     logic: {
       noLimitFPS: false,
-      numberOfLogicWorkers: 3,
+      numberOfLogicWorkers: 2,
       staggeredUpdates: true, // Enable tick decimation (entities tick based on their tickInterval)
     },
 
