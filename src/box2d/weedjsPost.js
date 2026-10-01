@@ -68,6 +68,9 @@
   let bodyDirtyWords = null;
   let bodyGeneration = null;
   let seenBodyGeneration = null;
+  // Bumped in bumpBodyGeneration. publishPose skips per-body Atomics.load when it matches.
+  let poseGenEpoch = null;
+  let seenPoseGenEpoch = 0;
   let jointViews = null;
   let liquidFunViews = null;
   let liquidFunGroupsViews = null;
@@ -286,11 +289,13 @@
       bodyDirtyFlags = null;
       bodyDirtyWords = null;
       bodyGeneration = null;
+      poseGenEpoch = null;
       return;
     }
     bodyDirtyFlags = viewFromDesc(desc.dirtyFlags, Int32Array);
     bodyDirtyWords = viewFromDesc(desc.dirtyWords, Int32Array);
     bodyGeneration = viewFromDesc(desc.generation, Int32Array);
+    poseGenEpoch = desc.epoch ? viewFromDesc(desc.epoch, Int32Array) : null;
   }
 
   function bindJointViews(desc, maxJ) {
@@ -477,13 +482,20 @@
     const outS = buf.rotS;
     const list = denseList;
     const n = denseCount;
+    const epoch = poseGenEpoch ? (Atomics.load(poseGenEpoch, 0) | 0) : 0;
+    // No epoch buffer: keep the per-body generation load. Matching epoch: nobody respawned.
+    // A skip must not latch the epoch, or the next frame would publish the stale slot.
+    const epochSame = poseGenEpoch ? epoch === (seenPoseGenEpoch | 0) : false;
+    let skipped = 0;
     for (let d = 0; d < n; d++) {
       const i = list[d];
       if (
+        !epochSame &&
         bodyGeneration &&
         seenBodyGeneration &&
         (seenBodyGeneration[i] | 0) !== (Atomics.load(bodyGeneration, i) | 0)
       ) {
+        skipped++;
         continue;
       }
       outX[i] = x[i];
@@ -491,6 +503,7 @@
       outC[i] = rotC[i];
       outS[i] = rotS[i];
     }
+    if (poseGenEpoch && skipped === 0) seenPoseGenEpoch = epoch;
     poseFrame++;
     Atomics.store(poseSync, 0, poseFrame);
     Atomics.notify(poseSync, 0, 1);
@@ -2866,6 +2879,21 @@
   }
 
 
+  function weedjsBindPoseBench(state) {
+    poseSync = state.poseSync;
+    poseBuffers = state.poseBuffers;
+    denseList = state.denseList;
+    denseCount = state.denseCount | 0;
+    views = state.views;
+    bodyGeneration = state.bodyGeneration;
+    seenBodyGeneration = state.seenBodyGeneration;
+    poseFrame = state.poseFrame | 0;
+    poseGenEpoch = state.poseGenEpoch || null;
+    seenPoseGenEpoch = state.seenPoseGenEpoch | 0;
+  }
+
+  globalThis.weedjsPublishPose = publishPose;
+  globalThis.weedjsBindPoseBench = weedjsBindPoseBench;
   globalThis.weedjsSnapshotLiquidFun = weedjsSnapshotLiquidFun;
   globalThis.weedjsRestoreLiquidFun = weedjsRestoreLiquidFun;
   globalThis.weedjsEnableHostMode = weedjsEnableHostMode;

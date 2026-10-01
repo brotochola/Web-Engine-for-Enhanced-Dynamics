@@ -16,6 +16,7 @@ export const BODY_DIRTY = Object.freeze({
 let dirtyFlags = null;
 let dirtyWords = null;
 let generation = null;
+let epoch = null;
 let pendingFlags = null;
 let dirtyDeferDepth = 0;
 let poseSlots = null;
@@ -65,6 +66,7 @@ export function bindBodySyncBuffers(buffers) {
     dirtyFlags = null;
     dirtyWords = null;
     generation = null;
+    epoch = null;
     pendingFlags = null;
     poseSlots = null;
     return null;
@@ -73,6 +75,7 @@ export function bindBodySyncBuffers(buffers) {
   dirtyFlags = new Int32Array(buffers.bodyDirtyFlags);
   dirtyWords = new Int32Array(buffers.bodyDirtyWords);
   generation = new Int32Array(buffers.bodyGeneration);
+  epoch = buffers.bodyGenEpoch ? new Int32Array(buffers.bodyGenEpoch) : null;
   pendingFlags = new Int32Array(dirtyFlags.length);
   poseSlots = null;
   if (buffers.poseDataA && buffers.poseDataB) {
@@ -127,6 +130,7 @@ export function bumpBodyGeneration(entityIndex) {
   const i = entityIndex | 0;
   if (i < 0 || i >= generation.length) return 0;
   const next = (Atomics.add(generation, i, 1) + 1) >>> 0;
+  if (epoch) Atomics.add(epoch, 0, 1);
   // Reused slot still holds the previous body's published pose. Drop it so
   // the first frames draw Transform until physics publishes this life.
   invalidatePoseSlot(i);

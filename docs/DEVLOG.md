@@ -6,6 +6,18 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Thursday 1 October 2026 — The Thread That Was Waiting, and the Load That Was Not
+
+The trace we had been reading was already a day old. Neighbors, the spatial cell walk, and the painter radix had landed since then, so I took another CPU profile of Predator before believing any percentage. The shape of the threads barely moved. Emit was still a quarter of pre-render. The pose publish on the physics thread still spent almost half of itself on one atomic load per body. And the three Box2D helper threads were still pegged, sixty percent of that time inside a single wasm function whose name the binary had thrown away.
+
+LTO strips the name section, so the index in the profile is just a number. Disassembling the shipped wasm showed that `wasm-function[102]` is not the solver's spin loop. It is Emscripten's pthread mailbox: read the clock, compare-and-swap a word, time out. The solver spinner the C file still marks with a todo is a different function, and it is not in the top of the profile. That changed the experiment. Cutting the pool from four threads to two should have freed a core if those threads were only waiting. Predator said otherwise. Physics step went from 8.7 ms to 10.9 ms, every pair worse. The renderer and the pre-render worker did get cheaper, which is what less idle spinning looks like, and it was not worth a solver that fell behind. The four-thread build went back.
+
+On the JavaScript side the same rule kept showing up. Emitting sprites in entity order instead of cell order is a beautiful memory story and a sort that made the real pre-render worker 69 % slower in the kernel, checksum identical, so it never saw a scene. Hoisting the shadow-caster columns looked like a 7 % win until the same edit was measured inside the worker's own function, where it tied. The win had been the act of recompiling the method in the bench, not the hoist.
+
+The one that stayed is smaller than the trace made it sound. Pose publish now skips the per-body generation load when nothing has respawned since the last clean pass. The kernel more than doubled. Predator did not move: physics is still the wasm step, 8.7 ms either way, and nothing else regressed. A doubled function that is not the bottleneck gets to stay, and it does not get to be called a faster game.
+
+The soldier scan that is twelve percent of logic looked like a win for eight pairs and disappeared when the sitting was extended to sixteen. It also changes which civilian gets shot for a few frames. It went back. A faster sine for grass was never a measurement: twenty thousand decorations in that scene have twenty thousand different frequencies.
+
 ## Wednesday 30 September 2026 (night) — The Kernel Said 138 %. Predator Said Nothing
 
 Second round, same night, same rules: kernel first, then the patched `src/` in a worktree, then a parity test, then eight counterbalanced Predator pairs. Six ideas went in. Two changed the scene, two only changed their kernel, two got thrown out. The ones that got thrown out taught me the most.

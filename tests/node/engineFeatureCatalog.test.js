@@ -44,6 +44,8 @@ const REQUIRED = [
   'gpuQueuePack',
   'decalPremultiply',
   'painterRadix',
+  'publishPose',
+  'preRenderWorker',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {

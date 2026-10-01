@@ -546,6 +546,24 @@ export const ENGINE_FEATURES = [
     primary: ['pixi_STEP_MS'],
     load: [],
   },
+  {
+    id: 'publishPose',
+    name: 'Physics pose publish',
+    module: 'src/box2d/weedjsPost.js',
+    kernel: { script: 'tests/bench/publishPoseMicrobench.mjs', opsKey: 'cases.publish.opsPerSec' },
+    scene: null,
+    primary: ['physics_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'preRenderWorker',
+    name: 'Pre-render emitSpriteQueue',
+    module: 'src/workers/preRenderWorker.js',
+    kernel: { script: 'tests/bench/preRenderWorkerMicrobench.mjs', opsKey: 'cases.emit.opsPerSec' },
+    scene: null,
+    primary: ['preRender_STEP_MS'],
+    load: [],
+  },
 ];
 
 export function getFeature(id) {

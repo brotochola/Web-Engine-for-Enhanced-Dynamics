@@ -615,6 +615,7 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
   buffers.bodyDirtyFlags = new SharedArrayBuffer(totalEntityCount * 4);
   buffers.bodyDirtyWords = new SharedArrayBuffer(dirtyWordCount * 4);
   buffers.bodyGeneration = new SharedArrayBuffer(totalEntityCount * 4);
+  buffers.bodyGenEpoch = new SharedArrayBuffer(4);
   const bodySync = bindBodySyncBuffers(buffers);
   if (bodySync) {
     bodySync.dirtyFlags.fill(BODY_DIRTY.LIFECYCLE);

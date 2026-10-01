@@ -728,6 +728,7 @@
           dirtyFlags: packView(state.bodySyncViews.dirtyFlags),
           dirtyWords: packView(state.bodySyncViews.dirtyWords),
           generation: packView(state.bodySyncViews.generation),
+          epoch: state.bodySyncViews.epoch ? packView(state.bodySyncViews.epoch) : null,
         }
         : null,
       views: {
@@ -1011,6 +1012,7 @@
         dirtyFlags: new Int32Array(buffers.bodyDirtyFlags),
         dirtyWords: new Int32Array(buffers.bodyDirtyWords),
         generation: new Int32Array(buffers.bodyGeneration),
+        epoch: buffers.bodyGenEpoch ? new Int32Array(buffers.bodyGenEpoch) : null,
       };
     } else {
       state.bodySyncViews = null;

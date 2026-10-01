@@ -20,7 +20,10 @@ export function runKernelVariants({ script, variants, rounds = 3, outDir, extraA
   fs.mkdirSync(outDir, { recursive: true });
   const runs = Object.fromEntries(variants.map((v) => [v, []]));
   for (let r = 0; r < rounds; r++) {
-    for (const v of variants) {
+    // Odd rounds flip who goes first. A fixed base-then-variant order
+    // parked the slower side on the variant (same drift S4 saw in Predator).
+    const order = r % 2 === 0 ? variants : [...variants].reverse();
+    for (const v of order) {
       const out = path.join(outDir, `${v}-r${r}.json`);
       execFileSync(process.execPath, [path.join(repoRoot, script), '--variant', v, '--output', out, ...extraArgs], {
         cwd: repoRoot,
