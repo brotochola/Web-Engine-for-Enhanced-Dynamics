@@ -11,6 +11,7 @@
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import webpack from 'webpack';
 import TerserPlugin from 'terser-webpack-plugin';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -133,7 +134,13 @@ const umdConfig = {
             })
         ]
     },
-    plugins: [],
+    plugins: [
+        new webpack.BannerPlugin({
+            banner: 'WeedJS by Facundo Saiegh — https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics',
+            // After Terser (comments: false would strip an earlier banner).
+            stage: webpack.Compilation.PROCESS_ASSETS_STAGE_SUMMARIZE,
+        }),
+    ],
     resolve: {
         extensions: ['.js'],
         alias: debugStubAliases

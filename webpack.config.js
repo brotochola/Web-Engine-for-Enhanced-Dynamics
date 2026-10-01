@@ -1,11 +1,19 @@
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import webpack from 'webpack';
 import TerserPlugin from 'terser-webpack-plugin';
 import WebpackObfuscator from 'webpack-obfuscator';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// After Terser and the obfuscator. An earlier stage is stripped (comments: false)
+// or rewritten when OBFUSCATE=true.
+const authorBanner = new webpack.BannerPlugin({
+    banner: 'WeedJS by Facundo Saiegh — https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics',
+    stage: webpack.Compilation.PROCESS_ASSETS_STAGE_SUMMARIZE,
+});
 
 // Worker files that need to be bundled separately
 const workerEntries = {
@@ -129,7 +137,10 @@ const mainConfig = {
         ]
     },
     optimization,
-    plugins: shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : [],
+    plugins: [
+        ...(shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : []),
+        authorBanner,
+    ],
     resolve: {
         extensions: ['.js'],
         alias: debugStubAliases
@@ -176,7 +187,10 @@ const workersConfig = {
             },
         },
     },
-    plugins: shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : [],
+    plugins: [
+        ...(shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : []),
+        authorBanner,
+    ],
     resolve: {
         extensions: ['.js'],
         alias: debugStubAliases

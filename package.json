@@ -186,10 +186,10 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/brotochola/MultithreadedGameEngine.git"
+    "url": "git+https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics.git"
   },
   "bugs": {
-    "url": "https://github.com/brotochola/MultithreadedGameEngine/issues"
+    "url": "https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/issues"
   },
   "homepage": "https://multithreaded-game-engine.vercel.app/demos",
   "devDependencies": {

@@ -313,6 +313,8 @@ const SaveGame = Object.freeze({
 export { SaveGame };
 
 const WEED = Object.freeze({
+  author: 'Facundo Saiegh',
+  github: 'https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics',
   ...enums,
 
   DEBUG_FLAGS,

@@ -3696,6 +3696,8 @@ export interface WeedNamespace extends WeedEnums {
   rng: typeof import('./utils').rng;
   SPRITE_TILE_MODE: typeof SPRITE_TILE_MODE;
   enums: WeedEnums;
+  author: string;
+  github: string;
   VERSION: typeof VERSION;
 }
 
