@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
-import { BUNDLE_ARTIFACTS, extractImportScriptNames } from './buildBundle.js';
+import { BUNDLE_ARTIFACTS, extractImportScriptNames, rewriteWorkerCommonImportScripts } from './buildBundle.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
@@ -50,22 +50,21 @@ function gunzipPayloads(s) {
 }
 
 function checkRewriteSample() {
-  const sample =
-    '__webpack_require__.u=chunkId=>"workers/worker_common.min.js";' +
-    '__webpack_require__.p=scriptUrl+"../";' +
-    'importScripts(__webpack_require__.p+__webpack_require__.u(chunkId));';
   const commonUrl = 'blob:http://localhost/fake-common';
-  let code = sample.replace(
-    /__webpack_require__\.u\s*=\s*chunkId\s*=>\s*"[^"]*worker_common[^"]*"/g,
-    '__webpack_require__.u=chunkId=>' + JSON.stringify(commonUrl),
-  );
-  code = code.replace(
-    /__webpack_require__\.p\s*=\s*scriptUrl\s*\+\s*"\.\.\/"/g,
-    '__webpack_require__.p=""',
-  );
-  assert(code.includes(JSON.stringify(commonUrl)), 'u() not rewritten to blob URL');
-  assert(code.includes('__webpack_require__.p=""'), 'publicPath not cleared');
-  assert(!code.includes('workers/worker_common.min.js'), 'old common path still present');
+  const samples = [
+    '__webpack_require__.u=chunkId=>"workers/worker_common.min.js";' +
+      '__webpack_require__.p=scriptUrl+"../";' +
+      'importScripts(__webpack_require__.p+__webpack_require__.u(chunkId));',
+    'i.u=t=>"workers/worker_common.min.js";' +
+      'i.p=t+"../";' +
+      'importScripts(i.p+i.u(e));',
+  ];
+  for (const sample of samples) {
+    const code = rewriteWorkerCommonImportScripts(sample, commonUrl);
+    assert(code.includes(JSON.stringify(commonUrl)), 'u() not rewritten to blob URL');
+    assert(code.includes('.p=""'), 'publicPath not cleared');
+    assert(!code.includes('workers/worker_common.min.js'), 'old common path still present');
+  }
 }
 
 checkRewriteSample();
@@ -117,7 +116,11 @@ for (const name of BUNDLE_ARTIFACTS) {
     }
   }
 
-  console.log(`  ${name}: wasm ${wasm.length} bytes${compressed ? ' + gzip workers' : ' + raw workers'}`);
+  const rawBytes = Buffer.byteLength(s);
+  const gzipBytes = zlib.gzipSync(s, { level: 9 }).length;
+  console.log(
+    `  ${name}: raw ${rawBytes} gzip ${gzipBytes} wasm ${wasm.length} bytes${compressed ? ' + gzip workers' : ' + raw workers'}`,
+  );
 }
 
 console.log('smoke-bundle-embed OK');

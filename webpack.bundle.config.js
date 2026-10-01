@@ -13,6 +13,7 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import webpack from 'webpack';
 import TerserPlugin from 'terser-webpack-plugin';
+import { MINIFY_RESERVED_NAMES } from './scripts/minifyReservedNames.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -108,23 +109,7 @@ const umdConfig = {
                             : ['console.debug']
                     },
                     mangle: {
-                        reserved: [
-                            // Core
-                            'WEED', 'GameEngine', 'Scene', 'GameObject', 'Component',
-                            'FSM', 'FSMState', 'DebugFlags', 'DebugUI', 'DebugDraw', 'Mouse', 'Camera',
-                            'Ray', 'NavGrid', 'Keyboard', 'SpriteSheetRegistry', 'BigAtlasInspector',
-                            // Components - CRITICAL: these names are used for identification
-                            'Transform', 'RigidBody', 'Collider', 'SpriteRenderer',
-                            'ParticleComponent', 'DecorationComponent', 'LightEmitter',
-                            'ShadowCaster', 'FlashComponent',
-                            // Systems
-                            'ParticleEmitter', 'DecorationPool', 'Flash', 'QuerySystem',
-                            'Box2d', 'Decal', 'Query', 'LiquidFun', 'Decoration',
-                            // Workers
-                            'AbstractWorker',
-                            // Enums
-                            'ShapeType'
-                        ]
+                        reserved: MINIFY_RESERVED_NAMES,
                     },
                     format: {
                         comments: false

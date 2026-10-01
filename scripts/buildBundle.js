@@ -247,6 +247,24 @@ function embedPayload(text, compressed) {
     return compressed ? gzipB64(text) : text;
 }
 
+export function rewriteWorkerCommonImportScripts(source, commonUrl) {
+    if (!commonUrl || !source) return source;
+    // Webpack emits importScripts(require.p + require.u(id)).
+    // u() returns "workers/worker_common.min.js" and p is scriptUrl + "../".
+    // Terser mangles the require binding and the parameter (i.u=t=>"..."), so
+    // match the property names only. Blob workers have no script directory:
+    // point u() at the common blob URL and clear publicPath.
+    var code = source.replace(
+        /\.u\s*=\s*[A-Za-z_$][\w$]*\s*=>\s*"[^"]*worker_common[^"]*"/g,
+        '.u=chunkId=>' + JSON.stringify(commonUrl)
+    );
+    code = code.replace(
+        /\.p\s*=\s*[A-Za-z_$][\w$]*\s*\+\s*"\.\.\/"/g,
+        '.p=""'
+    );
+    return code;
+}
+
 function writeBundleEntry({
     workers,
     workerCommon,
@@ -293,22 +311,7 @@ let embedPromise = null;
 let box2dWorkerBlobUrl = null;
 let workerCommonBlobUrl = null;
 
-function rewriteWorkerCommonImportScripts(source, commonUrl) {
-  if (!commonUrl || !source) return source;
-  // Webpack emits: importScripts(__webpack_require__.p + __webpack_require__.u(id))
-  // with u() => "workers/worker_common.min.js" and p = scriptUrl + "../".
-  // Blob workers have no useful script directory, so point u() at the common
-  // blob URL and clear publicPath.
-  var code = source.replace(
-    /__webpack_require__\\.u\\s*=\\s*chunkId\\s*=>\\s*"[^"]*worker_common[^"]*"/g,
-    '__webpack_require__.u=chunkId=>' + JSON.stringify(commonUrl)
-  );
-  code = code.replace(
-    /__webpack_require__\\.p\\s*=\\s*scriptUrl\\s*\\+\\s*"\\.\\.\\/"/g,
-    '__webpack_require__.p=""'
-  );
-  return code;
-}
+${rewriteWorkerCommonImportScripts.toString()}
 
 function weedB64ToU8(b64) {
   var binary = atob(b64);

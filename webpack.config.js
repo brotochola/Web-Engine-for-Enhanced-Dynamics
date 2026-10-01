@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import webpack from 'webpack';
 import TerserPlugin from 'terser-webpack-plugin';
 import WebpackObfuscator from 'webpack-obfuscator';
+import { MINIFY_RESERVED_NAMES } from './scripts/minifyReservedNames.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,7 +82,9 @@ const optimization = {
                     drop_debugger: true,
                     pure_funcs: ['console.debug', 'console.log']
                 },
-                mangle: false,
+                mangle: {
+                    reserved: MINIFY_RESERVED_NAMES,
+                },
                 format: {
                     comments: false
                 }
