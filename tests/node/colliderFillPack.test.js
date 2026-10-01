@@ -237,6 +237,30 @@ test('static mesh fill packs live Transform, not stale pose', () => {
   assert.equal(out[7], 80);
 });
 
+test('dynamic mesh fill packs live Transform when published rotation is dead', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.x[0] = 10;
+  views.y[0] = 20;
+  views.rotC[0] = 0;
+  views.rotS[0] = 0;
+  views.liveX = new Float32Array([30]);
+  views.liveY = new Float32Array([40]);
+  views.liveRotC = new Float32Array([1]);
+  views.liveRotS = new Float32Array([0]);
+  views.rbStatic = new Uint8Array([0]);
+  addTri(views, 0, 0, 0, 0, 4, 0, 0, 4);
+
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(out[6], 30);
+  assert.equal(out[7], 40);
+  assert.equal(out[8], 1);
+  assert.equal(out[9], 0);
+});
+
 test('dynamic mesh fill packs live Transform when pose is leftover', () => {
   const views = makeViews({ entities: 1, fixtures: 1 });
   views.meshActive[0] = 1;

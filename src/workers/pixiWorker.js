@@ -5963,8 +5963,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             skip.lastRevision !== COLLIDER_FILL_PACK_FIRST_FRAME &&
             !meshFillPresenceChanged(views, skip.prevPose);
           let packed = lastPacked;
+          let poseTableDirty = false;
           if (canPoseOnly) {
             packed = cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views);
+            poseTableDirty = true;
+          } else {
+            packed = packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
+            skip.localsReady = packed > 0;
+            cl.fillBatch.upload(packed);
+            if (packed > 0) {
+              cl.fillBatch.uploadPoseTable(skip.instanceEntity, packed, views);
+              poseTableDirty = true;
+            }
+          }
+          if (poseTableDirty) {
             const src = cl.fillBatch._poseSource;
             const pose = cl.fillBatch.poseTable;
             if (src && pose && this._useWebGpu) {
@@ -5975,10 +5987,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             } else if (src && pose) {
               this._uploadRgba32FloatGl(src, pose, cl.fillBatch._poseWidth, cl.fillBatch._poseHeight);
             }
-          } else {
-            packed = packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
-            skip.localsReady = packed > 0;
-            cl.fillBatch.upload(packed);
           }
           cl.prevCount = packed;
           copyMeshFillPoseScratch(views, skip.prevPose);

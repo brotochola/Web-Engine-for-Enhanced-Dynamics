@@ -21,7 +21,7 @@ import { JointBreakListener } from '../components/jointBreakListener.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
 import { AbstractWorker } from './abstractWorker.js';
-import { logicBlockRange, logicWorkerThatShouldTick, tickBucketPhase } from '../util/logicOwner.js';
+import { logicBlockRange, logicWorkerThatShouldTick, resolveForceProcessOnLogicWorker, tickBucketPhase } from '../util/logicOwner.js';
 
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
@@ -1859,6 +1859,21 @@ class LogicWorker extends AbstractWorker {
     }
   }
 
+  /**
+   * Ring drain runs on logic0. A class pinned to another worker makes spawn()
+   * post the setup there and return null. That null is the handoff, not a miss.
+   */
+  _ringSpawnHandedOff(EntityClass, cfg) {
+    const requested =
+      cfg && typeof cfg.forceProcessOnLogicWorker === 'number'
+        ? cfg.forceProcessOnLogicWorker
+        : typeof EntityClass.forceProcessOnLogicWorker === 'number'
+          ? EntityClass.forceProcessOnLogicWorker
+          : -1;
+    const owner = resolveForceProcessOnLogicWorker(requested, this.totalLogicWorkers);
+    return owner >= 0 && owner !== this.workerIndex;
+  }
+
   _drainSpawnCommandRing() {
     if (!isSpawnCommandRingBound()) return 0;
     this._drainingSpawnRing = true;
@@ -1889,7 +1904,7 @@ class LogicWorker extends AbstractWorker {
         return;
       }
       const instance = GameObject.spawn(EntityClass, cfg, entityIndex);
-      if (!instance) {
+      if (!instance && !this._ringSpawnHandedOff(EntityClass, cfg)) {
         console.warn(
           `LOGIC WORKER ${this.workerIndex}: Failed ring spawn ${EntityClass.name}`,
         );

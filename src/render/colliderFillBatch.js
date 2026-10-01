@@ -4,6 +4,7 @@
  * One PIXI.Mesh per MESH slot. VS applies packed pose (published display pose
  * when pixi latched it, else live Transform).
  * Static bodies pack live Transform: pose lags a remesh/spawn and the island snaps.
+ * A dynamic body whose published rotation is still zero (slot reuse) does too.
  * Pixi skips pack+upload when ColliderFixture.revision, mesh pose, and paint match.
  *
  * Instance floats (17): v0, v1, v2, xy, rotCS, tintBits, depth, texId, tileInv, tileOff.
@@ -224,6 +225,10 @@ const MESH_LIVE_POSE_SLACK_SQ = 48 * 48;
 function meshFillUsesLive(i, views) {
   if (!views.liveX || !views.liveY) return false;
   if (views.rbStatic && views.rbStatic[i]) return true;
+  const c = views.rotC ? views.rotC[i] : 1;
+  const s = views.rotS ? views.rotS[i] : 0;
+  // Same gate as poseRotationLive: zeros mean this life has not been published.
+  if (c * c + s * s <= 0.25) return true;
   const dx = views.liveX[i] - views.x[i];
   const dy = views.liveY[i] - views.y[i];
   return dx * dx + dy * dy > MESH_LIVE_POSE_SLACK_SQ;
