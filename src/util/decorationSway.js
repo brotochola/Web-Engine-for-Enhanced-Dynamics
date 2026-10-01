@@ -6,6 +6,10 @@ export const SWAY_OFF = 0;
 export const SWAY_LOOP = 1;
 /** One-shot half-sine 0→π then auto-clear */
 export const SWAY_IMPULSE = 2;
+/** Loop whose angle is a shear. Worker writes this into rotC; rotS holds the angle. */
+export const SWAY_LOOP_SKEW = 3;
+/** Not a cosine (|c| ≤ 1) and under the shadow discard (|c| > 2). */
+export const SWAY_SKEW_C = 1.5;
 
 /** Same scale as continuous: sin(accumulatedTimeMs * 0.002 * freq) */
 export const SWAY_ANGLE_PER_MS = 0.002;

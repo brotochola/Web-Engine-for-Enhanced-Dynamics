@@ -51,9 +51,10 @@ void main() {
   vec2 local = (content - aInstAnchor * aInstSize) * aInstScale;
   float c = aInstRotCS.x;
   float s = aInstRotCS.y;
-  vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+  vec2 spun = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+  vec2 sheared = vec2(local.x + local.y * s, local.y);
   vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);
-  vec2 world = rotated + xy;
+  vec2 world = (c > 1.0 ? sheared : spun) + xy;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(world, 1.0);
   gl_Position = vec4(clip.xy, aInstDepth, 1.0);

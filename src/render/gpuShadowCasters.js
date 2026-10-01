@@ -1,7 +1,7 @@
 /**
  * Compact shadow casters and honor maxShadowsPerLight / maxShadowsPerEntity
- * without packing CPU shadow sprites. Lights closest to the caster, then
- * casters closest to that light.
+ * without packing CPU shadow sprites. A caster keeps the lights closest to
+ * itself. Each light still keeps the casters closest to it.
  */
 
 import { GPU_CASTER_LIGHT_FLOAT, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
@@ -124,7 +124,45 @@ function buildStampGrid(sun, nSun, sf, counts, starts, items) {
   return _stampGridResult;
 }
 
+let _nearDist = new Float32Array(0);
+let _nearSlot = new Int32Array(0);
+let _nearCount = new Uint8Array(0);
 let _sortIdxRef = null;
+
+function ensureNearest(nSun, maxPE) {
+  const slots = nSun * maxPE;
+  if (_nearDist.length < slots) {
+    _nearDist = new Float32Array(slots);
+    _nearSlot = new Int32Array(slots);
+  }
+  if (_nearCount.length < nSun) _nearCount = new Uint8Array(nSun);
+  _nearCount.fill(0, 0, nSun);
+}
+
+/** Keep the closest lights on this caster. Ties break toward the smaller light index. */
+function noteNearest(caster, lightIndex, d2, maxPE) {
+  const base = caster * maxPE;
+  let n = _nearCount[caster];
+  if (n === maxPE) {
+    const worst = base + n - 1;
+    const wd = _nearDist[worst];
+    if (d2 > wd || (d2 === wd && lightIndex >= _nearSlot[worst])) return;
+    n--;
+  }
+  let i = n;
+  while (i > 0) {
+    const prev = base + i - 1;
+    const pd = _nearDist[prev];
+    const pl = _nearSlot[prev];
+    if (pd < d2 || (pd === d2 && pl <= lightIndex)) break;
+    _nearDist[base + i] = pd;
+    _nearSlot[base + i] = pl;
+    i--;
+  }
+  _nearDist[base + i] = d2;
+  _nearSlot[base + i] = lightIndex;
+  _nearCount[caster] = n + 1;
+}
 let _pairDistScratch = new Float32Array(0);
 
 function cmpPairByIdx(a, b) {
@@ -169,6 +207,8 @@ export function rtPixelScale(canvasPx, rtPx) {
  * `lightBegin` + `lightStride` split `_collectStampLights` across workers.
  * Returns the stamp instance cursor (dstBase + written).
  * Pair set matches a serial walk when maxPerEntity is 0 (default).
+ * When maxPerEntity > 0, each caster keeps that many closest lights. The
+ * per-caster slots are module scratch, grown only when the caster count grows.
  */
 export function stampLightRange({
   sun,
@@ -180,7 +220,6 @@ export function stampLightRange({
   lightStride,
   maxPerLight,
   maxPerEntity,
-  used,
   tmpIdx,
   dist,
   order,
@@ -203,15 +242,15 @@ export function stampLightRange({
   if (begin < 0) begin = 0;
   const maxPL = maxPerLight | 0;
   const maxPE = maxPerEntity | 0;
-  if (used && maxPE > 0 && nSun > 0) used.fill(0, 0, nSun);
   let cursor = stampBase | 0;
   const cap = stampCap | 0;
   if (!sun || !stamp || nSun <= 0 || !lights || !tmpIdx || !dist || !keepIdx || !lightVec) return cursor;
+  if (maxPE > 0) ensureNearest(nSun, maxPE);
   const tmpCap = tmpIdx.length | 0;
   const grid = gridCounts && gridStarts && gridItems
     ? buildStampGrid(sun, nSun, sf, gridCounts, gridStarts, gridItems)
     : null;
-  for (let i = begin; i < capL && cursor < cap; i += stride) {
+  for (let i = begin; i < capL && (maxPE > 0 || cursor < cap); i += stride) {
     const L = lights[i];
     if (!L || !(L.rangeSq > 0) || !(L.intensity > 0)) continue;
     const lim = (L.maxShadows > 0)
@@ -239,7 +278,6 @@ export function stampLightRange({
           const to = gridStarts[cell + 1];
           for (let p = from; p < to && m < tmpCap; p++) {
             const c = gridItems[p];
-            if (maxPE > 0 && used[c] >= maxPE) continue;
             const b = c * sf;
             const dx = sun[b] - lx;
             const dy = sun[b + 1] - ly;
@@ -253,7 +291,6 @@ export function stampLightRange({
       }
     } else {
       for (let c = 0; c < nSun && m < tmpCap; c++) {
-        if (maxPE > 0 && used[c] >= maxPE) continue;
         const b = c * sf;
         const dx = sun[b] - lx;
         const dy = sun[b + 1] - ly;
@@ -272,7 +309,14 @@ export function stampLightRange({
     if (m <= 0) continue;
     m = takeClosest(tmpIdx, dist, order, m, lim, keepIdx);
     if (maxPE > 0) {
-      for (let k = 0; k < m; k++) used[keepIdx[k]]++;
+      for (let k = 0; k < m; k++) {
+        const c = keepIdx[k];
+        const b = c * sf;
+        const dx = sun[b] - lx;
+        const dy = sun[b + 1] - ly;
+        noteNearest(c, i, dx * dx + dy * dy, maxPE);
+      }
+      continue;
     }
     lightVec[0] = lx;
     lightVec[1] = ly;
@@ -285,6 +329,25 @@ export function stampLightRange({
       for (let k = cursor; k < written; k++) stampLightIdx[k] = i;
     }
     cursor = written;
+  }
+  if (maxPE <= 0) return cursor;
+  for (let c = 0; c < nSun && cursor < cap; c++) {
+    const n = _nearCount[c];
+    const base = c * maxPE;
+    for (let k = 0; k < n && cursor < cap; k++) {
+      const li = _nearSlot[base + k];
+      const L = lights[li];
+      lightVec[0] = L.x;
+      lightVec[1] = L.y;
+      lightVec[2] = L.intensity;
+      lightVec[3] = L.rangeSq;
+      keepIdx[0] = c;
+      const written = appendStampedCasters(
+        stamp, stampFloats, cursor, sun, sf, keepIdx, 1, lightVec, cap, 0
+      );
+      if (stampLightIdx && written > cursor) stampLightIdx[cursor] = li;
+      cursor = written;
+    }
   }
   return cursor;
 }

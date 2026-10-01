@@ -7,7 +7,7 @@ import { DecorationSpatial } from './decorationSpatial.js';
 import { DecorationPool, decorationNoParent } from './decorationPool.js';
 import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from '../util/decorationSway.js';
 
-export { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from '../util/decorationSway.js';
+export { SWAY_OFF, SWAY_LOOP, SWAY_LOOP_SKEW, SWAY_IMPULSE } from '../util/decorationSway.js';
 
 export class Decoration {
   /**

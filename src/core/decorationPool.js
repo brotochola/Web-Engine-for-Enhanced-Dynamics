@@ -24,7 +24,7 @@ import {
   ENTITY_GLOW_SORT_BIAS,
 } from '../util/configDefaults.js';
 import { entityIdNone } from '../util/entityIdWidth.js';
-import { bucketFromSwayFrequency, swayFrequencyForBucket } from '../util/decorationSway.js';
+import { bucketFromSwayFrequency, swayFrequencyForBucket, SWAY_LOOP, SWAY_LOOP_SKEW } from '../util/decorationSway.js';
 
 export {
   DECORATION_Y_SORT_SCALE,
@@ -42,6 +42,7 @@ export const DECORATION_NO_PARENT = 0xffff;
 export {
   SWAY_OFF,
   SWAY_LOOP,
+  SWAY_LOOP_SKEW,
   SWAY_IMPULSE,
   SWAY_ANGLE_PER_MS,
   advanceImpulsePhase,
@@ -268,6 +269,7 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {number} [config.offsetX=0] - Offset X for depth sorting (sprite renders at x, sorts at x+offsetX)
    * @param {number} [config.offsetY=0] - Offset Y for depth sorting (sprite renders at y, sorts at y+offsetY)
    * @param {boolean} [config.sway=false] - Enable sway animation
+   * @param {boolean} [config.swaySkew=false] - Shear the sway instead of rotating it
    * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
    * @param {number} [config.swayFrequency=1.0] - Sway speed multiplier. Snapped onto the 1..3 grid when swayFrequencyBuckets > 1
    * @param {string|number} [config.layer] - Subscribe to one layer (same as layers: [layer])
@@ -388,7 +390,7 @@ export class DecorationPool extends SharedAtomicPool {
     decorationTextureId[i] = textureId;
 
     // Sway animation. Buckets > 1: store the grid frequency the particle worker already uses.
-    sway[i] = config.sway ? 1 : 0;
+    sway[i] = config.swaySkew ? SWAY_LOOP_SKEW : config.sway ? SWAY_LOOP : 0;
     swayAmplitude[i] = config.swayAmplitude ?? 0.025;
     {
       const freq = config.swayFrequency ?? 1.0;

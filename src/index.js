@@ -101,6 +101,7 @@ export {
   decorationNoParent,
   SWAY_OFF,
   SWAY_LOOP,
+  SWAY_LOOP_SKEW,
   SWAY_IMPULSE,
 } from './core/decorationPool.js';
 export { Decoration } from './core/decoration.js';
@@ -227,6 +228,7 @@ import {
   decorationNoParent,
   SWAY_OFF,
   SWAY_LOOP,
+  SWAY_LOOP_SKEW,
   SWAY_IMPULSE,
 } from './core/decorationPool.js';
 import { Decoration } from './core/decoration.js';
@@ -390,6 +392,7 @@ const WEED = Object.freeze({
   DecorationSpatial,
   SWAY_OFF,
   SWAY_LOOP,
+  SWAY_LOOP_SKEW,
   SWAY_IMPULSE,
 
   // Bullets

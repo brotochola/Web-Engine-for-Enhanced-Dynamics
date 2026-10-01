@@ -7,8 +7,10 @@ import { DecorationComponent } from '../components/decorationComponent.js';
 import { DecorationPool } from '../core/decorationPool.js';
 import {
   SWAY_LOOP,
+  SWAY_LOOP_SKEW,
   SWAY_IMPULSE,
   SWAY_OFF,
+  SWAY_SKEW_C,
   SWAY_ANGLE_PER_MS,
   IMPULSE_DONE,
   advanceImpulsePhase,
@@ -873,7 +875,7 @@ class ParticleWorker extends AbstractWorker {
 
       const mode = sway[i];
       let delta = 0;
-      if (mode === SWAY_LOOP) {
+      if (mode === SWAY_LOOP || mode === SWAY_LOOP_SKEW) {
         delta = Math.sin(swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
       } else if (mode === SWAY_IMPULSE) {
         const nextPhase = advanceImpulsePhase(swayPhase[i], deltaTime, swayFrequency[i]);
@@ -886,7 +888,10 @@ class ParticleWorker extends AbstractWorker {
           delta = Math.sin(nextPhase) * swayAmplitude[i];
         }
       }
-      if (delta !== 0) {
+      if (mode === SWAY_LOOP_SKEW) {
+        rotC[i] = SWAY_SKEW_C;
+        rotS[i] = delta;
+      } else if (delta !== 0) {
         const ad = delta < 0 ? -delta : delta;
         const dc = ad < 0.08 ? 1 : Math.cos(delta);
         const ds = ad < 0.08 ? delta : Math.sin(delta);
@@ -1137,8 +1142,13 @@ class ParticleWorker extends AbstractWorker {
       const bc = baseRotC[i];
       const bs = baseRotS[i];
       let delta = 0;
-      if (mode === SWAY_LOOP) {
+      if (mode === SWAY_LOOP || mode === SWAY_LOOP_SKEW) {
         delta = Math.sin(swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
+        if (mode === SWAY_LOOP_SKEW) {
+          rotC[i] = SWAY_SKEW_C;
+          rotS[i] = delta;
+          continue;
+        }
       } else if (mode === SWAY_IMPULSE) {
         const nextPhase = advanceImpulsePhase(swayPhase[i], deltaTime, swayFrequency[i]);
         if (nextPhase === IMPULSE_DONE) {
@@ -1204,9 +1214,14 @@ class ParticleWorker extends AbstractWorker {
       const bc = baseRotC[i];
       const bs = baseRotS[i];
       let delta = 0;
-      if (mode === SWAY_LOOP) {
+      if (mode === SWAY_LOOP || mode === SWAY_LOOP_SKEW) {
         const b = bucketFromSwayFrequency(swayFrequency[i], k);
         delta = (sA[b] * phaseCos[i] + cA[b] * phaseSin[i]) * swayAmplitude[i];
+        if (mode === SWAY_LOOP_SKEW) {
+          rotC[i] = SWAY_SKEW_C;
+          rotS[i] = delta;
+          continue;
+        }
       } else if (mode === SWAY_IMPULSE) {
         const nextPhase = advanceImpulsePhase(swayPhase[i], deltaTime, swayFrequency[i]);
         if (nextPhase === IMPULSE_DONE) {

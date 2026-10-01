@@ -80,9 +80,10 @@ fn mainVert(
   let local = (content - aInstAnchor * aInstSize) * aInstScale;
   let c = aInstRotCS.x;
   let s = aInstRotCS.y;
-  let rotated = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
+  let spun = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
+  let sheared = vec2<f32>(local.x + local.y * s, local.y);
   let xy = mix(aInstPrevXY, aInstXY, uniforms.uPoseAlpha);
-  let world = rotated + xy;
+  let world = select(spun, sheared, c > 1.0) + xy;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(world, 1.0);
   out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);
