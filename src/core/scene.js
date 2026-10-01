@@ -715,6 +715,7 @@ class Scene {
       ySort: this.config.renderer.ySort,
       packGpuSprites: this.config.preRender.packGpuSprites,
       sortSprites: this.config.preRender.sortSprites,
+      rendererInterpolation: this.config.renderer.interpolation === true,
     });
     this.config.preRender.packGpuSprites = spritePipe.packGpuSprites;
     this.config.preRender.sortSprites = spritePipe.sortSprites;

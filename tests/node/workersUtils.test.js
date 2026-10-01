@@ -26,7 +26,7 @@ test('single-worker stats readers share the same buffer layout', () => {
   assert.equal(reader[RENDERER_STATS.MSG_MS], 2.5);
 });
 
-test('RENDERER_STATS peel load keys sit inside stride 35', () => {
+test('RENDERER_STATS peel load keys sit inside stride 37', () => {
   assert.equal(RENDERER_STATS.DECAL_TILES_DIRTY, 16);
   assert.equal(RENDERER_STATS.DECAL_TILES_UPLOADED, 17);
   assert.equal(RENDERER_STATS.SCENERY_COUNT, 18);
@@ -38,8 +38,10 @@ test('RENDERER_STATS peel load keys sit inside stride 35', () => {
   assert.equal(RENDERER_STATS.GPU_CUSTOM_MS, 32);
   assert.equal(RENDERER_STATS.GPU_TIMER, 33);
   assert.equal(RENDERER_STATS.GPU_SORT_MS, 34);
-  assert.equal(RENDERER_STATS.STRIDE_FLOATS, 35);
-  assert.equal(RENDERER_STATS.BUFFER_SIZE, 35 * 4);
+  assert.equal(RENDERER_STATS.LAST_UPLOAD_MS, 35);
+  assert.equal(RENDERER_STATS.NEW_QUEUE, 36);
+  assert.equal(RENDERER_STATS.STRIDE_FLOATS, 37);
+  assert.equal(RENDERER_STATS.BUFFER_SIZE, 37 * 4);
   const buffer = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);
   const writer = createStatsWriter(buffer, RENDERER_STATS);
   const reader = createStatsReader(buffer, RENDERER_STATS);
@@ -75,9 +77,10 @@ test('getEntityHomeCellIndex returns -1 when out of bounds', () => {
   assert.equal(getEntityHomeCellIndex(10, 999, 0.1, 4, 4), -1);
 });
 
-test('PRE_RENDER_STATS WAIT_MS sits inside stride 17', () => {
+test('PRE_RENDER_STATS sprite pack sits past the old stride', () => {
   assert.equal(PRE_RENDER_STATS.ADOBE_MS, 15);
   assert.equal(PRE_RENDER_STATS.WAIT_MS, 16);
-  assert.equal(PRE_RENDER_STATS.STRIDE_FLOATS, 17);
-  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE, 17 * 4);
+  assert.equal(PRE_RENDER_STATS.SPRITE_PACK_MS, 17);
+  assert.equal(PRE_RENDER_STATS.STRIDE_FLOATS, 18);
+  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE, 18 * 4);
 });

@@ -453,6 +453,8 @@ class PixiRenderer extends AbstractWorker {
     this.lightsTimeThisFrame = 0;
     this.shadowsTimeThisFrame = 0;
     this.spritesTimeThisFrame = 0;
+    this._lastUploadMs = 0;
+    this._newQueueThisFrame = 0;
     this.sortTimeThisFrame = 0;
     this.queueTimeThisFrame = 0;
     this.presentTimeThisFrame = 0;
@@ -1081,6 +1083,8 @@ class PixiRenderer extends AbstractWorker {
         this.stats[RENDERER_STATS.LIGHTS_MS] = this.lightsTimeThisFrame;
         this.stats[RENDERER_STATS.SHADOWS_MS] = this.shadowsTimeThisFrame;
         this.stats[RENDERER_STATS.SPRITES_MS] = this.spritesTimeThisFrame;
+        this.stats[RENDERER_STATS.LAST_UPLOAD_MS] = this._lastUploadMs;
+        this.stats[RENDERER_STATS.NEW_QUEUE] = this._newQueueThisFrame;
         this.stats[RENDERER_STATS.SORT_MS] = this.sortTimeThisFrame;
         this.stats[RENDERER_STATS.QUEUE_MS] = this.queueTimeThisFrame;
         this.stats[RENDERER_STATS.PRESENT_MS] = this.presentTimeThisFrame;
@@ -1795,7 +1799,10 @@ class PixiRenderer extends AbstractWorker {
     const started = this.collectDetailedStats ? performance.now() : 0;
     const sortBefore = this.sortTimeThisFrame;
     this.updateSpritesFromRenderQueue();
-    if (started) this.spritesTimeThisFrame = performance.now() - started - (this.sortTimeThisFrame - sortBefore);
+    if (started) {
+      this.spritesTimeThisFrame = performance.now() - started - (this.sortTimeThisFrame - sortBefore);
+      this._lastUploadMs = this.spritesTimeThisFrame;
+    }
   }
 
   drawFrameCustomLayers() {
@@ -1848,6 +1855,7 @@ class PixiRenderer extends AbstractWorker {
     if (!this.presentationIsActive()) this._stopGpuClock();
     this.rememberDeltaTime(deltaTime);
     const consumedNewFrame = this.consumeNextRenderQueue();
+    this._newQueueThisFrame = consumedNewFrame ? 1 : 0;
     this.presentTimeThisFrame = 0;
     if (!this.gpuIsAvailable()) return;
 
@@ -5115,6 +5123,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       ySort: this._ySortMode,
       packGpuSprites: preCfg.packGpuSprites,
       sortSprites: preCfg.sortSprites,
+      rendererInterpolation: this._queueInterp,
     });
     this._packGpuSpritesOn = spritePipe.packGpuSprites;
     this._lightGlowAdd = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite';

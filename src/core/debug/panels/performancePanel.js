@@ -21,7 +21,7 @@ import {
   displayDetailStart,
 } from '../stats/statsCollector.js';
 
-const COMMON_KEYS = ['STEP_MS', 'LOAD', 'FPS', 'MSG_MS'];
+const COMMON_KEYS = ['STEP_MS', 'LOAD', 'FPS'];
 const LEAN_KEYS = ['STEP_MS', 'LOAD', 'FPS'];
 const SCHEMA_BY_TYPE = {
   renderer: RENDERER_STATS,
@@ -144,7 +144,6 @@ export class PerformancePanel {
         STEP_MS: true,
         LOAD: true,
         FPS: true,
-        MSG_MS: false,
       }),
     );
 
@@ -298,7 +297,7 @@ export class PerformancePanel {
     metrics.appendChild(step);
     this.elements.audioStats.STEP_MS = step;
 
-    for (const key of ['LOAD', 'FPS', 'MSG_MS']) {
+    for (const key of ['LOAD', 'FPS']) {
       metrics.appendChild(this._metricCell('audio', key, true));
     }
 
@@ -340,7 +339,18 @@ export class PerformancePanel {
         const chip = document.createElement('span');
         chip.className = 'debug-ui-worker-detail';
         if (stat.kind) chip.classList.add(`kind-${stat.kind}`);
-        chip.textContent = `${stat.label}: —`;
+        if (workerType === 'preRender' || workerType === 'renderer') {
+          const label = document.createElement('span');
+          label.textContent = `${stat.label}:`;
+          const value = document.createElement('span');
+          value.className = 'debug-ui-worker-detail-value';
+          value.classList.add(stat.kind === 'count' ? 'is-count' : 'is-ms');
+          value.textContent = '—';
+          chip.appendChild(label);
+          chip.appendChild(value);
+        } else {
+          chip.textContent = `${stat.label}: —`;
+        }
         details.appendChild(chip);
         elements[stat.key] = chip;
       }
@@ -621,7 +631,12 @@ export class PerformancePanel {
         el.textContent = formatted;
         if (stat.key === 'LOAD') this._setLoadBar(elements._loadFill, rawValue);
       } else {
-        el.textContent = `${stat.label}: ${formatted}`;
+        const valueEl = el.firstElementChild ? el.lastElementChild : null;
+        if (valueEl && valueEl.classList.contains('debug-ui-worker-detail-value')) {
+          valueEl.textContent = formatted;
+        } else {
+          el.textContent = `${stat.label}: ${formatted}`;
+        }
       }
     }
   }

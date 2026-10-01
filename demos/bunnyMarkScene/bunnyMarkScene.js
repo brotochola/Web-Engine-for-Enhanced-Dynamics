@@ -58,7 +58,7 @@ export class BunnyMarkScene extends Scene {
         preRender: {
             skipCull: true,
             interpolation: false,
-            packGpuSprites: bunnySearchParam('packGpuSprites') || 'pixi',
+            packGpuSprites: "pixi",// bunnySearchParam('packGpuSprites') || 'pixi',
         },
         lighting: { enabled: false },
     };

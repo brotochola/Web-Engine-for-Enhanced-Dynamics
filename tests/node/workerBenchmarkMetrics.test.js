@@ -153,7 +153,7 @@ test('PHYSICS_STATS LF pass slots 37-44 stay inside stride 48', () => {
 
 test('GPU row has no JsShadows and Rest is Step minus time chips', () => {
   const gpu = WORKER_DISPLAY_CONFIG.gpu;
-  assert.equal(gpu.omitMsg, true);
+  assert.equal(gpu.stats.some((r) => r.key === 'MSG_MS'), false);
   assert.equal(gpu.stats.some((r) => r.key === 'SHADOWS_MS'), false);
   const view = new Float32Array(RENDERER_STATS.STRIDE_FLOATS);
   assert.equal(gpu.stats.some((r) => r.key === 'GPU_CUSTOM_MS'), true);

@@ -64,8 +64,12 @@ export const RENDERER_STATS = Object.freeze({
   GPU_TIMER: 33,
   /** GPU timestamp for a sort pass, when the timer is on. 0 otherwise. */
   GPU_SORT_MS: 34,
-  STRIDE_FLOATS: 35,
-  BUFFER_SIZE: 35 * 4,
+  /** Last frame that uploaded sprites. Not cleared on interpolation-only frames. Not part of Step. */
+  LAST_UPLOAD_MS: 35,
+  /** 1 when this frame consumed a new render queue. 0 when it only interpolated. */
+  NEW_QUEUE: 36,
+  STRIDE_FLOATS: 37,
+  BUFFER_SIZE: 37 * 4,
 });
 
 /**
@@ -217,14 +221,17 @@ export const PRE_RENDER_STATS = Object.freeze({
   SORT_MS: 10,
   EMIT_MS: 11,
   CUSTOM_LAYER_MS: 12,
+  /** Shadow instance rows only (sun, stamp, cookies). Sprite rows are SPRITE_PACK_MS. */
   SHADOW_Q_MS: 13,
   VISIBILITY_MS: 14,
   ADOBE_MS: 15,
   WAIT_MS: 16,
-  STRIDE_FLOATS: 17,
-  BUFFER_SIZE_PER_WORKER: 17 * 4,
+  /** Sprite-queue instance rows. Sort time stays in SORT_MS. */
+  SPRITE_PACK_MS: 17,
+  STRIDE_FLOATS: 18,
+  BUFFER_SIZE_PER_WORKER: 18 * 4,
   /** One worker. Multi-worker buffers are BUFFER_SIZE_PER_WORKER * N. */
-  BUFFER_SIZE: 17 * 4,
+  BUFFER_SIZE: 18 * 4,
 });
 
 /**
@@ -311,18 +318,17 @@ export function computeRestMs(config, view, schema) {
   return step - sum;
 }
 
-export function displayHeadKeys(config, detailed) {
-  if (!detailed || config?.omitMsg) return ['STEP_MS', 'LOAD', 'FPS'];
-  return ['STEP_MS', 'LOAD', 'FPS', 'MSG_MS'];
+export function displayHeadKeys() {
+  return ['STEP_MS', 'LOAD', 'FPS'];
 }
 
-export function displayDetailStart(config) {
-  return config?.omitMsg ? 3 : 4;
+export function displayDetailStart() {
+  return 3;
 }
 
 /**
  * Display configuration for worker stats.
- * First keys (Step / Load / Fps / Msg, GPU omits Msg) are common columns.
+ * First keys (Step / Load / Fps) are common columns.
  * Remaining stats go in Details. kind time partitions Step; Rest is derived.
  */
 export const WORKER_DISPLAY_CONFIG = Object.freeze({
@@ -333,11 +339,12 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'STEP_MS', label: 'Step', format: fmtMs },
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
-      { key: 'MSG_MS', label: 'Msg', format: fmtMs },
       { key: 'QUEUE_MS', label: 'Queue', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'LIGHTS_MS', label: 'Lights', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'SHADOWS_MS', label: 'Shadows', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'SPRITES_MS', label: 'SpritesMs', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'SPRITES_MS', label: 'Upload', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'LAST_UPLOAD_MS', label: 'LastUp', format: fmtMs },
+      { key: 'NEW_QUEUE', label: 'NewQ', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'SORT_MS', label: 'Sort', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'CUSTOM_LAYERS_MS', label: 'Custom', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'MISC_MS', label: 'Misc', format: fmtMs, kind: STAT_KIND.TIME },
@@ -351,7 +358,6 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
   gpu: {
     label: 'GPU',
     color: 'gpu',
-    omitMsg: true,
     stats: [
       { key: 'STEP_MS', label: 'Step', format: fmtMs, src: 'GPU_STEP_MS' },
       LOAD_STAT,
@@ -374,7 +380,6 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'STEP_MS', label: 'Step', format: fmtMs },
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
-      { key: 'MSG_MS', label: 'Msg', format: fmtMs },
       { key: 'DECAL_STAMP_MS', label: 'Stamp', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'PARTICLE_PHYSICS_MS', label: 'Sim', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'BUILD_ACTIVE_VISIBLE_MS', label: 'Lists', format: fmtMs, kind: STAT_KIND.TIME },
@@ -390,7 +395,6 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'STEP_MS', label: 'Step', format: fmtMs },
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
-      { key: 'MSG_MS', label: 'Msg', format: fmtMs },
       { key: 'BOX2D_MS', label: 'Box2d', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'LIQUIDFUN_MS', label: 'LiquidFun', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
@@ -421,7 +425,6 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'STEP_MS', label: 'Step', format: fmtMs },
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
-      { key: 'MSG_MS', label: 'Msg', format: fmtMs },
       { key: 'REBUILD_MS', label: 'Rebuild', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'NEIGHBOR_MS', label: 'Search', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
@@ -438,7 +441,6 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'STEP_MS', label: 'Step', format: fmtMs },
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
-      { key: 'MSG_MS', label: 'Msg', format: fmtMs },
       { key: 'RAYCAST_MS', label: 'Ray', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'BOX2D_RAYCAST_MS', label: 'Box2dRay', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'ENTITY_MS', label: 'Entity', format: fmtMs, kind: STAT_KIND.TIME },
@@ -459,12 +461,12 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'STEP_MS', label: 'Step', format: fmtMs },
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
-      { key: 'MSG_MS', label: 'Msg', format: fmtMs },
       { key: 'COLLECT_MS', label: 'Collect', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'SORT_MS', label: 'Sort', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'EMIT_MS', label: 'Emit', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'CUSTOM_LAYER_MS', label: 'Custom', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'SHADOW_Q_MS', label: 'ShadowQ', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'SPRITE_PACK_MS', label: 'SpritePack', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'SHADOW_Q_MS', label: 'ShadowPack', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'VISIBILITY_MS', label: 'Vis', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'ADOBE_MS', label: 'Adobe', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },

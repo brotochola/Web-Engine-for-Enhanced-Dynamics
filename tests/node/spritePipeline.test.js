@@ -88,3 +88,48 @@ test('resolveSpritePipeline: unknown sort throws', () => {
     (err) => err.message === errorSortSpritesInvalid('radix')
   );
 });
+
+function withWarns(fn) {
+  const warnings = [];
+  const orig = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    return { pipe: fn(), warnings };
+  } finally {
+    console.warn = orig;
+  }
+}
+
+test('resolveSpritePipeline: interpolation moves preRender pack to pixi', () => {
+  const { pipe, warnings } = withWarns(() => resolveSpritePipeline({
+    ySort: false,
+    packGpuSprites: PACK_GPU_SPRITES_PRERENDER,
+    rendererInterpolation: true,
+  }));
+  assert.equal(pipe.packGpuSprites, PACK_GPU_SPRITES_PIXI);
+  assert.equal(pipe.sortSprites, SORT_SPRITES_NONE);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /renderer\.interpolation/);
+  assert.match(warnings[0], /packGpuSprites/);
+});
+
+test('resolveSpritePipeline: interpolation moves ySort painter to pixi', () => {
+  const { pipe, warnings } = withWarns(() => resolveSpritePipeline({
+    ySort: 'cpu',
+    rendererInterpolation: true,
+  }));
+  assert.equal(pipe.packGpuSprites, PACK_GPU_SPRITES_PIXI);
+  assert.equal(pipe.sortSprites, SORT_SPRITES_PIXI);
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[1], /sortSprites/);
+});
+
+test('resolveSpritePipeline: interpolation with pixi pack does not warn', () => {
+  const { pipe, warnings } = withWarns(() => resolveSpritePipeline({
+    ySort: false,
+    packGpuSprites: PACK_GPU_SPRITES_PIXI,
+    rendererInterpolation: true,
+  }));
+  assert.equal(pipe.packGpuSprites, PACK_GPU_SPRITES_PIXI);
+  assert.equal(warnings.length, 0);
+});

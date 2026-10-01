@@ -28,6 +28,7 @@ function formatWorkerConsoleLine(worker) {
     if (avg.COLLECT_MS != null) line += ` | COLLECT_MS ${Number(avg.COLLECT_MS).toFixed(3)}`;
     if (avg.EMIT_MS != null) line += ` | EMIT_MS ${Number(avg.EMIT_MS).toFixed(3)}`;
     if (avg.SORT_MS != null) line += ` | SORT_MS ${Number(avg.SORT_MS).toFixed(3)}`;
+    if (avg.SPRITE_PACK_MS != null) line += ` | SPRITE_PACK_MS ${Number(avg.SPRITE_PACK_MS).toFixed(3)}`;
     if (avg.SHADOW_Q_MS != null) line += ` | SHADOW_Q_MS ${Number(avg.SHADOW_Q_MS).toFixed(3)}`;
     if (avg.WAIT_MS != null) line += ` | WAIT_MS ${Number(avg.WAIT_MS).toFixed(3)}`;
     if (avg.RENDER_QUEUE_SIZE != null) line += ` | QUEUE ${Number(avg.RENDER_QUEUE_SIZE).toFixed(0)}`;

@@ -143,6 +143,7 @@ class PreRenderWorker extends AbstractWorker {
         this.sortTimeThisFrame = 0;
         this.emitTimeThisFrame = 0;
         this.customLayerTimeThisFrame = 0;
+        this.spritePackTimeThisFrame = 0;
         this.shadowQTimeThisFrame = 0;
         this.visibilityTimeThisFrame = 0;
         this.adobeTimeThisFrame = 0;
@@ -514,6 +515,7 @@ class PreRenderWorker extends AbstractWorker {
             ySort: this._ySortMode,
             packGpuSprites: preRenderConfig.packGpuSprites,
             sortSprites: preRenderConfig.sortSprites,
+            rendererInterpolation: rendererConfig.interpolation === true,
         });
         this._packGpuSpritesOn = spritePipe.packGpuSprites;
         this._sortSprites = spritePipe.sortSprites;
@@ -910,6 +912,7 @@ class PreRenderWorker extends AbstractWorker {
         this.sortTimeThisFrame = 0;
         this.emitTimeThisFrame = 0;
         this.customLayerTimeThisFrame = 0;
+        this.spritePackTimeThisFrame = 0;
         this.shadowQTimeThisFrame = 0;
         this.visibilityTimeThisFrame = 0;
         this.adobeTimeThisFrame = 0;
@@ -918,15 +921,7 @@ class PreRenderWorker extends AbstractWorker {
 
     packSpriteAndShadowQueues() {
         if (!this.gpuQueueBuffers) return;
-        const detail = this.collectDetailedStats;
-        const started = detail ? performance.now() : 0;
-        const sortBefore = this.sortTimeThisFrame;
         this._packGpuQueues(this.gpuQueueBuffers[this._queueBuf]);
-        if (detail) {
-            const packed = performance.now() - started;
-            const sortDelta = this.sortTimeThisFrame - sortBefore;
-            this.shadowQTimeThisFrame = packed - (sortDelta > 0 ? sortDelta : 0);
-        }
     }
 
     publishFrame() {
@@ -3048,10 +3043,20 @@ class PreRenderWorker extends AbstractWorker {
 
     _packGpuQueues(dst) {
         if (!dst || !this.gpuQueueCaps) return;
+        const detail = this.collectDetailedStats;
+        const tSprites = detail ? performance.now() : 0;
+        const sortBefore = this.sortTimeThisFrame;
         clearGpuQueueHeader(dst.header);
         const q = this._gpuSoAFromBound();
         if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
         const sprites = this._packGpuSprites(dst, q, this._allowGpuPainter());
+        if (detail) {
+            const sortDelta = this.sortTimeThisFrame - sortBefore;
+            let ms = performance.now() - tSprites;
+            if (sortDelta > 0) ms -= sortDelta;
+            this.spritePackTimeThisFrame = ms > 0 ? ms : 0;
+        }
+        const tShadows = detail ? performance.now() : 0;
         const shadows = this._packGpuShadows(dst, q);
         const counts = this._gpuCounts || (this._gpuCounts = {});
         counts.sprite = sprites.sprite | 0;
@@ -3062,6 +3067,7 @@ class PreRenderWorker extends AbstractWorker {
         counts.cookie = shadows.cookie | 0;
         counts.flags = sprites.flags | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
+        if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
     }
 
     /**
@@ -3410,6 +3416,7 @@ class PreRenderWorker extends AbstractWorker {
         this.stats[PRE_RENDER_STATS.SORT_MS] = this.sortTimeThisFrame;
         this.stats[PRE_RENDER_STATS.EMIT_MS] = this.emitTimeThisFrame;
         this.stats[PRE_RENDER_STATS.CUSTOM_LAYER_MS] = this.customLayerTimeThisFrame;
+        this.stats[PRE_RENDER_STATS.SPRITE_PACK_MS] = this.spritePackTimeThisFrame;
         this.stats[PRE_RENDER_STATS.SHADOW_Q_MS] = this.shadowQTimeThisFrame;
         this.stats[PRE_RENDER_STATS.VISIBILITY_MS] = this.visibilityTimeThisFrame;
         this.stats[PRE_RENDER_STATS.ADOBE_MS] = this.adobeTimeThisFrame;

@@ -186,6 +186,7 @@ export function extractMetrics(report) {
     COLLECT_MS: preRender.COLLECT_MS ?? 0,
     EMIT_MS: preRender.EMIT_MS ?? 0,
     SORT_MS: preRender.SORT_MS ?? 0,
+    SPRITE_PACK_MS: preRender.SPRITE_PACK_MS ?? 0,
     SHADOW_Q_MS: preRender.SHADOW_Q_MS ?? 0,
     WAIT_MS: preRender.WAIT_MS ?? 0,
     RENDER_QUEUE_SIZE: preRender.RENDER_QUEUE_SIZE ?? 0,

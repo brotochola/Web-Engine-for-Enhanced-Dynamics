@@ -44,7 +44,7 @@ export function errorSortSpritesInvalid(value) {
 
 /**
  * One owner for GPU sprite pack, one owner for the CPU painter. Never both sort.
- * @param {{ ySort?: unknown, packGpuSprites?: unknown, sortSprites?: unknown }} opts
+ * @param {{ ySort?: unknown, packGpuSprites?: unknown, sortSprites?: unknown, rendererInterpolation?: unknown }} opts
  * @returns {{ packGpuSprites: 'preRender'|'pixi', sortSprites: 'none'|'preRender'|'pixi' }}
  */
 export function resolveSpritePipeline(opts) {
@@ -69,6 +69,19 @@ export function resolveSpritePipeline(opts) {
   }
 
   if (!yOn) sort = SORT_SPRITES_NONE;
+
+  if (o.rendererInterpolation === true && pack === PACK_GPU_SPRITES_PRERENDER) {
+    console.warn(
+      'WeedJS: renderer.interpolation ignores GPU sprite rows packed on the pre-render worker. Sprite pack runs on Pixi. Set preRender.packGpuSprites to "pixi".'
+    );
+    pack = PACK_GPU_SPRITES_PIXI;
+    if (sort === SORT_SPRITES_PRERENDER) {
+      console.warn(
+        'WeedJS: renderer.interpolation ignores pre-render packed rows, so preRender.sortSprites "preRender" cannot run there. Painter sort runs on Pixi. Set preRender.sortSprites to "pixi".'
+      );
+      sort = SORT_SPRITES_PIXI;
+    }
+  }
 
   if (sort === SORT_SPRITES_PIXI && pack === PACK_GPU_SPRITES_PRERENDER) {
     throw new Error(
