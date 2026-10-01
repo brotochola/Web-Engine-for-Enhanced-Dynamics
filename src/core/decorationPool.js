@@ -24,6 +24,7 @@ import {
   ENTITY_GLOW_SORT_BIAS,
 } from '../util/configDefaults.js';
 import { entityIdNone } from '../util/entityIdWidth.js';
+import { bucketFromSwayFrequency, swayFrequencyForBucket } from '../util/decorationSway.js';
 
 export {
   DECORATION_Y_SORT_SCALE,
@@ -60,6 +61,9 @@ export class DecorationPool extends SharedAtomicPool {
   static _attachedDecorationIndices = null; // Uint16Array length entityCount * maxAttached
   static _attachmentEntityCount = 0;
   static _maxAttachedPerEntity = 0;
+
+  /** From particle.swayFrequencyBuckets. >1 snaps spawn swayFrequency onto the 1..3 grid. */
+  static swayFrequencyBuckets = 0;
 
   /**
    * Get count of active decorations from the compact list
@@ -265,7 +269,7 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {number} [config.offsetY=0] - Offset Y for depth sorting (sprite renders at y, sorts at y+offsetY)
    * @param {boolean} [config.sway=false] - Enable sway animation
    * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
-   * @param {number} [config.swayFrequency=1.0] - Sway speed multiplier
+   * @param {number} [config.swayFrequency=1.0] - Sway speed multiplier. Snapped onto the 1..3 grid when swayFrequencyBuckets > 1
    * @param {string|number} [config.layer] - Subscribe to one layer (same as layers: [layer])
    * @param {Array<string|number>} [config.layers] - Subscription list; omit = ENTITIES
    * @returns {number} - Index of spawned decoration, or -1 if pool is full
@@ -383,10 +387,15 @@ export class DecorationPool extends SharedAtomicPool {
     anchorY[i] = config.anchorY ?? 1;
     decorationTextureId[i] = textureId;
 
-    // Sway animation
+    // Sway animation. Buckets > 1: store the grid frequency the particle worker already uses.
     sway[i] = config.sway ? 1 : 0;
     swayAmplitude[i] = config.swayAmplitude ?? 0.025;
-    swayFrequency[i] = config.swayFrequency ?? 1.0;
+    {
+      const freq = config.swayFrequency ?? 1.0;
+      const k = this.swayFrequencyBuckets | 0;
+      swayFrequency[i] =
+        k > 1 ? swayFrequencyForBucket(bucketFromSwayFrequency(freq, k), k) : freq;
+    }
     DecorationComponent.swayPhase[i] = 0;
 
     DecorationComponent.layerMask[i] = Layer.resolveSubscriptions(config);
@@ -548,6 +557,7 @@ export class DecorationPool extends SharedAtomicPool {
     this._attachedDecorationIndices = null;
     this._attachmentEntityCount = 0;
     this._maxAttachedPerEntity = 0;
+    this.swayFrequencyBuckets = 0;
     DecorationSpatial.reset();
   }
 }

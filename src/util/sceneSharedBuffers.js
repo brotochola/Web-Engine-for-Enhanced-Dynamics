@@ -282,6 +282,7 @@ function initializeDecorationBuffers(scene) {
   resetFreeList(freeListTop, freeList, maxDecorations, 1);
 
   DecorationPool.initialize(maxDecorations);
+  DecorationPool.swayFrequencyBuckets = config.particle?.swayFrequencyBuckets | 0;
   DecorationPool.initializeFreeList(buffers.decorationFreeList, buffers.decorationFreeListTop);
 
   createCompactUint16ListPair(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);

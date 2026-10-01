@@ -7,7 +7,11 @@ import { DecorationComponent } from '../../src/components/decorationComponent.js
 import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
   tickDecorationSwayBuffers,
+  tickSwayFormula,
   checksumRot,
+  buildPhaseTables,
+  buildSinLut,
+  swayFrequencyForBucket,
   SWAY_LOOP,
   NO_PARENT,
 } from './decorationSwayKernel.mjs';
@@ -98,6 +102,90 @@ function assertApprox(actual, expected, eps, msg) {
   }
 }
 
+const FORMULA_NS = [8000, 20000];
+const FORMULA_TOL = 1e-3;
+const BUCKETS = { b32: 32, b100: 100 };
+
+function maxRotError(snapshot, count, rotC, rotS, refC, refS) {
+  let max = 0;
+  for (let n = 0; n < count; n++) {
+    const i = snapshot[n];
+    const dc = Math.abs(rotC[i] - refC[i]);
+    const ds = Math.abs(rotS[i] - refS[i]);
+    if (dc > max) max = dc;
+    if (ds > max) max = ds;
+  }
+  return max;
+}
+
+function runFormulaVariant(variant) {
+  const k = BUCKETS[variant] || 0;
+  if (variant !== 'base' && variant !== 'lut' && !k) throw new Error(`unknown variant ${variant}`);
+  setupPool(20000);
+  const soa = soaViews();
+  const phase = buildPhaseTables(20000);
+  const lut = variant === 'lut' ? buildSinLut() : null;
+  const sA = new Float32Array(k || 1);
+  const cA = new Float32Array(k || 1);
+  const mode = k ? { buckets: k, sA, cA, phaseSin: phase.phaseSin, phaseCos: phase.phaseCos } : { lut };
+  const rng = mulberry32(SEED);
+  const cases = {};
+  let worst = 0;
+  for (const n of FORMULA_NS) {
+    const snapshot = new Uint16Array(n);
+    for (let i = 0; i < n; i++) {
+      snapshot[i] = i;
+      DecorationComponent.active[i] = 1;
+      DecorationComponent.sway[i] = SWAY_LOOP;
+      DecorationComponent.swayAmplitude[i] = 0.05 + rng() * 0.03;
+      DecorationComponent.baseRotC[i] = 1;
+      DecorationComponent.baseRotS[i] = 0;
+      DecorationComponent.parentEntityIndex[i] = NO_PARENT;
+      DecorationComponent.swayFrequency[i] = k
+        ? swayFrequencyForBucket(i % k, k)
+        : 1 + rng() * 2;
+    }
+    const refC = new Float32Array(n);
+    const refS = new Float32Array(n);
+    for (let frame = 0; frame < 3; frame++) {
+      const angle = (1000 + frame * 16.67) * 0.002;
+      tickSwayFormula(snapshot, n, angle, soa, {});
+      for (let i = 0; i < n; i++) {
+        refC[i] = DecorationComponent.rotC[i];
+        refS[i] = DecorationComponent.rotS[i];
+      }
+      tickSwayFormula(snapshot, n, angle, soa, mode);
+      const err = maxRotError(snapshot, n, DecorationComponent.rotC, DecorationComponent.rotS, refC, refS);
+      if (err > worst) worst = err;
+    }
+    if (worst > FORMULA_TOL) {
+      throw new Error(`${variant} n=${n} max |rot| error ${worst} > ${FORMULA_TOL}`);
+    }
+    let angle = 2.5;
+    const key = n === 8000 ? 'n8k' : 'n20k';
+    cases[key] = timeIt(`sway ${variant} n=${n}`, () => {
+      angle += 0.033;
+      tickSwayFormula(snapshot, n, angle, soa, mode);
+    }, { iterations: 8, warmup: 4 });
+  }
+  const report = {
+    feature: 'decoration-sway-formula',
+    variant,
+    n: FORMULA_NS,
+    seed: SEED,
+    checksum: 0x5ea7,
+    maxAbsRotError: worst,
+    tolerance: FORMULA_TOL,
+    note: 'checksum is the tolerance pass, not bit-identical rot. lut/buckets stay within 1e-3 of Math.sin on the same frequencies.',
+    cases,
+  };
+  if (OUTPUT) writeReport(OUTPUT, report);
+  else console.log(`${variant} maxAbs ${worst}`);
+}
+
+if (args.variant) {
+  runFormulaVariant(String(args.variant));
+} else {
 setupPool(POOL);
 const rng = mulberry32(SEED);
 const soa = soaViews();
@@ -182,4 +270,5 @@ if (OUTPUT) {
     snapshotVsScanPct: pairs,
     cases: caseSummary,
   });
+}
 }

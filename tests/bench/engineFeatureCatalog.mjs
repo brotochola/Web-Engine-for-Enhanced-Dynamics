@@ -564,6 +564,15 @@ export const ENGINE_FEATURES = [
     primary: ['preRender_STEP_MS'],
     load: [],
   },
+  {
+    id: 'swayBuckets',
+    name: 'Decoration sway frequency buckets',
+    module: 'src/workers/particleWorker.js',
+    kernel: { script: 'tests/bench/swayBucketMicrobench.mjs', opsKey: 'cases.n20k.opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
 ];
 
 export function getFeature(id) {

@@ -12,6 +12,8 @@ import {
   SWAY_ANGLE_PER_MS,
   IMPULSE_DONE,
   advanceImpulsePhase,
+  swayFrequencyForBucket,
+  bucketFromSwayFrequency,
 } from '../util/decorationSway.js';
 import { BulletPool } from '../core/bulletPool.js';
 import { BulletComponent } from '../components/bulletComponent.js';
@@ -451,6 +453,19 @@ class ParticleWorker extends AbstractWorker {
     }
     if (this.maxDecorations > 0) {
       this._activeDecorationSnapshot = new Uint16Array(this.maxDecorations);
+      const buckets = this.config?.particle?.swayFrequencyBuckets | 0;
+      this._swayBuckets = buckets > 1 ? buckets : 0;
+      if (this._swayBuckets) {
+        this._phaseSin = new Float32Array(this.maxDecorations);
+        this._phaseCos = new Float32Array(this.maxDecorations);
+        for (let i = 0; i < this.maxDecorations; i++) {
+          const p = i * 0.1;
+          this._phaseSin[i] = Math.sin(p);
+          this._phaseCos[i] = Math.cos(p);
+        }
+        this._bucketSin = new Float32Array(this._swayBuckets);
+        this._bucketCos = new Float32Array(this._swayBuckets);
+      }
     }
 
     // ========================================
@@ -1102,6 +1117,11 @@ class ParticleWorker extends AbstractWorker {
 
     const swayBaseAngle = this.accumulatedTime * SWAY_ANGLE_PER_MS;
 
+    if (this._swayBuckets > 1) {
+      this._updateDecorationSwayBuckets(deltaTime, swayBaseAngle);
+      return;
+    }
+
     const parentEntityIndex = DecorationComponent.parentEntityIndex;
     const isItOnScreen = DecorationComponent.isItOnScreen;
 
@@ -1119,6 +1139,74 @@ class ParticleWorker extends AbstractWorker {
       let delta = 0;
       if (mode === SWAY_LOOP) {
         delta = Math.sin(swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
+      } else if (mode === SWAY_IMPULSE) {
+        const nextPhase = advanceImpulsePhase(swayPhase[i], deltaTime, swayFrequency[i]);
+        if (nextPhase === IMPULSE_DONE) {
+          sway[i] = SWAY_OFF;
+          swayPhase[i] = 0;
+          rotC[i] = bc;
+          rotS[i] = bs;
+          continue;
+        }
+        swayPhase[i] = nextPhase;
+        delta = Math.sin(nextPhase) * swayAmplitude[i];
+      }
+      if (delta !== 0) {
+        const ad = delta < 0 ? -delta : delta;
+        const dc = ad < 0.08 ? 1 : Math.cos(delta);
+        const ds = ad < 0.08 ? delta : Math.sin(delta);
+        rotC[i] = bc * dc - bs * ds;
+        rotS[i] = bs * dc + bc * ds;
+      } else {
+        rotC[i] = bc;
+        rotS[i] = bs;
+      }
+    }
+  }
+
+  /**
+   * Same loop as updateDecorationSway, but SWAY_LOOP uses the frequency grid.
+   * Chosen once per frame so the hot path has no fallback into Math.sin.
+   */
+  _updateDecorationSwayBuckets(deltaTime, swayBaseAngle) {
+    const activeData = this._activeDecorationSnapshot;
+    const activeCount = this._activeDecorationSnapshotCount;
+    const active = DecorationComponent.active;
+    const sway = DecorationComponent.sway;
+    const swayAmplitude = DecorationComponent.swayAmplitude;
+    const swayFrequency = DecorationComponent.swayFrequency;
+    const swayPhase = DecorationComponent.swayPhase;
+    const rotC = DecorationComponent.rotC;
+    const rotS = DecorationComponent.rotS;
+    const baseRotC = DecorationComponent.baseRotC;
+    const baseRotS = DecorationComponent.baseRotS;
+    const parentEntityIndex = DecorationComponent.parentEntityIndex;
+    const isItOnScreen = DecorationComponent.isItOnScreen;
+    const k = this._swayBuckets;
+    const sA = this._bucketSin;
+    const cA = this._bucketCos;
+    const phaseSin = this._phaseSin;
+    const phaseCos = this._phaseCos;
+    for (let b = 0; b < k; b++) {
+      const a = swayBaseAngle * swayFrequencyForBucket(b, k);
+      sA[b] = Math.sin(a);
+      cA[b] = Math.cos(a);
+    }
+
+    for (let idx = 0; idx < activeCount; idx++) {
+      const i = activeData[idx];
+      if (!active[i]) continue;
+      if (parentEntityIndex[i] !== this._noParent) continue;
+      if (!isItOnScreen[i]) continue;
+
+      const mode = sway[i];
+      if (mode === SWAY_OFF) continue;
+      const bc = baseRotC[i];
+      const bs = baseRotS[i];
+      let delta = 0;
+      if (mode === SWAY_LOOP) {
+        const b = bucketFromSwayFrequency(swayFrequency[i], k);
+        delta = (sA[b] * phaseCos[i] + cA[b] * phaseSin[i]) * swayAmplitude[i];
       } else if (mode === SWAY_IMPULSE) {
         const nextPhase = advanceImpulsePhase(swayPhase[i], deltaTime, swayFrequency[i]);
         if (nextPhase === IMPULSE_DONE) {

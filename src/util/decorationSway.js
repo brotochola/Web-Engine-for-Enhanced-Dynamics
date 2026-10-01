@@ -24,3 +24,16 @@ export function advanceImpulsePhase(phase, deltaTimeMs, frequency) {
   const next = phase + deltaTimeMs * SWAY_ANGLE_PER_MS * frequency;
   return next >= Math.PI ? IMPULSE_DONE : next;
 }
+
+/** Grass grid: 1..3 inclusive. Bucket 0 is 1, bucket K-1 is 3. */
+export function swayFrequencyForBucket(bucket, k) {
+  return 1 + bucket * (2 / (k - 1));
+}
+
+export function bucketFromSwayFrequency(freq, k) {
+  const step = 2 / (k - 1);
+  let b = Math.round((freq - 1) / step);
+  if (b < 0) b = 0;
+  if (b > k - 1) b = k - 1;
+  return b;
+}

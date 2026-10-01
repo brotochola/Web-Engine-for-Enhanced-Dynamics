@@ -46,6 +46,7 @@ const REQUIRED = [
   'painterRadix',
   'publishPose',
   'preRenderWorker',
+  'swayBuckets',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {

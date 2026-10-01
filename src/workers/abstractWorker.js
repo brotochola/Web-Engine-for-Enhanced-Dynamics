@@ -533,6 +533,7 @@ export class AbstractWorker {
 
       // Initialize DecorationPool with shared free list (enables any worker to spawn decorations)
       DecorationPool.initialize(data.maxDecorations);
+      DecorationPool.swayFrequencyBuckets = this.config?.particle?.swayFrequencyBuckets | 0;
       if (data.decorationFreeList && data.decorationFreeListTop) {
         DecorationPool.initializeFreeList(data.decorationFreeList, data.decorationFreeListTop);
         this.reportLog(`initialized DecorationPool free list`);

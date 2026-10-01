@@ -452,6 +452,8 @@ export const PARTICLE_DEFAULTS = Object.freeze({
   decalsResolution: 0.5,
   /** Expo ease LUT samples (built once at module load in particleTween). 256 ≈ 1e-4 error. */
   expoLutSize: 256,
+  /** Grass sway: 0 keeps Math.sin per decoration. 32 or 100 uses the frequency grid. */
+  swayFrequencyBuckets: 0,
   /** Zenithal projection curve (scene-level). Used when viewMode === ZENITHAL. */
   zenithalMaxHeight: 50,
   zenithalScaleFactor: 0.5,
