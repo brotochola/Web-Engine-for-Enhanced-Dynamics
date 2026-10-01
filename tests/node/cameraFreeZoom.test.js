@@ -79,6 +79,46 @@ test('updateFree one notch zoom-in stays ~1.1x (not near maxZoom)', () => {
   Mouse.wheel = 0;
 });
 
+test('updateFree wheel zooms toward the pointer, not the screen center', () => {
+  setupCamera({ zoom: 1, cx: 400, cy: 300 });
+  Mouse.initialize(new Float32Array(13));
+  Mouse.isPresent = true;
+  Mouse.x = 120;
+  Mouse.y = 80;
+
+  Camera.setFree(true, { zoomSensitivity: 0.001, smoothing: 0.15 });
+  Camera.setFreeTarget(400, 300);
+
+  const anchorX = Mouse.x;
+  const anchorY = Mouse.y;
+  const screenX = (anchorX - Camera.x) * Camera.zoom;
+  const screenY = (anchorY - Camera.y) * Camera.zoom;
+
+  Mouse.wheel = -100;
+  Camera.updateFree(1);
+  Mouse.wheel = 0;
+
+  const at = () => ({
+    x: (anchorX - Camera.x) * Camera.zoom,
+    y: (anchorY - Camera.y) * Camera.zoom,
+  });
+  let screen = at();
+  assert.ok(Math.abs(screen.x - screenX) < 1e-3);
+  assert.ok(Math.abs(screen.y - screenY) < 1e-3);
+  assert.ok(Math.abs(Camera.centerX - 400) > 1, 'view center moves when the pointer is off-center');
+
+  for (let i = 0; i < 80 && Math.abs(Camera.zoom - Camera.targetZoom) > 1e-4; i++) {
+    Camera.updateFree(1);
+    screen = at();
+    assert.ok(Math.abs(screen.x - screenX) < 1e-2);
+    assert.ok(Math.abs(screen.y - screenY) < 1e-2);
+  }
+
+  Camera.setFree(false);
+  Mouse.wheel = 0;
+  Mouse.isPresent = false;
+});
+
 test('updateFree equal in then out restores targetZoom (log-symmetric)', () => {
   setupCamera({ zoom: 1, cx: 400, cy: 300 });
   Mouse.initialize(new Float32Array(13));

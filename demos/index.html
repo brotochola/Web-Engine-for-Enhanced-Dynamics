@@ -34,10 +34,14 @@
     import WEED from '/src/index.js';
 
     const { GameEngine } = WEED;
+    const params = new URLSearchParams(location.search);
+
+
+
 
     const game = new GameEngine({
       autoResize: true,
-      debug: true,
+      debug: params.get('debug') !== '0',
     });
     window.game = game;
 
@@ -93,6 +97,7 @@
       return keys;
     }
 
+
     function findScene(query) {
       const want = query.trim().toLowerCase();
       if (!want) return null;
@@ -102,7 +107,7 @@
       return null;
     }
 
-    const requested = new URLSearchParams(location.search).get('scene');
+    const requested = params.get('scene');
     const direct = requested ? findScene(requested) : null;
 
     if (game.debugUI) {

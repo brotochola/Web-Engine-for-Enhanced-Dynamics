@@ -1,11 +1,12 @@
 import WEED from '/src/index.js';
 import { Branch, SEASON_WINTER } from './branch.js';
+import { Leaf } from './leaf.js';
+import { applyGenome, TreeComponent } from '../components/treeComponent.js';
 
-const { GameObject, Keyboard, Decoration, SharedResource, Transform, RigidBody, Collider, Noise2D } = WEED;
+const { GameObject, Keyboard, SharedResource, Transform, RigidBody, Collider, Noise2D, seededRandom } = WEED;
 
 const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
-const MAX_FALLING = 1600;
-const FALL_SPEED = 90;
+const ROOT_SLOTS = 6;
 
 export class TreeClock extends SharedResource {}
 
@@ -13,15 +14,7 @@ export const TUNE = {
   yearSec: { label: 'Year (s)', min: 8, max: 60, step: 1, value: 20 },
   wind: { label: 'Wind', min: 0, max: 20000, step: 100, value: 4000 },
   gust: { label: 'Gusts', min: 0.02, max: 1.5, step: 0.01, value: 0.2 },
-  flex: { label: 'Bend (°)', min: 0, max: 40, step: 1, value: 12 },
   damp: { label: 'Damping', min: 0, max: 12, step: 0.1, value: 2.5 },
-  grow: { label: 'Growth', min: 0, max: 3, step: 0.05, value: 1 },
-  spread: { label: 'Spread (°)', min: 20, max: 140, step: 1, value: 90 },
-  maxGen: { label: 'Generations', min: 2, max: 8, step: 1, value: 5 },
-  maxKids: { label: 'Children', min: 1, max: 5, step: 1, value: 3 },
-  maxLeaves: { label: 'Leaves per tip', min: 0, max: 8, step: 1, value: 4 },
-  lengthScale: { label: 'Length', min: 0.4, max: 2, step: 0.05, value: 1 },
-  leafScale: { label: 'Leaf size', min: 0.4, max: 2.5, step: 0.05, value: 1 },
 };
 
 export function writeTuneDefaults() {
@@ -75,9 +68,11 @@ export function writeTimeScale(scale) {
 }
 
 export class ProceduralTree extends GameObject {
-  static components = [RigidBody, Collider];
+  static components = [RigidBody, Collider, TreeComponent];
 
-  onSpawned() {
+  onSpawned(cfg = {}) {
+    applyGenome(this, cfg.preset || 'tree', cfg.seed ?? 1);
+    this._rand = seededRandom(this.treeComponent.seed | 0, 'plant');
     this.yearTime = 0;
     this.season = 0;
     this.seasonT = 0;
@@ -85,52 +80,64 @@ export class ProceduralTree extends GameObject {
     this.timeScale = readTimeScale();
     this.windX = 0;
     this.shedPending = 0;
-    this._rootIndex = -1;
-    if (!this._noise) this._noise = new Noise2D(1);
+    this._rootCount = 0;
+    if (!this._roots) this._roots = [-1, -1, -1, -1, -1, -1];
+    if (!this._noise) this._noise = new Noise2D(this.treeComponent.seed | 0 || 1);
 
     this.rigidBody.static = 1;
-    this.collider.width = 12;
-    this.collider.height = 12;
+    this.collider.width = 8;
+    this.collider.height = 8;
+    this.collider.collisionMask = 0;
     this.collider.collisionGroupIndex = -1;
-    this._fallCount = 0;
-    if (!this._fallIds) this._fallIds = new Array(MAX_FALLING);
 
-    const root = Branch.spawn({
-      x: this.x,
-      y: this.y,
-      generation: 0,
-      parentIndex: -1,
-      treeIndex: this.index,
-      localAngle: 0,
-      birthParentLength: 0,
-    });
-    if (root) this._rootIndex = root.index;
-
-    Decoration.spawn({
-      x: this.x,
-      y: this.y,
-      texture: '_white',
-      scaleX: 90,
-      scaleY: 2.5,
-      tint: 0x2f6b32,
-      anchorX: 0.5,
-      anchorY: 0,
-    });
+    const gene = this.treeComponent;
+    const shoots = Math.max(1, Math.min(ROOT_SLOTS, gene.rootShoots | 0));
+    const fan = (gene.spreadDeg * Math.PI) / 180;
+    for (let i = 0; i < shoots; i++) {
+      const t = shoots === 1 ? 0 : i / (shoots - 1) - 0.5;
+      const root = Branch.spawn({
+        x: this.x,
+        y: this.y,
+        generation: 0,
+        parentIndex: -1,
+        treeIndex: this.index,
+        localAngle: t * fan,
+        birthParentLength: 0,
+      });
+      if (root) this._roots[this._rootCount++] = root.index;
+    }
 
     this._postClock();
   }
 
+  rand() {
+    return this._rand ? this._rand() : 0;
+  }
+
   onDespawned() {
-    const rootIndex = this._rootIndex;
-    this._rootIndex = -1;
-    if (rootIndex >= 0 && Transform.active[rootIndex]) {
-      const root = GameObject.get(rootIndex);
-      if (root) root.despawn();
+    const roots = this._roots;
+    if (roots) {
+      for (let i = 0; i < this._rootCount; i++) {
+        const id = roots[i];
+        roots[i] = -1;
+        if (id >= 0 && Transform.active[id]) {
+          const root = GameObject.get(id);
+          if (root) root.despawn();
+        }
+      }
     }
-    const ids = this._fallIds;
-    if (!ids) return;
-    for (let i = 0; i < this._fallCount; i++) Decoration.despawn(ids[i]);
-    this._fallCount = 0;
+    this._rootCount = 0;
+  }
+
+  dropLeaf(opts) {
+    Leaf.spawn({
+      x: opts.x,
+      y: opts.y,
+      rotation: opts.rotation,
+      scale: opts.scale,
+      tint: opts.tint,
+      vx: this.windX * 0.004,
+    });
   }
 
   tick(dtRatio, deltaTime) {
@@ -158,49 +165,6 @@ export class ProceduralTree extends GameObject {
     if (crossedWinter || this.season === SEASON_WINTER) this.shedPending = 2;
     else if (this.shedPending > 0) this.shedPending--;
     if (seasonChanged || speedChanged) this._postClock();
-
-    this._stepFalling(dt * 0.001);
-  }
-
-  adoptFallingLeaf(opts) {
-    if (this._fallCount >= MAX_FALLING) return;
-    const id = Decoration.spawn({
-      x: opts.x,
-      y: opts.y,
-      texture: 'leaf',
-      scaleX: opts.scale,
-      scaleY: opts.scale,
-      tint: opts.tint,
-      rotation: opts.rotation,
-      anchorX: 0.5,
-      anchorY: 1,
-      sway: true,
-      swayAmplitude: opts.swayAmplitude,
-      swayFrequency: opts.swayFrequency,
-    });
-    if (id < 0) return;
-    this._fallIds[this._fallCount++] = id;
-  }
-
-  _stepFalling(dtSec) {
-    const ground = this.y + 2;
-    let i = 0;
-    while (i < this._fallCount) {
-      const id = this._fallIds[i];
-      const deco = Decoration.get(id);
-      if (!deco || !deco.active) {
-        this._fallIds[i] = this._fallIds[--this._fallCount];
-        continue;
-      }
-      deco.x += Math.sin(this.yearTime * 0.002 + id) * 22 * dtSec;
-      deco.y += FALL_SPEED * dtSec;
-      if (deco.y >= ground) {
-        Decoration.despawn(id);
-        this._fallIds[i] = this._fallIds[--this._fallCount];
-        continue;
-      }
-      i++;
-    }
   }
 
   _postClock() {

@@ -1,5 +1,8 @@
 import WEED from '/src/index.js';
 import { Branch } from './gameObjects/branch.js';
+import { Ground, groundSurfaceY } from './gameObjects/ground.js';
+import { Leaf } from './gameObjects/leaf.js';
+import { PRESETS, TreeComponent } from './components/treeComponent.js';
 import {
   ProceduralTree,
   TreeClock,
@@ -11,7 +14,7 @@ import {
   writeTuneDefaults,
 } from './gameObjects/proceduralTree.js';
 
-const { Scene, Camera } = WEED;
+const { Scene, Camera, LAYER_KIND, BLEND_MODES } = WEED;
 
 const HUD_CSS =
   'position:fixed;left:12px;bottom:12px;z-index:940;pointer-events:none;' +
@@ -36,6 +39,20 @@ function formatValue(value, step) {
   return value.toFixed(step < 0.1 ? 2 : 1);
 }
 
+const PLANT_SLIDERS = [
+  ['rootShoots', 'Root shoots', 1, 6, 1],
+  ['maxChildren', 'Children', 1, 5, 1],
+  ['maxGeneration', 'Generations', 2, 8, 1],
+  ['segmentLength', 'Length', 16, 220, 1],
+  ['spreadDeg', 'Spread (°)', 8, 140, 1],
+  ['leavesPerSegment', 'Leaves', 0, 8, 1],
+  ['leafScale', 'Leaf size', 0.4, 2.5, 0.05],
+  ['growth', 'Growth', 0, 3, 0.05],
+  ['matureGrowth', 'Mature growth', 0, 1, 0.01],
+  ['maxAgeYears', 'Max age (years)', 0, 12, 1],
+  ['flexDeg', 'Bend (°)', 0, 40, 1],
+];
+
 export class ProceduralTreeScene extends Scene {
   static config = {
     worldWidth: 3600,
@@ -50,10 +67,11 @@ export class ProceduralTreeScene extends Scene {
       numberOfLogicWorkers: 1,
     },
     physics: {
-      gravity: { x: 0, y: 0 },
+      gravity: { x: 0, y: 160 },
       sleeping: false,
       subStepCount: 4,
       maxJoints: 4096,
+      maxFixturePoolSize: 64,
     },
     particle: {
       maxParticles: 0,
@@ -66,22 +84,50 @@ export class ProceduralTreeScene extends Scene {
     renderer: {
       backend: 'webgl',
       ySort: false,
-      maxVisibleRenderables: 4096,
+      maxVisibleRenderables: 8192,
     },
     lighting: {
       enabled: false,
+    },
+    layers: {
+      terrain: {
+        kind: LAYER_KIND.MESH,
+        zIndex: 2.9,
+        blendMode: BLEND_MODES.NORMAL,
+        resolution: 1,
+        ySorting: false,
+        shader: {
+          fragment: 'rockContour',
+          containerBlend: BLEND_MODES.NORMAL,
+          uniforms: {
+            uCutoff: { value: 0.08, type: 'f32' },
+            uRimWidth: { value: 0.0018, type: 'f32' },
+            uRimColor: { value: [1, 1, 1], type: 'vec3<f32>' },
+            uRimAlpha: { value: 0.85, type: 'f32' },
+          },
+        },
+      },
     },
   };
 
   static assets = {
     textures: {
       leaf: '/demos/proceduralTreeScene/leaf.png',
+      rocky: '/demos/img/rocky.jpg',
+    },
+    shaders: {
+      rockContour: {
+        webgl: '/demos/shaders/rockContour.frag',
+        webgpu: '/demos/shaders/rockContour.wgsl',
+      },
     },
   };
 
   static entities = [
+    [Ground, 1],
     [ProceduralTree, 10],
     [Branch, 4000],
+    [Leaf, 2000],
   ];
 
   static sharedResources = [[TreeClock, tuneSchema()]];
@@ -89,14 +135,31 @@ export class ProceduralTreeScene extends Scene {
   create() {
     writeTimeScale(1);
     writeTuneDefaults();
+    this._activeIndex = -1;
+    this._plantInputs = {};
     this._buildHud();
     this._buildPanel();
     this._setClock(1, 'Spring', readTimeScale());
 
-    Camera.setZoom(1.2);
-    Camera.centerOn(800, 780);
+    Ground.spawn({ x: 0, y: 0 });
+    const tree = this._spawnPlant('tree', 780, 11);
+    this._spawnPlant('fern', 1320, 29);
+    this._activeIndex = tree;
+    this._loadPlantSliders(PRESETS.tree);
+
+    Camera.setZoom(0.85);
+    Camera.centerOn(1050, groundSurfaceY(1050) - 320);
     Camera.setFree(true, { panSpeed: 8 });
-    ProceduralTree.spawn({ x: 800, y: 1000 });
+  }
+
+  _spawnPlant(preset, x, seed) {
+    const spawned = ProceduralTree.spawn({
+      x,
+      y: groundSurfaceY(x),
+      preset,
+      seed,
+    });
+    return spawned ? spawned.index : -1;
   }
 
   onKeyDown(key) {
@@ -135,6 +198,24 @@ export class ProceduralTreeScene extends Scene {
     title.style.cssText = 'font-weight:700;margin-bottom:8px;';
     panel.appendChild(title);
 
+    const buttons = document.createElement('div');
+    buttons.style.cssText = 'display:flex;gap:6px;margin-bottom:8px;';
+    for (const name of ['tree', 'fern', 'bush']) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = name[0].toUpperCase() + name.slice(1);
+      button.style.cssText =
+        'flex:1;background:#1c1c1c;color:#eee;border:1px solid #666;border-radius:4px;padding:4px 0;cursor:pointer;';
+      button.addEventListener('click', () => {
+        const seed = (Math.random() * 0x7fffffff) | 0;
+        const x = 500 + ((seed >>> 4) % 8) * 220;
+        this._activeIndex = this._spawnPlant(name, x, seed);
+        this._loadPlantSliders(PRESETS[name]);
+      });
+      buttons.appendChild(button);
+    }
+    panel.appendChild(buttons);
+
     this._timeSlider = this._addSlider(panel, 'Time', 0.25, 8, 0.25, readTimeScale(), (n) => {
       writeTimeScale(n);
       if (this._clock) this._setClock(this._clock.year, this._clock.season, n);
@@ -144,6 +225,17 @@ export class ProceduralTreeScene extends Scene {
       const spec = TUNE[key];
       this._addSlider(panel, spec.label, spec.min, spec.max, spec.step, spec.value, (n) => {
         writeTune(key, n);
+      });
+    }
+
+    for (let i = 0; i < PLANT_SLIDERS.length; i++) {
+      const row = PLANT_SLIDERS[i];
+      const key = row[0];
+      const spec = PRESETS.tree;
+      this._plantInputs[key] = this._addSlider(panel, row[1], row[2], row[3], row[4], spec[key], (n) => {
+        const index = this._activeIndex;
+        if (index == null || index < 0 || !TreeComponent[key]) return;
+        TreeComponent[key][index] = n;
       });
     }
 
@@ -199,5 +291,19 @@ export class ProceduralTreeScene extends Scene {
     this._hudClock = null;
     this._panel = null;
     this._timeSlider = null;
+    this._plantInputs = null;
+  }
+
+  _loadPlantSliders(spec) {
+    const inputs = this._plantInputs;
+    if (!inputs || !spec) return;
+    for (let i = 0; i < PLANT_SLIDERS.length; i++) {
+      const row = PLANT_SLIDERS[i];
+      const ui = inputs[row[0]];
+      if (!ui) continue;
+      const value = spec[row[0]];
+      ui.input.value = String(value);
+      ui.val.textContent = formatValue(value, row[4]);
+    }
   }
 }

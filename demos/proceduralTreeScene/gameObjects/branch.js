@@ -1,5 +1,6 @@
 import WEED from '/src/index.js';
 import { readTune } from './proceduralTree.js';
+import { LAYER_BRANCH, LAYER_GROUND, LEAF_SIDES } from '../components/treeComponent.js';
 
 const {
   GameObject,
@@ -10,7 +11,6 @@ const {
   DecorationComponent,
   Transform,
   Joint,
-  rng,
 } = WEED;
 
 export const SEASON_SPRING = 0;
@@ -23,7 +23,6 @@ const CHILD_SLOTS = 5;
 const LEAF_SLOTS = 8;
 const LENGTH_SPEED = 40;
 const WIDTH_SPEED = 2.4;
-const SUMMER_GROWTH = 0.35;
 const BRANCH_GROUP = -1;
 
 function autumnTint(t) {
@@ -52,14 +51,21 @@ export class Branch extends GameObject {
     this._jointIdx = -1;
     this._flexApplied = -1;
     this._dampApplied = -1;
-    this._maxKids = Math.min(CHILD_SLOTS, Math.max(1, readTune('maxKids') | 0));
+    this._detached = 0;
+    this._bornYear = 0;
+    this._ageChecked = -1;
 
-    const decay = this._generation * 0.5 + 1;
-    const lengthScale = readTune('lengthScale');
-    this._maxLength = (180 / decay) * lengthScale;
-    this._maxWidth = (22 / decay) * lengthScale;
+    const tree = GameObject.get(this._treeIndex);
+    const gene = tree && tree.treeComponent;
+    if (tree) this._bornYear = tree._yearIndex | 0;
+    const decay = 1 + this._generation * (gene ? gene.lengthDecay : 0.5);
+    const lengthScale = gene ? gene.segmentLength : 180;
+    const widthScale = gene ? gene.segmentWidth : 22;
+    this._maxKids = Math.min(CHILD_SLOTS, Math.max(1, gene ? gene.maxChildren | 0 : 3));
     this._length = 4;
     this._width = 2;
+    this._maxLength = lengthScale / decay;
+    this._maxWidth = widthScale / decay;
 
     if (!this._childIndices) {
       this._childIndices = [-1, -1, -1, -1, -1];
@@ -73,6 +79,10 @@ export class Branch extends GameObject {
     }
 
     this.rigidBody.static = 0;
+    this.collider.friction = 0.65;
+    this.collider.restitution = 0;
+    this.collider.collisionLayer = LAYER_BRANCH;
+    this.collider.collisionMask = 1 << LAYER_GROUND;
     this.collider.collisionGroupIndex = BRANCH_GROUP;
     this._applyDamping(readTune('damp'));
 
@@ -111,7 +121,22 @@ export class Branch extends GameObject {
     const tree = GameObject.get(this._treeIndex);
     if (!tree || tree.season == null) return;
 
+    const gene = tree.treeComponent;
     const season = tree.season | 0;
+    if (!this._detached) this._maybeBreak(tree, gene, season);
+
+    if (this._detached) {
+      this._paint();
+      return;
+    }
+
+    const dtSec = deltaTime * 0.001 * (tree.timeScale || 1);
+    if (season !== SEASON_WINTER) this._grow(dtSec, season, gene);
+    this._paint();
+    this._applyWind(tree);
+    this._applyFlex(gene.flexDeg);
+    this._applyDamping(readTune('damp'));
+
     if (season === SEASON_WINTER || tree.shedPending) {
       if (!this._shed) {
         this._shed = 1;
@@ -121,27 +146,43 @@ export class Branch extends GameObject {
       this._shed = 0;
     }
 
-    const dtSec = deltaTime * 0.001 * (tree.timeScale || 1);
-    if (season === SEASON_SPRING || season === SEASON_SUMMER) {
-      this._grow(dtSec, season);
-    }
-    this._paint();
-    this._applyWind(tree);
-    this._applyFlex(readTune('flex'));
-    this._applyDamping(readTune('damp'));
-
-    if (season === SEASON_SPRING) this._maybeChild(dtSec);
-    if (this._childCount > 0) {
+    const sides = (gene.leafLayout | 0) === LEAF_SIDES;
+    if (season === SEASON_SPRING) this._maybeChild(dtSec, tree, gene);
+    if (!sides && this._childCount > 0) {
       if (this._leafCount > 0) this._discardLeaves();
     } else if (season === SEASON_SPRING || season === SEASON_SUMMER) {
-      this._maybeLeaf(dtSec, season);
+      if (sides) this._maybeSideLeaves(gene);
+      else this._maybeLeaf(dtSec, season, tree, gene);
     }
-    this._updateLeaves(dtSec, tree);
+    this._updateLeaves(dtSec, tree, gene);
+  }
+
+  _maybeBreak(tree, gene, season) {
+    if (this._generation === 0 || this._detached) return;
+    const maxAge = gene.maxAgeYears | 0;
+    if (maxAge <= 0 || season !== SEASON_SPRING) return;
+    const year = tree._yearIndex | 0;
+    if (year === this._ageChecked) return;
+    this._ageChecked = year;
+    const age = year - this._bornYear;
+    if (age >= maxAge && tree.rand() < 0.4) this._detach(tree);
+  }
+
+  _detach(tree) {
+    if (this._detached || this._generation === 0) return;
+    this._detached = 1;
+    if (this._jointIdx >= 0) {
+      Joint.remove(this._jointIdx);
+      this._jointIdx = -1;
+    }
+    this._shedLeaves(tree);
   }
 
   _attachJoint() {
-    const flex = (readTune('flex') * Math.PI) / 180;
-    this._flexApplied = readTune('flex');
+    const tree = GameObject.get(this._treeIndex);
+    const flexDeg = tree && tree.treeComponent ? tree.treeComponent.flexDeg : 12;
+    const flex = (flexDeg * Math.PI) / 180;
+    this._flexApplied = flexDeg;
     const parent = this._parentIndex < 0 ? this._treeIndex : this._parentIndex;
     const along = this._parentIndex < 0 ? 0 : this._birthParentLength;
     const idx = Joint.addRevolute({
@@ -183,16 +224,20 @@ export class Branch extends GameObject {
     this.addAcceleration((tree.windX * this._leafCount) / m, 0);
   }
 
-  _grow(dtSec, season) {
-    const mul = (season === SEASON_SUMMER ? SUMMER_GROWTH : 1) * readTune('grow');
-    if (this._length < this._maxLength) {
-      this._length += LENGTH_SPEED * mul * dtSec;
-      if (this._length > this._maxLength) this._length = this._maxLength;
-    }
-    if (this._width < this._maxWidth) {
-      this._width += WIDTH_SPEED * mul * dtSec;
-      if (this._width > this._maxWidth) this._width = this._maxWidth;
-    }
+  _grow(dtSec, season, gene) {
+    const decay = 1 + this._generation * gene.lengthDecay;
+    this._maxLength = gene.segmentLength / decay;
+    this._maxWidth = gene.segmentWidth / decay;
+    let rate = gene.growth;
+    if (season === SEASON_SUMMER) rate *= 0.35;
+    else if (season === SEASON_AUTUMN) rate *= gene.matureGrowth;
+    else if (season !== SEASON_SPRING) rate = 0;
+    const past = this._length >= this._maxLength;
+    if (past) rate *= gene.matureGrowth;
+    if (rate <= 0) return;
+    this._length += LENGTH_SPEED * rate * dtSec;
+    const widthRate = past ? rate : gene.growth * (season === SEASON_SUMMER ? 0.35 : season === SEASON_SPRING ? 1 : gene.matureGrowth);
+    this._width += WIDTH_SPEED * widthRate * dtSec;
   }
 
   _paint() {
@@ -207,14 +252,18 @@ export class Branch extends GameObject {
     this.collider.offsetY = -this._length * 0.5;
   }
 
-  _maybeChild(dtSec) {
-    const maxGen = readTune('maxGen') | 0;
+  _maybeChild(dtSec, tree, gene) {
+    const maxGen = gene.maxGeneration | 0;
+    const maxKids = Math.min(CHILD_SLOTS, Math.max(1, gene.maxChildren | 0));
+    this._maxKids = maxKids;
     if (this._generation >= maxGen) return;
-    if (this._childCount >= this._maxKids) return;
+    if (this._childCount >= maxKids) return;
     if (this._length < this._maxLength * 0.35) return;
-    if (rng() > 0.4 * dtSec) return;
+    const age = (tree._yearIndex | 0) - this._bornYear;
+    const ageFactor = Math.max(0.15, 1 - age * 0.12);
+    if (tree.rand() > 0.4 * dtSec * ageFactor) return;
 
-    const slot = this._openChildSlot();
+    const slot = this._openChildSlot(tree, gene, maxKids);
     if (!slot) return;
 
     const dist = this._length;
@@ -235,13 +284,16 @@ export class Branch extends GameObject {
     this._childIndices[this._childCount++] = child.index;
   }
 
-  _openChildSlot() {
-    const open = this._maxKids - this._childCount;
+  _openChildSlot(tree, gene, maxKids) {
+    const open = maxKids - this._childCount;
     if (open <= 0) return null;
-    const pick = (rng() * open) | 0;
+    if (maxKids <= 1) {
+      return { which: 0, angle: (tree.rand() - 0.5) * 0.22 };
+    }
+    const pick = (tree.rand() * open) | 0;
     let seen = 0;
     let which = 0;
-    for (let i = 0; i < this._maxKids; i++) {
+    for (let i = 0; i < maxKids; i++) {
       if (this._regionMask & (1 << i)) continue;
       if (seen === pick) {
         which = i;
@@ -249,54 +301,69 @@ export class Branch extends GameObject {
       }
       seen++;
     }
-    const spread = (readTune('spread') * Math.PI) / 180;
-    const span = spread / this._maxKids;
+    const spread = (gene.spreadDeg * Math.PI) / 180;
+    const span = spread / maxKids;
     return {
       which,
-      angle: which * span + rng() * span - spread * 0.5,
+      angle: which * span + tree.rand() * span - spread * 0.5,
     };
   }
 
-  _maybeLeaf(dtSec, season) {
+  _maybeSideLeaves(gene) {
+    const cap = Math.min(2, gene.leavesPerSegment | 0);
+    if (cap <= 0 || this._leafCount >= cap) return;
+    if (this._length < this._maxLength * 0.35) return;
+    for (let n = this._leafCount; n < cap; n++) {
+      const side = n === 0 ? -1 : 1;
+      this._addLeaf(side, 0.62, side * 1.15, gene.leafScale, true);
+    }
+  }
+
+  _maybeLeaf(dtSec, season, tree, gene) {
     if (this._childCount > 0) return;
-    const maxGen = readTune('maxGen') | 0;
+    const maxGen = gene.maxGeneration | 0;
     if (this._generation < maxGen && season === SEASON_SPRING) return;
-    const cap = Math.min(LEAF_SLOTS, Math.max(0, readTune('maxLeaves') | 0));
+    const cap = Math.min(LEAF_SLOTS, Math.max(0, gene.leavesPerSegment | 0));
     if (cap <= 0 || this._leafCount >= cap) return;
     if (this._length < this._maxLength * 0.3) return;
-    if (rng() > 0.9 * dtSec) return;
+    if (tree.rand() > 0.9 * dtSec) return;
 
-    const along = 0.55 + rng() * 0.4;
-    const side = (rng() * 2 - 1) * this._width * 0.9;
-    const target = (0.05 + rng() * 0.025) * readTune('leafScale');
+    const along = 0.55 + tree.rand() * 0.4;
+    const side = (tree.rand() * 2 - 1) * this._width * 0.9;
+    this._addLeaf(side, along, (tree.rand() - 0.5) * 1.6, gene.leafScale, false);
+  }
+
+  _addLeaf(side, along, rotation, leafScale, lateral) {
+    const target = (lateral ? 0.07 : 0.05 + Math.abs(side) * 0.001) * leafScale;
+    const localX = lateral ? side * (this._width * 0.5 + 6) : side;
     const id = this.addDecoration(
       'leaf',
-      side,
+      localX,
       -this._length * along,
       0.001,
       0.001,
       8,
       {
         sway: true,
-        swayAmplitude: 0.16 + rng() * 0.12,
-        swayFrequency: 0.85 + rng() * 0.8,
-        rotation: (rng() - 0.5) * 1.6,
+        swayAmplitude: 0.16 + Math.abs(rotation) * 0.05,
+        swayFrequency: 0.85 + (this._leafCount + 1) * 0.15,
+        rotation,
         anchorX: 0.5,
         anchorY: 1,
         tint: 0xffffff,
       },
     );
     if (id < 0) return;
-
     const slot = this._leafCount++;
     this._leafIds[slot] = id;
     this._leafAlong[slot] = along;
-    this._leafSide[slot] = side;
-    this._leafTarget[slot] = target;
+    this._leafSide[slot] = lateral ? side : localX;
+    this._leafTarget[slot] = lateral ? 0.07 * leafScale : (0.05 + 0.02) * leafScale;
+    if (!lateral) this._leafTarget[slot] = Math.max(0.04, target);
     this._placedLength = -1;
   }
 
-  _updateLeaves(dtSec, tree) {
+  _updateLeaves(dtSec, tree, gene) {
     if (this._leafCount === 0) return;
 
     const season = tree.season | 0;
@@ -305,11 +372,14 @@ export class Branch extends GameObject {
     const move = this._placedLength !== this._length;
     if (move) this._placedLength = this._length;
 
+    const sides = gene && (gene.leafLayout | 0) === LEAF_SIDES;
     for (let i = 0; i < this._leafCount; i++) {
       const deco = Decoration.get(this._leafIds[i]);
       if (!deco || !deco.active) continue;
-      if (move) {
-        deco.localX = this._leafSide[i];
+      if (move || sides) {
+        deco.localX = sides
+          ? this._leafSide[i] * (this._width * 0.5 + 6)
+          : this._leafSide[i];
         deco.localY = -this._length * this._leafAlong[i];
       }
       if (grow) {
@@ -359,7 +429,7 @@ export class Branch extends GameObject {
         swayFrequency: deco.swayFrequency,
       };
       Decoration.despawn(id);
-      tree.adoptFallingLeaf(falling);
+      tree.dropLeaf(falling);
     }
     this._leafCount = 0;
     this._placedLength = -1;

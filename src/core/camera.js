@@ -96,6 +96,9 @@ export class Camera {
   static _freeFollowX = 0;
   static _freeFollowY = 0;
   static _freeZoomPaused = false;
+  /** World point under the pointer at the last free-cam wheel. Null = zoom around center. */
+  static _freeZoomAnchorX = null;
+  static _freeZoomAnchorY = null;
 
   // ============================================
   // INITIALIZATION
@@ -634,6 +637,8 @@ export class Camera {
     if (!enabled) {
       this._freeZoomPaused = false;
       this._freeMaxZoom = null;
+      this._freeZoomAnchorX = null;
+      this._freeZoomAnchorY = null;
     }
   }
 
@@ -672,6 +677,8 @@ export class Camera {
   static updateFree(dtRatio) {
     if (!this._free || !this._data) {
       this._freeZoomPaused = false;
+      this._freeZoomAnchorX = null;
+      this._freeZoomAnchorY = null;
       return;
     }
 
@@ -698,17 +705,88 @@ export class Camera {
       this._freeFollowY = Math.max(0, Math.min(this._freeFollowY, this._worldHeight));
     }
 
-    // Wheel updates targetZoom only; follow() lerps display zoom (no setZoom snap).
+    // Wheel updates targetZoom only; display zoom lerps (no setZoom snap).
     // exp: log-symmetric in/out for raw deltaY (~±100/notch); linear 1-w*s is not invertible.
+    // Pointer over the canvas: latch the world point under it and zoom around that,
+    // not the screen center. Follow cameras still use follow()'s center anchor.
     if (!this._freeZoomPaused && Mouse.wheel) {
       let z = this.targetZoom * Math.exp(-Mouse.wheel * this._freeZoomSensitivity);
       const maxZ = this._freeMaxZoom != null ? this._freeMaxZoom : this._maxZoom;
       z = Math.max(this.minZoom, Math.min(maxZ, z));
       this._data[this.IDX_TARGET_ZOOM] = z;
+      if (Mouse.isPresent) {
+        this._freeZoomAnchorX = Mouse.x;
+        this._freeZoomAnchorY = Mouse.y;
+      }
     }
     this._freeZoomPaused = false;
 
-    this.follow(this._freeFollowX, this._freeFollowY, this._freeSmoothing, dtRatio);
+    const z0 = this._data[this.IDX_ZOOM];
+    const zT = this._data[this.IDX_TARGET_ZOOM];
+    const zooming = zT > 0 && z0 > 0 && Math.abs(zT - z0) > 0.0001;
+    if (!zooming) {
+      this._freeZoomAnchorX = null;
+      this._freeZoomAnchorY = null;
+    }
+    if (!zooming || this._freeZoomAnchorX == null || !(this._canvasWidth > 0)) {
+      this.follow(this._freeFollowX, this._freeFollowY, this._freeSmoothing, dtRatio);
+      return;
+    }
+
+    this._zoomFreeTowardPointer(dtRatio, z0);
+  }
+
+  /**
+   * Ease free-cam zoom while keeping _freeZoomAnchor under the same screen pixel.
+   * Shifts _freeFollow so WASD pan still eases in the zoomed frame.
+   * Zoom ease matches _applyFollow (smoothstep of the follow ease).
+   * @param {number} dtRatio
+   * @param {number} z0
+   */
+  static _zoomFreeTowardPointer(dtRatio, z0) {
+    const s = this._freeSmoothing;
+    const es = (dtRatio != null && dtRatio > 0) ? Math.min(s * dtRatio, 1.0) : s;
+    const esZoom = es * es * (3 - 2 * es);
+    let z1 = z0 + (this._data[this.IDX_TARGET_ZOOM] - z0) * esZoom;
+    z1 = Math.max(this.minZoom, Math.min(this._maxZoom, z1));
+    if (!(z1 > 0) || z1 === z0) {
+      this.follow(this._freeFollowX, this._freeFollowY, this._freeSmoothing, dtRatio);
+      return;
+    }
+
+    const camX = this._data[1];
+    const camY = this._data[2];
+    const cw = this._canvasWidth;
+    const ch = this._canvasHeight;
+    const sx = (this._freeZoomAnchorX - camX) * z0;
+    const sy = (this._freeZoomAnchorY - camY) * z0;
+
+    this._freeFollowX += (sx - cw * 0.5) * (1 / z0 - 1 / z1);
+    this._freeFollowY += (sy - ch * 0.5) * (1 / z0 - 1 / z1);
+    if (this._worldWidth !== Infinity) {
+      this._freeFollowX = Math.max(0, Math.min(this._freeFollowX, this._worldWidth));
+    }
+    if (this._worldHeight !== Infinity) {
+      this._freeFollowY = Math.max(0, Math.min(this._freeFollowY, this._worldHeight));
+    }
+
+    const keepX = this._freeZoomAnchorX - sx / z1;
+    const keepY = this._freeZoomAnchorY - sy / z1;
+    const halfW1 = cw / (2 * z1);
+    const halfH1 = ch / (2 * z1);
+    const newX = keepX + (this._freeFollowX - halfW1 - keepX) * es;
+    const newY = keepY + (this._freeFollowY - halfH1 - keepY) * es;
+
+    const clampZoom = Math.min(z0, z1);
+    const maxX = Math.max(0, this._worldWidth - cw / clampZoom);
+    const maxY = Math.max(0, this._worldHeight - ch / clampZoom);
+
+    this._clearFollowEntityStamp();
+    this._data[3] = this._freeFollowX;
+    this._data[4] = this._freeFollowY;
+    this._data[1] = Math.max(0, Math.min(newX, maxX));
+    this._data[2] = Math.max(0, Math.min(newY, maxY));
+    this._data[0] = z1;
   }
 
   /**
