@@ -75,18 +75,52 @@
       await game.loadScene(entry.url, { export: entry.export });
     }
 
+    function sceneKeys(entry) {
+      const parts = entry.url.split('/');
+      const file = parts[parts.length - 1].replace(/\.js$/i, '');
+      const folder = parts[parts.length - 2] || '';
+      const keys = new Set();
+      for (const raw of [file, folder]) {
+        const lower = raw.toLowerCase();
+        if (!lower) continue;
+        keys.add(lower);
+        if (lower.endsWith('scene')) keys.add(lower.slice(0, -5));
+      }
+      if (keys.has('predator')) {
+        keys.add('predators');
+        keys.add('predatorsscene');
+      }
+      return keys;
+    }
+
+    function findScene(query) {
+      const want = query.trim().toLowerCase();
+      if (!want) return null;
+      for (let i = 0; i < scenes.length; i++) {
+        if (sceneKeys(scenes[i]).has(want)) return scenes[i];
+      }
+      return null;
+    }
+
+    const requested = new URLSearchParams(location.search).get('scene');
+    const direct = requested ? findScene(requested) : null;
+
     if (game.debugUI) {
       game.debugUI.registerScenes(scenes);
     }
 
-    for (let i = 0; i < scenes.length; i++) {
-      const scene = scenes[i];
-      const button = document.createElement('button');
-      button.className = 'scene_chooser_button';
-      button.onclick = () => startScene(scene);
-      button.textContent = scene.name;
-      document.getElementById('scene_list').appendChild(button);
-      if (i % 2 == 1) document.getElementById('scene_list').appendChild(document.createElement('br'));
+    if (direct) {
+      startScene(direct);
+    } else {
+      for (let i = 0; i < scenes.length; i++) {
+        const scene = scenes[i];
+        const button = document.createElement('button');
+        button.className = 'scene_chooser_button';
+        button.onclick = () => startScene(scene);
+        button.textContent = scene.name;
+        document.getElementById('scene_list').appendChild(button);
+        if (i % 2 == 1) document.getElementById('scene_list').appendChild(document.createElement('br'));
+      }
     }
   </script>
 </body>
