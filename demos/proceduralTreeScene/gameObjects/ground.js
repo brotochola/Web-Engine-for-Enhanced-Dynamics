@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { LAYER_BRANCH, LAYER_GROUND, LAYER_LEAF } from '../components/treeComponent.js';
+import { LAYER_BRANCH, LAYER_DEAD, LAYER_GROUND, LAYER_LEAF } from '../components/treeComponent.js';
 
 const { GameObject, RigidBody, Collider, MeshRenderer } = WEED;
 
@@ -19,7 +19,7 @@ export class Ground extends GameObject {
     this.collider.friction = 1;
     this.collider.restitution = 0;
     this.collider.collisionLayer = LAYER_GROUND;
-    this.collider.collisionMask = (1 << LAYER_BRANCH) | (1 << LAYER_LEAF);
+    this.collider.collisionMask = (1 << LAYER_BRANCH) | (1 << LAYER_LEAF) | (1 << LAYER_DEAD);
     this.collider.collisionGroupIndex = 0;
     this.meshRenderer.tint = 0x88aa66;
     this.meshRenderer.setTexture('rocky');

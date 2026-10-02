@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 import { Branch } from './gameObjects/branch.js';
+import { DeadBranch } from './gameObjects/deadBranch.js';
 import { Ground, groundSurfaceY } from './gameObjects/ground.js';
-import { Leaf } from './gameObjects/leaf.js';
 import { PRESETS, TreeComponent } from './components/treeComponent.js';
 import {
   ProceduralTree,
@@ -50,6 +50,8 @@ const PLANT_SLIDERS = [
   ['growth', 'Growth', 0, 3, 0.05],
   ['matureGrowth', 'Mature growth', 0, 1, 0.01],
   ['maxAgeYears', 'Max age (years)', 0, 12, 1],
+  ['dieFromGeneration', 'Die from gen', 1, 8, 1],
+  ['dieChance', 'Die chance', 0, 0.4, 0.01],
   ['flexDeg', 'Bend (°)', 0, 40, 1],
 ];
 
@@ -67,11 +69,18 @@ export class ProceduralTreeScene extends Scene {
       numberOfLogicWorkers: 1,
     },
     physics: {
-      gravity: { x: 0, y: 160 },
+      gravity: { x: 0, y: 1000 },
       sleeping: false,
       subStepCount: 4,
       maxJoints: 4096,
       maxFixturePoolSize: 64,
+      liquidFun: {
+        enabled: true,
+        radius: 4,
+        density: 0.05,
+        maxCount: 4000,
+        subSteps: 1,
+      },
     },
     particle: {
       maxParticles: 0,
@@ -127,7 +136,7 @@ export class ProceduralTreeScene extends Scene {
     [Ground, 1],
     [ProceduralTree, 10],
     [Branch, 4000],
-    [Leaf, 2000],
+    [DeadBranch, 800],
   ];
 
   static sharedResources = [[TreeClock, tuneSchema()]];

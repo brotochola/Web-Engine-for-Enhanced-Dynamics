@@ -1,9 +1,22 @@
 import WEED from '/src/index.js';
 import { Branch, SEASON_WINTER } from './branch.js';
-import { Leaf } from './leaf.js';
+import { DeadBranch } from './deadBranch.js';
 import { applyGenome, TreeComponent } from '../components/treeComponent.js';
 
-const { GameObject, Keyboard, SharedResource, Transform, RigidBody, Collider, Noise2D, seededRandom } = WEED;
+const {
+  GameObject,
+  Keyboard,
+  SharedResource,
+  Transform,
+  RigidBody,
+  Collider,
+  Noise2D,
+  seededRandom,
+  LiquidFun,
+  LIQUIDFUN_FLAGS,
+} = WEED;
+
+const LEAF_USER_TAG = 1;
 
 const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
 const ROOT_SLOTS = 6;
@@ -130,14 +143,38 @@ export class ProceduralTree extends GameObject {
   }
 
   dropLeaf(opts) {
-    Leaf.spawn({
-      x: opts.x,
-      y: opts.y,
-      rotation: opts.rotation,
-      scale: opts.scale,
-      tint: opts.tint,
-      vx: this.windX * 0.004,
+    const scale = opts.scale > 0.02 ? opts.scale : 0.06;
+    LiquidFun.emit({
+      shape: 'circle',
+      posX: opts.x,
+      posY: opts.y,
+      radius: 4,
+      spacing: 0,
+      flags: LIQUIDFUN_FLAGS.POWDER,
+      lifespan: 3000,
+      fadeToAlpha0: true,
+      texture: 'leaf',
+      scale,
+      tint: opts.tint || 0x9fe06a,
+      userData: (this.index + LEAF_USER_TAG) >>> 0,
+      vx: this.windX * 0.01,
+      vy: 30,
+      layer: 'entities',
     });
+  }
+
+  _pushLeafParticles() {
+    if (!this.windX) return;
+    const views = LiquidFun.getViews();
+    if (!views || !views.userData || !views.count) return;
+    const n = views.count[0] | 0;
+    if (n <= 0) return;
+    const tag = (this.index + LEAF_USER_TAG) >>> 0;
+    const ud = views.userData;
+    const fx = this.windX * 0.04;
+    for (let i = 0; i < n; i++) {
+      if (ud[i] === tag) LiquidFun.applyForce(i, fx, 0);
+    }
   }
 
   tick(dtRatio, deltaTime) {
@@ -158,6 +195,7 @@ export class ProceduralTree extends GameObject {
     const into = this.yearTime - yearIndex * yearMs;
     const season = (into / seasonMs) | 0;
     this.windX = this._noise.sample(this.yearTime * 0.001 * readTune('gust'), 0) * readTune('wind');
+    this._pushLeafParticles();
     const seasonChanged = season !== this.season || yearIndex !== this._yearIndex;
     this.season = season > 3 ? 3 : season;
     this.seasonT = (into - this.season * seasonMs) / seasonMs;
