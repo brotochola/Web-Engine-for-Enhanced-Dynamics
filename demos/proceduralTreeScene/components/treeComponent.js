@@ -27,6 +27,7 @@ export const PRESETS = {
     maxAgeYears: 5,
     dieFromGeneration: 3,
     dieChance: 0.08,
+    upright: 1,
     flexDeg: 28,
   },
   bush: {
@@ -45,6 +46,7 @@ export const PRESETS = {
     maxAgeYears: 4,
     dieFromGeneration: 2,
     dieChance: 0.1,
+    upright: 0.7,
     flexDeg: 24,
   },
   fern: {
@@ -63,6 +65,7 @@ export const PRESETS = {
     maxAgeYears: 0,
     dieFromGeneration: 3,
     dieChance: 0,
+    upright: 1,
     flexDeg: 12,
   },
 };
@@ -86,6 +89,7 @@ export class TreeComponent extends Component {
     maxAgeYears: Float32Array,
     dieFromGeneration: Uint8Array,
     dieChance: Float32Array,
+    upright: Float32Array,
     flexDeg: Float32Array,
   };
 }
@@ -110,5 +114,6 @@ export function applyGenome(tree, presetName, seed) {
   gene.maxAgeYears = spec.maxAgeYears;
   gene.dieFromGeneration = spec.dieFromGeneration;
   gene.dieChance = spec.dieChance;
+  gene.upright = spec.upright;
   gene.flexDeg = spec.flexDeg;
 }

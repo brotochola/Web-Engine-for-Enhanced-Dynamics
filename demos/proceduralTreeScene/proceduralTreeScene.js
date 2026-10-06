@@ -4,6 +4,7 @@ import { DeadBranch } from './gameObjects/deadBranch.js';
 import { Ground, groundSurfaceY } from './gameObjects/ground.js';
 import { PRESETS, TreeComponent } from './components/treeComponent.js';
 import {
+  PLANT_GRAVITY_Y,
   ProceduralTree,
   TreeClock,
   TUNE,
@@ -15,6 +16,10 @@ import {
 } from './gameObjects/proceduralTree.js';
 
 const { Scene, Camera, LAYER_KIND, BLEND_MODES } = WEED;
+
+function bg(file) {
+  return '/demos/proceduralTreeScene/' + encodeURIComponent(file);
+}
 
 const HUD_CSS =
   'position:fixed;left:12px;bottom:12px;z-index:940;pointer-events:none;' +
@@ -52,6 +57,7 @@ const PLANT_SLIDERS = [
   ['maxAgeYears', 'Max age (years)', 0, 12, 1],
   ['dieFromGeneration', 'Die from gen', 1, 8, 1],
   ['dieChance', 'Die chance', 0, 0.4, 0.01],
+  ['upright', 'Upright', 0, 1, 0.01],
   ['flexDeg', 'Bend (°)', 0, 40, 1],
 ];
 
@@ -69,7 +75,7 @@ export class ProceduralTreeScene extends Scene {
       numberOfLogicWorkers: 1,
     },
     physics: {
-      gravity: { x: 0, y: 1000 },
+      gravity: { x: 0, y: PLANT_GRAVITY_Y },
       sleeping: false,
       subStepCount: 4,
       maxJoints: 4096,
@@ -80,6 +86,7 @@ export class ProceduralTreeScene extends Scene {
         density: 0.05,
         maxCount: 4000,
         subSteps: 1,
+        dampingStrength: 1.6,
       },
     },
     particle: {
@@ -99,6 +106,33 @@ export class ProceduralTreeScene extends Scene {
       enabled: false,
     },
     layers: {
+      bgFar: {
+        kind: LAYER_KIND.COVER,
+        texture: 'bgFar',
+        parallax: { x: 0.04, y: 0.02 },
+        zoomParallax: 0.12,
+        margin: 0.22,
+        zIndex: 0,
+        blendMode: BLEND_MODES.NORMAL,
+      },
+      bgMid: {
+        kind: LAYER_KIND.COVER,
+        texture: 'bgMid',
+        parallax: { x: 0.16, y: 0.05 },
+        zoomParallax: 0.22,
+        margin: 0.22,
+        zIndex: 0.4,
+        blendMode: BLEND_MODES.NORMAL,
+      },
+      bgNear: {
+        kind: LAYER_KIND.COVER,
+        texture: 'bgNear',
+        parallax: { x: 0.38, y: 0.1 },
+        zoomParallax: 0.35,
+        margin: 0.18,
+        zIndex: 1.15,
+        blendMode: BLEND_MODES.NORMAL,
+      },
       terrain: {
         kind: LAYER_KIND.MESH,
         zIndex: 2.9,
@@ -123,6 +157,9 @@ export class ProceduralTreeScene extends Scene {
     textures: {
       leaf: '/demos/proceduralTreeScene/leaf.png',
       rocky: '/demos/img/rocky.jpg',
+      bgFar: bg('paisaje.png'),
+      bgMid: bg('bosque.png'),
+      bgNear: bg('marco.png'),
     },
     shaders: {
       rockContour: {

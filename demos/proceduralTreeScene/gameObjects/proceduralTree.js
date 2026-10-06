@@ -17,11 +17,18 @@ const {
 } = WEED;
 
 const LEAF_USER_TAG = 1;
+const LEAF_RADIUS = 4;
+const LEAF_DENSITY = 0.05;
+// LiquidFun mass is density * diameter². Force = mass * acceleration.
+const LEAF_MASS = LEAF_DENSITY * (LEAF_RADIUS * 2) * (LEAF_RADIUS * 2);
+const LEAF_FALL = 48;
 
 const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
 const ROOT_SLOTS = 6;
 
-export class TreeClock extends SharedResource {}
+export class TreeClock extends SharedResource { }
+
+export const PLANT_GRAVITY_Y = 1000;
 
 export const TUNE = {
   yearSec: { label: 'Year (s)', min: 8, max: 60, step: 1, value: 20 },
@@ -148,32 +155,39 @@ export class ProceduralTree extends GameObject {
       shape: 'circle',
       posX: opts.x,
       posY: opts.y,
-      radius: 4,
+      radius: LEAF_RADIUS,
       spacing: 0,
       flags: LIQUIDFUN_FLAGS.POWDER,
-      lifespan: 3000,
+      lifespan: 12000,
       fadeToAlpha0: true,
       texture: 'leaf',
       scale,
       tint: opts.tint || 0x9fe06a,
       userData: (this.index + LEAF_USER_TAG) >>> 0,
-      vx: this.windX * 0.01,
-      vy: 30,
+      vx: (this.windX || 0) * 0.01,
+      vy: 8,
       layer: 'entities',
     });
   }
 
   _pushLeafParticles() {
-    if (!this.windX) return;
     const views = LiquidFun.getViews();
     if (!views || !views.userData || !views.count) return;
     const n = views.count[0] | 0;
     if (n <= 0) return;
     const tag = (this.index + LEAF_USER_TAG) >>> 0;
     const ud = views.userData;
-    const fx = this.windX * 0.04;
+    const vx = views.vx;
+    const vy = views.vy;
+    const wind = this.windX || 0;
+    const lift = LEAF_MASS * (LEAF_FALL - PLANT_GRAVITY_Y);
     for (let i = 0; i < n; i++) {
-      if (ud[i] === tag) LiquidFun.applyForce(i, fx, 0);
+      if (ud[i] !== tag) continue;
+      let fx = LEAF_MASS * wind * 0.018;
+      let fy = lift;
+      if (vx) fx -= LEAF_MASS * 1.1 * vx[i];
+      if (vy) fy -= LEAF_MASS * 0.45 * vy[i];
+      LiquidFun.applyForce(i, fx, fy);
     }
   }
 

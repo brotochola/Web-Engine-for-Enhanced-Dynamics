@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { readTune } from './proceduralTree.js';
+import { PLANT_GRAVITY_Y, readTune } from './proceduralTree.js';
 import { LAYER_BRANCH, LAYER_GROUND, LEAF_SIDES } from '../components/treeComponent.js';
 import { DeadBranch } from './deadBranch.js';
 
@@ -23,7 +23,6 @@ const WHITE_PX = 8;
 const CHILD_SLOTS = 5;
 const LEAF_SLOTS = 8;
 const LENGTH_SPEED = 40;
-const WIDTH_SPEED = 2.4;
 const BRANCH_GROUP = -1;
 const SHOOT_GREEN = 0x7cb342;
 const DEAD_WOOD = 0x4a4036;
@@ -54,10 +53,11 @@ export class Branch extends GameObject {
     this._drawnSx = -1;
     this._drawnSy = -1;
     this._jointIdx = -1;
-    this._flexApplied = -1;
+    this._flexBand = 0;
     this._dampApplied = -1;
     this._detached = 0;
     this._dead = 0;
+    this._frozen = 0;
     this._deathRoot = 0;
     this._deadMs = 0;
     this._converting = 0;
@@ -112,6 +112,7 @@ export class Branch extends GameObject {
       if (parent) worldAngle += parent.rotation;
     }
     this.rotation = worldAngle;
+    this._aim = worldAngle;
     this.vx = 0;
     this.vy = 0;
     this.angularVelocity = 0;
@@ -131,7 +132,12 @@ export class Branch extends GameObject {
       kids[i] = -1;
       if (id < 0 || !Transform.active[id]) continue;
       const child = GameObject.get(id);
-      if (child) child.despawn();
+      if (!child) continue;
+      if (child._frozen) {
+        this._releaseFrozen(child);
+        continue;
+      }
+      child.despawn();
     }
   }
 
@@ -144,29 +150,48 @@ export class Branch extends GameObject {
     if (this._dead) {
       this._deadMs += deltaTime * (tree.timeScale || 1);
       this._paint();
+      if (this._flexBand !== 5) {
+        this._flexBand = 5;
+        this._setHinge(1.8);
+      }
       if (this._deathRoot && this._deadMs >= DEAD_HANG_MS) this._toDead(tree);
-      return;
-    }
-    this._maybeDie(tree, gene, season);
-
-    if (this._detached) {
-      this._paint();
       return;
     }
 
     const dtSec = deltaTime * 0.001 * (tree.timeScale || 1);
+    this._grow(dtSec, season, gene, tree);
+    if (this._frozen) {
+      this._paint();
+      if (season === SEASON_WINTER || tree.shedPending) {
+        if (!this._shed) {
+          this._shed = 1;
+          this._shedLeaves(tree);
+        }
+      } else if (this._shed) {
+        this._shed = 0;
+      }
+      if (season === SEASON_SPRING) this._maybeChild(dtSec, tree, gene);
+      const sides = (gene.leafLayout | 0) === LEAF_SIDES;
+      if (season === SEASON_SPRING || season === SEASON_SUMMER) {
+        if (sides) this._maybeSideLeaves(gene);
+        else if (this._childCount === 0) this._maybeLeaf(dtSec, season, tree, gene);
+      }
+      this._updateLeaves(tree, gene);
+      return;
+    }
+
+    this._maybeDie(tree, gene, season);
+    if (this._dead) return;
+
     if (this._settleMs > 0) {
       this._settleMs -= deltaTime;
       this._applyDamping(8);
     } else {
       this._applyDamping(readTune('damp'));
     }
-    if (season !== SEASON_WINTER) this._grow(dtSec, season, gene);
     this._paint();
     this._applyWind(tree);
-    const grown = this._maxLength > 0 ? this._length / this._maxLength : 1;
-    const open = grown < 0 ? 0 : grown > 1 ? 1 : grown;
-    this._applyFlex(Math.round(gene.flexDeg * (0.25 + 0.75 * open)));
+    this._holdUp(gene);
 
     if (season === SEASON_WINTER || tree.shedPending) {
       if (!this._shed) {
@@ -195,20 +220,18 @@ export class Branch extends GameObject {
   }
 
   _maybeDie(tree, gene, season) {
-    if (this._dead) return;
+    if (this._dead || this._frozen) return;
     if (this._generation < (gene.dieFromGeneration | 0)) return;
-    const maxAge = gene.maxAgeYears | 0;
     const chance = gene.dieChance;
-    if (maxAge <= 0 || chance <= 0 || season !== SEASON_SPRING) return;
+    if (chance <= 0 || season !== SEASON_SPRING) return;
     const year = tree._yearIndex | 0;
     if (year === this._ageChecked) return;
     this._ageChecked = year;
-    const age = year - this._bornYear;
-    if (age >= maxAge && tree.rand() < chance) this._killTree(tree, false);
+    if (tree.rand() < chance) this._killTree(tree, false);
   }
 
   _killTree(tree, fromParent) {
-    if (this._dead) return;
+    if (this._dead || this._frozen) return;
     this._dead = 1;
     this._deathRoot = fromParent ? 0 : 1;
     this._deadMs = 0;
@@ -239,7 +262,12 @@ export class Branch extends GameObject {
         kids[i] = -1;
         if (id < 0 || !Transform.active[id]) continue;
         const child = GameObject.get(id);
-        if (child && child._toDead) child._toDead(tree);
+        if (!child) continue;
+        if (child._frozen) {
+          this._releaseFrozen(child);
+          continue;
+        }
+        if (child._toDead) child._toDead(tree);
       }
     }
     DeadBranch.spawn({
@@ -255,12 +283,31 @@ export class Branch extends GameObject {
     this.despawn();
   }
 
+  _releaseFrozen(child) {
+    if (child._jointIdx >= 0) {
+      Joint.remove(child._jointIdx);
+      child._jointIdx = -1;
+    }
+    child._parentIndex = -1;
+  }
+
+  _freeze() {
+    if (this._frozen) return;
+    this._frozen = 1;
+    this._width = this._maxWidth;
+    this.vx = 0;
+    this.vy = 0;
+    this.angularVelocity = 0;
+    RigidBody.ax[this.index] = 0;
+    RigidBody.ay[this.index] = 0;
+    RigidBody.angularAccel[this.index] = 0;
+    this.rigidBody.static = 1;
+  }
+
   _attachJoint() {
     const tree = GameObject.get(this._treeIndex);
-    const flexDeg = tree && tree.treeComponent ? tree.treeComponent.flexDeg : 12;
-    const flexDeg0 = Math.round((flexDeg || 12) * 0.25);
-    const flex = (flexDeg0 * Math.PI) / 180;
-    this._flexApplied = flexDeg0;
+    const flexDeg = tree && tree.treeComponent ? tree.treeComponent.flexDeg : 28;
+    const flex = ((flexDeg > 0 ? flexDeg : 28) * Math.PI) / 180;
     const parent = this._parentIndex < 0 ? this._treeIndex : this._parentIndex;
     const along = this._parentIndex < 0 ? 0 : this._birthParentLength;
     const idx = Joint.addRevolute({
@@ -275,12 +322,11 @@ export class Branch extends GameObject {
       upperAngle: flex,
     });
     this._jointIdx = idx;
+    this._flexBand = 0;
   }
 
-  _applyFlex(degrees) {
-    if (this._jointIdx < 0 || degrees === this._flexApplied) return;
-    this._flexApplied = degrees;
-    const flex = (degrees * Math.PI) / 180;
+  _setHinge(flex) {
+    if (this._jointIdx < 0) return;
     Joint.update(this._jointIdx, {
       enableLimit: true,
       lowerAngle: -flex,
@@ -295,28 +341,84 @@ export class Branch extends GameObject {
     this.rigidBody.angularDamping = damp;
   }
 
-  _applyWind(tree) {
-    if (this._leafCount <= 0 || !tree.windX) return;
-    const mass = RigidBody.mass[this.index];
-    const m = mass > 0 ? mass : 1;
-    this.addAcceleration((tree.windX * this._leafCount) / m, 0);
+  _skeletonAim() {
+    let parentAim = 0;
+    if (this._parentIndex >= 0 && Transform.active[this._parentIndex]) {
+      const parent = GameObject.get(this._parentIndex);
+      if (parent && parent._aim != null) parentAim = parent._aim;
+    }
+    return parentAim + this._localAngle;
   }
 
-  _grow(dtSec, season, gene) {
+  _holdUp(gene) {
+    const upright = gene && gene.upright > 0 ? gene.upright : 0;
+    const hold = upright > 1 ? 1 : upright;
+    if (hold <= 0) return;
+    // Gravity is a force at the center of mass. A torque never cancels it,
+    // and each child still loads the branch it hangs from.
+    this.addAcceleration(0, -PLANT_GRAVITY_Y * hold);
+
+    const thick = this._maxWidth > 1 ? this._width / this._maxWidth : 0;
+    const thin = thick >= 1 ? 0 : thick <= 0 ? 1 : 1 - thick;
+    if (thin <= 0) return;
+
+    const grown = this._skeletonAim();
+    this._aim = grown;
+    const aim = grown * (1 - hold * thin);
+    let err = this.rotation - aim;
+    const pi = Math.PI;
+    if (err > pi) err -= pi * 2;
+    else if (err < -pi) err += pi * 2;
+
+    const k = 18 * hold * (0.4 + 0.6 * thin);
+    const damp = 6;
+    const w = this._width;
+    const h = this._length > 1 ? this._length : 1;
+    const iOverM = (w * w + h * h) / 12;
+    let alpha = -k * err - damp * this.angularVelocity;
+    const cap = 10 * hold;
+    if (alpha > cap) alpha = cap;
+    else if (alpha < -cap) alpha = -cap;
+    RigidBody.angularAccel[this.index] = iOverM * alpha;
+  }
+
+  _applyWind(tree) {
+    const thick = this._maxWidth > 1 ? this._width / this._maxWidth : 0;
+    const thin = thick >= 1 ? 0 : 1 - thick;
+    if (thin < 0.02 || this._leafCount <= 0 || !tree.windX) return;
+    const mass = RigidBody.mass[this.index];
+    const m = mass > 0 ? mass : 1;
+    this.addAcceleration((tree.windX * this._leafCount * thin) / m, 0);
+  }
+
+  _grow(dtSec, season, gene, tree) {
     const decay = 1 + this._generation * gene.lengthDecay;
     this._maxLength = gene.segmentLength / decay;
     this._maxWidth = gene.segmentWidth / decay;
+    if (this._frozen) return;
+
+    const yearMs = Math.max(4000, readTune('yearSec') * 1000);
+    const age = tree.yearTime / yearMs - this._bornYear;
+    const pace = gene.growth > 0.05 ? gene.growth : 0.05;
+    const fillYears = 2.4 / pace;
+    let u = age / fillYears;
+    if (u < 0) u = 0;
+    else if (u > 1) u = 1;
+    const eased = 1 - (1 - u) * (1 - u) * (1 - u);
+    const startW = this._maxWidth * 0.12;
+    this._width = startW + (this._maxWidth - startW) * eased;
+    if (u >= 1) {
+      this._freeze();
+      return;
+    }
+
     let rate = gene.growth;
     if (season === SEASON_SUMMER) rate *= 0.35;
     else if (season === SEASON_AUTUMN) rate *= gene.matureGrowth;
     else if (season !== SEASON_SPRING) rate = 0;
-    const past = this._length >= this._maxLength;
-    if (past) rate *= gene.matureGrowth;
-    if (rate <= 0) return;
+    if (rate <= 0 || this._length >= this._maxLength) return;
     this._length += LENGTH_SPEED * rate * dtSec;
-    const longEnough = this._length >= this._maxLength * 0.75;
-    const widthMul = longEnough ? 1 : 0.15;
-    this._width += WIDTH_SPEED * rate * widthMul * dtSec;
+    if (this._length > this._maxLength) this._length = this._maxLength;
   }
 
   _paint() {
@@ -378,7 +480,7 @@ export class Branch extends GameObject {
     if (this._childCount >= maxKids) return;
     if (this._length < this._maxLength * 0.35) return;
     const age = (tree._yearIndex | 0) - this._bornYear;
-    const ageFactor = Math.max(0.15, 1 - age * 0.12);
+    const ageFactor = this._frozen ? 1 : Math.max(0.15, 1 - age * 0.12);
     if (tree.rand() > 0.4 * dtSec * ageFactor) return;
 
     const slot = this._openChildSlot(tree, gene, maxKids);
@@ -406,7 +508,8 @@ export class Branch extends GameObject {
     const open = maxKids - this._childCount;
     if (open <= 0) return null;
     if (maxKids <= 1) {
-      return { which: 0, angle: (tree.rand() - 0.5) * 0.22 };
+      const spread = (gene.spreadDeg * Math.PI) / 180;
+      return { which: 0, angle: (tree.rand() - 0.5) * spread * 0.45 };
     }
     const pick = (tree.rand() * open) | 0;
     let seen = 0;
