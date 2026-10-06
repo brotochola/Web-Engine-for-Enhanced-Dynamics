@@ -2898,6 +2898,9 @@
   globalThis.weedjsRestoreLiquidFun = weedjsRestoreLiquidFun;
   globalThis.weedjsEnableHostMode = weedjsEnableHostMode;
   globalThis.weedjsDoStep = weedjsDoStep;
+  globalThis.weedjsServiceQueries = function () {
+    serviceQueryAabb();
+  };
   globalThis.weedjsWhenModuleReady = weedjsWhenModuleReady;
   globalThis.weedjsHandleInit = handleInit;
   globalThis.weedjsApplyConfig = weedjsApplyConfig;

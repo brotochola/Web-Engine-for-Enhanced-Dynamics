@@ -234,6 +234,26 @@
     return true;
   }
 
+  // Wake the physics thread between frames. A sync query posted after doStep
+  // otherwise waits for the next requestAnimationFrame (~16 ms inside logic's step).
+  function armPendingWake(onPending) {
+    if (!i32 || typeof onPending !== 'function' || typeof Atomics.waitAsync !== 'function') return false;
+    var status = Atomics.load(i32, HDR_STATUS) | 0;
+    if (status === STATUS_PENDING) {
+      onPending();
+      return true;
+    }
+    var wait = Atomics.waitAsync(i32, HDR_STATUS, status);
+    if (!wait || wait.async === false) {
+      onPending();
+      return false;
+    }
+    wait.value.then(function () {
+      onPending();
+    });
+    return true;
+  }
+
   global.Box2dQueryAabb = {
     STATUS_IDLE: STATUS_IDLE,
     STATUS_PENDING: STATUS_PENDING,
@@ -247,5 +267,6 @@
     box2dQueryAABB: box2dQueryAABB,
     box2dQueryAABBAsync: box2dQueryAABBAsync,
     servicePendingQuery: servicePendingQuery,
+    armPendingWake: armPendingWake,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

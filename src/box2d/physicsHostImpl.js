@@ -1050,6 +1050,21 @@
     });
   }
 
+  function pumpQueryWake() {
+    if (state._queryWakeArmed) return;
+    if (typeof Box2dQueryAabb === 'undefined' || typeof Box2dQueryAabb.armPendingWake !== 'function') return;
+    if (typeof Box2dQueryAabb.isQueryAabbBound === 'function' && !Box2dQueryAabb.isQueryAabbBound()) return;
+    state._queryWakeArmed = true;
+    var armed = Box2dQueryAabb.armPendingWake(function () {
+      state._queryWakeArmed = false;
+      if (!state._inStep && typeof globalThis.weedjsServiceQueries === 'function') {
+        globalThis.weedjsServiceQueries();
+      }
+      pumpQueryWake();
+    });
+    if (!armed) state._queryWakeArmed = false;
+  }
+
   function gameLoop() {
     if (state.isPaused) return;
 
@@ -1080,7 +1095,12 @@
         if (dt > maxDt) dt = maxDt;
       }
       if (dt > 0) {
-        weedjsDoStep(dt, state.settings.subStepCount);
+        state._inStep = true;
+        try {
+          weedjsDoStep(dt, state.settings.subStepCount);
+        } finally {
+          state._inStep = false;
+        }
       }
       if (state.stats) {
         state.stats[PS.STEP_MS] = performance.now() - t0;
@@ -1099,6 +1119,7 @@
     } else {
       requestAnimationFrame(gameLoop);
     }
+    pumpQueryWake();
   }
 
   function stepOnce(deltaTimeMs) {
@@ -1109,7 +1130,12 @@
     var dt = deltaTimeMs / 1000;
     if (state.box2dReady && dt > 0) {
       var t0 = performance.now();
-      weedjsDoStep(dt, state.settings.subStepCount);
+      state._inStep = true;
+      try {
+        weedjsDoStep(dt, state.settings.subStepCount);
+      } finally {
+        state._inStep = false;
+      }
       if (state.stats) {
         state.stats[PS.STEP_MS] = performance.now() - t0;
       }
