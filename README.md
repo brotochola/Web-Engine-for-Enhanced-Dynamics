@@ -6,7 +6,7 @@
 
 ![npm](https://img.shields.io/npm/v/@weed.js/engine?label=npm&color=cb3837) ![license](https://img.shields.io/badge/license-ISC-blue) ![SharedArrayBuffer](https://img.shields.io/badge/zero--copy-SharedArrayBuffer-0f766e) ![WebGPU](https://img.shields.io/badge/WebGL%20%2B%20WebGPU-ready-5c3ee8)
 
-**[▶ Live demos](https://multithreaded-game-engine.vercel.app/demos)** · **[▶ Engine showcase (video)](https://youtu.be/V_4fTu9eKwo)** · **[Documentation](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/README.md)**
+**[▶ Live demos]([https://multithreaded-game-engine.vercel.app/demos]([https://web-engine-for-enhanced-dynamics.vercel.app/demos/](https://web-engine-for-enhanced-dynamics.vercel.app/demos/)))** · **[▶ Engine showcase (video)](https://youtu.be/V_4fTu9eKwo)** · **[Documentation](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/README.md)**
 
 ![Web Engine for Enhanced Dynamics demo](https://raw.githubusercontent.com/brotochola/Web-Engine-for-Enhanced-Dynamics/main/screen-capture.gif)
 
