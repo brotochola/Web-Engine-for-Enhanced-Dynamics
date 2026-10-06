@@ -149,7 +149,11 @@ export class Grid {
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (buffers.neighborBuffer) {
       Grid._neighborBuffer = buffers.neighborBuffer;
-      Grid._neighborData = new (idBytes === 4 ? Uint32Array : Uint16Array)(buffers.neighborBuffer);
+      const neighborByte = metadata.neighborByte | 0;
+      Grid._neighborData = new (idBytes === 4 ? Uint32Array : Uint16Array)(
+        buffers.neighborBuffer,
+        neighborByte,
+      );
     }
 
     // ===== CELL SLEEPING STATE (Single Buffer) =====

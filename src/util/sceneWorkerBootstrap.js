@@ -382,6 +382,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     customLayerRenderQueues: scene.customLayerRenderQueues,
     // Boot payload: pose SAB when physics is off. Workers bind once; ticks do not re-read this.
     weedPose: scene.weedPose || null,
+    spatialPublishMemory: scene.spatialPublish?.memory || null,
   };
 }
 

@@ -495,7 +495,8 @@ export class AbstractWorker {
       data.buffers?.nextTickData,
       data.buffers?.forceProcessOnLogicWorkerData,
       data.buffers?.entityTypeHasForcedLogicWorker,
-      data.buffers?.entityTypeForcedLogicWorkerCount
+      data.buffers?.entityTypeForcedLogicWorkerCount,
+      data.gridMetadata?.neighborByte | 0,
     );
 
     // Initialize ParticleComponent arrays (separate particle pool system)
@@ -720,7 +721,10 @@ export class AbstractWorker {
     // Initialize neighbor data reference (single buffer - row ownership eliminates races)
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (data.buffers?.neighborData) {
-      this.neighborData = new (EntityIdArray())(data.buffers.neighborData);
+      this.neighborData = new (EntityIdArray())(
+        data.buffers.neighborData,
+        data.gridMetadata?.neighborByte | 0,
+      );
     }
 
     // Initialize active entities list (for load-balanced processing)

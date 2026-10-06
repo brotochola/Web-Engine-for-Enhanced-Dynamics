@@ -48,6 +48,7 @@ import {
 import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
+import { bindSpatialPublish } from './spatialPublishClient.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../util/colliderUtils.js';
 
 /**
@@ -146,7 +147,7 @@ class SpatialWorker extends AbstractWorker {
    * Initialize spatial worker
    * @param {Object} data - Initialization data from Scene
    */
-  initialize(data) {
+  async initialize(data) {
     // Set worker identity
     this.workerId = data.workerIndex || 0;
     this.totalSpatialWorkers = data.totalSpatialWorkers || 1;
@@ -191,7 +192,10 @@ class SpatialWorker extends AbstractWorker {
     // Initialize pre-computed entity position buffer (interleaved for cache locality)
     // Layout: [x, y, halfExtent, pad] per entity (stride 4, 16 bytes each)
     if (data.buffers.entityPosData) {
-      this.entityPosData = new Float32Array(data.buffers.entityPosData);
+      const posByte = data.gridMetadata?.posByte | 0;
+      this.entityPosData = posByte
+        ? new Float32Array(data.buffers.entityPosData, posByte, this.globalEntityCount * 4)
+        : new Float32Array(data.buffers.entityPosData);
     }
     // Initialize duplicate detection marker for neighbors (entityB)
     // Uint32Array: upper 16 bits = frame counter, lower 16 bits = entityA
@@ -225,7 +229,25 @@ class SpatialWorker extends AbstractWorker {
       this._entityNeighborNextTick = null;
     }
     const candStride = 1 + Grid.maxNeighbors;
-    this._neighborCandidateData = new (EntityIdArray())(this.globalEntityCount * candStride);
+    this._wasmPub = null;
+    if (data.spatialPublishMemory && data.gridMetadata?.candByte) {
+      try {
+        this._wasmPub = await bindSpatialPublish(
+          data.spatialPublishMemory,
+          data.gridMetadata,
+          this.workerId | 0,
+          this.globalEntityCount,
+          Grid.maxNeighbors,
+        );
+        this._wasmMeta = data.gridMetadata;
+      } catch (err) {
+        console.error('[spatial] publish wasm unavailable', err);
+        this._wasmPub = null;
+      }
+    }
+    this._neighborCandidateData = this._wasmPub
+      ? this._wasmPub.cand
+      : new (EntityIdArray())(this.globalEntityCount * candStride);
     this._candidateCountOf = new (EntityIdArray())(this.globalEntityCount);
     this._ownedEntityList = new (EntityIdArray())(this.globalEntityCount);
     this._ownedEntityCount = 0;
@@ -562,6 +584,11 @@ class SpatialWorker extends AbstractWorker {
    * @returns {number} published count
    */
   _publishFilteredNeighbors(entityA, myX, myY, myVisualRange, neighborOffset, maxNeighbors, entityPosData, neighborData) {
+    if (this._wasmPub) {
+      this._wasmPub.range[entityA] = myVisualRange;
+      this._wasmPub.list[this._wasmPub.queued++] = entityA;
+      return 0;
+    }
     const candStride = 1 + maxNeighbors;
     const candBase = entityA * candStride;
     const cand = this._neighborCandidateData;
@@ -781,6 +808,25 @@ class SpatialWorker extends AbstractWorker {
           framesSinceBuild[entityA] = 0;
         }
       }
+    }
+    if (this._wasmPub && this._wasmPub.queued) {
+      const n = this._wasmPub.queued;
+      this._wasmPub.queued = 0;
+      const meta = this._wasmMeta;
+      this._wasmPub.publish(
+        n,
+        Grid.maxNeighbors,
+        meta.posByte,
+        meta.rangeByte,
+        meta.candByte,
+        meta.neighborByte,
+        this._wasmPub.listByte,
+      );
+      const stride = 1 + Grid.maxNeighbors;
+      let found = 0;
+      const neighborData = Grid.neighborData;
+      for (let i = 0; i < n; i++) found += neighborData[this._wasmPub.list[i] * stride];
+      this.neighborsFoundThisFrame += found;
     }
   }
 

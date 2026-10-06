@@ -1,4 +1,5 @@
 import { debugWorkerLog } from './debugLog.js';
+import { createSpatialPublishMemory } from './spatialPublishMemory.js';
 import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -173,10 +174,16 @@ function initializeCoreEntityAndComponentBuffers(scene) {
 
   const spatialOn = (config.spatial.numberOfSpatialWorkers | 0) > 0;
   const maxNeighbors = config.spatial.maxNeighbors;
+  scene.spatialPublish = null;
   if (spatialOn) {
-    buffers.neighborData = new SharedArrayBuffer(
-      totalEntityCount * (1 + maxNeighbors) * entityIdBytes(),
+    scene.spatialPublish = createSpatialPublishMemory(
+      totalEntityCount,
+      maxNeighbors,
+      config.spatial.numberOfSpatialWorkers | 0,
     );
+    buffers.neighborData = scene.spatialPublish
+      ? scene.spatialPublish.buffer
+      : new SharedArrayBuffer(totalEntityCount * (1 + maxNeighbors) * entityIdBytes());
   } else {
     buffers.neighborData = null;
   }
@@ -200,7 +207,8 @@ function initializeCoreEntityAndComponentBuffers(scene) {
     buffers.nextTickData || null,
     buffers.forceProcessOnLogicWorkerData,
     buffers.entityTypeHasForcedLogicWorker,
-    buffers.entityTypeForcedLogicWorkerCount
+    buffers.entityTypeForcedLogicWorkerCount,
+    scene.spatialPublish ? scene.spatialPublish.neighborByte : 0,
   );
 
   for (const [componentName, pool] of Object.entries(componentPools)) {
@@ -770,7 +778,10 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
     buffers.gridBuffer = new SharedArrayBuffer(totalCells * cellByteSize);
     buffers.cellSleepingBuffer = new SharedArrayBuffer(totalCells);
     buffers.cellVersionBuffer = new SharedArrayBuffer(totalCells * 4);
-    buffers.entityPosData = new SharedArrayBuffer(totalEntityCount * 4 * 4);
+    const publish = scene.spatialPublish;
+    buffers.entityPosData = publish
+      ? publish.buffer
+      : new SharedArrayBuffer(totalEntityCount * 4 * 4);
 
     scene.gridMetadata = {
       cellSize,
@@ -782,6 +793,11 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
       maxNeighbors,
       rowsPerBlock: config.spatial.rowsPerBlock,
       entityIdBytes: entityIdBytes(),
+      neighborByte: publish ? publish.neighborByte : 0,
+      posByte: publish ? publish.posByte : 0,
+      candByte: publish ? publish.candByte : 0,
+      rangeByte: publish ? publish.rangeByte : 0,
+      listByte: publish ? publish.listByte : 0,
     };
 
     Grid.initialize(
@@ -801,6 +817,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
         maxNeighbors,
         rowsPerBlock: config.spatial.rowsPerBlock,
         entityIdBytes: entityIdBytes(),
+        neighborByte: scene.gridMetadata.neighborByte,
       }
     );
   } else {

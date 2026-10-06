@@ -204,13 +204,16 @@ export class GameObject {
     nextTickBuffer = null,
     forceProcessOnLogicWorkerBuffer = null,
     entityTypeHasForcedLogicWorkerBuffer = null,
-    entityTypeForcedLogicWorkerCountBuffer = null
+    entityTypeForcedLogicWorkerCountBuffer = null,
+    neighborByte = 0
   ) {
     this.globalEntityCount = count;
 
-    // Initialize neighbor data if provided
-    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
-    this.neighborData = neighborBuffer ? new (EntityIdArray())(neighborBuffer) : null;
+    // Initialize neighbor data if provided.
+    // neighborByte skips a wasm stack header when the buffer is a WebAssembly.Memory.
+    this.neighborData = neighborBuffer
+      ? new (EntityIdArray())(neighborBuffer, neighborByte | 0)
+      : null;
 
     // Initialize tick decimation buffer if provided (staggeredUpdates enabled)
     if (nextTickBuffer) {

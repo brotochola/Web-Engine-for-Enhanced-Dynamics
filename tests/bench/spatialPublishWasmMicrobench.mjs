@@ -29,8 +29,8 @@ const candByte = align4(listByte + LIST_U16 * 2);
 const neighborJsByte = align4(candByte + ROW_U16 * 2);
 const neighborWasmByte = align4(neighborJsByte + ROW_U16 * 2);
 const bytes = neighborWasmByte + ROW_U16 * 2;
-const pages = 4096;
-if (bytes > pages * 65536) throw new Error(`layout ${bytes} exceeds wasm memory`);
+const pages = Math.max(2, Math.ceil(bytes / 65536));
+if (pages > 8192) throw new Error(`layout ${bytes} exceeds wasm memory`);
 
 function fill(memory) {
   const pos = new Float32Array(memory.buffer, posByte, POS_FLOATS);
