@@ -8,5 +8,6 @@ export const bindRayCastSab = R.bindRayCastSab;
 export const isRayCastBound = R.isRayCastBound;
 export const box2dCastRayClosest = R.box2dCastRayClosest;
 export const box2dCastRayClosestAsync = R.box2dCastRayClosestAsync;
+export const box2dCastRayClosestBatch = R.box2dCastRayClosestBatch;
 export const fillRayCastHit = R.fillRayCastHit;
 export const servicePendingRayCast = R.servicePendingRayCast;

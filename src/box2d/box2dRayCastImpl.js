@@ -24,6 +24,11 @@
   var HEADER_I32 = 8;
   var RAY_F32 = HEADER_I32; // ox, oy, dx, dy
   var OUT_F32 = HEADER_I32 + 4; // fraction, hitX, hitY (+1 pad)
+  var HDR_COUNT = 5;
+  var BATCH_CAP = 4096;
+  // Batch rays sit past the single-flight slots. One PENDING, one wait.
+  var BATCH_RAY_F32 = 16;
+  var BATCH_ENTITY_I32 = BATCH_RAY_F32 + BATCH_CAP * 4;
 
   var DEFAULT_CATEGORY = 1;
   var DEFAULT_MASK = 0xffffffff;
@@ -33,7 +38,7 @@
   var bound = false;
 
   function createRayCastSab() {
-    var i32Count = OUT_F32 + 4;
+    var i32Count = BATCH_ENTITY_I32 + BATCH_CAP;
     var sab = new SharedArrayBuffer(i32Count * 4);
     var view = new Int32Array(sab);
     Atomics.store(view, HDR_STATUS, STATUS_IDLE);
@@ -105,6 +110,7 @@
     Atomics.store(i32, HDR_MASK, mask);
     Atomics.store(i32, HDR_HIT, 0);
     Atomics.store(i32, HDR_ENTITY, -1);
+    Atomics.store(i32, HDR_COUNT, 1);
     Atomics.store(i32, HDR_STATUS, STATUS_PENDING);
     Atomics.notify(i32, HDR_STATUS, 1);
   }
@@ -230,8 +236,9 @@
    * @returns {boolean} true if a cast was serviced
    */
   function servicePendingRayCast(castFn) {
-    if (!i32 || typeof castFn !== 'function') return false;
-    if ((Atomics.load(i32, HDR_STATUS) | 0) !== STATUS_PENDING) return false;
+    if (!i32 || typeof castFn !== 'function') return 0;
+    if ((Atomics.load(i32, HDR_STATUS) | 0) !== STATUS_PENDING) return 0;
+    if ((Atomics.load(i32, HDR_COUNT) | 0) > 1) return serviceRayBatch(castFn);
 
     var ox = f32[RAY_F32];
     var oy = f32[RAY_F32 + 1];
@@ -258,7 +265,66 @@
       }
     }
     Atomics.notify(i32, HDR_STATUS, 1);
-    return true;
+    return 1;
+  }
+
+  function serviceRayBatch(castFn) {
+    var n = Atomics.load(i32, HDR_COUNT) | 0;
+    if (n > BATCH_CAP) n = BATCH_CAP;
+    var cat = Atomics.load(i32, HDR_CATEGORY) | 0;
+    var mask = Atomics.load(i32, HDR_MASK) | 0;
+    try {
+      for (var i = 0; i < n; i++) {
+        var b = BATCH_RAY_F32 + i * 4;
+        var r = castFn(f32[b], f32[b + 1], f32[b + 2], f32[b + 3], cat, mask) || {};
+        var hit = !!r.hit;
+        Atomics.store(i32, BATCH_ENTITY_I32 + i, hit ? (r.entityIndex | 0) : -1);
+      }
+      Atomics.store(i32, HDR_STATUS, STATUS_DONE);
+    } catch (err) {
+      Atomics.store(i32, HDR_STATUS, STATUS_ERROR);
+      if (typeof console !== 'undefined' && console.error) {
+        console.error('[box2dCastRayClosest] batch service error', err);
+      }
+    }
+    Atomics.notify(i32, HDR_STATUS, 1);
+    return 2;
+  }
+
+  function box2dCastRayClosestBatch(count, rays, entities, filter) {
+    var n = count | 0;
+    if (n < 1) return 0;
+    if (n > BATCH_CAP) n = BATCH_CAP;
+    if (!i32) {
+      throw new Error('box2dCastRayClosest: SAB not bound (wait for box2dReady)');
+    }
+    for (;;) {
+      var prev = Atomics.compareExchange(i32, HDR_STATUS, STATUS_IDLE, STATUS_CLAIMED);
+      if (prev === STATUS_IDLE) break;
+      Atomics.wait(i32, HDR_STATUS, prev);
+    }
+    var base = BATCH_RAY_F32;
+    var floats = n * 4;
+    for (var i = 0; i < floats; i++) f32[base + i] = rays[i];
+    var cat = filter && filter.categoryBits != null ? filter.categoryBits | 0 : DEFAULT_CATEGORY;
+    var mask = filter && filter.maskBits != null ? filter.maskBits | 0 : DEFAULT_MASK;
+    Atomics.store(i32, HDR_CATEGORY, cat);
+    Atomics.store(i32, HDR_MASK, mask);
+    Atomics.store(i32, HDR_COUNT, n);
+    Atomics.store(i32, HDR_STATUS, STATUS_PENDING);
+    Atomics.notify(i32, HDR_STATUS, 1);
+    waitUntilDoneSync();
+    if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_ERROR) {
+      Atomics.store(i32, HDR_COUNT, 1);
+      Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
+      Atomics.notify(i32, HDR_STATUS, 1);
+      throw new Error('box2dCastRayClosestBatch: physics reported error');
+    }
+    for (var e = 0; e < n; e++) entities[e] = Atomics.load(i32, BATCH_ENTITY_I32 + e) | 0;
+    Atomics.store(i32, HDR_COUNT, 1);
+    Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
+    Atomics.notify(i32, HDR_STATUS, 1);
+    return n;
   }
 
   /**
@@ -274,8 +340,10 @@
     if (max <= 0) max = 1;
     var serviced = 0;
     while (serviced < max) {
-      if (servicePendingRayCast(castFn)) {
+      var kind = servicePendingRayCast(castFn);
+      if (kind) {
         serviced++;
+        if (kind === 2) break;
         continue;
       }
       if (serviced === 0) break;
@@ -314,6 +382,7 @@
     isRayCastBound: isRayCastBound,
     box2dCastRayClosest: box2dCastRayClosest,
     box2dCastRayClosestAsync: box2dCastRayClosestAsync,
+    box2dCastRayClosestBatch: box2dCastRayClosestBatch,
     fillRayCastHit: fillRayCastHit,
     servicePendingRayCast: servicePendingRayCast,
     servicePendingRayCastBurst: servicePendingRayCastBurst,

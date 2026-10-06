@@ -4,7 +4,7 @@
 import { enqueueExplode } from '../box2d/box2dCommandRing.js';
 import { box2dQueryAABB, box2dQueryAABBAsync } from '../box2d/box2dQueryAabb.js';
 import { box2dOverlapCircle, box2dOverlapCircleAsync } from '../box2d/box2dOverlapCircle.js';
-import { box2dCastRayClosest, box2dCastRayClosestAsync } from '../box2d/box2dRayCast.js';
+import { box2dCastRayClosest, box2dCastRayClosestAsync, box2dCastRayClosestBatch } from '../box2d/box2dRayCast.js';
 import { box2dCastRayAll, box2dCastRayAllAsync } from '../box2d/box2dCastRayAll.js';
 import { getMovedBodiesViews } from '../box2d/box2dMovedBodies.js';
 
@@ -86,6 +86,15 @@ export class Box2d {
   static castRayClosestAsync(ox, oy, dx, dy, out, filter) {
     this._assertPhysicsWorker();
     return box2dCastRayClosestAsync(ox, oy, dx, dy, out, filter);
+  }
+
+  /**
+   * Sync batch of castRayClosest. One SAB wait for `count` rays.
+   * `rays` is interleaved ox, oy, dx, dy. `entities` receives the hit id or -1.
+   */
+  static castRayClosestBatch(count, rays, entities, filter) {
+    this._assertPhysicsWorker();
+    return box2dCastRayClosestBatch(count, rays, entities, filter);
   }
 
   /** Sync castRayAll (logic). Fills borrowed `out` with `{ entityIndex, fraction, hitX, hitY }`. */

@@ -35,6 +35,8 @@ export class RayStressDriver extends GameObject {
       hitX: 0,
       hitY: 0,
     };
+    this._batchRays = new Float32Array(CASTS_PER_TICK * 4);
+    this._batchEnt = new Int32Array(CASTS_PER_TICK);
   }
 
   _mulberry32(seed) {
@@ -110,7 +112,9 @@ export class RayStressDriver extends GameObject {
   }
 
   _tickBox2d(pairs, rays, cursor, half) {
-    let sink = this._sink;
+    const batch = this._batchRays;
+    const ent = this._batchEnt;
+    let n = 0;
     for (let i = 0; i < half; i++) {
       const k = ((cursor + i) % PAIR_COUNT) * 2;
       const a = pairs[k];
@@ -119,19 +123,44 @@ export class RayStressDriver extends GameObject {
       const ay = Transform.y[a];
       const bx = Transform.x[b];
       const by = Transform.y[b];
-      // Two closest casts ≈ LOS + linecastBetweenEntities cost shape.
-      const h1 = this._box2dClosest(ax, ay, bx, by);
-      if (h1 === -1) sink++;
-      const h2 = this._box2dClosest(ax, ay, bx, by);
-      if (h2 !== -1) sink++;
+      const o = n * 4;
+      batch[o] = ax;
+      batch[o + 1] = ay;
+      batch[o + 2] = bx - ax;
+      batch[o + 3] = by - ay;
+      n++;
+      batch[o + 4] = ax;
+      batch[o + 5] = ay;
+      batch[o + 6] = bx - ax;
+      batch[o + 7] = by - ay;
+      n++;
     }
+    const pairN = n;
     for (let i = 0; i < half; i++) {
       const k = ((cursor + i) % LONG_RAY_COUNT) * 4;
-      const hit = this._box2dClosest(rays[k], rays[k + 1], rays[k + 2], rays[k + 3]);
-      sink += hit;
-      // Second cast stands in for castAll(maxHits=4) volume (closest-only API).
-      const hit2 = this._box2dClosest(rays[k], rays[k + 1], rays[k + 2], rays[k + 3]);
-      if (hit2 !== -1) sink++;
+      const ox = rays[k];
+      const oy = rays[k + 1];
+      const o = n * 4;
+      batch[o] = ox;
+      batch[o + 1] = oy;
+      batch[o + 2] = rays[k + 2] - ox;
+      batch[o + 3] = rays[k + 3] - oy;
+      n++;
+      batch[o + 4] = ox;
+      batch[o + 5] = oy;
+      batch[o + 6] = rays[k + 2] - ox;
+      batch[o + 7] = rays[k + 3] - oy;
+      n++;
+    }
+    Box2d.castRayClosestBatch(n, batch, ent);
+    let sink = this._sink;
+    for (let i = 0; i < pairN; i += 2) {
+      if (ent[i] === -1) sink++;
+      if (ent[i + 1] !== -1) sink++;
+    }
+    for (let i = pairN; i < n; i += 2) {
+      sink += ent[i];
+      if (ent[i + 1] !== -1) sink++;
     }
     this._sink = sink;
   }
