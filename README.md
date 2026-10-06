@@ -1,18 +1,70 @@
-# WeedJS
+# Web Engine for Enhanced Dynamics
 
-**A multithreaded 2D web game engine for high-entity-count browser games.**
+**A multithreaded 2D game engine that makes the browser behave like a modern game console.**
 
-WeedJS is built around Web Workers, `SharedArrayBuffer`-backed component data, and a PixiJS renderer running on `OffscreenCanvas`. Spatial queries, physics, game logic, particles, render preparation, rendering, and audio mixing each have dedicated execution paths so busy scenes can stay responsive.
+`~1 MB` · `ECS` · `Box2D 3.2 on WebAssembly` · `LiquidFun fluids` · `WebGL + WebGPU` · `50,000+ entities at 60 FPS`
 
-Live demo: https://multithreaded-game-engine.vercel.app/demos
+![npm](https://img.shields.io/npm/v/@weed.js/engine?label=npm&color=cb3837) ![license](https://img.shields.io/badge/license-ISC-blue) ![SharedArrayBuffer](https://img.shields.io/badge/zero--copy-SharedArrayBuffer-0f766e) ![WebGPU](https://img.shields.io/badge/WebGL%20%2B%20WebGPU-ready-5c3ee8)
 
-![WeedJS Demo](https://raw.githubusercontent.com/brotochola/Web-Engine-for-Enhanced-Dynamics/main/screen-capture.gif)
+**[▶ Live demos](https://multithreaded-game-engine.vercel.app/demos)** · **[▶ Engine showcase (video)](https://youtu.be/V_4fTu9eKwo)** · **[Documentation](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/README.md)**
+
+![Web Engine for Enhanced Dynamics demo](https://raw.githubusercontent.com/brotochola/Web-Engine-for-Enhanced-Dynamics/main/screen-capture.gif)
+
+Many browser games run simulation and rendering on a single thread. This engine does not. Physics, game logic, spatial queries, particles, render preparation, rendering and audio each run in their own worker and share memory through `SharedArrayBuffer`, with zero-copy data paths. The result is tens of thousands of simulated entities, real rigid-body physics, fluids, lighting and GPU compute at 60 FPS, in a browser tab, from a bundle of about 1 MB.
+
+---
+
+## By the Numbers
+
+| Scenario | Result |
+| --- | --- |
+| **50,000+ entities** chasing, shooting and fleeing, driven by state machines | **60 FPS** |
+| **Bunnymark** sprite stress test | **250,000 sprites at 60 FPS** |
+| Production bundle (Box2D + LiquidFun WASM included) | **≈ 1 MB** |
+| Unit tests | **800** |
+
+Measured on a mid-range laptop: AMD Ryzen 7 4800H, 16 GB RAM, NVIDIA GTX 1650. Benchmark methodology: [`tests/bench/BENCHMARK_METHODOLOGY.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/tests/bench/BENCHMARK_METHODOLOGY.md).
+
+---
+
+## What You Get
+
+**Simulation at scale**
+- Pooled ECS-style entities backed by typed arrays, with data-oriented design (Structure of Arrays).
+- Row-owned spatial hashing with precomputed neighbor lists.
+- Flow-field and A\* pathfinding, finite state machines, DDA ray casting.
+
+**Physics**
+- **Box2D 3.2** compiled to multithreaded WebAssembly (pthreads, SIMD, shared memory). Not a JS reimplementation.
+- **LiquidFun fluids** rewritten in C and parallelized to run next to Box2D, with two-way coupling between particles and rigid bodies.
+
+**Rendering**
+- WebGL and WebGPU backends, with custom instancing shaders. PixiJS is used sparingly.
+- Custom shader layers, WebGPU compute layers (WGSL), mesh renderers.
+- Point lights with projected and ray-cast shadows, day/night sun control.
+- Particle emitters (flat and isometric), decals, Tiled tilemaps, spritesheets and Adobe Animate exports.
+
+**Developer experience**
+- Plain JavaScript and browser-native ES modules; the demos run straight from `src/`.
+- Debug UI with worker FPS stats, entity inspection, physics and navigation overlays.
+- Production and debug builds, save games, and a documentation set under [`docs/`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/tree/main/docs).
+
+---
+
+## Built Measurement-First
+
+The engine is developed against numbers, not intuition.
+
+- **800 unit tests** guard every change.
+- **Microbenchmarks and scenario benchmarks** record per-frame step time, FPS and the duration of every process in every worker, plus full-engine tracing.
+- **An AI-assisted optimization loop.** A coding agent reads the traces (V8 deoptimizations, hot functions, share of the 16 ms per-worker frame budget) and proposes optimizations. Each hypothesis lives in its own branch and is measured against the benchmarks and tests before it is kept. Winners are then combined and re-measured.
+- **Results so far:** several V8 deoptimizations fixed, step time halved in several engine processes, and up to 70x more operations per second in some microbenchmarks.
 
 ---
 
 ## Why the Web
 
-WeedJS is designed for developers who want the strengths of the browser as a game platform: open standards, instant URL-based distribution, inspectable source, and a runtime players already have installed.
+The engine is designed for developers who want the strengths of the browser as a game platform: open standards, instant URL-based distribution, inspectable source, and a runtime players already have installed.
 
 The engine works with plain JavaScript and browser-native ES modules. Clone the repo and run `npm run dev` to load demos from `src/`. `npm i @weed.js/engine` installs only the bundled `dist/` builds.
 
@@ -20,19 +72,19 @@ The engine works with plain JavaScript and browser-native ES modules. Clone the 
 
 ## Architecture at a Glance
 
-WeedJS brings console-style, data-oriented optimization patterns to the browser: pooled objects, dense memory, explicit worker ownership, and predictable frame pipelines. It does not pretend the browser is a console, but it treats the browser runtime with the same seriousness: keep hot data contiguous, avoid unnecessary allocation, move work off the main thread, and measure the result.
+The engine brings console-style, data-oriented optimization patterns to the browser: pooled objects, dense memory, explicit worker ownership, and predictable frame pipelines. It treats the browser runtime with the seriousness of a console: keep hot data contiguous, avoid unnecessary allocation, move work off the main thread, and measure the result.
 
-WeedJS splits work across specialized workers. Hot frame data lives in typed arrays on `SharedArrayBuffer`; control flow and setup still use `postMessage` and `MessagePort` where that is the right browser primitive.
+The engine splits work across specialized workers. Hot frame data lives in typed arrays on `SharedArrayBuffer`; control flow and setup still use `postMessage` and `MessagePort` where that is the right browser primitive.
 
-| Worker                | Count | Primary job                                                           |
-| --------------------- | ----: | --------------------------------------------------------------------- |
-| `spatial_worker`      |  1..N | Spatial hash rebuilds and neighbor lists                              |
-| `physics` (classic)   |     1 | Box2D 3.0 WASM host (`box2dWasm` + `physicsHostImpl`), contacts, joints |
-| `logic_worker`        |  1..N | Entity `tick()`, lifecycle, collision callbacks                       |
-| `particle_worker`     |     1 | Particles, bullets, decals, navigation, visibility lists              |
-| `pre_render_worker`   |     1 | Animation, Y-sorting, render queue assembly                           |
-| `pixi_worker`         |     1 | PixiJS rendering on `OffscreenCanvas`                                 |
-| `AudioMixerProcessor` |     1 | Real-time audio mixing on an AudioWorklet thread                      |
+| Worker                | Count | Primary job                                                             |
+| --------------------- | ----- | ----------------------------------------------------------------------- |
+| `spatial_worker`      | 1..N  | Spatial hash rebuilds and neighbor lists                                |
+| `physics` (classic)   | 1     | Box2D 3.2 WASM host (`box2dWasm` + `physicsHostImpl`), contacts, joints |
+| `logic_worker`        | 1..N  | Entity `tick()`, lifecycle, collision callbacks                         |
+| `particle_worker`     | 1     | Particles, bullets, decals, navigation, visibility lists                |
+| `pre_render_worker`   | 1     | Animation, Y-sorting, render queue assembly                             |
+| `pixi_worker`         | 1     | WebGL / WebGPU rendering on `OffscreenCanvas` (custom instancing)       |
+| `AudioMixerProcessor` | 1     | Real-time audio mixing on an AudioWorklet thread                        |
 
 The core design rule is single-writer ownership for each shared data region. That keeps most hot paths lock-free and allocation-light while still allowing all workers to read the state they need.
 
@@ -57,13 +109,13 @@ Open `http://localhost:8000/demos/`, or use the port printed by the server if `8
 
 `npm run dev` (or the [live demo](https://multithreaded-game-engine.vercel.app/demos)) opens a scene picker; every scene runs on the same engine build, nothing is a separate app.
 
-- 🔥 **Burning Boxes** — WebGPU compute layer: a fire/smoke fluid sim (advection, buoyancy, pressure, swirls) driven straight from packed Box2D collider geometry and LiquidFun oil particles, stepped in WGSL on the GPU. [`demos/burningBoxesScene`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/tree/main/demos/burningBoxesScene) · [`docs/COMPUTE_LAYERS.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/COMPUTE_LAYERS.md)
-- 🌊 **LiquidFun Fluid** — six liquid tools (water, oil, cream, dulce de leche, rigid "ice" groups, elastic jelly) with distinct viscosity/tension/group flags, dynamic Box2D boxes falling into the tanks. [`demos/liquidFunDemoScene`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/tree/main/demos/liquidFunDemoScene) · [`docs/LIQUIDFUN.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/LIQUIDFUN.md)
+- 🔥 **Burning Boxes** — WebGPU compute layer: a fire/smoke fluid sim (advection, buoyancy, pressure, swirls) driven straight from packed Box2D collider geometry and LiquidFun oil particles, stepped in WGSL on the GPU. `[demos/burningBoxesScene](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/tree/main/demos/burningBoxesScene)` · `[docs/COMPUTE_LAYERS.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/COMPUTE_LAYERS.md)`
+- 🌊 **LiquidFun Fluid** — six liquid tools (water, oil, cream, dulce de leche, rigid "ice" groups, elastic jelly) with distinct viscosity/tension/group flags, dynamic Box2D boxes falling into the tanks. `[demos/liquidFunDemoScene](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/tree/main/demos/liquidFunDemoScene)` · `[docs/LIQUIDFUN.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/LIQUIDFUN.md)`
 - 🧪 **LiquidFun Stress (bench)** — particle-count stress scene used by the benchmark harness.
 - 💧 **Water & Boxes** — custom-layer metaball water (additive blend + threshold shader) next to regular Box2D boxes; CPU sprite density, no LiquidFun involved.
 - 🐺 **Predators**, 🐦 **Boids**, 🐜 **Ants** — large-population entity/AI demos exercising spatial hashing and neighbor queries.
 - 🚗 **Car**, 🔗 **Constraints**, 🐷 **Bad Piggies**, 🧱 **Mamushka Dig** — Box2D joints, constraint rigs, and destructible/dig terrain.
-- ⛰️ **Destructible Terrain** — material+amount grid, marching squares, simplify + earcut, one Box2D body per island (`replacePolygons`). Ship, brush, laser. No harpoon. [`demos/destructibleTerrainScene`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/tree/main/demos/destructibleTerrainScene)
+- ⛰️ **Destructible Terrain** — material+amount grid, marching squares, simplify + earcut, one Box2D body per island (`replacePolygons`). Ship, brush, laser. No harpoon. `[demos/destructibleTerrainScene](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/tree/main/demos/destructibleTerrainScene)`
 
 The same picker also has Adobe Animate playback, tilemap navigation, ray casting, and `QueryAABB` demos.
 
@@ -216,30 +268,30 @@ ESM modules already visited stay in the heap until reload. `destroy()` on a scen
 
 ## What's Included
 
-WeedJS is intended to be a full 2D game runtime, not just a renderer. The major subsystems are all built around pooled objects, typed arrays, shared memory, worker ownership, and low-allocation hot paths.
+The engine is a full 2D game runtime, not just a renderer. The major subsystems are all built around pooled objects, typed arrays, shared memory, worker ownership, and low-allocation hot paths.
 
 - **Pooled ECS-style entities**: `GameObject` instances are facades over typed arrays, with fixed component sets per entity type and reusable spawn/despawn pools.
-- **SharedResource**: one `SharedArrayBuffer` per class for world blobs (grids, scores) that are not SoA × entity count. Scene declares `static sharedResources`; workers bind the class after `import()` of the scene module. Unmarked fields have one writer — pin it with `forceProcessOnLogicWorker`. `atomic: true` / `mailbox: true` on an integer field binds a mailbox (`GameState.score.add(1)`; raw view on `.view`). Details: [`docs/MEMORY_STRUCTURE.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/MEMORY_STRUCTURE.md).
+- **SharedResource**: one `SharedArrayBuffer` per class for world blobs (grids, scores) that are not SoA × entity count. Scene declares `static sharedResources`; workers bind the class after `import()` of the scene module. Unmarked fields have one writer — pin it with `forceProcessOnLogicWorker`. `atomic: true` / `mailbox: true` on an integer field binds a mailbox (`GameState.score.add(1)`; raw view on `.view`). Details: `[docs/MEMORY_STRUCTURE.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/MEMORY_STRUCTURE.md)`.
 - **Particle emitter**: `ParticleEmitter.emit()` supports sparks, smoke, blood, muzzle effects, floor decals, alpha/scale/tint controls, gravity, blending, and worker-side particle simulation.
 - **Bullets and projectile trails**: `BulletPool` and `BulletComponent` provide lightweight projectile slots, impact reporting, damage payloads, trail rendering, and visibility culling without turning every shot into a full entity.
 - **Decorations and attachments**: `DecorationPool` handles trees, rocks, props, child decorations attached to entities, sway animation, custom anchors, tint, alpha, and Y-sort ordering.
-- **Physics (Box2D 3.0)**: real Box2D 3 — the C rewrite — compiled to multithreaded WASM (SIMD + pthreads), not a JS reimplementation. Phaser games usually run Arcade or Matter on the main thread; Weed keeps the solver off-thread. Pose and velocity live on the WASM HEAP (`bindBox2dHotFields`), with sequenced contact/command rings feeding logic workers. Circles, boxes, polygons, sensors, sleeping, layers/masks/`groupIndex`, damping, friction, world `maximumLinearSpeed`, and Weed `Joint`s (`addDistance` / `addRevolute` / `addWeld`). Runtime lives under `src/box2d/`; `npm run make_bundle` embeds glue + wasm into `weed.bundle*.min.js` (no loose `dist/box2d/`). Smoke: `dist/index.html`. Details: [`src/box2d/README.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/src/box2d/README.md), [`docs/PHYSICS.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/PHYSICS.md).
-- **Fluids (LiquidFun)**: `liquidfun-c` — a from-scratch C17 particle sidecar on Box2D 3's public C API (not Google's C++ pasted in), compiled into the same WASM as rigid bodies. Particle pose (`count`/`x`/`y`/`alpha`/`weight`) lives HEAP-bound like `Transform`, no per-frame memcpy. Water, viscous/tensile liquids, and `SOLID`/`RIGID` particle groups two-way-couple with Box2D bodies; `QueryAABB`/`RayCast` walk the particle spatial hash. Two render paths — sprite density (atlas splat) or `LAYER_DENSITY_SOURCE.LIQUID_FUN` buffer density for large counts, straight from HEAP into a metaball-style layer. Details: [`docs/LIQUIDFUN.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/LIQUIDFUN.md).
+- **Physics (Box2D 3.2)**: real Box2D 3 — the C rewrite — compiled to multithreaded WASM (SIMD + pthreads), not a JS reimplementation. Phaser games usually run Arcade or Matter on the main thread; the engine keeps the solver off-thread. Pose and velocity live on the WASM HEAP (`bindBox2dHotFields`), with sequenced contact/command rings feeding logic workers. Circles, boxes, polygons, sensors, sleeping, layers/masks/`groupIndex`, damping, friction, world `maximumLinearSpeed`, and engine `Joint`s (`addDistance` / `addRevolute` / `addWeld`). Runtime lives under `src/box2d/`; `npm run make_bundle` embeds glue + wasm into `weed.bundle*.min.js` (no loose `dist/box2d/`). Smoke: `dist/index.html`. Details: `[src/box2d/README.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/src/box2d/README.md)`, `[docs/PHYSICS.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/PHYSICS.md)`.
+- **Fluids (LiquidFun)**: `liquidfun-c` — a from-scratch C17 particle sidecar on Box2D 3's public C API (not Google's C++ pasted in), compiled into the same WASM as rigid bodies. Particle pose (`count`/`x`/`y`/`alpha`/`weight`) lives HEAP-bound like `Transform`, no per-frame memcpy. Water, viscous/tensile liquids, and `SOLID`/`RIGID` particle groups two-way-couple with Box2D bodies; `QueryAABB`/`RayCast` walk the particle spatial hash. Two render paths — sprite density (atlas splat) or `LAYER_DENSITY_SOURCE.LIQUID_FUN` buffer density for large counts, straight from HEAP into a metaball-style layer. Details: `[docs/LIQUIDFUN.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/LIQUIDFUN.md)`.
 - **Spatial hashing**: row-owned spatial workers rebuild the grid, cache entity positions, reuse neighbor results when cells have not changed, and expose nearby entities through `this.neighborCount` / `this.getNeighbor(i)`.
 - **Ray casting**: `Ray.cast`, `Ray.castWithInfo`, `Ray.castAll`, `Ray.linecast`, and line-of-sight helpers traverse the spatial grid with DDA and support collision layer masks.
 - **Point lights and shadows**: `LightEmitter`, `ShadowCaster`, `LightOccluder`, `Flash`, and `Sun` support point lights, glow sprites, temporary flashes, ambient lighting, day/night-style sun control, and shadow queues.
 - **Layers**: built-in layers handle backgrounds, decals, cast shadows, entities, and lighting. Custom layers can route entities, particles, decorations, bullets, trails, and glow sprites into separate render queues.
 - **Custom shader layers**: custom layers can define fragment shaders, uniforms, blend modes, render-target resolution, and a two-render-texture pipeline for effects like metaballs, fog, heat distortion, glow accumulation, water, and other screen-space passes.
-- **Compute layers (WebGPU)**: generic compute on a custom layer — engine packs Box2D collider geometry and live LiquidFun particle poses into GPU storage buffers, dispatches scene-declared WGSL passes (ping-pong textures, iteration, camera/zoom-gated skips), and pins the last write as the layer's look texture. No built-in fire/fluid shader ships; the engine only does the plumbing (bind-layout inference, `FrameData` UBO, panel-driven uniforms). `renderer: { backend: 'webgpu' }` opt-in per scene. Details: [`docs/COMPUTE_LAYERS.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/COMPUTE_LAYERS.md).
-- **Tilemaps**: `TileMap` loads Tiled JSON maps, stores layer GIDs in `SharedArrayBuffer`, and answers allocation-free `getTileId` / `hasTile` from any worker. The pixi worker uploads native GID page meshes (RGBA8, 2048-tile pages, GLSL + WGSL) once; the frame only moves the camera. There is no `@pixi/tilemap` chunk stream. Details: [`docs/TILEMAP.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/TILEMAP.md).
-- **Rendering**: the pre-render worker builds double-buffered render queues, Y-sorts sprites, advances animations, prepares shadows/lights, and feeds a PixiJS renderer running on `OffscreenCanvas`.
+- **Compute layers (WebGPU)**: generic compute on a custom layer — engine packs Box2D collider geometry and live LiquidFun particle poses into GPU storage buffers, dispatches scene-declared WGSL passes (ping-pong textures, iteration, camera/zoom-gated skips), and pins the last write as the layer's look texture. No built-in fire/fluid shader ships; the engine only does the plumbing (bind-layout inference, `FrameData` UBO, panel-driven uniforms). `renderer: { backend: 'webgpu' }` opt-in per scene. Details: `[docs/COMPUTE_LAYERS.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/COMPUTE_LAYERS.md)`.
+- **Tilemaps**: `TileMap` loads Tiled JSON maps, stores layer GIDs in `SharedArrayBuffer`, and answers allocation-free `getTileId` / `hasTile` from any worker. The pixi worker uploads native GID page meshes (RGBA8, 2048-tile pages, GLSL + WGSL) once; the frame only moves the camera. There is no `@pixi/tilemap` chunk stream. Details: `[docs/TILEMAP.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/TILEMAP.md)`.
+- **Rendering**: the pre-render worker builds double-buffered render queues, Y-sorts sprites, advances animations, prepares shadows/lights, and feeds a WebGL / WebGPU renderer running on `OffscreenCanvas`. Sprites are drawn with custom instancing shaders; PixiJS is used sparingly.
 - **Animation**: `SpriteSheetRegistry`, `AdobeAnimRegistry`, `AdobeAnimCompiler`, `SpriteRenderer`, and `AdobeAnimComponent` cover spritesheets and Adobe Animate-style exports.
 - **Navigation**: `NavGrid` provides SAB-backed walkability data, flowfield requests, and A\* path requests computed off the logic hot path.
 - **Audio**: `SoundManager` uses an AudioWorklet mixer with a shared slot buffer for low-overhead play requests from the main thread or workers, including pitch, volume, loop, pan, and distance attenuation.
 - **Input and camera**: keyboard, mouse, edge-triggered mouse events, camera follow, zoom, and shared input/camera buffers are available inside workers.
 - **FSM helpers**: `FSM` and `FSMState` support behavior and animation state machines without imposing a specific gameplay architecture.
 - **Debugging tools**: the debug UI includes worker FPS stats, performance panels, scene/entity/decorations/layers/navigation panels, selected entity inspection, visual aids, physics debug rendering, navigation debug rendering, raycast debug drawing, and configurable debug flags.
-- **Save games**: sparse snapshots of `static serializable` active entities (IndexedDB + DebugUI **Saves** tab). Scene hooks: `create()` (always), `createNewGame()` (fresh start), `onLoadGame(payload)` (after restore). See [`docs/SAVE_GAME.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/SAVE_GAME.md).
+- **Save games**: sparse snapshots of `static serializable` active entities (IndexedDB + DebugUI **Saves** tab). Scene hooks: `create()` (always), `createNewGame()` (fresh start), `onLoadGame(payload)` (after restore). See `[docs/SAVE_GAME.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/SAVE_GAME.md)`.
 
 Everything performance-critical is aggressively optimized: pooled allocation, dense typed-array component storage, `SharedArrayBuffer` data paths, single-writer regions, preallocated scratch buffers, compact active/visible lists, double-buffered render queues, worker-side broadphase/physics/render preparation, and benchmark scripts for measuring worker throughput.
 
@@ -302,24 +354,24 @@ npm run test:visual
 
 Docs live in the GitHub repo, not in the npm tarball. Start with the [docs index](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/README.md).
 
-| File | Contents |
-| ---- | -------- |
-| [docs/bible_of_weed_js.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/bible_of_weed_js.md) | Practical quick reference and engine contracts |
-| [docs/DEVLOG.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/DEVLOG.md) | Dated project journal (stories; fill gaps) |
-| [docs/WORKERS_ARCHITECTURE.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/WORKERS_ARCHITECTURE.md) | Worker roles, data flow, message protocols |
-| [docs/MEMORY_STRUCTURE.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/MEMORY_STRUCTURE.md) | Shared memory layout and ownership map |
-| [docs/COMPONENT_STORAGE.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/COMPONENT_STORAGE.md) | Dense component storage policy |
-| [docs/SPATIAL_HASHING.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/SPATIAL_HASHING.md) | Spatial grid and neighbor query pipeline |
-| [docs/PHYSICS.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/PHYSICS.md) | Box2D 3.0 worker pipeline and invariants |
-| [docs/LIQUIDFUN.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/LIQUIDFUN.md) | liquidfun-c fluids, HEAP-bound particle pose, body coupling |
-| [src/box2d/README.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/src/box2d/README.md) | Nested WASM runtime, rebuild, bundle embed |
-| [docs/LAYER_ROUTING.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/LAYER_ROUTING.md) | Render layers, backgrounds, custom layer routing |
-| [docs/COMPUTE_LAYERS.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/COMPUTE_LAYERS.md) | WebGPU compute layers, Box2D/LiquidFun GPU packing, WGSL passes |
-| [docs/PARTICLES.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/PARTICLES.md) | ParticleEmitter modes and physics vs view |
-| [docs/FLASHES.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/FLASHES.md) | Flash.spawn, castShadows, light budget |
-| [docs/TILEMAP.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/TILEMAP.md) | SAB-backed Tiled map API |
-| [docs/RAYCASTING.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/RAYCASTING.md) | Grid-based raycast API |
-| [docs/ENTITY_TEMPLATE.js](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/ENTITY_TEMPLATE.js) | Copy-paste entity starter |
+| File                                                                                                                                  | Contents                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [docs/bible_of_weed_js.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/bible_of_weed_js.md)         | Practical quick reference and engine contracts                  |
+| [docs/DEVLOG.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/DEVLOG.md)                             | Dated project journal (stories; fill gaps)                      |
+| [docs/WORKERS_ARCHITECTURE.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/WORKERS_ARCHITECTURE.md) | Worker roles, data flow, message protocols                      |
+| [docs/MEMORY_STRUCTURE.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/MEMORY_STRUCTURE.md)         | Shared memory layout and ownership map                          |
+| [docs/COMPONENT_STORAGE.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/COMPONENT_STORAGE.md)       | Dense component storage policy                                  |
+| [docs/SPATIAL_HASHING.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/SPATIAL_HASHING.md)           | Spatial grid and neighbor query pipeline                        |
+| [docs/PHYSICS.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/PHYSICS.md)                           | Box2D 3.2 worker pipeline and invariants                        |
+| [docs/LIQUIDFUN.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/LIQUIDFUN.md)                       | liquidfun-c fluids, HEAP-bound particle pose, body coupling     |
+| [src/box2d/README.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/src/box2d/README.md)                   | Nested WASM runtime, rebuild, bundle embed                      |
+| [docs/LAYER_ROUTING.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/LAYER_ROUTING.md)               | Render layers, backgrounds, custom layer routing                |
+| [docs/COMPUTE_LAYERS.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/COMPUTE_LAYERS.md)             | WebGPU compute layers, Box2D/LiquidFun GPU packing, WGSL passes |
+| [docs/PARTICLES.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/PARTICLES.md)                       | ParticleEmitter modes and physics vs view                       |
+| [docs/FLASHES.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/FLASHES.md)                           | Flash.spawn, castShadows, light budget                          |
+| [docs/TILEMAP.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/TILEMAP.md)                           | SAB-backed Tiled map API                                        |
+| [docs/RAYCASTING.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/RAYCASTING.md)                     | Grid-based raycast API                                          |
+| [docs/ENTITY_TEMPLATE.js](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/ENTITY_TEMPLATE.js)           | Copy-paste entity starter                                       |
 
 ---
 
