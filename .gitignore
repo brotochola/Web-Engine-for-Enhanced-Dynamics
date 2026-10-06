@@ -33,6 +33,7 @@ memory_snapshot.json
 # Generated benchmark / smoke JSON (local only)
 tests/results/
 
-# Over GitHub's 100 MB file limit
+# Local trailers (too large for GitHub)
 trailer.mp4
+trailer2.mp4
 
