@@ -6,7 +6,7 @@
 
 ![npm](https://img.shields.io/npm/v/@weed.js/engine?label=npm&color=cb3837) ![license](https://img.shields.io/badge/license-ISC-blue) ![SharedArrayBuffer](https://img.shields.io/badge/zero--copy-SharedArrayBuffer-0f766e) ![WebGPU](https://img.shields.io/badge/WebGL%20%2B%20WebGPU-ready-5c3ee8)
 
-**[▶ Live demos](https://multithreaded-game-engine.vercel.app/demos)** · **[▶ Engine showcase (video)](https://youtu.be/V_4fTu9eKwo)** · **[Documentation](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/README.md)**
+**[▶ Live demos](https://web-engine-for-enhanced-dynamics.vercel.app/demos)** · **[▶ Engine showcase (video)](https://youtu.be/V_4fTu9eKwo)** · **[Documentation](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/README.md)**
 
 ![Web Engine for Enhanced Dynamics demo](https://raw.githubusercontent.com/brotochola/Web-Engine-for-Enhanced-Dynamics/main/screen-capture.gif)
 
@@ -111,7 +111,7 @@ Open `http://localhost:8000/demos/`, or use the port printed by the server if `8
 
 ## Demos
 
-`npm run dev` (or the [live demo](https://multithreaded-game-engine.vercel.app/demos)) opens a scene picker; every scene runs on the same engine build, nothing is a separate app.
+`npm run dev` (or the [live demo](https://web-engine-for-enhanced-dynamics.vercel.app/demos)) opens a scene picker; every scene runs on the same engine build, nothing is a separate app.
 
 - 🔥 **Burning Boxes** — WebGPU compute layer: a fire/smoke fluid sim (advection, buoyancy, pressure, swirls) driven straight from packed Box2D collider geometry and LiquidFun oil particles, stepped in WGSL on the GPU. `[demos/burningBoxesScene](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/tree/main/demos/burningBoxesScene)` · `[docs/COMPUTE_LAYERS.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/COMPUTE_LAYERS.md)`
 - 🌊 **LiquidFun Fluid** — six liquid tools (water, oil, cream, dulce de leche, rigid "ice" groups, elastic jelly) with distinct viscosity/tension/group flags, dynamic Box2D boxes falling into the tanks. `[demos/liquidFunDemoScene](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/tree/main/demos/liquidFunDemoScene)` · `[docs/LIQUIDFUN.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/LIQUIDFUN.md)`
