@@ -151,18 +151,14 @@ test('PHYSICS_STATS LF pass slots 37-44 stay inside stride 48', () => {
   assert.ok(physicsRows.some((r) => r.key === 'LF_PASS_FIND_CONTACTS_MS'));
 });
 
-test('GPU row has no JsShadows and Rest is Step minus time chips', () => {
+test('GPU row is counts only, so Rest has no step to partition', () => {
   const gpu = WORKER_DISPLAY_CONFIG.gpu;
   assert.equal(gpu.stats.some((r) => r.key === 'MSG_MS'), false);
   assert.equal(gpu.stats.some((r) => r.key === 'SHADOWS_MS'), false);
+  assert.equal(gpu.stats.some((r) => r.key === 'GPU_CUSTOM_MS'), false);
   const view = new Float32Array(RENDERER_STATS.STRIDE_FLOATS);
-  assert.equal(gpu.stats.some((r) => r.key === 'GPU_CUSTOM_MS'), true);
   view[RENDERER_STATS.GPU_STEP_MS] = 10;
-  view[RENDERER_STATS.GPU_SHADOWS_MS] = 1;
-  view[RENDERER_STATS.GPU_LIGHTS_MS] = 2;
-  view[RENDERER_STATS.GPU_CUSTOM_MS] = 1;
-  view[RENDERER_STATS.GPU_PRESENT_MS] = 4;
-  assert.equal(computeRestMs(gpu, view, RENDERER_STATS), 2);
+  assert.equal(computeRestMs(gpu, view, RENDERER_STATS), 0);
 });
 
 test('physics Rest ignores nested LF passes', () => {

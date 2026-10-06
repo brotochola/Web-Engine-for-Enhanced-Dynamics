@@ -73,7 +73,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     'scale', 'scaleX', 'scaleY', 'alpha', 'tint',
     'rotC', 'rotS', 'rotation', 'flipX', 'flipY',
     'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact',
-    'blendMode', 'layerId',
+    'blendMode', 'layerId', 'renderOnly',
   ];
   static _alongLineScratch = Object.create(null);
   static _acquireBatch = new Uint16Array(256);
@@ -105,6 +105,10 @@ export class ParticleEmitter extends SharedAtomicPool {
         ParticleComponent.layerMask[i] = 0;
         syncParticleFeed(i, old, 0);
       }
+    }
+    if (ParticleComponent.renderOnly && ParticleComponent.renderOnly[i]) {
+      ParticleComponent.renderOnly[i] = 0;
+      if (ParticleComponent.renderOnlyLive) Atomics.add(ParticleComponent.renderOnlyLive, 0, -1);
     }
     super.returnToPool(index);
   }
@@ -472,6 +476,11 @@ export class ParticleEmitter extends SharedAtomicPool {
 
       flat[i] = flatMode;
       viewModeArr[i] = viewMode;
+      if (ParticleComponent.renderOnly) {
+        const on = cfg.renderOnly ? 1 : 0;
+        ParticleComponent.renderOnly[i] = on;
+        if (on && ParticleComponent.renderOnlyLive) Atomics.add(ParticleComponent.renderOnlyLive, 0, 1);
+      }
 
       active[i] = 1;
 

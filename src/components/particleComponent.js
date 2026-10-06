@@ -92,14 +92,29 @@ export class ParticleComponent extends Component {
     flat: Uint8Array,
     // viewMode: CAMERA_TYPES.TOPDOWN | ZENITHAL
     viewMode: Uint8Array,
+    // 1 = do not integrate or sprite-emit on the CPU. A compute layer owns the look.
+    renderOnly: Uint8Array,
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
   };
 
   // Static pool tracking (set during initialization)
   static particleCount = 0;
 
+  static getBufferSize(count) {
+    const base = super.getBufferSize(count);
+    const aligned = (base + 3) & ~3;
+    return aligned + 4;
+  }
+
   static initializeArrays(buffer, count) {
     super.initializeArrays(buffer, count);
     if (this.rotC) this.rotC.fill(1);
+    const aligned = (super.getBufferSize(count) + 3) & ~3;
+    this.renderOnlyLive = new Int32Array(buffer, aligned, 1);
+  }
+
+  static clearArrays() {
+    super.clearArrays();
+    this.renderOnlyLive = null;
   }
 }

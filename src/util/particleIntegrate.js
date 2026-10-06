@@ -89,6 +89,7 @@ export function updateParticlePhysicsBuffers(
   } = pc;
 
   let stampedCount = 0;
+  const skipRenderOnly = !!(pc.renderOnlyLive && Atomics.load(pc.renderOnlyLive, 0) > 0);
 
   // P4: classify once (shared lifetime/tween work), then run two tight,
   // single-purpose passes instead of branching on flat[i] every iteration.
@@ -105,6 +106,9 @@ export function updateParticlePhysicsBuffers(
       ParticleEmitter.returnToPool(i);
       continue;
     }
+
+    // Opt-in: a compute layer owns motion and the sprite. CPU still ages the slot.
+    if (skipRenderOnly && pc.renderOnly[i]) continue;
 
     const mask = tweenMask ? tweenMask[i] : 0;
     const spinning = !!(hasAngularVel && hasAngularVel[i]);

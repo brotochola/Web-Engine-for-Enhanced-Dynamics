@@ -88,6 +88,43 @@ test('emitFlat gravity accelerates vy; zero gravity stays put', { concurrency: f
   }
 });
 
+test('renderOnly skips CPU motion and the default emit stays on the CPU path', { concurrency: false }, () => {
+  const restore = setupPool(4);
+  try {
+    const gpu = ParticleEmitter.acquireIndex();
+    const cpu = ParticleEmitter.acquireIndex();
+    spawnFlat(gpu, { gravity: 0.5, vy: 1 });
+    spawnFlat(cpu, { gravity: 0.5, vy: 1 });
+    ParticleComponent.renderOnly[gpu] = 1;
+    ParticleComponent.renderOnly[cpu] = 0;
+    Atomics.add(ParticleComponent.renderOnlyLive, 0, 1);
+
+    integrate(new Uint16Array([gpu, cpu]));
+
+    assert.equal(ParticleComponent.vy[gpu], 1);
+    assert.equal(ParticleComponent.y[gpu], 0);
+    assert.equal(ParticleComponent.currentLife[gpu] > 0, true);
+    assert.equal(ParticleComponent.vy[cpu], 1.5);
+    assert.equal(ParticleComponent.y[cpu], 1.5);
+
+    const n = ParticleEmitter.emitFlat({
+      count: 1,
+      x: 0,
+      y: 0,
+      lifespan: 1000,
+      renderOnly: true,
+    });
+    assert.equal(n, 1);
+    let flagged = 0;
+    for (let i = 0; i < 4; i++) {
+      if (ParticleComponent.active[i] && ParticleComponent.renderOnly[i]) flagged++;
+    }
+    assert.equal(flagged, 2);
+  } finally {
+    restore();
+  }
+});
+
 test('emitFlat scale range writes the same value to scaleX and scaleY', { concurrency: false }, () => {
   const restore = setupPool(4);
   try {
