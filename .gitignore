@@ -34,6 +34,7 @@ memory_snapshot.json
 tests/results/
 
 # Local trailers (too large for GitHub)
-trailer.mp4
-trailer2.mp4
 
+trailer2.mp4
+# Over GitHub's 100 MB file limit
+trailer.mp4
