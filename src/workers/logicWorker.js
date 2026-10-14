@@ -74,6 +74,26 @@ import {
 /** Stale pairs owned by another logic worker are dropped at least this often. */
 const FOREIGN_SWEEP_FRAMES = 30;
 
+/**
+ * B-09 / H-17 caps for the pending cross-worker list-update queue.
+ *
+ * Sized against what a healthy frame actually produces: every non-logic0 worker
+ * sends one batch per frame, and a batch is bounded by that worker's own spawn
+ * buffer (256 by default). So a normal backlog is one or two small batches.
+ *
+ * - MAX_BATCHES bounds how many batch wrappers exist, which is what the object
+ *   allocation rate is made of.
+ * - MAX_BATCH_PENDING bounds how many records one wrapper can hold, which is
+ *   what bounds the arrays when coalescing.
+ *
+ * 64 x 2048 records is far past anything a drain-once-per-frame loop should see,
+ * so a healthy engine never reaches either cap and never pays for them. The cap
+ * exists for the case where logic0 stops draining, and there the choice is
+ * bounded growth with a visible counter versus an OOM with neither.
+ */
+const LIST_UPDATE_MAX_BATCHES = 64;
+const LIST_UPDATE_MAX_BATCH_PENDING = 2048;
+
 class LogicWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
@@ -177,6 +197,36 @@ class LogicWorker extends AbstractWorker {
     // and processed by logic0 at the START of each frame (before any ticks).
     // This eliminates race conditions in sorted list insertions/removals.
     this.receivedListUpdates = [];       // Batch updates received from other workers
+    /**
+     * B-09 / H-17. `receivedListUpdates` used to grow without bound.
+     *
+     * Every non-logic0 worker pushes one batch per frame, and the queue is only
+     * drained inside `processListUpdates`, which runs from logic0's own frame
+     * loop. Anything that stops that loop from running - logic0 paused, a
+     * manual-step worker waiting on the main thread, the tab throttled - turns
+     * the queue into an unbounded producer/consumer mismatch, and each entry is
+     * an object holding two arrays of objects. So it is not a slow leak, it is
+     * fast allocation growth landing exactly when the frame budget is already
+     * gone, and it ends in an OOM rather than a visible stall.
+     *
+     * Two mechanisms, because they fail differently:
+     *
+     *  - Coalesce first. While the backlog fits in one batch, append into the
+     *    existing arrays instead of pushing a new batch wrapper. This is the
+     *    normal transient case and it costs no allocation at all, so a brief
+     *    hiccup leaves no trace.
+     *  - Drop and count past the cap. When even the tail batch is full, further
+     *    updates are dropped and counted. Dropping is not free and not hidden:
+     *    `listUpdatesDropped` is non-zero, which is the signal that logic0 is
+     *    not draining and the frame budget is the real problem.
+     *
+     * Dropping spawn/despawn updates is genuinely destructive - a despawn that
+     * is lost leaves a body in the active list forever. That is why it is capped
+     * at a level a healthy frame never approaches and why the counter is exposed
+     * rather than merely incremented.
+     */
+    this.listUpdatesDropped = 0;
+    this.listUpdatesCoalesced = 0;
     /** @internal Reused by sendListUpdatesToLogic0 to avoid .map() allocation */
     this._spawnSerializedBuffer = [];
     this._despawnSerializedBuffer = [];
@@ -482,6 +532,61 @@ class LogicWorker extends AbstractWorker {
     this._despawnType[n] = entityType;
     this._despawnClass[n] = EntityClass;
     this._despawnN = n + 1;
+  }
+
+  /**
+   /**
+   * B-09 / H-17. Add one batch of received spawn/despawn updates to the pending
+   * queue, keeping the queue bounded.
+   *
+   * Order of preference:
+   *   1. coalesce into the tail batch if it has room - allocates nothing, and is
+   *      what a brief frame hiccup should cost;
+   *   2. push a new batch if the queue is under LIST_UPDATE_MAX_BATCHES;
+   *   3. otherwise drop and count.
+   *
+   * Step 2 has to come before step 3. A single batch that fills the tail must not
+   * be able to wedge the queue shut: if it could, every later update would be
+   * dropped until logic0 next drained, which is the exact unbounded growth the
+   * cap is meant to prevent, wearing a different hat.
+   *
+   * @param {Array} spawns deserialized spawn records
+   * @param {Array} despawns deserialized despawn records
+   */
+  enqueueListUpdateBatch(spawns, despawns) {
+    const incoming = spawns.length + despawns.length;
+    const queue = this.receivedListUpdates;
+
+    const tail = queue.length > 0 ? queue[queue.length - 1] : null;
+    if (tail) {
+      const room = LIST_UPDATE_MAX_BATCH_PENDING - (tail.spawns.length + tail.despawns.length);
+      if (room > 0 && incoming <= room) {
+        for (let i = 0; i < spawns.length; i++) tail.spawns.push(spawns[i]);
+        for (let i = 0; i < despawns.length; i++) tail.despawns.push(despawns[i]);
+        this.listUpdatesCoalesced++;
+        return 'coalesced';
+      }
+    }
+
+    if (queue.length < LIST_UPDATE_MAX_BATCHES) {
+      queue.push({ spawns, despawns });
+      return 'queued';
+    }
+
+    // At the cap. Drop and count - see the constructor note for why this is
+    // visible rather than silent.
+    this.listUpdatesDropped += incoming;
+    return 'dropped';
+  }
+
+  /** Pending updates waiting to be folded into the SoA queues. */
+  getPendingListUpdateCount() {
+    const received = this.receivedListUpdates;
+    let n = 0;
+    for (let b = 0; b < received.length; b++) {
+      n += received[b].spawns.length + received[b].despawns.length;
+    }
+    return n;
   }
 
   /**
@@ -1826,10 +1931,7 @@ class LogicWorker extends AbstractWorker {
         }
 
         if (deserializedSpawns.length > 0 || deserializedDespawns.length > 0) {
-          this.receivedListUpdates.push({
-            spawns: deserializedSpawns,
-            despawns: deserializedDespawns,
-          });
+          this.enqueueListUpdateBatch(deserializedSpawns, deserializedDespawns);
         }
         break;
       }

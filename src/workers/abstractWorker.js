@@ -1181,12 +1181,14 @@ export class AbstractWorker {
       case 'step': {
         const dt = Number(e.data.deltaTime);
         this._injectedDeltaTime = dt > 0 ? dt : 16.67;
+        // Run one frame whatever the pause state is, then put it back exactly as
+        // it was. Restoring only under manualStep left a `step` sent to a
+        // running, paused worker silently un-pausing it for good.
+        const wasPaused = this.isPaused;
         this.isPaused = false;
         this._runFrame(false);
         this._injectedDeltaTime = 0;
-        if (this.config?.manualStep) {
-          this.isPaused = true;
-        }
+        this.isPaused = wasPaused;
         this.afterManualStep();
         self.postMessage({ msg: 'stepDone', id: e.data.id | 0 });
         break;

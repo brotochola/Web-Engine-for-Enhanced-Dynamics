@@ -56,9 +56,9 @@ export function explainStepMsFloor(hits) {
   if (!hits?.length) return '';
   const bits = hits.map((h) => `${h.side} ${h.key}=${h.median.toFixed(3)} ms`);
   return (
-    `step floor: primaria de estrés bajo ${STEP_MS_FLOOR} ms (${bits.join('; ')}). ` +
-    'Subí la perilla de esa escena (más partículas, balas, decorations, cuerpos, stamps, mapa o rays). ' +
-    'El delta no cuenta como keep/drop.'
+    `step floor: stress primary under ${STEP_MS_FLOOR} ms (${bits.join('; ')}). ` +
+    "Raise that scene's own load knob (more particles, bullets, decorations, bodies, stamps, map, or rays). " +
+    'The delta is not a keep and not a drop.'
   );
 }
 
@@ -395,31 +395,31 @@ export function explainHit(hit) {
   const d = hit.deltaPct;
   const dTxt = fmtDeltaPct(d);
   if (hit.higherBetter) {
-    if (d == null) return `${hit.metric}: no hay ops comparables.`;
+    if (d == null) return `${hit.metric}: no comparable ops.`;
     if (d >= SPEED_PCT) {
-      return `${hit.metric} subió ${dTxt} (más ops/s es más barato). Cruza el umbral de +3%.`;
+      return `${hit.metric} rose ${dTxt} (more ops/s is cheaper). It crosses the +3% threshold.`;
     }
     if (d <= -SPEED_PCT) {
-      return `${hit.metric} bajó ${dTxt} (menos ops/s es más caro). Cruza el umbral de −3%.`;
+      return `${hit.metric} fell ${dTxt} (fewer ops/s is more expensive). It crosses the −3% threshold.`;
     }
-    return `${hit.metric} ${dTxt}: dentro de 3%, empate.`;
+    return `${hit.metric} ${dTxt}: within 3%, a tie.`;
   }
   const kind = metricKind(hit.metric);
   const unit = kind === 'count' ? '' : ' ms';
   const b = Number.isFinite(hit.base) ? hit.base.toFixed(3) + unit : 'n/a';
   const h = Number.isFinite(hit.hyp) ? hit.hyp.toFixed(3) + unit : 'n/a';
-  if (d == null) return `${hit.metric}: no hay mediana comparable.`;
+  if (d == null) return `${hit.metric}: no comparable median.`;
   if (d >= SPEED_PCT) {
-    return `${hit.metric} pasó de ${b} a ${h} (${dTxt}). Más milisegundos es más caro. Cruza el umbral de +3%, así que la fila queda WORSE.`;
+    return `${hit.metric} went from ${b} to ${h} (${dTxt}). More milliseconds is more expensive. It crosses the +3% threshold, so the row is WORSE.`;
   }
   if (d <= -SPEED_PCT) {
-    return `${hit.metric} pasó de ${b} a ${h} (${dTxt}). Menos milisegundos es más barato. Cruza el umbral de −3%, así que hay keep de velocidad.`;
+    return `${hit.metric} went from ${b} to ${h} (${dTxt}). Fewer milliseconds is cheaper. It crosses the −3% threshold, so there is a speed keep.`;
   }
-  return `${hit.metric} pasó de ${b} a ${h} (${dTxt}): dentro de 3%, empate.`;
+  return `${hit.metric} went from ${b} to ${h} (${dTxt}): within 3%, a tie.`;
 }
 
 export function renderCompareTable(base, hyp, keys) {
-  const lines = ['| Métrica | baseline | árbol actual | delta |', '|---------|----------|--------------|-------|'];
+  const lines = ['| Metric | baseline | current tree | delta |', '|---------|----------|--------------|-------|'];
   for (const key of keys) {
     const b = base?.[key];
     const h = hyp?.[key];

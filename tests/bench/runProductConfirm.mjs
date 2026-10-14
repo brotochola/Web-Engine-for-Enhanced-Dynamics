@@ -187,35 +187,35 @@ function decideProduct(scenes, kernel) {
   };
 }
 
-function writeSpanishReport(payload) {
+function writeReport(payload) {
   const { args, scenes, kernel, decision } = payload;
   const lines = [];
-  lines.push('# Confirmación de producto: keep set versus main');
+  lines.push('# Product confirm: keep set versus main');
   lines.push('');
-  lines.push('Este informe está escrito en prosa. La hipótesis es: el keep set de esta rama (HASH, P2, P6, HYGIENE, COLLIDE; sin PACT ni LIGHT), con contadores de carga siempre visibles, es más rápido que `main` `' + MAIN_REV + '` en las demos que ejecutan ese código.');
+  lines.push('This report is written in prose. The hypothesis is: this branch\'s keep set (HASH, P2, P6, HYGIENE, COLLIDE; no PACT and no LIGHT), with load counts always visible, is faster than `main` `' + MAIN_REV + '` on the demos that run that code.');
   lines.push('');
   lines.push('## Setup');
   lines.push('');
-  lines.push(`- Capas: kernel Node \`emitFlat\` y escenas de gameplay headed (Balls y Predator).`);
-  lines.push(`- Corridas: ${args.runs}. Warmup ${args.warmupMs} ms. Medida ${args.durationMs} ms.`);
-  lines.push('- Ventana visible. Stats detalladas apagadas. Reintento de Playwright: 1.');
-  lines.push(`- Baseline: \`${MAIN_REV}\` más el parche de contadores de carga (mismos contadores, velocidad de main).`);
-  lines.push(`- Tratamiento: árbol keep actual. IDs: ${KEEP_IDS.join(', ')}.`);
-  lines.push('- Carga válida si `BODY_COUNT` (Balls) y `BODY_COUNT` + `ACTIVE_PARTICLES` (Predator) quedan en ±5% y el cv de cada clave de carga es menor a 50%. Si Balls tiene `BODY_COUNT` mediano 0, el informe falla.');
+  lines.push('- Layers: Node kernel `emitFlat` and headed gameplay scenes (Balls and Predator).');
+  lines.push(`- Runs: ${args.runs}. Warmup ${args.warmupMs} ms. Measure ${args.durationMs} ms.`);
+  lines.push('- Visible window. Detailed stats off. Playwright retry: 1.');
+  lines.push(`- Baseline: \`${MAIN_REV}\` plus the load-count patch (same counts, main's speed).`);
+  lines.push(`- Treatment: the current keep tree. IDs: ${KEEP_IDS.join(', ')}.`);
+  lines.push('- Load is valid if `BODY_COUNT` (Balls) and `BODY_COUNT` plus `ACTIVE_PARTICLES` (Predator) stay within ±5% and each load key\'s cv is under 50%. If Balls has a median `BODY_COUNT` of 0, the report fails.');
   lines.push('');
-  lines.push('## Números');
+  lines.push('## Numbers');
   lines.push('');
   for (const key of ['balls', 'predator']) {
     const row = scenes[key];
     lines.push(`### ${key}`);
     lines.push('');
     if (!row) {
-      lines.push('No se midió.');
+      lines.push('Not measured.');
       lines.push('');
       continue;
     }
     if (!row.ok) {
-      lines.push(`Falló: ${row.error || 'error desconocido'}`);
+      lines.push(`Failed: ${row.error || 'unknown error'}`);
       lines.push('');
       continue;
     }
@@ -223,8 +223,8 @@ function writeSpanishReport(payload) {
     lines.push(renderCompareTable(row.base, row.hyp, keys));
     lines.push('');
     lines.push(row.workload.ok
-      ? 'Carga comparable (dentro de 5%).'
-      : `Carga no comparable: ${row.workload.drifts.map((d) => d.key).join(', ')}.`);
+      ? 'Load matches (within 5%).'
+      : `Load does not match: ${row.workload.drifts.map((d) => d.key).join(', ')}.`);
     lines.push('');
   }
   if (kernel) {
@@ -232,23 +232,23 @@ function writeSpanishReport(payload) {
     lines.push('');
     if (kernel.baseOps != null && kernel.hypOps != null) {
       const d = kernel.deltaPct;
-      lines.push(`ops/s main ${kernel.baseOps.toFixed(0)}, keep ${kernel.hypOps.toFixed(0)} (${fmtDeltaPct(d)}). P6 se vende solo como win de kernel.`);
+      lines.push(`ops/s main ${kernel.baseOps.toFixed(0)}, keep ${kernel.hypOps.toFixed(0)} (${fmtDeltaPct(d)}). P6 is sold only as a kernel win.`);
     } else {
-      lines.push(`Kernel incompleto: ${kernel.error || 'sin ops'}`);
+      lines.push(`Kernel incomplete: ${kernel.error || 'no ops'}`);
     }
     lines.push('');
   }
-  lines.push('## Veredicto');
+  lines.push('## Verdict');
   lines.push('');
   lines.push(decision.fasterThanMain
-    ? 'Sí: más rápido que main bajo las reglas de producto.'
-    : 'No: no se puede afirmar que esta rama sea más rápida que main.');
+    ? 'Yes: faster than main under the product rules.'
+    : 'No: this branch cannot be claimed faster than main.');
   lines.push('');
   for (const r of decision.reasons) lines.push(`- ${r}`);
   lines.push('');
-  lines.push('## Qué se aprendió');
+  lines.push('## What we learned');
   lines.push('');
-  lines.push('Los contadores tienen que escribirse y el camino rápido de física tiene que llamar a writePhysicsStats. Si una escena de gameplay no cierra carga ±5%, el producto no es “más rápido que main” aunque otra escena gane. P6 se vende solo como win de kernel.');
+  lines.push('The counts have to be written, and the fast physics path has to call writePhysicsStats. If a gameplay scene does not close load within ±5%, the product is not "faster than main" even when another scene wins. P6 is sold only as a kernel win.');
   lines.push('');
   const md = lines.join('\n');
   fs.writeFileSync(path.join(outRoot, 'report.md'), md);
@@ -295,7 +295,7 @@ function main() {
     args,
   };
   writeJson(path.join(outRoot, 'summary.json'), payload);
-  const report = writeSpanishReport(payload);
+  const report = writeReport(payload);
   console.log('\n======== PRODUCT CONFIRM ========');
   console.log(decision.verdict);
   for (const r of decision.reasons) console.log(`- ${r}`);

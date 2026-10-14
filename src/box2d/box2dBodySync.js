@@ -51,7 +51,10 @@ function invalidatePoseSlot(i) {
   if (!slots || i < 0) return;
   for (let b = 0; b < slots.length; b++) {
     const slot = slots[b];
-    if (i >= slot.rotC.length) return;
+    // continue, not return: the two pose buffers are allocated with the same
+    // capacity today, but a return here would leave the second one holding the
+    // previous life's rotation for this slot if they ever diverged.
+    if (i >= slot.rotC.length) continue;
     slot.rotC[i] = 0;
     slot.rotS[i] = 0;
   }

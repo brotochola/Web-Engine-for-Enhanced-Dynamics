@@ -31,6 +31,21 @@ export class Box2d {
     }
   }
 
+  /**
+   * B-04. The sync query APIs block the calling thread with Atomics.wait, which
+   * throws `TypeError: Atomics.wait cannot be called in this context` on the
+   * main thread - a message that says nothing about the async variant that
+   * would have worked. Guard here as well as in the impls: the impls cover
+   * direct imports, this covers the documented public API, and between them no
+   * gameplay call site can hit a bare TypeError.
+   */
+  static _assertWorkerThread(asyncName) {
+    if (typeof window === 'undefined') return; // Worker has no `window`
+    throw new Error(
+      `Box2d: this query blocks the main thread with Atomics.wait and cannot run here. Use ${asyncName} instead.`,
+    );
+  }
+
   static beginFrame() {
     this._rayStatsMs = 0;
     this._rayStatsCount = 0;
@@ -48,6 +63,7 @@ export class Box2d {
   /** Sync QueryAABB (logic workers). Fills `out` with entity ids. */
   static queryAABB(x0, y0, x1, y1, out, filter) {
     this._assertPhysicsWorker();
+    this._assertWorkerThread('Box2d.queryAABBAsync');
     return box2dQueryAABB(x0, y0, x1, y1, out, filter);
   }
 
@@ -60,6 +76,7 @@ export class Box2d {
   /** Sync overlapCircle (logic). Fills `out` with entity ids. */
   static overlapCircle(cx, cy, radius, out, filter) {
     this._assertPhysicsWorker();
+    this._assertWorkerThread('Box2d.overlapCircleAsync');
     return box2dOverlapCircle(cx, cy, radius, out, filter);
   }
 
@@ -72,6 +89,7 @@ export class Box2d {
   /** Sync castRayClosest (logic workers). `dx,dy` is displacement, not a point. */
   static castRayClosest(ox, oy, dx, dy, out, filter) {
     this._assertPhysicsWorker();
+    this._assertWorkerThread('Box2d.castRayClosestAsync');
     if (!this.collectDetailedStats) {
       return box2dCastRayClosest(ox, oy, dx, dy, out, filter);
     }
@@ -94,12 +112,14 @@ export class Box2d {
    */
   static castRayClosestBatch(count, rays, entities, filter) {
     this._assertPhysicsWorker();
+    this._assertWorkerThread('Box2d.castRayClosestAsync');
     return box2dCastRayClosestBatch(count, rays, entities, filter);
   }
 
   /** Sync castRayAll (logic). Fills borrowed `out` with `{ entityIndex, fraction, hitX, hitY }`. */
   static castRayAll(ox, oy, dx, dy, out, filter) {
     this._assertPhysicsWorker();
+    this._assertWorkerThread('Box2d.castRayAllAsync');
     return box2dCastRayAll(ox, oy, dx, dy, out, filter);
   }
 
@@ -146,7 +166,21 @@ export class Box2d {
   }
 
   /**
-   * Entity indices that moved in the last physics step (live SAB views).
+   * Entity indices that moved in the last physics step.
+   *
+   * CONTRACT: `list`, `bits` and `fellAsleep` are live views into the physics
+   * SAB, not a copy. The physics worker rewrites them in place on its next
+   * step, so consume them before then. `generation` identifies which publish the
+   * views belong to - re-read it after you are done and compare; if it moved,
+   * the list you were iterating was replaced underneath you. That is what the
+   * field is for, and it is why the reader validates GEN against COUNT rather
+   * than reporting a pair from two different publishes.
+   *
+   * A copy per frame is deliberately not offered: this is a per-frame path and
+   * an entityCapacity-sized allocation every frame is exactly the GC pressure
+   * this engine has been working to remove. Callers that need to hold the set
+   * across a frame boundary should copy it themselves, deliberately.
+   *
    * @returns {{ list: Uint32Array, count: number, bits: Uint8Array|null, generation: number, fellAsleep: Uint8Array|null }}
    */
   static getMovedBodies() {

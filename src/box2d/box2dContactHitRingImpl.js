@@ -83,6 +83,10 @@
     var write = Atomics.load(i32, HDR_WRITE) | 0;
     var read = consumerCursor | 0;
     if (write - read > cap) {
+      // Match the contact ring: an overrun drops events, so it has to be
+      // visible. Without this bump, impacts vanish with no telemetry and the
+      // debug panel cannot show that anything was lost.
+      Atomics.add(i32, HDR_OVERFLOW, 1);
       _drainResult.nextCursor = write;
       _drainResult.count = 0;
       _drainResult.overrun = true;

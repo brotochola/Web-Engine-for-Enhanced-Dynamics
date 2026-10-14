@@ -79,6 +79,40 @@
 
   function getMovedBodiesViews() {
     if (!isMovedBodiesBound()) return null;
+
+    // B-06. The publisher writes COUNT first and bumps GEN last:
+    //     Atomics.store(hdrI32, HDR_COUNT, count);
+    //     Atomics.add(hdrI32, HDR_GEN, 1);
+    // so GEN is the commit word. Reading GEN then COUNT without validating
+    // returns a pair from two different publishes - new count, old generation -
+    // and `generation` is exactly what a consumer uses to decide whether the
+    // list it is holding is still the one it asked for. A generation that does
+    // not identify its own set is worse than none: it makes the consumer skip
+    // the check it would otherwise have done.
+    //
+    // Re-read GEN after COUNT and retry while it moved. Bounded, because the
+    // publisher commits once per physics step and always converges.
+    for (var attempt = 0; attempt < 4; attempt++) {
+      var gen1 = Atomics.load(hdrI32, HDR_GEN) | 0;
+      var cnt = Atomics.load(hdrI32, HDR_COUNT) | 0;
+      var gen2 = Atomics.load(hdrI32, HDR_GEN) | 0;
+      if (gen1 !== gen2) continue;
+      return {
+        sab: movedSab,
+        hdrI32: hdrI32,
+        movedList: movedList,
+        movedBits: movedBits,
+        fellAsleep: fellAsleep,
+        entityCapacity: entityCapacity,
+        generation: gen1,
+        count: cnt,
+      };
+    }
+
+    // Contended throughout. GEN is the commit word, so it is still the safer of
+    // the two: take the count it last committed against.
+    var gen = Atomics.load(hdrI32, HDR_GEN) | 0;
+    var count = Atomics.load(hdrI32, HDR_COUNT) | 0;
     return {
       sab: movedSab,
       hdrI32: hdrI32,
@@ -86,8 +120,8 @@
       movedBits: movedBits,
       fellAsleep: fellAsleep,
       entityCapacity: entityCapacity,
-      generation: Atomics.load(hdrI32, HDR_GEN) | 0,
-      count: Atomics.load(hdrI32, HDR_COUNT) | 0,
+      generation: gen,
+      count: count,
     };
   }
 

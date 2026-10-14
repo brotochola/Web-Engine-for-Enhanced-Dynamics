@@ -1156,9 +1156,14 @@ export class NavGrid {
     const slotOffset = this._pathHeadersOffset + slotIndex * this._pathSlotSize;
     const headerIdx = slotOffset >> 2;
 
-    // Clamp path length
+    // Clamp path length. Also clamp to what the source actually holds: an
+    // explicitLength past its end would read undefined, which coerces to 0 and
+    // is a real cell id, so it would silently enter the path as a waypoint.
     const sourceLength = explicitLength >= 0 ? explicitLength : pathCells.length;
-    const pathLength = Math.min(sourceLength, this._maxPathLength);
+    const pathLength = Math.max(
+      0,
+      Math.min(sourceLength, this._maxPathLength, pathCells.length | 0),
+    );
     u32[headerIdx + 3] = pathLength;
 
     // Write path data

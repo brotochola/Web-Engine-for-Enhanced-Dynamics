@@ -244,18 +244,41 @@ function createQuerySnapshotViews(sab, queryIndex, entityCapacity) {
 }
 
 function readPublishedQuerySnapshot(snapshotView) {
-  const snapshotIndex = Atomics.load(snapshotView.header, 0);
-  const count = Atomics.load(snapshotView.header, 1);
+  // The publisher writes the snapshot payload, then the count, then the index
+  // last. Reading index-then-count therefore lets a publish land between our two
+  // loads and hands us the old index with the new count - old data, new length,
+  // and the tail is stale entity ids from an earlier frame.
+  //
+  // Fix: accept the pair only when the count we read is the count that snapshot
+  // actually holds. The per-snapshot count is written before the index is
+  // published, so a matching pair means both loads saw the same publish. On a
+  // mismatch, re-read. Bounded because the publisher always converges.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const snapshotIndex = Atomics.load(snapshotView.header, 0);
+    const count = Atomics.load(snapshotView.header, 1);
+    const snapshot = snapshotView.snapshots[snapshotIndex] || snapshotView.snapshots[0];
+    if ((snapshot[0] | 0) !== (count | 0)) continue;
 
-  if (
-    snapshotView.cachedSnapshot === snapshotIndex &&
-    snapshotView.cachedCount === count &&
-    snapshotView.subarray !== null
-  ) {
-    return snapshotView.subarray;
+    if (
+      snapshotView.cachedSnapshot === snapshotIndex &&
+      snapshotView.cachedCount === count &&
+      snapshotView.subarray !== null
+    ) {
+      return snapshotView.subarray;
+    }
+    const subarray = count === 0 ? EMPTY_QUERY_RESULT : snapshot.subarray(1, 1 + count);
+    snapshotView.cachedSnapshot = snapshotIndex;
+    snapshotView.cachedCount = count;
+    snapshotView.subarray = subarray;
+    return subarray;
   }
 
+  // Contended the whole way through. Trust the snapshot's own count header
+  // rather than the shared one: it is the value that actually describes the
+  // bytes we are about to hand out.
+  const snapshotIndex = Atomics.load(snapshotView.header, 0);
   const snapshot = snapshotView.snapshots[snapshotIndex] || snapshotView.snapshots[0];
+  const count = snapshot[0] | 0;
   const subarray = count === 0 ? EMPTY_QUERY_RESULT : snapshot.subarray(1, 1 + count);
   snapshotView.cachedSnapshot = snapshotIndex;
   snapshotView.cachedCount = count;

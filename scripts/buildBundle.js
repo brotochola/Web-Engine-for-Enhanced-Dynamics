@@ -36,7 +36,15 @@ export const WORKER_NAMES = [
     'preRenderWorker',
 ];
 
+/**
+ * Marker written next to the bundles recording which engine they were built
+ * from. scripts/distVersion.js reads it; a missing or mismatched stamp blocks a
+ * bench run that would otherwise measure the wrong engine.
+ */
+export const BUILD_STAMP_FILE = '.build-version';
+
 export const BUNDLE_ARTIFACTS = [
+
     'weed.bundle.min.js',
     'weed.bundle.esm.min.js',
     'weed.prod.bundle.min.js',
@@ -534,6 +542,23 @@ function main() {
 
     cleanupDistTemps();
     copySmokeTest();
+
+    // Exact build stamp. distVersion.js refuses a bench run whose stamp does not
+    // match src/version.js, because a stale dist/ measures a different engine
+    // than the working tree and nothing in the output says so. Written from the
+    // same source syncVersion.js uses, so it cannot drift from src/version.js.
+    const stampedVersion = /VERSION\s*=\s*['"]([^'"]+)['"]/.exec(
+        fs.readFileSync(path.join(rootDir, 'src', 'version.js'), 'utf8'),
+    )?.[1];
+    if (!stampedVersion) {
+        throw new Error(
+            'buildBundle: could not read VERSION from src/version.js. Run: node scripts/syncVersion.js',
+        );
+    }
+    fs.writeFileSync(
+        path.join(distDir, BUILD_STAMP_FILE),
+        `${stampedVersion}\n`,
+    );
 
     console.log('\n✅ Single-file bundles created!');
     console.log('\n📊 Bundle sizes:');

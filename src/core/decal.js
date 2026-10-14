@@ -420,7 +420,14 @@ export class Decal {
           }
         }
 
-        decalsTilesDirty[tileIndex] = 1;
+        // B-03. The renderer reads and clears this same byte from a different
+        // worker. A plain store is not an atomic operation on a
+        // SharedArrayBuffer, so the two agents can interleave and the renderer
+        // can clear a stamp it has not uploaded yet - a lost update that leaves
+        // the tile stale until something else happens to stamp it.
+        // Atomics.store makes the flag transition a single well-defined step.
+        // It has to come after every pixel write above, which it does.
+        Atomics.store(decalsTilesDirty, tileIndex, 1);
       }
     }
   }
@@ -534,7 +541,7 @@ export class Decal {
         }
       }
       rgba.set(pixels, byteOffset);
-      dirty[i] = 1;
+      Atomics.store(dirty, i, 1); // B-03: atomic, matching the stamp path
       restored++;
     }
 

@@ -34,18 +34,18 @@ const fmtPct = (v) => `${v.toFixed(1)}%`.padStart(7);
 
 function hotLinesMarkdown(summary) {
   const lines = [
-    '# Líneas calientes por hilo',
+    '# Hot lines per thread',
     '',
-    `Trace: \`${summary.file}\`. Ventana desde ${summary.window.fromMs} ms${summary.window.durationMs ? `, ${summary.window.durationMs} ms` : ''}. Intervalo mediano entre muestras: ${summary.medianDeltaUs.toFixed(0)} µs.`,
+    `Trace: \`${summary.file}\`. Window from ${summary.window.fromMs} ms${summary.window.durationMs ? `, ${summary.window.durationMs} ms` : ''}. Median interval between samples: ${summary.medianDeltaUs.toFixed(0)} µs.`,
     '',
-    'Tiempo propio (self). El porcentaje de cada línea es sobre el tiempo propio de su función.',
+    'Self time. Each line\'s percentage is of its function\'s self time.',
     '',
   ];
   for (const t of summary.threads) {
     if (t.kind === 'other' || !t.hotLines.length) continue;
     lines.push(`## ${t.label} (${t.threadName})`);
     lines.push('');
-    lines.push(`Ocupado ${t.busyMsPerS.toFixed(0)} ms/s, GC ${t.gcMs.toFixed(0)} ms en la ventana.`);
+    lines.push(`Busy ${t.busyMsPerS.toFixed(0)} ms/s, GC ${t.gcMs.toFixed(0)} ms in the window.`);
     lines.push('');
     for (const h of t.hotLines) {
       lines.push(`### ${h.fn} (${h.fnMs.toFixed(1)} ms)`);
@@ -56,7 +56,7 @@ function hotLinesMarkdown(summary) {
         lines.push('');
       }
       if (!h.lines.length) {
-        lines.push('(sin muestras con línea)');
+        lines.push('(no samples with a line)');
         lines.push('');
         continue;
       }

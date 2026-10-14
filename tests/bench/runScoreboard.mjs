@@ -136,10 +136,10 @@ function isProtocolCeilingFail(row) {
 
 function productVerdict(rows, gates) {
   if (gates?.node && gates.node !== 'ok' && gates.node !== 'skipped') {
-    return { fasterThanMain: false, text: `No. test:node falló (${gates.node}). La velocidad no cuenta.` };
+    return { fasterThanMain: false, text: `No. test:node failed (${gates.node}). Speed does not count.` };
   }
   if (gates?.lockstep && gates.lockstep !== 'ok' && gates.lockstep !== 'skipped') {
-    return { fasterThanMain: false, text: `No. Lockstep falló (${gates.lockstep}). La velocidad no cuenta.` };
+    return { fasterThanMain: false, text: `No. Lockstep failed (${gates.lockstep}). Speed does not count.` };
   }
   const usable = rows.filter((r) => r.decision.verdict !== 'NA' && !isProtocolCeilingFail(r));
   const fails = rows.filter(
@@ -150,55 +150,55 @@ function productVerdict(rows, gates) {
   if (fails.length) {
     return {
       fasterThanMain: false,
-      text: `No. ${fails.length} fila(s) FAIL/WORSE. No se afirma mejor WeedJS.`,
+      text: `No. ${fails.length} row(s) FAIL/WORSE. Do not claim a better WeedJS.`,
     };
   }
   if (!usable.length) {
-    return { fasterThanMain: false, text: 'No. No hay filas comparables.' };
+    return { fasterThanMain: false, text: 'No. No comparable rows.' };
   }
   const ceilingNote = ceilings.length
-    ? ` ${ceilings.length} fila(s) son techo de protocolo (no se reclaman).`
+    ? ` ${ceilings.length} row(s) are a protocol ceiling (not claimed).`
     : '';
   if (keeps.length && !fails.length) {
     return {
       fasterThanMain: true,
-      text: `Sí, en las filas medidas: ${keeps.map((r) => r.id).join(', ')} kept y ninguna peor.${ceilingNote}`,
+      text: `Yes, on the rows that were measured: ${keeps.map((r) => r.id).join(', ')} kept and none worse.${ceilingNote}`,
     };
   }
   return {
     fasterThanMain: false,
-    text: `Empate: ninguna fila ≥3% mejor y ninguna peor.${ceilingNote}`,
+    text: `Tie: no row is ≥3% better and none is worse.${ceilingNote}`,
   };
 }
 
 function describeFeature(feature) {
-  if (!feature) return 'Feature sin entrada de catálogo.';
-  const bits = [`Módulo caliente: \`${feature.module}\`.`];
+  if (!feature) return 'Feature with no catalog entry.';
+  const bits = [`Hot module: \`${feature.module}\`.`];
   if (feature.kernel) {
     bits.push(
-      `Kernel Node: \`${feature.kernel.script}\` (clave ${feature.kernel.opsKey || 'ops/s'}; ${
-        feature.kernel.higherBetter === false ? 'menos ms es mejor' : 'más ops/s es mejor'
+      `Node kernel: \`${feature.kernel.script}\` (key ${feature.kernel.opsKey || 'ops/s'}; ${
+        feature.kernel.higherBetter === false ? 'fewer ms is better' : 'more ops/s is better'
       }).`
     );
   } else {
-    bits.push('No hay kernel Node para esta fila: se mide solo la escena que ejecuta el código.');
+    bits.push('There is no Node kernel for this row: only the scene that runs the code is measured.');
   }
   if (feature.scene) {
     bits.push(
-      `Escena: \`${feature.scene.path}\` (${feature.scene.exportName}), ${
+      `Scene: \`${feature.scene.path}\` (${feature.scene.exportName}), ${
         feature.scene.kind === 'gameplay' ? 'gameplay headed' : 'stress'
-      }, ${feature.scene.headed ? 'ventana visible' : 'headless'}.`
+      }, ${feature.scene.headed ? 'visible window' : 'headless'}.`
     );
   } else {
-    bits.push('No hay escena Chromium: el claim de esta fila es solo de kernel.');
+    bits.push('There is no Chromium scene: this row\'s claim is kernel-only.');
   }
-  if (feature.primary?.length) bits.push(`Primarias: ${feature.primary.join(', ')}.`);
-  if (feature.load?.length) bits.push(`Claves de carga: ${feature.load.join(', ')}.`);
+  if (feature.primary?.length) bits.push(`Primaries: ${feature.primary.join(', ')}.`);
+  if (feature.load?.length) bits.push(`Load keys: ${feature.load.join(', ')}.`);
   if (feature.protocolCeiling) {
-    bits.push(`Techo de protocolo (no se reclama la escena): ${feature.protocolCeiling}.`);
+    bits.push(`Protocol ceiling (the scene is not claimed): ${feature.protocolCeiling}.`);
   }
   if (feature.kernel?.informational) {
-    bits.push('El kernel es informativo: no entra al keep/drop (stride u otro confound).');
+    bits.push('The kernel is informational: it does not enter keep/drop (stride or another confound).');
   }
   return bits.join(' ');
 }
@@ -210,11 +210,11 @@ function writeFeatureSection(row, payload) {
   lines.push('');
   lines.push(describeFeature(feature));
   lines.push('');
-  lines.push(`**Veredicto: ${row.decision.verdict}.**`);
+  lines.push(`**Verdict: ${row.decision.verdict}.**`);
   lines.push('');
 
   if (row.kernel?.error) {
-    lines.push(`El kernel falló: ${row.kernel.error}`);
+    lines.push(`The kernel failed: ${row.kernel.error}`);
     lines.push('');
   } else if (row.kernel && (row.kernel.baseOps != null || row.kernel.hypOps != null)) {
     const d = row.kernel.deltaPct;
@@ -222,7 +222,7 @@ function writeFeatureSection(row, payload) {
     lines.push(
       `Kernel: baseline ${Number.isFinite(row.kernel.baseOps) ? row.kernel.baseOps.toFixed(higherBetter ? 0 : 3) : 'n/a'}${
         higherBetter ? ' ops/s' : ' ms'
-      }, árbol actual ${Number.isFinite(row.kernel.hypOps) ? row.kernel.hypOps.toFixed(higherBetter ? 0 : 3) : 'n/a'}${
+      }, current tree ${Number.isFinite(row.kernel.hypOps) ? row.kernel.hypOps.toFixed(higherBetter ? 0 : 3) : 'n/a'}${
         higherBetter ? ' ops/s' : ' ms'
       } (${fmtDeltaPct(d)}).`
     );
@@ -230,30 +230,30 @@ function writeFeatureSection(row, payload) {
   }
 
   if (row.scene && !row.scene.ok) {
-    lines.push(`La escena falló: ${row.scene.error || 'error desconocido'}. Sin números de worker.`);
+    lines.push(`The scene failed: ${row.scene.error || 'unknown error'}. No worker numbers.`);
     lines.push('');
   } else if (row.scene?.base || row.scene?.hyp) {
     const keys = sceneMetricKeys(feature, row.scene);
     lines.push(renderCompareTable(row.scene.base, row.scene.hyp, keys));
     lines.push('');
     if (row.scene.workload?.ok) {
-      lines.push('Carga comparable: las claves de esta fila quedaron dentro de ±5% y el cv de cada una fue menor a 50%. El par existe.');
+      lines.push('Load matches: this row\'s keys stayed within ±5% and each coefficient of variation was under 50%. The pair exists.');
     } else if (row.scene.workload) {
       const drifts = (row.scene.workload.drifts || [])
         .map((d) => (d.reason ? `${d.key}: ${d.reason}` : `${d.key} ${fmtDeltaPct(d.pct)}`))
         .join('; ');
-      lines.push(`Carga no comparable. El par no existe. Detalle: ${drifts || 'sin drifts anotados'}.`);
+      lines.push(`Load does not match. The pair does not exist. Detail: ${drifts || 'no drifts recorded'}.`);
     }
     lines.push('');
   }
 
   const hits = row.decision.hits || [];
   if (row.decision.reasons?.length) {
-    lines.push(`Motivo: ${row.decision.reasons.join(' ')}`);
+    lines.push(`Reason: ${row.decision.reasons.join(' ')}`);
     lines.push('');
   }
   if (hits.length) {
-    lines.push('Por qué el veredicto:');
+    lines.push('Why this verdict:');
     lines.push('');
     for (const hit of hits) lines.push(`- ${explainHit(hit)}`);
     lines.push('');
@@ -261,13 +261,13 @@ function writeFeatureSection(row, payload) {
 
   if (payload.args?.smoke) {
     lines.push(
-      'Esta fila se midió en smoke (una sola corrida por lado). El cv sale 0% porque no hay serie. Un KEPT o WORSE de smoke es una pantalla, no un claim para mergear.'
+      'This row was measured as smoke (one run per side). The cv comes out 0% because there is no series. A smoke KEPT or WORSE is a screen, not a claim to merge.'
     );
     lines.push('');
   }
   if (row.id === 'box2d' && payload.args?.smoke) {
     lines.push(
-      'Contexto de la misma campaña: el confirm headed 5-run de Balls (`tests/results/product-confirm/report.md`) midió physics 6.911 → 6.554 ms (−5.2%) con `BODY_COUNT` 9004/9004. Este smoke de 4 s no anula ese confirm: no tocamos el WASM de Box2D; `physics_STEP_MS` es el worker de física de Balls, y n=1 de 4 s se mueve varios por ciento solo por ruido de máquina.'
+      'Context from the same campaign: the headed 5-run Balls confirm (`tests/results/product-confirm/report.md`) measured physics 6.911 → 6.554 ms (−5.2%) with `BODY_COUNT` 9004/9004. This 4 s smoke does not cancel that confirm: Box2D WASM was not touched; `physics_STEP_MS` is the Balls physics worker, and one 4 s run moves several percent from machine noise alone.'
     );
     lines.push('');
   }
@@ -276,48 +276,48 @@ function writeFeatureSection(row, payload) {
 
 export function writeReport(payload) {
   const lines = [];
-  lines.push('# Scoreboard de features del motor');
+  lines.push('# Engine feature scoreboard');
   lines.push('');
   lines.push(
-    `Hipótesis: el árbol de trabajo actual es más rápido que \`${payload.vs}\` en las filas del catálogo que se midieron.`
+    `Hypothesis: the current working tree is faster than \`${payload.vs}\` on the catalog rows that were measured.`
   );
   lines.push('');
   lines.push('## Setup');
   lines.push('');
   lines.push(
-    `Se midieron ${payload.rows.length} de ${payload.catalogSize} filas del catálogo: ${payload.rows.map((r) => r.id).join(', ')}.`
+    `Measured ${payload.rows.length} of ${payload.catalogSize} catalog rows: ${payload.rows.map((r) => r.id).join(', ')}.`
   );
   lines.push(
-    `Correctness: test:node ${payload.gates?.node ?? 'n/a'}; lockstep balls/liquidfun/lfstress/particles ${payload.gates?.lockstep ?? 'n/a'}. Si alguno falla, la velocidad no cuenta.`
+    `Correctness: test:node ${payload.gates?.node ?? 'n/a'}; lockstep balls/liquidfun/lfstress/particles ${payload.gates?.lockstep ?? 'n/a'}. If either fails, speed does not count.`
   );
   lines.push(
     `Gameplay headed ${payload.args.runs} × ${payload.args.warmupMs}/${payload.args.durationMs} ms. Stress headless ${payload.args.stressRuns} × ${payload.args.stressWarmupMs}/${payload.args.stressDurationMs} ms.`
   );
   if (payload.args?.headedOnly) {
     lines.push(
-      `Esta corrida usó \`--headed-only ${payload.args.headedOnly.join(',')}\`: solo esas filas abren ventana y corren el protocolo de cinco corridas. El resto de escenas (aunque el catálogo marque headed) usan el protocolo de estrés sin ventana.`
+      `This run used \`--headed-only ${payload.args.headedOnly.join(',')}\`: only those rows open a window and run the five-run protocol. The other scenes (even if the catalog marks them headed) use the headless stress protocol.`
     );
   } else if (payload.args.headlessAll) {
-    lines.push('Esta corrida usó `--headless`: ninguna escena abre ventana.');
+    lines.push('This run used `--headless`: no scene opens a window.');
   }
   if (payload.args?.detailedStats) {
-    lines.push('Esta corrida pidió `--detailed-stats`: sub-timers (`VISIBILITY_MS`, etc.) encendidos. No es un confirm de producto.');
+    lines.push('This run asked for `--detailed-stats`: sub-timers (`VISIBILITY_MS`, and the rest) are on. This is not a product confirm.');
   }
   lines.push(
-    'Stats detalladas apagadas (los contadores de carga sí se publican). Carga comparable si la mediana queda en ±5% y el cv de cada clave es menor a 50%. Velocidad keep si una primaria baja al menos 3% en ms (o el kernel sube 3% en ops/s) y ninguna primaria de la fila empeora 3%.'
+    'Detailed stats off (load counts still publish). Load matches if the median stays within ±5% and each key\'s cv is under 50%. A speed keep requires a primary at least 3% cheaper in ms (or the kernel at least 3% more ops/s) and no primary on the row 3% worse.'
   );
   lines.push(
-    `Baseline: git \`${payload.vs}\` más el parche de contadores de carga (misma visibilidad, velocidad de ese rev). Tratamiento: árbol de trabajo actual. El baseline corre desde un worktree con solo \`src/\` de ese rev; el árbol de trabajo no se escribe.`
+    `Baseline: git \`${payload.vs}\` plus the load-count patch (same visibility, that rev's speed). Treatment: the current working tree. The baseline runs from a worktree with only that rev's \`src/\`; the working tree is not written.`
   );
   if (payload.args.smoke) {
     lines.push(
-      'Corrida smoke (n=1). Sirve para ver si la plataforma cierra carga y escribe números. No alcanza para afirmar que una feature es más barata o más cara.'
+      'Smoke run (n=1). It shows whether the platform closes load and writes numbers. It is not enough to claim that a feature is cheaper or more expensive.'
     );
   }
   lines.push('');
-  lines.push('## Resumen');
+  lines.push('## Summary');
   lines.push('');
-  lines.push('| Feature | Veredicto | Primaria | Carga |');
+  lines.push('| Feature | Verdict | Primary | Load |');
   lines.push('|---------|-----------|----------|-------|');
   for (const row of payload.rows) {
     const hit = (row.decision.hits || [])
@@ -327,19 +327,19 @@ export function writeReport(payload) {
     lines.push(`| ${row.id} | ${row.decision.verdict} | ${hit} | ${load} |`);
   }
   lines.push('');
-  lines.push('## Números por feature');
+  lines.push('## Numbers per feature');
   lines.push('');
   for (const row of payload.rows) {
     lines.push(writeFeatureSection(row, payload));
   }
-  lines.push('## Veredicto de producto');
+  lines.push('## Product verdict');
   lines.push('');
   lines.push(payload.product.text);
   lines.push('');
-  lines.push('## Qué se aprendió');
+  lines.push('## What we learned');
   lines.push('');
   lines.push(
-    'WORSE no significa “Box2D está roto”. Significa que la primaria de esa fila (en box2d: `physics_STEP_MS` de Balls) fue al menos 3% más cara en esta corrida, con carga comparable. Una tabla de signos no alcanza: el informe tiene que decir qué escena, qué worker, ambos lados en ms, y si n=1 o n=5. Predator artístico no entra. Vis-poly usa `visPolyStressScene` con `raycasted: true`. Combate estable usa `steadyCombatScene`. No se afirma “mejor WeedJS” hasta que todas las filas del catálogo sean KEPT o empate y ninguna WORSE/FAIL.'
+    'WORSE does not mean "Box2D is broken". It means that row\'s primary (for box2d: Balls `physics_STEP_MS`) was at least 3% more expensive on this run, with matching load. A table of signs is not enough: the report has to say which scene, which worker, both sides in ms, and whether n=1 or n=5. Artistic Predator is not a row. Vis-poly uses `visPolyStressScene` with `raycasted: true`. Stable combat uses `steadyCombatScene`. Do not claim a "better WeedJS" until every catalog row is KEPT or a tie and none is WORSE or FAIL.'
   );
   lines.push('');
   const md = lines.join('\n');
@@ -404,7 +404,7 @@ function abortCampaign(reason, rows, gates, args) {
     rows,
     gates,
     aborted: reason,
-    product: { fasterThanMain: false, text: `No. Campaña abortada: ${reason}` },
+    product: { fasterThanMain: false, text: `No. Campaign aborted: ${reason}` },
   };
   writeJson(path.join(outRoot, 'summary.json'), payload);
   writeReport(payload);

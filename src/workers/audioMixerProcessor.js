@@ -78,8 +78,6 @@ class MixerProcessor extends AudioWorkletProcessor {
       var pan = f32[b + 3];
       var vol = f32[b + 4] * mixGain;
       var loop = i32[b + 5];
-      var cursor = f32[b + 6];
-
       var asset = this._assets.get(id);
       if (!asset) {
         Atomics.store(i32, b, 0);
@@ -90,6 +88,13 @@ class MixerProcessor extends AudioWorkletProcessor {
       var len = asset.len;
       var nCh = asset.nCh;
 
+      // Normalise once per block, not once per sample. `!(cursor >= 0)` also
+      // catches NaN, so a poisoned cursor self-heals on the next block instead
+      // of persisting for the life of the AudioContext.
+      var cursor = f32[b + 6];
+      if (!(cursor >= 0)) cursor = 0;
+      else if (loop && cursor >= len) cursor %= len;
+
       var angle = (pan + 1) * PI_4;
       var gL = Math.cos(angle) * vol;
       var gR = Math.sin(angle) * vol;
@@ -98,13 +103,24 @@ class MixerProcessor extends AudioWorkletProcessor {
       for (var i = 0; i < frames; i++) {
         if (cursor >= len) {
           if (loop) {
+            // Reduce, do not subtract once. A pitch above the sample length
+            // leaves cursor >= len after a single subtraction, and the read
+            // below then goes out of bounds: undefined -> NaN, which the output
+            // clamp cannot catch (NaN > 1 and NaN < -1 are both false). That
+            // poisons every later block for the life of the context.
+            //
+            // The second reduction is only reachable when pitch > len, so
+            // ordinary audio never pays for it.
             cursor -= len;
+            if (cursor >= len) cursor %= len;
           } else {
             Atomics.store(i32, b, 0);
             ended = true;
             break;
           }
         }
+        // cursor is in [0, len) here: normalised before the loop, and the wrap
+        // above is taken on every path that could have left the range.
         var idx = ~~cursor;
         var frac = cursor - idx;
         var ni = idx + 1 < len ? idx + 1 : loop ? 0 : idx;
@@ -117,6 +133,10 @@ class MixerProcessor extends AudioWorkletProcessor {
         }
         cursor += pitch;
       }
+      // Keep the published cursor in range too, so anything reading the SAB -
+      // a debug view, a resume, a second consumer - never sees an out-of-range
+      // position and has to re-derive the invariant.
+      if (!ended && loop && cursor >= len) cursor %= len;
       f32[b + 6] = ended ? 0 : cursor;
     }
 

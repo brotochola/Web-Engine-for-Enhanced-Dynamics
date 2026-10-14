@@ -138,6 +138,29 @@
         import(sceneModule),
         import('/tests/bench/workerBenchmarkMetrics.js'),
       ]);
+      // In-page half of the distVersion guard. Without ?src=1 the importmap above
+      // resolves /src/index.js to the committed dist/ bundle, which can be an
+      // older engine than the tree the harness is reading schemas from. This
+      // compares the version the engine actually reports against src/version.js.
+      // Node-side scripts/distVersion.js blocks most entry points earlier; this
+      // covers the ones that navigate straight to this page.
+      if (!new URLSearchParams(location.search).get('src')) {
+        try {
+          const { VERSION: srcVersion } = await import('/src/version.js');
+          const loaded = WEED && WEED.VERSION;
+          if (loaded && srcVersion && loaded !== srcVersion) {
+            throw new Error(
+              `Engine version mismatch: the page loaded ${loaded} (dist bundle) but ` +
+              `src/version.js is ${srcVersion}. This run would measure ${loaded}, not ` +
+              `the working tree. Reload with ?src=1, or run: npm run make_bundle`,
+            );
+          }
+        } catch (err) {
+          if (err && /Engine version mismatch/.test(err.message)) throw err;
+          // /src/version.js unreachable (static server without src mounted):
+          // nothing to compare, let the run proceed.
+        }
+      }
       if (typeof WEED.ensureEmbeddedSources === 'function') {
         await WEED.ensureEmbeddedSources();
       }

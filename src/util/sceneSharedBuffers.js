@@ -920,9 +920,12 @@ export function teardownSceneSharedState(scene) {
   }
 
   if (scene.buffers.perTypeActiveLists) {
+    // Use the entity id width this scene was bound with. A hardcoded Uint16Array
+    // clears only the low half of the count on a 32-bit-id scene.
+    const IdArray = EntityIdArray();
     for (const typeName in scene.buffers.perTypeActiveLists) {
       const sab = scene.buffers.perTypeActiveLists[typeName];
-      const view = new Uint16Array(sab);
+      const view = new IdArray(sab);
       view[0] = 0;
     }
   }

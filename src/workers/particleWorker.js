@@ -1698,7 +1698,14 @@ class ParticleWorker extends AbstractWorker {
         scratch.pathResult[pathLength++] = current;
         current = scratch.cameFrom[current];
       }
-      scratch.pathResult[pathLength++] = fromCell;
+      // Only append the origin when there is room. Writing past the end of a
+      // typed array is a silent no-op, but pathLength would still advance and
+      // writePathData would then read one element beyond the array, getting
+      // undefined -> 0, which is a real cell id and lands in the path as a
+      // phantom waypoint.
+      if (pathLength < scratch.pathResult.length) {
+        scratch.pathResult[pathLength++] = fromCell;
+      }
 
       for (let i = 0; i < pathLength / 2; i++) {
         const tmp = scratch.pathResult[i];

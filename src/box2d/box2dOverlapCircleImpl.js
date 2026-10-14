@@ -73,7 +73,24 @@
     Atomics.notify(i32, HDR_STATUS, 1);
   }
 
+  // B-04: the sync variants block with Atomics.wait, which throws a TypeError
+  // on the main thread. Duplicated rather than imported because this file is a
+  // dual-mode script (ESM side-effect import AND importScripts), so it cannot
+  // take a dependency without changing the classic load order - the same reason
+  // the header constants above are duplicated across this family.
+  function assertWorkerThread(syncName, asyncName) {
+    if (typeof window === 'undefined') return; // Worker has no `window`
+    throw new Error(
+      syncName +
+        ' blocks the calling thread with Atomics.wait and cannot run on the main thread. ' +
+        'Use ' +
+        asyncName +
+        ' instead.',
+    );
+  }
+
   function claimAndWriteSync(cx, cy, radius, filter) {
+    assertWorkerThread('box2dOverlapCircle', 'box2dOverlapCircleAsync');
     if (!i32) throw new Error('box2dOverlapCircle: SAB not bound (wait for box2dReady)');
     for (;;) {
       var prev = Atomics.compareExchange(i32, HDR_STATUS, STATUS_IDLE, STATUS_CLAIMED);

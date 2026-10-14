@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
+import { assertDistFreshForRun } from '../../scripts/distVersion.js';
 import {
   DEFAULT_DURATION_MS,
   DEFAULT_SAMPLE_INTERVAL_MS,
@@ -274,8 +275,13 @@ async function main() {
   const screenshotDir = resolveScreenshotDir(cliArgs, outputPath);
   const usePhasedScreenshots = Boolean(screenshotDir);
 
-  const server = await createStaticBenchmarkServer(repoRoot);
   const srcModules = Boolean(cliArgs.src);
+  // Fail before a browser is launched: without --src the page importmaps
+  // /src/index.js to the committed dist/ bundle, and a stale bundle measures a
+  // different engine than the working tree with nothing in the output to say so.
+  assertDistFreshForRun(repoRoot, { useSrc: srcModules, label: 'runIntegratedWorkerBenchmark' });
+
+  const server = await createStaticBenchmarkServer(repoRoot);
   const extraQuery = typeof cliArgs.query === 'string' ? cliArgs.query.replace(/^\?/, '') : '';
   const qs = [];
   if (srcModules) qs.push('src=1');

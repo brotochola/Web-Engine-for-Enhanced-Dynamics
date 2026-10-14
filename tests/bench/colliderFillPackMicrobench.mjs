@@ -399,31 +399,31 @@ fs.mkdirSync(h2cDir, { recursive: true });
 writeReport(path.join(h2cDir, 'kernel.json'), payload);
 
 const pct = (x) => `${(x * 100).toFixed(1)}%`;
-const report = `# Pack instanced (B) es más barato que transformar vértices a world en CPU (A)
+const report = `# Instanced pack (B) is cheaper than transforming vertices to world space on the CPU (A)
 
 ## What changed
-Tres kernels en el mismo proceso Node, misma semilla, destinos prealocados. A escribe un VBO world-space (\`x,y\` × 3 × triángulo), el camino que Graphics usaba. B es \`packColliderFill\` (v1 que se mergea): locales + pose + tint. C solo escribe 256 poses (\`xy, rotCS\`) asumiendo verts ya residentes — no entra a \`src/\` en este plan.
+Three kernels in the same Node process, same seed, preallocated destinations. A writes a world-space VBO (\`x,y\` × 3 × triangle), the path Graphics used. B is \`packColliderFill\` (v1, the one that merges): locals + pose + tint. C only writes 256 poses (\`xy, rotCS\`) assuming the verts already reside on the GPU — it does not enter \`src/\` in this plan.
 
 ## Setup
-Kernel Node, sin workers. \`timeIt\` con piso de 3 ms. Carga fija: **${BODIES}** bodies, **${TRIS_PER_BODY}** tris locales cada uno (**${INSTANCES}** instancias). \`rotC/rotS\` prellenados. Checksum: aplicar pose de B a los locales y comparar con A (epsilon ${EPS}).
+Node kernel, no workers. \`timeIt\` with a 3 ms floor. Fixed load: **${BODIES}** bodies, **${TRIS_PER_BODY}** local tris each (**${INSTANCES}** instances). \`rotC/rotS\` prefilled. Checksum: apply B's pose to the locals and compare with A (epsilon ${EPS}).
 
 ## Numbers
-- A world-space: mediana ${a.ms.toFixed(3)} ms / ${a.iterations} ops → **${Math.round(a.opsPerSec).toLocaleString()} ops/s**
-- B packColliderFill: mediana ${b.ms.toFixed(3)} ms / ${b.iterations} ops → **${Math.round(b.opsPerSec).toLocaleString()} ops/s**
-- C pose-por-body: mediana ${c.ms.toFixed(3)} ms / ${c.iterations} ops → **${Math.round(c.opsPerSec).toLocaleString()} ops/s**
+- A world-space: median ${a.ms.toFixed(3)} ms / ${a.iterations} ops → **${Math.round(a.opsPerSec).toLocaleString()} ops/s**
+- B packColliderFill: median ${b.ms.toFixed(3)} ms / ${b.iterations} ops → **${Math.round(b.opsPerSec).toLocaleString()} ops/s**
+- C pose-per-body: median ${c.ms.toFixed(3)} ms / ${c.iterations} ops → **${Math.round(c.opsPerSec).toLocaleString()} ops/s**
 - Checksum: ${checksumOk ? 'OK' : 'FAIL'}
 - H1 B vs A: ${pct(v.h1)} → **${v.h1Status}**
 - H2 C vs B: ${pct(v.h2)} → **${v.h2Status}**
-- Skip pack limpio (${SKIP_N} bodies): mediana ${skipTimed.ms.toFixed(3)} ms / ${skipTimed.iterations} ops → **${Math.round(skipTimed.opsPerSec).toLocaleString()} ops/s**
-- Skip paintEpoch (${SKIP_N}): mediana ${skipEpochTimed.ms.toFixed(3)} ms / ${skipEpochTimed.iterations} ops → **${Math.round(skipEpochTimed.opsPerSec).toLocaleString()} ops/s**
-- Upload sintético: B ${payload.uploadBytes.B_instance} bytes/frame; C pose ${payload.uploadBytes.C_pose} bytes/frame; C remesh local ${payload.uploadBytes.C_localRemesh} bytes
+- Clean skip-pack (${SKIP_N} bodies): median ${skipTimed.ms.toFixed(3)} ms / ${skipTimed.iterations} ops → **${Math.round(skipTimed.opsPerSec).toLocaleString()} ops/s**
+- Skip paintEpoch (${SKIP_N}): median ${skipEpochTimed.ms.toFixed(3)} ms / ${skipEpochTimed.iterations} ops → **${Math.round(skipEpochTimed.opsPerSec).toLocaleString()} ops/s**
+- Synthetic upload: B ${payload.uploadBytes.B_instance} bytes/frame; C pose ${payload.uploadBytes.C_pose} bytes/frame; C local remesh ${payload.uploadBytes.C_localRemesh} bytes
 
 ## Verdict
-H1 ${v.h1Status}: B ${v.h1Status === 'KEEP' ? 'justifica' : v.h1Status === 'TIE' ? 'no cruza el 3% contra' : 'no gana contra'} matar el world-space en CPU. Este PR siempre mergea B.
-H2 ${v.h2Status}: ${v.h2Status === 'KEEP' ? 'C queda como follow-up (split de buffers / vertex pulling), no se mergea ahora.' : 'C se queda fuera de src/.'}
+H1 ${v.h1Status}: B ${v.h1Status === 'KEEP' ? 'justifies' : v.h1Status === 'TIE' ? 'does not cross 3% against' : 'does not beat'} killing world-space on the CPU. This PR always merges B.
+H2 ${v.h2Status}: ${v.h2Status === 'KEEP' ? 'C stays a follow-up (buffer split / vertex pulling). It does not merge now.' : 'C stays out of src/.'}
 
 ## What we learned
-Separar forma local de pose evita reescribir 3 vértices world por triángulo. Instancing sirve porque earcut/fan deja primitivos iguales. Upload GPU no se midió en Node.
+Separating local shape from pose avoids rewriting 3 world vertices per triangle. Instancing pays because earcut/fan leaves identical primitives. The GPU upload was not measured in Node.
 `;
 
 fs.mkdirSync(reportDir, { recursive: true });

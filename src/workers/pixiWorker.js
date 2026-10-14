@@ -1842,10 +1842,19 @@ class PixiRenderer extends AbstractWorker {
   update(deltaTime, dtRatio, resuming) {
     if (!this.presentationIsActive()) this._stopGpuClock();
     this.rememberDeltaTime(deltaTime);
+    this.presentTimeThisFrame = 0;
+    // Before consumeNextRenderQueue, never after it. Taking a frame sets
+    // _deferredRenderQueueRelease and only releaseRenderQueueIfHeld stores it,
+    // so returning between the two strands pre-render's backpressure counter:
+    // pixiIsMoreThanOneFrameBehind then skips every later frame. No GPU, no
+    // queue taken; lastReadFrame holds and the backpressure clamp walks us
+    // forward one frame at a time when it comes back.
+    if (!this.gpuIsAvailable()) {
+      this._newQueueThisFrame = 0;
+      return;
+    }
     const consumedNewFrame = this.consumeNextRenderQueue();
     this._newQueueThisFrame = consumedNewFrame ? 1 : 0;
-    this.presentTimeThisFrame = 0;
-    if (!this.gpuIsAvailable()) return;
 
     this.lightsTimeThisFrame = 0;
     this.shadowsTimeThisFrame = 0;
@@ -2054,7 +2063,7 @@ class PixiRenderer extends AbstractWorker {
     const maxUploads = Math.min(this.maxDecalTileUploadsPerFrame || totalTiles, totalTiles);
     let dirtyN = 0;
     for (let i = 0; i < totalTiles; i++) {
-      if (this.decalsTilesDirty[i]) dirtyN++;
+      if (Atomics.load(this.decalsTilesDirty, i)) dirtyN++;
     }
     this._decalTilesDirtyThisFrame = dirtyN;
     if (dirtyN === 0) {
@@ -2066,16 +2075,21 @@ class PixiRenderer extends AbstractWorker {
     let scanned = 0;
     let tileIndex = this._nextDecalTileScanIndex % totalTiles;
 
+    // B-03. This flag has two agents writing it from two workers: the stamp
+    // side sets 1, this loop sets 0. Both transitions are atomic now, and the
+    // claim is an exchange rather than a read-then-clear so the two cannot
+    // interleave between the check and the clear.
+    const dirtyFlags = this.decalsTilesDirty;
+
     while (scanned < totalTiles && processed < maxUploads) {
-      // Check if this tile was modified by particle_worker
-      if (this.decalsTilesDirty[tileIndex] === 0) {
+      // Claim the tile. If a stamp lands after this exchange it re-sets the
+      // flag and the tile is picked up next frame - that is the direction that
+      // self-heals, so clearing here can never lose an update.
+      if (Atomics.exchange(dirtyFlags, tileIndex, 0) === 0) {
         tileIndex = (tileIndex + 1) % totalTiles;
         scanned++;
         continue;
       }
-
-      // Clear dirty flag immediately (particle_worker may set it again)
-      this.decalsTilesDirty[tileIndex] = 0;
 
       const tileByteOffset = tileIndex * bytesPerTile;
       let tileRGBAShared = this._decalSharedBuffers?.[tileIndex];

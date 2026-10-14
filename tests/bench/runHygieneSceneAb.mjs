@@ -169,22 +169,22 @@ function decideRow(feature, scenePair) {
 
 function writeReport(payload, reportPath = path.join(outRoot, 'report.md')) {
   const lines = [];
-  lines.push('# Higiene vs main: cuatro escenas con física ON');
+  lines.push('# Hygiene vs main: four scenes with physics ON');
   lines.push('');
   lines.push(
-    'Hipótesis: el árbol actual (`physics.enabled === false` opt-in, no alocar grilla si spatial workers = 0, DebugUI caps) no empeora ≥3% las primarias de Predator, Balls, Burning Boxes y LiquidFunStress frente a `main`. Es higiene, no un claim de “más rápido que main”.'
+    'Hypothesis: the current tree (`physics.enabled === false` opt-in, do not allocate the grid when spatial workers = 0, DebugUI caps) does not make the primaries of Predator, Balls, Burning Boxes, and LiquidFunStress ≥3% worse than `main`. This is hygiene, not a claim of "faster than main".'
   );
   lines.push('');
   lines.push('## What changed');
   lines.push('');
   lines.push(
-    'El baseline es un worktree con solo `src/` de esa revisión; las escenas son las del árbol de trabajo en los dos lados. Las cuatro tienen física encendida y spatial workers > 0: no entran al path Weed-pose ni al skip de grilla.'
+    'The baseline is a worktree with only that revision\'s `src/`; both sides use the working tree\'s scenes. All four have physics on and spatial workers > 0: they do not enter the Weed-pose path or the grid skip.'
   );
   lines.push('');
   lines.push('## Setup');
   lines.push('');
   lines.push(
-    `Git: árbol de trabajo vs \`${payload.vs}\`. Gameplay headed ${payload.args.runs} × ${payload.args.warmupMs}/${payload.args.durationMs} ms, ventana visible, \`collectDetailedStats\` off. Stress headless ${payload.args.stressRuns} × ${payload.args.stressWarmupMs}/${payload.args.stressDurationMs} ms. Predator es la demo artística (carga emergente); no es la fila \`steadyCombat\` del scoreboard.`
+    `Git: working tree vs \`${payload.vs}\`. Gameplay headed ${payload.args.runs} × ${payload.args.warmupMs}/${payload.args.durationMs} ms, visible window, \`collectDetailedStats\` off. Stress headless ${payload.args.stressRuns} × ${payload.args.stressWarmupMs}/${payload.args.stressDurationMs} ms. Predator is the artistic demo (emergent load); it is not the scoreboard \`steadyCombat\` row.`
   );
   lines.push('');
   lines.push('## Numbers');
@@ -194,13 +194,13 @@ function writeReport(payload, reportPath = path.join(outRoot, 'report.md')) {
     lines.push(`### ${row.id} — ${row.name}`);
     lines.push('');
     lines.push(
-      `Escena \`${row.scene.path}\` (${row.scene.exportName}), ${row.scene.kind === 'gameplay' ? 'gameplay headed' : 'stress headless'}. Primarias: ${row.primary.join(', ')}. Carga: ${row.load.join(', ')}.`
+      `Scene \`${row.scene.path}\` (${row.scene.exportName}), ${row.scene.kind === 'gameplay' ? 'gameplay headed' : 'stress headless'}. Primaries: ${row.primary.join(', ')}. Load: ${row.load.join(', ')}.`
     );
     lines.push('');
-    lines.push(`**Veredicto: ${row.decision.verdict}.**`);
+    lines.push(`**Verdict: ${row.decision.verdict}.**`);
     lines.push('');
     if (!row.scenePair?.ok) {
-      lines.push(`La escena falló: ${row.scenePair?.error || 'error desconocido'}.`);
+      lines.push(`The scene failed: ${row.scenePair?.error || 'unknown error'}.`);
       lines.push('');
       continue;
     }
@@ -208,16 +208,16 @@ function writeReport(payload, reportPath = path.join(outRoot, 'report.md')) {
     lines.push(renderCompareTable(row.scenePair.base, row.scenePair.hyp, keys));
     lines.push('');
     if (row.scenePair.workload?.ok) {
-      lines.push('Carga comparable: ±5% y cv < 50%. El par existe.');
+      lines.push('Load matches: ±5% and cv < 50%. The pair exists.');
     } else if (row.scenePair.workload) {
       const drifts = (row.scenePair.workload.drifts || [])
         .map((d) => (d.reason ? `${d.key}: ${d.reason}` : `${d.key} ${fmtDeltaPct(d.pct)}`))
         .join('; ');
-      lines.push(`Carga no comparable. El par no existe. Detalle: ${drifts || 'sin drifts'}.`);
+      lines.push(`Load does not match. The pair does not exist. Detail: ${drifts || 'no drifts'}.`);
     }
     lines.push('');
     if (row.decision.reasons?.length) {
-      lines.push(`Motivo: ${row.decision.reasons.join(' ')}`);
+      lines.push(`Reason: ${row.decision.reasons.join(' ')}`);
       lines.push('');
     }
     for (const hit of row.decision.hits || []) lines.push(`- ${explainHit(hit)}`);
@@ -240,15 +240,15 @@ function productText(rows) {
   const keeps = rows.filter((r) => r.decision.verdict === 'KEPT');
   const ties = rows.filter((r) => r.decision.verdict === 'TIE');
   if (fails.length) {
-    return `No. ${fails.map((r) => `${r.id}=${r.decision.verdict}`).join(', ')}. Higiene no se afirma limpia.`;
+    return `No. ${fails.map((r) => `${r.id}=${r.decision.verdict}`).join(', ')}. Hygiene is not claimed clean.`;
   }
   if (keeps.length) {
-    return `Higiene OK. ${keeps.map((r) => r.id).join(', ')} kept; ${ties.map((r) => r.id).join(', ') || 'ninguna'} tie. Ninguna primaria ≥3% peor.`;
+    return `Hygiene OK. ${keeps.map((r) => r.id).join(', ')} kept; ${ties.map((r) => r.id).join(', ') || 'none'} tie. No primary ≥3% worse.`;
   }
   if (ties.length) {
-    return `Higiene OK (empate): ${ties.map((r) => r.id).join(', ')} dentro de 3%.`;
+    return `Hygiene OK (tie): ${ties.map((r) => r.id).join(', ')} within 3%.`;
   }
-  return 'Sin filas comparables.';
+  return 'No comparable rows.';
 }
 
 function main() {
@@ -313,8 +313,8 @@ function main() {
     summary: productText(rows),
     learned:
       args.only
-        ? 'steadyCombat es la fila de combate del catálogo (carga estable). Predator no sustituye este par.'
-        : 'Estas escenas no ejercitan el path Weed-pose. Un TIE o keep de higiene acá no prueba Bunny Mark; un WORSE sí sería una regresión en el path WASM de siempre.',
+        ? 'steadyCombat is the catalog combat row (stable load). Predator does not stand in for this pair.'
+        : 'These scenes do not exercise the Weed-pose path. A TIE or a hygiene keep here does not prove Bunny Mark; a WORSE would be a regression on the usual WASM path.',
   };
   const tag = args.only ? args.only.join('-') : 'all';
   const summaryPath = args.only
