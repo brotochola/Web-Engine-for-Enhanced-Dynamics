@@ -25,7 +25,7 @@ Use this when the claim is about a hot function in isolation.
 #### What a kernel is allowed to do
 
 - **A kernel never writes the working tree.** It imports `src/` and times it. No `copyFileSync`, no patch-and-restore, no `applySrcRev`. Those harnesses were deleted: an interrupted run left the engine on an old snapshot, and a node test that patched `src/` ran next to three other test files under `--test-concurrency=4`.
-- **It calls the shipped function.** When the hot code is a worker method, the kernel runs the real worker class in Node ([`tests/bench/workerHarness.mjs`](../tests/bench/workerHarness.mjs): import the worker module with a `self` stub, send a real `init` message). A loop copied into the bench measures the copy, and a local copy does not have the worker's `this`. That is how H7, H10, H11, H6 and "Stay sin sqrt" (kernel +553 %, scene +20 %) went wrong.
+- **It calls the shipped function.** When the hot code is a worker method, the kernel runs the real worker class in Node ([`tests/bench/workerHarness.mjs`](../tests/bench/workerHarness.mjs): import the worker module with a `self` stub, send a real `init` message). A loop copied into the bench measures the copy, and a local copy does not have the worker's `this`. That is how H7, H10, H11, H6 and "Stay without sqrt" (kernel +553 %, scene +20 %) went wrong.
 - **A hypothesis variant lives in the bench file** until it is decided. For a worker method, the variant is the shipped method source plus an exact diff, compiled in memory ([`tests/bench/methodVariant.mjs`](../tests/bench/methodVariant.mjs); `patchFunction` does the same for a module-level function); an anchor that no longer matches throws. A module-private function the kernel cannot reach is measured with gate 4 directly. Drop it when the idea is dropped. When it is kept, it moves to `src/` and the bench calls only the shipped code.
 - **Every kernel writes** `cases.<name>.opsPerSec` (finite), `n`, `seed` and a `checksum` with `--output`. `isCli()` in [`microbenchHelpers.mjs`](../tests/bench/microbenchHelpers.mjs) is the CLI guard (the old `import.meta.url === pathToFileURL(argv[1])` check could skip `main()` on Windows).
 - **Scale comes from Predator.** [`capturePredatorFixture.mjs`](../tests/bench/capturePredatorFixture.mjs) reads one live frame from the main thread (read-only) into `tests/fixtures/predator-frame.bin`: positions, collider sizes, casters, lights, audio slot occupancy. Kernels that need a real distribution load it. Match the storage too: per-type active lists live in a `SharedArrayBuffer` in the engine, so the query kernel builds them there, at Predator's ~16k actives.
@@ -192,7 +192,7 @@ The Predator verdict per worker kind is the median of the paired deltas (B − A
 - **Regression:** the median is at least +3 percent **and** at least 75 percent of the pairs are worse, on a kind whose coefficient of variation is at most 10 percent (or on the owner kind). Eight scattered pairs with a +3 percent median are noise; a sign that holds in six of eight is not.
 - **Load:** `BODY_COUNT`, `GPU_CASTERS`, `GPU_SHADOW_LIGHTS` within 5 percent. `ACTIVE_PARTICLES` gates only from a baseline of 1000: Predator emits about 100, and Poisson noise alone is 10 percent.
 - **Kept (product):** the owner kind is at least 3 percent cheaper with at least 75 percent of the pairs better, and nothing regresses.
-- **Kept (kernel, producto neutro):** the kernel gates passed, Predator does not regress anywhere, and the owner did not move 3 percent. The change stays. The log says it is a kernel claim.
+- **Kept (kernel, product-neutral):** the kernel gates passed, Predator does not regress anywhere, and the owner did not move 3 percent. The change stays. The log says it is a kernel claim.
 - **More pairs, said up front:** when the owner's median clears 3 percent but the pairs do not (G1: −5.7 %, 5 of 8), `--append --pairs 8` adds eight more and the verdict is read on all sixteen (12 of 16 for consistency). G1 came out at −0.1 %. The log records that the sitting was extended.
 - **A second sitting for a regression the change cannot explain:** decide the rule before looking — if it repeats, the change goes. Q1 repeated and went.
 
@@ -248,7 +248,7 @@ Do not rewrite the historical table just to change a status word. Add the new si
 
 ## The report
 
-Full prose. A table of plus and minus signs is not enough. The user’s language is fine for a report they asked for in that language. This protocol stays in English.
+Full prose. A table of plus and minus signs is not enough. Reports are in English. This protocol stays in English.
 
 Every campaign report (scoreboard, product confirm, isolation) says:
 

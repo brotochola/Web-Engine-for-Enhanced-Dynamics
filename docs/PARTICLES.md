@@ -145,7 +145,7 @@ pixiWorker
 
 ## Related
 
-- [`decal.js`](../src/core/decal.js) — `Decal.stamp` (juego) y atlas (`stampToTileBuffers`, save). El loop de píxeles no es API de escena.
+- [`decal.js`](../src/core/decal.js) — `Decal.stamp` (game) and the atlas (`stampToTileBuffers`, save). The pixel loop is not a scene API.
 - [`particleEmitter.js`](../src/core/particleEmitter.js)
 - [`particleComponent.js`](../src/components/particleComponent.js)
 - [`particleWorker.js`](../src/workers/particleWorker.js)

@@ -1,186 +1,183 @@
-# Diario de la campaña de una noche
+# Diary of a one-night campaign
 
-Noche del 15 al 16 de septiembre de 2026. Objetivo: 10 horas, colchón 11. Árbol keep (HASH + P2 + P6 + higiene + colisión + contadores) versus `main` `0695a8d` más los mismos contadores de carga.
+Night of 15–16 September 2026. Target: 10 hours, cushion 11. Keep tree (HASH + P2 + P6 + hygiene + collision + counters) versus `main` `0695a8d` plus the same load counters.
 
-Este archivo es el diario **humano** de esta noche. El runner escribe [`tests/results/scoreboard/report.md`](../tests/results/scoreboard/report.md). El índice de hipótesis es [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). El mapa de features es [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md).
+This file is the **human** diary of that night. The runner writes [`tests/results/scoreboard/report.md`](../tests/results/scoreboard/report.md). The hypothesis index is [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). The feature map is [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md).
 
-Protocolo: primaria = `STEP_MS` (o ops/s del kernel). Keep de velocidad si la primaria es al menos 3% más barata y la carga queda en ±5% con cv menor a 50%. FPS a 60 Hz no cuenta. Predator artístico no entra. No se afirma “WeedJS perfecta”.
+Protocol: primary = `STEP_MS` (or kernel ops/s). A speed keep requires the primary at least 3% cheaper and the load within ±5% with cv under 50%. FPS at 60 Hz does not count. Artistic Predator is not a row. Do not claim a "perfect WeedJS".
 
-## Reloj
+## Clock
 
-Arranque: 15 de septiembre de 2026, ~21:25 hora de Argentina.
+Start: 15 September 2026, ~21:25 Argentina time.
 
-Comandos previstos:
+Planned commands:
 
 ```bash
 pnpm bench:scoreboard --vs 0695a8d --only box2d,emit,steadyCombat --headed-only box2d,steadyCombat
 pnpm bench:scoreboard --vs 0695a8d --headed-only box2d,visPoly,steadyCombat --skip-node
 ```
 
-Máquina: Chromium headed visible, sin suspender, sin minimizar esas ventanas.
+Machine: Chromium headed and visible, not suspended, those windows not minimized.
 
 ---
 
-## Bloque 0 — Flag `--headed-only`
+## Block 0 — `--headed-only` flag
 
-**Qué se hizo.** En [`tests/bench/measureLib.mjs`](../tests/bench/measureLib.mjs): `sceneWantsHeaded`, `--headed-only id,id`. `--headless` sigue ganando. En [`tests/bench/runScoreboard.mjs`](../tests/bench/runScoreboard.mjs) la cache de escena usa el headed **efectivo** (`scene.key|0|smoke` o `scene.key|1|smoke`), no `scene.headed` del catálogo. Tests en `workloadCountsAlways.test.js`.
+**What was done.** In [`tests/bench/measureLib.mjs`](../tests/bench/measureLib.mjs): `sceneWantsHeaded`, `--headed-only id,id`. `--headless` still wins. In [`tests/bench/runScoreboard.mjs`](../tests/bench/runScoreboard.mjs) the scene cache uses the **effective** headed bit (`scene.key|0|smoke` or `scene.key|1|smoke`), not the catalog's `scene.headed`. Tests in `workloadCountsAlways.test.js`.
 
-**Setup.** Sin bench de producto todavía.
+**Setup.** No product bench yet.
 
-**Números.** No aplica.
+**Numbers.** Not applicable.
 
-**Veredicto.** El runner ya no abre compute ni zenithal si se pasa `--headed-only box2d,visPoly,steadyCombat`.
+**Verdict.** The runner no longer opens compute or zenithal when `--headed-only box2d,visPoly,steadyCombat` is passed.
 
-## Bloque A — Inventario
+## Block A — Inventory
 
-**Qué se hizo.** [`docs/INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md): glosario, mapa de las 21 filas, nota box2d smoke vs confirm, QueryAABB burst descartada. Punteros en HOW_WE_MEASURE, FEATURE_BENCHMARKS, docs/README. Corrección en FEATURE_HYP_PROGRAM (burst no shipped).
+**What was done.** [`docs/INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md): glossary, map of the 21 rows, box2d smoke-vs-confirm note, QueryAABB burst dropped. Pointers in HOW_WE_MEASURE, FEATURE_BENCHMARKS, docs/README. Correction in FEATURE_HYP_PROGRAM (burst was not shipped).
 
-**Setup.** Solo documentación.
+**Setup.** Documentation only.
 
-**Números.** No aplica.
+**Numbers.** Not applicable.
 
-**Veredicto.** Expectativa de producto: mapa por fila, no campeón global.
+**Verdict.** The product expectation is a map per row, not a global champion.
 
-**Siguiente.** Tilemap.
+**Next.** Tilemap.
 
-## Bloque B — Tilemap medible
+## Block B — Tilemap made measurable
 
-**Qué se hizo.** [`tests/bench/stressScenes/tilemapStressScene.js`](../tests/bench/stressScenes/tilemapStressScene.js): semilla `0x711e`, 64 queriers × 64 `getTileId` por tick, mapa 64×64. Catálogo: `scene` + `primary: logic0_STEP_MS` + `load: ENTITIES_PROCESSED`.
+**What was done.** [`tests/bench/stressScenes/tilemapStressScene.js`](../tests/bench/stressScenes/tilemapStressScene.js): seed `0x711e`, 64 queriers × 64 `getTileId` per tick, 64×64 map. Catalog: `scene` + `primary: logic0_STEP_MS` + `load: ENTITIES_PROCESSED`.
 
-**Setup.** Tests Node: `engineFeatureCatalog.test.js` y `--headed-only` en `workloadCountsAlways.test.js`.
+**Setup.** Node tests: `engineFeatureCatalog.test.js` and `--headed-only` in `workloadCountsAlways.test.js`.
 
-**Números.** `pnpm test:node`: 437 pass, 0 fail (incluye `tilemap has a seeded stress scene` y `--headed-only forces headed only`).
+**Numbers.** `pnpm test:node`: 437 pass, 0 fail (includes `tilemap has a seeded stress scene` and `--headed-only forces headed only`).
 
-**Veredicto.** La fila tilemap ya no es NA por falta de escena. Aún no hay números de estrés vs `0695a8d` (van en el bloque D).
+**Verdict.** The tilemap row is no longer NA for lack of a scene. There are still no stress numbers versus `0695a8d` (those go in block D).
 
-**Siguiente.** Bloque C, keep como paquete.
+**Next.** Block C, the keep as a package.
 
-## Bloque C — Keep como paquete (cerrado)
+## Block C — Keep as a package (closed)
 
-**Qué se hizo.** No Predator. No `runProductConfirm`.
+**What was done.** Not Predator. Not `runProductConfirm`.
 
 ```bash
 pnpm bench:scoreboard --vs 0695a8d --only box2d,emit,steadyCombat --headed-only box2d,steadyCombat
 ```
 
-Copia durable: [`tests/results/scoreboard/keep-bundle/report.md`](../tests/results/scoreboard/keep-bundle/report.md) (el tablero D va a reescribir `report.md`).
+Durable copy: [`tests/results/scoreboard/keep-bundle/report.md`](../tests/results/scoreboard/keep-bundle/report.md) (the block D board will rewrite `report.md`).
 
-**Setup.** `test:node` 437/437. Lockstep visual **falló**: `spawn timeout: 0 need 9004` en Balls (0 cuerpos). El runner siguió las filas de velocidad. Headed 5 × 25000/18000 ms en Balls y combate estable. Emit estrés 2 × 8 s / 10 s. Baseline `0695a8d` + contadores. `src/` restaurado (git status de `src/` limpio).
+**Setup.** `test:node` 437/437. Visual lockstep **failed**: `spawn timeout: 0 need 9004` on Balls (0 bodies). The runner continued the speed rows. Headed 5 × 25000/18000 ms on Balls and steady combat. Emit stress 2 × 8 s / 10 s. Baseline `0695a8d` + counters. `src/` restored (`src/` git status clean).
 
-**Números.**
+**Numbers.**
 
-- **emit KEPT.** Kernel 7073 → 7966 ops/s (**+12.6%**). `particle_STEP_MS` 0.277 → 0.273 ms (−1.2%, empate de escena). `ACTIVE_PARTICLES` 2114 / 2112 (−0.1%).
-- **box2d TIE.** `physics_STEP_MS` 6.893 → 7.067 ms (**+2.5%**, dentro de 3%). `BODY_COUNT` 9004 / 9004. cv física 1.9% / 2.6%. Esto **no anula** el confirm anterior de cinco corridas (−5.2%). Al lado, `logic0_STEP_MS` 0.339 → 0.474 ms (+39.6%): no es primaria de esta fila, se anota.
-- **steadyCombat KEPT.** `logic0_STEP_MS` 0.328 → 0.249 ms (**−24.1%**). Partículas 0.411 → 0.421 (+2.5%). Espacial 0.100 → 0.100 (+0.7%). `BODY_COUNT` 204/204. `ACTIVE_PARTICLES` 4023/4025 (+0.1%, cv bajo). Carga OK.
+- **emit KEPT.** Kernel 7073 → 7966 ops/s (**+12.6%**). `particle_STEP_MS` 0.277 → 0.273 ms (−1.2%, scene tie). `ACTIVE_PARTICLES` 2114 / 2112 (−0.1%).
+- **box2d TIE.** `physics_STEP_MS` 6.893 → 7.067 ms (**+2.5%**, within 3%). `BODY_COUNT` 9004 / 9004. Physics cv 1.9% / 2.6%. This **does not cancel** the earlier five-run confirm (−5.2%). Beside it, `logic0_STEP_MS` 0.339 → 0.474 ms (+39.6%): not this row's primary, noted.
+- **steadyCombat KEPT.** `logic0_STEP_MS` 0.328 → 0.249 ms (**−24.1%**). Particles 0.411 → 0.421 (+2.5%). Spatial 0.100 → 0.100 (+0.7%). `BODY_COUNT` 204/204. `ACTIVE_PARTICLES` 4023/4025 (+0.1%, low cv). Load OK.
 
-**Veredicto.** El paquete keep es campeón de emit (kernel) y de combate estable (logic0). Balls física empata esta sentada. No se afirma “más rápido que main”: lockstep falló. El JSON de producto dice que la velocidad no cuenta.
+**Verdict.** The keep package is the champion of emit (kernel) and of steady combat (logic0). Balls physics ties on this sitting. Do not claim "faster than main": lockstep failed. The product JSON says speed does not count.
 
-**Siguiente.** Bloque D: resto del catálogo, `--skip-node --skip-lockstep`, `--headed-only visPoly`. No se re-miden emit/box2d/steadyCombat (la cache es por proceso; se excluyen con `--only` para no gastar otras ~20 min headed ni pisar estos números).
+**Next.** Block D: the rest of the catalog, `--skip-node --skip-lockstep`, `--headed-only visPoly`. emit/box2d/steadyCombat are not remeasured (the cache is per process; they are excluded with `--only` so we do not spend another ~20 min headed or overwrite these numbers).
 
-## Bloque D — Resto del catálogo (cerrado)
+## Block D — Rest of the catalog (closed)
 
 ```bash
 pnpm bench:scoreboard --vs 0695a8d --headed-only visPoly --skip-node --skip-lockstep --only ray,rayVsBox2d,decals,integrate,spatial,liquidfun,liquidfunCouple,liquidfunQuery,queryAabb,nav,visPoly,tilemap,queryPublish,preRender,compute,decorations,bullets,spawn
 ```
 
-Informe: [`tests/results/scoreboard/catalog-rest/report.md`](../tests/results/scoreboard/catalog-rest/report.md). ~36 min. `src/` restaurado al terminar el runner.
+Report: [`tests/results/scoreboard/catalog-rest/report.md`](../tests/results/scoreboard/catalog-rest/report.md). ~36 min. `src/` restored when the runner finished.
 
-**Setup.** Estrés 2 × 8 s / 10 s. visPoly headed 5 × 25 s / 18 s. compute y zenithal **sin** ventana. Stats detalladas off. `VISIBILITY_MS` salió 0.
+**Setup.** Stress 2 × 8 s / 10 s. visPoly headed 5 × 25 s / 18 s. compute and zenithal **without** a window. Detailed stats off. `VISIBILITY_MS` came out 0.
 
-**Números (mapa).** Carga OK salvo preRender (`BODY_COUNT` 0: la escena de cola no spawnea cuerpos; el kernel +9.3% no cuenta). spawn FAIL: el kernel Treiber reventó en el baseline `0695a8d` (la escena sí corrió, logic0 −4.2%).
+**Numbers (map).** Load OK except preRender (`BODY_COUNT` 0: the queue scene does not spawn bodies; the kernel +9.3% does not count). spawn FAIL: the Treiber kernel blew up on the `0695a8d` baseline (the scene did run, logic0 −4.2%).
 
-| Fila | Veredicto | Primaria | Nota |
+| Row | Verdict | Primary | Note |
 |------|-----------|----------|------|
-| ray | WORSE | kernel +3.4%; logic0 +4.4% | `ray.js` no cambió vs main; logic0 ruido o keep de lógica |
+| ray | WORSE | kernel +3.4%; logic0 +4.4% | `ray.js` did not change vs main; logic0 is noise or a logic keep |
 | rayVsBox2d | WORSE | kernel −6.4%; physics +5.8% | |
 | decals | WORSE | particle +4.7% | |
 | integrate | WORSE | kernel −4.4% | |
 | spatial | TIE | spatialMax −2.1% | |
 | liquidfun | TIE | physics −0.3%; kernel −1.7% | |
-| liquidfunCouple | WORSE | kernel +9.2% ms (más caro) | escena física +0.7% |
-| liquidfunQuery | WORSE | physics +9.3%; logic0 −40.5% | una primaria peor mata la fila |
-| queryAabb | WORSE | physics 0.132 → 2.718 ms (**+1964.9%**) | burst AABB **todavía estaba** en el keep; logic0 −98.5% (el costo se fue a física) |
-| nav | WORSE | kernel −10.8% | el microbench **copia** Dijkstra; no importa `src/`. Escena logic0 +2.9% |
-| visPoly | WORSE | kernel −28.4%; preRender −1.2% | `angularSweep.js` **no** cambió vs main: kernel inestable. `VISIBILITY_MS` = 0 |
-| tilemap | WORSE | kernel −5.1%; logic0 −1.1% | escena nueva cierra carga (64 entidades). Kernel `tileMap.js` no cambió vs main |
+| liquidfunCouple | WORSE | kernel +9.2% ms (more expensive) | physics scene +0.7% |
+| liquidfunQuery | WORSE | physics +9.3%; logic0 −40.5% | one worse primary kills the row |
+| queryAabb | WORSE | physics 0.132 → 2.718 ms (**+1964.9%**) | AABB burst **was still** in the keep; logic0 −98.5% (the cost moved to physics) |
+| nav | WORSE | kernel −10.8% | the microbench **copies** Dijkstra; it does not import `src/`. Scene logic0 +2.9% |
+| visPoly | WORSE | kernel −28.4%; preRender −1.2% | `angularSweep.js` **did not** change vs main: unstable kernel. `VISIBILITY_MS` = 0 |
+| tilemap | WORSE | kernel −5.1%; logic0 −1.1% | the new scene closes load (64 entities). Kernel `tileMap.js` did not change vs main |
 | queryPublish | KEPT | logic0 0.353 → 0.339 (−4.1%) | |
-| preRender | FAIL | BODY_COUNT 0 | no es una regresión de cull |
-| compute | WORSE | kernel −34.4%; pixi +4.8% | `computeLayer.js` no cambió vs main |
-| decorations | WORSE | kernel −56.2%; pixi +5.4% | `decorationSpatial.js` no cambió vs main |
-| bullets | TIE | particle +1.6% | cache de `rayStress` |
-| spawn | FAIL | kernel BASE falló | escena logic0 −4.2% no cuenta |
+| preRender | FAIL | BODY_COUNT 0 | not a cull regression |
+| compute | WORSE | kernel −34.4%; pixi +4.8% | `computeLayer.js` did not change vs main |
+| decorations | WORSE | kernel −56.2%; pixi +5.4% | `decorationSpatial.js` did not change vs main |
+| bullets | TIE | particle +1.6% | cache of `rayStress` |
+| spawn | FAIL | kernel BASE failed | scene logic0 −4.2% does not count |
 
-**Veredicto.** No se afirma mejor WeedJS. El hallazgo accionable: el burst de QueryAABB seguía en `serviceQueryAabb` aunque el aislamiento lo había **descartado**. Kernels WORSE en módulos que no están en el diff vs `0695a8d` son ruido, no campeón peor.
+**Verdict.** Do not claim a better WeedJS. The actionable finding: the QueryAABB burst was still in `serviceQueryAabb` even though isolation had **dropped** it. WORSE kernels in modules that are not in the diff versus `0695a8d` are noise, not a worse champion.
 
-**Siguiente.** Revertir el burst. Remedir solo queryAabb. visPoly con `--detailed-stats` (hay margen). Nav: dos hipótesis en el Dijkstra de producción.
+**Next.** Revert the burst. Remeasure queryAabb only. visPoly with `--detailed-stats` (there is room). Nav: two hypotheses on the production Dijkstra.
 
-## Burst AABB revertido (higiene del keep)
+## AABB burst reverted (keep hygiene)
 
-**Qué se hizo.** `serviceQueryAabb` en [`src/box2d/weedjsPost.js`](../src/box2d/weedjsPost.js) otra vez llama solo `servicePendingQuery` (uno a uno). El burst era leftover: el aislamiento AABB lo **descartó** (+835%) y el paquete keep no debía incluirlo.
+**What was done.** `serviceQueryAabb` in [`src/box2d/weedjsPost.js`](../src/box2d/weedjsPost.js) again calls only `servicePendingQuery` (one at a time). The burst was a leftover: AABB isolation **dropped** it (+835%) and the keep package was not supposed to include it.
 
 ```bash
 pnpm bench:scoreboard --vs 0695a8d --only queryAabb --skip-node --skip-lockstep --skip-kernels
 ```
 
-**Setup.** Estrés 2 × 8 s / 10 s, headless.
+**Setup.** Stress 2 × 8 s / 10 s, headless.
 
-**Números.** Física 0.130 → 0.127 ms (**−2.5%**, TIE). `BODY_COUNT` 201/201. logic0 ~16.57 / 16.61 ms (el costo volvió a lógica, como en main). Informe: [`tests/results/scoreboard/queryaabb-after-burst-revert/report.md`](../tests/results/scoreboard/queryaabb-after-burst-revert/report.md).
+**Numbers.** Physics 0.130 → 0.127 ms (**−2.5%**, TIE). `BODY_COUNT` 201/201. logic0 ~16.57 / 16.61 ms (the cost went back to logic, as on main). Report: [`tests/results/scoreboard/queryaabb-after-burst-revert/report.md`](../tests/results/scoreboard/queryaabb-after-burst-revert/report.md).
 
-**Veredicto.** TIE. El +1964% era el burst, no Box2D WASM. Keep set ahora coincide con “sin AABB”.
+**Verdict.** TIE. The +1964% was the burst, not Box2D WASM. The keep set now matches "no AABB".
 
-## visPoly con stats detalladas (cerrado)
+## visPoly with detailed stats (closed)
 
 ```bash
 pnpm bench:scoreboard --vs 0695a8d --only visPoly --headed-only visPoly --skip-node --skip-lockstep --detailed-stats
 ```
 
-Informe: [`tests/results/scoreboard/vispoly-detailed/report.md`](../tests/results/scoreboard/vispoly-detailed/report.md).
+Report: [`tests/results/scoreboard/vispoly-detailed/report.md`](../tests/results/scoreboard/vispoly-detailed/report.md).
 
-**Setup.** Headed 5 × 25 s / 18 s. Sub-timers encendidos.
+**Setup.** Headed 5 × 25 s / 18 s. Sub-timers on.
 
-**Números.** `VISIBILITY_MS` ahora existe: 0.071 → 0.070 ms (−1.2%). `preRender_STEP_MS` 0.129 → 0.125 ms (**−3.3%**, keep de escena). Kernel 106449 → 98185 ops/s (−7.8%). `BODY_COUNT` 56/56.
+**Numbers.** `VISIBILITY_MS` now exists: 0.071 → 0.070 ms (−1.2%). `preRender_STEP_MS` 0.129 → 0.125 ms (**−3.3%**, scene keep). Kernel 106449 → 98185 ops/s (−7.8%). `BODY_COUNT` 56/56.
 
-**Veredicto.** Fila WORSE por el kernel. `angularSweep.js` no cambió vs main: ese kernel es ruido. Con stats detalladas el barrido angular es empate y el pre-render es un poco más barato. No se reabre VP (cache descartada).
+**Verdict.** Row WORSE because of the kernel. `angularSweep.js` did not change vs main: that kernel is noise. With detailed stats the angular sweep is a tie and pre-render is a bit cheaper. VP is not reopened (cache dropped).
 
-## Bloque E — Nav (cerrado)
+## Block E — Nav (closed)
 
-Dos hipótesis contra el árbol actual. Escena `NavStressScene`, headless 2 × 8 s / 10 s. Primaria `particle_STEP_MS`. Informe: [`tests/results/nav-hyps/report.md`](../tests/results/nav-hyps/report.md).
+Two hypotheses against the current tree. Scene `NavStressScene`, headless 2 × 8 s / 10 s. Primary `particle_STEP_MS`. Report: [`tests/results/nav-hyps/report.md`](../tests/results/nav-hyps/report.md).
 
-**N1_floor.** `Math.floor(cell / gridWidth)` → `| 0`. TIE: partículas 2.217 → 2.183 ms (−1.5%). **No mergeado.**
+**N1_floor.** `Math.floor(cell / gridWidth)` → `| 0`. TIE: particles 2.217 → 2.183 ms (−1.5%). **Not merged.**
 
-**N2_gridHeight.** Local `gridHeight` en `computeFlowfield`. KEPT: partículas 2.263 → 2.143 ms (**−5.3%**), logic0 −2.1%, carga OK. n=2 cribado. **Mergeado** en `src/workers/particleWorker.js`.
+**N2_gridHeight.** Local `gridHeight` in `computeFlowfield`. KEPT: particles 2.263 → 2.143 ms (**−5.3%**), logic0 −2.1%, load OK. n=2 screening. **Merged** in `src/workers/particleWorker.js`.
 
-**Veredicto.** N2 es el campeón actual de esa fila contra el código de esta noche, no contra main. No se afirma Nav más barato que `0695a8d` (el tablero D era WORSE de kernel copia).
+**Verdict.** N2 is the current champion of that row against tonight's code, not against main. Do not claim Nav cheaper than `0695a8d` (board D was a WORSE from the copied kernel).
 
-## Mapa al cerrar la noche
+## Map at the close of the night
 
-No se afirma WeedJS perfecta. No se afirma más rápida que main (lockstep falló; muchas filas WORSE/FAIL).
+Do not claim a perfect WeedJS. Do not claim faster than main (lockstep failed; many rows WORSE/FAIL).
 
-Keep como paquete (headed 5 corridas): emit KEPT, box2d TIE, steadyCombat KEPT. Burst AABB sacado: queryAabb TIE vs main. N2 Nav mergeado (cribado n=2). Diario: este archivo. Scoreboards: `tests/results/scoreboard/keep-bundle/`, `catalog-rest/`, `queryaabb-after-burst-revert/`, `vispoly-detailed/`.
+Keep as a package (headed 5 runs): emit KEPT, box2d TIE, steadyCombat KEPT. AABB burst removed: queryAabb TIE vs main. Nav N2 merged (screening n=2). Diary: this file. Scoreboards: `tests/results/scoreboard/keep-bundle/`, `catalog-rest/`, `queryaabb-after-burst-revert/`, `vispoly-detailed/`.
 
-`src/` queda con: keep original + revert burst AABB + N2 gridHeight.
+`src/` is left with: the original keep + AABB burst revert + N2 gridHeight.
 
 ---
 
 ## Pre-merge strip (2026-09-16)
 
-**Qué se hizo.** El log decía “Left reverted” pero el árbol todavía tenía TICK, ECB, PACT, BULLET compact, LIGHT skip, VP cache y la API muerta `servicePendingQueryBurst`. Se alineó `src/` al keep documentado. `test:node` 438/438. Lockstep visual **ok** (el `spawn timeout` de Balls desapareció con el strip de ECB).
+**What was done.** The log said "Left reverted" but the tree still had TICK, ECB, PACT, BULLET compact, LIGHT skip, VP cache, and the dead API `servicePendingQueryBurst`. `src/` was aligned to the documented keep. `test:node` 438/438. Visual lockstep **ok** (the Balls `spawn timeout` disappeared with the ECB strip).
 
-**Remedida.**
+**Remeasure.**
 
 ```bash
 pnpm bench:scoreboard --vs 0695a8d --only queryAabb --skip-node --skip-lockstep --skip-kernels
 pnpm bench:scoreboard --vs 0695a8d --only box2d,emit,steadyCombat --headed-only box2d,steadyCombat
 ```
 
-- queryAabb: physics +6.3% (0.201→0.213 ms) WORSE de protocolo; **no** +miles %. Copia: `tests/results/scoreboard/queryaabb-after-strip/`.
-- emit KEPT; box2d KEPT (logic0 −51% tras sacar TICK); steadyCombat WORSE por spatialMax +3.5% (logic0 −16.9%). Copia: `tests/results/scoreboard/keep-bundle-after-strip/`.
+- queryAabb: physics +6.3% (0.201→0.213 ms) protocol WORSE; **not** +thousands %. Copy: `tests/results/scoreboard/queryaabb-after-strip/`.
+- emit KEPT; box2d KEPT (logic0 −51% after removing TICK); steadyCombat WORSE because spatialMax +3.5% (logic0 −16.9%). Copy: `tests/results/scoreboard/keep-bundle-after-strip/`.
 
-**Merge.** Keep set + plataforma de benches. No afirmar WeedJS más rápida que main. Al mergear: squash a dos commits lógicos (`feat(bench): measurement platform` + `perf: keep set …`), no el pile `micro opts`.
+**Merge.** Keep set + bench platform. Do not claim WeedJS is faster than main. On merge: squash to two logical commits (`feat(bench): measurement platform` + `perf: keep set …`), not the `micro opts` pile.
 
-PR body sugerido: medición + keep parcial (HASH/P2/P6/hygiene/collide/load/N2); stack y product-confirm **no** ganan; ver `HYPOTHESIS_LOG` y esta sección.
+Suggested PR body: measurement + partial keep (HASH/P2/P6/hygiene/collide/load/N2); the stack and the product-confirm **do not** win; see `HYPOTHESIS_LOG` and this section.
 
 ---
-
-
-

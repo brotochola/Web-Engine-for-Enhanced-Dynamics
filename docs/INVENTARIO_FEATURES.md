@@ -1,45 +1,45 @@
-# Inventario de features del motor WeedJS
+# WeedJS engine feature inventory
 
-Documento de **esta campaña** (noche del 15 al 16 de septiembre de 2026). Dice qué es cada fila del catálogo, qué ya se midió contra su propio código, qué queda fuera de esta noche, y cómo se compara cada feature consigo misma. No es un claim de “WeedJS perfecta” ni de “más rápida que main”.
+Document of **this campaign** (night of 15–16 September 2026). It says what each catalog row is, what was already measured against its own code, what stays out of this night, and how each feature is compared with itself. It is not a claim of a "perfect WeedJS" or of "faster than main".
 
-Catálogo máquina: [`tests/bench/engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). Protocolo: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). Memoria de hipótesis: [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). Diario de esta noche: [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md).
+Machine catalog: [`tests/bench/engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). Hypothesis memory: [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). This night's diary: [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md).
 
-## Glosario
+## Glossary
 
-- **Fila del catálogo.** Un subsistema caliente (rayos, emisión, Box2D, etc.) con kernel Node opcional, escena que **ejecuta** el código, métricas primarias y claves de carga.
-- **Campeón actual de una fila.** El código que hoy está en `src/` para esa feature, medido contra un candidato (por ejemplo `main` `0695a8d` más los contadores de carga, o un parche de esa misma feature). Cada fila es su propio torneo. Una fila WORSE no “rompe Box2D”; dice que **esa** primaria fue al menos 3% más cara en esa corrida, con carga comparable.
-- **Mapa por fila, no campeón global.** “Mejor WeedJS” exigiría que **todas** las filas fueran KEPT o empate y ninguna WORSE/FAIL. El smoke de cinco filas ya vio box2d y visPoly peores en una corrida corta. El veredicto de producto es un mapa, no un sí/no único.
-- **Kernel.** Microbench Node, ops/s o ms, sin Chromium.
-- **Escena de estrés.** Chromium, a menudo sin ventana, 2 corridas × 8 s de calentamiento / 10 s de medida, para cribado.
-- **Gameplay headed.** Chromium con ventana visible, 5 corridas × 25 s / 18 s. No minimizar. No dormir el equipo.
-- **Primaria.** Worker `STEP_MS` (o ops/s del kernel). FPS a 60 Hz no cuenta.
-- **Carga.** Medianas de `BODY_COUNT`, `ACTIVE_PARTICLES`, etc. dentro de ±5% y coeficiente de variación menor a 50%. Si Balls tiene `BODY_COUNT` 0, la fila falla (el motor ya publica el contador). Predator artístico no es fila: el combate estable es `steadyCombatScene`.
-- **Keep de velocidad.** Primaria al menos 3% más barata (o kernel +3% ops/s) **y** carga OK.
-- **Keep de higiene/bugfix.** Se queda salvo que una primaria empeore 3%.
-- **Contadores de carga.** Se publican con estadísticas detalladas apagadas. Los sub-timers (`BOX2D_MS`, `VISIBILITY_MS`, …) siguen detrás de `collectDetailedStats`.
-- **`--headed-only`.** Solo las ids listadas abren ventana y usan 5×25/18. El resto, aunque el catálogo diga headed, corre como estrés. No usar un scoreboard sin flags (abriría cómputo y zenithal) ni `--headless` global (apagaria Balls / visPoly / combate).
-- **`runProductConfirm`.** Sigue anclado a Balls + Predator. **No** se usa esta noche.
+- **Catalog row.** A hot subsystem (rays, emit, Box2D, and so on) with an optional Node kernel, a scene that **runs** the code, primary metrics, and load keys.
+- **Current champion of a row.** The code that is in `src/` today for that feature, measured against a candidate (for example `main` `0695a8d` plus the load counters, or a patch of that same feature). Each row is its own tournament. A WORSE row does not "break Box2D"; it says **that** primary was at least 3% more expensive on that run, with comparable load.
+- **A map per row, not a global champion.** "Best WeedJS" would require **every** row to be KEPT or a tie and none WORSE/FAIL. The five-row smoke already saw box2d and visPoly worse on a short run. The product verdict is a map, not a single yes/no.
+- **Kernel.** Node microbench, ops/s or ms, no Chromium.
+- **Stress scene.** Chromium, often without a window, 2 runs × 8 s warmup / 10 s measure, for screening.
+- **Headed gameplay.** Chromium with a visible window, 5 runs × 25 s / 18 s. Do not minimize. Do not sleep the machine.
+- **Primary.** Worker `STEP_MS` (or kernel ops/s). FPS at 60 Hz does not count.
+- **Load.** Medians of `BODY_COUNT`, `ACTIVE_PARTICLES`, and the rest, within ±5% and a coefficient of variation under 50%. If Balls has `BODY_COUNT` 0, the row fails (the engine already publishes the counter). Artistic Predator is not a row: stable combat is `steadyCombatScene`.
+- **Speed keep.** Primary at least 3% cheaper (or kernel +3% ops/s) **and** load OK.
+- **Hygiene/bugfix keep.** It stays unless a primary gets 3% worse.
+- **Load counters.** Published with detailed stats off. Sub-timers (`BOX2D_MS`, `VISIBILITY_MS`, …) stay behind `collectDetailedStats`.
+- **`--headed-only`.** Only the listed ids open a window and use 5×25/18. The rest, even if the catalog says headed, run as stress. Do not run a scoreboard with no flags (it would open compute and zenithal) and do not use a global `--headless` (it would turn off Balls / visPoly / combat).
+- **`runProductConfirm`.** Still anchored to Balls + Predator. **Not** used this night.
 
-### Nota Box2D: smoke versus confirm de cinco corridas
+### Box2D note: smoke versus the five-run confirm
 
-El smoke n=1 del scoreboard midió Balls `physics_STEP_MS` 8.168 → 8.705 ms (**+6.6%**) con `BODY_COUNT` 9004/9004. Eso **no anula** el confirm headed de cinco corridas en [`tests/results/product-confirm/report.md`](../tests/results/product-confirm/report.md): física 6.911 → 6.554 ms (**−5.2%**), mismos 9004 cuerpos. No se tocó el WASM de Box2D. Una corrida de 4 s se mueve varios por ciento por ruido de máquina. Esta noche el bloque C vuelve a medir Balls con cinco corridas.
+The scoreboard smoke n=1 measured Balls `physics_STEP_MS` 8.168 → 8.705 ms (**+6.6%**) with `BODY_COUNT` 9004/9004. That **does not cancel** the five-run headed confirm in [`tests/results/product-confirm/report.md`](../tests/results/product-confirm/report.md): physics 6.911 → 6.554 ms (**−5.2%**), the same 9004 bodies. Box2D WASM was not touched. A 4 s run moves several percent from machine noise. Tonight block C measures Balls again with five runs.
 
-### QueryAABB burst: descartada
+### QueryAABB burst: dropped
 
-`FEATURE_HYP_PROGRAM.md` llegó a decir que el burst estaba “shipped”. **No.** Aislamiento AABB: física **+835%** en `QueryAabbStressScene`. No reintroducir `servicePendingQueryBurst`. El log vive en [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
+`FEATURE_HYP_PROGRAM.md` got as far as saying the burst was "shipped". **It was not.** AABB isolation: physics **+835%** on `QueryAabbStressScene`. Do not reintroduce `servicePendingQueryBurst`. The log lives in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
 
-### Qué no se reabre esta noche
+### What is not reopened tonight
 
-AABB, TICK, VP, PACT, LIGHT, BULLET, ECB, stack completo, espacial H1–H15 (salvo Verlet/stagger ya en main), set rechazado de LiquidFun (incluido H29 SIMD). No usar `pnpm bench:particle:tournament` como verdad.
+AABB, TICK, VP, PACT, LIGHT, BULLET, ECB, the full stack, spatial H1–H15 (except Verlet/stagger already on main), the rejected LiquidFun set (including H29 SIMD). Do not use `pnpm bench:particle:tournament` as truth.
 
 ---
 
-## Cómo se mide cada fila contra su campeón
+## How each row is measured against its champion
 
-1. Baseline: git `0695a8d` más el parche de contadores de carga (misma visibilidad de stats, velocidad de ese rev).
-2. Tratamiento: árbol de trabajo (keep HASH + P2 + P6 + higiene + colisión + contadores).
-3. Misma máquina, misma sentada, snapshot/restore de `src/`.
-4. Comando de producto de esta noche (no Predator):
+1. Baseline: git `0695a8d` plus the load-count patch (same stats visibility, that rev's speed).
+2. Treatment: working tree (keep HASH + P2 + P6 + hygiene + collision + counters).
+3. Same machine, same sitting, snapshot/restore of `src/`.
+4. Tonight's product command (not Predator):
 
 ```bash
 pnpm bench:scoreboard --vs 0695a8d --only box2d,emit,steadyCombat --headed-only box2d,steadyCombat
@@ -48,190 +48,190 @@ pnpm bench:scoreboard --vs 0695a8d --headed-only box2d,visPoly,steadyCombat --sk
 
 ---
 
-## Las 21 filas
+## The 21 rows
 
-### ray — Grid Ray DDA
+### ray — Grid ray DDA
 
-Módulo: `src/core/ray.js`. Kernel: `rayMicrobench.mjs`. Escena: `RayStressScene`. Primarias: `logic0_RAYCAST_MS`, `logic0_STEP_MS`. Carga: `logic0_RAYCAST_COUNT`.
+Module: `src/core/ray.js`. Kernel: `rayMicrobench.mjs`. Scene: `RayStressScene`. Primaries: `logic0_RAYCAST_MS`, `logic0_STEP_MS`. Load: `logic0_RAYCAST_COUNT`.
 
-**Ya medido.** Campeón de main: H6 (stamp en lugar de `Set`) + H1 (early-out top-N). Otras hipótesis de rayo rechazadas en [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Esta noche: kernel + estrés 2×8/10. Sin hipótesis nuevas de DDA.
+**Already measured.** Main's champion: H6 (stamp instead of `Set`) + H1 (top-N early-out). Other ray hypotheses rejected in [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Tonight: kernel + stress 2×8/10. No new DDA hypotheses.
 
-**Cómo medir contra el campeón.** Scoreboard fila `ray`. El keep de esta rama no toca el DDA; se espera empate salvo ruido.
+**How to measure against the champion.** Scoreboard row `ray`. This branch's keep does not touch the DDA; expect a tie aside from noise.
 
-### rayVsBox2d — Rayo WeedJS versus Box2D ocupado
+### rayVsBox2d — WeedJS ray versus busy Box2D
 
-Módulo: `src/core/ray.js` (más `Box2d.castRayClosest`). Kernel: `rayVsBox2dMicrobench.mjs`. Escena: `RayVsBox2dWeedBusyScene`. Primarias: `logic0_RAYCAST_MS`, `physics_STEP_MS`. Carga: `BODY_COUNT`. La fila Box2D (`box2dRayJs`) usa `logic0_BOX2D_RAYCAST_MS`.
+Module: `src/core/ray.js` (plus `Box2d.castRayClosest`). Kernel: `rayVsBox2dMicrobench.mjs`. Scene: `RayVsBox2dWeedBusyScene`. Primaries: `logic0_RAYCAST_MS`, `physics_STEP_MS`. Load: `BODY_COUNT`. The Box2D row (`box2dRayJs`) uses `logic0_BOX2D_RAYCAST_MS`.
 
-**Ya medido** el contraste idle/busy (el DDA de lógica no debería subir cuando física satura; el rayo sync de Box2D sí). Esta noche: kernel + estrés. Sin hipótesis nuevas.
+**Already measured:** the idle/busy contrast (the logic DDA should not rise when physics saturates; the sync Box2D ray should). Tonight: kernel + stress. No new hypotheses.
 
-### decals — Sello de decales
+### decals — Decal stamp
 
-Módulo: `src/core/decal.js`. Kernel: `decalMicrobench.mjs`. Escena: `DecalStampStressScene`. Primaria: `particle_STEP_MS`. Carga: `PARTICLES_STAMPED`.
+Module: `src/core/decal.js`. Kernel: `decalMicrobench.mjs`. Scene: `DecalStampStressScene`. Primary: `particle_STEP_MS`. Load: `PARTICLES_STAMPED`.
 
-**Ya medido.** Campeón D2 (UV DDA) en main. D1/D3–D6 rechazadas. Esta noche: kernel + estrés. No reabrir el torneo histórico.
+**Already measured.** Champion D2 (UV DDA) on main. D1/D3–D6 rejected. Tonight: kernel + stress. Do not reopen the historical tournament.
 
-### emit — Emisión de partículas
+### emit — Particle emit
 
-Módulo: `src/core/particleEmitter.js`. Kernel: `particleEmitMicrobench.mjs`. Escena: `ParticleEmitStressScene`. Primaria: `particle_STEP_MS`. Carga: `ACTIVE_PARTICLES`.
+Module: `src/core/particleEmitter.js`. Kernel: `particleEmitMicrobench.mjs`. Scene: `ParticleEmitStressScene`. Primary: `particle_STEP_MS`. Load: `ACTIVE_PARTICLES`.
 
-**Ya medido.** En main: P4+P5. En esta rama, aislados: P2 (lista de campos, keep, kernel +7.2%) y P6 (pop de free-list, keep de **kernel** ~+27%, no venderlo como win de Predator). Smoke scoreboard: emit KEPT, kernel +23.4%, `particle_STEP_MS` −9.6%, carga OK. Bloque C de esta noche: kernel de emisión otra vez, n de producto no smoke.
+**Already measured.** On main: P4+P5. On this branch, isolated: P2 (field list, keep, kernel +7.2%) and P6 (free-list pop, **kernel** keep ~+27%, do not sell it as a Predator win). Scoreboard smoke: emit KEPT, kernel +23.4%, `particle_STEP_MS` −9.6%, load OK. Tonight's block C: the emit kernel again, product n, not smoke.
 
-Skip-work C (no zero `animFrames` sin array) **kept** 2026-09-17 (kernel +4%, estrés TIE). Escena calibrada a 3600 emit/tick y `maxParticles` 60000 (piso 2 ms).
+Skip-work C (do not zero `animFrames` when there is no array) **kept** 2026-09-17 (kernel +4%, stress TIE). Scene calibrated to 3600 emit/tick and `maxParticles` 60000 (2 ms floor).
 
-**Cómo medir.** Fila `emit` en el scoreboard. P6 sigue siendo claim de kernel si el gameplay de partículas no cruza 3%.
+**How to measure.** Row `emit` on the scoreboard. P6 stays a kernel claim if particle gameplay does not cross 3%.
 
-### integrate — Integración de partículas
+### integrate — Particle integration
 
-Módulo: `src/util/particleIntegrate.js`. Kernel: `particleIntegrateMicrobench.mjs`. Escena: `ParticleIntegrateStressScene`. Primaria: `particle_STEP_MS`. Carga: `ACTIVE_PARTICLES`.
+Module: `src/util/particleIntegrate.js`. Kernel: `particleIntegrateMicrobench.mjs`. Scene: `ParticleIntegrateStressScene`. Primary: `particle_STEP_MS`. Load: `ACTIVE_PARTICLES`.
 
-**Ya medido** P4+P5 en main. PACT (expectedActive) **descartado** (carga +86%). Skip-work B (early-out tween + radianes en spawn) **kept** 2026-09-17. Escena calibrada a `maxParticles` 55000 / burst 50000 (piso 2 ms; 4 ms no cabe en índices Uint16).
+**Already measured** P4+P5 on main. PACT (expectedActive) **dropped** (load +86%). Skip-work B (tween early-out + radians at spawn) **kept** 2026-09-17. Scene calibrated to `maxParticles` 55000 / burst 50000 (2 ms floor; 4 ms does not fit in Uint16 indices).
 
-### spatial — Vecinos espaciales
+### spatial — Spatial neighbors
 
-Módulo: `src/workers/spatialWorker.js`. Kernel: `spatialMicrobench.mjs`. Escena: `StationarySpatialScene`. Primaria: `spatialMax_STEP_MS`. Carga: `BODY_COUNT`, `NEIGHBORS_REUSED`.
+Module: `src/workers/spatialWorker.js`. Kernel: `spatialMicrobench.mjs`. Scene: `StationarySpatialScene`. Primary: `spatialMax_STEP_MS`. Load: `BODY_COUNT`, `NEIGHBORS_REUSED`.
 
-**Ya medido.** En main: Verlet H3 + stagger. H1–H15 (salvo lo shipped) **descartadas**. En esta rama: HASH (quitar hash de dependencias) keep aislado, Predator spatial-max **−10.2%**. Smoke: spatial KEPT, `spatialMax_STEP_MS` −8.3%. Esta noche: kernel + estrés; el headed serio del keep es combate estable, no Predator.
+**Already measured.** On main: Verlet H3 + stagger. H1–H15 (except what shipped) **dropped**. On this branch: HASH (drop the dependency hash) isolated keep, Predator spatial-max **−10.2%**. Smoke: spatial KEPT, `spatialMax_STEP_MS` −8.3%. Tonight: kernel + stress; the serious headed keep is steady combat, not Predator.
 
-### box2d — Paso de Box2D
+### box2d — Box2D step
 
-Módulo: `src/box2d/weedjsPost.js`. Sin kernel Node (WASM). Escena: `BallsScene`, gameplay headed. Primaria: `physics_STEP_MS`. Carga: `BODY_COUNT`, `AWAKE_COUNT`.
+Module: `src/box2d/weedjsPost.js`. No Node kernel (WASM). Scene: `BallsScene`, headed gameplay. Primary: `physics_STEP_MS`. Load: `BODY_COUNT`, `AWAKE_COUNT`.
 
-**Ya medido.** Confirm 5 corridas: física −5.2%, 9004 cuerpos. Smoke n=1: WORSE +6.6% — ver nota arriba. El keep no cambia el WASM; higiene de `writePhysicsStats` en el `doStep` magro. Esta noche: headed 5×25/18 en el bloque C.
+**Already measured.** 5-run confirm: physics −5.2%, 9004 bodies. Smoke n=1: WORSE +6.6% — see the note above. The keep does not change the WASM; hygiene of `writePhysicsStats` on the lean `doStep`. Tonight: headed 5×25/18 in block C.
 
-### liquidfun — Paso de partículas LiquidFun
+### liquidfun — LiquidFun particle step
 
-Módulo: `src/box2d/weedjsPost.js` (WASM). Kernel: `liquidFunPassProfileMicrobench.mjs` (menos ms es mejor). Escena: `LiquidFunStressScene`. Primaria: `physics_STEP_MS`. Carga: `BODY_COUNT`.
+Module: `src/box2d/weedjsPost.js` (WASM). Kernel: `liquidFunPassProfileMicrobench.mjs` (fewer ms is better). Scene: `LiquidFunStressScene`. Primary: `physics_STEP_MS`. Load: `BODY_COUNT`.
 
-**Ya medido** el set shipped y el rechazado (H29 SIMD +1.6% kernel, no retry). Fase C en C es otra noche. Esta noche: kernel (lento) + estrés 2×8/10. Sin headed.
+**Already measured:** the shipped set and the rejected set (H29 SIMD +1.6% kernel, no retry). Phase C in C is another night. Tonight: kernel (slow) + stress 2×8/10. No headed run.
 
-### liquidfunCouple — Acoplamiento cuerpo–fluido
+### liquidfunCouple — Body–fluid coupling
 
-Módulo: `src/box2d/weedjsPost.js`. Kernel: `liquidFunBodyCoupleMicrobench.mjs`. Escena: `LiquidFunBodyCoupleStressScene`. Primaria: `physics_STEP_MS`. Carga: `BODY_COUNT`.
+Module: `src/box2d/weedjsPost.js`. Kernel: `liquidFunBodyCoupleMicrobench.mjs`. Scene: `LiquidFunBodyCoupleStressScene`. Primary: `physics_STEP_MS`. Load: `BODY_COUNT`.
 
-**Ya medido** H26 (reusar OverlapAABB entre sub-steps) shipped; H24/H25/H27/H28 rechazados. Esta noche: kernel + estrés.
+**Already measured:** H26 (reuse OverlapAABB across sub-steps) shipped; H24/H25/H27/H28 rejected. Tonight: kernel + stress.
 
-### liquidfunQuery — Consultas LiquidFun
+### liquidfunQuery — LiquidFun queries
 
-Módulo: `src/box2d/liquidFunQuery.js`. Sin kernel de ops. Escena: `LiquidFunQueryStressScene`. Primarias: `physics_STEP_MS`, `logic0_STEP_MS`. Carga: `BODY_COUNT`.
+Module: `src/box2d/liquidFunQuery.js`. No ops kernel. Scene: `LiquidFunQueryStressScene`. Primaries: `physics_STEP_MS`, `logic0_STEP_MS`. Load: `BODY_COUNT`.
 
-**Ya medido** el protocolo SAB. Esta noche: estrés. El burst de QueryAABB de **cuerpos** no aplica aquí.
+**Already measured:** the SAB protocol. Tonight: stress. The **body** QueryAABB burst does not apply here.
 
-### queryAabb — QueryAABB de Box2D (cuerpos)
+### queryAabb — Box2D QueryAABB (bodies)
 
-Módulo: `src/box2d/box2dQueryAabb.js`. Escena: `QueryAabbStressScene`. Primaria: `physics_STEP_MS`. Carga: `BODY_COUNT`.
+Module: `src/box2d/box2dQueryAabb.js`. Scene: `QueryAabbStressScene`. Primary: `physics_STEP_MS`. Load: `BODY_COUNT`.
 
-**Ya medido.** Burst **descartado** (+835%). Esta noche: estrés del camino uno-a-uno actual, no reintroducir burst.
+**Already measured.** Burst **dropped** (+835%). Tonight: stress of the current one-at-a-time path. Do not reintroduce the burst.
 
 ### nav — NavGrid
 
-Módulo: `src/core/navGrid.js`. Kernel: `navGridMicrobench.mjs`. Escena: `NavStressScene`. Primaria: `logic0_STEP_MS`. Carga: `ENTITIES_PROCESSED`.
+Module: `src/core/navGrid.js`. Kernel: `navGridMicrobench.mjs`. Scene: `NavStressScene`. Primary: `logic0_STEP_MS`. Load: `ENTITIES_PROCESSED`.
 
-**Hueco.** Hay kernel Dijkstra y escena de estrés; no hubo torneo serio de hipótesis nuevas en esta rama. TICK (cache de `tickFn`) **descartado** en Balls (+27%) — no reabrir. Esta noche: kernel + estrés en el tablero. El kernel del catálogo **copia** Dijkstra y no ve `src/`. Hipótesis N1 (`| 0` en cellY): TIE −1.5%, no mergeada. N2 (local `gridHeight` en `computeFlowfield`): KEPT −5.3% partículas en n=2, mergeada. No es un claim versus `0695a8d`.
+**Gap.** There is a Dijkstra kernel and a stress scene; this branch had no serious tournament of new hypotheses. TICK (`tickFn` cache) **dropped** on Balls (+27%) — do not reopen. Tonight: kernel + stress on the board. The catalog kernel **copies** Dijkstra and does not see `src/`. Hypothesis N1 (`| 0` on cellY): TIE −1.5%, not merged. N2 (local `gridHeight` in `computeFlowfield`): KEPT −5.3% particles at n=2, merged. Not a claim versus `0695a8d`.
 
-### visPoly — Polígonos de visibilidad
+### visPoly — Visibility polygons
 
-Módulo: `src/render/visibility/angularSweep.js`. Kernel: `angularSweepMicrobench.mjs`. Escena: `VisPolyStressScene` (`raycasted: true`). Primarias: `preRender_STEP_MS`, `VISIBILITY_MS`. Carga: `BODY_COUNT`.
+Module: `src/render/visibility/angularSweep.js`. Kernel: `angularSweepMicrobench.mjs`. Scene: `VisPolyStressScene` (`raycasted: true`). Primaries: `preRender_STEP_MS`, `VISIBILITY_MS`. Load: `BODY_COUNT`.
 
-**Ya medido (cache VP).** VP **descartado** (`VISIBILITY_MS` +10.8%). Predator default deja `raycasted` apagado; por eso existe esta escena. Smoke n=1: WORSE (kernel −7.2%, pre-render +5.8%). Esta noche: headed 5×25/18. Si `VISIBILITY_MS` sale 0 (stats detalladas off), se juzga `preRender_STEP_MS`; reintento con stats detalladas solo si hay margen.
+**Already measured (VP cache).** VP **dropped** (`VISIBILITY_MS` +10.8%). Predator's default leaves `raycasted` off; that is why this scene exists. Smoke n=1: WORSE (kernel −7.2%, pre-render +5.8%). Tonight: headed 5×25/18. If `VISIBILITY_MS` comes out 0 (detailed stats off), judge `preRender_STEP_MS`; retry with detailed stats only if there is room.
 
-### tilemap — Consultas TileMap
+### tilemap — TileMap queries
 
-Módulo: `src/core/tileMap.js`. Kernel: `tileMapMicrobench.mjs`. Escena **nueva**: `TilemapStressScene` (semilla fija, 64 entidades × 64 `getTileId` por tick). Primaria: `logic0_STEP_MS`. Carga: `ENTITIES_PROCESSED`.
+Module: `src/core/tileMap.js`. Kernel: `tileMapMicrobench.mjs`. **New** scene: `TilemapStressScene` (fixed seed, 64 entities × 64 `getTileId` per tick). Primary: `logic0_STEP_MS`. Load: `ENTITIES_PROCESSED`.
 
-**Hueco de escena** hasta esta noche (antes solo kernel). Sin hipótesis nuevas de tilemap más allá de enganchar la escena. Cómo medir: fila `tilemap` del scoreboard.
+**Scene gap** until tonight (kernel only before). No new tilemap hypotheses beyond wiring the scene. How to measure: scoreboard row `tilemap`.
 
-### tilemapGid — Tilemap GPU (páginas GID)
+### tilemapGid — GPU tilemap (GID pages)
 
-Módulo: `src/render/tilemapGid.js`. Kernel: `tilemapGidMicrobench.mjs` (`listGidPages` / `packGidPageRgba8`). Escena: `TilemapCullStressScene` (`kind: 'tilemap'` + cámara en círculo). Primaria: `pixi_STEP_MS`. Carga: `ENTITIES_PROCESSED`. No reusa `TilemapStressScene` (`getTileId`).
+Module: `src/render/tilemapGid.js`. Kernel: `tilemapGidMicrobench.mjs` (`listGidPages` / `packGidPageRgba8`). Scene: `TilemapCullStressScene` (`kind: 'tilemap'` + camera on a circle). Primary: `pixi_STEP_MS`. Load: `ENTITIES_PROCESSED`. Does not reuse `TilemapStressScene` (`getTileId`).
 
-### contactDrain — Drain de contactos Box2D
+### contactDrain — Box2D contact drain
 
-Módulo: `src/workers/logicWorker.js`. Sin kernel. Escena: `ContactDrainStressScene` (pile 256 + paredes, `CollisionListener`, gravity, sleeping off, 1 logic worker). Primaria: `logic0_STEP_MS`. Carga: `BODY_COUNT`.
+Module: `src/workers/logicWorker.js`. No kernel. Scene: `ContactDrainStressScene` (pile 256 + walls, `CollisionListener`, gravity, sleeping off, 1 logic worker). Primary: `logic0_STEP_MS`. Load: `BODY_COUNT`.
 
-### box2dRayJs — Servicio JS de castRayClosest
+### box2dRayJs — JS castRayClosest service
 
-Módulo: `src/box2d/weedjsPost.js` (`serviceRayCast`). Sin kernel WASM (ese no ve el bag JS). Escena: `RayVsBox2dBoxBusyScene`. Primarias: `physics_STEP_MS`, `logic0_BOX2D_RAYCAST_MS`. Carga: `BODY_COUNT`, `logic0_BOX2D_RAYCAST_COUNT`.
+Module: `src/box2d/weedjsPost.js` (`serviceRayCast`). No WASM kernel (that one does not see the JS bag). Scene: `RayVsBox2dBoxBusyScene`. Primaries: `physics_STEP_MS`, `logic0_BOX2D_RAYCAST_MS`. Load: `BODY_COUNT`, `logic0_BOX2D_RAYCAST_COUNT`.
 
-### queryPublish — Publicación QuerySystem
+### queryPublish — QuerySystem publish
 
-Módulo: `src/core/querySystem.js`. Kernel: `querySystemMicrobench.mjs`. Escena: `QueryChurnScene`. Primaria: `logic0_STEP_MS`. Carga: `ENTITIES_PROCESSED`.
+Module: `src/core/querySystem.js`. Kernel: `querySystemMicrobench.mjs`. Scene: `QueryChurnScene`. Primary: `logic0_STEP_MS`. Load: `ENTITIES_PROCESSED`.
 
-Skip-publish si las listas no cambian ya está en logic0. `QUERY_PUBLISH_MS` solo con stats detalladas. Esta noche: kernel + estrés. Sin escena `queryCircle` a tasa fija.
+Skip-publish when the lists do not change is already on logic0. `QUERY_PUBLISH_MS` only with detailed stats. Tonight: kernel + stress. No `queryCircle` scene at a fixed rate.
 
-### preRender — Cull y cola de pre-render
+### preRender — Pre-render cull and queue
 
-Módulo: `src/workers/preRenderWorker.js`. Kernel: `srFlagsMicrobench.mjs`. Escena: `RenderQueueStressScene`. Primaria: `preRender_STEP_MS`. Carga: `BODY_COUNT`.
+Module: `src/workers/preRenderWorker.js`. Kernel: `srFlagsMicrobench.mjs`. Scene: `RenderQueueStressScene`. Primary: `preRender_STEP_MS`. Load: `BODY_COUNT`.
 
-Packed vs 7 columnas Uint8 ya se midió (cull gana en kernel; cola ruidosa). `preRender.skipCull` (2026-09-20, **mixed**): opt-in, default false. Bunny 65k todos visibles: `preRender_STEP_MS` −4.5% (KEPT). Zoom alto: cola 640→16000 (CULL_PAYS). No default. Informe: [`tests/results/skip-cull/report.md`](../tests/results/skip-cull/report.md). DRY un loop + `_writeFusedSunShadow` (2026-09-20, **kept** higiene): bunny 8.350→8.274 (−0.9% TIE). B campos muertos (2026-09-20, **kept**): bunny 8.284→7.620 (−8.0%). A fuse type 0 **dropped** (+20.8%). C persist estáticas (**kept**, smoke): 7.395→5.978 (−19.2%), EMIT −60.8%. Informes: [`tests/results/prerender-hyps/`](../tests/results/prerender-hyps/).
+Packed versus 7 Uint8 columns was already measured (cull wins in the kernel; the queue is noisy). `preRender.skipCull` (2026-09-20, **mixed**): opt-in, default false. Bunny 65k all visible: `preRender_STEP_MS` −4.5% (KEPT). High zoom: queue 640→16000 (CULL_PAYS). Not the default. Report: [`tests/results/skip-cull/report.md`](../tests/results/skip-cull/report.md). DRY one loop + `_writeFusedSunShadow` (2026-09-20, **kept** hygiene): bunny 8.350→8.274 (−0.9% TIE). B dead fields (2026-09-20, **kept**): bunny 8.284→7.620 (−8.0%). A fuse type 0 **dropped** (+20.8%). C persist statics (**kept**, smoke): 7.395→5.978 (−19.2%), EMIT −60.8%. Reports: [`tests/results/prerender-hyps/`](../tests/results/prerender-hyps/).
 
-### compute — Pack WebGPU
+### compute — WebGPU pack
 
-Módulo: `src/render/webgpu/computeLayer.js`. Kernel: `computePackMicrobench.mjs`. Escena: `ComputeStressScene` (el catálogo marca headed). Primaria: `pixi_STEP_MS`. Carga: `BODY_COUNT`.
+Module: `src/render/webgpu/computeLayer.js`. Kernel: `computePackMicrobench.mjs`. Scene: `ComputeStressScene` (the catalog marks it headed). Primary: `pixi_STEP_MS`. Load: `BODY_COUNT`.
 
-Esta noche: kernel sí; escena **como estrés** (`--headed-only` no incluye `compute`). Arranque de GPU y carga dudosa. Headed 5×25/18 queda para otra noche.
+Tonight: kernel yes; scene **as stress** (`--headed-only` does not include `compute`). GPU startup and doubtful load. Headed 5×25/18 waits for another night.
 
-### decorations — Espacial de decoraciones
+### decorations — Decoration spatial
 
-Módulo: `src/core/decorationSpatial.js`. Kernel: `decorationSpatialMicrobench.mjs`. Escena: `DecoQueryCircleStressScene` (8000 decorations, 4300 `queryCircle`/tick). Primaria: `logic0_STEP_MS`. Carga: `ACTIVE_DECORATIONS`.
+Module: `src/core/decorationSpatial.js`. Kernel: `decorationSpatialMicrobench.mjs`. Scene: `DecoQueryCircleStressScene` (8000 decorations, 4300 `queryCircle`/tick). Primary: `logic0_STEP_MS`. Load: `ACTIVE_DECORATIONS`.
 
-Stamp de generación (skip-work L, 2026-09-17) **dropped**: kernel −30.1%, estrés +14.2%. Cada decoration está en una sola celda. Informe: [`tests/results/skip-work-hyps/hyp-L-querycircle/report.md`](../tests/results/skip-work-hyps/hyp-L-querycircle/report.md).
+Generation stamp (skip-work L, 2026-09-17) **dropped**: kernel −30.1%, stress +14.2%. Each decoration is in a single cell. Report: [`tests/results/skip-work-hyps/hyp-L-querycircle/report.md`](../tests/results/skip-work-hyps/hyp-L-querycircle/report.md).
 
-Pool-flow 2026-09-16 (otra pregunta, mismo worker de partículas): sway con `copyActiveSnapshot` vs scan de `maxDecorations`. Carga `ACTIVE_DECORATIONS` (slot 13 always-on). Escenas `DecoFixedStressScene` (12000) y `DecoChurnStressScene` (~4000). Kernel a 10% ocupación: snapshot **+79%** ops/s. Scan en estrés **dropped** (fija 1W +3.4%, churn +16.6% / +6.1%). Fija 3W headless KEEP de scan (−4.2%) no se confirmó headed (TIE −1.5%). Snapshot se queda. Informe: [`tests/results/pool-flow/report.md`](../tests/results/pool-flow/report.md).
+Pool-flow 2026-09-16 (a different question, same particle worker): sway with `copyActiveSnapshot` versus a scan of `maxDecorations`. Load `ACTIVE_DECORATIONS` (slot 13 always-on). Scenes `DecoFixedStressScene` (12000) and `DecoChurnStressScene` (~4000). Kernel at 10% occupancy: snapshot **+79%** ops/s. Scan on stress **dropped** (fixed 1W +3.4%, churn +16.6% / +6.1%). Fixed 3W headless KEEP of the scan (−4.2%) was not confirmed headed (TIE −1.5%). The snapshot stays. Report: [`tests/results/pool-flow/report.md`](../tests/results/pool-flow/report.md).
 
-### bullets — Tick de balas
+### bullets — Bullet tick
 
-Módulo: `src/core/bulletPool.js` (`BulletPool.tick`). Kernel: `bulletTickMicrobench.mjs` (`cases.tickCrowded.opsPerSec`; también scan vs compact sparse). Escena: `BulletStressScene` (pool 2048, 3 logic workers, 8 shooters × 40 spawn/tick, paredes). Gameplay: Predator headed. Primaria: `particle_STEP_MS`. Carga: `ACTIVE_BULLETS`.
+Module: `src/core/bulletPool.js` (`BulletPool.tick`). Kernel: `bulletTickMicrobench.mjs` (`cases.tickCrowded.opsPerSec`; also scan versus compact sparse). Scene: `BulletStressScene` (pool 2048, 3 logic workers, 8 shooters × 40 spawn/tick, walls). Gameplay: Predator headed. Primary: `particle_STEP_MS`. Load: `ACTIVE_BULLETS`.
 
-Pirámide 2026-09-16: speed-cache **kept en kernel** (`tickCrowded` hypot→cached; Predator headed TIE con ~2 balas vivas — no se vende como Predator). Compact **dropped** para el motor: kernel sparse gana ops/s (hasta +100% en 256/8192), estrés **WORSE** (+7.6% particle, carga OK), Predator compact **FAIL** (cv `ACTIVE_BULLETS` ≥ 50% + crash Chromium). Isolation vieja (+1.9%) se queda. Scan de `maxBullets`; no `activeBulletsLock`.
+Pyramid 2026-09-16: speed-cache **kept in the kernel** (`tickCrowded` hypot→cached; Predator headed TIE with ~2 live bullets — not sold as Predator). Compact **dropped** for the engine: sparse kernel wins ops/s (up to +100% at 256/8192), stress **WORSE** (+7.6% particle, load OK), Predator compact **FAIL** (`ACTIVE_BULLETS` cv ≥ 50% + Chromium crash). The old isolation (+1.9%) stays. Scan of `maxBullets`; no `activeBulletsLock`.
 
-Pool-flow 2026-09-16: storm 8192 (`BulletStormScene1W/3W`, ~8040 vivas). Two-pass **dropped** (kernel 10% 2048 +7.8%, 10% 8192 −3.7%; storm 1W +3.1% WORSE, 3W +2.9% TIE). Compact+lock **dropped** otra vez (1W +39.0%, 3W +35.3%). Predator no entra. Informe: [`tests/results/pool-flow/report.md`](../tests/results/pool-flow/report.md).
+Pool-flow 2026-09-16: storm 8192 (`BulletStormScene1W/3W`, ~8040 live). Two-pass **dropped** (kernel 10% 2048 +7.8%, 10% 8192 −3.7%; storm 1W +3.1% WORSE, 3W +2.9% TIE). Compact+lock **dropped** again (1W +39.0%, 3W +35.3%). Predator is not in this pair. Report: [`tests/results/pool-flow/report.md`](../tests/results/pool-flow/report.md).
 
-### spawn — Tormenta Treiber / spawn
+### spawn — Treiber / spawn storm
 
-Módulo: `src/util/atomicFreeList.js`. Kernel: `treiberMicrobench.mjs`. Escena: `SpawnStormScene`. Primaria: `logic0_STEP_MS`. Carga: `ENTITIES_PROCESSED`.
+Module: `src/util/atomicFreeList.js`. Kernel: `treiberMicrobench.mjs`. Scene: `SpawnStormScene`. Primary: `logic0_STEP_MS`. Load: `ENTITIES_PROCESSED`.
 
-ECB (batch spawn/despawn) **descartado** (−2.8%). Esta noche: kernel + estrés.
+ECB (batch spawn/despawn) **dropped** (−2.8%). Tonight: kernel + stress.
 
-### steadyCombat — Carga de combate estable
+### steadyCombat — Stable combat load
 
-Módulo: `src/workers/particleWorker.js` (la fila es de carga, no de un algoritmo único). Sin kernel. Escena: `SteadyCombatScene` (semilla, emit constante). Primarias: `particle_STEP_MS`, `spatialMax_STEP_MS`, `logic0_STEP_MS`. Carga: `BODY_COUNT`, `ACTIVE_PARTICLES`.
+Module: `src/workers/particleWorker.js` (the row is about load, not one algorithm). No kernel. Scene: `SteadyCombatScene` (seed, constant emit). Primaries: `particle_STEP_MS`, `spatialMax_STEP_MS`, `logic0_STEP_MS`. Load: `BODY_COUNT`, `ACTIVE_PARTICLES`.
 
-Sustituye a Predator emergente para el scoreboard. Smoke: KEPT (partículas −17.8%, logic0 −19.4%, carga OK, n=1). Product confirm con Predator **no cerró** `ACTIVE_PARTICLES` (+8.8%, cv ~75–80%). Esta noche: headed 5×25/18 en el bloque C. Si no cierra carga, FAIL, no se inventa el delta.
+Stands in for emergent Predator on the scoreboard. Smoke: KEPT (particles −17.8%, logic0 −19.4%, load OK, n=1). Product confirm with Predator **did not close** `ACTIVE_PARTICLES` (+8.8%, cv ~75–80%). Tonight: headed 5×25/18 in block C. If load does not close, FAIL. Do not invent the delta.
 
-### decalBlit — Blit de tiles de decal
+### decalBlit — Decal tile blit
 
-Módulo: `src/render/decalBlitPack.js` + `pixiWorker.updateDecalTiles`. Kernel: `decalBlitPackMicrobench.mjs`. Escena: `DecalBlitStressScene`. Primaria: `pixi_STEP_MS`. Carga: `DECAL_TILES_UPLOADED` (control `DECAL_TILES_DIRTY`). No es la fila `decals` (stamp / `particle_STEP_MS`). Hipótesis H1a: **dropped** (cacería 2026-09-19). 16k sprites + 32 uploads = 0.90 ms; 1024 uploads = 8.56 ms — la primaria es `ImageBitmap`, no el blit. No se implementó `InstancedSpriteBatch`.
+Module: `src/render/decalBlitPack.js` + `pixiWorker.updateDecalTiles`. Kernel: `decalBlitPackMicrobench.mjs`. Scene: `DecalBlitStressScene`. Primary: `pixi_STEP_MS`. Load: `DECAL_TILES_UPLOADED` (control `DECAL_TILES_DIRTY`). This is not the `decals` row (stamp / `particle_STEP_MS`). Hypothesis H1a: **dropped** (hunt 2026-09-19). 16k sprites + 32 uploads = 0.90 ms; 1024 uploads = 8.56 ms — the primary is `ImageBitmap`, not the blit. `InstancedSpriteBatch` was not implemented.
 
-### sceneryCam — Cámara de scenery
+### sceneryCam — Scenery camera
 
-Módulo: `src/render/sceneryCamPack.js`. Kernel: `sceneryCamMicrobench.mjs`. Escena: `SceneryCamStressScene`. Primaria: `pixi_STEP_MS`. Carga: `SCENERY_COUNT`. Techo del engine: `Layer.MAX_LAYERS` 16 (4 built-in), 12 capas custom. No subir a 64–256 sin cambiar `MAX_LAYERS`. Hipótesis H1c: **dropped** — 12 capas, pixi 0.08 ms, FAIL / sin señal.
+Module: `src/render/sceneryCamPack.js`. Kernel: `sceneryCamMicrobench.mjs`. Scene: `SceneryCamStressScene`. Primary: `pixi_STEP_MS`. Load: `SCENERY_COUNT`. Engine ceiling: `Layer.MAX_LAYERS` 16 (4 built-in), 12 custom layers. Do not raise it to 64–256 without changing `MAX_LAYERS`. Hypothesis H1c: **dropped** — 12 layers, pixi 0.08 ms, FAIL / no signal.
 
-### meshFillMoving — Pack MESH en movimiento
+### meshFillMoving — MESH pack while moving
 
-Módulo: `src/render/colliderFillBatch.js`. Kernel: `colliderFillPackMicrobench.mjs` (B). Escena: `MeshFillMovingScene`. Primaria: `pixi_STEP_MS`. Carga: `BODY_COUNT`. Control: H2/H3 no pueden empeorar esta fila 3%.
+Module: `src/render/colliderFillBatch.js`. Kernel: `colliderFillPackMicrobench.mjs` (B). Scene: `MeshFillMovingScene`. Primary: `pixi_STEP_MS`. Load: `BODY_COUNT`. Control: H2/H3 must not make this row 3% worse.
 
-### meshFillPan — Fill MESH + cámara en órbita
+### meshFillPan — MESH fill + orbiting camera
 
-Módulo: `src/render/meshFillCamera.js`. Kernel: `meshCameraUniformMicrobench.mjs` (contrato, no medalla). Escena: `MeshFillPanScene` (islas estáticas; look **passthrough** porque sin shader no hay RT). Primaria: `pixi_STEP_MS`. Carga: `BODY_COUNT`, `MESH_FILL_INSTANCES`, `MESH_RT_DRAWS` (mediana ~1 o la fila midió skip RT). Hipótesis H2: **dropped** — draws 1, pixi 0.47 ms, FAIL / sin señal. No se implementó el uniform.
+Module: `src/render/meshFillCamera.js`. Kernel: `meshCameraUniformMicrobench.mjs` (a contract, not a medal). Scene: `MeshFillPanScene` (static islands; look is **passthrough** because without a shader there is no render target). Primary: `pixi_STEP_MS`. Load: `BODY_COUNT`, `MESH_FILL_INSTANCES`, `MESH_RT_DRAWS` (median ~1, or the row measured an RT skip). Hypothesis H2: **dropped** — draws 1, pixi 0.47 ms, FAIL / no signal. The uniform was not implemented.
 
-### meshFillLook — Look MESH + cámara en órbita
+### meshFillLook — MESH look + orbiting camera
 
-Módulo: `src/render/meshLookUv.js`. Sin kernel de velocidad. Escena: `MeshFillLookPanScene` (look `rockContour`). Primaria: `pixi_STEP_MS`. Carga: igual que `meshFillPan`. Hipótesis H3: **dropped** — pixi 0.46 ms. Contrato UV: `tests/node/meshLookUv.test.js`. Headed Y: `pnpm bench:mesh-look-uv` si se reabre.
-
----
-
-## Fuera del catálogo: isolation multi-fixture
-
-No hay fila `colliderFixture` en [`engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). El pool y `replacePolygons*` se midieron como isolation MF1–MF5 (walk inline, OBB espacial, scratch WASM, skip de pack MESH, replace flat). Campeón de escena: `CompoundFixtureSpatialScene` / `CompoundGeometryDirtyScene` / `meshFillStaticScene`. Diario: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) § Isolation multi-fixture. Status: [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) filas MF1–MF5. No inventar una id de scoreboard aquí.
+Module: `src/render/meshLookUv.js`. No speed kernel. Scene: `MeshFillLookPanScene` (look `rockContour`). Primary: `pixi_STEP_MS`. Load: same as `meshFillPan`. Hypothesis H3: **dropped** — pixi 0.46 ms. UV contract: `tests/node/meshLookUv.test.js`. Headed Y: `pnpm bench:mesh-look-uv` if it is reopened.
 
 ---
 
-## Paquete keep de esta rama
+## Outside the catalog: multi-fixture isolation
 
-HASH + P2 + P6 + higiene (`debugLog`) + colisión (par key) + contadores de carga siempre encendidos + Nav N2. **No** PACT, LIGHT, AABB burst, TICK, VP, BULLET compact, ECB — stripped del árbol 2026-09-16 (antes el log mentía “reverted”).
+There is no `colliderFixture` row in [`engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). The pool and `replacePolygons*` were measured as isolation MF1–MF5 (inline walk, spatial OBB, WASM scratch, MESH pack skip, flat replace). Scene champion: `CompoundFixtureSpatialScene` / `CompoundGeometryDirtyScene` / `meshFillStaticScene`. Diary: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) § Isolation multi-fixture. Status: [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) rows MF1–MF5. Do not invent a scoreboard id here.
 
-Se mide **como paquete**, no cinco isolations headed. Remedida post-strip: emit/box2d KEPT; steadyCombat WORSE (spatial +3.5%). No se afirma producto más rápido que main.
+---
 
-## Fuera de estas 10–11 horas
+## This branch's keep package
 
-Isolations HASH/P2/P6 con cinco corridas cada uno. Hipótesis nuevas en visibilidad, decoraciones, consultas, cola, tilemap más allá de la escena. Zenithal y WebGPU headed. Fase C LiquidFun en C. Firefox, móvil, CI headed. Bisecar el keep.
+HASH + P2 + P6 + hygiene (`debugLog`) + collision (pair key) + load counters always on + Nav N2. **Not** PACT, LIGHT, AABB burst, TICK, VP, BULLET compact, ECB — stripped from the tree 2026-09-16 (before that the log lied and said "reverted").
+
+It is measured **as a package**, not as five headed isolations. Post-strip remeasure: emit/box2d KEPT; steadyCombat WORSE (spatial +3.5%). Do not claim the product is faster than main.
+
+## Outside these 10–11 hours
+
+HASH/P2/P6 isolations with five runs each. New hypotheses on visibility, decorations, queries, the queue, tilemap beyond the scene. Headed zenithal and WebGPU. LiquidFun phase C in C. Firefox, mobile, headed CI. Bisect the keep.
