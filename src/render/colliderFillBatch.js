@@ -74,7 +74,14 @@ function radialOutset(x, y, outset) {
     _oy = y;
     return;
   }
-  const len = Math.hypot(x, y);
+  // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted here.
+  // Measured ~16x cheaper (5/5 counterbalanced rounds, 1e-3..1e7). NOT
+  // bit-identical to hypot: it agrees on ~64% of in-range pairs and differs by
+  // a few ulps on the rest, because hypot is deliberately the more accurate of
+  // the two. That is ~1e-16 relative, far under the Float32 this value is
+  // stored into. Overflow is unreachable (Float64 squares overflow past ~1.34e154).
+  // Do not reintroduce hypot here without measuring it again.
+  const len = Math.sqrt(x * x + y * y);
   if (len < 1e-6) {
     _ox = x;
     _oy = y;

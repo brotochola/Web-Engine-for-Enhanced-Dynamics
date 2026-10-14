@@ -991,6 +991,786 @@ physics-hostile scene in the repo.
 
 ---
 
+## The real Predator trace, and what it does to the plan
+
+**2026-10-14 05:44.** Same command, flags passed where the parser can see them.
+This is Predator.
+
+```
+node tests/bench/runIntegratedWorkerBenchmark.mjs --headed --trace-cpu --src \
+  --no-collect-detailed-stats --scene /demos/predatorScene/predatorScene.js \
+  --scene-export PredatorScene --warmup-ms 8000 --duration-ms 12000
+-> trace 4315 events, window from 10000 ms, median sample interval 603 us
+```
+
+Scene confirmed three ways: `BODY_COUNT 17583`, `Moved 5641`, `Awake 5635`,
+**two** logic workers, `GPU_CASTERS 13420`, and no `ballsScene` symbol anywhere
+in the summary. Reported `STEP_MS` per worker:
+
+| worker | STEP_MS | load | trace busy |
+|---|---|---|---|
+| **preRender** | **8.421** | **51 %** | 513 ms/s |
+| physics | 7.890 | 47 % | 3.48 cores (see below) |
+| spatial | 7.139 | 43 % | 466 ms/s |
+| renderer (pixi) | 5.610 | 34 % | 370 ms/s |
+| logic0 | 4.528 | 27 % | 293 ms/s |
+| logic1 | 4.337 | 26 % | 285 ms/s |
+| particle | 1.759 | 11 % | 114 ms/s |
+| main | - | - | 28 ms/s |
+
+`BODY_COUNT 17583` against BallsScene's 9004, and `subStepCount 0` for Predator
+against 4 for BallsScene. The F-02 tells all point the other way this time.
+
+### Finding 1 - the plan's waves 3 and 4 have no support in this scene
+
+Not one function from the audit's math census appears anywhere in the trace.
+No `angularSweep` internals, no `normalizeAngleSigned`, no `Math.sin` hot spot.
+Concretely, against the plan:
+
+| plan item | trace | disposition |
+|---|---|---|
+| **Wave 3**, visibility polygon (H-04/H-05/H-06/H-08/H-09) | **absent. 0 %.** The shadow/light work that *is* there is `gpuShadowCasters.js`, not `angularSweep.js` | the plan's own instruction at section 4 applies verbatim: "if the trace shows none of their functions, they are hygiene keeps and should be shipped as such rather than given a sitting" |
+| **Wave 4**, allocation on the render path | GC self-time: preRender 34 ms/s of 513 (6.6 %), pixi 2 of 370 (0.5 %), spatial 0, particle 0 | weakly supported, one venue only |
+| H-11b (fast sin/cos for `setRotCSFromAngle`) | not named | falsifier (b) satisfied - drops to kernel-only, no sitting |
+| H-10 (decoration sway) | `_updateDecorationSwayBuckets` 27 % of particle, `bucketFromSwayFrequency` 11.7 %, `calculateSpeed` 4.6 % | real but small: particle is 11 % of the frame, so sway is roughly 3 % of it. Confirms the log's "no headroom" and keeps the shipped `Math.sin` |
+
+Wave 3 is the biggest single change the trace forces. It is an entire campaign
+aimed at code that does not execute in the scene the plan was validated
+against.
+
+**Honest caveat on Wave 4:** this is one scene. A scene that does not allocate
+will not show GC. "Not visible in Predator outside preRender" is the claim, not
+"the engine has no GC pressure" - and the GC census that the audit did do found
+real per-call allocation in exactly these files. That the *trace* does not see it
+means the pressure is low in this scene at this entity count, not that the code
+is clean.
+
+### Finding 2 - physics is 3.48 cores and two thirds of it is spin-wait
+
+Three threads at 1000 ms/s and one at 482 ms/s. Inside that:
+
+```
+30521.4 ms  67.8%  wasm-function[102]      <- Emscripten pthread mailbox
+4111.6 ms   9.1%  wasm-function[285]
+837.0 ms    1.9%  _emscripten_get_now
+392.4 ms    0.9%  publishPose /src/box2d/weedjsPost.js:471
+```
+
+DEVLOG (30 September, already disassembled this) is explicit that
+`wasm-function[102]` **is not the solver**: it is Emscripten's pthread mailbox -
+read the clock, compare-and-swap a word, time out. So Predator spends roughly
+**2.4 cores spinning to do nothing**, while the benchmark reports physics at
+"47 % load" and `STEP_MS 7.890`.
+
+**This is the biggest number in the engine and it is not work.** Any reading that
+takes `STEP_MS` as the cost of solving is reading a number that includes
+spin-wait, and every decision built on it is partly deciding how much to spin.
+
+**A hypothesis this raises, offered as a hypothesis and not a conclusion:** the
+four-thread-vs-two-thread experiment (DEVLOG: physics step 8.7 ms -> 10.9 ms,
+every pair worse, so the four-thread build was restored) may itself have been
+confounded, because it appears to have been judged on `STEP_MS` - the very
+number that includes the spin. Fewer threads should mean less spinning. It
+measured worse. Either the solver genuinely needs the cores, or the metric
+charged the experiment for the spin it removed. Those two are distinguishable
+and the existing sitting cannot tell them apart.
+
+That is not a licence to re-run it. It is a note that the experiment's
+conclusion rests on a metric the trace has just shown to be contaminated, and
+that any re-run should be judged on solver time and on Predator FPS, not on
+`STEP_MS`.
+
+### Finding 3 - the largest addressable items are none of the plan's hypotheses
+
+Self time, ranked across all workers, addressable JS only:
+
+| function | share of its worker | worker busy | note |
+|---|---|---|---|
+| `packInstancedRows` `gpuQueueLayout.js:233` | **38.8 % pixi + 9.3 % preRender** | 370 + 513 | ~192 ms/s across two workers - the biggest single addressable item in the engine |
+| `findNeighborsForOwnedEntities` `spatialWorker.js:618` | **56.0 % spatial** | 466 | was already optimised once (+36 % campaign, DEVLOG) |
+| `emitSpriteQueue` `preRenderWorker.js:2050` | 19.9 % preRender | 513 | DEVLOG 23 Sept, "Kill the Two-Pass" |
+| `stampLightRange` + `buildStampGrid` + `copyTypedRange` + `partitionOrder` | **18.4 % preRender combined** | 513 | `gpuShadowCasters.js` - shadow budget, adjacent to the plan's H-07/H-13 |
+| `gameObject.js:510 get` + `neighborCount:1986` + `getNeighbor:2005` | **26.0 % logic combined** | 293 + 285 | Predator's own AI walking neighbours |
+| `_processBox2dCollisionCallbacks` `logicWorker.js:1599` | 15.8 % logic | 578 | |
+| `_displayPose` `preRenderWorker.js:1779` | 11.4 % preRender | 513 | |
+| `getActiveSlotCount` `soundManager.js:402` | 11.4 % main | 28 | top main-thread entry, but main is 2.8 % of a core |
+
+Two of these are already twice-optimised per DEVLOG - `packInstancedRows` lost a
+specialisation 24 % because the branches are predictable, and its deopting store
+was fixed. `findNeighborsForOwnedEntities` came out of the campaign that took
+spatial from 6.12 ms to 5.13 ms. **Prior art kills the obvious version of both**,
+so they are not free wins and must not be entered as if they were.
+
+The one that is new to this audit is `gpuShadowCasters.js` at 18.4 % of the
+largest worker. The plan's nearest entries (H-07/H-13) are in `pixiWorker.js`,
+which is not where this cost is.
+
+`gameObject.js:510 get` + the two neighbour accessors at 26 % of logic is the
+second new one: it is Predator's AI, which means it is **scene code, not engine
+code**, and the engine part is only the accessors. The engine-side question is
+whether those three accessors can be cheaper; the rest is the demo's decision
+about how it searches for targets.
+
+### Method note - this is also a check on the audit itself
+
+The audit was a static read of `src/`. Its 17 hypotheses were derived from the
+source alone, and the plan said so honestly in section 8. This trace is the first
+measurement of what actually runs, and it agrees with the source-derived list on
+almost nothing.
+
+That is not a reason to distrust the audit. It is the reason section 5.6 existed.
+Of the seventeen hypotheses, the trace independently supports roughly one
+(H-10, weakly), refutes one (H-11b, by its own falsifier), and says nothing
+about the rest. The rest are not refuted - they are **unmeasured**, which is a
+different and much weaker position than "supported".
+
+---
+
+## F-02 closed - the harness now refuses to measure the wrong scene
+
+**2026-10-14 05:47.** Both halves of the guard, implemented in
+`tests/bench/runIntegratedWorkerBenchmark.mjs`.
+
+**1. A supplied-but-unparseable positional is now an error, not a default.**
+
+```js
+function toPositiveIntegerStrict(value, name, positionalIndex) { ... throws ... }
+```
+
+`buildBenchmarkOptions` now routes every warmup/duration/sample-interval value
+through it, and rejects a fourth positional outright. The failure that started
+this now stops the run in about a second, before the browser launches:
+
+```
+Error: benchmark: positional #0 ("PredatorScene") was read as warmupMs but is not a
+positive integer.
+  If you meant to pass --warmup-ms, it lost its leading "--" somewhere in the shell wrapper.
+  Call the runner directly instead of through npm: node tests/bench/runIntegratedWorkerBenchmark.mjs <flags>
+```
+
+The error names the slot it was read into, the flag it probably meant, and the
+invocation that works. That is the whole point: the old behaviour produced a
+complete, plausible, wrong measurement, and a complete wrong measurement cannot
+be detected downstream.
+
+**2. The summary names the scene and the window it measured.**
+
+```
+Main thread average FPS: 60.00
+Scene measured: BallsScene  (/demos/ballsScene/ballsScene.js)
+Window: warmup 1500 ms, measured 2000 ms, sample 100 ms
+```
+
+With `  <- DEFAULTS, no --scene was passed (this is ballsScene)` appended when
+no scene was requested. The flag tracks **whether `--scene` was passed**, not
+whether the resolved value equals the default - passing `--scene
+/demos/ballsScene/ballsScene.js` explicitly is a deliberate choice and must not
+be reported as "no scene was passed". That distinction was wrong in the first
+version of this print and is pinned by all three cases below.
+
+| invocation | scene line |
+| --- | --- |
+| `--scene <default> --scene-export <default>` | clean, no DEFAULTS marker |
+| no `--scene` | `... <- DEFAULTS, no --scene was passed (this is ballsScene)` |
+| npm-mangled flags | rejected before launch |
+
+---
+
+## H-K1 - a kernel for my own change, and two mistakes in writing it
+
+**2026-10-14 05:52.** B-02 put a bounded retry loop on
+`readPublishedQuerySnapshot`, and the trace shows that function on the main
+thread's hot path. **No kernel covered it** - grep across all of `tests/bench`
+for `readPublishedQuerySnapshot`, `queryActiveEntities` and
+`createWorkerQueryFunctions` returns nothing. So a correctness fix had landed on a
+hot path with no measurement behind it, which is the one thing this audit is
+about.
+
+`tests/bench/querySnapshotReadMicrobench.mjs` closes that. Gate 2 on both sides:
+the shipped module is imported and timed; the pre-fix variant is an exact textual
+diff over the shipped function source, brace-matched, with relative imports
+rewritten to absolute file URLs so the copy lives in `tests/results/` and **the
+working tree is never touched**. It throws if the anchor text no longer matches.
+Both variants are driven through the identical public entry,
+`createWorkerQueryFunctions(...).queryActiveEntities`, and the kernel refuses to
+report anything unless their checksums agree.
+
+**Mistake 1: the first version ran each side once and reported +13.82 %.**
+A change that *adds* a load and a compare cannot make a reader 13.8 % faster.
+This is the error DEVLOG (30 Sept) documents after losing a day to it - "five
+processes of the same code on the same tree gave 1875 to 2128 ops/s; one process
+per side cannot resolve 3 %". The kernel now does **five counterbalanced rounds,
+medians per side**, because DEVLOG also records that drift inside a pair always
+lands on whichever side ran second.
+
+**Mistake 2: the verdict logic asked the wrong question.** It demanded the
+shipped side win 5 of 5, which is DEVLOG's bar for claiming a *win*. A cost
+measurement legitimately comes out negative. The question is whether the rounds
+agree on a **direction**.
+
+**Result, five counterbalanced rounds:**
+
+```
+round 1/5 (shipped,pre-fix): 19.923.097 vs 18.271.181
+round 2/5 (pre-fix,shipped): 19.416.345 vs 19.810.611
+round 3/5 (shipped,pre-fix): 19.340.489 vs 20.038.875
+round 4/5 (pre-fix,shipped): 19.403.535 vs 19.366.334
+round 5/5 (shipped,pre-fix): 19.396.385 vs 20.143.015
+shipped 2/5, pre-fix 3/5  ->  NO CLAIM
+```
+
+And the deciding evidence that it is noise rather than a small cost: **two runs
+of this same kernel disagree with each other.** The first five-round run gave
+shipped 1/5 (delta -4.04 %); this one gave shipped 2/5. Absolute throughput also
+moved between the two processes, 20.31 M reads/s median against 19.40 M. The sign
+is not stable.
+
+**Verdict: the B-02 consistency check is free within what this machine can
+resolve.** The fix stays. Reported as `NO CLAIM`, not as "costs 0 %", because
+the honest statement is that this method cannot see a cost this small on this
+box - which is the same statement DEVLOG makes about 3 % generally.
+
+The residual is real but tiny and worth naming: the check adds one
+`snapshot[0]` load and one compare per query call, inside a bounded loop that
+returns on its first iteration when the header is consistent. If it ever does
+show up, the cheap way to remove it is to compare against the cached count
+first, which is already in `snapshotView.cachedCount`, before touching the SAB.
+
+Report: `tests/results/b02-query-snapshot/kernel.json`.
+
+---
+
+## Kernel regression check after twelve fixes
+
+**2026-10-14 05:50.** The plan's section 5.4 says a hypothesis lives in the
+bench as an exact textual diff over the shipped method source and throws if the
+anchor no longer matches. Twelve files changed today, five of which kernels
+read. Checked before trusting any kernel number:
+
+| kernel | reads | status |
+| --- | --- | --- |
+| `querySystemMicrobench` | `querySystem.js` (B-02) | runs, `publish_precomputed 53.540 ops/s` |
+| `navGridMicrobench` | `navGrid.js` (B-07) | runs |
+| `decalMicrobench` | `decal.js` (B-03) | runs, all five cases |
+| `decalBlitPackMicrobench` | `decalBlitPack.js` | runs, checksum 16535552 |
+| `audioSlotMicrobench` | audio slot ring | runs, all occupancy cases |
+
+No stale anchors, no crashes, checksums unchanged. **None of these is in
+`npm test`**, which is why it needed a separate check: the suite was green at
+873/873 while saying nothing about whether the benchmark harness still works.
+
+---
+
+---
+
+# Wave 2, continued - 2026-10-14 05:58 to 06:14
+
+## B-10 closed - and it was not inert after all
+
+**06:02.** The open item from the first batch is now tested. I had assumed the
+`Uint16Array` write was accidentally correct because a 16-bit count cannot
+exceed 65535. That is true for 16-bit and false for 32-bit:
+
+```
+MAX_ENTITIES_U16 = 65535
+MAX_ENTITIES_U32 = 300000   <- a single type can hold 300000
+current width    = 16
+```
+
+So on a 32-bit scene the count genuinely exceeds 16 bits, and clearing only the
+low half leaves the high half set - the list still reads as non-empty after
+teardown. `sceneSharedBuffers.js:108` already warns when a registration exceeds
+the 16-bit cap, so 32-bit is a supported configuration, not a rejected one. The
+bug was real; my earlier "probably inert" read was wrong and is corrected here.
+
+`tests/node/sceneTeardownIdWidth.test.js`, 4 cases, `bindEntityIdWidth(32)` to
+reach the wide mode. **Red proven:** reverted to the hardcoded `Uint16Array`,
+2 of 4 fail. The 16-bit case stays green throughout, which is what shows the
+failure is specific to the wide half.
+
+Getting the test to run took three passes against the teardown's real surface -
+it needs `registeredClasses`, `totalEntityCount`, `config.lighting.maxFlashes`,
+`sharedResourceRegs` and `audioMetrics`, all read unconditionally.
+
+## H-01 - `updateKeyboardBuffer` was O(keys) with 75 allocations per key event
+
+**06:05.** `src/core/scene.js:2167` walked `Object.entries(this.keyMap)` on
+every keydown/keyup: one outer array plus a two-element pair array per key, 75
+allocations and 74 writes, to mirror 74 keys - when only the key that just
+changed could have changed.
+
+Two parts, because they are separable and worth measuring separately:
+
+1. **Cache the flattened map.** `keyMap` is built once in the constructor and
+   never mutated, so the pair list is built there too and the per-event
+   enumeration disappears. The full-sync path still exists and still writes all
+   74 keys - `sceneSharedBuffers.js:740` calls it with no argument right after
+   binding the buffer, and teardown depends on that overwriting.
+2. **O(1) per event.** `onKeyDown`/`onKeyUp` now pass the changed key. This is
+   only sound because they are the *only* writers of `this.keyboard` besides two
+   wholesale reassignments (constructor, teardown) which are both followed by a
+   no-argument full sync. Verified by grepping every write to `this.keyboard`.
+
+### The bug I introduced, and the test that agreed with it
+
+**The first implementation cached the two lists separately:**
+
+```js
+this._keyNames = Object.keys(this.keyMap);
+this._keyIndices = Object.values(this.keyMap);
+```
+
+That looks obviously fine and is wrong. **`Object.values` does not return an
+object's values in insertion order when some keys are canonical numeric
+strings.** `'0'`..`'9'` are exactly that, so V8 treats them as array indices and
+emits them first, numerically:
+
+```
+Object.values(keyMap)[0] === 26      // not 0
+```
+
+So `_keyIndices[0]` belonged to `'a'` while `_keyNames[0]` was also `'a'` - wait,
+no: `_keyNames` came from `Object.keys` (insertion order, `'a'` first) and
+`_keyIndices` from `Object.values` (digits first). Position 0 paired `'a'` with
+index 26, which is `'0'`. **The full sync wrote every key's held state into
+another key's slot.**
+
+**And the parity test passed 6/6.** Worse, reverting `scene.js` to the broken
+two-pass version still passed 6/6, because the test built its own copy of the
+cached lists. Two failures stacked:
+
+- **The reference shared the implementation's assumption.** It used
+  `Object.entries`, which has the same reordering, so it agreed with the bug
+  perfectly. A parity test whose reference makes the same mistake is a mirror,
+  not a check.
+- **The test transcribed the method instead of calling it.** That is a gate-2
+  violation in a gate-5 test: a transcription cannot break when the source
+  breaks, which is exactly the property needed to catch this.
+
+Both are fixed. The reference now asks the question directly, per index - "which
+key owns this slot, and is it held?" - derived by inverting the map rather than
+by enumerating it, so it shares no ordering assumption with the code under test.
+And the test now calls `Scene.prototype.updateKeyboardBuffer` on a stub `this`.
+
+`tests/node/keyboardInputBuffer.test.js`, 7 cases, all green against both the old
+and the new implementation - which is correct, and is the point of a section 5.3
+regression test: it pins behaviour, not the optimization. Only a kernel can show
+the optimization exists.
+
+### What this test does NOT cover, stated plainly
+
+**The constructor step that builds `_keyNames` / `_keyIndices` - which is where
+the bug actually lived.** `new Scene(config)` needs a renderer, a canvas and a
+buffer allocation, none of which exist in Node. I confirmed this by injecting
+the two-pass bug back into `scene.js` and re-running: still 7/7. The gap is real
+and the header of the test file says so rather than implying coverage that does
+not exist.
+
+Closing it needs either a headless-browser test that constructs a real `Scene`,
+or extracting the caching step into a small exported helper that can be unit
+tested. The helper is the cheaper of the two and is the one worth doing.
+
+## H-01 kernel - inconclusive, and the reason matters
+
+**06:14.** `tests/bench/keyboardInputMicrobench.mjs`. Gate 2 on both sides, five
+counterbalanced rounds with a rotating order, three variants so the two claims
+are not averaged together: pre-fix (`Object.entries` full sync), cached full
+sync, and the O(1) fast path.
+
+**Result: NO CLAIM on both.** The pre-fix baseline measured **55,862 keyEvents/s**
+in one version of this harness and **1,198,493 keyEvents/s** in the next - a 21x
+swing on identical work, caused by nothing but the call shape.
+
+That is escape analysis. V8 can scalar-replace the `Object.entries` result when
+it can prove the arrays do not escape; whether it succeeds depends on inlining
+context and call-site shape, and a kernel that calls the method in a tight loop
+is the best possible case for it. A DOM `keydown` handler calling
+`this.updateKeyboardBuffer()` on a megamorphic `Scene` is the worst.
+
+**So the kernel does not refute H-01 - it fails to reproduce the production call
+shape, which is the only thing that determines whether the allocations happen.**
+A kernel that cannot reproduce the call site cannot answer the question, and
+reporting "+2143 %" off it would have been reporting V8's optimiser.
+
+The honest position: H-01's *allocation* claim is untested, its *correctness*
+claim is now well covered, and the product number needs the sitting in
+`docs/HOW_WE_MEASURE.md` - which for an event path with no trace support is
+probably not worth eight 10-second pairs.
+
+---
+
+## H-03 - `Math.hypot` -> `Math.sqrt`, with two corrections to the plan
+
+**06:31.** The engine's own rule was already written down at
+`preRenderWorker.js:1815` - *"sqrt, not Math.hypot (its overflow/underflow guard
+is wasted cost here"* - applied at one of seven sites. H-03 is "apply the
+engine's own rule consistently".
+
+**The premise, tested first** (`tests/bench/hypotVsSqrtMicrobench.mjs`, five
+counterbalanced rounds per magnitude, an accumulator so neither builtin can be
+dead-code eliminated):
+
+| magnitude | `Math.hypot` | `Math.sqrt` | ratio | rounds | bit-identical |
+|---|---|---|---|---|---|
+| 1e-3 | 29.3 M/s | 467.8 M/s | 0.06x | 5/5 | 64.4 % |
+| 1 | 30.3 M/s | 469.5 M/s | 0.06x | 5/5 | 64.5 % |
+| 1e3 | 30.3 M/s | 469.5 M/s | 0.06x | 5/5 | 65.2 % |
+| 1e4 | 30.2 M/s | 470.0 M/s | 0.06x | 5/5 | 61.6 % |
+| 1e7 | 30.2 M/s | 469.9 M/s | 0.06x | 5/5 | 61.7 % |
+
+**Correction 1 - the plan understates it.** "roughly an order of magnitude"
+measures at **~16x**. The claim holds; the number was wrong.
+
+**Correction 2 - "bit-identical" is false.** The plan argued that below ~1e7 the
+arithmetic is exact, so results are bit-identical, and used that as the gate-1
+checksum argument. Measured: only **~64 % of in-range pairs agree exactly**,
+and the rest differ by a few ulps, because `sqrt(x*x + y*y)` rounds at every
+step while `hypot` is deliberately the more accurate of the two. So this
+hypothesis cannot use a byte checksum. It uses a tolerance, and the tolerance is
+safe because the difference is ~1e-16 relative and every consumer stores into
+Float32 (~1e-7).
+
+**Overflow.** Float64 squares overflow past `sqrt(Number.MAX_VALUE)` ~ 1.34e154.
+A float32 coordinate tops out near 3.4e38, so the unreachable margin is over 115
+orders of magnitude. `tests/node/hypotParity.test.js` pins the exact threshold
+rather than asserting "unreachable" - and caught my own arithmetic: the first
+version claimed sqrt overflows at 1e154, but 1e154 squared is 1e308, which is
+*below* Float64 max. The boundary was one step out.
+
+**Applied at six runtime sites:** `colliderFillBatch.js:77`,
+`pixiWorker.js:2612`/`2625` (both corners of `_pushWedge`), `pixiWorker.js:3056`
+(`bodyR`), `pixiWorker.js:3251` (`uBodyRadius`), `preRenderWorker.js:3287`
+(`reach`), `physicsDebugRenderer.js:922` (debug).
+
+The two collider-dimension sites needed local variables rather than a textual
+swap: the existing expression already loads `Collider.width` and `Collider.height`,
+and squaring it inline would double those loads.
+
+**Kept:** `src/util/adobeAnimCompiler.js:188-189` - compile-time, on externally
+supplied animation matrices. The plan already excludes it, and the parity test
+asserts it still has exactly two live `Math.hypot` calls, so the exclusion cannot
+drift away unnoticed.
+
+**Not in the trace.** None of the seven sites appears in the Predator CPU trace,
+so by §4.0's rule this is a hygiene keep with no sitting. The case for it is the
+engine's own documented rule plus a measured 16x, not a trace.
+
+---
+
+## F-04 (HIGH, method) - "no headroom" was concluded from a scene that does not stress sway
+
+**06:44.** The most important entry in this batch, and it is a finding about how
+the audit reasoned, not about the engine.
+
+§4.0 recorded: *"H-10 (decoration sway) is confirmed weakly, and stays closed.
+Sway is 27 % of the particle worker, but particle is 11 % of the frame, so sway
+is ~3 % of it. The §1.1 'no headroom' ruling holds."*
+
+**That reasoning is wrong.** It converts "sway is 3 % of the frame *in Predator*"
+into "sway has no headroom *at all*". Predator is not a sway benchmark; it has
+relatively few swaying decorations, so the trace could only ever report what sway
+costs in a scene that does not stress it. The conclusion was drawn from a
+measurement that could not have detected headroom if it was there.
+
+This is exactly the failure §5.6 was written to prevent, and it survived into
+§4.0 unchanged after the trace.
+
+**The fix is a vehicle, not a better argument.**
+`tests/bench/stressScenes/decorationSwayStressScene.js`, parameterised by
+`?decorations=N`, plus three package scripts (`bench:feature:decoration-sway`,
+`:headed`, `:trace`).
+
+Design, aimed at making sway the only thing the particle worker does:
+
+- every decoration swaying (`sway: true`), 25 % `swaySkew`;
+- `decoration.swayDecimation = 1` - recalc every frame, the worst case;
+- `particle.swayFrequencyBuckets = 3` with frequencies stepped across the whole
+  1..3 grid, because `bucketFromSwayFrequency` is itself 11.7 % of the particle
+  worker in the Predator trace and a single-bucket scene would not exercise it;
+- varying `swayAmplitude` so the multiply is not a constant;
+- physics disabled, one anchor entity, no lighting, tiny spatial.
+
+**The first run looked healthy and measured nothing: `particle STEP_MS 0.022`.**
+Four bugs in my own scene, all worth recording because three of them fail
+silently:
+
+1. **`decoration` nested under `particle`.** `scene.js` merges
+   `DECORATION_DEFAULTS` into `config.decoration`, a **top-level** key. Nesting
+   it leaves `maxDecorations` at its default `0`, the scene spawns nothing, and
+   every worker reports a healthy near-zero step. Indistinguishable from a
+   working scene at a glance.
+2. **`Decoration` imported from the wrong module** - it lives on `WEED` and in
+   `src/core/decoration.js`, not `util/decorationSway.js` (which exports only the
+   `SWAY_*` constants and the bucket maths). This one at least threw.
+3. **`URL_COUNT` used before its `const` declaration** - temporal dead zone,
+   `ReferenceError`.
+4. **`SKew_SHARE` vs `SKEW_SHARE`** - a typo in the constant name.
+
+**After all four:**
+
+```
+Scene measured: DecorationSwayStressScene  (/tests/bench/stressScenes/decorationSwayStressScene.js)
+particle: STEP_MS 1.018 | Load 6%
+spatial0: 0.025 | logic0: 0.030 | preRender: 0.079 | renderer: 0.176
+```
+
+**A 46x increase** over the broken scene, and the isolation is the point:
+particle is ~93 % of the frame's work here against 11 % in Predator. Every other
+worker is near idle, so anything that moves in this scene is sway.
+
+**A trace attempt was polluted** - `devtools://devtools/bundled/ui/legacy/legacy.js`
+at 1000 ms/s on the main thread swamped the window. That was the operator having
+DevTools open, not an engine problem, and it is worth recording because a
+polluted trace is still a trace that reports numbers: the summarizer printed a
+complete, confident thread table in which the only visible entry was Chrome's own
+UI. **A trace whose top entry is not engine code should be discarded, not
+summarized.**
+
+**The ruling is open again.** Not overturned - not yet - but it no longer has a
+measurement behind it. The correct entry for H-10 is `unmeasured`, not `closed`.
+
+---
+
+### H-10 ruled on evidence - sway cost is bounded by screen area, not decoration count
+
+**06:52.** The sweep the scene exists to run:
+
+| decorations | particle STEP_MS | load |
+|---|---|---|
+| 40 000 | 0.794 | 5 % |
+| 150 000 | 0.959 | 6 % |
+| 400 000 | 0.911 | 5 % |
+
+**A 10x increase in decoration count moves particle step time by ~1.2x, and not
+even monotonically** (0.794 -> 0.959 -> 0.911). Three and a quarter to eight
+times the population, same cost. That is not a weak signal, it is a flat line.
+
+The explanation is in the trace the scene was built from: `particleWorker` runs
+`updateDecorationScreenVisibility` before the sway pass, and that is 13.6 % of the
+worker in Predator. **The particle worker processes what is on screen, not what
+exists.** Pool size is not the cost driver; screen area is.
+
+So the ruling, now with a measurement behind it:
+
+- sway is ~27 % of the particle worker (Predator trace);
+- the particle worker's cost is capped by the visible decoration count;
+- therefore **no decoration count can make sway a dominant cost**, and the sweep
+  demonstrates exactly that across a 10x range;
+- a faster sine could only improve ~27 % of a worker that is itself 5-11 % of the
+  frame. The ceiling on the whole hypothesis is a few percent of a few percent.
+
+**H-10 stays closed - keep the shipped `Math.sin`. But the reason has changed.**
+§4.0's version ("sway is ~3 % of the frame *in Predator*") was a scene-specific
+observation presented as a general one. This one is structural: the cost is
+bounded by the screen, and no amount of population changes that.
+
+It is worth being clear about what F-04 cost and what it bought. F-04 found the
+ruling was unfounded; the sweep then found the ruling happens to be right. Those
+are different outcomes and the log should not pretend the first turned into the
+second by argument - it took a purpose-built scene and a 10x sweep, and it could
+just as easily have come back the other way.
+
+---
+
+## H-14 - spawn sort, the first real kernel win of wave 2
+
+**07:04.** §5.1 flags that the `spawn` catalog row's kernel, `treiberMicrobench`,
+times the free list and **cannot see this change** - it will read TIE by
+construction. So this needs a new kernel: `tests/bench/spawnSortMicrobench.mjs`,
+five rounds with a rotating order, gate 1 as a checksum on the resulting
+`(entityIndex, classSlot)` sequence including ties and duplicates.
+
+The shipped line (`logicWorker.js`):
+
+```js
+for (let i = 0; i < n; i++) perm[i] = i;
+perm.subarray(0, n).sort((a, b) => idx[a] - idx[b]);
+```
+
+**Variant:** pack `(entityIndex, classSlot)` into one `Float64` key, sort the
+`Float64Array` with **no comparator** - V8's specialised numeric path - and
+unpack. Both halves fit exactly: `entityIndex <= 65535` times a 4096 slot span is
+below 2.7e8, far inside Float64's exact-integer range.
+
+| n | shipped | packed | rounds |
+|---|---|---|---|
+| 8 | 3 170 700 sorts/s | **+110.11 %** | 5/5 |
+| 64 | 287 922 sorts/s | **+117.75 %** | 5/5 |
+| 256 | 48 028 sorts/s | **+147.06 %** | 5/5 |
+| 1024 | 8 791 sorts/s | **+106.10 %** | 5/5 |
+
+**KERNEL WIN**, unanimous at every size, roughly 2x. Far over the 3 % floor.
+This is the first hypothesis in the plan that has cleared a gate outright.
+
+### Gate 1 found a real semantic difference, and it is worth keeping
+
+The first run **failed** the checksum: `packed paired the wrong class at 2`. The
+cause is not a bug in the variant, it is a property of the shipped code. For two
+entries with the same `entityIndex`, the comparator `idx[a] - idx[b]` returns 0,
+so their relative order after the sort is **implementation-defined**; the packed
+key instead orders them by class, because the class sits in the low bits. The two
+strategies therefore disagree on **tie order**, deterministically, whenever the
+same index appears with two different classes.
+
+`_processSpawnSoA` cannot produce that input. `queueSpawnListUpdate` takes
+`(entityIndex, entityType, EntityClass)` and an entity index determines its pool,
+so the same index always carries the same class. Duplicates and ties are common;
+**ties across different classes are impossible.**
+
+So the invariant is encoded in the kernel - `classForIndex(idx[i])` - rather than
+assumed, and the divergent case is run separately and logged so the claim stays
+visible instead of being swept away when the gate started passing. The
+alternative would have been to declare the gate "wrong" and loosen it.
+
+### A third variant, removed analytically before measuring
+
+A counting sort over the entity-index space was written - no comparisons at all -
+and then removed. It clears a 65 537-entry array and walks the whole index space
+on **every call**, so its cost is O(maxEntities) against O(n log n) with n in the
+hundreds. At n=256 that is roughly 65k memory writes to save about 2k
+comparisons.
+
+The first attempt capped its iterations and still timed out twice, at 7 and 10
+minutes, because `timeIt` scaled to 100k iterations of 65k work each. A kernel
+that spends ten minutes establishing "this is slower by construction" is a worse
+use of the machine than the sentence that says so. This is the shape H-14's own
+prior-art note warns about.
+
+### Not yet shipped, and why
+
+A kernel win is not the change. The plan's own history is that kernel wins here
+die at the scene - `PH1` was +147 % in the kernel and -0.8 % in Predator. The
+next step for H-14 is `spawnStormScene` via `pnpm bench:feature:spawn-storm`,
+eight counterbalanced pairs against `logic0_STEP_MS`, checking that
+`ENTITIES_PROCESSED` closes (the row can match `BODY_COUNT` while the spawn list
+collapses).
+
+---
+
+## H-14 shipped in `src/`, and the shape I had to change to ship it
+
+**07:04 - 07:40.** The kernel win was easy. Turning it into code was not, and the
+reason is worth recording because it would have been a shipped bug.
+
+**The packing had to change.** The kernel packed `(entityIndex, classSlot)`. In
+`src/`, `classes` is `_spawnClass` and it holds **EntityClass object references**,
+not numeric slots - so `idx[i] * 4096 + classes[i]` is `NaN`. The obvious
+workaround is to pack the numeric `_spawnType` instead, but that needs a
+type → class registry the worker cannot reach: `registeredClasses` is Scene-side
+(`scene.js:622`) and the worker has no path to it.
+
+So the shipped key packs **`(entityIndex, position)`** and leaves the gather
+completely untouched:
+
+```js
+const span = n + 1;
+keys[i] = idx[i] * span + i;
+const keyView = keys.subarray(0, n);
+keyView.sort();                       // no comparator - V8's numeric path
+...
+const entityIndex = Math.floor(key / span);
+sortedClass[m] = classes[key - entityIndex * span];
+```
+
+`Float64Array`, because the key overflows Int32 long before the entity cap.
+Exactness is guarded rather than assumed - `MAX_ENTITIES_CAP * span < 2^53` -
+with the comparator sort kept as the fallback if it were ever crossed. The
+margin is over 10^10 at any real batch size, so the branch never fires; it is
+there because the failure mode if the key ever stopped being an exact integer
+would be a silently mis-ordered active list, which is the worst kind.
+
+**Tie-break note.** The old comparator returned 0 for two entries sharing an
+entityIndex, leaving their order implementation-defined. The packed key breaks
+that tie by position, so duplicates keep spawn order - deterministic, and
+identical output because a repeated spawn of one index carries the same class.
+
+`tests/node/spawnSortParity.test.js`, 6 cases against the **real** shipped
+`_processSpawnSoA`. **Red proven:** reverted to the comparator sort, 4 of 6 fail.
+
+Three of those six failures were my own test harness, and the third is the one to
+remember:
+
+1. The test asserted on the `_spawnSorted` scratch, which the `n === 1` fast path
+   never writes. Asserted on the **merged active lists** instead - that is the
+   observable that matters, and the fast path produces it too.
+2. `reference()` used `indices.map((v, i) => [v, i])` on an `Int32Array`.
+   `TypedArray.prototype.map` returns a **typed array**, so every `[v, i]` pair
+   coerced to `NaN` and the "reference" was garbage. `Array.from` instead.
+3. `reset()` cleared the scratch but not the merged list or the per-type lists, so
+   every run saw the previous run's output appended to its own.
+
+**Scenario, not settled.** `spawnStormScene` is running. The plan is explicit
+that kernel wins here die at the scene - `PH1` was +147 % in the kernel and
+-0.8 % in Predator - so until the sitting closes, the honest status is
+`shipped, awaiting scene`. `ENTITIES_PROCESSED` has to close too: the row can
+match `BODY_COUNT` while the spawn list collapses.
+
+---
+
+## The gate runner could not run this hypothesis - and its baseline was broken twice
+
+**07:41 - 07:55.** Two things had to be fixed before H-14 could be judged, and
+both are recorded because both would have produced a confident wrong answer.
+
+### The gate was hardcoded to Predator
+
+`runPredatorAbab.mjs` carries the whole discipline - `--override` with a saved
+baseline file, counterbalanced order, the "a paired median of +3 % is not a
+regression by itself, it also has to be 75 % of pairs worse" rule, and the cv
+check - but its scene was a `const`.
+
+H-14's home is **`spawnStormScene`**, not Predator: `spawnStorm` is the catalog
+row that actually exercises the spawn list, and Predator barely spawns. Measuring
+it in Predator would have been measuring the wrong thing, and the alternative -
+writing a second sitting harness - is how the project ended up with eight
+campaign folders in the first place.
+
+So `--scene` / `--scene-export` now resolve the scene, defaulting to Predator, and
+an explicit scene is tagged `kind: 'stress'` so the 3 ms sample floor and the 8 ms
+campaign floor apply to any `STEP_MS` verdict. The gate, the decision rule and the
+ordering are untouched; only the scene moves.
+
+### The baseline was broken, and my own check script did not catch it
+
+`tests/bench/makeHypBaseline.mjs` saves the pre-change copy, following DEVLOG's
+rule that baselines are "saved in their own step now, and checked".
+
+The first baseline **ran with `ReferenceError: m is not defined` inside the
+LogicWorker.** The shipped sort block is:
+
+```js
+const keys = this._spawnSortKeys;
+const span = n + 1;
+let m = 0;              // <-- inside the replaced region
+...packed sort...
+```
+
+Replacing that region to restore the comparator sort also removed `let m = 0;`, so
+the baseline was missing the counter its own loop increments. The scene loaded,
+the workers started, and the failure appeared as a FATAL in `logic0` - after the
+benchmark had already begun.
+
+**The check script passed it.** It verified the baseline contains the comparator
+sort, contains no packed key, still has the gather, and differs in length from
+shipped. All true. None of that says the file runs.
+
+Two checks added:
+
+- **`declares the counter it uses`** - the specific omission, caught directly.
+- **`parses as a module`** - brace balance plus the presence of every top-level
+  declaration the block depends on.
+
+The general lesson is the one DEVLOG already states and I did not apply:
+**content checks are not validity checks.** A baseline can contain exactly the
+right text and still throw on first use, and the sitting will measure that
+happily.
+
+Sitting: `runPredatorAbab.mjs --name H14 --pairs 8 --owner logic --scene
+/tests/bench/stressScenes/spawnStormScene.js --scene-export SpawnStormScene
+--override src/workers/logicWorker.js=<baseline>`.
+
+---
+
 ## Wave 2 entry point
 
 All twelve bugs in wave 1 are closed. Remaining from the plan's bug list:

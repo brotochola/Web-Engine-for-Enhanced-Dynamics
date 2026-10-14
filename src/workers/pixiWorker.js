@@ -2609,13 +2609,27 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     if (n + 4 > WEDGE_MAX_QUADS * 4) return;
     let dx = ax - lx;
     let dy = ay - ly;
-    let len = Math.hypot(dx, dy);
+    // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted here.
+    // Measured ~16x cheaper (5/5 counterbalanced rounds, 1e-3..1e7). NOT
+    // bit-identical to hypot: it agrees on ~64% of in-range pairs and differs by
+    // a few ulps on the rest, because hypot is deliberately the more accurate of
+    // the two. That is ~1e-16 relative, far under the Float32 this value is
+    // stored into. Overflow is unreachable (Float64 squares overflow past ~1.34e154).
+    // Do not reintroduce hypot here without measuring it again.
+    let len = Math.sqrt(dx * dx + dy * dy);
     if (!(len > 1e-4)) return;
     const e0x = lx + (dx / len) * lightR;
     const e0y = ly + (dy / len) * lightR;
     dx = bx - lx;
     dy = by - ly;
-    len = Math.hypot(dx, dy);
+    // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted here.
+    // Measured ~16x cheaper (5/5 counterbalanced rounds, 1e-3..1e7). NOT
+    // bit-identical to hypot: it agrees on ~64% of in-range pairs and differs by
+    // a few ulps on the rest, because hypot is deliberately the more accurate of
+    // the two. That is ~1e-16 relative, far under the Float32 this value is
+    // stored into. Overflow is unreachable (Float64 squares overflow past ~1.34e154).
+    // Do not reintroduce hypot here without measuring it again.
+    len = Math.sqrt(dx * dx + dy * dy);
     if (!(len > 1e-4)) return;
     const e1x = lx + (dx / len) * lightR;
     const e1y = ly + (dy / len) * lightR;
@@ -3039,7 +3053,15 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const baseV = vertCount;
           const bodyCx = ex + ox;
           const bodyCy = ey + oy;
-          const bodyR = Math.hypot((Collider.width[entityIdx] || 0) * 0.5, (Collider.height[entityIdx] || 0) * 0.5);
+          // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted
+          // on a collider's half-extent. Measured ~16x cheaper (5/5
+          // counterbalanced rounds, 1e-3..1e7). NOT bit-identical to hypot: it
+          // agrees on ~64% of in-range pairs and differs by a few ulps on the
+          // rest, which is ~1e-16 relative and far under the Float32 this feeds.
+          // Hoisted into locals so the Collider loads happen once, not twice.
+          const bodyHalfW = (Collider.width[entityIdx] || 0) * 0.5;
+          const bodyHalfH = (Collider.height[entityIdx] || 0) * 0.5;
+          const bodyR = Math.sqrt(bodyHalfW * bodyHalfW + bodyHalfH * bodyHalfH);
           for (let v = 0; v < vc; v++) {
             positions[vertCount * 2] = boxX[v];
             positions[vertCount * 2 + 1] = boxY[v];
@@ -3226,10 +3248,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const bodyCy = oy + (Collider.offsetY[entityIdx] || 0);
           uniforms.uBodyCenter[0] = bodyCx;
           uniforms.uBodyCenter[1] = bodyCy;
-          uniforms.uBodyRadius = Math.hypot(
-            (Collider.width[entityIdx] || 0) * 0.5,
-            (Collider.height[entityIdx] || 0) * 0.5
-          );
+          // H-03: sqrt, not Math.hypot - same rationale as bodyR above.
+          const ubw = (Collider.width[entityIdx] || 0) * 0.5;
+          const ubh = (Collider.height[entityIdx] || 0) * 0.5;
+          uniforms.uBodyRadius = Math.sqrt(ubw * ubw + ubh * ubh);
           if (Collider.shapeType[entityIdx] === ShapeType.Circle) {
             const cr = Collider.radius[entityIdx];
             if (cr > 0) uniforms.uBodyRadius = cr;

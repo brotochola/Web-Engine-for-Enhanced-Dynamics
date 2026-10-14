@@ -439,6 +439,27 @@ class Scene {
 
     this.inputBufferSize = keyIndex;
 
+    // H-01. `updateKeyboardBuffer` walked `Object.entries(this.keyMap)` on every
+    // key event, which allocates the outer array plus one two-element array per
+    // key - 75 arrays for a 74-key map. keyMap is built once here and never
+    // mutated afterwards, so the flattened pair list is built once too.
+    //
+    // Both halves come out of ONE Object.entries pass, deliberately. Building
+    // them separately with Object.keys and Object.values looks equivalent and is
+    // not: the digit keys '0'..'9' are canonical numeric strings, so V8 orders
+    // them as array indices - numerically, and BEFORE the letter keys. So
+    // Object.values(keyMap) does not line up index-for-index with
+    // Object.keys(keyMap), and pairing them would write each key's held state
+    // into another key's slot. One entries pass cannot disagree with itself.
+    const keyEntries = Object.entries(this.keyMap);
+    const keyTotal = keyEntries.length;
+    this._keyNames = new Array(keyTotal);
+    this._keyIndices = new Int32Array(keyTotal);
+    for (let i = 0; i < keyTotal; i++) {
+      this._keyNames[i] = keyEntries[i][0];
+      this._keyIndices[i] = keyEntries[i][1];
+    }
+
     // Frame timing
     this.lastFrameTime = performance.now();
     this.updateRate = 1000 / 60;
@@ -2131,12 +2152,12 @@ class Scene {
         this.views.input[this.inputBufferSize + index]++;
       }
     }
-    this.updateKeyboardBuffer();
+    this.updateKeyboardBuffer(key);
   }
 
   onKeyUp(key) {
     this.keyboard[key] = false;
-    this.updateKeyboardBuffer();
+    this.updateKeyboardBuffer(key);
   }
 
   onMouseDown(button) {
@@ -2164,11 +2185,37 @@ class Scene {
     Mouse.wheel += deltaY;
   }
 
-  updateKeyboardBuffer() {
+  /**
+   * Mirror the held-key state into the SAB the logic workers read.
+   *
+   * With a `key` argument this is O(1): only the key that just changed can have
+   * changed, because `onKeyDown`/`onKeyUp` are the only writers of
+   * `this.keyboard` and each calls straight back in here. Without an argument it
+   * is a full sync, which is what the buffer setup path needs.
+   *
+   * The two produce identical bytes. `this.keyboard` is also assigned wholesale
+   * by teardown (sceneSharedBuffers.js) and by the constructor, and both of
+   * those are followed by a buffer (re)bind that calls this with no argument, so
+   * there is no path where keys change without a full sync catching up.
+   *
+   * @param {string} [key] the single key that changed, or nothing for a full sync
+   */
+  updateKeyboardBuffer(key) {
     const input = this.views.input;
     if (!input) return;
-    for (const [key, index] of Object.entries(this.keyMap)) {
-      input[index] = this.keyboard[key] ? 1 : 0;
+
+    if (key !== undefined) {
+      const index = this.keyMap[key];
+      if (index !== undefined) input[index] = this.keyboard[key] ? 1 : 0;
+      return;
+    }
+
+    // Full sync over the cached flattened map - no per-call allocation.
+    const names = this._keyNames;
+    const indices = this._keyIndices;
+    const keyboard = this.keyboard;
+    for (let i = 0; i < names.length; i++) {
+      input[indices[i]] = keyboard[names[i]] ? 1 : 0;
     }
   }
 

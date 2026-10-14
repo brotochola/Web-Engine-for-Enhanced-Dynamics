@@ -160,7 +160,10 @@
     "build:pixi": "node scripts/buildPixi.mjs",
     "prebuild:docs": "node scripts/syncVersion.js",
     "build:docs": "node scripts/buildDocs.js",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "bench:feature:decoration-sway": "node tests/bench/runIntegratedWorkerBenchmark.mjs --src --scene /tests/bench/stressScenes/decorationSwayStressScene.js --scene-export DecorationSwayStressScene --output tests/results/decoration-sway-stress.json",
+    "bench:feature:decoration-sway:headed": "node tests/bench/runIntegratedWorkerBenchmark.mjs --src --headed --scene /tests/bench/stressScenes/decorationSwayStressScene.js --scene-export DecorationSwayStressScene --output tests/results/decoration-sway-stress-headed.json",
+    "bench:feature:decoration-sway:trace": "node tests/bench/runIntegratedWorkerBenchmark.mjs --src --headed --trace-cpu --no-collect-detailed-stats --scene /tests/bench/stressScenes/decorationSwayStressScene.js --scene-export DecorationSwayStressScene --output tests/results/decoration-sway/stress.json"
   },
   "keywords": [
     "weed.js",

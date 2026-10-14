@@ -31,6 +31,39 @@ export const PREDATOR_SCENE = {
   kind: 'gameplay',
 };
 
+/**
+ * The gate was written for Predator only, and that was fine while every
+ * hypothesis was about Predator. H-14 is not: its home is `spawnStormScene`,
+ * because `spawnStorm` is the row that actually exercises the spawn list and
+ * Predator barely spawns. Hardcoding one scene would have meant either measuring
+ * H-14 in the wrong scene or writing a second, worse sitting harness.
+ *
+ * So the scene is a flag now. The gate, the decision rule and the counterbalanced
+ * ordering are unchanged - only the scene moves.
+ */
+function resolveScene(args) {
+  const scenePath = args.scene ? String(args.scene) : null;
+  const exportName = args['scene-export']
+    ? String(args['scene-export'])
+    : scenePath
+      ? String(scenePath).split('/').pop().replace(/\.js$/, '')
+      : null;
+
+  if (!scenePath && !args['scene-export']) return PREDATOR_SCENE;
+
+  const key = String(scenePath || exportName).replace(/[^a-z0-9]+/gi, '-');
+  return {
+    key,
+    path: scenePath ?? `/tests/bench/stressScenes/${exportName}.js`,
+    exportName: exportName ?? key,
+    // Stress scenes are catalogued `kind: 'stress'`, which is what puts the 3 ms
+    // floor and the 8 ms campaign floor on any STEP_MS verdict.
+    headed: true,
+    kind: 'stress',
+    explicit: true,
+  };
+}
+
 const KINDS = ['logic', 'spatial', 'physics', 'renderer', 'particle', 'preRender'];
 const LOAD_KEYS = ['BODY_COUNT', 'GPU_CASTERS', 'GPU_SHADOW_LIGHTS', 'ACTIVE_PARTICLES'];
 // Predator emits ~100 particles: Poisson noise alone is ~10 %. Below this
@@ -129,7 +162,14 @@ async function main() {
     durationMs: Number(args['duration-ms'] ?? DEFAULT_DURATION_MS),
     query: typeof args.query === 'string' ? args.query : '',
   };
-  const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
+  const scene = resolveScene(args);
+if (scene.explicit) {
+  console.log(
+    `scene: ${scene.exportName} (${scene.path}) - kind ${scene.kind}, so the 3 ms sample ` +
+      'floor and the 8 ms campaign floor both apply to any STEP_MS verdict',
+  );
+}
+const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   fs.mkdirSync(outDir, { recursive: true });
   const summaryPath = path.join(outDir, 'summary.json');
   if (args['decide-only']) {
@@ -154,7 +194,7 @@ async function main() {
     const order = p % 2 === 0 ? [['A', baseline.root], ['B', repoRoot]] : [['B', repoRoot], ['A', baseline.root]];
     for (const [side, root] of order) {
       console.log(`\n======== ${name} pair ${p + 1}/${first + nPairs} side ${side} ========`);
-      const res = runIntegratedWithRetry(PREDATOR_SCENE, path.join(outDir, `${side}-p${p}.json`), { ...opts, root });
+      const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root });
       if (!res.ok) throw new Error(`${side} p${p}: ${res.error}`);
       pair[side] = predatorMetrics(res.report);
     }

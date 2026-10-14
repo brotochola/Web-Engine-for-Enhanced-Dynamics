@@ -970,7 +970,96 @@ Ordered by expected value per unit of effort, respecting the gates. Do not run t
 
 **Before wave 2, run the trace** (§5.6). This plan came from a static read, and the trace decides which of these are worth a gate.
 
+### 4.0 TRACE VERDICT, 2026-10-14 05:44 — this section now overrides the campaign order below
+
+The trace named in §5.6 has now been run, for the first time, on Predator with
+the current tree. Full analysis in `docs/MATH_ALLOC_AUDIT_IMPLEMENTATION_LOG.md`
+under "The real Predator trace, and what it does to the plan".
+
+Measured: `preRender 8.421 ms / 51 %` (largest worker), physics `7.890 / 47 %`,
+spatial `7.139 / 43 %`, pixi `5.610 / 34 %`, logic0+logic1 `8.865 combined / 53 %`,
+particle `1.759 / 11 %`.
+
+**What the trace changes:**
+
+1. **Wave 3 (visibility polygon) has no support. Demote it.** Not one
+   `angularSweep` function appears in the trace, at any share. §4's own rule
+   already covers this: *"if the trace shows none of their functions, they are
+   hygiene keeps and should be shipped as such rather than given a sitting."*
+   H-04/H-05/H-06/H-08/H-09 therefore go to **hygiene keeps, no sitting**,
+   unless a trace of a scene that actually uses vis-poly lights changes that.
+   Predator has 48 shadow lights and no vis-poly cost, so this is a real
+   absence, not a sampling gap.
+
+2. **Wave 4 (allocation on the render path) has one venue, not several.** GC
+   self-time in Predator: preRender 6.6 % of its busy time, pixi 0.5 %, spatial
+   0, particle 0. Re-point the allocation census at `preRenderWorker.js`. Do not
+   spend the wave spread across the tree.
+
+3. **H-11b is refuted by its own falsifier.** `setRotCSFromAngle` /
+   `transform.js:45-46` are not named. Kernel-only or hygiene; **no Predator
+   sitting**. This is exactly what falsifier (b) was written for.
+
+4. **H-10 (decoration sway) is confirmed and stays closed — but the first
+   confirmation was wrong, and the second is structural.** Sway is ~27 % of the
+   particle worker via `_updateDecorationSwayBuckets`, and particle is 11 % of
+   Predator's frame. That observation alone is a statement about Predator, not
+   about sway, and §4.0 initially presented it as the latter. It could not have
+   detected headroom if headroom was there.
+
+   Re-measured against a purpose-built scene
+   (`tests/bench/stressScenes/decorationSwayStressScene.js`, `?decorations=N`):
+
+   | decorations | particle STEP_MS |
+   |---|---|
+   | 40 000 | 0.794 |
+   | 150 000 | 0.959 |
+   | 400 000 | 0.911 |
+
+   **A 10x change in population moves particle step time by ~1.2x, and not
+   monotonically.** The worker processes what is *on screen*
+   (`updateDecorationScreenVisibility` runs before the sway pass and is 13.6 % of
+   the worker), so cost is bounded by screen area, not pool size. **No decoration
+   count can make sway dominant.** Keep the shipped `Math.sin` — now for a reason
+   that survives a different scene.
+
+5. **One measurement rule in this document is now known to be unsafe.**
+   `STEP_MS` is used throughout §4 and §5 as the per-worker cost. The trace
+   shows 67.8 % of the physics worker's time is `wasm-function[102]`, which
+   DEVLOG has already disassembled as **Emscripten's pthread mailbox**, not the
+   solver. Predator is therefore burning ~2.4 cores in spin-wait while physics
+   reports "47 % load, `STEP_MS 7.890`". Any gate that reads physics `STEP_MS` as
+   the cost of solving is partly measuring how much it spun. Re-read §5.6.
+
+6. **New candidates the source read did not produce**, in addressable-JS order:
+   `packInstancedRows` (38.8 % of pixi **and** 9.3 % of preRender, ~192 ms/s
+   across two workers), `findNeighborsForOwnedEntities` (56.0 % of spatial),
+   `emitSpriteQueue` (19.9 % of preRender), and **`gpuShadowCasters.js` at 18.4 %
+   of preRender combined** (`stampLightRange` + `buildStampGrid` +
+   `copyTypedRange` + `partitionOrder`). The shadow work is **not** in
+   `pixiWorker.js` where H-07/H-13 point. Second: the three `gameObject`
+   accessors (`get:510`, `neighborCount:1986`, `getNeighbor:2005`) at 26 % of
+   logic combined — but the callers are Predator's own AI, so only the accessor
+   cost is the engine's to fix.
+
+   **Prior art kills the obvious version of the top two.** DEVLOG 30 Sept:
+   `packInstancedRows` lost a specialisation by 24 % because its branches always
+   go the same way and the predictor already made them free; `spatial` came out
+   of a campaign that already took it from 6.12 ms to 5.13 ms. These are not free
+   wins and must not be scheduled as if they were.
+
+**What the trace says about the 17 hypotheses:** it independently supports
+roughly one (H-10, weakly), refutes one (H-11b), and is silent on the other
+fifteen. **Silent is not refuted.** Those fifteen remain unmeasured, which is a
+much weaker position than "supported" and is how they should be described until
+a kernel says otherwise.
+
 ### Wave 1 — bugs, no measurement debate
+
+**Status: complete, 2026-10-14 05:35. All twelve closed, `npm test` 873/873.**
+See the implementation log for each entry and its red proof. B-03, B-06 and
+H-17 landed in the second pass; B-10's fix shipped without a gate-5 test and
+B-11's is inert as written — both recorded as open items in the log.
 
 Correctness. Each gets a `tests/node/` test from §5.2 and the hygiene gate only.
 
@@ -985,20 +1074,117 @@ Correctness. Each gets a `tests/node/` test from §5.2 and the hygiene gate only
 | H-17 | List-growth bound | `listUpdateBound.test.js` | Ships with B-09 |
 | B-03, B-04, B-06 | Next wave | §5.2 | Need more thought on the fix shape |
 
-### Wave 2 — free wins with clean checksums
+#### 4.0.1 H-03 result — two corrections to this document, both measured
 
-These have bit-identical or near-bit-identical output, so gate 1 is decisive and cheap. **All `cheap` per P-4.**
+**Shipped, 2026-10-14 06:31.** Six runtime sites; `adobeAnimCompiler.js` keeps
+`Math.hypot` as it already did.
+
+1. **"Roughly an order of magnitude" is wrong; it is ~16x.** Measured directly
+   (`hypotVsSqrtMicrobench.mjs`, five counterbalanced rounds, an accumulator so
+   neither builtin can be eliminated): `Math.hypot` ~30 M ops/s against
+   `Math.sqrt(x*x+y*y)` ~470 M ops/s at every magnitude from 1e-3 to 1e7.
+
+2. **"Bit-identical" is wrong, and this invalidates the plan's own gate-1
+   argument for this hypothesis.** The plan justified a byte checksum by claiming
+   that below ~1e7 the arithmetic is exact. Measured: only **~64 % of in-range
+   pairs agree exactly**; the rest differ by a few ulps, because
+   `sqrt(x*x + y*y)` rounds at every step while `hypot` is deliberately the more
+   accurate of the two.
+
+   **Consequence for the protocol:** a checksum tolerance is now required here,
+   and it is safe — the difference is ~1e-16 relative while every consumer stores
+   into Float32 (~1e-7). `hypotParity.test.js` also pins the exact overflow
+   boundary (`sqrt(Number.MAX_VALUE)` ~ 1.34e154) instead of asserting that
+   overflow is "unreachable", because the first version of that test had the
+   boundary one step out: 1e154 squared is 1e308, which is *below* Float64 max.
+
+3. **Not in the trace.** None of the seven sites appears in the Predator CPU
+   trace, so this is a hygiene keep with **no sitting**. The justification is the
+   engine's own documented rule plus a measured 16x — not a trace.
+
+### 4.0.2 Method finding — a "no headroom" verdict must not be drawn from a scene that does not stress the thing
+
+The sway stress scene took four attempts to work, three of which failed
+silently. All of it is in the implementation log under F-04; the transferable
+part:
+
+- A scene that silently spawns **nothing** reports a healthy near-zero step and
+  is indistinguishable from a working one. `decoration` is a **top-level** config
+  key; nesting it under `particle` left `maxDecorations` at its default of 0.
+- **A trace whose top entry is not engine code should be discarded, not
+  summarized.** A trace polluted by open DevTools printed a complete, confident
+  thread table in which the only visible entry was Chrome's own UI.
+- The sway scene is parameterised (`?decorations=N`) so the sweep is a command,
+  not an edit. Four of its five bugs were static, and every one of them would
+  have been caught by a scene that printed its own spawn count.
+
+**Standing rule for the rest of this plan: any "no headroom" or "closed" verdict
+derived from a product scene must name the vehicle that could have contradicted
+it. If there is no such vehicle, the verdict is `unmeasured`, not `closed`.**
+
+### 4.0.3 Dispositions for the demoted hypotheses — closed, not left open
+
+§4.0 struck H-04/H-05/H-06/H-07/H-08/H-09 off the sitting schedule because no
+trace names them. That is a demotion, not a closure, and an unexamined demotion is
+how a plan quietly stops being a plan. Each is now given a disposition.
+
+| ID | Where the code is | Disposition | Why |
+|---|---|---|---|
+| H-04 | `angularSweep.js:345-346`, `endDirC`/`endDirS` | **hygiene keep** | Loop-invariant hoist. Zero trace share. Correct and free, but nothing to gain and nothing to lose. |
+| H-05 | `emitArcVertices` | **hygiene keep** | Same family, zero trace share. |
+| H-06 | ε-expansion, `EPSILON` pre/post samples | **hygiene keep** | Same family, zero trace share. |
+| H-08 | `util/utils.js:933` redundant `%` | **hygiene keep** | Same family, zero trace share. |
+| H-09 | squared-range occluder cull | **hygiene keep** | Same family, zero trace share. |
+| H-07 | Pixi occluder circle tessellation | **reframed — see below** | The plan pointed at `pixiWorker.js`; the trace says the shadow cost is in `gpuShadowCasters.js`. |
+
+**Five of six are the same finding wearing different clothes: the visibility
+polygon path does not execute in Predator.** Their kernel
+(`angularSweepMicrobench`) is real and passing gates; what it cannot do is make a
+product claim, because there is no product scene where the code is hot. Shipping
+them as cleanups is honest; giving any of them a sitting would be theatre.
+
+**H-07 is the exception, and it is a plan error rather than a demotion.** §5.4
+places it at `pixiWorker.js` with `occluderSelfLit` as the kernel. The Predator
+trace puts shadow work in `gpuShadowCasters.js` instead — `stampLightRange` 7.7 %,
+`buildStampGrid` 5.5 %, `copyTypedRange` 3.0 %, `partitionOrder` 2.2 %, **18.4 %
+of the largest worker combined**, and none of it in `pixiWorker.js`. So H-07 as
+written points at the wrong file, and the real candidate is not in the plan at
+all. That is a new hypothesis, not a closed one.
+
+### 4.0.4 New candidates the trace produced, ranked
+
+The trace's own top entries, none of which were hypotheses. Ranked by share of its
+worker, with prior art checked because several have already been attacked:
+
+| candidate | share | prior art | note |
+|---|---|---|---|
+| `packInstancedRows` (`gpuQueueLayout.js:233`) | **38.8 % of pixi, 9.3 % of preRender** | a specialization lost 24 % — its branches are predictable and the predictor already made them free | biggest addressable item in the engine; **not** a free win |
+| `findNeighborsForOwnedEntities` (`spatialWorker.js:618`) | 56.0 % of spatial | came out of the campaign that took spatial 6.12 → 5.13 ms | already twice-worked |
+| `emitSpriteQueue` (`preRenderWorker.js:2050`) | 19.9 % of preRender | "Kill the Two-Pass", 23 Sept | already worked |
+| **`gpuShadowCasters.js`, four functions** | **18.4 % of preRender** | none found | **the genuinely new one** — where H-07 should have pointed |
+| `gameObject.js` `get:510` + `neighborCount:1986` + `getNeighbor:2005` | 26.0 % of logic | — | callers are Predator's own AI, so only the accessor cost is the engine's |
+| `_processBox2dCollisionCallbacks` (`logicWorker.js:1599`) | 15.8 % of logic | contact-table campaign | already worked |
+
+**Only `gpuShadowCasters.js` is both large and unworked.** That is where the next
+hypothesis should go, not into another sweep of code the trace does not run.
+
+## Wave 2 — free wins with clean checksums
+
+**Reordered per §4.0.** The `angularSweep` entries (H-04, H-05, H-06, H-08, H-09)
+are demoted to hygiene keeps and removed from the sitting schedule. The remaining
+entries keep bit-identical checksums, so gate 1 stays decisive and cheap. **All
+`cheap` per P-4.**
 
 | ID | What | Checksum | Test |
 | --- | --- | --- | --- |
-| H-04 | `angularSweep` endDir hoist | Bit-identical | — |
-| H-03 | `Math.hypot` → `Math.sqrt` (7 sites) | Bit-identical in pixel space | — |
+| ~~H-04~~ | ~~`angularSweep` endDir hoist~~ | Bit-identical | **hygiene keep — no trace support (§4.0)** |
+| H-03 | `Math.hypot` → `Math.sqrt` | **tolerance, not bytes — see §4.0.1** | `hypotParity.test.js` — **done** |
 | H-11a | `rotation === 0` fast path in decoration spawn | Bit-identical (`cos 0 === 1`, `sin 0 === 0`) | — |
-| H-08 | Drop the redundant `%` in `normalizeAngleSigned` | Bit-identical on `(-π, π)`, ≤1 ulp outside | `normalizeAngleSignedParity.test.js` |
-| H-06 | ε-expansion for pre/post event samples | O(ε²) ≈ 1e-10 rad | — |
+| ~~H-08~~ | ~~Drop the redundant `%` in `normalizeAngleSigned`~~ | Bit-identical on `(-π, π)`, ≤1 ulp outside | **hygiene keep — no trace support (§4.0)** |
+| ~~H-06~~ | ~~ε-expansion for pre/post event samples~~ | O(ε²) ≈ 1e-10 rad | **hygiene keep — no trace support (§4.0)** |
 | H-14 | Numeric sort in `_processSpawnSoA` | Byte-identical active lists | — |
 | H-01 | O(1) keyboard buffer write | Byte-identical input buffer | `keyboardInputBuffer.test.js` |
-| H-09 | Squared-distance occluder cull | Bit-identical survivor set | — |
+| ~~H-09~~ | ~~Squared-distance occluder cull~~ | Bit-identical survivor set | **hygiene keep — no trace support (§4.0)** |
 
 **Re-read the trace before this order is final.** H-04/H-03/H-08 are near-free; if the trace shows none of their functions, they are hygiene keeps and should be shipped as such rather than given a sitting.
 

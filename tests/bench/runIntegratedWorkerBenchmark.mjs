@@ -174,6 +174,39 @@ function toPositiveInteger(value, fallback) {
   return Number.isFinite(normalized) && normalized > 0 ? Math.round(normalized) : fallback;
 }
 
+/**
+ * Same as toPositiveInteger, but a value that was actually supplied and does not
+ * parse is an error rather than a silent fallback.
+ *
+ * This exists because of a real measurement that went wrong. `npm run <script> --
+ * --scene X` had npm strip the leading `--` from each flag, so the flags arrived
+ * as positionals. `buildBenchmarkOptions` reads positionals as warmup/duration/
+ * sample-interval, so `/demos/predatorScene/predatorScene.js` was fed to
+ * toPositiveInteger as a warmup, became NaN, fell back to the default - and
+ * `cliArgs.scene` was undefined, so the run measured DEFAULT_SCENE_MODULE
+ * (ballsScene) while printing a full, plausible report for Predator. Nothing
+ * errored and the FPS was 60.
+ *
+ * The npm quoting is only how it was reached. The defect is substituting a
+ * default for an argument that was present and did not parse: that is what makes
+ * a wrong measurement indistinguishable from a right one.
+ */
+function toPositiveIntegerStrict(value, name, positionalIndex) {
+  if (value === undefined) return undefined;
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    throw new Error(
+      `benchmark: positional #${positionalIndex} ("${value}") was read as ${name} but is not a ` +
+        `positive integer.\n` +
+        '  If you meant to pass --' +
+        name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase() +
+        ', it lost its leading "--" somewhere in the shell wrapper.\n' +
+        '  Call the runner directly instead of through npm: node tests/bench/runIntegratedWorkerBenchmark.mjs <flags>',
+    );
+  }
+  return Math.round(normalized);
+}
+
 function toOptionalPositiveInteger(value) {
   const normalized = Number(value);
   return Number.isFinite(normalized) && normalized > 0 ? Math.round(normalized) : undefined;
@@ -182,14 +215,42 @@ function toOptionalPositiveInteger(value) {
 function buildBenchmarkOptions(cliArgs) {
   const positional = cliArgs._ || [];
 
+  // A positional that is present but unparseable is an error, not a default.
+  // See toPositiveIntegerStrict for the measurement this prevents.
+  const positionalWarmup =
+    positional.length > 0 && cliArgs['warmup-ms'] === undefined
+      ? toPositiveIntegerStrict(positional[0], 'warmupMs', 0)
+      : undefined;
+  const positionalDuration =
+    positional.length > 1 && cliArgs['duration-ms'] === undefined
+      ? toPositiveIntegerStrict(positional[1], 'durationMs', 1)
+      : undefined;
+  const positionalSampleInterval =
+    positional.length > 2 && cliArgs['sample-interval-ms'] === undefined
+      ? toPositiveIntegerStrict(positional[2], 'sampleIntervalMs', 2)
+      : undefined;
+
+  if (positional.length > 3) {
+    throw new Error(
+      `benchmark: unexpected extra positional argument "${positional[3]}". ` +
+        'Pass flags with --, or call the runner directly (node tests/bench/runIntegratedWorkerBenchmark.mjs).',
+    );
+  }
+
   const canvasWidth = toOptionalPositiveInteger(cliArgs['canvas-width']);
   const canvasHeight = toOptionalPositiveInteger(cliArgs['canvas-height']);
-  const warmupMs = toPositiveInteger(cliArgs['warmup-ms'] ?? positional[0], DEFAULT_WARMUP_MS);
-  const durationMs = toPositiveInteger(cliArgs['duration-ms'] ?? positional[1], DEFAULT_DURATION_MS);
-  const sampleIntervalMs = toPositiveInteger(
-    cliArgs['sample-interval-ms'] ?? positional[2],
-    DEFAULT_SAMPLE_INTERVAL_MS
-  );
+  const warmupMs =
+    cliArgs['warmup-ms'] !== undefined
+      ? toPositiveIntegerStrict(cliArgs['warmup-ms'], 'warmupMs', 0)
+      : (positionalWarmup ?? DEFAULT_WARMUP_MS);
+  const durationMs =
+    cliArgs['duration-ms'] !== undefined
+      ? toPositiveIntegerStrict(cliArgs['duration-ms'], 'durationMs', 1)
+      : (positionalDuration ?? DEFAULT_DURATION_MS);
+  const sampleIntervalMs =
+    cliArgs['sample-interval-ms'] !== undefined
+      ? toPositiveIntegerStrict(cliArgs['sample-interval-ms'], 'sampleIntervalMs', 2)
+      : (positionalSampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MS);
 
   // Benches default collectDetailedStats on; --no-collect-detailed-stats for lean A/B.
   const collectDetailedStats = !cliArgs['no-collect-detailed-stats'];
@@ -202,6 +263,10 @@ function buildBenchmarkOptions(cliArgs) {
     sampleIntervalMs,
     sceneModule: cliArgs.scene || DEFAULT_SCENE_MODULE,
     sceneExport: cliArgs['scene-export'] || DEFAULT_SCENE_EXPORT,
+    // Whether --scene was actually passed, as opposed to the resolved value
+    // happening to equal the default. Passing --scene <the default> is a
+    // deliberate choice and must not be reported as "no scene was passed".
+    sceneExplicit: Boolean(cliArgs.scene || cliArgs['scene-export']),
     debug: Boolean(cliArgs.debug),
     collectDetailedStats,
     collectGpuStats,
@@ -550,6 +615,22 @@ async function main() {
       }
     }
     console.log(`Main thread average FPS: ${result.mainThread.averageFPS.toFixed(2)}`);
+    // Name the scene that actually ran, next to the number it produced.
+    // A wrong-scene run is otherwise indistinguishable from a right one: the
+    // same 60.00 FPS, the same worker lines, exit 0.
+    const ranScene =
+      result.scene?.name || benchmarkOptions.sceneExport || '(unknown)';
+    const ranModule = benchmarkOptions.sceneModule || '(unknown)';
+    console.log(
+      `Scene measured: ${ranScene}  (${ranModule})` +
+        (benchmarkOptions.sceneExplicit
+          ? ''
+          : '  <- DEFAULTS, no --scene was passed (this is ballsScene)'),
+    );
+    console.log(
+      `Window: warmup ${benchmarkOptions.warmupMs} ms, measured ${benchmarkOptions.durationMs} ms, ` +
+        `sample ${benchmarkOptions.sampleIntervalMs} ms`,
+    );
     for (const worker of result.workers) {
       console.log(formatWorkerConsoleLine(worker));
     }
