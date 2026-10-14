@@ -134,6 +134,16 @@ function isProtocolCeilingFail(row) {
   );
 }
 
+/** A stress pair under 3 ms is FAIL. It is not a regression: the protocol forbids keep, drop, and tie. */
+function isStepFloorFail(row) {
+  const reasons = (row.decision?.reasons || []).map(String);
+  return (
+    row.decision?.verdict === 'FAIL' &&
+    reasons.length > 0 &&
+    reasons.every((r) => r.startsWith('step floor:'))
+  );
+}
+
 function productVerdict(rows, gates) {
   if (gates?.node && gates.node !== 'ok' && gates.node !== 'skipped') {
     return { fasterThanMain: false, text: `No. test:node failed (${gates.node}). Speed does not count.` };
@@ -141,33 +151,37 @@ function productVerdict(rows, gates) {
   if (gates?.lockstep && gates.lockstep !== 'ok' && gates.lockstep !== 'skipped') {
     return { fasterThanMain: false, text: `No. Lockstep failed (${gates.lockstep}). Speed does not count.` };
   }
-  const usable = rows.filter((r) => r.decision.verdict !== 'NA' && !isProtocolCeilingFail(r));
+  const notClaimed = (r) => isProtocolCeilingFail(r) || isStepFloorFail(r);
+  const usable = rows.filter((r) => r.decision.verdict !== 'NA' && !notClaimed(r));
   const fails = rows.filter(
-    (r) => (r.decision.verdict === 'FAIL' || r.decision.verdict === 'WORSE') && !isProtocolCeilingFail(r)
+    (r) => (r.decision.verdict === 'FAIL' || r.decision.verdict === 'WORSE') && !notClaimed(r)
   );
   const keeps = rows.filter((r) => r.decision.verdict === 'KEPT');
   const ceilings = rows.filter(isProtocolCeilingFail);
+  const floors = rows.filter(isStepFloorFail);
+  const aside = [
+    ceilings.length ? `${ceilings.length} row(s) are a protocol ceiling (not claimed)` : '',
+    floors.length ? `${floors.length} row(s) are under the 3 ms floor (not a regression)` : '',
+  ].filter(Boolean).join('. ');
+  const asideNote = aside ? ` ${aside}.` : '';
   if (fails.length) {
     return {
       fasterThanMain: false,
-      text: `No. ${fails.length} row(s) FAIL/WORSE. Do not claim a better WeedJS.`,
+      text: `No. ${fails.length} row(s) FAIL/WORSE. Do not claim a better WeedJS.${asideNote}`,
     };
   }
   if (!usable.length) {
-    return { fasterThanMain: false, text: 'No. No comparable rows.' };
+    return { fasterThanMain: false, text: `No. No comparable rows.${asideNote}` };
   }
-  const ceilingNote = ceilings.length
-    ? ` ${ceilings.length} row(s) are a protocol ceiling (not claimed).`
-    : '';
   if (keeps.length && !fails.length) {
     return {
       fasterThanMain: true,
-      text: `Yes, on the rows that were measured: ${keeps.map((r) => r.id).join(', ')} kept and none worse.${ceilingNote}`,
+      text: `Yes, on the rows that were measured: ${keeps.map((r) => r.id).join(', ')} kept and none worse.${asideNote}`,
     };
   }
   return {
     fasterThanMain: false,
-    text: `Tie: no row is ≥3% better and none is worse.${ceilingNote}`,
+    text: `Tie: no row is ≥3% better and none is worse.${asideNote}`,
   };
 }
 

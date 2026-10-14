@@ -164,17 +164,17 @@ export class BallsScene extends Scene {
   }
 
   spawnBalls(count) {
+    const x0 = 0.2 * this.config.worldWidth;
+    const y0 = 0.2 * this.config.worldHeight;
+    const xSpan = this.config.worldWidth * 0.6;
+    const ySpan = this.config.worldHeight * 0.6;
     for (let i = 0; i < count; i++) {
-      setTimeout(() => {
-        this.spawnEntity(Ball, {
-          x: 0.2 * this.config.worldWidth + this.rng() * this.config.worldWidth * 0.6,
-          y: 0.2 * this.config.worldHeight + this.rng() * this.config.worldHeight * 0.6,
-          vx: 0,
-          vy: 0,
-          // radius:20
-        });
-      }, i * 0.01)
-
+      this.spawnEntity(Ball, {
+        x: x0 + this.rng() * xSpan,
+        y: y0 + this.rng() * ySpan,
+        vx: 0,
+        vy: 0,
+      });
     }
   }
 

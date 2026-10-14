@@ -3081,3 +3081,28 @@ visPoly, which is where H-04, H-05, and H-06 live, came back KEPT: preRender **9
 Kernel keeps that belong to this campaign's code: swayBuckets **+27.1 %** (H-10), gpuQueuePack **+18.6 %** (H-02, a different size from the 1.32× gather measurement). Kernel WORSE whose scene did not move 3 %: ray −5.6 % with logic0 +2.1 %, rayVsBox2d −4.2 % with logic0 −2.0 %, tilemap −37.2 % with logic0 +0.3 %, decalPremultiply −4.6 %, painterRadix −4.2 %. `ray.js` was not edited in this close. Those kernel deltas stay on the board as WORSE.
 
 steadyCombat is KEPT on gameplay numbers that sit under a millisecond (particle 0.268 → 0.256 ms, spatial 0.068 → 0.066 ms, logic0 0.222 → 0.215 ms). Gameplay skips the 3 ms floor. It is not the drift line. Balls physics is.
+
+---
+
+## 2026-10-14 22:35 - The six WORSE rows, re-sat. None of them held.
+
+The full board was one long sitting. Four of the six WORSE kernels time files `git diff 5ef9775e` does not touch: `ray.js`, `tileMap.js`, `pinGpuTexture.js`, `sortIndexByKey.js`. liquidfunQuery’s physics samples overlapped (11.284–12.721 against 12.350–13.166). So the six were run again, alone:
+
+```
+pnpm bench:scoreboard --vs 5ef9775e --only ray,rayVsBox2d,liquidfunQuery,tilemap,decalPremultiply,painterRadix --skip-lockstep --skip-node
+```
+
+| row | first sitting | this sitting |
+|---|---|---|
+| ray kernel | −5.6 % | +0.4 % (1,511,214 → 1,517,427 ops/s) |
+| ray logic0 | +2.1 % | +5.6 % (4.405 → 4.652 ms), then a scene-only pair −2.1 % (4.658 → 4.561 ms), **TIE** |
+| rayVsBox2d | kernel −4.2 %, logic0 −2.0 % | kernel +1.5 %, logic0 −0.8 %, **TIE** |
+| liquidfunQuery physics | +6.3 % | −8.9 % (12.914 → 11.763 ms median), sign flipped |
+| tilemap | kernel −37.2 %, logic0 +0.3 % | kernel +2.9 %, logic0 −1.5 %, **TIE** |
+| decalPremultiply | kernel −4.6 % | kernel +6.3 % |
+| painterRadix | kernel −4.2 % | kernel −2.7 %, **TIE** |
+
+`ray.js` and `grid.js` are the same blob in this tree and in the `5ef9775e` worktree (`git hash-object` matches). With detailed stats on, both trees cast 3072 rays a frame and `RAYCAST_MS` was 4.090 → 4.036. The ray functions are not slower. The +5.6 % logic step did not survive the next pair. The B-04 `typeof window` guard was not removed: rayVsBox2d’s kernel came back inside 3 %, and the guard does not run inside the physics step that liquidfunQuery times.
+
+No source edit for those six. `productVerdict` still leaves a step-floor row as FAIL, and it no longer counts that FAIL in the “do not claim a better WeedJS” line. A sub-floor pair is not a regression.
+
