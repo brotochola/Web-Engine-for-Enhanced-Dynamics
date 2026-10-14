@@ -86,6 +86,14 @@ export const PROBES = {
     why: 'sway runs per swaying decoration; without a live population the pool-bounded cost is not what is being measured',
   },
 
+  'H-19': {
+    id: 'H-19',
+    worker: 'preRender',
+    key: 'RENDER_QUEUE_SIZE',
+    floor: 0.5,
+    why: 'collectVisibleEntities fills the render queue; if the queue is short of the population, the collect loop is not what is being timed',
+  },
+
   'H-13': {
     id: 'H-13',
     worker: 'renderer',

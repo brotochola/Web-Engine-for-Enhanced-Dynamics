@@ -2669,3 +2669,104 @@ become a check, not a comment.
 ### Suite
 
 943/943.
+
+---
+
+## 2026-10-14 18:40 - H-19 CLOSED: KEPT (product). Loop win is -6.7 %, headline -12.6 %, and the difference is not ours.
+
+### The sitting
+
+    node tests/bench/runPredatorAbab.mjs --name H19-collect-hoist --owner preRender --hyp H-19 \
+      --scene .../spritePackStressScene.js --query "sprites=65535&spacing=6" \
+      --canvas-width 3840 --canvas-height 2160 --pairs 4 \
+      --override src/workers/preRenderWorker.js=tests/results/hyp-baselines/H19.preRenderWorker.unhoisted.js
+
+    probe ok: H-19: RENDER_QUEUE_SIZE = 45568 of 65535 requested
+    H19-collect-hoist: KEPT (product)
+
+    preRender pairedDeltaPct -12.59%   worseFraction 0.25 (1/4)
+    baseMedian 8.236   hypMedian 6.696   cv 9.0% / 13.3%
+    per-pair deltas: -19.2%  -5.9%  -21.1%  +4.3%
+    interpretable: true (8.236 ms is above the 3 ms floor)
+
+This is the first sitting this audit that the scene decided outright, with no
+kernel involved - the vehicle was deep enough to be judged.
+
+### F-10: the gate was disabling its own probe keys
+
+The FIRST attempt refused with `RENDER_QUEUE_SIZE is 0`. The probe was right to
+refuse and the scene was not at fault:
+
+    // preRenderWorker.js:3452
+    if (!this.collectDetailedStats) return;
+    this.stats[...RENDER_QUEUE_SIZE] = ...
+    this.stats[...COLLECT_MS] = ...
+
+The gate passed `--no-collect-detailed-stats` unconditionally, so it suppressed
+every key the preRender probes read, including the sub-timers that are the depth
+evidence. A direct run of the identical configuration reported `QUEUE 45568` and
+`COLLECT_MS 3.723` against the sitting's `STEP_MS 6.375` - the work was happening,
+the reporting was not.
+
+H-10 escaped this by luck: `ACTIVE_DECORATIONS` is published ABOVE that gate in
+particleWorker. One worker's layout, not a rule.
+
+Fixed: `--hyp` implies detailed stats, and every run prints which mode it used -
+otherwise a reader cannot tell "the work did not happen" from "reporting was off".
+
+Also added `--canvas-width` / `--canvas-height` to the gate, forwarded through the
+`extraArgs` passthrough `runIntegratedOnce` already had. `tests/bench/measureLib.mjs`
+was not touched (it carries the Spanish translation work).
+
+### The honest number: -6.7 %, not -12.6 %
+
+`STEP_MS` is the right primary but it is not the loop H-19 changed. Reading the
+sub-timers per pair (A = hoist reverted, B = hoist applied):
+
+| pair | COLLECT_MS A -> B | EMIT_MS A -> B |
+|---|---|---|
+| 0 | 4.107 -> 3.819 (-7.0%) | 2.683 -> 1.400 |
+| 1 | 4.091 -> 3.770 (-7.8%) | 1.336 -> 1.343 |
+| 2 | 3.794 -> 3.715 (-2.1%) | 2.624 -> 1.378 |
+| 3 | 3.802 -> 4.282 (**+12.6%**) | 2.605 -> 2.366 |
+
+**EMIT_MS is bimodal**: ~1.35 or ~2.65, a 1.25 ms swing depending on whether the
+pose-only persistence shortcut fires. A took the slow branch three times, B three
+times out of four - which is what a fair coin does at n=4 (p = 0.25). The median
+EMIT delta is **-46.6 %**, and none of it is ours.
+
+So roughly half the headline is an unrelated term that happened to split 3/1.
+
+And pair 3 - the only pair where COLLECT_MS went the wrong way - is the only pair
+where B never took the emit shortcut. The two are the same run conditions, so that
+pair is confounded rather than contradicting.
+
+**The cleanest single comparison is pair 1**, where both sides took the shortcut:
+`COLLECT_MS 4.091 -> 3.770`, **-7.8%**.
+
+### Verdict
+
+| | |
+|---|---|
+| Gate verdict | `KEPT (product)`, preRender -12.59%, 3/4 pairs |
+| **The loop H-19 changed** | **`COLLECT_MS` -6.7% median, 3/4 pairs, -7.8% on the unconfounded pair** |
+| Correctness | 943/943; hoist is a pure read-hoist, no arithmetic touched |
+| Disposition | **KEPT** |
+
+Quote -6.7 % for the change, not -12.6 % for the worker. The gate's verdict is
+correct and its primary is the protocol's; it simply is not the loop.
+
+### Methodological finding
+
+**A composite primary can be inflated by an unrelated bimodal sub-term.** The gate
+compares `<owner>_STEP_MS`, which sums collect + emit + sort + pack. When one term
+is bimodal and the hypothesis touches another, the verdict is a mixture and the
+mixture is not attributable.
+
+What would fix it properly: when a hypothesis names a sub-timer, compare that
+sub-timer, and say so in the summary. `readSubTimers.mjs` does this by hand today
+because the gate does not.
+
+### Suite
+
+943/943.

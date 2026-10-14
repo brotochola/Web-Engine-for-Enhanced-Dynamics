@@ -272,16 +272,57 @@ async function main() {
   const nPairs = Number(args.pairs ?? 4);
   const opts = {
     headed: true,
-    detailedStats: false,
+    // Detailed stats are required whenever a hypothesis probe is in play.
+    //
+    // `preRenderWorker.reportFPS` ends with `if (!this.collectDetailedStats) return;`
+    // before publishing RENDER_QUEUE_SIZE, COLLECT_MS, EMIT_MS and SPRITE_PACK_MS.
+    // The gate used to pass `--no-collect-detailed-stats` unconditionally, which
+    // made every preRender-keyed probe read a permanent zero and made the whole
+    // depth breakdown disappear.
+    //
+    // The H-19 sitting refused with `RENDER_QUEUE_SIZE is 0` on a run whose own
+    // `preRender: STEP_MS 6.375` matched a direct run of the same configuration
+    // (6.863). The work was happening; the reporting was not. That is the harness
+    // defeating its own check - and it would have produced a confident verdict
+    // about an empty queue.
+    //
+    // H-10 escaped this only by luck: ACTIVE_DECORATIONS is published ABOVE the
+    // gate in particleWorker, so it survived. One worker's layout, not a rule.
+    detailedStats: Boolean(args.hyp),
     warmupMs: Number(args['warmup-ms'] ?? DEFAULT_WARMUP_MS),
     durationMs: Number(args['duration-ms'] ?? DEFAULT_DURATION_MS),
     query: typeof args.query === 'string' ? args.query : '',
+    // Canvas size, forwarded as extra args rather than as new options.
+    //
+    // `runIntegratedOnce` already accepts `extraArgs` and forwards them verbatim,
+    // and `tests/bench/measureLib.mjs` is off-limits (it carries the Spanish
+    // translation work), so the capability is added where it costs nothing
+    // instead of in the shared library.
+    //
+    // This is not a convenience. The H-19 sitting ran at the 1920x1080 default
+    // and the scene queued NOTHING - `RENDER_QUEUE_SIZE 0`, every sub-timer 0.000 -
+    // while `preRender STEP_MS` still read 6.4-8.1 ms. At 3840x2160 the same
+    // configuration queues 45 568. Without this flag the gate can only ever sit
+    // against vehicles that happen to work at the default size, and a scene that
+    // silently measures an empty queue is exactly what the probe is there to catch.
+    extraArgs: [
+      ...(args['canvas-width'] ? ['--canvas-width', String(Number(args['canvas-width']))] : []),
+      ...(args['canvas-height'] ? ['--canvas-height', String(Number(args['canvas-height']))] : []),
+    ],
   };
   const scene = resolveScene(args);
 if (scene.explicit) {
   console.log(
     `scene: ${scene.exportName} (${scene.path}) - kind ${scene.kind}, so the 3 ms sample ` +
       'floor and the 8 ms campaign floor both apply to any STEP_MS verdict',
+  );
+  // Say so on every run. A reader of the transcript cannot otherwise tell whether
+  // a zero sub-timer means "the work did not happen" or "detailed stats were off".
+  console.log(
+    `detailed stats: ${opts.detailedStats ? 'ON' : 'off'}` +
+      (opts.detailedStats
+        ? ' (required by --hyp: preRender gates RENDER_QUEUE_SIZE and the sub-timers behind it)'
+        : ' (no --hyp, so no probe depends on them)'),
   );
 }
 const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
