@@ -375,9 +375,24 @@ export class DecorationPool extends SharedAtomicPool {
     scaleY[i] = randomRange(config.scaleY, 1);
 
     {
+      // H-11a. `config.rotation` is undefined for the overwhelming majority of
+      // spawns, so `a` is 0 and both transcendentals are spent producing values
+      // that are already exact constants.
+      //
+      // The guard is `Object.is(a, 0)` and NOT `a === 0` or `a !== 0`, because
+      // this was wrong the first time it was written. `-0 !== 0` is false, so an
+      // `a !== 0` guard sends -0 down the FAST path and returns +0 where
+      // `Math.sin(-0)` is -0. `Object.is` is true for +0 only, so -0 falls
+      // through to the transcendentals and keeps its sign.
+      //
+      // That sign is not observable in rotation composition (+0 and -0 compare
+      // and multiply identically there), but the claim being made here is
+      // BIT-IDENTICAL, and that claim has to survive -0 or it has to be
+      // withdrawn. `rotationParity.test.js` pins the whole domain.
       const a = config.rotation ?? 0;
-      const c = Math.cos(a);
-      const s = Math.sin(a);
+      const isPlusZero = Object.is(a, 0);
+      const c = isPlusZero ? 1 : Math.cos(a);
+      const s = isPlusZero ? 0 : Math.sin(a);
       baseRotC[i] = c;
       baseRotS[i] = s;
       rotC[i] = c;

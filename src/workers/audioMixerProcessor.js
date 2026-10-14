@@ -87,6 +87,11 @@ class MixerProcessor extends AudioWorkletProcessor {
       var ch = asset.ch;
       var len = asset.len;
       var nCh = asset.nCh;
+      // H-12b. The channel arrays do not change during the block. The sample
+      // locals below are per iteration, because idx moves. Same bytes as the
+      // inline ch[0][idx] loads.
+      var ch0 = ch[0];
+      var ch1 = nCh > 1 ? ch[1] : null;
 
       // Normalise once per block, not once per sample. `!(cursor >= 0)` also
       // catches NaN, so a poisoned cursor self-heals on the next block instead
@@ -125,10 +130,17 @@ class MixerProcessor extends AudioWorkletProcessor {
         var frac = cursor - idx;
         var ni = idx + 1 < len ? idx + 1 : loop ? 0 : idx;
 
-        var sL = ch[0][idx] + (ch[0][ni] - ch[0][idx]) * frac;
+        var s0 = ch0[idx];
+        var sN = ch0[ni];
+        var sL = s0 + (sN - s0) * frac;
         L[i] += sL * gL;
         if (R) {
-          var sR = nCh > 1 ? ch[1][idx] + (ch[1][ni] - ch[1][idx]) * frac : sL;
+          var sR = sL;
+          if (ch1) {
+            var r0 = ch1[idx];
+            var rN = ch1[ni];
+            sR = r0 + (rN - r0) * frac;
+          }
           R[i] += sR * gR;
         }
         cursor += pitch;

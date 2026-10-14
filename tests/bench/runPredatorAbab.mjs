@@ -125,6 +125,31 @@ const LOAD_KEYS = [
   // contract. Probing the upstream key would break the day they diverge.
   'RENDER_QUEUE_SIZE',
 ];
+
+/**
+ * Per-worker sub-timers, extracted as `<kind>_<KEY>`.
+ *
+ * These are what a hypothesis's `metric` is resolved against. STEP_MS sums
+ * collect + emit + sort + pack, and EMIT_MS is bimodal (a full emit or a
+ * pose-only persistence shortcut, ~1.3 ms apart on an 8 ms base). At 4 pairs a
+ * single unrelated bimodal term can decide a verdict on its own - which is how
+ * H-02 came back REGRESSION while the sub-timer holding its change had moved
+ * +3.3 % in 2 of 4 pairs.
+ */
+const SUB_TIMERS = [
+  'COLLECT_MS',
+  'EMIT_MS',
+  'SPRITE_PACK_MS',
+  'SORT_MS',
+  'SHADOW_Q_MS',
+  'CUSTOM_LAYER_MS',
+  'VISIBILITY_MS',
+  'SPRITES_MS',
+  'QUEUE_MS',
+  'PRESENT_MS',
+  'LIGHTS_MS',
+  'SHADOWS_MS',
+];
 // Predator emits ~100 particles: Poisson noise alone is ~10 %. Below this
 // baseline the key is reported, not gated (it is not any worker's load).
 const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000 };
@@ -158,6 +183,16 @@ export function predatorMetrics(report) {
     }
   }
   for (const lk of LOAD_KEYS) if (lk in published) out[lk] = published[lk];
+
+  // Sub-timers, namespaced by worker kind so two workers can publish the same
+  // one without colliding (`preRender_EMIT_MS` is not `renderer_EMIT_MS`).
+  for (const w of report.workers || []) {
+    const avg = w.statsSamplesAverage || {};
+    const kind = w.type === 'pixi' ? 'renderer' : w.type;
+    for (const t of SUB_TIMERS) {
+      if (t in avg) out[`${kind}_${t}`] = avg[t];
+    }
+  }
   return out;
 }
 
@@ -172,7 +207,7 @@ function parseOverrides(raw) {
   return out;
 }
 
-export function decideAbab(pairs, owner) {
+export function decideAbab(pairs, owner, metric = null) {
   const kinds = {};
   for (const kind of KINDS) {
     const key = `${kind}_STEP_MS`;
@@ -234,12 +269,9 @@ export function decideAbab(pairs, owner) {
     // `spatial` at -21.0 % on a 0.238 ms base read as a candidate win, and 21 %
     // of 0.238 ms is 0.05 ms of work in a 16.7 ms frame - noise with a sign.
     if (!k.interpretable) {
-      if (k.pairedDeltaPct !== 0) {
-        belowFloor.push(
-          `${kind} ${k.pairedDeltaPct.toFixed(1)}% on a ${k.baseMedian.toFixed(3)} ms base ` +
-            `(${k.belowFloorPct}% of the ${STEP_MS_FLOOR} ms floor) - reported, not judged`,
-        );
-      }
+      belowFloor.push(
+        `${kind} ${k.baseMedian.toFixed(3)} ms base, below the ${STEP_MS_FLOOR} ms floor - reported, not judged`,
+      );
       continue;
     }
     if (!(k.pairedDeltaPct >= 3)) continue;
@@ -261,7 +293,40 @@ export function decideAbab(pairs, owner) {
   else if (ownerJudged && o.pairedDeltaPct <= -3 && 1 - o.worseFraction >= CONSISTENT) {
     verdict = 'KEPT (product)';
   }
-  return { verdict, owner, ownerJudged: Boolean(ownerJudged), kinds, load, reasons, regress, noisy, belowFloor };
+
+  // The attributed verdict, on the sub-timer the change actually lives in.
+  //
+  // Reported alongside, never instead of: STEP_MS stays the protocol's primary
+  // and the only thing that can say REGRESSION. This answers a different
+  // question - "did the loop I touched move?" - and the two disagreeing is
+  // itself the finding, as H-02's did.
+  let attributed = null;
+  if (metric && owner) {
+    const mk = `${owner}_${metric}`;
+    const a = pairs.map((p) => p.A[mk]).filter(Number.isFinite);
+    const b = pairs.map((p) => p.B[mk]).filter(Number.isFinite);
+    if (a.length && b.length) {
+      const paired = pairs
+        .map((p) => pctDelta(p.B[mk], p.A[mk]))
+        .filter(Number.isFinite);
+      const base = median(a);
+      attributed = {
+        key: mk,
+        baseMedian: base,
+        hypMedian: median(b),
+        pairedDeltaPct: median(paired),
+        worseFraction: paired.length
+          ? paired.filter((d) => d > 0).length / paired.length
+          : 0,
+        cvBase: cv(a),
+        cvHyp: cv(b),
+        interpretable: base >= STEP_MS_FLOOR,
+        belowFloorPct: base >= STEP_MS_FLOOR ? null : ((base / STEP_MS_FLOOR) * 100).toFixed(1),
+      };
+    }
+  }
+
+  return { verdict, owner, ownerJudged, metric, attributed, kinds, load, reasons, regress, noisy, belowFloor };
 }
 
 async function main() {
@@ -330,7 +395,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   const summaryPath = path.join(outDir, 'summary.json');
   if (args['decide-only']) {
     const prev = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
-    prev.decision = decideAbab(prev.pairs, owner ?? prev.owner);
+    prev.decision = decideAbab(prev.pairs, owner ?? prev.owner, prev.probe?.metric ?? null);
     writeJson(summaryPath, prev);
     printDecision(name, prev.decision);
     return;
@@ -404,7 +469,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     }
   }
 
-  const decision = decideAbab(pairs, owner);
+  const decision = decideAbab(pairs, owner, probeVerdict?.metric ?? null);
   const summary = {
     name,
     owner,
@@ -433,6 +498,15 @@ function printDecision(name, decision) {
     return;
   }
   for (const [kind, k] of Object.entries(decision.kinds)) {
+    // A percentage on a base under the 3 ms floor is the H-14 spatial "-21%":
+    // the milliseconds are real, the percent is not a result. Print the times
+    // and withhold the percent.
+    if (!k.interpretable) {
+      console.log(
+        `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  below the ${STEP_MS_FLOOR} ms floor, not judged`,
+      );
+      continue;
+    }
     console.log(
       `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%`
     );
@@ -441,6 +515,27 @@ function printDecision(name, decision) {
     console.log(`${key.padEnd(18)} ${l.base.toFixed(1)} → ${l.hyp.toFixed(1)} (${l.deltaPct == null ? 'n/a' : l.deltaPct.toFixed(1) + '%'})${l.gated ? '' : ' (reported, not gated)'}`);
   }
   for (const r of [...decision.reasons, ...decision.regress, ...decision.noisy]) console.log(`- ${r}`);
+  if (decision.attributed) {
+    const at = decision.attributed;
+    const nPairs = Object.values(decision.kinds)[0]?.deltas?.length ?? 0;
+    if (!at.interpretable) {
+      console.log(
+        `\n  attributed to ${at.key} (the sub-timer the change lives in):\n` +
+          `    ${at.baseMedian.toFixed(3)} → ${at.hypMedian.toFixed(3)} ms  ` +
+          `below the ${STEP_MS_FLOOR} ms floor, not judged`,
+      );
+    } else {
+      console.log(
+        `\n  attributed to ${at.key} (the sub-timer the change lives in):\n` +
+          `    ${at.baseMedian.toFixed(3)} → ${at.hypMedian.toFixed(3)} ms  ` +
+          `paired ${at.pairedDeltaPct >= 0 ? '+' : ''}${at.pairedDeltaPct.toFixed(1)}%  ` +
+          `worse ${Math.round(at.worseFraction * nPairs)}/${nPairs}  ` +
+          `cv ${(at.cvBase * 100).toFixed(0)}/${(at.cvHyp * 100).toFixed(0)}%`,
+      );
+    }
+  } else if (decision.metric) {
+    console.log(`\n  attributed metric ${decision.metric}: not present in the pairs`);
+  }
 }
 
 if (isCli(import.meta.url)) await main();

@@ -2770,3 +2770,314 @@ because the gate does not.
 ### Suite
 
 943/943.
+
+---
+
+## 2026-10-14 19:25 - H-02 RE-SAT: NEUTRAL at 4 pairs, NEUTRAL at 6. The GC justification is dead. Keep on CPU.
+
+### The re-sitting, and why the first one was wrong
+
+The change: `gatherInstancedRows` copies each row with an explicit loop instead of
+`dst.set(src.subarray(from, from + spriteN), to)`. One subarray view allocated per
+row, 45 568 per frame at the deep setting.
+
+Kernel (`gatherInstancedRowsMicrobench.mjs`, small working set):
+**4.136 -> 12.149 ops/s, 2.94x**.
+
+Scene, 4 pairs:
+
+    H02-gather-copy: REGRESSION
+    preRender pairedDeltaPct +5.65%   worseFraction 1.00 (4/4 worse)
+
+**That verdict was noise, and the sub-timers said so:**
+
+| | A subarray | B looped | |
+|---|---|---|---|
+| SPRITE_PACK_MS (the change) | 1.384 | 1.430 | +3.3 %, 2/4 - noise |
+| COLLECT_MS (untouched) | 3.732 | 3.873 | +3.8 % - noise |
+| EMIT_MS (untouched) | fast 1/4 | slow **4/4** | the whole regression |
+
+A 4/0 split on the bimodal term is p = 0.125. The gate had decided a verdict on a
+coin flip of an unrelated sub-timer.
+
+Scene, 6 pairs:
+
+    H02-gather-copy: NEUTRAL
+    preRender 7.225 -> 7.409 ms  paired -4.8%  worse 3/6  cv 8/13%
+    attributed to preRender_SPRITE_PACK_MS:
+      1.480 -> 1.416 ms  paired -5.8%  worse 1/6  cv 7/6%   [below the 3 ms floor]
+
+The sign **flipped** between 4 and 6 pairs. That is the whole argument for more
+pairs on a vehicle with a bimodal neighbour.
+
+### F-11: STEP_MS is not a usable primary on this vehicle
+
+`preRender STEP_MS` sums collect + emit + sort + pack, and `EMIT_MS` alternates
+between a full emit and a pose-only persistence shortcut - ~1.3 ms apart on an
+8 ms base, about 16 %. At 4 pairs a single unrelated bimodal term can decide the
+verdict alone. It has now done so twice:
+
+- **H-19**: verdict -12.59 %, the loop itself -6.7 %. Half the headline was EMIT.
+- **H-02**: verdict +5.65 % REGRESSION, the loop itself +3.3 % in 2/4.
+
+Fixed in the gate, not just noted:
+- Probes may declare a `metric` - the sub-timer the change lives in.
+  `H-02 -> SPRITE_PACK_MS`, `H-19 -> COLLECT_MS`.
+- The gate extracts sub-timers namespaced per worker (`preRender_EMIT_MS`).
+- `decideAbab` reports an **attributed** verdict alongside the primary.
+
+Attribution is reported **alongside, never instead of**. `STEP_MS` stays the
+protocol's primary and the only thing that may declare REGRESSION; the attributed
+number answers the narrower question "did the loop I touched move?". Suppressing
+the primary because a sub-timer disagrees would trade one kind of dishonesty for
+another. When they disagree, the disagreement is the finding - which is exactly
+what H-02's did.
+
+### The GC justification is FALSIFIED
+
+The remaining argument for keeping the change was allocation pressure - 45 568
+views per frame - since GC time is invisible to `STEP_MS` (it lands between
+frames, off-thread). Measured directly with a `PerformanceObserver` counting GC
+events, 45 568 rows x 40 rounds, interleaved A/B:
+
+    A subarray  GC events 0    gather 6944 us   6.56 M rows/s
+    B looped    GC events 0    gather 5292 us   8.61 M rows/s
+
+**Zero GC events for either variant.** The subarray view does not survive the
+`set` call, so V8 allocates and collects it in place - it was never GC pressure,
+it was a young-gen object the escape analysis handles for free.
+
+That was my hypothesis for why the change might still be worth keeping after the
+scene came back neutral. It is wrong, and it is recorded as wrong rather than left
+as a plausible-sounding justification.
+
+### The kernel's 2.94x was inflated by a small working set
+
+Same kernel at the real depth, 45 568 rows:
+
+| working set | subarray | looped | speedup |
+|---|---|---|---|
+| microbench (small) | 4.136 ops/s | 12.149 | **2.94x** |
+| 45 568 rows (real) | 6.6 M rows/s | 8.8 M | **1.32x** |
+
+At the small working set the allocation dominates and removing it is worth 2.94x.
+At the real one the gather is memory-bound, the allocation is noise, and what
+remains is the difference between `set`'s bulk copy and a scalar loop - worth
+1.32x.
+
+**A kernel measured at a size the scene never reaches overstates by 2.2x here.**
+That is a sharper statement of the kernel-to-scene base rate than "kernels lie":
+the kernel answers a question about a configuration that does not exist.
+
+### Disposition: KEEP
+
+| evidence | value |
+|---|---|
+| Kernel at real scale | **1.32x** |
+| Kernel at microbench scale | 2.94x (not representative) |
+| GC pressure | **no difference - falsified** |
+| Scene SPRITE_PACK_MS | -5.8 %, 3/6 pairs, **below the 3 ms floor** |
+| Scene preRender STEP_MS | -4.8 %, 3/6 - NEUTRAL |
+| Output | **bit-identical**, 7 parity tests |
+
+Kept because it is 1.32x faster at the real depth, provably output-identical,
+costs no memory, and is neutral-to-favourable in the scene. **Not** kept on the GC
+argument, which is dead, and **not** claimed at 2.94x, which is a small-working-set
+artefact.
+
+The scene still cannot judge it: `SPRITE_PACK_MS` at 1.48 ms is below the 3 ms
+floor, and at the 65535-entity ceiling there is no configuration that clears it.
+So the kernel decides, at its realistic size.
+
+### Suite
+
+950/950 (+7 `gatherInstancedRowsParity`).
+
+---
+
+## 2026-10-14 20:10 - H-11a SHIPPED: zero-rotation fast path in the decoration spawn path
+
+### The change
+
+`src/core/decorationPool.js:377` ran two transcendentals on **every decoration
+spawn**:
+
+    const a = config.rotation ?? 0;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+
+`config.rotation` is undefined for the overwhelming majority of spawns, so `a` is
+0 and both calls produce constants that are already exact.
+
+### The bug I shipped first, and the test that caught it
+
+The first version guarded with `a !== 0`, and the comment claimed that this sent
+`-0` down the slow path. **That is backwards**: `-0 !== 0` is `false`, so `-0`
+took the FAST path and returned `+0` where `Math.sin(-0)` is `-0`.
+
+`rotationParity.test.js` failed on it immediately (`sin(-0): 0 vs 0` - two values
+that print identically and are not the same). The shipped guard is now
+`Object.is(a, 0)`, which is true for **+0 only**, so `-0` falls through to the
+transcendentals and keeps its sign.
+
+Two of the three obvious guards are wrong, which is worth stating because all
+three read as correct:
+
+| guard | +0 | -0 |
+|---|---|---|
+| `a === 0` | fast | **fast - wrong** |
+| `a !== 0` | slow | **fast - wrong** |
+| `Object.is(a, 0)` | fast | slow - correct |
+
+Is `-0` observable? Not in rotation composition: `+0` and `-0` compare and
+multiply identically there. So the original version would almost certainly have
+been harmless in practice. But the claim being made was **bit-identical**, and a
+claim that survives only because the consequence is invisible is not a claim. It
+is either achieved or withdrawn; here it is achieved.
+
+### Kernel
+
+200 000 spawns per sample, 3 ms floor, interleaved A/B, median of 3 reps:
+
+| rotation mix | reference | fast | delta |
+|---|---|---|---|
+| all undefined (**the real case**) | 14.203 ns | 10.786 ns | **-24.1 %** |
+| 95 % undefined | 24.338 ns | 20.379 ns | **-16.3 %** |
+| 50 % undefined | 42.922 ns | 43.015 ns | +0.2 % |
+| **none zero (falsifier row)** | 51.088 ns | 54.517 ns | **+6.7 %** |
+
+The falsifier row is reported because the plan wrote one: *"spawn kernel under
+3 %, or the floor."* With nothing to fast-path the change **costs ~3.4 ns per
+spawn** (the `Object.is` plus two branches) and that is stated rather than hidden.
+It is a good trade because the common case saves the same ~3.4 ns on every spawn
+and the cost is only paid by spawns that explicitly set a rotation.
+
+### The harness was wrong twice before the numbers were
+
+The first run reported the all-zero case **6.6 % SLOWER** - the one case where the
+fast path must help most - with **cv 73.8 %**. Two causes, both mine:
+
+1. Warmup was a single call, so the first row was measured pre-JIT-steady-state.
+2. A and B were measured fully sequentially, letting machine drift land entirely
+   on one side.
+
+Fixed with a fixed-duration warmup (120 ms of work, not N calls) and interleaved
+A/B. A result that contradicts its own premise is a harness bug, and **the tell
+was the cv, not the percentage**. This is the third timing-harness defect today
+(after the `timeIt` inflation in the sway kernel and the pair-count bug in the
+attribution printer) - enough that the pattern is worth naming: every one was a
+harness that looked plausible and reported a sign its own logic contradicted.
+
+### Not claimed
+
+This prices the rotation block alone. In the real spawn routine it sits among
+scale, anchor, tint, sway-bucket and array writes, so -24 % here is not -24 % of
+the spawn path, and no scene sitting is claimed. Per the plan's ordering, (a)
+ships and (b) - the general `fastSin`/`fastCos` drop-in - is not started; it
+touches 34 files and would move every kernel that times a rotation.
+
+### Suite
+
+958/958 (+8 `rotationParity`).
+
+---
+
+## 2026-10-14 21:00 - Campaign close. Hygiene shipped, H-13 and H-15 not shipped.
+
+The uncommitted H-02 gather copy, the H-11a `Object.is` guard, and the sub-timer attribution in the gate were already judged. They stayed. `pnpm test:node` at the start of this close was 958/958, and after the hygiene tests it was 964/964. Nothing in this entry re-sits H-02, H-10, H-11a, or H-19.
+
+### Visibility polygon, no scene
+
+The Predator trace names none of these functions, so none of them got a sitting. The polygon gate was stated before the edit: a three-circle fixture snapped from the old sweep must stay within **1e-4 world units**. That is above the drift of an O(ε²) expansion and of angle addition over at most four steps, and below anything the polygon is used for.
+
+- **H-04** hoists `cos`/`sin` of `Math.PI - EPSILON` to module constants. Bit-identical.
+- **H-06** replaces the four per-event transcendentals with one `(cos, sin)` pair and the first-order expansion in `EPSILON`.
+- **H-05** replaces the per-step `cos`/`sin` in `emitArcVertices` with angle addition. The loop emits at most four midpoints.
+- **H-08** drops the `%` in `normalizeAngleSigned`. One adjustment is not enough at exactly −3π: the old remainder lands on −π and the branch wraps it to +π, so the replacement applies the branch at most twice. `normalizeAngleSignedParity.test.js`: bit-identical on (−π, π), at most 1 ulp across 1 000 000 steps of [−3π, 3π].
+
+The fixture test passed. All four shipped.
+
+**H-09 did not ship.** Comparing squared distances before the occluder `sqrt` is the same extra branch on a hot line that lost 4/4 on 2026-10-06. There is no visibility-polygon vehicle in Predator, so a loss could not be seen. Leaving the `sqrt` where it is is the close.
+
+### H-12b, H-01, B-11
+
+**H-12b.** `audioMixerProcessor.js` hoists `ch[0]` and `ch[1]` out of the per-sample loop and caches the two interpolated samples in locals. The new test mixes mono and stereo against the inline formula and compares sample for sample. Pan and volume are read back from the slot's Float32 view, because 0.8 is not a float32 and a reference that keeps the float64 disagrees by an ulp that is not the hoist. H-12a and H-12c stay blocked: there is still no overrun metric.
+
+**H-01.** `flattenKeyMap` is the constructor step that pairs names with slots in one `Object.entries` pass. The keyboard test calls it. `new Scene` still needs a renderer, so the constructor itself is not constructed in Node. The pairing assertion is `keyMap[names[i]] === indices[i]` for every key, which is the bug the two-pass cache had.
+
+**B-11.** `bindPoseSlotBuffers` sizes each pose SAB from its own byte length. Production allocates both at `poseN * 16`, so equal buffers are unchanged. A new case gives the first buffer 2 slots and the second 8, publishes a rotation at index 4, and asserts `bumpBodyGeneration(4)` clears it. A `return` on the short view fails that case. The equal-capacity case is still there.
+
+### H-13 — under the floor, no counter
+
+`updateDecalTiles` counts dirty tiles with a linear `Atomics.load` scan, then returns immediately when the count is 0. That scan is the early-out, not only the debug stat. Gating it on `collectDetailedStats` would delete the early-out.
+
+`tests/bench/decalTileSweepMicrobench.mjs`, scripted pattern (every 10th tile), checksum is that count, `timeIt` held to the 3 ms sample floor:
+
+| tiles | ms per sweep |
+|---|---|
+| 1 000 | 0.0087 |
+| 16 000 | 0.143 |
+| 64 000 | 0.569 |
+
+The deepest row is about a fifth of the floor. **No SAB counter.** A counter would be a layout change for a loop the protocol cannot judge.
+
+### H-15 — the baselines do not show the sort
+
+One headless run each, live `/src`, detailed stats off, warmup 10 s, measure 10 s.
+
+`RayStressScene` (`tests/results/h15-ray-baseline.json`):
+
+    logic0 STEP_MS 4.906    BODY_COUNT 2000
+    physics 0.192   spatial 0.388   preRender 0.623   renderer 0.203   particle 0.053
+
+The driver calls `Ray.castAll(..., maxHits = 4)` next to line-of-sight, linecast, and `cast`. logic0 is above the 3 ms floor. The sort of at most four hit objects is not a number in that report, and 4.906 ms is the whole tick.
+
+`RayVsBox2dBoxBusyScene` (`tests/results/h15-box2d-ray-baseline.json`):
+
+    logic0 STEP_MS 16.500   BODY_COUNT 2800
+    physics 4.731          Moved 81   Awake 80
+
+That worker is hot, and it is the wrong function. The catalog row is Box2D `castRayClosest`. It does not run the comparator at `ray.js:720`.
+
+**The sort was not rewritten and `rayMicrobench` was not run for this question.** A kernel win on a sort of four objects would be H-14 again: real in isolation, invisible in the scene that actually calls it.
+
+### H-16
+
+`Grid.getEntitiesInRadius` still returns `Grid._queryResultBox` pointing at the shared `Grid._queryResults` buffer, and it clears `Grid._processedSet` before the walk. Two consecutive calls alias, and a re-entrant call sees an empty set. The function's own comment says it is called infrequently. Callers are the physics debug renderer and the tool manager. Recorded here. Not rewritten. No Predator run.
+
+### The idle-worker percentage
+
+`decideAbab` already refused to *judge* a worker under the 3 ms floor. It still *printed* the percentage, which is how H-14's spatial line of −21 % on a 0.238 ms base looked like a result. The printer now writes the two medians and the words "below the 3 ms floor, not judged", for the worker table and for an attributed sub-timer under the floor. The `belowFloor` reason string no longer contains a percent. H-14 was not re-run.
+
+### What this close does not do
+
+`gpuShadowCasters.js` is still the largest unworked trace entry. It is not a hypothesis in this plan. B-03's per-tile generation counters, B-06's double buffer, and F-01's ring-drain signatures stay deferred.
+
+The scoreboard against `5ef9775e` is the last measurement. Its drift line is the entry after this one.
+
+---
+
+## 2026-10-14 21:45 - Scoreboard vs 5ef9775e. The tree is not claimed faster.
+
+`pnpm bench:scoreboard --vs 5ef9775e` died in the lockstep gate:
+
+    spawn timeout: 3004 need 9004
+    spawn timeout: 2404 need 9004   (second run, this tree, balls alone)
+
+The same command from the worktree whose `src/` is `5ef9775e` died the same way, at 2104 of 9004. Balls schedules 9000 `setTimeout`s. Headless Chromium does not get them all out inside the 120 s wait, on the code this campaign started from and on the code it ends with. That failure is not a regression in the hygiene above.
+
+The catalog was then run with `--skip-lockstep`. test:node was 964/964 inside that run. Detailed stats off. 38 rows. Report: `tests/results/scoreboard/report.md`.
+
+**Do not claim a faster engine.** The product line is "No. 9 row(s) FAIL/WORSE." Protocol-ceiling rows are not in those nine. The nine are ray, rayVsBox2d, liquidfunQuery, tilemap, decalPremultiply, painterRadix (WORSE), and spatial, queryAabb, meshFillMoving (FAIL on the 3 ms stress floor, which the rule says is not a keep and not a drop).
+
+### Drift, worker by worker, on rows whose primary is a real step
+
+Balls is the box2d row. Physics is the primary and it is above the floor: **8.209 → 8.127 ms (−1.0 %), TIE**, `BODY_COUNT` matched. logic0 on that row is 0.314 → 0.330 ms. That base is under 3 ms, so the +5.1 % is the idle-worker percentage this close stopped printing, and it is not a judged regression.
+
+liquidfunQuery is the row that actually got worse above the floor: physics **12.003 → 12.758 ms (+6.3 %)**, load OK. Nothing in the hygiene of this close touches that query. It is the whole tree since `5ef9775e`, and it is why the board is not green.
+
+visPoly, which is where H-04, H-05, and H-06 live, came back KEPT: preRender **9.035 → 7.396 ms (−18.1 %)**, load OK. The scoreboard does not split that among the three hoists and H-19. It is the catalog row, not a new sitting of any one of them.
+
+Kernel keeps that belong to this campaign's code: swayBuckets **+27.1 %** (H-10), gpuQueuePack **+18.6 %** (H-02, a different size from the 1.32× gather measurement). Kernel WORSE whose scene did not move 3 %: ray −5.6 % with logic0 +2.1 %, rayVsBox2d −4.2 % with logic0 −2.0 %, tilemap −37.2 % with logic0 +0.3 %, decalPremultiply −4.6 %, painterRadix −4.2 %. `ray.js` was not edited in this close. Those kernel deltas stay on the board as WORSE.
+
+steadyCombat is KEPT on gameplay numbers that sit under a millisecond (particle 0.268 → 0.256 ms, spatial 0.068 → 0.066 ms, logic0 0.222 → 0.215 ms). Gameplay skips the 3 ms floor. It is not the drift line. Balls physics is.

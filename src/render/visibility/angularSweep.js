@@ -8,6 +8,12 @@ import { normalizeAngleSigned } from '../../util/utils.js';
 
 const TWO_PI = Math.PI * 2;
 const EPSILON = 1e-5;
+// H-04. endAngle is a module constant, so these directions are too. The sweep
+// used to call cos/sin on every light even though the comment below already
+// called them fixed.
+const END_ANGLE = Math.PI - EPSILON;
+const END_DIR_C = Math.cos(END_ANGLE);
+const END_DIR_S = Math.sin(END_ANGLE);
 /** Empty-light disc tessellation only (not free-arc densify). */
 const MAX_ARC_STEP = Math.PI / 16;
 /** Max free sector before inserting midpoints. Chord stays outside R with FREE_OVERSIZE. */
@@ -338,12 +344,10 @@ export function buildVisibilityPolygon(
 
   let vertCountOut = 0;
   const startAngle = -Math.PI;
-  const endAngle = Math.PI - EPSILON;
+  const endAngle = END_ANGLE;
   // start ≈ (-1, 0); end ≈ (-1, 0) — fixed dirs, no Math.cos/sin
   const startDirC = -1;
   const startDirS = 0;
-  const endDirC = Math.cos(endAngle);
-  const endDirS = Math.sin(endAngle);
 
   vertCountOut = emitVertex(lightX, lightY, startDirC, startDirS, maxRadius,
     kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
@@ -362,9 +366,17 @@ export function buildVisibilityPolygon(
       kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
       outX, outY, vertCountOut, maxVertices);
 
+    // H-06. EPSILON is 1e-5, so the pre/post samples are the first-order
+    // expansion of one (cos, sin) pair. The angular error is O(ε²) ≈ 1e-10 rad.
+    // Gate: the stored polygon stays within 1e-4 world units of the exact samples.
+    const ca = Math.cos(angle);
+    const sa = Math.sin(angle);
+    const preC = ca + EPSILON * sa;
+    const preS = sa - EPSILON * ca;
+
     // Pre-toggle sample slightly before event (active-set state before open/close)
     if (vertCountOut < maxVertices) {
-      vertCountOut = emitVertex(lightX, lightY, Math.cos(preAngle), Math.sin(preAngle), maxRadius,
+      vertCountOut = emitVertex(lightX, lightY, preC, preS, maxRadius,
         kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
         outX, outY, vertCountOut, maxVertices);
     }
@@ -386,9 +398,11 @@ export function buildVisibilityPolygon(
     }
 
     const postAngle = angle + EPSILON;
+    const postC = ca - EPSILON * sa;
+    const postS = sa + EPSILON * ca;
     // Post-toggle sample slightly after event
     if (vertCountOut < maxVertices) {
-      vertCountOut = emitVertex(lightX, lightY, Math.cos(postAngle), Math.sin(postAngle), maxRadius,
+      vertCountOut = emitVertex(lightX, lightY, postC, postS, maxRadius,
         kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
         outX, outY, vertCountOut, maxVertices);
     }
@@ -401,7 +415,7 @@ export function buildVisibilityPolygon(
     outX, outY, vertCountOut, maxVertices);
 
   if (vertCountOut < maxVertices) {
-    vertCountOut = emitVertex(lightX, lightY, endDirC, endDirS, maxRadius,
+    vertCountOut = emitVertex(lightX, lightY, END_DIR_C, END_DIR_S, maxRadius,
       kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
       outX, outY, vertCountOut, maxVertices);
   }
@@ -464,9 +478,20 @@ function emitArcVertices(
   // ceil so each step ≤ MAX_FREE_GAP (e.g. 242° → 3 steps → 2 midpoints)
   const steps = Math.ceil(gap / MAX_FREE_GAP);
   const step = gap / steps;
-  for (let s = 1; s < steps && vertCountOut < maxVertices; s++) {
-    const angle = fromAngle + s * step;
-    vertCountOut = emitVertex(lightX, lightY, Math.cos(angle), Math.sin(angle), maxRadius,
+  // H-05. Midpoints are an arithmetic progression, at most 4 steps (gap < 2π).
+  // Angle addition drifts by a few float64 ulps over that run. The gate, stated
+  // before this edit, is 1e-4 world units on the stored polygon — above that
+  // drift, below anything the sweep is used for.
+  let c = Math.cos(fromAngle);
+  let s = Math.sin(fromAngle);
+  const ch = Math.cos(step);
+  const sh = Math.sin(step);
+  for (let k = 1; k < steps && vertCountOut < maxVertices; k++) {
+    const nc = c * ch - s * sh;
+    const ns = s * ch + c * sh;
+    c = nc;
+    s = ns;
+    vertCountOut = emitVertex(lightX, lightY, c, s, maxRadius,
       kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
       outX, outY, vertCountOut, maxVertices);
   }

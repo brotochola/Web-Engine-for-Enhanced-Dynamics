@@ -85,12 +85,24 @@ export function gatherInstancedRows(src, dst, indices, n, srcFp, dstFp, shadowQ)
   const sfp = srcFp | 0;
   const dfp = dstFp | 0;
   if (!src || !dst || sn <= 0) return 0;
+  // H-02. An explicit copy instead of `dst.set(src.subarray(from, from + spriteN), to)`.
+  //
+  // `subarray` allocates a new TypedArray view per row, purely to hand `set` a
+  // range. At the deepest spritePack setting that is one view per queued sprite
+  // - 45 568 allocations per frame - to move GPU_SPRITE_FLOATS (15) floats.
+  // Copying in the loop body removes the allocation and keeps the same element
+  // conversions, since both paths are float-to-float.
+  //
+  // The first sitting of this hypothesis reported the scene NEUTRAL (-2.21 %) on a
+  // vehicle that queued 4 895 sprites and was probed under the wrong worker's key,
+  // so it was never actually judged. Re-sitting needs the change present and a
+  // probe that fires.
   for (let k = 0; k < sn; k++) {
     const i = indices[k] | 0;
     const from = i * sfp;
     const to = k * dfp;
     const spriteN = sfp < GPU_SPRITE_FLOATS ? sfp : GPU_SPRITE_FLOATS;
-    dst.set(src.subarray(from, from + spriteN), to);
+    for (let f = 0; f < spriteN; f++) dst[to + f] = src[from + f];
     if (shadowQ && dfp >= GPU_CASTER_FLOATS) {
       const shAt = GPU_SPRITE_FLOATS;
       dst[to + shAt] = shadowQ.shadowH ? shadowQ.shadowH[i] : 0;

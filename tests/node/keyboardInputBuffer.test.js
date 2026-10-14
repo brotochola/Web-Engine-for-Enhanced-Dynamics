@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 globalThis.window = globalThis.window || {};
-const { Scene } = await import('../../src/core/scene.js');
+const { Scene, flattenKeyMap } = await import('../../src/core/scene.js');
 
 /**
  * H-01 parity test - guards the EXISTING behaviour the optimization must not
@@ -30,12 +30,8 @@ const { Scene } = await import('../../src/core/scene.js');
  * transcription cannot break when the source breaks, so reverting the source to
  * the broken version still passed 6/6.
  *
- * NOT COVERED, stated rather than hidden: the constructor step that builds
- * `_keyNames` / `_keyIndices`. `new Scene(config)` needs a renderer, a canvas
- * and a buffer allocation, none of which exist in Node, so this file cannot
- * exercise it. That step is where the bug below actually lived. See the
- * implementation log - the two-pass version was found by inspection and fixed
- * there, not by a failing test.
+ * The constructor step that builds `_keyNames` / `_keyIndices` is `flattenKeyMap`.
+ * `new Scene(config)` still needs a renderer, so the test calls the helper.
  */
 
 /** The key map, built exactly the way scene.js builds it. */
@@ -82,15 +78,9 @@ function expectedBuffer(keyboard, size) {
   return expected;
 }
 
-/** A stub `this` with the cached lists built the way scene.js builds them. */
+/** A stub `this` whose cache is the shipped helper, not a transcription of it. */
 function makeScene(bufferLength = KEY_COUNT * 2) {
-  const entries = Object.entries(keyMap);
-  const names = new Array(entries.length);
-  const indices = new Int32Array(entries.length);
-  for (let i = 0; i < entries.length; i++) {
-    names[i] = entries[i][0];
-    indices[i] = entries[i][1];
-  }
+  const { names, indices } = flattenKeyMap(keyMap);
   return {
     keyMap,
     _keyNames: names,
@@ -100,6 +90,19 @@ function makeScene(bufferLength = KEY_COUNT * 2) {
     inputBufferSize: KEY_COUNT,
   };
 }
+
+test('H-01: flattenKeyMap pairs each name with the slot keyMap actually stores', { concurrency: false }, () => {
+  const { names, indices } = flattenKeyMap(keyMap);
+  assert.equal(names.length, KEY_COUNT);
+  assert.equal(indices.length, KEY_COUNT);
+  for (let i = 0; i < names.length; i++) {
+    assert.equal(keyMap[names[i]], indices[i], `${names[i]} landed in the wrong slot`);
+  }
+  const seen = new Set(names);
+  assert.equal(seen.size, names.length);
+  assert.equal(seen.has('0'), true);
+  assert.equal(seen.has('a'), true);
+});
 
 test('H-01: Object.values does NOT return keyMap values in insertion order', { concurrency: false }, () => {
   // The hazard the constructor's caching step has to avoid. keyMap is built so

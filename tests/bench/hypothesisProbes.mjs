@@ -62,6 +62,14 @@ export const PROBES = {
     // the upstream key.
     key: 'RENDER_QUEUE_SIZE',
     floor: 0.5,
+    // The sub-timer the change actually lives in.
+    //
+    // Without this the verdict is computed on preRender_STEP_MS, which sums
+    // collect + emit + sort + pack. EMIT_MS is bimodal - it alternates between a
+    // full emit and a pose-only persistence shortcut, a ~1.3 ms swing on an 8 ms
+    // base - and at n=4 that term alone produced a REGRESSION verdict on a change
+    // whose own sub-timer moved +3.3 % in 2 of 4 pairs.
+    metric: 'SPRITE_PACK_MS',
     why: 'gatherInstancedRows packs the queued rows; if the queue is short of the population, the gather path is not what is being timed',
   },
 
@@ -91,6 +99,10 @@ export const PROBES = {
     worker: 'preRender',
     key: 'RENDER_QUEUE_SIZE',
     floor: 0.5,
+    // The hoist is in collectVisibleEntities, so COLLECT_MS is the attributable
+    // number. On STEP_MS the verdict came back -12.59 % while the loop itself
+    // moved -6.7 %: roughly half the headline was EMIT_MS noise.
+    metric: 'COLLECT_MS',
     why: 'collectVisibleEntities fills the render queue; if the queue is short of the population, the collect loop is not what is being timed',
   },
 
@@ -176,6 +188,9 @@ export function checkProbe(id, stats, expected) {
     ok: true,
     code: 'OK',
     weak: probe.floor === 0,
+    // Carried through so the gate can compute an attributed verdict on the
+    // sub-timer this change actually lives in, instead of only on STEP_MS.
+    metric: probe.metric ?? null,
     detail:
       `${id}: ${probe.key} = ${value}${want ? ` of ${want} requested` : ''}` +
       (probe.floor === 0

@@ -216,3 +216,52 @@ test('AngularSweep: wide slab occludes when every corner is outside the radius',
   }
   assert.ok(minR < 40, `edge under the light must cut the polygon, minR=${minR}`);
 });
+
+// H-04 / H-05 / H-06. Snapshot of buildVisibilityPolygon before those edits, three
+// circle occluders, light at the origin, radius 200. H-04 is bit-identical.
+// H-06's expansion is O(ε²) ≈ 1e-10 rad. H-05 adds angles over at most 4 steps.
+// The gate, stated before the edit, is 1e-4 world units: above that drift, below
+// anything the polygon is used for. A miss means that edit does not ship.
+const PRE_CHANGE_X = [
+  -282.84271240234375, -250.51329040527344, -43.63529968261719, -34.176605224609375,
+  -196.2041473388672, 83.96852111816406, 277.1275634765625, 47.90321350097656,
+  47.90321350097656, 277.1275634765625, 42.429203033447266, 11.842803001403809,
+  -11.842803001403809, -42.429203033447266, -282.84271240234375,
+];
+const PRE_CHANGE_Y = [
+  0, -131.3129425048828, -22.873668670654297, -35.485260009765625,
+  -203.7251434326172, -270.09124755859375, -56.571311950683594, -9.777703285217285,
+  9.777703285217285, 56.571311950683594, 279.6422119140625, 78.06401824951172,
+  78.06401824951172, 279.6422119140625, 0.0028284271247684956,
+];
+const POLYGON_TOLERANCE = 1e-4;
+
+test('H-04/H-05/H-06: polygon stays within 1e-4 of the pre-change fixture', () => {
+  const circles = [[50, 0, 10], [0, 80, 12], [-40, -30, 8]];
+  const nOcc = circles.length;
+  const kind = new Uint8Array(nOcc);
+  const cx = new Float32Array(nOcc);
+  const cy = new Float32Array(nOcc);
+  const cr = new Float32Array(nOcc);
+  for (let i = 0; i < nOcc; i++) {
+    kind[i] = OCC_CIRCLE;
+    cx[i] = circles[i][0];
+    cy[i] = circles[i][1];
+    cr[i] = circles[i][2];
+  }
+  const outX = new Float32Array(256);
+  const outY = new Float32Array(256);
+  const count = buildVisibilityPolygon(
+    0, 0, 200,
+    kind, cx, cy, cr, new Int32Array(nOcc), new Uint8Array(nOcc),
+    new Float32Array(0), new Float32Array(0),
+    nOcc, outX, outY, 256,
+  );
+  assert.equal(count, PRE_CHANGE_X.length);
+  let max = 0;
+  for (let i = 0; i < count; i++) {
+    const d = Math.hypot(outX[i] - PRE_CHANGE_X[i], outY[i] - PRE_CHANGE_Y[i]);
+    if (d > max) max = d;
+  }
+  assert.ok(max <= POLYGON_TOLERANCE, `max vertex move ${max} exceeds ${POLYGON_TOLERANCE}`);
+});

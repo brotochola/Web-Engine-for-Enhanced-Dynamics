@@ -142,6 +142,36 @@ test('B-11: bumpBodyGeneration invalidates both pose buffers', { concurrency: fa
   bindBodySyncBuffers(null);
 });
 
+test('B-11: a shorter first pose buffer does not skip the longer second', { concurrency: false }, () => {
+  const capA = 2;
+  const capB = 8;
+  const genCap = 8;
+  const poseA = new SharedArrayBuffer(capA * 16);
+  const poseB = new SharedArrayBuffer(capB * 16);
+
+  bindBodySyncBuffers({
+    bodyDirtyFlags: new SharedArrayBuffer(genCap * 4),
+    bodyDirtyWords: new SharedArrayBuffer(8),
+    bodyGeneration: new SharedArrayBuffer(genCap * 4),
+    bodyGenEpoch: new SharedArrayBuffer(4),
+    poseDataA: poseA,
+    poseDataB: poseB,
+  });
+
+  const rotC = new Float32Array(poseB, capB * 8, capB);
+  const rotS = new Float32Array(poseB, capB * 12, capB);
+  rotC[4] = 1;
+  rotS[4] = 0.5;
+
+  // Index 4 exists only in B. A `return` on A's shorter view leaves this set.
+  bumpBodyGeneration(4);
+
+  assert.equal(rotC[4], 0, 'the longer buffer must still be invalidated');
+  assert.equal(rotS[4], 0, 'rotS on the longer buffer must still be invalidated');
+
+  bindBodySyncBuffers(null);
+});
+
 test('B-08: step on a paused non-manualStep worker leaves it paused', { concurrency: false }, () => {
   const posted = [];
   const previousSelf = globalThis.self;

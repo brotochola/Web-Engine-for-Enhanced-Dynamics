@@ -930,9 +930,18 @@ export function normalizeAngle(angle) {
  */
 export function normalizeAngleSigned(angle) {
   const TWO_PI = Math.PI * 2;
-  angle = angle % TWO_PI;
-  if (angle > Math.PI) angle -= TWO_PI;
-  else if (angle <= -Math.PI) angle += TWO_PI;
+  // H-08. Drop the floating-point remainder. Inside [-3π, 3π] two adjustments
+  // match what `%` plus one branch did. One adjustment is not enough at exactly
+  // -3π: the old remainder lands on -π and the following branch wraps it to +π.
+  // Callers only pass atan2 ± half-angle, which needs a single adjustment; the
+  // second exists so the stated range stays within 1 ulp of the old function.
+  if (angle > Math.PI) {
+    angle -= TWO_PI;
+    if (angle > Math.PI) angle -= TWO_PI;
+  } else if (angle <= -Math.PI) {
+    angle += TWO_PI;
+    if (angle <= -Math.PI) angle += TWO_PI;
+  }
   return angle;
 }
 

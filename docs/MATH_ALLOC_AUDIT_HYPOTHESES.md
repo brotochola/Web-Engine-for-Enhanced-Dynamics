@@ -445,7 +445,7 @@ updateKeyboardBuffer() {
 
 **Falsifier:** the gate-4 kernel showing the single write is not faster, or the parity test showing the edge-trigger counters diverge.
 
-**Status:** `not-measured`.
+**Status:** shipped, 2026-10-14. The kernel is inconclusive (escape analysis). `flattenKeyMap` is the tested constructor step. No scene sitting.
 
 ---
 
@@ -487,7 +487,7 @@ export function gatherInstancedRows(src, dst, indices, n, srcFp, dstFp, shadowQ)
 
 **Falsifier:** gate-4 TIE (the H11 recompilation trap), or rows processed differing, or the row failing its own load band as the caster-copy pair did.
 
-**Status:** `not-measured`.
+**Status:** kept, 2026-10-14, on the 45 568-row kernel (1.32×). The scene is NEUTRAL and `SPRITE_PACK_MS` is under the 3 ms floor. The GC justification is falsified. See the implementation log.
 
 ---
 
@@ -531,7 +531,7 @@ function radialOutset(x, y, outset) {
 
 **Falsifier:** bit-identical checksum fails (it should not), or the kernel is under 3 ms so the pair has no signal.
 
-**Status:** `not-measured`.
+**Status:** shipped as a hygiene keep, 2026-10-14. See §4.0.1. The checksum is a tolerance, not bytes. No sitting.
 
 ---
 
@@ -566,7 +566,7 @@ const endDirS = Math.sin(endAngle);     // ← and calls them anyway
 
 **Falsifier:** the kernel is `informational: true` and a 2-transcendental-per-call saving is under the timer at `cases.sweep`'s `n`. In that case this is **hygiene** — deleting obviously-dead recomputation — and the log should say so rather than claiming a speed win.
 
-**Status:** `not-measured`.
+**Status:** hygiene keep, shipped 2026-10-14, no sitting. The Predator trace shows no visibility-polygon share.
 
 ---
 
@@ -609,7 +609,7 @@ Compute `(cos h, sin h)` once before the loop; each step becomes 4 multiplies an
 
 **Falsifier:** the vertex-tolerance gate failing, or the kernel under its floor, or H-06 absorbing all the gain so the two cannot be separated (measure H-06 first if you intend to ship both).
 
-**Status:** `not-measured`.
+**Status:** hygiene keep, shipped 2026-10-14, no sitting. Polygon gate is 1e-4 world units. The trace shows no share, so there is no scene.
 
 ---
 
@@ -646,7 +646,7 @@ This is the **cheaper and safer** of the two sweep hypotheses, because the ε is
 
 **Falsifier:** the tolerance gate failing (it should not at ε = 1e-5), or the kernel showing no movement.
 
-**Status:** `not-measured`.
+**Status:** hygiene keep, shipped 2026-10-14, no sitting. Same polygon gate as H-05. The trace shows no share.
 
 ---
 
@@ -684,7 +684,7 @@ Perfectly even angular spacing — the same identity as H-05, plus the division 
 
 **Falsifier:** vertex drift beyond tolerance, or the kernel under 3 ms, or `visPoly`'s `pixi_STEP_MS` staying under the floor.
 
-**Status:** `not-measured`.
+**Status:** not shipped. §4.0.3 reframes it: the trace's shadow cost is `gpuShadowCasters.js`, not this Pixi loop. That file is the next campaign, not this one.
 
 ---
 
@@ -721,7 +721,7 @@ Callers: `src/render/visibility/angularSweep.js:248, 249, 286, 290` — **per oc
 
 **Falsifier:** the parity test showing a difference larger than 1 ulp inside `(-π, π)` — that would mean my reading of the branch coverage is wrong and the change is not safe.
 
-**Status:** `not-measured`.
+**Status:** hygiene keep, shipped 2026-10-14, no sitting. Bit-identical on `(-π, π)`, at most 1 ulp on `[-3π, 3π]`. The trace shows no share.
 
 ---
 
@@ -750,7 +750,7 @@ Both guards are monotone in `distSq`. Compute `distSq` once, compare squared, an
 
 **Falsifier:** the surviving-occluder set differing at all, or a Predator/scene regression in the style of the 2026-10-06 row.
 
-**Status:** `not-measured`. **Expect this one to lose; it is cheap to test.**
+**Status:** not shipped, 2026-10-14. Same extra branch on a hot line as the 2026-10-06 squared-range row, which lost 4/4. There is no vehicle that can falsify it, so it does not land as hygiene.
 
 ---
 
@@ -781,7 +781,7 @@ The default `swayAmplitude` is `0.025` (`src/core/decorationPool.js:394`), well 
 
 **Falsifier:** the kernel shows no movement at the configured amplitude distribution, which is the expected outcome.
 
-**Status:** `not-measured`, **with a strong prior from §1.1 that the product answer is "there is nothing here".** Do not spend a Predator ABAB on this.
+**Status:** closed, 2026-10-14. The δ expansion did not ship. The bucket cache did: kernel −18.0 %, scene −5.79 % at 65 000 decorations, below the 3 ms floor, kept as kernel with a product-neutral scene. The original "screen-bounded" sweep was void (F-07).
 
 ---
 
@@ -808,7 +808,7 @@ const s = Math.sin(a);
 
 **Falsifier (a):** spawn kernel under 3 %, or the floor. **Falsifier (b):** the trace not naming the functions, or a kernel win that fails gate 4.
 
-**Status:** `not-measured`.
+**Status:** (a) shipped, 2026-10-14. Kernel −24.1 % when rotation is undefined, +6.7 % when nothing is zero. No scene sitting. (b) not started: the trace does not name `setRotCSFromAngle`.
 
 ---
 
@@ -838,7 +838,7 @@ for (var i = 0; i < frames; i++) {
 - **(b) as hygiene, folded into the B-05 fix** — it is in the same function and the same innermost loop, and a GC pause there is a dropout.
 - **(a) and (c) as a measured kernel only if a real-time-overrun metric is built first.** Without one there is nothing to keep a verdict against, and inventing a proxy is exactly the kind of thing this protocol warns against.
 
-**Status:** (b) `not-measured` as hygiene, to ship with B-05. (a)/(c) `not-measured`, blocked on a metric.
+**Status:** (b) shipped, 2026-10-14, bit-identical to the inline mix. (a)/(c) still blocked: there is no overrun metric, and this campaign does not invent one.
 
 ---
 
@@ -869,7 +869,7 @@ A full linear sweep of every decal tile in the world, every frame, whose only co
 
 **Falsifier:** the kernel under 3 ms, or the row being a protocol ceiling with no vehicle.
 
-**Status:** `not-measured`.
+**Status:** not shipped, 2026-10-14. One sweep is 0.0087 / 0.143 / 0.569 ms at 1 000 / 16 000 / 64 000 tiles, all under the 3 ms floor. The count is also the upload early-out, so it was not gated on detailed stats, and no counter was added.
 
 ---
 
@@ -900,7 +900,7 @@ Because the catalog kernel is blind to this, H-14 needs either a **new kernel** 
 
 **Falsifier:** a Predator or stress regression in the style of the log's dropped rows, or a gate-4 TIE.
 
-**Status:** `not-measured`.
+**Status:** rejected and reverted, 2026-10-14. Kernel +147 % at n=256. Scene NEUTRAL, −0.55 %, 3/8 pairs, logic0 9.716 → 9.646 ms.
 
 ---
 
@@ -929,7 +929,7 @@ The author already tracks distance out of band (`Ray._tempAllHitsFarthest`, line
 
 **Falsifier:** the kernel showing no movement (the array may be shorter than assumed), or the ray scene's logic floor.
 
-**Status:** `not-measured`.
+**Status:** not shipped, 2026-10-14. Baselines: `RayStressScene` logic0 4.906 ms (the sort is `castAll` with `maxHits` 4, and nothing isolates it); `RayVsBox2dBoxBusyScene` logic0 16.500 ms on the Box2D closest-ray path, which is not this sort. No kernel, no rewrite.
 
 ---
 
@@ -946,7 +946,7 @@ The author already tracks distance out of band (`Ray._tempAllHitsFarthest`, line
 
 **Recommendation:** treat the **correctness** half (aliasing + non-reentrancy) as hygiene with a doc note, and the **perf** half as a kernel-only exercise or drop it. Do not run a Predator ABAB on this.
 
-**Status:** `not-measured`, **low expected value.** Included for completeness because the audit found it, not because it is worth a sitting.
+**Status:** noted, 2026-10-14, not rewritten. `getEntitiesInRadius` still returns `Grid._queryResultBox`, whose `entities` view is the shared `Grid._queryResults` buffer, and it `clear()`s `Grid._processedSet` on the way in. Two calls alias. Callers are debug and tooling. No Predator sitting.
 
 ---
 
@@ -960,7 +960,7 @@ The author already tracks distance out of band (`Ray._tempAllHitsFarthest`, line
 
 **Primary:** none. This is hygiene. If a memory snapshot shows growth, `HEAP_USED_KB` is already published in production stats (`HOW_WE_MEASURE.md` §"Same load") — **use that as the evidence, not a step time.**
 
-**Status:** `not-measured`. **Ship as part of B-09.**
+**Status:** shipped with B-09 in wave 1. The fix is the bound, not a speedup.
 
 ---
 
@@ -1168,14 +1168,22 @@ worker, with prior art checked because several have already been attacked:
 **Only `gpuShadowCasters.js` is both large and unworked.** That is where the next
 hypothesis should go, not into another sweep of code the trace does not run.
 
-### 4.0.5 Wave 2 outcomes so far — one ship, one rejection, and what they teach
+### 4.0.5 Wave 2 outcomes — closed 2026-10-14
+
+The mid-campaign snapshot said H-02 was unjudged and H-10 was a flat sweep. Both of those lines were wrong by the end of the day. This table is the close. The paragraphs under it still describe H-14, which did not change.
 
 | ID | kernel | scene | disposition |
 |---|---|---|---|
-| **H-14** | **+147 %** (5/5, n=8..1024) | **NEUTRAL, −0.55 %, 3/8 pairs** | **rejected and reverted** |
-| **H-02** | **+272 %** (5/5, n=4096) | sitting pending | shipped, unjudged |
-| H-03 | ~16× builtin, 5/5 | not in trace | shipped as a hygiene keep |
-| H-10 | — | 10× sweep: flat | closed, structurally |
+| **H-14** | **+147 %** at n=256 (5/5; +106 to +118 % for n=8..1024) | **NEUTRAL, −0.55 %, 3/8 pairs**, logic0 9.716 → 9.646 ms | **rejected and reverted** |
+| **H-02** | **1.32×** at 45 568 rows. The 2.94× figure is a small working set | NEUTRAL. preRender paired −4.8 %, 6 pairs. `SPRITE_PACK_MS` −5.8 %, under the 3 ms floor | **kept on the real-depth kernel**. GC justification falsified |
+| H-03 | ~16× builtin, 5/5 | not in the trace | shipped as a hygiene keep |
+| **H-10** | **−18.0 %** (bucket cache) | −5.79 %, 4/4, 65 000 decorations, below the 3 ms floor | **kept (kernel, product-neutral)** |
+| **H-19** | collect hoist | preRender −12.59 %, 3/4. The loop, `COLLECT_MS`, −6.7 % | **kept**. Quote the loop |
+| **H-11a** | −24.1 % when rotation is undefined; +6.7 % when none are zero | no scene | **shipped**, bit-identical |
+| H-04, H-05, H-06, H-08 | no sitting | trace share 0 | hygiene keeps, shipped. Polygon gate 1e-4 |
+| H-09 | not run | no vehicle | **not shipped** |
+| H-13 | 0.569 ms/sweep at 64 000 tiles | no vehicle that clears 3 ms | **not shipped** |
+| H-15 | not run | ray logic0 4.906 ms; Box2D-ray logic0 16.500 ms | **not shipped**. Neither number is the sort |
 
 **H-14 is the most useful result in the audit, and it is a negative one.**
 

@@ -186,6 +186,71 @@ test('B-05: a non-looping sound still stops and releases its slot', { concurrenc
   }
 });
 
+function referenceMix(channels, { frames, pitch, pan, volume, loop }) {
+  const L = new Float32Array(frames);
+  const R = new Float32Array(frames);
+  const len = channels[0].length;
+  const nCh = channels.length;
+  let cursor = 0;
+  const angle = (pan + 1) * (Math.PI * 0.25);
+  const gL = Math.cos(angle) * volume;
+  const gR = Math.sin(angle) * volume;
+  for (let i = 0; i < frames; i++) {
+    if (cursor >= len) {
+      if (loop) {
+        cursor -= len;
+        if (cursor >= len) cursor %= len;
+      } else break;
+    }
+    const idx = ~~cursor;
+    const frac = cursor - idx;
+    const ni = idx + 1 < len ? idx + 1 : loop ? 0 : idx;
+    const sL = channels[0][idx] + (channels[0][ni] - channels[0][idx]) * frac;
+    L[i] += sL * gL;
+    const sR = nCh > 1
+      ? channels[1][idx] + (channels[1][ni] - channels[1][idx]) * frac
+      : sL;
+    R[i] += sR * gR;
+    cursor += pitch;
+  }
+  for (let i = 0; i < frames; i++) {
+    if (L[i] > 1) L[i] = 1;
+    else if (L[i] < -1) L[i] = -1;
+    if (R[i] > 1) R[i] = 1;
+    else if (R[i] < -1) R[i] = -1;
+  }
+  return [L, R];
+}
+
+test('H-12b: hoisted channel loads match the inline mix for mono and stereo', { concurrency: false }, () => {
+  const frames = 64;
+  const mono = [new Float32Array([0.2, -0.4, 0.6, 0.1, -0.3, 0.5, 0.0, 0.8])];
+  const stereo = [
+    new Float32Array([0.2, -0.4, 0.6, 0.1, -0.3, 0.5, 0.0, 0.8]),
+    new Float32Array([-0.1, 0.3, -0.5, 0.7, 0.2, -0.6, 0.4, 0.0]),
+  ];
+  for (const [id, channels, pan] of [[1, mono, 0], [2, stereo, -0.25]]) {
+    const { p, i32, f32 } = makeProcessor({ slots: 1, frames });
+    installAsset(p, id, channels);
+    const b = claimSlot(i32, 0, { audioId: id, pitch: 0.5, pan, volume: 0.8, loop: 1, cursor: 0 });
+    const out = runOnce({ p, i32, frames });
+    // Pan and volume round when they land in the slot's Float32 view. The
+    // reference has to read those bits back, or it is testing the SAB, not the hoist.
+    const expected = referenceMix(channels, {
+      frames,
+      pitch: f32[b + 2],
+      pan: f32[b + 3],
+      volume: f32[b + 4],
+      loop: 1,
+    });
+    for (let ch = 0; ch < 2; ch++) {
+      for (let i = 0; i < frames; i++) {
+        assert.equal(out[ch][i], expected[ch][i], `asset ${id} ch ${ch} sample ${i}`);
+      }
+    }
+  }
+});
+
 test('B-05: stereo assets stay finite', { concurrency: false }, () => {
   const { p, i32, frames } = makeProcessor({ slots: 1, frames: 64 });
   const l = new Float32Array(16).fill(0.3);

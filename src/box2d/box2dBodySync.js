@@ -31,19 +31,26 @@ export function bindPoseSlotBuffers(pose) {
     poseSlots = null;
     return;
   }
-  const n = pose.capacity | 0;
-  if (!(n > 0)) {
-    poseSlots = null;
-    return;
-  }
   const sabs = [pose.dataA, pose.dataB];
-  poseSlots = [];
+  const slots = [];
   for (let i = 0; i < 2; i++) {
-    poseSlots.push({
-      rotC: new Float32Array(sabs[i], n * 8, n),
-      rotS: new Float32Array(sabs[i], n * 12, n),
+    const sab = sabs[i];
+    // Each buffer names its own capacity. Production allocates both at
+    // poseN * 16, so this matches the shared `pose.capacity`. A shorter first
+    // buffer must not shrink the view of the second: that is the case where
+    // `return` in invalidatePoseSlot skips a slot the longer buffer still holds.
+    const fromBytes = (sab.byteLength / 16) | 0;
+    const n = fromBytes > 0 ? fromBytes : (pose.capacity | 0);
+    if (!(n > 0)) {
+      poseSlots = null;
+      return;
+    }
+    slots.push({
+      rotC: new Float32Array(sab, n * 8, n),
+      rotS: new Float32Array(sab, n * 12, n),
     });
   }
+  poseSlots = slots;
 }
 
 function invalidatePoseSlot(i) {

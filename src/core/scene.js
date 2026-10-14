@@ -451,14 +451,9 @@ class Scene {
     // Object.values(keyMap) does not line up index-for-index with
     // Object.keys(keyMap), and pairing them would write each key's held state
     // into another key's slot. One entries pass cannot disagree with itself.
-    const keyEntries = Object.entries(this.keyMap);
-    const keyTotal = keyEntries.length;
-    this._keyNames = new Array(keyTotal);
-    this._keyIndices = new Int32Array(keyTotal);
-    for (let i = 0; i < keyTotal; i++) {
-      this._keyNames[i] = keyEntries[i][0];
-      this._keyIndices[i] = keyEntries[i][1];
-    }
+    const flat = flattenKeyMap(this.keyMap);
+    this._keyNames = flat.names;
+    this._keyIndices = flat.indices;
 
     // Frame timing
     this.lastFrameTime = performance.now();
@@ -2677,6 +2672,29 @@ class Scene {
   getSharedBufferSize(includeBreakdown = false) {
     return getSharedBufferSizeFromBuffers(this.buffers, includeBreakdown);
   }
+}
+
+/**
+ * Pair each key name with its slot index in one `Object.entries` pass.
+ *
+ * `Object.keys` and `Object.values` do not line up on this map. The digit keys
+ * `'0'..'9'` are canonical numeric strings, so `Object.values` emits them first,
+ * numerically, and a two-pass cache writes every key's held state into another
+ * key's slot. One entries pass cannot disagree with itself.
+ *
+ * @param {Record<string, number>} keyMap
+ * @returns {{ names: string[], indices: Int32Array }}
+ */
+export function flattenKeyMap(keyMap) {
+  const keyEntries = Object.entries(keyMap);
+  const keyTotal = keyEntries.length;
+  const names = new Array(keyTotal);
+  const indices = new Int32Array(keyTotal);
+  for (let i = 0; i < keyTotal; i++) {
+    names[i] = keyEntries[i][0];
+    indices[i] = keyEntries[i][1];
+  }
+  return { names, indices };
 }
 
 export { Scene };
