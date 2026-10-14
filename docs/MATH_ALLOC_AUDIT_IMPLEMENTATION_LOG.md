@@ -1771,6 +1771,315 @@ Sitting: `runPredatorAbab.mjs --name H14 --pairs 8 --owner logic --scene
 
 ---
 
+## F-05 (HIGH) - I repeated the `git worktree remove --force` catastrophe
+
+**07:58.** DEVLOG records this and I did it anyway:
+
+> On Windows, `node_modules` in each worktree is a junction back to the real one,
+> and `git worktree remove --force` follows junctions. It deleted every package
+> from `@babel` to `f` in the main repo before I killed it.
+
+**What happened.** `node_modules` was found empty (0 entries) and `npm install`
+restored 297 packages, playwright included. To clear a stale probe worktree before
+the H-14 sitting I ran:
+
+```
+git worktree remove --force "D:/xampp/htdocs/weed-ab/wt-H14probe"
+```
+
+The worktree carried the standard `node_modules` junction. `git worktree remove
+--force` followed it and **emptied the main repo's `node_modules` again**, within
+the same minute the install had finished it. The 297 packages were gone.
+
+**The order is what hid it.** Nothing failed loudly. `npm test` went on reporting
+894/894 because `node:test` needs no dependencies, so the suite stayed green while
+every benchmark in the repository was dead. I only found it when the sitting
+failed with `Cannot find package 'playwright'`.
+
+**Two lessons, and the second is the one that matters.**
+
+1. `git worktree remove --force` must never be run on a worktree carrying a
+   `node_modules` junction. The safe sequence is `cmd /c rmdir <junction>` first
+   - which unlinks the junction without recursing into the target - and only then
+   remove the worktree. Attempting that repair here produced a second surprise:
+   the **stale junction still reported 0 entries even after being recreated**,
+   because it had been created while the target was empty.
+
+2. **A green test suite is not evidence that the toolchain works.** `node:test`
+   needs no packages, so `npm test` cannot detect an empty `node_modules`. Every
+   part of this audit has leaned on `npm test` as the "is the tree healthy"
+   signal, and that signal is blind to exactly the failure that blocks the other
+   half of the work. From here the health check is **both** `npm test` **and** a
+   check that the benchmark harness resolves its imports:
+
+   ```
+   node -e "import('playwright').then(()=>console.log('toolchain OK')).catch(e=>{console.error('toolchain BROKEN:',e.code);process.exit(1)})"
+   ```
+
+   That check belongs beside the dist-freshness guard, because both answer the
+   same question: *is what I am about to measure actually runnable?*
+
+Reinstalled. Logged as "my own tooling destroyed the tree, and the check that
+would have caught it does not exist yet" - not as "blocked".
+
+---
+
+## H-14 REJECTED - +147 % in the kernel, NEUTRAL at the scene
+
+**14:22.** This is a negative result, so it gets the same care as a positive one.
+
+```
+node tests/bench/runPredatorAbab.mjs --name H14 --pairs 8 --owner logic \
+  --scene /tests/bench/stressScenes/spawnStormScene.js --scene-export SpawnStormScene \
+  --override src/workers/logicWorker.js=<comparator-sort baseline>
+
+verdict        NEUTRAL
+baseMedian     9.716 ms   (comparator sort)
+hypMedian      9.646 ms   (packed key)
+pairedDelta    -0.55 %
+worseFraction  0.375      (3 of 8 pairs)
+per-pair       -5.75  -0.44  +2.18  -1.10  -0.65  +0.07  -2.82  +5.53
+```
+
+**The kernel win did not survive.** +147 % at n=256 and 106-118 % across
+n=8..1024, 5/5 rounds everywhere - and the scene says -0.55 % with the direction
+flipping between pairs. `worseFraction` of 0.375 is nowhere near the 75 %
+consistency the rule requires, and the per-pair spread of -5.75 % to +5.53 % is
+scatter rather than signal.
+
+**Why, and it is not a mystery.** `_processSpawnSoA` sorts once per frame. At
+this scene's load `logic0_STEP_MS` is ~9.7 ms, of which the sort is a small
+slice - and that slice is `n log n` comparisons over a few hundred entries. A 2x
+on the sort cannot show up against 9.7 ms of other work. The kernel measured the
+right function; the scene measures a larger thing.
+
+**This is the plan's own prediction landing.** §5.4's prior-art note on H-14 says
+"kernel wins in this codebase have repeatedly died at the scene", and `PH1` was
++147.1 % in the kernel for -0.8 % in Predator. The +147 % here is almost exactly
+`PH1`'s +147.1 %, which is either a pleasing symmetry or a sign that both were
+measuring a real but immaterial improvement.
+
+**Reverted.** `src/workers/logicWorker.js` is back to the comparator sort,
+verified six ways: comparator restored, no `_spawnSortKeys`, no `keyView.sort()`,
+`m` declared, no orphaned `Float64Array` scratch, gather intact. `npm test`
+**894/894** - the parity test compares against an independent reference and the
+comparator sort also produces ascending order, which is exactly what a regression
+test should do.
+
+**What survives.** `spawnSortMicrobench.mjs` and `spawnSortParity.test.js` stay
+as the measurement and the guard. The kernel is the evidence for *why* this is
+not worth doing, which is the part this log has historically been shortest on.
+
+**Caveat, stated not buried.** Early in this sitting I ran the first version of
+the toolchain guard, which **imported** the benchmark runner - and that file
+calls `main()` at module scope, so the guard launched a Chromium instance while
+pairs were being timed.
+
+Does contamination change the conclusion? The result is a non-signal by a wide
+margin (-0.55 % against a 3 % floor, 3/8 consistent, scatter both ways), so noise
+added to noise cannot manufacture a win. But a clean re-run costs about eight
+minutes and is the disciplined move, so this is recorded as **rejected on a
+contaminated sitting, clean re-run pending** rather than as a clean rejection.
+If a clean re-run disagrees, this entry is wrong and says so.
+
+**What the sitting also exposed.** `spatial` reported deltas of -21 % and -13 %
+on a base of **0.238 ms**. That worker is idle in this scene, so its percentages
+are noise amplified by a near-zero denominator. A gate that reports a percentage
+for an idle worker is reporting nothing - the decision rule needs a floor on the
+denominator, not only on the sample.
+
+---
+
+## H-02 shipped - the biggest kernel win of the audit, and a more trustworthy one
+
+**14:38.** The kernel that had been running in the background came back:
+
+```
+gatherInstancedRows  spriteFloats=15  n=4096  checksum 984838846
+  shipped   4.113 gathers/s
+  looped   12.223   +197.2 %   5/5 rounds
+  unrolled 15.304   +272.1 %   5/5 rounds
+```
+
+**This one is more trustworthy than H-01's, and the reason is the baseline.**
+
+H-01's kernel was inconclusive because the pre-fix shape measured *fast* -
+55 862 ops/s in one harness and 1 198 493 in another, a 21x swing on identical
+work, because V8 was sometimes scalar-replacing the allocations and sometimes
+not. A kernel that only ever measures the shape where the optimiser fires is
+measuring the optimiser.
+
+H-02's baseline measures **4.1 gathers/s** - 61 440 float writes per gather, so
+roughly 0.25 M writes/s. That is far too slow to be a memcpy loop. The
+`subarray` allocations are real and are not being eliminated, which means this
+kernel is measuring the shape the production call site actually has, not a
+flattering one.
+
+**The change.** One function, `src/render/gpuQueueLayout.js`:
+
+```js
+dst.set(src.subarray(from, from + spriteN), to);   // was: one view per sprite
+```
+
+became an unrolled-by-4 copy with a 3-float tail, with `spriteN` hoisted out of
+the loop. Predator packs 42 633 sprite slots, so the old line allocated 42 633
+short-lived typed-array views every frame on the worker the trace puts at **38.8
+%** (`packInstancedRows`), and the same function is 9.3 % of preRender - the cost
+is paid on two workers.
+
+**Verified against a reference at every stride width**: `sfp` of 15, 12, 5, 3 and
+1 all produce byte-identical output, so the sub-4 tail cases - the ones where an
+unrolled loop is most likely to read out of bounds - are covered rather than
+assumed.
+
+**Why this one may survive where H-14 did not.** H-14 sorted once per frame
+inside a 9.7 ms worker and the 2x could not surface. H-02 is **38.8 % of its
+worker**, and the allocation it removes is per-sprite rather than per-batch, so
+the share it acts on is orders of magnitude larger. That is a prediction, not a
+result - and this log has just been wrong once in exactly that way, so it waits
+for the sitting like everything else.
+
+---
+
+## H-02 REJECTED - and the base rate is now 0 for 3
+
+**14:52.** `gatherInstancedRows` allocates one `subarray` view per sprite per
+frame. Predator packs **42 633 sprite slots**, so that is 42 633 short-lived
+typed arrays every frame on the worker the trace puts at **38.8 %**
+(`packInstancedRows`), and the same function is 9.3 % of preRender.
+
+Kernel (15-float rows, n=4096): shipped 4.113 gathers/s, looped **+197.2 %**,
+unrolled **+272.1 %**, both 5/5 rounds.
+
+This was a **better-founded** bet than H-14, and it still died:
+
+| | kernel | scene | pairs worse |
+|---|---|---|---|
+| H-14 | +147 % | **-0.55 %** | 3/8 |
+| H-02 | **+272 %** | **-2.21 %** | 3/8 |
+
+```
+node tests/bench/runPredatorAbab.mjs --name H02 --pairs 8 --owner pixi \
+  --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene \
+  --override src/render/gpuQueueLayout.js=<subarray baseline>
+
+verdict        NEUTRAL
+baseMedian     5.699 ms
+hypMedian      5.558 ms
+pairedDelta    -2.21 %
+worseFraction  0.375
+cv             12.9 % base, 10.2 % hypothesis
+per-pair       -0.40  -21.18  +20.33  +1.70  -11.61  -4.01  +4.65  -10.00
+```
+
+**Why I thought this one would survive, and why that was wrong.** It cleared
+every bar I had set for H-14, and cleared them further: a bigger kernel win; acting
+on **38.8 % of its worker** rather than one slice of a 9.7 ms step; a baseline
+slow enough (4.1 gathers/s, ~0.25 M writes/s) that V8 was clearly *not*
+scalar-replacing the allocations, so unlike H-01 this kernel was measuring the
+production call shape rather than the optimiser; per-sprite rather than per-batch.
+
+Every one of those arguments was about **the size of the kernel win**, and none
+was about whether the work is on the critical path. The cv is the tell: 10-13 %
+means the renderer measurement in Predator cannot resolve a 3 % effect at all, so
+a real effect of this size would not have been detected even if it existed.
+
+**Reverted**, byte-identical to the verified baseline, four checks. 894/894.
+
+### The finding that matters more than either hypothesis
+
+**Kernel-to-scene base rate in this codebase is now 0 for 3** - H-14, H-02, and
+`PH1` from history (+147.1 % kernel, -0.8 % Predator). Three large, unanimous,
+well-measured kernel wins; none moved a scene.
+
+I let H-02 ship on kernel evidence despite having written the warning myself.
+The warning was right and I under-weighted it, because H-02 looked so much better
+than H-14 on every axis I knew how to measure.
+
+**The rule this produces, rather than the hope I started with:**
+
+1. **The kernel is an instrument, not an argument.** It shows the code got
+   cheaper. It says nothing about whether that code was on the critical path, and
+   in this repo the two have been uncorrelated three times running.
+2. **Take the scene sitting FIRST**, on the unmodified tree, and ask whether the
+   target worker holds a *resolvable* share. If its cv is ~10 % or its median is
+   small, no change to it can be measured and the hypothesis is dead before a
+   kernel exists.
+3. **Only then write the kernel**, and treat its result as a tie-breaker among
+   changes already shown to matter.
+
+Both rejected kernels stay in the tree. They are the evidence for why this is not
+worth doing, which is the part this log has historically been shortest on.
+
+Also: `gatherInstancedRowsMicrobench.mjs` was re-run with the fix still shipped
+and read **+251 %**, confirming the kernel tracks the shipped source rather than a
+transcript of it. A kernel that reads the same number whether or not the engine
+changed is not measuring the engine.
+
+---
+
+## F-06 (HIGH) - "the scene measures nothing" is not the only bad outcome
+
+**15:40.** `tests/bench/sceneLiveness.mjs` + `sceneLiveness.test.js` (10 cases,
+904/904) were built to catch what four versions of `spritePackStressScene` did:
+
+| version | broken by | reported |
+|---|---|---|
+| v1 | `renderVisible = 0`, copied from a logic scene | flat 0.19 ms, `VISIBLE 0` |
+| v2 | `setSprite` never called | flat 0.19 ms, `VISIBLE 0` |
+| v3 | random scatter over a 16000^2 world | `VISIBLE 734`, identical at 20k/60k/150k |
+| v4 | grid filling a 4096^2 world | `VISIBLE 11139`, identical at 20k/60k/150k |
+
+Two checks, because they catch different failures: **liveness** (zero on every key
+⇒ `NO_WORK`, refuse the verdict) and **saturation** (key far below the requested
+population ⇒ `NOT_SATURATED`, the scene is measuring a slice of the work). The real
+failure outputs are the test fixtures, so the cases that happened stay pinned.
+
+### The third failure mode, which the checks above do NOT catch
+
+Asked why 11139 was flat across a 7.5x population change, the answer is not the
+camera: `visibleEntityCount` is assigned from `packed.sprite` at
+`pixiWorker.js:1474` - **the number the instanced batch accepted**, not the number
+the camera can see. It is a capacity ceiling, and zoom is fixed at 1 in that scene
+so it cannot produce a flat value.
+
+Tracing it surfaced something worse. Predator reports:
+
+```
+ENTITIES layer using instanced sprite mesh (painter, glow ADD)
+GPU_CASTERS 13558        VISIBLE_ENTITIES 0
+```
+
+`visibleEntityCount` is written unconditionally at `pixiWorker.js:1077`, so
+Predator's ENTITIES layer never populated it - consistent with the **mesh path
+bypassing the batch whose count it reports**. Predator's own log confirms the
+queue exists and is large: `GPU queues ready (sprites 119362, stamp 24576)`.
+
+**So the `packInstancedRows` at 38.8 % of pixi in the trace may be on the mesh
+path, while the stress scene exercises the batch path.** If so the scene is
+pointed at a different function than the trace named, and no amount of depth or
+saturation would reveal it.
+
+**That is a third outcome, and the most dangerous of the three:**
+
+1. measures **nothing** - caught by liveness, and the timing is visibly flat;
+2. measures **too little** - caught by saturation, and the key does not scale;
+3. measures **something adjacent to the hypothesis** - **not caught by either**,
+   because the key is non-zero and it does scale.
+
+Outcome 3 produces a confident, plausible, monotonically-increasing number about
+the wrong function, which is strictly more dangerous than the other two: 1 and 2
+look wrong, 3 looks exactly like success.
+
+**The fix the check needs is a mapping from hypothesis to the load key that
+proves the intended path ran**, not from worker kind to "any key that moved". The
+current `LIVENESS_KEYS` table is worker-kind-shaped and is therefore the wrong
+shape. Recorded, not done - and it is the prerequisite for re-judging H-02 at all,
+since H-02's sitting predates both checks and may be a false negative rather than
+a negative.
+
+---
+
 ## Wave 2 entry point
 
 All twelve bugs in wave 1 are closed. Remaining from the plan's bug list:
@@ -1788,3 +2097,575 @@ known prerequisites rather than with new code:
 
 Next action, in order: run the CPU trace, then re-derive which hypotheses the
 trace supports and which it refutes before writing kernel code for any of them.
+
+---
+
+## 2026-10-14 15:30 -03:00 - F-07: scene parameters never arrived. H-10 and the spritePack sweep are VOID.
+
+### What I thought was happening
+
+`spritePackStressScene` reported `VISIBLE_ENTITIES` of 734, then 11139, then 5335,
+then 21037 across a nominal 20k/60k/150k sweep. I built five successive explanations
+for those numbers:
+
+1. v3/v4: "density saturation" - fixed world, spacing shrinking as N grew.
+2. v7: "viewport saturation" - the camera shows a fixed screen area at zoom 1.
+
+Both were **fitted to numbers that never came from the parameterised scene**.
+
+### The actual cause
+
+A stress scene reads its parameters from `location.search`:
+
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('sprites');
+
+A module cannot see the specifier it was imported with. So when the runner was
+invoked as
+
+    --scene "/tests/bench/stressScenes/spritePackStressScene.js?sprites=150000"
+
+the `?sprites=150000` became part of the **module specifier** and never reached
+`location.search`. The scene fell back to its default of **60000 sprites** and
+reported a healthy `STEP_MS` with exit code 0.
+
+The parameters do arrive via `--query`, which is appended to the page URL
+(`runIntegratedWorkerBenchmark.mjs:350-356`). Verified directly:
+
+    --query "sprites=60000&spacing=8"   ->  VISIBLE 40915
+    (same scene, same canvas, defaults) ->  VISIBLE  5335
+
+7.7x apart. The two forms look identical on the command line and reach different
+places, which is why this survived seven runs and three explanations.
+
+### Evidence chain
+
+| run | command form | population actually used |
+|---|---|---|
+| 20k / 60k / 150k sweep | `--scene ...?sprites=N` | 60000 every time |
+| 1080p default | defaults | 60000 |
+| 4K default | defaults | 60000 |
+| `--query sprites=60000&spacing=8` | `--query` | 60000, spacing 8 |
+
+So 11139, 5335 and 21037 are three different *code versions* of the same
+60000-sprite scene at different canvas sizes - not three populations.
+
+### Damage
+
+- **H-10 is VOID.** The 40k/150k/400k decoration sweep was invoked the same way
+  and therefore ran the default three times. "Cost is screen-bounded, not
+  pool-bounded" was measured on one configuration. This is no longer a closed
+  hypothesis with evidence; it has no evidence.
+- **The density-saturation story was wrong.** With COUNT fixed, `cols` was fixed
+  at 245 and spacing was fixed at `4096/245 = 16.7`. Nothing self-cancelled.
+  11139 is simply `(1920/16.7) x (1080/16.7) = 115 x 65 = 7475` cells times the
+  engine's ~1.49 cull margin. The number was never a saturation.
+- **The 20k/60k/150k sweep never ran.** It was one scene, seven times.
+
+### Second limit found while fixing it
+
+    RangeError: totalEntityCount must be an integer in [0, 65535]
+
+The scene population ceiling is **65535 entities**, not 150k or 400k. Every
+"large" sweep in this log was above a hard engine limit. This one failed loudly,
+which is the only reason it was noticed at all - had the query plumbing worked,
+`sprites=400000` would have thrown instead of quietly measuring 60000.
+
+### Fixes
+
+1. **`runIntegratedWorkerBenchmark.mjs` forwards a `--scene` query into the page
+   URL**, so the convention every scene already assumes actually works. Passing
+   both forms with *different* values is now a hard error rather than a silent
+   pick. Verified: no scene reads `import.meta.url`, so nothing depended on the
+   query staying in the specifier.
+2. **F-07: the scene states what it resolved.** A scene may export
+   `stressSceneConfig.requested`; the runner compares it against the live query
+   and throws `SCENE PARAMETER MISMATCH` before measuring. Opt-in, because it
+   cannot be derived from a scene that does not declare it.
+3. `spritePackStressScene` exports it, and the runner prints the parameters in
+   effect on every run: `Scene parameters in effect: sprites=120000 spacing=24 scale=1`.
+
+### The general lesson
+
+This is a fifth failure mode, and the most expensive one yet:
+
+    measures the WRONG POPULATION, silently, with a healthy-looking number
+
+Liveness catches "no work". Saturation catches "too little work". The hypothesis
+probe catches "the wrong code path". None of them catch "the right code path, on
+the wrong population, because the population never arrived" - the keys are all
+non-zero and the timing is in a plausible band.
+
+The rule this establishes: **a parameterised scene must report the population it
+resolved, and the harness must compare it against the population requested.**
+Asking whether a key is non-zero is a different and much weaker question.
+
+### 2026-10-14 15:52 - the first valid spritePack sweep, and a wrong probe caught
+
+With the parameter plumbing fixed, the scene finally varies. 4K canvas,
+`sprites=65535` (the real ceiling - see the RangeError above):
+
+| spacing | RENDER_QUEUE_SIZE | queued / requested | preRender STEP_MS | SPRITE_PACK_MS |
+|---|---|---|---|---|
+| 24 | 21 340 | 32.6 % | - | - |
+| 16 | 41 984 | 64.0 % | - | - |
+| 10 | 45 056 | 68.8 % | - | - |
+| 6 | 45 568 | 69.5 % | **8.448** | **1.360** |
+
+The saturation is now real geometry - viewport area over sprite area - and it is
+a *stable* ceiling, not a self-cancelling one. At spacing 6 the scene packs 45 568
+sprites per frame, which is **9.3x deeper than the 4 895-deep vehicle the H-02
+sitting used**, and `preRender` clears the 8 ms campaign floor for the first time
+in this audit.
+
+Breakdown at spacing 6 (preRender `STEP_MS` 8.448):
+
+    COLLECT_MS      3.955
+    EMIT_MS         2.759
+    SPRITE_PACK_MS  1.360
+
+### F-08 - my own H-02 probe named the wrong worker
+
+Before re-sitting H-02 I checked which worker actually packs. It is **two**:
+
+    pixiWorker.js:1473         -> packSpriteLayer(spec)
+    preRenderWorker.js:3041    -> packSpriteLayer(spec)
+
+and this scene packs in **preRender**: `SPRITE_PACK_MS` 1.360 against a renderer
+`QUEUE_MS` of 0.012 for the same 45 568 queued sprites. The renderer's pack call
+is doing nothing here.
+
+The probe I had written ten minutes earlier said `worker: 'renderer'`. It would
+have passed - the renderer is alive, `VISIBLE_ENTITIES` is 45 568 - on a worker
+that packed nothing. **That is the exact failure the probe table exists to
+prevent, committed by the author of the table.** Corrected to:
+
+    worker: 'preRender'
+    key:    'RENDER_QUEUE_SIZE'   (not VISIBLE_ENTITIES - the queue is what is packed)
+
+`RENDER_QUEUE_SIZE` and `VISIBLE_ENTITIES` are equal on this scene (45 568 both),
+but equal by coincidence: `VISIBLE_ENTITIES` is the collect result upstream of the
+pack. Probing upstream because it happens to agree today is the same mistake as
+probing a worker because it happens to be alive today.
+
+### The probe floor then refused a vehicle I was about to use
+
+`spacing 24` queues 32.6 % of the requested population, under the 50 % floor, so
+the probe rejects it as `PATH_UNDERFED` - correctly. It is the first real
+demonstration of the floor doing its job on real data rather than a fixture:
+"packed a lot" and "packed what it was asked to pack" came apart, and spacing 24
+is on the wrong side of that line.
+
+### Also settled: the mesh-vs-batch divergence
+
+Predator logs `ENTITIES layer using instanced sprite mesh` and reports
+`VISIBLE_ENTITIES 0`, which I had flagged as an unverified inference. On this
+scene `MESH_FILL_INSTANCES` is **0** at every spacing, so the mesh path is not
+taken and the batch path is. The two scenes really do run different code, and
+H-02's change touches the batch path - so any conclusion drawn from Predator
+alone about H-02 would have been about the wrong branch. The mesh-vs-batch
+selection branch still has not been read, but the divergence itself is now
+measured rather than inferred.
+
+### Suite
+
+924/924 (was 904): +9 `sceneParams`, +11 `hypothesisProbes`.
+
+---
+
+## 2026-10-14 16:08 - H-10 REVERSED: the cost is pool-bounded, and H-10 is structurally unmeasurable
+
+H-10 was logged as "closed with evidence": *"sweep 40k/150k/400k -> particle STEP_MS
+flat (0.794/0.959/0.911). Cost is screen-bounded, not pool-bounded."*
+
+That sweep was invoked the broken way (F-07), so all three rows were the same
+40000-decoration run. Re-run with the parameters actually arriving:
+
+| decorations | ACTIVE_DECORATIONS | particle STEP_MS | ns / decoration |
+|---|---|---|---|
+| 5 000 | 5 000 | 0.138 | 27.6 |
+| 20 000 | 20 000 | 0.693 | 34.7 |
+| 40 000 | 40 000 | 0.903 | 22.6 |
+| 65 000 | 65 000 | 1.562 | 24.0 |
+
+`ACTIVE_DECORATIONS` equals the request on every row, so the guard would have
+passed each one - the parameters really did arrive this time.
+
+**The claim is the opposite of what was recorded.** The particle worker's
+decoration cost scales with the pool, not with the screen. It was never flat.
+
+### Two separate findings, and they point opposite ways
+
+**1. The scaling question is now answered, and the old answer was wrong.**
+
+Roughly 24 ns per decoration per frame, flat across a 13x range. That is a tight
+loop with no superlinear term, so H-10's original worry - that a bigger pool would
+make sway dominant - is answered *in the negative* by measurement rather than by
+a flat line that never varied.
+
+**2. H-10 cannot be given a speed verdict at all.**
+
+`decoration.maxDecorations` is capped at **65535** (`RangeError: decoration.
+maxDecorations must be an integer in [0, 65535]`). At the cap the particle
+worker spends **1.562 ms**, which is below the 3 ms stress floor in
+`docs/HOW_WE_MEASURE.md` line 79 ("Below that, 3 percent is timer noise") and far
+below the 8 ms campaign floor on line 93.
+
+At 24 ns per decoration, clearing 3 ms needs about 125 000 decorations. The engine
+allows 65 535. **The subject cannot be driven deep enough to be judged.**
+
+### Status change
+
+| | before | after |
+|---|---|---|
+| H-10 scaling claim | "screen-bounded" (wrong) | **pool-bounded, ~24 ns/dec** |
+| H-10 speed verdict | "closed with evidence" | **structurally unmeasurable** |
+
+The honest disposition is `closed-as-unmeasurable`, with the ceiling named as the
+cause. It is not "closed with evidence for screen-boundedness" - that sentence in
+the log is wrong and is corrected here rather than left standing.
+
+### What it would take to judge H-10
+
+Not a bigger pool. Either the per-decoration work has to grow (more sway modes
+evaluated per frame, or sway re-evaluated on layers it currently skips), or the
+subject has to move to a worker that can be pushed past 3 ms. Neither is free,
+and neither is worth doing until there is a specific change to test - which is the
+whole reason this is filed as unmeasurable rather than as a pending experiment.
+
+### Also read this pass: the mesh-vs-batch branch
+
+`pixiWorker.js` sets `MESH_FILL_INSTANCES` from `_meshFillInstancesThisFrame`
+alongside a `ENTITIES layer using instanced sprite mesh (${order}, ${glow})` log.
+On `spritePackStressScene` that key is **0** at every spacing while the batch path
+carries all 45 568 rows. So Predator's mesh log and this scene's batch path are
+genuinely different code, now measured rather than inferred - and any H-02
+conclusion drawn from Predator alone would have been about the wrong branch.
+
+---
+
+## 2026-10-14 16:24 - H-10 FINAL: pool-bounded at 22.3 ns/decoration, and no speed verdict is reachable
+
+`maxDecorations` is bounded by the uint16 entity id width, so **65535 is a design
+fact, not a knob**. There is no deeper configuration to build and none to wait
+for. H-10 is therefore judged inside that ceiling, from the four measured points.
+
+### What the four points say
+
+    STEP_MS = 0.1005 ms + n * 22.26 ns
+
+| decorations | STEP_MS | residual |
+|---|---|---|
+| 5 000 | 0.138 | -35 % |
+| 20 000 | 0.693 | +27 % |
+| 40 000 | 0.903 | -9 % |
+| 65 000 | 1.562 | +1 % |
+
+RMS scatter about the fit: **0.108 ms**, which is **6.9 %** of the 1.562 ms ceiling
+value.
+
+Three things are established:
+
+1. **Pool-bounded, not screen-bounded.** A 13x population range moves the time
+   11.3x. The original recorded claim - "cost is screen-bounded" - is wrong, and
+   was wrong because the sweep it rested on never varied the pool (F-07).
+2. **Linear, with no superlinear term.** 22.3 ns per decoration per frame, flat.
+   The concern that drove H-10 - that a full pool would make sway dominant in some
+   pathological way - is answered in the negative by measurement.
+3. **The ceiling cost is 1.562 ms/frame**, and in this scene the particle worker
+   has no particles (`TOTAL_PARTICLES 0`, `PARTICLES_STAMPED 0`), so that time is
+   the decoration path.
+
+Honest caveat: the fitted intercept of 0.100 ms is **inside the scatter** (-35 %
+residual at 5 000), so fixed cost and per-unit cost are not separable at the low
+end. The per-decoration figure is well determined; the intercept is not.
+
+### Why no speed verdict exists
+
+    a  3 % delta = 0.047 ms = 0.43x the scatter   -> unresolvable
+    a 10 % delta = 0.156 ms = 1.44x the scatter   -> marginal
+
+This is arithmetic, not a gap in the measuring. `docs/HOW_WE_MEASURE.md` line 79
+requires a baseline median of 3 ms because below that a 3 percent effect is timer
+noise. Reaching 3 ms at 22.3 ns per decoration needs **135 000 decorations**; the
+uint16 id width allows **65 535**. The subject is half the depth the protocol needs
+before it can be judged at all.
+
+### Disposition
+
+| | value |
+|---|---|
+| Scaling | **pool-bounded, linear, 22.3 ns/decoration** |
+| Ceiling cost | **1.562 ms/frame at 65535 decorations** |
+| Speed verdict | **unreachable - the uint16 ceiling is half the required depth** |
+
+H-10 is `closed-as-unmeasurable`, and the reason is a structural interaction
+between an id width and a protocol floor rather than anything about sway. That is
+a stronger and more durable statement than the "screen-bounded" line it replaces.
+
+### What this licenses, and what it does not
+
+It does **not** license a sway optimisation on the strength of "1.5 ms is worth
+having". No sitting can resolve the delta that would justify one, so a change made
+on that reasoning would be unfalsifiable here.
+
+It does license reading the loop. If the sweep contains a structural cost - an
+allocation per decoration, a redundant pass, a branch that is re-evaluated per
+element - that is a defect visible by inspection and provable by parity, in the
+same shape as H-03's hypot work: kernel for the speed claim, parity test for the
+correctness claim, scene for corroboration only. The scene is explicitly NOT the
+arbiter for this hypothesis, because it cannot be.
+
+### 2026-10-14 16:52 - CORRECTION to the H-10 verdict above: a LARGE change is measurable here
+
+I wrote that H-10 has "no reachable configuration that supports a speed verdict".
+That is too strong, and the kernel proves why.
+
+The 3 ms floor exists so a **3 percent** effect is not read as noise. It does not
+mean a shallow worker cannot arbitrate a *large* one. With 0.108 ms of scatter on
+a 1.562 ms base:
+
+| effect | absolute | vs scatter | resolvable? |
+|---|---|---|---|
+| 3 % | 0.047 ms | 0.43x | no |
+| 10 % | 0.156 ms | 1.44x | marginal |
+| 18 % | 0.281 ms | 2.6x | **yes** |
+| 30 % | 0.469 ms | 4.3x | yes |
+
+So the accurate statement is: **H-10 cannot be judged on marginal changes, and can
+be judged on structural ones.** A 3 % reshuffle of the sway loop is unfalsifiable
+in this scene; an 18 % removal of a division is not. The previous entry's claim
+that the scene is "explicitly NOT the arbiter for this hypothesis" is wrong for a
+change of this size, and is corrected here rather than left standing.
+
+---
+
+## 2026-10-14 16:52 - H-10 STRUCTURAL: cache the sway bucket, -18.0 % in the kernel
+
+### What the inspection found
+
+`docs/HOW_WE_MEASURE.md` and the H-10 verdict licensed reading the loop. In
+`particleWorker._updateDecorationSwayBuckets`:
+
+    const b = bucketFromSwayFrequency(swayFrequency[i], k);
+
+per decoration, per frame. And `bucketFromSwayFrequency` is:
+
+    const step = 2 / (k - 1);
+    let b = Math.round((freq - 1) / step);
+    if (b < 0) b = 0;
+    if (b > k - 1) b = k - 1;
+
+a division, a division, a `Math.round` and two clamps - to recover a value that
+almost never changes.
+
+The surrounding function carries the comment *"Chosen once per frame so the hot
+path has no fallback into Math.sin"*, and hoists the bucket `sin`/`cos` for
+exactly that reason. The bucket **lookup** was the same mistake one layer down,
+left behind by the hoist that stopped one line too early.
+
+### The change
+
+A self-validating cache: store the bucket, and the frequency it came from, and
+recompute whenever the two disagree.
+
+Deliberately **not** an invalidation contract at the three `swayFrequency` write
+sites (`decoration.js:218`, `decoration.js:235`, `decorationPool.js:398`). A
+contract spanning those files rots silently: a stale bucket is a decoration
+swaying at another decoration's frequency, which is invisible in a screenshot and
+invisible in a benchmark. Self-validating puts correctness in one place - there is
+no frame in which the cache is wrong, because a changed frequency misses and
+recomputes on the same frame.
+
+### The kernel
+
+`tests/bench/swayBucketCacheKernel.mjs`, N = 65 535 (the uint16 ceiling), grid k = 3:
+
+| | ms/frame | cv |
+|---|---|---|
+| A uncached | 1.1745 | 1.0 % |
+| B cached | 0.9636 | 0.5 % |
+
+**-18.0 %**, at 18x the coefficient of variation. Parity exact
+(`|sumA - sumB| = 0.00e+0`). Hit rate 100.00 % after the first frame, and the
+kernel prints the hit rate rather than asserting it - a cache that never hit would
+be strictly slower and the premise would be wrong.
+
+### Two bugs the tests caught in the change itself
+
+**1. The cache would have wrapped.** I first wrote `Uint8Array`. `swayFrequencyBuckets`
+is read straight from config with **no upper bound** (`particleWorker.js:458`), so a
+grid above 256 wraps 299 -> 43 and a decoration sways at decoration 43's frequency.
+Caught by asking what `k` is bounded by, not by the tests. Now `Uint16Array`, with
+a test at k = 300.
+
+**2. `-0`.** `Math.round(-0.3)` is `-0`, and `bucketFromSwayFrequency`'s `b < 0`
+clamp does not fire because `-0 < 0` is false. The reference returns `-0`; no
+typed array can store one. That normalisation is safe - `arr[-0]` is `arr[0]`, and
+`b` is only ever used to index - so the test asserts index equality (`===`), not
+`Object.is`. Asserting `Object.is` here would demand the cache preserve a signed
+zero that changes no output while missing the wrap bug that does.
+
+### Suite
+
+932/932 (was 924): +8 `swayBucketCache`.
+
+---
+
+## 2026-10-14 17:20 - F-09: the gate had three bugs, and the first one FAKED a refusal
+
+The H-10 sitting did not produce a verdict. It printed:
+
+    REFUSING THE VERDICT - PATH_NOT_RUN
+    ACTIVE_DECORATIONS is 0 for H-10 ... The hypothesis's code did not run
+
+on a run whose own output said `Scene parameters in effect: decorations=65000` and
+`particle: STEP_MS 1.362`. The scene had run. The probe had been lied to.
+
+### Bug 1 - the extractor never collected the key (the serious one)
+
+`predatorMetrics` built its output from a hand-written if-chain:
+
+    if (kind === 'physics') out.BODY_COUNT = ...
+    if (kind === 'renderer') out.GPU_CASTERS = ...; out.GPU_SHADOW_LIGHTS = ...
+    if (kind === 'particle') out.ACTIVE_PARTICLES = ...
+
+I added `ACTIVE_DECORATIONS`, `RENDER_QUEUE_SIZE` and the other probe keys to
+`LOAD_KEYS` and **forgot the extractor**. They came out `undefined`, became 0
+through `?? 0`, and the probe - correctly following its rules - refused a valid
+sitting.
+
+This is the hazard I had written into the `LOAD_KEYS` comment two edits earlier:
+
+> *"A probe that needs a key the gate never collected would silently never fire,
+> which is worse than having no probe at all."*
+
+Then it happened. **Fixed structurally, not by adding the missing line**: the
+extractor now walks `LOAD_KEYS` and takes whatever the workers publish, so a key
+added to the list is collected on the next run with no second edit to forget, and
+a key nobody publishes stays absent rather than becoming a confident zero.
+
+A subtlety worth recording: `DECORATIONS_ACTIVE` - the name I first gave the H-10
+probe - is `ABSENT` from every worker's stats. I invented it. It is kept in
+`LOAD_KEYS` only so that its absence is visible rather than silently wrong.
+
+### Bug 2 - the refusal path crashed
+
+`printDecision` iterated `decision.kinds` unconditionally. A refusal carries no
+`kinds`, so the run ended in a stack trace *after* the refusal had printed and the
+summary had been written. A guard that crashes on its own failure path trains you
+to distrust it. Now guarded.
+
+### Bug 3 - `STEP_MS_FLOOR` was never imported
+
+I added the denominator floor to `decideAbab` and never imported the constant, so
+`decideAbab` threw `ReferenceError` the moment it was called with the floor in
+scope.
+
+**Why nothing caught it:** the probe refusal path `return`s before `decideAbab`
+runs. The one sitting that exercised the new code took the refusal branch, so the
+broken line below it never executed. A latent break sitting one `return` away
+from the path that got tested.
+
+Found by `tests/node/decideAbab.test.js` (11 cases) - the gate's decision rules had
+**no tests at all** before this. The first run failed on `STEP_MS_FLOOR is not
+defined`, and the ninth on a fixture of mine that put the load shift in one pair
+only (the gate compares medians, so a single outlier is correctly not a shift).
+
+### On the floor being wired into the verdict, not just recorded
+
+`interpretable` was computed and stored on each kind, but the verdict branches
+never read it - so a below-floor owner would still have earned `KEPT (product)`.
+Now the floor is checked **before** the delta, for regressions and for keeps
+alike, and a below-floor pair reports its delta without judging it:
+
+    spatial -21.0% on a 0.238 ms base (7.9% of the 3 ms floor)
+      - reported, not judged
+
+### Suite
+
+943/943 (was 932): +11 `decideAbab`.
+
+---
+
+## 2026-10-14 17:52 - H-10 CLOSED: KEPT (kernel, producto neutro). Kernel -18.0 %, scene -5.79 %, 4/4 pairs.
+
+### The sitting
+
+    node tests/bench/runPredatorAbab.mjs --name H10-bucket-cache --owner particle \
+      --hyp H-10 --scene .../decorationSwayStressScene.js \
+      --query "decorations=65000" --pairs 4 \
+      --override src/workers/particleWorker.js=tests/results/hyp-baselines/H10.particleWorker.nocache.js
+
+Probe: `H-10: ACTIVE_DECORATIONS = 65000 of 65000 requested` - passed.
+Verdict: **`NEUTRAL (below floor)`**, `ownerJudged: false`.
+
+### Side assignment, and a near-miss
+
+`runPredatorAbab.mjs:309`:
+
+    const order = p % 2 === 0 ? [['A', baseline.root], ['B', repoRoot]] : ...
+
+**A is the baseline (cache swapped out), B is the working tree (cache in).**
+
+I read this backwards mid-analysis and concluded from the raw table that the cache
+was a 5.79 % *regression* - B looked slower than A in 4/4 pairs, which is exactly
+the shape of a real regression and exactly what I wanted to believe after a
+kernel and a scene disagreeing. The numbers were fine; my assignment was not.
+What caught it was `worseFraction: 0.00` combined with reading the gate's own
+side loop rather than trusting the direction of a percentage I had not checked.
+
+| pair | A (no cache) | B (cached) |
+|---|---|---|
+| 1 | 1.432 | 1.413 |
+| 2 | 1.500 | 1.321 |
+| 3 | 1.431 | 1.351 |
+| 4 | 1.449 | 1.362 |
+
+cv 2.2 % / 2.8 % - the 5.79 % effect is 2.2x the noise, and 4/4 pairs agree.
+
+### Final disposition
+
+| | value |
+|---|---|
+| Kernel (N=65 535, k=3) | **-18.0 %**, cv 1.0 %, parity exact, 100 % hit rate |
+| Scene (65 000 decorations) | **-5.79 %**, 4/4 pairs improved, cv 2.2 %/2.8 % |
+| Gate verdict | `NEUTRAL (below floor)` |
+| **Verdict** | **`KEPT (kernel, producto neutro)`** |
+
+`KEPT (kernel, producto neutro)` is not a phrase I invented for this: it is the
+gate's own documented disposition for *"NEUTRAL: with a kernel win"*
+(`runPredatorAbab.mjs:15`). The protocol's 3 ms floor means the scene may not
+*decide* this one, and the kernel decides it with the scene agreeing.
+
+Kernel 18 % against scene 5.8 % is the expected ratio, not a discrepancy: the
+kernel is pure sway, the particle worker also does stamping, flashes and decal
+sweeps. They agree in sign and in the fact of improvement.
+
+### The base rate is no longer 0 for 3
+
+H-02, H-14 and `PH1` all went kernel-positive / scene-neutral-or-worse. This is
+the first sitting where the kernel and the scene agree in sign on a structural
+change: **`1 for 4`**. The lesson was not "kernels lie" - it was that the vehicle
+has to exercise the same code, and once it does, the kernel earns its keep as the
+decider while the scene corroborates.
+
+### What made this sitting valid, for the record
+
+1. `--query` reached the scene (`Scene parameters in effect: decorations=65000`) - F-07.
+2. The scene configures `swayFrequencyBuckets: 3`, so the bucketed loop is actually
+   the code under test rather than a dead branch.
+3. The probe confirmed the population (`65000 of 65000`).
+4. The extractor actually collected the key - after F-09.
+5. The floor was wired into the verdict, so the sub-floor pair reports its delta
+   without claiming a verdict.
+
+Steps 2 and 5 are new. Point 2 is worth generalising: **a probe on a load key
+proves the population, not the branch.** A scene can have a full population and
+still never call the function under test. For H-10 the scene's own comment
+guaranteed it ("spread spawns across the 1..3 grid so the bucket walk and
+`bucketFromSwayFrequency` do real work") - that is the kind of claim that should
+become a check, not a comment.
+
+### Suite
+
+943/943.

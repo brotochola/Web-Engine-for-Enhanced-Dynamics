@@ -74,20 +74,6 @@ import {
 /** Stale pairs owned by another logic worker are dropped at least this often. */
 const FOREIGN_SWEEP_FRAMES = 30;
 
-/**
- * H-14. Guard on the packed spawn sort key.
- *
- * The key is `entityIndex * span + position` with `span = n + 1`, and it has to
- * be exact or the numeric sort is not an integer sort at all. Float64 represents
- * every integer below 2^53, so the worst case is
- * `MAX_ENTITIES * (n + 1) < 2^53`, which holds for any n below ~1.4e14. A spawn
- * batch cannot approach that, but the margin is checked rather than assumed,
- * because the failure mode if it were ever crossed would be a silently
- * mis-ordered active list.
- */
-const SPAWN_KEY_MAX_EXACT = 9007199254740992; // 2^53
-const MAX_ENTITIES_CAP = 65535;
-
 /** Float64Array, not Int32Array: this key overflows a 32-bit int well before the entity cap. */
 
 /**
@@ -253,7 +239,7 @@ class LogicWorker extends AbstractWorker {
     this._spawnPerm = new Int32Array(256);
     this._spawnSorted = new Int32Array(256);
     this._spawnSortedClass = new Array(256);
-    this._spawnSortKeys = new Float64Array(256); // H-14 packed sort key
+
     this._spawnN = 0;
     this._spawnXyScratch = { x: 0, y: 0 };
     this._listMergeScratch = null;
@@ -523,7 +509,7 @@ class LogicWorker extends AbstractWorker {
       // H-14: the packed spawn sort key. Float64 because the key
       // `entityIndex * 4096 + classSlot` overflows Int32 long before the entity
       // cap, while still sitting far inside Float64's exact-integer range.
-      this._spawnSortKeys = new Float64Array(next);
+
       this._spawnCap = next;
     } else {
       this._despawnIdx = idx;
@@ -713,38 +699,16 @@ class LogicWorker extends AbstractWorker {
     // key breaks that tie by position, so duplicates keep their spawn order -
     // deterministic, and identical output because a repeated spawn of one index
     // carries the same class.
-    const keys = this._spawnSortKeys;
-    const span = n + 1;
     let m = 0;
-
-    if (MAX_ENTITIES_CAP * span >= SPAWN_KEY_MAX_EXACT) {
-      // Unreachable for any real batch, and cheaper than proving it. Falling back
-      // to the comparator keeps the path correct if it ever were reached.
-      for (let i = 0; i < n; i++) perm[i] = i;
-      perm.subarray(0, n).sort((a, b) => idx[a] - idx[b]);
-      for (let i = 0; i < n; i++) {
-        const src = perm[i];
-        const entityIndex = idx[src];
-        if (transformActive[entityIndex] !== 1) continue;
-        sorted[m] = entityIndex;
-        sortedClass[m] = classes[src];
-        m++;
-      }
-    } else {
-      for (let i = 0; i < n; i++) {
-        keys[i] = idx[i] * span + i;
-      }
-      const keyView = keys.subarray(0, n);
-      keyView.sort();
-
-      for (let i = 0; i < n; i++) {
-        const key = keyView[i];
-        const entityIndex = Math.floor(key / span);
-        if (transformActive[entityIndex] !== 1) continue;
-        sorted[m] = entityIndex;
-        sortedClass[m] = classes[key - entityIndex * span];
-        m++;
-      }
+    for (let i = 0; i < n; i++) perm[i] = i;
+    perm.subarray(0, n).sort((a, b) => idx[a] - idx[b]);
+    for (let i = 0; i < n; i++) {
+      const src = perm[i];
+      const entityIndex = idx[src];
+      if (transformActive[entityIndex] !== 1) continue;
+      sorted[m] = entityIndex;
+      sortedClass[m] = classes[src];
+      m++;
     }
     if (m === 0) return false;
 

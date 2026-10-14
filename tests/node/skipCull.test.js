@@ -35,13 +35,46 @@ test('entity collect uses a per-frame skipCull branch; default still AABBs; B sk
   const body = preRender.slice(collect, adobe);
   const adobeBody = preRender.slice(adobe, adobeEnd);
   const skipIf = /if \(!this\.skipCull\)/g;
-  assert.equal(body.match(skipIf)?.length, 2);
-  assert.equal(adobeBody.match(skipIf)?.length, 1);
+  // H-19 hoisted `this.skipCull` into a local in both collect loops, so the
+  // literal `if (!this.skipCull)` no longer appears twice. What this test is
+  // really protecting - that each collect loop still has its OWN per-frame cull
+  // branch, and that neither reads it from `this` inside the loop - is asserted
+  // directly below instead of by counting a string that an optimisation removed.
+  assert.equal(body.match(skipIf)?.length ?? 0, 0);
+  assert.equal(adobeBody.match(skipIf)?.length ?? 0, 1);
+  // One hoisted read per loop...
+  assert.match(body, /const skipCull = this\.skipCull;/);
+  // ...used by the loop, and the loop guarded by it.
+  assert.match(body, /if \(!skipCull\) \{/);
+  // The glow collector hoists too, including the static-array lookups that were
+  // a property chain per light.
+  // Slice by the method DEFINITION, not a bare name: `advanceAdobeAnimations(` also
+  // matches an earlier call site, and indexOf would then return an index before
+  // the start, producing an empty slice rather than a useful failure.
+  const glow = preRender.slice(
+    preRender.indexOf('_collectEntityGlow('),
+    preRender.indexOf('advanceAdobeAnimations(deltaTime) {'),
+  );
+  assert.ok(glow.length > 0, 'glow collector slice must not be empty');
+  assert.match(glow, /const skipCull = this\.skipCull;/);
+  assert.match(glow, /const glowHalfW = SpriteRenderer\.boundsHalfW;/);
+  assert.match(glow, /glowHalfW\[i\]/);
+  // Against CODE, not prose. The H-19 comment quotes the removed
+  // `SpriteRenderer.boundsHalfW?.[i]` verbatim to explain what it replaced, and a
+  // naive doesNotMatch on the raw text flags that comment as a regression. The
+  // comment is worth keeping - so strip line comments and assert on what runs.
+  const glowCode = glow.replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(glowCode, /SpriteRenderer\.boundsHalfW\?\./);
+  assert.doesNotMatch(glowCode, /this\.skipCull\)/);
   assert.equal(body.match(/for \(let idx = 0; idx < iterCount/g)?.length, 1);
   assert.match(body, /screenMinX/);
   assert.doesNotMatch(body, /screenX\[i\] = sx/);
   assert.doesNotMatch(adobeBody, /screenX\[i\] = sx/);
-  const entityCull = body.slice(body.indexOf('if (!this.skipCull)'), body.indexOf('isItOnScreen[i] = 1'));
+  // Same reason as the glow slice: indexOf on a removed literal returns -1, and
+  // slice(-1, n) silently yields one character instead of failing loudly.
+  const cullStart = body.indexOf('if (!skipCull)');
+  assert.ok(cullStart >= 0, 'the entity cull branch must be findable');
+  const entityCull = body.slice(cullStart, body.indexOf('isItOnScreen[i] = 1'));
   assert.match(entityCull, /screenMinX/);
   assert.doesNotMatch(entityCull, /screenX\[i\]/);
   assert.match(preRender, /const ySorting = !!\(Layer\._ySorting && Layer\._ySorting\[entry\.layerId\]\)/);

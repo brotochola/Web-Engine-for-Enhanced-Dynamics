@@ -66,6 +66,23 @@ const URL_COUNT = (() => {
 })();
 
 export const DECORATION_COUNT = URL_COUNT || 40000;
+
+/**
+ * F-07. What this scene resolved, so the runner can refuse a sweep that never
+ * happened.
+ *
+ * The original H-10 sitting ran a 40k/150k/400k sweep and got a flat particle
+ * STEP_MS, and concluded "the cost is screen-bounded, not pool-bounded". The
+ * sweep was invoked with the query on `--scene`, where it lands in the module
+ * specifier and never reaches `location.search` - so all three runs measured the
+ * same 40000 decorations and the conclusion rested on one configuration.
+ *
+ * A flat line across a sweep is exactly what a sweep that never ran looks like,
+ * which is why this declaration is now mandatory for parameterised scenes.
+ */
+export const stressSceneConfig = {
+  requested: { decorations: DECORATION_COUNT },
+};
 export const WORLD_W = 20000;
 export const WORLD_H = 20000;
 

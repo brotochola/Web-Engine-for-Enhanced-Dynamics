@@ -106,7 +106,6 @@ export function gatherInstancedRows(src, dst, indices, n, srcFp, dstFp, shadowQ)
   return sn;
 }
 
-
 /**
  * @param {number} maxSprites
  * @param {object} [lighting]

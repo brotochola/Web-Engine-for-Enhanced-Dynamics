@@ -145,9 +145,36 @@ export function tickSwayFormula(snapshot, count, swayBaseAngle, soa, mode) {
     const phaseCos = mode.phaseCos;
     const freq = soa.swayFrequency;
     const amp = soa.swayAmplitude;
+
+    // A: the shipped code before H-10 - a division, a round and two clamps per
+    // element, per frame, to recover a bucket that almost never changes.
+    if (!mode.cached) {
+      for (let n = 0; n < count; n++) {
+        const i = snapshot[n];
+        const b = bucketFromSwayFrequency(freq[i], k);
+        const delta = (sA[b] * phaseCos[i] + cA[b] * phaseSin[i]) * amp[i];
+        composeDelta(i, delta, soa);
+      }
+      return;
+    }
+
+    // B: the self-validating cache, exactly as in particleWorker. A hit is two
+    // typed-array reads and a compare; a miss recomputes, so a frequency change
+    // is correct on the same frame it happens.
+    //
+    // Uint16, not Uint8: `swayFrequencyBuckets` is unvalidated config and a grid
+    // above 256 would wrap a Uint8 cache into the wrong bucket.
+    const bucketOf = mode.bucketOf;
+    const bucketFreq = mode.bucketFreq;
     for (let n = 0; n < count; n++) {
       const i = snapshot[n];
-      const b = bucketFromSwayFrequency(freq[i], k);
+      const f = freq[i];
+      let b = bucketOf[i];
+      if (bucketFreq[i] !== f) {
+        b = bucketFromSwayFrequency(f, k);
+        bucketOf[i] = b;
+        bucketFreq[i] = f;
+      }
       const delta = (sA[b] * phaseCos[i] + cA[b] * phaseSin[i]) * amp[i];
       composeDelta(i, delta, soa);
     }

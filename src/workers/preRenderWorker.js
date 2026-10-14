@@ -1167,24 +1167,49 @@ class PreRenderWorker extends AbstractWorker {
         const boundsHalfH = SpriteRenderer.boundsHalfH;
         const spritesheetId = SpriteRenderer.spritesheetId;
 
-        for (let idx = 0; idx < iterCount; idx++) {
-            const i = iterSource ? iterSource[idx] : idx;
-            if (!active[i]) continue;
-            if (!spriteRendererActive || !spriteRendererActive[i]) continue;
+        // H-19. Everything hoisted out of the per-entity loop below.
+        //
+        // None of these can change while the loop runs: the component arrays are
+        // bound once, `skipCull` is a config flag, and the truthiness of a typed
+        // array is fixed at allocation. The loop was re-deriving four array
+        // truthiness tests and one property read for every entity on every frame
+        // - 45 568 times per frame at the deepest spritePack setting.
+        //
+        // The counter is the other half. `this.visibleEntitiesCount++` is a
+        // property store per VISIBLE entity, so the same setting performed 45 568
+        // property writes to produce one number. It is accumulated in a local and
+        // added back once.
+        //
+        // `+=` and not `=`: `collectVisibleAdobeAnimations` increments the same
+        // field and both collectors run per frame, so assigning would discard the
+        // other method's contribution.
+        const skipCull = this.skipCull;
+        const hasSpriteRenderer = !!spriteRendererActive;
+        const hasHalfW = !!boundsHalfW;
+        const hasHalfH = !!boundsHalfH;
+        const hasVisualRange = !!visualRange;
+        const hasSheetId = !!spritesheetId;
+        const useIterSource = iterSource !== null && iterSource !== undefined;
+        let visibleCount = 0;
 
-            if (!this.skipCull) {
+        for (let idx = 0; idx < iterCount; idx++) {
+            const i = useIterSource ? iterSource[idx] : idx;
+            if (!active[i]) continue;
+            if (!hasSpriteRenderer || !spriteRendererActive[i]) continue;
+
+            if (!skipCull) {
                 const sx = x[i] * camZoom - cameraOffsetX;
                 const sy = y[i] * camZoom - cameraOffsetY;
 
                 // Use cached bounds (updated on scale/animation change)
                 let halfExtent = 0;
-                if (boundsHalfW) {
+                if (hasHalfW) {
                     const halfW = boundsHalfW[i] || 0;
-                    const halfH = boundsHalfH ? (boundsHalfH[i] || 0) : 0;
+                    const halfH = hasHalfH ? (boundsHalfH[i] || 0) : 0;
                     if (halfW > halfH) halfExtent = halfW;
                     else if (halfH > 0) halfExtent = halfH;
                 }
-                if (halfExtent <= 0 && visualRange) halfExtent = visualRange[i] || 0;
+                if (halfExtent <= 0 && hasVisualRange) halfExtent = visualRange[i] || 0;
                 const extent = halfExtent * camZoom;
                 const onScreen = sx >= screenMinX - extent && sx <= screenMaxX + extent &&
                     sy >= screenMinY - extent && sy <= screenMaxY + extent;
@@ -1192,13 +1217,14 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             // sheetId 0 = unset (spawn reset / pool recycle). Never queue.
-            if (renderVisible[i] && spritesheetId && spritesheetId[i]) {
+            if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
                 this.collectRenderable(0, i, 0);
-                this.visibleEntitiesCount++;
+                visibleCount++;
             }
-
             // Sun shadows are a second draw of this sprite. No shadow-queue row.
         }
+
+        this.visibleEntitiesCount += visibleCount;
 
         // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
         this._collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
@@ -1217,17 +1243,23 @@ class PreRenderWorker extends AbstractWorker {
                 const leGlow = LightEmitter.hasGlowSprite;
                 const leIntensity = LightEmitter.lightIntensity;
                 const leSqrt = LightEmitter.sqrtLightIntensity;
+                // H-19, same hoist as collectVisibleEntities, and worse here:
+                // `SpriteRenderer.boundsHalfW?.[i]` was a static property lookup
+                // plus an optional chain PER LIGHT, not just a truthiness test.
+                const skipCull = this.skipCull;
+                const glowHalfW = SpriteRenderer.boundsHalfW;
+                const glowHalfH = SpriteRenderer.boundsHalfH;
                 for (let li = 0; li < lights.length; li++) {
                     const i = lights[li];
                     if (!leActive[i] || !leGlow[i]) continue;
                     if (leIntensity[i] < MIN_GLOW_INTENSITY) continue;
                     if ((visualRange[i] || leSqrt[i] || 200) < MIN_GLOW_RANGE) continue;
-                    if (!this.skipCull) {
+                    if (!skipCull) {
                         const sx = x[i] * camZoom - cameraOffsetX;
                         const sy = y[i] * camZoom - cameraOffsetY;
                         let halfExtent = 0;
-                        const halfW = SpriteRenderer.boundsHalfW?.[i] ?? 0;
-                        const halfH = SpriteRenderer.boundsHalfH?.[i] ?? 0;
+                        const halfW = glowHalfW ? (glowHalfW[i] ?? 0) : 0;
+                        const halfH = glowHalfH ? (glowHalfH[i] ?? 0) : 0;
                         if (halfW > 0 || halfH > 0) halfExtent = halfW > halfH ? halfW : halfH;
                         if (halfExtent <= 0) halfExtent = visualRange[i] || 0;
                         const extent = halfExtent * camZoom;

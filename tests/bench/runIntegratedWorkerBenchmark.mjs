@@ -351,6 +351,44 @@ async function main() {
   const qs = [];
   if (srcModules) qs.push('src=1');
   if (extraQuery) qs.push(extraQuery);
+
+  // Forward a query written onto `--scene` into the page URL.
+  //
+  // Every stress scene reads its parameters from `location.search`, because a
+  // module cannot see the specifier it was imported with. A query on `--scene`
+  // lands in the MODULE SPECIFIER, so it never reaches `location.search` and the
+  // scene silently falls back to its defaults.
+  //
+  // That is not hypothetical. It cost two sittings:
+  //   - H-10's 40k/150k/400k decoration sweep ran the default three times, so
+  //     "cost is screen-bounded, not pool-bounded" was measured on one config.
+  //   - spritePackStressScene reported 11139, then 5335, then 21037 across a
+  //     nominal 20k/60k/150k sweep, and all three were the same 60000-sprite
+  //     scene at different canvas sizes.
+  //
+  // The two forms look identical on the command line and reach different
+  // places, which is what made it survive so long. Forwarding makes them behave
+  // the way every scene already assumes. Verified: no scene reads
+  // `import.meta.url`, so nothing depended on the query staying in the
+  // specifier.
+  const sceneModuleSpec = String(cliArgs.scene || '');
+  const sceneQuery = sceneModuleSpec.includes('?')
+    ? sceneModuleSpec.slice(sceneModuleSpec.indexOf('?') + 1)
+    : '';
+  if (sceneQuery) {
+    if (extraQuery && extraQuery !== sceneQuery) {
+      // Both given and they disagree. Silently picking one is how this bug
+      // survived; refuse instead.
+      throw new Error(
+        `--scene carries the query "${sceneQuery}" and --query carries ` +
+          `"${extraQuery}". They are both the same thing and they disagree. ` +
+          'Pass the parameters once, via --query.',
+      );
+    }
+    qs.push(sceneQuery);
+    console.log(`Benchmark: scene parameters "${sceneQuery}" forwarded to the page URL.`);
+  }
+
   const benchmarkUrl =
     `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html` +
     (qs.length ? `?${qs.join('&')}` : '');
@@ -487,8 +525,28 @@ async function main() {
       if (!SceneClass) {
         throw new Error(`Benchmark scene export "${sceneExport}" not found in ${sceneModule}`);
       }
+
+      // F-07. Did the scene actually receive the population it was asked for?
+      //
+      // A stress scene parameterised from `location.search` that does not find
+      // its parameter falls back to a default SILENTLY: the run succeeds, prints
+      // a healthy STEP_MS, exits 0, and measures the default.
+      // `spritePackStressScene` reported 11139, then 5335, then 21037 across a
+      // nominal 20k/60k/150k sweep - all three were the same 60000-sprite scene.
+      //
+      // The comparison lives in tests/bench/sceneParams.mjs so it can be tested
+      // without launching a browser; a guard that can only be exercised by
+      // running the thing it guards is a guard that rots.
+      //
+      // Scenes opt in by exporting `stressSceneConfig.requested`.
+      const { compareSceneParams } = await import('/tests/bench/sceneParams.mjs');
+      const requested = sceneModuleExports.stressSceneConfig?.requested || null;
+      const mismatch = compareSceneParams(requested, globalThis.location.search);
+
       return {
         name: SceneClass.name || sceneExport,
+        sceneParams: requested,
+        paramMismatch: mismatch,
         width: SceneClass.config.worldWidth,
         height: SceneClass.config.worldHeight,
       };
@@ -499,6 +557,20 @@ async function main() {
     await page.setViewportSize({ width: canvasWidth, height: canvasHeight });
     // Reduce accidental occlusion (another window on top); does not stop user minimizing afterward.
     await page.bringToFront();
+
+    // The scene resolved a different population than the one requested. Every
+    // number this run is about to produce describes a scene nobody asked for, so
+    // stop before measuring rather than after.
+    if (sceneDims.paramMismatch?.length) {
+      const { mismatchMessage } = await import('/tests/bench/sceneParams.mjs');
+      throw new Error(mismatchMessage(sceneDims.paramMismatch));
+    }
+    if (sceneDims.sceneParams) {
+      const shown = Object.entries(sceneDims.sceneParams)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(' ');
+      console.log(`Scene parameters in effect: ${shown}`);
+    }
 
     const runOptions = {
       ...benchmarkOptions,

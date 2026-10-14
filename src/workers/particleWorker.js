@@ -467,6 +467,27 @@ class ParticleWorker extends AbstractWorker {
         }
         this._bucketSin = new Float32Array(this._swayBuckets);
         this._bucketCos = new Float32Array(this._swayBuckets);
+        // Bucket cache for the sway hot loop. See `_updateDecorationSwayBuckets`.
+        //
+        // Deliberately self-validating rather than invalidated at the write
+        // sites: `swayFrequency` is written from three places (decoration.js:218,
+        // decoration.js:235, decorationPool.js:398) and an invalidation contract
+        // spanning those files is the kind of thing that rots silently - a stale
+        // bucket is a decoration swaying at the wrong frequency, which is nearly
+        // invisible in a screenshot and impossible to notice in a benchmark.
+        // Instead the cache stores the frequency it was derived from and
+        // recomputes whenever that no longer matches, so correctness stays local.
+        // Uint16, NOT Uint8: `swayFrequencyBuckets` is read straight from config with
+        // no upper bound, so a grid above 256 would wrap a Uint8 cache and hand
+        // back the wrong bucket - a decoration swaying at another decoration's
+        // frequency. 65535 buckets is far past any sane grid and the cache still
+        // costs two bytes per decoration.
+        this._swayBucketOf = new Uint16Array(this.maxDecorations);
+        this._swayBucketFreq = new Float32Array(this.maxDecorations);
+        // A sentinel no real frequency can equal, so the first read always misses.
+        this._swayBucketFreq.fill(-1);
+        // The bucket count the cache was populated for; k can be reconfigured.
+        this._swayBucketCacheK = this._swayBuckets;
       }
     }
 
@@ -1202,11 +1223,19 @@ class ParticleWorker extends AbstractWorker {
       sA[b] = Math.sin(a);
       cA[b] = Math.cos(a);
     }
+    // A reconfigured bucket count invalidates every cached bucket at once.
+    if (this._swayBucketCacheK !== k) {
+      this._swayBucketCacheK = k;
+      this._swayBucketFreq.fill(-1);
+    }
+    const bucketOf = this._swayBucketOf;
+    const bucketFreq = this._swayBucketFreq;
+    const noParent = this._noParent;
 
     for (let idx = 0; idx < activeCount; idx++) {
       const i = activeData[idx];
       if (!active[i]) continue;
-      if (parentEntityIndex[i] !== this._noParent) continue;
+      if (parentEntityIndex[i] !== noParent) continue;
       if (!isItOnScreen[i]) continue;
 
       const mode = sway[i];
@@ -1215,7 +1244,25 @@ class ParticleWorker extends AbstractWorker {
       const bs = baseRotS[i];
       let delta = 0;
       if (mode === SWAY_LOOP || mode === SWAY_LOOP_SKEW) {
-        const b = bucketFromSwayFrequency(swayFrequency[i], k);
+        // Self-validating bucket cache.
+        //
+        // `bucketFromSwayFrequency` recomputes `2 / (k - 1)`, then divides,
+        // rounds and clamps - per decoration, per frame. The loop above already
+        // hoists the sin/cos for exactly this reason ("chosen once per frame so
+        // the hot path has no fallback into Math.sin"), and this call was the
+        // same mistake one layer down.
+        //
+        // A steady state hit is two typed-array reads and a float compare,
+        // replacing a division. A miss recomputes and revalidates, so a
+        // decoration whose swayFrequency changed is correct on the same frame it
+        // changes - there is no window in which the cache is wrong.
+        const f = swayFrequency[i];
+        let b = bucketOf[i];
+        if (bucketFreq[i] !== f) {
+          b = bucketFromSwayFrequency(f, k);
+          bucketOf[i] = b;
+          bucketFreq[i] = f;
+        }
         delta = (sA[b] * phaseCos[i] + cA[b] * phaseSin[i]) * swayAmplitude[i];
         if (mode === SWAY_LOOP_SKEW) {
           rotC[i] = SWAY_SKEW_C;

@@ -1168,6 +1168,57 @@ worker, with prior art checked because several have already been attacked:
 **Only `gpuShadowCasters.js` is both large and unworked.** That is where the next
 hypothesis should go, not into another sweep of code the trace does not run.
 
+### 4.0.5 Wave 2 outcomes so far — one ship, one rejection, and what they teach
+
+| ID | kernel | scene | disposition |
+|---|---|---|---|
+| **H-14** | **+147 %** (5/5, n=8..1024) | **NEUTRAL, −0.55 %, 3/8 pairs** | **rejected and reverted** |
+| **H-02** | **+272 %** (5/5, n=4096) | sitting pending | shipped, unjudged |
+| H-03 | ~16× builtin, 5/5 | not in trace | shipped as a hygiene keep |
+| H-10 | — | 10× sweep: flat | closed, structurally |
+
+**H-14 is the most useful result in the audit, and it is a negative one.**
+
+The kernel measured a real 2x on a real function. The scene measured nothing:
+−0.55 % against a 3 % floor, 3 of 8 pairs worse, per-pair scatter from −5.75 %
+to +5.53 %. The sort is `n log n` over a few hundred entries, once per frame,
+inside a 9.7 ms `logic0_STEP_MS` — a 2x on that slice cannot surface against the
+other 9.7 ms. **The kernel and the scene were both right; they were measuring
+different quantities, and only one of them is the quantity anyone cares about.**
+
+`PH1` is the same shape: +147.1 % in the kernel, −0.8 % in Predator. Two
+hypotheses, two kernels over 147 %, two scenes that did not move. That is not a
+coincidence to be noted once — it is a property of the method, and it should
+change the order of operations for everything after this.
+
+**Therefore, for the remaining hypotheses, the vehicle comes first:**
+
+1. Build or point at the scene where the function is actually hot. No scene, no
+   hypothesis.
+2. **Take a baseline measurement of that scene BEFORE writing kernel code.** If
+   the worker the change targets does not hold a meaningful share of the frame
+   there, the hypothesis is dead and no kernel can revive it.
+3. Only then write the kernel, and treat its result as a necessary-not-sufficient
+   condition.
+
+H-14 had a scene (step 1) but skipped step 2 — the sitting was the first
+measurement of whether `logic0_STEP_MS` in `spawnStormScene` was mostly sort. It
+was not.
+
+### 4.0.6 Two method defects the sittings exposed
+
+**A gate that reports a percentage for an idle worker reports nothing.** The
+H-14 sitting returned `spatial` deltas of −21 % and −13 % on a base of
+**0.238 ms**. That worker is idle in the scene; the denominator is noise, so the
+numerator is too. `decideAbab` needs a floor on the denominator, not only the 3 %
+floor on the delta. Not yet changed — recorded so it is not lost.
+
+**A "health check" that only covers the tests is not a health check.** See F-05:
+`npm test` uses `node:test`, needs no dependencies, and reported **894/894 green**
+while `node_modules` was empty and every benchmark in the repo was dead. The
+health signal is now both the suite *and* `scripts/assertToolchain.mjs`, wired
+as `pretest:bench`.
+
 ## Wave 2 — free wins with clean checksums
 
 **Reordered per §4.0.** The `angularSweep` entries (H-04, H-05, H-06, H-08, H-09)
@@ -1400,3 +1451,30 @@ At campaign close:
 - **Per-frame call counts are estimated, not instrumented.** The magnitudes in H-05, H-06 and H-07 come from reading loop bounds, not from counters. **Instrument the counts before writing those hypotheses** — a hypothesis whose magnitude is guessed will fail the 3 % bar for the wrong reason.
 - **`src/version.js` was 0.7.941 at the time of reading.** Any keep from §1 is only as current as its row.
 - **The audio worklet was not run.** B-05's NaN path is derived from reading the loop; it has not been reproduced.
+
+### 4.0.7 F-07 - the wrong population, silently (2026-10-14)
+
+Discovered while re-sitting H-02. See the implementation log for the full chain.
+
+A stress scene reads its parameters from `location.search`. A query written onto
+`--scene` lands in the **module specifier** instead and never arrives. The scene
+falls back to its default, runs, prints a healthy `STEP_MS`, and exits 0.
+
+    --scene "/path/scene.js?sprites=150000"     ->  scene uses its default
+    --query  "sprites=150000"                   ->  scene uses 150000
+
+Verified: `VISIBLE_ENTITIES` of 5335 by the first form and 40915 by the second,
+same scene, same canvas.
+
+**H-10's sitting is void** - its 40k/150k/400k sweep ran the default three times.
+
+Rules that follow:
+
+- A scene that is parameterised **must** export `stressSceneConfig.requested`.
+  The runner compares it to the live query and throws `SCENE PARAMETER MISMATCH`
+  before measuring. This is now wired; see `runIntegratedWorkerBenchmark.mjs`.
+- **No sitting may be re-taken as evidence until its scene has reported the
+  population it actually used.** Sittings before 2026-10-14 that vary a
+  population are suspect by default, not by exception.
+- The sweep table in a log is not evidence that a sweep happened. Two rows with
+  the same resolved population are one row.
