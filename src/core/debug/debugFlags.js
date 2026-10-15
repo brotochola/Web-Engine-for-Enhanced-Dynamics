@@ -20,13 +20,14 @@ export const DEBUG_FLAGS = Object.freeze({
   SHOW_COLLISION_CANDIDATES: 15,
   SHOW_JOINTS: 16,
   SHOW_ENTITY_ORIGINS: 17,
+  SHOW_MESHES: 18,
 });
 
-/** Flag bytes used by SHOW_* (0..17). Selected entity Int32 lives at offset 20. */
-export const DEBUG_FLAG_COUNT = 18;
+/** Flag bytes used by SHOW_* (0..18). Byte 19 stays pad. Selected entity Int32 lives at offset 20. */
+export const DEBUG_FLAG_COUNT = 19;
 
 // Selected entity index storage (offset in debug buffer after flag bytes).
-// Layout: [flag bytes indexed by DEBUG_FLAGS (0-17)] [pad 18-19] [selectedEntityIndex at 20-23 as Int32]
+// Layout: [flag bytes indexed by DEBUG_FLAGS (0-18)] [pad 19] [selectedEntityIndex at 20-23 as Int32]
 export const DEBUG_SELECTED_ENTITY_OFFSET = 20;
 
 /**
@@ -151,6 +152,11 @@ export class DebugFlags {
     return this;
   }
 
+  showMeshes(enabled = true) {
+    this.flags[DEBUG_FLAGS.SHOW_MESHES] = enabled ? 1 : 0;
+    return this;
+  }
+
   /**
    * Set the selected entity index (writes to shared buffer)
    * @param {number} entityIndex - Entity index or -1 for no selection
@@ -200,6 +206,7 @@ export class DebugFlags {
     if (options.sleepingCells !== undefined) this.showSleepingCells(options.sleepingCells);
     if (options.joints !== undefined) this.showJoints(options.joints);
     if (options.entityOrigins !== undefined) this.showEntityOrigins(options.entityOrigins);
+    if (options.meshes !== undefined) this.showMeshes(options.meshes);
     return this;
   }
 
@@ -256,6 +263,7 @@ export class DebugFlags {
       sleepingCells: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS),
       joints: this.isEnabled(DEBUG_FLAGS.SHOW_JOINTS),
       entityOrigins: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS),
+      meshes: this.isEnabled(DEBUG_FLAGS.SHOW_MESHES),
     };
   }
 }

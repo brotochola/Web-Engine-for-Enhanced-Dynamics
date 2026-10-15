@@ -85,13 +85,31 @@ this.meshRenderer.tint = 0x88aa66;
 this.setLayer('terrain');
 ```
 
+A mesh does not need a body. `renderer.maxMeshVerts` (default `0`) is the vertex arena; `renderer.maxMeshIndices` (default `0`) is the index arena. Indices are `Uint16`, so `maxMeshVerts` caps at 65535.
+
+```js
+static config = {
+  renderer: { maxMeshVerts: 4096, maxMeshIndices: 8192 },
+  layers: { scenery: { kind: LAYER_KIND.MESH, zIndex: 2 } },
+};
+
+// onSpawned — local x,y. No Collider. Each call replaces the mesh.
+this.meshRenderer.setMesh(new Float32Array([0, 0, 40, 0, 0, 24]));
+// this.meshRenderer.setPolygon([0, 0, 30, 0, 10, 8, 0, 20]); // simple outline, no holes
+// this.meshRenderer.setPlane(64, 32, 1, 1);                  // UVs 0..1
+// this.meshRenderer.setRope([{ x: 0, y: 0 }, { x: 40, y: 12 }], 4);
+this.setLayer('scenery');
+```
+
+`setMesh(positions, indices, uvs)` — `indices` omitted fans from vertex 0 (convex). `uvs` omitted keeps `setTileWorld` / `setTileLocal`. `setVertices` rewrites positions when the count matches. `clearMesh` falls back to the collider fill. `visualOutset` does not move an explicit mesh.
+
 `replacePolygons` / `replacePolygonsFlat` write the [`ColliderFixture`](../src/core/colliderFixture.js) pool (intrusive list per entity). Host `clear_shapes` + `body_add_shape_polygon` on `GEOMETRY` dirty. Mass is the sum of fixture areas. Contacts still key by entity. `Ray` / spatial / debug walk every fixture. Light occluders still use the **primary** Collider shape only (feature gap: they do not walk fixtures).
 
 A SharedResource (one writer per field) pins its owner with `forceProcessOnLogicWorker: 1` so only `logic1` runs that entity’s `tick` / callbacks / `onSpawned`.
 
 `physicsHostImpl.js` `COLLIDER_SCHEMA` must stay in lockstep with `Collider.ARRAY_SCHEMA` (including trailing `layerMask` / `feedBits` / `fixtureCount`). The host binds SoA by walking that list; a missing tail field makes `views.fixtureCount` null, so `createBody` treats a compound island as a 0-vert polygon and logs `createBody failed; wait for next dirty`.
 
-Solid fill is a **render** component: `MeshRenderer` + a config layer with `kind: LAYER_KIND.MESH`. The packer reads `MeshRenderer.layerMask` (not `Collider.layerMask`) and fans fixtures first, else the primary polygon / box (two tris) / display regular 8-gon for a physics circle. Circle physics stays a true circle. Tint multiplies an optional atlas tile (`setTexture` + `setTileWorld` / `setTileLocal`). `visualOutset` grows only the draw fan. Look-shader MESH: one RT, world verts, camera on the RT transform — skip-pack still holds when the camera follows. Paint changes bump `MeshRenderer.paintEpoch` (one Uint32, not a per-entity scan). Same fixture revision and presence: pixi rewrites pose/paint on the resident 17-float tris (`packColliderFillPoseOnly`) instead of walking fixtures again. Look assets may be `{ webgl: '….frag', webgpu: '….wgsl' }`; `Scene` fetches the path for the active renderer backend.
+Solid fill is a **render** component: `MeshRenderer` + a config layer with `kind: LAYER_KIND.MESH`. The packer reads `MeshRenderer.layerMask` (not `Collider.layerMask`). An explicit mesh (`setMesh` / `setPolygon` / `setPlane` / `setRope`) is the draw. Otherwise it fans fixtures, else the primary polygon / box (two tris) / display regular 8-gon for a physics circle. Circle physics stays a true circle. Tint multiplies an optional atlas tile (`setTexture` + `setTileWorld` / `setTileLocal`). `visualOutset` grows only the collider-fill fan. Per-vertex UVs ride a second instanced mesh; the collider-fill stride stays 18 floats. Look-shader MESH: one RT, world verts, camera on the RT transform — skip-pack still holds when the camera follows. Paint changes bump `MeshRenderer.paintEpoch` (one Uint32, not a per-entity scan). Same fixture revision, mesh revision, and presence: pixi rewrites pose/paint on the resident tris (`packColliderFillPoseOnly`) instead of walking geometry again. Look assets may be `{ webgl: '….frag', webgpu: '….wgsl' }`; `Scene` fetches the path for the active renderer backend.
 
 Scene knob: `physics.maxFixturePoolSize` (default `0`, same opt-in as `maxJoints`). This is the **global** extra-convex-shape pool for the whole scene, not “per body”. `physics.maxFixtures` is a one-release alias.
 

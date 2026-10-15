@@ -33,7 +33,7 @@ all X values packed together, then all Y values, etc. No per-entity objects on t
 | **RigidBody**           | SoA: `active`, `static`, `fixedRotation` (Uint8); `ax`, `ay`, `px`, `py`, `pRotation`, `angularAccel`, `mass`, `invMass`, `inertia`, `invInertia`, `linearDamping`, `angularDamping`, `speed`, `sleepThreshold`. HEAP-only: `vx`, `vy`, `angularVelocity`, `sleeping`. `px/py/pRotation` = prev sim pose (snapshot before `world.step`). |
 | **Collider**            | `active`, `shapeType` (0=Box, 1=Circle, 2=Polygon — WASM C), `isTrigger` (Uint8); `offsetX`, `offsetY`, `radius`, `width`, `height`, `visualRange`, `friction` (Float32; Box2D fixture μ, pair = min); `polyCount` (Uint8); `polyCentroidX/Y` (Float32); strided `polyVertexX/Y`, `polyNormalX/Y` (length entityCount×8); `collisionLayer` (Uint8, index 0-31); `collisionMask` (Uint32, bitmask -- 32 collision layers max); `collisionGroupIndex` (Int32, Box2D-style group: 0 = layer/mask only, same negative = never collide, same positive = always collide); `layerMask` (Uint16, bit i = Layer.id); `feedBits` (Uint8, opaque compute flags); `fixtureCount` (Uint16, compound extras). Physics host `COLLIDER_SCHEMA` in `physicsHostImpl.js` must list the same keys in order — otherwise `createBody` never sees fixtures. |
 | **SpriteRenderer**      | `active`, `textureId`, animation fields, flip flags, etc.                                                                                                                                                                                                                                                                                   |
-| **MeshRenderer**        | `active`, `tint` (Uint32 0xRRGGBB), `alpha` (Float32), `layerMask` (Uint16, bit = Layer.id), `renderVisible`, `renderDirty`, `textureId` (Uint16, `0xffff` = solid), `tileMode` / `repeatX` / `repeatY` / `tileOffsetU` / `tileOffsetV` (same packing as SpriteRenderer), `visualOutset` (Float32 world px), `paintEpoch` (Uint32[1], bump on tint/tile/texture/outset). Fill of `ColliderFixture` fans **or** the primary box / makePolygon / display 8-gon on `LAYER_KIND.MESH`. Pixi instance buffer is 17 floats/tri; pose-only refill does not add SoA fields. |
+| **MeshRenderer**        | `active`, `tint` (Uint32 0xRRGGBB), `alpha` (Float32), `layerMask` (Uint16, bit = Layer.id), `renderVisible`, `renderDirty`, `textureId` (Uint16, `0xffff` = solid), `tileMode` / `repeatX` / `repeatY` / `tileOffsetU` / `tileOffsetV` (same packing as SpriteRenderer), `visualOutset` (Float32 world px, collider fill only), `paintEpoch` (Uint32[1], bump on tint/tile/texture/outset). Draw is the explicit mesh in `meshGeomData` when set, else `ColliderFixture` fans or the primary box / makePolygon / display 8-gon on `LAYER_KIND.MESH`. Collider-fill instances are 18 floats/tri. Per-vertex UVs are a second mesh at 24 floats. Pose-only refill does not add SoA fields. |
 | **ParticleComponent**   | `active`, `x`, `y`, `z`, `vx`, `vy`, `vz`, `lifespan`, `currentLife`, `gravity`, `scaleX/Y`, `alpha`, `tint`, `baseTint`, `textureId`, `rotation`, `flipX/Y`, `fadeOnTheFloor`, `timeOnFloor`, `initialAlpha`, `stayOnTheFloor`, `despawnOnGroundContact`, `alpha: { from, to: 0 }`, `isItOnScreen`, `blendMode` (mixed Uint8/Uint16/Float32/Uint32) |
 | **DecorationComponent** | `active`, `x`, `y`, `offsetX/Y`, `textureId`, `scaleX/Y`, `baseRotation`, `rotation`, `alpha`, `tint`, `anchorX/Y`, `isItOnScreen`, `sway`, `swayAmplitude`, `swayFrequency`                                                                                                                                                                |
 | **BulletComponent**     | `active`, `startX/Y`, `trailWidth`, `x`, `y`, `prevX/Y`, `vx`, `vy`, `bulletAngle`, `damage`, `ownerId`, `shooterEntityType`, `textureId`, `scale`, `alpha`, `tint`, `spriteRotation`, `anchorX/Y`, `offsetY`, `isItOnScreen`                                                                                                               |
@@ -199,6 +199,18 @@ Same Treiber stack as joints.
 | Writer | Reader |
 | ------ | ------ |
 | Logic (`replacePolygons` / `replacePolygonsFlat`) | Physics host, pixi fill, spatial / Ray / debug |
+
+---
+
+## 5c. MeshGeometry
+
+### `meshGeomData`
+
+Explicit visual mesh, one span per entity. Off unless `renderer.maxMeshVerts` > 0. Layout: `MeshGeometry.getBufferSize(maxMeshVerts, maxMeshIndices, entityCount)` — per entity `vertOffset` (`-1` = none), `vertCount`, `indexOffset` (`-1` = convex fan), `indexCount`, `hasUv`; arenas `vertexX/Y`, `uvU/V`, `indices` (`Uint16`, so `maxMeshVerts` ≤ 65535); one `revision`. The free-span table sits in the same SAB behind a spin lock so logic workers can allocate. Pixi only reads. The Box2D worker does not bind it.
+
+| Writer | Reader |
+| ------ | ------ |
+| Logic / main (`setMesh`, `setVertices`, `setPlane`, `setRope`, `setPolygon`, despawn) | Pixi MESH pack |
 
 ---
 

@@ -75,6 +75,7 @@ import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
+import { MeshGeometry } from '../core/meshGeometry.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
@@ -646,6 +647,17 @@ export class AbstractWorker {
       ColliderFixture.initialize(maxFixturePoolSize);
       ColliderFixture.initializeFreeList(data.fixtures.freeList, data.fixtures.freeListTop);
       this.reportLog(`initialized ColliderFixture pool for ${maxFixturePoolSize} fixtures`);
+    }
+
+    // Gameplay writes, pixi reads. The Box2D worker is not an AbstractWorker.
+    if (data.meshGeom && data.meshGeom.enabled && data.meshGeom.data) {
+      MeshGeometry.initializeArrays(
+        data.meshGeom.data,
+        data.meshGeom.maxMeshVerts | 0,
+        data.meshGeom.maxMeshIndices | 0,
+        data.meshGeom.entityCount | 0,
+      );
+      this.reportLog(`initialized MeshGeometry for ${data.meshGeom.maxMeshVerts | 0} verts`);
     }
 
     // Initialize particle compact lists (for optimized iteration)

@@ -59,6 +59,7 @@ import { liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from './liquidFunGroups
 import { LiquidFun } from '../core/liquidFun.js';
 import { Joint } from '../core/joint.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
+import { MeshGeometry } from '../core/meshGeometry.js';
 import { SoundManager } from '../core/soundManager.js';
 import { Query } from '../core/query.js';
 import { SharedResource } from '../core/sharedResource.js';
@@ -119,6 +120,18 @@ export function validateSceneSharedBufferConfig(scene) {
     config.physics.maxFixturePoolSize || config.physics.maxFixtures || 0,
     0,
     MAX_ENTITIES,
+  );
+  assertIntegerInRange(
+    'renderer.maxMeshVerts',
+    config.renderer?.maxMeshVerts ?? 0,
+    0,
+    65535,
+  );
+  assertIntegerInRange(
+    'renderer.maxMeshIndices',
+    config.renderer?.maxMeshIndices ?? 0,
+    0,
+    4194304,
   );
   assertIntegerInRange('spatial.maxNeighbors', config.spatial.maxNeighbors, 0, MAX_ENTITIES);
   assertIntegerInRange('spatial.maxEntitiesPerCell', config.spatial.maxEntitiesPerCell, 1, 255);
@@ -673,6 +686,20 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
     ColliderFixture.initializeFreeList(
       buffers.colliderFixtureFreeList,
       buffers.colliderFixtureFreeListTop,
+    );
+  }
+
+  MeshGeometry.reset();
+  const maxMeshVerts = config.renderer?.maxMeshVerts | 0;
+  const maxMeshIndices = config.renderer?.maxMeshIndices | 0;
+  if (maxMeshVerts > 0) {
+    const meshGeomBytes = MeshGeometry.getBufferSize(maxMeshVerts, maxMeshIndices, totalEntityCount);
+    buffers.meshGeomData = new SharedArrayBuffer(meshGeomBytes);
+    MeshGeometry.initializeArrays(
+      buffers.meshGeomData,
+      maxMeshVerts,
+      maxMeshIndices,
+      totalEntityCount,
     );
   }
 

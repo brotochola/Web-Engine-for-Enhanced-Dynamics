@@ -19,6 +19,7 @@ import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
 import { ColliderFixture } from './colliderFixture.js';
+import { MeshGeometry } from './meshGeometry.js';
 import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
 import { collectComponents, collisionPairKey, distanceSq2D, debugWorkerLog } from '../util/utils.js';
 import { entityIdBytes, EntityIdArray } from '../util/entityIdWidth.js';
@@ -1914,6 +1915,7 @@ export class GameObject {
 
     DecorationPool.clearAttachedAndDespawnAll(i);
     ColliderFixture.removeAllForEntity(i);
+    MeshGeometry.clearEntity(i);
 
     // ========================================
     // COMPONENT DEACTIVATION (SAFE - unique index)
@@ -2440,6 +2442,7 @@ export class GameObject {
     }
 
     if (has.MeshRenderer) {
+      MeshGeometry.clearEntity(i);
       MeshRenderer.active[i] = 0;
       MeshRenderer.tint[i] = 0xffffff;
       MeshRenderer.alpha[i] = 1;
@@ -2588,6 +2591,7 @@ export class GameObject {
     if (instance._spawnAborted) {
       instance._spawnAborted = false;
       ColliderFixture.removeAllForEntity(i);
+      MeshGeometry.clearEntity(i);
       Transform.active[i] = 0;
       if (has.RigidBody) {
         RigidBody.active[i] = 0;
@@ -2767,6 +2771,7 @@ export class GameObject {
         }
 
         DecorationPool.clearAttachedAndDespawnAll(i);
+        MeshGeometry.clearEntity(i);
         indicesToDespawn.add(i);
 
         // Deactivate all component active flags

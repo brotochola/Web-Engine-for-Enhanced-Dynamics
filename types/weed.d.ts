@@ -2788,6 +2788,25 @@ export declare class MeshRenderer extends Component {
   get visualOutset(): number;
   set visualOutset(value: number);
   setTexture(name: string | null | undefined): this;
+  /** Local x,y. indices null = convex fan. uvs null = tile / stretch. */
+  setMesh(
+    positions: ArrayLike<number>,
+    indices?: ArrayLike<number> | null,
+    uvs?: ArrayLike<number> | null,
+  ): this;
+  /** Rewrite local positions. Count must match the current mesh. */
+  setVertices(positions: ArrayLike<number>): this;
+  /** Drop the explicit mesh and fall back to collider fill. */
+  clearMesh(): this;
+  /** Subdivided quad, local origin at the center. segX / segY are cell counts. */
+  setPlane(width: number, height: number, segX: number, segY: number): this;
+  /** Textured strip. points is flat x,y or {x,y}[]. */
+  setRope(
+    points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    halfWidth: number,
+  ): this;
+  /** Simple outline, ear-clipped once. No holes. */
+  setPolygon(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>): this;
 }
 
 export declare class SpriteRenderer extends Component {

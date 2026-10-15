@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url';
 import {
   packColliderFill,
   packColliderFillPoseOnly,
+  packMeshUvFill,
+  colliderFillCanSkipPack,
+  copyMeshFillPoseScratch,
   COLLIDER_FILL_FLOATS,
+  MESH_UV_FILL_FLOATS,
   resetColliderFillMeshLayerWarn,
 } from '../../src/render/colliderFillBatch.js';
 import {
@@ -16,6 +20,7 @@ import {
   resetMeshRendererDrawableWarn,
   warnMeshRendererNeedsDrawableCollider,
 } from '../../src/components/meshRenderer.js';
+import { MeshGeometry, resetMeshGeometryWarns } from '../../src/core/meshGeometry.js';
 import { Collider } from '../../src/components/collider.js';
 
 const INV = 0xffff;
@@ -406,6 +411,290 @@ test('MESH look path is one RT, no fillSpace / SCREEN bake', () => {
   assert.match(src, /paintEpoch/);
   assert.match(src, /packColliderFillPoseOnly/);
   assert.match(src, /meshFillPresenceChanged/);
+});
+
+function attachExplicit(views, entity, xy, indices, uvs) {
+  const n = views.entityCount | 0;
+  if (!views.meshVertOffset) {
+    views.meshVertOffset = new Int32Array(n);
+    views.meshVertOffset.fill(-1);
+    views.meshVertCount = new Uint16Array(n);
+    views.meshIndexOffset = new Int32Array(n);
+    views.meshIndexOffset.fill(-1);
+    views.meshIndexCount = new Uint32Array(n);
+    views.meshHasUv = new Uint8Array(n);
+    views.meshVertexX = new Float32Array(64);
+    views.meshVertexY = new Float32Array(64);
+    views.meshUvU = new Float32Array(64);
+    views.meshUvV = new Float32Array(64);
+    views.meshIndices = new Uint16Array(64);
+    views._meshCursor = 0;
+    views._indexCursor = 0;
+  }
+  const vertN = (xy.length / 2) | 0;
+  const at = views._meshCursor | 0;
+  views._meshCursor = at + vertN;
+  for (let v = 0; v < vertN; v++) {
+    views.meshVertexX[at + v] = xy[v * 2];
+    views.meshVertexY[at + v] = xy[v * 2 + 1];
+    if (uvs) {
+      views.meshUvU[at + v] = uvs[v * 2];
+      views.meshUvV[at + v] = uvs[v * 2 + 1];
+      views.meshHasUv[entity] = 1;
+    }
+  }
+  views.meshVertOffset[entity] = at;
+  views.meshVertCount[entity] = vertN;
+  if (indices) {
+    const iAt = views._indexCursor | 0;
+    views._indexCursor = iAt + indices.length;
+    for (let t = 0; t < indices.length; t++) views.meshIndices[iAt + t] = indices[t];
+    views.meshIndexOffset[entity] = iAt;
+    views.meshIndexCount[entity] = indices.length;
+  }
+}
+
+function meshApi(index) {
+  return new MeshRenderer(index | 0);
+}
+
+function initMeshPool(verts, indices, entities) {
+  MeshGeometry.reset();
+  resetMeshGeometryWarns();
+  const bytes = MeshGeometry.getBufferSize(verts, indices, entities);
+  const buf = new SharedArrayBuffer(bytes);
+  MeshGeometry.initializeArrays(buf, verts, indices, entities);
+  assert.equal(buf.byteLength, bytes);
+}
+
+test('explicit mesh with no collider packs its triangles', () => {
+  resetColliderFillMeshLayerWarn();
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.meshVisualOutset = new Float32Array([9]);
+  views.offsetX[0] = 50;
+  views.x[0] = 100;
+  attachExplicit(views, 0, [0, 0, 10, 0, 0, 8]);
+
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(out[0], 0);
+  assert.equal(out[2], 10);
+  assert.equal(out[5], 8);
+  assert.equal(out[6], 100);
+  assert.equal(views.layerHasVertexUv, 0);
+});
+
+test('explicit mesh wins over a fixture fan', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  addTri(views, 0, 0, 9, 9, 19, 9, 9, 19);
+  attachExplicit(views, 0, [1, 2, 3, 2, 1, 4]);
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(out[0], 1);
+  assert.equal(out[1], 2);
+});
+
+test('indexed explicit mesh packs each triangle', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  attachExplicit(
+    views,
+    0,
+    [0, 0, 4, 0, 4, 2, 0, 2],
+    [0, 1, 2, 0, 2, 3],
+  );
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 2);
+  assert.equal(out[COLLIDER_FILL_FLOATS + 4], 0);
+  assert.equal(out[COLLIDER_FILL_FLOATS + 5], 2);
+});
+
+test('per-vertex UVs skip the 18-float pack', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  attachExplicit(
+    views,
+    0,
+    [0, 0, 4, 0, 0, 4],
+    null,
+    [0, 0, 1, 0, 0, 1],
+  );
+  const fill = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  assert.equal(packColliderFill(fill, 4, 0, views), 0);
+  assert.equal(views.layerHasVertexUv, 1);
+  const uv = new Float32Array(4 * MESH_UV_FILL_FLOATS);
+  const n = packMeshUvFill(uv, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(uv[0], 0);
+  assert.equal(uv[2], 4);
+  assert.equal(uv[18], 0);
+  assert.equal(uv[20], 1);
+  assert.equal(uv[23], 1);
+});
+
+test('packer warns once when a MESH layer has nothing to draw', () => {
+  resetColliderFillMeshLayerWarn();
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.meshBits = 1;
+  const warnings = [];
+  const prev = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+    assert.equal(packColliderFill(out, 4, 0, views), 0);
+    packColliderFill(out, 4, 0, views);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /no drawable collider/);
+  } finally {
+    console.warn = prev;
+    resetColliderFillMeshLayerWarn();
+  }
+});
+
+test('fixture fan still packs when no explicit mesh was set', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.meshVertOffset = new Int32Array([-1]);
+  views.meshVertCount = new Uint16Array(1);
+  views.meshIndexOffset = new Int32Array([-1]);
+  views.meshIndexCount = new Uint32Array(1);
+  views.meshHasUv = new Uint8Array(1);
+  addTri(views, 0, 0, 0, 0, 6, 0, 0, 6);
+  const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+  const n = packColliderFill(out, 4, 0, views);
+  assert.equal(n, 1);
+  assert.equal(out[2], 6);
+});
+
+test('mesh geometry revision blocks skip', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  addTri(views, 0, 0, 0, 0, 4, 0, 0, 4);
+  views.fixtureRevision = new Uint32Array([3]);
+  views.meshGeomRevision = new Uint32Array([1]);
+  views.lastMeshRevision = 1;
+  const prevPose = {};
+  copyMeshFillPoseScratch(views, prevPose);
+  assert.equal(colliderFillCanSkipPack(views, 3, prevPose), true);
+  views.meshGeomRevision[0] = 2;
+  assert.equal(colliderFillCanSkipPack(views, 3, prevPose), false);
+});
+
+test('setMesh packs without a collider and rejects non-finite positions', () => {
+  initMeshPool(32, 64, 2);
+  const warnings = [];
+  const prev = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    const mr = meshApi(0);
+    assert.equal(mr.setMesh([0, 0, NaN, 0, 0, 1]), mr);
+    assert.equal(MeshGeometry.vertOffset[0], -1);
+    assert.equal(mr.setMesh([0, 0, 10, 0, 0, 8]), mr);
+    assert.equal(MeshGeometry.vertCount[0], 3);
+    assert.equal(MeshGeometry.indexOffset[0], -1);
+    assert.equal(MeshGeometry.vertexX[MeshGeometry.vertOffset[0] + 1], 10);
+
+    const views = makeViews({ entities: 1, fixtures: 1 });
+    views.meshActive[0] = 1;
+    views.meshLayerMask[0] = 1;
+    views.meshVertOffset = MeshGeometry.vertOffset;
+    views.meshVertCount = MeshGeometry.vertCount;
+    views.meshIndexOffset = MeshGeometry.indexOffset;
+    views.meshIndexCount = MeshGeometry.indexCount;
+    views.meshHasUv = MeshGeometry.hasUv;
+    views.meshVertexX = MeshGeometry.vertexX;
+    views.meshVertexY = MeshGeometry.vertexY;
+    views.meshUvU = MeshGeometry.uvU;
+    views.meshUvV = MeshGeometry.uvV;
+    views.meshIndices = MeshGeometry.indices;
+    const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+    assert.equal(packColliderFill(out, 4, 0, views), 1);
+    assert.equal(out[2], 10);
+
+    mr.setVertices([0, 0, 4, 0, 0, 3]);
+    assert.equal(MeshGeometry.vertexX[MeshGeometry.vertOffset[0] + 1], 4);
+    assert.equal(mr.setVertices([0, 0, 1, 0]), mr);
+    assert.equal(MeshGeometry.vertexX[MeshGeometry.vertOffset[0] + 1], 4);
+    mr.clearMesh();
+    assert.equal(MeshGeometry.vertOffset[0], -1);
+    mr.setMesh([0, 0, 2, 0, 0, 2]);
+    assert.equal(MeshGeometry.vertCount[0], 3);
+  } finally {
+    console.warn = prev;
+    MeshGeometry.reset();
+  }
+  assert.equal(warnings.length, 0);
+});
+
+test('setMesh warns once when the vertex pool is off', () => {
+  MeshGeometry.reset();
+  const warnings = [];
+  const prev = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    const mr = meshApi(0);
+    mr.setMesh([0, 0, 1, 0, 0, 1]);
+    mr.setMesh([0, 0, 2, 0, 0, 2]);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /maxMeshVerts/);
+  } finally {
+    console.warn = prev;
+    MeshGeometry.reset();
+  }
+});
+
+test('setPolygon, setPlane, and setRope write a mesh', () => {
+  initMeshPool(64, 128, 2);
+  try {
+    const poly = meshApi(0);
+    poly.setPolygon([0, 0, 3, 0, 3, 1, 1, 1, 1, 2, 0, 2]);
+    assert.equal(MeshGeometry.vertCount[0], 6);
+    assert.equal(MeshGeometry.indexCount[0], 12);
+    assert.equal(MeshGeometry.hasUv[0], 0);
+
+    const plane = meshApi(1);
+    plane.setPlane(10, 6, 1, 1);
+    assert.equal(MeshGeometry.vertCount[1], 4);
+    assert.equal(MeshGeometry.indexCount[1], 6);
+    assert.equal(MeshGeometry.hasUv[1], 1);
+    const pAt = MeshGeometry.vertOffset[1];
+    assert.equal(MeshGeometry.vertexX[pAt], -5);
+    assert.equal(MeshGeometry.vertexY[pAt], -3);
+    assert.equal(MeshGeometry.uvU[pAt + 1], 1);
+
+    plane.setRope([{ x: 0, y: 0 }, { x: 10, y: 0 }], 2);
+    assert.equal(MeshGeometry.vertCount[1], 4);
+    assert.equal(MeshGeometry.indexCount[1], 6);
+    assert.equal(MeshGeometry.hasUv[1], 1);
+    const rAt = MeshGeometry.vertOffset[1];
+    assert.ok(Math.abs(MeshGeometry.vertexY[rAt] - 2) < 1e-5);
+    assert.ok(Math.abs(MeshGeometry.vertexY[rAt + 1] + 2) < 1e-5);
+  } finally {
+    MeshGeometry.reset();
+  }
+});
+
+test('meshUvFill.wgsl samples the atlas before the vHasTex branch', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const wgsl = fs.readFileSync(path.join(here, '../../src/shaders/meshUvFill.wgsl'), 'utf8');
+  const frag = wgsl.slice(wgsl.indexOf('fn mainFrag'));
+  const sampleAt = frag.indexOf('textureSample');
+  const branchAt = frag.indexOf('vHasTex');
+  assert.ok(sampleAt >= 0);
+  assert.ok(branchAt < 0 || sampleAt < branchAt);
 });
 
 test('MeshRenderer paintEpoch bumps once per dirty burst', () => {

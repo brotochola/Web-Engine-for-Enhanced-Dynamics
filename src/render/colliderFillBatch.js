@@ -1,13 +1,15 @@
 /**
  * Instanced fill of this entity's collider (LAYER_KIND.MESH).
- * Fixtures first; else primary polygon / box / display 8-gon for a physics circle.
+ * Explicit MeshGeometry wins. Else fixtures, else primary polygon / box /
+ * display 8-gon for a physics circle. Per-vertex UVs go to packMeshUvFill.
  * One PIXI.Mesh per MESH slot. VS applies packed pose (published display pose
  * when pixi latched it, else live Transform).
  * Static bodies pack live Transform: pose lags a remesh/spawn and the island snaps.
  * A dynamic body whose published rotation is still zero (slot reuse) does too.
- * Pixi skips pack+upload when ColliderFixture.revision, mesh pose, and paint match.
+ * Pixi skips pack+upload when ColliderFixture.revision, MeshGeometry.revision,
+ * mesh pose, and paint match.
  *
- * Instance floats (17): v0, v1, v2, xy, rotCS, tintBits, depth, texId, tileInv, tileOff.
+ * Instance floats (18): v0, v1, v2, xy, rotCS, tintBits, depth, texId, tileInv, tileOff, body.
  * World verts. Camera is the RT render root, not baked here.
  */
 
@@ -32,6 +34,9 @@ import { MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 
 export const COLLIDER_FILL_FLOATS = 18;
 export const COLLIDER_FILL_STRIDE = COLLIDER_FILL_FLOATS * 4;
+/** Explicit mesh with per-vertex UVs. 18 collider floats plus uv0, uv1, uv2. */
+export const MESH_UV_FILL_FLOATS = 24;
+export const MESH_UV_FILL_STRIDE = MESH_UV_FILL_FLOATS * 4;
 /** lastRevision < 0 means no packed frame yet (always pack). */
 export const COLLIDER_FILL_PACK_FIRST_FRAME = -1;
 
@@ -46,6 +51,13 @@ let _warnedNoDrawable = false;
 export function resetColliderFillMeshLayerWarn() {
   _warnedMeshLayer = false;
   _warnedNoDrawable = false;
+}
+
+function explicitMeshOffset(i, views) {
+  const off = views.meshVertOffset;
+  if (!off) return -1;
+  const o = off[i] | 0;
+  return o >= 0 ? o : -1;
 }
 
 function entityHasDrawableCollider(i, views) {
@@ -243,6 +255,10 @@ function meshFillUsesLive(i, views) {
 
 const _livePose = { x: 0, y: 0, c: 1, s: 0 };
 
+export function sampleMeshFillPose(i, views) {
+  return readMeshFillPose(i, views, meshFillUsesLive(i, views));
+}
+
 function readMeshFillPose(i, views, live) {
   const useLive = live === true;
   _livePose.x = useLive ? views.liveX[i] : views.x[i];
@@ -324,9 +340,13 @@ function readFixtureRevision(views) {
   return views.fixtureRevision ? (views.fixtureRevision[0] | 0) : 0;
 }
 
+function readMeshGeomRevision(views) {
+  return views.meshGeomRevision ? (views.meshGeomRevision[0] | 0) : 0;
+}
+
 /**
  * True when pack+upload can be skipped.
- * ponytail: first frame and any fixture replace / pose / paint always pack.
+ * ponytail: first frame and any fixture replace / mesh edit / pose / paint always pack.
  * @param {object} views
  * @param {number} lastRevision
  * @param {object} prevPose
@@ -334,6 +354,9 @@ function readFixtureRevision(views) {
 export function colliderFillCanSkipPack(views, lastRevision, prevPose) {
   if ((lastRevision | 0) < 0 || !prevPose) return false;
   if (readFixtureRevision(views) !== (lastRevision | 0)) return false;
+  if (views.meshGeomRevision) {
+    if (readMeshGeomRevision(views) !== (views.lastMeshRevision | 0)) return false;
+  }
   if (views.paintEpoch) {
     if ((views.paintEpoch[0] | 0) !== (views.lastPaintEpoch | 0)) return false;
   } else if (meshFillPaintDirty(views)) {
@@ -344,8 +367,10 @@ export function colliderFillCanSkipPack(views, lastRevision, prevPose) {
 
 /**
  * Pack collider fans for one MESH layer bit into `out`.
- * Fixtures win; else primary polygon, box (two tris), or a display regular 8-gon
- * for a physics circle. Circle physics stays a true circle.
+ * Explicit mesh wins (no visualOutset, no collider offset). Else fixtures,
+ * else primary polygon, box (two tris), or a display regular 8-gon for a
+ * physics circle. Circle physics stays a true circle. Per-vertex UVs are skipped
+ * here; packMeshUvFill writes those. Sets views.layerHasVertexUv.
  * @param {Float32Array} out
  * @param {number} cap
  * @param {number} layerId
@@ -382,6 +407,7 @@ export function packColliderFill(out, cap, layerId, views) {
   const primaryRadius = views.primaryRadius;
   const outU32 = packOutU32(out, views);
   _instanceEntity = views.instanceEntity || null;
+  views.layerHasVertexUv = 0;
 
   const bit = 1 << (layerId | 0);
   const depthDenom = maxOut + 1;
@@ -392,7 +418,8 @@ export function packColliderFill(out, cap, layerId, views) {
     _packEntity = i;
     if (!meshActive[i] || !meshVisible[i]) continue;
     const mask = meshMask[i] | 0;
-    const drawable = entityHasDrawableCollider(i, views);
+    const meshAt = explicitMeshOffset(i, views);
+    const drawable = meshAt >= 0 || entityHasDrawableCollider(i, views);
     if (!(mask & meshBits)) {
       if (!_warnedMeshLayer && drawable) {
         _warnedMeshLayer = true;
@@ -424,6 +451,50 @@ export function packColliderFill(out, cap, layerId, views) {
     else if (a > 1) a = 1;
     const a8 = (a * 255 + 0.5) | 0;
     const packed = ((a8 & 255) << 24) | ((meshTint[i] >>> 0) & 0xffffff);
+
+    if (meshAt >= 0) {
+      if (views.meshHasUv && views.meshHasUv[i]) {
+        views.layerHasVertexUv = 1;
+        continue;
+      }
+      const vcount = views.meshVertCount ? (views.meshVertCount[i] | 0) : 0;
+      const ixAt = views.meshIndexOffset ? (views.meshIndexOffset[i] | 0) : -1;
+      const mx = views.meshVertexX;
+      const my = views.meshVertexY;
+      if (ixAt >= 0 && views.meshIndices && views.meshIndexCount) {
+        const ic = views.meshIndexCount[i] | 0;
+        const indices = views.meshIndices;
+        const triN = (ic / 3) | 0;
+        for (let t = 0; t < triN; t++) {
+          const o = ixAt + t * 3;
+          const ia = indices[o] | 0;
+          const ib = indices[o + 1] | 0;
+          const icx = indices[o + 2] | 0;
+          if (ia < 0 || ib < 0 || icx < 0 || ia >= vcount || ib >= vcount || icx >= vcount) continue;
+          const nextW = writeFillTri(
+            out, outU32, base, written, maxOut, depthDenom,
+            mx[meshAt + ia], my[meshAt + ia],
+            mx[meshAt + ib], my[meshAt + ib],
+            mx[meshAt + icx], my[meshAt + icx],
+            pose.x, pose.y, c, s, packed,
+          );
+          if (nextW < 0) return written;
+          written = nextW;
+          base += COLLIDER_FILL_FLOATS;
+        }
+        continue;
+      }
+      if (vcount >= 3 && mx && my) {
+        const fan = fanLocalVerts(
+          out, outU32, base, written, maxOut, depthDenom,
+          mx, my, meshAt, vcount, pose.x, pose.y, c, s, packed, 0,
+        );
+        written = fan.written;
+        base = fan.base;
+        if (fan.full) return written;
+      }
+      continue;
+    }
 
     if ((fixtureCount[i] | 0) >= 1 && head) {
       let cur = head[i];
@@ -548,9 +619,10 @@ export function meshFillPresenceChanged(views, prevPose) {
  * Rewrite pose/paint on already-packed local tris. Fixture topology must match.
  * @returns {number} instance count (same as `count`)
  */
-export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, views) {
+export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, views, stride) {
   const n = count | 0;
   if (!out || n <= 0 || !entityOfInstance) return 0;
+  const step = (stride | 0) > 0 ? (stride | 0) : COLLIDER_FILL_FLOATS;
   const outU32 = packOutU32(out, views);
   const offsetX = views.offsetX;
   const offsetY = views.offsetY;
@@ -563,9 +635,10 @@ export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, view
     const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
     const c = pose.c;
     const s = pose.s;
-    const ox = offsetX ? offsetX[i] : 0;
-    const oy = offsetY ? offsetY[i] : 0;
-    const base = k * COLLIDER_FILL_FLOATS;
+    const explicit = explicitMeshOffset(i, views) >= 0;
+    const ox = !explicit && offsetX ? offsetX[i] : 0;
+    const oy = !explicit && offsetY ? offsetY[i] : 0;
+    const base = k * step;
     out[base + 6] = pose.x + c * ox - s * oy;
     out[base + 7] = pose.y + s * ox + c * oy;
     out[base + 8] = c;
@@ -583,6 +656,123 @@ export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, view
     out[base + 16] = _paint.tov;
   }
   return n;
+}
+
+function writeUvTri(
+  out, outU32, base, written, maxOut, depthDenom,
+  x0, y0, x1, y1, x2, y2, wx, wy, c, s, packed,
+  u0, v0, u1, v1, u2, v2,
+) {
+  const next = writeFillTri(
+    out, outU32, base, written, maxOut, depthDenom,
+    x0, y0, x1, y1, x2, y2, wx, wy, c, s, packed,
+  );
+  if (next < 0) return -1;
+  out[base + 18] = u0;
+  out[base + 19] = v0;
+  out[base + 20] = u1;
+  out[base + 21] = v1;
+  out[base + 22] = u2;
+  out[base + 23] = v2;
+  return next;
+}
+
+/**
+ * Per-vertex UV meshes on this MESH layer. Stride is MESH_UV_FILL_FLOATS.
+ * Collider fill and tile-mode explicit meshes stay in packColliderFill.
+ * @returns {number} instance count
+ */
+export function packMeshUvFill(out, cap, layerId, views) {
+  const maxOut = cap | 0;
+  if (!out || maxOut <= 0 || !views.meshHasUv || !views.meshVertexX) return 0;
+  const entityCount = views.entityCount | 0;
+  const meshActive = views.meshActive;
+  const meshVisible = views.meshVisible;
+  const meshMask = views.meshLayerMask;
+  const meshTint = views.meshTint;
+  const meshAlpha = views.meshAlpha;
+  const meshBits = views.meshBits | 0;
+  const outU32 = packOutU32(out, views);
+  _instanceEntity = views.instanceEntity || null;
+  const bit = 1 << (layerId | 0);
+  const depthDenom = maxOut + 1;
+  const mx = views.meshVertexX;
+  const my = views.meshVertexY;
+  const mu = views.meshUvU;
+  const mv = views.meshUvV;
+  const indices = views.meshIndices;
+  let written = 0;
+  let base = 0;
+
+  for (let i = 0; i < entityCount; i++) {
+    _packEntity = i;
+    if (!meshActive[i] || !meshVisible[i]) continue;
+    if (!views.meshHasUv[i]) continue;
+    const mask = meshMask[i] | 0;
+    if (!(mask & bit) || !(mask & meshBits)) continue;
+    const meshAt = explicitMeshOffset(i, views);
+    if (meshAt < 0) continue;
+    const vcount = views.meshVertCount ? (views.meshVertCount[i] | 0) : 0;
+    if (vcount < 3 || !mu || !mv) continue;
+
+    bindMeshPaint(i, views);
+    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    const rc = pose.c;
+    const rs = pose.s;
+    let a = meshAlpha ? meshAlpha[i] : 1;
+    if (a < 0) a = 0;
+    else if (a > 1) a = 1;
+    const a8 = (a * 255 + 0.5) | 0;
+    const packed = ((a8 & 255) << 24) | ((meshTint[i] >>> 0) & 0xffffff);
+    const ixAt = views.meshIndexOffset ? (views.meshIndexOffset[i] | 0) : -1;
+
+    if (ixAt >= 0 && indices && views.meshIndexCount) {
+      const triN = ((views.meshIndexCount[i] | 0) / 3) | 0;
+      for (let t = 0; t < triN; t++) {
+        const o = ixAt + t * 3;
+        const ia = indices[o] | 0;
+        const ib = indices[o + 1] | 0;
+        const icx = indices[o + 2] | 0;
+        if (ia < 0 || ib < 0 || icx < 0 || ia >= vcount || ib >= vcount || icx >= vcount) continue;
+        const a0 = meshAt + ia;
+        const b0 = meshAt + ib;
+        const c0 = meshAt + icx;
+        const nextW = writeUvTri(
+          out, outU32, base, written, maxOut, depthDenom,
+          mx[a0], my[a0], mx[b0], my[b0], mx[c0], my[c0],
+          pose.x, pose.y, rc, rs, packed,
+          mu[a0], mv[a0], mu[b0], mv[b0], mu[c0], mv[c0],
+        );
+        if (nextW < 0) {
+          _instanceEntity = null;
+          return written;
+        }
+        written = nextW;
+        base += MESH_UV_FILL_FLOATS;
+      }
+      continue;
+    }
+    const fans = vcount - 2;
+    const a0 = meshAt;
+    for (let t = 0; t < fans; t++) {
+      const b0 = meshAt + t + 1;
+      const c0 = meshAt + t + 2;
+      const nextW = writeUvTri(
+        out, outU32, base, written, maxOut, depthDenom,
+        mx[a0], my[a0], mx[b0], my[b0], mx[c0], my[c0],
+        pose.x, pose.y, rc, rs, packed,
+        mu[a0], mv[a0], mu[b0], mv[b0], mu[c0], mv[c0],
+      );
+      if (nextW < 0) {
+        _instanceEntity = null;
+        return written;
+      }
+      written = nextW;
+      base += MESH_UV_FILL_FLOATS;
+    }
+  }
+  _instanceEntity = null;
+  return written;
 }
 
 export class ColliderFillBatch {

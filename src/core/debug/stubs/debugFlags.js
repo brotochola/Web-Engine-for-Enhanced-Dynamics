@@ -20,9 +20,10 @@ export const DEBUG_FLAGS = Object.freeze({
   SHOW_COLLISION_CANDIDATES: 15,
   SHOW_JOINTS: 16,
   SHOW_ENTITY_ORIGINS: 17,
+  SHOW_MESHES: 18,
 });
 
-export const DEBUG_FLAG_COUNT = 18;
+export const DEBUG_FLAG_COUNT = 19;
 export const DEBUG_SELECTED_ENTITY_OFFSET = 20;
 
 export class DebugFlags {
@@ -55,6 +56,7 @@ export class DebugFlags {
   showCollisionCandidates(enabled = true) { return this._set(DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES, enabled); }
   showJoints(enabled = true) { return this._set(DEBUG_FLAGS.SHOW_JOINTS, enabled); }
   showEntityOrigins(enabled = true) { return this._set(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS, enabled); }
+  showMeshes(enabled = true) { return this._set(DEBUG_FLAGS.SHOW_MESHES, enabled); }
 
   setSelectedEntity(entityIndex) {
     this._selectedEntityView[0] = entityIndex;
@@ -88,6 +90,7 @@ export class DebugFlags {
     if (options.sleepingCells !== undefined) this.showSleepingCells(options.sleepingCells);
     if (options.joints !== undefined) this.showJoints(options.joints);
     if (options.entityOrigins !== undefined) this.showEntityOrigins(options.entityOrigins);
+    if (options.meshes !== undefined) this.showMeshes(options.meshes);
     return this;
   }
 
@@ -131,6 +134,7 @@ export class DebugFlags {
       sleepingCells: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS),
       joints: this.isEnabled(DEBUG_FLAGS.SHOW_JOINTS),
       entityOrigins: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS),
+      meshes: this.isEnabled(DEBUG_FLAGS.SHOW_MESHES),
     };
   }
 }

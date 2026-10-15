@@ -536,6 +536,13 @@ export const RENDERER_DEFAULTS = Object.freeze({
    * smoothing (that is preRender.interpolation). Both true adds a frame of lag.
    */
   interpolation: false,
+  /**
+   * Explicit MeshRenderer vertex arena (local x,y). 0 = off.
+   * Indices are Uint16, so this caps at 65535.
+   */
+  maxMeshVerts: 0,
+  /** Explicit MeshRenderer index arena. 0 = convex fans only. Caps at 2^22. */
+  maxMeshIndices: 0,
 });
 
 // ============================================================================

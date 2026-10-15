@@ -3,6 +3,7 @@
 import { DEBUG_FLAGS } from '../debugFlags.js';
 import { NavDebugRenderer } from './navDebugRenderer.js';
 import { PhysicsDebugRenderer } from './physicsDebugRenderer.js';
+import { MeshDebugRenderer } from './meshDebugRenderer.js';
 import { bindBox2dHotFields, isBox2dHotFieldsBound } from '../../../box2d/box2dHotFields.js';
 import { createRenderQueueCameraViews } from '../../../render/renderQueueLayout.js';
 import { Mouse } from '../../mouse.js';
@@ -37,6 +38,7 @@ export class DebugCanvas {
 
     this.nav = new NavDebugRenderer();
     this.physics = new PhysicsDebugRenderer();
+    this.meshes = new MeshDebugRenderer();
 
     this._vpBuf = [null, null];
     this._vpMaxVerts = 0;
@@ -275,6 +277,7 @@ export class DebugCanvas {
 
     return (
       flags.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS) ||
+      flags.isEnabled(DEBUG_FLAGS.SHOW_MESHES) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_VELOCITY) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_ACCELERATION) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES) ||
@@ -343,6 +346,9 @@ export class DebugCanvas {
 
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS))
       this.physics.drawColliders(ctx, canvas, camera, zoom, pose, flags);
+
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_MESHES))
+      this.meshes.draw(ctx, canvas, camera, zoom, pose, flags);
 
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS))
       this.physics.drawEntityOrigins(ctx, canvas, camera, zoom, flags, pose);

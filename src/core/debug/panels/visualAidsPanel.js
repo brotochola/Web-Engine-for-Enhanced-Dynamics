@@ -15,6 +15,7 @@ const VISUAL_METHOD = {
   sleepingCells: 'showSleepingCells',
   joints: 'showJoints',
   entityOrigins: 'showEntityOrigins',
+  meshes: 'showMeshes',
   entityInfo: 'showEntityInfo',
   activeOnly: 'showActiveOnly',
   lights: 'showLights',
@@ -33,6 +34,7 @@ const VISUAL_FLAG = {
   sleepingCells: DEBUG_FLAGS.SHOW_SLEEPING_CELLS,
   joints: DEBUG_FLAGS.SHOW_JOINTS,
   entityOrigins: DEBUG_FLAGS.SHOW_ENTITY_ORIGINS,
+  meshes: DEBUG_FLAGS.SHOW_MESHES,
   entityInfo: DEBUG_FLAGS.SHOW_ENTITY_INFO,
   activeOnly: DEBUG_FLAGS.SHOW_ACTIVE_ONLY,
   lights: DEBUG_FLAGS.SHOW_LIGHTS,
@@ -77,6 +79,7 @@ export class VisualAidsPanel {
     const row = createRow();
     const visualAids = [
       { key: 'colliders', label: 'Colliders' },
+      { key: 'meshes', label: 'Meshes' },
       { key: 'velocity', label: 'Velocity' },
       { key: 'acceleration', label: 'Accel' },
       { key: 'neighbors', label: 'Neighbors' },
@@ -95,6 +98,8 @@ export class VisualAidsPanel {
       btn.textContent = aid.label;
       if (aid.key === 'acceleration') {
         btn.title = 'Impulse applied this step (Box2D clears ax/ay after integrate)';
+      } else if (aid.key === 'meshes') {
+        btn.title = 'Triangle edges. Magenta = authored mesh, cyan = per-vertex UVs, orange = collider fill';
       }
       btn.onclick = () => this.toggleVisualAid(aid.key);
       this.elements.visualToggles[aid.key] = btn;

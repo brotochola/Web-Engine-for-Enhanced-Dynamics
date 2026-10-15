@@ -373,6 +373,15 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           freeListTop: scene.buffers.colliderFixtureFreeListTop,
         }
       : null,
+    meshGeom: (scene.config.renderer?.maxMeshVerts | 0) > 0
+      ? {
+          enabled: true,
+          maxMeshVerts: scene.config.renderer.maxMeshVerts | 0,
+          maxMeshIndices: scene.config.renderer.maxMeshIndices | 0,
+          entityCount: scene.totalEntityCount,
+          data: scene.buffers.meshGeomData,
+        }
+      : null,
     audio: {
       soundIdMap: SoundManager.exportSoundIdMap(),
       slotSAB: SoundManager.getSlotSABConfig(),

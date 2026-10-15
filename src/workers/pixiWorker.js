@@ -26,6 +26,8 @@ import { LightEmitter } from '../components/lightEmitter.js';
 import { LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
+import { MeshGeometry } from '../core/meshGeometry.js';
+import { MeshUvFillBatch } from '../render/meshUvFillBatch.js';
 import { Sun } from '../core/sun.js';
 
 import {
@@ -97,6 +99,7 @@ import {
   ColliderFillBatch,
   packColliderFill,
   packColliderFillPoseOnly,
+  packMeshUvFill,
   colliderFillCanSkipPack,
   copyMeshFillPoseScratch,
   clearMeshFillPaintDirty,
@@ -1145,6 +1148,17 @@ class PixiRenderer extends AbstractWorker {
       v.maxFixtures = ColliderFixture.maxCount | 0;
       v.fixtureRevision = ColliderFixture.revision;
       v.paintEpoch = MeshRenderer.paintEpoch;
+      v.meshVertOffset = MeshGeometry.vertOffset;
+      v.meshVertCount = MeshGeometry.vertCount;
+      v.meshIndexOffset = MeshGeometry.indexOffset;
+      v.meshIndexCount = MeshGeometry.indexCount;
+      v.meshHasUv = MeshGeometry.hasUv;
+      v.meshVertexX = MeshGeometry.vertexX;
+      v.meshVertexY = MeshGeometry.vertexY;
+      v.meshUvU = MeshGeometry.uvU;
+      v.meshUvV = MeshGeometry.uvV;
+      v.meshIndices = MeshGeometry.indices;
+      v.meshGeomRevision = MeshGeometry.revision;
     }
     v.entityCount = MeshRenderer.active ? MeshRenderer.active.length : 0;
     v.animationFrameStart = this.animationFrameStart;
@@ -1217,6 +1231,12 @@ class PixiRenderer extends AbstractWorker {
           mesh.scale.set(zoom);
           mesh.x = -cameraX * zoom;
           mesh.y = -cameraY * zoom;
+        }
+        const uvMesh = cl.uvFillBatch?.mesh;
+        if (uvMesh) {
+          uvMesh.scale.set(zoom);
+          uvMesh.x = -cameraX * zoom;
+          uvMesh.y = -cameraY * zoom;
         }
       }
     }
@@ -1567,6 +1587,7 @@ class PixiRenderer extends AbstractWorker {
       const cl = this._customLayerList[i];
       if (cl.batch) cl.batch.setLutSource(lut);
       if (cl.fillBatch) cl.fillBatch.setLutSource(lut);
+      if (cl.uvFillBatch) cl.uvFillBatch.setLutSource(lut);
     }
   }
 
@@ -1598,6 +1619,7 @@ class PixiRenderer extends AbstractWorker {
       const cl = this._customLayerList[i];
       if (cl.batch) cl.batch.setAtlasSource(src);
       if (cl.fillBatch) cl.fillBatch.setAtlasSource(src);
+      if (cl.uvFillBatch) cl.uvFillBatch.setAtlasSource(src);
     }
     this._bindLutToBatches();
   }
@@ -4053,6 +4075,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (cl?.fillBatch?.mesh) {
           cl.fillBatch.mesh.blendMode = containerBlendMode;
         }
+        if (cl?.uvFillBatch?.mesh) {
+          cl.uvFillBatch.mesh.blendMode = containerBlendMode;
+        }
         if (cl?.splatBatch?.mesh) {
           cl.splatBatch.mesh.blendMode = containerBlendMode;
         }
@@ -4134,23 +4159,99 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * World verts + camera on a reused Container. Pixi 8 ignores Mesh x/y/scale
    * when that Mesh is the RT render root.
    */
+  _uploadMeshPoseSource(batch, label) {
+    const src = batch?._poseSource;
+    const pose = batch?.poseTable;
+    if (!src || !pose) return;
+    if (this._useWebGpu) {
+      const renderer = this.pixiApp?.renderer;
+      if (renderer) {
+        writeRgba32Float(renderer, src, pose, batch._poseWidth, batch._poseHeight, label);
+      }
+    } else {
+      this._uploadRgba32FloatGl(src, pose, batch._poseWidth, batch._poseHeight);
+    }
+  }
+
+  _ensureMeshUvBatch(cl) {
+    if (cl.uvFillBatch) return cl.uvFillBatch;
+    const cap = cl.uvCapacity | 0;
+    if (cap <= 0) return null;
+    const batch = new MeshUvFillBatch({
+      capacity: cap,
+      label: `mesh-uv-${cl.layerId}`,
+      useWebGpu: this._useWebGpu,
+      shaders: this._engineShaders,
+      atlasSource: this._resolveAtlasSource(),
+      lutSource: this._texLutSource,
+    });
+    batch.mesh.blendMode = cl.fillBatch?.mesh?.blendMode || cl.containerBlend || 'normal';
+    cl.uvFillBatch = batch;
+    if (!cl.rt && !cl.meshLook) {
+      const fill = cl.fillBatch?.mesh;
+      if (fill?.parent) fill.parent.addChild(batch.mesh);
+      else this.pixiApp.stage.addChild(batch.mesh);
+      if (fill) {
+        batch.mesh.x = fill.x;
+        batch.mesh.y = fill.y;
+        batch.mesh.scale.set(fill.scale.x, fill.scale.y);
+        batch.mesh.zIndex = fill.zIndex;
+      }
+    }
+    return batch;
+  }
+
+  _packMeshUvLayer(cl, views, skip) {
+    if (!views.layerHasVertexUv) {
+      if (cl.uvFillBatch) {
+        cl.uvFillBatch.upload(0);
+        skip.uvLocalsReady = false;
+        cl.uvPrevCount = 0;
+      }
+      return;
+    }
+    const batch = this._ensureMeshUvBatch(cl);
+    if (!batch) return;
+    const cap = batch.capacity;
+    if (!skip.uvInstanceEntity || skip.uvInstanceEntity.length < cap) {
+      skip.uvInstanceEntity = new Uint32Array(cap);
+    }
+    views.instanceEntity = skip.uvInstanceEntity;
+    views.outU32 = batch.dataU32;
+    const packed = packMeshUvFill(batch.data, cap, cl.layerId, views);
+    skip.uvLocalsReady = packed > 0;
+    cl.uvPrevCount = packed;
+    batch.upload(packed);
+    if (packed > 0) {
+      batch.uploadPoseTable(skip.uvInstanceEntity, packed, views);
+      this._uploadMeshPoseSource(batch, 'mesh-uv-pose');
+    }
+  }
+
   _renderMeshFillToRt(cl, fillMesh) {
     const z = this._renderZoom * (cl.resolution || 1);
     const mx = this._meshRtTransform;
     mx.set(z, 0, 0, z, -this._renderCameraX * z, -this._renderCameraY * z);
     const root = this._meshRtRoot;
-    if (fillMesh.parent !== root) {
-      if (fillMesh.parent) fillMesh.parent.removeChild(fillMesh);
-      root.addChild(fillMesh);
-    }
+    const uvMesh = cl.uvFillBatch?.mesh || null;
+    root.removeChildren();
+    root.addChild(fillMesh);
+    if (uvMesh) root.addChild(uvMesh);
     fillMesh.x = 0;
     fillMesh.y = 0;
     if (fillMesh.scale.x !== 1 || fillMesh.scale.y !== 1) fillMesh.scale.set(1);
+    if (uvMesh) {
+      uvMesh.x = 0;
+      uvMesh.y = 0;
+      if (uvMesh.scale.x !== 1 || uvMesh.scale.y !== 1) uvMesh.scale.set(1);
+    }
     root.x = 0;
     root.y = 0;
     if (root.scale.x !== 1 || root.scale.y !== 1) root.scale.set(1);
+    const fillEmpty = emptyInstancedMesh(fillMesh);
+    const uvEmpty = !uvMesh || emptyInstancedMesh(uvMesh);
     const rtOpts = this._rtRenderOpts;
-    rtOpts.container = emptyInstancedMesh(fillMesh)
+    rtOpts.container = fillEmpty && uvEmpty
       ? this._rtEmptyContainer
       : root;
     rtOpts.target = cl.rt;
@@ -4303,6 +4404,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const h = this.canvasHeight * resolution;
     if (cl.batch?.mesh?.parent) cl.batch.mesh.parent.removeChild(cl.batch.mesh);
     if (cl.fillBatch?.mesh?.parent) cl.fillBatch.mesh.parent.removeChild(cl.fillBatch.mesh);
+    if (cl.uvFillBatch?.mesh?.parent) cl.uvFillBatch.mesh.parent.removeChild(cl.uvFillBatch.mesh);
     if (!cl.rt) cl.rt = PIXI.RenderTexture.create({ width: w, height: h });
     const meshLook = !!cl.fillBatch;
     if (!meshLook && !cl.rtOut) cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
@@ -4999,6 +5101,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/colliderFill.wgsl').then((s) => {
           sh.colliderFill = s;
         }),
+        fetchEngineShader('/src/shaders/meshUvFill.wgsl').then((s) => {
+          sh.meshUvFill = s;
+        }),
         fetchEngineShader('/src/shaders/tilemapGid.wgsl').then((s) => {
           sh.tilemapGid = s;
         })
@@ -5046,6 +5151,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/colliderFill.frag.glsl').then((s) => {
           sh.colliderFillFrag = s;
+        }),
+        fetchEngineShader('/src/shaders/meshUvFill.vert.glsl').then((s) => {
+          sh.meshUvFillVert = s;
+        }),
+        fetchEngineShader('/src/shaders/meshUvFill.frag.glsl').then((s) => {
+          sh.meshUvFillFrag = s;
         }),
         fetchEngineShader('/src/shaders/tilemapGid.vert.glsl').then((s) => {
           sh.tilemapGidVert = s;
@@ -5619,15 +5730,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           (data.config?.physics?.maxFixtures | 0) ||
           (this.config?.physics?.maxFixtures | 0);
         const entitySlots = this.globalEntityCount | 0;
+        const maxMeshVerts =
+          (data.config?.renderer?.maxMeshVerts | 0) ||
+          (this.config?.renderer?.maxMeshVerts | 0);
+        const maxMeshIndices =
+          (data.config?.renderer?.maxMeshIndices | 0) ||
+          (this.config?.renderer?.maxMeshIndices | 0);
         // Fixtures or one primary shape per entity; each convex is at most 6 fans (8-2).
+        const colliderCap = Math.max(maxFx, entitySlots) * (MAX_POLYGON_VERTICES - 2);
+        const fanCap = maxMeshVerts > 2 ? maxMeshVerts - 2 : 0;
+        const indexCap = (maxMeshIndices / 3) | 0;
+        const explicitCap = fanCap + indexCap;
         fillBatch = new ColliderFillBatch({
-          capacity: Math.max(1, Math.max(maxFx, entitySlots) * (MAX_POLYGON_VERTICES - 2)),
+          capacity: Math.max(1, colliderCap + explicitCap),
           label: `mesh-layer-${layerName}`,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
           atlasSource: this._resolveAtlasSource(),
           lutSource: this._texLutSource,
         });
+        fillBatch._uvCapacity = explicitCap;
         fillBatch.mesh.blendMode = containerBlend;
       }
       let sortKeyU32ByBuf = null;
@@ -5682,6 +5804,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         prevCount: 0,
         batch,
         fillBatch,
+        uvFillBatch: null,
+        uvCapacity: fillBatch?._uvCapacity | 0,
+        uvPrevCount: 0,
         splatBatch,
         densitySource: isLfDensity ? LAYER_DENSITY_SOURCE.LIQUID_FUN : LAYER_DENSITY_SOURCE.SPRITES,
         splat: splatCfg ? { ...splatCfg } : null,
@@ -5951,65 +6076,66 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (!skip) {
           skip = this._colliderFillSkip[cl.layerId] = {
             lastRevision: COLLIDER_FILL_PACK_FIRST_FRAME,
+            lastMeshRevision: 0,
             lastPaintEpoch: -1,
             prevPose: {},
             camX: NaN,
             camY: NaN,
             zoom: NaN,
             rtReady: false,
+            uvLocalsReady: false,
           };
         }
         views.lastPaintEpoch = skip.lastPaintEpoch;
+        views.lastMeshRevision = skip.lastMeshRevision | 0;
         let packedThisFrame = false;
         if (!colliderFillCanSkipPack(views, skip.lastRevision, skip.prevPose)) {
           const cap = cl.fillBatch.capacity;
           if (!skip.instanceEntity || skip.instanceEntity.length < cap) {
             skip.instanceEntity = new Uint32Array(cap);
           }
-          views.instanceEntity = skip.instanceEntity;
           const lastPacked = cl.prevCount | 0;
           const rev = views.fixtureRevision ? (views.fixtureRevision[0] | 0) : 0;
-          const canPoseOnly =
-            lastPacked > 0 &&
-            skip.localsReady &&
-            rev === (skip.lastRevision | 0) &&
+          const meshRev = views.meshGeomRevision ? (views.meshGeomRevision[0] | 0) : 0;
+          const topologyStable =
             skip.lastRevision !== COLLIDER_FILL_PACK_FIRST_FRAME &&
+            rev === (skip.lastRevision | 0) &&
+            meshRev === (skip.lastMeshRevision | 0) &&
             !meshFillPresenceChanged(views, skip.prevPose);
-          let packed = lastPacked;
-          let poseTableDirty = false;
-          if (canPoseOnly) {
-            packed = cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views);
-            poseTableDirty = true;
+          const canPoseFill = topologyStable && skip.localsReady && lastPacked > 0;
+          const canPoseUv = topologyStable && skip.uvLocalsReady && (cl.uvPrevCount | 0) > 0 && cl.uvFillBatch;
+          if (canPoseFill || canPoseUv) {
+            if (canPoseFill) {
+              views.instanceEntity = skip.instanceEntity;
+              cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views);
+              this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
+            }
+            if (canPoseUv) {
+              cl.uvFillBatch.uploadPoseTable(skip.uvInstanceEntity, cl.uvPrevCount | 0, views);
+              this._uploadMeshPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
+            }
           } else {
-            packed = packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
+            views.instanceEntity = skip.instanceEntity;
+            views.outU32 = cl.fillBatch.dataU32;
+            const packed = packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
             skip.localsReady = packed > 0;
             cl.fillBatch.upload(packed);
+            cl.prevCount = packed;
             if (packed > 0) {
               cl.fillBatch.uploadPoseTable(skip.instanceEntity, packed, views);
-              poseTableDirty = true;
+              this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
             }
+            this._packMeshUvLayer(cl, views, skip);
           }
-          if (poseTableDirty) {
-            const src = cl.fillBatch._poseSource;
-            const pose = cl.fillBatch.poseTable;
-            if (src && pose && this._useWebGpu) {
-              const renderer = this.pixiApp?.renderer;
-              if (renderer) {
-                writeRgba32Float(renderer, src, pose, cl.fillBatch._poseWidth, cl.fillBatch._poseHeight, 'mesh-pose');
-              }
-            } else if (src && pose) {
-              this._uploadRgba32FloatGl(src, pose, cl.fillBatch._poseWidth, cl.fillBatch._poseHeight);
-            }
-          }
-          cl.prevCount = packed;
           copyMeshFillPoseScratch(views, skip.prevPose);
           skip.lastRevision = rev;
+          skip.lastMeshRevision = meshRev;
           skip.lastPaintEpoch = views.paintEpoch ? (views.paintEpoch[0] | 0) : 0;
           clearMeshFillPaintDirty(views);
           packedThisFrame = true;
         }
         densityMesh = cl.fillBatch.mesh;
-        this._meshFillInstancesThisFrame += cl.prevCount | 0;
+        this._meshFillInstancesThisFrame += (cl.prevCount | 0) + (cl.uvPrevCount | 0);
         const camChanged =
           skip.camX !== this._renderCameraX ||
           skip.camY !== this._renderCameraY ||

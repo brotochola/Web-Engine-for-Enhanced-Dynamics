@@ -41,7 +41,19 @@ test('constructor and disableAll keep selected entity at -1', () => {
 
   assert.equal(flags.getSelectedEntity(), -1);
   assert.equal(flags.isEnabled(DEBUG_FLAGS.SHOW_JOINTS), false);
-  assert.equal(DEBUG_FLAG_COUNT, 18);
+  assert.equal(DEBUG_FLAG_COUNT, 19);
+});
+
+test('mesh flag sits in the pad byte and does not alias the selected entity', () => {
+  const debugBuffer = new SharedArrayBuffer(32);
+  const flags = new DebugFlags(debugBuffer);
+  flags.showMeshes(true);
+  flags.setSelectedEntity(99);
+  assert.equal(flags.isEnabled(DEBUG_FLAGS.SHOW_MESHES), true);
+  assert.equal(flags.getSelectedEntity(), 99);
+  flags.disableAll();
+  assert.equal(flags.isEnabled(DEBUG_FLAGS.SHOW_MESHES), false);
+  assert.equal(flags.getSelectedEntity(), -1);
 });
 
 test('enable() forwards debugDraws, joints, lights, and activeOnly', () => {
