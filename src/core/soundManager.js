@@ -14,7 +14,7 @@
 //     +4 volume  (Float32) 0..1
 //     +5 loop    (Int32)   0=once 1=loop
 //     +6 cursor  (Float32) fractional sample position (worklet writes)
-//     +7 reserved
+//     +7 channel (Int32)   bus index
 
 import { AUDIO_DEFAULTS } from '../util/configDefaults.js';
 import { rng } from '../util/utils.js';
@@ -47,6 +47,43 @@ export class SoundManager {
   /** SharedArrayBuffer: Float32[1] = last process() wall ms (worklet → main). */
   static _processMsSab = null;
   static _processMsF32 = null;
+
+  // Output level ring, separate from the slot SAB. Worklet writes one quantum
+  // at a time; the debug UI folds the new entries. Header words:
+  //   [0] writeIndex i32  [1] clipSticky i32  [2] reserved  [3] reserved
+  // then LEVEL_RING floats of peakL, peakR, and mean square.
+  static LEVEL_HEADER = 4;
+  static LEVEL_RING = 256; // power of two; the reader masks with RING - 1
+  static _levelsSab = null;
+  static _levelsI32 = null;
+  static _levelsF32 = null;
+  static _levelsReadIndex = -1;
+  static _levelSample = { peakL: 0, peakR: 0, rms: 0, clip: false, count: 0 };
+
+  // Bus SAB. Header is the master compressor, then each bus.
+  // Header: [threshold, ratio, attack, release, reduction, unused ×3]
+  // Bus stride 8: [volume, pan, mute i32, reduction, threshold, ratio, attack, release]
+  // Slot word +7 is the bus index. Does not change HEADER_SIZE or SLOT_SIZE.
+  static MAX_CHANNELS = 8;
+  static CHANNEL_HEADER = 8;
+  static CHANNEL_STRIDE = 8;
+  static DEFAULT_MAX_VOICES = 32;
+  static DEFAULT_BUS_COMPRESSOR = Object.freeze({ threshold: 0.6, ratio: 4, attack: 0.01, release: 0.15 });
+  static DEFAULT_MASTER_COMPRESSOR = Object.freeze({ threshold: 0.85, ratio: 12, attack: 0.005, release: 0.12 });
+  static _channelMaxVoices = [32, 32, 32, 32, 32, 32, 32, 32];
+  static _channelSab = null;
+  static _channelI32 = null;
+  static _channelF32 = null;
+  static _channelNames = [];
+  static _channelNameToIndex = new Map();
+  static _channelHandles = new Map();
+  static _channelCount = 1;
+  static _channelRev = 0;
+
+  // Main-thread catalog. PCM itself stays in the worklet.
+  static _assetRev = 0;
+  static _assets = [];
+  static _assetById = new Map();
 
   // Volume state (main thread tracks these for mute/unmute restore)
   static _muted = false;
@@ -102,11 +139,11 @@ export class SoundManager {
 
   // ─── AudioWorklet initialization (main thread only) ─────────────────────────
 
-  static async initializeAudioWorklet(maxSlots = 64, mixGain = 0.5, masterVolume = 1.0) {
+  static async initializeAudioWorklet(maxSlots = 64, mixGain = 0.5, masterVolume = 1.0, channels) {
     if (this._isWorkerContext()) return false;
 
     if (this._audioCtx) {
-      this._reconfigureForNewScene(maxSlots, mixGain, masterVolume);
+      this._reconfigureForNewScene(maxSlots, mixGain, masterVolume, channels);
       return true;
     }
 
@@ -146,19 +183,15 @@ export class SoundManager {
     this._processMsSab = new SharedArrayBuffer(4);
     this._processMsF32 = new Float32Array(this._processMsSab);
     this._processMsF32[0] = 0;
+    this._ensureLevelsSab();
 
     this._workletNode = new AudioWorkletNode(this._audioCtx, 'weed-audio-mixer', {
       numberOfOutputs: 1,
       outputChannelCount: [2],
     });
     this._workletNode.connect(this._audioCtx.destination);
-
-    this._workletNode.port.postMessage({
-      type: 'init',
-      sab: this._sab,
-      maxSlots,
-      processMsSab: this._processMsSab,
-    });
+    this.configureChannels(channels);
+    this._postWorkletInit();
 
     debugWorkerLog(
       `[SoundManager] AudioWorklet mixer initialized (${maxSlots} slots, mixGain=${mixGain}, masterVol=${masterVolume})`
@@ -166,9 +199,200 @@ export class SoundManager {
     return true;
   }
 
+  static _ensureLevelsSab() {
+    if (this._levelsSab) return;
+    const words = this.LEVEL_HEADER + this.LEVEL_RING * 3;
+    this._levelsSab = new SharedArrayBuffer(words * 4);
+    this._levelsI32 = new Int32Array(this._levelsSab);
+    this._levelsF32 = new Float32Array(this._levelsSab);
+    this._levelsReadIndex = -1;
+  }
+
+  static _postWorkletInit() {
+    if (!this._workletNode || !this._sab) return;
+    this._ensureLevelsSab();
+    this._ensureChannelSab();
+    this._workletNode.port.postMessage({
+      type: 'init',
+      sab: this._sab,
+      maxSlots: this._maxSlots,
+      processMsSab: this._processMsSab,
+      levelsSab: this._levelsSab,
+      channelSab: this._channelSab,
+      channelCount: this._channelCount,
+    });
+  }
+
+  /** Drop level-ring history so a scene switch does not graph the previous mix. */
+  static _snapLevelsCursor() {
+    const i32 = this._levelsI32;
+    if (!i32) {
+      this._levelsReadIndex = -1;
+      return;
+    }
+    Atomics.store(i32, 1, 0);
+    this._levelsReadIndex = Atomics.load(i32, 0);
+  }
+
   static getSlotSABConfig() {
     if (!this._sab) return null;
     return { sab: this._sab, maxSlots: this._maxSlots };
+  }
+
+  static _ensureChannelSab() {
+    if (this._channelSab) return;
+    const words = this.MAX_CHANNELS * this.CHANNEL_STRIDE;
+    this._channelSab = new SharedArrayBuffer(words * 4);
+    this._channelI32 = new Int32Array(this._channelSab);
+    this._channelF32 = new Float32Array(this._channelSab);
+  }
+
+  static _postChannelCount() {
+    if (!this._workletNode) return;
+    this._workletNode.port.postMessage({
+      type: 'channels',
+      channelCount: this._channelCount,
+    });
+  }
+
+  /**
+   * Replace the bus list. `channels` is `{ name: { volume, pan } }` in declaration
+   * order. The first bus is the default for play() calls that omit a channel.
+   * More than MAX_CHANNELS throws. Workers do not call this; they import the map.
+   */
+  static configureChannels(channels) {
+    const list = this._normalizeChannels(channels);
+    if (list.length > this.MAX_CHANNELS) {
+      throw new Error(`Audio channels exceed ${this.MAX_CHANNELS} (got ${list.length})`);
+    }
+    this._ensureChannelSab();
+    this._channelNames.length = 0;
+    this._channelNameToIndex.clear();
+    this._channelHandles.clear();
+    const f32 = this._channelF32;
+    const i32 = this._channelI32;
+    const stride = this.CHANNEL_STRIDE;
+    for (let i = 0; i < list.length; i++) {
+      const entry = list[i];
+      this._channelNames[i] = entry.name;
+      this._channelNameToIndex.set(entry.name, i);
+      const b = i * stride;
+      f32[b] = entry.volume;
+      f32[b + 1] = entry.pan;
+      i32[b + 2] = 0;
+    }
+    for (let i = list.length; i < this.MAX_CHANNELS; i++) {
+      const b = i * stride;
+      f32[b] = 1;
+      f32[b + 1] = 0;
+      i32[b + 2] = 0;
+    }
+    this._channelCount = list.length;
+    this._channelRev++;
+  }
+
+  static _normalizeChannels(channels) {
+    const source = channels && typeof channels === 'object' ? channels : null;
+    const names = source ? Object.keys(source) : [];
+    if (names.length === 0) return [{ name: 'main', volume: 1, pan: 0 }];
+    const list = [];
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      const def = source[name] && typeof source[name] === 'object' ? source[name] : {};
+      let volume = Number(def.volume);
+      let pan = Number(def.pan);
+      if (!Number.isFinite(volume)) volume = 1;
+      else if (volume < 0) volume = 0;
+      else if (volume > 1) volume = 1;
+      if (!Number.isFinite(pan)) pan = 0;
+      else if (pan < -1) pan = -1;
+      else if (pan > 1) pan = 1;
+      list.push({ name, volume, pan });
+    }
+    return list;
+  }
+
+  static _resolveChannel(name) {
+    if (name == null || name === '') return 0;
+    if (typeof name === 'number' && Number.isInteger(name)) {
+      return name >= 0 && name < this._channelCount ? name : -1;
+    }
+    if (typeof name !== 'string') return -1;
+    const id = this._channelNameToIndex.get(name);
+    return typeof id === 'number' ? id : -1;
+  }
+
+  /** Bus handle. volume, pan, and muted read and write the shared bus buffer. */
+  static channel(name) {
+    const key = typeof name === 'string' ? name : '';
+    let handle = this._channelHandles.get(key);
+    if (!handle) {
+      handle = new AudioChannel(key);
+      this._channelHandles.set(key, handle);
+    }
+    return handle;
+  }
+
+  static listChannels() {
+    return this._channelNames.slice(0, this._channelCount);
+  }
+
+  static getChannelRevision() {
+    return this._channelRev;
+  }
+
+  static exportChannelMap() {
+    const out = {};
+    for (let i = 0; i < this._channelCount; i++) {
+      const name = this._channelNames[i];
+      if (name) out[name] = i;
+    }
+    return out;
+  }
+
+  static importChannelMap(channelMap) {
+    this._channelNames.length = 0;
+    this._channelNameToIndex.clear();
+    this._channelHandles.clear();
+    let count = 0;
+    if (channelMap && typeof channelMap === 'object') {
+      for (const [name, idValue] of Object.entries(channelMap)) {
+        const id = idValue | 0;
+        if (id < 0 || id >= this.MAX_CHANNELS) continue;
+        this._channelNames[id] = name;
+        this._channelNameToIndex.set(name, id);
+        if (id + 1 > count) count = id + 1;
+      }
+    }
+    if (count === 0) {
+      this._channelNames[0] = 'main';
+      this._channelNameToIndex.set('main', 0);
+      count = 1;
+    }
+    this._channelCount = count;
+    this._channelRev++;
+  }
+
+  static getChannelSAB() {
+    return this._channelSab;
+  }
+
+  static initializeChannelSAB(sab) {
+    if (!sab) {
+      this._channelSab = null;
+      this._channelI32 = null;
+      this._channelF32 = null;
+      return;
+    }
+    this._channelSab = sab;
+    this._channelI32 = new Int32Array(sab);
+    this._channelF32 = new Float32Array(sab);
+  }
+
+  static _channelWord(name) {
+    const id = this._channelNameToIndex.get(name);
+    if (typeof id !== 'number' || !this._channelF32) return -1;
+    return id * this.CHANNEL_STRIDE;
   }
 
   static initializeSlotSAB(config) {
@@ -189,7 +413,7 @@ export class SoundManager {
    * Reconfigure the audio worklet for a new scene without recreating the AudioContext.
    * Rebuilds the SAB if maxSlots changed, and always applies fresh gain/volume.
    */
-  static _reconfigureForNewScene(maxSlots, mixGain, masterVolume) {
+  static _reconfigureForNewScene(maxSlots, mixGain, masterVolume, channels) {
     if (maxSlots !== this._maxSlots) {
       this._maxSlots = maxSlots;
       const sabBytes = (this.HEADER_SIZE + maxSlots * this.SLOT_SIZE) * 4;
@@ -199,20 +423,15 @@ export class SoundManager {
       this._i32.fill(0);
       Atomics.store(this._i32, 0, maxSlots);
 
-      if (this._workletNode) {
-        this._workletNode.port.postMessage({
-          type: 'init',
-          sab: this._sab,
-          maxSlots,
-          processMsSab: this._processMsSab,
-        });
-      }
+      if (this._workletNode) this._postWorkletInit();
     }
 
     this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, mixGain));
     this._f32[this.HEADER_MASTER_VOL] = Math.max(0, Math.min(1, masterVolume));
     this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
     this._muted = false;
+    this.configureChannels(channels);
+    this._postChannelCount();
 
     debugWorkerLog(
       `[SoundManager] AudioWorklet reconfigured for new scene (${maxSlots} slots, mixGain=${mixGain}, masterVol=${masterVolume})`
@@ -259,6 +478,7 @@ export class SoundManager {
     for (const [name, srcUrl] of entries) {
       const id = this._assignId(name);
       if (mainThread) {
+        this._beginAsset(id, name, srcUrl);
         loadPromises.push(this._decodeAndSendToWorklet(id, srcUrl));
       }
     }
@@ -278,12 +498,16 @@ export class SoundManager {
     loop = 0,
     mute = 0,
     worldX = Number.NaN,
-    worldY = Number.NaN
+    worldY = Number.NaN,
+    channel
   ) {
     if (!this._enabled) return -1;
 
     const soundDefId = this._resolveSoundId(nameOrId);
     if (soundDefId < 0) return -1;
+
+    const channelIndex = this._resolveChannel(channel);
+    if (channelIndex < 0) return -1;
 
     const spatial = this._computeSpatial(worldX, worldY);
     if (!spatial.audible) return -1;
@@ -292,7 +516,7 @@ export class SoundManager {
     if (!mute && !(finalVolume > 0)) return -1;
 
     const playbackRate = this._resolveRateRange(rateMin, rateMax);
-    return this._writeSlot(soundDefId, finalVolume, playbackRate, spatial.pan, !!loop);
+    return this._writeSlot(soundDefId, finalVolume, playbackRate, spatial.pan, !!loop, channelIndex);
   }
 
   static stop(nameOrId) {
@@ -330,6 +554,7 @@ export class SoundManager {
     const name = this._idToName[soundDefId];
     if (name) this._nameToId.delete(name);
     this._idToName[soundDefId] = null;
+    this._removeAsset(soundDefId);
   }
 
   static unloadMany(names) {
@@ -348,6 +573,7 @@ export class SoundManager {
     }
     this._idToName.length = 0;
     this._nameToId.clear();
+    this._clearAssets();
   }
 
   static reset() {
@@ -359,9 +585,11 @@ export class SoundManager {
     }
     this._idToName.length = 0;
     this._nameToId.clear();
+    this._clearAssets();
     if (this._i32) {
       Atomics.store(this._i32, this.HEADER_DROPPED, 0);
     }
+    this._snapLevelsCursor();
   }
 
   /**
@@ -395,6 +623,17 @@ export class SoundManager {
     this._f32 = null;
     this._processMsSab = null;
     this._processMsF32 = null;
+    this._levelsSab = null;
+    this._levelsI32 = null;
+    this._levelsF32 = null;
+    this._levelsReadIndex = -1;
+    this._channelSab = null;
+    this._channelI32 = null;
+    this._channelF32 = null;
+    this._channelNames.length = 0;
+    this._channelNameToIndex.clear();
+    this._channelHandles.clear();
+    this._channelCount = 1;
     this._maxSlots = 0;
     this._audioUnlocked = false;
   }
@@ -426,6 +665,139 @@ export class SoundManager {
       outputLatency: ctx ? (ctx.outputLatency || 0) : 0,
       processMs: this._processMsF32 ? this._processMsF32[0] : 0,
     };
+  }
+
+  /** Asset entries in load order. Callers must not mutate the array or the entries. */
+  static getAssetCatalog() {
+    return this._assets;
+  }
+
+  static getAssetRevision() {
+    return this._assetRev;
+  }
+
+  /**
+   * Fill `out` with the voices currently in STATE_PLAYING. Reuses objects already
+   * stored on `out`. `out.length` is the active count.
+   */
+  static readPlayingVoices(out) {
+    const i32 = this._i32;
+    const f32 = this._f32;
+    let n = 0;
+    if (i32 && f32) {
+      const H = this.HEADER_SIZE;
+      const S = this.SLOT_SIZE;
+      const max = this._maxSlots;
+      const names = this._idToName;
+      for (let s = 0; s < max; s++) {
+        const b = H + s * S;
+        if (Atomics.load(i32, b) !== this.STATE_PLAYING) continue;
+        let voice = out[n];
+        if (!voice) {
+          voice = {
+            slot: 0,
+            audioId: 0,
+            name: '',
+            volume: 0,
+            pitch: 0,
+            pan: 0,
+            loop: 0,
+            cursor: 0,
+            channel: 0,
+            channelName: '',
+          };
+          out[n] = voice;
+        }
+        const audioId = i32[b + 1];
+        const channel = i32[b + 7] | 0;
+        voice.slot = s;
+        voice.audioId = audioId;
+        voice.name = names[audioId] || '#' + audioId;
+        voice.pitch = f32[b + 2];
+        voice.pan = f32[b + 3];
+        voice.volume = f32[b + 4];
+        voice.loop = i32[b + 5];
+        voice.cursor = f32[b + 6];
+        voice.channel = channel;
+        voice.channelName = this._channelNames[channel] || '';
+        n++;
+      }
+    }
+    out.length = n;
+    return out;
+  }
+
+  static stopSlot(slot) {
+    const s = slot | 0;
+    if (!this._i32 || s < 0 || s >= this._maxSlots) return;
+    Atomics.store(this._i32, this.HEADER_SIZE + s * this.SLOT_SIZE, this.STATE_FREE);
+  }
+
+  static clearDropped() {
+    if (!this._i32) return;
+    Atomics.store(this._i32, this.HEADER_DROPPED, 0);
+  }
+
+  /**
+   * Fold level-ring quanta written since the previous call.
+   * peakL / peakR are the max post-clamp peaks in that span, rms is the
+   * root-mean-square across those quanta, and clip is the sticky full-scale flag
+   * (cleared here). Returns the same object every call.
+   */
+  static sampleOutputLevels() {
+    const out = this._levelSample;
+    out.peakL = 0;
+    out.peakR = 0;
+    out.rms = 0;
+    out.clip = false;
+    out.count = 0;
+
+    const i32 = this._levelsI32;
+    const f32 = this._levelsF32;
+    if (!i32 || !f32) return out;
+
+    const write = Atomics.load(i32, 0);
+    out.clip = Atomics.exchange(i32, 1, 0) !== 0;
+
+    const ring = this.LEVEL_RING;
+    let read = this._levelsReadIndex;
+    if (read < 0 || write - read > ring) {
+      read = write > ring ? write - ring : 0;
+    }
+    let count = write - read;
+    if (count < 0) {
+      read = write;
+      count = 0;
+    } else if (count > ring) {
+      read = write - ring;
+      count = ring;
+    }
+
+    const header = this.LEVEL_HEADER;
+    const baseR = header + ring;
+    const baseM = header + ring * 2;
+    let pkL = 0;
+    let pkR = 0;
+    let sum = 0;
+    for (let i = 0; i < count; i++) {
+      const slot = (read + i) & (ring - 1);
+      const l = f32[header + slot];
+      const r = f32[baseR + slot];
+      const m = f32[baseM + slot];
+      if (l > pkL) pkL = l;
+      if (r > pkR) pkR = r;
+      if (m > 0) sum += m;
+    }
+    this._levelsReadIndex = write;
+    out.peakL = pkL;
+    out.peakR = pkR;
+    out.rms = count > 0 ? Math.sqrt(sum / count) : 0;
+    out.count = count;
+    return out;
+  }
+
+  static resume() {
+    this._tryResumeAudioContext();
   }
 
   // ─── Volume controls ─────────────────────────────────────────────────────
@@ -463,7 +835,7 @@ export class SoundManager {
 
   // ─── Private ──────────────────────────────────────────────────────────────
 
-  static _writeSlot(audioId, volume, pitch, pan, loop) {
+  static _writeSlot(audioId, volume, pitch, pan, loop, channelIndex = 0) {
     const i32 = this._i32;
     if (!i32) return -1;
 
@@ -484,7 +856,7 @@ export class SoundManager {
         f32[b + 4] = volume;
         i32[b + 5] = loop ? 1 : 0;
         f32[b + 6] = 0;
-        i32[b + 7] = 0;
+        i32[b + 7] = channelIndex | 0;
         Atomics.store(i32, b, this.STATE_PLAYING);
         return s;
       }
@@ -494,23 +866,112 @@ export class SoundManager {
   }
 
   static async _decodeAndSendToWorklet(id, srcUrl) {
-    if (!this._workletNode) return;
-
-    const response = await fetch(srcUrl);
-    const arrayBuffer = await response.arrayBuffer();
-    const decoded = await this._audioCtx.decodeAudioData(arrayBuffer);
-
-    const channels = [];
-    for (let c = 0; c < decoded.numberOfChannels; c++) {
-      channels.push(new Float32Array(decoded.getChannelData(c)));
+    if (!this._workletNode) {
+      this._failAsset(id, 'audio worklet not initialized');
+      return;
     }
 
-    this._workletNode.port.postMessage({
-      type: 'load',
-      id,
-      channels,
-      length: decoded.length,
-    });
+    try {
+      const response = await fetch(srcUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      const decoded = await this._audioCtx.decodeAudioData(arrayBuffer);
+
+      const channels = [];
+      for (let c = 0; c < decoded.numberOfChannels; c++) {
+        channels.push(new Float32Array(decoded.getChannelData(c)));
+      }
+
+      this._workletNode.port.postMessage({
+        type: 'load',
+        id,
+        channels,
+        length: decoded.length,
+      });
+      this._readyAsset(id, decoded);
+    } catch (err) {
+      this._failAsset(id, err);
+      throw err;
+    }
+  }
+
+  static _touchAssets() {
+    this._assetRev++;
+  }
+
+  static _beginAsset(id, name, src) {
+    let entry = this._assetById.get(id);
+    if (!entry) {
+      entry = {
+        id,
+        name,
+        src,
+        state: 'loading',
+        channels: 0,
+        sampleRate: 0,
+        duration: 0,
+        length: 0,
+        bytes: 0,
+        error: '',
+      };
+      this._assetById.set(id, entry);
+      this._assets.push(entry);
+    } else {
+      entry.name = name;
+      entry.src = src;
+      entry.state = 'loading';
+      entry.channels = 0;
+      entry.sampleRate = 0;
+      entry.duration = 0;
+      entry.length = 0;
+      entry.bytes = 0;
+      entry.error = '';
+    }
+    this._touchAssets();
+  }
+
+  static _readyAsset(id, decoded) {
+    const entry = this._assetById.get(id);
+    if (!entry) return;
+    const channels = decoded.numberOfChannels | 0;
+    const length = decoded.length | 0;
+    const sampleRate = decoded.sampleRate | 0;
+    entry.state = 'ready';
+    entry.channels = channels;
+    entry.sampleRate = sampleRate;
+    entry.length = length;
+    entry.duration = decoded.duration || (sampleRate ? length / sampleRate : 0);
+    entry.bytes = channels * length * 4;
+    entry.error = '';
+    this._touchAssets();
+  }
+
+  static _failAsset(id, err) {
+    const entry = this._assetById.get(id);
+    if (!entry) return;
+    entry.state = 'error';
+    entry.error = err && err.message ? err.message : String(err || 'decode failed');
+    this._touchAssets();
+  }
+
+  static _removeAsset(id) {
+    const entry = this._assetById.get(id);
+    if (!entry) return;
+    this._assetById.delete(id);
+    const list = this._assets;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i] === entry) {
+        list.splice(i, 1);
+        break;
+      }
+    }
+    this._touchAssets();
+  }
+
+  static _clearAssets() {
+    if (this._assets.length === 0 && this._assetById.size === 0) return;
+    this._assets.length = 0;
+    this._assetById.clear();
+    this._touchAssets();
   }
 
   static _resolveRateRange(rateMin, rateMax) {
@@ -647,5 +1108,55 @@ export class SoundManager {
     document.removeEventListener('keydown', this._unlockHandler, true);
     this._unlockListenersAttached = false;
     this._unlockHandler = null;
+  }
+}
+
+class AudioChannel {
+  constructor(name) {
+    this.name = name;
+  }
+
+  get volume() {
+    const word = SoundManager._channelWord(this.name);
+    if (word < 0) return 1;
+    return SoundManager._channelF32[word];
+  }
+
+  set volume(value) {
+    const word = SoundManager._channelWord(this.name);
+    if (word < 0) return;
+    let v = Number(value);
+    if (!Number.isFinite(v)) v = 1;
+    else if (v < 0) v = 0;
+    else if (v > 1) v = 1;
+    SoundManager._channelF32[word] = v;
+  }
+
+  get pan() {
+    const word = SoundManager._channelWord(this.name);
+    if (word < 0) return 0;
+    return SoundManager._channelF32[word + 1];
+  }
+
+  set pan(value) {
+    const word = SoundManager._channelWord(this.name);
+    if (word < 0) return;
+    let p = Number(value);
+    if (!Number.isFinite(p)) p = 0;
+    else if (p < -1) p = -1;
+    else if (p > 1) p = 1;
+    SoundManager._channelF32[word + 1] = p;
+  }
+
+  get muted() {
+    const word = SoundManager._channelWord(this.name);
+    if (word < 0 || !SoundManager._channelI32) return false;
+    return SoundManager._channelI32[word + 2] !== 0;
+  }
+
+  set muted(value) {
+    const word = SoundManager._channelWord(this.name);
+    if (word < 0 || !SoundManager._channelI32) return;
+    SoundManager._channelI32[word + 2] = value ? 1 : 0;
   }
 }

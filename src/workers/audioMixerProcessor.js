@@ -13,7 +13,12 @@
 //   +4 volume  (Float32) 0..1
 //   +5 loop    (Int32)   0=once  1=loop
 //   +6 cursor  (Float32) fractional sample position
-//   +7 reserved
+//   +7 channel (Int32)   bus index
+//
+// Levels SAB (debug, separate buffer). Header 4 words, then three rings of the
+// same length: post-clamp peak L, post-clamp peak R, mean square.
+//   [0] writeIndex (i32, monotonic, published after the ring slot is written)
+//   [1] clipSticky (i32, set to 1 when a pre-clamp sample exceeds full scale)
 
 var H = 4; // header ints
 var S = 8; // fields per slot
@@ -31,6 +36,14 @@ class MixerProcessor extends AudioWorkletProcessor {
     this._processMs = null;
     this._max = 0;
     this._assets = new Map();
+    this._levelsI32 = null;
+    this._levelsF32 = null;
+    this._levelRing = 0;
+    this._levelMask = 0;
+    this._levelHeader = 4;
+    this._chI32 = null;
+    this._chF32 = null;
+    this._channelCount = 0;
 
     this.port.onmessage = function (e) {
       var d = e.data;
@@ -39,7 +52,32 @@ class MixerProcessor extends AudioWorkletProcessor {
         this._f32 = new Float32Array(d.sab);
         this._max = d.maxSlots;
         this._processMs = d.processMsSab ? new Float32Array(d.processMsSab) : null;
+        if (d.levelsSab) {
+          this._levelsI32 = new Int32Array(d.levelsSab);
+          this._levelsF32 = new Float32Array(d.levelsSab);
+          var ring = ((d.levelsSab.byteLength >> 2) - this._levelHeader) / 3 | 0;
+          this._levelRing = ring;
+          this._levelMask = ring > 0 ? ring - 1 : 0;
+        } else {
+          this._levelsI32 = null;
+          this._levelsF32 = null;
+          this._levelRing = 0;
+          this._levelMask = 0;
+        }
+        if (d.channelSab) {
+          this._chI32 = new Int32Array(d.channelSab);
+          this._chF32 = new Float32Array(d.channelSab);
+          this._channelCount = d.channelCount | 0;
+          if (!(this._channelCount > 0)) this._channelCount = 1;
+        } else {
+          this._chI32 = null;
+          this._chF32 = null;
+          this._channelCount = 0;
+        }
         this._ready = true;
+      } else if (d.type === 'channels') {
+        this._channelCount = d.channelCount | 0;
+        if (!(this._channelCount > 0)) this._channelCount = 1;
       } else if (d.type === 'load') {
         this._assets.set(d.id, { ch: d.channels, len: d.length, nCh: d.channels.length });
       } else if (d.type === 'unload') {
@@ -77,6 +115,18 @@ class MixerProcessor extends AudioWorkletProcessor {
       if (!(pitch > 0)) pitch = 1;
       var pan = f32[b + 3];
       var vol = f32[b + 4] * mixGain;
+      var chI = this._chI32;
+      if (chI) {
+        var bus = i32[b + 7];
+        if (bus < 0 || bus >= this._channelCount) bus = 0;
+        var cb = bus << 2;
+        var cVol = this._chF32[cb];
+        if (chI[cb + 2]) cVol = 0;
+        vol *= cVol;
+        pan += this._chF32[cb + 1];
+        if (pan > 1) pan = 1;
+        else if (pan < -1) pan = -1;
+      }
       var loop = i32[b + 5];
       var asset = this._assets.get(id);
       if (!asset) {
@@ -153,15 +203,49 @@ class MixerProcessor extends AudioWorkletProcessor {
     }
 
     var masterVol = f32[3];
+    var pkL = 0;
+    var pkR = 0;
+    var sumSq = 0;
+    var clipped = 0;
+    var channelsOut = R ? 2 : 1;
     for (var i = 0; i < frames; i++) {
-      L[i] *= masterVol;
-      if (L[i] > 1) L[i] = 1;
-      else if (L[i] < -1) L[i] = -1;
-      if (R) {
-        R[i] *= masterVol;
-        if (R[i] > 1) R[i] = 1;
-        else if (R[i] < -1) R[i] = -1;
+      var sL = L[i] * masterVol;
+      var aL = sL < 0 ? -sL : sL;
+      if (aL > 1) {
+        clipped = 1;
+        sL = sL < 0 ? -1 : 1;
+        aL = 1;
       }
+      L[i] = sL;
+      if (aL > pkL) pkL = aL;
+      if (R) {
+        var sR = R[i] * masterVol;
+        var aR = sR < 0 ? -sR : sR;
+        if (aR > 1) {
+          clipped = 1;
+          sR = sR < 0 ? -1 : 1;
+          aR = 1;
+        }
+        R[i] = sR;
+        if (aR > pkR) pkR = aR;
+        sumSq += sL * sL + sR * sR;
+      } else {
+        sumSq += sL * sL;
+      }
+    }
+
+    var levelsI = this._levelsI32;
+    if (levelsI && this._levelRing > 0) {
+      var idx = Atomics.load(levelsI, 0);
+      var slot = idx & this._levelMask;
+      var base = this._levelHeader;
+      var ring = this._levelRing;
+      var lf = this._levelsF32;
+      lf[base + slot] = pkL;
+      lf[base + ring + slot] = pkR;
+      lf[base + ring + ring + slot] = frames > 0 ? sumSq / (frames * channelsOut) : 0;
+      if (clipped) Atomics.store(levelsI, 1, 1);
+      Atomics.store(levelsI, 0, idx + 1);
     }
 
     if (this._processMs) {

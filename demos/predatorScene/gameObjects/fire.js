@@ -58,7 +58,7 @@ export class Fire extends GameObject {
 
     // Set fixed animation speed
     this.setAnimationSpeed(this.fireComponent.baseAnimationSpeed);
-    SoundManager.play('explosion_de_fuego', 0.8, 0.9, 1.1, 0, 0, this.x, this.y);
+    SoundManager.play('explosion_de_fuego', 0.8, 0.9, 1.1, 0, 0, this.x, this.y, 'sfx');
   }
 
   tick(dt, deltaTime) {

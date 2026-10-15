@@ -17,8 +17,13 @@
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   height: 32px;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.debug-ui-header::-webkit-scrollbar {
+  height: 0;
 }
 
 .debug-ui-tab {
@@ -947,4 +952,299 @@
 .debug-ui-pool-block:last-child {
   border-bottom: none;
   margin-bottom: 0;
+}
+
+/* Audio panel */
+.debug-ui-audio {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.debug-ui-audio-title {
+  font-weight: bold;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.debug-ui-audio-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+
+.debug-ui-audio-slider .debug-ui-range {
+  width: 120px;
+}
+
+.debug-ui-audio-slider-value {
+  min-width: 36px;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-ui-audio .is-cap {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.debug-ui-audio-buses {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.debug-ui-audio-bus-gap {
+  width: 10px;
+  align-self: stretch;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 0 4px;
+}
+
+.debug-ui-audio-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 4.5rem;
+  padding: 8px 4px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.debug-ui-audio-strip-master {
+  background: rgba(56, 189, 248, 0.06);
+  border-color: rgba(56, 189, 248, 0.2);
+}
+
+.debug-ui-audio-strip-name {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.85);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-ui-audio-fader {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 18px;
+  height: 112px;
+  margin: 0;
+  accent-color: #38bdf8;
+  cursor: pointer;
+}
+
+.debug-ui-audio-strip-pct,
+.debug-ui-audio-strip-pan,
+.debug-ui-audio-strip-count {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.debug-ui-audio-pan-slider {
+  width: 3.6rem;
+}
+
+.debug-ui-audio-strip .debug-ui-btn {
+  padding: 2px 0;
+  width: 1.6rem;
+  min-width: 0;
+}
+
+.debug-ui-audio-out {
+  width: 36rem;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-ui-audio-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.debug-ui-audio-col {
+  width: 28rem;
+  max-width: 100%;
+}
+
+.debug-ui-audio-meters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.debug-ui-audio-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 9rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+
+.debug-ui-audio-meter-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.debug-ui-audio-meter-fill {
+  height: 100%;
+  width: 0;
+  background: #38bdf8;
+}
+
+.debug-ui-audio-meter-db {
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-ui-audio-clip {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.debug-ui-audio-clip.is-on {
+  color: #fff;
+  background: #ef4444;
+}
+
+.debug-ui-audio-graph {
+  display: block;
+  width: 100%;
+  height: 56px;
+  border-radius: 4px;
+}
+
+.debug-ui-audio-filter {
+  user-select: text;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.85);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  width: 140px;
+}
+
+.debug-ui-audio-scroll {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.debug-ui-audio-head,
+.debug-ui-audio-row {
+  display: grid;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-ui-audio-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 2px 0;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(15, 15, 20, 0.95);
+}
+
+.debug-ui-audio-row {
+  color: rgba(255, 255, 255, 0.78);
+  padding: 2px 0;
+}
+
+.debug-ui-audio-voice {
+  grid-template-columns: 1.6rem 7.5rem 3.2rem 2.4rem 5.5rem auto;
+}
+
+.debug-ui-audio-asset {
+  grid-template-columns: 7rem 3.2rem 2.8rem 1.4rem 3.2rem 3.4rem 1.6rem auto;
+}
+
+.debug-ui-audio-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-ui-audio-row .is-error {
+  color: #f87171;
+}
+
+.debug-ui-audio-bar,
+.debug-ui-audio-pan {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.debug-ui-audio-bar-track,
+.debug-ui-audio-pan-track {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.debug-ui-audio-bar-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: #38bdf8;
+}
+
+.debug-ui-audio-pan-mark {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 10px;
+  margin-left: -1px;
+  background: #e2e8f0;
+}
+
+.debug-ui-audio-bar-label {
+  min-width: 2.4rem;
+  text-align: right;
+}
+
+.debug-ui-audio-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.debug-ui-audio-empty {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  padding: 4px 0;
+}
+
+.debug-ui-audio-foot {
+  font-size: 11px;
 }

@@ -953,7 +953,8 @@ class Scene {
     await SoundManager.initializeAudioWorklet(
       audioConfig.maxSlots,
       audioConfig.mixGain,
-      audioConfig.masterVolume
+      audioConfig.masterVolume,
+      audioConfig.channels
     );
     SoundManager.initializeAutoplayGate();
 

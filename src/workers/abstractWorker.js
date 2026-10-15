@@ -466,6 +466,8 @@ export class AbstractWorker {
     // Initialize worker-side SoundManager (shared slot SAB + sound ID map)
     SoundManager.importSoundIdMap(data.audio?.soundIdMap || null);
     SoundManager.initializeSlotSAB(data.audio?.slotSAB || null);
+    SoundManager.importChannelMap(data.audio?.channelMap || null);
+    SoundManager.initializeChannelSAB(data.audio?.channelSAB || null);
 
     // Load game-specific scripts dynamically (entity classes + custom components)
     // ALL workers now receive entity classes for consistent component access

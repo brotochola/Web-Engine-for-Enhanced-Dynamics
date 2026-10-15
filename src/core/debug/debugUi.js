@@ -14,6 +14,7 @@ import { DEBUG_DEFAULTS } from '../../util/configDefaults.js';
 // Panels
 import { ScenePanel } from './panels/scenePanel.js';
 import { PerformancePanel } from './panels/performancePanel.js';
+import { AudioPanel } from './panels/audioPanel.js';
 import { VisualAidsPanel } from './panels/visualAidsPanel.js';
 import { EntitiesPanel } from './panels/entitiesPanel.js';
 import { PoolsPanel } from './panels/poolsPanel.js';
@@ -64,6 +65,7 @@ export class DebugUI {
     this.panels = {
       scene: new ScenePanel(this),
       performance: new PerformancePanel(this),
+      audio: new AudioPanel(this),
       memory: new MemoryPanel(this),
       saves: new SavesPanel(this),
       visual: new VisualAidsPanel(this),
@@ -75,6 +77,7 @@ export class DebugUI {
     this._panelList = [
       this.panels.scene,
       this.panels.performance,
+      this.panels.audio,
       this.panels.memory,
       this.panels.saves,
       this.panels.visual,
@@ -233,6 +236,7 @@ export class DebugUI {
     const tabDefs = [
       ['🎬', 'Scene', 'scene'],
       ['⚡', 'Performance', 'performance'],
+      ['🔊', 'Audio', 'audio'],
       ['💾', 'Memory', 'memory'],
       ['💿', 'Saves', 'saves'],
       ['👁', 'Visual', 'visual'],

@@ -451,7 +451,8 @@ export class Person extends Lootable {
         0,
         0,
         muzzleX,
-        muzzleY
+        muzzleY,
+        'sfx'
       );
     }
 
@@ -630,7 +631,7 @@ export class Person extends Lootable {
 
     const deathSounds = ['dolor1', 'dolor2', 'dolor3', 'dolor4'];
     const deathSound = deathSounds[(rng() * deathSounds.length) | 0];
-    SoundManager.play(deathSound, 0.8, 0.9, 1.1, 0, 0, this.x, this.y);
+    SoundManager.play(deathSound, 0.8, 0.9, 1.1, 0, 0, this.x, this.y, 'voice');
 
     // Emit blood particles
     ParticleEmitter.emit({

@@ -385,6 +385,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     audio: {
       soundIdMap: SoundManager.exportSoundIdMap(),
       slotSAB: SoundManager.getSlotSABConfig(),
+      channelMap: SoundManager.exportChannelMap(),
+      channelSAB: SoundManager.getChannelSAB(),
     },
     layerData: Layer.getSerializableData(),
     tilemapData: TileMap.getSerializableData(),

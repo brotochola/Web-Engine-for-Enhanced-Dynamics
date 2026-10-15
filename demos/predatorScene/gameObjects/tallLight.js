@@ -51,7 +51,7 @@ export class TallLight extends GameObject {
 
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
     const impactSound = rng() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
-    SoundManager.play(impactSound, 0.6, 0.9, 1.15, 0, 0, hitX, hitY);
+    SoundManager.play(impactSound, 0.6, 0.9, 1.15, 0, 0, hitX, hitY, 'sfx');
 
     const count = Math.floor(damage * 8) + 3;
     ParticleEmitter.emit({

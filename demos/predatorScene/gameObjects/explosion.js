@@ -66,7 +66,7 @@ export class Explosion extends GameObject {
     ec.lifespan = (ec.frameCount / animationFPS) * 1000;
     ec.elapsedTime = 0;
     ec.justSpawned = 1; // Flag to ensure clean state on first tick
-    SoundManager.play('explosion_corta', 1, 0.9, 1.1, 0, 0, this.x, this.y);
+    SoundManager.play('explosion_corta', 1, 0.9, 1.1, 0, 0, this.x, this.y, 'sfx');
 
     setTimeout(() => this.stampDecalToFloor(), 100);
   }

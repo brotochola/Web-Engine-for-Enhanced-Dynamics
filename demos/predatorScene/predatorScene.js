@@ -131,6 +131,12 @@ export class PredatorScene extends WEED.Scene {
     },
     audio: {
       maxSlots: 2048,
+      channels: {
+        sfx: { volume: 1, pan: 0 },
+        voice: { volume: 1, pan: 0 },
+        ui: { volume: 1, pan: 0 },
+        bgm: { volume: 0.7, pan: 0 },
+      },
     },
 
     // Logic configuration

@@ -497,6 +497,16 @@ export const AUDIO_DEFAULTS = Object.freeze({
   maxSlots: 128,
   mixGain: 0.5,
   masterVolume: 1.0,
+  channels: Object.freeze({
+    main: Object.freeze({
+      volume: 1,
+      pan: 0,
+      maxVoices: 32,
+      compressor: Object.freeze({ threshold: 0.6, ratio: 4, attack: 0.01, release: 0.15 }),
+    }),
+  }),
+  /** Master compressor, after the buses sum and before the master fader. */
+  compressor: Object.freeze({ threshold: 0.85, ratio: 12, attack: 0.005, release: 0.12 }),
 });
 
 // ============================================================================
