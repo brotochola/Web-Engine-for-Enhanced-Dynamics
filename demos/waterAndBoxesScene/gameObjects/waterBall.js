@@ -79,7 +79,7 @@ class WaterBall extends GameObject {
     const i = this.index;
     const relVx = rb.vx[otherIndex] - rb.vx[i];
     const relVy = rb.vy[otherIndex] - rb.vy[i];
-    const impactSpeed = Math.hypot(relVx, relVy); // px/s
+    const impactSpeed = Math.sqrt(relVx * relVx + relVy * relVy); // px/s
     if (impactSpeed < SPLASH_SPEED_MIN) return;
 
     // Mass-weighted intensity so heavy boxes splash more than light taps.

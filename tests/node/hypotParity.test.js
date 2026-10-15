@@ -17,8 +17,7 @@ import { fileURLToPath } from 'node:url';
  *     consumer working in Float32 (~1e-7 relative) cannot see the difference;
  *   - the sqrt form never produces NaN or Infinity where hypot did not, for
  *     every value the engine can actually hold in these variables;
- *   - the shipped source really does use sqrt at those sites, and keeps hypot
- *     where the plan says to keep it.
+ *   - no live engine source under src/ calls Math.hypot.
  */
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -107,30 +106,26 @@ test('H-03: the two forms diverge exactly at sqrt(Float64 max), which nothing he
   assert.ok(threshold / 3.4e38 > 1e115, 'the unreachable margin is over 115 orders of magnitude');
 });
 
-test('H-03: the shipped sites use sqrt, and only adobeAnimCompiler keeps hypot', { concurrency: false }, () => {
-  const files = [
-    'src/render/colliderFillBatch.js',
-    'src/workers/pixiWorker.js',
-    'src/workers/preRenderWorker.js',
-    'src/core/debug/rendering/physicsDebugRenderer.js',
-  ];
-  for (const rel of files) {
-    const lines = fs.readFileSync(path.join(REPO, rel), 'utf8').split('\n');
-    const live = lines
-      .map((l, i) => ({ l, n: i + 1 }))
-      .filter(({ l }) => l.includes('Math.hypot') && !l.trim().startsWith('//'));
-    assert.deepEqual(
-      live.map(({ n }) => `${rel}:${n}`),
-      [],
-      `${rel} still calls Math.hypot in live code`,
-    );
-  }
-
-  // Compile-time, on externally supplied animation matrices. The plan excludes
-  // it and the exclusion should stay visible rather than drifting.
-  const adobe = fs.readFileSync(path.join(REPO, 'src/util/adobeAnimCompiler.js'), 'utf8');
-  const adobeLive = adobe
-    .split('\n')
-    .filter((l) => l.includes('Math.hypot') && !l.trim().startsWith('//'));
-  assert.equal(adobeLive.length, 2, 'adobeAnimCompiler keeps its two hypot calls');
+test('H-03: no engine source under src/ calls Math.hypot', { concurrency: false }, () => {
+  const live = [];
+  const walk = (dir) => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!ent.name.endsWith('.js') && !ent.name.endsWith('.mjs')) continue;
+      const rel = path.relative(REPO, full).replaceAll('\\', '/');
+      const lines = fs.readFileSync(full, 'utf8').split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.includes('Math.hypot') && !line.trim().startsWith('//')) {
+          live.push(`${rel}:${i + 1}`);
+        }
+      }
+    }
+  };
+  walk(path.join(REPO, 'src'));
+  assert.deepEqual(live, [], 'engine source still calls Math.hypot');
 });

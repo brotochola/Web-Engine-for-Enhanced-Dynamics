@@ -22,7 +22,7 @@ export class OrientedBox extends GameObject {
         this.collider.height = height;
         this.collider.isTrigger = 0;
         this.collider.friction = 1;
-        this.collider.visualRange = Math.hypot(width, height) * 0.5 + 200;
+        this.collider.visualRange = Math.sqrt(width * width + height * height) * 0.5 + 200;
 
         this.rigidBody.static = 0;
         this.rigidBody.linearDamping = 0.001;

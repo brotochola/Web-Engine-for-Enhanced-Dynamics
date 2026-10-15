@@ -50,6 +50,6 @@ export class Ground extends GameObject {
       counts.length,
     );
     if (!ok) return;
-    this.collider.visualRange = Math.hypot(maxX, maxY) + 80;
+    this.collider.visualRange = Math.sqrt(maxX * maxX + maxY * maxY) + 80;
   }
 }

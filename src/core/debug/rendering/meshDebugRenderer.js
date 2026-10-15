@@ -122,7 +122,8 @@ export class MeshDebugRenderer {
       let lx = srcX[base + v];
       let ly = srcY[base + v];
       if (outset > 0) {
-        const len = Math.hypot(lx, ly);
+        // H-03: sqrt, not Math.hypot. Overflow is unreachable for world px.
+        const len = Math.sqrt(lx * lx + ly * ly);
         if (len > 1e-6) {
           const k = 1 + outset / len;
           lx *= k;

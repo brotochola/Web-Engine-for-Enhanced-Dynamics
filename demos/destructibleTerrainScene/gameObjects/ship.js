@@ -21,7 +21,7 @@ const HALF_H = 14;
 const THRUST_ACCEL = 3100;
 const LOOK_AHEAD = 0.02;
 const CAM_SMOOTH = 0.12;
-const MUZZLE_PAD = Math.hypot(HALF_W, HALF_H) + 4;
+const MUZZLE_PAD = Math.sqrt(HALF_W * HALF_W + HALF_H * HALF_H) + 4;
 
 export class Ship extends GameObject {
   static serializable = false;
@@ -172,7 +172,7 @@ export class Ship extends GameObject {
   }
 
   _emitLaser(ox, oy, hx, hy, didHit) {
-    const beamDist = Math.hypot(hx - ox, hy - oy);
+    const beamDist = Math.sqrt((hx - ox) * (hx - ox) + (hy - oy) * (hy - oy));
     const numberOfParticles = beamDist > 150 ? 150 : beamDist / 10;
     ParticleEmitter.emitAlongLine({
       x0: ox,

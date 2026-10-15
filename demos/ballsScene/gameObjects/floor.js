@@ -27,7 +27,7 @@ class Floor extends GameObject {
         this.collider.friction = config.friction ?? 0.6;
         this.rotation = config.rotation ?? 0;
 
-        const halfDiagonal = Math.hypot(width, height) / 2;
+        const halfDiagonal = Math.sqrt(width * width + height * height) / 2;
         this.collider.visualRange = config.visualRange != null
           ? config.visualRange
           : halfDiagonal + 200;

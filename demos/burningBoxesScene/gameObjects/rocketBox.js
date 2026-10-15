@@ -23,7 +23,7 @@ export class RocketBox extends GameObject {
     this.collider.radius = 0;
     this.collider.shapeType = ShapeType.Box;
     this.collider.friction = config.friction ?? 0.4;
-    this.collider.visualRange = Math.hypot(width, height) / 2 + 200;
+    this.collider.visualRange = Math.sqrt(width * width + height * height) / 2 + 200;
     this.rigidBody.linearDamping = 0.05;
     this.rigidBody.static = 0;
     this.rotation = config.rotation ?? 0;

@@ -31,7 +31,7 @@ export class MachineBox extends GameObject {
     this.collider.radius = 0;
     this.collider.isTrigger = ghost ? 1 : 0;
     this.collider.friction = 1;
-    this.collider.visualRange = Math.hypot(size, size) * 0.5 + 200;
+    this.collider.visualRange = Math.sqrt(size * size + size * size) * 0.5 + 200;
     this.collider.collisionLayer = LAYER_BOX;
     this.collider.collisionMask = ghost ? 0 : MASK_BOX;
 

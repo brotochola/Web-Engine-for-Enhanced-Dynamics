@@ -91,10 +91,9 @@ export class ConstraintBox extends GameObject {
 
         for (let i = 0; i < EDGE_PAIRS.length; i++) {
             const [a, b] = EDGE_PAIRS[i];
-            const dist = Math.hypot(
-                Transform.x[parts[a].index] - Transform.x[parts[b].index],
-                Transform.y[parts[a].index] - Transform.y[parts[b].index]
-            );
+            const dx = Transform.x[parts[a].index] - Transform.x[parts[b].index];
+            const dy = Transform.y[parts[a].index] - Transform.y[parts[b].index];
+            const dist = Math.sqrt(dx * dx + dy * dy);
             const idx = Joint.addDistance({
                 entityA: parts[a].index,
                 entityB: parts[b].index,

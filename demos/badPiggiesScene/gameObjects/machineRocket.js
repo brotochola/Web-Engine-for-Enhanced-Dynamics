@@ -26,7 +26,7 @@ export class MachineRocket extends GameObject {
     this.collider.radius = 0;
     this.collider.isTrigger = ghost ? 1 : 0;
     this.collider.friction = 0.4;
-    this.collider.visualRange = Math.hypot(width, height) * 0.5 + 200;
+    this.collider.visualRange = Math.sqrt(width * width + height * height) * 0.5 + 200;
     this.collider.collisionLayer = LAYER_ROCKET;
     this.collider.collisionMask = ghost ? 0 : MASK_ROCKET;
 

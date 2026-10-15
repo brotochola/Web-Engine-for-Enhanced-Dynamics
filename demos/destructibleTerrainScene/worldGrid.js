@@ -879,13 +879,17 @@ function cleanContour(contour) {
       continue;
     }
     const prev = pts[pts.length - 1];
-    if (Math.hypot(p.x - prev.x, p.y - prev.y) < 0.05) continue;
+    const dx = p.x - prev.x;
+    const dy = p.y - prev.y;
+    if (dx * dx + dy * dy < 0.0025) continue;
     pts.push({ x: p.x, y: p.y });
   }
   if (pts.length >= 2) {
     const a = pts[0];
     const b = pts[pts.length - 1];
-    if (Math.hypot(a.x - b.x, a.y - b.y) < 0.05) pts.pop();
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    if (dx * dx + dy * dy < 0.0025) pts.pop();
   }
   return pts;
 }
@@ -1111,7 +1115,9 @@ function classifyLoops(loops, solidX, solidY, cellSize) {
     const loop = cleaned[i];
     if (Math.abs(polygonArea(loop) - bestA) < 1e-6) {
       const c = loopCentroid(loop);
-      if (Math.hypot(c.x - oc.x, c.y - oc.y) < 0.5) continue;
+      const hx = c.x - oc.x;
+      const hy = c.y - oc.y;
+      if (hx * hx + hy * hy < 0.25) continue;
     }
     const c = loopCentroid(loop);
     if (!pointInPolygon(c.x, c.y, outer)) continue;
@@ -1919,7 +1925,7 @@ function paintBrush(field, wx, wy, radius, hardness, strength, erase, material) 
       const nx = targetX + dx;
       const ny = targetY + dy;
       if (nx < 0 || ny < 0 || nx >= field.cols || ny >= field.rows) continue;
-      const dist = Math.hypot(dx, dy);
+      const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > r) continue;
       const idx = ny * field.cols + nx;
       if (hardness >= 0.999) {
@@ -1948,7 +1954,7 @@ function damageKernel(field, cx, cy, radius, power, falloff) {
   const rCeil = Math.ceil(radius);
   for (let dy = -rCeil; dy <= rCeil; dy++) {
     for (let dx = -rCeil; dx <= rCeil; dx++) {
-      const d = Math.hypot(dx, dy);
+      const d = Math.sqrt(dx * dx + dy * dy);
       if (d > radius) continue;
       const nx = cx + dx;
       const ny = cy + dy;

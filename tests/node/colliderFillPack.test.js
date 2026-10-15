@@ -8,6 +8,7 @@ import {
   packColliderFill,
   packColliderFillPoseOnly,
   packMeshUvFill,
+  rewriteExplicitMeshCorners,
   colliderFillCanSkipPack,
   copyMeshFillPoseScratch,
   COLLIDER_FILL_FLOATS,
@@ -695,6 +696,95 @@ test('meshUvFill.wgsl samples the atlas before the vHasTex branch', () => {
   const branchAt = frag.indexOf('vHasTex');
   assert.ok(sampleAt >= 0);
   assert.ok(branchAt < 0 || sampleAt < branchAt);
+});
+
+test('pose-only paint keeps corners and writes tint', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  views.meshTint[0] = 0x112233;
+  addTri(views, 0, 0, 0, 0, 8, 0, 0, 6);
+  const cap = 4;
+  const out = new Float32Array(cap * COLLIDER_FILL_FLOATS);
+  views.instanceEntity = new Uint32Array(cap);
+  const n = packColliderFill(out, cap, 0, views);
+  assert.equal(n, 1);
+  const corners = out.slice(0, 6);
+  views.meshTint[0] = 0xaabbcc;
+  views.meshAlpha[0] = 0.5;
+  packColliderFillPoseOnly(out, cap, n, views.instanceEntity, views);
+  for (let i = 0; i < 6; i++) assert.equal(out[i], corners[i]);
+  const bits = new Uint32Array(out.buffer, out.byteOffset, out.length);
+  const packed = bits[10];
+  assert.equal(packed & 0xffffff, 0xaabbcc);
+  assert.equal((packed >>> 24) & 255, 128);
+});
+
+test('visualOutset bumps outsetEpoch and not paintEpoch', () => {
+  const n = 1;
+  const buf = new ArrayBuffer(MeshRenderer.getBufferSize(n));
+  MeshRenderer.initializeArrays(buf, n);
+  MeshRenderer.visualOutset[0] = 0;
+  MeshRenderer.renderDirty[0] = 0;
+  const paint = MeshRenderer.paintEpoch[0];
+  const mr = new MeshRenderer(0);
+  mr.visualOutset = 4;
+  assert.equal(MeshRenderer.visualOutset[0], 4);
+  assert.equal(MeshRenderer.outsetEpoch[0], 1);
+  assert.equal(MeshRenderer.paintEpoch[0], paint);
+  mr.tint = 0xff00ff;
+  assert.equal(MeshRenderer.paintEpoch[0], (paint + 1) >>> 0);
+  assert.equal(MeshRenderer.outsetEpoch[0], 1);
+  MeshRenderer.clearArrays();
+});
+
+test('writeVertices bumps vertGen and leaves topology revision', () => {
+  initMeshPool(32, 64, 2);
+  try {
+    const a = meshApi(0);
+    const b = meshApi(1);
+    const rev0 = MeshGeometry.revision[0];
+    a.setMesh([0, 0, 10, 0, 0, 8]);
+    b.setMesh([1, 1, 4, 1, 1, 5]);
+    const rev1 = MeshGeometry.revision[0];
+    assert.ok(rev1 !== rev0);
+    const epoch = Atomics.load(MeshGeometry.vertEpoch, 0);
+    a.setVertices([0, 0, 20, 0, 0, 3]);
+    assert.equal(MeshGeometry.revision[0], rev1);
+    assert.equal(Atomics.load(MeshGeometry.vertGen, 0) > 0, true);
+    assert.equal(Atomics.load(MeshGeometry.vertGen, 1), 0);
+    assert.ok(Atomics.load(MeshGeometry.vertEpoch, 0) !== epoch);
+    assert.equal(MeshGeometry.vertexX[MeshGeometry.vertOffset[0] + 1], 20);
+    assert.equal(MeshGeometry.vertexX[MeshGeometry.vertOffset[1]], 1);
+  } finally {
+    MeshGeometry.reset();
+  }
+});
+
+test('vert rewrite updates one mesh and leaves the other corners', () => {
+  const views = makeViews({ entities: 2, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshActive[1] = 1;
+  views.meshLayerMask[0] = 1;
+  views.meshLayerMask[1] = 1;
+  attachExplicit(views, 0, [0, 0, 4, 0, 0, 4]);
+  attachExplicit(views, 1, [1, 1, 3, 1, 1, 3]);
+  const cap = 4;
+  const out = new Float32Array(cap * COLLIDER_FILL_FLOATS);
+  views.instanceEntity = new Uint32Array(cap);
+  const n = packColliderFill(out, cap, 0, views);
+  assert.equal(n, 2);
+  const keep = out[COLLIDER_FILL_FLOATS];
+  views.meshVertexX[views.meshVertOffset[0] + 1] = 40;
+  views.meshVertGen = new Uint32Array([1, 0]);
+  const last = new Uint32Array(2);
+  const code = rewriteExplicitMeshCorners(
+    out, n, views.instanceEntity, views, COLLIDER_FILL_FLOATS, last,
+  );
+  assert.equal(code, 1);
+  assert.equal(out[2], 40);
+  assert.equal(out[COLLIDER_FILL_FLOATS], keep);
+  assert.equal(out[COLLIDER_FILL_FLOATS + 2], 3);
 });
 
 test('MeshRenderer paintEpoch bumps once per dirty burst', () => {

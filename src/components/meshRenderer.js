@@ -92,6 +92,11 @@ function bumpPaintEpoch() {
   if (ep) ep[0] = (ep[0] + 1) >>> 0;
 }
 
+function bumpOutsetEpoch() {
+  const ep = MeshRenderer.outsetEpoch;
+  if (ep) ep[0] = (ep[0] + 1) >>> 0;
+}
+
 function markPaint(i) {
   if (MeshRenderer.renderDirty[i]) return;
   MeshRenderer.renderDirty[i] = 1;
@@ -116,7 +121,7 @@ export class MeshRenderer extends Component {
   };
 
   static getBufferSize(count) {
-    return super.getBufferSize(count) + 4;
+    return super.getBufferSize(count) + 8;
   }
 
   static initializeArrays(buffer, count) {
@@ -127,12 +132,15 @@ export class MeshRenderer extends Component {
     if (this.renderVisible) this.renderVisible.fill(1);
     if (this.renderDirty) this.renderDirty.fill(1);
     if (this.textureId) this.textureId.fill(MESH_NO_TEXTURE);
-    this.paintEpoch = new Uint32Array(buffer, super.getBufferSize(count), 1);
+    const tail = super.getBufferSize(count);
+    this.paintEpoch = new Uint32Array(buffer, tail, 1);
+    this.outsetEpoch = new Uint32Array(buffer, tail + 4, 1);
   }
 
   static clearArrays() {
     super.clearArrays();
     this.paintEpoch = null;
+    this.outsetEpoch = null;
   }
 
   get tint() {
@@ -227,7 +235,7 @@ export class MeshRenderer extends Component {
     if (!(v > 0)) v = 0;
     if (MeshRenderer.visualOutset[this.index] === v) return;
     MeshRenderer.visualOutset[this.index] = v;
-    markPaint(this.index);
+    bumpOutsetEpoch();
   }
 
   /**
@@ -355,7 +363,8 @@ export class MeshRenderer extends Component {
     for (let i = 1; i < n; i++) {
       const dx = src[i * 2] - src[(i - 1) * 2];
       const dy = src[i * 2 + 1] - src[(i - 1) * 2 + 1];
-      total += Math.hypot(dx, dy);
+      // H-03: sqrt, not Math.hypot. Overflow is unreachable for world px.
+      total += Math.sqrt(dx * dx + dy * dy);
       dist[i] = total;
     }
     if (!(total > 0)) return this;
@@ -372,7 +381,7 @@ export class MeshRenderer extends Component {
         dx = src[(i + 1) * 2] - src[(i - 1) * 2];
         dy = src[(i + 1) * 2 + 1] - src[(i - 1) * 2 + 1];
       }
-      const len = Math.hypot(dx, dy);
+      const len = Math.sqrt(dx * dx + dy * dy);
       const nx = len < 1e-8 ? 0 : -dy / len;
       const ny = len < 1e-8 ? 1 : dx / len;
       const x = src[i * 2];

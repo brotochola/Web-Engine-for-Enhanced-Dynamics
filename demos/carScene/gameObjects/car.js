@@ -74,7 +74,7 @@ export class Car extends GameObject {
 
         const carLength = this.spriteRenderer.originalWidth * scale * 0.9;
         const carHeight = this.spriteRenderer.originalHeight * scale * 0.75;
-        const halfDiag = Math.hypot(carLength, carHeight) * 0.5;
+        const halfDiag = Math.sqrt(carLength * carLength + carHeight * carHeight) * 0.5;
         this._halfDiag = halfDiag;
 
         this.collider.shapeType = ShapeType.Box;

@@ -6,6 +6,82 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 14 October 2026 (night) — Hand the Renderer a Mesh
+
+`MeshRenderer` could already fill whatever the collider was. What I wanted was a mesh I write myself. Vertices, a subdivided plane, a rope, a polygon, optional UVs, in a shared arena the Pixi worker reads and gameplay writes. The Box2D worker does not bind that pool. If an entity has called `setMesh`, that geometry is what gets drawn. If it has not, the fill still comes from the fixtures. A debug overlay draws the triangles. Mesh Gallery is the scene that lines the cases up so they can be looked at.
+
+The arena is first-fit spans. Replacing meshes of different sizes will fragment it. The upgrade, when many entities draw the same mesh, is one shared asset id. `MeshGeometry`, `setVertices`, `setPlane`, `setRope`, `setPolygon`.
+
+## Wednesday 14 October 2026 — The Plan Was a Reading of the Source
+
+The math-allocation audit started as a census of `src/`. Seventeen hypotheses, written down before a trace of the scene they were supposed to speed up. The first run measured the wrong scene. `npm run … -- --scene X` ate the flags, so a Predator command came back as Balls. The harness now refuses a capture whose body count and symbols are not the scene that was asked for.
+
+Then the real Predator trace. Pre-render 8.4 ms, physics 7.9 ms, spatial 7.1 ms. Not one function from the math census is in it. Visibility polygons are absent. `Math.sin` is absent. Decoration sway is real and small, about 3 % of a worker that is 11 % of the frame. Physics is still 3.48 cores, and two thirds of that is `wasm-function[102]`, the mailbox, the same function disassembled on the morning of 1 October. The largest JavaScript costs are ones this plan never named: `packInstancedRows`, the neighbor walk, shadow stamping. The list and the machine agreed on almost nothing. That is why the trace comes before the kernels.
+
+The morning was twelve bugs. None of them is a speed claim. The one that freezes the game: the renderer consumes a queue frame, then returns early because the GPU is unavailable, and the release lives in a `finally` that return never reaches. `renderQueueSync` stays put. Pre-render decides it is more than a frame behind and skips every frame after that, with no error. A looping sound pitched past its own length reads off the end of the channel. The sample is `undefined`, the interpolation is `NaN`, and the output clamp lets it through because `NaN > 1` is false. The audio context stays poisoned for as long as it lives. A sync Box2D query on the main thread calls `Atomics.wait` and throws a `TypeError` that names neither the thread nor `queryAABBAsync`. The query snapshot reader took the index before the count. Path reconstruction wrote one past its buffer. The decal dirty flag had two writers. A moved-body view could straddle two publishes. The list-update queue grew without a bound while its consumer was paused. The suite went from 812 to 873.
+
+One of the cleanups shipped a bug the test agreed with. Caching `Object.keys` and `Object.values` of the keymap looks like the same list twice. Numeric keys `'0'` through `'9'` come out of `Object.values` first, as array indices, so the held state of `a` was written into the slot for `0`. The parity test built its lists the same way and passed six for six. A reference that shares the bug is a mirror. It now inverts the map and asks which key owns the slot, and it calls `updateKeyboardBuffer` instead of a transcription of it. `flattenKeyMap` does the pairing in one `Object.entries` pass.
+
+I also repeated the worktree mistake from 30 September. `git worktree remove --force` followed the `node_modules` junction and emptied the main repo again. `npm test` stayed green, because `node:test` needs no packages. The sitting died later, on `Cannot find package 'playwright'`. A green suite does not mean the benchmark can run. `pretest` and `prebench` now resolve `playwright` before anything is measured.
+
+What the hypotheses actually did:
+
+The sway-frequency bucket is cached instead of recomputed per decoration. Kernel −18 % at 65 535 decorations, exact parity. The stress scene moved −5.8 %, four pairs of four, and the worker is under the 3 ms floor, so the product verdict is neutral. An earlier sweep of that scene was void. The decoration count in the command never arrived at the worker. Once the parameter landed, the cost is linear: 22.3 ns per decoration.
+
+`collectVisibleEntities` hoists what the loop was rereading. The worker headline was −12.6 %. The loop that changed, `COLLECT_MS`, is −6.7 %. The gap is `EMIT_MS`, which jumps about 1.3 ms when the pose-only shortcut does or does not fire. The keep is the 6.7 %.
+
+`gatherInstancedRows` copies each sprite row in a loop instead of one `subarray` per row. At the real depth, 45 568 rows, the kernel is 1.32×, and the output is bit-identical. A `PerformanceObserver` over that run counted zero GC events on both sides. The allocation story was the reason to do it, and there is no allocation in the number. The sprite-pack scene did not move a judged 3 %. It stays as a kernel keep.
+
+`Math.hypot` against `Math.sqrt` of the two squares is about 16× in the kernel, at every magnitude from a thousandth to ten million. About 64 % of in-range pairs are bit-identical. The rest differ by a few ulps, inside float32. Hygiene. A decoration spawned at angle +0 skips `cos` and `sin`. The test is `Object.is`, so −0 still takes the transcendental and keeps its sign. The all-zero case is −24 % of that spawn microbench. The fully rotated case is +6.7 %. No scene. The Predator trace does not name `setRotCSFromAngle`.
+
+The visibility polygon got four small edits and no sitting, because the trace names none of those functions. The constant end direction is hoisted. The ε samples use a first-order expansion. An arc of at most four steps uses angle addition. `normalizeAngleSigned` drops `%`. The gate was written down first: a three-circle fixture snapped from the old sweep must stay within 1e-4 world units. It passed. Comparing squared distances before the occluder square root did not ship. That extra branch already lost four pairs of four on 6 October, and Predator has no visibility-polygon vehicle that would show the loss.
+
+Sorting packed spawn keys instead of a comparator was +147 % in the kernel at 256 items, and −0.6 % on the spawn storm, three pairs of eight the wrong way. Dropped. That sitting was also dirty: a toolchain check launched Chromium in the middle of the pairs. The gate no longer prints a percentage for a worker under 3 ms. Minus 21 % of 0.238 ms is not a result.
+
+The decal dirty scan and the `castAll` comparator were left alone. The scan is also the early-out, and at 64 000 tiles it costs 0.57 ms. The ray stress that is actually hot is `castRayClosest`. It does not run that sort.
+
+Balls lockstep had been failing on both sides of the board. `spawnBalls` scheduled 9000 `setTimeout`s, and headless Chromium did not get them out inside 120 seconds, on this tree and on the tree the audit started from. The balls are created before the flush now. Lockstep passes. Physics is 8.013 ms to 7.997 ms, a tie, 9004 bodies awake on both sides. The scoreboard against that morning's revision is still not a faster engine. LiquidFun, the coupled liquid scene, and decal blit came out a few percent more expensive. A first pass had also blamed the ray, the tilemap, and the painter radix. Those files were not edited, and a second sitting of them flipped sign. The keeps that belong to this day are visPoly's pre-render and the sway-bucket kernel.
+
+The essay is [`MATH_ALLOC_AUDIT_IMPLEMENTATION_LOG.md`](./MATH_ALLOC_AUDIT_IMPLEMENTATION_LOG.md). The rows are in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
+
+## Friday 9 October 2026 — Count a Particle Pair Once
+
+`FindParticleContacts` walks the nine neighboring cells and never checks that it is standing in the particle's real cell. Two diagonal cells can land in the same bucket, and the pair is pushed twice. The filter marks only those aliases. Contact count unchanged, 25328. One worker got 16 % more expensive in the microbench. Four workers, 3.6 %. Balls physics +0.9 %. The liquid stress +1.5 %. Both scenes tie on load. It stays because the pairs were wrong. The step did not get cheaper.
+
+## Monday 6 October 2026 — One Wait for Three Thousand Rays
+
+The campaign opened on a Predator A/A that was neutral, and on the same mailbox as 1 October: three helper threads at 100 %, `wasm-function[102]` still about 60 % of them. The pool stays at four. The other obvious lever was how many of our own workers to run, and every change made a worker it did not own more expensive. Two spatial workers cut spatial 35 % and raised the renderer 8 %. Three logic workers cut logic 16 % and raised the particle worker. One logic worker nearly doubled logic. The default stays at one spatial worker and two logic workers.
+
+A synchronous `queryAABB` posted from logic after the physics step sat inside that step until the next animation frame. The stress was 16.6 ms of logic for 201 bodies. The physics worker now wakes on the shared status and services the query between frames. Logic fell to 0.15 ms. Predator did not move. Leaving that wake armed all the time made the LiquidFun query worse, physics +4 % and logic +15 %, so the always-on form went back. The keep is the query that waits only when a query was actually posted.
+
+Neighbor lists were still being copied out of WASM. Poses, candidates, and `neighborData` already live in one `WebAssembly.Memory` the size of the scene, so the filter writes the published row where the readers already look. Kernel +118 %. Predator spatial went from 7.94 ms to 6.64 ms, every pair better, and no other worker crossed 3 %. A SIMD build of a publish that still copied was +126 % in its kernel and made logic and pre-render worse in the scene. That one went back. The neighbor cap stays at 1024. A visual range of 400 with 32 entities in a cell can pass 64, and the readers already stop at `neighborCount`.
+
+`ParticleEmitter` takes `renderOnly`, default off. One shared counter says how many emitters asked for it. Zero means integrate and emit never touch the column. Above zero, those particles age on the CPU and stay on the compute layer that already draws them. If the shader does not move the pose, nothing is drawn. This is an opt-out of the CPU integrate, not a new GPU integrator.
+
+The busy Box2D ray stress was 50 ms of logic because each of 3072 `castRayClosest` calls was its own trip through the shared buffer. They go into one pending batch, and the physics worker casts them in one pass. Logic went from 49.9 ms to 16.6 ms. Physics went from 6.3 ms to 4.5 ms. 2800 bodies on both sides.
+
+The rest of the wave lost.
+
+Eight sprite fields packed into one block were 26 % cheaper to read, in a microbench that did not do the write. With the extra write on emit, sixteen Predator pairs put the renderer 8 % slower. The write ate the read. Dropped.
+
+Skipping the second separating axis in `b2CollidePolygons`, once the first axis had cleared the speculative band, passed the WASM tests and made Balls physics 4.6 % worse, six pairs of eight. The binary and the C went back. Predator was not run. A scene that rises 3 % ends that wave.
+
+Three edits taken from the trace after the ray keep, all reverted. Caching the squared range in the candidate loop made spatial 9 % slower, four pairs of four. The half-extents change, and the branch does not pay. Skipping the previous pose when interpolation is off looked like a win for four pairs and tied at eight, while physics and logic, which never call that function, had moved with it. Taking `|| 0` off the bounds half-extents made pre-render 5 % slower, four of four.
+
+Against the revision the campaign started from, Predator spatial is 7.27 ms to 6.50 ms. Logic and physics came out higher, with the variation around 10 %, and the runner does not call that a regression. The scoreboard is not one verdict. The query wake, the neighbor publish, and the ray batch are the product keeps. Eleven rows failed or went the wrong way, some of them because the stress sat under the 3 ms floor, and the Box2D ray row had no baseline on the old revision because that scene used to publish 0 ms. The rows are in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
+
+## Thursday 1 October 2026 (later) — A Hundred Sines for Twenty Thousand Blades
+
+The morning entry closed the grass question: a faster sine is not a measurement when twenty thousand blades have twenty thousand frequencies. Quantizing the frequency still leaves a distinct phase on every blade, so a lookup of the sine is the wrong shape. What stayed is a grid. `sin(i * 0.1)` and `cos(i * 0.1)` are built once. Each frame does a hundred sines, and the blade loop is a product. Thirty-two buckets and a hundred tied in the kernel. A hundred stayed. `particle.swayFrequencyBuckets` defaults to 0, so every other scene keeps `Math.sin`. Predator writes the grid `1 + bucket * (2/99)` at spawn. Against the old worker the kernel was +35 %, within 1e-3 of the real sine. The particle step went from 2.03 ms to 1.81 ms. Physics rose 3.6 %, five pairs of eight the wrong way, which is short of a regression.
+
+The loop also grew a shear. `SWAY_LOOP_SKEW` stores a sentinel in `rotC` and the angle in `rotS`, so the quad shears instead of turning, and the shadow pass can tell that value from a cosine. Grass that bends is still a sprite the shadow system is allowed to drop.
+
+A dynamic collider fill whose published rotation was still zero was painting the old orientation. The pack takes the live Transform in that case.
+
+The GPU clock came out. Timestamp queries, and `onSubmittedWorkDone`, wedged Chrome. The WebGL timer queries were coming back empty. The performance panel stopped printing those milliseconds. What it shows for the sprite path is the last upload, and whether the queue that frame was new.
+
+The procedural tree is a demo: a plant that grows, drops dead branches, and dies. The index opens a scene from the URL, so a refresh comes back to the one you had open.
+
 ## Thursday 1 October 2026 — The Thread That Was Waiting, and the Load That Was Not
 
 The trace we had been reading was already a day old. Neighbors, the spatial cell walk, and the painter radix had landed since then, so I took another CPU profile of Predator before believing any percentage. The shape of the threads barely moved. Emit was still a quarter of pre-render. The pose publish on the physics thread still spent almost half of itself on one atomic load per body. And the three Box2D helper threads were still pegged, sixty percent of that time inside a single wasm function whose name the binary had thrown away.

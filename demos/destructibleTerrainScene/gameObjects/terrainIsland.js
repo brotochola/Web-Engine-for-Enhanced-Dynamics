@@ -76,7 +76,7 @@ export class TerrainIsland extends GameObject {
   _refreshVisualRange() {
     const hw = (this.collider.width || 0) * 0.5;
     const hh = (this.collider.height || 0) * 0.5;
-    this.collider.visualRange = Math.hypot(hw, hh) + 80;
+    this.collider.visualRange = Math.sqrt(hw * hw + hh * hh) + 80;
   }
 
   /**

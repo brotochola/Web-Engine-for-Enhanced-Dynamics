@@ -179,6 +179,27 @@ test('renderDirty paint forces pack', () => {
   assert.equal(colliderFillCanSkipPack(views, 1, prevPose), false);
 });
 
+test('vertEpoch blocks skip without moving topology revision', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  addTri(views, 0, 0, 0, 0, 2, 0, 0, 2);
+  views.fixtureRevision[0] = 1;
+  views.meshGeomRevision = new Uint32Array([3]);
+  views.lastMeshRevision = 3;
+  views.meshVertEpoch = new Uint32Array(new SharedArrayBuffer(4));
+  views.meshVertEpoch[0] = 1;
+  views.lastVertEpoch = 1;
+  const prevPose = {};
+  copyMeshFillPoseScratch(views, prevPose);
+  assert.equal(colliderFillCanSkipPack(views, 1, prevPose), true);
+  Atomics.add(views.meshVertEpoch, 0, 1);
+  assert.equal(colliderFillCanSkipPack(views, 1, prevPose), false);
+  views.lastVertEpoch = Atomics.load(views.meshVertEpoch, 0);
+  views.meshGeomRevision[0] = 4;
+  assert.equal(colliderFillCanSkipPack(views, 1, prevPose), false);
+});
+
 test('presence change (hide mesh) forces pack', () => {
   const views = makeViews({ entities: 1, fixtures: 1 });
   views.meshActive[0] = 1;

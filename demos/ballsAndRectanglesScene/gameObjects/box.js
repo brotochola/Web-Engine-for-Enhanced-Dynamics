@@ -53,7 +53,7 @@ class Box extends GameObject {
     this.collider.radius = 0; // Not used for boxes, but clear it
 
     // Set visual range for spatial queries (half-diagonal + margin)
-    const halfDiagonal = Math.hypot(boxWidth, boxHeight) / 2;
+    const halfDiagonal = Math.sqrt(boxWidth * boxWidth + boxHeight * boxHeight) / 2;
     this.collider.visualRange = halfDiagonal + cellSize;
 
     // Scale sprite to match collision size

@@ -185,8 +185,9 @@ function buildLeafMatrix(element) {
 }
 
 function decomposeAffine(matrix) {
-  const scaleX = Math.hypot(matrix.a, matrix.b) || 0;
-  const scaleYAbs = Math.hypot(matrix.c, matrix.d) || 0;
+  // H-03: sqrt, not Math.hypot. Animation scales never reach the overflow range.
+  const scaleX = Math.sqrt(matrix.a * matrix.a + matrix.b * matrix.b) || 0;
+  const scaleYAbs = Math.sqrt(matrix.c * matrix.c + matrix.d * matrix.d) || 0;
   const determinant = matrix.a * matrix.d - matrix.b * matrix.c;
   const scaleY = determinant < 0 ? -scaleYAbs : scaleYAbs;
   const rotation = Math.atan2(matrix.b, matrix.a);

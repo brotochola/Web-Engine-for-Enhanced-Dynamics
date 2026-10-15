@@ -56,7 +56,7 @@ export class WeldBreakBox extends GameObject {
     this.collider.height = height;
     this.collider.isTrigger = 0;
     this.collider.friction = 0.8;
-    this.collider.visualRange = Math.hypot(width, height) * 0.5 + 200;
+    this.collider.visualRange = Math.sqrt(width * width + height * height) * 0.5 + 200;
 
     this.collider.enableHitEvents = 1;
 

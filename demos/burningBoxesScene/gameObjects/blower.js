@@ -19,7 +19,7 @@ export class Blower extends GameObject {
     this.collider.radius = 0;
     this.collider.shapeType = ShapeType.Box;
     this.collider.friction = 0.4;
-    this.collider.visualRange = Math.hypot(width, height) / 2 + 80;
+    this.collider.visualRange = Math.sqrt(width * width + height * height) / 2 + 80;
     this.rigidBody.static = 1;
     this.rotation = config.rotation ?? 0;
 

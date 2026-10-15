@@ -143,7 +143,7 @@ export function heightsToSegments(heights, x0, dx, thickness, overlap = 1.05) {
     const yB = heights[i + 1];
     const sx = xB - xA;
     const sy = yB - yA;
-    const len = Math.hypot(sx, sy);
+    const len = Math.sqrt(sx * sx + sy * sy);
     if (!(len > 0)) continue;
     const angle = Math.atan2(sy, sx);
     segs.push({

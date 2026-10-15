@@ -357,6 +357,12 @@ export function colliderFillCanSkipPack(views, lastRevision, prevPose) {
   if (views.meshGeomRevision) {
     if (readMeshGeomRevision(views) !== (views.lastMeshRevision | 0)) return false;
   }
+  if (views.outsetEpoch) {
+    if ((views.outsetEpoch[0] | 0) !== (views.lastOutsetEpoch | 0)) return false;
+  }
+  if (views.meshVertEpoch) {
+    if (Atomics.load(views.meshVertEpoch, 0) !== (views.lastVertEpoch >>> 0)) return false;
+  }
   if (views.paintEpoch) {
     if ((views.paintEpoch[0] | 0) !== (views.lastPaintEpoch | 0)) return false;
   } else if (meshFillPaintDirty(views)) {
@@ -656,6 +662,85 @@ export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, view
     out[base + 16] = _paint.tov;
   }
   return n;
+}
+
+/**
+ * Rewrite aV0..aV2 (and uv0..uv2 when stride is the UV batch) for entities whose
+ * vertGen moved. Returns -1 when the packed triangle count no longer matches.
+ * @returns {number} 1 ok, -1 topology mismatch, 0 nothing to do
+ */
+export function rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen) {
+  const n = count | 0;
+  if (!out || n <= 0 || !entityOfInstance || !views.meshVertGen || !lastVertGen) return 0;
+  const step = (stride | 0) > 0 ? (stride | 0) : COLLIDER_FILL_FLOATS;
+  const gen = views.meshVertGen;
+  let k = 0;
+  while (k < n) {
+    const i = entityOfInstance[k] | 0;
+    let end = k + 1;
+    while (end < n && (entityOfInstance[end] | 0) === i) end++;
+    const run = end - k;
+    const dirty = i >= 0 && i < gen.length && (gen[i] >>> 0) !== ((lastVertGen[i] >>> 0));
+    const explicit = views.meshVertOffset && (views.meshVertOffset[i] | 0) >= 0;
+    if (dirty && explicit) {
+      const vN = views.meshVertCount ? (views.meshVertCount[i] | 0) : 0;
+      const iAt = views.meshIndexOffset ? (views.meshIndexOffset[i] | 0) : -1;
+      const need = iAt >= 0
+        ? ((views.meshIndexCount[i] >>> 0) / 3) | 0
+        : (vN >= 3 ? vN - 2 : 0);
+      if (need !== run) return -1;
+      for (let t = 0; t < run; t++) {
+        if (!writeExplicitTriCorners(out, (k + t) * step, step, views, i, t)) return -1;
+      }
+    }
+    k = end;
+  }
+  return 1;
+}
+
+function writeExplicitTriCorners(out, base, stride, views, i, triIndex) {
+  const vOff = views.meshVertOffset[i] | 0;
+  const vN = views.meshVertCount[i] | 0;
+  const vx = views.meshVertexX;
+  const vy = views.meshVertexY;
+  if (!vx || !vy || vOff < 0 || vN < 3) return false;
+  const iAt = views.meshIndexOffset ? (views.meshIndexOffset[i] | 0) : -1;
+  let a;
+  let b;
+  let c;
+  if (iAt >= 0) {
+    const idx = views.meshIndices;
+    if (!idx) return false;
+    const o = iAt + triIndex * 3;
+    a = idx[o] | 0;
+    b = idx[o + 1] | 0;
+    c = idx[o + 2] | 0;
+    if (a < 0 || b < 0 || c < 0 || a >= vN || b >= vN || c >= vN) return false;
+  } else {
+    a = 0;
+    b = triIndex + 1;
+    c = triIndex + 2;
+  }
+  const ia = vOff + a;
+  const ib = vOff + b;
+  const ic = vOff + c;
+  out[base] = vx[ia];
+  out[base + 1] = vy[ia];
+  out[base + 2] = vx[ib];
+  out[base + 3] = vy[ib];
+  out[base + 4] = vx[ic];
+  out[base + 5] = vy[ic];
+  if (stride >= MESH_UV_FILL_FLOATS && views.meshUvU && views.meshUvV) {
+    const u = views.meshUvU;
+    const v = views.meshUvV;
+    out[base + 18] = u[ia];
+    out[base + 19] = v[ia];
+    out[base + 20] = u[ib];
+    out[base + 21] = v[ib];
+    out[base + 22] = u[ic];
+    out[base + 23] = v[ic];
+  }
+  return true;
 }
 
 function writeUvTri(

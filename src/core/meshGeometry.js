@@ -68,6 +68,8 @@ function bindMeshGeom(buffer, maxVerts, maxIndices, entityCount) {
   const indices = view(Uint16Array, I, I * 2);
   offset = align4(offset);
   const revision = view(Uint32Array, 1, 4);
+  const vertEpoch = view(Uint32Array, 1, 4);
+  const vertGen = view(Uint32Array, E, E * 4);
   const lock = view(Int32Array, 1, 4);
   const vertFreeCount = view(Int32Array, 1, 4);
   const indexFreeCount = view(Int32Array, 1, 4);
@@ -88,6 +90,8 @@ function bindMeshGeom(buffer, maxVerts, maxIndices, entityCount) {
     uvV,
     indices,
     revision,
+    vertEpoch,
+    vertGen,
     lock,
     vertFreeCount,
     indexFreeCount,
@@ -153,6 +157,8 @@ export class MeshGeometry {
     this.uvV = g.uvV;
     this.indices = g.indices;
     this.revision = g.revision;
+    this.vertEpoch = g.vertEpoch;
+    this.vertGen = g.vertGen;
     this.lock = g.lock;
     this.vertFreeCount = g.vertFreeCount;
     this.indexFreeCount = g.indexFreeCount;
@@ -171,6 +177,8 @@ export class MeshGeometry {
     this.indexCount.fill(0);
     this.hasUv.fill(0);
     this.revision[0] = 0;
+    if (this.vertEpoch) this.vertEpoch[0] = 0;
+    if (this.vertGen) this.vertGen.fill(0);
     this.lock[0] = 0;
     this.vertFreeCount[0] = 1;
     this.vertFreeOff[0] = 0;
@@ -192,6 +200,8 @@ export class MeshGeometry {
     this.uvV = null;
     this.indices = null;
     this.revision = null;
+    this.vertEpoch = null;
+    this.vertGen = null;
     this.lock = null;
     this.vertFreeCount = null;
     this.indexFreeCount = null;
@@ -227,6 +237,17 @@ export class MeshGeometry {
   static bumpRevision() {
     const rev = this.revision;
     if (rev) rev[0] = (rev[0] + 1) >>> 0;
+  }
+
+  /** In-place vert/UV write. Call after the stores. Does not bump topology revision. */
+  static _publishVert(i) {
+    const g = this.vertGen;
+    const ep = this.vertEpoch;
+    if (!g || !ep) return;
+    const cur = Atomics.load(g, i);
+    const next = (cur + 1) >>> 0;
+    Atomics.store(g, i, next === 0 ? 1 : next);
+    Atomics.add(ep, 0, 1);
   }
 
   static _lock() {
@@ -376,7 +397,7 @@ export class MeshGeometry {
     if (same) {
       this._copyVerts(oldV, positions, vertN, useUv ? uvs : null);
       if (indexN > 0) this._copyIndices(oldI, indices, indexN);
-      this.bumpRevision();
+      this._publishVert(i);
       this._unlock();
       return true;
     }
@@ -437,16 +458,19 @@ export class MeshGeometry {
     const i = entity | 0;
     if (i < 0 || i >= (this.entityCount | 0)) return false;
     if (!positions || positions.length == null) return false;
-    if (!this._lock()) return false;
-    const off = this.vertOffset[i] | 0;
     const n = this.vertCount[i] | 0;
     const floats = n * 2;
-    if (off < 0 || (positions.length | 0) !== floats || !finitePairs(positions, floats)) {
+    const off = this.vertOffset[i] | 0;
+    if (off < 0 || (positions.length | 0) !== floats || !finitePairs(positions, floats)) return false;
+    if (!this._lock()) return false;
+    const offNow = this.vertOffset[i] | 0;
+    const nNow = this.vertCount[i] | 0;
+    if (offNow < 0 || nNow !== n) {
       this._unlock();
       return false;
     }
-    this._copyVerts(off, positions, n, null);
-    this.bumpRevision();
+    this._copyVerts(offNow, positions, n, null);
+    this._publishVert(i);
     this._unlock();
     return true;
   }

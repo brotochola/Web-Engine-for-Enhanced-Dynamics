@@ -100,11 +100,15 @@ import {
   packColliderFill,
   packColliderFillPoseOnly,
   packMeshUvFill,
+  rewriteExplicitMeshCorners,
   colliderFillCanSkipPack,
   copyMeshFillPoseScratch,
   clearMeshFillPaintDirty,
   meshFillPresenceChanged,
+  meshFillPoseOrPresenceChanged,
   COLLIDER_FILL_PACK_FIRST_FRAME,
+  COLLIDER_FILL_FLOATS,
+  MESH_UV_FILL_FLOATS,
 } from '../render/colliderFillBatch.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
@@ -1148,6 +1152,7 @@ class PixiRenderer extends AbstractWorker {
       v.maxFixtures = ColliderFixture.maxCount | 0;
       v.fixtureRevision = ColliderFixture.revision;
       v.paintEpoch = MeshRenderer.paintEpoch;
+      v.outsetEpoch = MeshRenderer.outsetEpoch;
       v.meshVertOffset = MeshGeometry.vertOffset;
       v.meshVertCount = MeshGeometry.vertCount;
       v.meshIndexOffset = MeshGeometry.indexOffset;
@@ -1159,6 +1164,8 @@ class PixiRenderer extends AbstractWorker {
       v.meshUvV = MeshGeometry.uvV;
       v.meshIndices = MeshGeometry.indices;
       v.meshGeomRevision = MeshGeometry.revision;
+      v.meshVertGen = MeshGeometry.vertGen;
+      v.meshVertEpoch = MeshGeometry.vertEpoch;
     }
     v.entityCount = MeshRenderer.active ? MeshRenderer.active.length : 0;
     v.animationFrameStart = this.animationFrameStart;
@@ -4201,6 +4208,24 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return batch;
   }
 
+  _ensureVertGenScratch(skip, views) {
+    const n = views.entityCount | 0;
+    if (!skip.lastVertGen || skip.lastVertGen.length < n) {
+      const next = new Uint32Array(n);
+      if (skip.lastVertGen) next.set(skip.lastVertGen);
+      skip.lastVertGen = next;
+    }
+  }
+
+  _snapshotVertGen(skip, views) {
+    const g = views.meshVertGen;
+    if (!g) return;
+    this._ensureVertGenScratch(skip, views);
+    const n = views.entityCount | 0;
+    const dst = skip.lastVertGen;
+    for (let i = 0; i < n; i++) dst[i] = g[i];
+  }
+
   _packMeshUvLayer(cl, views, skip) {
     if (!views.layerHasVertexUv) {
       if (cl.uvFillBatch) {
@@ -6078,6 +6103,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             lastRevision: COLLIDER_FILL_PACK_FIRST_FRAME,
             lastMeshRevision: 0,
             lastPaintEpoch: -1,
+            lastOutsetEpoch: 0,
+            lastVertEpoch: 0,
+            lastVertGen: null,
             prevPose: {},
             camX: NaN,
             camY: NaN,
@@ -6088,6 +6116,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
         views.lastPaintEpoch = skip.lastPaintEpoch;
         views.lastMeshRevision = skip.lastMeshRevision | 0;
+        views.lastOutsetEpoch = skip.lastOutsetEpoch | 0;
+        views.lastVertEpoch = skip.lastVertEpoch >>> 0;
         let packedThisFrame = false;
         if (!colliderFillCanSkipPack(views, skip.lastRevision, skip.prevPose)) {
           const cap = cl.fillBatch.capacity;
@@ -6097,24 +6127,45 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const lastPacked = cl.prevCount | 0;
           const rev = views.fixtureRevision ? (views.fixtureRevision[0] | 0) : 0;
           const meshRev = views.meshGeomRevision ? (views.meshGeomRevision[0] | 0) : 0;
+          const outsetRev = views.outsetEpoch ? (views.outsetEpoch[0] | 0) : 0;
+          const vertEpoch = views.meshVertEpoch ? Atomics.load(views.meshVertEpoch, 0) : 0;
           const topologyStable =
             skip.lastRevision !== COLLIDER_FILL_PACK_FIRST_FRAME &&
             rev === (skip.lastRevision | 0) &&
             meshRev === (skip.lastMeshRevision | 0) &&
+            outsetRev === (skip.lastOutsetEpoch | 0) &&
             !meshFillPresenceChanged(views, skip.prevPose);
-          const canPoseFill = topologyStable && skip.localsReady && lastPacked > 0;
-          const canPoseUv = topologyStable && skip.uvLocalsReady && (cl.uvPrevCount | 0) > 0 && cl.uvFillBatch;
-          if (canPoseFill || canPoseUv) {
-            if (canPoseFill) {
-              views.instanceEntity = skip.instanceEntity;
-              cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views);
-              this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
-            }
-            if (canPoseUv) {
-              cl.uvFillBatch.uploadPoseTable(skip.uvInstanceEntity, cl.uvPrevCount | 0, views);
-              this._uploadMeshPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
-            }
-          } else {
+          const paintMoved = !!(
+            views.paintEpoch &&
+            (views.paintEpoch[0] | 0) !== (skip.lastPaintEpoch | 0)
+          );
+          const vertsMoved = vertEpoch !== (skip.lastVertEpoch >>> 0);
+          const poseMoved = meshFillPoseOrPresenceChanged(views, skip.prevPose);
+          this._ensureVertGenScratch(skip, views);
+          let full = !topologyStable;
+          if (!full && vertsMoved) {
+            const fillRewrite = rewriteExplicitMeshCorners(
+              cl.fillBatch.data,
+              lastPacked,
+              skip.instanceEntity,
+              views,
+              COLLIDER_FILL_FLOATS,
+              skip.lastVertGen,
+            );
+            const uvCount = cl.uvPrevCount | 0;
+            const uvRewrite = !cl.uvFillBatch || uvCount <= 0
+              ? 1
+              : rewriteExplicitMeshCorners(
+                cl.uvFillBatch.data,
+                uvCount,
+                skip.uvInstanceEntity,
+                views,
+                MESH_UV_FILL_FLOATS,
+                skip.lastVertGen,
+              );
+            if (fillRewrite < 0 || uvRewrite < 0) full = true;
+          }
+          if (full) {
             views.instanceEntity = skip.instanceEntity;
             views.outU32 = cl.fillBatch.dataU32;
             const packed = packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
@@ -6126,11 +6177,57 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
             }
             this._packMeshUvLayer(cl, views, skip);
+            this._snapshotVertGen(skip, views);
+          } else {
+            const touchVbo = vertsMoved || paintMoved;
+            if (paintMoved) {
+              if (lastPacked > 0) {
+                views.outU32 = cl.fillBatch.dataU32;
+                packColliderFillPoseOnly(
+                  cl.fillBatch.data,
+                  cap,
+                  lastPacked,
+                  skip.instanceEntity,
+                  views,
+                );
+              }
+              const uvCount = cl.uvPrevCount | 0;
+              if (cl.uvFillBatch && uvCount > 0 && skip.uvInstanceEntity) {
+                views.outU32 = cl.uvFillBatch.dataU32;
+                packColliderFillPoseOnly(
+                  cl.uvFillBatch.data,
+                  cl.uvFillBatch.capacity,
+                  uvCount,
+                  skip.uvInstanceEntity,
+                  views,
+                  MESH_UV_FILL_FLOATS,
+                );
+              }
+            }
+            if (touchVbo) {
+              if (lastPacked > 0) cl.fillBatch.upload(lastPacked);
+              const uvCount = cl.uvPrevCount | 0;
+              if (cl.uvFillBatch && uvCount > 0) cl.uvFillBatch.upload(uvCount);
+            }
+            if (poseMoved) {
+              if (lastPacked > 0) {
+                cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views);
+                this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
+              }
+              const uvCount = cl.uvPrevCount | 0;
+              if (cl.uvFillBatch && uvCount > 0 && skip.uvInstanceEntity) {
+                cl.uvFillBatch.uploadPoseTable(skip.uvInstanceEntity, uvCount, views);
+                this._uploadMeshPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
+              }
+            }
+            if (vertsMoved) this._snapshotVertGen(skip, views);
           }
           copyMeshFillPoseScratch(views, skip.prevPose);
           skip.lastRevision = rev;
           skip.lastMeshRevision = meshRev;
           skip.lastPaintEpoch = views.paintEpoch ? (views.paintEpoch[0] | 0) : 0;
+          skip.lastOutsetEpoch = outsetRev;
+          skip.lastVertEpoch = vertEpoch;
           clearMeshFillPaintDirty(views);
           packedThisFrame = true;
         }
