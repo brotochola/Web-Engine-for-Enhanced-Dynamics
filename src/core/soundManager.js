@@ -14,7 +14,7 @@
 //     +4 volume  (Float32) 0..1
 //     +5 loop    (Int32)   0=once 1=loop
 //     +6 cursor  (Float32) fractional sample position (worklet writes)
-//     +7 channel (Int32)   bus index
+//     +7 channel (Int32)   bus in bits 0..7, per-bus list index in bits 8..23
 
 import { AUDIO_DEFAULTS } from '../util/configDefaults.js';
 import { rng } from '../util/utils.js';
@@ -61,12 +61,15 @@ export class SoundManager {
   static _levelSample = { peakL: 0, peakR: 0, rms: 0, clip: false, count: 0 };
 
   // Bus SAB. Header is the master compressor, then each bus.
-  // Header: [threshold, ratio, attack, release, reduction, unused ×3]
+  // Header: [threshold, ratio, attack, release, reduction, highWater, unused ×2]
   // Bus stride 8: [volume, pan, mute i32, reduction, threshold, ratio, attack, release]
-  // Slot word +7 is the bus index. Does not change HEADER_SIZE or SLOT_SIZE.
+  // Tail, one block per bus: [lock, count, quietSlot, quietVol, secondSlot, secondVol, unused ×2, slot ids...]
+  // Slot word +7 is the bus in the low 8 bits and that bus's list index above them.
   static MAX_CHANNELS = 8;
   static CHANNEL_HEADER = 8;
   static CHANNEL_STRIDE = 8;
+  static LIST_CAP = 2048;
+  static TAIL_META = 8;
   /** Fallback when a bus omits maxVoices. A scene value above this is kept. */
   static get maxVoicesPerChannel() {
     const n = AUDIO_DEFAULTS.maxVoicesPerChannel | 0;
@@ -256,12 +259,40 @@ export class SoundManager {
     return { sab: this._sab, maxSlots: this._maxSlots };
   }
 
+  static _tailWords() {
+    return this.MAX_CHANNELS * (this.TAIL_META + this.LIST_CAP);
+  }
+
+  static _tailBase() {
+    return this.CHANNEL_HEADER + this.MAX_CHANNELS * this.CHANNEL_STRIDE;
+  }
+
+  static _tail(bus) {
+    return this._tailBase() + (bus | 0) * (this.TAIL_META + this.LIST_CAP);
+  }
+
   static _ensureChannelSab() {
-    if (this._channelSab) return;
-    const words = this.CHANNEL_HEADER + this.MAX_CHANNELS * this.CHANNEL_STRIDE;
+    const words = this._tailBase() + this._tailWords();
+    if (this._channelSab && this._channelI32 && this._channelI32.length >= words) return;
     this._channelSab = new SharedArrayBuffer(words * 4);
     this._channelI32 = new Int32Array(this._channelSab);
     this._channelF32 = new Float32Array(this._channelSab);
+    this._resetBusTails();
+  }
+
+  static _resetBusTails() {
+    const i32 = this._channelI32;
+    const f32 = this._channelF32;
+    if (!i32 || i32.length < this._tailBase() + this._tailWords()) return;
+    for (let bus = 0; bus < this.MAX_CHANNELS; bus++) {
+      const t = this._tail(bus);
+      i32[t] = 0;
+      i32[t + 1] = 0;
+      i32[t + 2] = -1;
+      f32[t + 3] = Infinity;
+      i32[t + 4] = -1;
+      f32[t + 5] = Infinity;
+    }
   }
 
   static _postChannelCount() {
@@ -316,6 +347,7 @@ export class SoundManager {
     }
     this._channelCount = list.length;
     Atomics.store(i32, 5, 0);
+    this._resetBusTails();
     this._channelRev++;
   }
 
@@ -787,7 +819,7 @@ export class SoundManager {
           out[n] = voice;
         }
         const audioId = i32[b + 1];
-        const channel = i32[b + 7] | 0;
+        const channel = (i32[b + 7] | 0) & 0xff;
         voice.slot = s;
         voice.audioId = audioId;
         voice.name = names[audioId] || '#' + audioId;
@@ -938,7 +970,244 @@ export class SoundManager {
     }
   }
 
+  static _lockBus(chI, tail) {
+    while (Atomics.compareExchange(chI, tail, 0, 1) !== 0) {}
+  }
+
+  static _unlockBus(chI, tail) {
+    Atomics.store(chI, tail, 0);
+  }
+
+  static _publishQuiet(bus, tail) {
+    const chI = this._channelI32;
+    const f32 = this._f32;
+    const H = this.HEADER_SIZE;
+    const S = this.SLOT_SIZE;
+    const list = tail + this.TAIL_META;
+    const n = chI[tail + 1] | 0;
+    let qS = -1;
+    let qV = Infinity;
+    let sS = -1;
+    let sV = Infinity;
+    let kept = 0;
+    for (let i = 0; i < n; i++) {
+      const slot = chI[list + i] | 0;
+      const b = H + slot * S;
+      if (Atomics.load(this._i32, b) !== this.STATE_PLAYING) continue;
+      chI[list + kept] = slot;
+      const packed = (this._i32[b + 7] & 0xff) | (kept << 8);
+      this._i32[b + 7] = packed;
+      const vol = f32[b + 4];
+      if (qS < 0 || vol < qV || (vol === qV && slot < qS)) {
+        sS = qS;
+        sV = qV;
+        qS = slot;
+        qV = vol;
+      } else if (vol < sV || (vol === sV && (sS < 0 || slot < sS))) {
+        sS = slot;
+        sV = vol;
+      }
+      kept++;
+    }
+    chI[tail + 1] = kept;
+    chI[tail + 2] = qS;
+    this._channelF32[tail + 3] = qV;
+    chI[tail + 4] = sS;
+    this._channelF32[tail + 5] = sV;
+  }
+
+  static _rememberVoice(bus, tail, slot, volume) {
+    const chI = this._channelI32;
+    const chF = this._channelF32;
+    const count = chI[tail + 1] | 0;
+    const qS = chI[tail + 2] | 0;
+    if (qS < 0) {
+      if (count === 1) {
+        chI[tail + 2] = slot;
+        chF[tail + 3] = volume;
+      }
+      return;
+    }
+    const qV = chF[tail + 3];
+    if (volume < qV || (volume === qV && slot < qS)) {
+      chI[tail + 4] = qS;
+      chF[tail + 5] = qV;
+      chI[tail + 2] = slot;
+      chF[tail + 3] = volume;
+      return;
+    }
+    if (count === 2) {
+      chI[tail + 4] = slot;
+      chF[tail + 5] = volume;
+      return;
+    }
+    const sS = chI[tail + 4] | 0;
+    if (sS < 0) return;
+    const sV = chF[tail + 5];
+    if (volume < sV || (volume === sV && slot < sS)) {
+      chI[tail + 4] = slot;
+      chF[tail + 5] = volume;
+    }
+  }
+
+  static _retuneStolen(tail, slot, volume) {
+    const chI = this._channelI32;
+    const chF = this._channelF32;
+    const sS = chI[tail + 4] | 0;
+    const sV = chF[tail + 5];
+    if (sS >= 0 && volume < sV) {
+      chI[tail + 2] = slot;
+      chF[tail + 3] = volume;
+      return;
+    }
+    if (sS >= 0) {
+      chI[tail + 2] = sS;
+      chF[tail + 3] = sV;
+    } else {
+      chI[tail + 2] = -1;
+      chF[tail + 3] = Infinity;
+    }
+    chI[tail + 4] = -1;
+    chF[tail + 5] = Infinity;
+  }
+
+  static _noteFreed(slot) {
+    const i32 = this._i32;
+    const chI = this._channelI32;
+    if (!i32 || !chI || chI.length < this._tailBase() + this._tailWords()) return;
+    const H = this.HEADER_SIZE;
+    const S = this.SLOT_SIZE;
+    const b = H + slot * S;
+    const packed = i32[b + 7] | 0;
+    const bus = packed & 0xff;
+    const idx = packed >>> 8;
+    const tail = this._tail(bus);
+    this._lockBus(chI, tail);
+    const count = chI[tail + 1] | 0;
+    if (idx >= 0 && idx < count) {
+      const list = tail + this.TAIL_META;
+      const last = count - 1;
+      const moved = chI[list + last] | 0;
+      chI[list + idx] = moved;
+      if (moved !== slot) {
+        const mb = H + moved * S;
+        i32[mb + 7] = (i32[mb + 7] & 0xff) | (idx << 8);
+      }
+      chI[tail + 1] = last;
+    }
+    if ((chI[tail + 2] | 0) === slot) {
+      const ss = chI[tail + 4] | 0;
+      chI[tail + 2] = ss;
+      this._channelF32[tail + 3] = ss >= 0 ? this._channelF32[tail + 5] : Infinity;
+      chI[tail + 4] = -1;
+      this._channelF32[tail + 5] = Infinity;
+    } else if ((chI[tail + 4] | 0) === slot) {
+      chI[tail + 4] = -1;
+      this._channelF32[tail + 5] = Infinity;
+    }
+    this._unlockBus(chI, tail);
+  }
+
   static _writeSlot(audioId, volume, pitch, pan, loop, channelIndex = 0) {
+    const chI = this._channelI32;
+    if (!chI || chI.length < this._tailBase() + this._tailWords()) {
+      return this._writeSlotScan(audioId, volume, pitch, pan, loop, channelIndex);
+    }
+    const bus = channelIndex | 0;
+    let maxV = chI[this.CHANNEL_HEADER + bus * this.CHANNEL_STRIDE + 2] >> 8;
+    if (maxV < 1) maxV = this.maxVoicesPerChannel;
+    if (maxV > this.LIST_CAP) {
+      return this._writeSlotScan(audioId, volume, pitch, pan, loop, channelIndex);
+    }
+    const tail = this._tail(bus);
+    this._lockBus(chI, tail);
+    try {
+      return this._writeSlotListed(audioId, volume, pitch, pan, loop, bus, tail, maxV);
+    } finally {
+      this._unlockBus(chI, tail);
+    }
+  }
+
+  static _writeSlotListed(audioId, volume, pitch, pan, loop, bus, tail, maxV) {
+    const i32 = this._i32;
+    const f32 = this._f32;
+    const chI = this._channelI32;
+    const chF = this._channelF32;
+    const H = this.HEADER_SIZE;
+    const S = this.SLOT_SIZE;
+    const max = this._maxSlots;
+    const FREE = this.STATE_FREE;
+    const PLAYING = this.STATE_PLAYING;
+
+    const claim = (slot, from) => {
+      const b = H + slot * S;
+      const idx = from === FREE ? (chI[tail + 1] | 0) : ((i32[b + 7] >>> 8) | 0);
+      if (Atomics.compareExchange(i32, b, from, this.STATE_CLAIMING) !== from) return -1;
+      this._fillSlot(b, audioId, volume, pitch, pan, loop, bus);
+      const stored = f32[b + 4];
+      i32[b + 7] = bus | (idx << 8);
+      if (from === FREE) {
+        chI[tail + this.TAIL_META + idx] = slot;
+        chI[tail + 1] = idx + 1;
+        this._rememberVoice(bus, tail, slot, stored);
+      } else {
+        this._retuneStolen(tail, slot, stored);
+      }
+      this._raiseHighWater(slot);
+      return slot;
+    };
+
+    const count = chI[tail + 1] | 0;
+    if (count >= maxV) {
+      const qS = chI[tail + 2] | 0;
+      const qV = chF[tail + 3];
+      const sS = chI[tail + 4] | 0;
+      if (qS < 0 || (volume > qV && sS < 0)) this._publishQuiet(bus, tail);
+      if (!(volume > chF[tail + 3])) {
+        Atomics.add(i32, this.HEADER_DROPPED, 1);
+        return -1;
+      }
+      let got = claim(chI[tail + 2], PLAYING);
+      if (got >= 0) return got;
+      this._publishQuiet(bus, tail);
+      if (!(volume > chF[tail + 3])) {
+        Atomics.add(i32, this.HEADER_DROPPED, 1);
+        return -1;
+      }
+      got = claim(chI[tail + 2], PLAYING);
+      if (got >= 0) return got;
+      Atomics.add(i32, this.HEADER_DROPPED, 1);
+      return -1;
+    }
+
+    let hw = Atomics.load(chI, 5);
+    if (hw < 0) hw = 0;
+    if (hw > max) hw = max;
+    const scan = hw < max ? hw : max;
+    let free = -1;
+    for (let s = 0; s < scan; s++) {
+      if (Atomics.load(i32, H + s * S) === FREE) {
+        free = s;
+        break;
+      }
+    }
+    if (free >= 0) {
+      const got = claim(free, FREE);
+      if (got >= 0) return got;
+    } else if (hw < max) {
+      const got = claim(hw, FREE);
+      if (got >= 0) return got;
+    }
+    if ((chI[tail + 2] | 0) < 0) this._publishQuiet(bus, tail);
+    if ((chI[tail + 2] | 0) >= 0 && volume > chF[tail + 3]) {
+      const got = claim(chI[tail + 2], PLAYING);
+      if (got >= 0) return got;
+    }
+    Atomics.add(i32, this.HEADER_DROPPED, 1);
+    return -1;
+  }
+
+  static _writeSlotScan(audioId, volume, pitch, pan, loop, channelIndex = 0) {
     const i32 = this._i32;
     const f32 = this._f32;
     if (!i32 || !f32) return -1;
@@ -983,7 +1252,7 @@ export class SoundManager {
         if (free < 0) free = s;
         continue;
       }
-      if (state !== PLAYING || (i32[b + 7] | 0) !== bus) continue;
+      if (state !== PLAYING || ((i32[b + 7] | 0) & 0xff) !== bus) continue;
       onBus++;
       const v = f32[b + 4];
       if (v < quietVol) {

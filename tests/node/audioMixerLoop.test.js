@@ -251,6 +251,142 @@ test('H-12b: hoisted channel loads match the inline mix for mono and stereo', { 
   }
 });
 
+const CH_HEADER = 8;
+const CH_STRIDE = 8;
+
+function attachBuses(p, { count = 1, maxVoices = [32], mute = [], voiceCap = 32, threshold = 1, ratio = 1 } = {}) {
+  const sab = new SharedArrayBuffer((CH_HEADER + CH_STRIDE * 8) * 4);
+  const i32 = new Int32Array(sab);
+  const f32 = new Float32Array(sab);
+  f32[0] = 1;
+  f32[1] = 1;
+  f32[2] = 0.005;
+  f32[3] = 0.12;
+  f32[4] = 1;
+  i32[5] = p._max;
+  for (let bus = 0; bus < 8; bus++) {
+    const b = CH_HEADER + bus * CH_STRIDE;
+    f32[b] = 1;
+    f32[b + 1] = 0;
+    const cap = maxVoices[bus] > 0 ? maxVoices[bus] : 32;
+    i32[b + 2] = (cap << 8) | (mute[bus] ? 1 : 0);
+    f32[b + 3] = 1;
+    f32[b + 4] = threshold;
+    f32[b + 5] = ratio;
+    f32[b + 6] = 0;
+    f32[b + 7] = 0.05;
+  }
+  p._chI32 = i32;
+  p._chF32 = f32;
+  p._channelCount = count;
+  p._setVoiceCap(voiceCap);
+  p._applyMaxVoices(maxVoices);
+  p._env.fill(1);
+  p._masterEnv = 1;
+  const levels = new SharedArrayBuffer((4 + 256 * 3) * 4);
+  p._levelsI32 = new Int32Array(levels);
+  p._levelsF32 = new Float32Array(levels);
+  p._levelRing = 256;
+  p._levelMask = 255;
+  p._levelHeader = 4;
+  return { chI: i32, chF: f32 };
+}
+
+function peakOf(buffer) {
+  let peak = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    const a = buffer[i] < 0 ? -buffer[i] : buffer[i];
+    if (a > peak) peak = a;
+  }
+  return peak;
+}
+
+test('a muted bus is silent and a voice cap keeps one voice', { concurrency: false }, () => {
+  const previousRate = globalThis.sampleRate;
+  globalThis.sampleRate = 48000;
+  try {
+    const muted = makeProcessor({ slots: 1, frames: 64 });
+    attachBuses(muted.p, { maxVoices: [4], mute: [1], voiceCap: 4 });
+    installAsset(muted.p, 1, [new Float32Array(64).fill(1)]);
+    const b = claimSlot(muted.i32, 0, { audioId: 1, pitch: 1, volume: 1, loop: 1 });
+    muted.i32[b + 7] = 0;
+    const silent = runOnce(muted);
+    assert.equal(peakOf(silent[0]), 0);
+    assert.equal(peakOf(silent[1]), 0);
+    assert.ok(Number.isFinite(silent[0][0]) && Number.isFinite(silent[1][0]));
+
+    const capped = makeProcessor({ slots: 2, frames: 64 });
+    attachBuses(capped.p, { maxVoices: [1], voiceCap: 4 });
+    installAsset(capped.p, 1, [new Float32Array(64).fill(1)]);
+    const loud = claimSlot(capped.i32, 0, { audioId: 1, pitch: 1, volume: 1, loop: 1 });
+    const quiet = claimSlot(capped.i32, 1, { audioId: 1, pitch: 1, volume: 1, loop: 1 });
+    capped.i32[loud + 7] = 0;
+    capped.i32[quiet + 7] = 0;
+    const mixed = runOnce(capped);
+    const peak = peakOf(mixed[0]);
+    assert.ok(peak > 0.5 && peak < 0.9, `capped peak ${peak} should be one voice, not both`);
+    assert.ok(Number.isFinite(mixed[0][0]) && Number.isFinite(mixed[1][0]));
+
+    const stereo = makeProcessor({ slots: 1, frames: 32 });
+    attachBuses(stereo.p, { maxVoices: [4], voiceCap: 4 });
+    installAsset(stereo.p, 2, [new Float32Array(16).fill(0.4), new Float32Array(16).fill(-0.4)]);
+    const sb = claimSlot(stereo.i32, 0, { audioId: 2, pitch: 3, pan: 0.25, volume: 1, loop: 1 });
+    stereo.i32[sb + 7] = 0;
+    for (let block = 0; block < 3; block++) {
+      const out = runOnce(stereo);
+      assert.ok(Number.isFinite(out[0][0]) && Number.isFinite(out[1][0]));
+    }
+  } finally {
+    globalThis.sampleRate = previousRate;
+  }
+});
+
+test('the bus compressor pulls a hot voice down', { concurrency: false }, () => {
+  const previousRate = globalThis.sampleRate;
+  globalThis.sampleRate = 48000;
+  try {
+    function render(threshold, ratio) {
+      const ctx = makeProcessor({ slots: 1, frames: 128 });
+      attachBuses(ctx.p, { maxVoices: [4], voiceCap: 4, threshold, ratio });
+      installAsset(ctx.p, 1, [new Float32Array(128).fill(1)]);
+      const b = claimSlot(ctx.i32, 0, { audioId: 1, pitch: 1, volume: 1, loop: 1 });
+      ctx.i32[b + 7] = 0;
+      return peakOf(runOnce(ctx)[0]);
+    }
+    const open = render(1, 1);
+    const squeezed = render(0.2, 8);
+    assert.ok(open > 0.6, `open peak ${open}`);
+    assert.ok(squeezed < 0.45, `compressed peak ${squeezed}`);
+    assert.ok(Number.isFinite(open) && Number.isFinite(squeezed));
+  } finally {
+    globalThis.sampleRate = previousRate;
+  }
+});
+
+test('the levels ring records peaks and the clip flag', { concurrency: false }, () => {
+  const previousRate = globalThis.sampleRate;
+  globalThis.sampleRate = 48000;
+  try {
+    const ctx = makeProcessor({ slots: 2, frames: 64 });
+    attachBuses(ctx.p, { maxVoices: [4], voiceCap: 4 });
+    installAsset(ctx.p, 1, [new Float32Array(64).fill(1)]);
+    const a = claimSlot(ctx.i32, 0, { audioId: 1, pitch: 1, volume: 1, loop: 1 });
+    const b = claimSlot(ctx.i32, 1, { audioId: 1, pitch: 1, volume: 1, loop: 1 });
+    ctx.i32[a + 7] = 0;
+    ctx.i32[b + 7] = 0;
+    const out = runOnce(ctx);
+    assert.ok(Number.isFinite(out[0][0]) && Number.isFinite(out[1][0]));
+    assert.equal(Atomics.load(ctx.p._levelsI32, 0), 1);
+    assert.equal(Atomics.load(ctx.p._levelsI32, 1), 1);
+    const peakL = ctx.p._levelsF32[4];
+    const peakR = ctx.p._levelsF32[4 + 256];
+    assert.equal(peakL, 1);
+    assert.equal(peakR, 1);
+  } finally {
+    globalThis.sampleRate = previousRate;
+  }
+});
+
 test('B-05: stereo assets stay finite', { concurrency: false }, () => {
   const { p, i32, frames } = makeProcessor({ slots: 1, frames: 64 });
   const l = new Float32Array(16).fill(0.3);

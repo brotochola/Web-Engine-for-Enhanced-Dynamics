@@ -25,6 +25,55 @@ var S = 8; // fields per slot
 var CH_HEADER = 8;
 var CH_STRIDE = 8;
 var BUS_N = 8;
+var BUS_LIST_CAP = 2048;
+var BUS_TAIL_META = 8;
+var TAIL_BASE = CH_HEADER + BUS_N * CH_STRIDE;
+
+function busTail(bus) {
+  return TAIL_BASE + bus * (BUS_TAIL_META + BUS_LIST_CAP);
+}
+
+function releaseVoice(i32, chI, b) {
+  var slot = (b - H) / S;
+  var packed = i32[b + 7] | 0;
+  var bus = packed & 255;
+  if (!chI || chI.length <= TAIL_BASE) {
+    Atomics.store(i32, b, 0);
+    return;
+  }
+  var tail = busTail(bus);
+  if (tail + BUS_TAIL_META > chI.length) {
+    Atomics.store(i32, b, 0);
+    return;
+  }
+  while (Atomics.compareExchange(chI, tail, 0, 1) !== 0) {}
+  packed = i32[b + 7] | 0;
+  bus = packed & 255;
+  var idx = packed >>> 8;
+  tail = busTail(bus);
+  Atomics.store(i32, b, 0);
+  var count = chI[tail + 1] | 0;
+  if (idx >= 0 && idx < count && (chI[tail + BUS_TAIL_META + idx] | 0) === slot) {
+    var list = tail + BUS_TAIL_META;
+    var last = count - 1;
+    var moved = chI[list + last] | 0;
+    chI[list + idx] = moved;
+    if (moved !== slot) {
+      var mb = H + moved * S;
+      i32[mb + 7] = (i32[mb + 7] & 255) | (idx << 8);
+    }
+    chI[tail + 1] = last;
+  }
+  if ((chI[tail + 2] | 0) === slot) {
+    var ss = chI[tail + 4] | 0;
+    chI[tail + 2] = ss;
+    chI[tail + 3] = ss >= 0 ? (chI[tail + 5] | 0) : 0x7f800000;
+    chI[tail + 4] = -1;
+  } else if ((chI[tail + 4] | 0) === slot) {
+    chI[tail + 4] = -1;
+  }
+  Atomics.store(chI, tail, 0);
+}
 
 function compressorTarget(peak, threshold, ratio) {
   if (!(peak > threshold) || !(ratio > 1) || !(threshold > 0)) return 1;
@@ -82,7 +131,7 @@ function considerVoice(slots, gains, counts, bus, maxKeep, slot, gain) {
   slots[j] = slot;
 }
 
-function advanceVoice(i32, f32, b, len, pitch, loop, frames) {
+function advanceVoice(i32, f32, b, len, pitch, loop, frames, chI) {
   var cursor = f32[b + 6];
   if (!(cursor >= 0)) cursor = 0;
   cursor += frames * pitch;
@@ -92,14 +141,14 @@ function advanceVoice(i32, f32, b, len, pitch, loop, frames) {
     return;
   }
   if (cursor >= len) {
-    Atomics.store(i32, b, 0);
+    releaseVoice(i32, chI, b);
     f32[b + 6] = 0;
     return;
   }
   f32[b + 6] = cursor;
 }
 
-function mixVoice(i32, f32, b, asset, pitch, loop, gL, gR, busL, busR, frames) {
+function mixVoice(i32, f32, b, asset, pitch, loop, gL, gR, busL, busR, frames, chI) {
   var ch = asset.ch;
   var len = asset.len;
   var ch0 = ch[0];
@@ -114,7 +163,7 @@ function mixVoice(i32, f32, b, asset, pitch, loop, gL, gR, busL, busR, frames) {
         cursor -= len;
         if (cursor >= len) cursor %= len;
       } else {
-        Atomics.store(i32, b, 0);
+        releaseVoice(i32, chI, b);
         ended = true;
         break;
       }
@@ -266,7 +315,7 @@ class MixerProcessor extends AudioWorkletProcessor {
       if (Atomics.load(i32, b) !== 1) continue;
       var asset = this._assets.get(i32[b + 1]);
       if (!asset) {
-        Atomics.store(i32, b, 0);
+        releaseVoice(i32, null, b);
         continue;
       }
       var pitch = f32[b + 2];
@@ -276,7 +325,7 @@ class MixerProcessor extends AudioWorkletProcessor {
       if (pan > 1) pan = 1;
       else if (pan < -1) pan = -1;
       var angle = (pan + 1) * PI_4;
-      mixVoice(i32, f32, b, asset, pitch, i32[b + 5], Math.cos(angle) * vol, Math.sin(angle) * vol, L, R, frames);
+      mixVoice(i32, f32, b, asset, pitch, i32[b + 5], Math.cos(angle) * vol, Math.sin(angle) * vol, L, R, frames, null);
     }
   }
 
@@ -300,11 +349,11 @@ class MixerProcessor extends AudioWorkletProcessor {
       var b = H + s * S;
       if (Atomics.load(i32, b) !== 1) continue;
       if (!this._assets.get(i32[b + 1])) {
-        Atomics.store(i32, b, 0);
+        releaseVoice(i32, chI, b);
         continue;
       }
       active[activeN++] = s;
-      var voiceBus = i32[b + 7];
+      var voiceBus = i32[b + 7] & 255;
       if (voiceBus < 0 || voiceBus >= buses) voiceBus = 0;
       var cb = CH_HEADER + voiceBus * CH_STRIDE;
       var cVol = chF[cb];
@@ -339,17 +388,17 @@ class MixerProcessor extends AudioWorkletProcessor {
       var b = H + s * S;
       var asset = this._assets.get(i32[b + 1]);
       if (!asset) {
-        Atomics.store(i32, b, 0);
+        releaseVoice(i32, chI, b);
         continue;
       }
       var pitch = f32[b + 2];
       if (!(pitch > 0)) pitch = 1;
       var loop = i32[b + 5];
       if (!keep[s]) {
-        advanceVoice(i32, f32, b, asset.len, pitch, loop, frames);
+        advanceVoice(i32, f32, b, asset.len, pitch, loop, frames, chI);
         continue;
       }
-      var voiceBus = i32[b + 7];
+      var voiceBus = i32[b + 7] & 255;
       if (voiceBus < 0 || voiceBus >= buses) voiceBus = 0;
       var cb = CH_HEADER + voiceBus * CH_STRIDE;
       var pan = f32[b + 3] + chF[cb + 1];
@@ -360,7 +409,7 @@ class MixerProcessor extends AudioWorkletProcessor {
       mixVoice(
         i32, f32, b, asset, pitch, loop,
         Math.cos(angle) * vol, Math.sin(angle) * vol,
-        this._busL[voiceBus], R ? this._busR[voiceBus] : null, frames
+        this._busL[voiceBus], R ? this._busR[voiceBus] : null, frames, chI
       );
     }
 

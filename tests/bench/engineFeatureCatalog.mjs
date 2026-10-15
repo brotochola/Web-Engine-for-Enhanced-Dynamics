@@ -489,6 +489,21 @@ export const ENGINE_FEATURES = [
     load: ['BODY_COUNT', 'MESH_FILL_INSTANCES', 'MESH_RT_DRAWS'],
     protocolCeiling: 'MESH look pan skips the pack; pixi stays ≪ 3 ms',
   },
+  {
+    id: 'audioStorm',
+    name: 'Audio play storm',
+    module: 'src/core/soundManager.js',
+    kernel: { script: 'tests/bench/audioMixerMicrobench.mjs', opsKey: 'cases.scan2048.opsPerSec' },
+    scene: {
+      key: 'audioStorm',
+      path: '/tests/bench/stressScenes/audioStormScene.js',
+      exportName: 'AudioStormScene',
+      headed: false,
+      kind: 'stress',
+    },
+    primary: ['logic0_STEP_MS'],
+    load: ['BODY_COUNT'],
+  },
   // Kernel-only rows: no stress scene reaches their regime; the product gate is
   // Predator ABAB (runPredatorAbab.mjs) on the worker named in `primary`.
   {
