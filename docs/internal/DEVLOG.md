@@ -6,6 +6,16 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Thursday 15 October 2026 — A Mixer I Can Hear, and Then See
+
+I wanted guns, voices, and music to be different things. One gain on the master was a mute switch with extra steps. A scene now names up to eight buses. Each one has a volume, a pan, a mute, a cap on how many voices it will keep, and a compressor. A louder shot on a full bus replaces the quietest voice on that bus instead of dying in a queue of slots the mixer will never play. The master sits after the buses, with its own compressor. `play` takes the bus name. `SoundManager.channel('sfx')` is the handle.
+
+The Audio tab is the mixer desk. A status line for the context, the rate, the latency, the voice count, and how many plays were dropped. One card per bus, with a fader, a pan, mute, and the two sounds that bus is playing right now. Under that, the live voices, the loaded assets, and the stereo output: the history, the two peaks, and one RMS, because the level ring is not a stereo RMS. No icons. A colored edge on the card is enough. The fader you are dragging is not overwritten by the next refresh.
+
+Then I asked where the time went. A stress scene that only calls `play`, 800 times a tick, put 96 % of the logic worker inside `_writeSlot`. The line was not the claim. It was the walk. Every play on the voice bus still visited the gun slots and the music slots to find out they were not voice. At 800 plays the step was 6.6 ms, under the 8 ms bar, so the knob went to 1200. Headed, live source, detailed stats off, logic was 8.8 ms.
+
+Each bus now keeps the slots it actually holds, and the quietest voice and the one after it. A shot that is not louder than that minimum is a drop after one read. A louder shot takes that slot. The walk, when it still happens, is that bus's list, not the whole table. The worklet updates the list when a one-shot ends. The kernel, same voices left on the buses, same drop count, was 21 thousand calls a second to 262 thousand, five rounds out of five. The scene went from 8.8 ms to 0.28 ms. The fast side is under 8 ms. The baseline had cleared it, and the step got cheaper, so the keep stands. Predator is not that number. Last time this function showed up there it was 4 % of logic.
+
 ## Wednesday 14 October 2026 (later) — Make the Mesh Busy, Then Look
 
 The gallery is eight pictures. It can show that `setMesh` and a rope and a polygon all draw. It cannot say where the frame goes. I wanted a scene that fills the vertex arena and then a trace of that scene, before another guess about what to speed up.
