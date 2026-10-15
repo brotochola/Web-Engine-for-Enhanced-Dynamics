@@ -67,10 +67,25 @@ export class SoundManager {
   static MAX_CHANNELS = 8;
   static CHANNEL_HEADER = 8;
   static CHANNEL_STRIDE = 8;
-  static DEFAULT_MAX_VOICES = 32;
+  /** Fallback when a bus omits maxVoices. A scene value above this is kept. */
+  static get maxVoicesPerChannel() {
+    const n = AUDIO_DEFAULTS.maxVoicesPerChannel | 0;
+    return n > 0 ? n : 1;
+  }
+
+  /** Pick-list size for the worklet: the largest bus cap in this scene. */
+  static get voiceCap() {
+    let cap = this.maxVoicesPerChannel;
+    const count = this._channelCount | 0;
+    for (let i = 0; i < count; i++) {
+      const n = this._channelMaxVoices[i] | 0;
+      if (n > cap) cap = n;
+    }
+    return cap;
+  }
   static DEFAULT_BUS_COMPRESSOR = Object.freeze({ threshold: 0.6, ratio: 4, attack: 0.01, release: 0.15 });
   static DEFAULT_MASTER_COMPRESSOR = Object.freeze({ threshold: 0.85, ratio: 12, attack: 0.005, release: 0.12 });
-  static _channelMaxVoices = [32, 32, 32, 32, 32, 32, 32, 32];
+  static _channelMaxVoices = [0, 0, 0, 0, 0, 0, 0, 0];
   static _channelSab = null;
   static _channelI32 = null;
   static _channelF32 = null;
@@ -221,6 +236,7 @@ export class SoundManager {
       channelSab: this._channelSab,
       channelCount: this._channelCount,
       maxVoices: this._channelMaxVoices.slice(0, this.MAX_CHANNELS),
+      voiceCap: this.voiceCap,
     });
   }
 
@@ -254,6 +270,7 @@ export class SoundManager {
       type: 'channels',
       channelCount: this._channelCount,
       maxVoices: this._channelMaxVoices.slice(0, this.MAX_CHANNELS),
+      voiceCap: this.voiceCap,
     });
   }
 
@@ -290,10 +307,10 @@ export class SoundManager {
     }
     for (let i = list.length; i < this.MAX_CHANNELS; i++) {
       const b = header + i * stride;
-      this._channelMaxVoices[i] = this.DEFAULT_MAX_VOICES;
+      this._channelMaxVoices[i] = this.maxVoicesPerChannel;
       f32[b] = 1;
       f32[b + 1] = 0;
-      i32[b + 2] = this.DEFAULT_MAX_VOICES << 8;
+      i32[b + 2] = this.maxVoicesPerChannel << 8;
       f32[b + 3] = 1;
       this._writeCompressor(b, this.DEFAULT_BUS_COMPRESSOR, false);
     }
@@ -339,7 +356,7 @@ export class SoundManager {
         name: 'main',
         volume: 1,
         pan: 0,
-        maxVoices: this.DEFAULT_MAX_VOICES,
+        maxVoices: this.maxVoicesPerChannel,
         compressor: this.DEFAULT_BUS_COMPRESSOR,
       }];
     }
@@ -356,8 +373,7 @@ export class SoundManager {
       else if (pan < -1) pan = -1;
       else if (pan > 1) pan = 1;
       let maxVoices = def.maxVoices | 0;
-      if (maxVoices < 1) maxVoices = this.DEFAULT_MAX_VOICES;
-      else if (maxVoices > 128) maxVoices = 128;
+      if (maxVoices < 1) maxVoices = this.maxVoicesPerChannel;
       const compressor = def.compressor === false
         ? { threshold: 1, ratio: 1, attack: 0.01, release: 0.15 }
         : this._clampCompressor(def.compressor, this.DEFAULT_BUS_COMPRESSOR);
@@ -950,7 +966,7 @@ export class SoundManager {
     }
 
     let maxV = chI[this.CHANNEL_HEADER + bus * this.CHANNEL_STRIDE + 2] >> 8;
-    if (maxV < 1) maxV = this.DEFAULT_MAX_VOICES;
+    if (maxV < 1) maxV = this.maxVoicesPerChannel;
     let hw = Atomics.load(chI, 5);
     if (hw < 0) hw = 0;
     if (hw > max) hw = max;

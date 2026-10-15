@@ -497,6 +497,7 @@ export const AUDIO_DEFAULTS = Object.freeze({
   maxSlots: 128,
   mixGain: 0.5,
   masterVolume: 1.0,
+  maxVoicesPerChannel: 128,
   channels: Object.freeze({
     main: Object.freeze({
       volume: 1,

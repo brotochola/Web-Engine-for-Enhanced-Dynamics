@@ -25,7 +25,6 @@ var S = 8; // fields per slot
 var CH_HEADER = 8;
 var CH_STRIDE = 8;
 var BUS_N = 8;
-var PICK_MAX = 128;
 
 function compressorTarget(peak, threshold, ratio) {
   if (!(peak > threshold) || !(ratio > 1) || !(threshold > 0)) return 1;
@@ -168,13 +167,10 @@ class MixerProcessor extends AudioWorkletProcessor {
     this._env = new Float32Array(BUS_N);
     this._env.fill(1);
     this._masterEnv = 1;
+    this._pickMax = 0;
     this._pick = [];
     this._pickGain = [];
     this._pickCount = new Int32Array(BUS_N);
-    for (var p = 0; p < BUS_N; p++) {
-      this._pick[p] = new Int32Array(PICK_MAX);
-      this._pickGain[p] = new Float32Array(PICK_MAX);
-    }
     this._active = new Int32Array(0);
     this._busL = [];
     this._busR = [];
@@ -204,6 +200,7 @@ class MixerProcessor extends AudioWorkletProcessor {
           this._chF32 = new Float32Array(d.channelSab);
           this._channelCount = d.channelCount | 0;
           if (!(this._channelCount > 0)) this._channelCount = 1;
+          this._setVoiceCap(d.voiceCap);
           this._applyMaxVoices(d.maxVoices);
           this._env.fill(1);
           this._masterEnv = 1;
@@ -216,6 +213,7 @@ class MixerProcessor extends AudioWorkletProcessor {
       } else if (d.type === 'channels') {
         this._channelCount = d.channelCount | 0;
         if (!(this._channelCount > 0)) this._channelCount = 1;
+        this._setVoiceCap(d.voiceCap);
         this._applyMaxVoices(d.maxVoices);
         this._env.fill(1);
         this._masterEnv = 1;
@@ -227,12 +225,25 @@ class MixerProcessor extends AudioWorkletProcessor {
     }.bind(this);
   }
 
+  _setVoiceCap(cap) {
+    var n = cap | 0;
+    if (n < 1) n = 1;
+    if (this._pickMax === n && this._pick.length === BUS_N) return;
+    this._pickMax = n;
+    this._pick = [];
+    this._pickGain = [];
+    for (var p = 0; p < BUS_N; p++) {
+      this._pick[p] = new Int32Array(n);
+      this._pickGain[p] = new Float32Array(n);
+    }
+  }
+
   _applyMaxVoices(list) {
-    var n = BUS_N;
-    for (var i = 0; i < n; i++) {
-      var v = list && list[i] | 0;
-      if (v < 1) v = 32;
-      else if (v > PICK_MAX) v = PICK_MAX;
+    var cap = this._pickMax > 0 ? this._pickMax : 1;
+    for (var i = 0; i < BUS_N; i++) {
+      var v = (list && list[i]) | 0;
+      if (v < 1) v = cap;
+      else if (v > cap) v = cap;
       this._maxVoices[i] = v;
     }
   }
@@ -302,7 +313,7 @@ class MixerProcessor extends AudioWorkletProcessor {
       if (!(vol > 0)) continue;
       var maxKeep = chI[cb + 2] >> 8;
       if (maxKeep < 1) maxKeep = this._maxVoices[voiceBus];
-      if (maxKeep > PICK_MAX) maxKeep = PICK_MAX;
+      if (maxKeep > this._pickMax) maxKeep = this._pickMax;
       considerVoice(
         this._pick[voiceBus],
         this._pickGain[voiceBus],

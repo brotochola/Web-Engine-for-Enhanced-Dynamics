@@ -130,13 +130,13 @@ export class PredatorScene extends WEED.Scene {
       maxImpactsPerFrame: 512,
     },
     audio: {
-      maxSlots: 12048,
+      maxSlots: 2048,
       channels: {
         sfx: {
           volume: 0.7,
           pan: 0,
-          maxVoices: 64,
-          compressor: { threshold: 0.7, ratio: 2, attack: 0.005, release: 0.12 },
+          maxVoices: 128,
+          compressor: { threshold: 0.5, ratio: 15, attack: 0.000, release: 0.12 },
         },
         bullet_hits: {
           volume: 0.33,
