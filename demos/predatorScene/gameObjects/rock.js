@@ -21,7 +21,7 @@ export class Rock extends GameObject {
 
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
     const impactSound = rng() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
-    SoundManager.play(impactSound, 0.55, 0.85, 1.12, 0, 0, hitX, hitY, 'sfx');
+    SoundManager.play(impactSound, 0.25, 0.85, 1.12, 0, 0, hitX, hitY, 'bullet_hits');
 
     const radius = this.collider.radius;
     ParticleEmitter.emit({

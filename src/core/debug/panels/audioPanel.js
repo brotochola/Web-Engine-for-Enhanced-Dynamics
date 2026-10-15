@@ -43,6 +43,11 @@ function fmtRate(rate) {
   return rate >= 1000 ? rate / 1000 + ' kHz' : rate + ' Hz';
 }
 
+function fmtTrim(gain) {
+  if (!(gain > 0) || gain > 0.944) return '';
+  return (20 * Math.log10(gain)).toFixed(1);
+}
+
 function fmtDuration(asset) {
   if (asset.state !== 'ready' || !(asset.duration > 0)) return '—';
   return asset.duration.toFixed(2) + 's';
@@ -448,8 +453,10 @@ export class AudioPanel {
     const count = document.createElement('div');
     count.className = 'debug-ui-audio-strip-count';
     count.textContent = '0';
-    root.append(title, fader, pct, pan, panLabel, mute, count);
-    return { root, name, index, fader, pct, pan, panLabel, mute, count, master: false };
+    const trim = document.createElement('div');
+    trim.className = 'debug-ui-audio-strip-trim';
+    root.append(title, fader, pct, pan, panLabel, mute, count, trim);
+    return { root, name, index, fader, pct, pan, panLabel, mute, count, trim, master: false };
   }
 
   _createMasterStrip() {
@@ -488,8 +495,10 @@ export class AudioPanel {
     });
     const mute = createButton('M', '', () => SoundManager.setMuted(!SoundManager.isMuted()));
     mute.title = 'Mute master';
-    root.append(title, fader, pct, mixLabel, mix, mute);
-    return { root, fader, pct, pan: mix, panLabel: mixLabel, mute, master: true };
+    const trim = document.createElement('div');
+    trim.className = 'debug-ui-audio-strip-trim';
+    root.append(title, fader, pct, mixLabel, mix, mute, trim);
+    return { root, fader, pct, pan: mix, panLabel: mixLabel, mute, trim, master: true };
   }
 
   _bindFader(input, write) {
@@ -512,6 +521,7 @@ export class AudioPanel {
       setText(strip.panLabel, 'Mix ' + (((metrics.mixGain || 0) * 100 + 0.5) | 0) + '%');
       const muted = !!metrics.muted;
       strip.mute.classList.toggle('active', muted);
+      setText(strip.trim, fmtTrim(SoundManager.getMasterReduction()));
       return;
     }
     const bus = SoundManager.channel(strip.name);
@@ -523,6 +533,7 @@ export class AudioPanel {
     }
     strip.mute.classList.toggle('active', bus.muted);
     setText(strip.count, String(this._busCounts.get(strip.index) | 0));
+    setText(strip.trim, fmtTrim(bus.reduction));
   }
 
   _pullRange(input, label, linear, signed) {

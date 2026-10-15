@@ -139,11 +139,11 @@ export class SoundManager {
 
   // ─── AudioWorklet initialization (main thread only) ─────────────────────────
 
-  static async initializeAudioWorklet(maxSlots = 64, mixGain = 0.5, masterVolume = 1.0, channels) {
+  static async initializeAudioWorklet(maxSlots = 64, mixGain = 0.5, masterVolume = 1.0, channels, masterCompressor) {
     if (this._isWorkerContext()) return false;
 
     if (this._audioCtx) {
-      this._reconfigureForNewScene(maxSlots, mixGain, masterVolume, channels);
+      this._reconfigureForNewScene(maxSlots, mixGain, masterVolume, channels, masterCompressor);
       return true;
     }
 
@@ -190,7 +190,7 @@ export class SoundManager {
       outputChannelCount: [2],
     });
     this._workletNode.connect(this._audioCtx.destination);
-    this.configureChannels(channels);
+    this.configureChannels(channels, masterCompressor);
     this._postWorkletInit();
 
     debugWorkerLog(
@@ -220,6 +220,7 @@ export class SoundManager {
       levelsSab: this._levelsSab,
       channelSab: this._channelSab,
       channelCount: this._channelCount,
+      maxVoices: this._channelMaxVoices.slice(0, this.MAX_CHANNELS),
     });
   }
 
@@ -241,7 +242,7 @@ export class SoundManager {
 
   static _ensureChannelSab() {
     if (this._channelSab) return;
-    const words = this.MAX_CHANNELS * this.CHANNEL_STRIDE;
+    const words = this.CHANNEL_HEADER + this.MAX_CHANNELS * this.CHANNEL_STRIDE;
     this._channelSab = new SharedArrayBuffer(words * 4);
     this._channelI32 = new Int32Array(this._channelSab);
     this._channelF32 = new Float32Array(this._channelSab);
@@ -252,6 +253,7 @@ export class SoundManager {
     this._workletNode.port.postMessage({
       type: 'channels',
       channelCount: this._channelCount,
+      maxVoices: this._channelMaxVoices.slice(0, this.MAX_CHANNELS),
     });
   }
 
@@ -260,7 +262,7 @@ export class SoundManager {
    * order. The first bus is the default for play() calls that omit a channel.
    * More than MAX_CHANNELS throws. Workers do not call this; they import the map.
    */
-  static configureChannels(channels) {
+  static configureChannels(channels, masterCompressor) {
     const list = this._normalizeChannels(channels);
     if (list.length > this.MAX_CHANNELS) {
       throw new Error(`Audio channels exceed ${this.MAX_CHANNELS} (got ${list.length})`);
@@ -272,29 +274,75 @@ export class SoundManager {
     const f32 = this._channelF32;
     const i32 = this._channelI32;
     const stride = this.CHANNEL_STRIDE;
+    const header = this.CHANNEL_HEADER;
+    this._writeCompressor(0, this._clampCompressor(masterCompressor, this.DEFAULT_MASTER_COMPRESSOR), true);
     for (let i = 0; i < list.length; i++) {
       const entry = list[i];
       this._channelNames[i] = entry.name;
       this._channelNameToIndex.set(entry.name, i);
-      const b = i * stride;
+      this._channelMaxVoices[i] = entry.maxVoices;
+      const b = header + i * stride;
       f32[b] = entry.volume;
       f32[b + 1] = entry.pan;
-      i32[b + 2] = 0;
+      i32[b + 2] = entry.maxVoices << 8;
+      f32[b + 3] = 1;
+      this._writeCompressor(b, entry.compressor, false);
     }
     for (let i = list.length; i < this.MAX_CHANNELS; i++) {
-      const b = i * stride;
+      const b = header + i * stride;
+      this._channelMaxVoices[i] = this.DEFAULT_MAX_VOICES;
       f32[b] = 1;
       f32[b + 1] = 0;
-      i32[b + 2] = 0;
+      i32[b + 2] = this.DEFAULT_MAX_VOICES << 8;
+      f32[b + 3] = 1;
+      this._writeCompressor(b, this.DEFAULT_BUS_COMPRESSOR, false);
     }
     this._channelCount = list.length;
+    Atomics.store(i32, 5, 0);
     this._channelRev++;
+  }
+
+  /** Master words sit at 0. Bus words sit at base+4. Reduction is reset to 1. */
+  static _writeCompressor(base, comp, master) {
+    const f32 = this._channelF32;
+    const at = master ? base : base + 4;
+    f32[at] = comp.threshold;
+    f32[at + 1] = comp.ratio;
+    f32[at + 2] = comp.attack;
+    f32[at + 3] = comp.release;
+    if (master) f32[4] = 1;
+  }
+
+  static _clampCompressor(def, fallback) {
+    const src = def && typeof def === 'object' ? def : fallback;
+    let threshold = Number(src.threshold);
+    let ratio = Number(src.ratio);
+    let attack = Number(src.attack);
+    let release = Number(src.release);
+    if (!Number.isFinite(threshold)) threshold = fallback.threshold;
+    else if (threshold < 0) threshold = 0;
+    else if (threshold > 1) threshold = 1;
+    if (!Number.isFinite(ratio) || ratio < 1) ratio = fallback.ratio;
+    else if (ratio > 100) ratio = 100;
+    if (!Number.isFinite(attack) || attack < 0) attack = fallback.attack;
+    else if (attack > 2) attack = 2;
+    if (!Number.isFinite(release) || release < 0) release = fallback.release;
+    else if (release > 4) release = 4;
+    return { threshold, ratio, attack, release };
   }
 
   static _normalizeChannels(channels) {
     const source = channels && typeof channels === 'object' ? channels : null;
     const names = source ? Object.keys(source) : [];
-    if (names.length === 0) return [{ name: 'main', volume: 1, pan: 0 }];
+    if (names.length === 0) {
+      return [{
+        name: 'main',
+        volume: 1,
+        pan: 0,
+        maxVoices: this.DEFAULT_MAX_VOICES,
+        compressor: this.DEFAULT_BUS_COMPRESSOR,
+      }];
+    }
     const list = [];
     for (let i = 0; i < names.length; i++) {
       const name = names[i];
@@ -307,7 +355,13 @@ export class SoundManager {
       if (!Number.isFinite(pan)) pan = 0;
       else if (pan < -1) pan = -1;
       else if (pan > 1) pan = 1;
-      list.push({ name, volume, pan });
+      let maxVoices = def.maxVoices | 0;
+      if (maxVoices < 1) maxVoices = this.DEFAULT_MAX_VOICES;
+      else if (maxVoices > 128) maxVoices = 128;
+      const compressor = def.compressor === false
+        ? { threshold: 1, ratio: 1, attack: 0.01, release: 0.15 }
+        : this._clampCompressor(def.compressor, this.DEFAULT_BUS_COMPRESSOR);
+      list.push({ name, volume, pan, maxVoices, compressor });
     }
     return list;
   }
@@ -392,7 +446,15 @@ export class SoundManager {
   static _channelWord(name) {
     const id = this._channelNameToIndex.get(name);
     if (typeof id !== 'number' || !this._channelF32) return -1;
-    return id * this.CHANNEL_STRIDE;
+    return this.CHANNEL_HEADER + id * this.CHANNEL_STRIDE;
+  }
+
+  /** Linear master-compressor gain written by the worklet. 1 = no cut. */
+  static getMasterReduction() {
+    const f32 = this._channelF32;
+    if (!f32) return 1;
+    const gain = f32[4];
+    return gain > 0 ? gain : 1;
   }
 
   static initializeSlotSAB(config) {
@@ -413,7 +475,7 @@ export class SoundManager {
    * Reconfigure the audio worklet for a new scene without recreating the AudioContext.
    * Rebuilds the SAB if maxSlots changed, and always applies fresh gain/volume.
    */
-  static _reconfigureForNewScene(maxSlots, mixGain, masterVolume, channels) {
+  static _reconfigureForNewScene(maxSlots, mixGain, masterVolume, channels, masterCompressor) {
     if (maxSlots !== this._maxSlots) {
       this._maxSlots = maxSlots;
       const sabBytes = (this.HEADER_SIZE + maxSlots * this.SLOT_SIZE) * 4;
@@ -430,7 +492,7 @@ export class SoundManager {
     this._f32[this.HEADER_MASTER_VOL] = Math.max(0, Math.min(1, masterVolume));
     this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
     this._muted = false;
-    this.configureChannels(channels);
+    this.configureChannels(channels, masterCompressor);
     this._postChannelCount();
 
     debugWorkerLog(
@@ -835,31 +897,107 @@ export class SoundManager {
 
   // ─── Private ──────────────────────────────────────────────────────────────
 
+  static _fillSlot(b, audioId, volume, pitch, pan, loop, channelIndex) {
+    const i32 = this._i32;
+    const f32 = this._f32;
+    i32[b + 1] = audioId;
+    f32[b + 2] = pitch;
+    f32[b + 3] = pan;
+    f32[b + 4] = volume;
+    i32[b + 5] = loop ? 1 : 0;
+    f32[b + 6] = 0;
+    i32[b + 7] = channelIndex | 0;
+    Atomics.store(i32, b, this.STATE_PLAYING);
+  }
+
+  static _raiseHighWater(slot) {
+    const chI = this._channelI32;
+    if (!chI) return;
+    const need = (slot | 0) + 1;
+    let hw = Atomics.load(chI, 5);
+    while (need > hw) {
+      const prev = Atomics.compareExchange(chI, 5, hw, need);
+      if (prev === hw) return;
+      hw = prev;
+    }
+  }
+
   static _writeSlot(audioId, volume, pitch, pan, loop, channelIndex = 0) {
     const i32 = this._i32;
-    if (!i32) return -1;
+    const f32 = this._f32;
+    if (!i32 || !f32) return -1;
 
     const H = this.HEADER_SIZE;
     const S = this.SLOT_SIZE;
     const max = this._maxSlots;
     const FREE = this.STATE_FREE;
+    const PLAYING = this.STATE_PLAYING;
+    const CLAIMING = this.STATE_CLAIMING;
+    const bus = channelIndex | 0;
+    const chI = this._channelI32;
 
-    // Plain load first: a CAS takes the cache line exclusive even when it fails,
-    // and with every slot busy each play() would do that for all of them.
-    for (let s = 0; s < max; s++) {
-      const b = H + s * S;
-      if (Atomics.load(i32, b) === FREE && Atomics.compareExchange(i32, b, FREE, this.STATE_CLAIMING) === FREE) {
-        const f32 = this._f32;
-        i32[b + 1] = audioId;
-        f32[b + 2] = pitch;
-        f32[b + 3] = pan;
-        f32[b + 4] = volume;
-        i32[b + 5] = loop ? 1 : 0;
-        f32[b + 6] = 0;
-        i32[b + 7] = channelIndex | 0;
-        Atomics.store(i32, b, this.STATE_PLAYING);
-        return s;
+    // No bus buffer: first free slot, same as before channels existed.
+    if (!chI) {
+      for (let s = 0; s < max; s++) {
+        const b = H + s * S;
+        if (Atomics.load(i32, b) === FREE && Atomics.compareExchange(i32, b, FREE, CLAIMING) === FREE) {
+          this._fillSlot(b, audioId, volume, pitch, pan, loop, bus);
+          return s;
+        }
       }
+      Atomics.add(i32, this.HEADER_DROPPED, 1);
+      return -1;
+    }
+
+    let maxV = chI[this.CHANNEL_HEADER + bus * this.CHANNEL_STRIDE + 2] >> 8;
+    if (maxV < 1) maxV = this.DEFAULT_MAX_VOICES;
+    let hw = Atomics.load(chI, 5);
+    if (hw < 0) hw = 0;
+    if (hw > max) hw = max;
+
+    let free = -1;
+    let onBus = 0;
+    let quietSlot = -1;
+    let quietVol = Infinity;
+    const scan = hw < max ? hw : max;
+    for (let s = 0; s < scan; s++) {
+      const b = H + s * S;
+      const state = Atomics.load(i32, b);
+      if (state === FREE) {
+        if (free < 0) free = s;
+        continue;
+      }
+      if (state !== PLAYING || (i32[b + 7] | 0) !== bus) continue;
+      onBus++;
+      const v = f32[b + 4];
+      if (v < quietVol) {
+        quietVol = v;
+        quietSlot = s;
+      }
+    }
+
+    const claim = (slot, from) => {
+      const b = H + slot * S;
+      if (Atomics.compareExchange(i32, b, from, CLAIMING) !== from) return -1;
+      this._fillSlot(b, audioId, volume, pitch, pan, loop, bus);
+      this._raiseHighWater(slot);
+      return slot;
+    };
+
+    if (onBus < maxV) {
+      if (free >= 0) {
+        const got = claim(free, FREE);
+        if (got >= 0) return got;
+      } else if (hw < max) {
+        const got = claim(hw, FREE);
+        if (got >= 0) return got;
+      }
+    }
+    // Bus is at its mix cap. A louder shot replaces the quietest one on this bus
+    // instead of piling up a silent slot that blocks every later play().
+    if (quietSlot >= 0 && volume > quietVol) {
+      const got = claim(quietSlot, PLAYING);
+      if (got >= 0) return got;
     }
     Atomics.add(i32, this.HEADER_DROPPED, 1);
     return -1;
@@ -1151,12 +1289,22 @@ class AudioChannel {
   get muted() {
     const word = SoundManager._channelWord(this.name);
     if (word < 0 || !SoundManager._channelI32) return false;
-    return SoundManager._channelI32[word + 2] !== 0;
+    return (SoundManager._channelI32[word + 2] & 1) !== 0;
   }
 
   set muted(value) {
     const word = SoundManager._channelWord(this.name);
-    if (word < 0 || !SoundManager._channelI32) return;
-    SoundManager._channelI32[word + 2] = value ? 1 : 0;
+    const i32 = SoundManager._channelI32;
+    if (word < 0 || !i32) return;
+    if (value) Atomics.or(i32, word + 2, 1);
+    else Atomics.and(i32, word + 2, ~1);
+  }
+
+  /** Linear compressor gain for this bus. 1 = the envelope is not cutting. */
+  get reduction() {
+    const word = SoundManager._channelWord(this.name);
+    if (word < 0) return 1;
+    const gain = SoundManager._channelF32[word + 3];
+    return gain > 0 ? gain : 1;
   }
 }

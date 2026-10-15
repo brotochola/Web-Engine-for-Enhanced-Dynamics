@@ -130,13 +130,40 @@ export class PredatorScene extends WEED.Scene {
       maxImpactsPerFrame: 512,
     },
     audio: {
-      maxSlots: 2048,
+      maxSlots: 12048,
       channels: {
-        sfx: { volume: 1, pan: 0 },
-        voice: { volume: 1, pan: 0 },
-        ui: { volume: 1, pan: 0 },
-        bgm: { volume: 0.7, pan: 0 },
+        sfx: {
+          volume: 0.7,
+          pan: 0,
+          maxVoices: 64,
+          compressor: { threshold: 0.7, ratio: 2, attack: 0.005, release: 0.12 },
+        },
+        bullet_hits: {
+          volume: 0.33,
+          pan: 0,
+          maxVoices: 32,
+          compressor: { threshold: 0.5, ratio: 4, attack: 0.005, release: 0.12 },
+        },
+        voice: {
+          volume: 0.7,
+          pan: 0,
+          maxVoices: 32,
+          compressor: { threshold: 0.5, ratio: 6, attack: 0.01, release: 0.18 },
+        },
+        ui: {
+          volume: 1,
+          pan: 0,
+          maxVoices: 16,
+          compressor: { threshold: 1, ratio: 1, attack: 0.01, release: 0.15 },
+        },
+        bgm: {
+          volume: 0.7,
+          pan: 0,
+          maxVoices: 4,
+          compressor: { threshold: 1, ratio: 1, attack: 0.01, release: 0.15 },
+        },
       },
+      compressor: { threshold: 0.85, ratio: 12, attack: 0.005, release: 0.12 },
     },
 
     // Logic configuration

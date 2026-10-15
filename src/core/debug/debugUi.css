@@ -1049,6 +1049,13 @@
   color: rgba(255, 255, 255, 0.55);
 }
 
+.debug-ui-audio-strip-trim {
+  min-height: 12px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: #fbbf24;
+}
+
 .debug-ui-audio-pan-slider {
   width: 3.6rem;
 }

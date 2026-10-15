@@ -954,7 +954,8 @@ class Scene {
       audioConfig.maxSlots,
       audioConfig.mixGain,
       audioConfig.masterVolume,
-      audioConfig.channels
+      audioConfig.channels,
+      audioConfig.compressor
     );
     SoundManager.initializeAutoplayGate();
 
