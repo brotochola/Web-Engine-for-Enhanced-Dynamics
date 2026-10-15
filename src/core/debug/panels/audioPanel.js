@@ -1,12 +1,13 @@
-// AudioPanel.js — Mixer debug: device, output graph, playing voices, loaded assets.
+// AudioPanel.js — Mixer debug: device, channel cards, output graph, voices, assets.
 
-import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
+import { createPanel, createStat, createButton } from '../ui/debugDom.js';
 import { SoundManager } from '../../soundManager.js';
 import { formatBytes } from '../../../util/sceneBufferMemory.js';
 
 const HISTORY = 150;
 const DB_FLOOR = -60;
 const CLIP_HOLD_MS = 1000;
+const BUS_ACCENTS = ['#38bdf8', '#a78bfa', '#22d3ee', '#fb923c', '#f472b6', '#4ade80', '#fbbf24', '#94a3b8'];
 
 function linToDb(lin) {
   if (!(lin > 0)) return DB_FLOOR;
@@ -21,6 +22,11 @@ function fmtDb(lin) {
   const db = 20 * Math.log10(lin);
   if (db < DB_FLOOR) return '-60';
   return db.toFixed(1);
+}
+
+function fmtDbUnit(lin) {
+  const db = fmtDb(lin);
+  return db === '-inf' ? '-inf' : db + ' dB';
 }
 
 function meterPct(lin) {
@@ -48,9 +54,17 @@ function fmtTrim(gain) {
   return (20 * Math.log10(gain)).toFixed(1);
 }
 
-function fmtDuration(asset) {
-  if (asset.state !== 'ready' || !(asset.duration > 0)) return '—';
-  return asset.duration.toFixed(2) + 's';
+function fmtClock(sec) {
+  if (!(sec >= 0) || !Number.isFinite(sec)) return '—';
+  const s = Math.round(sec);
+  const m = (s / 60) | 0;
+  const r = s % 60;
+  return m + ':' + (r < 10 ? '0' : '') + r;
+}
+
+function fmtSpan(sec, precise) {
+  if (!(sec >= 0) || !Number.isFinite(sec)) return '—';
+  return precise ? sec.toFixed(1) + 's' : fmtClock(sec);
 }
 
 export class AudioPanel {
@@ -64,6 +78,8 @@ export class AudioPanel {
     this._matched = [];
     this._assetRows = [];
     this._lenById = new Map();
+    this._rateById = new Map();
+    this._durById = new Map();
     this._useCount = new Map();
     this._assetRev = -1;
     this._filter = '';
@@ -76,6 +92,8 @@ export class AudioPanel {
     this._channelRev = -1;
     this._busStrips = [];
     this._busCounts = new Map();
+    this._busLines = new Map();
+    this._assetBus = new Map();
   }
 
   create() {
@@ -83,82 +101,86 @@ export class AudioPanel {
     const root = document.createElement('div');
     root.className = 'debug-ui-audio';
 
-    const stats = createRow('gap:8px');
-    this.elements.state = createStat('Context —', 'audio');
+    const bar = document.createElement('div');
+    bar.className = 'debug-ui-audio-status';
+    const brand = document.createElement('span');
+    brand.className = 'debug-ui-audio-brand';
+    brand.textContent = 'AUDIO';
+    this.elements.state = document.createElement('span');
+    this.elements.state.className = 'debug-ui-audio-pill';
+    this.elements.state.textContent = 'closed';
     this.elements.resume = createButton('Resume', '', () => SoundManager.resume());
     this.elements.resume.style.display = 'none';
-    this.elements.unlock = createStat('—');
     this.elements.rate = createStat('—');
-    this.elements.latency = createStat('—');
-    this.elements.process = createStat('—');
-    stats.append(
+    this.elements.latency = createStat('Latency —');
+    this.elements.process = createStat('Process —');
+    this.elements.voices = createStat('Voices —');
+    this.elements.dropped = createStat('Dropped —');
+    const gap = document.createElement('span');
+    gap.className = 'debug-ui-audio-status-gap';
+    bar.append(
+      brand,
       this.elements.state,
       this.elements.resume,
-      this.elements.unlock,
       this.elements.rate,
       this.elements.latency,
       this.elements.process,
-    );
-    root.appendChild(stats);
-
-    const budget = createRow('gap:8px');
-    this.elements.voices = createStat('Voices —');
-    this.elements.dropped = createStat('Dropped —');
-    budget.append(
       this.elements.voices,
       this.elements.dropped,
+      gap,
       createButton('Clear dropped', '', () => SoundManager.clearDropped()),
       createButton('Stop all', 'danger', () => SoundManager.stopAll()),
     );
-    root.appendChild(budget);
+    root.appendChild(bar);
 
     this.elements.busRow = document.createElement('div');
     this.elements.busRow.className = 'debug-ui-audio-buses';
     root.appendChild(this.elements.busRow);
 
-    const output = document.createElement('div');
-    output.className = 'debug-ui-audio-out';
-    const meters = document.createElement('div');
-    meters.className = 'debug-ui-audio-meters';
-    const left = this._meter('L');
-    const right = this._meter('R');
-    this.elements.meterL = left.fill;
-    this.elements.dbL = left.db;
-    this.elements.meterR = right.fill;
-    this.elements.dbR = right.db;
-    this.elements.clip = document.createElement('span');
-    this.elements.clip.className = 'debug-ui-audio-clip';
-    this.elements.clip.textContent = 'CLIP';
-    meters.append(left.root, right.root, this.elements.clip);
-    this.elements.readout = createStat('Peak — · RMS —');
-    const canvas = document.createElement('canvas');
-    canvas.className = 'debug-ui-audio-graph';
-    this.elements.graph = canvas;
-    output.append(meters, this.elements.readout, canvas);
-    root.appendChild(output);
-
     const columns = document.createElement('div');
     columns.className = 'debug-ui-audio-columns';
+    columns.append(this._voiceCard(), this._assetCard(), this._outputCard());
+    root.appendChild(columns);
 
-    const voiceCol = document.createElement('div');
-    voiceCol.className = 'debug-ui-audio-col';
-    voiceCol.appendChild(this._title('Playing'));
-    const voiceScroll = document.createElement('div');
-    voiceScroll.className = 'debug-ui-audio-scroll';
+    this.panel.appendChild(root);
+    return this.panel;
+  }
+
+  _voiceCard() {
+    const card = document.createElement('div');
+    card.className = 'debug-ui-audio-card';
+    const head = document.createElement('div');
+    head.className = 'debug-ui-audio-card-head';
+    head.appendChild(this._title('Playing voices'));
+    this.elements.voiceCount = document.createElement('span');
+    this.elements.voiceCount.className = 'debug-ui-audio-count';
+    this.elements.voiceCount.textContent = '0 active';
+    head.appendChild(this.elements.voiceCount);
+    card.appendChild(head);
+
+    const scroll = document.createElement('div');
+    scroll.className = 'debug-ui-audio-scroll';
     this.elements.voiceEmpty = this._empty('No voices playing');
     this.elements.voiceHead = this._head(
-      ['#', 'Name', 'Bus', 'Vol', 'Progress', ''],
+      ['#', 'Name', 'Channel', 'Vol', 'Progress', 'Loop', 'Play', 'Stop'],
       'debug-ui-audio-voice',
     );
     this.elements.voiceHead.style.display = 'none';
     this.elements.voiceList = document.createElement('div');
-    voiceScroll.append(this.elements.voiceEmpty, this.elements.voiceHead, this.elements.voiceList);
-    voiceCol.appendChild(voiceScroll);
+    scroll.append(this.elements.voiceEmpty, this.elements.voiceHead, this.elements.voiceList);
+    card.appendChild(scroll);
+    return card;
+  }
 
-    const assetCol = document.createElement('div');
-    assetCol.className = 'debug-ui-audio-col';
-    const assetTitle = createRow('gap:8px');
-    assetTitle.appendChild(this._title('Loaded assets'));
+  _assetCard() {
+    const card = document.createElement('div');
+    card.className = 'debug-ui-audio-card';
+    const head = document.createElement('div');
+    head.className = 'debug-ui-audio-card-head';
+    head.appendChild(this._title('Loaded assets'));
+    this.elements.assetCount = document.createElement('span');
+    this.elements.assetCount.className = 'debug-ui-audio-count';
+    this.elements.assetCount.textContent = '0 total';
     const filter = document.createElement('input');
     filter.type = 'search';
     filter.className = 'debug-ui-audio-filter';
@@ -169,28 +191,64 @@ export class AudioPanel {
     });
     filter.addEventListener('keydown', (event) => event.stopPropagation());
     filter.addEventListener('keyup', (event) => event.stopPropagation());
-    assetTitle.appendChild(filter);
-    assetCol.appendChild(assetTitle);
+    head.append(this.elements.assetCount, filter);
+    card.appendChild(head);
 
-    const assetScroll = document.createElement('div');
-    assetScroll.className = 'debug-ui-audio-scroll';
+    const scroll = document.createElement('div');
+    scroll.className = 'debug-ui-audio-scroll';
     this.elements.assetEmpty = this._empty('No audio assets loaded');
     this.elements.assetHead = this._head(
-      ['Name', 'State', 'Time', 'Ch', 'Rate', 'Size', 'Use', ''],
+      ['#', 'Name', 'Channel', 'Size', 'State', 'Play', 'Stop'],
       'debug-ui-audio-asset',
     );
     this.elements.assetHead.style.display = 'none';
     this.elements.assetList = document.createElement('div');
-    assetScroll.append(this.elements.assetEmpty, this.elements.assetHead, this.elements.assetList);
-    assetCol.appendChild(assetScroll);
-    this.elements.assetFoot = createStat('0 assets · 0 B PCM');
-    this.elements.assetFoot.classList.add('debug-ui-audio-foot');
-    assetCol.appendChild(this.elements.assetFoot);
-    columns.append(voiceCol, assetCol);
-    root.appendChild(columns);
+    scroll.append(this.elements.assetEmpty, this.elements.assetHead, this.elements.assetList);
+    card.appendChild(scroll);
 
-    this.panel.appendChild(root);
-    return this.panel;
+    this.elements.assetFoot = createStat('0 B PCM');
+    this.elements.assetFoot.classList.add('debug-ui-audio-foot');
+    card.appendChild(this.elements.assetFoot);
+    return card;
+  }
+
+  _outputCard() {
+    const card = document.createElement('div');
+    card.className = 'debug-ui-audio-card debug-ui-audio-out';
+    const head = document.createElement('div');
+    head.className = 'debug-ui-audio-card-head';
+    head.appendChild(this._title('Output'));
+    const stereo = document.createElement('span');
+    stereo.className = 'debug-ui-audio-count';
+    stereo.textContent = 'Stereo';
+    this.elements.readout = document.createElement('span');
+    this.elements.readout.className = 'debug-ui-audio-headline';
+    this.elements.readout.textContent = '-inf';
+    this.elements.clip = document.createElement('span');
+    this.elements.clip.className = 'debug-ui-audio-clip';
+    this.elements.clip.textContent = 'CLIP';
+    head.append(stereo, this.elements.readout, this.elements.clip);
+    card.appendChild(head);
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'debug-ui-audio-graph';
+    this.elements.graph = canvas;
+    card.appendChild(canvas);
+
+    const meters = document.createElement('div');
+    meters.className = 'debug-ui-audio-meters';
+    const left = this._meter('L');
+    const right = this._meter('R');
+    this.elements.meterL = left.fill;
+    this.elements.dbL = left.db;
+    this.elements.meterR = right.fill;
+    this.elements.dbR = right.db;
+    this.elements.rms = document.createElement('div');
+    this.elements.rms.className = 'debug-ui-audio-rms';
+    this.elements.rms.textContent = 'RMS -inf';
+    meters.append(left.root, right.root, this.elements.rms);
+    card.appendChild(meters);
+    return card;
   }
 
   attach() {}
@@ -252,19 +310,32 @@ export class AudioPanel {
     track.appendChild(fill);
     const db = document.createElement('span');
     db.className = 'debug-ui-audio-meter-db';
-    db.textContent = '-inf';
+    db.textContent = 'Peak -inf';
     root.append(name, track, db);
     return { root, fill, db };
   }
 
+  _nowLine() {
+    const root = document.createElement('div');
+    root.className = 'debug-ui-audio-now-line';
+    const name = document.createElement('span');
+    name.className = 'debug-ui-audio-now-name';
+    const time = document.createElement('span');
+    time.className = 'debug-ui-audio-now-time';
+    root.append(name, time);
+    return { root, name, time };
+  }
+
   _updateStrip(metrics) {
     const state = metrics.state || 'closed';
-    setText(this.elements.state, 'Context ' + state);
+    const unlocked = SoundManager.isAudioUnlocked();
+    const pill = this.elements.state;
+    setText(pill, unlocked ? state : 'waiting for gesture');
+    pill.classList.toggle('is-running', unlocked && state === 'running');
+    pill.classList.toggle('is-wait', !unlocked || state === 'suspended');
+    pill.classList.toggle('is-closed', unlocked && state === 'closed');
     this.elements.resume.style.display = state === 'suspended' ? '' : 'none';
-    setText(
-      this.elements.unlock,
-      SoundManager.isAudioUnlocked() ? 'unlocked' : 'waiting for gesture',
-    );
+
     setText(this.elements.rate, fmtRate(metrics.sampleRate | 0));
     const latencyMs = ((metrics.baseLatency || 0) + (metrics.outputLatency || 0)) * 1000;
     setText(this.elements.latency, 'Latency ' + latencyMs.toFixed(2) + ' ms');
@@ -274,7 +345,9 @@ export class AudioPanel {
     const max = metrics.maxSlots | 0;
     setText(this.elements.voices, `Voices ${active}/${max}`);
     this.elements.voices.classList.toggle('is-cap', max > 0 && active >= max);
-    setText(this.elements.dropped, 'Dropped ' + ((metrics.dropped || 0) | 0));
+    const dropped = (metrics.dropped || 0) | 0;
+    setText(this.elements.dropped, 'Dropped ' + dropped);
+    this.elements.dropped.classList.toggle('is-warn', dropped > 0);
   }
 
   _updateMeters(levels) {
@@ -284,12 +357,10 @@ export class AudioPanel {
 
     this.elements.meterL.style.width = meterPct(levels.peakL).toFixed(1) + '%';
     this.elements.meterR.style.width = meterPct(levels.peakR).toFixed(1) + '%';
-    setText(this.elements.dbL, fmtDb(levels.peakL));
-    setText(this.elements.dbR, fmtDb(levels.peakR));
-    setText(
-      this.elements.readout,
-      `Peak ${fmtDb(Math.max(levels.peakL, levels.peakR))} dB · RMS ${fmtDb(levels.rms)} dB`,
-    );
+    setText(this.elements.dbL, 'Peak ' + fmtDbUnit(levels.peakL));
+    setText(this.elements.dbR, 'Peak ' + fmtDbUnit(levels.peakR));
+    setText(this.elements.readout, fmtDbUnit(Math.max(levels.peakL, levels.peakR)));
+    setText(this.elements.rms, 'RMS ' + fmtDbUnit(levels.rms));
   }
 
   _pushHistory(peak, rms) {
@@ -302,8 +373,8 @@ export class AudioPanel {
   _drawGraph() {
     const canvas = this.elements.graph;
     const cssW = canvas.clientWidth | 0;
-    const cssH = 56;
-    if (cssW <= 0) return;
+    const cssH = canvas.clientHeight | 0;
+    if (cssW <= 0 || cssH <= 0) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const bufW = Math.max(1, Math.floor(cssW * dpr));
     const bufH = Math.max(1, Math.floor(cssH * dpr));
@@ -373,12 +444,30 @@ export class AudioPanel {
     const cache = this._assetCache;
     cache.length = 0;
     this._lenById.clear();
+    this._rateById.clear();
+    this._durById.clear();
     for (let i = 0; i < src.length; i++) {
       const entry = src[i];
       cache.push(entry);
       this._lenById.set(entry.id, entry.length | 0);
+      this._rateById.set(entry.id, entry.sampleRate | 0);
+      this._durById.set(entry.id, entry.duration > 0 ? entry.duration : 0);
     }
     cache.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  }
+
+  _fmtVoiceTime(voice) {
+    const id = voice.audioId;
+    const len = this._lenById.get(id) | 0;
+    const rate = this._rateById.get(id) | 0;
+    const dur = this._durById.get(id) || 0;
+    let elapsed = 0;
+    if (rate > 0) elapsed = voice.cursor / rate;
+    else if (len > 0 && dur > 0) elapsed = (voice.cursor / len) * dur;
+    if (!(elapsed >= 0)) elapsed = 0;
+    const precise = !(dur >= 10);
+    const clock = fmtSpan(elapsed, precise);
+    return dur > 0 ? clock + ' / ' + fmtSpan(dur, precise) : clock;
   }
 
   _syncBuses(metrics) {
@@ -402,9 +491,6 @@ export class AudioPanel {
       this._busStrips.push(strip);
       row.appendChild(strip.root);
     }
-    const gap = document.createElement('div');
-    gap.className = 'debug-ui-audio-bus-gap';
-    row.appendChild(gap);
     const master = this._createMasterStrip();
     this._busStrips.push(master);
     row.appendChild(master.root);
@@ -413,9 +499,20 @@ export class AudioPanel {
   _createBusStrip(name, index) {
     const root = document.createElement('div');
     root.className = 'debug-ui-audio-strip';
+    root.style.setProperty('--bus-accent', BUS_ACCENTS[index % BUS_ACCENTS.length]);
+
+    const head = document.createElement('div');
+    head.className = 'debug-ui-audio-strip-head';
     const title = document.createElement('div');
     title.className = 'debug-ui-audio-strip-name';
     title.textContent = name;
+    const count = document.createElement('div');
+    count.className = 'debug-ui-audio-strip-count';
+    count.textContent = '0 playing';
+    head.append(title, count);
+
+    const body = document.createElement('div');
+    body.className = 'debug-ui-audio-strip-body';
     const fader = document.createElement('input');
     fader.type = 'range';
     fader.className = 'debug-ui-audio-fader';
@@ -423,13 +520,25 @@ export class AudioPanel {
     fader.max = '100';
     fader.step = '1';
     fader.value = '100';
+    const pct = document.createElement('div');
+    pct.className = 'debug-ui-audio-strip-pct';
+    pct.textContent = '100%';
     this._bindFader(fader, (value) => {
       SoundManager.channel(name).volume = value / 100;
       setText(pct, value + '%');
     });
-    const pct = document.createElement('div');
-    pct.className = 'debug-ui-audio-strip-pct';
-    pct.textContent = '100%';
+    const now = document.createElement('div');
+    now.className = 'debug-ui-audio-now';
+    const lines = [this._nowLine(), this._nowLine()];
+    now.append(lines[0].root, lines[1].root);
+    body.append(fader, pct, now);
+
+    const panRow = document.createElement('div');
+    panRow.className = 'debug-ui-audio-pan-row';
+    const panL = document.createElement('span');
+    panL.textContent = 'L';
+    const panR = document.createElement('span');
+    panR.textContent = 'R';
     const pan = document.createElement('input');
     pan.type = 'range';
     pan.className = 'debug-ui-range debug-ui-audio-pan-slider';
@@ -438,33 +547,35 @@ export class AudioPanel {
     pan.step = '1';
     pan.value = '0';
     this._bindFader(pan, (value) => {
-      const p = value / 100;
-      SoundManager.channel(name).pan = p;
-      setText(panLabel, p.toFixed(2));
+      SoundManager.channel(name).pan = value / 100;
     });
-    const panLabel = document.createElement('div');
-    panLabel.className = 'debug-ui-audio-strip-pan';
-    panLabel.textContent = '0.00';
-    const mute = createButton('M', '', () => {
+    panRow.append(panL, pan, panR);
+
+    const mute = createButton('Mute', '', () => {
       const bus = SoundManager.channel(name);
       bus.muted = !bus.muted;
     });
     mute.title = 'Mute';
-    const count = document.createElement('div');
-    count.className = 'debug-ui-audio-strip-count';
-    count.textContent = '0';
     const trim = document.createElement('div');
     trim.className = 'debug-ui-audio-strip-trim';
-    root.append(title, fader, pct, pan, panLabel, mute, count, trim);
-    return { root, name, index, fader, pct, pan, panLabel, mute, count, trim, master: false };
+    root.append(head, body, panRow, mute, trim);
+    return { root, name, index, fader, pct, pan, mute, count, lines, trim, master: false };
   }
 
   _createMasterStrip() {
     const root = document.createElement('div');
     root.className = 'debug-ui-audio-strip debug-ui-audio-strip-master';
+    root.style.setProperty('--bus-accent', '#e2e8f0');
+
+    const head = document.createElement('div');
+    head.className = 'debug-ui-audio-strip-head';
     const title = document.createElement('div');
     title.className = 'debug-ui-audio-strip-name';
     title.textContent = 'Master';
+    head.appendChild(title);
+
+    const body = document.createElement('div');
+    body.className = 'debug-ui-audio-strip-master-body';
     const fader = document.createElement('input');
     fader.type = 'range';
     fader.className = 'debug-ui-audio-fader';
@@ -472,16 +583,20 @@ export class AudioPanel {
     fader.max = '100';
     fader.step = '1';
     fader.value = '100';
+    const pct = document.createElement('div');
+    pct.className = 'debug-ui-audio-strip-pct';
+    pct.textContent = '100%';
     this._bindFader(fader, (value) => {
       SoundManager.setMasterVolume(value / 100);
       setText(pct, value + '%');
     });
-    const pct = document.createElement('div');
-    pct.className = 'debug-ui-audio-strip-pct';
-    pct.textContent = '100%';
-    const mixLabel = document.createElement('div');
-    mixLabel.className = 'debug-ui-audio-strip-pan';
-    mixLabel.textContent = 'Mix';
+    body.append(fader, pct);
+
+    const mixRow = document.createElement('div');
+    mixRow.className = 'debug-ui-audio-mix';
+    const mixLabel = document.createElement('span');
+    mixLabel.className = 'debug-ui-audio-mix-label';
+    mixLabel.textContent = 'Mix 50%';
     const mix = document.createElement('input');
     mix.type = 'range';
     mix.className = 'debug-ui-range debug-ui-audio-pan-slider';
@@ -493,11 +608,13 @@ export class AudioPanel {
       SoundManager.setMixGain(value / 100);
       setText(mixLabel, 'Mix ' + value + '%');
     });
-    const mute = createButton('M', '', () => SoundManager.setMuted(!SoundManager.isMuted()));
+    mixRow.append(mixLabel, mix);
+
+    const mute = createButton('Mute', '', () => SoundManager.setMuted(!SoundManager.isMuted()));
     mute.title = 'Mute master';
     const trim = document.createElement('div');
     trim.className = 'debug-ui-audio-strip-trim';
-    root.append(title, fader, pct, mixLabel, mix, mute, trim);
+    root.append(head, body, mixRow, mute, trim);
     return { root, fader, pct, pan: mix, panLabel: mixLabel, mute, trim, master: true };
   }
 
@@ -519,8 +636,7 @@ export class AudioPanel {
       this._pullRange(strip.fader, strip.pct, metrics.masterVolume || 0, false);
       this._pullRange(strip.pan, null, metrics.mixGain || 0, false);
       setText(strip.panLabel, 'Mix ' + (((metrics.mixGain || 0) * 100 + 0.5) | 0) + '%');
-      const muted = !!metrics.muted;
-      strip.mute.classList.toggle('active', muted);
+      strip.mute.classList.toggle('active', !!metrics.muted);
       setText(strip.trim, fmtTrim(SoundManager.getMasterReduction()));
       return;
     }
@@ -529,10 +645,28 @@ export class AudioPanel {
     if (!strip.pan._drag) {
       const panPct = (bus.pan * 100 + (bus.pan >= 0 ? 0.5 : -0.5)) | 0;
       if ((strip.pan.value | 0) !== panPct) strip.pan.value = String(panPct);
-      setText(strip.panLabel, bus.pan.toFixed(2));
     }
     strip.mute.classList.toggle('active', bus.muted);
-    setText(strip.count, String(this._busCounts.get(strip.index) | 0));
+    const n = this._busCounts.get(strip.index) | 0;
+    setText(strip.count, n + ' playing');
+    const live = this._busLines.get(strip.index);
+    for (let i = 0; i < strip.lines.length; i++) {
+      const line = strip.lines[i];
+      const voice = live && live[i];
+      if (!voice) {
+        if (i === 0 && n === 0) {
+          line.root.style.display = '';
+          setText(line.name, '—');
+          setText(line.time, '');
+        } else {
+          line.root.style.display = 'none';
+        }
+        continue;
+      }
+      line.root.style.display = '';
+      setText(line.name, voice.name);
+      setText(line.time, this._fmtVoiceTime(voice));
+    }
     setText(strip.trim, fmtTrim(bus.reduction));
   }
 
@@ -551,14 +685,25 @@ export class AudioPanel {
     const buses = this._busCounts;
     counts.clear();
     buses.clear();
+    this._busLines.clear();
+    this._assetBus.clear();
     for (let i = 0; i < voices.length; i++) {
-      const id = voices[i].audioId;
+      const voice = voices[i];
+      const id = voice.audioId;
       counts.set(id, (counts.get(id) | 0) + 1);
-      const bus = voices[i].channel | 0;
+      if (!this._assetBus.has(id)) this._assetBus.set(id, voice.channelName || '—');
+      const bus = voice.channel | 0;
       buses.set(bus, (buses.get(bus) | 0) + 1);
+      let lines = this._busLines.get(bus);
+      if (!lines) {
+        lines = [];
+        this._busLines.set(bus, lines);
+      }
+      if (lines.length < 2) lines.push(voice);
     }
 
     const n = voices.length;
+    setText(this.elements.voiceCount, n + ' active');
     this.elements.voiceEmpty.style.display = n ? 'none' : '';
     this.elements.voiceHead.style.display = n ? '' : 'none';
     const list = this.elements.voiceList;
@@ -574,7 +719,7 @@ export class AudioPanel {
         continue;
       }
       row.root.style.display = '';
-      this._patchVoice(row, voices[i]);
+      this._patchVoice(row, voices[i], i);
     }
   }
 
@@ -587,13 +732,29 @@ export class AudioPanel {
     const bus = document.createElement('span');
     const vol = document.createElement('span');
     const progress = this._bar();
+    const loop = document.createElement('span');
+    const play = createButton('Play', '', () => {
+      if (!play._name) return;
+      const pitch = play._pitch > 0 ? play._pitch : 1;
+      SoundManager.play(
+        play._name,
+        play._volume,
+        pitch,
+        pitch,
+        play._loop ? 1 : 0,
+        0,
+        Number.NaN,
+        Number.NaN,
+        play._channel,
+      );
+    });
     const stop = createButton('Stop', '', () => SoundManager.stopSlot(stop._slot));
-    root.append(slot, name, bus, vol, progress.root, stop);
-    return { root, slot, name, bus, vol, progress, stop };
+    root.append(slot, name, bus, vol, progress.root, loop, play, stop);
+    return { root, slot, name, bus, vol, progress, loop, play, stop };
   }
 
-  _patchVoice(row, voice) {
-    setText(row.slot, String(voice.slot));
+  _patchVoice(row, voice, index) {
+    setText(row.slot, String(index + 1));
     setText(row.name, voice.name);
     setText(row.bus, voice.channelName || '—');
     const vol = voice.volume > 0 ? voice.volume : 0;
@@ -607,6 +768,12 @@ export class AudioPanel {
     }
     row.progress.fill.style.width = (progress * 100).toFixed(1) + '%';
     setText(row.progress.label, len > 0 ? Math.round(progress * 100) + '%' : '—');
+    setText(row.loop, voice.loop ? 'Yes' : 'No');
+    row.play._name = voice.name;
+    row.play._volume = vol > 0 ? vol : 1;
+    row.play._pitch = voice.pitch > 0 ? voice.pitch : 1;
+    row.play._loop = voice.loop ? 1 : 0;
+    row.play._channel = voice.channel | 0;
     row.stop._slot = voice.slot;
   }
 
@@ -625,6 +792,7 @@ export class AudioPanel {
       matched.push(asset);
     }
 
+    setText(this.elements.assetCount, cache.length + ' total');
     const n = matched.length;
     const empty = this.elements.assetEmpty;
     if (cache.length === 0) {
@@ -651,49 +819,45 @@ export class AudioPanel {
         continue;
       }
       row.root.style.display = '';
-      this._patchAsset(row, matched[i]);
+      this._patchAsset(row, matched[i], i);
     }
 
-    let foot = `${cache.length} assets · ${formatBytes(bytes)} PCM`;
-    if (loading) foot += ` · ${loading} loading`;
+    let foot = formatBytes(bytes) + ' PCM';
+    if (loading) foot += ' · ' + loading + ' loading';
     setText(this.elements.assetFoot, foot);
   }
 
   _createAssetRow() {
     const root = document.createElement('div');
     root.className = 'debug-ui-audio-row debug-ui-audio-asset';
+    const index = document.createElement('span');
     const name = document.createElement('span');
     name.className = 'debug-ui-audio-name';
-    const state = document.createElement('span');
-    const time = document.createElement('span');
-    const channels = document.createElement('span');
-    const rate = document.createElement('span');
+    const channel = document.createElement('span');
     const size = document.createElement('span');
-    const uses = document.createElement('span');
-    const actions = document.createElement('span');
-    actions.className = 'debug-ui-audio-actions';
+    const state = document.createElement('span');
+    state.className = 'debug-ui-audio-state';
     const play = createButton('Play', '', () => {
       if (play._name) SoundManager.play(play._name, 1);
     });
     const stop = createButton('Stop', '', () => {
       if (stop._name) SoundManager.stop(stop._name);
     });
-    actions.append(play, stop);
-    root.append(name, state, time, channels, rate, size, uses, actions);
-    return { root, name, state, time, channels, rate, size, uses, play, stop };
+    root.append(index, name, channel, size, state, play, stop);
+    return { root, index, name, channel, size, state, play, stop };
   }
 
-  _patchAsset(row, asset) {
+  _patchAsset(row, asset, index) {
+    setText(row.index, String(index + 1));
     setText(row.name, asset.name);
     row.name.title = asset.error ? asset.src + '\n' + asset.error : asset.src || '';
+    setText(row.channel, this._assetBus.get(asset.id) || '—');
+    setText(row.size, asset.bytes > 0 ? formatBytes(asset.bytes) : '—');
     setText(row.state, asset.state);
+    row.state.classList.toggle('is-ready', asset.state === 'ready');
+    row.state.classList.toggle('is-loading', asset.state === 'loading');
     row.state.classList.toggle('is-error', asset.state === 'error');
     row.state.title = asset.error || '';
-    setText(row.time, fmtDuration(asset));
-    setText(row.channels, asset.channels > 0 ? String(asset.channels) : '—');
-    setText(row.rate, fmtRate(asset.sampleRate | 0));
-    setText(row.size, asset.bytes > 0 ? formatBytes(asset.bytes) : '—');
-    setText(row.uses, String(this._useCount.get(asset.id) | 0));
     row.play.disabled = asset.state !== 'ready';
     row.play._name = asset.name;
     row.stop._name = asset.name;
