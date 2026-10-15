@@ -155,7 +155,7 @@ The pixi worker uploads each Tiled layer once as **GID pages** (RGBA8, 2048 tile
 
 On `Layer.ground.setTilemap` / config `kind: LAYER_KIND.TILEMAP`:
 
-1. Pack each visible layer (`options.layers` filters names) through [`src/render/tilemapGid.js`](../src/render/tilemapGid.js).
+1. Pack each visible layer (`options.layers` filters names) through [`src/render/tilemapGid.js`](../../src/render/tilemapGid.js).
 2. Create one `Mesh` per page with the native shader (`tilemapGid` GLSL or WGSL, same contract).
 3. Every frame only the camera matrix moves. The fragment does `world → tile → texelFetch(GID) → atlas UV` (Tiled H/V/D flags, 0.5 px inset). Empty GID `0` discards.
 

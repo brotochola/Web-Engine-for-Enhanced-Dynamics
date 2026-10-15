@@ -46,7 +46,7 @@ Default: **4 pthreads + `-flto=full`** (`weedjs\build_for_weed.bat`). Builds wit
 
 **WASM only.** Weed never needs sibling native `test.exe`, samples, or `demo_*.exe`. Correctness after a C change is Weed Node WASM tests + L2/visual, not ctest.
 
-Fluids: `liquidfun-c` is compiled into this WASM. Integration and SAB rules: [`docs/LIQUIDFUN.md`](../../docs/LIQUIDFUN.md).
+Fluids: `liquidfun-c` is compiled into this WASM. Integration and SAB rules: [`docs/guide/LIQUIDFUN.md`](../../docs/guide/LIQUIDFUN.md).
 
 ## Shapeless bodies / Collider composition
 
@@ -58,4 +58,4 @@ Wrapper exports (sibling `box2d/src/wasm_wrapper.c`):
 - `body_clear_shapes` — destroy **all** shapes; body remains (unit mass if dynamic)
 - `body_set_density` / `filter` / `friction` / `restitution` — apply to every shape on the body
 
-Weed host wiring and product semantics: [`docs/PHYSICS.md`](../../docs/PHYSICS.md#rigidbody--collider-composition). Node gate: `tests/node/rbColliderComposition.wasm.test.js`.
+Weed host wiring and product semantics: [`docs/guide/PHYSICS.md`](../../docs/guide/PHYSICS.md#rigidbody--collider-composition). Node gate: `tests/node/rbColliderComposition.wasm.test.js`.

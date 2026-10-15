@@ -2,7 +2,7 @@
 
 Document of **this campaign** (night of 15–16 September 2026). It says what each catalog row is, what was already measured against its own code, what stays out of this night, and how each feature is compared with itself. It is not a claim of a "perfect WeedJS" or of "faster than main".
 
-Machine catalog: [`tests/bench/engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). Hypothesis memory: [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). This night's diary: [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md).
+Machine catalog: [`tests/bench/engineFeatureCatalog.mjs`](../../tests/bench/engineFeatureCatalog.mjs). Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). Hypothesis memory: [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). This night's diary: [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md).
 
 ## Glossary
 
@@ -22,7 +22,7 @@ Machine catalog: [`tests/bench/engineFeatureCatalog.mjs`](../tests/bench/engineF
 
 ### Box2D note: smoke versus the five-run confirm
 
-The scoreboard smoke n=1 measured Balls `physics_STEP_MS` 8.168 → 8.705 ms (**+6.6%**) with `BODY_COUNT` 9004/9004. That **does not cancel** the five-run headed confirm in [`tests/results/product-confirm/report.md`](../tests/results/product-confirm/report.md): physics 6.911 → 6.554 ms (**−5.2%**), the same 9004 bodies. Box2D WASM was not touched. A 4 s run moves several percent from machine noise. Tonight block C measures Balls again with five runs.
+The scoreboard smoke n=1 measured Balls `physics_STEP_MS` 8.168 → 8.705 ms (**+6.6%**) with `BODY_COUNT` 9004/9004. That **does not cancel** the five-run headed confirm in [`tests/results/product-confirm/report.md`](../../tests/results/product-confirm/report.md): physics 6.911 → 6.554 ms (**−5.2%**), the same 9004 bodies. Box2D WASM was not touched. A 4 s run moves several percent from machine noise. Tonight block C measures Balls again with five runs.
 
 ### QueryAABB burst: dropped
 
@@ -162,7 +162,7 @@ Skip-publish when the lists do not change is already on logic0. `QUERY_PUBLISH_M
 
 Module: `src/workers/preRenderWorker.js`. Kernel: `srFlagsMicrobench.mjs`. Scene: `RenderQueueStressScene`. Primary: `preRender_STEP_MS`. Load: `BODY_COUNT`.
 
-Packed versus 7 Uint8 columns was already measured (cull wins in the kernel; the queue is noisy). `preRender.skipCull` (2026-09-20, **mixed**): opt-in, default false. Bunny 65k all visible: `preRender_STEP_MS` −4.5% (KEPT). High zoom: queue 640→16000 (CULL_PAYS). Not the default. Report: [`tests/results/skip-cull/report.md`](../tests/results/skip-cull/report.md). DRY one loop + `_writeFusedSunShadow` (2026-09-20, **kept** hygiene): bunny 8.350→8.274 (−0.9% TIE). B dead fields (2026-09-20, **kept**): bunny 8.284→7.620 (−8.0%). A fuse type 0 **dropped** (+20.8%). C persist statics (**kept**, smoke): 7.395→5.978 (−19.2%), EMIT −60.8%. Reports: [`tests/results/prerender-hyps/`](../tests/results/prerender-hyps/).
+Packed versus 7 Uint8 columns was already measured (cull wins in the kernel; the queue is noisy). `preRender.skipCull` (2026-09-20, **mixed**): opt-in, default false. Bunny 65k all visible: `preRender_STEP_MS` −4.5% (KEPT). High zoom: queue 640→16000 (CULL_PAYS). Not the default. Report: [`tests/results/skip-cull/report.md`](../../tests/results/skip-cull/report.md). DRY one loop + `_writeFusedSunShadow` (2026-09-20, **kept** hygiene): bunny 8.350→8.274 (−0.9% TIE). B dead fields (2026-09-20, **kept**): bunny 8.284→7.620 (−8.0%). A fuse type 0 **dropped** (+20.8%). C persist statics (**kept**, smoke): 7.395→5.978 (−19.2%), EMIT −60.8%. Reports: [`tests/results/prerender-hyps/`](../../tests/results/prerender-hyps/).
 
 ### compute — WebGPU pack
 
@@ -174,9 +174,9 @@ Tonight: kernel yes; scene **as stress** (`--headed-only` does not include `comp
 
 Module: `src/core/decorationSpatial.js`. Kernel: `decorationSpatialMicrobench.mjs`. Scene: `DecoQueryCircleStressScene` (8000 decorations, 4300 `queryCircle`/tick). Primary: `logic0_STEP_MS`. Load: `ACTIVE_DECORATIONS`.
 
-Generation stamp (skip-work L, 2026-09-17) **dropped**: kernel −30.1%, stress +14.2%. Each decoration is in a single cell. Report: [`tests/results/skip-work-hyps/hyp-L-querycircle/report.md`](../tests/results/skip-work-hyps/hyp-L-querycircle/report.md).
+Generation stamp (skip-work L, 2026-09-17) **dropped**: kernel −30.1%, stress +14.2%. Each decoration is in a single cell. Report: [`tests/results/skip-work-hyps/hyp-L-querycircle/report.md`](../../tests/results/skip-work-hyps/hyp-L-querycircle/report.md).
 
-Pool-flow 2026-09-16 (a different question, same particle worker): sway with `copyActiveSnapshot` versus a scan of `maxDecorations`. Load `ACTIVE_DECORATIONS` (slot 13 always-on). Scenes `DecoFixedStressScene` (12000) and `DecoChurnStressScene` (~4000). Kernel at 10% occupancy: snapshot **+79%** ops/s. Scan on stress **dropped** (fixed 1W +3.4%, churn +16.6% / +6.1%). Fixed 3W headless KEEP of the scan (−4.2%) was not confirmed headed (TIE −1.5%). The snapshot stays. Report: [`tests/results/pool-flow/report.md`](../tests/results/pool-flow/report.md).
+Pool-flow 2026-09-16 (a different question, same particle worker): sway with `copyActiveSnapshot` versus a scan of `maxDecorations`. Load `ACTIVE_DECORATIONS` (slot 13 always-on). Scenes `DecoFixedStressScene` (12000) and `DecoChurnStressScene` (~4000). Kernel at 10% occupancy: snapshot **+79%** ops/s. Scan on stress **dropped** (fixed 1W +3.4%, churn +16.6% / +6.1%). Fixed 3W headless KEEP of the scan (−4.2%) was not confirmed headed (TIE −1.5%). The snapshot stays. Report: [`tests/results/pool-flow/report.md`](../../tests/results/pool-flow/report.md).
 
 ### bullets — Bullet tick
 
@@ -184,7 +184,7 @@ Module: `src/core/bulletPool.js` (`BulletPool.tick`). Kernel: `bulletTickMicrobe
 
 Pyramid 2026-09-16: speed-cache **kept in the kernel** (`tickCrowded` hypot→cached; Predator headed TIE with ~2 live bullets — not sold as Predator). Compact **dropped** for the engine: sparse kernel wins ops/s (up to +100% at 256/8192), stress **WORSE** (+7.6% particle, load OK), Predator compact **FAIL** (`ACTIVE_BULLETS` cv ≥ 50% + Chromium crash). The old isolation (+1.9%) stays. Scan of `maxBullets`; no `activeBulletsLock`.
 
-Pool-flow 2026-09-16: storm 8192 (`BulletStormScene1W/3W`, ~8040 live). Two-pass **dropped** (kernel 10% 2048 +7.8%, 10% 8192 −3.7%; storm 1W +3.1% WORSE, 3W +2.9% TIE). Compact+lock **dropped** again (1W +39.0%, 3W +35.3%). Predator is not in this pair. Report: [`tests/results/pool-flow/report.md`](../tests/results/pool-flow/report.md).
+Pool-flow 2026-09-16: storm 8192 (`BulletStormScene1W/3W`, ~8040 live). Two-pass **dropped** (kernel 10% 2048 +7.8%, 10% 8192 −3.7%; storm 1W +3.1% WORSE, 3W +2.9% TIE). Compact+lock **dropped** again (1W +39.0%, 3W +35.3%). Predator is not in this pair. Report: [`tests/results/pool-flow/report.md`](../../tests/results/pool-flow/report.md).
 
 ### spawn — Treiber / spawn storm
 
@@ -222,7 +222,7 @@ Module: `src/render/meshLookUv.js`. No speed kernel. Scene: `MeshFillLookPanScen
 
 ## Outside the catalog: multi-fixture isolation
 
-There is no `colliderFixture` row in [`engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). The pool and `replacePolygons*` were measured as isolation MF1–MF5 (inline walk, spatial OBB, WASM scratch, MESH pack skip, flat replace). Scene champion: `CompoundFixtureSpatialScene` / `CompoundGeometryDirtyScene` / `meshFillStaticScene`. Diary: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) § Isolation multi-fixture. Status: [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) rows MF1–MF5. Do not invent a scoreboard id here.
+There is no `colliderFixture` row in [`engineFeatureCatalog.mjs`](../../tests/bench/engineFeatureCatalog.mjs). The pool and `replacePolygons*` were measured as isolation MF1–MF5 (inline walk, spatial OBB, WASM scratch, MESH pack skip, flat replace). Scene champion: `CompoundFixtureSpatialScene` / `CompoundGeometryDirtyScene` / `meshFillStaticScene`. Diary: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) § Isolation multi-fixture. Status: [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) rows MF1–MF5. Do not invent a scoreboard id here.
 
 ---
 

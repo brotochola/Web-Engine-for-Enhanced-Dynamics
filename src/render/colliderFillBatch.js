@@ -674,6 +674,12 @@ export function rewriteExplicitMeshCorners(out, count, entityOfInstance, views, 
   if (!out || n <= 0 || !entityOfInstance || !views.meshVertGen || !lastVertGen) return 0;
   const step = (stride | 0) > 0 ? (stride | 0) : COLLIDER_FILL_FLOATS;
   const gen = views.meshVertGen;
+  const vx = views.meshVertexX;
+  const vy = views.meshVertexY;
+  const indices = views.meshIndices;
+  const u = views.meshUvU;
+  const v = views.meshUvV;
+  const uvOn = step >= MESH_UV_FILL_FLOATS && u && v;
   let k = 0;
   while (k < n) {
     const i = entityOfInstance[k] | 0;
@@ -681,66 +687,66 @@ export function rewriteExplicitMeshCorners(out, count, entityOfInstance, views, 
     while (end < n && (entityOfInstance[end] | 0) === i) end++;
     const run = end - k;
     const dirty = i >= 0 && i < gen.length && (gen[i] >>> 0) !== ((lastVertGen[i] >>> 0));
-    const explicit = views.meshVertOffset && (views.meshVertOffset[i] | 0) >= 0;
-    if (dirty && explicit) {
+    const vOff = views.meshVertOffset && i >= 0 ? (views.meshVertOffset[i] | 0) : -1;
+    if (dirty && vOff >= 0) {
       const vN = views.meshVertCount ? (views.meshVertCount[i] | 0) : 0;
       const iAt = views.meshIndexOffset ? (views.meshIndexOffset[i] | 0) : -1;
       const need = iAt >= 0
         ? ((views.meshIndexCount[i] >>> 0) / 3) | 0
         : (vN >= 3 ? vN - 2 : 0);
-      if (need !== run) return -1;
-      for (let t = 0; t < run; t++) {
-        if (!writeExplicitTriCorners(out, (k + t) * step, step, views, i, t)) return -1;
+      if (need !== run || vN < 3 || !vx || !vy) return -1;
+      if (iAt >= 0) {
+        if (!indices) return -1;
+        for (let t = 0; t < run; t++) {
+          const o = iAt + t * 3;
+          const a = indices[o] | 0;
+          const b = indices[o + 1] | 0;
+          const c = indices[o + 2] | 0;
+          if (a < 0 || b < 0 || c < 0 || a >= vN || b >= vN || c >= vN) return -1;
+          const ia = vOff + a;
+          const ib = vOff + b;
+          const ic = vOff + c;
+          const base = (k + t) * step;
+          out[base] = vx[ia];
+          out[base + 1] = vy[ia];
+          out[base + 2] = vx[ib];
+          out[base + 3] = vy[ib];
+          out[base + 4] = vx[ic];
+          out[base + 5] = vy[ic];
+          if (uvOn) {
+            out[base + 18] = u[ia];
+            out[base + 19] = v[ia];
+            out[base + 20] = u[ib];
+            out[base + 21] = v[ib];
+            out[base + 22] = u[ic];
+            out[base + 23] = v[ic];
+          }
+        }
+      } else {
+        for (let t = 0; t < run; t++) {
+          const ib = vOff + t + 1;
+          const ic = vOff + t + 2;
+          const base = (k + t) * step;
+          out[base] = vx[vOff];
+          out[base + 1] = vy[vOff];
+          out[base + 2] = vx[ib];
+          out[base + 3] = vy[ib];
+          out[base + 4] = vx[ic];
+          out[base + 5] = vy[ic];
+          if (uvOn) {
+            out[base + 18] = u[vOff];
+            out[base + 19] = v[vOff];
+            out[base + 20] = u[ib];
+            out[base + 21] = v[ib];
+            out[base + 22] = u[ic];
+            out[base + 23] = v[ic];
+          }
+        }
       }
     }
     k = end;
   }
   return 1;
-}
-
-function writeExplicitTriCorners(out, base, stride, views, i, triIndex) {
-  const vOff = views.meshVertOffset[i] | 0;
-  const vN = views.meshVertCount[i] | 0;
-  const vx = views.meshVertexX;
-  const vy = views.meshVertexY;
-  if (!vx || !vy || vOff < 0 || vN < 3) return false;
-  const iAt = views.meshIndexOffset ? (views.meshIndexOffset[i] | 0) : -1;
-  let a;
-  let b;
-  let c;
-  if (iAt >= 0) {
-    const idx = views.meshIndices;
-    if (!idx) return false;
-    const o = iAt + triIndex * 3;
-    a = idx[o] | 0;
-    b = idx[o + 1] | 0;
-    c = idx[o + 2] | 0;
-    if (a < 0 || b < 0 || c < 0 || a >= vN || b >= vN || c >= vN) return false;
-  } else {
-    a = 0;
-    b = triIndex + 1;
-    c = triIndex + 2;
-  }
-  const ia = vOff + a;
-  const ib = vOff + b;
-  const ic = vOff + c;
-  out[base] = vx[ia];
-  out[base + 1] = vy[ia];
-  out[base + 2] = vx[ib];
-  out[base + 3] = vy[ib];
-  out[base + 4] = vx[ic];
-  out[base + 5] = vy[ic];
-  if (stride >= MESH_UV_FILL_FLOATS && views.meshUvU && views.meshUvV) {
-    const u = views.meshUvU;
-    const v = views.meshUvV;
-    out[base + 18] = u[ia];
-    out[base + 19] = v[ia];
-    out[base + 20] = u[ib];
-    out[base + 21] = v[ib];
-    out[base + 22] = u[ic];
-    out[base + 23] = v[ic];
-  }
-  return true;
 }
 
 function writeUvTri(
@@ -999,8 +1005,12 @@ export class ColliderFillBatch {
     const gen = this._poseGen;
     const stamp = (this._poseStamp + 1) | 0 || 1;
     this._poseStamp = stamp;
-    for (let k = 0; k < n; k++) {
+    let k = 0;
+    while (k < n) {
       const i = instanceEntity[k] | 0;
+      let end = k + 1;
+      while (end < n && (instanceEntity[end] | 0) === i) end++;
+      k = end;
       if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
       gen[i] = stamp;
       const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));

@@ -2,9 +2,9 @@
 
 Weed fluids are **not** Google LiquidFun C++ pasted into Box2D. They are **`liquidfun-c`**: a from-scratch C17 sidecar on Box2D 3.x’s public C API, compiled into the same WASM as rigid bodies, then driven from JS with a command ring and SharedArrayBuffer views. No GC on the step path.
 
-Sibling source of truth: `d:\xampp\htdocs\Box2d_3.2_C_-_liquidfun` (`box2d+liquidfun/`, `box2d/src/wasm_wrapper.c`). Rebuild copies artifacts into [`src/box2d/`](../src/box2d/).
+Sibling source of truth: `d:\xampp\htdocs\Box2d_3.2_C_-_liquidfun` (`box2d+liquidfun/`, `box2d/src/wasm_wrapper.c`). Rebuild copies artifacts into [`src/box2d/`](../../src/box2d/).
 
-Related: [Physics pipeline](./PHYSICS.md), [CPU particles](./PARTICLES.md), [Workers](./WORKERS_ARCHITECTURE.md), [Memory](./MEMORY_STRUCTURE.md), [`src/box2d/README.md`](../src/box2d/README.md), [LiquidFun optimization campaign + benchmarks](./LIQUIDFUN_HYPOTHESES.md).
+Related: [Physics pipeline](./PHYSICS.md), [CPU particles](./PARTICLES.md), [Workers](./WORKERS_ARCHITECTURE.md), [Memory](./MEMORY_STRUCTURE.md), [`src/box2d/README.md`](../../src/box2d/README.md), [LiquidFun optimization campaign + benchmarks](../internal/LIQUIDFUN_HYPOTHESES.md).
 
 ---
 
@@ -40,7 +40,7 @@ Prefer buffer density for large particle counts. Sprite path still useful for no
 
 Enums: `LAYER_DENSITY_SOURCE` (`SPRITES`=0 \| `LIQUID_FUN`=1), `LAYER_SPLAT_FALLOFF` (`QUADRATIC`=0 active; `SMOOTHSTEP` / `GAUSSIAN` reserved). Look uniforms (`uCutoff`, `uRim`/`uFoam`, `uDepth`, `uBodyAlpha`, `uEdgeAlpha`) are documented in the [bible Layers](./bible_of_weed_js.md#look-shader-uniforms-dulcedelechefrag--similar-fluid-looks) section.
 
-See [bible Layers](./bible_of_weed_js.md) for the full config example. Demo: [`demos/liquidFunDemoScene`](../demos/liquidFunDemoScene/liquidFunDemoScene.js).
+See [bible Layers](./bible_of_weed_js.md) for the full config example. Demo: [`demos/liquidFunDemoScene`](../../demos/liquidFunDemoScene/liquidFunDemoScene.js).
 
 ### Group slabs (Google LiquidFun 1.1)
 
@@ -129,7 +129,7 @@ Omitted **i32** (`groupFlags`, `userData`, `color`) are 0. Engine wrappers alway
 
 Group id **0 is valid**. `-1` is `LF_NULL_PARTICLE_GROUP` (no system, inverted AABB, or capacity full).
 
-JS scene API stays **center + half extents** (same as Weed boxes). Conversion to AABB happens once in [`physicsApi.js`](../src/box2d/physicsApi.js), not in the ring and not per particle.
+JS scene API stays **center + half extents** (same as Weed boxes). Conversion to AABB happens once in [`physicsApi.js`](../../src/box2d/physicsApi.js), not in the ring and not per particle.
 
 ---
 
@@ -164,7 +164,7 @@ SIMD itself is **not** skipped — `Integrate`/`SolveGravity`/`LimitVelocity` ar
 explicit SSE2/wasm128 intrinsics (`<emmintrin.h>`, same technique Box2D's own
 `contact_solver.c` uses for `B2_SIMD_SSE2` on `B2_CPU_WASM`); the build fails
 (`#error`) rather than silently going scalar if that flag is ever missing. See
-[LIQUIDFUN_HYPOTHESES.md](./LIQUIDFUN_HYPOTHESES.md) H2.
+[LIQUIDFUN_HYPOTHESES.md](../internal/LIQUIDFUN_HYPOTHESES.md) H2.
 
 Emit is **explicit knobs**, not a named cookbook. `LIQUIDFUN_FLAGS` + per-call `viscousScale` / `tint` / `strength` / `trackGroup`. Game recipes (oil, dulce, jelly) live in the scene, not the engine.
 
@@ -207,7 +207,7 @@ Skipped on purpose: NEON, destroy-oldest, contact listeners/filters, ParticleHan
 
 `lfParticleSystem_Step` cannot run in parallel with `b2World_Step` **of the same frame** (world locked; queries invalid). Overlay `Box2d` ms stays `step_world`.
 
-**In-step `lfParallelFor` is already live** (not a later lever). `FindParticleContacts` parallelizes on the Box2D pthread pool (Weed default **4**) when live count ≥ `LF_CONTACT_PARALLEL_MIN` (4096). Work is stolen by block. Contacts land in **per-block** buckets and merge in block-index order, matching a serial `for i in 0..n` walk — same set **and** same order, so pressure / tensile stay bit-stable. Do **not** qsort the merge (see [H10](./LIQUIDFUN_HYPOTHESES.md)). A future snapshot+pipeline that overlaps LiquidFun with the *next* rigid step is still sibling ROADMAP Fase 6.
+**In-step `lfParallelFor` is already live** (not a later lever). `FindParticleContacts` parallelizes on the Box2D pthread pool (Weed default **4**) when live count ≥ `LF_CONTACT_PARALLEL_MIN` (4096). Work is stolen by block. Contacts land in **per-block** buckets and merge in block-index order, matching a serial `for i in 0..n` walk — same set **and** same order, so pressure / tensile stay bit-stable. Do **not** qsort the merge (see [H10](../internal/LIQUIDFUN_HYPOTHESES.md)). A future snapshot+pipeline that overlaps LiquidFun with the *next* rigid step is still sibling ROADMAP Fase 6.
 
 LiquidFun lagging rigid bodies by **1-2 frames is acceptable** for Weed — confirmed, not just assumed. That's the slack a future snapshot+pipeline design would need (main thread owns the live `b2WorldId` exclusively, copies what a background LiquidFun thread needs once per step, drains its impulses back in on a later step); see the sibling ROADMAP's rewritten Fase 6 for the concrete design and its one still-open problem (`FindBodyContacts`/`SolveCollision` would need their own spatial structure over a snapshot, not live Box2D queries). Not implemented — recorded so the constraint isn't rediscovered from scratch later.
 
@@ -318,7 +318,7 @@ Compute pack (`LfParticle`) is 8 floats / 32 bytes: `x,y,vx,vy` + `userData: u32
 
 **Debug stats:** with `config.debug.collectDetailedStats`, physics panel shows **LiquidFun** (`LIQUIDFUN_MS`) = wall time of `lfParticleSystem_Step` + pose deinterleave inside `step_world`. `BOX2D_MS` remains the full `world.step` wall time (rigid + LiquidFun).
 
-Demo: [`demos/liquidFunDemoScene/liquidFunDemoScene.js`](../demos/liquidFunDemoScene/liquidFunDemoScene.js) — recipes on scene tools; LMB sprays. Query self-check: [`demos/liquidFunQueryScene/liquidFunQueryScene.js`](../demos/liquidFunQueryScene/liquidFunQueryScene.js).
+Demo: [`demos/liquidFunDemoScene/liquidFunDemoScene.js`](../../demos/liquidFunDemoScene/liquidFunDemoScene.js) — recipes on scene tools; LMB sprays. Query self-check: [`demos/liquidFunQueryScene/liquidFunQueryScene.js`](../../demos/liquidFunQueryScene/liquidFunQueryScene.js).
 
 `radius` is the **particle** radius (world units), not the group radius. Group `radius` / `halfWidth` is the fill shape. Spacing `0` → pack at **0.75 × diameter** (Google particle stride).
 
@@ -330,7 +330,7 @@ Measured, not aspirational, as of the 2026-08-23 optimization campaign: a dedica
 L2 benchmark scene (`tests/bench/stressScenes/liquidFunStressScene.js`, ~10.2k water
 + ~2k spring/staticPressure) runs `BOX2D_MS` ≈ 5.5ms headless — comfortably inside a
 60fps frame budget on its own, before accounting for rendering/other workers. Full
-before/after numbers for every optimization: [LIQUIDFUN_HYPOTHESES.md](./LIQUIDFUN_HYPOTHESES.md).
+before/after numbers for every optimization: [LIQUIDFUN_HYPOTHESES.md](../internal/LIQUIDFUN_HYPOTHESES.md).
 
 ---
 
@@ -357,11 +357,11 @@ pnpm test:visual --scene liquidfun,lfstress
 
 | File | What |
 |------|------|
-| [`tests/node/liquidFun.test.js`](../tests/node/liquidFun.test.js) | Flags (including COLOR_MIXING / REPULSIVE / REACTIVE), AABB, `SET_LIQUIDFUN_EMIT` ring, opaque userData i32 opcodes, `physics.liquidFun` merge + maxCount clamp 65535, groups SAB 14-column bind (physics host matches util, including `groupFlags`) |
-| [`tests/node/liquidFunLightSplat.test.js`](../tests/node/liquidFunLightSplat.test.js) | CPU pack of lit group slabs; `I > 0` with `sqrtI === 0` packs 0 |
-| [`tests/node/box2dBundleSiblings.test.js`](../tests/node/box2dBundleSiblings.test.js) | Glue is `box2dWasm.js` only; `locateFile("box2dWasm.wasm")`; `importScripts` camelCase siblings |
-| [`tests/node/liquidFun.wasm.test.js`](../tests/node/liquidFun.wasm.test.js) | Y-down floor settle + `spanY`; no wall-climb **and** no centers inside the wall; water beside a thick box (`maxPen < radius`); **SOLID\|RIGID ice rests on a static floor** (no tunnel) **and** ice beside a thick box (`maxPen < radius`); overlapping ice bars eject and **do not nest** (`overlapX < 3 radius`); `sync_active_particle_groups` copies `groupFlags` at `stride * 11`; 10k create/step smoke; **1-particle point rest** on floor top (`|vy|` small); barrier smoke; staticPressure finite; deinterleaved `x`/`y` exactly match interleaved `pos`; `strictContactCheck` 5th-arg smoke |
-| [`tests/bench/runLockstepVisual.mjs`](../tests/bench/runLockstepVisual.mjs) (`pnpm test:visual`) | Headed two-run lockstep. `liquidfun` + `lfstress` are `match: 'exact'` at 100 steps (CPU `hashLiquidFun` + PNG). Catalog: [`lockstepVisualScenes.mjs`](../tests/bench/lockstepVisualScenes.mjs). `water` stays `not-black` (rigid metaball balls, not LiquidFun). |
+| [`tests/node/liquidFun.test.js`](../../tests/node/liquidFun.test.js) | Flags (including COLOR_MIXING / REPULSIVE / REACTIVE), AABB, `SET_LIQUIDFUN_EMIT` ring, opaque userData i32 opcodes, `physics.liquidFun` merge + maxCount clamp 65535, groups SAB 14-column bind (physics host matches util, including `groupFlags`) |
+| [`tests/node/liquidFunLightSplat.test.js`](../../tests/node/liquidFunLightSplat.test.js) | CPU pack of lit group slabs; `I > 0` with `sqrtI === 0` packs 0 |
+| [`tests/node/box2dBundleSiblings.test.js`](../../tests/node/box2dBundleSiblings.test.js) | Glue is `box2dWasm.js` only; `locateFile("box2dWasm.wasm")`; `importScripts` camelCase siblings |
+| [`tests/node/liquidFun.wasm.test.js`](../../tests/node/liquidFun.wasm.test.js) | Y-down floor settle + `spanY`; no wall-climb **and** no centers inside the wall; water beside a thick box (`maxPen < radius`); **SOLID\|RIGID ice rests on a static floor** (no tunnel) **and** ice beside a thick box (`maxPen < radius`); overlapping ice bars eject and **do not nest** (`overlapX < 3 radius`); `sync_active_particle_groups` copies `groupFlags` at `stride * 11`; 10k create/step smoke; **1-particle point rest** on floor top (`|vy|` small); barrier smoke; staticPressure finite; deinterleaved `x`/`y` exactly match interleaved `pos`; `strictContactCheck` 5th-arg smoke |
+| [`tests/bench/runLockstepVisual.mjs`](../../tests/bench/runLockstepVisual.mjs) (`pnpm test:visual`) | Headed two-run lockstep. `liquidfun` + `lfstress` are `match: 'exact'` at 100 steps (CPU `hashLiquidFun` + PNG). Catalog: [`lockstepVisualScenes.mjs`](../../tests/bench/lockstepVisualScenes.mjs). `water` stays `not-black` (rigid metaball balls, not LiquidFun). |
 
 
 ## Save / restore (groups + pairs)

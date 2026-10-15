@@ -6,7 +6,7 @@
 **Scenes:** `BallsScene`, `PredatorScene`  
 **Runtime:** Chromium headed (Playwright), throttle mitigation on  
 **Data:** `tests/results/spatial-hyps/campaign-summary.json`, `tests/results/spatial-hyps/confirm-summary.json`  
-**Code under test:** [`src/workers/spatialWorker.js`](../src/workers/spatialWorker.js) (restored to baseline when the campaign closed)
+**Code under test:** [`src/workers/spatialWorker.js`](../../src/workers/spatialWorker.js) (restored to baseline when the campaign closed)
 
 ---
 
@@ -27,7 +27,7 @@ The main result, in line with the Morton REPORT (H5 Verlet / amortizing neighbor
 - Micro-optimizations (cell radius, sampled hash, dense cache, index pack, Morton reorder, `cellSize=96`, and the rest) are **rejected** as defaults under this protocol.
 - A literal port of `AdaptiveSpatial` (hash Map / dense counting / a separate Verlet) was **not** implemented: weed.js's SAB grid + row partition is already dense; the transferable finding is **amortizing the all-neighbors phase**, not the on-demand router.
 
-The source tree was restored to baseline; the patches live in [`tests/bench/spatial-hyps/hypPatches.mjs`](../tests/bench/spatial-hyps/hypPatches.mjs) for reproduction.
+The source tree was restored to baseline; the patches live in [`tests/bench/spatial-hyps/hypPatches.mjs`](../../tests/bench/spatial-hyps/hypPatches.mjs) for reproduction.
 
 ---
 
@@ -70,10 +70,10 @@ Hypothetico-deductive: (1) falsifiable H1–H15; (2) headed 2-run screening; (3)
 
 | Factor | Value |
 |--------|-------|
-| Warmup / measure | 25 s / 18 s ([`benchmarkDefaults.mjs`](../tests/bench/benchmarkDefaults.mjs)) |
+| Warmup / measure | 25 s / 18 s ([`benchmarkDefaults.mjs`](../../tests/bench/benchmarkDefaults.mjs)) |
 | Mode | headed Chromium |
 | Isolation | 1 hypothesis per run; restore from the baseline snapshot |
-| Harness | [`runSpatialHypCampaign.mjs`](../tests/bench/runSpatialHypCampaign.mjs), [`runSpatialHypConfirm.mjs`](../tests/bench/runSpatialHypConfirm.mjs) |
+| Harness | [`runSpatialHypCampaign.mjs`](../../tests/bench/runSpatialHypCampaign.mjs), [`runSpatialHypConfirm.mjs`](../../tests/bench/runSpatialHypConfirm.mjs) |
 
 ### 4.3 Hypotheses (short statement)
 
@@ -219,7 +219,7 @@ Confirm baseline (more conservative than the early Predator screening):
 | cellSize | Keep Balls **100**, Predator **128** |
 | Morton reorder / BVH / hash Map | Not as a default (confirmed again) |
 
-**Code status:** the *correct* Verlet H3 lives in [`src/workers/spatialWorker.js`](../src/workers/spatialWorker.js) behind `neighborReuseSkin` (default **0.04**). The FN/FP oracle (`verifyNeighborSets`) was removed from the engine after FN=0/FP=0 was validated; see §12.
+**Code status:** the *correct* Verlet H3 lives in [`src/workers/spatialWorker.js`](../../src/workers/spatialWorker.js) behind `neighborReuseSkin` (default **0.04**). The FN/FP oracle (`verifyNeighborSets`) was removed from the engine after FN=0/FP=0 was validated; see §12.
 
 ---
 
@@ -295,7 +295,7 @@ Perf Δ STEP_MS ≈ **−53.7%** on that scene.
 
 ### 12.5 skin × frames sweep (partial)
 
-Harness: [`runNeighborReuseGrid.mjs`](../tests/bench/runNeighborReuseGrid.mjs). Artifact: `tests/results/neighbor-reuse/skin-frames-grid.json` (stopped at `skin=0.25 frames=15` on Predator; skins **0–0.2** complete).
+Harness: [`runNeighborReuseGrid.mjs`](../../tests/bench/runNeighborReuseGrid.mjs). Artifact: `tests/results/neighbor-reuse/skin-frames-grid.json` (stopped at `skin=0.25 frames=15` on Predator; skins **0–0.2** complete).
 
 Baseline `skin=0`: Balls STEP_max **15.74 ms**, Predator **53.43 ms**.
 

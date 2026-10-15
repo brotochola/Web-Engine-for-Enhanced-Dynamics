@@ -8,7 +8,7 @@ Same pipeline as Ray for every isolatable hot subsystem:
 4. **Tournament** headless singles → pairs → stacks → merge champion
 5. **L3** demo gate when relevant
 
-Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../tests/bench/featureTournamentLib.mjs), [`microbenchHelpers.mjs`](../tests/bench/microbenchHelpers.mjs).
+Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../../tests/bench/featureTournamentLib.mjs), [`microbenchHelpers.mjs`](../../tests/bench/microbenchHelpers.mjs).
 
 ## Protocol (headless)
 
@@ -182,4 +182,4 @@ pnpm bench:micro:particle-l1
 - [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) — catalog + pyramid
 - [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md) — completed Ray tournament
 - [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md) — LiquidFun particle-step campaign
-- [`PARTICLES.md`](./PARTICLES.md) — emit / stamp / integrate docs
+- [`PARTICLES.md`](../guide/PARTICLES.md) — emit / stamp / integrate docs

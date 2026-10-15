@@ -4,9 +4,9 @@
 **Follow-on to:** [`spatial_worker_hypothesis_report.md`](./spatial_worker_hypothesis_report.md) (H1–H15 campaign)  
 **Scenes:** `BallsScene`, `PredatorScene`  
 **Runtime:** Chromium headed (Playwright), background-throttle mitigation on  
-**Baseline under test:** current [`src/workers/spatialWorker.js`](../src/workers/spatialWorker.js) with integrated Verlet reuse + `neighborTickInterval` freeze (not the older campaign baseline)  
-**Data:** [`tests/results/sleep-neighbor-hyps/campaign-summary.json`](../tests/results/sleep-neighbor-hyps/campaign-summary.json), [`confirm-summary.json`](../tests/results/sleep-neighbor-hyps/confirm-summary.json)  
-**Patches:** [`tests/bench/sleep-neighbor-hyps/sleepHypPatches.mjs`](../tests/bench/sleep-neighbor-hyps/sleepHypPatches.mjs) (tree restored to baseline after each campaign)
+**Baseline under test:** current [`src/workers/spatialWorker.js`](../../src/workers/spatialWorker.js) with integrated Verlet reuse + `neighborTickInterval` freeze (not the older campaign baseline)  
+**Data:** [`tests/results/sleep-neighbor-hyps/campaign-summary.json`](../../tests/results/sleep-neighbor-hyps/campaign-summary.json), [`confirm-summary.json`](../../tests/results/sleep-neighbor-hyps/confirm-summary.json)  
+**Patches:** [`tests/bench/sleep-neighbor-hyps/sleepHypPatches.mjs`](../../tests/bench/sleep-neighbor-hyps/sleepHypPatches.mjs) (tree restored to baseline after each campaign)
 
 ---
 
@@ -79,11 +79,11 @@ Context shift matters: old BASE Predator STEP was ~22 ms; **S0 today is ~6 ms**.
 
 | Factor | Value |
 |--------|-------|
-| Warmup / measure | 25 s / 18 s ([`benchmarkDefaults.mjs`](../tests/bench/benchmarkDefaults.mjs)) |
+| Warmup / measure | 25 s / 18 s ([`benchmarkDefaults.mjs`](../../tests/bench/benchmarkDefaults.mjs)) |
 | Mode | headed Chromium |
 | Isolation | One hyp per apply; restore from snapshot baselines under `tests/bench/sleep-neighbor-hyps/` |
-| Screening | 2 runs ([`runSleepNeighborCampaign.mjs`](../tests/bench/runSleepNeighborCampaign.mjs)) |
-| Confirm | 5 runs median + CV for S0, S1, S2, S3, S6 ([`runSleepNeighborConfirm.mjs`](../tests/bench/runSleepNeighborConfirm.mjs)) |
+| Screening | 2 runs ([`runSleepNeighborCampaign.mjs`](../../tests/bench/runSleepNeighborCampaign.mjs)) |
+| Confirm | 5 runs median + CV for S0, S1, S2, S3, S6 ([`runSleepNeighborConfirm.mjs`](../../tests/bench/runSleepNeighborConfirm.mjs)) |
 | Primary metric | Balls: `spatial0` STEP; Predator: **max** STEP among spatial workers |
 | Same-session S0 | All deltas vs S0 measured in the same campaign/confirm session |
 

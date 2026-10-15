@@ -1,11 +1,11 @@
 # Particle emit + integrate optimization hypotheses
 
 Falsifiable claims for speeding up particle spawn and per-frame integration —
-[`src/core/particleEmitter.js`](../src/core/particleEmitter.js) (`_spawn`, `_mergeCfg`,
-`emit`/`emitZenithal`/`emitFlat`), [`src/util/particleIntegrate.js`](../src/util/particleIntegrate.js)
+[`src/core/particleEmitter.js`](../../src/core/particleEmitter.js) (`_spawn`, `_mergeCfg`,
+`emit`/`emitZenithal`/`emitFlat`), [`src/util/particleIntegrate.js`](../../src/util/particleIntegrate.js)
 (`updateParticlePhysicsBuffers`, `buildActiveListBuffers`, `buildActiveAndVisibleListBuffers`),
-and the shared free list ([`src/core/sharedAtomicPool.js`](../src/core/sharedAtomicPool.js),
-[`src/util/atomicFreeList.js`](../src/util/atomicFreeList.js)). Test **headless only** with the
+and the shared free list ([`src/core/sharedAtomicPool.js`](../../src/core/sharedAtomicPool.js),
+[`src/util/atomicFreeList.js`](../../src/util/atomicFreeList.js)). Test **headless only** with the
 three-layer protocol below (Wave B of [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)).
 
 ## Protocol (always headless)
@@ -74,17 +74,17 @@ than hand-picking winners.
 
 - Baselines (pre-opt): `tests/bench/particle-hyps/baselineParticleEmitter.js`,
   `baselineParticleIntegrate.js`, `baselineSharedAtomicPool.js`, `baselineAtomicFreeList.js`
-- Composable transforms: [`tests/bench/particle-hyps/hypPatches.mjs`](../tests/bench/particle-hyps/hypPatches.mjs)
+- Composable transforms: [`tests/bench/particle-hyps/hypPatches.mjs`](../../tests/bench/particle-hyps/hypPatches.mjs)
   (`applyCombo`, `CANONICAL_ORDER = P1→P2→P3→P4→P5→P6`)
-- Tournament runner: [`tests/bench/runParticleHypTournament.mjs`](../tests/bench/runParticleHypTournament.mjs)
-- L1: [`tests/bench/particleEmitMicrobench.mjs`](../tests/bench/particleEmitMicrobench.mjs),
-  [`tests/bench/particleIntegrateMicrobench.mjs`](../tests/bench/particleIntegrateMicrobench.mjs)
-  (merged into one report by [`tests/bench/particleL1Microbench.mjs`](../tests/bench/particleL1Microbench.mjs)
+- Tournament runner: [`tests/bench/runParticleHypTournament.mjs`](../../tests/bench/runParticleHypTournament.mjs)
+- L1: [`tests/bench/particleEmitMicrobench.mjs`](../../tests/bench/particleEmitMicrobench.mjs),
+  [`tests/bench/particleIntegrateMicrobench.mjs`](../../tests/bench/particleIntegrateMicrobench.mjs)
+  (merged into one report by [`tests/bench/particleL1Microbench.mjs`](../../tests/bench/particleL1Microbench.mjs)
   for the tournament's single-microRunner contract — `emit_*` / `integrate_*` case prefixes)
-- L2: [`tests/bench/stressScenes/particleEmitStressScene.js`](../tests/bench/stressScenes/particleEmitStressScene.js)
-  + [`particles/particleEmitDriver.js`](../tests/bench/stressScenes/particles/particleEmitDriver.js);
-  [`tests/bench/stressScenes/particleIntegrateStressScene.js`](../tests/bench/stressScenes/particleIntegrateStressScene.js)
-  + [`particles/particleIntegrateDriver.js`](../tests/bench/stressScenes/particles/particleIntegrateDriver.js)
+- L2: [`tests/bench/stressScenes/particleEmitStressScene.js`](../../tests/bench/stressScenes/particleEmitStressScene.js)
+  + [`particles/particleEmitDriver.js`](../../tests/bench/stressScenes/particles/particleEmitDriver.js);
+  [`tests/bench/stressScenes/particleIntegrateStressScene.js`](../../tests/bench/stressScenes/particleIntegrateStressScene.js)
+  + [`particles/particleIntegrateDriver.js`](../../tests/bench/stressScenes/particles/particleIntegrateDriver.js)
 
 Source files under `src/` are checked out CRLF; `hypPatches.mjs` normalizes to LF in-memory before
 anchor matching and writes patched output back as LF. `restoreAll()` still restores the original
@@ -104,5 +104,5 @@ constant and `{min,max}` objects for all other ranged fields.
 - Feature pyramid: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md), [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)
 - Completed campaign for the pipeline template: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md)
 - Sibling Wave A campaign: [`DECAL_HYPOTHESES.md`](./DECAL_HYPOTHESES.md)
-- Particle docs: [`PARTICLES.md`](./PARTICLES.md)
-- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../tests/bench/BENCHMARK_METHODOLOGY.md)
+- Particle docs: [`PARTICLES.md`](../guide/PARTICLES.md)
+- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md)

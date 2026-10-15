@@ -17,7 +17,7 @@ lighting: {
 }
 ```
 
-`Scene` registers `Flash` and calls `Flash.initialize(maxFlashes)` when `maxFlashes > 0`. That also ensures `LightEmitter` / `FlashComponent` SoA pools exist (see `docs/COMPONENT_STORAGE.md`).
+`Scene` registers `Flash` and calls `Flash.initialize(maxFlashes)` when `maxFlashes > 0`. That also ensures `LightEmitter` / `FlashComponent` SoA pools exist (see `docs/guide/COMPONENT_STORAGE.md`).
 
 ## Spawn API
 
@@ -107,7 +107,7 @@ pixiWorker
 
 ## Related
 
-- [`flash.js`](../src/core/flash.js)
-- [`flashComponent.js`](../src/components/flashComponent.js)
-- [`lightEmitter.js`](../src/components/lightEmitter.js)
-- Demo: [`person.js`](../demos/predatorScene/gameObjects/person.js) (muzzle `castShadows: false`), [`PredatorScene.js`](../demos/predatorScene/predatorScene.js) (`maxFlashes`)
+- [`flash.js`](../../src/core/flash.js)
+- [`flashComponent.js`](../../src/components/flashComponent.js)
+- [`lightEmitter.js`](../../src/components/lightEmitter.js)
+- Demo: [`person.js`](../../demos/predatorScene/gameObjects/person.js) (muzzle `castShadows: false`), [`PredatorScene.js`](../../demos/predatorScene/predatorScene.js) (`maxFlashes`)

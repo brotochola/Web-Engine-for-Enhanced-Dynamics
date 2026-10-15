@@ -25,10 +25,10 @@ Use this when the claim is about a hot function in isolation.
 #### What a kernel is allowed to do
 
 - **A kernel never writes the working tree.** It imports `src/` and times it. No `copyFileSync`, no patch-and-restore, no `applySrcRev`. Those harnesses were deleted: an interrupted run left the engine on an old snapshot, and a node test that patched `src/` ran next to three other test files under `--test-concurrency=4`.
-- **It calls the shipped function.** When the hot code is a worker method, the kernel runs the real worker class in Node ([`tests/bench/workerHarness.mjs`](../tests/bench/workerHarness.mjs): import the worker module with a `self` stub, send a real `init` message). A loop copied into the bench measures the copy, and a local copy does not have the worker's `this`. That is how H7, H10, H11, H6 and "Stay without sqrt" (kernel +553 %, scene +20 %) went wrong.
-- **A hypothesis variant lives in the bench file** until it is decided. For a worker method, the variant is the shipped method source plus an exact diff, compiled in memory ([`tests/bench/methodVariant.mjs`](../tests/bench/methodVariant.mjs); `patchFunction` does the same for a module-level function); an anchor that no longer matches throws. A module-private function the kernel cannot reach is measured with gate 4 directly. Drop it when the idea is dropped. When it is kept, it moves to `src/` and the bench calls only the shipped code.
-- **Every kernel writes** `cases.<name>.opsPerSec` (finite), `n`, `seed` and a `checksum` with `--output`. `isCli()` in [`microbenchHelpers.mjs`](../tests/bench/microbenchHelpers.mjs) is the CLI guard (the old `import.meta.url === pathToFileURL(argv[1])` check could skip `main()` on Windows).
-- **Scale comes from Predator.** [`capturePredatorFixture.mjs`](../tests/bench/capturePredatorFixture.mjs) reads one live frame from the main thread (read-only) into `tests/fixtures/predator-frame.bin`: positions, collider sizes, casters, lights, audio slot occupancy. Kernels that need a real distribution load it. Match the storage too: per-type active lists live in a `SharedArrayBuffer` in the engine, so the query kernel builds them there, at Predator's ~16k actives.
+- **It calls the shipped function.** When the hot code is a worker method, the kernel runs the real worker class in Node ([`tests/bench/workerHarness.mjs`](../../tests/bench/workerHarness.mjs): import the worker module with a `self` stub, send a real `init` message). A loop copied into the bench measures the copy, and a local copy does not have the worker's `this`. That is how H7, H10, H11, H6 and "Stay without sqrt" (kernel +553 %, scene +20 %) went wrong.
+- **A hypothesis variant lives in the bench file** until it is decided. For a worker method, the variant is the shipped method source plus an exact diff, compiled in memory ([`tests/bench/methodVariant.mjs`](../../tests/bench/methodVariant.mjs); `patchFunction` does the same for a module-level function); an anchor that no longer matches throws. A module-private function the kernel cannot reach is measured with gate 4 directly. Drop it when the idea is dropped. When it is kept, it moves to `src/` and the bench calls only the shipped code.
+- **Every kernel writes** `cases.<name>.opsPerSec` (finite), `n`, `seed` and a `checksum` with `--output`. `isCli()` in [`microbenchHelpers.mjs`](../../tests/bench/microbenchHelpers.mjs) is the CLI guard (the old `import.meta.url === pathToFileURL(argv[1])` check could skip `main()` on Windows).
+- **Scale comes from Predator.** [`capturePredatorFixture.mjs`](../../tests/bench/capturePredatorFixture.mjs) reads one live frame from the main thread (read-only) into `tests/fixtures/predator-frame.bin`: positions, collider sizes, casters, lights, audio slot occupancy. Kernels that need a real distribution load it. Match the storage too: per-type active lists live in a `SharedArrayBuffer` in the engine, so the query kernel builds them there, at Predator's ~16k actives.
 - **One case per JIT when the engine uses the function one way per worker.** `packInstancedRows` warmed with sprites and then casters ran casters 1.6–1.8× faster than a function that has only ever seen casters, which is pre-render's case (Pixi only packs sprites). A kernel whose cases share one process measures a JIT state no worker has. `gpuQueuePackMicrobench.mjs` runs each case in its own `worker_thread`.
 - **Choose at the caller, not inside the hot loop.** A variant that falls back to the shipped function from inside its own big loop function ran that fallback 46 % slower (X2, and X5's first draft): the call site had no feedback when it was finally taken. Dispatch before either loop.
 
@@ -42,7 +42,7 @@ What a kernel cannot show, and the scene can:
 
 - A variant against the shipped code: `node tests/bench/runKernelVariants.mjs --script <kernel> --variants base,<v>`. Processes alternate (base, v, base, v, …). A variant whose checksum differs from base is rejected before ops/s is read.
 - The whole catalog, or against a revision: `pnpm bench:kernels` (dump, `tests/results/kernels/kernels-dump.json`), `node tests/bench/runKernelsVsRev.mjs --vs <rev>`, `--changed` for the rows whose `module` the diff touches. The warmup process is the preflight: a row whose `opsKey` is not a finite number stops the run before the timed pass. There is no fallback to "the first case in the JSON" any more; that fallback scored a different function without anyone noticing.
-- The baseline of a revision is a **git worktree** in `../weed-ab/` ([`tests/bench/revWorktree.mjs`](../tests/bench/revWorktree.mjs)): only `src/` comes from the revision, everything else is the working tree, so both sides run the same scenes and kernels. A hypothesis still in the working tree is compared with `--overlay <name> --override <file>=<pre-hypothesis copy>` (gate 4 below). `node_modules` is a junction into the worktree; `removeRevWorktree()` unlinks it first, because `git worktree remove` follows a junction on Windows and deletes the target.
+- The baseline of a revision is a **git worktree** in `../weed-ab/` ([`tests/bench/revWorktree.mjs`](../../tests/bench/revWorktree.mjs)): only `src/` comes from the revision, everything else is the working tree, so both sides run the same scenes and kernels. A hypothesis still in the working tree is compared with `--overlay <name> --override <file>=<pre-hypothesis copy>` (gate 4 below). `node_modules` is a junction into the worktree; `removeRevWorktree()` unlinks it first, because `git worktree remove` follows a junction on Windows and deletes the target.
 
 Each side runs a **discard warmup process** and then the timed processes. With a baseline, `runKernelsVsRev.mjs` runs 5 timed rounds per side (`--rounds`), the order alternating each round, and compares medians. One process per side is not enough: the same `packInstancedRows` code moved between 1794 and 2165 ops/s from one process to the next, and a single pass once read −11.9 % on identical code. A kernel verdict needs both the 3 percent and **rounds won ≥ 90 %**: of the 25 (KEEP round, BASE round) comparisons, KEEP wins at least 23 (or loses 23 for WORSE). Identical code reaches that about 1.6 percent of the time; the −11.9 % case came out at 56 %, a tie.
 
@@ -50,7 +50,7 @@ The first timed case after a cold start is often slow: compute `results.0` (n=64
 
 ### 2. Stress scene
 
-Scenes under [`tests/bench/stressScenes/`](../tests/bench/stressScenes/). Chromium. Headless is fine for screening.
+Scenes under [`tests/bench/stressScenes/`](../../tests/bench/stressScenes/). Chromium. Headless is fine for screening.
 
 The question is whether the win survives the real engine: workers, shared memory, and WASM.
 
@@ -58,7 +58,7 @@ Use this when Balls or Predator never execute the code you changed (a QueryAABB 
 
 ### 3. Gameplay scene
 
-A demo that actually runs the changed code: [`demos/ballsScene`](../demos/ballsScene/), [`demos/predatorScene`](../demos/predatorScene/), `steadyCombatScene`, and others.
+A demo that actually runs the changed code: [`demos/ballsScene`](../../demos/ballsScene/), [`demos/predatorScene`](../../demos/predatorScene/), `steadyCombatScene`, and others.
 
 Chromium with a visible window. Do not minimize. Two runs. Warmup 10 seconds, measure 10 seconds (`pnpm bench:headed:median`, or the integrated runner with those defaults). The previous default was five runs with 25 seconds of warmup and 18 seconds of measure; that schedule is retired. A pair that follows 2×10 s/10 s is the protocol. Do not mark it `screened` only because it is shorter than the old default. Rows already written under 5×25/18 stay as evidence of that sitting.
 
@@ -86,7 +86,7 @@ Gameplay scenes skip this floor: Balls, Predator, `steadyCombatScene`, zenithal,
 
 Kernel `timeIt` uses the same 3 ms floor per timed sample. If a sample is cheaper, iterations increase until the sample lasts 3 ms (or the run throws). The 3 percent ops/s keep rule does not change.
 
-The harness constant is `STEP_MS_FLOOR` in [`tests/bench/benchmarkDefaults.mjs`](../tests/bench/benchmarkDefaults.mjs).
+The harness constant is `STEP_MS_FLOOR` in [`tests/bench/benchmarkDefaults.mjs`](../../tests/bench/benchmarkDefaults.mjs).
 
 ### Campaign signal floor (8 ms)
 
@@ -130,7 +130,7 @@ Production stats already write `BODY_COUNT`, `AWAKE_COUNT`, `BODY_MOVED_COUNT`, 
 
 ## When the change moves work
 
-Some changes do not make one worker’s loop cheaper. They move a cost from one worker to another. Packing GPU sprites and sorting the painter are the usual case: the same rows can be built in the pre-render worker or in Pixi (`packGpuSprites` and `sortSprites` in [`src/util/configDefaults.js`](../src/util/configDefaults.js)).
+Some changes do not make one worker’s loop cheaper. They move a cost from one worker to another. Packing GPU sprites and sorting the painter are the usual case: the same rows can be built in the pre-render worker or in Pixi (`packGpuSprites` and `sortSprites` in [`src/util/configDefaults.js`](../../src/util/configDefaults.js)).
 
 For that kind of change the primary is the bottleneck, not the worker that received the work:
 
@@ -184,7 +184,7 @@ A micro-optimization found in the engine trace goes through these gates, in orde
 3. **Kernel win:** at least 3 percent more ops/s, same `n` and `seed`, in the regime the trace shows (Predator saturates audio slots, runs 16k bodies, 48 shadow lights). A win outside the product regime is noted, not kept.
 4. **Re-run the kernel against the patched `src/`** (`runKernelsVsRev.mjs --overlay`). A local variant can win while the worker's hidden class eats the gain; this gate catches it before any scene.
 5. **Parity test** in `tests/node/`: the new code against a reference of the old behavior, frame by frame (for example `contactPairParity.test.js`, `soundSlotClaim.test.js`). `pnpm test:node` stays green.
-6. **Predator ABAB** ([`runPredatorAbab.mjs`](../tests/bench/runPredatorAbab.mjs)): headed, detailed stats off, `--src`, seed 123456, A = baseline worktree (the working tree with the hypothesis files swapped back), B = working tree, 8 pairs of 10 s / 10 s. The order inside a pair is counterbalanced (AB, BA, AB, …): with a fixed A-then-B order, drift inside the pair always landed on B, and S4 once showed every untouched worker +2 to +6 % in 5 of 8 pairs. Every worker kind is watched, not only the owner.
+6. **Predator ABAB** ([`runPredatorAbab.mjs`](../../tests/bench/runPredatorAbab.mjs)): headed, detailed stats off, `--src`, seed 123456, A = baseline worktree (the working tree with the hypothesis files swapped back), B = working tree, 8 pairs of 10 s / 10 s. The order inside a pair is counterbalanced (AB, BA, AB, …): with a fixed A-then-B order, drift inside the pair always landed on B, and S4 once showed every untouched worker +2 to +6 % in 5 of 8 pairs. Every worker kind is watched, not only the owner.
 7. **Other scenes:** `runKernelsVsRev.mjs --changed` and the catalog rows whose `module` the diff touches.
 
 The Predator verdict per worker kind is the median of the paired deltas (B − A) / A:
@@ -264,7 +264,7 @@ Then update [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). The scoreboard writer in
 
 ## Engine-wide claim
 
-The feature catalog is [`tests/bench/engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). To claim “this tree is faster than a git rev” on the engine, run `pnpm bench:scoreboard --vs <rev>`. Every catalog row must be **KEPT** or a tie (inside 3 percent), and none WORSE or FAIL. Until that board is green, do not call the tree the fastest WeedJS.
+The feature catalog is [`tests/bench/engineFeatureCatalog.mjs`](../../tests/bench/engineFeatureCatalog.mjs). To claim “this tree is faster than a git rev” on the engine, run `pnpm bench:scoreboard --vs <rev>`. Every catalog row must be **KEPT** or a tie (inside 3 percent), and none WORSE or FAIL. Until that board is green, do not call the tree the fastest WeedJS.
 
 Product “faster than main”: the load keys match, some of physics, logic0, particle, spatial-max, or Pixi is at least 3 percent cheaper, and none of those is 3 percent worse. A kernel-only win is not a gameplay win. A move of work between pre-render and Pixi uses the max rule above inside that product claim. It does not get a free pass on physics, logic, particle, or spatial.
 
@@ -320,4 +320,4 @@ pnpm bench:headed:trace-cpu --scene /demos/predatorScene/predatorScene.js --scen
 pnpm trace:summary tests/results/<dir>/engine_trace.json
 ```
 
-Harness defaults: [`tests/bench/BENCHMARK_METHODOLOGY.md`](../tests/bench/BENCHMARK_METHODOLOGY.md). Feature catalog: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md).
+Harness defaults: [`tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md). Feature catalog: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md).

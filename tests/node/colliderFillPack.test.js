@@ -14,7 +14,9 @@ import {
   COLLIDER_FILL_FLOATS,
   MESH_UV_FILL_FLOATS,
   resetColliderFillMeshLayerWarn,
+  ColliderFillBatch,
 } from '../../src/render/colliderFillBatch.js';
+import { MeshUvFillBatch } from '../../src/render/meshUvFillBatch.js';
 import {
   MeshRenderer,
   MESH_NO_TEXTURE,
@@ -22,6 +24,7 @@ import {
   warnMeshRendererNeedsDrawableCollider,
 } from '../../src/components/meshRenderer.js';
 import { MeshGeometry, resetMeshGeometryWarns } from '../../src/core/meshGeometry.js';
+import { triangulateSimplePolygon } from '../../src/render/meshTriangulate.js';
 import { Collider } from '../../src/components/collider.js';
 
 const INV = 0xffff;
@@ -803,6 +806,99 @@ test('MeshRenderer paintEpoch bumps once per dirty burst', () => {
   mr.tint = 0x0000ff;
   assert.equal(MeshRenderer.paintEpoch[0], (ep + 1) >>> 0);
   MeshRenderer.clearArrays();
+});
+
+test('ear-clip index counts for the star, the arrow, and an L', () => {
+  const star = new Float32Array(20);
+  let o = 0;
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const r = (i & 1) === 0 ? 52 : 22;
+    star[o++] = Math.cos(a) * r;
+    star[o++] = Math.sin(a) * r;
+  }
+  const arrow = new Float32Array([
+    0, -80, 70, -20, 28, -20, 28, 70, -28, 70, -28, -20, -70, -20,
+  ]);
+  const ell = new Float32Array([0, 0, 3, 0, 3, 1, 1, 1, 1, 2, 0, 2]);
+  const starIdx = new Uint32Array(24);
+  const arrowIdx = new Uint32Array(15);
+  const ellIdx = new Uint32Array(12);
+  assert.equal(triangulateSimplePolygon(star, 10, starIdx), 24);
+  assert.equal(triangulateSimplePolygon(arrow, 7, arrowIdx), 15);
+  assert.equal(triangulateSimplePolygon(ell, 6, ellIdx), 12);
+});
+
+test('setRope places a bent polyline on the perpendicular', () => {
+  initMeshPool(32, 64, 1);
+  try {
+    const mr = meshApi(0);
+    const hw = 2;
+    mr.setRope([0, 0, 10, 0, 10, 10], hw);
+    assert.equal(MeshGeometry.vertCount[0], 6);
+    const at = MeshGeometry.vertOffset[0] | 0;
+    const x = MeshGeometry.vertexX;
+    const y = MeshGeometry.vertexY;
+    assert.ok(Math.abs(x[at] - 0) < 1e-4 && Math.abs(y[at] - hw) < 1e-4);
+    assert.ok(Math.abs(x[at + 1] - 0) < 1e-4 && Math.abs(y[at + 1] + hw) < 1e-4);
+    const s = Math.SQRT2;
+    assert.ok(Math.abs(x[at + 2] - (10 - hw / s)) < 1e-4);
+    assert.ok(Math.abs(y[at + 2] - hw / s) < 1e-4);
+    assert.ok(Math.abs(x[at + 3] - (10 + hw / s)) < 1e-4);
+    assert.ok(Math.abs(y[at + 3] + hw / s) < 1e-4);
+    assert.ok(Math.abs(x[at + 4] - 8) < 1e-4 && Math.abs(y[at + 4] - 10) < 1e-4);
+    assert.ok(Math.abs(x[at + 5] - 12) < 1e-4 && Math.abs(y[at + 5] - 10) < 1e-4);
+  } finally {
+    MeshGeometry.reset();
+  }
+});
+
+test('vert rewrite returns -1 when the packed run is shorter than the mesh', () => {
+  const views = makeViews({ entities: 1, fixtures: 1 });
+  views.meshActive[0] = 1;
+  views.meshLayerMask[0] = 1;
+  attachExplicit(views, 0, [0, 0, 4, 0, 4, 4, 0, 4]);
+  const cap = 4;
+  const out = new Float32Array(cap * COLLIDER_FILL_FLOATS);
+  views.instanceEntity = new Uint32Array(cap);
+  const n = packColliderFill(out, cap, 0, views);
+  assert.equal(n, 2);
+  views.meshVertGen = new Uint32Array([1]);
+  const code = rewriteExplicitMeshCorners(
+    out, 1, views.instanceEntity, views, COLLIDER_FILL_FLOATS, new Uint32Array(1),
+  );
+  assert.equal(code, -1);
+});
+
+test('pose table writes one row per contiguous entity run', () => {
+  const ids = new Uint32Array([0, 0, 0, 1, 1, 2]);
+  const views = {
+    entityCount: 3,
+    x: new Float32Array([10, 20, 30]),
+    y: new Float32Array([1, 2, 3]),
+    rotC: new Float32Array([1, 0, 1]),
+    rotS: new Float32Array([0, 1, 0]),
+  };
+  const call = (proto) => {
+    const ctx = { poseTable: null, _poseGen: null, _poseStamp: 0, mesh: { visible: false } };
+    proto.uploadPoseTable.call(ctx, ids, ids.length, views);
+    return ctx.poseTable;
+  };
+  for (const table of [
+    call(MeshUvFillBatch.prototype),
+    call(ColliderFillBatch.prototype),
+  ]) {
+    assert.equal(table[0], 10);
+    assert.equal(table[1], 1);
+    assert.equal(table[2], 1);
+    assert.equal(table[3], 0);
+    assert.equal(table[4], 20);
+    assert.equal(table[5], 2);
+    assert.equal(table[6], 0);
+    assert.equal(table[7], 1);
+    assert.equal(table[8], 30);
+    assert.equal(table[9], 3);
+  }
 });
 
 test('spawn path resets mesh tile / texture / outset', () => {

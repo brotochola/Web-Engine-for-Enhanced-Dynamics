@@ -1,6 +1,6 @@
 # Decal stamp optimization hypotheses
 
-Falsifiable claims for speeding up blood-decal stamping — [`src/util/decalStamp.js`](../src/util/decalStamp.js) (`stampParticleToTileBuffers`), [`src/workers/particleWorker.js`](../src/workers/particleWorker.js) (`stampCollectedParticles`), and [`src/core/particleEmitter.js`](../src/core/particleEmitter.js) (`stampDecal`). Test **headless only** with the three-layer protocol below (Wave A of [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)).
+Falsifiable claims for speeding up blood-decal stamping — [`src/util/decalStamp.js`](../../src/util/decalStamp.js) (`stampParticleToTileBuffers`), [`src/workers/particleWorker.js`](../../src/workers/particleWorker.js) (`stampCollectedParticles`), and [`src/core/particleEmitter.js`](../../src/core/particleEmitter.js) (`stampDecal`). Test **headless only** with the three-layer protocol below (Wave A of [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)).
 
 ## Protocol (always headless)
 
@@ -58,10 +58,10 @@ Auto-reject fired on non-target L1 multiply case only. Primary targets (multitil
 ## Patch layout
 
 - Baselines (pre-opt): `tests/bench/decal-hyps/baselineDecalStamp.js`, `baselineParticleEmitter.js`, `baselineParticleWorker.js`
-- Composable transforms: [`tests/bench/decal-hyps/hypPatches.mjs`](../tests/bench/decal-hyps/hypPatches.mjs) (`applyCombo`, `CANONICAL_ORDER = D1→D2→D3→D4→D5→D6`)
-- Tournament runner: [`tests/bench/runDecalHypTournament.mjs`](../tests/bench/runDecalHypTournament.mjs)
-- L1: [`tests/bench/decalMicrobench.mjs`](../tests/bench/decalMicrobench.mjs)
-- L2: [`tests/bench/stressScenes/decalStampStressScene.js`](../tests/bench/stressScenes/decalStampStressScene.js) + [`decals/decalStampDriver.js`](../tests/bench/stressScenes/decals/decalStampDriver.js)
+- Composable transforms: [`tests/bench/decal-hyps/hypPatches.mjs`](../../tests/bench/decal-hyps/hypPatches.mjs) (`applyCombo`, `CANONICAL_ORDER = D1→D2→D3→D4→D5→D6`)
+- Tournament runner: [`tests/bench/runDecalHypTournament.mjs`](../../tests/bench/runDecalHypTournament.mjs)
+- L1: [`tests/bench/decalMicrobench.mjs`](../../tests/bench/decalMicrobench.mjs)
+- L2: [`tests/bench/stressScenes/decalStampStressScene.js`](../../tests/bench/stressScenes/decalStampStressScene.js) + [`decals/decalStampDriver.js`](../../tests/bench/stressScenes/decals/decalStampDriver.js)
 
 Source files under `src/` are checked out CRLF; `hypPatches.mjs` normalizes to LF in-memory before anchor matching and writes patched output back as LF. `restoreAll()` still restores the original CRLF baseline bytes untouched.
 
@@ -69,5 +69,5 @@ Source files under `src/` are checked out CRLF; `hypPatches.mjs` normalizes to L
 
 - Feature pyramid: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md), [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)
 - Completed campaign for the pipeline template: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md)
-- Particle docs: [`PARTICLES.md`](./PARTICLES.md)
-- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../tests/bench/BENCHMARK_METHODOLOGY.md)
+- Particle docs: [`PARTICLES.md`](../guide/PARTICLES.md)
+- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md)

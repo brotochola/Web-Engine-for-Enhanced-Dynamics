@@ -1,10 +1,10 @@
 # Physics pipeline
 
-Weed runs **Box2D 3.0** (the real C library, WASM + SIMD + pthreads) as Scene’s physics worker when `config.physics.enabled` is not `false` (the default): classic `src/box2d/box2dWasm.js` + [`physicsHostImpl.js`](../src/box2d/physicsHostImpl.js) + [`weedjsPost.js`](../src/box2d/weedjsPost.js). After `box2dReady`, `bindBox2dHotFields` points `Transform.x/y/rotation/rotC/rotS` and `RigidBody.vx/vy/angularVelocity/sleeping` at WASM HEAP — those fields are not in Weed SoA. **Facing truth is `Transform.rotC` / `Transform.rotS`** (native `b2Rot`); `Transform.rotation` is a derived angle (atan2) for API convenience — hot paths must not `Math.cos/sin(rotation)`. The `GameObject.rotation` setter is the radians **write boundary** (`syncRotCSFromAngle` + cmd-ring `SET_ROT_CS`); the ring never takes radians. Visual consumers (pre_render, particle parent-follow) do **not** sample live HEAP mid-step; they latch a post-step **pose publish** SAB (`poseDataA/B` + `poseSync`).
+Weed runs **Box2D 3.0** (the real C library, WASM + SIMD + pthreads) as Scene’s physics worker when `config.physics.enabled` is not `false` (the default): classic `src/box2d/box2dWasm.js` + [`physicsHostImpl.js`](../../src/box2d/physicsHostImpl.js) + [`weedjsPost.js`](../../src/box2d/weedjsPost.js). After `box2dReady`, `bindBox2dHotFields` points `Transform.x/y/rotation/rotC/rotS` and `RigidBody.vx/vy/angularVelocity/sleeping` at WASM HEAP — those fields are not in Weed SoA. **Facing truth is `Transform.rotC` / `Transform.rotS`** (native `b2Rot`); `Transform.rotation` is a derived angle (atan2) for API convenience — hot paths must not `Math.cos/sin(rotation)`. The `GameObject.rotation` setter is the radians **write boundary** (`syncRotCSFromAngle` + cmd-ring `SET_ROT_CS`); the ring never takes radians. Visual consumers (pre_render, particle parent-follow) do **not** sample live HEAP mid-step; they latch a post-step **pose publish** SAB (`poseDataA/B` + `poseSync`).
 
 Scenes that never need a solver set `physics.enabled: false` and skip WASM entirely — see [Scenes without Box2D](#scenes-without-box2d). Pose still binds once onto `Transform.x`; hot loops do not branch on the flag.
 
-Bundle builds (`npm run make_bundle`) shove glue + `.wasm` + the `importScripts` siblings into `WEED.Box2dWorkerSource` so npm consumers don’t fetch a separate `dist/box2d/`. Rebuild notes: [src/box2d/README.md](../src/box2d/README.md).
+Bundle builds (`npm run make_bundle`) shove glue + `.wasm` + the `importScripts` siblings into `WEED.Box2dWorkerSource` so npm consumers don’t fetch a separate `dist/box2d/`. Rebuild notes: [src/box2d/README.md](../../src/box2d/README.md).
 
 This doc is about the **pipeline** (step, contacts, joints, invariants). Implementation: `src/box2d/physicsHostImpl.js`, `src/box2d/weedjsPost.js`, `src/components/rigidBody.js`, `src/core/gameObject.js`, `src/core/joint.js`.
 
@@ -103,7 +103,7 @@ this.setLayer('scenery');
 
 `setMesh(positions, indices, uvs)` — `indices` omitted fans from vertex 0 (convex). `uvs` omitted keeps `setTileWorld` / `setTileLocal`. `setVertices` rewrites positions when the count matches. `clearMesh` falls back to the collider fill. `visualOutset` does not move an explicit mesh.
 
-`replacePolygons` / `replacePolygonsFlat` write the [`ColliderFixture`](../src/core/colliderFixture.js) pool (intrusive list per entity). Host `clear_shapes` + `body_add_shape_polygon` on `GEOMETRY` dirty. Mass is the sum of fixture areas. Contacts still key by entity. `Ray` / spatial / debug walk every fixture. Light occluders still use the **primary** Collider shape only (feature gap: they do not walk fixtures).
+`replacePolygons` / `replacePolygonsFlat` write the [`ColliderFixture`](../../src/core/colliderFixture.js) pool (intrusive list per entity). Host `clear_shapes` + `body_add_shape_polygon` on `GEOMETRY` dirty. Mass is the sum of fixture areas. Contacts still key by entity. `Ray` / spatial / debug walk every fixture. Light occluders still use the **primary** Collider shape only (feature gap: they do not walk fixtures).
 
 A SharedResource (one writer per field) pins its owner with `forceProcessOnLogicWorker: 1` so only `logic1` runs that entity’s `tick` / callbacks / `onSpawned`.
 
@@ -271,7 +271,7 @@ On-demand Box2D broadphase query for entity ids (parallel to spatial `neighborDa
 - Physics services pending queries in `doStep` after command drain (and when `dt==0` so paused worlds still answer).
 - Optional `filter`: `{ categoryBits, maskBits }` (defaults match `physics-api` overlap filters).
 - `Box2d.queryAABB` is Box2D fixtures. `Query.query` is ECS component bitmasks. Different systems.
-- Demo self-check: [`demos/box2dQueryAabbScene/box2dQueryAabbScene.js`](../demos/box2dQueryAabbScene/box2dQueryAabbScene.js).
+- Demo self-check: [`demos/box2dQueryAabbScene/box2dQueryAabbScene.js`](../../demos/box2dQueryAabbScene/box2dQueryAabbScene.js).
 
 ### LiquidFun QueryAABB / RayCast
 
@@ -282,7 +282,7 @@ Same single-flight SAB pattern for particle indices (`liquidFunQuerySab`).
 | Logic | `LiquidFun.queryAABB` / `rayCast` | Sync (`Atomics.wait`) |
 | Main | `LiquidFun.queryAABBAsync` / `rayCastAsync` | Async (`Atomics.waitAsync`) |
 
-See [LiquidFun](./LIQUIDFUN.md). Demo: [`demos/liquidFunQueryScene`](../demos/liquidFunQueryScene/liquidFunQueryScene.js).
+See [LiquidFun](./LIQUIDFUN.md). Demo: [`demos/liquidFunQueryScene`](../../demos/liquidFunQueryScene/liquidFunQueryScene.js).
 
 With `debug.collectDetailedStats`, physics stats include `LIQUIDFUN_MS` (fluid solve inside `step_world`). `BOX2D_MS` is still the full `world.step` wall time.
 

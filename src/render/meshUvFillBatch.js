@@ -146,8 +146,12 @@ export class MeshUvFillBatch {
     const gen = this._poseGen;
     const stamp = (this._poseStamp + 1) | 0 || 1;
     this._poseStamp = stamp;
-    for (let k = 0; k < n; k++) {
+    let k = 0;
+    while (k < n) {
       const i = instanceEntity[k] | 0;
+      let end = k + 1;
+      while (end < n && (instanceEntity[end] | 0) === i) end++;
+      k = end;
       if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
       gen[i] = stamp;
       const pose = sampleMeshFillPose(i, views);

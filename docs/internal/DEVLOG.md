@@ -6,6 +6,20 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 14 October 2026 (later) — Make the Mesh Busy, Then Look
+
+The gallery is eight pictures. It can show that `setMesh` and a rope and a polygon all draw. It cannot say where the frame goes. I wanted a scene that fills the vertex arena and then a trace of that scene, before another guess about what to speed up.
+
+The stress scene is one mesh layer: rigid fans that only turn, grids whose vertices are rewritten every tick, ropes rebuilt every tick, quads with their own UVs, and a smaller set of boxes that still fill from the collider. Headless, the renderer sat at 2.4 ms, under the floor. Headed, the same scene was 3.8 ms, which is enough to judge.
+
+The trace does not point at ear-clipping or at `Math.sqrt`. Half of the renderer's busy time is the upload of the instance buffer. A quarter is writing the three corners of each triangle whose vertices moved. The pose table was walking every triangle to store one pose per entity. A grid of 768 triangles was writing the same pose 768 times.
+
+Walking that table once per run of triangles, instead of once per triangle, was 2.9 thousand calls a second to 11 thousand, and the table matched. Loading an entity's vertices once for the whole run, instead of once per triangle, was 28 % more calls a second, and every float matched. Dropping the unary plus on `writeVertices` was slower. That one stayed out.
+
+Headed, after both edits, the renderer was 3.03 ms and then 2.76 ms. Against 3.78 ms that is about 23 % cheaper. The second window fell under 3 ms. The baseline had cleared the floor and the changed side was cheaper, so the keep stands. The upload of triangles that actually move is still half the trace. An indexed mesh would shrink that. It was not this change.
+
+The write-up is [`MESH_API_TRACE_REPORT.md`](./MESH_API_TRACE_REPORT.md).
+
 ## Wednesday 14 October 2026 (night) — Hand the Renderer a Mesh
 
 `MeshRenderer` could already fill whatever the collider was. What I wanted was a mesh I write myself. Vertices, a subdivided plane, a rope, a polygon, optional UVs, in a shared arena the Pixi worker reads and gameplay writes. The Box2D worker does not bind that pool. If an entity has called `setMesh`, that geometry is what gets drawn. If it has not, the fill still comes from the fixtures. A debug overlay draws the triangles. Mesh Gallery is the scene that lines the cases up so they can be looked at.
@@ -176,7 +190,7 @@ The presenting path from 21 September kept the sim alive and only stopped the ca
 
 They are split now. Hide writes the SAB immediately so the current frame can skip the rest of its submits, including `ComputeLayer.step` before `queue.submit`. The presenting post waits one turn. F5 fires `pagehide` in that same turn with `persisted === false`, cancels the post, and `terminate()`s every worker. No `unconfigure`. The bfcache case (`persisted`) still only stops presenting. Alt-tab still gets the unconfigure on the next turn, which is the TDR fix from before.
 
-The demo found it again. The contract is in the engine: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md#presenting-vs-pause).
+The demo found it again. The contract is in the engine: [WORKERS_ARCHITECTURE.md](../guide/WORKERS_ARCHITECTURE.md#presenting-vs-pause).
 
 ## Wednesday 23 September 2026 — The Sort Key Sits on a Pixel
 
@@ -186,7 +200,7 @@ A fractional entity id inside the pixel would have kept same-pixel ties stable w
 
 Precomputing the float-to-ordinal once was 6.4% more ops/s in Node and 11.5% more expensive on Pixi (24.4 ms to 27.2 ms). The extra array is gone. Pixi's `Buffer.update` already uploads the same typed array. No copy to delete there.
 
-Numbers: [`tests/results/ysort-quantize/report.md`](../tests/results/ysort-quantize/report.md).
+Numbers: [`tests/results/ysort-quantize/report.md`](../../tests/results/ysort-quantize/report.md).
 
 ## Wednesday 23 September 2026 — One Hook, `onSpawned`
 
@@ -220,7 +234,7 @@ Could not get further than that here. This sandbox has no GPU — WebGL and WebG
 
 Shipped the part that was unambiguous: the main queue and every Y-sorted custom layer now call the same four functions (`createPainterState`, `painterSameSet`, `radixPainterOrder`, `orderPainterSlots`), instead of custom layers being stuck on the old GPU depth path unconditionally while the main queue got the fix. `renderer.painterSort: 'off'` stays as a real fallback on both paths, not deleted — Predator is still using it, and deleting it before someone with a real GPU confirms `reinsert` is correct there would be trading a documented, working escape hatch for a codebase that only looks cleaner.
 
-Numbers and the full trace: [`tests/results/painter-shard-coverage/report.md`](../tests/results/painter-shard-coverage/report.md).
+Numbers and the full trace: [`tests/results/painter-shard-coverage/report.md`](../../tests/results/painter-shard-coverage/report.md).
 
 ## Tuesday 22 September 2026 — Sprites Should Composite Like a PNG
 
@@ -238,7 +252,7 @@ I tried rounding atlas frames and turning smoothing off on the pack blit, so nea
 
 Checked in the demos, zoomed, with the ground and without: Bichos and Predator both composite. Fire sits on the bugs the way a PNG would.
 
-Numbers: [`tests/results/sprite-painter/move-report.md`](../tests/results/sprite-painter/move-report.md). The dropped full sort: [`tests/results/sprite-painter/report.md`](../tests/results/sprite-painter/report.md). Where the workers do it: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md).
+Numbers: [`tests/results/sprite-painter/move-report.md`](../../tests/results/sprite-painter/move-report.md). The dropped full sort: [`tests/results/sprite-painter/report.md`](../../tests/results/sprite-painter/report.md). Where the workers do it: [WORKERS_ARCHITECTURE.md](../guide/WORKERS_ARCHITECTURE.md).
 
 ## Monday 21 September 2026 — I Looked Away and the Tab Died
 
@@ -250,7 +264,7 @@ So now there are two APIs. `pause` / `resume` stop every worker, and Pixi actual
 
 `device.lost` and `webglcontextlost` go through `reportError` if the driver comes back and the page is still alive. A TDR that kills the tab will never print. That is the browser.
 
-The demo found it. The contract is in the engine: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md#presenting-vs-pause).
+The demo found it. The contract is in the engine: [WORKERS_ARCHITECTURE.md](../guide/WORKERS_ARCHITECTURE.md#presenting-vs-pause).
 
 ## Monday 21 September 2026 — 250k Bunnies, and the Sprite Shouldn't Step
 
@@ -268,7 +282,7 @@ The Performance tab will still look wrong if you multiply the columns. Step is t
 
 Headed, 175k, pre-render slower than the display: pixi median 4.29 ms down to 2.32 ms. The samples split into quiet frames and upload frames, so the spread is ugly. Pre-render's own step did not get cheaper. The mark is the 250k scene, not that row.
 
-Numbers: [`tests/results/renderer-interp/report.md`](../tests/results/renderer-interp/report.md). Where it sits in the workers: [WORKERS_ARCHITECTURE.md](./WORKERS_ARCHITECTURE.md).
+Numbers: [`tests/results/renderer-interp/report.md`](../../tests/results/renderer-interp/report.md). Where it sits in the workers: [WORKERS_ARCHITECTURE.md](../guide/WORKERS_ARCHITECTURE.md).
 
 ## Sunday 20 September 2026 — I Wanted this.x = 10 Without a Solver
 
@@ -280,7 +294,7 @@ Queries and `explode` throw if you forgot the flag and called a solver API. `thi
 
 We measured it as Bunny Mark C against A. `logic0_STEP_MS` did not move a clean 3% — both sides were under the 3 ms floor. The win is boot, not the frame. The playable mark now sets the flag. Stress A still boots WASM beside the same `tickAll` so we can measure the tax. D, the solver moving the bunnies, stays dropped.
 
-Contract: [PHYSICS.md](./PHYSICS.md#scenes-without-box2d). Numbers: [HYPOTHESIS_LOG.md](./HYPOTHESIS_LOG.md), [`tests/results/bunny-mover/report.md`](../tests/results/bunny-mover/report.md).
+Contract: [PHYSICS.md](../guide/PHYSICS.md#scenes-without-box2d). Numbers: [HYPOTHESIS_LOG.md](./HYPOTHESIS_LOG.md), [`tests/results/bunny-mover/report.md`](../../tests/results/bunny-mover/report.md).
 
 ## Saturday 19 September 2026 — The Tilemap Was Smooth. The Car Wasn't
 
@@ -288,7 +302,7 @@ The want was simple once the GID pages were in: drive a police car across a 50,0
 
 Two `requestAnimationFrame` loops. Physics publishes a pose. Logic follows it. Pre-render packs the sprite from the same latch. When the clocks lap — 60 against something like 59.75 is about four seconds — physics skips a publish so it will not overwrite the slot pre-render is still reading. The sprite freezes on the last snapshot. `followEntity` did not. It kept easing the camera toward that frozen point. The tilemap is the camera. The car is the sprite. The world slid under a parked drawing.
 
-Look-ahead had already learned this lesson: freeze HEAP velocity until pose xy actually publishes. The missing half was the pan. Logic now stamps the pose generation it latched. If `poseReady` has not moved, `followEntity` holds the camera and still stamps `followUsed` so pre-render's slide is a no-op. Next publish, both jump together. The ship in the terrain demo uses the same call. The contract lives in [PHYSICS.md](./PHYSICS.md#display-pose-publish). The test is `followEntity holds pan when pose generation is unchanged`.
+Look-ahead had already learned this lesson: freeze HEAP velocity until pose xy actually publishes. The missing half was the pan. Logic now stamps the pose generation it latched. If `poseReady` has not moved, `followEntity` holds the camera and still stamps `followUsed` so pre-render's slide is a no-op. Next publish, both jump together. The ship in the terrain demo uses the same call. The contract lives in [PHYSICS.md](../guide/PHYSICS.md#display-pose-publish). The test is `followEntity holds pan when pose generation is unchanged`.
 
 ## Saturday 19 September 2026 — I Didn't Want a Tile Library
 
@@ -296,7 +310,7 @@ CarScene at full speed used to hitch every time `@pixi/tilemap` built another ch
 
 The want was a Tiled map that is already a texture. Raw GIDs in the SAB — flags and all — packed once into RGBA8 pages, 2048 tiles on a side because that is WebGL2's portable max. One world-space quad per non-empty page. A shader that does `page UV → tile → texelFetch → atlas`, same contract in GLSL and WGSL. After create, the pixi worker only moves the parent container. Empty GID 0 discards. We do not raise the page size to `MAX_TEXTURE_SIZE`: carScene is 2082 tiles wide, and a 2082-wide NPOT page hitchs the driver the same way the chunks did.
 
-`pixiTilemapModule.js` is gone. `tilemapCull.js` is gone. `config.renderer.tilemapCull` is ignored if a scene still sends it. The query API (`getTileId`, `hasTile`) did not change. The old Hyp 7 cull scratch is a measurement of a path that no longer exists; do not reimplement `listVisibleChunks`. Spec: [TILEMAP.md](./TILEMAP.md).
+`pixiTilemapModule.js` is gone. `tilemapCull.js` is gone. `config.renderer.tilemapCull` is ignored if a scene still sends it. The query API (`getTileId`, `hasTile`) did not change. The old Hyp 7 cull scratch is a measurement of a path that no longer exists; do not reimplement `listVisibleChunks`. Spec: [TILEMAP.md](../guide/TILEMAP.md).
 
 ## Friday 18 September 2026 — A Grid Is Not a Component
 
@@ -312,7 +326,7 @@ static sharedResources = [
 
 `WorldGrid.cells[i] = v` on main and on every worker after bind. No Atomics. No FieldView. One writer per field, same rule as Mouse. The subclass needs `static scriptUrl` or the worker cannot `import()` it and `bindFromInit` throws — better a boot failure than two threads writing the same cells. Pin the writer with `forceProcessOnLogicWorker` so `tick` does not stride across logic workers.
 
-The destructible terrain demo is how this got tested: one `WorldGrid`, one manager forced onto a logic worker, carve and fall. The demo is not the product. The product is a typed array that is not pretending to be an entity. Layout: [MEMORY_STRUCTURE.md](./MEMORY_STRUCTURE.md) §1b.
+The destructible terrain demo is how this got tested: one `WorldGrid`, one manager forced onto a logic worker, carve and fall. The demo is not the product. The product is a typed array that is not pretending to be an entity. Layout: [MEMORY_STRUCTURE.md](../guide/MEMORY_STRUCTURE.md) §1b.
 
 ## Friday 18 September 2026 — One Body, Many Shapes
 
@@ -320,7 +334,7 @@ Worms-style dirt is not one box. It is an island: one rigid body, N convex polyg
 
 `ColliderFixture` is a global pool (`physics.maxFixturePoolSize`, default 0 — opt in or the replace calls no-op). Intrusive list per entity. `replacePolygons` / `replacePolygonsFlat` / `clearFixtures`. WASM adds every fixture to the same body. Mass sums. Spatial uses a cheap oriented box so the grid does not transform every vertex; rays and `pointInCollider` stay tight and report `fixtureIndex` (−1 is the primary). MESH fill fans the fixtures, or the primary box / polygon / display octagon if the pool is empty. Light occluders still see only the primary. That is a known hole, not a forgotten one.
 
-The terrain demo is the champion scene, not a special case inside the engine. Isolation work for the pool (MF1–MF5) is in [HYPOTHESIS_LOG.md](./HYPOTHESIS_LOG.md). The API is in [PHYSICS.md](./PHYSICS.md).
+The terrain demo is the champion scene, not a special case inside the engine. Isolation work for the pool (MF1–MF5) is in [HYPOTHESIS_LOG.md](./HYPOTHESIS_LOG.md). The API is in [PHYSICS.md](../guide/PHYSICS.md).
 
 ## Monday 14 September 2026 (evening) — The Fire Was There. The Light Wasn't
 

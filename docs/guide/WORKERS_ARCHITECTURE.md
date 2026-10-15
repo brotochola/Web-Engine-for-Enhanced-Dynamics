@@ -3,7 +3,7 @@
 Six specialized Web Workers. Game state and frame data flow mostly through shared memory, while control messages still use `postMessage` and `MessagePort`s where appropriate.
 Each worker owns its data region so hot paths can avoid broad locking and per-frame serialization.
 
-**Deep dives:** [Docs index](./README.md) · [Spatial hashing & neighbors](./SPATIAL_HASHING.md) · [Physics pipeline](./PHYSICS.md)
+**Deep dives:** [Docs index](../README.md) · [Spatial hashing & neighbors](./SPATIAL_HASHING.md) · [Physics pipeline](./PHYSICS.md)
 
 ---
 
@@ -87,7 +87,7 @@ Spatial `neighborData` is visual-range only — Box2D does narrowphase itself.
 | `physicsStats`                     | **Write**      | FPS, body/joint/contact counters                                                     |
 | `frameRateData`                    | **Write**      | Own slot                                                                             |
 
-Details: [PHYSICS.md](./PHYSICS.md), [box2d README](../src/box2d/README.md)
+Details: [PHYSICS.md](./PHYSICS.md), [box2d README](../../src/box2d/README.md)
 
 ---
 
@@ -159,7 +159,7 @@ The multitasker. Handles particles, bullets, decals, navigation computation, vis
 
 **What it does each frame:**
 
-1. Update particle simulation (lifetime; flat = XY only; heighted = gravity / ground / floor flags — see `docs/PARTICLES.md`)
+1. Update particle simulation (lifetime; flat = XY only; heighted = gravity / ground / floor flags — see `docs/guide/PARTICLES.md`)
 2. Stamp decals onto tile buffers
 3. Tick bullets (movement, trail, screen visibility, impact detection → `impactBuffer`; publishes `count` then bumps batch `seq` via Atomics so logic workers never double-process a batch)
 4. Update decoration sway; resolve parented decorations from latched `posePublish` (no consume — pre_render owns `consumedFrame`)

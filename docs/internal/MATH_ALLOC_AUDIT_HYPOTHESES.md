@@ -66,7 +66,7 @@ The `visPoly` scene is `kind: 'gameplay'` (see `tests/bench/engineFeatureCatalog
 ### 0.6 The gates for a trace-derived micro-optimization
 
 1. **Checksum.** The variant must produce what the shipped code produces. If not: `rejected-in-kernel`, ops/s is not read.
-2. **Baseline is the shipped function** (or the real worker method), never a copy. Use [`tests/bench/workerHarness.mjs`](../tests/bench/workerHarness.mjs) so worker methods run as the real class.
+2. **Baseline is the shipped function** (or the real worker method), never a copy. Use [`tests/bench/workerHarness.mjs`](../../tests/bench/workerHarness.mjs) so worker methods run as the real class.
 3. **Kernel win** ≥ 3 % ops/s, same `n` and `seed`, in the trace's regime.
 4. **Re-run the kernel against the patched `src/`** (`runKernelsVsRev.mjs --overlay`). A local variant can win while the worker's hidden class eats the gain.
 5. **Parity test** in `tests/node/`, frame by frame. `pnpm test:node` stays green.

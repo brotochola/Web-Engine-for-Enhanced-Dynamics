@@ -1,6 +1,6 @@
 # Ray optimization hypotheses
 
-Falsifiable claims for speeding up [`src/core/ray.js`](../src/core/ray.js). Test **headless only** with the three-layer protocol below.
+Falsifiable claims for speeding up [`src/core/ray.js`](../../src/core/ray.js). Test **headless only** with the three-layer protocol below.
 
 ## Protocol (always headless)
 
@@ -69,12 +69,12 @@ Post-merge sanity (RayStress L2): logic STEP ~2.2 ms (was ~2.8 ms BASE).
 
 ## Patch layout
 
-- Baselines (pre-opt): [`tests/bench/ray-hyps/baselineRay.js`](../tests/bench/ray-hyps/baselineRay.js), `baselineUtils.js`
-- Composable transforms: [`tests/bench/ray-hyps/hypPatches.mjs`](../tests/bench/ray-hyps/hypPatches.mjs) (`applyCombo`, `CANONICAL_ORDER = H2→H6→H1→H3→H4→H5`)
-- Tournament runner: [`tests/bench/runRayHypTournament.mjs`](../tests/bench/runRayHypTournament.mjs)
+- Baselines (pre-opt): [`tests/bench/ray-hyps/baselineRay.js`](../../tests/bench/ray-hyps/baselineRay.js), `baselineUtils.js`
+- Composable transforms: [`tests/bench/ray-hyps/hypPatches.mjs`](../../tests/bench/ray-hyps/hypPatches.mjs) (`applyCombo`, `CANONICAL_ORDER = H2→H6→H1→H3→H4→H5`)
+- Tournament runner: [`tests/bench/runRayHypTournament.mjs`](../../tests/bench/runRayHypTournament.mjs)
 
 ## Related
 
 - Feature pyramid: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)
-- Ray API: [`RAYCASTING.md`](./RAYCASTING.md)
-- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../tests/bench/BENCHMARK_METHODOLOGY.md)
+- Ray API: [`RAYCASTING.md`](../guide/RAYCASTING.md)
+- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md)

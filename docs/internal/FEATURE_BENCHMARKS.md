@@ -2,13 +2,13 @@
 
 When changing a hot algorithm in WeedJS, measure in this order. Do not jump straight to a real demo.
 
-The machine-readable catalog (one row per hot engine feature, with kernel, scene that actually runs the code, primary workers, and load keys) is [`tests/bench/engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs). Compare the current tree to a git rev with:
+The machine-readable catalog (one row per hot engine feature, with kernel, scene that actually runs the code, primary workers, and load keys) is [`tests/bench/engineFeatureCatalog.mjs`](../../tests/bench/engineFeatureCatalog.mjs). Compare the current tree to a git rev with:
 
 ```bash
 pnpm bench:scoreboard --vs 0695a8d
 ```
 
-That writes [`tests/results/scoreboard/report.md`](../tests/results/scoreboard/report.md) and updates [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). Artistic demos are not scoreboard rows. Vis-poly uses `visPolyStressScene` (`lighting.raycasted: true`). Combat-class particle + spatial load uses `steadyCombatScene` (seeded, constant emit). Do not patch `demos/predatorScene` so a bench can close. Human map of each row: [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md). Night diary: [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md).
+That writes [`tests/results/scoreboard/report.md`](../../tests/results/scoreboard/report.md) and updates [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). Artistic demos are not scoreboard rows. Vis-poly uses `visPolyStressScene` (`lighting.raycasted: true`). Combat-class particle + spatial load uses `steadyCombatScene` (seeded, constant emit). Do not patch `demos/predatorScene` so a bench can close. Human map of each row: [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md). Night diary: [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md).
 
 `--headed-only box2d,visPoly,steadyCombat` opens a window only for those ids (5 × 25 s / 18 s). Compute and zenithal stay on the stress protocol even though the catalog marks them headed. A scoreboard with **no** flags would head those GPU scenes; `--headless` would un-head Balls and vis-poly too.
 
@@ -26,9 +26,9 @@ Always compare with the **same flags**, prefer `pnpm bench:headed:median` (5 run
 
 A stress A/B whose primary median is **below 3 ms** is not comparable. The harness fails the row (`step floor:`). Raise that scene's load before reading keep/drop. Gameplay rows skip the floor. Kernel samples use the same 3 ms `timeIt` floor. Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
 
-Stress scenes live only under [`tests/bench/stressScenes/`](../tests/bench/stressScenes/). Demos stay in `demos/<demoName>/`.
+Stress scenes live only under [`tests/bench/stressScenes/`](../../tests/bench/stressScenes/). Demos stay in `demos/<demoName>/`.
 
-Methodology for the integrated harness: [`tests/bench/BENCHMARK_METHODOLOGY.md`](../tests/bench/BENCHMARK_METHODOLOGY.md).
+Methodology for the integrated harness: [`tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md).
 
 ## Workflow
 
@@ -135,7 +135,7 @@ See [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md) for hyp summaries per w
 
 ## L1 scaffold
 
-Shared helpers: [`tests/bench/microbenchHelpers.mjs`](../tests/bench/microbenchHelpers.mjs) (`mulberry32`, `timeIt`, `writeReport`, `parseArgs`). Tournament helpers: [`tests/bench/featureTournamentLib.mjs`](../tests/bench/featureTournamentLib.mjs).
+Shared helpers: [`tests/bench/microbenchHelpers.mjs`](../../tests/bench/microbenchHelpers.mjs) (`mulberry32`, `timeIt`, `writeReport`, `parseArgs`). Tournament helpers: [`tests/bench/featureTournamentLib.mjs`](../../tests/bench/featureTournamentLib.mjs).
 
 Microbenches import production `src/...` code (no algorithm copies). Run a correctness gate before timing.
 
@@ -167,7 +167,7 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 
 ## Isolation: multi-fixture (not catalog rows)
 
-These scripts stay off [`engineFeatureCatalog.mjs`](../tests/bench/engineFeatureCatalog.mjs) until `main` also has the scenes. Isolation uses `--src`, same pattern as `tests/results/hot-path-alloc/`. Do not run `--vs main`.
+These scripts stay off [`engineFeatureCatalog.mjs`](../../tests/bench/engineFeatureCatalog.mjs) until `main` also has the scenes. Isolation uses `--src`, same pattern as `tests/results/hot-path-alloc/`. Do not run `--vs main`.
 
 ```bash
 pnpm bench:micro:collider-fixture-bounds
@@ -185,7 +185,7 @@ pnpm bench:feature:mesh-fill-moving
 | MeshFillStaticScene | `/tests/bench/stressScenes/meshFillStaticScene.js` | `pixi_STEP_MS` | `BODY_COUNT` |
 | MeshFillMovingScene | `/tests/bench/stressScenes/meshFillMovingScene.js` | `pixi_STEP_MS` | `BODY_COUNT` |
 
-Reports live under [`tests/results/multi-fixture/`](../tests/results/multi-fixture/). Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
+Reports live under [`tests/results/multi-fixture/`](../../tests/results/multi-fixture/). Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
 
 ```bash
 node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \

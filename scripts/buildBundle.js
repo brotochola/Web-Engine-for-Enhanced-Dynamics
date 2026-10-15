@@ -226,6 +226,35 @@ function buildBox2dWorkerSource() {
     );
 }
 
+/**
+ * Webpack emits `new URL('./spatialPublish.wasm', import.meta.url)` as
+ * `new URL(publicPath + "hash.wasm", scriptBase)`. Blob workers set scriptBase
+ * to `blob:.../../../`, and `new URL` throws. Inline the bytes as a data URL
+ * so the constructor gets an absolute URL and the worker never fetches.
+ */
+function inlineWorkerWasmAssets(source, label) {
+    let inlined = 0;
+    const next = source.replace(/[A-Za-z_$][\w$]*\.p\s*\+\s*(["'])([^"']+\.wasm)\1/g, (_match, _quote, rel) => {
+        const filePath = path.join(distDir, rel);
+        const fallback = path.join(distDir, path.basename(rel));
+        const resolved = fs.existsSync(filePath) ? filePath : fallback;
+        if (!fs.existsSync(resolved)) {
+            throw new Error(`Worker wasm asset missing (${label}): ${rel}`);
+        }
+        inlined++;
+        const b64 = fs.readFileSync(resolved).toString('base64');
+        return JSON.stringify(`data:application/wasm;base64,${b64}`);
+    });
+    if (label === 'spatialWorker' && inlined < 1) {
+        throw new Error(
+            'spatialWorker.min.js has no publicPath wasm asset to inline. ' +
+            'new URL(import.meta.url) would throw inside the blob worker.',
+        );
+    }
+    if (inlined) console.log(`   inlined ${inlined} wasm asset(s) into ${label}`);
+    return next;
+}
+
 function readWorkerArtifacts() {
     const workers = {};
     const sizes = {};
@@ -234,14 +263,14 @@ function readWorkerArtifacts() {
         if (!fs.existsSync(filePath)) {
             throw new Error(`Missing worker build: ${filePath}`);
         }
-        workers[name] = fs.readFileSync(filePath, 'utf8');
+        workers[name] = inlineWorkerWasmAssets(fs.readFileSync(filePath, 'utf8'), name);
         sizes[name] = Buffer.byteLength(workers[name], 'utf8');
     }
 
     const commonPath = path.join(workersDir, 'worker_common.min.js');
     let workerCommon = '';
     if (fs.existsSync(commonPath)) {
-        workerCommon = fs.readFileSync(commonPath, 'utf8');
+        workerCommon = inlineWorkerWasmAssets(fs.readFileSync(commonPath, 'utf8'), 'worker_common');
         sizes.worker_common = Buffer.byteLength(workerCommon, 'utf8');
     } else {
         console.warn('   WARN: workers/worker_common.min.js missing — workers not deduped');

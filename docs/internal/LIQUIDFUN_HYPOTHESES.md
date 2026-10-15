@@ -3,7 +3,7 @@
 Falsifiable claims for speeding up `lfParticleSystem_Step` — the sibling
 `Box2d_3.2_C_-_liquidfun` repo's [`box2d+liquidfun/src/lf_particle_system.c`](../../Box2d_3.2_C_-_liquidfun/box2d+liquidfun/src/lf_particle_system.c),
 wired into this repo via [`box2d/src/wasm_wrapper.c`](../../Box2d_3.2_C_-_liquidfun/box2d/src/wasm_wrapper.c)
-→ [`src/box2d/physicsApi.js`](../src/box2d/physicsApi.js) → [`src/box2d/weedjsPost.js`](../src/box2d/weedjsPost.js).
+→ [`src/box2d/physicsApi.js`](../../src/box2d/physicsApi.js) → [`src/box2d/weedjsPost.js`](../../src/box2d/weedjsPost.js).
 Same protocol family as [`PARTICLE_HYPOTHESES.md`](./PARTICLE_HYPOTHESES.md) /
 [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md) (Wave family in
 [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)). Hot loop is C; L1 micros
@@ -14,8 +14,8 @@ instantiate the WASM in Node (`CapturePairs` create-time, `ComputeDepth` spawn-s
 | Layer | Command | Primary metric |
 |-------|---------|-----------------|
 | **Correctness** | `node --test tests/node/liquidFun.test.js tests/node/liquidFun.wasm.test.js` (then `pnpm test:node`) | All pass. Sibling C: ship **WASM only** (`weedjs\build_for_weed.bat`). Do not build native Box2D `test.exe`. |
-| **L1 (H6)** | `pnpm bench:micro:liquidfun-capturepairs` ([`tests/bench/liquidFunCapturePairsMicrobench.mjs`](../tests/bench/liquidFunCapturePairsMicrobench.mjs)) | Wall-clock ms for one large SPRING-group `create_particle_group_box` call — create-time-only; L2 steady-state never sees it |
-| **L1 (H9)** | `pnpm bench:micro:liquidfun-computedepth` ([`tests/bench/liquidFunComputeDepthMicrobench.mjs`](../tests/bench/liquidFunComputeDepthMicrobench.mjs)) | First `step_world` after a SOLID ice create, with a large tracked puddle already in the system |
+| **L1 (H6)** | `pnpm bench:micro:liquidfun-capturepairs` ([`tests/bench/liquidFunCapturePairsMicrobench.mjs`](../../tests/bench/liquidFunCapturePairsMicrobench.mjs)) | Wall-clock ms for one large SPRING-group `create_particle_group_box` call — create-time-only; L2 steady-state never sees it |
+| **L1 (H9)** | `pnpm bench:micro:liquidfun-computedepth` ([`tests/bench/liquidFunComputeDepthMicrobench.mjs`](../../tests/bench/liquidFunComputeDepthMicrobench.mjs)) | First `step_world` after a SOLID ice create, with a large tracked puddle already in the system |
 | **L1 (H14)** | `pnpm bench:micro:liquidfun-extract` | Wall-clock `extract_particles` from a ~4k group; k in {64, 512, 1024} |
 | **L1 (H13)** | `pnpm bench:micro:liquidfun-reactive` | First `step_world` after SPRING\|REACTIVE create (`--spring-only` control) |
 | **L1 (H16)** | `pnpm bench:micro:liquidfun-sparse-step` | Steady `get_liquidfun_step_ms` on ~10k particles spaced > diameter (AABB + grid, almost no contacts) |
@@ -233,7 +233,7 @@ already the right tool for a list whose size isn't actually bounded small.
 group creation, which happens during a scene's `create()`/warmup — before
 `bench:feature:liquidfun`'s measured window starts. The L2 harness structurally
 cannot see this win (flagged as a known caveat before starting this campaign).
-Added a new **L1 microbench**, [`tests/bench/liquidFunCapturePairsMicrobench.mjs`](../tests/bench/liquidFunCapturePairsMicrobench.mjs)
+Added a new **L1 microbench**, [`tests/bench/liquidFunCapturePairsMicrobench.mjs`](../../tests/bench/liquidFunCapturePairsMicrobench.mjs)
 (`pnpm bench:micro:liquidfun-capturepairs`), filling the "no L1 yet" gap noted in
 this doc's intro — times one `create_particle_group_box` call (SPRING flag) in
 isolation via the raw WASM export, same instantiation pattern as
@@ -648,7 +648,7 @@ Campaign plan called these **H11–H16**. Those IDs already mean collision-dt / 
 
 WASM: `get_lf_body_contact_count`, `get_lf_query_shape_count`, `get_lf_overlap_aabb_calls`, `get_lf_apply_impulse_calls`, `get_lf_world_point_velocity_calls`, `get_lf_body_prop_calls`. Skip flags: `set_lf_skip_body_impulse`, `set_lf_skip_body_velocity`. Reuse: `set_lf_reuse_query_across_substeps` (default **1**).
 
-Puddle+floor: contacts / impulse / overlap **nonzero**. Empty particle system: contacts **0**. Tests: [`tests/node/liquidFunCoupling.wasm.test.js`](../tests/node/liquidFunCoupling.wasm.test.js).
+Puddle+floor: contacts / impulse / overlap **nonzero**. Empty particle system: contacts **0**. Tests: [`tests/node/liquidFunCoupling.wasm.test.js`](../../tests/node/liquidFunCoupling.wasm.test.js).
 
 #### Correctness (H23)
 
@@ -777,6 +777,6 @@ Do **not** edit `Box2d_3.2_C_-_liquidfun` in the current WeedJS speed program. W
 
 - Feature pyramid: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md), [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)
 - Sibling campaigns: [`PARTICLE_HYPOTHESES.md`](./PARTICLE_HYPOTHESES.md), [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md), [`DECAL_HYPOTHESES.md`](./DECAL_HYPOTHESES.md)
-- LiquidFun architecture/algorithm docs: [`LIQUIDFUN.md`](./LIQUIDFUN.md)
+- LiquidFun architecture/algorithm docs: [`LIQUIDFUN.md`](../guide/LIQUIDFUN.md)
 - Sibling repo roadmap: `Box2d_3.2_C_-_liquidfun/box2d+liquidfun/ROADMAP.md`
-- L2 scene: [`tests/bench/stressScenes/liquidFunStressScene.js`](../tests/bench/stressScenes/liquidFunStressScene.js)
+- L2 scene: [`tests/bench/stressScenes/liquidFunStressScene.js`](../../tests/bench/stressScenes/liquidFunStressScene.js)

@@ -362,7 +362,7 @@ export function writeReport(payload) {
 }
 
 function updateHypothesisLog(payload) {
-  const logPath = path.join(repoRoot, 'docs/HYPOTHESIS_LOG.md');
+  const logPath = path.join(repoRoot, 'docs/internal/HYPOTHESIS_LOG.md');
   if (!fs.existsSync(logPath)) return;
   let text = fs.readFileSync(logPath, 'utf8');
   const stamp = new Date().toISOString().slice(0, 10);

@@ -85,7 +85,7 @@ class MyScene extends WEED.Scene {
 }
 ```
 
-Do **not** branch on `_restorePayload` inside `create()`. Use `createNewGame` / `onLoadGame` instead. Full save API: [`docs/SAVE_GAME.md`](./SAVE_GAME.md).
+Do **not** branch on `_restorePayload` inside `create()`. Use `createNewGame` / `onLoadGame` instead. Full save API: [`docs/guide/SAVE_GAME.md`](./SAVE_GAME.md).
 
 ### Prebaked bigAtlas
 
@@ -330,7 +330,7 @@ this.collider.collidesWithLayer(4);                      // true
 this.collider.collisionGroupIndex = -parentEntityIndex;
 ```
 
-All `Ray` methods also accept an optional `mask` param (default all layers). Rays do **not** use `collisionGroupIndex` (entity–entity pairs only). See `docs/RAYCASTING.md`.
+All `Ray` methods also accept an optional `mask` param (default all layers). Rays do **not** use `collisionGroupIndex` (entity–entity pairs only). See `docs/guide/RAYCASTING.md`.
 
 ### Contact queries (`isCollidingWith`)
 
@@ -616,7 +616,7 @@ WEED.BulletPool.spawn({
 LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('GLOW_LAYER');
 ```
 
-Omit `layer`/`layers` → entities bit. See `docs/LAYER_ROUTING.md`.
+Omit `layer`/`layers` → entities bit. See `docs/guide/LAYER_ROUTING.md`.
 
 ### Sprite tiling (`setTileWorld` / `setTileLocal`)
 
@@ -804,9 +804,9 @@ TileMap.myTilemap.heightPx   // mapHeight * tileHeight
 
 Tile GIDs include Tiled flip flags in the top 3 bits. Strip with `gid & 0x1FFFFFFF`. GID `0` = empty.
 
-Pixi draws the background with native **GID page** meshes (shader, WebGL and WebGPU). The camera only transforms the parent container; tiles are not streamed as `CompositeTilemap` chunks. See `docs/TILEMAP.md` (Rendering).
+Pixi draws the background with native **GID page** meshes (shader, WebGL and WebGPU). The camera only transforms the parent container; tiles are not streamed as `CompositeTilemap` chunks. See `docs/guide/TILEMAP.md` (Rendering).
 
-See `docs/TILEMAP.md` for memory layout, lifecycle, and queries.
+See `docs/guide/TILEMAP.md` for memory layout, lifecycle, and queries.
 
 ---
 
@@ -849,12 +849,12 @@ WEED.Camera.targetZoom = 0.5; // then follow / followEntity — lerps zoom, keep
 WEED.Camera.setZoom(1.5);     // snap zoom (do not call every tick while following)
 // getViewportBounds(out?) — pass a stable object if you need to store bounds;
 // the no-arg form reuses an internal scratch object (consume immediately).
-// High-speed follow hitch: docs/PHYSICS.md “Display pose publish”.
+// High-speed follow hitch: docs/guide/PHYSICS.md “Display pose publish”.
 // followEntity holds SAB pan when poseReady is unchanged (publish skip).
 // Drawn cam = packed pose + look-ahead lead (renderQueueCamera), not eased Camera.x/y.
 // lookAheadSec is seconds × vy — 1 at fall speed is a huge Y slam.
 
-// Particles — pick mode at call site (see docs/PARTICLES.md)
+// Particles — pick mode at call site (see docs/guide/PARTICLES.md)
 // emit: heighted, screenY = y + z
 // emitZenithal: heighted, height → scale (scene zenithal* knobs)
 // emitFlat: no ground, gravity on vy, screenY = y
@@ -882,7 +882,7 @@ WEED.ParticleEmitter.emitZenithal({
   stayOnTheFloor: true,
 });
 
-// Flashes — pooled LightEmitter + FlashComponent (see docs/FLASHES.md)
+// Flashes — pooled LightEmitter + FlashComponent (see docs/guide/FLASHES.md)
 // Needs lighting.maxFlashes > 0. Shares lighting.maxLights with persistent lights.
 WEED.Flash.spawn({
   x: this.x,
@@ -1002,7 +1002,7 @@ scene.getMemoryUsageSummary(); // raw SharedArrayBuffer tree and total bytes
 scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 ```
 
-`getMemoryUsageReport().componentAllocations` shows each component buffer's byte size, capacity, number of entity types using it, total pool slots for those types, and estimated unused dense slots/bytes. Use it before changing component storage: dense component arrays are fast, but rare components can waste memory when allocated for every entity slot. See `docs/COMPONENT_STORAGE.md` for the dense-vs-sparse decision policy.
+`getMemoryUsageReport().componentAllocations` shows each component buffer's byte size, capacity, number of entity types using it, total pool slots for those types, and estimated unused dense slots/bytes. Use it before changing component storage: dense component arrays are fast, but rare components can waste memory when allocated for every entity slot. See `docs/guide/COMPONENT_STORAGE.md` for the dense-vs-sparse decision policy.
 
 ---
 
