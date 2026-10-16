@@ -17,6 +17,7 @@ struct VisUniforms {
   uCameraPos: vec2<f32>,
   uZoom: f32,
   uCanvasSize: vec2<f32>,
+  uCameraRot: vec2<f32>,
   uLightPos: vec2<f32>,
   uLightIntensity: f32,
   uLightRadius: f32,
@@ -31,6 +32,16 @@ struct VertexOut {
   @location(1) vScale: f32,
 }
 
+fn weedWorldToScreen(world: vec2<f32>) -> vec2<f32> {
+  let focus = uniforms.uCameraPos + uniforms.uCanvasSize / (2.0 * uniforms.uZoom);
+  let d = world - focus;
+  let rot = uniforms.uCameraRot;
+  return uniforms.uCanvasSize * 0.5 + vec2<f32>(
+    rot.x * d.x - rot.y * d.y,
+    rot.x * d.y + rot.y * d.x,
+  ) * uniforms.uZoom;
+}
+
 @vertex
 fn mainVert(
   @location(0) aPosition: vec2<f32>,
@@ -39,7 +50,7 @@ fn mainVert(
   var out: VertexOut;
   out.vWorldPos = aPosition;
   out.vScale = aScale;
-  let screenPos = (aPosition - uniforms.uCameraPos) * uniforms.uZoom;
+  let screenPos = weedWorldToScreen(aPosition);
   let clipPos = (screenPos / uniforms.uCanvasSize) * 2.0 - 1.0;
   out.position = vec4<f32>(clipPos.x, -clipPos.y, 0.0, 1.0);
   return out;

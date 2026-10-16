@@ -28,7 +28,6 @@ const {
 
 const SHATTER_MAX = 24;
 const EXPLODE_IMPULSE = 1500;
-const WORLD_H = ROWS * CELL;
 const _scratchVerts = [];
 const _scratchLocal = { x: 0, y: 0 };
 
@@ -41,11 +40,16 @@ function aabbOverlapCells(a, b) {
   return (x1 - x0 + 1) * (y1 - y0 + 1);
 }
 
+function Islands() {
+  return WorldGridManager.islandClass || TerrainIsland;
+}
+
 export class WorldGridManager extends GameObject {
   static serializable = false;
   static instances = [];
   static components = [];
   static forceProcessOnLogicWorker = 1;
+  static islandClass = TerrainIsland;
 
   onSpawned() {
     this.tool = 'draw';
@@ -62,10 +66,26 @@ export class WorldGridManager extends GameObject {
     this._extraShardBag = [];
     this._hitScratch = { kind: 0, x: 0, y: 0, entityIndex: -1, fixtureIndex: -1 };
     this._bodyHit = { hitX: 0, hitY: 0, fixtureIndex: -1, entityIndex: -1 };
-    WorldGrid.cols = COLS;
-    WorldGrid.rows = ROWS;
-    WorldGrid.cellSize = CELL;
-    WorldGrid.seedWorld(this.config?.seed ?? 7);
+    const disk = WorldGrid.disk;
+    if (disk) {
+      WorldGrid.cols = disk.cols;
+      WorldGrid.rows = disk.rows;
+      WorldGrid.cellSize = disk.cell || CELL;
+      WorldGrid.anchorX = disk.cx;
+      WorldGrid.anchorY = disk.cy;
+      WorldGrid.bedrock = disk.bedrock || 4;
+      WorldGrid.seedDisk(disk.cx, disk.cy, disk.radius);
+    } else {
+      WorldGridManager.islandClass = TerrainIsland;
+      WorldGrid.disk = null;
+      WorldGrid.anchorX = null;
+      WorldGrid.anchorY = null;
+      WorldGrid.gravityCenter = null;
+      WorldGrid.cols = COLS;
+      WorldGrid.rows = ROWS;
+      WorldGrid.cellSize = CELL;
+      WorldGrid.seedWorld(this.config?.seed ?? 7);
+    }
     // this._placeShip();
     this.rebuild(true);
   }
@@ -123,7 +143,7 @@ export class WorldGridManager extends GameObject {
         continue;
       }
       if (hit.kind !== SHOT_KIND_BODY) continue;
-      const island = TerrainIsland.get(hit.entityIndex);
+      const island = Islands().get(hit.entityIndex);
       if (!island) continue;
       const body = this._bodyHit;
       body.hitX = hit.x;
@@ -155,8 +175,8 @@ export class WorldGridManager extends GameObject {
       const box = this._fullDirtyBox;
       box.minX = 0;
       box.minY = 0;
-      box.maxX = COLS - 1;
-      box.maxY = ROWS - 1;
+      box.maxX = WorldGrid.cols - 1;
+      box.maxY = WorldGrid.rows - 1;
       dirty = box;
     } else {
       dirty = WorldGrid.consumeDirty(1);
@@ -322,7 +342,7 @@ export class WorldGridManager extends GameObject {
     if (!cen) return false;
     const local = WorldGrid.polysToLocal(built.polys, cen.x, cen.y);
     if (!local.length) return false;
-    const spawned = TerrainIsland.spawn({
+    const spawned = Islands().spawn({
       x: cen.x,
       y: cen.y,
       isStatic: false,
@@ -430,7 +450,7 @@ export class WorldGridManager extends GameObject {
         pool.pop();
         continue;
       }
-      const spawned = TerrainIsland.spawn({
+      const spawned = Islands().spawn({
         x: job.cen.x,
         y: job.cen.y,
         isStatic: true,
@@ -543,8 +563,9 @@ export class WorldGridManager extends GameObject {
   }
 
   _retargetStatic(rec, job) {
-    const start = TerrainIsland.startIndex | 0;
-    const inst = TerrainIsland.instances[rec.index - start];
+    const Island = Islands();
+    const start = Island.startIndex | 0;
+    const inst = Island.instances[rec.index - start];
     return !!(inst && inst.active && inst.retarget(job.cen.x, job.cen.y, job.local));
   }
 
@@ -573,7 +594,7 @@ export class WorldGridManager extends GameObject {
     this._despawnIndex(idx);
     this._removeDynamic(idx);
     this._removeStatic(idx);
-    TerrainIsland.spawnShardsFromWorld(shards, tint, vx, vy);
+    Islands().spawnShardsFromWorld(shards, tint, vx, vy);
     Box2d.explode({
       x: cx,
       y: cy,
@@ -593,8 +614,9 @@ export class WorldGridManager extends GameObject {
   }
 
   _eachIsland(fn) {
-    const start = TerrainIsland.startIndex | 0;
-    const end = TerrainIsland.endIndex | 0;
+    const Island = Islands();
+    const start = Island.startIndex | 0;
+    const end = Island.endIndex | 0;
     for (let idx = start; idx < end; idx++) {
       if (!Transform.active?.[idx]) continue;
       fn(idx);
@@ -647,15 +669,16 @@ export class WorldGridManager extends GameObject {
   }
 
   _despawnIndex(idx) {
-    const start = TerrainIsland.startIndex | 0;
-    const inst = TerrainIsland.instances[idx - start];
+    const Island = Islands();
+    const start = Island.startIndex | 0;
+    const inst = Island.instances[idx - start];
     if (inst && inst.active) inst.despawn();
   }
 
   _cullDynamics() {
     this._eachIsland((idx) => {
       if (RigidBody.static[idx]) return;
-      if (Transform.y[idx] > WORLD_H + 240) this._despawnIndex(idx);
+      if (Transform.y[idx] > WorldGrid.rows * WorldGrid.cellSize + 240) this._despawnIndex(idx);
     });
   }
 }

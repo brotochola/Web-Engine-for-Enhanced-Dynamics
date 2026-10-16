@@ -2,28 +2,82 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>WeedJS Demos</title>
   <style>
     #scene_list {
+      --top-inset: 0px;
       position: fixed;
-      top: 50vh;
-      left: 50vw;
-      transform: translate(-50%, -50%);
-      color: white;
+      inset: 0;
       z-index: 1000;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      height: 100dvh;
+      padding-top: max(calc(var(--top-inset) + 8px), env(safe-area-inset-top, 0px));
+      padding-right: max(12px, env(safe-area-inset-right, 0px));
+      padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+      padding-left: max(12px, env(safe-area-inset-left, 0px));
+      overflow: hidden;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    .scene_list_title {
+      margin: 0;
+      flex: 0 0 auto;
+      color: #8d8d8d;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    #scene_grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      max-width: 100%;
     }
 
     .scene_chooser_button {
-      margin: 10px;
-      width: 250px;
-      height: 40px;
-      background: #000;
-      color: white;
-      border: 1px solid white;
-      border-radius: 5px;
+      appearance: none;
+      box-sizing: border-box;
+      flex: 0 0 auto;
+      width: var(--btn-w, 180px);
+      height: var(--btn-h, 40px);
+      margin: 0;
+      padding: 0 10px;
+      background: #141414;
+      color: #f2f2f2;
+      border: 1px solid #3a3a3a;
+      border-radius: 7px;
       cursor: pointer;
-      font-size: 16px;
-      font-weight: bold;
+      font: 600 13px/calc(var(--btn-h, 40px) - 2px) system-ui, -apple-system, "Segoe UI", sans-serif;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .scene_chooser_button:hover {
+      background: #1c1c1c;
+      border-color: #7d7d7d;
+    }
+
+    .scene_chooser_button:focus-visible {
+      outline: 2px solid #d8d8d8;
+      outline-offset: 1px;
+    }
+
+    .scene_chooser_button:active {
+      background: #2a2a2a;
     }
   </style>
   <link rel="icon" href="/demos/favicon.ico" />
@@ -35,9 +89,7 @@
 
     const { GameEngine } = WEED;
     const params = new URLSearchParams(location.search);
-
-
-
+    const SCENE_BTN_GAP = 8;
 
     const game = new GameEngine({
       autoResize: true,
@@ -73,6 +125,7 @@
       { name: '🔥 Burning Boxes', url: '/demos/burningBoxesScene/burningBoxesScene.js', export: 'BurningBoxesScene' },
       { name: '⛰️ Destructible Terrain', url: '/demos/destructibleTerrainScene/destructibleTerrainScene.js' },
       { name: '🪐 Planet', url: '/demos/planetScene/planetScene.js' },
+      { name: '🪐 Planet Box2D', url: '/demos/planetPhysicsScene/planetPhysicsScene.js' },
       { name: '🔷 Mesh Gallery', url: '/demos/meshGalleryScene/meshGalleryScene.js' },
     ];
 
@@ -99,7 +152,6 @@
       return keys;
     }
 
-
     function findScene(query) {
       const want = query.trim().toLowerCase();
       if (!want) return null;
@@ -107,6 +159,64 @@
         if (sceneKeys(scenes[i]).has(want)) return scenes[i];
       }
       return null;
+    }
+
+    function pickSceneGrid(count, availW, availH) {
+      const maxW = 210;
+      const targetH = 40;
+      const minH = 24;
+      let best = null;
+      const maxCols = Math.min(count, Math.max(1, Math.floor((availW + SCENE_BTN_GAP) / (72 + SCENE_BTN_GAP))));
+      for (let cols = 1; cols <= maxCols; cols++) {
+        const rows = Math.ceil(count / cols);
+        const w = Math.min(maxW, Math.floor((availW - SCENE_BTN_GAP * (cols - 1)) / cols));
+        if (w < 72) continue;
+        const slack = availH - SCENE_BTN_GAP * (rows - 1);
+        if (slack <= 0) continue;
+        const h = Math.min(targetH, Math.floor(slack / rows));
+        if (h < minH) continue;
+        const gridW = cols * w + SCENE_BTN_GAP * (cols - 1);
+        const gridH = rows * h + SCENE_BTN_GAP * (rows - 1);
+        const aspect = gridW / gridH;
+        const score =
+          Math.abs(Math.log(aspect) - Math.log(1.7)) * 36 +
+          Math.max(0, 150 - w) * 5 +
+          (targetH - h) * 4;
+        if (!best || score < best.score) best = { cols, w, h, score };
+      }
+      if (best) return best;
+      const cols = Math.max(1, Math.min(count, Math.floor((availW + SCENE_BTN_GAP) / 64) || 1));
+      const rows = Math.ceil(count / cols);
+      return {
+        cols,
+        w: Math.max(1, Math.floor((availW - SCENE_BTN_GAP * (cols - 1)) / cols)),
+        h: Math.max(18, Math.floor((availH - SCENE_BTN_GAP * (rows - 1)) / rows)),
+      };
+    }
+
+    function layoutSceneList() {
+      const list = document.getElementById('scene_list');
+      const grid = document.getElementById('scene_grid');
+      if (!grid || list.clientWidth < 2 || list.clientHeight < 2) return;
+
+      const bar = document.querySelector('.debug-ui-header');
+      const barBottom = bar ? Math.ceil(bar.getBoundingClientRect().bottom) : 0;
+      list.style.setProperty('--top-inset', barBottom + 'px');
+
+      const cs = getComputedStyle(list);
+      const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+      const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+      const title = list.querySelector('.scene_list_title');
+      const titleGap = parseFloat(cs.rowGap || cs.gap) || 0;
+      const titleH = title ? title.offsetHeight : 0;
+      const availW = Math.max(0, Math.floor(list.clientWidth - padX) - 1);
+      const availH = Math.max(0, Math.floor(list.clientHeight - padY - titleH - titleGap) - 1);
+      const picked = pickSceneGrid(scenes.length, availW, availH);
+
+      grid.style.gap = SCENE_BTN_GAP + 'px';
+      grid.style.width = (picked.cols * picked.w + SCENE_BTN_GAP * (picked.cols - 1)) + 'px';
+      grid.style.setProperty('--btn-w', picked.w + 'px');
+      grid.style.setProperty('--btn-h', picked.h + 'px');
     }
 
     const requested = params.get('scene');
@@ -119,14 +229,33 @@
     if (direct) {
       startScene(direct);
     } else {
+      const list = document.getElementById('scene_list');
+      const title = document.createElement('p');
+      title.className = 'scene_list_title';
+      title.textContent = 'WeedJS';
+      list.appendChild(title);
+
+      const grid = document.createElement('div');
+      grid.id = 'scene_grid';
+      list.appendChild(grid);
+
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i];
         const button = document.createElement('button');
+        button.type = 'button';
         button.className = 'scene_chooser_button';
-        button.onclick = () => startScene(scene);
         button.textContent = scene.name;
-        document.getElementById('scene_list').appendChild(button);
-        if (i % 2 == 1) document.getElementById('scene_list').appendChild(document.createElement('br'));
+        button.title = scene.name;
+        button.onclick = () => startScene(scene);
+        grid.appendChild(button);
+      }
+
+      layoutSceneList();
+      window.addEventListener('resize', layoutSceneList);
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', layoutSceneList);
+      const debugBar = document.querySelector('.debug-ui-header');
+      if (debugBar && typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(layoutSceneList).observe(debugBar);
       }
     }
   </script>

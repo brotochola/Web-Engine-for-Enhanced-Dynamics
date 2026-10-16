@@ -153,7 +153,7 @@ export class TerrainIsland extends GameObject {
       for (let t = 0; t < islands[i].length; t++) {
         world.push(TerrainIsland.localToWorldPoly(idx, islands[i][t]));
       }
-      TerrainIsland.spawnIslandFromWorldPolys(world, tint, vx0, vy0);
+      this.constructor.spawnIslandFromWorldPolys(world, tint, vx0, vy0);
     }
 
     if (!applyPolysFlat(this.collider, islands[best])) {
@@ -182,7 +182,7 @@ export class TerrainIsland extends GameObject {
     if (!cen) return;
     const local = WorldGrid.polysToLocal(worldPolys, cen.x, cen.y);
     if (!local.length) return;
-    const spawned = TerrainIsland.spawn({
+    const spawned = this.spawn({
       x: cen.x,
       y: cen.y,
       isStatic: false,
@@ -204,7 +204,7 @@ export class TerrainIsland extends GameObject {
       if (!cen) continue;
       const local = WorldGrid.polysToLocal([poly], cen.x, cen.y);
       if (!local.length) continue;
-      const spawned = TerrainIsland.spawn({
+      const spawned = this.spawn({
         x: cen.x,
         y: cen.y,
         isStatic: false,
@@ -281,6 +281,4 @@ export class TerrainIsland extends GameObject {
     }
     return out;
   }
-
-  tick() { }
 }

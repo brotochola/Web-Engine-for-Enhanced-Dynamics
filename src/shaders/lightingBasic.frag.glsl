@@ -4,6 +4,7 @@ uniform vec2 uCameraPos;
 uniform float uZoom;
 uniform vec2 uViewport;
 uniform vec2 uFullCanvasSize;
+uniform vec2 uCameraRot;
 
 uniform sampler2D uLightData;
 uniform float uLightTexWidth;
@@ -17,12 +18,21 @@ uniform float uFlipY;
 uniform sampler2D uShadowMap;
 uniform float uShadowComposite;
 
+vec2 weedScreenToWorld(vec2 screenPos) {
+  vec2 focus = uCameraPos + uFullCanvasSize / (2.0 * uZoom);
+  vec2 sxy = screenPos - uFullCanvasSize * 0.5;
+  return focus + vec2(
+    uCameraRot.x * sxy.x + uCameraRot.y * sxy.y,
+    -uCameraRot.y * sxy.x + uCameraRot.x * sxy.y
+  ) / uZoom;
+}
+
 void main() {
   float y = gl_FragCoord.y;
   if (uFlipY > 0.5) y = uViewport.y - y;
   vec2 normCoord = vec2(gl_FragCoord.x, y) / uViewport;
   vec2 screenPos = normCoord * uFullCanvasSize;
-  vec2 fragWorld = (screenPos / uZoom) + uCameraPos;
+  vec2 fragWorld = weedScreenToWorld(screenPos);
   vec3 totalLight = vec3(uBaseAmbient);
   vec3 sunColor = vec3(uSunR, uSunG, uSunB);
   totalLight += sunColor * uSunIntensity;

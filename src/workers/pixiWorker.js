@@ -2250,6 +2250,7 @@ LIGHTING SYSTEM SETUP
           value: new Float32Array([this.canvasWidth, this.canvasHeight]),
           type: 'vec2<f32>',
         },
+        uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
         uInvResolution: { value: 1.0 / this.lightingResolution, type: 'f32' },
         uLightTexWidth: { value: maxLights, type: 'f32' },
         uLightCount: { value: 0, type: 'i32' },
@@ -2562,12 +2563,24 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     return this._visPolyMeshes[index];
   }
 
+  _stampLightCamera(uniforms, cameraX, cameraY, zoom) {
+    uniforms.uCameraPos[0] = cameraX;
+    uniforms.uCameraPos[1] = cameraY;
+    uniforms.uZoom = zoom;
+    const rc = uniforms.uCameraRot;
+    if (!rc) return;
+    const rot = this._renderCameraRot || 0;
+    rc[0] = Math.cos(rot);
+    rc[1] = Math.sin(rot);
+  }
+
   _lightUniformResources(attenScale) {
     return {
       uniforms: {
         uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
         uZoom: { value: 1.0, type: 'f32' },
         uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
+        uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
         uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
         uLightIntensity: { value: 1000, type: 'f32' },
         uLightRadius: { value: 1e6, type: 'f32' },
@@ -2885,9 +2898,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
       // Update shader uniforms
       const uniforms = shader.resources.uniforms.uniforms;
-      uniforms.uCameraPos[0] = cameraX;
-      uniforms.uCameraPos[1] = cameraY;
-      uniforms.uZoom = zoom;
+      this._stampLightCamera(uniforms, cameraX, cameraY, zoom);
       uniforms.uCanvasSize[0] = this.canvasWidth;
       uniforms.uCanvasSize[1] = this.canvasHeight;
       uniforms.uLightPos[0] = lx;
@@ -2916,9 +2927,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       dp[7] = lightY + radius;
       discPos.update(32);
       const du = disc.shader.resources.uniforms.uniforms;
-      du.uCameraPos[0] = cameraX;
-      du.uCameraPos[1] = cameraY;
-      du.uZoom = zoom;
+      this._stampLightCamera(du, cameraX, cameraY, zoom);
       du.uCanvasSize[0] = this.canvasWidth;
       du.uCanvasSize[1] = this.canvasHeight;
       du.uLightPos[0] = lx;
@@ -3150,9 +3159,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           }
 
           const uniforms = shader.resources.uniforms.uniforms;
-          uniforms.uCameraPos[0] = cameraX;
-          uniforms.uCameraPos[1] = cameraY;
-          uniforms.uZoom = zoom;
+          this._stampLightCamera(uniforms, cameraX, cameraY, zoom);
           uniforms.uCanvasSize[0] = this.canvasWidth;
           uniforms.uCanvasSize[1] = this.canvasHeight;
           uniforms.uLightPos[0] = lx;
@@ -3168,9 +3175,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         if (wedgeVerts > 0 && this._wedgeMesh) {
           this._uploadWedge();
           const wu = this._wedgeMesh.shader.resources.uniforms.uniforms;
-          wu.uCameraPos[0] = cameraX;
-          wu.uCameraPos[1] = cameraY;
-          wu.uZoom = zoom;
+          this._stampLightCamera(wu, cameraX, cameraY, zoom);
           wu.uCanvasSize[0] = this.canvasWidth;
           wu.uCanvasSize[1] = this.canvasHeight;
           wu.uLightPos[0] = lx;
@@ -3279,9 +3284,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           uvBuf.update();
 
           const uniforms = shader.resources.uniforms.uniforms;
-          uniforms.uCameraPos[0] = cameraX;
-          uniforms.uCameraPos[1] = cameraY;
-          uniforms.uZoom = zoom;
+          this._stampLightCamera(uniforms, cameraX, cameraY, zoom);
           uniforms.uCanvasSize[0] = this.canvasWidth;
           uniforms.uCanvasSize[1] = this.canvasHeight;
           uniforms.uLightPos[0] = lx;
@@ -3357,6 +3360,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
             uZoom: { value: 1.0, type: 'f32' },
             uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
+            uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
             uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
             uLightIntensity: { value: 1000, type: 'f32' },
             uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
@@ -3511,9 +3515,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const cameraY = this._renderCameraY;
 
     // Update camera uniforms (vec2 types)
-    uniformGroup.uniforms.uCameraPos[0] = cameraX;
-    uniformGroup.uniforms.uCameraPos[1] = cameraY;
-    uniformGroup.uniforms.uZoom = zoom;
+    this._stampLightCamera(uniformGroup.uniforms, cameraX, cameraY, zoom);
     this._applyLightingViewport(this.canvasWidth, this.canvasHeight);
 
     const lightData = this._lightDataFloats;

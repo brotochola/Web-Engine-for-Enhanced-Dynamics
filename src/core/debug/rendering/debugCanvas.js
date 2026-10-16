@@ -22,7 +22,7 @@ export class DebugCanvas {
     this._hotRebindLogged = false;
 
     // Scratch camera — mutated each frame; matches pixi renderQueueCamera when ready
-    this._cam = { x: 0, y: 0, zoom: 1 };
+    this._cam = { x: 0, y: 0, zoom: 1, rotation: 0 };
     this._rqSync = null;
     this._rqCamA = null;
     this._rqCamB = null;
@@ -220,6 +220,7 @@ export class DebugCanvas {
         cam.zoom = view[0];
         cam.x = view[1];
         cam.y = view[2];
+        cam.rotation = view.length > 3 ? (view[3] || 0) : 0;
         this._queuePoseReady = poseReady ? poseReady[0] : 0;
         return cam;
       }
@@ -228,7 +229,27 @@ export class DebugCanvas {
     cam.zoom = sc?.zoom || 1;
     cam.x = sc?.x || 0;
     cam.y = sc?.y || 0;
+    cam.rotation = sc?.rotation || 0;
     return cam;
+  }
+
+  /**
+   * Rotate already-projected screen points around the canvas center.
+   * Angle 0 leaves the context alone. Same pivot as the world camera.
+   */
+  _beginWorldCamera(ctx, canvas, camera) {
+    const rot = camera.rotation || 0;
+    if (!rot) return false;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const halfW = canvas.width * 0.5;
+    const halfH = canvas.height * 0.5;
+    ctx.setTransform(
+      c, s, -s, c,
+      halfW - c * halfW + s * halfH,
+      halfH - s * halfW - c * halfH,
+    );
+    return true;
   }
 
   // ------- RAF loop -------
@@ -300,6 +321,7 @@ export class DebugCanvas {
 
   clear() {
     if (this._ctx && this._canvas) {
+      this._ctx.setTransform(1, 0, 0, 1, 0, 0);
       this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
     }
   }
@@ -321,8 +343,10 @@ export class DebugCanvas {
     const camera = this._latchRenderCamera(scene);
     const zoom = camera.zoom;
 
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    const rolled = this._beginWorldCamera(ctx, canvas, camera);
     this._pinDisplayPose(this._queuePoseReady);
     const pose = this._colliderPose;
 
@@ -387,6 +411,7 @@ export class DebugCanvas {
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY))
       this.physics.drawSelectedEntity(ctx, canvas, camera, zoom, flags, pose);
 
+    if (rolled) ctx.setTransform(1, 0, 0, 1, 0, 0);
     this._drawHud(ctx, canvas, camera, zoom);
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH))
       this._drawFpsGraph(ctx, canvas, scene);

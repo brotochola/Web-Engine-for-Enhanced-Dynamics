@@ -18,6 +18,7 @@ struct LightingUniforms {
   uZoom: f32,
   uViewport: vec2<f32>,
   uFullCanvasSize: vec2<f32>,
+  uCameraRot: vec2<f32>,
   uInvResolution: f32,
   uLightTexWidth: f32,
   uLightCount: i32,
@@ -45,6 +46,16 @@ fn mainVert(@location(0) aPosition: vec2<f32>) -> VertexOut {
   return out;
 }
 
+fn weedScreenToWorld(screenPos: vec2<f32>) -> vec2<f32> {
+  let focus = uniforms.uCameraPos + uniforms.uFullCanvasSize / (2.0 * uniforms.uZoom);
+  let sxy = screenPos - uniforms.uFullCanvasSize * 0.5;
+  let rot = uniforms.uCameraRot;
+  return focus + vec2<f32>(
+    rot.x * sxy.x + rot.y * sxy.y,
+    -rot.y * sxy.x + rot.x * sxy.y,
+  ) / uniforms.uZoom;
+}
+
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   // Framebuffer origin is top-left (WebGPU + Pixi Y-down). Same as GLSL
@@ -54,7 +65,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   if (uniforms.uFlipY > 0.5) { y = vp.y - y; }
   let normCoord = vec2<f32>(in.position.x, y) / vp;
   let screenPos = normCoord * uniforms.uFullCanvasSize;
-  let fragWorld = (screenPos / uniforms.uZoom) + uniforms.uCameraPos;
+  let fragWorld = weedScreenToWorld(screenPos);
   var totalLight = vec3<f32>(uniforms.uBaseAmbient);
   totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
   let nLights = uniforms.uLightCount;

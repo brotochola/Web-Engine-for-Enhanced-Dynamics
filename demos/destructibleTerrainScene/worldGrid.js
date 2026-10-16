@@ -315,6 +315,11 @@ export class WorldGrid extends SharedResource {
     seedWorld(this, seed | 0);
   }
 
+  /** Filled disk. anchorX/anchorY make that core the bedrock instead of the map border. */
+  static seedDisk(cx, cy, radius) {
+    seedDisk(this, cx | 0, cy | 0, radius | 0);
+  }
+
   static stampDemoShapes() {
     stampDemoShapes(this);
   }
@@ -1493,7 +1498,7 @@ function extractIslands(field, box, opts) {
 
       const nodeCount = nodeFill - nodeStart;
       if (!grounded) {
-        grounded = isGroundedNodes(cols, lastX, lastY, nodeIdx, nodeStart, nodeCount);
+        grounded = isGroundedNodes(field, cols, lastX, lastY, nodeIdx, nodeStart, nodeCount);
       }
 
       let rec = _islandsOut[islandCount];
@@ -1757,6 +1762,27 @@ function seedWorld(field, seed) {
   field.markAllDirty();
 }
 
+function seedDisk(field, cx, cy, radius) {
+  const cols = field.cols;
+  const rows = field.rows;
+  const amount = field.amount;
+  const material = field.material;
+  amount.fill(0);
+  material.fill(0);
+  const r2 = radius * radius;
+  for (let y = 0; y < rows; y++) {
+    const dy = y - cy;
+    for (let x = 0; x < cols; x++) {
+      const dx = x - cx;
+      if (dx * dx + dy * dy > r2) continue;
+      const i = y * cols + x;
+      amount[i] = 1;
+      material[i] = MAT_DIRT;
+    }
+  }
+  field.markAllDirty();
+}
+
 function stampFilled(field, x0, y0, x1, y1, mat) {
   const cols = field.cols;
   const rows = field.rows;
@@ -2005,12 +2031,22 @@ function packedBox(field, packed) {
   return box;
 }
 
-function isGroundedNodes(cols, lastX, lastY, packed, start, count) {
+function touchesBedrock(field, x, y, lastX, lastY) {
+  if (field.anchorX != null) {
+    const dx = x - (field.anchorX | 0);
+    const dy = y - (field.anchorY | 0);
+    const br = field.bedrock > 0 ? field.bedrock : 3;
+    return dx * dx + dy * dy <= br * br;
+  }
+  return x === 0 || x === lastX || y === lastY;
+}
+
+function isGroundedNodes(field, cols, lastX, lastY, packed, start, count) {
   for (let i = 0; i < count; i++) {
     const p = packed[start + i];
     const x = p % cols;
     const y = (p / cols) | 0;
-    if (x === 0 || x === lastX || y === lastY) return true;
+    if (touchesBedrock(field, x, y, lastX, lastY)) return true;
   }
   return false;
 }
@@ -2019,7 +2055,7 @@ function isGrounded(field, island) {
   if (!island || !island.nodeCount) return false;
   if (island.grounded) return true;
   const cols = field.cols;
-  return isGroundedNodes(cols, cols - 1, field.rows - 1, island.nodeIdx, island.nodeStart, island.nodeCount);
+  return isGroundedNodes(field, cols, cols - 1, field.rows - 1, island.nodeIdx, island.nodeStart, island.nodeCount);
 }
 
 function touchesChunkEdge(field, island, box) {
@@ -2050,10 +2086,12 @@ function isGroundedAt(field, sx, sy) {
   if (amount[sy * cols + sx] < ISO) return false;
   const lastX = cols - 1;
   const lastY = rows - 1;
-  if (sx === 0 || sx === lastX || sy === lastY) return true;
-  let yDown = sy;
-  while (yDown < lastY && amount[(yDown + 1) * cols + sx] >= ISO) yDown++;
-  if (yDown === lastY) return true;
+  if (field.anchorX == null) {
+    if (sx === 0 || sx === lastX || sy === lastY) return true;
+    let yDown = sy;
+    while (yDown < lastY && amount[(yDown + 1) * cols + sx] >= ISO) yDown++;
+    if (yDown === lastY) return true;
+  } else if (touchesBedrock(field, sx, sy, lastX, lastY)) return true;
 
   const n = cols * rows;
   ensureExtractScratch(field, n);
@@ -2073,7 +2111,7 @@ function isGroundedAt(field, sx, sy) {
     const packed = queue[qh++];
     const x = packed % cols;
     const y = (packed / cols) | 0;
-    if (x === 0 || x === lastX || y === lastY) return true;
+    if (touchesBedrock(field, x, y, lastX, lastY)) return true;
     if (x + 1 <= lastX) {
       const nIdx = packed + 1;
       if (visited[nIdx] !== floodId && amount[nIdx] >= ISO) {
