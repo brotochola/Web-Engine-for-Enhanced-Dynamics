@@ -6,6 +6,14 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Thursday 15 October 2026 (later) — A Planet You Can Dig
+
+I wanted the round planet from the old page. A million cells, a brush, a walker that sticks to the dirt, and water that sits in the holes. Box2D cannot be that grid. The ground is a bit array the scene owns. The picture is one world rectangle, and the scene shader colors it. WebGL and WebGPU each have a file. The engine does not know it is a planet. It copies bytes into a picture.
+
+The call is the same shape as a uniform. `Layer.get('planet').updateTexture('cells', PlanetGrid.cells, x, y, width, height)`. The name is the picture. The array is the shared field the game just wrote. The rectangle is the part that changed. A private array, one thread only, is rejected. A compute pass that already writes that name is rejected too.
+
+I asked where the time went. A stress picture, the whole thing every tick, put 89 % of the renderer inside the copy to the card. The JavaScript around that call did not show up. Asking for the one row that changed took the renderer from about 10 ms to about 0.17 ms. The brush already asks for the dirty chunk. There was no engine edit left in that trace.
+
 ## Thursday 15 October 2026 — A Mixer I Can Hear, and Then See
 
 I wanted guns, voices, and music to be different things. One gain on the master was a mute switch with extra steps. A scene now names up to eight buses. Each one has a volume, a pan, a mute, a cap on how many voices it will keep, and a compressor. A louder shot on a full bus replaces the quietest voice on that bus instead of dying in a queue of slots the mixer will never play. The master sits after the buses, with its own compressor. `play` takes the bus name. `SoundManager.channel('sfx')` is the handle.

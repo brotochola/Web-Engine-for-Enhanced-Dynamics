@@ -9,7 +9,6 @@ const PH = 24;
 const INV = 1 / CELL;
 const SPEED = 240;
 const JUMP = 560;
-const STEP = 8 * CELL;
 
 const lxs = [];
 const lys = [];
@@ -67,6 +66,7 @@ export class Walker extends GameObject {
     this.walkerMotion.uy = -1;
     this.facing = 1;
     this.grounded = false;
+    this.stepTolerance = 8 * CELL;
     this.vis = 0;
     this.cam = 0;
   }
@@ -93,7 +93,7 @@ export class Walker extends GameObject {
     const rx = f[2];
     const ry = f[3];
 
-    for (let k = 0; k < 120 && hit(x, y, rx, ry, ux, uy); k++) {
+    if (hit(x, y, rx, ry, ux, uy)) {
       x += ux * 2;
       y += uy * 2;
     }
@@ -131,7 +131,8 @@ export class Walker extends GameObject {
       } else {
         let ok = false;
         if (wasG) {
-          for (let s = 2; s <= STEP; s += 2) {
+          const step = this.stepTolerance;
+          for (let s = 2; s <= step; s += 2) {
             if (!hit(nx + ux * s, ny + uy * s, rx, ry, ux, uy)) {
               x = nx + ux * s;
               y = ny + uy * s;
@@ -147,7 +148,8 @@ export class Walker extends GameObject {
 
     let g = vu <= 0.01 && hit(x - ux * 3, y - uy * 3, rx, ry, ux, uy);
     if (!g && wasG && vu <= 0.01) {
-      for (let s = 1; s <= STEP; s++) {
+      const step = this.stepTolerance;
+      for (let s = 1; s <= step; s++) {
         if (hit(x - ux * (s + 1), y - uy * (s + 1), rx, ry, ux, uy)) {
           x -= ux * s;
           y -= uy * s;

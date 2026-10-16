@@ -1334,6 +1334,7 @@ class PixiRenderer extends AbstractWorker {
     opts.snapZoom = this._renderZoom;
     opts.snapCameraX = this._renderCameraX;
     opts.snapCameraY = this._renderCameraY;
+    opts.cameraRot = 0;
   }
 
   _bindPixiPackWriters() {
@@ -6260,6 +6261,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           opts.cameraX = this._renderCameraX;
           opts.cameraY = this._renderCameraY;
           opts.resolution = cl.resolution || 1.0;
+          opts.cameraRot = this._renderCameraRot || 0;
+          opts.canvasW = this.canvasWidth || 0;
+          opts.canvasH = this.canvasHeight || 0;
         } else {
           opts.space = BATCH_SPACE.WORLD;
           opts.zoom = 1;

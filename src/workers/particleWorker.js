@@ -367,6 +367,7 @@ class ParticleWorker extends AbstractWorker {
     this.globalEntityCount = 0;
     this._queryRigidBody = null;
     this.deriveSpeed = false;
+    this.cellSleeping = false;
     this.deriveSpeedByType = null;
 
     this._rbActive = null;
@@ -573,6 +574,7 @@ class ParticleWorker extends AbstractWorker {
     // Sway decimation config
     this.swayDecimation = data.config?.decoration?.swayDecimation ?? DECORATION_DEFAULTS.swayDecimation;
     this.deriveSpeed = data.config?.particle?.deriveSpeed === true;
+    this.cellSleeping = data.config?.spatial?.cellSleeping === true;
     const registered = this.registeredClasses || [];
     this.deriveSpeedByType = new Uint8Array(registered.length);
     for (const classInfo of registered) {
@@ -705,8 +707,7 @@ class ParticleWorker extends AbstractWorker {
     // Update derived properties (speed). Sleeping: Box2D → RigidBody.sleeping
     this.updateDerivedProperties();
 
-    // Update cell sleeping states
-    this.updateCellSleepingStates();
+    if (this.cellSleeping) this.updateCellSleepingStates();
   }
 
   // ========================================
@@ -1858,7 +1859,7 @@ class ParticleWorker extends AbstractWorker {
     const entityType = Transform.entityType;
     const deriveSpeedByType = this.deriveSpeedByType;
 
-        const physicsEntities = Query.queryActiveEntities(this._queryRigidBody);
+    const physicsEntities = Query.queryActiveEntities(this._queryRigidBody);
 
     for (let idx = 0; idx < physicsEntities.length; idx++) {
       const i = physicsEntities[idx];

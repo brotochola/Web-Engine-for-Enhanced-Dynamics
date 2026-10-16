@@ -1,5 +1,8 @@
-// Bit planet. No Box2D. Walker probes bits. Drops separate through the spatial hash.
-// Z fill, X erase, [ ] brush, Q pour, A/D walk, W/space jump. Click paints.
+// Round planet. No Box2D. The ground is PlanetGrid, a bit array the scene owns.
+// The walker probes those bits. Drops separate in the spatial hash and draw as metaballs.
+// The planet picture is one world rectangle. The manager copies dirty chunks with
+// Layer.get('planet').updateTexture('cells', PlanetGrid.cells, x, y, width, height).
+// Z fill, X erase, [ ] brush, Q pour, A/D walk, W or space jump. Click paints.
 
 import { PlanetManager } from './gameObjects/planetManager.js';
 import { Walker } from './gameObjects/walker.js';
@@ -7,7 +10,7 @@ import { WaterDrop } from './gameObjects/waterDrop.js';
 import { PlanetGrid, CELL, GRID, PLANET_RADIUS } from './planetGrid.js';
 import WEED from '/src/index.js';
 
-const { Scene, Camera } = WEED;
+const { Scene, Camera, BLEND_MODES } = WEED;
 
 const WORLD = GRID * CELL;
 const PUDDLE = 120;
@@ -25,9 +28,9 @@ export class PlanetScene extends Scene {
     },
     spatial: {
       numberOfSpatialWorkers: 1,
-      cellSize: 8,
-      maxEntitiesPerCell: 16,
-      maxNeighbors: 32,
+      cellSize: 32,
+      maxEntitiesPerCell: 128,
+      maxNeighbors: 128,
       neighborTickInterval: 1,
       neighborReuseSkin: 0,
       noLimitFPS: false,
@@ -56,6 +59,7 @@ export class PlanetScene extends Scene {
     },
 
     layers: {
+      // Ground picture. The fragment reads `cells`. The camera, including roll, moves the mesh.
       planet: {
         zIndex: 1,
         shader: {
@@ -80,12 +84,34 @@ export class PlanetScene extends Scene {
           },
         },
       },
+      // Soft disks added together, then a water body. Above the ground, under the walker.
+      water: {
+        zIndex: 2.5,
+        blendMode: BLEND_MODES.NORMAL,
+        resolution: 1,
+        maxItems: 2000,
+        ySorting: false,
+        shader: {
+          fragment: 'planetWater',
+          containerBlend: BLEND_MODES.ADD,
+          uniforms: {
+            uCutoff: { value: 0.18, type: 'f32' },
+            uRim: { value: 0.32, type: 'f32' },
+            uDepth: { value: 0.45, type: 'f32' },
+            uBodyAlpha: { value: 0.88, type: 'f32' },
+            uEdgeAlpha: { value: 0.55, type: 'f32' },
+          },
+        },
+      },
     },
   };
 
   static assets = {
     textures: {
       square: '/demos/img/10_10_square.png',
+    },
+    shaders: {
+      planetWater: '/demos/planetScene/shaders/planetWater.frag',
     },
   };
 

@@ -300,9 +300,23 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     let y = rqY[i];
     let sx = rqScaleX[i];
     let sy = rqScaleY[i];
+    let rc = rqRotC[i];
+    let rs = rqRotS[i];
     if (useScreen) {
-      x = (x - cameraX) * screenScale;
-      y = (y - cameraY) * screenScale;
+      if (ctx.cameraRot) {
+        const c = ctx.camC;
+        const s = ctx.camS;
+        const dx = x - ctx.focusX;
+        const dy = y - ctx.focusY;
+        x = ctx.halfW + (dx * c - dy * s) * screenScale;
+        y = ctx.halfH + (dx * s + dy * c) * screenScale;
+        const nrc = rc * c - rs * s;
+        rs = rs * c + rc * s;
+        rc = nrc;
+      } else {
+        x = (x - cameraX) * screenScale;
+        y = (y - cameraY) * screenScale;
+      }
       sx *= screenScale;
       sy *= screenScale;
     }
@@ -333,8 +347,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     dst[base + 3] = sy;
     dst[base + 4] = rqAnchorX[i];
     dst[base + 5] = rqAnchorY[i];
-    dst[base + 6] = rqRotC[i];
-    dst[base + 7] = rqRotS[i];
+    dst[base + 6] = rc;
+    dst[base + 7] = rs;
     dst[base + 8] = depth;
     dstU32[base + 9] = packed >>> 0;
     dst[base + 10] = rqTextureId[i];
@@ -394,6 +408,27 @@ export function makePackContext(q, opts, capacity, out) {
   ctx.cameraX = cameraX;
   ctx.cameraY = cameraY;
   ctx.screenScale = screenScale;
+  const rot = o.cameraRot || 0;
+  ctx.cameraRot = rot;
+  if (rot && useScreen) {
+    const z = zoom || 1;
+    const canvasW = o.canvasW || 0;
+    const canvasH = o.canvasH || 0;
+    const res = resolution || 1;
+    ctx.camC = Math.cos(rot);
+    ctx.camS = Math.sin(rot);
+    ctx.focusX = cameraX + canvasW / (2 * z);
+    ctx.focusY = cameraY + canvasH / (2 * z);
+    ctx.halfW = canvasW * 0.5 * res;
+    ctx.halfH = canvasH * 0.5 * res;
+  } else {
+    ctx.camC = 1;
+    ctx.camS = 0;
+    ctx.focusX = 0;
+    ctx.focusY = 0;
+    ctx.halfW = 0;
+    ctx.halfH = 0;
+  }
   ctx.typeArr = typeArr;
   ctx.includeType = includeType;
   ctx.exclude0 = exclude0;

@@ -415,6 +415,11 @@ export const SPATIAL_DEFAULTS = Object.freeze({
    * 1 = every frame (off). >1 amortizes cell-walk like logic tickInterval.
    */
   neighborTickInterval: 1,
+  /**
+   * Particle worker writes Grid.cellSleepingData each frame (Sleep Cells overlay).
+   * Production spatial does not read it. Off skips that full-grid scan.
+   */
+  cellSleeping: false,
 });
 
 // ============================================================================

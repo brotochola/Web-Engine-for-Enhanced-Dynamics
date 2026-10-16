@@ -12,10 +12,12 @@ const {
   ShapeType,
 } = WEED;
 
-const REST = 8;
+const REST = 16;
 const REST2 = REST * REST;
-const WALKER_REACH = 18;
+const WALKER_REACH = 14;
+const PUSH_MAX = 1.5;
 const INV = 1 / CELL;
+const DRAG = 6;
 
 export class WaterDrop extends GameObject {
   static components = [SpriteRenderer, Collider, WalkerMotion];
@@ -23,10 +25,12 @@ export class WaterDrop extends GameObject {
   static _sy = null;
 
   onSpawned(spawnConfig = {}) {
-    this.setSprite('square');
+    this.setSprite('_metaball');
     this.setAnchor(0.5, 0.5);
-    this.setScale(0.8);
-    this.setTint(0x3aa0ff);
+    this.setScale(0.5);
+    this.setAlpha(0.45);
+    this.setTint(0xffffff);
+    this.setLayer('water');
     this.x = spawnConfig.x ?? 0;
     this.y = spawnConfig.y ?? 0;
     const i = this.index;
@@ -65,6 +69,7 @@ export class WaterDrop extends GameObject {
     const sy = WaterDrop._sy;
 
     const dt = dtRatio > 0 ? dtRatio / 60 : 0;
+    const damp = Math.exp(-DRAG * dt);
     const pcx = PlanetGrid.cx * CELL;
     const pcy = PlanetGrid.cy * CELL;
 
@@ -75,14 +80,42 @@ export class WaterDrop extends GameObject {
       const uy = f[1];
       const rx = f[2];
       const ry = f[3];
-      const vr = vxs[i] * rx + vys[i] * ry;
-      const vu = WalkerMotion.gravity(vxs[i] * ux + vys[i] * uy, dt);
-      const vx = rx * vr + ux * vu;
-      const vy = ry * vr + uy * vu;
+      const vr = (vxs[i] * rx + vys[i] * ry) * damp;
+      const vu = WalkerMotion.gravity(vxs[i] * ux + vys[i] * uy, dt) * damp;
+      let x = xs[i];
+      let y = ys[i];
+      if (blocked(x, y)) {
+        x += ux * 2;
+        y += uy * 2;
+      }
+      let vx = rx * vr + ux * vu;
+      let vy = ry * vr + uy * vu;
+      const dist = Math.hypot(vx, vy) * dt;
+      const steps = Math.max(1, Math.ceil(dist / 2));
+      const sdt = dt / steps;
+      for (let s = 0; s < steps; s++) {
+        const nx = x + vx * sdt;
+        const ny = y + vy * sdt;
+        if (!blocked(nx, ny)) {
+          x = nx;
+          y = ny;
+          continue;
+        }
+        if (!blocked(nx, y)) {
+          x = nx;
+          vy = 0;
+        } else if (!blocked(x, ny)) {
+          y = ny;
+          vx = 0;
+        } else {
+          vx = 0;
+          vy = 0;
+        }
+      }
+      sx[i] = x;
+      sy[i] = y;
       vxs[i] = vx;
       vys[i] = vy;
-      sx[i] = xs[i] + vx * dt;
-      sy[i] = ys[i] + vy * dt;
     }
 
     WaterDrop._separate(list, n, sx, sy, types, dropType);
@@ -90,7 +123,6 @@ export class WaterDrop extends GameObject {
 
     for (let k = 0; k < n; k++) {
       const i = list[k];
-      pushOutOfBits(i, sx, sy, vxs, vys, pcx, pcy);
       xs[i] = sx[i];
       ys[i] = sy[i];
     }
@@ -104,7 +136,6 @@ export class WaterDrop extends GameObject {
       const i = list[k];
       let px = 0;
       let py = 0;
-      let near = 0;
       const nc = Grid.getNeighborCount(i);
       for (let n = 0; n < nc; n++) {
         const j = Grid.getNeighbor(i, n);
@@ -114,85 +145,44 @@ export class WaterDrop extends GameObject {
         const d2 = dx * dx + dy * dy;
         if (d2 >= REST2 || d2 < 1e-8) continue;
         const d = Math.sqrt(d2);
-        const push = ((REST - d) * 0.5) / d;
+        const push = ((REST - d) * 0.35) / d;
         px += dx * push;
         py += dy * push;
-        near++;
       }
       if (walker >= 0) {
         const dx = sx[i] - wx;
         const dy = sy[i] - wy;
         const d2 = dx * dx + dy * dy;
-        if (d2 < WALKER_REACH * WALKER_REACH && d2 > 1e-8) {
+        const reach2 = WALKER_REACH * WALKER_REACH;
+        if (d2 < reach2 && d2 > 1e-8) {
           const d = Math.sqrt(d2);
-          const push = (WALKER_REACH - d) / d;
+          const push = Math.min(PUSH_MAX, WALKER_REACH - d) / d;
           px += dx * push;
           py += dy * push;
         }
       }
-      if (near > 0) {
-        const plen = Math.hypot(px, py);
-        if (plen > 1e-6) {
-          const extra = near * 0.08;
-          px += (px / plen) * extra;
-          py += (py / plen) * extra;
-        }
+      if (px > PUSH_MAX) px = PUSH_MAX;
+      else if (px < -PUSH_MAX) px = -PUSH_MAX;
+      if (py > PUSH_MAX) py = PUSH_MAX;
+      else if (py < -PUSH_MAX) py = -PUSH_MAX;
+      const qx = sx[i] + px;
+      const qy = sy[i] + py;
+      if (!blocked(qx, qy)) {
+        sx[i] = qx;
+        sy[i] = qy;
       }
-      if (px > 8) px = 8;
-      else if (px < -8) px = -8;
-      if (py > 8) py = 8;
-      else if (py < -8) py = -8;
-      sx[i] += px;
-      sy[i] += py;
     }
   }
 }
 
-function pushOutOfBits(i, sx, sy, vxs, vys, pcx, pcy) {
-  let x = sx[i];
-  let y = sy[i];
-  let vx = vxs[i];
-  let vy = vys[i];
-  let hit = false;
-  for (let s = 0; s < 8; s++) {
-    const gx = Math.floor(x * INV);
-    const gy = Math.floor(y * INV);
-    if (!PlanetGrid.get(gx, gy)) break;
-    hit = true;
-    let nx = 0;
-    let ny = 0;
-    if (!PlanetGrid.get(gx + 1, gy)) nx += 1;
-    if (!PlanetGrid.get(gx - 1, gy)) nx -= 1;
-    if (!PlanetGrid.get(gx, gy + 1)) ny += 1;
-    if (!PlanetGrid.get(gx, gy - 1)) ny -= 1;
-    let len = Math.hypot(nx, ny);
-    if (len < 1e-6) {
-      const dx = x - pcx;
-      const dy = y - pcy;
-      len = Math.hypot(dx, dy) || 1;
-      nx = dx / len;
-      ny = dy / len;
-    } else {
-      nx /= len;
-      ny /= len;
-    }
-    x += nx * CELL;
-    y += ny * CELL;
-  }
-  if (hit) {
-    const dx = x - pcx;
-    const dy = y - pcy;
-    const len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len;
-    const uy = dy / len;
-    const inward = -(vx * ux + vy * uy);
-    if (inward > 0) {
-      vx += ux * inward;
-      vy += uy * inward;
-    }
-  }
-  sx[i] = x;
-  sy[i] = y;
-  vxs[i] = vx;
-  vys[i] = vy;
+function occupied(x, y) {
+  return PlanetGrid.get(Math.floor(x * INV), Math.floor(y * INV));
+}
+
+function blocked(x, y) {
+  if (occupied(x, y)) return true;
+  const r = 8;
+  if (occupied(x + r, y) || occupied(x - r, y)) return true;
+  if (occupied(x, y + r) || occupied(x, y - r)) return true;
+  return false;
 }

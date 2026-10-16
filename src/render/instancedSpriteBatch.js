@@ -331,6 +331,13 @@ export class InstancedSpriteBatch {
       cameraX: 0,
       cameraY: 0,
       screenScale: 1,
+      cameraRot: 0,
+      camC: 1,
+      camS: 0,
+      focusX: 0,
+      focusY: 0,
+      halfW: 0,
+      halfH: 0,
       typeArr: null,
       includeType: -1,
       exclude0: -1,
@@ -530,6 +537,27 @@ export class InstancedSpriteBatch {
     ctx.cameraX = cameraX;
     ctx.cameraY = cameraY;
     ctx.screenScale = screenScale;
+    const rot = o.cameraRot || 0;
+    ctx.cameraRot = rot;
+    if (rot && useScreen) {
+      const z = zoom || 1;
+      const canvasW = o.canvasW || 0;
+      const canvasH = o.canvasH || 0;
+      const res = resolution || 1;
+      ctx.camC = Math.cos(rot);
+      ctx.camS = Math.sin(rot);
+      ctx.focusX = cameraX + canvasW / (2 * z);
+      ctx.focusY = cameraY + canvasH / (2 * z);
+      ctx.halfW = canvasW * 0.5 * res;
+      ctx.halfH = canvasH * 0.5 * res;
+    } else {
+      ctx.camC = 1;
+      ctx.camS = 0;
+      ctx.focusX = 0;
+      ctx.focusY = 0;
+      ctx.halfW = 0;
+      ctx.halfH = 0;
+    }
     ctx.typeArr = typeArr;
     ctx.includeType = includeType;
     ctx.exclude0 = exclude0;
@@ -662,14 +690,27 @@ export class InstancedSpriteBatch {
       let py = prevYArr ? prevYArr[i] : y;
       let sx = rqScaleX[i];
       let sy = rqScaleY[i];
-      if (useScreen) {
+    if (useScreen) {
+      if (ctx.cameraRot) {
+        const c = ctx.camC;
+        const s = ctx.camS;
+        const dx = x - ctx.focusX;
+        const dy = y - ctx.focusY;
+        x = ctx.halfW + (dx * c - dy * s) * screenScale;
+        y = ctx.halfH + (dx * s + dy * c) * screenScale;
+        const pdx = px - ctx.focusX;
+        const pdy = py - ctx.focusY;
+        px = ctx.halfW + (pdx * c - pdy * s) * screenScale;
+        py = ctx.halfH + (pdx * s + pdy * c) * screenScale;
+      } else {
         x = (x - cameraX) * screenScale;
         y = (y - cameraY) * screenScale;
         px = (px - cameraX) * screenScale;
         py = (py - cameraY) * screenScale;
-        sx *= screenScale;
-        sy *= screenScale;
       }
+      sx *= screenScale;
+      sy *= screenScale;
+    }
       const snapped = snapSpritePos(x, y, o, useScreen);
       x = snapped.x;
       y = snapped.y;
@@ -692,8 +733,17 @@ export class InstancedSpriteBatch {
       data[base + 3] = sy;
       data[base + 4] = rqAnchorX[i];
       data[base + 5] = rqAnchorY[i];
-      data[base + 6] = rqRotC[i];
-      data[base + 7] = rqRotS[i];
+      let rc = rqRotC[i];
+      let rs = rqRotS[i];
+      if (useScreen && ctx.cameraRot) {
+        const c = ctx.camC;
+        const s = ctx.camS;
+        const nrc = rc * c - rs * s;
+        rs = rs * c + rc * s;
+        rc = nrc;
+      }
+      data[base + 6] = rc;
+      data[base + 7] = rs;
       data[base + 8] = depth;
       dataU32[base + 9] = packed >>> 0;
       data[base + 10] = rqTextureId[i];
