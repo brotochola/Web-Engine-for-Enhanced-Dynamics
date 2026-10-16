@@ -6243,6 +6243,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         so.useParticleTint = cl.splat?.useParticleTint !== false;
         so.canvasW = this.canvasWidth;
         so.canvasH = this.canvasHeight;
+        so.cameraRot = this._renderCameraRot || 0;
         cl.splatBatch.upload(views, so);
         densityMesh = cl.splatBatch.mesh;
         cl.prevCount = views?.count ? views.count[0] | 0 : 0;
@@ -6291,6 +6292,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             camX: NaN,
             camY: NaN,
             zoom: NaN,
+            camRot: NaN,
             rtReady: false,
             uvLocalsReady: false,
           };
@@ -6417,7 +6419,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const camChanged =
           skip.camX !== this._renderCameraX ||
           skip.camY !== this._renderCameraY ||
-          skip.zoom !== this._renderZoom;
+          skip.zoom !== this._renderZoom ||
+          skip.camRot !== (this._renderCameraRot || 0);
         skip._skipRt = !packedThisFrame && !camChanged && skip.rtReady;
       } else {
         continue;
@@ -6433,6 +6436,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               skipRt.camX = this._renderCameraX;
               skipRt.camY = this._renderCameraY;
               skipRt.zoom = this._renderZoom;
+              skipRt.camRot = this._renderCameraRot || 0;
               skipRt.rtReady = true;
               skipRt._skipRt = false;
             }

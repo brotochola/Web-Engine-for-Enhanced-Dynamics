@@ -109,6 +109,13 @@ export class LiquidFunDensitySplat {
     this._canvasW = 0;
     this._canvasH = 0;
     this._resolution = 1;
+    this._rot = 0;
+    this._camC = 1;
+    this._camS = 0;
+    this._focusX = 0;
+    this._focusY = 0;
+    this._halfW = 0;
+    this._halfH = 0;
     this._screenRadius = 1;
     this._pad = 0;
     this._cull = false;
@@ -136,6 +143,18 @@ export class LiquidFunDensitySplat {
     this._useTint = opts.useParticleTint !== false;
     this._canvasW = opts.canvasW > 0 ? opts.canvasW : 0;
     this._canvasH = opts.canvasH > 0 ? opts.canvasH : 0;
+    const rot = opts.cameraRot || 0;
+    if (rot && this._canvasW > 0 && this._canvasH > 0 && zoom > 0) {
+      this._rot = rot;
+      this._camC = Math.cos(rot);
+      this._camS = Math.sin(rot);
+      this._focusX = this._camX + this._canvasW / (2 * zoom);
+      this._focusY = this._camY + this._canvasH / (2 * zoom);
+      this._halfW = this._canvasW * 0.5 * resolution;
+      this._halfH = this._canvasH * 0.5 * resolution;
+    } else {
+      this._rot = 0;
+    }
     this._cull = this._canvasW > 0 && this._canvasH > 0;
     this._pad = this._screenRadius;
     this._out = 0;
@@ -195,8 +214,19 @@ export class LiquidFunDensitySplat {
   }
 
   _writeInst(wx, wy, tint, alphaMul) {
-    const sx = (wx - this._camX) * this._screenScale;
-    const sy = (wy - this._camY) * this._screenScale;
+    let sx;
+    let sy;
+    if (this._rot) {
+      const dx = wx - this._focusX;
+      const dy = wy - this._focusY;
+      const c = this._camC;
+      const s = this._camS;
+      sx = this._halfW + (dx * c - dy * s) * this._screenScale;
+      sy = this._halfH + (dx * s + dy * c) * this._screenScale;
+    } else {
+      sx = (wx - this._camX) * this._screenScale;
+      sy = (wy - this._camY) * this._screenScale;
+    }
     if (this._cull) {
       const pad = this._pad;
       if (sx < -pad || sy < -pad || sx > this._canvasW * this._resolution + pad || sy > this._canvasH * this._resolution + pad) {

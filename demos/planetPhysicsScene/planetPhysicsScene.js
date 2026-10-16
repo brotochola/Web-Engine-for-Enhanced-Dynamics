@@ -1,9 +1,9 @@
-// Box2D planet. The ground is the destructible-terrain chunk remesh, seeded as a disk.
+// Box2D planet. The ground is a bit grid this scene owns. Dirty chunks are blurred, then marched.
 // World gravity is zero. Loose chunks and the walker pull themselves inward.
 // Z fills, X erases, click paints, Q pours. A/D walk, W or space jumps outward.
 
-import { WorldGrid } from '../destructibleTerrainScene/worldGrid.js';
-import { WorldGridManager } from '../destructibleTerrainScene/gameObjects/worldGridManager.js';
+import { WorldGrid } from './worldGrid.js';
+import { WorldGridManager } from './gameObjects/worldGridManager.js';
 import { PlanetIsland } from './gameObjects/planetIsland.js';
 import { PlanetPull } from './gameObjects/planetPull.js';
 import { PlanetWalker } from './gameObjects/planetWalker.js';
@@ -133,7 +133,7 @@ export class PlanetPhysicsScene extends Scene {
       rocky: '/demos/img/rocky.jpg',
     },
     shaders: {
-      planetWater: '/demos/planetScene/shaders/planetWater.frag',
+      planetWater: '/demos/planetPhysicsScene/shaders/planetWater.frag',
       rockContour: {
         webgl: '/demos/shaders/rockContour.frag',
         webgpu: '/demos/shaders/rockContour.wgsl',

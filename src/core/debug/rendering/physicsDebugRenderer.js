@@ -114,6 +114,35 @@ export class PhysicsDebugRenderer {
    * MeshRenderer-only bodies never get SpriteRenderer.isItOnScreen.
    * Compound terrain also sits far from the body origin — pad by local AABB.
    */
+  /** Axis-aligned world box of the rolled screen, plus a margin. */
+  _rolledView(camera, canvas, zoom) {
+    const margin = 100;
+    const z = zoom > 0 ? zoom : 1;
+    const rot = camera.rotation || 0;
+    if (!rot) {
+      return {
+        left: camera.x - margin,
+        right: camera.x + canvas.width / z + margin,
+        top: camera.y - margin,
+        bottom: camera.y + canvas.height / z + margin,
+      };
+    }
+    const hw = canvas.width / z * 0.5;
+    const hh = canvas.height / z * 0.5;
+    const focusX = camera.x + hw;
+    const focusY = camera.y + hh;
+    const c = Math.abs(Math.cos(rot));
+    const s = Math.abs(Math.sin(rot));
+    const ex = hw * c + hh * s + margin;
+    const ey = hw * s + hh * c + margin;
+    return {
+      left: focusX - ex,
+      right: focusX + ex,
+      top: focusY - ey,
+      bottom: focusY + ey,
+    };
+  }
+
   _colliderDebugInView(i, entityX, entityY, viewLeft, viewRight, viewTop, viewBottom) {
     const spriteOn = SpriteRenderer.isItOnScreen;
     if (spriteOn && spriteOn[i]) return true;
@@ -267,10 +296,11 @@ export class PhysicsDebugRenderer {
     const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
     const n = Math.min(active.length, x.length);
 
-    const viewLeft = camera.x - 100;
-    const viewRight = camera.x + canvas.width / zoom + 100;
-    const viewTop = camera.y - 100;
-    const viewBottom = camera.y + canvas.height / zoom + 100;
+    const view = this._rolledView(camera, canvas, zoom);
+    const viewLeft = view.left;
+    const viewRight = view.right;
+    const viewTop = view.top;
+    const viewBottom = view.bottom;
 
     ctx.lineWidth = 2;
 
@@ -573,10 +603,11 @@ export class PhysicsDebugRenderer {
     const poseRotS = pose ? pose.rotS : null;
     const n = Math.min(active.length, x.length);
 
-    const viewLeft = camera.x - 100;
-    const viewRight = camera.x + canvas.width / zoom + 100;
-    const viewTop = camera.y - 100;
-    const viewBottom = camera.y + canvas.height / zoom + 100;
+    const view = this._rolledView(camera, canvas, zoom);
+    const viewLeft = view.left;
+    const viewRight = view.right;
+    const viewTop = view.top;
+    const viewBottom = view.bottom;
 
     ctx.strokeStyle = 'rgba(255, 0, 255, 0.8)';
     ctx.fillStyle = 'rgba(255, 0, 255, 0.2)';
