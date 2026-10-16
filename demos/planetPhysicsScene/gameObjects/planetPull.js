@@ -27,7 +27,7 @@ export class PlanetPull extends GameObject {
     for (let i = 0; i < n; i++) {
       const dx = CX - xs[i];
       const dy = CY - ys[i];
-      const len = Math.hypot(dx, dy) || 1;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
       LiquidFun.applyForce(i, (dx / len) * G * PARTICLE_MASS, (dy / len) * G * PARTICLE_MASS);
     }
   }
