@@ -588,6 +588,21 @@ export const ENGINE_FEATURES = [
     primary: ['particle_STEP_MS'],
     load: [],
   },
+  {
+    id: 'textureUpload',
+    name: 'Shared picture upload',
+    module: 'src/render/sharedTextureUpload.js',
+    kernel: { script: 'tests/bench/textureUploadMicrobench.mjs', opsKey: 'cases.pack.opsPerSec' },
+    scene: {
+      key: 'textureUpload',
+      path: '/tests/bench/stressScenes/textureUploadStressScene.js',
+      exportName: 'TextureUploadStressScene',
+      headed: false,
+      kind: 'stress',
+    },
+    primary: ['pixi_STEP_MS'],
+    load: [],
+  },
 ];
 
 export function getFeature(id) {

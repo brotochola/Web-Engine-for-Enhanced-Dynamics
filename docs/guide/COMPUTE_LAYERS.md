@@ -72,6 +72,25 @@ static config = {
 
 Missing/invalid WGSL or a look shader that does not match `renderer.backend`: throw a `WeedJS:` error (no skip, no silent fallback). Compute is WebGPU-only.
 
+### Shared pictures and buffers
+
+`shader.textures` declares a picture the fragment shader samples by name. The game chooses the bytes at the call:
+
+```javascript
+Layer.get('planet').updateTexture('cells', PlanetGrid.cells, x, y, width, height);
+Layer.get('planet').updateTexture('cells', PlanetGrid.cells);
+Layer.get('fire').updateBuffer('drops', FireGrid.drops, offset, count);
+Layer.get('fire').updateBuffer('drops', FireGrid.drops);
+```
+
+`PlanetGrid.cells` is a `SharedResource` field. The call records a rectangle. The renderer copies that rectangle from the same shared memory. WebGL 2 uses `texSubImage2D`. WebGPU copies directly when the row is 256-byte aligned and packs the dirty rows otherwise. The picture is created once, nearest, no mipmaps.
+
+`shader.worldRect` is one world-sized rectangle. The engine vertex shader passes world position through and the camera moves the mesh. The scene fragment does not rebuild the camera.
+
+The same call works for a name in `shader.compute.textures` or `shader.compute.buffers`. If a pass ping-pongs or swaps that name, the call throws. Fire does not call `updateTexture`. Its pictures stay filled by the compute program.
+
+`fragment` may be `{ webgl, webgpu }` with a path for each backend.
+
 ### Texture size
 
 Declared compute textures are allocated at a **pixel extent**. Independent of `layer.resolution` (look RT). Zoom does not realloc.

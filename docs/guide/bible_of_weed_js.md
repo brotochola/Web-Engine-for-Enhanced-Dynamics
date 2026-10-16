@@ -656,6 +656,33 @@ const color = water.getUniform('uWaterColor');   // Float32Array subview (zero-a
 
 The pixi worker picks up dirty uniforms each frame via an atomic flag.
 
+### Shared pictures
+
+A picture declared on `shader.textures` is a GPU texture the scene fragment samples by name. `updateTexture` copies a rectangle from a shared array into that picture. `updateBuffer` does the same for a compute buffer. The array has to be a field of a `SharedResource`. A normal typed array throws.
+
+```javascript
+Layer.get('planet').updateTexture('cells', PlanetGrid.cells, x, y, width, height);
+Layer.get('planet').updateTexture('cells', PlanetGrid.cells); // whole picture
+Layer.get('fire').updateBuffer('drops', FireGrid.drops, offset, count);
+```
+
+`worldRect` draws one world-sized rectangle with the engine vertex shader. The camera, including roll, moves that rectangle. The fragment shader reads `cells` and does not rebuild the camera. WebGL loads the `.frag` file and WebGPU loads the `.wgsl` file when `fragment` is `{ webgl, webgpu }`.
+
+```javascript
+planet: {
+  zIndex: 1,
+  shader: {
+    fragment: { webgl: '/shaders/planetLook.frag', webgpu: '/shaders/planetLook.wgsl' },
+    worldRect: { width: WORLD, height: WORLD },
+    textures: [
+      { name: 'cells', format: 'r8unorm', size: { width: GRID / 8, height: GRID } },
+    ],
+  },
+}
+```
+
+Two calls in one tick union into one copy. A whole-picture call replaces that rectangle. Nothing is copied when the picture did not change. A compute pass that ping-pongs or swaps the same name throws, because that picture is filled by the compute program.
+
 ### Supported Uniform Types
 
 | Type | Size (floats) | Example |

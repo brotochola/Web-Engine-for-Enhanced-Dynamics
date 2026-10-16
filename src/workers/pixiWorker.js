@@ -215,6 +215,9 @@ function applyComputeTexSizeUniform(cl) {
   );
 }
 import { writeRgba32Float, writeRgba8, copyPremultiplyRgba } from '../render/webgpu/pinGpuTexture.js';
+import { createSharedTextureSource, createWorldRectMesh } from '../render/worldTextureMesh.js';
+import { uploadSharedImage } from '../render/sharedTextureUpload.js';
+import { SharedResource } from '../core/sharedResource.js';
 import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from '../render/webgpu/pixiMeshWgsl.js';
 import { prependLookPrelude, findWgslUseBeforeDeclare } from '../render/webgpu/wgslPrelude.js';
 import {
@@ -442,6 +445,7 @@ class PixiRenderer extends AbstractWorker {
     this._sceneryCamY = NaN;
     this._sceneryCamCw = -1;
     this._sceneryCamCh = -1;
+    this._sceneryCamRot = NaN;
     this._coverBgArgs = null;
     this._coverBgOut = null;
 
@@ -637,6 +641,7 @@ class PixiRenderer extends AbstractWorker {
     // Reusable camera render-state
     this._renderCameraX = 0;
     this._renderCameraY = 0;
+    this._renderCameraRot = 0;
     this._renderZoom = 1.0;
     this._cameraInitialized = false;
     // Reused compute pack pose (same generation as sprites). Filled on new queue frame.
@@ -1194,36 +1199,53 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
+   * World-space display object. Rotation 0 keeps the old top-left pan.
+   * A non-zero angle pivots on the follow point so radial up stays screen-up.
+   */
+  _placeWorldCamera(obj, zoom, cameraX, cameraY, rot) {
+    if (!obj) return;
+    const z = zoom || 1;
+    if (rot) {
+      const cw = this.canvasWidth || 0;
+      const ch = this.canvasHeight || 0;
+      const focusX = cameraX + cw / (2 * z);
+      const focusY = cameraY + ch / (2 * z);
+      obj.pivot.set(focusX, focusY);
+      obj.position.set(cw * 0.5, ch * 0.5);
+      obj.scale.set(z);
+      obj.rotation = rot;
+      return;
+    }
+    if (obj.rotation) obj.rotation = 0;
+    if (obj.pivot && (obj.pivot.x || obj.pivot.y)) obj.pivot.set(0, 0);
+    obj.scale.set(z);
+    obj.x = -cameraX * z;
+    obj.y = -cameraY * z;
+  }
+
+  /**
    * Update camera on instanced meshes, background, tilemap root, decals
    */
   updateCameraTransform() {
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
+    const rot = this._renderCameraRot || 0;
 
     // Apply camera to ENTITIES root (cutout + blend stay in that order under it)
     if (this._entitiesRoot) {
-      this._entitiesRoot.scale.set(zoom);
-      this._entitiesRoot.x = -cameraX * zoom;
-      this._entitiesRoot.y = -cameraY * zoom;
+      this._placeWorldCamera(this._entitiesRoot, zoom, cameraX, cameraY, rot);
     } else if (this.spriteMesh) {
-      this.spriteMesh.scale.set(zoom);
-      this.spriteMesh.x = -cameraX * zoom;
-      this.spriteMesh.y = -cameraY * zoom;
+      this._placeWorldCamera(this.spriteMesh, zoom, cameraX, cameraY, rot);
     }
     if (this.spriteGlowMesh) {
-      this.spriteGlowMesh.scale.set(zoom);
-      this.spriteGlowMesh.x = -cameraX * zoom;
-      this.spriteGlowMesh.y = -cameraY * zoom;
+      this._placeWorldCamera(this.spriteGlowMesh, zoom, cameraX, cameraY, rot);
     }
 
-    this._applySceneryCamera(zoom, cameraX, cameraY);
+    this._applySceneryCamera(zoom, cameraX, cameraY, rot);
 
-    // Apply camera state to decal tile container
     if (this.decalTileContainer) {
-      this.decalTileContainer.scale.set(zoom);
-      this.decalTileContainer.x = -cameraX * zoom;
-      this.decalTileContainer.y = -cameraY * zoom;
+      this._placeWorldCamera(this.decalTileContainer, zoom, cameraX, cameraY, rot);
     }
 
     // Shadow sprites render in screen space directly to shadowRT (no camera transform needed here)
@@ -1233,18 +1255,10 @@ class PixiRenderer extends AbstractWorker {
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       if (!cl.rt) {
-        const mesh = cl.batch?.mesh || cl.fillBatch?.mesh;
-        if (mesh) {
-          mesh.scale.set(zoom);
-          mesh.x = -cameraX * zoom;
-          mesh.y = -cameraY * zoom;
-        }
+        const mesh = cl.worldMesh || cl.batch?.mesh || cl.fillBatch?.mesh;
+        if (mesh) this._placeWorldCamera(mesh, zoom, cameraX, cameraY, rot);
         const uvMesh = cl.uvFillBatch?.mesh;
-        if (uvMesh) {
-          uvMesh.scale.set(zoom);
-          uvMesh.x = -cameraX * zoom;
-          uvMesh.y = -cameraY * zoom;
-        }
+        if (uvMesh) this._placeWorldCamera(uvMesh, zoom, cameraX, cameraY, rot);
       }
     }
   }
@@ -1750,6 +1764,7 @@ class PixiRenderer extends AbstractWorker {
         this._renderZoom = this.renderQueueCamera[0];
         this._renderCameraX = this.renderQueueCamera[1];
         this._renderCameraY = this.renderQueueCamera[2];
+        this._renderCameraRot = this.renderQueueCamera.length > 3 ? (this.renderQueueCamera[3] || 0) : 0;
         this._cameraInitialized = true;
       }
       if (this._queueInterp) {
@@ -1780,6 +1795,7 @@ class PixiRenderer extends AbstractWorker {
     this._renderZoom = this.cameraData[0];
     this._renderCameraX = this.cameraData[1];
     this._renderCameraY = this.cameraData[2];
+    this._renderCameraRot = this.cameraData.length > 9 ? (this.cameraData[9] || 0) : 0;
     this._cameraInitialized = true;
   }
 
@@ -4256,7 +4272,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _renderMeshFillToRt(cl, fillMesh) {
     const z = this._renderZoom * (cl.resolution || 1);
     const mx = this._meshRtTransform;
-    mx.set(z, 0, 0, z, -this._renderCameraX * z, -this._renderCameraY * z);
+    const rot = this._renderCameraRot || 0;
+    if (!rot) {
+      mx.set(z, 0, 0, z, -this._renderCameraX * z, -this._renderCameraY * z);
+    } else {
+      const c = Math.cos(rot);
+      const s = Math.sin(rot);
+      const a = z * c;
+      const b = z * s;
+      const cc = -z * s;
+      const d = z * c;
+      const focusX = this._renderCameraX + (this.canvasWidth || 0) / (2 * (this._renderZoom || 1));
+      const focusY = this._renderCameraY + (this.canvasHeight || 0) / (2 * (this._renderZoom || 1));
+      const screenCx = (this.canvasWidth || 0) * (cl.resolution || 1) * 0.5;
+      const screenCy = (this.canvasHeight || 0) * (cl.resolution || 1) * 0.5;
+      mx.set(a, b, cc, d, screenCx - a * focusX - cc * focusY, screenCy - b * focusX - d * focusY);
+    }
     const root = this._meshRtRoot;
     const uvMesh = cl.uvFillBatch?.mesh || null;
     root.removeChildren();
@@ -4734,6 +4765,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._renderZoom = this.cameraData[0];
       this._renderCameraX = this.cameraData[1];
       this._renderCameraY = this.cameraData[2];
+      this._renderCameraRot = this.cameraData.length > 9 ? (this.cameraData[9] || 0) : 0;
       this._cameraInitialized = true;
     }
     this.updateCameraTransform();
@@ -4829,7 +4861,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     });
   }
 
-  _applySceneryCamera(zoom, cameraX, cameraY) {
+  _applySceneryCamera(zoom, cameraX, cameraY, rot = 0) {
     const cw = this.canvasWidth;
     const ch = this.canvasHeight;
     if (
@@ -4838,7 +4870,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       cameraX === this._sceneryCamX &&
       cameraY === this._sceneryCamY &&
       cw === this._sceneryCamCw &&
-      ch === this._sceneryCamCh
+      ch === this._sceneryCamCh &&
+      rot === this._sceneryCamRot
     ) {
       return;
     }
@@ -4848,12 +4881,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._sceneryCamY = cameraY;
     this._sceneryCamCw = cw;
     this._sceneryCamCh = ch;
+    this._sceneryCamRot = rot;
     for (let i = 0; i < this._scenery.length; i++) {
       const s = this._scenery[i];
       if (!s || !s.displayObject) continue;
       if (s.kind === 'cover' && s.cover) {
         this._applyCoverTransform(s);
         continue;
+      }
+      if (rot) {
+        this._placeWorldCamera(s.displayObject, zoom * (s.sx || 1), cameraX, cameraY, rot);
+        continue;
+      }
+      if (s.displayObject.rotation) s.displayObject.rotation = 0;
+      if (s.displayObject.pivot && (s.displayObject.pivot.x || s.displayObject.pivot.y)) {
+        s.displayObject.pivot.set(0, 0);
       }
       s.displayObject.scale.set(zoom * s.sx, zoom * s.sy);
       s.displayObject.x = -cameraX * zoom * s.px;
@@ -5704,7 +5746,125 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * can call Layer.water.setUniform('uThreshold', 0.4) and the change
    * is picked up next frame with zero postMessage overhead.
    */
+  _byteView(slot, raw) {
+    if (!raw) return null;
+    if (raw instanceof Uint8Array) return raw;
+    const prev = slot.byteView;
+    if (prev && prev.buffer === raw.buffer && prev.byteOffset === raw.byteOffset && prev.byteLength === raw.byteLength) {
+      return prev;
+    }
+    slot.byteView = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+    return slot.byteView;
+  }
+
+  _uploadSharedPictures(cl) {
+    const bag = Layer._textureSlots && Layer._textureSlots[cl.layerId];
+    if (!bag) return;
+    const renderer = this.pixiApp && this.pixiApp.renderer;
+    const names = Object.keys(bag);
+    for (let i = 0; i < names.length; i++) {
+      const slot = bag[names[i]];
+      const rect = Layer.consumeTextureUpload(cl.layerId, names[i]);
+      if (!rect || rect.w < 1 || rect.h < 1) continue;
+      const raw = SharedResource.viewAt(rect.resourceIndex, rect.fieldIndex);
+      if (!raw) continue;
+      if (slot.buffer) {
+        if (cl.compute) cl.compute.uploadFromSharedBuffer(names[i], raw, rect);
+        continue;
+      }
+      if (slot.compute && cl.compute) {
+        cl.compute.uploadFromShared(names[i], this._byteView(slot, raw), rect);
+        continue;
+      }
+      const source = cl.sharedSources && cl.sharedSources[names[i]];
+      if (!source) continue;
+      const gpu = renderer && source._gpuData && renderer.uid != null
+        ? source._gpuData[renderer.uid]
+        : null;
+      uploadSharedImage({
+        useWebGpu: this._useWebGpu,
+        device: renderer && renderer.gpu && renderer.gpu.device,
+        gpuTexture: gpu && gpu.gpuTexture,
+        gl: renderer && renderer.gl,
+        renderer,
+        source,
+        bytes: this._byteView(slot, raw),
+        width: slot.width,
+        height: slot.height,
+        format: slot.format,
+        rect,
+        glReady: !!source._weedGlReady,
+      });
+      source._weedGlReady = true;
+      source.uploadMethodId = 'external';
+    }
+  }
+
+  _initWorldTextureLayer(cl, config) {
+    const fragment = config.shaderFragment;
+    const rect = config.worldRect;
+    const pics = config.shaderTextures || [];
+    if (typeof fragment !== 'string' || !rect || !pics.length) {
+      console.warn(`PIXI WORKER: world-rect layer "${cl.layerName}" is missing its shader or pictures`);
+      return;
+    }
+    const renderer = this.pixiApp.renderer;
+    const pictures = [];
+    cl.sharedSources = {};
+    for (let i = 0; i < pics.length; i++) {
+      const spec = pics[i];
+      const source = createSharedTextureSource(spec, renderer, this._useWebGpu);
+      cl.sharedSources[spec.name] = source;
+      pictures.push({ name: spec.name, format: spec.format, source });
+    }
+    const uniformDefs = {};
+    if (config.uniformMap) {
+      for (const [uName, entry] of Object.entries(config.uniformMap)) {
+        const uType = config.uniformTypes?.[uName] || 'f32';
+        const floats = Layer._uniformFloats[cl.layerId];
+        if (entry.size === 1) {
+          uniformDefs[uName] = { value: floats[entry.offset], type: uType };
+        } else {
+          const arr = new Float32Array(entry.size);
+          for (let k = 0; k < entry.size; k++) arr[k] = floats[entry.offset + k];
+          uniformDefs[uName] = { value: arr, type: uType };
+        }
+      }
+    }
+    const built = createWorldRectMesh({
+      useWebGpu: this._useWebGpu,
+      worldW: rect.width,
+      worldH: rect.height,
+      fragmentSource: fragment,
+      uniformDefs,
+      uniformMap: config.uniformMap,
+      uniformTypes: config.uniformTypes,
+      pictures,
+      name: cl.layerName,
+    });
+    cl.worldMesh = built.mesh;
+    cl.shader = built.shader;
+    cl.uniformStore = built.shader.resources?.customUniforms?.uniforms || null;
+    cl.uniformEntries = config.uniformMap ? Object.entries(config.uniformMap) : null;
+    this._registerLayerDisplayObject(cl.layerName, built.mesh, true);
+    this.pixiApp.stage.addChild(built.mesh);
+    this._applyLayerPresentation(cl.layerName, built.mesh, true);
+    console.log(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}`);
+  }
+
   async initializeCustomLayers(data) {
+    const prev = this._customLayerList || [];
+    for (let i = 0; i < prev.length; i++) {
+      const old = prev[i];
+      if (old && old.worldMesh) old.worldMesh.destroy(true);
+      const sources = old && old.sharedSources;
+      if (!sources) continue;
+      const keys = Object.keys(sources);
+      for (let k = 0; k < keys.length; k++) {
+        const source = sources[keys[k]];
+        if (source && typeof source.destroy === 'function') source.destroy();
+      }
+    }
     this._destroyAllCustomLayerCompute();
     this._customLayers = {};
     if (!data.layerData) return;
@@ -5728,12 +5888,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const isLfDensity = config.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN;
       const isCompute = !!config.compute;
       const isMesh = config.kind === LAYER_KIND.MESH;
-      if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh) continue;
+      const isWorldRect = !!(config.worldRect && config.shaderTextures && config.shaderTextures.length);
+      if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh && !isWorldRect) continue;
 
       const layerId = config.id;
       const layerName = config.name;
       const lrq = queues[layerId];
-      if (!isLfDensity && !isCompute && !isMesh && !lrq) continue;
+      if (!isLfDensity && !isCompute && !isMesh && !isWorldRect && !lrq) continue;
 
       const layerObj = Layer.getById(layerId);
       if (!layerObj) continue;
@@ -5897,7 +6058,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
       }
 
-      if (hasShader && config.shaderFragment) {
+      if (isWorldRect) {
+        try {
+          this._initWorldTextureLayer(cl, config);
+        } catch (err) {
+          if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
+          throw errorCompileFailed(
+            'look',
+            config.shaderName || layerName,
+            layerName,
+            this._useWebGpu ? 'WebGPU' : 'WebGL',
+            err
+          );
+        }
+      } else if (hasShader && config.shaderFragment) {
         const w = this.canvasWidth * resolution;
         const h = this.canvasHeight * resolution;
 
@@ -5999,6 +6173,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let li = 0; li < this._customLayerList.length; li++) {
       const cl = this._customLayerList[li];
       if (!layerIsVisible(cl.layerId)) continue;
+      this._uploadSharedPictures(cl);
       const renderToRT = !!cl.rt;
       let densityMesh = null;
 

@@ -79,6 +79,9 @@ import {
 } from '../box2d/box2dBodySync.js';
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
 
+/** Cell count ceiling. Not an entity id. 2^20 covers a 4096 px world at a 4 px cell. */
+export const MAX_SPATIAL_CELLS = 1 << 20;
+
 function assertIntegerInRange(label, value, min, max) {
   if (!Number.isInteger(value) || value < min || value > max) {
     throw new RangeError(`${label} must be an integer in [${min}, ${max}], got ${value}`);
@@ -142,7 +145,7 @@ export function validateSceneSharedBufferConfig(scene) {
   const gridRows = Math.ceil(config.worldHeight / cellSize);
   assertIntegerInRange('spatial grid columns', gridCols, 1, MAX_ENTITIES);
   assertIntegerInRange('spatial grid rows', gridRows, 1, MAX_ENTITIES);
-  assertIntegerInRange('spatial total cells', gridCols * gridRows, 1, MAX_ENTITIES);
+  assertIntegerInRange('spatial total cells', gridCols * gridRows, 1, MAX_SPATIAL_CELLS);
 
   const maxLights = config.lighting.maxLights || 128;
   assertIntegerInRange('lighting.maxLights', maxLights, 0, MAX_ENTITIES);
@@ -901,6 +904,7 @@ function initializeSharedResourceBuffers(scene) {
     rec.class.initialize(sab, rec.schema);
     scene.buffers.sharedResources[rec.name] = sab;
   }
+  Layer.resolveSharedTextures();
 }
 
 export function teardownSceneSharedState(scene) {

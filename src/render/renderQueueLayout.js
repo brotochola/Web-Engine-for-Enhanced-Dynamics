@@ -46,9 +46,9 @@ const FIELDS = [
     ['shadowOffY',  Float32Array,           4,   0],
 ];
 
-/** Sibling SAB: Float32 zoom/x/y + Int32 poseReady (not stuffed in a float). */
-export const RENDER_QUEUE_CAMERA_BYTES = 16;
-export const RENDER_QUEUE_POSE_READY_OFFSET = 12;
+/** Sibling SAB: Float32 zoom/x/y/rotation + Int32 poseReady (not stuffed in a float). */
+export const RENDER_QUEUE_CAMERA_BYTES = 20;
+export const RENDER_QUEUE_POSE_READY_OFFSET = 16;
 
 /**
  * @param {SharedArrayBuffer|null|undefined} sab
@@ -57,7 +57,7 @@ export const RENDER_QUEUE_POSE_READY_OFFSET = 12;
 export function createRenderQueueCameraViews(sab) {
     if (!sab) return null;
     return {
-        camera: new Float32Array(sab, 0, 3),
+        camera: new Float32Array(sab, 0, 4),
         poseReady: new Int32Array(sab, RENDER_QUEUE_POSE_READY_OFFSET, 1),
     };
 }

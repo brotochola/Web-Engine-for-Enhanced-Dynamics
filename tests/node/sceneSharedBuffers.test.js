@@ -5,6 +5,8 @@ import {
   createSceneSharedBuffers,
   computeAutoMaxVisibleRenderables,
   resolveMaxVisibleRenderables,
+  validateSceneSharedBufferConfig,
+  MAX_SPATIAL_CELLS,
 } from '../../src/util/sceneSharedBuffers.js';
 import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
 import { AdobeAnimRegistry } from '../../src/core/adobeAnimRegistry.js';
@@ -97,6 +99,40 @@ test('createSceneSharedBuffers rejects spatial grids with too many cells for Uin
   assert.throws(
     () => createSceneSharedBuffers(scene),
     /spatial grid columns must be an integer in \[1, 65535\]/
+  );
+});
+
+test('validateSceneSharedBufferConfig accepts a 512 by 512 spatial hash', () => {
+  const scene = createValidationScene({
+    config: {
+      worldWidth: 4096,
+      worldHeight: 4096,
+      spatial: { cellSize: 8 },
+    },
+  });
+  assert.doesNotThrow(() => validateSceneSharedBufferConfig(scene));
+});
+
+test('validateSceneSharedBufferConfig rejects one cell past the spatial ceiling', () => {
+  const atCap = createValidationScene({
+    config: {
+      worldWidth: 1024,
+      worldHeight: 1024,
+      spatial: { cellSize: 1 },
+    },
+  });
+  assert.doesNotThrow(() => validateSceneSharedBufferConfig(atCap));
+
+  const past = createValidationScene({
+    config: {
+      worldWidth: 1025,
+      worldHeight: 1025,
+      spatial: { cellSize: 1 },
+    },
+  });
+  assert.throws(
+    () => validateSceneSharedBufferConfig(past),
+    new RegExp(`spatial total cells must be an integer in \\[1, ${MAX_SPATIAL_CELLS}\\]`)
   );
 });
 

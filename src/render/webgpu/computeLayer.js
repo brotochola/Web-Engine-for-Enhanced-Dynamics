@@ -13,6 +13,7 @@ import { packLiquidFunParticles, PARTICLE_FLOATS } from '../liquidFunParticlePac
 import { LAYER_COMPUTE_SOURCE } from '../../util/configDefaults.js';
 import { Layer, RESERVED_LOOK_UNIFORMS } from '../../core/layer.js';
 import { pinGpuTexture } from './pinGpuTexture.js';
+import { uploadSharedImage } from '../sharedTextureUpload.js';
 import { resolveComputeLayout } from './inferComputeLayout.js';
 import { prependComputePrelude, findWgslUseBeforeDeclare } from './wgslPrelude.js';
 
@@ -93,6 +94,7 @@ export class ComputeLayer {
     this.texDecls = (meta.compute?.textures || []).slice();
     this.bufDecls = (meta.compute?.buffers || []).slice();
     this.layoutSpecs = meta.compute?.layouts || null;
+    this._assertCpuOwned();
     if (!this.texDecls.length) {
       this.texDecls = [{ name: 'out', format: 'rgba8unorm', pingPong: false, look: true }];
     }
@@ -379,6 +381,52 @@ export class ComputeLayer {
     this._layoutNames = null;
     this._ready = false;
     this._destroyed = true;
+  }
+
+  _assertCpuOwned() {
+    for (let i = 0; i < this.texDecls.length; i++) {
+      const t = this.texDecls[i];
+      if (!t || !t.resourceName) continue;
+      if (t.pingPong) {
+        throw new Error(
+          `WeedJS: texture "${t.name}" is filled from a shared array and cannot ping-pong`,
+        );
+      }
+      for (let p = 0; p < this.passes.length; p++) {
+        const swap = this.passes[p].swap;
+        if (swap && swap.indexOf(t.name) >= 0) {
+          throw new Error(
+            `WeedJS: compute pass writes "${t.name}", which is filled from a shared array`,
+          );
+        }
+      }
+    }
+  }
+
+  uploadFromShared(name, bytes, rect) {
+    const rec = this._tex[name];
+    const texture = rec && (rec.tex || rec.read);
+    if (!texture || !bytes || !rect) return;
+    const decl = this.texDecls.find((t) => t.name === name);
+    uploadSharedImage({
+      useWebGpu: true,
+      device: this.device,
+      gpuTexture: texture,
+      bytes: bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+      width: this.numX,
+      height: this.numY,
+      format: (decl && decl.format) || 'rgba8unorm',
+      rect,
+    });
+  }
+
+  uploadFromSharedBuffer(name, view, rect) {
+    const buf = this._buf[name];
+    if (!buf || !view || !rect) return;
+    const start = rect.x | 0;
+    const count = rect.w | 0;
+    if (count < 1) return;
+    this.device.queue.writeBuffer(buf, start * view.BYTES_PER_ELEMENT, view, start, count);
   }
 
   resize(numX, numY) {

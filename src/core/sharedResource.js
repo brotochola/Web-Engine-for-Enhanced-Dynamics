@@ -5,6 +5,8 @@
 // compareExchange). Raw TypedArray on mailbox.view. No FieldView. No [] intercept.
 // Workers bind after the scene module import.
 
+import { assertSharedBytes } from './layerTextureUpload.js';
+
 const TYPED_ARRAYS = Object.freeze({
   Int8Array,
   Uint8Array,
@@ -32,6 +34,9 @@ const ATOMIC_TYPES = new Set([
 
 /** @type {Function[]} */
 const live = [];
+
+/** @type {Array<{name:string, fields:string[], class:Function}>} */
+const bound = [];
 
 /** Integer SAB mailbox. Index last; default 0. */
 export class SharedResourceMailbox {
@@ -173,6 +178,56 @@ export class SharedResource {
     }
 
     if (live.indexOf(this) < 0) live.push(this);
+    SharedResource._noteBound(this);
+  }
+
+  static _noteBound(ResourceClass) {
+    const name = ResourceClass.name;
+    const fields = ResourceClass._fieldNames ? ResourceClass._fieldNames.slice() : [];
+    for (let i = 0; i < bound.length; i++) {
+      if (bound[i].name === name) {
+        bound[i].fields = fields;
+        bound[i].class = ResourceClass;
+        return;
+      }
+    }
+    bound.push({ name, fields, class: ResourceClass });
+  }
+
+  static boundList() {
+    return bound;
+  }
+
+  /**
+   * Match a typed array to a bound shared field.
+   * @returns {{resourceIndex:number, fieldIndex:number, bytes:ArrayBufferView}}
+   */
+  static locateView(view) {
+    const bytes = view && view.view && view.view.buffer ? view.view : view;
+    assertSharedBytes(bytes);
+    for (let i = 0; i < bound.length; i++) {
+      const C = bound[i].class;
+      const fields = bound[i].fields;
+      for (let f = 0; f < fields.length; f++) {
+        const raw = fieldBytes(C[fields[f]]);
+        if (!raw) continue;
+        if (raw.buffer === bytes.buffer
+          && raw.byteOffset === bytes.byteOffset
+          && raw.byteLength === bytes.byteLength) {
+          return { resourceIndex: i, fieldIndex: f, bytes: raw };
+        }
+      }
+    }
+    throw new Error('WeedJS: texture source is not a shared resource field');
+  }
+
+  /** @returns {ArrayBufferView|null} */
+  static viewAt(resourceIndex, fieldIndex) {
+    const rec = bound[resourceIndex | 0];
+    if (!rec) return null;
+    const name = rec.fields[fieldIndex | 0];
+    if (!name) return null;
+    return fieldBytes(rec.class[name]);
   }
 
   /** Drop views so a later scene cannot read stale arrays. */
@@ -189,6 +244,7 @@ export class SharedResource {
   static resetAll() {
     for (let i = 0; i < live.length; i++) live[i].reset();
     live.length = 0;
+    bound.length = 0;
   }
 
   /**
@@ -244,4 +300,11 @@ export class SharedResource {
       C.initialize(rec.sab, rec.schema);
     }
   }
+}
+
+function fieldBytes(value) {
+  if (!value) return null;
+  const raw = value.view && value.view.buffer ? value.view : value;
+  if (!raw || !raw.buffer || typeof raw.byteLength !== 'number') return null;
+  return raw;
 }

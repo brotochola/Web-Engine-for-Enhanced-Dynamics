@@ -302,10 +302,25 @@ export class Mouse {
    * @param {Object} camera - Camera object with zoom, x, y
    */
   static updateWorldPosition(camera) {
-    if (this._data && this._canvasX !== undefined) {
-      this._data[0] = this._canvasX / camera.zoom + camera.x;
-      this._data[1] = this._canvasY / camera.zoom + camera.y;
+    if (!(this._data && this._canvasX !== undefined && camera)) return;
+    const zoom = camera.zoom || 1;
+    const rot = camera.rotation || 0;
+    const cw = camera.canvasWidth || 0;
+    const ch = camera.canvasHeight || 0;
+    if (!rot || !(cw > 0 && ch > 0 && zoom > 0)) {
+      this._data[0] = this._canvasX / zoom + camera.x;
+      this._data[1] = this._canvasY / zoom + camera.y;
+      return;
     }
+    const focusX = camera.x + cw / (2 * zoom);
+    const focusY = camera.y + ch / (2 * zoom);
+    const sx = this._canvasX - cw * 0.5;
+    const sy = this._canvasY - ch * 0.5;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const inv = 1 / zoom;
+    this._data[0] = focusX + (c * sx + s * sy) * inv;
+    this._data[1] = focusY + (-s * sx + c * sy) * inv;
   }
 
   /**

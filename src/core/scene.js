@@ -114,6 +114,7 @@ import {
   collectComputeAssetNames,
   errorShaderFetchFailed,
   resolveShaderPath,
+  shaderFragmentKey,
   resolveSpritePipeline,
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
@@ -177,6 +178,9 @@ class Scene {
       zoom: 1,
       x: 0,
       y: 0,
+      rotation: 0,
+      canvasWidth: 0,
+      canvasHeight: 0,
     };
 
     /** @type {object|null} Last box2dReady payload (HEAP sab + channelOffsets) */
@@ -1415,9 +1419,10 @@ class Scene {
     if (this.config.layers) {
       const inlinePromises = [];
       for (const layerConfig of Object.values(this.config.layers)) {
-        const fragRef = layerConfig.shader?.fragment;
-        if (!fragRef) continue;
-        if (this._loadedShaderSources[fragRef]) continue;
+        const frag = layerConfig.shader?.fragment;
+        if (!frag) continue;
+        const fragRef = shaderFragmentKey(frag, backend);
+        if (!fragRef || this._loadedShaderSources[fragRef]) continue;
         if (fragRef.includes('/') || fragRef.includes('.')) {
           inlinePromises.push(
             fetch(fragRef)
@@ -2221,6 +2226,9 @@ class Scene {
     this.camera.zoom = Camera.zoom;
     this.camera.x = Camera.x;
     this.camera.y = Camera.y;
+    this.camera.rotation = Camera.rotation;
+    this.camera.canvasWidth = Camera.canvasWidth;
+    this.camera.canvasHeight = Camera.canvasHeight;
 
     // Update mouse world position based on camera
     Mouse.updateWorldPosition(this.camera);

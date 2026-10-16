@@ -5,6 +5,7 @@ import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { Query } from '../core/query.js';
 import { Flash } from '../core/flash.js';
 import { Layer } from '../core/layer.js';
+import { shaderFragmentKey } from '../render/rendererBackend.js';
 import { TileMap } from '../core/tileMap.js';
 import { NavGrid } from '../core/navGrid.js';
 import { SoundManager } from '../core/soundManager.js';
@@ -99,7 +100,10 @@ function injectLoadedShaderSources(scene) {
   if (!scene._loadedShaderSources || !scene.config.layers) return;
 
   for (const [layerName, layerConfig] of Object.entries(scene.config.layers)) {
-    const fragRef = layerConfig.shader?.fragment;
+    const fragRef = shaderFragmentKey(
+      layerConfig.shader?.fragment,
+      scene.config.renderer?.backend,
+    );
     if (!fragRef) continue;
 
     const source = scene._loadedShaderSources[fragRef];

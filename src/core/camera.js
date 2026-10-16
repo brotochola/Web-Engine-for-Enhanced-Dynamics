@@ -9,9 +9,9 @@ import { Mouse } from './mouse.js';
 
 /**
  * Static Camera class for managing viewport state
- * Camera data is stored in a SharedArrayBuffer Float32Array[9]:
+ * Camera data is stored in a SharedArrayBuffer Float32Array[10]:
  * [zoom, x, y, followTargetX, followTargetY, targetZoom,
- *  followEntityIndex, followUsedX, followUsedY]
+ *  followEntityIndex, followUsedX, followUsedY, rotation]
  *
  * followEntityIndex is 0 = none, else entityIndex+1 (0 is a valid entity).
  * followUsedX/Y are the entity pose xy followEntity read (not look-ahead).
@@ -28,7 +28,7 @@ import { Mouse } from './mouse.js';
 export class Camera {
   // SharedArrayBuffer view: Float32Array[9]
   static _data = null;
-  static FLOAT_COUNT = 9;
+  static FLOAT_COUNT = 10;
   static IDX_ZOOM = 0;
   static IDX_X = 1;
   static IDX_Y = 2;
@@ -38,6 +38,7 @@ export class Camera {
   static IDX_FOLLOW_ENTITY = 6;
   static IDX_FOLLOW_USED_X = 7;
   static IDX_FOLLOW_USED_Y = 8;
+  static IDX_ROTATION = 9;
 
   // Canvas dimensions (needed for centering calculations)
   static _canvasWidth = 0;
@@ -493,8 +494,14 @@ export class Camera {
 
     // Write position BEFORE zoom so a reader that still sees the old zoom
     // will never pair it with a position that exceeds its viewport bounds.
-    this._data[1] = Math.max(0, Math.min(newX, maxX));
-    this._data[2] = Math.max(0, Math.min(newY, maxY));
+    const rot = this._data.length > this.IDX_ROTATION ? this._data[this.IDX_ROTATION] : 0;
+    if (rot) {
+      this._data[1] = newX;
+      this._data[2] = newY;
+    } else {
+      this._data[1] = Math.max(0, Math.min(newX, maxX));
+      this._data[2] = Math.max(0, Math.min(newY, maxY));
+    }
     this._data[0] = newZoom;
   }
 
@@ -605,6 +612,17 @@ export class Camera {
     if (!this._data) return;
     this.zoom = targetZoom;
     this._data[this.IDX_TARGET_ZOOM] = this._data[this.IDX_ZOOM];
+  }
+
+  /** World rotation that keeps radial up at the top of the screen. Radians. */
+  static get rotation() {
+    if (!this._data || this._data.length <= this.IDX_ROTATION) return 0;
+    return this._data[this.IDX_ROTATION] || 0;
+  }
+
+  static setAngle(radians) {
+    if (!this._data || this._data.length <= this.IDX_ROTATION) return;
+    this._data[this.IDX_ROTATION] = radians || 0;
   }
 
   /**
@@ -895,8 +913,22 @@ export class Camera {
     const cameraX = this._data ? this._data[1] : 0;
     const cameraY = this._data ? this._data[2] : 0;
     const dest = out || Camera._worldToScreenScratch;
-    dest.x = (worldX - cameraX) * zoom;
-    dest.y = (worldY - cameraY) * zoom;
+    const rot = this.rotation;
+    const cw = this._canvasWidth;
+    const ch = this._canvasHeight;
+    if (!rot || !(cw > 0 && ch > 0 && zoom > 0)) {
+      dest.x = (worldX - cameraX) * zoom;
+      dest.y = (worldY - cameraY) * zoom;
+      return dest;
+    }
+    const focusX = cameraX + cw / (2 * zoom);
+    const focusY = cameraY + ch / (2 * zoom);
+    const dx = worldX - focusX;
+    const dy = worldY - focusY;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    dest.x = (c * dx - s * dy) * zoom + cw * 0.5;
+    dest.y = (s * dx + c * dy) * zoom + ch * 0.5;
     return dest;
   }
 
@@ -912,8 +944,23 @@ export class Camera {
     const cameraX = this._data ? this._data[1] : 0;
     const cameraY = this._data ? this._data[2] : 0;
     const dest = out || Camera._screenToWorldScratch;
-    dest.x = screenX / zoom + cameraX;
-    dest.y = screenY / zoom + cameraY;
+    const rot = this.rotation;
+    const cw = this._canvasWidth;
+    const ch = this._canvasHeight;
+    if (!rot || !(cw > 0 && ch > 0 && zoom > 0)) {
+      dest.x = screenX / zoom + cameraX;
+      dest.y = screenY / zoom + cameraY;
+      return dest;
+    }
+    const focusX = cameraX + cw / (2 * zoom);
+    const focusY = cameraY + ch / (2 * zoom);
+    const sx = screenX - cw * 0.5;
+    const sy = screenY - ch * 0.5;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const inv = 1 / zoom;
+    dest.x = focusX + (c * sx + s * sy) * inv;
+    dest.y = focusY + (-s * sx + c * sy) * inv;
     return dest;
   }
 

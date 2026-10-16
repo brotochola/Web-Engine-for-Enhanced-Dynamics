@@ -134,6 +134,65 @@ export function prependLookPrelude(code, uniformMap, uniformTypes) {
   return buildLookPrelude(uniformMap, uniformTypes) + code;
 }
 
+const WORLD_RECT_VERT = `struct GlobalUniforms {
+  uProjectionMatrix: mat3x3<f32>,
+  uWorldTransformMatrix: mat3x3<f32>,
+  uWorldColorAlpha: vec4<f32>,
+  uResolution: vec2<f32>,
+}
+@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
+
+struct LocalUniforms {
+  uTransformMatrix: mat3x3<f32>,
+  uColor: vec4<f32>,
+  uRound: f32,
+}
+@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
+
+struct VertexOut {
+  @builtin(position) position: vec4<f32>,
+  @location(0) vWorld: vec2<f32>,
+}
+
+@vertex
+fn mainVert(@location(0) aPosition: vec2<f32>) -> VertexOut {
+  var out: VertexOut;
+  let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
+  let clip = mvp * vec3<f32>(aPosition, 1.0);
+  out.position = vec4<f32>(clip.xy, 0.0, 1.0);
+  out.vWorld = aPosition;
+  return out;
+}
+`;
+
+function textureWgslType(format) {
+  if (format === 'r8uint' || format === 'rgba8uint') return 'texture_2d<u32>';
+  return 'texture_2d<f32>';
+}
+
+/** Engine world-rect vertex plus the scene fragment. Textures are bound by name. */
+export function buildWorldRectWgsl(code, uniformMap, uniformTypes, textures) {
+  const m = LOOK_REDECLARE_RE.exec(code);
+  if (m) {
+    throw new Error(
+      `WeedJS: world-rect shader declares "${m[0]}" — the engine prelude generates GlobalUniforms, LocalUniforms, CustomUniforms, VertexOut and the picture bindings. Delete the declaration.`
+    );
+  }
+  let s = WORLD_RECT_VERT;
+  s += 'struct CustomUniforms {\n';
+  const tail = tailLines(uniformMap, uniformTypes, '  ');
+  s += tail || '  _pad: f32,\n';
+  s += '}\n';
+  s += '@group(2) @binding(0) var<uniform> customUniforms: CustomUniforms;\n';
+  const list = textures || [];
+  for (let i = 0; i < list.length; i++) {
+    const tex = list[i];
+    s += `@group(2) @binding(${i + 1}) var ${tex.name}: ${textureWgslType(tex.format)};\n`;
+  }
+  s += '\n';
+  return s + code;
+}
+
 function stripWgslCommentsSameLength(src) {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))

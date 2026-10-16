@@ -873,6 +873,7 @@ class PreRenderWorker extends AbstractWorker {
         this._frameCameraZoom = this.cameraData[0];
         this._frameCameraX = this.cameraData[1];
         this._frameCameraY = this.cameraData[2];
+        this._frameCameraRot = this.cameraData.length > 9 ? (this.cameraData[9] || 0) : 0;
         const aligned = Camera.alignFollowCameraToLatchedPose(
             this._frameCameraX, this._frameCameraY, this._poseX, this._poseY
         );
@@ -880,7 +881,7 @@ class PreRenderWorker extends AbstractWorker {
         this._frameCameraY = aligned.y;
         const worldWidth = Camera.worldWidth;
         const worldHeight = Camera.worldHeight;
-        if (worldWidth !== Infinity && worldHeight !== Infinity && this._frameCameraZoom > 0) {
+        if (!this._frameCameraRot && worldWidth !== Infinity && worldHeight !== Infinity && this._frameCameraZoom > 0) {
             const viewWidth = Camera.canvasWidth / this._frameCameraZoom;
             const viewHeight = Camera.canvasHeight / this._frameCameraZoom;
             const maxX = Math.max(0, worldWidth - viewWidth);
@@ -892,6 +893,9 @@ class PreRenderWorker extends AbstractWorker {
             this.renderQueueCamera[0] = this._frameCameraZoom;
             this.renderQueueCamera[1] = this._frameCameraX;
             this.renderQueueCamera[2] = this._frameCameraY;
+            if (this.renderQueueCamera.length > 3) {
+                this.renderQueueCamera[3] = this._frameCameraRot || 0;
+            }
         }
     }
 

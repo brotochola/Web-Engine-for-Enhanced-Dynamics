@@ -111,8 +111,9 @@ class SpatialWorker extends AbstractWorker {
     // Pattern lengths cache: cellRadius -> length (number of cell pairs)
     this._patternLengths = new Uint16Array(this._maxCellRadius + 1);
 
-    // Cached neighbor cells: (cellIndex * MAX_CELL_RADIUS + cellRadius) -> Uint16Array of neighbor cell indices
-    // Uint16Array since cell indices are always positive and < 65535
+    // Cached neighbor cells: (cellIndex * MAX_CELL_RADIUS + cellRadius) -> cell-index list.
+    // Uint16 while totalCells <= 65535; Uint32 above that. Chosen in initialize.
+    this._cellIndexArray = Uint16Array;
     this._cellNeighborCache = new Map();
     this._maxNeighborCacheEntries = 8192;
 
@@ -168,6 +169,7 @@ class SpatialWorker extends AbstractWorker {
     this.gridWidth = gridMetadata.gridCols;
     this.gridHeight = gridMetadata.gridRows;
     this.totalCells = gridMetadata.totalCells;
+    this._cellIndexArray = this.totalCells > 65535 ? Uint32Array : Uint16Array;
     this.rowsPerBlock = gridMetadata.rowsPerBlock || SPATIAL_DEFAULTS.rowsPerBlock;
 
     // Store viewport for screen checks
@@ -310,7 +312,7 @@ class SpatialWorker extends AbstractWorker {
    * @param {number} cellRadius - Search radius in cells
    * @param {number} centerRow - Center row of the entity's cell
    * @param {number} centerCol - Center column of the entity's cell
-   * @returns {Uint16Array} Array of neighbor cell indices (Uint16 since cell indices < 65535)
+   * @returns {Uint16Array|Uint32Array} Neighbor cell indices
    */
   _getNeighborCells(cellIndex, cellRadius, centerRow, centerCol) {
     const clampedRadius = cellRadius > this._maxCellRadius ? this._maxCellRadius : cellRadius;
@@ -329,7 +331,7 @@ class SpatialWorker extends AbstractWorker {
     const maxNeighborCells = this._patternLengths[clampedRadius] || (patternLength >> 1);
 
     // Pre-allocate array (worst case: all cells in pattern are valid)
-    const neighborCells = new Uint16Array(maxNeighborCells);
+    const neighborCells = new this._cellIndexArray(maxNeighborCells);
     let count = 0;
 
     const gridWidth = this.gridWidth;

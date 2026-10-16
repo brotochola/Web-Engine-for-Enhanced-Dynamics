@@ -37,6 +37,13 @@ import {
     normalizeCoverBackgroundOptions,
     normalizeWorldParallax,
 } from '../render/coverBackground.js';
+import {
+    TEXTURE_UPLOAD_INTS,
+    bytesPerTexel,
+    readTextureUpload,
+    writeTextureUpload,
+} from './layerTextureUpload.js';
+import { SharedResource } from './sharedResource.js';
 
 /**
  * Engine-reserved look uniforms, auto-declared on every custom shader layer
@@ -140,6 +147,7 @@ export class Layer {
     static _uniformFloats = [];   // Float32Array[] indexed by layer id
     static _uniformDirty = [];    // Int32Array[1][] indexed by layer id
     static _uniformMaps = [];     // { name: { offset, size } }[] indexed by layer id
+    static _textureSlots = [];    // { [name]: { view, width, height, sab } }[] by layer id
 
     // Blend mode ID -> PixiJS string. Indices match BLEND_MODES enum in configDefaults.js.
     static _BLEND_MODE_STRINGS = [
@@ -284,6 +292,92 @@ export class Layer {
         }
         Atomics.store(Layer._uniformDirty[this.id], 0, 1);
         return this;
+    }
+
+    /**
+     * Copy a rectangle of this picture from a shared array.
+     * No x,y,width,height copies the whole picture.
+     * Unions with a copy the renderer has not taken yet.
+     * @param {string} name picture name in shader.textures or compute.textures
+     * @param {ArrayBufferView} bytes shared resource field the game just edited
+     * @returns {Layer}
+     */
+    updateTexture(name, bytes, x, y, width, height) {
+        const slot = this._uploadSlot(name);
+        this._rejectComputeWriter(name);
+        const loc = SharedResource.locateView(bytes);
+        this._assertPictureBytes(slot, loc.bytes);
+        writeTextureUpload(
+            slot.view, x, y, width, height, slot.width, slot.height,
+            loc.resourceIndex, loc.fieldIndex,
+        );
+        return this;
+    }
+
+    /**
+     * Copy a shared buffer into the named compute buffer.
+     * No offset copies the whole buffer.
+     * @param {string} name
+     * @param {ArrayBufferView} bytes
+     * @returns {Layer}
+     */
+    updateBuffer(name, bytes, offset, count) {
+        const slot = this._uploadSlot(name);
+        this._rejectComputeWriter(name);
+        const loc = SharedResource.locateView(bytes);
+        const full = offset === undefined || offset === null;
+        writeTextureUpload(
+            slot.view,
+            full ? undefined : offset,
+            0,
+            full ? undefined : count,
+            1,
+            slot.width,
+            1,
+            loc.resourceIndex,
+            loc.fieldIndex,
+        );
+        return this;
+    }
+
+    _uploadSlot(name) {
+        const slot = textureSlot(this.id, name);
+        if (!slot) {
+            throw new Error(`WeedJS: layer "${this.name}" has no picture or buffer "${name}"`);
+        }
+        return slot;
+    }
+
+    _assertPictureBytes(slot, bytes) {
+        if (slot.buffer || !(slot.width > 0) || !(slot.height > 0)) return;
+        const need = (slot.width | 0) * (slot.height | 0) * bytesPerTexel(slot.format);
+        if (bytes.byteLength < need) {
+            throw new Error(
+                `WeedJS: shared array is ${bytes.byteLength} bytes, picture "${slot.name}" needs ${need}`,
+            );
+        }
+    }
+
+    _rejectComputeWriter(name) {
+        const compute = this._compute;
+        if (!compute) return;
+        const textures = compute.textures || [];
+        for (let i = 0; i < textures.length; i++) {
+            const tex = textures[i];
+            if (!tex || tex.name !== name || !tex.pingPong) continue;
+            throw new Error(
+                `WeedJS: texture "${name}" is written by a compute pass and cannot be filled from a shared array`,
+            );
+        }
+        const passes = compute.passes || [];
+        for (let p = 0; p < passes.length; p++) {
+            const swap = passes[p].swap;
+            if (swap && swap.indexOf(name) >= 0) {
+                throw new Error(
+                    `WeedJS: compute pass writes "${name}", which cannot also be filled from a shared array`,
+                );
+            }
+        }
     }
 
     /**
@@ -677,6 +771,7 @@ export class Layer {
         this._uniformFloats = [];
         this._uniformDirty = [];
         this._uniformMaps = [];
+        this._textureSlots = [];
         this._feedIndexSABs = [];
         this._feedIndices = [];
         this._feedMax = [];
@@ -727,11 +822,13 @@ export class Layer {
                 _content: this._extractContent(config),
             });
             if (!layer) continue;
+            layer._sharedPictures = shaderTextureList(config.shader).length > 0;
             // LF density, compute, and scenery skip the sprite render queue.
             this._hasRenderQueue[layer.id] = (
                 densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                 || compute
                 || kind === LAYER_KIND.MESH
+                || hasSharedPictures(config)
                 || isSceneryKind(kind)
             ) ? 0 : 1;
 
@@ -986,6 +1083,8 @@ export class Layer {
                 format: typeof p.format === 'string' ? p.format : 'rgba8unorm',
                 pingPong: !!p.pingPong,
                 look: !!p.look,
+                resourceName: sourceName(p.from),
+                field: null,
             });
         }
         return out;
@@ -1002,6 +1101,8 @@ export class Layer {
                 name: b.name,
                 strideFloats: Math.max(1, b.strideFloats | 0),
                 count: Math.max(1, b.count | 0),
+                resourceName: sourceName(b.from),
+                field: null,
             });
         }
         return out;
@@ -1121,6 +1222,7 @@ export class Layer {
         if (isSceneryKind(layer._kind)) kind = LAYER_FEEDER_KIND.NONE;
         else if (layer._kind === LAYER_KIND.MESH) kind = LAYER_FEEDER_KIND.MESH;
         else if (layer._compute) kind = LAYER_FEEDER_KIND.COMPUTE;
+        else if (layer._sharedPictures) kind = LAYER_FEEDER_KIND.NONE;
         else if (layer._densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN) kind = LAYER_FEEDER_KIND.DENSITY;
         else if (this._hasRenderQueue && this._hasRenderQueue[id] === 1) kind = LAYER_FEEDER_KIND.SPRITES;
         this._feederKind[id] = kind;
@@ -1488,6 +1590,7 @@ export class Layer {
                 maxItems: isBuiltIn
                     || densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                     || layer._kind === LAYER_KIND.MESH
+                    || hasSharedPictures(config)
                     || isSceneryKind(layer._kind)
                     ? 0
                     : (config.maxItems || LAYER_DEFAULTS.maxItemsPerLayer),
@@ -1503,6 +1606,9 @@ export class Layer {
                 computeSource: layer._computeSource ?? null,
                 maxBodies: layer._compute?.maxBodies || 0,
                 maxParticles: layer._compute?.maxParticles || 0,
+                resource: typeof config.resource === 'string' ? config.resource : null,
+                worldRect: worldRectOf(config.shader),
+                shaderTextures: shaderTextureList(config.shader),
             };
 
             if (config.shader) {
@@ -1529,6 +1635,59 @@ export class Layer {
         }
     }
 
+    static _textureUploadSABs() {
+        const out = {};
+        const slots = this._textureSlots || [];
+        for (let i = 0; i < slots.length; i++) {
+            const bag = slots[i];
+            if (!bag) continue;
+            const names = Object.keys(bag);
+            for (let n = 0; n < names.length; n++) {
+                const slot = bag[names[n]];
+                if (slot && slot.sab) out[i + ':' + names[n]] = slot.sab;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Allocate the change record for every declared picture and compute buffer.
+     * The shared array is chosen later, by updateTexture / updateBuffer.
+     */
+    static resolveSharedTextures() {
+        const layers = this._metadata && this._metadata.layers;
+        if (!layers) return;
+        for (let i = 0; i < layers.length; i++) {
+            const specs = sharedTextureSpecs(layers[i]);
+            if (!specs.length) continue;
+            const bag = this._textureSlots[i] || (this._textureSlots[i] = {});
+            for (let t = 0; t < specs.length; t++) {
+                const spec = specs[t];
+                if (bag[spec.name]) continue;
+                const sab = new SharedArrayBuffer(TEXTURE_UPLOAD_INTS * 4);
+                const view = new Int32Array(sab);
+                Atomics.store(view, 6, -1);
+                Atomics.store(view, 7, -1);
+                bag[spec.name] = {
+                    name: spec.name,
+                    view,
+                    width: spec.buffer ? (spec.count | 0) : (spec.width | 0),
+                    height: spec.buffer ? 1 : (spec.height | 0),
+                    format: spec.format || 'rgba8unorm',
+                    buffer: !!spec.buffer,
+                    compute: !!spec.compute,
+                    sab,
+                };
+            }
+        }
+    }
+
+    static consumeTextureUpload(layerId, name) {
+        const slot = textureSlot(layerId, name);
+        if (!slot) return null;
+        return readTextureUpload(slot.view);
+    }
+
     static getSerializableData() {
         const uniformSABs = {};
         for (let i = 0; i < this.count; i++) {
@@ -1540,6 +1699,7 @@ export class Layer {
         return {
             configSAB: this._configSAB,
             uniformSABs,
+            textureUploadSABs: this._textureUploadSABs(),
             metadata: this._metadata,
             feedCountSAB: this._feedCountSAB,
             feedIndexSABs: this._feedIndexSABs,
@@ -1563,6 +1723,8 @@ export class Layer {
         this._uniformSABs = [];
         this._uniformFloats = [];
         this._uniformDirty = [];
+        this._uniformMaps = [];
+        this._textureSlots = [];
         this._feedIndexSABs = [];
         this._feedIndices = [];
         this._feedMax = [];
@@ -1620,6 +1782,30 @@ export class Layer {
             this._uniformFloats[id] = new Float32Array(sab, 0, floatCount);
             this._uniformDirty[id] = new Int32Array(sab, dirtyOffset, 1);
             this._uniformMaps[id] = uMap;
+        }
+
+        const uploadSABs = data.textureUploadSABs || {};
+        const layers = meta.layers || [];
+        for (let li = 0; li < layers.length; li++) {
+            const specs = sharedTextureSpecs(layers[li]);
+            if (!specs.length) continue;
+            const bag = {};
+            this._textureSlots[li] = bag;
+            for (let t = 0; t < specs.length; t++) {
+                const spec = specs[t];
+                const sab = uploadSABs[li + ':' + spec.name];
+                if (!sab) continue;
+                bag[spec.name] = {
+                    name: spec.name,
+                    view: new Int32Array(sab),
+                    width: spec.buffer ? (spec.count | 0) : (spec.width | 0),
+                    height: spec.buffer ? 1 : (spec.height | 0),
+                    format: spec.format || 'rgba8unorm',
+                    buffer: !!spec.buffer,
+                    compute: !!spec.compute,
+                    sab,
+                };
+            }
         }
 
         this._feedCountSAB = data.feedCountSAB || null;
@@ -1699,10 +1885,98 @@ export class Layer {
         this._uniformFloats = [];
         this._uniformDirty = [];
         this._uniformMaps = [];
+        this._textureSlots = [];
         this._metadata = null;
         this._allCache = [];
         this._allCacheCount = -1;
         this._postToRenderer = null;
         this._nextContentRequestId = 1;
     }
+}
+
+function sourceName(from) {
+    if (!from) return null;
+    if (typeof from === 'function') return from.name || null;
+    if (typeof from === 'string' && from) return from;
+    return null;
+}
+
+function hasSharedPictures(config) {
+    return shaderTextureList(config && config.shader).length > 0;
+}
+
+function worldRectOf(shader) {
+    const rect = shader && shader.worldRect;
+    if (!rect) return null;
+    const width = rect.width | 0;
+    const height = rect.height | 0;
+    if (width < 1 || height < 1) return null;
+    return { width, height };
+}
+
+function shaderTextureList(shader) {
+    const raw = shader && shader.textures;
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (let i = 0; i < raw.length; i++) {
+        const p = raw[i];
+        if (!p || typeof p.name !== 'string' || !p.name) continue;
+        const size = p.size || {};
+        out.push({
+            name: p.name,
+            format: typeof p.format === 'string' ? p.format : 'r8unorm',
+            width: size.width | 0,
+            height: size.height | 0,
+            buffer: false,
+        });
+    }
+    return out;
+}
+
+function sharedTextureSpecs(meta) {
+    if (!meta) return [];
+    const out = [];
+    const pics = meta.shaderTextures;
+    if (Array.isArray(pics)) {
+        for (let i = 0; i < pics.length; i++) out.push(pics[i]);
+    }
+    const compute = meta.compute;
+    if (compute) {
+        const textures = compute.textures || [];
+        for (let i = 0; i < textures.length; i++) {
+            const p = textures[i];
+            if (!p || typeof p.name !== 'string' || !p.name) continue;
+            const size = compute.size || {};
+            out.push({
+                name: p.name,
+                format: p.format || 'rgba8unorm',
+                width: size.width | 0,
+                height: size.height | 0,
+                buffer: false,
+                compute: true,
+            });
+        }
+        const buffers = compute.buffers || [];
+        for (let i = 0; i < buffers.length; i++) {
+            const b = buffers[i];
+            if (!b || typeof b.name !== 'string' || !b.name) continue;
+            out.push({
+                name: b.name,
+                format: 'r32float',
+                width: b.count | 0,
+                height: 1,
+                count: b.count | 0,
+                strideFloats: b.strideFloats | 0,
+                buffer: true,
+                compute: true,
+            });
+        }
+    }
+    return out;
+}
+
+function textureSlot(layerId, name) {
+    const bag = Layer._textureSlots && Layer._textureSlots[layerId];
+    if (!bag) return null;
+    return bag[name] || null;
 }

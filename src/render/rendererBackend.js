@@ -235,6 +235,23 @@ export function errorShaderMapMissingBackend(asset, backend) {
   );
 }
 
+export function shaderFragmentKey(fragment, backend) {
+  if (!fragment) return null;
+  if (typeof fragment === 'string') return fragment;
+  if (typeof fragment === 'object') {
+    const key =
+      backend === RENDERER_BACKEND_WEBGL
+        ? 'webgl'
+        : backend === RENDERER_BACKEND_WEBGPU
+          ? 'webgpu'
+          : null;
+    const path = key && fragment[key];
+    if (typeof path === 'string' && path) return path;
+    throw errorShaderMapMissingBackend('fragment', backend || 'unspecified');
+  }
+  return null;
+}
+
 /**
  * Resolve a shader asset to a fetch path.
  * `shaderAssets[name]` may be a string or `{ webgl, webgpu }`.
@@ -345,10 +362,11 @@ export function assertLoadedShadersCompatible({ backend, layers, shaderAssets, l
     if (!shader) continue;
     const look = shader.fragment;
     if (look) {
-      const path = resolveShaderPath(look, assets, backend);
-      const source = loaded[look];
-      if (!source) throw errorLookMissing(layerName, look);
-      assertLookShaderCompatible({ backend, layerName, asset: look, path, source });
+      const asset = shaderFragmentKey(look, backend);
+      const path = resolveShaderPath(asset, assets, backend);
+      const source = loaded[asset];
+      if (!source) throw errorLookMissing(layerName, asset);
+      assertLookShaderCompatible({ backend, layerName, asset, path, source });
     }
     if (shader.compute) {
       const names = collectComputeAssetNames(shader);
