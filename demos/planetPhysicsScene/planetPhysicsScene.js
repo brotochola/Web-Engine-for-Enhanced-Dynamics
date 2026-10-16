@@ -75,7 +75,7 @@ export class PlanetPhysicsScene extends Scene {
       enabled: true,
       raycasted: true,
       shadowsEnabled: false,
-      baseAmbient: 0.12,
+      baseAmbient: 0,
       maxLights: 40,
       maxPolygonVertices: 5000,
       maxOccluderSelfLit: 1024,
@@ -146,7 +146,7 @@ export class PlanetPhysicsScene extends Scene {
     [PlanetIsland, 2048],
     [PlanetPull, 1],
     [PlanetWalker, 1],
-    [PlanetLamp, 4],
+    [PlanetLamp, 400],
   ];
 
   static sharedResources = [

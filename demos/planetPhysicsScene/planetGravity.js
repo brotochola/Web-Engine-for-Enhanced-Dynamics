@@ -1,9 +1,9 @@
 // Shared numbers for the Box2D planet. World gravity is zero; G is the pull.
 
-export const N = 512;
+export const N = 2048;
 export const CELL = 16;
-export const RADIUS = 220;
-export const G = 1300;
+export const RADIUS = 1024;
+export const G = 3333;
 export const CX = (N >> 1) * CELL;
 export const CY = CX;
 export const PARTICLE_R = 6;
