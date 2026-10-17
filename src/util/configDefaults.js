@@ -546,9 +546,6 @@ export const RENDERER_DEFAULTS = Object.freeze({
   backend: 'webgpu',
   noLimitFPS: false,
   fixedFps: 0,
-  /**
-   * Y order for the entity list. `false` = emit order. `true` / `'cpu'` = CPU painter.
-   */
   ySort: false,
   /** null = auto-size main render queue at SAB alloc from pools + Adobe piece bounds */
   maxVisibleRenderables: null,

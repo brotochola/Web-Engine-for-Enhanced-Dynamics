@@ -36,16 +36,16 @@ Integrated benchmarks use **BallsScene** by default. You can select another scen
 
 ```bash
 node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
-  --scene /demos/ballsAndRectanglesScene/ballsAndRectanglesScene.js \
-  --scene-export BallsAndRectanglesScene \
-  --output tests/results/balls-and-rectangles-headed.json
+  --scene /demos/waterAndBoxesScene/waterAndBoxesScene.js \
+  --scene-export WaterAndBoxesScene \
+  --output tests/results/water-and-boxes-headed.json
 ```
 
 Use scene selection for targeted checks:
 
 - **Feature pyramid (L1/L2/L3):** see [`docs/internal/FEATURE_BENCHMARKS.md`](../../docs/internal/FEATURE_BENCHMARKS.md). L2 stress scenes live under `tests/bench/stressScenes/`.
 - **Raycasts:** L1 `pnpm bench:micro:ray`; L2 `pnpm bench:feature:ray` (`RayStressScene`).
-- **Spatial/physics:** `BallsScene`, `BallsAndRectanglesScene`, or `StationarySpatialScene`.
+- **Spatial/physics:** `BallsScene` or `StationarySpatialScene`.
 - **Query churn:** `QueryChurnScene` for spawn/despawn list updates and custom precomputed active-query publication.
 - **Pre-render/render queues:** `RenderQueueStressScene` for many visible renderables and Y-sorted queue pressure.
 - **Particles/decorations:** a scene that actually has active particles/decorations; BallsScene reports `ACTIVE_DECORATIONS: 0`.

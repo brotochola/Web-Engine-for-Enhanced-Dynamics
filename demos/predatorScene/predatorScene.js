@@ -184,10 +184,10 @@ export class PredatorScene extends WEED.Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      ySort: 'cpu',
+      ySort: true,
       autoGenerateMipmaps: false,
       interpolation: false,
-      atlasScaleMode: 'linear',
+      // atlasScaleMode: 'linear',
     },
     preRender: {
       noLimitFPS: false,
