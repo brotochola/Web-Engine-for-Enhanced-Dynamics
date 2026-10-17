@@ -268,7 +268,7 @@ function initMemory() {
     return;
   }
   {
-    var INITIAL_MEMORY = 268435456;
+    var INITIAL_MEMORY = 536870912;
     /** @suppress {checkTypes} */ wasmMemory = new WebAssembly.Memory({
       "initial": INITIAL_MEMORY / 65536,
       "maximum": INITIAL_MEMORY / 65536,

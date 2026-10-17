@@ -35,6 +35,7 @@ function gearOutline(teeth, innerR, outerR) {
       xy[o++] = Math.sin(ang[k]) * rad[k];
     }
   }
+  // console.log(xy);
   return xy;
 }
 
