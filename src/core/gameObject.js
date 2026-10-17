@@ -890,7 +890,9 @@ export class GameObject {
       return;
     }
     Collider.radius[this.index] = value;
-    if (value > 0) Collider.shapeType[this.index] = ShapeType.Circle;
+    if (value > 0 && Collider.shapeType[this.index] !== ShapeType.Chain) {
+      Collider.shapeType[this.index] = ShapeType.Circle;
+    }
     if (this._hasComponents.RigidBody) {
       RigidBody.syncMassFromCollider(this.index);
     }
@@ -908,7 +910,11 @@ export class GameObject {
       return;
     }
     Collider.width[this.index] = value;
-    if (value > 0 && Collider.shapeType[this.index] !== ShapeType.Polygon) {
+    if (
+      value > 0 &&
+      Collider.shapeType[this.index] !== ShapeType.Polygon &&
+      Collider.shapeType[this.index] !== ShapeType.Chain
+    ) {
       Collider.shapeType[this.index] = ShapeType.Box;
     }
     if (this._hasComponents.RigidBody) {
@@ -928,7 +934,11 @@ export class GameObject {
       return;
     }
     Collider.height[this.index] = value;
-    if (value > 0 && Collider.shapeType[this.index] !== ShapeType.Polygon) {
+    if (
+      value > 0 &&
+      Collider.shapeType[this.index] !== ShapeType.Polygon &&
+      Collider.shapeType[this.index] !== ShapeType.Chain
+    ) {
       Collider.shapeType[this.index] = ShapeType.Box;
     }
     if (this._hasComponents.RigidBody) {

@@ -3,16 +3,18 @@
 (function (global) {
   /**
    * Collider shape — WASM C b2_game_shape_* numbers (single source for Weed + glue).
-   * Box=0, Circle=1, Polygon=2.
+   * Box=0, Circle=1, Polygon=2, Chain=3.
    */
   var ShapeType = Object.freeze({
     Box: 0,
     Circle: 1,
     Polygon: 2,
+    Chain: 3,
     // aliases for classic glue
     BOX: 0,
     CIRCLE: 1,
     POLYGON: 2,
+    CHAIN: 3,
   });
 
   /** Box2D body motion class (not a shape) */

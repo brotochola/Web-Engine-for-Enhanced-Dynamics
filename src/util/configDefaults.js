@@ -341,6 +341,8 @@ export const PHYSICS_DEFAULTS = Object.freeze({
    * `maxFixtures` is a one-release alias copied onto this field in Scene._applyConfigDefaults.
    */
   maxFixturePoolSize: 0,
+  /** Global chain-point arena for the whole scene. 0 = off. */
+  maxChainPoints: 0,
   /** @deprecated Use maxFixturePoolSize. Accepted as an alias when the new key is 0. */
   maxFixtures: 0,
   /** Gravity (px/s²). */

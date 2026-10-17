@@ -377,6 +377,15 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           freeListTop: scene.buffers.colliderFixtureFreeListTop,
         }
       : null,
+    chains: scene.config.physics.maxChainPoints > 0
+      ? {
+          enabled: true,
+          maxChainPoints: scene.config.physics.maxChainPoints,
+          entityCount: scene.totalEntityCount,
+          lengthUnitsPerMeter: scene.config.physics.lengthUnitsPerMeter || 100,
+          data: scene.buffers.chainPointData,
+        }
+      : null,
     meshGeom: (scene.config.renderer?.maxMeshVerts | 0) > 0
       ? {
           enabled: true,

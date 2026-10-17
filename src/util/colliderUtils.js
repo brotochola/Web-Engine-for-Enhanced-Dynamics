@@ -8,6 +8,7 @@
 import { Transform } from '../components/transform.js';
 import { Collider } from '../components/collider.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
+import { ChainPoints } from '../core/chainPoints.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from './configDefaults.js';
 
 /**
@@ -17,6 +18,7 @@ export { ShapeType };
 export const SHAPE_BOX = ShapeType.Box;
 export const SHAPE_CIRCLE = ShapeType.Circle;
 export const SHAPE_POLYGON = ShapeType.Polygon;
+export const SHAPE_CHAIN = ShapeType.Chain;
 
 /**
  * Pre-allocated result objects for zero-GC operations
@@ -44,6 +46,24 @@ export function getColliderBounds(idx, result) {
   const ty = Transform.y[idx];
   const rotC = Transform.rotC;
   const rotS = Transform.rotS;
+
+  if (shape === SHAPE_CHAIN) {
+    const c = rotC ? rotC[idx] : 1;
+    const s = rotS ? rotS[idx] : 0;
+    const originX = tx + c * ox - s * oy;
+    const originY = ty + s * ox + c * oy;
+    const lcx = Collider.polyCentroidX ? Collider.polyCentroidX[idx] : 0;
+    const lcy = Collider.polyCentroidY ? Collider.polyCentroidY[idx] : 0;
+    result.posX = originX + c * lcx - s * lcy;
+    result.posY = originY + s * lcx + c * lcy;
+    const hw = (Collider.width[idx] || 0) * 0.5;
+    const hh = (Collider.height[idx] || 0) * 0.5;
+    const ac = c < 0 ? -c : c;
+    const as = s < 0 ? -s : s;
+    result.halfW = ac * hw + as * hh;
+    result.halfH = as * hw + ac * hh;
+    return result;
+  }
 
   if (shape === SHAPE_CIRCLE) {
     result.posX = tx + ox;
@@ -144,6 +164,8 @@ export function pointInCollider(idx, x, y) {
   const oy = Collider.offsetY[idx] || 0;
   const tx = Transform.x[idx];
   const ty = Transform.y[idx];
+
+  if (shape === SHAPE_CHAIN) return ChainPoints.pointNear(idx, x, y);
 
   if (shape === SHAPE_CIRCLE) {
     const r = Collider.radius[idx] || 0;

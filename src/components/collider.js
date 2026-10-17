@@ -12,6 +12,7 @@
 import { Component } from '../core/component.js';
 import { RigidBody } from './rigidBody.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
+import { ChainPoints } from '../core/chainPoints.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 
@@ -211,6 +212,19 @@ class Collider extends Component {
    * width/height from the compound AABB are not a box.
    * @param {number} index
    */
+  /**
+   * One Box2D chain. xy is local interleaved x,y and stays caller-owned.
+   * Open: first and last points are ghosts. Loop: every edge collides.
+   */
+  static setChain(index, xy, count, loop) {
+    const n = count == null ? ((xy && xy.length) >> 1) : count | 0;
+    return ChainPoints.setForEntity(index, xy, n, loop);
+  }
+
+  static clearChain(index) {
+    ChainPoints.clearForEntity(index);
+  }
+
   static clearFixtures(index) {
     ColliderFixture.removeAllForEntity(index);
     RigidBody.syncMassFromCollider(index);
@@ -282,6 +296,14 @@ class Collider extends Component {
     return Collider.replacePolygonsFlat(this.index, vertexXY, vertexCounts, polygonCount);
   }
 
+  setChain(xy, count, loop) {
+    return Collider.setChain(this.index, xy, count, loop);
+  }
+
+  clearChain() {
+    Collider.clearChain(this.index);
+  }
+
   clearFixtures() {
     Collider.clearFixtures(this.index);
   }
@@ -339,7 +361,9 @@ class Collider extends Component {
   set radius(value) {
     Collider.radius[this.index] = value;
     // Authoring sugar: positive radius ⇒ circle (SAB default 0 is now Box in C numbering)
-    if (value > 0) Collider.shapeType[this.index] = ShapeType.Circle;
+    if (value > 0 && Collider.shapeType[this.index] !== ShapeType.Chain) {
+      Collider.shapeType[this.index] = ShapeType.Circle;
+    }
     RigidBody.syncMassFromCollider(this.index);
     markBodyDirty(this.index, BODY_DIRTY.GEOMETRY);
   }
@@ -349,7 +373,11 @@ class Collider extends Component {
   }
   set width(value) {
     Collider.width[this.index] = value;
-    if (value > 0 && Collider.shapeType[this.index] !== ShapeType.Polygon) {
+    if (
+      value > 0 &&
+      Collider.shapeType[this.index] !== ShapeType.Polygon &&
+      Collider.shapeType[this.index] !== ShapeType.Chain
+    ) {
       Collider.shapeType[this.index] = ShapeType.Box;
     }
     RigidBody.syncMassFromCollider(this.index);
@@ -361,7 +389,11 @@ class Collider extends Component {
   }
   set height(value) {
     Collider.height[this.index] = value;
-    if (value > 0 && Collider.shapeType[this.index] !== ShapeType.Polygon) {
+    if (
+      value > 0 &&
+      Collider.shapeType[this.index] !== ShapeType.Polygon &&
+      Collider.shapeType[this.index] !== ShapeType.Chain
+    ) {
       Collider.shapeType[this.index] = ShapeType.Box;
     }
     RigidBody.syncMassFromCollider(this.index);

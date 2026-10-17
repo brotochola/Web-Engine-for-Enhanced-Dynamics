@@ -530,6 +530,24 @@
     };
   }
 
+  // Mirrors ChainPoints.initializeArrays. Physics only reads xy/begin/count/loop.
+  function bindChainViews(buffer, maxPoints, entityCount) {
+    var n = maxPoints | 0;
+    var e = entityCount | 0;
+    var align4 = function (o) {
+      return (o + 3) & ~3;
+    };
+    var offset = 0;
+    var xy = new Float32Array(buffer, offset, n * 2);
+    offset += n * 2 * 4;
+    var begin = new Int32Array(buffer, offset, e);
+    offset += e * 4;
+    var count = new Uint16Array(buffer, offset, e);
+    offset = align4(offset + e * 2);
+    var loop = new Uint8Array(buffer, align4(offset + e * 2), e);
+    return { xy: xy, begin: begin, count: count, loop: loop };
+  }
+
   var state = {
     config: {},
     settings: null,
@@ -561,6 +579,9 @@
     fixturesEnabled: false,
     maxFixtures: 0,
     fixtureViews: null,
+    chainsEnabled: false,
+    maxChainPoints: 0,
+    chainViews: null,
     box2dReady: false,
     isPaused: true,
     lastFrameTime: 0,
@@ -805,6 +826,17 @@
       };
     }
 
+    if (state.chainsEnabled && state.chainViews) {
+      var Ch = state.chainViews;
+      initPayload.maxChainPoints = state.maxChainPoints;
+      initPayload.chainViews = {
+        xy: packView(Ch.xy),
+        begin: packView(Ch.begin),
+        count: packView(Ch.count),
+        loop: packView(Ch.loop),
+      };
+    }
+
     if (state.fixturesEnabled && state.fixtureViews) {
       var F = state.fixtureViews;
       initPayload.maxFixturePoolSize = state.maxFixtures;
@@ -1033,6 +1065,16 @@
         state.maxFixtures,
         data.fixtures.entityCount | 0,
         data.fixtures.entityIdWidth | 0 || state.entityIdWidth || 16,
+      );
+    }
+
+    if (data.chains && data.chains.enabled && data.chains.data) {
+      state.chainsEnabled = true;
+      state.maxChainPoints = data.chains.maxChainPoints | 0;
+      state.chainViews = bindChainViews(
+        data.chains.data,
+        state.maxChainPoints,
+        data.chains.entityCount | 0,
       );
     }
 

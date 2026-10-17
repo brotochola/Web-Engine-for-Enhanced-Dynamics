@@ -14,6 +14,7 @@ import { Mouse } from '../../mouse.js';
 import { Grid } from '../../grid.js';
 import { Joint } from '../../joint.js';
 import { ColliderFixture } from '../../colliderFixture.js';
+import { ChainPoints } from '../../chainPoints.js';
 import { DebugDraw } from '../debugDraw.js';
 import { DEBUG_FLAGS } from '../debugFlags.js';
 import { distanceSq2D, lightInfluenceRadius } from '../../../util/utils.js';
@@ -342,6 +343,11 @@ export class PhysicsDebugRenderer {
         continue;
       }
 
+      if (shape === ShapeType.Chain) {
+        this._strokeChain(ctx, i, sx, sy, c, s, zoom, false);
+        continue;
+      }
+
       if (shape === ShapeType.Circle) {
         const r = radius[i];
         if (!(r > 0)) continue;
@@ -378,6 +384,28 @@ export class PhysicsDebugRenderer {
         }
       }
     }
+  }
+
+  _strokeChain(ctx, entityIdx, sx, sy, c, s, zoom, fill) {
+    if (!ChainPoints.xy || !ChainPoints.begin) return;
+    const begin = ChainPoints.begin[entityIdx];
+    const count = ChainPoints.count[entityIdx] | 0;
+    if (begin < 0 || count < 2) return;
+    const xy = ChainPoints.xy;
+    const base = begin * 2;
+    const loop = ChainPoints.loop[entityIdx] | 0;
+    ctx.beginPath();
+    for (let v = 0; v < count; v++) {
+      const lx = xy[base + v * 2];
+      const ly = xy[base + v * 2 + 1];
+      const wx = sx + (c * lx - s * ly) * zoom;
+      const wy = sy + (s * lx + c * ly) * zoom;
+      if (v === 0) ctx.moveTo(wx, wy);
+      else ctx.lineTo(wx, wy);
+    }
+    if (loop) ctx.closePath();
+    if (fill) ctx.fill();
+    ctx.stroke();
   }
 
   _strokeFixtures(ctx, entityIdx, sx, sy, c, s, zoom, fill) {
@@ -644,6 +672,11 @@ export class PhysicsDebugRenderer {
       const extras = Collider.fixtureCount ? (Collider.fixtureCount[i] | 0) : 0;
       if (extras > 0 && ColliderFixture.head) {
         this._strokeFixtures(ctx, i, sx, sy, c, s, zoom, true);
+        continue;
+      }
+
+      if (shape === ShapeType.Chain) {
+        this._strokeChain(ctx, i, sx, sy, c, s, zoom, true);
         continue;
       }
 

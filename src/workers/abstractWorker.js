@@ -47,6 +47,7 @@ import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
 import { Joint } from '../core/joint.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
+import { ChainPoints } from '../core/chainPoints.js';
 import { SoundManager } from '../core/soundManager.js';
 import { createWorkerQueryFunctions } from '../core/querySystem.js';
 import { Query } from '../core/query.js';
@@ -649,6 +650,16 @@ export class AbstractWorker {
       ColliderFixture.initialize(maxFixturePoolSize);
       ColliderFixture.initializeFreeList(data.fixtures.freeList, data.fixtures.freeListTop);
       this.reportLog(`initialized ColliderFixture pool for ${maxFixturePoolSize} fixtures`);
+    }
+
+    if (data.chains && data.chains.enabled && data.chains.data) {
+      ChainPoints.lengthUnitsPerMeter = data.chains.lengthUnitsPerMeter || 100;
+      ChainPoints.initializeArrays(
+        data.chains.data,
+        data.chains.maxChainPoints | 0,
+        data.chains.entityCount || 0,
+      );
+      this.reportLog(`initialized chain points for ${data.chains.maxChainPoints | 0} points`);
     }
 
     // Gameplay writes, pixi reads. The Box2D worker is not an AbstractWorker.

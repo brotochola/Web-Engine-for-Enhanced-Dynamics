@@ -8,6 +8,7 @@ import { ColliderFixture } from './colliderFixture.js';
 import { Grid } from './grid.js';
 import { rayCircleIntersect, rayBoxIntersect, rayPolygonIntersect } from '../util/utils.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
+import { ChainPoints } from './chainPoints.js';
 
 /**
  * Ray - Static class for raycasting against entities in the spatial grid
@@ -49,6 +50,7 @@ export class Ray {
   static SHAPE_BOX = ShapeType.Box;
   static SHAPE_CIRCLE = ShapeType.Circle;
   static SHAPE_POLYGON = ShapeType.Polygon;
+  static SHAPE_CHAIN = ShapeType.Chain;
 
   // GC Optimization: Reusable objects to avoid GC pressure
   static _tempResult = { entityIndex: -1, distance: Infinity, fixtureIndex: -1 };
@@ -872,6 +874,10 @@ export class Ray {
     const oy = Collider.offsetY[entityIndex] || 0;
     const tx = Transform.x[entityIndex];
     const ty = Transform.y[entityIndex];
+
+    if (shapeType === Ray.SHAPE_CHAIN) {
+      return ChainPoints.rayDistance(entityIndex, rayX, rayY, dirX, dirY, rayLength);
+    }
 
     if (shapeType === Ray.SHAPE_POLYGON) {
       const c = Transform.rotC ? Transform.rotC[entityIndex] : 1;

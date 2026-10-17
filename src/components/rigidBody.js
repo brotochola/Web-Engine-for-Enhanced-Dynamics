@@ -140,6 +140,17 @@ export class RigidBody extends Component {
           RigidBody.invMass[index] = isStatic ? 0 : 1 / area;
           massInitialized = true;
         }
+      } else if (shapeType === ShapeType.Chain) {
+        // Segments have no area. Disk of the local AABB, same density as a circle.
+        const w = Collider.width[index];
+        const h = Collider.height[index];
+        const r = 0.5 * (w > h ? w : h);
+        if (r > 0) {
+          const mass = Math.PI * r * r;
+          RigidBody.mass[index] = mass;
+          RigidBody.invMass[index] = isStatic ? 0 : 1 / mass;
+          massInitialized = true;
+        }
       }
     }
 
@@ -192,6 +203,11 @@ export class RigidBody extends Component {
           ? ColliderFixture.inertiaAboutOrigin(index, mass)
           : Collider.polygonInertia(index, mass);
       }
+    } else if (shapeType === ShapeType.Chain) {
+      const w = Collider.width[index];
+      const h = Collider.height[index];
+      const r = 0.5 * (w > h ? w : h);
+      if (r > 0 && mass > 0) inertia = 0.5 * mass * r * r;
     }
 
     RigidBody.inertia[index] = inertia;

@@ -59,6 +59,7 @@ import { liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from './liquidFunGroups
 import { LiquidFun } from '../core/liquidFun.js';
 import { Joint } from '../core/joint.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
+import { ChainPoints } from '../core/chainPoints.js';
 import { MeshGeometry } from '../core/meshGeometry.js';
 import { SoundManager } from '../core/soundManager.js';
 import { Query } from '../core/query.js';
@@ -123,6 +124,12 @@ export function validateSceneSharedBufferConfig(scene) {
     config.physics.maxFixturePoolSize || config.physics.maxFixtures || 0,
     0,
     MAX_ENTITIES,
+  );
+  assertIntegerInRange(
+    'physics.maxChainPoints',
+    config.physics.maxChainPoints || 0,
+    0,
+    1 << 20,
   );
   assertIntegerInRange(
     'renderer.maxMeshVerts',
@@ -690,6 +697,15 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
       buffers.colliderFixtureFreeList,
       buffers.colliderFixtureFreeListTop,
     );
+  }
+
+  ChainPoints.reset();
+  const maxChainPoints = config.physics.maxChainPoints || 0;
+  if (maxChainPoints > 0) {
+    ChainPoints.lengthUnitsPerMeter = config.physics.lengthUnitsPerMeter || 100;
+    const chainBytes = ChainPoints.getBufferSize(maxChainPoints, totalEntityCount);
+    buffers.chainPointData = new SharedArrayBuffer(chainBytes);
+    ChainPoints.initializeArrays(buffers.chainPointData, maxChainPoints, totalEntityCount);
   }
 
   MeshGeometry.reset();

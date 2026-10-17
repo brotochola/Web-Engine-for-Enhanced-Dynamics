@@ -36,12 +36,12 @@ Playable `bunnyMarkScene` sets the flag. Stress A (WASM beside `tickAll`) and D 
 
 Box2D always attaches **shapes to a body**. Weed maps ECS components like Unity:
 
-| Components | Box2D body | Contacts / rays (Box2D) | Notes |
-| ---------- | ---------- | ----------------------- | ----- |
-| **RigidBody + Collider** | Dynamic or static (`RigidBody.static`) + shape | Yes | Same as classic Weed path |
-| **RigidBody only** | Body **without shapes** (WASM `create_body`) | No | Solver still integrates `vx/vy`, damping, gravity, joints. Ghost projectiles / flight FX. Unit mass when shapeless. |
-| **Collider only** | **Implicit static** body + shape | Yes | Walls, triggers, occluders. No force response. |
-| **Neither** | No Box2D body | — | Transform (+ optional sprite bounds in spatial) |
+| Components               | Box2D body                                     | Contacts / rays (Box2D) | Notes                                                                                                               |
+| ------------------------ | ---------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **RigidBody + Collider** | Dynamic or static (`RigidBody.static`) + shape | Yes                     | Same as classic Weed path                                                                                           |
+| **RigidBody only**       | Body **without shapes** (WASM `create_body`)   | No                      | Solver still integrates `vx/vy`, damping, gravity, joints. Ghost projectiles / flight FX. Unit mass when shapeless. |
+| **Collider only**        | **Implicit static** body + shape               | Yes                     | Walls, triggers, occluders. No force response.                                                                      |
+| **Neither**              | No Box2D body                                  | —                       | Transform (+ optional sprite bounds in spatial)                                                                     |
 
 Host sync (`weedjsPost.syncBodySlot`):
 
@@ -54,19 +54,19 @@ Host sync (`weedjsPost.syncBodySlot`):
 **Weed game API** (do not call WASM `addShape` / `clearShapes` from gameplay):
 
 ```js
-this.collider.active = 0;  // RB stays: body kept, shapes cleared (no contacts)
-this.collider.active = 1;  // restore shape on existing body
+this.collider.active = 0; // RB stays: body kept, shapes cleared (no contacts)
+this.collider.active = 1; // restore shape on existing body
 this.rigidBody.active = 0; // Collider stays: implicit static body + shape
 this.rigidBody.active = 1; // restore dynamic/static from rigidBody.static
 this.collider.replacePolygons(tris); // compound: N convex fixtures (3..8 local CCW verts)
 this.collider.replacePolygonsFlat(xy, counts, n); // same writer, packed SoA, no {x,y}
-this.collider.clearFixtures();       // extras gone; shapeless if polyCount is already 0
-this.meshRenderer.tint = 0x88aa66;   // MeshRenderer + LAYER_KIND.MESH (not Collider)
+this.collider.clearFixtures(); // extras gone; shapeless if polyCount is already 0
+this.meshRenderer.tint = 0x88aa66; // MeshRenderer + LAYER_KIND.MESH (not Collider)
 this.meshRenderer.setTexture('rocky');
 this.setTileWorld(128);
-this.meshRenderer.visualOutset = 2;  // draw inflate only
+this.meshRenderer.visualOutset = 2; // draw inflate only
 this.setLayer('terrain');
-this.bakeWorldTileToLocal();         // when the island goes dynamic
+this.bakeWorldTileToLocal(); // when the island goes dynamic
 ```
 
 A junior can get a visible MESH body without fixtures:
@@ -117,7 +117,7 @@ Setters write SoA and `markBodyDirty` with `LIFECYCLE|GEOMETRY|MASS` (Collider) 
 
 `GameObject.spawn` wraps `onSpawned` in `withBodyDirtyDeferred` so mid-hook Box 0×0 never creates a body. `bumpBodyGeneration` after activate **always** publishes `LIFECYCLE`, even if a parent `onSpawned` is still deferred (child spawn). `markBodyDirty(..., force)` is the same escape hatch for post-spawn `GEOMETRY|BODY_TYPE|FILTER` (demo: `TerrainIsland.syncPhysics`). Host `syncBodySlot`: if flags are more than `LIFECYCLE` alone, run `syncBodyProperties` on the create frame too — otherwise multi-fixture islands stay shapeless until a later remesh.
 
-WASM sibling (`Box2d_3.2_C_-_liquidfun`): `create_body`, `body_add_shape_{box,circle,polygon}`, `body_clear_shapes`. Rebuild: `weedjs\build_for_weed.bat` → copies into `src/box2d/`. Correctness: `tests/node/rbColliderComposition.wasm.test.js` (WASM attach/detach); dirty-flag publish: `tests/node/box2dBodyJointSync.test.js`.
+WASM sibling (`Box2d_3.2_C_-_liquidfun`): `create_body`, `body_add_shape_{box,circle,polygon}`, `body_set_chain`, `body_clear_shapes`. `box2d/` is a subtree of Box2D 3.2.0 (`BOX2D_UPSTREAM.txt`); the pose export is `patches/weed-state-export.patch`. Rebuild: `weedjs\build_for_weed.bat` → copies into `src/box2d/`. Correctness: `tests/node/rbColliderComposition.wasm.test.js` (WASM attach/detach); dirty-flag publish: `tests/node/box2dBodyJointSync.test.js`.
 
 **Not in v1:** kinematic type exposure (enum exists, Weed still passes static/dynamic only); Collider as Weed-grid-only without a Box2D body (would let dynamics tunnel “walls”).
 
@@ -138,10 +138,10 @@ The worker does **not** build the spatial grid or neighbor lists; it **reads** `
 
 Live HEAP `Transform` mutates during solver substeps. Async readers must not sample it for sprites.
 
-| Buffer | Layout | Role |
-|--------|--------|------|
-| `poseDataA` / `poseDataB` | SoA `Float32` `x[N]`, `y[N]`, `rotC[N]`, `rotS[N]` (`N = totalEntityCount`) | Post-step display snapshot |
-| `poseSync` | `Int32[2]` `[readyFrame, consumedFrame]` | Writer stores ready; pre_render latches `(ready-1)%2` and stores consumed |
+| Buffer                    | Layout                                                                      | Role                                                                      |
+| ------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `poseDataA` / `poseDataB` | SoA `Float32` `x[N]`, `y[N]`, `rotC[N]`, `rotS[N]` (`N = totalEntityCount`) | Post-step display snapshot                                                |
+| `poseSync`                | `Int32[2]` `[readyFrame, consumedFrame]`                                    | Writer stores ready; pre_render latches `(ready-1)%2` and stores consumed |
 
 - **Writer:** `weedjsPost.publishPose` after `world.step` (dense body list → typed views; no alloc).
 - **Readers:** `preRenderWorker` (entities / adobe / shadows / parented deco compose) consumes; `particleWorker` parent-follow latches without consume. Logic binds the same latch for `Camera.followEntity`. Pixi compute pack and debug colliders pin the generation stamped as `Int32 poseReady` on the render-queue camera SAB (same slot as sprites; no `Atomics.load` of live `poseSync`).
@@ -152,11 +152,11 @@ Live HEAP `Transform` mutates during solver substeps. Async readers must not sam
 
 Two independent `requestAnimationFrame` loops (physics vs pre_render/pixi) drift. At ~60 vs ~59.3 FPS they **lap about once a second**. Double-buffer without a gate: the third publish writes `poseFrame & 1` onto the buffer pre_render is still reading → sprites jump to the other generation (looks like last frame / rewind).
 
-**Correct gate** (`maybePublishPose` in `weedjsPost.js`): after `world.step`, skip **publish only** when `poseFrame > consumedFrame`. The sim keeps running; the next free slot gets the latest HEAP pose (at most a 1-frame *forward* skip).
+**Correct gate** (`maybePublishPose` in `weedjsPost.js`): after `world.step`, skip **publish only** when `poseFrame > consumedFrame`. The sim keeps running; the next free slot gets the latest HEAP pose (at most a 1-frame _forward_ skip).
 
 **Wrong gate:** zero `dt` / skip `world.step` until consume. That couples physics to visual jitter → random freeze-then-catch-up. Worse than the rhythmic lap.
 
-`pre_render` queue backpressure (`renderQueueFrame > consumedFrame + 1`) is a *separate* pixi lock. Do not tighten it to `> consumed` as a substitute for pose gating — that stalls packing, delays consume, and reintroduces hitch storms.
+`pre_render` queue backpressure (`renderQueueFrame > consumedFrame + 1`) is a _separate_ pixi lock. Do not tighten it to `> consumed` as a substitute for pose gating — that stalls packing, delays consume, and reintroduces hitch storms.
 
 #### Camera look-ahead must share the sprite clock
 
@@ -184,11 +184,12 @@ Soft spring bias (`contactHertz` / damping / maxBias) is **not used** by the cur
 
 ### Collider shape types
 
-| Value | Name     | Notes                                                                 |
-| ----: | -------- | --------------------------------------------------------------------- |
-|   `0` | Box      | Box2D box (`width`/`height` local AABB); rotates with `Transform.rotation` unless `fixedRotation` / static |
-|   `1` | Circle   | Uses `radius`                                                         |
-|   `2` | Polygon  | Convex polygon: local verts/normals via `Collider.makePolygon`, max 8 verts; oriented by `Transform.rotation`. |
+| Value | Name    | Notes                                                                                                                                        |
+| ----: | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+|   `0` | Box     | Box2D box (`width`/`height` local AABB); rotates with `Transform.rotation` unless `fixedRotation` / static                                   |
+|   `1` | Circle  | Uses `radius`                                                                                                                                |
+|   `2` | Polygon | Convex polygon: local verts/normals via `Collider.makePolygon`, max 8 verts; oriented by `Transform.rotation`.                               |
+|   `3` | Chain   | One-sided polyline via `Collider.setChain`. Open chains treat the first and last points as ghosts. Opt-in `physics.maxChainPoints`. No mass. |
 
 Numbers match WASM C `b2_game_shape_*` (Box2D language).
 
@@ -205,9 +206,9 @@ Inertia (synced from collider geometry in `RigidBody.syncMassFromCollider`):
 
 Box2D owns sleep. Weed exposes one scene knob:
 
-| Knob | Default | Role |
-|------|---------|------|
-| `sleeping` | `true` | Maps to `b2World_EnableSleeping`. When `false`, dynamics never sleep. |
+| Knob       | Default | Role                                                                  |
+| ---------- | ------- | --------------------------------------------------------------------- |
+| `sleeping` | `true`  | Maps to `b2World_EnableSleeping`. When `false`, dynamics never sleep. |
 
 ```javascript
 physics: {
@@ -256,14 +257,14 @@ Body create/destroy sync uses a **dirty bitset + generation** (`box2dBodySync`),
 
 On-demand Box2D broadphase query for entity ids (parallel to spatial `neighborData`, does **not** replace spatial workers).
 
-| Caller | API | Blocking |
-|--------|-----|----------|
-| Logic / `GameObject` | `Box2d.queryAABB(x0, y0, x1, y1, out, filter?)` | Sync (`Atomics.wait`) |
-| Scene (main) | `Box2d.queryAABBAsync(...)` → Promise | Async (`Atomics.waitAsync`) |
-| Logic | `Box2d.overlapCircle(cx, cy, radius, out, filter?)` | Sync (`Atomics.wait`) |
-| Scene (main) | `Box2d.overlapCircleAsync(...)` | Async |
-| Logic | `Box2d.castRayAll(ox, oy, dx, dy, out?, filter?)` | Sync; borrowed `{ entityIndex, fraction, hitX, hitY }[]` |
-| Scene (main) | `Box2d.castRayAllAsync(...)` | Async |
+| Caller               | API                                                 | Blocking                                                 |
+| -------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| Logic / `GameObject` | `Box2d.queryAABB(x0, y0, x1, y1, out, filter?)`     | Sync (`Atomics.wait`)                                    |
+| Scene (main)         | `Box2d.queryAABBAsync(...)` → Promise               | Async (`Atomics.waitAsync`)                              |
+| Logic                | `Box2d.overlapCircle(cx, cy, radius, out, filter?)` | Sync (`Atomics.wait`)                                    |
+| Scene (main)         | `Box2d.overlapCircleAsync(...)`                     | Async                                                    |
+| Logic                | `Box2d.castRayAll(ox, oy, dx, dy, out?, filter?)`   | Sync; borrowed `{ entityIndex, fraction, hitX, hitY }[]` |
+| Scene (main)         | `Box2d.castRayAllAsync(...)`                        | Async                                                    |
 
 - `out` must be `Int32Array` (`queryAABB` / `overlapCircle`). Return value = full hit count; written slots = `min(count, out.length)`.
 - `overlapCircle` / `castRayAll` fill the WASM query slots / hits (same buffers as closest ray). `castRayAll` copies the first four floats per hit (`entity`, `fraction`, `hitX`, `hitY`).
@@ -277,10 +278,10 @@ On-demand Box2D broadphase query for entity ids (parallel to spatial `neighborDa
 
 Same single-flight SAB pattern for particle indices (`liquidFunQuerySab`).
 
-| Caller | API | Blocking |
-|--------|-----|----------|
-| Logic | `LiquidFun.queryAABB` / `rayCast` | Sync (`Atomics.wait`) |
-| Main | `LiquidFun.queryAABBAsync` / `rayCastAsync` | Async (`Atomics.waitAsync`) |
+| Caller | API                                         | Blocking                    |
+| ------ | ------------------------------------------- | --------------------------- |
+| Logic  | `LiquidFun.queryAABB` / `rayCast`           | Sync (`Atomics.wait`)       |
+| Main   | `LiquidFun.queryAABBAsync` / `rayCastAsync` | Async (`Atomics.waitAsync`) |
 
 See [LiquidFun](./LIQUIDFUN.md). Demo: [`demos/liquidFunQueryScene`](../../demos/liquidFunQueryScene/liquidFunQueryScene.js).
 
@@ -359,24 +360,24 @@ Physics sync iterates the dense active list (`activeIndices` / `activeCount`), n
 
 Written to per-worker stats SABs via indices in `src/util/workersUtils.js`. DebugUI Performance tab shows **Step** (`STEP_MS`) first after the worker name, then **FPS**.
 
-| Key | Meaning |
-| --- | --- |
-| `FPS` | How often the loop woke up: `1000 / ms` between the start of this tick and the start of the previous one. The Performance tab averages the last 60 samples. Backpressure skips are cheap wake-ups and pull the average up. Not `1000 / STEP_MS`. |
+| Key       | Meaning                                                                                                                                                                                                                                                                                                                                                                 |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FPS`     | How often the loop woke up: `1000 / ms` between the start of this tick and the start of the previous one. The Performance tab averages the last 60 samples. Backpressure skips are cheap wake-ups and pull the average up. Not `1000 / STEP_MS`.                                                                                                                        |
 | `STEP_MS` | Wall ms for that frame’s work only (not idle to next rAF/`fixedFps`). Physics: around `weedjsDoStep`. Other workers: around `AbstractWorker.update()`. Main: around `Scene.updateInternal()` (`Scene.mainStepMs`). Audio: worklet `process()` wall ms (`SoundManager` process SAB). Load% is this number against 16.7 ms (a 60 Hz frame), not against the measured FPS. |
-| `MSG_MS` | Time spent handling incoming messages this frame (ms); see `AbstractWorker` |
+| `MSG_MS`  | Time spent handling incoming messages this frame (ms); see `AbstractWorker`                                                                                                                                                                                                                                                                                             |
 
 Physics-only fields on `physicsStats` (`PHYSICS_STATS`):
 
-| Key | Meaning |
-| --- | --- |
-| `BODY_COUNT` | Nested weedjs: dense Box2D bodies after `syncBodies` |
-| `JOINT_COUNT` | Nested weedjs: `world.getJointCount()` (WASM joint table high-water) |
-| `CONTACT_BEGIN` / `CONTACT_END` | Box2D contact begin/end event counts this step (`EVENT_HEADER`) |
-| `SENSOR_BEGIN` / `SENSOR_END` | Box2D sensor begin/end event counts this step |
-| `WEED_JOINTS` | Dense active count from Weed `Joint` SAB (when joints enabled) |
-| `COMMAND_OVERFLOW_TOTAL` | Cumulative MPSC command ring overflows |
-| `CONTACT_DROPPED` / `SENSOR_DROPPED` | WASM export drops + contact-ring overrun counter |
-| `BODY_SYNC_*` / `JOINT_SYNC_*` / `COMMAND_*` | Nested subphase timings and change counts |
+| Key                                          | Meaning                                                              |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| `BODY_COUNT`                                 | Nested weedjs: dense Box2D bodies after `syncBodies`                 |
+| `JOINT_COUNT`                                | Nested weedjs: `world.getJointCount()` (WASM joint table high-water) |
+| `CONTACT_BEGIN` / `CONTACT_END`              | Box2D contact begin/end event counts this step (`EVENT_HEADER`)      |
+| `SENSOR_BEGIN` / `SENSOR_END`                | Box2D sensor begin/end event counts this step                        |
+| `WEED_JOINTS`                                | Dense active count from Weed `Joint` SAB (when joints enabled)       |
+| `COMMAND_OVERFLOW_TOTAL`                     | Cumulative MPSC command ring overflows                               |
+| `CONTACT_DROPPED` / `SENSOR_DROPPED`         | WASM export drops + contact-ring overrun counter                     |
+| `BODY_SYNC_*` / `JOINT_SYNC_*` / `COMMAND_*` | Nested subphase timings and change counts                            |
 
 With capped FPS (~60), prefer **Step** over FPS to compare worker load.
 

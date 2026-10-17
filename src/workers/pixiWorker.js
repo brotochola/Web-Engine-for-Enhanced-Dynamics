@@ -2752,6 +2752,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     if (!(scale > 0)) return;
     const tan = this._wedgeTan;
     const shape = Collider.shapeType[entityIdx];
+    if (shape === ShapeType.Chain) return;
     let ok = false;
     if (shape === ShapeType.Circle) {
       const r = Collider.radius[entityIdx];
@@ -3078,6 +3079,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             indices[idxCount++] = center + 1 + si;
             indices[idxCount++] = center + 1 + ((si + 1) % segs);
           }
+        } else if (shape === ShapeType.Chain) {
+          continue;
         } else {
           let vc = 0;
           if (shape === ShapeType.Box) {

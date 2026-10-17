@@ -135,6 +135,7 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
     const worldX = posX + c * offX - s * offY;
     const worldY = posY + s * offX + c * offY;
     const kind = shapeType[i] | 0;
+    if (kind === ShapeType.Chain) continue;
     let hw = 0;
     let hh = 0;
     let vStart = 0;

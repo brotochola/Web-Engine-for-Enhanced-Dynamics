@@ -392,3 +392,51 @@ test('three polygon fixtures on one body block a dynamic box', () => {
   assert.ok(contacts > 0, 'box should still hit after clear+box');
   assert.ok(bodyX(ball) < 10, `box should not pass rebuilt wall (x=${bodyX(ball)})`);
 });
+
+test('open chain holds a box on the solid edge and lets one through the ghost', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  assert.ok(fn('body_set_chain'), 'body_set_chain export missing — rebuild box2dWasm');
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const worldId = createWorld(0, 400, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(64));
+  fn('world_enable_sleeping')(worldId, 0);
+
+  const ground = fn('create_body')(worldId, BODY_STATIC, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0);
+  assert.ok(ground >= 0);
+  const bytes = 4 * 2 * 4;
+  const ptr = fn('malloc')(bytes);
+  assert.ok(ptr);
+  const heap = new Float32Array(memory.buffer);
+  const base = ptr >> 2;
+  const pts = [0, 0, 20, 0, 80, 0, 100, 0];
+  for (let i = 0; i < pts.length; i++) heap[base + i] = pts[i];
+  fn('body_set_chain')(ground, ptr, 4, 0, 0.4, 0, 1, 0xffffffff, 0);
+
+  const onSolid = createBox(fn, worldId, {
+    x: 50,
+    y: -40,
+    hx: 4,
+    hy: 4,
+    gravityScale: 1,
+    fixedRotation: 1,
+    entityIndex: 1,
+  });
+  const onGhost = createBox(fn, worldId, {
+    x: 8,
+    y: -40,
+    hx: 4,
+    hy: 4,
+    gravityScale: 1,
+    fixedRotation: 1,
+    entityIndex: 2,
+  });
+  const stepWorld = fn('step_world');
+  const stateByte = fn('get_state_byte_offset')();
+  const cap = fn('get_body_capacity')();
+  const bodyY = (slot) => new Float32Array(memory.buffer)[(stateByte >> 2) + cap + slot];
+  for (let i = 0; i < 180; i++) stepWorld(worldId, 1 / 60, 4);
+  assert.ok(bodyY(onSolid) < 5, `solid edge should catch the box (y=${bodyY(onSolid)})`);
+  assert.ok(bodyY(onGhost) > 20, `ghost edge should let the box through (y=${bodyY(onGhost)})`);
+});

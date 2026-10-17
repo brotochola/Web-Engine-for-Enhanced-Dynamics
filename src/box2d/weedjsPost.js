@@ -138,6 +138,10 @@
   let jointCapacityWarn = false;
   let fixtureViews = null;
   let maxFixtures = 0;
+  let chainViews = null;
+  let maxChainPoints = 0;
+  let chainVertexHeapPointer = 0;
+  let chainVertexHeapFloatIndex = 0;
   // Lifetime = physics worker. Not a JS new Float32Array per fixture.
   let polygonVertexHeapPointer = 0;
   let polygonVertexHeapFloatIndex = 0;
@@ -281,6 +285,21 @@
       vertexX: viewFromDesc(desc.vertexX, Float32Array),
       vertexY: viewFromDesc(desc.vertexY, Float32Array),
       head: desc.head ? viewFromDesc(desc.head, Uint16Array) : null,
+    };
+  }
+
+  function bindChainViews(desc, maxPoints) {
+    if (!desc || !(maxPoints > 0)) {
+      chainViews = null;
+      maxChainPoints = 0;
+      return;
+    }
+    maxChainPoints = maxPoints | 0;
+    chainViews = {
+      xy: viewFromDesc(desc.xy, Float32Array),
+      begin: viewFromDesc(desc.begin, Int32Array),
+      count: viewFromDesc(desc.count, Uint16Array),
+      loop: viewFromDesc(desc.loop, Uint8Array),
     };
   }
 
@@ -589,6 +608,46 @@
     return polygonVertexHeapPointer;
   }
 
+  function ensureChainVertexScratch() {
+    if (chainVertexHeapPointer || !(maxChainPoints > 0)) return;
+    chainVertexHeapPointer = Module._malloc(maxChainPoints * 2 * 4);
+    chainVertexHeapFloatIndex = chainVertexHeapPointer >> 2;
+  }
+
+  function syncChain(entityIdx) {
+    const C = chainViews;
+    if (!C || !bodySetChainFn) return 0;
+    const count = C.count[entityIdx] | 0;
+    const isLoop = C.loop[entityIdx] | 0;
+    if (isLoop ? count < 3 : count < 4) {
+      if (bodyClearShapesFn) bodyClearShapesFn(entityIdx);
+      return 0;
+    }
+    ensureChainVertexScratch();
+    const begin = C.begin[entityIdx] | 0;
+    const src = begin * 2;
+    const heapBase = chainVertexHeapFloatIndex;
+    const ox = views.offsetX[entityIdx] || 0;
+    const oy = views.offsetY[entityIdx] || 0;
+    for (let v = 0; v < count; v++) {
+      Module.HEAPF32[heapBase + v * 2] = C.xy[src + v * 2] + ox;
+      Module.HEAPF32[heapBase + v * 2 + 1] = C.xy[src + v * 2 + 1] + oy;
+    }
+    const friction = views.friction[entityIdx];
+    bodySetChainFn(
+      entityIdx,
+      chainVertexHeapPointer,
+      count,
+      isLoop,
+      friction >= 0 ? friction : 0,
+      views.restitution[entityIdx] || 0,
+      categoryBitsFor(entityIdx) >>> 0,
+      views.collisionMask[entityIdx] >>> 0,
+      views.collisionGroupIndex[entityIdx] | 0,
+    );
+    return 1;
+  }
+
   function addAllFixtures(entityIdx) {
     const F = fixtureViews;
     if (!F || !F.head || !bodyAddShapePolygonFn) return 0;
@@ -700,6 +759,18 @@
         }
         return true;
       }
+      if (shape === ShapeType.Chain) {
+        world.create(opts);
+        if (!syncChain(i)) {
+          try {
+            world.destroyBody(i);
+          } catch (_) {
+            /* slot may already be clear */
+          }
+          return false;
+        }
+        return true;
+      }
       if (shape === ShapeType.Circle) {
         const r = views.radius[i];
         if (!(r > 0)) return false;
@@ -729,6 +800,11 @@
   }
 
   function syncBodyGeometry(i) {
+    const shapeNow = views.shapeType[i] | 0;
+    if (shapeNow === ShapeType.Chain) {
+      syncChain(i);
+      return;
+    }
     const extras = views.fixtureCount ? views.fixtureCount[i] | 0 : 0;
     if (extras > 0) {
       if (bodyClearShapesFn) bodyClearShapesFn(i);
@@ -783,7 +859,9 @@
       }
     }
     if (col && flags & (BODY_DIRTY.MASS | BODY_DIRTY.GEOMETRY)) {
-      bodySetDensityFn(i, densityForEntity(i, views.shapeType[i] | 0));
+      if ((views.shapeType[i] | 0) !== ShapeType.Chain) {
+        bodySetDensityFn(i, densityForEntity(i, views.shapeType[i] | 0));
+      }
     }
     if (col && flags & BODY_DIRTY.FILTER) {
       bodySetFilterFn(
@@ -1132,6 +1210,7 @@
   let bodySetShapePolygonFn = null;
   let bodyAddShapePolygonFn = null;
   let bodyClearShapesFn = null;
+  let bodySetChainFn = null;
 
   // Teleports skip b2BodyMoveEvent — accumulate and merge into moved SAB after step
   let pendingTeleportBits = null;
@@ -2474,6 +2553,17 @@
       'number',
     ]);
     bodyClearShapesFn = Module.cwrap('body_clear_shapes', null, ['number']);
+    bodySetChainFn = Module.cwrap('body_set_chain', null, [
+      'number',
+      'number',
+      'number',
+      'number',
+      'number',
+      'number',
+      'number',
+      'number',
+      'number',
+    ]);
     weedjsHeapBytesUsed =
       typeof Module._weedjs_heap_bytes_used === 'function'
         ? Module._weedjs_heap_bytes_used
@@ -2550,6 +2640,7 @@
     }
     bindJointViews(data.jointViews, data.maxJoints | 0);
     bindFixtureViews(data.fixtureViews, data.maxFixturePoolSize | data.maxFixtures | 0);
+    bindChainViews(data.chainViews, data.maxChainPoints | 0);
     if (data.liquidFunViews) {
       liquidFunViews = {
         count: data.liquidFunViews.count

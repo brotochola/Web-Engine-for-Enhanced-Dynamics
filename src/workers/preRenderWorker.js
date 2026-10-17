@@ -3308,6 +3308,7 @@ class PreRenderWorker extends AbstractWorker {
                     const s = pose.rotS;
 
                     const shape = shapeType[nIdx];
+                    if (shape === ShapeType.Chain) continue;
                     const ox = colOffX[nIdx] || 0;
                     const oy = colOffY[nIdx] || 0;
                     const occX = wx + ox;
