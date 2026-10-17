@@ -4,9 +4,10 @@ import WEED from '/src/index.js';
 import { Car } from '/demos/carScene/gameObjects/car.js';
 import { NavGrid } from '/src/core/navGrid.js';
 import { CarComponent } from '/demos/carScene/components/carComponent.js';
+import { CityPerson } from './cityPerson.js';
 import { dot2 } from '/src/util/utils.js';
 
-const { SpriteRenderer, RigidBody, Collider, CollisionListener } = WEED;
+const { SpriteRenderer, RigidBody, Collider, CollisionListener, Transform } = WEED;
 
 const _navVec = { x: 0, y: 0 };
 
@@ -27,11 +28,18 @@ const _PROBE = [
   [0, -96],
 ];
 
+// Lane corridor: only dodge bodies that would actually be hit
+const AVOID_PERSON_REACH = 140;
+const AVOID_PERSON_CORRIDOR = 42;
+const AVOID_CAR_REACH = 180;
+const AVOID_CAR_CORRIDOR = 72;
+const AVOID_STEER = 1.15;
+
 export class TrafficCar extends Car {
   static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, CarComponent];
 
   static aiTurnStrength = 0.8;
-  static aiForwardStrength = 0.9;
+  static aiForwardStrength = 0.5;
   static aiForwardAlignmentThreshold = 0.15;
   static aiBrakeForwardSpeedThreshold = 60; // px/s
   /** Small throttle so minSteerSpeed can unlock when facing away from FF */
@@ -72,6 +80,52 @@ export class TrafficCar extends Car {
     return false;
   }
 
+  /**
+   * Brake and steer off people and other traffic cars sitting in the lane ahead.
+   * @returns {{ brake: number, steer: number }}
+   */
+  _avoidAhead(fx, fy) {
+    const myX = this.x;
+    const myY = this.y;
+    const personType = CityPerson.entityType;
+    const carType = this.entityType;
+    let brake = 0;
+    let steer = 0;
+
+    for (let n = 0; n < this.neighborCount; n++) {
+      const ni = this.getNeighbor(n);
+      if (!Transform.active[ni]) continue;
+      const type = Transform.entityType[ni];
+      const isPerson = type === personType;
+      const isCar = type === carType;
+      if (!isPerson && !isCar) continue;
+
+      const lead = isCar ? 0.2 : 0.12;
+      const dx = Transform.x[ni] + RigidBody.vx[ni] * lead - myX;
+      const dy = Transform.y[ni] + RigidBody.vy[ni] * lead - myY;
+      const ahead = dx * fx + dy * fy;
+      const reach = isCar ? AVOID_CAR_REACH : AVOID_PERSON_REACH;
+      if (ahead <= 12 || ahead > reach) continue;
+
+      const side = fx * dy - fy * dx;
+      const absSide = side < 0 ? -side : side;
+      const corridor = isCar ? AVOID_CAR_CORRIDOR : AVOID_PERSON_CORRIDOR;
+      if (absSide > corridor) continue;
+
+      const aheadU = 1 - ahead / reach;
+      const sideU = 1 - absSide / corridor;
+      const urgency = aheadU * (0.4 + 0.6 * sideU);
+      if (urgency > brake) brake = urgency;
+      // Positive steer is left of forward; push away from the side they occupy
+      steer += (side >= 0 ? 1 : -1) * urgency;
+    }
+
+    return {
+      brake: brake > 1 ? 1 : brake,
+      steer: steer > 1 ? 1 : steer < -1 ? -1 : steer,
+    };
+  }
+
   tick(dtRatio) {
     super.tick(dtRatio);
 
@@ -96,7 +150,7 @@ export class TrafficCar extends Car {
     const fy = this.forwardY;
     const cross = fx * ny - fy * nx;
     const alignment = fx * nx + fy * ny;
-    const turnInput = Math.max(-1, Math.min(1, cross * 2)) * this.constructor.aiTurnStrength;
+    let turnInput = Math.max(-1, Math.min(1, cross * 2)) * this.constructor.aiTurnStrength;
 
     const i = this.index;
     const forwardSpeed = dot2(RigidBody.vx[i], RigidBody.vy[i], fx, fy);
@@ -109,6 +163,13 @@ export class TrafficCar extends Car {
     } else if (Math.abs(turnInput) > 0.05) {
       // Creep so applyForces can steer while nearly stopped / facing wrong way
       forwardInput = this.constructor.aiCreepForward;
+    }
+
+    const avoid = this._avoidAhead(fx, fy);
+    if (avoid.brake > 0 || avoid.steer !== 0) {
+      const blended = turnInput * (1 - avoid.brake * 0.65) + avoid.steer * AVOID_STEER;
+      turnInput = blended > 1 ? 1 : blended < -1 ? -1 : blended;
+      forwardInput = avoid.brake > 0.82 ? -0.35 : forwardInput * (1 - avoid.brake);
     }
 
     this.applyForces(forwardInput, turnInput);

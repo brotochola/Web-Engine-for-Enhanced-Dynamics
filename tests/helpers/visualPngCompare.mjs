@@ -94,10 +94,16 @@ export function verdictFromDiff({ black, differing, pixels, maxDelta }) {
 }
 
 export async function captureCanvasPng(page) {
-  const canvas = page.locator('canvas').first();
-  const box = await canvas.boundingBox();
-  if (box && box.width > 0 && box.height > 0) {
-    return page.screenshot({ type: 'png', clip: box });
+  const locator = page.locator(
+    'body > canvas:not(#debug-visualization-canvas):not(.debug-ui-audio-graph), canvas:not(#debug-visualization-canvas):not(.debug-ui-audio-graph), canvas'
+  );
+  const count = await locator.count();
+  for (let i = 0; i < count; i++) {
+    const candidate = locator.nth(i);
+    const box = await candidate.boundingBox();
+    if (box && box.width > 0 && box.height > 0) {
+      return page.screenshot({ type: 'png', clip: box });
+    }
   }
-  return canvas.screenshot({ type: 'png' });
+  return locator.first().screenshot({ type: 'png' });
 }

@@ -56,6 +56,27 @@ export function triangulateSimplePolygon(xy, count, out) {
   if (area === 0 || !Number.isFinite(area)) return -1;
   const ccw = area > 0;
 
+  // D.1 Fast path: If polygon is strictly convex, fan from vertex 0 directly in O(N).
+  let isConvex = true;
+  for (let i = 0; i < n; i++) {
+    const p = i === 0 ? n - 1 : i - 1;
+    const nx = i + 1 === n ? 0 : i + 1;
+    const cr = cross(xy, p, i, nx);
+    if (ccw ? cr <= 0 : cr >= 0) {
+      isConvex = false;
+      break;
+    }
+  }
+  if (isConvex) {
+    let w = 0;
+    for (let i = 1; i < n - 1; i++) {
+      out[w++] = 0;
+      out[w++] = ccw ? i : i + 1;
+      out[w++] = ccw ? i + 1 : i;
+    }
+    return w;
+  }
+
   if (!_prev || _prev.length < n) {
     _prev = new Uint32Array(n);
     _next = new Uint32Array(n);

@@ -2283,20 +2283,7 @@ class Scene {
     const wallRatio = deltaTime / 16.67;
 
     // Update audio metrics from AudioWorklet (worklet handles playback directly via SAB)
-    const am = SoundManager.getMetrics();
-    const audioMetrics = this.audioMetrics;
-    audioMetrics.activeSlots = am.activeSlots;
-    audioMetrics.maxSlots = am.maxSlots;
-    audioMetrics.loadedSounds = am.loadedSounds;
-    audioMetrics.dropped = am.dropped;
-    audioMetrics.mixGain = am.mixGain;
-    audioMetrics.masterVolume = am.masterVolume;
-    audioMetrics.muted = am.muted;
-    audioMetrics.state = am.state;
-    audioMetrics.sampleRate = am.sampleRate;
-    audioMetrics.baseLatency = am.baseLatency;
-    audioMetrics.outputLatency = am.outputLatency;
-    audioMetrics.processMs = am.processMs || 0;
+    SoundManager.getMetrics(this.audioMetrics);
 
     // Camera pose comes from Camera SAB getters (workers call Camera.follow*).
     this.updateCameraBuffer();

@@ -673,7 +673,40 @@ export class Camera {
     const zoom = data[this.IDX_ZOOM] || 1;
     const cx = data[this.IDX_X] + this._canvasWidth / (2 * zoom);
     const cy = data[this.IDX_Y] + this._canvasHeight / (2 * zoom);
-    return deadzoneCenter(entityX, entityY, cx, cy, halfW, halfH, dest);
+    const rot = this.rotation;
+    if (!rot) {
+      return deadzoneCenter(entityX, entityY, cx, cy, halfW, halfH, dest);
+    }
+
+    // Rotate world delta into camera view/screen space
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const dx = entityX - cx;
+    const dy = entityY - cy;
+    const viewDx = c * dx - s * dy;
+    const viewDy = s * dx + c * dy;
+
+    let targetViewDx = 0;
+    let targetViewDy = 0;
+    if (halfW > 0) {
+      if (viewDx > halfW) targetViewDx = viewDx - halfW;
+      else if (viewDx < -halfW) targetViewDx = viewDx + halfW;
+      else targetViewDx = 0;
+    } else {
+      targetViewDx = viewDx;
+    }
+    if (halfH > 0) {
+      if (viewDy > halfH) targetViewDy = viewDy - halfH;
+      else if (viewDy < -halfH) targetViewDy = viewDy + halfH;
+      else targetViewDy = 0;
+    } else {
+      targetViewDy = viewDy;
+    }
+
+    // Rotate camera shift back into world space
+    dest.x = cx + (c * targetViewDx + s * targetViewDy);
+    dest.y = cy + (-s * targetViewDx + c * targetViewDy);
+    return dest;
   }
 
   /**
@@ -739,9 +772,17 @@ export class Camera {
     return this._data[this.IDX_ROTATION] || 0;
   }
 
-  static setAngle(radians) {
+  static set rotation(radians) {
     if (!this._data || this._data.length <= this.IDX_ROTATION) return;
     this._data[this.IDX_ROTATION] = radians || 0;
+  }
+
+  static setRotation(radians) {
+    this.rotation = radians;
+  }
+
+  static setAngle(radians) {
+    this.rotation = radians;
   }
 
   /**

@@ -42,7 +42,7 @@ export class PlanetWalker extends GameObject {
     const i = this.index;
     const dx = CX - this.x;
     const dy = CY - this.y;
-    const len = Math.hypot(dx, dy) || 1;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
     const ux = dx / len;
     const uy = dy / len;
     const tx = -uy;

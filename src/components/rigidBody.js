@@ -10,6 +10,8 @@ import { updateMassFromCircle, updateMassFromBox } from '../util/utils.js';
 import { ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 
+let _warnedDynamicChain = false;
+
 export class RigidBody extends Component {
   // SoA fields only. vx/vy/angularVelocity/sleeping live on Box2D HEAP
   // (bindBox2dHotFields after box2dReady). Stay null if physics.enabled === false —
@@ -100,7 +102,7 @@ export class RigidBody extends Component {
   static syncMassFromCollider(index) {
     if (!RigidBody.active || !RigidBody.active[index]) return false;
 
-    const isStatic = RigidBody.static[index] !== 0;
+    let isStatic = RigidBody.static[index] !== 0;
     let massInitialized = false;
     let shapeType = -1;
 
@@ -141,16 +143,17 @@ export class RigidBody extends Component {
           massInitialized = true;
         }
       } else if (shapeType === ShapeType.Chain) {
-        // Segments have no area. Disk of the local AABB, same density as a circle.
-        const w = Collider.width[index];
-        const h = Collider.height[index];
-        const r = 0.5 * (w > h ? w : h);
-        if (r > 0) {
-          const mass = Math.PI * r * r;
-          RigidBody.mass[index] = mass;
-          RigidBody.invMass[index] = isStatic ? 0 : 1 / mass;
-          massInitialized = true;
+        if (!isStatic) {
+          if (!_warnedDynamicChain) {
+            _warnedDynamicChain = true;
+            console.warn(`[RigidBody] entity ${index} has a chain collider, so the body is static`);
+          }
+          RigidBody.static[index] = 1;
+          isStatic = true;
         }
+        RigidBody.mass[index] = 0;
+        RigidBody.invMass[index] = 0;
+        massInitialized = true;
       }
     }
 
@@ -204,10 +207,7 @@ export class RigidBody extends Component {
           : Collider.polygonInertia(index, mass);
       }
     } else if (shapeType === ShapeType.Chain) {
-      const w = Collider.width[index];
-      const h = Collider.height[index];
-      const r = 0.5 * (w > h ? w : h);
-      if (r > 0 && mass > 0) inertia = 0.5 * mass * r * r;
+      inertia = 0;
     }
 
     RigidBody.inertia[index] = inertia;

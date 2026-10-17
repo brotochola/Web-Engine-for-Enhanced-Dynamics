@@ -16,6 +16,17 @@ function setupCamera({ zoom = 1, cx = 400, cy = 300, canvasW = 800, canvasH = 60
   return data;
 }
 
+test('rotation, setRotation, and setAngle write the same radians', () => {
+  const data = setupCamera();
+  Camera.rotation = 0.5;
+  assert.equal(data[Camera.IDX_ROTATION], 0.5);
+  assert.equal(Camera.rotation, 0.5);
+  Camera.setRotation(-1);
+  assert.equal(Camera.rotation, -1);
+  Camera.setAngle(0.25);
+  assert.equal(Camera.rotation, 0.25);
+});
+
 test('deadzone holds a point inside the box and pins an outside point to the edge', () => {
   const inside = deadzoneCenter(410, 290, 400, 300, 80, 60);
   assert.equal(inside.x, 400);
@@ -67,4 +78,22 @@ test('shake decays on sim time and holds during a hitstop step', () => {
   assert.equal(done.x, 0);
   assert.equal(done.y, 0);
   assert.equal(Camera.advanceShake(16).x, 0);
+});
+
+test('deadzone rotates with Camera.rotation into screen space', () => {
+  setupCamera();
+  Camera.setDeadzone(80, 60);
+  Camera.rotation = Math.PI / 2; // 90 deg: screen X is world -Y, screen Y is world +X
+
+  // Delta dx = 0, dy = -70: in screen space viewDx = 70, viewDy = 0.
+  // 70 <= halfW (80) and 0 <= halfH (60), so entity is inside view-space deadzone.
+  const inside = Camera._deadzoneAim(400, 230);
+  assert.equal(Math.round(inside.x), 400);
+  assert.equal(Math.round(inside.y), 300);
+
+  // Delta dx = 0, dy = -100: viewDx = 100 (> halfW 80).
+  // targetViewDx = 20. Back in world space: cx = 400, cy = 300 - 20 = 280.
+  const outside = Camera._deadzoneAim(400, 200);
+  assert.equal(Math.round(outside.x), 400);
+  assert.equal(Math.round(outside.y), 280);
 });

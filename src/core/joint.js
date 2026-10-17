@@ -485,7 +485,7 @@ export class Joint extends SharedAtomicPool {
     this.upperAngle[idx] = opts.upperTranslation ?? 0;
     this.enableMotor[idx] = opts.enableMotor ? 1 : 0;
     this.motorSpeed[idx] = opts.motorSpeed ?? 0;
-    this.maxMotorTorque[idx] = opts.maxMotorForce ?? 0;
+    this.maxMotorTorque[idx] = opts.maxMotorForce ?? opts.maxMotorTorque ?? 0;
     this.linearHertz[idx] = opts.axisAngle ?? 0;
     this._activate(idx);
     return idx;
@@ -628,6 +628,9 @@ export class Joint extends SharedAtomicPool {
       }
       if (props.maxMotorForce !== undefined) {
         this.maxMotorTorque[idx] = props.maxMotorForce;
+        changed = true;
+      } else if (props.maxMotorTorque !== undefined) {
+        this.maxMotorTorque[idx] = props.maxMotorTorque;
         changed = true;
       }
     } else if (t === JOINT_TYPE.WELD) {

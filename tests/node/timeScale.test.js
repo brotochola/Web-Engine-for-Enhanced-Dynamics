@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { AbstractWorker } from '../../src/workers/abstractWorker.js';
-import { Time, sanitizeTimeScale, scaleSimMs } from '../../src/core/timeScale.js';
+import { Time, sanitizeTimeScale, scaleSimMs, MAX_TIME_SCALE } from '../../src/core/timeScale.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -24,16 +24,19 @@ function timingStub(wallMsAgo) {
   };
 }
 
-test('sanitizeTimeScale: non-finite is 1, non-positive is 0', () => {
+test('sanitizeTimeScale: non-finite is 1, non-positive is 0, clamped to MAX_TIME_SCALE', () => {
   assert.equal(sanitizeTimeScale(1), 1);
   assert.equal(sanitizeTimeScale(0.25), 0.25);
   assert.equal(sanitizeTimeScale(0), 0);
   assert.equal(sanitizeTimeScale(-2), 0);
   assert.equal(sanitizeTimeScale(Number.NaN), 1);
   assert.equal(sanitizeTimeScale(Number.POSITIVE_INFINITY), 1);
+  assert.equal(sanitizeTimeScale(MAX_TIME_SCALE), 4);
+  assert.equal(sanitizeTimeScale(100), 4);
   assert.equal(scaleSimMs(16, 0.5), 8);
   assert.equal(scaleSimMs(16, 0), 0);
   assert.equal(scaleSimMs(16, Number.NaN), 16);
+  assert.equal(scaleSimMs(16, 10), 16 * 4);
 });
 
 test('Time.scale writes the clock SAB and scales sim ms', { concurrency: false }, () => {

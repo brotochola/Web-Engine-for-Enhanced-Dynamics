@@ -22,10 +22,9 @@ export function assertSharedBytes(view) {
 }
 
 /**
- * Union a rectangle into the slot, then bump the generation.
+ * Union a rectangle into the slot, then publish an even generation.
+ * Odd GEN means a write is in progress. Even GEN is a stable rectangle.
  * No x means the whole picture and replaces any pending rectangle.
- * Resource and field indexes are written before the generation so the renderer
- * sees them together with the rectangle.
  * @param {Int32Array} view
  */
 export function writeTextureUpload(view, x, y, w, h, fullW, fullH, resourceIndex, fieldIndex) {
@@ -46,8 +45,10 @@ export function writeTextureUpload(view, x, y, w, h, fullW, fullH, resourceIndex
     nh = h | 0;
     if (nw < 1 || nh < 1) return;
   }
-  const gen = Atomics.load(view, GEN);
+  let gen = Atomics.load(view, GEN);
+  if ((gen & 1) !== 0) gen = (gen + 1) | 0;
   const seen = Atomics.load(view, SEEN);
+  Atomics.store(view, GEN, (gen + 1) | 0);
   if (!full && gen !== seen) {
     const px = Atomics.load(view, X);
     const py = Atomics.load(view, Y);
@@ -70,24 +71,30 @@ export function writeTextureUpload(view, x, y, w, h, fullW, fullH, resourceIndex
   Atomics.store(view, Y, ny);
   Atomics.store(view, W, nw);
   Atomics.store(view, H, nh);
-  Atomics.store(view, GEN, (gen + 1) | 0);
+  Atomics.store(view, GEN, (gen + 2) | 0);
 }
 
-/** @returns {{x:number,y:number,w:number,h:number,resourceIndex:number,fieldIndex:number}|null} */
-export function readTextureUpload(view) {
+/**
+ * Fill `out` from a stable (even) generation. A write in progress returns null
+ * and leaves SEEN alone so the finished rectangle is still read later.
+ * @param {Int32Array} view
+ * @param {{x:number,y:number,w:number,h:number,resourceIndex:number,fieldIndex:number}} out
+ */
+export function readTextureUpload(view, out) {
+  if (!out) return null;
   const gen = Atomics.load(view, GEN);
+  if ((gen & 1) !== 0) return null;
   if (gen === Atomics.load(view, SEEN)) return null;
-  const rect = {
-    x: Atomics.load(view, X),
-    y: Atomics.load(view, Y),
-    w: Atomics.load(view, W),
-    h: Atomics.load(view, H),
-    resourceIndex: Atomics.load(view, RES),
-    fieldIndex: Atomics.load(view, FIELD),
-  };
-  if (Atomics.load(view, GEN) !== gen) return null;
-  Atomics.store(view, SEEN, gen);
-  return rect;
+  out.x = Atomics.load(view, X);
+  out.y = Atomics.load(view, Y);
+  out.w = Atomics.load(view, W);
+  out.h = Atomics.load(view, H);
+  out.resourceIndex = Atomics.load(view, RES);
+  out.fieldIndex = Atomics.load(view, FIELD);
+  const gen2 = Atomics.load(view, GEN);
+  if (gen !== gen2 || (gen2 & 1) !== 0) return null;
+  Atomics.store(view, SEEN, gen2);
+  return out;
 }
 
 export function bytesPerTexel(format) {

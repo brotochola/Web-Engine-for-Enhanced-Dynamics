@@ -33,7 +33,7 @@ function instantiateBox2dWasm() {
   for (const imp of WebAssembly.Module.imports(wasmModule)) {
     if (!imports[imp.module]) imports[imp.module] = {};
     if (imp.kind === 'memory') {
-      memory = new WebAssembly.Memory({ initial: 4096, maximum: 4096, shared: true });
+      memory = new WebAssembly.Memory({ initial: 8192, maximum: 8192, shared: true });
       imports[imp.module][imp.name] = memory;
     } else if (imp.kind === 'table') {
       imports[imp.module][imp.name] = new WebAssembly.Table({ initial: 1024, element: 'anyfunc' });

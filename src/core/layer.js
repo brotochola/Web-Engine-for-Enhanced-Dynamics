@@ -1677,6 +1677,7 @@ export class Layer {
                     buffer: !!spec.buffer,
                     compute: !!spec.compute,
                     sab,
+                    rect: { x: 0, y: 0, w: 0, h: 0, resourceIndex: 0, fieldIndex: 0 },
                 };
             }
         }
@@ -1685,7 +1686,10 @@ export class Layer {
     static consumeTextureUpload(layerId, name) {
         const slot = textureSlot(layerId, name);
         if (!slot) return null;
-        return readTextureUpload(slot.view);
+        if (!slot.rect) {
+            slot.rect = { x: 0, y: 0, w: 0, h: 0, resourceIndex: 0, fieldIndex: 0 };
+        }
+        return readTextureUpload(slot.view, slot.rect);
     }
 
     static getSerializableData() {
@@ -1804,6 +1808,7 @@ export class Layer {
                     buffer: !!spec.buffer,
                     compute: !!spec.compute,
                     sab,
+                    rect: { x: 0, y: 0, w: 0, h: 0, resourceIndex: 0, fieldIndex: 0 },
                 };
             }
         }

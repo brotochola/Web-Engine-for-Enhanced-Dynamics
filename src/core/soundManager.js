@@ -95,6 +95,7 @@ export class SoundManager {
   static _channelNames = [];
   static _channelNameToIndex = new Map();
   static _channelHandles = new Map();
+  static _channelWarned = new Set();
   static _channelCount = 1;
   static _channelRev = 0;
 
@@ -429,6 +430,10 @@ export class SoundManager {
     const key = typeof name === 'string' ? name : '';
     let handle = this._channelHandles.get(key);
     if (!handle) {
+      if ((this._channelRev | 0) > 0 && !this._channelNameToIndex.has(key) && !this._channelWarned.has(key)) {
+        this._channelWarned.add(key);
+        console.warn(`[SoundManager] channel("${key}") is not declared`);
+      }
       handle = new AudioChannel(key);
       this._channelHandles.set(key, handle);
     }
@@ -743,6 +748,7 @@ export class SoundManager {
     this._channelNames.length = 0;
     this._channelNameToIndex.clear();
     this._channelHandles.clear();
+    this._channelRev = 0;
     this._channelCount = 1;
     this._maxSlots = 0;
     this._audioUnlocked = false;
@@ -759,22 +765,35 @@ export class SoundManager {
     return count;
   }
 
-  static getMetrics() {
+  static getMetrics(out) {
     const ctx = this._audioCtx;
-    return {
-      activeSlots: this.getActiveSlotCount(),
-      maxSlots: this._maxSlots,
-      loadedSounds: this._nameToId.size,
-      dropped: this._i32 ? Atomics.load(this._i32, this.HEADER_DROPPED) : 0,
-      mixGain: this._f32 ? this._f32[this.HEADER_MIX_GAIN] : 0,
-      masterVolume: this._muted ? this._savedMasterVolume : (this._f32 ? this._f32[this.HEADER_MASTER_VOL] : 0),
-      muted: this._muted,
-      state: ctx ? ctx.state : 'closed',
-      sampleRate: ctx ? ctx.sampleRate : 0,
-      baseLatency: ctx ? (ctx.baseLatency || 0) : 0,
-      outputLatency: ctx ? (ctx.outputLatency || 0) : 0,
-      processMs: this._processMsF32 ? this._processMsF32[0] : 0,
-    };
+    const dst = out || this._metricsScratch || (this._metricsScratch = {
+      activeSlots: 0,
+      maxSlots: 0,
+      loadedSounds: 0,
+      dropped: 0,
+      mixGain: 0,
+      masterVolume: 0,
+      muted: false,
+      state: 'closed',
+      sampleRate: 0,
+      baseLatency: 0,
+      outputLatency: 0,
+      processMs: 0,
+    });
+    dst.activeSlots = this.getActiveSlotCount();
+    dst.maxSlots = this._maxSlots;
+    dst.loadedSounds = this._nameToId.size;
+    dst.dropped = this._i32 ? Atomics.load(this._i32, this.HEADER_DROPPED) : 0;
+    dst.mixGain = this._f32 ? this._f32[this.HEADER_MIX_GAIN] : 0;
+    dst.masterVolume = this._muted ? this._savedMasterVolume : (this._f32 ? this._f32[this.HEADER_MASTER_VOL] : 0);
+    dst.muted = this._muted;
+    dst.state = ctx ? ctx.state : 'closed';
+    dst.sampleRate = ctx ? ctx.sampleRate : 0;
+    dst.baseLatency = ctx ? (ctx.baseLatency || 0) : 0;
+    dst.outputLatency = ctx ? (ctx.outputLatency || 0) : 0;
+    dst.processMs = this._processMsF32 ? this._processMsF32[0] : 0;
+    return dst;
   }
 
   /** Asset entries in load order. Callers must not mutate the array or the entries. */
@@ -1071,41 +1090,22 @@ export class SoundManager {
     chF[tail + 5] = Infinity;
   }
 
-  static _noteFreed(slot) {
-    const i32 = this._i32;
+  static _reclaimDeadVoices(bus, tail) {
     const chI = this._channelI32;
-    if (!i32 || !chI || chI.length < this._tailBase() + this._tailWords()) return;
-    const H = this.HEADER_SIZE;
-    const S = this.SLOT_SIZE;
-    const b = H + slot * S;
-    const packed = i32[b + 7] | 0;
-    const bus = packed & 0xff;
-    const idx = packed >>> 8;
-    const tail = this._tail(bus);
-    this._lockBus(chI, tail);
-    const count = chI[tail + 1] | 0;
-    if (idx >= 0 && idx < count) {
-      const list = tail + this.TAIL_META;
-      const last = count - 1;
-      const moved = chI[list + last] | 0;
-      chI[list + idx] = moved;
-      if (moved !== slot) {
-        const mb = H + moved * S;
-        i32[mb + 7] = (i32[mb + 7] & 0xff) | (idx << 8);
+    const i32 = this._i32;
+    if (!chI || !i32) return;
+    const n = chI[tail + 1] | 0;
+    if (n <= 0) return;
+    const list = tail + this.TAIL_META;
+    const base = this.HEADER_SIZE;
+    const stride = this.SLOT_SIZE;
+    for (let i = 0; i < n; i++) {
+      const slot = chI[list + i] | 0;
+      if (Atomics.load(i32, base + slot * stride) !== this.STATE_PLAYING) {
+        this._publishQuiet(bus, tail);
+        return;
       }
-      chI[tail + 1] = last;
     }
-    if ((chI[tail + 2] | 0) === slot) {
-      const ss = chI[tail + 4] | 0;
-      chI[tail + 2] = ss;
-      this._channelF32[tail + 3] = ss >= 0 ? this._channelF32[tail + 5] : Infinity;
-      chI[tail + 4] = -1;
-      this._channelF32[tail + 5] = Infinity;
-    } else if ((chI[tail + 4] | 0) === slot) {
-      chI[tail + 4] = -1;
-      this._channelF32[tail + 5] = Infinity;
-    }
-    this._unlockBus(chI, tail);
   }
 
   static _writeSlot(audioId, volume, pitch, pan, loop, channelIndex = 0) {
@@ -1138,6 +1138,8 @@ export class SoundManager {
     const max = this._maxSlots;
     const FREE = this.STATE_FREE;
     const PLAYING = this.STATE_PLAYING;
+
+    this._reclaimDeadVoices(bus, tail);
 
     const claim = (slot, from) => {
       const b = H + slot * S;

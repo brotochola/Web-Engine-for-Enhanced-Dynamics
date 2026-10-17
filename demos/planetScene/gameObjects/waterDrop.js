@@ -90,7 +90,7 @@ export class WaterDrop extends GameObject {
       }
       let vx = rx * vr + ux * vu;
       let vy = ry * vr + uy * vu;
-      const dist = Math.hypot(vx, vy) * dt;
+      const dist = Math.sqrt(vx * vx + vy * vy) * dt;
       const steps = Math.max(1, Math.ceil(dist / 2));
       const sdt = dt / steps;
       for (let s = 0; s < steps; s++) {

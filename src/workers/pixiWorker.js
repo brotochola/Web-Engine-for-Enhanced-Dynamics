@@ -4245,7 +4245,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._ensureVertGenScratch(skip, views);
     const n = views.entityCount | 0;
     const dst = skip.lastVertGen;
-    for (let i = 0; i < n; i++) dst[i] = g[i];
+    if (g.length === n && dst.length === n) {
+      dst.set(g);
+    } else {
+      dst.set(g.subarray(0, n));
+    }
   }
 
   _packMeshUvLayer(cl, views, skip) {

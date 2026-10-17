@@ -192,7 +192,7 @@ export class ChainPoints {
     Collider.polyCentroidY[entityIdx] = (minY + maxY) * 0.5;
     Collider.shapeType[entityIdx] = ShapeType.Chain;
     RigidBody.syncMassFromCollider(entityIdx);
-    markBodyDirty(entityIdx, BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS);
+    markBodyDirty(entityIdx, BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS | BODY_DIRTY.BODY_TYPE);
     this.lastError.code = '';
     return true;
   }
@@ -209,64 +209,48 @@ export class ChainPoints {
     markBodyDirty(entityIdx, BODY_DIRTY.GEOMETRY);
   }
 
-  static _origin(entityIdx) {
+  static rayDistance(entityIdx, rayX, rayY, dirX, dirY, rayLength) {
+    const count = this.count ? (this.count[entityIdx] | 0) : 0;
+    const begin = this.begin ? (this.begin[entityIdx] | 0) : -1;
+    if (!this.xy || begin < 0) return -1;
+    const loop = this.loop[entityIdx] | 0;
+    if (loop ? count < 3 : count < 4) return -1;
+
     const tx = Transform.x[entityIdx];
     const ty = Transform.y[entityIdx];
     const c = Transform.rotC ? Transform.rotC[entityIdx] : 1;
     const s = Transform.rotS ? Transform.rotS[entityIdx] : 0;
-    const ox = Collider.offsetX[entityIdx] || 0;
-    const oy = Collider.offsetY[entityIdx] || 0;
-    return {
-      x: tx + c * ox - s * oy,
-      y: ty + s * ox + c * oy,
-      c,
-      s,
-    };
-  }
+    const offX = Collider.offsetX[entityIdx] || 0;
+    const offY = Collider.offsetY[entityIdx] || 0;
+    const bodyX = tx + c * offX - s * offY;
+    const bodyY = ty + s * offX + c * offY;
+    const relX = rayX - bodyX;
+    const relY = rayY - bodyY;
+    const localX = c * relX + s * relY;
+    const localY = -s * relX + c * relY;
+    const localDirX = c * dirX + s * dirY;
+    const localDirY = -s * dirX + c * dirY;
 
-  static _world(origin, lx, ly) {
-    return {
-      x: origin.x + origin.c * lx - origin.s * ly,
-      y: origin.y + origin.s * lx + origin.c * ly,
-    };
-  }
-
-  static _solidRange(entityIdx) {
-    const count = this.count[entityIdx] | 0;
-    const loop = this.loop[entityIdx] | 0;
-    if (!this.xy || this.begin[entityIdx] < 0) return null;
-    if (loop) {
-      if (count < 3) return null;
-      return { begin: this.begin[entityIdx], count, loop: 1, edges: count };
-    }
-    if (count < 4) return null;
-    return { begin: this.begin[entityIdx], count, loop: 0, edges: count - 3 };
-  }
-
-  static rayDistance(entityIdx, rayX, rayY, dirX, dirY, rayLength) {
-    const span = this._solidRange(entityIdx);
-    if (!span) return -1;
-    const origin = this._origin(entityIdx);
     const xy = this.xy;
-    const base = span.begin;
+    const start = loop ? 0 : 1;
+    const edgeCount = loop ? count : count - 3;
     let best = -1;
-    const n = span.count;
-    const start = span.loop ? 0 : 1;
-    const edgeCount = span.edges;
     for (let e = 0; e < edgeCount; e++) {
       const i0 = start + e;
-      const i1 = span.loop ? (i0 + 1) % n : i0 + 1;
-      const a = this._world(origin, xy[(base + i0) * 2], xy[(base + i0) * 2 + 1]);
-      const b = this._world(origin, xy[(base + i1) * 2], xy[(base + i1) * 2 + 1]);
-      const ex = b.x - a.x;
-      const ey = b.y - a.y;
-      const ox = rayX - a.x;
-      const oy = rayY - a.y;
+      const i1 = loop ? (i0 + 1) % count : i0 + 1;
+      const ax = xy[(begin + i0) * 2];
+      const ay = xy[(begin + i0) * 2 + 1];
+      const bx = xy[(begin + i1) * 2];
+      const by = xy[(begin + i1) * 2 + 1];
+      const ex = bx - ax;
+      const ey = by - ay;
+      const ox = localX - ax;
+      const oy = localY - ay;
       if (ox * ey - oy * ex <= 0) continue;
-      const denom = dirX * ey - dirY * ex;
+      const denom = localDirX * ey - localDirY * ex;
       if (denom === 0) continue;
       const t = (ox * ey - oy * ex) / denom;
-      const u = (ox * dirY - oy * dirX) / denom;
+      const u = (ox * localDirY - oy * localDirX) / denom;
       if (t < 0 || t > rayLength || u < 0 || u > 1) continue;
       if (best < 0 || t < best) best = t;
     }
@@ -274,29 +258,45 @@ export class ChainPoints {
   }
 
   static pointNear(entityIdx, x, y) {
-    const span = this._solidRange(entityIdx);
-    if (!span) return false;
-    const origin = this._origin(entityIdx);
+    const count = this.count ? (this.count[entityIdx] | 0) : 0;
+    const begin = this.begin ? (this.begin[entityIdx] | 0) : -1;
+    if (!this.xy || begin < 0) return false;
+    const loop = this.loop[entityIdx] | 0;
+    if (loop ? count < 3 : count < 4) return false;
+
+    const tx = Transform.x[entityIdx];
+    const ty = Transform.y[entityIdx];
+    const c = Transform.rotC ? Transform.rotC[entityIdx] : 1;
+    const s = Transform.rotS ? Transform.rotS[entityIdx] : 0;
+    const offX = Collider.offsetX[entityIdx] || 0;
+    const offY = Collider.offsetY[entityIdx] || 0;
+    const bodyX = tx + c * offX - s * offY;
+    const bodyY = ty + s * offX + c * offY;
+    const relX = x - bodyX;
+    const relY = y - bodyY;
+    const localX = c * relX + s * relY;
+    const localY = -s * relX + c * relY;
+
     const xy = this.xy;
-    const base = span.begin;
-    const n = span.count;
-    const start = span.loop ? 0 : 1;
-    const slop = PICK_SLOP;
-    const slopSqr = slop * slop;
-    for (let e = 0; e < span.edges; e++) {
+    const start = loop ? 0 : 1;
+    const edgeCount = loop ? count : count - 3;
+    const slopSqr = PICK_SLOP * PICK_SLOP;
+    for (let e = 0; e < edgeCount; e++) {
       const i0 = start + e;
-      const i1 = span.loop ? (i0 + 1) % n : i0 + 1;
-      const a = this._world(origin, xy[(base + i0) * 2], xy[(base + i0) * 2 + 1]);
-      const b = this._world(origin, xy[(base + i1) * 2], xy[(base + i1) * 2 + 1]);
-      const ex = b.x - a.x;
-      const ey = b.y - a.y;
+      const i1 = loop ? (i0 + 1) % count : i0 + 1;
+      const ax = xy[(begin + i0) * 2];
+      const ay = xy[(begin + i0) * 2 + 1];
+      const bx = xy[(begin + i1) * 2];
+      const by = xy[(begin + i1) * 2 + 1];
+      const ex = bx - ax;
+      const ey = by - ay;
       const lenSqr = ex * ex + ey * ey;
       if (!(lenSqr > 0)) continue;
-      let u = ((x - a.x) * ex + (y - a.y) * ey) / lenSqr;
+      let u = ((localX - ax) * ex + (localY - ay) * ey) / lenSqr;
       if (u < 0) u = 0;
       else if (u > 1) u = 1;
-      const dx = x - (a.x + ex * u);
-      const dy = y - (a.y + ey * u);
+      const dx = localX - (ax + ex * u);
+      const dy = localY - (ay + ey * u);
       if (dx * dx + dy * dy <= slopSqr) return true;
     }
     return false;

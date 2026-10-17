@@ -140,8 +140,32 @@
   let maxFixtures = 0;
   let chainViews = null;
   let maxChainPoints = 0;
+  // chain-scratch-start
   let chainVertexHeapPointer = 0;
   let chainVertexHeapFloatIndex = 0;
+  let chainVertexHeapCapacity = 0;
+
+  function releaseChainVertexScratch() {
+    if (!chainVertexHeapPointer) return;
+    Module._free(chainVertexHeapPointer);
+    chainVertexHeapPointer = 0;
+    chainVertexHeapFloatIndex = 0;
+    chainVertexHeapCapacity = 0;
+  }
+
+  function ensureChainVertexScratch() {
+    const req = maxChainPoints | 0;
+    if (!(req > 0)) {
+      releaseChainVertexScratch();
+      return;
+    }
+    if (chainVertexHeapPointer && req <= chainVertexHeapCapacity) return;
+    releaseChainVertexScratch();
+    chainVertexHeapPointer = Module._malloc(req * 8);
+    chainVertexHeapFloatIndex = chainVertexHeapPointer >> 2;
+    chainVertexHeapCapacity = req;
+  }
+  // chain-scratch-end
   // Lifetime = physics worker. Not a JS new Float32Array per fixture.
   let polygonVertexHeapPointer = 0;
   let polygonVertexHeapFloatIndex = 0;
@@ -292,6 +316,7 @@
     if (!desc || !(maxPoints > 0)) {
       chainViews = null;
       maxChainPoints = 0;
+      releaseChainVertexScratch();
       return;
     }
     maxChainPoints = maxPoints | 0;
@@ -608,12 +633,6 @@
     return polygonVertexHeapPointer;
   }
 
-  function ensureChainVertexScratch() {
-    if (chainVertexHeapPointer || !(maxChainPoints > 0)) return;
-    chainVertexHeapPointer = Module._malloc(maxChainPoints * 2 * 4);
-    chainVertexHeapFloatIndex = chainVertexHeapPointer >> 2;
-  }
-
   function syncChain(entityIdx) {
     const C = chainViews;
     if (!C || !bodySetChainFn) return 0;
@@ -703,10 +722,11 @@
   function createBodyForEntity(i) {
     const rb = views.rbActive[i] !== 0;
     const col = views.colActive[i] !== 0;
-    // Collider-only → implicit static. RB-only / both → honor rbStatic.
-    const isStatic = !rb || views.rbStatic[i] !== 0;
-    const type = isStatic ? Box2dBodyType.STATIC : Box2dBodyType.DYNAMIC;
     const shape = views.shapeType[i] | 0;
+    // Collider-only → implicit static. Chains are static in Box2D 3.
+    const chain = shape === ShapeType.Chain;
+    const isStatic = !rb || views.rbStatic[i] !== 0 || chain;
+    const type = isStatic ? Box2dBodyType.STATIC : Box2dBodyType.DYNAMIC;
     const rawFriction = views.friction[i];
     const friction = rawFriction >= 0 ? rawFriction : 0;
     const restitution = views.restitution[i] || 0;
@@ -842,9 +862,11 @@
     const col = views.colActive[i] !== 0;
     if (flags & BODY_DIRTY.BODY_TYPE) {
       // Collider-only stays static even if rbStatic SoA is stale.
+      // A chain stays static even if the flag is still dynamic.
+      const chain = (views.shapeType[i] | 0) === ShapeType.Chain;
       bodySetTypeFn(
         i,
-        !rb || views.rbStatic[i] ? Box2dBodyType.STATIC : Box2dBodyType.DYNAMIC,
+        !rb || views.rbStatic[i] || chain ? Box2dBodyType.STATIC : Box2dBodyType.DYNAMIC,
       );
     }
     if (flags & BODY_DIRTY.DAMPING) {
@@ -1062,6 +1084,37 @@
     if (jv.revision) Atomics.add(jv.revision, idx, 1);
   }
 
+  const _jointScratchOpts = {
+    bodyA: { slot: 0 },
+    bodyB: { slot: 0 },
+    localAnchorAX: 0,
+    localAnchorAY: 0,
+    localAnchorBX: 0,
+    localAnchorBY: 0,
+    length: 0,
+    enableSpring: false,
+    hertz: 0,
+    dampingRatio: 0,
+    enableLimit: false,
+    lowerAngle: 0,
+    upperAngle: 0,
+    enableMotor: false,
+    motorSpeed: 0,
+    maxMotorTorque: 0,
+    bodyX: 0,
+    bodyY: 0,
+    bodyRotC: 1,
+    bodyRotS: 0,
+    axisAngle: 0,
+    lowerTranslation: 0,
+    upperTranslation: 0,
+    maxMotorForce: 0,
+    linearHertz: 0,
+    angularHertz: 0,
+    linearDampingRatio: 0,
+    angularDampingRatio: 0,
+  };
+
   function createJointAt(idx) {
     const jv = jointViews;
     const a = jointEntityA(jv, idx);
@@ -1074,62 +1127,51 @@
       jointHandle[idx] = -1;
     }
 
-    const bodyA = { slot: a };
-    const bodyB = { slot: b };
-    const opts = {
-      bodyA,
-      bodyB,
-      localAnchorAX: jv.localAnchorAX[idx],
-      localAnchorAY: jv.localAnchorAY[idx],
-      localAnchorBX: jv.localAnchorBX[idx],
-      localAnchorBY: jv.localAnchorBY[idx],
-    };
+    const opts = _jointScratchOpts;
+    opts.bodyA.slot = a;
+    opts.bodyB.slot = b;
+    opts.localAnchorAX = jv.localAnchorAX[idx];
+    opts.localAnchorAY = jv.localAnchorAY[idx];
+    opts.localAnchorBX = jv.localAnchorBX[idx];
+    opts.localAnchorBY = jv.localAnchorBY[idx];
 
     let handleObj = null;
     try {
       const t = jv.type[idx] | 0;
       if (t === JOINT_TYPE.DISTANCE) {
-        handleObj = world.createDistanceJointLocal({
-          ...opts,
-          length: jv.length[idx],
-          enableSpring: jv.enableSpring[idx] !== 0,
-          hertz: jv.hertz[idx],
-          dampingRatio: jv.dampingRatio[idx],
-        });
+        opts.length = jv.length[idx];
+        opts.enableSpring = jv.enableSpring[idx] !== 0;
+        opts.hertz = jv.hertz[idx];
+        opts.dampingRatio = jv.dampingRatio[idx];
+        handleObj = world.createDistanceJointLocal(opts);
       } else if (t === JOINT_TYPE.REVOLUTE) {
-        handleObj = world.createRevoluteJointLocal({
-          ...opts,
-          enableLimit: jv.enableLimit[idx] !== 0,
-          lowerAngle: jv.lowerAngle[idx],
-          upperAngle: jv.upperAngle[idx],
-          enableMotor: jv.enableMotor[idx] !== 0,
-          motorSpeed: jv.motorSpeed[idx],
-          maxMotorTorque: jv.maxMotorTorque[idx],
-        });
+        opts.enableLimit = jv.enableLimit[idx] !== 0;
+        opts.lowerAngle = jv.lowerAngle[idx];
+        opts.upperAngle = jv.upperAngle[idx];
+        opts.enableMotor = jv.enableMotor[idx] !== 0;
+        opts.motorSpeed = jv.motorSpeed[idx];
+        opts.maxMotorTorque = jv.maxMotorTorque[idx];
+        handleObj = world.createRevoluteJointLocal(opts);
       } else if (t === JOINT_TYPE.PRISMATIC) {
         const pose = views;
-        handleObj = world.createPrismaticJointLocal({
-          ...opts,
-          bodyX: pose && pose.x ? pose.x[a] : 0,
-          bodyY: pose && pose.y ? pose.y[a] : 0,
-          bodyRotC: pose && pose.rotC ? pose.rotC[a] : 1,
-          bodyRotS: pose && pose.rotS ? pose.rotS[a] : 0,
-          axisAngle: jv.linearHertz[idx],
-          enableLimit: jv.enableLimit[idx] !== 0,
-          lowerTranslation: jv.lowerAngle[idx],
-          upperTranslation: jv.upperAngle[idx],
-          enableMotor: jv.enableMotor[idx] !== 0,
-          motorSpeed: jv.motorSpeed[idx],
-          maxMotorForce: jv.maxMotorTorque[idx],
-        });
+        opts.bodyX = pose && pose.x ? pose.x[a] : 0;
+        opts.bodyY = pose && pose.y ? pose.y[a] : 0;
+        opts.bodyRotC = pose && pose.rotC ? pose.rotC[a] : 1;
+        opts.bodyRotS = pose && pose.rotS ? pose.rotS[a] : 0;
+        opts.axisAngle = jv.linearHertz[idx];
+        opts.enableLimit = jv.enableLimit[idx] !== 0;
+        opts.lowerTranslation = jv.lowerAngle[idx];
+        opts.upperTranslation = jv.upperAngle[idx];
+        opts.enableMotor = jv.enableMotor[idx] !== 0;
+        opts.motorSpeed = jv.motorSpeed[idx];
+        opts.maxMotorForce = jv.maxMotorTorque[idx];
+        handleObj = world.createPrismaticJointLocal(opts);
       } else if (t === JOINT_TYPE.WELD) {
-        handleObj = world.createWeldJointLocal({
-          ...opts,
-          linearHertz: jv.linearHertz[idx],
-          angularHertz: jv.angularHertz[idx],
-          linearDampingRatio: jv.linearDampingRatio[idx],
-          angularDampingRatio: jv.angularDampingRatio[idx],
-        });
+        opts.linearHertz = jv.linearHertz[idx];
+        opts.angularHertz = jv.angularHertz[idx];
+        opts.linearDampingRatio = jv.linearDampingRatio[idx];
+        opts.angularDampingRatio = jv.angularDampingRatio[idx];
+        handleObj = world.createWeldJointLocal(opts);
       } else {
         return false;
       }

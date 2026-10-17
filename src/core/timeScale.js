@@ -4,16 +4,19 @@
 /** Index of the scale inside `clockData`. */
 export const TIME_SCALE_INDEX = 0;
 
+export const MAX_TIME_SCALE = 4.0;
+
 /**
  * Non-finite becomes 1 so a torn or unset slot does not freeze the sim.
- * Negative becomes 0 (hitstop). Infinity becomes 0 so a bad write cannot
- * hand Box2D an unbounded step.
+ * Negative becomes 0 (hitstop). Values exceeding MAX_TIME_SCALE are clamped
+ * to prevent Box2D solver divergence or physics tunnelling.
  * @param {number} scale
  * @returns {number}
  */
 export function sanitizeTimeScale(scale) {
   if (typeof scale !== 'number' || !Number.isFinite(scale)) return 1;
   if (scale <= 0) return 0;
+  if (scale > MAX_TIME_SCALE) return MAX_TIME_SCALE;
   return scale;
 }
 

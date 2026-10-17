@@ -47,15 +47,24 @@ test('prismatic fields alias the revolute and weld columns', () => {
   assert.equal(Joint.maxMotorTorque[idx], 4);
   assert.equal(Joint.lowerAngle[idx], -2);
 
+  Joint.update(idx, { maxMotorTorque: 9 });
+  assert.equal(Joint.maxMotorTorque[idx], 9);
+
   const saved = Joint.serializeActive();
   assert.equal(saved.length, 1);
   assert.equal(saved[0].axisAngle, 0.5);
-  assert.equal(saved[0].maxMotorForce, 4);
+  assert.equal(saved[0].maxMotorForce, 9);
   Joint.remove(idx);
   const again = Joint.restoreFromSave(saved, null);
   assert.equal(again.length, 1);
   assert.equal(Joint.linearHertz[again[0]], 0.5);
   assert.equal(Joint.upperAngle[again[0]], 40);
+  assert.equal(Joint.maxMotorTorque[again[0]], 9);
+
+  const idx2 = Joint.addPrismatic({ entityA: 1, entityB: 2, maxMotorTorque: 15 });
+  assert.equal(Joint.maxMotorTorque[idx2], 15);
+  Joint.remove(idx2);
+
   Joint.reset();
 });
 

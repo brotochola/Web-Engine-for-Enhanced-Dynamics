@@ -79,6 +79,22 @@ test('bus volume, pan, mute, master, and mix gain write the shared buffers', { c
   assert.ok(Math.abs(SoundManager._f32[SoundManager.HEADER_MASTER_VOL] - 0.8) < 1e-6);
 });
 
+test('a bus at its cap still accepts a play after those slots were freed', { concurrency: false }, () => {
+  boot({
+    slots: 2,
+    channels: { sfx: { volume: 1, pan: 0, maxVoices: 1 } },
+  });
+  const held = SoundManager.play('loud', 0.9, 1, 1, 0, 0, Number.NaN, Number.NaN, 'sfx');
+  assert.equal(held, 0);
+  Atomics.store(SoundManager._i32, SoundManager.HEADER_SIZE, SoundManager.STATE_FREE);
+  const next = SoundManager.play('soft', 0.1, 1, 1, 0, 0, Number.NaN, Number.NaN, 'sfx');
+  assert.equal(next, 0);
+  assert.equal(SoundManager.getActiveSlotCount(), 1);
+  const voices = SoundManager.readPlayingVoices([]);
+  assert.equal(voices.length, 1);
+  assert.equal(voices[0].name, 'soft');
+});
+
 test('a full bus drops a quieter voice and counts it', { concurrency: false }, () => {
   boot({
     slots: 4,
@@ -118,6 +134,31 @@ test('sampleOutputLevels reuses one object and clears the clip flag', { concurre
   assert.equal(first, second);
   assert.equal(second.clip, false);
   assert.equal(second.count, 0);
+});
+
+test('getMetrics fills the object it is given', { concurrency: false }, () => {
+  boot();
+  const out = { activeSlots: -1 };
+  assert.equal(SoundManager.getMetrics(out), out);
+  assert.equal(out.activeSlots, 0);
+  assert.equal(out.maxSlots, 8);
+  assert.equal(out.state, 'closed');
+});
+
+test('an undeclared channel warns once after configure', { concurrency: false }, () => {
+  boot();
+  const warns = [];
+  const orig = console.warn;
+  console.warn = (msg) => warns.push(String(msg));
+  try {
+    SoundManager.channel('sfx');
+    SoundManager.channel('missing');
+    SoundManager.channel('missing');
+  } finally {
+    console.warn = orig;
+  }
+  assert.equal(warns.length, 1);
+  assert.match(warns[0], /missing/);
 });
 
 test('a sound far outside the camera takes no slot', { concurrency: false }, () => {

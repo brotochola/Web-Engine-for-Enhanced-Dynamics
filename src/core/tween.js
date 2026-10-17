@@ -170,14 +170,35 @@ export class Tween {
    * @param {number|string} [ease]
    * @returns {number} slot, or -1
    */
+  /**
+   * @param {number} entityIndex
+   * @param {{ alpha?: number, tint?: number, scaleX?: number, scaleY?: number, x?: number, y?: number }} props
+   * @param {number} ms
+   * @param {number|string} [ease]
+   * @returns {number} slot, or -1
+   */
   static to(entityIndex, props, ms, ease) {
     if (!props) return -1;
+    const ent = entityIndex | 0;
     const wantsXy = props.x !== undefined || props.y !== undefined;
-    if (wantsXy) {
-      if (isDynamic(entityIndex | 0)) return -1;
-      return this._start(KIND_XY, entityIndex | 0, props, ms, ease);
+    const wantsPaint = props.alpha !== undefined || props.scaleX !== undefined ||
+                       props.scaleY !== undefined || props.tint !== undefined;
+
+    if (wantsXy && isDynamic(ent)) {
+      if (!wantsPaint) return -1;
+      return this._start(KIND_PAINT, ent, props, ms, ease);
     }
-    return this._start(KIND_PAINT, entityIndex | 0, props, ms, ease);
+
+    if (wantsXy && wantsPaint) {
+      const slotXy = this._start(KIND_XY, ent, props, ms, ease);
+      const slotPaint = this._start(KIND_PAINT, ent, props, ms, ease);
+      return slotXy >= 0 ? slotXy : slotPaint;
+    }
+
+    if (wantsXy) {
+      return this._start(KIND_XY, ent, props, ms, ease);
+    }
+    return this._start(KIND_PAINT, ent, props, ms, ease);
   }
 
   /**
@@ -187,7 +208,28 @@ export class Tween {
    * @returns {number}
    */
   static toZoom(zoom, ms, ease) {
-    return this._start(KIND_ZOOM, 0, { zoom }, ms, ease);
+    if (!(ms > 0)) {
+      Camera.targetZoom = +zoom;
+      return -1;
+    }
+    return this._start(KIND_ZOOM, 0, { zoom: +zoom }, ms, ease);
+  }
+
+  /**
+   * Cancel active tweens on an entity.
+   * @param {number} entityIndex
+   * @param {number} [kind]
+   */
+  static cancel(entityIndex, kind = null) {
+    const active = this.active;
+    if (!active) return;
+    const ent = entityIndex | 0;
+    for (let i = 0; i < this.capacity; i++) {
+      if (!active[i]) continue;
+      if (this.entity[i] === ent && (kind === null || this.kind[i] === kind)) {
+        Atomics.store(active, i, 0);
+      }
+    }
   }
 
   static _claim() {
@@ -208,13 +250,17 @@ export class Tween {
   }
 
   static _start(kind, entityIndex, props, ms, ease) {
+    const dur = ms > 0 ? ms : 0;
+    if (!(dur > 0)) {
+      this._applyImmediate(kind, entityIndex, props);
+      return -1;
+    }
     const slot = this._claim();
     if (slot < 0) return -1;
-    const dur = ms > 0 ? ms : 0;
     this.kind[slot] = kind;
     this.entity[slot] = entityIndex;
     this.ease[slot] = easeIdOf(ease);
-    this.duration[slot] = dur > 0 ? dur : 1;
+    this.duration[slot] = dur;
     this.elapsed[slot] = 0;
     this.mask[slot] = 0;
     this.from0[slot] = 0;
@@ -282,18 +328,54 @@ export class Tween {
       this.mask[slot] = mask;
     }
 
-    if (!(dur > 0)) {
-      this._apply(slot, 1);
-      Atomics.store(this.active, slot, 0);
-    }
     return slot;
   }
 
+  static _applyImmediate(kind, entityIndex, props) {
+    if (kind === KIND_ZOOM) {
+      Camera.targetZoom = +props.zoom;
+      return;
+    }
+    if (kind === KIND_XY) {
+      if (props.x !== undefined && Transform.x) Transform.x[entityIndex] = +props.x;
+      if (props.y !== undefined && Transform.y) Transform.y[entityIndex] = +props.y;
+      return;
+    }
+    const spriteOn = SpriteRenderer.active && SpriteRenderer.active[entityIndex];
+    const meshOn = !spriteOn && MeshRenderer.active && MeshRenderer.active[entityIndex];
+    if (props.alpha !== undefined) {
+      const a = +props.alpha;
+      if (spriteOn) SpriteRenderer.alpha[entityIndex] = a;
+      else if (meshOn) MeshRenderer.alpha[entityIndex] = a;
+    }
+    if (props.scaleX !== undefined && spriteOn) {
+      SpriteRenderer.scaleX[entityIndex] = +props.scaleX;
+    }
+    if (props.scaleY !== undefined && spriteOn) {
+      SpriteRenderer.scaleY[entityIndex] = +props.scaleY;
+    }
+    if (props.tint !== undefined) {
+      const c = props.tint >>> 0;
+      if (spriteOn) SpriteRenderer.tint[entityIndex] = c;
+      else if (meshOn) MeshRenderer.tint[entityIndex] = c;
+    }
+    if (spriteOn && SpriteRenderer.renderDirty) SpriteRenderer.renderDirty[entityIndex] = 1;
+    if (meshOn && MeshRenderer.renderDirty && !MeshRenderer.renderDirty[entityIndex]) {
+      MeshRenderer.renderDirty[entityIndex] = 1;
+      const ep = MeshRenderer.paintEpoch;
+      if (ep) ep[0] = (ep[0] + 1) >>> 0;
+    }
+  }
+
+  static ownsEntity(entityIndex, kind, workerIndex, workerCount) {
+    if (workerCount <= 1) return true;
+    if (kind === KIND_ZOOM) return (workerIndex | 0) === 0;
+    return ((entityIndex | 0) % workerCount) === (workerIndex | 0);
+  }
+
   /**
-   * One worker walks the whole pool. Two workers split the slot array with the
-   * same contiguous cut as entity ticks. ponytail: that cut is the entity's
-   * worker only while slot i was created for entity i. A later tween can land
-   * in the other half; the upgrade is a per-worker slot list.
+   * Walk active slots. When multiple workers are configured, each worker only
+   * mutates entities that it owns, preventing cross-worker data races.
    * @param {number} dt
    * @param {number} [workerIndex]
    * @param {number} [workerCount]
@@ -303,10 +385,15 @@ export class Tween {
     const active = this.active;
     if (!active) return 0;
     const step = dt > 0 ? dt : 0;
-    const range = logicBlockRange(this.capacity, workerIndex | 0, workerCount | 0);
+    const nSlots = this.capacity;
+    const wIndex = workerIndex | 0;
+    const wCount = workerCount | 0;
     let n = 0;
-    for (let i = range.start; i < range.end; i++) {
+    for (let i = 0; i < nSlots; i++) {
       if (!active[i]) continue;
+      const kind = this.kind[i];
+      const ent = this.entity[i];
+      if (wCount > 1 && !this.ownsEntity(ent, kind, wIndex, wCount)) continue;
       n++;
       const dur = this.duration[i];
       const elapsed = this.elapsed[i] + step;

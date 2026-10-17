@@ -1345,6 +1345,7 @@ function createPhysicsApi(Module) {
         throw new Error("createPrismaticJoint requires bodyA and bodyB");
       }
 
+      const maxForce = options.maxMotorForce !== undefined ? options.maxMotorForce : (options.maxMotorTorque ?? 0);
       const handle = createPrismaticJoint(
         this.worldId,
         slotA,
@@ -1357,7 +1358,7 @@ function createPhysicsApi(Module) {
         options.upperTranslation ?? 0,
         options.enableMotor ? 1 : 0,
         options.motorSpeed ?? 0,
-        options.maxMotorForce ?? 0,
+        maxForce,
       );
       if (handle < 0) {
         throw new Error("createPrismaticJoint failed");
@@ -1393,6 +1394,7 @@ function createPhysicsApi(Module) {
         enableMotor: options.enableMotor,
         motorSpeed: options.motorSpeed,
         maxMotorForce: options.maxMotorForce,
+        maxMotorTorque: options.maxMotorTorque,
       });
     }
 

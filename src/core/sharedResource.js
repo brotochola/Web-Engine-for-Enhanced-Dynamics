@@ -179,6 +179,7 @@ export class SharedResource {
 
     if (live.indexOf(this) < 0) live.push(this);
     SharedResource._noteBound(this);
+    SharedResource._stampViews(this);
   }
 
   static _noteBound(ResourceClass) {
@@ -202,9 +203,29 @@ export class SharedResource {
    * Match a typed array to a bound shared field.
    * @returns {{resourceIndex:number, fieldIndex:number, bytes:ArrayBufferView}}
    */
+  static _stampViews(ResourceClass) {
+    let resourceIndex = -1;
+    for (let i = 0; i < bound.length; i++) {
+      if (bound[i].class === ResourceClass) {
+        resourceIndex = i;
+        break;
+      }
+    }
+    if (resourceIndex < 0) return;
+    const names = ResourceClass._fieldNames;
+    if (!names) return;
+    for (let f = 0; f < names.length; f++) {
+      const raw = fieldBytes(ResourceClass[names[f]]);
+      if (!raw) continue;
+      raw._weedLoc = { resourceIndex, fieldIndex: f, bytes: raw };
+    }
+  }
+
   static locateView(view) {
     const bytes = view && view.view && view.view.buffer ? view.view : view;
     assertSharedBytes(bytes);
+    const stamped = bytes._weedLoc;
+    if (stamped && stamped.bytes === bytes) return stamped;
     for (let i = 0; i < bound.length; i++) {
       const C = bound[i].class;
       const fields = bound[i].fields;
@@ -234,7 +255,11 @@ export class SharedResource {
   static reset() {
     const names = this._fieldNames;
     if (names) {
-      for (let i = 0; i < names.length; i++) this[names[i]] = null;
+      for (let i = 0; i < names.length; i++) {
+        const raw = fieldBytes(this[names[i]]);
+        if (raw) raw._weedLoc = null;
+        this[names[i]] = null;
+      }
     }
     this._fieldNames = null;
     this._schema = null;

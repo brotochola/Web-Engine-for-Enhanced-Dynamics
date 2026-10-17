@@ -36,7 +36,7 @@ test('AbstractWorker step runs one _runFrame and does not schedule', () => {
   assert.match(abstractWorker, /self\.postMessage\(\{ msg: 'stepDone'/);
   assert.match(
     abstractWorker,
-    /const deltaTime = this\._injectedDeltaTime > 0/,
+    /const (?:deltaTime|simBase) = this\._injectedDeltaTime > 0/,
   );
 });
 

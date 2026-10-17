@@ -47,6 +47,10 @@ test('updateTexture unions two rectangles and a whole-picture call replaces them
     assert.equal(union.w, 5);
     assert.equal(union.h, 3);
     assert.equal(SharedResource.viewAt(union.resourceIndex, union.fieldIndex), Grid.cells);
+    assert.equal(SharedResource.locateView(Grid.cells), Grid.cells._weedLoc);
+    const slot = Layer._textureSlots[layer.id].cells;
+    assert.equal(union, slot.rect);
+    assert.equal(Atomics.load(slot.view, 0) & 1, 0);
     assert.equal(Layer.consumeTextureUpload(layer.id, 'cells'), null);
 
     layer.updateTexture('cells', Grid.cells);
@@ -55,6 +59,46 @@ test('updateTexture unions two rectangles and a whole-picture call replaces them
       { x: full.x, y: full.y, w: full.w, h: full.h },
       { x: 0, y: 0, w: 8, h: 8 },
     );
+  } finally {
+    Layer.reset();
+    SharedResource.resetAll();
+  }
+});
+
+test('a generation that moves mid-read is not consumed', () => {
+  try {
+    const layer = planetLayer();
+    const slot = Layer._textureSlots[layer.id].cells;
+    const view = slot.view;
+    layer.updateTexture('cells', Grid.cells, 1, 1, 2, 2);
+    const seen = Atomics.load(view, 5);
+    const orig = Atomics.load;
+    let genLoads = 0;
+    Atomics.load = function (buf, index) {
+      const value = orig.call(Atomics, buf, index);
+      if (buf === view && index === 0 && genLoads++ === 0) {
+        Atomics.store(view, 3, 99);
+        Atomics.store(view, 0, (value + 2) | 0);
+      }
+      return value;
+    };
+    let torn = null;
+    try {
+      torn = Layer.consumeTextureUpload(layer.id, 'cells');
+    } finally {
+      Atomics.load = orig;
+    }
+    assert.equal(torn, null);
+    assert.equal(Atomics.load(view, 5), seen);
+    Atomics.store(view, 3, 2);
+    Atomics.store(view, 0, 2);
+    layer.updateTexture('cells', Grid.cells, 4, 0, 2, 3);
+    const union = Layer.consumeTextureUpload(layer.id, 'cells');
+    assert.equal(union.x, 1);
+    assert.equal(union.y, 0);
+    assert.equal(union.w, 5);
+    assert.equal(union.h, 3);
+    assert.notEqual(union.w, 99);
   } finally {
     Layer.reset();
     SharedResource.resetAll();

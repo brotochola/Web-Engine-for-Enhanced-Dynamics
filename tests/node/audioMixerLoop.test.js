@@ -173,6 +173,46 @@ test('B-05: a normal looping sound still loops and stays audible', { concurrency
   assert.equal(nonzero, frames, 'a healthy loop must fill the block, not silence it');
 });
 
+test('a one-shot end frees the slot and does not take the bus lock', { concurrency: false }, () => {
+  const previousRate = globalThis.sampleRate;
+  globalThis.sampleRate = 48000;
+  const originalCas = Atomics.compareExchange;
+  try {
+    const { p, i32, f32, frames } = makeProcessor({ slots: 1, frames: 64 });
+    attachBuses(p, { maxVoices: [4], voiceCap: 4 });
+    const tail = 8 + 8 * 8;
+    const wide = new Int32Array(tail + 16);
+    wide.set(p._chI32);
+    const wideF = new Float32Array(wide.buffer);
+    wideF.set(p._chF32);
+    p._chI32 = wide;
+    p._chF32 = wideF;
+    const chI = wide;
+    chI[tail] = 1;
+    chI[tail + 1] = 1;
+    chI[tail + 8] = 7;
+    Atomics.compareExchange = function (view, index, expected, replacement) {
+      if (view === chI) throw new Error(`worklet compareExchange on the channel buffer at ${index}`);
+      return originalCas.call(Atomics, view, index, expected, replacement);
+    };
+    installAsset(p, 1, [new Float32Array(16).fill(0.5)]);
+    const b = claimSlot(i32, 0, { audioId: 1, pitch: 1, loop: 0, volume: 1, cursor: 14 });
+    i32[b + 7] = 0;
+    const out = runOnce({ p, i32, frames });
+    assert.equal(Atomics.load(i32, b), 0);
+    assert.equal(f32[b + 6], 0);
+    assert.equal(chI[tail], 1);
+    assert.equal(chI[tail + 1], 1);
+    assert.equal(chI[tail + 8], 7);
+    for (let i = 0; i < frames; i++) {
+      assert.ok(Number.isFinite(out[0][i]), `sample ${i} is ${out[0][i]}`);
+    }
+  } finally {
+    Atomics.compareExchange = originalCas;
+    globalThis.sampleRate = previousRate;
+  }
+});
+
 test('B-05: a non-looping sound still stops and releases its slot', { concurrency: false }, () => {
   const { p, i32, frames } = makeProcessor({ slots: 1, frames: 64 });
   const samples = new Float32Array(16).fill(0.5);

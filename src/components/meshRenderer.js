@@ -331,12 +331,7 @@ export class MeshRenderer extends Component {
         idx[wri++] = c;
       }
     }
-    MeshGeometry.replace(
-      this.index,
-      pos.subarray(0, vertN * 2),
-      idx.subarray(0, wri),
-      uv.subarray(0, vertN * 2),
-    );
+    MeshGeometry.replace(this.index, pos, idx, uv, vertN, wri);
     return this;
   }
 
@@ -411,12 +406,7 @@ export class MeshRenderer extends Component {
       idx[wri++] = c;
       idx[wri++] = d;
     }
-    MeshGeometry.replace(
-      this.index,
-      pos.subarray(0, vertN * 2),
-      idx.subarray(0, wri),
-      uv.subarray(0, vertN * 2),
-    );
+    MeshGeometry.replace(this.index, pos, idx, uv, vertN, wri);
     return this;
   }
 
@@ -435,7 +425,7 @@ export class MeshRenderer extends Component {
       MeshGeometry.warnPolygon();
       return this;
     }
-    MeshGeometry.replace(this.index, xy.subarray(0, n * 2), idx.subarray(0, ic), null);
+    MeshGeometry.replace(this.index, xy, idx, null, n, ic);
     return this;
   }
 

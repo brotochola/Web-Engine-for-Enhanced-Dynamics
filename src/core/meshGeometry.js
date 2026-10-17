@@ -298,11 +298,13 @@ export class MeshGeometry {
         i++;
         continue;
       }
+      const grew = s < start || e > end;
       if (s < start) start = s;
       if (e > end) end = e;
-      off[i] = off[n - 1];
-      len[i] = len[n - 1];
       n--;
+      off[i] = off[n];
+      len[i] = len[n];
+      if (grew) i = 0;
     }
     const cap = this._maxFree | 0;
     if (n >= cap) {
@@ -350,9 +352,11 @@ export class MeshGeometry {
    * @param {ArrayLike<number>} positions flat x,y
    * @param {ArrayLike<number>|null|undefined} indices null = convex fan
    * @param {ArrayLike<number>|null|undefined} uvs null = tile / stretch from position
+   * @param {number} [vertCount] vertex count; omit to use positions.length / 2
+   * @param {number} [indexCount] index count; omit to use indices.length
    * @returns {boolean}
    */
-  static replace(entity, positions, indices, uvs) {
+  static replace(entity, positions, indices, uvs, vertCount, indexCount) {
     if (!this.vertOffset || !this.lock) {
       warnOnce('pool', 'WeedJS: MeshRenderer.setMesh needs renderer.maxMeshVerts > 0');
       return false;
@@ -360,14 +364,24 @@ export class MeshGeometry {
     const i = entity | 0;
     if (i < 0 || i >= (this.entityCount | 0)) return false;
     if (!positions || positions.length == null) return false;
-    const floats = positions.length | 0;
-    const vertN = floats >> 1;
-    if (vertN < 3 || floats !== vertN * 2 || vertN > MAX_VERTS) return false;
+    let vertN;
+    let floats;
+    if (vertCount == null) {
+      floats = positions.length | 0;
+      vertN = floats >> 1;
+      if (floats !== vertN * 2) return false;
+    } else {
+      vertN = vertCount | 0;
+      floats = vertN * 2;
+      if ((positions.length | 0) < floats) return false;
+    }
+    if (vertN < 3 || vertN > MAX_VERTS) return false;
     if (!finitePairs(positions, floats)) return false;
 
     let indexN = 0;
     if (indices) {
-      indexN = indices.length | 0;
+      indexN = indexCount == null ? (indices.length | 0) : (indexCount | 0);
+      if ((indices.length | 0) < indexN) return false;
       if (indexN < 3 || (indexN % 3) !== 0) return false;
       if (!this.indices || (this.maxIndices | 0) <= 0) {
         warnOnce('indices', 'WeedJS: MeshRenderer.setMesh indices need renderer.maxMeshIndices > 0');
@@ -380,7 +394,8 @@ export class MeshGeometry {
     }
     let useUv = 0;
     if (uvs) {
-      if ((uvs.length | 0) !== floats || !finitePairs(uvs, floats)) return false;
+      if ((uvs.length | 0) < floats || !finitePairs(uvs, floats)) return false;
+      if (vertCount == null && (uvs.length | 0) !== floats) return false;
       useUv = 1;
     }
 

@@ -16,6 +16,8 @@ import { ChainPoints } from '../core/chainPoints.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 
+const _chainFailWarned = new Set();
+
 class Collider extends Component {
   // Array schema - defines all collision properties
   static ARRAY_SCHEMA = {
@@ -218,7 +220,15 @@ class Collider extends Component {
    */
   static setChain(index, xy, count, loop) {
     const n = count == null ? ((xy && xy.length) >> 1) : count | 0;
-    return ChainPoints.setForEntity(index, xy, n, loop);
+    const ok = ChainPoints.setForEntity(index, xy, n, loop);
+    if (!ok) {
+      const code = ChainPoints.lastError.code || 'failed';
+      if (!_chainFailWarned.has(code)) {
+        _chainFailWarned.add(code);
+        console.warn(`[Collider] setChain failed: ${code}`);
+      }
+    }
+    return ok;
   }
 
   static clearChain(index) {

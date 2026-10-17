@@ -123,3 +123,88 @@ test('tween pool warns once when every slot is live', { concurrency: false }, ()
     resetTweenFullWarn();
   }
 });
+
+test('simultaneous XY and paint tween animates both properties', { concurrency: false }, () => {
+  sprite(2);
+  Transform.x = new Float32Array([0, 0]);
+  Transform.y = new Float32Array([0, 0]);
+  bind(4);
+  const slot = Tween.to(0, { x: 50, alpha: 0.2 }, 100, 0);
+  assert.ok(slot >= 0);
+  // Both slots are active (one XY, one Paint)
+  assert.equal(Tween.active[0], 1);
+  assert.equal(Tween.active[1], 1);
+
+  Tween.tick(50);
+  assert.ok(Math.abs(Transform.x[0] - 25) < 1e-4);
+  assert.ok(Math.abs(SpriteRenderer.alpha[0] - 0.6) < 1e-4);
+
+  Tween.tick(50);
+  assert.ok(Math.abs(Transform.x[0] - 50) < 1e-4);
+  assert.ok(Math.abs(SpriteRenderer.alpha[0] - 0.2) < 1e-4);
+  // Both completed
+  assert.equal(Tween.active[0], 0);
+  assert.equal(Tween.active[1], 0);
+  Tween.unbind();
+});
+
+test('zero duration tween applies immediately without claiming SAB slot', { concurrency: false }, () => {
+  sprite(1);
+  Transform.x = new Float32Array([10]);
+  Transform.y = new Float32Array([20]);
+  const camData = new Float32Array(Camera.FLOAT_COUNT);
+  camData[0] = 1;
+  camData[5] = 1;
+  Camera.initialize(camData, 800, 600);
+  bind(4);
+  const slot = Tween.to(0, { x: 99, alpha: 0.1 }, 0);
+  assert.equal(slot, -1);
+  assert.equal(Transform.x[0], 99);
+  assert.ok(Math.abs(SpriteRenderer.alpha[0] - 0.1) < 1e-5);
+  assert.equal(SpriteRenderer.renderDirty[0], 1);
+  // No slots claimed in SAB pool
+  assert.equal(Tween.active[0], 0);
+  assert.equal(Tween.active[1], 0);
+
+  const zoomSlot = Tween.toZoom(3.5, 0);
+  assert.equal(zoomSlot, -1);
+  assert.equal(Camera.targetZoom, 3.5);
+  Tween.unbind();
+  Camera._data = null;
+});
+
+test('Tween.cancel frees active slots for the target entity', { concurrency: false }, () => {
+  sprite(2);
+  bind(4);
+  Tween.to(0, { alpha: 0 }, 1000, 0);
+  Tween.to(1, { alpha: 0 }, 1000, 0);
+  assert.equal(Tween.active[0], 1);
+  assert.equal(Tween.active[1], 1);
+
+  Tween.cancel(0);
+  assert.equal(Tween.active[0], 0);
+  assert.equal(Tween.active[1], 1);
+
+  Tween.cancel(1);
+  assert.equal(Tween.active[1], 0);
+  Tween.unbind();
+});
+
+test('multi-worker tick isolates by entity ownership regardless of slot index', { concurrency: false }, () => {
+  sprite(4);
+  bind(4);
+  // Put entity 1 (Worker 1's entity) into slot 0
+  Tween.to(1, { alpha: 0 }, 100, 0);
+  // Put entity 0 (Worker 0's entity) into slot 1
+  Tween.to(0, { alpha: 0 }, 100, 0);
+
+  // Worker 0 ticks: only entity 0 (slot 1) should be touched
+  Tween.tick(50, 0, 2);
+  assert.equal(SpriteRenderer.alpha[1], 1); // Entity 1 not touched by Worker 0
+  assert.ok(Math.abs(SpriteRenderer.alpha[0] - 0.5) < 1e-4); // Entity 0 advanced
+
+  // Worker 1 ticks: only entity 1 (slot 0) should be touched
+  Tween.tick(50, 1, 2);
+  assert.ok(Math.abs(SpriteRenderer.alpha[1] - 0.5) < 1e-4); // Entity 1 advanced
+  Tween.unbind();
+});

@@ -754,18 +754,33 @@ function writeUvTri(
   x0, y0, x1, y1, x2, y2, wx, wy, c, s, packed,
   u0, v0, u1, v1, u2, v2,
 ) {
-  const next = writeFillTri(
-    out, outU32, base, written, maxOut, depthDenom,
-    x0, y0, x1, y1, x2, y2, wx, wy, c, s, packed,
-  );
-  if (next < 0) return -1;
+  if (written >= maxOut) return -1;
+  out[base] = x0;
+  out[base + 1] = y0;
+  out[base + 2] = x1;
+  out[base + 3] = y1;
+  out[base + 4] = x2;
+  out[base + 5] = y2;
+  out[base + 6] = wx;
+  out[base + 7] = wy;
+  out[base + 8] = c;
+  out[base + 9] = s;
+  outU32[base + 10] = packed >>> 0;
+  out[base + 11] = 1.0 - (written + 1) / depthDenom;
+  out[base + 12] = _paint.texId;
+  out[base + 13] = _paint.tix;
+  out[base + 14] = _paint.tiy;
+  out[base + 15] = _paint.tou;
+  out[base + 16] = _paint.tov;
+  out[base + 17] = _packEntity;
   out[base + 18] = u0;
   out[base + 19] = v0;
   out[base + 20] = u1;
   out[base + 21] = v1;
   out[base + 22] = u2;
   out[base + 23] = v2;
-  return next;
+  if (_instanceEntity) _instanceEntity[written] = _packEntity;
+  return written + 1;
 }
 
 /**

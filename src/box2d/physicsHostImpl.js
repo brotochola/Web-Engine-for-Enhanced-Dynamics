@@ -1151,6 +1151,9 @@
         if (dt > maxDt) dt = maxDt;
       }
       dt *= readTimeScale();
+      // Cap scaled dt so fast-forward or large hitch cannot destabilize Box2D constraints.
+      var maxStableDt = 1 / 30;
+      if (dt > maxStableDt) dt = maxStableDt;
       if (dt > 0) {
         state._inStep = true;
         try {

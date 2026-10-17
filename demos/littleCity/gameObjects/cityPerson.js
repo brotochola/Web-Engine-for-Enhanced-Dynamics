@@ -2,6 +2,8 @@
 
 import WEED from '/src/index.js';
 import { NavGrid } from '/src/core/navGrid.js';
+import { CarComponent } from '/demos/carScene/components/carComponent.js';
+import { CityPersonComponent } from '../components/cityPersonComponent.js';
 
 const { rng, GameObject, RigidBody, Collider, SpriteRenderer, Transform } = WEED;
 
@@ -30,7 +32,18 @@ const WALK_SPEED_THRESHOLD = 8; // px/s
 const WALK_ANIM_MULT = 0.00277;
 const IDLE_ANIM_MULT = 0.05;
 /** Soft cap so they never hit run-looking speeds */
-const MAX_SPEED = 90;
+const MAX_SPEED = 190;
+/** Per-person multiplier band around the class strengths (0.75–1.25). */
+const FACTOR_MIN = 0.75;
+const FACTOR_SPAN = 0.5;
+/** Step aside from a car center inside this range (px). */
+const CAR_AVOID_RADIUS = 150;
+const CAR_AVOID_RADIUS_SQ = CAR_AVOID_RADIUS * CAR_AVOID_RADIUS;
+const CAR_AVOID_FORCE = 700;
+
+function randomFactor() {
+  return FACTOR_MIN + rng() * FACTOR_SPAN;
+}
 
 function facingFromVelocity(vx, vy) {
   const ax = vx < 0 ? -vx : vx;
@@ -43,7 +56,7 @@ export class CityPerson extends GameObject {
   static deriveSpeed = true;
   static tickInterval = 4;
 
-  static components = [RigidBody, Collider, SpriteRenderer];
+  static components = [RigidBody, Collider, SpriteRenderer, CityPersonComponent];
 
   static peopleSpritesheets = PEOPLE_SHEETS;
   static flowfieldName = 'sidewalks';
@@ -77,6 +90,11 @@ export class CityPerson extends GameObject {
     this._facing = DIR_DOWN;
     this._anim = 'idle';
 
+    const traits = this.cityPersonComponent;
+    traits.flowFollow = randomFactor();
+    traits.separation = randomFactor();
+    traits.maxSpeed = randomFactor();
+
     // this.addDecoration('_whiteCircle_64x64', 0, 0, 0.33, 0.16, -1, {
     //   anchorX: 0.5,
     //   anchorY: 0.5,
@@ -104,25 +122,62 @@ export class CityPerson extends GameObject {
   }
 
   tick() {
+    const i = this.index;
+    const follow = this.constructor.flowFollowStrength * CityPersonComponent.flowFollow[i];
+
     NavGrid.requestVectorFromStaticFlowfield(
       this.constructor.flowfieldName,
       this.x,
       this.y,
       _navVec,
     );
-    const follow = this.constructor.flowFollowStrength;
-    this.addAcceleration(_navVec.x * follow, _navVec.y * follow);
+
+    this.addAcceleration(_navVec.x * follow + rng() * 0.1 - 0.05, _navVec.y * follow + rng() * 0.1 - 0.05);
 
     const myX = this.x;
     const myY = this.y;
     const myType = this.entityType;
     const sepR2 = this.constructor.separationRadiusSq;
-    const sepF = this.constructor.separationForce;
+    const sepF = this.constructor.separationForce * CityPersonComponent.separation[i];
     let sx = 0;
     let sy = 0;
+    let ax = 0;
+    let ay = 0;
 
     for (let n = 0; n < this.neighborCount; n++) {
       const ni = this.getNeighbor(n);
+      if (!Transform.active[ni]) continue;
+      if (CarComponent.active[ni]) {
+        const cx = Transform.x[ni] + RigidBody.vx[ni] * 0.3;
+        const cy = Transform.y[ni] + RigidBody.vy[ni] * 0.3;
+        const dx = myX - cx;
+        const dy = myY - cy;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < CAR_AVOID_RADIUS_SQ && d2 > 4) {
+          const dist = Math.sqrt(d2);
+          const proximity = (CAR_AVOID_RADIUS - dist) / CAR_AVOID_RADIUS;
+          const cvx = RigidBody.vx[ni];
+          const cvy = RigidBody.vy[ni];
+          const spd2 = cvx * cvx + cvy * cvy;
+          let px = dx / dist;
+          let py = dy / dist;
+          let boost = 0.45;
+          if (spd2 > 400) {
+            const inv = 1 / Math.sqrt(spd2);
+            const fx = cvx * inv;
+            const fy = cvy * inv;
+            const side = dx * fy - dy * fx;
+            const sideSign = side >= 0 ? 1 : -1;
+            px += fy * sideSign;
+            py += -fx * sideSign;
+            const spd = spd2 * inv;
+            boost += spd > 280 ? 1 : spd / 280;
+          }
+          ax += px * proximity * boost;
+          ay += py * proximity * boost;
+        }
+        continue;
+      }
       if (Transform.entityType[ni] !== myType) continue;
       const dx = myX - Transform.x[ni];
       const dy = myY - Transform.y[ni];
@@ -134,20 +189,23 @@ export class CityPerson extends GameObject {
       }
     }
     if (sx !== 0 || sy !== 0) {
-      this.addAcceleration(sx * sepF, sy * sepF);
+      this.addAcceleration(sx * sepF + rng() * 0.01 - 0.005, sy * sepF + rng() * 0.01 - 0.005);
+    }
+    if (ax !== 0 || ay !== 0) {
+      this.addAcceleration(ax * CAR_AVOID_FORCE, ay * CAR_AVOID_FORCE);
     }
 
-    const i = this.index;
     let vx = RigidBody.vx[i];
     let vy = RigidBody.vy[i];
     let speed = RigidBody.speed[i];
+    const maxSpeed = MAX_SPEED * CityPersonComponent.maxSpeed[i];
 
-    if (speed > MAX_SPEED) {
-      const s = MAX_SPEED / speed;
+    if (speed > maxSpeed) {
+      const s = maxSpeed / speed;
       vx *= s;
       vy *= s;
       this.setVelocity(vx, vy);
-      speed = MAX_SPEED;
+      speed = maxSpeed;
     } else if (speed < 6) {
       this.setVelocity(0, 0);
       vx = 0;
