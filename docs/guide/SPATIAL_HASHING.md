@@ -2,7 +2,7 @@
 
 This document describes the **spatial worker** pipeline: row-partitioned grid rebuild, neighbor discovery, shared buffers, and performance-oriented details (caching, `entityPosData`, static/sleeping rules).
 
-Implementation: `src/workers/spatialWorker.js`, `src/core/grid.js`. High-level worker map: [Workers architecture](./WORKERS_ARCHITECTURE.md). Physics consumption of neighbors: [Physics pipeline](./PHYSICS.md).
+Implementation: `src/workers/spatialWorker.js`, `src/core/grid.js`. High-level worker map: [Workers architecture](./WORKERS_ARCHITECTURE.md). Neighbors are visual range. Box2D owns contacts: [Physics pipeline](./PHYSICS.md).
 
 ---
 

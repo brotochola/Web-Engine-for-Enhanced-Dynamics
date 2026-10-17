@@ -31,7 +31,7 @@ all X values packed together, then all Y values, etc. No per-entity objects on t
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Transform**           | SoA: `active` (Uint8), `entityType` (Uint8), `isItOnScreen` (Uint8). Pose `x`/`y`/`rotation`/`rotC`/`rotS` (Float32) bind **once**: Box2D WASM HEAP via `bindBox2dHotFields` after `box2dReady`, or a Weed SAB (`bindWeedPoseFields`) when `physics.enabled === false`. Same `Transform.x[i]` after bind. Visuals latch **pose publish** when the physics worker writes it; otherwise they read live `Transform`. |
 | **RigidBody**           | SoA: `active`, `static`, `fixedRotation` (Uint8); `ax`, `ay`, `px`, `py`, `pRotation`, `angularAccel`, `mass`, `invMass`, `inertia`, `invInertia`, `linearDamping`, `angularDamping`, `speed`, `sleepThreshold`. HEAP-only: `vx`, `vy`, `angularVelocity`, `sleeping`. `px/py/pRotation` = prev sim pose (snapshot before `world.step`). |
-| **Collider**            | `active`, `shapeType` (0=Box, 1=Circle, 2=Polygon — WASM C), `isTrigger` (Uint8); `offsetX`, `offsetY`, `radius`, `width`, `height`, `visualRange`, `friction` (Float32; Box2D fixture μ, pair = min); `polyCount` (Uint8); `polyCentroidX/Y` (Float32); strided `polyVertexX/Y`, `polyNormalX/Y` (length entityCount×8); `collisionLayer` (Uint8, index 0-31); `collisionMask` (Uint32, bitmask -- 32 collision layers max); `collisionGroupIndex` (Int32, Box2D-style group: 0 = layer/mask only, same negative = never collide, same positive = always collide); `layerMask` (Uint16, bit i = Layer.id); `feedBits` (Uint8, opaque compute flags); `fixtureCount` (Uint16, compound extras). Physics host `COLLIDER_SCHEMA` in `physicsHostImpl.js` must list the same keys in order — otherwise `createBody` never sees fixtures. |
+| **Collider**            | `active`, `shapeType` (0=Box, 1=Circle, 2=Polygon, **3=Chain** — WASM C), `isTrigger` (Uint8); `offsetX`, `offsetY`, `radius`, `width`, `height`, `visualRange`, `friction` (Float32; Box2D fixture μ, pair = min), `restitution` (Float32); `enableHitEvents` (Uint8); `polyCount` (Uint8); `polyCentroidX/Y` (Float32); strided `polyVertexX/Y`, `polyNormalX/Y` (length entityCount×8); `collisionLayer` (Uint8, index 0-31); `collisionMask` (Uint32, bitmask -- 32 collision layers max); `collisionGroupIndex` (Int32, Box2D-style group: 0 = layer/mask only, same negative = never collide, same positive = always collide); `layerMask` (Uint16, bit i = Layer.id); `feedBits` (Uint8, opaque compute flags); `fixtureCount` (Uint16, compound extras). Chain points are a separate pool (`Collider.setChain`, `physics.maxChainPoints`). Physics host `COLLIDER_SCHEMA` in `physicsHostImpl.js` must list the same keys in order — otherwise `createBody` never sees fixtures. |
 | **SpriteRenderer**      | `active`, `textureId`, animation fields, flip flags, etc.                                                                                                                                                                                                                                                                                   |
 | **MeshRenderer**        | `active`, `tint` (Uint32 0xRRGGBB), `alpha` (Float32), `layerMask` (Uint16, bit = Layer.id), `renderVisible`, `renderDirty`, `textureId` (Uint16, `0xffff` = solid), `tileMode` / `repeatX` / `repeatY` / `tileOffsetU` / `tileOffsetV` (same packing as SpriteRenderer), `visualOutset` (Float32 world px, collider fill only), `paintEpoch` (Uint32[1], bump on tint/tile/texture), `outsetEpoch` (Uint32[1], bump on visualOutset). Draw is the explicit mesh in `meshGeomData` when set, else `ColliderFixture` fans or the primary box / makePolygon / display 8-gon on `LAYER_KIND.MESH`. Collider-fill instances are 18 floats/tri. Per-vertex UVs are a second mesh at 24 floats. Pose-only refill does not add SoA fields. |
 | **ParticleComponent**   | `active`, `x`, `y`, `z`, `vx`, `vy`, `vz`, `lifespan`, `currentLife`, `gravity`, `scaleX/Y`, `alpha`, `tint`, `baseTint`, `textureId`, `rotation`, `flipX/Y`, `fadeOnTheFloor`, `timeOnFloor`, `initialAlpha`, `stayOnTheFloor`, `despawnOnGroundContact`, `alpha: { from, to: 0 }`, `isItOnScreen`, `blendMode` (mixed Uint8/Uint16/Float32/Uint32) |
@@ -74,10 +74,10 @@ The world is divided into cells. Each cell stores a count + entity indices.
 
 | Property           | Value                                                                |
 | ------------------ | -------------------------------------------------------------------- |
-| **Cell byte size** | `4 + maxEntitiesPerCell * 2` (default 64 entities = 132 bytes/cell; entity slots are Uint16)  |
+| **Cell byte size** | `4 + maxEntitiesPerCell * entityIdBytes()` (width 16: `* 2`, 64 entities = 132 bytes/cell) |
 | **Total size**     | `totalCells * cellByteSize`                                          |
-| **Cell layout**    | `[count: Uint8, pad: 3 bytes, entities[maxEntitiesPerCell]: Uint16]` |
-| **Typed arrays**   | `Uint8Array` (counts), `Uint32Array` (entity indices)                |
+| **Cell layout**    | `[count: Uint8, pad: 3 bytes, entities[maxEntitiesPerCell]]` |
+| **Typed arrays**   | `Uint8Array` (counts). Entity slots are `Uint16Array` at width 16 and `Uint32Array` at width 32 |
 
 | Writer                                                                                              | Reader                   |
 | --------------------------------------------------------------------------------------------------- | ------------------------ |
@@ -89,9 +89,9 @@ Every entity gets a visual-range neighbor list (Box2D owns contacts).
 
 | Property              | Value                                                                           |
 | --------------------- | ------------------------------------------------------------------------------- |
-| **Size**              | `totalEntityCount * (1 + maxNeighbors) * 2` bytes (default `maxNeighbors` = 128) |
-| **Per-entity layout** | `[totalCount: Uint16, neighbors[maxNeighbors]: Uint16]`                         |
-| **Typed array**       | `Uint16Array`                                                                   |
+| **Size**              | `totalEntityCount * (1 + maxNeighbors) * entityIdBytes()` (default `maxNeighbors` = 128; width 16 is `* 2`) |
+| **Per-entity layout** | `[totalCount, neighbors[maxNeighbors]]` in the scene entity-id width                         |
+| **Typed array**       | `Uint16Array` at width 16, `Uint32Array` at width 32                                                                   |
 
 | Writer                           | Reader                                      |
 | -------------------------------- | ------------------------------------------- |
@@ -127,12 +127,12 @@ Every entity gets a visual-range neighbor list (Box2D owns contacts).
 
 Compact index lists so workers iterate only alive/visible entities. No scanning full pools.
 
-All lists share the same layout: `[count: Uint16, idx0: Uint16, idx1: Uint16, ...]`
+Entity active lists use the scene id width: `[count, idx0, idx1, ...]` with `entityIdBytes()` equal to 2 or 4. Particle, decoration, and bullet lists stay `Uint16` (`* 2`), because those pools cap at 65535.
 
 | Buffer                         | Size                               | Writer                           | Reader                        |
 | ------------------------------ | ---------------------------------- | -------------------------------- | ----------------------------- |
-| `activeEntitiesData`           | `(1 + totalEntityCount) * 2` bytes | Logic worker 0 (spawn/despawn)   | Spatial, particle, pre_render |
-| `perTypeActiveLists[typeName]` | `(1 + poolSize) * 2` bytes each    | Logic worker 0                   | All workers                   |
+| `activeEntitiesData`           | `(1 + totalEntityCount) * idBytes` | Logic worker 0 (spawn/despawn)   | Spatial, particle, pre_render |
+| `perTypeActiveLists[typeName]` | `(1 + poolSize) * idBytes` each    | Logic worker 0                   | All workers                   |
 | `activeParticlesData`          | `(1 + maxParticles) * 2` bytes     | Particle worker                  | Pre_render                    |
 | `visibleParticlesData`         | `(1 + maxParticles) * 2` bytes     | Particle worker                  | Pre_render                    |
 | `activeDecorationsData`        | `(1 + maxDecorations) * 2` bytes   | DecorationPool + particle worker | Pre_render                    |
@@ -170,7 +170,8 @@ Box2D still writes begin/end into WASM HEAP buffers each step. Nested `weedjsPos
 
 | Property   | Value |
 | ---------- | ----- |
-| **Size**   | `Joint.getBufferSize(maxJoints)` — type, pairs, localAnchors A/B, active, distance/revolute/weld fields, dense active list, `revision` |
+| **Size**   | `Joint.getBufferSize(maxJoints)` — type, localAnchors A/B, active, distance/revolute/prismatic/weld fields, dense active list, `revision` |
+| **Pairs**  | Width 16: one packed `Uint32` per slot, `(entityA << 16) \| entityB`. Width 32: `entityA` and `entityB` as `Uint32`. Prismatic reuses revolute/weld columns (`axisAngle` in `linearHertz`, translation limits in `lowerAngle` / `upperAngle`, `maxMotorForce` in `maxMotorTorque`) |
 | **Layout** | See `src/core/joint.js` `initializeArrays` |
 
 ### `jointFreeList` / `jointFreeListTop`
@@ -544,7 +545,7 @@ Every worker exposes **`STEP_MS`** (wall ms for that frame’s work) and **`FPS`
 | --------------------- | ---- | ------ |
 | `queryEntityMetadata` | `16 + numTypes * 16` | `[numTypes, pad, per-type: componentMask, startIndex, endIndex]` |
 | `queryCacheSAB`       | `8 + maxQueries * 16` | `[numQueries, maxQueries, pad, per-query: queryMask, typeMask]` |
-| `queryResultsSAB`     | `numQueries * (16 + 3 * (1+N) * 2)` | Per query: Int32 header `[publishedSnapshot, publishedCount, publishedFrame, reserved]` + **3** Uint16 snapshots of `[count, entityIndices…]` sized to scene `N = totalEntityCount` (≤ 65535). Triple buffering avoids torn reads when a reader lags one publish. |
+| `queryResultsSAB`     | `numQueries * (16 + 3 * (1+N) * idBytes)` | Per query: Int32 header `[publishedSnapshot, publishedCount, publishedFrame, reserved]` + **3** snapshots of `[count, entityIndices…]`. `idBytes` is 2 or 4. `N` is the scene entity capacity (65535 at width 16, 300000 at width 32). Triple buffering avoids torn reads when a reader lags one publish. |
 | `queryVersionSAB`     | `4` | `[activeQueryVersion: Int32]` bumped whenever logic 0 mutates active/query lists |
 
 | Writer                                                                                                   | Reader                    |
@@ -555,11 +556,11 @@ Every worker exposes **`STEP_MS`** (wall ms for that frame’s work) and **`FPS`
 
 ## 13. Audio Mixer SAB (SoundManager ↔ AudioWorklet)
 
-Sound playback is fully lock-free. Workers and the main thread write play commands into a slot array backed by a `SharedArrayBuffer`. The `AudioMixerProcessor` worklet reads the same SAB every `process()` call (~128 samples / ~2.9 ms at 44.1 kHz) and mixes all active sounds into stereo output.
+Workers and the main thread write play commands into a slot array backed by a `SharedArrayBuffer`. The `AudioMixerProcessor` worklet reads the same SAB every `process()` call (~128 samples / ~2.9 ms at 44.1 kHz) and mixes all active sounds into stereo output. The slot state change is a `compareExchange`. A scene with buses also spin-locks that bus's voice list before the claim.
 
 ### SAB Layout
 
-**Total size:** `(HEADER_SIZE + maxSlots × SLOT_SIZE) × 4` bytes. Default `maxSlots = 64` → **2,080 bytes**.
+**Total size:** `(HEADER_SIZE + maxSlots × SLOT_SIZE) × 4` bytes. Default `audio.maxSlots = 128` → **4,112 bytes**. `SoundManager.initializeAudioWorklet`'s own default argument is 64; `Scene` passes the config default, which is 128.
 
 #### Header (4 × Int32/Float32, 16 bytes)
 
@@ -581,19 +582,19 @@ Sound playback is fully lock-free. Workers and the main thread write play comman
 |     +4 | `volume`  | Float32 | Per-slot volume (0..1)                                |
 |     +5 | `loop`    | Int32   | `0` = one-shot, `1` = loop                            |
 |     +6 | `cursor`  | Float32 | Fractional sample position (written by worklet)       |
-|     +7 | reserved  | Int32   | Unused                                                |
+|     +7 | `channel` | Int32   | Bus in bits 0..7, that bus's voice-list index in bits 8..23 |
 
 #### Slot Claiming Protocol
 
-Slot writes are lock-free via `Atomics.compareExchange`:
+The slot itself is claimed with `Atomics.compareExchange`:
 
-1. Writer scans slots for `state === 0` (free)
-2. `Atomics.compareExchange(i32, slotBase, 0, 2)` — atomically claim if still free
-3. Write `audioId`, `pitch`, `pan`, `volume`, `loop`, zero `cursor`
-4. `Atomics.store(i32, slotBase, 1)` — transition to playing
-5. If no free slot found, `Atomics.add(i32, HEADER_DROPPED, 1)` and return -1
+1. On a named bus, the writer takes that bus's spinlock, then looks at the bus's own voice list (not every slot in the mixer).
+2. `Atomics.compareExchange` moves a free slot from state `0` to `2` (claiming). A louder play on a full bus can take the quietest voice on that same bus.
+3. Write `audioId`, `pitch`, `pan`, `volume`, `loop`, zero `cursor`, and pack the bus into word `+7`.
+4. `Atomics.store` moves the slot to state `1` (playing). The bus lock is released.
+5. If no slot is claimed, `Atomics.add` bumps `droppedCount` and the call returns `-1`.
 
-This allows any thread (logic workers, main thread) to trigger sounds without locks or postMessage.
+Any thread (logic workers, main thread) can call `SoundManager.play` without `postMessage`. The worklet never takes the bus lock. Up to 8 buses live on a second SAB (`SoundManager.getChannelSAB`): volume, pan, mute, compressor, and the voice list. Default config is one bus, `main`.
 
 #### Worklet-Side Read
 
@@ -652,8 +653,8 @@ The big picture. Who writes what, who reads what.
 | Data Region                                   | Primary Writer                                                                               | Readers                                      |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | Component arrays (Transform, RigidBody, etc.) | Logic workers (entity code), physics (RB/Collider), particle (particles/decorations/bullets) | All workers                                  |
-| Spatial grid (`gridBuffer`)                   | Spatial workers (owned rows)                                                                 | Physics, logic, particle                     |
-| Neighbor lists (`neighborData`)               | Spatial workers (owned entities)                                                             | Physics, logic                               |
+| Spatial grid (`gridBuffer`)                   | Spatial workers (owned rows)                                                                 | Logic, particle, pre-render, `Ray`           |
+| Neighbor lists (`neighborData`)               | Spatial workers (owned entities)                                                             | Logic, lights, `Ray`                         |
 | Position cache (`entityPosData`)              | Spatial workers                                                                              | Spatial workers                              |
 | Cell sleeping (`cellSleepingBuffer`)          | Particle worker                                                                              | All workers                                  |
 | Active entity lists                           | Logic worker 0                                                                               | Spatial, particle, pre_render                |

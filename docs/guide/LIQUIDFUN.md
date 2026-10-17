@@ -57,8 +57,7 @@ Emit: `groupFlags` packed in `SET_LIQUIDFUN_EMIT` (bits 17–20). Demo: **Y** ic
 
 ---
 
-## What this is
-
+## Units
 
 Weed default: pixels as units (`lengthUnitsPerMeter: 100`, gravity `{x:0,y:980}`). Native sibling demos use meters (`radius ≈ 0.05`, gravity `-10`). Both work if radius, positions, and gravity use one unit system.
 

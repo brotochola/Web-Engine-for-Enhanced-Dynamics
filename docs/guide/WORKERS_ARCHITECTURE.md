@@ -12,10 +12,10 @@ Each worker owns its data region so hot paths can avoid broad locking and per-fr
 | Worker                | Count | Scalable | Runs Entity Scripts | Primary Job                                              |
 | --------------------- | ----: | -------- | ------------------- | -------------------------------------------------------- |
 | `spatialWorker`      |  0..N | Yes      | No                  | Spatial hash grid + neighbor lists. **0** skips worker and grid/neighbor SABs |
-| `physics` (classic)   |  0..1 | No       | No                  | Box2D 3.0 WASM host (`box2dWasm` + `physicsHost`), contacts, joints. **0** when `config.physics.enabled === false` |
+| `physics` (classic)   |  0..1 | No       | No                  | Box2D 3.2.0 WASM host (`box2dWasm` + `physicsHost`), contacts, joints. **0** when `config.physics.enabled === false` |
 | `logicWorker`        |  1..N | Yes      | **Yes**             | Entity `tick()`, callbacks, lifecycle                    |
 | `particleWorker`     |     1 | No       | No                  | Particles, bullets, decals, navigation, visibility lists |
-| `preRenderWorker`   |  1..N | Yes      | No                  | Animation, visibility, render + shadow queue assembly    |
+| `preRenderWorker`   |     1 | No       | No                  | Animation, visibility, render + shadow queue assembly    |
 | `pixiWorker`         |     1 | No       | No                  | PixiJS on OffscreenCanvas. Draws the frame.              |
 | `audioMixerProcessor` |     1 | No       | No                  | Real-time PCM mixing on audio thread (AudioWorklet)      |
 
@@ -79,10 +79,9 @@ Spatial `neighborData` is visual-range only — Box2D does narrowphase itself.
 | `poseDataA/B` + `poseSync`         | **Write**      | Post-step display snapshot for pre_render / particle (not mid-step HEAP)             |
 | Collider                           | Read (sync)    | Shapes, radii, `friction`, layers/masks/`groupIndex`                                 |
 | `colliderFixtureData`              | Read (sync)    | Extra convex polys on the same body (`replacePolygons*`); default pool size 0        |
-| `neighborData`                     | Read           | Visual-range neighbors — not the contact source                                      |
 | Command ring (`commandSab`)        | **Write** (logic/main) / drain (Box2D) | MPSC sequence-slot pose/vel commands                            |
 | Contact ring (`contactSab`)        | **Write** (Box2D) / read (logic) | Begin/end + sensor events with body generations                             |
-| `Joint` SAB                        | Read/**Write** | Dense active list → Box2D distance / revolute / weld                                 |
+| `Joint` SAB                        | Read/**Write** | Dense active list → Box2D distance / revolute / prismatic / weld                    |
 | `activeEntitiesData`               | Read           | Alive entities                                                                       |
 | `physicsStats`                     | **Write**      | FPS, body/joint/contact counters                                                     |
 | `frameRateData`                    | **Write**      | Own slot                                                                             |
@@ -113,7 +112,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 
 **Tickless types:** if `GameObject.typeNeedsLogicTick(EntityClass)` is false and the type has no `CameraInOutListener`, that type is not pushed onto `nonDecimatedTypes` / `decimatedTypes`. Active lists, queries, spatial, physics, render, and collision / impact callbacks stay. `tickInterval === 0` is the explicit opt-out for an empty `tick(){}` override.
 
-**tickAll:** if the class defines `static tickAll` and does not override `tick()`, logic packs live indices (stride / forced worker) into a scratch `Uint16Array` and calls `EntityClass.tickAll(list, count, dtRatio)` once per type. RigidBody accel is zeroed only when the type has `RigidBody`.
+**tickAll:** if the class defines `static tickAll` and does not override `tick()`, logic packs live indices (stride / forced worker) into a scratch `EntityIdArray` (`Uint16` or `Uint32`, same width as the scene) and calls `EntityClass.tickAll(list, count, dtRatio)` once per type. RigidBody accel is zeroed only when the type has `RigidBody`.
 
 **Tick decimation:** entities with `tickInterval > 1` use `nextTickData[entityIndex]` countdown. Logic zeros `RigidBody.ax/ay/angularAccel` only when a tick actually runs, then the entity writes the desired px/s². Off-tick frames leave the last values so Box2D keeps applying them every physics step. One-shot kicks belong in `addVelocity` (impact/collision callbacks run before tick and would be wiped by the zero).
 
@@ -131,7 +130,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 | `cameraData`             | Read/**Write**                       | Camera state SAB `[zoom,x,y,followX,followY,targetZoom]` (prefer single writer policy) |
 | `queryResultsSAB`        | Read, **published write** (logic 0)  | Triple-buffered pre-computed active query snapshots                                    |
 | `queryVersionSAB`        | Read/**Write** (logic 0 maintenance) | Shared invalidation counter for cached non-precomputed active queries                  |
-| `Joint` SAB              | **Write**                            | Create joints via `Joint.addDistance` / `addRevolute` / `addWeld`                      |
+| `Joint` SAB              | **Write**                            | Create joints via `Joint.addDistance` / `addRevolute` / `addPrismatic` / `addWeld`    |
 | `colliderFixtureData`    | Read                                 | Logic rays (`Ray.castWithInfo`) walk extras; `fixtureIndex` −1 = primary               |
 | `raycastDebugData`       | **Write**                            | Debug ray visualization                                                                |
 | `logicStats`             | **Write**                            | FPS, entities processed                                                                |
@@ -194,7 +193,7 @@ The multitasker. Handles particles, bullets, decals, navigation computation, vis
 
 ---
 
-### Pre-Render Worker (1..N)
+### Pre-Render Worker (1)
 
 Reads visibility lists, advances animations, builds the render and shadow queues that pixi consumes. **Sprite animation is owned entirely here** (main ENTITIES queue and custom-layer queues) — `pixiWorker` only consumes resolved `textureId` values from the render queue.
 
@@ -295,7 +294,7 @@ ParticleContainer (entity sprites)
    │  rawRT       │  Density / accumulation texture
    │  (offscreen) │  Resolution controlled by layer.resolution
    └──────┬──────┘
-          │ sampled as uSampler in fragment shader
+          │ sampled as uTexture (uSampler is the sampler)
           ▼
    ┌─────────────┐
    │  Fullscreen  │  Custom fragment shader (e.g. metaball threshold)
@@ -340,12 +339,13 @@ Not a Web Worker — an `AudioWorkletProcessor` running on the browser's **audio
 
 **How sound gets played:**
 
-1. Any thread (logic worker, main thread) calls `SoundManager.play()` which atomically claims a free SAB slot via `Atomics.compareExchange`
-2. The worklet's `process()` scans slots every ~2.9 ms, picks up `state === 1` (playing)
-3. Worklet reads pre-loaded PCM buffers, applies pitch interpolation + equal-power stereo pan, advances cursor
-4. When a sound finishes (non-looping), worklet sets `state = 0` to free the slot
+1. Any thread (logic worker, main thread) calls `SoundManager.play()`. The slot state still moves free → claiming → playing with `Atomics.compareExchange`.
+2. When the scene has buses, the writer first takes that bus's spinlock (`_lockBus`) so the voice list and the quietest-voice steal stay consistent. The worklet does not take that lock. It reads slot state.
+3. The worklet's `process()` scans slots every ~2.9 ms, picks up `state === 1` (playing)
+4. Worklet reads pre-loaded PCM buffers, applies pitch interpolation + equal-power stereo pan, advances cursor
+5. When a sound finishes (non-looping), worklet sets `state = 0` to free the slot
 
-**Slot claiming is lock-free.** Writers use a CAS loop over the slot array; the worklet reads atomically. No postMessage in the hot path.
+Slot word `+7` is the bus in bits 0..7 and that bus's list index in bits 8..23. Up to 8 buses. No postMessage in the hot path.
 
 **PCM assets** are decoded on the main thread (`AudioContext.decodeAudioData`) and transferred to the worklet via `postMessage({ type: 'load', id, channels, length })`. Once loaded, asset data stays local to the worklet process.
 
@@ -515,24 +515,9 @@ Not a Web Worker — an `AudioWorkletProcessor` running on the browser's **audio
 - Logic worker 0 has extra duties: list mutations, spawn/despawn processing
 - Keyboard / Mouse / Gamepad: main thread writes SAB; all workers read (Gamepad via `poll()` each frame)
 
-### Pre-Render Workers
-
-`config.preRender.numberOfPreRenderWorkers` (default 1). `1` keeps the original single-writer frame: no joins, no private queues.
-
-`N > 1` splits the frame and still publishes one queue for pixi:
-
-- An entity belongs to `floor(entityIndex / entityBlockSize) % N` (`entityBlockSize` default 256). Animation accumulators stay on that worker. `isItOnScreen` is cleared and set only on owned blocks.
-- Particles, decorations, bullets, and liquidfun are contiguous slices of the visible list. Lights, point shadows, and visibility polygons are a contiguous slice of the light list.
-- Each worker emits into private buffers. Adobe pieces make the slot count unknown before emit, so the shared queue is a packed copy after the counts are known. Prefixes are deterministic (worker 0, then 1, …). Pixi still reads one `count` and one SoA buffer.
-- Two joins per frame (`arrived` + `epoch`), plus the existing `readyFrame` / `consumedFrame`. No atomic per sprite. Worker 0 stamps the physics pose generation before the frame starts; the worker that finishes the copy join consumes `poseSync` and stores `readyFrame`.
-- Shadows read `entityLastTextureId` before this frame's emit, so they see the previous frame. That avoids a torn id without a second texture buffer.
-- `maxShadowsPerEntity` is per worker. Several workers can each emit the cap for the same caster.
-
-`STEP_MS` includes the join wait, so the frame time is the slowest worker. `COLLECT_MS` and `EMIT_MS` do not.
-
 ### Single-Instance Workers
 
-Physics, particle, and pixi stay single-owner. Their workloads don't partition cleanly or benefit from splitting.
+Physics, particle, pre-render, and pixi stay single-owner. `createSceneWorkerInstances` pushes one `preRenderWorker`. `Scene.numberOfPreRenderWorkers` returns `1`. There is no `preRender.numberOfPreRenderWorkers` and no join between pre-render workers.
 
 ---
 
@@ -547,9 +532,9 @@ Each worker gets a slot in `frameRateData` for aggregate FPS monitoring:
 | `N+1`          | Pixi (renderer) |
 | `N+2`          | Particle        |
 | `N+3 .. N+2+L` | Logic workers   |
-| `N+3+L .. N+2+L+P` | Pre-render workers |
+| `N+3+L` | Pre-render |
 
-Where `N = numberOfSpatialWorkers`, `L = numberOfLogicWorkers`, `P = numberOfPreRenderWorkers`. One pre-render worker still occupies a single slot at `N+3+L`.
+Where `N = numberOfSpatialWorkers` and `L = numberOfLogicWorkers`. Pre-render is one slot. Bootstrap assigns these indexes in `initializeSceneWorkers`.
 
 ---
 
@@ -571,4 +556,4 @@ Regression harness: `node tests/bench/sceneCycleSmoke.mjs`.
 - Atomics are used where workers share mutable coordination state: render-queue double buffer (pre_render ↔ pixi), physics pose publish (`poseSync`: physics ↔ pre_render; particle latches without consume), Treiber free-list heads (`atomicFreeList.js`), `impactBuffer` batch `seq`, NavGrid slot `status` publication, layer alpha/uniform dirty flags, audio slot CAS, query snapshot versioning, and assorted stats/debug fields. Most component SABs rely on single-writer ownership instead of per-field atomics.
 - Single-writer ownership eliminates the need for locks on frame-critical data.
 - If your game stutters, check `frameRateData` in debug UI to find which worker is the bottleneck.
-- Audio slot writes are lock-free (CAS). The worklet reads the SAB at hardware sample rate with zero postMessage overhead per frame. If you see `droppedCount` rising, increase `maxSlots` or make sure you `stop()` looping sounds when they're no longer needed.
+- A play claim is still a CAS on the slot. The per-bus voice list takes a short spinlock first. The worklet reads the SAB at hardware sample rate with zero postMessage overhead per frame. If you see `droppedCount` rising, increase `audio.maxSlots` (default 128) or `stop()` looping sounds. A full bus can also steal its quietest voice instead of using another bus's slots.

@@ -22,22 +22,22 @@ An entity is included in a save only if:
 
 Per entity, the snapshot packs SoA component fields (plus Transform pose and RigidBody velocity/sleeping from Box2D HEAP views). JS-only FSM locals that are not in an `ARRAY_SCHEMA` are not saved.
 
-After restore, the physics host marks the Box2D body dirty when **either** `RigidBody` or `Collider` is active on the entity (RigidBody-only / Collider-only / both). See [PHYSICS.md � composition](./PHYSICS.md#rigidbody--collider-composition).
+After restore, the physics host marks the Box2D body dirty when **either** `RigidBody` or `Collider` is active on the entity (RigidBody-only / Collider-only / both). See [PHYSICS.md, composition](./PHYSICS.md#rigidbody--collider-composition).
 
 ## Scene lifecycle (new game vs load)
 
 ```text
 preload()
-create()                 // always ? static world
-?? createNewGame()       // new game only
-?? restore (await restoreSaveComplete) + onLoadGame  // save load only
-startMainLoop / workers  // only after restore ack ? workers stay paused until then
+create()                 // always — static world
+  createNewGame()        // new game only
+  restore (await restoreSaveComplete) + onLoadGame  // save load only
+startMainLoop / workers  // only after restore ack — workers stay paused until then
 ```
 
 | Hook | When | Put here |
 |------|------|----------|
 | `preload()` | Always | Tilemap, camera prep, nav |
-| `create()` | Always | Static world (lights, trash, trees, grass, ?) |
+| `create()` | Always | Static world (lights, trash, trees, grass) |
 | `createNewGame()` | No save restore | Serializable / dynamic spawns (soldiers, civilians, player) |
 | `onLoadGame(payload)` | After save applied | Load-only logic (UI, quests). Payload already restored entities + camera/sun |
 
@@ -53,11 +53,11 @@ Do not gate spawns with `if (!this._restorePayload)` inside `create()`.
 
 Save code lives under `src/core/save/`:
 
-- `saveGame.js` ? orchestrate save/load
-- `saveStore.js` ? IndexedDB + catalog
-- `entitySaveSnapshot.js` ? entity SoA pack/unpack + outer encode/decode
-- `binarySaveCodec.js` ? sectioned little-endian body (sole wire codec)
-- `liquidFunSave.js` ? LiquidFun typed-array snapshot helpers
+- `saveGame.js` — orchestrate save/load
+- `saveStore.js` — IndexedDB + catalog
+- `entitySaveSnapshot.js` — entity SoA pack/unpack + outer encode/decode
+- `binarySaveCodec.js` — sectioned little-endian body (sole wire codec)
+- `liquidFunSave.js` — LiquidFun typed-array snapshot helpers
 - `Decal.packSnapshot` / `Decal.applySnapshot` — sparse DECALS tile pack/unpack
 
 ## Storage
@@ -67,7 +67,9 @@ Save code lives under `src/core/save/`:
 | IndexedDB (`weed-saves`) | Compressed save blobs |
 | `localStorage` (`weed.save.catalog`) | Slot metadata only (`id`, `scene`, `savedAt`, `bytes`, `engineVersion`, `entityCount`) |
 
-## Wire format (`SAVE_FORMAT_VERSION = 3`)
+## Wire format (`SAVE_FORMAT_VERSION = 5`)
+
+`SAVE_FORMAT_VERSION` lives in `src/core/save/entitySaveSnapshot.js`. The current value is **5**. Decode throws on any other version.
 
 Outer file (little-endian):
 
@@ -120,30 +122,30 @@ Load remounts the scene: `create()` builds statics, then logic worker `restoreSa
 
 ## Debug UI
 
-Debug overlay ? **Saves** tab:
+Debug overlay, **Saves** tab:
 
-- **Save** ? new slot for the current scene
-- **Load** ? selected row (remount + restore)
-- **�** on each row ? delete that slot (`SaveStore.remove`)
-- **List** ? slots filtered to `scene.constructor.name`
+- **Save** writes a new slot for the current scene
+- **Load** restores the selected row (remount + restore)
+- The delete control on each row calls `SaveStore.remove`
+- **List** shows slots filtered to `scene.constructor.name`
 
 ## Joints + LiquidFun + Decals
 
 Logical payload (after decode) includes:
 
-- `entities[]` ? each record includes `entityIndex` (pre-restore free-list index) for joint remapping
-- `joints[]` ? full SoA dump via `Joint.serializeActive()`, recreated after entity spawn
-- `liquidFun` ? optional typed-array snapshot from the physics worker
-- `decals` ? optional sparse DECALS tilemap (`tiles[]` with `fmt: 'png'|'raw'` + `bytes: Uint8Array`)
+- `entities[]` — each record includes `entityIndex` (pre-restore free-list index) for joint remapping
+- `joints[]` — full SoA dump via `Joint.serializeActive()`, recreated after entity spawn
+- `liquidFun` — optional typed-array snapshot from the physics worker
+- `decals` — optional sparse DECALS tilemap (`tiles[]` with `fmt: 'png'|'raw'` + `bytes: Uint8Array`)
 
-LiquidFun WASM source: `D:\xampp\htdocs\Box2d_3.2_C_-_liquidfun` (`wasm_wrapper.c` + `lf_particle_system.c`). Rebuild with `weedjs\build_for_weed.bat`.
+LiquidFun WASM source: the sibling `Box2d_3.2_C_-_liquidfun` tree (`wasm_wrapper.c` + `lf_particle_system.c`). Rebuild with `weedjs\build_for_weed.bat`.
 
 ## Limits
 
-- **Joints:** active Weed joint pool is saved/restored (distance / revolute / weld) with entity-index remapping. Box2D contact manifold dump is not saved.
+- **Joints:** the active Weed joint pool is saved and restored (distance, revolute, prismatic, weld) with entity-index remapping. A Box2D contact manifold dump is not saved.
 - **LiquidFun:** particle pos/vel/flags, render tint/texture/scale/alpha, plus group slots, per-particle `groupIndex` / elastic `restOffset`, and spring/barrier pair graphs.
 - **Decals:** sparse non-empty DECALS tiles (PNG in browser, raw RGBA in Node); layout mismatch skips restore.
 - No decoration / CPU particle / bullet dumps.
-- Schema fingerprint mismatch ? warn / best-effort apply.
-- Cross-scene load rejected (`payload.sceneName` must match).
-- Only format version `3` is accepted; other versions throw.
+- Schema fingerprint mismatch warns and applies best-effort.
+- Cross-scene load is rejected (`payload.sceneName` must match).
+- Only format version `5` is accepted; other versions throw.

@@ -1546,12 +1546,16 @@ class PreRenderWorker extends AbstractWorker {
         const shadowH = (ref && ref.shadowH) || this.renderQueueShadowH;
         if (!shadowH) return;
         const i = entityIndex | 0;
-        const cast = ShadowCaster.active && ShadowCaster.active[i];
-        shadowH[out] = cast ? (ShadowCaster.heightMultiplier[i] || 0) : 0;
+        const scActive = (ref && ref.scActive) || ShadowCaster.active;
+        const cast = scActive && scActive[i];
+        const scH = (ref && ref.scH) || ShadowCaster.heightMultiplier;
+        shadowH[out] = cast ? (scH ? (scH[i] || 0) : 0) : 0;
         const offX = (ref && ref.shadowOffX) || this.renderQueueShadowOffX;
         const offY = (ref && ref.shadowOffY) || this.renderQueueShadowOffY;
-        if (offX) offX[out] = cast ? (ShadowCaster.anchorOffsetX[i] || 0) : 0;
-        if (offY) offY[out] = cast ? (ShadowCaster.anchorOffsetY[i] || 0) : 0;
+        const scOx = (ref && ref.scOx) || ShadowCaster.anchorOffsetX;
+        const scOy = (ref && ref.scOy) || ShadowCaster.anchorOffsetY;
+        if (offX) offX[out] = cast ? (scOx ? (scOx[i] || 0) : 0) : 0;
+        if (offY) offY[out] = cast ? (scOy ? (scOy[i] || 0) : 0) : 0;
     }
 
     _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs) {
@@ -1594,6 +1598,11 @@ class PreRenderWorker extends AbstractWorker {
         if (!anchorX || !anchorY || !scaleX || !scaleY) {
             return pose.y;
         }
+        const ax = anchorX[index];
+        const ay = anchorY[index];
+        if (ax === 0.5 && ay === 1.0) {
+            return pose.y;
+        }
         const textureId = this._entityTextureIdOrResolve(index);
         let w = 0;
         let h = 0;
@@ -1601,8 +1610,8 @@ class PreRenderWorker extends AbstractWorker {
             w = this.frameWidth[textureId] || 0;
             h = this.frameHeight[textureId] || 0;
         }
-        const ox = (0.5 - anchorX[index]) * w * scaleX[index];
-        const oy = (1 - anchorY[index]) * h * Math.abs(scaleY[index]);
+        const ox = (0.5 - ax) * w * scaleX[index];
+        const oy = (1 - ay) * h * Math.abs(scaleY[index]);
         return pose.y + ox * pose.rotS + oy * pose.rotC;
     }
 
@@ -2225,9 +2234,21 @@ class PreRenderWorker extends AbstractWorker {
         ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
         ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;
         ref.tileMulX = rqTileMulX; ref.tileMulY = rqTileMulY;
-        ref.shadowH = this.renderQueueShadowH;
-        ref.shadowOffX = this.renderQueueShadowOffX;
-        ref.shadowOffY = this.renderQueueShadowOffY;
+        const rqShadowH = this.renderQueueShadowH;
+        const rqShadowOffX = this.renderQueueShadowOffX;
+        const rqShadowOffY = this.renderQueueShadowOffY;
+        const scActive = ShadowCaster.active;
+        const scH = ShadowCaster.heightMultiplier;
+        const scOx = ShadowCaster.anchorOffsetX;
+        const scOy = ShadowCaster.anchorOffsetY;
+
+        ref.shadowH = rqShadowH;
+        ref.shadowOffX = rqShadowOffX;
+        ref.shadowOffY = rqShadowOffY;
+        ref.scActive = scActive;
+        ref.scH = scH;
+        ref.scOx = scOx;
+        ref.scOy = scOy;
 
         let writeCount = 0;
         const stashPose = this._displayPoseOut;
@@ -2309,7 +2330,12 @@ class PreRenderWorker extends AbstractWorker {
                 const ax = srAnchorX[idx];
                 const ay = srAnchorY[idx];
                 rqAlpha[out] = a;
-                this._writeQueueShadow(out, idx);
+                if (rqShadowH) {
+                    const cast = scActive && scActive[idx];
+                    rqShadowH[out] = cast ? (scH ? (scH[idx] || 0) : 0) : 0;
+                    if (rqShadowOffX) rqShadowOffX[out] = cast ? (scOx ? (scOx[idx] || 0) : 0) : 0;
+                    if (rqShadowOffY) rqShadowOffY[out] = cast ? (scOy ? (scOy[idx] || 0) : 0) : 0;
+                }
                 const rx0 = srRepeatX[idx];
                 const ry0 = srRepeatY[idx];
                 if (rx0 !== 0 || ry0 !== 0) {

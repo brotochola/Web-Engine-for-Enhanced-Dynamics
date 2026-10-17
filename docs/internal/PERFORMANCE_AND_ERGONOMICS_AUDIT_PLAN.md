@@ -1258,3 +1258,5 @@ if (props.maxMotorForce !== undefined) {
 | **Camera** | Shake tied to render framerate | Time-based harmonic frequency | `cameraDeadzone.test.js` | FPS-independent multi-axis shake | **Verified** (Hitstop & simMs decay) |
 | **Physics** | Unbounded time scale explodes sim | Clamp scale $\le 4.0$ & limit `dt`| `timeScale.test.js` | Solver stability with fast forward | **Verified** (Clamped dt <= 1/30s) |
 | **Joints** | Dictionary allocation in joint sync | Flattened parameter passing | `prismaticJointMicrobench.mjs` | $>50\%$ throughput increase | **Verified** (Reusable _jointScratchOpts) |
+| **Worker** | PreRenderWorker scalar loop bottlenecks | Foot-anchor fast path + cached shadow columns | `preRenderWorkerMicrobench.mjs` | $\ge 20\%$ emit throughput gain | **Verified** (+48.4% ops/s: 697.6 → 1,035.0 ops/s, checksum `1469374565`) |
+| **Packer** | GPU instance row packing scalar branch churn | Hoisted lookups + specialized world loops | `gpuQueuePackMicrobench.mjs` | $\ge 50\%$ packing throughput gain | **Verified** (+124% sprites: 1.05k → 2.35k ops/s, +92% casters: 1.25k → 2.39k ops/s, checksum `2969232012`) |

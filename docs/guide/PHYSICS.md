@@ -1,6 +1,6 @@
 # Physics pipeline
 
-Weed runs **Box2D 3.0** (the real C library, WASM + SIMD + pthreads) as Scene’s physics worker when `config.physics.enabled` is not `false` (the default): classic `src/box2d/box2dWasm.js` + [`physicsHostImpl.js`](../../src/box2d/physicsHostImpl.js) + [`weedjsPost.js`](../../src/box2d/weedjsPost.js). After `box2dReady`, `bindBox2dHotFields` points `Transform.x/y/rotation/rotC/rotS` and `RigidBody.vx/vy/angularVelocity/sleeping` at WASM HEAP — those fields are not in Weed SoA. **Facing truth is `Transform.rotC` / `Transform.rotS`** (native `b2Rot`); `Transform.rotation` is a derived angle (atan2) for API convenience — hot paths must not `Math.cos/sin(rotation)`. The `GameObject.rotation` setter is the radians **write boundary** (`syncRotCSFromAngle` + cmd-ring `SET_ROT_CS`); the ring never takes radians. Visual consumers (pre_render, particle parent-follow) do **not** sample live HEAP mid-step; they latch a post-step **pose publish** SAB (`poseDataA/B` + `poseSync`).
+Weed runs **Box2D 3.2.0** (the real C library, WASM + SIMD + pthreads) as Scene’s physics worker when `config.physics.enabled` is not `false` (the default): classic `src/box2d/box2dWasm.js` + [`physicsHostImpl.js`](../../src/box2d/physicsHostImpl.js) + [`weedjsPost.js`](../../src/box2d/weedjsPost.js). After `box2dReady`, `bindBox2dHotFields` points `Transform.x/y/rotation/rotC/rotS` and `RigidBody.vx/vy/angularVelocity/sleeping` at WASM HEAP — those fields are not in Weed SoA. **Facing truth is `Transform.rotC` / `Transform.rotS`** (native `b2Rot`); `Transform.rotation` is a derived angle (atan2) for API convenience — hot paths must not `Math.cos/sin(rotation)`. The `GameObject.rotation` setter is the radians **write boundary** (`syncRotCSFromAngle` + cmd-ring `SET_ROT_CS`); the ring never takes radians. Visual consumers (pre_render, particle parent-follow) do **not** sample live HEAP mid-step; they latch a post-step **pose publish** SAB (`poseDataA/B` + `poseSync`).
 
 Scenes that never need a solver set `physics.enabled: false` and skip WASM entirely — see [Scenes without Box2D](#scenes-without-box2d). Pose still binds once onto `Transform.x`; hot loops do not branch on the flag.
 
@@ -146,7 +146,7 @@ WEED.Time.scale = 1;
 3. **Joints** — Weed `Joint` SAB (`addDistance` / `addRevolute` / `addPrismatic` / `addWeld` with body-local anchors) syncs to Box2D joints each step (`weedjsPost.syncJoints`). A prismatic joint does not spin: `axisAngle` is stored in the weld `linearHertz` column, translation limits reuse `lowerAngle` / `upperAngle`, and `maxMotorForce` reuses `maxMotorTorque`. The host calls `createPrismaticJointLocal`, which turns body A's pose plus the local anchor into the world anchor WASM already accepts. Cap: WASM `MAX_JOINTS` (4096). Wheels stay `addRevolute` plus `motorSpeed`.
 4. **Stats** — write counters and timing into `physicsStats`.
 
-The worker does **not** build the spatial grid or neighbor lists; it **reads** `Grid.neighborData` produced by spatial workers.
+The worker does **not** build the spatial grid and it does **not** read `neighborData`. Spatial lists are visual range for logic, lights, and `Ray`. Box2D owns contacts.
 
 ### Display pose publish
 
@@ -336,7 +336,13 @@ RigidBody.syncMassFromCollider(entityIndex);
 
 ## Joints (Box2D-mapped)
 
-Joints live in a **SharedArrayBuffer** pool (`Joint`), shared with main + workers. Packed pair: `(entityA << 16) | entityB`. Types: distance / revolute / weld. Attachment: `localAnchorA/B` (body local; default COM). Authored via `Joint.addDistance` / `addRevolute` / `addWeld`. Weld create captures current relative rotation (`localFrameB.q = qB⁻¹ qA`) so angled parts stay put; identity frames would snap both bodies to the same world angle.
+Joints live in a **SharedArrayBuffer** pool (`Joint`), shared with main + workers. Types: distance / revolute / prismatic / weld. Attachment: `localAnchorA/B` (body local; default COM). Authored via `Joint.addDistance` / `addRevolute` / `addPrismatic` / `addWeld`.
+
+At `entityIdWidth` 16 the pair is one packed `Uint32`: `(entityA << 16) | entityB`. At width 32 the same slot stores `entityA` and `entityB` as two `Uint32` columns, so an id past 65535 does not alias. The joint slot free-list stays `Uint16` either way.
+
+A prismatic joint does not spin. `axisAngle` is stored in the weld `linearHertz` column, translation limits reuse `lowerAngle` / `upperAngle`, and `maxMotorForce` reuses `maxMotorTorque`. The host calls `createPrismaticJointLocal`. Wheels stay `addRevolute` plus `motorSpeed`.
+
+Weld create captures current relative rotation (`localFrameB.q = qB⁻¹ qA`) so angled parts stay put; identity frames would snap both bodies to the same world angle.
 
 ### Dense active list
 
@@ -352,7 +358,7 @@ Physics sync iterates the dense active list (`activeIndices` / `activeCount`), n
 
 ### Break thresholds
 
-`Joint.addDistance` / `addRevolute` / `addWeld` accept `forceThreshold` / `torqueThreshold` (default `Infinity` — never breaks). On successful create, `weedjsPost` wires them via `joint_configure(handle, weedJointIndex, forceThreshold, torqueThreshold)`. When Box2D reports the joint exceeded a threshold, `weedjsPost` destroys the WASM joint, removes it from the `Joint` dense active list, and publishes a **joint-break ring** (`box2dJointBreakRing`) record. Logic workers drain it only when at least one entity type has **`JointBreakListener`**, and dispatch `GameObject.onJointBreak(jointIndex, entityA, entityB)` only to listening types on A and/or B (same worker-partition + generation rules as contacts). Hits stay on `CollisionListener`; breaks use `JointBreakListener`. Demo: **Weld Break** scene (`demos/weldBreakScene/weldBreakScene.js`) — welded stacks + particle burst on snap.
+`Joint.addDistance` / `addRevolute` / `addPrismatic` / `addWeld` accept `forceThreshold` / `torqueThreshold` (default `Infinity` — never breaks). On successful create, `weedjsPost` wires them via `joint_configure(handle, weedJointIndex, forceThreshold, torqueThreshold)`. When Box2D reports the joint exceeded a threshold, `weedjsPost` destroys the WASM joint, removes it from the `Joint` dense active list, and publishes a **joint-break ring** (`box2dJointBreakRing`) record. Logic workers drain it only when at least one entity type has **`JointBreakListener`**, and dispatch `GameObject.onJointBreak(jointIndex, entityA, entityB)` only to listening types on A and/or B (same worker-partition + generation rules as contacts). Hits stay on `CollisionListener`; breaks use `JointBreakListener`. Demo: **Weld Break** scene (`demos/weldBreakScene/weldBreakScene.js`) — welded stacks + particle burst on snap.
 
 ### Explosions
 

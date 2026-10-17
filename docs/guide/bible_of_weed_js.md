@@ -6,22 +6,27 @@ Engine-focused notes for the current `src/` architecture.
 
 | Resource | Current Limit |
 |---|---|
-| Entity indices | `0..65534` (`Uint16`) |
-| Total pooled entities | `65535` max |
-| Particle / decoration / bullet / constraint pool indices | `0..65534` (`Uint16`) |
+| Entity indices, default | `0..65534` (`config.entityIdWidth` **16**, `Uint16`) |
+| Total pooled entities, default | `65535` |
+| Entity indices, opt-in | `config.entityIdWidth: 32`, ceiling **300000**. A scene with `physics.enabled` (the default) throws if `totalEntityCount > 65535` |
+| Particle / decoration / bullet pool indices | `0..65534`. Those slot stacks stay `Uint16` at either width |
 | QuerySystem component mask width | `64` components |
 | QuerySystem entity-type mask width | `64` entity types |
-| Spatial grid cells | `65535` max (cell indices cached as `Uint16`) |
+| Spatial grid cells | No 65535 cap. The neighbor-cell cache is `Uint16` until `totalCells > 65535`, then `Uint32` |
 | Default max neighbors/entity | `128` (raise via `spatial.maxNeighbors` for dense flocks) |
 | Max entities/cell | `255` hard cap (`Uint8` count), `64` default |
-| Default max collision pairs/frame | `10000` |
+| Contact ring | `65536` events (`physics.contactRingCapacity`). Overrun drops contacts; it is not a pair cap of 10000 |
+| Joint entity ids | Width 16 packs `(entityA << 16) \| entityB`. Width 32 stores `entityA` and `entityB` as two `Uint32` columns. The joint **slot** stack stays `Uint16` |
 | Collision layers | `32` (Uint32 bitmask) |
-| Audio mixer slots | `64` default (`maxSlots` param) |
+| Audio mixer slots | `128` default (`audio.maxSlots`) |
+| Audio buses | `8` (`SoundManager.MAX_CHANNELS`) |
 | Max rendering layers | `16` (`Layer.MAX_LAYERS`) |
-| ColliderFixture pool | `physics.maxFixturePoolSize` (global Uint16 slots, default `0`) |
+| ColliderFixture pool | `physics.maxFixturePoolSize` (global slots, default `0`) |
 | Default custom layer maxItems | `5000` |
 | Audio playback rate range | `0.25..4` |
 | Sound ID type | `Int32` (index into per-name ID map) |
+
+`entityIdWidth` is bound once when the scene allocates shared buffers. Width 32 widens active lists, queries, grid slots, and neighbor lists to 4 bytes. Bunny mark uses it with physics off. Width 16 is what every other demo uses.
 
 ---
 
@@ -289,10 +294,10 @@ Add it to `static components` and use `Query.query([MyTag])` to find entities. N
 | Worker | Count | Main Responsibility |
 |---|---:|---|
 | `spatialWorker` | 1..N | Grid rebuild + neighbor lists |
-| `physics` (classic) | 1 | Box2D 3.0 WASM host + contact/joint sync |
+| `physics` (classic) | 0..1 | Box2D **3.2.0** WASM host + contact/joint sync. **0** when `physics.enabled` is `false` |
 | `logicWorker` | 1..N | Entity tick + callbacks + lifecycle |
 | `particleWorker` | 1 | Particles, decals, nav, visibility buffers |
-| `preRenderWorker` | 1 | Animation + render/shadow queue build |
+| `preRenderWorker` | 1 | Animation + render/shadow queue build. One writer; there is no `numberOfPreRenderWorkers` |
 | `pixiWorker` | 1 | OffscreenCanvas/Pixi draw |
 | `AudioMixerProcessor` (worklet) | 1 | Real-time PCM mixing on the audio thread via SAB |
 
@@ -444,7 +449,7 @@ this.setFeedBits(1); // scene bit 0 (burning boxes ignite); engine ORs static on
 
 Renderer default is `config.renderer.backend: 'webgpu'`. Demo scenes other than burning boxes set `'webgl'`. Look shaders must match the backend (`.frag` / GLSL on WebGL, `.wgsl` on WebGPU). Compute layers require `'webgpu'`. Mismatches throw `WeedJS:` errors at scene load. Missing GPU device throws at Pixi init if the scene asked for WebGPU.
 
-### DebugUI Layer Inspector
+### Buffer density example
 
 ```javascript
 import { BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } from '/src/util/configDefaults.js';
@@ -743,7 +748,7 @@ import { BLEND_MODES } from '/src/util/configDefaults.js';
     ┌───────────┐
     │  rawRT     │   Density / accumulation texture (resolution × screen)
     └─────┬─────┘
-          │ sampled as uSampler in your fragment shader
+          │ sampled as uTexture (uSampler is the sampler)
           ▼
     ┌───────────┐
     │  Shader   │   Custom fragment: threshold, color, effects
@@ -1017,7 +1022,7 @@ Recommended `<head>` meta tags (add these to your HTML — the engine can't inje
 - Logic: `staggeredUpdates = false`
 - Renderer: `maxVisibleRenderables` defaults to auto (pool sum + particles/decorations/bullets/glows + Adobe piece expansion); set explicitly only to cap below that floor
 - Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = false` (built-in), `blendMode = BLEND_MODES.NORMAL` (0)
-- Audio: `maxSlots = 64`, `mixGain = 0.5`, `masterVolume = 1.0`
+- Audio: `maxSlots = 128`, `mixGain = 0.5`, `masterVolume = 1.0`, one bus named `main` unless `audio.channels` says otherwise
 - Navigation: `enabled = false` by default
 
 See `src/util/configDefaults.js` for the canonical defaults.
@@ -1048,6 +1053,6 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Flash pool is finite (`lighting.maxFlashes`). Flashes also compete for `lighting.maxLights`; persistent lights win when the list is capped. Short muzzle flashes should use `Flash.spawn({ castShadows: false })` so they light without point-shadow grid work.
 - Rendering caps are finite too. One-shot pre-render warnings for visible lights, shadow queues, shadow sprites, and visibility polygon occluders mean the scene is truncating work. Tune `lighting.maxLights`, `lighting.maxFlashes`, `lighting.maxShadowCastingLights`, `lighting.maxShadowsPerLight`, `lighting.maxShadowSprites`, or reduce light/occluder density.
-- Sound slots are finite (default 64). One-shot SFX are cheap; don't forget `stop()` on loops.
+- Sound slots are finite (default 128). One-shot SFX are cheap; don't forget `stop()` on loops. A full bus drops or steals a voice on that bus; `droppedCount` counts plays that found no slot.
 - Spatial sound culls anything a full viewport-width outside the camera. Keep that in mind for ambient loops.
 - Only add `CollisionListener` / `CameraInOutListener` to entity types that actually use the callbacks or `isCollidingWith()`. Without `CollisionListener` anywhere in the scene, the engine skips the entire collision callback/query pass.

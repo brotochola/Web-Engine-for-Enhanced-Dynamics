@@ -286,6 +286,91 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
   let base = 0;
   let out = 0;
   let particles = 0;
+  if (!useScreen && !pixelSnap && !filterTypes) {
+    if (!shadowCast && fp === GPU_SPRITE_FLOATS) {
+      for (let k = 0; k < scanCount; k++) {
+        if (out >= cap) break;
+        const i = useIndices ? indices[k] : k;
+        if (typeArr && typeArr[i] === 1) particles++;
+
+        const depth = 1.0 - (out + 1) * invDepthDenom;
+        let a = rqAlpha[i];
+        if (a < 0) a = 0;
+        else if (a > 1) a = 1;
+        const a8 = (a * 255 + 0.5) | 0;
+        const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
+
+        const invX = rqTileMulX ? rqTileMulX[i] : (rqRepeatX && rqRepeatX[i] > 0 ? 1 / rqRepeatX[i] : 0);
+        const invY = rqTileMulY ? rqTileMulY[i] : (rqRepeatY && rqRepeatY[i] > 0 ? 1 / rqRepeatY[i] : 0);
+        dst[base] = rqX[i];
+        dst[base + 1] = rqY[i];
+        dst[base + 2] = rqScaleX[i];
+        dst[base + 3] = rqScaleY[i];
+        dst[base + 4] = rqAnchorX[i];
+        dst[base + 5] = rqAnchorY[i];
+        dst[base + 6] = rqRotC[i];
+        dst[base + 7] = rqRotS[i];
+        dst[base + 8] = depth;
+        dstU32[base + 9] = packed >>> 0;
+        dst[base + 10] = rqTextureId[i];
+        dst[base + 11] = invX;
+        dst[base + 12] = invY;
+        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
+        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+        base += 15;
+        out++;
+      }
+      ctx.particleCount = particles;
+      return out;
+    }
+    if (shadowCast && fp === GPU_CASTER_FLOATS) {
+      const qShadowH = q.shadowH;
+      const qShadowOffX = q.shadowOffX;
+      const qShadowOffY = q.shadowOffY;
+      for (let k = 0; k < scanCount; k++) {
+        if (out >= cap) break;
+        const i = useIndices ? indices[k] : k;
+        if (typeArr && typeArr[i] === 1) particles++;
+
+        const depth = 1.0 - (out + 1) * invDepthDenom;
+        let a = rqAlpha[i];
+        if (a < 0) a = 0;
+        else if (a > 1) a = 1;
+        const a8 = (a * 255 + 0.5) | 0;
+        const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
+
+        const invX = rqTileMulX ? rqTileMulX[i] : (rqRepeatX && rqRepeatX[i] > 0 ? 1 / rqRepeatX[i] : 0);
+        const invY = rqTileMulY ? rqTileMulY[i] : (rqRepeatY && rqRepeatY[i] > 0 ? 1 / rqRepeatY[i] : 0);
+        dst[base] = rqX[i];
+        dst[base + 1] = rqY[i];
+        dst[base + 2] = rqScaleX[i];
+        dst[base + 3] = rqScaleY[i];
+        dst[base + 4] = rqAnchorX[i];
+        dst[base + 5] = rqAnchorY[i];
+        dst[base + 6] = rqRotC[i];
+        dst[base + 7] = rqRotS[i];
+        dst[base + 8] = depth;
+        dstU32[base + 9] = packed >>> 0;
+        dst[base + 10] = rqTextureId[i];
+        dst[base + 11] = invX;
+        dst[base + 12] = invY;
+        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
+        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+        dst[base + 15] = qShadowH ? qShadowH[i] : 0;
+        dst[base + 16] = qShadowOffX ? qShadowOffX[i] : 0;
+        dst[base + 17] = qShadowOffY ? qShadowOffY[i] : 0;
+        dst[base + 18] = 0;
+        dst[base + 19] = 0;
+        dst[base + 20] = 0;
+        dst[base + 21] = 0;
+        base += 22;
+        out++;
+      }
+      ctx.particleCount = particles;
+      return out;
+    }
+  }
+
   for (let k = 0; k < scanCount; k++) {
     const i = useIndices ? indices[k] : k;
     if (filterTypes) {
@@ -337,10 +422,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     const a8 = (a * 255 + 0.5) | 0;
     const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
 
-    const rx = rqRepeatX ? rqRepeatX[i] : 0;
-    const ry = rqRepeatY ? rqRepeatY[i] : 0;
-    const invX = rqTileMulX ? rqTileMulX[i] : (rx > 0 ? 1 / rx : 0);
-    const invY = rqTileMulY ? rqTileMulY[i] : (ry > 0 ? 1 / ry : 0);
+    const invX = rqTileMulX ? rqTileMulX[i] : (rqRepeatX && rqRepeatX[i] > 0 ? 1 / rqRepeatX[i] : 0);
+    const invY = rqTileMulY ? rqTileMulY[i] : (rqRepeatY && rqRepeatY[i] > 0 ? 1 / rqRepeatY[i] : 0);
     dst[base] = x;
     dst[base + 1] = y;
     dst[base + 2] = sx;

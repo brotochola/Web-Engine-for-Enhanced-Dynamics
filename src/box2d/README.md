@@ -1,6 +1,6 @@
 # Weed Box2D runtime (`src/box2d`)
 
-Classic physics worker for **Box2D 3.0 WASM** (pthread + SharedArrayBuffer). Scene’s `workers.physics` **is** [`box2dWasm.js`](box2dWasm.js), which loads [`weedjsPost.js`](weedjsPost.js) then [`physicsHostImpl.js`](physicsHostImpl.js). Host speaks Weed `init`/`start` and calls `weedjsDoStep` in-process.
+Classic physics worker for **Box2D 3.2.0 WASM** (pthread + SharedArrayBuffer). Scene’s `workers.physics` **is** [`box2dWasm.js`](box2dWasm.js), which loads [`weedjsPost.js`](weedjsPost.js) then [`physicsHostImpl.js`](physicsHostImpl.js). Host speaks Weed `init`/`start` and calls `weedjsDoStep` in-process.
 
 ## Layout
 
@@ -25,8 +25,8 @@ Classic physics worker for **Box2D 3.0 WASM** (pthread + SharedArrayBuffer). Sce
 
 | Artifact                                                        | Notes                                                    |
 | --------------------------------------------------------------- | -------------------------------------------------------- |
-| `weed.bundle.min.js` / `.esm.min.js`                            | Debug UI, raw worker strings (default `main` / `module`) |
-| `weed.prod.bundle.min.js` / `.esm.min.js`                       | Debug stubs, raw worker strings                          |
+| `weed.bundle.min.js` / `.esm.min.js`                            | Debug UI, raw worker strings (`exports["./debug"]`)      |
+| `weed.prod.bundle.min.js` / `.esm.min.js`                       | Debug stubs, raw worker strings (`main` / `module` / `exports["."]` ) |
 | `weed.bundle.compressed.min.js` / `.esm.compressed.min.js`      | Debug UI, gzip-embedded workers                          |
 | `weed.prod.bundle.compressed.min.js` / `.esm.compressed.min.js` | Debug stubs, gzip-embedded workers                       |
 
