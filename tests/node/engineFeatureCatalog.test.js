@@ -38,6 +38,7 @@ const REQUIRED = [
   'meshFillMoving',
   'meshFillPan',
   'meshFillLook',
+  'audioStorm',
   'audioSlots',
   'gameObjectAccess',
   'shadowStamp',
@@ -47,6 +48,7 @@ const REQUIRED = [
   'publishPose',
   'preRenderWorker',
   'swayBuckets',
+  'textureUpload',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {

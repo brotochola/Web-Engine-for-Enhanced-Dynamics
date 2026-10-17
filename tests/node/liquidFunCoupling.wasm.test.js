@@ -360,8 +360,14 @@ test('WASM skip-impulse flag still counts calls but crate is not pushed', () => 
   assert.ok(fn('create_particle_system')(worldId, 10, 1.0, 800));
   fn('set_lf_skip_body_impulse')(1);
   assert.ok(fn('create_particle_group_box')(-120, -50, 20, 50, 0, 0, 0.5, 0, 0, 0, 1, 1) >= 0);
-  for (let i = 0; i < 45; i++) fn('step_world')(worldId, 1 / 60, 1);
-  assert.ok(fn('get_lf_apply_impulse_calls')() > 0);
+  // The counter resets every step. The cloud leaves the crate before the last
+  // step, so sum the calls. The crate must still not be pushed.
+  let calls = 0;
+  for (let i = 0; i < 45; i++) {
+    fn('step_world')(worldId, 1 / 60, 1);
+    calls += fn('get_lf_apply_impulse_calls')();
+  }
+  assert.ok(calls > 0);
   const after = readBody(memory, fn, crate);
   const moved = Math.hypot(after.x - spawn.x, after.y - spawn.y);
   assert.ok(moved < 2, `skip impulse should leave crate put: moved=${moved}`);
