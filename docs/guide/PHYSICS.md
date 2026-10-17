@@ -125,11 +125,25 @@ Command ring `setVelocity` works once `hasBody` (RB-only included). Col-only sta
 
 ---
 
+## Time scale
+
+`clockData` is one `Float32`, default `1`. `Time.scale` writes it. `0` is a hitstop. A non-finite write is read back as `1`. A negative write is read back as `0`.
+
+[`AbstractWorker.updateFrameTiming`](../../src/workers/abstractWorker.js) multiplies the sim step (`deltaTime` and `dtRatio`, and the accumulated sim clock) by that value. The physics host does the same to the seconds it passes to `weedjsDoStep`, after the 1/20 s hitch cap, in both its own loop and a lockstep `step`. `Scene.update` and the sun day-cycle receive the scaled step. Free-cam uses the wall step.
+
+Wall `STEP_MS` and FPS stay on `performance.now()` around the work. They do not become the scaled step. Keyboard, mouse, gamepad, and the audio mixer are not multiplied. `GameEngine.pause()` still freezes workers; it is not a time scale.
+
+```javascript
+WEED.Time.scale = 0.25; // slow motion
+WEED.Time.scale = 0;    // hitstop
+WEED.Time.scale = 1;
+```
+
 ## Responsibilities (per frame)
 
 1. **Box2D step** — classic WASM host advances bodies in-process (`weedjsDoStep`); hot pose/vel (`Transform.x/y/rotation/rotC/rotS`, `RigidBody.vx/vy/angularVelocity/sleeping`) live on HEAP. World `maximumLinearSpeed` clamps in the solver. Body damping: `linearDamping` / `angularDamping`. Before `world.step`, physics snapshots prev pose into `RigidBody.px/py/pRotation`. After the step, it **publishes** live `Transform.x/y/rotC/rotS` for dense bodies into double-buffered `poseDataA/B` and bumps `poseSync[readyFrame]` (same Atomics idiom as the render queue).
 2. **Contacts** — Box2D owns narrowphase; fixture μ from `Collider.friction`.
-3. **Joints** — Weed `Joint` SAB (`addDistance` / `addRevolute` / `addWeld` with body-local anchors) syncs to Box2D joints each step (`weedjsPost.syncJoints`). Cap: WASM `MAX_JOINTS` (4096).
+3. **Joints** — Weed `Joint` SAB (`addDistance` / `addRevolute` / `addPrismatic` / `addWeld` with body-local anchors) syncs to Box2D joints each step (`weedjsPost.syncJoints`). A prismatic joint does not spin: `axisAngle` is stored in the weld `linearHertz` column, translation limits reuse `lowerAngle` / `upperAngle`, and `maxMotorForce` reuses `maxMotorTorque`. The host calls `createPrismaticJointLocal`, which turns body A's pose plus the local anchor into the world anchor WASM already accepts. Cap: WASM `MAX_JOINTS` (4096). Wheels stay `addRevolute` plus `motorSpeed`.
 4. **Stats** — write counters and timing into `physicsStats`.
 
 The worker does **not** build the spatial grid or neighbor lists; it **reads** `Grid.neighborData` produced by spatial workers.

@@ -555,6 +555,7 @@
     globalEntityCount: 0,
     stats: null,
     frameRateData: null,
+    clockScale: null,
     frameRateIndex: -1,
     frameRateStride: 1,
     commandSab: null,
@@ -989,6 +990,9 @@
     if (data.buffers && data.buffers.frameRateData) {
       state.frameRateData = new Float32Array(data.buffers.frameRateData);
     }
+    if (data.buffers && data.buffers.clockData) {
+      state.clockScale = new Float32Array(data.buffers.clockData);
+    }
     if (data.frameRateIndex !== undefined) {
       state.frameRateIndex = data.frameRateIndex | 0;
     }
@@ -1107,6 +1111,16 @@
     if (!armed) state._queryWakeArmed = false;
   }
 
+  // ponytail: classic IIFE cannot import timeScale.js — keep in sync with sanitizeTimeScale.
+  function readTimeScale() {
+    var view = state.clockScale;
+    if (!view) return 1;
+    var s = view[0];
+    if (typeof s !== 'number' || s !== s || s === Infinity || s === -Infinity) return 1;
+    if (s <= 0) return 0;
+    return s;
+  }
+
   function gameLoop() {
     if (state.isPaused) return;
 
@@ -1136,6 +1150,7 @@
         var maxDt = 1 / 20;
         if (dt > maxDt) dt = maxDt;
       }
+      dt *= readTimeScale();
       if (dt > 0) {
         state._inStep = true;
         try {
@@ -1169,7 +1184,7 @@
     state.frameNumber++;
     state.lastFrameTime = performance.now();
     state.currentFPS = 1000 / deltaTimeMs;
-    var dt = deltaTimeMs / 1000;
+    var dt = (deltaTimeMs / 1000) * readTimeScale();
     if (state.box2dReady && dt > 0) {
       var t0 = performance.now();
       state._inStep = true;

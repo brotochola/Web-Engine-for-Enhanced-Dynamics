@@ -13,6 +13,7 @@ import { Mouse } from '../core/mouse.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Camera } from '../core/camera.js';
+import { Tween } from '../core/tween.js';
 
 import { CameraInOutListener, noteScreenVisibility } from '../components/cameraInOutListener.js';
 import { CollisionListener } from '../components/collisionListener.js';
@@ -841,6 +842,7 @@ class LogicWorker extends AbstractWorker {
 
   update(deltaTime, dtRatio, resuming) {
     if (this.collectDetailedStats) this.frameStartTime = performance.now();
+    Tween.tick(deltaTime, this.workerIndex, this.totalLogicWorkers);
     this._latchDisplayPose();
 
     // Reset stats for this frame

@@ -1,0 +1,125 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { Tween, tweenBufferBytes, resetTweenFullWarn } from '../../src/core/tween.js';
+import { TWEEN_DEFAULTS } from '../../src/util/configDefaults.js';
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { Transform } from '../../src/components/transform.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { Camera } from '../../src/core/camera.js';
+
+function bind(count) {
+  Tween.bind(new SharedArrayBuffer(tweenBufferBytes(count)), count);
+}
+
+function sprite(n = 1) {
+  SpriteRenderer.active = new Uint8Array(n);
+  SpriteRenderer.active.fill(1);
+  SpriteRenderer.alpha = new Float32Array(n);
+  SpriteRenderer.alpha.fill(1);
+  SpriteRenderer.tint = new Uint32Array(n);
+  SpriteRenderer.tint.fill(0xffffff);
+  SpriteRenderer.scaleX = new Float32Array(n);
+  SpriteRenderer.scaleX.fill(1);
+  SpriteRenderer.scaleY = new Float32Array(n);
+  SpriteRenderer.scaleY.fill(1);
+  SpriteRenderer.renderDirty = new Uint8Array(n);
+}
+
+test('TWEEN_DEFAULTS.maxTweens is the pool size', () => {
+  assert.equal(TWEEN_DEFAULTS.maxTweens, 128);
+});
+
+test('tween writes sprite alpha and refuses a dynamic body', { concurrency: false }, () => {
+  const prev = {
+    active: SpriteRenderer.active,
+    alpha: SpriteRenderer.alpha,
+    tint: SpriteRenderer.tint,
+    scaleX: SpriteRenderer.scaleX,
+    scaleY: SpriteRenderer.scaleY,
+    renderDirty: SpriteRenderer.renderDirty,
+    tx: Transform.x,
+    ty: Transform.y,
+    rbA: RigidBody.active,
+    rbS: RigidBody.static,
+    cam: Camera._data,
+  };
+  try {
+    sprite();
+    bind(4);
+    const slot = Tween.to(0, { alpha: 0 }, 100, 'quad.out');
+    assert.equal(slot, 0);
+    Tween.tick(100);
+    assert.equal(SpriteRenderer.alpha[0], 0);
+    assert.equal(SpriteRenderer.renderDirty[0], 1);
+
+    Transform.x = new Float32Array([5]);
+    Transform.y = new Float32Array([6]);
+    RigidBody.active = new Uint8Array([1]);
+    RigidBody.static = new Uint8Array([0]);
+    assert.equal(Tween.to(0, { x: 9, y: 1 }, 100, 0), -1);
+    assert.equal(Transform.x[0], 5);
+
+    RigidBody.static[0] = 1;
+    const kin = Tween.to(0, { x: 9 }, 100, 0);
+    assert.ok(kin >= 0);
+    Tween.tick(100);
+    assert.equal(Transform.x[0], 9);
+
+    const data = new Float32Array(Camera.FLOAT_COUNT);
+    data[0] = 1;
+    data[5] = 1;
+    Camera.initialize(data, 800, 600);
+    const zoom = Tween.toZoom(2, 100, 0);
+    assert.ok(zoom >= 0);
+    Tween.tick(100);
+    assert.equal(Camera.targetZoom, 2);
+  } finally {
+    Tween.unbind();
+    SpriteRenderer.active = prev.active;
+    SpriteRenderer.alpha = prev.alpha;
+    SpriteRenderer.tint = prev.tint;
+    SpriteRenderer.scaleX = prev.scaleX;
+    SpriteRenderer.scaleY = prev.scaleY;
+    SpriteRenderer.renderDirty = prev.renderDirty;
+    Transform.x = prev.tx;
+    Transform.y = prev.ty;
+    RigidBody.active = prev.rbA;
+    RigidBody.static = prev.rbS;
+    Camera._data = prev.cam;
+  }
+});
+
+test('two logic workers tick disjoint halves and match one full tick', { concurrency: false }, () => {
+  sprite(4);
+  bind(4);
+  Tween.to(0, { alpha: 0 }, 100, 0);
+  Tween.to(1, { alpha: 0 }, 100, 0);
+  Tween.to(2, { alpha: 0 }, 100, 0);
+  Tween.to(3, { alpha: 0 }, 100, 0);
+  Tween.tick(50, 0, 2);
+  Tween.tick(50, 1, 2);
+  assert.ok(Math.abs(SpriteRenderer.alpha[0] - 0.5) < 1e-5);
+  assert.ok(Math.abs(SpriteRenderer.alpha[3] - 0.5) < 1e-5);
+  Tween.unbind();
+});
+
+test('tween pool warns once when every slot is live', { concurrency: false }, () => {
+  resetTweenFullWarn();
+  const warnings = [];
+  const prev = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    bind(2);
+    assert.equal(Tween.to(0, { alpha: 0 }, 1000, 0), 0);
+    assert.equal(Tween.to(0, { alpha: 0 }, 1000, 0), 1);
+    assert.equal(Tween.to(0, { alpha: 0 }, 1000, 0), -1);
+    assert.equal(Tween.to(0, { alpha: 0 }, 1000, 0), -1);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /full \(2\)/);
+  } finally {
+    console.warn = prev;
+    Tween.unbind();
+    resetTweenFullWarn();
+  }
+});

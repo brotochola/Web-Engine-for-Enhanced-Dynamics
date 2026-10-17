@@ -872,6 +872,10 @@ const lt = WEED.Gamepad.getButton(0, WEED.Gamepad.LT); // analog trigger 0..1
 // Camera
 WEED.Camera.follow(this.x, this.y);
 WEED.Camera.followEntity(index, lookAheadSec, smoothing, dtRatio); // pose xy + vel frozen to pose publishes
+WEED.Camera.setDeadzone(80, 60); // world-pixel box; the camera holds while the entity stays inside
+WEED.Camera.shake(12, 180);      // punch added when the camera is packed; decays on sim time
+WEED.Tween.to(this.index, { alpha: 0 }, 200, 'quad.out'); // sprite or mesh; not a dynamic body's x/y
+WEED.Tween.toZoom(0.5, 400, 'quad.out');
 WEED.Camera.targetZoom = 0.5; // then follow / followEntity — lerps zoom, keeps screen center
 WEED.Camera.setZoom(1.5);     // snap zoom (do not call every tick while following)
 // getViewportBounds(out?) — pass a stable object if you need to store bounds;

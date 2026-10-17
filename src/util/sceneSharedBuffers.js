@@ -28,6 +28,8 @@ import { Gamepad } from '../core/gamepad.js';
 import Keyboard from '../core/keyboard.js';
 import { Flash } from '../core/flash.js';
 import { Camera } from '../core/camera.js';
+import { Time } from '../core/timeScale.js';
+import { Tween, tweenBufferBytes } from '../core/tween.js';
 import {
   SUN_DEFAULTS,
   LAYER_DEFAULTS,
@@ -118,6 +120,7 @@ export function validateSceneSharedBufferConfig(scene) {
   assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_ENTITIES_U16);
   assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_ENTITIES_U16);
   assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES_U16);
+  assertIntegerInRange('tween.maxTweens', config.tween?.maxTweens ?? 0, 0, 1 << 20);
   assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, maxEnt);
   assertIntegerInRange(
     'physics.maxFixturePoolSize',
@@ -785,6 +788,20 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   Keyboard.initialize(views.input, scene.keyMap);
   scene.updateKeyboardBuffer();
 
+  buffers.clockData = new SharedArrayBuffer(4);
+  views.clock = new Float32Array(buffers.clockData);
+  views.clock[0] = 1;
+  Time.bind(buffers.clockData);
+
+  const maxTweens = config.tween?.maxTweens | 0;
+  if (maxTweens > 0) {
+    buffers.tweenData = new SharedArrayBuffer(tweenBufferBytes(maxTweens));
+    Tween.bind(buffers.tweenData, maxTweens);
+  } else {
+    buffers.tweenData = null;
+    Tween.unbind();
+  }
+
   buffers.cameraData = new SharedArrayBuffer(Camera.FLOAT_COUNT * 4);
   views.camera = new Float32Array(buffers.cameraData);
   views.camera[0] = scene.camera.zoom;
@@ -1014,6 +1031,8 @@ export function teardownSceneSharedState(scene) {
   }
 
   Camera._data = null;
+  Time.unbind();
+  Tween.unbind();
   Mouse._data = null;
   Gamepad.initialize(null);
   Ray.debugFlags = null;

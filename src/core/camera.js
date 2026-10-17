@@ -8,10 +8,44 @@ import Keyboard from './keyboard.js';
 import { Mouse } from './mouse.js';
 
 /**
+ * Camera center that keeps the entity inside a world-pixel box.
+ * A non-positive half on an axis tracks the entity on that axis.
+ * @param {number} entityX
+ * @param {number} entityY
+ * @param {number} centerX
+ * @param {number} centerY
+ * @param {number} halfW
+ * @param {number} halfH
+ * @param {{x: number, y: number}} [out]
+ * @returns {{x: number, y: number}}
+ */
+export function deadzoneCenter(entityX, entityY, centerX, centerY, halfW, halfH, out) {
+  const dest = out || { x: 0, y: 0 };
+  dest.x = centerX;
+  dest.y = centerY;
+  if (halfW > 0) {
+    const dx = entityX - centerX;
+    if (dx > halfW) dest.x = entityX - halfW;
+    else if (dx < -halfW) dest.x = entityX + halfW;
+  } else {
+    dest.x = entityX;
+  }
+  if (halfH > 0) {
+    const dy = entityY - centerY;
+    if (dy > halfH) dest.y = entityY - halfH;
+    else if (dy < -halfH) dest.y = entityY + halfH;
+  } else {
+    dest.y = entityY;
+  }
+  return dest;
+}
+
+/**
  * Static Camera class for managing viewport state
- * Camera data is stored in a SharedArrayBuffer Float32Array[10]:
+ * Camera data is stored in a SharedArrayBuffer Float32Array[16]:
  * [zoom, x, y, followTargetX, followTargetY, targetZoom,
- *  followEntityIndex, followUsedX, followUsedY, rotation]
+ *  followEntityIndex, followUsedX, followUsedY, rotation,
+ *  deadzoneHalfW, deadzoneHalfH, shakeAmp, shakeDur, shakeElapsed, shakePhase]
  *
  * followEntityIndex is 0 = none, else entityIndex+1 (0 is a valid entity).
  * followUsedX/Y are the entity pose xy followEntity read (not look-ahead).
@@ -28,7 +62,7 @@ import { Mouse } from './mouse.js';
 export class Camera {
   // SharedArrayBuffer view: Float32Array[9]
   static _data = null;
-  static FLOAT_COUNT = 10;
+  static FLOAT_COUNT = 16;
   static IDX_ZOOM = 0;
   static IDX_X = 1;
   static IDX_Y = 2;
@@ -39,6 +73,12 @@ export class Camera {
   static IDX_FOLLOW_USED_X = 7;
   static IDX_FOLLOW_USED_Y = 8;
   static IDX_ROTATION = 9;
+  static IDX_DEADZONE_X = 10;
+  static IDX_DEADZONE_Y = 11;
+  static IDX_SHAKE_AMP = 12;
+  static IDX_SHAKE_DUR = 13;
+  static IDX_SHAKE_ELAPSED = 14;
+  static IDX_SHAKE_PHASE = 15;
 
   // Canvas dimensions (needed for centering calculations)
   static _canvasWidth = 0;
@@ -59,6 +99,8 @@ export class Camera {
   };
   static _followTargetScratch = { x: 0, y: 0 };
   static _alignCamScratch = { x: 0, y: 0 };
+  static _deadzoneScratch = { x: 0, y: 0 };
+  static _shakeScratch = { x: 0, y: 0 };
   static _worldToScreenScratch = { x: 0, y: 0 };
   static _screenToWorldScratch = { x: 0, y: 0 };
 
@@ -601,7 +643,84 @@ export class Camera {
     // Same pose snapshot as last follow: sprite is frozen. Do not ease the
     // camera or the tilemap slides under the car (high-speed rAF lap hitch).
     if (publishFrozen) return;
-    this._applyFollow(x + vx * look, y + vy * look, smoothing, dtRatio);
+    const aim = this._deadzoneAim(x, y);
+    this._applyFollow(aim.x + vx * look, aim.y + vy * look, smoothing, dtRatio);
+  }
+
+  /**
+   * World-pixel box around the view center. The camera holds while the
+   * follow point stays inside. Zero on an axis tracks that axis.
+   * @param {number} halfWidth
+   * @param {number} halfHeight
+   */
+  static setDeadzone(halfWidth, halfHeight) {
+    if (!this._data || this._data.length <= this.IDX_DEADZONE_Y) return;
+    this._data[this.IDX_DEADZONE_X] = halfWidth > 0 ? halfWidth : 0;
+    this._data[this.IDX_DEADZONE_Y] = halfHeight > 0 ? halfHeight : 0;
+  }
+
+  /** @returns {{x: number, y: number}} */
+  static _deadzoneAim(entityX, entityY) {
+    const dest = this._deadzoneScratch;
+    const data = this._data;
+    const halfW = data && data.length > this.IDX_DEADZONE_X ? data[this.IDX_DEADZONE_X] : 0;
+    const halfH = data && data.length > this.IDX_DEADZONE_Y ? data[this.IDX_DEADZONE_Y] : 0;
+    if (!(halfW > 0) && !(halfH > 0) || !data) {
+      dest.x = entityX;
+      dest.y = entityY;
+      return dest;
+    }
+    const zoom = data[this.IDX_ZOOM] || 1;
+    const cx = data[this.IDX_X] + this._canvasWidth / (2 * zoom);
+    const cy = data[this.IDX_Y] + this._canvasHeight / (2 * zoom);
+    return deadzoneCenter(entityX, entityY, cx, cy, halfW, halfH, dest);
+  }
+
+  /**
+   * Start a view punch. The offset is added when the camera is packed,
+   * not written into the follow target, so follow does not ease it away.
+   * @param {number} amplitude - World pixels at the start of the punch
+   * @param {number} durationMs - Sim milliseconds
+   */
+  static shake(amplitude, durationMs) {
+    const data = this._data;
+    if (!data || data.length <= this.IDX_SHAKE_PHASE) return;
+    data[this.IDX_SHAKE_AMP] = amplitude > 0 ? amplitude : 0;
+    data[this.IDX_SHAKE_DUR] = durationMs > 0 ? durationMs : 0;
+    data[this.IDX_SHAKE_ELAPSED] = 0;
+    data[this.IDX_SHAKE_PHASE] = 1;
+  }
+
+  /**
+   * Decay the punch by sim milliseconds and return this frame's offset.
+   * Zero sim time holds the offset (hitstop).
+   * @param {number} simMs
+   * @param {{x: number, y: number}} [out]
+   * @returns {{x: number, y: number}}
+   */
+  static advanceShake(simMs, out) {
+    const dest = out || this._shakeScratch;
+    dest.x = 0;
+    dest.y = 0;
+    const data = this._data;
+    if (!data || data.length <= this.IDX_SHAKE_PHASE) return dest;
+    const amp = data[this.IDX_SHAKE_AMP];
+    const dur = data[this.IDX_SHAKE_DUR];
+    if (!(amp > 0) || !(dur > 0)) return dest;
+    const step = simMs > 0 ? simMs : 0;
+    const elapsed = data[this.IDX_SHAKE_ELAPSED] + step;
+    if (elapsed >= dur) {
+      data[this.IDX_SHAKE_ELAPSED] = dur;
+      data[this.IDX_SHAKE_AMP] = 0;
+      return dest;
+    }
+    data[this.IDX_SHAKE_ELAPSED] = elapsed;
+    if (step > 0) data[this.IDX_SHAKE_PHASE] = data[this.IDX_SHAKE_PHASE] > 0 ? -1 : 1;
+    const mag = amp * (1 - elapsed / dur);
+    const phase = data[this.IDX_SHAKE_PHASE] || 1;
+    dest.x = phase * mag;
+    dest.y = phase * mag * -0.5;
+    return dest;
   }
 
   /**

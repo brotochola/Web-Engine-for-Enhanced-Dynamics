@@ -1365,6 +1365,37 @@ function createPhysicsApi(Module) {
       return new JointHandle(this, handle);
     }
 
+    /**
+     * Local-anchor prismatic. WASM only has a world-anchor create, so this
+     * turns body A's pose plus localAnchorA into that anchor and adds A's
+     * rotation to axisAngle. Body pose defaults to the origin.
+     */
+    createPrismaticJointLocal(options = {}) {
+      const ax = options.localAnchorAX ?? 0;
+      const ay = options.localAnchorAY ?? 0;
+      const c = options.bodyRotC ?? 1;
+      const s = options.bodyRotS ?? 0;
+      const bx = options.bodyX ?? 0;
+      const by = options.bodyY ?? 0;
+      const anchorX = bx + ax * c - ay * s;
+      const anchorY = by + ax * s + ay * c;
+      let axis = options.axisAngle ?? 0;
+      if (s !== 0 || c !== 1) axis += Math.atan2(s, c);
+      return this.createPrismaticJoint({
+        bodyA: options.bodyA,
+        bodyB: options.bodyB,
+        anchorX,
+        anchorY,
+        axisAngle: axis,
+        enableLimit: options.enableLimit,
+        lowerTranslation: options.lowerTranslation,
+        upperTranslation: options.upperTranslation,
+        enableMotor: options.enableMotor,
+        motorSpeed: options.motorSpeed,
+        maxMotorForce: options.maxMotorForce,
+      });
+    }
+
     createWeldJoint(options = {}) {
       const slotA = options.bodyA?.slot;
       const slotB = options.bodyB?.slot;

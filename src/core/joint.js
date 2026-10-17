@@ -463,6 +463,35 @@ export class Joint extends SharedAtomicPool {
   }
 
   /**
+   * Prismatic (slider) joint. No spin: motion is along axisAngle (radians, body-local).
+   * Limits and the motor reuse the revolute columns. axisAngle reuses the weld
+   * linearHertz column so the joint SAB does not grow.
+   * @param {{entityA:number, entityB:number, axisAngle?:number, enableLimit?:boolean, lowerTranslation?:number, upperTranslation?:number, enableMotor?:boolean, motorSpeed?:number, maxMotorForce?:number, forceThreshold?:number, torqueThreshold?:number}} [opts]
+   * @returns {number}
+   */
+  static addPrismatic(opts = {}) {
+    const entityA = opts.entityA | 0;
+    const entityB = opts.entityB | 0;
+    const idx = this._acquireOrWarn();
+    if (idx === -1) return -1;
+
+    const anchors = this._resolveLocalAnchors(opts, entityA, entityB);
+    this.type[idx] = JOINT_TYPE.PRISMATIC;
+    this._setPairAndAnchors(idx, entityA, entityB, anchors);
+    this.forceThreshold[idx] = opts.forceThreshold ?? Infinity;
+    this.torqueThreshold[idx] = opts.torqueThreshold ?? Infinity;
+    this.enableLimit[idx] = opts.enableLimit ? 1 : 0;
+    this.lowerAngle[idx] = opts.lowerTranslation ?? 0;
+    this.upperAngle[idx] = opts.upperTranslation ?? 0;
+    this.enableMotor[idx] = opts.enableMotor ? 1 : 0;
+    this.motorSpeed[idx] = opts.motorSpeed ?? 0;
+    this.maxMotorTorque[idx] = opts.maxMotorForce ?? 0;
+    this.linearHertz[idx] = opts.axisAngle ?? 0;
+    this._activate(idx);
+    return idx;
+  }
+
+  /**
    * Return a joint slot to the pool.
    * @param {number} idx
    */
@@ -570,6 +599,35 @@ export class Joint extends SharedAtomicPool {
       }
       if (props.maxMotorTorque !== undefined) {
         this.maxMotorTorque[idx] = props.maxMotorTorque;
+        changed = true;
+      }
+    } else if (t === JOINT_TYPE.PRISMATIC) {
+      if (props.axisAngle !== undefined) {
+        this.linearHertz[idx] = props.axisAngle;
+        changed = true;
+      }
+      if (props.enableLimit !== undefined) {
+        this.enableLimit[idx] = props.enableLimit ? 1 : 0;
+        changed = true;
+      }
+      if (props.lowerTranslation !== undefined) {
+        this.lowerAngle[idx] = props.lowerTranslation;
+        changed = true;
+      }
+      if (props.upperTranslation !== undefined) {
+        this.upperAngle[idx] = props.upperTranslation;
+        changed = true;
+      }
+      if (props.enableMotor !== undefined) {
+        this.enableMotor[idx] = props.enableMotor ? 1 : 0;
+        changed = true;
+      }
+      if (props.motorSpeed !== undefined) {
+        this.motorSpeed[idx] = props.motorSpeed;
+        changed = true;
+      }
+      if (props.maxMotorForce !== undefined) {
+        this.maxMotorTorque[idx] = props.maxMotorForce;
         changed = true;
       }
     } else if (t === JOINT_TYPE.WELD) {
@@ -745,6 +803,14 @@ export class Joint extends SharedAtomicPool {
         rec.enableMotor = this.enableMotor[idx] ? 1 : 0;
         rec.motorSpeed = this.motorSpeed[idx];
         rec.maxMotorTorque = this.maxMotorTorque[idx];
+      } else if (type === JOINT_TYPE.PRISMATIC) {
+        rec.axisAngle = this.linearHertz[idx];
+        rec.enableLimit = this.enableLimit[idx] ? 1 : 0;
+        rec.lowerTranslation = this.lowerAngle[idx];
+        rec.upperTranslation = this.upperAngle[idx];
+        rec.enableMotor = this.enableMotor[idx] ? 1 : 0;
+        rec.motorSpeed = this.motorSpeed[idx];
+        rec.maxMotorForce = this.maxMotorTorque[idx];
       } else if (type === JOINT_TYPE.WELD) {
         rec.linearHertz = this.linearHertz[idx];
         rec.angularHertz = this.angularHertz[idx];
@@ -820,6 +886,17 @@ export class Joint extends SharedAtomicPool {
           enableMotor: !!rec.enableMotor,
           motorSpeed: rec.motorSpeed ?? 0,
           maxMotorTorque: rec.maxMotorTorque ?? 0,
+        });
+      } else if (t === JOINT_TYPE.PRISMATIC) {
+        idx = this.addPrismatic({
+          ...opts,
+          axisAngle: rec.axisAngle ?? 0,
+          enableLimit: !!rec.enableLimit,
+          lowerTranslation: rec.lowerTranslation ?? 0,
+          upperTranslation: rec.upperTranslation ?? 0,
+          enableMotor: !!rec.enableMotor,
+          motorSpeed: rec.motorSpeed ?? 0,
+          maxMotorForce: rec.maxMotorForce ?? 0,
         });
       } else if (t === JOINT_TYPE.WELD) {
         idx = this.addWeld({

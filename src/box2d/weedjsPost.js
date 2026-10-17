@@ -1106,6 +1106,22 @@
           motorSpeed: jv.motorSpeed[idx],
           maxMotorTorque: jv.maxMotorTorque[idx],
         });
+      } else if (t === JOINT_TYPE.PRISMATIC) {
+        const pose = views;
+        handleObj = world.createPrismaticJointLocal({
+          ...opts,
+          bodyX: pose && pose.x ? pose.x[a] : 0,
+          bodyY: pose && pose.y ? pose.y[a] : 0,
+          bodyRotC: pose && pose.rotC ? pose.rotC[a] : 1,
+          bodyRotS: pose && pose.rotS ? pose.rotS[a] : 0,
+          axisAngle: jv.linearHertz[idx],
+          enableLimit: jv.enableLimit[idx] !== 0,
+          lowerTranslation: jv.lowerAngle[idx],
+          upperTranslation: jv.upperAngle[idx],
+          enableMotor: jv.enableMotor[idx] !== 0,
+          motorSpeed: jv.motorSpeed[idx],
+          maxMotorForce: jv.maxMotorTorque[idx],
+        });
       } else if (t === JOINT_TYPE.WELD) {
         handleObj = world.createWeldJointLocal({
           ...opts,

@@ -868,7 +868,7 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
-    latchCamera(writeQueueCamera = true) {
+    latchCamera(simMs = 0) {
         if (!this.cameraData) return;
         this._frameCameraZoom = this.cameraData[0];
         this._frameCameraX = this.cameraData[1];
@@ -889,7 +889,10 @@ class PreRenderWorker extends AbstractWorker {
             this._frameCameraX = Math.max(0, Math.min(this._frameCameraX, maxX));
             this._frameCameraY = Math.max(0, Math.min(this._frameCameraY, maxY));
         }
-        if (writeQueueCamera && this.renderQueueCamera) {
+        const shake = Camera.advanceShake(simMs);
+        this._frameCameraX += shake.x;
+        this._frameCameraY += shake.y;
+        if (this.renderQueueCamera) {
             this.renderQueueCamera[0] = this._frameCameraZoom;
             this.renderQueueCamera[1] = this._frameCameraX;
             this.renderQueueCamera[2] = this._frameCameraY;
@@ -947,7 +950,7 @@ class PreRenderWorker extends AbstractWorker {
         }
         this.selectWriteBuffers();
         this.latchPhysicsPose();
-        this.latchCamera();
+        this.latchCamera(deltaTime);
         this.resetFrameCounters();
         this._frameAdobeEntities = AdobeAnimComponent.active
             ? Query.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent])

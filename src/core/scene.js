@@ -58,6 +58,8 @@ import Keyboard from './keyboard.js';
 import { Flash } from './flash.js';
 import { BigAtlasInspector } from './bigAtlasInspector.js';
 import { Camera } from './camera.js';
+import { Time } from './timeScale.js';
+import { Tween } from './tween.js';
 import {
   buildMemoryUsageSummary,
   buildSceneMemoryUsageReport,
@@ -75,6 +77,7 @@ import {
   PARTICLE_DEFAULTS,
   DECORATION_DEFAULTS,
   BULLET_DEFAULTS,
+  TWEEN_DEFAULTS,
   LOGIC_DEFAULTS,
   RENDERER_DEFAULTS,
   PRE_RENDER_DEFAULTS,
@@ -263,6 +266,8 @@ class Scene {
       activeEntitiesData: null, // Active entity list for spatial worker load balancing
       inputData: null,
       cameraData: null,
+      clockData: null,
+      tweenData: null,
       debugData: null,
       debugDrawData: null, // Debug draw ring buffer (DebugDraw API)
       frameRateData: null, // Real-time FPS tracking per worker
@@ -701,6 +706,11 @@ class Scene {
       ...(this.config.bullet || {}),
     };
 
+    this.config.tween = {
+      ...TWEEN_DEFAULTS,
+      ...(this.config.tween || {}),
+    };
+
     // Audio defaults from centralized config
     this.config.audio = {
       ...AUDIO_DEFAULTS,
@@ -1108,6 +1118,8 @@ class Scene {
     window.Joint = Joint;
     window.LiquidFun = LiquidFun;
     window.SharedResource = SharedResource;
+    window.Time = Time
+    window.Tween = Tween
     const resourceRegs = this.sharedResourceRegs || [];
     for (let i = 0; i < resourceRegs.length; i++) {
       const rec = resourceRegs[i];
@@ -2264,7 +2276,11 @@ class Scene {
   }
 
   updateInternal(deltaTime) {
-    const dtRatio = deltaTime / 16.67;
+    // Sim dt for scene gameplay and the sun. Free-cam stays on the wall step
+    // (input). mainStepMs / mainFPS are measured around this call, unscaled.
+    const simMs = Time.scaleSimMs(deltaTime);
+    const dtRatio = simMs / 16.67;
+    const wallRatio = deltaTime / 16.67;
 
     // Update audio metrics from AudioWorklet (worklet handles playback directly via SAB)
     const am = SoundManager.getMetrics();
@@ -2287,7 +2303,7 @@ class Scene {
 
     // Update sun day cycle (if enabled)
     // Sun writes to SharedArrayBuffer, workers read it
-    this.updateSunDayCycle(deltaTime);
+    this.updateSunDayCycle(simMs);
 
     // Update input edge flags on the main thread so Scene.update() can use them
     // the same way entity tick() does in workers.
@@ -2297,12 +2313,12 @@ class Scene {
     Gamepad.updateEdgeFlags();
 
     // Call user's update hook
-    this.update(dtRatio, deltaTime, performance.now(), this.mainFrameNumber);
+    this.update(dtRatio, simMs, performance.now(), this.mainFrameNumber);
 
     GrabSystem.update(this);
 
     // Free-cam after scene.update so scenes can setFreeTarget / pauseFreeZoom first
-    Camera.updateFree(dtRatio);
+    Camera.updateFree(wallRatio);
 
     // Reset per-frame input state (after update so devs can read it)
     Mouse.wheel = 0;

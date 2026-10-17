@@ -488,6 +488,15 @@ export const DECORATION_INNER_Z_MIN = -(DECORATION_Y_SORT_SCALE - 1);
 export const ENTITY_GLOW_SORT_BIAS = DECORATION_Y_SORT_SCALE - 1;
 
 // ============================================================================
+// TWEEN DEFAULTS
+// ============================================================================
+
+export const TWEEN_DEFAULTS = Object.freeze({
+  /** Shared tween slots for the scene. 0 = off. */
+  maxTweens: 128,
+});
+
+// ============================================================================
 // BULLET DEFAULTS
 // ============================================================================
 

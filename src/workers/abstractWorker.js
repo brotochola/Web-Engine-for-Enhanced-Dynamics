@@ -13,6 +13,8 @@ import { Decoration } from '../core/decoration.js';
 import { BulletPool } from '../core/bulletPool.js';
 import { BulletComponent } from '../components/bulletComponent.js';
 import { Flash } from '../core/flash.js';
+import { Time } from '../core/timeScale.js';
+import { Tween } from '../core/tween.js';
 import {
   bindSceneGraph,
   missingWorkerEntityClasses,
@@ -240,12 +242,13 @@ export class AbstractWorker {
     this.currentFPS = instantaneousFPS;
 
     // Sim dt: injected lockstep step, else freeze when fixedFps > 0.
-    // Wall delta stays for FPS / STEP_MS only.
-    const deltaTime = this._injectedDeltaTime > 0
+    // Wall delta stays for FPS / STEP_MS only. Time.scale is the hitstop.
+    const simBase = this._injectedDeltaTime > 0
       ? this._injectedDeltaTime
       : this.fixedFps > 0
         ? 1000 / this.fixedFps
         : wallDelta;
+    const deltaTime = Time.scaleSimMs(simBase);
 
     // Write instantaneous FPS + frame index (slot 1, unused by FPS readers).
     if (this.frameRateData && this.frameRateIndex >= 0) {
@@ -782,6 +785,13 @@ export class AbstractWorker {
     // Initialize frame rate tracking buffer
     if (data.buffers?.frameRateData) {
       this.frameRateData = new Float32Array(data.buffers.frameRateData);
+    }
+
+    if (data.buffers?.clockData) {
+      Time.bind(data.buffers.clockData);
+    }
+    if (data.buffers?.tweenData) {
+      Tween.bind(data.buffers.tweenData, data.config?.tween?.maxTweens | 0);
     }
 
     // Store frame rate buffer index for writing to frameRateData

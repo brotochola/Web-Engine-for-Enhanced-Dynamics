@@ -153,6 +153,8 @@ function buildSceneSharedBuffers(scene) {
     visibleLightsData: scene.buffers.visibleLightsData || null,
     inputData: scene.buffers.inputData,
     cameraData: scene.buffers.cameraData,
+    clockData: scene.buffers.clockData,
+    tweenData: scene.buffers.tweenData,
     debugData: scene.buffers.debugData,
     debugDrawData: scene.buffers.debugDrawData,
     frameRateData: scene.buffers.frameRateData,
