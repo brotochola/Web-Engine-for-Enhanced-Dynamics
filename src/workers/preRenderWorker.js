@@ -77,6 +77,37 @@ const INVALID_TEXTURE_ID = 0xFFFF;
 const EMPTY_OWNED_IDS = new Uint32Array(0);
 const TILE_MODE_LOCAL = SPRITE_TILE_MODE.LOCAL;
 
+/**
+ * E-07. Kinds of animation-row source, as numeric tags.
+ *
+ * `emitSpriteQueue` resolves one animation id per queued row. The label used to be
+ * passed as a pre-built template string (`particle:${pAnimIdx}` and three siblings)
+ * and is read ONLY on the two warning branches of `_resolveAnimFrameStart`. Passing
+ * a tag instead means the string is built only when a frame is already reporting a
+ * missing texture, where the cost is irrelevant.
+ *
+ * Predator queues 20 000 swaying grass decorations, so this was ~20 000 string
+ * concatenations per frame in a loop that runs 20 000 times per frame.
+ */
+const ANIM_LABEL_TAG = Object.freeze({
+    PARTICLE: 0,
+    LIQUID_FUN: 1,
+    DECORATION: 2,
+    BULLET: 3,
+});
+const ANIM_LABEL_NAMES = Object.freeze(['particle', 'liquidFun', 'decoration', 'bullet']);
+
+/**
+ * Build the diagnostic label. Only ever called on a warn path.
+ * A string `kind` is passed through, so the name-based caller still works.
+ */
+function formatAnimLabel(kind, animIdx) {
+    const name = typeof kind === 'string' ? kind : ANIM_LABEL_NAMES[kind];
+    // Undefined/null animIdx used to render as "undefined" via template coercion;
+    // String() keeps that identical.
+    return `${name}:${String(animIdx)}`;
+}
+
 /** Stretch / skip tiling on non-entity queue rows (particles, adobe pieces, …). */
 function clearTileFields(ref, out) {
     if (ref.tileMode) ref.tileMode[out] = 0;
@@ -353,8 +384,9 @@ class PreRenderWorker extends AbstractWorker {
      * @param {string} label
      * @returns {number}
      */
-    _resolveAnimFrameStart(animIdx, label) {
+    _resolveAnimFrameStart(animIdx, kind) {
         if (animIdx === undefined || animIdx === null || animIdx < 0) {
+            const label = formatAnimLabel(kind, animIdx);
             this._warnMissingTexture(
                 `anim:${label}`,
                 `[PRE_RENDER] missing animation "${label}" (animIdx=${animIdx})`
@@ -363,8 +395,9 @@ class PreRenderWorker extends AbstractWorker {
         }
         const start = this.animationFrameStart?.[animIdx];
         if (start === undefined || start === null) {
+            const label = formatAnimLabel(kind, animIdx);
             this._warnMissingTexture(
-                `frameStart:${label}:${animIdx}`,
+                `frameStart:${label}`,
                 `[PRE_RENDER] animationFrameStart missing for "${label}" (animIdx=${animIdx})`
             );
             return INVALID_TEXTURE_ID;
@@ -2476,7 +2509,7 @@ class PreRenderWorker extends AbstractWorker {
                 const pAnimIdx = particleTextureId[idx];
                 rqTextureId[out] = pAnimIdx === 0
                     ? whiteCircleTextureId
-                    : this._resolveAnimFrameStart(pAnimIdx, `particle:${pAnimIdx}`);
+                    : this._resolveAnimFrameStart(pAnimIdx, ANIM_LABEL_TAG.PARTICLE);
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
                 this._setQueueType(ref, out, 1, idx);
@@ -2505,7 +2538,7 @@ class PreRenderWorker extends AbstractWorker {
                 const lfAnimIdx = lf.textureId[idx];
                 rqTextureId[out] = lfAnimIdx === 0
                     ? whiteCircleTextureId
-                    : this._resolveAnimFrameStart(lfAnimIdx, `liquidFun:${lfAnimIdx}`);
+                    : this._resolveAnimFrameStart(lfAnimIdx, ANIM_LABEL_TAG.LIQUID_FUN);
                 rqAnchorX[out] = 0.5;
                 rqAnchorY[out] = 0.5;
                 this._setQueueType(ref, out, 1, idx);
@@ -2536,7 +2569,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqAlpha[out] = decoAlpha[idx] * this._decorationZoomAlpha;
                 rqTint[out] = decoTint[idx];
                 const dAnimIdx = decoTextureId[idx];
-                rqTextureId[out] = this._resolveAnimFrameStart(dAnimIdx, `decoration:${dAnimIdx}`);
+                rqTextureId[out] = this._resolveAnimFrameStart(dAnimIdx, ANIM_LABEL_TAG.DECORATION);
                 rqAnchorX[out] = decoAnchorX[idx];
                 rqAnchorY[out] = decoAnchorY[idx];
                 this._setQueueType(ref, out, 2, idx);
@@ -2558,7 +2591,7 @@ class PreRenderWorker extends AbstractWorker {
                     rqAlpha[out] = bulletAlpha[idx];
                     rqTint[out] = bulletTint[idx];
                     const bAnimIdx = bulletTextureId[idx];
-                    rqTextureId[out] = this._resolveAnimFrameStart(bAnimIdx, `bullet:${bAnimIdx}`);
+                    rqTextureId[out] = this._resolveAnimFrameStart(bAnimIdx, ANIM_LABEL_TAG.BULLET);
                     rqAnchorX[out] = bulletAnchorX[idx];
                     rqAnchorY[out] = bulletAnchorY[idx];
                 }
