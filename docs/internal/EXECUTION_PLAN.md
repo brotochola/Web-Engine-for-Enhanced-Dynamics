@@ -621,14 +621,57 @@ times. A C change needs the same premise probe as a JS one.
 
 ## Wave 5 — reopen old rows
 
-### E-19 Re-open Q1 (`copyTypeActiveListToBuffer` with `TypedArray.set`) — **not-started**
-2026-09-30. Gate 4 +20.9 %. Predator ABAB **REGRESSION twice** (+2.7 %, then +3.5 %)
-with spatial, renderer and particle — which cannot run this code — also up 3–4 % in
-6/8 pairs both times. A/A control clean. **No mechanism found.**
-**Why it can be re-opened:** the code around the path has moved substantially (L1/L2
-contacts, S4/S6 spatial, sway buckets, the audio-slot keep, the `publishPose` epoch,
-the WASM publish). **As a diagnostic first:** reproduce the interference before
-re-litigating the change.
+### E-19 Re-open Q1 (`copyTypeActiveListToBuffer` with `TypedArray.set`) - **DONE 2026-10-18 as a DIAGNOSTIC. Mechanism found.**
+Report: [`reports/E-19-query-publish-interference.md`](./reports/E-19-query-publish-interference.md).
+2026-09-30. Gate 4 +20.9 %. Predator ABAB **REGRESSION twice** (+2.7 %, +3.5 %) with
+spatial, renderer and particle - *"which cannot run this code"* - also up 3-4 % in 6/8
+pairs. A/A clean. **No mechanism found.** The plan asked for the interference to be
+reproduced first; the diagnostic is now done and it needed no re-run.
+
+**The premise was half-wrong, in the useful direction.** Verified end to end: the changed
+function is reached only from `publishPrecomputedActiveQueries` (`querySystem.js:910`),
+whose only production caller is **`logicWorker.js:657`** - logic workers only, and only
+when `activeQueryPopulationChanged`. So the three workers genuinely do not **execute** it.
+
+**But they are the READERS of what it writes.** `publishPrecomputedActiveQueries` writes
+into `queryResultViews[q].snapshots[]`, a **SharedArrayBuffer**, and every precomputed
+`queryActiveEntities` call reads it: **preRender** (9 sites), **renderer/pixi** (2),
+**particle** (1). Those are three of the four regressing workers. `spatial` is the only
+one with no read site, and its movement stays unexplained.
+
+**Mechanism class: not "this code is slower" but "this code changes the write pattern
+into shared memory."** A `.set()` bulk copy and an element loop are not interchangeable
+when the destination is a SAB and the readers sit on other cores - a copy that is faster
+*in the writer* can be worse *for three readers*. Same class as X5's cross-core
+cache-line transfer, already recorded for E-18.
+
+**The target, and the instrument was already in the tree:** `QUERY_PUBLISH_MS` has existed
+all along (slot 10, `logicWorker.js:2099`). Predator, headed, stats on:
+
+```
+logic0   STEP_MS 5.1240  QUERY_PUBLISH_MS 0.2408   <- 4.7% of its step
+logic1   STEP_MS 4.6576  QUERY_PUBLISH_MS 0.0000   <- never runs
+```
+
+So the target is at most ~0.24 ms and only in **one** of two logic workers. The timer is
+maintained only under `collectDetailedStats` (`logicWorker.js:657-664` times the call
+inside the detailed branch), so **the lean A/B path could never have shown it** - which is
+why the change was invisible in the numbers it was judged on.
+
+**Not settled, and deliberately not claimed:** whether `.set()` beats the loop. That needs
+the pair re-run judged on **the readers' STEP_MS, not the writer's**. Gate 4's "+20.9 %"
+was measured on the wrong primary for this change.
+
+### E-39 "X cannot run this code" is not a claim about involvement - *synthesis, from E-19*
+The third time in this campaign an involvement/frequency premise inverted a conclusion
+(after E-13's "per entity" and E-21's "45 568 allocations/frame"). E-35 covers frequency;
+this covers the other half:
+
+> **Before using "X cannot run this code" to dismiss an effect, check whether X *reads*
+> what the code writes.** In this engine the query snapshot is a SharedArrayBuffer whose
+> readers span four workers, so *"cannot run it"* and *"cannot be affected by it"* are
+> different claims - and only the first is true. The premise that produced "no mechanism
+> found" was not wrong, it was **narrower than the reader believed**.
 
 ### E-20 `WAIT_MS`-dependent and other never-measured rows — see E-24.
 
