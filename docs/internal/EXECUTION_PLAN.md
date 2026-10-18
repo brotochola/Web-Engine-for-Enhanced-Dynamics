@@ -302,13 +302,36 @@ the 7.4 ms number, not on total render work.
 `IDLE_MS` (E-01) supplies the "how long is each worker idle" half. The remaining half is
 E-24b. Recorded as merged so the pair is not mistaken for two untested ideas.
 
-### E-27 `entityIdWidth: 32` is an in-tree option that no catalog row scores — **not-started**
-**Raised by E-10's premise probe.** Under `entityIdWidth: 32`, `packPair` switches to
-`packCantor` — a float-division pairing (`entityIdWidth.js:43`) with
-`Math.floor`/`Math.sqrt` on unpack. It is exercised by `entityIdWidthKernels.mjs` but
-**no catalog row scores it**. **Primary:** `logic0_STEP_MS`. **Layer:** kernel against
-`entityIdWidthKernels.mjs`, then a stress scene with `entityIdWidth: 32`.
-**Falsifier:** within 3 % of the 16-bit path → closes as "the option costs nothing".
+### E-27 `entityIdWidth: 32` is an in-tree option that no catalog row scores — **DONE 2026-10-18. Falsifier FAILED**
+Report: [`reports/E-27-entity-id-width-32.md`](./reports/E-27-entity-id-width-32.md).
+**Raised by E-10's premise probe.** **Falsifier:** within 3 % of the 16-bit path → "the
+option costs nothing". **Answered by the kernel the plan already pointed at**, unmodified.
+
+| 64 k entities | ops/s | vs 16-bit default |
+| --- | --- | --- |
+| `PAIR0` pack16 + `Set` (shipped default) | 7 007 659 | — |
+| `PAIR1` float-multiply + `Set` | 3 422 003 | 0.49× |
+| **`PAIR3` packCantor + `Set` (ships at 32-bit)** | **4 061 285** | **0.58×** |
+
+**The falsifier fails: `entityIdWidth: 32` is ~1.73× slower** on the realistic
+pack-then-`Set.has` shape, 2.40× on packing alone.
+
+**And the finding is not where the hypothesis assumed.** Cantor vs the *alternative*
+32-bit encoding is **−1.8 %** — the pairing formula is effectively free. **The entire
+1.73× is the cost of the key becoming a double at all**: a `Map`/`Set` hashing an int32
+is materially cheaper than hashing a double. So `packCantor` is exonerated and the
+`entityIdWidth: 32` configuration is expensive for a reason no encoding can avoid.
+
+**This inverts the comment E-26 removed.** That comment read *"Float64Array, not
+Int32Array: this key overflows a 32-bit int"* — read as storage, it says the double is
+**necessary**. The kernel says the double is the **cost**. Run before E-26 this would
+have been a tidy-up; run after, it is the removal of a claim pointing the wrong way
+about the engine's one configurable id scheme.
+
+**Share of `logic0_STEP_MS` UNMEASURED and deliberately not quoted.** `_pairSlot.size` is
+the live pair count and is published nowhere — the same defect as E-04 and E-37. Dividing
+a per-op kernel delta by a scene step time is **exactly the arithmetic E-17 got wrong**
+("1.79 % of the step", then lost by 3.1 %). Next step is one line: publish it.
 
 ### E-26 The pair-key comment described a type the file does not contain — **DONE 2026-10-18. Fixed (hygiene)**
 Report: [`reports/E-26-pair-key-comment.md`](./reports/E-26-pair-key-comment.md).
