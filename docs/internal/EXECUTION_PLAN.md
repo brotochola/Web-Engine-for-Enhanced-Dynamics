@@ -189,7 +189,8 @@ inferred one.** The implementation log asked whether the old pool experiment was
 judged on a contaminated metric. It was not: `STEP_MS` was correctly charging it
 for lost parallelism, not for removed spin.
 
-### E-34 The Box2D spin is not addressable by configuration — *opened 2026-10-18*
+### E-34 The Box2D spin is not addressable by configuration — **probe BLOCKED on a named instrument. 2026-10-18**
+Report: [`reports/E-34-box2d-mailbox-spin-probe-blocked.md`](./reports/E-34-box2d-mailbox-spin-probe-blocked.md).
 **Raised by E-04b.** ~2.4 cores still burn in the Emscripten mailbox, and this
 sitting shows **neither lever reaches it**: a smaller pool costs the solver threads
 (2026-10-01, +26.2 %), and a smaller worker count costs the solver its parallelism
@@ -209,6 +210,31 @@ moves the step; on a sleeping-heavy scene 1–2 threads removes most of the spin
 solver cost. **Primary:** `physics_STEP_MS`. **Declared secondary:** process CPU
 (core-seconds/frame), which no engine stat records — proposal P-3 applied.
 **Load:** `BODY_COUNT` **and** `AWAKE_COUNT` within 5 %.
+
+**PROBE BLOCKED — the deliverable is the specification, not a number (2026-10-18).**
+Confirmed: the wait primitive is `__emscripten_thread_mailbox_await`
+(sibling `weedjs/box2d_wasm.js:213`, called after `__emscripten_thread_init` at `:209`),
+and it is invisible to every engine stat **by construction** — the spin is on threads the
+engine does not own, which is why E-01's 75–99 % worker idle and the 2.4-core figure
+coexist without contradiction. **They measure different populations.**
+
+**Two things are missing and neither can be substituted:**
+1. **Whether it spins is not confirmable from source.** That decision lives in
+   libcompiler-rt C compiled into the `.wasm`; the JS glue only calls it. The premise
+   "threads spin whether or not they have work" is currently an assertion.
+2. **No engine stat can record core-seconds** — it is a process property, not a call-path
+   cost, and `runBox2dWorkerCountSweep.mjs` does not capture it. It needs a sampling CPU
+   profiler on the Chromium renderer, OS-level per-thread CPU correlated against
+   `box2dWorkerCount`, or a rebuilt Emscripten runtime exposing spin counters. All three
+   are projects; the third also rebuilds a vendor runtime adjacent to audio real-time.
+
+**Prerequisite before any build: validate the CPU instrument against the known
+`box2dWorkerCount` 4→1 difference** — a ~2× step with an expected direction. **An
+instrument that does not show it is not an instrument.** This campaign has twice deleted a
+broken instrument rather than ship its output (E-13's kernel, E-24's analyzer); building
+an unvalidated one and acting on it would repeat the 2026-10-01 pool experiment's error,
+which could not separate "the solver needs the cores" from "the metric charged us for the
+spin it removed".
 
 ### E-05 `packGpuSprites` / `sortSprites` → `'preRender'` on Predator — **dropped. Predator's `'pixi'` override is correct.**
 **DONE 2026-10-18.** Report: [`reports/E-05-pack-in-prerender.md`](./reports/E-05-pack-in-prerender.md).
