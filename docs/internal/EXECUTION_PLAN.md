@@ -43,6 +43,7 @@ Same as `HYPOTHESIS_LOG.md`: `not-started` · `in-progress` · `kernel` · `scen
 | **E-01** | `WAIT_MS` / `IDLE_MS` do not exist as metrics | **kept (hygiene)** — and `IDLE_MS` found the frame shape |
 | **E-02** | the WASM publish recount is a pass over 34 MB | **kept (hygiene), not a speed win** — 1.09 µs, 0.016 % |
 | **E-03** | `logicBlockRange` allocates 480 B/frame | **rejected-in-kernel** — forcing it is −15.7 % |
+| **E-05** | the engine default should pack sprites in pre-render | **dropped** — works on Pixi, loses on the bottleneck |
 | **E-07** | 20 000 per-row strings per frame | **NEUTRAL**, hygiene — worker did not move |
 | **E-08** | `_sortPrefix` reallocates every frame | **kept (hygiene)** — the one that paid |
 | **E-10** | the pair key is a boxed double | **rejected-in-kernel** — 0 boxed keys |
@@ -134,14 +135,51 @@ solver cost. **Primary:** `physics_STEP_MS`. **Declared secondary:** process CPU
 (core-seconds/frame), which no engine stat records — proposal P-3 applied.
 **Load:** `BODY_COUNT` **and** `AWAKE_COUNT` within 5 %.
 
-### E-05 `packGpuSprites` / `sortSprites` → `'preRender'` on Predator — **not-started**
-Both engine defaults are `'preRender'` (`configDefaults.js:679,685`); in that mode
-pre-render writes the interleaved instance rows and Pixi only `set()`s them
-(`pixiWorker.js:1439-1473`), so `packInstancedRows` — 38.8 % of Pixi's busy time — does
-not run. Predator pins both to `'pixi'`. **Primary:** `max(preRender, pixi)`.
-**Prior art:** "Shared pack", 2026-09-27, `11.854 → 11.675 ms (−1.5 %)`, renderer
-`+1.6 %` — a TIE, on a tree that has since changed substantially.
-**Note:** `renderer.interpolation` forcibly rewrites both to `'pixi'`.
+### E-05 `packGpuSprites` / `sortSprites` → `'preRender'` on Predator — **dropped. Predator's `'pixi'` override is correct.**
+**DONE 2026-10-18.** Report: [`reports/E-05-pack-in-prerender.md`](./reports/E-05-pack-in-prerender.md).
+Predator ABAB, 4 counterbalanced pairs, 10 s/10 s, stats off. **A = hypothesis**
+(`preRender`/`preRender`), **B = shipped** (`pixi`/`pixi`). Primary
+`max(preRender, pixi)`, **declared before the run**.
+
+| | A (engine defaults) | B (shipped) |
+| --- | --- | --- |
+| renderer | **2.245 ms** | 3.542 ms |
+| preRender | 7.412 ms | **6.475 ms** |
+| **max (primary)** | **7.412 ms** | **6.475 ms** |
+
+**The mechanism worked** — moving the pack took the renderer down **1.30 ms, 36.6 %,
+4/4 pairs**; `packInstancedRows` really does leave Pixi. **And the bottleneck moved
+the wrong way**: pre-render absorbed it and went to 7.412 ms, so the max got
+**12.6 % worse, 0/4**. Judged on the renderer alone this is a +36.6 % keep; judged on
+the frame's bottleneck it is a −12.6 % loss. Same run, opposite verdicts — which is
+exactly why the primary is named before the run.
+
+Runner verdict was `FAIL (load)` on `DECAL_TILES_DIRTY 0.8 → 1.0` — **0.8 tiles versus
+1.0 tile**. Filed as **E-32**. The substantive result is unambiguous.
+
+Reconciles the 2026-09-27 "Shared pack" TIE: in September pre-render was *larger*
+(11.8 ms) so the displaced work hid; today it is the bottleneck and the pack lands on
+it whole.
+
+**No `src/` change, no scene change.** One baseline copy used as `--override`, applied
+in a worktree, leaving the working tree untouched.
+
+### E-32 A load key gating a verdict must have a floor — *harness, not-started*
+**Raised by E-05.** `DECAL_TILES_DIRTY` read **0.8 → 1.0 tiles per frame** and failed
+the pair on a 24.7 % delta. Those are not integer counts; it is two runs reporting a
+mean below one tile. `runPredatorAbab.mjs` already has
+`LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000 }` for exactly this reason;
+**`DECAL_TILES_DIRTY` needs the same treatment** (report below ~2, do not gate). A load
+key whose mean is under 2 turns rounding into a FAIL.
+
+### E-33 The bottleneck identity is itself a result — *synthesis, from E-05*
+preRender went from "the largest worker" (11.8 ms, September) to "the worker whose
+every extra microsecond is the frame's critical path" (7.4 ms, today), while Pixi sits
+at 2.2–3.5 ms with ~5 ms of slack. **Any work moved into pre-render is a loss until
+pre-render itself gets cheaper** — and three Wave 4 entries move work there: E-15
+(neighbour rows are read there), E-16 (shadow stamping is already there), E-18 (the
+transpose would land there under the default). Each must be judged on whether it grows
+the 7.4 ms number, not on total render work.
 
 ### E-06 Frame-schedule timeline — **merged into E-24 (superseded, not dropped)**
 `IDLE_MS` (E-01) supplies the "how long is each worker idle" half. The remaining half is
