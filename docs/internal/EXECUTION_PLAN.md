@@ -373,7 +373,49 @@ pointer-compressed V8. Timing: 42.15 M vs 42.05 M ops/s, **−0.23 %**, checksum
 **The comment at `logicWorker.js:78` is right about the storage type and wrong about the
 cost** — recorded as refuted (E-26) so it is not re-derived.
 
-### E-11 Flowfield/A\* clear the whole grid per request — **not-started**
+### E-38 The nav stress scene services zero flowfield requests — *harness, OPEN 2026-10-18*
+**Raised by E-37.** `NavStressScene` is the vehicle the plan names for **all three** nav
+hypotheses (E-11, E-12, E-14), and it services **zero** flowfield requests. Measured:
+`flow computed 0.0 / serviced 0.0`, while the same run shows `logic0 ENTITIES_PROCESSED =
+256` and `particle ACTIVE_ENTITIES = 256` — so 256 agents tick every frame,
+`NavStressAgent.tick` calls `NavGrid.requestVector` unconditionally, and not one request
+reaches the particle worker.
+
+**`NavGrid` itself is correct.** `tests/node/navgridRequestPath.test.js` drives the real
+path in-process: the stress scene's own spawn/target positions map to valid cells, and a
+miss posts exactly one `REQUEST_FLOWFIELD` (targetCell 780 on a 64×64 grid) and dedups
+repeats. That rules out all three silent exits in `requestVector` — `_initialized`, cell
+bounds, and `currentCell === targetCell`.
+
+**So the break is the logic → particle `MessagePort` wiring.** `initializeWorkerPorts`
+sets `NavGrid`'s port only `if (this.workerPorts.has('particle'))`; the ordering inside
+that function is correct, so the map is either not receiving `particle` or is populated
+after the check. `_requestFlowfield` warns and returns when the port is absent —
+**and that warning is unobservable**, because the benchmark forwards **no worker logs at
+all** for this scene.
+
+**To close:** forward worker logs for stress scenes, or add a "requests posted" counter.
+Either is small. Until then E-11/E-12/E-14 are **blocked**, not rejected.
+
+### E-37 Publish the nav counters that already exist — **DONE 2026-10-18. KEPT**
+**Raised by E-35 applied to E-11.** `flowfieldsComputedThisFrame` and
+`pathsComputedThisFrame` have been incremented and zeroed since the nav system landed and
+were **published nowhere**. The one number that decides whether E-11 is real had no way
+out of the worker — and it cannot be inferred, because `_processNextFlowfieldRequest`
+checks `_findExistingFlowfieldSlot` and returns on a hit **without computing anything**,
+and the `REQUEST_FLOWFIELD` handler checks the same LRU before it even enqueues. The
+cache is consulted at two stages, so "five full-size `fill()`s per request" is a true
+reading of the code and not a statement about frequency. Report:
+[`reports/E-37-nav-counters-and-a-dead-vehicle.md`](./reports/E-37-nav-counters-and-a-dead-vehicle.md).
+
+**Added** `FLOWFIELDS_COMPUTED` / `FLOWFIELDS_SERVICED` / `PATHS_COMPUTED` (slots 16–18,
+stride 16 → 19, appended), published **before** the detailed gate so a premise never
+needs its own detailed sitting. **`COMPUTED / SERVICED` is the miss rate**, and the
+denominator is the reason it exists: `0 computed` alone cannot tell *nothing was
+requested* from *everything hit*. Added as A/B load keys so a nav hypothesis can tell
+"my code ran" from "the cache was warm". Suite 1120 → 1125.
+
+### E-11 Flowfield/A\* clear the whole grid per request — **BLOCKED on E-38**
 `computeFlowfield` runs five full-size `fill()`s plus `distance.fill(65535)` and
 `direction.fill(NONE)` per request, then a post-pass over all cells and a smoothing
 pass with 2 divisions + 2 `Math.round` **per cell**; `computePath` fills `inOpenSet` and
@@ -381,12 +423,25 @@ allocates 2 closures per request. Generation stamps remove all of it.
 **Precedent in-tree:** `processedMarker`, the sway bucket cache, `queryVersionData`.
 **Primary:** `particle_STEP_MS` — **below the 8 ms campaign floor on Predator**. Per
 P-6, either more pairs at the existing load or `FAIL / no signal`. `NavStressScene` is
-the honest vehicle.
+the honest vehicle — **and per E-38 it is not a vehicle, it services zero requests.**
+**Also pre-priced against E-36 before any code is written:** the replacement is a
+grid-sized stamp array in place of `fill()` sweeps, which is the same arithmetic-for-
+memory trade that lost E-17. Price it before the refactor.
 
-### E-12 `requestVector` does a linear slot scan with one `Atomics.load` per slot — **not-started**
+### E-12 `requestVector` does a linear slot scan with one `Atomics.load` per slot — **BLOCKED on E-38**
 `navGrid.js:813-832`, reached per navigating entity per tick, with 2 divisions by 127 at
 `:841-850`. `painterSameSet` (`sortIndexByKey.js:223`) is the existing generation-stamp
-implementation. **Primary:** `logic0_STEP_MS`.
+implementation. **Primary:** `logic0_STEP_MS`. Blocked: the vehicle services zero
+requests (E-38), so the premise frequency is unmeasured. Note the premise is **per
+navigating entity per tick** — E-35 applies, and `ENTITIES_PROCESSED = 256` with
+`FLOWFIELDS_SERVICED = 0` is the live evidence that the second half of that claim has
+never held in a measured run.
+
+### E-14 `performance.now()` per iteration in the nav deadline loop — **BLOCKED on E-38**
+`particleWorker.js:1319` reads the clock every iteration of a 2 ms-bounded Dijkstra
+loop. Check every K iterations. **Primary:** `particle_STEP_MS`. Blocked: the loop never
+executes anything on the named vehicle (E-38), and on Predator the particle worker is
+below the floor anyway.
 
 ### E-13 `_getNeighborCells` does a `Map.get` per entity per frame — **rejected by premise inspection**
 **DONE 2026-10-18.** Report:
@@ -415,11 +470,9 @@ source does not support — `_getNeighborCells` "one `Map.get` per entity" and
 the counter that measures it or read the exits in front of it.** E-13 was rejected for
 free; had it gone to a scene it would have cost a Predator pair to confirm a zero.
 
-### E-14 `performance.now()` per iteration in the nav deadline loop — **not-started**
-`particleWorker.js:1319` reads the clock every iteration of a 2 ms-bounded Dijkstra
-loop. Check every K iterations. **Primary:** `particle_STEP_MS`.
-
 ---
+
+## Not doing (read the log first)
 
 ## Wave 4 — wide changes (require trace evidence or a kernel win first)
 

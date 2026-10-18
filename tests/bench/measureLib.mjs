@@ -191,6 +191,11 @@ export function extractMetrics(report) {
     // E-29. STAMP_LIGHTS_MS is contained in SHADOW_Q_MS; do not sum them.
     STAMP_LIGHTS_MS: preRender.STAMP_LIGHTS_MS ?? 0,
     VISIBLE_LIGHTS_MS: preRender.VISIBLE_LIGHTS_MS ?? 0,
+    // E-37. COMPUTED / SERVICED is the flowfield LRU miss rate. Both are needed: the
+    // miss count alone makes a warm cache look free.
+    FLOWFIELDS_COMPUTED: particle.FLOWFIELDS_COMPUTED ?? 0,
+    FLOWFIELDS_SERVICED: particle.FLOWFIELDS_SERVICED ?? 0,
+    PATHS_COMPUTED: particle.PATHS_COMPUTED ?? 0,
     WAIT_MS: preRender.WAIT_MS ?? 0,
     RENDER_QUEUE_SIZE: preRender.RENDER_QUEUE_SIZE ?? 0,
     VISIBLE_ENTITIES: preRender.VISIBLE_ENTITIES ?? 0,

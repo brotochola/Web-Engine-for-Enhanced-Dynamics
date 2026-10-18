@@ -38,6 +38,19 @@ function formatWorkerConsoleLine(worker) {
     if (avg.WAIT_MS != null) line += ` | WAIT_MS ${Number(avg.WAIT_MS).toFixed(3)}`;
     if (avg.RENDER_QUEUE_SIZE != null) line += ` | QUEUE ${Number(avg.RENDER_QUEUE_SIZE).toFixed(0)}`;
   }
+  if (worker.type === 'particle' || worker.id === 'particle') {
+    // E-37. COMPUTED / SERVICED is the flowfield LRU miss rate and is the number that
+    // decides whether E-11 is real. Printed as a ratio because the two counts are not
+    // interpretable alone -- a scene that never requests a flowfield reads "0 computed",
+    // which is indistinguishable from "every request hit" without the denominator.
+    if (avg.FLOWFIELDS_SERVICED != null) {
+      const served = Number(avg.FLOWFIELDS_SERVICED);
+      const computed = Number(avg.FLOWFIELDS_COMPUTED || 0);
+      const miss = served > 0 ? ((computed / served) * 100).toFixed(1) : 'n/a';
+      line += ` | flow computed ${computed.toFixed(1)} / serviced ${served.toFixed(1)} (miss ${miss}%)`;
+    }
+    if (avg.PATHS_COMPUTED != null) line += ` | PATHS_COMPUTED ${Number(avg.PATHS_COMPUTED).toFixed(1)}`;
+  }
   if (worker.type === 'physics' || worker.id === 'physics') {
     if (avg.BOX2D_MS != null) line += ` | BOX2D_MS ${Number(avg.BOX2D_MS).toFixed(3)}`;
     if (avg.LIQUIDFUN_MS != null) line += ` | LIQUIDFUN_MS ${Number(avg.LIQUIDFUN_MS).toFixed(3)}`;

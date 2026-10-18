@@ -124,6 +124,13 @@ const LOAD_KEYS = [
   // VISIBLE_ENTITIES on spritePackStressScene but equal by coincidence, not by
   // contract. Probing the upstream key would break the day they diverge.
   'RENDER_QUEUE_SIZE',
+  // E-37. Nav load. A nav hypothesis (E-11/E-12/E-14) changes only what the particle
+  // worker does with flowfields; without these keys the gate cannot tell "my code ran"
+  // from "the cache was warm and nothing happened", which is the same blind spot
+  // VISIBLE_ENTITIES was added for.
+  'FLOWFIELDS_COMPUTED',
+  'FLOWFIELDS_SERVICED',
+  'PATHS_COMPUTED',
 ];
 
 /**

@@ -109,8 +109,34 @@ export const PARTICLE_STATS = Object.freeze({
   WAIT_MS: 14,
   /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
   IDLE_MS: 15,
-  STRIDE_FLOATS: 16,
-  BUFFER_SIZE: 16 * 4,
+  /**
+   * E-37. Flowfields actually COMPUTED this frame, not requested.
+   *
+   * `particleWorker.flowfieldsComputedThisFrame` has been incremented and zeroed every
+   * frame since the nav system landed and was **published nowhere**, so the single
+   * number that decides whether E-11 is a real hypothesis or a cache that always hits
+   * had no way out of the worker.
+   *
+   * The difference from a request count is the whole point. `_processNextFlowfieldRequest`
+   * calls `_findExistingFlowfieldSlot` first and returns on a hit without computing
+   * anything, so "per request" and "per computation" can differ by orders of magnitude
+   * and only this one is the expensive one. Same reasoning as E-02's `ENTITIES_PROCESSED`
+   * vs `VISIBLE_ENTITIES` pair.
+   */
+  FLOWFIELDS_COMPUTED: 16,
+  /** E-37. Paths actually computed this frame. See FLOWFIELDS_COMPUTED. */
+  PATHS_COMPUTED: 17,
+  /**
+   * E-37. Flowfield requests serviced this frame, hits and misses alike.
+   *
+   * `COMPUTED / SERVICED` is the LRU hit rate. If it is 0 the entire flowfield path is
+   * dead weight and E-11 is moot; if it is 1, every request pays for five full-grid
+   * `fill()`s and E-11 is real. One ratio instead of two raw counters, because the two
+   * numbers are not interpretable on their own.
+   */
+  FLOWFIELDS_SERVICED: 18,
+  STRIDE_FLOATS: 19,
+  BUFFER_SIZE: 19 * 4,
 });
 
 /**
@@ -435,6 +461,11 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'FPS', label: 'Fps', format: fmtFps },
       { key: 'DECAL_STAMP_MS', label: 'Stamp', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'PARTICLE_PHYSICS_MS', label: 'Sim', format: fmtMs, kind: STAT_KIND.TIME },
+      // E-37. COMPUTED / SERVICED is the flowfield LRU miss rate; the panel shows both
+      // because either alone is not interpretable.
+      { key: 'FLOWFIELDS_COMPUTED', label: 'FlowCalc', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'FLOWFIELDS_SERVICED', label: 'FlowReq', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'PATHS_COMPUTED', label: 'PathCalc', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'BUILD_ACTIVE_VISIBLE_MS', label: 'Lists', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
       { key: 'ACTIVE_PARTICLES', label: 'Active', format: fmtNum, kind: STAT_KIND.COUNT },

@@ -10,10 +10,26 @@ function readSrc(rel) {
   return fs.readFileSync(path.join(root, rel), 'utf8').replace(/\r\n/g, '\n');
 }
 
+/**
+ * The text of `reportFPS()` from `marker` onward.
+ *
+ * The window was 900 characters and every assertion below is "is this key written
+ * BEFORE the `if (!this.collectDetailedStats) return;` line". Adding a stat above the
+ * gate -- which is the normal way to add a stat, and what E-37 did -- pushes the gate
+ * out of a fixed window and fails every test in this file for a reason that has
+ * nothing to do with what they check. A window sized to the assertion is the bug, not
+ * the insertion.
+ *
+ * 8192 is comfortably larger than `reportFPS` in every worker and small enough not to
+ * swallow the next method. If a future `reportFPS` genuinely exceeds it, the failure
+ * mode to look for is "assert on the wrong method", not "shrink the window".
+ */
+const REPORT_BLOCK_CHARS = 8192;
+
 function reportBlock(src, marker) {
   const i = src.indexOf(marker);
   assert.ok(i >= 0, `missing ${marker}`);
-  return src.slice(i, i + 900);
+  return src.slice(i, i + REPORT_BLOCK_CHARS);
 }
 
 test('lean physics step still calls writePhysicsStats so load counts publish', () => {

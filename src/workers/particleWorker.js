@@ -356,6 +356,10 @@ class ParticleWorker extends AbstractWorker {
     this.maxPaths = 0;
     this.flowfieldsComputedThisFrame = 0;
     this.pathsComputedThisFrame = 0;
+    // E-37. New: the denominator for the flowfield miss rate. Paired with the per-frame
+    // reset below so a frame that services nothing publishes 0 rather than the last
+    // frame's count.
+    this.flowfieldsServicedThisFrame = 0;
     this.cachedFlowfieldsCount = 0;
     this.cachedPathsCount = 0;
     this.navigationMaxProcessingMsPerFrame = NAVIGATION_DEFAULTS.maxProcessingMsPerFrame;
@@ -647,6 +651,10 @@ class ParticleWorker extends AbstractWorker {
     this.particlesStampedThisFrame = 0;
     this.flowfieldsComputedThisFrame = 0;
     this.pathsComputedThisFrame = 0;
+    // E-37. New: the denominator for the flowfield miss rate. Paired with the per-frame
+    // reset below so a frame that services nothing publishes 0 rather than the last
+    // frame's count.
+    this.flowfieldsServicedThisFrame = 0;
     this.buildActiveVisibleTimeThisFrame = 0;
     this.particlePhysicsTimeThisFrame = 0;
     this.decalStampTimeThisFrame = 0;
@@ -1323,6 +1331,11 @@ class ParticleWorker extends AbstractWorker {
 
   _processNextFlowfieldRequest() {
     const targetCell = this.flowfieldRequests.dequeue();
+        // E-37. Serviced, not computed. This counts requests that reached the processing
+        // loop; `flowfieldsComputedThisFrame` below counts the ones that missed the LRU.
+        // The ratio is the miss rate, and publishing only the miss count would make a
+        // permanently-warm cache look free -- the opposite of the question E-11 asks.
+        if (targetCell >= 0) this.flowfieldsServicedThisFrame++;
     if (targetCell < 0) return false;
 
     const existingSlot = this._findExistingFlowfieldSlot(targetCell);
@@ -1957,6 +1970,14 @@ class ParticleWorker extends AbstractWorker {
     // E-01: always on, like STEP_MS. See docs/internal/EXECUTION_PLAN.md.
     this.stats[PARTICLE_STATS.IDLE_MS] = this.idleTimeThisFrame;
     this.stats[PARTICLE_STATS.WAIT_MS] = waitMeterMs();
+    // E-37. Before the detailed gate, like STEP_MS/IDLE_MS/WAIT_MS: these are three
+    // scalar writes, and the whole point is that the nav premises can be checked on a
+    // lean run. Gating them would mean E-11, E-12 and E-14 each needed a second
+    // detailed-stats sitting just to read a premise, which is exactly the cost this
+    // instrument exists to remove.
+    this.stats[PARTICLE_STATS.FLOWFIELDS_COMPUTED] = this.flowfieldsComputedThisFrame;
+    this.stats[PARTICLE_STATS.FLOWFIELDS_SERVICED] = this.flowfieldsServicedThisFrame;
+    this.stats[PARTICLE_STATS.PATHS_COMPUTED] = this.pathsComputedThisFrame;
     if (!this.collectDetailedStats) return;
     this.stats[PARTICLE_STATS.TOTAL_PARTICLES] = this.maxParticles;
     this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
