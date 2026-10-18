@@ -48,6 +48,7 @@ Same as `HYPOTHESIS_LOG.md`: `not-started` · `in-progress` · `kernel` · `scen
 | **E-07** | 20 000 per-row strings per frame | **NEUTRAL**, hygiene — worker did not move |
 | **E-08** | `_sortPrefix` reallocates every frame | **kept (hygiene)** — the one that paid |
 | **E-10** | the pair key is a boxed double | **rejected-in-kernel** — 0 boxed keys |
+| **E-13** | `_getNeighborCells` does a Map.get per entity | **rejected by premise** — 14/15 exit before it |
 | **E-21** | `gatherInstancedRows` is dead in `src/` | **documentation fixed** |
 
 **Four consecutive memory-cost hypotheses were wrong** (E-02, E-03, E-10, E-07). That
@@ -312,10 +313,32 @@ the honest vehicle.
 `:841-850`. `painterSameSet` (`sortIndexByKey.js:223`) is the existing generation-stamp
 implementation. **Primary:** `logic0_STEP_MS`.
 
-### E-13 `_getNeighborCells` does a `Map.get` per entity per frame — **not-started**
-`spatialWorker.js:317-364` — ~16.5 k probes/frame inside the 56 % function.
-**Careful:** row C16 rejected a flat table here, but C16 measured the **miss** path; this
-is the **hit** path.
+### E-13 `_getNeighborCells` does a `Map.get` per entity per frame — **rejected by premise inspection**
+**DONE 2026-10-18.** Report:
+[`reports/E-13-neighbor-cells-rejected.md`](./reports/E-13-neighbor-cells-rejected.md).
+The premise says *per entity*; the shipped control flow reaches that function only in
+the `else` of `skinCanReuse`, **and only after the neighbour stagger `continue`**
+(`spatialWorker.js:703-711` and `:725-737`). Predator runs
+`neighborTickInterval: 15` (`predatorScene.js:108-111`), so **14 of every 15 entities
+exit before the cell walk**, and the Verlet skin captures most of the rest.
+The ~16.5 k `Map.get`/frame the hypothesis rests on **does not happen**.
+The engine already publishes `ENTITIES_PROCESSED` and `NEIGHBORS_REUSED`; their
+difference is the rebuild population — a live confirmation is available for anyone who
+wants it.
+**Zero cost.** A `spatialCellRebuildMicrobench.mjs` driving the real worker was written
+and **deleted rather than shipped**: `setActiveList` did not reach the worker's
+`activeEntitiesData` view, so every counter read zero, and a kernel reporting zeros is
+worse than no kernel because its output looks like a measurement.
+
+### E-35 A frequency claim needs a counter, not a reading — *standing rule, from E-13 + E-21*
+Twice in this campaign a static reading has produced a **frequency** claim that the
+source does not support — `_getNeighborCells` "one `Map.get` per entity" and
+`gatherInstancedRows` "45 568 allocations per frame". Both times the description of
+*what the code does* was correct and *how often it runs* was supplied by the reader.
+
+**Before believing any "per frame" / "per entity" / "N per call" claim, either point at
+the counter that measures it or read the exits in front of it.** E-13 was rejected for
+free; had it gone to a scene it would have cost a Predator pair to confirm a zero.
 
 ### E-14 `performance.now()` per iteration in the nav deadline loop — **not-started**
 `particleWorker.js:1319` reads the clock every iteration of a 2 ms-bounded Dijkstra
