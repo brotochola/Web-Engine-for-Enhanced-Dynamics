@@ -237,7 +237,6 @@ test('painter on each id-half then concat is not the global Y order', () => {
   assert.notDeepEqual(concat, Array.from(global.subarray(0, 4)));
 });
 
-
 test('painterSameSet: filtered set (real idxE) needs matching integers, not just count', () => {
   const cap = 8;
   const keys = new Float32Array(cap);

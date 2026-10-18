@@ -35,7 +35,7 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { orderSortKey, spriteYSortKey, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
+import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -225,6 +225,9 @@ class PreRenderWorker extends AbstractWorker {
 
         // Entity texture lookup buffer
         this.entityLastTextureId = null;
+
+        // Component arrays for spriteSortFootY, bound once on first use
+        this._spriteSortArrays = null;
 
         // Animation frame tracking
         this.entityFrameIndex = null;
@@ -674,6 +677,11 @@ class PreRenderWorker extends AbstractWorker {
             this.frameWidth = data.textureMetadata.frameWidth;   // Uint16Array[textureId]
             this.frameHeight = data.textureMetadata.frameHeight; // Uint16Array[textureId]
         }
+
+        // Component SoA views are per-scene. Drop the cached sort-line binding
+        // so it can never outlive them (a cached null would silently pin every
+        // sort line to the pose for the rest of the session).
+        this._spriteSortArrays = null;
 
         if (
             data.shadows &&
@@ -1586,23 +1594,32 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Y-sort line is the sprite's bottom edge, not the pose.
-     * Identity rotation: y + (1 - anchorY) * height * |scaleY|.
-     * Rotation uses the same local offset as the sprite vertex shader.
+     * Component arrays the sort line reads, bound once. Rebuilt never: these
+     * are the worker's own SoA views for its lifetime.
+     */
+    _spriteSortSrc() {
+        let src = this._spriteSortArrays;
+        if (src) return src;
+        src = this._spriteSortArrays = {};
+        src.anchorX = SpriteRenderer.anchorX;
+        src.anchorY = SpriteRenderer.anchorY;
+        src.scaleX = SpriteRenderer.scaleX;
+        src.scaleY = SpriteRenderer.scaleY;
+        src.inheritRotation = SpriteRenderer.inheritTransformRotation;
+        src.spriteRotC = SpriteRenderer.spriteRotC;
+        src.spriteRotS = SpriteRenderer.spriteRotS;
+        return src;
+    }
+
+    /**
+     * Y-sort line is the sprite's bottom edge, not the pose. The rotation half
+     * of that lives in spriteSortFootY so there is one definition of it.
      */
     _spriteSortFootY(index, pose) {
-        const anchorX = SpriteRenderer.anchorX;
-        const anchorY = SpriteRenderer.anchorY;
-        const scaleX = SpriteRenderer.scaleX;
-        const scaleY = SpriteRenderer.scaleY;
-        if (!anchorX || !anchorY || !scaleX || !scaleY) {
-            return pose.y;
-        }
-        const ax = anchorX[index];
-        const ay = anchorY[index];
-        if (ax === 0.5 && ay === 1.0) {
-            return pose.y;
-        }
+        const src = this._spriteSortSrc();
+        // Same fast path the helper takes, before the frame lookup: feet-anchored
+        // sprites are the common case and never need the texture resolved.
+        if (src.anchorX[index] === 0.5 && src.anchorY[index] === 1.0) return pose.y;
         const textureId = this._entityTextureIdOrResolve(index);
         let w = 0;
         let h = 0;
@@ -1610,16 +1627,7 @@ class PreRenderWorker extends AbstractWorker {
             w = this.frameWidth[textureId] || 0;
             h = this.frameHeight[textureId] || 0;
         }
-        const ox = (0.5 - ax) * w * scaleX[index];
-        const oy = (1 - ay) * h * Math.abs(scaleY[index]);
-        const inherit = SpriteRenderer.inheritTransformRotation;
-        let rotC = pose.rotC;
-        let rotS = pose.rotS;
-        if (inherit && inherit[index] === 0) {
-            rotC = SpriteRenderer.spriteRotC[index];
-            rotS = SpriteRenderer.spriteRotS[index];
-        }
-        return pose.y + ox * rotS + oy * rotC;
+        return spriteSortFootY(src, index, pose.y, pose.rotC, pose.rotS, w, h);
     }
 
     _writeRenderable(type, index, y, layerId) {

@@ -11,6 +11,50 @@ export function spriteYSortKey(y, ySortK) {
   return Math.round(y) * ySortK;
 }
 
+/**
+ * Y-sort line for a sprite: the world Y of its bottom edge, not its pose.
+ * Identity rotation: y + (1 - anchorY) * height * |scaleY|. With rotation it
+ * is the same local offset the sprite vertex shader uses — which means it has
+ * to use the SAME rotation the sprite is drawn with. `inheritRotation[index]`
+ * is that choice: truthy takes the body pose's rotation, falsy takes the
+ * sprite's own facing (`spriteRotC`/`spriteRotS`). `emitSpriteQueue` and the
+ * pixi self-lit path both branch on that flag; a sort line that ignores it
+ * puts a turning sprite on the wrong side of its neighbours (a car whose
+ * facing lives in the frame, on a body that steers, is the live case).
+ *
+ * `w`/`h` are the frame size in px, 0 when the texture is unresolved — then
+ * the offset is 0 and the sort line collapses to the pose, which is the old
+ * behaviour for a missing frame, not a special case.
+ *
+ * @param {object} s component arrays: anchorX, anchorY, scaleX, scaleY,
+ *   inheritRotation, spriteRotC, spriteRotS. Any missing array falls back to poseY.
+ * @param {number} index entity slot
+ * @param {number} poseY world Y of the pose
+ * @param {number} rotC pose rotation cos
+ * @param {number} rotS pose rotation sin
+ * @param {number} w frame width px, 0 if unknown
+ * @param {number} h frame height px, 0 if unknown
+ * @returns {number} world Y of the sprite's bottom edge
+ */
+export function spriteSortFootY(s, index, poseY, rotC, rotS, w, h) {
+  if (!s || !s.anchorX || !s.anchorY || !s.scaleX || !s.scaleY) return poseY;
+  const ax = s.anchorX[index];
+  const ay = s.anchorY[index];
+  // Feet-anchored sprites sort on the pose itself. Callers may short-circuit
+  // this before resolving the frame; the check lives here so the helper is
+  // correct standalone.
+  if (ax === 0.5 && ay === 1.0) return poseY;
+  const sy = s.scaleY[index];
+  const ox = (0.5 - ax) * w * s.scaleX[index];
+  const oy = (1 - ay) * h * (sy < 0 ? -sy : sy);
+  const inherit = s.inheritRotation;
+  if (inherit && !inherit[index]) {
+    rotC = s.spriteRotC[index];
+    rotS = s.spriteRotS[index];
+  }
+  return poseY + ox * rotS + oy * rotC;
+}
+
 /** Width of one zIndex band. Larger than any Y key inside the world. */
 export function zSortBand(worldHeight) {
   const h = worldHeight > 0 ? worldHeight : 1;
@@ -317,4 +361,3 @@ export function orderPainterSlots(state, idxE, ne, keysU32) {
   if (changed < 0) return radixPainterOrder(state, idxE, ne, keysU32);
   return state.order;
 }
-
