@@ -43,6 +43,7 @@ Same as `HYPOTHESIS_LOG.md`: `not-started` · `in-progress` · `kernel` · `scen
 | **E-01** | `WAIT_MS` / `IDLE_MS` do not exist as metrics | **kept (hygiene)** — and `IDLE_MS` found the frame shape |
 | **E-02** | the WASM publish recount is a pass over 34 MB | **kept (hygiene), not a speed win** — 1.09 µs, 0.016 % |
 | **E-03** | `logicBlockRange` allocates 480 B/frame | **rejected-in-kernel** — forcing it is −15.7 % |
+| **E-04b** | Box2D worker count / the mailbox-spin confound | **`4` confirmed** — solver needs 1.86×, nothing else benefits |
 | **E-05** | the engine default should pack sprites in pre-render | **dropped** — works on Pixi, loses on the bottleneck |
 | **E-07** | 20 000 per-row strings per frame | **NEUTRAL**, hygiene — worker did not move |
 | **E-08** | `_sortPrefix` reallocates every frame | **kept (hygiene)** — the one that paid |
@@ -125,7 +126,47 @@ Dead buffer. Verdict: hygiene (deletion). Primary: none. (Same finding as E-22.)
 
 ## Wave 2 — config-only experiments (no `src/` edit)
 
-### E-04b `box2dWorkerCount` sweep — **not-started**
+### E-04b `box2dWorkerCount` sweep — **`4` confirmed. The 2026-10-01 confound is resolved.**
+**DONE 2026-10-18.** Report:
+[`reports/E-04b-box2d-worker-count.md`](./reports/E-04b-box2d-worker-count.md).
+Primary `physics_STEP_MS`; load `BODY_COUNT` **and** `AWAKE_COUNT`. Declared
+secondary: max `STEP_MS` of every other worker, to measure the offsetting effect
+rather than assume it.
+
+**Busy scene (Balls, 9004 bodies / 9000 awake), three independent sweeps:**
+
+| workers | 1 | 2 | 3 | 4 |
+| --- | --- | --- | --- | --- |
+| run A | 10.723 | 7.541 | 6.411 | **5.763** |
+| run B | 10.792 | 7.945 | 6.521 | **5.795** |
+| run C | 10.610 | 7.350 | 6.315 | **5.550** |
+
+**1 → 4 workers is a 1.86× speedup.** Load closed perfectly (9004 / 9000, 0.0 %
+spread). Physics pays **5.0 ms** to save workers; the largest offsetting saving in
+any other worker is **0.12 ms** (all bystanders under 1.2 ms). **No trade exists.**
+
+**Sleeping-heavy scene (9000 bodies, 0 awake):** 0.706 / 0.683 / 0.682 / **0.661**
+ms — a 6.7 % total spread against 86 % on the busy scene, and flat-to-worse, never
+better. All arms under the 3 ms floor, so reported and not judged. **On a sleeping
+scene the worker count is not a measurable lever at all.**
+
+**Verdict: `4` is correct in both regimes, for a measured reason rather than an
+inferred one.** The implementation log asked whether the old pool experiment was
+judged on a contaminated metric. It was not: `STEP_MS` was correctly charging it
+for lost parallelism, not for removed spin.
+
+### E-34 The Box2D spin is not addressable by configuration — *opened 2026-10-18*
+**Raised by E-04b.** ~2.4 cores still burn in the Emscripten mailbox, and this
+sitting shows **neither lever reaches it**: a smaller pool costs the solver threads
+(2026-10-01, +26.2 %), and a smaller worker count costs the solver its parallelism
+(this sitting, +86 %). Box2D's threads spin whether or not they have work, so the spin
+is not a configuration question at all.
+
+**The only remaining lever is *how Box2D waits*** — Emscripten's pthread runtime, in
+the sibling repo, which now has a working `emcc` (E-31). **Per E-30, this needs a
+premise probe before any edit:** measure how much of the 2.4 cores is the mailbox and
+how much a different wait primitive would recover. It also changes a vendor runtime
+adjacent to audio real-time behaviour, so the bar is high.
 The pool experiment of 2026-10-01 (4→2) was a *solver capacity* test that also removed
 spin; it cannot tell "the solver needs the cores" from "the metric charged us for the
 spin it removed". Sweep `physics.box2dWorkerCount` ∈ {1,2,3,4} at a fixed pool of 4.

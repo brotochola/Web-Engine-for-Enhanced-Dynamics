@@ -1,6 +1,25 @@
 import WEED from '/src/index.js';
 import { StationarySpatialEntity } from './stationary/stationarySpatialEntity.js';
 
+/**
+ * E-04b. Read `box2dWorkerCount` from the query string so the Box2D worker-count
+ * sweep can drive this scene per arm. Falls back to the engine default (4) when
+ * the parameter is absent, so every existing invocation is unchanged.
+ *
+ * This scene is the SLEEPING-heavy half of the sweep: gravity is zero and the
+ * probe reported `Awake 0`, so the solver has almost nothing to decompose and
+ * extra Box2D threads should be close to pure spin.
+ */
+const SCENE_QUERY =
+  typeof location !== 'undefined' && location.search
+    ? new URLSearchParams(location.search)
+    : new URLSearchParams('');
+function sceneNumberParam(name, fallback) {
+  const raw = SCENE_QUERY.get(name);
+  const n = raw == null ? NaN : Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
 const { Scene, Camera } = WEED;
 
 export class StationarySpatialScene extends Scene {
@@ -19,6 +38,7 @@ export class StationarySpatialScene extends Scene {
       noLimitFPS: false,
     },
     physics: {
+      box2dWorkerCount: sceneNumberParam('box2dWorkerCount', 4),
       subStepCount: 1,
       noLimitFPS: false,
       gravity: { x: 0, y: 0 },

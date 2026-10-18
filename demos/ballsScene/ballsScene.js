@@ -7,6 +7,23 @@ import { Floor } from './gameObjects/floor.js';
 import WEED from '/src/index.js';
 const { Scene, Camera, Keyboard, Mouse, Box2d, Query, RigidBody } = WEED;
 
+/**
+ * Read a positive integer from the page query string.
+ *
+ * Added for the E-04b Box2D worker-count sweep. It is read once at module scope and
+ * every call site falls back to the value the scene already used, so a run with no
+ * query string is byte-identical to a run before this existed.
+ */
+const BALLS_QUERY =
+  typeof location !== 'undefined' && location.search
+    ? new URLSearchParams(location.search)
+    : new URLSearchParams('');
+function ballsNumberParam(name, fallback) {
+  const raw = BALLS_QUERY.get(name);
+  const n = raw == null ? NaN : Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
 export class BallsScene extends Scene {
   // ========================================
   // STATIC SCENE CONFIGURATION
@@ -40,7 +57,14 @@ export class BallsScene extends Scene {
 
     // Physics configuration
     physics: {
-      box2dWorkerCount: 4,
+      // E-04b. Readable from the URL so the Box2D worker-count sweep can run
+      // without editing the scene per arm. The default is unchanged (4), so the
+      // scene behaves exactly as it did before.
+      //
+      // This is a harness affordance, not a bench patch: the key is optional, the
+      // fallback is the shipped value, and the scene is not edited per sitting the
+      // way `HOW_WE_MEASURE` forbids for a bench to close a pair.
+      box2dWorkerCount: ballsNumberParam('box2dWorkerCount', 4),
       subStepCount: 4,
       noLimitFPS: false,
       gravity: { x: 0, y: 1800 },
