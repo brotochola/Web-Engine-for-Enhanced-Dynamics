@@ -10,6 +10,7 @@ import {
   depthFromSortKey,
   orderSortKey,
   zSortBand,
+  floatBitsToOrd,
 } from '../../src/util/sortIndexByKey.js';
 
 function cmpFloat(a, b) {
@@ -97,16 +98,18 @@ function orderCheck(keysU32, ne, idxE, state) {
   const order = orderPainterSlots(state, idxE, ne, keysU32);
   const slots = idxE ? Array.from(idxE.subarray(0, ne)) : Array.from({ length: ne }, (_, i) => i);
   const got = order ? Array.from(order.subarray(0, ne)) : slots;
-  const expect = slots.slice().sort((a, b) => keysU32[a] - keysU32[b] || a - b);
-  // Compare as sets sorted by key value (bit pattern order for our all-positive
-  // test keys matches numeric order, so a plain numeric compare is fine here).
-  const gotSorted = got
-    .map((slot) => keysU32[slot])
-    .every((k, i) => i === 0 || k >= got.map((s) => keysU32[s])[i - 1]);
+  // Compare ordinals, not raw bits: for a negative key the raw bits run the
+  // other way, so `keysU32[a] <= keysU32[b]` is only valid while every key is
+  // positive. `floatBitsToOrd` is the transform the painter itself orders by.
+  const drawn = got.map((slot) => floatBitsToOrd(keysU32[slot]));
   assert.equal(got.length, ne);
   assert.deepEqual(new Set(got), new Set(slots), 'order is a permutation of the live slot set');
-  assert.ok(gotSorted, `order not ascending by key: ${got.map((s) => keysU32[s])}`);
-  void expect;
+  for (let i = 1; i < drawn.length; i++) {
+    assert.ok(
+      drawn[i - 1] <= drawn[i],
+      `order not ascending by key at ${i}: ...${drawn.slice(Math.max(0, i - 3), i + 2)}...`,
+    );
+  }
 }
 
 test('orderPainterSlots: dense layer queue (idxE=null) sorts by key every frame', () => {
@@ -247,4 +250,73 @@ test('painterSameSet: filtered set (real idxE) needs matching integers, not just
   const shiftedIdxE = new Uint32Array([0, 1, 3, 4]);
   assert.equal(painterSameSet(state, shiftedIdxE, 4), false);
   assert.equal(painterSameSet(state, idxE, 4), true);
+});
+
+// --- negative sort keys (anything above the world origin) -------------------
+
+test('floatBitsToOrd orders negatives before positives, as an unsigned value', () => {
+  const bits = (v) => { const f = new Float32Array(1); f[0] = v; return new Uint32Array(f.buffer)[0]; };
+  const ord = (v) => floatBitsToOrd(bits(v));
+  const ascending = [-1e6, -128, -1, -0, 0, 1, 128, 5e3];
+  for (let i = 1; i < ascending.length; i++) {
+    assert.ok(
+      ord(ascending[i - 1]) <= ord(ascending[i]),
+      `ord(${ascending[i - 1]}) must not exceed ord(${ascending[i]})`,
+    );
+  }
+  // The whole point: a positive key's ordinal has bit 31 set, so reading it as
+  // a signed int32 makes it look smaller than any negative key's ordinal.
+  assert.ok(ord(1) > 0x7fffffff, 'positive key ordinal must exceed INT32_MAX');
+  assert.ok(ord(-1) >= 0 && ord(-1) < 0x80000000, 'negative key ordinal must fit below 2^31');
+});
+
+test('reinsert: a negative key stays behind a positive one', () => {
+  const n = 2;
+  const keys = new Float32Array([-128, 128]); // world y = -1 and y = +1
+  const keysU32 = new Uint32Array(keys.buffer);
+  const order = new Uint32Array([0, 1]);
+  const prev = new Uint32Array(keysU32);
+  const slotMoved = new Uint8Array(n);
+  const movedList = new Uint32Array(n);
+  const merge = new Uint32Array(n);
+  const scratch = new Uint32Array(n);
+  const hist = new Uint32Array(256);
+  // Nudge slot 0 so it has to travel back through the merge.
+  keys[0] = -1024;
+  assert.equal(reinsertChangedSlots(order, n, keysU32, prev, slotMoved, movedList, merge, scratch, hist), 1);
+  assert.deepEqual(Array.from(order), [0, 1], 'y=-8 must still draw before y=+1');
+});
+
+test('orderPainterSlots: mixed-sign keys stay sorted across many reinsert frames', () => {
+  const n = 512;
+  const keys = new Float32Array(n);
+  const keysU32 = new Uint32Array(keys.buffer);
+  const state = createPainterState(n);
+  // Fixed count every frame, so painterSameSet always approves and every frame
+  // after the first goes through the incremental merge, never a radix rebuild.
+  for (let i = 0; i < n; i++) keys[i] = spriteYSortKey(i < n / 2 ? -(1 + (i % 120)) : 100 + (i % 120), 128);
+  orderCheck(keysU32, n, null, state);
+  for (let frame = 1; frame < 200; frame++) {
+    for (let i = 0; i < 5; i++) {
+      const s = (frame * 7 + i * 13) % n;
+      keys[s] = spriteYSortKey((frame % 60) - 30, 128);
+    }
+    orderCheck(keysU32, n, null, state);
+  }
+});
+
+test('orderPainterSlots: mixed-sign keys survive a visible-set size change', () => {
+  const cap = 64;
+  const keys = new Float32Array(cap);
+  const keysU32 = new Uint32Array(keys.buffer);
+  const state = createPainterState(cap);
+  for (const vals of [
+    [-512, -256, 0, 128, 640],
+    [-128, -128, 256, 256, 1280, 0],
+    [-1024, 512],
+    [-768, -256, 384, 1536, 2048, 0, 64],
+  ]) {
+    keys.set(vals);
+    orderCheck(keysU32, vals.length, null, state);
+  }
 });

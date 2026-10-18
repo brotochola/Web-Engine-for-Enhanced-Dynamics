@@ -69,7 +69,14 @@ export function depthFromSortKey(key, worldHeight, ySortK) {
   return z;
 }
 
-/** IEEE-754 bits → uint32 that orders like the float (negatives included). */
+/**
+ * IEEE-754 bits → uint32 that orders like the float (negatives included).
+ * The trailing `>>> 0` is load-bearing: the transform flips bit 31, so every
+ * POSITIVE float comes out as a value ≥ 2^31 and every NEGATIVE float as one
+ * < 2^31. Compare the result as unsigned (`>>> 0` again, or as a Uint32Array
+ * element). Comparing it as a signed int32 puts all positive keys ahead of all
+ * negative ones, which is backwards.
+ */
 export function floatBitsToOrd(bits) {
   const u = bits >>> 0;
   return ((u & 0x80000000) ? ~u : (u | 0x80000000)) >>> 0;
@@ -94,6 +101,9 @@ export function radixSortIndicesBySortKey(idx, n, keysU32, scratch, hist) {
   void hist;
   const h = radixHist4;
   h.fill(0);
+  // `ord` is the floatBitsToOrd transform, inlined. It is only ever consumed
+  // through `&` / `>>>`, which coerce to unsigned — that is what makes this
+  // loop agree with the reinsert merge. Do not compare `ord` directly.
   for (let i = 0; i < n; i++) {
     const u = keysU32[idx[i]] >>> 0;
     const ord = (u & 0x80000000) ? ~u : (u | 0x80000000);
@@ -170,10 +180,11 @@ export function reinsertChangedSlots(order, n, keysU32, prevKey, slotMoved, move
   let b = 0;
   let o = 0;
   while (a < w && b < m) {
-    const ua = keysU32[order[a]] >>> 0;
-    const ka = (ua & 0x80000000) ? ~ua : (ua | 0x80000000);
-    const ub = keysU32[movedList[b]] >>> 0;
-    const kb = (ub & 0x80000000) ? ~ub : (ub | 0x80000000);
+    // Unsigned ordinals. Sorting these as signed int32 puts every positive key
+    // ahead of every negative one, which swaps the two halves of the draw order
+    // the moment any entity sits above the world origin (negative world Y).
+    const ka = floatBitsToOrd(keysU32[order[a]]);
+    const kb = floatBitsToOrd(keysU32[movedList[b]]);
     if (ka <= kb) merge[o++] = order[a++];
     else merge[o++] = movedList[b++];
   }

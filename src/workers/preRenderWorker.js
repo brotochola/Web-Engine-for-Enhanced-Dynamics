@@ -1612,7 +1612,14 @@ class PreRenderWorker extends AbstractWorker {
         }
         const ox = (0.5 - ax) * w * scaleX[index];
         const oy = (1 - ay) * h * Math.abs(scaleY[index]);
-        return pose.y + ox * pose.rotS + oy * pose.rotC;
+        const inherit = SpriteRenderer.inheritTransformRotation;
+        let rotC = pose.rotC;
+        let rotS = pose.rotS;
+        if (inherit && inherit[index] === 0) {
+            rotC = SpriteRenderer.spriteRotC[index];
+            rotS = SpriteRenderer.spriteRotS[index];
+        }
+        return pose.y + ox * rotS + oy * rotC;
     }
 
     _writeRenderable(type, index, y, layerId) {
