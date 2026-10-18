@@ -512,12 +512,44 @@ free; had it gone to a scene it would have cost a Predator pair to confirm a zer
 
 ## Wave 4 — wide changes (require trace evidence or a kernel win first)
 
-### E-15 Packed neighbor rows (fixed stride → prefix-sum offsets) — **not-started**
-**Claim amended by E-02:** the "it strides over a 34 MB working set" argument **does not
-hold** — measured at 1.09 µs. E-15 must earn itself on the **write** side, where the
-log's own S4 precedent applies (−13.4 % Predator spatial, 0/8 worse), not on address
-space. **Blocked on E-31** (remove the recount first so the exposure is halved and the
-two are not confused). **Read `logic0_STEP_MS` too** — `getNeighbor` gains an indirection.
+### E-15 Packed neighbor rows (fixed stride → prefix-sum offsets) — **premise probe DONE 2026-10-18. Still not started. E-36 revised by it.**
+Report: [`reports/E-15-packed-neighbor-rows-probe.md`](./reports/E-15-packed-neighbor-rows-probe.md).
+**Unblocked** (E-31 done). Probed per E-36 before any code, and **the probe changed the
+answer in the hypothesis's favour.**
+
+**First, a correction to this entry's own amendment.** "The 34 MB argument does not hold
+— measured at 1.09 µs" conflated two measurements. E-02's 1.09 µs is the *recount* path.
+The **address space** figure is real and it is config-dependent:
+
+| config | stride | neighborBuffer @17 556 |
+| --- | --- | --- |
+| default (`maxNeighbors: 128`) | 129 | 4.3 MB |
+| **Predator (`maxNeighbors: 1024`)** | **1025** | **34.4 MB** |
+
+**34 MB was right all along — for Predator**, the scene the argument was made about.
+E-15's address-space case is *stronger* on the scene that matters than this note implied.
+
+**What the proposal adds:** offsets + counts at entityCount × 4 each = **~137 KB** at
+Predator, written once and read once per rebuild — ~2.6× the 52.3 KB array that lost E-17.
+
+**And E-36 as written was too broad — this probe revises it:**
+
+> **E-36 (revised) — the size test applies when the trade is ALU-for-memory. When the
+> trade is memory-for-memory, compare the two memory patterns instead; a contiguous index
+> can be paid for out of a larger strided read even when the index itself exceeds L1
+> several times over.**
+
+E-17 removed ~26 800 divides and added 52 KB — two currencies, hence the size test. E-15
+removes a **34.4 MB strided** read and adds a **137 KB contiguous** index — both memory,
+so the index's size alone does not disqualify it. **A 34.4 MB strided read against 137 KB
+of contiguous access is not a close call, and it is the opposite situation from E-17.**
+
+**Instructions for the kernel when E-15 is attempted:** measure the strided read **and** the
+index read **in one kernel** so both land on the same side of the ledger, at
+`maxNeighbors: 1024`, and price the index against the strided read rather than in
+isolation. **No speed number and no share of `spatial_STEP_MS` claimed** — per E-25 a share
+needs a measurement, and per E-17 a kernel delta must not be divided by a scene step time.
+**Read `logic0_STEP_MS` too** — `getNeighbor` gains an indirection.
 
 ### E-16 Incremental / sharded shadow stamp — **REJECTED on premise, by E-29. 2026-10-18**
 `gpuShadowCasters.js` rebuilds the stamp grid from scratch every frame (4 passes over
@@ -574,6 +606,14 @@ E-30 says allocation *count* has never been the cost. E-17 is the sharper form:
 > **Before replacing a recomputation with a cache, ask how big the cache is and whether
 > it will be resident.** A cache larger than L1, written and read once per pass, can
 > cost more than the arithmetic it replaced.
+>
+> **Revised by E-15's premise probe — the size test only applies when the trade is
+> ALU-for-memory.** E-17 removed 26 800 divides and added 52 KB: two currencies, so
+> "is it bigger than L1" decided it. **When the trade is memory-for-memory, compare the
+> two memory patterns instead** — E-15 removes a 34.4 MB *strided* read and adds a 137 KB
+> *contiguous* index, and the index exceeding L1 several times over does not disqualify
+> it. A rule that would have me skip this on a size test that does not apply is a rule
+> that is too broad.
 
 Re-prices three open hypotheses, all of the shape "compute less, store more":
 - **E-15** packed neighbour rows — the packed layout is a *smaller* working set, but
