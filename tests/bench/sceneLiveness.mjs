@@ -44,7 +44,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
  */
 const LIVENESS_KEYS = {
   renderer: ['VISIBLE_ENTITIES', 'GPU_CASTERS', 'GPU_PASSES'],
-  preRender: ['QUEUE', 'COLLECT_MS', 'EMIT_MS', 'SPRITE_PACK_MS'],
+  preRender: ['QUEUE', 'COLLECT_MS', 'EMIT_MS', 'SPRITE_PACK_MS', 'VISIBLE_LIGHTS_MS'],
   logic: ['ENTITIES_PROCESSED', 'MARK_ACTIVE'],
   spatial: ['ENTITIES_PROCESSED'],
   particle: ['ACTIVE_PARTICLES', 'DECORATIONS_ACTIVE'],

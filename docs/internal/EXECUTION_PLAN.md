@@ -430,14 +430,27 @@ log's own S4 precedent applies (−13.4 % Predator spatial, 0/8 worse), not on a
 space. **Blocked on E-31** (remove the recount first so the exposure is halved and the
 two are not confused). **Read `logic0_STEP_MS` too** — `getNeighbor` gains an indirection.
 
-### E-16 Incremental / sharded shadow stamp — **not-started**
+### E-16 Incremental / sharded shadow stamp — **REJECTED on premise, by E-29. 2026-10-18**
 `gpuShadowCasters.js` rebuilds the stamp grid from scratch every frame (4 passes over
-~13 400 casters). **Precedent:** `neighborReuseSkin` and the neighbor stagger — same
-idea, twice kept. **Hard gate:** `GPU_CASTERS` and `GPU_SHADOW_LIGHTS` within 5 %; the
-caster set must be bit-identical or the pair does not exist.
-**Enabler:** `numberOfPreRenderWorkers` is hard-coded to `1` (`scene.js:806-808`) while
-`stampLightRange` already takes `lightStride`/`lightBegin`
-(`gpuShadowCasters.js:220-221`). **The seam survived; only the config is missing.**
+~13 400 casters). **Enabler:** `numberOfPreRenderWorkers` is hard-coded to `1`
+(`scene.js:806-808`) while `stampLightRange` already takes `lightStride`/`lightBegin`
+(`gpuShadowCasters.js:220-221`) — the seam survived, only the config is missing.
+
+**Rejected, and the seam is not the reason.** E-29 added `STAMP_LIGHTS_MS`, which measures
+the light *collection* — the only part of the stamp phase that an incremental or sharded
+scheme could plausibly attack — and it is **~2 % of `SHADOW_Q_MS`** (0.048 / 2.059 ms),
+about 0.05 ms, **~0.7 % of the pre-render step, a quarter of the 3 % keep bar**.
+
+The rest of the phase is `stampLightRange`'s distance test and bucket walk over 13 400
+casters, which no amount of sharding makes smaller — it is already one pass. So the
+hypothesis had a real enabler pointed at a negligible target, and the decisive number
+came from a timer rather than from a twenty-minute sitting. **This is why E-29 was
+sequenced ahead of E-16/E-17**, and it is the strongest argument in the plan for
+instrumenting before hypothesising.
+
+**Also bounded by the same reading:** E-08's `_sortPrefix` lives in `VISIBLE_LIGHTS_MS`
+(0.041–0.055 ms), so its fix could never have been worth more than ~0.7 % — the *hygiene*
+verdict was right, now on a number rather than a hunch.
 
 ### E-17 Shadow stamp grid: cache the cell index instead of recomputing it — **FAIL (load). No speed verdict. Reverted.**
 **DONE 2026-10-18.** Report:
@@ -601,11 +614,38 @@ measurement while a structural defect sat behind it (all zeros; unattributable t
 names with 100 % overlap). Neither was visible without asking **"what would I expect to
 see if this were broken?"** and then looking for it.
 
-### E-29 `_collectVisibleLights` and `_collectStampLights` have no timer — *instrumentation, not-started*
-**Raised by E-08.** Two phases of the pre-render frame publish **no `*_MS` stat**, so
-they are invisible to the trace and cannot be named as a primary. E-08 lived in one of
-them for the life of this engine without that being knowable. **Do this before any
-E-16 / E-17 work** — both touch the same phase. **Primary:** none.
+### E-29 `_collectVisibleLights` and `_collectStampLights` have no timer — **DONE 2026-10-18. KEPT (instrumentation)**
+**Raised by E-08.** Two phases of the pre-render frame published **no `*_MS` stat**, so
+they were invisible to the trace and could never be named as a primary. E-08 lived in one
+of them for the life of this engine without that being knowable from a measurement.
+Report: [`reports/E-29-pre-render-light-timers.md`](./reports/E-29-pre-render-light-timers.md).
+
+**Why they were invisible, specifically.** `VISIBLE_LIGHTS_MS` is a *peer* that falls in a
+gap: it runs after the `COLLECT_MS` and `CUSTOM_LAYER_MS` windows close and before
+`VISIBILITY_MS` opens, so it belonged to **no stat at all**. `STAMP_LIGHTS_MS` is a
+*sub-timer* of `SHADOW_Q_MS` (`_stampAgainstSun` → `_packGpuShadows` → the window), so the
+two must never be added — documented in the schema, the panel row, the runner, and the
+benchmark's own print.
+
+**Slots 19 and 20, stride 19 → 21, appended so slots 0–18 keep their indices.** Wired into
+the debug panel, `measureLib`, `runPredatorAbab`'s `SUB_TIMERS` (so either can be a
+metric), `sceneLiveness` and the benchmark print. Cost: two gated `performance.now()`
+pairs per frame; verified `--no-collect-detailed-stats` reads exactly `0.000`, which is the
+`ADOBE_MS` failure mode checked at runtime.
+
+**What they are worth — Predator, headed, stats on:** `VISIBLE_LIGHTS_MS` 0.055 / 0.041,
+`STAMP_LIGHTS_MS` 0.052 / 0.048 ms across two runs, stable to ~±10 %. **~0.095 ms total,
+~1.3 % of the pre-render step. `STAMP_LIGHTS_MS` is ~2 % of `SHADOW_Q_MS`** (0.048 / 2.059).
+The first run's `STEP_MS` 12.160 is a warm-up outlier (`COLLECT_MS`/`EMIT_MS` nearly
+double run 2) and is kept in the table rather than deleted.
+
+### E-16 Incremental / sharded shadow stamp — **REJECTED on premise, by E-29** *(recorded here as the second reference; the entry of record is above, next to E-15)*
+The only part of the stamp phase an incremental or sharded scheme could attack is the
+light *collection*, and `STAMP_LIGHTS_MS` measures it at **~2 % of `SHADOW_Q_MS`** — about
+0.05 ms, ~0.7 % of the pre-render step, a **quarter of the 3 % keep bar**. Rejected on a
+timer reading rather than after a twenty-minute sitting. **E-08 is also retrospectively
+bounded:** `_sortPrefix` is in `VISIBLE_LIGHTS_MS`, so its fix could never have been worth
+more than ~0.7 %.
 
 ---
 

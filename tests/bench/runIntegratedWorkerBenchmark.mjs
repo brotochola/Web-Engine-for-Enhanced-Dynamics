@@ -30,6 +30,10 @@ function formatWorkerConsoleLine(worker) {
     if (avg.EMIT_MS != null) line += ` | EMIT_MS ${Number(avg.EMIT_MS).toFixed(3)}`;
     if (avg.SORT_MS != null) line += ` | SORT_MS ${Number(avg.SORT_MS).toFixed(3)}`;
     if (avg.SPRITE_PACK_MS != null) line += ` | SPRITE_PACK_MS ${Number(avg.SPRITE_PACK_MS).toFixed(3)}`;
+    // E-29. VISIBLE_LIGHTS_MS is a peer of the other rows. STAMP_LIGHTS_MS is a
+    // SUB-TIMER of SHADOW_Q_MS, so it is printed after it and flagged.
+    if (avg.VISIBLE_LIGHTS_MS != null) line += ` | VISIBLE_LIGHTS_MS ${Number(avg.VISIBLE_LIGHTS_MS).toFixed(3)}`;
+    if (avg.STAMP_LIGHTS_MS != null) line += ` | STAMP_LIGHTS_MS ${Number(avg.STAMP_LIGHTS_MS).toFixed(3)} (in SHADOW_Q_MS)`;
     if (avg.SHADOW_Q_MS != null) line += ` | SHADOW_Q_MS ${Number(avg.SHADOW_Q_MS).toFixed(3)}`;
     if (avg.WAIT_MS != null) line += ` | WAIT_MS ${Number(avg.WAIT_MS).toFixed(3)}`;
     if (avg.RENDER_QUEUE_SIZE != null) line += ` | QUEUE ${Number(avg.RENDER_QUEUE_SIZE).toFixed(0)}`;

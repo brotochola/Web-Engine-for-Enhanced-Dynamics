@@ -179,6 +179,11 @@ class PreRenderWorker extends AbstractWorker {
         this.visibilityTimeThisFrame = 0;
         this.adobeTimeThisFrame = 0;
         this.waitTimeThisFrame = 0;
+        // E-29. The two phases that had no timer. See the PRE_RENDER_STATS comments:
+        // VISIBLE_LIGHTS_MS is a peer of the others, STAMP_LIGHTS_MS is a sub-timer of
+        // SHADOW_Q_MS.
+        this.visibleLightsTimeThisFrame = 0;
+        this.stampLightsTimeThisFrame = 0;
 
         // Entity and particle counts
         this.globalEntityCount = 0;
@@ -965,6 +970,9 @@ class PreRenderWorker extends AbstractWorker {
         this.visibilityTimeThisFrame = 0;
         this.adobeTimeThisFrame = 0;
         this.waitTimeThisFrame = 0;
+        // E-29.
+        this.visibleLightsTimeThisFrame = 0;
+        this.stampLightsTimeThisFrame = 0;
     }
 
     packSpriteAndShadowQueues() {
@@ -1018,7 +1026,19 @@ class PreRenderWorker extends AbstractWorker {
         this.buildCustomLayerQueues(deltaTime);
         if (detail) this.customLayerTimeThisFrame = performance.now() - started;
 
+        // E-29. This call had no timer and belonged to no existing one. It runs after
+        // `buildCustomLayerQueues` (whose COLLECT/CUSTOM_LAYER_MS windows both closed at
+        // the line above) and before `buildVisibilityPolygons` (whose VISIBILITY_MS window
+        // opens below), so its cost landed in a gap that no published stat covered. On a
+        // frame where the light list is long that gap was real money, and there was no way
+        // to see it. Gated on `detail` like every other sub-timer: two performance.now()
+        // calls per frame is not free when you only want them when someone is looking.
+        const detailLights = this.collectDetailedStats;
+        let tLights = 0;
+        if (detailLights) tLights = performance.now();
         this.collectVisibleLights();
+        if (detailLights) this.visibleLightsTimeThisFrame = performance.now() - tLights;
+
         this.packSpriteAndShadowQueues();
 
         if (detail) started = performance.now();
@@ -2968,7 +2988,16 @@ class PreRenderWorker extends AbstractWorker {
 
     _stampAgainstSun(dst, sun, sunN, stampBase, lightBegin, lightStride) {
         this._stampSortLights = (sunN | 0) > 0;
+        // E-29. A SUB-TIMER of SHADOW_Q_MS, not a peer of it. `_stampAgainstSun` is
+        // reached from `_packGpuShadows`, inside the window SHADOW_Q_MS measures, so this
+        // time is already counted there. It gets its own slot because that window was the
+        // only untested-but-large phase on the critical path (E-33) and a caller had no
+        // way to tell "choosing the lights" from "stamping against them" - which are
+        // different costs with different fixes, and only one of them is a sort.
+        const detailStamp = this.collectDetailedStats;
+        const tStamp = detailStamp ? performance.now() : 0;
         this._collectStampLights();
+        if (detailStamp) this.stampLightsTimeThisFrame = performance.now() - tStamp;
         const lights = this._stampLights;
         const capL = Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0);
         const caps = this.gpuQueueCaps;
@@ -3573,6 +3602,9 @@ class PreRenderWorker extends AbstractWorker {
         this.stats[PRE_RENDER_STATS.CUSTOM_LAYER_MS] = this.customLayerTimeThisFrame;
         this.stats[PRE_RENDER_STATS.SPRITE_PACK_MS] = this.spritePackTimeThisFrame;
         this.stats[PRE_RENDER_STATS.SHADOW_Q_MS] = this.shadowQTimeThisFrame;
+        // E-29. STAMP_LIGHTS_MS is contained in SHADOW_Q_MS above; do not add them.
+        this.stats[PRE_RENDER_STATS.STAMP_LIGHTS_MS] = this.stampLightsTimeThisFrame;
+        this.stats[PRE_RENDER_STATS.VISIBLE_LIGHTS_MS] = this.visibleLightsTimeThisFrame;
         this.stats[PRE_RENDER_STATS.VISIBILITY_MS] = this.visibilityTimeThisFrame;
         this.stats[PRE_RENDER_STATS.ADOBE_MS] = this.adobeTimeThisFrame;
         this.stats[PRE_RENDER_STATS.WAIT_MS] = this.waitTimeThisFrame;

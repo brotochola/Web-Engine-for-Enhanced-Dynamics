@@ -188,6 +188,9 @@ export function extractMetrics(report) {
     SORT_MS: preRender.SORT_MS ?? 0,
     SPRITE_PACK_MS: preRender.SPRITE_PACK_MS ?? 0,
     SHADOW_Q_MS: preRender.SHADOW_Q_MS ?? 0,
+    // E-29. STAMP_LIGHTS_MS is contained in SHADOW_Q_MS; do not sum them.
+    STAMP_LIGHTS_MS: preRender.STAMP_LIGHTS_MS ?? 0,
+    VISIBLE_LIGHTS_MS: preRender.VISIBLE_LIGHTS_MS ?? 0,
     WAIT_MS: preRender.WAIT_MS ?? 0,
     RENDER_QUEUE_SIZE: preRender.RENDER_QUEUE_SIZE ?? 0,
     VISIBLE_ENTITIES: preRender.VISIBLE_ENTITIES ?? 0,

@@ -269,10 +269,31 @@ export const PRE_RENDER_STATS = Object.freeze({
   SPRITE_PACK_MS: 17,
   /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
   IDLE_MS: 18,
-  STRIDE_FLOATS: 19,
-  BUFFER_SIZE_PER_WORKER: 19 * 4,
+  /**
+   * E-29. `_collectVisibleLights` -- sort, screen-bounds test and persist for every
+   * visible light, plus its flash branch.
+   *
+   * **Not a sibling of COLLECT_MS.** It runs after `buildCustomLayerQueues` and before
+   * `buildVisibilityPolygons`, so it sits in the gap between COLLECT_MS + CUSTOM_LAYER_MS
+   * and VISIBILITY_MS and belongs to neither. That gap is exactly why it was invisible:
+   * every phase around it had a timer, and the one without a timer was the one nobody
+   * could name.
+   */
+  VISIBLE_LIGHTS_MS: 19,
+  /**
+   * E-29. `_collectStampLights` -- the light list for the shadow stamp pass.
+   *
+   * **A sub-timer of SHADOW_Q_MS, not a sibling.** It is called from `_stampAgainstSun`,
+   * which is inside `_packGpuShadows`, which is inside the window `SHADOW_Q_MS` measures.
+   * Summing the two double-counts. It is its own slot because the shadow work is the one
+   * thing on the critical path (E-33) and a caller had no way to separate "pick the
+   * lights" from "stamp against them".
+   */
+  STAMP_LIGHTS_MS: 20,
+  STRIDE_FLOATS: 21,
+  BUFFER_SIZE_PER_WORKER: 21 * 4,
   /** One worker. Multi-worker buffers are BUFFER_SIZE_PER_WORKER * N. */
-  BUFFER_SIZE: 19 * 4,
+  BUFFER_SIZE: 21 * 4,
 });
 
 /**
@@ -502,6 +523,14 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'CUSTOM_LAYER_MS', label: 'Custom', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'SPRITE_PACK_MS', label: 'SpritePack', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'SHADOW_Q_MS', label: 'ShadowPack', format: fmtMs, kind: STAT_KIND.TIME },
+      // E-29. Labeled "StampLights" and placed directly under ShadowPack because it is a
+      // SUB-TIMER of SHADOW_Q_MS, not a peer: reading this row as additive with the one
+      // above is the mistake the schema comment warns about. It sits last of the time
+      // rows so the panel's own ordering does not imply a sum.
+      { key: 'STAMP_LIGHTS_MS', label: 'StampLights', format: fmtMs, kind: STAT_KIND.TIME },
+      // E-29. A peer of every row above: it is the one phase that falls between
+      // CUSTOM_LAYER_MS and VISIBILITY_MS rather than inside either.
+      { key: 'VISIBLE_LIGHTS_MS', label: 'VisLights', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'VISIBILITY_MS', label: 'Vis', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'ADOBE_MS', label: 'Adobe', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },

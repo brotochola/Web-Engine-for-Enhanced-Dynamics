@@ -89,7 +89,13 @@ test('PRE_RENDER_STATS sprite pack sits past the old stride', () => {
   // backpressure skip, counted as SKIPPED_FRAMES), but it is now a documented
   // zero rather than an accidental one.
   assert.equal(PRE_RENDER_STATS.IDLE_MS, 18);
-  assert.equal(PRE_RENDER_STATS.STRIDE_FLOATS, 19);
-  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE, 19 * 4);
-  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE_PER_WORKER, 19 * 4);
+  // E-29 took 19 and 20 (VISIBLE_LIGHTS_MS, STAMP_LIGHTS_MS), so the stride moved
+  // 19 -> 21. Appending rather than renumbering is the point: slots 0-18 keep their
+  // indices, so a saved sitting's sub-timer still means what it meant when it was
+  // recorded. `preRenderLightTimers.test.js` pins that explicitly.
+  assert.equal(PRE_RENDER_STATS.VISIBLE_LIGHTS_MS, 19);
+  assert.equal(PRE_RENDER_STATS.STAMP_LIGHTS_MS, 20);
+  assert.equal(PRE_RENDER_STATS.STRIDE_FLOATS, 21);
+  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE, 21 * 4);
+  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE_PER_WORKER, 21 * 4);
 });

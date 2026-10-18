@@ -140,6 +140,11 @@ const SUB_TIMERS = [
   'COLLECT_MS',
   'EMIT_MS',
   'SPRITE_PACK_MS',
+  // E-29. Sub-timers of the critical path, added once the phases had timers to
+  // report. STAMP_LIGHTS_MS is contained in SHADOW_Q_MS - naming it as a metric is
+  // fine, reading the two as additive is not.
+  'STAMP_LIGHTS_MS',
+  'VISIBLE_LIGHTS_MS',
   'SORT_MS',
   'SHADOW_Q_MS',
   'CUSTOM_LAYER_MS',
