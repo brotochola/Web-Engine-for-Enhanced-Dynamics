@@ -80,7 +80,20 @@ close as "the idle is the display period, not a scheduling loss".
 frame that is work. If the waking schedule is improvable that is a multiplier on
 all of them and it touches no hot loop.
 
-### E-02 Remove the WASM spatial publish stat recount — `not-started`
+### E-02 Remove the WASM spatial publish stat recount — **kept (hygiene), NOT a speed win**
+**DONE 2026-10-18.** Report:
+[`reports/E-02-publish-recount.md`](./reports/E-02-publish-recount.md).
+Kernel `spatialPublishRecountMicrobench.mjs`, Predator geometry (1100 published rows,
+stride 2050 B, 33.8 MB working set): **1.09 µs per pass, 0.016 % of a 7 ms spatial
+step.** The hypothesis as written — "deletes a full strided pass over ~34 MB" — is
+true about the address space and false about the cost. 1100 loads is not 34 MB of
+traffic; only the cache lines actually touched are fetched, and the rows were just
+written by WASM on this same core.
+**No scene sitting was run, deliberately:** at 0.016 % the effect is two orders of
+magnitude below the 3 % bar and a 20-minute Predator pair cannot resolve it. The
+gate is kept as hygiene — it stops the worker computing a number that is unreadable
+on every run that can decide anything — and the regression risk is zero by
+construction (a gate removes work, it cannot add any).
 **Claim:** `SpatialWorker` runs a second full pass over `neighborData` after
 `this._wasmPub.publish(...)` purely to recompute `neighborsFoundThisFrame`
 (`src/workers/spatialWorker.js:828-831`); returning the published count from the
@@ -93,12 +106,36 @@ bytes apart and the recount walks ~34 MB of address space per frame.
 **Prior art:** none. This pass was introduced with the WASM publish keep
 (2026-10-06) and its cost was never separated from the win.
 
-### E-03 `logicBlockRange` allocates a fresh `{start,end}` per type per frame — `not-started`
-**Claim:** `src/util/logicOwner.js:54-64` returns a new object on every call, and it
-is called from logic PHASE 1, PHASE 2 and `_runTickAllTypes` — three times per
-entity type per logic worker per frame; writing into a preallocated pair removes
-that allocation.
-**Primary:** `logic0_STEP_MS`. **Load:** `BODY_COUNT`, `ENTITIES_PROCESSED`.
+### E-03 `logicBlockRange` allocates a fresh `{start,end}` per type per frame — **rejected-in-kernel. No `src/` change.**
+**DONE 2026-10-18.** Report: [`reports/E-03-block-range.md`](./reports/E-03-block-range.md).
+Kernel `logicBlockRangeMicrobench.mjs`. **Premise probe: 24 calls/worker/frame,
+480 bytes, 0.0018 % of the measured 4.528 ms logic step.** Shipped 12.16 M ops/s,
+preallocated pair 10.24 M ops/s, **−15.74 % — the "allocation-free" version is
+slower.** Checksum clean over **147 492 exhaustive cases** (every `count` 0..4096 ×
+`i` × `w` 1..8), so the timing difference is not an input artefact.
+**Cause: escape analysis.** A returned fresh object never escapes the caller in the
+worker, so V8 scalar-replaces it and the allocation does not happen. Forcing it with
+a caller-owned pair introduces an aliasing store the compiler cannot elide.
+`happy JIT.md` in this repo already warns about exactly this; the allocation is real
+and free.
+
+### E-25 Standing practice → **promoted to the campaign's primary screening rule**
+**Rule: no hypothesis goes to a scene sitting until its kernel reports the effect as
+a share of the owning worker's measured step.** Three data points in three
+hypotheses, failing in three *different* directions:
+
+| | assumed | actually |
+| --- | --- | --- |
+| **E-02** | striding a 34 MB array costs 34 MB of traffic | 1.09 µs; one cache line per row, already warm |
+| **E-10** | `pack16` produces boxed doubles | 0 boxed keys; JS `<<` is signed |
+| **E-03** | 24 allocs/frame are worth removing | escape analysis already removes them; forcing it costs −15.7 % |
+
+Not the lesson "allocations are cheap". The lesson: **all three were claims about the
+cost of a memory operation, and all three were cheaper than assumed** — once by
+10⁵×, once because the premise was false, once in the opposite direction from what
+the fix expected. None was measured before it was argued. E-03's premise probe
+printed `shareOfLogicStepPct: 0.0018` and that one number would have saved the
+entire sitting.
 
 ### E-04 `Grid._cellVersionData` is allocated and never written — `not-started`
 **Claim:** dead buffer. **Verdict:** hygiene (deletion). Primary: none.
@@ -133,16 +170,31 @@ busy time in the 2026-10-14 trace — does not run. Predator pins both to `'pixi
 stamp grid and the audio-slot keep; `HOW_WE_MEASURE` names "pack and sort, the
 painter" as moved. **This is a re-sitting under the current protocol.**
 
-### E-06 Frame-schedule timeline — `not-started`
-**Claim:** every metric in this engine is intra-step. There is no cross-worker frame
-barrier; each worker self-clocks (`src/workers/abstractWorker.js:352-365`:
-`fixedFps`→`setInterval`, `noLimitFPS`→`setTimeout(…,2)`, default→`requestAnimationFrame`).
-The idle gap between a worker finishing step N and being woken for N+1 is unmeasured
-and may exceed every other win in this campaign.
-**Primary:** none — this is an instrumentation sitting whose output is the plan for
-later waves. **Layer:** one headed Predator run with per-worker step start/end
-stamps, plus a wall-clock CPU measurement per worker.
-**Falsifier:** wake latency < 0.5 ms everywhere → closed, and recorded as closed.
+### E-06 Frame-schedule timeline — **merged into E-24 (superseded, not dropped)**
+`IDLE_MS` (E-01) already supplies the "how long is each worker idle" half of this
+sitting. What remains is the "when do they run relative to each other" half (E-24b).
+Recorded here as merged rather than closed so the pair is not mistaken for two
+untested ideas.
+
+### E-27 Predator has 16.5k bodies but never uses the upper half of the id space — *not-started*
+**Raised by E-10's premise probe,** 2026-10-18. `pack16` puts `minE` in the high 16
+bits, so the key only reaches the negative half of the Smi range once `minE >= 32768`.
+Predator sits at ~16.5k.
+**Claim:** if a scene's live entity ids stay under 32768, then `maxNeighbors`-sized
+neighbour rows, command-ring keys and contact keys are all addressing less than half
+their nominal capacity — and scenes above 32768 pay for the full 32-bit range in
+`Uint32Array` id width.
+**Why it is worth one sitting:** `entityIdWidth: 32` is a documented scene option,
+and under it `packPair` switches to `packCantor` — a float-division-based pairing
+(`entityIdWidth.js:43`) with `Math.floor`/`Math.sqrt` on unpack. That path is in the
+engine and is exercised by `tests/bench/entityIdWidthKernels.mjs`, but **no catalog
+row scores it**.
+**Primary:** `logic0_STEP_MS`. **Layer:** kernel first against
+`entityIdWidthKernels.mjs`, then a stress scene with `entityIdWidth: 32`.
+**Falsifier:** the 32-bit path is within 3 % of the 16-bit path, in which case
+`packCantor` is fine and this closes as "the option costs nothing".
+
+### E-26 `logicWorker.js:78`'s comment is actively misleading — *hygiene, not-started*
 
 ---
 
@@ -157,13 +209,44 @@ pair removes that allocation. Predator has 20 000 swaying decorations.
 **Gate 1:** the resolved animation frame index per row is identical.
 **Layer:** kernel, then scene.
 
-### E-08 `_sortPrefix` reallocates its buffer via `tmp.length = n` — `not-started`
-**Claim:** `src/workers/preRenderWorker.js:2853` assigns `.length` on a typed array,
-which allocates a new `ArrayBuffer` whenever the value changes; `_collectVisibleLights`
-passes a light count that changes every frame. Allocate at scene capacity once and
-sort a subarray.
-**Primary:** `preRender_STEP_MS`. **Note:** `_collectVisibleLights` carries no
-`*_MS` timer, so the trace cannot see this phase — a second reason to instrument it.
+### E-28 Allocation hypotheses: the rule, narrowed by E-08 — *synthesis*
+E-02, E-10 and E-03 all failed on cost; E-08 succeeded. The tempting over-correction
+is "allocation hypotheses are dead". Too broad. The property that separated them was
+never *allocates* — it was:
+
+> **Allocates unconditionally, every frame, in a phase the existing instrumentation
+> cannot see.**
+
+E-02, E-10 and E-03 all had numbers in the engine that already bounded them
+(`NEIGHBOR_CHECKS`, the contact step, the logic step). E-08's phase had **no
+`*_MS` timer at all**, so nothing in the repo could have told anyone it was
+allocating. That is checkable by reading, which is why E-08 was cheap to judge
+correctly and the other three were not.
+**Use this when triaging any future allocation hypothesis.** If the answer to "can
+the engine currently see this?" is "no", it is worth a sitting even at 0.0018 %.
+
+### E-29 `_collectVisibleLights` and `_collectStampLights` have no timer — *instrumentation, not-started*
+**Raised by E-08.** Two phases of the pre-render frame — the visible-light collect
+(`preRenderWorker.js:3154`) and the stamp-light collect (`:2779`) — publish **no
+`*_MS` stat**, so they are invisible to the trace and cannot be named as a primary.
+E-08 lived in one of them for the life of this engine without that being knowable.
+**Do this before any E-16 / E-17 work**, since both touch the same phase.
+**Primary:** none (instrumentation). **Layer:** none. **Verdict:** hygiene.
+
+### E-08 `_sortPrefix` reallocates its buffer via `tmp.length = n` — **kept (hygiene)**
+**DONE 2026-10-18.** Report: [`reports/E-08-sort-prefix-realloc.md`](./reports/E-08-sort-prefix-realloc.md).
+`tmp.length = n` on a plain Array **reallocates the backing store**; `n` is the live
+light count, which moves most frames. Now sized once with geometric headroom and
+only copied into. `tests/node/sortPrefixNoRealloc.test.js` 9/9. Suite **1075/1075**.
+No sitting — hygiene by construction (replaces an allocation with one integer
+compare), and a kernel could not see it anyway: `_collectVisibleLights` carries no
+`*_MS` timer, so the phase is invisible to the trace.
+**The test caught a wrong first fix.** `new Array(Math.max(n, 16))` grows to exactly
+`n`, which *still* reallocates whenever `n` rises — "frame 3 resized the scratch to
+22 !== 16". The broken fix sorted perfectly, so an output-correctness test would
+have passed it. The test asserts the **allocation behaviour**, which is the claim.
+**Narrowed E-25 (see E-28): allocation hypotheses are not dead; the ones worth
+taking allocate unconditionally in phases the instrumentation cannot see.**
 
 ### E-09 Physics dense scans include sleeping bodies — `not-started`
 **Claim:** `snapshotPrevPose` (`src/box2d/weedjsPost.js:486-509`) and
@@ -175,15 +258,33 @@ mid-interval is a gate-5 question, not a perf question. Settle it before any sit
 **Precedent in-tree:** `weedjsPost.js:1273` already skips `b2BodyMoveEvent` for
 teleports and merges afterwards.
 
-### E-10 Contact pair key is a HeapNumber — `not-started`
-**Claim:** `pack16(min,max) = (min<<16)|max` lands in `[0, 2^32)` even at the default
-`entityIdWidth: 16`, so every value ≥ 2^31 is a boxed double. `_pairSlot`
-(`Map<number,number>`) and `_beginSet` (`Set<number>`) are therefore keyed entirely
-by HeapNumbers, and `collisionPairKey` is rebuilt per pair in the stay loop
-(`src/workers/logicWorker.js:1684`). Biasing the key by `-0x80000000` moves it into
-Smi range with no overflow.
-**Primary:** `logic0_STEP_MS`. **Kernel:** reuse `contactsMicrobench.mjs`.
-**Gate 1:** the observable pair set, callbacks fired and `has()` answers.
+### E-10 Contact pair key is a HeapNumber — **rejected-in-kernel. No `src/` change.**
+**DONE 2026-10-18.** Report: [`reports/E-10-pair-key-smi.md`](./reports/E-10-pair-key-smi.md).
+**Refuted by the kernel's own premise probe:** `pack16` never leaves the Smi range.
+Swept all 715 838 805 keys of the 16-bit id space — **0 boxed**, observed range
+`[-2 147 450 879, 2 147 483 646]`, 25 % negative. Reason: **JS `<<` is a 32-bit
+*signed* operation**, so `minE >= 32768` yields a *negative* key, not a large
+positive one. The full signed 32-bit range *is* the Smi range on 64-bit
+pointer-compressed V8.
+Timing: shipped 42.15 M ops/s, Smi-biased 42.05 M, **−0.23 %**; checksums equal.
+**The comment at `logicWorker.js:78` ("this key overflows a 32-bit int well before
+the entity cap") is right about the storage type and wrong about the cost.** It is
+recorded here as refuted so it is not re-derived.
+
+### E-25 (superseded — see the promoted rule above)
+Original wording, kept for the record: *"every hypothesis gets a kernel that probes
+its PREMISE before it times anything, and a hypothesis whose premise is stated in a
+source comment is treated as an unverified claim."* E-03 added the part that made it
+a rule — **report the effect as a share of the owning worker's measured step before
+spending a scene sitting on it.**
+
+### E-26 `logicWorker.js:78`'s comment is actively misleading — *hygiene, not-started*
+**Claim:** the comment justifying `Float64Array` for the pair key reads as a
+performance justification and is not one. It describes a *storage* type, not a
+hashing cost, and it is what made E-10 a two-line hypothesis that was already dead.
+**Verdict:** hygiene (correct the comment). Primary: none.
+**Do it with E-10's finding cited inline**, so the next reader sees both the claim
+and the sweep that killed it.
 
 ### E-11 Flowfield/A\* clear the whole grid per request — `not-started`
 **Claim:** `computeFlowfield` runs five full-size `fill()`s plus

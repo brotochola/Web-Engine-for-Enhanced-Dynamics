@@ -80,23 +80,42 @@ export function rewritePackedDepth(dst, n, depthDenom, floatsPer) {
   }
 }
 
+/**
+ * Gather `indices`-selected rows from a flat float array into `dst`.
+ *
+ * E-21 — DEAD IN PRODUCTION. This function has **no caller in `src/`**. A recursive
+ * scan of `src/` finds only the definition and its own doc comment; the only
+ * references anywhere in the repository are in `tests/node/*` and `tests/bench/*`.
+ * Do not read its history as a claim about the engine: see below.
+ *
+ * The live gather is `packInstancedRows` (`gpuQueueLayout.js:244`), called from
+ * `instancedSpriteBatch.js:625` and from four sites in `preRenderWorker.js`
+ * (`:2907`, `:3052`, `:3094`, `:3105`). It does the same job - SoA columns in,
+ * interleaved instance floats out - with a different, larger signature.
+ *
+ * The comment that used to sit here said:
+ *
+ *   "`subarray` allocates a new TypedArray view per row... one view per queued
+ *    sprite - 45 568 allocations per frame".
+ *
+ * That is true **of this function** and false **of the engine**, and the distinction
+ * matters because it was quoted in DEVLOG and in the math-allocation implementation
+ * log as an engine-level finding. H-02's 2026-10-14 keep was a 1.32x kernel win on
+ * this loop with **0 GC events counted on either side**; the allocation story was
+ * already falsified by that measurement, and it turns out the loop was never on the
+ * frame path to begin with. Recorded in
+ * `docs/internal/reports/E-21-gather-instanced-rows.md`.
+ *
+ * Kept rather than deleted: it is exported, it is covered by
+ * `gatherInstancedRowsParity.test.js`, and it is the natural place to put a
+ * contiguous-range gather if a future backend needs one. Its history is recorded
+ * here so it cannot be re-cited as an engine speed claim.
+ */
 export function gatherInstancedRows(src, dst, indices, n, srcFp, dstFp, shadowQ) {
   const sn = n | 0;
   const sfp = srcFp | 0;
   const dfp = dstFp | 0;
   if (!src || !dst || sn <= 0) return 0;
-  // H-02. An explicit copy instead of `dst.set(src.subarray(from, from + spriteN), to)`.
-  //
-  // `subarray` allocates a new TypedArray view per row, purely to hand `set` a
-  // range. At the deepest spritePack setting that is one view per queued sprite
-  // - 45 568 allocations per frame - to move GPU_SPRITE_FLOATS (15) floats.
-  // Copying in the loop body removes the allocation and keeps the same element
-  // conversions, since both paths are float-to-float.
-  //
-  // The first sitting of this hypothesis reported the scene NEUTRAL (-2.21 %) on a
-  // vehicle that queued 4 895 sprites and was probed under the wrong worker's key,
-  // so it was never actually judged. Re-sitting needs the change present and a
-  // probe that fires.
   for (let k = 0; k < sn; k++) {
     const i = indices[k] | 0;
     const from = i * sfp;

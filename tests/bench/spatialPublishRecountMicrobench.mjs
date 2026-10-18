@@ -72,7 +72,8 @@ function checksumOf(b) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2), DEFAULTS);
+  // `parseArgs` in microbenchHelpers takes no defaults argument; merge by hand.
+  const args = { ...DEFAULTS, ...parseArgs(process.argv.slice(2)) };
   const b = build(args);
   const checksum = checksumOf(b);
 
@@ -80,15 +81,13 @@ async function main() {
   const rowBytes = b.stride * 2;
   const workingSetBytes = b.neighborData.byteLength;
 
-  const perCall = recount(b.neighborData, b.list, b.n, b.stride);
-  const perCallNs = (perCall / b.n) * 1e9;
+  const shipped = timeIt('recount', () => recount(b.neighborData, b.list, b.n, b.stride));
+  const gated = timeIt('recount-gated', () => recountGated());
 
-  const shipped = timeIt(() => recount(b.neighborData, b.list, b.n, b.stride));
-  const gated = timeIt(() => recountGated());
-
-  // Cost of the whole pass at 60 Hz, which is the number the scene cares about.
-  const perFrameMs = (shipped.medianMs !== undefined ? shipped.medianMs : 0) * 1;
-  const atSixtyHzMs = perFrameMs;
+  // One pass costs `1 / opsPerSec` seconds. That is the whole number that matters:
+  // it is what the worker spends per frame, and it is what the scene can save.
+  const perPassMs = 1000 / shipped.opsPerSec;
+  const nsPerPublishedRow = (perPassMs * 1e6) / b.n;
 
   const report = {
     name: 'spatialPublishRecount',
@@ -107,12 +106,13 @@ async function main() {
       workingSetMB: +(workingSetBytes / 1e6).toFixed(2),
     },
     reading: {
-      nsPerPublishedRow: +perCallNs.toFixed(2),
+      nsPerPublishedRow: +nsPerPublishedRow.toFixed(1),
       note:
-        'opsPerSec is one full recount pass. Gated is the trivial form and exists to ' +
-        'show the floor, not to claim a speedup ratio.',
-      perPassMsAtProductScale: +perFrameMs.toFixed(4),
-      sixtyHzCostMs: +atSixtyHzMs.toFixed(4),
+        'opsPerSec is one full recount pass over `publishCount` rows. Gated is the ' +
+        'trivial form and exists to show the floor, not to claim a speedup ratio.',
+      perPassMs: +perPassMs.toFixed(6),
+      // What the number means against a real spatial worker step.
+      shareOfA7msStepPct: +((perPassMs / 7) * 100).toFixed(4),
     },
     verdict: 'screen-only',
     verdictReason:
@@ -122,6 +122,8 @@ async function main() {
       'docs/internal/reports/E-02-publish-recount.md.',
   };
 
-  if (isCli()) writeReport(report, process.argv.slice(2));
+  if (isCli(import.meta.url)) writeReport('tests/results/e02-publish-recount/kernel.json', report);
   console.log(JSON.stringify(report, null, 2));
 }
+
+if (isCli(import.meta.url)) main();
