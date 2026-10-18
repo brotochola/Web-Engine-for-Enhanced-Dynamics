@@ -51,7 +51,27 @@ function unpackCantor(key, out) {
   return out;
 }
 
-/** Bound in bindEntityIdWidth. No width branch. */
+/**
+ * Bound in `bindEntityIdWidth`. No width branch -- the caller sees one signature.
+ *
+ * **The key is a plain JS number, and that is a measured property, not an assumption.**
+ * (E-26.)
+ *
+ * At the default 16-bit width `pack16` is `((minE & 0xffff) << 16) | (maxE & 0xffff)`.
+ * JS `<<` yields a **32-bit signed** result, so the key is always an int32: never
+ * boxed, never a float, never a double. A stale comment in `logicWorker.js` claimed
+ * otherwise -- "Float64Array, not Int32Array: this key overflows a 32-bit int well
+ * before the entity cap" -- over a key that file does not store in a typed array at
+ * all. It was floating, attached to nothing, and read as a hashing-cost claim, which
+ * is what made E-10 a two-line hypothesis that was already dead.
+ *
+ * **E-10 swept 715 838 805 keys and found 0 boxed.** So at 16 bits the concern is
+ * settled by measurement, not by argument.
+ *
+ * Under `entityIdWidth: 32` the bound becomes `packCantor`, whose result genuinely
+ * does exceed int32 and is a double - that is the only configuration where the old
+ * comment's arithmetic had any purchase, and it is also E-27's subject.
+ */
 export let packPair = pack16;
 /** Bound in bindEntityIdWidth. No width branch. */
 export let unpackPair = unpack16;

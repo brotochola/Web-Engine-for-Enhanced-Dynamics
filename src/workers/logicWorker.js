@@ -76,8 +76,6 @@ import {
 /** Stale pairs owned by another logic worker are dropped at least this often. */
 const FOREIGN_SWEEP_FRAMES = 30;
 
-/** Float64Array, not Int32Array: this key overflows a 32-bit int well before the entity cap. */
-
 /**
  * B-09 / H-17 caps for the pending cross-worker list-update queue.
  *
@@ -132,6 +130,17 @@ class LogicWorker extends AbstractWorker {
     // sweep every FOREIGN_SWEEP_FRAMES. Map value: slot ≥ 0 own, −(slot+1) foreign.
     /** @type {Map<number, number>} */
     this._pairSlot = new Map();
+    // The key is `collisionPairKey(minE, maxE)`, which is `packPair` bound by
+    // `bindEntityIdWidth` - see src/util/entityIdWidth.js, which carries the full note.
+    //
+    // A previous version of this file had, 45 lines above and attached to nothing, the
+    // comment "Float64Array, not Int32Array: this key overflows a 32-bit int well
+    // before the entity cap." There is no Float64Array in this file - the grep for one
+    // returns that comment - and the key is a Map key, i.e. a JS number. As a floating
+    // JSDoc it also visually documented the B-09 block below it. Read as a performance
+    // claim about hashing, it is what made E-10 a two-line hypothesis that was already
+    // dead; E-10 then swept 715 838 805 keys and found zero boxed. The comment is gone
+    // and the measurement is cited where the key is actually built.
     this._pairCount = 0;
     this._pairCapacity = 0;
     this._pairMin = new Uint32Array(0);

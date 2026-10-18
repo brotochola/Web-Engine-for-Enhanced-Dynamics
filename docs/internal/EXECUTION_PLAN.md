@@ -310,12 +310,25 @@ E-24b. Recorded as merged so the pair is not mistaken for two untested ideas.
 `entityIdWidthKernels.mjs`, then a stress scene with `entityIdWidth: 32`.
 **Falsifier:** within 3 % of the 16-bit path → closes as "the option costs nothing".
 
-### E-26 `logicWorker.js:78`'s comment is actively misleading — **hygiene, not-started**
-The comment justifying `Float64Array` for the pair key reads as a performance
-justification and is not one — it describes a *storage* type, not a hashing cost. It is
-what made E-10 a two-line hypothesis that was already dead. **Correct it with E-10's
-sweep cited inline** (0 boxed keys in 715 838 805), so the next reader sees both the
-claim and the measurement that killed it.
+### E-26 The pair-key comment described a type the file does not contain — **DONE 2026-10-18. Fixed (hygiene)**
+Report: [`reports/E-26-pair-key-comment.md`](./reports/E-26-pair-key-comment.md).
+The plan recorded this as "reads as a performance justification and is not one". It was
+worse in three separately checkable ways:
+
+1. **The type is not in the file.** `Float64Array` in `logicWorker.js` returns exactly one
+   hit — the comment itself. The key lives in `this._pairSlot`, a `Map`.
+2. **It was attached to nothing**, floating between `FOREIGN_SWEEP_FRAMES` and the
+   unrelated **B-09** block, so it visually documented B-09.
+3. **It reads as a performance claim**, and that reading is what made E-10 a two-line
+   hypothesis that E-10 then refuted by sweeping **715 838 805 keys and finding 0 boxed**
+   — `pack16` cannot exceed int32 because JS `<<` is 32-bit *signed*.
+
+**A comment that manufactures a hypothesis and costs a kernel sweep to refute is not
+documentation.** The note moved to `entityIdWidth.js` on `packPair` (where the key is
+built) with a pointer on the Map, states the signedness fact, cites E-10's number, and
+**forwards to E-27** — because under `entityIdWidth: 32` the bound really is `packCantor`
+and the result really is a double, which is the one place the old arithmetic had purchase.
+Suite **1125 → 1131**.
 
 ---
 
