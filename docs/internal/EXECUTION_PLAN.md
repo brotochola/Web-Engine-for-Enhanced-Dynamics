@@ -49,6 +49,7 @@ Same as `HYPOTHESIS_LOG.md`: `not-started` · `in-progress` · `kernel` · `scen
 | **E-08** | `_sortPrefix` reallocates every frame | **kept (hygiene)** — the one that paid |
 | **E-10** | the pair key is a boxed double | **rejected-in-kernel** — 0 boxed keys |
 | **E-13** | `_getNeighborCells` does a Map.get per entity | **rejected by premise** — 14/15 exit before it |
+| **E-24** | the frame is rAF-paced, so workers contend rather than pipeline | **screened** — instrument blocked; question still open |
 | **E-21** | `gatherInstancedRows` is dead in `src/` | **documentation fixed** |
 
 **Four consecutive memory-cost hypotheses were wrong** (E-02, E-03, E-10, E-07). That
@@ -77,7 +78,38 @@ Two invariants enforced in source, not just documented: `IDLE_MS` is measured **
 worker, with `IDLE + STEP ≈ 16.67 ms` on every one. Every worker is rAF-paced and idle
 75–99 % of the frame. That promoted E-24 to the top of the plan.
 
-### E-24 The frame is rAF-paced, so a worker that finishes early cannot start early — **not-started (promoted)**
+### E-24 The frame is rAF-paced, so a worker that finishes early cannot start early — **screened. Blocked on the instrument.**
+**DONE 2026-10-18 (instrumentation attempt).** Report:
+[`reports/E-24-frame-schedule-screened.md`](./reports/E-24-frame-schedule-screened.md).
+A Predator CPU trace was captured and a concurrency/phase analyzer was written, then
+**deleted rather than shipped**. Three concrete faults, all found by asking what I
+would expect to see if the tool were broken:
+
+1. **Thread identity did not resolve.** `thread_name` keys by `pid`/`tid`;
+   `ProfileChunk` carries the profile `id` and no `tid`. Every worker printed as
+   `tid0x4`, so nothing was attributable to spatial/logic/pre-render/physics.
+2. **Zero `(idle)` samples in the capture.** Chrome's CPU-only mode records a sample
+   per JS stack and has no synthetic idle node, so every thread classified as busy
+   for the whole window.
+3. **No ground truth for the gap heuristic.** The main thread emits a sample every
+   0.62 ms (the full cadence) while itself being mostly idle, so "gap > N x median"
+   has nothing to separate and no known-good case to validate against.
+
+**Verdict: blocked on the instrument, not the question.** Zero cost — two scratch files
+deleted, no `src/` change, nothing promoted on an undefendable number.
+**The fresh Predator trace is kept** (`tests/results/e24-trace/stress.json`); only the
+concurrency/phase analysis is abandoned. The existing summariser's per-thread busy
+figures are verified and remain valid.
+
+**How to finish it, in cost order:**
+1. **In-engine timestamps — the right answer.** Each worker already records step start
+   and end for `IDLE_MS`. Publish those into its stats buffer plus a **shared
+   frame-generation counter**, because `performance.now()` has a *different origin in
+   each worker* and raw timestamps are not comparable across them. No profiler needed.
+2. `--trace` instead of `--trace-cpu`: records `(idle)`/`(program)` nodes, so interval
+   reconstruction is trivial — ~190 MB for 20 s instead of 7 MB, and it adds its own
+   cost to every task.
+3. OS-level per-process CPU: answers "vsync-bound or CPU-bound", nothing about phase.
 **Raised by E-01.** Six workers share one `requestAnimationFrame` period
 (`abstractWorker.js:363`), each idles 75–99 % of it, and the only blocking
 coordination in the simulation path is `Atomics.notify` on pose publish.
@@ -474,6 +506,15 @@ the owner's step* (E-25), and *can the engine currently see this at all* (E-28).
 **Also standing, from E-08/E-07's test bugs:** strip comments before asserting. A
 confident comment quoting removed code is indistinguishable from that code to any
 regex — this produced four false positives across two test files.
+
+**And, from E-13 and E-24:** *delete an instrument rather than ship its output.*
+E-13 deleted a kernel that reported zeros; E-24 deleted an analyzer that reported
+plausible numbers. Both for the same reason — an instrument that cannot be checked
+against ground truth will produce a **confident wrong answer**, which is the specific
+failure this campaign exists to prevent. The tell in both was output that looked like a
+measurement while a structural defect sat behind it (all zeros; unattributable thread
+names with 100 % overlap). Neither was visible without asking **"what would I expect to
+see if this were broken?"** and then looking for it.
 
 ### E-29 `_collectVisibleLights` and `_collectStampLights` have no timer — *instrumentation, not-started*
 **Raised by E-08.** Two phases of the pre-render frame publish **no `*_MS` stat**, so
