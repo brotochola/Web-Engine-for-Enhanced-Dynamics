@@ -49,6 +49,7 @@ Same as `HYPOTHESIS_LOG.md`: `not-started` · `in-progress` · `kernel` · `scen
 | **E-08** | `_sortPrefix` reallocates every frame | **kept (hygiene)** — the one that paid |
 | **E-10** | the pair key is a boxed double | **rejected-in-kernel** — 0 boxed keys |
 | **E-13** | `_getNeighborCells` does a Map.get per entity | **rejected by premise** — 14/15 exit before it |
+| **E-17** | the stamp grid recomputes each caster's cell | **FAIL (load)**, reverted — cached 52 KB cost more than the divides |
 | **E-24** | the frame is rAF-paced, so workers contend rather than pipeline | **screened** — instrument blocked; question still open |
 | **E-21** | `gatherInstancedRows` is dead in `src/` | **documentation fixed** |
 
@@ -396,11 +397,53 @@ caster set must be bit-identical or the pair does not exist.
 `stampLightRange` already takes `lightStride`/`lightBegin`
 (`gpuShadowCasters.js:220-221`). **The seam survived; only the config is missing.**
 
-### E-17 Shadow stamp grid: bounds pass and per-frame resets — **not-started**
-`buildStampGrid`'s bounds pass exists only to size the grid; last frame's bounds would
-do (~25 % of the build). `noteNearest` does `fill(0,0,nSun)` per call, and
-`lighting.adaptiveShadowBudget` (default true) recomputes per-light budgets every
-frame. **Primary:** `preRender_STEP_MS`.
+### E-17 Shadow stamp grid: cache the cell index instead of recomputing it — **FAIL (load). No speed verdict. Reverted.**
+**DONE 2026-10-18.** Report:
+[`reports/E-17-stamp-grid-cell-cache.md`](./reports/E-17-stamp-grid-cell-cache.md).
+`buildStampGrid`'s count pass and scatter pass both derive `(col, row)` for every
+caster from the same immutable input. Caching the cell should remove ~53 600 divisions
+and ~53 600 floors per frame at Predator's 13 400 casters.
+
+**Kernel: 0.263 → 0.147 ms, +79.2 %,** saving 0.116 ms = **1.79 % of the pre-render
+step** (4.35 % of `SHADOW_Q_MS`). Below the bar but a real fraction, and it makes the
+bottleneck cheaper rather than moving work into it, so E-33 does not apply. Sitting run.
+
+**Scene (Predator ABAB, 4 pairs, stats off, `--owner preRender`): preRender
+7.472 → 7.794 ms, paired +3.1 %, 3/4 worse — the opposite sign.**
+Runner verdict `FAIL (load)` on `DECAL_TILES_DIRTY 1.1 → 0.8` (E-32 again), so there is
+formally no speed verdict.
+
+**Mechanism, and this is the finding.** The cache is `Int32Array(nSun)` = **52.3 KB**
+at 13 400 casters, written across the whole count pass and read back across the whole
+scatter pass — it exceeds L1 and is traversed twice per frame. The change traded
+**ALU-bound** work (~26 800 float divides at ~4–14 cycles) for **memory-bound** work
+(~13 400 cold int writes + reads at ~100+ cycles each). The kernel could not see it
+because a microbench keeps both `sun` and the scratch hot.
+
+**Reverted.** The only scene evidence leans negative and this campaign does not ship
+against that. The parity test that proved the change bit-exact (5/5, sweeping 8 input
+shapes at 13 400 casters) was deleted with it: **exactness was not the problem.**
+
+### E-36 Arithmetic-to-memory is not a free trade — *triage rule, from E-17*
+E-30 says allocation *count* has never been the cost. E-17 is the sharper form:
+
+> **Before replacing a recomputation with a cache, ask how big the cache is and whether
+> it will be resident.** A cache larger than L1, written and read once per pass, can
+> cost more than the arithmetic it replaced.
+
+Re-prices three open hypotheses, all of the shape "compute less, store more":
+- **E-15** packed neighbour rows — the packed layout is a *smaller* working set, but
+  the offset index is an extra 16 500 × 4 = **66 KB** array. Same trap. **Price before
+  the refactor.**
+- **E-18** WASM transpose — writes into the destination Pixi uploads, no new array.
+  Unaffected.
+- **E-11** generation-stamped flowfield — a stamp array the size of the grid replacing
+  `fill()` sweeps. Same shape. **Price it the same way.**
+
+Also recorded: the kernel's "1.79 % of the step" was computed by dividing a microbench
+delta by a scene measurement — two numbers from different worlds. **A share derived
+from a kernel inherits the kernel's optimistic memory assumptions**, which is exactly
+what was wrong here.
 
 ### E-18 WASM SIMD transpose for the sprite pack — **not-started (now unblocked)**
 `packInstancedRows` (`gpuQueueLayout.js:244`) is a 24-column SoA → 15-float AoS
