@@ -91,11 +91,26 @@ export class Grid {
   static _cellSleepingBuffer = null; // SharedArrayBuffer
   static _cellSleepingData = null; // Uint8Array view
 
-  // ===== CELL VERSION STATE (Single Buffer - Written by row owner) =====
-  // Incremented when a cell's count/hash changes so spatial workers can reuse
-  // neighbor lists only when every searched cell is unchanged.
-  static _cellVersionBuffer = null; // SharedArrayBuffer
-  static _cellVersionData = null; // Uint32Array view
+  // E-04: the per-cell version buffer is GONE.
+  //
+  // It was declared here as "incremented when a cell's count/hash changes so spatial
+  // workers can reuse neighbor lists only when every searched cell is unchanged",
+  // allocated in sceneSharedBuffers.js, plumbed through sceneWorkerBootstrap and
+  // abstractWorker, bound to a Uint32Array view here - and then never written or read
+  // by anything, anywhere in the repository.
+  //
+  // The mechanism it described is real but was implemented differently: neighbour
+  // reuse is gated by the Verlet skin (`_canReuseNeighbors`, a distance test) plus an
+  // age cap, and spatialWorker.js:554-558 says so explicitly - "Cell-version
+  // dependency hash is unused (skin + age already gate reuse)". The buffer is the
+  // leftover of the first design.
+  //
+  // Removed rather than left as documentation because a version buffer that exists
+  // and is never maintained is worse than one that does not: any future reader
+  // checking `cellVersionData` to decide whether a cell changed would read a buffer
+  // of zeros forever.
+  //
+  // No performance claim. It is `totalCells * 4` bytes of never-touched memory.
 
   // Internal stride for neighbor arrays (computed as 1 + maxNeighbors during initialize)
   // Layout: [totalCount, neighbor0, neighbor1, ...]
@@ -164,10 +179,8 @@ export class Grid {
       Grid._cellSleepingData.fill(0);
     }
 
-    if (buffers.cellVersionBuffer) {
-      Grid._cellVersionBuffer = buffers.cellVersionBuffer;
-      Grid._cellVersionData = new Uint32Array(buffers.cellVersionBuffer);
-    }
+    // E-04: the cellVersionBuffer bind is gone with the buffer. See the note on the
+    // former `_cellVersionData` declaration above.
 
     const QueryArray = idBytes === 4 ? Uint32Array : Uint16Array;
     if (!(Grid._queryResults instanceof QueryArray)) {
@@ -187,8 +200,6 @@ export class Grid {
     Grid._neighborData = null;
     Grid._cellSleepingBuffer = null;
     Grid._cellSleepingData = null;
-    Grid._cellVersionBuffer = null;
-    Grid._cellVersionData = null;
     Grid._markerArray = null;
     Grid._processedSet = null;
     Grid._idBytes = 2;
