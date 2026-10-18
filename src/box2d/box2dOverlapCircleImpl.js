@@ -136,12 +136,24 @@
     return count;
   }
 
+  // E-01: the engine blocks on a sibling in exactly one place, and this is it.
+  // Fold the blocked time into the shared meter so WAIT_MS is a measurement
+  // instead of a hardcoded zero. These files are UMD/IIFE loaded by
+  // importScripts, so they cannot import the ESM accessor; the meter is created
+  // lazily on the global that the IIFE already receives. See src/util/waitMeter.js.
+  var WAIT_METER = global.__weedWaitMeter || (global.__weedWaitMeter = { ms: 0 });
+
   function waitUntilDoneSync() {
+    var s = Atomics.load(i32, HDR_STATUS) | 0;
+    if (s === STATUS_DONE || s === STATUS_ERROR) return;
+    // Clock starts only once we know we are actually going to block.
+    var t0 = performance.now();
     for (;;) {
-      var s = Atomics.load(i32, HDR_STATUS) | 0;
-      if (s === STATUS_DONE || s === STATUS_ERROR) return;
+      if (s === STATUS_DONE || s === STATUS_ERROR) break;
       Atomics.wait(i32, HDR_STATUS, s);
+      s = Atomics.load(i32, HDR_STATUS) | 0;
     }
+    WAIT_METER.ms += performance.now() - t0;
   }
 
   function box2dOverlapCircle(cx, cy, radius, out, filter) {

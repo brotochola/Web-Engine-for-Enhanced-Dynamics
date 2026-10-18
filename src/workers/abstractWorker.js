@@ -40,6 +40,7 @@ import { TileMap } from '../core/tileMap.js';
 import { Ray } from '../core/ray.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
+import { resetWaitMeter } from '../util/waitMeter.js';
 import { SceneBridge } from '../core/sceneBridge.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
@@ -191,6 +192,20 @@ export class AbstractWorker {
     // Lightweight worker diagnostics written into the existing stats buffers.
     this.messageTimeThisFrame = 0;
 
+    // Wall ms between the end of the previous frame and the start of this one.
+    //
+    // Every other metric the engine publishes is intra-step, so this gap has
+    // never been visible: a worker that does 1 ms of work every 16.7 ms and a
+    // worker that does 8 ms of work every 16.7 ms both report only their step.
+    // `_lastFrameEndAt` is stamped at the end of every frame; `_runFrame` turns
+    // the distance into the next frame into IDLE_MS.
+    //
+    // It is NOT algorithm time and NOT part of STEP_MS, and it must not be
+    // folded into either. It is scheduler idle: time this thread had nothing to
+    // do. E-01 / E-06 in docs/internal/EXECUTION_PLAN.md.
+    this.idleTimeThisFrame = 0;
+    this._lastFrameEndAt = 0;
+
     // Injected dt for `{ msg: 'step' }` (lockstep). 0 = use wall / fixedFps.
     this._injectedDeltaTime = 0;
 
@@ -320,8 +335,18 @@ export class AbstractWorker {
    * Used by gameLoop and by `{ msg: 'step' }` lockstep.
    */
   _runFrame(resuming = false) {
+    // Scheduler idle since the previous frame. Measured before updateFrameTiming()
+    // so it cannot absorb any of the step it is meant to sit beside.
+    const frameStart = performance.now();
+    this.idleTimeThisFrame = this._lastFrameEndAt > 0 ? Math.max(0, frameStart - this._lastFrameEndAt) : 0;
+
     this.frameNumber++;
     const timing = this.updateFrameTiming();
+
+    // The sibling-block meter resets here, before update(), because every wait in
+    // this engine happens inside update() (the sync Box2D query protocol). Reset
+    // after reportFPS would publish the previous frame's value.
+    resetWaitMeter();
 
     if (this.needsGameScripts) {
       Keyboard.updateEdgeFlags();
@@ -332,6 +357,7 @@ export class AbstractWorker {
     const t0 = performance.now();
     this.update(timing.deltaTime, timing.dtRatio, resuming);
     this.stepTimeThisFrame = performance.now() - t0;
+    this._lastFrameEndAt = performance.now();
 
     // Report FPS
     this.reportFPS();

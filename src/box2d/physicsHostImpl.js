@@ -61,6 +61,10 @@
     FPS: 0,
     STEP_MS: 1,
     MSG_MS: 2,
+    // E-01: WAIT_MS / IDLE_MS. The physics host is not an AbstractWorker, so it
+    // does its own frame bookkeeping and cannot inherit the idle measurement.
+    WAIT_MS: 47,
+    IDLE_MS: 48,
   };
 
   // Mirrors Transform / RigidBody ARRAY_SCHEMA (pose/vel/sleeping = HEAP only).
@@ -1124,6 +1128,14 @@
   function gameLoop() {
     if (state.isPaused) return;
 
+    // E-01: scheduler idle since the previous frame, measured before anything
+    // else so it cannot absorb the step it sits beside. This is the number
+    // E-06 needs and the physics host could not report it at all before.
+    var frameStart = performance.now();
+    if (state.stats && state._lastFrameEndAt > 0) {
+      state.stats[PS.IDLE_MS] = Math.max(0, frameStart - state._lastFrameEndAt);
+    }
+
     state.frameNumber++;
     var now = performance.now();
     var deltaTime = now - state.lastFrameTime;
@@ -1166,6 +1178,7 @@
         state.stats[PS.STEP_MS] = performance.now() - t0;
       }
     }
+    state._lastFrameEndAt = performance.now();
 
     writeFPS();
     state.messageTimeThisFrame = 0;

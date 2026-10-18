@@ -28,6 +28,7 @@ import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.
 import { Ray } from '../core/ray.js';
 import { Box2d } from '../core/box2d.js';
 import { collisionPairKey } from '../util/utils.js';
+import { waitMeterMs } from '../util/waitMeter.js';
 import { EntityIdArray } from '../util/entityIdWidth.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
@@ -2072,6 +2073,10 @@ class LogicWorker extends AbstractWorker {
       }
     }
     this.stats[LOGIC_STATS.MARK_ACTIVE] = markActive;
+    // E-01: always on. IDLE_MS is the scheduler gap E-06 needs; WAIT_MS is the
+    // real blocked-on-physics time from the sync Box2D query protocol.
+    this.stats[LOGIC_STATS.IDLE_MS] = this.idleTimeThisFrame;
+    this.stats[LOGIC_STATS.WAIT_MS] = waitMeterMs();
     if (!this.collectDetailedStats) return;
     this.stats[LOGIC_STATS.SYSTEMS_EXECUTED] = this.systemsExecutedThisFrame;
     this.stats[LOGIC_STATS.MSG_MS] = this.messageTimeThisFrame;

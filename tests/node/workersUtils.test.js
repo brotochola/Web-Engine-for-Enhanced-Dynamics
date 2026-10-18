@@ -26,7 +26,7 @@ test('single-worker stats readers share the same buffer layout', () => {
   assert.equal(reader[RENDERER_STATS.MSG_MS], 2.5);
 });
 
-test('RENDERER_STATS peel load keys sit inside stride 37', () => {
+test('RENDERER_STATS peel load keys sit inside stride 39', () => {
   assert.equal(RENDERER_STATS.DECAL_TILES_DIRTY, 16);
   assert.equal(RENDERER_STATS.DECAL_TILES_UPLOADED, 17);
   assert.equal(RENDERER_STATS.SCENERY_COUNT, 18);
@@ -40,8 +40,11 @@ test('RENDERER_STATS peel load keys sit inside stride 37', () => {
   assert.equal(RENDERER_STATS.GPU_SORT_MS, 34);
   assert.equal(RENDERER_STATS.LAST_UPLOAD_MS, 35);
   assert.equal(RENDERER_STATS.NEW_QUEUE, 36);
-  assert.equal(RENDERER_STATS.STRIDE_FLOATS, 37);
-  assert.equal(RENDERER_STATS.BUFFER_SIZE, 37 * 4);
+  // E-01 took 37 (WAIT_MS) and 38 (IDLE_MS), so the stride moved 37 -> 39.
+  assert.equal(RENDERER_STATS.WAIT_MS, 37);
+  assert.equal(RENDERER_STATS.IDLE_MS, 38);
+  assert.equal(RENDERER_STATS.STRIDE_FLOATS, 39);
+  assert.equal(RENDERER_STATS.BUFFER_SIZE, 39 * 4);
   const buffer = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);
   const writer = createStatsWriter(buffer, RENDERER_STATS);
   const reader = createStatsReader(buffer, RENDERER_STATS);
@@ -81,6 +84,12 @@ test('PRE_RENDER_STATS sprite pack sits past the old stride', () => {
   assert.equal(PRE_RENDER_STATS.ADOBE_MS, 15);
   assert.equal(PRE_RENDER_STATS.WAIT_MS, 16);
   assert.equal(PRE_RENDER_STATS.SPRITE_PACK_MS, 17);
-  assert.equal(PRE_RENDER_STATS.STRIDE_FLOATS, 18);
-  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE, 18 * 4);
+  // E-01 took 18 (IDLE_MS), so the stride moved 18 -> 19. WAIT_MS stays at 16:
+  // it is still 0 by construction for pre-render (its only sibling wait is the
+  // backpressure skip, counted as SKIPPED_FRAMES), but it is now a documented
+  // zero rather than an accidental one.
+  assert.equal(PRE_RENDER_STATS.IDLE_MS, 18);
+  assert.equal(PRE_RENDER_STATS.STRIDE_FLOATS, 19);
+  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE, 19 * 4);
+  assert.equal(PRE_RENDER_STATS.BUFFER_SIZE_PER_WORKER, 19 * 4);
 });

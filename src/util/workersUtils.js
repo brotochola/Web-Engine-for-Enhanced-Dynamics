@@ -68,8 +68,22 @@ export const RENDERER_STATS = Object.freeze({
   LAST_UPLOAD_MS: 35,
   /** 1 when this frame consumed a new render queue. 0 when it only interpolated. */
   NEW_QUEUE: 36,
-  STRIDE_FLOATS: 37,
-  BUFFER_SIZE: 37 * 4,
+  /**
+   * Wall ms the worker spent blocked on a sibling, inside the step. 0 when the
+   * renderer never blocks (it has no sync sibling API). See E-01.
+   */
+  WAIT_MS: 37,
+  /**
+   * Wall ms between the end of the previous frame and the start of this one.
+   *
+   * This is the scheduler idle, NOT algorithm time and NOT STEP_MS: no work was
+   * in flight on this thread during it. It exists because every other metric in
+   * the engine is intra-step, so the gap between frames has never been measured.
+   * E-06 in docs/internal/EXECUTION_PLAN.md.
+   */
+  IDLE_MS: 38,
+  STRIDE_FLOATS: 39,
+  BUFFER_SIZE: 39 * 4,
 });
 
 /**
@@ -91,6 +105,10 @@ export const PARTICLE_STATS = Object.freeze({
   STEP_MS: 11,
   ACTIVE_BULLETS: 12,
   ACTIVE_DECORATIONS: 13,
+  /** Wall ms blocked on a sibling inside the step. See E-01. */
+  WAIT_MS: 14,
+  /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
+  IDLE_MS: 15,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
 });
@@ -152,8 +170,12 @@ export const PHYSICS_STATS = Object.freeze({
   LF_PASS_PRESSURE_MS: 42,
   LF_PASS_CONTACT_SOLVERS_MS: 43,
   LF_PASS_REST_MS: 44,
-  STRIDE_FLOATS: 48,
-  BUFFER_SIZE: 48 * 4,
+  /** Wall ms blocked on a sibling inside the step. See E-01. */
+  WAIT_MS: 47,
+  /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
+  IDLE_MS: 48,
+  STRIDE_FLOATS: 49,
+  BUFFER_SIZE: 49 * 4,
 });
 
 /**
@@ -173,6 +195,10 @@ export const SPATIAL_STATS = Object.freeze({
   SLEEP_NEIGHBOR_SKIPS: 9,
   /** Grid actives with a sprite and neither RigidBody nor Collider (no Box2D body). */
   NO_BODY_COUNT: 10,
+  /** Wall ms blocked on a sibling inside the step. See E-01. */
+  WAIT_MS: 11,
+  /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
+  IDLE_MS: 12,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });
@@ -199,6 +225,10 @@ export const LOGIC_STATS = Object.freeze({
   BOX2D_RAYCAST_COUNT: 12,
   /** Always-on load key for Bunny Mark (and similar toy movers). */
   MARK_ACTIVE: 13,
+  /** Wall ms blocked on a sibling inside the step. See E-01. */
+  WAIT_MS: 14,
+  /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
+  IDLE_MS: 15,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });
@@ -225,13 +255,24 @@ export const PRE_RENDER_STATS = Object.freeze({
   SHADOW_Q_MS: 13,
   VISIBILITY_MS: 14,
   ADOBE_MS: 15,
+  /**
+   * Wall ms blocked on Pixi inside the step.
+   *
+   * This slot used to be assigned `0` from two places and never incremented
+   * anywhere in `src/`, so the debug panel showed a hardcoded zero for every
+   * session. The pre-render worker's only wait on a sibling is the backpressure
+   * skip, which is counted separately as SKIPPED_FRAMES; the scheduler idle is
+   * IDLE_MS below. E-01 in docs/internal/EXECUTION_PLAN.md.
+   */
   WAIT_MS: 16,
   /** Sprite-queue instance rows. Sort time stays in SORT_MS. */
   SPRITE_PACK_MS: 17,
-  STRIDE_FLOATS: 18,
-  BUFFER_SIZE_PER_WORKER: 18 * 4,
+  /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
+  IDLE_MS: 18,
+  STRIDE_FLOATS: 19,
+  BUFFER_SIZE_PER_WORKER: 19 * 4,
   /** One worker. Multi-worker buffers are BUFFER_SIZE_PER_WORKER * N. */
-  BUFFER_SIZE: 18 * 4,
+  BUFFER_SIZE: 19 * 4,
 });
 
 /**
@@ -423,6 +464,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'NEIGHBOR_CHECKS', label: 'Neighbors', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'NEIGHBORS_REUSED', label: 'Reused', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'SLEEP_NEIGHBOR_SKIPS', label: 'SleepSkip', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.TIME },
     ],
   },
   logic: {
@@ -443,6 +485,8 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'RAYCAST_COUNT', label: 'Rays', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'BOX2D_RAYCAST_COUNT', label: 'Box2dRays', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'MARK_ACTIVE', label: 'Mark', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.TIME },
     ],
   },
   preRender: {
@@ -461,6 +505,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'VISIBILITY_MS', label: 'Vis', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'ADOBE_MS', label: 'Adobe', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
       { key: 'RENDER_QUEUE_SIZE', label: 'Queue', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'SKIPPED_FRAMES', label: 'Skipped', format: fmtNum, kind: STAT_KIND.COUNT },

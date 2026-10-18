@@ -48,6 +48,7 @@ import {
 import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
+import { waitMeterMs } from '../util/waitMeter.js';
 import { bindSpatialPublish } from './spatialPublishClient.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../util/colliderUtils.js';
 
@@ -824,11 +825,32 @@ class SpatialWorker extends AbstractWorker {
         meta.neighborByte,
         this._wasmPub.listByte,
       );
-      const stride = 1 + Grid.maxNeighbors;
-      let found = 0;
-      const neighborData = Grid.neighborData;
-      for (let i = 0; i < n; i++) found += neighborData[this._wasmPub.list[i] * stride];
-      this.neighborsFoundThisFrame += found;
+      // E-02. This recount is a SECOND full pass over the neighbor array after
+      // the WASM publish, and it exists only to fill `neighborsFoundThisFrame`.
+      // The WASM kernel returns nothing and this tree has no C toolchain to make
+      // it return the count, so the count is read back here instead.
+      //
+      // The read-back is not free and not local: `stride` is `1 + maxNeighbors`
+      // (2050 bytes at Predator's 1024), so n rows touch n * 2 KB of address
+      // space to read one uint16 from each - the same ~34 MB working set the
+      // publish itself just walked.
+      //
+      // It is gated for the same reason the rest of this report is gated: the
+      // only consumer is `SPATIAL_STATS.NEIGHBOR_CHECKS`, which is a
+      // `collectDetailedStats` stat. HOW_WE_MEASURE requires detailed stats OFF
+      // for the pair that writes a verdict ("Sub-timers inflate the step, and a
+      // 3 percent gap on that inflation is not the product"), so on every run
+      // that can decide anything this loop was computing a number nobody could
+      // read. The JS fallback path above still increments the counter inline and
+      // is unconditional - it costs nothing extra to keep it correct there.
+      if (this.collectDetailedStats) {
+        const stride = 1 + Grid.maxNeighbors;
+        let found = 0;
+        const neighborData = Grid.neighborData;
+        const list = this._wasmPub.list;
+        for (let i = 0; i < n; i++) found += neighborData[list[i] * stride];
+        this.neighborsFoundThisFrame += found;
+      }
     }
   }
 
@@ -841,6 +863,10 @@ class SpatialWorker extends AbstractWorker {
     this.stats[SPATIAL_STATS.STEP_MS] = this.stepTimeThisFrame;
     this.stats[SPATIAL_STATS.NEIGHBORS_REUSED] = this.neighborsReusedThisFrame;
     this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
+    // Always on, not a detailed stat: IDLE_MS is what E-06 needs and it must be
+    // readable with collectDetailedStats off.
+    this.stats[SPATIAL_STATS.IDLE_MS] = this.idleTimeThisFrame;
+    this.stats[SPATIAL_STATS.WAIT_MS] = waitMeterMs();
     if (!this.collectDetailedStats) return;
     this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
     this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;

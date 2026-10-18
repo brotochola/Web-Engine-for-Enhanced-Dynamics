@@ -3498,6 +3498,10 @@ class PreRenderWorker extends AbstractWorker {
         this.stats[PRE_RENDER_STATS.FPS] = this.currentFPS;
         this.stats[PRE_RENDER_STATS.STEP_MS] = this.stepTimeThisFrame;
         this.stats[PRE_RENDER_STATS.VISIBLE_ENTITIES] = this.visibleEntitiesCount;
+        // E-01: always on. IDLE_MS is the scheduler gap E-06 measures. WAIT_MS
+        // stays 0 by construction here - pre-render's only wait on a sibling is
+        // the backpressure skip, which is counted as SKIPPED_FRAMES below.
+        this.stats[PRE_RENDER_STATS.IDLE_MS] = this.idleTimeThisFrame;
         if (!this.collectDetailedStats) return;
         this.stats[PRE_RENDER_STATS.VISIBLE_PARTICLES] = this.visibleParticlesCount;
         this.stats[PRE_RENDER_STATS.VISIBLE_DECORATIONS] = this.visibleDecorationsCount;

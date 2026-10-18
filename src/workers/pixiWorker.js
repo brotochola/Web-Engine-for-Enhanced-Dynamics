@@ -267,6 +267,7 @@ function sortPrefixByDistSq(arr, count) {
 }
 
 import { RENDERER_STATS, createStatsWriter } from '../util/workersUtils.js';
+import { waitMeterMs } from '../util/waitMeter.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -1059,6 +1060,10 @@ class PixiRenderer extends AbstractWorker {
     if (this.stats) {
       this.stats[RENDERER_STATS.FPS] = this.currentFPS;
       this.stats[RENDERER_STATS.STEP_MS] = this.stepTimeThisFrame;
+      // E-01: always on. The renderer never blocks on a sibling (it has no sync
+      // query API), so WAIT_MS is 0 by construction; IDLE_MS is the real number.
+      this.stats[RENDERER_STATS.IDLE_MS] = this.idleTimeThisFrame;
+      this.stats[RENDERER_STATS.WAIT_MS] = waitMeterMs();
       this.stats[RENDERER_STATS.DECAL_TILES_DIRTY] = this._decalTilesDirtyThisFrame;
       this.stats[RENDERER_STATS.DECAL_TILES_UPLOADED] = this._decalTilesUploadedThisFrame;
       let sceneryN = 0;

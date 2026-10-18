@@ -17,6 +17,7 @@ import {
   swayFrequencyForBucket,
   bucketFromSwayFrequency,
 } from '../util/decorationSway.js';
+import { waitMeterMs } from '../util/waitMeter.js';
 import { BulletPool } from '../core/bulletPool.js';
 import { BulletComponent } from '../components/bulletComponent.js';
 import { Transform } from '../components/transform.js';
@@ -1953,6 +1954,9 @@ class ParticleWorker extends AbstractWorker {
     this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
     this.stats[PARTICLE_STATS.ACTIVE_BULLETS] = this.activeBulletsData ? this.activeBulletsData[0] : 0;
     this.stats[PARTICLE_STATS.ACTIVE_DECORATIONS] = this._activeDecorationSnapshotCount || 0;
+    // E-01: always on, like STEP_MS. See docs/internal/EXECUTION_PLAN.md.
+    this.stats[PARTICLE_STATS.IDLE_MS] = this.idleTimeThisFrame;
+    this.stats[PARTICLE_STATS.WAIT_MS] = waitMeterMs();
     if (!this.collectDetailedStats) return;
     this.stats[PARTICLE_STATS.TOTAL_PARTICLES] = this.maxParticles;
     this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
