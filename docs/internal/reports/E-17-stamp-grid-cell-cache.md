@@ -1,7 +1,9 @@
 # E-17 — the stamp-grid scatter pass: a kernel win that became a loss, and why
 
-**Date:** 2026-10-18. **Anchor:** `d4933190`. **Verdict: FAIL (load) — no speed verdict. Change REVERTED.**
+**Date:** 2026-10-18. **Anchor:** `d4933190`. **Verdict: REGRESSION. Change REVERTED.**
 **Plan:** [`../EXECUTION_PLAN.md`](../EXECUTION_PLAN.md) § E-17.
+*(Originally recorded as `FAIL (load)`; re-adjudicated under E-32 on 2026-10-18. See
+§ Re-adjudication.)*
 
 ## Hypothesis, in one sentence
 
@@ -59,9 +61,9 @@ Load: `BODY_COUNT` 0.0 %, `GPU_CASTERS` 0.1 %, `GPU_SHADOW_LIGHTS` 0.0 %,
 `VISIBLE_ENTITIES` 0.1 %, `ENTITIES_PROCESSED` 0.0 %, `ACTIVE_DECORATIONS` 20 000 both
 sides.
 
-**Runner verdict: `FAIL (load)` — `DECAL_TILES_DIRTY 1.1 → 0.8 (−26.1 %)`.** That is
-the same sub-2 count that failed E-05, and it is **E-32**. There is formally **no
-speed verdict**.
+**Runner verdict as run: `FAIL (load)` — `DECAL_TILES_DIRTY 1.1 → 0.8 (−26.1 %)`.**
+That is the same sub-2 count that failed E-05, and it is **E-32**. See
+§ Re-adjudication below, where the recorded `pairs` are re-run under the fixed gate.
 
 ## The finding: arithmetic is cheaper than the memory that replaces it
 
@@ -97,13 +99,9 @@ more expensive than the redundancy.
 
 ## Verdict and disposition
 
-**No speed verdict exists** — the load gate fired. But the only scene evidence leans
-**negative** (owner +3.1 %, 3/4 pairs), and this campaign does not ship a change whose
-sole scene measurement doubts it.
-
-**The `src/` change is reverted.** The kernel, the baseline copy and this report stay,
-because the mechanism is the finding and it is worth more than the code would have
-been.
+**`REGRESSION`. The `src/` change is reverted.** The kernel, the baseline copy and this
+report stay, because the mechanism is the finding and it is worth more than the code
+would have been.
 
 The parity test that proved the change exact (`stampGridCellCache.test.js`, 5/5,
 including a bit-identical sweep at 13 400 casters across 8 input shapes) was deleted
@@ -138,6 +136,39 @@ by dividing a microbench delta by a scene measurement — two numbers from diffe
 worlds.** The kernel's own `gate25` note says the decision must come from a share, but
 the share inherits the kernel's optimistic memory assumptions, and those were exactly
 what was wrong.
+
+## Re-adjudication (E-32, 2026-10-18)
+
+The sitting was originally recorded as `FAIL (load)` with **no speed verdict**. The
+load gate fired on `DECAL_TILES_DIRTY`, a key whose median is about **1** and which
+reported a −26.1 % "mismatch". Every other load key matched to within 0.1 %:
+`BODY_COUNT` 0.0 %, `GPU_CASTERS` 0.1 %, `ACTIVE_DECORATIONS` exactly 20 000 on both
+sides. That is not a load difference; that is a key that cannot hold a 5 % band.
+
+The fix (E-32) gives every load key the noise guard the `STEP_MS` path has always had
+(`quiet = max(cvBase, cvHyp)`), so the band is `max(5 %, the key's own noise)`.
+`decideAbab` is a pure function of the recorded `pairs`, so the sitting was
+**re-adjudicated rather than re-run** — no browser time, and the pre-render numbers
+are byte-identical:
+
+```
+node tests/bench/readjudicateAbab.mjs --all
+```
+
+| | before | after |
+| --- | --- | --- |
+| verdict | `FAIL (load)` | **`REGRESSION`** |
+| reasons | `load DECAL_TILES_DIRTY -26.1%` | *(none)* |
+| `DECAL_TILES_DIRTY` | 1.1 → 0.8, band 38.5 %, muted by floor | reported, not gating |
+| owner preRender | 7.472 → 7.794 ms, +3.1 %, 3/4 pairs | **unchanged** |
+
+The verdict is **stronger than it was**, not weaker. Before, there was no verdict at
+all and the disposition rested on my judgement that a 3.1 % regression plus a failed
+gate was enough to revert. Now the gate is satisfied and the regression is formally
+adjudicated: `preRender +3.1% (3/4 pairs worse, cv 7%)`.
+
+All nine recorded sittings were re-adjudicated. **Only two changed verdict, and both
+were the two broken ones** — every pre-E-32 sitting kept its verdict unchanged.
 
 ## Cost
 

@@ -1,6 +1,9 @@
 # E-05 — moving the sprite pack to pre-render: the mechanism works, the bottleneck moves the wrong way
 
 **Date:** 2026-10-18. **Anchor:** `d4933190`. **Verdict: dropped. Predator's `'pixi'` override is correct.**
+*(Runner verdict as run: `FAIL (load)`. Re-adjudicated under E-32 on 2026-10-18 →
+`NEUTRAL (below floor)`. The disposition is unchanged — see
+§ Re-adjudication.)*
 **Plan:** [`../EXECUTION_PLAN.md`](../EXECUTION_PLAN.md) § E-05.
 
 ## Hypothesis, in one sentence
@@ -71,6 +74,41 @@ So the machine verdict is FAIL and the substantive result is unambiguous. Both a
 recorded, and the harness gap is filed as **E-32**: a load key gating a verdict must
 have a floor, the way `ACTIVE_PARTICLES` has `LOAD_GATE_MIN: 1000`. Gating on a key
 whose mean is below 2 turns rounding into a failure.
+
+## Re-adjudication (E-32, 2026-10-18)
+
+The gate fix described above was implemented and this sitting re-adjudicated from its
+recorded `pairs` — no re-run, identical numbers:
+
+| | before | after |
+| --- | --- | --- |
+| verdict | `FAIL (load)` | **`NEUTRAL (below floor)`** |
+| reasons | `load DECAL_TILES_DIRTY 24.7%` | *(none)* |
+| `DECAL_TILES_DIRTY` | 0.8 → 1.0, band 38.5 % | reported, not gating |
+| every other load key | unchanged | unchanged |
+| A renderer (pack in pre-render) | 2.245 ms | 2.245 ms — below the 3 ms floor |
+| B pre-render | 6.475 ms | 6.475 ms |
+
+**The new verdict is `NEUTRAL (below floor)`, not a rejection, and the reason is worth
+being exact about.** `--owner renderer` names the worker that carries the change. On
+the A side that worker sits at 2.245 ms, under the 3 ms interpretability floor, so the
+protocol forbids crediting *or* blaming it — 36.6 % of 2.245 ms is 0.82 ms, and the
+floor exists precisely to refuse percentages on bases that small. The owner therefore
+cannot be judged at all, and `NEUTRAL (below floor)` is the honest verdict.
+
+**The substantive result is untouched, and it is what the disposition rests on.** The
+comparison in § above does not use the owner or the gate at all: it compares the
+frame's actual bottleneck on each side, `max(primary)` = 7.412 ms with the pack moved
+into pre-render against 6.475 ms with Predator's shipped `'pixi'` — **12.6 % cheaper
+without it, 0/4 pairs favouring the change.** That argument was available when the
+sitting ran; it does not depend on the load gate, the floor, or the owner, and it is
+the reason Predator's override stays `'pixi'`.
+
+**What E-32 actually bought here is honesty about the machine's verdict, not a better
+number.** Before, the run said `FAIL (load)` and the reason was a key whose mean was
+0.8 tiles. Now it says the owner could not be judged, which is the true state of
+affairs. E-17 is the sitting where the fix mattered more than that — its verdict went
+from "none" to a formal `REGRESSION`.
 
 ## What this settles
 

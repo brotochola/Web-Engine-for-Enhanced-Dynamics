@@ -152,7 +152,44 @@ const SUB_TIMERS = [
 ];
 // Predator emits ~100 particles: Poisson noise alone is ~10 %. Below this
 // baseline the key is reported, not gated (it is not any worker's load).
-const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000 };
+//
+// E-32. DECAL_TILES_DIRTY joins it. Observed across three Predator sittings it
+// reads 0.0, 0.8, 1.0, 1.1 and 1.2 - a mean of about one dirty decal tile. A
+// key whose value is ~1 cannot hold a 5 % band at any threshold: one tile
+// dirtying differently between two 10 s halves is a 25 % "change". That is a
+// structural problem, not a noisy one, so it is floored rather than tuned.
+//
+// The floor is deliberately well above the observed range and is NOT a claim
+// that 8 tiles is a quiet signal. It marks "out of the degenerate regime"; the
+// noise guard below is what does the real work, for every key.
+const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8 };
+
+// E-32. A load key may only invalidate a sitting if its change is larger than the
+// key's own run-to-run variation.
+//
+// The STEP_MS path has always had this guard, and always had it in the right
+// place: `quiet = max(cvBase, cvHyp) <= 0.1` decides whether a +3 % is a
+// regression or noise. The load path had no equivalent, and two sittings were
+// lost to it. E-05 saw `DECAL_TILES_DIRTY 0.8 -> 1.0`; E-17 saw `1.1 -> 0.8`.
+// Both were reported as 25 % load mismatches. Neither was a load difference -
+// neither side did different work, and every other load key matched to within
+// 0.1 %.
+//
+// So the band is no longer a constant 5 %: it is max(5 %, the key's own noise).
+// A key that shifts consistently across every pair has low noise and a large
+// delta, so it still invalidates the sitting exactly as before. A key that
+// jitters pair to pair has high noise and does not.
+//
+// Direction of the error is deliberate. Muting can hide a real load shift that is
+// itself noisy, which costs one sitting. The alternative - a 25 % band appearing
+// on a jittering key and then being reported as a load failure - costs a sitting
+// too and teaches the reader that the gate is arbitrary. A muted key is still
+// printed with its numbers, its cv and its band, so nothing is hidden; only its
+// ability to invalidate the pair changed.
+const LOAD_GATE_BAND_PCT = 5;
+// A cv estimated from fewer pairs is itself mostly noise, so it must not widen the
+// band. Below this the gate falls back to the plain 5 %.
+const NOISE_PAIRS_MIN = 3;
 
 /** Max STEP_MS per worker kind plus the load keys. */
 export function predatorMetrics(report) {
@@ -243,16 +280,49 @@ export function decideAbab(pairs, owner, metric = null) {
       belowFloorPct: interpretable ? null : ((baseMedian / STEP_MS_FLOOR) * 100).toFixed(1),
     };
   }
+  // E-32. The noise guard. See the note on LOAD_GATE_BAND_PCT for why the band is
+  // per-key rather than a constant.
   const load = {};
   for (const key of LOAD_KEYS) {
-    const a = median(pairs.map((p) => p.A[key] ?? 0));
-    const b = median(pairs.map((p) => p.B[key] ?? 0));
-    load[key] = { base: a, hyp: b, deltaPct: a > 0 ? pctDelta(b, a) : null };
+    const av = pairs.map((p) => p.A[key] ?? 0);
+    const bv = pairs.map((p) => p.B[key] ?? 0);
+    const a = median(av);
+    const b = median(bv);
+    const cvA = cv(av);
+    const cvB = cv(bv);
+    const enoughPairs = av.length >= NOISE_PAIRS_MIN && bv.length >= NOISE_PAIRS_MIN;
+    const noise = enoughPairs ? Math.max(Number.isFinite(cvA) ? cvA : 0, Number.isFinite(cvB) ? cvB : 0) : 0;
+    load[key] = {
+      base: a,
+      hyp: b,
+      deltaPct: a > 0 ? pctDelta(b, a) : null,
+      cvBase: Number.isFinite(cvA) ? cvA : 0,
+      cvHyp: Number.isFinite(cvB) ? cvB : 0,
+      noisePct: noise * 100,
+      bandPct: Math.max(LOAD_GATE_BAND_PCT, noise * 100),
+    };
   }
   const reasons = [];
+  const muted = [];
   for (const [key, l] of Object.entries(load)) {
-    l.gated = !(l.base < (LOAD_GATE_MIN[key] ?? 0));
-    if (l.gated && l.deltaPct != null && Math.abs(l.deltaPct) > 5) reasons.push(`load ${key} ${l.deltaPct.toFixed(1)}%`);
+    const floor = LOAD_GATE_MIN[key] ?? 0;
+    l.belowFloor = l.base < floor;
+    l.gated = !l.belowFloor;
+    if (l.belowFloor) {
+      l.mutedBy = 'floor';
+      continue;
+    }
+    if (l.deltaPct == null || Math.abs(l.deltaPct) <= LOAD_GATE_BAND_PCT) continue;
+    if (Math.abs(l.deltaPct) <= l.bandPct) {
+      // It moved by more than 5 %, but by no more than it moves on its own.
+      l.mutedBy = 'noise';
+      muted.push(
+        `load ${key} ${l.deltaPct.toFixed(1)}% is within its own noise (${l.bandPct.toFixed(1)}%) - reported, not gating`,
+      );
+      continue;
+    }
+    l.mutedBy = null;
+    reasons.push(`load ${key} ${l.deltaPct.toFixed(1)}%`);
   }
   // A paired median of +3 % from 8 scattered pairs is not a regression by
   // itself: it also has to be consistent (≥ 75 % of the pairs worse).
@@ -326,7 +396,7 @@ export function decideAbab(pairs, owner, metric = null) {
     }
   }
 
-  return { verdict, owner, ownerJudged, metric, attributed, kinds, load, reasons, regress, noisy, belowFloor };
+  return { verdict, owner, ownerJudged, metric, attributed, kinds, load, reasons, muted, regress, noisy, belowFloor };
 }
 
 async function main() {
@@ -511,10 +581,22 @@ function printDecision(name, decision) {
       `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%`
     );
   }
+  // E-32. A muted key prints its numbers, its cv and the band it was measured
+  // against. A key that moved but did not gate is the most confusing thing a
+  // reader can encounter if it is not explained on the same line: the run says
+  // the load matched, and the table says a key moved 25 %.
   for (const [key, l] of Object.entries(decision.load)) {
-    console.log(`${key.padEnd(18)} ${l.base.toFixed(1)} → ${l.hyp.toFixed(1)} (${l.deltaPct == null ? 'n/a' : l.deltaPct.toFixed(1) + '%'})${l.gated ? '' : ' (reported, not gated)'}`);
+    let note = '';
+    if (l.mutedBy === 'floor') note = ' (below its floor, reported, not gated)';
+    else if (l.mutedBy === 'noise') note = ` (moved, but within its own noise of ${l.bandPct.toFixed(1)}%, not gating)`;
+    else if (!l.gated) note = ' (reported, not gated)';
+    console.log(
+      `${key.padEnd(18)} ${l.base.toFixed(1)} → ${l.hyp.toFixed(1)} ` +
+        `(${l.deltaPct == null ? 'n/a' : l.deltaPct.toFixed(1) + '%'})` +
+        `cv ${(l.cvBase * 100).toFixed(0)}/${(l.cvHyp * 100).toFixed(0)}%${note}`,
+    );
   }
-  for (const r of [...decision.reasons, ...decision.regress, ...decision.noisy]) console.log(`- ${r}`);
+  for (const r of [...decision.reasons, ...decision.muted, ...decision.regress, ...decision.noisy]) console.log(`- ${r}`);
   if (decision.attributed) {
     const at = decision.attributed;
     const nPairs = Object.values(decision.kinds)[0]?.deltas?.length ?? 0;
