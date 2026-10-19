@@ -52,7 +52,7 @@ Same as `HYPOTHESIS_LOG.md`: `not-started` · `in-progress` · `kernel` · `scen
 | **E-17** | the stamp grid recomputes each caster's cell | **FAIL (load)**, reverted — cached 52 KB cost more than the divides |
 | **E-24** | the frame is rAF-paced, so workers wake together rather than pipeline | **answered** — spread 0.095 ms; the idle is the rest of the vsync |
 | **E-18** | WASM SIMD transpose of the sprite pack | **rejected on premise** — painter run length 1.002 |
-| **E-15** | packed neighbor rows | **kernel read 3.57×**, layout not changed — the write has no join |
+| **E-15** | packed neighbor rows | **closed** — full scan still wins; the live read does not clear 0.15 ms |
 | **E-21** | `gatherInstancedRows` is dead in `src/` | **documentation fixed** |
 
 **Four consecutive memory-cost hypotheses were wrong** (E-02, E-03, E-10, E-07). That
@@ -597,6 +597,31 @@ isolation. **No speed number and no share of `spatial_STEP_MS` claimed** — per
 needs a measurement, and per E-17 a kernel delta must not be divided by a scene step time.
 **Read `logic0_STEP_MS` too** — `getNeighbor` gains an indirection.
 
+#### E-15, sitting 2 — the live read is not the scan the kernel timed. **Closed 2026-10-19. No wasm edit.**
+Report: [`reports/E-15-live-read-shape.md`](./reports/E-15-live-read-shape.md).
+
+The 2026-10-18 kernels are kept as evidence about a full scan. They are not a reason to change `publish_batch` yet.
+
+One entity's neighbor ids are already contiguous. The count sits at `entity * stride` and the ids follow it (`grid.js`, `gameObject.js` `getNeighbor`). The stride is the gap before the next entity's row. It is what lets a spatial worker rewrite one entity while the others keep yesterday's row, and what lets two workers publish without agreeing on a packed tail. Predator sets `neighborTickInterval` to 15, so an off-tick entity does not write (`spatialWorker.js`). Civilians tick every 4th frame and soldiers every 6th (`tickInterval`), and the read inside that tick is one row (`person.js` `updateTeamData`). Pre-render's visibility pass reads one row per visible light (`preRenderWorker.js` `buildVisibilityPolygons`), not 17 556 rows.
+
+A packed tail cannot update one row in place. Shipping it means a full rewrite every frame, which deletes the stagger skip, or a bump allocator whose rows are not in tick order, which deletes the sequential-scan win the kernel measured. Either one is a different hypothesis from "the packed read was 3.57×".
+
+**Claim, one sentence.** Packing the rows makes the worker that actually reads them at least 3 % cheaper.
+
+**Primary, named before the run.** `logic0_STEP_MS`. E-24 measured that worker at 4.85 ms on headed Predator, so 3 % is **0.15 ms**. Pre-render is not the owner of this read. A scene pair is not this sitting.
+
+**The kernel that has to clear that bar** (`tests/bench/e40NeighborReadShape.mjs`), same fixture as E-15: 17 556 entities, stride 1025, 32 ids, checksum equal, each shape in its own thread, `timeIt` floor 3 ms.
+
+1. **Dense id order.** The control. It should still show a large packed gap. If it does not, the instrument is broken and the other rows are not read.
+2. **One logic worker, interval 4, id order.** Half of the entities whose id falls in one phase. Neighbor ids only.
+3. **The same ids, shuffled.** Active-list order is not entity order.
+4. **Shape 2 plus the two position loads the tick does per neighbor.** The delta that can move a step is this one, not the ids alone.
+5. **64 spread-out lights, one row each.** The visibility read.
+
+**Rule.** If shape 4's packed side is not at least 0.15 ms cheaper than its strided side, E-15 closes. No wasm edit, no scene pair. If it clears 0.15 ms, the next artifact is a design that still updates one row in place. That design is not a scene pair until it exists.
+
+**Result.** The dense control still shows the scan: strided **1.472 ms**, packed **0.499 ms**, delta **0.973 ms**. The live shapes do not. One logic worker, 2 195 ids: id-order ids **+0.015 ms**, shuffled ids **−0.012 ms** (packed slower), id-order plus the two position loads **−0.003 ms**, the same loads in shuffled order **−0.026 ms**, 64 lights **−0.0003 ms**. An earlier pass of the position-load shape alone printed **+0.148 ms** and did not repeat. Shape 4 does not clear 0.15 ms. **E-15 closes.** The format stays the stride.
+
 ### E-16 Incremental / sharded shadow stamp — **REJECTED on premise, by E-29. 2026-10-18**
 `gpuShadowCasters.js` rebuilds the stamp grid from scratch every frame (4 passes over
 ~13 400 casters). **Enabler:** `numberOfPreRenderWorkers` is hard-coded to `1`
@@ -864,3 +889,4 @@ more than ~0.7 %.
 - Interleaved pack record ("hot record", 2026-10-06) — dropped, renderer +8.1 % 12/16.
 - `gatherInstancedRows` as a *speed* claim — dead in `src/` (E-21).
 - `collisionPairKey` representation — refuted (E-10).
+- Packed neighbor rows as a format change — the full scan is cheaper, the live read is not (E-15, sitting 2).

@@ -16,6 +16,8 @@ Status words: `kept` · `dropped` · `screened` · `rejected-in-kernel` · `not-
 
 **Previous-pose copy, E-09 (2026-10-18):** rejected on premise, no scene. Kernel `e09PrevPosePremise.mjs`, shuffled dense index, `timeIt` floor held. **0.026 ms** at 9 000 bodies, **0.065 ms** at 17 556. Report: `[reports/E-09-prev-pose-premise.md](./reports/E-09-prev-pose-premise.md)`.
 
+**Neighbor read shape, E-15 sitting 2 (2026-10-19):** closed, no scene, no wasm edit. Kernel `e40NeighborReadShape.mjs`, 17 556 entities, stride 1025, 32 ids, each shape its own thread, `timeIt` floor held. Dense control strided **1.472 ms** / packed **0.499 ms** (delta 0.973). One logic worker, 2 195 ids: id-order **+0.015 ms**, shuffled **−0.012 ms**, id-order plus two position loads **−0.003 ms**, shuffled plus those loads **−0.026 ms**, 64 lights **−0.0003 ms**. Bar was 0.15 ms on the position-load shape (3 % of logic0 at 4.85 ms). A prior pass of that shape printed +0.148 ms and did not repeat. Report: `[reports/E-15-live-read-shape.md](./reports/E-15-live-read-shape.md)`.
+
 **Neighbor publish, E-15 (2026-10-18):** kernel only. Packed publish including the prefix sum **0.618 ms** against strided **1.569 ms** (2.54×), checksum 232433664. The format stays; the live writer is wasm. Report: `[reports/E-15-neighbor-publish-kernel.md](./reports/E-15-neighbor-publish-kernel.md)`.
 
 **Query copy, E-19 (2026-10-18):** kernel, do not re-apply. Writer `set` is 0.0006 ms against the loop's 0.0128 ms (21.7×). A concurrent reader did not get slower (6959 → 7198 passes). The two Predator reader regressions stand. Report: `[reports/E-19-query-copy-kernel.md](./reports/E-19-query-copy-kernel.md)`.
