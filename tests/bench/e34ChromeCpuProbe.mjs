@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * E-34 instrument check. The mailbox spin is invisible to STEP_MS. This samples
- * Chrome process CPU while Balls runs at box2dWorkerCount 4 and at 1. The
+ * Chrome process CPU while Balls runs at numberOfPhysicsWorkers 4 and at 1. The
  * instrument is real only if the step moves the way E-04b already measured
  * (4 faster than 1) AND the CPU moves with the worker count. A flat CPU trace
  * next to a 2× step is not an instrument.
@@ -53,7 +53,7 @@ function runArm(count) {
     '--warmup-ms', '8000',
     '--duration-ms', '8000',
     '--no-collect-detailed-stats',
-    '--query', `box2dWorkerCount=${count}`,
+    '--query', `numberOfPhysicsWorkers=${count}`,
     '--output', out,
   ], { cwd: ROOT, stdio: 'inherit' });
   const base = new Map();
@@ -110,7 +110,7 @@ function runArm(count) {
 
 const arms = [];
 for (const count of [4, 1]) {
-  console.log(`arm box2dWorkerCount=${count}`);
+  console.log(`arm numberOfPhysicsWorkers=${count}`);
   arms.push(await runArm(count));
   console.log(JSON.stringify({ count: arms.at(-1).count, stepMs: arms.at(-1).stepMs, cores: arms.at(-1).cores, processes: arms.at(-1).processes, browserPid: arms.at(-1).browserPid }));
 }

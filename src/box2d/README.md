@@ -42,7 +42,7 @@ From `Box2d_3.2_C_-_liquidfun`:
 weedjs\build_for_weed.bat
 ```
 
-Default: **pthread pool 0 + `-flto=full`** (`weedjs\build_for_weed.bat`). The link does not prewarm workers. `physics.box2dWorkerCount` is 1..32 (`B2_MAX_WORKERS`), default 4; helpers started are `count - 1`. Builds with `weedjs/weed_post.js` (`importScripts('weedjsPost.js')` then `physicsHostImpl.js`), `OUTPUT_NAME box2dWasm` (not lab `box2d_wasm`), runs a post-link `wasm-opt` size pass, and copies **only** `box2dWasm.js` + `.wasm` into this folder. Do not keep a snake_case pair here — glue `locateFile` follows `OUTPUT_NAME`. After that CMake name changes, `build_for_weed.bat clean` then rebuild.
+Default: **pthread pool 0 + `-flto=full`** (`weedjs\build_for_weed.bat`). The link does not prewarm workers. `physics.numberOfPhysicsWorkers` is 1..32 (`B2_MAX_WORKERS`), default 4; helpers started are `count - 1`. Builds with `weedjs/weed_post.js` (`importScripts('weedjsPost.js')` then `physicsHostImpl.js`), `OUTPUT_NAME box2dWasm` (not lab `box2d_wasm`), runs a post-link `wasm-opt` size pass, and copies **only** `box2dWasm.js` + `.wasm` into this folder. Do not keep a snake_case pair here — glue `locateFile` follows `OUTPUT_NAME`. After that CMake name changes, `build_for_weed.bat clean` then rebuild.
 
 **WASM only.** Weed never needs sibling native `test.exe`, samples, or `demo_*.exe`. Correctness after a C change is Weed Node WASM tests + L2/visual, not ctest.
 

@@ -64,7 +64,7 @@ export class BallsScene extends Scene {
       // This is a harness affordance, not a bench patch: the key is optional, the
       // fallback is the shipped value, and the scene is not edited per sitting the
       // way `HOW_WE_MEASURE` forbids for a bench to close a pair.
-      box2dWorkerCount: ballsNumberParam('box2dWorkerCount', 4),
+      numberOfPhysicsWorkers: ballsNumberParam('numberOfPhysicsWorkers', 4),
       subStepCount: 4,
       noLimitFPS: false,
       gravity: { x: 0, y: 1800 },

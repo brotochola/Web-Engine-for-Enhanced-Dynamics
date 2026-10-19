@@ -1002,7 +1002,7 @@ function createPhysicsApi(Module) {
         o.contactDampingRatio ?? 10,
         o.contactSpeed ?? 3,
         o.maximumLinearSpeed ?? 400,
-        o.box2dWorkerCount ?? 4,
+        o.numberOfPhysicsWorkers ?? 4,
       );
       this._buffersBound = false;
     }

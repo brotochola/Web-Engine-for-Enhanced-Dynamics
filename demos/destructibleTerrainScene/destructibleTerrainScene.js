@@ -77,7 +77,7 @@ export class DestructibleTerrainScene extends Scene {
     },
 
     physics: {
-      box2dWorkerCount: 4,
+      numberOfPhysicsWorkers: 4,
       subStepCount: 4,
       noLimitFPS: false,
       gravity: { x: 0, y: 1800 },

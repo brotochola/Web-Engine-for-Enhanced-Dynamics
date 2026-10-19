@@ -323,7 +323,7 @@ export const ENGINE_DEFAULTS = Object.freeze({
 // PHYSICS DEFAULTS
 // ============================================================================
 
-/** Box2D `B2_MAX_WORKERS`. Scene `physics.box2dWorkerCount` clamps to this. */
+/** Box2D `B2_MAX_WORKERS`. Scene `physics.numberOfPhysicsWorkers` clamps to this. */
 export const BOX2D_MAX_WORKERS = 32;
 
 export const PHYSICS_DEFAULTS = Object.freeze({
@@ -357,7 +357,7 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   /** Hard linear speed clamp (px/s). */
   maximumLinearSpeed: 50000,
   /** Box2D solver workers, including the physics worker. Clamped to BOX2D_MAX_WORKERS. */
-  box2dWorkerCount: 4,
+  numberOfPhysicsWorkers: 4,
   /** SPMC contact/sensor event ring capacity (begin+end). Dense spawns need large. */
   contactRingCapacity: 65536,
   /** MPSC SET_TRANSFORM/VEL/ROT ring. Boot-time only; dense teleports need large. */

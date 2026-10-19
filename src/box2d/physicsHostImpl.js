@@ -28,7 +28,7 @@
     lengthUnitsPerMeter: 100,
     contactSpeed: 1000,
     maximumLinearSpeed: 50000,
-    box2dWorkerCount: 4,
+    numberOfPhysicsWorkers: 4,
     contactRingCapacity: 65536,
     commandRingCapacity: 4096,
     sleeping: true,
@@ -322,10 +322,10 @@
         n.maximumLinearSpeed != null
           ? n.maximumLinearSpeed
           : base.maximumLinearSpeed,
-      box2dWorkerCount:
-        n.box2dWorkerCount != null
-          ? n.box2dWorkerCount
-          : base.box2dWorkerCount,
+      numberOfPhysicsWorkers:
+        n.numberOfPhysicsWorkers != null
+          ? n.numberOfPhysicsWorkers
+          : base.numberOfPhysicsWorkers,
       contactRingCapacity:
         n.contactRingCapacity != null
           ? n.contactRingCapacity
@@ -752,7 +752,7 @@
       contactDampingRatio: s.contactDampingRatio,
       contactSpeed: s.contactSpeed,
       maximumLinearSpeed: s.maximumLinearSpeed,
-      box2dWorkerCount: s.box2dWorkerCount,
+      numberOfPhysicsWorkers: s.numberOfPhysicsWorkers,
       maxBodies: maxBodies,
       entityCount: entityCount,
       subSteps: s.subStepCount,

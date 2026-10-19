@@ -2507,7 +2507,7 @@
       contactDampingRatio: data.contactDampingRatio,
       contactSpeed: data.contactSpeed,
       maximumLinearSpeed: data.maximumLinearSpeed,
-      box2dWorkerCount: data.box2dWorkerCount,
+      numberOfPhysicsWorkers: data.numberOfPhysicsWorkers,
     });
     world.enableSleeping(sleepingEnabled);
     const slots = world.getMaxBodySlots();

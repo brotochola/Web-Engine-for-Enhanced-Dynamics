@@ -1,4 +1,4 @@
-// E-04b: sweep `physics.box2dWorkerCount` at a FIXED Box2D thread pool.
+// E-04b: sweep `physics.numberOfPhysicsWorkers` at a FIXED Box2D thread pool.
 //
 // Why this exists. The 2026-10-01 pool experiment (4 threads -> 2) is recorded as a
 // REGRESSION: physics 8.671 -> 10.875 ms, +26.2 %, 8/8 worse. But it changed the
@@ -11,7 +11,7 @@
 //   - does the SOLVER need the cores?      (pool 4 -> 2 says yes)
 //   - how much of the number is SPIN?      (nobody measured)
 //
-// `box2dWorkerCount` is the knob that changes the solver's task decomposition while
+// `numberOfPhysicsWorkers` is the knob that changes the solver's task decomposition while
 // leaving the pool alone, so sweeping it separates them: a step that gets worse while
 // CPU time falls is losing to less parallelism, not paying more spin.
 //
@@ -62,7 +62,7 @@ function runArm(count, round) {
       '--warmup-ms', WARMUP,
       '--duration-ms', DURATION,
       '--no-collect-detailed-stats',
-      '--query', `box2dWorkerCount=${count}`,
+      '--query', `numberOfPhysicsWorkers=${count}`,
       '--output', out,
     ],
     { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' },
@@ -98,7 +98,7 @@ const median = (xs) => {
   return v[(v.length / 2) | 0];
 };
 
-console.log(`E-04b box2dWorkerCount sweep: counts=${COUNTS.join(',')} rounds=${ROUNDS}`);
+console.log(`E-04b numberOfPhysicsWorkers sweep: counts=${COUNTS.join(',')} rounds=${ROUNDS}`);
 console.log(`scene=${SCENE}  warmup=${WARMUP}ms measure=${DURATION}ms  stats off\n`);
 
 const arms = [];
@@ -118,7 +118,7 @@ for (const c of COUNTS) {
   const bodies = mine.map((a) => a.avg.BODY_COUNT);
   const awake = mine.map((a) => a.avg.AWAKE_COUNT);
   rows.push({
-    box2dWorkerCount: c,
+    numberOfPhysicsWorkers: c,
     stepMsMedian: median(steps),
     stepMsSamples: steps,
     bodyCountMedian: median(bodies),
@@ -133,15 +133,15 @@ for (const c of COUNTS) {
   });
 }
 
-const base = rows.find((r) => r.box2dWorkerCount === COUNTS[COUNTS.length - 1]) || rows[rows.length - 1];
-console.log('\n--- physics STEP_MS by box2dWorkerCount ---');
+const base = rows.find((r) => r.numberOfPhysicsWorkers === COUNTS[COUNTS.length - 1]) || rows[rows.length - 1];
+console.log('\n--- physics STEP_MS by numberOfPhysicsWorkers ---');
 for (const r of rows) {
   const pct = base.stepMsMedian && r.stepMsMedian
     ? ((r.stepMsMedian - base.stepMsMedian) / base.stepMsMedian) * 100
     : null;
   console.log(
-    `  workers=${r.box2dWorkerCount}  ${r.stepMsMedian?.toFixed(3)} ms` +
-      (pct == null ? '' : `  ${pct >= 0 ? '+' : ''}${pct.toFixed(1)} % vs workers=${base.box2dWorkerCount}`) +
+    `  workers=${r.numberOfPhysicsWorkers}  ${r.stepMsMedian?.toFixed(3)} ms` +
+      (pct == null ? '' : `  ${pct >= 0 ? '+' : ''}${pct.toFixed(1)} % vs workers=${base.numberOfPhysicsWorkers}`) +
       `  bodies=${r.bodyCountMedian}  awake=${r.awakeCountMedian}`,
   );
 }
@@ -171,7 +171,7 @@ if (kinds.length) {
         return (v == null ? '-' : v.toFixed(2)).padEnd(11);
       })
       .join('');
-    console.log(`  ${String(r.box2dWorkerCount).padEnd(11)} ${cells}`);
+    console.log(`  ${String(r.numberOfPhysicsWorkers).padEnd(11)} ${cells}`);
   }
 }
 

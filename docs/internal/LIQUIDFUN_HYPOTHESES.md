@@ -515,7 +515,7 @@ still leaves the world (rest rebuild, not this hyp).
 
 **Claim:** `lfParallelFor` on `FindParticleContacts` (n ≥ 4096) stole blocks and pushed contacts into `contactBucket[workerIndex]`. Merge concatenated workers 0,1,2,3. Same contact *set*, different *order* depending on which worker finished which block. `ComputeWeight` / `SolvePressure` / `SolveTensile` then drifted in float32. Gravity/integrate stayed serial. `demo_parallel.c` only checked count + COM, so it never caught this.
 
-**Wrong first story:** in-step `parallel_for` was “later” (`LIQUIDFUN.md`). It was already on. Production WASM pthread pool stays **4** — do not force `box2dWorkerCount: 1` for visual gates.
+**Wrong first story:** in-step `parallel_for` was “later” (`LIQUIDFUN.md`). It was already on. Production WASM pthread pool stays **4** — do not force `numberOfPhysicsWorkers: 1` for visual gates.
 
 **Change (sibling `lf_particle_system.c`, no qsort):** buckets are per **block**, not worker. `MergeContactBuckets` concatenates `k = 0 .. blockCount-1` = serial `for i in 0..n`. Steal still unique per block (no race, still load-balanced).
 

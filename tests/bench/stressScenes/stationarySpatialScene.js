@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 import { StationarySpatialEntity } from './stationary/stationarySpatialEntity.js';
 
 /**
- * E-04b. Read `box2dWorkerCount` from the query string so the Box2D worker-count
+ * E-04b. Read `numberOfPhysicsWorkers` from the query string so the Box2D worker-count
  * sweep can drive this scene per arm. Falls back to the engine default (4) when
  * the parameter is absent, so every existing invocation is unchanged.
  *
@@ -38,7 +38,7 @@ export class StationarySpatialScene extends Scene {
       noLimitFPS: false,
     },
     physics: {
-      box2dWorkerCount: sceneNumberParam('box2dWorkerCount', 4),
+      numberOfPhysicsWorkers: sceneNumberParam('numberOfPhysicsWorkers', 4),
       subStepCount: 1,
       noLimitFPS: false,
       gravity: { x: 0, y: 0 },

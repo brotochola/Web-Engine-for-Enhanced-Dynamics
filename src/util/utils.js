@@ -853,13 +853,13 @@ export function validatePhysicsConfig(currentConfig, newConfig) {
       current.maximumLinearSpeed ??
       PHYSICS_DEFAULTS.maximumLinearSpeed
     ),
-    box2dWorkerCount: Math.max(
+    numberOfPhysicsWorkers: Math.max(
       1,
       Math.min(
         BOX2D_MAX_WORKERS,
-        (newConfig.box2dWorkerCount ??
-          current.box2dWorkerCount ??
-          PHYSICS_DEFAULTS.box2dWorkerCount) | 0
+        (newConfig.numberOfPhysicsWorkers ??
+          current.numberOfPhysicsWorkers ??
+          PHYSICS_DEFAULTS.numberOfPhysicsWorkers) | 0
       )
     ),
     contactRingCapacity: Math.max(
