@@ -255,8 +255,14 @@ export const LOGIC_STATS = Object.freeze({
   WAIT_MS: 14,
   /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
   IDLE_MS: 15,
-  STRIDE_FLOATS: 16,
-  BUFFER_SIZE_PER_WORKER: 16 * 4,
+  /**
+   * E-27. Live contact-pair map size. `_pairSlot.size` is the only count of pairs
+   * and was published nowhere, so a kernel delta on the pair key had nothing to
+   * divide by except a scene step from a different world.
+   */
+  PAIR_COUNT: 16,
+  STRIDE_FLOATS: 17,
+  BUFFER_SIZE_PER_WORKER: 17 * 4,
 });
 
 /**
@@ -539,6 +545,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'MARK_ACTIVE', label: 'Mark', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'PAIR_COUNT', label: 'Pairs', format: fmtNum, kind: STAT_KIND.COUNT },
     ],
   },
   preRender: {

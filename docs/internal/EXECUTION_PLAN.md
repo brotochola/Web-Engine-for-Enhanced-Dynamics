@@ -202,7 +202,9 @@ inferred one.** The implementation log asked whether the old pool experiment was
 judged on a contaminated metric. It was not: `STEP_MS` was correctly charging it
 for lost parallelism, not for removed spin.
 
-### E-34 The Box2D spin is not addressable by configuration — **probe BLOCKED on a named instrument. 2026-10-18**
+### E-34 The Box2D spin is not addressable by configuration — **sampler holds. Worker count moves the step a lot and the cores a little. 2026-10-19**
+Report: [`reports/E-34-browser-tree-cpu.md`](./reports/E-34-browser-tree-cpu.md).
+The all-Chrome sum is discarded ([`reports/E-34-cpu-sampler-failed.md`](./reports/E-34-cpu-sampler-failed.md)). Sampling the benchmark process and the processes it spawned, Balls headless, `--src`, 8 s/8 s, one window: physics **6.37 ms and 2.02 cores at 4 workers**, **16.33 ms and 1.40 cores at 1**. Load 9004/9000 both. Nine processes both. The step check passes. The whole browser tree at 4 workers is 2.02 cores, so a 2.4-core mailbox cannot be sitting inside it as well. Dropping the worker count saves 0.62 cores and costs 10 ms. No Emscripten change.
 Report: [`reports/E-34-box2d-mailbox-spin-probe-blocked.md`](./reports/E-34-box2d-mailbox-spin-probe-blocked.md).
 **Raised by E-04b.** ~2.4 cores still burn in the Emscripten mailbox, and this
 sitting shows **neither lever reaches it**: a smaller pool costs the solver threads
@@ -367,10 +369,7 @@ Int32Array: this key overflows a 32-bit int"* — read as storage, it says the d
 have been a tidy-up; run after, it is the removal of a claim pointing the wrong way
 about the engine's one configurable id scheme.
 
-**Share of `logic0_STEP_MS` UNMEASURED and deliberately not quoted.** `_pairSlot.size` is
-the live pair count and is published nowhere — the same defect as E-04 and E-37. Dividing
-a per-op kernel delta by a scene step time is **exactly the arithmetic E-17 got wrong**
-("1.79 % of the step", then lost by 3.1 %). Next step is one line: publish it.
+**Share of `logic0_STEP_MS` is now publishable.** `PAIR_COUNT` is logic stats slot 16, stride 16 → 17, written from `_pairSlot.size` before the detailed-stats return. `tests/node/pairCountStat.test.js`. No scene: the count is the missing denominator, not a speed claim.
 
 ### E-26 The pair-key comment described a type the file does not contain — **DONE 2026-10-18. Fixed (hygiene)**
 Report: [`reports/E-26-pair-key-comment.md`](./reports/E-26-pair-key-comment.md).
@@ -430,12 +429,9 @@ passed it. **The test asserts the allocation behaviour, which is the claim.**
 No sitting: hygiene by construction, and a kernel could not see it — `_collectVisibleLights`
 has no `*_MS` timer (see E-29).
 
-### E-09 Physics dense scans include sleeping bodies — **not-started (downgraded)**
-**Primary:** `physics_STEP_MS`. **Load:** `BODY_COUNT` + `AWAKE_COUNT` within 5 %.
-`snapshotPrevPose` is only **0.9 % of physics busy time** in the 2026-10-14 trace, so
-the ceiling is small. **Run the premise probe first** (E-30): report the share of the
-owner step before spending a sitting. Correctness first — what `snapshotPrevPose` must
-hold for a body that wakes mid-interval is a gate-5 question.
+### E-09 Physics dense scans include sleeping bodies — **rejected on premise. No sitting. 2026-10-18**
+Report: [`reports/E-09-prev-pose-premise.md`](./reports/E-09-prev-pose-premise.md).
+The dense-list copy is **0.026 ms** at 9 000 live bodies and **0.065 ms** at 17 556. `timeIt` floor held. That is the whole of `snapshotPrevPose`. A scene pair cannot clear 3 % of a multi-millisecond physics step on a copy this small, which is what the 2026-10-14 trace (0.9 % of busy time) already implied. No `src/` change.
 
 ### E-10 Contact pair key is a HeapNumber — **rejected-in-kernel. No `src/` change.**
 **DONE 2026-10-18.** Report: [`reports/E-10-pair-key-smi.md`](./reports/E-10-pair-key-smi.md).
@@ -562,7 +558,7 @@ free; had it gone to a scene it would have cost a Predator pair to confirm a zer
 Report: [`reports/E-15-neighbor-layout-kernel.md`](./reports/E-15-neighbor-layout-kernel.md).
 The premise probe is [`reports/E-15-packed-neighbor-rows-probe.md`](./reports/E-15-packed-neighbor-rows-probe.md). The kernel the probe asked for, at `maxNeighbors: 1024` / 17 556 entities / 32 neighbors each: strided read **1.755 ms**, packed read plus the 140 KB index **0.491 ms**, checksum equal, **3.57×**. That is the memory-for-memory comparison, and the packed side wins it.
 
-The layout is unchanged. Spatial publish writes `entity * stride` so two workers never share a packed tail (`spatialWorker.js`). A prefix sum is a join this kernel did not time. No share of `spatial_STEP_MS` claimed.
+The layout is unchanged. The publish kernel ([`reports/E-15-neighbor-publish-kernel.md`](./reports/E-15-neighbor-publish-kernel.md)) includes the prefix sum and is still cheaper: strided **1.569 ms**, packed **0.618 ms**, same checksum, **2.54×**. Both kernels are one thread. The live Predator writer is the wasm kernel into this stride, and a format change has to land there before a scene can judge it. No share of `spatial_STEP_MS` claimed.
 Report: [`reports/E-15-packed-neighbor-rows-probe.md`](./reports/E-15-packed-neighbor-rows-probe.md).
 **Unblocked** (E-31 done). Probed per E-36 before any code, and **the probe changed the
 answer in the hypothesis's favour.**
@@ -739,9 +735,7 @@ maintained only under `collectDetailedStats` (`logicWorker.js:657-664` times the
 inside the detailed branch), so **the lean A/B path could never have shown it** - which is
 why the change was invisible in the numbers it was judged on.
 
-**Not settled, and deliberately not claimed:** whether `.set()` beats the loop. That needs
-the pair re-run judged on **the readers' STEP_MS, not the writer's**. Gate 4's "+20.9 %"
-was measured on the wrong primary for this change.
+**Not settled as a scene re-run, and `set` stays out.** A same-process kernel (`e19QueryCopyPremise.mjs`, 16 384 ids) makes the writer **21.7×** faster with `set` and does not slow a reader summing the same SAB (6 959 → 7 198 passes). That reader is not the cross-core transfer the two Predator regressions already recorded. Report: [`reports/E-19-query-copy-kernel.md`](./reports/E-19-query-copy-kernel.md). The pair those regressions need, judged on the readers, has not been run again.
 
 ### E-39 "X cannot run this code" is not a claim about involvement - *synthesis, from E-19*
 The third time in this campaign an involvement/frequency premise inverted a conclusion
