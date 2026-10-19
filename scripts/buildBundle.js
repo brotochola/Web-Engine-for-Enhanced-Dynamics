@@ -186,14 +186,19 @@ function buildBox2dWorkerSource() {
         `    var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));\n` +
         `    return new Response(stream).arrayBuffer().then(function(buf) { return new Uint8Array(buf); });\n` +
         `  }\n` +
-        `  Module["instantiateWasm"] = function(info, receiveInstance) {\n` +
-        `    return __weedGunzip(__weedB64ToU8(__weedWasmGzipB64)).then(function(wasmBinary) {\n` +
-        `      return WebAssembly.instantiate(wasmBinary, info).then(function(result) {\n` +
-        `        receiveInstance(result.instance, result.module);\n` +
-        `        return result.instance.exports;\n` +
+        `  // Pthread helpers receive an already-compiled module and instantiate it\n` +
+        `  // synchronously. The async gunzip hook would mark the worker ready before\n` +
+        `  // exports exist, so the first pthread_create (pool size 0) crashes.\n` +
+        `  if (global.name !== "em-pthread") {\n` +
+        `    Module["instantiateWasm"] = function(info, receiveInstance) {\n` +
+        `      return __weedGunzip(__weedB64ToU8(__weedWasmGzipB64)).then(function(wasmBinary) {\n` +
+        `        return WebAssembly.instantiate(wasmBinary, info).then(function(result) {\n` +
+        `          receiveInstance(result.instance, result.module);\n` +
+        `          return result.instance.exports;\n` +
+        `        });\n` +
         `      });\n` +
-        `    });\n` +
-        `  };\n` +
+        `    };\n` +
+        `  }\n` +
         `  global.Module = Module;\n` +
         `  var __weedBox2dScripts = ${JSON.stringify(box2dSiblingScripts)};\n` +
         `  var __weedBox2dBlobs = Object.create(null);\n` +
