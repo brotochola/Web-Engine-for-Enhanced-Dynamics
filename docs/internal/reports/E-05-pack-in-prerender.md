@@ -84,7 +84,7 @@ recorded `pairs` — no re-run, identical numbers:
 | --- | --- | --- |
 | verdict | `FAIL (load)` | **`NEUTRAL (below floor)`** |
 | reasons | `load DECAL_TILES_DIRTY 24.7%` | *(none)* |
-| `DECAL_TILES_DIRTY` | 0.8 → 1.0, band 38.5 % | reported, not gating |
+| `DECAL_TILES_DIRTY` | 0.8 → 1.0, both under the floor of 8 | reported, not gating |
 | every other load key | unchanged | unchanged |
 | A renderer (pack in pre-render) | 2.245 ms | 2.245 ms — below the 3 ms floor |
 | B pre-render | 6.475 ms | 6.475 ms |

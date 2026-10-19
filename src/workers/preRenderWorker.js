@@ -2905,41 +2905,24 @@ class PreRenderWorker extends AbstractWorker {
     _sortPrefix(arr, count, compare) {
         const n = count | 0;
         if (n <= 1) return;
-        // takeClosest keep: native sort, not insertion. Prefix copy keeps pooled slots.
         if (n === arr.length) {
             arr.sort(compare);
             return;
         }
-        // E-08. `tmp.length = n` was NOT a capacity hint. On a plain Array it
-        // reallocates the backing store whenever the value differs, and `n` here is
-        // the live light count, which changes on almost every frame (a light spawns,
-        // dies, or scrolls out of range). So this allocated a fresh backing store per
-        // frame to hold a prefix copy.
-        //
-        // The fix sizes the scratch ONCE with geometric headroom and then only copies
-        // a prefix into it. Growth is now O(log n) times over the session instead of
-        // once per frame.
-        //
-        // Note on a first attempt that looked equivalent and was not: growing to
-        // exactly `n` (`new Array(Math.max(n, 16))`) still reallocates every time `n`
-        // rises above the current capacity, which is most frames once the light count
-        // is not monotonically falling. `sortPrefixNoRealloc.test.js` failed on
-        // exactly that ("frame 3 resized the scratch to 22 !== 16"). The growth below
-        // doubles instead.
-        let tmp = this._sortPrefixTmp;
-        if (!tmp || tmp.length < n) {
-            const current = tmp ? tmp.length : 0;
-            let cap = current < 16 ? 16 : current;
-            while (cap < n) cap *= 2;
-            tmp = this._sortPrefixTmp = new Array(cap);
+        // Slots at n and past it are pooled and must stay put, so this cannot
+        // hand the whole array to sort. ponytail: insertion sort is quadratic
+        // in the prefix. Stamp lights are capped (default 20). Visible-light
+        // lists are the large case; switch to a range sort if a caller passes
+        // thousands.
+        for (let i = 1; i < n; i++) {
+            const item = arr[i];
+            let j = i - 1;
+            while (j >= 0 && compare(arr[j], item) > 0) {
+                arr[j + 1] = arr[j];
+                j--;
+            }
+            arr[j + 1] = item;
         }
-        // Copy the prefix in, sort, copy back. `tmp` itself is never handed to sort
-        // when it is longer than n, because sorting the whole backing store would
-        // reorder slots the caller does not own.
-        const view = tmp.length === n ? tmp : tmp.slice(0, n);
-        for (let i = 0; i < n; i++) view[i] = arr[i];
-        view.sort(compare);
-        for (let i = 0; i < n; i++) arr[i] = view[i];
     }
 
     _packGpuSun(dst, q) {

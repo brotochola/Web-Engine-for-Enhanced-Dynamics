@@ -280,7 +280,7 @@ it whole.
 **No `src/` change, no scene change.** One baseline copy used as `--override`, applied
 in a worktree, leaving the working tree untouched.
 
-### E-32 The load gate needs a floor **and** a noise guard — *harness, DONE 2026-10-18*
+### E-32 The load gate floors a count of ~1, and the band stays 5% — *harness, DONE 2026-10-18*
 **Raised by E-05 and E-17.** `DECAL_TILES_DIRTY` read **0.8 → 1.0 tiles per frame** in
 E-05 and **1.1 → 0.8** in E-17, failing both pairs on ~25 % deltas. Those are not
 integer counts; it is two runs reporting a mean below one tile, and every other load key
@@ -288,23 +288,16 @@ in both runs matched to within 0.1 % (`BODY_COUNT` 0.0 %, `GPU_CASTERS` 0.1 %,
 `ACTIVE_DECORATIONS` exactly 20 000 both sides). Two sittings were lost to a key that
 cannot hold a 5 % band.
 
-**Two separable defects, both fixed in `runPredatorAbab.mjs`:**
+**Two separable defects. The floor is what fixed the two sittings. The band stays 5%.**
 
-1. **Floor.** `LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8 }`. The
-   DECAL floor is a "out of the degenerate regime" marker, **not** a claim that 8 tiles
-   is quiet — it is set well above the observed 0.0–1.2 range, and the noise guard below
-   is what does the real work.
-2. **Noise guard — the general fix.** The `STEP_MS` path has always had
-   `quiet = max(cvBase, cvHyp) <= 0.1` deciding whether a +3 % is real; **the load path
-   had no equivalent**. The band is now `max(5 %, the key's own noise)` per key, with a
-   `NOISE_PAIRS_MIN: 3` floor so a 2-pair run cannot widen it. Needs no per-key tuning and
-   applies to every key, present and future.
-
-**Direction of the error is deliberate.** Muting can hide a real *noisy* load shift,
-costing one sitting. The alternative — a 25 % band appearing on a jittering key and being
-reported as a load failure — costs a sitting and teaches the reader the gate is arbitrary.
-Muted keys still print their numbers, cv and band; only their ability to invalidate the
-pair changed.
+1. **Floor.** `LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8 }`. A key
+   is muted only when **both** medians are under the floor. E-05 (0.8 and 1.0) and
+   E-17 (1.1 and 0.8) stay muted. A base under the floor and a hyp at or above it is
+   a normal 5% check, so ~100 particles versus thousands still fails.
+2. **The 5% band does not widen.** An earlier draft set the band to `max(5%, the
+   key's own noise)`, which let a real shift pass whenever the key was noisy. That
+   contradicts HOW_WE_MEASURE: outside 5% fails, and a coefficient of variation at or
+   above 50% fails. Under the floor, a wild cv on a count of ~1 does not fail.
 
 **Re-adjudicated, not re-run.** `decideAbab` is a pure function of the recorded `pairs`,
 so `tests/bench/readjudicateAbab.mjs` recomputes verdicts from
@@ -326,7 +319,7 @@ formal `REGRESSION` rather than my judgement call on a failed gate. E-05's subst
 argument (`max(primary)` 7.412 vs 6.475, 12.6 % cheaper with `'pixi'`, 0/4) never used
 the gate at all.
 
-`tests/node/decideAbabLoadGate.test.js` (12 tests) pins both mechanisms and, critically,
+`tests/node/decideAbabLoadGate.test.js` pins the floor, the 5% band, and the 50% cv fail, and, critically,
 **that a real consistent shift still fails the sitting** — a gate that cannot fire is
 worse than no gate, because it looks like a pass.
 

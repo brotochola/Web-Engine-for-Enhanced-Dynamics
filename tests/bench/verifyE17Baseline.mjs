@@ -1,5 +1,5 @@
-// Verify the E-17 baseline copy really is the pre-hypothesis form, so an A/B
-// against it measures the hypothesis and not a broken file.
+// E-17 was measured and reverted. This checks that the shipped buildStampGrid
+// is the recompute form again, the same form as the baseline copy.
 //
 // The previous two baseline verifiers in this campaign were written as inline
 // `node -e` one-liners, and PowerShell ate the `${...}` inside a template literal,
@@ -47,44 +47,13 @@ check('baseline scatter pass does not use a cache', !/cellOf/.test(baseScatter))
 check('baseline has no cell-index scratch', !/cellOf/.test(baseCode));
 check('baseline declares no _stampCellOf', !/_stampCellOf/.test(baseCode));
 
-// --- the shipped tree must be the NEW code -----------------------------------
-check('ship scatter pass uses the cache', /cursor\[cellOf\[c\]\]/.test(shipScatter));
-check('ship scatter pass has no Math.floor', !/Math\.floor/.test(shipScatter));
-check('ship scatter pass no longer reads sun', !/sun\[b\]/.test(shipScatter));
-check('ship count pass records the cell', /cellOf\[c\] = cell;/.test(shipCode));
-check('ship declares _stampCellOf', /let _stampCellOf = null;/.test(shipCode));
-// And the count pass still does the work the cache depends on.
+// --- the shipped tree is the recompute form again ----------------------------
+check('ship scatter pass recomputes the cell', /Math\.floor/.test(shipScatter));
+check('ship scatter pass does not use a cache', !/cellOf/.test(shipScatter));
+check('ship has no cell-index scratch', !/cellOf/.test(shipCode));
+check('ship declares no _stampCellOf', !/_stampCellOf/.test(shipCode));
 check('ship count pass still derives the cell', /Math\.floor\(\(sun\[b\] - minX\)/.test(fnBody(shipCode)));
 
-const fnStart = (code) => code.indexOf('function buildStampGrid(');
-const outsideBase = baseCode.slice(0, fnStart(baseCode));
-const outsideShip = shipCode.slice(0, fnStart(shipCode));
-
-// --- nothing else moved -------------------------------------------------------
-// The header is SUPPOSED to differ, by exactly the scratch declaration. So assert
-// that: remove the declaration and its comment from the shipped header and the two
-// must be identical. Anything else differing would mean the A/B measures more than
-// the hypothesis.
-const scratchDecl = /let _stampCellOf = null;/;
-const shippedHeaderStripped = outsideShip
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/\/\/[^\n]*/g, '')
-  .replace(/\n{2,}/g, '\n')
-  .replace(scratchDecl, '')
-  .replace(/\n{2,}/g, '\n')
-  .trim();
-const baseHeaderStripped = outsideBase
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/\/\/[^\n]*/g, '')
-  .replace(/\n{2,}/g, '\n')
-  .trim();
-check(
-  'the header differs ONLY by the scratch declaration',
-  shippedHeaderStripped === baseHeaderStripped,
-  `baseline has ${baseHeaderStripped.length} chars of header, shipped has ${shippedHeaderStripped.length} after removing the declaration`,
-);
-
-// And the function body is shorter by roughly the removed derivation block.
 const fn = (s) => {
   const start = s.indexOf('function buildStampGrid(');
   return s.slice(start, s.indexOf('\n}', start)).replace(/\s+/g, ' ').trim();
@@ -92,25 +61,10 @@ const fn = (s) => {
 const fnBase = fn(baseCode);
 const fnShip = fn(shipCode);
 check(
-  'the function body is strictly shorter',
-  fnShip.length < fnBase.length,
-  `${fnBase.length} -> ${fnShip.length} chars`,
+  'ship buildStampGrid matches the baseline recompute',
+  fnShip === fnBase,
+  `${fnBase.length} baseline chars, ${fnShip.length} shipped`,
 );
-// One cell derivation is TWO Math.floor calls (col and row), so removing the whole
-// scatter-pass derivation removes two of each. An expectation of 1 failed here, and
-// the reason is worth stating: the count is per-axis, not per-cell.
-const countOf = (s, re) => (s.match(re) || []).length;
-check(
-  'ship body lost exactly two Math.floor (one cell derivation = col + row)',
-  countOf(fnBase, /Math\.floor/g) - countOf(fnShip, /Math\.floor/g) === 2,
-  `${countOf(fnBase, /Math\.floor/g)} -> ${countOf(fnShip, /Math\.floor/g)}`,
-);
-check(
-  'ship body lost exactly two STAMP_CELL divisions',
-  countOf(fnBase, /\/ STAMP_CELL/g) - countOf(fnShip, /\/ STAMP_CELL/g) === 2,
-  `${countOf(fnBase, /\/ STAMP_CELL/g)} -> ${countOf(fnShip, /\/ STAMP_CELL/g)}`,
-);
-check('ship body kept the bounds pass intact', countOf(fnShip, /Math\.floor/g) >= 2);
 
 check('both files still export stampLightRange', /export function stampLightRange/.test(base) && /export function stampLightRange/.test(ship));
 check('both files still define takeClosest', /function takeClosest/.test(base) && /function takeClosest/.test(ship));

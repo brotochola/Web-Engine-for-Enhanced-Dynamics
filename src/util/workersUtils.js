@@ -129,7 +129,7 @@ export const PARTICLE_STATS = Object.freeze({
   /**
    * E-37. Flowfield requests serviced this frame, hits and misses alike.
    *
-   * `COMPUTED / SERVICED` is the LRU hit rate. If it is 0 the entire flowfield path is
+   * `COMPUTED / SERVICED` is the LRU miss rate. If it is 0 the entire flowfield path is
    * dead weight and E-11 is moot; if it is 1, every request pays for five full-grid
    * `fill()`s and E-11 is real. One ratio instead of two raw counters, because the two
    * numbers are not interpretable on their own.

@@ -1,31 +1,16 @@
 // E-32: the load gate, and the two sittings it cost.
 //
 // `runPredatorAbab.mjs` decides `FAIL (load)` when a load key moves by more than
-// 5%. The STEP_MS path has always guarded that comparison with the key's own
-// coefficient of variation (`quiet = max(cvBase, cvHyp) <= 0.1`). The load path did
-// not, and two sittings were lost to it:
+// 5%, or when its coefficient of variation is 50% or higher. That is
+// HOW_WE_MEASURE. The band does not widen with the key's own noise.
+//
+// Two sittings were lost to a count of about one dirty tile:
 //
 //   E-05: DECAL_TILES_DIRTY 0.8 -> 1.0  -> FAIL (load), 25 % "mismatch"
 //   E-17: DECAL_TILES_DIRTY 1.1 -> 0.8  -> FAIL (load), -27 % "mismatch"
 //
-// Neither was a load difference. Every other load key in both runs matched to
-// within 0.1 %: BODY_COUNT 0.0 %, GPU_CASTERS 0.1 %, ACTIVE_DECORATIONS exactly
-// 20 000 on both sides. Predator's dirty-decal count sits at about one tile, and
-// a mean of ~1 cannot hold a 5 % band at any threshold.
-//
-// Two independent defects, and this file tests them separately because they are
-// separable:
-//
-//   1. FLOOR. A key whose value is structurally too small to gate (DECAL_TILES_DIRTY
-//      ~1, floored at 8; ACTIVE_PARTICLES ~100, floored at 1000).
-//   2. NOISE. A key whose value is large enough but whose run-to-run spread exceeds
-//      the delta. This one is the general fix - it needs no floor and applies to
-//      every key - and it is the one most likely to be re-broken by someone
-//      tightening the band back to a constant.
-//
-// The tests below are in that order of importance. `a real shift still fails the
-// sitting` is the load-bearing one: a gate that cannot fire is worse than no gate,
-// because it looks like a pass.
+// Neither was a load difference. The floor mutes a key only when BOTH medians
+// are under it. One side at or above the floor is a normal 5% check.
 //
 // E-32 in docs/internal/EXECUTION_PLAN.md.
 
@@ -135,11 +120,7 @@ test('a real shift still fails the sitting', () => {
 });
 
 test('a large shift still fails even when the key is noisy', () => {
-  // Muting must be bounded: noise widens the band, it does not disable the gate.
-  // Here the key jitters by ~29 % but its median moves by 20 % in the same
-  // direction as B's median in the previous test - i.e. that would be muted. A
-  // delta of 300 % on a noisy key must still fire, or the gate can be defeated by
-  // making the key noisier.
+  // Noise must not widen the band. A 300% move on a jittery key still fails.
   const pairs = pairsWithLoad(
     'preRender',
     [7.0, 7.0, 7.0, 7.0],
@@ -160,9 +141,9 @@ test('a large shift still fails even when the key is noisy', () => {
 // 3. The noise guard itself
 // ---------------------------------------------------------------------------
 
-test('a delta inside the key\'s own noise is muted, not fatal', () => {
-  // The median moves 20 % but one pair is an outlier that drags the spread wide.
-  // Without the guard this read as a 20 % load mismatch.
+test('a 20% shift fails even when one pair is an outlier', () => {
+  // The median moves 20%. One pair is an outlier. The band stays 5%, so this
+  // is a load failure, not a mute.
   const pairs = pairsWithLoad(
     'preRender',
     [7.0, 7.0, 7.0, 7.0],
@@ -173,23 +154,13 @@ test('a delta inside the key\'s own noise is muted, not fatal', () => {
   );
   const d = decideAbab(pairs, 'preRender');
   const l = d.load.ENTITIES_PROCESSED;
-  assert.ok(l.noisePct > 5, `expected a noisy key, got ${l.noisePct.toFixed(1)}%`);
-  assert.ok(Math.abs(l.deltaPct) <= l.bandPct, 'the delta must be inside the band for this to be a mute');
-  assert.equal(l.mutedBy, 'noise');
-  assert.ok(
-    !d.reasons.some((r) => r.includes('ENTITIES_PROCESSED')),
-    'a muted key must not appear in reasons',
-  );
-  assert.ok(
-    d.muted.some((s) => s.includes('ENTITIES_PROCESSED') && s.includes('noise')),
-    `a muted key must be explained, not silently dropped: ${JSON.stringify(d.muted)}`,
-  );
+  assert.equal(l.bandPct, 5);
+  assert.equal(l.mutedBy, null);
+  assert.ok(d.reasons.some((r) => r.includes('ENTITIES_PROCESSED')));
+  assert.equal(d.verdict, 'FAIL (load)');
 });
 
-test('a muted key is still reported with its numbers, cv and band', () => {
-  // The run says the load matched; the table says a key moved 20 %. Without the
-  // cv and band on the same line that reads as a contradiction rather than a
-  // decision, which is how the E-05/E-17 failures got mistaken for real findings.
+test('a failing key is still reported with its numbers, cv and band', () => {
   const pairs = pairsWithLoad(
     'preRender',
     [7.0, 7.0, 7.0, 7.0],
@@ -204,8 +175,24 @@ test('a muted key is still reported with its numbers, cv and band', () => {
     assert.ok(f in l, `load entries must carry ${f}`);
     assert.ok(l[f] === null || l[f] === undefined || typeof l[f] !== 'number' || Number.isFinite(l[f]), `${f} is not finite: ${l[f]}`);
   }
-  // It survives a JSON round trip - the summary is written to disk from this.
   assert.doesNotThrow(() => JSON.parse(JSON.stringify(d.load)));
+});
+
+test('cv at or above 50% fails a gated key even when the median matches', () => {
+  const pairs = pairsWithLoad(
+    'preRender',
+    [7.0, 7.0, 7.0, 7.0],
+    [7.0, 7.0, 7.0, 7.0],
+    'ENTITIES_PROCESSED',
+    [100, 100, 100, 100],
+    [10, 10, 190, 190],
+  );
+  const d = decideAbab(pairs, 'preRender');
+  const l = d.load.ENTITIES_PROCESSED;
+  assert.ok(Math.max(l.cvBase, l.cvHyp) >= 0.5);
+  assert.ok(Math.abs(l.deltaPct) <= 5);
+  assert.ok(d.reasons.some((r) => r.includes('ENTITIES_PROCESSED') && r.includes('cv')));
+  assert.equal(d.verdict, 'FAIL (load)');
 });
 
 test('the band falls back to 5% when there are too few pairs to estimate noise', () => {
@@ -261,6 +248,21 @@ test('ACTIVE_PARTICLES keeps its floor', () => {
   const d = decideAbab(pairs, 'preRender');
   assert.equal(d.load.ACTIVE_PARTICLES.mutedBy, 'floor');
   assert.ok(!d.reasons.some((r) => r.includes('ACTIVE_PARTICLES')));
+});
+
+test('a base under the floor still fails when the other side is above it', () => {
+  const pairs = pairsWithLoad(
+    'preRender',
+    [7.0, 7.0, 7.0, 7.0],
+    [7.0, 7.0, 7.0, 7.0],
+    'ACTIVE_PARTICLES',
+    [100, 110, 90, 100],
+    [5000, 5100, 4900, 5000],
+  );
+  const d = decideAbab(pairs, 'preRender');
+  assert.notEqual(d.load.ACTIVE_PARTICLES.mutedBy, 'floor');
+  assert.ok(d.reasons.some((r) => r.includes('ACTIVE_PARTICLES')));
+  assert.equal(d.verdict, 'FAIL (load)');
 });
 
 test('a floored key comes back under the gate once its base is large enough', () => {

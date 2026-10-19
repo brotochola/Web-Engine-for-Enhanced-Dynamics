@@ -65,26 +65,6 @@ const STAMP_GRID_MAX_CELLS = 128 * 128;
 
 const _stampGridResult = { minX: 0, minY: 0, gw: 0, gh: 0, cells: 0 };
 
-// E-17. Cell index per caster, computed once and reused.
-//
-// The count pass and the scatter pass both walk `sun` and both derive the same
-// `(col, row)` from the same immutable input and the same `minX/minY/gw/gh`. The
-// scatter pass therefore repeated, per caster: two float loads, two subtractions,
-// two divisions by STAMP_CELL, two Math.floor + `| 0`, and four range clamps -- to
-// arrive at a number the count pass had already computed.
-//
-// At Predator's ~13 400 casters that is ~53 600 divisions and ~53 600 floors per
-// frame, recomputed for a value that did not change between the two passes.
-//
-// The replacement is exact, not approximate: both passes read the same `sun` values
-// and the same already-final `minX/minY/gw/gh`, so the recomputation was
-// deterministic and could not have differed. `tests/node/stampGridCellCache.test.js`
-// sweeps the input space and asserts the grid is bit-identical.
-//
-// Module scratch, like `_stampGridResult` beside it: `buildStampGrid` runs once per
-// frame from `stampLightRange`, on one thread.
-let _stampCellOf = null;
-
 function buildStampGrid(sun, nSun, sf, counts, starts, items) {
   let minX = Infinity;
   let minY = Infinity;
@@ -107,10 +87,6 @@ function buildStampGrid(sun, nSun, sf, counts, starts, items) {
     return null;
   }
   counts.fill(0, 0, cells);
-  // E-17: size the cell-index scratch to the caster count, then record each caster's
-  // cell here so the scatter pass does not derive it a second time.
-  if (!_stampCellOf || _stampCellOf.length < nSun) _stampCellOf = new Int32Array(nSun);
-  const cellOf = _stampCellOf;
   for (let c = 0; c < nSun; c++) {
     const b = c * sf;
     let col = Math.floor((sun[b] - minX) / STAMP_CELL) | 0;
@@ -119,9 +95,7 @@ function buildStampGrid(sun, nSun, sf, counts, starts, items) {
     else if (col >= gw) col = gw - 1;
     if (row < 0) row = 0;
     else if (row >= gh) row = gh - 1;
-    const cell = row * gw + col;
-    cellOf[c] = cell;
-    counts[cell]++;
+    counts[row * gw + col]++;
   }
   let sum = 0;
   for (let i = 0; i < cells; i++) {

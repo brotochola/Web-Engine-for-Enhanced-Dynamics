@@ -145,9 +145,9 @@ reported a −26.1 % "mismatch". Every other load key matched to within 0.1 %:
 `BODY_COUNT` 0.0 %, `GPU_CASTERS` 0.1 %, `ACTIVE_DECORATIONS` exactly 20 000 on both
 sides. That is not a load difference; that is a key that cannot hold a 5 % band.
 
-The fix (E-32) gives every load key the noise guard the `STEP_MS` path has always had
-(`quiet = max(cvBase, cvHyp)`), so the band is `max(5 %, the key's own noise)`.
-`decideAbab` is a pure function of the recorded `pairs`, so the sitting was
+The fix (E-32) floors `DECAL_TILES_DIRTY` when both medians sit under 8, which is
+this sitting: 1.1 and 0.8. The 5% band is unchanged. `decideAbab` is a pure function
+of the recorded `pairs`, so the sitting was
 **re-adjudicated rather than re-run** — no browser time, and the pre-render numbers
 are byte-identical:
 
@@ -159,7 +159,7 @@ node tests/bench/readjudicateAbab.mjs --all
 | --- | --- | --- |
 | verdict | `FAIL (load)` | **`REGRESSION`** |
 | reasons | `load DECAL_TILES_DIRTY -26.1%` | *(none)* |
-| `DECAL_TILES_DIRTY` | 1.1 → 0.8, band 38.5 %, muted by floor | reported, not gating |
+| `DECAL_TILES_DIRTY` | 1.1 → 0.8, both under the floor of 8 | reported, not gating |
 | owner preRender | 7.472 → 7.794 ms, +3.1 %, 3/4 pairs | **unchanged** |
 
 The verdict is **stronger than it was**, not weaker. Before, there was no verdict at
@@ -173,7 +173,10 @@ were the two broken ones** — every pre-E-32 sitting kept its verdict unchanged
 ## Cost
 
 One kernel, one baseline copy, one baseline verifier, one report. **The `src/` change
-is reverted**; the tree is byte-identical to the anchor for this file.
+is reverted.** The first revert left the count-pass write of `_stampCellOf` in place
+and still recomputed the cell on the scatter pass, so the hot path paid for the store
+and kept the arithmetic. That write is gone. `buildStampGrid` matches the baseline
+copy again.
 
 Numbers: `tests/results/e17-stamp-grid/kernel.json`,
 `tests/results/predator-abab/E17/summary.json`.

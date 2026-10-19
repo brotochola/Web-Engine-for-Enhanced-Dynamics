@@ -162,46 +162,16 @@ const SUB_TIMERS = [
   'LIGHTS_MS',
   'SHADOWS_MS',
 ];
-// Predator emits ~100 particles: Poisson noise alone is ~10 %. Below this
-// baseline the key is reported, not gated (it is not any worker's load).
-//
-// E-32. DECAL_TILES_DIRTY joins it. Observed across three Predator sittings it
-// reads 0.0, 0.8, 1.0, 1.1 and 1.2 - a mean of about one dirty decal tile. A
-// key whose value is ~1 cannot hold a 5 % band at any threshold: one tile
-// dirtying differently between two 10 s halves is a 25 % "change". That is a
-// structural problem, not a noisy one, so it is floored rather than tuned.
-//
-// The floor is deliberately well above the observed range and is NOT a claim
-// that 8 tiles is a quiet signal. It marks "out of the degenerate regime"; the
-// noise guard below is what does the real work, for every key.
+// Predator emits ~100 particles. DECAL_TILES_DIRTY sits near one tile. A 5%
+// band on a count of ~1 is one tile of rounding. Mute only when BOTH medians
+// are under the floor. One side at or above the floor is a normal 5% check,
+// so 100 particles versus 5000 still fails.
 const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8 };
 
-// E-32. A load key may only invalidate a sitting if its change is larger than the
-// key's own run-to-run variation.
-//
-// The STEP_MS path has always had this guard, and always had it in the right
-// place: `quiet = max(cvBase, cvHyp) <= 0.1` decides whether a +3 % is a
-// regression or noise. The load path had no equivalent, and two sittings were
-// lost to it. E-05 saw `DECAL_TILES_DIRTY 0.8 -> 1.0`; E-17 saw `1.1 -> 0.8`.
-// Both were reported as 25 % load mismatches. Neither was a load difference -
-// neither side did different work, and every other load key matched to within
-// 0.1 %.
-//
-// So the band is no longer a constant 5 %: it is max(5 %, the key's own noise).
-// A key that shifts consistently across every pair has low noise and a large
-// delta, so it still invalidates the sitting exactly as before. A key that
-// jitters pair to pair has high noise and does not.
-//
-// Direction of the error is deliberate. Muting can hide a real load shift that is
-// itself noisy, which costs one sitting. The alternative - a 25 % band appearing
-// on a jittering key and then being reported as a load failure - costs a sitting
-// too and teaches the reader that the gate is arbitrary. A muted key is still
-// printed with its numbers, its cv and its band, so nothing is hidden; only its
-// ability to invalidate the pair changed.
+// HOW_WE_MEASURE: a load key outside 5% fails the pair. A coefficient of
+// variation at or above 50% fails the pair. The band does not widen with cv.
 const LOAD_GATE_BAND_PCT = 5;
-// A cv estimated from fewer pairs is itself mostly noise, so it must not widen the
-// band. Below this the gate falls back to the plain 5 %.
-const NOISE_PAIRS_MIN = 3;
+const LOAD_CV_FAIL = 0.5;
 
 /** Max STEP_MS per worker kind plus the load keys. */
 export function predatorMetrics(report) {
@@ -292,49 +262,48 @@ export function decideAbab(pairs, owner, metric = null) {
       belowFloorPct: interpretable ? null : ((baseMedian / STEP_MS_FLOOR) * 100).toFixed(1),
     };
   }
-  // E-32. The noise guard. See the note on LOAD_GATE_BAND_PCT for why the band is
-  // per-key rather than a constant.
   const load = {};
+  const reasons = [];
+  const muted = [];
   for (const key of LOAD_KEYS) {
-    const av = pairs.map((p) => p.A[key] ?? 0);
-    const bv = pairs.map((p) => p.B[key] ?? 0);
-    const a = median(av);
-    const b = median(bv);
-    const cvA = cv(av);
-    const cvB = cv(bv);
-    const enoughPairs = av.length >= NOISE_PAIRS_MIN && bv.length >= NOISE_PAIRS_MIN;
-    const noise = enoughPairs ? Math.max(Number.isFinite(cvA) ? cvA : 0, Number.isFinite(cvB) ? cvB : 0) : 0;
-    load[key] = {
+    const av = [];
+    const bv = [];
+    for (const p of pairs) {
+      if (p.A && Object.prototype.hasOwnProperty.call(p.A, key) && Number.isFinite(p.A[key])) av.push(p.A[key]);
+      if (p.B && Object.prototype.hasOwnProperty.call(p.B, key) && Number.isFinite(p.B[key])) bv.push(p.B[key]);
+    }
+    if (av.length === 0 && bv.length === 0) continue;
+    const a = av.length ? median(av) : null;
+    const b = bv.length ? median(bv) : null;
+    const cvA = av.length ? cv(av) : 0;
+    const cvB = bv.length ? cv(bv) : 0;
+    const noise = Math.max(Number.isFinite(cvA) ? cvA : 0, Number.isFinite(cvB) ? cvB : 0);
+    const floor = LOAD_GATE_MIN[key] ?? 0;
+    const bothPresent = av.length === pairs.length && bv.length === pairs.length;
+    const belowFloor = bothPresent && a < floor && b < floor;
+    const entry = {
       base: a,
       hyp: b,
       deltaPct: a > 0 ? pctDelta(b, a) : null,
       cvBase: Number.isFinite(cvA) ? cvA : 0,
       cvHyp: Number.isFinite(cvB) ? cvB : 0,
       noisePct: noise * 100,
-      bandPct: Math.max(LOAD_GATE_BAND_PCT, noise * 100),
+      bandPct: LOAD_GATE_BAND_PCT,
+      belowFloor,
+      gated: !belowFloor,
+      mutedBy: belowFloor ? 'floor' : null,
     };
-  }
-  const reasons = [];
-  const muted = [];
-  for (const [key, l] of Object.entries(load)) {
-    const floor = LOAD_GATE_MIN[key] ?? 0;
-    l.belowFloor = l.base < floor;
-    l.gated = !l.belowFloor;
-    if (l.belowFloor) {
-      l.mutedBy = 'floor';
+    load[key] = entry;
+    if (belowFloor) continue;
+    if (!bothPresent) {
+      reasons.push(`load ${key} missing`);
       continue;
     }
-    if (l.deltaPct == null || Math.abs(l.deltaPct) <= LOAD_GATE_BAND_PCT) continue;
-    if (Math.abs(l.deltaPct) <= l.bandPct) {
-      // It moved by more than 5 %, but by no more than it moves on its own.
-      l.mutedBy = 'noise';
-      muted.push(
-        `load ${key} ${l.deltaPct.toFixed(1)}% is within its own noise (${l.bandPct.toFixed(1)}%) - reported, not gating`,
-      );
-      continue;
+    if (noise >= LOAD_CV_FAIL) reasons.push(`load ${key} cv ${(noise * 100).toFixed(1)}%`);
+    if (a === 0 && b !== 0) reasons.push(`load ${key} 0 -> ${b}`);
+    else if (entry.deltaPct != null && Math.abs(entry.deltaPct) > LOAD_GATE_BAND_PCT) {
+      reasons.push(`load ${key} ${entry.deltaPct.toFixed(1)}%`);
     }
-    l.mutedBy = null;
-    reasons.push(`load ${key} ${l.deltaPct.toFixed(1)}%`);
   }
   // A paired median of +3 % from 8 scattered pairs is not a regression by
   // itself: it also has to be consistent (≥ 75 % of the pairs worse).
@@ -599,11 +568,11 @@ function printDecision(name, decision) {
   // the load matched, and the table says a key moved 25 %.
   for (const [key, l] of Object.entries(decision.load)) {
     let note = '';
-    if (l.mutedBy === 'floor') note = ' (below its floor, reported, not gated)';
-    else if (l.mutedBy === 'noise') note = ` (moved, but within its own noise of ${l.bandPct.toFixed(1)}%, not gating)`;
+    if (l.mutedBy === 'floor') note = ' (both sides below its floor, reported, not gated)';
     else if (!l.gated) note = ' (reported, not gated)';
+    const fmt = (n) => (typeof n === 'number' && Number.isFinite(n) ? n.toFixed(1) : 'missing');
     console.log(
-      `${key.padEnd(18)} ${l.base.toFixed(1)} → ${l.hyp.toFixed(1)} ` +
+      `${key.padEnd(18)} ${fmt(l.base)} → ${fmt(l.hyp)} ` +
         `(${l.deltaPct == null ? 'n/a' : l.deltaPct.toFixed(1) + '%'})` +
         `cv ${(l.cvBase * 100).toFixed(0)}/${(l.cvHyp * 100).toFixed(0)}%${note}`,
     );
