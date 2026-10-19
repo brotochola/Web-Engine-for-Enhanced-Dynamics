@@ -18,7 +18,7 @@ const {
 
 const HALF_W = 11;
 const HALF_H = 14;
-const THRUST_ACCEL = 3100;
+export const THRUST_ACCEL = 3100;
 const LOOK_AHEAD = 0.02;
 const CAM_SMOOTH = 0.12;
 const MUZZLE_PAD = Math.sqrt(HALF_W * HALF_W + HALF_H * HALF_H) + 4;
@@ -57,10 +57,15 @@ export class Ship extends GameObject {
     this._benchRemesh = !!spawnConfig.benchRemesh;
   }
 
-  tick(dtRatio, _deltaTime, accumulatedTime) {
+  /** World-space thrusters. Planet scenes override this for camera-local flight. */
+  _applyThrust() {
     if (Keyboard.w) this.addAcceleration(0, -THRUST_ACCEL);
     if (Keyboard.a) this.addAcceleration(-THRUST_ACCEL * 0.25, 0);
     if (Keyboard.d) this.addAcceleration(THRUST_ACCEL * 0.25, 0);
+  }
+
+  tick(dtRatio, _deltaTime, accumulatedTime) {
+    this._applyThrust();
 
     if (this._benchRemesh) this._laserOn = 1;
     if (Keyboard.isPressed('c')) this._laserOn = 1;

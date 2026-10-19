@@ -12,6 +12,7 @@ import {
   SHOT_KIND_BODY,
 } from '../worldGrid.js';
 import { TerrainIsland } from './terrainIsland.js';
+import { debugWorkerLog } from '/src/util/debugLog.js';
 import WEED from '/src/index.js';
 
 const {
@@ -437,18 +438,31 @@ export class WorldGridManager extends GameObject {
       }
       if (bestI >= 0) {
         const rec = pool[bestI];
-        this._retargetStatic(rec, job);
-        rec.minX = job.islandBox.minX;
-        rec.minY = job.islandBox.minY;
-        rec.maxX = job.islandBox.maxX;
-        rec.maxY = job.islandBox.maxY;
-        rec.chunkX = job.chunkX;
-        rec.chunkY = job.chunkY;
-        rec.quad = job.quad;
-        keep.push(rec);
+        if (this._retargetStatic(rec, job)) {
+          rec.minX = job.islandBox.minX;
+          rec.minY = job.islandBox.minY;
+          rec.maxX = job.islandBox.maxX;
+          rec.maxY = job.islandBox.maxY;
+          rec.chunkX = job.chunkX;
+          rec.chunkY = job.chunkY;
+          rec.quad = job.quad;
+          keep.push(rec);
+          pool[bestI] = pool[pool.length - 1];
+          pool.pop();
+          continue;
+        }
+        // replacePolygonsFlat fails closed: the island keeps its OLD fixtures
+        // (CW/degenerate contour, vert-count, or a full fixture pool). Keeping
+        // the rec would strand those shapes in Box2D and in the mesh while the
+        // rec's rect already tracks the new grid — stale terrain no later
+        // remesh repairs. Drop the island and fall through to a fresh spawn;
+        // if that also fails the area is retried by the next dirty pass.
+        debugWorkerLog(
+          `worldGrid: retarget failed entity=${rec.index}; rebuilding static island`,
+        );
+        this._despawnIndex(rec.index);
         pool[bestI] = pool[pool.length - 1];
         pool.pop();
-        continue;
       }
       const spawned = Islands().spawn({
         x: job.cen.x,

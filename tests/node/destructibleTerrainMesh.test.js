@@ -637,3 +637,78 @@ test('stopIfGrounded massif next to pebble skips mesh; pebble stays small', () =
     teardown();
   }
 });
+
+test('contour fixtures stay replace-compatible at every simplify tolerance', () => {
+  // The remesh path feeds polysToLocal() output straight into
+  // ColliderFixture.replaceForEntityFlat, which fails closed (old fixtures
+  // stay) on CW/degenerate/vert-count. The builder must never emit a poly the
+  // replace step would reject, or deleted terrain would keep stale collision
+  // and mesh that no later remesh repairs.
+  const signedArea = (pts) => {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length;
+      a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+    }
+    return a * 0.5;
+  };
+  const shapes = [
+    {
+      cols: 32,
+      rows: 24,
+      fill() {
+        for (let y = 6; y < 18; y++) for (let x = 4; x < 28; x++) WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+        for (let y = 9; y < 13; y++) for (let x = 12; x < 18; x++) WorldGrid.setAmount(x, y, 0, MAT_DIRT);
+      },
+    },
+    {
+      cols: 28,
+      rows: 28,
+      fill() {
+        for (let y = 4; y < 24; y++) {
+          for (let x = 4; x < 24; x++) {
+            if ((x - 14) * (x - 14) + (y - 14) * (y - 14) > 90) continue;
+            WorldGrid.setAmount(x, y, 1, MAT_DIRT);
+          }
+        }
+        for (let y = 4; y < 8; y++) for (let x = 13; x < 16; x++) WorldGrid.setAmount(x, y, 0, MAT_DIRT);
+      },
+    },
+  ];
+  try {
+    let localCount = 0;
+    for (const shape of shapes) {
+      SharedResource.resetAll();
+      WorldGrid.attach(shape.cols, shape.rows, 8);
+      shape.fill();
+      const islands = WorldGrid.extractIslands();
+      assert.ok(islands.length >= 1, 'shape produces an island');
+      for (const tol of [1, 2, 3, 8, 12, 16]) {
+        for (const island of islands) {
+          const built = WorldGrid.buildContourFixtures(island, tol);
+          assert.ok(Array.isArray(built.polys), `polys array tol ${tol}`);
+          for (const poly of built.polys) {
+            assert.ok(poly.length >= 3 && poly.length <= 8, `world verts ${poly.length} tol ${tol}`);
+            for (const p of poly) {
+              assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y), 'non-finite world vertex');
+            }
+          }
+          if (!built.polys.length) continue;
+          const cen = WorldGrid.centroidFromPolys(built.polys);
+          assert.ok(cen, `centroid tol ${tol}`);
+          for (const poly of WorldGrid.polysToLocal(built.polys, cen.x, cen.y)) {
+            localCount++;
+            assert.ok(poly.length >= 3 && poly.length <= 8, `local verts ${poly.length} tol ${tol}`);
+            assert.ok(signedArea(poly) > 1e-8, `local poly must be CCW positive tol ${tol}`);
+            for (const p of poly) {
+              assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y), 'non-finite local vertex');
+            }
+          }
+        }
+      }
+    }
+    assert.ok(localCount > 0, 'expected replaceable local polys');
+  } finally {
+    teardown();
+  }
+});
