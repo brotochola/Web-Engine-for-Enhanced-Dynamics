@@ -78,6 +78,7 @@
     "bench:feature:tilemap-gid": "node tests/bench/runIntegratedWorkerBenchmark.mjs --scene /tests/bench/stressScenes/tilemapCullStressScene.js --scene-export TilemapCullStressScene --output tests/results/tilemap-gid-stress.json",
     "bench:feature:contact-drain": "node tests/bench/runIntegratedWorkerBenchmark.mjs --scene /tests/bench/stressScenes/contactDrainStressScene.js --scene-export ContactDrainStressScene --output tests/results/contact-drain-stress.json",
     "bench:micro:treiber": "node tests/bench/treiberMicrobench.mjs",
+    "bench:micro:body-dirty-flush": "node tests/bench/bodyDirtyFlushMicrobench.mjs",
     "bench:feature:spawn-storm": "node tests/bench/runIntegratedWorkerBenchmark.mjs --scene /tests/bench/stressScenes/spawnStormScene.js --scene-export SpawnStormScene --output tests/results/spawn-storm.json",
     "bench:micro:spawn-ring": "node tests/bench/spawnCommandRingMicrobench.mjs",
     "bench:micro:skip-work": "node tests/bench/skipWorkMicrobench.mjs",

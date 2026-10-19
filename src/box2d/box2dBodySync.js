@@ -19,6 +19,9 @@ let dirtyWords = null;
 let generation = null;
 let epoch = null;
 let pendingFlags = null;
+let pendingList = null;
+let pendingListCount = 0;
+let pendingOverflow = 0;
 let dirtyDeferDepth = 0;
 let poseSlots = null;
 
@@ -79,6 +82,9 @@ export function bindBodySyncBuffers(buffers) {
     generation = null;
     epoch = null;
     pendingFlags = null;
+    pendingList = null;
+    pendingListCount = 0;
+    pendingOverflow = 0;
     poseSlots = null;
     return null;
   }
@@ -88,6 +94,9 @@ export function bindBodySyncBuffers(buffers) {
   generation = new Int32Array(buffers.bodyGeneration);
   epoch = buffers.bodyGenEpoch ? new Int32Array(buffers.bodyGenEpoch) : null;
   pendingFlags = new Int32Array(dirtyFlags.length);
+  pendingList = new Int32Array(dirtyFlags.length);
+  pendingListCount = 0;
+  pendingOverflow = 0;
   poseSlots = null;
   if (buffers.poseDataA && buffers.poseDataB) {
     const n = (buffers.poseDataA.byteLength / 16) | 0;
@@ -100,10 +109,36 @@ export function bindBodySyncBuffers(buffers) {
   return { dirtyFlags, dirtyWords, generation };
 }
 
+function rememberPending(i) {
+  const list = pendingList;
+  if (!list) return;
+  const n = pendingListCount;
+  if (n >= list.length) {
+    pendingOverflow = 1;
+    return;
+  }
+  list[n] = i;
+  pendingListCount = n + 1;
+}
+
 function flushPendingBodyDirty() {
   const pending = pendingFlags;
   if (!pending || !dirtyFlags) return;
-  for (let i = 0; i < pending.length; i++) {
+  if (pendingOverflow) {
+    pendingOverflow = 0;
+    pendingListCount = 0;
+    for (let i = 0; i < pending.length; i++) {
+      if (!pending[i]) continue;
+      publishBodyDirty(i, 0);
+    }
+    return;
+  }
+  const list = pendingList;
+  const n = pendingListCount;
+  pendingListCount = 0;
+  if (!list) return;
+  for (let k = 0; k < n; k++) {
+    const i = list[k];
     if (!pending[i]) continue;
     publishBodyDirty(i, 0);
   }
@@ -141,6 +176,7 @@ export function markBodyDirty(entityIndex, flags = BODY_DIRTY.LIFECYCLE, force =
   if (dirtyDeferDepth > 0 && !force) {
     if (!pendingFlags || i >= pendingFlags.length) return false;
     pendingFlags[i] |= flags | 0;
+    rememberPending(i);
     return true;
   }
   return publishBodyDirty(i, flags);

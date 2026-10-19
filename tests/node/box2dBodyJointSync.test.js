@@ -106,6 +106,27 @@ test('body dirty: closing the spawn window publishes every saved mark', () => {
   assert.ok(words[0] & (1 << 9));
 });
 
+test('body dirty: pending list overflow still publishes every slot', () => {
+  const entityCount = 16;
+  const buffers = {
+    bodyDirtyFlags: new SharedArrayBuffer(entityCount * 4),
+    bodyDirtyWords: new SharedArrayBuffer(4),
+    bodyGeneration: new SharedArrayBuffer(entityCount * 4),
+  };
+  bindBodySyncBuffers(buffers);
+  const flags = new Int32Array(buffers.bodyDirtyFlags);
+  const words = new Int32Array(buffers.bodyDirtyWords);
+
+  withBodyDirtyDeferred(() => {
+    for (let n = 0; n < entityCount + 4; n++) markBodyDirty(1, BODY_DIRTY.GEOMETRY);
+    markBodyDirty(2, BODY_DIRTY.MASS);
+  });
+  assert.equal(flags[1] & BODY_DIRTY.GEOMETRY, BODY_DIRTY.GEOMETRY);
+  assert.equal(flags[2] & BODY_DIRTY.MASS, BODY_DIRTY.MASS);
+  assert.ok(words[0] & (1 << 1));
+  assert.ok(words[0] & (1 << 2));
+});
+
 test('body dirty: closing the defer window publishes saved flags', () => {
   const entityCount = 16;
   const buffers = {
