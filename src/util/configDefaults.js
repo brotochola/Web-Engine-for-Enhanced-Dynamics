@@ -323,6 +323,9 @@ export const ENGINE_DEFAULTS = Object.freeze({
 // PHYSICS DEFAULTS
 // ============================================================================
 
+/** Box2D `B2_MAX_WORKERS`. Scene `physics.box2dWorkerCount` clamps to this. */
+export const BOX2D_MAX_WORKERS = 32;
+
 export const PHYSICS_DEFAULTS = Object.freeze({
   /**
    * Default true. false = do not create box2dWasm.js; Transform pose binds to a Weed SAB.
@@ -353,7 +356,7 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   contactSpeed: 1000,
   /** Hard linear speed clamp (px/s). */
   maximumLinearSpeed: 50000,
-  /** Box2D internal pthread count (not Weed logic/spatial). Clamped to PTHREAD_POOL_SIZE (4). */
+  /** Box2D solver workers, including the physics worker. Clamped to BOX2D_MAX_WORKERS. */
   box2dWorkerCount: 4,
   /** SPMC contact/sensor event ring capacity (begin+end). Dense spawns need large. */
   contactRingCapacity: 65536,

@@ -483,32 +483,6 @@ var callRuntimeCallbacks = callbacks => {
 
 var onPreRuns = [];
 
-var addOnPreRun = cb => onPreRuns.push(cb);
-
-var dependenciesPromise = null;
-
-var resolveRunDependencies = async () => dependenciesPromise;
-
-var runDependencies = 0;
-
-var dependenciesPromiseResolve = null;
-
-var removeRunDependency = id => {
-  runDependencies--;
-  Module["monitorRunDependencies"]?.(runDependencies);
-  if (!runDependencies) {
-    dependenciesPromiseResolve();
-  }
-};
-
-var addRunDependency = id => {
-  if (!runDependencies) {
-    dependenciesPromise = new Promise(resolve => dependenciesPromiseResolve = resolve);
-  }
-  runDependencies++;
-  Module["monitorRunDependencies"]?.(runDependencies);
-};
-
 var spawnThread = threadParams => {
   var worker = PThread.getNewWorker();
   if (!worker) {
@@ -626,21 +600,7 @@ var PThread = {
       PThread.initMainThread();
     }
   },
-  initMainThread() {
-    var pthreadPoolSize = 4;
-    // Start loading up the Worker pool, if requested.
-    while (pthreadPoolSize--) {
-      PThread.allocateUnusedWorker();
-    }
-    // MINIMAL_RUNTIME takes care of calling loadWasmModuleToAllWorkers
-    // in postamble_minimal.js
-    addOnPreRun(async () => {
-      var pthreadPoolReady = PThread.loadWasmModuleToAllWorkers();
-      addRunDependency("loading-workers");
-      await pthreadPoolReady;
-      removeRunDependency("loading-workers");
-    });
-  },
+  initMainThread() {},
   terminateAllThreads: () => {
     // Attempt to kill all workers.  Sadly (at least on the web) there is no
     // way to terminate a worker synchronously, or to be notified when a
@@ -764,14 +724,6 @@ var PThread = {
       wasmModule
     });
   }),
-  async loadWasmModuleToAllWorkers() {
-    // Instantiation is synchronous in pthreads.
-    if (ENVIRONMENT_IS_PTHREAD) {
-      return;
-    }
-    let pthreadPoolReady = Promise.all(PThread.unusedWorkers.map(PThread.loadWasmModuleToWorker));
-    return pthreadPoolReady;
-  },
   allocateUnusedWorker() {
     var worker;
     var pthreadMainJs = _scriptName;
@@ -1702,9 +1654,6 @@ async function run() {
     return;
   }
   preRun();
-  if (runDependencies) {
-    await resolveRunDependencies();
-  }
   var setStatus = Module["setStatus"];
   if (setStatus) {
     setStatus("Running...");

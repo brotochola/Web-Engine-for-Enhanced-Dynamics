@@ -180,6 +180,7 @@ export class PredatorScene extends WEED.Scene {
     // Physics configuration
     physics: {
       subStepCount: 0,
+      box2dWorkerCount: 4,
       noLimitFPS: predatorNoLimitFPS,
 
       gravity: { x: 0, y: 0 },

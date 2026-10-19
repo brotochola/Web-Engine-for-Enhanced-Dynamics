@@ -151,6 +151,9 @@ test('WASM get_lf_worker_count matches create_world workerCount', () => {
   const world4 = fn('create_world')(0, 0, 100, 30, 0.7, 3, 4000, 4);
   assert.ok(world4);
   assert.equal(fn('get_lf_worker_count')(), 4);
+  const world99 = fn('create_world')(0, 0, 100, 30, 0.7, 3, 4000, 99);
+  assert.ok(world99);
+  assert.equal(fn('get_lf_worker_count')(), 32);
 });
 
 test('WASM static floor vx stays 0 under a puddle', () => {

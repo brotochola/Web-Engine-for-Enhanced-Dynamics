@@ -3,7 +3,7 @@
 // Shared utility functions for the multithreaded game engine
 // ============================================================================
 
-import { PHYSICS_DEFAULTS } from './configDefaults.js';
+import { BOX2D_MAX_WORKERS, PHYSICS_DEFAULTS } from './configDefaults.js';
 import { nativeImport } from './sceneScript.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
@@ -856,7 +856,7 @@ export function validatePhysicsConfig(currentConfig, newConfig) {
     box2dWorkerCount: Math.max(
       1,
       Math.min(
-        4,
+        BOX2D_MAX_WORKERS,
         (newConfig.box2dWorkerCount ??
           current.box2dWorkerCount ??
           PHYSICS_DEFAULTS.box2dWorkerCount) | 0
