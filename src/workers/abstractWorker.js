@@ -41,6 +41,7 @@ import { Ray } from '../core/ray.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter } from '../util/waitMeter.js';
+import { bindFrameClock, stampStep } from '../util/frameClock.js';
 import { SceneBridge } from '../core/sceneBridge.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
@@ -205,6 +206,10 @@ export class AbstractWorker {
     // do. E-01 / E-06 in docs/internal/EXECUTION_PLAN.md.
     this.idleTimeThisFrame = 0;
     this._lastFrameEndAt = 0;
+    // E-24. Null until init hands over the shared frame clock. Stamps stay
+    // outside STEP_MS: they run before the step timer starts and after it stops.
+    this._frameClock = null;
+    this._frameClockSlot = -1;
 
     // Injected dt for `{ msg: 'step' }` (lockstep). 0 = use wall / fixedFps.
     this._injectedDeltaTime = 0;
@@ -338,6 +343,8 @@ export class AbstractWorker {
     // Scheduler idle since the previous frame. Measured before updateFrameTiming()
     // so it cannot absorb any of the step it is meant to sit beside.
     const frameStart = performance.now();
+    // Absolute ms. performance.now() alone is not comparable with other workers.
+    const frameStartAbs = performance.timeOrigin + frameStart;
     this.idleTimeThisFrame = this._lastFrameEndAt > 0 ? Math.max(0, frameStart - this._lastFrameEndAt) : 0;
 
     this.frameNumber++;
@@ -358,6 +365,14 @@ export class AbstractWorker {
     this.update(timing.deltaTime, timing.dtRatio, resuming);
     this.stepTimeThisFrame = performance.now() - t0;
     this._lastFrameEndAt = performance.now();
+    if (this._frameClock) {
+      stampStep(
+        this._frameClock,
+        this._frameClockSlot,
+        frameStartAbs,
+        performance.timeOrigin + this._lastFrameEndAt
+      );
+    }
 
     // Report FPS
     this.reportFPS();
@@ -815,6 +830,10 @@ export class AbstractWorker {
 
     if (data.buffers?.clockData) {
       Time.bind(data.buffers.clockData);
+    }
+    if (data.buffers?.frameClock && Number.isInteger(data.frameClockSlot)) {
+      this._frameClock = bindFrameClock(data.buffers.frameClock);
+      this._frameClockSlot = data.frameClockSlot;
     }
     if (data.buffers?.tweenData) {
       Tween.bind(data.buffers.tweenData, data.config?.tween?.maxTweens | 0);

@@ -67,6 +67,41 @@
     IDLE_MS: 48,
   };
 
+  // E-24. Keep these offsets in sync with src/util/frameClock.js.
+  // ponytail: classic IIFE cannot import that module (upgrade: importScripts one impl).
+  var FC_HEADER = 32;
+  var FC_SLOT = 32;
+  var FC_SEQ = 4;
+  var FC_GEN = 5;
+
+  function fcReadGen(i32) {
+    var gen = 0;
+    for (var spin = 0; spin < 8; spin++) {
+      var s1 = Atomics.load(i32, FC_SEQ);
+      if (s1 & 1) continue;
+      gen = Atomics.load(i32, FC_GEN);
+      var s2 = Atomics.load(i32, FC_SEQ);
+      if (s1 === s2 && (s2 & 1) === 0) return gen;
+    }
+    return Atomics.load(i32, FC_GEN);
+  }
+
+  function fcStamp(state, startAbs, endAbs) {
+    if (!state.fcI32 || !(startAbs > 0) || !(endAbs >= startAbs)) return;
+    var slot = state.fcSlot;
+    if (slot < 0) return;
+    var i32 = state.fcI32;
+    var f64 = state.fcF64;
+    var gen = fcReadGen(i32);
+    var i32Base = (FC_HEADER + slot * FC_SLOT) >> 2;
+    var f64Base = (FC_HEADER + slot * FC_SLOT) >> 3;
+    Atomics.add(i32, i32Base + 5, 1);
+    f64[f64Base] = startAbs;
+    f64[f64Base + 1] = endAbs;
+    Atomics.store(i32, i32Base + 4, gen);
+    Atomics.add(i32, i32Base + 5, 1);
+  }
+
   // Mirrors Transform / RigidBody ARRAY_SCHEMA (pose/vel/sleeping = HEAP only).
   var TRANSFORM_SCHEMA = {
     active: Uint8Array,
@@ -997,6 +1032,11 @@
     if (data.buffers && data.buffers.clockData) {
       state.clockScale = new Float32Array(data.buffers.clockData);
     }
+    if (data.buffers && data.buffers.frameClock && (data.frameClockSlot | 0) === data.frameClockSlot) {
+      state.fcI32 = new Int32Array(data.buffers.frameClock);
+      state.fcF64 = new Float64Array(data.buffers.frameClock);
+      state.fcSlot = data.frameClockSlot | 0;
+    }
     if (data.frameRateIndex !== undefined) {
       state.frameRateIndex = data.frameRateIndex | 0;
     }
@@ -1132,6 +1172,7 @@
     // else so it cannot absorb the step it sits beside. This is the number
     // E-06 needs and the physics host could not report it at all before.
     var frameStart = performance.now();
+    var frameStartAbs = (typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0) + frameStart;
     if (state.stats && state._lastFrameEndAt > 0) {
       state.stats[PS.IDLE_MS] = Math.max(0, frameStart - state._lastFrameEndAt);
     }
@@ -1179,6 +1220,11 @@
       }
     }
     state._lastFrameEndAt = performance.now();
+    fcStamp(
+      state,
+      frameStartAbs,
+      (typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0) + state._lastFrameEndAt
+    );
 
     writeFPS();
     state.messageTimeThisFrame = 0;

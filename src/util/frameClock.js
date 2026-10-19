@@ -1,0 +1,345 @@
+// frameClock.js — one clock for "when did this worker's step run?"
+//
+// E-24 in docs/internal/EXECUTION_PLAN.md.
+//
+// IDLE_MS says how long a worker waited. It does not say whether the six workers
+// woke on the same vsync or took turns through the frame. A CPU trace could not
+// answer that: thread ids did not resolve and the capture had no idle samples.
+//
+// performance.now() is not comparable across workers — each realm has its own
+// time origin. The comparable value is performance.timeOrigin + performance.now(),
+// which is milliseconds since the Unix epoch on every realm that implements the
+// spec. Those absolute milliseconds do not fit in the Float32 stats buffers
+// (a Float32 around 1e12 has a ulp of minutes), and the benchmark averages every
+// stat it reads, which erases a phase. So this is a separate SharedArrayBuffer,
+// not another stats slot.
+//
+// Layout, little-endian:
+//   Header 32 bytes
+//     0  f64  frameT0     absolute ms of the main thread's last rAF publish
+//     16 i32  seq         even = frameT0/gen are stable; odd = main is writing
+//     20 i32  gen         increments once per main-thread animation frame, from 1
+//   Slot 32 bytes, SLOT_COUNT of them. One writer per slot, so no cross-writer race.
+//     0  f64  startAbs
+//     8  f64  endAbs
+//     16 i32  gen         the main-thread gen the worker observed when it stamped
+//     20 i32  seq         even = the three fields above are a finished step
+//
+// ponytail: logic slots are 8 and spatial slots are 8. A scene that asks for more
+// gets no stamp on the extra workers (upgrade: size the table from the config).
+
+export const HEADER_BYTES = 32;
+export const SLOT_BYTES = 32;
+export const MAX_LOGIC = 8;
+export const MAX_SPATIAL = 8;
+
+export const FRAME_CLOCK_SLOTS = Object.freeze({
+  main: 0,
+  physics: 1,
+  renderer: 2,
+  particle: 3,
+  preRender: 4,
+});
+
+export const LOGIC_SLOT0 = 5;
+export const SPATIAL_SLOT0 = LOGIC_SLOT0 + MAX_LOGIC;
+
+export const SLOT_COUNT = SPATIAL_SLOT0 + MAX_SPATIAL;
+export const FRAME_CLOCK_BYTES = HEADER_BYTES + SLOT_COUNT * SLOT_BYTES;
+
+const HEADER_SEQ = 4;
+const HEADER_GEN = 5;
+
+export const SLOT_NAME = Object.freeze([
+  'main',
+  'physics',
+  'renderer',
+  'particle',
+  'preRender',
+  ...Array.from({ length: MAX_LOGIC }, (_, i) => `logic${i}`),
+  ...Array.from({ length: MAX_SPATIAL }, (_, i) => `spatial${i}`),
+]);
+
+/** Slot for a worker kind, or -1 when the index does not fit the table. */
+export function frameClockSlot(kind, index = 0) {
+  if (kind === 'logic') {
+    const slot = LOGIC_SLOT0 + (index | 0);
+    return slot < SPATIAL_SLOT0 ? slot : -1;
+  }
+  if (kind === 'spatial') {
+    const slot = SPATIAL_SLOT0 + (index | 0);
+    return slot < SLOT_COUNT ? slot : -1;
+  }
+  const fixed = FRAME_CLOCK_SLOTS[kind];
+  return fixed === undefined ? -1 : fixed;
+}
+
+export function createFrameClockBuffer() {
+  return new SharedArrayBuffer(FRAME_CLOCK_BYTES);
+}
+
+export function bindFrameClock(sab) {
+  if (!sab || sab.byteLength < FRAME_CLOCK_BYTES) return null;
+  return {
+    sab,
+    f64: new Float64Array(sab),
+    i32: new Int32Array(sab),
+  };
+}
+
+function slotF64(slot) {
+  return (HEADER_BYTES + slot * SLOT_BYTES) >> 3;
+}
+
+function slotI32(slot) {
+  return (HEADER_BYTES + slot * SLOT_BYTES) >> 2;
+}
+
+/**
+ * Main thread, once per animation frame. Returns the generation just published.
+ * @param {{ f64: Float64Array, i32: Int32Array }} view
+ * @param {number} absNow performance.timeOrigin + performance.now()
+ */
+export function publishFrame(view, absNow) {
+  const i32 = view.i32;
+  Atomics.add(i32, HEADER_SEQ, 1);
+  view.f64[0] = absNow;
+  const gen = Atomics.add(i32, HEADER_GEN, 1) + 1;
+  Atomics.add(i32, HEADER_SEQ, 1);
+  return gen;
+}
+
+/** Stable read of the main thread's last publish. */
+export function readFrame(view) {
+  const i32 = view.i32;
+  const f64 = view.f64;
+  for (let spin = 0; spin < 8; spin++) {
+    const s1 = Atomics.load(i32, HEADER_SEQ);
+    if (s1 & 1) continue;
+    const t0 = f64[0];
+    const gen = Atomics.load(i32, HEADER_GEN);
+    const s2 = Atomics.load(i32, HEADER_SEQ);
+    if (s1 === s2 && (s2 & 1) === 0) return { t0, gen };
+  }
+  return { t0: f64[0], gen: Atomics.load(i32, HEADER_GEN) };
+}
+
+/**
+ * One finished step. Called after the step, with both ends, so a reader never
+ * pairs this frame's start with the previous frame's end. The gen stored is the
+ * main-thread generation observed at stamp time.
+ * @param {{ f64: Float64Array, i32: Int32Array }} view
+ */
+export function stampStep(view, slot, startAbs, endAbs) {
+  if (!view || slot < 0 || slot >= SLOT_COUNT) return;
+  if (!(startAbs > 0) || !(endAbs >= startAbs)) return;
+  const frame = readFrame(view);
+  const i32 = view.i32;
+  const f64 = view.f64;
+  const f0 = slotF64(slot);
+  const seq = slotI32(slot) + 5;
+  const genAt = slotI32(slot) + 4;
+  Atomics.add(i32, seq, 1);
+  f64[f0] = startAbs;
+  f64[f0 + 1] = endAbs;
+  Atomics.store(i32, genAt, frame.gen);
+  Atomics.add(i32, seq, 1);
+}
+
+export function readSlot(view, slot) {
+  if (!view || slot < 0 || slot >= SLOT_COUNT) return null;
+  const i32 = view.i32;
+  const f64 = view.f64;
+  const f0 = slotF64(slot);
+  const seq = slotI32(slot) + 5;
+  const genAt = slotI32(slot) + 4;
+  for (let spin = 0; spin < 8; spin++) {
+    const s1 = Atomics.load(i32, seq);
+    if (s1 & 1) continue;
+    const start = f64[f0];
+    const end = f64[f0 + 1];
+    const gen = Atomics.load(i32, genAt);
+    const s2 = Atomics.load(i32, seq);
+    if (s1 === s2 && (s2 & 1) === 0) {
+      return { name: SLOT_NAME[slot], gen, start, end };
+    }
+  }
+  return null;
+}
+
+/** One sample, taken by the main thread at the end of its frame. */
+export function readPhaseSample(view) {
+  const frame = readFrame(view);
+  const slots = [];
+  for (let slot = 0; slot < SLOT_COUNT; slot++) {
+    const row = readSlot(view, slot);
+    if (!row || !(row.gen > 0) || !(row.start > 0)) continue;
+    slots.push(row);
+  }
+  return { mainGen: frame.gen, mainT0: frame.t0, slots };
+}
+
+function median(values) {
+  if (values.length === 0) return null;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  if (sorted.length & 1) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Phase verdict from samples taken at the end of main-thread frames.
+ *
+ * Named before any Predator run (E-24):
+ * - A worker whose start is more than 100 ms from that sample's mainT0, on a
+ *   gen equal to the sample gen or one behind, is not on the shared clock.
+ *   One such required worker and the instrument is broken. No phase claim.
+ * - A slot-sample whose (end - start) is ≤ 0 or ≥ 40 ms is torn. More than 5%
+ *   torn and the instrument is broken.
+ * - Per sample, keep slots on the newest gen, plus the previous gen only when
+ *   that start is within 12 ms of the newest start (a worker that ran just
+ *   before main published, not a stamp left over from the frame before).
+ * - Median of (max start − min start) over those samples:
+ *     ≤ 2 ms  wake-together
+ *     ≥ 8 ms  offset (the plan's falsifier: already pipelined)
+ *     else    between
+ * Fewer than 30 samples, or fewer than 2 slots in a sample, is not a verdict.
+ *
+ * @param {Array<{ mainGen: number, mainT0: number, slots: Array<{ name: string, gen: number, start: number, end: number }> }>} samples
+ * @param {{ required?: string[] }} [opts]
+ */
+export function summarizePhase(samples, opts = {}) {
+  const required = opts.required || [
+    'main',
+    'physics',
+    'renderer',
+    'particle',
+    'preRender',
+    'logic0',
+    'spatial0',
+  ];
+  const list = Array.isArray(samples) ? samples : [];
+  if (list.length < 30) {
+    return { verdict: 'thin', samples: list.length, reason: 'fewer than 30 frame samples' };
+  }
+
+  let torn = 0;
+  let stamped = 0;
+  const clockDeltas = Object.create(null);
+  for (const name of required) clockDeltas[name] = [];
+
+  for (const sample of list) {
+    const mainT0 = sample.mainT0;
+    const mainGen = sample.mainGen;
+    for (const slot of sample.slots || []) {
+      stamped++;
+      const duration = slot.end - slot.start;
+      if (!(duration > 0) || duration >= 40) {
+        torn++;
+        continue;
+      }
+      if (!clockDeltas[slot.name]) continue;
+      if (slot.gen === mainGen || slot.gen === mainGen - 1) {
+        clockDeltas[slot.name].push(Math.abs(slot.start - mainT0));
+      }
+    }
+  }
+
+  const tornRate = stamped > 0 ? torn / stamped : 1;
+  const clocks = {};
+  const broken = [];
+  for (const name of required) {
+    const deltas = clockDeltas[name];
+    const med = median(deltas);
+    clocks[name] = { n: deltas.length, medianAbsDeltaMs: med };
+    if (deltas.length < 10 || med == null || med > 100) broken.push(name);
+  }
+  if (tornRate > 0.05 || broken.length > 0) {
+    return {
+      verdict: 'clock-broken',
+      samples: list.length,
+      tornRate,
+      clocks,
+      broken,
+      reason: tornRate > 0.05
+        ? 'more than 5% of stamps were torn or longer than 40 ms'
+        : `clock not comparable on ${broken.join(', ')}`,
+    };
+  }
+
+  const spreads = [];
+  let overlapSamples = 0;
+  let overlapHits = 0;
+  for (const sample of list) {
+    const usable = [];
+    for (const slot of sample.slots || []) {
+      const duration = slot.end - slot.start;
+      if (!(duration > 0) || duration >= 40) continue;
+      if (slot.name === 'main') continue;
+      usable.push(slot);
+    }
+    if (usable.length < 2) continue;
+    let maxGen = 0;
+    let newest = -Infinity;
+    for (const slot of usable) {
+      if (slot.gen > maxGen) maxGen = slot.gen;
+      if (slot.start > newest) newest = slot.start;
+    }
+    const included = usable.filter((slot) => {
+      if (slot.gen === maxGen) return true;
+      return slot.gen === maxGen - 1 && newest - slot.start <= 12;
+    });
+    if (included.length < 2) continue;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const slot of included) {
+      if (slot.start < lo) lo = slot.start;
+      if (slot.start > hi) hi = slot.start;
+    }
+    spreads.push(hi - lo);
+
+    let first = included[0];
+    let second = included[1];
+    if (second.end - second.start > first.end - first.start) {
+      const swap = first;
+      first = second;
+      second = swap;
+    }
+    for (let i = 2; i < included.length; i++) {
+      const dur = included[i].end - included[i].start;
+      if (dur > first.end - first.start) {
+        second = first;
+        first = included[i];
+      } else if (dur > second.end - second.start) {
+        second = included[i];
+      }
+    }
+    overlapSamples++;
+    if (first.start < second.end && second.start < first.end) overlapHits++;
+  }
+
+  const spreadMs = median(spreads);
+  if (spreadMs == null) {
+    return {
+      verdict: 'thin',
+      samples: list.length,
+      tornRate,
+      clocks,
+      reason: 'no sample had two fresh worker stamps',
+    };
+  }
+
+  let verdict = 'between';
+  if (spreadMs <= 2) verdict = 'wake-together';
+  else if (spreadMs >= 8) verdict = 'offset';
+
+  return {
+    verdict,
+    samples: list.length,
+    spreadSamples: spreads.length,
+    spreadMs,
+    tornRate,
+    clocks,
+    overlap: overlapSamples > 0 ? overlapHits / overlapSamples : null,
+  };
+}

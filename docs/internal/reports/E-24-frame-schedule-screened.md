@@ -1,6 +1,8 @@
 # E-24 — the frame schedule: instrumented, and the instrument was deleted
 
 **Date:** 2026-10-18. **Anchor:** `d4933190`. **Verdict: screened. Blocked on a working instrument.**
+
+The block was lifted the same day by the in-engine clock. The answer is in [`E-24-frame-phase.md`](./E-24-frame-phase.md). This file is the trace attempt only.
 **Plan:** [`../EXECUTION_PLAN.md`](../EXECUTION_PLAN.md) § E-24.
 
 ## Hypothesis, in one sentence
@@ -97,8 +99,8 @@ structural defect behind it (all zeros; unattributable thread names and 100 % ov
 Neither was visible without asking *"what would I expect to see if this were broken?"*
 and then looking for it.
 
-## Open, and still first
+## What this file specified, and what happened to it
 
-E-24 remains the largest unmeasured question in the campaign. It is now specified
-precisely enough to execute: **E-29's instrumentation plus a shared frame-generation
-counter is the instrument to build, and the trace route is a fallback, not the plan.**
+The instrument named here was built the same day. The phase question is answered in
+[`E-24-frame-phase.md`](./E-24-frame-phase.md): the workers wake within 0.10 ms of each
+other. The trace route stayed a fallback and was not used.

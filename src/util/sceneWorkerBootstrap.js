@@ -11,6 +11,7 @@ import { NavGrid } from '../core/navGrid.js';
 import { SoundManager } from '../core/soundManager.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { collectWorkerScriptsToLoad } from './sceneScript.js';
+import { frameClockSlot } from './frameClock.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -158,6 +159,7 @@ function buildSceneSharedBuffers(scene) {
     debugData: scene.buffers.debugData,
     debugDrawData: scene.buffers.debugDrawData,
     frameRateData: scene.buffers.frameRateData,
+    frameClock: scene.buffers.frameClock || null,
     componentData: scene.buffers.componentData,
     gridBuffer: scene.buffers.gridBuffer,
     cellSleepingBuffer: scene.buffers.cellSleepingBuffer,
@@ -431,6 +433,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
       frameRateIndex: spatialStartIndex + i,
       workerIndex: i,
       totalSpatialWorkers: numberOfSpatialWorkers,
+      frameClockSlot: frameClockSlot('spatial', i),
     });
   }
 
@@ -444,6 +447,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
         workerPorts: logicPorts,
         workerIndex: i,
         frameRateIndex: logicStartIndex + i,
+        frameClockSlot: frameClockSlot('logic', i),
         bigAtlasProxySheets: scene.bigAtlasProxySheets || {},
       },
       getPortTransferables(logicPorts)
@@ -455,6 +459,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     const physicsExtra = {
       workerPorts: workerPorts.physics,
       frameRateIndex: physicsIndex,
+      frameClockSlot: frameClockSlot('physics'),
     };
     postWorkerInitMessage(
       scene.workers.physics,
@@ -477,6 +482,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     {
       workerPorts: particlePorts,
       frameRateIndex: particleIndex,
+      frameClockSlot: frameClockSlot('particle'),
     },
     getPortTransferables(particlePorts)
   );
@@ -494,6 +500,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
       preRenderStats: scene.buffers.preRenderStats,
     },
     frameRateIndex: preRenderStart,
+    frameClockSlot: frameClockSlot('preRender'),
   });
 
   debugWorkerLog('[Scene]   → Initializing renderer worker...');
@@ -521,6 +528,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
       tilesetBitmaps,
       bigAtlasProxySheets: scene.bigAtlasProxySheets || {},
       frameRateIndex: rendererIndex,
+      frameClockSlot: frameClockSlot('renderer'),
       workerPorts: workerPorts.renderer,
       presentingFlag: scene.game?._presentingFlag || null,
     },

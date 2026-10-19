@@ -68,6 +68,13 @@ import {
 import { createSceneSharedBuffers, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray } from '../util/entityIdWidth.js';
 import { createSceneWorkers } from '../util/sceneWorkerBootstrap.js';
+import {
+  bindFrameClock,
+  publishFrame,
+  stampStep,
+  readPhaseSample,
+  frameClockSlot,
+} from '../util/frameClock.js';
 import { Query } from './query.js';
 import { GrabSystem } from './grabSystem.js';
 import {
@@ -2247,7 +2254,23 @@ class Scene {
   }
 
   startMainLoop() {
+    const clock = this.buffers?.frameClock ? bindFrameClock(this.buffers.frameClock) : null;
+    const mainSlot = frameClockSlot('main');
     const loop = (currentTime) => {
+      // E-24. Publish the display frame before any worker of this vsync is
+      // expected to stamp, including while the scene is paused, so a paused
+      // main thread does not freeze the generation workers still read.
+      const frameAbs = performance.timeOrigin + performance.now();
+      // Sample before the new publish. Main's rAF is registered before the
+      // workers', so at this moment their latest stamp is the generation still
+      // in the header — the one they ran just after the previous main callback.
+      // Sampling after the publish reads that same stamp against the new t0 and
+      // reports a fake one-frame lead.
+      if (clock && !this.state.pause && this._phaseLog && this._phaseLog.length < 600) {
+        this._phaseLog.push(readPhaseSample(clock));
+      }
+      if (clock) publishFrame(clock, frameAbs);
+
       if (!this.state.pause) {
         const deltaTime = currentTime - this.lastFrameTime;
         this.lastFrameTime = currentTime;
@@ -2264,6 +2287,10 @@ class Scene {
 
         const averageFrameTime = this.mainFrameTimesSum / this.mainFPSFrameCount;
         this.mainFPS = 1000 / averageFrameTime;
+
+        if (clock) {
+          stampStep(clock, mainSlot, frameAbs, performance.timeOrigin + performance.now());
+        }
       }
 
       // DebugUI reads mainFPS from this field

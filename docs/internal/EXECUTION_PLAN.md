@@ -50,7 +50,7 @@ Same as `HYPOTHESIS_LOG.md`: `not-started` · `in-progress` · `kernel` · `scen
 | **E-10** | the pair key is a boxed double | **rejected-in-kernel** — 0 boxed keys |
 | **E-13** | `_getNeighborCells` does a Map.get per entity | **rejected by premise** — 14/15 exit before it |
 | **E-17** | the stamp grid recomputes each caster's cell | **FAIL (load)**, reverted — cached 52 KB cost more than the divides |
-| **E-24** | the frame is rAF-paced, so workers contend rather than pipeline | **screened** — instrument blocked; question still open |
+| **E-24** | the frame is rAF-paced, so workers wake together rather than pipeline | **answered** — spread 0.095 ms; the idle is the rest of the vsync |
 | **E-21** | `gatherInstancedRows` is dead in `src/` | **documentation fixed** |
 
 **Four consecutive memory-cost hypotheses were wrong** (E-02, E-03, E-10, E-07). That
@@ -79,9 +79,20 @@ Two invariants enforced in source, not just documented: `IDLE_MS` is measured **
 worker, with `IDLE + STEP ≈ 16.67 ms` on every one. Every worker is rAF-paced and idle
 75–99 % of the frame. That promoted E-24 to the top of the plan.
 
-### E-24 The frame is rAF-paced, so a worker that finishes early cannot start early — **screened. Blocked on the instrument.**
-**DONE 2026-10-18 (instrumentation attempt).** Report:
-[`reports/E-24-frame-schedule-screened.md`](./reports/E-24-frame-schedule-screened.md).
+### E-24 The frame is rAF-paced, so a worker that finishes early cannot start early — **answered. They wake together.**
+**DONE 2026-10-18.** Report: [`reports/E-24-frame-phase.md`](./reports/E-24-frame-phase.md).
+The trace attempt is [`reports/E-24-frame-schedule-screened.md`](./reports/E-24-frame-schedule-screened.md). The instrument that replaced it is a shared frame clock (`src/util/frameClock.js`): each worker stamps `performance.timeOrigin + performance.now()` at step start and end, and the main thread publishes one generation per `requestAnimationFrame`. Float32 stats were the wrong transport — an epoch millisecond does not fit, and the benchmark average erases a phase.
+
+**Rules named before the run.** Spread of start times ≤ 2 ms → wake-together. ≥ 8 ms → already pipelined (the falsifier). A worker more than 100 ms from the main-thread time, or more than 5 % torn stamps, and the instrument is broken: no phase claim.
+
+**Predator, headed, `--src`, detailed stats off, warmup 10 s, capture 5 s, 302 frames.** Clock check passed (every required worker within 0.06 ms of the main publish, torn rate 0). **Median spread of start times 0.095 ms.** The two longest steps, physics 7.77 ms and pre-render 7.81 ms, overlapped on 302/302 frames. Particle's step is 1.33 ms and it still starts with the others, so the ~15 ms after it is the rest of the vsync, not a turn it is taking. **The falsifier did not fire.**
+
+A first capture sampled *after* the main thread published the new generation. Main's rAF is registered first (`scene.js`, "Main thread loop first"), so that sample compared the new time origin to the workers' previous stamp and printed a −16.8 ms "lead" with `genDelta` −1. Same spread, same verdict, wrong column. The sample moved to before the publish. The rules were not touched. The re-run is the result above.
+
+**(a) is still open.** `noLimitFPS` selects `setTimeout(gameLoop, 2)`. Config only. The question is whether any worker's `STEP_MS` moves once the vsync wait is gone — the phase result says the wait is real, and it does not say the step gets cheaper without it. Primary, if it is run: `preRender_STEP_MS`, because that worker is the bottleneck (E-33). Declared secondary: `IDLE_MS`, which is the wait and is not algorithm time.
+
+The trace attempt below is how the clock got specified. Its verdict was "blocked", and that block is lifted by the result above.
+
 A Predator CPU trace was captured and a concurrency/phase analyzer was written, then
 **deleted rather than shipped**. Three concrete faults, all found by asking what I
 would expect to see if the tool were broken:
@@ -102,7 +113,7 @@ deleted, no `src/` change, nothing promoted on an undefendable number.
 concurrency/phase analysis is abandoned. The existing summariser's per-thread busy
 figures are verified and remain valid.
 
-**How to finish it, in cost order:**
+**How that attempt said to finish it.** Item 1 is the result above.
 1. **In-engine timestamps — the right answer.** Each worker already records step start
    and end for `IDLE_MS`. Publish those into its stats buffer plus a **shared
    frame-generation counter**, because `performance.now()` has a *different origin in
