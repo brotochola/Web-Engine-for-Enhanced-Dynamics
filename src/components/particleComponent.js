@@ -94,6 +94,8 @@ export class ParticleComponent extends Component {
     viewMode: Uint8Array,
     // 1 = do not integrate or sprite-emit on the CPU. A compute layer owns the look.
     renderOnly: Uint8Array,
+    // sqrt(lightIntensity). 0 = this particle does not light the scene.
+    lightSqrt: Float32Array,
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
   };
 

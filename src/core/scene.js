@@ -757,11 +757,16 @@ class Scene {
     this.config.preRender.packGpuSprites = spritePipe.packGpuSprites;
     this.config.preRender.sortSprites = spritePipe.sortSprites;
 
-    // Lighting defaults from centralized config (sun / dayCycle nested, not shallow-replaced)
+    // Lighting defaults from centralized config (sun / dayCycle / particleLights nested, not shallow-replaced)
     const userSun = userLightingConfig.sun || {};
+    const userParticleLights = userLightingConfig.particleLights || {};
     this.config.lighting = {
       ...LIGHTING_DEFAULTS,
       ...(this.config.lighting || {}),
+    };
+    this.config.lighting.particleLights = {
+      ...LIGHTING_DEFAULTS.particleLights,
+      ...userParticleLights,
     };
     this.config.lighting.sun = {
       ...SUN_DEFAULTS,

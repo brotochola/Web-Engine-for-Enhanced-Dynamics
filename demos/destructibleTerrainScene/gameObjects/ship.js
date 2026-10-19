@@ -195,6 +195,23 @@ export class Ship extends GameObject {
       alpha: { from: { min: 0.55, max: 0.95 }, to: 0 },
       layer: 'fx',
     });
+    ParticleEmitter.emitAlongLine({
+      x0: ox,
+      y0: oy,
+      x1: hx,
+      y1: hy,
+      vx: { min: -0.5, max: 0.5 },
+      vy: { min: -0.5, max: 0.5 },
+      count: 24,
+      texture: '_whiteCircle',
+      gravity: -0.1,
+      lifespan: { min: 150, max: 320 },
+      scale: { from: { min: 1.0, max: 1.4 }, to: { min: 1.5, max: 2 } },
+      tint: { min: 0x7ef9ff, max: 0xddffff },
+      alpha: { from: { min: 0.55, max: 0.95 }, to: 0 },
+      lightIntensity: 200,
+      layer: 'fx',
+    });
     if (!didHit) return;
     ParticleEmitter.emitFlat({
       count: { min: 4, max: 8 },
@@ -208,6 +225,7 @@ export class Ship extends GameObject {
       texture: '_whiteCircle',
       tint: { min: 0xaaffff, max: 0xffffff },
       alpha: { from: { min: 0.5, max: 0.95 }, to: 0 },
+      lightIntensity: 200,
       layer: 'fx',
     });
   }

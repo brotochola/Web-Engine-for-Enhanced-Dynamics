@@ -91,7 +91,12 @@ export class DestructibleTerrainScene extends Scene {
     },
 
     lighting: {
-      enabled: false,
+      enabled: true,
+      baseAmbient: 0.3,
+      particleLights: {
+        enabled: true,
+        max: 256,
+      },
     },
 
     layers: {

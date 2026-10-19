@@ -73,7 +73,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     'scale', 'scaleX', 'scaleY', 'alpha', 'tint',
     'rotC', 'rotS', 'rotation', 'flipX', 'flipY',
     'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact',
-    'blendMode', 'layerId', 'renderOnly',
+    'blendMode', 'layerId', 'renderOnly', 'lightIntensity',
   ];
   static _alongLineScratch = Object.create(null);
   static _acquireBatch = new Uint16Array(256);
@@ -99,6 +99,9 @@ export class ParticleEmitter extends SharedAtomicPool {
 
   static returnToPool(index) {
     const i = index | 0;
+    if (ParticleComponent.lightSqrt && ParticleComponent.lightSqrt[i]) {
+      ParticleComponent.lightSqrt[i] = 0;
+    }
     if (ParticleComponent.layerMask) {
       const old = ParticleComponent.layerMask[i] | 0;
       if (old) {
@@ -216,6 +219,23 @@ export class ParticleEmitter extends SharedAtomicPool {
 
     const count = Math.round(randomRange(cfg.count, 1));
     let spawned = 0;
+    const lightSqrt = ParticleComponent.lightSqrt;
+    let lightSqrtConst = 0;
+    let lightLo = 0;
+    let lightHi = 0;
+    let lightRange = false;
+    const rawLight = cfg.lightIntensity;
+    if (typeof rawLight === 'number') {
+      if (Number.isFinite(rawLight) && rawLight > 0) lightSqrtConst = Math.sqrt(rawLight);
+    } else if (rawLight && typeof rawLight === 'object') {
+      const lo = +rawLight.min;
+      const hi = +rawLight.max;
+      if (Number.isFinite(lo) && Number.isFinite(hi) && lo >= 0 && hi >= 0) {
+        lightRange = true;
+        lightLo = lo;
+        lightHi = hi;
+      }
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // TEXTURE RESOLUTION
@@ -480,6 +500,15 @@ export class ParticleEmitter extends SharedAtomicPool {
         const on = cfg.renderOnly ? 1 : 0;
         ParticleComponent.renderOnly[i] = on;
         if (on && ParticleComponent.renderOnlyLive) Atomics.add(ParticleComponent.renderOnlyLive, 0, 1);
+      }
+
+      if (lightSqrt) {
+        let s = lightSqrtConst;
+        if (lightRange) {
+          const v = lightLo + rng() * (lightHi - lightLo);
+          s = v > 0 ? Math.sqrt(v) : 0;
+        }
+        lightSqrt[i] = s;
       }
 
       active[i] = 1;

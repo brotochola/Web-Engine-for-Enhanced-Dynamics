@@ -94,7 +94,8 @@ import {
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
 import { createPainterState } from '../util/sortIndexByKey.js';
-import { LiquidFunDensitySplat } from '../render/liquidFunDensitySplat.js';
+import { LiquidFunDensitySplat, LF_SPLAT_STRIDE } from '../render/liquidFunDensitySplat.js';
+import { packParticleLights } from '../render/particleLightSplat.js';
 import {
   ColliderFillBatch,
   packColliderFill,
@@ -737,6 +738,36 @@ class PixiRenderer extends AbstractWorker {
       resolution: 1,
       canvasW: 0,
       canvasH: 0,
+    };
+    this._particleLightsEnabled = false;
+    this._particleLightMax = 0;
+    this._particleLightSplat = null;
+    this._particleLightOpts = {
+      zoom: 1,
+      cameraX: 0,
+      cameraY: 0,
+      cameraRot: 0,
+      resolution: 1,
+      canvasW: 0,
+      canvasH: 0,
+      zenithalMaxHeight: 50,
+      zenithalAlphaFade: 0,
+      layerVisible: null,
+      layerAlpha: null,
+      max: 256,
+    };
+    this._particleLightViews = {
+      active: null,
+      lightSqrt: null,
+      x: null,
+      y: null,
+      z: null,
+      alpha: null,
+      tint: null,
+      flat: null,
+      viewMode: null,
+      renderOnly: null,
+      layerMask: null,
     };
     this._rtRenderOpts = {
       container: null,
@@ -1866,6 +1897,7 @@ class PixiRenderer extends AbstractWorker {
       renderOptions.clearColor = this._clearTransparent;
       this._submitRender(renderOptions);
       this._renderLiquidFunLightingField();
+      this._renderParticleLightingField();
     }
     if (started) this.lightsTimeThisFrame += performance.now() - started;
   }
@@ -2301,8 +2333,8 @@ LIGHTING SYSTEM SETUP
       shader: this.lightingShader,
     });
 
-    // Low-res lighting, or LiquidFun field splat, needs an RT target.
-    const needRt = this.lightingResolution < 1.0 || this.liquidFunMaxCount > 0;
+    // Low-res lighting, liquid field splats, or particle lights need an RT target.
+    const needRt = this.lightingResolution < 1.0 || this.liquidFunMaxCount > 0 || this._particleLightsEnabled;
     if (needRt) {
       const lw = rtPixelSize(this.canvasWidth, this.lightingResolution);
       const lh = rtPixelSize(this.canvasHeight, this.lightingResolution);
@@ -2350,6 +2382,34 @@ LIGHTING SYSTEM SETUP
     this._lfLightSplat.mesh.blendMode = 'add';
   }
 
+  _createParticleLightSplat(maxLights) {
+    const cap = maxLights | 0;
+    if (cap <= 0 || !this._particleLightsEnabled) return;
+    const shaders = this._useWebGpu
+      ? { lfSplat: this._engineShaders.lfLightSplat }
+      : {
+        lfSplatVert: this._engineShaders.lfLightSplatVert,
+        lfSplatFrag: this._engineShaders.lfLightSplatFrag,
+      };
+    if (this._useWebGpu && !shaders.lfSplat) return;
+    if (!this._useWebGpu && (!shaders.lfSplatVert || !shaders.lfSplatFrag)) return;
+    const splat = new LiquidFunDensitySplat({
+      capacity: cap,
+      label: 'particle-light-splat',
+      blendMode: 'add',
+      useWebGpu: this._useWebGpu,
+      shaders,
+      shaderResources: {
+        uniforms: {
+          uInvScreenScale: { value: 1.0, type: 'f32' },
+        },
+      },
+    });
+    splat.buffer.shrinkToFit = false;
+    splat.mesh.blendMode = 'add';
+    this._particleLightSplat = splat;
+  }
+
   _renderLiquidFunLightingField() {
     const splat = this._lfLightSplat;
     if (!splat || !this.lightingRT || this._visPolyEnabled) return;
@@ -2364,6 +2424,56 @@ LIGHTING SYSTEM SETUP
     o.canvasH = this.canvasHeight;
     const packed = splat.uploadLitGroups(views, groups, o);
     if (packed <= 0) return;
+    const screenScale = (this._renderZoom || 1) * (o.resolution || 1);
+    const u = splat.shader?.resources?.uniforms?.uniforms;
+    if (u) u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
+    const rtOpts = this._rtRenderOptsNoClear;
+    rtOpts.container = splat.mesh;
+    rtOpts.target = this.lightingRT;
+    this._submitRender(rtOpts);
+  }
+
+  _renderParticleLightingField() {
+    const splat = this._particleLightSplat;
+    if (!splat || !this.lightingRT || this._visPolyEnabled) return;
+    const active = this.activeParticlesData;
+    const lightSqrt = ParticleComponent.lightSqrt;
+    if (!active || !(active[0] > 0) || !lightSqrt) return;
+    const o = this._particleLightOpts;
+    o.zoom = this._renderZoom;
+    o.cameraX = this._renderCameraX;
+    o.cameraY = this._renderCameraY;
+    o.cameraRot = this._renderCameraRot || 0;
+    o.resolution = this._lightingPixelScale || this.lightingResolution;
+    o.canvasW = this.canvasWidth;
+    o.canvasH = this.canvasHeight;
+    const pcfg = this.config && this.config.particle;
+    o.zenithalMaxHeight = pcfg && pcfg.zenithalMaxHeight > 0 ? pcfg.zenithalMaxHeight : 50;
+    o.zenithalAlphaFade = pcfg && pcfg.zenithalAlphaFade > 0 ? pcfg.zenithalAlphaFade : 0;
+    o.layerVisible = Layer._visible;
+    o.layerAlpha = Layer._alpha;
+    o.max = this._particleLightMax;
+    const views = this._particleLightViews;
+    views.active = active;
+    views.lightSqrt = lightSqrt;
+    views.x = ParticleComponent.x;
+    views.y = ParticleComponent.y;
+    views.z = ParticleComponent.z;
+    views.alpha = ParticleComponent.alpha;
+    views.tint = ParticleComponent.tint;
+    views.flat = ParticleComponent.flat;
+    views.viewMode = ParticleComponent.viewMode;
+    views.renderOnly = ParticleComponent.renderOnly;
+    views.layerMask = ParticleComponent.layerMask;
+    const packed = packParticleLights(splat.data, splat.dataU32, splat.capacity, views, o);
+    if (packed <= 0) {
+      splat.geometry.instanceCount = 0;
+      splat.mesh.visible = false;
+      return;
+    }
+    splat.buffer.update(packed * LF_SPLAT_STRIDE);
+    splat.geometry.instanceCount = packed;
+    splat.mesh.visible = true;
     const screenScale = (this._renderZoom || 1) * (o.resolution || 1);
     const u = splat.shader?.resources?.uniforms?.uniforms;
     if (u) u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
@@ -5613,11 +5723,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           ? lightingConfig.maxShadowsPerEntity
           : LIGHTING_DEFAULTS.maxShadowsPerEntity;
       this.liquidFunMaxCount = data.liquidFunMaxCount | 0;
+      const particleLights = lightingConfig.particleLights || LIGHTING_DEFAULTS.particleLights;
+      this._particleLightsEnabled = !!(particleLights && particleLights.enabled);
+      const particleLightMax = particleLights && particleLights.max != null
+        ? particleLights.max | 0
+        : LIGHTING_DEFAULTS.particleLights.max;
+      this._particleLightMax = particleLightMax > 0 ? particleLightMax : 0;
 
       // Create lighting mesh (full-screen quad with multiply blend)
     // Shadows are now sprites, not in shader
     this.createLightingSystem();
     this._createLiquidFunLightSplat(this.liquidFunMaxCount);
+    this._createParticleLightSplat(this._particleLightMax);
 
     console.log(
       `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, shadowLights: ${this.maxShadowCastingLights}, resolution: ${this.lightingResolution}, shadowResolution: ${this.shadowResolution})`

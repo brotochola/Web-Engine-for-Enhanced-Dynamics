@@ -8,7 +8,7 @@ import { diff as martinezDiff, union as martinezUnion } from './vendor/martinez.
 import simplify2 from './vendor/simplify2.js';
 
 export const CELL = 10;
-export const COLS = 640;
+export const COLS = 900;
 export const ROWS = 200;
 export const ISO = 0.1;
 export const MAT_NONE = 0;

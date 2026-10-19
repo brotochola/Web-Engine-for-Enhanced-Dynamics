@@ -21,6 +21,7 @@ export class PlanetShip extends Ship {
     this.lightEmitter.lightIntensity = 20000;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0
+    this.setFixedRotation(0);
     // Draw the hull with its own rotation (below) instead of the physics angle.
     SpriteRenderer.inheritTransformRotation[this.index] = 0;
   }

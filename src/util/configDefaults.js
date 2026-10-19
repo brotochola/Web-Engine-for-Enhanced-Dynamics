@@ -629,6 +629,11 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.
    */
   lightGlow: 'add',
+  /** Additive radial quads for ParticleEmitter `lightIntensity`. Off unless a scene opts in. */
+  particleLights: Object.freeze({
+    enabled: false,
+    max: 256,
+  }),
   sun: SUN_DEFAULTS,
 });
 
