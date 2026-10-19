@@ -11,10 +11,15 @@ export class NavStressAgent extends GameObject {
     this._tx = tx;
     this._ty = ty;
     this._vec = { x: 0, y: 0 };
+    this._f = 0;
   }
 
   tick() {
-    const f = (this.scene?.mainFrameNumber || 0) | 0;
+    // No Scene on a logic worker. this.scene?.mainFrameNumber was always 0,
+    // so every agent walked one frozen target and the measure window saw a
+    // warm flowfield cache. E-38.
+    this._f = (this._f + 1) | 0;
+    const f = this._f;
     this._tx = 400 + ((this.index + f) % 40) * 32;
     this._ty = 400 + ((this.index * 3 + f) % 40) * 32;
     NavGrid.requestVector(this.x, this.y, this._tx, this._ty, this._vec);

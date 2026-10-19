@@ -74,7 +74,7 @@ Accepted by the author on 2026-10-14 and implemented in the same sitting. Two gu
 
 **`scripts/distVersion.js`** (new) — reads `src/version.js` and `dist/.build-version`, returns `{ok, reason, message}`, and `assertDistFreshForRun(repoRoot, {useSrc, label})` throws unless the run is `--src`. Reasons: `fresh` · `missing` · `unstamped` · `stale`.
 
-**`scripts/buildBundle.js`** — writes `dist/.build-version` from the same `src/version.js` that `syncVersion.js` generates, so the stamp cannot drift from the engine. Written after `cleanupDistTemps()`, which only deletes `.css`/`.js`, so it survives. Exports `BUILD_STAMP_FILE`.
+**`scripts/buildBundle.js`** — writes `dist/.build-version` from the same `src/version.js` that `syncVersion.js` generates, so the stamp cannot drift from the engine. Written after `cleanupDistTemps()`, which deletes every `dist/` entry that is not a bundle artifact or `index.html` (including a previous stamp). Exports `BUILD_STAMP_FILE`.
 
 **`tests/bench/runIntegratedWorkerBenchmark.mjs`** — calls the guard before `createStaticBenchmarkServer`, so a wrong-engine run never launches a browser.
 

@@ -30,6 +30,10 @@ function predatorSearchParam(name) {
   return new URLSearchParams(search).get(name);
 }
 
+// E-24 (a). Default stays vsync. `?noLimitFPS=1` selects setTimeout(gameLoop, 2)
+// on every worker that reads the flag. The page URL is the harness query.
+const predatorNoLimitFPS = predatorSearchParam('noLimitFPS') === '1';
+
 function predatorNumberParam(name, fallback) {
   const q = predatorSearchParam(name);
   const n = q != null ? Number(q) : NaN;
@@ -103,7 +107,7 @@ export class PredatorScene extends WEED.Scene {
       maxNeighbors: 1024,
       maxEntitiesPerCell: 32, //this is very important!!
       numberOfSpatialWorkers: 1, // Multiple workers for parallel neighbor detection
-      noLimitFPS: false,
+      noLimitFPS: predatorNoLimitFPS,
       // Dense/fast flocks: smaller skin + longer reuse than engine defaults (0.04 / 15)
       neighborReuseSkin: 0.01,
       neighborReuseMaxFrames: 30,
@@ -112,7 +116,7 @@ export class PredatorScene extends WEED.Scene {
     },
 
     particle: {
-      noLimitFPS: false,
+      noLimitFPS: predatorNoLimitFPS,
       maxParticles: 10000,
       decals: true,
       decalsTileSize: 256,
@@ -168,7 +172,7 @@ export class PredatorScene extends WEED.Scene {
 
     // Logic configuration
     logic: {
-      noLimitFPS: false,
+      noLimitFPS: predatorNoLimitFPS,
       numberOfLogicWorkers: 2,
       staggeredUpdates: true, // Enable tick decimation (entities tick based on their tickInterval)
     },
@@ -176,21 +180,21 @@ export class PredatorScene extends WEED.Scene {
     // Physics configuration
     physics: {
       subStepCount: 0,
-      noLimitFPS: false,
+      noLimitFPS: predatorNoLimitFPS,
 
       gravity: { x: 0, y: 0 },
     },
 
     renderer: {
       backend: 'webgl',
-      noLimitFPS: false,
+      noLimitFPS: predatorNoLimitFPS,
       ySort: true,
       autoGenerateMipmaps: false,
       interpolation: false,
       // atlasScaleMode: 'linear',
     },
     preRender: {
-      noLimitFPS: false,
+      noLimitFPS: predatorNoLimitFPS,
       packGpuSprites: predatorSearchParam('packGpuSprites') || 'pixi',
       sortSprites: predatorSearchParam('sortSprites') || 'pixi',
       backpressure: true,
@@ -239,7 +243,7 @@ export class PredatorScene extends WEED.Scene {
     },
 
     navigation: {
-      noLimitFPS: false,
+      noLimitFPS: predatorNoLimitFPS,
       enabled: true,
       cellSize: 48,
       maxFlowfields: 16,

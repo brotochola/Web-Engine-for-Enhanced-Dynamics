@@ -515,24 +515,11 @@ function buildProdAxis({ prod, box2dWorkerSource, audioWorkletSource }) {
 function cleanupDistTemps() {
     console.log('\n🧹 Cleaning up temporary build files...');
 
-    if (fs.existsSync(workersDir)) {
-        fs.rmSync(workersDir, { recursive: true });
-        console.log('   Removed: dist/workers/');
-    }
-
-    const weedMinPath = path.join(distDir, 'weed.min.js');
-    if (fs.existsSync(weedMinPath)) {
-        fs.unlinkSync(weedMinPath);
-        console.log('   Removed: dist/weed.min.js');
-    }
-
     if (!fs.existsSync(distDir)) return;
     for (const file of fs.readdirSync(distDir)) {
         if (KEEP_DIST_FILES.has(file)) continue;
-        if (file.endsWith('.css') || file.endsWith('.js')) {
-            fs.unlinkSync(path.join(distDir, file));
-            console.log('   Removed: dist/' + file);
-        }
+        fs.rmSync(path.join(distDir, file), { recursive: true, force: true });
+        console.log('   Removed: dist/' + file);
     }
 }
 

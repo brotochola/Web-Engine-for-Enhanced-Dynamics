@@ -51,6 +51,8 @@ Same as `HYPOTHESIS_LOG.md`: `not-started` · `in-progress` · `kernel` · `scen
 | **E-13** | `_getNeighborCells` does a Map.get per entity | **rejected by premise** — 14/15 exit before it |
 | **E-17** | the stamp grid recomputes each caster's cell | **FAIL (load)**, reverted — cached 52 KB cost more than the divides |
 | **E-24** | the frame is rAF-paced, so workers wake together rather than pipeline | **answered** — spread 0.095 ms; the idle is the rest of the vsync |
+| **E-18** | WASM SIMD transpose of the sprite pack | **rejected on premise** — painter run length 1.002 |
+| **E-15** | packed neighbor rows | **kernel read 3.57×**, layout not changed — the write has no join |
 | **E-21** | `gatherInstancedRows` is dead in `src/` | **documentation fixed** |
 
 **Four consecutive memory-cost hypotheses were wrong** (E-02, E-03, E-10, E-07). That
@@ -89,7 +91,7 @@ The trace attempt is [`reports/E-24-frame-schedule-screened.md`](./reports/E-24-
 
 A first capture sampled *after* the main thread published the new generation. Main's rAF is registered first (`scene.js`, "Main thread loop first"), so that sample compared the new time origin to the workers' previous stamp and printed a −16.8 ms "lead" with `genDelta` −1. Same spread, same verdict, wrong column. The sample moved to before the publish. The rules were not touched. The re-run is the result above.
 
-**(a) is still open.** `noLimitFPS` selects `setTimeout(gameLoop, 2)`. Config only. The question is whether any worker's `STEP_MS` moves once the vsync wait is gone — the phase result says the wait is real, and it does not say the step gets cheaper without it. Primary, if it is run: `preRender_STEP_MS`, because that worker is the bottleneck (E-33). Declared secondary: `IDLE_MS`, which is the wait and is not algorithm time.
+**(a) ran, one window a side, screened.** Headed Predator, `--src`, detailed stats off, warmup 10 s, measure 10 s. `?noLimitFPS=1` against the default vsync. Primary `preRender_STEP_MS` **7.048 → 7.385 ms (+4.8 %)**. It did not get cheaper. `IDLE_MS` fell from 9.5–15.2 ms to **~4.8 ms on every worker**, which is Chrome's nested-timer floor, not a cleared wait (`setTimeout(2)` does not sleep 2 ms). Physics **7.329 → 8.198 ms**. `BODY_COUNT` 17557 → 17663. `GPU_CASTERS` **13351 → 7683**, so the renderer drop (3.958 → 2.083) is a different picture, not a keep. Report: [`reports/E-24a-nolimit.md`](./reports/E-24a-nolimit.md).
 
 The trace attempt below is how the clock got specified. Its verdict was "blocked", and that block is lifted by the result above.
 
@@ -164,8 +166,8 @@ Checksum clean over **147 492 exhaustive cases**, so it is not an input artefact
 worker, so V8 scalar-replaces it and the allocation does not happen. Forcing it with a
 caller-owned pair introduces an aliasing store the compiler cannot elide.
 
-### E-04 `Grid._cellVersionData` is allocated and never written — **not-started**
-Dead buffer. Verdict: hygiene (deletion). Primary: none. (Same finding as E-22.)
+### E-04 `Grid._cellVersionData` is allocated and never written — **already removed**
+The buffer, the plumb through `sceneSharedBuffers.js` / `sceneWorkerBootstrap.js`, and the `Grid` view are gone. `tests/node/cellVersionBufferRemoved.test.js` pins the absence. Nothing left to delete.
 
 ---
 
@@ -446,7 +448,11 @@ pointer-compressed V8. Timing: 42.15 M vs 42.05 M ops/s, **−0.23 %**, checksum
 **The comment at `logicWorker.js:78` is right about the storage type and wrong about the
 cost** — recorded as refuted (E-26) so it is not re-derived.
 
-### E-38 The nav stress scene services zero flowfield requests — *harness, OPEN 2026-10-18*
+### E-38 The nav stress scene services zero flowfield requests — **fixed. The target was frozen. 2026-10-18**
+Report: [`reports/E-38-nav-vehicle.md`](./reports/E-38-nav-vehicle.md).
+`this.scene?.mainFrameNumber` is always 0 on a logic worker, so each agent requested one cell and the measure window saw a warm cache. The agent now increments its own frame. Headless, `--src`, detailed stats off, 4 s / 5 s: particle **8.532 ms**, flow **6.0 computed / 6.0 serviced, miss 100 %**. The port was delivering. logic0 is 0.710 ms.
+
+The notes below are the earlier reading, from the run that saw zeros. They are how the port became the suspect. The run above replaces that suspect.
 **Raised by E-37.** `NavStressScene` is the vehicle the plan names for **all three** nav
 hypotheses (E-11, E-12, E-14), and it services **zero** flowfield requests. Measured:
 `flow computed 0.0 / serviced 0.0`, while the same run shows `logic0 ENTITIES_PROCESSED =
@@ -488,7 +494,8 @@ denominator is the reason it exists: `0 computed` alone cannot tell *nothing was
 requested* from *everything hit*. Added as A/B load keys so a nav hypothesis can tell
 "my code ran" from "the cache was warm". Suite 1120 → 1125.
 
-### E-11 Flowfield/A\* clear the whole grid per request — **BLOCKED on E-38**
+### E-11 Flowfield/A\* clear the whole grid per request — **not a STEP_MS claim while the loop is deadline-capped. Not implemented.**
+The vehicle runs (E-38). `processNavigationRequests` exits when `performance.now()` passes `maxProcessingMsPerFrame` (8 on NavStress). The measured particle step is 8.532 ms with a 100 % miss rate, so the budget is full. A cheaper `fill` does more searches in the same 8 ms. The named primary does not move. The stamp-array price (E-36) was not spent on a change that cannot hit that primary.
 `computeFlowfield` runs five full-size `fill()`s plus `distance.fill(65535)` and
 `direction.fill(NONE)` per request, then a post-pass over all cells and a smoothing
 pass with 2 divisions + 2 `Math.round` **per cell**; `computePath` fills `inOpenSet` and
@@ -501,7 +508,8 @@ the honest vehicle — **and per E-38 it is not a vehicle, it services zero requ
 grid-sized stamp array in place of `fill()` sweeps, which is the same arithmetic-for-
 memory trade that lost E-17. Price it before the refactor.
 
-### E-12 `requestVector` does a linear slot scan with one `Atomics.load` per slot — **BLOCKED on E-38**
+### E-12 `requestVector` does a linear slot scan with one `Atomics.load` per slot — **vehicle under the floor. Not sat.**
+logic0 on the working NavStress run is **0.710 ms**. A scene pair would be FAIL under the 3 ms floor. The scan does run (256 agents, up to 64 slots). It is not rejected the way E-13 was. It is not measurable as a keep on this scene.
 `navGrid.js:813-832`, reached per navigating entity per tick, with 2 divisions by 127 at
 `:841-850`. `painterSameSet` (`sortIndexByKey.js:223`) is the existing generation-stamp
 implementation. **Primary:** `logic0_STEP_MS`. Blocked: the vehicle services zero
@@ -510,7 +518,8 @@ navigating entity per tick** — E-35 applies, and `ENTITIES_PROCESSED = 256` wi
 `FLOWFIELDS_SERVICED = 0` is the live evidence that the second half of that claim has
 never held in a measured run.
 
-### E-14 `performance.now()` per iteration in the nav deadline loop — **BLOCKED on E-38**
+### E-14 `performance.now()` per iteration in the nav deadline loop — **same budget as E-11. Not implemented.**
+The clock read is how the loop knows it has spent its 8 ms. Reading it less often does not end the frame earlier while requests remain, and the NavStress step is that budget. Primary `particle_STEP_MS` does not move.
 `particleWorker.js:1319` reads the clock every iteration of a 2 ms-bounded Dijkstra
 loop. Check every K iterations. **Primary:** `particle_STEP_MS`. Blocked: the loop never
 executes anything on the named vehicle (E-38), and on Predator the particle worker is
@@ -549,7 +558,11 @@ free; had it gone to a scene it would have cost a Predator pair to confirm a zer
 
 ## Wave 4 — wide changes (require trace evidence or a kernel win first)
 
-### E-15 Packed neighbor rows (fixed stride → prefix-sum offsets) — **premise probe DONE 2026-10-18. Still not started. E-36 revised by it.**
+### E-15 Packed neighbor rows (fixed stride → prefix-sum offsets) — **kernel read wins, layout not changed. 2026-10-18**
+Report: [`reports/E-15-neighbor-layout-kernel.md`](./reports/E-15-neighbor-layout-kernel.md).
+The premise probe is [`reports/E-15-packed-neighbor-rows-probe.md`](./reports/E-15-packed-neighbor-rows-probe.md). The kernel the probe asked for, at `maxNeighbors: 1024` / 17 556 entities / 32 neighbors each: strided read **1.755 ms**, packed read plus the 140 KB index **0.491 ms**, checksum equal, **3.57×**. That is the memory-for-memory comparison, and the packed side wins it.
+
+The layout is unchanged. Spatial publish writes `entity * stride` so two workers never share a packed tail (`spatialWorker.js`). A prefix sum is a join this kernel did not time. No share of `spatial_STEP_MS` claimed.
 Report: [`reports/E-15-packed-neighbor-rows-probe.md`](./reports/E-15-packed-neighbor-rows-probe.md).
 **Unblocked** (E-31 done). Probed per E-36 before any code, and **the probe changed the
 answer in the hypothesis's favour.**
@@ -666,18 +679,9 @@ delta by a scene measurement — two numbers from different worlds. **A share de
 from a kernel inherits the kernel's optimistic memory assumptions**, which is exactly
 what was wrong here.
 
-### E-18 WASM SIMD transpose for the sprite pack — **not-started (now unblocked)**
-`packInstancedRows` (`gpuQueueLayout.js:244`) is a 24-column SoA → 15-float AoS
-transpose at `indices[k]` in painter order — 38.8 % of Pixi + 9.3 % of pre-render,
-the largest addressable JS item in the engine. WASM SIMD writing **directly into the
-`dst` region Pixi uploads**, no intermediate.
-**Why it is not X5:** X5 changed the read order in JS and lost in the browser (renderer
-+2.5 %, pre-render +5.4 % 8/8); the diagnosis was cross-core cache-line transfer, which
-a SIMD transpose does not remove. **Prior art:** the WASM spatial publish keep
-(2026-10-06, −14.6 %, 0/8 worse); the WASM variant that lost there copied first.
-**Note:** `gatherInstancedRows` is dead (E-21) — the live path is
-`instancedSpriteBatch.js:621-625`. **Blocked on:** nothing now — see E-31 for the
-toolchain.
+### E-18 WASM SIMD transpose for the sprite pack — **rejected on premise. No C. 2026-10-18**
+Report: [`reports/E-18-simd-transpose-rejected.md`](./reports/E-18-simd-transpose-rejected.md).
+The fast sprite loop gathers one row through `indices[k]`. At 16 384 Predator-fixture rows the painter list has a mean run length of **1.002** (0.19 % of steps are adjacent), so a SIMD vector load does not apply. The same pack on identity indices is 0.287 ms against 0.497 ms for the painter list (1.73×). Stripping the arithmetic and keeping the 15 loads and stores leaves 0.367 ms, so the arithmetic a SIMD body could rewrite is 26 % of the call and the gather is the rest. The contiguous transpose would be timing the identity-index case, which is not the engine's list. No wasm was compiled. No share of a worker step is claimed.
 
 ### E-31 Toolchain is available — the "no C compiler" blocker is gone — **opened 2026-10-18**
 The sibling repo `D:\xampp\htdocs\Box2d_3.2_C_-_liquidfun` ships `emsdk/` and
