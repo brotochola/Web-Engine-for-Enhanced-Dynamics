@@ -1005,10 +1005,7 @@ export function teardownSceneSharedState(scene) {
     clearActiveFlags(BulletComponent.active, scene.config.bullet.maxBullets);
   }
 
-  Mouse.isPresent = false;
-  Mouse.isButton0Down = false;
-  Mouse.isButton1Down = false;
-  Mouse.isButton2Down = false;
+  Mouse.reset();
 
   if (scene.config.lighting.maxFlashes > 0 && Flash.instances) {
     Flash.instances = [];

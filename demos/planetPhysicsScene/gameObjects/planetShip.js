@@ -8,14 +8,19 @@ import { Ship, THRUST_ACCEL } from '/demos/destructibleTerrainScene/gameObjects/
 import { CX, CY, G, radialCameraAngle } from '../planetGravity.js';
 import WEED from '/src/index.js';
 
-const { Camera, Keyboard, SpriteRenderer } = WEED;
+const { Camera, Keyboard, SpriteRenderer, LightEmitter, RigidBody, Collider } = WEED;
 
 const CAM_TURN_RATE = 12;
 const SIDE_ACCEL = THRUST_ACCEL * 0.25;
 
 export class PlanetShip extends Ship {
+  static components = [...Ship.components, LightEmitter];
+
   onSpawned(spawnConfig = {}) {
     super.onSpawned(spawnConfig);
+    this.lightEmitter.lightIntensity = 20000;
+    this.lightEmitter.active = 1;
+    this.lightEmitter.hasGlowSprite = 0
     // Draw the hull with its own rotation (below) instead of the physics angle.
     SpriteRenderer.inheritTransformRotation[this.index] = 0;
   }

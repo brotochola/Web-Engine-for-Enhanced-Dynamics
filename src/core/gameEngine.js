@@ -75,7 +75,7 @@ class GameEngine {
     // Create canvas immediately
     this._createCanvas();
 
-    // Input listeners (engine owns all listeners, forwards to currentScene)
+    // Input listeners (engine owns them). Keys go to the scene. Pointer and wheel write Mouse.
     this._setupWindowListeners();
 
     // Auto-resize: track window size changes
@@ -150,7 +150,7 @@ class GameEngine {
 
     this._wheelHandler = (e) => {
       e.preventDefault();
-      this.currentScene?.onWheel(e.deltaY);
+      Mouse.addWheel(e.deltaY);
     };
 
     window.addEventListener('keydown', this._keydownHandler);
@@ -253,23 +253,12 @@ class GameEngine {
   // ---------------------------------------------------------------------------
 
   _setupCanvasListeners() {
-    this.canvas.addEventListener('mousedown', (e) => {
-      if (Mouse.isDebugToolActive) return;
-      this.currentScene?.onMouseDown(e.button);
-    });
-
-    this.canvas.addEventListener('mouseup', (e) => {
-      this.currentScene?.onMouseUp(e.button);
-    });
-
-    this.canvas.addEventListener('mousemove', (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      this.currentScene?.onMouseMove(e.clientX - rect.left, e.clientY - rect.top);
-    });
-
-    this.canvas.addEventListener('mouseleave', () => {
-      this.currentScene?.onMouseLeave();
-    });
+    const camera = () => this.currentScene?.camera;
+    this.canvas.addEventListener('pointerdown', (e) => Mouse.pointerDown(e, camera()));
+    this.canvas.addEventListener('pointermove', (e) => Mouse.pointerMove(e, camera()));
+    this.canvas.addEventListener('pointerup', (e) => Mouse.pointerUp(e, camera()));
+    this.canvas.addEventListener('pointercancel', (e) => Mouse.pointerCancel(e, camera()));
+    this.canvas.addEventListener('pointerleave', (e) => Mouse.pointerLeave(e));
   }
 
   // ---------------------------------------------------------------------------

@@ -2182,31 +2182,6 @@ class Scene {
     this.updateKeyboardBuffer(key);
   }
 
-  onMouseDown(button) {
-    if (button == 0) { Mouse.isButton0Down = true; Mouse.incrementPress0(); }
-    if (button == 1) { Mouse.isButton1Down = true; Mouse.incrementPress1(); }
-    if (button == 2) { Mouse.isButton2Down = true; Mouse.incrementPress2(); }
-  }
-
-  onMouseUp(button) {
-    if (button == 0) { Mouse.isButton0Down = false; Mouse.incrementRelease0(); }
-    if (button == 1) { Mouse.isButton1Down = false; Mouse.incrementRelease1(); }
-    if (button == 2) { Mouse.isButton2Down = false; Mouse.incrementRelease2(); }
-  }
-
-  onMouseMove(canvasX, canvasY) {
-    Mouse.isPresent = true;
-    Mouse.setCanvasPosition(canvasX, canvasY, this.camera);
-  }
-
-  onMouseLeave() {
-    Mouse.isPresent = false;
-  }
-
-  onWheel(deltaY) {
-    Mouse.wheel += deltaY;
-  }
-
   /**
    * Mirror the held-key state into the SAB the logic workers read.
    *

@@ -61,6 +61,16 @@ const SURFACE_Y = CY - RADIUS * CELL;
 // destructible landscape instead. Workers are created per scene load
 // (Scene.killWorkers), so this cannot leak into other demos' workers; the
 // main-thread copy is cleared in destroy().
+//
+// cols/rows/cellSize are plain statics, not shared memory: each realm has its
+// own copy. The manager sets them in its onSpawned(), but it is forced onto
+// logic worker 1 while the ship (and islands) tick on worker 0. Without the
+// module-scope assignment the ship's WorldGrid.castRay() kept the destructible
+// ROWS=200 bound, so laser rays fired from the lower two thirds of the disk
+// started outside the grid and never hit static terrain.
+WorldGrid.cols = N;
+WorldGrid.rows = N;
+WorldGrid.cellSize = CELL;
 WorldGrid.disk = {
   cols: N,
   rows: N,

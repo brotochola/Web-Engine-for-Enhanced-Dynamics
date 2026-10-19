@@ -111,8 +111,8 @@ export class ToolManager {
 
   destroy() {
     Mouse.isDebugToolActive = false;
-    if (this._onToolMouseDown) document.removeEventListener('mousedown', this._onToolMouseDown, true);
-    if (this._onToolMouseUp) document.removeEventListener('mouseup', this._onToolMouseUp, true);
+    if (this._onToolMouseDown) document.removeEventListener('pointerdown', this._onToolMouseDown);
+    if (this._onToolMouseUp) document.removeEventListener('pointerup', this._onToolMouseUp);
     if (this._toolIndicator?.parentNode) this._toolIndicator.parentNode.removeChild(this._toolIndicator);
     if (this._inspectorFloat) {
       this._inspectorFloat.onClose = null;
@@ -271,8 +271,8 @@ export class ToolManager {
       this._toolMouseDown = false;
     };
 
-    document.addEventListener('mousedown', this._onToolMouseDown, true);
-    document.addEventListener('mouseup', this._onToolMouseUp, true);
+    document.addEventListener('pointerdown', this._onToolMouseDown);
+    document.addEventListener('pointerup', this._onToolMouseUp);
   }
 
   _updatePaintTool() {

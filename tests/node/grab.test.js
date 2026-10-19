@@ -136,7 +136,7 @@ test('pointInCollider convex polygon', () => {
 
 test('grabber picks only grabByType indices', () => {
   initSoA();
-  Mouse.initialize(new Float32Array(13));
+  Mouse.initialize(new Float32Array(Mouse.BUFFER_SIZE / 4));
   boxAt(0, 0, 0, 40, 40);
   boxAt(1, 0, 0, 40, 40);
   RigidBody.active[0] = 1;
@@ -155,7 +155,7 @@ test('grabber picks only grabByType indices', () => {
 
 test('RigidBody.static skipped', () => {
   initSoA();
-  Mouse.initialize(new Float32Array(13));
+  Mouse.initialize(new Float32Array(Mouse.BUFFER_SIZE / 4));
   boxAt(0, 0, 0, 40, 40);
   RigidBody.active[0] = 1;
   RigidBody.static[0] = 1;
@@ -168,7 +168,7 @@ test('RigidBody.static skipped', () => {
 
 test('collider-only: Transform moves; no toss', () => {
   initSoA();
-  Mouse.initialize(new Float32Array(13));
+  Mouse.initialize(new Float32Array(Mouse.BUFFER_SIZE / 4));
   boxAt(0, 0, 0, 40, 40);
   RigidBody.active[0] = 0;
   Mouse.x = 0;
@@ -194,7 +194,7 @@ test('collider-only: Transform moves; no toss', () => {
 
 test('dynamic RB+Collider: release writes vx/vy', () => {
   initSoA();
-  Mouse.initialize(new Float32Array(13));
+  Mouse.initialize(new Float32Array(Mouse.BUFFER_SIZE / 4));
   boxAt(0, 0, 0, 40, 40);
   RigidBody.active[0] = 1;
   RigidBody.static[0] = 0;

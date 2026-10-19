@@ -1374,11 +1374,6 @@ export declare class Scene {
   updatePhysicsConfig(partialConfig?: Record<string, unknown>): void;
   onKeyDown(key: string): void;
   onKeyUp(key: string): void;
-  onMouseDown(button: number): void;
-  onMouseUp(button: number): void;
-  onMouseMove(canvasX: number, canvasY: number): void;
-  onMouseLeave(): void;
-  onWheel(deltaY: number): void;
   updateKeyboardBuffer(): void;
   updateCameraBuffer(): void;
   startMainLoop(): void;
@@ -1553,11 +1548,13 @@ export declare class DebugDraw {
 }
 
 export declare class Mouse {
+  static readonly MAX: 4;
   static readonly BUFFER_SIZE: number;
   static isDebugToolActive: boolean;
 
   static initialize(buffer: SharedArrayBuffer | Float32Array): void;
   static get isInitialized(): boolean;
+  static reset(): void;
 
   static get x(): number;
   static set x(value: number);
@@ -1565,6 +1562,10 @@ export declare class Mouse {
   static set y(value: number);
   static get prevX(): number;
   static get prevY(): number;
+  static xAt(i: number): number;
+  static yAt(i: number): number;
+  static prevXAt(i: number): number;
+  static prevYAt(i: number): number;
 
   static get isButton0Down(): boolean;
   static set isButton0Down(value: boolean);
@@ -1572,6 +1573,8 @@ export declare class Mouse {
   static set isButton1Down(value: boolean);
   static get isButton2Down(): boolean;
   static set isButton2Down(value: boolean);
+  static isDownAt(i: number): boolean;
+  static get count(): number;
 
   static get isButton0Pressed(): boolean;
   static get isButton0Released(): boolean;
@@ -1579,12 +1582,15 @@ export declare class Mouse {
   static get isButton1Released(): boolean;
   static get isButton2Pressed(): boolean;
   static get isButton2Released(): boolean;
+  static isPressedAt(i: number): boolean;
+  static isReleasedAt(i: number): boolean;
 
   static get isPresent(): boolean;
   static set isPresent(value: boolean);
   static get wheel(): number;
   static set wheel(value: number);
   static get prevWheel(): number;
+  static addWheel(deltaY: number): void;
 
   static get isDown(): boolean;
   static get isInWorld(): boolean;
@@ -1599,20 +1605,24 @@ export declare class Mouse {
   static get isRightButtonPressed(): boolean;
   static get isRightButtonReleased(): boolean;
 
-  static incrementPress0(): void;
-  static incrementRelease0(): void;
-  static incrementPress1(): void;
-  static incrementRelease1(): void;
-  static incrementPress2(): void;
-  static incrementRelease2(): void;
+  static pinchRatio(): number;
+  static get pinchX(): number;
+  static get pinchY(): number;
 
   static updateEdgeFlags(): void;
+  static snapshotPreviousFrame(): void;
   static updateWorldPosition(camera: Vec2Mutable & { zoom: number }): void;
   static setCanvasPosition(
     canvasX: number,
     canvasY: number,
     camera: Vec2Mutable & { zoom: number }
   ): void;
+
+  static pointerDown(e: PointerEvent, camera?: Vec2Mutable & { zoom: number }): void;
+  static pointerMove(e: PointerEvent, camera?: Vec2Mutable & { zoom: number }): void;
+  static pointerUp(e: PointerEvent, camera?: Vec2Mutable & { zoom: number }): void;
+  static pointerCancel(e: PointerEvent, camera?: Vec2Mutable & { zoom: number }): void;
+  static pointerLeave(e: PointerEvent): void;
 }
 
 /** Multipad gamepad input (W3C standard mapping). SharedArrayBuffer-backed like Mouse. */

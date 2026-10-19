@@ -44,7 +44,7 @@ test('follow keeps screen-center world point stable across a zoom lerp step', ()
 
 test('updateFree wheel writes targetZoom and lets follow lerp (no setZoom snap)', () => {
   setupCamera({ zoom: 1, cx: 400, cy: 300 });
-  Mouse.initialize(new Float32Array(13));
+  Mouse.initialize(new Float32Array(Mouse.BUFFER_SIZE / 4));
   Mouse.wheel = 100; // one typical notch worth of deltaY
 
   Camera.setFree(true, { zoomSensitivity: 0.001, smoothing: 0.15 });
@@ -64,7 +64,7 @@ test('updateFree wheel writes targetZoom and lets follow lerp (no setZoom snap)'
 
 test('updateFree one notch zoom-in stays ~1.1x (not near maxZoom)', () => {
   setupCamera({ zoom: 1, cx: 400, cy: 300 });
-  Mouse.initialize(new Float32Array(13));
+  Mouse.initialize(new Float32Array(Mouse.BUFFER_SIZE / 4));
   Mouse.wheel = -100;
 
   Camera.setFree(true, { zoomSensitivity: 0.001, smoothing: 0.15 });
@@ -81,7 +81,7 @@ test('updateFree one notch zoom-in stays ~1.1x (not near maxZoom)', () => {
 
 test('updateFree wheel zooms toward the pointer, not the screen center', () => {
   setupCamera({ zoom: 1, cx: 400, cy: 300 });
-  Mouse.initialize(new Float32Array(13));
+  Mouse.initialize(new Float32Array(Mouse.BUFFER_SIZE / 4));
   Mouse.isPresent = true;
   Mouse.x = 120;
   Mouse.y = 80;
@@ -121,7 +121,7 @@ test('updateFree wheel zooms toward the pointer, not the screen center', () => {
 
 test('updateFree equal in then out restores targetZoom (log-symmetric)', () => {
   setupCamera({ zoom: 1, cx: 400, cy: 300 });
-  Mouse.initialize(new Float32Array(13));
+  Mouse.initialize(new Float32Array(Mouse.BUFFER_SIZE / 4));
 
   Camera.setFree(true, { zoomSensitivity: 0.001, smoothing: 0.15 });
   Camera.setFreeTarget(400, 300);

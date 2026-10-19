@@ -630,7 +630,7 @@ The worklet stores assets in a `Map<id, { ch, len, nCh }>`. Only slot state trav
 | Buffer             | Size                        | Layout                                                                                 | Writer                    | Reader                    |
 | ------------------ | --------------------------- | -------------------------------------------------------------------------------------- | ------------------------- | ------------------------- |
 | `inputData`        | `inputBufferSize * 8` bytes | `[heldState[keyCount], pressCount[keyCount]]` as `Int32`                               | Main thread               | Main thread + all workers |
-| `mouseData`        | 52 bytes (13 × Float32)     | `[x, y, btn0, btn1, btn2, isPresent, wheel, press0, rel0, press1, rel1, press2, rel2]` | Main thread               | All workers               |
+| `mouseData`        | 112 bytes (28 × Float32)    | Header `[isPresent, wheel, btn1, btn2, press1, rel1, press2, rel2]`, then 4 × `[down, x, y, press, release]`. Slot 0 is the cursor or the first finger. | Main thread               | All workers               |
 | `gamepadData`      | 624 bytes (4 × 39 × Float32)| Per pad: `[connected, axes[4], buttons[17], pressCounts[17]]`                          | Main thread (poll)        | All workers               |
 | `clockData`        | 4 bytes (1 × Float32)       | `[timeScale]`. `1` real time, `0` hitstop. Sim dt only; wall `STEP_MS` / FPS do not read it. | Any realm via `Time.scale` | Workers, physics host, main |
 | `tweenData`        | `config.tween.maxTweens` (default 128) | Paint / kinematic xy / zoom. Logic 0 ticks. Dynamic body xy is refused. 0 skips the buffer. | Any logic worker `Tween.to` | Logic 0 |

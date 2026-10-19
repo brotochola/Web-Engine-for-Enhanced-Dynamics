@@ -51,8 +51,8 @@ export class PlanetWorldGridManager extends WorldGridManager {
     if (--this._actorDelay > 0) return;
     this._actorsSpawned = true;
     PlanetShip.spawn({
-      x: CX,
-      y: SURFACE_Y - 120,
+      x: CX + RADIUS * CELL + 120,
+      y: CY,
       forceProcessOnLogicWorker: 0,
       benchRemesh: this._benchRemesh,
     });

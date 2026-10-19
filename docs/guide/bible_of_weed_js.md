@@ -849,19 +849,34 @@ See `docs/guide/TILEMAP.md` for memory layout, lifecycle, and queries.
 if (WEED.Keyboard.isDown('w')) { ... }     // true every frame while held
 if (WEED.Keyboard.isPressed('w')) { ... }  // true only on the press frame
 
-// Input — Mouse (held state: true every frame while button is held)
-if (WEED.Mouse.isButton0Down) { ... }   // left button
-if (WEED.Mouse.isButton1Down) { ... }   // middle button
-if (WEED.Mouse.isButton2Down) { ... }   // right button
+// Input — Mouse. Slot 0 is the cursor or pen, or the first finger when no cursor
+// owns the canvas. Mouse.x / isButton0Down / clicked follow that contact.
+// Held state is true every frame while the button or finger is down.
+if (WEED.Mouse.isButton0Down) { ... }   // slot 0 (left button or first finger)
+if (WEED.Mouse.isButton1Down) { ... }   // middle button (cursor only)
+if (WEED.Mouse.isButton2Down) { ... }   // right button (cursor only)
 
-// Input — Mouse (edge detection: true only on the frame the event occurred)
-// Works reliably across ALL logic workers — backed by SAB event counters.
-if (Mouse.isButton0Pressed) { ... }     // left button just pressed (mousedown edge)
-if (Mouse.isButton0Released) { ... }    // left button just released (mouseup edge)
-if (Mouse.clicked) { ... }             // alias for isButton0Pressed
+// Edge detection: true only on the frame the event occurred.
+// Works across logic workers — SAB press/release counters.
+if (Mouse.isButton0Pressed) { ... }     // slot 0 just pressed
+if (Mouse.isButton0Released) { ... }    // slot 0 just released
+if (Mouse.clicked) { ... }              // alias for isButton0Pressed
 
-// Mouse movement deltas: x - Mouse.prevX (prev values snapshotted at end of frame
-// on main thread and every logic worker via Mouse.snapshotPreviousFrame()).
+// Up to Mouse.MAX (4) contacts. Slots stay put until that contact ends.
+// count is how many primary buttons are down (hover and right-click do not count).
+for (let i = 0; i < Mouse.MAX; i++) {
+  if (!Mouse.isDownAt(i)) continue;
+  mark(Mouse.xAt(i), Mouse.yAt(i));
+}
+if (Mouse.isPressedAt(1)) { ... }       // slot 1 began this frame
+if (Mouse.count >= 2) {
+  camera.zoom *= Mouse.pinchRatio();    // distance now / last frame, else 1
+  pan(Mouse.pinchX, Mouse.pinchY);       // midpoint of the first two down slots
+}
+
+// Movement deltas: x - Mouse.prevX, or xAt(i) - prevXAt(i).
+// Prev values are snapshotted at end of frame on the main thread and every
+// logic worker via Mouse.snapshotPreviousFrame().
 
 // Input — Gamepad (multipad, W3C standard mapping; main thread polls navigator.getGamepads)
 // Pad index first on indexed APIs. Edge flags need updateEdgeFlags() (engine calls it).
@@ -973,7 +988,7 @@ Smoke test: `node tests/bench/sceneCycleSmoke.mjs` (Playwright, heap + static le
 
 ## GameEngine Browser Hardening
 
-The engine automatically handles fullscreen web game boilerplate. Keyboard/mouse/wheel listeners are owned by `GameEngine` and forwarded to the active scene (`onKeyDown`, `onMouseDown`, etc.). Gamepad state is **poll-based**: `Scene.updateInternal` calls `Gamepad.poll()` each frame (no DOM stream). Listeners survive scene transitions — no gap between scenes.
+The engine automatically handles fullscreen web game boilerplate. Keyboard listeners are owned by `GameEngine` and forwarded to the active scene (`onKeyDown`, `onKeyUp`). Pointer and wheel listeners write `Mouse` directly: the cursor, a pen, and up to four contacts. Gamepad state is **poll-based**: `Scene.updateInternal` calls `Gamepad.poll()` each frame (no DOM stream). Listeners survive scene transitions — no gap between scenes.
 
 ```javascript
 const game = new GameEngine({
