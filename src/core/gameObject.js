@@ -890,7 +890,8 @@ export class GameObject {
       return;
     }
     Collider.radius[this.index] = value;
-    if (value > 0 && Collider.shapeType[this.index] !== ShapeType.Chain) {
+    const shape = Collider.shapeType[this.index];
+    if (value > 0 && shape !== ShapeType.Chain && shape !== ShapeType.Polygon) {
       Collider.shapeType[this.index] = ShapeType.Circle;
     }
     if (this._hasComponents.RigidBody) {

@@ -1,6 +1,6 @@
 // Box2D planet. The ground is a bit grid this scene owns. Dirty chunks are blurred, then marched.
 // World gravity is zero. Loose chunks and the walker pull themselves inward.
-// Z fills, X erases, click paints, Q pours. A/D walk, W or space jumps outward.
+// Z fills, X erases, click paints, Q pours. A/D walk, W or space jumps outward. Wheel zooms.
 
 import { WorldGrid } from './worldGrid.js';
 import { WorldGridManager } from './gameObjects/worldGridManager.js';
@@ -11,7 +11,7 @@ import { PlanetLamp } from './gameObjects/planetLamp.js';
 import { N, CELL, RADIUS, CX, CY, G, PARTICLE_R } from './planetGravity.js';
 import WEED from '/src/index.js';
 
-const { Scene, Camera, LAYER_KIND, BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } = WEED;
+const { Scene, Camera, Mouse, LAYER_KIND, BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } = WEED;
 
 WorldGrid.disk = {
   cols: N,
@@ -62,7 +62,7 @@ export class PlanetPhysicsScene extends Scene {
         enabled: true,
         radius: PARTICLE_R,
         maxCount: 4000,
-        subSteps: 1,
+        subSteps: 2,
       },
     },
 
@@ -162,5 +162,11 @@ export class PlanetPhysicsScene extends Scene {
 
   createNewGame() {
     this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
+  }
+
+  update() {
+    if (Mouse.wheel) {
+      Camera.targetZoom *= Math.exp(-Mouse.wheel * 0.001);
+    }
   }
 }

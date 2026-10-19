@@ -388,7 +388,7 @@ function addPolygon(fn, memory, slot, verts) {
   const ptr = malloc(count * 8);
   assert.ok(ptr, 'malloc for polygon verts failed');
   new Float32Array(memory.buffer, ptr, count * 2).set(verts);
-  add(slot, ptr, count, 0, 0);
+  add(slot, ptr, count, 0, 0, 0);
   free(ptr);
 }
 

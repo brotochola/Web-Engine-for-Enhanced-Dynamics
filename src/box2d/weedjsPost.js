@@ -667,6 +667,11 @@
     return 1;
   }
 
+  function polygonSkin(entityIdx) {
+    const r = views.radius[entityIdx];
+    return r > 0 ? r : 0;
+  }
+
   function addAllFixtures(entityIdx) {
     const F = fixtureViews;
     if (!F || !F.head || !bodyAddShapePolygonFn) return 0;
@@ -682,7 +687,7 @@
         if (count >= 3) {
           const base = cur * MAX_POLY_VERTS;
           const ptr = writePolygonToHeapScratch(F.vertexX, F.vertexY, base, count);
-          bodyAddShapePolygonFn(entityIdx, ptr, count, ox, oy);
+          bodyAddShapePolygonFn(entityIdx, ptr, count, ox, oy, polygonSkin(entityIdx));
           n++;
         }
       }
@@ -808,7 +813,7 @@
         for (let v = 0; v < count; v++) {
           verts.push(views.polyVertexX[base + v], views.polyVertexY[base + v]);
         }
-        world.createPolygon({ ...opts, verts });
+        world.createPolygon({ ...opts, verts, radius: polygonSkin(i) });
       } else {
         return false;
       }
@@ -853,7 +858,7 @@
       }
       const base = i * MAX_POLY_VERTS;
       const ptr = writePolygonToHeapScratch(views.polyVertexX, views.polyVertexY, base, count);
-      bodySetShapePolygonFn(i, ptr, count, offsetX, offsetY);
+      bodySetShapePolygonFn(i, ptr, count, offsetX, offsetY, polygonSkin(i));
     }
   }
 
@@ -2601,9 +2606,11 @@
       'number',
       'number',
       'number',
+      'number',
     ]);
     ensurePolygonVertexScratch();
     bodyAddShapePolygonFn = Module.cwrap('body_add_shape_polygon', null, [
+      'number',
       'number',
       'number',
       'number',

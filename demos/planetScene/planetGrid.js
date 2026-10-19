@@ -7,7 +7,7 @@ export const CELL = 4;
 export const GRID = 2048;
 export const CHUNK = 32;
 export const PLANET_RADIUS = 2048;
-export const GRAVITY = 1300;
+export const GRAVITY = 600;
 export const VMAX = 1800;
 
 const DIRTY_HEAD = 0;

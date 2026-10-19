@@ -370,8 +370,10 @@ class Collider extends Component {
   }
   set radius(value) {
     Collider.radius[this.index] = value;
-    // Authoring sugar: positive radius ⇒ circle (SAB default 0 is now Box in C numbering)
-    if (value > 0 && Collider.shapeType[this.index] !== ShapeType.Chain) {
+    // Positive radius on a box means a circle. A polygon keeps its shape:
+    // radius is the Box2D border around the hull (0 = sharp).
+    const shape = Collider.shapeType[this.index];
+    if (value > 0 && shape !== ShapeType.Chain && shape !== ShapeType.Polygon) {
       Collider.shapeType[this.index] = ShapeType.Circle;
     }
     RigidBody.syncMassFromCollider(this.index);

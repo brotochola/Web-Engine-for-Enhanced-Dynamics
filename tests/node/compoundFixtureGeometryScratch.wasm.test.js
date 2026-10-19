@@ -70,7 +70,7 @@ test('one heap scratch survives many clear+add polygon loops', () => {
     fn('body_clear_shapes')(slot);
     for (let t = 0; t < tris.length; t++) {
       heap.set(tris[t]);
-      fn('body_add_shape_polygon')(slot, ptr, 3, 0, 0);
+      fn('body_add_shape_polygon')(slot, ptr, 3, 0, 0, 0);
     }
   }
 

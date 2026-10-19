@@ -11,6 +11,9 @@ const {
 } = WEED;
 
 const MIN_KEEP_AREA = CELL * CELL;
+// Box2D border around each triangle. Shared corners are a single point;
+// this overlaps them so a particle ray cannot miss the seam.
+const POLYGON_SKIN = 1;
 const _scratchVerts = [];
 const _scratchCS = { c: 1, s: 0 };
 const _scratchLocal = { x: 0, y: 0 };
@@ -60,6 +63,7 @@ export class TerrainIsland extends GameObject {
       this.despawn();
       return;
     }
+    this.collider.radius = POLYGON_SKIN;
 
     this.meshRenderer.tint = spawnConfig.tint ?? 0x88aa66;
     this.meshRenderer.setTexture('rocky');
