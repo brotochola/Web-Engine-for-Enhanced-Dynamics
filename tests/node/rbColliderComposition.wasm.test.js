@@ -334,6 +334,52 @@ test('attach shape to shapeless body starts contacts; clearShapes stops them', (
   assert.ok(bodyX(ghost) > 8, `should pass wall after clear (x=${bodyX(ghost)})`);
 });
 
+test('clearing one of two shapes leaves no leftover contact', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const { worldId, bodyX, contactBeginCount } = makeWorld(fn, memory);
+  const stepWorld = fn('step_world');
+  const addShape = fn('body_add_shape_box');
+  const clearShapes = fn('body_clear_shapes');
+
+  const wall = createShapeless(fn, worldId, {
+    type: BODY_STATIC,
+    x: 0,
+    y: 0,
+    entityIndex: 0,
+  });
+  // Removed shape covers x=-7..-5. Kept shape covers x=5..7.
+  addShape(wall, 1, 2, -6, 0);
+  addShape(wall, 1, 2, 6, 0);
+  clearShapes(wall);
+  addShape(wall, 1, 2, 6, 0);
+
+  const ball = createBox(fn, worldId, {
+    type: BODY_DYNAMIC,
+    x: -12,
+    y: 0,
+    hx: 0.4,
+    hy: 0.4,
+    vx: 30,
+    entityIndex: 1,
+  });
+
+  let contacts = 0;
+  for (let i = 0; i < 20; i++) {
+    stepWorld(worldId, 1 / 60, 4);
+    contacts += contactBeginCount();
+  }
+  assert.equal(contacts, 0, 'removed shape must not contact');
+  assert.ok(bodyX(ball) > -4, `ball should pass the removed shape (x=${bodyX(ball)})`);
+
+  contacts = 0;
+  for (let i = 0; i < 40; i++) {
+    stepWorld(worldId, 1 / 60, 4);
+    contacts += contactBeginCount();
+  }
+  assert.ok(contacts > 0, 'remaining shape should contact');
+  assert.ok(bodyX(ball) < 6, `ball should stop on the remaining shape (x=${bodyX(ball)})`);
+});
+
 function addPolygon(fn, memory, slot, verts) {
   const malloc = fn('malloc');
   const free = fn('free');

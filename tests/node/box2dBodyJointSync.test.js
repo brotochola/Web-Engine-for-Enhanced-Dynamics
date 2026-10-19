@@ -44,14 +44,15 @@ test('body dirty: defer saves marks; bump publishes them with lifecycle', () => 
   withBodyDirtyDeferred(() => {
     assert.equal(markBodyDirty(5, BODY_DIRTY.GEOMETRY), true);
     assert.equal(markBodyDirty(5, BODY_DIRTY.DAMPING), true);
+    assert.equal(flags[5], 0);
   });
-  assert.equal(flags[5], 0);
-  assert.equal(words[0], 0);
+  const saved = BODY_DIRTY.GEOMETRY | BODY_DIRTY.DAMPING;
+  assert.equal(flags[5] & saved, saved);
+  assert.ok(words[0] & (1 << 5));
 
   assert.equal(bumpBodyGeneration(5), 1);
-  const want = BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY | BODY_DIRTY.DAMPING;
+  const want = saved | BODY_DIRTY.LIFECYCLE;
   assert.equal(flags[5] & want, want);
-  assert.ok(words[0] & (1 << 5));
 });
 
 test('body dirty: child bump inside parent defer publishes saved geometry', () => {
@@ -80,7 +81,7 @@ test('body dirty: child bump inside parent defer publishes saved geometry', () =
   });
 });
 
-test('body dirty: bump of one entity does not publish the other', () => {
+test('body dirty: closing the spawn window publishes every saved mark', () => {
   const entityCount = 16;
   const buffers = {
     bodyDirtyFlags: new SharedArrayBuffer(entityCount * 4),
@@ -92,24 +93,20 @@ test('body dirty: bump of one entity does not publish the other', () => {
   const words = new Int32Array(buffers.bodyDirtyWords);
 
   withBodyDirtyDeferred(() => {
-    markBodyDirty(4, BODY_DIRTY.GEOMETRY);
-    markBodyDirty(9, BODY_DIRTY.FILTER);
+    markBodyDirty(4, BODY_DIRTY.LIFECYCLE);
+    markBodyDirty(9, BODY_DIRTY.GEOMETRY);
     assert.equal(bumpBodyGeneration(4), 1);
+    assert.equal(flags[9], 0);
   });
 
-  const want4 = BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY;
+  const want4 = BODY_DIRTY.LIFECYCLE;
   assert.equal(flags[4] & want4, want4);
-  assert.equal(flags[9], 0);
+  assert.equal(flags[9] & BODY_DIRTY.GEOMETRY, BODY_DIRTY.GEOMETRY);
   assert.ok(words[0] & (1 << 4));
-  assert.equal(words[0] & (1 << 9), 0);
-
-  assert.equal(bumpBodyGeneration(9), 1);
-  const want9 = BODY_DIRTY.LIFECYCLE | BODY_DIRTY.FILTER;
-  assert.equal(flags[9] & want9, want9);
   assert.ok(words[0] & (1 << 9));
 });
 
-test('body dirty: mark outside defer publishes leftover saved flags', () => {
+test('body dirty: closing the defer window publishes saved flags', () => {
   const entityCount = 16;
   const buffers = {
     bodyDirtyFlags: new SharedArrayBuffer(entityCount * 4),
@@ -118,15 +115,13 @@ test('body dirty: mark outside defer publishes leftover saved flags', () => {
   };
   bindBodySyncBuffers(buffers);
   const flags = new Int32Array(buffers.bodyDirtyFlags);
+  const words = new Int32Array(buffers.bodyDirtyWords);
 
   withBodyDirtyDeferred(() => {
     markBodyDirty(2, BODY_DIRTY.GEOMETRY);
   });
-  assert.equal(flags[2], 0);
-
-  assert.equal(markBodyDirty(2, BODY_DIRTY.MASS), true);
-  const want = BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS;
-  assert.equal(flags[2] & want, want);
+  assert.equal(flags[2] & BODY_DIRTY.GEOMETRY, BODY_DIRTY.GEOMETRY);
+  assert.ok(words[0] & (1 << 2));
 });
 
 test('body generation: bump increments and marks lifecycle dirty', () => {

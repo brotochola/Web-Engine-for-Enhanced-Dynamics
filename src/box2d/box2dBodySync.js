@@ -1,7 +1,8 @@
 // Sparse lifecycle/config synchronization from Weed workers to nested Box2D.
 // Writers coalesce per-entity flags, then publish one bit in the dirty-word set.
-// During spawn defer, marks are saved here (pendingFlags) and published on
-// bump after activate — physics never sees the reset Box 0×0.
+// During spawn defer, marks are saved here (pendingFlags). The outermost
+// window publishes every saved slot. A bump still publishes that one slot
+// immediately so a child spawn is not left shapeless.
 
 export const BODY_DIRTY = Object.freeze({
   LIFECYCLE: 1,
@@ -99,12 +100,22 @@ export function bindBodySyncBuffers(buffers) {
   return { dirtyFlags, dirtyWords, generation };
 }
 
+function flushPendingBodyDirty() {
+  const pending = pendingFlags;
+  if (!pending || !dirtyFlags) return;
+  for (let i = 0; i < pending.length; i++) {
+    if (!pending[i]) continue;
+    publishBodyDirty(i, 0);
+  }
+}
+
 export function withBodyDirtyDeferred(fn) {
   dirtyDeferDepth++;
   try {
     return fn();
   } finally {
     dirtyDeferDepth--;
+    if (dirtyDeferDepth === 0) flushPendingBodyDirty();
   }
 }
 

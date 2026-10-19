@@ -1966,7 +1966,9 @@ export class GameObject {
       FlashComponent.castShadows[i] = 0;
     }
     if (this.lightOccluder) LightOccluder.active[i] = 0;
-    if (hadPhysicsBody) markBodyDirty(i);
+    // Active flags are already 0. The generation bump force-publishes lifecycle
+    // even inside another spawn window, and the physics step destroys this body.
+    if (hadPhysicsBody) bumpBodyGeneration(i);
 
     // ========================================
     // FREE LIST PUSH (ATOMIC - any thread)
@@ -2808,7 +2810,7 @@ export class GameObject {
         if (flashInitialIntensity) flashInitialIntensity[i] = 0;
         if (flashCastShadows) flashCastShadows[i] = 0;
         if (lightOccluderActive) lightOccluderActive[i] = 0;
-        if (hadPhysicsBody) markBodyDirty(i);
+        if (hadPhysicsBody) bumpBodyGeneration(i);
       }
     }
 
