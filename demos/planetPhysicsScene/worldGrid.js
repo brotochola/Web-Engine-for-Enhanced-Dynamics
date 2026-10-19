@@ -9,7 +9,10 @@ import simplify2 from './vendor/simplify2.js';
 
 export const CELL = 10;
 export const COLS = 640;
-export const ROWS = 200;
+export const ROWS = COLS;
+/** Circle diameter as a fraction of the square grid. The rest is empty margin. */
+export const PLANET_DIAMETER = 0.66;
+export const PLANET_RADIUS = Math.round((COLS * PLANET_DIAMETER) / 2);
 export const ISO = 0.5;
 export const BLUR_R = 2;
 const BLUR_N = (BLUR_R * 2 + 1) * (BLUR_R * 2 + 1);
@@ -58,7 +61,9 @@ export const TUNE_DEFAULTS = [
   0,
   // 32-cell chunks tiled the disk with a body every 512 px. 128 cells is 2048 px, about one chunk on screen.
   128,
-  16,
+  // Coarser than a cell. A 4px pass keeps the marching-squares jag and the
+  // empty-cell test rejects it; 48px is enough to drop that jag on this disk.
+  48,
   0.72,
 ];
 /** Ungrounded crumbs smaller than this vanish instead of becoming a body. */
@@ -1289,6 +1294,16 @@ function triAreaSum(tris) {
   return a;
 }
 
+function cellFullyEmpty(field, cx, cy) {
+  return !bitAt(field, cx, cy)
+    && !bitAt(field, cx + 1, cy)
+    && !bitAt(field, cx + 1, cy + 1)
+    && !bitAt(field, cx, cy + 1);
+}
+
+const _emptyFx = [0.5, 0.25, 0.75, 0.5, 0.5];
+const _emptyFy = [0.5, 0.5, 0.5, 0.25, 0.75];
+
 function anyTriCoversEmpty(field, island, tris) {
   if (island.minX == null || island.maxX == null) return false;
   const cs = field.cellSize;
@@ -1298,11 +1313,15 @@ function anyTriCoversEmpty(field, island, tris) {
   const cy1 = Math.min(field.msRows - 1, island.maxY | 0);
   for (let cy = cy0; cy <= cy1; cy++) {
     for (let cx = cx0; cx <= cx1; cx++) {
-      if (cellCorners(field, cx, cy).caseId !== 0) continue;
-      const px = (cx + 0.5) * cs;
-      const py = (cy + 0.5) * cs;
-      for (let t = 0; t < tris.length; t++) {
-        if (pointInPolygon(px, py, tris[t])) return true;
+      if (!cellFullyEmpty(field, cx, cy)) continue;
+      const x0 = cx * cs;
+      const y0 = cy * cs;
+      for (let s = 0; s < 5; s++) {
+        const px = x0 + _emptyFx[s] * cs;
+        const py = y0 + _emptyFy[s] * cs;
+        for (let t = 0; t < tris.length; t++) {
+          if (pointInPolygon(px, py, tris[t])) return true;
+        }
       }
     }
   }
@@ -1356,17 +1375,13 @@ function buildContourFixtures(island, field, simplifyTol) {
   if (outer0 && outer0.length >= 3) {
     const baseTol = simplifyTol > 0 ? simplifyTol : WorldGrid.tuneGet(TUNE.SIMPLIFY_TOL);
     const maxTol = WorldGrid.tuneGet(TUNE.SIMPLIFY_MAX);
-    let triedHalf = false;
+    // A jaggy iso-line pokes an empty cell at the fine tolerance. Coarsening
+    // pulls that jag back inside the solid. Stop at the first outline that
+    // passes. A real crater stays rejected: a chord across it still covers
+    // an empty cell, and the quad-split fallback remains.
     for (let tol = baseTol; tol <= maxTol + 1e-6; tol += 2) {
       const attempt = tryDelaunayAtTol(island, field, outer0, holes0, tol);
       if (attempt.reason === 'ok') return { polys: attempt.tris, fallback: false };
-      if (attempt.reason === 'many' || attempt.reason === 'empty') continue;
-      if (!triedHalf) {
-        triedHalf = true;
-        const half = tryDelaunayAtTol(island, field, outer0, holes0, Math.max(1, tol * 0.5));
-        if (half.reason === 'ok') return { polys: half.tris, fallback: false };
-      }
-      break;
     }
   }
 

@@ -8,12 +8,17 @@ import {
   SHOT_KIND_BODY,
 } from '../worldGrid.js';
 import { TerrainIsland } from './terrainIsland.js';
+import { PlanetWalker } from './planetWalker.js';
+import { PlanetLamp } from './planetLamp.js';
+import { PlanetPull } from './planetPull.js';
+import { CX, CY, RADIUS, CELL as SURFACE_CELL } from '../planetGravity.js';
 import WEED from '/src/index.js';
 
 const {
   GameObject,
   Keyboard,
   Mouse,
+  Camera,
   Transform,
   RigidBody,
   Collider,
@@ -28,17 +33,25 @@ const ROCK_TINT = 0x88aa66;
 const _scratchVerts = [];
 const _scratchLocal = { x: 0, y: 0 };
 
-function aabbOverlapCells(a, b) {
-  const x0 = a.minX > b.minX ? a.minX : b.minX;
-  const y0 = a.minY > b.minY ? a.minY : b.minY;
-  const x1 = a.maxX < b.maxX ? a.maxX : b.maxX;
-  const y1 = a.maxY < b.maxY ? a.maxY : b.maxY;
-  if (x1 < x0 || y1 < y0) return 0;
-  return (x1 - x0 + 1) * (y1 - y0 + 1);
-}
-
 function Islands() {
   return WorldGridManager.islandClass || TerrainIsland;
+}
+
+function chunkHitsDisk(rec) {
+  const disk = WorldGrid.disk;
+  if (!disk) return false;
+  const r = (disk.radius | 0) + 1;
+  const ox = disk.cx | 0;
+  const oy = disk.cy | 0;
+  let x = ox;
+  let y = oy;
+  if (x < rec.minX) x = rec.minX;
+  else if (x > rec.maxX) x = rec.maxX;
+  if (y < rec.minY) y = rec.minY;
+  else if (y > rec.maxY) y = rec.maxY;
+  const dx = x - ox;
+  const dy = y - oy;
+  return dx * dx + dy * dy <= r * r;
 }
 
 export class WorldGridManager extends GameObject {
@@ -63,6 +76,11 @@ export class WorldGridManager extends GameObject {
     this._extraShardBag = [];
     this._hitScratch = { kind: 0, x: 0, y: 0, entityIndex: -1, fixtureIndex: -1 };
     this._bodyHit = { hitX: 0, hitY: 0, fixtureIndex: -1, entityIndex: -1 };
+    this._viewBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    this._viewPt = { x: 0, y: 0 };
+    this._meshed = null;
+    this._chunkCols = 0;
+    this._actorsSpawned = false;
     const disk = WorldGrid.disk;
     if (disk) {
       WorldGrid.cols = disk.cols;
@@ -72,8 +90,14 @@ export class WorldGridManager extends GameObject {
       WorldGrid.anchorY = disk.cy;
       WorldGrid.bedrock = disk.bedrock || 4;
       WorldGrid.seedDisk(disk.cx, disk.cy, disk.radius);
+      WorldGrid.consumeDirty(0);
+      const ch = WorldGrid.chunkCells();
+      this._chunkCols = Math.ceil(WorldGrid.cols / ch);
+      const n = this._chunkCols * Math.ceil(WorldGrid.rows / ch);
+      this._meshed = new Uint8Array(n);
+    } else {
+      this.rebuild(true);
     }
-    this.rebuild(true);
   }
 
   tick() {
@@ -109,6 +133,7 @@ export class WorldGridManager extends GameObject {
       this.rebuild(false);
     }
 
+    this._streamVisibleChunk();
     this._cullDynamics();
   }
 
@@ -184,19 +209,190 @@ export class WorldGridManager extends GameObject {
 
     if (allowPromote !== false && (full || this.tool !== 'draw')) this._promoteDirty(snap);
 
+    this._commitSnap(snap, full);
+    this._markSnapMeshed(snap);
+  }
+
+  _commitSnap(snap, despawnOutside) {
     const keep = this._keepIslands;
     keep.length = 0;
     const live = this.staticIslands;
     for (let i = 0; i < live.length; i++) {
       const rec = live[i];
       if (this._recInShards(rec, snap)) continue;
-      if (full) this._despawnIndex(rec.index);
+      if (despawnOutside) this._despawnIndex(rec.index);
       else keep.push(rec);
     }
 
     for (let s = 0; s < snap.length; s++) this._remeshShard(snap[s], keep);
     this.staticIslands = keep;
     this._keepIslands = live;
+  }
+
+  _markSnapMeshed(snap) {
+    const meshed = this._meshed;
+    if (!meshed) return;
+    const nx = this._chunkCols;
+    for (let i = 0; i < snap.length; i++) {
+      const s = snap[i];
+      const idx = s.chunkY * nx + s.chunkX;
+      if (idx >= 0 && idx < meshed.length) meshed[idx] = 1;
+    }
+  }
+
+  _clampCellBox(box) {
+    const cols = WorldGrid.cols;
+    const rows = WorldGrid.rows;
+    if (box.minX < 0) box.minX = 0;
+    if (box.minY < 0) box.minY = 0;
+    if (box.maxX >= cols) box.maxX = cols - 1;
+    if (box.maxY >= rows) box.maxY = rows - 1;
+    if (box.maxX < box.minX) box.maxX = box.minX;
+    if (box.maxY < box.minY) box.maxY = box.minY;
+  }
+
+  _viewCellBox() {
+    const cs = WorldGrid.cellSize || CELL;
+    const pad = WorldGrid.chunkCells();
+    const box = this._viewBox;
+    const cw = Camera.canvasWidth;
+    const ch = Camera.canvasHeight;
+    if (!(cw > 0 && ch > 0)) {
+      const disk = WorldGrid.disk;
+      const x = disk ? disk.cx : 0;
+      const y = disk ? disk.cy - disk.radius : 0;
+      box.minX = x - pad;
+      box.minY = y - pad;
+      box.maxX = x + pad;
+      box.maxY = y + pad;
+      this._clampCellBox(box);
+      return box;
+    }
+    const margin = pad * cs;
+    const p = this._viewPt;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < 4; i++) {
+      Camera.screenToWorld(i & 1 ? cw : 0, i & 2 ? ch : 0, p);
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    box.minX = Math.floor((minX - margin) / cs);
+    box.minY = Math.floor((minY - margin) / cs);
+    box.maxX = Math.floor((maxX + margin) / cs);
+    box.maxY = Math.floor((maxY + margin) / cs);
+    this._clampCellBox(box);
+    return box;
+  }
+
+  _streamVisibleChunk() {
+    if (!this._meshed) return;
+    const box = this._viewCellBox();
+    const src = WorldGrid.chunksOverlapping(box);
+    const cs = WorldGrid.cellSize || CELL;
+    let viewCx;
+    let viewCy;
+    if (Camera.canvasWidth > 0 && Camera.canvasHeight > 0) {
+      viewCx = Camera.centerX / cs;
+      viewCy = Camera.centerY / cs;
+    } else {
+      const disk = WorldGrid.disk;
+      viewCx = disk ? disk.cx : 0;
+      viewCy = disk ? disk.cy - disk.radius : 0;
+    }
+    const nx = this._chunkCols;
+    const meshed = this._meshed;
+    let bestX = -1;
+    let bestY = -1;
+    let bestD = Infinity;
+    for (let i = 0; i < src.length; i++) {
+      const s = src[i];
+      const idx = s.chunkY * nx + s.chunkX;
+      if (idx < 0 || idx >= meshed.length || meshed[idx]) continue;
+      if (!chunkHitsDisk(s)) {
+        meshed[idx] = 1;
+        continue;
+      }
+      const dx = (s.minX + s.maxX) * 0.5 - viewCx;
+      const dy = (s.minY + s.maxY) * 0.5 - viewCy;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        bestX = s.chunkX;
+        bestY = s.chunkY;
+      }
+    }
+    if (bestX >= 0) {
+      this._meshChunk(bestX, bestY);
+      return;
+    }
+    if (this._actorsSpawned) return;
+    const foot = this._spawnChunk();
+    if (!this._isMeshed(foot.cx, foot.cy)) {
+      this._meshChunk(foot.cx, foot.cy);
+      return;
+    }
+    this._spawnActors();
+  }
+
+  _isMeshed(cx, cy) {
+    const meshed = this._meshed;
+    if (!meshed) return false;
+    const idx = cy * this._chunkCols + cx;
+    return idx >= 0 && idx < meshed.length && meshed[idx] === 1;
+  }
+
+  _spawnChunk() {
+    const ch = WorldGrid.chunkCells();
+    const cs = WorldGrid.cellSize || SURFACE_CELL;
+    let x = Math.floor(CX / cs);
+    let y = Math.floor((CY - RADIUS * SURFACE_CELL) / cs);
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    let cx = (x / ch) | 0;
+    let cy = (y / ch) | 0;
+    const maxCx = this._chunkCols - 1;
+    const maxCy = Math.ceil(WorldGrid.rows / ch) - 1;
+    if (cx > maxCx) cx = maxCx;
+    if (cy > maxCy) cy = maxCy;
+    return { cx, cy };
+  }
+
+  _meshChunk(cx, cy) {
+    const ch = WorldGrid.chunkCells();
+    const snap = this._shardSnap;
+    let rec = snap[0];
+    if (!rec) rec = snap[0] = {};
+    rec.chunkX = cx;
+    rec.chunkY = cy;
+    rec.minX = cx * ch;
+    rec.minY = cy * ch;
+    rec.maxX = Math.min(WorldGrid.cols - 1, rec.minX + ch - 1);
+    rec.maxY = Math.min(WorldGrid.rows - 1, rec.minY + ch - 1);
+    snap.length = 1;
+    this._commitSnap(snap, false);
+    this._markSnapMeshed(snap);
+  }
+
+  _spawnActors() {
+    if (this._actorsSpawned) return;
+    this._actorsSpawned = true;
+    const surface = CY - RADIUS * SURFACE_CELL;
+    PlanetWalker.spawn({
+      x: CX,
+      y: surface - 40,
+      forceProcessOnLogicWorker: 0,
+    });
+    PlanetLamp.spawn({
+      x: CX + 90,
+      y: surface - 30,
+      forceProcessOnLogicWorker: 0,
+    });
+    PlanetPull.spawn({ forceProcessOnLogicWorker: 0 });
   }
 
   _unionPaintDirty() {
@@ -400,44 +596,14 @@ export class WorldGridManager extends GameObject {
       this._pushStaticJob(jobs, island, islandBox, built.polys, shard, -1);
     }
 
-    for (let f = 0; f < failed.length; f++) {
-      if (!this._tryQuadSplit(failed[f], shard, jobs, pool, keep)) {
-        this._keepOverlapping(pool, keep, failed[f]);
-      }
-    }
-
-    if (!jobs.length && this._shardHasSolid(shard)) {
-      for (let i = 0; i < pool.length; i++) keep.push(pool[i]);
-      return;
-    }
+    for (let f = 0; f < failed.length; f++) this._tryQuadSplit(failed[f], shard, jobs, pool, keep);
 
     jobs.sort((a, b) => b.areaCells - a.areaCells);
     for (let j = 0; j < jobs.length; j++) {
       const job = jobs[j];
-      let bestI = -1;
-      let bestA = 0;
-      for (let p = 0; p < pool.length; p++) {
-        const a = aabbOverlapCells(pool[p], job.islandBox);
-        if (a > bestA) {
-          bestA = a;
-          bestI = p;
-        }
-      }
-      if (bestI >= 0) {
-        const rec = pool[bestI];
-        this._retargetStatic(rec, job);
-        rec.minX = job.islandBox.minX;
-        rec.minY = job.islandBox.minY;
-        rec.maxX = job.islandBox.maxX;
-        rec.maxY = job.islandBox.maxY;
-        rec.chunkX = job.chunkX;
-        rec.chunkY = job.chunkY;
-        rec.quad = job.quad;
-        keep.push(rec);
-        pool[bestI] = pool[pool.length - 1];
-        pool.pop();
-        continue;
-      }
+      // New body, then the pool despawn below destroys the previous Box2D body.
+      // Retarget only rewrote the fixture list the debug view reads; the old
+      // shapes stayed in the world and held up every cut after the first.
       const spawned = Islands().spawn({
         x: job.cen.x,
         y: job.cen.y,
@@ -446,10 +612,7 @@ export class WorldGridManager extends GameObject {
         tint: job.tint,
         layer: 'terrain',
       });
-      if (!spawned) {
-        this._keepOverlapping(pool, keep, job.islandBox);
-        continue;
-      }
+      if (!spawned) continue;
       keep.push({
         index: spawned.index,
         minX: job.islandBox.minX,
@@ -463,18 +626,6 @@ export class WorldGridManager extends GameObject {
     }
 
     for (let i = 0; i < pool.length; i++) this._despawnIndex(pool[i].index);
-  }
-
-  _shardHasSolid(shard) {
-    if (!WorldGrid.cells) return false;
-    const x1 = shard.maxX;
-    const y1 = shard.maxY;
-    for (let y = shard.minY; y <= y1; y++) {
-      for (let x = shard.minX; x <= x1; x++) {
-        if (WorldGrid.get(x, y)) return true;
-      }
-    }
-    return false;
   }
 
   _pushStaticJob(jobs, island, islandBox, polys, shard, quad) {
@@ -505,7 +656,6 @@ export class WorldGridManager extends GameObject {
     for (let q = 0; q < quads.length; q++) {
       const quad = quads[q];
       const parts = WorldGrid.extractIslands(quad, { clip: true });
-      let quadHit = false;
       for (let i = 0; i < parts.length; i++) {
         const island = parts[i];
         const islandBox = {
@@ -518,40 +668,12 @@ export class WorldGridManager extends GameObject {
         const built = WorldGrid.buildContourFixtures(island, WorldGrid.tuneGet(TUNE.SIMPLIFY_TOL));
         if (built.polys && built.polys.length && this._pushStaticJob(jobs, island, islandBox, built.polys, shard, quad.quad)) {
           any = true;
-          quadHit = true;
           continue;
         }
-        if (this._tryQuadSplit(islandBox, shard, jobs, pool, keep, depth + 1)) {
-          any = true;
-          quadHit = true;
-        }
+        if (this._tryQuadSplit(islandBox, shard, jobs, pool, keep, depth + 1)) any = true;
       }
-      if (!quadHit && parts.length) this._keepOverlapping(pool, keep, quad);
     }
     return any;
-  }
-
-  _keepOverlapping(pool, keep, islandBox) {
-    let bestI = -1;
-    let bestA = 0;
-    for (let p = 0; p < pool.length; p++) {
-      const a = aabbOverlapCells(pool[p], islandBox);
-      if (a > bestA) {
-        bestA = a;
-        bestI = p;
-      }
-    }
-    if (bestI < 0) return;
-    keep.push(pool[bestI]);
-    pool[bestI] = pool[pool.length - 1];
-    pool.pop();
-  }
-
-  _retargetStatic(rec, job) {
-    const Island = Islands();
-    const start = Island.startIndex | 0;
-    const inst = Island.instances[rec.index - start];
-    return !!(inst && inst.active && inst.retarget(job.cen.x, job.cen.y, job.local));
   }
 
   _tryShatter() {

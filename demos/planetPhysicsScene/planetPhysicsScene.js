@@ -157,21 +157,10 @@ export class PlanetPhysicsScene extends Scene {
     WorldGridManager.islandClass = PlanetIsland;
     Camera.setFree(false);
     Camera.setZoom(1);
+    Camera.centerOn(CX, CY - RADIUS * CELL);
   }
 
   createNewGame() {
     this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
-    this.spawnEntity(PlanetPull, { forceProcessOnLogicWorker: 0 });
-    const surface = CY - RADIUS * CELL;
-    this.spawnEntity(PlanetWalker, {
-      x: CX,
-      y: surface - 40,
-      forceProcessOnLogicWorker: 0,
-    });
-    this.spawnEntity(PlanetLamp, {
-      x: CX + 90,
-      y: surface - 30,
-      forceProcessOnLogicWorker: 0,
-    });
   }
 }
