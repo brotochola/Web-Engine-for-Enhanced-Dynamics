@@ -8,6 +8,7 @@ import {
   SHOT_KIND_BODY,
 } from '../worldGrid.js';
 import { TerrainIsland } from './terrainIsland.js';
+import { LooseIsland } from './planetIsland.js';
 import { PlanetWalker } from './planetWalker.js';
 import { PlanetLamp } from './planetLamp.js';
 import { PlanetPull } from './planetPull.js';
@@ -54,6 +55,11 @@ function chunkHitsDisk(rec) {
   return dx * dx + dy * dy <= r * r;
 }
 
+function hasActive(EntityClass) {
+  const active = EntityClass.getAllActive?.();
+  return !!(active && active.length);
+}
+
 export class WorldGridManager extends GameObject {
   static serializable = false;
   static instances = [];
@@ -61,7 +67,7 @@ export class WorldGridManager extends GameObject {
   static forceProcessOnLogicWorker = 1;
   static islandClass = TerrainIsland;
 
-  onSpawned() {
+  onSpawned(spawnConfig = {}) {
     this.tool = 'draw';
     this.staticIslands = [];
     this.dynamicIslands = [];
@@ -82,22 +88,35 @@ export class WorldGridManager extends GameObject {
     this._chunkCols = 0;
     this._actorsSpawned = false;
     const disk = WorldGrid.disk;
-    if (disk) {
-      WorldGrid.cols = disk.cols;
-      WorldGrid.rows = disk.rows;
-      WorldGrid.cellSize = disk.cell || CELL;
-      WorldGrid.anchorX = disk.cx;
-      WorldGrid.anchorY = disk.cy;
-      WorldGrid.bedrock = disk.bedrock || 4;
+    if (spawnConfig.resume) {
+      this._bindDisk(disk);
+      WorldGrid.consumeDirty(0);
+      if (!hasActive(PlanetPull)) {
+        PlanetPull.spawn({ forceProcessOnLogicWorker: 0, poured: true });
+      }
+      return;
+    }
+    if (disk && spawnConfig.seed) {
+      this._bindDisk(disk);
       WorldGrid.seedDisk(disk.cx, disk.cy, disk.radius);
       WorldGrid.consumeDirty(0);
-      const ch = WorldGrid.chunkCells();
-      this._chunkCols = Math.ceil(WorldGrid.cols / ch);
-      const n = this._chunkCols * Math.ceil(WorldGrid.rows / ch);
-      this._meshed = new Uint8Array(n);
-    } else {
-      this.rebuild(true);
+      return;
     }
+    if (!disk) this.rebuild(true);
+  }
+
+  _bindDisk(disk) {
+    if (!disk) return;
+    WorldGrid.cols = disk.cols;
+    WorldGrid.rows = disk.rows;
+    WorldGrid.cellSize = disk.cell || CELL;
+    WorldGrid.anchorX = disk.cx;
+    WorldGrid.anchorY = disk.cy;
+    WorldGrid.bedrock = disk.bedrock || 4;
+    const ch = WorldGrid.chunkCells();
+    this._chunkCols = Math.ceil(WorldGrid.cols / ch);
+    const n = this._chunkCols * Math.ceil(WorldGrid.rows / ch);
+    this._meshed = new Uint8Array(n);
   }
 
   tick() {
@@ -382,17 +401,23 @@ export class WorldGridManager extends GameObject {
     if (this._actorsSpawned) return;
     this._actorsSpawned = true;
     const surface = CY - RADIUS * SURFACE_CELL;
-    PlanetWalker.spawn({
-      x: CX,
-      y: surface - 40,
-      forceProcessOnLogicWorker: 0,
-    });
-    PlanetLamp.spawn({
-      x: CX + 90,
-      y: surface - 30,
-      forceProcessOnLogicWorker: 0,
-    });
-    PlanetPull.spawn({ forceProcessOnLogicWorker: 0 });
+    if (!hasActive(PlanetWalker)) {
+      PlanetWalker.spawn({
+        x: CX,
+        y: surface - 40,
+        forceProcessOnLogicWorker: 0,
+      });
+    }
+    if (!hasActive(PlanetLamp)) {
+      PlanetLamp.spawn({
+        x: CX + 90,
+        y: surface - 30,
+        forceProcessOnLogicWorker: 0,
+      });
+    }
+    if (!hasActive(PlanetPull)) {
+      PlanetPull.spawn({ forceProcessOnLogicWorker: 0 });
+    }
   }
 
   _unionPaintDirty() {
@@ -526,7 +551,7 @@ export class WorldGridManager extends GameObject {
     if (!cen) return false;
     const local = WorldGrid.polysToLocal(built.polys, cen.x, cen.y);
     if (!local.length) return false;
-    const spawned = Islands().spawn({
+    const spawned = LooseIsland.spawn({
       x: cen.x,
       y: cen.y,
       isStatic: false,

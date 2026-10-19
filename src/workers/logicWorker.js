@@ -14,6 +14,13 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Camera } from '../core/camera.js';
 import { Tween } from '../core/tween.js';
+import {
+  applyChains,
+  applyFixtures,
+  applyMeshes,
+  applyTweens,
+  remapEntityIdFields,
+} from '../core/save/worldBufferSave.js';
 
 import { CameraInOutListener, noteScreenVisibility } from '../components/cameraInOutListener.js';
 import { CollisionListener } from '../components/collisionListener.js';
@@ -1860,7 +1867,15 @@ class LogicWorker extends AbstractWorker {
       case 'restoreSave': {
         if (this.workerIndex !== 0) break;
 
-        const { serializableClassNames = [], entities = [], joints = [] } = data;
+        const {
+          serializableClassNames = [],
+          entities = [],
+          joints = [],
+          chains = [],
+          fixtures = [],
+          meshes = [],
+          tweens = [],
+        } = data;
         let restored = 0;
         let failed = 0;
         const oldToNew = new Map();
@@ -1904,10 +1919,37 @@ class LogicWorker extends AbstractWorker {
           }
         }
 
+        const restoredPairs = [];
+        const mapGet = (old) => {
+          const key = old | 0;
+          return oldToNew.has(key) ? oldToNew.get(key) | 0 : null;
+        };
+        for (const [old, neu] of oldToNew) {
+          restoredPairs.push({ old, neu });
+        }
+        applyChains(chains, restoredPairs);
+        applyFixtures(fixtures, restoredPairs);
+        applyMeshes(meshes, restoredPairs);
+        applyTweens(tweens, mapGet);
+        for (let r = 0; r < entities.length; r++) {
+          const rec = entities[r];
+          if (rec.entityIndex == null) continue;
+          const neu = mapGet(rec.entityIndex);
+          if (neu == null) continue;
+          const EntityClass = self[rec.typeName];
+          if (!EntityClass) continue;
+          remapEntityIdFields(EntityClass, neu, rec.components, mapGet);
+        }
+
         let jointsRestored = 0;
         if (joints.length && typeof Joint.restoreFromSave === 'function') {
           const created = Joint.restoreFromSave(joints, oldToNew);
           jointsRestored = created.length;
+        }
+
+        const idPairs = [];
+        for (let p = 0; p < restoredPairs.length; p++) {
+          idPairs.push(restoredPairs[p].old | 0, restoredPairs[p].neu | 0);
         }
 
         // Flush active lists before ack so entities are fully in the scene.
@@ -1917,6 +1959,7 @@ class LogicWorker extends AbstractWorker {
           restored,
           failed,
           jointsRestored,
+          idPairs,
         });
         break;
       }

@@ -1850,6 +1850,7 @@ class Scene {
         pending.resolve({
           restored: e.data.restored || 0,
           failed: e.data.failed || 0,
+          idPairs: e.data.idPairs || [],
         });
       }
     } else if (

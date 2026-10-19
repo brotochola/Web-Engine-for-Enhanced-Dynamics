@@ -14,7 +14,7 @@ export const ROWS = COLS;
 export const PLANET_DIAMETER = 0.66;
 export const PLANET_RADIUS = Math.round((COLS * PLANET_DIAMETER) / 2);
 export const ISO = 0.5;
-export const BLUR_R = 2;
+export const BLUR_R = 0;
 const BLUR_N = (BLUR_R * 2 + 1) * (BLUR_R * 2 + 1);
 export const LAYER_STATIC = 1;
 export const RAY_MASK_NO_STATIC = 0xffffffff ^ (1 << LAYER_STATIC);
@@ -60,7 +60,7 @@ export const TUNE_DEFAULTS = [
   CELL * CELL,
   0,
   // 32-cell chunks tiled the disk with a body every 512 px. 128 cells is 2048 px, about one chunk on screen.
-  128,
+  32,
   // Coarser than a cell. A 4px pass keeps the marching-squares jag and the
   // empty-cell test rejects it; 48px is enough to drop that jag on this disk.
   48,

@@ -11,6 +11,7 @@ const SPEED = 260;
 const JUMP = 420;
 
 export class PlanetWalker extends GameObject {
+  static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer, LightEmitter];
   static forceProcessOnLogicWorker = 0;
 
@@ -33,7 +34,7 @@ export class PlanetWalker extends GameObject {
     this.x = spawnConfig.x ?? CX;
     this.y = spawnConfig.y ?? CY;
     this._jump = 0;
-    this.cam = 0;
+    this.cam = spawnConfig._saveRestore ? (Camera.rotation || 0) : 0;
     this.setVelocity(0, 0);
   }
 

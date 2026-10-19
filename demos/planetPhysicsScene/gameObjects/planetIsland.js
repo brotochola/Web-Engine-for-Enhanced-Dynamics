@@ -18,3 +18,8 @@ export class PlanetIsland extends TerrainIsland {
     RigidBody.ay[i] = (dy / len) * g.g;
   }
 }
+
+/** Broken-off chunk. Cells are already cleared, so the body itself is the save. */
+export class LooseIsland extends PlanetIsland {
+  static serializable = true;
+}

@@ -12,9 +12,13 @@ import { PARTICLE_EASE } from '../util/configDefaults.js';
 import { applyParticleEase } from '../util/particleTween.js';
 import { logicBlockRange } from '../util/logicOwner.js';
 
-const KIND_PAINT = 0;
-const KIND_XY = 1;
-const KIND_ZOOM = 2;
+export const TWEEN_KIND_PAINT = 0;
+export const TWEEN_KIND_XY = 1;
+export const TWEEN_KIND_ZOOM = 2;
+
+const KIND_PAINT = TWEEN_KIND_PAINT;
+const KIND_XY = TWEEN_KIND_XY;
+const KIND_ZOOM = TWEEN_KIND_ZOOM;
 
 const PAINT_ALPHA = 1;
 const PAINT_SCALEX = 2;

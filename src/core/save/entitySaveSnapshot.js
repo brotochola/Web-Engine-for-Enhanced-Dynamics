@@ -11,6 +11,15 @@ import { VERSION } from '../../version.js';
 import { BODY_DIRTY, markBodyDirty } from '../../box2d/box2dBodySync.js';
 import { Joint } from '../joint.js';
 import { encodeBinarySaveBody, decodeBinarySaveBody } from './binarySaveCodec.js';
+import {
+  packSharedResources,
+  packChains,
+  packFixtures,
+  packMeshes,
+  packNav,
+  packTime,
+  packTweens,
+} from './worldBufferSave.js';
 
 export const SAVE_MAGIC = 'WEEDSAVE1';
 export const SAVE_FORMAT_VERSION = 5;
@@ -35,8 +44,8 @@ export function isEntityClassSerializable(EntityClass) {
 export function componentSchemaFingerprint(ComponentClass) {
   const parts = [ComponentClass.name];
   for (const [name, typeOrSpec] of Object.entries(ComponentClass.ARRAY_SCHEMA || {})) {
-    const { type, length } = Component._schemaEntry(typeOrSpec);
-    parts.push(`${name}:${type.name}:${length}`);
+    const { type, length, entityId } = Component._schemaEntry(typeOrSpec);
+    parts.push(entityId ? `${name}:${type.name}:${length}:entityId` : `${name}:${type.name}:${length}`);
   }
   if (ComponentClass === Transform || ComponentClass.name === 'Transform') {
     parts.push('pose:x,y,rotC,rotS');
@@ -283,6 +292,22 @@ export function buildSavePayload(scene, globals = {}) {
   if (globals.decals !== undefined) {
     payload.decals = globals.decals;
   }
+  const savedIndices = new Array(entities.length);
+  for (let i = 0; i < entities.length; i++) savedIndices[i] = entities[i].entityIndex | 0;
+  const sharedResources = packSharedResources();
+  if (sharedResources.length) payload.sharedResources = sharedResources;
+  const chains = packChains(savedIndices);
+  if (chains.length) payload.chains = chains;
+  const fixtures = packFixtures(savedIndices);
+  if (fixtures.length) payload.fixtures = fixtures;
+  const meshes = packMeshes(savedIndices);
+  if (meshes.length) payload.meshes = meshes;
+  const nav = packNav();
+  if (nav) payload.nav = nav;
+  const timeScale = packTime();
+  if (timeScale != null) payload.timeScale = timeScale;
+  const tweens = packTweens();
+  if (tweens) payload.tweens = tweens;
   return payload;
 }
 

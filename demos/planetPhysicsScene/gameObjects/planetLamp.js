@@ -7,6 +7,7 @@ const { GameObject, RigidBody, Collider, SpriteRenderer, LightEmitter, enums } =
 const { ShapeType } = enums;
 
 export class PlanetLamp extends GameObject {
+  static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer, LightEmitter];
   static forceProcessOnLogicWorker = 0;
 

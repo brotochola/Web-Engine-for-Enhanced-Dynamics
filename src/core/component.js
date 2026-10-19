@@ -43,15 +43,21 @@ export class Component {
    * @param {number} count - Total number of component instances
    */
   /**
-   * Resolve ARRAY_SCHEMA entry: TypedArray ctor, or `{ type, length }` for
-   * per-entity multi-element fields (e.g. polygon verts: length = 8).
-   * @returns {{ type: Function, length: number }}
+   * Resolve ARRAY_SCHEMA entry: TypedArray ctor, or `{ type, length, entityId }`
+   * for per-entity multi-element fields (e.g. polygon verts: length = 8).
+   * `entityId: true` marks a field SaveGame remaps through the restore id map.
+   * Empty is `entityIdNone`, not 0.
+   * @returns {{ type: Function, length: number, entityId: boolean }}
    */
   static _schemaEntry(typeOrSpec) {
     if (typeOrSpec && typeof typeOrSpec === 'object' && typeOrSpec.type) {
-      return { type: typeOrSpec.type, length: typeOrSpec.length | 0 || 1 };
+      return {
+        type: typeOrSpec.type,
+        length: typeOrSpec.length | 0 || 1,
+        entityId: typeOrSpec.entityId === true,
+      };
     }
-    return { type: typeOrSpec, length: 1 };
+    return { type: typeOrSpec, length: 1, entityId: false };
   }
 
   static initializeArrays(buffer, count) {

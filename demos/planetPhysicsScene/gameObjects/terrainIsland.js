@@ -58,6 +58,16 @@ export class TerrainIsland extends GameObject {
     this.rigidBody.angularDamping = spawnConfig.isStatic ? 0 : 0.8;
     if (spawnConfig.isStatic) this.collider.collisionLayer = LAYER_STATIC;
 
+    if (spawnConfig._saveRestore) {
+      this.collider.radius = POLYGON_SKIN;
+      this.meshRenderer.tint = spawnConfig.tint ?? 0x88aa66;
+      this.meshRenderer.setTexture('rocky');
+      this.setTileWorld(128);
+      this.meshRenderer.visualOutset = 2;
+      this.setLayer('terrain');
+      return;
+    }
+
     const polys = spawnConfig.polys;
     if (!polys || !polys.length || !applyPolysFlat(this.collider, polys)) {
       this.despawn();

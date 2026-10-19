@@ -9,8 +9,8 @@ export class PlanetPull extends GameObject {
   static components = [];
   static forceProcessOnLogicWorker = 0;
 
-  onSpawned() {
-    this._poured = false;
+  onSpawned(spawnConfig = {}) {
+    this._poured = !!spawnConfig.poured;
   }
 
   tick() {

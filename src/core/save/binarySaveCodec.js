@@ -10,6 +10,13 @@ export const SECTION = Object.freeze({
   JOINTS: 5,
   LIQUIDFUN: 6,
   DECALS: 7,
+  SHARED_RESOURCES: 8,
+  CHAINS: 9,
+  FIXTURES: 10,
+  MESHES: 11,
+  NAV: 12,
+  TIME: 13,
+  TWEENS: 14,
 });
 
 const KIND = Object.freeze({
@@ -609,6 +616,177 @@ function readDecals(r) {
   return { tilesX, tilesY, tilePixelSize, tileSize, tiles };
 }
 
+function writeSharedResources(w, records) {
+  const list = records || [];
+  w.u32(list.length);
+  for (let i = 0; i < list.length; i++) {
+    const rec = list[i];
+    w.str(rec.name || '');
+    const bytes = rec.bytes instanceof Uint8Array ? rec.bytes : new Uint8Array(rec.bytes || []);
+    w.bytes(bytes);
+  }
+}
+
+function readSharedResources(r) {
+  const n = r.u32();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push({ name: r.str(), bytes: r.bytes() });
+  }
+  return out;
+}
+
+function writeChains(w, records) {
+  const list = records || [];
+  w.u32(list.length);
+  for (let i = 0; i < list.length; i++) {
+    const rec = list[i];
+    w.u32(rec.entityIndex | 0);
+    w.u8(rec.loop ? 1 : 0);
+    w.u32(rec.count | 0);
+    writeTyped(w, rec.xy);
+  }
+}
+
+function readChains(r) {
+  const n = r.u32();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push({
+      entityIndex: r.u32(),
+      loop: r.u8(),
+      count: r.u32(),
+      xy: readTyped(r),
+    });
+  }
+  return out;
+}
+
+function writeFixtures(w, records) {
+  const list = records || [];
+  w.u32(list.length);
+  for (let i = 0; i < list.length; i++) {
+    const rec = list[i];
+    w.u32(rec.entityIndex | 0);
+    writeTyped(w, rec.counts);
+    writeTyped(w, rec.xy);
+  }
+}
+
+function readFixtures(r) {
+  const n = r.u32();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push({
+      entityIndex: r.u32(),
+      counts: readTyped(r),
+      xy: readTyped(r),
+    });
+  }
+  return out;
+}
+
+function writeMeshes(w, records) {
+  const list = records || [];
+  w.u32(list.length);
+  for (let i = 0; i < list.length; i++) {
+    const rec = list[i];
+    w.u32(rec.entityIndex | 0);
+    writeTyped(w, rec.xy);
+    w.u8(rec.uv ? 1 : 0);
+    if (rec.uv) writeTyped(w, rec.uv);
+    w.u8(rec.indices ? 1 : 0);
+    if (rec.indices) writeTyped(w, rec.indices);
+  }
+}
+
+function readMeshes(r) {
+  const n = r.u32();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const entityIndex = r.u32();
+    const xy = readTyped(r);
+    const uv = r.u8() ? readTyped(r) : null;
+    const indices = r.u8() ? readTyped(r) : null;
+    out.push({ entityIndex, xy, uv, indices });
+  }
+  return out;
+}
+
+function writeNav(w, nav) {
+  w.u32(nav.gridWidth | 0);
+  w.u32(nav.gridHeight | 0);
+  w.u32(nav.cellSize >>> 0);
+  writeTyped(w, nav.walkability);
+}
+
+function readNav(r) {
+  return {
+    gridWidth: r.u32(),
+    gridHeight: r.u32(),
+    cellSize: r.u32(),
+    walkability: readTyped(r),
+  };
+}
+
+function writeTime(w, scale) {
+  w.f32(+scale);
+}
+
+function readTime(r) {
+  return r.f32();
+}
+
+function writeTweens(w, slots) {
+  const list = slots || [];
+  w.u32(list.length);
+  for (let i = 0; i < list.length; i++) {
+    const rec = list[i];
+    w.u8(rec.kind | 0);
+    w.u8(rec.ease | 0);
+    w.u8(rec.mask | 0);
+    w.u16(rec.entity | 0);
+    w.f32(+rec.duration || 0);
+    w.f32(+rec.elapsed || 0);
+    w.f32(+rec.from0 || 0);
+    w.f32(+rec.to0 || 0);
+    w.f32(+rec.from1 || 0);
+    w.f32(+rec.to1 || 0);
+    w.f32(+rec.from2 || 0);
+    w.f32(+rec.to2 || 0);
+    w.f32(+rec.from3 || 0);
+    w.f32(+rec.to3 || 0);
+    w.u32(rec.tintFrom >>> 0);
+    w.u32(rec.tintTo >>> 0);
+  }
+}
+
+function readTweens(r) {
+  const n = r.u32();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push({
+      kind: r.u8(),
+      ease: r.u8(),
+      mask: r.u8(),
+      entity: r.u16(),
+      duration: r.f32(),
+      elapsed: r.f32(),
+      from0: r.f32(),
+      to0: r.f32(),
+      from1: r.f32(),
+      to1: r.f32(),
+      from2: r.f32(),
+      to2: r.f32(),
+      from3: r.f32(),
+      to3: r.f32(),
+      tintFrom: r.u32(),
+      tintTo: r.u32(),
+    });
+  }
+  return out;
+}
+
 /**
  * Encode logical save payload to uncompressed binary body (no magic/version/deflate).
  * @param {object} payload
@@ -626,6 +804,27 @@ export function encodeBinarySaveBody(payload) {
   }
   if (payload.decals?.tiles?.length) {
     pushSection(sections, SECTION.DECALS, (w) => writeDecals(w, payload.decals));
+  }
+  if (payload.sharedResources?.length) {
+    pushSection(sections, SECTION.SHARED_RESOURCES, (w) => writeSharedResources(w, payload.sharedResources));
+  }
+  if (payload.chains?.length) {
+    pushSection(sections, SECTION.CHAINS, (w) => writeChains(w, payload.chains));
+  }
+  if (payload.fixtures?.length) {
+    pushSection(sections, SECTION.FIXTURES, (w) => writeFixtures(w, payload.fixtures));
+  }
+  if (payload.meshes?.length) {
+    pushSection(sections, SECTION.MESHES, (w) => writeMeshes(w, payload.meshes));
+  }
+  if (payload.nav?.walkability) {
+    pushSection(sections, SECTION.NAV, (w) => writeNav(w, payload.nav));
+  }
+  if (payload.timeScale != null) {
+    pushSection(sections, SECTION.TIME, (w) => writeTime(w, payload.timeScale));
+  }
+  if (payload.tweens?.length) {
+    pushSection(sections, SECTION.TWEENS, (w) => writeTweens(w, payload.tweens));
   }
 
   const out = new Writer();
@@ -668,5 +867,14 @@ export function decodeBinarySaveBody(bytes) {
       ? readLiquidFun(new Reader(map[SECTION.LIQUIDFUN]))
       : null,
     decals: map[SECTION.DECALS] ? readDecals(new Reader(map[SECTION.DECALS])) : null,
+    sharedResources: map[SECTION.SHARED_RESOURCES]
+      ? readSharedResources(new Reader(map[SECTION.SHARED_RESOURCES]))
+      : null,
+    chains: map[SECTION.CHAINS] ? readChains(new Reader(map[SECTION.CHAINS])) : null,
+    fixtures: map[SECTION.FIXTURES] ? readFixtures(new Reader(map[SECTION.FIXTURES])) : null,
+    meshes: map[SECTION.MESHES] ? readMeshes(new Reader(map[SECTION.MESHES])) : null,
+    nav: map[SECTION.NAV] ? readNav(new Reader(map[SECTION.NAV])) : null,
+    timeScale: map[SECTION.TIME] ? readTime(new Reader(map[SECTION.TIME])) : null,
+    tweens: map[SECTION.TWEENS] ? readTweens(new Reader(map[SECTION.TWEENS])) : null,
   };
 }

@@ -1,6 +1,6 @@
 # Save Game (sparse serializable entities)
 
-WeedJS saves **active, opt-in entities** plus tiny globals (camera / sun). It does **not** dump whole entity SharedArrayBuffer pools, decorations, CPU particles, bullets, or the Box2D WASM heap. Camera, sun, joints, LiquidFun, and sparse DECALS tiles are included.
+WeedJS saves **active, opt-in entities** plus world buffers that are not per-entity SoA: camera, sun, joints, LiquidFun, sparse DECALS tiles, shared resources, chains, extra collider fixtures, custom meshes, nav walkability, `Time.scale`, and in-flight tweens. It does **not** dump whole entity SharedArrayBuffer pools, decorations, CPU particles, bullets, playing sounds, or the Box2D WASM heap.
 
 ## Opt-in
 
@@ -21,6 +21,16 @@ An entity is included in a save only if:
 2. It is active (`Transform.active[i] === 1` / type active list)
 
 Per entity, the snapshot packs SoA component fields (plus Transform pose and RigidBody velocity/sleeping from Box2D HEAP views). JS-only FSM locals that are not in an `ARRAY_SCHEMA` are not saved.
+
+A component field that stores another entity's index must say so, or restore writes the pre-restore slot:
+
+```javascript
+static ARRAY_SCHEMA = {
+  target: { type: Uint16Array, entityId: true },
+};
+```
+
+`entityIdNone` (`0xffff` / `0xffffffff`) stays empty. `0` is a real entity. An id whose entity was not in the save becomes `entityIdNone`. Camera follow uses the same map (`0` means no follow, otherwise `entityIndex + 1`). Joints already remapped this way.
 
 After restore, the physics host marks the Box2D body dirty when **either** `RigidBody` or `Collider` is active on the entity (RigidBody-only / Collider-only / both). See [PHYSICS.md, composition](./PHYSICS.md#rigidbody--collider-composition).
 
@@ -96,8 +106,15 @@ repeat:
 | 5 | JOINTS | packed joint records |
 | 6 | LIQUIDFUN | typed particle/group/pair/render buffers |
 | 7 | DECALS | sparse tiles as raw PNG or RGBA bytes |
+| 8 | SHARED_RESOURCES | one record per bound class: name + raw SAB bytes |
+| 9 | CHAINS | local chain points for saved entities |
+| 10 | FIXTURES | extra convex pieces for saved entities |
+| 11 | MESHES | custom mesh verts, optional UVs, optional indices |
+| 12 | NAV | walkability bytes plus grid width, height, and cell size |
+| 13 | TIME | `Time.scale` |
+| 14 | TWEENS | active tween slots |
 
-Empty optional sections (no LiquidFun / no decals) are omitted. There is no JSON payload and no base64 on the wire.
+Version stays **5**. A save written before these tags simply has no such section; decode treats that as empty. Empty optional sections are omitted. There is no JSON payload and no base64 on the wire.
 
 Helpers: `SaveStore.put/get/list/listForScene/remove`, `downloadSave`, `parseUploadedFile`.
 
@@ -145,7 +162,12 @@ LiquidFun WASM source: the sibling `Box2d_3.2_C_-_liquidfun` tree (`wasm_wrapper
 - **Joints:** the active Weed joint pool is saved and restored (distance, revolute, prismatic, weld) with entity-index remapping. A Box2D contact manifold dump is not saved.
 - **LiquidFun:** particle pos/vel/flags, render tint/texture/scale/alpha, plus group slots, per-particle `groupIndex` / elastic `restOffset`, and spring/barrier pair graphs.
 - **Decals:** sparse non-empty DECALS tiles (PNG in browser, raw RGBA in Node); layout mismatch skips restore.
-- No decoration / CPU particle / bullet dumps.
-- Schema fingerprint mismatch warns and applies best-effort.
+- **Shared resources:** the whole SAB for each bound class. A missing name or a different byte length skips that resource.
+- **Chains, extra fixtures, custom meshes:** only for entities that are in the save. Restore writes them onto the new entity index. A saved entity with no chain, no extra fixtures, or no custom mesh has that data cleared, so an `onSpawned` default does not survive a save that removed it.
+- **Nav:** walkability only. Flow fields and paths are caches and are invalidated. A width, height, or cell-size mismatch skips the grid. A `REBUILD_FROM_INDICES` posted from `create()` has already run; one posted from `onLoadGame` replaces the restored grid.
+- **Time:** `Time.scale`, including `0`. An old save with no TIME section leaves the new scene clock at `1`.
+- **Tweens:** active slots. Paint and xy slots remap their entity. Zoom slots do not. A paint or xy target that was not restored is dropped.
+- No decoration / CPU particle / bullet / playing-sound dumps.
+- Schema fingerprint mismatch warns and applies best-effort. Adding `entityId: true` changes the fingerprint.
 - Cross-scene load is rejected (`payload.sceneName` must match).
 - Only format version `5` is accepted; other versions throw.

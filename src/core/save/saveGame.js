@@ -24,6 +24,13 @@ import {
 } from './liquidFunSave.js';
 import { Decal } from '../decal.js';
 import { VERSION } from '../../version.js';
+import {
+  applySharedResources,
+  applyTime,
+  applyNav,
+  remapCameraFollow,
+  idMapGetter,
+} from './worldBufferSave.js';
 
 export {
   SaveStore,
@@ -113,8 +120,8 @@ export function assertPayloadCompatible(scene, payload) {
 
 /**
  * Apply decoded payload into a live scene (workers still paused or after create).
- * Posts one restoreSave message to logic0; applies camera/sun on main.
- * Resolves when logic0 replies restoreSaveComplete (entities in active lists).
+ * Posts one restoreSave message to logic0; applies camera/sun and world
+ * buffers on main. Resolves when logic0 replies restoreSaveComplete.
  * @param {object} scene
  * @param {object} payload
  * @returns {Promise<{ restored: number, failed: number }>}
@@ -131,6 +138,10 @@ export function applySavePayloadToScene(scene, payload) {
     throw new Error('SaveGame: logic worker 0 not ready');
   }
 
+  applySharedResources(payload.sharedResources);
+  applyTime(payload.timeScale);
+  applyNav(payload.nav);
+
   const completePromise = new Promise((resolve, reject) => {
     scene._pendingRestoreComplete = { resolve, reject };
   });
@@ -140,6 +151,10 @@ export function applySavePayloadToScene(scene, payload) {
     serializableClassNames,
     entities: payload.entities || [],
     joints: payload.joints || [],
+    chains: payload.chains || [],
+    fixtures: payload.fixtures || [],
+    meshes: payload.meshes || [],
+    tweens: payload.tweens || [],
   });
 
   applyCameraGlobals(payload.camera);
@@ -147,6 +162,9 @@ export function applySavePayloadToScene(scene, payload) {
   scene._restorePayload = null;
 
   return completePromise.then(async (result) => {
+    const mapGet = idMapGetter(result.idPairs);
+    remapCameraFollow(payload.camera, mapGet);
+    if (payload.camera) applyCameraGlobals(payload.camera);
     if (payload.liquidFun && scene.workers?.physics) {
       try {
         const unpacked = unpackLiquidFunSnapshot(payload.liquidFun);

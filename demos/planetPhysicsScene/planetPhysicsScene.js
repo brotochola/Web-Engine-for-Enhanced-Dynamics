@@ -4,7 +4,7 @@
 
 import { WorldGrid } from './worldGrid.js';
 import { WorldGridManager } from './gameObjects/worldGridManager.js';
-import { PlanetIsland } from './gameObjects/planetIsland.js';
+import { PlanetIsland, LooseIsland } from './gameObjects/planetIsland.js';
 import { PlanetPull } from './gameObjects/planetPull.js';
 import { PlanetWalker } from './gameObjects/planetWalker.js';
 import { PlanetLamp } from './gameObjects/planetLamp.js';
@@ -144,6 +144,7 @@ export class PlanetPhysicsScene extends Scene {
   static entities = [
     [WorldGridManager, 1],
     [PlanetIsland, 2048],
+    [LooseIsland, 1024],
     [PlanetPull, 1],
     [PlanetWalker, 1],
     [PlanetLamp, 400],
@@ -161,7 +162,11 @@ export class PlanetPhysicsScene extends Scene {
   }
 
   createNewGame() {
-    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
+    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1, seed: true });
+  }
+
+  onLoadGame() {
+    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1, resume: true });
   }
 
   update() {
