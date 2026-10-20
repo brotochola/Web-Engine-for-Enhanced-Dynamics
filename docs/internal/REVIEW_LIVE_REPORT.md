@@ -17,10 +17,37 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**23:10** — **HEADED RUN next:** checking N-12 (does a rotated camera cull the screen
-edges?) with screenshots before touching it.
+**23:55** — **N-13** (the public screen helpers use the eased camera), then **B18**.
 
 ## Log
+
+### 23:50 — N-12 confirmed in a headed run and fixed (`d7228257`); new E-51
+
+- **Confirmed before fixing.** Headed run on the boids demo with the camera set to 0°, 45° and
+  90°. At 90° the left and right **~200 px of the screen drew nothing**, with straight edges; the
+  prediction from the math was 208 px. At 45° two corners were empty along diagonal lines. The
+  planet demos turn the camera every tick, so they hit this all the time.
+- **Fix:** one small module (`src/util/viewBounds.js`) computes the box around the turned view.
+  Used by:
+  - pre-render and particle culls;
+  - the Pixi and pre-render light culls;
+  - `Camera.isOnScreen` and `getViewportBounds`;
+  - the debug overlay. It already had a private copy of this exact math and allocated an
+    object per call; it now uses the shared helper.
+
+  At rotation 0 the numbers are unchanged, and a test asserts that.
+- **Tests:** every drawn pixel (9×9 grid, edges and corners) must survive the cull at 7 angles × 3
+  zooms, through the real pre-render and particle worker methods. The old code fails 5 of 7.
+  After the fix, the same headed run shows boids reaching every edge at 90° and every corner
+  at 45°.
+- **Measured one regression and fixed it.** My first `isOnScreen` read the angle through the
+  `rotation` getter. A 10k-point A/B against `HEAD` measured **−21 %** (0/25 rounds). I changed it
+  to read the angle directly from the camera buffer, and it is now a tie (−1.2 %, 7/25).
+  `CameraInOutListener` calls this per entity per frame, so it mattered.
+- **New E-51 (speed):** at 45° the box around the turned view is ~2.2× the screen, so rotated
+  scenes now queue off-screen sprites. An exact turned test would remove that. It goes through
+  the measurement protocol on the planet demo.
+- Suite **1236/1236**.
 
 ### 23:05 — N-11 fixed (`b0c4d333`); new N-12, N-13; N-7 now has a second crash
 

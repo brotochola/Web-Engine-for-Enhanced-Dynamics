@@ -941,6 +941,15 @@ frameClock header seqlock protects one int32; `_snapshotVertGen` copies every en
 littleCity `rng()` jitter is invisible; body-create path allocations (MF3 pattern). Each
 is screened on its own kernel before any scene.
 
+### E-51 A turned camera culls with the box around the view — **not-started**
+Found while fixing N-12 (`d7228257`). Culls now keep the axis-aligned box around the
+turned view, which is ~2.2× the screen area at 45° on 16:9, so pre-render queues and Pixi
+draws off-screen sprites the GPU then clips. An exact test (turn the point into view space:
+two extra mul-adds per entity, behind a loop hoisted on `rot !== 0`) removes that.
+**Primary:** `preRender_STEP_MS` and `pixi_STEP_MS` on the planet demo at 45° (both
+`planetScene` and `planetPhysicsScene` turn the camera every tick); rotation 0 must stay
+bit-identical.
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at
