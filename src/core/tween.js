@@ -1,4 +1,5 @@
-// Tween.js — scene tween pool. Logic worker 0 ticks it with scaled dt.
+// Tween.js — scene tween pool. Every logic worker ticks its own block of slots
+// with scaled dt (one writer per slot; see Tween.tick).
 // Slot count is config.tween.maxTweens (TWEEN_DEFAULTS).
 // Paint writes SpriteRenderer, or MeshRenderer when the entity has no sprite.
 // xy is refused on a dynamic RigidBody. Zoom writes Camera.targetZoom.
@@ -379,33 +380,31 @@ export class Tween {
     }
   }
 
-  static ownsEntity(entityIndex, kind, workerIndex, workerCount) {
-    if (workerCount <= 1) return true;
-    if (kind === KIND_ZOOM) return (workerIndex | 0) === 0;
-    return ((entityIndex | 0) % workerCount) === (workerIndex | 0);
-  }
-
   /**
-   * Walk active slots. When multiple workers are configured, each worker only
-   * mutates entities that it owns, preventing cross-worker data races.
+   * Advance this worker's block of slots: with W logic workers, worker i ticks
+   * logicBlockRange(capacity, i, W), so every slot has exactly one writer and no worker
+   * scans the whole pool. That worker is not necessarily the one that ticks the tweened
+   * entity: do not tween a property the entity's own tick also writes (REVIEW_PLAN N-6).
    * @param {number} dt
    * @param {number} [workerIndex]
    * @param {number} [workerCount]
-   * @returns {number} slots visited
+   * @returns {number} live slots advanced
    */
   static tick(dt, workerIndex = 0, workerCount = 1) {
     const active = this.active;
     if (!active) return 0;
     const step = dt > 0 ? dt : 0;
     const nSlots = this.capacity;
-    const wIndex = workerIndex | 0;
-    const wCount = workerCount | 0;
+    let from = 0;
+    let to = nSlots;
+    if ((workerCount | 0) > 1) {
+      const range = logicBlockRange(nSlots, workerIndex | 0, workerCount | 0);
+      from = range.start;
+      to = range.end;
+    }
     let n = 0;
-    for (let i = 0; i < nSlots; i++) {
+    for (let i = from; i < to; i++) {
       if (active[i] !== SLOT_LIVE) continue;
-      const kind = this.kind[i];
-      const ent = this.entity[i];
-      if (wCount > 1 && !this.ownsEntity(ent, kind, wIndex, wCount)) continue;
       n++;
       const dur = this.duration[i];
       const elapsed = this.elapsed[i] + step;

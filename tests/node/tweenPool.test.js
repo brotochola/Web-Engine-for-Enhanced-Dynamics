@@ -190,21 +190,19 @@ test('Tween.cancel frees active slots for the target entity', { concurrency: fal
   Tween.unbind();
 });
 
-test('multi-worker tick isolates by entity ownership regardless of slot index', { concurrency: false }, () => {
-  sprite(4);
-  bind(4);
-  // Put entity 1 (Worker 1's entity) into slot 0
-  Tween.to(1, { alpha: 0 }, 100, 0);
-  // Put entity 0 (Worker 0's entity) into slot 1
-  Tween.to(0, { alpha: 0 }, 100, 0);
-
-  // Worker 0 ticks: only entity 0 (slot 1) should be touched
-  Tween.tick(50, 0, 2);
-  assert.equal(SpriteRenderer.alpha[1], 1); // Entity 1 not touched by Worker 0
-  assert.ok(Math.abs(SpriteRenderer.alpha[0] - 0.5) < 1e-4); // Entity 0 advanced
-
-  // Worker 1 ticks: only entity 1 (slot 0) should be touched
-  Tween.tick(50, 1, 2);
-  assert.ok(Math.abs(SpriteRenderer.alpha[1] - 0.5) < 1e-4); // Entity 1 advanced
-  Tween.unbind();
+// The contract is one writer per slot (each worker ticks its block of the pool), not
+// "the worker that ticks the entity": entityIndex % W never was that worker (B11).
+test('multi-worker tick advances every live slot exactly once, uneven blocks too', { concurrency: false }, () => {
+  for (const [workers, slots] of [[2, 4], [3, 5], [4, 3]]) {
+    sprite(slots);
+    bind(slots);
+    for (let e = 0; e < slots; e++) Tween.to(e, { alpha: 0 }, 100, 0);
+    let advanced = 0;
+    for (let w = 0; w < workers; w++) advanced += Tween.tick(50, w, workers);
+    assert.equal(advanced, slots, `${workers} workers, ${slots} slots`);
+    for (let e = 0; e < slots; e++) {
+      assert.ok(Math.abs(SpriteRenderer.alpha[e] - 0.5) < 1e-5, `entity ${e} advanced once`);
+    }
+    Tween.unbind();
+  }
 });
