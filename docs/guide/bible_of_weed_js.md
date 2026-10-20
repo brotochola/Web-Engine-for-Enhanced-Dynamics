@@ -908,6 +908,7 @@ WEED.Camera.setZoom(1.5);     // snap zoom (do not call every tick while followi
 // High-speed follow hitch: docs/guide/PHYSICS.md “Display pose publish”.
 // followEntity holds SAB pan when poseReady is unchanged (publish skip).
 // Drawn cam = packed pose + look-ahead lead (renderQueueCamera), not eased Camera.x/y.
+// Engine culls (pre-render, particle worker) use Camera.resolveDrawnCamera, the same camera.
 // lookAheadSec is seconds × vy — 1 at fall speed is a huge Y slam.
 
 // Particles — pick mode at call site (see docs/guide/PARTICLES.md)

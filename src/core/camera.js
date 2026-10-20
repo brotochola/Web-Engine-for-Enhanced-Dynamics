@@ -561,6 +561,45 @@ export class Camera {
   }
 
   /**
+   * The camera pre-render packs into the render queue, before shake: the SAB
+   * camera with followEntity snapped to the latched pose, then an unrotated
+   * view clamped to the world. Cull with this, not the SAB x/y, which can
+   * trail it by the follow ease.
+   * @param {Float32Array|null} poseX latched pose; null before the first publish
+   * @param {Float32Array|null} poseY
+   * @param {{zoom: number, x: number, y: number, rotation: number}} out
+   * @returns {{zoom: number, x: number, y: number, rotation: number}} out
+   */
+  static resolveDrawnCamera(poseX, poseY, out) {
+    const data = this._data;
+    if (!data) {
+      out.zoom = 1;
+      out.x = 0;
+      out.y = 0;
+      out.rotation = 0;
+      return out;
+    }
+    const zoom = data[this.IDX_ZOOM];
+    const rot = data.length > this.IDX_ROTATION ? (data[this.IDX_ROTATION] || 0) : 0;
+    const aligned = this.alignFollowCameraToLatchedPose(data[this.IDX_X], data[this.IDX_Y], poseX, poseY);
+    let x = aligned.x;
+    let y = aligned.y;
+    const worldWidth = this._worldWidth;
+    const worldHeight = this._worldHeight;
+    if (!rot && worldWidth !== Infinity && worldHeight !== Infinity && zoom > 0) {
+      const maxX = Math.max(0, worldWidth - this._canvasWidth / zoom);
+      const maxY = Math.max(0, worldHeight - this._canvasHeight / zoom);
+      x = Math.max(0, Math.min(x, maxX));
+      y = Math.max(0, Math.min(y, maxY));
+    }
+    out.zoom = zoom;
+    out.x = x;
+    out.y = y;
+    out.rotation = rot;
+    return out;
+  }
+
+  /**
    * Smoothly follow a target position (centers target on screen)
    * Also lerps zoom toward targetZoom if set
    * @param {number} targetX - Target X position in world coordinates

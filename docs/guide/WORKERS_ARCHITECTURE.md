@@ -199,7 +199,7 @@ Reads visibility lists, advances animations, builds the render and shadow queues
 
 **What it does each frame:**
 
-1. Latch published physics pose (`poseSync` / `poseDataA/B`) once — entities, adobe, shadows, parented deco compose from that snapshot (boot: live `Transform` if `ready===0`). `preRender.interpolation: true` blends the last two physics poses while packing. That is not display-rate smoothing. `preRender.fixedFps` slows this whole worker; pair it with `renderer.interpolation` if sprites should keep moving between publishes. Viewport AABB uses `preRender.cullingRatio` (same key for particle cull). Decoration fade/hide zooms live here too.
+1. Latch published physics pose (`poseSync` / `poseDataA/B`) once — entities, adobe, shadows, parented deco compose from that snapshot (boot: live `Transform` if `ready===0`). `preRender.interpolation: true` blends the last two physics poses while packing. That is not display-rate smoothing. `preRender.fixedFps` slows this whole worker; pair it with `renderer.interpolation` if sprites should keep moving between publishes. Viewport AABB uses `preRender.cullingRatio` (same key for particle cull) around the drawn camera (`Camera.resolveDrawnCamera`), which both workers compute the same way. Decoration fade/hide zooms live here too.
 2. Read compact visible lists (entities, particles, decorations, bullets)
 3. Advance sprite animation frames (including custom-layer entities)
 4. Collect visible renderables -- entities routed by `layerMask` bits:

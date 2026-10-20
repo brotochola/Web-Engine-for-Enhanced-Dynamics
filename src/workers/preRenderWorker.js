@@ -264,6 +264,9 @@ class PreRenderWorker extends AbstractWorker {
         this._frameCameraZoom = 1;
         this._frameCameraX = 0;
         this._frameCameraY = 0;
+        this._frameCameraRot = 0;
+        /** Camera.resolveDrawnCamera scratch. */
+        this._drawnCam = { zoom: 1, x: 0, y: 0, rotation: 0 };
 
         // Entity texture lookup buffer
         this.entityLastTextureId = null;
@@ -922,28 +925,12 @@ class PreRenderWorker extends AbstractWorker {
 
     latchCamera(simMs = 0) {
         if (!this.cameraData) return;
-        this._frameCameraZoom = this.cameraData[0];
-        this._frameCameraX = this.cameraData[1];
-        this._frameCameraY = this.cameraData[2];
-        this._frameCameraRot = this.cameraData.length > 9 ? (this.cameraData[9] || 0) : 0;
-        const aligned = Camera.alignFollowCameraToLatchedPose(
-            this._frameCameraX, this._frameCameraY, this._poseX, this._poseY
-        );
-        this._frameCameraX = aligned.x;
-        this._frameCameraY = aligned.y;
-        const worldWidth = Camera.worldWidth;
-        const worldHeight = Camera.worldHeight;
-        if (!this._frameCameraRot && worldWidth !== Infinity && worldHeight !== Infinity && this._frameCameraZoom > 0) {
-            const viewWidth = Camera.canvasWidth / this._frameCameraZoom;
-            const viewHeight = Camera.canvasHeight / this._frameCameraZoom;
-            const maxX = Math.max(0, worldWidth - viewWidth);
-            const maxY = Math.max(0, worldHeight - viewHeight);
-            this._frameCameraX = Math.max(0, Math.min(this._frameCameraX, maxX));
-            this._frameCameraY = Math.max(0, Math.min(this._frameCameraY, maxY));
-        }
+        const cam = Camera.resolveDrawnCamera(this._poseX, this._poseY, this._drawnCam);
         const shake = Camera.advanceShake(simMs);
-        this._frameCameraX += shake.x;
-        this._frameCameraY += shake.y;
+        this._frameCameraZoom = cam.zoom;
+        this._frameCameraX = cam.x + shake.x;
+        this._frameCameraY = cam.y + shake.y;
+        this._frameCameraRot = cam.rotation;
         if (this.renderQueueCamera) {
             this.renderQueueCamera[0] = this._frameCameraZoom;
             this.renderQueueCamera[1] = this._frameCameraX;

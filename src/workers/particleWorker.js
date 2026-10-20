@@ -23,6 +23,7 @@ import { BulletComponent } from '../components/bulletComponent.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
+import { Camera } from '../core/camera.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { Query } from '../core/query.js';
@@ -395,9 +396,8 @@ class ParticleWorker extends AbstractWorker {
     };
     // PAR-CAM: one camera bounds compute per particle update()
     this._frameCamValid = false;
-    this._frameCamZoom = NaN;
-    this._frameCamX = NaN;
-    this._frameCamY = NaN;
+    /** Camera.resolveDrawnCamera scratch. */
+    this._drawnCam = { zoom: 1, x: 0, y: 0, rotation: 0 };
     this._worldBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
     this._gridQueryResult = null;
 
@@ -734,28 +734,20 @@ class ParticleWorker extends AbstractWorker {
 
   /**
    * PAR-CAM: calculateCameraScreenBounds once per update(); reuse for particles/decos/bullets.
+   * Culls against the camera pre-render draws (followEntity snapped to the
+   * latched pose), not the eased SAB x/y, or a fast follow culls the leading
+   * edge while it is still on screen.
    */
   _frameCameraBounds() {
     if (!this.cameraData) return null;
-    const zoom = this.cameraData[0];
-    const cameraX = this.cameraData[1];
-    const cameraY = this.cameraData[2];
-    if (
-      this._frameCamValid &&
-      this._frameCamZoom === zoom &&
-      this._frameCamX === cameraX &&
-      this._frameCamY === cameraY
-    ) {
-      return this._cameraBounds;
-    }
-    this._frameCamZoom = zoom;
-    this._frameCamX = cameraX;
-    this._frameCamY = cameraY;
+    if (this._frameCamValid) return this._cameraBounds;
+    this._latchPose();
+    const cam = Camera.resolveDrawnCamera(this._poseX, this._poseY, this._drawnCam);
     this._frameCamValid = true;
     return calculateCameraScreenBounds(
-      zoom,
-      cameraX,
-      cameraY,
+      cam.zoom,
+      cam.x,
+      cam.y,
       this.canvasWidth,
       this.canvasHeight,
       this.cullingRatio,
