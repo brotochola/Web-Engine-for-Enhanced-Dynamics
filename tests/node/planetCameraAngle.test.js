@@ -3,6 +3,7 @@
 // ship travels around the disk. Mirrors Camera.worldToScreen's rotation.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import '../helpers/registerWebRoot.mjs';
 import { radialCameraAngle, CX, CY } from '../../demos/planetPhysicsScene/planetGravity.js';
 
 function rotate(x, y, rot) {
@@ -37,15 +38,23 @@ test('radial camera angle is 0 above the core and -PI/2 to its right', () => {
 // B28 (boot camera at the wrong pole). The ship moved to the east of the disk
 // but create() still centered the camera above the north pole at angle 0, so
 // the first follow crossed a quarter of the planet and turned the view 90°.
-test('the boot camera starts on the ship spawn, rolled to its local up', async () => {
-  const { readFileSync } = await import('node:fs');
+// Runs the scene's real create() (the demo loads through the web-root hook).
+test('create() starts the camera on the ship spawn, rolled to its local up', async () => {
+  const { Camera } = await import('../../src/core/camera.js');
+  const { PlanetPhysicsScene } = await import('../../demos/planetPhysicsScene/planetPhysicsScene.js');
   const { SHIP_SPAWN_X, SHIP_SPAWN_Y } = await import('../../demos/planetPhysicsScene/planetGravity.js');
-  const read = (p) => readFileSync(new URL(`../../demos/planetPhysicsScene/${p}`, import.meta.url), 'utf8');
-  const scene = read('planetPhysicsScene.js');
-  const create = scene.slice(scene.indexOf('  create() {'), scene.indexOf('  async destroy()'));
-  assert.match(create, /Camera\.setAngle\(radialCameraAngle\(SHIP_SPAWN_X, SHIP_SPAWN_Y\)\)/);
-  assert.match(create, /Camera\.centerOn\(SHIP_SPAWN_X, SHIP_SPAWN_Y\)/);
-  const manager = read('gameObjects/planetWorldGridManager.js');
-  assert.match(manager, /PlanetShip\.spawn\(\{\s*x: SHIP_SPAWN_X,\s*y: SHIP_SPAWN_Y,/);
+  const data = new Float32Array(new SharedArrayBuffer(Camera.FLOAT_COUNT * 4));
+  Camera.initialize(data, 1280, 720);
+  Camera.setWorldBounds(9000, 9000);
+  PlanetPhysicsScene.prototype.create.call({ _spawnWalls() {}, _buildPanel() {} });
+  assert.ok(Math.abs(Camera.rotation - radialCameraAngle(SHIP_SPAWN_X, SHIP_SPAWN_Y)) < 1e-6, `rotation ${Camera.rotation}`);
+  assert.ok(Math.abs(Camera.centerX - SHIP_SPAWN_X) < 1e-3, `centerX ${Camera.centerX}`);
+  assert.ok(Math.abs(Camera.centerY - SHIP_SPAWN_Y) < 1e-3, `centerY ${Camera.centerY}`);
   assert.ok(Math.abs(radialCameraAngle(SHIP_SPAWN_X, SHIP_SPAWN_Y) + Math.PI / 2) < 1e-12, 'east of the core');
+});
+
+test('the manager spawns the ship at the same point', async () => {
+  const { readFileSync } = await import('node:fs');
+  const manager = readFileSync(new URL('../../demos/planetPhysicsScene/gameObjects/planetWorldGridManager.js', import.meta.url), 'utf8');
+  assert.match(manager, /PlanetShip\.spawn\(\{\s*x: SHIP_SPAWN_X,\s*y: SHIP_SPAWN_Y,/);
 });

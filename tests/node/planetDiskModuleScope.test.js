@@ -4,46 +4,25 @@
 // a create()-only assignment only reaches the main thread, the workers keep
 // disk === undefined and seed the flat destructible landscape instead. That
 // regression looked like ghost/stale terrain in the planet demo.
+//
+// These import the scene module the way a worker does (through the web-root
+// hook, review M8) and read the result; they used to be regexes over the source.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import '../helpers/registerWebRoot.mjs';
 
-const sceneUrl = new URL(
-  '../../demos/planetPhysicsScene/planetPhysicsScene.js',
-  import.meta.url,
-);
-const src = readFileSync(sceneUrl, 'utf8');
-
-test('planet disk is assigned at module scope so workers seed a disk', () => {
-  // Column 0 anchor: an assignment inside create() would be indented and the
-  // search below returns -1, failing the test.
-  const at = src.search(/^WorldGrid\.disk\s*=\s*\{/m);
-  assert.notEqual(at, -1, 'planetPhysicsScene must assign WorldGrid.disk at module scope');
-
-  const classAt = src.indexOf('export class PlanetPhysicsScene');
-  assert.notEqual(classAt, -1, 'scene class not found');
-  assert.ok(
-    at < classAt,
-    'WorldGrid.disk must be assigned before the class body (module scope, runs in workers)',
-  );
-
-  const block = src.slice(at, src.indexOf('};', at) + 2);
-  assert.match(block, /cols:\s*N\b/, 'disk.cols must use the grid constant');
-  assert.match(block, /rows:\s*N\b/, 'disk.rows must use the grid constant');
-  assert.match(block, /radius:\s*RADIUS\b/, 'disk.radius must use the planet radius');
-});
-
-test('planet grid dimensions are set at module scope for every logic worker', () => {
-  // These are plain statics (not shared memory), so the manager's assignment in
-  // its onSpawned() only reaches logic worker 1. The ship is forced onto worker
-  // 0 and raycasts with WorldGrid.castRay(); if worker 0 keeps the destructible
-  // ROWS=200 bound, every ray fired from row >= 200 misses static terrain.
-  const classAt = src.indexOf('export class PlanetPhysicsScene');
-  assert.notEqual(classAt, -1, 'scene class not found');
-  const moduleBlock = src.slice(0, classAt);
-  assert.match(moduleBlock, /^WorldGrid\.cols\s*=\s*N\s*;/m, 'WorldGrid.cols must be set at module scope');
-  assert.match(moduleBlock, /^WorldGrid\.rows\s*=\s*N\s*;/m, 'WorldGrid.rows must be set at module scope');
-  assert.match(moduleBlock, /^WorldGrid\.cellSize\s*=\s*CELL\s*;/m, 'WorldGrid.cellSize must be set at module scope');
+test('importing the scene module configures the planet disk and grid', async () => {
+  const { WorldGrid, ROWS } = await import('../../demos/destructibleTerrainScene/worldGrid.js');
+  assert.ok(!WorldGrid.disk, 'no disk before the scene module runs');
+  assert.equal(WorldGrid.rows, ROWS, 'the flat level bound before the scene module runs');
+  await import('../../demos/planetPhysicsScene/planetPhysicsScene.js');
+  const { N, CELL, RADIUS } = await import('../../demos/planetPhysicsScene/planetGravity.js');
+  // A worker never calls create(); module evaluation alone has to do this.
+  assert.deepEqual(WorldGrid.disk, { cols: N, rows: N, cell: CELL, cx: N >> 1, cy: N >> 1, radius: RADIUS, bedrock: 4 });
+  // Plain statics, one copy per realm: the ship's worker raycasts with them.
+  assert.equal(WorldGrid.cols, N);
+  assert.equal(WorldGrid.rows, N);
+  assert.equal(WorldGrid.cellSize, CELL);
 });
 
 test('castRay is bounded by the realm-local rows static', async () => {
@@ -63,9 +42,17 @@ test('castRay is bounded by the realm-local rows static', async () => {
   assert.equal(hit.gy, row);
 });
 
-test('planet scene clears the main-thread disk on destroy', () => {
-  const destroyAt = src.indexOf('async destroy()');
-  assert.notEqual(destroyAt, -1, 'destroy() not found');
-  const block = src.slice(destroyAt, destroyAt + 220);
-  assert.match(block, /WorldGrid\.disk\s*=\s*null/, 'destroy() must clear WorldGrid.disk');
+test('planet scene clears the main-thread disk on destroy', async () => {
+  const { WorldGrid } = await import('../../demos/destructibleTerrainScene/worldGrid.js');
+  const { PlanetPhysicsScene } = await import('../../demos/planetPhysicsScene/planetPhysicsScene.js');
+  const { Scene } = await import('../../src/core/scene.js');
+  WorldGrid.disk = { cols: 1 };
+  const superDestroy = Scene.prototype.destroy;
+  Scene.prototype.destroy = async function () {};
+  try {
+    await PlanetPhysicsScene.prototype.destroy.call({ _removePanel() {} });
+  } finally {
+    Scene.prototype.destroy = superDestroy;
+  }
+  assert.equal(WorldGrid.disk, null);
 });
