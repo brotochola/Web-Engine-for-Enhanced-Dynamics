@@ -7,7 +7,7 @@ import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
 import { Collider } from '../components/collider.js';
 import { RigidBody } from '../components/rigidBody.js';
-import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
+import { MAX_POLYGON_VERTICES } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 
@@ -301,7 +301,7 @@ export class ColliderFixture extends SharedAtomicPool {
     if (!vertexXY || !vertexCounts || n <= 0) {
       this.removeAllForEntity(entityIdx);
       Collider.polyCount[entityIdx] = 0;
-      Collider.shapeType[entityIdx] = ShapeType.Polygon;
+      Collider.setPolygonShape(entityIdx);
       RigidBody.syncMassFromCollider(entityIdx);
       markBodyDirty(entityIdx, BODY_DIRTY.GEOMETRY | BODY_DIRTY.MASS);
       return true;
@@ -381,7 +381,7 @@ export class ColliderFixture extends SharedAtomicPool {
 
     Collider.fixtureCount[entityIdx] = n;
     Collider.polyCount[entityIdx] = 0;
-    Collider.shapeType[entityIdx] = ShapeType.Polygon;
+    Collider.setPolygonShape(entityIdx);
     Collider.width[entityIdx] = maxX - minX;
     Collider.height[entityIdx] = maxY - minY;
     Collider.polyCentroidX[entityIdx] = (minX + maxX) * 0.5;

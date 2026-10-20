@@ -209,6 +209,8 @@ Soft spring bias (`contactHertz` / damping / maxBias) is **not used** by the cur
 
 Numbers match WASM C `b2_game_shape_*` (Box2D language).
 
+**Polygon skin.** On a Polygon (primary or compound fixtures), `Collider.radius` is the Box2D polygon radius: a rounded border around each hull, `0` = sharp. Set it **after** the shape is a polygon (`makePolygon` / `replacePolygons*`, then `collider.radius = 1`); a radius left from a circle is cleared when the shape becomes a polygon, and a polygon keeps its skin across re-shapes. Box2D weighs a skinned polygon by its vertices pushed out by `1.412·r`, so the host divides `RigidBody.mass` by that area (`polygonMassArea` in `weedjsPost.js`) and the body still weighs `RigidBody.mass`. The skin is physics-only: Weed's own rays, spatial queries and `pointInCollider` test the sharp hull. Small skins (about 1 px) seal seams between neighbouring triangles against fast particles.
+
 Inertia (synced from collider geometry in `RigidBody.syncMassFromCollider`):
 
 - Circle: `I = 0.5 * m * r²`

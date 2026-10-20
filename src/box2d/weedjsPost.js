@@ -589,7 +589,66 @@
     return layer <= 31 ? 1 << layer : 1;
   }
 
-  function fixtureAreaSum(entityIdx) {
+  // polygon-mass-area-start
+  // The area Box2D 3 weighs a convex polygon by. With a skin r it pushes each
+  // vertex out by 1.412·r along the bisector of its two edge normals
+  // (b2ComputePolygonMass), so density must be mass / this area, or a skinned
+  // body comes out heavier than RigidBody.mass: (1 + 2r/s)² for a square of
+  // side s. Collinear vertices are skipped, as b2ComputeHull drops them.
+  // Either winding (b2ComputeHull accepts both).
+  function polygonMassArea(xs, ys, base, count, r) {
+    if (count < 3) return 0;
+    let twice = 0;
+    for (let v = 0; v < count; v++) {
+      const n = v + 1 < count ? v + 1 : 0;
+      twice += xs[base + v] * ys[base + n] - xs[base + n] * ys[base + v];
+    }
+    if (!(r > 0)) return Math.abs(twice) * 0.5;
+    // Outward normal of a CCW edge (dx, dy) is (dy, -dx) / length; CW flips it.
+    const push = (twice > 0 ? 1.412 : -1.412) * r;
+    twice = 0;
+    let firstX = 0;
+    let firstY = 0;
+    let prevX = 0;
+    let prevY = 0;
+    let have = false;
+    for (let v = 0; v < count; v++) {
+      const p = v > 0 ? v - 1 : count - 1;
+      const n = v + 1 < count ? v + 1 : 0;
+      const x = xs[base + v];
+      const y = ys[base + v];
+      const e1x = x - xs[base + p];
+      const e1y = y - ys[base + p];
+      const e2x = xs[base + n] - x;
+      const e2y = ys[base + n] - y;
+      const l1 = Math.sqrt(e1x * e1x + e1y * e1y);
+      const l2 = Math.sqrt(e2x * e2x + e2y * e2y);
+      if (!(l1 > 0) || !(l2 > 0)) continue;
+      if (Math.abs(e1x * e2y - e1y * e2x) <= 1e-6 * l1 * l2) continue;
+      let mx = e1y / l1 + e2y / l2;
+      let my = -e1x / l1 - e2x / l2;
+      const ml = Math.sqrt(mx * mx + my * my);
+      mx /= ml;
+      my /= ml;
+      const px = x + push * mx;
+      const py = y + push * my;
+      if (have) {
+        twice += prevX * py - px * prevY;
+      } else {
+        firstX = px;
+        firstY = py;
+        have = true;
+      }
+      prevX = px;
+      prevY = py;
+    }
+    if (!have) return 0;
+    twice += prevX * firstY - firstX * prevY;
+    return Math.abs(twice) * 0.5;
+  }
+  // polygon-mass-area-end
+
+  function fixtureAreaSum(entityIdx, skin) {
     const F = fixtureViews;
     if (!F || !F.head) return 0;
     const inv = 0xffff;
@@ -600,16 +659,7 @@
       if (F.active[cur]) {
         const count = F.vertCount[cur] | 0;
         if (count >= 3) {
-          const base = cur * MAX_POLY_VERTS;
-          let twice = 0;
-          for (let v = 0; v < count; v++) {
-            const n = v + 1 < count ? v + 1 : 0;
-            twice +=
-              F.vertexX[base + v] * F.vertexY[base + n] -
-              F.vertexX[base + n] * F.vertexY[base + v];
-          }
-          const a = twice * 0.5;
-          if (a > 0) area += a;
+          area += polygonMassArea(F.vertexX, F.vertexY, cur * MAX_POLY_VERTS, count, skin);
         }
       }
       cur = F.next[cur];
@@ -704,20 +754,15 @@
     } else if (shape === ShapeType.Box) {
       area = views.width[i] * views.height[i];
     } else if (shape === ShapeType.Polygon) {
+      // Box2D weighs a skinned polygon by more than its hull (polygonMassArea).
+      const skin = polygonSkin(i);
       const extras = views.fixtureCount ? views.fixtureCount[i] | 0 : 0;
       if (extras > 0) {
-        area = fixtureAreaSum(i);
+        area = fixtureAreaSum(i, skin);
       } else {
-        const count = views.polyCount[i] | 0;
-        const base = i * MAX_POLY_VERTS;
-        let twiceArea = 0;
-        for (let v = 0; v < count; v++) {
-          const next = v + 1 < count ? v + 1 : 0;
-          twiceArea +=
-            views.polyVertexX[base + v] * views.polyVertexY[base + next] -
-            views.polyVertexX[base + next] * views.polyVertexY[base + v];
-        }
-        area = Math.abs(twiceArea) * 0.5;
+        area = polygonMassArea(
+          views.polyVertexX, views.polyVertexY, i * MAX_POLY_VERTS, views.polyCount[i] | 0, skin,
+        );
       }
     }
     const mass = views.mass[i];

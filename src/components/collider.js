@@ -176,11 +176,22 @@ class Collider extends Component {
     Collider.polyCentroidY[index] = cy;
     Collider.width[index] = maxX - minX;
     Collider.height[index] = maxY - minY;
-    Collider.shapeType[index] = ShapeType.Polygon;
+    Collider.setPolygonShape(index);
 
     RigidBody.syncMassFromCollider(index);
     markBodyDirty(index, BODY_DIRTY.GEOMETRY);
     return true;
+  }
+
+  /**
+   * Switch a collider to Polygon. On a polygon, radius is the Box2D skin (a
+   * rounded border around the hull), so a radius left from a circle is
+   * cleared rather than turned into one. A polygon keeps the skin it has.
+   * @param {number} index
+   */
+  static setPolygonShape(index) {
+    if (Collider.shapeType[index] !== ShapeType.Polygon) Collider.radius[index] = 0;
+    Collider.shapeType[index] = ShapeType.Polygon;
   }
 
   /**
