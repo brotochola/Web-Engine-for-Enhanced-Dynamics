@@ -10,7 +10,7 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Camera } from './camera.js';
 import { PARTICLE_EASE } from '../util/configDefaults.js';
-import { applyParticleEase } from '../util/particleTween.js';
+import { applyParticleEase, lerpRgb } from '../util/particleTween.js';
 import { logicBlockRange } from '../util/logicOwner.js';
 import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
 
@@ -468,15 +468,3 @@ export class Tween {
   }
 }
 
-function lerpRgb(a, b, t) {
-  const ar = (a >>> 16) & 255;
-  const ag = (a >>> 8) & 255;
-  const ab = a & 255;
-  const br = (b >>> 16) & 255;
-  const bg = (b >>> 8) & 255;
-  const bb = b & 255;
-  const r = (ar + (br - ar) * t + 0.5) | 0;
-  const g = (ag + (bg - ag) * t + 0.5) | 0;
-  const bl = (ab + (bb - ab) * t + 0.5) | 0;
-  return ((r & 255) << 16) | ((g & 255) << 8) | (bl & 255);
-}
