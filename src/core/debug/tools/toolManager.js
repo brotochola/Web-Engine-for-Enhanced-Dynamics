@@ -63,6 +63,7 @@ export class ToolManager {
 
     this._onToolMouseDown = null;
     this._onToolMouseUp = null;
+    this._onToolMouseMove = null;
 
     this._particleCfg = { x: 0, y: 0, count: 1, texture: '_whiteCircle', lifespan: 90, scale: 1.2 };
     this._bulletCfg = { x: 0, y: 0, vx: 12, vy: 0, damage: 0, ownerId: 0xffff, texture: 'bullet', scale: 1 };
@@ -113,6 +114,7 @@ export class ToolManager {
     Mouse.isDebugToolActive = false;
     if (this._onToolMouseDown) document.removeEventListener('pointerdown', this._onToolMouseDown);
     if (this._onToolMouseUp) document.removeEventListener('pointerup', this._onToolMouseUp);
+    if (this._onToolMouseMove) document.removeEventListener('pointermove', this._onToolMouseMove);
     if (this._toolIndicator?.parentNode) this._toolIndicator.parentNode.removeChild(this._toolIndicator);
     if (this._inspectorFloat) {
       this._inspectorFloat.onClose = null;
@@ -266,13 +268,23 @@ export class ToolManager {
       this._toolMouseDown = true;
     };
 
+    // pointerup fires only for the last button of a chord; releasing the primary while
+    // another button is held arrives as a pointermove. Both read the `buttons` mask.
+    const primaryReleased = (e) => (typeof e.buttons === 'number' ? (e.buttons & 1) === 0 : e.button === 0);
+
     this._onToolMouseUp = (e) => {
-      if (e.button !== 0) return;
-      this._toolMouseDown = false;
+      if (primaryReleased(e)) this._toolMouseDown = false;
+    };
+
+    this._onToolMouseMove = (e) => {
+      if (this._toolMouseDown && typeof e.buttons === 'number' && (e.buttons & 1) === 0) {
+        this._toolMouseDown = false;
+      }
     };
 
     document.addEventListener('pointerdown', this._onToolMouseDown);
     document.addEventListener('pointerup', this._onToolMouseUp);
+    document.addEventListener('pointermove', this._onToolMouseMove);
   }
 
   _updatePaintTool() {

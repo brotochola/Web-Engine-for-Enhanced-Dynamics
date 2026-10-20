@@ -467,6 +467,24 @@ export class Mouse {
     return this.isButton0Down || this.isButton1Down || this.isButton2Down;
   }
 
+  /**
+   * Pointer Events fire pointerdown for the first button and pointerup for the last;
+   * every press or release in between is a pointermove with a new `buttons` mask
+   * (1 primary, 2 secondary, 4 auxiliary). Releases always apply. A press applies only
+   * when `allowPress`: a move that did not start on this canvas (a drag in from a DOM
+   * panel) must not start one.
+   * @param {number} buttons
+   * @param {boolean} allowPress
+   */
+  static _syncCursorButtons(buttons, allowPress) {
+    if ((buttons & 1) === 0) this._setDown(0, false);
+    else if (allowPress && !this.isDebugToolActive) this._setDown(0, true);
+    if ((buttons & 4) === 0) this._setHeld(this._BTN1, false, this._PRESS1, this._REL1);
+    else if (allowPress) this._setHeld(this._BTN1, true, this._PRESS1, this._REL1);
+    if ((buttons & 2) === 0) this._setHeld(this._BTN2, false, this._PRESS2, this._REL2);
+    else if (allowPress) this._setHeld(this._BTN2, true, this._PRESS2, this._REL2);
+  }
+
   static _claimCursor(pointerId) {
     this._mouseOwnsSlot0 = true;
     if (this._ids[0] !== pointerId && this._ids[0] >= 0) this._setDown(0, false);
@@ -543,7 +561,9 @@ export class Mouse {
       this._claimCursor(id);
       this._place(0, e, camera);
       this.isPresent = true;
-      if (button === 0) {
+      if (typeof e.buttons === 'number') {
+        this._syncCursorButtons(e.buttons, true);
+      } else if (button === 0) {
         if (!this.isDebugToolActive) this._setDown(0, true);
       } else if (button === 1) {
         this._setHeld(this._BTN1, true, this._PRESS1, this._REL1);
@@ -569,6 +589,9 @@ export class Mouse {
     this._claimCursor(this._pid(e));
     this._place(0, e, camera);
     this.isPresent = true;
+    // A chord's middle presses and releases only arrive here. A new press counts only
+    // while a button pressed on this canvas is still held.
+    if (typeof e.buttons === 'number') this._syncCursorButtons(e.buttons, this._cursorHeld());
   }
 
   /**
@@ -583,10 +606,14 @@ export class Mouse {
     }
     this._claimCursor(this._pid(e));
     this._place(0, e, camera);
-    const button = e.button | 0;
-    if (button === 0) this._setDown(0, false);
-    else if (button === 1) this._setHeld(this._BTN1, false, this._PRESS1, this._REL1);
-    else if (button === 2) this._setHeld(this._BTN2, false, this._PRESS2, this._REL2);
+    if (typeof e.buttons === 'number') {
+      this._syncCursorButtons(e.buttons, false);
+    } else {
+      const button = e.button | 0;
+      if (button === 0) this._setDown(0, false);
+      else if (button === 1) this._setHeld(this._BTN1, false, this._PRESS1, this._REL1);
+      else if (button === 2) this._setHeld(this._BTN2, false, this._PRESS2, this._REL2);
+    }
     this._releaseCapture(e);
     if (!this._inside(e)) this._releaseCursor(e);
   }
