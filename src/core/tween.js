@@ -20,6 +20,13 @@ const KIND_PAINT = TWEEN_KIND_PAINT;
 const KIND_XY = TWEEN_KIND_XY;
 const KIND_ZOOM = TWEEN_KIND_ZOOM;
 
+// Slot states in `active`. A claim goes 0 -> CLAIMING, writes every field, then
+// publishes LIVE; tick, cancel and save act on LIVE only. Several logic workers tick
+// the pool, so a slot must never read LIVE with the previous tween's fields.
+const SLOT_FREE = 0;
+const SLOT_LIVE = 1;
+const SLOT_CLAIMING = 2;
+
 const PAINT_ALPHA = 1;
 const PAINT_SCALEX = 2;
 const PAINT_SCALEY = 4;
@@ -229,9 +236,9 @@ export class Tween {
     if (!active) return;
     const ent = entityIndex | 0;
     for (let i = 0; i < this.capacity; i++) {
-      if (!active[i]) continue;
+      if (active[i] !== SLOT_LIVE) continue;
       if (this.entity[i] === ent && (kind === null || this.kind[i] === kind)) {
-        Atomics.store(active, i, 0);
+        Atomics.store(active, i, SLOT_FREE);
       }
     }
   }
@@ -244,7 +251,7 @@ export class Tween {
     for (let k = 0; k < n; k++) {
       const i = start + k;
       const slot = i < n ? i : i - n;
-      if (Atomics.compareExchange(active, slot, 0, 1) === 0) {
+      if (Atomics.compareExchange(active, slot, SLOT_FREE, SLOT_CLAIMING) === SLOT_FREE) {
         this._claimCursor = slot + 1 < n ? slot + 1 : 0;
         return slot;
       }
@@ -332,6 +339,7 @@ export class Tween {
       this.mask[slot] = mask;
     }
 
+    Atomics.store(this.active, slot, SLOT_LIVE);
     return slot;
   }
 
@@ -394,7 +402,7 @@ export class Tween {
     const wCount = workerCount | 0;
     let n = 0;
     for (let i = 0; i < nSlots; i++) {
-      if (!active[i]) continue;
+      if (active[i] !== SLOT_LIVE) continue;
       const kind = this.kind[i];
       const ent = this.entity[i];
       if (wCount > 1 && !this.ownsEntity(ent, kind, wIndex, wCount)) continue;
@@ -409,7 +417,7 @@ export class Tween {
         done = true;
       }
       this._apply(i, applyParticleEase(t, this.ease[i]));
-      if (done) Atomics.store(active, i, 0);
+      if (done) Atomics.store(active, i, SLOT_FREE);
     }
     return n;
   }

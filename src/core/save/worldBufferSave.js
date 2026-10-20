@@ -251,7 +251,8 @@ export function packTweens() {
   const out = [];
   const n = Tween.capacity | 0;
   for (let i = 0; i < n; i++) {
-    if (!Tween.active[i]) continue;
+    // 1 = live. 2 is a claim still writing its fields (another worker): skip it.
+    if (Tween.active[i] !== 1) continue;
     out.push({
       kind: Tween.kind[i] | 0,
       ease: Tween.ease[i] | 0,
