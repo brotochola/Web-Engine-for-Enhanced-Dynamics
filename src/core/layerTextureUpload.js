@@ -45,10 +45,16 @@ export function writeTextureUpload(view, x, y, w, h, fullW, fullH, resourceIndex
     nh = h | 0;
     if (nw < 1 || nh < 1) return;
   }
-  let gen = Atomics.load(view, GEN);
-  if ((gen & 1) !== 0) gen = (gen + 1) | 0;
+  // Several logic workers can mark the same texture. Claim the slot by moving
+  // GEN from even to odd with a CAS, so two writers never merge into the
+  // pending rectangle at once (the later store dropped the other's region:
+  // 4 of 200 contended rounds in the probe). Held for a few stores only.
+  let gen;
+  for (;;) {
+    gen = Atomics.load(view, GEN);
+    if ((gen & 1) === 0 && Atomics.compareExchange(view, GEN, gen, (gen + 1) | 0) === gen) break;
+  }
   const seen = Atomics.load(view, SEEN);
-  Atomics.store(view, GEN, (gen + 1) | 0);
   if (!full && gen !== seen) {
     const px = Atomics.load(view, X);
     const py = Atomics.load(view, Y);
