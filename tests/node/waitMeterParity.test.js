@@ -227,8 +227,12 @@ test('every worker publishes IDLE_MS outside the collectDetailedStats gate', asy
     const src = read(file);
     const at = src.indexOf(idl);
     assert.ok(at > 0, `${file} never publishes ${idl}`);
-    const before = src.slice(0, at);
-    const gate = before.lastIndexOf('if (!this.collectDetailedStats) return;');
-    assert.ok(gate < at, `${file}: ${idl} is published after the collectDetailedStats gate`);
+    // The store sits in reportFPS() above its detail gate. (This used to look
+    // for the gate inside the text before the store, so it could not fail:
+    // review M6.)
+    const fnStart = src.lastIndexOf('reportFPS() {', at);
+    assert.ok(fnStart > 0, `${file}: ${idl} is not published in reportFPS()`);
+    const gate = src.indexOf('if (!this.collectDetailedStats) return;', fnStart);
+    assert.ok(gate === -1 || gate > at, `${file}: ${idl} is published after the collectDetailedStats gate`);
   }
 });

@@ -844,11 +844,13 @@ class SpatialWorker extends AbstractWorker {
       // read. The JS fallback path above still increments the counter inline and
       // is unconditional - it costs nothing extra to keep it correct there.
       if (this.collectDetailedStats) {
+        // neighbor-recount-start
         const stride = 1 + Grid.maxNeighbors;
         let found = 0;
         const neighborData = Grid.neighborData;
         const list = this._wasmPub.list;
         for (let i = 0; i < n; i++) found += neighborData[list[i] * stride];
+        // neighbor-recount-end
         this.neighborsFoundThisFrame += found;
       }
     }

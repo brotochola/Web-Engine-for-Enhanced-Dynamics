@@ -96,11 +96,18 @@ function makeNeighborArray(entityCount, maxNeighbors) {
   return { data, counts, stride, entityCount, maxNeighbors };
 }
 
-/** Exactly the loop the shipped worker runs, ungated. */
+/**
+ * The shipped recount: the block between the neighbor-recount markers in
+ * spatialWorker.js, run as is. (A copy of the loop kept here compared the test
+ * with itself and could not fail: review M6.)
+ */
 function recount(neighborData, list, n, stride) {
-  let found = 0;
-  for (let i = 0; i < n; i++) found += neighborData[list[i] * stride];
-  return found;
+  const src = read('src/workers/spatialWorker.js');
+  const a = src.indexOf('// neighbor-recount-start');
+  const b = src.indexOf('// neighbor-recount-end');
+  assert.ok(a > 0 && b > a, 'neighbor-recount markers not found in spatialWorker.js');
+  const fn = new Function('Grid', 'n', `${src.slice(a, b)}\nreturn found;`);
+  return fn.call({ _wasmPub: { list } }, { maxNeighbors: stride - 1, neighborData }, n);
 }
 
 test('gating the recount leaves NEIGHBOR_CHECKS exact when it is published', () => {
@@ -126,23 +133,11 @@ test('gating the recount leaves NEIGHBOR_CHECKS exact when it is published', () 
   for (let i = 0; i < n; i++) direct += counts[list[i]];
   assert.equal(expected, direct, 'recount disagrees with the authoritative row counts');
 
-  // And the value the counter would publish is that sum, unchanged by the gate:
-  // the gate decides WHETHER to compute it, never WHAT it is.
-  assert.equal(expected, direct);
+  // The gate decides WHETHER to compute it, never WHAT it is. Rows are
+  // 1 + maxNeighbors apart (2050 bytes here, E-02's premise): a wrong stride in
+  // the shipped block reads other rows' slots and misses the sum above.
   assert.ok(expected > 0);
   assert.equal(stride, 1 + maxNeighbors);
-});
-
-test('the recount really does stride across a large working set', () => {
-  // Not a performance assertion - a statement of the premise the hypothesis rests
-  // on. If rows were contiguous the loop would be cheap and E-02 would be noise.
-  const { stride, entityCount, maxNeighbors } = makeNeighborArray(20000, 1024);
-  assert.equal(stride, 1025);
-  // 16.7k entities * 2050 bytes is ~34 MB of address space for the rows, and the
-  // recount walks one element from each of n of them.
-  const rowBytes = stride * 2;
-  assert.equal(rowBytes, 2050);
-  assert.ok(entityCount * rowBytes > 30e6, 'working set is smaller than the hypothesis assumed');
 });
 
 // ---------------------------------------------------------------- consumers ---

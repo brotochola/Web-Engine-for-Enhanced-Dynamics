@@ -132,17 +132,25 @@ test('no other pre-render stat moved when the two slots were added', async () =>
 // 2. The phases are actually timed, and actually published
 // ---------------------------------------------------------------------------
 
+// The text between two anchors, both required and in order. A bare
+// slice(indexOf(a), indexOf(b)) with b missing runs to the end of the file, and
+// every regex then matches something else (review M6).
+function between(src, a, b) {
+  const s = src.indexOf(a);
+  const e = s < 0 ? -1 : src.indexOf(b, s);
+  assert.ok(s >= 0 && e > s, `anchors not found in order: ${a} … ${b}`);
+  return src.slice(s, e);
+}
+
 test('both phases are timed and gated on collectDetailedStats', () => {
   const src = code(worker);
   // Comments are stripped: the E-29 notes quote the very code the test looks for.
-  const vis = src.slice(src.indexOf('collectVisibleLights();'), src.indexOf('packSpriteAndShadowQueues();'));
-  assert.ok(vis.length > 0, 'could not find the collectVisibleLights call site');
+  const vis = between(src, 'collectVisibleLights();', 'packSpriteAndShadowQueues();');
   assert.match(vis, /performance\.now\(\)/, 'collectVisibleLights is not timed');
   assert.match(vis, /visibleLightsTimeThisFrame/, 'collectVisibleLights does not store its time');
   assert.match(vis, /collectDetailedStats/, 'collectVisibleLights is not gated on collectDetailedStats');
 
-  const stamp = src.slice(src.indexOf('_stampAgainstSun(dst'), src.indexOf('const lights = this._stampLights;'));
-  assert.ok(stamp.length > 0, 'could not find the _collectStampLights call site');
+  const stamp = between(src, '_stampAgainstSun(dst', 'const lights = this._stampLights;');
   assert.match(stamp, /performance\.now\(\)/, '_collectStampLights is not timed');
   assert.match(stamp, /stampLightsTimeThisFrame/, '_collectStampLights does not store its time');
   assert.match(stamp, /collectDetailedStats/, '_collectStampLights is not gated on collectDetailedStats');

@@ -314,3 +314,40 @@ test('STEP_MS verdicts are untouched by the load-gate change', () => {
   const d = decideAbab(pairs, 'preRender');
   assert.equal(d.verdict, 'REGRESSION');
 });
+// ---------------------------------------------------------------------------
+// Review M6: two gate branches no test reached
+// ---------------------------------------------------------------------------
+
+test('a load key missing from some pairs fails the sitting', () => {
+  // One B run did not publish the key. A median over the runs that did would
+  // look matched; the gate refuses instead of judging on a partial set.
+  const pairs = pairsWithLoad(
+    'preRender',
+    [7.0, 7.0, 7.0, 7.0],
+    [7.0, 7.0, 7.0, 7.0],
+    'ENTITIES_PROCESSED',
+    [100, 100, 100, 100],
+    [100, 100, 100, 100],
+  );
+  delete pairs[2].B.ENTITIES_PROCESSED;
+  const d = decideAbab(pairs, 'preRender');
+  assert.ok(d.reasons.includes('load ENTITIES_PROCESSED missing'), JSON.stringify(d.reasons));
+  assert.equal(d.verdict, 'FAIL (load)');
+});
+
+test('a zero baseline against a non-zero hypothesis fails the sitting', () => {
+  // No percentage exists against 0, so this is its own rule: the hypothesis
+  // ran work the baseline never did.
+  const pairs = pairsWithLoad(
+    'preRender',
+    [7.0, 7.0, 7.0, 7.0],
+    [7.0, 7.0, 7.0, 7.0],
+    'ENTITIES_PROCESSED',
+    [0, 0, 0, 0],
+    [500, 500, 500, 500],
+  );
+  const d = decideAbab(pairs, 'preRender');
+  assert.equal(d.load.ENTITIES_PROCESSED.deltaPct, null);
+  assert.ok(d.reasons.includes('load ENTITIES_PROCESSED 0 -> 500'), JSON.stringify(d.reasons));
+  assert.equal(d.verdict, 'FAIL (load)');
+});
