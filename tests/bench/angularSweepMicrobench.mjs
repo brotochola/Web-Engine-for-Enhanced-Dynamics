@@ -109,6 +109,24 @@ const polarN = runPolar();
 assert.ok(polarN === POLAR_BINS, `polar polygon ${polarN}`);
 const polarChecksum = checksumFloats(polarX, polarN) ^ checksumFloats(polarY, polarN);
 
+// Review M5. A light with both regular and compound occluders merges its sweep
+// polygon into the polar bins: n > 0 runs sweepDistAt for every bin (E-43).
+// runPolar passes n = 0, so that loop was never timed.
+const sweepX = outX.slice(0, n);
+const sweepY = outY.slice(0, n);
+function runPolarMerge() {
+  clearPolarBins(220);
+  for (let i = 0; i < SEGMENTS; i++) {
+    const o = i * 4;
+    rasterBoundarySegment(soup[o], soup[o + 1], soup[o + 2], soup[o + 3], 0, 0);
+  }
+  return clipVisibilityToPolar(0, 0, sweepX, sweepY, n, polarX, polarY, POLAR_BINS);
+}
+const mergeN = runPolarMerge();
+assert.ok(mergeN === POLAR_BINS, `polar merge polygon ${mergeN}`);
+const mergeChecksum = checksumFloats(polarX, mergeN) ^ checksumFloats(polarY, mergeN);
+assert.notEqual(mergeChecksum, polarChecksum, 'the sweep polygon must change the merged outline');
+
 const cases = {
   sweep: timeIt('visibility_polygon', (iters) => {
     for (let i = 0; i < iters; i++) {
@@ -122,6 +140,9 @@ const cases = {
   polar: timeIt('polar_nearest', (iters) => {
     for (let i = 0; i < iters; i++) runPolar();
   }, { iterations: Number(args.iters ?? 400) }),
+  polarMerge: timeIt('polar_merge', (iters) => {
+    for (let i = 0; i < iters; i++) runPolarMerge();
+  }, { iterations: Number(args.iters ?? 400) }),
 };
 
 const report = {
@@ -131,6 +152,8 @@ const report = {
   signedArea: area,
   polarVerts: polarN,
   polarChecksum,
+  mergeSweepVerts: n,
+  mergeChecksum,
   cases,
 };
 if (OUTPUT) writeReport(OUTPUT, report);

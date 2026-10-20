@@ -900,6 +900,10 @@ expression is bit-identical (same pattern as `_fullCircleC/S`; not H-11b). **Pri
 For lights with both simple and compound occluders, replace the per-bin scan with a
 monotone two-pointer walk (both run in ascending angle from −π), writing into a separate
 output buffer (also removes the 8192-entry hold copy). Gate the polygon at 1e-4 world units.
+**Premise measured (2026-10-20, review M5):** `angularSweepMicrobench` timed only
+`clipVisibilityToPolar(..., n = 0)`, which skips this loop. Its new `polar_merge` case
+feeds the bench's own 24-occluder sweep polygon: **~324 µs per light** against ~30 µs for
+`polar_nearest`. The path this item targets is ~11× what the old kernel showed.
 
 ### E-44 Every raycasted light clears 512 bins even with no compound occluder — **not-started**
 `clearPolarBins` per light (`preRenderWorker.js:3427`) fills 512 floats; the visPoly row
@@ -959,6 +963,16 @@ continuous fire at the 60 ms cooldown) and 4–8 impact sparks (intensity 200), 
 candidates exceed the cap; under the cap the loop stays as is. **Primary:** pre-render (or
 pixi, wherever the packer runs) on the destructible terrain demo under continuous fire;
 the under-cap path must tie.
+
+### E-53 Does the no-pool Box2D runtime cost physics time? — **not-started**
+Found re-running E-04b for review M5. E-04b (anchor `d4933190`, 2026-10-17) ran on a
+glue that pre-allocated 4 pthreads; since `c9ba6f6f` (10-19) `PThread.initMainThread`
+is empty, so pthreads are created on first use. Re-run 2026-10-20, Balls, headless,
+`--src`, stats off, 2 rounds: physics **10.68/13.76, 8.10/8.03, 6.89/6.39, 6.22/5.98 ms**
+at 1/2/3/4 workers, load 9004/9000 both. **`4` is still best.** The 4-worker step is
+~5–8 % above E-04b's 5.55–5.80 ms, but that is two days and many commits apart.
+**Primary:** `physics_STEP_MS` on Balls at 4 workers, the same tree with the two glue
+builds, ABAB. Only then is the gap the runtime's.
 
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review

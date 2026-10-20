@@ -136,6 +136,10 @@ that fall back to the shipped value, so every existing invocation is unchanged:
 - `tests/bench/stressScenes/stationarySpatialScene.js` —
   `sceneNumberParam('box2dWorkerCount', 4)`.
 
+*(2026-10-20: since `a585e598` both read `numberOfPhysicsWorkers`, and
+`?box2dWorkerCount=` is ignored, so a re-run passes the new name, as
+`runBox2dWorkerCountSweep.mjs` already does. The re-run on the no-pool runtime is E-53.)*
+
 Neither is a bench patch in the sense `HOW_WE_MEASURE` forbids: the key is optional,
 the fallback is the current behaviour, and the scene is not edited per sitting.
 Runner: `tests/bench/runBox2dWorkerCountSweep.mjs` (round-robin arms, load gate on
