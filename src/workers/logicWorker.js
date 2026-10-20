@@ -2159,6 +2159,8 @@ class LogicWorker extends AbstractWorker {
     // E-27. Always on, like IDLE_MS: the live pair count is a premise, not a
     // detailed diagnostic. Map.size is one load of a field the map already keeps.
     this.stats[LOGIC_STATS.PAIR_COUNT] = this._pairSlot.size;
+    // M11: every worker's map holds every pair; this is the share it validates.
+    this.stats[LOGIC_STATS.PAIR_OWN] = this._pairCount;
     if (!this.collectDetailedStats) return;
     this.stats[LOGIC_STATS.SYSTEMS_EXECUTED] = this.systemsExecutedThisFrame;
     this.stats[LOGIC_STATS.MSG_MS] = this.messageTimeThisFrame;

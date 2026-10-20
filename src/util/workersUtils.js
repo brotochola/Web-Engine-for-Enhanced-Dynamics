@@ -259,10 +259,15 @@ export const LOGIC_STATS = Object.freeze({
    * E-27. Live contact-pair map size. `_pairSlot.size` is the only count of pairs
    * and was published nowhere, so a kernel delta on the pair key had nothing to
    * divide by except a scene step from a different world.
+   *
+   * Own plus foreign pairs. Every logic worker reads every contact, so each one
+   * publishes the same total: do not sum it across workers (review M11).
    */
   PAIR_COUNT: 16,
-  STRIDE_FLOATS: 17,
-  BUFFER_SIZE_PER_WORKER: 17 * 4,
+  /** Pairs this worker owns and validates every frame (minE % workers === index). */
+  PAIR_OWN: 17,
+  STRIDE_FLOATS: 18,
+  BUFFER_SIZE_PER_WORKER: 18 * 4,
 });
 
 /**
@@ -554,6 +559,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.NESTED },
       { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.OUTSIDE },
       { key: 'PAIR_COUNT', label: 'Pairs', format: fmtNum, kind: STAT_KIND.COUNT },
+      { key: 'PAIR_OWN', label: 'OwnPairs', format: fmtNum, kind: STAT_KIND.COUNT },
     ],
   },
   preRender: {
