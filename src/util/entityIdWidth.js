@@ -58,15 +58,19 @@ function unpackCantor(key, out) {
  * (E-26.)
  *
  * At the default 16-bit width `pack16` is `((minE & 0xffff) << 16) | (maxE & 0xffff)`.
- * JS `<<` yields a **32-bit signed** result, so the key is always an int32: never
- * boxed, never a float, never a double. A stale comment in `logicWorker.js` claimed
+ * JS `<<` yields a **32-bit signed** result, so the key is always an int32, never a
+ * double. Boxing depends on the engine: Node runs V8 without pointer compression, where
+ * every int32 is a Smi, but Chrome compresses pointers and its Smis are 31-bit, so a
+ * key at or above 2^30 (minE >= 16384) is a heap number once it enters a Map or Set
+ * (`_pairSlot`, `frameCollisions`). E-10 below ran in Node and cannot see that; the
+ * Chrome question is E-54. A stale comment in `logicWorker.js` claimed
  * otherwise -- "Float64Array, not Int32Array: this key overflows a 32-bit int well
  * before the entity cap" -- over a key that file does not store in a typed array at
  * all. It was floating, attached to nothing, and read as a hashing-cost claim, which
  * is what made E-10 a two-line hypothesis that was already dead.
  *
- * **E-10 swept 715 838 805 keys and found 0 boxed.** So at 16 bits the concern is
- * settled by measurement, not by argument.
+ * **E-10 swept 715 838 805 keys and found 0 boxed** in Node. So in Node at 16 bits the
+ * concern is settled by measurement; in Chrome it holds only below minE 16384.
  *
  * Under `entityIdWidth: 32` the bound becomes `packCantor`, whose result genuinely
  * does exceed int32 and is a double - that is the only configuration where the old

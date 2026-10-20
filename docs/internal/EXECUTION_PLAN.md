@@ -436,6 +436,20 @@ Swept all **715 838 805** keys — **0 boxed**, range `[-2 147 450 879, 2 147 48
 pointer-compressed V8. Timing: 42.15 M vs 42.05 M ops/s, **−0.23 %**, checksums equal.
 **The comment at `logicWorker.js:78` is right about the storage type and wrong about the
 cost** — recorded as refuted (E-26) so it is not re-derived.
+*(2026-10-20, review M10: the V8 premise above is backwards. Pointer compression is what
+makes Smis **31-bit**; the full int32 range is a Smi only without it, which is how Node
+is built, and the sweep ran in Node. Chrome compresses pointers, so there every key with
+minE ≥ 16384 is a HeapNumber once it enters `_pairSlot` or `frameCollisions`. The Node
+result stands for Node; the Chrome cost is E-54.)*
+
+### E-54 Pair keys at or above 2^30 are heap numbers in Chrome — **not-started**
+Found by review M10 (above). `collisionPairKey(minE, maxE)` crosses 2^30 at minE 16384,
+so a scene with more than 16 384 entities that collide pays a HeapNumber per key that
+enters the pair Map/Set. Premise first, in Chrome, not Node: a kernel page (or the
+headed harness) that times `Map.set/has` with keys below and above 2^30 and counts
+allocations; then whether any shipped scene has colliding pairs past minE 16384. Only if
+both are true: a primary on `logic0_STEP_MS` for an alternative key (e.g. two Int32
+columns plus open addressing, as `_pairSlot`'s dense columns already half are).
 
 ### E-38 The nav stress scene services zero flowfield requests — **fixed. The target was frozen. 2026-10-18**
 Report: [`reports/E-38-nav-vehicle.md`](./reports/E-38-nav-vehicle.md).

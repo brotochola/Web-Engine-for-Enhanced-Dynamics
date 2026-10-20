@@ -146,7 +146,8 @@ class LogicWorker extends AbstractWorker {
     // returns that comment - and the key is a Map key, i.e. a JS number. As a floating
     // JSDoc it also visually documented the B-09 block below it. Read as a performance
     // claim about hashing, it is what made E-10 a two-line hypothesis that was already
-    // dead; E-10 then swept 715 838 805 keys and found zero boxed. The comment is gone
+    // dead; E-10 then swept 715 838 805 keys and found zero boxed (in Node; Chrome's
+    // 31-bit Smis box keys from minE 16384 on, E-54). The comment is gone
     // and the measurement is cited where the key is actually built.
     this._pairCount = 0;
     this._pairCapacity = 0;
