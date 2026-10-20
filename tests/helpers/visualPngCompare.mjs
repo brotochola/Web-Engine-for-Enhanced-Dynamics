@@ -93,17 +93,25 @@ export function verdictFromDiff({ black, differing, pixels, maxDelta }) {
   return 'drift';
 }
 
+// In priority order. These used to be one comma list, which matches the union
+// in document order, so the plain `canvas` fallback let a debug or audio-graph
+// canvas that came first in the DOM be the one compared (review M9).
+const CANVAS_SELECTORS = [
+  'body > canvas:not(#debug-visualization-canvas):not(.debug-ui-audio-graph)',
+  'canvas:not(#debug-visualization-canvas):not(.debug-ui-audio-graph)',
+  'canvas',
+];
+
 export async function captureCanvasPng(page) {
-  const locator = page.locator(
-    'body > canvas:not(#debug-visualization-canvas):not(.debug-ui-audio-graph), canvas:not(#debug-visualization-canvas):not(.debug-ui-audio-graph), canvas'
-  );
-  const count = await locator.count();
-  for (let i = 0; i < count; i++) {
-    const candidate = locator.nth(i);
-    const box = await candidate.boundingBox();
-    if (box && box.width > 0 && box.height > 0) {
-      return page.screenshot({ type: 'png', clip: box });
+  for (const selector of CANVAS_SELECTORS) {
+    const locator = page.locator(selector);
+    const count = await locator.count();
+    for (let i = 0; i < count; i++) {
+      const box = await locator.nth(i).boundingBox();
+      if (box && box.width > 0 && box.height > 0) {
+        return page.screenshot({ type: 'png', clip: box });
+      }
     }
   }
-  return locator.first().screenshot({ type: 'png' });
+  return page.locator('canvas').first().screenshot({ type: 'png' });
 }
