@@ -126,7 +126,7 @@ The same 5 percent band and the same 50 percent coefficient-of-variation rule ap
 
 If shadows are off on both sides, caster and shadow-light counts at 0 are expected. They do not fail the pair.
 
-Production stats already write `BODY_COUNT`, `AWAKE_COUNT`, `BODY_MOVED_COUNT`, `ACTIVE_PARTICLES`, `ACTIVE_BULLETS`, `ACTIVE_DECORATIONS`, `PARTICLES_STAMPED`, and `HEAP_USED_KB`. Sub-timers (`BOX2D_MS`, `PARTICLE_PHYSICS_MS`, `COLLECT_MS`, `SHADOW_Q_MS`, `SORT_MS`, `WAIT_MS`, and the rest) stay behind `collectDetailedStats`.
+Production stats already write `BODY_COUNT`, `AWAKE_COUNT`, `BODY_MOVED_COUNT`, `ACTIVE_PARTICLES`, `ACTIVE_BULLETS`, `ACTIVE_DECORATIONS`, `PARTICLES_STAMPED`, `VISIBLE_ENTITIES`, `RENDER_QUEUE_SIZE` (always on since M1; before, it was 0 with detail off and the gate skipped it), and `HEAP_USED_KB`. Sub-timers (`BOX2D_MS`, `PARTICLE_PHYSICS_MS`, `COLLECT_MS`, `SHADOW_Q_MS`, `SORT_MS`, `WAIT_MS`, and the rest) stay behind `collectDetailedStats`.
 
 ## When the change moves work
 

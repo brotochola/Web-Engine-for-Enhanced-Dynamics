@@ -3688,11 +3688,12 @@ class PreRenderWorker extends AbstractWorker {
         // stays 0 by construction here - pre-render's only wait on a sibling is
         // the backpressure skip, which is counted as SKIPPED_FRAMES below.
         this.stats[PRE_RENDER_STATS.IDLE_MS] = this.idleTimeThisFrame;
+        // M1: a load key of the A/B gate, so it is published with detail off too.
+        this.stats[PRE_RENDER_STATS.RENDER_QUEUE_SIZE] = this.renderQueueCount ? this.renderQueueCount[0] : 0;
         if (!this.collectDetailedStats) return;
         this.stats[PRE_RENDER_STATS.VISIBLE_PARTICLES] = this.visibleParticlesCount;
         this.stats[PRE_RENDER_STATS.VISIBLE_DECORATIONS] = this.visibleDecorationsCount;
         this.stats[PRE_RENDER_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;
-        this.stats[PRE_RENDER_STATS.RENDER_QUEUE_SIZE] = this.renderQueueCount ? this.renderQueueCount[0] : 0;
         this.stats[PRE_RENDER_STATS.MSG_MS] = this.messageTimeThisFrame;
         this.stats[PRE_RENDER_STATS.SKIPPED_FRAMES] = this.skippedFramesThisFrame;
         this.stats[PRE_RENDER_STATS.COLLECT_MS] = this.collectTimeThisFrame;
