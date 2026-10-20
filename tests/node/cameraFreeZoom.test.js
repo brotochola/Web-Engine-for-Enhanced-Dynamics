@@ -5,8 +5,10 @@ import { Camera } from '../../src/core/camera.js';
 import { Mouse } from '../../src/core/mouse.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 
-function setupCamera({ zoom = 1, cx = 400, cy = 300, canvasW = 800, canvasH = 600 } = {}) {
-  const data = new Float32Array(Camera.FLOAT_COUNT);
+function setupCamera({ zoom = 1, cx = 400, cy = 300, canvasW = 800, canvasH = 600, shared = false } = {}) {
+  const data = shared
+    ? new Float32Array(new SharedArrayBuffer(Camera.FLOAT_COUNT * 4))
+    : new Float32Array(Camera.FLOAT_COUNT);
   data[0] = zoom;
   data[1] = cx - canvasW / (2 * zoom);
   data[2] = cy - canvasH / (2 * zoom);
@@ -251,6 +253,38 @@ test('alignFollowCameraToLatchedPose keeps look-ahead lead on packed pose', () =
   const aligned = Camera.alignFollowCameraToLatchedPose(Camera.x, Camera.y, stub.poseX, stub.poseY);
   assert.ok(Math.abs(aligned.x - (40 + 100 * look - 400)) < 1e-6);
   assert.ok(Math.abs(aligned.y - (25 + 50 * look - 300)) < 1e-6);
+  stub.restore();
+});
+
+test('alignFollowCameraToLatchedPose reuses coherent lead during a follow write', () => {
+  const data = setupCamera({ zoom: 1, cx: 400, cy: 300, shared: true });
+  const stub = stubPoseBody({ x: 400, y: 300, vx: 100, vy: 0 });
+  const look = 0.33;
+  const lead = 100 * look;
+  const seq = new Int32Array(data.buffer, Camera.IDX_FOLLOW_SEQ * 4, 1);
+
+  Camera.followEntity(0, look, 1, 1);
+  assert.equal(seq[0] & 1, 0, 'follow write leaves the seqlock even');
+  const coherent = Camera.alignFollowCameraToLatchedPose(0, 0, new Float32Array([400]), new Float32Array([300]));
+  assert.ok(Math.abs(coherent.x - (400 + lead - 400)) < 1e-6, 'caches the coherent lead');
+
+  // Simulate pre-render reading between followUsed and followTarget writes:
+  // used moved to the next pose, target is still the old one.
+  Atomics.add(seq, 0, 1);
+  data[Camera.IDX_FOLLOW_USED_X] = 436;
+  data[Camera.IDX_FOLLOW_X] = 400 + lead;
+  data[Camera.IDX_FOLLOW_USED_Y] = 300;
+  data[Camera.IDX_FOLLOW_Y] = 300;
+  const torn = Camera.alignFollowCameraToLatchedPose(0, 0, new Float32Array([472]), new Float32Array([300]));
+  assert.ok(Math.abs(torn.x - (472 + lead - 400)) < 1e-6, 'uses last coherent lead');
+  assert.ok(Math.abs(torn.y - 0) < 1e-6);
+  Atomics.add(seq, 0, 1);
+
+  // Once the write completes, the new lead is picked up normally.
+  data[Camera.IDX_FOLLOW_X] = 436 + 10;
+  const after = Camera.alignFollowCameraToLatchedPose(0, 0, new Float32Array([472]), new Float32Array([300]));
+  assert.ok(Math.abs(after.x - (472 + 10 - 400)) < 1e-6);
+
   stub.restore();
 });
 

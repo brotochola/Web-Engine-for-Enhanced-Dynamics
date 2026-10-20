@@ -2,13 +2,15 @@
 // tools and camera follow. The differences are radial gravity, the camera roll
 // that keeps the planet's local up at the top of the screen, camera-local
 // thrusters (so W/A/D still mean screen up/left/right while the view turns) and
-// a hull rotation that keeps the collider upright on screen.
+// a sprite counter-rotation that keeps the hull upright on screen. The body is
+// rotation-locked; the camera roll comes from the ship's radial position, so
+// contacts cannot twist the view.
 
 import { Ship, THRUST_ACCEL } from '/demos/destructibleTerrainScene/gameObjects/ship.js';
 import { CX, CY, G, radialCameraAngle } from '../planetGravity.js';
 import WEED from '/src/index.js';
 
-const { Camera, Keyboard, LightEmitter } = WEED;
+const { Camera, Keyboard, LightEmitter, ShapeType } = WEED;
 
 const CAM_TURN_RATE = 12;
 const SIDE_ACCEL = THRUST_ACCEL * 0.25;
@@ -19,9 +21,16 @@ export class PlanetShip extends Ship {
   onSpawned(spawnConfig = {}) {
     super.onSpawned(spawnConfig);
     this.lightEmitter.lightIntensity = 20000;
+    // 14 is the radius of a circle with the same area as the 22x28 hull box,
+    // so switching shapes keeps the ship's mass.
+    this.collider.shapeType = ShapeType.Circle;
+    this.collider.radius = 14;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0
-    this.setFixedRotation(0);
+    this.lightEmitter.hasGlowSprite = 0;
+    // Contacts must not spin the body; the hull turns only as a sprite.
+    this.setFixedRotation(1);
+    this.spriteRenderer.inheritTransformRotation = 0;
+    this.spriteRenderer.spriteRotation = 0;
   }
 
   tick(dtRatio, deltaTime, accumulatedTime) {
@@ -30,22 +39,23 @@ export class PlanetShip extends Ship {
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
     this.addAcceleration((dx / len) * G, (dy / len) * G);
 
-    // Rotate the view so the surface under the ship stays at the bottom as it
-    // travels around the disk. Smooth the shortest arc; seed from the current
-    // camera angle so a restored/moved camera does not snap.
-    const target = radialCameraAngle(this.x, this.y);
+    super.tick(dtRatio, deltaTime, accumulatedTime);
+
+    // Follow stamps the pose it accepted. A repeated pose keeps the roll that
+    // is already on screen; a new pose eases toward that pose's radial up.
+    const ready = Camera.poseReadyFrame | 0;
+    if (!(ready > 0) || ready === this._rollReady) return;
+    this._rollReady = ready;
+    const target = radialCameraAngle(Camera.followUsedX, Camera.followUsedY);
     if (this._camAngle === undefined) this._camAngle = Camera.rotation || 0;
     let diff = target - this._camAngle;
     diff = ((diff + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     const dt = dtRatio > 0 ? dtRatio / 60 : 0;
     this._camAngle += diff * (1 - Math.exp(-dt * CAM_TURN_RATE));
     Camera.setAngle(this._camAngle);
-    // Same angle the camera rolls by, opposite sign, so the hull stays upright
-    // on screen. fixedRotation stays off: a lock forces the body back to angle 0.
-    this.rotation = -this._camAngle;
-    this.angularVelocity = 0;
-
-    super.tick(dtRatio, deltaTime, accumulatedTime);
+    // Opposite sign so the hull cancels the roll. The body stays fixed; only
+    // the sprite turns.
+    this.spriteRenderer.spriteRotation = -this._camAngle;
   }
 
   /** Camera-local thrust: W is screen up (radially out), A/D are screen left/right. */

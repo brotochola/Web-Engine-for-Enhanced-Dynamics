@@ -42,10 +42,11 @@ export function deadzoneCenter(entityX, entityY, centerX, centerY, halfW, halfH,
 
 /**
  * Static Camera class for managing viewport state
- * Camera data is stored in a SharedArrayBuffer Float32Array[16]:
+ * Camera data is stored in a SharedArrayBuffer Float32Array[17]:
  * [zoom, x, y, followTargetX, followTargetY, targetZoom,
  *  followEntityIndex, followUsedX, followUsedY, rotation,
- *  deadzoneHalfW, deadzoneHalfH, shakeAmp, shakeDur, shakeElapsed, shakePhase]
+ *  deadzoneHalfW, deadzoneHalfH, shakeAmp, shakeDur, shakeElapsed, shakePhase,
+ *  followSeq (Int32 seqlock, not a float)]
  *
  * followEntityIndex is 0 = none, else entityIndex+1 (0 is a valid entity).
  * followUsedX/Y are the entity pose xy followEntity read (not look-ahead).
@@ -60,9 +61,9 @@ export function deadzoneCenter(entityX, entityY, centerX, centerY, halfW, halfH,
  * - Multiple readers in pre_render, pixi, main thread UI/debug
  */
 export class Camera {
-  // SharedArrayBuffer view: Float32Array[9]
+  // SharedArrayBuffer view: Float32Array[17]
   static _data = null;
-  static FLOAT_COUNT = 16;
+  static FLOAT_COUNT = 17;
   static IDX_ZOOM = 0;
   static IDX_X = 1;
   static IDX_Y = 2;
@@ -79,6 +80,8 @@ export class Camera {
   static IDX_SHAKE_DUR = 13;
   static IDX_SHAKE_ELAPSED = 14;
   static IDX_SHAKE_PHASE = 15;
+  /** Int32 seqlock guarding followEntity/followTarget/followUsed writes. */
+  static IDX_FOLLOW_SEQ = 16;
 
   // Canvas dimensions (needed for centering calculations)
   static _canvasWidth = 0;
@@ -119,6 +122,10 @@ export class Camera {
   static _poseReadyFrame = 0;
   /** readyFrame followEntity last eased against. */
   static _followPoseReady = 0;
+  /** Int32 seqlock view of IDX_FOLLOW_SEQ, or null for non-shared test buffers. */
+  static _followSeq = null;
+  /** Last coherent follow snapshot. Lead is pose-relative, so it stays valid. */
+  static _followSnap = { slot: 0, usedX: 0, usedY: 0, leadX: 0, leadY: 0 };
 
   // Look-ahead vel frozen to pose-xy publishes (live HEAP vx wanders between publishes).
   static _lookHoldIdx = -1;
@@ -159,6 +166,12 @@ export class Camera {
     this._canvasHeight = canvasHeight;
     this._poseReadyFrame = 0;
     this._followPoseReady = 0;
+    this._followSeq = this._bindFollowSeq(data);
+    this._followSnap.slot = 0;
+    this._followSnap.usedX = 0;
+    this._followSnap.usedY = 0;
+    this._followSnap.leadX = 0;
+    this._followSnap.leadY = 0;
     if (this._data && this._data.length > this.IDX_TARGET_ZOOM) {
       // Keep buffer fields in a valid state for readers across workers.
       this._data[this.IDX_TARGET_ZOOM] = this._data[this.IDX_TARGET_ZOOM] > 0
@@ -167,6 +180,80 @@ export class Camera {
       if (Number.isNaN(this._data[this.IDX_FOLLOW_X])) this._data[this.IDX_FOLLOW_X] = this._data[this.IDX_X] || 0;
       if (Number.isNaN(this._data[this.IDX_FOLLOW_Y])) this._data[this.IDX_FOLLOW_Y] = this._data[this.IDX_Y] || 0;
     }
+  }
+
+  /**
+   * Bind the Int32 seqlock at the tail of the camera SAB.
+   * Plain ArrayBuffers (Node tests) run single-threaded and need no lock.
+   * @param {Float32Array|null} data
+   * @returns {Int32Array|null}
+   */
+  static _bindFollowSeq(data) {
+    if (!data || !data.buffer) return null;
+    if (typeof SharedArrayBuffer === 'undefined') return null;
+    if (!(data.buffer instanceof SharedArrayBuffer)) return null;
+    const byteOffset = data.byteOffset + this.IDX_FOLLOW_SEQ * 4;
+    if (byteOffset + 4 > data.buffer.byteLength) return null;
+    return new Int32Array(data.buffer, byteOffset, 1);
+  }
+
+  /** Mark the start of a follow snapshot write (seqlock becomes odd). */
+  static _followWriteBegin() {
+    if (this._followSeq) Atomics.add(this._followSeq, 0, 1);
+  }
+
+  /** Mark the end of a follow snapshot write (seqlock becomes even). */
+  static _followWriteEnd() {
+    if (this._followSeq) Atomics.add(this._followSeq, 0, 1);
+  }
+
+  /**
+   * Read followEntity slot and lead (followTarget - followUsed) coherently.
+   * A torn pair would shift the queue camera by one pose frame, so retry on
+   * the seqlock and otherwise reuse the last coherent lead. The lead is
+   * relative to the followed pose, so an older lead still applies to a newer
+   * latched pose.
+   * @returns {{slot: number, usedX: number, usedY: number, leadX: number, leadY: number}}
+   */
+  static _readFollowSnapshot() {
+    const data = this._data;
+    const snap = this._followSnap;
+    if (!data) {
+      snap.slot = 0;
+      return snap;
+    }
+    const seq = this._followSeq;
+    if (!seq) {
+      const slot = data[this.IDX_FOLLOW_ENTITY] | 0;
+      const usedX = data[this.IDX_FOLLOW_USED_X];
+      const usedY = data[this.IDX_FOLLOW_USED_Y];
+      snap.slot = slot;
+      snap.usedX = usedX;
+      snap.usedY = usedY;
+      snap.leadX = data[this.IDX_FOLLOW_X] - usedX;
+      snap.leadY = data[this.IDX_FOLLOW_Y] - usedY;
+      return snap;
+    }
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const s0 = Atomics.load(seq, 0);
+      if (s0 & 1) continue;
+      const slot = data[this.IDX_FOLLOW_ENTITY] | 0;
+      const usedX = data[this.IDX_FOLLOW_USED_X];
+      const usedY = data[this.IDX_FOLLOW_USED_Y];
+      const leadX = data[this.IDX_FOLLOW_X] - usedX;
+      const leadY = data[this.IDX_FOLLOW_Y] - usedY;
+      if (Atomics.load(seq, 0) !== s0) continue;
+      snap.slot = slot;
+      snap.usedX = usedX;
+      snap.usedY = usedY;
+      snap.leadX = leadX;
+      snap.leadY = leadY;
+      return snap;
+    }
+    // Writer busy/torn. Only reuse the cached lead for the same follow entity.
+    const slotNow = data[this.IDX_FOLLOW_ENTITY] | 0;
+    if (snap.slot <= 0 || snap.slot !== slotNow) snap.slot = 0;
+    return snap;
   }
 
   /**
@@ -456,24 +543,20 @@ export class Camera {
     dest.x = camX;
     dest.y = camY;
     if (!this._hasFollowEntityStamp() || !poseX || !poseY) return dest;
-    const slot = this._data[this.IDX_FOLLOW_ENTITY] | 0;
-    if (slot <= 0) return dest;
-    const i = slot - 1;
+    const snap = this._readFollowSnapshot();
+    if (snap.slot <= 0) return dest;
+    const i = snap.slot - 1;
     if (i < 0 || i >= poseX.length) return dest;
-    const usedX = this._data[this.IDX_FOLLOW_USED_X];
-    const usedY = this._data[this.IDX_FOLLOW_USED_Y];
-    const leadX = this._data[this.IDX_FOLLOW_X] - usedX;
-    const leadY = this._data[this.IDX_FOLLOW_Y] - usedY;
     const zoom = this._data[this.IDX_ZOOM] || 1;
     const cw = this._canvasWidth;
     const ch = this._canvasHeight;
     if (!(cw > 0 && ch > 0 && zoom > 0)) {
-      dest.x = camX + (poseX[i] - usedX);
-      dest.y = camY + (poseY[i] - usedY);
+      dest.x = camX + (poseX[i] - snap.usedX);
+      dest.y = camY + (poseY[i] - snap.usedY);
       return dest;
     }
-    dest.x = poseX[i] + leadX - cw / (2 * zoom);
-    dest.y = poseY[i] + leadY - ch / (2 * zoom);
+    dest.x = poseX[i] + snap.leadX - cw / (2 * zoom);
+    dest.y = poseY[i] + snap.leadY - ch / (2 * zoom);
     return dest;
   }
 
@@ -486,8 +569,13 @@ export class Camera {
    * @param {number} [dtRatio] - Delta time ratio for frame-rate-independent smoothing
    */
   static follow(targetX, targetY, smoothing, dtRatio) {
-    this._clearFollowEntityStamp();
-    this._applyFollow(targetX, targetY, smoothing, dtRatio);
+    this._followWriteBegin();
+    try {
+      this._clearFollowEntityStamp();
+      this._applyFollow(targetX, targetY, smoothing, dtRatio);
+    } finally {
+      this._followWriteEnd();
+    }
   }
 
   static _applyFollow(targetX, targetY, smoothing, dtRatio) {
@@ -636,15 +724,28 @@ export class Camera {
       vx = RigidBody.vx ? RigidBody.vx[i] : 0;
       vy = RigidBody.vy ? RigidBody.vy[i] : 0;
     }
-    this._stampFollowEntity(i, x, y);
     const ready = this._poseReadyFrame | 0;
     const publishFrozen = ready > 0 && ready === this._followPoseReady;
     this._followPoseReady = ready;
     // Same pose snapshot as last follow: sprite is frozen. Do not ease the
     // camera or the tilemap slides under the car (high-speed rAF lap hitch).
-    if (publishFrozen) return;
+    if (publishFrozen) {
+      this._followWriteBegin();
+      try {
+        this._stampFollowEntity(i, x, y);
+      } finally {
+        this._followWriteEnd();
+      }
+      return;
+    }
     const aim = this._deadzoneAim(x, y);
-    this._applyFollow(aim.x + vx * look, aim.y + vy * look, smoothing, dtRatio);
+    this._followWriteBegin();
+    try {
+      this._stampFollowEntity(i, x, y);
+      this._applyFollow(aim.x + vx * look, aim.y + vy * look, smoothing, dtRatio);
+    } finally {
+      this._followWriteEnd();
+    }
   }
 
   /**
@@ -764,6 +865,22 @@ export class Camera {
     if (!this._data) return;
     this.zoom = targetZoom;
     this._data[this.IDX_TARGET_ZOOM] = this._data[this.IDX_ZOOM];
+  }
+
+  /** Pose generation followEntity last read. 0 until a pose is bound. */
+  static get poseReadyFrame() {
+    return this._poseReadyFrame | 0;
+  }
+
+  /** Pose xy the last followEntity accepted. Not the look-ahead point. */
+  static get followUsedX() {
+    if (!this._data || this._data.length <= this.IDX_FOLLOW_USED_X) return 0;
+    return this._data[this.IDX_FOLLOW_USED_X];
+  }
+
+  static get followUsedY() {
+    if (!this._data || this._data.length <= this.IDX_FOLLOW_USED_Y) return 0;
+    return this._data[this.IDX_FOLLOW_USED_Y];
   }
 
   /** World rotation that keeps radial up at the top of the screen. Radians. */
