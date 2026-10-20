@@ -52,7 +52,13 @@ export class WorldGridManager extends GameObject {
   static forceProcessOnLogicWorker = 1;
   static islandClass = TerrainIsland;
 
-  onSpawned() {
+  /**
+   * @param {Object} [spawnConfig]
+   * @param {boolean} [spawnConfig.resume] The grid came back from a save (it is a
+   *   SharedResource): mesh what is there instead of seeding a new world.
+   */
+  onSpawned(spawnConfig = {}) {
+    const resume = !!spawnConfig.resume;
     this.tool = 'draw';
     this.staticIslands = [];
     this.dynamicIslands = [];
@@ -75,7 +81,7 @@ export class WorldGridManager extends GameObject {
       WorldGrid.anchorX = disk.cx;
       WorldGrid.anchorY = disk.cy;
       WorldGrid.bedrock = disk.bedrock || 4;
-      WorldGrid.seedDisk(disk.cx, disk.cy, disk.radius);
+      if (!resume) WorldGrid.seedDisk(disk.cx, disk.cy, disk.radius);
     } else {
       WorldGridManager.islandClass = TerrainIsland;
       WorldGrid.disk = null;
@@ -85,7 +91,7 @@ export class WorldGridManager extends GameObject {
       WorldGrid.cols = COLS;
       WorldGrid.rows = ROWS;
       WorldGrid.cellSize = CELL;
-      WorldGrid.seedWorld(this.config?.seed ?? 7);
+      if (!resume) WorldGrid.seedWorld(this.config?.seed ?? 7);
     }
     // this._placeShip();
     this.rebuild(true);

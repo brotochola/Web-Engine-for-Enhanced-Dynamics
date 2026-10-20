@@ -172,6 +172,18 @@ export class DestructibleTerrainScene extends Scene {
   }
 
   createNewGame() {
+    this._spawnShip();
+    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
+  }
+
+  // Only the WorldGrid bytes are saved (Ship, islands and manager are not
+  // serializable): mesh the restored grid and put a fresh ship in.
+  onLoadGame() {
+    this._spawnShip();
+    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1, resume: true });
+  }
+
+  _spawnShip() {
     const bench = terrainBenchRemesh();
     this.spawnEntity(Ship, {
       x: WORLD_W * 0.5,
@@ -180,7 +192,6 @@ export class DestructibleTerrainScene extends Scene {
       forceProcessOnLogicWorker: 0,
       benchRemesh: bench,
     });
-    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
   }
 
   update() {

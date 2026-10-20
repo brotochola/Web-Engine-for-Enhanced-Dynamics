@@ -19,10 +19,16 @@ const { Transform, RigidBody } = WEED;
 const SURFACE_Y = CY - RADIUS * CELL;
 const ACTOR_SPAWN_DELAY = 2;
 
+function hasActive(EntityClass) {
+  const active = EntityClass.getAllActive();
+  return !!(active && active.length);
+}
+
 export class PlanetWorldGridManager extends WorldGridManager {
   onSpawned(spawnConfig = {}) {
     super.onSpawned(spawnConfig);
     this._benchRemesh = !!spawnConfig.benchRemesh;
+    this._resume = !!spawnConfig.resume;
     this._actorsSpawned = false;
     this._actorDelay = ACTOR_SPAWN_DELAY;
   }
@@ -56,11 +62,16 @@ export class PlanetWorldGridManager extends WorldGridManager {
       forceProcessOnLogicWorker: 0,
       benchRemesh: this._benchRemesh,
     });
-    PlanetLamp.spawn({
-      x: CX + 90,
-      y: SURFACE_Y - 60,
-      forceProcessOnLogicWorker: 0,
-    });
-    PlanetPull.spawn({ forceProcessOnLogicWorker: 0 });
+    // A loaded save already restored the lamp (serializable) and the LiquidFun water.
+    if (!this._resume || !hasActive(PlanetLamp)) {
+      PlanetLamp.spawn({
+        x: CX + 90,
+        y: SURFACE_Y - 60,
+        forceProcessOnLogicWorker: 0,
+      });
+    }
+    if (!hasActive(PlanetPull)) {
+      PlanetPull.spawn({ forceProcessOnLogicWorker: 0, poured: this._resume });
+    }
   }
 }

@@ -256,6 +256,17 @@ export class PlanetPhysicsScene extends Scene {
     });
   }
 
+  // A save restores the WorldGrid bytes, the lamp and the LiquidFun water. The manager
+  // meshes the restored grid instead of seeding, then spawns the ship (and the water
+  // pull, marked as already poured). Broken-off chunks are not saved yet (REVIEW_PLAN N-5).
+  onLoadGame() {
+    this.spawnEntity(PlanetWorldGridManager, {
+      forceProcessOnLogicWorker: 1,
+      benchRemesh: planetBenchRemesh(),
+      resume: true,
+    });
+  }
+
   update() {
     this._drawHud();
     this._syncSliders();
