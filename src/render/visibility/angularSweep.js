@@ -839,8 +839,10 @@ export function copyBoundarySegment(i, out) {
 export const POLAR_BINS = 512;
 const POLAR_BIN_SCALE = POLAR_BINS / TWO_PI;
 const _polarDist = new Float32Array(POLAR_BINS);
-const _holdX = new Float32Array(8192);
-const _holdY = new Float32Array(8192);
+// The sweep polygon, copied because in and out may alias. Grows to the largest
+// sweep seen: maxPolygonVertices has no cap.
+let _holdX = new Float32Array(8192);
+let _holdY = new Float32Array(8192);
 let _polarRadius = 0;
 let _polarActive = 0;
 
@@ -930,7 +932,12 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
   // The caller stores y at x + maxVerts, so the result must never exceed maxVerts.
   const cap = maxVerts | 0;
   if (cap < 3) return n;
-  const holdN = n < _holdX.length ? n : _holdX.length;
+  if (n > _holdX.length) {
+    // A cut-short copy closed the polygon with a chord and let light past it.
+    _holdX = new Float32Array(n);
+    _holdY = new Float32Array(n);
+  }
+  const holdN = n > 0 ? n : 0;
   for (let i = 0; i < holdN; i++) {
     _holdX[i] = inX[i];
     _holdY[i] = inY[i];

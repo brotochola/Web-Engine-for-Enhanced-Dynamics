@@ -72,3 +72,29 @@ test('at 512 or more vertices the clip is one vertex per bin, as before', () => 
   assert.equal(res.outX[0], Math.fround(Math.cos(a) * R));
   assert.equal(res.outY[0], Math.fround(Math.sin(a) * R));
 });
+
+// B29 (_holdX/_holdY 8192 cap). The sweep polygon was copied into fixed
+// 8192-entry buffers. A larger one (maxPolygonVertices has no cap) lost its
+// tail, closing it with a chord: rays in that arc stopped short of the shape.
+test('a sweep polygon longer than 8192 vertices is not cut short', () => {
+  clearPolarBins(R);
+  rasterBoundarySegment(150, -10, 150, 10, 0, 0); // turns polar on; farther than the circle
+  const n = 9000;
+  const inX = new Float32Array(n);
+  const inY = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI + (i / n) * 2 * Math.PI;
+    inX[i] = Math.cos(a) * 60;
+    inY[i] = Math.sin(a) * 60;
+  }
+  const outX = new Float32Array(POLAR_BINS);
+  const outY = new Float32Array(POLAR_BINS);
+  const count = clipVisibilityToPolar(0, 0, inX, inY, n, outX, outY, POLAR_BINS);
+  assert.equal(count, POLAR_BINS);
+  let worst = 0;
+  for (let k = 0; k < count; k++) {
+    const d = Math.sqrt(outX[k] * outX[k] + outY[k] * outY[k]);
+    worst = Math.max(worst, Math.abs(d - 60));
+  }
+  assert.ok(worst < 0.05, `furthest from the circle: ${worst.toFixed(3)}`);
+});
