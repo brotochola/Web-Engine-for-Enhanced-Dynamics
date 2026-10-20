@@ -78,8 +78,6 @@ export function computeGpuQueueBufferSize(caps) {
   offset += (c.maxCookie | 0) * GPU_SPRITE_FLOATS * 4;
   offset = align4(offset);
   offset += (c.maxStamp | 0) * 2;
-  offset = align4(offset);
-  offset += (c.maxSprites | 0) * 4;
   return align4(offset);
 }
 
@@ -109,10 +107,9 @@ export function createGpuQueueViews(sab, caps) {
   offset = align4(cookie.next);
   const stampN = c.maxStamp | 0;
   const stampLightIdx = stampN > 0 ? new Uint16Array(sab, offset, stampN) : new Uint16Array(0);
+  // A spriteKeys region (maxSprites floats) used to follow; nothing read or
+  // wrote it, so it is gone (review D6).
   offset = align4(offset + stampN * 2);
-  const keyN = c.maxSprites | 0;
-  const spriteKeys = keyN > 0 ? new Float32Array(sab, offset, keyN) : new Float32Array(0);
-  offset = align4(offset + keyN * 4);
   return {
     header,
     sprites: sprites.view,
@@ -126,7 +123,6 @@ export function createGpuQueueViews(sab, caps) {
     cookie: cookie.view,
     cookieU32: cookie.u32,
     stampLightIdx,
-    spriteKeys,
     caps: c,
     byteLength: offset,
   };
