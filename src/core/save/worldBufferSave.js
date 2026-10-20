@@ -406,12 +406,23 @@ export function remapEntityIdFields(EntityClass, entityIndex, components, mapGet
  * @param {ArrayLike<number>|null} camera
  * @param {(oldId:number) => number|null} mapGet
  */
+/**
+ * The saved camera with its follow entity mapped to this load's index. A copy:
+ * the caller's payload keeps the saved id, so loading the same payload again
+ * maps from it rather than from the previous load's index.
+ * @param {number[]|null|undefined} camera saved camera floats
+ * @param {(old: number) => number|null} mapGet
+ * @returns {number[]|null}
+ */
 export function remapCameraFollow(camera, mapGet) {
-  if (!camera || camera.length <= Camera.IDX_FOLLOW_ENTITY) return;
-  const stored = camera[Camera.IDX_FOLLOW_ENTITY] | 0;
-  if (!stored) return;
+  if (!camera) return null;
+  const out = Array.from(camera);
+  if (out.length <= Camera.IDX_FOLLOW_ENTITY) return out;
+  const stored = out[Camera.IDX_FOLLOW_ENTITY] | 0;
+  if (!stored) return out;
   const next = mapGet(stored - 1);
-  camera[Camera.IDX_FOLLOW_ENTITY] = next == null ? 0 : (next | 0) + 1;
+  out[Camera.IDX_FOLLOW_ENTITY] = next == null ? 0 : (next | 0) + 1;
+  return out;
 }
 
 /** @param {number[]|null|undefined} pairs flat [old, neu, ...] */

@@ -385,15 +385,29 @@ describe('world buffer apply', { concurrency: false }, () => {
 
     const cam = new Array(16).fill(0);
     cam[Camera.IDX_FOLLOW_ENTITY] = 6;
-    remapCameraFollow(cam, (id) => (id === 5 ? 2 : null));
-    assert.equal(cam[Camera.IDX_FOLLOW_ENTITY], 3);
+    assert.equal(remapCameraFollow(cam, (id) => (id === 5 ? 2 : null))[Camera.IDX_FOLLOW_ENTITY], 3);
 
     cam[Camera.IDX_FOLLOW_ENTITY] = 0;
-    remapCameraFollow(cam, () => 2);
-    assert.equal(cam[Camera.IDX_FOLLOW_ENTITY], 0);
+    assert.equal(remapCameraFollow(cam, () => 2)[Camera.IDX_FOLLOW_ENTITY], 0);
 
     cam[Camera.IDX_FOLLOW_ENTITY] = 4;
-    remapCameraFollow(cam, () => null);
-    assert.equal(cam[Camera.IDX_FOLLOW_ENTITY], 0);
+    assert.equal(remapCameraFollow(cam, () => null)[Camera.IDX_FOLLOW_ENTITY], 0);
+  });
+
+  test('remapCameraFollow leaves the caller\'s payload alone (B23)', () => {
+    // Loading the same decoded payload twice must map from the saved id both
+    // times; an in-place remap made the second load map the first load's index.
+    const cam = new Array(16).fill(0);
+    cam[1] = 120;
+    cam[Camera.IDX_FOLLOW_ENTITY] = 6; // entity 5
+    const firstLoad = (id) => (id === 5 ? 9 : null);
+    const secondLoad = (id) => (id === 5 ? 9 : id === 9 ? 1 : null);
+    const a = remapCameraFollow(cam, firstLoad);
+    const b = remapCameraFollow(cam, secondLoad);
+    assert.equal(cam[Camera.IDX_FOLLOW_ENTITY], 6, 'payload unchanged');
+    assert.equal(a[Camera.IDX_FOLLOW_ENTITY], 10);
+    assert.equal(b[Camera.IDX_FOLLOW_ENTITY], 10, 'not entity 1');
+    assert.equal(b[1], 120);
+    assert.equal(remapCameraFollow(null, firstLoad), null);
   });
 });

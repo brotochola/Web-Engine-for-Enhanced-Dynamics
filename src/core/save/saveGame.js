@@ -164,8 +164,8 @@ export function applySavePayloadToScene(scene, payload) {
 
   return completePromise.then(async (result) => {
     const mapGet = idMapGetter(result.idPairs);
-    remapCameraFollow(payload.camera, mapGet);
-    if (payload.camera) applyCameraGlobals(payload.camera);
+    const camera = remapCameraFollow(payload.camera, mapGet);
+    if (camera) applyCameraGlobals(camera);
     if (payload.liquidFun && scene.workers?.physics) {
       try {
         const unpacked = unpackLiquidFunSnapshot(payload.liquidFun);
