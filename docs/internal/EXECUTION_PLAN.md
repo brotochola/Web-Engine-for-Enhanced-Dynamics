@@ -950,6 +950,16 @@ two extra mul-adds per entity, behind a loop hoisted on `rot !== 0`) removes tha
 `planetScene` and `planetPhysicsScene` turn the camera every tick); rotation 0 must stay
 bit-identical.
 
+### E-52 Under `particleLights.max` the first lit particles win, not the brightest — **not-started**
+Found in B28. `packParticleLights` takes lit particles in active-list order until the cap.
+The terrain ship's laser lights every beam particle (intensity 10, up to ~600 alive under
+continuous fire at the 60 ms cooldown) and 4–8 impact sparks (intensity 200), so with
+`max: 256` which lights survive is pool order: the impact flash can drop out. Keep the
+`max` largest `sqrtI·alpha` (a partial select over the candidates, O(n)) only when the
+candidates exceed the cap; under the cap the loop stays as is. **Primary:** pre-render (or
+pixi, wherever the packer runs) on the destructible terrain demo under continuous fire;
+the under-cap path must tie.
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at

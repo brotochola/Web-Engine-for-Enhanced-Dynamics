@@ -17,9 +17,61 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**19:30** — B29 is closed. Next: B28 (the planet demo items), then Phase 2 (M1–M12).
+**19:52** — B28 is closed. Next: N-16 (the command ring drops commands without a word), then
+Phase 2 (M1–M12).
 
 ## Log
+
+### 19:52 — B28 closed: five demo fixes, one revert, one engine getter, four new items
+
+Commits: `ff1322c6`, `fc0fc06e`, `09f899f4`, `b1f68c2c`, `4a16b035`, `65796be2`, `1ee6f393`.
+
+- **The planet no longer asks for particle lights** (`ff1322c6`). It uses raycasted lighting,
+  which doesn't draw them, so the setting only produced a warning.
+- **The controls line was never on screen** (`09f899f4`). Both terrain demos drew it with
+  DebugDraw at a point about 1400 px from the view center, past the screen's corner at any camera
+  angle. It now sits under each panel's title. The flat scene's list also gained W, which the ship
+  thrusts on.
+- **The planet's boot camera started on the wrong side** (`b1f68c2c`). The ship had been moved to
+  the east of the disk, but the camera still started above the north pole, unrotated, so the
+  first follow crossed a quarter of the planet and turned 90°. The spawn point is now one constant
+  used by both. Headed check: the camera sits on the ship, already rotated, from the first sample.
+- **Failed terrain updates are no longer silent** (`65796be2`). They were logged through a debug
+  logger that is off by default; now they warn once.
+- **The planet's size no longer follows the flat level** (`1ee6f393`). It was `N = COLS` from the
+  flat terrain level; now it's its own 900.
+- **Light ranges: fixed, measured, and partly reverted.**
+  - A raycasted light only checks occluders within its entity's `Collider.visualRange`. The lamp
+    had 500 px for a light reaching 1183 px, and the ship 80 px for 1414 px, so light went through
+    rock beyond that.
+  - I added `LightEmitter.influenceRadius` and set both ranges to it (`fc0fc06e`).
+  - **Headed A/B, 3 rounds each side:** pre-render 0.616 → 0.887 ms (the visibility pass
+    0.422 → 0.694 ms), pixi lights 0.291 → 0.335 ms, spatial a tie.
+  - **Screenshots then showed a worse look.** Every terrain chunk within reach lit up, deep rock
+    included, with chunk seams showing. The engine draws a blocking shape "self-lit" as soon as
+    any edge is in range, even when other rock hides it. The old small ranges had hidden that.
+  - So I reverted the demo ranges (`4a16b035`) and kept the getter. The engine fix is now
+    **N-19**: light only the shapes the light can actually see.
+- **Water seam skin: not restored, because it wasn't the cause.**
+  - On 10-19 the planet had a 1 px polygon skin "so water cannot slip through seams", which a
+    refactor dropped.
+  - I built a probe from the planet's real terrain mesh: 310 chunk bodies, 2618 shapes, 2948
+    water particles, the same radial pull.
+  - At rest, **0** particles get inside, with or without the skin.
+  - Dropped from higher up, water tunnels in, and the skin barely matters: 1 / 11 / 122 / 142
+    particles inside at 250 / 500 / 1000 / 1500 px, against 0 / 20 / 120 / 114 with the skin.
+  - It's a speed problem in LiquidFun's collision, now **N-18**. The probe is in the repo:
+    `tests/bench/liquidFunTunnelProbe.mjs`.
+- **Laser lights: the look stays.** Each beam particle is a small light, and the beam's glow
+  depends on many of them overlapping. The real problem: once `particleLights.max` is reached,
+  the packer keeps whichever lit particles come first in the pool, so the bright impact flash can
+  drop out. That's now **E-52**: keep the brightest lights when over the cap.
+- **New items found on the way:**
+  - **N-16:** a full physics command ring drops commands without a word. Nothing reads its
+    overflow counter.
+  - **N-17:** the planet's water pull sends one command per particle per tick, up to ~4000
+    against a 4096-slot ring.
+- Suite **1305/1305**.
 
 ### 19:30 — B29 closed: four more fixes (`1af3e461`, `5964b602`, `f89268ea`, `8222566c`)
 
