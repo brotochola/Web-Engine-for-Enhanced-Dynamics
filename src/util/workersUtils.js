@@ -366,10 +366,14 @@ export function workerLoadPct(stepMs, { fixedFps = 0, budgetHz = 60 } = {}) {
 const LOAD_STAT = Object.freeze({ key: 'LOAD', label: 'Load', format: fmtLoad });
 
 export const STAT_KIND = Object.freeze({
+  /** Part of STEP_MS that no other TIME chip contains. Rest subtracts these. */
   TIME: 'time',
   COUNT: 'count',
+  /** Inside another chip (STAMP_LIGHTS_MS in SHADOW_Q_MS, LIQUIDFUN_MS in BOX2D_MS). */
   NESTED: 'nested',
   REST: 'rest',
+  /** Time outside STEP_MS: IDLE_MS is the gap between frames. */
+  OUTSIDE: 'outside',
 });
 
 /** Step minus partition time chips. Derived in the Performance panel, not a SAB field. */
@@ -393,7 +397,7 @@ export function readDisplayStat(stat, view, schema) {
   return view[idx];
 }
 
-/** STEP_MS minus chips with kind time. Nested and counts are ignored. */
+/** STEP_MS minus chips with kind time. Nested, outside-the-step and counts are ignored. */
 export function computeRestMs(config, view, schema) {
   if (!config?.stats) return 0;
   let step = 0;
@@ -486,7 +490,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
       { key: 'BOX2D_MS', label: 'Box2d', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'LIQUIDFUN_MS', label: 'LiquidFun', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'LIQUIDFUN_MS', label: 'LiquidFun', format: fmtMs, kind: STAT_KIND.NESTED },
       REST_STAT,
       { key: 'LF_PASS_FIND_CONTACTS_MS', label: 'LfFind', format: fmtMs, kind: STAT_KIND.NESTED },
       { key: 'LF_PASS_CONTACT_SOLVERS_MS', label: 'LfSolv', format: fmtMs, kind: STAT_KIND.NESTED },
@@ -522,7 +526,7 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'NEIGHBOR_CHECKS', label: 'Neighbors', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'NEIGHBORS_REUSED', label: 'Reused', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'SLEEP_NEIGHBOR_SKIPS', label: 'SleepSkip', format: fmtNum, kind: STAT_KIND.COUNT },
-      { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.OUTSIDE },
     ],
   },
   logic: {
@@ -532,19 +536,21 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'STEP_MS', label: 'Step', format: fmtMs },
       LOAD_STAT,
       { key: 'FPS', label: 'Fps', format: fmtFps },
-      { key: 'RAYCAST_MS', label: 'Ray', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'BOX2D_RAYCAST_MS', label: 'Box2dRay', format: fmtMs, kind: STAT_KIND.TIME },
+      // ENTITY_MS is the whole entity loop. Rays, decimation, ticks and the
+      // query waits all run inside it, so they are nested, not partitions.
+      { key: 'RAYCAST_MS', label: 'Ray', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'BOX2D_RAYCAST_MS', label: 'Box2dRay', format: fmtMs, kind: STAT_KIND.NESTED },
       { key: 'ENTITY_MS', label: 'Entity', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'DECIMATE_MS', label: 'Decim', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'TICK_MS', label: 'Tick', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'DECIMATE_MS', label: 'Decim', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'TICK_MS', label: 'Tick', format: fmtMs, kind: STAT_KIND.NESTED },
       { key: 'QUERY_PUBLISH_MS', label: 'QueryPub', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
       { key: 'ENTITIES_PROCESSED', label: 'Entities', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'RAYCAST_COUNT', label: 'Rays', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'BOX2D_RAYCAST_COUNT', label: 'Box2dRays', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'MARK_ACTIVE', label: 'Mark', format: fmtNum, kind: STAT_KIND.COUNT },
-      { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.NESTED },
+      { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.OUTSIDE },
       { key: 'PAIR_COUNT', label: 'Pairs', format: fmtNum, kind: STAT_KIND.COUNT },
     ],
   },
@@ -565,14 +571,14 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       // SUB-TIMER of SHADOW_Q_MS, not a peer: reading this row as additive with the one
       // above is the mistake the schema comment warns about. It sits last of the time
       // rows so the panel's own ordering does not imply a sum.
-      { key: 'STAMP_LIGHTS_MS', label: 'StampLights', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'STAMP_LIGHTS_MS', label: 'StampLights', format: fmtMs, kind: STAT_KIND.NESTED },
       // E-29. A peer of every row above: it is the one phase that falls between
       // CUSTOM_LAYER_MS and VISIBILITY_MS rather than inside either.
       { key: 'VISIBLE_LIGHTS_MS', label: 'VisLights', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'VISIBILITY_MS', label: 'Vis', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'ADOBE_MS', label: 'Adobe', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },
-      { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.TIME },
+      { key: 'IDLE_MS', label: 'Idle', format: fmtMs, kind: STAT_KIND.OUTSIDE },
       REST_STAT,
       { key: 'RENDER_QUEUE_SIZE', label: 'Queue', format: fmtNum, kind: STAT_KIND.COUNT },
       { key: 'SKIPPED_FRAMES', label: 'Skipped', format: fmtNum, kind: STAT_KIND.COUNT },

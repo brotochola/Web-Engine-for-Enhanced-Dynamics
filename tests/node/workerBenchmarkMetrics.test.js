@@ -165,12 +165,14 @@ test('GPU row is counts only, so Rest has no step to partition', () => {
 });
 
 test('physics Rest ignores nested LF passes', () => {
+  // BOX2D_MS wraps world.step, and LiquidFun steps inside step_world, so
+  // LIQUIDFUN_MS and its passes are all inside BOX2D_MS (review M3).
   const view = new Float32Array(PHYSICS_STATS.STRIDE_FLOATS);
   view[PHYSICS_STATS.STEP_MS] = 10;
   view[PHYSICS_STATS.BOX2D_MS] = 4;
   view[PHYSICS_STATS.LIQUIDFUN_MS] = 3;
   view[PHYSICS_STATS.LF_PASS_GRID_MS] = 2;
-  assert.equal(computeRestMs(WORKER_DISPLAY_CONFIG.physics, view, PHYSICS_STATS), 3);
+  assert.equal(computeRestMs(WORKER_DISPLAY_CONFIG.physics, view, PHYSICS_STATS), 6);
 });
 
 test('summarizeWorkerBenchmarkWindow averages stats fields across samples', () => {

@@ -259,9 +259,14 @@ test('the debug panel shows both, with labels that do not imply a sum', () => {
   const u = code(utils);
   assert.match(u, /\{ key: 'VISIBLE_LIGHTS_MS', label: 'VisLights'/, 'no panel row for VISIBLE_LIGHTS_MS');
   assert.match(u, /\{ key: 'STAMP_LIGHTS_MS', label: 'StampLights'/, 'no panel row for STAMP_LIGHTS_MS');
-  // Both must be TIME kind, or the panel formats a millisecond value as a count.
-  for (const k of ['VISIBLE_LIGHTS_MS', 'STAMP_LIGHTS_MS']) {
+  // Neither may be a COUNT row, or the panel formats a millisecond value as a
+  // count. VISIBLE_LIGHTS_MS is a peer of the other phases (TIME). STAMP_LIGHTS_MS
+  // sits inside SHADOW_Q_MS (point 3 above), so it is NESTED: as TIME the
+  // panel's Rest subtracted it twice (review M3).
+  const kindOf = (k) => {
     const row = u.slice(u.indexOf(`{ key: '${k}'`));
-    assert.match(row.slice(0, 120), /STAT_KIND\.TIME/, `${k} is not a TIME row`);
-  }
+    return /STAT_KIND\.(\w+)/.exec(row.slice(0, 120))?.[1];
+  };
+  assert.equal(kindOf('VISIBLE_LIGHTS_MS'), 'TIME');
+  assert.equal(kindOf('STAMP_LIGHTS_MS'), 'NESTED');
 });
