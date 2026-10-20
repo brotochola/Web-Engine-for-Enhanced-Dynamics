@@ -104,6 +104,11 @@ const ANIM_LABEL_TAG = Object.freeze({
 });
 const ANIM_LABEL_NAMES = Object.freeze(['particle', 'liquidFun', 'decoration', 'bullet']);
 
+/** Copy n floats, no view allocated (copies run per skipped shadow frame). */
+function copyF32(dst, src, n) {
+    for (let i = 0; i < n; i++) dst[i] = src[i];
+}
+
 /**
  * Build the diagnostic label. Only ever called on a warn path.
  * A string `kind` is passed through, so the name-based caller still works.
@@ -266,6 +271,8 @@ class PreRenderWorker extends AbstractWorker {
         this._frameCameraX = 0;
         this._frameCameraY = 0;
         this._frameCameraRot = 0;
+        /** GPU queue buffer that holds the last shadow pack (see _republishGpuShadows). */
+        this._gpuShadowsFrom = null;
         /** Camera.resolveDrawnCamera scratch. */
         this._drawnCam = { zoom: 1, x: 0, y: 0, rotation: 0 };
 
@@ -3134,6 +3141,7 @@ class PreRenderWorker extends AbstractWorker {
         const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
         this._shadowUpdateTick++;
         if (skip) {
+            this._republishGpuShadows(dst, res);
             return res;
         }
         const sunN = this._packGpuSun(dst, q);
@@ -3142,7 +3150,26 @@ class PreRenderWorker extends AbstractWorker {
         res.sun = sunN;
         res.stamp = stamp;
         res.cookie = cookie;
+        this._gpuShadowsFrom = dst;
         return res;
+    }
+
+    /**
+     * A skipped shadow frame (shadowUpdateInterval > 1) reports the last
+     * pack's counts, but the queue buffer alternates every frame: this one
+     * holds rows from an older pack, or none (interval 2 always packs into the
+     * same buffer). Copy the last pack's rows in. Plain loops: no per-frame view.
+     */
+    _republishGpuShadows(dst, res) {
+        const src = this._gpuShadowsFrom;
+        if (!src || src === dst) return;
+        copyF32(dst.sun, src.sun, (res.sun | 0) * GPU_CASTER_FLOATS);
+        copyF32(dst.stamp, src.stamp, (res.stamp | 0) * GPU_CASTER_FLOATS);
+        const stampN = res.stamp | 0;
+        const di = dst.stampLightIdx;
+        const si = src.stampLightIdx;
+        for (let i = 0; i < stampN; i++) di[i] = si[i];
+        copyF32(dst.cookie, src.cookie, (res.cookie | 0) * GPU_SPRITE_FLOATS);
     }
 
     _allowGpuPainter() {
