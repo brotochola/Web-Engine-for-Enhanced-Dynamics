@@ -100,11 +100,30 @@ function makeSession(fn, memory) {
   };
 }
 
+// One clear is 1.5-3.5 us and each sample brackets one call, so the pair of clock
+// reads (about 100 ns here) was 3-7 % of every sample, and a larger share of a
+// faster arm's: ratios between arms were squeezed toward 1 (review M9). Batching
+// clears needs more bodies in the world, which changes the regime (removals cost
+// more in a bigger tree), so the pair's cost is measured and subtracted instead.
+let clockPairMs = null;
+function clockPairCost() {
+  if (clockPairMs !== null) return clockPairMs;
+  const N = 200000;
+  let acc = 0;
+  for (let i = 0; i < N; i++) {
+    const t0 = performance.now();
+    acc += performance.now() - t0;
+  }
+  clockPairMs = acc / N;
+  return clockPairMs;
+}
+
 /** Time only body_clear_shapes. Fill and body recreate stay outside the clock. */
 function timeClear(session, n) {
+  const pair = clockPairCost();
   let acc = 0;
   let count = 0;
-  while (acc < 3 && count < 100000) {
+  while (acc - count * pair < 3 && count < 100000) {
     session.fill(n);
     const t0 = performance.now();
     session.clear(session.slot);
@@ -112,7 +131,7 @@ function timeClear(session, n) {
     count++;
     session.resetBody();
   }
-  return (count / acc) * 1000;
+  return (count / (acc - count * pair)) * 1000;
 }
 
 function timeStep(session) {
@@ -149,7 +168,7 @@ function measure(wasmPath) {
   const stepSession = makeSession(fn, memory);
   const stepOps = timeStep(stepSession);
   stepSession.free();
-  return { leftoverByN, clearOps, stepOps };
+  return { leftoverByN, clearOps, stepOps, clockPairNs: clockPairCost() * 1e6 };
 }
 
 function median(xs) {
