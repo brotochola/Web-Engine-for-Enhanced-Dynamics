@@ -17,9 +17,23 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**03:15** — **B22** (Adobe roots look up a texture they do not have, every frame).
+**03:35** — **B23** (save robustness, six parts). Reading the save/restore path first.
 
 ## Log
+
+### 03:30 — B22 fixed (`ec7fe654`)
+
+- **The bug:** Adobe-animated entities went through the sprite sort-line code. With no sprite their
+  anchors are 0, so they missed the fast path and looked up a sprite texture they don't have.
+  The miss isn't cached, so this ran **every frame for every Adobe root**, only to produce the pose
+  y anyway (with no frame size the offsets are zero).
+- **Reproduced first:** a spy on the texture resolver counted one lookup per frame for a single
+  root. After the fix: zero, with the same sort key.
+- **Fix:** Adobe roots sort on their pose directly. No demo gives an Adobe entity a sprite, so
+  nothing else changes.
+- **Measured** because this function runs per visible renderable: the shipped writer on 20k sprites
+  measured −0.1 %, 10/25 rounds, a tie.
+- Suite **1260/1260**.
 
 ### 03:10 — B21 fixed (`fa121e63`)
 
