@@ -3509,7 +3509,8 @@ class PreRenderWorker extends AbstractWorker {
                             fixtureRevision ? fixtureRevision[0] : 0,
                             fixtureHead, fixtureNext, fixtureActiveArr,
                             fixtureVertCount, fixtureVertX, fixtureVertY,
-                            fixtureHead[nIdx], fixturePoolMax
+                            fixtureHead[nIdx], fixturePoolMax,
+                            false // segments only: the fill is pixi's (self-lit)
                         );
                         const hit = collectSolidSegments(
                             solid, wx, wy, c, s, ox, oy,
