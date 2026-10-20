@@ -43,13 +43,13 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
   `denom` has the wrong sign, so `t` and `u` are negated: real hits are missed, rays
   pointing away hit. Affects `Ray.cast`, `castAll`, line of sight. Fix the sign; rewrite
   `chainRayPick.test.js`, whose expectations pin the bug.
-- [ ] **B4 ✓ Raycasted lights touched by a compound occluder draw a quarter circle at the default config.** [`angularSweep.js:921-925`](../../src/render/visibility/angularSweep.js); default 128 at [`configDefaults.js:623`](../../src/util/configDefaults.js) · `9df34e53`.
+- [x] **B4 ✓ Raycasted lights touched by a compound occluder draw a quarter circle at the default config.** — fixed `36fddfda`; bit-identical at ≥ 512; hygiene kernel TIE. [`angularSweep.js:921-925`](../../src/render/visibility/angularSweep.js); default 128 at [`configDefaults.js:623`](../../src/util/configDefaults.js) · `9df34e53`.
   Fix: never emit fewer bins than the full circle needs; test with maxVerts 128.
-- [ ] **B5 ✓ Particle `layer`, `layers`, `angularVelocity`, `anim` are silently ignored.** [`particleEmitter.js:69-77`](../../src/core/particleEmitter.js), merge `:192-203` · since `32672989`.
+- [x] **B5 ✓ Particle `layer`, `layers`, `angularVelocity`, `anim` are silently ignored.** — fixed `a41f2128`. [`particleEmitter.js:69-77`](../../src/core/particleEmitter.js), merge `:192-203` · since `32672989`.
   Every emit path copies only the listed keys. Fix: add the keys, drop the unused
   `layerId`; test emit / emitFlat / emitAlongLine honour `layer`. **Visible change:**
   demos that set `layer: 'fx'` will start routing those particles.
-- [ ] **B6 ✓ Sprites can flicker at 30 Hz after a one-off tint/alpha/scale change.** [`preRenderWorker.js:2336-2339`](../../src/workers/preRenderWorker.js), `:1566-1610` · `c418c4e7` (2026-09-27), path touched by `4a7fa4c1`.
+- [x] **B6 ✓ Sprites can flicker at 30 Hz after a one-off tint/alpha/scale change.** — fixed `a5362de6`; kernel TIE; **Predator ABAB pending** (batched with the other pre-render fixes). [`preRenderWorker.js:2336-2339`](../../src/workers/preRenderWorker.js), `:1566-1610` · `c418c4e7` (2026-09-27), path touched by `4a7fa4c1`.
   One dirty flag per entity, two queue buffers; buffer 0's full emit clears it, buffer 1
   then reuses older columns. Buffer 0 never takes the path (index 0 is falsy). Fix: −1
   sentinel; invalidate the other buffer when a dirty flag is cleared. (Confirmed by
@@ -58,7 +58,19 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
   The 1/30 s cap truncates after scaling instead of sub-stepping. Fix: split into equal
   steps (max 4), one helper for both loops, mirror the 4.0 clamp; test physics seconds
   match logic seconds at scale 3 and fixedFps 20.
-- [ ] **B8 ✓ Traffic cars steer toward what they avoid (Demo).** [`trafficCar.js:110-120`](../../demos/littleCity/gameObjects/trafficCar.js) · `8af92002`.
+  **Deferred 2026-10-20 after analysis — the fix is not a one-liner:**
+  (a) one `world.step(n·dt, n·subSteps)` keeps per-substep h, but Box2D v3 detects
+  collisions once per step, so 2–4× more travel between detections (tunneling for fast
+  non-bullet bodies), and LiquidFun's dynamics depend on dt (velocity cap `diameter/dt`,
+  pressure `(diameter/dt)²`) unless its particle sub-steps scale too;
+  (b) n `world.step(dt)` calls inside one `doStep` keep everything per-step-identical but
+  need the event half of `afterStep` (contact ring, hits, joint breaks, moved bodies) after
+  **each** sub-step, forces re-applied per sub-step (`applyForcesAndTorque` keeps ax/ay, so
+  that is safe), and the LiquidFun sync and pose publish once at the end; whether the rings
+  tolerate several publishes per frame must be confirmed first. Plan: (b), with a WASM-level
+  test (Node already instantiates the module in `*.wasm.test.js`) that a falling body at
+  scale 4 covers 4× the distance and a contact begin in sub-step 1 still reaches logic.
+- [x] **B8 ✓ Traffic cars steer toward what they avoid (Demo).** [`trafficCar.js:110-120`](../../demos/littleCity/gameObjects/trafficCar.js) · `8af92002`. — fixed `1732aa11`.
 - [ ] **B9 ✓ The planet scene cannot load a save (Demo).** [`planetPhysicsScene.js:248-257`](../../demos/planetPhysicsScene/planetPhysicsScene.js) · `acce50cb`.
   No `onLoadGame`; only PlanetLamp is serializable.
 
@@ -135,7 +147,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 ## Phase 5 — GC pressure
 
 - [ ] **G1** `ensureCompoundSolid` per-edge strings/objects; pool-wide revision key.
-- [ ] **G2** `TrafficCar._avoidAhead` returns an object per car per frame (Demo).
+- [x] **G2** `TrafficCar._avoidAhead` returns an object per car per frame (Demo). — fixed `b1c2f916`.
 - [ ] **G3** `_sortKeyBits` new `Uint32Array` per frame.
 - [ ] **G4** Radix copy-back `subarray`.
 - [ ] **G5** frameClock `readFrame` object per stamp.
@@ -192,3 +204,8 @@ before treating either as closed. Removed `subarray` views are not GC wins (H-02
 ## Found during implementation
 
 *(new items get `N-n` ids, newest last)*
+
+- [ ] **N-1** (GC, low) The visibility polygon copy builds two `subarray` views per light per frame — [`preRenderWorker.js:3627-3628`](../../src/workers/preRenderWorker.js) `f32.set(outX.subarray(0, vertCount), …)`. Pre-window. Rule: copy paths do not create a view per row; justify on CPU only (H-02: transient views were 0 GC events).
+- [ ] **N-2** (GC, low) `Layer._subscriptionList` returns a fresh `{ omitted, list }` per emit and a one-element array for `layer` — [`layer.js:1300-1311`](../../src/core/layer.js), called once per emit from `particleEmitter.js:310`. Handle the no-layer and single-layer cases without allocating (like `resolveOne`).
+- [ ] **N-4** (bad code / docs, low) `RigidBody.inertia` **is** read: [`car.js:114-120`](../../demos/carScene/gameObjects/car.js) multiplies the steering alpha by `inertia / mass` to pre-compensate the host applying torque as `angularAccel × mass` ([`weedjsPost.js:1774`](../../src/box2d/weedjsPost.js)). D9's "never read" is wrong for inertia. Fixing the host torque (use inertia) must remove that compensation in the same change, or car steering doubles.
+- [ ] **N-3** (bad code, low) An unknown layer name `console.warn`s on every emit, and its particles get mask 0, so they are never drawn — [`layer.js:1281-1283`](../../src/core/layer.js). Warn once per name; decide whether particles should fall back to entities (game objects already do).

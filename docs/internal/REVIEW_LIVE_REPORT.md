@@ -17,10 +17,77 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**17:05** — **B4**: raycasted lights touched by a compound occluder draw a quarter circle
-at the engine default `maxPolygonVertices` (128).
+**18:25** — **B9** (the planet scene cannot load a save).
 
 ## Log
+
+### 18:20 — B8 fixed: traffic cars steered toward what they avoid (`1732aa11`), G2 (`b1c2f916`)
+
+Confirmed the sign against the same file's road-seek code: `cross(forward, target)` with a
+positive `turnInput` turns **toward** a target, and the avoidance used that same sign. The
+old rule takes an obstacle at (100, 20) from 0.197 to 0.147 rad off the nose — into it.
+The turn decision now lives in `demos/littleCity/avoidSteer.js` (no engine imports, so Node
+tests it) with the convention written down; the pedestrian sidestep in cityPerson uses a
+different, correct calculation, so I left it alone. G2 in the same function: the result
+object is reused instead of allocated per car per frame.
+
+**Found while checking:** `car.js` reads `RigidBody.inertia` to pre-compensate the host
+applying torque as `angularAccel × mass` → **N-4** (the review's "inertia is never read"
+was wrong, and fixing the host torque would double-compensate this demo).
+
+### 18:05 — B7 deferred after analysis (the physics time-scale cap)
+
+The obvious fix has two shapes, and both have a real hazard. One bigger world step with
+n× sub-steps keeps Box2D's sub-step size, but Box2D v3 detects collisions **once per
+step** (more tunneling at 4×), and LiquidFun's velocity cap and pressure depend on dt.
+n separate world steps keep everything identical, but contact/hit/joint-break/moved-body
+events must then be published after **each** sub-step, and I cannot see from JS whether
+those rings tolerate that. I wrote the analysis into the plan and will come back with a
+WASM-level test (Node already instantiates the module) instead of guessing.
+
+### 18:00 — B6 fixed: the 30 Hz pose-only flicker (`a5362de6`)
+
+The render queue alternates two buffers, but `renderDirty` is one flag per entity, so a
+change emitted into one buffer cleared the flag and the other buffer kept reusing old
+columns. Now clearing a dirty flag invalidates the other buffer, and buffer 0 can persist
+too (index 0 used to read as false). Tested on the **real worker class** over simulated
+frames; a mutation without the invalidation fails two of the three tests. Kernel vs its
+parent: emit −3.4 % with only 36 % of rounds lost (TIE); the cull kernel, which B6 does
+not touch, moved −5 % — that is this kernel's noise floor. The protocol's real check for
+pre-render is a headed Predator ABAB; **I will run one for the batch of pre-render fixes**
+instead of one per fix.
+
+### 17:35 — B5 fixed: particle `layer`, `layers`, `angularVelocity`, `anim` were dropped (`a41f2128`)
+
+I first checked the review's claim that *every* path is affected — `_spawn` only merges
+when it gets mode overrides, so plain `emit()` could have been fine. It is not: `emit`
+passes `_topdownOverrides`, and `emitAlongLine` copies the list into a bag. Ten new tests
+failed (for example `layer: 'fx'` gave mask 4 = entities instead of 16 = fx). A scan of
+the file agreed with the review exactly: `angularVelocity` and `anim` read but not listed,
+`layerId` listed but never read, nothing else missing. Added the four keys, removed
+`layerId`, and a guard test that fails if a future `cfg.<key>` is not in the list (with a
+read-count floor so it cannot pass vacuously). Node suite **1198 / 1198**.
+
+**Please look at this one:** destructibleTerrain's laser and mamushkaDig's dig particles
+now draw on the `fx` layer those scenes define (additive blend, z 4.5, 4000-item cap) —
+what the scenes asked for, but they will look brighter than before.
+
+### 17:20 — B4 fixed: polar clip covers the whole circle at any vertex budget (`36fddfda`)
+
+At the engine default (128 vertices) a light touched by a compound occluder drew only
+−180°…−90°. Now, under 512 vertices, each vertex covers a group of adjacent bins at the
+nearest of their hits (conservative: light never passes an occluder inside a group).
+Checks: at ≥ 512 vertices the output is **bit-identical** (kernel `polarChecksum`
+426461800, the logged value); every budget from 1 to 600 stays within itself — the
+caller stores y at `x + maxVerts`, so overflowing would have corrupted the polygon; one
+guard I added myself: a budget under 3 leaves the sweep unclipped. Hygiene kernel vs its
+parent, 5 rounds: polar case 36.6 k → 36.0 k ops/s (−1.6 %), sweep +1.5 % — both TIE.
+
+**New items found (added to the plan):**
+- **N-1** the visibility copy builds two `subarray` views per light per frame.
+- **N-2** `Layer._subscriptionList` allocates an object (and an array for `layer`) per emit.
+- **N-3** an unknown layer name `console.warn`s on every emit, and its particles get mask 0
+  (never drawn).
 
 ### 17:00 — B3 fixed: chain raycasts used a negated denominator (`a14c0c31`)
 
