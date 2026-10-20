@@ -874,10 +874,86 @@ more than ~0.7 %.
 
 ---
 
+## Wave 6 — from the 2026-10-20 review of `8af92002^..80464dc1`
+
+Raised by the 47-commit review ([`REVIEW_PLAN.md`](./REVIEW_PLAN.md)). E-40 is skipped
+on purpose: `tests/bench/e40NeighborReadShape.mjs` already uses that number for an E-15
+sitting. Baseline rev for every pair here: `8af92002^` (`main` now equals HEAD).
+
+### E-41 Compound-only lights clip 512 bins against a placeholder full circle — **not-started**
+Compound bodies `continue` before `occCount++` (`preRenderWorker.js:3495` vs `:3598`), so a
+light that sees only compound occluders gets `buildFullCircle` (32 edges) and
+`clipVisibilityToPolar` runs `sweepDistAt` for every bin against it: 16 384 `raySegT` per
+light to learn "R". Review trace share: `sweepDistAt` 34.2 % of pre-render busy in
+CompoundVisPolyStressScene; node timing 103 µs vs 26 µs per light. **Claim:** skipping the
+merge when the sweep is the full circle makes pre-render ≥3 % cheaper there.
+**Primary:** `preRender_STEP_MS`. Kernel first: add a full-circle case to
+`angularSweepMicrobench.mjs` (today `cases.polar` passes n=0 and cannot see this).
+
+### E-42 The 512 bin directions call cos/sin per segment per bin — **not-started**
+`stampPolarBin` and `sweepDistAt` recompute `Math.cos/sin` of a constant bin angle; the
+clip output computes them a third time. A `Float64Array(512)` table built with the same
+expression is bit-identical (same pattern as `_fullCircleC/S`; not H-11b). **Primary:**
+`preRender_STEP_MS` on CompoundVisPolyStressScene; kernel checksum must not move.
+
+### E-43 Polar merge is O(bins × sweep vertices) — **not-started**
+For lights with both simple and compound occluders, replace the per-bin scan with a
+monotone two-pointer walk (both run in ascending angle from −π), writing into a separate
+output buffer (also removes the 8192-entry hold copy). Gate the polygon at 1e-4 world units.
+
+### E-44 Every raycasted light clears 512 bins even with no compound occluder — **not-started**
+`clearPolarBins` per light (`preRenderWorker.js:3427`) fills 512 floats; the visPoly row
+(360 lights) pays ~184k writes per frame and never uses the bins. Lazy clear on the first
+stamp. **Primary:** visPoly row `preRender_STEP_MS`. Likely under the bar; screen only.
+
+### E-45 `4a7fa4c1` re-landed two rejected ideas on the two hottest functions — **not-started**
+A flag-specialized copy of the `packInstancedRows` loop (HYPOTHESIS_LOG X2, rejected in
+kernel: sprites −23.8 %, casters −46.4 %) and the `_emitRef` ShadowCaster column hoist (H11,
+rejected at gate 4), both under a commit titled "Update README". No log row. **Claim to
+test:** each still wins ≥3 % with load matched. Gate 4 (`runKernelsVsRev --overlay`), then
+Predator ABAB with owner `pixi` for the pack and `preRender` for the emit. Revert what fails.
+
+### E-46 Audio `play()` walks the bus list before the O(1) full-bus drop — **not-started**
+Since `8af92002`, `_reclaimDeadVoices` runs before the `count >= maxV` early drop. The
+2026-10-15 keep ("Audio slot scan, per-bus list and quietest cache": AudioStorm logic0
+8.806 → 0.278 ms) depended on that early drop; the full-bus regime was never re-measured
+(the audit kernel used a non-full bus). **Primary:** AudioStorm `logic0_STEP_MS` vs
+`8af92002^`, raising `PLAYS_PER_TICK` until the baseline clears 3 ms.
+
+### E-47 Pixi self-lit pass rewrites every compound triangle for every light — **not-started**
+`_renderOccluderSelfLit` is 44.4 % of Pixi busy in the compound stress scene. Skip fill
+triangles whose bounding circle misses the light disc; collapse free-bin runs in the
+512-vertex fan. **Primary:** `pixi_STEP_MS` on CompoundVisPolyStressScene.
+
+### E-48 Tween tick split by `entityIndex % W` scans every slot on every worker — **not-started**
+Tied to bug B11 (the split is not the tick owner). Compare logic0-only against the modulo
+filter with a W=2 case in `tweenPoolMicrobench.mjs`, then TweenStressScene.
+
+### E-49 Save encode writes every field name for every entity — **not-started**
+Cold path, but a main-thread stall: a synthetic Predator-scale payload took ~930 ms to
+encode (~625 ms `TextEncoder` on repeated names). A per-save string table plus a single
+writer. **Primary:** time-to-save on Predator; no STEP_MS claim.
+
+### E-50 Small review items — **not-started**
+Light-splat attenuation reduces to `1/(1+100·dot(v,v))`; `collectSolidSegments` divides
+before its back-face test; body-dirty list re-appends already-pending slots;
+frameClock header seqlock protects one int32; `_snapshotVertGen` copies every entity's gen;
+littleCity `rng()` jitter is invisible; body-create path allocations (MF3 pattern). Each
+is screened on its own kernel before any scene.
+
+### E-08 (reopened 2026-10-20) — see the E-08 entry above
+`b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
+kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at
+n=360. Plan: hybrid (insertion below ~64, native above), log a row, fix the E-08 text.
+
+---
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
-  share. The math audit's Wave 3 was demoted for exactly this reason.
+  share. The math audit's Wave 3 was demoted for exactly this reason. **(2026-10-20: this
+  is about Predator. Compound-occluder scenes put the polar path at 34 % of pre-render —
+  E-41…E-44.)**
 - `useZBuffer` — does not exist in `src/`.
 - Interleaved pack record ("hot record", 2026-10-06) — dropped, renderer +8.1 % 12/16.
 - `gatherInstancedRows` as a *speed* claim — dead in `src/` (E-21).
