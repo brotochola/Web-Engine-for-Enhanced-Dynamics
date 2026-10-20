@@ -71,16 +71,16 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
   test (Node already instantiates the module in `*.wasm.test.js`) that a falling body at
   scale 4 covers 4× the distance and a contact begin in sub-step 1 still reaches logic.
 - [x] **B8 ✓ Traffic cars steer toward what they avoid (Demo).** [`trafficCar.js:110-120`](../../demos/littleCity/gameObjects/trafficCar.js) · `8af92002`. — fixed `1732aa11`.
-- [ ] **B9 ✓ The planet scene cannot load a save (Demo).** [`planetPhysicsScene.js:248-257`](../../demos/planetPhysicsScene/planetPhysicsScene.js) · `acce50cb`.
+- [x] **B9 ✓ The planet scene cannot load a save (Demo).** — fixed `8b933f5f` (both terrain scenes); loose chunks → N-5; **headed smoke pending**. [`planetPhysicsScene.js:248-257`](../../demos/planetPhysicsScene/planetPhysicsScene.js) · `acce50cb`.
   No `onLoadGame`; only PlanetLamp is serializable.
 
 ### Medium
 
-- [ ] **B10 ✓ Tween claim race.** [`tween.js:247`](../../src/core/tween.js) vs `:262` · `5c986922`, kept by `8af92002`. A slot goes active before its fields are written. Fix: CAS 0→2, write, store 1.
-- [ ] **B11 ✓ Tweens run on a different worker than their entity's tick.** [`tween.js:374-400`](../../src/core/tween.js) · `8af92002` (audit G.1, marked Verified, not fixed). → speed side is **E-48**.
-- [ ] **B12 ✓ Tween entity ids are 16-bit.** [`tween.js:142`](../../src/core/tween.js); save u16 in `binarySaveCodec.js:748/772`.
+- [x] **B10 ✓ Tween claim race.** — fixed `c0c3edab`. [`tween.js:247`](../../src/core/tween.js) vs `:262` · `5c986922`, kept by `8af92002`. A slot goes active before its fields are written. Fix: CAS 0→2, write, store 1.
+- [x] **B11 ✓ Tweens run on a different worker than their entity's tick.** — one writer per slot `847070be`; entity isolation → N-6. [`tween.js:374-400`](../../src/core/tween.js) · `8af92002` (audit G.1, marked Verified, not fixed). → speed side is **E-48**.
+- [x] **B12 ✓ Tween entity ids are 16-bit.** — fixed `b222c41a` (TWEENS2 section, legacy still loads). [`tween.js:142`](../../src/core/tween.js); save u16 in `binarySaveCodec.js:748/772`.
 - [ ] **B13 ✓ Older saves wipe chains/fixtures/meshes; every load wipes tweens on non-serializable entities.** [`saveGame.js:154-157`](../../src/core/save/saveGame.js), `worldBufferSave.js:93-301` · `67a93c49`.
-- [ ] **B14 ✓ Loose planet chunks hover forever (Demo).** [`planetWorldGridManager.js:36-47`](../../demos/planetPhysicsScene/gameObjects/planetWorldGridManager.js) · `acce50cb`.
+- [x] **B14 ✓ Loose planet chunks hover forever (Demo).** — fixed `53691920`. [`planetWorldGridManager.js:36-47`](../../demos/planetPhysicsScene/gameObjects/planetWorldGridManager.js) · `acce50cb`.
 - [ ] **B15 ✓ `collider.active = 0` deletes compound fixtures; `= 1` does not restore them.** [`collider.js:335`](../../src/components/collider.js). PHYSICS.md:57 says it restores.
 - [ ] **B16 ✓ Pinch zoom feeds back on itself.** [`mouse.js:304-315`](../../src/core/mouse.js) · `d57f96a3`. World-space ratio; reused slots jump.
 - [ ] **B17 Mouse world position inverts the eased camera, not the drawn one.** [`scene.js:2226-2234`](../../src/core/scene.js) · `d57f96a3`. (~90 world px at 600 px/s.)
@@ -208,4 +208,7 @@ before treating either as closed. Removed `subarray` views are not GC wins (H-02
 - [ ] **N-1** (GC, low) The visibility polygon copy builds two `subarray` views per light per frame — [`preRenderWorker.js:3627-3628`](../../src/workers/preRenderWorker.js) `f32.set(outX.subarray(0, vertCount), …)`. Pre-window. Rule: copy paths do not create a view per row; justify on CPU only (H-02: transient views were 0 GC events).
 - [ ] **N-2** (GC, low) `Layer._subscriptionList` returns a fresh `{ omitted, list }` per emit and a one-element array for `layer` — [`layer.js:1300-1311`](../../src/core/layer.js), called once per emit from `particleEmitter.js:310`. Handle the no-layer and single-layer cases without allocating (like `resolveOne`).
 - [ ] **N-4** (bad code / docs, low) `RigidBody.inertia` **is** read: [`car.js:114-120`](../../demos/carScene/gameObjects/car.js) multiplies the steering alpha by `inertia / mass` to pre-compensate the host applying torque as `angularAccel × mass` ([`weedjsPost.js:1774`](../../src/box2d/weedjsPost.js)). D9's "never read" is wrong for inertia. Fixing the host torque (use inertia) must remove that compensation in the same change, or car steering doubles.
+- [ ] **N-5** (Demo, med) Broken-off terrain chunks are not saved: they are non-serializable `TerrainIsland`s whose cells were already cleared, so a load loses that material. The 67a93c49 design (a serializable `LooseIsland` subclass plus a `_saveRestore` branch) has to come back through the shared manager's loose-spawn paths (melt-off, laser split, shatter).
+- [ ] **N-6** (engine, med) True tween/entity single-writer isolation: B11 restored one writer per tween slot, but a tween and its entity's own tick can still run on different logic workers. Needs a per-frame entity→owner map (types without `tick()` included) or tween application inside the owner's entity loop.
+- [ ] **N-7** (tests, med) `tests/node/liquidFunLightSplat.test.js` failed once at the file level under `--test-concurrency=4` (suite total dropped to 1203, so the file did not load or crashed); it passes alone and in three full reruns (1208/1208). Find the cause before trusting it.
 - [ ] **N-3** (bad code, low) An unknown layer name `console.warn`s on every emit, and its particles get mask 0, so they are never drawn — [`layer.js:1281-1283`](../../src/core/layer.js). Warn once per name; decide whether particles should fall back to entities (game objects already do).

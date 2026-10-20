@@ -17,9 +17,51 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**18:25** — **B9** (the planet scene cannot load a save).
+**19:25** — Tween hygiene measurement for B10–B12 (kernel against `53691920`, the last
+commit before them), then **B13** (old saves wipe geometry; loads wipe some tweens).
 
 ## Log
+
+### 19:20 — A flaky test slipped past my commit chain (my mistake, now fixed)
+
+The full-suite run before the B12 commit reported **1 failure**:
+`liquidFunLightSplat.test.js` failed at the file level (the total dropped to 1203). My
+command chain did not check the fail count, so the commit went in anyway. I then checked:
+the file passes alone (6/6) and the full suite passed **three** times in a row
+(1208/1208); the file touches neither tweens nor saves, so B12 did not cause it. It is
+still a flaky test → **N-7**. **Process fix:** from now on a commit runs only if the saved
+suite output says `# fail 0`.
+
+### 19:15 — B10, B11, B12 fixed: the tween pool (`c0c3edab`, `847070be`, `b222c41a`)
+
+- **B10 claim race.** A claim made the slot live before its fields were written; another
+  worker's tick in between replayed the slot's previous tween and freed the new one. A
+  deterministic test reproduced it (alpha went 1 → 0). Slots now go free → claiming →
+  live; tick, cancel and save act on live only.
+- **B11 ownership.** `entityIndex % W` was documented as "the entity's owner"; it is not
+  (logic ticks blocks of each type's active list), and every worker scanned every slot.
+  Back to one block of slots per worker (one writer per slot, no W× scan). The engine has
+  no entity→owner map, so true entity isolation is a bigger design → **N-6**. The test
+  that pinned the modulo split now checks one-writer-per-slot with uneven blocks.
+- **B12 16-bit ids.** At `entityIdWidth: 32`, a tween on 70000 animated 4464, and saves
+  truncated it. The pool column now follows the id width, and saves use a new `TWEENS2`
+  section (layout byte + u32 entity). Saves written since yesterday (old tag 14) still
+  load — tested with a hand-built legacy body.
+
+### 18:50 — B9 and B14 fixed: terrain scenes load saves; loose planet chunks fall (`8b933f5f`, `53691920`)
+
+- **B9.** `acce50cb` dropped the planet scene's resume path; a load restored the grid bytes,
+  lamp and water but no terrain, ship or water pull. The shared manager now has a `resume`
+  mode (mesh the restored grid instead of re-seeding), both terrain scenes got
+  `onLoadGame`, and the planet manager keeps the restored lamp and water. Loose chunks
+  are still not saved → **N-5**. **Not verified in a browser yet** — on the headed smoke
+  list.
+- **B14.** Only one of three loose-chunk paths was in the gravity list. Gravity now walks
+  every active non-static island; the write-only `dynamicIslands` list is gone.
+
+**Housekeeping you might notice:** the editor's atomic writes sometimes leave files like
+`worldGridManager.js.tmp.1872.<hash>` next to a file I edited several times quickly. They
+are untracked; I sweep them before every commit (four so far, none committed).
 
 ### 18:20 — B8 fixed: traffic cars steered toward what they avoid (`1732aa11`), G2 (`b1c2f916`)
 
