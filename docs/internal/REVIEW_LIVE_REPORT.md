@@ -17,9 +17,30 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**22:20** — **B17** (Mouse world position uses the eased camera, not the one drawn).
+**22:50** — **N-11** (the particle worker culls with the eased camera), then **B18** (camera
+follow seqlock).
 
 ## Log
+
+### 22:45 — B17 fixed (`8cdac3b1`); new N-11
+
+- **B17 — clicks landed behind a followed entity.** I confirmed the size before changing it:
+  `followEntity` writes the *target* (pose + look-ahead) into the follow slots, and
+  pre-render draws the camera **snapped** to it. The SAB `x/y` the mouse used eases toward it,
+  so it trails by `v·(1−s)/s` per frame: 10·0.9/0.1 = **90 world px** at 600 px/s, the plan's
+  figure. The new test failed with exactly that: world x 500 where the drawn camera gives 590.
+- **Fix:** the main-thread camera mirror (only the mouse and the debug overlay read it) now
+  copies the newest published render-queue camera, the one Pixi draws (follow snap, world clamp
+  and shake). A new `readQueueCamera` helper re-checks the ready count after the copy. That is
+  enough because pre-render only rewrites a published slot two frames later, after the next
+  publish. A mutation check (drop the re-check) makes the race test fail. The debug overlay had
+  its own copy of this read without the re-check, and now uses the helper too (−32 lines).
+- **New, N-11 (found while tracing B17):** the particle worker culls particles, decorations and
+  **bullets** with that same eased camera, while pre-render culls everything else with the drawn
+  one. The cull margin is 10 % of the canvas, so above ~720 px/s at zoom 1 things near the
+  leading edge are culled while still on screen, for example bullets fired ahead of a fast ship.
+  Next.
+- Suite **1225/1225**.
 
 ### 22:15 — B15 and B16 fixed (`1b4a3690`, `5d329e3a`)
 
