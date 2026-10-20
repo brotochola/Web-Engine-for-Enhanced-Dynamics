@@ -198,6 +198,9 @@ class Scene {
     };
     /** Render-queue camera views bound by _drawnCameraViews(). */
     this._drawnCam = null;
+    /** Pending pauseAndSettle barrier: { id, left, resolve }. */
+    this._barrier = null;
+    this._barrierSeq = 0;
 
     /** @type {object|null} Last box2dReady payload (HEAP sab + channelOffsets) */
     this.box2dHotFields = null;
@@ -1854,6 +1857,12 @@ class Scene {
       }
     } else if (e.data.msg === 'layerContentReady') {
       Layer.resolveLayerContentReady(e.data.layerId, e.data.requestId);
+    } else if (e.data.msg === 'barrierDone') {
+      const b = this._barrier;
+      if (b && b.id === e.data.id && --b.left === 0) {
+        this._barrier = null;
+        b.resolve();
+      }
     } else if (e.data.msg === 'restoreSaveComplete') {
       const pending = this._pendingRestoreComplete;
       this._pendingRestoreComplete = null;
@@ -2461,6 +2470,38 @@ class Scene {
 
     allWorkers.forEach((worker) => {
       if (worker) worker.postMessage({ msg: 'pause' });
+    });
+  }
+
+  /**
+   * Pause every worker and wait until each has stopped. Workers handle
+   * messages only between frames, so one that answers the barrier sent after
+   * 'pause' is idle and writes nothing until resume(). A worker that never
+   * answers is waited for at most timeoutMs.
+   * @param {number} [timeoutMs=2000]
+   * @returns {Promise<void>}
+   */
+  pauseAndSettle(timeoutMs = 2000) {
+    this.pause();
+    const workers = this.getAllWorkers();
+    if (!workers.length) return Promise.resolve();
+    const id = (this._barrierSeq = (this._barrierSeq | 0) + 1);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (this._barrier?.id !== id) return;
+        console.warn(`[Scene] pauseAndSettle: ${this._barrier.left} worker(s) did not answer`);
+        this._barrier = null;
+        resolve();
+      }, timeoutMs);
+      this._barrier = {
+        id,
+        left: workers.length,
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+      };
+      for (const worker of workers) worker.postMessage({ msg: 'barrier', id });
     });
   }
 

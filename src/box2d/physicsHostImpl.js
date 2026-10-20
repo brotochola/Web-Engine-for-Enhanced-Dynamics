@@ -1294,6 +1294,9 @@
       } else if (data.msg === 'pause') {
         state.isPaused = true;
         clearSchedulers();
+      } else if (data.msg === 'barrier') {
+        // Between steps by construction: the reply proves the world is idle.
+        self.postMessage({ msg: 'barrierDone', id: data.id | 0 });
       } else if (data.msg === 'resume') {
         startGameLoop();
       } else if (data.msg === 'step') {

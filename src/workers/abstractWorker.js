@@ -1258,6 +1258,12 @@ export class AbstractWorker {
         this.resume();
         break;
 
+      case 'barrier':
+        // Messages run only between frames, so this reply (sent after a
+        // 'pause') proves the worker is idle. See Scene.pauseAndSettle.
+        self.postMessage({ msg: 'barrierDone', id: e.data.id | 0 });
+        break;
+
       case 'step': {
         const dt = Number(e.data.deltaTime);
         this._injectedDeltaTime = dt > 0 ? dt : 16.67;

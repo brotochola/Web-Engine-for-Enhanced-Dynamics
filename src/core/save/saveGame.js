@@ -54,26 +54,38 @@ export {
  */
 export async function saveGame(scene, slotId) {
   if (!scene) throw new Error('SaveGame: no scene');
+  // Capture a stopped world. Running workers write the buffers read below, so
+  // a save could catch a re-mesh, a joint or a physics step half done, and the
+  // LiquidFun particles and the bodies would come from different frames. A
+  // manual-step scene is already stopped between steps (resume would start it).
+  const settle =
+    !scene.config?.manualStep && !scene.state?.pause && typeof scene.pauseAndSettle === 'function';
+  if (settle) await scene.pauseAndSettle();
+  let payload;
   let liquidFun = null;
-  const lfEnabled = !!(scene.config?.physics?.liquidFun?.enabled);
-  if (lfEnabled && scene.workers?.physics) {
-    try {
-      const snap = await requestLiquidFunSnapshot(scene.workers.physics);
-      liquidFun = packLiquidFunSnapshot(snap);
-    } catch (err) {
-      console.warn('[SaveGame] LiquidFun snapshot failed:', err);
-    }
-  }
-  let decals = null;
   try {
-    decals = await Decal.packSnapshot(scene);
-  } catch (err) {
-    console.warn('[SaveGame] Decal snapshot failed:', err);
+    const lfEnabled = !!(scene.config?.physics?.liquidFun?.enabled);
+    if (lfEnabled && scene.workers?.physics) {
+      try {
+        const snap = await requestLiquidFunSnapshot(scene.workers.physics);
+        liquidFun = packLiquidFunSnapshot(snap);
+      } catch (err) {
+        console.warn('[SaveGame] LiquidFun snapshot failed:', err);
+      }
+    }
+    let decals = null;
+    try {
+      decals = await Decal.packSnapshot(scene);
+    } catch (err) {
+      console.warn('[SaveGame] Decal snapshot failed:', err);
+    }
+    const globals = {};
+    if (liquidFun) globals.liquidFun = liquidFun;
+    if (decals) globals.decals = decals;
+    payload = buildSavePayload(scene, globals);
+  } finally {
+    if (settle) scene.resume();
   }
-  const globals = {};
-  if (liquidFun) globals.liquidFun = liquidFun;
-  if (decals) globals.decals = decals;
-  const payload = buildSavePayload(scene, globals);
   const compressed = await encodeSave(payload);
   const id =
     slotId ||
