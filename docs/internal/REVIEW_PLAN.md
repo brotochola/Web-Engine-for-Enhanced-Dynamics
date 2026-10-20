@@ -81,8 +81,8 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [x] **B12 ✓ Tween entity ids are 16-bit.** — fixed `b222c41a` (TWEENS2 section, legacy still loads). [`tween.js:142`](../../src/core/tween.js); save u16 in `binarySaveCodec.js:748/772`.
 - [x] **B13 ✓ Older saves wipe chains/fixtures/meshes; every load wipes tweens on non-serializable entities.** — fixed `00ac7938`. [`saveGame.js:154-157`](../../src/core/save/saveGame.js), `worldBufferSave.js:93-301` · `67a93c49`.
 - [x] **B14 ✓ Loose planet chunks hover forever (Demo).** — fixed `53691920`. [`planetWorldGridManager.js:36-47`](../../demos/planetPhysicsScene/gameObjects/planetWorldGridManager.js) · `acce50cb`.
-- [ ] **B15 ✓ `collider.active = 0` deletes compound fixtures; `= 1` does not restore them.** [`collider.js:335`](../../src/components/collider.js). PHYSICS.md:57 says it restores.
-- [ ] **B16 ✓ Pinch zoom feeds back on itself.** [`mouse.js:304-315`](../../src/core/mouse.js) · `d57f96a3`. World-space ratio; reused slots jump.
+- [x] **B15 ✓ `collider.active = 0` deletes compound fixtures; `= 1` does not restore them.** — fixed `1b4a3690`. [`collider.js:335`](../../src/components/collider.js). PHYSICS.md:57 says it restores.
+- [x] **B16 ✓ Pinch zoom feeds back on itself.** — fixed `5d329e3a` (canvas-space ratio; mouse buffer literals too). [`mouse.js:304-315`](../../src/core/mouse.js) · `d57f96a3`. World-space ratio; reused slots jump.
 - [ ] **B17 Mouse world position inverts the eased camera, not the drawn one.** [`scene.js:2226-2234`](../../src/core/scene.js) · `d57f96a3`. (~90 world px at 600 px/s.)
 - [ ] **B18 Follow seqlock leaves zoom outside; `clearFollowTarget` writes NaN outside the lock.** [`camera.js:546-559`](../../src/core/camera.js), `:1116` · `8cfc4b09`. (likely)
 - [ ] **B19 Spawn race on body generation.** [`gameObject.js:2590-2629`](../../src/core/gameObject.js), `box2dBodySync.js:147-155` · `62c31c70`. (likely)

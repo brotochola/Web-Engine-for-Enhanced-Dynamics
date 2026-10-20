@@ -17,10 +17,25 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**21:40** — Headed runs are done for now. Back to the bug list: **B15** (`collider.active`
-toggle loses compound fixtures).
+**22:20** — **B17** (Mouse world position uses the eased camera, not the one drawn).
 
 ## Log
+
+### 22:15 — B15 and B16 fixed (`1b4a3690`, `5d329e3a`)
+
+- **B15 — `collider.active` off/on lost compound fixtures.** Before changing it I checked
+  every consumer of the fixture records: the physics host already clears all shapes while
+  a collider is off and rebuilds every fixture when it is back, body creation adds them only
+  for an active collider, and rays, spatial and `pointInCollider` skip inactive colliders.
+  So the only bug was the setter freeing the records. Removed; a test toggles a two-fixture
+  body off and on. Side effect worth knowing: an inactive compound collider no longer goes
+  **invisible** in MESH fill (its fill drew nothing once the records were freed).
+- **B16 — pinch zoom flicker.** Reproduced first: after one 10 % spread with still fingers,
+  the next frame reported 0.909 (the zoom undid itself), and a finger landing in a reused
+  slot reported a 44.7× jump. Each contact now carries canvas pixels in the shared buffer
+  (112 → 144 bytes), and the ratio is taken there, returning 1 when a pinch finger landed,
+  lifted or the pair changed. The bible snippet now uses `Camera.targetZoom` (it used an
+  undefined `camera`). New `Mouse.canvasXAt/canvasYAt` (typed).
 
 ### 21:35 — Headed smoke results, and a pre-existing demo bug found on the way (N-8)
 
