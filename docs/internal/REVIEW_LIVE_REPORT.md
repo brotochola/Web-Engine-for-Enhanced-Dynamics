@@ -17,10 +17,41 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**19:52** — B28 is closed. Next: N-16 (the command ring drops commands without a word), then
-Phase 2 (M1–M12).
+**20:00** — Phase 2: M1–M3 done. Next: M4 (`WAIT_MS` gaps), then M5–M12.
 
 ## Log
+
+### 20:00 — N-16, M1, M2, M3: the instruments now tell the truth (`f01daac7`, `8335ec0c`, `9dc5b27d`, `432ef4cd`)
+
+- **A full physics command ring now says so** (`f01daac7`).
+  - When the ring is full, a command (a velocity, a force, a teleport) is dropped and only
+    counted.
+  - **Correction of my own N-16 note:** I wrote that nothing reads the counter. It is read:
+    physics publishes it as the `COMMAND_OVERFLOW_TOTAL` stat, and my search missed it because
+    the code used the literal `3`. But the Performance panel doesn't show that stat and nothing
+    warns.
+  - Now the first drop warns once, with the count, the capacity and the config key to raise.
+- **The A/B gate's "same workload" check was blind to the sprite queue** (`8335ec0c`).
+  - `RENDER_QUEUE_SIZE` is one of the keys used to confirm both sides did the same work, but it
+    was only published with detailed stats on. Verdict runs keep those off.
+  - Both sides read 0, and the gate skips a key that is 0, so it always passed.
+  - It's now published every frame.
+- **The nav cache "miss rate" always read 100 %** (`9dc5b27d`).
+  - The request counter only saw misses: a cached target is answered before it is queued, and a
+    repeated one is merged in the queue.
+  - So E-38's "miss 100 %" was this artifact. I noted it in EXECUTION_PLAN. The 8.5 ms step that
+    E-11's verdict rests on is unaffected.
+  - The old source test for this had an assertion that compared an absolute offset with a
+    relative one, so it could never fail. That's fixed too.
+- **The Performance panel's "Rest" column was negative on most workers** (`432ef4cd`).
+  - Computed from two real planet runs it was about **−16 ms**. It subtracted the idle gap
+    *between* frames, and it subtracted timers that already sit inside another one (stamp lights
+    inside shadow pack, LiquidFun inside Box2D, and rays/ticks/waits inside logic's entity loop).
+  - Now every worker reads **0.007–0.249 ms**. Two old tests pinned the wrong split and were
+    corrected, with the code proof: `BOX2D_MS` wraps `world.step`, where LiquidFun runs.
+- **Clock note:** twice in this stretch I wrote a time into a notice before reading the clock
+  (19:58 for 19:40, 20:00 for 19:52). Both are corrected; I now run `date` first.
+- Suite **1312/1312**.
 
 ### 19:52 — B28 closed: five demo fixes, one revert, one engine getter, four new items
 
