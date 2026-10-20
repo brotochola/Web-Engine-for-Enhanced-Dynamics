@@ -246,10 +246,13 @@ export class ChainPoints {
       const ey = by - ay;
       const ox = localX - ax;
       const oy = localY - ay;
-      if (ox * ey - oy * ex <= 0) continue;
-      const denom = localDirX * ey - localDirY * ex;
+      // One-sided: only from the edge's outer (right-hand) side.
+      const side = ox * ey - oy * ex;
+      if (side <= 0) continue;
+      // origin + t*dir = a + u*e with w = origin - a: t = (w x e)/(e x dir), u = (w x dir)/(e x dir).
+      const denom = ex * localDirY - ey * localDirX;
       if (denom === 0) continue;
-      const t = (ox * ey - oy * ex) / denom;
+      const t = side / denom;
       const u = (ox * localDirY - oy * localDirX) / denom;
       if (t < 0 || t > rayLength || u < 0 || u > 1) continue;
       if (best < 0 || t < best) best = t;
