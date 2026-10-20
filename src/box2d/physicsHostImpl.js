@@ -296,6 +296,31 @@
     };
   }
 
+  // worker-count-start
+  /** Box2D B2_MAX_WORKERS (configDefaults BOX2D_MAX_WORKERS). */
+  var BOX2D_MAX_WORKERS = 32;
+  var warnedWorkerCountAlias = false;
+
+  /**
+   * numberOfPhysicsWorkers, clamped to 1..B2_MAX_WORKERS. The key was
+   * box2dWorkerCount before a585e598; that name still works, with a warning,
+   * instead of being ignored.
+   */
+  function physicsWorkerCount(n, base) {
+    var v = n.numberOfPhysicsWorkers;
+    if (v == null && n.box2dWorkerCount != null) {
+      if (!warnedWorkerCountAlias) {
+        warnedWorkerCountAlias = true;
+        console.warn('[weedjs-box2d] physics.box2dWorkerCount is now numberOfPhysicsWorkers');
+      }
+      v = n.box2dWorkerCount;
+    }
+    if (v == null) v = base.numberOfPhysicsWorkers;
+    v = v | 0;
+    return v < 1 ? 1 : v > BOX2D_MAX_WORKERS ? BOX2D_MAX_WORKERS : v;
+  }
+  // worker-count-end
+
   function validatePhysicsConfig(current, next) {
     var base = current || PHYSICS_DEFAULTS;
     var n = next || {};
@@ -322,10 +347,7 @@
         n.maximumLinearSpeed != null
           ? n.maximumLinearSpeed
           : base.maximumLinearSpeed,
-      numberOfPhysicsWorkers:
-        n.numberOfPhysicsWorkers != null
-          ? n.numberOfPhysicsWorkers
-          : base.numberOfPhysicsWorkers,
+      numberOfPhysicsWorkers: physicsWorkerCount(n, base),
       contactRingCapacity:
         n.contactRingCapacity != null
           ? n.contactRingCapacity

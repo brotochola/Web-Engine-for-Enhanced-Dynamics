@@ -874,7 +874,9 @@ export function validatePhysicsConfig(currentConfig, newConfig) {
       1,
       Math.min(
         BOX2D_MAX_WORKERS,
+        // box2dWorkerCount: the name before a585e598 (the host warns about it).
         (newConfig.numberOfPhysicsWorkers ??
+          newConfig.box2dWorkerCount ??
           current.numberOfPhysicsWorkers ??
           PHYSICS_DEFAULTS.numberOfPhysicsWorkers) | 0
       )
