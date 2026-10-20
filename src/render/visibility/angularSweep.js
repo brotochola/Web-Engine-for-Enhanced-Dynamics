@@ -910,28 +910,41 @@ function sweepDistAt(lx, ly, ang, xs, ys, n, radius) {
  * One vertex per bin at min(boundary hit, simple-occluder sweep).
  * Returns the sweep count unchanged when no boundary edge wrote a bin.
  * in and out may be the same buffer.
+ *
+ * Always the whole circle. Below POLAR_BINS vertices (the engine default
+ * maxPolygonVertices is 128), each vertex covers `group` adjacent bins at
+ * their centre angle and the nearest of their hits, so light never passes an
+ * occluder inside a group. At POLAR_BINS or more it is one vertex per bin.
  */
 export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts) {
   if (!_polarActive) return n;
+  // The caller stores y at x + maxVerts, so the result must never exceed maxVerts.
+  const cap = maxVerts | 0;
+  if (cap < 3) return n;
   const holdN = n < _holdX.length ? n : _holdX.length;
   for (let i = 0; i < holdN; i++) {
     _holdX[i] = inX[i];
     _holdY[i] = inY[i];
   }
-  const bins = POLAR_BINS < maxVerts ? POLAR_BINS : maxVerts;
-  const step = TWO_PI / POLAR_BINS;
+  const group = cap >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / cap);
+  const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
   const radius = _polarRadius;
-  for (let b = 0; b < bins; b++) {
-    const ang = -Math.PI + (b + 0.5) * step;
-    let d = _polarDist[b];
+  for (let k = 0; k < count; k++) {
+    const b0 = k * group;
+    const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
+    let d = _polarDist[b0];
+    for (let b = b0 + 1; b < b1; b++) {
+      if (_polarDist[b] < d) d = _polarDist[b];
+    }
+    const ang = -Math.PI + (b0 + b1) * 0.5 * (TWO_PI / POLAR_BINS);
     if (holdN >= 3) {
       const sd = sweepDistAt(lx, ly, ang, _holdX, _holdY, holdN, radius);
       if (sd < d) d = sd;
     }
-    outX[b] = lx + Math.cos(ang) * d;
-    outY[b] = ly + Math.sin(ang) * d;
+    outX[k] = lx + Math.cos(ang) * d;
+    outY[k] = ly + Math.sin(ang) * d;
   }
-  return bins;
+  return count;
 }
 
 /** Raster one world segment into the current polar buffer. For the kernel. */
