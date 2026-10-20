@@ -18,6 +18,7 @@
 // E-10 in docs/internal/EXECUTION_PLAN.md.
 
 import { parseArgs, timeIt, writeReport, isCli, checksumInts } from './microbenchHelpers.mjs';
+import { packPair } from '../../src/util/entityIdWidth.js';
 
 const DEFAULTS = {
   seed: 0xe0a0,
@@ -42,10 +43,8 @@ function mulberry32(seed) {
   };
 }
 
-/** Shipped encoding. */
-function keyShipped(minE, maxE) {
-  return ((minE & 0xffff) << 16) | (maxE & 0xffff);
-}
+/** Shipped encoding: packPair as bound at the default 16-bit width, not a copy (review M9). */
+const keyShipped = packPair;
 
 /** Smi-range bias. Bijective with keyShipped; identical for every pair. */
 const K32 = 0x80000000;
@@ -126,6 +125,7 @@ function smiRangeProbe(minE, maxE) {
   let total = 0;
   let negative = 0;
   let boxed = 0;
+  let outsideSmi31 = 0;
   let maxSeen = -Infinity;
   let minSeen = Infinity;
   for (let a = minE; a < maxE; a += 1) {
@@ -134,6 +134,7 @@ function smiRangeProbe(minE, maxE) {
       total++;
       if (k < 0) negative++;
       if (!(k >= -2147483648 && k <= 2147483647)) boxed++;
+      if (!(k >= -1073741824 && k <= 1073741823)) outsideSmi31++;
       if (k > maxSeen) maxSeen = k;
       if (k < minSeen) minSeen = k;
     }
@@ -142,16 +143,19 @@ function smiRangeProbe(minE, maxE) {
     keysProbed: total,
     signedRange: [+minSeen, +maxSeen],
     negativeFraction: total ? +(negative / total).toFixed(4) : null,
+    // Outside int32: a `<<` result never is, so this is 0 by construction (review M10).
     boxedFraction: total ? +(boxed / total).toFixed(4) : null,
     allWithinSmiRange: boxed === 0,
+    // Outside [-2^30, 2^30): heap numbers in Chrome, whose Smis are 31-bit (E-54).
+    outsideSmi31Fraction: total ? +(outsideSmi31 / total).toFixed(4) : null,
   };
 }
 
 /** Fraction of the built keys that are boxed, for the configured id range. */
-function smiFraction(pairs) {
+function smiFraction(pairs, lo = -2147483648, hi = 2147483647) {
   let boxed = 0;
   for (const p of pairs) {
-    if (!(p.k >= -2147483648 && p.k <= 2147483647)) boxed++;
+    if (!(p.k >= lo && p.k <= hi)) boxed++;
   }
   return boxed / pairs.length;
 }
@@ -184,6 +188,8 @@ async function main() {
   const biasCk = tableChecksum(biasPairs, keyBiased);
 
   const boxedFraction = smiFraction(shipPairs);
+  // Chrome's 31-bit Smis (E-54): the configured pairs that are heap numbers there.
+  const chromeBoxedFraction = smiFraction(shipPairs, -1073741824, 1073741823);
 
   const shipped = bench(shipPairs, args.lookupsPerRound, args.rounds);
   const biased = bench(biasPairs, args.lookupsPerRound, args.rounds);
@@ -208,13 +214,15 @@ async function main() {
       idRange: [args.minE, args.maxE],
     },
     boxedKeyFraction: +boxedFraction.toFixed(4),
+    chromeBoxedKeyFraction: +chromeBoxedFraction.toFixed(4),
     premiseProbe: {
       ...smiRangeProbe(0, 65536),
       claim: 'pack16 lands in [0, 2^32), so keys >= 2^31 are HeapNumbers',
       refuted:
         'JS `<<` is a 32-bit SIGNED operation, so minE >= 32768 yields a NEGATIVE ' +
-        'key. pack16 spans the full signed 32-bit range, which is the Smi range on ' +
-        '64-bit pointer-compressed V8.',
+        'key. pack16 spans the full signed 32-bit range, which is the Smi range in ' +
+        'Node (V8 built without pointer compression). Chrome compresses pointers: its ' +
+        'Smis are 31-bit, and outsideSmi31Fraction of these keys are heap numbers there (E-54).',
     },
     deltaPct: +pct.toFixed(2),
     note:

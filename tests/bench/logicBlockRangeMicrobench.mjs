@@ -18,6 +18,7 @@
 // E-03 in docs/internal/EXECUTION_PLAN.md.
 
 import { parseArgs, timeIt, writeReport, isCli } from './microbenchHelpers.mjs';
+import { logicBlockRange } from '../../src/util/logicOwner.js';
 
 const DEFAULTS = {
   seed: 0xe030,
@@ -32,18 +33,8 @@ const DEFAULTS = {
   maxE: 16583,
 };
 
-/** The shipped function, verbatim in behaviour: allocates on every call. */
-function shipped(count, workerIndex, workerCount) {
-  const n = count | 0;
-  const w = workerCount | 0;
-  const i = workerIndex | 0;
-  if (w <= 1 || n <= 0) return { start: 0, end: n };
-  const span = (n / w) | 0;
-  const rem = n - span * w;
-  const start = i * span + (i < rem ? i : rem);
-  const len = span + (i < rem ? 1 : 0);
-  return { start, end: start + len };
-}
+/** The shipped function itself (allocates on every call), not a copy (review M9). */
+const shipped = logicBlockRange;
 
 /**
  * The candidate: same arithmetic, result written into a caller-owned pair.

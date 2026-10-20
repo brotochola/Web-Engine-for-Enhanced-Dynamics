@@ -451,6 +451,12 @@ headed harness) that times `Map.set/has` with keys below and above 2^30 and coun
 allocations; then whether any shipped scene has colliding pairs past minE 16384. Only if
 both are true: a primary on `logic0_STEP_MS` for an alternative key (e.g. two Int32
 columns plus open addressing, as `_pairSlot`'s dense columns already half are).
+**Premise, arithmetic (review M9):** `pairKeySmiMicrobench` now counts keys outside
+[-2^30, 2^30). Over all 16-bit ids, **50 %** are; over Predator's ids (0..16 583, its
+4096 random pairs), **0 %**, because a key boxes only when the pair's *smaller* index
+is 16 384 or more (~0.014 % of random pairs there). Its old "0 boxed" checked int32,
+which a `<<` result can never leave. So only scenes past 16 384 entities with contacts
+among the high ids can pay this; no shipped demo is one yet.
 
 ### E-38 The nav stress scene services zero flowfield requests — **fixed. The target was frozen. 2026-10-18**
 Report: [`reports/E-38-nav-vehicle.md`](./reports/E-38-nav-vehicle.md).

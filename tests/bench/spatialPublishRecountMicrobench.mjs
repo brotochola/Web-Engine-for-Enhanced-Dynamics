@@ -15,6 +15,8 @@
 //
 // E-02 in docs/internal/EXECUTION_PLAN.md.
 
+import fs from 'node:fs';
+
 import { parseArgs, timeIt, writeReport, isCli } from './microbenchHelpers.mjs';
 
 const DEFAULTS = {
@@ -55,11 +57,24 @@ function build({ seed, maxNeighbors, entityCount, publishFraction }) {
   return { neighborData, list, n, stride };
 }
 
-/** The loop the shipped worker runs, ungated. */
-function recount(neighborData, list, n, stride) {
-  let found = 0;
-  for (let i = 0; i < n; i++) found += neighborData[list[i] * stride];
-  return found;
+/**
+ * The shipped block itself, ungated: the code between the neighbor-recount
+ * markers in spatialWorker.js, not a copy of it (review M9).
+ */
+const shippedRecount = (() => {
+  const src = fs.readFileSync(new URL('../../src/workers/spatialWorker.js', import.meta.url), 'utf8');
+  const a = src.indexOf('// neighbor-recount-start');
+  const b = src.indexOf('// neighbor-recount-end');
+  if (!(a > 0 && b > a)) throw new Error('neighbor-recount markers not found in spatialWorker.js');
+  return new Function('Grid', 'n', `${src.slice(a, b)}
+return found;`);
+})();
+
+/** Bind the worker fields the block reads once per fixture, outside any timing. */
+function makeRecount({ neighborData, list, n, stride }) {
+  const self = { _wasmPub: { list } };
+  const grid = { maxNeighbors: stride - 1, neighborData };
+  return () => shippedRecount.call(self, grid, n);
 }
 
 /** The gated form: no work at all on a verdict run. */
@@ -67,21 +82,22 @@ function recountGated() {
   return 0;
 }
 
-function checksumOf(b) {
-  return recount(b.neighborData, b.list, b.n, b.stride) >>> 0;
+function checksumOf(run) {
+  return run() >>> 0;
 }
 
 async function main() {
   // `parseArgs` in microbenchHelpers takes no defaults argument; merge by hand.
   const args = { ...DEFAULTS, ...parseArgs(process.argv.slice(2)) };
   const b = build(args);
-  const checksum = checksumOf(b);
+  const run = makeRecount(b);
+  const checksum = checksumOf(run);
 
   // Sanity: the premise of the hypothesis, asserted rather than assumed.
   const rowBytes = b.stride * 2;
   const workingSetBytes = b.neighborData.byteLength;
 
-  const shipped = timeIt('recount', () => recount(b.neighborData, b.list, b.n, b.stride));
+  const shipped = timeIt('recount', run);
   const gated = timeIt('recount-gated', () => recountGated());
 
   // One pass costs `1 / opsPerSec` seconds. That is the whole number that matters:
