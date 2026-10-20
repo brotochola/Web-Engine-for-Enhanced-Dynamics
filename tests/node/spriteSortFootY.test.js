@@ -34,11 +34,11 @@ test('unknown frame collapses the offset to the pose', () => {
   assert.equal(spriteSortFootY(s, 0, 500, 1, 0, 0, 0), 500);
 });
 
-test('identity rotation: y + (1 - anchorY) * height * |scaleY|', () => {
+test('identity rotation: y + (1 - anchorY) * height * scaleY', () => {
   const s = src(1);
   assert.equal(spriteSortFootY(s, 0, 500, 1, 0, W, H), 500 + 20);
   s.scaleY[0] = -2;
-  assert.equal(spriteSortFootY(s, 0, 500, 1, 0, W, H), 500 + 40, '|scaleY|, sign does not matter');
+  assert.equal(spriteSortFootY(s, 0, 500, 1, 0, W, H), 500 + 40, 'at anchorY 0.5 a flip lands on the same line');
 });
 
 test('body rotation is used when the sprite inherits it', () => {
@@ -100,4 +100,19 @@ test('spriteSortFootY feeds spriteYSortKey without losing sub-pixel stability', 
   const key = spriteSortFootY(s, 0, 500.4, 1, 0, W, H);
   assert.equal(spriteYSortKey(key, 128), spriteYSortKey(520.4, 128));
   assert.equal(spriteYSortKey(spriteSortFootY(s, 0, 500.2, 1, 0, W, H), 128), spriteYSortKey(key, 128));
+});
+
+// B29 (flipped-sprite sort line). The shader places local y at
+// (v - anchorY) * height * scaleY, so a vertical flip puts the frame's top edge
+// lowest: the line is anchorY * height * |scaleY| below the pose, not
+// (1 - anchorY) * height * |scaleY|. The two only agree at anchorY 0.5.
+test('a vertically flipped sprite sorts on the edge that is drawn lowest', () => {
+  const s = src(1);
+  s.anchorY[0] = 0.25;
+  assert.equal(spriteSortFootY(s, 0, 500, 1, 0, W, H), 500 + 0.75 * H, 'upright');
+  s.scaleY[0] = -2;
+  assert.equal(spriteSortFootY(s, 0, 500, 1, 0, W, H), 500 + 0.25 * H * 2, 'flipped');
+  // Shader corners for v in {0, 1}: the max local y must equal the line.
+  const corner = (v) => (v - 0.25) * H * -2;
+  assert.equal(Math.max(corner(0), corner(1)), 0.25 * H * 2);
 });

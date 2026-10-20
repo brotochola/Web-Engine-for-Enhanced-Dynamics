@@ -13,7 +13,10 @@ export function spriteYSortKey(y, ySortK) {
 
 /**
  * Y-sort line for a sprite: the world Y of its bottom edge, not its pose.
- * Identity rotation: y + (1 - anchorY) * height * |scaleY|. With rotation it
+ * Identity rotation: y + (1 - anchorY) * height * scaleY, or, flipped
+ * (scaleY < 0), y + anchorY * height * |scaleY|: the shader places local y at
+ * (v - anchorY) * height * scaleY, so a flip puts the frame's top edge
+ * lowest. With rotation it
  * is the same local offset the sprite vertex shader uses — which means it has
  * to use the SAME rotation the sprite is drawn with. `inheritRotation[index]`
  * is that choice: truthy takes the body pose's rotation, falsy takes the
@@ -46,7 +49,8 @@ export function spriteSortFootY(s, index, poseY, rotC, rotS, w, h) {
   if (ax === 0.5 && ay === 1.0) return poseY;
   const sy = s.scaleY[index];
   const ox = (0.5 - ax) * w * s.scaleX[index];
-  const oy = (1 - ay) * h * (sy < 0 ? -sy : sy);
+  // The lower edge on screen: the frame's top edge when vertically flipped.
+  const oy = sy < 0 ? -ay * h * sy : (1 - ay) * h * sy;
   const inherit = s.inheritRotation;
   if (inherit && !inherit[index]) {
     rotC = s.spriteRotC[index];
