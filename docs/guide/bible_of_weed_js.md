@@ -870,9 +870,12 @@ for (let i = 0; i < Mouse.MAX; i++) {
 }
 if (Mouse.isPressedAt(1)) { ... }       // slot 1 began this frame
 if (Mouse.count >= 2) {
-  camera.zoom *= Mouse.pinchRatio();    // distance now / last frame, else 1
-  pan(Mouse.pinchX, Mouse.pinchY);       // midpoint of the first two down slots
+  // Screen distance now / last frame (1 when a finger landed, lifted or the pair
+  // changed). Measured in canvas pixels, so it does not feed back through the zoom.
+  Camera.targetZoom *= Mouse.pinchRatio();
+  pan(Mouse.pinchX, Mouse.pinchY);       // world midpoint of the first two down slots
 }
+// Canvas pixels of a contact: Mouse.canvasXAt(i), Mouse.canvasYAt(i).
 
 // Movement deltas: x - Mouse.prevX, or xAt(i) - prevXAt(i).
 // Prev values are snapshotted at end of frame on the main thread and every

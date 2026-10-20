@@ -5,15 +5,17 @@
 /**
  * Static Mouse class for cross-worker pointer state.
  *
- * SharedArrayBuffer layout (28 Float32 values, 112 bytes):
+ * SharedArrayBuffer layout (36 Float32 values, 144 bytes):
  *   Header:
  *     [0] isPresent
  *     [1] wheel
  *     [2] btn1        [3] btn2
  *     [4] press1      [5] rel1
  *     [6] press2      [7] rel2
- *   Stride 5, MAX 4 contacts (slot i at 8 + i * 5):
- *     down, x, y, press, release
+ *   Stride 7, MAX 4 contacts (slot i at 8 + i * 7):
+ *     down, x, y, press, release, canvasX, canvasY
+ *   x/y are world; canvasX/canvasY are canvas pixels (gestures such as pinch must be
+ *   measured there, or a zoom driven by them feeds back through the camera).
  *
  * Slot 0 is the primary pointer: the cursor or pen, or the first finger
  * when no cursor owns the slot. Mouse.x and isButton0Down read that slot.
@@ -32,7 +34,7 @@ export class Mouse {
   static MAX = 4;
 
   static HEADER = 8;
-  static STRIDE = 5;
+  static STRIDE = 7;
 
   // Header
   static _PRESENT = 0;
@@ -50,9 +52,11 @@ export class Mouse {
   static _SY = 2;
   static _PRESS = 3;
   static _RELEASE = 4;
+  static _CX = 5;
+  static _CY = 6;
 
-  /** SAB size in bytes (28 Float32 values = 112 bytes) */
-  static BUFFER_SIZE = (8 + 4 * 5) * 4;
+  /** SAB size in bytes: HEADER + MAX * STRIDE Float32 values. */
+  static BUFFER_SIZE = (this.HEADER + this.MAX * this.STRIDE) * 4;
 
   // Debug tool mode flag - when true, primary-button down is consumed by DebugUI tools
   static isDebugToolActive = false;
@@ -61,15 +65,15 @@ export class Mouse {
   static _mouseOwnsSlot0 = false;
 
   // Main-thread pointerId → slot. -1 empty. Workers never read this.
-  static _ids = new Int32Array(4).fill(-1);
-  static _canvasX = new Float64Array(4);
-  static _canvasY = new Float64Array(4);
+  static _ids = new Int32Array(this.MAX).fill(-1);
+  static _canvasX = new Float64Array(this.MAX);
+  static _canvasY = new Float64Array(this.MAX);
 
   // Per-realm edge state
-  static _lastDownPress = new Float32Array(4);
-  static _lastDownRelease = new Float32Array(4);
-  static _downPressed = new Uint8Array(4);
-  static _downReleased = new Uint8Array(4);
+  static _lastDownPress = new Float32Array(this.MAX);
+  static _lastDownRelease = new Float32Array(this.MAX);
+  static _downPressed = new Uint8Array(this.MAX);
+  static _downReleased = new Uint8Array(this.MAX);
   static _lastPress1 = 0;
   static _lastRelease1 = 0;
   static _lastPress2 = 0;
@@ -79,8 +83,13 @@ export class Mouse {
   static _button2JustPressed = false;
   static _button2JustReleased = false;
 
-  static _prevXs = new Float32Array(4);
-  static _prevYs = new Float32Array(4);
+  static _prevXs = new Float32Array(this.MAX);
+  static _prevYs = new Float32Array(this.MAX);
+  // Canvas positions and the pinch pair at the end of the previous frame (per realm).
+  static _prevCXs = new Float32Array(this.MAX);
+  static _prevCYs = new Float32Array(this.MAX);
+  static _prevPinchA = -1;
+  static _prevPinchB = -1;
   static _prevWheel = 0;
   static _pinchPair = new Int32Array(2);
 
@@ -168,6 +177,20 @@ export class Mouse {
     i = i | 0;
     if (!this._data || i < 0 || i >= this.MAX) return 0;
     return this._data[this._slot(i) + this._SY];
+  }
+
+  /** Canvas x in pixels of contact slot i (any realm). */
+  static canvasXAt(i) {
+    i = i | 0;
+    if (!this._data || i < 0 || i >= this.MAX) return 0;
+    return this._data[this._slot(i) + this._CX];
+  }
+
+  /** Canvas y in pixels of contact slot i (any realm). */
+  static canvasYAt(i) {
+    i = i | 0;
+    if (!this._data || i < 0 || i >= this.MAX) return 0;
+    return this._data[this._slot(i) + this._CY];
   }
 
   static prevXAt(i) {
@@ -300,17 +323,26 @@ export class Mouse {
     return n;
   }
 
-  /** Distance now / distance last frame. 1 when fewer than two contacts are down. */
+  /**
+   * Screen distance now / screen distance last frame between the first two contacts
+   * that are down. 1 when fewer than two are down, when either one landed or lifted
+   * this frame, or when the pair changed (no previous distance to compare).
+   * Measured in canvas pixels, so `targetZoom *= Mouse.pinchRatio()` does not feed back.
+   */
   static pinchRatio() {
     if (this._twoDown() < 2) return 1;
     const a = this._pinchPair[0];
     const b = this._pinchPair[1];
-    const pdx = this._prevXs[a] - this._prevXs[b];
-    const pdy = this._prevYs[a] - this._prevYs[b];
+    if (a !== this._prevPinchA || b !== this._prevPinchB) return 1;
+    if (this.isPressedAt(a) || this.isPressedAt(b) || this.isReleasedAt(a) || this.isReleasedAt(b)) {
+      return 1;
+    }
+    const pdx = this._prevCXs[a] - this._prevCXs[b];
+    const pdy = this._prevCYs[a] - this._prevCYs[b];
     const prev = Math.sqrt(pdx * pdx + pdy * pdy);
     if (!(prev > 0)) return 1;
-    const dx = this.xAt(a) - this.xAt(b);
-    const dy = this.yAt(a) - this.yAt(b);
+    const dx = this.canvasXAt(a) - this.canvasXAt(b);
+    const dy = this.canvasYAt(a) - this.canvasYAt(b);
     return Math.sqrt(dx * dx + dy * dy) / prev;
   }
 
@@ -363,6 +395,15 @@ export class Mouse {
       const base = this._slot(i);
       this._prevXs[i] = d[base + this._SX] || 0;
       this._prevYs[i] = d[base + this._SY] || 0;
+      this._prevCXs[i] = d[base + this._CX] || 0;
+      this._prevCYs[i] = d[base + this._CY] || 0;
+    }
+    if (this._twoDown() === 2) {
+      this._prevPinchA = this._pinchPair[0];
+      this._prevPinchB = this._pinchPair[1];
+    } else {
+      this._prevPinchA = -1;
+      this._prevPinchB = -1;
     }
     this._prevWheel = d[this._WHEEL] || 0;
   }
@@ -391,9 +432,18 @@ export class Mouse {
    * @param {Object} camera
    */
   static setCanvasPosition(canvasX, canvasY, camera) {
-    this._canvasX[0] = canvasX;
-    this._canvasY[0] = canvasY;
+    this._writeCanvas(0, canvasX, canvasY);
     this._writeWorld(0, camera);
+  }
+
+  static _writeCanvas(slot, canvasX, canvasY) {
+    this._canvasX[slot] = canvasX;
+    this._canvasY[slot] = canvasY;
+    const d = this._data;
+    if (!d) return;
+    const base = this._slot(slot);
+    d[base + this._CX] = canvasX;
+    d[base + this._CY] = canvasY;
   }
 
   static _writeWorld(slot, camera) {
@@ -500,8 +550,7 @@ export class Mouse {
       x -= rect.left;
       y -= rect.top;
     }
-    this._canvasX[slot] = x;
-    this._canvasY[slot] = y;
+    this._writeCanvas(slot, x, y);
     if (camera) this._writeWorld(slot, camera);
   }
 

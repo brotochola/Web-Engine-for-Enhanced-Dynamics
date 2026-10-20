@@ -1564,6 +1564,9 @@ export declare class Mouse {
   static get prevY(): number;
   static xAt(i: number): number;
   static yAt(i: number): number;
+  /** Canvas pixels of contact slot i (readable on every realm). */
+  static canvasXAt(i: number): number;
+  static canvasYAt(i: number): number;
   static prevXAt(i: number): number;
   static prevYAt(i: number): number;
 
