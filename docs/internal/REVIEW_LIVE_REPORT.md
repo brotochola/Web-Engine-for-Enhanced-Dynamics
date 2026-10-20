@@ -17,9 +17,33 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**23:55** — **N-13** (the public screen helpers use the eased camera), then **B18**.
+**00:35** — **N-13** (the public screen helpers use the eased camera).
 
 ## Log
+
+### 00:30 — B18 fixed (`656e7d4c`); a third camera-lock hole found and fixed; new N-14
+
+- **Two races, both reproduced before fixing**, by injecting the "other thread" at the exact point
+  between two writes or two reads:
+  - `clearFollowTarget` wrote NaN into the follow target **before** clearing the entity stamp,
+    outside the lock. A pre-render read in that gap packed a **NaN camera** (test: `NaN, NaN`).
+  - The drawn camera read zoom twice: once to pack, once to center. A follow write between them
+    gave a view centered for one zoom and drawn with another (test: center 1840 instead of 2000
+    for a 1→0.8 zoom write). During a zoom ease that is a one-frame jump of `cw/2·(1/z₁−1/z₂)`,
+    about 10–20 px.
+- **Fix:** the lock snapshot now carries the zoom and x/y of the same write, and the drawn camera
+  uses it for everything. Every writer of zoom, x/y or follow takes the lock: the setters,
+  `centerOn`, `setPosition`, `clearFollowTarget`, free-cam zoom, size re-clamps and save load. A
+  depth count keeps nested writes (`setZoom` → `zoom` setter) from flipping the lock's parity.
+  The five copy-pasted re-clamp blocks are now one `_reclamp()`.
+- **Third hole, found while doing this:** loading a save stored `0` into the lock slot. If the logic
+  worker was inside a follow write at that moment, its unlock left the counter odd **for good**, and
+  every later read fell back to the cached snapshot. With my wider snapshot that would have frozen
+  the camera, so it had to go. The load now writes inside the lock (test reproduces the stuck
+  counter on the old code).
+- **New N-14 (low):** camera shake has two writers (logic starts it, pre-render advances it), so a
+  `shake()` can be shortened or dropped. The fix is a single-writer design, logged.
+- Suite **1242/1242**.
 
 ### 23:50 — N-12 confirmed in a headed run and fixed (`d7228257`); new E-51
 
