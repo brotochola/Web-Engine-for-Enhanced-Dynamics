@@ -8,6 +8,7 @@
 // were still building the fixtures.
 
 import { WorldGridManager } from '/demos/destructibleTerrainScene/gameObjects/worldGridManager.js';
+import { TerrainIsland } from '/demos/destructibleTerrainScene/gameObjects/terrainIsland.js';
 import { PlanetShip } from './planetShip.js';
 import { PlanetLamp } from './planetLamp.js';
 import { PlanetPull } from './planetPull.js';
@@ -39,11 +40,14 @@ export class PlanetWorldGridManager extends WorldGridManager {
     this._spawnActors();
   }
 
+  // Every loose piece, however it was made (melt-off, laser split, shatter shard).
+  // World gravity is 0 here, so a piece this misses hovers forever.
   _pullLooseIslands() {
-    const list = this.dynamicIslands;
+    const list = TerrainIsland.getAllActive();
+    if (!list) return;
     for (let i = 0; i < list.length; i++) {
       const idx = list[i];
-      if (!Transform.active?.[idx] || RigidBody.static[idx]) continue;
+      if (RigidBody.static[idx]) continue;
       const dx = CX - Transform.x[idx];
       const dy = CY - Transform.y[idx];
       const len = Math.sqrt(dx * dx + dy * dy) || 1;

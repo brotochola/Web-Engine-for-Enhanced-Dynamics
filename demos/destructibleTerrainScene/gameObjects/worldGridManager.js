@@ -61,7 +61,6 @@ export class WorldGridManager extends GameObject {
     const resume = !!spawnConfig.resume;
     this.tool = 'draw';
     this.staticIslands = [];
-    this.dynamicIslands = [];
     this._shardSnap = [];
     this._shardPool = [];
     this._shardJobs = [];
@@ -357,9 +356,7 @@ export class WorldGridManager extends GameObject {
       tint,
       layer: 'terrain',
     });
-    if (!spawned) return false;
-    this.dynamicIslands.push(spawned.index);
-    return true;
+    return !!spawned;
   }
 
   _spawnLooseSplit(box, tint, depth) {
@@ -612,7 +609,6 @@ export class WorldGridManager extends GameObject {
 
     if (!picked.dynamic && picked.rec) this._clearStaticField(picked.rec);
     this._despawnIndex(idx);
-    this._removeDynamic(idx);
     this._removeStatic(idx);
     Islands().spawnShardsFromWorld(shards, tint, vx, vy);
     Box2d.explode({
@@ -668,15 +664,6 @@ export class WorldGridManager extends GameObject {
   _clearStaticField(rec) {
     if (!rec) return;
     WorldGrid.clearRect(rec.minX, rec.minY, rec.maxX, rec.maxY);
-  }
-
-  _removeDynamic(idx) {
-    const arr = this.dynamicIslands;
-    let w = 0;
-    for (let i = 0; i < arr.length; i++) {
-      if (arr[i] !== idx) arr[w++] = arr[i];
-    }
-    arr.length = w;
   }
 
   _removeStatic(idx) {
