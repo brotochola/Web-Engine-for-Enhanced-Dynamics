@@ -118,3 +118,31 @@ test('a load keeps tweens on entities the save does not own', () => {
     Transform.active = prevActive;
   }
 });
+
+// The real save path, not a hand-built payload: buildSavePayload must survive unbound
+// pools (pack returns null) and keep a bound pool's empty list so the section is written.
+test('buildSavePayload with every geometry pool unbound does not throw and writes no section', async () => {
+  const { buildSavePayload } = await import('../../src/core/save/entitySaveSnapshot.js');
+  const { ColliderFixture } = await import('../../src/core/colliderFixture.js');
+  const { MeshGeometry } = await import('../../src/core/meshGeometry.js');
+  const prev = [ChainPoints.count, ColliderFixture.head, MeshGeometry.vertCount];
+  try {
+    ChainPoints.count = null;
+    ColliderFixture.head = null;
+    MeshGeometry.vertCount = null;
+    const payload = buildSavePayload({ registeredClasses: [], totalEntityCount: 0 }, { camera: null, sun: null });
+    assert.equal(payload.chains, undefined);
+    assert.equal(payload.fixtures, undefined);
+    assert.equal(payload.meshes, undefined);
+  } finally {
+    [ChainPoints.count, ColliderFixture.head, MeshGeometry.vertCount] = prev;
+  }
+});
+
+test('buildSavePayload keeps a bound chain pool as an empty, present section', async () => {
+  const { buildSavePayload } = await import('../../src/core/save/entitySaveSnapshot.js');
+  chains(4);
+  const payload = buildSavePayload({ registeredClasses: [], totalEntityCount: 0 }, { camera: null, sun: null });
+  assert.deepEqual(payload.chains, []);
+  assert.deepEqual(decodeSaveUncompressed(encodeSaveUncompressed(payload)).chains, []);
+});

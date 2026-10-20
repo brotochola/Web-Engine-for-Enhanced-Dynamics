@@ -298,12 +298,15 @@ export function buildSavePayload(scene, globals = {}) {
   for (let i = 0; i < entities.length; i++) savedIndices[i] = entities[i].entityIndex | 0;
   const sharedResources = packSharedResources();
   if (sharedResources.length) payload.sharedResources = sharedResources;
+  // null: that pool is unbound, write no section (a load leaves onSpawned geometry).
+  // [] is kept: a bound pool writes its section even empty, so a load clears geometry
+  // the saved entities did not have.
   const chains = packChains(savedIndices);
-  if (chains.length) payload.chains = chains;
+  if (chains) payload.chains = chains;
   const fixtures = packFixtures(savedIndices);
-  if (fixtures.length) payload.fixtures = fixtures;
+  if (fixtures) payload.fixtures = fixtures;
   const meshes = packMeshes(savedIndices);
-  if (meshes.length) payload.meshes = meshes;
+  if (meshes) payload.meshes = meshes;
   const nav = packNav();
   if (nav) payload.nav = nav;
   const timeScale = packTime();
