@@ -17,9 +17,22 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**05:35** — **B24** (a mesh vertex edit can be marked seen without a redraw).
+**05:55** — **B25** (particle lights under raycasted lighting draw nothing but still allocate).
 
 ## Log
+
+### 05:50 — B24 fixed (`fa89175b`)
+
+- **The race:** a logic worker edits a mesh's vertices, then bumps that mesh's "generation".
+  Pixi redrew the meshes whose generation moved, and only afterwards copied the live generations
+  as "drawn". An edit landing between the read and the copy was booked as drawn although its
+  vertices never reached the screen, and it stayed invisible until the mesh changed again.
+- **Fix:** the classic rule for this kind of protocol. Pixi takes the generations **before** reading
+  any vertices and records that copy. A write after it still looks new next frame and gets drawn.
+- **Test:** it drives the shipped Pixi methods through exactly that interleaving. Replaying the
+  same steps with the old bookkeeping leaves the second edit off screen (`0, 10, 0` drawn instead
+  of `5, 25, 5`).
+- Suite **1280/1280**.
 
 ### 05:30 — B23 (save robustness) complete: six fixes, then a headed save→load smoke
 
