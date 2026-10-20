@@ -17,9 +17,23 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**06:25** — **B27** (`physics.box2dWorkerCount` renamed with no alias; worker count not clamped).
+**06:40** — **B29** (the "others" list of small engine items), then the planet demo items (B28).
 
 ## Log
+
+### 06:35 — B27 fixed (`f4fe8a67`); new N-15
+
+- A rename three days ago (`box2dWorkerCount` → `numberOfPhysicsWorkers`) left no alias, so the
+  old key was **silently ignored**. Even the bundle test page still set it, so its worker option
+  did nothing. The physics host also passed the count to Box2D unclamped.
+- **Fix:**
+  - The host clamps the count to 1..32.
+  - The old key works again, with a one-time warning.
+  - The bundle page uses the new key.
+- **New N-15:** the physics config validator exists **twice**. The copy that runs is in the physics
+  host; the copy in `utils.js` is only called by tests. That split is exactly why the clamp existed
+  in only one of them. It should become one shared implementation.
+- Suite **1288/1288**.
 
 ### 06:20 — B26 fixed (`46c5b590`)
 
