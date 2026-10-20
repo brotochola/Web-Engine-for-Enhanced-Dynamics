@@ -3,10 +3,33 @@
  * float32 x, y, radius + packed unorm8x4 RGBA. No allocation.
  */
 
-import { CAMERA_TYPES } from '../util/configDefaults.js';
+import { CAMERA_TYPES, LIGHTING_DEFAULTS } from '../util/configDefaults.js';
 import { LIGHT_INFLUENCE_RADIUS_SCALE } from '../util/utils.js';
 
 export const PARTICLE_LIGHT_FLOATS = 4;
+
+/**
+ * Whether particle lights run, and their cap. Raycasted visibility lighting
+ * builds its own field and never draws them (as with the liquid light field),
+ * so they are switched off there, with a warning, rather than allocating a
+ * splat and forcing a lighting render texture nobody draws into.
+ * @param {{ enabled?: boolean, max?: number }|undefined} particleLights lighting.particleLights
+ * @param {boolean} raycasted visibilityPolygons.enabled
+ * @returns {{ enabled: boolean, max: number, warning: string|null }}
+ */
+export function resolveParticleLights(particleLights, raycasted) {
+  const cfg = particleLights || LIGHTING_DEFAULTS.particleLights;
+  if (!cfg.enabled) return { enabled: false, max: 0, warning: null };
+  if (raycasted) {
+    return {
+      enabled: false,
+      max: 0,
+      warning: 'lighting.particleLights is ignored with raycasted lighting (visibilityPolygons): it is not drawn there',
+    };
+  }
+  const max = cfg.max != null ? cfg.max | 0 : LIGHTING_DEFAULTS.particleLights.max;
+  return max > 0 ? { enabled: true, max, warning: null } : { enabled: false, max: 0, warning: null };
+}
 /** Drop quads whose projected alpha is at or under this. */
 export const PARTICLE_LIGHT_ALPHA_CUT = 1 / 255;
 /** Drop quads smaller than half a lighting-RT pixel. */

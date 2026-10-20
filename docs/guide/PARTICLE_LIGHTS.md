@@ -20,7 +20,7 @@ lighting: {
 
 `createLightingSystem` builds `lightingRT` only when `resolution < 1` or the scene has liquid. At resolution 1 with no liquid, a splat has nowhere to draw, and the feature would be broken. `particleLights.enabled` is part of that `needRt` check. The second splat mesh is created only when the flag is on. Capacity is `max`, not `particle.maxParticles`. The buffer is created once with `shrinkToFit: false`.
 
-The mesh is drawn additively into `lightingRT` after the liquid light field, using the existing no-clear render options. Raycasted visibility lighting skips this, the same way it skips the liquid field. Resize already replaces `lightingRT` and refreshes the lighting viewport. The splat is not a stage sprite. Each frame the pack reads the canvas size and the lighting pixel scale, so a resize does not need a second path for the mesh.
+The mesh is drawn additively into `lightingRT` after the liquid light field, using the existing no-clear render options. Raycasted visibility lighting skips this, the same way it skips the liquid field: with `visibilityPolygons` on, particle lights are switched off at init (a console warning says so), and no splat or lighting render texture is made for them. Resize already replaces `lightingRT` and refreshes the lighting viewport. The splat is not a stage sprite. Each frame the pack reads the canvas size and the lighting pixel scale, so a resize does not need a second path for the mesh.
 
 ## Spawn
 

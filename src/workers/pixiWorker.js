@@ -98,7 +98,7 @@ import {
 } from '../render/instancedSpriteBatch.js';
 import { createPainterState } from '../util/sortIndexByKey.js';
 import { LiquidFunDensitySplat, LF_SPLAT_STRIDE } from '../render/liquidFunDensitySplat.js';
-import { packParticleLights } from '../render/particleLightSplat.js';
+import { packParticleLights, resolveParticleLights } from '../render/particleLightSplat.js';
 import {
   ColliderFillBatch,
   packColliderFill,
@@ -5815,12 +5815,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           ? lightingConfig.maxShadowsPerEntity
           : LIGHTING_DEFAULTS.maxShadowsPerEntity;
       this.liquidFunMaxCount = data.liquidFunMaxCount | 0;
-      const particleLights = lightingConfig.particleLights || LIGHTING_DEFAULTS.particleLights;
-      this._particleLightsEnabled = !!(particleLights && particleLights.enabled);
-      const particleLightMax = particleLights && particleLights.max != null
-        ? particleLights.max | 0
-        : LIGHTING_DEFAULTS.particleLights.max;
-      this._particleLightMax = particleLightMax > 0 ? particleLightMax : 0;
+      const particleLights = resolveParticleLights(
+        lightingConfig.particleLights,
+        !!(data.visibilityPolygons && data.visibilityPolygons.enabled),
+      );
+      if (particleLights.warning) console.warn(`PIXI WORKER: ${particleLights.warning}`);
+      this._particleLightsEnabled = particleLights.enabled;
+      this._particleLightMax = particleLights.max;
 
       // Create lighting mesh (full-screen quad with multiply blend)
     // Shadows are now sprites, not in shader
