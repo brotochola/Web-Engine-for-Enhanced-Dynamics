@@ -4419,6 +4419,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return batch;
   }
 
+  // vertgen-start
   _ensureVertGenScratch(skip, views) {
     const n = views.entityCount | 0;
     if (!skip.lastVertGen || skip.lastVertGen.length < n) {
@@ -4428,18 +4429,35 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
   }
 
-  _snapshotVertGen(skip, views) {
+  /**
+   * Copy the live vertex generations before any vertex is read this frame.
+   * Writers store the vertices, then bump the generation. Recording a copy
+   * taken after the reads could mark a write that landed in between as seen,
+   * with its vertices never drawn; from this copy, such a write still differs
+   * next frame and is redrawn.
+   * @returns {Uint32Array|null}
+   */
+  _captureVertGen(skip, views) {
     const g = views.meshVertGen;
-    if (!g) return;
-    this._ensureVertGenScratch(skip, views);
+    if (!g) return null;
     const n = views.entityCount | 0;
-    const dst = skip.lastVertGen;
+    if (!skip.frameVertGen || skip.frameVertGen.length < n) skip.frameVertGen = new Uint32Array(n);
+    const dst = skip.frameVertGen;
     if (g.length === n && dst.length === n) {
       dst.set(g);
     } else {
       dst.set(g.subarray(0, n));
     }
+    return dst;
   }
+
+  /** Record the generations captured this frame as drawn. */
+  _commitVertGen(skip, views) {
+    if (!skip.frameVertGen || !views.meshVertGen) return;
+    this._ensureVertGenScratch(skip, views);
+    skip.lastVertGen.set(skip.frameVertGen.subarray(0, skip.lastVertGen.length));
+  }
+  // vertgen-end
 
   _packMeshUvLayer(cl, views, skip) {
     if (!views.layerHasVertexUv) {
@@ -6491,6 +6509,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             lastOutsetEpoch: 0,
             lastVertEpoch: 0,
             lastVertGen: null,
+            frameVertGen: null,
             prevPose: {},
             camX: NaN,
             camY: NaN,
@@ -6529,6 +6548,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const poseMoved = meshFillPoseOrPresenceChanged(views, skip.prevPose);
           this._ensureVertGenScratch(skip, views);
           let full = !topologyStable;
+          // Generations before vertices (B24): both paths below read vertices.
+          const genNow = full || vertsMoved ? this._captureVertGen(skip, views) : null;
           if (!full && vertsMoved) {
             const fillRewrite = rewriteExplicitMeshCorners(
               cl.fillBatch.data,
@@ -6537,6 +6558,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               views,
               COLLIDER_FILL_FLOATS,
               skip.lastVertGen,
+              genNow,
             );
             const uvCount = cl.uvPrevCount | 0;
             const uvRewrite = !cl.uvFillBatch || uvCount <= 0
@@ -6548,6 +6570,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 views,
                 MESH_UV_FILL_FLOATS,
                 skip.lastVertGen,
+                genNow,
               );
             if (fillRewrite < 0 || uvRewrite < 0) full = true;
           }
@@ -6563,7 +6586,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
             }
             this._packMeshUvLayer(cl, views, skip);
-            this._snapshotVertGen(skip, views);
+            this._commitVertGen(skip, views);
           } else {
             const touchVbo = vertsMoved || paintMoved;
             if (paintMoved) {
@@ -6606,7 +6629,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 this._uploadMeshPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
               }
             }
-            if (vertsMoved) this._snapshotVertGen(skip, views);
+            if (vertsMoved) this._commitVertGen(skip, views);
           }
           copyMeshFillPoseScratch(views, skip.prevPose);
           skip.lastRevision = rev;

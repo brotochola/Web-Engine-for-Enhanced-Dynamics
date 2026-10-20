@@ -669,11 +669,13 @@ export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, view
  * vertGen moved. Returns -1 when the packed triangle count no longer matches.
  * @returns {number} 1 ok, -1 topology mismatch, 0 nothing to do
  */
-export function rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen) {
+export function rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow) {
   const n = count | 0;
-  if (!out || n <= 0 || !entityOfInstance || !views.meshVertGen || !lastVertGen) return 0;
+  // genNow: generations captured before any vertex read (see pixiWorker
+  // _captureVertGen). The live array works for a single-threaded caller.
+  const gen = genNow || views.meshVertGen;
+  if (!out || n <= 0 || !entityOfInstance || !gen || !lastVertGen) return 0;
   const step = (stride | 0) > 0 ? (stride | 0) : COLLIDER_FILL_FLOATS;
-  const gen = views.meshVertGen;
   const vx = views.meshVertexX;
   const vy = views.meshVertexY;
   const indices = views.meshIndices;
