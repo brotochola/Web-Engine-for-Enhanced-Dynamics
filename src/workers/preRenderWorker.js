@@ -20,16 +20,14 @@ import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { Camera } from '../core/camera.js';
 import { Query } from '../core/query.js';
 import {
-    BOUNDARY_SEGMENT_CAP,
-    boundarySegmentCount,
     buildVisibilityPolygon,
-    clearBoundarySegments,
+    clearPolarBins,
+    clipVisibilityToPolar,
     collectSolidSegments,
-    copyBoundarySegment,
     ensureCompoundSolid,
     OCC_CIRCLE,
     OCC_POLY,
-    trimBoundarySegments,
+    polarBinsActive,
     writeOrientedBoxVerts,
     writePolygonVerts,
 } from '../render/visibility/angularSweep.js';
@@ -820,7 +818,6 @@ class PreRenderWorker extends AbstractWorker {
             this._vpVertsX = new Float32Array(maxOccluders * MAX_POLYGON_VERTICES);
             this._vpVertsY = new Float32Array(maxOccluders * MAX_POLYGON_VERTICES);
             this._vpMaxOccluders = maxOccluders;
-            this._vpSegOut = new Float32Array(4);
 
             // Output scratch for polygon vertices
             this._vpOutX = new Float32Array(maxVerts);
@@ -3422,7 +3419,7 @@ class PreRenderWorker extends AbstractWorker {
             let occCount = 0;
             let vertPool = 0;
             let occluderLimitHit = false;
-            clearBoundarySegments();
+            clearPolarBins(influenceRadius);
 
             if (neighborData && stride > 0) {
                 const offset = lightIdx * stride;
@@ -3596,28 +3593,6 @@ class PreRenderWorker extends AbstractWorker {
                     occCount++;
                 }
             }
-            const segRoom = BOUNDARY_SEGMENT_CAP < maxOccluders - occCount
-                ? BOUNDARY_SEGMENT_CAP
-                : maxOccluders - occCount;
-            if (trimBoundarySegments(segRoom)) occluderLimitHit = true;
-            const segN = boundarySegmentCount();
-            const segOut = this._vpSegOut;
-            for (let s = 0; s < segN; s++) {
-                if (occCount >= maxOccluders) {
-                    occluderLimitHit = true;
-                    break;
-                }
-                copyBoundarySegment(s, segOut);
-                kind[occCount] = OCC_POLY;
-                vertStart[occCount] = vertPool;
-                vertsX[vertPool] = segOut[0];
-                vertsY[vertPool] = segOut[1];
-                vertsX[vertPool + 1] = segOut[2];
-                vertsY[vertPool + 1] = segOut[3];
-                vertCountArr[occCount] = 2;
-                vertPool += 2;
-                occCount++;
-            }
             if (occluderLimitHit) {
                 this._warnOnce(
                     '_warnedVisibilityPolygonOccluderCap',
@@ -3625,11 +3600,16 @@ class PreRenderWorker extends AbstractWorker {
                 );
             }
 
-            const vertCount = buildVisibilityPolygon(
+            let vertCount = buildVisibilityPolygon(
                 lx, ly, influenceRadius,
                 kind, cX, cY, cR, vertStart, vertCountArr, vertsX, vertsY,
                 occCount, outX, outY, maxVerts
             );
+            if (polarBinsActive()) {
+                vertCount = clipVisibilityToPolar(
+                    lx, ly, outX, outY, vertCount, outX, outY, maxVerts
+                );
+            }
 
             // Layout: [lightIdx:i32, lightX:f32, lightY:f32, vertexCount:i32, x[N]:f32, y[N]:f32]
             const baseIndex = (4 + lightsWritten * slotBytes) >> 2;

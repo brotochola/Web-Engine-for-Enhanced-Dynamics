@@ -9,10 +9,14 @@ import assert from 'node:assert/strict';
 import {
   OCC_CIRCLE,
   OCC_POLY,
+  POLAR_BINS,
   buildVisibilityPolygon,
+  clearPolarBins,
+  clipVisibilityToPolar,
+  rasterBoundarySegment,
   writeOrientedBoxVerts,
 } from '../../src/render/visibility/angularSweep.js';
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { checksumFloats, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
 const OUTPUT = args.output ? String(args.output) : null;
@@ -79,6 +83,32 @@ const emptyN = buildVisibilityPolygon(
 );
 assert.ok(emptyN >= 3, 'empty-light disc should tessellate');
 
+const SEGMENTS = 80;
+const polarX = new Float32Array(POLAR_BINS);
+const polarY = new Float32Array(POLAR_BINS);
+const soup = new Float32Array(SEGMENTS * 4);
+for (let i = 0; i < SEGMENTS; i++) {
+  const a0 = (i / SEGMENTS) * Math.PI * 2;
+  const a1 = ((i + 0.65) / SEGMENTS) * Math.PI * 2;
+  soup[i * 4] = Math.cos(a0) * 90;
+  soup[i * 4 + 1] = Math.sin(a0) * 90;
+  soup[i * 4 + 2] = Math.cos(a1) * 90;
+  soup[i * 4 + 3] = Math.sin(a1) * 90;
+}
+
+function runPolar() {
+  clearPolarBins(220);
+  for (let i = 0; i < SEGMENTS; i++) {
+    const o = i * 4;
+    rasterBoundarySegment(soup[o], soup[o + 1], soup[o + 2], soup[o + 3], 0, 0);
+  }
+  return clipVisibilityToPolar(0, 0, polarX, polarY, 0, polarX, polarY, POLAR_BINS);
+}
+
+const polarN = runPolar();
+assert.ok(polarN === POLAR_BINS, `polar polygon ${polarN}`);
+const polarChecksum = checksumFloats(polarX, polarN) ^ checksumFloats(polarY, polarN);
+
 const cases = {
   sweep: timeIt('visibility_polygon', (iters) => {
     for (let i = 0; i < iters; i++) {
@@ -89,6 +119,9 @@ const cases = {
       );
     }
   }, { iterations: Number(args.iters ?? 4000) }),
+  polar: timeIt('polar_nearest', (iters) => {
+    for (let i = 0; i < iters; i++) runPolar();
+  }, { iterations: Number(args.iters ?? 400) }),
 };
 
 const report = {
@@ -96,6 +129,8 @@ const report = {
   occluders: OCCLUDERS,
   vertexCount: n,
   signedArea: area,
+  polarVerts: polarN,
+  polarChecksum,
   cases,
 };
 if (OUTPUT) writeReport(OUTPUT, report);

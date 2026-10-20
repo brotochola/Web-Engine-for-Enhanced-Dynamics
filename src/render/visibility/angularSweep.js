@@ -777,8 +777,15 @@ export function collectSolidSegments(
     const y1 = originY + rotS * lx1 + rotC * ly1;
     const dist = segmentDistSq(lightX, lightY, x0, y0, x1, y1);
     if (dist > radiusSq) continue;
-    pushBoundarySegment(x0, y0, x1, y1, dist);
     hit++;
+    // Solid is on the left of a CCW boundary edge. A light on that side
+    // cannot see this edge; the canyon wall faces the empty side and stays.
+    const ex = x1 - x0;
+    const ey = y1 - y0;
+    const tx = lightX - x0;
+    const ty = lightY - y0;
+    if (ex * ty - ey * tx >= 0) continue;
+    writePolarSegment(x0, y0, x1, y1, lightX, lightY);
   }
   return hit;
 }
@@ -813,4 +820,121 @@ export function copyBoundarySegment(i, out) {
   out[1] = _sy0[i];
   out[2] = _sx1[i];
   out[3] = _sy1[i];
+}
+
+/**
+ * ponytail: 512 bins is about 0.7°. A canyon narrower than one bin at that
+ * distance can seal. More bins is the upgrade; the visibility slot already
+ * allows 5000 vertices.
+ */
+export const POLAR_BINS = 512;
+const POLAR_BIN_SCALE = POLAR_BINS / TWO_PI;
+const _polarDist = new Float32Array(POLAR_BINS);
+const _holdX = new Float32Array(8192);
+const _holdY = new Float32Array(8192);
+let _polarRadius = 0;
+let _polarActive = 0;
+
+export function clearPolarBins(radius) {
+  const r = radius > 0 ? radius : 0;
+  _polarRadius = r;
+  _polarActive = 0;
+  _polarDist.fill(r);
+}
+
+export function polarBinsActive() {
+  return _polarActive;
+}
+
+function raySegT(ox, oy, dx, dy, ax, ay, bx, by) {
+  const ex = bx - ax;
+  const ey = by - ay;
+  const denom = dx * ey - dy * ex;
+  if (Math.abs(denom) < 1e-12) return Infinity;
+  const fx = ax - ox;
+  const fy = ay - oy;
+  const t = (fx * ey - fy * ex) / denom;
+  const u = (fx * dy - fy * dx) / denom;
+  if (t > 1e-4 && u >= -1e-4 && u <= 1 + 1e-4) return t;
+  return Infinity;
+}
+
+function writePolarSegment(x0, y0, x1, y1, lx, ly) {
+  let open = normalizeAngleSigned(Math.atan2(y0 - ly, x0 - lx));
+  let close = normalizeAngleSigned(Math.atan2(y1 - ly, x1 - lx));
+  let span = close - open;
+  if (span < 0) span += TWO_PI;
+  if (span > Math.PI) {
+    const swap = open;
+    open = close;
+    close = swap;
+    span = TWO_PI - span;
+  }
+  if (!(span > 1e-4)) return;
+  let b0 = ((open + Math.PI) * POLAR_BIN_SCALE) | 0;
+  let b1 = ((close + Math.PI) * POLAR_BIN_SCALE) | 0;
+  if (b0 < 0) b0 = 0;
+  else if (b0 >= POLAR_BINS) b0 = POLAR_BINS - 1;
+  if (b1 < 0) b1 = 0;
+  else if (b1 >= POLAR_BINS) b1 = POLAR_BINS - 1;
+  if (open <= close) {
+    for (let b = b0; b <= b1; b++) stampPolarBin(b, x0, y0, x1, y1, lx, ly);
+  } else {
+    for (let b = b0; b < POLAR_BINS; b++) stampPolarBin(b, x0, y0, x1, y1, lx, ly);
+    for (let b = 0; b <= b1; b++) stampPolarBin(b, x0, y0, x1, y1, lx, ly);
+  }
+}
+
+function stampPolarBin(b, x0, y0, x1, y1, lx, ly) {
+  const ang = -Math.PI + (b + 0.5) * (TWO_PI / POLAR_BINS);
+  const t = raySegT(lx, ly, Math.cos(ang), Math.sin(ang), x0, y0, x1, y1);
+  if (t < _polarDist[b]) {
+    _polarDist[b] = t;
+    _polarActive = 1;
+  }
+}
+
+function sweepDistAt(lx, ly, ang, xs, ys, n, radius) {
+  const dx = Math.cos(ang);
+  const dy = Math.sin(ang);
+  let best = radius;
+  for (let i = 0; i < n; i++) {
+    const j = i + 1 < n ? i + 1 : 0;
+    const t = raySegT(lx, ly, dx, dy, xs[i], ys[i], xs[j], ys[j]);
+    if (t < best) best = t;
+  }
+  return best;
+}
+
+/**
+ * One vertex per bin at min(boundary hit, simple-occluder sweep).
+ * Returns the sweep count unchanged when no boundary edge wrote a bin.
+ * in and out may be the same buffer.
+ */
+export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts) {
+  if (!_polarActive) return n;
+  const holdN = n < _holdX.length ? n : _holdX.length;
+  for (let i = 0; i < holdN; i++) {
+    _holdX[i] = inX[i];
+    _holdY[i] = inY[i];
+  }
+  const bins = POLAR_BINS < maxVerts ? POLAR_BINS : maxVerts;
+  const step = TWO_PI / POLAR_BINS;
+  const radius = _polarRadius;
+  for (let b = 0; b < bins; b++) {
+    const ang = -Math.PI + (b + 0.5) * step;
+    let d = _polarDist[b];
+    if (holdN >= 3) {
+      const sd = sweepDistAt(lx, ly, ang, _holdX, _holdY, holdN, radius);
+      if (sd < d) d = sd;
+    }
+    outX[b] = lx + Math.cos(ang) * d;
+    outY[b] = ly + Math.sin(ang) * d;
+  }
+  return bins;
+}
+
+/** Raster one world segment into the current polar buffer. For the kernel. */
+export function rasterBoundarySegment(x0, y0, x1, y1, lx, ly) {
+  writePolarSegment(x0, y0, x1, y1, lx, ly);
 }
