@@ -12,13 +12,21 @@ import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 
 let _warnedDynamicChain = false;
 
+/**
+ * RigidBody.static value for a dynamic body made static only because its
+ * collider is a chain (Box2D chains are static). Nonzero, so every reader sees
+ * a static body; syncMassFromCollider makes it dynamic again when the collider
+ * stops being a chain. A user's static is 1 and is never undone.
+ */
+export const RIGID_BODY_CHAIN_STATIC = 2;
+
 export class RigidBody extends Component {
   // SoA fields only. vx/vy/angularVelocity/sleeping live on Box2D HEAP
   // (bindBox2dHotFields after box2dReady). Stay null if physics.enabled === false —
   // do not read this.vx on that path (a null-check here would tax the default).
   static ARRAY_SCHEMA = {
     active: Uint8Array, // 0 = entity doesn't have this component, 1 = active
-    static: Uint8Array, // 0 = dynamic, 1 = static
+    static: Uint8Array, // 0 = dynamic, 1 = static, 2 = static because the collider is a chain
 
     ax: Float32Array,
     ay: Float32Array,
@@ -108,6 +116,12 @@ export class RigidBody extends Component {
 
     if (Collider.active && Collider.active[index]) {
       shapeType = Collider.shapeType[index];
+      // Static only because it was a chain: dynamic again once it is not.
+      if (RigidBody.static[index] === RIGID_BODY_CHAIN_STATIC && shapeType !== ShapeType.Chain) {
+        RigidBody.static[index] = 0;
+        isStatic = false;
+        markBodyDirty(index, BODY_DIRTY.BODY_TYPE);
+      }
       if (shapeType === ShapeType.Circle) {
         const radius = Collider.radius[index];
         if (radius > 0) {
@@ -148,7 +162,9 @@ export class RigidBody extends Component {
             _warnedDynamicChain = true;
             console.warn(`[RigidBody] entity ${index} has a chain collider, so the body is static`);
           }
-          RigidBody.static[index] = 1;
+          // Not 1: the body was not made static by choice, and a 1 stuck after
+          // the collider stopped being a chain.
+          RigidBody.static[index] = RIGID_BODY_CHAIN_STATIC;
           isStatic = true;
         }
         RigidBody.mass[index] = 0;

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { Collider } from '../../src/components/collider.js';
-import { RigidBody } from '../../src/components/rigidBody.js';
+import { RigidBody, RIGID_BODY_CHAIN_STATIC } from '../../src/components/rigidBody.js';
 import { ChainPoints } from '../../src/core/chainPoints.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
 
@@ -26,7 +26,7 @@ test('a dynamic chain is stored as a static body', () => {
   console.warn = (msg) => warns.push(String(msg));
   try {
     RigidBody.syncMassFromCollider(0);
-    assert.equal(RigidBody.static[0], 1);
+    assert.equal(RigidBody.static[0], RIGID_BODY_CHAIN_STATIC);
     assert.equal(RigidBody.mass[0], 0);
     assert.equal(RigidBody.invMass[0], 0);
     assert.equal(RigidBody.inertia[0], 0);
@@ -58,4 +58,46 @@ test('setChain warns once when the outline is too short', () => {
   assert.equal(warns.length, 1);
   assert.match(warns[0], /count/);
   assert.equal(ChainPoints.lastError.code, 'count');
+});
+
+// B29 (mass sync flips body type). The chain-static flag used to be 1, the same
+// as a user's static, so a body that had a chain for a while stayed static for
+// good after its collider became a polygon.
+test('a body static only because of its chain is dynamic again without it', async () => {
+  const { bindBodySyncBuffers, BODY_DIRTY } = await import('../../src/box2d/box2dBodySync.js');
+  const n = 2;
+  const buffers = {
+    bodyDirtyFlags: new SharedArrayBuffer(n * 4),
+    bodyDirtyWords: new SharedArrayBuffer(4),
+    bodyGeneration: new SharedArrayBuffer(n * 4),
+  };
+  bindBodySyncBuffers(buffers);
+  const flags = new Int32Array(buffers.bodyDirtyFlags);
+  RigidBody.initializeArrays(new SharedArrayBuffer(RigidBody.getBufferSize(n)), n);
+  Collider.initializeArrays(new SharedArrayBuffer(Collider.getBufferSize(n)), n);
+  const orig = console.warn;
+  console.warn = () => {};
+  try {
+    for (const i of [0, 1]) {
+      RigidBody.active[i] = 1;
+      Collider.active[i] = 1;
+      Collider.shapeType[i] = ShapeType.Chain;
+    }
+    RigidBody.static[1] = 1; // the user's static
+    RigidBody.syncMassFromCollider(0);
+    RigidBody.syncMassFromCollider(1);
+    assert.equal(RigidBody.static[0], RIGID_BODY_CHAIN_STATIC);
+    assert.equal(RigidBody.static[1], 1);
+
+    flags.fill(0);
+    assert.equal(Collider.makePolygon(0, [0, 0, 10, 0, 10, 10, 0, 10]), true);
+    assert.equal(Collider.makePolygon(1, [0, 0, 10, 0, 10, 10, 0, 10]), true);
+    assert.equal(RigidBody.static[0], 0, 'dynamic again');
+    assert.ok(RigidBody.invMass[0] > 0);
+    assert.equal(flags[0] & BODY_DIRTY.BODY_TYPE, BODY_DIRTY.BODY_TYPE, 'physics told to switch the type');
+    assert.equal(RigidBody.static[1], 1, 'a user static stays static');
+    assert.equal(RigidBody.invMass[1], 0);
+  } finally {
+    console.warn = orig;
+  }
 });
