@@ -151,9 +151,10 @@ export function applySavePayloadToScene(scene, payload) {
     serializableClassNames,
     entities: payload.entities || [],
     joints: payload.joints || [],
-    chains: payload.chains || [],
-    fixtures: payload.fixtures || [],
-    meshes: payload.meshes || [],
+    // null = section absent (older save): the worker leaves onSpawned geometry alone.
+    chains: payload.chains ?? null,
+    fixtures: payload.fixtures ?? null,
+    meshes: payload.meshes ?? null,
     tweens: payload.tweens || [],
   });
 

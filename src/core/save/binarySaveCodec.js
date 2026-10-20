@@ -827,13 +827,15 @@ export function encodeBinarySaveBody(payload) {
   if (payload.sharedResources?.length) {
     pushSection(sections, SECTION.SHARED_RESOURCES, (w) => writeSharedResources(w, payload.sharedResources));
   }
-  if (payload.chains?.length) {
+  // Present (even empty) when the pool was bound: a load then clears geometry the
+  // saved entities did not have. Absent means "unknown" and a load leaves it alone.
+  if (Array.isArray(payload.chains)) {
     pushSection(sections, SECTION.CHAINS, (w) => writeChains(w, payload.chains));
   }
-  if (payload.fixtures?.length) {
+  if (Array.isArray(payload.fixtures)) {
     pushSection(sections, SECTION.FIXTURES, (w) => writeFixtures(w, payload.fixtures));
   }
-  if (payload.meshes?.length) {
+  if (Array.isArray(payload.meshes)) {
     pushSection(sections, SECTION.MESHES, (w) => writeMeshes(w, payload.meshes));
   }
   if (payload.nav?.walkability) {

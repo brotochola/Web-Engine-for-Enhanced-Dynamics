@@ -1930,7 +1930,7 @@ class LogicWorker extends AbstractWorker {
         applyChains(chains, restoredPairs);
         applyFixtures(fixtures, restoredPairs);
         applyMeshes(meshes, restoredPairs);
-        applyTweens(tweens, mapGet);
+        applyTweens(tweens, mapGet, restoredPairs);
         for (let r = 0; r < entities.length; r++) {
           const rec = entities[r];
           if (rec.entityIndex == null) continue;

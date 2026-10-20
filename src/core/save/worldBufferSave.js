@@ -13,6 +13,7 @@ import { NavGrid } from '../navGrid.js';
 import { SharedResource } from '../sharedResource.js';
 import { Time } from '../timeScale.js';
 import { Tween, TWEEN_KIND_ZOOM } from '../tween.js';
+import { Transform } from '../../components/transform.js';
 import { entityIdNone } from '../../util/entityIdWidth.js';
 
 function copyInto(dst, src, n) {
@@ -61,7 +62,10 @@ export function applySharedResources(records) {
  */
 export function packChains(entityIndices) {
   const out = [];
-  if (!ChainPoints.count || !ChainPoints.begin || !entityIndices) return out;
+  // null: the pool is unbound, so the save writes no CHAINS section and a load leaves
+  // whatever onSpawned built. [] (even empty) writes the section.
+  if (!ChainPoints.count || !ChainPoints.begin) return null;
+  if (!entityIndices) return out;
   for (let i = 0; i < entityIndices.length; i++) {
     const entityIndex = entityIndices[i] | 0;
     if (entityIndex < 0 || entityIndex >= ChainPoints.entityCount) continue;
@@ -85,7 +89,9 @@ export function packChains(entityIndices) {
  * @param {Array<{old:number, neu:number}>} restored
  */
 export function applyChains(records, restored) {
-  if (!restored || !restored.length) return;
+  // null: the save has no such section (older than 67a93c49, or the pool was unbound):
+  // leave what onSpawned built. [] means none of the saved entities had one.
+  if (records == null || !restored || !restored.length) return;
   const byOld = indexRecords(records);
   for (let i = 0; i < restored.length; i++) {
     const neu = restored[i].neu | 0;
@@ -104,7 +110,8 @@ export function applyChains(records, restored) {
 
 export function packFixtures(entityIndices) {
   const out = [];
-  if (!ColliderFixture.head || !entityIndices) return out;
+  if (!ColliderFixture.head) return null;
+  if (!entityIndices) return out;
   for (let i = 0; i < entityIndices.length; i++) {
     const entityIndex = entityIndices[i] | 0;
     const counts = [];
@@ -129,7 +136,9 @@ export function packFixtures(entityIndices) {
 }
 
 export function applyFixtures(records, restored) {
-  if (!restored || !restored.length) return;
+  // null: the save has no such section (older than 67a93c49, or the pool was unbound):
+  // leave what onSpawned built. [] means none of the saved entities had one.
+  if (records == null || !restored || !restored.length) return;
   const byOld = indexRecords(records);
   for (let i = 0; i < restored.length; i++) {
     const neu = restored[i].neu | 0;
@@ -151,7 +160,8 @@ export function applyFixtures(records, restored) {
 
 export function packMeshes(entityIndices) {
   const out = [];
-  if (!MeshGeometry.vertCount || !entityIndices) return out;
+  if (!MeshGeometry.vertCount) return null;
+  if (!entityIndices) return out;
   for (let i = 0; i < entityIndices.length; i++) {
     const entityIndex = entityIndices[i] | 0;
     if (entityIndex < 0 || entityIndex >= (MeshGeometry.entityCount | 0)) continue;
@@ -184,7 +194,9 @@ export function packMeshes(entityIndices) {
 }
 
 export function applyMeshes(records, restored) {
-  if (!restored || !restored.length) return;
+  // null: the save has no such section (older than 67a93c49, or the pool was unbound):
+  // leave what onSpawned built. [] means none of the saved entities had one.
+  if (records == null || !restored || !restored.length) return;
   const byOld = indexRecords(records);
   for (let i = 0; i < restored.length; i++) {
     const neu = restored[i].neu | 0;
@@ -276,19 +288,36 @@ export function packTweens() {
 }
 
 /**
- * Replace the live tween pool. Zoom slots keep their entity field.
- * Paint and xy slots whose target was not restored are dropped.
+ * Restore the saved tweens. Zoom slots keep their entity field. Paint and xy slots whose
+ * target was not restored are dropped.
+ *
+ * The live pool is not wiped: create() runs again on a load, and tweens it started on
+ * entities the save does not own (non-serializable props) must survive. A live slot is
+ * cleared when it is a zoom tween (the saved zoom replaces it), when its entity is no
+ * longer active (a serializable entity the restore despawned), or when its entity is
+ * one of the restored entities (the saved tween state replaces what onSpawned started).
  * @param {object[]|null} slots
  * @param {(oldId:number) => number|null} mapGet
+ * @param {Array<{old:number, neu:number}>} [restored]
  */
-export function applyTweens(slots, mapGet) {
+export function applyTweens(slots, mapGet, restored) {
   if (!Tween.active) {
     if (slots && slots.length) console.warn('[SaveGame] tween restore skipped: pool is unbound');
     return;
   }
   const n = Tween.capacity | 0;
+  const restoredNew = new Set();
+  if (restored) for (let i = 0; i < restored.length; i++) restoredNew.add(restored[i].neu | 0);
+  const alive = Transform.active;
   for (let i = 0; i < n; i++) {
-    if (Tween.active[i]) Atomics.store(Tween.active, i, 0);
+    const state = Tween.active[i];
+    if (state === 0) continue;
+    const ent = Tween.entity[i];
+    const keep = state === 1 &&
+      Tween.kind[i] !== TWEEN_KIND_ZOOM &&
+      !!alive && alive[ent] === 1 &&
+      !restoredNew.has(ent);
+    if (!keep) Atomics.store(Tween.active, i, 0);
   }
   if (!slots || !slots.length) return;
   let slot = 0;
@@ -301,6 +330,7 @@ export function applyTweens(slots, mapGet) {
       if (next == null) continue;
       entity = next | 0;
     }
+    while (slot < n && Tween.active[slot] !== 0) slot++;
     if (slot >= n) {
       console.warn('[SaveGame] tween restore dropped slots: pool is smaller than the save');
       return;
