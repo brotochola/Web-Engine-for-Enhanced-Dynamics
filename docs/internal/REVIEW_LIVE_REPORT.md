@@ -17,10 +17,29 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**19:25** — Tween hygiene measurement for B10–B12 (kernel against `53691920`, the last
-commit before them), then **B13** (old saves wipe geometry; loads wipe some tweens).
+**20:05** — Preparing the **headed smoke pass** for every demo change so far (B5 fx-layer
+particles, B8 cars, B9 save → load in both terrain scenes, B14 loose chunks). I will write
+a **HEADED RUN** line here before the browser opens.
 
 ## Log
+
+### 20:00 — B13 fixed: older saves keep onSpawned geometry; loads keep unowned tweens (`00ac7938`)
+
+Four tests failed first. **Geometry:** an absent CHAINS/FIXTURES/MESHES section (every save
+older than `67a93c49`) became `[]` and wiped what `onSpawned` had just built. Now "absent"
+(older save, or the pool was unbound) and "present but empty" (the entity had none) are
+different on the wire, and only the second clears. **Tweens:** a load wiped the whole pool,
+but `create()` runs again on a load, so a non-serializable prop's fade-in was lost. Now a
+load clears zoom slots, slots on entities the restore despawned, and slots on restored
+entities, and keeps the rest. Suite **1212 / 1212** before the (now gated) commit.
+
+### 19:35 — Tween hygiene measurement: B10–B12 TIE (no regression)
+
+`tweenPoolMicrobench` (65 535 live tweens), working tree vs a worktree of `53691920`, one
+discarded warmup process per side, 5 alternating rounds (runner:
+`scratchpad/kernelAb.mjs`, same rules as `runKernelsVsRev`): **522 → 543 ticks/s (+4.1 %),
+KEEP won 17 of 25 comparisons, checksums identical** → TIE. B11 also removes the W× scan
+on multi-worker scenes, which this single-worker kernel cannot show.
 
 ### 19:20 — A flaky test slipped past my commit chain (my mistake, now fixed)
 

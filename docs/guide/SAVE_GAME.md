@@ -112,9 +112,10 @@ repeat:
 | 11 | MESHES | custom mesh verts, optional UVs, optional indices |
 | 12 | NAV | walkability bytes plus grid width, height, and cell size |
 | 13 | TIME | `Time.scale` |
-| 14 | TWEENS | active tween slots |
+| 14 | TWEENS | legacy: active tween slots with a u16 entity. Read only (saves written before B12) |
+| 15 | TWEENS2 | u8 layout version, then active tween slots with a u32 entity (entityIdWidth 32) |
 
-Version stays **5**. A save written before these tags simply has no such section; decode treats that as empty. Empty optional sections are omitted. There is no JSON payload and no base64 on the wire.
+Version stays **5**. CHAINS, FIXTURES and MESHES are written whenever that pool is bound, even with no records: on load, a present section clears geometry the saved entities did not have, while an absent one (a save older than these tags, or a pool that was unbound) leaves whatever `onSpawned` built. Other empty optional sections are omitted. A load keeps tweens on entities the save does not own (`create()` runs again on a load); it replaces zoom tweens and tweens on restored or despawned entities. There is no JSON payload and no base64 on the wire.
 
 Helpers: `SaveStore.put/get/list/listForScene/remove`, `downloadSave`, `parseUploadedFile`.
 
