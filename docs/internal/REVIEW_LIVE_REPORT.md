@@ -17,10 +17,33 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**04:30** — B23, remaining parts: shared resources vs lifecycle hooks, unlocked reads during save,
-nav restore order, layout/fingerprint bytes.
+**05:35** — **B24** (a mesh vertex edit can be marked seen without a redraw).
 
 ## Log
+
+### 05:30 — B23 (save robustness) complete: six fixes, then a headed save→load smoke
+
+Since the last entry:
+
+- **Hooks no longer corrupt shared state on load** (`6ae879d5`). A load despawns the scene's
+  starting entities and respawns the saved ones. Their `onDespawned`/`onSpawned` hooks used to
+  run **after** the saved shared resources and nav grid were written. In the test, a kill counter
+  ended at saved + 3. The saved bytes are now applied again afterwards, so the load ends exactly
+  on the saved state, and hooks still see the saved values while they run.
+- **Saves are taken from a stopped world** (`0bc1f333`). Saving read every buffer while the workers
+  were writing them, so a save could catch a terrain re-mesh or a physics step half-done. New
+  `Scene.pauseAndSettle()`: pause everything, then a "barrier" message that each worker answers
+  between frames. Once all have answered, nothing is writing. The save captures inside that
+  window and resumes before compressing.
+- **Save format can evolve safely** (`c9c65a85`):
+  - The three newest sections now start with a layout byte; older saves still load.
+  - Shared resources carry a schema fingerprint. Before, a game update that swapped two
+    same-size fields would silently load the bytes into the wrong fields; now it's detected and
+    skipped with a warning.
+- **Headed check:** save → load on the planet and terrain demos. The save took **48 ms and 39 ms**
+  including the new settle step. Both demos resumed at ~62 fps, both loads matched the earlier
+  counts (309 / 1072 islands), and there were no errors.
+- Suite **1277/1277**.
 
 ### 04:25 — The flaky test crashes (N-7) are solved (`e0cab8b5`); B23 two parts done
 
