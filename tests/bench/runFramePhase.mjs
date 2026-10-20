@@ -72,6 +72,9 @@ const browser = await chromium.launch({
     '--disable-backgrounding-occluded-windows',
     '--enable-webgpu-developer-features',
     '--enable-dawn-features=allow_unsafe_apis',
+    // Same as runIntegratedWorkerBenchmark: without it Windows reports a covered
+    // window as hidden and Chrome throttles its frames (review M9).
+    ...(process.platform === 'win32' ? ['--disable-features=CalculateNativeWinOcclusion'] : []),
   ],
 });
 
