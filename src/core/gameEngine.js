@@ -432,8 +432,9 @@ class GameEngine {
     return this.currentScene?.debugFlags;
   }
 
+  /** The static Mouse API while a scene is active. It read a scene.mouse that never existed, so it was always undefined (review D7). */
   get mouse() {
-    return this.currentScene?.mouse;
+    return this.currentScene ? Mouse : undefined;
   }
 
   get camera() {
