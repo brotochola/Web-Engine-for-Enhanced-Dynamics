@@ -2,13 +2,13 @@
 // tools and camera follow. The differences are radial gravity, the camera roll
 // that keeps the planet's local up at the top of the screen, camera-local
 // thrusters (so W/A/D still mean screen up/left/right while the view turns) and
-// a sprite counter-rotation that keeps the hull upright on screen.
+// a hull rotation that keeps the collider upright on screen.
 
 import { Ship, THRUST_ACCEL } from '/demos/destructibleTerrainScene/gameObjects/ship.js';
 import { CX, CY, G, radialCameraAngle } from '../planetGravity.js';
 import WEED from '/src/index.js';
 
-const { Camera, Keyboard, SpriteRenderer, LightEmitter, RigidBody, Collider } = WEED;
+const { Camera, Keyboard, LightEmitter } = WEED;
 
 const CAM_TURN_RATE = 12;
 const SIDE_ACCEL = THRUST_ACCEL * 0.25;
@@ -22,8 +22,6 @@ export class PlanetShip extends Ship {
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0
     this.setFixedRotation(0);
-    // Draw the hull with its own rotation (below) instead of the physics angle.
-    SpriteRenderer.inheritTransformRotation[this.index] = 0;
   }
 
   tick(dtRatio, deltaTime, accumulatedTime) {
@@ -42,9 +40,10 @@ export class PlanetShip extends Ship {
     const dt = dtRatio > 0 ? dtRatio / 60 : 0;
     this._camAngle += diff * (1 - Math.exp(-dt * CAM_TURN_RATE));
     Camera.setAngle(this._camAngle);
-
-    // The camera rolls the world; counter-rotate the hull so it stays upright.
-    this.spriteRenderer.spriteRotation = -this._camAngle;
+    // Same angle the camera rolls by, opposite sign, so the hull stays upright
+    // on screen. fixedRotation stays off: a lock forces the body back to angle 0.
+    this.rotation = -this._camAngle;
+    this.angularVelocity = 0;
 
     super.tick(dtRatio, deltaTime, accumulatedTime);
   }

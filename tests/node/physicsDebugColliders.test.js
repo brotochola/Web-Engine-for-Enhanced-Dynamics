@@ -44,8 +44,13 @@ function mockCtx() {
     get strokes() { return strokes; },
     lastRect: null,
     beginPath() {},
-    moveTo() {},
-    lineTo() {},
+    points: [],
+    moveTo(x, y) { this.points.push(x, y); },
+    lineTo(x, y) { this.points.push(x, y); },
+    save() {},
+    restore() {},
+    translate() {},
+    rotate() {},
     closePath() {},
     stroke() { strokes++; },
     strokeRect(x, y, w, h) { this.lastRect = { x, y, w, h }; },
@@ -99,7 +104,7 @@ test('SHOW_COLLIDERS strokes ColliderFixture polys even if shapeType is Box', ()
   assert.equal(ctx.strokes, 2);
 });
 
-test('drawSelectedEntity strokes collider AABB, not the 20x20 sprite fallback', () => {
+test('drawSelectedEntity strokes the oriented collider quad, not the sprite fallback', () => {
   initSoA();
   const dbg = new PhysicsDebugRenderer();
   assert.ok(Collider.replacePolygons(0, [
@@ -109,9 +114,20 @@ test('drawSelectedEntity strokes collider AABB, not the 20x20 sprite fallback', 
   const ctx = mockCtx();
   const flags = { getSelectedEntity() { return 0; } };
   dbg.drawSelectedEntity(ctx, { width: 900, height: 900 }, { x: 0, y: 0 }, 1, flags, null);
-  assert.ok(ctx.lastRect);
-  assert.ok(ctx.lastRect.w > 100, `AABB width should follow fixtures, got ${ctx.lastRect.w}`);
-  assert.ok(ctx.lastRect.h > 100, `AABB height should follow fixtures, got ${ctx.lastRect.h}`);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < ctx.points.length; i += 2) {
+    const x = ctx.points[i];
+    const y = ctx.points[i + 1];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  assert.ok(maxX - minX > 100, `quad width should follow fixtures, got ${maxX - minX}`);
+  assert.ok(maxY - minY > 100, `quad height should follow fixtures, got ${maxY - minY}`);
 });
 
 test('collider debug uses Transform when pose SAB is still zeros', () => {

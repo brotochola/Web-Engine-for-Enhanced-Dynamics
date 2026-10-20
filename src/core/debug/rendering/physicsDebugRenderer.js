@@ -56,6 +56,7 @@ export class PhysicsDebugRenderer {
     this._decoSizeTex = -1;
     this._decoSizeW = 20;
     this._decoSizeH = 20;
+    this._quad = new Float32Array(8);
   }
 
   attach(scene) {
@@ -430,22 +431,61 @@ export class PhysicsDebugRenderer {
     });
   }
 
+  /**
+   * The debug camera rolls the whole context. Spin back around a label anchor
+   * so glyphs and their backing rects stay screen-upright.
+   */
+  _uprightAt(ctx, camera, x, y, draw) {
+    const rot = camera && camera.rotation ? camera.rotation : 0;
+    if (!rot) {
+      draw();
+      return;
+    }
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-rot);
+    ctx.translate(-x, -y);
+    draw();
+    ctx.restore();
+  }
+
+  _writeLocalQuad(sx, sy, c, s, x0, y0, x1, y1, x2, y2, x3, y3, quad) {
+    quad[0] = sx + c * x0 - s * y0;
+    quad[1] = sy + s * x0 + c * y0;
+    quad[2] = sx + c * x1 - s * y1;
+    quad[3] = sy + s * x1 + c * y1;
+    quad[4] = sx + c * x2 - s * y2;
+    quad[5] = sy + s * x2 + c * y2;
+    quad[6] = sx + c * x3 - s * y3;
+    quad[7] = sy + s * x3 + c * y3;
+  }
+
+  _strokeQuad(ctx, quad, fill = false) {
+    ctx.beginPath();
+    ctx.moveTo(quad[0], quad[1]);
+    ctx.lineTo(quad[2], quad[3]);
+    ctx.lineTo(quad[4], quad[5]);
+    ctx.lineTo(quad[6], quad[7]);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    ctx.stroke();
+  }
+
+  _dotQuad(ctx, quad, r) {
+    for (let i = 0; i < 8; i += 2) {
+      ctx.beginPath();
+      ctx.arc(quad[i], quad[i + 1], r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   /** Stroke a width×height box centered at (sx,sy), oriented by cos/sin. */
   _strokeOrientedBox(ctx, sx, sy, wZoom, hZoom, c, s, fill = false) {
     const hw = wZoom * 0.5;
     const hh = hZoom * 0.5;
-    const x0 = -hw, y0 = -hh;
-    const x1 = hw, y1 = -hh;
-    const x2 = hw, y2 = hh;
-    const x3 = -hw, y3 = hh;
-    ctx.beginPath();
-    ctx.moveTo(sx + c * x0 - s * y0, sy + s * x0 + c * y0);
-    ctx.lineTo(sx + c * x1 - s * y1, sy + s * x1 + c * y1);
-    ctx.lineTo(sx + c * x2 - s * y2, sy + s * x2 + c * y2);
-    ctx.lineTo(sx + c * x3 - s * y3, sy + s * x3 + c * y3);
-    ctx.closePath();
-    if (fill) ctx.fill();
-    ctx.stroke();
+    const quad = this._quad;
+    this._writeLocalQuad(sx, sy, c, s, -hw, -hh, hw, -hh, hw, hh, -hw, hh, quad);
+    this._strokeQuad(ctx, quad, fill);
   }
 
   // ------- entity origins -------
@@ -553,7 +593,11 @@ export class PhysicsDebugRenderer {
         ctx.font = '10px monospace';
         ctx.textAlign = 'left';
         ctx.fillStyle = 'rgba(0, 136, 255, 0.95)';
-        ctx.fillText(this._velLabel, sx + 8, sy - 8);
+        const tx = sx + 8;
+        const ty = sy - 8;
+        this._uprightAt(ctx, camera, tx, ty, () => {
+          ctx.fillText(this._velLabel, tx, ty);
+        });
       }
       const w = angVel ? angVel[selectedIdx] : 0;
       if (Math.abs(w) > 0.02) {
@@ -834,10 +878,12 @@ export class PhysicsDebugRenderer {
             tw = ctx.measureText(text).width;
             this._ddTextWidth[i] = tw;
           }
-          ctx.fillStyle = 'rgba(0,0,0,0.7)';
-          ctx.fillRect(tx - tw / 2 - 2, ty - 12, tw + 4, 14);
-          ctx.fillStyle = rgb;
-          ctx.fillText(text, tx, ty);
+          this._uprightAt(ctx, camera, tx, ty, () => {
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(tx - tw / 2 - 2, ty - 12, tw + 4, 14);
+            ctx.fillStyle = rgb;
+            ctx.fillText(text, tx, ty);
+          });
           break;
         }
         case DebugDraw.TYPE_CELL: {
@@ -888,10 +934,12 @@ export class PhysicsDebugRenderer {
       const tw = this._indexWidth(ctx, i);
       const pad = 2;
 
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(sx - tw / 2 - pad, sy - 12, tw + pad * 2, 14);
-      ctx.fillStyle = 'rgba(255, 255, 255, 1.0)';
-      ctx.fillText(text, sx, sy);
+      this._uprightAt(ctx, camera, sx, sy, () => {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(sx - tw / 2 - pad, sy - 12, tw + pad * 2, 14);
+        ctx.fillStyle = 'rgba(255, 255, 255, 1.0)';
+        ctx.fillText(text, sx, sy);
+      });
     }
   }
 
@@ -1034,65 +1082,113 @@ export class PhysicsDebugRenderer {
 
     const pos = this._pos;
     this._worldXY(selectedIdx, pose, pos);
-    let posX = pos.x;
-    let posY = pos.y;
-    let left;
-    let top;
-    let w;
-    let h;
+    const poseRotC = pose ? pose.rotC : null;
+    const poseRotS = pose ? pose.rotS : null;
+    const rb = RigidBody.active;
+    const usePose = !!(pose && pose.x && rb && rb[selectedIdx] && this._posePublished(selectedIdx, poseRotC, poseRotS));
+    let c = usePose && poseRotC ? poseRotC[selectedIdx] : (Transform.rotC ? Transform.rotC[selectedIdx] : 1);
+    let s = usePose && poseRotS ? poseRotS[selectedIdx] : (Transform.rotS ? Transform.rotS[selectedIdx] : 0);
 
-    if (Collider.active && Collider.active[selectedIdx]) {
-      getColliderBounds(selectedIdx, _boundsResult);
-      const hw = _boundsResult.halfW;
-      const hh = _boundsResult.halfH;
-      posX = _boundsResult.posX;
-      posY = _boundsResult.posY;
-      w = hw * 2;
-      h = hh * 2;
-      left = posX - hw;
-      top = posY - hh;
-    } else {
+    ctx.strokeStyle = 'rgba(255, 200, 100, 1.0)';
+    ctx.lineWidth = 2;
+
+    let hw = 0;
+    let hh = 0;
+    const hasCollider = Collider.active && Collider.active[selectedIdx];
+    if (hasCollider) {
+      const ox = Collider.offsetX[selectedIdx] || 0;
+      const oy = Collider.offsetY[selectedIdx] || 0;
+      const shape = Collider.shapeType[selectedIdx];
+      let posX;
+      let posY;
+      if (shape === ShapeType.Circle) {
+        posX = pos.x + ox;
+        posY = pos.y + oy;
+      } else {
+        posX = pos.x + c * ox - s * oy;
+        posY = pos.y + s * ox + c * oy;
+        if (shape === ShapeType.Polygon || shape === ShapeType.Chain) {
+          const lcx = Collider.polyCentroidX ? Collider.polyCentroidX[selectedIdx] : 0;
+          const lcy = Collider.polyCentroidY ? Collider.polyCentroidY[selectedIdx] : 0;
+          posX += c * lcx - s * lcy;
+          posY += s * lcx + c * lcy;
+        }
+      }
+      const sx = (posX - camera.x) * zoom;
+      const sy = (posY - camera.y) * zoom;
+      if (shape === ShapeType.Circle) {
+        const r = (Collider.radius[selectedIdx] || 0) * zoom;
+        if (r > 0) {
+          hw = r;
+          hh = r;
+          this._strokeOrientedBox(ctx, sx, sy, r * 2, r * 2, c, s);
+        }
+      } else {
+        const w = (Collider.width[selectedIdx] || 0) * zoom;
+        const h = (Collider.height[selectedIdx] || 0) * zoom;
+        if (w > 0 && h > 0) {
+          hw = w * 0.5;
+          hh = h * 0.5;
+          this._strokeOrientedBox(ctx, sx, sy, w, h, c, s);
+        }
+      }
+    }
+
+    const quad = this._quad;
+    if (!(hw > 0 && hh > 0)) {
+      const inherit = SpriteRenderer.inheritTransformRotation;
+      if (inherit && !inherit[selectedIdx]) {
+        c = SpriteRenderer.spriteRotC[selectedIdx];
+        s = SpriteRenderer.spriteRotS[selectedIdx];
+      }
       const width = SpriteRenderer.getOriginalWidth(selectedIdx) || 20;
       const height = SpriteRenderer.getOriginalHeight(selectedIdx) || 20;
       const scaleX = SpriteRenderer.scaleX?.[selectedIdx] || 1;
       const scaleY = SpriteRenderer.scaleY?.[selectedIdx] || 1;
       const anchorX = SpriteRenderer.anchorX?.[selectedIdx] || 0.5;
       const anchorY = SpriteRenderer.anchorY?.[selectedIdx] || 0.5;
-      w = width * Math.abs(scaleX);
-      h = height * Math.abs(scaleY);
-      left = posX - w * anchorX;
-      top = posY - h * anchorY;
+      const w = width * Math.abs(scaleX) * zoom;
+      const h = height * Math.abs(scaleY) * zoom;
+      hw = w * 0.5;
+      hh = h * 0.5;
+      const sx = (pos.x - camera.x) * zoom;
+      const sy = (pos.y - camera.y) * zoom;
+      this._writeLocalQuad(
+        sx, sy, c, s,
+        -anchorX * w, -anchorY * h,
+        (1 - anchorX) * w, -anchorY * h,
+        (1 - anchorX) * w, (1 - anchorY) * h,
+        -anchorX * w, (1 - anchorY) * h,
+        quad
+      );
+      this._strokeQuad(ctx, quad);
     }
 
-    const sLeft = (left - camera.x) * zoom;
-    const sTop = (top - camera.y) * zoom;
-    const sWidth = w * zoom;
-    const sHeight = h * zoom;
-
-    ctx.strokeStyle = 'rgba(255, 200, 100, 1.0)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(sLeft, sTop, sWidth, sHeight);
-
-    const cornerSize = 6;
     ctx.fillStyle = 'rgba(255, 200, 100, 0.8)';
-    ctx.beginPath(); ctx.arc(sLeft, sTop, cornerSize, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(sLeft + sWidth, sTop, cornerSize, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(sLeft, sTop + sHeight, cornerSize, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(sLeft + sWidth, sTop + sHeight, cornerSize, 0, Math.PI * 2); ctx.fill();
+    this._dotQuad(ctx, quad, 6);
 
-    const sx = (posX - camera.x) * zoom;
-    const labelY = sTop - 15;
+    const q = quad;
+    const cx = (q[0] + q[2] + q[4] + q[6]) * 0.25;
+    const cy = (q[1] + q[3] + q[5] + q[7]) * 0.25;
+    const pad = Math.sqrt(hw * hw + hh * hh) + 16;
+    const rot = camera.rotation || 0;
+    const lx = cx - Math.sin(rot) * pad;
+    const ly = cy - (rot ? Math.cos(rot) : 1) * pad;
     const text = this._indexLabel(selectedIdx);
-    ctx.font = '12px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
     if (this._selLabelIdx !== selectedIdx) {
       this._selLabelIdx = selectedIdx;
       this._selLabelWidth = ctx.measureText(text).width;
     }
     const tw = this._selLabelWidth;
-    ctx.fillStyle = 'rgba(255, 200, 100, 0.9)';
-    ctx.fillRect(sx - tw / 2 - 4, labelY - 12, tw + 8, 16);
-    ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
-    ctx.fillText(text, sx, labelY);
+    this._uprightAt(ctx, camera, lx, ly, () => {
+      ctx.fillStyle = 'rgba(255, 200, 100, 0.9)';
+      ctx.fillRect(lx - tw / 2 - 4, ly - 12, tw + 8, 16);
+      ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
+      ctx.fillText(text, lx, ly);
+    });
   }
 
   drawLights(ctx, canvas, camera, zoom, flags, pose, visPoly) {
@@ -1173,10 +1269,13 @@ export class PhysicsDebugRenderer {
     ctx.textBaseline = 'bottom';
     if (this._hoverWidth < 0) this._hoverWidth = ctx.measureText(text).width;
     const w = this._hoverWidth;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
-    ctx.fillRect(sx - w * 0.5 - 4, sy - 28, w + 8, 16);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillText(text, sx, sy - 14);
+    const ly = sy - 14;
+    this._uprightAt(ctx, camera, sx, ly, () => {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+      ctx.fillRect(sx - w * 0.5 - 4, ly - 14, w + 8, 16);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.fillText(text, sx, ly);
+    });
   }
 
   drawPoolSelection(ctx, canvas, camera, zoom, kind, index) {
