@@ -12,7 +12,6 @@ import {
   SHOT_KIND_BODY,
 } from '../worldGrid.js';
 import { TerrainIsland } from './terrainIsland.js';
-import { debugWorkerLog } from '/src/util/debugLog.js';
 import WEED from '/src/index.js';
 
 const {
@@ -72,6 +71,7 @@ export class WorldGridManager extends GameObject {
     this._extraShardBag = [];
     this._hitScratch = { kind: 0, x: 0, y: 0, entityIndex: -1, fixtureIndex: -1 };
     this._bodyHit = { hitX: 0, hitY: 0, fixtureIndex: -1, entityIndex: -1 };
+    this._retargetFailWarned = false;
     const disk = WorldGrid.disk;
     if (disk) {
       WorldGrid.cols = disk.cols;
@@ -460,9 +460,14 @@ export class WorldGridManager extends GameObject {
         // rec's rect already tracks the new grid — stale terrain no later
         // remesh repairs. Drop the island and fall through to a fresh spawn;
         // if that also fails the area is retried by the next dirty pass.
-        debugWorkerLog(
-          `worldGrid: retarget failed entity=${rec.index}; rebuilding static island`,
-        );
+        // Warn once: a full fixture pool fails every retarget after it.
+        if (!this._retargetFailWarned) {
+          this._retargetFailWarned = true;
+          console.warn(
+            `worldGrid: retarget failed (entity ${rec.index}); rebuilding the static island. ` +
+              'Likely a full fixture pool (physics.maxFixturePoolSize) or a degenerate contour. Not repeated.',
+          );
+        }
         this._despawnIndex(rec.index);
         pool[bestI] = pool[pool.length - 1];
         pool.pop();
