@@ -10,7 +10,9 @@ export const SECTION = Object.freeze({
   JOINTS: 5,
   LIQUIDFUN: 6,
   DECALS: 7,
+  /** Legacy (no schema fingerprint). Read only; writes use SHARED_RESOURCES2. */
   SHARED_RESOURCES: 8,
+  /** Legacy (no layout byte). Read only; writes use CHAINS2, FIXTURES2, MESHES2. */
   CHAINS: 9,
   FIXTURES: 10,
   MESHES: 11,
@@ -20,9 +22,17 @@ export const SECTION = Object.freeze({
   TWEENS: 14,
   /** u8 layout version, then the TWEENS records with a u32 entity. */
   TWEENS2: 15,
+  /** u8 layout, then records of name, u32 schema fingerprint (0 = unknown), bytes. */
+  SHARED_RESOURCES2: 16,
+  /** u8 layout, then the CHAINS / FIXTURES / MESHES records. */
+  CHAINS2: 17,
+  FIXTURES2: 18,
+  MESHES2: 19,
 });
 
 const TWEENS2_LAYOUT = 1;
+/** Record layout of SHARED_RESOURCES2, CHAINS2, FIXTURES2, MESHES2. Bump on any change. */
+const SECTION_LAYOUT = 1;
 
 const KIND = Object.freeze({
   F64: 0,
@@ -623,26 +633,32 @@ function readDecals(r) {
 
 function writeSharedResources(w, records) {
   const list = records || [];
+  w.u8(SECTION_LAYOUT);
   w.u32(list.length);
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
     w.str(rec.name || '');
+    w.u32(rec.fingerprint >>> 0);
     const bytes = rec.bytes instanceof Uint8Array ? rec.bytes : new Uint8Array(rec.bytes || []);
     w.bytes(bytes);
   }
 }
 
-function readSharedResources(r) {
+/** @param {boolean} legacy SHARED_RESOURCES (tag 8): no fingerprint. */
+function readSharedResources(r, legacy) {
   const n = r.u32();
   const out = [];
   for (let i = 0; i < n; i++) {
-    out.push({ name: r.str(), bytes: r.bytes() });
+    const name = r.str();
+    const fingerprint = legacy ? 0 : r.u32();
+    out.push({ name, fingerprint: fingerprint || null, bytes: r.bytes() });
   }
   return out;
 }
 
 function writeChains(w, records) {
   const list = records || [];
+  w.u8(SECTION_LAYOUT);
   w.u32(list.length);
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
@@ -669,6 +685,7 @@ function readChains(r) {
 
 function writeFixtures(w, records) {
   const list = records || [];
+  w.u8(SECTION_LAYOUT);
   w.u32(list.length);
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
@@ -693,6 +710,7 @@ function readFixtures(r) {
 
 function writeMeshes(w, records) {
   const list = records || [];
+  w.u8(SECTION_LAYOUT);
   w.u32(list.length);
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
@@ -825,18 +843,18 @@ export function encodeBinarySaveBody(payload) {
     pushSection(sections, SECTION.DECALS, (w) => writeDecals(w, payload.decals));
   }
   if (payload.sharedResources?.length) {
-    pushSection(sections, SECTION.SHARED_RESOURCES, (w) => writeSharedResources(w, payload.sharedResources));
+    pushSection(sections, SECTION.SHARED_RESOURCES2, (w) => writeSharedResources(w, payload.sharedResources));
   }
   // Present (even empty) when the pool was bound: a load then clears geometry the
   // saved entities did not have. Absent means "unknown" and a load leaves it alone.
   if (Array.isArray(payload.chains)) {
-    pushSection(sections, SECTION.CHAINS, (w) => writeChains(w, payload.chains));
+    pushSection(sections, SECTION.CHAINS2, (w) => writeChains(w, payload.chains));
   }
   if (Array.isArray(payload.fixtures)) {
-    pushSection(sections, SECTION.FIXTURES, (w) => writeFixtures(w, payload.fixtures));
+    pushSection(sections, SECTION.FIXTURES2, (w) => writeFixtures(w, payload.fixtures));
   }
   if (Array.isArray(payload.meshes)) {
-    pushSection(sections, SECTION.MESHES, (w) => writeMeshes(w, payload.meshes));
+    pushSection(sections, SECTION.MESHES2, (w) => writeMeshes(w, payload.meshes));
   }
   if (payload.nav?.walkability) {
     pushSection(sections, SECTION.NAV, (w) => writeNav(w, payload.nav));
@@ -857,6 +875,24 @@ export function encodeBinarySaveBody(payload) {
     out.raw(s.body);
   }
   return out.finish();
+}
+
+/**
+ * A section written with a leading layout byte (tag) or its older form
+ * without one (legacyTag). A layout newer than this build reads as absent.
+ * @returns {*} read(reader, legacy), or null
+ */
+function readVersioned(map, tag, legacyTag, what, read) {
+  if (map[tag]) {
+    const r = new Reader(map[tag]);
+    const layout = r.u8();
+    if (layout !== SECTION_LAYOUT) {
+      console.warn(`[SaveGame] ${what} section layout ${layout} is newer than this build; skipped`);
+      return null;
+    }
+    return read(r, false);
+  }
+  return map[legacyTag] ? read(new Reader(map[legacyTag]), true) : null;
 }
 
 /**
@@ -888,12 +924,12 @@ export function decodeBinarySaveBody(bytes) {
       ? readLiquidFun(new Reader(map[SECTION.LIQUIDFUN]))
       : null,
     decals: map[SECTION.DECALS] ? readDecals(new Reader(map[SECTION.DECALS])) : null,
-    sharedResources: map[SECTION.SHARED_RESOURCES]
-      ? readSharedResources(new Reader(map[SECTION.SHARED_RESOURCES]))
-      : null,
-    chains: map[SECTION.CHAINS] ? readChains(new Reader(map[SECTION.CHAINS])) : null,
-    fixtures: map[SECTION.FIXTURES] ? readFixtures(new Reader(map[SECTION.FIXTURES])) : null,
-    meshes: map[SECTION.MESHES] ? readMeshes(new Reader(map[SECTION.MESHES])) : null,
+    sharedResources: readVersioned(
+      map, SECTION.SHARED_RESOURCES2, SECTION.SHARED_RESOURCES, 'shared resource', readSharedResources,
+    ),
+    chains: readVersioned(map, SECTION.CHAINS2, SECTION.CHAINS, 'chain', readChains),
+    fixtures: readVersioned(map, SECTION.FIXTURES2, SECTION.FIXTURES, 'fixture', readFixtures),
+    meshes: readVersioned(map, SECTION.MESHES2, SECTION.MESHES, 'mesh', readMeshes),
     nav: map[SECTION.NAV] ? readNav(new Reader(map[SECTION.NAV])) : null,
     timeScale: map[SECTION.TIME] ? readTime(new Reader(map[SECTION.TIME])) : null,
     tweens: map[SECTION.TWEENS2]

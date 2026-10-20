@@ -11,6 +11,7 @@ import { VERSION } from '../../version.js';
 import { BODY_DIRTY, markBodyDirty } from '../../box2d/box2dBodySync.js';
 import { Joint } from '../joint.js';
 import { encodeBinarySaveBody, decodeBinarySaveBody } from './binarySaveCodec.js';
+import { fnv1a32 } from './schemaHash.js';
 import {
   packSharedResources,
   packChains,
@@ -53,13 +54,7 @@ export function componentSchemaFingerprint(ComponentClass) {
   if (ComponentClass === RigidBody || ComponentClass.name === 'RigidBody') {
     parts.push('pose:vx,vy,angularVelocity,sleeping');
   }
-  let hash = 2166136261;
-  const s = parts.join('|');
-  for (let i = 0; i < s.length; i++) {
-    hash ^= s.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+  return fnv1a32(parts.join('|'));
 }
 
 /**

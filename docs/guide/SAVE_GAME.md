@@ -106,14 +106,20 @@ repeat:
 | 5 | JOINTS | packed joint records |
 | 6 | LIQUIDFUN | typed particle/group/pair/render buffers |
 | 7 | DECALS | sparse tiles as raw PNG or RGBA bytes |
-| 8 | SHARED_RESOURCES | one record per bound class: name + raw SAB bytes |
-| 9 | CHAINS | local chain points for saved entities |
-| 10 | FIXTURES | extra convex pieces for saved entities |
-| 11 | MESHES | custom mesh verts, optional UVs, optional indices |
+| 8 | SHARED_RESOURCES | legacy: name + raw SAB bytes, no fingerprint. Read only |
+| 9 | CHAINS | legacy: CHAINS2 records without the layout byte. Read only |
+| 10 | FIXTURES | legacy: FIXTURES2 records without the layout byte. Read only |
+| 11 | MESHES | legacy: MESHES2 records without the layout byte. Read only |
 | 12 | NAV | walkability bytes plus grid width, height, and cell size |
 | 13 | TIME | `Time.scale` |
 | 14 | TWEENS | legacy: active tween slots with a u16 entity. Read only (saves written before B12) |
 | 15 | TWEENS2 | u8 layout version, then active tween slots with a u32 entity (entityIdWidth 32) |
+| 16 | SHARED_RESOURCES2 | u8 layout, then one record per bound class: name, u32 schema fingerprint (0 = unknown), raw SAB bytes |
+| 17 | CHAINS2 | u8 layout, then local chain points for saved entities |
+| 18 | FIXTURES2 | u8 layout, then extra convex pieces for saved entities |
+| 19 | MESHES2 | u8 layout, then custom mesh verts, optional UVs, optional indices |
+
+Every section added since TWEENS2 starts with a layout byte: a record change bumps it instead of needing a new tag, and a layout newer than the build reads as an absent section (with a warning). A shared resource whose schema fingerprint (name, then each field name, type, length and atomic flag in layout order) differs from the bound class is skipped: raw bytes cannot be applied best-effort, and two schemas can share a byte size.
 
 Version stays **5**. CHAINS, FIXTURES and MESHES are written whenever that pool is bound, even with no records: on load, a present section clears geometry the saved entities did not have, while an absent one (a save older than these tags, or a pool that was unbound) leaves whatever `onSpawned` built. Other empty optional sections are omitted. A load keeps tweens on entities the save does not own (`create()` runs again on a load); it replaces zoom tweens and tweens on restored or despawned entities. There is no JSON payload and no base64 on the wire.
 

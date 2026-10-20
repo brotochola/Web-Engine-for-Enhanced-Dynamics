@@ -15,21 +15,39 @@ import { Time } from '../timeScale.js';
 import { Tween, TWEEN_KIND_ZOOM } from '../tween.js';
 import { Transform } from '../../components/transform.js';
 import { entityIdNone } from '../../util/entityIdWidth.js';
+import { fnv1a32 } from './schemaHash.js';
 
 function copyInto(dst, src, n) {
   const count = n | 0;
   for (let i = 0; i < count; i++) dst[i] = src[i];
 }
 
+/**
+ * Schema fingerprint of a shared resource: its name, then each field's name,
+ * type, length and atomic flag in layout order. Two schemas can share a byte
+ * size and still lay the bytes out differently.
+ * @param {typeof SharedResource} ResourceClass
+ * @returns {number}
+ */
+export function sharedResourceFingerprint(ResourceClass) {
+  const parts = [ResourceClass.name];
+  for (const [name, spec] of Object.entries(ResourceClass._schema || {})) {
+    const { type, length, atomic } = SharedResource._schemaEntry(spec);
+    parts.push(atomic ? `${name}:${type.name}:${length}:atomic` : `${name}:${type.name}:${length}`);
+  }
+  return fnv1a32(parts.join('|'));
+}
+
 export function packSharedResources() {
   const bound = SharedResource.boundList();
   const out = [];
   for (let i = 0; i < bound.length; i++) {
-    const buf = bound[i].class?.sharedBuffer;
+    const ResourceClass = bound[i].class;
+    const buf = ResourceClass?.sharedBuffer;
     if (!buf) continue;
     const bytes = new Uint8Array(buf.byteLength);
     bytes.set(new Uint8Array(buf));
-    out.push({ name: bound[i].name, bytes });
+    out.push({ name: bound[i].name, fingerprint: sharedResourceFingerprint(ResourceClass), bytes });
   }
   return out;
 }
@@ -51,6 +69,13 @@ export function applySharedResources(records) {
       console.warn(
         `[SaveGame] shared resource ${rec.name} size ${bytes.byteLength} != ${ResourceClass.sharedBuffer.byteLength}; skipped`
       );
+      continue;
+    }
+    // Raw bytes cannot be applied best-effort: a different layout at the same
+    // size would land values in the wrong fields. Saves older than the
+    // fingerprint carry none and keep the size check alone.
+    if (rec.fingerprint != null && rec.fingerprint !== sharedResourceFingerprint(ResourceClass)) {
+      console.warn(`[SaveGame] shared resource ${rec.name} schema changed since the save; skipped`);
       continue;
     }
     new Uint8Array(ResourceClass.sharedBuffer).set(bytes);
