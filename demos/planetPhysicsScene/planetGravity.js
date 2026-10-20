@@ -3,9 +3,8 @@
 // decides where the disk sits and how hard it pulls.
 // World gravity is zero; G is the radial pull toward (CX, CY).
 
-import { COLS } from '../destructibleTerrainScene/worldGrid.js';
-
-export const N = COLS;
+/** Square grid side in cells. Its own number: it used to be the flat level's COLS. */
+export const N = 900;
 export const CELL = 10;
 /** Circle diameter as a fraction of the square grid. The rest is empty margin. */
 export const PLANET_DIAMETER = 0.66;
