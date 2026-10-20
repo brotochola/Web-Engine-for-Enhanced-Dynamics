@@ -1686,9 +1686,7 @@ export class Layer {
     static consumeTextureUpload(layerId, name) {
         const slot = textureSlot(layerId, name);
         if (!slot) return null;
-        if (!slot.rect) {
-            slot.rect = { x: 0, y: 0, w: 0, h: 0, resourceIndex: 0, fieldIndex: 0 };
-        }
+        // Both slot builders create rect up front (review D7).
         return readTextureUpload(slot.view, slot.rect);
     }
 

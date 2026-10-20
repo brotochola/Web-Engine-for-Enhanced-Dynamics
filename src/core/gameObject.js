@@ -2101,7 +2101,7 @@ export class GameObject {
    * Do not write an empty tick(){}. Do not assign this.tick on an instance.
    *
    * Note: this._neighbors and this.neighborCount are updated before this is called
-   * Input is available via this.mouse and this.keyboard
+   * Input comes from the static Mouse, Keyboard and Gamepad classes
    *
    * @param {number} dtRatio - Delta time ratio normalized to 60fps (1.0 = 16.67ms frame)
    * @param {number} deltaTime - Actual time since last frame in milliseconds

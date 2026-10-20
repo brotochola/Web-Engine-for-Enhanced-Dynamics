@@ -25,7 +25,7 @@ export class ChainPoints {
   static maxPoints = 0;
   static entityCount = 0;
   static lengthUnitsPerMeter = 100;
-  static lastError = { code: '', entityIndex: -1 };
+  static lastError = { code: '' };
 
   static getBufferSize(maxPoints, entityCount) {
     const n = maxPoints | 0;
@@ -88,9 +88,8 @@ export class ChainPoints {
     this.entityCount = 0;
   }
 
-  static _fail(code, entityIndex) {
+  static _fail(code) {
     this.lastError.code = code;
-    this.lastError.entityIndex = entityIndex | 0;
     return false;
   }
 
@@ -149,12 +148,12 @@ export class ChainPoints {
    */
   static setForEntity(entityIdx, xy, count, loop) {
     if (!this.xy || entityIdx < 0 || entityIdx >= this.entityCount) {
-      return this._fail('not-initialized', entityIdx);
+      return this._fail('not-initialized');
     }
     const n = count | 0;
     const isLoop = loop ? 1 : 0;
     if (!xy || (isLoop ? n < 3 : n < 4) || n * 2 > xy.length) {
-      return this._fail('count', entityIdx);
+      return this._fail('count');
     }
     const slop = 0.005 * (this.lengthUnitsPerMeter || 100);
     const slopSqr = slop * slop;
@@ -166,7 +165,7 @@ export class ChainPoints {
     for (let i = 0; i < n; i++) {
       const x = xy[i * 2];
       const y = xy[i * 2 + 1];
-      if (x !== x || y !== y) return this._fail('nan', entityIdx);
+      if (x !== x || y !== y) return this._fail('nan');
       if (x < minX) minX = x;
       if (x > maxX) maxX = x;
       if (y < minY) minY = y;
@@ -175,11 +174,11 @@ export class ChainPoints {
     for (let i = 0; i < pairs; i++) {
       const j = i + 1 < n ? i + 1 : 0;
       if (!this._edgeOk(xy[i * 2], xy[i * 2 + 1], xy[j * 2], xy[j * 2 + 1], slopSqr)) {
-        return this._fail('short-edge', entityIdx);
+        return this._fail('short-edge');
       }
     }
     const begin = this._alloc(entityIdx, n);
-    if (begin < 0) return this._fail('pool-exhausted', entityIdx);
+    if (begin < 0) return this._fail('pool-exhausted');
     const dst = begin * 2;
     for (let i = 0; i < n * 2; i++) this.xy[dst + i] = xy[i];
     this.loop[entityIdx] = isLoop;

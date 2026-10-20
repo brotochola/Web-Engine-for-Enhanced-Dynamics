@@ -431,11 +431,6 @@ export class Mouse {
    * @param {number} canvasY
    * @param {Object} camera
    */
-  static setCanvasPosition(canvasX, canvasY, camera) {
-    this._writeCanvas(0, canvasX, canvasY);
-    this._writeWorld(0, camera);
-  }
-
   static _writeCanvas(slot, canvasX, canvasY) {
     this._canvasX[slot] = canvasX;
     this._canvasY[slot] = canvasY;

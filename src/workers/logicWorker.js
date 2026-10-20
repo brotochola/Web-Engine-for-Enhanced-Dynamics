@@ -1790,10 +1790,8 @@ class LogicWorker extends AbstractWorker {
       remapEntityIdFields(EntityClass, neu, rec.components, mapGet);
     }
 
-    let jointsRestored = 0;
     if (joints.length && typeof Joint.restoreFromSave === 'function') {
-      const created = Joint.restoreFromSave(joints, oldToNew);
-      jointsRestored = created.length;
+      Joint.restoreFromSave(joints, oldToNew);
     }
 
     const idPairs = [];
@@ -1807,7 +1805,6 @@ class LogicWorker extends AbstractWorker {
       msg: 'restoreSaveComplete',
       restored,
       failed,
-      jointsRestored,
       idPairs,
     };
   }

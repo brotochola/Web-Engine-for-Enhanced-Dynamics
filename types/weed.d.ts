@@ -1615,11 +1615,6 @@ export declare class Mouse {
   static updateEdgeFlags(): void;
   static snapshotPreviousFrame(): void;
   static updateWorldPosition(camera: Vec2Mutable & { zoom: number }): void;
-  static setCanvasPosition(
-    canvasX: number,
-    canvasY: number,
-    camera: Vec2Mutable & { zoom: number }
-  ): void;
 
   static pointerDown(e: PointerEvent, camera?: Vec2Mutable & { zoom: number }): void;
   static pointerMove(e: PointerEvent, camera?: Vec2Mutable & { zoom: number }): void;
