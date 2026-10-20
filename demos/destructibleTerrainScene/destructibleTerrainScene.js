@@ -1,7 +1,7 @@
 // Destructible terrain — WorldGrid SAB. Ship on logic0 (rays). Manager on logic1 (grid write).
 // Loose dirt (not touching left/right/bottom) falls as one body. No welds.
 // Ship followEntity: LOOK_AHEAD=0. Drawn cam is renderQueueCamera (PHYSICS.md).
-// Z draw · X erase · C laser · V shatter · [ ] brush · A/D thrusters · click uses tool.
+// Z draw · X erase · C laser · V shatter · [ ] brush · W/A/D thrusters · click uses tool.
 // Headed bench: ?benchRemesh=1 holds laser straight down (no C+mouse).
 
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
@@ -11,7 +11,7 @@ import { Ship } from './gameObjects/ship.js';
 import { WorldGrid, CELL, COLS, ROWS, TUNE } from './worldGrid.js';
 import WEED from '/src/index.js';
 
-const { Scene, Camera, DebugDraw, LAYER_KIND, BLEND_MODES } = WEED;
+const { Scene, Camera, LAYER_KIND, BLEND_MODES } = WEED;
 
 /** Dual-map look: query `?backend=webgl|webgpu` overrides. Missing GPUDevice stays a hard error. */
 function terrainSearchParam(name) {
@@ -195,7 +195,6 @@ export class DestructibleTerrainScene extends Scene {
   }
 
   update() {
-    this._drawHud();
     this._syncSliders();
   }
 
@@ -235,12 +234,6 @@ export class DestructibleTerrainScene extends Scene {
     });
   }
 
-  _drawHud() {
-    const x = Camera.x - 220 / (Camera.zoom || 1);
-    const y = Camera.y - 180 / (Camera.zoom || 1);
-    DebugDraw.drawText(x, y, 'Z draw  X erase  C laser  V shatter', 0xe8e8e8, 0);
-  }
-
   _buildPanel() {
     if (typeof document === 'undefined') return;
     this._removePanel();
@@ -257,6 +250,7 @@ export class DestructibleTerrainScene extends Scene {
     title.style.cssText = 'font:600 14px/1.2 system-ui;margin:0 0 8px;color:#fff;';
     title.textContent = 'Terrain';
     panel.appendChild(title);
+    panel.appendChild(this._keysRow('Z draw · X erase · C laser · V shatter · [ ] brush · W/A/D thrusters'));
 
     this._sliderRows = [];
     for (let i = 0; i < SLIDERS.length; i++) {
@@ -274,6 +268,14 @@ export class DestructibleTerrainScene extends Scene {
 
     document.body.appendChild(panel);
     this._panel = panel;
+  }
+
+  // A screen-space line: world-space DebugDraw text moves with the camera.
+  _keysRow(text) {
+    const keys = document.createElement('div');
+    keys.style.cssText = 'margin:0 0 8px;color:#b8c0d0;font:11px/1.4 system-ui;';
+    keys.textContent = text;
+    return keys;
   }
 
   _syncSliders() {

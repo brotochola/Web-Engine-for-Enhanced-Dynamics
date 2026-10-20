@@ -18,8 +18,6 @@ import WEED from '/src/index.js';
 const {
   Scene,
   Camera,
-  Mouse,
-  DebugDraw,
   LAYER_KIND,
   BLEND_MODES,
   LAYER_DENSITY_SOURCE,
@@ -265,7 +263,6 @@ export class PlanetPhysicsScene extends Scene {
   }
 
   update() {
-    this._drawHud();
     this._syncSliders();
   }
 
@@ -305,12 +302,6 @@ export class PlanetPhysicsScene extends Scene {
     });
   }
 
-  _drawHud() {
-    const x = Camera.x - 240 / (Camera.zoom || 1);
-    const y = Camera.y - 180 / (Camera.zoom || 1);
-    DebugDraw.drawText(x, y, 'Z draw  X erase  C laser  V shatter  W/A/D fly', 0xe8e8e8, 0);
-  }
-
   _buildPanel() {
     if (typeof document === 'undefined') return;
     this._removePanel();
@@ -327,6 +318,7 @@ export class PlanetPhysicsScene extends Scene {
     title.style.cssText = 'font:600 14px/1.2 system-ui;margin:0 0 8px;color:#fff;';
     title.textContent = 'Planet terrain';
     panel.appendChild(title);
+    panel.appendChild(this._keysRow('Z draw · X erase · C laser · V shatter · [ ] brush · W/A/D fly · Q water'));
 
     this._sliderRows = [];
     for (let i = 0; i < SLIDERS.length; i++) {
@@ -344,6 +336,14 @@ export class PlanetPhysicsScene extends Scene {
 
     document.body.appendChild(panel);
     this._panel = panel;
+  }
+
+  // A screen-space line: world-space DebugDraw text turns and lags with the camera.
+  _keysRow(text) {
+    const keys = document.createElement('div');
+    keys.style.cssText = 'margin:0 0 8px;color:#b8c0d0;font:11px/1.4 system-ui;';
+    keys.textContent = text;
+    return keys;
   }
 
   _syncSliders() {
