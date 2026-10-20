@@ -203,7 +203,9 @@ export class AbstractWorker {
     //
     // It is NOT algorithm time and NOT part of STEP_MS, and it must not be
     // folded into either. It is scheduler idle: time this thread had nothing to
-    // do. E-01 / E-06 in docs/internal/EXECUTION_PLAN.md.
+    // do. E-01 / E-06 in docs/internal/EXECUTION_PLAN.md. Two limits: messages
+    // handled between frames (MSG_MS) are inside it, and resume() clears the
+    // stamp so a pause is not reported as idle.
     this.idleTimeThisFrame = 0;
     this._lastFrameEndAt = 0;
     // E-24. Null until init hands over the shared frame clock. Stamps stay
@@ -1412,6 +1414,8 @@ export class AbstractWorker {
   resume() {
     this.isPaused = false;
     this.lastFrameTime = performance.now(); // Reset timing to avoid large delta
+    // The pause is not scheduler idle: the first frame after it reports 0 (M4).
+    this._lastFrameEndAt = 0;
 
     if (!this.usesCustomScheduler) {
       this.gameLoop(true);

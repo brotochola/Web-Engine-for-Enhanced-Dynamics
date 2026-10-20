@@ -1307,6 +1307,8 @@
   function startGameLoop() {
     state.isPaused = false;
     state.lastFrameTime = performance.now();
+    // A pause (or the time before start) is not scheduler idle (M4).
+    state._lastFrameEndAt = 0;
     clearSchedulers();
     gameLoop();
   }
