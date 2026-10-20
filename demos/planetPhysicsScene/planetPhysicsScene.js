@@ -12,7 +12,7 @@ import { PlanetWorldGridManager } from './gameObjects/planetWorldGridManager.js'
 import { PlanetShip } from './gameObjects/planetShip.js';
 import { PlanetPull } from './gameObjects/planetPull.js';
 import { PlanetLamp } from './gameObjects/planetLamp.js';
-import { N, CELL, RADIUS, CX, CY, PARTICLE_R } from './planetGravity.js';
+import { N, CELL, RADIUS, PARTICLE_R, SHIP_SPAWN_X, SHIP_SPAWN_Y, radialCameraAngle } from './planetGravity.js';
 import WEED from '/src/index.js';
 
 const {
@@ -51,7 +51,6 @@ const SLIDERS = [
 ];
 
 const WORLD = N * CELL;
-const SURFACE_Y = CY - RADIUS * CELL;
 
 // The manager runs in the logic workers and every worker imports this scene
 // module, so the disk must be configured at module scope — a create()-only
@@ -228,8 +227,10 @@ export class PlanetPhysicsScene extends Scene {
     this._spawnWalls();
     Camera.setFree(false);
     Camera.setZoom(1);
-    Camera.setAngle(0);
-    Camera.centerOn(CX, SURFACE_Y - 120);
+    // Start where the manager spawns the ship, rolled to its local up, so the
+    // first follow neither crosses a quarter of the planet nor turns 90 degrees.
+    Camera.setAngle(radialCameraAngle(SHIP_SPAWN_X, SHIP_SPAWN_Y));
+    Camera.centerOn(SHIP_SPAWN_X, SHIP_SPAWN_Y);
     this._buildPanel();
   }
 

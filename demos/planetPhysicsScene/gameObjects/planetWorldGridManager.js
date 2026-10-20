@@ -12,7 +12,7 @@ import { TerrainIsland } from '/demos/destructibleTerrainScene/gameObjects/terra
 import { PlanetShip } from './planetShip.js';
 import { PlanetLamp } from './planetLamp.js';
 import { PlanetPull } from './planetPull.js';
-import { CX, CY, G, RADIUS, CELL } from '../planetGravity.js';
+import { CX, CY, G, RADIUS, CELL, SHIP_SPAWN_X, SHIP_SPAWN_Y } from '../planetGravity.js';
 import WEED from '/src/index.js';
 
 const { Transform, RigidBody } = WEED;
@@ -61,8 +61,8 @@ export class PlanetWorldGridManager extends WorldGridManager {
     if (--this._actorDelay > 0) return;
     this._actorsSpawned = true;
     PlanetShip.spawn({
-      x: CX + RADIUS * CELL + 120,
-      y: CY,
+      x: SHIP_SPAWN_X,
+      y: SHIP_SPAWN_Y,
       forceProcessOnLogicWorker: 0,
       benchRemesh: this._benchRemesh,
     });

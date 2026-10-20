@@ -16,6 +16,9 @@ export const CX = (N >> 1) * CELL;
 export const CY = CX;
 export const PARTICLE_R = 6;
 export const PARTICLE_MASS = 4 * PARTICLE_R * PARTICLE_R;
+/** Ship spawn, east of the disk and 120 px off its surface. The boot camera starts here. */
+export const SHIP_SPAWN_X = CX + RADIUS * CELL + 120;
+export const SHIP_SPAWN_Y = CY;
 
 /**
  * Camera angle (radians) that keeps the planet's local "up" at the top of the
