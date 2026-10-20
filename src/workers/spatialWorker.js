@@ -102,8 +102,6 @@ class SpatialWorker extends AbstractWorker {
     this._entityLastY = null;
     this._entityLastHalfExtent = null;
     this._entityLastVisualRange = null;
-    this._entityLastCellIndex = null;
-    this._entityLastCellRadius = null;
     this._entityReuseInitialized = null;
 
     this._maxCellRadius = 12; // Support visual ranges up to ~1500px with cellSize=128
@@ -210,8 +208,6 @@ class SpatialWorker extends AbstractWorker {
     this._entityLastY = new Float32Array(this.globalEntityCount);
     this._entityLastHalfExtent = new Float32Array(this.globalEntityCount);
     this._entityLastVisualRange = new Float32Array(this.globalEntityCount);
-    this._entityLastCellIndex = new Uint32Array(this.globalEntityCount);
-    this._entityLastCellRadius = new Uint16Array(this.globalEntityCount);
     this._entityReuseInitialized = new Uint8Array(this.globalEntityCount);
 
     const spatialCfg = this.config?.spatial || {};
@@ -571,14 +567,12 @@ class SpatialWorker extends AbstractWorker {
     return dx * dx + dy * dy <= skinSq;
   }
 
-  _storeNeighborReuseSignature(entityId, myX, myY, myHalfExtent, myVisualRange, entityCellIndex, cellRadius) {
+  _storeNeighborReuseSignature(entityId, myX, myY, myHalfExtent, myVisualRange) {
     this._entityReuseInitialized[entityId] = 1;
     this._entityLastX[entityId] = myX;
     this._entityLastY[entityId] = myY;
     this._entityLastHalfExtent[entityId] = myHalfExtent;
     this._entityLastVisualRange[entityId] = myVisualRange;
-    this._entityLastCellIndex[entityId] = entityCellIndex;
-    this._entityLastCellRadius[entityId] = cellRadius;
     this._entityFramesSinceBuild[entityId] = 0;
   }
 
@@ -796,15 +790,7 @@ class SpatialWorker extends AbstractWorker {
         );
 
         if (!truncated) {
-          this._storeNeighborReuseSignature(
-            entityA,
-            myX,
-            myY,
-            myHalfExtent,
-            myVisualRange,
-            entityCellIndex,
-            cellRadius
-          );
+          this._storeNeighborReuseSignature(entityA, myX, myY, myHalfExtent, myVisualRange);
         } else {
           // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
           this._entityReuseInitialized[entityA] = 0;
