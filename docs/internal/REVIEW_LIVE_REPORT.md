@@ -17,9 +17,51 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**20:00** — Phase 2: M1–M3 done. Next: M4 (`WAIT_MS` gaps), then M5–M12.
+**20:14** — Phase 2: M1–M7 done. Next: M8–M12 (behavioural tests, harness bugs, two stat
+comments, bundle temp files).
 
 ## Log
+
+### 20:14 — M4–M7: waiting is measured, one old verdict re-checked, four tests that could not fail (`078169b4`, `7e04aee2`, `1ff45964`, `ab4622e9`)
+
+- **Waiting on another thread is now fully counted** (`078169b4`).
+  - Before, `WAIT_MS` only counted waiting for a query's result. Two more kinds of waiting were
+    invisible:
+    - A logic worker waiting for another worker to release a query slot (7 places).
+    - The physics step spinning and waiting up to 2 ms for logic's next query in a burst.
+  - Both are now counted. Physics publishes its `WAIT_MS` (it never did), and the Performance
+    panel shows it.
+  - The A/B tool read `WAIT_MS` from pre-render, which never waits, so it was always 0. It now
+    takes the worker that waits the most.
+  - A two-thread test proves both: a 30 ms blocked claim used to count as 0.
+- **A pause no longer counts as idle time** (`7e04aee2`). After a 250 ms pause, the next frame
+  reported 261 ms of idle. Every save pauses now, so this skewed averages.
+- **An old measurement re-checked, and a kernel that hid the real cost** (`1ff45964`).
+  - The Box2D runtime changed on 10-19: it no longer pre-starts its 4 threads. So I re-ran the
+    worker-count sweep, headless:
+
+    | workers | 1 | 2 | 3 | 4 |
+    |---|---|---|---|---|
+    | physics ms (2 rounds) | 10.7 / 13.8 | 8.1 / 8.0 | 6.9 / 6.4 | **6.2 / 6.0** |
+
+  - **4 workers is still best.** The 4-worker step is ~5–8 % above the old run's numbers, but
+    that's across two days and many commits. Deciding whether the runtime change caused it needs
+    a same-tree A/B: **E-53**.
+  - The lighting kernel only ever timed the case with no regular occluders. The new merge case
+    costs **~324 µs per light vs ~30 µs**, so E-43's target is ~11× bigger than the old kernel
+    showed.
+- **Four tests that could never fail now can** (`ab4622e9`).
+  - One looked for a code order inside the wrong slice of text.
+  - One compared its own copy of a loop with itself. It now runs the shipped code.
+  - One could silently search the whole rest of the file.
+  - Two A/B gate rules had no test at all.
+  - Each rewritten test was checked by breaking the code on purpose; each now fails.
+- **M7** (tests that pinned wrong behaviour): already fixed alongside B3, B11 and B29. The
+  time-scale test pins the deferred B7 design and will change with it.
+- **A slip I caught:** during a mutation check, I restored a file with `git checkout`, which also
+  wiped my uncommitted marker lines. I restored them from the backup made just before. Mutation
+  checks now always restore from a backup.
+- Suite **1317/1317**.
 
 ### 20:00 — N-16, M1, M2, M3: the instruments now tell the truth (`f01daac7`, `8335ec0c`, `9dc5b27d`, `432ef4cd`)
 
