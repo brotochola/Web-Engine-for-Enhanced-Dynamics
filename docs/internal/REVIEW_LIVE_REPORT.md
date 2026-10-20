@@ -17,9 +17,31 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**02:05** — **B20** (polygon skin: `Collider.radius` doubles as the polygon border).
+**02:50** — **B21** (`makePolygon` on a body with several Box2D shapes keeps N−1 of them).
 
 ## Log
+
+### 02:45 — B20 fixed (`36875ce6`)
+
+- **Measured first, in the shipped Box2D WASM.** A body's mass is impulse ÷ velocity. Squares of
+  10–50 px with 1–5 px skins weighed **1.08× to 3.99×** `RigidBody.mass`. The cause: Box2D weighs
+  a skinned polygon by its vertices pushed out by 1.412·r along each corner's bisector, while the
+  engine divided by the sharp hull area. My first measurement was wrong: all the bodies sat at the
+  origin and collided with each other. Spacing them apart gave numbers that match the model to
+  three decimals.
+- **Fix 1 (mass):** the physics host now computes the area Box2D actually uses, so a skinned body
+  weighs `RigidBody.mass`. Tested against 30 bodies measured in the real Box2D, within 0.2 %. The
+  cases cover both windings, a vertex Box2D drops as collinear, a thin sliver, and skins 0–6.
+- **Fix 2 (the silent skin):** nothing cleared `radius` when a shape became a polygon. So
+  `collider.radius = 14` followed by `makePolygon(...)` gave a polygon with a 14 px rounded border.
+  A circle's radius is now cleared when the shape becomes a polygon, while a polygon keeps a skin
+  across re-shapes. Three code paths now go through one helper, and an unused import is gone.
+- **Context:** no demo sets a skin right now. The planet demo's 1 px "seam" skin was lost when it
+  moved to the shared terrain island; that is B28. The skin was undocumented, and PHYSICS.md now
+  explains it, including that Weed's own rays and queries test the sharp hull.
+- One file write failed mid-edit (an EPERM from Windows on the atomic rename). I checked the file
+  before going on: intact, the edit simply had not applied, so I redid it.
+- Suite **1254/1254**.
 
 ### 02:00 — B19 fixed (`36ee6ee7`)
 
