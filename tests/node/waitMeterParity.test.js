@@ -29,7 +29,7 @@ import {
   LOGIC_STATS,
   PRE_RENDER_STATS,
 } from '../../src/util/workersUtils.js';
-import { waitMeterMs, resetWaitMeter, addWaitMs, WAIT_METER_GLOBAL_KEY } from '../../src/util/waitMeter.js';
+import { waitMeterMs, resetWaitMeter, WAIT_METER_GLOBAL_KEY } from '../../src/util/waitMeter.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -92,15 +92,13 @@ test('multi-worker buffer sizes cover the stride', () => {
 
 // ------------------------------------------------------------------ meter ---
 
-test('wait meter accumulates, resets, and ignores non-positive deltas', () => {
+test('wait meter accumulates through the global and resets', () => {
+  // The query files add to the shared global, as here (addWaitMs, an ESM
+  // helper nothing in the engine called, was removed by review D4).
   resetWaitMeter();
   assert.equal(waitMeterMs(), 0);
-  addWaitMs(5);
-  addWaitMs(2.5);
-  assert.equal(waitMeterMs(), 7.5);
-  // A clock that did not advance must not subtract from a real measurement.
-  addWaitMs(0);
-  addWaitMs(-3);
+  globalThis[WAIT_METER_GLOBAL_KEY].ms += 5;
+  globalThis[WAIT_METER_GLOBAL_KEY].ms += 2.5;
   assert.equal(waitMeterMs(), 7.5);
   resetWaitMeter();
   assert.equal(waitMeterMs(), 0);

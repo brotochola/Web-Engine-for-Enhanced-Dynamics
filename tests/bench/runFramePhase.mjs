@@ -3,7 +3,7 @@
  * E-24 — when do the workers run, relative to each other?
  *
  * Headed Predator, source tree (`?src=1`), detailed stats off. The decision
- * rules are summarizePhase in src/util/frameClock.js and were named before
+ * rules are summarizePhase in tests/bench/framePhaseSummary.mjs and were named before
  * this run. This script does not interpret a broken clock as a phase.
  *
  *   node tests/bench/runFramePhase.mjs
@@ -16,7 +16,7 @@ import { chromium } from 'playwright';
 
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
 import { parseArgs } from './microbenchHelpers.mjs';
-import { summarizePhase } from '../../src/util/frameClock.js';
+import { summarizePhase } from './framePhaseSummary.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = parseArgs(process.argv.slice(2));

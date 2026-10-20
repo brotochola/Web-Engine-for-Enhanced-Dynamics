@@ -24,8 +24,8 @@ import {
   publishFrame,
   stampStep,
   readPhaseSample,
-  summarizePhase,
 } from '../../src/util/frameClock.js';
+import { summarizePhase } from '../bench/framePhaseSummary.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 

@@ -54,15 +54,5 @@ export function waitMeterMs() {
   return meter().ms;
 }
 
-/**
- * Fold an already-measured interval in.
- *
- * Used by anything outside the six `waitUntilDoneSync` closures that also blocks on
- * a sibling. Non-positive deltas are ignored so a clock that did not advance cannot
- * subtract from a real measurement.
- */
-export function addWaitMs(deltaMs) {
-  if (deltaMs > 0) meter().ms += deltaMs;
-}
-
+/** The global the IIFE query files add to; tests check both sides agree on it. */
 export const WAIT_METER_GLOBAL_KEY = GLOBAL_KEY;
