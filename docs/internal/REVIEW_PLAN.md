@@ -29,17 +29,17 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 
 ### High
 
-- [ ] **B1 ✓ Audio voices leak across buses.** [`soundManager.js:1093-1172`](../../src/core/soundManager.js), [`audioMixerProcessor.js:32-35`](../../src/workers/audioMixerProcessor.js) · `8af92002`.
+- [x] **B1 ✓ Audio voices leak across buses.** — fixed `85b74217`; inline follow-up `27751001` after the storm case read −12.5 %; re-measured 41.6 k → 43.0 k plays/s (no regression). [`soundManager.js:1093-1172`](../../src/core/soundManager.js), [`audioMixerProcessor.js:32-35`](../../src/workers/audioMixerProcessor.js) · `8af92002`.
   A voice the audio thread frees stays on its bus list. Another bus reuses the slot; the
   old bus counts it, can steal it, and rewrites its word 7. Result: false drops, stolen
   sounds. Fix: an entry is live only if PLAYING and word 7 names this bus and list index;
   re-check before every steal. Test: two buses (`ui` maxVoices 1 + `sfx`). Hot path
   (every `play()`): AudioStorm hygiene check.
-- [ ] **B2 ✓ Chorded mouse buttons get stuck.** [`mouse.js:546-589`](../../src/core/mouse.js), [`toolManager.js:269-272`](../../src/core/debug/tools/toolManager.js) · `d57f96a3`.
+- [x] **B2 ✓ Chorded mouse buttons get stuck.** — fixed `e29e7684`. [`mouse.js:546-589`](../../src/core/mouse.js), [`toolManager.js:269-272`](../../src/core/debug/tools/toolManager.js) · `d57f96a3`.
   A second button pressed while one is held arrives as `pointermove`, which ignores
   buttons. Fix: sync from `e.buttons` in down/move/up; same in ToolManager. Test both
   chord orders.
-- [ ] **B3 ✓ Chain-collider raycasts are wrong.** [`chainPoints.js:250-253`](../../src/core/chainPoints.js) · formula `9cedc4c7`, rewritten `8af92002`.
+- [x] **B3 ✓ Chain-collider raycasts are wrong.** — fixed `a14c0c31`. [`chainPoints.js:250-253`](../../src/core/chainPoints.js) · formula `9cedc4c7`, rewritten `8af92002`.
   `denom` has the wrong sign, so `t` and `u` are negated: real hits are missed, rays
   pointing away hit. Affects `Ray.cast`, `castAll`, line of sight. Fix the sign; rewrite
   `chainRayPick.test.js`, whose expectations pin the bug.
