@@ -8,6 +8,7 @@ import { nativeImport } from './sceneScript.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
 import { rotatedHalfExtents } from './viewBounds.js';
+import { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius } from './lightRadius.js';
 export {
   packPair as collisionPairKey,
   unpackPair as collisionPairUnpack,
@@ -265,13 +266,7 @@ export function calculateCameraScreenBounds(
 export const LIGHT_GRADIENT_TEXTURE_RADIUS = 100;
 /** Soft-disk for fluid / metaball density splat (smaller than light glow). */
 export const METABALL_TEXTURE_RADIUS = 32;
-/** World radius = sqrtIntensity * this. Used by lighting + shadow culls. */
-export const LIGHT_INFLUENCE_RADIUS_SCALE = 10;
-
-/** World-space light influence radius for LIGHTING / CASTED_SHADOWS culls. */
-export function lightInfluenceRadius(sqrtIntensity) {
-  return (sqrtIntensity || 0) * LIGHT_INFLUENCE_RADIUS_SCALE;
-}
+export { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius };
 
 /** Rows in the lighting data texture: 0 = xy+intensity, 1 = rgb. */
 export const LIGHT_DATA_TEX_HEIGHT = 2;

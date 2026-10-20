@@ -1,9 +1,12 @@
 import { Component } from '../core/component.js';
+import { lightInfluenceRadius } from '../util/lightRadius.js';
 
 /**
  * Point / glow light on an entity.
- * Shadow casters come from this entity's Collider.visualRange neighbors (not from lightIntensity).
- * Tune visualRange for shadow reach / cost; lightIntensity still drives lighting / cookie math.
+ * Shadow casters and raycasted occluders come from this entity's Collider.visualRange
+ * neighbors (not from lightIntensity): an occluder past visualRange does not block
+ * the light. Tune visualRange for that reach / cost (`influenceRadius` is the light's
+ * full reach); lightIntensity still drives lighting / cookie math.
  */
 export class LightEmitter extends Component {
   static ARRAY_SCHEMA = {
@@ -34,6 +37,11 @@ export class LightEmitter extends Component {
     LightEmitter.lightIntensity[this.index] = value;
     // Cache sqrt(intensity) to avoid recalculating it every frame in hot loops
     LightEmitter.sqrtLightIntensity[this.index] = Math.sqrt(value);
+  }
+
+  /** World radius this light reaches. Collider.visualRange at least this occludes all of it. */
+  get influenceRadius() {
+    return lightInfluenceRadius(LightEmitter.sqrtLightIntensity[this.index]);
   }
 
   get lightColor() {

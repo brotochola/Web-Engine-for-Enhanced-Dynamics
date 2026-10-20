@@ -3205,6 +3205,8 @@ export declare class LightEmitter extends Component {
   static layerIdOfGlowSprite: Uint8Array;
   get lightIntensity(): number;
   set lightIntensity(value: number);
+  /** World radius this light reaches. Occluders past Collider.visualRange do not block it. */
+  get influenceRadius(): number;
   get lightColor(): number;
   set lightColor(value: number);
   /** Glow strength in [0, 1]. 0 off, 0.5 default alpha, 1 twice that alpha. */
