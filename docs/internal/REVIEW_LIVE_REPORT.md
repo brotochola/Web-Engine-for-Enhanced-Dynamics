@@ -17,10 +17,19 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**01:20** — **HEADED RUN:** smoke of the follow-camera demos (car, little city, planet) after
-five camera commits. Looking for a frozen or NaN camera, and for culling at the edges.
+**01:40** — Back to the bug list: **B19** (spawn race on body generation).
 
 ## Log
+
+### 01:35 — Headed smoke after the camera commits: clean
+
+Four demos (car, little city, planet Box2D, planet), each driven for 2 s with the movement keys.
+On every one, the drawn camera stayed finite, the camera lock ended even (not stuck), and there
+were no page errors. The camera moved 866–3342 px with the player in little city and both planet
+demos (both planets turn the camera). The car demo's camera stayed at (0, 0). I did not take that
+on trust: the followed car only reached (160, 163), in the world's top-left corner, so the camera
+is clamped there. The **pre-review code behaves identically** (same probe on the old worktree),
+and the car is drawn where the camera math puts it.
 
 ### 01:15 — N-13 fixed (`512f8efd`, `09850135`)
 
