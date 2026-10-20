@@ -182,7 +182,9 @@ Sprites use latched pose xy. `Camera.followEntity` used to add **live HEAP** `Ri
 
 A skipped publish freezes the sprite. If `followEntity` still eases the SAB camera toward that frozen xy, the tilemap (or MESH fill) slides under the car. Logic passes `poseReady` into `Camera.bindDisplayPose`. When that generation matches the last follow, `followEntity` stamps `followUsed` and **does not** call `_applyFollow`. Next publish, both move together. Tests: `followEntity holds pan when pose generation is unchanged` in `tests/node/cameraFreeZoom.test.js`.
 
-Logic and pre_render still latch `poseSync` independently. `followEntity` stamps the pose xy it used (`followUsed`) and writes look-ahead into `followTarget` (`pose + vel * lookAheadSec`). Pre_render **snaps** `renderQueueCamera` to `packedPose + (followTarget - followUsed) - halfViewport`. It does **not** add `(packed - followUsed)` onto the eased SAB cam — that double-hit (ease + slide) made MESH terrain hitch in Y when falling. `Camera.x/y` on the SAB may still ease; the drawn camera is the queue. `Camera.follow(x,y)` clears the stamp (HEAP follow stays a demo clock split). MESH fill in pixi uses the queue-stamped pose latch, not live HEAP.
+Logic and pre_render still latch `poseSync` independently. `followEntity` stamps the pose xy it used (`followUsed`) and writes look-ahead into `followTarget` (`pose + vel * lookAheadSec`). Pre_render **snaps** `renderQueueCamera` to `packedPose + (followTarget - followUsed) - halfViewport`. It does **not** add `(packed - followUsed)` onto the eased SAB cam - that double-hit (ease + slide) made MESH terrain hitch in Y when falling. `Camera.x/y` on the SAB may still ease; the drawn camera is the queue. `Camera.follow(x,y)` clears the stamp (HEAP follow stays a demo clock split). MESH fill in pixi uses the queue-stamped pose latch, not live HEAP.
+
+The follow snapshot (`followEntity`, `followUsed`, `followTarget`) is guarded by a seqlock in `cameraData[16]`. Pre_render retries a torn read and otherwise reuses the last coherent lead; the lead is pose-relative, so pairing an older lead with a newer packed pose is safe. Without the lock, a read between the `followUsed` and `followTarget` writes stole exactly one pose frame from the lead - the periodic high-speed "ship a few pixels ahead" camera shift.
 
 `lookAheadSec` is seconds of held velocity. `1` at fall speed (`vy` ~ gravity) is thousands of pixels of lead — not a “bit of padding”.
 
@@ -190,7 +192,7 @@ Speed zoom: write `Camera.targetZoom` **then** `followEntity`. `follow()` lerps 
 
 Debug colliders and the pixi compute pack follow **stamped `poseReady`** on the render-queue camera SAB (same generation sprites packed), not live HEAP / latest pose. Overlay clock, not the gameplay hitch above.
 
-Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.test.js` (`followEntity look-ahead ignores live vx…`, `alignFollowCameraToLatchedPose snaps queue cam…`, `alignFollowCameraToLatchedPose ignores ease lag on SAB cam`, `followEntity holds pan when pose generation is unchanged`).
+Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.test.js` (`followEntity look-ahead ignores live vx…`, `alignFollowCameraToLatchedPose snaps queue cam…`, `alignFollowCameraToLatchedPose ignores ease lag on SAB cam`, `alignFollowCameraToLatchedPose reuses coherent lead during a follow write`, `followEntity holds pan when pose generation is unchanged`).
 
 ### Soft contact knobs
 

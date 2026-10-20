@@ -237,7 +237,8 @@ export function buildLayoutHint(scene) {
 
 export function readCameraGlobals() {
   if (!Camera._data) return null;
-  return Array.from(Camera._data);
+  // The tail slot is the follow seqlock, not camera state.
+  return Array.from(Camera._data.slice(0, Camera.IDX_FOLLOW_SEQ));
 }
 
 export function readSunGlobals() {
@@ -251,8 +252,9 @@ export function readSunGlobals() {
 
 export function applyCameraGlobals(camera) {
   if (!camera || !Camera._data) return;
-  const n = Math.min(Camera._data.length, camera.length);
+  const n = Math.min(Camera._data.length, camera.length, Camera.IDX_FOLLOW_SEQ);
   for (let i = 0; i < n; i++) Camera._data[i] = camera[i];
+  if (Camera._data.length > Camera.IDX_FOLLOW_SEQ) Camera._data[Camera.IDX_FOLLOW_SEQ] = 0;
 }
 
 export function applySunGlobals(sun) {
