@@ -21,7 +21,8 @@ function writeSet(src, dst) {
 
 function runWriter(mode) {
   const src = new Uint16Array(N);
-  const dst = new Uint16Array(N);
+  // The shipped destination is a SharedArrayBuffer (review M9: this was a plain array).
+  const dst = new Uint16Array(new SharedArrayBuffer(N * 2));
   for (let i = 0; i < N; i++) src[i] = i & 0xffff;
   const fn = mode === 'set' ? () => writeSet(src, dst) : () => writeLoop(src, dst);
   const checksum = (fn(), dst[N - 1]) >>> 0;
@@ -41,19 +42,27 @@ async function runOverlap(mode) {
   const src = new Uint16Array(N);
   const dst = new Uint16Array(sab);
   for (let i = 0; i < N; i++) src[i] = (i * 3) & 0xffff;
-  const reader = new Worker(new URL(import.meta.url), { workerData: { role: 'read', sab, ms: 80 } });
+  // Review M9: the reader used to read for a fixed 80 ms while the writer timed
+  // its own calls, so most of the reader's window had no writer in it. Now the
+  // reader counts only from `go` to `stop`, which bracket the writer.
+  const ctl = new Int32Array(new SharedArrayBuffer(8)); // [0] go, [1] stop
+  const reader = new Worker(new URL(import.meta.url), { workerData: { role: 'read', sab, ctl: ctl.buffer } });
   const readerDone = new Promise((resolve, reject) => {
     reader.once('message', resolve);
     reader.once('error', reject);
   });
-  await new Promise((r) => setTimeout(r, 5));
+  await new Promise((r) => reader.once('online', r));
   const fn = mode === 'set' ? () => writeSet(src, dst) : () => writeLoop(src, dst);
+  Atomics.store(ctl, 0, 1);
+  Atomics.notify(ctl, 0);
   const writer = timeIt(`e19 overlap writer ${mode}`, fn, { iterations: 200, warmup: 10 });
+  Atomics.store(ctl, 1, 1);
   const read = await readerDone;
   return {
     writerMsPerCall: writer.ms / writer.iterations,
     readerPasses: read.passes,
     readerMs: read.ms,
+    readerPassesPerMs: read.passes / read.ms,
   };
 }
 
@@ -81,7 +90,8 @@ async function main() {
     writers,
     overlap,
     setOverLoopWriter: writers.set.msPerCall / writers.loop.msPerCall,
-    setOverLoopReaderPasses: overlap.set.readerPasses / overlap.loop.readerPasses,
+    // A rate: the two overlap windows are as long as each writer run, not equal.
+    setOverLoopReaderRate: overlap.set.readerPassesPerMs / overlap.loop.readerPassesPerMs,
   };
   if (args.output) writeReport(String(args.output), report);
   console.log(JSON.stringify({
@@ -90,16 +100,18 @@ async function main() {
     setOverLoopWriter: report.setOverLoopWriter,
     loopReaderPasses: overlap.loop.readerPasses,
     setReaderPasses: overlap.set.readerPasses,
-    setOverLoopReaderPasses: report.setOverLoopReaderPasses,
+    setOverLoopReaderRate: report.setOverLoopReaderRate,
   }, null, 2));
 }
 
-function readFor(ms, sab) {
+function readWhileWriting(sab, ctlBuf) {
   const view = new Uint16Array(sab);
+  const ctl = new Int32Array(ctlBuf);
+  while (Atomics.load(ctl, 0) === 0) Atomics.wait(ctl, 0, 0, 5);
   const t0 = performance.now();
   let passes = 0;
   let sum = 0;
-  while (performance.now() - t0 < ms) {
+  while (Atomics.load(ctl, 1) === 0) {
     let s = 0;
     for (let i = 0; i < view.length; i++) s += view[i];
     sum = s;
@@ -112,5 +124,5 @@ const { isMainThread, workerData, parentPort } = await import('node:worker_threa
 if (!isMainThread && workerData?.role === 'write') {
   parentPort.postMessage(runWriter(workerData.mode));
 } else if (!isMainThread && workerData?.role === 'read') {
-  parentPort.postMessage(readFor(workerData.ms, workerData.sab));
+  parentPort.postMessage(readWhileWriting(workerData.sab, workerData.ctl));
 } else if (isCli(import.meta.url)) await main();

@@ -18,6 +18,10 @@ const OUT = path.join(ROOT, 'tests/results/e34-cpu');
 fs.mkdirSync(OUT, { recursive: true });
 
 const PS1 = path.join(ROOT, 'tests/bench/e34ProcessTreeCpu.ps1');
+const WARMUP_MS = 8000;
+const DURATION_MS = 8000;
+// Collect, write and browser close after the measure window.
+const TEARDOWN_GUARD_MS = 1000;
 
 function treeCpu(rootPid) {
   if (!rootPid) return Promise.resolve([]);
@@ -50,8 +54,8 @@ function runArm(count) {
     '--src',
     '--scene', '/demos/ballsScene/ballsScene.js',
     '--scene-export', 'BallsScene',
-    '--warmup-ms', '8000',
-    '--duration-ms', '8000',
+    '--warmup-ms', String(WARMUP_MS),
+    '--duration-ms', String(DURATION_MS),
     '--no-collect-detailed-stats',
     '--query', `numberOfPhysicsWorkers=${count}`,
     '--output', out,
@@ -92,13 +96,29 @@ function runArm(count) {
       const end = usable[usable.length - 1];
       const wallS = first && end ? (end.t - first.t) / 1000 : 0;
       const cpuS = end ? end.cpu : 0;
+      // Review M9: STEP_MS is the measure window's average, but cores used to be
+      // the whole run (browser start, page load, warmup, teardown). The headless
+      // runner measures last, so the window is the DURATION_MS before a short
+      // teardown guard at the end of the samples.
+      const winEnd = end ? end.t - TEARDOWN_GUARD_MS : 0;
+      const winStart = winEnd - DURATION_MS;
+      const at = (t) => {
+        let best = null;
+        for (const s of usable) if (s.t <= t) best = s;
+        return best;
+      };
+      const w0 = at(winStart);
+      const w1 = at(winEnd);
+      const winS = w0 && w1 ? (w1.t - w0.t) / 1000 : 0;
       resolve({
         count,
         browserPid: root,
         stepMs: physics.STEP_MS ?? null,
         bodyCount: physics.BODY_COUNT ?? null,
         awake: physics.AWAKE_COUNT ?? null,
-        cores: wallS > 0 ? cpuS / wallS : null,
+        cores: winS > 0 ? (w1.cpu - w0.cpu) / winS : null,
+        coresWholeRun: wallS > 0 ? cpuS / wallS : null,
+        windowSeconds: winS,
         cpuSeconds: cpuS,
         wallSeconds: wallS,
         processes: end ? end.processes : 0,
@@ -116,4 +136,4 @@ for (const count of [4, 1]) {
 }
 const report = { feature: 'e34-chrome-cpu', arms };
 fs.writeFileSync(path.join(OUT, 'summary.json'), JSON.stringify(report, null, 2));
-console.log(JSON.stringify(arms.map(({ count, stepMs, cores, bodyCount, awake, processes, browserPid }) => ({ count, stepMs, cores, bodyCount, awake, processes, browserPid })), null, 2));
+console.log(JSON.stringify(arms.map(({ count, stepMs, cores, coresWholeRun, windowSeconds, bodyCount, awake, processes, browserPid }) => ({ count, stepMs, cores, coresWholeRun, windowSeconds, bodyCount, awake, processes, browserPid })), null, 2));

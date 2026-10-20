@@ -205,6 +205,7 @@ for lost parallelism, not for removed spin.
 ### E-34 The Box2D spin is not addressable by configuration — **sampler holds. Worker count moves the step a lot and the cores a little. 2026-10-19**
 Report: [`reports/E-34-browser-tree-cpu.md`](./reports/E-34-browser-tree-cpu.md).
 The all-Chrome sum is discarded ([`reports/E-34-cpu-sampler-failed.md`](./reports/E-34-cpu-sampler-failed.md)). Sampling the benchmark process and the processes it spawned, Balls headless, `--src`, 8 s/8 s, one window: physics **6.37 ms and 2.02 cores at 4 workers**, **16.33 ms and 1.40 cores at 1**. Load 9004/9000 both. Nine processes both. The step check passes. The whole browser tree at 4 workers is 2.02 cores, so a 2.4-core mailbox cannot be sitting inside it as well. Dropping the worker count saves 0.62 cores and costs 10 ms. No Emscripten change.
+*(2026-10-20, review M9: those cores were the whole run, start-up and warmup included, next to a step from the measure window. The probe now windows the CPU to the measure phase and keeps the old figure beside it. Re-run on today's runtime: 4 workers **6.27 ms, 1.72 cores** (whole run 1.88); 1 worker **12.45 ms, 1.25 cores** (1.25). Inside the measured window the tree uses fewer cores, so the conclusion holds with more margin.)*
 Report: [`reports/E-34-box2d-mailbox-spin-probe-blocked.md`](./reports/E-34-box2d-mailbox-spin-probe-blocked.md).
 **Raised by E-04b.** ~2.4 cores still burn in the Emscripten mailbox, and this
 sitting shows **neither lever reaches it**: a smaller pool costs the solver threads
@@ -753,6 +754,13 @@ into shared memory."** A `.set()` bulk copy and an element loop are not intercha
 when the destination is a SAB and the readers sit on other cores - a copy that is faster
 *in the writer* can be worse *for three readers*. Same class as X5's cross-core
 cache-line transfer, already recorded for E-18.
+
+**Measured (2026-10-20, review M9).** `e19QueryCopyPremise.mjs` timed the writer into a
+plain array and let the reader run a fixed 80 ms beside a writer that took a few ms. It
+now writes into a SAB and counts the reader only while the writer runs. Three runs, Node,
+16 384 u16: `.set()` writes in **0.145–0.164×** the loop's time, and a reader on another
+core reads at **0.78–0.85×** its rate during the loop's writes. The writer-fast,
+reader-slow shape this entry inferred is now measured, in a kernel.
 
 **The target, and the instrument was already in the tree:** `QUERY_PUBLISH_MS` has existed
 all along (slot 10, `logicWorker.js:2099`). Predator, headed, stats on:
