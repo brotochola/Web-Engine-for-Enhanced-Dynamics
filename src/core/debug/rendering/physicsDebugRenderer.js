@@ -1151,14 +1151,17 @@ export class PhysicsDebugRenderer {
       }
       const width = SpriteRenderer.getOriginalWidth(selectedIdx) || 20;
       const height = SpriteRenderer.getOriginalHeight(selectedIdx) || 20;
-      const scaleX = SpriteRenderer.scaleX?.[selectedIdx] || 1;
-      const scaleY = SpriteRenderer.scaleY?.[selectedIdx] || 1;
-      const anchorX = SpriteRenderer.anchorX?.[selectedIdx] || 0.5;
-      const anchorY = SpriteRenderer.anchorY?.[selectedIdx] || 0.5;
-      const w = width * Math.abs(scaleX) * zoom;
-      const h = height * Math.abs(scaleY) * zoom;
-      hw = w * 0.5;
-      hh = h * 0.5;
+      // The sprite shader's corners: (v - anchor) * size * scale, scale signed.
+      // An anchor of 0 is real (`|| 0.5` shifted the box by half a sprite), and
+      // a flip mirrors the box about the anchor.
+      const scaleX = SpriteRenderer.scaleX ? SpriteRenderer.scaleX[selectedIdx] : 1;
+      const scaleY = SpriteRenderer.scaleY ? SpriteRenderer.scaleY[selectedIdx] : 1;
+      const anchorX = SpriteRenderer.anchorX ? SpriteRenderer.anchorX[selectedIdx] : 0.5;
+      const anchorY = SpriteRenderer.anchorY ? SpriteRenderer.anchorY[selectedIdx] : 0.5;
+      const w = width * scaleX * zoom;
+      const h = height * scaleY * zoom;
+      hw = Math.abs(w) * 0.5;
+      hh = Math.abs(h) * 0.5;
       const sx = (pos.x - camera.x) * zoom;
       const sy = (pos.y - camera.y) * zoom;
       this._writeLocalQuad(
