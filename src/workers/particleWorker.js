@@ -751,7 +751,8 @@ class ParticleWorker extends AbstractWorker {
       this.canvasWidth,
       this.canvasHeight,
       this.cullingRatio,
-      this._cameraBounds
+      this._cameraBounds,
+      cam.rotation
     );
   }
 

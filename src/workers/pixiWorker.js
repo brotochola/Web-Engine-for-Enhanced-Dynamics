@@ -87,6 +87,7 @@ import {
   stashResizeWhileHidden,
   takePendingResize,
 } from '../util/utils.js';
+import { viewWorldBounds } from '../util/viewBounds.js';
 import {
   InstancedSpriteBatch,
   BATCH_SPACE,
@@ -646,6 +647,8 @@ class PixiRenderer extends AbstractWorker {
     this._renderCameraX = 0;
     this._renderCameraY = 0;
     this._renderCameraRot = 0;
+    /** viewWorldBounds scratch for the light cull. */
+    this._lightViewBounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
     this._renderZoom = 1.0;
     this._cameraInitialized = false;
     // Reused compute pack pose (same generation as sprites). Filled on new queue frame.
@@ -3594,11 +3597,16 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
 
-    // Calculate viewport bounds for culling
+    // Viewport box for culling; a rotated camera grows it to cover the turned view
     const viewWidth = this.canvasWidth / zoom;
     const viewHeight = this.canvasHeight / zoom;
-    const viewRight = cameraX + viewWidth;
-    const viewBottom = cameraY + viewHeight;
+    const view = viewWorldBounds(
+      zoom, cameraX, cameraY, this.canvasWidth, this.canvasHeight, this._renderCameraRot || 0, this._lightViewBounds
+    );
+    const viewLeft = view.minX;
+    const viewTop = view.minY;
+    const viewRight = view.maxX;
+    const viewBottom = view.maxY;
 
     // Viewport center for sorting by distance (only needed if candidates exceed maxLights)
     const maxLights = this.maxLights | 0;
@@ -3628,9 +3636,9 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
       const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[i]);
 
       if (
-        x + influenceRadius < cameraX ||
+        x + influenceRadius < viewLeft ||
         x - influenceRadius > viewRight ||
-        yForLight + influenceRadius < cameraY ||
+        yForLight + influenceRadius < viewTop ||
         yForLight - influenceRadius > viewBottom
       ) {
         continue;

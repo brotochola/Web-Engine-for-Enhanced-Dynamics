@@ -6,6 +6,7 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import Keyboard from './keyboard.js';
 import { Mouse } from './mouse.js';
+import { rotatedHalfExtents } from '../util/viewBounds.js';
 
 /**
  * Camera center that keeps the entity inside a world-pixel box.
@@ -106,6 +107,8 @@ export class Camera {
   static _shakeScratch = { x: 0, y: 0 };
   static _worldToScreenScratch = { x: 0, y: 0 };
   static _screenToWorldScratch = { x: 0, y: 0 };
+  static _isOnScreenScratch = { x: 0, y: 0 };
+  static _viewExtScratch = { halfW: 0, halfH: 0 };
 
   // Zoom limits
   static _maxZoom = 50;
@@ -1199,21 +1202,32 @@ export class Camera {
    * @returns {boolean} True if position is on screen
    */
   static isOnScreen(worldX, worldY, margin = 0) {
-    if (!this._data) return true;
+    const data = this._data;
+    if (!data) return true;
+    // [9] is IDX_ROTATION. Read directly: this runs per listener entity per
+    // frame, and the getter's guards cost 21% here (N-12 A/B).
+    if (data[9]) return this._isOnScreenTurned(worldX, worldY, margin);
 
-    const zoom = this._data[0];
-    const cameraX = this._data[1];
-    const cameraY = this._data[2];
-
-    // Convert world position to screen position
-    const screenX = (worldX - cameraX) * zoom;
-    const screenY = (worldY - cameraY) * zoom;
+    const zoom = data[0];
+    const screenX = (worldX - data[1]) * zoom;
+    const screenY = (worldY - data[2]) * zoom;
 
     return (
       screenX >= -margin &&
       screenX <= this._canvasWidth + margin &&
       screenY >= -margin &&
       screenY <= this._canvasHeight + margin
+    );
+  }
+
+  /** isOnScreen for a turned camera: the view turns about the canvas center. */
+  static _isOnScreenTurned(worldX, worldY, margin) {
+    const s = this.worldToScreen(worldX, worldY, this._isOnScreenScratch);
+    return (
+      s.x >= -margin &&
+      s.x <= this._canvasWidth + margin &&
+      s.y >= -margin &&
+      s.y <= this._canvasHeight + margin
     );
   }
 
@@ -1284,6 +1298,7 @@ export class Camera {
    * Get viewport bounds in world coordinates.
    * Writes into `out` when provided; otherwise reuses a static scratch object
    * (zero allocation on the hot path used by SoundManager spatial culling).
+   * With a rotated camera this is the world box around the turned view.
    * @param {{left?: number, top?: number, right?: number, bottom?: number, width?: number, height?: number}|null} [out]
    * @returns {{left: number, top: number, right: number, bottom: number, width: number, height: number}}
    */
@@ -1295,6 +1310,19 @@ export class Camera {
 
     const width = this._canvasWidth / zoom;
     const height = this._canvasHeight / zoom;
+    const rot = this.rotation;
+    if (rot) {
+      const e = rotatedHalfExtents(width, height, rot, this._viewExtScratch);
+      const cx = cameraX + width * 0.5;
+      const cy = cameraY + height * 0.5;
+      result.left = cx - e.halfW;
+      result.top = cy - e.halfH;
+      result.right = cx + e.halfW;
+      result.bottom = cy + e.halfH;
+      result.width = e.halfW * 2;
+      result.height = e.halfH * 2;
+      return result;
+    }
 
     result.left = cameraX;
     result.top = cameraY;

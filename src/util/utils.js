@@ -7,6 +7,7 @@ import { BOX2D_MAX_WORKERS, PHYSICS_DEFAULTS } from './configDefaults.js';
 import { nativeImport } from './sceneScript.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
+import { rotatedHalfExtents } from './viewBounds.js';
 export {
   packPair as collisionPairKey,
   unpackPair as collisionPairUnpack,
@@ -216,9 +217,14 @@ export function randomUnitCS(out) {
   return out;
 }
 
+const _cullExt = { halfW: 0, halfH: 0 };
+
 /**
  * Compute screen-space camera bounds (with culling margin) into a reusable object.
  * Result shape: { zoom, cameraOffsetX, cameraOffsetY, minX, maxX, minY, maxY }.
+ * Points are tested unrotated (`x * zoom - cameraOffsetX`). A rotated camera
+ * draws the canvas turned about its center, so the bounds grow to the box
+ * around that turned canvas; at rotation 0 they are the canvas.
  */
 export function calculateCameraScreenBounds(
   zoom,
@@ -227,7 +233,8 @@ export function calculateCameraScreenBounds(
   canvasWidth,
   canvasHeight,
   cullingRatio,
-  result
+  result,
+  rotation = 0
 ) {
   const cameraOffsetX = cameraX * zoom;
   const cameraOffsetY = cameraY * zoom;
@@ -238,10 +245,20 @@ export function calculateCameraScreenBounds(
   result.zoom = zoom;
   result.cameraOffsetX = cameraOffsetX;
   result.cameraOffsetY = cameraOffsetY;
-  result.minX = -marginX;
-  result.maxX = canvasWidth + marginX;
-  result.minY = -marginY;
-  result.maxY = canvasHeight + marginY;
+  if (!rotation) {
+    result.minX = -marginX;
+    result.maxX = canvasWidth + marginX;
+    result.minY = -marginY;
+    result.maxY = canvasHeight + marginY;
+    return result;
+  }
+  const e = rotatedHalfExtents(canvasWidth, canvasHeight, rotation, _cullExt);
+  const centerX = canvasWidth * 0.5;
+  const centerY = canvasHeight * 0.5;
+  result.minX = centerX - e.halfW - marginX;
+  result.maxX = centerX + e.halfW + marginX;
+  result.minY = centerY - e.halfH - marginY;
+  result.maxY = centerY + e.halfH + marginY;
   return result;
 }
 

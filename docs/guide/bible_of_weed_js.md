@@ -903,8 +903,11 @@ WEED.Tween.to(this.index, { alpha: 0 }, 200, 'quad.out'); // sprite or mesh; not
 WEED.Tween.toZoom(0.5, 400, 'quad.out');
 WEED.Camera.targetZoom = 0.5; // then follow / followEntity — lerps zoom, keeps screen center
 WEED.Camera.setZoom(1.5);     // snap zoom (do not call every tick while following)
+WEED.Camera.setAngle(rad);    // turn the view about the screen center (Camera.rotation)
 // getViewportBounds(out?) — pass a stable object if you need to store bounds;
 // the no-arg form reuses an internal scratch object (consume immediately).
+// With a turned camera it is the world box around the turned view; isOnScreen
+// and the engine culls follow the turn too.
 // High-speed follow hitch: docs/guide/PHYSICS.md “Display pose publish”.
 // followEntity holds SAB pan when poseReady is unchanged (publish skip).
 // Drawn cam = packed pose + look-ahead lead (renderQueueCamera), not eased Camera.x/y.

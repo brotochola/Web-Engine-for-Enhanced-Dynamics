@@ -40,6 +40,7 @@ import {
     lightCookieScale,
     lightGlowScale,
 } from '../util/utils.js';
+import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
 import {
@@ -1111,7 +1112,8 @@ class PreRenderWorker extends AbstractWorker {
             this.canvasWidth,
             this.canvasHeight,
             this.cullingRatio,
-            this._cameraBounds
+            this._cameraBounds,
+            this._frameCameraRot
         );
     }
 
@@ -2861,12 +2863,16 @@ class PreRenderWorker extends AbstractWorker {
         const zoom = this._frameCameraZoom || 1;
         const camX = this._frameCameraX || 0;
         const camY = this._frameCameraY || 0;
-        const viewW = this.canvasWidth / (zoom > 0 ? zoom : 1);
-        const viewH = this.canvasHeight / (zoom > 0 ? zoom : 1);
-        const viewRight = camX + viewW;
-        const viewBottom = camY + viewH;
-        const cx = camX + viewW * 0.5;
-        const cy = camY + viewH * 0.5;
+        const view = viewWorldBounds(
+            zoom, camX, camY, this.canvasWidth, this.canvasHeight, this._frameCameraRot, this._worldBounds
+        );
+        const viewLeft = view.minX;
+        const viewTop = view.minY;
+        const viewRight = view.maxX;
+        const viewBottom = view.maxY;
+        // The view turns about its focus, so the sort center ignores rotation.
+        const cx = camX + this.canvasWidth / (zoom > 0 ? zoom : 1) * 0.5;
+        const cy = camY + this.canvasHeight / (zoom > 0 ? zoom : 1) * 0.5;
         const raw = Query.queryPublishedFrame(this._queryLightEmitter) === -1
             ? EMPTY_OWNED_IDS
             : Query.queryActiveEntities(this._queryLightEmitter);
@@ -2878,9 +2884,9 @@ class PreRenderWorker extends AbstractWorker {
             const y = worldY[id] - (lightHeight[id] || 0);
             const influence = lightInfluenceRadius(sqrtI[id]);
             if (
-                x + influence < camX ||
+                x + influence < viewLeft ||
                 x - influence > viewRight ||
-                y + influence < camY ||
+                y + influence < viewTop ||
                 y - influence > viewBottom
             ) {
                 continue;
@@ -3253,7 +3259,8 @@ class PreRenderWorker extends AbstractWorker {
             const screenBounds = this._frameCameraBoundsValid
                 ? this._cameraBounds
                 : calculateCameraScreenBounds(
-                    zoom, camX, camY, this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
+                    zoom, camX, camY, this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds,
+                    this._frameCameraRot
                 );
             const worldBounds = screenBoundsToWorldBounds(screenBounds, 0, 0, this._worldBounds);
             const viewMinX = worldBounds.minX;

@@ -18,6 +18,7 @@ import { ChainPoints } from '../../chainPoints.js';
 import { DebugDraw } from '../debugDraw.js';
 import { DEBUG_FLAGS } from '../debugFlags.js';
 import { distanceSq2D, lightInfluenceRadius } from '../../../util/utils.js';
+import { viewWorldBounds } from '../../../util/viewBounds.js';
 import { ShapeType } from '../../../util/configDefaults.js';
 import { getColliderBounds, _boundsResult } from '../../../util/colliderUtils.js';
 import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
@@ -33,6 +34,8 @@ export class PhysicsDebugRenderer {
     this._worldA = { x: 0, y: 0 };
     this._worldB = { x: 0, y: 0 };
     this._filter = { selectedOnly: false, selectedIdx: -1 };
+    this._viewBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    this._rolledViewOut = { left: 0, right: 0, top: 0, bottom: 0 };
     this._indexLabels = [];
     this._indexWidths = [];
     this._typeNames = [];
@@ -116,33 +119,16 @@ export class PhysicsDebugRenderer {
    * MeshRenderer-only bodies never get SpriteRenderer.isItOnScreen.
    * Compound terrain also sits far from the body origin — pad by local AABB.
    */
-  /** Axis-aligned world box of the rolled screen, plus a margin. */
+  /** Axis-aligned world box of the rolled screen, plus a margin. Reused: copy the fields. */
   _rolledView(camera, canvas, zoom) {
     const margin = 100;
-    const z = zoom > 0 ? zoom : 1;
-    const rot = camera.rotation || 0;
-    if (!rot) {
-      return {
-        left: camera.x - margin,
-        right: camera.x + canvas.width / z + margin,
-        top: camera.y - margin,
-        bottom: camera.y + canvas.height / z + margin,
-      };
-    }
-    const hw = canvas.width / z * 0.5;
-    const hh = canvas.height / z * 0.5;
-    const focusX = camera.x + hw;
-    const focusY = camera.y + hh;
-    const c = Math.abs(Math.cos(rot));
-    const s = Math.abs(Math.sin(rot));
-    const ex = hw * c + hh * s + margin;
-    const ey = hw * s + hh * c + margin;
-    return {
-      left: focusX - ex,
-      right: focusX + ex,
-      top: focusY - ey,
-      bottom: focusY + ey,
-    };
+    const b = viewWorldBounds(zoom, camera.x, camera.y, canvas.width, canvas.height, camera.rotation || 0, this._viewBox);
+    const v = this._rolledViewOut;
+    v.left = b.minX - margin;
+    v.right = b.maxX + margin;
+    v.top = b.minY - margin;
+    v.bottom = b.maxY + margin;
+    return v;
   }
 
   _colliderDebugInView(i, entityX, entityY, viewLeft, viewRight, viewTop, viewBottom) {
