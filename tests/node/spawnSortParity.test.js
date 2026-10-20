@@ -16,18 +16,17 @@ const { Transform } = await import('../../src/components/transform.js');
 const { GameObject } = await import('../../src/core/gameObject.js');
 
 /**
- * H-14 parity - the packed spawn sort key must produce byte-identical output to
- * the comparator sort it replaced.
- *
- * The shipped line was
+ * Spawn sort parity. Written for H-14, which replaced the shipped comparator
+ * sort
  *
  *     for (let i = 0; i < n; i++) perm[i] = i;
  *     perm.subarray(0, n).sort((a, b) => idx[a] - idx[b]);
  *
- * replaced by packing `(entityIndex, position)` into one Float64 key and sorting
- * it with no comparator, which is V8's specialised numeric path. The gather that
- * follows is unchanged, so the only thing that can differ is the ORDER produced,
- * and the only place order is observable is the resulting active lists.
+ * with a numeric sort of packed `(entityIndex, position)` Float64 keys. H-14 was
+ * dropped and reverted (HYPOTHESIS_LOG), so these cases now pin the comparator
+ * sort above; any replacement must pass them unchanged. The gather that follows
+ * the sort is fixed, so the only thing a replacement can change is the ORDER
+ * produced, and the only place order is observable is the resulting active lists.
  *
  * These cases run the real `_processSpawnSoA` and compare the full active-list
  * state against a reference computed independently - a plain sort of the same

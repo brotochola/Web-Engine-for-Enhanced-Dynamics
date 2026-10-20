@@ -525,10 +525,6 @@ class LogicWorker extends AbstractWorker {
       this._spawnPerm = new Int32Array(next);
       this._spawnSorted = new Int32Array(next);
       this._spawnSortedClass = new Array(next);
-      // H-14: the packed spawn sort key. Float64 because the key
-      // `entityIndex * 4096 + classSlot` overflows Int32 long before the entity
-      // cap, while still sitting far inside Float64's exact-integer range.
-
       this._spawnCap = next;
     } else {
       this._despawnIdx = idx;
@@ -695,29 +691,14 @@ class LogicWorker extends AbstractWorker {
     const sortedClass = this._spawnSortedClass;
     const transformActive = Transform.active;
 
-    // H-14. The permutation exists only because the comparator sorts positions
-    // rather than values, and a comparator on a TypedArray forces V8 off its
-    // specialised numeric path - a temporary copy plus a JS call per comparison.
-    //
-    // Packing (entityIndex, position) into one key lets the sort run with NO
-    // comparator. The key is exact in Float64: entityIndex <= 65535 and the
-    // position span is n+1, so even a 65535-entity burst stays under 2^53 where
-    // every integer is representable and the sort is pure integer comparison.
-    //
-    // Deliberately packing the POSITION, not the class. `classes` holds
-    // EntityClass object references, and packing those is not possible; the
-    // obvious workaround - pack the numeric entity type instead - would need a
-    // type->class registry the worker cannot reach, since `registeredClasses` is
-    // Scene-side. Packing the position keeps the gather below byte-identical to
-    // what it was, so the only thing that changes is how the order is produced.
-    //
-    // Gate 1 measured +147 % at n=256, 5/5 rounds, 106-118 % across n=8..1024.
-    //
-    // Ordering note: for two entries sharing an entityIndex the old comparator
-    // returned 0, leaving their relative order implementation-defined. The packed
-    // key breaks that tie by position, so duplicates keep their spawn order -
-    // deterministic, and identical output because a repeated spawn of one index
-    // carries the same class.
+    // Sort spawn positions by entity index with a comparator over a permutation,
+    // then gather. H-14 (2026-10-14) replaced the comparator with a numeric sort
+    // of packed (entityIndex, position) Float64 keys: +106..147 % in the kernel,
+    // but a spawnStorm sitting of -0.55 % with 3/8 pairs worse, contaminated by a
+    // stray Chromium launch, so it was dropped and reverted. Its comments stayed
+    // here and described a key this code does not build (review). Read
+    // HYPOTHESIS_LOG before re-proposing it. Two spawns of one index compare
+    // equal; they carry the same class, so their order does not change the lists.
     let m = 0;
     for (let i = 0; i < n; i++) perm[i] = i;
     perm.subarray(0, n).sort((a, b) => idx[a] - idx[b]);
