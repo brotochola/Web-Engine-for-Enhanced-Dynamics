@@ -163,6 +163,13 @@ export function applySavePayloadToScene(scene, payload) {
   scene._restorePayload = null;
 
   return completePromise.then(async (result) => {
+    // The restore despawned the create()-time entities and spawned the saved
+    // ones; their onDespawned / onSpawned hooks may have written shared
+    // resources or walkability on top of the bytes applied above. Those bytes
+    // already hold every effect the saved entities had, so they win: hooks read
+    // the saved values, and the load ends on exactly the saved state.
+    applySharedResources(payload.sharedResources);
+    applyNav(payload.nav);
     const mapGet = idMapGetter(result.idPairs);
     const camera = remapCameraFollow(payload.camera, mapGet);
     if (camera) applyCameraGlobals(camera);

@@ -163,9 +163,9 @@ LiquidFun WASM source: the sibling `Box2d_3.2_C_-_liquidfun` tree (`wasm_wrapper
 - **Joints:** the active Weed joint pool is saved and restored (distance, revolute, prismatic, weld) with entity-index remapping. A Box2D contact manifold dump is not saved.
 - **LiquidFun:** particle pos/vel/flags, render tint/texture/scale/alpha, plus group slots, per-particle `groupIndex` / elastic `restOffset`, and spring/barrier pair graphs.
 - **Decals:** sparse non-empty DECALS tiles (PNG in browser, raw RGBA in Node); layout mismatch skips restore.
-- **Shared resources:** the whole SAB for each bound class. A missing name or a different byte length skips that resource.
+- **Shared resources:** the whole SAB for each bound class. A missing name or a different byte length skips that resource. Applied before logic0 restores the entities (so restore-time `onDespawned` / `onSpawned` hooks read the saved values) and again after it, so the load ends on exactly the saved bytes whatever those hooks wrote (a kill counter in `onDespawned` does not drift on every load).
 - **Chains, extra fixtures, custom meshes:** only for entities that are in the save. Restore writes them onto the new entity index. A saved entity with no chain, no extra fixtures, or no custom mesh has that data cleared, so an `onSpawned` default does not survive a save that removed it.
-- **Nav:** walkability only. Flow fields and paths are caches and are invalidated. A width, height, or cell-size mismatch skips the grid. A `REBUILD_FROM_INDICES` posted from `create()` has already run; one posted from `onLoadGame` replaces the restored grid.
+- **Nav:** walkability only. Flow fields and paths are caches and are invalidated. A width, height, or cell-size mismatch skips the grid. Applied before and again after the entity restore, like shared resources. A `REBUILD_FROM_INDICES` posted from `create()` has already run; one posted from `onLoadGame` replaces the restored grid.
 - **Time:** `Time.scale`, including `0`. An old save with no TIME section leaves the new scene clock at `1`.
 - **Tweens:** active slots. Paint and xy slots remap their entity. Zoom slots do not. A paint or xy target that was not restored is dropped.
 - No decoration / CPU particle / bullet / playing-sound dumps.
