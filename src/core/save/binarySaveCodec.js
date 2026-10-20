@@ -16,8 +16,13 @@ export const SECTION = Object.freeze({
   MESHES: 11,
   NAV: 12,
   TIME: 13,
+  /** Legacy (u16 entity). Read only; writes use TWEENS2. */
   TWEENS: 14,
+  /** u8 layout version, then the TWEENS records with a u32 entity. */
+  TWEENS2: 15,
 });
+
+const TWEENS2_LAYOUT = 1;
 
 const KIND = Object.freeze({
   F64: 0,
@@ -737,15 +742,18 @@ function readTime(r) {
   return r.f32();
 }
 
+// TWEENS2. The entity is u32 (entityIdWidth 32 indices exceed 65535). The leading
+// layout byte lets the record grow without another tag.
 function writeTweens(w, slots) {
   const list = slots || [];
+  w.u8(TWEENS2_LAYOUT);
   w.u32(list.length);
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
     w.u8(rec.kind | 0);
     w.u8(rec.ease | 0);
     w.u8(rec.mask | 0);
-    w.u16(rec.entity | 0);
+    w.u32(rec.entity >>> 0);
     w.f32(+rec.duration || 0);
     w.f32(+rec.elapsed || 0);
     w.f32(+rec.from0 || 0);
@@ -761,7 +769,18 @@ function writeTweens(w, slots) {
   }
 }
 
-function readTweens(r) {
+/**
+ * @param {Reader} r
+ * @param {boolean} legacy TWEENS (tag 14): no layout byte, u16 entity.
+ */
+function readTweens(r, legacy) {
+  if (!legacy) {
+    const layout = r.u8();
+    if (layout !== TWEENS2_LAYOUT) {
+      console.warn(`[SaveGame] tween section layout ${layout} is newer than this build; tweens skipped`);
+      return null;
+    }
+  }
   const n = r.u32();
   const out = [];
   for (let i = 0; i < n; i++) {
@@ -769,7 +788,7 @@ function readTweens(r) {
       kind: r.u8(),
       ease: r.u8(),
       mask: r.u8(),
-      entity: r.u16(),
+      entity: legacy ? r.u16() : r.u32(),
       duration: r.f32(),
       elapsed: r.f32(),
       from0: r.f32(),
@@ -824,7 +843,7 @@ export function encodeBinarySaveBody(payload) {
     pushSection(sections, SECTION.TIME, (w) => writeTime(w, payload.timeScale));
   }
   if (payload.tweens?.length) {
-    pushSection(sections, SECTION.TWEENS, (w) => writeTweens(w, payload.tweens));
+    pushSection(sections, SECTION.TWEENS2, (w) => writeTweens(w, payload.tweens));
   }
 
   const out = new Writer();
@@ -875,6 +894,10 @@ export function decodeBinarySaveBody(bytes) {
     meshes: map[SECTION.MESHES] ? readMeshes(new Reader(map[SECTION.MESHES])) : null,
     nav: map[SECTION.NAV] ? readNav(new Reader(map[SECTION.NAV])) : null,
     timeScale: map[SECTION.TIME] ? readTime(new Reader(map[SECTION.TIME])) : null,
-    tweens: map[SECTION.TWEENS] ? readTweens(new Reader(map[SECTION.TWEENS])) : null,
+    tweens: map[SECTION.TWEENS2]
+      ? readTweens(new Reader(map[SECTION.TWEENS2]), false)
+      : map[SECTION.TWEENS]
+        ? readTweens(new Reader(map[SECTION.TWEENS]), true)
+        : null,
   };
 }

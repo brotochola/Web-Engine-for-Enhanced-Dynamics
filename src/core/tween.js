@@ -12,6 +12,7 @@ import { Camera } from './camera.js';
 import { PARTICLE_EASE } from '../util/configDefaults.js';
 import { applyParticleEase } from '../util/particleTween.js';
 import { logicBlockRange } from '../util/logicOwner.js';
+import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
 
 export const TWEEN_KIND_PAINT = 0;
 export const TWEEN_KIND_XY = 1;
@@ -57,7 +58,8 @@ function align4(n) {
 }
 
 /**
- * Bytes for a pool of `count` slots.
+ * Bytes for a pool of `count` slots. The entity column follows entityIdWidth, so
+ * call it after bindEntityIdWidth (Scene and workers do).
  * @param {number} count
  */
 export function tweenBufferBytes(count) {
@@ -67,7 +69,7 @@ export function tweenBufferBytes(count) {
   o = align4(o + n);
   o = align4(o + n);
   o = align4(o + n);
-  o += n * 2;
+  o += n * entityIdBytes();
   o = align4(o);
   o += n * 4 * 10;
   o += n * 4 * 2;
@@ -147,8 +149,9 @@ export class Tween {
     o = align4(o + n);
     this.kind = new Uint8Array(sab, o, n);
     o = align4(o + n);
-    this.entity = new Uint16Array(sab, o, n);
-    o = align4(o + n * 2);
+    const IdArray = EntityIdArray();
+    this.entity = new IdArray(sab, o, n);
+    o = align4(o + n * entityIdBytes());
     const take = () => {
       const view = new Float32Array(sab, o, n);
       o += n * 4;
