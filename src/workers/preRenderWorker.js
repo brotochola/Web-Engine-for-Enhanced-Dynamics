@@ -1597,6 +1597,7 @@ class PreRenderWorker extends AbstractWorker {
         const dirty = SpriteRenderer.renderDirty;
         const frameIndex = this.entityFrameIndex;
         const animState = SpriteRenderer.animationState;
+        let clearedDirty = false;
         for (let i = 0; i < count; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
@@ -1604,9 +1605,16 @@ class PreRenderWorker extends AbstractWorker {
             prevE[i] = idx;
             prevF[i] = frameIndex ? (frameIndex[idx] | 0) : 0;
             prevA[i] = type === 0 && animState ? (animState[idx] | 0) : 0;
-            if (type === 0 && dirty) dirty[idx] = 0;
+            if (type === 0 && dirty && dirty[idx]) {
+                dirty[idx] = 0;
+                clearedDirty = true;
+            }
         }
         this._persistCount[bufIdx] = count;
+        // The dirty flag is one per entity, but the queue has two buffers. This buffer
+        // just took the change; the other one still holds the old columns, so its next
+        // emit must be a full one or it flickers the old tint/alpha/scale at 30 Hz.
+        if (clearedDirty) this._persistCount[bufIdx ^ 1] = -1;
     }
 
     _writeQueueShadow(out, entityIndex, ref) {
@@ -2333,8 +2341,9 @@ class PreRenderWorker extends AbstractWorker {
         const stashPose = this._displayPoseOut;
         const writeSortKey = !!(rqSortKey && source.hasOrder);
         const ySort = !!source.ySort;
-        const persistBuf = source.persist ? this._queueBuf : null;
-        const persistHit = persistBuf
+        // -1 when off: buffer 0 is a valid persist target (it used to read as false).
+        const persistBuf = source.persist ? this._queueBuf : -1;
+        const persistHit = persistBuf >= 0
             ? this._type0PersistHit(persistBuf, count, collectorType, collectorIndex)
             : false;
         if (persistHit) {
