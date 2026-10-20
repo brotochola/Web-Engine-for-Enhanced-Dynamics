@@ -59,6 +59,8 @@
   let jointBreakRingBound = false;
   let views = null;
   let hasBody = null;
+  /** 1 while the Box2D body holds several shapes (compound fixtures, chain segments). */
+  let multiShape = null;
   let createFailed = null;
   let denseList = null;
   let densePositions = null;
@@ -809,6 +811,7 @@
       entityIndex: i,
     };
 
+    multiShape[i] = 0;
     try {
       // RigidBody without Collider: shapeless body (moves, no contacts).
       if (rb && !col) {
@@ -819,6 +822,7 @@
       const extras = views.fixtureCount ? views.fixtureCount[i] | 0 : 0;
       if (extras > 0) {
         world.create(opts);
+        multiShape[i] = 1;
         if (!addAllFixtures(i)) {
           try {
             world.destroyBody(i);
@@ -831,6 +835,7 @@
       }
       if (shape === ShapeType.Chain) {
         world.create(opts);
+        multiShape[i] = 1;
         if (!syncChain(i)) {
           try {
             world.destroyBody(i);
@@ -869,17 +874,28 @@
     return true;
   }
 
+  // sync-body-geometry-start
   function syncBodyGeometry(i) {
     const shapeNow = views.shapeType[i] | 0;
     if (shapeNow === ShapeType.Chain) {
       syncChain(i);
+      multiShape[i] = 1;
       return;
     }
     const extras = views.fixtureCount ? views.fixtureCount[i] | 0 : 0;
     if (extras > 0) {
       if (bodyClearShapesFn) bodyClearShapesFn(i);
       addAllFixtures(i);
+      multiShape[i] = 1;
       return;
+    }
+    // body_set_shape_* replaces one shape (or adds one to a shapeless body).
+    // A body left with several (compound fixtures, chain segments) would keep
+    // the other N-1, so clear it first. Single-shape bodies keep the in-place
+    // set: clearing would end and restart their contacts on every resize.
+    if (multiShape[i]) {
+      if (bodyClearShapesFn) bodyClearShapesFn(i);
+      multiShape[i] = 0;
     }
     const shape = views.shapeType[i] | 0;
     const offsetX = views.offsetX[i];
@@ -906,6 +922,7 @@
       bodySetShapePolygonFn(i, ptr, count, offsetX, offsetY, polygonSkin(i));
     }
   }
+  // sync-body-geometry-end
 
   function syncBodyProperties(i, flags) {
     const rb = views.rbActive[i] !== 0;
@@ -2830,6 +2847,7 @@
     collectDetailedStats = !!data.collectDetailedStats;
     const entityCount = data.entityCount | 0;
     hasBody = new Uint8Array(entityCount);
+    multiShape = new Uint8Array(entityCount);
     createFailed = new Uint8Array(entityCount);
     denseList = new Uint16Array(entityCount);
     densePositions = new Int32Array(entityCount);

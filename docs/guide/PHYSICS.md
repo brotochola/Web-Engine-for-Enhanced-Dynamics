@@ -103,7 +103,7 @@ this.setLayer('scenery');
 
 `setMesh(positions, indices, uvs)` — `indices` omitted fans from vertex 0 (convex). `uvs` omitted keeps `setTileWorld` / `setTileLocal`. `setVertices` rewrites positions when the count matches. `clearMesh` falls back to the collider fill. `visualOutset` does not move an explicit mesh.
 
-`replacePolygons` / `replacePolygonsFlat` write the [`ColliderFixture`](../../src/core/colliderFixture.js) pool (intrusive list per entity). Host `clear_shapes` + `body_add_shape_polygon` on `GEOMETRY` dirty. Mass is the sum of fixture areas. Contacts still key by entity. `Ray` / spatial / debug walk every fixture. Light occluders still use the **primary** Collider shape only (feature gap: they do not walk fixtures).
+`replacePolygons` / `replacePolygonsFlat` write the [`ColliderFixture`](../../src/core/colliderFixture.js) pool (intrusive list per entity). Host `clear_shapes` + `body_add_shape_polygon` on `GEOMETRY` dirty. Going back to one shape (`makePolygon`, box, circle; or leaving a chain) clears the body first: `body_set_shape_*` replaces only one Box2D shape, so the other fixtures would stay as invisible colliders. A body that already has one shape is resized in place (its contacts carry over). Mass is the sum of fixture areas. Contacts still key by entity. `Ray` / spatial / debug walk every fixture. Light occluders still use the **primary** Collider shape only (feature gap: they do not walk fixtures).
 
 A SharedResource (one writer per field) pins its owner with `forceProcessOnLogicWorker: 1` so only `logic1` runs that entity’s `tick` / callbacks / `onSpawned`.
 
