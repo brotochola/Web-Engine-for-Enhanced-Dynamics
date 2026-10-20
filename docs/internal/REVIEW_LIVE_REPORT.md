@@ -17,9 +17,30 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**06:40** — **B29** (the "others" list of small engine items), then the planet demo items (B28).
+**07:30** — B29 continues: flipped-sprite sort line, then the rest of the list.
 
 ## Log
+
+### 07:25 — B29: three engine bugs fixed (`e95bf3a4`, `e75c25bf`, `4bac5008`)
+
+- **`despawnAll` had drifted from `despawn`** (`e95bf3a4`):
+  - It never freed an entity's extra collider fixtures. Save restore runs it on every load, so
+    **each load leaked the terrain's fixtures** until the pool ran out.
+  - Neither path freed **chain points**. A recycled slot kept the old chain, and the next save
+    wrote it for a box. A load then turned that box into a chain.
+  - Fix: one shared release step for despawn, `despawnAll` and an aborted spawn, plus a save-side
+    check. All three were reproduced first.
+- **A body made static by a chain collider stayed static forever** (`e75c25bf`). The mass sync
+  stamped `static = 1`, the same value as a user's choice, so nothing could undo it when the
+  collider became a polygon. Chain-forced static is now `2`, which every reader already treats as
+  static, and it reverts automatically.
+- **Tint tweens with back/elastic eases flashed wrong colours** (`4bac5008`). The overshoot pushed a
+  colour channel past 255 or below 0. One copy masked it, so white flashed near-black; the other
+  copy let it spill into the next channel. Now there's one shared lerp that saturates.
+  **Four variants measured** on the bare lerp: plain clamps cost −2.7 to −5.1 % (a tie on the
+  rerun), while the "clever" ones were far slower (an early return −27 %, one guard test −22 %,
+  branchless bit tricks −42 %). Kept the plain clamps.
+- Suite **1295/1295**.
 
 ### 06:35 — B27 fixed (`f4fe8a67`); new N-15
 

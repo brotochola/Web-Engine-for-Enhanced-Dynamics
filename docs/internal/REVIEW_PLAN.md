@@ -98,7 +98,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 ### Low
 
 - [ ] **B28 Planet demo (Demo):** planetPhysicsScene has `raycasted: true` **and** `particleLights.enabled`: its particle lights never drew (now warned, B25) — drop the setting or make particle lights draw under raycasting (feature); polygon-skin seam fix lost (water leak); ship/lamp lights see occluders only within `visualRange`; planet size tied to the flat level's COLS; laser lights every beam particle; HUD off-screen; boot camera at the wrong pole; silent retarget failure via a deep engine import.
-- [ ] **B29 Others:** flipped-sprite sort line; pack fast paths hardcode strides; texture-upload seqlock is single-writer; tint tween wraps; mass sync flips body type to static; debug selection box offset; `particleLights.max` unvalidated; `_holdX/_holdY` 8192 cap; mouse buffer literals; camera getter JSDoc; `despawnAll` drifted from `despawn` (fixtures and chain spans never freed); `renderOnly` ghost rows (likely); shadow republish with `shadowUpdateInterval > 1`.
+- [ ] **B29 Others:** *(done: `despawnAll` drift + chain release `e95bf3a4`; chain-static flag `e75c25bf`; tint wrap `4bac5008`; mouse buffer literals in B16)* flipped-sprite sort line; pack fast paths hardcode strides; texture-upload seqlock is single-writer; tint tween wraps; mass sync flips body type to static; debug selection box offset; `particleLights.max` unvalidated; `_holdX/_holdY` 8192 cap; mouse buffer literals; camera getter JSDoc; `despawnAll` drifted from `despawn` (fixtures and chain spans never freed); `renderOnly` ghost rows (likely); shadow republish with `shadowUpdateInterval > 1`.
 
 ## Phase 2 — Measurement and test integrity (before any speed work)
 
