@@ -17,9 +17,29 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**01:40** — Back to the bug list: **B19** (spawn race on body generation).
+**02:05** — **B20** (polygon skin: `Collider.radius` doubles as the polygon border).
 
 ## Log
+
+### 02:00 — B19 fixed (`36ee6ee7`)
+
+- **What the race was** (the plan only said "likely"; I traced it):
+  - Spawn activated the entity, then bumped its body generation.
+  - Since `62c31c70`, closing the spawn window had already published the entity's saved marks.
+  - A physics step between those two lines saw the slot active and dirty. It created the body
+    under the **old** generation. The bump then made the next step **destroy and recreate it**,
+    dropping any joint made in between.
+  - The bump also cleared the slot's previous-life pose only after activation, so a frame could
+    draw at the old position.
+- **Confirmed before fixing:** the test hooks the instant the slot turns active during a real
+  `GameObject.spawn`. On the old code the generation at that instant was 3, the old life's;
+  afterwards it was 4.
+- **Fix:** the generation, the epoch and the stale-pose drop now happen **before** activation. The
+  LIFECYCLE publish happens **after** it.
+- **Checked before choosing:** properties that physics consumes while the entity is still inactive
+  are not lost. Body creation reads type, damping, geometry, density, filter and friction from the
+  current state, so it applies everything those flags would. The real Box2D WASM tests pass.
+- Suite **1249/1249**.
 
 ### 01:35 — Headed smoke after the camera commits: clean
 
