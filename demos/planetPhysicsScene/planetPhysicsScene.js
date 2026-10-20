@@ -135,10 +135,7 @@ export class PlanetPhysicsScene extends Scene {
       maxLights: 40,
       maxPolygonVertices: 5000,
       maxOccluderSelfLit: 1024,
-      particleLights: {
-        enabled: true,
-        max: 256,
-      },
+      // No particleLights: raycasted lighting does not draw them.
       sun: { enabled: false },
     },
 
