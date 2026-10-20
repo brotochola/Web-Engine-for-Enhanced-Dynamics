@@ -66,14 +66,17 @@ export class ParticleEmitter extends SharedAtomicPool {
 
   // Hot-path scratches (per-worker module instance; emit is sync/non-reentrant)
   static _cfgScratch = Object.create(null);
+  // Every key _spawn reads from cfg, plus `layer` / `layers` (read by
+  // Layer.resolveSubscriptions). Every public emit path copies only these keys, so a
+  // missing one is silently ignored (tests/node/particleEmitConfigKeys.test.js).
   static _cfgFieldList = [
-    'count', 'flat', 'viewMode', 'texture', 'spritesheet', 'animation', 'frame',
+    'count', 'flat', 'viewMode', 'texture', 'spritesheet', 'animation', 'frame', 'anim',
     'x', 'y', 'z', 'dirX', 'dirY', 'speed', 'spread', 'angleXY',
     'vx', 'vy', 'vz', 'lifespan', 'gravity',
     'scale', 'scaleX', 'scaleY', 'alpha', 'tint',
-    'rotC', 'rotS', 'rotation', 'flipX', 'flipY',
+    'rotC', 'rotS', 'rotation', 'angularVelocity', 'flipX', 'flipY',
     'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact',
-    'blendMode', 'layerId', 'renderOnly', 'lightIntensity',
+    'blendMode', 'layer', 'layers', 'renderOnly', 'lightIntensity',
   ];
   static _alongLineScratch = Object.create(null);
   static _acquireBatch = new Uint16Array(256);
