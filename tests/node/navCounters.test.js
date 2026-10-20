@@ -92,16 +92,22 @@ test('serviced counts requests and computed counts misses', () => {
   assert.ok(comp >= 0, 'flowfieldsComputedThisFrame is never incremented');
   assert.notEqual(svc, comp, 'both counters are incremented at the same site');
 
-  // Serviced must sit at the dequeue, before the LRU check, so it counts hits too.
+  // Serviced is counted where a request arrives, before the message handler
+  // answers a cached target: hits and coalesced repeats never reach the
+  // processing loop (M2; behaviour in flowfieldServicedCount.test.js).
+  const handler = src.slice(src.indexOf("case 'REQUEST_FLOWFIELD'"));
+  const svcAt = handler.indexOf('this.flowfieldsServicedThisFrame++');
+  const hitAt = handler.indexOf('this._findExistingFlowfieldSlot(targetCell)');
+  assert.ok(svcAt >= 0 && hitAt >= 0);
+  assert.ok(svcAt < hitAt, 'serviced is counted after the cached-target answer, so cache hits are not counted');
+  // And computed sits on the miss path of the processing loop. (Offsets are
+  // both taken inside the function: an absolute offset against a relative one
+  // always passed.)
   const fn = src.slice(src.indexOf('_processNextFlowfieldRequest()'));
-  const svcAt = fn.indexOf('this.flowfieldsServicedThisFrame++');
   const lruAt = fn.indexOf('this._findExistingFlowfieldSlot(targetCell)');
-  const earlyReturn = fn.indexOf('this._updateFlowfieldLRU(existingSlot)');
-  assert.ok(svcAt >= 0 && lruAt >= 0 && earlyReturn >= 0);
-  assert.ok(svcAt < lruAt, 'serviced is counted after the LRU search, so cache hits are not counted');
-  assert.ok(svcAt < earlyReturn, 'serviced is counted after the hit early-return, so cache hits are not counted');
-  // And computed must sit after it, on the miss path only.
-  assert.ok(comp > lruAt, 'computed is counted before the LRU search, so hits are counted as computations');
+  const compAt = fn.indexOf('this.flowfieldsComputedThisFrame++');
+  assert.ok(lruAt >= 0 && compAt >= 0);
+  assert.ok(compAt > lruAt, 'computed is counted before the LRU search, so hits are counted as computations');
 });
 
 test('the LRU hit path the premise depends on still exists', () => {

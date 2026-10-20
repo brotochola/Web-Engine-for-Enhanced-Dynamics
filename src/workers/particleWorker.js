@@ -607,6 +607,11 @@ class ParticleWorker extends AbstractWorker {
         const { targetCell } = data;
         // console.log(`[PARTICLE WORKER] REQUEST_FLOWFIELD for targetCell: ${targetCell}`);
         if (targetCell >= 0 && targetCell < this.totalCells) {
+          // E-37. Every request counts here, hits included: a cached target is
+          // answered below and a pending one is coalesced by the queue, so
+          // neither reaches the processing loop. COMPUTED / SERVICED is the
+          // LRU miss rate; counting at dequeue saw only misses and read 1.
+          this.flowfieldsServicedThisFrame++;
           const existingSlot = this._findExistingFlowfieldSlot(targetCell);
           if (existingSlot >= 0) {
             this._updateFlowfieldLRU(existingSlot);
@@ -1324,11 +1329,6 @@ class ParticleWorker extends AbstractWorker {
 
   _processNextFlowfieldRequest() {
     const targetCell = this.flowfieldRequests.dequeue();
-        // E-37. Serviced, not computed. This counts requests that reached the processing
-        // loop; `flowfieldsComputedThisFrame` below counts the ones that missed the LRU.
-        // The ratio is the miss rate, and publishing only the miss count would make a
-        // permanently-warm cache look free -- the opposite of the question E-11 asks.
-        if (targetCell >= 0) this.flowfieldsServicedThisFrame++;
     if (targetCell < 0) return false;
 
     const existingSlot = this._findExistingFlowfieldSlot(targetCell);

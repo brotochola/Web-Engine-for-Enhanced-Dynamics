@@ -439,7 +439,7 @@ cost** — recorded as refuted (E-26) so it is not re-derived.
 
 ### E-38 The nav stress scene services zero flowfield requests — **fixed. The target was frozen. 2026-10-18**
 Report: [`reports/E-38-nav-vehicle.md`](./reports/E-38-nav-vehicle.md).
-`this.scene?.mainFrameNumber` is always 0 on a logic worker, so each agent requested one cell and the measure window saw a warm cache. The agent now increments its own frame. Headless, `--src`, detailed stats off, 4 s / 5 s: particle **8.532 ms**, flow **6.0 computed / 6.0 serviced, miss 100 %**. The port was delivering. logic0 is 0.710 ms.
+`this.scene?.mainFrameNumber` is always 0 on a logic worker, so each agent requested one cell and the measure window saw a warm cache. The agent now increments its own frame. Headless, `--src`, detailed stats off, 4 s / 5 s: particle **8.532 ms**, flow **6.0 computed / 6.0 serviced, miss 100 %**. The port was delivering. logic0 is 0.710 ms. *(2026-10-20, review M2: that ratio was an artifact. SERVICED was counted at dequeue, and a cached or pending target never reaches the queue, so it only ever saw misses. It is now counted in the message handler. The 6.0 computed per frame stands; the miss rate was not measured.)*
 
 The notes below are the earlier reading, from the run that saw zeros. They are how the port became the suspect. The run above replaces that suspect.
 **Raised by E-37.** `NavStressScene` is the vehicle the plan names for **all three** nav
@@ -484,7 +484,7 @@ requested* from *everything hit*. Added as A/B load keys so a nav hypothesis can
 "my code ran" from "the cache was warm". Suite 1120 → 1125.
 
 ### E-11 Flowfield/A\* clear the whole grid per request — **not a STEP_MS claim while the loop is deadline-capped. Not implemented.**
-The vehicle runs (E-38). `processNavigationRequests` exits when `performance.now()` passes `maxProcessingMsPerFrame` (8 on NavStress). The measured particle step is 8.532 ms with a 100 % miss rate, so the budget is full. A cheaper `fill` does more searches in the same 8 ms. The named primary does not move. The stamp-array price (E-36) was not spent on a change that cannot hit that primary.
+The vehicle runs (E-38). `processNavigationRequests` exits when `performance.now()` passes `maxProcessingMsPerFrame` (8 on NavStress). The measured particle step is 8.532 ms, so the budget is full. (The "100 % miss rate" this line first cited was the M2 artifact; the step time carries the conclusion.) A cheaper `fill` does more searches in the same 8 ms. The named primary does not move. The stamp-array price (E-36) was not spent on a change that cannot hit that primary.
 `computeFlowfield` runs five full-size `fill()`s plus `distance.fill(65535)` and
 `direction.fill(NONE)` per request, then a post-pass over all cells and a smoothing
 pass with 2 divisions + 2 `Math.round` **per cell**; `computePath` fills `inOpenSet` and
