@@ -486,3 +486,72 @@ test('open chain holds a box on the solid edge and lets one through the ghost', 
   assert.ok(bodyY(onSolid) < 5, `solid edge should catch the box (y=${bodyY(onSolid)})`);
   assert.ok(bodyY(onGhost) > 20, `ghost edge should let the box through (y=${bodyY(onGhost)})`);
 });
+
+function worldShapeCount(fn, memory, worldId) {
+  fn('step_world')(worldId, 1 / 60, 1);
+  const off = fn('get_counters_byte_offset')();
+  return new Int32Array(memory.buffer)[(off >> 2) + 1];
+}
+
+function fillSquares(fn, memory, slot, n) {
+  const ptr = fn('malloc')(8 * 4);
+  assert.ok(ptr);
+  const heap = new Float32Array(memory.buffer, ptr, 8);
+  const add = fn('body_add_shape_polygon');
+  for (let i = 0; i < n; i++) {
+    const x = i * 1.2;
+    heap[0] = x;
+    heap[1] = -0.4;
+    heap[2] = x + 0.8;
+    heap[3] = -0.4;
+    heap[4] = x + 0.8;
+    heap[5] = 0.4;
+    heap[6] = x;
+    heap[7] = 0.4;
+    add(slot, ptr, 4, 0, 0, 0);
+  }
+  fn('free')(ptr);
+}
+
+test('clearing 96 shapes leaves none, including past the 32-id batch', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const { worldId, bodyX, contactBeginCount } = makeWorld(fn, memory);
+  const stepWorld = fn('step_world');
+
+  const wall = createShapeless(fn, worldId, {
+    type: BODY_STATIC,
+    x: 0,
+    y: 0,
+    entityIndex: 0,
+  });
+  fillSquares(fn, memory, wall, 63);
+  assert.equal(worldShapeCount(fn, memory, worldId), 63);
+  fn('body_clear_shapes')(wall);
+  assert.equal(worldShapeCount(fn, memory, worldId), 0, '63 shapes must all clear');
+
+  fillSquares(fn, memory, wall, 96);
+  assert.equal(worldShapeCount(fn, memory, worldId), 96);
+  fn('body_clear_shapes')(wall);
+  assert.equal(
+    worldShapeCount(fn, memory, worldId),
+    0,
+    '96 shapes must all clear (32-id batch used to keep the rest)',
+  );
+
+  const ball = createBox(fn, worldId, {
+    type: BODY_DYNAMIC,
+    x: -4,
+    y: 0,
+    hx: 0.3,
+    hy: 0.3,
+    vx: 200,
+    entityIndex: 1,
+  });
+  let contacts = 0;
+  for (let i = 0; i < 40; i++) {
+    stepWorld(worldId, 1 / 60, 4);
+    contacts += contactBeginCount();
+  }
+  assert.equal(contacts, 0, 'cleared wall must not contact');
+  assert.ok(bodyX(ball) > 120, `ball should cross the old span (x=${bodyX(ball)})`);
+});
