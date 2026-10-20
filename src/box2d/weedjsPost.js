@@ -24,6 +24,7 @@
     'liquidFunUserDataListImpl.js',
   );
   const drainBox2dCommandRing = Box2dCommandRing.drainCommandRing;
+  const readBox2dCommandRingOverflow = Box2dCommandRing.readCommandRingOverflow;
   const publishBox2dContactEvent = Box2dContactRing.publishContactEvent;
   const CONTACT_KIND = Box2dContactRing.BOX2D_CONTACT_KIND;
   const publishContactHit = Box2dContactHitRing.publishContactHit;
@@ -2408,9 +2409,7 @@
     statsF32[PS.BODY_SYNC_VISITED] = lastBodySyncVisited;
     statsF32[PS.JOINT_SYNC_CHANGES] = jointSyncChanges;
     statsF32[PS.COMMAND_COUNT] = commandCount;
-    statsF32[PS.COMMAND_OVERFLOW_TOTAL] = cmdI32
-      ? Atomics.load(cmdI32, 3) | 0
-      : 0;
+    statsF32[PS.COMMAND_OVERFLOW_TOTAL] = readBox2dCommandRingOverflow(cmdI32);
     const hdr = world && world._eventHeader;
     if (hdr) {
       statsF32[PS.CONTACT_BEGIN] = hdr[EVENT_HEADER.CONTACT_BEGIN_COUNT] | 0;

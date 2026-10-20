@@ -399,7 +399,7 @@ Physics-only fields on `physicsStats` (`PHYSICS_STATS`):
 | `CONTACT_BEGIN` / `CONTACT_END`              | Box2D contact begin/end event counts this step (`EVENT_HEADER`)      |
 | `SENSOR_BEGIN` / `SENSOR_END`                | Box2D sensor begin/end event counts this step                        |
 | `WEED_JOINTS`                                | Dense active count from Weed `Joint` SAB (when joints enabled)       |
-| `COMMAND_OVERFLOW_TOTAL`                     | Cumulative MPSC command ring overflows                               |
+| `COMMAND_OVERFLOW_TOTAL`                     | Commands dropped by a full MPSC command ring (cumulative). The first drop also warns once: raise `physics.commandRingCapacity` |
 | `CONTACT_DROPPED` / `SENSOR_DROPPED`         | WASM export drops + contact-ring overrun counter                     |
 | `BODY_SYNC_*` / `JOINT_SYNC_*` / `COMMAND_*` | Nested subphase timings and change counts                            |
 

@@ -541,10 +541,31 @@
     return enqueue(BOX2D_CMD.CLEAR_LIQUIDFUN_PARTICLES, systemId, 0, 0, 0, 0);
   }
 
+  /** Commands dropped because the ring was full, since it was created. */
+  function readCommandRingOverflow(i32) {
+    return i32 ? Atomics.load(i32, HDR_OVERFLOW) | 0 : 0;
+  }
+
+  // enqueue drops a command when the ring is full. Producers do not check the
+  // return, so the consumer says it once per ring.
+  var overflowWarnedFor = null;
+
+  function warnCommandRingOverflow(i32, cap) {
+    if (overflowWarnedFor === i32) return;
+    var dropped = Atomics.load(i32, HDR_OVERFLOW) | 0;
+    if (dropped <= 0) return;
+    overflowWarnedFor = i32;
+    console.warn(
+      'Box2dCommandRing: ring full, ' + dropped + ' command(s) dropped so far (capacity ' + cap +
+        '). Raise physics.commandRingCapacity. Not repeated.'
+    );
+  }
+
   function drainCommandRing(i32, f32, handlers) {
     if (!i32 || !f32 || !handlers) return 0;
     var cap = i32[HDR_CAP] | 0;
     if (!(cap > 0)) return 0;
+    warnCommandRingOverflow(i32, cap);
     var n = 0;
     for (;;) {
       var read = Atomics.load(i32, HDR_READ);
@@ -747,5 +768,6 @@
     enqueueExtractParticles: enqueueExtractParticles,
     enqueueSetParticleUserDataList: enqueueSetParticleUserDataList,
     drainCommandRing: drainCommandRing,
+    readCommandRingOverflow: readCommandRingOverflow,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

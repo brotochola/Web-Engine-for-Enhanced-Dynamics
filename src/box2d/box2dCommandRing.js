@@ -54,5 +54,6 @@ export const enqueueParticleApplyImpulseRange = R.enqueueParticleApplyImpulseRan
 export const enqueueExtractParticles = R.enqueueExtractParticles;
 export const enqueueSetParticleUserDataList = R.enqueueSetParticleUserDataList;
 export const drainCommandRing = R.drainCommandRing;
+export const readCommandRingOverflow = R.readCommandRingOverflow;
 export const Box2dCommandRing = R;
 export default R;
