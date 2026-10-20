@@ -851,6 +851,8 @@ if (WEED.Keyboard.isPressed('w')) { ... }  // true only on the press frame
 
 // Input — Mouse. Slot 0 is the cursor or pen, or the first finger when no cursor
 // owns the canvas. Mouse.x / isButton0Down / clicked follow that contact.
+// Mouse.x/y are world points under the drawn camera (renderQueueCamera), so a
+// click lands where the sprite is drawn even while followEntity eases Camera.x/y.
 // Held state is true every frame while the button or finger is down.
 if (WEED.Mouse.isButton0Down) { ... }   // slot 0 (left button or first finger)
 if (WEED.Mouse.isButton1Down) { ... }   // middle button (cursor only)

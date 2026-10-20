@@ -100,7 +100,11 @@ import { setVerboseWorkers, debugWorkerLog } from '../util/debugLog.js';
 import { Sun } from './sun.js';
 import { Layer } from './layer.js';
 import { TileMap } from './tileMap.js';
-import { computeBufferSize as computeRenderQueueBufferSize } from '../render/renderQueueLayout.js';
+import {
+  computeBufferSize as computeRenderQueueBufferSize,
+  createRenderQueueCameraViews,
+  readQueueCamera,
+} from '../render/renderQueueLayout.js';
 import { NavGrid } from './navGrid.js';
 import { Grid } from './grid.js';
 import { Ray } from './ray.js';
@@ -192,6 +196,8 @@ class Scene {
       canvasWidth: 0,
       canvasHeight: 0,
     };
+    /** Render-queue camera views bound by _drawnCameraViews(). */
+    this._drawnCam = null;
 
     /** @type {object|null} Last box2dReady payload (HEAP sab + channelOffsets) */
     this.box2dHotFields = null;
@@ -2221,17 +2227,45 @@ class Scene {
     }
   }
 
+  /**
+   * Refresh the main-thread camera mirror and the cursor's world points.
+   *
+   * The mouse inverts this mirror, so it holds the camera Pixi draws: the
+   * newest published render-queue camera. The Camera SAB x/y can trail that
+   * by the follow ease (90 world px at 600 px/s with smoothing 0.1), because
+   * the drawn follow is snapped to the packed pose. Before the first publish
+   * the SAB is all there is.
+   */
   updateCameraBuffer() {
-    // Sync all camera state from Camera static class (controlled by worker/entity via follow())
-    this.camera.zoom = Camera.zoom;
-    this.camera.x = Camera.x;
-    this.camera.y = Camera.y;
-    this.camera.rotation = Camera.rotation;
-    this.camera.canvasWidth = Camera.canvasWidth;
-    this.camera.canvasHeight = Camera.canvasHeight;
+    const cam = this.camera;
+    const q = this._drawnCameraViews();
+    if (!q || !readQueueCamera(q.sync, q.a, q.b, cam)) {
+      cam.zoom = Camera.zoom;
+      cam.x = Camera.x;
+      cam.y = Camera.y;
+      cam.rotation = Camera.rotation;
+    }
+    cam.canvasWidth = Camera.canvasWidth;
+    cam.canvasHeight = Camera.canvasHeight;
 
-    // Update mouse world position based on camera
-    Mouse.updateWorldPosition(this.camera);
+    Mouse.updateWorldPosition(cam);
+  }
+
+  /** Render-queue camera views for the current buffer set; rebound after a restart. */
+  _drawnCameraViews() {
+    const buffers = this.buffers;
+    const sab = buffers?.renderQueueSync;
+    if (!sab || !buffers.renderQueueCameraA || !buffers.renderQueueCameraB) return null;
+    let q = this._drawnCam;
+    if (!q || q.sab !== sab) {
+      q = this._drawnCam = {
+        sab,
+        sync: new Int32Array(sab),
+        a: createRenderQueueCameraViews(buffers.renderQueueCameraA),
+        b: createRenderQueueCameraViews(buffers.renderQueueCameraB),
+      };
+    }
+    return q;
   }
 
   startMainLoop() {

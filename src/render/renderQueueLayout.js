@@ -62,6 +62,32 @@ export function createRenderQueueCameraViews(sab) {
     };
 }
 
+/**
+ * Copy the camera of the newest published queue: the one Pixi draws (follow
+ * snapped to the packed pose, world clamp and shake applied). Pre-render
+ * rewrites the slot of frame `ready` only for frame `ready + 2`, which it
+ * starts after publishing `ready + 1`, so a ready count unchanged across the
+ * copy proves the copy is whole.
+ * @param {Int32Array} sync renderQueueSync ([0] = ready frame)
+ * @param {{camera: Float32Array}} a slot 0 views (odd frames)
+ * @param {{camera: Float32Array}} b slot 1 views (even frames)
+ * @param {{zoom: number, x: number, y: number, rotation: number}} out
+ * @returns {number} the frame copied, or 0 when none is published (out untouched)
+ */
+export function readQueueCamera(sync, a, b, out) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+        const ready = Atomics.load(sync, 0);
+        if (ready <= 0) return 0;
+        const cam = ((ready - 1) & 1) === 0 ? a.camera : b.camera;
+        out.zoom = cam[0];
+        out.x = cam[1];
+        out.y = cam[2];
+        out.rotation = cam[3] || 0;
+        if (Atomics.load(sync, 0) === ready) return ready;
+    }
+    return 0;
+}
+
 function align4(n) { return (n + 3) & ~3; }
 
 export function computeBufferSize(maxItems) {

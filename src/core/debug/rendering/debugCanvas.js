@@ -5,7 +5,7 @@ import { NavDebugRenderer } from './navDebugRenderer.js';
 import { PhysicsDebugRenderer } from './physicsDebugRenderer.js';
 import { MeshDebugRenderer } from './meshDebugRenderer.js';
 import { bindBox2dHotFields, isBox2dHotFieldsBound } from '../../../box2d/box2dHotFields.js';
-import { createRenderQueueCameraViews } from '../../../render/renderQueueLayout.js';
+import { createRenderQueueCameraViews, readQueueCamera } from '../../../render/renderQueueLayout.js';
 import { Mouse } from '../../mouse.js';
 
 /**
@@ -24,10 +24,8 @@ export class DebugCanvas {
     // Scratch camera — mutated each frame; matches pixi renderQueueCamera when ready
     this._cam = { x: 0, y: 0, zoom: 1, rotation: 0 };
     this._rqSync = null;
-    this._rqCamA = null;
-    this._rqCamB = null;
-    this._rqPoseReadyA = null;
-    this._rqPoseReadyB = null;
+    this._rqA = null;
+    this._rqB = null;
     this._queuePoseReady = 0;
     this._poseBuffers = [null, null];
     this._poseX = null;
@@ -101,10 +99,8 @@ export class DebugCanvas {
     this.stopLoop();
     this.clear();
     this._rqSync = null;
-    this._rqCamA = null;
-    this._rqCamB = null;
-    this._rqPoseReadyA = null;
-    this._rqPoseReadyB = null;
+    this._rqA = null;
+    this._rqB = null;
     this._queuePoseReady = 0;
     this._poseBuffers[0] = null;
     this._poseBuffers[1] = null;
@@ -125,19 +121,13 @@ export class DebugCanvas {
     const buffers = scene?.buffers;
     if (!buffers?.renderQueueSync || !buffers.renderQueueCameraA || !buffers.renderQueueCameraB) {
       this._rqSync = null;
-      this._rqCamA = null;
-      this._rqCamB = null;
-      this._rqPoseReadyA = null;
-      this._rqPoseReadyB = null;
+      this._rqA = null;
+      this._rqB = null;
       return;
     }
     this._rqSync = new Int32Array(buffers.renderQueueSync);
-    const a = createRenderQueueCameraViews(buffers.renderQueueCameraA);
-    const b = createRenderQueueCameraViews(buffers.renderQueueCameraB);
-    this._rqCamA = a ? a.camera : null;
-    this._rqCamB = b ? b.camera : null;
-    this._rqPoseReadyA = a ? a.poseReady : null;
-    this._rqPoseReadyB = b ? b.poseReady : null;
+    this._rqA = createRenderQueueCameraViews(buffers.renderQueueCameraA);
+    this._rqB = createRenderQueueCameraViews(buffers.renderQueueCameraB);
   }
 
   /** Same 4-channel pose SAB as AbstractWorker._bindPosePublish. */
@@ -211,17 +201,10 @@ export class DebugCanvas {
   _latchRenderCamera(scene) {
     const cam = this._cam;
     this._queuePoseReady = 0;
-    if (this._rqSync && this._rqCamA && this._rqCamB) {
-      const ready = Atomics.load(this._rqSync, 0);
+    if (this._rqSync && this._rqA && this._rqB) {
+      const ready = readQueueCamera(this._rqSync, this._rqA, this._rqB, cam);
       if (ready > 0) {
-        const slotA = ((ready - 1) % 2) === 0;
-        const view = slotA ? this._rqCamA : this._rqCamB;
-        const poseReady = slotA ? this._rqPoseReadyA : this._rqPoseReadyB;
-        cam.zoom = view[0];
-        cam.x = view[1];
-        cam.y = view[2];
-        cam.rotation = view.length > 3 ? (view[3] || 0) : 0;
-        this._queuePoseReady = poseReady ? poseReady[0] : 0;
+        this._queuePoseReady = (((ready - 1) & 1) === 0 ? this._rqA : this._rqB).poseReady[0];
         return cam;
       }
     }
@@ -512,10 +495,8 @@ export class DebugCanvas {
     this._canvas = null;
     this._ctx = null;
     this._rqSync = null;
-    this._rqCamA = null;
-    this._rqCamB = null;
-    this._rqPoseReadyA = null;
-    this._rqPoseReadyB = null;
+    this._rqA = null;
+    this._rqB = null;
     this._poseBuffers[0] = null;
     this._poseBuffers[1] = null;
   }
