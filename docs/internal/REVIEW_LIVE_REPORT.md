@@ -17,12 +17,41 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**08:20** — B29, the last five items: pack fast-path strides, debug selection box, camera getter
-JSDoc, `renderOnly` ghost rows, shadow republish.
+**19:30** — B29 is closed. Next: B28 (the planet demo items), then Phase 2 (M1–M12).
 
 ## Log
 
-### 08:15 — B29: four more fixes (`75db93fb`, `7bc33c81`, `fdd9dc1d`, `9c65edec`)
+### 19:30 — B29 closed: four more fixes (`1af3e461`, `5964b602`, `f89268ea`, `8222566c`)
+
+- **Shadows drew garbage every other frame with `shadowUpdateInterval > 1`** (`1af3e461`). On a
+  skipped frame pre-render reported the last pack's counts, but the GPU queue buffer alternates
+  every frame. With interval 2 every pack lands in the same buffer, so the other one never held
+  shadow rows. A skipped frame now copies the last pack into the buffer it publishes.
+- **The debug selection box was half a sprite off** for a top-left anchor, and not mirrored for a
+  flipped sprite (`5964b602`). It read the anchor with `|| 0.5`, so an anchor of 0 became 0.5, and
+  it used `|scale|`. It now uses the shader's corner formula.
+- **`renderOnly` particles left a stale row in the render queue** (`f89268ea`). The sprite emit
+  reserved the row before it skipped the particle, so the published count included a row that
+  still held an older frame's sprite. Reproduced first: the queue showed 3 rows for 2 sprites,
+  one of them the stale marker. The particle is now dropped at collect, before it takes a slot.
+  No measurement: one predicted branch moved from the emit loop to the collect loop.
+- **Camera getters now say what they read** (`8222566c`). `Camera.x/y/zoom` and `minX`…`centerY`
+  read the logic camera. Under `followEntity` that camera trails the screen, and with a turned
+  camera `minX`…`maxY` are not the screen's edges. `weed.d.ts` gained `followEntity`,
+  `setDeadzone`, `shake`, `rotation`/`setAngle`, the free-cam members and the `out` parameters
+  (the Camera part of DOC3). `tsc` passes on the typings.
+- **Recorded, not changed:** the collider fill row layout is written in three places by hand (the
+  writers' `base + 0..17` literals, the attribute byte offsets, and the UV variant). It works
+  today. It is now Phase 4 item **R13**, to be measured before it lands because it's the hottest
+  pack loop.
+- Found on the way: the destructible-terrain demo has the same off-screen HUD code as the planet
+  demo. It's added to B28.
+- **Times corrected:** the headings from 16:20 on showed clock times I had estimated, and they ran
+  far ahead of the real clock (up to "08:15" for work done at 19:08). Every heading now shows the
+  git commit time of its work. Entries without a commit show when they were published.
+- Suite **1303/1303**.
+
+### 19:08 — B29: four more fixes (`75db93fb`, `7bc33c81`, `fdd9dc1d`, `9c65edec`)
 
 - **Vertically flipped sprites sorted at the wrong depth** (`75db93fb`). The sprite shader confirms a
   flip puts the frame's top edge lowest, but the sort line always used the bottom edge. The old
@@ -38,7 +67,7 @@ JSDoc, `renderOnly` ghost rows, shadow republish.
   with the fix, **0 of 600**. The test is deterministic: it fails on the old code every time.
 - Suite **1299/1299**.
 
-### 07:25 — B29: three engine bugs fixed (`e95bf3a4`, `e75c25bf`, `4bac5008`)
+### 19:00 — B29: three engine bugs fixed (`e95bf3a4`, `e75c25bf`, `4bac5008`)
 
 - **`despawnAll` had drifted from `despawn`** (`e95bf3a4`):
   - It never freed an entity's extra collider fixtures. Save restore runs it on every load, so
@@ -59,7 +88,7 @@ JSDoc, `renderOnly` ghost rows, shadow republish.
   branchless bit tricks −42 %). Kept the plain clamps.
 - Suite **1295/1295**.
 
-### 06:35 — B27 fixed (`f4fe8a67`); new N-15
+### 18:50 — B27 fixed (`f4fe8a67`); new N-15
 
 - A rename three days ago (`box2dWorkerCount` → `numberOfPhysicsWorkers`) left no alias, so the
   old key was **silently ignored**. Even the bundle test page still set it, so its worker option
@@ -73,7 +102,7 @@ JSDoc, `renderOnly` ghost rows, shadow republish.
   in only one of them. It should become one shared implementation.
 - Suite **1288/1288**.
 
-### 06:20 — B26 fixed (`46c5b590`)
+### 18:45 — B26 fixed (`46c5b590`)
 
 - Under raycasted lighting, a light blocker with `block < 1` lets part of the light through by
   adding a "transmit wedge" behind it. A compound blocker (made of several pieces) added one wedge
@@ -85,7 +114,7 @@ JSDoc, `renderOnly` ghost rows, shadow republish.
   **2** wedges with the old behavior and is under **1** now.
 - Suite **1285/1285**.
 
-### 06:05 — B25 fixed (`6308777f`)
+### 18:42 — B25 fixed (`6308777f`)
 
 - With raycasted lighting on, particle lights are never drawn (by design: PARTICLE_LIGHTS.md says
   raycasting skips them). But the renderer still allocated their GPU buffer and forced an extra
@@ -96,7 +125,7 @@ JSDoc, `renderOnly` ghost rows, shadow republish.
   (logged under B28).
 - Suite **1283/1283**.
 
-### 05:50 — B24 fixed (`fa89175b`)
+### 18:40 — B24 fixed (`fa89175b`)
 
 - **The race:** a logic worker edits a mesh's vertices, then bumps that mesh's "generation".
   Pixi redrew the meshes whose generation moved, and only afterwards copied the live generations
@@ -109,7 +138,7 @@ JSDoc, `renderOnly` ghost rows, shadow republish.
   of `5, 25, 5`).
 - Suite **1280/1280**.
 
-### 05:30 — B23 (save robustness) complete: six fixes, then a headed save→load smoke
+### 18:37 — B23 (save robustness) complete: six fixes, then a headed save→load smoke
 
 Since the last entry:
 
@@ -133,7 +162,7 @@ Since the last entry:
   counts (309 / 1072 islands), and there were no errors.
 - Suite **1277/1277**.
 
-### 04:25 — The flaky test crashes (N-7) are solved (`e0cab8b5`); B23 two parts done
+### 18:27 — The flaky test crashes (N-7) are solved (`e0cab8b5`); B23 two parts done
 
 - **N-7, root cause found.** A third test file crashed with the same native abort (`0xC0000409`),
   and this one was pure JavaScript, so the cause couldn't be in what the tests do. I sampled the
@@ -157,7 +186,7 @@ Since the last entry:
   It now returns a copy.
 - Suite **1264/1264**, and every commit is still gated on a green run.
 
-### 03:30 — B22 fixed (`ec7fe654`)
+### 18:18 — B22 fixed (`ec7fe654`)
 
 - **The bug:** Adobe-animated entities went through the sprite sort-line code. With no sprite their
   anchors are 0, so they missed the fast path and looked up a sprite texture they don't have.
@@ -171,7 +200,7 @@ Since the last entry:
   measured −0.1 %, 10/25 rounds, a tie.
 - Suite **1260/1260**.
 
-### 03:10 — B21 fixed (`fa121e63`)
+### 18:14 — B21 fixed (`fa121e63`)
 
 - **Measured in the WASM first.** A body with three 10×10 squares weighed **216** after
   `body_set_shape_polygon(4×4)`, where 16 was expected. The call replaces **one** Box2D shape, so
@@ -186,7 +215,7 @@ Since the last entry:
   pins both behaviors; on the old code 3 of 4 fail and the in-place guard passes.
 - Suite **1258/1258**.
 
-### 02:45 — B20 fixed (`36875ce6`)
+### 18:11 — B20 fixed (`36875ce6`)
 
 - **Measured first, in the shipped Box2D WASM.** A body's mass is impulse ÷ velocity. Squares of
   10–50 px with 1–5 px skins weighed **1.08× to 3.99×** `RigidBody.mass`. The cause: Box2D weighs
@@ -208,7 +237,7 @@ Since the last entry:
   before going on: intact, the edit simply had not applied, so I redid it.
 - Suite **1254/1254**.
 
-### 02:00 — B19 fixed (`36ee6ee7`)
+### 18:04 — B19 fixed (`36ee6ee7`)
 
 - **What the race was** (the plan only said "likely"; I traced it):
   - Spawn activated the entity, then bumped its body generation.
@@ -228,7 +257,7 @@ Since the last entry:
   current state, so it applies everything those flags would. The real Box2D WASM tests pass.
 - Suite **1249/1249**.
 
-### 01:35 — Headed smoke after the camera commits: clean
+### 17:57 — Headed smoke after the camera commits: clean
 
 Four demos (car, little city, planet Box2D, planet), each driven for 2 s with the movement keys.
 On every one, the drawn camera stayed finite, the camera lock ended even (not stuck), and there
@@ -238,7 +267,7 @@ on trust: the followed car only reached (160, 163), in the world's top-left corn
 is clamped there. The **pre-review code behaves identically** (same probe on the old worktree),
 and the car is drawn where the camera math puts it.
 
-### 01:15 — N-13 fixed (`512f8efd`, `09850135`)
+### 17:55 — N-13 fixed (`512f8efd`, `09850135`)
 
 - **The screen helpers** (`isOnScreen`, `worldToScreen`, `screenToWorld`, `getViewportBounds`)
   now answer for the drawn camera, through a per-realm cache. Every camera write bumps the lock
@@ -256,7 +285,7 @@ and the car is drawn where the camera math puts it.
   At angle 0 the numbers match the old formula, and a test checks that.
 - Suite **1248/1248**.
 
-### 00:30 — B18 fixed (`656e7d4c`); a third camera-lock hole found and fixed; new N-14
+### 17:46 — B18 fixed (`656e7d4c`); a third camera-lock hole found and fixed; new N-14
 
 - **Two races, both reproduced before fixing**, by injecting the "other thread" at the exact point
   between two writes or two reads:
@@ -280,7 +309,7 @@ and the car is drawn where the camera math puts it.
   `shake()` can be shortened or dropped. The fix is a single-writer design, logged.
 - Suite **1242/1242**.
 
-### 23:50 — N-12 confirmed in a headed run and fixed (`d7228257`); new E-51
+### 17:38 — N-12 confirmed in a headed run and fixed (`d7228257`); new E-51
 
 - **Confirmed before fixing.** Headed run on the boids demo with the camera set to 0°, 45° and
   90°. At 90° the left and right **~200 px of the screen drew nothing**, with straight edges; the
@@ -308,7 +337,7 @@ and the car is drawn where the camera math puts it.
   the measurement protocol on the planet demo.
 - Suite **1236/1236**.
 
-### 23:05 — N-11 fixed (`b0c4d333`); new N-12, N-13; N-7 now has a second crash
+### 17:28 — N-11 fixed (`b0c4d333`); new N-12, N-13; N-7 now has a second crash
 
 - **N-11 — particle culling used the eased camera.** I moved pre-render's drawn-camera math
   (follow snap + world clamp) into one function, `Camera.resolveDrawnCamera`. Pre-render packs it
@@ -331,7 +360,7 @@ and the car is drawn where the camera math puts it.
 - Also logged: `weed.d.ts` `Camera` is missing `followEntity`, `shake`, `setDeadzone` and
   `setAngle` (added to DOC3).
 
-### 22:45 — B17 fixed (`8cdac3b1`); new N-11
+### 17:21 — B17 fixed (`8cdac3b1`); new N-11
 
 - **B17 — clicks landed behind a followed entity.** I confirmed the size before changing it:
   `followEntity` writes the *target* (pose + look-ahead) into the follow slots, and
@@ -351,7 +380,7 @@ and the car is drawn where the camera math puts it.
   Next.
 - Suite **1225/1225**.
 
-### 22:15 — B15 and B16 fixed (`1b4a3690`, `5d329e3a`)
+### 17:11 — B15 and B16 fixed (`1b4a3690`, `5d329e3a`)
 
 - **B15 — `collider.active` off/on lost compound fixtures.** Before changing it I checked
   every consumer of the fixture records: the physics host already clears all shapes while
@@ -367,7 +396,7 @@ and the car is drawn where the camera math puts it.
   lifted or the pair changed. The bible snippet now uses `Camera.targetZoom` (it used an
   undefined `camera`). New `Mouse.canvasXAt/canvasYAt` (typed).
 
-### 21:35 — Headed smoke results, and a pre-existing demo bug found on the way (N-8)
+### 17:05 — Headed smoke results, and a pre-existing demo bug found on the way (N-8)
 
 **What the smoke verified (second run, after `8fb919d4`):**
 - Planet: boots with 310 islands, ship, lamp and water pull; the camera roll keeps the
@@ -396,7 +425,7 @@ inside the logic workers works; the Box2D pthread workers cannot be evaluated at
 **Kept outside the repo:** `D:\xampp\htdocs\weed-ab\80464dc1-80464dc1` is a full checkout of
 the pre-review commit, for A/B probes (the bench tooling's normal worktree folder).
 
-### 20:40 — The headed smoke caught my own B13 regression: saving crashed (fixed, `8fb919d4`)
+### 16:52 — The headed smoke caught my own B13 regression: saving crashed (fixed, `8fb919d4`)
 
 First headed run: no page errors, scenes boot (planet: 310 islands, ship, lamp, water pull;
 terrain: 1108 islands), the camera roll keeps the planet surface level under the ship —
@@ -411,7 +440,7 @@ The first run's loose-chunk check was also mine to fix: shards spawn through a j
 and I sampled them 400 ms after the click (0 found). The second run tracks every loose
 piece over 3 s.
 
-### 20:00 — B13 fixed: older saves keep onSpawned geometry; loads keep unowned tweens (`00ac7938`)
+### 16:47 — B13 fixed: older saves keep onSpawned geometry; loads keep unowned tweens (`00ac7938`)
 
 Four tests failed first. **Geometry:** an absent CHAINS/FIXTURES/MESHES section (every save
 older than `67a93c49`) became `[]` and wiped what `onSpawned` had just built. Now "absent"
@@ -421,7 +450,7 @@ but `create()` runs again on a load, so a non-serializable prop's fade-in was lo
 load clears zoom slots, slots on entities the restore despawned, and slots on restored
 entities, and keeps the rest. Suite **1212 / 1212** before the (now gated) commit.
 
-### 19:35 — Tween hygiene measurement: B10–B12 TIE (no regression)
+### 16:48 — Tween hygiene measurement: B10–B12 TIE (no regression)
 
 `tweenPoolMicrobench` (65 535 live tweens), working tree vs a worktree of `53691920`, one
 discarded warmup process per side, 5 alternating rounds (runner:
@@ -429,7 +458,7 @@ discarded warmup process per side, 5 alternating rounds (runner:
 KEEP won 17 of 25 comparisons, checksums identical** → TIE. B11 also removes the W× scan
 on multi-worker scenes, which this single-worker kernel cannot show.
 
-### 19:20 — A flaky test slipped past my commit chain (my mistake, now fixed)
+### 16:43 — A flaky test slipped past my commit chain (my mistake, now fixed)
 
 The full-suite run before the B12 commit reported **1 failure**:
 `liquidFunLightSplat.test.js` failed at the file level (the total dropped to 1203). My
@@ -439,7 +468,7 @@ the file passes alone (6/6) and the full suite passed **three** times in a row
 still a flaky test → **N-7**. **Process fix:** from now on a commit runs only if the saved
 suite output says `# fail 0`.
 
-### 19:15 — B10, B11, B12 fixed: the tween pool (`c0c3edab`, `847070be`, `b222c41a`)
+### 16:41 — B10, B11, B12 fixed: the tween pool (`c0c3edab`, `847070be`, `b222c41a`)
 
 - **B10 claim race.** A claim made the slot live before its fields were written; another
   worker's tick in between replayed the slot's previous tween and freed the new one. A
@@ -455,7 +484,7 @@ suite output says `# fail 0`.
   section (layout byte + u32 entity). Saves written since yesterday (old tag 14) still
   load — tested with a hand-built legacy body.
 
-### 18:50 — B9 and B14 fixed: terrain scenes load saves; loose planet chunks fall (`8b933f5f`, `53691920`)
+### 16:33 — B9 and B14 fixed: terrain scenes load saves; loose planet chunks fall (`8b933f5f`, `53691920`)
 
 - **B9.** `acce50cb` dropped the planet scene's resume path; a load restored the grid bytes,
   lamp and water but no terrain, ship or water pull. The shared manager now has a `resume`
@@ -470,7 +499,7 @@ suite output says `# fail 0`.
 `worldGridManager.js.tmp.1872.<hash>` next to a file I edited several times quickly. They
 are untracked; I sweep them before every commit (four so far, none committed).
 
-### 18:20 — B8 fixed: traffic cars steered toward what they avoid (`1732aa11`), G2 (`b1c2f916`)
+### 16:28 — B8 fixed: traffic cars steered toward what they avoid (`1732aa11`), G2 (`b1c2f916`)
 
 Confirmed the sign against the same file's road-seek code: `cross(forward, target)` with a
 positive `turnInput` turns **toward** a target, and the avoidance used that same sign. The
@@ -484,7 +513,7 @@ object is reused instead of allocated per car per frame.
 applying torque as `angularAccel × mass` → **N-4** (the review's "inertia is never read"
 was wrong, and fixing the host torque would double-compensate this demo).
 
-### 18:05 — B7 deferred after analysis (the physics time-scale cap)
+### 16:28 — B7 deferred after analysis (the physics time-scale cap)
 
 The obvious fix has two shapes, and both have a real hazard. One bigger world step with
 n× sub-steps keeps Box2D's sub-step size, but Box2D v3 detects collisions **once per
@@ -494,7 +523,7 @@ events must then be published after **each** sub-step, and I cannot see from JS 
 those rings tolerate that. I wrote the analysis into the plan and will come back with a
 WASM-level test (Node already instantiates the module) instead of guessing.
 
-### 18:00 — B6 fixed: the 30 Hz pose-only flicker (`a5362de6`)
+### 16:25 — B6 fixed: the 30 Hz pose-only flicker (`a5362de6`)
 
 The render queue alternates two buffers, but `renderDirty` is one flag per entity, so a
 change emitted into one buffer cleared the flag and the other buffer kept reusing old
@@ -506,7 +535,7 @@ not touch, moved −5 % — that is this kernel's noise floor. The protocol's re
 pre-render is a headed Predator ABAB; **I will run one for the batch of pre-render fixes**
 instead of one per fix.
 
-### 17:35 — B5 fixed: particle `layer`, `layers`, `angularVelocity`, `anim` were dropped (`a41f2128`)
+### 16:19 — B5 fixed: particle `layer`, `layers`, `angularVelocity`, `anim` were dropped (`a41f2128`)
 
 I first checked the review's claim that *every* path is affected — `_spawn` only merges
 when it gets mode overrides, so plain `emit()` could have been fine. It is not: `emit`
@@ -521,7 +550,7 @@ read-count floor so it cannot pass vacuously). Node suite **1198 / 1198**.
 now draw on the `fx` layer those scenes define (additive blend, z 4.5, 4000-item cap) —
 what the scenes asked for, but they will look brighter than before.
 
-### 17:20 — B4 fixed: polar clip covers the whole circle at any vertex budget (`36fddfda`)
+### 16:15 — B4 fixed: polar clip covers the whole circle at any vertex budget (`36fddfda`)
 
 At the engine default (128 vertices) a light touched by a compound occluder drew only
 −180°…−90°. Now, under 512 vertices, each vertex covers a group of adjacent bins at the
@@ -538,7 +567,7 @@ parent, 5 rounds: polar case 36.6 k → 36.0 k ops/s (−1.6 %), sweep +1.5 % �
 - **N-3** an unknown layer name `console.warn`s on every emit, and its particles get mask 0
   (never drawn).
 
-### 17:00 — B3 fixed: chain raycasts used a negated denominator (`a14c0c31`)
+### 16:12 — B3 fixed: chain raycasts used a negated denominator (`a14c0c31`)
 
 The ray/segment solve divided by `dir × e` instead of `e × dir`, so the hit distance and the
 edge parameter came out negated. I worked every expectation out from the world geometry
@@ -548,7 +577,7 @@ unrotated loops, an open chain, front and back side, start inside, pointing away
 the old code and passes now. This changes what `Ray.cast`, `castAll` and line of sight
 return against chain colliders: real hits now register, phantom hits are gone.
 
-### 16:55 — B1 follow-up: the 12.5 % storm cost is gone (`27751001`)
+### 16:12 — B1 follow-up: the 12.5 % storm cost is gone (`27751001`)
 
 The cheap fix worked. The cost was the per-entry helper call inside the walk, not the
 check: with the check inlined as one compare (word 7 must equal `bus | (i << 8)`), the
@@ -560,7 +589,7 @@ scene check is folded into E-46, which measures that scene anyway.
 **Lesson worth keeping:** the catalog key for a row can miss the case a change touches.
 For hot-path fixes I now read every case of the kernel, not only the scored one.
 
-### 16:42 — B1 hygiene kernel: catalog keys tie, but the multi-bus `storm` case is ~12 % slower
+### 16:15 — B1 hygiene kernel: catalog keys tie, but the multi-bus `storm` case is ~12 % slower
 
 `runKernelsVsRev --vs HEAD~1 --only audioSlots,audioStorm`, 5 alternating rounds per side:
 
@@ -580,7 +609,7 @@ check, hoist the loads) and re-measure `storm`. If it stays above 3 %, I fix the
 (the worklet bumps a per-bus "freed" counter, and `play()` walks only when it moved), which
 is E-46's fix and makes the common case O(1) again. A hygiene keep must not cost 3 %.
 
-### 16:35 — B2 fixed: chorded mouse buttons no longer stick (`e29e7684`)
+### 16:08 — B2 fixed: chorded mouse buttons no longer stick (`e29e7684`)
 
 Six new tests drive `Mouse.pointerDown/Move/Up` with the event order the Pointer Events
 spec defines for chords. Three failed on the old code (both chord orders left a button
@@ -591,7 +620,7 @@ events without a `buttons` mask keep the old path. ToolManager stops painting wh
 primary is released inside a chord. ToolManager has no Node test (it needs a DOM); the
 change is three lines. Node suite **1179 / 1179**.
 
-### 16:20 — B1 fixed: a bus list only counts voices it still owns (`85b74217`)
+### 16:05 — B1 fixed: a bus list only counts voices it still owns (`85b74217`)
 
 **The bug, reproduced first.** Two new tests failed on the old code exactly as the review
 predicted: with buses `ui` (1 voice) and `sfx`, a `ui` click ends on the audio thread, an
