@@ -1655,6 +1655,16 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
+     * Sort key for a sprite (type 0) or an Adobe root (type 6). An Adobe root
+     * has no sprite frame, so its line is the pose: the sprite path would miss
+     * the feet fast path on its zero anchors and resolve a texture it does not
+     * have, every frame, to get the same pose.y.
+     */
+    _entitySortY(type, index, pose) {
+        return type === 6 ? spriteYSortKey(pose.y, Y_SORT_K) : this._spriteSortY(index, pose);
+    }
+
+    /**
      * Component arrays the sort line reads, bound once. Rebuilt never: these
      * are the worker's own SoA views for its lifetime.
      */
@@ -1701,7 +1711,7 @@ class PreRenderWorker extends AbstractWorker {
                     if (type === 0 || type === 6) {
                         const pose = this._displayPoseOut;
                         this._displayPose(index, pose);
-                        sortY = this._spriteSortY(index, pose);
+                        sortY = this._entitySortY(type, index, pose);
                     }
                     collector.y[wi] = sortY;
                     collector.type[wi] = type;
@@ -1736,7 +1746,7 @@ class PreRenderWorker extends AbstractWorker {
             // Drawn Y, whole pixels. A raw pose.y key changes bits on a
             // fraction of a pixel and the painter swaps two sprites that
             // did not cross.
-            this._renderableY[writeIdx] = this._spriteSortY(index, pose);
+            this._renderableY[writeIdx] = this._entitySortY(type, index, pose);
         } else if (type === 2) {
             const pose = this._displayPoseOut;
             this._decorationWorldXY(index, pose);
