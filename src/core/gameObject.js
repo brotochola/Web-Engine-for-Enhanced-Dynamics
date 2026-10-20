@@ -55,6 +55,8 @@ import {
   isCommandRingBound,
 } from '../box2d/box2dCommandRing.js';
 import {
+  BODY_DIRTY,
+  advanceBodyGeneration,
   bumpBodyGeneration,
   markBodyDirty,
   withBodyDirtyDeferred,
@@ -2529,9 +2531,10 @@ export class GameObject {
     }
 
     // Save markBodyDirty from setters/onSpawned. Physics must not
-    // see want=1 with spawn-reset Box 0×0. bumpBodyGeneration after activate
-    // publishes the saved marks so a child spawn from parent onSpawned gets
-    // a body with the real shape.
+    // see want=1 with spawn-reset Box 0×0. The outermost window publishes the
+    // saved marks; the LIFECYCLE published after activation (below) carries
+    // any this entity still holds, so a child spawned from a parent's
+    // onSpawned gets a body with the real shape.
     withBodyDirtyDeferred(() => {
       // Size before other spawnConfig keys (and before onSpawned damping/static).
       // Skip active — Transform.active stays 0 until the bump below.
@@ -2622,11 +2625,14 @@ export class GameObject {
 
     // Activate the entity - this enables spatial_worker to add it to Grid
     // and physics to process it. Must happen AFTER onSpawned.
+    // The body life starts before activation and LIFECYCLE is published after
+    // it: a physics step that sees this slot active already sees the new
+    // generation, so the body is created once (B19).
+    const hasBody = has.RigidBody || has.Collider;
+    if (hasBody) advanceBodyGeneration(i);
     Transform.active[i] = 1;
     if (has.MeshRenderer) MeshRenderer.active[i] = 1;
-    if (has.RigidBody || has.Collider) {
-      bumpBodyGeneration(i);
-    }
+    if (hasBody) markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);
 
     // ========================================
     // LIST UPDATES (QUEUED - processed by logic0)

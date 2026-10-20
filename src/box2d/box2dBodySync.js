@@ -182,7 +182,15 @@ export function markBodyDirty(entityIndex, flags = BODY_DIRTY.LIFECYCLE, force =
   return publishBodyDirty(i, flags);
 }
 
-export function bumpBodyGeneration(entityIndex) {
+/**
+ * Start a new body life for a slot without publishing it: advance the
+ * generation, tell pose publishing a slot respawned, drop the slot's stale
+ * pose. Spawn calls this before it activates the entity and publishes
+ * LIFECYCLE after, so physics that sees the slot active already sees the new
+ * generation. Activating first let a physics step create the body under the
+ * old generation, then destroy and recreate it the next step.
+ */
+export function advanceBodyGeneration(entityIndex) {
   if (!generation) return 0;
   const i = entityIndex | 0;
   if (i < 0 || i >= generation.length) return 0;
@@ -191,6 +199,13 @@ export function bumpBodyGeneration(entityIndex) {
   // Reused slot still holds the previous body's published pose. Drop it so
   // the first frames draw Transform until physics publishes this life.
   invalidatePoseSlot(i);
+  return next;
+}
+
+export function bumpBodyGeneration(entityIndex) {
+  const i = entityIndex | 0;
+  if (!generation || i < 0 || i >= generation.length) return 0;
+  const next = advanceBodyGeneration(i);
   // Parent onSpawned may still be deferred. Publish this entity's saved
   // marks plus LIFECYCLE so the child body is created with the real shape.
   markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);
