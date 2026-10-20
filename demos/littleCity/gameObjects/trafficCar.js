@@ -11,6 +11,8 @@ import { dot2 } from '/src/util/utils.js';
 const { SpriteRenderer, RigidBody, Collider, CollisionListener, Transform } = WEED;
 
 const _navVec = { x: 0, y: 0 };
+// _avoidAhead's result, rewritten per call (one per car per frame otherwise).
+const _avoid = { brake: 0, steer: 0 };
 
 // Probe offsets to recover onto road when the current cell is empty
 const _PROBE = [
@@ -83,6 +85,7 @@ export class TrafficCar extends Car {
 
   /**
    * Brake and steer off people and other traffic cars sitting in the lane ahead.
+   * Returns a shared object: read it before the next call.
    * @returns {{ brake: number, steer: number }}
    */
   _avoidAhead(fx, fy) {
@@ -121,10 +124,9 @@ export class TrafficCar extends Car {
       steer += avoidTurnSign(fx, fy, dx, dy) * urgency;
     }
 
-    return {
-      brake: brake > 1 ? 1 : brake,
-      steer: steer > 1 ? 1 : steer < -1 ? -1 : steer,
-    };
+    _avoid.brake = brake > 1 ? 1 : brake;
+    _avoid.steer = steer > 1 ? 1 : steer < -1 ? -1 : steer;
+    return _avoid;
   }
 
   tick(dtRatio) {
