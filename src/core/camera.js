@@ -297,7 +297,13 @@ export class Camera {
   // ============================================
   // POSITION & ZOOM - getters and setters
   // ============================================
+  // These read and write the logic camera (the shared buffer). The drawn
+  // frame can differ: with followEntity, x/y ease toward the target while the
+  // drawn camera snaps to its packed pose, trailing the screen by about
+  // v·(1 − s)/s (v: target speed per follow call, s: smoothing). For what is
+  // on screen use worldToScreen, screenToWorld, isOnScreen, getViewportBounds.
 
+  /** Zoom of the logic camera. Setting it clamps to [minZoom, maxZoom]. */
   static get zoom() {
     return this._data ? this._data[0] : 1;
   }
@@ -324,6 +330,7 @@ export class Camera {
     }
   }
 
+  /** Left of the logic camera's unturned view, world pixels. */
   static get x() {
     return this._data ? this._data[1] : 0;
   }
@@ -340,6 +347,7 @@ export class Camera {
     }
   }
 
+  /** Top of the logic camera's unturned view, world pixels. */
   static get y() {
     return this._data ? this._data[2] : 0;
   }
@@ -359,39 +367,43 @@ export class Camera {
   // ============================================
   // VIEWPORT BOUNDS (read-only getters)
   // ============================================
+  // Edges and center of the logic camera's unturned view, from x, y and zoom.
+  // Under followEntity they can trail the drawn frame, and with a turned
+  // camera they are not the screen's edges: getViewportBounds() is the world
+  // box around what is drawn.
 
-  /** Left edge of viewport in world coordinates */
+  /** Left edge of the logic view (same as x), world pixels. */
   static get minX() {
     return this._data ? this._data[1] : 0;
   }
 
-  /** Right edge of viewport in world coordinates */
+  /** Right edge of the logic view, world pixels. */
   static get maxX() {
     const zoom = this._data ? this._data[0] : 1;
     const cameraX = this._data ? this._data[1] : 0;
     return cameraX + this._canvasWidth / zoom;
   }
 
-  /** Top edge of viewport in world coordinates */
+  /** Top edge of the logic view (same as y), world pixels. */
   static get minY() {
     return this._data ? this._data[2] : 0;
   }
 
-  /** Bottom edge of viewport in world coordinates */
+  /** Bottom edge of the logic view, world pixels. */
   static get maxY() {
     const zoom = this._data ? this._data[0] : 1;
     const cameraY = this._data ? this._data[2] : 0;
     return cameraY + this._canvasHeight / zoom;
   }
 
-  /** Center X of viewport in world coordinates */
+  /** Center X of the logic view, world pixels. The view turns about this point. */
   static get centerX() {
     const zoom = this._data ? this._data[0] : 1;
     const cameraX = this._data ? this._data[1] : 0;
     return cameraX + this._canvasWidth / (2 * zoom);
   }
 
-  /** Center Y of viewport in world coordinates */
+  /** Center Y of the logic view, world pixels. */
   static get centerY() {
     const zoom = this._data ? this._data[0] : 1;
     const cameraY = this._data ? this._data[2] : 0;
@@ -981,7 +993,11 @@ export class Camera {
     return this._data[this.IDX_FOLLOW_USED_Y];
   }
 
-  /** World rotation that keeps radial up at the top of the screen. Radians. */
+  /**
+   * View angle in radians. The view turns about its center: a world offset
+   * (dx, dy) from the view center is drawn at (c·dx − s·dy, s·dx + c·dy)·zoom
+   * from the screen center (c = cos, s = sin).
+   */
   static get rotation() {
     if (!this._data || this._data.length <= this.IDX_ROTATION) return 0;
     return this._data[this.IDX_ROTATION] || 0;
@@ -1376,10 +1392,10 @@ export class Camera {
   }
 
   /**
-   * Get viewport bounds in world coordinates.
+   * World box around the drawn view (the camera on screen, not the eased
+   * x/y). With a turned camera it is the box around the turned view.
    * Writes into `out` when provided; otherwise reuses a static scratch object
-   * (zero allocation on the hot path used by SoundManager spatial culling).
-   * With a rotated camera this is the world box around the turned view.
+   * (consume it before the next call).
    * @param {{left?: number, top?: number, right?: number, bottom?: number, width?: number, height?: number}|null} [out]
    * @returns {{left: number, top: number, right: number, bottom: number, width: number, height: number}}
    */

@@ -1720,19 +1720,29 @@ export declare class Camera {
   static initialize(data: Float32Array, canvasWidth?: number, canvasHeight?: number): void;
   static get isInitialized(): boolean;
 
+  /**
+   * zoom, x, y and the edge/center getters read the logic camera (the shared
+   * buffer). With followEntity, x/y ease toward the target while the drawn
+   * camera snaps to its packed pose, so they can trail the screen. For what is
+   * on screen use worldToScreen, screenToWorld, isOnScreen, getViewportBounds.
+   */
   static get zoom(): number;
   static set zoom(value: number);
   static get targetZoom(): number;
   static set targetZoom(value: number);
+  /** Left of the logic camera's unturned view, world pixels. */
   static get x(): number;
   static set x(value: number);
+  /** Top of the logic camera's unturned view, world pixels. */
   static get y(): number;
   static set y(value: number);
 
+  /** Edges of the logic camera's unturned view; not the screen's edges when turned. */
   static get minX(): number;
   static get maxX(): number;
   static get minY(): number;
   static get maxY(): number;
+  /** Center of the logic view. The view turns about this point. */
   static get centerX(): number;
   static get centerY(): number;
 
@@ -1756,14 +1766,42 @@ export declare class Camera {
   static set maxZoom(value: number);
 
   static follow(targetX: number, targetY: number, smoothing?: number, dtRatio?: number): void;
+  /**
+   * Follow an entity from its published pose plus velocity look-ahead
+   * (lookAheadSec × velocity). The drawn camera snaps to the packed pose.
+   */
+  static followEntity(index: number, lookAheadSec?: number, smoothing?: number, dtRatio?: number): void;
+  /** World-pixel box around the view center; the camera holds while the follow point stays inside. 0 tracks that axis. */
+  static setDeadzone(halfWidth: number, halfHeight: number): void;
+  /** View punch added when the camera is packed; decays over sim milliseconds. */
+  static shake(amplitude: number, durationMs: number): void;
   static setZoom(targetZoom: number): void;
-  static getFollowTarget(): CameraFollowTarget | null;
+  /** View angle in radians. The view turns about its center. */
+  static get rotation(): number;
+  static set rotation(radians: number);
+  static setAngle(radians: number): void;
+  static setRotation(radians: number): void;
+  /** Free-cam: WASD (and arrows when enabled) pan, wheel zoom. */
+  static setFree(
+    enabled: boolean,
+    options?: { panSpeed?: number; zoomSensitivity?: number; smoothing?: number; arrows?: boolean; maxZoom?: number }
+  ): void;
+  static setFreeTarget(x: number, y: number): void;
+  /** Skip wheel zoom for one frame. */
+  static pauseFreeZoom(): void;
+  static get isFreePanning(): boolean;
+  static get freeArrows(): boolean;
+  static set freeArrows(value: boolean);
+  static getFollowTarget(out?: Partial<CameraFollowTarget> | null): CameraFollowTarget | null;
   static clearFollowTarget(): void;
   static centerOn(targetX: number, targetY: number): void;
   static setPosition(x: number, y: number): void;
+  /** isOnScreen, worldToScreen, screenToWorld and getViewportBounds use the drawn camera. */
   static isOnScreen(worldX: number, worldY: number, margin?: number): boolean;
-  static worldToScreen(worldX: number, worldY: number): Vec2Mutable;
-  static screenToWorld(screenX: number, screenY: number): Vec2Mutable;
+  /** Without `out` the result is a shared scratch object; consume it before the next call. */
+  static worldToScreen(worldX: number, worldY: number, out?: Partial<Vec2Mutable> | null): Vec2Mutable;
+  static screenToWorld(screenX: number, screenY: number, out?: Partial<Vec2Mutable> | null): Vec2Mutable;
+  /** World box around the drawn view; with a turned camera, the box around the turned view. */
   static getViewportBounds(out?: CameraViewportBounds): CameraViewportBounds;
 }
 
