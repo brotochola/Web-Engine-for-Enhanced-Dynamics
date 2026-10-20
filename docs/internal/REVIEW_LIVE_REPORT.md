@@ -17,9 +17,24 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**02:50** — **B21** (`makePolygon` on a body with several Box2D shapes keeps N−1 of them).
+**03:15** — **B22** (Adobe roots look up a texture they do not have, every frame).
 
 ## Log
+
+### 03:10 — B21 fixed (`fa121e63`)
+
+- **Measured in the WASM first.** A body with three 10×10 squares weighed **216** after
+  `body_set_shape_polygon(4×4)`, where 16 was expected. The call replaces **one** Box2D shape, so
+  the other two stayed. Clearing first gives 16. Two more probes: on a shapeless body the call
+  adds a shape, and on a one-shape body it replaces it, even across shape types.
+- **So:** `makePolygon`, a box or a circle on a body that had compound fixtures left the old
+  fixtures in place as invisible colliders. Leaving a chain (many segment shapes) for one shape
+  had the same problem.
+- **Fix:** the physics host remembers which bodies hold several shapes and clears those before
+  setting a single shape. I deliberately did **not** clear on every resize: that would end and
+  restart contacts, firing collision exit/enter events every time a circle's radius changed. A test
+  pins both behaviors; on the old code 3 of 4 fail and the in-place guard passes.
+- Suite **1258/1258**.
 
 ### 02:45 — B20 fixed (`36875ce6`)
 
