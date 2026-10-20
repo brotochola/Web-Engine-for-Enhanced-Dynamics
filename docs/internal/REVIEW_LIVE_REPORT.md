@@ -17,9 +17,34 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**03:35** — **B23** (save robustness, six parts). Reading the save/restore path first.
+**04:30** — B23, remaining parts: shared resources vs lifecycle hooks, unlocked reads during save,
+nav restore order, layout/fingerprint bytes.
 
 ## Log
+
+### 04:25 — The flaky test crashes (N-7) are solved (`e0cab8b5`); B23 two parts done
+
+- **N-7, root cause found.** A third test file crashed with the same native abort (`0xC0000409`),
+  and this one was pure JavaScript, so the cause couldn't be in what the tests do. I sampled the
+  machine's free commit memory during a suite run: **it fell from ~6 GB to 0.2 GB**. Splitting the
+  suite pinned it on the 7 WASM test files: alone, they took it to 0.2 GB, while the other 205
+  files used about 0.4 GB.
+  - Each Box2D WASM instance commits a 512 MB shared memory (I checked that the module rejects
+    anything smaller), and the files made a fresh instance per test (47 in one file) without
+    freeing the old ones.
+  - When commit runs out, V8 aborts whichever process tries to allocate. That's why random files
+    died.
+  - **Fix:** one shared test helper frees the previous instance before making the next and
+    compiles the module once. The seven copy-pasted setups are gone (−319 lines).
+  - Free commit now bottoms out at **3.87 GB**, and the suite runs in **10.2 s instead of 13.6 s**.
+- **B23 part: a failing restore hung the load forever** (`249d5a7e`). The logic worker's restore
+  had no error handling: one throw (a user `onSpawned`, a bad record) and the "restore complete"
+  reply never came, so the scene waited forever. It now always replies, and the load fails with
+  the real error. Reproduced first, by forcing a throw inside the restore.
+- **B23 part: loading the same save twice could follow the wrong entity** (`b611687d`). The camera
+  follow remap rewrote the caller's payload, so a second load remapped an already-remapped index.
+  It now returns a copy.
+- Suite **1264/1264**, and every commit is still gated on a green run.
 
 ### 03:30 — B22 fixed (`ec7fe654`)
 
