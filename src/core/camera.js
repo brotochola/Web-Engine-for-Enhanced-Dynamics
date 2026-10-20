@@ -127,8 +127,13 @@ export class Camera {
   static _followPoseReady = 0;
   /** Int32 seqlock view of IDX_FOLLOW_SEQ, or null for non-shared test buffers. */
   static _followSeq = null;
-  /** Last coherent follow snapshot. Lead is pose-relative, so it stays valid. */
-  static _followSnap = { slot: 0, usedX: 0, usedY: 0, leadX: 0, leadY: 0 };
+  /** Nesting depth of camera writes in this realm; only the outermost moves the seqlock. */
+  static _writeDepth = 0;
+  /**
+   * Last coherent snapshot: follow stamp and lead, plus the zoom and x/y of the
+   * same write. Lead is pose-relative, so it stays valid for a newer pose.
+   */
+  static _followSnap = { slot: 0, usedX: 0, usedY: 0, leadX: 0, leadY: 0, zoom: 1, camX: 0, camY: 0 };
 
   // Look-ahead vel frozen to pose-xy publishes (live HEAP vx wanders between publishes).
   static _lookHoldIdx = -1;
@@ -170,11 +175,15 @@ export class Camera {
     this._poseReadyFrame = 0;
     this._followPoseReady = 0;
     this._followSeq = this._bindFollowSeq(data);
+    this._writeDepth = 0;
     this._followSnap.slot = 0;
     this._followSnap.usedX = 0;
     this._followSnap.usedY = 0;
     this._followSnap.leadX = 0;
     this._followSnap.leadY = 0;
+    this._followSnap.zoom = (data && data[this.IDX_ZOOM]) || 1;
+    this._followSnap.camX = data ? data[this.IDX_X] || 0 : 0;
+    this._followSnap.camY = data ? data[this.IDX_Y] || 0 : 0;
     if (this._data && this._data.length > this.IDX_TARGET_ZOOM) {
       // Keep buffer fields in a valid state for readers across workers.
       this._data[this.IDX_TARGET_ZOOM] = this._data[this.IDX_TARGET_ZOOM] > 0
@@ -200,23 +209,28 @@ export class Camera {
     return new Int32Array(data.buffer, byteOffset, 1);
   }
 
-  /** Mark the start of a follow snapshot write (seqlock becomes odd). */
+  /**
+   * Mark the start of a camera write (seqlock becomes odd). Every write of
+   * zoom, x/y or the follow fields goes inside one, so the drawn camera reads
+   * them as a set. Nested calls only count depth.
+   */
   static _followWriteBegin() {
-    if (this._followSeq) Atomics.add(this._followSeq, 0, 1);
+    if (this._writeDepth++ === 0 && this._followSeq) Atomics.add(this._followSeq, 0, 1);
   }
 
-  /** Mark the end of a follow snapshot write (seqlock becomes even). */
+  /** Mark the end of a camera write (seqlock becomes even at the outermost end). */
   static _followWriteEnd() {
-    if (this._followSeq) Atomics.add(this._followSeq, 0, 1);
+    if (--this._writeDepth === 0 && this._followSeq) Atomics.add(this._followSeq, 0, 1);
   }
 
   /**
-   * Read followEntity slot and lead (followTarget - followUsed) coherently.
-   * A torn pair would shift the queue camera by one pose frame, so retry on
-   * the seqlock and otherwise reuse the last coherent lead. The lead is
-   * relative to the followed pose, so an older lead still applies to a newer
-   * latched pose.
-   * @returns {{slot: number, usedX: number, usedY: number, leadX: number, leadY: number}}
+   * Read the follow slot and lead (followTarget - followUsed), with the zoom
+   * and x/y of the same write, coherently. A torn set shifts the queue camera
+   * (a zoom from one write centered with another moves the view by
+   * cw/2·(1/z1 − 1/z2)), so retry on the seqlock and otherwise reuse the last
+   * coherent snapshot. The lead is relative to the followed pose, so an older
+   * lead still applies to a newer latched pose.
+   * @returns {{slot: number, usedX: number, usedY: number, leadX: number, leadY: number, zoom: number, camX: number, camY: number}}
    */
   static _readFollowSnapshot() {
     const data = this._data;
@@ -235,6 +249,9 @@ export class Camera {
       snap.usedY = usedY;
       snap.leadX = data[this.IDX_FOLLOW_X] - usedX;
       snap.leadY = data[this.IDX_FOLLOW_Y] - usedY;
+      snap.zoom = data[this.IDX_ZOOM];
+      snap.camX = data[this.IDX_X];
+      snap.camY = data[this.IDX_Y];
       return snap;
     }
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -245,12 +262,18 @@ export class Camera {
       const usedY = data[this.IDX_FOLLOW_USED_Y];
       const leadX = data[this.IDX_FOLLOW_X] - usedX;
       const leadY = data[this.IDX_FOLLOW_Y] - usedY;
+      const zoom = data[this.IDX_ZOOM];
+      const camX = data[this.IDX_X];
+      const camY = data[this.IDX_Y];
       if (Atomics.load(seq, 0) !== s0) continue;
       snap.slot = slot;
       snap.usedX = usedX;
       snap.usedY = usedY;
       snap.leadX = leadX;
       snap.leadY = leadY;
+      snap.zoom = zoom;
+      snap.camX = camX;
+      snap.camY = camY;
       return snap;
     }
     // Writer busy/torn. Only reuse the cached lead for the same follow entity.
@@ -277,8 +300,13 @@ export class Camera {
 
   static set zoom(value) {
     if (this._data) {
-      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, value));
-      this._clampToWorldBounds();
+      this._followWriteBegin();
+      try {
+        this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, value));
+        this._clampToWorldBounds();
+      } finally {
+        this._followWriteEnd();
+      }
     }
   }
 
@@ -298,8 +326,13 @@ export class Camera {
 
   static set x(value) {
     if (this._data) {
-      this._data[1] = value;
-      this._clampToWorldBounds();
+      this._followWriteBegin();
+      try {
+        this._data[1] = value;
+        this._clampToWorldBounds();
+      } finally {
+        this._followWriteEnd();
+      }
     }
   }
 
@@ -309,8 +342,13 @@ export class Camera {
 
   static set y(value) {
     if (this._data) {
-      this._data[2] = value;
-      this._clampToWorldBounds();
+      this._followWriteBegin();
+      try {
+        this._data[2] = value;
+        this._clampToWorldBounds();
+      } finally {
+        this._followWriteEnd();
+      }
     }
   }
 
@@ -366,14 +404,7 @@ export class Camera {
 
   static set canvasWidth(value) {
     this._canvasWidth = value;
-    // Re-clamp zoom and position since minZoom may have changed
-    if (this._data) {
-      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
-      if (this._data[5] > 0) {
-        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
-      }
-      this._clampToWorldBounds();
-    }
+    this._reclamp();
   }
 
   static get canvasHeight() {
@@ -382,14 +413,7 @@ export class Camera {
 
   static set canvasHeight(value) {
     this._canvasHeight = value;
-    // Re-clamp zoom and position since minZoom may have changed
-    if (this._data) {
-      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
-      if (this._data[5] > 0) {
-        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
-      }
-      this._clampToWorldBounds();
-    }
+    this._reclamp();
   }
 
   // ============================================
@@ -402,14 +426,7 @@ export class Camera {
 
   static set worldWidth(value) {
     this._worldWidth = value;
-    // Re-clamp zoom and position since minZoom may have changed
-    if (this._data) {
-      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
-      if (this._data[5] > 0) {
-        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
-      }
-      this._clampToWorldBounds();
-    }
+    this._reclamp();
   }
 
   static get worldHeight() {
@@ -418,14 +435,7 @@ export class Camera {
 
   static set worldHeight(value) {
     this._worldHeight = value;
-    // Re-clamp zoom and position since minZoom may have changed
-    if (this._data) {
-      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
-      if (this._data[5] > 0) {
-        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
-      }
-      this._clampToWorldBounds();
-    }
+    this._reclamp();
   }
 
   /**
@@ -436,14 +446,21 @@ export class Camera {
   static setWorldBounds(width, height) {
     this._worldWidth = width;
     this._worldHeight = height;
+    this._reclamp();
+  }
 
-    // Re-clamp zoom and position with new bounds
-    if (this._data) {
+  /** Re-clamp zoom, targetZoom and position after a canvas or world size change (minZoom may move). */
+  static _reclamp() {
+    if (!this._data) return;
+    this._followWriteBegin();
+    try {
       this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
       if (this._data[5] > 0) {
         this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
       }
       this._clampToWorldBounds();
+    } finally {
+      this._followWriteEnd();
     }
   }
 
@@ -546,16 +563,23 @@ export class Camera {
     dest.x = camX;
     dest.y = camY;
     if (!this._hasFollowEntityStamp() || !poseX || !poseY) return dest;
-    const snap = this._readFollowSnapshot();
+    return this._alignToSnapshot(this._readFollowSnapshot(), poseX, poseY, dest);
+  }
+
+  /**
+   * Snap `dest` (a camera top-left) to a follow snapshot. Centers with the
+   * snapshot's zoom, the one packed next to it. No-op without a stamp.
+   */
+  static _alignToSnapshot(snap, poseX, poseY, dest) {
     if (snap.slot <= 0) return dest;
     const i = snap.slot - 1;
     if (i < 0 || i >= poseX.length) return dest;
-    const zoom = this._data[this.IDX_ZOOM] || 1;
+    const zoom = snap.zoom || 1;
     const cw = this._canvasWidth;
     const ch = this._canvasHeight;
     if (!(cw > 0 && ch > 0 && zoom > 0)) {
-      dest.x = camX + (poseX[i] - snap.usedX);
-      dest.y = camY + (poseY[i] - snap.usedY);
+      dest.x += poseX[i] - snap.usedX;
+      dest.y += poseY[i] - snap.usedY;
       return dest;
     }
     dest.x = poseX[i] + snap.leadX - cw / (2 * zoom);
@@ -582,9 +606,14 @@ export class Camera {
       out.rotation = 0;
       return out;
     }
-    const zoom = data[this.IDX_ZOOM];
+    // One snapshot for everything: x/y, zoom and the follow lead of one write.
+    const snap = this._readFollowSnapshot();
+    const zoom = snap.zoom;
     const rot = data.length > this.IDX_ROTATION ? (data[this.IDX_ROTATION] || 0) : 0;
-    const aligned = this.alignFollowCameraToLatchedPose(data[this.IDX_X], data[this.IDX_Y], poseX, poseY);
+    const aligned = this._alignCamScratch;
+    aligned.x = snap.camX;
+    aligned.y = snap.camY;
+    if (poseX && poseY && this._hasFollowEntityStamp()) this._alignToSnapshot(snap, poseX, poseY, aligned);
     let x = aligned.x;
     let y = aligned.y;
     const worldWidth = this._worldWidth;
@@ -1118,12 +1147,17 @@ export class Camera {
     const maxX = Math.max(0, this._worldWidth - cw / clampZoom);
     const maxY = Math.max(0, this._worldHeight - ch / clampZoom);
 
-    this._clearFollowEntityStamp();
-    this._data[3] = this._freeFollowX;
-    this._data[4] = this._freeFollowY;
-    this._data[1] = Math.max(0, Math.min(newX, maxX));
-    this._data[2] = Math.max(0, Math.min(newY, maxY));
-    this._data[0] = z1;
+    this._followWriteBegin();
+    try {
+      this._clearFollowEntityStamp();
+      this._data[3] = this._freeFollowX;
+      this._data[4] = this._freeFollowY;
+      this._data[1] = Math.max(0, Math.min(newX, maxX));
+      this._data[2] = Math.max(0, Math.min(newY, maxY));
+      this._data[0] = z1;
+    } finally {
+      this._followWriteEnd();
+    }
   }
 
   /**
@@ -1154,10 +1188,16 @@ export class Camera {
    */
   static clearFollowTarget() {
     if (!this._data) return;
-    // Set to NaN to indicate no target
-    this._data[3] = Number.NaN;
-    this._data[4] = Number.NaN;
-    this._clearFollowEntityStamp();
+    this._followWriteBegin();
+    try {
+      // Stamp first: a reader that still sees the slot must not see a NaN target.
+      this._clearFollowEntityStamp();
+      // NaN indicates no target
+      this._data[3] = Number.NaN;
+      this._data[4] = Number.NaN;
+    } finally {
+      this._followWriteEnd();
+    }
   }
 
   /**
@@ -1167,16 +1207,21 @@ export class Camera {
    */
   static centerOn(targetX, targetY) {
     if (!this._data) return;
-    this._clearFollowEntityStamp();
+    this._followWriteBegin();
+    try {
+      this._clearFollowEntityStamp();
 
-    const zoom = this._data[0];
+      const zoom = this._data[0];
 
-    // Account for zoom when centering
-    this._data[1] = targetX - this._canvasWidth / (2 * zoom);
-    this._data[2] = targetY - this._canvasHeight / (2 * zoom);
+      // Account for zoom when centering
+      this._data[1] = targetX - this._canvasWidth / (2 * zoom);
+      this._data[2] = targetY - this._canvasHeight / (2 * zoom);
 
-    // Clamp to world bounds
-    this._clampToWorldBounds();
+      // Clamp to world bounds
+      this._clampToWorldBounds();
+    } finally {
+      this._followWriteEnd();
+    }
   }
 
   /**
@@ -1186,12 +1231,17 @@ export class Camera {
    */
   static setPosition(x, y) {
     if (!this._data) return;
-    this._clearFollowEntityStamp();
-    this._data[1] = x;
-    this._data[2] = y;
+    this._followWriteBegin();
+    try {
+      this._clearFollowEntityStamp();
+      this._data[1] = x;
+      this._data[2] = y;
 
-    // Clamp to world bounds
-    this._clampToWorldBounds();
+      // Clamp to world bounds
+      this._clampToWorldBounds();
+    } finally {
+      this._followWriteEnd();
+    }
   }
 
   /**
