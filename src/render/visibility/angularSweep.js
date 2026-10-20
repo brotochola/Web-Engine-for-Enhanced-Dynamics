@@ -5,6 +5,7 @@
 // and ray–edge hits. Allocation-free hot path (pre-allocated output / scratch).
 
 import { normalizeAngleSigned } from '../../util/utils.js';
+import { MAX_POLYGON_VERTICES } from '../../util/configDefaults.js';
 
 const TWO_PI = Math.PI * 2;
 const EPSILON = 1e-5;
@@ -131,6 +132,21 @@ function distSqToConvex(px, py, vertsX, vertsY, start, count) {
     if (dSq < minSq) minSq = dSq;
   }
   return minSq;
+}
+
+/** Squared distance from a point to a segment. */
+export function segmentDistSq(px, py, ax, ay, bx, by) {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const apx = px - ax;
+  const apy = py - ay;
+  const abLenSq = abx * abx + aby * aby;
+  let t = abLenSq > 0 ? (apx * abx + apy * aby) / abLenSq : 0;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  const dx = ax + abx * t - px;
+  const dy = ay + aby * t - py;
+  return dx * dx + dy * dy;
 }
 
 /**
@@ -276,27 +292,50 @@ export function buildVisibilityPolygon(
     } else {
       const vs = vertStart[i];
       const vc = vertCount[i] | 0;
-      if (vc < 3) continue;
-
-      // Skip only if the whole polygon is outside the light. Corners of a long
-      // slab can all sit past the radius while an edge passes next to the light.
       const maxRadiusSq = maxRadius * maxRadius;
-      if (distSqToConvex(lightX, lightY, vertsX, vertsY, vs, vc) > maxRadiusSq) continue;
+      let openN;
+      let closeN;
+      if (vc === 2) {
+        // Boundary segment of a compound solid. The blocked wedge is the
+        // shorter sector between the endpoints, including the ±π wrap.
+        const ax = vertsX[vs];
+        const ay = vertsY[vs];
+        const bx = vertsX[vs + 1];
+        const by = vertsY[vs + 1];
+        if (segmentDistSq(lightX, lightY, ax, ay, bx, by) > maxRadiusSq) continue;
+        openN = normalizeAngleSigned(Math.atan2(ay - lightY, ax - lightX));
+        closeN = normalizeAngleSigned(Math.atan2(by - lightY, bx - lightX));
+        let span = closeN - openN;
+        if (span < 0) span += TWO_PI;
+        if (span > Math.PI) {
+          const swap = openN;
+          openN = closeN;
+          closeN = swap;
+          span = TWO_PI - span;
+        }
+        if (!(span > 1e-4)) continue;
+      } else {
+        if (vc < 3) continue;
 
-      if (!polyTangentIndices(lightX, lightY, vertsX, vertsY, vs, vc, _tangentOut)) {
-        continue; // light inside poly
+        // Skip only if the whole polygon is outside the light. Corners of a long
+        // slab can all sit past the radius while an edge passes next to the light.
+        if (distSqToConvex(lightX, lightY, vertsX, vertsY, vs, vc) > maxRadiusSq) continue;
+
+        if (!polyTangentIndices(lightX, lightY, vertsX, vertsY, vs, vc, _tangentOut)) {
+          continue; // light inside poly
+        }
+
+        const iLeft = _tangentOut[0];
+        const iRight = _tangentOut[1];
+        openN = normalizeAngleSigned(Math.atan2(
+          vertsY[vs + iLeft] - lightY,
+          vertsX[vs + iLeft] - lightX
+        ));
+        closeN = normalizeAngleSigned(Math.atan2(
+          vertsY[vs + iRight] - lightY,
+          vertsX[vs + iRight] - lightX
+        ));
       }
-
-      const iLeft = _tangentOut[0];
-      const iRight = _tangentOut[1];
-      const openN = normalizeAngleSigned(Math.atan2(
-        vertsY[vs + iLeft] - lightY,
-        vertsX[vs + iLeft] - lightX
-      ));
-      const closeN = normalizeAngleSigned(Math.atan2(
-        vertsY[vs + iRight] - lightY,
-        vertsX[vs + iRight] - lightX
-      ));
       if (i < MAX_OCC_CACHE) {
         _occOpen[i] = openN;
         _occClose[i] = closeN;
@@ -564,4 +603,214 @@ export function writePolygonVerts(
     outY[start + i] = wy + s * lx + c * ly;
   }
   return count;
+}
+
+/** Per-light boundary segments. Past this the sweep's 2048-event cap turns the lamp into a full disc. */
+export const BOUNDARY_SEGMENT_CAP = 900;
+const FIXTURE_NONE = 0xffff;
+const EDGE_QUANT = 1000;
+const _solids = [];
+const _edgeMap = new Map();
+const _sx0 = new Float32Array(BOUNDARY_SEGMENT_CAP);
+const _sy0 = new Float32Array(BOUNDARY_SEGMENT_CAP);
+const _sx1 = new Float32Array(BOUNDARY_SEGMENT_CAP);
+const _sy1 = new Float32Array(BOUNDARY_SEGMENT_CAP);
+const _sd = new Float32Array(BOUNDARY_SEGMENT_CAP);
+let _segN = 0;
+let _segWorst = 0;
+
+function growFloats(arr, needed) {
+  if (arr.length >= needed) return arr;
+  let n = arr.length || 64;
+  while (n < needed) n *= 2;
+  const next = new Float32Array(n);
+  if (arr.length) next.set(arr);
+  return next;
+}
+
+function edgeKey(ax, ay, bx, by) {
+  if (bx < ax || (bx === ax && by < ay)) return `${bx},${by},${ax},${ay}`;
+  return `${ax},${ay},${bx},${by}`;
+}
+
+/**
+ * Boundary segments and solid fill for one compound body.
+ * Rebuilt only when the fixture pool revision changes.
+ * Edges shared by two triangles are interior and dropped, so a canyon stays a hole.
+ * @returns {{ revision: number, seg: Float32Array, segCount: number, fill: Float32Array, fillVerts: number }}
+ */
+export function ensureCompoundSolid(
+  entityIdx, revision,
+  head, next, active, vertCount, vertX, vertY,
+  headIdx, poolMax
+) {
+  let solid = _solids[entityIdx];
+  if (solid && solid.revision === revision) return solid;
+  if (!solid) {
+    solid = {
+      revision: -1,
+      seg: new Float32Array(64),
+      segCount: 0,
+      fill: new Float32Array(64),
+      fillVerts: 0,
+    };
+    _solids[entityIdx] = solid;
+  }
+  solid.segCount = 0;
+  solid.fillVerts = 0;
+  _edgeMap.clear();
+  if (head && next && active && vertX && vertY && headIdx != null && headIdx !== FIXTURE_NONE) {
+    let cur = headIdx;
+    let guard = 0;
+    const limit = poolMax | 0;
+    let fillN = 0;
+    while (cur !== FIXTURE_NONE && guard++ < limit) {
+      if (active[cur]) {
+        const count = vertCount[cur] | 0;
+        if (count >= 3 && count <= MAX_POLYGON_VERTICES) {
+          const base = cur * MAX_POLYGON_VERTICES;
+          const need = (fillN + (count - 2) * 3) * 2;
+          solid.fill = growFloats(solid.fill, need);
+          const fill = solid.fill;
+          const x0 = vertX[base];
+          const y0 = vertY[base];
+          for (let i = 1; i < count - 1; i++) {
+            const o = fillN * 2;
+            fill[o] = x0;
+            fill[o + 1] = y0;
+            fill[o + 2] = vertX[base + i];
+            fill[o + 3] = vertY[base + i];
+            fill[o + 4] = vertX[base + i + 1];
+            fill[o + 5] = vertY[base + i + 1];
+            fillN += 3;
+          }
+          for (let i = 0; i < count; i++) {
+            const j = i + 1 < count ? i + 1 : 0;
+            const ax = vertX[base + i];
+            const ay = vertY[base + i];
+            const bx = vertX[base + j];
+            const by = vertY[base + j];
+            const iax = Math.round(ax * EDGE_QUANT);
+            const iay = Math.round(ay * EDGE_QUANT);
+            const ibx = Math.round(bx * EDGE_QUANT);
+            const iby = Math.round(by * EDGE_QUANT);
+            if (iax === ibx && iay === iby) continue;
+            const key = edgeKey(iax, iay, ibx, iby);
+            const prev = _edgeMap.get(key);
+            if (prev) prev.n++;
+            else _edgeMap.set(key, { n: 1, x0: ax, y0: ay, x1: bx, y1: by });
+          }
+        }
+      }
+      cur = next[cur];
+    }
+    solid.fillVerts = fillN;
+    let segN = 0;
+    for (const edge of _edgeMap.values()) {
+      if (edge.n !== 1) continue;
+      solid.seg = growFloats(solid.seg, (segN + 1) * 4);
+      const o = segN * 4;
+      solid.seg[o] = edge.x0;
+      solid.seg[o + 1] = edge.y0;
+      solid.seg[o + 2] = edge.x1;
+      solid.seg[o + 3] = edge.y1;
+      segN++;
+    }
+    solid.segCount = segN;
+  }
+  solid.revision = revision;
+  return solid;
+}
+
+export function clearBoundarySegments() {
+  _segN = 0;
+  _segWorst = 0;
+}
+
+/** Keep the closest segments, capped at BOUNDARY_SEGMENT_CAP. */
+export function pushBoundarySegment(x0, y0, x1, y1, distSq) {
+  if (_segN < BOUNDARY_SEGMENT_CAP) {
+    const i = _segN++;
+    _sx0[i] = x0;
+    _sy0[i] = y0;
+    _sx1[i] = x1;
+    _sy1[i] = y1;
+    _sd[i] = distSq;
+    if (distSq > _sd[_segWorst]) _segWorst = i;
+    return;
+  }
+  if (distSq >= _sd[_segWorst]) return;
+  _sx0[_segWorst] = x0;
+  _sy0[_segWorst] = y0;
+  _sx1[_segWorst] = x1;
+  _sy1[_segWorst] = y1;
+  _sd[_segWorst] = distSq;
+  let worst = 0;
+  for (let i = 1; i < _segN; i++) {
+    if (_sd[i] > _sd[worst]) worst = i;
+  }
+  _segWorst = worst;
+}
+
+/**
+ * World-space boundary edges of a solid that overlap the light disc.
+ * @returns {number} how many overlapped, before the per-light cap dropped any
+ */
+export function collectSolidSegments(
+  solid, entityX, entityY, rotC, rotS, offX, offY, lightX, lightY, radiusSq
+) {
+  if (!solid || solid.segCount <= 0) return 0;
+  const originX = entityX + rotC * offX - rotS * offY;
+  const originY = entityY + rotS * offX + rotC * offY;
+  const seg = solid.seg;
+  const n = solid.segCount;
+  let hit = 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    const lx0 = seg[o];
+    const ly0 = seg[o + 1];
+    const lx1 = seg[o + 2];
+    const ly1 = seg[o + 3];
+    const x0 = originX + rotC * lx0 - rotS * ly0;
+    const y0 = originY + rotS * lx0 + rotC * ly0;
+    const x1 = originX + rotC * lx1 - rotS * ly1;
+    const y1 = originY + rotS * lx1 + rotC * ly1;
+    const dist = segmentDistSq(lightX, lightY, x0, y0, x1, y1);
+    if (dist > radiusSq) continue;
+    pushBoundarySegment(x0, y0, x1, y1, dist);
+    hit++;
+  }
+  return hit;
+}
+
+/** Drop the farthest segments until `room` remain. @returns {boolean} true if any were dropped */
+export function trimBoundarySegments(room) {
+  const keep = room > 0 ? room | 0 : 0;
+  let dropped = false;
+  while (_segN > keep) {
+    dropped = true;
+    let worst = 0;
+    for (let i = 1; i < _segN; i++) {
+      if (_sd[i] > _sd[worst]) worst = i;
+    }
+    _segN--;
+    _sx0[worst] = _sx0[_segN];
+    _sy0[worst] = _sy0[_segN];
+    _sx1[worst] = _sx1[_segN];
+    _sy1[worst] = _sy1[_segN];
+    _sd[worst] = _sd[_segN];
+  }
+  _segWorst = 0;
+  return dropped;
+}
+
+export function boundarySegmentCount() {
+  return _segN;
+}
+
+export function copyBoundarySegment(i, out) {
+  out[0] = _sx0[i];
+  out[1] = _sy0[i];
+  out[2] = _sx1[i];
+  out[3] = _sy1[i];
 }

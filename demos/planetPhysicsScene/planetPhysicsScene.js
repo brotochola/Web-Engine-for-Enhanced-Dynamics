@@ -129,7 +129,7 @@ export class PlanetPhysicsScene extends Scene {
 
     lighting: {
       enabled: true,
-      raycasted: false,
+      raycasted: true,
       shadowsEnabled: false,
       baseAmbient: 0,
       maxLights: 40,

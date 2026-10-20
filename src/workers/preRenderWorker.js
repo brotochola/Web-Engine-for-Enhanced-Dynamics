@@ -8,20 +8,28 @@ import { BulletComponent } from '../components/bulletComponent.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
+import { ColliderFixture } from '../core/colliderFixture.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
-import { LightOccluder } from '../components/lightOccluder.js';
+import { LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { Camera } from '../core/camera.js';
 import { Query } from '../core/query.js';
 import {
+    BOUNDARY_SEGMENT_CAP,
+    boundarySegmentCount,
     buildVisibilityPolygon,
+    clearBoundarySegments,
+    collectSolidSegments,
+    copyBoundarySegment,
+    ensureCompoundSolid,
     OCC_CIRCLE,
     OCC_POLY,
+    trimBoundarySegments,
     writeOrientedBoxVerts,
     writePolygonVerts,
 } from '../render/visibility/angularSweep.js';
@@ -801,7 +809,7 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             // Scratch arrays for collecting nearby occluders (circle + convex)
-            const maxOccluders = 256;
+            const maxOccluders = 1024;
             this._vpOccKind = new Uint8Array(maxOccluders);
             this._vpCircleX = new Float32Array(maxOccluders);
             this._vpCircleY = new Float32Array(maxOccluders);
@@ -812,6 +820,7 @@ class PreRenderWorker extends AbstractWorker {
             this._vpVertsX = new Float32Array(maxOccluders * MAX_POLYGON_VERTICES);
             this._vpVertsY = new Float32Array(maxOccluders * MAX_POLYGON_VERTICES);
             this._vpMaxOccluders = maxOccluders;
+            this._vpSegOut = new Float32Array(4);
 
             // Output scratch for polygon vertices
             this._vpOutX = new Float32Array(maxVerts);
@@ -3338,6 +3347,17 @@ class PreRenderWorker extends AbstractWorker {
         const polyCountArr = Collider.polyCount;
         const polyVertX = Collider.polyVertexX;
         const polyVertY = Collider.polyVertexY;
+        const polyCentroidX = Collider.polyCentroidX;
+        const polyCentroidY = Collider.polyCentroidY;
+        const fixtureCountArr = Collider.fixtureCount;
+        const fixtureHead = ColliderFixture.head;
+        const fixtureNext = ColliderFixture.next;
+        const fixtureActiveArr = ColliderFixture.active;
+        const fixtureVertCount = ColliderFixture.vertCount;
+        const fixtureVertX = ColliderFixture.vertexX;
+        const fixtureVertY = ColliderFixture.vertexY;
+        const fixturePoolMax = ColliderFixture.maxCount | 0;
+        const fixtureRevision = ColliderFixture.revision;
         const lightEnabled = LightEmitter.active;
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
@@ -3402,6 +3422,7 @@ class PreRenderWorker extends AbstractWorker {
             let occCount = 0;
             let vertPool = 0;
             let occluderLimitHit = false;
+            clearBoundarySegments();
 
             if (neighborData && stride > 0) {
                 const offset = lightIdx * stride;
@@ -3425,6 +3446,52 @@ class PreRenderWorker extends AbstractWorker {
                     if (shape === ShapeType.Chain) continue;
                     const ox = colOffX[nIdx] || 0;
                     const oy = colOffY[nIdx] || 0;
+                    const nFixtures = fixtureCountArr ? (fixtureCountArr[nIdx] | 0) : 0;
+                    if (nFixtures > 0 && fixtureHead && nIdx < fixtureHead.length) {
+                        const lcx = polyCentroidX ? polyCentroidX[nIdx] : 0;
+                        const lcy = polyCentroidY ? polyCentroidY[nIdx] : 0;
+                        const centX = wx + c * (ox + lcx) - s * (oy + lcy);
+                        const centY = wy + s * (ox + lcx) + c * (oy + lcy);
+                        const hw = (colWidth[nIdx] || 0) * 0.5;
+                        const hh = (colHeight[nIdx] || 0) * 0.5;
+                        const reach = Math.sqrt(hw * hw + hh * hh);
+                        const cdx = centX - lx;
+                        const cdy = centY - ly;
+                        const bound = influenceRadius + reach;
+                        if (cdx * cdx + cdy * cdy > bound * bound) continue;
+
+                        const solid = ensureCompoundSolid(
+                            nIdx,
+                            fixtureRevision ? fixtureRevision[0] : 0,
+                            fixtureHead, fixtureNext, fixtureActiveArr,
+                            fixtureVertCount, fixtureVertX, fixtureVertY,
+                            fixtureHead[nIdx], fixturePoolMax
+                        );
+                        const hit = collectSolidSegments(
+                            solid, wx, wy, c, s, ox, oy,
+                            lx, ly, influenceRadius * influenceRadius
+                        );
+                        if (hit > 0 && selfLitI32 && selfLitCount < maxSelfLit) {
+                            const byteOff = 4 + selfLitCount * selfLitItemBytes;
+                            const i32Off = byteOff >> 2;
+                            selfLitI32[i32Off] = nIdx;
+                            selfLitI32[i32Off + 1] = lightIdx;
+                            selfLitF32[i32Off + 2] = wx;
+                            selfLitF32[i32Off + 3] = wy;
+                            selfLitF32[i32Off + 4] = c;
+                            selfLitF32[i32Off + 5] = s;
+                            const u16Off = byteOff >> 1;
+                            let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
+                            if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
+                                texId = this._resolveEntitySpriteTextureId(nIdx);
+                            }
+                            selfLitU16[u16Off + 12] = texId;
+                            selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
+                            selfLitU8[byteOff + 27] = 0;
+                            selfLitCount++;
+                        }
+                        continue;
+                    }
                     const occX = wx + ox;
                     const occY = wy + oy;
                     const dx = occX - lx;
@@ -3517,7 +3584,7 @@ class PreRenderWorker extends AbstractWorker {
                         selfLitF32[i32Off + 5] = s;
                         const u16Off = byteOff >> 1;
                         let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
-                        if (texId === INVALID_TEXTURE_ID) {
+                        if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
                             texId = this._resolveEntitySpriteTextureId(nIdx);
                         }
                         selfLitU16[u16Off + 12] = texId; // after 6×i32/f32 = 24 bytes
@@ -3528,6 +3595,28 @@ class PreRenderWorker extends AbstractWorker {
 
                     occCount++;
                 }
+            }
+            const segRoom = BOUNDARY_SEGMENT_CAP < maxOccluders - occCount
+                ? BOUNDARY_SEGMENT_CAP
+                : maxOccluders - occCount;
+            if (trimBoundarySegments(segRoom)) occluderLimitHit = true;
+            const segN = boundarySegmentCount();
+            const segOut = this._vpSegOut;
+            for (let s = 0; s < segN; s++) {
+                if (occCount >= maxOccluders) {
+                    occluderLimitHit = true;
+                    break;
+                }
+                copyBoundarySegment(s, segOut);
+                kind[occCount] = OCC_POLY;
+                vertStart[occCount] = vertPool;
+                vertsX[vertPool] = segOut[0];
+                vertsY[vertPool] = segOut[1];
+                vertsX[vertPool + 1] = segOut[2];
+                vertsY[vertPool + 1] = segOut[3];
+                vertCountArr[occCount] = 2;
+                vertPool += 2;
+                occCount++;
             }
             if (occluderLimitHit) {
                 this._warnOnce(

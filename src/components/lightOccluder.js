@@ -7,7 +7,10 @@ export const LIGHT_OCCLUDER_MASK_SPRITE = 1;
 
 /**
  * Light blocker for raycasted lighting.
- * Occlusion shape comes from the entity's Collider (circle, rotated box, or convex polygon).
+ * Occlusion shape comes from the entity's Collider. One circle, rotated box, or convex
+ * polygon uses that primary shape. Extra fixtures (`fixtureCount > 0`) block as one
+ * solid: only the boundary edges, so a hole stays open and interior triangles are
+ * not separate occluders.
  *
  * `block` is how much light this body removes. 0 blocks nothing (left out of the
  * visibility sweep). 1 blocks all. Values in between keep the hard silhouette and

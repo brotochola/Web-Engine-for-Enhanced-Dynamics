@@ -43,6 +43,8 @@ import {
   LAYER_SCALE_MODE,
 } from '../util/configDefaults.js';
 import {
+  ensureCompoundSolid,
+  segmentDistSq,
   writeOrientedBoxVerts,
   writePolygonVerts,
 } from '../render/visibility/angularSweep.js';
@@ -2868,6 +2870,30 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const tan = this._wedgeTan;
     const shape = Collider.shapeType[entityIdx];
     if (shape === ShapeType.Chain) return;
+    const nFixtures = Collider.fixtureCount ? (Collider.fixtureCount[entityIdx] | 0) : 0;
+    if (nFixtures > 0 && ColliderFixture.head && entityIdx < ColliderFixture.head.length) {
+      const solid = ensureCompoundSolid(
+        entityIdx,
+        ColliderFixture.revision ? ColliderFixture.revision[0] : 0,
+        ColliderFixture.head, ColliderFixture.next, ColliderFixture.active,
+        ColliderFixture.vertCount, ColliderFixture.vertexX, ColliderFixture.vertexY,
+        ColliderFixture.head[entityIdx], ColliderFixture.maxCount | 0
+      );
+      const seg = solid.seg;
+      const radiusSq = lightR * lightR;
+      const originX = ex + c * ox - s * oy;
+      const originY = ey + s * ox + c * oy;
+      for (let i = 0; i < solid.segCount; i++) {
+        const o = i * 4;
+        const x0 = originX + c * seg[o] - s * seg[o + 1];
+        const y0 = originY + s * seg[o] + c * seg[o + 1];
+        const x1 = originX + c * seg[o + 2] - s * seg[o + 3];
+        const y1 = originY + s * seg[o + 2] + c * seg[o + 3];
+        if (segmentDistSq(lx, ly, x0, y0, x1, y1) > radiusSq) continue;
+        this._pushWedge(lx, ly, lightR, x0, y0, x1, y1, scale);
+      }
+      return;
+    }
     let ok = false;
     if (shape === ShapeType.Circle) {
       const r = Collider.radius[entityIdx];
@@ -3167,6 +3193,46 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         const block = occluderBlock ? occluderBlock[entityIdx] : 1;
         this._emitTransmitWedge(lx, ly, lightR, entityIdx, ex, ey, c, s, ox, oy, block);
         if (maskMode === LIGHT_OCCLUDER_MASK_SPRITE) continue;
+
+        const nFixtures = Collider.fixtureCount ? (Collider.fixtureCount[entityIdx] | 0) : 0;
+        if (nFixtures > 0 && shape !== ShapeType.Chain && ColliderFixture.head && entityIdx < ColliderFixture.head.length) {
+          const solid = ensureCompoundSolid(
+            entityIdx,
+            ColliderFixture.revision ? ColliderFixture.revision[0] : 0,
+            ColliderFixture.head, ColliderFixture.next, ColliderFixture.active,
+            ColliderFixture.vertCount, ColliderFixture.vertexX, ColliderFixture.vertexY,
+            ColliderFixture.head[entityIdx], ColliderFixture.maxCount | 0
+          );
+          const fill = solid.fill;
+          const n = solid.fillVerts | 0;
+          const lcx = Collider.polyCentroidX ? Collider.polyCentroidX[entityIdx] : 0;
+          const lcy = Collider.polyCentroidY ? Collider.polyCentroidY[entityIdx] : 0;
+          const bodyCx = ex + c * (ox + lcx) - s * (oy + lcy);
+          const bodyCy = ey + s * (ox + lcx) + c * (oy + lcy);
+          const originX = ex + c * ox - s * oy;
+          const originY = ey + s * ox + c * oy;
+          let stopFill = false;
+          for (let v = 0; v + 3 <= n; v += 3) {
+            if (vertCount + 3 > maxVerts) {
+              stopFill = true;
+              break;
+            }
+            const baseV = vertCount;
+            for (let k = 0; k < 3; k++) {
+              const lxocal = fill[(v + k) * 2];
+              const lyocal = fill[(v + k) * 2 + 1];
+              positions[vertCount * 2] = originX + c * lxocal - s * lyocal;
+              positions[vertCount * 2 + 1] = originY + s * lxocal + c * lyocal;
+              this._stampOccluderVert(vertCount, bodyCx, bodyCy, 0);
+              vertCount++;
+            }
+            indices[idxCount++] = baseV;
+            indices[idxCount++] = baseV + 1;
+            indices[idxCount++] = baseV + 2;
+          }
+          if (stopFill) break;
+          continue;
+        }
 
         if (shape === ShapeType.Circle) {
           const r = Collider.radius[entityIdx];

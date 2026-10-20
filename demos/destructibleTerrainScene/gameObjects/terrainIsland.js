@@ -8,6 +8,7 @@ const {
   ColliderFixture,
   MeshRenderer,
   Transform,
+  LightOccluder,
 } = WEED;
 
 const MIN_KEEP_AREA = CELL * CELL;
@@ -43,7 +44,7 @@ function applyPolysFlat(collider, polys, dx, dy) {
 export class TerrainIsland extends GameObject {
   static serializable = false;
   static instances = [];
-  static components = [RigidBody, Collider, MeshRenderer];
+  static components = [RigidBody, Collider, MeshRenderer, LightOccluder];
   // static forceProcessOnLogicWorker = 1;
 
   onSpawned(spawnConfig = {}) {
