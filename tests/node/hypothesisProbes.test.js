@@ -26,7 +26,7 @@ test('the wrong key, even when non-zero, does not satisfy the probe', () => {
   const r = checkProbe('H-02', { GPU_CASTERS: 13558, RENDER_QUEUE_SIZE: 0 }, 150000);
   assert.equal(r.ok, false);
   assert.equal(r.code, 'PATH_NOT_RUN');
-  assert.match(r.detail, /gatherInstancedRows packs the queued rows/);
+  assert.match(r.detail, /packInstancedRows packs the queued rows/);
 });
 
 test('the pack runs in preRender, not renderer - and the probe says so', () => {

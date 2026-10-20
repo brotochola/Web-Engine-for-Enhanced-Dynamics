@@ -7,11 +7,11 @@ import {
   painterSameSet,
   orderPainterSlots,
   spriteYSortKey,
-  depthFromSortKey,
   orderSortKey,
   zSortBand,
   floatBitsToOrd,
 } from '../../src/util/sortIndexByKey.js';
+import { depthFromSortKey } from '../helpers/zBufferDepth.mjs';
 
 function cmpFloat(a, b) {
   if (a < b) return -1;

@@ -18,11 +18,11 @@
 import { PerformanceObserver, constants } from 'node:perf_hooks';
 
 import {
-  gatherInstancedRows,
   GPU_SPRITE_FLOATS,
   GPU_CASTER_FLOATS,
   GPU_CASTER_LIGHT_FLOAT,
 } from '../../src/render/gpuQueueLayout.js';
+import { gatherInstancedRows } from '../helpers/gpuQueueReference.mjs';
 
 const NO_PARENT = 0xffff;
 

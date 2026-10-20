@@ -4,13 +4,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  depthFromOrderKey,
-  depthSpanForZ,
-  orderKeySpan,
-  orderSortKey,
-  zSortBand,
-} from '../../src/util/sortIndexByKey.js';
+import { orderSortKey, zSortBand } from '../../src/util/sortIndexByKey.js';
+// The removed z-buffer path's helpers (review D5); this file is their analysis.
+import { depthFromOrderKey, depthSpanForZ, orderKeySpan } from '../helpers/zBufferDepth.mjs';
 
 const YK = 128;
 

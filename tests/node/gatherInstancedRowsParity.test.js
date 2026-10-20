@@ -4,11 +4,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import {
-  gatherInstancedRows,
   GPU_SPRITE_FLOATS,
   GPU_CASTER_FLOATS,
   GPU_CASTER_LIGHT_FLOAT,
 } from '../../src/render/gpuQueueLayout.js';
+// Not engine code since review D5 (E-21: it never ran in a frame).
+import { gatherInstancedRows } from '../helpers/gpuQueueReference.mjs';
 
 /**
  * H-02. `gatherInstancedRows` copies a row with an explicit loop instead of
@@ -163,12 +164,12 @@ test('the working tree really no longer allocates a subarray per row', () => {
   // The point of the change. Asserted on the source so a future edit cannot
   // quietly reintroduce the allocation while the parity tests still pass.
   const src = readFileSync(
-    fileURLToPath(new URL('../../src/render/gpuQueueLayout.js', import.meta.url)),
+    fileURLToPath(new URL('../helpers/gpuQueueReference.mjs', import.meta.url)),
     'utf8',
   );
   const body = src.slice(
     src.indexOf('export function gatherInstancedRows'),
-    src.indexOf('export function gpuQueueCaps'),
+    src.indexOf('export function copyPackedRows'),
   );
   const code = body.replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(code, /\.subarray\(/, 'the hot loop must not allocate a subarray');

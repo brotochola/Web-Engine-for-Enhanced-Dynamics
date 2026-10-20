@@ -10,6 +10,15 @@ import fs from 'node:fs';
 const SRC = 'src/render/gpuQueueLayout.js';
 const OUT = 'tests/results/hyp-baselines/H02.gpuQueueLayout.subarray.js';
 
+// H-02 is closed: E-21 found gatherInstancedRows never ran in a frame, and
+// review D5 moved it out of src/ (tests/helpers/gpuQueueReference.mjs). An
+// overlay of src/render/gpuQueueLayout.js can no longer swap it, so there is
+// nothing to baseline.
+if (!fs.readFileSync(SRC, 'utf8').includes('export function gatherInstancedRows(')) {
+  console.error('makeH02Baseline: H-02 is closed (E-21, review D5); gatherInstancedRows is not engine code.');
+  process.exit(1);
+}
+
 const source = fs.readFileSync(SRC, 'utf8');
 
 const FN = 'export function gatherInstancedRows(';

@@ -3,10 +3,9 @@ import assert from 'node:assert/strict';
 import {
   GPU_SPRITE_FLOATS,
   packInstancedRows,
-  writeGpuSpriteRow,
-  gatherInstancedRows,
   makePackContext,
 } from '../../src/render/gpuQueueLayout.js';
+import { writeGpuSpriteRow, gatherInstancedRows } from '../helpers/gpuQueueReference.mjs';
 import {
   spriteYSortKey,
   zSortBand,

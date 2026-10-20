@@ -12,13 +12,15 @@ import {
   createGpuQueueViews,
   writeGpuQueueHeader,
   packInstancedRows,
-  writeGpuSpriteRow,
-  gatherInstancedRows,
   makePackContext,
   fillQueueIndices,
+} from '../../src/render/gpuQueueLayout.js';
+import {
+  writeGpuSpriteRow,
+  gatherInstancedRows,
   copyPackedRows,
   rewritePackedDepth,
-} from '../../src/render/gpuQueueLayout.js';
+} from '../helpers/gpuQueueReference.mjs';
 
 test('gpuQueue SAB views round-trip header and packed rows', () => {
   const lighting = { enabled: true, shadowsEnabled: true, maxLights: 4, maxShadowCastingLights: 2, maxShadowsPerLight: 3, maxShadowsPerEntity: 1 };
