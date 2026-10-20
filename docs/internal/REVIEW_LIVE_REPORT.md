@@ -17,9 +17,21 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**06:10** — **B26** (compound light-transmit wedges stack).
+**06:25** — **B27** (`physics.box2dWorkerCount` renamed with no alias; worker count not clamped).
 
 ## Log
+
+### 06:20 — B26 fixed (`46c5b590`)
+
+- Under raycasted lighting, a light blocker with `block < 1` lets part of the light through by
+  adding a "transmit wedge" behind it. A compound blocker (made of several pieces) added one wedge
+  **per outline edge**, and a ray behind a closed outline crosses it at least twice. So the light
+  stacked: `block 0.5` let 100 % through.
+- **Fix:** only edges that face the light get a wedge, matching how a single shape gets one
+  silhouette wedge.
+- **Test:** it drives the shipped Pixi method on a two-square bar. A point behind it was under
+  **2** wedges with the old behavior and is under **1** now.
+- Suite **1285/1285**.
 
 ### 06:05 — B25 fixed (`6308777f`)
 
