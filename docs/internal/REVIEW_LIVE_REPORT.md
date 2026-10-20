@@ -17,10 +17,33 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**22:50** — **N-11** (the particle worker culls with the eased camera), then **B18** (camera
-follow seqlock).
+**23:10** — **HEADED RUN next:** checking N-12 (does a rotated camera cull the screen
+edges?) with screenshots before touching it.
 
 ## Log
+
+### 23:05 — N-11 fixed (`b0c4d333`); new N-12, N-13; N-7 now has a second crash
+
+- **N-11 — particle culling used the eased camera.** I moved pre-render's drawn-camera math
+  (follow snap + world clamp) into one function, `Camera.resolveDrawnCamera`. Pre-render packs it
+  (plus shake), and the particle worker now culls particles, decorations and bullets with it, once
+  per frame. The test drives a real `followEntity` at 10 px/frame. With the **old** workers it
+  fails at 640 vs 550.16, the predicted 90 px lag. Pre-render's check passed on both versions,
+  which shows the refactor did not change what it draws.
+- **New, N-12 (high if real):** while tracing this I found that **no cull handles camera
+  rotation**. Pre-render, the particle worker, `Camera.isOnScreen` and `getViewportBounds` all
+  test the unrotated rectangle plus a 10 % margin (`worldToScreen` does rotate). At 90° on
+  1920×1080 the visible strip is 1920 long but the cull keeps 1188 of it. The planet demos rotate
+  the camera every tick. It is a strong claim, so I am verifying it with screenshots before fixing.
+- **New, N-13:** the public screen helpers (`isOnScreen`, `worldToScreen`, `screenToWorld`,
+  `getViewportBounds`) also use the eased x/y. So `CameraInOutListener` enter and exit events fire
+  late at a fast follow's leading edge. The fix needs a once-per-frame latch, because `isOnScreen`
+  runs per entity.
+- **N-7 is a pattern:** a second LiquidFun test file (`liquidFunQuery`) crashed its process under
+  `--test-concurrency=4` with `0xC0000409`. That is a native fail-fast abort, not an assertion.
+  It passes alone, and the rerun was 1229/1229. Suspect: the WASM module under concurrency.
+- Also logged: `weed.d.ts` `Camera` is missing `followEntity`, `shake`, `setDeadzone` and
+  `setAngle` (added to DOC3).
 
 ### 22:45 — B17 fixed (`8cdac3b1`); new N-11
 
