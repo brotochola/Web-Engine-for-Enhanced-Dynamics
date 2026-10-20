@@ -17,11 +17,54 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**20:05** — Preparing the **headed smoke pass** for every demo change so far (B5 fx-layer
-particles, B8 cars, B9 save → load in both terrain scenes, B14 loose chunks). I will write
-a **HEADED RUN** line here before the browser opens.
+**21:40** — Headed runs are done for now. Back to the bug list: **B15** (`collider.active`
+toggle loses compound fixtures).
 
 ## Log
+
+### 21:35 — Headed smoke results, and a pre-existing demo bug found on the way (N-8)
+
+**What the smoke verified (second run, after `8fb919d4`):**
+- Planet: boots with 310 islands, ship, lamp and water pull; the camera roll keeps the
+  surface level under the ship. **Save → load works**: after the load there are 309
+  islands (the one I had shattered stays gone, so the restored grid was meshed, not
+  re-seeded), exactly one ship, one lamp, one water pull — nothing duplicated.
+- Destructible terrain: 1108 islands at boot; I fired the laser, saved and loaded: 1070
+  islands after the load (the carved grid came back), no page errors.
+- Little City: boots, no page errors.
+
+**What it could not verify, and why:** B14 (loose chunks fall) needs a loose chunk. The
+shatter tool turned out to **delete rock without spawning any shards** — in both terrain
+scenes, and on `80464dc1` too, so it is **not** from this review. I confirmed the cause with
+logging inside the logic worker: the shatter cuts 24 shards of ~11 px² from the first of 7
+fixtures, and the spawner keeps only shards of ≥ 100 px², so all 24 are dropped. My first
+"fix" (passing the same threshold to both) was wrong — one is a maximum, the other a
+minimum — so I reverted it. → **N-8**, with the measured numbers and a real fix design.
+Spawning a loose rock from the page does not work either ("Failed ring spawn": the ring
+cannot carry `polys`) → **N-10**. B14 stays verified by reading only, until N-8 is fixed.
+
+**Instrument lesson → N-9:** Playwright's `console` events do not carry dedicated-worker
+messages here, so my first smoke's "no errors" only covered the main thread. Capturing
+inside the logic workers works; the Box2D pthread workers cannot be evaluated at all
+(they spin). The bench runner may have the same blind spot.
+
+**Kept outside the repo:** `D:\xampp\htdocs\weed-ab\80464dc1-80464dc1` is a full checkout of
+the pre-review commit, for A/B probes (the bench tooling's normal worktree folder).
+
+### 20:40 — The headed smoke caught my own B13 regression: saving crashed (fixed, `8fb919d4`)
+
+First headed run: no page errors, scenes boot (planet: 310 islands, ship, lamp, water pull;
+terrain: 1108 islands), the camera roll keeps the planet surface level under the ship —
+but **`saveGame` threw `Cannot read properties of null (reading 'length')` in both terrain
+scenes.** B13 made the pack functions return `null` for an unbound pool, and
+`buildSavePayload` still read `.length`; it also dropped empty lists, so the "present but
+empty" section B13 depends on was never written by a real save. My B13 tests built the
+payload by hand and missed the real path. Fixed, and the new tests go through
+`buildSavePayload` (both reproduced the TypeError first). Suite **1214 / 1214**.
+
+The first run's loose-chunk check was also mine to fix: shards spawn through a job queue,
+and I sampled them 400 ms after the click (0 found). The second run tracks every loose
+piece over 3 s.
 
 ### 20:00 — B13 fixed: older saves keep onSpawned geometry; loads keep unowned tweens (`00ac7938`)
 
