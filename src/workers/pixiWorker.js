@@ -45,6 +45,7 @@ import {
 import {
   ensureCompoundSolid,
   segmentDistSq,
+  segmentFacesPoint,
   writeOrientedBoxVerts,
   writePolygonVerts,
 } from '../render/visibility/angularSweep.js';
@@ -2866,6 +2867,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     }
   }
 
+  // transmit-wedge-start
   _emitTransmitWedge(lx, ly, lightR, entityIdx, ex, ey, c, s, ox, oy, block) {
     if (!(block < 1)) return;
     const scale = (1 - block) * VIS_REST;
@@ -2892,6 +2894,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         const y0 = originY + s * seg[o] + c * seg[o + 1];
         const x1 = originX + c * seg[o + 2] - s * seg[o + 3];
         const y1 = originY + s * seg[o + 2] + c * seg[o + 3];
+        // Light-facing edges only: a ray behind the solid crosses its outline
+        // twice (more if concave), so a wedge per edge stacked the transmitted
+        // light (block 0.5 let all of it through). Same as the silhouette wedge
+        // of a single shape.
+        if (!segmentFacesPoint(x0, y0, x1, y1, lx, ly)) continue;
         if (segmentDistSq(lx, ly, x0, y0, x1, y1) > radiusSq) continue;
         this._pushWedge(lx, ly, lightR, x0, y0, x1, y1, scale);
       }
@@ -2934,6 +2941,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     if (!ok) return;
     this._pushWedge(lx, ly, lightR, tan[0], tan[1], tan[2], tan[3], scale);
   }
+  // transmit-wedge-end
 
   _stampOccluderVert(vert, cx, cy, rad) {
     const o = vert * 3;

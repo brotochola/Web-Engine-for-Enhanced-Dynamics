@@ -14,7 +14,9 @@ export const LIGHT_OCCLUDER_MASK_SPRITE = 1;
  *
  * `block` is how much light this body removes. 0 blocks nothing (left out of the
  * visibility sweep). 1 blocks all. Values in between keep the hard silhouette and
- * add the missing light back inside that body's shadow wedge.
+ * add the missing light back inside that body's shadow wedge. A compound solid
+ * adds it behind its light-facing boundary edges only, so a ray passing through
+ * gets it once, as behind a single shape's silhouette.
  * A full block still leaves a 0.33 radial floor in the umbra so the shadow fades
  * near a LightEmitter, matching ShadowCaster's point-shadow scale.
  *

@@ -722,6 +722,15 @@ export function ensureCompoundSolid(
   return solid;
 }
 
+/**
+ * Whether an outline segment faces a point: the segment's outward normal
+ * (dy, -dx) points to the point's side. True for CCW outlines, which is how
+ * ensureCompoundSolid keeps each edge (its fixture's order).
+ */
+export function segmentFacesPoint(x0, y0, x1, y1, px, py) {
+  return (y1 - y0) * (px - x0) - (x1 - x0) * (py - y0) > 0;
+}
+
 export function clearBoundarySegments() {
   _segN = 0;
   _segWorst = 0;
