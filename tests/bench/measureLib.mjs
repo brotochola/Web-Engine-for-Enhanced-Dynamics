@@ -155,6 +155,14 @@ export function extractMetrics(report) {
   const pixi = avgOf(
     pick((w) => w.id === 'renderer' || w.type === 'pixi' || w.id === 'pixi' || w.type === 'renderer')
   );
+  // M4. WAIT_MS is the largest per-worker value: pre-render never blocks on a
+  // sibling, so its own WAIT_MS (what this read before) is 0 by construction.
+  // Logic waits in query claims and results, physics between burst queries.
+  let waitMax = 0;
+  for (const w of workers) {
+    const v = avgOf(w).WAIT_MS ?? 0;
+    if (v > waitMax) waitMax = v;
+  }
   let spatialMax = null;
   for (const w of workers) {
     if (!String(w.id || '').startsWith('spatial')) continue;
@@ -196,7 +204,9 @@ export function extractMetrics(report) {
     FLOWFIELDS_COMPUTED: particle.FLOWFIELDS_COMPUTED ?? 0,
     FLOWFIELDS_SERVICED: particle.FLOWFIELDS_SERVICED ?? 0,
     PATHS_COMPUTED: particle.PATHS_COMPUTED ?? 0,
-    WAIT_MS: preRender.WAIT_MS ?? 0,
+    WAIT_MS: waitMax,
+    physics_WAIT_MS: physics.WAIT_MS ?? 0,
+    logic0_WAIT_MS: logic0.WAIT_MS ?? 0,
     RENDER_QUEUE_SIZE: preRender.RENDER_QUEUE_SIZE ?? 0,
     VISIBLE_ENTITIES: preRender.VISIBLE_ENTITIES ?? 0,
     pixi_STEP_MS: pixi.STEP_MS ?? 0,

@@ -491,6 +491,8 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       { key: 'FPS', label: 'Fps', format: fmtFps },
       { key: 'BOX2D_MS', label: 'Box2d', format: fmtMs, kind: STAT_KIND.TIME },
       { key: 'LIQUIDFUN_MS', label: 'LiquidFun', format: fmtMs, kind: STAT_KIND.NESTED },
+      // M4: waiting for the next logic query of a burst; outside BOX2D_MS.
+      { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
       { key: 'LF_PASS_FIND_CONTACTS_MS', label: 'LfFind', format: fmtMs, kind: STAT_KIND.NESTED },
       { key: 'LF_PASS_CONTACT_SOLVERS_MS', label: 'LfSolv', format: fmtMs, kind: STAT_KIND.NESTED },

@@ -150,7 +150,7 @@ The worker that receives the work may get slower. Scoring that rise as a loss fo
 
 When more than one pre-render worker (or more than one logic or spatial worker) runs the changed code, the primary is the **maximum** `STEP_MS` across those workers. The average hides a worker that fell behind.
 
-`WAIT_MS` is time spent blocked on a sibling or on Pixi. It is not algorithm time. Subtract it before saying the algorithm got cheaper. If the hypothesis is “the join waits less,” then `WAIT_MS` on the slowest worker is the primary, and say that in the hypothesis.
+`WAIT_MS` is time spent blocked on a sibling or on Pixi. It is not algorithm time. Subtract it before saying the algorithm got cheaper. If the hypothesis is “the join waits less,” then `WAIT_MS` on the slowest worker is the primary, and say that in the hypothesis. `measureLib` records `WAIT_MS` as the largest per-worker value plus `physics_WAIT_MS` and `logic0_WAIT_MS`. Logic waits while claiming a query slot and for its result; physics waits between the queries of a burst (M4). Pre-render never blocks, so its `WAIT_MS` is 0.
 
 ## The regime the hypothesis names
 

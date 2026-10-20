@@ -114,7 +114,11 @@
         STATUS_CLAIMED,
       );
       if (prev === STATUS_IDLE) break;
+      // M4: another worker holds the slot. A block on a sibling, like the
+      // wait for DONE, so it is metered too.
+      var tClaim = performance.now();
       Atomics.wait(i32, HDR_STATUS, prev);
+      WAIT_METER.ms += performance.now() - tClaim;
     }
     writeRequest(op, a, b, c, d);
   }
@@ -289,26 +293,31 @@
       }
       if (serviced === 0) break;
 
-      var found = false;
-      for (var spin = 0; spin < 100000; spin++) {
-        if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_PENDING) {
-          found = true;
-          break;
-        }
-      }
-      if (found) continue;
-
-      var s2 = Atomics.load(i32, HDR_STATUS) | 0;
-      if (s2 === STATUS_PENDING) continue;
-      if (s2 === STATUS_CLAIMED) {
-        Atomics.wait(i32, HDR_STATUS, STATUS_CLAIMED, 2.0);
-        continue;
-      }
-      Atomics.wait(i32, HDR_STATUS, s2, 2.0);
-      var s3 = Atomics.load(i32, HDR_STATUS) | 0;
-      if (s3 !== STATUS_PENDING && s3 !== STATUS_CLAIMED) break;
+      var tWait = performance.now();
+      var more = waitForNextRequest();
+      WAIT_METER.ms += performance.now() - tWait;
+      if (!more) break;
     }
     return serviced;
+  }
+
+  /**
+   * Spin, then wait up to 2 ms, for the next request of a burst. False ends the
+   * burst. The physics step is blocked on a logic worker here (M4: WAIT_MS).
+   */
+  function waitForNextRequest() {
+    for (var spin = 0; spin < 100000; spin++) {
+      if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_PENDING) return true;
+    }
+    var s2 = Atomics.load(i32, HDR_STATUS) | 0;
+    if (s2 === STATUS_PENDING) return true;
+    if (s2 === STATUS_CLAIMED) {
+      Atomics.wait(i32, HDR_STATUS, STATUS_CLAIMED, 2.0);
+      return true;
+    }
+    Atomics.wait(i32, HDR_STATUS, s2, 2.0);
+    var s3 = Atomics.load(i32, HDR_STATUS) | 0;
+    return s3 === STATUS_PENDING || s3 === STATUS_CLAIMED;
   }
 
   global.LiquidFunQuery = {

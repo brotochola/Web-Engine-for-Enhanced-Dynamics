@@ -67,6 +67,10 @@
     IDLE_MS: 48,
   };
 
+  // M4: blocked-on-sibling ms inside the step. The query IIFEs (bursts waiting
+  // for the next logic query) add to this shared object; the step resets it.
+  var WAIT_METER = global.__weedWaitMeter || (global.__weedWaitMeter = { ms: 0 });
+
   // E-24. Keep these offsets in sync with src/util/frameClock.js.
   // ponytail: classic IIFE cannot import that module (upgrade: importScripts one impl).
   var FC_HEADER = 32;
@@ -1229,6 +1233,7 @@
       // Cap scaled dt so fast-forward or large hitch cannot destabilize Box2D constraints.
       var maxStableDt = 1 / 30;
       if (dt > maxStableDt) dt = maxStableDt;
+      WAIT_METER.ms = 0;
       if (dt > 0) {
         state._inStep = true;
         try {
@@ -1239,6 +1244,7 @@
       }
       if (state.stats) {
         state.stats[PS.STEP_MS] = performance.now() - t0;
+        state.stats[PS.WAIT_MS] = WAIT_METER.ms;
       }
     }
     state._lastFrameEndAt = performance.now();
@@ -1271,6 +1277,7 @@
     var dt = (deltaTimeMs / 1000) * readTimeScale();
     if (state.box2dReady && dt > 0) {
       var t0 = performance.now();
+      WAIT_METER.ms = 0;
       state._inStep = true;
       try {
         weedjsDoStep(dt, state.settings.subStepCount);
@@ -1279,6 +1286,7 @@
       }
       if (state.stats) {
         state.stats[PS.STEP_MS] = performance.now() - t0;
+        state.stats[PS.WAIT_MS] = WAIT_METER.ms;
       }
     }
     writeFPS();

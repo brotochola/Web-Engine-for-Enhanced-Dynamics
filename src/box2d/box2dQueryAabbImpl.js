@@ -120,7 +120,11 @@
         STATUS_CLAIMED,
       );
       if (prev === STATUS_IDLE) break;
+      // M4: another worker holds the slot. A block on a sibling, like the
+      // wait for DONE, so it is metered too.
+      var tClaim = performance.now();
       Atomics.wait(i32, HDR_STATUS, prev);
+      WAIT_METER.ms += performance.now() - tClaim;
     }
     writeRequest(x0, y0, x1, y1, filter);
   }
