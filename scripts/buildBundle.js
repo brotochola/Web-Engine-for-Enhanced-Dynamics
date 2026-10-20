@@ -474,8 +474,12 @@ function webpackBundle({ prod, compressed, workers, workerCommon, box2dWorkerSou
     );
 
     console.log(`🎁 Webpack UMD+ESM [${label}]...`);
-    runWebpack('webpack.bundle.config.js', env);
-    fs.unlinkSync(bundleEntryPath);
+    try {
+        runWebpack('webpack.bundle.config.js', env);
+    } finally {
+        // A failed webpack must not leave the generated entry in src/.
+        fs.rmSync(bundleEntryPath, { force: true });
+    }
 
     return [
         bundleFileName({ prod, esm: false, compressed }),
@@ -523,7 +527,8 @@ function cleanupDistTemps() {
     if (!fs.existsSync(distDir)) return;
     for (const file of fs.readdirSync(distDir)) {
         if (KEEP_DIST_FILES.has(file)) continue;
-        fs.rmSync(path.join(distDir, file), { recursive: true, force: true });
+        // Windows: an indexer or antivirus can hold a file for a moment.
+        fs.rmSync(path.join(distDir, file), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
         console.log('   Removed: dist/' + file);
     }
 }
@@ -540,6 +545,11 @@ function copySmokeTest() {
 
 function main() {
     console.log('🌿 Building WeedJS single-file bundles (debug + prod, raw + compressed)...\n');
+
+    // The stamp says dist/ matches src/version.js. Drop it before writing
+    // anything, so a build that fails halfway leaves no stamp, and distVersion
+    // refuses the half-new dist/ instead of trusting the previous stamp.
+    fs.rmSync(path.join(distDir, BUILD_STAMP_FILE), { force: true });
 
     console.log('📦 Preparing shared Box2D embed (gzip → base64)...');
     const box2dWorkerSource = buildBox2dWorkerSource();
@@ -592,9 +602,13 @@ function main() {
     console.log('   index.html:             Bundle smoke test (?bundle= filename)');
 }
 
-const isDirectRun =
-    Boolean(process.argv[1]) &&
-    path.normalize(path.resolve(process.argv[1])) === path.normalize(__filename);
+// Windows paths compare case-insensitively: `node d:/...` against a `D:\...`
+// module path read as "imported", and the build silently did nothing.
+const normPath = (p) => {
+    const abs = path.normalize(path.resolve(p));
+    return process.platform === 'win32' ? abs.toLowerCase() : abs;
+};
+const isDirectRun = Boolean(process.argv[1]) && normPath(process.argv[1]) === normPath(__filename);
 
 if (isDirectRun) {
     main();
