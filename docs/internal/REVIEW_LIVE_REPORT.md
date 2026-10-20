@@ -17,9 +17,26 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**07:30** — B29 continues: flipped-sprite sort line, then the rest of the list.
+**08:20** — B29, the last five items: pack fast-path strides, debug selection box, camera getter
+JSDoc, `renderOnly` ghost rows, shadow republish.
 
 ## Log
+
+### 08:15 — B29: four more fixes (`75db93fb`, `7bc33c81`, `fdd9dc1d`, `9c65edec`)
+
+- **Vertically flipped sprites sorted at the wrong depth** (`75db93fb`). The sprite shader confirms a
+  flip puts the frame's top edge lowest, but the sort line always used the bottom edge. The old
+  test only checked `anchorY = 0.5`, where the two coincide. With `anchorY = 0.25` the old line
+  was 40 px off.
+- **Very large light polygons leaked light** (`7bc33c81`). A fixed 8192-vertex buffer cut longer
+  polygons short, closing them with a chord. On a 9000-vertex circle the old code stopped rays
+  **2.4 px** short in that arc, exactly the chord math.
+- **`particleLights.max` could allocate gigabytes** (`fdd9dc1d`). It's now capped at 65535 with a
+  warning, matching LiquidFun's limit.
+- **Two workers editing the same layer texture could lose a region** (`9c65edec`). The upload
+  handshake assumed one writer. A two-thread probe lost a dirty rectangle in **4 of 200** rounds;
+  with the fix, **0 of 600**. The test is deterministic: it fails on the old code every time.
+- Suite **1299/1299**.
 
 ### 07:25 — B29: three engine bugs fixed (`e95bf3a4`, `e75c25bf`, `4bac5008`)
 
