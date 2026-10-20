@@ -28,8 +28,21 @@ export function resolveParticleLights(particleLights, raycasted) {
     };
   }
   const max = cfg.max != null ? cfg.max | 0 : LIGHTING_DEFAULTS.particleLights.max;
-  return max > 0 ? { enabled: true, max, warning: null } : { enabled: false, max: 0, warning: null };
+  if (!(max > 0)) return { enabled: false, max: 0, warning: null };
+  // The splat allocates max instances up front (16 bytes each); cap it like
+  // LiquidFun's maxCount instead of letting a typo allocate gigabytes.
+  if (max > PARTICLE_LIGHT_MAX) {
+    return {
+      enabled: true,
+      max: PARTICLE_LIGHT_MAX,
+      warning: `lighting.particleLights.max ${max} is above ${PARTICLE_LIGHT_MAX}; capped`,
+    };
+  }
+  return { enabled: true, max, warning: null };
 }
+
+/** Upper bound for lighting.particleLights.max (same as LiquidFun maxCount). */
+export const PARTICLE_LIGHT_MAX = 65535;
 /** Drop quads whose projected alpha is at or under this. */
 export const PARTICLE_LIGHT_ALPHA_CUT = 1 / 255;
 /** Drop quads smaller than half a lighting-RT pixel. */

@@ -37,3 +37,14 @@ test('Pixi decides before it builds the lighting system and the splat', () => {
   assert.ok(resolve > 0 && resolve < build && build < splat);
   assert.match(pixi.slice(resolve, build), /data\.visibilityPolygons && data\.visibilityPolygons\.enabled/);
 });
+
+// B29 (particleLights.max unvalidated). The splat allocates max instances up
+// front; a stray 1e8 tried to allocate 1.6 GB.
+test('particleLights.max is capped with a warning', async () => {
+  const { PARTICLE_LIGHT_MAX } = await import('../../src/render/particleLightSplat.js');
+  const r = resolveParticleLights({ enabled: true, max: 1e8 }, false);
+  assert.equal(r.enabled, true);
+  assert.equal(r.max, PARTICLE_LIGHT_MAX);
+  assert.match(r.warning, /above 65535; capped/);
+  assert.deepEqual(resolveParticleLights({ enabled: true, max: PARTICLE_LIGHT_MAX }, false).warning, null);
+});
