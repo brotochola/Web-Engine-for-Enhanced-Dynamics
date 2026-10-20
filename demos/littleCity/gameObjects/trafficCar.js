@@ -5,6 +5,7 @@ import { Car } from '/demos/carScene/gameObjects/car.js';
 import { NavGrid } from '/src/core/navGrid.js';
 import { CarComponent } from '/demos/carScene/components/carComponent.js';
 import { CityPerson } from './cityPerson.js';
+import { avoidTurnSign } from '../avoidSteer.js';
 import { dot2 } from '/src/util/utils.js';
 
 const { SpriteRenderer, RigidBody, Collider, CollisionListener, Transform } = WEED;
@@ -116,8 +117,8 @@ export class TrafficCar extends Car {
       const sideU = 1 - absSide / corridor;
       const urgency = aheadU * (0.4 + 0.6 * sideU);
       if (urgency > brake) brake = urgency;
-      // Positive steer is left of forward; push away from the side they occupy
-      steer += (side >= 0 ? 1 : -1) * urgency;
+      // Turn away from the side they occupy (road-seek's sign turns toward).
+      steer += avoidTurnSign(fx, fy, dx, dy) * urgency;
     }
 
     return {
