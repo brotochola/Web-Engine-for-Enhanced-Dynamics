@@ -5,6 +5,7 @@
 
 import { Component } from '../component.js';
 import { Collider } from '../../components/collider.js';
+import { ShapeType } from '../../util/configDefaults.js';
 import { Camera } from '../camera.js';
 import { ChainPoints } from '../chainPoints.js';
 import { ColliderFixture } from '../colliderFixture.js';
@@ -94,6 +95,8 @@ export function packChains(entityIndices) {
   for (let i = 0; i < entityIndices.length; i++) {
     const entityIndex = entityIndices[i] | 0;
     if (entityIndex < 0 || entityIndex >= ChainPoints.entityCount) continue;
+    // Points left in a slot whose collider is no longer a chain are not its shape.
+    if (Collider.shapeType && (Collider.shapeType[entityIndex] | 0) !== ShapeType.Chain) continue;
     const count = ChainPoints.count[entityIndex] | 0;
     const begin = ChainPoints.begin[entityIndex] | 0;
     if (begin < 0 || count <= 0) continue;

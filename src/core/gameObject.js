@@ -19,6 +19,7 @@ import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
 import { ColliderFixture } from './colliderFixture.js';
+import { ChainPoints } from './chainPoints.js';
 import { MeshGeometry } from './meshGeometry.js';
 import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
 import { collectComponents, collisionPairKey, distanceSq2D, debugWorkerLog } from '../util/utils.js';
@@ -1896,6 +1897,29 @@ export class GameObject {
    * - List updates (activeEntities, perTypeActive, queries) are QUEUED
    * - Only logic0 processes list updates (at start of each frame)
    */
+  /**
+   * Pools a slot holds besides its component flags: collider layer feeds,
+   * attached decorations, extra fixtures, chain points, custom mesh. despawn
+   * and despawnAll both call this after onDespawned. despawnAll had drifted and
+   * freed neither fixtures nor feeds (a save restore leaked the terrain's
+   * fixtures on every load), and neither path freed chain points (a recycled
+   * slot kept the old chain, which the next save wrote).
+   * @param {number} i
+   */
+  static _releaseSlotResources(i) {
+    if (Collider.layerMask) {
+      const old = Collider.layerMask[i] | 0;
+      if (old) {
+        Collider.layerMask[i] = 0;
+        syncColliderFeed(i, old, 0);
+      }
+    }
+    DecorationPool.clearAttachedAndDespawnAll(i);
+    ColliderFixture.removeAllForEntity(i);
+    if (ChainPoints.begin && ChainPoints.begin[i] >= 0) ChainPoints.clearForEntity(i);
+    MeshGeometry.clearEntity(i);
+  }
+
   despawn() {
     const i = this.index;
     const activeState = Transform.active[i];
@@ -1920,15 +1944,7 @@ export class GameObject {
       this.onDespawned();
     }
 
-    if (this._hasComponents?.Collider && Collider.layerMask) {
-      const old = Collider.layerMask[i] | 0;
-      Collider.layerMask[i] = 0;
-      if (old) syncColliderFeed(i, old, 0);
-    }
-
-    DecorationPool.clearAttachedAndDespawnAll(i);
-    ColliderFixture.removeAllForEntity(i);
-    MeshGeometry.clearEntity(i);
+    GameObject._releaseSlotResources(i);
 
     // ========================================
     // COMPONENT DEACTIVATION (SAFE - unique index)
@@ -2606,8 +2622,7 @@ export class GameObject {
 
     if (instance._spawnAborted) {
       instance._spawnAborted = false;
-      ColliderFixture.removeAllForEntity(i);
-      MeshGeometry.clearEntity(i);
+      GameObject._releaseSlotResources(i);
       Transform.active[i] = 0;
       if (has.RigidBody) {
         RigidBody.active[i] = 0;
@@ -2746,6 +2761,9 @@ export class GameObject {
     const rigidBodySleeping = RigidBody.sleeping;
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
+    const spriteRenderVisible = SpriteRenderer.renderVisible;
+    const spriteSheetId = SpriteRenderer.spritesheetId;
+    const spriteAnimState = SpriteRenderer.animationState;
     const meshRendererActive = MeshRenderer.active;
     const adobeAnimActive = AdobeAnimComponent.active;
     const lightEmitterActive = LightEmitter.active;
@@ -2789,8 +2807,7 @@ export class GameObject {
           instance.onDespawned();
         }
 
-        DecorationPool.clearAttachedAndDespawnAll(i);
-        MeshGeometry.clearEntity(i);
+        GameObject._releaseSlotResources(i);
         indicesToDespawn.add(i);
 
         // Deactivate all component active flags
@@ -2799,7 +2816,13 @@ export class GameObject {
         if (rigidBodyActive) rigidBodyActive[i] = 0;
         if (rigidBodySleeping) rigidBodySleeping[i] = 0;
         if (colliderActive) colliderActive[i] = 0;
-        if (spriteRendererActive) spriteRendererActive[i] = 0;
+        if (spriteRendererActive) {
+          spriteRendererActive[i] = 0;
+          // As in despawn: a recycled slot mid-reset must not draw as a valid sprite.
+          if (spriteRenderVisible) spriteRenderVisible[i] = 0;
+          if (spriteSheetId) spriteSheetId[i] = 0;
+          if (spriteAnimState) spriteAnimState[i] = -1;
+        }
         if (meshRendererActive) meshRendererActive[i] = 0;
         if (adobeAnimActive) adobeAnimActive[i] = 0;
         if (lightEmitterActive) lightEmitterActive[i] = 0;
