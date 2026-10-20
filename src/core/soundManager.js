@@ -110,6 +110,7 @@ export class SoundManager {
 
   // Spatial culling / panning
   static _spatialResult = { audible: 1, gain: 1, pan: 0 };
+  static _spatialScreen = { x: 0, y: 0 };
 
   // Autoplay gate
   static _audioUnlocked = false;
@@ -1508,26 +1509,22 @@ export class SoundManager {
     if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) return out;
 
     const Camera = globalThis.Camera;
-    if (!Camera || typeof Camera.getViewportBounds !== 'function') return out;
-
-    const viewport = Camera.getViewportBounds();
-    if (!viewport || !Number.isFinite(viewport.width) || viewport.width <= 0) return out;
+    if (!Camera || typeof Camera.worldToScreen !== 'function') return out;
+    const cw = Camera.canvasWidth;
+    const ch = Camera.canvasHeight;
+    if (!(cw > 0 && ch > 0)) return out;
 
     const zoom = Camera.zoom;
     const zoomGain = (zoom > 0 && zoom < 1) ? zoom : 1;
 
-    const left = viewport.left;
-    const right = viewport.right;
-    const top = viewport.top;
-    const bottom = viewport.bottom;
-    const centerX = (left + right) * 0.5;
-    const viewportWidth = viewport.width;
+    // Screen space through the drawn camera, so pan follows screen x and the
+    // falloff is the same at any camera angle. Unturned, this equals the old
+    // world-space form: pan over 1.5 view widths, silent one width outside.
+    const s = Camera.worldToScreen(worldX, worldY, this._spatialScreen);
+    out.pan = Math.max(-1, Math.min(1, (s.x - cw * 0.5) / (cw * 1.5)));
 
-    const dxFromCenter = worldX - centerX;
-    out.pan = Math.max(-1, Math.min(1, dxFromCenter / (viewportWidth * 1.5)));
-
-    const dxOut = worldX < left ? left - worldX : worldX > right ? worldX - right : 0;
-    const dyOut = worldY < top ? top - worldY : worldY > bottom ? worldY - bottom : 0;
+    const dxOut = s.x < 0 ? -s.x : s.x > cw ? s.x - cw : 0;
+    const dyOut = s.y < 0 ? -s.y : s.y > ch ? s.y - ch : 0;
     const outsideDistance = Math.sqrt(dxOut * dxOut + dyOut * dyOut);
 
     if (outsideDistance <= 0) {
@@ -1535,7 +1532,7 @@ export class SoundManager {
       return out;
     }
 
-    const gain = 1 - outsideDistance / viewportWidth;
+    const gain = 1 - outsideDistance / cw;
     if (gain <= 0) {
       out.audible = 0;
       out.gain = 0;

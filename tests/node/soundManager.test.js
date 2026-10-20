@@ -270,8 +270,12 @@ test('a sound far outside the camera takes no slot', { concurrency: false }, () 
   boot();
   globalThis.Camera = {
     zoom: 1,
-    getViewportBounds() {
-      return { left: 0, right: 100, top: 0, bottom: 100, width: 100, height: 100 };
+    canvasWidth: 100,
+    canvasHeight: 100,
+    worldToScreen(x, y, out) {
+      out.x = x;
+      out.y = y;
+      return out;
     },
   };
   const slot = SoundManager.play('hit', 1, 1, 1, 0, 0, 10000, 10000, 'sfx');

@@ -349,7 +349,7 @@ Slot word `+7` is the bus in bits 0..7 and that bus's list index in bits 8..23. 
 
 **PCM assets** are decoded on the main thread (`AudioContext.decodeAudioData`) and transferred to the worklet via `postMessage({ type: 'load', id, channels, length })`. Once loaded, asset data stays local to the worklet process.
 
-**Spatial audio:** `SoundManager._computeSpatial()` runs on the caller's thread before writing the slot. It derives `gain` (distance attenuation from camera viewport) and `pan` (stereo position relative to viewport center). Sounds a full viewport-width outside the camera are culled and never written.
+**Spatial audio:** `SoundManager._computeSpatial()` runs on the caller's thread before writing the slot. It derives `gain` (distance attenuation from camera viewport) and `pan` (stereo position relative to viewport center). Sounds a full viewport-width outside the camera are culled and never written. Both are measured on the screen through `Camera.worldToScreen` (the drawn camera), so pan follows screen x when the camera is turned.
 
 | Buffer / Data                        | Access    | Notes                                       |
 | ------------------------------------ | --------- | ------------------------------------------- |
