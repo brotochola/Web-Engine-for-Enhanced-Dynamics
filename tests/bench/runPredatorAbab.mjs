@@ -16,6 +16,8 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { median, pctDelta, writeJson } from './featureTournamentLib.mjs';
@@ -226,6 +228,42 @@ function parseOverrides(raw) {
   return out;
 }
 
+// Review M9. What a sitting's pairs were measured with. --append pools new
+// pairs with old ones, which is only a median of one measurement when the
+// metric set, scene, protocol, baseline and both trees are the same.
+function sittingStamp(scene, opts, args, baseline) {
+  const git = (argv, encoding) => execFileSync('git', argv, { cwd: repoRoot, encoding, maxBuffer: 1 << 28 });
+  return {
+    schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS },
+    scene: { path: scene.path, exportName: scene.exportName },
+    protocol: {
+      headed: opts.headed,
+      detailedStats: opts.detailedStats,
+      warmupMs: opts.warmupMs,
+      durationMs: opts.durationMs,
+      query: opts.query,
+      extraArgs: opts.extraArgs,
+    },
+    vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
+    overrides: baseline.overrides ?? null,
+    // B is the working tree, and A is built from its HEAD: both change with these.
+    tree: {
+      head: git(['rev-parse', 'HEAD'], 'utf8').trim(),
+      diff: createHash('sha1').update(git(['diff', 'HEAD', '--binary'], 'buffer')).digest('hex'),
+    },
+  };
+}
+
+/** The stamp fields where an earlier sitting differs; empty when its pairs may be pooled. */
+export function appendMismatches(prev, stamp) {
+  if (!prev || !prev.stamp) return ['stamp (the earlier sitting was written before --append checked one)'];
+  const out = [];
+  for (const k of Object.keys(stamp)) {
+    if (JSON.stringify(prev.stamp[k] ?? null) !== JSON.stringify(stamp[k] ?? null)) out.push(k);
+  }
+  return out;
+}
+
 export function decideAbab(pairs, owner, metric = null) {
   const kinds = {};
   for (const kind of KINDS) {
@@ -391,7 +429,8 @@ async function main() {
     // Detailed stats are required whenever a hypothesis probe is in play.
     //
     // `preRenderWorker.reportFPS` ends with `if (!this.collectDetailedStats) return;`
-    // before publishing RENDER_QUEUE_SIZE, COLLECT_MS, EMIT_MS and SPRITE_PACK_MS.
+    // before publishing COLLECT_MS, EMIT_MS and SPRITE_PACK_MS (RENDER_QUEUE_SIZE
+    // was behind it too until review M1; it is published every frame now).
     // The gate used to pass `--no-collect-detailed-stats` unconditionally, which
     // made every preRender-keyed probe read a permanent zero and made the whole
     // depth breakdown disappear.
@@ -456,8 +495,21 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     ? ensureRevWorktree(String(args.vs))
     : ensureOverlayWorktree(name, parseOverrides(rawOverrides));
   console.log(`baseline worktree ${baseline.root}`);
-  // --append: add pairs to the previous sitting of the same hypothesis.
-  const pairs = args.append && fs.existsSync(summaryPath) ? JSON.parse(fs.readFileSync(summaryPath, 'utf8')).pairs : [];
+  // --append: add pairs to the previous sitting of the same hypothesis, only when
+  // that sitting was measured the same way (review M9).
+  const stamp = sittingStamp(scene, opts, args, baseline);
+  let pairs = [];
+  if (args.append && fs.existsSync(summaryPath)) {
+    const prev = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+    const differs = appendMismatches(prev, stamp);
+    if (differs.length) {
+      throw new Error(
+        `--append refused: the earlier sitting differs in ${differs.join(', ')}. ` +
+          'Its pairs measured something else; start a new sitting under another name.',
+      );
+    }
+    pairs = prev.pairs;
+  }
   const first = pairs.length;
   for (let p = first; p < first + nPairs; p++) {
     const pair = {};
@@ -529,6 +581,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     protocol: { ...opts, pairs: pairs.length, order: 'AB BA AB BA', seed: 123456 },
     vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
     overrides: baseline.overrides ?? null,
+    stamp,
     pairs,
     decision,
   };
