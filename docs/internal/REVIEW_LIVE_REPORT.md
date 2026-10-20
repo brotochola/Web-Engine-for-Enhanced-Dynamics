@@ -17,10 +17,67 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**20:14** — Phase 2: M1–M7 done. Next: M8–M12 (behavioural tests, harness bugs, two stat
-comments, bundle temp files).
+**20:36** — Phase 2 done except M8 (turn ~15 source-text tests into behavioural ones, plus a
+Node loader so demo code can be tested). That's a bigger piece; I'll scope it next, then go on to
+Phase 3.
 
 ## Log
+
+### 20:36 — M9–M12: the measuring tools, and two old verdicts whose instruments were wrong
+
+Commits: `14f7198f`, `539256dc`, `5a44cb17`, `7c286f2e`, `59ad3dcb`, `8eb7eb08`, `991c185b`,
+`d3906710`, `f113af06`, `846023ae`, `d61699a0`, `0c35be67`, `d9308478`.
+
+- **Two old verdicts rested on wrong premises. Both conclusions survive, now for the right
+  reasons:**
+  - **Pair keys (E-10, `14f7198f`):**
+    - The verdict said the keys are never boxed because "the full int32 range is the Smi range
+      on pointer-compressed V8". That's backwards: pointer compression is what makes Smis
+      31-bit, and Chrome uses it. Node, where E-10 ran, doesn't.
+    - Its "0 boxed out of 715 million" only checked the int32 range, which this kind of key can
+      never leave.
+    - Measured properly (`d9308478`): 50 % of all 16-bit keys would box in Chrome, but **0 %**
+      at Predator's entity counts. A key only boxes once its smaller entity index reaches 16384.
+      So it doesn't matter for any demo today. The Chrome-side question is **E-54**.
+  - **The CPU-cores probe (E-34, `f113af06`):** it compared CPU over the whole run (including
+    browser start and warmup) against step time from the measured window only. Windowed
+    properly: 1.72 cores at 4 workers (was 1.88). The verdict holds with more margin.
+- **E-19's mechanism is now measured, not inferred** (`f113af06`). Its script timed the writer
+  into a plain array and let the reader run mostly alone. Fixed, across 3 runs: `.set()` writes
+  6–7× faster, and slows a reader on another core to 0.78–0.85×. That's exactly the "faster for
+  the writer, worse for the readers" shape E-19 guessed.
+- **Measuring tools that could silently mislead:**
+  - Four kernels ignored `--output`, so the A/B tool could read a stale file (`7c286f2e`).
+  - `--append` could pool pairs measured under different conditions (`59ad3dcb`). It now checks
+    a stamp covering the metric set, scene, protocol, baseline and both code trees.
+  - The re-judging script read two fields that are never written (`8eb7eb08`). No existing
+    verdict changes.
+  - The frame-phase runner could be throttled on Windows when its window was covered
+    (`d3906710`).
+  - The visual compare could screenshot the debug canvas instead of the game (`d61699a0`).
+  - Three kernels timed copies of engine code instead of the engine's own code (`d9308478`).
+    Checksums are identical after switching.
+- **Clock cost in the clearShapes timing** (`846023ae`).
+  - Each sample timed one 1.4–3.5 µs call, so the clock read itself (~60 ns here) was 2–5 % of
+    every sample.
+  - I first tried timing clears in batches. That changed the result 3.5×, because more bodies
+    means a bigger collision tree, so it was measuring a different situation. I dropped it and
+    subtract the measured clock cost instead.
+- **Stats and logs:**
+  - Logic now publishes its *own* pair count next to the total (`539256dc`). The total is the
+    same on every worker, so adding it up across workers double-counts.
+  - Leftover comments from a reverted optimization (H-14) described a sort the code doesn't do
+    (`0c35be67`).
+- **Build script** (`5a44cb17`):
+  - It no longer leaves temp files after a failed build.
+  - It no longer keeps the old version stamp over a half-built `dist/`.
+  - Run as `node d:/...` with a lowercase drive letter, it used to silently do nothing.
+  - Not exercised with a full build, because `dist/` is tracked and rebuilding it is your call.
+- **A flag for you:** a note from 10-14 in `runPredatorAbab.mjs` says `measureLib.mjs` is
+  "off-limits" because of in-progress Spanish translation work. measureLib was edited twice
+  since then (10-18), so I treated the note as stale and changed one line there in M4 (the
+  `WAIT_MS` source). If that translation work is still live, tell me and I'll move that line.
+- Suite **1324/1324**.
 
 ### 20:14 — M4–M7: waiting is measured, one old verdict re-checked, four tests that could not fail (`078169b4`, `7e04aee2`, `1ff45964`, `ab4622e9`)
 
