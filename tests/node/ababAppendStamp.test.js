@@ -33,3 +33,17 @@ test('each kind of difference is named', () => {
   prev.protocol.warmupMs = 8000;
   assert.deepEqual(appendMismatches({ stamp: prev, pairs: [] }, now), ['schema', 'protocol', 'tree']);
 });
+
+// Review M9. readjudicateAbab read protocol.owner / protocol.metric, which no
+// summary contains; a refused sitting's decision has no owner either, so the
+// re-adjudication ran with none. redecide reads what the runner writes.
+test('redecide takes the owner and metric the runner recorded', async () => {
+  const { redecide } = await import('../../tests/bench/runPredatorAbab.mjs');
+  const kinds = ['logic', 'spatial', 'physics', 'renderer', 'particle', 'preRender'];
+  const side = (ms) => Object.fromEntries(kinds.map((k) => [`${k}_STEP_MS`, k === 'preRender' ? ms : 0.02]));
+  const pairs = [0, 1, 2, 3].map(() => ({ A: side(7), B: side(7) }));
+  const s = { owner: 'preRender', probe: { metric: 'EMIT_MS' }, decision: { verdict: 'REFUSED' }, pairs };
+  const d = redecide(s);
+  assert.equal(d.owner, 'preRender');
+  assert.equal(d.metric, 'EMIT_MS');
+});

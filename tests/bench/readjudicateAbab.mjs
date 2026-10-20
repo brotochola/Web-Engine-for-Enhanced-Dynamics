@@ -20,7 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decideAbab } from './runPredatorAbab.mjs';
+import { redecide } from './runPredatorAbab.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BASE = path.join(ROOT, 'tests/results/predator-abab');
@@ -50,10 +50,10 @@ for (const name of dirs) {
     console.log(`skip ${name}: no recorded pairs`);
     continue;
   }
-  const owner = s.protocol?.owner ?? s.decision?.owner ?? null;
-  const metric = s.protocol?.metric ?? s.decision?.metric ?? null;
   const before = s.decision?.verdict ?? '(none)';
-  const d = decideAbab(s.pairs, owner, metric);
+  // Same inputs the runner's --decide-only uses (review M9: this used to read
+  // protocol.owner / protocol.metric, which no summary contains).
+  const d = redecide(s);
   const flag = d.verdict === before ? '   ' : ' * ';
   if (d.verdict !== before) changed++;
 

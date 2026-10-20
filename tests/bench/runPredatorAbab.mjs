@@ -254,6 +254,20 @@ function sittingStamp(scene, opts, args, baseline) {
   };
 }
 
+/**
+ * Recompute a written sitting's verdict from its own recorded inputs: the
+ * top-level owner and the probe's metric, as the runner writes them. One
+ * function for --decide-only and readjudicateAbab, which used to read
+ * protocol.owner / protocol.metric, fields nothing writes (review M9).
+ */
+export function redecide(summary, owner = null) {
+  return decideAbab(
+    summary.pairs,
+    owner ?? summary.owner ?? summary.decision?.owner ?? null,
+    summary.probe?.metric ?? summary.decision?.metric ?? null,
+  );
+}
+
 /** The stamp fields where an earlier sitting differs; empty when its pairs may be pooled. */
 export function appendMismatches(prev, stamp) {
   if (!prev || !prev.stamp) return ['stamp (the earlier sitting was written before --append checked one)'];
@@ -485,7 +499,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   const summaryPath = path.join(outDir, 'summary.json');
   if (args['decide-only']) {
     const prev = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
-    prev.decision = decideAbab(prev.pairs, owner ?? prev.owner, prev.probe?.metric ?? null);
+    prev.decision = redecide(prev, owner);
     writeJson(summaryPath, prev);
     printDecision(name, prev.decision);
     return;
