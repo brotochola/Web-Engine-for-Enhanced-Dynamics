@@ -224,7 +224,7 @@ async function main() {
       'already a Smi for every input.',
   };
 
-  if (isCli(import.meta.url)) writeReport('tests/results/e10-pair-key-smi/kernel.json', report);
+  if (isCli(import.meta.url)) writeReport(args.output || 'tests/results/e10-pair-key-smi/kernel.json', report);
   console.log(JSON.stringify(report, null, 2));
 }
 

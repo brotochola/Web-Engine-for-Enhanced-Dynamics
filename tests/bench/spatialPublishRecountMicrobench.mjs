@@ -122,7 +122,7 @@ async function main() {
       'docs/internal/reports/E-02-publish-recount.md.',
   };
 
-  if (isCli(import.meta.url)) writeReport('tests/results/e02-publish-recount/kernel.json', report);
+  if (isCli(import.meta.url)) writeReport(args.output || 'tests/results/e02-publish-recount/kernel.json', report);
   console.log(JSON.stringify(report, null, 2));
 }
 

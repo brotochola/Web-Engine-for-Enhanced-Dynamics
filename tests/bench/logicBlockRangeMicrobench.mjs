@@ -171,7 +171,7 @@ async function main() {
       'worker step.',
   };
 
-  if (isCli(import.meta.url)) writeReport('tests/results/e03-block-range/kernel.json', report);
+  if (isCli(import.meta.url)) writeReport(args.output || 'tests/results/e03-block-range/kernel.json', report);
   console.log(JSON.stringify(report, null, 2));
 }
 

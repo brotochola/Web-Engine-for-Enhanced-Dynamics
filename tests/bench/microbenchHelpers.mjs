@@ -148,10 +148,14 @@ export function parseArgs(argv = process.argv.slice(2)) {
 }
 
 /** Write a JSON report under tests/results/ (or absolute path). */
+// Relative report paths resolve against this tree's root, not the cwd: a kernel
+// run from tests/bench used to write tests/bench/tests/results/... (review M9).
+const REPORT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
 export function writeReport(outputPath, payload) {
   const resolved = path.isAbsolute(outputPath)
     ? outputPath
-    : path.resolve(process.cwd(), outputPath);
+    : path.resolve(REPORT_ROOT, outputPath);
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
   const body = {
     ...payload,

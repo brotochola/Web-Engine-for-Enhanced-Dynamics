@@ -207,7 +207,7 @@ async function main() {
       'resolved by this harness and the verdict is hygiene.',
     verdict: 'screen-only',
   };
-  if (isCli(import.meta.url)) writeReport('tests/results/e17-stamp-grid/kernel.json', report);
+  if (isCli(import.meta.url)) writeReport(args.output || 'tests/results/e17-stamp-grid/kernel.json', report);
   console.log(JSON.stringify(report, null, 2));
 }
 
