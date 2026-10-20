@@ -997,22 +997,17 @@ export class SoundManager {
     Atomics.store(chI, tail, 0);
   }
 
-  // A list entry is this bus's voice only while the slot is PLAYING and word 7 still
-  // names this bus and this list index. The audio thread frees a voice with a bare
+  // A list entry at index i is this bus's voice only while the slot is PLAYING and
+  // its word 7 is exactly `bus | (i << 8)`. The audio thread frees a voice with a bare
   // CAS and never touches the lists, so a freed slot that another bus re-claimed (or
   // this bus re-claimed at a new index) must not read as live here.
-  static _ownsListed(b, bus, listIndex) {
-    const i32 = this._i32;
-    if (Atomics.load(i32, b) !== this.STATE_PLAYING) return false;
-    const w = i32[b + 7] | 0;
-    return (w & 0xff) === bus && (w >>> 8) === listIndex;
-  }
-
   static _publishQuiet(bus, tail) {
     const chI = this._channelI32;
+    const i32 = this._i32;
     const f32 = this._f32;
     const H = this.HEADER_SIZE;
     const S = this.SLOT_SIZE;
+    const PLAYING = this.STATE_PLAYING;
     const list = tail + this.TAIL_META;
     const n = chI[tail + 1] | 0;
     let qS = -1;
@@ -1023,10 +1018,9 @@ export class SoundManager {
     for (let i = 0; i < n; i++) {
       const slot = chI[list + i] | 0;
       const b = H + slot * S;
-      if (!this._ownsListed(b, bus, i)) continue;
+      if (Atomics.load(i32, b) !== PLAYING || (i32[b + 7] | 0) !== (bus | (i << 8))) continue;
       chI[list + kept] = slot;
-      const packed = (this._i32[b + 7] & 0xff) | (kept << 8);
-      this._i32[b + 7] = packed;
+      i32[b + 7] = bus | (kept << 8);
       const vol = f32[b + 4];
       if (qS < 0 || vol < qV || (vol === qV && slot < qS)) {
         sS = qS;
@@ -1110,9 +1104,11 @@ export class SoundManager {
     const list = tail + this.TAIL_META;
     const base = this.HEADER_SIZE;
     const stride = this.SLOT_SIZE;
+    const PLAYING = this.STATE_PLAYING;
     for (let i = 0; i < n; i++) {
-      const slot = chI[list + i] | 0;
-      if (!this._ownsListed(base + slot * stride, bus, i)) {
+      const b = base + (chI[list + i] | 0) * stride;
+      // Same ownership rule as _publishQuiet.
+      if (Atomics.load(i32, b) !== PLAYING || (i32[b + 7] | 0) !== (bus | (i << 8))) {
         this._publishQuiet(bus, tail);
         return;
       }
