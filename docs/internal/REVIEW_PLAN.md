@@ -117,10 +117,10 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 
 ## Phase 3 — Dead code (hygiene)
 
-- [ ] **D1** angularSweep boundary-segment top-K (orphaned by `9df34e53`), the `vc === 2` branch, `solid.fill` in pre-render, `maxOccluders = 1024`, stale comments.
-- [ ] **D2** Write-only spatial arrays `_entityLastCellIndex/_entityLastCellRadius`.
-- [ ] **D3** Pre-render `waitTimeThisFrame`; physics `WAIT_MS` (or write it, M4); load keys that match nothing.
-- [ ] **D4** frameClock always-on stamping (gate it), internal exports, ~160 lines of bench verdict logic in `src/`, `addWaitMs`.
+- [x] **D1** — `667cab19` (top-K block and `vc === 2` branch gone; pre-render no longer builds the fill fan pixi alone reads; kernel TIE +2.0 %). `maxOccluders = 1024` kept: it is the live per-light cap. Original: angularSweep boundary-segment top-K (orphaned by `9df34e53`), the `vc === 2` branch, `solid.fill` in pre-render, `maxOccluders = 1024`, stale comments.
+- [x] **D2** — `ec040164`. Write-only spatial arrays `_entityLastCellIndex/_entityLastCellRadius`.
+- [x] **D3** — `7b8125b9` (pre-render publishes the shared wait meter; DECORATIONS_ACTIVE and ACTIVE_AUDIO_SLOTS out of LOAD_KEYS; probes refuse a missing key as KEY_NOT_PUBLISHED, which is H-12's case). Pre-render `waitTimeThisFrame`; physics `WAIT_MS` (or write it, M4); load keys that match nothing.
+- [x] **D4** — `8414cf71` (summarizePhase to tests/bench; addWaitMs gone; always-on stamping kept, a few stores per frame). frameClock always-on stamping (gate it), internal exports, ~160 lines of bench verdict logic in `src/`, `addWaitMs`.
 - [ ] **D5** Test-only exports in `src/` (`gatherInstancedRows`, `rewritePackedDepth`, `writeGpuSpriteRow`, `copyPackedRows`, the `useZBuffer`-era depth helpers, dead painter state).
 - [ ] **D6** `spriteKeys` region of the GPU queue SAB.
 - [ ] **D7** Small leftovers (layer.js lazy `rect`, tween import/export, `jointsRestored`, `Mouse.setCanvasPosition`, `Camera.setRotation`, `GameEngine.mouse`, `BodyHandle.addShape*`, `shrinkToFit`, unreachable guard, `lastError.entityIndex`, physics `maxDt`).

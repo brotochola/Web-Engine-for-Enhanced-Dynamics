@@ -17,11 +17,40 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**20:36** — Phase 2 done except M8 (turn ~15 source-text tests into behavioural ones, plus a
-Node loader so demo code can be tested). That's a bigger piece; I'll scope it next, then go on to
-Phase 3.
+**20:50** — Phase 3 (dead code): D1–D4 done. Next: D5–D11.
 
 ## Log
+
+### 20:50 — M8 started; Phase 3 D1–D4 (`ef645769`, `667cab19`, `ec040164`, `7b8125b9`, `8414cf71`)
+
+- **Demo code is now testable in Node** (`ef645769`).
+  - The demos import the engine as `/src/index.js`, the way the browser serves it, so Node
+    couldn't load them and their tests were regexes over source text.
+  - A small loader hook maps those paths into the repo. The engine's `src/index.js` loads in Node
+    unchanged.
+  - The three planet test files now run the demo's real code. Each was checked by breaking the
+    demo on purpose and seeing the test fail.
+  - The other ~32 files that lean on source text are listed in the plan, with a rule for which
+    to convert and which are legitimate text guards.
+- **D1 — leftover lighting code** (`667cab19`).
+  - When compound occluders moved to polar bins (10-19), the old nearest-segment machinery stayed
+    behind, unused, plus a sweep branch for 2-point occluders that nothing produces anymore.
+    112 lines gone.
+  - Pre-render also built a triangle fill for every compound shape that only pixi reads. Each
+    worker has its own cache, so this was rebuilt for nothing after every terrain change. It now
+    builds only the outline.
+  - Kernel check: a tie (+2.0 %).
+- **D2 — two spatial arrays** written for every entity and never read (`ec040164`).
+- **D3 — instruments that measured nothing** (`7b8125b9`).
+  - Pre-render's wait stat came from a field nothing ever set.
+  - The A/B gate listed two load keys that no worker publishes (one a misspelling), so they looked
+    gated but never gated anything.
+  - A hypothesis whose probe key is never collected (H-12, audio) was refused as "your code didn't
+    run". It now says the key isn't collected.
+- **D4 — bench-only code shipped in the engine bundle** (`8414cf71`). 165 lines of benchmark
+  verdict logic lived in a file every worker imports; they moved to `tests/bench`. One unused
+  helper was removed.
+- Suite **1328/1328**.
 
 ### 20:36 — M9–M12: the measuring tools, and two old verdicts whose instruments were wrong
 
