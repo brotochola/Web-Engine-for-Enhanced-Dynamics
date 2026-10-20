@@ -55,7 +55,7 @@ Host sync (`weedjsPost.syncBodySlot`):
 
 ```js
 this.collider.active = 0; // RB stays: body kept, shapes cleared (no contacts)
-this.collider.active = 1; // restore shape on existing body
+this.collider.active = 1; // restore shape on existing body (compound fixtures included)
 this.rigidBody.active = 0; // Collider stays: implicit static body + shape
 this.rigidBody.active = 1; // restore dynamic/static from rigidBody.static
 this.collider.replacePolygons(tris); // compound: N convex fixtures (3..8 local CCW verts)

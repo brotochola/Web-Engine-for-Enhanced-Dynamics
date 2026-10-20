@@ -118,3 +118,24 @@ test('instance replacePolygonsFlat writes the caller buffers', () => {
   assert.ok(c.replacePolygonsFlat(flat.xy, flat.counts, flat.polygonCount));
   assert.equal(Collider.fixtureCount[0], 1);
 });
+
+// B15. PHYSICS.md: "collider.active = 0 … shapes cleared / collider.active = 1 restore
+// shape on existing body". The host destroys the body while the collider is inactive and
+// rebuilds every fixture when it comes back, so the fixture records must survive.
+test('collider.active off and on keeps the compound fixtures', () => {
+  initPool();
+  const flat = pack([TRI_A, TRI_B]);
+  const c = new Collider();
+  c.index = 0;
+  assert.ok(c.replacePolygonsFlat(flat.xy, flat.counts, flat.polygonCount));
+  assert.equal(Collider.fixtureCount[0], 2);
+  const head = ColliderFixture.headOf(0);
+
+  c.active = 0;
+  assert.equal(Collider.active[0], 0);
+  assert.equal(Collider.fixtureCount[0], 2, 'deactivating must not free the fixtures');
+
+  c.active = 1;
+  assert.equal(Collider.fixtureCount[0], 2, 'the compound shape comes back');
+  assert.equal(ColliderFixture.headOf(0), head);
+});

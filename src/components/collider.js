@@ -325,6 +325,8 @@ class Collider extends Component {
   /**
    * Toggle Collider participation. Off + RigidBody still on → shapeless body
    * (moves, no Box2D contacts). Host clears/adds shapes via GEOMETRY dirty.
+   * Compound fixtures (replacePolygons*) are kept while off, so turning it back on
+   * restores the whole shape. Rays, spatial and pointInCollider skip inactive colliders.
    */
   get active() {
     return Collider.active[this.index];
@@ -332,7 +334,6 @@ class Collider extends Component {
   set active(value) {
     const next = value ? 1 : 0;
     if (Collider.active[this.index] === next) return;
-    if (!next) ColliderFixture.removeAllForEntity(this.index);
     Collider.active[this.index] = next;
     markBodyDirty(
       this.index,
