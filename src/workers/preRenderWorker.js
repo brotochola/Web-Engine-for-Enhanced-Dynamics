@@ -1139,9 +1139,16 @@ class PreRenderWorker extends AbstractWorker {
         const z = ParticleComponent.z;
         const flat = ParticleComponent.flat;
         const viewMode = ParticleComponent.viewMode;
+        // renderOnly particles are drawn by their compute layer. Dropped here,
+        // before they take a collector slot or a queue row.
+        const renderOnly = ParticleComponent.renderOnlyLive &&
+            Atomics.load(ParticleComponent.renderOnlyLive, 0) > 0
+            ? ParticleComponent.renderOnly
+            : null;
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
+            if (renderOnly && renderOnly[i]) continue;
             const isZenithal =
                 viewMode &&
                 viewMode[i] === CAMERA_TYPES.ZENITHAL &&
@@ -2267,10 +2274,6 @@ class PreRenderWorker extends AbstractWorker {
         const particleTextureId = ParticleComponent.textureId;
         const particleFlat = ParticleComponent.flat;
         const particleViewMode = ParticleComponent.viewMode;
-        const skipRenderOnly = !!(
-          ParticleComponent.renderOnlyLive &&
-          Atomics.load(ParticleComponent.renderOnlyLive, 0) > 0
-        );
 
         const lightColor = LightEmitter.lightColor;
         const lightIntensity = LightEmitter.lightIntensity;
@@ -2522,7 +2525,6 @@ class PreRenderWorker extends AbstractWorker {
                 rqTextureId[out] = tex;
             } else if (type === 1) {
                 // === PARTICLE ===
-                if (skipRenderOnly && ParticleComponent.renderOnly[idx]) continue;
                 rqX[out] = particleX[idx];
                 // Zenithal: height → scale (and alpha). Never fold z into Y.
                 // Flat: y only. Else (topdown): screenY = y + z.
