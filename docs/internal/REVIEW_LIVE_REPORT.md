@@ -17,9 +17,28 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**00:35** — **N-13** (the public screen helpers use the eased camera).
+**01:20** — **HEADED RUN:** smoke of the follow-camera demos (car, little city, planet) after
+five camera commits. Looking for a frozen or NaN camera, and for culling at the edges.
 
 ## Log
+
+### 01:15 — N-13 fixed (`512f8efd`, `09850135`)
+
+- **The screen helpers** (`isOnScreen`, `worldToScreen`, `screenToWorld`, `getViewportBounds`)
+  now answer for the drawn camera, through a per-realm cache. Every camera write bumps the lock
+  counter, so the cache cannot go stale. The test drives a real `followEntity`: before the fix, the
+  followed entity was drawn at screen x 729 instead of the center 640.
+- **Cost, three tries.** `isOnScreen` runs per listener entity per frame, and Predator's trees use
+  it, so it had to be free. Measured on a 10k-point kernel:
+  - first version (atomic load, three keys): **−41 %**;
+  - plain read, two keys: **−3.1 %**;
+  - one key, with the pose bind dropping the cache: **−0.2 %, tie**. Kept.
+- **Debug overlay:** it culled with `Camera.isOnScreen` but drew with the render-queue camera. It
+  now culls with the camera it draws with, and its unused import is gone.
+- **Sound:** pan and the off-screen falloff were measured along world x. With a turned camera,
+  a sound on the right of the screen panned to the center. Both are now measured on the screen.
+  At angle 0 the numbers match the old formula, and a test checks that.
+- Suite **1248/1248**.
 
 ### 00:30 — B18 fixed (`656e7d4c`); a third camera-lock hole found and fixed; new N-14
 
