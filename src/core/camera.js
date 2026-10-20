@@ -134,6 +134,9 @@ export class Camera {
    * same write. Lead is pose-relative, so it stays valid for a newer pose.
    */
   static _followSnap = { slot: 0, usedX: 0, usedY: 0, leadX: 0, leadY: 0, zoom: 1, camX: 0, camY: 0 };
+  /** Drawn camera for the screen helpers, and what it was resolved from (see _drawnView). */
+  static _view = { zoom: 1, x: 0, y: 0, rotation: 0 };
+  static _viewSeq = -1;
 
   // Look-ahead vel frozen to pose-xy publishes (live HEAP vx wanders between publishes).
   static _lookHoldIdx = -1;
@@ -176,6 +179,7 @@ export class Camera {
     this._followPoseReady = 0;
     this._followSeq = this._bindFollowSeq(data);
     this._writeDepth = 0;
+    this._viewSeq = -1;
     this._followSnap.slot = 0;
     this._followSnap.usedX = 0;
     this._followSnap.usedY = 0;
@@ -632,6 +636,27 @@ export class Camera {
   }
 
   /**
+   * The drawn camera for the screen helpers (isOnScreen, worldToScreen,
+   * screenToWorld, getViewportBounds), cached per realm. Every write of zoom,
+   * x/y, angle or the follow fields moves the lock counter, and
+   * bindDisplayPose drops the cache, so it is never stale. One compare on the
+   * hot path: isOnScreen runs per listener entity per frame. A plain test
+   * buffer has no lock and recomputes every call.
+   * @returns {{zoom: number, x: number, y: number, rotation: number}}
+   */
+  static _drawnView() {
+    const v = this._view;
+    const seq = this._followSeq;
+    if (seq) {
+      // A plain read is enough for a staleness key; the recompute reads under the lock.
+      const key = seq[0];
+      if (key === this._viewSeq) return v;
+      this._viewSeq = key;
+    }
+    return this.resolveDrawnCamera(this._poseX, this._poseY, v);
+  }
+
+  /**
    * Smoothly follow a target position (centers target on screen)
    * Also lerps zoom toward targetZoom if set
    * @param {number} targetX - Target X position in world coordinates
@@ -720,6 +745,8 @@ export class Camera {
     this._poseRotC = rotC || null;
     this._poseRotS = rotS || null;
     this._poseReadyFrame = this._poseX ? (readyFrame | 0) : 0;
+    // A new pose moves a followed view; the screen helpers resolve it again.
+    this._viewSeq = -1;
     if (!this._poseX) {
       this._clearLookHold();
       this._followPoseReady = 0;
@@ -962,7 +989,10 @@ export class Camera {
 
   static set rotation(radians) {
     if (!this._data || this._data.length <= this.IDX_ROTATION) return;
+    // Inside the lock so the screen helpers' cached view sees the new angle.
+    this._followWriteBegin();
     this._data[this.IDX_ROTATION] = radians || 0;
+    this._followWriteEnd();
   }
 
   static setRotation(radians) {
@@ -1252,15 +1282,14 @@ export class Camera {
    * @returns {boolean} True if position is on screen
    */
   static isOnScreen(worldX, worldY, margin = 0) {
-    const data = this._data;
-    if (!data) return true;
-    // [9] is IDX_ROTATION. Read directly: this runs per listener entity per
-    // frame, and the getter's guards cost 21% here (N-12 A/B).
-    if (data[9]) return this._isOnScreenTurned(worldX, worldY, margin);
+    if (!this._data) return true;
+    // The drawn camera (followEntity snapped to the pose), cached per realm.
+    const v = this._drawnView();
+    if (v.rotation) return this._isOnScreenTurned(worldX, worldY, margin);
 
-    const zoom = data[0];
-    const screenX = (worldX - data[1]) * zoom;
-    const screenY = (worldY - data[2]) * zoom;
+    const zoom = v.zoom;
+    const screenX = (worldX - v.x) * zoom;
+    const screenY = (worldY - v.y) * zoom;
 
     return (
       screenX >= -margin &&
@@ -1289,11 +1318,12 @@ export class Camera {
    * @returns {{x: number, y: number}} Screen coordinates
    */
   static worldToScreen(worldX, worldY, out = null) {
-    const zoom = this._data ? this._data[0] : 1;
-    const cameraX = this._data ? this._data[1] : 0;
-    const cameraY = this._data ? this._data[2] : 0;
+    const v = this._drawnView();
+    const zoom = v.zoom;
+    const cameraX = v.x;
+    const cameraY = v.y;
     const dest = out || Camera._worldToScreenScratch;
-    const rot = this.rotation;
+    const rot = v.rotation;
     const cw = this._canvasWidth;
     const ch = this._canvasHeight;
     if (!rot || !(cw > 0 && ch > 0 && zoom > 0)) {
@@ -1320,11 +1350,12 @@ export class Camera {
    * @returns {{x: number, y: number}} World coordinates
    */
   static screenToWorld(screenX, screenY, out = null) {
-    const zoom = this._data ? this._data[0] : 1;
-    const cameraX = this._data ? this._data[1] : 0;
-    const cameraY = this._data ? this._data[2] : 0;
+    const v = this._drawnView();
+    const zoom = v.zoom;
+    const cameraX = v.x;
+    const cameraY = v.y;
     const dest = out || Camera._screenToWorldScratch;
-    const rot = this.rotation;
+    const rot = v.rotation;
     const cw = this._canvasWidth;
     const ch = this._canvasHeight;
     if (!rot || !(cw > 0 && ch > 0 && zoom > 0)) {
@@ -1354,13 +1385,14 @@ export class Camera {
    */
   static getViewportBounds(out = null) {
     const result = out || Camera._viewportBoundsScratch;
-    const zoom = this._data ? this._data[0] : 1;
-    const cameraX = this._data ? this._data[1] : 0;
-    const cameraY = this._data ? this._data[2] : 0;
+    const v = this._drawnView();
+    const zoom = v.zoom;
+    const cameraX = v.x;
+    const cameraY = v.y;
 
     const width = this._canvasWidth / zoom;
     const height = this._canvasHeight / zoom;
-    const rot = this.rotation;
+    const rot = v.rotation;
     if (rot) {
       const e = rotatedHalfExtents(width, height, rot, this._viewExtScratch);
       const cx = cameraX + width * 0.5;

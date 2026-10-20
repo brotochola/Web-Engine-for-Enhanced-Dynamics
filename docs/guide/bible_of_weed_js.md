@@ -911,7 +911,8 @@ WEED.Camera.setAngle(rad);    // turn the view about the screen center (Camera.r
 // High-speed follow hitch: docs/guide/PHYSICS.md “Display pose publish”.
 // followEntity holds SAB pan when poseReady is unchanged (publish skip).
 // Drawn cam = packed pose + look-ahead lead (renderQueueCamera), not eased Camera.x/y.
-// Engine culls (pre-render, particle worker) use Camera.resolveDrawnCamera, the same camera.
+// Engine culls and the screen helpers (isOnScreen, worldToScreen, screenToWorld,
+// getViewportBounds) use that drawn camera; the Camera.x/y/zoom getters read the SAB.
 // lookAheadSec is seconds × vy — 1 at fall speed is a huge Y slam.
 
 // Particles — pick mode at call site (see docs/guide/PARTICLES.md)

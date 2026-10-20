@@ -1,7 +1,6 @@
 // PhysicsDebugRenderer.js — Draws entity-level debug overlays
 // Colliders, velocity, acceleration, neighbors, raycasts, sleeping, constraints, origins, indices
 
-import { Camera } from '../../camera.js';
 import { Transform } from '../../../components/transform.js';
 import { RigidBody } from '../../../components/rigidBody.js';
 import { Collider } from '../../../components/collider.js';
@@ -36,6 +35,7 @@ export class PhysicsDebugRenderer {
     this._filter = { selectedOnly: false, selectedIdx: -1 };
     this._viewBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
     this._rolledViewOut = { left: 0, right: 0, top: 0, bottom: 0 };
+    this._cull = { left: 0, right: 0, top: 0, bottom: 0 };
     this._indexLabels = [];
     this._indexWidths = [];
     this._typeNames = [];
@@ -129,6 +129,24 @@ export class PhysicsDebugRenderer {
     v.top = b.minY - margin;
     v.bottom = b.maxY + margin;
     return v;
+  }
+
+  /**
+   * Cull box for one draw call: the view of the camera this overlay draws
+   * with (the render-queue one), not the SAB camera Camera.isOnScreen would read here.
+   */
+  _beginCull(camera, canvas, zoom) {
+    const v = this._rolledView(camera, canvas, zoom);
+    const c = this._cull;
+    c.left = v.left;
+    c.right = v.right;
+    c.top = v.top;
+    c.bottom = v.bottom;
+  }
+
+  _inCull(x, y) {
+    const c = this._cull;
+    return x >= c.left && x <= c.right && y >= c.top && y <= c.bottom;
   }
 
   _colliderDebugInView(i, entityX, entityY, viewLeft, viewRight, viewTop, viewBottom) {
@@ -477,6 +495,7 @@ export class PhysicsDebugRenderer {
   // ------- entity origins -------
 
   drawEntityOrigins(ctx, canvas, camera, zoom, flags, pose) {
+    this._beginCull(camera, canvas, zoom);
     const active = Transform.active;
     const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
     const pos = this._pos;
@@ -485,7 +504,7 @@ export class PhysicsDebugRenderer {
     const selectedCrossSize = 8;
 
     for (let i = 0; i < active.length; i++) {
-      if (!active[i] || !Camera.isOnScreen(Transform.x[i], Transform.y[i])) continue;
+      if (!active[i] || !this._inCull(Transform.x[i], Transform.y[i])) continue;
       if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
       this._worldXY(i, pose, pos);
       const sx = (pos.x - camera.x) * zoom;
@@ -512,6 +531,7 @@ export class PhysicsDebugRenderer {
 
   drawVelocityVectors(ctx, canvas, camera, zoom, flags, pose) {
     if (!RigidBody.vx || !RigidBody.vy) return;
+    this._beginCull(camera, canvas, zoom);
     const active = Transform.active;
     const vx = RigidBody.vx;
     const vy = RigidBody.vy;
@@ -529,7 +549,7 @@ export class PhysicsDebugRenderer {
     const maxLen = 80;
     ctx.beginPath();
     for (let i = 0; i < active.length; i++) {
-      if (!active[i] || !Camera.isOnScreen(Transform.x[i], Transform.y[i])) continue;
+      if (!active[i] || !this._inCull(Transform.x[i], Transform.y[i])) continue;
       if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
       const velX = vx[i];
       const velY = vy[i];
@@ -548,7 +568,7 @@ export class PhysicsDebugRenderer {
     }
     ctx.stroke();
 
-    if (selectedIdx >= 0 && active[selectedIdx] && Camera.isOnScreen(Transform.x[selectedIdx], Transform.y[selectedIdx])) {
+    if (selectedIdx >= 0 && active[selectedIdx] && this._inCull(Transform.x[selectedIdx], Transform.y[selectedIdx])) {
       this._worldXY(selectedIdx, pose, pos);
       const sx = (pos.x - camera.x) * zoom;
       const sy = (pos.y - camera.y) * zoom;
@@ -600,6 +620,7 @@ export class PhysicsDebugRenderer {
   // ------- acceleration -------
 
   drawAccelerationVectors(ctx, canvas, camera, zoom, flags, pose) {
+    this._beginCull(camera, canvas, zoom);
     const active = Transform.active;
     const ax = RigidBody.ax;
     const ay = RigidBody.ay;
@@ -617,7 +638,7 @@ export class PhysicsDebugRenderer {
     const maxLen = 80;
     ctx.beginPath();
     for (let i = 0; i < active.length; i++) {
-      if (!active[i] || !Camera.isOnScreen(Transform.x[i], Transform.y[i])) continue;
+      if (!active[i] || !this._inCull(Transform.x[i], Transform.y[i])) continue;
       if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
       const accX = ax[i];
       const accY = ay[i];
@@ -902,6 +923,7 @@ export class PhysicsDebugRenderer {
   // ------- entity indices -------
 
   drawEntityIndices(ctx, canvas, camera, zoom, flags, pose) {
+    this._beginCull(camera, canvas, zoom);
     const active = Transform.active;
     const { selectedOnly, selectedIdx } = this._selectedFilter(flags);
     const pos = this._pos;
@@ -911,7 +933,7 @@ export class PhysicsDebugRenderer {
     ctx.textBaseline = 'bottom';
 
     for (let i = 0; i < active.length; i++) {
-      if (!active[i] || !Camera.isOnScreen(Transform.x[i], Transform.y[i])) continue;
+      if (!active[i] || !this._inCull(Transform.x[i], Transform.y[i])) continue;
       if (this._skipUnselected(i, selectedOnly, selectedIdx)) continue;
       this._worldXY(i, pose, pos);
       const sx = (pos.x - camera.x) * zoom;
