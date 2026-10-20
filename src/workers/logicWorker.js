@@ -1726,6 +1726,110 @@ class LogicWorker extends AbstractWorker {
    * Handle custom messages from Scene or other workers
    * Implements spawning and despawning commands
    */
+  /**
+   * Logic0 side of a save load: despawn the serializable types, respawn the
+   * saved entities, then chains, fixtures, meshes, tweens, id remaps and
+   * joints. Returns the restoreSaveComplete reply.
+   * @param {object} data restoreSave message
+   * @returns {object}
+   */
+  _restoreSave(data) {
+    const {
+      serializableClassNames = [],
+      entities = [],
+      joints = [],
+      chains = [],
+      fixtures = [],
+      meshes = [],
+      tweens = [],
+    } = data;
+    let restored = 0;
+    let failed = 0;
+    const oldToNew = new Map();
+
+    for (let i = 0; i < serializableClassNames.length; i++) {
+      const EntityClass = self[serializableClassNames[i]];
+      if (EntityClass) GameObject.despawnAll(EntityClass);
+    }
+
+    if (typeof Joint.clearAllActive === 'function') {
+      Joint.clearAllActive();
+    }
+
+    for (let i = 0; i < entities.length; i++) {
+      const rec = entities[i];
+      const EntityClass = self[rec.typeName];
+      if (!EntityClass) {
+        console.error(
+          `LOGIC WORKER ${this.workerIndex}: restoreSave missing class ${rec.typeName}`
+        );
+        failed++;
+        continue;
+      }
+      const fields = rec.components?.Transform?.fields || {};
+      const spawnConfig = {
+        x: fields.x ?? 0,
+        y: fields.y ?? 0,
+        _saveRestore: rec.components,
+      };
+      const instance = GameObject.spawn(EntityClass, spawnConfig);
+      if (!instance) {
+        console.warn(
+          `LOGIC WORKER ${this.workerIndex}: restoreSave spawn failed for ${rec.typeName}`
+        );
+        failed++;
+      } else {
+        restored++;
+        if (rec.entityIndex != null && rec.entityIndex >= 0) {
+          oldToNew.set(rec.entityIndex | 0, instance.index | 0);
+        }
+      }
+    }
+
+    const restoredPairs = [];
+    const mapGet = (old) => {
+      const key = old | 0;
+      return oldToNew.has(key) ? oldToNew.get(key) | 0 : null;
+    };
+    for (const [old, neu] of oldToNew) {
+      restoredPairs.push({ old, neu });
+    }
+    applyChains(chains, restoredPairs);
+    applyFixtures(fixtures, restoredPairs);
+    applyMeshes(meshes, restoredPairs);
+    applyTweens(tweens, mapGet, restoredPairs);
+    for (let r = 0; r < entities.length; r++) {
+      const rec = entities[r];
+      if (rec.entityIndex == null) continue;
+      const neu = mapGet(rec.entityIndex);
+      if (neu == null) continue;
+      const EntityClass = self[rec.typeName];
+      if (!EntityClass) continue;
+      remapEntityIdFields(EntityClass, neu, rec.components, mapGet);
+    }
+
+    let jointsRestored = 0;
+    if (joints.length && typeof Joint.restoreFromSave === 'function') {
+      const created = Joint.restoreFromSave(joints, oldToNew);
+      jointsRestored = created.length;
+    }
+
+    const idPairs = [];
+    for (let p = 0; p < restoredPairs.length; p++) {
+      idPairs.push(restoredPairs[p].old | 0, restoredPairs[p].neu | 0);
+    }
+
+    // Flush active lists before ack so entities are fully in the scene.
+    this.processListUpdates();
+    return {
+      msg: 'restoreSaveComplete',
+      restored,
+      failed,
+      jointsRestored,
+      idPairs,
+    };
+  }
+
   handleCustomMessage(data) {
     const { msg } = data;
 
@@ -1866,101 +1970,23 @@ class LogicWorker extends AbstractWorker {
 
       case 'restoreSave': {
         if (this.workerIndex !== 0) break;
-
-        const {
-          serializableClassNames = [],
-          entities = [],
-          joints = [],
-          chains = [],
-          fixtures = [],
-          meshes = [],
-          tweens = [],
-        } = data;
-        let restored = 0;
-        let failed = 0;
-        const oldToNew = new Map();
-
-        for (let i = 0; i < serializableClassNames.length; i++) {
-          const EntityClass = self[serializableClassNames[i]];
-          if (EntityClass) GameObject.despawnAll(EntityClass);
-        }
-
-        if (typeof Joint.clearAllActive === 'function') {
-          Joint.clearAllActive();
-        }
-
-        for (let i = 0; i < entities.length; i++) {
-          const rec = entities[i];
-          const EntityClass = self[rec.typeName];
-          if (!EntityClass) {
-            console.error(
-              `LOGIC WORKER ${this.workerIndex}: restoreSave missing class ${rec.typeName}`
-            );
-            failed++;
-            continue;
-          }
-          const fields = rec.components?.Transform?.fields || {};
-          const spawnConfig = {
-            x: fields.x ?? 0,
-            y: fields.y ?? 0,
-            _saveRestore: rec.components,
+        // Always answer: main awaits this reply, and a throw that skipped it
+        // left the load waiting forever.
+        let reply;
+        try {
+          reply = this._restoreSave(data);
+        } catch (err) {
+          console.error(`LOGIC WORKER ${this.workerIndex}: restoreSave failed`, err);
+          reply = {
+            msg: 'restoreSaveComplete',
+            error: String((err && err.stack) || err),
+            restored: 0,
+            failed: 0,
+            jointsRestored: 0,
+            idPairs: [],
           };
-          const instance = GameObject.spawn(EntityClass, spawnConfig);
-          if (!instance) {
-            console.warn(
-              `LOGIC WORKER ${this.workerIndex}: restoreSave spawn failed for ${rec.typeName}`
-            );
-            failed++;
-          } else {
-            restored++;
-            if (rec.entityIndex != null && rec.entityIndex >= 0) {
-              oldToNew.set(rec.entityIndex | 0, instance.index | 0);
-            }
-          }
         }
-
-        const restoredPairs = [];
-        const mapGet = (old) => {
-          const key = old | 0;
-          return oldToNew.has(key) ? oldToNew.get(key) | 0 : null;
-        };
-        for (const [old, neu] of oldToNew) {
-          restoredPairs.push({ old, neu });
-        }
-        applyChains(chains, restoredPairs);
-        applyFixtures(fixtures, restoredPairs);
-        applyMeshes(meshes, restoredPairs);
-        applyTweens(tweens, mapGet, restoredPairs);
-        for (let r = 0; r < entities.length; r++) {
-          const rec = entities[r];
-          if (rec.entityIndex == null) continue;
-          const neu = mapGet(rec.entityIndex);
-          if (neu == null) continue;
-          const EntityClass = self[rec.typeName];
-          if (!EntityClass) continue;
-          remapEntityIdFields(EntityClass, neu, rec.components, mapGet);
-        }
-
-        let jointsRestored = 0;
-        if (joints.length && typeof Joint.restoreFromSave === 'function') {
-          const created = Joint.restoreFromSave(joints, oldToNew);
-          jointsRestored = created.length;
-        }
-
-        const idPairs = [];
-        for (let p = 0; p < restoredPairs.length; p++) {
-          idPairs.push(restoredPairs[p].old | 0, restoredPairs[p].neu | 0);
-        }
-
-        // Flush active lists before ack so entities are fully in the scene.
-        this.processListUpdates();
-        self.postMessage({
-          msg: 'restoreSaveComplete',
-          restored,
-          failed,
-          jointsRestored,
-          idPairs,
-        });
+        self.postMessage(reply);
         break;
       }
 

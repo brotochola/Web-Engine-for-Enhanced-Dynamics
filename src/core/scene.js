@@ -1857,7 +1857,9 @@ class Scene {
     } else if (e.data.msg === 'restoreSaveComplete') {
       const pending = this._pendingRestoreComplete;
       this._pendingRestoreComplete = null;
-      if (pending) {
+      if (pending && e.data.error) {
+        pending.reject(new Error(`SaveGame: restore failed on logic0: ${e.data.error}`));
+      } else if (pending) {
         pending.resolve({
           restored: e.data.restored || 0,
           failed: e.data.failed || 0,
