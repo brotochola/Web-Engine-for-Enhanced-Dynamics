@@ -17,9 +17,20 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**05:55** — **B25** (particle lights under raycasted lighting draw nothing but still allocate).
+**06:10** — **B26** (compound light-transmit wedges stack).
 
 ## Log
+
+### 06:05 — B25 fixed (`6308777f`)
+
+- With raycasted lighting on, particle lights are never drawn (by design: PARTICLE_LIGHTS.md says
+  raycasting skips them). But the renderer still allocated their GPU buffer and forced an extra
+  lighting render texture. They are now switched off at init with one console warning.
+- **Found in a demo:** the planet Box2D demo has **both** raycasted lighting and particle lights
+  enabled. Its particle lights have never drawn, and it now shows the warning. I didn't change
+  the demo: dropping the setting or making particle lights work under raycasting is your call
+  (logged under B28).
+- Suite **1283/1283**.
 
 ### 05:50 — B24 fixed (`fa89175b`)
 
