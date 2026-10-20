@@ -4,73 +4,11 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const BOX2D_DIR = path.resolve(__dirname, '../../src/box2d');
-const WASM_PATH = path.join(BOX2D_DIR, 'box2dWasm.wasm');
-const JS_PATH = path.join(BOX2D_DIR, 'box2dWasm.js');
+import { instantiateBox2dWasm as instantiateShared } from '../helpers/box2dWasmInstance.mjs';
 
 const BODY_STATIC = 0;
 
-function parseWasmExportMap(jsSource) {
-  const map = Object.create(null);
-  const re = /Module\["_(\w+)"\]\s*=\s*wasmExports\["([^"]+)"\]/g;
-  let m;
-  while ((m = re.exec(jsSource))) {
-    map[m[1]] = m[2];
-  }
-  return map;
-}
-
-function instantiateBox2dWasm() {
-  const wasmBuffer = fs.readFileSync(WASM_PATH);
-  const jsSource = fs.readFileSync(JS_PATH, 'utf8');
-  const names = parseWasmExportMap(jsSource);
-  assert.ok(names.overlap_circle, 'overlap_circle export missing');
-  assert.ok(names.cast_ray_all, 'cast_ray_all export missing');
-  assert.ok(names.get_query_slots_byte_offset, 'query slots offset missing');
-  assert.ok(names.get_query_hits_byte_offset, 'query hits offset missing');
-
-  const wasmModule = new WebAssembly.Module(wasmBuffer);
-  let memory = null;
-  const imports = {};
-  for (const imp of WebAssembly.Module.imports(wasmModule)) {
-    if (!imports[imp.module]) imports[imp.module] = {};
-    if (imp.kind === 'memory') {
-      memory = new WebAssembly.Memory({ initial: 8192, maximum: 8192, shared: true });
-      imports[imp.module][imp.name] = memory;
-    } else if (imp.kind === 'table') {
-      imports[imp.module][imp.name] = new WebAssembly.Table({
-        initial: 1024,
-        element: 'anyfunc',
-      });
-    } else if (imp.kind === 'function') {
-      if (imp.module === 'a' && imp.name === 'b') {
-        imports[imp.module][imp.name] = () => performance.now();
-      } else {
-        imports[imp.module][imp.name] = () => 0;
-      }
-    } else if (imp.kind === 'global') {
-      imports[imp.module][imp.name] = 0;
-    }
-  }
-  assert.ok(memory, 'wasm memory import missing');
-
-  const instance = new WebAssembly.Instance(wasmModule, imports);
-  const fn = (name) => {
-    const exp = names[name];
-    assert.ok(
-      exp && typeof instance.exports[exp] === 'function',
-      `missing wasm export ${name} (${exp})`,
-    );
-    return instance.exports[exp];
-  };
-
-  return { memory, fn };
-}
+const instantiateBox2dWasm = () => instantiateShared(['overlap_circle', 'cast_ray_all', 'get_query_slots_byte_offset', 'get_query_hits_byte_offset']);
 
 function createBox(fn, worldId, x, y, entityIndex) {
   const slot = fn('create_body_box')(

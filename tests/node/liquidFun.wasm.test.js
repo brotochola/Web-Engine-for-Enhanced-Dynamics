@@ -1,66 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const BOX2D_DIR = path.resolve(__dirname, '../../src/box2d');
-const WASM_PATH = path.join(BOX2D_DIR, 'box2dWasm.wasm');
-const JS_PATH = path.join(BOX2D_DIR, 'box2dWasm.js');
-
-function parseWasmExportMap(jsSource) {
-  const map = Object.create(null);
-  const re = /Module\["_(\w+)"\]\s*=\s*wasmExports\["([^"]+)"\]/g;
-  let m;
-  while ((m = re.exec(jsSource))) {
-    map[m[1]] = m[2];
-  }
-  return map;
-}
+import { instantiateBox2dWasm as instantiateShared } from '../helpers/box2dWasmInstance.mjs';
 
 function instantiateBox2dWasm() {
-  const wasmBuffer = fs.readFileSync(WASM_PATH);
-  const jsSource = fs.readFileSync(JS_PATH, 'utf8');
-  const names = parseWasmExportMap(jsSource);
-  assert.ok(names.create_world, 'create_world export map missing — rebuild box2d_wasm.js');
-  assert.ok(names.create_particle_system, 'create_particle_system export map missing');
-
-  const wasmModule = new WebAssembly.Module(wasmBuffer);
-  let memory = null;
-  const imports = {};
-  for (const imp of WebAssembly.Module.imports(wasmModule)) {
-    if (!imports[imp.module]) imports[imp.module] = {};
-    if (imp.kind === 'memory') {
-      memory = new WebAssembly.Memory({ initial: 8192, maximum: 8192, shared: true });
-      imports[imp.module][imp.name] = memory;
-    } else if (imp.kind === 'table') {
-      imports[imp.module][imp.name] = new WebAssembly.Table({ initial: 1024, element: 'anyfunc' });
-    } else if (imp.kind === 'function') {
-      // box2d_wasm.js wasmImports: a.b = _emscripten_get_now (LTO minified).
-      // Stubbed 0 makes LF step timer always report 0 ms.
-      if (imp.module === 'a' && imp.name === 'b') {
-        imports[imp.module][imp.name] = () => performance.now();
-      } else {
-        imports[imp.module][imp.name] = () => 0;
-      }
-    } else if (imp.kind === 'global') {
-      imports[imp.module][imp.name] = 0;
-    }
-  }
-  assert.ok(memory, 'wasm memory import missing');
-
-  const instance = new WebAssembly.Instance(wasmModule, imports);
-  const fn = (name) => {
-    const exp = names[name];
-    assert.ok(exp && typeof instance.exports[exp] === 'function', `missing wasm export ${name} (${exp})`);
-    return instance.exports[exp];
-  };
-
-  // Demo uses subSteps=1. Wrapper default is 2; that 4× critical pressure sprays puddles off the floor.
-  fn('set_particle_sub_steps')(1);
-
-  return { instance, memory, fn };
+  const w = instantiateShared(['create_world', 'create_particle_system']);
+  // Demo uses subSteps=1. Wrapper default is 2; that 4x critical pressure sprays puddles off the floor.
+  w.fn('set_particle_sub_steps')(1);
+  return w;
 }
 
 test('WASM LiquidFun groups create and rest on a static box (Y-down pixels)', () => {

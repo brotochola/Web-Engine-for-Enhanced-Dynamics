@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { instantiateBox2dWasm as instantiateShared } from '../helpers/box2dWasmInstance.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOX2D_DIR = path.resolve(__dirname, '../../src/box2d');
@@ -21,30 +22,7 @@ function loadPolygonMassArea() {
   return new Function(`${post.slice(start, end)}\nreturn polygonMassArea;`)();
 }
 
-function instantiateBox2dWasm() {
-  const wasmBuffer = fs.readFileSync(path.join(BOX2D_DIR, 'box2dWasm.wasm'));
-  const jsSource = fs.readFileSync(path.join(BOX2D_DIR, 'box2dWasm.js'), 'utf8');
-  const names = Object.create(null);
-  for (const m of jsSource.matchAll(/Module\["_(\w+)"\]\s*=\s*wasmExports\["([^"]+)"\]/g)) names[m[1]] = m[2];
-  const wasmModule = new WebAssembly.Module(wasmBuffer);
-  let memory = null;
-  const imports = {};
-  for (const imp of WebAssembly.Module.imports(wasmModule)) {
-    if (!imports[imp.module]) imports[imp.module] = {};
-    if (imp.kind === 'memory') {
-      memory = new WebAssembly.Memory({ initial: 8192, maximum: 8192, shared: true });
-      imports[imp.module][imp.name] = memory;
-    } else if (imp.kind === 'table') {
-      imports[imp.module][imp.name] = new WebAssembly.Table({ initial: 1024, element: 'anyfunc' });
-    } else if (imp.kind === 'function') {
-      imports[imp.module][imp.name] = imp.module === 'a' && imp.name === 'b' ? () => performance.now() : () => 0;
-    } else if (imp.kind === 'global') {
-      imports[imp.module][imp.name] = 0;
-    }
-  }
-  const instance = new WebAssembly.Instance(wasmModule, imports);
-  return { memory, fn: (n) => instance.exports[names[n]] };
-}
+const instantiateBox2dWasm = instantiateShared;
 
 const POLYS = {
   square: [-5, -5, 5, -5, 5, 5, -5, 5],
