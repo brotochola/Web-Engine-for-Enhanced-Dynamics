@@ -114,6 +114,8 @@ export const PROBES = {
     why: 'H-13 is about the tile sweep, which runs regardless of dirty count - this key only proves the path is reached',
   },
 
+  // Not collectable yet: audio slots are in SoundManager's metrics, which the
+  // bench report does not carry, so H-12 refuses with KEY_NOT_PUBLISHED.
   'H-12': {
     id: 'H-12',
     worker: 'renderer',
@@ -148,6 +150,18 @@ export function checkProbe(id, stats, expected) {
   }
 
   const s = stats || {};
+  // Review D3. A key the stats do not carry says nothing about the path: H-12's
+  // ACTIVE_AUDIO_SLOTS was never collected, so every H-12 sitting was refused as
+  // "the code did not run". Still a refusal, now with the real reason.
+  if (!(probe.key in s)) {
+    return {
+      ok: false,
+      code: 'KEY_NOT_PUBLISHED',
+      detail:
+        `${probe.key} is not in the stats this run collected, so nothing shows whether ` +
+        `${id}'s path ran. Collect it (the ${probe.worker} worker's report) before sitting ${id}.`,
+    };
+  }
   const value = Number(s[probe.key]) || 0;
 
   // `floor: 0` means the key is NOT a proof of liveness for this hypothesis.

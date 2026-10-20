@@ -114,13 +114,14 @@ const LOAD_KEYS = [
   // which is worse than having no probe at all.
   'VISIBLE_ENTITIES',
   'ENTITIES_PROCESSED',
-  'DECORATIONS_ACTIVE',
-  // The key the particle worker actually publishes. The name above was written
-  // from the sound of it and matches nothing; keeping it would have left the
-  // H-10 probe unable to fire on any real run.
+  // The key the particle worker actually publishes. DECORATIONS_ACTIVE, written
+  // from the sound of it, matched nothing and stayed listed beside this one
+  // until review D3, looking gated and never gating.
   'ACTIVE_DECORATIONS',
   'DECAL_TILES_DIRTY',
-  'ACTIVE_AUDIO_SLOTS',
+  // ACTIVE_AUDIO_SLOTS was listed here too, but audio slots live in
+  // SoundManager's metrics, which the bench report does not carry (review D3).
+  // An audio hypothesis has to collect them before it can gate on them.
   // F-07 / the two-pack-sites finding. packSpriteLayer runs in preRender, and
   // RENDER_QUEUE_SIZE is what actually feeds it - measured equal to
   // VISIBLE_ENTITIES on spritePackStressScene but equal by coincidence, not by

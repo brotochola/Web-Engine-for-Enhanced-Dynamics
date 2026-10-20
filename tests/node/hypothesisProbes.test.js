@@ -97,10 +97,12 @@ test('each probe names its own worker and key', () => {
   assert.ok(seen.size >= 4, 'the probes must not collapse onto one key per worker');
 });
 
-test('a missing key is treated as zero, not as undefined passing through', () => {
+test('a missing key is refused, and says it is missing (review D3)', () => {
   const r = checkProbe('H-14', { BODY_COUNT: 9000 }, 50000);
   assert.equal(r.ok, false, 'ENTITIES_PROCESSED missing must not read as fine');
-  assert.equal(r.code, 'PATH_NOT_RUN');
+  assert.equal(r.code, 'KEY_NOT_PUBLISHED');
+  // A key that is there and zero is the path not running.
+  assert.equal(checkProbe('H-14', { ENTITIES_PROCESSED: 0 }, 50000).code, 'PATH_NOT_RUN');
 });
 
 test('floor 0 admits a zero key but says out loud that the probe is weak', () => {

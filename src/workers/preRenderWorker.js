@@ -41,6 +41,7 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
+import { waitMeterMs } from '../util/waitMeter.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
 import {
@@ -190,7 +191,6 @@ class PreRenderWorker extends AbstractWorker {
         this.shadowQTimeThisFrame = 0;
         this.visibilityTimeThisFrame = 0;
         this.adobeTimeThisFrame = 0;
-        this.waitTimeThisFrame = 0;
         // E-29. The two phases that had no timer. See the PRE_RENDER_STATS comments:
         // VISIBLE_LIGHTS_MS is a peer of the others, STAMP_LIGHTS_MS is a sub-timer of
         // SHADOW_Q_MS.
@@ -970,7 +970,6 @@ class PreRenderWorker extends AbstractWorker {
         this.shadowQTimeThisFrame = 0;
         this.visibilityTimeThisFrame = 0;
         this.adobeTimeThisFrame = 0;
-        this.waitTimeThisFrame = 0;
         // E-29.
         this.visibleLightsTimeThisFrame = 0;
         this.stampLightsTimeThisFrame = 0;
@@ -3708,7 +3707,9 @@ class PreRenderWorker extends AbstractWorker {
         this.stats[PRE_RENDER_STATS.VISIBLE_LIGHTS_MS] = this.visibleLightsTimeThisFrame;
         this.stats[PRE_RENDER_STATS.VISIBILITY_MS] = this.visibilityTimeThisFrame;
         this.stats[PRE_RENDER_STATS.ADOBE_MS] = this.adobeTimeThisFrame;
-        this.stats[PRE_RENDER_STATS.WAIT_MS] = this.waitTimeThisFrame;
+        // Review D3: the shared meter (reset each frame by AbstractWorker), not a
+        // field nothing ever set. 0 unless pre-render calls a blocking query.
+        this.stats[PRE_RENDER_STATS.WAIT_MS] = waitMeterMs();
     }
 }
 
