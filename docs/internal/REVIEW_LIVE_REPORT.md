@@ -17,8 +17,28 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**04:54** — Guide pass done (DOC1, DOC2, DOC4, DOC6, DOC7). Left in Phase 8: DOC3 (topics the
-guide is missing) and DOC5 (internal log rows). E-46b measured and not kept.
+**05:00** — **Phase 8 (docs) is complete.** Running now: E-60 (Pixi's circle lighting with a
+cos/sin table) on a new round-occluder setting of the lighting stress scene.
+
+### 05:00 — The missing guide pages, and the measurement log caught up (`b6bd6bc9`, `9b5ce309`, `c935bbf8`, `b56e0080`)
+
+- **New guide sections:**
+  - how to read and turn the camera;
+  - why a raycasted light can miss shadow-casters (it only sees what is within its own
+    `visualRange`; the guide shows how to set it);
+  - compound bodies as shadow-casters;
+  - audio buses;
+  - the full ray and physics-query API;
+  - polygon "skin";
+  - the frame-clock buffer.
+- **Types.** `Time` and `Tween` now have TypeScript types. The particle emit config matches the
+  code: a non-existent method was removed and a real one added.
+- **The measurement log** has 24 new entries: everything measured earlier that had no entry, plus
+  today's results.
+- How: four agents, each owning separate files, wrote against the source. I reviewed every diff
+  and corrected two statements that today's own changes had made out of date.
+
+**04:54** — Guide pass done (DOC1, DOC2, DOC4, DOC6, DOC7). E-46b measured and not kept.
 
 ### 04:54 — The user guide now matches the engine (`4a6c76ab`, `aa58985a`)
 
