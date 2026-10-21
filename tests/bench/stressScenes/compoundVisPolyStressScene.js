@@ -6,6 +6,7 @@ import WEED from '/src/index.js';
 import { VisPolyAlbedo } from './visPoly/visPolyAlbedo.js';
 import { CompoundVisIsland } from './compoundVisPoly/compoundVisIsland.js';
 import { CompoundVisLight } from './compoundVisPoly/compoundVisLight.js';
+import { VisPolyOccluder } from './visPoly/visPolyOccluder.js';
 
 const { Scene, Camera } = WEED;
 
@@ -44,8 +45,23 @@ export const RING_SEGMENTS = (() => {
   }
 })();
 
+/**
+ * `?boxes=N`: N plain box occluders among the islands, so lights see simple and
+ * compound occluders together and merge the sweep into the polar bins (E-43).
+ * 0 (default) is the compound-only scene.
+ */
+export const BOXES = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('boxes');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+})();
+
 export const stressSceneConfig = {
-  requested: { remeshEvery: REMESH_EVERY, ringSegments: RING_SEGMENTS },
+  requested: { remeshEvery: REMESH_EVERY, ringSegments: RING_SEGMENTS, boxes: BOXES },
 };
 const TRIS = RING_SEGMENTS * 2;
 const WORLD_W = 2400;
@@ -89,6 +105,9 @@ export class CompoundVisPolyStressScene extends Scene {
     [VisPolyAlbedo, 1],
     [CompoundVisLight, LIGHTS],
     [CompoundVisIsland, ISLANDS],
+    // Always listed: a worker reads no query, so a conditional entry would leave
+    // it unbound there. The page's count is the one that sizes the pool.
+    [VisPolyOccluder, BOXES],
   ];
 
   create() {
@@ -135,6 +154,15 @@ export class CompoundVisPolyStressScene extends Scene {
         y: 300 + rng() * (WORLD_H - 600),
         vx: Math.cos(dir) * speed,
         vy: Math.sin(dir) * speed,
+      });
+    }
+    // After the lights, so the default scene draws the same random numbers.
+    for (let i = 0; i < BOXES; i++) {
+      this.spawnEntity(VisPolyOccluder, {
+        x: 160 + rng() * (WORLD_W - 320),
+        y: 160 + rng() * (WORLD_H - 320),
+        width: 24 + rng() * 40,
+        height: 24 + rng() * 40,
       });
     }
     Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);
