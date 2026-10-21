@@ -201,12 +201,25 @@ for (let i = 0; i < FULL_CIRCLE_SEGS; i++) {
   _fullCircleC[i] = Math.cos(a);
   _fullCircleS[i] = Math.sin(a);
 }
+// N-39: which occluders the last sweep's vertices landed on. A sweep that gave
+// up (event or active overflow, a full circle) cannot tell: everyone counts.
+const _occSeenStamp = new Uint32Array(MAX_OCC_CACHE);
+let _sweepStamp = 0;
+let _sweepSeenValid = false;
+
+/** Whether the last buildVisibilityPolygon put a vertex on occluder `oi` (N-39). */
+export function sweepSawOccluder(oi) {
+  if (!_sweepSeenValid || oi >= MAX_OCC_CACHE) return true;
+  return _occSeenStamp[oi] === _sweepStamp;
+}
+
 let _warnedEventOverflow = false;
 let _warnedActiveOverflow = false;
 
 const _tangentOut = new Int32Array(2);
 
 function warnEventOverflow(occCount) {
+  _sweepSeenValid = false;
   if (_warnedEventOverflow) return;
   _warnedEventOverflow = true;
   console.warn(
@@ -216,6 +229,7 @@ function warnEventOverflow(occCount) {
 }
 
 function warnActiveOverflow() {
+  _sweepSeenValid = false;
   if (_warnedActiveOverflow) return;
   _warnedActiveOverflow = true;
   console.warn(
@@ -249,6 +263,12 @@ export function buildVisibilityPolygon(
   kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
   occCount, outX, outY, maxVertices
 ) {
+  _sweepStamp = (_sweepStamp + 1) >>> 0;
+  if (_sweepStamp === 0) {
+    _occSeenStamp.fill(0);
+    _sweepStamp = 1;
+  }
+  _sweepSeenValid = true;
   if (occCount === 0) {
     return buildFullCircle(lightX, lightY, maxRadius, outX, outY, maxVertices);
   }
@@ -469,6 +489,7 @@ function emitVertex(
   if (vertCountOut >= maxVertices) return vertCountOut;
 
   let minDist = maxRadius;
+  let hitOcc = -1;
 
   for (let a = 0; a < _activeCount; a++) {
     const oi = _activeOcc[a];
@@ -478,8 +499,12 @@ function emitVertex(
     } else {
       d = rayPolyDist(lightX, lightY, dirX, dirY, vertsX, vertsY, vertStart[oi], vertCount[oi] | 0);
     }
-    if (d < minDist) minDist = d;
+    if (d < minDist) {
+      minDist = d;
+      hitOcc = oi;
+    }
   }
+  if (hitOcc >= 0 && minDist < maxRadius - EPSILON) _occSeenStamp[hitOcc] = _sweepStamp;
 
   // Free sky: oversize so fan chord sits outside R; frag clips to uLightRadius
   const placeDist = minDist >= maxRadius - EPSILON ? maxRadius * FREE_OVERSIZE : minDist;

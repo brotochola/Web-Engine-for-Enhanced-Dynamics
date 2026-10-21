@@ -8,6 +8,7 @@ import {
   markSeenPolarOwners,
   OCC_POLY,
   rasterBoundarySegment,
+  sweepSawOccluder,
   writeOrientedBoxVerts,
 } from '../../src/render/visibility/angularSweep.js';
 
@@ -40,6 +41,23 @@ function sweepThenClip(simple) {
   }
   const n = buildVisibilityPolygon(0, 0, R, kind, cx, cy, cr, vertStart, vertCount, vx, vy, occ, outX, outY, MAX);
   return clipVisibilityToPolar(0, 0, outX, outY, n, outX, outY, MAX);
+}
+
+function sweepThenClipMany(boxes) {
+  const n = boxes.length;
+  const kind = new Uint8Array(n).fill(OCC_POLY);
+  const f = new Float32Array(n);
+  const vertStart = new Int32Array(n);
+  const vertCount = new Uint8Array(n).fill(4);
+  const vx = new Float32Array(n * 4);
+  const vy = new Float32Array(n * 4);
+  boxes.forEach(([x, y, w, h], i) => {
+    vertStart[i] = i * 4;
+    writeOrientedBoxVerts(vx, vy, i * 4, x, y, w, h, 1, 0, 0, 0);
+  });
+  const outX = new Float32Array(MAX);
+  const outY = new Float32Array(MAX);
+  return buildVisibilityPolygon(0, 0, R * 10, kind, f, f, f, vertStart, vertCount, vx, vy, n, outX, outY, MAX);
 }
 
 function stampWalls() {
@@ -94,7 +112,7 @@ test('before any merge, the caller is told it cannot know', () => {
   assert.equal(markSeenPolarOwners(new Uint32Array(16), 1), -1);
 });
 
-test('pre-render keeps only the seen solids of a light, simple occluders included', async () => {
+test('pre-render keeps only the occluders a light sees, solids and simple ones', async () => {
   const { loadWorker } = await import('../bench/workerHarness.mjs');
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const itemBytes = 28;
@@ -102,18 +120,22 @@ test('pre-render keeps only the seen solids of a light, simple occluders include
   const buf = { i32: new Int32Array(sab), f32: new Float32Array(sab), u8: new Uint8Array(sab) };
   pre._selfLitItemBytes = itemBytes;
   pre._selfLitSolid = new Uint8Array(8);
+  pre._selfLitOcc = new Int32Array(8);
   pre._selfLitSeen = new Uint32Array(16);
-  // Items 2..5 belong to this light: solid 7, a simple occluder 3, solid 8, solid 9.
+  // Items 2..5 belong to this light: solid 7, a simple occluder 3 (sweep
+  // occluder 0, a box up the y axis that the light sees), solid 8, solid 9.
   const items = [[1, 0], [2, 0], [7, 1], [3, 0], [8, 1], [9, 1]];
   items.forEach(([id, solid], q) => {
     const at = (4 + q * itemBytes) >> 2;
     buf.i32[at] = id;
     buf.f32[at + 2] = id * 10; // a payload that must move with its item
     pre._selfLitSolid[q] = solid;
+    pre._selfLitOcc[q] = 0;
   });
   stampWalls();
-  sweepThenClip([]);
-  const kept = pre._dropUnseenSolids(buf, 2, items.length, true);
+  sweepThenClip([[0, 150, 40, 20]]);
+  assert.equal(sweepSawOccluder(0), true);
+  const kept = pre._dropUnseen(buf, 2, items.length, true);
   assert.equal(kept, 5);
   const ids = [];
   for (let q = 0; q < kept; q++) {
@@ -122,7 +144,34 @@ test('pre-render keeps only the seen solids of a light, simple occluders include
     assert.equal(buf.f32[at + 2], buf.i32[at] * 10, `item ${q} moved whole`);
   }
   assert.deepEqual(ids, [1, 2, 7, 3, 9], 'solid 8 is behind solid 7');
-  // No bin stamped at all: no solid is seen, the simple occluder stays.
-  assert.equal(pre._dropUnseenSolids(buf, 2, kept, false), 3);
+  // No bin stamped at all: no solid is seen, the seen simple occluder stays.
+  assert.equal(pre._dropUnseen(buf, 2, kept, false), 3);
   assert.equal(buf.i32[(4 + 2 * itemBytes) >> 2], 3);
+});
+
+// N-39. Simple occluders (boxes, circles, polygons) went into the self-lit
+// queue by range alone, as solids did before N-19. The sweep now records which
+// occluder each of its vertices lands on.
+test('a box wholly behind another box is not seen; the one in front is', () => {
+  // Occluder 0: a tall box at x = 100. Occluder 1: a smaller one at x = 200,
+  // inside 0's shadow. Occluder 2: a box behind the light, in the clear.
+  sweepThenClip([[100, 0, 10, 120], [200, 0, 10, 40], [-150, 0, 10, 40]]);
+  assert.equal(sweepSawOccluder(0), true, 'the near box');
+  assert.equal(sweepSawOccluder(1), false, 'the box in its shadow');
+  assert.equal(sweepSawOccluder(2), true, 'the box behind the light');
+});
+
+test('a sweep that gives up does not hide anyone', () => {
+  // More events than the sweep holds: it falls back to a full circle and
+  // cannot tell who was seen, so everyone counts (the old range behaviour).
+  const many = [];
+  for (let i = 0; i < 1100; i++) many.push([120 + (i % 30) * 12, ((i / 30) | 0) * 12 - 200, 4, 4]);
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    sweepThenClipMany(many);
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(sweepSawOccluder(1000), true);
 });
