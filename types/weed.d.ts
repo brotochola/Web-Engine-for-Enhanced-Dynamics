@@ -4101,4 +4101,10 @@ declare global {
     /** Populated when the UMD/global build assigns `window.WEED`. */
     WEED?: Readonly<WeedNamespace>;
   }
+  /**
+   * The engine, for scene and entity files that do not import it. Importing the
+   * engine on the page defines it; each worker defines its own, without the
+   * main-thread-only names (GameEngine, saveGame, …).
+   */
+  var WEED: Readonly<WeedNamespace>;
 }
