@@ -1,7 +1,7 @@
 // AbstractWorker.js - Base class for all game engine workers
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
-import { GameObject, SpriteSheetRegistry } from '../core/gameObject.js';
+import { GameObject } from '../core/gameObject.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import Keyboard from '../core/keyboard.js';
 import { Mouse } from '../core/mouse.js';
@@ -9,12 +9,11 @@ import { Gamepad } from '../core/gamepad.js';
 import { ParticleEmitter } from '../core/particleEmitter.js';
 import { DecorationPool } from '../core/decorationPool.js';
 import { DecorationSpatial } from '../core/decorationSpatial.js';
-import { Decoration } from '../core/decoration.js';
 import { BulletPool } from '../core/bulletPool.js';
 import { BulletComponent } from '../components/bulletComponent.js';
-import { Flash } from '../core/flash.js';
 import { Time } from '../core/timeScale.js';
 import { Tween } from '../core/tween.js';
+import { WORKER_WEED } from './workerWeed.js';
 import {
   bindSceneGraph,
   missingWorkerEntityClasses,
@@ -26,12 +25,6 @@ import {
   initializeComponentViews,
   exposeComponentsGlobally,
   exposeEntityClassesGlobally,
-  randomColor,
-  distanceSq2D,
-  getDirectionFromAngle,
-  getDirectionFromVector,
-  getDirection8FromVector,
-  containerRadius,
 } from '../util/utils.js';
 import { Camera } from '../core/camera.js';
 import { Sun } from '../core/sun.js';
@@ -42,7 +35,6 @@ import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
 import { bindFrameClock, stampStep } from '../util/frameClock.js';
-import { SceneBridge } from '../core/sceneBridge.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
 import { Grid } from '../core/grid.js';
@@ -73,8 +65,6 @@ import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { bindBodySyncBuffers, bindPoseSlotBuffers } from '../box2d/box2dBodySync.js';
 
 import { Component } from '../core/component.js';
-import { FSM } from '../core/fsm.js';
-import { FSMState } from '../core/fsmState.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
@@ -86,11 +76,6 @@ import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
-import { CameraInOutListener } from '../components/cameraInOutListener.js';
-import { CollisionListener } from '../components/collisionListener.js';
-import { JointBreakListener } from '../components/jointBreakListener.js';
-import { Grab } from '../components/grab.js';
-import { ShapeType } from '../util/configDefaults.js';
 import { bindPoolExhaustion } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from '../core/messages.js';
@@ -1017,69 +1002,15 @@ export class AbstractWorker {
   }
 
   /**
-   * Register core engine classes globally for all workers
-   * These are the fundamental engine classes needed across all worker types
+   * Scene and entity scripts read engine names from `WEED` or as globals.
+   * Bundled workers evaluate those files without imports (see loadSingleScript).
    */
   registerCoreClasses() {
-    self.GameObject = GameObject;
-    self.Component = Component;
-    self.SharedResource = SharedResource;
-    self.FSM = FSM;
-    self.FSMState = FSMState;
-    self.Mouse = Mouse;
-    self.Keyboard = Keyboard;
-    self.Ray = Ray;
-    self.DebugDraw = DebugDraw;
-    self.DebugUI = DebugDraw; // alias so game scripts can use DebugUI.drawLine(...)
-    self.Grid = Grid;
-    self.NavGrid = NavGrid;
-    self.Camera = Camera;
-    self.Sun = Sun;
-    self.SpriteSheetRegistry = SpriteSheetRegistry;
-    self.AdobeAnimRegistry = AdobeAnimRegistry;
-    self.SoundManager = SoundManager;
-    self.Joint = Joint;
-    self.Layer = Layer;
-    self.SceneBridge = SceneBridge;
-    self.Gamepad = Gamepad;
-    self.Box2d = Box2d;
-    self.Decal = Decal;
-    self.Query = Query;
-    self.LiquidFun = LiquidFun;
-
-    // Components (required for blob worker entity script evaluation)
-    self.Transform = Transform;
-    self.RigidBody = RigidBody;
-    self.Collider = Collider;
-    self.SpriteRenderer = SpriteRenderer;
-    self.MeshRenderer = MeshRenderer;
-    self.AdobeAnimComponent = AdobeAnimComponent;
-    self.ParticleComponent = ParticleComponent;
-    self.LightEmitter = LightEmitter;
-    self.ShadowCaster = ShadowCaster;
-    self.FlashComponent = FlashComponent;
-    self.DecorationComponent = DecorationComponent;
-    self.BulletComponent = BulletComponent;
-    self.CameraInOutListener = CameraInOutListener;
-    self.CollisionListener = CollisionListener;
-    self.JointBreakListener = JointBreakListener;
-    self.Grab = Grab;
-
-    // Systems
-    self.ParticleEmitter = ParticleEmitter;
-    self.DecorationPool = DecorationPool;
-    self.Decoration = Decoration;
-    self.BulletPool = BulletPool;
-    self.Flash = Flash;
-
-    // Enums & utilities
-    self.ShapeType = ShapeType;
-    self.randomColor = randomColor;
-    self.distanceSq2D = distanceSq2D;
-    self.getDirectionFromAngle = getDirectionFromAngle;
-    self.getDirectionFromVector = getDirectionFromVector;
-    self.getDirection8FromVector = getDirection8FromVector;
-    self.containerRadius = containerRadius;
+    self.WEED = WORKER_WEED;
+    const names = Object.keys(WORKER_WEED);
+    for (let i = 0; i < names.length; i++) {
+      self[names[i]] = WORKER_WEED[names[i]];
+    }
   }
 
   /**
