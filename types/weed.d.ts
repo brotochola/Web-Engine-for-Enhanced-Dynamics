@@ -17,6 +17,9 @@ export {
   randomColor,
   rng,
   layerMask,
+  normalizeAngle,
+  dot2,
+  randomUnitCS,
 } from './utils';
 
 // --- Config / enums (from ConfigDefaults.js) ---
@@ -3839,6 +3842,9 @@ export interface WeedNamespace extends WeedEnums {
   randomColor: typeof import('./utils').randomColor;
   rng: typeof import('./utils').rng;
   layerMask: typeof import('./utils').layerMask;
+  normalizeAngle: typeof import('./utils').normalizeAngle;
+  dot2: typeof import('./utils').dot2;
+  randomUnitCS: typeof import('./utils').randomUnitCS;
   SPRITE_TILE_MODE: typeof SPRITE_TILE_MODE;
   enums: WeedEnums;
   author: string;

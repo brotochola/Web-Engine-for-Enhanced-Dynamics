@@ -975,6 +975,9 @@ WEED.distanceSq2D(x1, y1, x2, y2)
 WEED.getDirectionFromAngle(angle)
 WEED.containerRadius(count, radius)
 WEED.mixTint(colorA, colorB, t)
+WEED.normalizeAngle(angle)              // into [0, 2π]
+WEED.dot2(ax, ay, bx, by)               // ax*bx + ay*by
+WEED.randomUnitCS(out)                  // out.c, out.s = cos/sin of a random angle
 
 // Sound (works from both main thread and workers)
 WEED.SoundManager.play('hit', 0.8);                         // name, volume

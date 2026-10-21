@@ -77,6 +77,10 @@ export function rayPolygonIntersect(
 export function randomRange(value: unknown, defaultVal?: number): number;
 export function randomColor(value: unknown, defaultVal?: number): number;
 export function distanceSq2D(x1: number, y1: number, x2: number, y2: number): number;
+/** ax*bx + ay*by. */
+export function dot2(ax: number, ay: number, bx: number, by: number): number;
+/** A random unit direction as cos/sin, written into `out` and returned. */
+export function randomUnitCS<T extends { c: number; s: number }>(out: T): T;
 export function cantorPair(a: number, b: number): number;
 export function cantorUnpair(z: number, result?: { a: number; b: number }): { a: number; b: number };
 export function collisionPairKey(minE: number, maxE: number): number;

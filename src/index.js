@@ -48,6 +48,9 @@ export {
   randomColor,
   rng,
   layerMask,
+  normalizeAngle,
+  dot2,
+  randomUnitCS,
 } from './util/utils.js';
 export {
   SaveStore,
@@ -210,6 +213,9 @@ import {
   randomColor,
   rng,
   layerMask,
+  normalizeAngle,
+  dot2,
+  randomUnitCS,
 } from './util/utils.js';
 
 import { Transform } from './components/transform.js';
@@ -439,6 +445,9 @@ const WEED = Object.freeze({
   randomColor,
   rng,
   layerMask,
+  normalizeAngle,
+  dot2,
+  randomUnitCS,
 
   SPRITE_TILE_MODE,
   enums,
