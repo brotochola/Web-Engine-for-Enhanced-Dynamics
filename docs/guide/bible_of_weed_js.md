@@ -92,7 +92,16 @@ class MyScene extends WEED.Scene {
 
 Do **not** branch on `_restorePayload` inside `create()`. Use `createNewGame` / `onLoadGame` instead.
 
-`game.loadScene(url, { data })` hands parameters to the scene (level number, a menu choice): `this.data`, also the argument of `preload`, `create` and `createNewGame`. It lives on the main thread; entities get what they need through `spawnConfig` or a `SharedResource`. `scene.loadGame(slot)` remounts with the same `data`. Full save API: [`docs/guide/SAVE_GAME.md`](./SAVE_GAME.md).
+`game.loadScene(url, { data })` hands parameters to the scene (level number, a menu choice): `this.data`, also the argument of `preload`, `create` and `createNewGame`. It lives on the main thread; entities get what they need through `spawnConfig` or a `SharedResource`. `scene.loadGame(slot)` remounts with the same `data`.
+
+**Loading screen.** `onLoadProgress(done, total, stage)` runs on the main thread once per finished boot step: `audio`, `scripts`, `buffers`, `adobe`, `atlas`, `tilemaps`, `flowfields`, `shaders`, `sounds` (the asset steps finish in any order), `workers`, `world` (last, right before the first frame). Drive an HTML bar from it; when the menu owns the bar, pass the same callback as `loadScene(url, { onProgress })`. A throw in it is logged and loading goes on.
+
+```javascript
+onLoadProgress(done, total, stage) {
+  bar.style.width = `${(100 * done) / total}%`;
+  label.textContent = stage;
+}
+``` Full save API: [`docs/guide/SAVE_GAME.md`](./SAVE_GAME.md).
 
 ### Prebaked bigAtlas
 

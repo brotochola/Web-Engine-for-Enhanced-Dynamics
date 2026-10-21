@@ -142,6 +142,12 @@ import {
 } from '../util/spawnCommandRing.js';
 
 class Scene {
+  /** Steps onLoadProgress reports, in boot order (the asset ones overlap). */
+  static LOAD_STEPS = Object.freeze([
+    'audio', 'scripts', 'buffers', 'adobe', 'atlas', 'tilemaps',
+    'flowfields', 'shaders', 'sounds', 'workers', 'world',
+  ]);
+
   // Worker index constants for FrameRate SharedArrayBuffer
   // Spatial workers use indices 0..N-1 (N = numberOfSpatialWorkers).
   // Other roles offset by numberOfSpatialWorkers.
@@ -174,6 +180,10 @@ class Scene {
      * Main thread only: entities get what they need through spawnConfig or a SharedResource.
      */
     this.data = null;
+    /** Load steps finished so far (onLoadProgress). */
+    this._loadStepsDone = 0;
+    /** loadScene's { onProgress }, set by GameEngine; null when none. */
+    this._onProgressOption = null;
 
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
@@ -1001,14 +1011,17 @@ class Scene {
       audioConfig.compressor
     );
     SoundManager.initializeAutoplayGate();
+    this._loadStep('audio');
 
     // Load entity scripts dynamically in main thread (like workers do)
 
     await this.loadEntityScriptsInMainThread();
+    this._loadStep('scripts');
 
     // Create shared buffers
 
     this.createSharedBuffers();
+    this._loadStep('buffers');
 
     // Create workers
 
@@ -1016,6 +1029,7 @@ class Scene {
 
     // Wait for all workers to be ready (workers stay paused until we send 'start')
     await this.readyPromise;
+    this._loadStep('workers');
 
     // Expose scene and component references globally for console access
     this.exposeGlobalReferences();
@@ -1048,6 +1062,7 @@ class Scene {
       await this.createNewGame(this.data);
       await this._flushCreateSpawns();
     }
+    this._loadStep('world');
     this._spawnBatchOpen = false;
 
     // LIFECYCLE PHASE 3: Start everything.
@@ -1205,6 +1220,30 @@ class Scene {
    */
   onLoadGame(payload) {
     // Override for post-load scene logic
+  }
+
+  /**
+   * Called on the main thread while the scene loads, once per finished step:
+   * audio, scripts, buffers, adobe, atlas, tilemaps, flowfields, shaders,
+   * sounds, workers, world (the asset steps finish in any order). `done` goes
+   * 1 … `total`; the last call is 'world', right before the first frame.
+   * Drive an HTML loading screen from here; a throw is logged, not fatal.
+   * @param {number} done
+   * @param {number} total
+   * @param {string} stage - the step that just finished
+   */
+  onLoadProgress(done, total, stage) {}
+
+  /** @internal One load step finished: scene hook, then loadScene's onProgress. */
+  _loadStep(stage) {
+    const done = ++this._loadStepsDone;
+    const total = Scene.LOAD_STEPS.length;
+    try {
+      this.onLoadProgress(done, total, stage);
+      if (this._onProgressOption !== null) this._onProgressOption(done, total, stage);
+    } catch (error) {
+      console.error('WeedJS: onLoadProgress threw (loading continues):', error);
+    }
   }
 
   /**
@@ -1515,6 +1554,11 @@ class Scene {
     const sceneSpritesheets = imageUrls?.spritesheets || {};
     const adobeAnimateAnimations = imageUrls?.AdobeAnimateAnimations || {};
     const preparedAdobeAssets = await this.prepareAdobeAnimateAssets(adobeAnimateAnimations);
+    this._loadStep('adobe');
+    const step = (stage) => (value) => {
+      this._loadStep(stage);
+      return value;
+    };
     const bakedBigAtlas = imageUrls?.bigAtlas;
     const atlasOptions = this.config.assets;
 
@@ -1552,11 +1596,11 @@ class Scene {
     );
 
     const [atlasResult, , , , loadedAudioNames] = await Promise.all([
-      atlasPromise,
-      this._loadTilemapsParallel(imageUrls?.tilemaps),
-      flowfieldsPromise,
-      this._loadShaderSources(imageUrls),
-      audioPromise,
+      atlasPromise.then(step('atlas')),
+      this._loadTilemapsParallel(imageUrls?.tilemaps).then(step('tilemaps')),
+      flowfieldsPromise.then(step('flowfields')),
+      this._loadShaderSources(imageUrls).then(step('shaders')),
+      audioPromise.then(step('sounds')),
     ]);
 
     this._installBigAtlas(atlasResult, preparedAdobeAssets.compiledAssets);

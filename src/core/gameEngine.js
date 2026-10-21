@@ -287,9 +287,11 @@ class GameEngine {
    * and workers load that same file (entity graph, no per-entity scriptUrl).
    * Class: same as today; engine infers the file from loaded JS when it can.
    * @param {string|Function} source
-   * @param {{ data?: unknown, restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string }} [options]
+   * @param {{ data?: unknown, onProgress?: (done: number, total: number, stage: string) => void, restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string }} [options]
    *   data: handed to the scene as scene.data and as the argument of preload / create /
    *   createNewGame (level number, a menu choice, …).
+   *   onProgress(done, total, stage): the same calls as Scene.onLoadProgress, for a
+   *   loading screen the caller owns.
    * @returns {boolean} - true if scene change accepted, false if busy
    */
   async loadScene(source, options = {}) {
@@ -364,6 +366,7 @@ class GameEngine {
       this.currentScene = new SceneClass(this);
       this.currentScene.sceneScriptUrl = sceneScriptUrl;
       this.currentScene.data = options.data === undefined ? null : options.data;
+      if (typeof options.onProgress === 'function') this.currentScene._onProgressOption = options.onProgress;
       if (restorePayload) {
         this.currentScene._restorePayload = restorePayload;
       }

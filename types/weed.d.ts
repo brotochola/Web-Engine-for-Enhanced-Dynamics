@@ -1145,7 +1145,7 @@ export declare class GameEngine {
   debugUI: DebugUI | null;
   constructor(config?: GameEngineConfig);
   /** data: handed to the scene as scene.data and as the argument of preload / create / createNewGame. */
-  loadScene(source: string | typeof Scene, options?: { data?: unknown; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
+  loadScene(source: string | typeof Scene, options?: { data?: unknown; onProgress?: (done: number, total: number, stage: string) => void; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
   readonly presenting: boolean;
   setPresenting(on: boolean): void;
   rebindSurface(): void;
@@ -1444,6 +1444,10 @@ export declare class Scene {
   onLoadGame(payload: { custom: unknown; [key: string]: unknown }): void | Promise<void>;
   /** While a save is built: scene state outside entities (score, flags, level), as JSON data. */
   onSaveGame(): unknown;
+  /** Steps onLoadProgress reports, in boot order. */
+  static readonly LOAD_STEPS: readonly string[];
+  /** Once per finished boot step (main thread): drive an HTML loading screen. Last call: 'world'. */
+  onLoadProgress(done: number, total: number, stage: string): void;
   update(dtRatio: number, deltaTime: number, accumulatedTime: number, frameNumber: number): void;
   onMessageFromGameObject(
     data: unknown,
