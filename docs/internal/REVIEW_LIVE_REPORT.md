@@ -17,6 +17,30 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**17:08** — **N-17 done: `LiquidFun.setRadialGravity(x, y, accel)`** (`da9dfe76` engine, `ddb7efc9` planet). B7 (`37827604`) and N-26 (`5c6be84d`) were done just before. On the way: N-40, a LiquidFun force quirk, documented (`0cc1d351`). Suite 1,443 / 1,443.
+
+### 17:08 — One setting pulls the planet's water
+
+- **What it is:** `LiquidFun.setRadialGravity(x, y, accel)` pulls every particle toward a point, in
+  px/s², on top of world gravity, until the next call; 0 turns it off. It is one command. Physics
+  keeps the setting and adds the pull to each particle's velocity before every step.
+- **Why the planet needed it:** the water's pull was one command per particle per logic tick.
+  - Headless with about 3,770 particles, HEAD dropped commands in every run (1,772 in one).
+    With the change: none.
+  - Logic time on the planet fell from 0.87 to 0.10 ms per frame.
+- **Something I did not expect:** on HEAD the water got only half of the pull the ship and rock get.
+  LiquidFun applies `applyForce` in the first of its sub-steps only, and the planet runs two.
+  - With the full pull, the water now sits lower: 25 px above the ground against 33 px on HEAD.
+  - The denser water costs physics about 1 ms per frame (13.9 against 12.4–13.3 ms; one run).
+  - Set the planet to `G / 2` if you prefer the old look.
+- **Cost of the code itself:** I compared HEAD with the new code at half the pull, so the water was
+  the same on both sides (33 px on both). Physics was within noise: +3.8, −5.7 and −6.2 % over three
+  pairs.
+- **N-40:** the force quirk is how Google's LiquidFun works too. I documented it on `applyForce`,
+  `applyForceRange`, the types and the guide. Changing it means a C change and a wasm rebuild: your call.
+- **B7 confirmation:** the contact, hit and joint-break rings append, so several steps per frame
+  publish safely. That was the open question in B7's plan.
+
 **16:06** — **N-35 fixed: the scoreboard no longer calls noise a regression** (`27a8a786`). A row flagged WORSE is measured again over 4 alternating pairs and only stays WORSE if it holds. Tried on a known-noisy row: four pairs of identical code read −4.7 / −3.0 / +1.5 / +2.6 %, not a regression. Also one more test now runs the code it guards instead of reading its text (M8, `7d0df259`): the physics force pass, which now also covers N-4.
 
 **16:02** — **N-39 and N-5 fixed, N-8 seen working in the demo** (`b909df57`, `8426a084`, `1e2984e3`).
