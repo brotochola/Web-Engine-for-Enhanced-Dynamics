@@ -178,6 +178,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [x] **E-54** — kept `1a1c4c37`: the begin Set of pair keys is a per-slot stamp. Predator's ids now pass 16384, so 4.2 MB/s of keys were heap numbers; **logic −382 µs at matched load (se 132)**.
 - [x] **E-67** — audited: the other workers are clean or vendor/demo code. CLAUDE.md rule added. **E-68** (FSM time boxed per onUpdate) screened: API change for ~0.5 %.
 - [~] **E-69** — dropped: component getters by integer slot. Kernel tie, Predator logic −137 µs (se 70) at matched load, but the getter's own profile time rose 749 → 1,079 ms. Code restored (as L4 in September).
+- [ ] **E-70** Spatial: neighbor search gathers positions in entity order (25 % + 13 % of its time); needs a compact cell-ordered copy (design).
 - [ ] **E-63** Sweep: cos/sin of an atan2 angle per event; not bit-identical, needs a tolerance argument.
 - [~] **E-64** — screened, premise wrong: a function in the CPU profile can still be inlined (the profiler names inlined code by its source). Folding the merge's searches tied in Chrome and lost 5.4 % in Node; reverted. Merge binary searches "not inlined".
 - [x] **E-60** — kept `7c301240`: Pixi's circle fan reads a cos/sin table. Round-occluder vis-poly scene: **renderer −13.2 % (4/4)**.

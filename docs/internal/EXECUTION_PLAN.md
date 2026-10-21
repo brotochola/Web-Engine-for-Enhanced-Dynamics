@@ -1463,6 +1463,17 @@ is cheaper than it looks; the getter's share is mostly how often demo ticks call
 in how components attach (e.g. own fields set at construction), which is an API and memory question,
 not a quick change.
 
+### E-70 The neighbor search gathers each candidate's position in entity order — **not-started (design)**
+Predator CPU profile, 2026-10-21:  is ~60 % of spatial (5.4 ms), and
+ is 25 % of it, the dedup  another 13 %: two
+gathers per candidate in entity order through the cell lists (the 2026-10-06 trace saw the same 23 %).
+Idea: positions in cell order, read sequentially; and a per-slot "spans more than one cell" flag so
+single-cell entities skip the marker (same candidates, same order). **Constraint:** the grid keeps
+ (~255) slots per cell, so a slot-parallel float copy is ~8× the grid's memory; a compact
+CSR copy needs a counting pass before the fill in . With several spatial workers a
+private copy covers only owned rows (fallback per cell). Kernel , then
+Predator spatial with a load fit.
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above — **kept: adaptive insertion → merge** (`c53f163b`; kernel `7319ff1c`)
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at
