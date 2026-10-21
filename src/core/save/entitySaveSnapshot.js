@@ -58,26 +58,49 @@ export function componentSchemaFingerprint(ComponentClass) {
 }
 
 /**
+ * A component's saved fields, in schema order, and its fingerprint. Built once
+ * per save for each class: per entity it cost a fingerprint string, an entries
+ * array and a schema object per field (E-49). Per save, not global: a schema
+ * can change between scenes (entity-id width).
+ */
+function componentPlan(ComponentClass, plans) {
+  let plan = plans.get(ComponentClass);
+  if (plan) return plan;
+  const names = [];
+  const lengths = [];
+  for (const [fieldName, typeOrSpec] of Object.entries(ComponentClass.ARRAY_SCHEMA)) {
+    names.push(fieldName);
+    lengths.push(Component._schemaEntry(typeOrSpec).length);
+  }
+  plan = { fingerprint: componentSchemaFingerprint(ComponentClass), names, lengths };
+  plans.set(ComponentClass, plan);
+  return plan;
+}
+
+/**
  * Read one entity's component fields into a plain object map.
  * @param {Function} EntityClass
  * @param {number} entityIndex
+ * @param {Map} [plans] per-save cache of componentPlan; omitted, one is made for this call
  * @returns {Record<string, { fingerprint: number, fields: Record<string, number|number[]> }>|null}
  */
-export function readEntityComponents(EntityClass, entityIndex) {
+export function readEntityComponents(EntityClass, entityIndex, plans = new Map()) {
   const map = EntityClass._componentClassMap || {};
   const out = {};
 
   for (const name in map) {
     const ComponentClass = map[name];
     if (!ComponentClass?.ARRAY_SCHEMA) continue;
+    const plan = componentPlan(ComponentClass, plans);
     // Skip empty schemas
-    if (Object.keys(ComponentClass.ARRAY_SCHEMA).length === 0 && ComponentClass !== Transform) {
+    if (plan.names.length === 0 && ComponentClass !== Transform) {
       continue;
     }
 
     const fields = {};
-    for (const [fieldName, typeOrSpec] of Object.entries(ComponentClass.ARRAY_SCHEMA)) {
-      const { length } = Component._schemaEntry(typeOrSpec);
+    for (let p = 0; p < plan.names.length; p++) {
+      const fieldName = plan.names[p];
+      const length = plan.lengths[p];
       const arr = ComponentClass[fieldName];
       if (!arr) continue;
       if (length === 1) {
@@ -109,7 +132,7 @@ export function readEntityComponents(EntityClass, entityIndex) {
     }
 
     out[ComponentClass.name] = {
-      fingerprint: componentSchemaFingerprint(ComponentClass),
+      fingerprint: plan.fingerprint,
       fields,
     };
   }
@@ -193,6 +216,7 @@ export function applyEntitySaveRestore(entityIndex, EntityClass, components) {
 export function collectSerializableEntities(scene) {
   const records = [];
   const registered = scene.registeredClasses || [];
+  const plans = new Map();
 
   for (let r = 0; r < registered.length; r++) {
     const EntityClass = registered[r].class;
@@ -208,7 +232,7 @@ export function collectSerializableEntities(scene) {
       records.push({
         typeName,
         entityIndex,
-        components: readEntityComponents(EntityClass, entityIndex),
+        components: readEntityComponents(EntityClass, entityIndex, plans),
       });
     }
   }

@@ -20,6 +20,7 @@ export class AdobeAnimateScene extends Scene {
       noLimitFPS: false,
       gravity: { x: 0, y: 0 },
       sleeping: false,
+      commandRingCapacity: 65535
     },
     particle: {
       noLimitFPS: false,
@@ -30,11 +31,15 @@ export class AdobeAnimateScene extends Scene {
       backend: 'webgl',
       noLimitFPS: false,
       ySort: true,
-      maxVisibleRenderables: 250000,
+      maxVisibleRenderables: 350000,
     },
     lighting: {
       enabled: false,
     },
+    preRender: {
+      // packGpuSprites: 'pixi',
+      // sortSprites: 'pixi',
+    }
   };
 
   static assets = {

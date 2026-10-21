@@ -58,6 +58,21 @@ const DECAL_FMT = Object.freeze({
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+// Component and field names repeat for every saved entity; each is encoded
+// once (E-49). Schema names only, so the set stays small; capped anyway.
+const _nameBytes = new Map();
+const NAME_CACHE_MAX = 4096;
+
+function nameBytes(s) {
+  let b = _nameBytes.get(s);
+  if (b === undefined) {
+    if (_nameBytes.size >= NAME_CACHE_MAX) _nameBytes.clear();
+    b = textEncoder.encode(s);
+    _nameBytes.set(s, b);
+  }
+  return b;
+}
+
 class Writer {
   constructor(initial = 4096) {
     this.buf = new Uint8Array(initial);
@@ -113,6 +128,11 @@ class Writer {
 
   str(s) {
     this.bytes(textEncoder.encode(s == null ? '' : String(s)));
+  }
+
+  /** str() for a schema name: same bytes, encoded once per name. */
+  name(s) {
+    this.bytes(nameBytes(s));
   }
 
   /** Raw bytes without length prefix */
@@ -364,13 +384,13 @@ function writeEntities(w, entities) {
       for (let c = 0; c < names.length; c++) {
         const name = names[c];
         const comp = components[name] || {};
-        w.str(name);
+        w.name(name);
         w.u32(comp.fingerprint >>> 0);
         const fields = comp.fields || {};
         const fieldNames = Object.keys(fields);
         w.u16(fieldNames.length);
         for (let f = 0; f < fieldNames.length; f++) {
-          w.str(fieldNames[f]);
+          w.name(fieldNames[f]);
           writeValue(w, fields[fieldNames[f]]);
         }
       }
