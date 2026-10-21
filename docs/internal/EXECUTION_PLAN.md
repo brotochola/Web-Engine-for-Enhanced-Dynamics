@@ -1325,6 +1325,59 @@ returns the same doubles, as in E-42. **Primary:** renderer `STEP_MS` on a vis-p
 many lit circle occluders (`visPolyStressScene` if its occluders are circles; check first),
 baseline ≥ 3 ms. Kernel first, with a checksum of the fan positions.
 
+### E-61 Rastering a compound edge costs two atan2, and adjacent edges share an end — **KEPT** (`0b8b07f2`)
+**Result (2026-10-21).** Found in a CPU profile of CompoundVisPolyStressScene `boxes=60` after E-43:
+`writePolarSegment` was 27 % of pre-render busy time, 90 % of it on its two
+`normalizeAngleSigned(Math.atan2(...))` lines (Node: ~23 ns per `atan2`). `ensureCompoundSolid`
+keeps boundary edges in first-seen order, not loop order, and Pixi's transmit wedges read that order.
+So pre-render walks a separate `solid.chain`, built on first use after each rebuild (a hash of edge
+starts, O(n)): each edge followed by an unused edge that starts exactly where it ends.
+`collectSolidSegments` keeps the last rastered end and its angle in locals, and reuses the angle when
+the next edge starts at that point. Equal coordinates give the same `atan2` inputs up to the sign
+of a zero. ±0 bin alike, `normalizeAngleSigned` folds −π to π, and with both differences zero every
+`raySegT` is Infinity. The bins take a minimum and callers read only `hit > 0`, so order is free.
+Bit-identical.
+A first version kept the cache in `writePolarSegment`. That pushed it past TurboFan's 460-byte
+inline limit, so every call boxed six doubles (kernel −7 to −14 %). The stamping is now
+`rasterPolarSpan` with one call site (its wrap loops became one loop over b0…b1+512): 253 bytes with
+230 inlined, inlined into `collectSolidSegments` also when it recompiles after a deopt.
+Kernel `compoundSolidMicrobench`, 7 rounds, checksums equal: island collect **+16.4 %** (49/49),
+large collect +6.8 % (44/49; most of its lights are inside the outline, where nothing is rastered);
+rebuild, raster-only and merge tie. Scene, 4 ABAB pairs: **`ringSegments=64` pre-render 5.03 →
+3.97 ms (−20.8 %, 4/4)**; `boxes=60` −7.2 % (3/4). `polarRasterChain.test.js` holds it to the old
+raster (now `tests/helpers/polarReference.mjs`) on rings, grids, snapped and turned lights, a
+rebuild, a signed-zero end (fails if the −π fold is removed) and two stacked squares (fails if the
+reuse checks only x).
+
+### E-62 The merge finds each sweep edge's arc with two atan2 — **KEPT** (`483f1da7`)
+**Result (2026-10-21).** In the same profile, 63 % of E-43's `mergeSweep` was its two `atan2` per
+sweep edge, and those angles only choose candidate rays. The arc is now found without them: the
+cross product of the slack-extended ends says which way is short (a sine under 1e-3 with the ends
+apart is near a half turn: every ray, as before), and `pseudoAngle` orders the ends and the rays
+(`y/(|x|+|y|)` by quadrant, −2…2 over (−π, π], a static table for the rays). Its slope is 1/2 to 1
+per radian, so the 1e-6 pad still covers at least 1e-6 rad. If a rounded cross product has the
+wrong sign, the ends are within the pad and are taken in order. The polygon still comes only from
+`raySegT`: bit-identical. Kernel, 7 rounds, checksums equal: merge **+13.5 %**, placeholder circle
++6.2 % / +10.5 % (512 / 128), all 49/49; raster-only ties. Compound scene `boxes=100`, CPU profiles of 7.6 s with the same total busy time: `mergeSweep` inclusive time **346 → 233 ms (−33 %)**, about 0.25 ms a frame. Its `STEP_MS`, 6 ABAB pairs: −0.5 % (4/6), a tie; the scene's run-to-run load spread (±10 %) hides ~6 %. At `boxes=60` (−7.5 %, 5/6) two tree runs fell under the 3 ms floor, so that row fails. Kept on the kernel; the scene is not worse. (The commit message's −60 % is `mergeSweep`'s self time alone, without its inlined callees.) Injected bugs (shrunk arc,
+wrong way round, no unwrap, no high wrap) each fail `polarMergeScatter.test.js`.
+
+### E-63 The sweep takes cos/sin of an atan2 angle at every event — **not-started**
+From the same profile: `buildVisibilityPolygon` was 7.9 % of pre-render busy, 44 % of it on
+`Math.cos(angle)` / `Math.sin(angle)` per event and 28 % on the two tangent `atan2` per occluder.
+An event's ray points at its own tangent vertex, so `dx/r, dy/r` would replace cos/sin of its
+`atan2`. That is not bit for bit: every polygon moves by rounding-sized amounts. It needs a
+tolerance argument (a visual or geometric golden, not the hash goldens) and a kernel first.
+**Primary:** pre-render on CompoundVisPolyStressScene `boxes=100` or VisPolyStressScene.
+
+### E-64 The merge's binary searches look un-inlined in Chrome — **screened 2026-10-21: premise wrong, reverted**
+The `boxes=100` profile listed `firstRayAfter` / `firstRayAtOrAfter` as their own frames (~5 % of
+pre-render), which read as five call sites Chrome would not inline, each boxing a double. Folding
+them to one call site each changed nothing in Chrome (`mergeSweep` inclusive 233 → 230 ms) and
+cost the Node kernel 5.4 % (42/49 worse). The premise was wrong: V8's CPU profiler maps inlined
+code back to its source function, so an inlined callee still shows as a frame (`raySegT` and
+`stampPolarBin` do too, and `--trace-turbo-inlining` inlines them). Reverted, never committed.
+HOW_WE_MEASURE now says so.
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above — **kept: adaptive insertion → merge** (`c53f163b`; kernel `7319ff1c`)
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at

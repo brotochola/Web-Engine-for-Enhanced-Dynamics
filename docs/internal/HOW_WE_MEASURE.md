@@ -224,6 +224,8 @@ Predator is not deterministic across runs of the same commit: `runLockstepVisual
 
 `pnpm trace:deopts <v8 log dir> --trace <engine_trace.json>` ranks deopts by the count after warmup times the function's self time in the trace. A deopt loop in a cold function is not a target.
 
+A function TurboFan inlined still has its own row: the profiler maps inlined code back to its source function. A small helper in the list is not evidence of a call that boxes its doubles (E-64); `--trace-turbo-inlining` (`--js-flags=` in Chrome) is. For the same reason, compare a function's **inclusive** time between two traces when the change moves work into or out of an inlined callee: self time alone credited E-62 with −60 % where the merge as a whole went −33 %.
+
 On Windows the tracing profiler samples about every 630 µs; `--js-flags=--cpu-profiler-sampling-interval=100` does not change that interval. CPU samples are where time goes, not a speed verdict: the verdict is always `STEP_MS`.
 
 ## Detailed stats

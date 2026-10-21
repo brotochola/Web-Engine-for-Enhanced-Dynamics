@@ -23,7 +23,9 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   --scene-export ClassName [--query k=v] [--warmup-ms N --duration-ms N]` (headless Chromium).
   From Git Bash set `MSYS_NO_PATHCONV=1`, or `/demos/...` becomes `C:/Program Files/Git/demos/...`.
 - V8 evidence: add `--js-flags="--log-deopt --log-ic" --v8-log-dir <dir>`, then
-  `node tests/bench/summarizeV8Deopt.mjs <dir>` (deopts, IC states, steady vs warm-up).
+  `node tests/bench/summarizeV8Deopt.mjs <dir>` (deopts, IC states, steady vs warm-up). A CPU
+  profile names inlined code by its source function, so a helper listed there may well be inlined:
+  ask `--trace-turbo-inlining`, and compare inclusive times when work moves into a callee (E-64).
 - Predator gate: `tests/bench/runPredatorAbab.mjs`; engine-wide: `npm run bench:scoreboard`.
 
 ## Commits

@@ -17,6 +17,45 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**06:18** — E-61 and E-62 kept, E-64 screened (a wrong premise, now written into the
+measuring guide). E-63 logged. Next: the open items in REVIEW_PLAN.
+
+### 06:18 — Compound lighting another −21 %, and a profiler lesson (`603a1e45`, `0b8b07f2`, `483f1da7`)
+
+- **Where the time went after E-43.** A CPU profile of the boxes scene showed the shadow
+  outline raster at 27 % of pre-render. Almost all of it was `atan2`, two calls per outline
+  edge (about 23 ns each).
+- **E-61, kept.** Neighbouring outline edges share an end point, so the angle computed for
+  one edge's end is the next edge's start. The outline's edges were stored in the order the
+  triangles produced them, not around the loop. Pre-render now walks them in loop order,
+  built once per outline change, and reuses each shared angle: half the `atan2` calls. The
+  result is bit for bit the same. The code comment and the tests cover the signed-zero case
+  that could have broken that.
+  - Kernel: +16.4 % (49/49). Scene with 64-segment islands: **pre-render 5.03 → 3.97 ms
+    (−20.8 %, 4/4)**. Boxes scene: −7.2 % (3/4).
+  - **A trap I hit on the way.** My first version made the raster function too big for V8
+    to inline (its 460-byte limit). Every call then boxed six numbers, and the kernel got
+    8–14 % *slower*. Splitting the function and merging its three stamp loops into one fixed
+    that.
+- **E-62, kept on the kernel.** The new merge from E-43 also spent most of its time in
+  `atan2`, only to choose which directions to test. A cross product and a cheap
+  angle-ordering function do the same job. The result is still exact.
+  - Kernel: +13.5 % (49/49).
+  - In the scene, profiles show the merge's total time **346 → 233 ms (−33 %)**, about
+    0.25 ms a frame. The scene's frame time varies ±10 % from run to run, which hides a ~6 %
+    change (6 pairs: a tie).
+- **E-64, screened: my premise was wrong.** The profile listed two tiny search functions on
+  their own, which I read as V8 not inlining them. Rewriting them changed nothing in Chrome
+  and cost 5 % in Node, so I reverted it. Chrome's profiler names inlined code after its
+  source function, so a function appearing in a profile proves nothing about inlining. That
+  is now written in HOW_WE_MEASURE and CLAUDE.md.
+- **Also corrected.** I measured E-62 at 60 boxes first. Two of its runs fell under the 3 ms
+  floor, so that row doesn't count; I re-ran it at 100 boxes. Today's three lighting wins
+  pushed that scene down to the floor.
+- **E-63, logged for later.** The shadow sweep takes cos/sin of an angle at every corner. The
+  obvious replacement is not bit-identical, so it needs a different kind of test first.
+- Suite **1404/1404**.
+
 **05:35** — E-43 and E-60 kept, E-44 screened. Next: a CPU profile of pre-render in the
 boxes scene, to see what its remaining 3.5 ms is made of.
 
