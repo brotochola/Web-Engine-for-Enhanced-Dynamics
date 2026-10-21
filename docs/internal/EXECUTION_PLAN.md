@@ -1474,15 +1474,52 @@ CSR copy needs a counting pass before the fill in `rebuildOwnedRows`. With sever
 private copy covers only owned rows (fallback per cell). Kernel `spatialWorkerMicrobench.mjs`, then
 Predator spatial with a load fit.
 
-### E-71 N-32 costs the Node emit kernel ~14 % — **not-started**
-Found by the merge gate against `main` (2026-10-21): `preRenderWorkerMicrobench` emit is −15.8 % against
-`main` (0/49 rounds, normal compiles on both sides). A bisect over the 120 commits that change `src/`
-(only `src/` swapped, current kernel file) puts it at N-32 (`45886e4a`): 1,709 → 1,481 ops/s. The
-worker keeps fast properties (165 → 216 own properties). In Chrome, N-32 measured pre-render −9.6 % on
-Predator by removing late-field deopts, and the gate shows pre-render level with `main`, so this is a
-cost the kernel sees, not a product regression. Likely cause: fields N-32 declares as `null` that are
-typed arrays later, which loosens their field type. Find them (halve the declaration list in the
-kernel), give them typed initial values, and keep the Chrome win.
+### E-71 N-32 costs the Node emit kernel ~14 % — **KEPT** (`a49482f4`)
+Found by the merge gate against `main` (2026-10-21): `preRenderWorkerMicrobench` emit was −15.8 % against
+`main`, bisected to N-32 (`45886e4a`). **Cause:** N-32 declared 8 render-queue columns (shadow height
+and offsets, tile mode, offsets and multipliers) as `null`. V8 gives a field that starts `null` the
+field type Any, so optimized code checks the array's class before it indexes the field. Before N-32,
+`initialize()` added the same fields with their real views and the type stayed `Class(Float32Array)`
+(Uint8, Uint16). `--trace-generalization` shows both: `h{Any}` from `null`, `h{Class(…)}` from an
+empty array of the view's class. Removing the 8 declarations gave +17.3 %; declaring them as empty
+arrays of their class (module constants `EMPTY_F32`, `EMPTY_U8`, `EMPTY_U16`) gave the same and keeps
+N-32's shape fix. **Measured:** kernel 1,458 → 1,717 ops/s (+17.7 %, 49/49, checksums equal).
+Predator headless, 8 ABAB pairs: pre-render +1.3 % median, +53 µs at matched load (se 154); no
+reachable worker 3 % worse. Emit is under 1 ms of Predator's 6.7 ms pre-render, so a 15 % emit gain is
+about 0.1 ms there, below what 8 pairs resolve. `workerShape.test.js` ties each column's initial class
+to its view's class.
+
+### E-72 The other pre-render render-queue columns were typed Any from the start — **KEPT** (`4289cbc5`)
+E-71's cause predates N-32: `x`, `y`, scale, rotation, alpha, tint, `textureId`, anchors, `type`,
+`sortKey` and its U32 alias, and `repeatX/Y` were declared `null` too. They now start as empty arrays
+of their view's class. `renderQueueCount` stays `null` (written once a frame; `RENDER_QUEUE_SIZE` reads
+0 while it is), and so do the camera and pose-ready views (`null` when the camera SAB is missing).
+The guards inside the loops (`if (rqRepeatX)`) stay; with a known class TurboFan folds them.
+**Measured:** kernel 1,701 → 2,004 ops/s against E-71 (+17.8 %, 49/49, checksums equal); with
+`count` typed as well it was +18.8 %. Predator headless, 8 pairs: pre-render +0.2 % median, +12 µs at
+matched load (se 186); logic +108 (se 121), physics +40 (se 128), spatial +37 (se 161), particle +13
+(se 25) µs. The raw medians of workers the change cannot reach leaned worse (renderer +5.5 %, logic1
++8 %), so an A/A of the same sitting followed: identical code moved worker medians by −4.6 to +7.2 %
+(logic1 +7.2 %, renderer −4.6 %). Bunny mark (250 k sprites, `packGpuSprites: pixi`) is renderer-bound
+at 19 ms and gave pre-render pairs from −35 % to +26 %: no signal. Verdict: kernel keep, product
+neutral. E-71 + E-72 together: the emit kernel is ~37 % faster than before E-71 and ~17 % faster than
+the rev before N-32 (1,709 ops/s in the bisect; different sittings).
+
+### E-73 Worker fields that start null and later hold typed arrays — **not-started (audit done)**
+E-71's mechanism is not specific to the render queue. `tests/bench/fieldTypeAudit.mjs` (`c841379c`)
+lists, per worker, the own fields that hold a typed array after a scene's warm-up and were `null`
+right after the constructor. Predator, 2026-10-21: Pixi 52, pre-render 41 (after E-72), particle
+26, spatial 24, logic 24. Every worker shares 15 of them from `AbstractWorker` (`stats`, `inputData`,
+`cameraData`, `neighborData`, `activeEntitiesData`, `poseSync`, `_poseX/Y/RotC/RotS`,
+`_prevPose*`, `queryVersionData`, `frameRateData`); per entity, hot loops read the pose columns.
+Next, in order, one commit and one measure each: the `AbstractWorker` pose columns (every worker;
+kernels that read them: spatial, pre-render), spatial's `entityPosData` / `processedMarker` /
+`_entityLast*` (`spatialWorkerMicrobench`, which E-70 also needs), pre-render's `_renderable*`
+collector columns, Pixi's render-queue columns (Pixi copies them into a per-frame `src` object, whose
+fields count too, and reads `renderQueueX` as "queue bound"). Check each field for a path that sets
+it back to `null` or to an array of another class: such a field stays Any whatever its first value.
+The audit does not see fields of objects a worker points to, nor the physics worker (the page does
+not start it).
 
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above — **kept: adaptive insertion → merge** (`c53f163b`; kernel `7319ff1c`)
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review

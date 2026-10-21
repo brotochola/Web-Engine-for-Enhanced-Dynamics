@@ -48,7 +48,9 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   that saw the old shape (review N-32: one warning flag cost pre-render ~8 s of per-frame
   deopts). `tests/node/workerShape.test.js` enforces it for pre-render and Pixi. A field that
   holds fractions must start as a double (`NaN` if it must also be falsy): a Smi-to-double write
-  also moves the object to a new map.
+  also moves the object to a new map. A field that will hold a typed array starts as an empty one
+  of the same class, not `null`: from `null` V8 types it Any and every use checks the array's
+  class (E-71: 15 % of the emit kernel). `tests/bench/fieldTypeAudit.mjs` lists the candidates.
 - **Hot loops:** don't merge copies through a shared helper or add a loop-invariant branch inside
   them; that cost 10–30 % (review R8). Send the rare case to its own copied loop instead
   (E-41, E-51, E-52 do this). Keep hot callees under TurboFan's 460-byte inline limit when they

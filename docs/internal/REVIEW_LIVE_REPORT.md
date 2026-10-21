@@ -17,6 +17,42 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**13:25** — **E-71 and E-72 kept: the pre-render emit kernel is ~37 % faster** (`a49482f4`,
+`4289cbc5`). The same cause is in every worker; that is E-73, next.
+
+### 13:25 — Why N-32 slowed the emit kernel, and a bigger case of the same thing
+
+- **The cause.** When a field starts as `null` and later holds a typed array, V8 gives it the
+  field type "Any". Optimized code then has to check what the field holds before it indexes it.
+  If the field starts as an empty array of the right class, V8 keeps that class when the real
+  array replaces it. V8's own trace shows both cases (`--trace-generalization`: `h{Any}` versus
+  `h{Class(Float32Array)}`). N-32 declared 8 render-queue columns as `null`. Before N-32,
+  `initialize()` added them with their real arrays, so their types were right.
+- **E-71** (`a49482f4`): the 8 columns start as empty arrays of their class, so N-32's shape fix
+  stays. Emit kernel **1,458 → 1,717 ops/s (+17.7 %, 49 of 49 rounds, same checksums)**.
+  Predator, headless, 8 pairs: pre-render +53 µs at matched load (se 154). Emit is under 1 ms of
+  Predator's 6.7 ms pre-render, so ~0.1 ms is the most it can show there.
+- **E-72** (`4289cbc5`): the other 16 columns (x, y, scale, rotation, alpha, tint, …) had been
+  `null` since long before N-32. Typed now: **1,701 → 2,004 ops/s (+17.8 %, 49/49)**. Predator:
+  pre-render +12 µs at matched load (se 186); every worker within one standard error at matched
+  load.
+- **An A/A to read that sitting.** In the E-72 run, workers the change cannot reach looked worse
+  (renderer +5.5 %, logic1 +8 %). Running identical code on both sides moved the medians by
+  −4.6 % to +7.2 %, so that was the sitting. Bunny mark gave no signal either way: it's
+  renderer-bound at 19 ms, and its pre-render pairs ranged from −35 % to +26 %.
+- **E-73, the audit** (`tests/bench/fieldTypeAudit.mjs`, `c841379c`). In Predator it found these
+  fields declared `null` that hold typed arrays: Pixi 52, pre-render 41, particle 26, spatial 24,
+  logic 24. Fifteen come from `AbstractWorker` and are shared by every worker, including the pose
+  columns that hot loops read once per entity. Plan: one worker area per commit, kernel first,
+  starting with those shared pose columns.
+- **CLAUDE.md** has the rule now: a field that will hold a typed array starts as an empty array of
+  the same class.
+- **Two things for you:**
+  - I lost ~20 minutes: I started the A/A in a way that didn't notify me when it ended.
+  - A probe from 2026-10-19 00:43 is still alive: `e34ChromeCpuProbe.mjs` → a Balls
+    `runIntegratedWorkerBenchmark` (PID 2644) and its Chrome. It's hung, with 47 CPU-seconds in
+    2.5 days, so it didn't disturb any measurement. I left it alone; it's safe to end.
+
 **12:17** — **`main` fast-forwarded to this branch** (local only, nothing pushed). Follow-ups
 are E-71, N-35 and N-36.
 

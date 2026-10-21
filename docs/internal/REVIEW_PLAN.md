@@ -178,7 +178,9 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [x] **E-54** — kept `1a1c4c37`: the begin Set of pair keys is a per-slot stamp. Predator's ids now pass 16384, so 4.2 MB/s of keys were heap numbers; **logic −382 µs at matched load (se 132)**.
 - [x] **E-67** — audited: the other workers are clean or vendor/demo code. CLAUDE.md rule added. **E-68** (FSM time boxed per onUpdate) screened: API change for ~0.5 %.
 - [~] **E-69** — dropped: component getters by integer slot. Kernel tie, Predator logic −137 µs (se 70) at matched load, but the getter's own profile time rose 749 → 1,079 ms. Code restored (as L4 in September).
-- [ ] **E-71** Pre-render: N-32 costs the Node emit kernel ~14 % (bisected); probable field-type cause. Chrome product unaffected.
+- [x] **E-71** Pre-render: N-32 cost the Node emit kernel ~15 % — fixed `a49482f4`. Its 8 columns were declared `null`, which V8 types Any; they now start as empty arrays of their view's class. Kernel +17.7 %, Predator level.
+- [x] **E-72** Pre-render: the other 16 render-queue columns had the same cost since before N-32 — fixed `4289cbc5`. Kernel +17.8 % more; Predator level (A/A of the sitting −4.6 to +7.2 %).
+- [ ] **E-73** Every worker: fields that start `null` and hold typed arrays (audit `c841379c`: Pixi 52, pre-render 41, particle 26, spatial 24, logic 24; 15 shared from `AbstractWorker`). One worker area per commit, kernel first.
 - [ ] **N-35** (tooling) The scoreboard's stress rows take 2 runs per side: against `main`, four of its six FAIL/WORSE flags were noise (`textureUpload` "+15 %" is −11 % over 4 pairs). Re-check a flagged row with ≥ 4 ABAB pairs before calling it WORSE.
 - [ ] **N-36** (watch) Spatial vs `main`: +3 to +6 % median in two Predator sittings (12 of 16 pairs worse, noisy), load fit −79 µs (se 302), spatial kernel +0.3 % (tie). If real it is contention between workers, not spatial code.
 - [ ] **E-70** Spatial: neighbor search gathers positions in entity order (25 % + 13 % of its time); needs a compact cell-ordered copy (design).
