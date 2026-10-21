@@ -679,7 +679,7 @@ function edgeCount(qax, qay, qbx, qby) {
  * Edges shared by two triangles are interior and dropped, so a canyon stays a hole.
  * `wantFill` false skips the fill triangles: pre-render reads only the segments,
  * and each worker keeps its own cache (review D1).
- * @returns {{ revision: number, seg: Float32Array, segCount: number, fill: Float32Array, fillVerts: number, hasFill: boolean }}
+ * @returns {{ revision: number, seg: Float32Array, segCount: number, fill: Float32Array, fillVerts: number, hasFill: boolean, chain: Int32Array, chainValid: boolean }}
  */
 export function ensureCompoundSolid(
   entityIdx, revision,
@@ -696,6 +696,9 @@ export function ensureCompoundSolid(
       fill: new Float32Array(64),
       fillVerts: 0,
       hasFill: false,
+      // Pre-render's walk order over seg (E-61), built on its first use.
+      chain: new Int32Array(64),
+      chainValid: false,
     };
     // Fill the gap so the array stays packed: a first write past ~1024 empty
     // slots turns it into a dictionary, and every cache hit then costs a hash
@@ -705,6 +708,7 @@ export function ensureCompoundSolid(
   }
   solid.segCount = 0;
   solid.fillVerts = 0;
+  solid.chainValid = false;
   edgeTableClear();
   if (head && next && active && vertX && vertY && headIdx != null && headIdx !== FIXTURE_NONE) {
     let cur = headIdx;
@@ -788,6 +792,65 @@ export function segmentFacesPoint(x0, y0, x1, y1, px, py) {
   return (y1 - y0) * (px - x0) - (x1 - x0) * (py - y0) > 0;
 }
 
+// E-61. Rastering an edge costs two atan2, one per end, and an outline's edges
+// share their ends. seg keeps the order the triangles gave (Pixi draws its
+// transmit wedges in that order), so collectSolidSegments walks solid.chain
+// instead: each edge followed, where there is one, by the edge that starts
+// exactly where it ends, and reuses the end angle it just computed as the next
+// start. The bins take a minimum, which is the same in any order, and the
+// callers read only hit > 0.
+let _chainHead = new Int32Array(512).fill(-1); // hash slot -> an edge starting there
+let _chainNext = new Int32Array(256); // edge -> the next edge in its slot
+let _chainUsed = new Uint8Array(256);
+
+function chainSlot(x, y, mask) {
+  let h = Math.imul(Math.round(x * EDGE_QUANT) | 0, 0x9e3779b1) ^ Math.imul(Math.round(y * EDGE_QUANT) | 0, 0x85ebca77);
+  h ^= h >>> 15;
+  return h & mask;
+}
+
+function chainSolidSegments(solid) {
+  const n = solid.segCount;
+  if (solid.chain.length < n) solid.chain = new Int32Array(n * 2);
+  if (_chainNext.length < n) {
+    _chainNext = new Int32Array(n * 2);
+    _chainUsed = new Uint8Array(n * 2);
+  }
+  if (_chainHead.length < n * 2) {
+    let size = _chainHead.length;
+    while (size < n * 2) size *= 2;
+    _chainHead = new Int32Array(size).fill(-1);
+  }
+  const head = _chainHead;
+  const mask = head.length - 1;
+  const seg = solid.seg;
+  for (let i = 0; i < n; i++) {
+    const slot = chainSlot(seg[i * 4], seg[i * 4 + 1], mask);
+    _chainNext[i] = head[slot];
+    head[slot] = i;
+  }
+  _chainUsed.fill(0, 0, n);
+  const chain = solid.chain;
+  let out = 0;
+  for (let first = 0; first < n; first++) {
+    let cur = _chainUsed[first] ? -1 : first;
+    while (cur >= 0) {
+      _chainUsed[cur] = 1;
+      chain[out++] = cur;
+      const ex = seg[cur * 4 + 2];
+      const ey = seg[cur * 4 + 3];
+      let cand = head[chainSlot(ex, ey, mask)];
+      while (cand >= 0 && (_chainUsed[cand] || seg[cand * 4] !== ex || seg[cand * 4 + 1] !== ey)) {
+        cand = _chainNext[cand];
+      }
+      cur = cand;
+    }
+  }
+  // Empty only the slots used: the table may be sized for a far larger outline.
+  for (let i = 0; i < n; i++) head[chainSlot(seg[i * 4], seg[i * 4 + 1], mask)] = -1;
+  solid.chainValid = true;
+}
+
 /**
  * World-space boundary edges of a solid that overlap the light disc.
  * @returns {number} 0 when no edge overlaps the light disc; otherwise at least 1
@@ -797,13 +860,24 @@ export function collectSolidSegments(
   solid, entityX, entityY, rotC, rotS, offX, offY, lightX, lightY, radiusSq
 ) {
   if (!solid || solid.segCount <= 0) return 0;
+  if (!solid.chainValid) chainSolidSegments(solid);
   const originX = entityX + rotC * offX - rotS * offY;
   const originY = entityY + rotS * offX + rotC * offY;
   const seg = solid.seg;
+  const chain = solid.chain;
   const n = solid.segCount;
   let hit = 0;
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
+  // The last rastered end and its angle (E-61). Equal coordinates give equal
+  // differences. Nonzero ones are the same bits; a zero may differ in sign,
+  // which atan2 reads only as ±0 or ±π. Both ±0 give the same bins and span,
+  // normalizeAngleSigned folds -π to π, and with both differences zero the
+  // light is on the edge's line, where every raySegT is Infinity. So a reused
+  // angle stamps what a fresh atan2 would.
+  let lastX = NaN;
+  let lastY = NaN;
+  let lastAngle = 0;
+  for (let q = 0; q < n; q++) {
+    const o = chain[q] * 4;
     const lx0 = seg[o];
     const ly0 = seg[o + 1];
     const lx1 = seg[o + 2];
@@ -826,7 +900,14 @@ export function collectSolidSegments(
     }
     if (segmentDistSq(lightX, lightY, x0, y0, x1, y1) > radiusSq) continue;
     hit++;
-    writePolarSegment(x0, y0, x1, y1, lightX, lightY);
+    const open = x0 === lastX && y0 === lastY
+      ? lastAngle
+      : normalizeAngleSigned(Math.atan2(y0 - lightY, x0 - lightX));
+    const close = normalizeAngleSigned(Math.atan2(y1 - lightY, x1 - lightX));
+    lastX = x1;
+    lastY = y1;
+    lastAngle = close;
+    rasterPolarSpan(open, close, x0, y0, x1, y1, lightX, lightY);
   }
   return hit;
 }
@@ -877,8 +958,15 @@ function raySegT(ox, oy, dx, dy, ax, ay, bx, by) {
 }
 
 function writePolarSegment(x0, y0, x1, y1, lx, ly) {
-  let open = normalizeAngleSigned(Math.atan2(y0 - ly, x0 - lx));
-  let close = normalizeAngleSigned(Math.atan2(y1 - ly, x1 - lx));
+  rasterPolarSpan(
+    normalizeAngleSigned(Math.atan2(y0 - ly, x0 - lx)),
+    normalizeAngleSigned(Math.atan2(y1 - ly, x1 - lx)),
+    x0, y0, x1, y1, lx, ly
+  );
+}
+
+/** Stamp the bins between the ends' angles, each normalizeAngleSigned(atan2(...)). */
+function rasterPolarSpan(open, close, x0, y0, x1, y1, lx, ly) {
   let span = close - open;
   if (span < 0) span += TWO_PI;
   if (span > Math.PI) {
@@ -894,11 +982,11 @@ function writePolarSegment(x0, y0, x1, y1, lx, ly) {
   else if (b0 >= POLAR_BINS) b0 = POLAR_BINS - 1;
   if (b1 < 0) b1 = 0;
   else if (b1 >= POLAR_BINS) b1 = POLAR_BINS - 1;
-  if (open <= close) {
-    for (let b = b0; b <= b1; b++) stampPolarBin(b, x0, y0, x1, y1, lx, ly);
-  } else {
-    for (let b = b0; b < POLAR_BINS; b++) stampPolarBin(b, x0, y0, x1, y1, lx, ly);
-    for (let b = 0; b <= b1; b++) stampPolarBin(b, x0, y0, x1, y1, lx, ly);
+  // b0 through b1, past the last bin to the first when the span wraps. One call
+  // site keeps this small enough to inline into collectSolidSegments (E-61).
+  const end = open <= close ? b1 : b1 + POLAR_BINS;
+  for (let v = b0; v <= end; v++) {
+    stampPolarBin(v < POLAR_BINS ? v : v - POLAR_BINS, x0, y0, x1, y1, lx, ly);
   }
 }
 
