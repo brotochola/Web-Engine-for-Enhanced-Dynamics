@@ -9,7 +9,9 @@ export class BluePlatformerPlayer extends GameObject {
   static components = [PlatformerCharacterComponent, AdobeAnimComponent, RigidBody, Collider, LightEmitter, CollisionListener];
   static assetName = 'blue_character';
 
-  static jumpImpulse = -80000; // px/s² burst
+  // One-shot kick: addVelocity, not an acceleration burst (whose height
+  // depended on how many physics steps ran before the next tick).
+  static jumpSpeed = 1333; // px/s, what the old -80000 px/s² burst gave on one 60 Hz step
   static moveAcceleration = 1800; // px/s²
   static scale = 0.35;
   static clips = Object.freeze({
@@ -142,8 +144,8 @@ export class BluePlatformerPlayer extends GameObject {
 
     if (left) this.addAcceleration(-BluePlatformerPlayer.moveAcceleration * ratioOfSideMovement, 0);
     if (right) this.addAcceleration(BluePlatformerPlayer.moveAcceleration * ratioOfSideMovement, 0);
-    if (jumpHeld && this.rigidBody.vy == 0 && this.rigidBody.ay == 0 && this.platformerCharacterComponent.isItStandingOnPlatform > -1) {
-      this.addAcceleration(0, BluePlatformerPlayer.jumpImpulse);
+    if (jumpHeld && this.rigidBody.vy == 0 && this.platformerCharacterComponent.isItStandingOnPlatform > -1) {
+      this.addVelocity(0, -BluePlatformerPlayer.jumpSpeed);
     }
 
     if (Math.abs(this.rigidBody.vx) < 3) {
