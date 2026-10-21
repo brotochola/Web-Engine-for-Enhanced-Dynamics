@@ -143,7 +143,8 @@ export function packParticleLights(data, dataU32, capacity, views, opts) {
   const poolN = lightSqrt.length | 0;
 
   let out = 0;
-  for (let s = 0; s < n && out < cap; s++) {
+  let s = 0;
+  for (; s < n && out < cap; s++) {
     const i = active[1 + s] | 0;
     if (i < 0 || i >= poolN) continue;
     const sqrtI = lightSqrt[i];
@@ -207,5 +208,163 @@ export function packParticleLights(data, dataU32, capacity, views, opts) {
     dataU32[base + 3] = r | (g << 8) | (b << 16) | (ai << 24);
     out++;
   }
+  // Full with candidates left: the first `cap` in pool order are not the ones to
+  // keep (a laser's 600 dim beam particles would push out its impact flash).
+  // The rest goes through its own copy of the loop (HOW_WE_MEASURE, review R8:
+  // a shared helper or a branch in the loop above costs the common path), E-52.
+  if (out >= cap && s < n) replaceDimmest(data, dataU32, cap, active, s, n, views, opts);
   return out;
+}
+
+let _heapSlot = new Int32Array(256);
+let _heapW = new Float32Array(256);
+
+function heapSiftDown(slot, w, size, k) {
+  for (;;) {
+    const l = 2 * k + 1;
+    if (l >= size) return;
+    const r = l + 1;
+    const c = r < size && w[r] < w[l] ? r : l;
+    if (!(w[c] < w[k])) return;
+    const ts = slot[k];
+    slot[k] = slot[c];
+    slot[c] = ts;
+    const tw = w[k];
+    w[k] = w[c];
+    w[c] = tw;
+    k = c;
+  }
+}
+
+/**
+ * packParticleLights hit its cap with candidates left (active list from
+ * `start`). Keep the brightest `cap` by screen radius × alpha, which is
+ * √intensity × alpha at one zoom: a min-heap of the packed slots, and every
+ * remaining candidate brighter than its root replaces it. The per-candidate
+ * work is the main loop's, copied; it is most of the cost (a 1.5× replace
+ * threshold saved 2 of 10.6 µs and lost the exact selection).
+ */
+function replaceDimmest(data, dataU32, cap, active, start, n, views, opts) {
+  if (_heapSlot.length < cap) {
+    _heapSlot = new Int32Array(cap);
+    _heapW = new Float32Array(cap);
+  }
+  const slot = _heapSlot;
+  const w = _heapW;
+  for (let k = 0; k < cap; k++) {
+    const base = k * PARTICLE_LIGHT_FLOATS;
+    slot[k] = k;
+    w[k] = data[base + 2] * (dataU32[base + 3] >>> 24);
+  }
+  for (let k = (cap >> 1) - 1; k >= 0; k--) heapSiftDown(slot, w, cap, k);
+
+  const zoom = opts.zoom ?? 1;
+  const cameraX = opts.cameraX ?? 0;
+  const cameraY = opts.cameraY ?? 0;
+  const resolution = opts.resolution ?? 1;
+  const screenScale = zoom * resolution;
+  const canvasW = opts.canvasW > 0 ? opts.canvasW : 0;
+  const canvasH = opts.canvasH > 0 ? opts.canvasH : 0;
+  const cull = canvasW > 0 && canvasH > 0;
+  const rtW = canvasW * resolution;
+  const rtH = canvasH * resolution;
+  const rot = opts.cameraRot || 0;
+  const useRot = !!(rot && cull && zoom > 0);
+  let camC = 1;
+  let camS = 0;
+  let focusX = 0;
+  let focusY = 0;
+  let halfW = 0;
+  let halfH = 0;
+  if (useRot) {
+    camC = Math.cos(rot);
+    camS = Math.sin(rot);
+    focusX = cameraX + canvasW / (2 * zoom);
+    focusY = cameraY + canvasH / (2 * zoom);
+    halfW = canvasW * 0.5 * resolution;
+    halfH = canvasH * 0.5 * resolution;
+  }
+  const lightSqrt = views.lightSqrt;
+  const xArr = views.x;
+  const yArr = views.y;
+  const zArr = views.z;
+  const alphaArr = views.alpha;
+  const tintArr = views.tint;
+  const flatArr = views.flat;
+  const viewMode = views.viewMode;
+  const renderOnly = views.renderOnly;
+  const layerMask = views.layerMask;
+  const layerVisible = opts.layerVisible || null;
+  const layerAlphaArr = opts.layerAlpha || null;
+  const zMax = opts.zenithalMaxHeight > 0 ? opts.zenithalMaxHeight : 0;
+  const zFade = opts.zenithalAlphaFade > 0 ? opts.zenithalAlphaFade : 0;
+  const poolN = lightSqrt.length | 0;
+
+  for (let s = start; s < n; s++) {
+    const i = active[1 + s] | 0;
+    if (i < 0 || i >= poolN) continue;
+    const sqrtI = lightSqrt[i];
+    if (!(sqrtI > 0)) continue;
+    if (renderOnly && renderOnly[i]) continue;
+
+    const worldRadius = sqrtI * LIGHT_INFLUENCE_RADIUS_SCALE;
+    const screenRadius = worldRadius * screenScale;
+    if (!(screenRadius >= PARTICLE_LIGHT_MIN_SCREEN_RADIUS)) continue;
+
+    const isFlat = !!(flatArr && flatArr[i]);
+    const isZenithal = !isFlat && !!(viewMode && viewMode[i] === CAMERA_TYPES.ZENITHAL);
+    let wy = yArr[i];
+    if (!isFlat && !isZenithal && zArr) wy += zArr[i];
+
+    let a = alphaArr ? alphaArr[i] : 1;
+    if (isZenithal && zArr && zFade > 0 && zMax > 0) {
+      const height = -zArr[i];
+      const alphaFade = Math.min(1, (height / zMax) * zFade);
+      a *= Math.max(0, 1 - alphaFade);
+    }
+    if (layerMask) a *= layerAlpha(layerMask[i], layerVisible, layerAlphaArr);
+    if (!(a > PARTICLE_LIGHT_ALPHA_CUT)) continue;
+
+    let ai = (a * 255 + 0.5) | 0;
+    if (ai < 0) ai = 0;
+    else if (ai > 255) ai = 255;
+    const weight = screenRadius * ai;
+    if (!(weight > w[0])) continue;
+
+    let sx;
+    let sy;
+    if (useRot) {
+      const dx = xArr[i] - focusX;
+      const dy = wy - focusY;
+      sx = halfW + (dx * camC - dy * camS) * screenScale;
+      sy = halfH + (dx * camS + dy * camC) * screenScale;
+    } else {
+      sx = (xArr[i] - cameraX) * screenScale;
+      sy = (wy - cameraY) * screenScale;
+    }
+    if (cull) {
+      if (sx < -screenRadius || sy < -screenRadius || sx > rtW + screenRadius || sy > rtH + screenRadius) {
+        continue;
+      }
+    }
+
+    let r = 255;
+    let g = 255;
+    let b = 255;
+    if (tintArr) {
+      const tint = tintArr[i] >>> 0;
+      if (tint) {
+        r = (tint >> 16) & 0xff;
+        g = (tint >> 8) & 0xff;
+        b = tint & 0xff;
+      }
+    }
+    const base = slot[0] * PARTICLE_LIGHT_FLOATS;
+    data[base] = sx;
+    data[base + 1] = sy;
+    data[base + 2] = screenRadius;
+    dataU32[base + 3] = r | (g << 8) | (b << 16) | (ai << 24);
+    w[0] = weight;
+    heapSiftDown(slot, w, cap, 0);
+  }
 }

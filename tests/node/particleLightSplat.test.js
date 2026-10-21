@@ -154,3 +154,49 @@ test('offscreen quads are culled by radius', () => {
   const { n } = pack(views);
   assert.equal(n, 0);
 });
+
+// E-52. Over the cap, the brightest lights win, not the first in pool order:
+// a laser's many dim beam particles must not push out its few bright sparks.
+test('over the cap the brightest candidates are kept', () => {
+  const N = 300;
+  const views = makeViews(N + 4);
+  for (let i = 0; i < N; i++) {
+    views.lightSqrt[i] = 1 + (i % 7) * 0.01;
+    views.x[i] = 50 + (i % 30) * 10;
+    views.y[i] = 50 + ((i / 30) | 0) * 20;
+  }
+  for (let k = 0; k < 4; k++) {
+    const i = N + k;
+    views.lightSqrt[i] = 5;
+    views.x[i] = 100 + k * 40;
+    views.y[i] = 150;
+  }
+  const { n, data } = pack(views, {}, 16);
+  assert.equal(n, 16);
+  const radii = [];
+  for (let k = 0; k < n; k++) radii.push(data[k * PARTICLE_LIGHT_FLOATS + 2]);
+  const bright = radii.filter((r) => r === lightInfluenceRadius(5)).length;
+  assert.equal(bright, 4, 'all four sparks made it');
+  // The other 12 are the brightest of the dim ones (sqrtI 1.06).
+  const dim = radii.filter((r) => r !== lightInfluenceRadius(5));
+  assert.ok(dim.every((r) => Math.abs(r - lightInfluenceRadius(1.06)) < 1e-3), `dim kept: ${dim}`);
+});
+
+test('over the cap a bright candidate that is filtered or culled does not get in', () => {
+  const views = makeViews(24);
+  for (let i = 0; i < 20; i++) {
+    views.lightSqrt[i] = 1;
+    views.x[i] = 20 + i * 15;
+    views.y[i] = 100;
+  }
+  views.lightSqrt[20] = 9; views.x[20] = 100; views.y[20] = 100; views.renderOnly[20] = 1;
+  views.lightSqrt[21] = 9; views.x[21] = 100; views.y[21] = 100; views.alpha[21] = 0;
+  views.lightSqrt[22] = 9; views.x[22] = 5000; views.y[22] = 5000;
+  views.lightSqrt[23] = 3; views.x[23] = 200; views.y[23] = 120;
+  const { n, data } = pack(views, {}, 8);
+  assert.equal(n, 8);
+  const radii = [];
+  for (let k = 0; k < n; k++) radii.push(data[k * PARTICLE_LIGHT_FLOATS + 2]);
+  assert.ok(!radii.includes(lightInfluenceRadius(9)), 'no filtered or offscreen bright light');
+  assert.equal(radii.filter((r) => r === lightInfluenceRadius(3)).length, 1, 'the visible bright one did');
+});
