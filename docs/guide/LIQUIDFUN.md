@@ -91,7 +91,7 @@ pixiWorker
 
 `step_world` always steps particles when the system exists. No extra JS flag enables fixture contact.
 
-`physics.liquidFun` (merged in both `validatePhysicsConfig` copies):
+`physics.liquidFun` (merged and clamped by `validatePhysicsConfig`, `src/box2d/physicsConfigImpl.js`):
 
 ```javascript
 liquidFun: { enabled: false, radius: 10, maxCount: 10000, subSteps: 1, density: 1, strictContactCheck: false,

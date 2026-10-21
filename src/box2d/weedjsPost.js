@@ -9,6 +9,7 @@
 
   importScripts(
     'box2dConstantsImpl.js',
+    'physicsConfigImpl.js',
     'physicsApi.js',
     'box2dCommandRingImpl.js',
     'box2dContactRingImpl.js',

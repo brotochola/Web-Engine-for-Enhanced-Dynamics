@@ -3,7 +3,6 @@
 // Shared utility functions for the multithreaded game engine
 // ============================================================================
 
-import { BOX2D_MAX_WORKERS, PHYSICS_DEFAULTS } from './configDefaults.js';
 import { nativeImport } from './sceneScript.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
@@ -819,107 +818,10 @@ export function postWorkerInitMessage(
 // ============================================================================
 
 /**
- * Validate and merge physics configuration
- * @param {Object} currentConfig - Current configuration
- * @param {Object} newConfig - New configuration to merge
- * @returns {Object} Validated and merged configuration
+ * Validate and merge physics configuration: the physics host's own function
+ * (physicsConfigImpl.js, review N-15).
  */
-export function validatePhysicsConfig(currentConfig, newConfig) {
-  // Handle null/undefined currentConfig (first initialization) - use centralized defaults
-  const current = currentConfig || PHYSICS_DEFAULTS;
-  return {
-    subStepCount: Math.max(1, newConfig.subStepCount ?? current.subStepCount),
-    contactHertz: Math.max(
-      0,
-      newConfig.contactHertz ?? current.contactHertz ?? PHYSICS_DEFAULTS.contactHertz
-    ),
-    contactDampingRatio: Math.max(
-      0,
-      newConfig.contactDampingRatio ??
-      current.contactDampingRatio ??
-      PHYSICS_DEFAULTS.contactDampingRatio
-    ),
-    gravity: {
-      x:
-        newConfig.gravity && typeof newConfig.gravity.x === 'number'
-          ? newConfig.gravity.x
-          : (current.gravity?.x ?? 0),
-      y:
-        newConfig.gravity && typeof newConfig.gravity.y === 'number'
-          ? newConfig.gravity.y
-          : (current.gravity?.y ?? 0),
-    },
-    lengthUnitsPerMeter: Math.max(
-      1e-6,
-      newConfig.lengthUnitsPerMeter ??
-      current.lengthUnitsPerMeter ??
-      PHYSICS_DEFAULTS.lengthUnitsPerMeter
-    ),
-    contactSpeed: Math.max(
-      0,
-      newConfig.contactSpeed ?? current.contactSpeed ?? PHYSICS_DEFAULTS.contactSpeed
-    ),
-    maximumLinearSpeed: Math.max(
-      1,
-      newConfig.maximumLinearSpeed ??
-      current.maximumLinearSpeed ??
-      PHYSICS_DEFAULTS.maximumLinearSpeed
-    ),
-    numberOfPhysicsWorkers: Math.max(
-      1,
-      Math.min(
-        BOX2D_MAX_WORKERS,
-        // box2dWorkerCount: the name before a585e598 (the host warns about it).
-        (newConfig.numberOfPhysicsWorkers ??
-          newConfig.box2dWorkerCount ??
-          current.numberOfPhysicsWorkers ??
-          PHYSICS_DEFAULTS.numberOfPhysicsWorkers) | 0
-      )
-    ),
-    contactRingCapacity: Math.max(
-      256,
-      (newConfig.contactRingCapacity ??
-        current.contactRingCapacity ??
-        PHYSICS_DEFAULTS.contactRingCapacity) | 0
-    ),
-    commandRingCapacity: Math.max(
-      64,
-      (newConfig.commandRingCapacity ??
-        current.commandRingCapacity ??
-        PHYSICS_DEFAULTS.commandRingCapacity) | 0
-    ),
-    liquidFun: mergeLiquidFunConfig(current.liquidFun, newConfig.liquidFun),
-  };
-}
-
-function mergeLiquidFunConfig(currentLf, newLf) {
-  const d = PHYSICS_DEFAULTS.liquidFun;
-  const src = { ...d, ...(currentLf || {}), ...(newLf || {}) };
-  const num = (v, fallback) => (Number.isFinite(v) ? v : fallback);
-  return {
-    enabled: !!src.enabled,
-    radius: Math.max(1e-6, src.radius > 0 ? src.radius : d.radius),
-    maxCount: Math.min(65535, Math.max(1, (src.maxCount != null ? src.maxCount : d.maxCount) | 0)),
-    subSteps: Math.max(1, (src.subSteps != null ? src.subSteps : d.subSteps) | 0),
-    density: num(src.density, d.density),
-    strictContactCheck: !!src.strictContactCheck,
-    dampingStrength: num(src.dampingStrength, d.dampingStrength),
-    pressureStrength: num(src.pressureStrength, d.pressureStrength),
-    viscousStrength: num(src.viscousStrength, d.viscousStrength),
-    tensileStrength: num(src.tensileStrength, d.tensileStrength),
-    powderStrength: num(src.powderStrength, d.powderStrength),
-    springStrength: num(src.springStrength, d.springStrength),
-    staticPressureStrength: num(src.staticPressureStrength, d.staticPressureStrength),
-    staticPressureRelaxation: num(src.staticPressureRelaxation, d.staticPressureRelaxation),
-    staticPressureIterations: Math.max(
-      1,
-      (src.staticPressureIterations != null ? src.staticPressureIterations : d.staticPressureIterations) | 0,
-    ),
-    ejectionStrength: num(src.ejectionStrength, d.ejectionStrength),
-    colorMixingStrength: num(src.colorMixingStrength, d.colorMixingStrength),
-    repulsiveStrength: num(src.repulsiveStrength, d.repulsiveStrength),
-  };
-}
+export { validatePhysicsConfig } from '../box2d/physicsConfig.js';
 
 /**
  * Normalize an angle to [0, 2*PI] range

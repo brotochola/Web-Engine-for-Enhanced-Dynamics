@@ -3,6 +3,8 @@
  * Single source of truth for all config settings across the engine
  */
 
+import { BOX2D_MAX_WORKERS as SIM_MAX_WORKERS, PHYSICS_SIM_DEFAULTS as SIM } from '../box2d/physicsConfig.js';
+
 // ============================================================================
 // ENUMS
 // ============================================================================
@@ -324,7 +326,7 @@ export const ENGINE_DEFAULTS = Object.freeze({
 // ============================================================================
 
 /** Box2D `B2_MAX_WORKERS`. Scene `physics.numberOfPhysicsWorkers` clamps to this. */
-export const BOX2D_MAX_WORKERS = 32;
+export const BOX2D_MAX_WORKERS = SIM_MAX_WORKERS;
 
 export const PHYSICS_DEFAULTS = Object.freeze({
   /**
@@ -332,12 +334,14 @@ export const PHYSICS_DEFAULTS = Object.freeze({
    * RigidBody vel, Collider, Joint, LiquidFun, and Box2d query/explode APIs need true.
    */
   enabled: true,
+  // The simulation values come from src/box2d/physicsConfigImpl.js, which the
+  // classic physics host loads as well (review N-15).
   /** Solver steps per physics tick (maps to Box2D world.step subStep). */
-  subStepCount: 4,
+  subStepCount: SIM.subStepCount,
   /** Soft contact spring frequency (Hz) → b2WorldDef.contactHertz. */
-  contactHertz: 30,
+  contactHertz: SIM.contactHertz,
   /** Soft contact damping ratio ζ → b2WorldDef.contactDampingRatio. */
-  contactDampingRatio: 0.7,
+  contactDampingRatio: SIM.contactDampingRatio,
   maxJoints: 0,
   /**
    * Global ColliderFixture pool size for the whole scene (not per body). 0 = off.
@@ -349,48 +353,27 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   /** @deprecated Use maxFixturePoolSize. Accepted as an alias when the new key is 0. */
   maxFixtures: 0,
   /** Gravity (px/s²). */
-  gravity: Object.freeze({ x: 0, y: 0 }),
+  gravity: SIM.gravity,
   /** Pixels treated as 1 meter for Box2D scale-dependent thresholds. */
-  lengthUnitsPerMeter: 100,
+  lengthUnitsPerMeter: SIM.lengthUnitsPerMeter,
   /** Overlap push speed cap (px/s). */
-  contactSpeed: 1000,
+  contactSpeed: SIM.contactSpeed,
   /** Hard linear speed clamp (px/s). */
-  maximumLinearSpeed: 50000,
+  maximumLinearSpeed: SIM.maximumLinearSpeed,
   /** Box2D solver workers, including the physics worker. Clamped to BOX2D_MAX_WORKERS. */
-  numberOfPhysicsWorkers: 4,
+  numberOfPhysicsWorkers: SIM.numberOfPhysicsWorkers,
   /** SPMC contact/sensor event ring capacity (begin+end). Dense spawns need large. */
-  contactRingCapacity: 65536,
+  contactRingCapacity: SIM.contactRingCapacity,
   /** MPSC SET_TRANSFORM/VEL/ROT ring. Boot-time only; dense teleports need large. */
-  commandRingCapacity: 4096,
+  commandRingCapacity: SIM.commandRingCapacity,
   /** Master switch: maps to b2World_EnableSleeping. When false, Box2D never sleeps dynamics. */
-  sleeping: true,
+  sleeping: SIM.sleeping,
   /** Min relative approach speed (px/s) to emit a Collider.enableHitEvents contact-hit. 0 = Box2D default. */
-  hitEventThreshold: 0,
+  hitEventThreshold: SIM.hitEventThreshold,
   noLimitFPS: false,
   fixedFps: 0,
-  liquidFun: Object.freeze({
-    enabled: false, // scene sets true to auto-create the system at physics init
-    radius: 10, // particle radius, world px
-    maxCount: 10000,
-    subSteps: 1, // particle solver only; not Box2D subStepCount
-    density: 1,
-    // liquidfun-c / Google default is false. RemoveSpuriousBodyContacts (qsort,
-    // drops floor+wall corner false-positives) only runs when this is true.
-    strictContactCheck: false,
-    // System def coeffs (lfParticleSystemDef). Solvers read these each step.
-    dampingStrength: 1.0,
-    pressureStrength: 0.05,
-    viscousStrength: 0.25,
-    tensileStrength: 0.2,
-    powderStrength: 0.5,
-    springStrength: 0.25,
-    staticPressureStrength: 0.2,
-    staticPressureRelaxation: 0.2,
-    staticPressureIterations: 8,
-    ejectionStrength: 0.5,
-    colorMixingStrength: 0.5,
-    repulsiveStrength: 1,
-  }),
+  /** LiquidFun particle system; each key is documented in physicsConfigImpl.js. */
+  liquidFun: SIM.liquidFun,
 });
 
 // ============================================================================
