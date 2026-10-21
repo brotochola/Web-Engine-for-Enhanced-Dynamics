@@ -29,10 +29,25 @@ export const REMESH_EVERY = (() => {
   }
 })();
 
+/**
+ * `?ringSegments=N`: each island is a ring of N segments, 2N triangles. 18
+ * (default, 36 triangles) is the plain scene; terrain islands run to hundreds
+ * of triangles, which is where an outline rebuild costs (E-58).
+ */
+export const RING_SEGMENTS = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('ringSegments');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n >= 3 ? n : 18;
+  } catch {
+    return 18;
+  }
+})();
+
 export const stressSceneConfig = {
-  requested: { remeshEvery: REMESH_EVERY },
+  requested: { remeshEvery: REMESH_EVERY, ringSegments: RING_SEGMENTS },
 };
-const TRIS = 36;
+const TRIS = RING_SEGMENTS * 2;
 const WORLD_W = 2400;
 const WORLD_H = 2400;
 
@@ -109,6 +124,7 @@ export class CompoundVisPolyStressScene extends Scene {
         vy: Math.sin(dir) * speed,
         spin: (rng() - 0.5) * 1.2,
         remeshEvery: i === 0 ? REMESH_EVERY : 0,
+        segments: RING_SEGMENTS,
       });
     }
     for (let i = 0; i < LIGHTS; i++) {

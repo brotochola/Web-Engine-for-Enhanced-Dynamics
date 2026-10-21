@@ -49,6 +49,7 @@ export class CompoundVisIsland extends GameObject {
     vy = 0,
     spin = 0,
     remeshEvery = 0,
+    segments = 18,
   } = {}) {
     this.x = x;
     this.y = y;
@@ -58,7 +59,7 @@ export class CompoundVisIsland extends GameObject {
     this.rigidBody.angularDamping = 0;
     this.collider.visualRange = 96;
     this.collider.friction = 0.2;
-    const polys = makeRingPolys(18, 80, 32);
+    const polys = makeRingPolys(segments, 80, 32);
     if (!this.collider.replacePolygons(polys)) {
       this.despawn();
       return;
