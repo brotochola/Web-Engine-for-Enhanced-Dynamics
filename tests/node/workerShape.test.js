@@ -90,7 +90,9 @@ test('pre-render: the emit ref declares every column emitSpriteQueue puts on it'
 test('pre-render: render-queue columns start as arrays of their view\'s class', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const views = createViews(new SharedArrayBuffer(computeBufferSize(4)), 4);
-  const columns = ['tileMode', 'tileOffsetU', 'tileOffsetV', 'tileMulX', 'tileMulY', 'shadowH', 'shadowOffX', 'shadowOffY'];
+  // count stays null: it is written once a frame, and RENDER_QUEUE_SIZE reads 0 while it is.
+  const columns = Object.keys(views).filter((name) => name !== 'count');
+  assert.ok(columns.length >= 24, `the layout's columns (${columns.length})`);
   const wrong = columns
     .map((name) => [`renderQueue${name[0].toUpperCase()}${name.slice(1)}`, views[name].constructor])
     .filter(([field, Ctor]) => !(pre[field] instanceof Ctor))

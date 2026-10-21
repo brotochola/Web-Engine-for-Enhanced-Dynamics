@@ -87,6 +87,7 @@ const EMPTY_OWNED_IDS = new Uint32Array(0);
 const EMPTY_F32 = new Float32Array(0);
 const EMPTY_U8 = new Uint8Array(0);
 const EMPTY_U16 = new Uint16Array(0);
+const EMPTY_U32 = new Uint32Array(0);
 const TILE_MODE_LOCAL = SPRITE_TILE_MODE.LOCAL;
 
 /**
@@ -327,23 +328,24 @@ class PreRenderWorker extends AbstractWorker {
 
         // Current write buffer reference (set each frame based on frame counter)
         // Tile fields (tileMode / tileOffset / tileMul): see renderQueueLayout.js
+        // Columns start as empty arrays of their class, not null: see E-71 below.
         this.renderQueueCount = null;
-        this.renderQueueX = null;
-        this.renderQueueY = null;
-        this.renderQueueScaleX = null;
-        this.renderQueueScaleY = null;
-        this.renderQueueRotC = null;
-        this.renderQueueRotS = null;
-        this.renderQueueAlpha = null;
-        this.renderQueueTint = null;
-        this.renderQueueTextureId = null;
-        this.renderQueueAnchorX = null;
-        this.renderQueueAnchorY = null;
-        this.renderQueueType = null;
-        this.renderQueueSortKey = null;
-        this.renderQueueSortKeyU32 = null;
-        this.renderQueueRepeatX = null;
-        this.renderQueueRepeatY = null;
+        this.renderQueueX = EMPTY_F32;
+        this.renderQueueY = EMPTY_F32;
+        this.renderQueueScaleX = EMPTY_F32;
+        this.renderQueueScaleY = EMPTY_F32;
+        this.renderQueueRotC = EMPTY_F32;
+        this.renderQueueRotS = EMPTY_F32;
+        this.renderQueueAlpha = EMPTY_F32;
+        this.renderQueueTint = EMPTY_U32;
+        this.renderQueueTextureId = EMPTY_U16;
+        this.renderQueueAnchorX = EMPTY_F32;
+        this.renderQueueAnchorY = EMPTY_F32;
+        this.renderQueueType = EMPTY_U8;
+        this.renderQueueSortKey = EMPTY_F32;
+        this.renderQueueSortKeyU32 = EMPTY_U32;
+        this.renderQueueRepeatX = EMPTY_U16;
+        this.renderQueueRepeatY = EMPTY_U16;
         this.renderQueueCamera = null;
         this.renderQueuePoseReady = null;
         this._frameCameraZoom = 1;
