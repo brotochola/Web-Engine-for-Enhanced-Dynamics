@@ -266,7 +266,7 @@
    * Physics: if a cast is PENDING, run castFn and publish result.
    * castFn(ox,oy,dx,dy,categoryBits,maskBits) →
    *   { hit:boolean, entityIndex:number, fraction:number, hitX:number, hitY:number }
-   * @returns {boolean} true if a cast was serviced
+   * @returns {number} 0 nothing pending, 1 a single cast, 2 a batch
    */
   function servicePendingRayCast(castFn) {
     if (!i32 || typeof castFn !== 'function') return 0;
