@@ -17,6 +17,35 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**10:22** — N-22 done at the C level (`f67c3a5f`), as you asked.
+
+### 10:22 — Box2D overlap queries fixed in the WASM itself (N-22)
+
+- **Which build.** The shipped `src/box2d/box2dWasm.wasm` is the output of
+  `weedjs/build_for_weed.bat` with no arguments (LTO full, no prewarmed thread pool) in
+  `Box2d_3.2_C_-_liquidfun`. I checked before changing anything: its current artifacts and a
+  fresh relink of the unmodified tree both match the shipped wasm and glue **byte for byte**.
+- **The fix** in `box2d/src/wasm_wrapper.c`, `overlap_collect_callback`:
+  - each query gets a fresh per-body stamp, so a body with several shapes is listed once;
+  - when the 512 slots are full, the callback tells Box2D to stop walking the tree.
+  - `queryAABB`, `overlapCircle` and `overlapBox` all use it.
+- **Checked:**
+  - new WASM-level tests: one entry per compound body for all three queries; the same
+    bodies on a second query; 600 three-shape bodies give 512 *distinct* bodies (before:
+    ~171, three times each). Three of these fail on the old wasm.
+  - the QueryAABB demo's self-check passes;
+  - suite 1412/1412;
+  - physics hygiene: Balls −3.5 % (4/4), Predator a tie at matched load. The glue file is
+    unchanged, so only the `.wasm` was replaced.
+- **Two things to know about your sibling repo:**
+  - My C edit is **uncommitted** there, next to the uncommitted 10-19 edits (polygon skin
+    radius, thread pool) that the shipped build already contained. I didn't commit, so as
+    not to mix my change into your work in progress. A backup of the file as it was is in my
+    scratchpad.
+  - `weedjs/build_for_weed.bat` has LF line endings, which `cmd` misreads ("ild_for_weed.bat
+    is not recognized"). I ran its steps directly instead (emsdk env, `cmake --build` in
+    `build_wasm_weed_ltofull`, the same `wasm-opt` pass) and copied only the `.wasm`.
+
 **08:09** — M8 step (`adae675e`), E-70 logged. Open items now need design or your decision
 (list below).
 
