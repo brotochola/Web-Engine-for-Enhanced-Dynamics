@@ -167,6 +167,23 @@ function mergeSortPrefix(arr, tmp, n, compare) {
     if (src !== arr) for (let i = 0; i < n; i++) arr[i] = src[i];
 }
 
+// Light sort orders (E-66). A comparator's double result is boxed on its way
+// back to the sort, and Chrome made a heap number per comparison. ±1 has the
+// same sign; ±0 and NaN come back as they are, so Array.prototype.sort and
+// every `> 0` / `<= 0` test in _sortPrefix read the order `a - b` gave.
+function lightYOrder(a, b) {
+    const d = Transform.y[a] - Transform.y[b];
+    return d > 0 ? 1 : d < 0 ? -1 : d;
+}
+
+/** Nearest first, then id: `a.distSq - b.distSq || a.id - b.id`, unboxed. */
+function stampLightOrder(a, b) {
+    const d = a.distSq - b.distSq;
+    if (d > 0) return 1;
+    if (d < 0) return -1;
+    return a.id - b.id;
+}
+
 /**
  * Build the diagnostic label. Only ever called on a warn path.
  * A string `kind` is passed through, so the name-based caller still works.
@@ -419,7 +436,7 @@ class PreRenderWorker extends AbstractWorker {
         this._sortedLightEntities = [];
         this._lightPersistScratch = [];
         this._lightFlashScratch = [];
-        this._lightYComparator = (a, b) => Transform.y[a] - Transform.y[b];
+        this._lightYComparator = lightYOrder;
         this._sortPrefixTmp = null;
 
         // Stats tracking
@@ -479,10 +496,10 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuCounts = null;
         this._gpuShadowsResult = null;
         this._gpuSpritesResult = null;
+        this._stampLightCmp = stampLightOrder;
         // Stamp lights and their scratch: first written when a light first shows.
         this._stampLights = null;
         this._stampLightCount = 0;
-        this._stampLightCmp = null;
         this._stampSortLights = false;
         this._stampRangeSpec = null;
         this._gpuLightVec = null;
@@ -3078,9 +3095,6 @@ class PreRenderWorker extends AbstractWorker {
             n++;
         }
         this._stampLightCount = n;
-        if (!this._stampLightCmp) {
-            this._stampLightCmp = (a, b) => a.distSq - b.distSq || a.id - b.id;
-        }
         // Cookie pack needs the list; dist-order is only for stamping casters.
         if (this._stampSortLights) this._sortPrefix(out, n, this._stampLightCmp);
     }
