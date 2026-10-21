@@ -9,6 +9,7 @@ import {
   clearCreateSpawnQueue,
   pushCreateSpawnExtra,
   collectCreateSpawnExtras,
+  ringCarriesSpawnConfig,
 } from '../../src/util/createSpawnBatch.js';
 
 test('isXyOnlySpawnConfig treats position and owner as metadata', () => {
@@ -73,4 +74,15 @@ test('create flush extras sidecar skips xy-only configs', () => {
   assert.equal(fromQueue[0].entityIndex, 20);
   assert.equal(fromQueue[0].className, 'Ball');
   assert.deepEqual(fromQueue[0].spawnConfig, { x: 0, y: 0, vx: 5 });
+});
+
+test('a runtime spawn with more than x/y does not go through the ring (N-10)', () => {
+  // The ring carries type, index and x/y. A main-thread TerrainIsland spawn with
+  // polys reached logic0 without them and failed ("Failed ring spawn").
+  assert.equal(ringCarriesSpawnConfig({ x: 1, y: 2 }, false), true);
+  assert.equal(ringCarriesSpawnConfig({ x: 1, y: 2, forceProcessOnLogicWorker: 1 }, false), true);
+  assert.equal(ringCarriesSpawnConfig({ x: 1, y: 2, polys: [[0, 0, 1, 0, 0, 1]] }, false), false);
+  assert.equal(ringCarriesSpawnConfig({ x: 1, vx: 5 }, false), false);
+  // Inside create() the extras sidecar carries the rest.
+  assert.equal(ringCarriesSpawnConfig({ x: 1, y: 2, polys: [] }, true), true);
 });

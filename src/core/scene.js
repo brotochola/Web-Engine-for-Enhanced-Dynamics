@@ -131,7 +131,7 @@ import {
   shaderFragmentKey,
   resolveSpritePipeline,
 } from '../render/rendererBackend.js';
-import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
+import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
 import {
   isSpawnCommandRingBound,
   tryPushDespawn,
@@ -2658,7 +2658,11 @@ class Scene {
     const x = spawnConfig.x ?? 0;
     const y = spawnConfig.y ?? 0;
     const typeId = EntityClass?.entityType | 0;
-    if (isSpawnCommandRingBound() && tryPushSpawn(typeId, entityIndex, x, y)) {
+    if (
+      isSpawnCommandRingBound() &&
+      ringCarriesSpawnConfig(spawnConfig, this._spawnBatchOpen) &&
+      tryPushSpawn(typeId, entityIndex, x, y)
+    ) {
       if (this._spawnBatchOpen) {
         this._createRingPushes++;
         if (!isXyOnlySpawnConfig(spawnConfig)) {

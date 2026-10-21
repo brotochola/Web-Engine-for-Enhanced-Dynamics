@@ -13,6 +13,19 @@ export function isXyOnlySpawnConfig(config) {
   return true;
 }
 
+/**
+ * Whether the spawn command ring can carry this spawn (N-10). A ring entry holds
+ * the type, index and x/y only. Inside create() the other keys travel in the
+ * extras sidecar; at runtime a config with more than x/y must take the
+ * postMessage path, or those keys (polys, vx, ...) are lost on the way.
+ * @param {object|null|undefined} config
+ * @param {boolean} batchOpen - create()'s spawn batch is collecting extras
+ * @returns {boolean}
+ */
+export function ringCarriesSpawnConfig(config, batchOpen) {
+  return !!batchOpen || isXyOnlySpawnConfig(config);
+}
+
 export function createCreateSpawnQueue(initialCap = 256) {
   const cap = initialCap | 0 || 256;
   return {
