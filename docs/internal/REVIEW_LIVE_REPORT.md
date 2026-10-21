@@ -17,10 +17,30 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**13:45** — Stale probe killed, and the runner can't hang like that again (`fcdb92af`). Where
+**13:40** — **E-73 screened: no change.** Most of the audit's fields cost nothing. The one
+that would gain (+9.6 % on a kernel) is parked. Next: N-19, then E-70.
+
+### 13:40 — Typed fields in the other workers: mostly ties
+
+- **Spatial**, its 15 fields typed: kernel +0.6 % (35 of 49 rounds). A tie.
+- **Pre-render's collector columns**, which `_writeRenderable` touches seven times per entity:
+  measured on a new `collect` kernel case, +0.7 % (25 of 49). A tie.
+- **The pose columns** are the exception. In the real code they are set back to `null` every frame,
+  and `null` is how about 15 readers in five workers learn that there is no pose yet. I measured
+  the best case on another new kernel case (`collectPose`, every entity a moving body):
+  **+9.6 %, 58 of 81 rounds**. In a scene that's about 0.1 ms of pre-render, too small for a
+  Predator run to see. Getting it means a new "no pose" marker at every reader, and a mistake
+  there draws bodies at NaN. Parked.
+- **What the cost depends on** (all the measurements fit, but no trace proves it): code that tests
+  the array itself once per entity. Examples are emit's `if (rqRepeatX) …` and `_displayPose`'s
+  `poseX && rb && …`. On a field of known class V8 folds that test away; on an "Any" field it can't.
+  Loops that only index the array didn't pay. CLAUDE.md's rule now says so.
+- The report's previous entry said 13:45; it was 13:30 (corrected).
+
+**13:30** — Stale probe killed, and the runner can't hang like that again (`fcdb92af`). Where
 we stand is below. Next: E-73. **To do at the end: delete `D:/xampp/htdocs/weed-ab`** (you asked).
 
-### 13:45 — The 2.5-day process, and where the plan stands
+### 13:30 — The 2.5-day process, and where the plan stands
 
 - **The process:** `e34ChromeCpuProbe.mjs`, started 2026-10-19 00:43. I killed it with the scene
   run under it and five Chrome processes, seven in all, and checked that no other stale

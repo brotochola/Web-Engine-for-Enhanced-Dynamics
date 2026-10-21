@@ -1505,21 +1505,32 @@ at 19 ms and gave pre-render pairs from −35 % to +26 %: no signal. Verdict: ke
 neutral. E-71 + E-72 together: the emit kernel is ~37 % faster than before E-71 and ~17 % faster than
 the rev before N-32 (1,709 ops/s in the bisect; different sittings).
 
-### E-73 Worker fields that start null and later hold typed arrays — **not-started (audit done)**
+### E-73 Worker fields that start null and later hold typed arrays — **screened 2026-10-21: no change; pose bound parked**
 E-71's mechanism is not specific to the render queue. `tests/bench/fieldTypeAudit.mjs` (`c841379c`)
 lists, per worker, the own fields that hold a typed array after a scene's warm-up and were `null`
-right after the constructor. Predator, 2026-10-21: Pixi 52, pre-render 41 (after E-72), particle
-26, spatial 24, logic 24. Every worker shares 15 of them from `AbstractWorker` (`stats`, `inputData`,
-`cameraData`, `neighborData`, `activeEntitiesData`, `poseSync`, `_poseX/Y/RotC/RotS`,
-`_prevPose*`, `queryVersionData`, `frameRateData`); per entity, hot loops read the pose columns.
-Next, in order, one commit and one measure each: the `AbstractWorker` pose columns (every worker;
-kernels that read them: spatial, pre-render), spatial's `entityPosData` / `processedMarker` /
-`_entityLast*` (`spatialWorkerMicrobench`, which E-70 also needs), pre-render's `_renderable*`
-collector columns, Pixi's render-queue columns (Pixi copies them into a per-frame `src` object, whose
-fields count too, and reads `renderQueueX` as "queue bound"). Check each field for a path that sets
-it back to `null` or to an array of another class: such a field stays Any whatever its first value.
-The audit does not see fields of objects a worker points to, nor the physics worker (the page does
-not start it).
+right after the constructor. Predator: Pixi 52, pre-render 41 (after E-72), particle 26, spatial 24,
+logic 24; 15 of them come from `AbstractWorker`. **Most of them cost nothing measurable:**
+- **Spatial**, its 15 fixed-class fields typed (`spatialWorkerMicrobench` frame): 242 → 244 ops/s,
+  +0.6 %, 35/49, checksums equal. Tie.
+- **Pre-render collector** (`_renderable*`, seven columns `_writeRenderable` writes per entity
+  through `this.`), on a new kernel case `collect` (`788e0ee1`): 1,011 → 1,018, +0.7 %, 25/49. Tie.
+- **Pose columns** (`_poseX/Y/RotC/RotS`, `_prevPose*`, `_rbActive`): `_latchPose` writes `null` into
+  them every frame, and `null` means "no pose" to about 15 readers in five workers, so a typed start
+  alone changes nothing. Upper bound (typed, never reset; not shippable) on a new case `collectPose`
+  (`4ec480c4`, poses published, every entity a live body): 947 → 1,038, **+9.6 %, 58/81**, checksums
+  equal. Parked: in a scene that is ~0.1 ms of pre-render, below what a Predator sitting resolves,
+  and shipping it means a new "no pose" sentinel at every reader (a wrong one draws NaN poses).
+  Reopen if a profile shows `_displayPose` hot.
+- **Pixi's `q`**: `_bindSpriteQueue` stores `src.sortKey || null` (and the shadow columns) into the
+  queue object `packInstancedRows` reads, so its fields are Any whatever the worker declares. Only
+  `packGpuSprites: 'pixi'` scenes pack there (bunny mark, the render-queue stress scene); pre-render's
+  own pack objects (`_gpuSoa`, `_gpuBoundViews`) are filled from views and typed fields.
+
+**What the cost tracks:** where per-entity code tests the array's truthiness. Emit had six such
+guards per row (`if (rqRepeatX) …`, `if (!shadowH) return` once per entity), and `_displayPose` has
+five (`poseX && rb && rb[idx] && …`). With a known class, TurboFan folds the test; with Any, it
+has to inspect the value each time. Loops that only index a hoisted local (spatial, collect) did not
+pay. This is consistent with every measurement here, not proven by a trace.
 
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above — **kept: adaptive insertion → merge** (`c53f163b`; kernel `7319ff1c`)
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
