@@ -111,5 +111,9 @@ export function createViews(sab, maxItems) {
         offset += count * bpe;
         if (bpe < 4) offset = align4(offset);
     }
+    // The CPU painter sorts the keys' bit patterns. One alias per queue, made
+    // here: building it at pack time made one per frame (review G3).
+    const sk = views.sortKey;
+    views.sortKeyU32 = new Uint32Array(sk.buffer, sk.byteOffset, sk.length);
     return views;
 }

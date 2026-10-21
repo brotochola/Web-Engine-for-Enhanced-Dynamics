@@ -263,6 +263,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorY = null;
         this.renderQueueType = null;
         this.renderQueueSortKey = null;
+        this.renderQueueSortKeyU32 = null;
         this.renderQueueRepeatX = null;
         this.renderQueueRepeatY = null;
         this.renderQueueCamera = null;
@@ -883,6 +884,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorY = buffer.anchorY;
         this.renderQueueType = buffer.type;
         this.renderQueueSortKey = buffer.sortKey;
+        this.renderQueueSortKeyU32 = buffer.sortKeyU32;
         this.renderQueueRepeatX = buffer.repeatX;
         this.renderQueueRepeatY = buffer.repeatY;
         this.renderQueueTileMode = buffer.tileMode;
@@ -1064,6 +1066,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorY = views.anchorY;
         this.renderQueueType = views.type;
         this.renderQueueSortKey = views.sortKey;
+        this.renderQueueSortKeyU32 = views.sortKeyU32;
         this.renderQueueRepeatX = views.repeatX;
         this.renderQueueRepeatY = views.repeatY;
         this.renderQueueTileMode = views.tileMode;
@@ -1092,6 +1095,7 @@ class PreRenderWorker extends AbstractWorker {
         saved.anchorY = this.renderQueueAnchorY;
         saved.type = this.renderQueueType;
         saved.sortKey = this.renderQueueSortKey;
+        saved.sortKeyU32 = this.renderQueueSortKeyU32;
         saved.repeatX = this.renderQueueRepeatX;
         saved.repeatY = this.renderQueueRepeatY;
         saved.tileMode = this.renderQueueTileMode;
@@ -2794,6 +2798,7 @@ class PreRenderWorker extends AbstractWorker {
         q.tileOffsetU = views.tileOffsetU;
         q.tileOffsetV = views.tileOffsetV;
         q.sortKey = views.sortKey;
+        q.sortKeyU32 = views.sortKeyU32;
         q.shadowH = views.shadowH;
         q.shadowOffX = views.shadowOffX;
         q.shadowOffY = views.shadowOffY;
@@ -2822,24 +2827,12 @@ class PreRenderWorker extends AbstractWorker {
         v.tileOffsetU = this.renderQueueTileOffsetU;
         v.tileOffsetV = this.renderQueueTileOffsetV;
         v.sortKey = this.renderQueueSortKey;
+        v.sortKeyU32 = this.renderQueueSortKeyU32;
         v.shadowH = this.renderQueueShadowH;
         v.shadowOffX = this.renderQueueShadowOffX;
         v.shadowOffY = this.renderQueueShadowOffY;
         v.type = this.renderQueueType;
         return this._gpuSoAFromViews(v);
-    }
-
-    _sortKeyBits(sk) {
-        if (!sk) return null;
-        if (
-            this._sortKeyU32View &&
-            this._sortKeyU32View.buffer === sk.buffer &&
-            this._sortKeyU32View.byteOffset === sk.byteOffset
-        ) {
-            return this._sortKeyU32View;
-        }
-        this._sortKeyU32View = new Uint32Array(sk.buffer, sk.byteOffset, sk.length);
-        return this._sortKeyU32View;
     }
 
     _resetGpuPackOpts(opts) {
@@ -3236,7 +3229,7 @@ class PreRenderWorker extends AbstractWorker {
         spec.idxEntity = this._gpuIdxEntity;
         spec.idxGlow = this._gpuIdxGlow;
         spec.painter = allowSort ? this._gpuPainter : null;
-        spec.keysU32 = allowSort ? this._sortKeyBits(q.sortKey) : null;
+        spec.keysU32 = allowSort ? q.sortKeyU32 : null;
         spec.addSortMs = this.collectDetailedStats ? this._addPackSortMs : null;
         spec.glowCapacity = caps.maxGlow | 0;
         const packed = packSpriteLayer(spec);

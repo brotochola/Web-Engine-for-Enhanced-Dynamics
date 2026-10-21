@@ -5722,8 +5722,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
         const views = createRenderQueueViews(bufferSABs[bufIdx], maxItems);
         this.renderQueueBuffers[bufIdx] = views;
-        const sk = views.sortKey;
-        this._sortKeyU32ByBuf[bufIdx] = new Uint32Array(sk.buffer, sk.byteOffset, sk.length);
+        this._sortKeyU32ByBuf[bufIdx] = views.sortKeyU32;
         const camViews = createRenderQueueCameraViews(cameraSABs[bufIdx]);
         this.renderQueueCameraBuffers[bufIdx] = camViews ? camViews.camera : null;
         this.renderQueuePoseReadyBuffers[bufIdx] = camViews ? camViews.poseReady : null;
@@ -6164,9 +6163,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           createRenderQueueViews(lrq.dataA, maxItems),
           createRenderQueueViews(lrq.dataB, maxItems),
         ];
-        sortKeyU32ByBuf = buffers.map(
-          (b) => new Uint32Array(b.sortKey.buffer, b.sortKey.byteOffset, b.sortKey.length)
-        );
+        sortKeyU32ByBuf = buffers.map((b) => b.sortKeyU32);
         painter = layerYSort ? createPainterState(maxItems) : null;
         batch = new InstancedSpriteBatch({
           capacity: maxItems,
