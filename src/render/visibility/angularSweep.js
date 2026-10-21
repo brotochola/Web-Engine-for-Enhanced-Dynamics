@@ -697,6 +697,10 @@ export function ensureCompoundSolid(
       fillVerts: 0,
       hasFill: false,
     };
+    // Fill the gap so the array stays packed: a first write past ~1024 empty
+    // slots turns it into a dictionary, and every cache hit then costs a hash
+    // lookup (3x slower, review V5).
+    while (_solids.length < entityIdx) _solids.push(null);
     _solids[entityIdx] = solid;
   }
   solid.segCount = 0;

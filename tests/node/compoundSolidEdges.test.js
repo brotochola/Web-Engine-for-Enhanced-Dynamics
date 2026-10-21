@@ -138,3 +138,24 @@ test('a small body after a large one starts from an empty table', () => {
   const got = outline(small, 101, false);
   assert.deepEqual(Array.from(got.seg), Array.from(referenceOutline(small)));
 });
+
+test('bodies far apart in the entity pool each keep their own cached outline', () => {
+  // V5: the cache fills the gap below a new high index with nulls so it stays a
+  // packed array; a null slot must still read as "no outline yet".
+  const f = randomCompound(21, 6, 4, {});
+  const call = (entity, rev) => ensureCompoundSolid(
+    entity, rev, f.head, f.next, f.active, f.vertCount, f.vx, f.vy, f.headIdx, f.poolMax, true,
+  );
+  const far = call(9000, 50);
+  const mid = call(4500, 50);
+  const near = call(3, 50);
+  assert.notEqual(far, mid);
+  assert.notEqual(mid, near);
+  assert.equal(call(9000, 50), far, 'same revision: the cached object');
+  assert.equal(call(4500, 50), mid);
+  assert.equal(call(3, 50), near);
+  const fresh = call(8999, 50);
+  assert.notEqual(fresh, far, 'a gap slot builds its own');
+  assert.equal(fresh.segCount, far.segCount);
+  assert.deepEqual(Array.from(fresh.seg.slice(0, fresh.segCount * 4)), Array.from(referenceOutline(f)));
+});
