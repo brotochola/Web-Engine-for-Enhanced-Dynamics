@@ -1059,18 +1059,5 @@ export function teardownSceneSharedState(scene) {
 
   scene.registeredClasses = [];
   scene.totalEntityCount = 0;
-  scene.audioMetrics = {
-    activeSlots: 0,
-    maxSlots: 0,
-    loadedSounds: 0,
-    dropped: 0,
-    mixGain: 0,
-    masterVolume: 0,
-    muted: false,
-    state: 'closed',
-    sampleRate: 0,
-    baseLatency: 0,
-    outputLatency: 0,
-    processMs: 0,
-  };
+  scene.audioMetrics = SoundManager.createMetrics();
 }

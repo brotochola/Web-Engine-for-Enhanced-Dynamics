@@ -369,20 +369,7 @@ class Scene {
     this.mainFrameTimesSum = 16.67 * this.mainFPSFrameCount;
     this.mainFPSReportInterval = 30;
     this.mainFrameNumber = 0;
-    this.audioMetrics = {
-      activeSlots: 0,
-      maxSlots: 0,
-      loadedSounds: 0,
-      dropped: 0,
-      mixGain: 0,
-      masterVolume: 0,
-      muted: false,
-      state: 'closed',
-      sampleRate: 0,
-      baseLatency: 0,
-      outputLatency: 0,
-      processMs: 0,
-    };
+    this.audioMetrics = SoundManager.createMetrics();
 
     // Worker stats (populated by worker messages, read by DebugUI)
     this.workerStats = {

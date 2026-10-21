@@ -766,9 +766,9 @@ export class SoundManager {
     return count;
   }
 
-  static getMetrics(out) {
-    const ctx = this._audioCtx;
-    const dst = out || this._metricsScratch || (this._metricsScratch = {
+  /** A metrics object before any audio: the shape getMetrics fills. */
+  static createMetrics() {
+    return {
       activeSlots: 0,
       maxSlots: 0,
       loadedSounds: 0,
@@ -781,7 +781,12 @@ export class SoundManager {
       baseLatency: 0,
       outputLatency: 0,
       processMs: 0,
-    });
+    };
+  }
+
+  static getMetrics(out) {
+    const ctx = this._audioCtx;
+    const dst = out || this._metricsScratch || (this._metricsScratch = this.createMetrics());
     dst.activeSlots = this.getActiveSlotCount();
     dst.maxSlots = this._maxSlots;
     dst.loadedSounds = this._nameToId.size;

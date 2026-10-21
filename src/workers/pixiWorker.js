@@ -5977,7 +5977,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _uploadSharedPictures(cl) {
-    const bag = Layer._textureSlots && Layer._textureSlots[cl.layerId];
+    const bag = Layer.textureSlotsFor(cl.layerId);
     if (!bag) return;
     const renderer = this.pixiApp && this.pixiApp.renderer;
     const names = Object.keys(bag);

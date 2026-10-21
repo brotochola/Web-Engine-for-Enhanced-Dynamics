@@ -1683,6 +1683,11 @@ export class Layer {
         }
     }
 
+    /** A layer's shared texture slots by name, or null. */
+    static textureSlotsFor(layerId) {
+        return (this._textureSlots && this._textureSlots[layerId]) || null;
+    }
+
     static consumeTextureUpload(layerId, name) {
         const slot = textureSlot(layerId, name);
         if (!slot) return null;
@@ -1979,7 +1984,7 @@ function sharedTextureSpecs(meta) {
 }
 
 function textureSlot(layerId, name) {
-    const bag = Layer._textureSlots && Layer._textureSlots[layerId];
+    const bag = Layer.textureSlotsFor(layerId);
     if (!bag) return null;
     return bag[name] || null;
 }
