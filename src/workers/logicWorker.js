@@ -9,6 +9,7 @@ self.postMessage({
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from '../util/debugLog.js';
+import { reportWorkerError } from '../util/errorReport.js';
 import { Joint } from '../core/joint.js';
 import { Mouse } from '../core/mouse.js';
 import { Transform } from '../components/transform.js';
@@ -946,26 +947,37 @@ class LogicWorker extends AbstractWorker {
         entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
       );
 
+      // A throw from game code reports that entity and resumes after it. The
+      // try sits outside the inner loop so the loop body compiles as before.
       if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
-        for (let idx = 0; idx < count; idx++) {
-          const entityIndex = activeList[1 + idx];
-          if (
-            logicWorkerThatShouldTick(
-              idx,
-              entityIndex,
-              totalWorkers,
-              forceProcessOnLogicWorker,
-            ) !== myIndex
-          ) {
-            continue;
+        let idx = 0;
+        for (;;) {
+          try {
+            for (; idx < count; idx++) {
+              const entityIndex = activeList[1 + idx];
+              if (
+                logicWorkerThatShouldTick(
+                  idx,
+                  entityIndex,
+                  totalWorkers,
+                  forceProcessOnLogicWorker,
+                ) !== myIndex
+              ) {
+                continue;
+              }
+              const n = this._tickNonDecimatedOne(
+                entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                needsScreenCallbacks, transformActive, gameObjects,
+                rbAx, rbAy, rbAa, collectDetailed
+              );
+              activeCount += n;
+              if (collectDetailed) tickMs += this._lastTickMs;
+            }
+            break;
+          } catch (error) {
+            this._entityThrew(error, activeList[1 + idx], 'tick');
+            idx++;
           }
-          const n = this._tickNonDecimatedOne(
-            entityIndex, dtRatio, deltaTime, accTime, frameNum,
-            needsScreenCallbacks, transformActive, gameObjects,
-            rbAx, rbAy, rbAa, collectDetailed
-          );
-          activeCount += n;
-          if (collectDetailed) tickMs += this._lastTickMs;
         }
       } else {
         let from = myIndex;
@@ -977,15 +989,24 @@ class LogicWorker extends AbstractWorker {
           to = range.end;
           step = 1;
         }
-        for (let idx = from; idx < to; idx += step) {
-          const entityIndex = activeList[1 + idx];
-          const n = this._tickNonDecimatedOne(
-            entityIndex, dtRatio, deltaTime, accTime, frameNum,
-            needsScreenCallbacks, transformActive, gameObjects,
-            rbAx, rbAy, rbAa, collectDetailed
-          );
-          activeCount += n;
-          if (collectDetailed) tickMs += this._lastTickMs;
+        let idx = from;
+        for (;;) {
+          try {
+            for (; idx < to; idx += step) {
+              const entityIndex = activeList[1 + idx];
+              const n = this._tickNonDecimatedOne(
+                entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                needsScreenCallbacks, transformActive, gameObjects,
+                rbAx, rbAy, rbAa, collectDetailed
+              );
+              activeCount += n;
+              if (collectDetailed) tickMs += this._lastTickMs;
+            }
+            break;
+          } catch (error) {
+            this._entityThrew(error, activeList[1 + idx], 'tick');
+            idx += step;
+          }
         }
       }
     }
@@ -1025,27 +1046,36 @@ class LogicWorker extends AbstractWorker {
         }
 
         if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
-          for (let idx = 0; idx < count; idx++) {
-            const entityIndex = activeList[1 + idx];
-            if (
-              logicWorkerThatShouldTick(
-                idx,
-                entityIndex,
-                totalWorkers,
-                forceProcessOnLogicWorker,
-              ) !== myIndex
-            ) {
-              continue;
-            }
-            const n = this._tickDecimatedOne(
-              entityIndex, dtRatio, deltaTime, accTime, frameNum,
-              tickInterval, needsScreenCallbacks, transformActive, gameObjects,
-              rbAx, rbAy, rbAa, nextTick, collectDetailed
-            );
-            activeCount += n;
-            if (collectDetailed) {
-              decimateMs += this._lastDecimateMs;
-              tickMs += this._lastTickMs;
+          let idx = 0;
+          for (;;) {
+            try {
+              for (; idx < count; idx++) {
+                const entityIndex = activeList[1 + idx];
+                if (
+                  logicWorkerThatShouldTick(
+                    idx,
+                    entityIndex,
+                    totalWorkers,
+                    forceProcessOnLogicWorker,
+                  ) !== myIndex
+                ) {
+                  continue;
+                }
+                const n = this._tickDecimatedOne(
+                  entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                  tickInterval, needsScreenCallbacks, transformActive, gameObjects,
+                  rbAx, rbAy, rbAa, nextTick, collectDetailed
+                );
+                activeCount += n;
+                if (collectDetailed) {
+                  decimateMs += this._lastDecimateMs;
+                  tickMs += this._lastTickMs;
+                }
+              }
+              break;
+            } catch (error) {
+              this._entityThrew(error, activeList[1 + idx], 'tick');
+              idx++;
             }
           }
         } else {
@@ -1058,17 +1088,26 @@ class LogicWorker extends AbstractWorker {
             to = range.end;
             step = 1;
           }
-          for (let idx = from; idx < to; idx += step) {
-            const entityIndex = activeList[1 + idx];
-            const n = this._tickDecimatedOne(
-              entityIndex, dtRatio, deltaTime, accTime, frameNum,
-              tickInterval, needsScreenCallbacks, transformActive, gameObjects,
-              rbAx, rbAy, rbAa, nextTick, collectDetailed
-            );
-            activeCount += n;
-            if (collectDetailed) {
-              decimateMs += this._lastDecimateMs;
-              tickMs += this._lastTickMs;
+          let idx = from;
+          for (;;) {
+            try {
+              for (; idx < to; idx += step) {
+                const entityIndex = activeList[1 + idx];
+                const n = this._tickDecimatedOne(
+                  entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                  tickInterval, needsScreenCallbacks, transformActive, gameObjects,
+                  rbAx, rbAy, rbAa, nextTick, collectDetailed
+                );
+                activeCount += n;
+                if (collectDetailed) {
+                  decimateMs += this._lastDecimateMs;
+                  tickMs += this._lastTickMs;
+                }
+              }
+              break;
+            } catch (error) {
+              this._entityThrew(error, activeList[1 + idx], 'tick');
+              idx += step;
             }
           }
         }
@@ -1171,7 +1210,13 @@ class LogicWorker extends AbstractWorker {
           scratch[n++] = entityIndex;
         }
       }
-      if (n > 0) typeInfo.EntityClass.tickAll(scratch, n, dtRatio);
+      if (n > 0) {
+        try {
+          typeInfo.EntityClass.tickAll(scratch, n, dtRatio);
+        } catch (error) {
+          reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
+        }
+      }
       this.entitiesProcessedThisFrame += n;
       packed += n;
     }
@@ -1215,37 +1260,56 @@ class LogicWorker extends AbstractWorker {
     }
 
     let visited = 0;
+    // Same resume-after-the-throw shape as update(): try outside the loop.
     if (forcedScan) {
-      for (let i = 0; i < nAll; i++) {
-        const entityIndex = list[i];
-        if (
-          logicWorkerThatShouldTick(i, entityIndex, totalWorkers, forceProcessOnLogicWorker) !==
-          myIndex
-        ) {
-          continue;
+      let i = 0;
+      for (;;) {
+        try {
+          for (; i < nAll; i++) {
+            const entityIndex = list[i];
+            if (
+              logicWorkerThatShouldTick(i, entityIndex, totalWorkers, forceProcessOnLogicWorker) !==
+              myIndex
+            ) {
+              continue;
+            }
+            if (transformActive[entityIndex] === 0) continue;
+            const obj = gameObjects[entityIndex];
+            if (!obj || typeof obj.tick !== 'function') continue;
+            rbAx[entityIndex] = 0;
+            rbAy[entityIndex] = 0;
+            rbAa[entityIndex] = 0;
+            obj.tick(dtRatio, deltaTime, accTime, frameNum);
+            this.entitiesProcessedThisFrame++;
+            visited++;
+          }
+          break;
+        } catch (error) {
+          this._entityThrew(error, list[i], 'tick');
+          i++;
         }
-        if (transformActive[entityIndex] === 0) continue;
-        const obj = gameObjects[entityIndex];
-        if (!obj || typeof obj.tick !== 'function') continue;
-        rbAx[entityIndex] = 0;
-        rbAy[entityIndex] = 0;
-        rbAa[entityIndex] = 0;
-        obj.tick(dtRatio, deltaTime, accTime, frameNum);
-        this.entitiesProcessedThisFrame++;
-        visited++;
       }
     } else {
-      for (let i = from; i < to; i++) {
-        const entityIndex = list[i];
-        if (transformActive[entityIndex] === 0) continue;
-        const obj = gameObjects[entityIndex];
-        if (!obj || typeof obj.tick !== 'function') continue;
-        rbAx[entityIndex] = 0;
-        rbAy[entityIndex] = 0;
-        rbAa[entityIndex] = 0;
-        obj.tick(dtRatio, deltaTime, accTime, frameNum);
-        this.entitiesProcessedThisFrame++;
-        visited++;
+      let i = from;
+      for (;;) {
+        try {
+          for (; i < to; i++) {
+            const entityIndex = list[i];
+            if (transformActive[entityIndex] === 0) continue;
+            const obj = gameObjects[entityIndex];
+            if (!obj || typeof obj.tick !== 'function') continue;
+            rbAx[entityIndex] = 0;
+            rbAy[entityIndex] = 0;
+            rbAa[entityIndex] = 0;
+            obj.tick(dtRatio, deltaTime, accTime, frameNum);
+            this.entitiesProcessedThisFrame++;
+            visited++;
+          }
+          break;
+        } catch (error) {
+          this._entityThrew(error, list[i], 'tick');
+          i++;
+        }
       }
     }
     return visited;
@@ -1370,7 +1434,11 @@ class LogicWorker extends AbstractWorker {
 
       const obj = gameObjects[targetId];
       if (obj && obj.onGotShot) {
-        obj.onGotShot(damage, hitX, hitY, ownerId, shooterEntityType);
+        try {
+          obj.onGotShot(damage, hitX, hitY, ownerId, shooterEntityType);
+        } catch (error) {
+          this._entityThrew(error, targetId, 'onGotShot');
+        }
       }
     }
   }
@@ -1421,8 +1489,21 @@ class LogicWorker extends AbstractWorker {
     const gameObjects = this.gameObjects;
     const aListens = collisionFlags[entityType[a]];
     const bListens = collisionFlags[entityType[b]];
-    if (aListens) gameObjects[a]?.onCollisionHit(b, px, py, nx, ny, speed);
-    if (bListens) gameObjects[b]?.onCollisionHit(a, px, py, -nx, -ny, speed);
+    // A throw is caught per call so the ring drain still advances its cursor.
+    if (aListens) {
+      try {
+        gameObjects[a]?.onCollisionHit(b, px, py, nx, ny, speed);
+      } catch (error) {
+        this._entityThrew(error, a, 'onCollisionHit');
+      }
+    }
+    if (bListens) {
+      try {
+        gameObjects[b]?.onCollisionHit(a, px, py, -nx, -ny, speed);
+      } catch (error) {
+        this._entityThrew(error, b, 'onCollisionHit');
+      }
+    }
   }
 
   /**
@@ -1449,8 +1530,27 @@ class LogicWorker extends AbstractWorker {
     const aListens = jointBreakFlags[entityType[entityA]];
     const bListens = jointBreakFlags[entityType[entityB]];
     if (!aListens && !bListens) return;
-    if (aListens) gameObjects[entityA]?.onJointBreak(jointIndex, entityA, entityB);
-    if (bListens) gameObjects[entityB]?.onJointBreak(jointIndex, entityA, entityB);
+    if (aListens) {
+      try {
+        gameObjects[entityA]?.onJointBreak(jointIndex, entityA, entityB);
+      } catch (error) {
+        this._entityThrew(error, entityA, 'onJointBreak');
+      }
+    }
+    if (bListens) {
+      try {
+        gameObjects[entityB]?.onJointBreak(jointIndex, entityA, entityB);
+      } catch (error) {
+        this._entityThrew(error, entityB, 'onJointBreak');
+      }
+    }
+  }
+
+  /** Report a throw from game code on one entity (class + index + phase). Error path only. */
+  _entityThrew(error, entityIndex, phase) {
+    const obj = entityIndex >= 0 ? this.gameObjects[entityIndex] : null;
+    const className = obj && obj.constructor ? obj.constructor.name : '';
+    reportWorkerError(error, phase, className, entityIndex);
   }
 
   _entityGen(i) {
@@ -1569,8 +1669,20 @@ class LogicWorker extends AbstractWorker {
     const gameObjects = this.gameObjects;
     const aListens = collisionFlags[entityType[minE]];
     const bListens = collisionFlags[entityType[maxE]];
-    if (aListens) gameObjects[minE]?.onCollisionExit(maxE);
-    if (bListens) gameObjects[maxE]?.onCollisionExit(minE);
+    if (aListens) {
+      try {
+        gameObjects[minE]?.onCollisionExit(maxE);
+      } catch (error) {
+        this._entityThrew(error, minE, 'onCollisionExit');
+      }
+    }
+    if (bListens) {
+      try {
+        gameObjects[maxE]?.onCollisionExit(minE);
+      } catch (error) {
+        this._entityThrew(error, maxE, 'onCollisionExit');
+      }
+    }
   }
 
   _applyContactBegin(rawA, rawB, genA, genB) {
@@ -1620,8 +1732,20 @@ class LogicWorker extends AbstractWorker {
     const aListens = collisionFlags[entityType[rawA]];
     const bListens = collisionFlags[entityType[rawB]];
     if (!aListens && !bListens) return;
-    if (aListens) gameObjects[rawA]?.onCollisionEnter(rawB);
-    if (bListens) gameObjects[rawB]?.onCollisionEnter(rawA);
+    if (aListens) {
+      try {
+        gameObjects[rawA]?.onCollisionEnter(rawB);
+      } catch (error) {
+        this._entityThrew(error, rawA, 'onCollisionEnter');
+      }
+    }
+    if (bListens) {
+      try {
+        gameObjects[rawB]?.onCollisionEnter(rawA);
+      } catch (error) {
+        this._entityThrew(error, rawB, 'onCollisionEnter');
+      }
+    }
   }
 
   _onContactRingEvent(kind, a, b, genA, genB) {
@@ -1672,27 +1796,40 @@ class LogicWorker extends AbstractWorker {
     const genMax = this._pairGenMax;
     const began = this._pairBegan;
 
-    // Purge pairs whose generation changed or entities went inactive
-    for (let s = 0; s < this._pairCount; ) {
-      const minE = pairMin[s];
-      const maxE = pairMax[s];
-      const valid =
-        active[minE] &&
-        active[maxE] &&
-        (gen
-          ? (Atomics.load(gen, minE) >>> 0) === genMin[s] && (Atomics.load(gen, maxE) >>> 0) === genMax[s]
-          : genMin[s] === 0 && genMax[s] === 0);
-      if (!valid) {
-        this._removePairSlot(s, collisionPairKey(minE, maxE));
-        continue;
+    // Purge pairs whose generation changed or entities went inactive.
+    // A throwing onCollisionStay is reported and the walk resumes at the next
+    // pair (s is already past it); the try sits outside the loop.
+    let s = 0;
+    let calling = -1;
+    for (;;) {
+      try {
+        while (s < this._pairCount) {
+          const minE = pairMin[s];
+          const maxE = pairMax[s];
+          const valid =
+            active[minE] &&
+            active[maxE] &&
+            (gen
+              ? (Atomics.load(gen, minE) >>> 0) === genMin[s] && (Atomics.load(gen, maxE) >>> 0) === genMax[s]
+              : genMin[s] === 0 && genMax[s] === 0);
+          if (!valid) {
+            this._removePairSlot(s, collisionPairKey(minE, maxE));
+            continue;
+          }
+          const beganNow = began[s] === frame;
+          s++;
+          if (beganNow) continue;
+          const aListens = collisionFlags[entityType[minE]];
+          const bListens = collisionFlags[entityType[maxE]];
+          calling = minE;
+          if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
+          calling = maxE;
+          if (bListens) gameObjects[maxE]?.onCollisionStay(minE);
+        }
+        break;
+      } catch (error) {
+        this._entityThrew(error, calling, 'onCollisionStay');
       }
-      const beganNow = began[s] === frame;
-      s++;
-      if (beganNow) continue;
-      const aListens = collisionFlags[entityType[minE]];
-      const bListens = collisionFlags[entityType[maxE]];
-      if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
-      if (bListens) gameObjects[maxE]?.onCollisionStay(minE);
     }
   }
 

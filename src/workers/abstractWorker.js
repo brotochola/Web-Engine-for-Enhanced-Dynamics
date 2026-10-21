@@ -92,6 +92,7 @@ import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { ShapeType } from '../util/configDefaults.js';
 import { bindPoolExhaustion } from '../util/poolExhaustion.js';
+import { reportWorkerError } from '../util/errorReport.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -100,6 +101,7 @@ import { bindPoolExhaustion } from '../util/poolExhaustion.js';
 export class AbstractWorker {
   constructor(selfRef) {
     this.self = selfRef;
+
 
     // Explicit queue preserves ordering without building a promise chain per message.
     this._pendingMessages = [];
@@ -345,7 +347,12 @@ export class AbstractWorker {
   gameLoop(resuming = false) {
     if (this.isPaused) return;
 
-    this._runFrame(resuming);
+    try {
+      this._runFrame(resuming);
+    } catch (error) {
+      // A throw used to skip scheduleNextFrame below and stop this worker for good.
+      reportWorkerError(error, 'frame');
+    }
 
     // Schedule next frame (only if not using custom scheduler)
     if (!this.usesCustomScheduler) {

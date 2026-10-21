@@ -69,6 +69,7 @@ import {
 import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
 import { isSpawnCommandRingBound, tryPushSpawn } from '../util/spawnCommandRing.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
+import { reportWorkerError } from '../util/errorReport.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
@@ -2567,7 +2568,14 @@ export class GameObject {
       }
 
       if (instance.onSpawned) {
-        instance.onSpawned(spawnConfig);
+        try {
+          instance.onSpawned(spawnConfig);
+        } catch (error) {
+          // In a worker, report it and finish the spawn (Unity keeps an object
+          // whose Awake threw); elsewhere (tests, tools) keep throwing.
+          if (!logicWorkerCtx) throw error;
+          reportWorkerError(error, 'onSpawned', EntityClass.name, i);
+        }
       }
 
       if (has.RigidBody && RigidBody.active[i]) {

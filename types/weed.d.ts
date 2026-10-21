@@ -1482,6 +1482,18 @@ export declare class Scene {
   loadEntityScriptsInMainThread(): Promise<void>;
   getMemoryUsageSummary(): MemoryUsageSummary;
   getMemoryUsageReport(): SceneMemoryUsageReport;
+  /**
+   * Game-code errors from workers this scene, one row per distinct (class, phase, message).
+   * The worker printed the first one; repeats are counted here.
+   */
+  getEntityErrors(): Array<{
+    phase: string;
+    className: string;
+    entityIndex: number;
+    message: string;
+    stack: string;
+    count: number;
+  }>;
   getSharedBufferSize(includeBreakdown?: false): number;
   getSharedBufferSize(includeBreakdown: true): SharedBufferSizeBreakdown;
   getSharedBufferSize(includeBreakdown?: boolean): number | SharedBufferSizeBreakdown;

@@ -1171,6 +1171,7 @@ Recommended `<head>` meta tags (add these to your HTML — the engine can't inje
 - Audio: `maxSlots = 128`, `mixGain = 0.5`, `masterVolume = 1.0`, one bus named `main` unless `audio.channels` says otherwise
 - Navigation: `enabled = false` by default
 - Logging: a game's `console.log` prints from every worker (`tick`, callbacks, module top level). The engine's own worker chatter stays off unless `debug.verboseWorkers: true`
+- Errors: when game code throws (`tick`, `tickAll`, `onSpawned`, a collision / hit / joint / shot callback), the worker keeps running. That entity misses that one call, the others still run, and the error is printed once with its class, index and phase; repeats are counted, not printed. The debug build lists them in a small panel; `scene.getEntityErrors()` returns them in any build.
 
 See `src/util/configDefaults.js` for the canonical defaults.
 

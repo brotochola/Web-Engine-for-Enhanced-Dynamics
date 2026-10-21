@@ -201,6 +201,9 @@ class Scene {
     };
     /** Render-queue camera views bound by _drawnCameraViews(). */
     this._drawnCam = null;
+    /** Game-code errors from workers: key → { phase, className, entityIndex, message, counts: Map<worker, n> }. */
+    this._entityErrors = new Map();
+    this._entityErrorsDismissed = false;
     /** Pending pauseAndSettle barrier: { id, left, resolve }. */
     this._barrier = null;
     this._barrierSeq = 0;
@@ -1769,6 +1772,8 @@ class Scene {
 
       // Show a visible error message on the page
       this._showFatalErrorMessage(workerName, title, message);
+    } else if (e.data.msg === 'entityError' || e.data.msg === 'entityErrorCount') {
+      this._onEntityError(e.data);
     } else if (e.data.msg === 'box2dReady') {
       const payload = {
         msg: 'box2dReady',
@@ -1893,6 +1898,97 @@ class Scene {
     } else {
       // Log unexpected messages for debugging
       debugWorkerLog(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);
+    }
+  }
+
+  /**
+   * A worker's ErrorReporter posts the first throw of each distinct error, then
+   * counts at most once a second. The worker already printed the Error; here
+   * the scene keeps the list (getEntityErrors) and, in debug, shows it.
+   * @param {object} data - entityError or entityErrorCount message
+   */
+  _onEntityError(data) {
+    let rec = this._entityErrors.get(data.key);
+    if (data.msg === 'entityError') {
+      if (!rec) {
+        rec = {
+          phase: data.phase,
+          className: data.className,
+          entityIndex: data.entityIndex,
+          message: data.message,
+          stack: data.stack,
+          counts: new Map(),
+        };
+        this._entityErrors.set(data.key, rec);
+      }
+    } else if (!rec) {
+      return;
+    }
+    rec.counts.set(data.workerName, data.count);
+    this._renderEntityErrors();
+  }
+
+  /**
+   * Game-code errors seen this scene, one row per distinct (class, phase, message).
+   * @returns {{ phase: string, className: string, entityIndex: number, message: string, stack: string, count: number }[]}
+   */
+  getEntityErrors() {
+    const out = [];
+    for (const rec of this._entityErrors.values()) {
+      let count = 0;
+      for (const n of rec.counts.values()) count += n;
+      out.push({
+        phase: rec.phase,
+        className: rec.className,
+        entityIndex: rec.entityIndex,
+        message: rec.message,
+        stack: rec.stack,
+        count,
+      });
+    }
+    return out;
+  }
+
+  /** Debug builds only: a small list in the corner, not the fatal overlay. */
+  _renderEntityErrors() {
+    if (typeof document === 'undefined' || !this.game || !this.game.debugEnabled) return;
+    if (this._entityErrorsDismissed) return;
+    let box = document.getElementById('weed-entity-errors');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'weed-entity-errors';
+      box.style.cssText =
+        'position:fixed;left:12px;bottom:12px;max-width:560px;z-index:10000;' +
+        'background:rgba(110,0,0,0.92);color:#fff;font:12px/1.4 monospace;' +
+        'padding:8px 10px;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.5);';
+      document.body.appendChild(box);
+    }
+    box.textContent = '';
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;justify-content:space-between;gap:12px;font-weight:bold;margin-bottom:4px;';
+    head.textContent = 'Game code threw (details in the console)';
+    const close = document.createElement('button');
+    close.textContent = '×';
+    close.style.cssText = 'background:none;border:0;color:#fff;font:bold 14px monospace;cursor:pointer;';
+    close.onclick = () => {
+      this._entityErrorsDismissed = true;
+      box.remove();
+    };
+    head.appendChild(close);
+    box.appendChild(head);
+    const rows = this.getEntityErrors();
+    const shown = rows.length > 8 ? 8 : rows.length;
+    for (let r = 0; r < shown; r++) {
+      const e = rows[r];
+      const line = document.createElement('div');
+      const who = e.className ? `${e.className}${e.entityIndex >= 0 ? ` #${e.entityIndex}` : ''} · ` : '';
+      line.textContent = `${who}${e.phase}: ${e.message}  ×${e.count}`;
+      box.appendChild(line);
+    }
+    if (rows.length > shown) {
+      const more = document.createElement('div');
+      more.textContent = `… ${rows.length - shown} more (scene.getEntityErrors())`;
+      box.appendChild(more);
     }
   }
 
@@ -2409,6 +2505,7 @@ class Scene {
 
     Camera.setFree(false);
     GrabSystem.reset();
+    if (typeof document !== 'undefined') document.getElementById('weed-entity-errors')?.remove();
 
     // =========================================================================
     // CRITICAL: Clear global references FIRST to allow GC of the scene
