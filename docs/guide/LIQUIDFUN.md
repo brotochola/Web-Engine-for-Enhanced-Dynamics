@@ -293,13 +293,13 @@ LiquidFun.setGroupFlags(id, 0); // RIGID is whole-group; corner melt needs extra
 LiquidFun.destroyParticle(i);
 LiquidFun.createParticle({ x, y, vx, vy, flags, userData, color });
 LiquidFun.extract(groupId, indices, count, { groupFlags: 0 }); // → newGroupId; C always tracks
-LiquidFun.applyForceRange(first, last, fx, fy); // last exclusive; force split across members
+LiquidFun.applyForceRange(first, last, fx, fy); // last exclusive; force split across members; first sub-step only
 
 LiquidFun.getGroups(); // includes groupFlags
 LiquidFun.setGroupViscousScale(id, scale);
 LiquidFun.joinParticleGroups(a, b);
 LiquidFun.splitParticleGroup(id);
-LiquidFun.applyForce(i, fx, fy);
+LiquidFun.applyForce(i, fx, fy); // next step, first sub-step only (dt / subSteps, as Google 1.1)
 LiquidFun.groupApplyLinearImpulse(id, ix, iy);
 LiquidFun.setRadialGravity(x, y, accel); // every particle pulled toward (x, y), px/s², each step; 0 = off
 

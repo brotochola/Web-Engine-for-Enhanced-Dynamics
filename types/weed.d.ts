@@ -3495,6 +3495,7 @@ export declare class LiquidFun {
   static setGroupViscousScale(groupId: number, scale: number): void;
   static joinParticleGroups(groupA: number, groupB: number): void;
   static splitParticleGroup(groupId: number): void;
+  /** Force on one particle for the next step; acts in LiquidFun's first sub-step only (dt / subSteps). */
   static applyForce(index: number, fx: number, fy: number): void;
   /** Pull every particle toward (x, y) at `accel` px/s² (on top of gravity) until the next call; 0 turns it off. */
   static setRadialGravity(x: number, y: number, accel: number): void;

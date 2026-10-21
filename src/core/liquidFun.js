@@ -408,6 +408,16 @@ export class LiquidFun {
     Box2dCommandRing.enqueueSplitParticleGroup(groupId);
   }
 
+  /**
+   * Add a force to one particle for the next physics step. It acts in the
+   * first of LiquidFun's sub-steps only, over dt / subSteps (Google LiquidFun
+   * 1.1 does the same), so with subSteps 2 the velocity change is half of
+   * force / mass × dt. For a steady pull on every particle use world gravity
+   * or setRadialGravity, which act over the whole step.
+   * @param {number} index
+   * @param {number} fx
+   * @param {number} fy
+   */
   static applyForce(index, fx, fy) {
     Box2dCommandRing.enqueueParticleApplyForce(index, fx, fy);
   }
@@ -643,7 +653,7 @@ export class LiquidFun {
     return liquidFunExtractAsync(groupId, indices, count, opts);
   }
 
-  /** last exclusive. Total force is split across members. */
+  /** last exclusive. Total force is split across members; first sub-step only, as applyForce. */
   static applyForceRange(first, last, fx, fy) {
     Box2dCommandRing.enqueueParticleApplyForceRange(first, last, fx, fy);
   }
