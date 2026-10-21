@@ -16,6 +16,7 @@ import {
   buildActiveAndVisibleListBuffers,
 } from '../../src/util/particleIntegrate.js';
 import { PARTICLE_TWEEN } from '../../src/util/particleTween.js';
+import { PerformanceObserver } from 'node:perf_hooks';
 import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const args = parseArgs();
@@ -355,6 +356,70 @@ function resetLife(indices) {
   despawnIndices(indices);
 }
 
+// --- fade_tween_*: alpha + scale from/to on every particle (E-59) ---
+// Every particle takes the tween path, so applyParticleEase runs once per
+// particle per step: LERP, one polynomial curve, and all 14 ids mixed. The
+// checksum is the alpha/scale bits after a fixed 600-step replay, so the ease
+// rewrite must give the same floats. minorGcPer1000 counts minor GCs over 1000
+// steps (a non-inlined ease boxes its double argument and result).
+for (const [key, easeOf] of [
+  ['fade_tween_lerp_N', () => 0],
+  ['fade_tween_quad_out_N', () => 2],
+  ['fade_tween_mixed_N', (i) => i % 14],
+]) {
+  const N = PARTICLES_PER_CASE;
+  const indices = spawnDirect(N, { flat: true, x0: 0, y0: 0, vx0: 0, vy0: 0, lifespan: 65535 });
+  for (const i of indices) {
+    ParticleComponent.tweenMask[i] = PARTICLE_TWEEN.ALPHA | PARTICLE_TWEEN.SCALEX | PARTICLE_TWEEN.SCALEY;
+    ParticleComponent.alphaFrom[i] = 1;
+    ParticleComponent.alphaTo[i] = 0;
+    ParticleComponent.scaleXFrom[i] = 0.5;
+    ParticleComponent.scaleXTo[i] = 2;
+    ParticleComponent.scaleYFrom[i] = 2;
+    ParticleComponent.scaleYTo[i] = 0.25;
+    ParticleComponent.easeId[i] = easeOf(i);
+  }
+  const activeIndices = new Uint16Array(indices);
+
+  cases[key] = timeIt(
+    `${key} physics (${N} particles/step, alpha+scale tween)`,
+    (steps) => {
+      resetLife(indices);
+      for (let s = 0; s < steps; s++) {
+        physics(activeIndices, N);
+      }
+    },
+    { iterations: STEPS }
+  );
+
+  let minor = 0;
+  const obs = new PerformanceObserver((list) => {
+    for (const e of list.getEntries()) if (e.detail?.kind === 1) minor++;
+  });
+  obs.observe({ entryTypes: ['gc'] });
+  resetLife(indices);
+  for (let s = 0; s < 1000; s++) physics(activeIndices, N);
+  await new Promise((r) => setTimeout(r, 50));
+  obs.disconnect();
+  cases[key].minorGcPer1000 = minor;
+
+  resetLife(indices);
+  for (let s = 0; s < 600; s++) physics(activeIndices, N);
+  const bits = new Uint32Array(1);
+  const f32 = new Float32Array(bits.buffer);
+  let h = 0x811c9dc5;
+  for (const i of indices) {
+    for (const v of [ParticleComponent.alpha[i], ParticleComponent.scaleX[i], ParticleComponent.scaleY[i]]) {
+      f32[0] = v;
+      h = Math.imul(h ^ bits[0], 16777619) >>> 0;
+    }
+  }
+  cases[key].checksum = h;
+  console.log(`  ${key}: ${cases[key].minorGcPer1000} minor GCs per 1000 steps, checksum ${h}`);
+
+  despawnIndices(indices);
+}
+
 // --- build_lists_N: active-list scan cost alone (no physics), ~30% of the pool active ---
 {
   const localIndices = new Uint16Array(MAX_PARTICLES);
@@ -476,6 +541,7 @@ if (OUTPUT) {
       ms: result.ms,
       opsPerSec: result.opsPerSec, // steps/sec (each step processes the case's whole particle set)
       iterations: result.iterations,
+      ...(result.minorGcPer1000 !== undefined ? { minorGcPer1000: result.minorGcPer1000, checksum: result.checksum } : {}),
     };
   }
   writeReport(OUTPUT, {

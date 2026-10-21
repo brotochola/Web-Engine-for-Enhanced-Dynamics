@@ -13,18 +13,32 @@ const GRAVITY = 0.08;
 const WORLD_W = 4000;
 const WORLD_H = 3000;
 const MARGIN = 64;
+// `tween` (scene `?tween=1`, E-59): every particle fades and shrinks over its
+// life, one ease per particle, so the integrate loop runs the ease each step.
+const EASES = ['lerp', 'quad.out', 'cubic.in', 'quad.inout', 'expo.out', 'back.in', 'bounce.out'];
 
 /** Emits a large heighted population (gravity + despawnOnGroundContact) once, then trickles. */
 export class ParticleIntegrateDriver extends GameObject {
   static components = [];
 
-  onSpawned({ seed = 0xc0de1234 } = {}) {
+  onSpawned({ seed = 0xc0de1234, tween = 0 } = {}) {
     this.x = -10000;
     this.y = -10000;
     this._seed = seed >>> 0;
     this._rng = this._mulberry32(this._seed);
     this._sink = 0;
     this._burstDone = false;
+    this._tween = tween | 0;
+    this._ticks = 0;
+  }
+
+  /** Spawn-time scale, or a fade-and-shrink tween with the given ease. */
+  _look(ease) {
+    if (!this._tween) return { scale: { min: 0.4, max: 1 }, alpha: undefined };
+    return {
+      scale: { from: { min: 0.4, max: 1 }, to: 0.2, ease },
+      alpha: { from: 1, to: 0, ease },
+    };
   }
 
   _mulberry32(seed) {
@@ -43,24 +57,30 @@ export class ParticleIntegrateDriver extends GameObject {
     // guaranteed ready in this worker context — same lazy-init pattern as RayStressDriver.
     if (!this._burstDone) {
       this._burstDone = true;
-      this._sink += ParticleEmitter.emit({
-        count: INITIAL_BURST,
-        x: { min: MARGIN, max: WORLD_W - MARGIN },
-        y: { min: MARGIN, max: WORLD_H - MARGIN },
-        z: { min: -2000, max: -300 },
-        vx: { min: -15, max: 15 },
-        vy: { min: -15, max: 15 },
-        vz: { min: -2, max: 2 },
-        gravity: GRAVITY,
-        despawnOnGroundContact: true,
-        lifespan: { min: 8000, max: 20000 },
-        scale: { min: 0.4, max: 1 },
-      });
+      const chunks = this._tween ? EASES.length : 1;
+      for (let k = 0; k < chunks; k++) {
+        const look = this._look(EASES[k]);
+        this._sink += ParticleEmitter.emit({
+          count: Math.floor(INITIAL_BURST / chunks),
+          x: { min: MARGIN, max: WORLD_W - MARGIN },
+          y: { min: MARGIN, max: WORLD_H - MARGIN },
+          z: { min: -2000, max: -300 },
+          vx: { min: -15, max: 15 },
+          vy: { min: -15, max: 15 },
+          vz: { min: -2, max: 2 },
+          gravity: GRAVITY,
+          despawnOnGroundContact: true,
+          lifespan: { min: 8000, max: 20000 },
+          scale: look.scale,
+          alpha: look.alpha,
+        });
+      }
     }
 
     const rng = this._rng;
     const cx = MARGIN + rng() * (WORLD_W - 2 * MARGIN);
     const cy = MARGIN + rng() * (WORLD_H - 2 * MARGIN);
+    const look = this._look(EASES[this._ticks++ % EASES.length]);
 
     this._sink += ParticleEmitter.emit({
       count: TOPUP_PER_TICK,
@@ -73,7 +93,8 @@ export class ParticleIntegrateDriver extends GameObject {
       gravity: GRAVITY,
       despawnOnGroundContact: true,
       lifespan: { min: 8000, max: 20000 },
-      scale: { min: 0.4, max: 1 },
+      scale: look.scale,
+      alpha: look.alpha,
     });
   }
 }

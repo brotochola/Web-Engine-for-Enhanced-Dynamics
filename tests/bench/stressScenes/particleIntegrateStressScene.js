@@ -5,6 +5,23 @@ const { Scene, Camera } = WEED;
 
 const SEED = 0xc0ffee;
 
+/**
+ * `?tween=1`: every particle fades and shrinks over its life with a rotating
+ * ease, so the integrate loop runs the ease per particle (E-59). Default 0
+ * keeps the untweened population.
+ */
+export const TWEEN = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('tween') === '1' ? 1 : 0;
+  } catch {
+    return 0;
+  }
+})();
+
+export const stressSceneConfig = {
+  requested: { tween: TWEEN },
+};
+
 /** L2 intermediate bench: large heighted (gravity + despawnOnGroundContact) population. No decals. */
 export class ParticleIntegrateStressScene extends Scene {
   static config = {
@@ -45,7 +62,7 @@ export class ParticleIntegrateStressScene extends Scene {
   static entities = [[ParticleIntegrateDriver, 1]];
 
   create() {
-    this.spawnEntity(ParticleIntegrateDriver, { seed: SEED });
+    this.spawnEntity(ParticleIntegrateDriver, { seed: SEED, tween: TWEEN });
 
     Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
     Camera.setZoom(0.3);
