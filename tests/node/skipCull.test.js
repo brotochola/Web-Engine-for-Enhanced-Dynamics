@@ -92,7 +92,8 @@ test('persist static columns live on the champion worker', () => {
 
 test('persist pose rewrite also restores shadowH for GPU casters', () => {
   const start = preRender.indexOf('_writeType0PosesOnly(');
-  const end = preRender.indexOf('_spriteSortY(', start);
+  const end = preRender.indexOf('_storeEntitySortY(', start);
+  assert.ok(start >= 0 && end > start, 'markers found in order');
   const body = preRender.slice(start, end);
   assert.match(body, /_writeQueueShadow\(i, idx\)/);
 });
