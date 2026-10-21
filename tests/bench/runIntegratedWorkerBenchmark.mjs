@@ -459,6 +459,15 @@ async function main() {
     typeof cliArgs.channel === 'string' ? cliArgs.channel : jsFlags ? null : 'chrome';
   let browser;
   let browserChannel = requestedChannel || 'chrome';
+  // N-37: a page that never finished kept this process and its Chrome alive for
+  // 2.5 days. Past warm-up + window + 5 min, close the browser and give up.
+  const deadlineMs = benchmarkOptions.warmupMs + benchmarkOptions.durationMs + 300000;
+  const watchdog = setTimeout(async () => {
+    console.error(`runIntegratedWorkerBenchmark: no result after ${deadlineMs} ms, giving up`);
+    await Promise.race([browser ? browser.close().catch(() => {}) : null, sleep(10000)]);
+    process.exit(3);
+  }, deadlineMs);
+  watchdog.unref();
 
   try {
     if (requestedChannel === 'chromium') {
