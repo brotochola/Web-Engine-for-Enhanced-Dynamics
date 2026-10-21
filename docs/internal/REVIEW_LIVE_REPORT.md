@@ -17,10 +17,33 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**HEADED RUN — 10:50.** The merge gate against `main` is running: the Predator gate (8 ABAB
-pairs, visible window), then the engine scoreboard (40 rows; its 4 gameplay rows open a
-window). Please keep the machine quiet until the result is posted here; it will take a
-while. The sibling repo is committed: `5b79b8b` (your 10-19 build edits), `4ecb163` (N-22).
+**11:48** — The headed runs are over. The merge gate against `main` is **not clean as run**:
+not merged. Triage below.
+
+### 11:48 — Merge gate against `main`: mostly noise, one real finding, two things unresolved
+
+- **The Predator gate said FAIL, on a load key that isn't load.** `RENDER_QUEUE_SIZE` reads 0
+  on `main`, which doesn't publish that counter, against 13,687 here. The real load keys
+  match: 13,505 vs 13,504 visible entities, same bodies. The timings were very noisy (cv
+  14–19 %). Fitted to their own load, every worker difference is within one standard error:
+  physics +0.21 ± 0.68 ms, spatial +0.45 ± 0.46 ms, logic +0.16 ± 0.18 ms. Pre-render was
+  level with `main` (7.50 → 7.46 ms).
+- **The scoreboard said 6 rows FAIL or WORSE.** It takes only 2 runs per side on stress rows,
+  so I re-measured each flag against `main`:
+  - `swayBuckets` (−33 %) and `painterRadix` (−3 %): ties over 7 rounds. Noise.
+  - `textureUpload` (renderer +15 %): with 4 pairs it's actually **−11 %, better**. Noise.
+  - `meshFillMoving` (renderer +7 %): a tie, under the floor.
+  - `steadyCombat` (particle +6.8 %): +18 µs on a 0.26 ms step. Too small to mean anything.
+  - **`preRenderWorker` kernel −15.8 %: real** (0/49 rounds). A bisect over the 120 commits that
+    change engine code points at N-32 (`45886e4a`, every pre-render field declared in the
+    constructor): 1,709 → 1,481 ops/s. In Chrome, N-32 measured −9.6 % pre-render, by
+    removing deopts, and today's gate shows pre-render level with `main`. So this is a cost
+    the Node kernel sees, not a shown product regression. It is likely about field types
+    (fields that now start as `null`); worth a follow-up, not a merge blocker in my view.
+- **Unresolved:** spatial, flagged twice under noise (scoreboard +9 % under the floor;
+  Predator +6 % in a noisy sitting). The branch changed spatial only through small
+  refactors.
+- **Sibling repo committed:** `5b79b8b` (your 10-19 build edits), `4ecb163` (N-22).
 
 **10:22** — N-22 done at the C level (`f67c3a5f`), as you asked.
 
