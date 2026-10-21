@@ -173,7 +173,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [ ] **E-43** Polar: two-pointer merge into a separate output buffer.
 - [ ] **E-44** Polar: lazy bin clear (every raycasted light pays a 512-float fill).
 - [x] **E-45** — X2 **kept** (without it the Predator renderer is +18.7 %, 4/4; the old rejection was the old kernel). H11 **reverted** `bae431b6` (it lost: emit kernel +8.6 % without it, Predator pre-render better in 4/4). Re-measure the re-landed X2 (pack fast paths) and H11 (emit shadow hoist).
-- [ ] **E-46** Audio `play()` full-bus regime after `8af92002`.
+- [x] **E-46** — confirmed (10× slower on full buses since `8af92002`) and fixed `4f7e3ff6`: the list walk runs only after a release. AudioStorm `plays=2400` logic0 **4.33 → 0.57 ms (−86.6 %)**. E-46b (the per-play closure) is open. Audio `play()` full-bus regime after `8af92002`.
 - [~] **E-47** — screened: in the compound scene the lights (1500 px) dwarf the islands (80 px), so about 10 % of triangles could be skipped, on a 1.7 ms renderer. It needs a scene with small lights over large lit compounds. Pixi self-lit: skip triangles outside the light disc; collapse free fan runs.
 - [ ] **E-08 (reopened)** `_sortPrefix` hybrid.
 - [ ] **E-48** Tween tick: logic0 only vs modulo split.

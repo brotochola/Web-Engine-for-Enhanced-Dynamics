@@ -17,9 +17,28 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**03:29** — E-45 done. Next: E-46 (audio), E-48 (tween split), E-50 (small items).
+**03:41** — E-46 fixed. Next: E-48 (tween split across logic workers), E-50 (small items).
+
+**For you, no rush:** two benchmark processes from an earlier session have been stuck since
+10-19 00:43: `e34ChromeCpuProbe.mjs` (node PID 17256), its Balls bench (PID 2644) and a Chrome
+(PID 10784). They're idle (12 s of CPU in two days), so they didn't skew today's numbers. I
+didn't start them, so I left them; you can end them in Task Manager. Also: the `dist/` bundles
+aren't rebuilt by my commits. Today's `src/` changes reach them on your next bundle build.
 
 ## Log
+
+### 03:41 — Audio: a 10× slowdown found and fixed (`4f7e3ff6`, knob `a8b7c482`)
+
+- **The bug.** Since the 10-20 voice fix (`8af92002`), every `play()` walked through every voice
+  on its bus to check none had ended. When buses are full (many sounds at once) that's hundreds of
+  checks per play. In the audio stress scene at 2400 plays per frame, the logic worker went from
+  **0.44 ms before that commit to 4.29 ms after: 10× slower**. The earlier "no regression" check
+  had used a bus that wasn't full.
+- **The fix.** A voice can only go stale when one ends. So the audio thread (and `stop()`) now bump
+  a counter whenever a voice ends, and a bus only re-checks its list when that counter has moved.
+  The correctness rule from B1 is unchanged; its tests still pass, plus two new ones.
+- **Numbers.** Same scene: **logic 4.33 → 0.57 ms (−87 %, all 4 pairs)**. A small rest (0.13 ms)
+  is logged as E-46b.
 
 ### 03:29 — Two old ideas re-tested: one stays, one goes (`bae431b6`, `bc14d527`)
 

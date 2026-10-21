@@ -975,7 +975,20 @@ rejected at gate 4), both under a commit titled "Update README". No log row. **C
 test:** each still wins ≥3 % with load matched. Gate 4 (`runKernelsVsRev --overlay`), then
 Predator ABAB with owner `pixi` for the pack and `preRender` for the emit. Revert what fails.
 
-### E-46 Audio `play()` walks the bus list before the O(1) full-bus drop — **not-started**
+### E-46 Audio `play()` walks the bus list before the O(1) full-bus drop — **CONFIRMED and FIXED** (`4f7e3ff6`; knob `a8b7c482`)
+**The regression (2026-10-21).** At 1200 plays per tick logic0 is 2.25 ms, under the floor, so
+AudioStorm got `?plays=N`. At 2400, 4 ABAB pairs against `8af92002^`: **logic0 0.44 → 4.29 ms,
+about 10× (4/4)**. Every play walked its bus's whole voice list.
+**The fix.** A list can only gain a dead entry through a release. So releases bump a counter in
+channel header word 6: the mixer's `releaseVoice` when its CAS wins, and the host's `stop`,
+`stopAll` and `stopSlot`. Each bus keeps the value it last walked at (tail word 6) and skips the
+walk while it hasn't moved. B1's ownership rule is unchanged. **AudioStorm `plays=2400`, 4 pairs
+against HEAD: logic0 4.33 → 0.57 ms (−86.6 %, 4/4).** Tests: the B1 tests' audio-thread helper
+bumps like the mixer; the real mixer bumps once per release; a host stop frees room on a full
+bus (that test fails with the bumps removed). **E-46b (open):** the last 0.13 ms against
+`8af92002^` is B1's owner checks plus the `claim` closure `play()` builds per call. Hoist the
+closure into a static method and measure on its own.
+
 Since `8af92002`, `_reclaimDeadVoices` runs before the `count >= maxV` early drop. The
 2026-10-15 keep ("Audio slot scan, per-bus list and quietest cache": AudioStorm logic0
 8.806 → 0.278 ms) depended on that early drop; the full-bus regime was never re-measured
