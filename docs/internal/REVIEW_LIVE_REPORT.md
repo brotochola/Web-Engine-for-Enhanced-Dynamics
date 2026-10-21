@@ -17,6 +17,29 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**14:18** — **N-18 closed: the water bug was in the probe, not the engine** (`59d9cd6d`).
+E-70's cheap half turned out to be unsafe; its notes are updated.
+
+### 14:18 — No water tunnels into the planet
+
+- **What was wrong:** the probe that found N-18 had room for 64 physics bodies and built 310
+  terrain islands, one body each. 246 islands silently got no collision, and the water fell
+  through them to the core. That was the whole result.
+- **How it showed:** I logged every particle's step from outside the rock to inside it, then cast
+  a ray along each of those steps. Every one missed every shape, though a ray at the pole hit,
+  which meant those shapes didn't exist. The probe then counted 246 bodies that had failed to
+  create.
+- **The fixed probe:** **0 particles get in at any drop height** with the planet's settings. The
+  old 1 px "seam skin" actually lets a few particles about 40 px in, so leaving it off was right.
+- **The game can't fail this way.** Its bodies are one per entity (up to 65,535), and a missing
+  slot throws instead of being skipped.
+- **E-70's quick half doesn't hold.** I meant to let entities that sit in one cell skip the
+  "already seen" marker in the neighbour search (13 % of it). But with several spatial workers,
+  a worker can read another's cells mid-update. An entity that just moved can then be found in
+  its old cell and its new one, and that marker is what keeps it from being listed twice. Safe
+  with one spatial worker; Predator runs three. The bigger half, reading positions in cell order,
+  still needs a memory-layout design.
+
 **14:06** — **N-19 fixed: deep rock no longer lights up** (`ed5a7b89`), and the planet demo's
 lights cover their whole radius again (`83ca5461`). Next: N-18, then E-70.
 

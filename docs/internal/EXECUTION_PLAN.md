@@ -1473,6 +1473,15 @@ single-cell entities skip the marker (same candidates, same order). **Constraint
 CSR copy needs a counting pass before the fill in `rebuildOwnedRows`. With several spatial workers a
 private copy covers only owned rows (fallback per cell). Kernel `spatialWorkerMicrobench.mjs`, then
 Predator spatial with a load fit.
+**The marker half is not a free skip (2026-10-21).** The pad float of `entityPosData` (`[x, y, he, pad]`,
+unread by the WASM publisher) could hold "spans more than one cell", written in `rebuildOwnedRows`, so
+single-cell entities skip `processedMarker`. But spatial workers have no barrier between rebuild and
+search: a worker reads other workers' cells mid-rebuild or a frame old (the file's own header). An
+entity that moved from one cell to the next then shows up in both, and today the marker drops the
+second; with the skip it would be listed twice. Workers also read Transform while logic writes it,
+so two workers can compute different cell ranges for one entity. With one spatial worker the skip
+would be exact; Predator runs three. The cell-ordered gather (25 %) is the part left, and it needs
+the layout design above.
 
 ### E-71 N-32 costs the Node emit kernel ~14 % — **KEPT** (`a49482f4`)
 Found by the merge gate against `main` (2026-10-21): `preRenderWorkerMicrobench` emit was −15.8 % against
