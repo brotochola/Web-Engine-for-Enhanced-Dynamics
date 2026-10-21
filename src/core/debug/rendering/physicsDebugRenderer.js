@@ -439,18 +439,26 @@ export class PhysicsDebugRenderer {
    * The debug camera rolls the whole context. Spin back around a label anchor
    * so glyphs and their backing rects stay screen-upright.
    */
-  _uprightAt(ctx, camera, x, y, draw) {
+  /**
+   * Text at (x, y), upright on a turned camera, over an optional box from
+   * x - tw / 2 - pad, y + top, tw + 2 * pad wide and h tall. No closure: the
+   * index labels call it once per entity per frame (review G7).
+   */
+  _uprightLabel(ctx, camera, text, x, y, fg, bg, tw, pad, top, h) {
     const rot = camera && camera.rotation ? camera.rotation : 0;
-    if (!rot) {
-      draw();
-      return;
+    if (rot) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(-rot);
+      ctx.translate(-x, -y);
     }
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(-rot);
-    ctx.translate(-x, -y);
-    draw();
-    ctx.restore();
+    if (bg) {
+      ctx.fillStyle = bg;
+      ctx.fillRect(x - tw / 2 - pad, y + top, tw + pad * 2, h);
+    }
+    ctx.fillStyle = fg;
+    ctx.fillText(text, x, y);
+    if (rot) ctx.restore();
   }
 
   _writeLocalQuad(sx, sy, c, s, x0, y0, x1, y1, x2, y2, x3, y3, quad) {
@@ -598,12 +606,9 @@ export class PhysicsDebugRenderer {
         }
         ctx.font = '10px monospace';
         ctx.textAlign = 'left';
-        ctx.fillStyle = 'rgba(0, 136, 255, 0.95)';
         const tx = sx + 8;
         const ty = sy - 8;
-        this._uprightAt(ctx, camera, tx, ty, () => {
-          ctx.fillText(this._velLabel, tx, ty);
-        });
+        this._uprightLabel(ctx, camera, this._velLabel, tx, ty, 'rgba(0, 136, 255, 0.95)', null, 0, 0, 0, 0);
       }
       const w = angVel ? angVel[selectedIdx] : 0;
       if (Math.abs(w) > 0.02) {
@@ -885,12 +890,7 @@ export class PhysicsDebugRenderer {
             tw = ctx.measureText(text).width;
             this._ddTextWidth[i] = tw;
           }
-          this._uprightAt(ctx, camera, tx, ty, () => {
-            ctx.fillStyle = 'rgba(0,0,0,0.7)';
-            ctx.fillRect(tx - tw / 2 - 2, ty - 12, tw + 4, 14);
-            ctx.fillStyle = rgb;
-            ctx.fillText(text, tx, ty);
-          });
+          this._uprightLabel(ctx, camera, text, tx, ty, rgb, 'rgba(0,0,0,0.7)', tw, 2, -12, 14);
           break;
         }
         case DebugDraw.TYPE_CELL: {
@@ -942,12 +942,7 @@ export class PhysicsDebugRenderer {
       const tw = this._indexWidth(ctx, i);
       const pad = 2;
 
-      this._uprightAt(ctx, camera, sx, sy, () => {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.fillRect(sx - tw / 2 - pad, sy - 12, tw + pad * 2, 14);
-        ctx.fillStyle = 'rgba(255, 255, 255, 1.0)';
-        ctx.fillText(text, sx, sy);
-      });
+      this._uprightLabel(ctx, camera, text, sx, sy, 'rgba(255, 255, 255, 1.0)', 'rgba(0, 0, 0, 0.7)', tw, pad, -12, 14);
     }
   }
 
@@ -1194,12 +1189,7 @@ export class PhysicsDebugRenderer {
       this._selLabelWidth = ctx.measureText(text).width;
     }
     const tw = this._selLabelWidth;
-    this._uprightAt(ctx, camera, lx, ly, () => {
-      ctx.fillStyle = 'rgba(255, 200, 100, 0.9)';
-      ctx.fillRect(lx - tw / 2 - 4, ly - 12, tw + 8, 16);
-      ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
-      ctx.fillText(text, lx, ly);
-    });
+    this._uprightLabel(ctx, camera, text, lx, ly, 'rgba(0, 0, 0, 1.0)', 'rgba(255, 200, 100, 0.9)', tw, 4, -12, 16);
   }
 
   drawLights(ctx, canvas, camera, zoom, flags, pose, visPoly) {
@@ -1281,12 +1271,7 @@ export class PhysicsDebugRenderer {
     if (this._hoverWidth < 0) this._hoverWidth = ctx.measureText(text).width;
     const w = this._hoverWidth;
     const ly = sy - 14;
-    this._uprightAt(ctx, camera, sx, ly, () => {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
-      ctx.fillRect(sx - w * 0.5 - 4, ly - 14, w + 8, 16);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-      ctx.fillText(text, sx, ly);
-    });
+    this._uprightLabel(ctx, camera, text, sx, ly, 'rgba(255, 255, 255, 0.95)', 'rgba(0, 0, 0, 0.72)', w, 4, -14, 16);
   }
 
   drawPoolSelection(ctx, canvas, camera, zoom, kind, index) {
