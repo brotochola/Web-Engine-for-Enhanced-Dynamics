@@ -117,7 +117,7 @@ export class RayVsBox2dStressScene extends Scene {
       }
     }
 
-    this.spawnEntity(RayStressDriver, { seed: SEED, backend });
+    this.spawnEntity(RayStressDriver, { seed: SEED, backend, singleCasts: this.constructor.singleCasts });
 
     Camera.centerOn(worldW * 0.5, worldH * 0.5);
     Camera.setZoom(0.45);
@@ -143,6 +143,12 @@ export class RayVsBox2dBoxIdleScene extends RayVsBox2dStressScene {
 export class RayVsBox2dBoxSingleScene extends RayVsBox2dStressScene {
   static backend = 'box2d-single';
   static physicsLoad = 'idle';
+  static singleCasts = 8;
+}
+
+/** The same at a load whose baseline clears the protocol's step floors. */
+export class RayVsBox2dBoxSingleHeavyScene extends RayVsBox2dBoxSingleScene {
+  static singleCasts = 1536;
 }
 
 export class RayVsBox2dBoxBusyScene extends RayVsBox2dStressScene {

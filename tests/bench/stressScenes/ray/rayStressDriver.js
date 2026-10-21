@@ -18,7 +18,8 @@ const MARGIN = 64;
 export class RayStressDriver extends GameObject {
   static components = [];
 
-  onSpawned({ seed = 0xc0de1234, backend = 'weedjs' } = {}) {
+  onSpawned({ seed = 0xc0de1234, backend = 'weedjs', singleCasts = SINGLE_CASTS_PER_TICK } = {}) {
+    this._singleCasts = singleCasts | 0;
     this.x = -10000;
     this.y = -10000;
     this._seed = seed >>> 0;
@@ -170,7 +171,7 @@ export class RayStressDriver extends GameObject {
   // (review N-24 / E-56: the batch scene never exercises a single cast).
   _tickBox2dSingle(pairs, cursor) {
     let sink = this._sink;
-    for (let i = 0; i < SINGLE_CASTS_PER_TICK; i++) {
+    for (let i = 0; i < this._singleCasts; i++) {
       const k = ((cursor + i) % PAIR_COUNT) * 2;
       const a = pairs[k];
       const b = pairs[k + 1];
