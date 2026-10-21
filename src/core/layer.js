@@ -99,6 +99,8 @@ export class Layer {
     // Registry
     static _byName = {};
     static _byId = [];
+    /** Subscription warnings already printed (N-3: once per name, not per emit). */
+    static _subscriptionWarned = new Set();
     static count = 0;
     static initialized = false;
 
@@ -1271,7 +1273,7 @@ export class Layer {
         if (typeof entry === 'number') {
             id = entry | 0;
             if (!this.getById(id)) {
-                console.warn(`layer: id ${id} not found`);
+                this._warnSubscription(`layer: id ${id} not found`);
                 return -1;
             }
         } else {
@@ -1279,35 +1281,28 @@ export class Layer {
             if (!name) return -1;
             id = this.getId(name);
             if (id === -1) {
-                console.warn(`layer: Layer "${name}" not found`);
+                this._warnSubscription(`layer: Layer "${name}" not found`);
                 return -1;
             }
         }
         const layer = this.getById(id);
         const name = layer ? layer.name : null;
         if (layer && isSkipSubscribeKind(layer._kind)) {
-            console.warn(`layer: Layer "${name}" is not a subscription target`);
+            this._warnSubscription(`layer: Layer "${name}" is not a subscription target`);
             return -1;
         }
         if (kind === LAYER_SUBSCRIBE_KIND.GAME_OBJECT && this.feederKind(id) === LAYER_FEEDER_KIND.DENSITY) {
-            console.warn(
+            this._warnSubscription(
                 `layer: Layer "${name}" is density (particles splat it); colliders are not splat`
             );
         }
         return id;
     }
 
-    static _subscriptionList(opts) {
-        if (!opts) return { omitted: true, list: null };
-        if (opts.layers !== undefined) {
-            const raw = opts.layers;
-            const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-            return { omitted: false, list };
-        }
-        if (opts.layer !== undefined && opts.layer !== null) {
-            return { omitted: false, list: [opts.layer] };
-        }
-        return { omitted: true, list: null };
+    static _warnSubscription(message) {
+        if (this._subscriptionWarned.has(message)) return;
+        this._subscriptionWarned.add(message);
+        console.warn(message);
     }
 
     /**
@@ -1334,14 +1329,31 @@ export class Layer {
      * @param {number} [kind]
      * @returns {number} Uint16 mask
      */
+    static _subscriptionList(opts) {
+        if (!opts) return { omitted: true, list: null };
+        if (opts.layers !== undefined) {
+            const raw = opts.layers;
+            const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+            return { omitted: false, list };
+        }
+        if (opts.layer !== undefined && opts.layer !== null) {
+            return { omitted: false, list: [opts.layer] };
+        }
+        return { omitted: true, list: null };
+    }
+
     static resolveSubscriptions(opts, kind = LAYER_SUBSCRIBE_KIND.PARTICLE) {
         const { omitted, list } = this._subscriptionList(opts);
         if (omitted) return this.entitiesMask();
         let mask = 0;
         let hasSpriteQueue = false;
+        let missed = false;
         for (let i = 0; i < list.length; i++) {
             const id = this._resolveOneSubscription(list[i], kind);
-            if (id < 0) continue;
+            if (id < 0) {
+                missed = true;
+                continue;
+            }
             mask |= this.bit(id);
             if (this.feederKind(id) === LAYER_FEEDER_KIND.SPRITES) hasSpriteQueue = true;
         }
@@ -1349,6 +1361,9 @@ export class Layer {
             if (!hasSpriteQueue) mask |= this.entitiesMask();
             return mask;
         }
+        // N-3: a particle whose every layer is unknown is drawn with the
+        // entities, as a game object is, instead of never. An empty list stays 0.
+        if (mask === 0 && missed) return this.entitiesMask();
         return mask;
     }
 

@@ -31,6 +31,16 @@ function collectSpriteBits(mask) {
   return ids;
 }
 
+function quiet(fn) {
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    return fn();
+  } finally {
+    console.warn = warn;
+  }
+}
+
 test('Layer.resolveSubscriptions: omit, empty, one name, oil+fire, unknown, builtin skip', () => {
   withLayers(
     {
@@ -58,7 +68,10 @@ test('Layer.resolveSubscriptions: omit, empty, one name, oil+fire, unknown, buil
         entities | (1 << fireId),
       );
       assert.equal(Layer.resolveSubscriptions({ layer: 'fx' }, LAYER_SUBSCRIBE_KIND.PARTICLE), 1 << fxId);
-      assert.equal(Layer.resolveSubscriptions({ layer: 'nope' }, LAYER_SUBSCRIBE_KIND.PARTICLE), 0);
+      // N-3: unknown alone falls back to entities (it was 0: never drawn).
+      assert.equal(quiet(() => Layer.resolveSubscriptions({ layer: 'nope' }, LAYER_SUBSCRIBE_KIND.PARTICLE)), entities);
+      assert.equal(quiet(() => Layer.resolveSubscriptions({ layers: ['nope', 'fx'] }, LAYER_SUBSCRIBE_KIND.PARTICLE)), 1 << fxId);
+      assert.equal(Layer.resolveSubscriptions({ layers: 'fx' }, LAYER_SUBSCRIBE_KIND.PARTICLE), 1 << fxId);
       assert.equal(Layer.feederKind(oilId), LAYER_FEEDER_KIND.DENSITY);
       assert.equal(Layer.feederKind(fireId), LAYER_FEEDER_KIND.COMPUTE);
       assert.equal(Layer.feederKind(fxId), LAYER_FEEDER_KIND.SPRITES);
@@ -97,4 +110,19 @@ test('Layer.bit clamps out of range', () => {
   assert.equal(Layer.bit(-1), 0);
   assert.equal(Layer.bit(16), 0);
   assert.equal(Layer.bit(3), 1 << 3);
+});
+
+test('an unknown layer name warns once, not on every emit (N-3)', () => {
+  withLayers({ fx: { zIndex: 8 } }, () => {
+    const warn = console.warn;
+    const seen = [];
+    console.warn = (m) => seen.push(String(m));
+    try {
+      for (let i = 0; i < 50; i++) Layer.resolveSubscriptions({ layer: 'n3-missing' }, LAYER_SUBSCRIBE_KIND.PARTICLE);
+      Layer.resolveSubscriptions({ layer: 'n3-other' }, LAYER_SUBSCRIBE_KIND.PARTICLE);
+    } finally {
+      console.warn = warn;
+    }
+    assert.deepEqual(seen, ['layer: Layer "n3-missing" not found', 'layer: Layer "n3-other" not found']);
+  });
 });
