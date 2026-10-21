@@ -17,6 +17,32 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**13:45** — Stale probe killed, and the runner can't hang like that again (`fcdb92af`). Where
+we stand is below. Next: E-73. **To do at the end: delete `D:/xampp/htdocs/weed-ab`** (you asked).
+
+### 13:45 — The 2.5-day process, and where the plan stands
+
+- **The process:** `e34ChromeCpuProbe.mjs`, started 2026-10-19 00:43. I killed it with the scene
+  run under it and five Chrome processes, seven in all, and checked that no other stale
+  benchmark process is left. The page had hung, and nothing waited on it with a deadline. The
+  scene runner now gives up after warm-up + window + 5 min: it closes Chrome and exits with
+  code 3 (N-37). Every A/B script goes through that runner, so this covers them all.
+- **Open speed hypotheses, most valuable first:**
+  - **E-73**: every worker's typed-array fields that start `null` (proven mechanism, cheap).
+  - **E-70**: spatial's neighbour gather (big, needs a layout design).
+  - **E-63**: the sweep's cos/sin (~3 % of pre-render, needs a tolerance test).
+  - **E-57**: physics' tail after query bursts.
+  - **E-50b**: body-create allocations (small).
+  - Parked: E-51b's last rows and E-55.
+- **Open review items:**
+  - Bugs a player sees: N-19 (hidden occluders drawn lit), N-18 (water tunnels into terrain),
+    B7 (`Time.scale` above 2; needs your call on sub-stepping), N-6, N-14, N-15.
+  - Demo bugs: N-5, N-8, N-10, N-17, N-31.
+  - Tooling and watch: N-35, N-36, M8, N-9.
+  - Low: N-1 to N-4, N-26 (your call).
+  - R1 and R2 are ticked; E-45 had settled them.
+- **Order:** E-73, then E-70, with N-19 and N-18 in between.
+
 **13:25** — **E-71 and E-72 kept: the pre-render emit kernel is ~37 % faster** (`a49482f4`,
 `4289cbc5`). The same cause is in every worker; that is E-73, next.
 

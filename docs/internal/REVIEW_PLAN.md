@@ -131,8 +131,8 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 
 ## Phase 4 — Repeated code
 
-- [ ] **R1 ✓** `packInstancedRows` two pasted loop copies (rejected X2) — decided by **E-45**.
-- [ ] **R2** `_emitRef` ShadowCaster hoist (rejected H11) — decided by **E-45**.
+- [x] **R1 ✓** `packInstancedRows` two pasted loop copies (rejected X2) — decided by **E-45** (X2 kept).
+- [x] **R2** `_emitRef` ShadowCaster hoist (rejected H11) — decided by **E-45** (H11 reverted).
 - [x] **R3** — `759ca67a` (`box2dSyncSlotImpl.js` owns the status word and every wait; −281 lines; the wait-meter test is end to end now; hygiene tie on the ray scene). It paid off at once: N-24's wake and N-25's fix each landed in one place. Six identical `waitUntilDoneSync` + claim loops + burst servicers → one global.
 - [x] **R4** — `c66ddd32` (FPS, STEP, IDLE, WAIT in one helper; pre-render WAIT_MS was behind its detail gate; the test is behavioral for four workers). IDLE/WAIT publish ×5 → `AbstractWorker._writeFrameMeters()`.
 - [x] **R5** — `a12ec944`, as a test, not a move: the host copy is checked byte for byte against stampStep (the move would need the bundle to embed a sibling from src/util for 25 lines). Physics host hand-copies the frameClock layout → one dual-mode IIFE.
@@ -181,6 +181,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [x] **E-71** Pre-render: N-32 cost the Node emit kernel ~15 % — fixed `a49482f4`. Its 8 columns were declared `null`, which V8 types Any; they now start as empty arrays of their view's class. Kernel +17.7 %, Predator level.
 - [x] **E-72** Pre-render: the other 16 render-queue columns had the same cost since before N-32 — fixed `4289cbc5`. Kernel +17.8 % more; Predator level (A/A of the sitting −4.6 to +7.2 %).
 - [ ] **E-73** Every worker: fields that start `null` and hold typed arrays (audit `c841379c`: Pixi 52, pre-render 41, particle 26, spatial 24, logic 24; 15 shared from `AbstractWorker`). One worker area per commit, kernel first.
+- [x] **N-37** (tooling) — fixed `fcdb92af`. An E-34 probe started 2026-10-19 00:43 stayed alive 2.5 days with its Chrome (hung page, 47 CPU-seconds in all, so no measurement was disturbed): the scene runner had no deadline and its callers spawn it without one. The runner now closes the browser and exits 3 after warm-up + window + 5 min. Process tree killed 2026-10-21.
 - [ ] **N-35** (tooling) The scoreboard's stress rows take 2 runs per side: against `main`, four of its six FAIL/WORSE flags were noise (`textureUpload` "+15 %" is −11 % over 4 pairs). Re-check a flagged row with ≥ 4 ABAB pairs before calling it WORSE.
 - [ ] **N-36** (watch) Spatial vs `main`: +3 to +6 % median in two Predator sittings (12 of 16 pairs worse, noisy), load fit −79 µs (se 302), spatial kernel +0.3 % (tie). If real it is contention between workers, not spatial code.
 - [ ] **E-70** Spatial: neighbor search gathers positions in entity order (25 % + 13 % of its time); needs a compact cell-ordered copy (design).
