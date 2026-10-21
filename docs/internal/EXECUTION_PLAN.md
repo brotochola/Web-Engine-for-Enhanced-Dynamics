@@ -1125,7 +1125,12 @@ candidates exceed the cap; under the cap the loop stays as is. **Primary:** pre-
 pixi, wherever the packer runs) on the destructible terrain demo under continuous fire;
 the under-cap path must tie.
 
-### E-53 Does the no-pool Box2D runtime cost physics time? — **not-started**
+### E-53 Does the no-pool Box2D runtime cost physics time? — **ANSWERED 2026-10-21: no**
+**Result.** The pool is JS-only glue, so the same tree and the same `box2dWasm.wasm` can run both
+ways: reverse-applying `c9ba6f6f`'s glue diff restores the 4-pthread pool. Balls, 4 Box2D workers,
+8 ABAB pairs, A = no pool (HEAD), B = pool: physics **5.90 vs 5.93 ms (+1.4 % for the pool, 5/8),
+a tie**. Load was identical (9,004 bodies, 9,000 awake). The 5–8 % gap against E-04b was the two
+days of commits between them. Nothing to change; the glue went back.
 Found re-running E-04b for review M5. E-04b (anchor `d4933190`, 2026-10-17) ran on a
 glue that pre-allocated 4 pthreads; since `c9ba6f6f` (10-19) `PThread.initMainThread`
 is empty, so pthreads are created on first use. Re-run 2026-10-20, Balls, headless,

@@ -17,8 +17,22 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**04:35** — E-51 in. Next: E-53 (does the Box2D runtime without a thread pool cost physics
-time?), then the docs phase (DOC1–DOC7).
+**04:44** — E-53 answered and DOC1 done. Next: DOC2–DOC7 (guide accuracy, the internal log,
+a CLAUDE.md digest).
+
+### 04:44 — The Box2D thread pool question, and guide examples that work (`0b755c14`, `d0b3c26e`)
+
+- **E-53.** On 10-19 the physics runtime stopped pre-creating its 4 threads. Did that slow physics
+  down? I rebuilt the old behaviour on today's code (it's a JavaScript-only difference) and ran
+  both side by side: **5.90 vs 5.93 ms, a tie**. Nothing to change.
+- **DOC1, guide examples that broke user code.** `Layer.get("LIGHTING")` returned nothing (the
+  name is `"lighting"`). An animation example used a `scene.time` that doesn't exist. The entity
+  template's collision callback could never fire, because it was missing `CollisionListener`. And
+  the raycasting guide imported `layerMask` from a path that doesn't exist. That helper wasn't
+  exported at all, so it's part of the public API now (named import, `WEED.layerMask`, with types).
+  Two other items on that list (B5, B15) were already true after their code fixes earlier.
+
+**04:35** — E-51 in.
 
 ### 04:35 — Turned cameras stop drawing what's off screen (`f6063781`, knob `c0ad244c`)
 
