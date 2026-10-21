@@ -21,7 +21,7 @@ import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { CAMERA_TYPES } from '../../src/util/configDefaults.js';
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
-import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { checksumInts, isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker, quietly } from './workerHarness.mjs';
 import { variantClass } from './methodVariant.mjs';
 
@@ -249,7 +249,16 @@ export async function setupPreRenderKernel(opts = {}) {
     return checksumInts(acc, n);
   }
 
-  return { n, worker, frame, checksum, seed };
+  // N-28: one long loop per call, so a few frames leave only OSR code. A game's
+  // later frames run a normal compile; short calls on 64 rows get it one first.
+  function warm() {
+    const small = Math.min(64, n);
+    worker._fillEmitSource(small, small, collectorY, collectorType, collectorIndex, stashX, stashY, stashRc, stashRs, false, false, false);
+    warmNormalCompile(() => worker.emitSpriteQueue(16.67, source));
+    worker._fillEmitSource(n, n, collectorY, collectorType, collectorIndex, stashX, stashY, stashRc, stashRs, false, false, false);
+  }
+
+  return { n, worker, frame, checksum, seed, warm };
 }
 
 async function main() {
@@ -260,6 +269,7 @@ async function main() {
   const k = await setupPreRenderKernel({ n, seed, variant });
   const checksum = k.checksum();
   assert.equal(k.worker.renderQueueX.length >= n, true);
+  k.warm();
   const cases = {
     emit: timeIt(`preRender emitSpriteQueue ${variant} (n=${n})`, () => k.frame(), { iterations: 24, warmup: 8 }),
   };

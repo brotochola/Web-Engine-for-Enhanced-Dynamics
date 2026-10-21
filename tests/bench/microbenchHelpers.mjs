@@ -46,6 +46,21 @@ export function checksumFloats(arr, n = arr.length) {
 export { mulberry32 } from './benchMath.js';
 
 /**
+ * Call `short` many times before timing a function that runs a long loop per
+ * call (review N-28). A handful of long calls leave V8 with only OSR code for
+ * it, which a game reaches only in its first frames and which can measure
+ * differently (no folded module consts; CLite was 46 % slower). Short calls get
+ * it a normal TurboFan compile first. `short` should run the timed function on a
+ * small slice of the same data. `kernelTierAudit.mjs` finds the kernels that
+ * need it.
+ * @param {() => void} short
+ * @param {number} [calls]
+ */
+export function warmNormalCompile(short, calls = 3000) {
+  for (let i = 0; i < calls; i++) short();
+}
+
+/**
  * Time `fn(iterations)` over `reps` runs; return median ms and ops/s.
  * Each sample must last at least `STEP_MS_FLOOR` ms (same 3 ms noise floor as
  * stress STEP_MS). If the median is cheaper, iterations grow up to

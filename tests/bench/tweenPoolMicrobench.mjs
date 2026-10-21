@@ -5,7 +5,7 @@
 
 import { Tween, tweenBufferBytes } from '../../src/core/tween.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
-import { checksumFloats, isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { checksumFloats, isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 
 const SEED = 0x65535;
 const N = 65535;
@@ -48,8 +48,21 @@ function run(iterations) {
   return acc;
 }
 
+/** N-28: Tween.tick loops over every slot, so a few long calls leave only OSR code. */
+function warmSmallPool() {
+  const W = 64;
+  Tween.bind(new SharedArrayBuffer(tweenBufferBytes(W)), W);
+  for (let i = 0; i < W; i++) Tween.to(i, { alpha: 0 }, 1e9, 0);
+  warmNormalCompile(() => {
+    Tween.elapsed.fill(0);
+    Tween.tick(16);
+  });
+}
+
 function main() {
   const args = parseArgs();
+  setup();
+  warmSmallPool();
   setup();
   const sum = checksum();
   if (!Number.isFinite(sum)) throw new Error('tween checksum is not finite');

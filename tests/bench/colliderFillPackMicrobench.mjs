@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import {
   packColliderFill,
   packColliderFillPoseOnly,
@@ -240,6 +240,8 @@ const c = timeIt('C pose-per-body', (iterations) => {
   for (let i = 0; i < iterations; i++) packPoseC(pose, views);
 }, { iterations: 400, warmup: 40, reps: 5 });
 
+// N-28: a normal compile of the pose-only refill first; 4 long calls left only OSR code.
+warmNormalCompile(() => packColliderFillPoseOnly(inst, INSTANCES, 64, views.instanceEntity, views));
 const cLite = timeIt('C-lite pose-only refill', (iterations) => {
   for (let i = 0; i < iterations; i++) {
     packColliderFillPoseOnly(inst, INSTANCES, nB, views.instanceEntity, views);
