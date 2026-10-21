@@ -267,9 +267,42 @@ export async function setupPreRenderKernel(opts = {}) {
     return worker._renderableCount;
   }
 
-  function collectChecksum() {
-    const written = collect();
+  // collectPose: the same collect with physics poses published, as in a scene
+  // with bodies: pre-render latches the pose each frame, and _displayPose reads
+  // the latched columns per entity. Bound only after the plain collect is timed.
+  const pose = {
+    sync: new SharedArrayBuffer(8),
+    dataA: new SharedArrayBuffer(n * 16),
+    dataB: new SharedArrayBuffer(n * 16),
+    capacity: n,
+  };
+  function bindPoses() {
+    const a = new Float32Array(pose.dataA);
+    const b = new Float32Array(pose.dataB);
+    for (let i = 0; i < n; i++) {
+      const t = rng() * Math.PI * 2;
+      for (const [f, dx] of [[a, 0], [b, 1.5]]) {
+        f[i] = Transform.x[i] + dx;
+        f[n + i] = Transform.y[i] - dx;
+        f[2 * n + i] = Math.cos(t);
+        f[3 * n + i] = Math.sin(t);
+      }
+      RigidBody.active[i] = 1;
+    }
+    // Ready frame 2: dataB is the current pose, dataA the previous one.
+    new Int32Array(pose.sync)[0] = 2;
+    worker._bindPosePublish(pose);
+  }
+
+  function collectPose(count = n) {
+    worker.latchPhysicsPose();
+    return collect(count);
+  }
+
+  function collectChecksum(withPose = false) {
+    const written = withPose ? collectPose() : collect();
     assert.equal(written, n, 'every entity reaches the main collector');
+    if (withPose) assert.ok(worker._poseX, 'the pose is latched');
     const acc = new Uint32Array(n);
     for (let s = 0; s < written; s++) {
       let h = 2166136261;
@@ -283,11 +316,11 @@ export async function setupPreRenderKernel(opts = {}) {
     return checksumInts(acc, n);
   }
 
-  function warmCollect() {
-    warmNormalCompile(() => collect(Math.min(64, n)));
+  function warmCollect(withPose = false) {
+    warmNormalCompile(withPose ? () => collectPose(Math.min(64, n)) : () => collect(Math.min(64, n)));
   }
 
-  return { n, worker, frame, checksum, seed, warm, collect, collectChecksum, warmCollect };
+  return { n, worker, frame, checksum, seed, warm, collect, collectChecksum, warmCollect, bindPoses, collectPose };
 }
 
 async function main() {
@@ -305,6 +338,10 @@ async function main() {
   const collectChecksum = k.collectChecksum();
   k.warmCollect();
   cases.collect = timeIt(`preRender collectRenderable ${variant} (n=${n})`, () => k.collect(), { iterations: 24, warmup: 8 });
+  k.bindPoses();
+  const collectPoseChecksum = k.collectChecksum(true);
+  k.warmCollect(true);
+  cases.collectPose = timeIt(`preRender collectRenderable + pose ${variant} (n=${n})`, () => k.collectPose(), { iterations: 24, warmup: 8 });
   const report = {
     feature: 'preRender-worker-emit',
     variant,
@@ -316,6 +353,7 @@ async function main() {
     seed,
     checksum,
     collectChecksum,
+    collectPoseChecksum,
     note: 'Real PreRenderWorker. Collector is cell order. Checksum is per entity id, so an emit reorder can match.',
     cases,
   };
