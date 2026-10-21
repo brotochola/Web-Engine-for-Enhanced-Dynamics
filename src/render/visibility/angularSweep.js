@@ -176,6 +176,9 @@ function polyTangentIndices(lx, ly, vertsX, vertsY, start, count, out) {
 
 const MAX_EVENTS = 2048;
 const _eventAngles = new Float64Array(MAX_EVENTS);
+// E-63: each event's ray direction, from the geometry its angle came from.
+const _eventC = new Float64Array(MAX_EVENTS);
+const _eventS = new Float64Array(MAX_EVENTS);
 const _eventOccIdx = new Int32Array(MAX_EVENTS);
 const _eventType = new Uint8Array(MAX_EVENTS); // 1=open, 0=close
 const _sortIndices = new Int32Array(MAX_EVENTS);
@@ -280,12 +283,22 @@ export function buildVisibilityPolygon(
         return buildFullCircle(lightX, lightY, maxRadius, outX, outY, maxVertices);
       }
 
+      // E-63. The tangents are center ∓ asin(r/dist): their cos/sin come from
+      // the center direction and sin = r/dist, cos = sqrt(1 - sin²).
+      const cc = dx / dist;
+      const sc = dy / dist;
+      const sh = r / dist;
+      const ch = Math.sqrt(1 - sh * sh);
       _eventAngles[eventCount] = openAngle;
+      _eventC[eventCount] = cc * ch + sc * sh;
+      _eventS[eventCount] = sc * ch - cc * sh;
       _eventOccIdx[eventCount] = i;
       _eventType[eventCount] = 1;
       eventCount++;
 
       _eventAngles[eventCount] = closeAngle;
+      _eventC[eventCount] = cc * ch - sc * sh;
+      _eventS[eventCount] = sc * ch + cc * sh;
       _eventOccIdx[eventCount] = i;
       _eventType[eventCount] = 0;
       eventCount++;
@@ -305,14 +318,12 @@ export function buildVisibilityPolygon(
 
       const iLeft = _tangentOut[0];
       const iRight = _tangentOut[1];
-      const openN = normalizeAngleSigned(Math.atan2(
-        vertsY[vs + iLeft] - lightY,
-        vertsX[vs + iLeft] - lightX
-      ));
-      const closeN = normalizeAngleSigned(Math.atan2(
-        vertsY[vs + iRight] - lightY,
-        vertsX[vs + iRight] - lightX
-      ));
+      const oX = vertsX[vs + iLeft] - lightX;
+      const oY = vertsY[vs + iLeft] - lightY;
+      const kX = vertsX[vs + iRight] - lightX;
+      const kY = vertsY[vs + iRight] - lightY;
+      const openN = normalizeAngleSigned(Math.atan2(oY, oX));
+      const closeN = normalizeAngleSigned(Math.atan2(kY, kX));
       if (i < MAX_OCC_CACHE) {
         _occOpen[i] = openN;
         _occClose[i] = closeN;
@@ -324,12 +335,20 @@ export function buildVisibilityPolygon(
         return buildFullCircle(lightX, lightY, maxRadius, outX, outY, maxVertices);
       }
 
+      // E-63. The ray points at the tangent vertex itself. A light on the
+      // vertex (length 0) keeps cos/sin of atan2's answer.
+      const oR = Math.sqrt(oX * oX + oY * oY);
+      const kR = Math.sqrt(kX * kX + kY * kY);
       _eventAngles[eventCount] = openN;
+      _eventC[eventCount] = oR > 0 ? oX / oR : Math.cos(openN);
+      _eventS[eventCount] = oR > 0 ? oY / oR : Math.sin(openN);
       _eventOccIdx[eventCount] = i;
       _eventType[eventCount] = 1;
       eventCount++;
 
       _eventAngles[eventCount] = closeN;
+      _eventC[eventCount] = kR > 0 ? kX / kR : Math.cos(closeN);
+      _eventS[eventCount] = kR > 0 ? kY / kR : Math.sin(closeN);
       _eventOccIdx[eventCount] = i;
       _eventType[eventCount] = 0;
       eventCount++;
@@ -385,8 +404,10 @@ export function buildVisibilityPolygon(
     // H-06. EPSILON is 1e-5, so the pre/post samples are the first-order
     // expansion of one (cos, sin) pair. The angular error is O(ε²) ≈ 1e-10 rad.
     // Gate: the stored polygon stays within 1e-4 world units of the exact samples.
-    const ca = Math.cos(angle);
-    const sa = Math.sin(angle);
+    // E-63: that pair is the event's own direction, not cos/sin of its angle
+    // (a few ulps apart; same gate, sweepEventDirection.test.js).
+    const ca = _eventC[idx];
+    const sa = _eventS[idx];
     const preC = ca + EPSILON * sa;
     const preS = sa - EPSILON * ca;
 
