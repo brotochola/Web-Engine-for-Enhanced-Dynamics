@@ -849,10 +849,6 @@ for (let m = 0; m <= POLAR_BINS * 2; m++) {
   _polarSin[m] = Math.sin(ang);
 }
 const _polarDist = new Float32Array(POLAR_BINS);
-// The sweep polygon, copied because in and out may alias. Grows to the largest
-// sweep seen: maxPolygonVertices has no cap.
-let _holdX = new Float32Array(8192);
-let _holdY = new Float32Array(8192);
 let _polarRadius = 0;
 let _polarActive = 0;
 
@@ -930,20 +926,10 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
   // The caller stores y at x + maxVerts, so the result must never exceed maxVerts.
   const cap = maxVerts | 0;
   if (cap < 3) return n;
-  if (n > _holdX.length) {
-    // A cut-short copy closed the polygon with a chord and let light past it.
-    _holdX = new Float32Array(n);
-    _holdY = new Float32Array(n);
-  }
-  const holdN = n > 0 ? n : 0;
-  for (let i = 0; i < holdN; i++) {
-    _holdX[i] = inX[i];
-    _holdY[i] = inY[i];
-  }
   const group = cap >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / cap);
   const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
-  const radius = _polarRadius;
-  mergeSweep(lx, ly, holdN, count, group, radius, outX, outY);
+  // No copy of the input: mergeSweep reads every vertex before its first write.
+  mergeSweep(lx, ly, inX, inY, n, count, group, _polarRadius, outX, outY);
   return count;
 }
 
@@ -987,7 +973,7 @@ function firstRayAfter(n, a) {
   return lo;
 }
 
-function mergeSweep(lx, ly, n, count, group, radius, outX, outY) {
+function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY) {
   // Fewer than 3 vertices is no polygon: the bins alone.
   const edges = n >= 3 ? n : 0;
   if (edges > 0) {
@@ -1001,8 +987,6 @@ function mergeSweep(lx, ly, n, count, group, radius, outX, outY) {
       _rayBest[k] = radius;
     }
   }
-  const xs = _holdX;
-  const ys = _holdY;
   for (let i = 0; i < edges; i++) {
     const j = i + 1 < edges ? i + 1 : 0;
     const ax = xs[i];
