@@ -17,7 +17,8 @@ const GATED_HOOKS = [
   ['onJointBreak', JointBreakListener],
 ];
 
-function definesBelow(EntityClass, BaseClass, name) {
+/** True when EntityClass (or a game base class below BaseClass) defines `name`. */
+export function definesBelow(EntityClass, BaseClass, name) {
   let proto = EntityClass.prototype;
   const stop = BaseClass.prototype;
   while (proto && proto !== stop) {

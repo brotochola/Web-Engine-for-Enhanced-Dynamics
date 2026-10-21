@@ -70,6 +70,7 @@ import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
 import { isSpawnCommandRingBound, tryPushSpawn } from '../util/spawnCommandRing.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
+import { Messages } from './messages.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
@@ -533,6 +534,30 @@ export class GameObject {
 
     this._componentCache = {};
     Ctor._ensureComponentAccessors();
+  }
+
+  /**
+   * Send a message to another entity: it runs other.onMessage(name, this.index,
+   * a, b, c, d) next frame, before its tick, on the logic worker that owns it.
+   * `name` must be in the scene's static messages; a, b, c, d are numbers.
+   * Dropped if the target despawns first. No allocation.
+   * @param {number|GameObject} other
+   * @param {string} name
+   * @returns {boolean} false when not sent (no listener in the scene, inbox full)
+   */
+  sendTo(other, name, a = 0, b = 0, c = 0, d = 0) {
+    return Messages.send(typeof other === 'number' ? other : other.index, name, this.index, a, b, c, d);
+  }
+
+  /**
+   * Tell the main thread something happened: scene.on(name, fn) gets
+   * fn(data, entityIndex, className). `data` is structured-cloned (allocates):
+   * for rare events (died, won, picked up), not every frame.
+   * @param {string} name
+   * @param {*} [data]
+   */
+  emit(name, data) {
+    return SceneBridge.emitToScene(name, data, this);
   }
 
   /** Worker→Scene postMessage helper (`SceneBridge`). */
@@ -2136,6 +2161,7 @@ export class GameObject {
    */
   static _deactivateSlotComponents(i) {
     Transform.active[i] = 0;
+    Messages.bumpGeneration(i);
     if (RigidBody.active) RigidBody.active[i] = 0;
     // HEAP slot hygiene — destroy is markBodyDirty. Do not setAwake.
     if (RigidBody.sleeping) RigidBody.sleeping[i] = 0;
@@ -2343,6 +2369,14 @@ export class GameObject {
    *
    * @param {number} otherIndex - Index of the other entity in collision
    */
+  /**
+   * A message from sendTo / scene.sendToEntity (override it; the scene must
+   * list the name in static messages). Runs before tick on the owning worker.
+   * @param {string} name
+   * @param {number} from - sender's entity index, -1 for the scene
+   */
+  onMessage(name, from, a, b, c, d) {}
+
   onCollisionEnter(otherIndex) {
     // Override in subclasses
   }

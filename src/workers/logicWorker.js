@@ -10,6 +10,9 @@ self.postMessage({
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { reportWorkerError } from '../util/errorReport.js';
+import { Messages } from '../core/messages.js';
+import { drainMessages } from '../util/messageRing.js';
+import { definesBelow } from '../util/listenerTags.js';
 import { Joint } from '../core/joint.js';
 import { Mouse } from '../core/mouse.js';
 import { Transform } from '../components/transform.js';
@@ -176,6 +179,7 @@ class LogicWorker extends AbstractWorker {
     this._onContactRingEvent = this._onContactRingEvent.bind(this);
     this._onHitRingEvent = this._onHitRingEvent.bind(this);
     this._onJointBreakRingEvent = this._onJointBreakRingEvent.bind(this);
+    this._onMessageEvent = this._onMessageEvent.bind(this);
 
     // Box2D sequenced contact ring (msg box2dReady)
     this.box2dContactRingI32 = null;
@@ -203,6 +207,9 @@ class LogicWorker extends AbstractWorker {
 
     // Joint-break listener per-type flags (indexed by entityType)
     this.jointBreakListenerByType = null; // Uint8Array sized to max entity types
+
+    // onMessage per-type flags (indexed by entityType); filled with the instances
+    this.messageListenerByType = new Uint8Array(0);
     this.anyTypeNeedsJointBreaks = false; // Scene-level kill switch
 
     // ========================================
@@ -376,6 +383,7 @@ class LogicWorker extends AbstractWorker {
     const numTypes = this.registeredClasses.length;
     this.collisionListenerByType = new Uint8Array(numTypes);
     this.jointBreakListenerByType = new Uint8Array(numTypes);
+    this.messageListenerByType = new Uint8Array(numTypes);
     this.markActiveTypes = [];
     this._entityClassByType = [];
 
@@ -424,6 +432,9 @@ class LogicWorker extends AbstractWorker {
         }
         if (needsJointBreakCallbacks) {
           this.jointBreakListenerByType[entityType] = 1;
+        }
+        if (definesBelow(EntityClass, GameObject, 'onMessage')) {
+          this.messageListenerByType[entityType] = 1;
         }
         if (EntityClass.reportMarkActive) {
           this.markActiveTypes.push(EntityClass);
@@ -903,6 +914,11 @@ class LogicWorker extends AbstractWorker {
     ) {
       this.processCollisionCallbacks();
       this.systemsExecutedThisFrame++;
+    }
+
+    // Entity messages sent since the last frame (sendTo / sendToEntity / engine).
+    if (Messages.enabled) {
+      drainMessages(Messages.inboxI32[this.workerIndex], Messages.inboxF64[this.workerIndex], this._onMessageEvent);
     }
 
     // Count active entities while processing
@@ -1544,6 +1560,18 @@ class LogicWorker extends AbstractWorker {
       } catch (error) {
         this._entityThrew(error, entityB, 'onJointBreak');
       }
+    }
+  }
+
+  /** One inbox message: dropped if its target despawned since it was sent. */
+  _onMessageEvent(target, from, nameId, gen, a, b, c, d) {
+    if (Transform.active[target] === 0 || Messages.spawnGen[target] !== gen) return;
+    const obj = this.gameObjects[target];
+    if (!obj || this.messageListenerByType[Transform.entityType[target]] !== 1) return;
+    try {
+      obj.onMessage(Messages.names[nameId], from, a, b, c, d);
+    } catch (error) {
+      this._entityThrew(error, target, 'onMessage');
     }
   }
 

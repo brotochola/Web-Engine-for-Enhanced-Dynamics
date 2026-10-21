@@ -83,6 +83,7 @@ import {
 } from '../box2d/box2dBodySync.js';
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
 import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
+import { Messages } from '../core/messages.js';
 
 /** Cell count ceiling. Not an entity id. 2^20 covers a 4096 px world at a 4 px cell. */
 export const MAX_SPATIAL_CELLS = 1 << 20;
@@ -798,6 +799,18 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   buffers.poolExhaustionData = new SharedArrayBuffer(poolExhaustionBytes(scene.registeredClasses.length));
   bindPoolExhaustion(buffers.poolExhaustionData);
 
+  // Entity messages: only when a registered type defines onMessage / onAnimationEnd.
+  if (scene._anyMessageListener) {
+    const mb = Messages.createBuffers(scene.numberOfLogicWorkers, config.logic?.maxMessages ?? 4096, totalEntityCount);
+    buffers.messageInboxes = mb.inboxes;
+    buffers.messageSpawnGen = mb.spawnGen;
+    Messages.bind(mb, scene.constructor.messages);
+  } else {
+    buffers.messageInboxes = null;
+    buffers.messageSpawnGen = null;
+    Messages.unbind();
+  }
+
   const maxTweens = config.tween?.maxTweens | 0;
   if (maxTweens > 0) {
     buffers.tweenData = new SharedArrayBuffer(tweenBufferBytes(maxTweens));
@@ -1038,6 +1051,7 @@ export function teardownSceneSharedState(scene) {
   Time.unbind();
   Tween.unbind();
   unbindPoolExhaustion();
+  Messages.unbind();
   Mouse._data = null;
   Gamepad.initialize(null);
   Ray.debugFlags = null;

@@ -1119,6 +1119,15 @@ export declare class GameObject {
   static isType(index: number, EntityClass: Function): boolean;
   /** True when the entity type at index lists ComponentClass (tags included). */
   static hasComponent(index: number, ComponentClass: Function): boolean;
+  /**
+   * Send a message: other.onMessage(name, this.index, a, b, c, d) runs next frame, before its tick,
+   * on the logic worker that owns it. name must be in the scene's static messages. Numbers only.
+   */
+  sendTo(other: number | GameObject, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
+  /** Tell the main thread: scene.on(name, fn) gets fn(data, entityIndex, className). Structured-cloned. */
+  emit(name: string, data?: unknown): boolean;
+  /** Override to receive sendTo / scene.sendToEntity messages. from = -1 for the scene. */
+  onMessage(name: string, from: number, a: number, b: number, c: number, d: number): void;
   /** Is the other entity (index or GameObject) an EntityClass or a subclass? */
   is(other: number | GameObject, EntityClass: Function): boolean;
   /** Does this entity's type (or other's, when given) list ComponentClass? */
@@ -1444,6 +1453,13 @@ export declare class Scene {
   onLoadGame(payload: { custom: unknown; [key: string]: unknown }): void | Promise<void>;
   /** While a save is built: scene state outside entities (score, flags, level), as JSON data. */
   onSaveGame(): unknown;
+  /** Names entities may send each other (sendTo / onMessage). */
+  static messages: string[];
+  /** Send an entity a message from the scene: onMessage(name, -1, a, b, c, d) next frame. */
+  sendToEntity(index: number, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
+  /** Listen to gameObject.emit(name, data). Returns a function that removes the listener. */
+  on(name: string, fn: (data: unknown, entityIndex: number, className: string) => void): () => void;
+  off(name: string, fn: (data: unknown, entityIndex: number, className: string) => void): void;
   /** Steps onLoadProgress reports, in boot order. */
   static readonly LOAD_STEPS: readonly string[];
   /** Once per finished boot step (main thread): drive an HTML loading screen. Last call: 'world'. */

@@ -362,6 +362,42 @@ if (this.isCollidingWith(playerIndex)) {
 
 Use collision **callbacks** for edge-triggered logic (enter/exit). Use `isCollidingWith()` inside `tick()` when you need "am I currently overlapping?" without maintaining your own state.
 
+### Messages between entities (`sendTo` / `onMessage`), and to the scene (`emit` / `on`)
+
+An entity can tell another one something without sharing a component field:
+
+```javascript
+class Arena extends WEED.Scene {
+  static messages = ['hit', 'heal'];   // the names entities may send
+  static entities = [[Hero, 1], [Slime, 200]];
+}
+
+class Slime extends GameObject {
+  onCollisionEnter(other) {
+    if (this.is(other, Hero)) this.sendTo(other, 'hit', 10); // name, then up to 4 numbers
+  }
+}
+
+class Hero extends GameObject {
+  static components = [Health, CollisionListener];
+  onMessage(name, from, a) {
+    if (name === 'hit') this.health.hp -= a;
+    if (this.health.hp <= 0) this.emit('died', { score: this.health.score }); // to the main thread
+  }
+}
+
+// main thread
+scene.on('died', (data, entityIndex, className) => showGameOver(data.score));
+scene.sendToEntity(heroIndex, 'heal', 25);          // from the scene: from = -1
+```
+
+- `onMessage(name, from, a, b, c, d)` runs **next frame, before `tick`**, on the logic worker that owns the target (`target % numberOfLogicWorkers`, like collision callbacks). `from` is the sender's index, `-1` for the scene.
+- Names must be in the scene's `static messages` (every worker maps them to the same id); an unknown name throws and says what to add. A class with `onMessage` in a scene without `static messages` gets a warning at load.
+- Payload: up to four numbers. Nothing is allocated to send or deliver. Each logic worker's inbox holds `logic.maxMessages` (default 4096) between two frames; a full inbox warns once and drops.
+- A message to an entity that despawns before delivery is dropped, even if a new entity took its index.
+- The inboxes exist only when some type defines `onMessage` (or `onAnimationEnd`); otherwise `sendTo` warns once and does nothing.
+- `emit(name, data)` goes to the main thread by `postMessage` (`data` is structured-cloned): for rare events (died, level won), not every frame. `scene.on` returns a function that removes the listener.
+
 ### What did I hit? (`is`, `hasComponent`)
 
 Callbacks get the other entity's **index**. Ask about it without reading SoA by hand:

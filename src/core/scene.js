@@ -132,7 +132,8 @@ import {
   resolveSpritePipeline,
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
-import { warnMissingListenerTags } from '../util/listenerTags.js';
+import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
+import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import {
@@ -168,6 +169,8 @@ class Scene {
   static entities = []; // [[EntityClass, poolSize], ...]
   static sharedResources = []; // [[SharedResourceClass, schema], ...]
   static queries = []; // [[ComponentClass, ...], ...] custom active queries to precompute
+  /** Names entities may send each other (sendTo / onMessage): ['hit', 'heal', …]. */
+  static messages = [];
 
   constructor(game) {
     this.game = game; // Reference to GameEngine orchestrator
@@ -219,6 +222,10 @@ class Scene {
     this._drawnCam = null;
     /** Game-code errors from workers: key → { phase, className, entityIndex, message, counts: Map<worker, n> }. */
     this._entityErrors = new Map();
+    /** True when a registered type defines onMessage (or onAnimationEnd): the inboxes exist. */
+    this._anyMessageListener = false;
+    /** gameObject.emit listeners: name → fn[]. */
+    this._eventListeners = new Map();
     this._entityErrorsDismissed = false;
     /** Pending pauseAndSettle barrier: { id, left, resolve }. */
     this._barrier = null;
@@ -306,6 +313,8 @@ class Scene {
       cameraData: null,
       clockData: null,
       poolExhaustionData: null,
+      messageInboxes: null,
+      messageSpawnGen: null,
       tweenData: null,
       debugData: null,
       debugDrawData: null, // Debug draw ring buffer (DebugDraw API)
@@ -513,6 +522,17 @@ class Scene {
     }
     // A hook without its tag never runs, silently: say so once, here.
     warnMissingListenerTags(this.registeredClasses, GameObject);
+    const messageNames = this.constructor.messages || [];
+    for (const r of this.registeredClasses) {
+      const onMessage = definesBelow(r.class, GameObject, 'onMessage');
+      if (onMessage || definesBelow(r.class, GameObject, 'onAnimationEnd')) this._anyMessageListener = true;
+      if (onMessage && messageNames.length === 0) {
+        console.warn(
+          `WeedJS: ${r.class.name} defines onMessage but ${this.constructor.name} declares no static messages, ` +
+            "so nothing can be sent to it. Add static messages = ['hit', …] to the scene."
+        );
+      }
+    }
 
     // Lighting / flash flags may need optional SoA even with no entity listing them yet
     this.ensureOptionalComponentPools();
@@ -1223,6 +1243,38 @@ class Scene {
   }
 
   /**
+   * Send an entity a message from the scene (main thread): it runs
+   * onMessage(name, -1, a, b, c, d) next frame. `name` must be in static messages.
+   * @returns {boolean} false when not sent
+   */
+  sendToEntity(index, name, a = 0, b = 0, c = 0, d = 0) {
+    return Messages.send(index, name, -1, a, b, c, d);
+  }
+
+  /**
+   * Listen to gameObject.emit(name, data): fn(data, entityIndex, className).
+   * @param {string} name
+   * @param {(data: *, entityIndex: number, className: string) => void} fn
+   * @returns {() => void} removes the listener
+   */
+  on(name, fn) {
+    let list = this._eventListeners.get(name);
+    if (list === undefined) {
+      list = [];
+      this._eventListeners.set(name, list);
+    }
+    list.push(fn);
+    return () => this.off(name, fn);
+  }
+
+  off(name, fn) {
+    const list = this._eventListeners.get(name);
+    if (list === undefined) return;
+    const i = list.indexOf(fn);
+    if (i >= 0) list.splice(i, 1);
+  }
+
+  /**
    * Called on the main thread while the scene loads, once per finished step:
    * audio, scripts, buffers, adobe, atlas, tilemaps, flowfields, shaders,
    * sounds, workers, world (the asset steps finish in any order). `done` goes
@@ -1839,6 +1891,11 @@ class Scene {
 
       // Show a visible error message on the page
       this._showFatalErrorMessage(workerName, title, message);
+    } else if (e.data.msg === 'gameObjectEvent') {
+      const list = this._eventListeners.get(e.data.name);
+      if (list !== undefined) {
+        for (let i = 0; i < list.length; i++) list[i](e.data.data, e.data.entityIndex, e.data.className);
+      }
     } else if (e.data.msg === 'entityError' || e.data.msg === 'entityErrorCount') {
       this._onEntityError(e.data);
     } else if (e.data.msg === 'box2dReady') {

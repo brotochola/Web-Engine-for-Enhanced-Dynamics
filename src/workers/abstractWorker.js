@@ -93,6 +93,7 @@ import { Grab } from '../components/grab.js';
 import { ShapeType } from '../util/configDefaults.js';
 import { bindPoolExhaustion } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
+import { Messages } from '../core/messages.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -858,6 +859,10 @@ export class AbstractWorker {
     if (data.buffers?.poolExhaustionData) {
       bindPoolExhaustion(data.buffers.poolExhaustionData);
     }
+    Messages.bind(
+      data.buffers?.messageInboxes ? { inboxes: data.buffers.messageInboxes, spawnGen: data.buffers.messageSpawnGen } : null,
+      data.messageNames
+    );
     if (data.buffers?.frameClock && Number.isInteger(data.frameClockSlot)) {
       this._frameClock = bindFrameClock(data.buffers.frameClock);
       this._frameClockSlot = data.frameClockSlot;
