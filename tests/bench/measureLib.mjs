@@ -20,7 +20,7 @@ function integratedRunnerAt(root) {
 }
 
 export const LOAD_CV_FAIL = 0.5;
-export const LOAD_PCT_FAIL = 5;
+const LOAD_PCT_FAIL = 5;
 export const SPEED_PCT = 3;
 export { STEP_MS_FLOOR };
 
@@ -52,7 +52,7 @@ function stepMsFloorHits(summary, primaryKeys) {
   return hits;
 }
 
-export function explainStepMsFloor(hits) {
+function explainStepMsFloor(hits) {
   if (!hits?.length) return '';
   const bits = hits.map((h) => `${h.side} ${h.key}=${h.median.toFixed(3)} ms`);
   return (
@@ -102,7 +102,7 @@ export function seriesStats(values) {
   return { median: median(nums), mean: mean(nums), cv: cv(nums), samples: nums };
 }
 
-export function summarizeRuns(rows) {
+function summarizeRuns(rows) {
   if (!rows.length) return null;
   const keys = Object.keys(rows[0]).filter((k) => typeof rows[0][k] === 'number');
   return Object.fromEntries(keys.map((k) => [k, seriesStats(rows.map((r) => r[k]))]));
@@ -145,7 +145,7 @@ function avgOf(worker) {
   return worker?.statsSamplesAverage || {};
 }
 
-export function extractMetrics(report) {
+function extractMetrics(report) {
   const workers = report.workers || [];
   const pick = (pred) => workers.find(pred);
   const physics = avgOf(pick((w) => w.id === 'physics' || w.type === 'physics'));
