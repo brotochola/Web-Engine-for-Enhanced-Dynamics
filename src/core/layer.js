@@ -1329,27 +1329,28 @@ export class Layer {
      * @param {number} [kind]
      * @returns {number} Uint16 mask
      */
-    static _subscriptionList(opts) {
-        if (!opts) return { omitted: true, list: null };
+    static resolveSubscriptions(opts, kind = LAYER_SUBSCRIBE_KIND.PARTICLE) {
+        // N-2: one name or an array, read in place; no { omitted, list } object
+        // and no one-element array per emit.
+        if (!opts) return this.entitiesMask();
+        let list = null;
+        let single = null;
         if (opts.layers !== undefined) {
             const raw = opts.layers;
-            const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-            return { omitted: false, list };
+            if (Array.isArray(raw)) list = raw;
+            else if (raw == null) return kind === LAYER_SUBSCRIBE_KIND.GAME_OBJECT ? this.entitiesMask() : 0;
+            else single = raw;
+        } else if (opts.layer !== undefined && opts.layer !== null) {
+            single = opts.layer;
+        } else {
+            return this.entitiesMask();
         }
-        if (opts.layer !== undefined && opts.layer !== null) {
-            return { omitted: false, list: [opts.layer] };
-        }
-        return { omitted: true, list: null };
-    }
-
-    static resolveSubscriptions(opts, kind = LAYER_SUBSCRIBE_KIND.PARTICLE) {
-        const { omitted, list } = this._subscriptionList(opts);
-        if (omitted) return this.entitiesMask();
+        const n = list ? list.length : 1;
         let mask = 0;
         let hasSpriteQueue = false;
         let missed = false;
-        for (let i = 0; i < list.length; i++) {
-            const id = this._resolveOneSubscription(list[i], kind);
+        for (let i = 0; i < n; i++) {
+            const id = this._resolveOneSubscription(list ? list[i] : single, kind);
             if (id < 0) {
                 missed = true;
                 continue;
