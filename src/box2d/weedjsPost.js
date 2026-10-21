@@ -1332,6 +1332,23 @@
 
   let bodyApplyForceCenterFn = null;
   let bodyApplyTorqueFn = null;
+  let bodyApplyLinearImpulseFn = null;
+  let bodyApplyLinearImpulseCenterFn = null;
+  let bodyApplyAngularImpulseFn = null;
+
+  // body-impulse-start
+  /** APPLY_IMPULSE: Box2D's own impulse; a point (both finite) also turns the body about its centre of mass. */
+  function applyImpulseToBody(entity, ix, iy, px, py) {
+    if (!hasBody[entity]) return;
+    if (px === px && py === py) bodyApplyLinearImpulseFn(entity, ix, iy, px, py, 1);
+    else bodyApplyLinearImpulseCenterFn(entity, ix, iy, 1);
+  }
+
+  function applyAngularImpulseToBody(entity, impulse) {
+    if (!hasBody[entity] || isFixedRotation(entity)) return;
+    bodyApplyAngularImpulseFn(entity, impulse, 1);
+  }
+  // body-impulse-end
   let bodySetLinearVelocityFn = null;
   let bodySetTransformFn = null;
   let bodySetAwakeFn = null;
@@ -1367,6 +1384,8 @@
 
   // Hoisted once — drainCommands must not allocate a fresh handlers object every step
   const cmdHandlers = {
+    applyImpulse: applyImpulseToBody,
+    applyAngularImpulse: applyAngularImpulseToBody,
     setTransform(entity, x, y, rotC, rotS) {
       if (!hasBody[entity]) return;
       let c = rotC;
@@ -2707,6 +2726,25 @@
 
     bodyApplyForceCenterFn = Module.cwrap('body_apply_force_center', null, [
       'number',
+      'number',
+      'number',
+      'number',
+    ]);
+    bodyApplyLinearImpulseFn = Module.cwrap('body_apply_linear_impulse', null, [
+      'number',
+      'number',
+      'number',
+      'number',
+      'number',
+      'number',
+    ]);
+    bodyApplyLinearImpulseCenterFn = Module.cwrap('body_apply_linear_impulse_center', null, [
+      'number',
+      'number',
+      'number',
+      'number',
+    ]);
+    bodyApplyAngularImpulseFn = Module.cwrap('body_apply_angular_impulse', null, [
       'number',
       'number',
       'number',

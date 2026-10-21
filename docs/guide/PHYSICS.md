@@ -125,6 +125,46 @@ Command ring `setVelocity` works once `hasBody` (RB-only included). Col-only sta
 
 ---
 
+## Moving bodies
+
+Four ways to push a body, by two questions: does it act every tick or once, and should heavier bodies react less?
+
+|                  | Ignores mass        | Heavier bodies react less             |
+| ---------------- | ------------------- | ------------------------------------- |
+| **Every tick**   | `addAcceleration`, `RigidBody.angularAccel` | `applyForce`, `applyTorque` |
+| **Once**         | `addVelocity`       | `applyImpulse`, `applyAngularImpulse` |
+
+```javascript
+// Every tick, while it should keep acting (from the body's own tick)
+this.addAcceleration(0, 900);          // px/s²: steering, custom gravity
+this.applyForce(400, 0);               // mass·px/s²: wind, thrusters, magnets
+this.applyForce(0, -800, tipX, tipY);  // at a world point: also turns the body
+this.applyTorque(5000);                // rad/s² × inertia
+
+// Once
+this.addVelocity(0, -650);             // px/s: jump, dash
+this.applyImpulse(300, 0);             // mass·px/s: hit, kick, recoil
+this.applyImpulse(0, -200, hitX, hitY); // at a world point: also spins the body
+this.applyAngularImpulse(800);
+
+this.rigidBody.mass;     // what Box2D solves with (settable)
+this.rigidBody.inertia;  // read-only
+```
+
+They map to Unity's `ForceMode.Acceleration`, `Force`, `VelocityChange` and `Impulse`, and to Godot's `apply_central_force` / `apply_force` / `apply_central_impulse` / `apply_impulse` / `apply_torque` / `apply_torque_impulse`. Each method returns `this`; the same four are on the component too (`this.rigidBody.applyImpulse(…)`). For SoA code (`tickAll`) the same calls take an index: `RigidBody.applyForce(i, fx, fy, atX?, atY?)`, `RigidBody.applyTorque(i, t)`, `RigidBody.applyImpulse(i, ix, iy, atX?, atY?)`, `RigidBody.applyAngularImpulse(i, impulse)`.
+
+**Every tick** means the value holds until that body's next `tick`: logic clears `ax`, `ay` and `angularAccel` just before it, and the physics worker applies them on every step in between, however many there are. So the push does not depend on how the logic and physics frame rates line up. `applyForce` and `applyTorque` write those same columns (force × `invMass`, torque × `invInertia`), and the physics worker turns them back into the force and torque you asked for. Call them from the body's own `tick`: to push **another** body, use an impulse, because the other body's next tick clears what you wrote.
+
+**Once** happens on the next physics step. `applyImpulse` and `applyAngularImpulse` go through the command ring to Box2D's own impulse functions, so several impulses on one body in the same frame add up, even from different workers, and a point impulse turns the body about Box2D's own centre of mass. `this.vx` / `this.vy` show the result after that step. `addVelocity` changes `this.vx` / `this.vy` at once and sends the new velocity; use it for a body only one place writes to (a jump, a dash).
+
+Do not fake a one-shot kick with `addAcceleration`: how long it stays applied depends on how many physics steps run before the next tick, so the same jump can be four times higher on a hitch. `angularAccel` is an angular acceleration in rad/s² (it is multiplied by the body's inertia, N-4).
+
+Units are WeedJS units: pixels, seconds, and the mass Box2D solves with (`RigidBody.mass`, from the collider area unless you set it). An impulse is mass × px/s, a force mass × px/s². `applyImpulse(0, -650 * this.rigidBody.mass)` is the same jump as `addVelocity(0, -650)`.
+
+Static bodies ignore all of these. `fixedRotation` bodies ignore the turning part.
+
+---
+
 ## Time scale
 
 `clockData` is one `Float32`, default `1`. `Time.scale` writes it. `0` is a hitstop. A non-finite write is read back as `1`. A negative write is read back as `0`. A value above `4` is read back as `4` (`MAX_TIME_SCALE`).

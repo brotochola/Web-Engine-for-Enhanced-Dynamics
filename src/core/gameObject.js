@@ -1442,6 +1442,56 @@ export class GameObject {
   }
 
   /**
+   * Push for this tick; call it every tick while it should act. Heavier bodies
+   * react less. Holds until this body's next tick, like addAcceleration: to
+   * push another body, use applyImpulse.
+   * @param {number} fx - Force X (mass·px/s²)
+   * @param {number} fy - Force Y (mass·px/s²)
+   * @param {number} [atX] - World point; with atY the force also turns the body
+   * @param {number} [atY]
+   * @returns {this} For chaining
+   */
+  applyForce(fx, fy, atX, atY) {
+    if (this._hasComponents.RigidBody) RigidBody.applyForce(this.index, fx, fy, atX, atY);
+    return this;
+  }
+
+  /**
+   * Turn for this tick; call it every tick while it should act.
+   * @param {number} torque - mass·px²/s² (rad/s² × inertia)
+   * @returns {this} For chaining
+   */
+  applyTorque(torque) {
+    if (this._hasComponents.RigidBody) RigidBody.applyTorque(this.index, torque);
+    return this;
+  }
+
+  /**
+   * One kick on the next physics step (Box2D's own impulse). Heavier bodies
+   * react less; several in one frame add up, from any worker. this.vx / vy
+   * show it after that step.
+   * @param {number} ix - Impulse X (mass·px/s)
+   * @param {number} iy - Impulse Y (mass·px/s)
+   * @param {number} [atX] - World point; with atY the impulse also spins the body
+   * @param {number} [atY]
+   * @returns {this} For chaining
+   */
+  applyImpulse(ix, iy, atX, atY) {
+    if (this._hasComponents.RigidBody) RigidBody.applyImpulse(this.index, ix, iy, atX, atY);
+    return this;
+  }
+
+  /**
+   * One spin kick on the next physics step.
+   * @param {number} impulse - mass·px²/s
+   * @returns {this} For chaining
+   */
+  applyAngularImpulse(impulse) {
+    if (this._hasComponents.RigidBody) RigidBody.applyAngularImpulse(this.index, impulse);
+    return this;
+  }
+
+  /**
    * Wake or sleep the Box2D body (command ring → body_set_awake).
    * Writing RigidBody.sleeping alone does not change the solver.
    * @param {boolean} [awake=true]

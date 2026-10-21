@@ -1084,6 +1084,14 @@ export declare class GameObject {
   getJoint(i: number): number;
   getJoints(): number[];
   markDirty(): void;
+  /** Push for this tick (mass·px/s²); every tick while it should act. See PHYSICS.md "Moving bodies". */
+  applyForce(fx: number, fy: number, atX?: number, atY?: number): this;
+  /** Turn for this tick; every tick while it should act. */
+  applyTorque(torque: number): this;
+  /** One kick on the next physics step (mass·px/s); several add up. */
+  applyImpulse(ix: number, iy: number, atX?: number, atY?: number): this;
+  /** One spin kick on the next physics step. */
+  applyAngularImpulse(impulse: number): this;
   setAlpha(value: number): this;
   setTint(value: number): this;
   setTileWorld(periodX: number, periodY?: number, u0?: number, v0?: number): this;
@@ -2788,7 +2796,25 @@ export declare class RigidBody extends Component {
   static sleeping: Uint8Array;
   static sleepThreshold: Float32Array;
   static syncMassFromCollider(index: number): boolean;
+  /**
+   * Push for this tick (mass·px/s²); call it every tick while it should act.
+   * Holds until the body's next tick. With atX/atY (world point) it also turns the body.
+   */
+  static applyForce(index: number, fx: number, fy: number, atX?: number, atY?: number): void;
+  /** Turn for this tick (rad/s² × inertia); every tick while it should act. */
+  static applyTorque(index: number, torque: number): void;
+  /** One kick on the next physics step (mass·px/s); several add up. With atX/atY it also spins the body. */
+  static applyImpulse(index: number, ix: number, iy: number, atX?: number, atY?: number): void;
+  /** One spin kick on the next physics step. */
+  static applyAngularImpulse(index: number, impulse: number): void;
   syncMassFromCollider(): boolean;
+  applyForce(fx: number, fy: number, atX?: number, atY?: number): void;
+  applyTorque(torque: number): void;
+  applyImpulse(ix: number, iy: number, atX?: number, atY?: number): void;
+  applyAngularImpulse(impulse: number): void;
+  get mass(): number;
+  set mass(value: number);
+  get inertia(): number;
   get static(): number;
   set static(value: number | boolean);
 }
