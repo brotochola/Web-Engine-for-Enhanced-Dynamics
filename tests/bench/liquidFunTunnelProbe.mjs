@@ -10,18 +10,19 @@
  * that end up well inside solid terrain (all four grid nodes around them
  * solid), for a polygon skin of 0 and 1 px.
  *
- * Result on 2026-10-20 (2948 particles, 1200 steps, 310 islands, 2618 fixtures):
+ * Result on 2026-10-21 (2948 particles, 1200 steps, 310 islands, 2618 fixtures):
  *
  *   drop above the pole   skin 0   skin 1
  *   0 px                     0        0
- *   250 px                   1        0
- *   500 px                  11       20
- *   1000 px                122      120
- *   1500 px                142      114
+ *   250 px                   0        0
+ *   500 px                   0        3   (at most 15 px deep)
+ *   1000 px                  0        8   (42 px)
+ *   1500 px                  0       13   (42 px)
  *
- * At rest the seams between triangles and chunk bodies hold water, so the 1 px
- * skin the planet had on 10-19 is not what keeps it out. Fast water tunnels with
- * or without it, and a particle that gets in sinks to the core.
+ * The planet meshes with skin 0: no water gets in. The 2026-10-20 table (up to
+ * 142 particles, down to the core) came from this probe binding 64 body slots
+ * for 310 islands: create_body returned -1 for 246 of them, and their shapes
+ * were never made (N-18, closed).
  *
  *   node --expose-gc tests/bench/liquidFunTunnelProbe.mjs
  *   DROP=1000 STEPS=1200 node --expose-gc tests/bench/liquidFunTunnelProbe.mjs
@@ -64,13 +65,16 @@ function run(skin) {
   const { memory, fn } = instantiateBox2dWasm(['create_particle_box', 'particle_apply_force']);
   // Engine units: 100 px per meter; world gravity off, the pull is per particle.
   const worldId = fn('create_world')(0, 0, 100, 30, 0.7, 1000, 50000, 1);
-  fn('bind_game_buffers')(64);
+  // One body per island: with 64 slots (the old value) create_body returned -1
+  // for 246 of 310 islands, and water fell through rock that had no shapes.
+  fn('bind_game_buffers')(islands.length + 8);
   fn('set_particle_sub_steps')(2);
   const ptr = fn('malloc')(64);
   const heap = new Float32Array(memory.buffer, ptr, 16);
   let fixtures = 0;
   for (const polys of islands) {
     const slot = fn('create_body')(worldId, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1);
+    if (slot < 0) throw new Error('create_body: no slot left for an island');
     for (const p of polys) {
       for (let v = 0; v < p.length; v++) {
         heap[2 * v] = p[v].x;
