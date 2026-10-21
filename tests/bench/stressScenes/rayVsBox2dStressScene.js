@@ -65,7 +65,7 @@ export class RayVsBox2dStressScene extends Scene {
   ];
 
   create() {
-    const backend = this.constructor.backend === 'box2d' ? 'box2d' : 'weedjs';
+    const backend = this.constructor.backend;
     const busy = this.constructor.physicsLoad === 'busy';
 
     if (busy) {
@@ -136,6 +136,12 @@ export class RayVsBox2dWeedBusyScene extends RayVsBox2dStressScene {
 
 export class RayVsBox2dBoxIdleScene extends RayVsBox2dStressScene {
   static backend = 'box2d';
+  static physicsLoad = 'idle';
+}
+
+/** Eight single sync casts per tick, each its own round trip (review E-56). */
+export class RayVsBox2dBoxSingleScene extends RayVsBox2dStressScene {
+  static backend = 'box2d-single';
   static physicsLoad = 'idle';
 }
 

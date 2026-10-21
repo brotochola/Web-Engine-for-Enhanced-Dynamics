@@ -3,6 +3,7 @@ import WEED from '/src/index.js';
 const { GameObject, Ray, Transform, Collider, RigidBody, Box2d } = WEED;
 
 const CASTS_PER_TICK = 3072;
+const SINGLE_CASTS_PER_TICK = 8;
 const PAIR_COUNT = 1024;
 const LONG_RAY_COUNT = 512;
 const WORLD_W = 4000;
@@ -21,7 +22,7 @@ export class RayStressDriver extends GameObject {
     this.x = -10000;
     this.y = -10000;
     this._seed = seed >>> 0;
-    this._backend = backend === 'box2d' ? 'box2d' : 'weedjs';
+    this._backend = backend === 'box2d' || backend === 'box2d-single' ? backend : 'weedjs';
     this._cursor = 0;
     this._sink = 0;
     this._ready = false;
@@ -165,6 +166,19 @@ export class RayStressDriver extends GameObject {
     this._sink = sink;
   }
 
+  // The gameplay shape: a few sync casts per tick, each its own round trip
+  // (review N-24 / E-56: the batch scene never exercises a single cast).
+  _tickBox2dSingle(pairs, cursor) {
+    let sink = this._sink;
+    for (let i = 0; i < SINGLE_CASTS_PER_TICK; i++) {
+      const k = ((cursor + i) % PAIR_COUNT) * 2;
+      const a = pairs[k];
+      const b = pairs[k + 1];
+      if (this._box2dClosest(Transform.x[a], Transform.y[a], Transform.x[b], Transform.y[b]) !== -1) sink++;
+    }
+    this._sink = sink;
+  }
+
   tick() {
     if (!this._ensureWorkload()) return;
 
@@ -173,7 +187,9 @@ export class RayStressDriver extends GameObject {
     const cursor = this._cursor;
     const half = CASTS_PER_TICK >> 2;
 
-    if (this._backend === 'box2d') {
+    if (this._backend === 'box2d-single') {
+      this._tickBox2dSingle(pairs, cursor);
+    } else if (this._backend === 'box2d') {
       this._tickBox2d(pairs, rays, cursor, half);
     } else {
       this._tickWeedjs(pairs, rays, cursor, half);
