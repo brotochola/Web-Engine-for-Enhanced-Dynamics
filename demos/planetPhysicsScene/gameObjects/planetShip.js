@@ -29,6 +29,9 @@ export class PlanetShip extends Ship {
     this.collider.radius = 14;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0;
+    // Raycasted occluders come from this neighbor list; Ship's 80 px let the
+    // light pass through every rock past that.
+    this.collider.visualRange = this.lightEmitter.influenceRadius;
     // Contacts must not spin the body; the hull turns only as a sprite.
     this.setFixedRotation(1);
     this.spriteRenderer.inheritTransformRotation = 0;
