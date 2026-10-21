@@ -812,6 +812,15 @@ class PixiRenderer extends AbstractWorker {
     this._selfLitColliderMesh = null;
     this._selfLitSpriteMeshes = [];
     this._selfLitCircleSegs = 16;
+    // The circle fan's fixed angles, cos/sin built with the loop's own expression
+    // so a lookup is the same double as the call it replaces (E-60).
+    this._selfLitCircleCos = new Float64Array(this._selfLitCircleSegs);
+    this._selfLitCircleSin = new Float64Array(this._selfLitCircleSegs);
+    for (let si = 0; si < this._selfLitCircleSegs; si++) {
+      const a = (si / this._selfLitCircleSegs) * Math.PI * 2;
+      this._selfLitCircleCos[si] = Math.cos(a);
+      this._selfLitCircleSin[si] = Math.sin(a);
+    }
     this._selfLitPosScratch = null;
     this._selfLitIdxScratch = null;
     this._selfLitBoxScratchX = new Float32Array(8);
@@ -3304,10 +3313,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           positions[vertCount * 2 + 1] = cy;
           this._stampOccluderVert(vertCount, cx, cy, r);
           vertCount++;
+          const fanCos = this._selfLitCircleCos;
+          const fanSin = this._selfLitCircleSin;
           for (let si = 0; si < segs; si++) {
-            const a = (si / segs) * Math.PI * 2;
-            positions[vertCount * 2] = cx + Math.cos(a) * r;
-            positions[vertCount * 2 + 1] = cy + Math.sin(a) * r;
+            positions[vertCount * 2] = cx + fanCos[si] * r;
+            positions[vertCount * 2 + 1] = cy + fanSin[si] * r;
             this._stampOccluderVert(vertCount, cx, cy, r);
             vertCount++;
           }
