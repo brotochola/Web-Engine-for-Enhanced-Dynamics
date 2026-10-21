@@ -9,6 +9,12 @@ import {
   servicePendingQuery,
 } from '../../src/box2d/box2dQueryAabb.js';
 import { createRayCastSab, bindRayCastSab, servicePendingRayCast } from '../../src/box2d/box2dRayCast.js';
+import {
+  createCastRayAllSab,
+  bindCastRayAllSab,
+  box2dCastRayAllAsync,
+  servicePendingCastRayAll,
+} from '../../src/box2d/box2dCastRayAll.js';
 
 // Review N-21. Box2D QueryAABB and closest-ray had no round-trip test since
 // queryAabbBurst.test.js went (f68a182e); overlapCircle, castRayAll and the
@@ -106,6 +112,34 @@ test('queryAABB: a physics error rejects the caller and frees the slot', async (
   } finally {
     console.error = quiet;
     bindQueryAabbSab(null);
+  }
+});
+
+test('castRayAll: an `out` that is not an array is refused without leaving the slot taken (N-23)', async () => {
+  // The copy used to check `out` after physics had answered, and threw
+  // without releasing: the slot stayed DONE, and every later castRayAll
+  // blocked in its claim wait for good.
+  const sab = createCastRayAllSab(8);
+  bindCastRayAllSab(sab);
+  try {
+    let error = null;
+    let pending = null;
+    try {
+      pending = box2dCastRayAllAsync(0, 0, 10, 0, new Float32Array(16));
+    } catch (e) {
+      error = e;
+    }
+    if (pending) {
+      await new Promise((r) => setImmediate(r));
+      servicePendingCastRayAll(() => 0);
+      await pending.then(() => {}, (e) => {
+        error = e;
+      });
+    }
+    assert.ok(error instanceof TypeError, `expected a TypeError, got ${error}`);
+    assert.equal(Atomics.load(new Int32Array(sab), 0), STATUS_IDLE, 'the slot was left taken');
+  } finally {
+    bindCastRayAllSab(null);
   }
 });
 

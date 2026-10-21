@@ -86,7 +86,6 @@
   }
 
   function claimAndWriteSync(ox, oy, dx, dy, filter) {
-    assertWorkerThread('box2dCastRayAll', 'box2dCastRayAllAsync');
     if (!i32) throw new Error('box2dCastRayAll: SAB not bound (wait for box2dReady)');
     for (;;) {
       var prev = Atomics.compareExchange(i32, HDR_STATUS, STATUS_IDLE, STATUS_CLAIMED);
@@ -132,9 +131,6 @@
       Atomics.notify(i32, HDR_STATUS, 1);
       throw new Error('box2dCastRayAll: physics reported error');
     }
-    if (!Array.isArray(out)) {
-      throw new TypeError('box2dCastRayAll: out must be an array');
-    }
     var count = Atomics.load(i32, HDR_COUNT) | 0;
     var write = count < resultCap ? count : resultCap;
     out.length = write;
@@ -172,15 +168,24 @@
     WAIT_METER.ms += performance.now() - t0;
   }
 
+  // Checked before the claim: a throw after physics answers would leave the
+  // slot DONE, and every later caller's claim wait would never end.
+  function outArray(out) {
+    if (out == null) return [];
+    if (!Array.isArray(out)) throw new TypeError('box2dCastRayAll: out must be an array');
+    return out;
+  }
+
   function box2dCastRayAll(ox, oy, dx, dy, out, filter) {
-    var dest = out || [];
+    assertWorkerThread('box2dCastRayAll', 'box2dCastRayAllAsync');
+    var dest = outArray(out);
     claimAndWriteSync(ox, oy, dx, dy, filter);
     waitUntilDoneSync();
     return copyResultsAndRelease(dest);
   }
 
   function box2dCastRayAllAsync(ox, oy, dx, dy, out, filter) {
-    var dest = out || [];
+    var dest = outArray(out);
     return claimAndWriteAsync(ox, oy, dx, dy, filter).then(function () {
       function waitLoop() {
         var s = Atomics.load(i32, HDR_STATUS) | 0;
