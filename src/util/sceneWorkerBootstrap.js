@@ -163,10 +163,6 @@ function buildSceneSharedBuffers(scene) {
     componentData: scene.buffers.componentData,
     gridBuffer: scene.buffers.gridBuffer,
     cellSleepingBuffer: scene.buffers.cellSleepingBuffer,
-    // E-04: `cellVersionBuffer` no longer exists. It was allocated per scene, plumbed
-    // through here and abstractWorker, bound to a Uint32Array view in Grid, and never
-    // written or read by anything. Neighbour reuse is gated by the Verlet skin and an
-    // age cap instead - see src/core/grid.js.
     entityPosData: scene.buffers.entityPosData,
     rendererStats: scene.buffers.rendererStats,
     particleStats: scene.buffers.particleStats,

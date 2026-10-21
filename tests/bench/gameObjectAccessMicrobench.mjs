@@ -31,7 +31,7 @@ export function setupAccess(variant, n, seed, opts = {}) {
   const { buffers, gridMetadata } = spatialBuffers(cfg, n);
   Grid.reset();
   Grid.initialize(
-    { gridBuffer: buffers.gridBuffer, neighborBuffer: buffers.neighborData, cellSleepingBuffer: buffers.cellSleepingBuffer, cellVersionBuffer: buffers.cellVersionBuffer },
+    { gridBuffer: buffers.gridBuffer, neighborBuffer: buffers.neighborData, cellSleepingBuffer: buffers.cellSleepingBuffer },
     { ...gridMetadata, gridWidth: gridMetadata.gridCols, gridHeight: gridMetadata.gridRows }
   );
   const Base = VARIANTS[variant](GameObject);

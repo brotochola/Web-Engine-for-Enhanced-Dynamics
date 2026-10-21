@@ -841,8 +841,6 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
 
     buffers.gridBuffer = new SharedArrayBuffer(totalCells * cellByteSize);
     buffers.cellSleepingBuffer = new SharedArrayBuffer(totalCells);
-    // E-04: `cellVersionBuffer` (totalCells * 4) removed. It was allocated, plumbed
-    // through three files and bound to a view, and never written or read.
     const publish = scene.spatialPublish;
     buffers.entityPosData = publish
       ? publish.buffer
@@ -870,7 +868,6 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
         gridBuffer: buffers.gridBuffer,
         neighborBuffer: buffers.neighborData,
         cellSleepingBuffer: buffers.cellSleepingBuffer,
-        // E-04: cellVersionBuffer removed - allocated, never written, never read.
       },
       {
         cellSize,

@@ -30,7 +30,6 @@ function allocGrid() {
     {
       gridBuffer: new SharedArrayBuffer(totalCells * cellByteSize),
       neighborBuffer: new SharedArrayBuffer(ENTITIES * (1 + MAX_NEIGHBORS) * 2),
-      cellVersionBuffer: new SharedArrayBuffer(totalCells * 4),
     },
     {
       cellSize: CELL_SIZE,

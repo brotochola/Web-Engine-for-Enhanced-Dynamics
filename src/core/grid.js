@@ -179,9 +179,6 @@ export class Grid {
       Grid._cellSleepingData.fill(0);
     }
 
-    // E-04: the cellVersionBuffer bind is gone with the buffer. See the note on the
-    // former `_cellVersionData` declaration above.
-
     const QueryArray = idBytes === 4 ? Uint32Array : Uint16Array;
     if (!(Grid._queryResults instanceof QueryArray)) {
       Grid._queryResults = new QueryArray(16384);

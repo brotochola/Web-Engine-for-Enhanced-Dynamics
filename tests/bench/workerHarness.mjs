@@ -88,7 +88,6 @@ export function spatialBuffers(cfg, n) {
   const buffers = {
     gridBuffer: new SharedArrayBuffer(totalCells * cellByteSize),
     cellSleepingBuffer: new SharedArrayBuffer(totalCells),
-    cellVersionBuffer: new SharedArrayBuffer(totalCells * 4),
     entityPosData: new SharedArrayBuffer(n * 16),
     neighborData: new SharedArrayBuffer(n * (1 + cfg.maxNeighbors) * idBytes),
     activeEntitiesData: new SharedArrayBuffer((n + 1) * idBytes),

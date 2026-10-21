@@ -953,7 +953,6 @@ export class AbstractWorker {
           gridBuffer: data.buffers.gridBuffer,
           neighborBuffer: data.buffers.neighborData,
           cellSleepingBuffer: data.buffers.cellSleepingBuffer,
-          // E-04: cellVersionBuffer removed - see src/core/grid.js.
         },
         data.gridMetadata
       );

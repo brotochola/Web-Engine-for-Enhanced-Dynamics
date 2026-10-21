@@ -476,7 +476,6 @@ export interface GridInitializeBuffers {
   gridBuffer?: SharedArrayBuffer;
   neighborBuffer?: SharedArrayBuffer;
   cellSleepingBuffer?: SharedArrayBuffer;
-  cellVersionBuffer?: SharedArrayBuffer;
 }
 
 export interface GridInitializeMetadata {
