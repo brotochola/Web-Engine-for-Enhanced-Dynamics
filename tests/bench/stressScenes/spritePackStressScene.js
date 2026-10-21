@@ -110,6 +110,17 @@ export const SPRITE_SCALE = (() => {
   }
 })();
 
+/** `?camRot=<radians>` turns the camera (review E-51: a turned view culls with the box around it). Default 0. */
+export const CAM_ROT = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('camRot');
+    const n = raw ? parseFloat(raw) : NaN;
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+})();
+
 const COLS = Math.max(1, Math.ceil(Math.sqrt(SPRITE_COUNT)));
 const ROWS = Math.ceil(SPRITE_COUNT / COLS);
 
@@ -130,6 +141,7 @@ export const stressSceneConfig = {
     sprites: SPRITE_COUNT,
     spacing: SPACING,
     scale: SPRITE_SCALE,
+    camRot: CAM_ROT,
   },
 };
 export const WORLD_W = COLS * SPACING;
@@ -260,5 +272,6 @@ static assets = { textures: { sprite: '/demos/img/bunny.png' } };
     Camera.setZoom(1);
     // Centre on the grid, which now IS the world.
     Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);
+    if (CAM_ROT) Camera.setAngle(CAM_ROT);
   }
 }
