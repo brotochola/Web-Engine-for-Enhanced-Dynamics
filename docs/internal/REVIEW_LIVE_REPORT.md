@@ -17,9 +17,25 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**22:58** — R3, N-24/E-56 and N-25 done. Next: the rest of Phase 4 (R4 onward).
+**23:08** — Phase 4: R3–R6 done. Next: R7.
 
 ## Log
+
+### 23:08 — R4–R6: three more copies folded into one (`c66ddd32`, `a12ec944`, `357e268e`)
+
+- **R4** (`c66ddd32`): five workers each wrote their FPS, step, idle and wait numbers by hand.
+  One copy had drifted: pre-render wrote its wait time only with detailed stats on, which hides
+  it on exactly the runs the protocol uses for a verdict. One shared helper does it now, and the
+  test runs four real workers with detailed stats off and reads the numbers back.
+- **R5** (`a12ec944`): the physics host keeps its own copy of the frame-clock stamp, because it
+  is an old-style script that can't import the module. Moving it would mean changing the bundle
+  build for 25 lines, so I added a test instead: it runs the host's copy and the real one on two
+  buffers and compares every byte.
+- **R6** (`357e268e`): the camera and the mouse each had the same turned-view math, and the turned
+  deadzone repeated the normal deadzone's clamp. Each is one function now. Measured: a tie
+  (−1.7 %, one extra function call).
+
+Suite: 1353/1353.
 
 ### 22:58 — Sync queries: one helper, a frame-long wait fixed, a two-worker hang fixed (`759ca67a`, `ffb8e725`, `cf159be9`, `941b29b1`)
 
