@@ -1,7 +1,6 @@
 // Boid.js - Classic flocking (cohesion / separation / alignment)
 
 import WEED from '/src/index.js';
-import { enqueueSetRotCS } from '/src/box2d/box2dCommandRing.js';
 
 const { enums, GameObject, RigidBody, Collider, SpriteRenderer, Mouse, Transform } = WEED;
 const { ShapeType } = enums;
@@ -174,7 +173,7 @@ class Boid extends GameObject {
     const speed = RigidBody.speed[i];
     if (speed > Boid.faceSpeedMin) {
       const inv = 1 / speed;
-      enqueueSetRotCS(i, rbVX[i] * inv, rbVY[i] * inv);
+      this.setRotationCS(rbVX[i] * inv, rbVY[i] * inv);
     }
   }
 }
