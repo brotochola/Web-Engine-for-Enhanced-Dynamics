@@ -17,6 +17,31 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**15:46** — **N-4, N-3, N-2 and N-10 fixed** (`0dbd7876`, `4fcd8b70`, `ae75b09e`, `72b74120`). The suite is at 1,430.
+N-17 and N-31 wait for you (below).
+
+### 15:46 — Four engine fixes, and two things that need your call
+
+- **N-4, rotation:** `RigidBody.angularAccel` wasn't an angular acceleration. Physics multiplied it
+  by the body's mass instead of its rotational inertia, so a game asking for a rotation got a
+  different one. Two demos had quietly compensated. Physics now uses the inertia, and the car and
+  the tree branch drop their workarounds. Both produce exactly the same torque as before, and
+  both scenes boot and run.
+- **N-3, unknown layer:** a particle emit naming a layer that doesn't exist printed a warning on
+  every emit and then drew nothing. It now warns once and draws the particles with the
+  entities, as game objects already did.
+- **N-2:** the same function stopped allocating two objects on every emit.
+- **N-10, main-thread spawns:** while the game runs, a `spawnEntity` from the page kept only x and
+  y; every other setting (polygons, velocity, ...) was lost on the way to the logic worker.
+  Those spawns now take the route that carries the whole config.
+- **Your call:**
+  - **N-17, the planet's water pull:** it sends ~4,000 commands per tick into a 4,096-slot queue.
+    The clean fix is a small engine API, e.g. `LiquidFun.setRadialGravity(x, y, accel)` applied
+    by physics each step. The alternative is a demo-only throttle. It's new API, so I'd rather
+    you decide.
+  - **N-31, Predator's switched-off flocking code:** delete it (git keeps it), or bring the
+    feature back?
+
 **15:39** — **N-14 and N-8 fixed** (`06a308e8`, `3890517d`). N-6 needs a design pass (below). Next: N-17, then the
 other demo bugs.
 
