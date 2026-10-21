@@ -916,53 +916,6 @@ function stampPolarBin(b, x0, y0, x1, y1, lx, ly) {
 }
 
 /**
- * True when xs/ys is buildFullCircle's placeholder around (lx, ly) at r: the
- * sweep of a light with no simple occluder (all its occluders are compound).
- * Stateless: compares the vertices, as stored in a Float32 or Float64 buffer.
- */
-function isFullCircleAt(xs, ys, n, lx, ly, r) {
-  if (n !== FULL_CIRCLE_SEGS) return false;
-  for (let i = 0; i < n; i++) {
-    const x = lx + _fullCircleC[i] * r;
-    const y = ly + _fullCircleS[i] * r;
-    if (xs[i] !== x && xs[i] !== Math.fround(x)) return false;
-    if (ys[i] !== y && ys[i] !== Math.fround(y)) return false;
-  }
-  return true;
-}
-
-/**
- * sweepDistAt for that placeholder (E-41). A ray from the centre of a convex
- * polygon only meets the edge whose angular span holds it, or a neighbour at a
- * corner; every other edge gives Infinity or a negative t. Three raySegT on the
- * same vertices give the same minimum, bit for bit, as all 32.
- */
-function fullCircleDistAt(lx, ly, ang, dx, dy, xs, ys, radius) {
-  const n = FULL_CIRCLE_SEGS;
-  let k = Math.floor((ang + Math.PI) * (n / TWO_PI));
-  if (k < 0) k = 0;
-  else if (k >= n) k = n - 1;
-  let best = radius;
-  for (let d = n - 1; d <= n + 1; d++) {
-    const i = (k + d) % n;
-    const j = i + 1 < n ? i + 1 : 0;
-    const t = raySegT(lx, ly, dx, dy, xs[i], ys[i], xs[j], ys[j]);
-    if (t < best) best = t;
-  }
-  return best;
-}
-
-function sweepDistAt(lx, ly, dx, dy, xs, ys, n, radius) {
-  let best = radius;
-  for (let i = 0; i < n; i++) {
-    const j = i + 1 < n ? i + 1 : 0;
-    const t = raySegT(lx, ly, dx, dy, xs[i], ys[i], xs[j], ys[j]);
-    if (t < best) best = t;
-  }
-  return best;
-}
-
-/**
  * One vertex per bin at min(boundary hit, simple-occluder sweep).
  * Returns the sweep count unchanged when no boundary edge wrote a bin.
  * in and out may be the same buffer.
@@ -990,25 +943,106 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
   const group = cap >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / cap);
   const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
   const radius = _polarRadius;
-  if (holdN >= 3 && isFullCircleAt(_holdX, _holdY, holdN, lx, ly, radius)) {
-    // Same loop, three edges per bin instead of 32 (E-41).
+  mergeSweep(lx, ly, holdN, count, group, radius, outX, outY);
+  return count;
+}
+
+// E-43. The merge took each output ray's nearest hit on the sweep polygon by
+// testing every sweep edge: rays x edges raySegT calls, 512 x several hundred
+// for a light among many boxes. raySegT is finite only for a ray inside the
+// angle the edge subtends from the light, extended by raySegT's own 1e-4 slack
+// at both ends. So each edge is tested against the rays in that arc, padded by
+// ARC_PAD (rays are 2π/512 apart), and lowers their running minimum. An edge
+// whose arc is near a half turn passes by the light and is tested by every ray,
+// as is one whose arc is NaN. A minimum is the same in any order and every ray
+// left out would get Infinity, so the polygon is the full scan's, bit for bit.
+// A visibility polygon's edges tile the circle: the work is about rays + edges.
+// That includes the 32-gon placeholder of a light with only compound occluders,
+// which E-41 merged at three edges per ray: this is faster on it too.
+const ARC_PAD = 1e-6;
+const _rayAng = new Float64Array(POLAR_BINS);
+const _rayCos = new Float64Array(POLAR_BINS);
+const _raySin = new Float64Array(POLAR_BINS);
+const _rayBest = new Float64Array(POLAR_BINS);
+
+function firstRayAtOrAfter(n, a) {
+  let lo = 0;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (_rayAng[mid] < a) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function firstRayAfter(n, a) {
+  let lo = 0;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (_rayAng[mid] <= a) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function mergeSweep(lx, ly, n, count, group, radius, outX, outY) {
+  // Fewer than 3 vertices is no polygon: the bins alone.
+  const edges = n >= 3 ? n : 0;
+  if (edges > 0) {
     for (let k = 0; k < count; k++) {
       const b0 = k * group;
       const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
-      let d = _polarDist[b0];
-      for (let b = b0 + 1; b < b1; b++) {
-        if (_polarDist[b] < d) d = _polarDist[b];
-      }
       const m = b0 + b1;
-      const ang = -Math.PI + m * 0.5 * (TWO_PI / POLAR_BINS);
-      const c = _polarCos[m];
-      const s = _polarSin[m];
-      const sd = fullCircleDistAt(lx, ly, ang, c, s, _holdX, _holdY, radius);
-      if (sd < d) d = sd;
-      outX[k] = lx + c * d;
-      outY[k] = ly + s * d;
+      _rayAng[k] = -Math.PI + m * 0.5 * (TWO_PI / POLAR_BINS);
+      _rayCos[k] = _polarCos[m];
+      _raySin[k] = _polarSin[m];
+      _rayBest[k] = radius;
     }
-    return count;
+  }
+  const xs = _holdX;
+  const ys = _holdY;
+  for (let i = 0; i < edges; i++) {
+    const j = i + 1 < edges ? i + 1 : 0;
+    const ax = xs[i];
+    const ay = ys[i];
+    const bx = xs[j];
+    const by = ys[j];
+    const ex = bx - ax;
+    const ey = by - ay;
+    const fx = ax - lx;
+    const fy = ay - ly;
+    const a = Math.atan2(fy - 1e-4 * ey, fx - 1e-4 * ex);
+    let span = Math.atan2(fy + (1 + 1e-4) * ey, fx + (1 + 1e-4) * ex) - a;
+    if (span > Math.PI) span -= TWO_PI;
+    else if (span <= -Math.PI) span += TWO_PI;
+    // Rays [k0, k1), and [0, k2) when the arc wraps past ±π.
+    let k0 = 0;
+    let k1 = count;
+    let k2 = 0;
+    if (Math.abs(span) < Math.PI - 1e-3) {
+      const lo = (span >= 0 ? a : a + span) - ARC_PAD;
+      const hi = (span >= 0 ? a + span : a) + ARC_PAD;
+      if (lo < -Math.PI) {
+        k0 = firstRayAtOrAfter(count, lo + TWO_PI);
+        k2 = firstRayAfter(count, hi);
+      } else if (hi > Math.PI) {
+        k0 = firstRayAtOrAfter(count, lo);
+        k2 = firstRayAfter(count, hi - TWO_PI);
+      } else {
+        k0 = firstRayAtOrAfter(count, lo);
+        k1 = firstRayAfter(count, hi);
+      }
+    }
+    for (let k = k0; k < k1; k++) {
+      const t = raySegT(lx, ly, _rayCos[k], _raySin[k], ax, ay, bx, by);
+      if (t < _rayBest[k]) _rayBest[k] = t;
+    }
+    for (let k = 0; k < k2; k++) {
+      const t = raySegT(lx, ly, _rayCos[k], _raySin[k], ax, ay, bx, by);
+      if (t < _rayBest[k]) _rayBest[k] = t;
+    }
   }
   for (let k = 0; k < count; k++) {
     const b0 = k * group;
@@ -1017,17 +1051,11 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
     for (let b = b0 + 1; b < b1; b++) {
       if (_polarDist[b] < d) d = _polarDist[b];
     }
+    if (edges > 0 && _rayBest[k] < d) d = _rayBest[k];
     const m = b0 + b1;
-    const c = _polarCos[m];
-    const s = _polarSin[m];
-    if (holdN >= 3) {
-      const sd = sweepDistAt(lx, ly, c, s, _holdX, _holdY, holdN, radius);
-      if (sd < d) d = sd;
-    }
-    outX[k] = lx + c * d;
-    outY[k] = ly + s * d;
+    outX[k] = lx + _polarCos[m] * d;
+    outY[k] = ly + _polarSin[m] * d;
   }
-  return count;
 }
 
 /** Raster one world segment into the current polar buffer. For the kernel. */

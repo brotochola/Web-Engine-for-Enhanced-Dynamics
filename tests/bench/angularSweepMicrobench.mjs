@@ -110,8 +110,8 @@ assert.ok(polarN === POLAR_BINS, `polar polygon ${polarN}`);
 const polarChecksum = checksumFloats(polarX, polarN) ^ checksumFloats(polarY, polarN);
 
 // Review M5. A light with both regular and compound occluders merges its sweep
-// polygon into the polar bins: n > 0 runs sweepDistAt for every bin (E-43).
-// runPolar passes n = 0, so that loop was never timed.
+// polygon into the polar bins: n > 0 tests the sweep edges against the bins
+// (E-43). runPolar passes n = 0, so that loop was never timed.
 const sweepX = outX.slice(0, n);
 const sweepY = outY.slice(0, n);
 function runPolarMerge() {
@@ -128,9 +128,9 @@ const mergeChecksum = checksumFloats(polarX, mergeN) ^ checksumFloats(polarY, me
 assert.notEqual(mergeChecksum, polarChecksum, 'the sweep polygon must change the merged outline');
 
 // E-41. A light whose occluders are all compound bodies has no sweep occluder,
-// so its sweep polygon is buildFullCircle's 32-gon, and the merge ray-tests
-// that placeholder for every bin. Off-centre light; 512 bins, and 128 output
-// vertices (pre-render's default maxPolygonVertices, 4 bins per vertex).
+// so its sweep polygon is buildFullCircle's 32-gon, merged into every bin.
+// Off-centre light; 512 bins, and 128 output vertices (pre-render's default
+// maxPolygonVertices, 4 bins per vertex).
 const FC_LX = 37.5;
 const FC_LY = -12.25;
 const fcX = new Float32Array(MAX_VERTS);

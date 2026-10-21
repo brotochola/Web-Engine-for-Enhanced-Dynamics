@@ -11,10 +11,10 @@ import {
 import { mulberry32 } from '../bench/benchMath.js';
 
 // E-41. A light with only compound occluders sweeps nothing, so its sweep
-// polygon is the 32-segment placeholder circle, and the polar merge tests only
-// three of its edges per bin. The same circle starting one vertex later is the
-// same set of edges but not the placeholder, so it takes the full scan: both
-// must give the same polygon, bit for bit.
+// polygon is the 32-segment placeholder circle. E-41 merged it at three edges
+// per bin and anything else with the full scan; E-43's arc scatter now merges
+// both. The same circle starting one vertex later is the same set of edges, so
+// it must still give the same polygon, bit for bit.
 
 const empty = {
   kind: new Uint8Array(1), cx: new Float32Array(1), cy: new Float32Array(1), cr: new Float32Array(1),
