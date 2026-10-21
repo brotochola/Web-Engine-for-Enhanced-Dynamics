@@ -17,6 +17,8 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**14:28** — **`D:/xampp/htdocs/weed-ab` deleted**, as asked. It held 64 A/B baseline worktrees, each with a junction to this repo's `node_modules`. I unlinked every junction first, so the deletion couldn't reach the real `node_modules` (still intact), then removed the worktrees through git. Five experiment helpers from E-05, E-07 and E-17 that were in no commit are saved in my scratchpad. The A/B tools recreate that folder the next time one runs.
+
 **14:18** — **N-18 closed: the water bug was in the probe, not the engine** (`59d9cd6d`).
 E-70's cheap half turned out to be unsafe; its notes are updated.
 
