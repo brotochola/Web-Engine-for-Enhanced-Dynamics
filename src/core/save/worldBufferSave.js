@@ -14,6 +14,7 @@ import { NavGrid } from '../navGrid.js';
 import { SharedResource } from '../sharedResource.js';
 import { Time } from '../timeScale.js';
 import { Tween, TWEEN_KIND_ZOOM } from '../tween.js';
+import { TWEEN_RECORD_FIELDS, tweenFieldValue } from './tweenRecord.js';
 import { Transform } from '../../components/transform.js';
 import { entityIdNone } from '../../util/entityIdWidth.js';
 import { fnv1a32 } from './schemaHash.js';
@@ -293,24 +294,12 @@ export function packTweens() {
   for (let i = 0; i < n; i++) {
     // 1 = live. 2 is a claim still writing its fields (another worker): skip it.
     if (Tween.active[i] !== 1) continue;
-    out.push({
-      kind: Tween.kind[i] | 0,
-      ease: Tween.ease[i] | 0,
-      mask: Tween.mask[i] | 0,
-      entity: Tween.entity[i] | 0,
-      duration: Tween.duration[i],
-      elapsed: Tween.elapsed[i],
-      from0: Tween.from0[i],
-      to0: Tween.to0[i],
-      from1: Tween.from1[i],
-      to1: Tween.to1[i],
-      from2: Tween.from2[i],
-      to2: Tween.to2[i],
-      from3: Tween.from3[i],
-      to3: Tween.to3[i],
-      tintFrom: Tween.tintFrom[i] >>> 0,
-      tintTo: Tween.tintTo[i] >>> 0,
-    });
+    const rec = {};
+    for (let f = 0; f < TWEEN_RECORD_FIELDS.length; f++) {
+      const name = TWEEN_RECORD_FIELDS[f][0];
+      rec[name] = Tween[name][i];
+    }
+    out.push(rec);
   }
   return out.length ? out : null;
 }
@@ -363,22 +352,12 @@ export function applyTweens(slots, mapGet, restored) {
       console.warn('[SaveGame] tween restore dropped slots: pool is smaller than the save');
       return;
     }
-    Tween.kind[slot] = kind;
+    for (let f = 0; f < TWEEN_RECORD_FIELDS.length; f++) {
+      const name = TWEEN_RECORD_FIELDS[f][0];
+      Tween[name][slot] = tweenFieldValue(TWEEN_RECORD_FIELDS[f][1], rec[name]);
+    }
+    // The entity was remapped above.
     Tween.entity[slot] = entity;
-    Tween.ease[slot] = rec.ease | 0;
-    Tween.mask[slot] = rec.mask | 0;
-    Tween.duration[slot] = +rec.duration || 0;
-    Tween.elapsed[slot] = +rec.elapsed || 0;
-    Tween.from0[slot] = +rec.from0 || 0;
-    Tween.to0[slot] = +rec.to0 || 0;
-    Tween.from1[slot] = +rec.from1 || 0;
-    Tween.to1[slot] = +rec.to1 || 0;
-    Tween.from2[slot] = +rec.from2 || 0;
-    Tween.to2[slot] = +rec.to2 || 0;
-    Tween.from3[slot] = +rec.from3 || 0;
-    Tween.to3[slot] = +rec.to3 || 0;
-    Tween.tintFrom[slot] = rec.tintFrom >>> 0;
-    Tween.tintTo[slot] = rec.tintTo >>> 0;
     Atomics.store(Tween.active, slot, 1);
     slot++;
   }

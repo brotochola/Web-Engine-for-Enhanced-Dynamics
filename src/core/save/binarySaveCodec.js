@@ -1,6 +1,7 @@
 // Binary save body codec — sectioned little-endian payload (sole wire format).
 
 import { Layer } from '../layer.js';
+import { TWEEN_RECORD_FIELDS, tweenFieldValue } from './tweenRecord.js';
 
 export const SECTION = Object.freeze({
   META: 1,
@@ -768,22 +769,14 @@ function writeTweens(w, slots) {
   w.u32(list.length);
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
-    w.u8(rec.kind | 0);
-    w.u8(rec.ease | 0);
-    w.u8(rec.mask | 0);
-    w.u32(rec.entity >>> 0);
-    w.f32(+rec.duration || 0);
-    w.f32(+rec.elapsed || 0);
-    w.f32(+rec.from0 || 0);
-    w.f32(+rec.to0 || 0);
-    w.f32(+rec.from1 || 0);
-    w.f32(+rec.to1 || 0);
-    w.f32(+rec.from2 || 0);
-    w.f32(+rec.to2 || 0);
-    w.f32(+rec.from3 || 0);
-    w.f32(+rec.to3 || 0);
-    w.u32(rec.tintFrom >>> 0);
-    w.u32(rec.tintTo >>> 0);
+    for (let f = 0; f < TWEEN_RECORD_FIELDS.length; f++) {
+      const name = TWEEN_RECORD_FIELDS[f][0];
+      const type = TWEEN_RECORD_FIELDS[f][1];
+      const v = tweenFieldValue(type, rec[name]);
+      if (type === 'f32') w.f32(v);
+      else if (type === 'u32') w.u32(v);
+      else w.u8(v);
+    }
   }
 }
 
@@ -802,24 +795,15 @@ function readTweens(r, legacy) {
   const n = r.u32();
   const out = [];
   for (let i = 0; i < n; i++) {
-    out.push({
-      kind: r.u8(),
-      ease: r.u8(),
-      mask: r.u8(),
-      entity: legacy ? r.u16() : r.u32(),
-      duration: r.f32(),
-      elapsed: r.f32(),
-      from0: r.f32(),
-      to0: r.f32(),
-      from1: r.f32(),
-      to1: r.f32(),
-      from2: r.f32(),
-      to2: r.f32(),
-      from3: r.f32(),
-      to3: r.f32(),
-      tintFrom: r.u32(),
-      tintTo: r.u32(),
-    });
+    const rec = {};
+    for (let f = 0; f < TWEEN_RECORD_FIELDS.length; f++) {
+      const name = TWEEN_RECORD_FIELDS[f][0];
+      const type = TWEEN_RECORD_FIELDS[f][1];
+      if (type === 'f32') rec[name] = r.f32();
+      else if (type === 'u32') rec[name] = legacy && name === 'entity' ? r.u16() : r.u32();
+      else rec[name] = r.u8();
+    }
+    out.push(rec);
   }
   return out;
 }
