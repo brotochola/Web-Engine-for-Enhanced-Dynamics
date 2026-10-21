@@ -146,6 +146,12 @@ A speed keep on a move requires all of the following:
 
 The worker that receives the work may get slower. Scoring that rise as a loss forbids the move even when the frame’s bottleneck fell. The old “no primary worker may be 3 percent worse” rule still applies to workers that were not supposed to change.
 
+## Merging copies inside hot loops
+
+A refactor that merges duplicated code is a hygiene change, but inside a per-point or per-entity loop it can change what V8 generates. Review R8 (2026-10-20, the splat packers, 4096 points): moving the per-pass setup of three packers into one shared helper cost the loops 10 to 30 percent; a loop-invariant `if (turned)` inside one loop cost 21.6 percent even with the other branch untouched (the extra values stay live and spill). Dispatching the rare case to its own copied function kept the common path at +0.7 percent.
+
+So before merging copies inside a hot loop, time HEAD against the tree in one process (load both trees' modules, alternate, compare medians; identical code reads within 1 percent) or run `kernelAb.mjs`. When the merge costs more than the copies are worth, keep the copies and add a test that ties them together.
+
 ## More than one worker of the same kind
 
 When more than one pre-render worker (or more than one logic or spatial worker) runs the changed code, the primary is the **maximum** `STEP_MS` across those workers. The average hides a worker that fell behind.

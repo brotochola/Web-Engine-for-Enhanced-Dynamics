@@ -17,9 +17,30 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**23:15** — Phase 4: R3–R7 done. Next: R8 (lighting copies).
+**23:35** — Phase 4: R8 partly done (one bug fixed, one finding about merging). Next: R9.
 
 ## Log
+
+### 23:35 — R8: a lighting bug, and a measured reason not to merge some copies (`b0da4084`, `dc10142b`, `213492d0`)
+
+- **N-27, fixed** (`b0da4084`): with a turned camera, light from lit LiquidFun water was drawn in
+  the wrong place, because this light packer didn't turn with the camera. The other two packers
+  did. A test now checks that both kinds of light land on the same pixels.
+- **What I learned while merging the three light packers:** the merged version ran 10–30 %
+  slower. Even a single `if (turned)` inside the loop cost 21 %, because JavaScript's optimizer
+  copes worse with the extra values. So the copies stay, tied together by the test. A turned
+  camera uses its own copy of the loop, and the normal path is as fast as before (+0.7 %). This
+  is now a rule in HOW_WE_MEASURE: before merging copies inside a hot loop, time it.
+- **Zenithal height** (`dc10142b`): pre-render and the renderer read this setting differently. A
+  value of 0 made pre-render divide by zero (zenithal particles at infinite size, fully faded).
+  It's one rule now.
+- **Renderer setup** (`213492d0`): the two light-splat creators and draw steps are one each. They
+  run once per frame, not per point. Checked headless on the terrain demo with the laser: no
+  errors, and the lights draw.
+- **Not done, and why:** the other four lighting copies are inside per-light or per-ray loops. Each
+  needs the same kind of timing first.
+
+Suite: 1357/1357.
 
 ### 23:15 — R7: four copies, two of which had drifted (`c9de5973`, `56bc7066`, `93294af4`)
 
