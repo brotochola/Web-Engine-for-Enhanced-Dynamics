@@ -19,6 +19,19 @@ An entity is included in a save only if:
 
 1. Its class (or an ancestor) has `static serializable === true`
 2. It is active (`Transform.active[i] === 1` / type active list)
+3. Its class has no `static shouldSaveEntity(entityIndex)`, or that returns true for it
+
+`shouldSaveEntity` is for a class whose entities are only partly worth saving. The terrain
+demos save their loose, dynamic chunks and rebuild the static rock from the saved grid:
+
+```javascript
+export class TerrainIsland extends GameObject {
+  static serializable = true;
+  static shouldSaveEntity(entityIndex) {
+    return RigidBody.static[entityIndex] !== 1;
+  }
+}
+```
 
 Per entity, the snapshot packs SoA component fields (plus Transform pose and RigidBody velocity/sleeping from Box2D HEAP views). JS-only FSM locals that are not in an `ARRAY_SCHEMA` are not saved.
 

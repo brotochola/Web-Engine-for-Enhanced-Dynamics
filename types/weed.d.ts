@@ -1001,6 +1001,10 @@ export declare class GameObject {
    */
   static tickAll?(list: ArrayLike<number>, count: number, dtRatio: number): void;
   static typeHasTickAll(EntityClass?: typeof GameObject): boolean;
+  /** Save this class's active entities (or an ancestor's flag). See docs/guide/SAVE_GAME.md. */
+  static serializable?: boolean;
+  /** Optional per-entity filter on a serializable class: false leaves that entity out of a save. */
+  static shouldSaveEntity?(entityIndex: number): boolean;
   /**
    * Particle worker fills RigidBody.speed for this entityType when true.
    * Scene gate skips the hypot loop if no registered type opts in.

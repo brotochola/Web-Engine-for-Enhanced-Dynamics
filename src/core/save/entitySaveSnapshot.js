@@ -226,9 +226,11 @@ export function collectSerializableEntities(scene) {
     const active = EntityClass.getAllActive?.();
     if (!active || active.length === 0) continue;
 
+    const filter = typeof EntityClass.shouldSaveEntity === 'function' ? EntityClass : null;
     for (let a = 0; a < active.length; a++) {
       const entityIndex = active[a];
       if (Transform.active && Transform.active[entityIndex] !== 1) continue;
+      if (filter && !filter.shouldSaveEntity(entityIndex)) continue;
       records.push({
         typeName,
         entityIndex,
@@ -461,5 +463,8 @@ export function shouldSaveEntity(EntityClass, entityIndex, transformLike = Trans
   if (!isEntityClassSerializable(EntityClass)) return false;
   const active = transformLike.active;
   if (active && active[entityIndex] !== 1) return false;
+  // Optional per-entity filter on a serializable class (N-5: terrain saves its
+  // loose chunks and rebuilds its static rock from the grid).
+  if (typeof EntityClass.shouldSaveEntity === 'function' && !EntityClass.shouldSaveEntity(entityIndex)) return false;
   return true;
 }

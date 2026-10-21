@@ -80,6 +80,19 @@ test('shouldSaveEntity requires serializable + active', () => {
   assert.equal(shouldSaveEntity(OtherEntity, 1, { active }), false);
 });
 
+test('a serializable class can leave some of its entities out of a save (N-5)', () => {
+  class Chunk {
+    static serializable = true;
+    static shouldSaveEntity(i) {
+      return i !== 1;
+    }
+  }
+  const active = new Uint8Array([1, 1, 1]);
+  assert.equal(shouldSaveEntity(Chunk, 0, { active }), true);
+  assert.equal(shouldSaveEntity(Chunk, 1, { active }), false);
+  assert.equal(shouldSaveEntity(Chunk, 2, { active }), true);
+});
+
 test('SAVE_FORMAT_VERSION is 5', () => {
   assert.equal(SAVE_FORMAT_VERSION, 5);
 });
