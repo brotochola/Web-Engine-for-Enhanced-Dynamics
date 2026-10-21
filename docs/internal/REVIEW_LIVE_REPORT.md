@@ -17,10 +17,37 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**21:46** — Phase 4 started. R3 (one helper for the six sync-query slots) is next, then the
-E-56 fix it enables.
+**22:58** — R3, N-24/E-56 and N-25 done. Next: the rest of Phase 4 (R4 onward).
 
 ## Log
+
+### 22:58 — Sync queries: one helper, a frame-long wait fixed, a two-worker hang fixed (`759ca67a`, `ffb8e725`, `cf159be9`, `941b29b1`)
+
+- **R3, one helper for the six sync-query slots** (`759ca67a`): QueryAABB, overlapCircle,
+  closest ray, castRayAll and the two LiquidFun queries each had their own copy of the same
+  slot code: claim, wait, async wait, burst. That's 281 fewer lines now. Measured on the ray
+  scene: a tie (physics −0.2 %, logic −0.1 %). The next two fixes each landed in one place
+  because of it.
+- **N-24 / E-56, the frame-long wait** (`ffb8e725`, then `941b29b1`): physics now answers
+  every sync-query kind as soon as a request lands, not only at one point in its step. A new
+  physics stat, `QueryWake`, shows that time; it sits outside `STEP_MS`.
+  - Box2D ray batch scene: **logic 16.6 ms → 2.9 ms per frame (−82 %, 4 of 4 pairs)**.
+    Physics does the same work at a different time (a tie). This is the one result that meets
+    every rule in HOW_WE_MEASURE.
+  - Eight single casts per tick: logic −78 %, and it no longer swings between 0.2 ms and 3 ms
+    with frame timing. That's screening only: these numbers are under the protocol's floors.
+  - Balls (no sync queries): a tie.
+  - What I took back: my first version also cut physics' 2 ms wait at the end of each burst.
+    That gave −70 % physics at light use but cost logic 30–50 % on long streams of casts. That
+    part was reverted in `941b29b1` and is now its own hypothesis, E-57.
+- **N-25, a hang with two logic workers** (`cf159be9`): every slot change woke only one waiter.
+  With two logic workers casting on the same query kind, the wake could go to the wrong one;
+  then neither ever woke again. This predates the review. A two-thread test reproduces it on
+  the old code; now every change wakes every waiter.
+- **N-26, your call**: five files have mixed line endings, as on `main`. A `.gitattributes`
+  would fix it for good, but it rewrites every CRLF file in one commit.
+
+Suite: 1349/1349.
 
 ### 21:46 — Two engine bugs in the sync queries; one costs a whole frame (`5092c48a`, `4162b0ca`)
 

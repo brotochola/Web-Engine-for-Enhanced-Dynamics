@@ -1014,7 +1014,24 @@ headed trace of the physics pthreads shows `_emscripten_get_now` frames above ~1
 would be a runtime switch in the C timer that returns 0 while detailed stats are off (the
 engine reads `b2Profile` through `get_profile_byte_offset` for its physics sub-timers).
 
-### E-56 Wake physics for every sync query kind, not only QueryAABB — **not-started**
+### E-56 Wake physics for every sync query kind, not only QueryAABB — **kept (batch regime); screened elsewhere**
+**Result (2026-10-20, `ffb8e725` then `941b29b1`):** every kind arms the wake; the host
+answers all kinds when one fires (`QUERY_WAKE_MS`, outside `STEP_MS`); bursts the wake
+starts end on a ~0.1 ms spin, bursts in the step keep the old spin + 2 ms sleep. Headless,
+`--src`, stats off, A = `e7393e27`:
+- **Batch scene, 4 pairs: logic0 16.6 → 2.9–3.4 ms (−82 %, 4/4).** Baseline over the 8 ms
+  floor: the one protocol-valid verdict. Physics `STEP_MS` −88 % is the batch moving into
+  the wake; `STEP_MS + QUERY_WAKE_MS` −1.4 % (2/4), a tie (and under the 3 ms floor).
+- 8 single casts per tick, 4 pairs: logic0 −78 % (3/4; 0.37–0.44 ms every run against
+  0.23–3.2 ms with frame phase), physics busy +4.9 % (2/4). Under the floors: screening.
+- 1536 per tick: the old code answers 1024 per burst and the rest a frame later (logic
+  18–24 ms); with the wake 6.2–6.4 ms (−71 %, 3/3), physics busy +28 % because it answers
+  all 1536 every frame. Load does not match.
+- Balls (no sync queries), 3 pairs: physics −0.33 % (1/3), the wake never fires. Tie.
+- First version (`ffb8e725`, every burst on the short spin): 8 casts physics busy −70 %
+  (8/8), logic −73 % (6/8), but 384 casts logic +31 % to +50 % (three tail lengths). That
+  part was taken back in `941b29b1`; it is E-57.
+
 Found in review N-24. Only QueryAABB arms `Atomics.waitAsync` on its slot between physics
 steps; overlapCircle, closest ray (single and batch), castRayAll, LiquidFun query and
 extract are serviced only in `doStep`, so a request posted after that point waits a whole
@@ -1029,6 +1046,18 @@ that measured +835 % physics step (2026-09-15).
 Also check the existing burst tail itself: after servicing ≥ 1 single cast, `waitForNextRequest`
 spins 100k loads and then waits up to 2 ms inside `doStep`. No scene in the repo issues
 single sync casts, so it was never measured; the single-cast variant measures it.
+
+### E-57 A shorter in-step burst tail for light sync-query use — **not-started**
+From E-56. After the last request of a burst, the step spins ~0.45 ms and sleeps up to
+2 ms for one more: on 8 single casts per tick that tail was 1.54 of 1.78 ms of physics
+step. Cutting it to a 0.1 ms spin everywhere gave physics busy −70 % there, but broke a
+384-cast stream into many bursts (logic +31 % to +50 %): the sleep is what keeps a stream
+together across a descheduled caller. Candidates: scale the sleep with the burst's own
+request count or gap history; or end the burst on the spin and let the wake take the
+rest only after N short bursts. **Primary:** physics `STEP_MS + QUERY_WAKE_MS` and logic0
+at matched load (count casts answered per frame: the 1536 scene shows the old cap of 1024
+changes the load), with a load knob that puts the baseline over the floors without
+saturating logic's frame. Not a gameplay win until some scene issues sync single casts.
 
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
