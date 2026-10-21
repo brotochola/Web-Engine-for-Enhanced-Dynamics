@@ -114,13 +114,15 @@ function collectCase(label, body, entity) {
   const pass = () => {
     for (const [lx, ly] of lights) {
       clearPolarBins(R);
-      sink += collectSolidSegments(solid, 0, 0, 1, 0, 0, 0, lx, ly, R * R);
+      // The last argument is the owner id the won bins record (N-19); pre-render
+      // passes the entity. Before N-19 the extra argument is ignored.
+      sink += collectSolidSegments(solid, 0, 0, 1, 0, 0, 0, lx, ly, R * R, 7);
     }
   };
   let checksum = 0;
   for (const [lx, ly] of lights) {
     clearPolarBins(R);
-    collectSolidSegments(solid, 0, 0, 1, 0, 0, 0, lx, ly, R * R);
+    collectSolidSegments(solid, 0, 0, 1, 0, 0, 0, lx, ly, R * R, 7);
     const m = clipVisibilityToPolar(lx, ly, outX, outY, 0, outX, outY, POLAR_BINS);
     checksum = (checksum ^ checksumFloats(outX, m) ^ checksumFloats(outY, m)) >>> 0;
   }
