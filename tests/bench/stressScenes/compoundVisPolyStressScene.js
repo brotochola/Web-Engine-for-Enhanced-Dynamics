@@ -12,6 +12,26 @@ const { Scene, Camera } = WEED;
 const SEED = 0xc0ffee;
 export const ISLANDS = 40;
 export const LIGHTS = 24;
+
+/**
+ * `?remeshEvery=N`: island 0 re-applies its own polygons every N ticks. That
+ * bumps the pool-wide fixture revision, so every lit compound rebuilds its
+ * outline the next frame, as when the terrain laser remeshes one island
+ * (review G1, E-58). 0 (default) never remeshes.
+ */
+export const REMESH_EVERY = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('remeshEvery');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+})();
+
+export const stressSceneConfig = {
+  requested: { remeshEvery: REMESH_EVERY },
+};
 const TRIS = 36;
 const WORLD_W = 2400;
 const WORLD_H = 2400;
@@ -88,6 +108,7 @@ export class CompoundVisPolyStressScene extends Scene {
         vx: Math.cos(dir) * speed,
         vy: Math.sin(dir) * speed,
         spin: (rng() - 0.5) * 1.2,
+        remeshEvery: i === 0 ? REMESH_EVERY : 0,
       });
     }
     for (let i = 0; i < LIGHTS; i++) {

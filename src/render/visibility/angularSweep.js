@@ -585,7 +585,6 @@ export function writePolygonVerts(
 const FIXTURE_NONE = 0xffff;
 const EDGE_QUANT = 1000;
 const _solids = [];
-const _edgeMap = new Map();
 
 function growFloats(arr, needed) {
   if (arr.length >= needed) return arr;
@@ -596,9 +595,82 @@ function growFloats(arr, needed) {
   return next;
 }
 
-function edgeKey(ax, ay, bx, by) {
-  if (bx < ax || (bx === ax && by < ay)) return `${bx},${by},${ax},${ay}`;
-  return `${ax},${ay},${bx},${by}`;
+// Edge table, reused by every rebuild: open addressing on the quantized ends,
+// edge ids in first-seen order so the outline comes out in the order a Map
+// keyed by strings gave. That Map made a string and an object per edge on
+// every rebuild (review G1).
+const EDGE_TABLE_START = 256;
+let _edgeQ = new Float64Array(EDGE_TABLE_START * 4); // edge id -> quantized ends, canonical order
+let _edgeN = new Uint32Array(EDGE_TABLE_START); // edge id -> times seen
+let _edgeXY = new Float32Array(EDGE_TABLE_START * 4); // edge id -> first-seen ends
+let _edgeSlot = new Int32Array(EDGE_TABLE_START * 2).fill(-1); // slot -> edge id, -1 empty
+let _edgeMask = EDGE_TABLE_START * 2 - 1;
+let _edgeCount = 0;
+
+function edgeHash(ax, ay, bx, by) {
+  let h = Math.imul(ax | 0, 0x9e3779b1) ^ Math.imul(ay | 0, 0x85ebca77)
+    ^ Math.imul(bx | 0, 0xc2b2ae3d) ^ Math.imul(by | 0, 0x27d4eb2f);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x2c1b3c6d);
+  return (h ^ (h >>> 12)) & _edgeMask;
+}
+
+function edgeTableClear() {
+  if (_edgeCount > 0) _edgeSlot.fill(-1);
+  _edgeCount = 0;
+}
+
+/** Twice the edges, rehashed; the table stays at most half full. */
+function edgeTableGrow() {
+  const n = _edgeN.length * 2;
+  const q = new Float64Array(n * 4);
+  q.set(_edgeQ);
+  const seen = new Uint32Array(n);
+  seen.set(_edgeN);
+  const xy = new Float32Array(n * 4);
+  xy.set(_edgeXY);
+  _edgeQ = q;
+  _edgeN = seen;
+  _edgeXY = xy;
+  _edgeSlot = new Int32Array(n * 2).fill(-1);
+  _edgeMask = n * 2 - 1;
+  for (let id = 0; id < _edgeCount; id++) {
+    const o = id * 4;
+    let slot = edgeHash(q[o], q[o + 1], q[o + 2], q[o + 3]);
+    while (_edgeSlot[slot] >= 0) slot = (slot + 1) & _edgeMask;
+    _edgeSlot[slot] = id;
+  }
+}
+
+/**
+ * Count one edge by its quantized ends, in canonical order, and return its id.
+ * A new edge gets id === the count before the call; the caller stores its
+ * float ends then. Only integers cross the call, so nothing is boxed when it
+ * is not inlined.
+ */
+function edgeCount(qax, qay, qbx, qby) {
+  if (_edgeCount === _edgeN.length) edgeTableGrow();
+  const q = _edgeQ;
+  let slot = edgeHash(qax, qay, qbx, qby);
+  for (;;) {
+    const id = _edgeSlot[slot];
+    if (id < 0) break;
+    const o = id * 4;
+    if (q[o] === qax && q[o + 1] === qay && q[o + 2] === qbx && q[o + 3] === qby) {
+      _edgeN[id]++;
+      return id;
+    }
+    slot = (slot + 1) & _edgeMask;
+  }
+  const id = _edgeCount++;
+  const o = id * 4;
+  q[o] = qax;
+  q[o + 1] = qay;
+  q[o + 2] = qbx;
+  q[o + 3] = qby;
+  _edgeN[id] = 1;
+  _edgeSlot[slot] = id;
+  return id;
 }
 
 /**
@@ -629,7 +701,7 @@ export function ensureCompoundSolid(
   }
   solid.segCount = 0;
   solid.fillVerts = 0;
-  _edgeMap.clear();
+  edgeTableClear();
   if (head && next && active && vertX && vertY && headIdx != null && headIdx !== FIXTURE_NONE) {
     let cur = headIdx;
     let guard = 0;
@@ -668,10 +740,16 @@ export function ensureCompoundSolid(
             const ibx = Math.round(bx * EDGE_QUANT);
             const iby = Math.round(by * EDGE_QUANT);
             if (iax === ibx && iay === iby) continue;
-            const key = edgeKey(iax, iay, ibx, iby);
-            const prev = _edgeMap.get(key);
-            if (prev) prev.n++;
-            else _edgeMap.set(key, { n: 1, x0: ax, y0: ay, x1: bx, y1: by });
+            const swap = ibx < iax || (ibx === iax && iby < iay);
+            const fresh = _edgeCount;
+            const id = edgeCount(swap ? ibx : iax, swap ? iby : iay, swap ? iax : ibx, swap ? iay : iby);
+            if (id === fresh) {
+              const e = id * 4;
+              _edgeXY[e] = ax;
+              _edgeXY[e + 1] = ay;
+              _edgeXY[e + 2] = bx;
+              _edgeXY[e + 3] = by;
+            }
           }
         }
       }
@@ -679,14 +757,15 @@ export function ensureCompoundSolid(
     }
     solid.fillVerts = fillN;
     let segN = 0;
-    for (const edge of _edgeMap.values()) {
-      if (edge.n !== 1) continue;
+    for (let id = 0; id < _edgeCount; id++) {
+      if (_edgeN[id] !== 1) continue;
       solid.seg = growFloats(solid.seg, (segN + 1) * 4);
       const o = segN * 4;
-      solid.seg[o] = edge.x0;
-      solid.seg[o + 1] = edge.y0;
-      solid.seg[o + 2] = edge.x1;
-      solid.seg[o + 3] = edge.y1;
+      const e = id * 4;
+      solid.seg[o] = _edgeXY[e];
+      solid.seg[o + 1] = _edgeXY[e + 1];
+      solid.seg[o + 2] = _edgeXY[e + 2];
+      solid.seg[o + 3] = _edgeXY[e + 3];
       segN++;
     }
     solid.segCount = segN;

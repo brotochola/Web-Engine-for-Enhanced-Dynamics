@@ -48,6 +48,7 @@ export class CompoundVisIsland extends GameObject {
     vx = 0,
     vy = 0,
     spin = 0,
+    remeshEvery = 0,
   } = {}) {
     this.x = x;
     this.y = y;
@@ -62,6 +63,9 @@ export class CompoundVisIsland extends GameObject {
       this.despawn();
       return;
     }
+    this._polys = polys;
+    this._remeshEvery = remeshEvery | 0;
+    this._remeshTick = 0;
     this.lightOccluder.active = 1;
     this.lightOccluder.block = 1;
     this.setVelocity(vx, vy);
@@ -77,5 +81,10 @@ export class CompoundVisIsland extends GameObject {
     if ((this.y < 160 && vy < 0) || (this.y > WORLD_H - 160 && vy > 0)) vy = -vy;
     RigidBody.vx[i] = vx;
     RigidBody.vy[i] = vy;
+    // Same polygons: only the fixture revision moves (see the scene's remeshEvery).
+    if (this._remeshEvery > 0 && ++this._remeshTick >= this._remeshEvery) {
+      this._remeshTick = 0;
+      this.collider.replacePolygons(this._polys);
+    }
   }
 }
