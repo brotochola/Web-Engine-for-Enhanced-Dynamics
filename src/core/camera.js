@@ -46,7 +46,7 @@ export function deadzoneCenter(entityX, entityY, centerX, centerY, halfW, halfH,
  * Camera data is stored in a SharedArrayBuffer Float32Array[17]:
  * [zoom, x, y, followTargetX, followTargetY, targetZoom,
  *  followEntityIndex, followUsedX, followUsedY, rotation,
- *  deadzoneHalfW, deadzoneHalfH, shakeAmp, shakeDur, shakeElapsed, shakePhase,
+ *  deadzoneHalfW, deadzoneHalfH, shakeAmp, shakeDur, shakeGen, (unused),
  *  followSeq (Int32 seqlock, not a float)]
  *
  * followEntityIndex is 0 = none, else entityIndex+1 (0 is a valid entity).
@@ -79,7 +79,9 @@ export class Camera {
   static IDX_DEADZONE_Y = 11;
   static IDX_SHAKE_AMP = 12;
   static IDX_SHAKE_DUR = 13;
-  static IDX_SHAKE_ELAPSED = 14;
+  /** Bumped by shake(), after amp and dur. Was the elapsed time before N-14. */
+  static IDX_SHAKE_GEN = 14;
+  /** Unused since N-14 (was the phase); kept so the layout does not move. */
   static IDX_SHAKE_PHASE = 15;
   /** Int32 seqlock guarding followEntity/followTarget/followUsed writes. */
   static IDX_FOLLOW_SEQ = 16;
@@ -105,6 +107,10 @@ export class Camera {
   static _alignCamScratch = { x: 0, y: 0 };
   static _deadzoneScratch = { x: 0, y: 0 };
   static _shakeScratch = { x: 0, y: 0 };
+  // N-14: the reader's own clock for the current shake (advanceShake's worker).
+  static _shakeSeenGen = 0;
+  static _shakeElapsed = Infinity; // a double from the start: it holds fractions
+  static _shakePhase = 1;
   static _worldToScreenScratch = { x: 0, y: 0 };
   static _screenToWorldScratch = { x: 0, y: 0 };
   static _isOnScreenScratch = { x: 0, y: 0 };
@@ -188,6 +194,11 @@ export class Camera {
     this._followSnap.zoom = (data && data[this.IDX_ZOOM]) || 1;
     this._followSnap.camX = data ? data[this.IDX_X] || 0 : 0;
     this._followSnap.camY = data ? data[this.IDX_Y] || 0 : 0;
+    // A shake already in the buffer is not this reader's to play (it may have
+    // ended long ago: nothing zeroes it any more).
+    this._shakeSeenGen = data && data.length > this.IDX_SHAKE_GEN ? data[this.IDX_SHAKE_GEN] : 0;
+    this._shakeElapsed = Infinity;
+    this._shakePhase = 1;
     if (this._data && this._data.length > this.IDX_TARGET_ZOOM) {
       // Keep buffer fields in a valid state for readers across workers.
       this._data[this.IDX_TARGET_ZOOM] = this._data[this.IDX_TARGET_ZOOM] > 0
@@ -911,16 +922,18 @@ export class Camera {
    */
   static shake(amplitude, durationMs) {
     const data = this._data;
-    if (!data || data.length <= this.IDX_SHAKE_PHASE) return;
+    if (!data || data.length <= this.IDX_SHAKE_GEN) return;
     data[this.IDX_SHAKE_AMP] = amplitude > 0 ? amplitude : 0;
     data[this.IDX_SHAKE_DUR] = durationMs > 0 ? durationMs : 0;
-    data[this.IDX_SHAKE_ELAPSED] = 0;
-    data[this.IDX_SHAKE_PHASE] = 1;
+    // N-14: the only writer. The generation goes last (exact in a float32 up
+    // to 2^24); the reader restarts its clock when it changes.
+    data[this.IDX_SHAKE_GEN] = (data[this.IDX_SHAKE_GEN] + 1) % 16777216;
   }
 
   /**
    * Decay the punch by sim milliseconds and return this frame's offset.
-   * Zero sim time holds the offset (hitstop).
+   * Zero sim time holds the offset (hitstop). Reads the shared fields and keeps
+   * the elapsed time and phase itself (N-14: a shake() is never overwritten).
    * @param {number} simMs
    * @param {{x: number, y: number}} [out]
    * @returns {{x: number, y: number}}
@@ -930,21 +943,26 @@ export class Camera {
     dest.x = 0;
     dest.y = 0;
     const data = this._data;
-    if (!data || data.length <= this.IDX_SHAKE_PHASE) return dest;
+    if (!data || data.length <= this.IDX_SHAKE_GEN) return dest;
+    const gen = data[this.IDX_SHAKE_GEN];
+    if (gen !== this._shakeSeenGen) {
+      this._shakeSeenGen = gen;
+      this._shakeElapsed = 0;
+      this._shakePhase = 1;
+    }
     const amp = data[this.IDX_SHAKE_AMP];
     const dur = data[this.IDX_SHAKE_DUR];
-    if (!(amp > 0) || !(dur > 0)) return dest;
+    if (!(amp > 0) || !(dur > 0) || this._shakeElapsed >= dur) return dest;
     const step = simMs > 0 ? simMs : 0;
-    const elapsed = data[this.IDX_SHAKE_ELAPSED] + step;
+    const elapsed = this._shakeElapsed + step;
     if (elapsed >= dur) {
-      data[this.IDX_SHAKE_ELAPSED] = dur;
-      data[this.IDX_SHAKE_AMP] = 0;
+      this._shakeElapsed = dur;
       return dest;
     }
-    data[this.IDX_SHAKE_ELAPSED] = elapsed;
-    if (step > 0) data[this.IDX_SHAKE_PHASE] = data[this.IDX_SHAKE_PHASE] > 0 ? -1 : 1;
+    this._shakeElapsed = elapsed;
+    if (step > 0) this._shakePhase = -this._shakePhase;
     const mag = amp * (1 - elapsed / dur);
-    const phase = data[this.IDX_SHAKE_PHASE] || 1;
+    const phase = this._shakePhase;
     dest.x = phase * mag;
     dest.y = phase * mag * -0.5;
     return dest;

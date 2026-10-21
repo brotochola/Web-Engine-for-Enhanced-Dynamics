@@ -80,6 +80,38 @@ test('shake decays on sim time and holds during a hitstop step', () => {
   assert.equal(Camera.advanceShake(16).x, 0);
 });
 
+// N-14. Logic's shake() and pre-render's advanceShake both wrote the shake
+// fields, so a shake() landing between advanceShake's read and its write was
+// shortened (elapsed overwritten) or dropped (amp zeroed). Pre-render now only
+// reads: it keeps the elapsed time itself and restarts on a new shake().
+test('advanceShake never writes the shared camera data; only shake() does', () => {
+  const data = setupCamera();
+  Camera.shake(10, 100);
+  const before = Float32Array.from(data);
+  Camera.advanceShake(30);
+  Camera.advanceShake(30);
+  Camera.advanceShake(80);
+  assert.deepEqual(Array.from(data), Array.from(before));
+});
+
+test('a shake() during a punch restarts at its own full amplitude', () => {
+  setupCamera();
+  Camera.shake(10, 100);
+  Camera.advanceShake(60);
+  Camera.shake(8, 40);
+  assert.equal(Camera.advanceShake(0).x, 8);
+  assert.equal(Camera.advanceShake(20).x, -4);
+  assert.equal(Camera.advanceShake(20).x, 0);
+});
+
+test('a worker that starts after a shake ended does not replay it', () => {
+  const data = setupCamera();
+  Camera.shake(10, 100);
+  Camera.advanceShake(200);
+  Camera.initialize(data, 800, 600);
+  assert.equal(Camera.advanceShake(16).x, 0);
+});
+
 test('deadzone rotates with Camera.rotation into screen space', () => {
   setupCamera();
   Camera.setDeadzone(80, 60);
