@@ -886,20 +886,9 @@ export class GameObject {
   }
 
   set radius(value) {
-    if (!this._hasComponents.Collider) return;
-    // Delegate so Collider radius setter can set ShapeType.Circle
-    if (this.collider) {
-      this.collider.radius = value;
-      return;
-    }
-    Collider.radius[this.index] = value;
-    const shape = Collider.shapeType[this.index];
-    if (value > 0 && shape !== ShapeType.Chain && shape !== ShapeType.Polygon) {
-      Collider.shapeType[this.index] = ShapeType.Circle;
-    }
-    if (this._hasComponents.RigidBody) {
-      RigidBody.syncMassFromCollider(this.index);
-    }
+    // The Collider setter owns the rule: circle shape, mass sync, body dirty.
+    // (A copy here had lost the dirty mark; the accessor always exists once bound.)
+    if (this._hasComponents.Collider) this.collider.radius = value;
   }
 
   /** Collider width - also syncs RigidBody mass from collider geometry */
@@ -908,22 +897,7 @@ export class GameObject {
     return Collider.width[this.index];
   }
   set width(value) {
-    if (!this._hasComponents.Collider) return;
-    if (this.collider) {
-      this.collider.width = value;
-      return;
-    }
-    Collider.width[this.index] = value;
-    if (
-      value > 0 &&
-      Collider.shapeType[this.index] !== ShapeType.Polygon &&
-      Collider.shapeType[this.index] !== ShapeType.Chain
-    ) {
-      Collider.shapeType[this.index] = ShapeType.Box;
-    }
-    if (this._hasComponents.RigidBody) {
-      RigidBody.syncMassFromCollider(this.index);
-    }
+    if (this._hasComponents.Collider) this.collider.width = value;
   }
 
   /** Collider height - also syncs RigidBody mass from collider geometry */
@@ -932,22 +906,7 @@ export class GameObject {
     return Collider.height[this.index];
   }
   set height(value) {
-    if (!this._hasComponents.Collider) return;
-    if (this.collider) {
-      this.collider.height = value;
-      return;
-    }
-    Collider.height[this.index] = value;
-    if (
-      value > 0 &&
-      Collider.shapeType[this.index] !== ShapeType.Polygon &&
-      Collider.shapeType[this.index] !== ShapeType.Chain
-    ) {
-      Collider.shapeType[this.index] = ShapeType.Box;
-    }
-    if (this._hasComponents.RigidBody) {
-      RigidBody.syncMassFromCollider(this.index);
-    }
+    if (this._hasComponents.Collider) this.collider.height = value;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1920,6 +1879,48 @@ export class GameObject {
     MeshGeometry.clearEntity(i);
   }
 
+  /**
+   * Every component's active flag off, and the per-slot state a recycled slot
+   * must not show: a sprite collect→emit would draw, a light, a flash. despawn
+   * and despawnAll both call this after _releaseSlotResources (they had each
+   * kept their own copy). Arrays a realm does not bind are skipped.
+   * @param {number} i
+   */
+  static _deactivateSlotComponents(i) {
+    Transform.active[i] = 0;
+    if (RigidBody.active) RigidBody.active[i] = 0;
+    // HEAP slot hygiene — destroy is markBodyDirty. Do not setAwake.
+    if (RigidBody.sleeping) RigidBody.sleeping[i] = 0;
+    if (Collider.active) Collider.active[i] = 0;
+    if (SpriteRenderer.active) {
+      SpriteRenderer.active[i] = 0;
+      SpriteRenderer.renderVisible[i] = 0;
+      SpriteRenderer.spritesheetId[i] = 0;
+      SpriteRenderer.animationState[i] = -1;
+    }
+    if (MeshRenderer.active) MeshRenderer.active[i] = 0;
+    if (AdobeAnimComponent.active) AdobeAnimComponent.active[i] = 0;
+    if (LightEmitter.active) {
+      LightEmitter.active[i] = 0;
+      LightEmitter.lightColor[i] = 0xffffff;
+      LightEmitter.lightIntensity[i] = 0;
+      LightEmitter.sqrtLightIntensity[i] = 0;
+      LightEmitter.height[i] = 0;
+      LightEmitter.glowHeightOffset[i] = 0;
+      LightEmitter.hasGlowSprite[i] = 0.5;
+      LightEmitter.layerIdOfGlowSprite[i] = 0;
+    }
+    if (ShadowCaster.active) ShadowCaster.active[i] = 0;
+    if (FlashComponent.active) {
+      FlashComponent.active[i] = 0;
+      FlashComponent.lifespan[i] = 0;
+      FlashComponent.currentLife[i] = 0;
+      FlashComponent.initialIntensity[i] = 0;
+      FlashComponent.castShadows[i] = 0;
+    }
+    if (LightOccluder.active) LightOccluder.active[i] = 0;
+  }
+
   despawn() {
     const i = this.index;
     const activeState = Transform.active[i];
@@ -1945,46 +1946,7 @@ export class GameObject {
     }
 
     GameObject._releaseSlotResources(i);
-
-    // ========================================
-    // COMPONENT DEACTIVATION (SAFE - unique index)
-    // ========================================
-    // Deactivate all component active flags
-    Transform.active[i] = 0;
-    if (this.rigidBody) {
-      RigidBody.active[i] = 0;
-      // HEAP slot hygiene — destroy is markBodyDirty. Do not setAwake.
-      RigidBody.sleeping[i] = 0;
-    }
-    if (this.collider) Collider.active[i] = 0;
-    if (this.spriteRenderer) {
-      SpriteRenderer.active[i] = 0;
-      // Clear sprite so collect→emit cannot see a recycled slot mid-reset as a valid draw.
-      SpriteRenderer.renderVisible[i] = 0;
-      SpriteRenderer.spritesheetId[i] = 0;
-      SpriteRenderer.animationState[i] = -1;
-    }
-    if (this.meshRenderer) MeshRenderer.active[i] = 0;
-    if (this.adobeAnimComponent) AdobeAnimComponent.active[i] = 0;
-    if (this.lightEmitter) {
-      LightEmitter.active[i] = 0;
-      LightEmitter.lightColor[i] = 0xffffff;
-      LightEmitter.lightIntensity[i] = 0;
-      LightEmitter.sqrtLightIntensity[i] = 0;
-      LightEmitter.height[i] = 0;
-      LightEmitter.glowHeightOffset[i] = 0;
-      LightEmitter.hasGlowSprite[i] = 0.5;
-      LightEmitter.layerIdOfGlowSprite[i] = 0;
-    }
-    if (this.shadowCaster) ShadowCaster.active[i] = 0;
-    if (this.flashComponent) {
-      FlashComponent.active[i] = 0;
-      FlashComponent.lifespan[i] = 0;
-      FlashComponent.currentLife[i] = 0;
-      FlashComponent.initialIntensity[i] = 0;
-      FlashComponent.castShadows[i] = 0;
-    }
-    if (this.lightOccluder) LightOccluder.active[i] = 0;
+    GameObject._deactivateSlotComponents(i);
     // Active flags are already 0. The generation bump force-publishes lifecycle
     // even inside another spawn window, and the physics step destroys this body.
     if (hadPhysicsBody) bumpBodyGeneration(i);
@@ -2755,31 +2717,16 @@ export class GameObject {
     const indicesToDespawn = GameObject._despawnAllBuffer;
     indicesToDespawn.clear();
 
-    // Cache component active arrays for inner loop
+    // Active flags the robust clear checks (despawn checks only Transform.active).
     const transformActive = Transform.active;
     const rigidBodyActive = RigidBody.active;
-    const rigidBodySleeping = RigidBody.sleeping;
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
-    const spriteRenderVisible = SpriteRenderer.renderVisible;
-    const spriteSheetId = SpriteRenderer.spritesheetId;
-    const spriteAnimState = SpriteRenderer.animationState;
     const meshRendererActive = MeshRenderer.active;
     const adobeAnimActive = AdobeAnimComponent.active;
     const lightEmitterActive = LightEmitter.active;
-    const lightEmitterColor = LightEmitter.lightColor;
-    const lightEmitterIntensity = LightEmitter.lightIntensity;
-    const lightEmitterSqrtIntensity = LightEmitter.sqrtLightIntensity;
-    const lightEmitterHeight = LightEmitter.height;
-    const lightEmitterGlowHeightOffset = LightEmitter.glowHeightOffset;
-    const lightEmitterHasGlowSprite = LightEmitter.hasGlowSprite;
-    const lightEmitterGlowLayerId = LightEmitter.layerIdOfGlowSprite;
     const shadowCasterActive = ShadowCaster.active;
     const flashActive = FlashComponent.active;
-    const flashLifespan = FlashComponent.lifespan;
-    const flashCurrentLife = FlashComponent.currentLife;
-    const flashInitialIntensity = FlashComponent.initialIntensity;
-    const flashCastShadows = FlashComponent.castShadows;
     const lightOccluderActive = LightOccluder.active;
 
     for (let i = startIndex; i < endIndex; i++) {
@@ -2809,37 +2756,8 @@ export class GameObject {
 
         GameObject._releaseSlotResources(i);
         indicesToDespawn.add(i);
-
-        // Deactivate all component active flags
-        transformActive[i] = 0;
+        GameObject._deactivateSlotComponents(i);
         GameObject.writeForceProcessOnLogicWorker(i, EntityClass.entityType, FORCE_PROCESS_ON_LOGIC_WORKER_NONE);
-        if (rigidBodyActive) rigidBodyActive[i] = 0;
-        if (rigidBodySleeping) rigidBodySleeping[i] = 0;
-        if (colliderActive) colliderActive[i] = 0;
-        if (spriteRendererActive) {
-          spriteRendererActive[i] = 0;
-          // As in despawn: a recycled slot mid-reset must not draw as a valid sprite.
-          if (spriteRenderVisible) spriteRenderVisible[i] = 0;
-          if (spriteSheetId) spriteSheetId[i] = 0;
-          if (spriteAnimState) spriteAnimState[i] = -1;
-        }
-        if (meshRendererActive) meshRendererActive[i] = 0;
-        if (adobeAnimActive) adobeAnimActive[i] = 0;
-        if (lightEmitterActive) lightEmitterActive[i] = 0;
-        if (lightEmitterColor) lightEmitterColor[i] = 0xffffff;
-        if (lightEmitterIntensity) lightEmitterIntensity[i] = 0;
-        if (lightEmitterSqrtIntensity) lightEmitterSqrtIntensity[i] = 0;
-        if (lightEmitterHeight) lightEmitterHeight[i] = 0;
-        if (lightEmitterGlowHeightOffset) lightEmitterGlowHeightOffset[i] = 0;
-        if (lightEmitterHasGlowSprite) lightEmitterHasGlowSprite[i] = 0.5;
-        if (lightEmitterGlowLayerId) lightEmitterGlowLayerId[i] = 0;
-        if (shadowCasterActive) shadowCasterActive[i] = 0;
-        if (flashActive) flashActive[i] = 0;
-        if (flashLifespan) flashLifespan[i] = 0;
-        if (flashCurrentLife) flashCurrentLife[i] = 0;
-        if (flashInitialIntensity) flashInitialIntensity[i] = 0;
-        if (flashCastShadows) flashCastShadows[i] = 0;
-        if (lightOccluderActive) lightOccluderActive[i] = 0;
         if (hadPhysicsBody) bumpBodyGeneration(i);
       }
     }
