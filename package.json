@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.11.325",
+  "version": "0.11.326",
   "description": "A multi-threaded 2D web game engine for high-entity-count browser games",
   "type": "module",
   "main": "dist/weed.prod.bundle.min.js",
@@ -42,6 +42,7 @@
     "pretest:node": "node scripts/syncVersion.js",
     "test": "npm run test:node",
     "test:node": "node --test --test-concurrency=4 tests/node/*.test.js",
+    "test:demos": "node --test --test-concurrency=4 demos/tests/*.test.js",
     "test:node:bundle": "node scripts/runNodeTestsOnBundle.mjs",
     "test:node:bundle:build": "npm run make_bundle && npm run test:node:bundle",
     "test:bundle": "node scripts/smokeBundleEmbed.mjs && node scripts/smokeBundleBrowser.mjs",
