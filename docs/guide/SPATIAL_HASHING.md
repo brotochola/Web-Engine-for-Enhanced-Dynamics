@@ -210,8 +210,6 @@ spatial: {
 }
 ```
 
-A/B harness: `tests/bench/runNeighborTickAb.mjs`.
-
 ---
 
 ## Local scratch buffers
