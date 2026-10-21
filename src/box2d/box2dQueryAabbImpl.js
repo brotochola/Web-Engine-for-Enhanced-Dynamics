@@ -193,10 +193,11 @@
   }
 
   // Physics side of queryAABB and overlapCircle: copy the WASM query slots into
-  // a results view. The WASM reports a body once per overlapping shape, so a
-  // compound body would take several slots with the same id; keep the first.
-  // The WASM fills at most slots.length (its query capacity, counted in shapes)
-  // and drops the rest, so reaching it is warned once per query kind.
+  // a results view. Since N-22 the WASM lists each body once and stops at
+  // slots.length bodies (its query capacity); before, it listed a compound body
+  // once per shape, and the first-wins dedupe here stays for a wasm of that age.
+  // Reaching the capacity means bodies past it were not listed: warned once per
+  // query kind.
   var seenStamp = new Int32Array(0);
   var seenGen = 0;
   var capacityWarned = Object.create(null);
@@ -208,7 +209,7 @@
         capacityWarned[kind] = true;
         console.warn(
           '[Box2d.' + kind + '] reached the WASM query capacity (' + n +
-            ' shapes): hits past it are dropped. Query a smaller area.',
+            ' bodies): bodies past it are not listed. Query a smaller area.',
         );
       }
     }

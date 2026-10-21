@@ -8,7 +8,7 @@ import { copyUniqueSlots } from '../../src/box2d/box2dQueryAabb.js';
 // fixture (a 3-shape body came back as [11, 11, 11]). Physics copies the WASM
 // query slots through copyUniqueSlots.
 
-const CAPACITY = 512; // the WASM query capacity, in shapes
+const CAPACITY = 512; // the WASM query capacity, in bodies (in shapes before N-22)
 
 function slotsOf(ids, capacity = CAPACITY) {
   const slots = new Int32Array(capacity);
@@ -54,7 +54,7 @@ test('reaching the WASM query capacity warns once per query kind', () => {
     copyUniqueSlots(full, 4, results, 8, 'test-full-b');
     copyUniqueSlots(slotsOf([1, 2], 4), 2, results, 8, 'test-full-c');
     assert.equal(warned.length, 2, warned.join('\n'));
-    assert.match(warned[0], /Box2d\.test-full-a.*4 shapes/);
+    assert.match(warned[0], /Box2d\.test-full-a.*4 bodies/);
     assert.match(warned[1], /Box2d\.test-full-b/);
   } finally {
     console.warn = original;

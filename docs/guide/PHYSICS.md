@@ -293,7 +293,7 @@ On-demand Box2D broadphase query for entity ids (parallel to spatial `neighborDa
 | Scene (main)         | `Box2d.castRayAllAsync(...)`                        | Async                                                    |
 
 - `out` must be `Int32Array` (`queryAABB` / `overlapCircle`). Each entity appears once, however many of its shapes overlap. Return value = entities found; written slots = `min(count, out.length)`.
-- The WASM collects at most 512 shapes per query (`get_query_capacity`). A query that reaches it warns once, and the shapes past it are lost: query a smaller area. `castRayAll` reports one hit per shape the ray crosses, so a compound body can appear more than once.
+- The WASM collects at most 512 bodies per query (`get_query_capacity`) and stops looking once it has them. A query that reaches it warns once, and the bodies past it are not listed: query a smaller area. `castRayAll` reports one hit per shape the ray crosses, so a compound body can appear more than once.
 - `overlapCircle` / `castRayAll` fill the WASM query slots / hits (same buffers as closest ray). `castRayAll` copies the first four floats per hit (`entity`, `fraction`, `hitX`, `hitY`).
 - Single-flight SAB (`box2dQueryAabb` / overlap / castAll): one outstanding query of each kind process-wide; concurrent callers serialize.
 - Physics services pending queries in `doStep` after command drain (and when `dt==0` so paused worlds still answer), and between steps: every query kind arms a wake, so a request posted after the step's service point is answered as soon as physics is idle instead of at the next frame. That time is the physics stat `QUERY_WAKE_MS`, outside `STEP_MS`.
