@@ -17,9 +17,36 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**21:38** — Phase 3 (dead code) is done, D1–D11. Next: Phase 4, repeated code.
+**21:46** — Phase 4 started. R3 (one helper for the six sync-query slots) is next, then the
+E-56 fix it enables.
 
 ## Log
+
+### 21:46 — Two engine bugs in the sync queries; one costs a whole frame (`5092c48a`, `4162b0ca`)
+
+- **N-23, fixed** (`5092c48a`): `Box2d.castRayAll` with an `out` that is not an array, such as a
+  typed array, hung every later `castRayAll`. The check ran after physics answered, and it
+  threw without freeing the slot. The slot stayed taken, and each later caller waited on it
+  forever. The check now runs before the slot is taken. The new test leaves the slot stuck on
+  the old code.
+- **N-24, measured, not fixed yet**: a sync `overlapCircle`, `castRayClosest`, `castRayAll`,
+  LiquidFun query or extract blocks its logic worker until the **next physics frame**. Physics
+  answers these only at one point inside its step; only QueryAABB has a wake for requests that
+  arrive later. On the Box2D ray stress scene (headless, live source, detailed stats off):
+
+  | worker | step | waiting | idle |
+  |---|---|---|---|
+  | logic0 | 16.59 ms | **16.50 ms** | 0.07 ms |
+  | physics | 2.62 ms | 0 | **14.03 ms** |
+
+  The logic worker is at 100 % load and does almost nothing, while physics sits idle for 14 ms
+  of the same frame. In a game, one sync ray cast per tick costs that tick its whole frame.
+- **The plan (E-56):** give all six query kinds the wake QueryAABB already has. To do that
+  once instead of six times, R3 comes first: one shared helper for the slot protocol that the
+  six files copy today. This session already paid for those copies twice, in M4 and N-22.
+  Then measure E-56 under the protocol, including a few-casts-per-tick scene. No such scene
+  exists today, so the old burst tail (a spin, then up to 2 ms of waiting inside the physics
+  step) was never measured either.
 
 ### 21:38 — Phase 3 done; a real bug in two Box2D query APIs (N-22); new N-20, N-21, E-55
 
