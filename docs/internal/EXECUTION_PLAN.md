@@ -961,7 +961,23 @@ triangles whose bounding circle misses the light disc; collapse free-bin runs in
 Tied to bug B11 (the split is not the tick owner). Compare logic0-only against the modulo
 filter with a W=2 case in `tweenPoolMicrobench.mjs`, then TweenStressScene.
 
-### E-49 Save encode writes every field name for every entity — **not-started**
+### E-49 Save encode writes every field name for every entity — **kept (kernel); browser time-to-save not measured**
+**Result (2026-10-21, `62537602`):** no format change. The writer caches each name's UTF-8
+bytes (`nameBytes`, a Map capped at 4096 names, cleared when full) instead of calling
+`TextEncoder` per entity per field. The snapshot builds each component class's field plan
+(fingerprint, names, lengths) once per save instead of per entity. Kernel
+(`saveEncodeMicrobench.mjs`, new, 4000 mixed entities, 49 alternating rounds against
+`89c94e18`): snapshot **109.7 → 42.5 ms** per save (49/49), encode **235.0 → 40.9 ms**
+(49/49), so **345 → 83 ms** of main-thread stall per save. Output is byte for byte the
+same: `saveEncodeGolden.test.js` pins length 51908 and its sha256, which HEAD also
+produces, plus a 5000-name round-trip past the cache cap. The browser time-to-save on
+Predator (the stated primary) was **not** run. The kernel is the same code the main
+thread runs and the world is paused during the snapshot, so no worker `STEP_MS` moves.
+**Still open:** the restore side (`applyEntitySaveRestore`) still computes the fingerprint
+and runs `Object.entries` per entity (E-49b if a load stall shows). Names still repeat in
+the file at ~2.2 KB per entity. A per-save string table would shrink it but changes the
+format and needs a version bump.
+
 Cold path, but a main-thread stall: a synthetic Predator-scale payload took ~930 ms to
 encode (~625 ms `TextEncoder` on repeated names). A per-save string table plus a single
 writer. **Primary:** time-to-save on Predator; no STEP_MS claim.
