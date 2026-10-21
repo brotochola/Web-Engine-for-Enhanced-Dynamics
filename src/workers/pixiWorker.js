@@ -5979,22 +5979,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const bag = Layer.textureSlotsFor(cl.layerId);
     if (!bag) return;
     const renderer = this.pixiApp && this.pixiApp.renderer;
-    const names = Object.keys(bag);
-    for (let i = 0; i < names.length; i++) {
-      const slot = bag[names[i]];
-      const rect = Layer.consumeTextureUpload(cl.layerId, names[i]);
+    // for...in, not Object.keys: this runs per layer per frame (review G7).
+    for (const name in bag) {
+      const slot = bag[name];
+      const rect = Layer.consumeTextureUpload(cl.layerId, name);
       if (!rect || rect.w < 1 || rect.h < 1) continue;
       const raw = SharedResource.viewAt(rect.resourceIndex, rect.fieldIndex);
       if (!raw) continue;
       if (slot.buffer) {
-        if (cl.compute) cl.compute.uploadFromSharedBuffer(names[i], raw, rect);
+        if (cl.compute) cl.compute.uploadFromSharedBuffer(name, raw, rect);
         continue;
       }
       if (slot.compute && cl.compute) {
-        cl.compute.uploadFromShared(names[i], this._byteView(slot, raw), rect);
+        cl.compute.uploadFromShared(name, this._byteView(slot, raw), rect);
         continue;
       }
-      const source = cl.sharedSources && cl.sharedSources[names[i]];
+      const source = cl.sharedSources && cl.sharedSources[name];
       if (!source) continue;
       const gpu = renderer && source._gpuData && renderer.uid != null
         ? source._gpuData[renderer.uid]
