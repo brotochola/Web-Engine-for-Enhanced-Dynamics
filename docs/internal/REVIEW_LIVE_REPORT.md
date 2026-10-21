@@ -17,9 +17,37 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**20:50** — Phase 3 (dead code): D1–D4 done. Next: D5–D11.
+**21:00** — Phase 3: D1–D8 done; the headed smoke is clean. Next: D9–D11.
 
 ## Log
+
+### 21:00 — D5–D8 removed, plus one real bug (`56ee5f6e`, `4102aa1b`, `36537a9c`, `580d8b25`, `b01e3fe5`)
+
+- **Test-only code moved out of the engine** (`56ee5f6e`).
+  - Four GPU row writers and four z-buffer depth helpers had no caller in the engine; only tests
+    and closed benchmarks used them.
+  - They now live in `tests/helpers`, and their tests run unchanged.
+  - **A near miss I caught:** one helper I first moved (`snapWorldToPixel`) is used by the live
+    packer. My "no other users" check had piped through `head` and hidden that line. I restored
+    it before committing, and I no longer truncate those checks.
+  - Also: three painter arrays looked unused, but the merge step reads them, so they stay.
+- **The GPU queue carried an unused region** (`4102aa1b`): 512 KB across the two buffers at 65 535
+  sprites. Every user goes through the same two layout functions, so they stay in step.
+- **`GameEngine.mouse` was broken, not just unused** (`36537a9c`). Its own typing says it returns
+  the `Mouse` API, but it read a property that doesn't exist, so it was always `undefined`. Fixed,
+  with a test.
+- **Small leftovers** (`580d8b25`): three never-called physics shape methods, a never-called mouse
+  method, an unread error field, an unread reply field, an unreachable guard, and a doc line that
+  pointed to `this.mouse` / `this.keyboard`, which don't exist.
+  - Kept on purpose: `Camera.setRotation`, which is typed public API.
+- **`cellVersionBuffer` leftovers** (`b01e3fe5`): a typing, three benchmarks still allocating it,
+  and five "removed" comments. The comment that records *why* it was removed stays, because a
+  test requires it.
+- **HEADED RUN result (20:58):** planet, destructible terrain and city ran with no console errors,
+  and save/load works in both terrain demos (44 ms / 38 ms). The black hole in the planet after
+  the shatter step was already there in the 18:37 smoke: that's N-8 (shatter deletes rock without
+  spawning shards), not something new.
+- Suite **1329/1329**.
 
 ### 20:50 — M8 started; Phase 3 D1–D4 (`ef645769`, `667cab19`, `ec040164`, `7b8125b9`, `8414cf71`)
 

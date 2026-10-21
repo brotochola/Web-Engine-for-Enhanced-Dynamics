@@ -121,10 +121,10 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [x] **D2** — `ec040164`. Write-only spatial arrays `_entityLastCellIndex/_entityLastCellRadius`.
 - [x] **D3** — `7b8125b9` (pre-render publishes the shared wait meter; DECORATIONS_ACTIVE and ACTIVE_AUDIO_SLOTS out of LOAD_KEYS; probes refuse a missing key as KEY_NOT_PUBLISHED, which is H-12's case). Pre-render `waitTimeThisFrame`; physics `WAIT_MS` (or write it, M4); load keys that match nothing.
 - [x] **D4** — `8414cf71` (summarizePhase to tests/bench; addWaitMs gone; always-on stamping kept, a few stores per frame). frameClock always-on stamping (gate it), internal exports, ~160 lines of bench verdict logic in `src/`, `addWaitMs`.
-- [ ] **D5** Test-only exports in `src/` (`gatherInstancedRows`, `rewritePackedDepth`, `writeGpuSpriteRow`, `copyPackedRows`, the `useZBuffer`-era depth helpers, dead painter state).
-- [ ] **D6** `spriteKeys` region of the GPU queue SAB.
-- [ ] **D7** Small leftovers (layer.js lazy `rect`, tween import/export, `jointsRestored`, `Mouse.setCanvasPosition`, `Camera.setRotation`, `GameEngine.mouse`, `BodyHandle.addShape*`, `shrinkToFit`, unreachable guard, `lastError.entityIndex`, physics `maxDt`).
-- [ ] **D8** `cellVersionBuffer` leftovers (types, three benches, five tombstones).
+- [x] **D5** — `56ee5f6e` (four GPU row writers and four z-buffer depth helpers to tests/helpers; painter arrays are live). Test-only exports in `src/` (`gatherInstancedRows`, `rewritePackedDepth`, `writeGpuSpriteRow`, `copyPackedRows`, the `useZBuffer`-era depth helpers, dead painter state).
+- [x] **D6** — `4102aa1b`. `spriteKeys` region of the GPU queue SAB.
+- [x] **D7** — `580d8b25`, plus `36537a9c` (GameEngine.mouse was broken: always undefined). Kept: Camera.setRotation (typed alias), Pixi shrinkToFit (real option), physics 1/20 s clamp (B7). Small leftovers (layer.js lazy `rect`, tween import/export, `jointsRestored`, `Mouse.setCanvasPosition`, `Camera.setRotation`, `GameEngine.mouse`, `BodyHandle.addShape*`, `shrinkToFit`, unreachable guard, `lastError.entityIndex`, physics `maxDt`).
+- [x] **D8** — `b01e3fe5` (grid.js rationale kept: a test pins it). `cellVersionBuffer` leftovers (types, three benches, five tombstones).
 - [ ] **D9** Docs-revealed: `invMass/inertia/invInertia` never read; `buildDenseColliders` section; `stillnessTime`; multi-pre-render plumbing.
 - [ ] **D10** Demo leftovers; move `ballsAndRectanglesScene/gameObjects/box.js` into ballsScene.
 - [ ] **D11** Tests/benches: delete `patchE01WaitMeter.mjs`, `verifyE07Baseline.mjs`, `scratchTexturePack.mjs`, `runAuditFixKernels.mjs`; archive closed probes; add scripts for live tools; unused helpers and `measureLib` exports.
