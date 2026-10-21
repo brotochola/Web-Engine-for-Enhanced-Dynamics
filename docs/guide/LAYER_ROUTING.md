@@ -181,14 +181,17 @@ Each `layerMask` field is a `Uint16Array` (2 bytes per pool slot). `Layer.MAX_LA
 Layer opacity can be set from any worker at any time. It uses the config SAB + an Atomics dirty flag — no messages involved.
 
 ```javascript
-// Fade out lighting from any worker
-Layer.get("LIGHTING").alpha = 0;
+// Fade out lighting from any worker. Layer names are the config keys, lowercase
+// for the built-in layers: Layer.get("LIGHTING") is null.
+Layer.get("lighting").alpha = 0;
 
 // Read current alpha
 const a = Layer.get("water").alpha;
 
-// Animate alpha in a tick()
-Layer.get("water").alpha = Math.sin(this.scene.time * 2) * 0.5 + 0.5;
+// Animate alpha in a tick(). accumulatedTime is ms since the worker started.
+tick(dtRatio, deltaTime, accumulatedTime) {
+  Layer.get("water").alpha = Math.sin(accumulatedTime * 0.002) * 0.5 + 0.5;
+}
 ```
 
 Under the hood, `set alpha(v)` writes to a `Float32Array` slot in the shared config SAB and sets a per-layer `Int32` dirty flag via `Atomics.store`. The renderer polls dirty flags once per frame, applies changed values to the PIXI display object, and clears the flag.

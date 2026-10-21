@@ -1,11 +1,13 @@
 // Entity Template - engine-level starter (no demo dependencies)
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, SoundManager, Mouse, Gamepad } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, CollisionListener, SoundManager, Mouse, Gamepad } = WEED;
 
 class MyEntity extends GameObject {
-  // Required: fixed component set for this entity type
-  static components = [RigidBody, Collider, SpriteRenderer];
+  // Required: fixed component set for this entity type.
+  // CollisionListener is what makes onCollisionEnter/Stay/Exit below fire; drop
+  // it (and those methods) if this type does not need collision callbacks.
+  static components = [RigidBody, Collider, SpriteRenderer, CollisionListener];
 
   // Optional: reduce logic frequency when staggered updates are enabled
   // static tickInterval = 2;

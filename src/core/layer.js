@@ -204,7 +204,7 @@ export class Layer {
      * Layer opacity (0.0 = fully transparent, 1.0 = fully opaque).
      * Mutable from any worker — writes go through the config SAB and the
      * renderer picks up changes via an Atomics dirty flag each frame.
-     * @example Layer.get("LIGHTING").alpha = 0.5;
+     * @example Layer.get("lighting").alpha = 0.5;
      */
     get alpha() { return Layer._alpha[this.id]; }
     set alpha(v) {
