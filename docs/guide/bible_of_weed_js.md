@@ -266,7 +266,7 @@ class Enemy extends GameObject {
 }
 ```
 
-Entity types without the tag component can still define `onCollisionEnter` etc. on their prototype, but they will **never be called**. The tag is the gate.
+Entity types without the tag component can still define `onCollisionEnter` etc. on their prototype, but they will **never be called**. The tag is the gate. The scene warns once at load for each class that defines a gated hook without its tag, and when a class calls `isCollidingWith` while no type in the scene lists `CollisionListener`.
 
 ### Querying by tag
 

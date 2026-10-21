@@ -132,6 +132,7 @@ import {
   resolveSpritePipeline,
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
+import { warnMissingListenerTags } from '../util/listenerTags.js';
 import {
   isSpawnCommandRingBound,
   tryPushDespawn,
@@ -488,6 +489,8 @@ class Scene {
     for (const [EntityClass, poolSize] of this.constructor.entities) {
       this.registerEntityClass(EntityClass, poolSize);
     }
+    // A hook without its tag never runs, silently: say so once, here.
+    warnMissingListenerTags(this.registeredClasses, GameObject);
 
     // Lighting / flash flags may need optional SoA even with no entity listing them yet
     this.ensureOptionalComponentPools();
