@@ -114,6 +114,63 @@ function copyF32(dst, src, n) {
  * Build the diagnostic label. Only ever called on a warn path.
  * A string `kind` is passed through, so the name-based caller still works.
  */
+// _sortPrefix: insertion sort up to this many items, merge sort above (E-08).
+const SORT_PREFIX_INSERTION_MAX = 64;
+const SORT_PREFIX_RUN = 32;
+
+/**
+ * Stable bottom-up merge sort of arr[0, n) through tmp (length >= n): runs of
+ * SORT_PREFIX_RUN insertion-sorted in place, then merge passes alternating
+ * between the two. Stable like the insertion sort it takes over from, so the
+ * order is the same, ties included. Slots at n and past it are not touched.
+ */
+function mergeSortPrefix(arr, tmp, n, compare) {
+    for (let lo = 0; lo < n; lo += SORT_PREFIX_RUN) {
+        const hi = lo + SORT_PREFIX_RUN < n ? lo + SORT_PREFIX_RUN : n;
+        for (let i = lo + 1; i < hi; i++) {
+            const item = arr[i];
+            let j = i - 1;
+            while (j >= lo && compare(arr[j], item) > 0) {
+                arr[j + 1] = arr[j];
+                j--;
+            }
+            arr[j + 1] = item;
+        }
+    }
+    // Every run boundary in order: the whole prefix already is (n / RUN compares).
+    let ordered = true;
+    for (let r = SORT_PREFIX_RUN; r < n; r += SORT_PREFIX_RUN) {
+        if (compare(arr[r - 1], arr[r]) > 0) {
+            ordered = false;
+            break;
+        }
+    }
+    if (ordered) return;
+    let src = arr;
+    let dst = tmp;
+    for (let width = SORT_PREFIX_RUN; width < n; width *= 2) {
+        for (let lo = 0; lo < n; lo += 2 * width) {
+            const mid = lo + width < n ? lo + width : n;
+            const hi = lo + 2 * width < n ? lo + 2 * width : n;
+            let i = lo;
+            let j = mid;
+            let k = lo;
+            // Halves already in order (a nearly sorted list): copy, no compares.
+            if (j >= hi || compare(src[j - 1], src[j]) <= 0) {
+                while (k < hi) dst[k] = src[k++];
+                continue;
+            }
+            while (i < mid && j < hi) dst[k++] = compare(src[i], src[j]) <= 0 ? src[i++] : src[j++];
+            while (i < mid) dst[k++] = src[i++];
+            while (j < hi) dst[k++] = src[j++];
+        }
+        const t = src;
+        src = dst;
+        dst = t;
+    }
+    if (src !== arr) for (let i = 0; i < n; i++) arr[i] = src[i];
+}
+
 function formatAnimLabel(kind, animIdx) {
     const name = typeof kind === 'string' ? kind : ANIM_LABEL_NAMES[kind];
     // Undefined/null animIdx used to render as "undefined" via template coercion;
@@ -363,6 +420,7 @@ class PreRenderWorker extends AbstractWorker {
         this._lightPersistScratch = [];
         this._lightFlashScratch = [];
         this._lightYComparator = (a, b) => Transform.y[a] - Transform.y[b];
+        this._sortPrefixTmp = null;
 
         // Stats tracking
         this.shadowsUpdatedThisFrame = 0;
@@ -2989,10 +3047,14 @@ class PreRenderWorker extends AbstractWorker {
             return;
         }
         // Slots at n and past it are pooled and must stay put, so this cannot
-        // hand the whole array to sort. ponytail: insertion sort is quadratic
-        // in the prefix. Stamp lights are capped (default 20). Visible-light
-        // lists are the large case; switch to a range sort if a caller passes
-        // thousands.
+        // hand the whole array to sort. Insertion sort costs ~n on a nearly
+        // sorted list (lights spawned in rows: 3.4 µs at 360) and n²/4 moves on
+        // one far from sorted (moving lights in entity order: 54 µs at 360).
+        // Past SORT_PREFIX_INSERTION_MAX it gets a budget of 16 moves per item;
+        // a list that spends it finishes in a merge sort through a scratch kept
+        // across frames, grown and never reallocated per frame (E-08).
+        const budget = n > SORT_PREFIX_INSERTION_MAX ? n * 16 : Infinity;
+        let moves = 0;
         for (let i = 1; i < n; i++) {
             const item = arr[i];
             let j = i - 1;
@@ -3001,6 +3063,17 @@ class PreRenderWorker extends AbstractWorker {
                 j--;
             }
             arr[j + 1] = item;
+            moves += i - 1 - j;
+            if (moves > budget) {
+                let tmp = this._sortPrefixTmp;
+                if (!tmp || tmp.length < n) {
+                    let cap = tmp ? tmp.length : SORT_PREFIX_INSERTION_MAX * 2;
+                    while (cap < n) cap *= 2;
+                    tmp = this._sortPrefixTmp = new Array(cap);
+                }
+                mergeSortPrefix(arr, tmp, n, compare);
+                return;
+            }
         }
     }
 

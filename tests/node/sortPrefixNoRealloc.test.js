@@ -1,40 +1,19 @@
-// E-08: `_sortPrefix` sorts [0, n) and does not allocate to do it.
+// E-08: `_sortPrefix` sorts [0, n) and does not allocate on a steady frame.
 //
 // `tmp.slice(0, n)` allocated a fresh array on every frame whose light count
-// was not exactly the scratch capacity. The prefix is sorted in place.
-// Slots at n and past it are pooled and must stay put.
+// was not exactly the scratch capacity. Short prefixes are insertion-sorted in
+// place; long ones (the visible-light list, entity order, random in y) go
+// through a stable merge sort whose scratch is grown, never reallocated per
+// frame (E-08 reopened, 2026-10-21). Slots at n and past it are pooled and
+// must stay put. These run on a real worker instance.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const src = fs.readFileSync(path.join(ROOT, 'src/workers/preRenderWorker.js'), 'utf8');
+import { loadWorker } from '../bench/workerHarness.mjs';
 
-function extractSortPrefix() {
-  const start = src.indexOf('    _sortPrefix(arr, count, compare) {');
-  assert.ok(start > 0, 'could not find _sortPrefix');
-  const end = src.indexOf('\n    }', start);
-  assert.ok(end > start, 'could not find the end of _sortPrefix');
-  const body = src.slice(start, end);
-  const raw = new Function(
-    'return function (arr, count, compare) {' + body.slice(body.indexOf('{') + 1) + '};',
-  )();
-  return (arr, count, compare) => raw.call({}, arr, count, compare);
-}
-
-const sortPrefix = extractSortPrefix();
-
-function fnSource() {
-  const body = src.slice(src.indexOf('    _sortPrefix(arr, count, compare) {'));
-  const end = body.indexOf('\n    }');
-  return body
-    .slice(0, end)
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n]*/g, '');
-}
+const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+const sortPrefix = (arr, count, compare) => pre._sortPrefix(arr, count, compare);
 
 test('sorts a prefix and leaves the tail of `arr` untouched', () => {
   const cmp = (a, b) => a.distSq - b.distSq || a.id - b.id;
@@ -101,10 +80,36 @@ test('a changing count across frames still sorts only the prefix', () => {
   }
 });
 
-test('the prefix path does not allocate', () => {
-  const fn = fnSource();
-  assert.ok(!/\.slice\(/.test(fn), '_sortPrefix still slices a view');
-  assert.ok(!/new Array\(/.test(fn), '_sortPrefix still allocates a scratch array');
-  assert.ok(!/_sortPrefixTmp/.test(fn), '_sortPrefix still keeps a scratch');
-  assert.match(fn, /compare\(arr\[j\], item\) > 0/, 'ties must not reorder');
+test('a long prefix (merge path) matches the stable native sort, ties included', () => {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  for (const n of [65, 100, 128, 129, 360, 1000]) {
+    for (const kind of ['random', 'ties', 'sorted', 'reversed']) {
+      const items = Array.from({ length: n + 5 }, (_, i) => ({
+        id: i,
+        y: kind === 'ties' ? (rnd() * 6) | 0 : kind === 'sorted' ? i : kind === 'reversed' ? -i : rnd() * 1000,
+      }));
+      const cmp = (a, b) => a.y - b.y;
+      const want = items.slice(0, n).sort(cmp).map((s) => s.id);
+      const tail = items.slice(n).map((s) => s.id);
+      sortPrefix(items, n, cmp);
+      assert.deepEqual(items.slice(0, n).map((s) => s.id), want, `n=${n} ${kind}`);
+      assert.deepEqual(items.slice(n).map((s) => s.id), tail, `n=${n} ${kind} tail`);
+    }
+  }
+});
+
+test('steady frames do not allocate: the merge scratch is kept, short prefixes use none', () => {
+  // The module is cached, so this is the same worker the tests above used.
+  const fresh = pre;
+  fresh._sortPrefixTmp = null;
+  const cmp = (a, b) => a.y - b.y;
+  const make = (n) => Array.from({ length: n + 3 }, (_, i) => ({ id: i, y: (i * 7919) % 101 }));
+  fresh._sortPrefix(make(40), 40, cmp);
+  assert.equal(fresh._sortPrefixTmp, null, 'insertion path needs no scratch');
+  fresh._sortPrefix(make(300), 300, cmp);
+  const scratch = fresh._sortPrefixTmp;
+  assert.ok(Array.isArray(scratch) && scratch.length >= 300);
+  for (const n of [250, 300, 120, 299, 300]) fresh._sortPrefix(make(n), n, cmp);
+  assert.equal(fresh._sortPrefixTmp, scratch, 'the scratch is reused, not reallocated');
 });
