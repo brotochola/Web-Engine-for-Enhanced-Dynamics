@@ -17,6 +17,8 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**15:30** — **N-15 fixed: one physics config source** (`328d6c9f`). The physics worker and the main side each had their own config validator and defaults, and they had drifted. The one that ran skipped the safety clamps, and the tested one was missing two settings. Now there's one file both load, with the clamps. A small bug went with it: changing one gravity axis used to zero the other. Balls boots and steps 9,000 bodies headless; the suite is green (1,420). One slip: a `sed` edit had turned a CRLF guide file to LF; I caught it and fixed it in the same local commit. Next: N-14.
+
 **15:25** — **`main` fast-forwarded to `c5d0ee6c`** (local; nothing pushed; undo: `git branch -f main 758e1d92`). The gate passed: Predator, headless, 8 pairs against `main`, no worker 3 % worse at matched load.
 
 | Worker | Median | Pairs worse | At matched load |
