@@ -1014,6 +1014,22 @@ headed trace of the physics pthreads shows `_emscripten_get_now` frames above ~1
 would be a runtime switch in the C timer that returns 0 while detailed stats are off (the
 engine reads `b2Profile` through `get_profile_byte_offset` for its physics sub-timers).
 
+### E-56 Wake physics for every sync query kind, not only QueryAABB — **not-started**
+Found in review N-24. Only QueryAABB arms `Atomics.waitAsync` on its slot between physics
+steps; overlapCircle, closest ray (single and batch), castRayAll, LiquidFun query and
+extract are serviced only in `doStep`, so a request posted after that point waits a whole
+physics frame. Measured before: `RayVsBox2dBoxIdleScene`, logic0 STEP 16.59 ms with WAIT
+16.50 ms, physics STEP 2.62 ms with IDLE 14.03 ms. **Change:** arm the same wake for all six
+slots (one helper after R3); a woken service runs one request, or one burst without the
+2 ms tail wait (the tail would block physics' event loop past rAF). **Primary:** logic0
+STEP_MS and WAIT_MS on that scene, plus a single-cast variant (a few sync casts per tick,
+the gameplay shape); physics STEP_MS must not get ≥ 3 % worse; Balls and Predator (no sync
+queries) must tie. **Do not** reintroduce a spin/wait burst inside `doStep` for QueryAABB:
+that measured +835 % physics step (2026-09-15).
+Also check the existing burst tail itself: after servicing ≥ 1 single cast, `waitForNextRequest`
+spins 100k loads and then waits up to 2 ms inside `doStep`. No scene in the repo issues
+single sync casts, so it was never measured; the single-cast variant measures it.
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at
