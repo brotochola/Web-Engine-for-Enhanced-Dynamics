@@ -1800,7 +1800,7 @@ function createPhysicsApi(Module) {
       return Array.from(Module.HEAP32.subarray(particleQueryHitsI32, particleQueryHitsI32 + n));
     }
 
-    /** Fill Int32Array results without allocating; returns full hit count. */
+    /** Fill Int32Array results without allocating; returns the hit count (the WASM stops at 4096). */
     fillParticleQueryAabb(x0, y0, x1, y1, results, cap) {
       const n = particleQueryAabb(x0, y0, x1, y1) | 0;
       const write = n < cap ? n : cap | 0;

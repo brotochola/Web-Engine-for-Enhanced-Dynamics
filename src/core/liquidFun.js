@@ -525,7 +525,7 @@ export class LiquidFun {
     Box2dCommandRing.enqueueClearLiquidFunParticles(systemId);
   }
 
-  /** Sync QueryAABB (logic workers). Returns full hit count; fills `out` with particle indices. */
+  /** Sync QueryAABB (logic workers). Returns the hit count, at most 4096 (the WASM stops there); fills `out` with particle indices. */
   static queryAABB(x0, y0, x1, y1, out) {
     return liquidFunQueryAABB(x0, y0, x1, y1, out);
   }

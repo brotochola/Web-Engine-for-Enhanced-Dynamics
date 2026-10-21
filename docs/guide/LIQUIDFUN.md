@@ -309,7 +309,7 @@ await LiquidFun.queryAABBAsync(x0, y0, x1, y1, out);
 await LiquidFun.rayCastAsync(x1, y1, x2, y2, out);
 ```
 
-Single-flight SAB (`liquidFunQuery` / `liquidFunExtract`), same pattern as body `Box2d.queryAABB`. Physics **burst-drains** pending queries/extracts in `doStep` (including paused/`dt==0`) so many sync callers in one logic tick do not stall a frame each. Extract index cap is **4096** (matches C `g_extract_indices`). Particle indices are **unstable** after zombie compact, join, split, or extract — query every tick. No `ParticleHandle` this pass. Gameplay heat/melt: walk `getGroupViews()` slabs, do not `queryAABB` per entity. Range setters are C `[first, last)`.
+Single-flight SAB (`liquidFunQuery` / `liquidFunExtract`), same pattern as body `Box2d.queryAABB`. Physics **burst-drains** pending queries/extracts in `doStep` (including paused/`dt==0`) so many sync callers in one logic tick do not stall a frame each. Extract index cap is **4096** (matches C `g_extract_indices`). `queryAABB` / `rayCast` stop at **4096** hits too (C `MAX_PARTICLE_QUERY_HITS`); the count they return is never larger. Particle indices are **unstable** after zombie compact, join, split, or extract — query every tick. No `ParticleHandle` this pass. Gameplay heat/melt: walk `getGroupViews()` slabs, do not `queryAABB` per entity. Range setters are C `[first, last)`.
 
 Compute pack (`LfParticle`) is 8 floats / 32 bytes: `x,y,vx,vy` + `userData: u32` + pad. Scene shaders read `particles[i].userData`, not an engine `heat` field.
 
