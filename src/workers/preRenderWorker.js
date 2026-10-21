@@ -385,6 +385,62 @@ class PreRenderWorker extends AbstractWorker {
         this._warnedShadowSpriteCap = false;
         this._warnedVisibilityPolygonLightCap = false;
         this._warnedVisibilityPolygonOccluderCap = false;
+        this._renderQueueOverflowWarned = false;
+        this._adobeRenderQueueOverflowWarned = false;
+        this._missingTextureWarns = null;
+
+        // Everything the frame paths write later, declared here (N-32). A field
+        // first written after the loop starts changes this object's hidden
+        // class, and V8 drops every optimized method that checked the old one.
+        // After the first full-queue warning, one method deoptimized every frame
+        // for ~8 s before V8 compiled it again.
+        // initialize() and the paths below overwrite these as before.
+        this.renderQueueShadowH = null;
+        this.renderQueueShadowOffX = null;
+        this.renderQueueShadowOffY = null;
+        this.renderQueueTileMode = null;
+        this.renderQueueTileOffsetU = null;
+        this.renderQueueTileOffsetV = null;
+        this.renderQueueTileMulX = null;
+        this.renderQueueTileMulY = null;
+        this._vpWriteBuffer = null;
+        this._selfLitWriteBuffer = null;
+        this._decorationZoomAlpha = 1;
+        this._emitWriteCount = 0;
+        this._emptyAdobeEntities = null;
+        this._columnSnapshot = null;
+        this._lightGlowAsSprite = false;
+        this._glowEmit = false;
+        this._glowLayerAlpha = 1;
+        this._emitSource = null;
+        this._gpuSoa = null;
+        this._gpuBoundViews = null;
+        this._gpuCounts = null;
+        this._gpuShadowsResult = null;
+        this._gpuSpritesResult = null;
+        // Stamp lights and their scratch: first written when a light first shows.
+        this._stampLights = null;
+        this._stampLightCount = 0;
+        this._stampLightCmp = null;
+        this._stampSortLights = false;
+        this._stampRangeSpec = null;
+        this._gpuLightVec = null;
+        this._gpuStampTmp = null;
+        this._gpuStampDist = null;
+        this._gpuStampOrder = null;
+        this._gpuCasterUsed = null;
+        this._gpuKeepIdx = null;
+        this._stampGridCounts = null;
+        this._stampGridStarts = null;
+        this._stampGridItems = null;
+        // GPU pack writers, bound on the first packed frame.
+        this._gpuPackSpec = null;
+        this._addPackSortMs = null;
+        this._writePackedSprites = null;
+        this._writePackedGlow = null;
+        this._packParticles = 0;
+        this._packDst = null;
+        this._packQ = null;
     }
 
     _warnOnce(flagName, message) {
@@ -707,6 +763,7 @@ class PreRenderWorker extends AbstractWorker {
                         count: 0,
                         maxItems: layerMax,
                         ySorting: Layer.getById(layerId)?.ySorting !== false,
+                        _overflowWarned: false,
                     };
                     this._customLayerCollectors[layerId] = collector;
 
