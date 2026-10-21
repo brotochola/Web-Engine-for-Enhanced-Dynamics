@@ -258,7 +258,36 @@ export async function setupPreRenderKernel(opts = {}) {
     worker._fillEmitSource(n, n, collectorY, collectorType, collectorIndex, stashX, stashY, stashRc, stashRs, false, false, false);
   }
 
-  return { n, worker, frame, checksum, seed, warm };
+  // Collect: the per-entity path that fills the arrays emit reads
+  // (collectRenderable -> _writeRenderable), in the same cell order. It
+  // rewrites the collector, so time it after emit.
+  function collect(count = n) {
+    worker._renderableCount = 0;
+    for (let k = 0; k < count; k++) worker.collectRenderable(0, slots[k], 0);
+    return worker._renderableCount;
+  }
+
+  function collectChecksum() {
+    const written = collect();
+    assert.equal(written, n, 'every entity reaches the main collector');
+    const acc = new Uint32Array(n);
+    for (let s = 0; s < written; s++) {
+      let h = 2166136261;
+      h = mix(h, collectorY[s]);
+      h = mix(h, stashX[s]);
+      h = mix(h, stashY[s]);
+      h = mix(h, stashRc[s]);
+      h = mix(h, stashRs[s]);
+      acc[collectorIndex[s]] = h;
+    }
+    return checksumInts(acc, n);
+  }
+
+  function warmCollect() {
+    warmNormalCompile(() => collect(Math.min(64, n)));
+  }
+
+  return { n, worker, frame, checksum, seed, warm, collect, collectChecksum, warmCollect };
 }
 
 async function main() {
@@ -273,13 +302,20 @@ async function main() {
   const cases = {
     emit: timeIt(`preRender emitSpriteQueue ${variant} (n=${n})`, () => k.frame(), { iterations: 24, warmup: 8 }),
   };
+  const collectChecksum = k.collectChecksum();
+  k.warmCollect();
+  cases.collect = timeIt(`preRender collectRenderable ${variant} (n=${n})`, () => k.collect(), { iterations: 24, warmup: 8 });
   const report = {
     feature: 'preRender-worker-emit',
     variant,
-    functions: ['PreRenderWorker.emitSpriteQueue', 'PreRenderWorker._writeQueueShadow'],
+    functions: [
+      'PreRenderWorker.emitSpriteQueue', 'PreRenderWorker._writeQueueShadow',
+      'PreRenderWorker.collectRenderable', 'PreRenderWorker._writeRenderable',
+    ],
     n,
     seed,
     checksum,
+    collectChecksum,
     note: 'Real PreRenderWorker. Collector is cell order. Checksum is per entity id, so an emit reorder can match.',
     cases,
   };
