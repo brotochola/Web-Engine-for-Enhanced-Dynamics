@@ -17,6 +17,18 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**18:18** — **N-41 done: demos take engine names from WEED only** (`74ceeeba`, `8c681c8b`, `9c6f8102`, `c750a095`, `e5d55420`).
+- **The imports:** 39 files now get Camera, Component, NavGrid and the rest from `WEED`.
+- **New public helpers:** `normalizeAngle`, `dot2` and `randomUnitCS` (named exports, on `WEED`,
+  typed, in the guide).
+- **The boids:** they set their facing straight on the physics command ring. They now call the new
+  `GameObject.setRotationCS(c, s)`, the option you picked. It costs about 2.5 ns more per call.
+- **Guard:** a demo test fails if a demo imports an engine module other than `/src/index.js`.
+- **Checked:** the 18 affected scenes, plus Boids, load headless with no errors and every worker
+  stepping. Engine suite 1,367, demo suite 83.
+- **Branch note:** you switched to `main` at 17:39, so these commits are on `main`. The review
+  branch is behind it. Nothing is pushed.
+
 **17:54** — **`test:all` passes, and the engine suite tests only the engine** (`9e00ec27`, `aa1f8150`).
 - **The error:** in each bundle pass, `test:all` failed on a planet demo test. The planet ship
   imports `normalizeAngle` from `/src/util/utils.js`, which no bundle exports, so the chain also
