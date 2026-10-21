@@ -17,6 +17,25 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**07:50** — E-69 dropped (`028e9f34`). Next: N-28 (do our kernels time the code we think
+they time?), then M8.
+
+### 07:50 — A promising idea that the profile vetoed (E-69, dropped)
+
+- After the fixes above, the logic profile's top engine item was the getter behind
+  `this.transform`, `this.spriteRenderer`, and so on: 10.8 % of logic. It looks each
+  component up by name in a per-object table, through code every class shares. That looked
+  slow, and an earlier attempt (L4, in September) had already lost in Predator.
+- I tried a different fix: a small number per component instead of a name.
+  - Kernel: a tie.
+  - Predator logic: −4 % at matched load, but only at the edge of significance.
+  - The profile settled it: the getter itself got **44 % more expensive** (749 → 1,079 ms),
+    with the code next to it unchanged.
+- I trust the direct measurement of the changed function over a borderline statistical
+  fit, so it's reverted. The getter's cost is mostly how often game code calls it. Fixing
+  that would change how components attach to game objects, which is a design question
+  for you, not a quick change.
+
 **07:34** — E-66 and E-54 kept; a new allocation profiler; E-51b's other culls parked.
 Next: the remaining open items (E-50b, E-57, E-63, N-28, M8).
 
