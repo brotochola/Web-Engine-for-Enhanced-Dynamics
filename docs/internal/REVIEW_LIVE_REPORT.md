@@ -17,6 +17,34 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**14:06** — **N-19 fixed: deep rock no longer lights up** (`ed5a7b89`), and the planet demo's
+lights cover their whole radius again (`83ca5461`). Next: N-18, then E-70.
+
+### 14:06 — Lighting follows what the light can see
+
+- **The bug:** a terrain chunk was drawn lit when any of its edges was within the light's range,
+  so with the planet lamp and ship covering their radius, every chunk around them lit up, deep
+  rock included, with the chunk grid showing. That's why the demo's ranges had been cut back.
+- **The fix:** each of the light's 512 angular bins now remembers which chunk its nearest hit
+  came from. Once the polygon is built, a chunk counts as lit only if one of its bins is on the
+  polygon, and the light's other chunks are dropped. The polygon itself is unchanged, bit for
+  bit (golden tests and kernel checksums). New tests:
+  - a wall behind a wall stays dark;
+  - a box in front of a chunk hides it;
+  - a sliver seen past another wall's edge counts;
+  - on the real worker, the lit list keeps the right items, whole and in order.
+- **Seen in the demo** (headless screenshots of the boot view, covering ranges on both sides):
+  before, a big lit disc with the chunk squares showing; after, only the chunks around the shaft
+  the ship sits in. Those chunks still light over their whole square, so their edges show inside
+  the rock. That's a shader-side improvement, logged as N-38. Boxes and circles still light by
+  range alone: N-39.
+- **Cost:** one extra store per stamped bin.
+  - My first version read the owner from a module variable and cost the stamping kernel 8–11 %.
+  - Passing it as a parameter, and setting the "bins active" flag once per edge instead of
+    once per bin, brought it down to −5.1 % and −0.5 % on the two kernel cases.
+  - In the compound scene, pre-render was +1.7 % (under the 3 % bar) and the renderer −4.5 %
+    (it draws fewer lit chunks).
+
 **13:40** — **E-73 screened: no change.** Most of the audit's fields cost nothing. The one
 that would gain (+9.6 % on a kernel) is parked. Next: N-19, then E-70.
 
