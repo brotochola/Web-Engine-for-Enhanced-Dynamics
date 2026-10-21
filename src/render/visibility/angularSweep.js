@@ -1028,13 +1028,27 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
 // at both ends. So each edge is tested against the rays in that arc, padded by
 // ARC_PAD (rays are 2π/512 apart), and lowers their running minimum. An edge
 // whose arc is near a half turn passes by the light and is tested by every ray,
-// as is one whose arc is NaN. A minimum is the same in any order and every ray
+// as is one whose arc is NaN. The arc is found without atan2 (E-62): the cross
+// product of its ends says which way is short, and pseudoAngle orders the ends
+// and the rays. A minimum is the same in any order and every ray
 // left out would get Infinity, so the polygon is the full scan's, bit for bit.
 // A visibility polygon's edges tile the circle: the work is about rays + edges.
 // That includes the 32-gon placeholder of a light with only compound occluders,
 // which E-41 merged at three edges per ray: this is faster on it too.
 const ARC_PAD = 1e-6;
-const _rayAng = new Float64Array(POLAR_BINS);
+// A stand-in for atan2(y, x) that keeps its order over (-π, π]: -2 at -π, 0 at
+// 0, 2 at π, one unit per quarter turn. Its slope is 1/2 to 1 per radian, so a
+// pad of ARC_PAD units covers at least ARC_PAD radians.
+function pseudoAngle(x, y) {
+  const ax = x < 0 ? -x : x;
+  const ay = y < 0 ? -y : y;
+  const p = ay / (ax + ay);
+  if (y < 0) return x < 0 ? p - 2 : -p;
+  return x < 0 ? 2 - p : p;
+}
+const _polarPseudo = new Float64Array(POLAR_BINS * 2 + 1);
+for (let m = 0; m <= POLAR_BINS * 2; m++) _polarPseudo[m] = pseudoAngle(_polarCos[m], _polarSin[m]);
+const _rayAng = new Float64Array(POLAR_BINS); // pseudoAngle of each ray
 const _rayCos = new Float64Array(POLAR_BINS);
 const _raySin = new Float64Array(POLAR_BINS);
 const _rayBest = new Float64Array(POLAR_BINS);
@@ -1069,7 +1083,7 @@ function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY) {
       const b0 = k * group;
       const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
       const m = b0 + b1;
-      _rayAng[k] = -Math.PI + m * 0.5 * (TWO_PI / POLAR_BINS);
+      _rayAng[k] = _polarPseudo[m];
       _rayCos[k] = _polarCos[m];
       _raySin[k] = _polarSin[m];
       _rayBest[k] = radius;
@@ -1085,23 +1099,44 @@ function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY) {
     const ey = by - ay;
     const fx = ax - lx;
     const fy = ay - ly;
-    const a = Math.atan2(fy - 1e-4 * ey, fx - 1e-4 * ex);
-    let span = Math.atan2(fy + (1 + 1e-4) * ey, fx + (1 + 1e-4) * ex) - a;
-    if (span > Math.PI) span -= TWO_PI;
-    else if (span <= -Math.PI) span += TWO_PI;
+    // The slack-extended ends, from the light.
+    const sx = fx - 1e-4 * ex;
+    const sy = fy - 1e-4 * ey;
+    const tx = fx + (1 + 1e-4) * ex;
+    const ty = fy + (1 + 1e-4) * ey;
+    const cr = sx * ty - sy * tx;
     // Rays [k0, k1), and [0, k2) when the arc wraps past ±π.
     let k0 = 0;
     let k1 = count;
     let k2 = 0;
-    if (Math.abs(span) < Math.PI - 1e-3) {
-      const lo = (span >= 0 ? a : a + span) - ARC_PAD;
-      const hi = (span >= 0 ? a + span : a) + ARC_PAD;
-      if (lo < -Math.PI) {
-        k0 = firstRayAtOrAfter(count, lo + TWO_PI);
+    // A sine under 1e-3 with the ends apart is near a half turn: every ray.
+    if (cr * cr > 1e-6 * (sx * sx + sy * sy) * (tx * tx + ty * ty) || sx * tx + sy * ty > 0) {
+      // Counter-clockwise from p0 to p1 is the short way. A wrong sign of a
+      // rounded cr leaves p0 and p1 within ARC_PAD: take them in order then.
+      const ps = pseudoAngle(sx, sy);
+      const pt = pseudoAngle(tx, ty);
+      const p0 = cr >= 0 ? ps : pt;
+      const p1 = cr >= 0 ? pt : ps;
+      let lo;
+      let hi;
+      if (p1 >= p0) {
+        lo = p0;
+        hi = p1;
+      } else if (p0 - p1 < ARC_PAD) {
+        lo = p1;
+        hi = p0;
+      } else {
+        lo = p0;
+        hi = p1 + 4;
+      }
+      lo -= ARC_PAD;
+      hi += ARC_PAD;
+      if (lo < -2) {
+        k0 = firstRayAtOrAfter(count, lo + 4);
         k2 = firstRayAfter(count, hi);
-      } else if (hi > Math.PI) {
+      } else if (hi > 2) {
         k0 = firstRayAtOrAfter(count, lo);
-        k2 = firstRayAfter(count, hi - TWO_PI);
+        k2 = firstRayAfter(count, hi - 4);
       } else {
         k0 = firstRayAtOrAfter(count, lo);
         k1 = firstRayAfter(count, hi);
