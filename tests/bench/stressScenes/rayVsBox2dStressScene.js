@@ -6,8 +6,22 @@ import { RayStressBusyBall } from './ray/rayStressBusyBall.js';
 const { Scene, Camera } = WEED;
 
 const OBSTACLE_COUNT = 2000;
-const BUSY_BALL_COUNT = 800;
 const SEED = 0xc0ffee;
+
+/**
+ * Query knobs (E-57): `?singleCasts=N` sets the single sync casts per tick of the
+ * box2d-single scenes; `?physicsLoad=busy` adds the bouncing balls to any of them,
+ * and `?busyBalls=N` how many (800), so the physics step has a baseline over the
+ * protocol floors.
+ */
+function queryParam(name) {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get(name);
+  } catch {
+    return null;
+  }
+}
+const BUSY_BALL_COUNT = parseInt(queryParam('busyBalls'), 10) > 0 ? parseInt(queryParam('busyBalls'), 10) : 800;
 
 /**
  * Shared L2 Ray vs Box2D stress scene.
@@ -66,7 +80,7 @@ export class RayVsBox2dStressScene extends Scene {
 
   create() {
     const backend = this.constructor.backend;
-    const busy = this.constructor.physicsLoad === 'busy';
+    const busy = (queryParam('physicsLoad') || this.constructor.physicsLoad) === 'busy';
 
     if (busy) {
       this.config.physics.gravity = { x: 0, y: 980 };
@@ -117,7 +131,9 @@ export class RayVsBox2dStressScene extends Scene {
       }
     }
 
-    this.spawnEntity(RayStressDriver, { seed: SEED, backend, singleCasts: this.constructor.singleCasts });
+    const castsKnob = parseInt(queryParam('singleCasts'), 10);
+    const singleCasts = castsKnob > 0 ? castsKnob : this.constructor.singleCasts;
+    this.spawnEntity(RayStressDriver, { seed: SEED, backend, singleCasts });
 
     Camera.centerOn(worldW * 0.5, worldH * 0.5);
     Camera.setZoom(0.45);
