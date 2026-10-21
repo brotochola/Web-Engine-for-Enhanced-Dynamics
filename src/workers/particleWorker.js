@@ -38,6 +38,7 @@ import {
   updateParticlePhysicsBuffers,
   buildActiveListBuffers,
   buildActiveAndVisibleListBuffers,
+  buildActiveAndVisibleListBuffersTurned,
 } from '../util/particleIntegrate.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
@@ -798,15 +799,32 @@ class ParticleWorker extends AbstractWorker {
     const cameraBounds = this._frameCameraBounds();
     if (!cameraBounds) return;
 
-    const { activeCount } = buildActiveAndVisibleListBuffers(
-      ParticleComponent,
-      maxParticles,
-      localIndices,
-      activeData,
-      visibleData,
-      expectedActive,
-      cameraBounds,
-    );
+    // _frameCameraBounds filled _drawnCam this frame. A turned camera tests each
+    // particle in view space, not in the box around the view (E-51b).
+    const rotation = this._drawnCam.rotation;
+    const { activeCount } = rotation
+      ? buildActiveAndVisibleListBuffersTurned(
+        ParticleComponent,
+        maxParticles,
+        localIndices,
+        activeData,
+        visibleData,
+        expectedActive,
+        cameraBounds,
+        rotation,
+        this.canvasWidth,
+        this.canvasHeight,
+        this.cullingRatio,
+      )
+      : buildActiveAndVisibleListBuffers(
+        ParticleComponent,
+        maxParticles,
+        localIndices,
+        activeData,
+        visibleData,
+        expectedActive,
+        cameraBounds,
+      );
 
     this.activeParticleCount = activeCount;
     // if (activeCount !== this._lastLoggedActiveCount) {
