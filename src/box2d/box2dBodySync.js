@@ -175,8 +175,10 @@ export function markBodyDirty(entityIndex, flags = BODY_DIRTY.LIFECYCLE, force =
   if (i < 0 || i >= dirtyFlags.length) return false;
   if (dirtyDeferDepth > 0 && !force) {
     if (!pendingFlags || i >= pendingFlags.length) return false;
+    // Listed once per window: a slot that already has pending flags is already
+    // on the list (E-50). Duplicates only filled it toward the full-scan fallback.
+    if (!pendingFlags[i]) rememberPending(i);
     pendingFlags[i] |= flags | 0;
-    rememberPending(i);
     return true;
   }
   return publishBodyDirty(i, flags);
