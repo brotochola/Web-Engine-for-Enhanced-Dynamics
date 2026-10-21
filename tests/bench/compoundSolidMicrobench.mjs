@@ -9,7 +9,13 @@
  */
 import { PerformanceObserver } from 'node:perf_hooks';
 
-import { ensureCompoundSolid } from '../../src/render/visibility/angularSweep.js';
+import {
+  POLAR_BINS,
+  clearPolarBins,
+  clipVisibilityToPolar,
+  collectSolidSegments,
+  ensureCompoundSolid,
+} from '../../src/render/visibility/angularSweep.js';
 import { MAX_POLYGON_VERTICES } from '../../src/util/configDefaults.js';
 import { checksumFloats, isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { mulberry32 } from './benchMath.js';
@@ -86,6 +92,45 @@ function rebuildCase(label, body, wantFill) {
   }, 50));
 }
 
+/**
+ * collectSolidSegments for 8 lights around and inside one built outline (E-50):
+ * the pre-render step that rasters a lit compound's edges into the polar bins.
+ * The checksum is the polar polygon each light ends with.
+ */
+function collectCase(label, body, entity) {
+  const solid = ensureCompoundSolid(
+    entity, 1, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures, false,
+  );
+  const lights = [];
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    const d = k % 2 ? 60 : 260;
+    lights.push([260 + Math.cos(a) * d, 280 + Math.sin(a) * d]);
+  }
+  const R = 900;
+  const outX = new Float32Array(POLAR_BINS);
+  const outY = new Float32Array(POLAR_BINS);
+  let sink = 0;
+  const pass = () => {
+    for (const [lx, ly] of lights) {
+      clearPolarBins(R);
+      sink += collectSolidSegments(solid, 0, 0, 1, 0, 0, 0, lx, ly, R * R);
+    }
+  };
+  let checksum = 0;
+  for (const [lx, ly] of lights) {
+    clearPolarBins(R);
+    collectSolidSegments(solid, 0, 0, 1, 0, 0, 0, lx, ly, R * R);
+    const m = clipVisibilityToPolar(lx, ly, outX, outY, 0, outX, outY, POLAR_BINS);
+    checksum = (checksum ^ checksumFloats(outX, m) ^ checksumFloats(outY, m)) >>> 0;
+  }
+  for (let k = 0; k < 2000; k++) pass();
+  const timed = timeIt(label, (iters) => {
+    for (let k = 0; k < iters; k++) pass();
+  }, { iterations: 200 });
+  return { label, opsPerSec: timed.opsPerSec, ms: timed.ms, iterations: timed.iterations, segCount: solid.segCount, checksum, hit: sink > 0 };
+}
+
 async function main() {
   const args = parseArgs();
   const cases = {};
@@ -94,10 +139,14 @@ async function main() {
     cases[`${name}Outline`] = await rebuildCase(`${name} outline (${body.fixtures} tris)`, body, false);
     cases[`${name}Fill`] = await rebuildCase(`${name} outline+fill (${body.fixtures} tris)`, body, true);
   }
+  cases.islandCollect = collectCase('island collect, 8 lights', gridCompound(16, 8, 10, 23), 900);
+  cases.largeCollect = collectCase('large collect, 8 lights', gridCompound(48, 24, 10, 55), 901);
   const checksum = Object.values(cases).reduce((h, c) => (h ^ c.checksum) >>> 0, 0);
   const report = { name: 'compoundSolid', cases, checksum };
   for (const [k, c] of Object.entries(cases)) {
-    console.log(`${k}: ${Math.round(c.opsPerSec).toLocaleString()} rebuilds/s, ${c.minorGcPer1000} minor GCs per 1000, ${c.segCount} outline segs`);
+    const gc = c.minorGcPer1000 === undefined ? '' : `, ${c.minorGcPer1000} minor GCs per 1000`;
+    const unit = c.minorGcPer1000 === undefined ? '8-light passes/s' : 'rebuilds/s';
+    console.log(`${k}: ${Math.round(c.opsPerSec).toLocaleString()} ${unit}${gc}, ${c.segCount} outline segs`);
   }
   writeReport(args.output || 'tests/results/compound-solid/kernel.json', report);
 }
