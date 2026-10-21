@@ -127,6 +127,34 @@ assert.ok(mergeN === POLAR_BINS, `polar merge polygon ${mergeN}`);
 const mergeChecksum = checksumFloats(polarX, mergeN) ^ checksumFloats(polarY, mergeN);
 assert.notEqual(mergeChecksum, polarChecksum, 'the sweep polygon must change the merged outline');
 
+// E-41. A light whose occluders are all compound bodies has no sweep occluder,
+// so its sweep polygon is buildFullCircle's 32-gon, and the merge ray-tests
+// that placeholder for every bin. Off-centre light; 512 bins, and 128 output
+// vertices (pre-render's default maxPolygonVertices, 4 bins per vertex).
+const FC_LX = 37.5;
+const FC_LY = -12.25;
+const fcX = new Float32Array(MAX_VERTS);
+const fcY = new Float32Array(MAX_VERTS);
+const fcN = buildVisibilityPolygon(
+  FC_LX, FC_LY, 220,
+  kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
+  0, fcX, fcY, MAX_VERTS
+);
+const fcOutX = new Float32Array(POLAR_BINS);
+const fcOutY = new Float32Array(POLAR_BINS);
+function runPolarFullCircle(maxVerts) {
+  clearPolarBins(220);
+  for (let i = 0; i < SEGMENTS; i++) {
+    const o = i * 4;
+    rasterBoundarySegment(soup[o] + FC_LX, soup[o + 1] + FC_LY, soup[o + 2] + FC_LX, soup[o + 3] + FC_LY, FC_LX, FC_LY);
+  }
+  return clipVisibilityToPolar(FC_LX, FC_LY, fcX, fcY, fcN, fcOutX, fcOutY, maxVerts);
+}
+function fullCircleChecksum(maxVerts) {
+  const m = runPolarFullCircle(maxVerts);
+  return checksumFloats(fcOutX, m) ^ checksumFloats(fcOutY, m);
+}
+
 const cases = {
   sweep: timeIt('visibility_polygon', (iters) => {
     for (let i = 0; i < iters; i++) {
@@ -143,7 +171,16 @@ const cases = {
   polarMerge: timeIt('polar_merge', (iters) => {
     for (let i = 0; i < iters; i++) runPolarMerge();
   }, { iterations: Number(args.iters ?? 400) }),
+  polarFullCircle: timeIt('polar_full_circle_512', (iters) => {
+    for (let i = 0; i < iters; i++) runPolarFullCircle(POLAR_BINS);
+  }, { iterations: Number(args.iters ?? 400) }),
+  polarFullCircle128: timeIt('polar_full_circle_128', (iters) => {
+    for (let i = 0; i < iters; i++) runPolarFullCircle(128);
+  }, { iterations: Number(args.iters ?? 400) }),
 };
+cases.polarFullCircle.checksum = fullCircleChecksum(POLAR_BINS);
+cases.polarFullCircle128.checksum = fullCircleChecksum(128);
+assert.equal(fcN, 32, 'the empty light is the 32-segment placeholder');
 
 const report = {
   feature: 'angular-sweep',
