@@ -41,6 +41,8 @@ import {
   LAYER_FEEDER_KIND,
   LAYER_KIND,
   LAYER_SCALE_MODE,
+  PARTICLE_DEFAULTS,
+  resolveZenithalMaxHeight,
 } from '../util/configDefaults.js';
 import {
   ensureCompoundSolid,
@@ -756,7 +758,7 @@ class PixiRenderer extends AbstractWorker {
       resolution: 1,
       canvasW: 0,
       canvasH: 0,
-      zenithalMaxHeight: 50,
+      zenithalMaxHeight: PARTICLE_DEFAULTS.zenithalMaxHeight,
       zenithalAlphaFade: 0,
       layerVisible: null,
       layerAlpha: null,
@@ -2359,20 +2361,22 @@ LIGHTING SYSTEM SETUP
     }
   }
 
-  _createLiquidFunLightSplat(lfMax) {
-    const cap = lfMax | 0;
-    if (cap <= 0) return;
+  /**
+   * An additive light splat (LiquidFun lit groups, particle lights), or null
+   * when the light-splat shaders are missing.
+   */
+  _createLightSplat(capacity, label) {
     const shaders = this._useWebGpu
       ? { lfSplat: this._engineShaders.lfLightSplat }
       : {
         lfSplatVert: this._engineShaders.lfLightSplatVert,
         lfSplatFrag: this._engineShaders.lfLightSplatFrag,
       };
-    if (this._useWebGpu && !shaders.lfSplat) return;
-    if (!this._useWebGpu && (!shaders.lfSplatVert || !shaders.lfSplatFrag)) return;
-    this._lfLightSplat = new LiquidFunDensitySplat({
-      capacity: Math.max(1, cap),
-      label: 'lf-light-splat',
+    if (this._useWebGpu && !shaders.lfSplat) return null;
+    if (!this._useWebGpu && (!shaders.lfSplatVert || !shaders.lfSplatFrag)) return null;
+    const splat = new LiquidFunDensitySplat({
+      capacity,
+      label,
       blendMode: 'add',
       useWebGpu: this._useWebGpu,
       shaders,
@@ -2382,35 +2386,31 @@ LIGHTING SYSTEM SETUP
         },
       },
     });
-    this._lfLightSplat.mesh.blendMode = 'add';
+    splat.mesh.blendMode = 'add';
+    return splat;
+  }
+
+  /** Draw a packed light splat into the lighting RT. */
+  _drawLightSplat(splat, resolution) {
+    const screenScale = (this._renderZoom || 1) * (resolution || 1);
+    const u = splat.shader?.resources?.uniforms?.uniforms;
+    if (u) u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
+    const rtOpts = this._rtRenderOptsNoClear;
+    rtOpts.container = splat.mesh;
+    rtOpts.target = this.lightingRT;
+    this._submitRender(rtOpts);
+  }
+
+  _createLiquidFunLightSplat(lfMax) {
+    const cap = lfMax | 0;
+    if (cap <= 0) return;
+    this._lfLightSplat = this._createLightSplat(cap, 'lf-light-splat');
   }
 
   _createParticleLightSplat(maxLights) {
     const cap = maxLights | 0;
     if (cap <= 0 || !this._particleLightsEnabled) return;
-    const shaders = this._useWebGpu
-      ? { lfSplat: this._engineShaders.lfLightSplat }
-      : {
-        lfSplatVert: this._engineShaders.lfLightSplatVert,
-        lfSplatFrag: this._engineShaders.lfLightSplatFrag,
-      };
-    if (this._useWebGpu && !shaders.lfSplat) return;
-    if (!this._useWebGpu && (!shaders.lfSplatVert || !shaders.lfSplatFrag)) return;
-    const splat = new LiquidFunDensitySplat({
-      capacity: cap,
-      label: 'particle-light-splat',
-      blendMode: 'add',
-      useWebGpu: this._useWebGpu,
-      shaders,
-      shaderResources: {
-        uniforms: {
-          uInvScreenScale: { value: 1.0, type: 'f32' },
-        },
-      },
-    });
-    splat.buffer.shrinkToFit = false;
-    splat.mesh.blendMode = 'add';
-    this._particleLightSplat = splat;
+    this._particleLightSplat = this._createLightSplat(cap, 'particle-light-splat');
   }
 
   _renderLiquidFunLightingField() {
@@ -2428,13 +2428,7 @@ LIGHTING SYSTEM SETUP
     o.canvasH = this.canvasHeight;
     const packed = splat.uploadLitGroups(views, groups, o);
     if (packed <= 0) return;
-    const screenScale = (this._renderZoom || 1) * (o.resolution || 1);
-    const u = splat.shader?.resources?.uniforms?.uniforms;
-    if (u) u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
-    const rtOpts = this._rtRenderOptsNoClear;
-    rtOpts.container = splat.mesh;
-    rtOpts.target = this.lightingRT;
-    this._submitRender(rtOpts);
+    this._drawLightSplat(splat, o.resolution);
   }
 
   _renderParticleLightingField() {
@@ -2452,7 +2446,7 @@ LIGHTING SYSTEM SETUP
     o.canvasW = this.canvasWidth;
     o.canvasH = this.canvasHeight;
     const pcfg = this.config && this.config.particle;
-    o.zenithalMaxHeight = pcfg && pcfg.zenithalMaxHeight > 0 ? pcfg.zenithalMaxHeight : 50;
+    o.zenithalMaxHeight = resolveZenithalMaxHeight(pcfg);
     o.zenithalAlphaFade = pcfg && pcfg.zenithalAlphaFade > 0 ? pcfg.zenithalAlphaFade : 0;
     o.layerVisible = Layer._visible;
     o.layerAlpha = Layer._alpha;
@@ -2478,13 +2472,7 @@ LIGHTING SYSTEM SETUP
     splat.buffer.update(packed * LF_SPLAT_STRIDE);
     splat.geometry.instanceCount = packed;
     splat.mesh.visible = true;
-    const screenScale = (this._renderZoom || 1) * (o.resolution || 1);
-    const u = splat.shader?.resources?.uniforms?.uniforms;
-    if (u) u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
-    const rtOpts = this._rtRenderOptsNoClear;
-    rtOpts.container = splat.mesh;
-    rtOpts.target = this.lightingRT;
-    this._submitRender(rtOpts);
+    this._drawLightSplat(splat, o.resolution);
   }
 
   /* =====================
