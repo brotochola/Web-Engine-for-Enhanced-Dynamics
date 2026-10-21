@@ -1,6 +1,6 @@
 // L2: water + many dynamic crates. Oracle for body-couple API (H24/H25/H27).
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Box } from '/demos/ballsAndRectanglesScene/gameObjects/box.js';
+import { Box } from '/demos/ballsScene/gameObjects/box.js';
 import { Camera } from '/src/core/camera.js';
 import WEED from '/src/index.js';
 

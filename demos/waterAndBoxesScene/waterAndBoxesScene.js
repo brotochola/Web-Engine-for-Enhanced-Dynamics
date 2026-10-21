@@ -4,7 +4,7 @@
 // while boxes render in the default ENTITIES layer.
 
 import { WaterBall } from './gameObjects/waterBall.js';
-import { Box } from '/demos/ballsAndRectanglesScene/gameObjects/box.js';
+import { Box } from '/demos/ballsScene/gameObjects/box.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { Camera } from '/src/core/camera.js';
 import { BLEND_MODES } from '/src/util/configDefaults.js';
