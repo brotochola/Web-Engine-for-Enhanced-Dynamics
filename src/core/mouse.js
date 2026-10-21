@@ -2,6 +2,8 @@
 // Pure utility class like Camera and Keyboard - NOT a GameObject
 // Zero allocations, direct SharedArrayBuffer access
 
+import { viewScreenToWorld } from '../util/viewBounds.js';
+
 /**
  * Static Mouse class for cross-worker pointer state.
  *
@@ -68,6 +70,7 @@ export class Mouse {
   static _ids = new Int32Array(this.MAX).fill(-1);
   static _canvasX = new Float64Array(this.MAX);
   static _canvasY = new Float64Array(this.MAX);
+  static _worldScratch = { x: 0, y: 0 };
 
   // Per-realm edge state
   static _lastDownPress = new Float32Array(this.MAX);
@@ -444,27 +447,14 @@ export class Mouse {
   static _writeWorld(slot, camera) {
     const d = this._data;
     if (!d || !camera) return;
-    const canvasX = this._canvasX[slot];
-    const canvasY = this._canvasY[slot];
+    const world = viewScreenToWorld(
+      camera.x, camera.y, camera.zoom || 1, camera.rotation || 0,
+      camera.canvasWidth || 0, camera.canvasHeight || 0,
+      this._canvasX[slot], this._canvasY[slot], this._worldScratch,
+    );
     const base = this._slot(slot);
-    const zoom = camera.zoom || 1;
-    const rot = camera.rotation || 0;
-    const cw = camera.canvasWidth || 0;
-    const ch = camera.canvasHeight || 0;
-    if (!rot || !(cw > 0 && ch > 0 && zoom > 0)) {
-      d[base + this._SX] = canvasX / zoom + camera.x;
-      d[base + this._SY] = canvasY / zoom + camera.y;
-      return;
-    }
-    const focusX = camera.x + cw / (2 * zoom);
-    const focusY = camera.y + ch / (2 * zoom);
-    const sx = canvasX - cw * 0.5;
-    const sy = canvasY - ch * 0.5;
-    const c = Math.cos(rot);
-    const s = Math.sin(rot);
-    const inv = 1 / zoom;
-    d[base + this._SX] = focusX + (c * sx + s * sy) * inv;
-    d[base + this._SY] = focusY + (-s * sx + c * sy) * inv;
+    d[base + this._SX] = world.x;
+    d[base + this._SY] = world.y;
   }
 
   // ============================================

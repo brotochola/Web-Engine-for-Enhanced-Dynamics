@@ -1,4 +1,4 @@
-// Boxes around the drawn view, for culling.
+// Boxes around the drawn view, for culling, and the view's point transforms.
 //
 // The camera turns about the canvas center, so a rotated view is its rectangle
 // turned about the focus. Culls test boxes, so they take the box around that
@@ -62,5 +62,52 @@ export function viewWorldBounds(zoom, cameraX, cameraY, canvasWidth, canvasHeigh
   out.maxX = cx + e.halfW;
   out.minY = cy - e.halfH;
   out.maxY = cy + e.halfH;
+  return out;
+}
+
+/**
+ * Screen point to world point. The view is a top-left camera (viewX, viewY in
+ * world px) at `zoom`, turned by `rotation` about the canvas center.
+ * Camera.screenToWorld and the mouse's world position both use it.
+ * @param {{x: number, y: number}} out
+ * @returns {{x: number, y: number}} out
+ */
+export function viewScreenToWorld(viewX, viewY, zoom, rotation, canvasWidth, canvasHeight, screenX, screenY, out) {
+  if (!rotation || !(canvasWidth > 0 && canvasHeight > 0 && zoom > 0)) {
+    out.x = screenX / zoom + viewX;
+    out.y = screenY / zoom + viewY;
+    return out;
+  }
+  const focusX = viewX + canvasWidth / (2 * zoom);
+  const focusY = viewY + canvasHeight / (2 * zoom);
+  const sx = screenX - canvasWidth * 0.5;
+  const sy = screenY - canvasHeight * 0.5;
+  const c = Math.cos(rotation);
+  const s = Math.sin(rotation);
+  const inv = 1 / zoom;
+  out.x = focusX + (c * sx + s * sy) * inv;
+  out.y = focusY + (-s * sx + c * sy) * inv;
+  return out;
+}
+
+/**
+ * World point to screen point; the inverse of viewScreenToWorld.
+ * @param {{x: number, y: number}} out
+ * @returns {{x: number, y: number}} out
+ */
+export function viewWorldToScreen(viewX, viewY, zoom, rotation, canvasWidth, canvasHeight, worldX, worldY, out) {
+  if (!rotation || !(canvasWidth > 0 && canvasHeight > 0 && zoom > 0)) {
+    out.x = (worldX - viewX) * zoom;
+    out.y = (worldY - viewY) * zoom;
+    return out;
+  }
+  const focusX = viewX + canvasWidth / (2 * zoom);
+  const focusY = viewY + canvasHeight / (2 * zoom);
+  const dx = worldX - focusX;
+  const dy = worldY - focusY;
+  const c = Math.cos(rotation);
+  const s = Math.sin(rotation);
+  out.x = (c * dx - s * dy) * zoom + canvasWidth * 0.5;
+  out.y = (s * dx + c * dy) * zoom + canvasHeight * 0.5;
   return out;
 }

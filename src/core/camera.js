@@ -6,7 +6,7 @@ import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import Keyboard from './keyboard.js';
 import { Mouse } from './mouse.js';
-import { rotatedHalfExtents } from '../util/viewBounds.js';
+import { rotatedHalfExtents, viewScreenToWorld, viewWorldToScreen } from '../util/viewBounds.js';
 
 /**
  * Camera center that keeps the entity inside a world-pixel box.
@@ -889,34 +889,17 @@ export class Camera {
       return deadzoneCenter(entityX, entityY, cx, cy, halfW, halfH, dest);
     }
 
-    // Rotate world delta into camera view/screen space
+    // The same box in view space: rotate the entity's offset in, keep it in the
+    // box about the center, rotate the camera's shift back out.
     const c = Math.cos(rot);
     const s = Math.sin(rot);
     const dx = entityX - cx;
     const dy = entityY - cy;
-    const viewDx = c * dx - s * dy;
-    const viewDy = s * dx + c * dy;
-
-    let targetViewDx = 0;
-    let targetViewDy = 0;
-    if (halfW > 0) {
-      if (viewDx > halfW) targetViewDx = viewDx - halfW;
-      else if (viewDx < -halfW) targetViewDx = viewDx + halfW;
-      else targetViewDx = 0;
-    } else {
-      targetViewDx = viewDx;
-    }
-    if (halfH > 0) {
-      if (viewDy > halfH) targetViewDy = viewDy - halfH;
-      else if (viewDy < -halfH) targetViewDy = viewDy + halfH;
-      else targetViewDy = 0;
-    } else {
-      targetViewDy = viewDy;
-    }
-
-    // Rotate camera shift back into world space
-    dest.x = cx + (c * targetViewDx + s * targetViewDy);
-    dest.y = cy + (-s * targetViewDx + c * targetViewDy);
+    const shift = deadzoneCenter(c * dx - s * dy, s * dx + c * dy, 0, 0, halfW, halfH, dest);
+    const viewX = shift.x;
+    const viewY = shift.y;
+    dest.x = cx + (c * viewX + s * viewY);
+    dest.y = cy + (-s * viewX + c * viewY);
     return dest;
   }
 
@@ -1335,27 +1318,10 @@ export class Camera {
    */
   static worldToScreen(worldX, worldY, out = null) {
     const v = this._drawnView();
-    const zoom = v.zoom;
-    const cameraX = v.x;
-    const cameraY = v.y;
-    const dest = out || Camera._worldToScreenScratch;
-    const rot = v.rotation;
-    const cw = this._canvasWidth;
-    const ch = this._canvasHeight;
-    if (!rot || !(cw > 0 && ch > 0 && zoom > 0)) {
-      dest.x = (worldX - cameraX) * zoom;
-      dest.y = (worldY - cameraY) * zoom;
-      return dest;
-    }
-    const focusX = cameraX + cw / (2 * zoom);
-    const focusY = cameraY + ch / (2 * zoom);
-    const dx = worldX - focusX;
-    const dy = worldY - focusY;
-    const c = Math.cos(rot);
-    const s = Math.sin(rot);
-    dest.x = (c * dx - s * dy) * zoom + cw * 0.5;
-    dest.y = (s * dx + c * dy) * zoom + ch * 0.5;
-    return dest;
+    return viewWorldToScreen(
+      v.x, v.y, v.zoom, v.rotation, this._canvasWidth, this._canvasHeight,
+      worldX, worldY, out || Camera._worldToScreenScratch,
+    );
   }
 
   /**
@@ -1367,28 +1333,10 @@ export class Camera {
    */
   static screenToWorld(screenX, screenY, out = null) {
     const v = this._drawnView();
-    const zoom = v.zoom;
-    const cameraX = v.x;
-    const cameraY = v.y;
-    const dest = out || Camera._screenToWorldScratch;
-    const rot = v.rotation;
-    const cw = this._canvasWidth;
-    const ch = this._canvasHeight;
-    if (!rot || !(cw > 0 && ch > 0 && zoom > 0)) {
-      dest.x = screenX / zoom + cameraX;
-      dest.y = screenY / zoom + cameraY;
-      return dest;
-    }
-    const focusX = cameraX + cw / (2 * zoom);
-    const focusY = cameraY + ch / (2 * zoom);
-    const sx = screenX - cw * 0.5;
-    const sy = screenY - ch * 0.5;
-    const c = Math.cos(rot);
-    const s = Math.sin(rot);
-    const inv = 1 / zoom;
-    dest.x = focusX + (c * sx + s * sy) * inv;
-    dest.y = focusY + (-s * sx + c * sy) * inv;
-    return dest;
+    return viewScreenToWorld(
+      v.x, v.y, v.zoom, v.rotation, this._canvasWidth, this._canvasHeight,
+      screenX, screenY, out || Camera._screenToWorldScratch,
+    );
   }
 
   /**
