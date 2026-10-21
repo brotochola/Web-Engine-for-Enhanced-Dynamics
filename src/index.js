@@ -47,6 +47,7 @@ export {
   mixTint,
   randomColor,
   rng,
+  layerMask,
 } from './util/utils.js';
 export {
   SaveStore,
@@ -208,6 +209,7 @@ import {
   mixTint,
   randomColor,
   rng,
+  layerMask,
 } from './util/utils.js';
 
 import { Transform } from './components/transform.js';
@@ -436,6 +438,7 @@ const WEED = Object.freeze({
   mixTint,
   randomColor,
   rng,
+  layerMask,
 
   SPRITE_TILE_MODE,
   enums,

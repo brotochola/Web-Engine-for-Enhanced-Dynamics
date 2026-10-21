@@ -6,7 +6,8 @@ export type Vec2Like = { x: number; y: number };
 export type RectLike = { x: number; y: number; width: number; height: number };
 
 export function usableCanvasSize(width: number, height: number): boolean;
-export function layerMask(layers: unknown): number;
+/** Uint32 bitmask with the bits of the given collision layers (0-31) set. */
+export function layerMask(layers: number[]): number;
 export function countTrailingZeros(n: number): number;
 export function binarySearchInsertPoint(
   data: ArrayLike<number>,

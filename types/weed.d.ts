@@ -16,6 +16,7 @@ export {
   mixTint,
   randomColor,
   rng,
+  layerMask,
 } from './utils';
 
 // --- Config / enums (from ConfigDefaults.js) ---
@@ -3760,6 +3761,7 @@ export interface WeedNamespace extends WeedEnums {
   mixTint: typeof import('./utils').mixTint;
   randomColor: typeof import('./utils').randomColor;
   rng: typeof import('./utils').rng;
+  layerMask: typeof import('./utils').layerMask;
   SPRITE_TILE_MODE: typeof SPRITE_TILE_MODE;
   enums: WeedEnums;
   author: string;

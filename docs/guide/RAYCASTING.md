@@ -110,7 +110,7 @@ Same as `linecastBetweenEntities` -- returns `{ blocked, entityIndex, distance }
 All methods default to `mask = 0xFFFFFFFF` (hit everything). Pass a bitmask to restrict which layers the ray can hit:
 
 ```javascript
-import { layerMask } from '../core/utils.js';
+import { layerMask } from '@weed.js/engine';
 
 // Only hit terrain (0) and enemies (4)
 Ray.cast(x, y, tx, ty, Infinity, layerMask([0, 4]));
