@@ -178,6 +178,10 @@ import { saveGame, loadGame, SaveStore, encodeSave, decodeSave } from '/src/inde
 
 Load remounts the scene: `create()` builds statics, then logic worker `restoreSave` despawns serializable types and re-spawns from records (Box2D bodies via normal spawn dirty path), flushes active lists, acks `restoreSaveComplete`, then `onLoadGame(payload)`, then play starts.
 
+## Hot reload (debug)
+
+`new GameEngine({ debug: true, hotReload: true })` on a page served by `npm run dev`: when a served file changes, the engine saves the running scene to a reserved slot, reloads the page, and the next `loadScene` of the same scene restores it once (with the same `data`), then deletes the slot. What comes back is what a save keeps (this page), so state in plain JS fields does not. A save that fails reloads without state, with a warning. A schema change between the two runs loads best-effort, as any save would.
+
 ## Debug UI
 
 Debug overlay, **Saves** tab:

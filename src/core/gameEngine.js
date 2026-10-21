@@ -2,6 +2,7 @@
 // Manages canvas, scene lifecycle, input listeners, browser hardening, and debug UI
 
 import { DebugUI } from './debug/debugUi.js';
+import { HotReload } from './debug/hotReload.js';
 import { Mouse } from './mouse.js';
 import { SoundManager } from './soundManager.js';
 import { Scene } from './scene.js';
@@ -64,6 +65,9 @@ class GameEngine {
         updateInterval: config.debugUpdateInterval ?? DEBUG_DEFAULTS.updateInterval,
         defaultOpen: config.debugDefaultOpen ?? DEBUG_DEFAULTS.defaultOpen,
       });
+      // Opt-in (hotReload: true), for pages served by npm run dev: reload on a file
+      // change, keeping the running scene's state. Other servers would 404 the endpoint.
+      if (config.hotReload === true) HotReload.start(this);
     }
 
     // Browser environment hardening
@@ -335,6 +339,16 @@ class GameEngine {
         SceneClass.scriptUrl = sceneScriptUrl;
       }
 
+      // A hot reload of this very scene: restore what was running (once).
+      let hotRestore = false;
+      if (this.debugEnabled && !options.restorePayload && !options.restoreSlot) {
+        const hot = HotReload.takeRestore(sceneScriptUrl);
+        if (hot) {
+          options = { ...options, restoreSlot: hot.restoreSlot, data: options.data ?? hot.data };
+          hotRestore = true;
+        }
+      }
+
       let restorePayload = options.restorePayload || null;
       if (!restorePayload && options.restoreSlot) {
         const { SaveStore, decodeSave } = await import('./save/saveGame.js');
@@ -389,6 +403,7 @@ class GameEngine {
 
       // Scene loaded successfully
       this.state = GameEngine.states.READY;
+      if (hotRestore) HotReload.discardSlot();
       return true;
     } catch (error) {
       console.error('❌ Error loading scene:', error);

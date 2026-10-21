@@ -146,6 +146,11 @@ export interface GameEngineConfig {
   canvasWidth?: number;
   canvasHeight?: number;
   debug?: boolean;
+  /**
+   * Debug builds, pages served by npm run dev: a file change saves the running scene,
+   * reloads the page and restores it. Off by default (other servers have no endpoint).
+   */
+  hotReload?: boolean;
   debugUpdateInterval?: number;
   debugDefaultOpen?: boolean | string | null;
   transitionCooldown?: number;

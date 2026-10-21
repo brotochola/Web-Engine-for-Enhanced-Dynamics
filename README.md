@@ -107,6 +107,8 @@ Open `http://localhost:8000/demos/`, or use the port printed by the server if `8
 
 `SharedArrayBuffer` needs cross-origin isolation (COOP/COEP). Same headers unlock Box2D’s pthread pool. The included `npm run dev` server already sends them.
 
+**Hot reload.** With `npm run dev` and `new GameEngine({ debug: true, hotReload: true })` (the demo page has it on), saving a file reloads the page and restores the running scene where it was: serializable entities, shared resources, camera, tweens and `onSaveGame` data come back from a save the engine takes just before the reload. `WEED_HOT_RELOAD=0 npm run dev` turns the server side off.
+
 ---
 
 ## Demos
