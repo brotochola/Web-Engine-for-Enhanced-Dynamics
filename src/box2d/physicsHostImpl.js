@@ -73,8 +73,9 @@
   // for the next logic query) add to this shared object; the step resets it.
   var WAIT_METER = global.__weedWaitMeter || (global.__weedWaitMeter = { ms: 0 });
 
-  // E-24. Keep these offsets in sync with src/util/frameClock.js.
-  // ponytail: classic IIFE cannot import that module (upgrade: importScripts one impl).
+  // E-24. src/util/frameClock.js stampStep, copied: a classic script cannot
+  // import it. tests/node/frameClock.test.js runs this copy against stampStep
+  // and compares the buffers byte for byte.
   var FC_HEADER = 32;
   var FC_SLOT = 32;
   var FC_SEQ = 4;

@@ -29,12 +29,29 @@ import { summarizePhase } from '../bench/framePhaseSummary.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-test('layout matches the physics host copy', () => {
+test('the physics host stamps byte for byte what stampStep stamps', () => {
+  // The host is a classic script and keeps its own copy of the stamp (review
+  // R5: moving it into a shared impl means the bundle embedding a sibling from
+  // src/util). Run the host's own code against a second buffer and compare.
   const host = fs.readFileSync(path.join(ROOT, 'src/box2d/physicsHostImpl.js'), 'utf8');
-  assert.match(host, /var FC_HEADER = 32;/);
-  assert.match(host, /var FC_SLOT = 32;/);
-  assert.match(host, /var FC_SEQ = 4;/);
-  assert.match(host, /var FC_GEN = 5;/);
+  const start = host.indexOf('  var FC_HEADER = 32;');
+  const end = host.indexOf('\n  // Mirrors Transform / RigidBody ARRAY_SCHEMA');
+  assert.ok(start > 0 && end > start, 'frame clock block not found in physicsHostImpl.js');
+  const { fcStamp } = new Function(`${host.slice(start, end)}\nreturn { fcStamp: fcStamp };`)();
+  const abs = 1_700_000_000_000;
+  const ours = bindFrameClock(createFrameClockBuffer());
+  const hosts = bindFrameClock(createFrameClockBuffer());
+  for (const view of [ours, hosts]) {
+    publishFrame(view, abs);
+    publishFrame(view, abs + 16.5);
+  }
+  const slot = frameClockSlot('physics');
+  stampStep(ours, slot, abs + 17, abs + 19.25);
+  fcStamp({ fcI32: hosts.i32, fcF64: hosts.f64, fcSlot: slot }, abs + 17, abs + 19.25);
+  assert.deepEqual(new Uint8Array(hosts.i32.buffer), new Uint8Array(ours.i32.buffer));
+});
+
+test('layout and slots', () => {
   assert.equal(HEADER_BYTES, 32);
   assert.equal(SLOT_BYTES, 32);
   assert.equal(FRAME_CLOCK_BYTES, HEADER_BYTES + SLOT_COUNT * SLOT_BYTES);
