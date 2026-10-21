@@ -289,6 +289,24 @@ const listenerSlots = Query.queryActiveEntities([CameraInOutListener]); // activ
 const visibleListeners = Query.queryActiveEntitiesSlow([CameraInOutListener, SpriteRenderer]); // explicit slow path
 ```
 
+### TypeScript and your own components
+
+`types/weed.d.ts` types the engine (`npm run check:types` also fails when a public runtime member of `GameObject`, `Scene`, `GameEngine` or `WEED` is not declared). A component you add is reached through an accessor the engine defines on your class's prototype (`this.health` for `Health`), which TypeScript cannot see. Declare it, **without an initializer**:
+
+```ts
+class Health extends Component {
+  static ARRAY_SCHEMA = { hp: Float32Array };
+  declare hp: number;
+}
+
+class Hero extends GameObject {
+  static components = [Health, RigidBody, Collider];
+  declare health: Health;            // TypeScript: `declare` emits nothing
+}
+```
+
+In plain JavaScript, do **not** write a class field with that name (`health;` or `/** @type {Health} */ health;`): a class field is an own property set to `undefined`, and it hides the engine's accessor. Use a JSDoc `@property` on the class instead.
+
 ### Creating your own tag components
 
 ```javascript
