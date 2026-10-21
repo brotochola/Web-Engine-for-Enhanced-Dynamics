@@ -17,8 +17,31 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**04:44** — E-53 answered and DOC1 done. Next: DOC2–DOC7 (guide accuracy, the internal log,
-a CLAUDE.md digest).
+**04:54** — Guide pass done (DOC1, DOC2, DOC4, DOC6, DOC7). Left in Phase 8: DOC3 (topics the
+guide is missing) and DOC5 (internal log rows). E-46b measured and not kept.
+
+### 04:54 — The user guide now matches the engine (`4a6c76ab`, `aa58985a`)
+
+- **How.** Three read-only agents checked every flagged guide statement against the source and
+  proposed exact edits. I spot-checked the important ones myself before applying them.
+- **Stale things removed or corrected**, for example:
+  - a whole "shadow render queue" that doesn't exist any more;
+  - a depth-buffer option (`useZBuffer`) that was deleted;
+  - the stats buffer sizes;
+  - a physics setting described as "not used" that is used;
+  - an old version pin;
+  - advice on dropped sounds that pointed at the wrong setting.
+- **Bad patterns in examples fixed.** The entity template played a sound every frame. Examples
+  looked up layers and created "reusable" result objects inside per-frame code. A pinch-zoom
+  snippet called functions that don't exist. Layer names were in ALL_CAPS, which the engine
+  warns about. The guide also now says to declare object fields up front, the same lesson as
+  N-32.
+- **CLAUDE.md** (`aa58985a`). A ~100-line digest of the project's rules (commits, line endings,
+  measuring, the engine code rules learned in this review), so a new session doesn't need to
+  read 13,000 lines of internal docs first.
+- **E-46b.** Turning the audio `claim` closure into a method measured as a tie, so it was reverted.
+
+**04:44** — E-53 answered and DOC1 done.
 
 ### 04:44 — The Box2D thread pool question, and guide examples that work (`0b755c14`, `d0b3c26e`)
 

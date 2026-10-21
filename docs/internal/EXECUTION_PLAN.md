@@ -985,9 +985,10 @@ channel header word 6: the mixer's `releaseVoice` when its CAS wins, and the hos
 walk while it hasn't moved. B1's ownership rule is unchanged. **AudioStorm `plays=2400`, 4 pairs
 against HEAD: logic0 4.33 → 0.57 ms (−86.6 %, 4/4).** Tests: the B1 tests' audio-thread helper
 bumps like the mixer; the real mixer bumps once per release; a host stop frees room on a full
-bus (that test fails with the bumps removed). **E-46b (open):** the last 0.13 ms against
-`8af92002^` is B1's owner checks plus the `claim` closure `play()` builds per call. Hoist the
-closure into a static method and measure on its own.
+bus (that test fails with the bumps removed). **E-46b — measured, not kept (2026-10-21):** the
+`claim` closure hoisted into a static method (`_claimListed`, 9 arguments) ties in
+`audioSlotMicrobench` (storm +1.9 %, 63/81; three-thread occupancy −1.9 %). It was reverted. The
+last 0.13 ms against `8af92002^` is B1's ownership checks.
 
 Since `8af92002`, `_reclaimDeadVoices` runs before the `count >= maxV` early drop. The
 2026-10-15 keep ("Audio slot scan, per-bus list and quietest cache": AudioStorm logic0
