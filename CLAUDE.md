@@ -1,0 +1,80 @@
+# WeedJS — notes for coding sessions
+
+WeedJS is a multithreaded 2D web game engine: logic, spatial, physics (Box2D 3 WASM + LiquidFun),
+particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` is the product;
+`demos/` exist to exercise, show and measure it. This file is a digest of the rules spread over
+`.cursor/rules/` and `docs/internal/` (≈13k lines); follow the linked documents for detail.
+
+## Before you change code
+
+- **Engine or demo?** If a request could mean either ("fix the camera", "make it faster"), ask.
+  Engine work stays generic: no special case for one demo inside `src/`. Demo work uses public
+  APIs. (`.cursor/rules/engine-vs-demo.mdc`)
+- **Speed claims:** read `docs/internal/HYPOTHESIS_LOG.md` first, then follow
+  `docs/internal/HOW_WE_MEASURE.md`. A row is evidence about one sitting, not a ban.
+- **Plans and open items:** `docs/internal/EXECUTION_PLAN.md` (speed hypotheses E-xx),
+  `docs/internal/REVIEW_PLAN.md` (review items B/M/D/R/G/V/N/DOC). New findings go there.
+
+## Commands
+
+- Node suite: `npm run test:node` (≈1400 tests, ~15 s). Commit only when it is green.
+- Kernels: `node tests/bench/<name>Microbench.mjs [--output path]` (Node, no browser).
+- Scene runs: `node tests/bench/runIntegratedWorkerBenchmark.mjs --src --scene /path/scene.js
+  --scene-export ClassName [--query k=v] [--warmup-ms N --duration-ms N]` (headless Chromium).
+  From Git Bash set `MSYS_NO_PATHCONV=1`, or `/demos/...` becomes `C:/Program Files/Git/demos/...`.
+- V8 evidence: add `--js-flags="--log-deopt --log-ic" --v8-log-dir <dir>`, then
+  `node tests/bench/summarizeV8Deopt.mjs <dir>` (deopts, IC states, steady vs warm-up).
+- Predator gate: `tests/bench/runPredatorAbab.mjs`; engine-wide: `npm run bench:scoreboard`.
+
+## Commits
+
+- One change per commit; the title says what code changed. Measurement tools (new kernel cases,
+  scene knobs) go in their own commit before the change they measure.
+- **No AI or Cursor attribution trailers.** Commits belong to the human author
+  (`.cursor/rules/no-cursor-attribution.mdc`; the commit-msg hook strips Cursor trailers).
+- The pre-commit hook bumps the patch version and stages `package.json` and `src/version.js`.
+  Commit other `package.json` edits on their own.
+- Preserve line endings: some files are CRLF (`git ls-files --eol <file>`). Edit those with a
+  script that writes `\r\n`, not a tool that writes `\n`.
+- Do not push unless asked.
+
+## Engine code rules
+
+- **No `Math.hypot`**: `Math.sqrt(dx * dx + dy * dy)` (`.cursor/rules/no-hypot.mdc`).
+- **Declare every field in the constructor** of worker classes and per-frame objects. A field
+  first written after the frame loop starts reshapes the object and deoptimizes every method
+  that saw the old shape (review N-32: one warning flag cost pre-render ~8 s of per-frame
+  deopts). `tests/node/workerShape.test.js` enforces it for pre-render and Pixi. A field that
+  holds fractions must start as a double (`NaN` if it must also be falsy): a Smi-to-double write
+  also moves the object to a new map.
+- **Hot loops:** don't merge copies through a shared helper or add a loop-invariant branch inside
+  them; that cost 10–30 % (review R8). Send the rare case to its own copied loop instead
+  (E-41, E-51, E-52 do this). Keep hot callees under TurboFan's 460-byte inline limit when they
+  take or return doubles (a non-inlined call boxes them: E-59).
+- Correctness-sensitive reorders keep the output bit-identical, with a golden or parity test
+  (E-41, E-42, E-50 examples in `tests/node/`).
+- Prefer behavioural tests on real code (`tests/bench/workerHarness.mjs` loads a real worker in
+  Node) over assertions on source text.
+
+## Measuring (digest of HOW_WE_MEASURE)
+
+- Lowest layer that can see the change: kernel → stress scene → gameplay scene (Predator).
+- Kernel: calls the shipped function, never writes `src/`, reports ops/s with a checksum, warms up
+  through short calls so the timed code is a normal compile, not OSR (say which tier it timed).
+- Scene pair: ABAB against a worktree of the base rev, headless, `--src`, detailed stats off.
+  Primary = the owning worker's `STEP_MS − WAIT_MS`; baseline ≥ 3 ms or the row fails (raise the
+  scene's own load knob). Speed keep: ≥ 3 % and ≥ 75 % of pairs, load keys within 5 %.
+  A kernel claim needs the kernel win and the scene must not get 3 % worse.
+- Hygiene keep (bug fix, dead code): stays unless a primary worker is ≥ 3 % worse.
+- A worker the change cannot reach "regresses": run an A/A, and in emergent scenes fit its time
+  against its own load key before calling it (review E-50: physics vs `BODY_MOVED_COUNT`).
+- After measuring, update `HYPOTHESIS_LOG.md` / `EXECUTION_PLAN.md`; reports in full prose.
+
+## Where things are
+
+- Workers: `src/workers/` (`preRenderWorker.js`, `pixiWorker.js`, `logicWorker.js`, …).
+- Physics: `src/box2d/` (`physicsHostImpl.js` mirrors some SAB layouts by hand: append, don't move).
+- Lighting/visibility: `src/render/visibility/angularSweep.js`; splats in `src/render/*Splat.js`.
+- User guide: `docs/guide/` (examples there are user-facing: they must run).
+- Public API: `src/index.js` (named exports and the default `WEED` object, both) and
+  `types/weed.d.ts`.
