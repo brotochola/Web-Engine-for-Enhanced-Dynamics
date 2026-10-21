@@ -66,7 +66,9 @@ test('entity collect uses a per-frame skipCull branch; default still AABBs; B sk
   const glowCode = glow.replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(glowCode, /SpriteRenderer\.boundsHalfW\?\./);
   assert.doesNotMatch(glowCode, /this\.skipCull\)/);
-  assert.equal(body.match(/for \(let idx = 0; idx < iterCount/g)?.length, 1);
+  // Two loops: the turned-camera copy (E-51, exact view-space cull) and the one
+  // rotation 0 runs; turnedCameraCull.test.js checks what the copy keeps.
+  assert.equal(body.match(/for \(let idx = 0; idx < iterCount/g)?.length, 2);
   assert.match(body, /screenMinX/);
   assert.doesNotMatch(body, /screenX\[i\] = sx/);
   assert.doesNotMatch(adobeBody, /screenX\[i\] = sx/);

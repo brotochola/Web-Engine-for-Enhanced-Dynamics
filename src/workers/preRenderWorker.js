@@ -1390,6 +1390,52 @@ class PreRenderWorker extends AbstractWorker {
         const useIterSource = iterSource !== null && iterSource !== undefined;
         let visibleCount = 0;
 
+        const rot = this._frameCameraRot || 0;
+        if (rot && !skipCull) {
+            // E-51. A turned camera's box (above) is ~2× the view at 45° on 16:9,
+            // and everything in it was queued. Here each point turns into view
+            // space and is tested against the view itself plus the same margin.
+            // A copy of the loop below, so rotation 0 runs the loop it always did.
+            const rc = Math.cos(rot);
+            const rs = Math.sin(rot);
+            const halfCw = this.canvasWidth * 0.5;
+            const halfCh = this.canvasHeight * 0.5;
+            const marginScale = camZoom < 1 ? camZoom : 1;
+            const limW = halfCw + this.canvasWidth * this.cullingRatio * marginScale;
+            const limH = halfCh + this.canvasHeight * this.cullingRatio * marginScale;
+            for (let idx = 0; idx < iterCount; idx++) {
+                const i = useIterSource ? iterSource[idx] : idx;
+                if (!active[i]) continue;
+                if (!hasSpriteRenderer || !spriteRendererActive[i]) continue;
+
+                const dx = x[i] * camZoom - cameraOffsetX - halfCw;
+                const dy = y[i] * camZoom - cameraOffsetY - halfCh;
+                let halfExtent = 0;
+                if (hasHalfW) {
+                    const halfW = boundsHalfW[i] || 0;
+                    const halfH = hasHalfH ? (boundsHalfH[i] || 0) : 0;
+                    if (halfW > halfH) halfExtent = halfW;
+                    else if (halfH > 0) halfExtent = halfH;
+                }
+                if (halfExtent <= 0 && hasVisualRange) halfExtent = visualRange[i] || 0;
+                const extent = halfExtent * camZoom;
+                const u = rc * dx - rs * dy;
+                const v = rs * dx + rc * dy;
+                const w = limW + extent;
+                const h = limH + extent;
+                if (u < -w || u > w || v < -h || v > h) continue;
+
+                if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
+                    this.collectRenderable(0, i, 0);
+                    visibleCount++;
+                }
+            }
+            this.visibleEntitiesCount += visibleCount;
+            this._collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+                screenMinX, screenMaxX, screenMinY, screenMaxY);
+            return;
+        }
+
         for (let idx = 0; idx < iterCount; idx++) {
             const i = useIterSource ? iterSource[idx] : idx;
             if (!active[i]) continue;
