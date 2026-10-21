@@ -133,6 +133,7 @@ import {
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
 import { warnMissingListenerTags } from '../util/listenerTags.js';
+import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import {
   isSpawnCommandRingBound,
   tryPushDespawn,
@@ -968,9 +969,13 @@ class Scene {
   async init() {
     debugWorkerLog(`🎬 Scene ${this.constructor.name}: Initializing...`);
 
-    // Check SharedArrayBuffer support
-    if (typeof SharedArrayBuffer === 'undefined') {
-      throw new Error('SharedArrayBuffer not available! Check CORS headers.');
+    // Check SharedArrayBuffer support: on the page too, a blank canvas says nothing
+    const isolationError = sharedArrayBufferMissing();
+    if (isolationError) {
+      if (typeof document !== 'undefined') {
+        this._showFatalErrorMessage('page', 'SharedArrayBuffer unavailable', isolationError);
+      }
+      throw new Error(isolationError);
     }
 
     // Initialize AudioWorklet mixer and autoplay gate
