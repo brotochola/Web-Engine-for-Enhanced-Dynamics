@@ -307,24 +307,14 @@ With `debug.collectDetailedStats`, physics stats include `LIQUIDFUN_MS` (fluid s
 
 ---
 
-## Dense collider list (`buildDenseColliders`)
+## Mass, `invMass` and `invInertia`
 
-**Legacy (pre–Box2D):** Once per physics frame the Verlet path built a dense list of entities with `neighborData` collision candidates.
-
-**Current:** Box2D owns contacts. Spatial `neighborData` is visual-range only; this dense-candidate filter is not part of the Box2D contact path.
-
----
-
-## Mass and `invMass` invariants
-
-Collision response uses **inverse mass** directly (`invMass[i]`, `invMass[j]`) **without** a per-pair `|| 1` fallback.
+Box2D owns contacts and the mass it solves with: the physics host turns `RigidBody.mass` into a shape density (mass over collider area, `densityForEntity` in `weedjsPost.js`), so `mass` is what changes how a body moves. `invMass` and `invInertia` are derived columns kept for game code, such as impulse maths or the car demo's `inertia / mass` steering compensation; the engine writes them and does not read them.
 
 **Invariant:** For every **dynamic** body that participates in physics, `mass` and `invMass` must be valid after spawn / `onSpawned`:
 
 - Mass derived from collider geometry when a collider can supply it.
 - Otherwise an explicit custom `mass` is respected, or **unit mass** (`mass = 1`, `invMass = 1`) is set once by `RigidBody.syncMassFromCollider()`.
-
-**Why:** Removes a branch and implicit default from the hottest collision code; keeps behavior explicit.
 
 **Static bodies:** `invMass` is `0` (infinite mass). Collider size changes also go through `RigidBody.syncMassFromCollider()`, so a static body keeps `invMass = 0` even if its collider geometry changes later.
 

@@ -39,7 +39,6 @@ export class BoxPart extends GameObject {
         this.rigidBody.linearDamping = 0.001;
 
         this.rigidBody.sleeping = 0;
-        this.rigidBody.stillnessTime = 0;
         this.rigidBody.static = 0;
     }
 
