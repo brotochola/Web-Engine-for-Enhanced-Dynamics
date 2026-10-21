@@ -1440,6 +1440,10 @@ export declare class Scene {
   create(data?: unknown): void | Promise<void>;
   /** New game only (skipped when a save is loaded). */
   createNewGame(data?: unknown): void | Promise<void>;
+  /** After a save is applied; payload.custom is what onSaveGame returned (null if nothing). */
+  onLoadGame(payload: { custom: unknown; [key: string]: unknown }): void | Promise<void>;
+  /** While a save is built: scene state outside entities (score, flags, level), as JSON data. */
+  onSaveGame(): unknown;
   update(dtRatio: number, deltaTime: number, accumulatedTime: number, frameNumber: number): void;
   onMessageFromGameObject(
     data: unknown,

@@ -341,6 +341,9 @@ export function buildSavePayload(scene, globals = {}) {
   if (timeScale != null) payload.timeScale = timeScale;
   const tweens = packTweens();
   if (tweens) payload.tweens = tweens;
+  // Scene state outside entities (score, quest flags, level): JSON, back as payload.custom.
+  const custom = typeof scene.onSaveGame === 'function' ? scene.onSaveGame() : undefined;
+  if (custom !== undefined && custom !== null) payload.custom = custom;
   return payload;
 }
 

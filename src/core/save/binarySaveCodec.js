@@ -29,6 +29,8 @@ export const SECTION = Object.freeze({
   CHAINS2: 17,
   FIXTURES2: 18,
   MESHES2: 19,
+  /** u8 layout, then the JSON text of Scene.onSaveGame()'s value. Absent when it returned nothing. */
+  CUSTOM: 20,
 });
 
 const TWEENS2_LAYOUT = 1;
@@ -773,6 +775,21 @@ function readNav(r) {
   };
 }
 
+function writeCustom(w, value) {
+  let text;
+  try {
+    text = JSON.stringify(value);
+  } catch (err) {
+    throw new Error(`SaveGame: onSaveGame() must return JSON data (${err.message})`);
+  }
+  w.u8(SECTION_LAYOUT);
+  w.str(text);
+}
+
+function readCustom(r) {
+  return JSON.parse(r.str());
+}
+
 function writeTime(w, scale) {
   w.f32(+scale);
 }
@@ -869,6 +886,9 @@ export function encodeBinarySaveBody(payload) {
   if (payload.tweens?.length) {
     pushSection(sections, SECTION.TWEENS2, (w) => writeTweens(w, payload.tweens));
   }
+  if (payload.custom !== undefined && payload.custom !== null) {
+    pushSection(sections, SECTION.CUSTOM, (w) => writeCustom(w, payload.custom));
+  }
 
   const out = new Writer();
   out.u16(sections.length);
@@ -941,5 +961,7 @@ export function decodeBinarySaveBody(bytes) {
       : map[SECTION.TWEENS]
         ? readTweens(new Reader(map[SECTION.TWEENS]), true)
         : null,
+    // Older saves have no CUSTOM section: null, not an error.
+    custom: readVersioned(map, SECTION.CUSTOM, -1, 'custom', readCustom),
   };
 }

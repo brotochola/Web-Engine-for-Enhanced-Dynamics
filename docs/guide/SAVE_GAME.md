@@ -62,7 +62,8 @@ startMainLoop / workers  // only after restore ack — workers stay paused until
 | `preload()` | Always | Tilemap, camera prep, nav |
 | `create()` | Always | Static world (lights, trash, trees, grass) |
 | `createNewGame()` | No save restore | Serializable / dynamic spawns (soldiers, civilians, player) |
-| `onLoadGame(payload)` | After save applied | Load-only logic (UI, quests). Payload already restored entities + camera/sun |
+| `onLoadGame(payload)` | After save applied | Load-only logic (UI, quests). Payload already restored entities + camera/sun; `payload.custom` is what `onSaveGame` returned |
+| `onSaveGame()` | While a save is built | Return scene state outside entities (score, quest flags, level) as JSON data |
 
 Base `Scene` defaults: empty `createNewGame()` / `onLoadGame()`.
 
@@ -137,6 +138,26 @@ Every section added since TWEENS2 starts with a layout byte: a record change bum
 Version stays **5**. CHAINS, FIXTURES and MESHES are written whenever that pool is bound, even with no records: on load, a present section clears geometry the saved entities did not have, while an absent one (a save older than these tags, or a pool that was unbound) leaves whatever `onSpawned` built. Other empty optional sections are omitted. A load keeps tweens on entities the save does not own (`create()` runs again on a load); it replaces zoom tweens and tweens on restored or despawned entities. There is no JSON payload and no base64 on the wire.
 
 Helpers: `SaveStore.put/get/list/listForScene/remove`, `downloadSave`, `parseUploadedFile`.
+
+## Scene state outside entities (`onSaveGame`)
+
+Entities save their component fields and `SharedResource`s save whole. State a scene keeps in plain JS (a score on the main thread, quest flags, which level this is) needs `onSaveGame`:
+
+```javascript
+class Level extends WEED.Scene {
+  onSaveGame() {
+    return { score: this.score, flags: [...this.flags], level: this.data.level };
+  }
+
+  onLoadGame(payload) {
+    const saved = payload.custom; // null for a save made before the scene had onSaveGame
+    this.score = saved?.score ?? 0;
+    this.flags = new Set(saved?.flags ?? []);
+  }
+}
+```
+
+The value must be JSON data (objects, arrays, strings, numbers, booleans, null); a save of anything else throws `onSaveGame() must return JSON data`. It is stored in its own optional section (`CUSTOM`), so older saves load with `payload.custom === null` and the save format version is unchanged.
 
 ## API
 

@@ -1200,12 +1200,23 @@ class Scene {
    * (serializable entities restored + active lists flushed, camera/sun applied).
    * Runs only after logic0 restoreSaveComplete — before play starts.
    * Override for load-only hooks (UI, quests, follow-up spawns).
+   * payload.custom is what onSaveGame() returned (null for a save without it).
    * @param {object} payload - Decoded save payload
    */
   onLoadGame(payload) {
     // Override for post-load scene logic
   }
 
+  /**
+   * Called on the main thread while a save is built. Return the scene state
+   * that lives outside entities and SharedResources (score, quest flags, level
+   * number, …) as JSON data; onLoadGame gets it back as payload.custom.
+   * Return undefined (the default) to save nothing extra.
+   * @returns {*} JSON-serializable value or undefined
+   */
+  onSaveGame() {
+    return undefined;
+  }
 
   /**
    * Called once per frame on the main thread.
