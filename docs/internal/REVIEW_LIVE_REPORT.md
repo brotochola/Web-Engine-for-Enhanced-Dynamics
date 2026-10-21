@@ -17,6 +17,27 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**08:05** — N-28 done (`8f55ed66`, `6d777088`). Next: M8 (tests that read source text).
+
+### 08:05 — Do our kernels time the code we think they time? Now checked (N-28)
+
+- **The question.** A kernel that calls a function only a few times, each with a long
+  loop inside, can end up timing a special "mid-loop" compiled version (OSR). A game only
+  runs that version in its first seconds. So a kernel could pass or fail a change for the
+  wrong reason.
+- **The tool.** `tests/bench/kernelTierAudit.mjs` runs every kernel with V8's compile
+  traces and lists the engine functions that only ever got that mid-loop version. It
+  filters out names the kernel defines itself, and functions inlined into a normally
+  compiled caller.
+- **Result over all 86 kernels:** 3 timed functions had the problem: the collider pose
+  refill, pre-render's sprite emit, and the tween tick. 4 more hits were one-off setup
+  helpers, harmless. The three kernels now warm up with a few thousand short calls first
+  (a new `warmNormalCompile` helper).
+- **Does it change any verdict?** Not today: all three numbers tie with the old ones
+  (−1.6 % to +1.3 %). The 46 % gap N-28 originally found no longer reproduces. The kernels
+  behind today's lighting decisions were clean too. From now on no kernel depends on it,
+  and the audit is in CLAUDE.md and HOW_WE_MEASURE.
+
 **07:50** — E-69 dropped (`028e9f34`). Next: N-28 (do our kernels time the code we think
 they time?), then M8.
 

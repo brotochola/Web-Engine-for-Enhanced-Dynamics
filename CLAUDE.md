@@ -68,7 +68,8 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
 
 - Lowest layer that can see the change: kernel → stress scene → gameplay scene (Predator).
 - Kernel: calls the shipped function, never writes `src/`, reports ops/s with a checksum, warms up
-  through short calls so the timed code is a normal compile, not OSR (say which tier it timed).
+  through short calls so the timed code is a normal compile, not OSR (say which tier it timed;
+  `warmNormalCompile` in `microbenchHelpers.mjs`, and `tests/bench/kernelTierAudit.mjs` checks).
 - Scene pair: ABAB against a worktree of the base rev, headless, `--src`, detailed stats off.
   Primary = the owning worker's `STEP_MS − WAIT_MS`; baseline ≥ 3 ms or the row fails (raise the
   scene's own load knob). Speed keep: ≥ 3 % and ≥ 75 % of pairs, load keys within 5 %.
