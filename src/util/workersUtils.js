@@ -200,8 +200,14 @@ export const PHYSICS_STATS = Object.freeze({
   WAIT_MS: 47,
   /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
   IDLE_MS: 48,
-  STRIDE_FLOATS: 49,
-  BUFFER_SIZE: 49 * 4,
+  /**
+   * Wall ms answering sync queries between steps, since the previous frame (E-56).
+   * Outside STEP_MS: a request that lands after the step's service point is
+   * answered by the host's wake instead of waiting for the next frame.
+   */
+  QUERY_WAKE_MS: 49,
+  STRIDE_FLOATS: 50,
+  BUFFER_SIZE: 50 * 4,
 });
 
 /**
@@ -499,6 +505,8 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       // M4: waiting for the next logic query of a burst; outside BOX2D_MS.
       { key: 'WAIT_MS', label: 'Wait', format: fmtMs, kind: STAT_KIND.TIME },
       REST_STAT,
+      // E-56: queries answered between steps, outside STEP_MS (like Idle).
+      { key: 'QUERY_WAKE_MS', label: 'QueryWake', format: fmtMs, kind: STAT_KIND.OUTSIDE },
       { key: 'LF_PASS_FIND_CONTACTS_MS', label: 'LfFind', format: fmtMs, kind: STAT_KIND.NESTED },
       { key: 'LF_PASS_CONTACT_SOLVERS_MS', label: 'LfSolv', format: fmtMs, kind: STAT_KIND.NESTED },
       { key: 'LF_PASS_PRESSURE_MS', label: 'LfP', format: fmtMs, kind: STAT_KIND.NESTED },

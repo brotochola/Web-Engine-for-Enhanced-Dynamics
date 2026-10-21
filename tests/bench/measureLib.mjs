@@ -206,6 +206,8 @@ function extractMetrics(report) {
     PATHS_COMPUTED: particle.PATHS_COMPUTED ?? 0,
     WAIT_MS: waitMax,
     physics_WAIT_MS: physics.WAIT_MS ?? 0,
+    // E-56: sync queries answered between steps run outside physics STEP_MS.
+    physics_QUERY_WAKE_MS: physics.QUERY_WAKE_MS ?? 0,
     logic0_WAIT_MS: logic0.WAIT_MS ?? 0,
     RENDER_QUEUE_SIZE: preRender.RENDER_QUEUE_SIZE ?? 0,
     VISIBLE_ENTITIES: preRender.VISIBLE_ENTITIES ?? 0,

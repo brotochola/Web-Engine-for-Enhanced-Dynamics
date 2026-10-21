@@ -3105,8 +3105,14 @@
   globalThis.weedjsRestoreLiquidFun = weedjsRestoreLiquidFun;
   globalThis.weedjsEnableHostMode = weedjsEnableHostMode;
   globalThis.weedjsDoStep = weedjsDoStep;
+  // Between steps (the physics host's wake, review N-24): every sync kind.
   globalThis.weedjsServiceQueries = function () {
     serviceQueryAabb();
+    serviceOverlapCircle();
+    serviceRayCast();
+    serviceCastRayAll();
+    serviceLiquidFunQuery();
+    serviceLiquidFunExtract();
   };
   globalThis.weedjsWhenModuleReady = weedjsWhenModuleReady;
   globalThis.weedjsHandleInit = handleInit;

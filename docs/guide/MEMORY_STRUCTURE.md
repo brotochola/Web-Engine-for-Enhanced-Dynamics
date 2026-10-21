@@ -527,7 +527,7 @@ Every worker exposes **`STEP_MS`** (wall ms for that frame’s work) and **`FPS`
 | ----------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rendererStats`   | 1                        | FPS, …, MSG_MS, **STEP_MS**; DRAW_CALLS, VISIBLE_*, SPRITES_CREATED, ACTIVE_DECORATIONS                                                             |
 | `particleStats`   | 1                        | FPS, …, MSG_MS, BUILD_ACTIVE_VISIBLE_MS, PARTICLE_PHYSICS_MS, **STEP_MS**; ACTIVE/TOTAL particles & entities                                        |
-| `physicsStats`    | 1                        | FPS, **STEP_MS**, MSG_MS, BODY_COUNT, JOINT_COUNT, CONTACT_*, SENSOR_*, WEED_JOINTS, subphase timings, HEAP_*                                       |
+| `physicsStats`    | 1                        | FPS, **STEP_MS**, MSG_MS, BODY_COUNT, JOINT_COUNT, CONTACT_*, SENSOR_*, WEED_JOINTS, subphase timings, HEAP_*, WAIT_MS, IDLE_MS, QUERY_WAKE_MS (stride 50) |
 | `spatialStats`    | N (1 per spatial worker) | FPS, …, MSG_MS, NEIGHBORS_REUSED, **STEP_MS**; NEIGHBOR_CHECKS, GRID_CELLS_CHECKED, ENTITIES_PROCESSED, REBUILD_MS, NEIGHBOR_MS                    |
 | `logicStats`      | N (1 per logic worker)   | FPS, ENTITIES_PROCESSED, SYSTEMS_EXECUTED, MSG_MS, **STEP_MS**; PAIR_COUNT (all tracked pairs, the same on every worker), PAIR_OWN (this worker's)        |
 | `preRenderStats`  | 1                        | FPS, …, MSG_MS, SKIPPED_FRAMES, **STEP_MS**; VISIBLE_*, SHADOWS_UPDATED, RENDER_QUEUE_SIZE                                                          |

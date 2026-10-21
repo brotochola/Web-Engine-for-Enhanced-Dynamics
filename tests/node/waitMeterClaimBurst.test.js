@@ -60,8 +60,11 @@ test('the burst servicer waiting for the next query counts as wait', async () =>
     const waited = meter().ms - before;
     await pending; // settle the client before any assertion can unbind the SAB
     assert.equal(served, 1);
-    // No second query comes: the servicer spins, then waits its 2 ms and ends.
-    assert.ok(waited >= 1.5, `burst wait not metered: ${waited.toFixed(2)} ms`);
+    // No second query comes: the servicer spins for one, metered, and ends.
+    // Since E-56 there is no timed wait after the spin: a later query is the
+    // physics host's wake's to answer, not the step's.
+    assert.ok(waited > 0, `burst wait not metered: ${waited.toFixed(3)} ms`);
+    assert.ok(waited < 50, `the burst waited ${waited.toFixed(2)} ms for a query that never came`);
   } finally {
     bindRayCastSab(null);
   }

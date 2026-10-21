@@ -164,6 +164,11 @@
     return true;
   }
 
+  // Physics: wake between steps when a request lands (review N-24).
+  function armPendingWake(onPending) {
+    return Slot.armPendingWake(i32, onPending);
+  }
+
   global.Box2dCastRayAll = {
     DEFAULT_RESULT_CAP: DEFAULT_RESULT_CAP,
     HIT_STRIDE: HIT_STRIDE,
@@ -174,5 +179,6 @@
     box2dCastRayAll: box2dCastRayAll,
     box2dCastRayAllAsync: box2dCastRayAllAsync,
     servicePendingCastRayAll: servicePendingCastRayAll,
+    armPendingWake: armPendingWake,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

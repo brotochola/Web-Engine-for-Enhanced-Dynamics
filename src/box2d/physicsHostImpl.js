@@ -65,6 +65,8 @@
     // does its own frame bookkeeping and cannot inherit the idle measurement.
     WAIT_MS: 47,
     IDLE_MS: 48,
+    // E-56: sync queries answered by the wake between steps.
+    QUERY_WAKE_MS: 49,
   };
 
   // M4: blocked-on-sibling ms inside the step. The query IIFEs (bursts waiting
@@ -1166,19 +1168,49 @@
     });
   }
 
+  // Wake between steps for every sync query kind (review N-24). doStep answers
+  // them once per frame; a request posted after that point would wait for the
+  // next requestAnimationFrame, its logic worker blocked the whole time.
+  var WAKE_KINDS = [
+    'Box2dQueryAabb',
+    'Box2dOverlapCircle',
+    'Box2dRayCast',
+    'Box2dCastRayAll',
+    'LiquidFunQuery',
+    'LiquidFunExtract',
+  ];
+  var wakeArmed = Object.create(null);
+  var wakeDepth = 0;
+  // Time spent answering in the wake since the last published frame.
+  var queryWakeMs = 0;
+
   function pumpQueryWake() {
-    if (state._queryWakeArmed) return;
-    if (typeof Box2dQueryAabb === 'undefined' || typeof Box2dQueryAabb.armPendingWake !== 'function') return;
-    if (typeof Box2dQueryAabb.isQueryAabbBound === 'function' && !Box2dQueryAabb.isQueryAabbBound()) return;
-    state._queryWakeArmed = true;
-    var armed = Box2dQueryAabb.armPendingWake(function () {
-      state._queryWakeArmed = false;
-      if (!state._inStep && typeof globalThis.weedjsServiceQueries === 'function') {
+    for (var k = 0; k < WAKE_KINDS.length; k++) armQueryWake(WAKE_KINDS[k]);
+  }
+
+  function armQueryWake(kind) {
+    if (wakeArmed[kind]) return;
+    var api = global[kind];
+    if (!api || typeof api.armPendingWake !== 'function') return;
+    wakeArmed[kind] = true;
+    var armed = api.armPendingWake(function () {
+      wakeArmed[kind] = false;
+      // Not ready, or mid-step: the end-of-frame pump arms it again.
+      if (state._inStep || !state.box2dReady || typeof globalThis.weedjsServiceQueries !== 'function') return;
+      // A request that lands as the last one is answered fires the next arm
+      // synchronously; past a few in a row, leave it to the pump.
+      if (wakeDepth > 8) return;
+      wakeDepth++;
+      try {
+        var t0 = performance.now();
         globalThis.weedjsServiceQueries();
+        queryWakeMs += performance.now() - t0;
+        armQueryWake(kind);
+      } finally {
+        wakeDepth--;
       }
-      pumpQueryWake();
     });
-    if (!armed) state._queryWakeArmed = false;
+    if (!armed) wakeArmed[kind] = false;
   }
 
   // ponytail: classic IIFE cannot import timeScale.js — keep in sync with sanitizeTimeScale.
@@ -1245,6 +1277,8 @@
       if (state.stats) {
         state.stats[PS.STEP_MS] = performance.now() - t0;
         state.stats[PS.WAIT_MS] = WAIT_METER.ms;
+        state.stats[PS.QUERY_WAKE_MS] = queryWakeMs;
+        queryWakeMs = 0;
       }
     }
     state._lastFrameEndAt = performance.now();
@@ -1287,6 +1321,8 @@
       if (state.stats) {
         state.stats[PS.STEP_MS] = performance.now() - t0;
         state.stats[PS.WAIT_MS] = WAIT_METER.ms;
+        state.stats[PS.QUERY_WAKE_MS] = queryWakeMs;
+        queryWakeMs = 0;
       }
     }
     writeFPS();

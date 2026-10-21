@@ -18,6 +18,10 @@
 
   var HDR_STATUS = 0;
 
+  // A burst's spin for the next request. A caller's turnaround (wake from its
+  // wait, read, next claim) is tens of microseconds; ~25k loads is ~0.1 ms.
+  var SPIN_LOADS = 25000;
+
   // E-01: blocking on a sibling is folded into the shared meter so WAIT_MS is a
   // measurement. A classic script cannot import the ESM accessor, so the meter is
   // created lazily on the global. See src/util/waitMeter.js.
@@ -114,22 +118,16 @@
   }
 
   /**
-   * Physics: spin, then wait up to 2 ms, for the next request of a burst. False
-   * ends the burst. The step is blocked on a logic worker here (M4: WAIT_MS).
+   * Physics: spin for the next request of a burst. False ends the burst. A
+   * request that comes later is answered by the physics host's wake between
+   * steps (E-56), so the step no longer waits up to 2 ms for it. The step is
+   * blocked on a logic worker here (M4: WAIT_MS).
    */
   function waitForNextRequest(i32) {
-    for (var spin = 0; spin < 100000; spin++) {
+    for (var spin = 0; spin < SPIN_LOADS; spin++) {
       if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_PENDING) return true;
     }
-    var s2 = Atomics.load(i32, HDR_STATUS) | 0;
-    if (s2 === STATUS_PENDING) return true;
-    if (s2 === STATUS_CLAIMED) {
-      Atomics.wait(i32, HDR_STATUS, STATUS_CLAIMED, 2.0);
-      return true;
-    }
-    Atomics.wait(i32, HDR_STATUS, s2, 2.0);
-    var s3 = Atomics.load(i32, HDR_STATUS) | 0;
-    return s3 === STATUS_PENDING || s3 === STATUS_CLAIMED;
+    return false;
   }
 
   /**

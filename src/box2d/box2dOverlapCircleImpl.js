@@ -147,6 +147,11 @@
     return true;
   }
 
+  // Physics: wake between steps when a request lands (review N-24).
+  function armPendingWake(onPending) {
+    return Slot.armPendingWake(i32, onPending);
+  }
+
   global.Box2dOverlapCircle = {
     DEFAULT_RESULT_CAP: DEFAULT_RESULT_CAP,
     RESULTS_I32: RESULTS_I32,
@@ -156,5 +161,6 @@
     box2dOverlapCircle: box2dOverlapCircle,
     box2dOverlapCircleAsync: box2dOverlapCircleAsync,
     servicePendingOverlapCircle: servicePendingOverlapCircle,
+    armPendingWake: armPendingWake,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

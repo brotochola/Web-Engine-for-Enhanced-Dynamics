@@ -154,6 +154,11 @@
     return Slot.serviceBurst(i32, servicePendingLiquidFunExtract, extractFn, maxExtracts);
   }
 
+  // Physics: wake between steps when a request lands (review N-24).
+  function armPendingWake(onPending) {
+    return Slot.armPendingWake(i32, onPending);
+  }
+
   global.LiquidFunExtract = {
     STATUS_IDLE: STATUS_IDLE,
     STATUS_PENDING: STATUS_PENDING,
@@ -167,5 +172,6 @@
     liquidFunExtractAsync: liquidFunExtractAsync,
     servicePendingLiquidFunExtract: servicePendingLiquidFunExtract,
     servicePendingLiquidFunExtractBurst: servicePendingLiquidFunExtractBurst,
+    armPendingWake: armPendingWake,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

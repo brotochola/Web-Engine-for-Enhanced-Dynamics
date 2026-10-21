@@ -152,6 +152,8 @@ When more than one pre-render worker (or more than one logic or spatial worker) 
 
 `WAIT_MS` is time spent blocked on a sibling or on Pixi. It is not algorithm time. Subtract it before saying the algorithm got cheaper. If the hypothesis is “the join waits less,” then `WAIT_MS` on the slowest worker is the primary, and say that in the hypothesis. `measureLib` records `WAIT_MS` as the largest per-worker value plus `physics_WAIT_MS` and `logic0_WAIT_MS`. Logic waits while claiming a query slot and for its result; physics waits between the queries of a burst (M4). Pre-render never blocks, so its `WAIT_MS` is 0.
 
+Physics answers sync queries in two places: inside the step, and between steps when a request wakes it (E-56). The second is `QUERY_WAKE_MS` (`physics_QUERY_WAKE_MS` in `measureLib`), and it is **not** in `STEP_MS`. On a scene with sync queries the physics primary is `STEP_MS + QUERY_WAKE_MS`: a change that moves the answers from the step to the wake makes `STEP_MS` fall with no saving (the batch ray scene: −88 % `STEP_MS`, −1.4 % with the wake added).
+
 ## The regime the hypothesis names
 
 “The demo runs the code” is not enough. The scene has to be in the situation the hypothesis is about. Write that situation in the one-sentence hypothesis.

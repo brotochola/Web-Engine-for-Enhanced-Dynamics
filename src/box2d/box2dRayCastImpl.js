@@ -288,6 +288,11 @@
     return Slot.serviceBurst(i32, servicePendingRayCast, castFn, maxCasts);
   }
 
+  // Physics: wake between steps when a request lands (review N-24).
+  function armPendingWake(onPending) {
+    return Slot.armPendingWake(i32, onPending);
+  }
+
   global.Box2dRayCast = {
     STATUS_IDLE: STATUS_IDLE,
     STATUS_PENDING: STATUS_PENDING,
@@ -303,5 +308,6 @@
     fillRayCastHit: fillRayCastHit,
     servicePendingRayCast: servicePendingRayCast,
     servicePendingRayCastBurst: servicePendingRayCastBurst,
+    armPendingWake: armPendingWake,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

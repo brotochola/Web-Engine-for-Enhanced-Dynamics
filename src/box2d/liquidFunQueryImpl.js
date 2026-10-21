@@ -201,6 +201,11 @@
     return Slot.serviceBurst(i32, servicePendingLiquidFunQuery, queryFn, maxQueries);
   }
 
+  // Physics: wake between steps when a request lands (review N-24).
+  function armPendingWake(onPending) {
+    return Slot.armPendingWake(i32, onPending);
+  }
+
   global.LiquidFunQuery = {
     STATUS_IDLE: STATUS_IDLE,
     STATUS_PENDING: STATUS_PENDING,
@@ -219,5 +224,6 @@
     liquidFunRayCastAsync: liquidFunRayCastAsync,
     servicePendingLiquidFunQuery: servicePendingLiquidFunQuery,
     servicePendingLiquidFunQueryBurst: servicePendingLiquidFunQueryBurst,
+    armPendingWake: armPendingWake,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);
