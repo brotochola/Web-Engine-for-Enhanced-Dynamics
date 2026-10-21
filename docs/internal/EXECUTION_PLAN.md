@@ -1474,6 +1474,16 @@ CSR copy needs a counting pass before the fill in `rebuildOwnedRows`. With sever
 private copy covers only owned rows (fallback per cell). Kernel `spatialWorkerMicrobench.mjs`, then
 Predator spatial with a load fit.
 
+### E-71 N-32 costs the Node emit kernel ~14 % — **not-started**
+Found by the merge gate against `main` (2026-10-21): `preRenderWorkerMicrobench` emit is −15.8 % against
+`main` (0/49 rounds, normal compiles on both sides). A bisect over the 120 commits that change `src/`
+(only `src/` swapped, current kernel file) puts it at N-32 (`45886e4a`): 1,709 → 1,481 ops/s. The
+worker keeps fast properties (165 → 216 own properties). In Chrome, N-32 measured pre-render −9.6 % on
+Predator by removing late-field deopts, and the gate shows pre-render level with `main`, so this is a
+cost the kernel sees, not a product regression. Likely cause: fields N-32 declares as `null` that are
+typed arrays later, which loosens their field type. Find them (halve the declaration list in the
+kernel), give them typed initial values, and keep the Chrome win.
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above — **kept: adaptive insertion → merge** (`c53f163b`; kernel `7319ff1c`)
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at

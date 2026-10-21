@@ -17,6 +17,33 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**12:17** — **`main` fast-forwarded to this branch** (local only, nothing pushed). Follow-ups
+are E-71, N-35 and N-36.
+
+### 12:17 — The last check, and the merge
+
+- **Predator against `main`, headless, 8 pairs** (much steadier than the windowed gate):
+
+  | Worker | Median vs `main` | At matched load |
+  |---|---|---|
+  | logic | −2.9 % / −10.1 % | −142 µs (se 136) |
+  | pre-render | −4.8 % | −476 µs (se 383) |
+  | physics | +1.0 % | −257 µs (se 295) |
+  | renderer | +1.7 % | — |
+  | spatial | +3.4 % (5/8 pairs) | −79 µs (se 302) |
+
+- **Spatial**, the open question: its pairs range from −5 % to +8 %, with one outlier pair at
+  −22 %; mean −0.3 %, median +3.4 %. That isn't a regression by the rule (5/8 pairs), but both
+  sittings leaned the same way. So I ran the spatial worker's own frame against `main`: **a tie
+  (+0.3 %, same checksums)**. The spatial code isn't slower. If the lean is real it comes from
+  contention between workers. Logged as N-36 to watch.
+- **No worker is 3 % worse at matched load**, which was the bar, so `main` now points at this
+  branch's tip: a fast-forward, 0 commits behind, undone with one command until pushed.
+- **Follow-ups logged:**
+  - E-71: recover N-32's Node kernel cost without losing its Chrome win;
+  - N-35: the scoreboard's 2-run stress rows raised four false alarms;
+  - N-36: watch spatial.
+
 **11:48** — The headed runs are over. The merge gate against `main` is **not clean as run**:
 not merged. Triage below.
 
