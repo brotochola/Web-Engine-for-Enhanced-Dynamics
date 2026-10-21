@@ -908,7 +908,18 @@ Raised by the 47-commit review ([`REVIEW_PLAN.md`](./REVIEW_PLAN.md)). E-40 is s
 on purpose: `tests/bench/e40NeighborReadShape.mjs` already uses that number for an E-15
 sitting. Baseline rev for every pair here: `8af92002^` (`main` now equals HEAD).
 
-### E-41 Compound-only lights clip 512 bins against a placeholder full circle — **not-started**
+### E-41 Compound-only lights clip 512 bins against a placeholder full circle — **KEPT** (`634baaab`; kernel case `87528d3c`)
+**Result (2026-10-21).** I didn't skip the merge, which would have moved the outer edge from the
+32-gon's chords to the circle (up to 0.5 % of R). The merge now tests three edges per bin instead
+of 32. A ray from the centre of a convex polygon only meets the edge whose span holds it, or a
+neighbour at a corner, so the minimum is the same, bit for bit. The placeholder is recognised by
+its vertices (stateless, Float32 or Float64), in its own copy of the loop; anything else takes the
+full scan. Kernel (`angularSweepMicrobench`, new `polarFullCircle` cases, 9 rounds against
+`7ba494d1`): **+224.9 % at 512 bins, +116.1 % at 128 vertices** (81/81, checksums equal); the
+general merge, nearest and sweep tie. **CompoundVisPolyStressScene, 4 ABAB pairs: pre-render
+6.47 → 4.07 ms (−37.2 %, 4/4)**; every other worker ties. `polarFullCircle.test.js` holds it to
+the full scan on 60 random lights × 8 vertex caps.
+
 Compound bodies `continue` before `occCount++` (`preRenderWorker.js:3495` vs `:3598`), so a
 light that sees only compound occluders gets `buildFullCircle` (32 edges) and
 `clipVisibilityToPolar` runs `sweepDistAt` for every bin against it: 16 384 `raySegT` per
@@ -952,7 +963,14 @@ Since `8af92002`, `_reclaimDeadVoices` runs before the `count >= maxV` early dro
 (the audit kernel used a non-full bus). **Primary:** AudioStorm `logic0_STEP_MS` vs
 `8af92002^`, raising `PLAYS_PER_TICK` until the baseline clears 3 ms.
 
-### E-47 Pixi self-lit pass rewrites every compound triangle for every light — **not-started**
+### E-47 Pixi self-lit pass rewrites every compound triangle for every light — **screened 2026-10-21: low ceiling where it was measured**
+CompoundVisPolyStressScene's lights reach 1500 px (`sqrt(22500) × 10`) and its islands are 80 px
+across. Pre-render already drops bodies outside a light's reach, so a triangle can miss the disc
+only on an island straddling the rim: about 10 % of the fill triangles. The renderer there is
+1.7 ms, under the 3 ms floor. The skip would save a few hundredths of a ms in a row that can't
+judge it. Reopen with a scene of small lights over large lit compounds (the terrain demo's particle
+lights over islands, if they go through self-lit), and a renderer ≥ 3 ms.
+
 `_renderOccluderSelfLit` is 44.4 % of Pixi busy in the compound stress scene. Skip fill
 triangles whose bounding circle misses the light disc; collapse free-bin runs in the
 512-vertex fan. **Primary:** `pixi_STEP_MS` on CompoundVisPolyStressScene.

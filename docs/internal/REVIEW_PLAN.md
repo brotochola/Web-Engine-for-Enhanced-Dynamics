@@ -168,13 +168,13 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 
 ## Phase 7 — Speed (each is a hypothesis in EXECUTION_PLAN.md)
 
-- [ ] **E-41** Polar: skip the merge for compound-only lights.
+- [x] **E-41** — kept `634baaab`: three edges per bin against the placeholder circle, bit-identical. Compound scene **pre-render −37.2 % (4/4)**. Polar: skip the merge for compound-only lights.
 - [ ] **E-42** Polar: 512-entry cos/sin table.
 - [ ] **E-43** Polar: two-pointer merge into a separate output buffer.
 - [ ] **E-44** Polar: lazy bin clear (every raycasted light pays a 512-float fill).
 - [ ] **E-45** Re-measure the re-landed X2 (pack fast paths) and H11 (emit shadow hoist).
 - [ ] **E-46** Audio `play()` full-bus regime after `8af92002`.
-- [ ] **E-47** Pixi self-lit: skip triangles outside the light disc; collapse free fan runs.
+- [~] **E-47** — screened: in the compound scene the lights (1500 px) dwarf the islands (80 px), so about 10 % of triangles could be skipped, on a 1.7 ms renderer. It needs a scene with small lights over large lit compounds. Pixi self-lit: skip triangles outside the light disc; collapse free fan runs.
 - [ ] **E-08 (reopened)** `_sortPrefix` hybrid.
 - [ ] **E-48** Tween tick: logic0 only vs modulo split.
 - [x] **E-49** — kept `62537602` (byte cache + per-class plans, no format change; see G6). The string table stays open, since it changes the save format. Save encode: string table + single writer.

@@ -17,10 +17,24 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**03:03** — E-58 dropped, on measurement. Next: E-47 (Pixi self-lit is 44 % of the
-renderer in the compound scene), then the polar-lighting group E-41–E-44.
+**03:11** — E-41 is in: pre-render −37 % in the compound lighting scene. Next: E-42 (a
+cos/sin table for the same lighting loop), then E-43/E-44.
 
 ## Log
+
+### 03:11 — Compound lighting: pre-render 37 % cheaper (`634baaab`, kernel case `87528d3c`)
+
+- **What it was.** A light whose shadow-casters are all compound bodies (terrain islands,
+  for example) works out its lit area against a placeholder circle, a 32-sided polygon. For
+  each of its 512 directions it tested all 32 sides to find which one the ray hits: 16,384
+  ray tests per light per frame.
+- **The change.** A ray from the centre of a regular polygon can only hit the side it points
+  at, or a neighbour at a corner. So it now tests 3 sides instead of 32. The result is the same
+  to the last bit, checked against the old method on 60 random lights at 8 different settings.
+- **Numbers.** In the compound lighting stress scene: **pre-render 6.47 → 4.07 ms (−37 %,
+  better in all 4 pairs)**. Nothing else moved. In the kernel that piece is 2–3× faster.
+- **E-47 (Pixi self-lit) screened.** In that scene the lights are so much bigger than the
+  islands that almost nothing could be skipped. It needs a different scene to judge; logged.
 
 ### 03:03 — E-58 measured and dropped (knob `df614bbf`)
 
