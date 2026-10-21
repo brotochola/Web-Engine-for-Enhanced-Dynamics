@@ -17,6 +17,11 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**HEADED RUN — 10:50.** The merge gate against `main` is running: the Predator gate (8 ABAB
+pairs, visible window), then the engine scoreboard (40 rows; its 4 gameplay rows open a
+window). Please keep the machine quiet until the result is posted here; it will take a
+while. The sibling repo is committed: `5b79b8b` (your 10-19 build edits), `4ecb163` (N-22).
+
 **10:22** — N-22 done at the C level (`f67c3a5f`), as you asked.
 
 ### 10:22 — Box2D overlap queries fixed in the WASM itself (N-22)
