@@ -17,6 +17,8 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**16:06** — **N-35 fixed: the scoreboard no longer calls noise a regression** (`27a8a786`). A row flagged WORSE is measured again over 4 alternating pairs and only stays WORSE if it holds. Tried on a known-noisy row: four pairs of identical code read −4.7 / −3.0 / +1.5 / +2.6 %, not a regression. Also one more test now runs the code it guards instead of reading its text (M8, `7d0df259`): the physics force pass, which now also covers N-4.
+
 **16:02** — **N-39 and N-5 fixed, N-8 seen working in the demo** (`b909df57`, `8426a084`, `1e2984e3`).
 
 ### 16:02 — Hidden boxes stay dark, broken rock survives a save, shards appear
