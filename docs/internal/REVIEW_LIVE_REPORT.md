@@ -17,6 +17,29 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**15:39** — **N-14 and N-8 fixed** (`06a308e8`, `3890517d`). N-6 needs a design pass (below). Next: N-17, then the
+other demo bugs.
+
+### 15:39 — Camera shake, the shatter tool, and why N-6 waits
+
+- **N-14, camera shake:** two threads wrote the shake at once, so a shake could come out shorter
+  or vanish. Now only `Camera.shake()` writes it. Pre-render reads it and keeps its own clock.
+  Tests show the shared data is never touched by the reader, and a new shake mid-shake restarts
+  cleanly.
+- **N-8, the shatter tool:** it deleted the rock and spawned nothing. It cut the rock into 24
+  tiny slivers, all from one corner, and every sliver was below the size the shard spawner
+  keeps. It now halves the biggest piece of the whole rock until there are 24 or they're about
+  one cell each.
+  - Tests reproduce the old failure (nothing spawned) and check the new pieces.
+  - **Not yet seen in the game:** my headless script could click (it fired the laser) but its key
+    presses didn't switch tools on the benchmark page. Pressing V in the planet demo and
+    clicking rock should show the shards falling to the planet.
+- **N-6 (tween vs entity tick on different workers) waits for a design.** Entities change workers
+  from frame to frame as their type's list changes, so the only exact fix applies each tween
+  inside its entity's own tick. That means a per-entity tween list, a check in logic's hottest
+  loop, and a fallback for entity types with no tick. The engine's documented rule ("don't tween
+  a property the entity's own tick writes") still holds until then.
+
 **15:30** — **N-15 fixed: one physics config source** (`328d6c9f`). The physics worker and the main side each had their own config validator and defaults, and they had drifted. The one that ran skipped the safety clamps, and the tested one was missing two settings. Now there's one file both load, with the clamps. A small bug went with it: changing one gravity axis used to zero the other. Balls boots and steps 9,000 bodies headless; the suite is green (1,420). One slip: a `sed` edit had turned a CRLF guide file to LF; I caught it and fixed it in the same local commit. Next: N-14.
 
 **15:25** — **`main` fast-forwarded to `c5d0ee6c`** (local; nothing pushed; undo: `git branch -f main 758e1d92`). The gate passed: Predator, headless, 8 pairs against `main`, no worker 3 % worse at matched load.
