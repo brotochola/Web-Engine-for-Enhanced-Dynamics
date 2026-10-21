@@ -11,6 +11,7 @@ import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 import { Transform } from '../components/transform.js';
 
 const PICK_SLOP = 4;
+const _local = { begin: 0, count: 0, loop: 0, c: 1, s: 0, x: 0, y: 0 };
 
 export class ChainPoints {
   static xy = null;
@@ -208,25 +209,45 @@ export class ChainPoints {
     markBodyDirty(entityIdx, BODY_DIRTY.GEOMETRY);
   }
 
-  static rayDistance(entityIdx, rayX, rayY, dirX, dirY, rayLength) {
+  /**
+   * rayDistance and pointNear: the entity's chain, and a world point in its
+   * body's frame (pose plus the rotated collider offset). Null when there is
+   * no usable chain: a loop needs 3 points, an open chain 4 (two ghosts, one edge).
+   * The result is a shared scratch object; read it before the next call.
+   */
+  static _toLocal(entityIdx, x, y) {
     const count = this.count ? (this.count[entityIdx] | 0) : 0;
     const begin = this.begin ? (this.begin[entityIdx] | 0) : -1;
-    if (!this.xy || begin < 0) return -1;
+    if (!this.xy || begin < 0) return null;
     const loop = this.loop[entityIdx] | 0;
-    if (loop ? count < 3 : count < 4) return -1;
-
-    const tx = Transform.x[entityIdx];
-    const ty = Transform.y[entityIdx];
+    if (loop ? count < 3 : count < 4) return null;
     const c = Transform.rotC ? Transform.rotC[entityIdx] : 1;
     const s = Transform.rotS ? Transform.rotS[entityIdx] : 0;
     const offX = Collider.offsetX[entityIdx] || 0;
     const offY = Collider.offsetY[entityIdx] || 0;
-    const bodyX = tx + c * offX - s * offY;
-    const bodyY = ty + s * offX + c * offY;
-    const relX = rayX - bodyX;
-    const relY = rayY - bodyY;
-    const localX = c * relX + s * relY;
-    const localY = -s * relX + c * relY;
+    const relX = x - (Transform.x[entityIdx] + c * offX - s * offY);
+    const relY = y - (Transform.y[entityIdx] + s * offX + c * offY);
+    const f = _local;
+    f.begin = begin;
+    f.count = count;
+    f.loop = loop;
+    f.c = c;
+    f.s = s;
+    f.x = c * relX + s * relY;
+    f.y = -s * relX + c * relY;
+    return f;
+  }
+
+  static rayDistance(entityIdx, rayX, rayY, dirX, dirY, rayLength) {
+    const f = this._toLocal(entityIdx, rayX, rayY);
+    if (!f) return -1;
+    const begin = f.begin;
+    const count = f.count;
+    const loop = f.loop;
+    const c = f.c;
+    const s = f.s;
+    const localX = f.x;
+    const localY = f.y;
     const localDirX = c * dirX + s * dirY;
     const localDirY = -s * dirX + c * dirY;
 
@@ -260,24 +281,13 @@ export class ChainPoints {
   }
 
   static pointNear(entityIdx, x, y) {
-    const count = this.count ? (this.count[entityIdx] | 0) : 0;
-    const begin = this.begin ? (this.begin[entityIdx] | 0) : -1;
-    if (!this.xy || begin < 0) return false;
-    const loop = this.loop[entityIdx] | 0;
-    if (loop ? count < 3 : count < 4) return false;
-
-    const tx = Transform.x[entityIdx];
-    const ty = Transform.y[entityIdx];
-    const c = Transform.rotC ? Transform.rotC[entityIdx] : 1;
-    const s = Transform.rotS ? Transform.rotS[entityIdx] : 0;
-    const offX = Collider.offsetX[entityIdx] || 0;
-    const offY = Collider.offsetY[entityIdx] || 0;
-    const bodyX = tx + c * offX - s * offY;
-    const bodyY = ty + s * offX + c * offY;
-    const relX = x - bodyX;
-    const relY = y - bodyY;
-    const localX = c * relX + s * relY;
-    const localY = -s * relX + c * relY;
+    const f = this._toLocal(entityIdx, x, y);
+    if (!f) return false;
+    const begin = f.begin;
+    const count = f.count;
+    const loop = f.loop;
+    const localX = f.x;
+    const localY = f.y;
 
     const xy = this.xy;
     const start = loop ? 0 : 1;
