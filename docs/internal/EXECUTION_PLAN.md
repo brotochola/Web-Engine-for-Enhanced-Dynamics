@@ -1448,6 +1448,21 @@ inline.
 about one heap number per FSM tick, 0.8 MB/s per logic worker in Predator, ~20 µs a frame against a
 ~4 ms logic step. Avoiding it means changing the public onUpdate signature. Not done.
 
+### E-69 Component getters cache by an integer slot, not by name — **DROPPED 2026-10-21 (the getter got slower)**
+A Predator CPU profile after E-66 put the shared component getter (`gameObject.js`) at 10.8 % of
+logic, ahead of `neighborCount` / `getNeighbor`. Its body looks up `this._componentCache[name]`
+twice with the name from the closure; every getter runs the same code, so that keyed load is
+megamorphic. Variant: a slot per component name from a module registry, captured by each getter,
+and `_componentCache` an array. Holey and grown on demand, the kernel lost 12.7 % (0/49); sized and
+filled with `null` at construction it tied (+2.1 %). Predator, 8 ABAB pairs: logic medians 0 % and
++6.7 %, and −137 µs (se 70 µs) at matched load. But a CPU profile of the same tree put the getter
+itself at **1,079 ms against 749 ms** (17.2 % of logic against 10.8 %), with `neighborCount` and
+`getNeighbor` beside it unchanged (520 → 544, 487 → 503 ms). The function-level measure wins over a
+2-se fit: dropped, code restored. Same lesson as L4 (2026-09-30): the megamorphic string-keyed load
+is cheaper than it looks; the getter's share is mostly how often demo ticks call it. The fix would be
+in how components attach (e.g. own fields set at construction), which is an API and memory question,
+not a quick change.
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above — **kept: adaptive insertion → merge** (`c53f163b`; kernel `7319ff1c`)
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at
