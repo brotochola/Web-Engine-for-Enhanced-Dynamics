@@ -1075,7 +1075,24 @@ at matched load (count casts answered per frame: the 1536 scene shows the old ca
 changes the load), with a load knob that puts the baseline over the floors without
 saturating logic's frame. Not a gameplay win until some scene issues sync single casts.
 
-### E-58 Rebuild a compound outline only when its own fixtures changed — **not-started**
+### E-58 Rebuild a compound outline only when its own fixtures changed — **DROPPED 2026-10-21 (no product win after G1)**
+**Result.** Built as planned: a per-entity `entityRevision` (Uint32 per entity, appended after
+the pool revision so the physics host's offsets don't move), bumped by `replaceForEntityFlat`
+and `_freeFixtureChain` for that entity and never reset; the three `ensureCompoundSolid` call
+sites keyed on it. Tests showed one remesh leaving the other bodies' cached outlines alone.
+Suite green. CompoundVisPolyStressScene `remeshEvery=1`, 4 ABAB pairs against `66b82a5a`:
+- 36-triangle islands (default): pre-render 6.54 ms, **−0.8 % (1/4), tie**; renderer −5.8 %
+  (0/4), but its 1.7 ms baseline is under the floor.
+- 128-triangle islands (`ringSegments=64`, new knob `df614bbf`): pre-render 10.94 ms,
+  **+0.8 % (2/4), tie**; renderer +3.4 % (3/4), 2.0 ms, under the floor.
+- 256 triangles saturates pre-render (19 ms, 116 % load) on the visibility sweep, not on
+  rebuilds, so it can't judge this.
+
+Why it does not pay: G1 already made a rebuild 12–18× cheaper. Pre-render only outlines bodies
+inside a light's reach, and only their segments. What is left of the "rebuild everything"
+cost is under the noise. The patch was not kept; the design above rebuilds it in an hour.
+**Reopen only** with a scene where rebuilds show in a profile (many large lit islands, one cut
+per frame, primary ≥ 3 ms).
 
 Found in review G1. `ensureCompoundSolid` caches each compound body's outline by
 `ColliderFixture.revision[0]`, which is pool-wide: any fixture change anywhere (one island

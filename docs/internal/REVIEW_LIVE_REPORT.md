@@ -17,10 +17,25 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**02:51** — E-59 is in. Next: E-58 (rebuild a lit outline only when its own piece changed),
-then the rest of Phase 7, one hypothesis at a time.
+**03:03** — E-58 dropped, on measurement. Next: E-47 (Pixi self-lit is 44 % of the
+renderer in the compound scene), then the polar-lighting group E-41–E-44.
 
 ## Log
+
+### 03:03 — E-58 measured and dropped (knob `df614bbf`)
+
+- **The idea.** When the terrain laser cuts one island, every lit island rebuilt its lighting
+  outline, because the "something changed" counter was shared by all of them. I gave each body
+  its own counter, so only the cut island rebuilds.
+- **It worked, and it didn't matter.** In the stress scene with one island re-cut every frame,
+  pre-render tied, both with the scene's small islands (36 triangles) and with islands four
+  times bigger (128 triangles, via a new `?ringSegments` switch). The renderer moved a few
+  percent either way, under the 3 ms floor. The earlier G1 fix had already made a rebuild
+  12–18× cheaper, so what was left doesn't show.
+- **What I did.** I reverted the code and wrote the design and numbers into EXECUTION_PLAN, so
+  it can be rebuilt in an hour if a real scene ever shows rebuilds in a profile. It's on the
+  "don't re-propose" list until then. The `?ringSegments` switch stays: it's useful for future
+  lighting work.
 
 ### 02:51 — Fading particles are 10 % cheaper (`7e56612e`, tools `e79834c1`)
 

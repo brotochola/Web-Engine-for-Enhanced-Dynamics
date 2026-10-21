@@ -179,6 +179,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [ ] **E-48** Tween tick: logic0 only vs modulo split.
 - [x] **E-49** — kept `62537602` (byte cache + per-class plans, no format change; see G6). The string table stays open, since it changes the save format. Save encode: string table + single writer.
 - [ ] **E-50** Smaller items (light-splat attenuation, `collectSolidSegments` order, body-dirty duplicates, frameClock header lock, `_snapshotVertGen`, littleCity jitter, body-create scratch).
+- [x] **E-58** — dropped. Pre-render tied at 36 and at 128 triangles per island (`remeshEvery=1`), and the renderer stayed under the floor. G1 had already made rebuilds cheap.
 - [x] **E-59** — kept `7e56612e` (tools `e79834c1`). From V6. The ease front is 245 bytes and now inlines: tweened particles +28 % in the kernel, with no boxing GCs; ParticleIntegrateStressScene `?tween=1` particle −10.3 % (4/4).
 
 ## Phase 8 — Docs
@@ -199,7 +200,8 @@ not H-11b) · P3 · H-14 numeric sort · E-13 · E-17 · E-18 · E-19 · E-23 (u
 `VISIBILITY_MS` on a terrain scene says otherwise) · H-13 · spatial S4/H2/multigrid/C16 ·
 decoration stamp · monomorphic tickFn cache · `writeVertices` without unary plus ·
 GL state skip around texSubImage2D · fuse type 0 / packed srFlags / interleaved emit
-record · 16 ms frame-fit gate · second LiquidFun pthread pool.
+record · 16 ms frame-fit gate · second LiquidFun pthread pool · E-58 per-entity fixture
+revision (unless a profile shows outline rebuilds).
 Caveats: E-03 rests on one pass and E-10 ran in Node without pointer compression; re-run
 before treating either as closed. Removed `subarray` views are not GC wins (H-02: 0 GC events).
 
