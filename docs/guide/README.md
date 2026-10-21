@@ -11,6 +11,7 @@ These notes are for someone writing a game on the engine. Specs live here. The m
 | [`WORKERS_ARCHITECTURE.md`](./WORKERS_ARCHITECTURE.md) | Worker roles, data flow, scaling, message protocols |
 | [`MEMORY_STRUCTURE.md`](./MEMORY_STRUCTURE.md) | SharedArrayBuffer layouts, who writes, who reads, SharedResource blobs |
 | [`ENTITY_TEMPLATE.js`](./ENTITY_TEMPLATE.js) | A minimal entity, with worker-safe imports and lifecycle hooks |
+| [`DEPLOY.md`](./DEPLOY.md) | The two headers `SharedArrayBuffer` needs, per host (Vercel, Netlify, GitHub Pages, itch.io, …) |
 
 ## Subsystems
 

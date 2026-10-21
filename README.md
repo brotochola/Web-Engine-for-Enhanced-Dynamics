@@ -147,7 +147,7 @@ Or, if you load a `<script>` / CDN URL, change `weed.bundle*.min.js` to `weed.pr
 
 The published bundle is a **default export only**. Destructure from `WEED`. `import { Scene } from '@weed.js/engine'` may type-check (the `.d.ts` also exports class names) but fails at runtime.
 
-`SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game.
+`SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game. Per-host setup (Vercel, Netlify, GitHub Pages, itch.io): [`docs/guide/DEPLOY.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md).
 
 ### CDN (jsDelivr)
 
@@ -376,6 +376,7 @@ Docs live in the GitHub repo, not in the npm tarball. Start with the [docs index
 | [docs/guide/TILEMAP.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/TILEMAP.md)                           | SAB-backed Tiled map API                                        |
 | [docs/guide/RAYCASTING.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/RAYCASTING.md)                     | Grid-based raycast API                                          |
 | [docs/guide/ENTITY_TEMPLATE.js](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/ENTITY_TEMPLATE.js)           | Copy-paste entity starter                                       |
+| [docs/guide/DEPLOY.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md)                             | Headers for SharedArrayBuffer per host (Vercel, Netlify, GitHub Pages, itch.io) |
 
 ---
 
