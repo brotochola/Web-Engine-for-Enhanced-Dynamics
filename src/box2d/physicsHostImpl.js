@@ -1061,6 +1061,32 @@
     return s;
   }
 
+  // b7-split-start
+  /** Longest step Box2D and LiquidFun stay stable with. */
+  var MAX_STABLE_DT = 1 / 30;
+  /** Most ordinary steps one frame may take; past that the frame is cut short. */
+  var MAX_FRAME_STEPS = 4;
+  var _frameSplit = { dt: 0, steps: 1 };
+
+  /**
+   * B7. A frame's scaled dt as equal steps no longer than MAX_STABLE_DT. It was
+   * one step capped at 1/30 s, so Time.scale above 2 at 60 Hz ran at 2 and
+   * fixedFps under 30 ran slow. Scale 3 at 60 Hz is 2 steps of 1/40 s; fixedFps
+   * 20 is 2 of 1/40 s. Past MAX_FRAME_STEPS (a long hitch at scale 4) the steps
+   * stay at MAX_STABLE_DT and the frame loses the rest, as the cap did.
+   */
+  function splitFrameDt(dt) {
+    var steps = Math.ceil(dt / MAX_STABLE_DT - 1e-9);
+    if (!(steps >= 1)) steps = 1;
+    if (steps > MAX_FRAME_STEPS) steps = MAX_FRAME_STEPS;
+    var step = dt / steps;
+    if (step > MAX_STABLE_DT) step = MAX_STABLE_DT;
+    _frameSplit.dt = step;
+    _frameSplit.steps = steps;
+    return _frameSplit;
+  }
+  // b7-split-end
+
   function gameLoop() {
     if (state.isPaused) return;
 
@@ -1100,14 +1126,13 @@
         if (dt > maxDt) dt = maxDt;
       }
       dt *= readTimeScale();
-      // Cap scaled dt so fast-forward or large hitch cannot destabilize Box2D constraints.
-      var maxStableDt = 1 / 30;
-      if (dt > maxStableDt) dt = maxStableDt;
       WAIT_METER.ms = 0;
       if (dt > 0) {
+        // B7: a long frame is several stable steps, not one capped step.
+        var split = splitFrameDt(dt);
         state._inStep = true;
         try {
-          weedjsDoStep(dt, state.settings.subStepCount);
+          weedjsDoStep(split.dt, state.settings.subStepCount, split.steps);
         } finally {
           state._inStep = false;
         }
@@ -1150,9 +1175,10 @@
     if (state.box2dReady && dt > 0) {
       var t0 = performance.now();
       WAIT_METER.ms = 0;
+      var split = splitFrameDt(dt);
       state._inStep = true;
       try {
-        weedjsDoStep(dt, state.settings.subStepCount);
+        weedjsDoStep(split.dt, state.settings.subStepCount, split.steps);
       } finally {
         state._inStep = false;
       }

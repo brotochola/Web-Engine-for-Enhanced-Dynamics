@@ -129,7 +129,7 @@ Command ring `setVelocity` works once `hasBody` (RB-only included). Col-only sta
 
 `clockData` is one `Float32`, default `1`. `Time.scale` writes it. `0` is a hitstop. A non-finite write is read back as `1`. A negative write is read back as `0`. A value above `4` is read back as `4` (`MAX_TIME_SCALE`).
 
-[`AbstractWorker.updateFrameTiming`](../../src/workers/abstractWorker.js) multiplies the sim step (`deltaTime` and `dtRatio`, and the accumulated sim clock) by that value. The physics host does the same to the seconds it passes to `weedjsDoStep`, after the 1/20 s hitch cap, in both its own loop and a lockstep `step`. `Scene.update` and the sun day-cycle receive the scaled step. Free-cam uses the wall step.
+[`AbstractWorker.updateFrameTiming`](../../src/workers/abstractWorker.js) multiplies the sim step (`deltaTime` and `dtRatio`, and the accumulated sim clock) by that value. The physics host does the same to the seconds it steps, after the 1/20 s hitch cap, in both its own loop and a lockstep `step`. A frame longer than 1/30 s (a scale above 2 at 60 Hz, or `fixedFps` under 30) is split into up to 4 equal steps of at most 1/30 s, each an ordinary Box2D and LiquidFun step, so physics keeps pace with the scaled clock; contact events come out of every step, poses once per frame. Past 4 steps (a long hitch at scale 4) the frame is cut short. `Scene.update` and the sun day-cycle receive the scaled step. Free-cam uses the wall step.
 
 Wall `STEP_MS` and FPS stay on `performance.now()` around the work. They do not become the scaled step. Keyboard, mouse, gamepad, and the audio mixer are not multiplied. `GameEngine.pause()` still freezes workers; it is not a time scale.
 

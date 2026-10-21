@@ -53,6 +53,13 @@
   let hostEntityCount = 0;
   let hostSubSteps = 4;
   let hostDt = 0;
+  /** B7: ordinary steps of hostDt this frame (physicsHostImpl splits a long frame). */
+  let hostSteps = 1;
+  // B7: moved-body events gathered over a frame's earlier steps (allocated on first use).
+  let gatherMovedSlots = null;
+  let gatherMovedAsleep = null;
+  let gatherMovedAt = null;
+  let gatherMovedCount = 0;
   let moduleReady = false;
   const moduleReadyWaiters = [];
   let cmdI32 = null;
@@ -2334,6 +2341,60 @@
     world.cullParticlesOutsideBounds(0, 0, w, h);
   }
 
+  // b7-steps-start
+  /**
+   * B7. The world steps of one frame. A frame longer than the stable step
+   * (Time.scale above 2, fixedFps under 30) is hostSteps ordinary steps of dt.
+   * Box2D clears forces after a step and reports only its last step's events,
+   * so forces go in again before each step and contact, hit and joint-break
+   * events come out after each one; moved-body events are gathered. Poses,
+   * moved bodies and LiquidFun are published once, after the last (afterStep).
+   */
+  function stepWorld(dt, solverSteps) {
+    const steps = hostSteps > 1 ? hostSteps : 1;
+    for (let k = 0; k < steps; k++) {
+      if (k > 0) {
+        applyForcesAndTorque();
+        cullLiquidFunOutsideWorld();
+      }
+      world.step(dt, solverSteps);
+      if (k < steps - 1) {
+        publishContactRingFromWasm();
+        publishHitsFromWasm();
+        publishJointBreaksFromWasm();
+        gatherMovedFromStep();
+      }
+    }
+  }
+
+  /** Add this step's moved bodies to the frame's list; the latest fell-asleep flag wins. */
+  function gatherMovedFromStep() {
+    if (!world) return;
+    const n = typeof world._getBodyMoveCount === 'function' ? world._getBodyMoveCount() | 0 : 0;
+    const slots = world._bodyMoved;
+    if (!slots || n <= 0) return;
+    const asleep = world._bodyFellAsleep;
+    if (!gatherMovedSlots || gatherMovedAt.length < hostEntityCount) {
+      const cap = Math.max(hostEntityCount | 0, 1);
+      gatherMovedSlots = new Int32Array(cap);
+      gatherMovedAsleep = new Uint8Array(cap);
+      gatherMovedAt = new Int32Array(cap).fill(-1);
+      gatherMovedCount = 0;
+    }
+    for (let i = 0; i < n; i++) {
+      const slot = slots[i] | 0;
+      if (slot < 0 || slot >= gatherMovedAt.length) continue;
+      let at = gatherMovedAt[slot];
+      if (at < 0) {
+        at = gatherMovedCount++;
+        gatherMovedAt[slot] = at;
+        gatherMovedSlots[at] = slot;
+      }
+      gatherMovedAsleep[at] = asleep ? asleep[i] | 0 : 0;
+    }
+  }
+  // b7-steps-end
+
   function afterStep() {
     publishContactRingFromWasm();
     publishHitsFromWasm();
@@ -2345,18 +2406,33 @@
 
   function publishMovedSabFromStep() {
     if (!world || typeof publishMovedBodies !== 'function') return;
-    const wasmCount =
-      typeof world._getBodyMoveCount === 'function'
-        ? world._getBodyMoveCount() | 0
-        : 0;
-    publishMovedBodies(
-      world._bodyMoved,
-      world._bodyFellAsleep,
-      wasmCount,
-      pendingTeleportList,
-      pendingTeleportCount,
-      pendingTeleportBits,
-    );
+    if (gatherMovedCount > 0) {
+      // B7: a frame of several steps publishes every body any of them moved.
+      gatherMovedFromStep();
+      publishMovedBodies(
+        gatherMovedSlots,
+        gatherMovedAsleep,
+        gatherMovedCount,
+        pendingTeleportList,
+        pendingTeleportCount,
+        pendingTeleportBits,
+      );
+      for (let i = 0; i < gatherMovedCount; i++) gatherMovedAt[gatherMovedSlots[i]] = -1;
+      gatherMovedCount = 0;
+    } else {
+      const wasmCount =
+        typeof world._getBodyMoveCount === 'function'
+          ? world._getBodyMoveCount() | 0
+          : 0;
+      publishMovedBodies(
+        world._bodyMoved,
+        world._bodyFellAsleep,
+        wasmCount,
+        pendingTeleportList,
+        pendingTeleportCount,
+        pendingTeleportBits,
+      );
+    }
     if (pendingTeleportCount > 0 && pendingTeleportBits) {
       for (let i = 0; i < pendingTeleportCount; i++) {
         pendingTeleportBits[pendingTeleportList[i]] = 0;
@@ -2522,7 +2598,7 @@
       snapshotPrevPose(entityCount);
       applyForcesAndTorque();
       cullLiquidFunOutsideWorld();
-      world.step(dt, solverSteps);
+      stepWorld(dt, solverSteps);
       maybePublishPose(entityCount);
       afterStep();
       writePhysicsStats(0, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -2545,7 +2621,7 @@
     applyForcesAndTorque();
     const t4 = performance.now();
     cullLiquidFunOutsideWorld();
-    world.step(dt, solverSteps);
+    stepWorld(dt, solverSteps);
     const t5 = performance.now();
     maybePublishPose(entityCount);
     afterStep();
@@ -2903,11 +2979,12 @@
    * @param {number} dtSec
    * @param {number} [subSteps]
    */
-  function weedjsDoStep(dtSec, subSteps) {
+  function weedjsDoStep(dtSec, subSteps, steps) {
     if (subSteps != null) {
       hostSubSteps = Math.max(1, subSteps | 0);
     }
     hostDt = dtSec;
+    hostSteps = steps > 1 ? steps | 0 : 1;
     doStep();
   }
 
