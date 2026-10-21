@@ -68,6 +68,7 @@ import {
 } from '../util/logicOwner.js';
 import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
 import { isSpawnCommandRingBound, tryPushSpawn } from '../util/spawnCommandRing.js';
+import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
@@ -2299,7 +2300,8 @@ export class GameObject {
       i = popEntity(EntityClass.freeListTop, EntityClass.freeList, EntityClass.startIndex);
 
       if (i < 0) {
-        // Pool exhausted
+        // Pool exhausted: one warning per type per scene, the rest are counted
+        reportPoolExhausted(EntityClass);
         return null;
       }
     }
@@ -2652,7 +2654,7 @@ export class GameObject {
    */
   static getPoolStats(EntityClass) {
     if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
-      return { total: 0, active: 0, available: 0 };
+      return { total: 0, active: 0, available: 0, dropped: 0 };
     }
 
     // If free list exists, use it for O(1) stats
@@ -2662,6 +2664,7 @@ export class GameObject {
         total: EntityClass.poolSize,
         active: EntityClass.poolSize - available,
         available: available,
+        dropped: droppedSpawns(EntityClass),
       };
     }
 
@@ -2680,6 +2683,7 @@ export class GameObject {
       total: total,
       active: activeCount,
       available: total - activeCount,
+      dropped: droppedSpawns(EntityClass),
     };
   }
 

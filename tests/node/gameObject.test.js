@@ -637,6 +637,7 @@ test('Scene.getPoolStats handles entity classes that start at index 0', () => {
       total: 3,
       active: 2,
       available: 1,
+      dropped: 0,
     });
   } finally {
     Transform.active = previousTransformActive;

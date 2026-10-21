@@ -155,6 +155,7 @@ function buildSceneSharedBuffers(scene) {
     inputData: scene.buffers.inputData,
     cameraData: scene.buffers.cameraData,
     clockData: scene.buffers.clockData,
+    poolExhaustionData: scene.buffers.poolExhaustionData,
     tweenData: scene.buffers.tweenData,
     debugData: scene.buffers.debugData,
     debugDrawData: scene.buffers.debugDrawData,

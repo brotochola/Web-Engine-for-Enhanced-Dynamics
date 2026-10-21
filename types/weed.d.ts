@@ -1129,6 +1129,8 @@ export declare class GameEngine {
     total: number;
     active: number;
     available: number;
+    /** Spawns that found the pool empty this scene (one warning, then counted). */
+    dropped: number;
   };
   /** Scene debug flags buffer (same as {@link Scene.debugFlags}). */
   get debug(): DebugFlags | undefined;
@@ -1467,6 +1469,8 @@ export declare class Scene {
     total: number;
     active: number;
     available: number;
+    /** Spawns that found the pool empty this scene (one warning, then counted). */
+    dropped: number;
   };
   registerEntityClass(
     EntityClass: typeof GameObject,

@@ -91,6 +91,7 @@ import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { ShapeType } from '../util/configDefaults.js';
+import { bindPoolExhaustion } from '../util/poolExhaustion.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -846,6 +847,9 @@ export class AbstractWorker {
 
     if (data.buffers?.clockData) {
       Time.bind(data.buffers.clockData);
+    }
+    if (data.buffers?.poolExhaustionData) {
+      bindPoolExhaustion(data.buffers.poolExhaustionData);
     }
     if (data.buffers?.frameClock && Number.isInteger(data.frameClockSlot)) {
       this._frameClock = bindFrameClock(data.buffers.frameClock);

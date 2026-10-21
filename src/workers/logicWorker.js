@@ -2053,9 +2053,9 @@ class LogicWorker extends AbstractWorker {
     }
     const instance = GameObject.spawn(EntityClass, spawnConfig, entityIndex);
     if (!instance) {
-      console.warn(
-        `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`
-      );
+      // The index was reserved on main (an empty pool is reported there), so a
+      // null here is onSpawned despawning its own entity: a choice, not an error.
+      debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: ${className}[${entityIndex}] spawn did not complete`);
     }
   }
 

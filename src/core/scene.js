@@ -134,6 +134,7 @@ import {
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
 import { warnMissingListenerTags } from '../util/listenerTags.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
+import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import {
   isSpawnCommandRingBound,
   tryPushDespawn,
@@ -285,6 +286,7 @@ class Scene {
       inputData: null,
       cameraData: null,
       clockData: null,
+      poolExhaustionData: null,
       tweenData: null,
       debugData: null,
       debugDrawData: null, // Debug draw ring buffer (DebugDraw API)
@@ -2633,8 +2635,8 @@ class Scene {
         Transform.x[entityIndex] = spawnConfig.x ?? 0;
         Transform.y[entityIndex] = spawnConfig.y ?? 0;
       } else {
-        // Pool exhausted
-        console.warn(`spawnEntity: Pool exhausted for ${className}`);
+        // Pool exhausted: one warning per type per scene, the rest are counted
+        reportPoolExhausted(EntityClass);
         return null;
       }
     }
@@ -2721,7 +2723,7 @@ class Scene {
 
   getPoolStats(EntityClass) {
     if (EntityClass.startIndex == null || EntityClass.poolSize == null) {
-      return { total: 0, active: 0, available: 0 };
+      return { total: 0, active: 0, available: 0, dropped: 0 };
     }
 
     const startIndex = EntityClass.startIndex;
@@ -2738,6 +2740,7 @@ class Scene {
       total: total,
       active: activeCount,
       available: total - activeCount,
+      dropped: droppedSpawns(EntityClass),
     };
   }
 

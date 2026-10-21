@@ -82,6 +82,7 @@ import {
   bindBodySyncBuffers,
 } from '../box2d/box2dBodySync.js';
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
+import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
 
 /** Cell count ceiling. Not an entity id. 2^20 covers a 4096 px world at a 4 px cell. */
 export const MAX_SPATIAL_CELLS = 1 << 20;
@@ -794,6 +795,9 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   views.clock[0] = 1;
   Time.bind(buffers.clockData);
 
+  buffers.poolExhaustionData = new SharedArrayBuffer(poolExhaustionBytes(scene.registeredClasses.length));
+  bindPoolExhaustion(buffers.poolExhaustionData);
+
   const maxTweens = config.tween?.maxTweens | 0;
   if (maxTweens > 0) {
     buffers.tweenData = new SharedArrayBuffer(tweenBufferBytes(maxTweens));
@@ -1032,6 +1036,7 @@ export function teardownSceneSharedState(scene) {
   Camera._data = null;
   Time.unbind();
   Tween.unbind();
+  unbindPoolExhaustion();
   Mouse._data = null;
   Gamepad.initialize(null);
   Ray.debugFlags = null;
