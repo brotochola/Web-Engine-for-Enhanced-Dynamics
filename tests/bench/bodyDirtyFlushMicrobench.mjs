@@ -179,6 +179,21 @@ function main() {
     }
   }, { iterations: 2000 });
 
+  // E-50: one window, a burst of 4096 spawns, each slot marked three times
+  // (lifecycle, then geometry and mass from its setters), as a batch spawn does.
+  const BURST = 4096;
+  const burst = timeIt('shipped_burst_triple_mark', (iters) => {
+    for (let n = 0; n < iters; n++) {
+      withBodyDirtyDeferred(() => {
+        for (let i = 0; i < BURST; i++) {
+          markBodyDirty(i, BODY_DIRTY.LIFECYCLE);
+          markBodyDirty(i, BODY_DIRTY.GEOMETRY);
+          markBodyDirty(i, BODY_DIRTY.MASS);
+        }
+      });
+    }
+  }, { iterations: 200 });
+
   const dense = makeDense(N);
   const sparse = makeSparse(N);
   const denseHot = timeIt('dense_empty_flush', (iters) => runHot(dense, iters), { iterations: 2000 });
@@ -194,6 +209,7 @@ function main() {
     checksum: checksumInts(sparse.dirtyFlags, 16),
     cases: {
       shippedEmptyFlush: shipped,
+      shippedBurstTripleMark: burst,
       denseEmptyFlush: denseHot,
       sparseEmptyFlush: sparseHot,
       denseOneForeign: denseForeign,
