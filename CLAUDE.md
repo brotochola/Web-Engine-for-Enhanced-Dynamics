@@ -53,6 +53,12 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   them; that cost 10–30 % (review R8). Send the rare case to its own copied loop instead
   (E-41, E-51, E-52 do this). Keep hot callees under TurboFan's 460-byte inline limit when they
   take or return doubles (a non-inlined call boxes them: E-59).
+- **Per-entity doubles in typed arrays, not object fields.** In Chrome, x and y stored into a
+  scratch object allocated a heap number each (shared map transitions make such fields tagged),
+  and a double returned from a callee that a big caller did not inline was boxed: pre-render made
+  30 MB/s of garbage that way (E-66). Write results into a Float64Array or the destination array.
+  Sort comparators return a sign, not `a - b`. Check with `tests/bench/heapSampleWorkers.mjs`
+  (Chrome); Node's V8 does not show it.
 - Correctness-sensitive reorders keep the output bit-identical, with a golden or parity test
   (E-41, E-42, E-50 examples in `tests/node/`).
 - Prefer behavioural tests on real code (`tests/bench/workerHarness.mjs` loads a real worker in

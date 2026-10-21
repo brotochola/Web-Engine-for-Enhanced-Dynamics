@@ -17,6 +17,58 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**07:34** — E-66 and E-54 kept; a new allocation profiler; E-51b's other culls parked.
+Next: the remaining open items (E-50b, E-57, E-63, N-28, M8).
+
+### 07:34 — Predator's pre-render made 30 MB/s of garbage; now 0.27 (`fbaaad81`, `878bc55a`, `7b980c2f`, `1a1c4c37`, `a5c2e0f7`)
+
+- **How I found it.** A CPU profile of Predator showed pre-render spending 35 ms in garbage
+  collection over 13 s. An old trace from 10-14 showed the same, so it isn't new. CPU
+  profiles don't say *what* allocates, so I built a small tool
+  (`tests/bench/heapSampleWorkers.mjs`). It attaches Chrome's sampling heap profiler to
+  chosen workers while a scene runs, and lists allocation per function in KB/s.
+- **What it showed.** Pre-render allocated **30.1 MB/s**, about 500 KB a frame, nearly all in
+  three spots, each making one or two throwaway number objects for every drawn entity
+  (~13,600 a frame):
+  - the light-sorting comparators returned a fractional difference (3.5 MB/s);
+  - the scratch object that holds an entity's position and rotation (17.6 MB/s);
+  - a helper returning the depth-sort key (8.9 MB/s).
+- **The surprise.** The same code in Node allocates nothing. This is specific to Chrome's
+  newer JavaScript engine. For the scratch object, I proved it by removing just its four
+  writes, which made the allocation vanish. Two other guesses didn't help: initializing the
+  fields as fractions, and inlining a helper. The likely reason: every object that starts
+  with `x, y` shares internal bookkeeping in a worker, and one debug object stores `null`
+  there, which makes those fields generic.
+- **The fixes**, each its own commit and test:
+  - comparators return −1/0/+1, with a parity test that includes NaN and ties;
+  - the scratch is a typed array;
+  - the sort key is written straight into its slot.
+- **Numbers:** pre-render allocation **30.1 → 0.27 MB/s**. Pre-render time **−8.7 % (4/4)**
+  from the scratch fix; −3.7 % (3/4) from the comparators; a tie over 10 pairs for the sort
+  key.
+- **The same tool on the logic workers (E-54).** A contact-tracking loop built a pair
+  number for every touching pair, every frame, and looked it up in a set (4.2 MB/s). E-54
+  had predicted that wouldn't happen in Predator. That prediction assumed the old entity
+  count: Predator now has 42,633 entity slots, and ids past 16,384 make those numbers too
+  big for V8's small-integer form (31 bits in Chrome). A per-slot marker replaces the set,
+  checked frame by frame against the old tracker.
+  - **Logic −382 µs per frame at matched load (−9.5 %)**. The raw medians said −19 %, but
+    logic load varies by run, so I report the load-matched number.
+- **Checked and left alone:**
+  - E-68: the state-machine helper boxes one number per tick, about 0.5 % of logic, and
+    avoiding it would change a public callback.
+  - The Pixi worker's 1.1 MB/s is mostly Pixi's own library code.
+  - Spatial and particle workers are clean.
+- **Two of my own mistakes, caught.**
+  - I first committed before starting an A/B, which would have compared the change against
+    itself. I stopped it and redid it in the right order.
+  - My first E-54 version checked the next slot's marker instead of the current one. The
+    existing parity test caught it on frame 0.
+- **CLAUDE.md** now has the rule: per-entity numbers go in typed arrays, not object fields.
+- **E-51b, the rest:** decorations, bullets and glow are parked. Their only measurable cost
+  (+22 % sway work at 45°) sits under the 3 ms floor, and no demo turns the camera with them.
+- Suite **1410/1410**.
+
 **06:37** — E-51b (particles) kept, E-65 screened. Next: the rest of E-51b (decorations,
 bullets, glow) and the other open items.
 

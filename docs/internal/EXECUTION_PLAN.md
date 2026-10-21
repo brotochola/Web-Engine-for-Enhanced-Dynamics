@@ -443,7 +443,19 @@ is built, and the sweep ran in Node. Chrome compresses pointers, so there every 
 minE ≥ 16384 is a HeapNumber once it enters `_pairSlot` or `frameCollisions`. The Node
 result stands for Node; the Chrome cost is E-54.)*
 
-### E-54 Pair keys at or above 2^30 are heap numbers in Chrome — **not-started**
+### E-54 Pair keys at or above 2^30 are heap numbers in Chrome — **KEPT** (`1a1c4c37`)
+**Result (2026-10-21).** The premise below is out of date: Predator now has 42,633 entity slots,
+with its soldiers, trees and rocks above 16384, so pairs among them have keys past Chrome's 31-bit
+Smis. A sampling heap profile (`heapSampleWorkers.mjs`, `a5c2e0f7`) put
+`_processBox2dCollisionCallbacks` at **4.2 MB/s** in one logic worker: the stay loop built
+`collisionPairKey(minE, maxE)` and probed the begin Set for every tracked pair every frame. A
+Uint32Array stamp per slot (set when the pair begins, moved by the swap delete, compared with a
+per-frame counter) replaces the Set; the public key encoding is unchanged. `contactPairParity.test.js`
+holds the tracker to its Set reference frame by frame, and fails without the stamp move. Logic
+allocation 7.0 → 2.8 MB/s. Predator, 4 ABAB pairs: logic0 −18.9 %, logic1 −19.9 % (3/4 each), but
+logic time tracks `ENTITIES_PROCESSED` (r = 0.76): **at matched load −382 µs (se 132 µs), about
+−9.5 %**. The per-event `_pairSlot` lookups (begin and end only) still build keys.
+
 Found by review M10 (above). `collisionPairKey(minE, maxE)` crosses 2^30 at minE 16384,
 so a scene with more than 16 384 entities that collide pays a HeapNumber per key that
 enters the pair Map/Set. Premise first, in Chrome, not Node: a kernel page (or the
@@ -1402,6 +1414,39 @@ cost the Node kernel 5.4 % (42/49 worse). The premise was wrong: V8's CPU profil
 code back to its source function, so an inlined callee still shows as a frame (`raySegT` and
 `stampPolarBin` do too, and `--trace-turbo-inlining` inlines them). Reverted, never committed.
 HOW_WE_MEASURE now says so.
+
+### E-66 Pre-render boxed three doubles per drawn entity per frame in Chrome — **KEPT** (`fbaaad81`, `878bc55a`, `7b980c2f`)
+Found by a sampling heap profile of Predator (`heapSampleWorkers.mjs`): pre-render allocated
+**30.1 MB/s**, which is the 35 ms of pre-render GC per 13 s the CPU traces have shown since at least
+10-14. Node runs the same paths without allocating, so this is a Chrome-only cost.
+- **Sort comparators** (`fbaaad81`): `_lightYComparator` and the stamp order returned `a − b`, a
+  double boxed on its way back to the sort (3.5 MB/s). They return ±1, or the difference when it is
+  ±0 or NaN, so every `> 0` / `<= 0` test reads the same order (`lightSortOrder.test.js` against
+  the old comparators, NaN and ties included). Predator: pre-render −3.7 % (3/4), no worker worse.
+- **The display pose scratch** (`878bc55a`): `_displayPose` stored x, y, rotC, rotS into an object
+  for each of ~13,600 drawn entities: 17.6 MB/s, about two heap numbers a call. Dropping just those
+  four stores removed it; initializing the fields as doubles, inlining `poseRotationLive` and
+  bounding the Transform loads did not. Every literal that starts with x, y shares map transitions
+  in a worker, and `debugCanvas.js` has `{ x: null, y: null, rotC: null, rotS: null }`, so x and y
+  are most likely tagged fields there. The scratch is a `Float64Array` [x, y, rotC, rotS]. Predator,
+  4 pairs: **pre-render 6.90 → 6.30 ms (−8.7 %, 4/4)**; logic1's +11 % was load (matched: +1 µs,
+  se 93 µs).
+- **The sort key** (`7b980c2f`): the foot-line helper stayed a call inside collectVisibleEntities
+  (inlining budget) and its returned double was boxed (8.9 MB/s). `_storeEntitySortY` writes the
+  key into the collector's typed array. Predator, 10 pairs over two sittings: +0.6 % (se 1.7 %), a tie.
+Pre-render allocation 30.1 → **0.27 MB/s**.
+
+### E-67 Doubles in object fields and returned doubles allocate in Chrome — **audited 2026-10-21**
+E-66's lesson, checked across Predator's workers with the same profiler: spatial 10 KB/s and particle
+0.1 MB/s (clean); Pixi 1.1 MB/s, mostly Pixi's own code; logic 7.0 MB/s, of which E-54 was 4.2. What
+is left in logic is demo code (`civilian.js`, `mySoldier.js` ticks) and E-68. CLAUDE.md now says
+to keep per-entity doubles in typed arrays and not return them from calls a big caller may not
+inline.
+
+### E-68 FSM.tick boxes the time in state for every onUpdate — **screened 2026-10-21: API change for ~0.5 %**
+`CurrentState.onUpdate(owner, i, dt, FSMClass.time[i])` is a polymorphic call, so the time is boxed:
+about one heap number per FSM tick, 0.8 MB/s per logic worker in Predator, ~20 µs a frame against a
+~4 ms logic step. Avoiding it means changing the public onUpdate signature. Not done.
 
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above — **kept: adaptive insertion → merge** (`c53f163b`; kernel `7319ff1c`)
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review

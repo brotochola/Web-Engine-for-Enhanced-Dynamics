@@ -174,6 +174,9 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [~] **E-44** — screened: ~18–36 µs a frame for 360 lights, under 1 % of pre-render. Polar: lazy bin clear (every raycasted light pays a 512-float fill).
 - [x] **E-61** — kept `0b8b07f2`: pre-render walks each outline in chain order and reuses the shared end's `atan2`, bit-identical. Compound `ringSegments=64` **pre-render 5.03 → 3.97 ms (−20.8 %, 4/4)**. Polar raster: two atan2 per edge.
 - [x] **E-62** — kept `483f1da7`: the merge finds each sweep edge's arc with a cross product and a pseudo-angle instead of two `atan2`, bit-identical. Kernel merge **+13.5 %**; at `boxes=100` the merge's inclusive profile time is −33 % and `STEP_MS` ties. Polar merge: atan2 per sweep edge.
+- [x] **E-66** — kept `fbaaad81`, `878bc55a`, `7b980c2f`: pre-render boxed three doubles per drawn entity per frame in Chrome (light comparators, the pose scratch object, a returned sort key). Pre-render allocation **30.1 → 0.27 MB/s**; Predator **pre-render −8.7 % (4/4)** from the pose scratch. Tool: `heapSampleWorkers.mjs` `a5c2e0f7`.
+- [x] **E-54** — kept `1a1c4c37`: the begin Set of pair keys is a per-slot stamp. Predator's ids now pass 16384, so 4.2 MB/s of keys were heap numbers; **logic −382 µs at matched load (se 132)**.
+- [x] **E-67** — audited: the other workers are clean or vendor/demo code. CLAUDE.md rule added. **E-68** (FSM time boxed per onUpdate) screened: API change for ~0.5 %.
 - [ ] **E-63** Sweep: cos/sin of an atan2 angle per event; not bit-identical, needs a tolerance argument.
 - [~] **E-64** — screened, premise wrong: a function in the CPU profile can still be inlined (the profiler names inlined code by its source). Folding the merge's searches tied in Chrome and lost 5.4 % in Node; reverted. Merge binary searches "not inlined".
 - [x] **E-60** — kept `7c301240`: Pixi's circle fan reads a cos/sin table. Round-occluder vis-poly scene: **renderer −13.2 % (4/4)**.
