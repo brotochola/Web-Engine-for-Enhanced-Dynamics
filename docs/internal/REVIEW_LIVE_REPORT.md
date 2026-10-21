@@ -17,9 +17,22 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**23:35** — Phase 4: R8 partly done (one bug fixed, one finding about merging). Next: R9.
+**23:41** — Phase 4: R9 done. Next: R10.
 
 ## Log
+
+### 23:41 — R9: tween saves and tween writes (`7db97535`, `7dee0cd9`)
+
+- **The tween save record** (`7db97535`): a saved tween's 16 fields were listed four times, for
+  saving, loading, writing to bytes and reading back. One table drives all four now. A new test
+  pins the format: a fixed save hashes exactly as before, so old save files still load.
+- **Tween writes** (`7dee0cd9`): a zero-length tween repeated the per-frame tween's whole write
+  logic. It shares it now. The per-frame path keeps its own inline copy, because calling the
+  shared one cost 4.9 % on the 65,535-tween benchmark. Sharing only the sprite-or-mesh choice
+  measured a tie, so that part is shared.
+- Three helpers on the list already had a single copy.
+
+Suite: 1359/1359.
 
 ### 23:35 — R8: a lighting bug, and a measured reason not to merge some copies (`b0da4084`, `dc10142b`, `213492d0`)
 
