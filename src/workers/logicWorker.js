@@ -10,12 +10,15 @@ self.postMessage({
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { reportWorkerError } from '../util/errorReport.js';
-import { Messages } from '../core/messages.js';
+import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
+import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
+import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { drainMessages } from '../util/messageRing.js';
 import { definesBelow } from '../util/listenerTags.js';
 import { Joint } from '../core/joint.js';
 import { Mouse } from '../core/mouse.js';
 import { Transform } from '../components/transform.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Camera } from '../core/camera.js';
 import { Tween } from '../core/tween.js';
@@ -210,6 +213,7 @@ class LogicWorker extends AbstractWorker {
 
     // onMessage per-type flags (indexed by entityType); filled with the instances
     this.messageListenerByType = new Uint8Array(0);
+    this.animEndListenerByType = new Uint8Array(0);
     this.anyTypeNeedsJointBreaks = false; // Scene-level kill switch
 
     // ========================================
@@ -384,6 +388,7 @@ class LogicWorker extends AbstractWorker {
     this.collisionListenerByType = new Uint8Array(numTypes);
     this.jointBreakListenerByType = new Uint8Array(numTypes);
     this.messageListenerByType = new Uint8Array(numTypes);
+    this.animEndListenerByType = new Uint8Array(numTypes);
     this.markActiveTypes = [];
     this._entityClassByType = [];
 
@@ -435,6 +440,9 @@ class LogicWorker extends AbstractWorker {
         }
         if (definesBelow(EntityClass, GameObject, 'onMessage')) {
           this.messageListenerByType[entityType] = 1;
+        }
+        if (definesBelow(EntityClass, GameObject, 'onAnimationEnd')) {
+          this.animEndListenerByType[entityType] = 1;
         }
         if (EntityClass.reportMarkActive) {
           this.markActiveTypes.push(EntityClass);
@@ -1567,11 +1575,33 @@ class LogicWorker extends AbstractWorker {
   _onMessageEvent(target, from, nameId, gen, a, b, c, d) {
     if (Transform.active[target] === 0 || Messages.spawnGen[target] !== gen) return;
     const obj = this.gameObjects[target];
-    if (!obj || this.messageListenerByType[Transform.entityType[target]] !== 1) return;
+    if (!obj) return;
+    if (nameId === MESSAGE_ANIMATION_END) {
+      this._deliverAnimationEnd(obj, target, a, b);
+      return;
+    }
+    if (this.messageListenerByType[Transform.entityType[target]] !== 1) return;
     try {
       obj.onMessage(Messages.names[nameId], from, a, b, c, d);
     } catch (error) {
       this._entityThrew(error, target, 'onMessage');
+    }
+  }
+
+  /** kind 0: sprite animation `id`; kind 1: Adobe clip `id`. Delivered by name. */
+  _deliverAnimationEnd(obj, target, kind, id) {
+    if (this.animEndListenerByType[Transform.entityType[target]] !== 1) return;
+    let name;
+    if (kind === 0) {
+      const sheet = SpriteSheetRegistry.getSpritesheetName(SpriteRenderer.spritesheetId[target]);
+      name = sheet ? SpriteSheetRegistry.getAnimationName(sheet, id) : undefined;
+    } else {
+      name = AdobeAnimRegistry.getClipName(AdobeAnimComponent.assetId[target], id);
+    }
+    try {
+      obj.onAnimationEnd(name === undefined || name === null ? '' : name);
+    } catch (error) {
+      this._entityThrew(error, target, 'onAnimationEnd');
     }
   }
 

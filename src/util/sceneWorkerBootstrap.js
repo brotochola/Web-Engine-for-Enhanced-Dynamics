@@ -12,6 +12,8 @@ import { SoundManager } from '../core/soundManager.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { collectWorkerScriptsToLoad } from './sceneScript.js';
 import { frameClockSlot } from './frameClock.js';
+import { definesBelow } from './listenerTags.js';
+import { GameObject } from '../core/gameObject.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -206,6 +208,7 @@ function buildRegisteredClassesInfo(scene) {
     endIndex: r.startIndex + r.count,
     entityType: r.entityType,
     deriveSpeed: r.class.deriveSpeed === true,
+    animationEnd: definesBelow(r.class, GameObject, 'onAnimationEnd'),
     engineProvided: r.class.scriptUrl === null,
     components: r.components.map((c) => c.name),
   }));

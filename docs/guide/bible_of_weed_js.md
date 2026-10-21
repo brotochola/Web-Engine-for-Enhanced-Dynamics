@@ -398,6 +398,21 @@ scene.sendToEntity(heroIndex, 'heal', 25);          // from the scene: from = -1
 - The inboxes exist only when some type defines `onMessage` (or `onAnimationEnd`); otherwise `sendTo` warns once and does nothing.
 - `emit(name, data)` goes to the main thread by `postMessage` (`data` is structured-cloned): for rare events (died, level won), not every frame. `scene.on` returns a function that removes the listener.
 
+### When a play-once animation ends (`onAnimationEnd`)
+
+```javascript
+attack() {
+  this.setAnimation('slash', false); // play once
+  this.setAnimationSpeed(0.3);       // a sprite animation does not play at speed 0 (the spawn default)
+}
+
+onAnimationEnd(name) {
+  if (name === 'slash') this.setAnimation('idle');
+}
+```
+
+Spritesheet animations call it after their last frame has shown; an Adobe clip played without loop (`adobeAnimComponent.play(name, false)`) when it reaches its end. It runs on the logic worker that owns the entity, the frame after, once per play. Animations advance while the sprite is drawn, so an off-screen one ends when it is back on screen. It travels on the same inboxes as `sendTo` (they exist when a type defines `onMessage` or `onAnimationEnd`); `static messages` is not needed for it.
+
 ### What did I hit? (`is`, `hasComponent`)
 
 Callbacks get the other entity's **index**. Ask about it without reading SoA by hand:

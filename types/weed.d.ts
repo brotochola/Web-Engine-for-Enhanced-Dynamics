@@ -1138,6 +1138,12 @@ export declare class GameObject {
   sendTo(other: number | GameObject, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
   /** Tell the main thread: scene.on(name, fn) gets fn(data, entityIndex, className). Structured-cloned. */
   emit(name: string, data?: unknown): boolean;
+  /**
+   * A play-once animation finished (setAnimation(name, false) after its last frame showed, or an
+   * Adobe clip played without loop). Runs the frame after, on the owning logic worker. Animations
+   * advance while drawn, so an off-screen one waits.
+   */
+  onAnimationEnd(name: string): void;
   /** Override to receive sendTo / scene.sendToEntity messages. from = -1 for the scene. */
   onMessage(name: string, from: number, a: number, b: number, c: number, d: number): void;
   /** Is the other entity (index or GameObject) an EntityClass or a subclass? */

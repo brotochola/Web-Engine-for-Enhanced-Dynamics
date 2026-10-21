@@ -2379,6 +2379,15 @@ export class GameObject {
    */
   onMessage(name, from, a, b, c, d) {}
 
+  /**
+   * A play-once animation finished: a spritesheet animation (setAnimation(name, false))
+   * after its last frame has shown, or an Adobe clip played without loop. Override
+   * it; runs on the logic worker that owns the entity, the frame after. Animations
+   * advance while the sprite is drawn, so an off-screen one waits.
+   * @param {string} name - animation or clip name
+   */
+  onAnimationEnd(name) {}
+
   onCollisionEnter(otherIndex) {
     // Override in subclasses
   }
