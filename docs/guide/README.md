@@ -6,6 +6,8 @@ These notes are for someone writing a game on the engine. Specs live here. The m
 
 | File | Use it for |
 | --- | --- |
+| [`FIRST_GAME.md`](./FIRST_GAME.md) | A complete small game in 13 steps (runnable: [`first-game/`](./first-game/)) |
+| [`COMING_FROM.md`](./COMING_FROM.md) | Unity / Godot / Phaser names for WeedJS concepts, and where your code runs |
 | [`bible_of_weed_js.md`](./bible_of_weed_js.md) | Scene contract, entity lifecycle, tags, collision, layers, audio, common limits |
 | [`SAVE_GAME.md`](./SAVE_GAME.md) | Sparse save/load, `create` / `createNewGame` / `onLoadGame`, IndexedDB, the Saves tab |
 | [`WORKERS_ARCHITECTURE.md`](./WORKERS_ARCHITECTURE.md) | Worker roles, data flow, scaling, message protocols |
