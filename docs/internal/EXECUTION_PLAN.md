@@ -908,7 +908,10 @@ Raised by the 47-commit review ([`REVIEW_PLAN.md`](./REVIEW_PLAN.md)). E-40 is s
 on purpose: `tests/bench/e40NeighborReadShape.mjs` already uses that number for an E-15
 sitting. Baseline rev for every pair here: `8af92002^` (`main` now equals HEAD).
 
-### E-41 Compound-only lights clip 512 bins against a placeholder full circle — **KEPT** (`634baaab`; kernel case `87528d3c`)
+### E-41 Compound-only lights clip 512 bins against a placeholder full circle — **KEPT** (`634baaab`; kernel case `87528d3c`), **superseded by E-43** (`43b5bc2c`)
+E-43's arc scatter merges the placeholder faster than this path did (kernel +69.7 % / +20.3 % at
+512 / 128 vertices), so the path and its recogniser are removed. The parity test still holds.
+
 **Result (2026-10-21).** I didn't skip the merge, which would have moved the outer edge from the
 32-gon's chords to the circle (up to 0.5 % of R). The merge now tests three edges per bin instead
 of 32. A ray from the centre of a convex polygon only meets the edge whose span holds it, or a
@@ -944,7 +947,31 @@ clip output computes them a third time. A `Float64Array(512)` table built with t
 expression is bit-identical (same pattern as `_fullCircleC/S`; not H-11b). **Primary:**
 `preRender_STEP_MS` on CompoundVisPolyStressScene; kernel checksum must not move.
 
-### E-43 Polar merge is O(bins × sweep vertices) — **not-started**
+### E-43 Polar merge is O(bins × sweep vertices) — **KEPT** (`43b5bc2c`; knob `2f6880df`; no input copy `fcdec953`)
+**Result (2026-10-21).** Not the planned two-pointer walk, but an arc scatter that is bit-identical
+by construction. `raySegT` can only be finite for a ray inside the arc its edge subtends from the
+light, extended by raySegT's own 1e-4 slack at both ends. Each sweep edge now computes that arc (two
+`atan2`, padded by 1e-6 rad; rays are 2π/512 apart), finds its rays by binary search, and lowers
+their running minimum. An edge whose arc is within 1e-3 of a half turn (it passes by the light), or
+NaN, is tested by every ray. A minimum does not depend on order and every skipped ray would get
+Infinity, so the output is the full scan's. A visibility polygon's edges tile the circle, so the
+work is about rays + edges instead of rays × edges. It also beat E-41's three-edge path on the
+placeholder circle, so that path is removed.
+Kernel, 7 rounds against `2f6880df`, checksums equal: **polar_merge +1451 %** (3,307 → 51,303
+ops/s, 49/49), full circle +72.7 % / +18.1 % (512 / 128), raster and sweep tie. CompoundVisPolyStressScene
+got `?boxes=N` (plain boxes among the islands, default 0). **`boxes=60`, 4 ABAB pairs: pre-render
+11.61 → 3.46 ms (−69.8 %, 4/4)**, both sides at 60 fps with no skipped frames. The default scene
+went 2.32 → 2.04 ms (−11.5 %, 4/4), under the floor, so that is support only.
+`polarMergeScatter.test.js` checks parity against a copy of the old raster and full scan, at eight
+vertex caps, on real sweeps (grid-snapped lights and boxes put edges in line with the light) and on
+arbitrary polygons (zero-length edges, edges through and within 1e-3 of the light). Four injected
+bugs (no wrap, a negative pad, a short arc end, no start slack) each fail it. The pad and the
+half-turn list guard rounding when the light is within ~1e-10 of an edge's line. Random data cannot
+reach that, so the test does not fail without them.
+**Follow-up kept (`fcdec953`).** The scatter reads every input vertex before its first output write,
+so the 8192-entry `_holdX/_holdY` copy, there because input and output alias, is gone with its
+growth path. Kernel, 7 rounds: every case ties (+1.9 % to +4.2 %), checksums equal. Scene `boxes=60`, 4 pairs: pre-render +1.96 % (2/4), a tie; no worker 3 % worse.
+
 For lights with both simple and compound occluders, replace the per-bin scan with a
 monotone two-pointer walk (both run in ascending angle from −π), writing into a separate
 output buffer (also removes the 8192-entry hold copy). Gate the polygon at 1e-4 world units.

@@ -17,8 +17,41 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**05:00** — **Phase 8 (docs) is complete.** Running now: E-60 (Pixi's circle lighting with a
-cos/sin table) on a new round-occluder setting of the lighting stress scene.
+**05:35** — E-43 and E-60 kept, E-44 screened. Next: a CPU profile of pre-render in the
+boxes scene, to see what its remaining 3.5 ms is made of.
+
+### 05:35 — Lights among many boxes: pre-render 11.6 → 3.5 ms (E-43) (`2f6880df`, `43b5bc2c`, `fcdec953`)
+
+- **The problem.** A light that sees both simple occluders (boxes, circles) and compound
+  bodies builds its shadow outline in two parts and then merges them. For each of 512
+  directions, the merge tested every edge of the first outline. With 60 boxes in the
+  lighting stress scene, that is 512 × several hundred tests per light per frame.
+- **The fix.** An edge can only block the directions it covers as seen from the light. Each
+  edge now works out that angle range and tests only those directions. The result is the
+  same bit for bit. The nearest hit doesn't depend on the order the edges are tried, and
+  the skipped directions could never have hit.
+- **Numbers.**
+  - Kernel: the merge is **15.5× faster** (+1451 %), checksums equal.
+  - Scene, with a new `?boxes=60` setting (`2f6880df`): **pre-render 11.61 → 3.46 ms
+    (−69.8 %, 4/4 pairs)**.
+  - Lights that see only compound bodies: the new merge also beats E-41's special case for
+    them (+73 % / +18 % in the kernel), so that special case is removed. The default scene's
+    pre-render went 2.32 → 2.04 ms.
+- **How it's checked.** A new test compares against a copy of the old algorithm on real and
+  deliberately awkward shapes (edges through the light, in line with it, zero-length) at
+  eight vertex limits. I broke the new code on purpose in four ways, and each one fails the
+  test.
+- **Follow-up** (`fcdec953`). The merge copied its input because input and output share a
+  buffer. The new merge reads all of its input before writing anything, so the copy and its
+  64 KB of buffers are gone. Kernel and scene both tie.
+
+### 05:05 — E-60 kept, E-44 screened (`1d91efac`, `7c301240`)
+
+- **E-60.** For every light, Pixi drew each lit round occluder by computing the same 16
+  cos/sin values. A table built once gives the same numbers. With 700 round occluders and 360
+  lights: **renderer 6.49 → 5.61 ms (−13.2 %, 4/4)**.
+- **E-44, screened.** Clearing each light's 512 direction slots costs under 1 % of
+  pre-render, so it can't reach the 3 % bar. Not changed.
 
 ### 05:00 — The missing guide pages, and the measurement log caught up (`b6bd6bc9`, `9b5ce309`, `c935bbf8`, `b56e0080`)
 

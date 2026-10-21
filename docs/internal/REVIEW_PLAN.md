@@ -168,9 +168,9 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 
 ## Phase 7 — Speed (each is a hypothesis in EXECUTION_PLAN.md)
 
-- [x] **E-41** — kept `634baaab`: three edges per bin against the placeholder circle, bit-identical. Compound scene **pre-render −37.2 % (4/4)**. Polar: skip the merge for compound-only lights.
+- [x] **E-41** — kept `634baaab`: three edges per bin against the placeholder circle, bit-identical. Compound scene **pre-render −37.2 % (4/4)**. Superseded by E-43, which merges the placeholder faster; the path is removed. Polar: skip the merge for compound-only lights.
 - [x] **E-42** — kept `c8db38ea`: bit-identical table. Compound scene **pre-render −42.3 % on top of E-41** (6.47 → 2.32 ms overall). Polar: 512-entry cos/sin table.
-- [ ] **E-43** Polar: two-pointer merge into a separate output buffer.
+- [x] **E-43** — kept `43b5bc2c` (knob `2f6880df`): each sweep edge is tested only against the rays in its arc, bit-identical, and E-41's path is folded in. Kernel merge **+1451 %**; compound `boxes=60` **pre-render 11.61 → 3.46 ms (−69.8 %, 4/4)**. The input copy is gone too (`fcdec953`). Polar: two-pointer merge into a separate output buffer.
 - [~] **E-44** — screened: ~18–36 µs a frame for 360 lights, under 1 % of pre-render. Polar: lazy bin clear (every raycasted light pays a 512-float fill).
 - [x] **E-60** — kept `7c301240`: Pixi's circle fan reads a cos/sin table. Round-occluder vis-poly scene: **renderer −13.2 % (4/4)**.
 - [x] **E-45** — X2 **kept** (without it the Predator renderer is +18.7 %, 4/4; the old rejection was the old kernel). H11 **reverted** `bae431b6` (it lost: emit kernel +8.6 % without it, Predator pre-render better in 4/4). Re-measure the re-landed X2 (pack fast paths) and H11 (emit shadow hoist).
