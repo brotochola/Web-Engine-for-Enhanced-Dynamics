@@ -289,7 +289,7 @@ On-demand Box2D broadphase query for entity ids (parallel to spatial `neighborDa
 - `overlapCircle` / `castRayAll` fill the WASM query slots / hits (same buffers as closest ray). `castRayAll` copies the first four floats per hit (`entity`, `fraction`, `hitX`, `hitY`).
 - Single-flight SAB (`box2dQueryAabb` / overlap / castAll): one outstanding query of each kind process-wide; concurrent callers serialize.
 - Physics services pending queries in `doStep` after command drain (and when `dt==0` so paused worlds still answer), and between steps: every query kind arms a wake, so a request posted after the step's service point is answered as soon as physics is idle instead of at the next frame. That time is the physics stat `QUERY_WAKE_MS`, outside `STEP_MS`.
-- A burst of sync queries is drained in one go: after each answer physics spins about 0.1 ms for the next request, then moves on; a later request is the wake's.
+- A burst of sync queries is drained in one go. In the step, after each answer physics spins, then sleeps up to 2 ms for the caller's next request, so one caller's stream of casts stays one burst (up to 1024 requests). In the wake it only spins about 0.1 ms; a later request is the next wake's. Many rays per tick: use `castRayClosestBatch`, one round trip for up to 4096.
 - Optional `filter`: `{ categoryBits, maskBits }` (defaults match `physics-api` overlap filters).
 - `Box2d.queryAABB` is Box2D fixtures. `Query.query` is ECS component bitmasks. Different systems.
 - Demo self-check: [`demos/box2dQueryAabbScene/box2dQueryAabbScene.js`](../../demos/box2dQueryAabbScene/box2dQueryAabbScene.js).

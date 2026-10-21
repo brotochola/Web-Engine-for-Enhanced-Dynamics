@@ -18,9 +18,15 @@
 
   var HDR_STATUS = 0;
 
-  // A burst's spin for the next request. A caller's turnaround (wake from its
-  // wait, read, next claim) is tens of microseconds; ~25k loads is ~0.1 ms.
-  var SPIN_LOADS = 25000;
+  // A burst's wait for the caller's next request. In the step it spins, then
+  // sleeps up to 2 ms: that keeps a caller's stream of requests in one burst,
+  // even across the caller being descheduled. In the physics host's wake
+  // between steps (E-56) it only spins (~0.1 ms) and leaves anything later to
+  // the next wake, so the host's event loop is never held for 2 ms.
+  var STEP_SPIN_LOADS = 100000;
+  var STEP_WAIT_MS = 2.0;
+  var WAKE_SPIN_LOADS = 25000;
+  var inWake = false;
 
   // E-01: blocking on a sibling is folded into the shared meter so WAIT_MS is a
   // measurement. A classic script cannot import the ESM accessor, so the meter is
@@ -124,16 +130,29 @@
   }
 
   /**
-   * Physics: spin for the next request of a burst. False ends the burst. A
-   * request that comes later is answered by the physics host's wake between
-   * steps (E-56), so the step no longer waits up to 2 ms for it. The step is
-   * blocked on a logic worker here (M4: WAIT_MS).
+   * Physics: wait for the next request of a burst (see STEP_WAIT_MS). False
+   * ends the burst. Physics is blocked on a logic worker here (M4: WAIT_MS).
    */
   function waitForNextRequest(i32) {
-    for (var spin = 0; spin < SPIN_LOADS; spin++) {
+    var spins = inWake ? WAKE_SPIN_LOADS : STEP_SPIN_LOADS;
+    for (var spin = 0; spin < spins; spin++) {
       if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_PENDING) return true;
     }
-    return false;
+    if (inWake) return false;
+    var s2 = Atomics.load(i32, HDR_STATUS) | 0;
+    if (s2 === STATUS_PENDING) return true;
+    if (s2 === STATUS_CLAIMED) {
+      Atomics.wait(i32, HDR_STATUS, STATUS_CLAIMED, STEP_WAIT_MS);
+      return true;
+    }
+    Atomics.wait(i32, HDR_STATUS, s2, STEP_WAIT_MS);
+    var s3 = Atomics.load(i32, HDR_STATUS) | 0;
+    return s3 === STATUS_PENDING || s3 === STATUS_CLAIMED;
+  }
+
+  /** Physics host: bursts started while `on` are the wake's (spin only). */
+  function setWakeService(on) {
+    inWake = !!on;
   }
 
   /**
@@ -206,6 +225,7 @@
     post: post,
     answer: answer,
     waitForNextRequest: waitForNextRequest,
+    setWakeService: setWakeService,
     serviceBurst: serviceBurst,
     armPendingWake: armPendingWake,
   };

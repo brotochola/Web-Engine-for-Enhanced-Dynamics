@@ -46,7 +46,8 @@ test('a request on every sync query kind wakes physics', async () => {
   }
 });
 
-test('a burst ends without a timed wait inside the step', async () => {
+// How many times one burst, with nothing after its first request, sleeps.
+async function burstSleeps(inWake) {
   const R = globalThis.Box2dRayCast;
   R.bindRayCastSab(R.createRayCastSab());
   const realWait = Atomics.wait;
@@ -58,13 +59,26 @@ test('a burst ends without a timed wait inside the step', async () => {
   try {
     const pending = R.box2dCastRayClosestAsync(0, 0, 10, 0);
     await new Promise((r) => setImmediate(r));
-    assert.equal(R.servicePendingRayCastBurst(() => ({ hit: false }), 4), 1);
-    assert.equal(waits, 0, 'the step blocked in Atomics.wait for a request that never came');
+    globalThis.Box2dSyncSlot.setWakeService(inWake);
+    try {
+      assert.equal(R.servicePendingRayCastBurst(() => ({ hit: false }), 4), 1);
+    } finally {
+      globalThis.Box2dSyncSlot.setWakeService(false);
+    }
     await pending;
+    return waits;
   } finally {
     Atomics.wait = realWait;
     R.bindRayCastSab(null);
   }
+}
+
+test('a burst in the host wake only spins; one in the step keeps its wait', async () => {
+  // The wake runs between steps on the host's event loop: a 2 ms sleep there
+  // would hold the next frame. In the step the sleep keeps a caller's stream
+  // of casts in one burst (shorter tails cost logic up to 50 % on 384 casts).
+  assert.equal(await burstSleeps(true), 0, 'the wake slept waiting for a request that never came');
+  assert.ok((await burstSleeps(false)) >= 1, 'the step burst no longer waits for the next request');
 });
 
 // The host's wake loop, evaluated alone (as physicsWorkerCount.test.js does)

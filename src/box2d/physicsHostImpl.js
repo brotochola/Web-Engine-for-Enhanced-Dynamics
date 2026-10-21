@@ -1201,9 +1201,15 @@
       // synchronously; past a few in a row, leave it to the pump.
       if (wakeDepth > 8) return;
       wakeDepth++;
+      var slot = global.Box2dSyncSlot;
       try {
         var t0 = performance.now();
-        globalThis.weedjsServiceQueries();
+        if (slot) slot.setWakeService(true);
+        try {
+          globalThis.weedjsServiceQueries();
+        } finally {
+          if (slot) slot.setWakeService(false);
+        }
         queryWakeMs += performance.now() - t0;
         armQueryWake(kind);
       } finally {
