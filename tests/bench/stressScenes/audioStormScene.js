@@ -9,8 +9,21 @@ import { AudioStormDriver } from './audio/audioStormDriver.js';
 
 const { Scene, Camera } = WEED;
 
-export const PLAYS_PER_TICK = 1200;
+/** `?plays=N` overrides it (E-46 needed 2400 for a 3 ms baseline on 2026-10-21). */
+export const PLAYS_PER_TICK = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('plays');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 1200;
+  } catch {
+    return 1200;
+  }
+})();
 export const ACTIVE_LOOPS = 128;
+
+export const stressSceneConfig = {
+  requested: { plays: PLAYS_PER_TICK },
+};
 
 export class AudioStormScene extends Scene {
   static config = {
