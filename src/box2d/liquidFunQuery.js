@@ -1,4 +1,5 @@
 // ESM facade over liquidFunQueryImpl.js (one logic source for importScripts + import).
+import './box2dSyncSlotImpl.js';
 import './liquidFunQueryImpl.js';
 
 const R = globalThis.LiquidFunQuery;

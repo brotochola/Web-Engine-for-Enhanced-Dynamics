@@ -15,6 +15,7 @@
     'box2dContactHitRingImpl.js',
     'box2dJointBreakRingImpl.js',
     'box2dMovedBodiesImpl.js',
+    'box2dSyncSlotImpl.js',
     'box2dQueryAabbImpl.js',
     'box2dOverlapCircleImpl.js',
     'box2dRayCastImpl.js',

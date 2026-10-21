@@ -2,24 +2,27 @@
 // ESM: imported as side-effect by liquidFunQuery.js
 // Classic: importScripts from weedjsPost.js
 // Writers: logic / GameObject / Scene (main async). Reader+filler: weedjs_post doStep.
+// The status word and every wait on it: box2dSyncSlotImpl.js (loaded first).
 //
-// STATUS: IDLE=0 PENDING=1 DONE=2 ERROR=3 CLAIMED=4
 // OP: AABB=0 RAY=1
-// Caller CAS IDLE→CLAIMED, writes OP+coords, stores PENDING, waits DONE/ERROR,
-// copies results into out, stores IDLE.
+// Caller claims the slot, writes OP+coords, posts, waits DONE/ERROR,
+// copies results into out, releases.
 // Physics: if PENDING, particle query → results, COUNT, DONE, notify.
 
 (function (global) {
-  var STATUS_IDLE = 0;
-  var STATUS_PENDING = 1;
-  var STATUS_DONE = 2;
-  var STATUS_ERROR = 3;
-  var STATUS_CLAIMED = 4;
+  var Slot = global.Box2dSyncSlot;
+  if (!Slot) throw new Error('liquidFunQueryImpl.js: load box2dSyncSlotImpl.js first');
+
+  var STATUS_IDLE = Slot.STATUS_IDLE;
+  var STATUS_PENDING = Slot.STATUS_PENDING;
+  var STATUS_DONE = Slot.STATUS_DONE;
+  var STATUS_ERROR = Slot.STATUS_ERROR;
+  var STATUS_CLAIMED = Slot.STATUS_CLAIMED;
 
   var OP_AABB = 0;
   var OP_RAY = 1;
 
-  var HDR_STATUS = 0;
+  var HDR_STATUS = Slot.HDR_STATUS;
   var HDR_COUNT = 1;
   var HDR_OP = 2;
   var HDR_RESULT_CAP = 3;
@@ -81,45 +84,15 @@
     f32[COORDS_F32 + 2] = c;
     f32[COORDS_F32 + 3] = d;
     Atomics.store(i32, HDR_COUNT, 0);
-    Atomics.store(i32, HDR_STATUS, STATUS_PENDING);
-    Atomics.notify(i32, HDR_STATUS, 1);
-  }
-
-  // B-04: the sync variants block with Atomics.wait, which throws a TypeError
-  // on the main thread. Duplicated rather than imported because this file is a
-  // dual-mode script (ESM side-effect import AND importScripts), so it cannot
-  // take a dependency without changing the classic load order - the same reason
-  // the header constants above are duplicated across this family.
-  function assertWorkerThread(syncName, asyncName) {
-    if (typeof window === 'undefined') return; // Worker has no `window`
-    throw new Error(
-      syncName +
-        ' blocks the calling thread with Atomics.wait and cannot run on the main thread. ' +
-        'Use ' +
-        asyncName +
-        ' instead.',
-    );
+    Slot.post(i32);
   }
 
   function claimAndWriteSync(op, a, b, c, d) {
-    assertWorkerThread('liquidFunQuery', 'liquidFunQueryAABBAsync / liquidFunRayCastAsync');
+    Slot.assertWorkerThread('liquidFunQuery', 'liquidFunQueryAABBAsync / liquidFunRayCastAsync');
     if (!i32) {
       throw new Error('liquidFunQuery: SAB not bound (wait for box2dReady)');
     }
-    for (;;) {
-      var prev = Atomics.compareExchange(
-        i32,
-        HDR_STATUS,
-        STATUS_IDLE,
-        STATUS_CLAIMED,
-      );
-      if (prev === STATUS_IDLE) break;
-      // M4: another worker holds the slot. A block on a sibling, like the
-      // wait for DONE, so it is metered too.
-      var tClaim = performance.now();
-      Atomics.wait(i32, HDR_STATUS, prev);
-      WAIT_METER.ms += performance.now() - tClaim;
-    }
+    Slot.claimSync(i32);
     writeRequest(op, a, b, c, d);
   }
 
@@ -134,33 +107,14 @@
         new Error('liquidFunQueryAsync: Atomics.waitAsync unavailable'),
       );
     }
-
-    function claimLoop() {
-      var prev = Atomics.compareExchange(
-        i32,
-        HDR_STATUS,
-        STATUS_IDLE,
-        STATUS_CLAIMED,
-      );
-      if (prev === STATUS_IDLE) {
-        writeRequest(op, a, b, c, d);
-        return Promise.resolve();
-      }
-      var r = Atomics.waitAsync(i32, HDR_STATUS, prev);
-      if (r.async === false) {
-        return claimLoop();
-      }
-      return r.value.then(claimLoop);
-    }
-
-    return claimLoop();
+    return Slot.claimAsync(i32, function () {
+      writeRequest(op, a, b, c, d);
+    });
   }
 
   function copyResultsAndRelease(out) {
-    var status = Atomics.load(i32, HDR_STATUS) | 0;
-    if (status === STATUS_ERROR) {
-      Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
-      Atomics.notify(i32, HDR_STATUS, 1);
+    if (Slot.isError(i32)) {
+      Slot.release(i32);
       throw new Error('liquidFunQuery: physics reported error');
     }
     var count = Atomics.load(i32, HDR_COUNT) | 0;
@@ -169,79 +123,40 @@
     for (var i = 0; i < n; i++) {
       out[i] = i32[base + i] | 0;
     }
-    Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Slot.release(i32);
     return count;
   }
 
-  // E-01: the engine blocks on a sibling in exactly one place, and this is it.
-  // Fold the blocked time into the shared meter so WAIT_MS is a measurement
-  // instead of a hardcoded zero. These files are UMD/IIFE loaded by
-  // importScripts, so they cannot import the ESM accessor; the meter is created
-  // lazily on the global that the IIFE already receives. See src/util/waitMeter.js.
-  var WAIT_METER = global.__weedWaitMeter || (global.__weedWaitMeter = { ms: 0 });
+  function querySync(op, a, b, c, d, out) {
+    assertOut(out);
+    claimAndWriteSync(op, a, b, c, d);
+    Slot.waitDoneSync(i32);
+    return copyResultsAndRelease(out);
+  }
 
-  function waitUntilDoneSync() {
-    var s = Atomics.load(i32, HDR_STATUS) | 0;
-    if (s === STATUS_DONE || s === STATUS_ERROR) return;
-    // Clock starts only once we know we are actually going to block.
-    var t0 = performance.now();
-    for (;;) {
-      if (s === STATUS_DONE || s === STATUS_ERROR) break;
-      Atomics.wait(i32, HDR_STATUS, s);
-      s = Atomics.load(i32, HDR_STATUS) | 0;
-    }
-    WAIT_METER.ms += performance.now() - t0;
+  function queryAsync(op, a, b, c, d, out) {
+    assertOut(out);
+    return claimAndWriteAsync(op, a, b, c, d).then(function () {
+      return Slot.waitDoneAsync(i32, function () {
+        return copyResultsAndRelease(out);
+      });
+    });
   }
 
   function liquidFunQueryAABB(x0, y0, x1, y1, out) {
-    assertOut(out);
-    claimAndWriteSync(OP_AABB, x0, y0, x1, y1);
-    waitUntilDoneSync();
-    return copyResultsAndRelease(out);
+    return querySync(OP_AABB, x0, y0, x1, y1, out);
   }
 
   function liquidFunQueryAABBAsync(x0, y0, x1, y1, out) {
-    assertOut(out);
-    return claimAndWriteAsync(OP_AABB, x0, y0, x1, y1).then(function () {
-      function waitLoop() {
-        var s = Atomics.load(i32, HDR_STATUS) | 0;
-        if (s === STATUS_DONE || s === STATUS_ERROR) {
-          return Promise.resolve(copyResultsAndRelease(out));
-        }
-        var r = Atomics.waitAsync(i32, HDR_STATUS, s);
-        if (r.async === false) {
-          return waitLoop();
-        }
-        return r.value.then(waitLoop);
-      }
-      return waitLoop();
-    });
+    return queryAsync(OP_AABB, x0, y0, x1, y1, out);
   }
 
   function liquidFunRayCast(x1, y1, x2, y2, out) {
-    assertOut(out);
-    claimAndWriteSync(OP_RAY, x1, y1, x2, y2);
-    waitUntilDoneSync();
-    return copyResultsAndRelease(out);
+    return querySync(OP_RAY, x1, y1, x2, y2, out);
   }
 
   function liquidFunRayCastAsync(x1, y1, x2, y2, out) {
-    assertOut(out);
-    return claimAndWriteAsync(OP_RAY, x1, y1, x2, y2).then(function () {
-      function waitLoop() {
-        var s = Atomics.load(i32, HDR_STATUS) | 0;
-        if (s === STATUS_DONE || s === STATUS_ERROR) {
-          return Promise.resolve(copyResultsAndRelease(out));
-        }
-        var r = Atomics.waitAsync(i32, HDR_STATUS, s);
-        if (r.async === false) {
-          return waitLoop();
-        }
-        return r.value.then(waitLoop);
-      }
-      return waitLoop();
-    });
+    return queryAsync(OP_RAY, x1, y1, x2, y2, out);
   }
 
   /**
@@ -251,7 +166,7 @@
    */
   function servicePendingLiquidFunQuery(queryFn) {
     if (!i32 || typeof queryFn !== 'function') return false;
-    if ((Atomics.load(i32, HDR_STATUS) | 0) !== STATUS_PENDING) return false;
+    if (!Slot.isPending(i32)) return false;
 
     var op = Atomics.load(i32, HDR_OP) | 0;
     var a = f32[COORDS_F32];
@@ -261,63 +176,29 @@
     var cap = resultCap | 0;
     var results = resultsView || i32.subarray(RESULTS_I32, RESULTS_I32 + cap);
 
+    var status = STATUS_DONE;
     try {
       var count = queryFn(op, a, b, c, d, results, cap) | 0;
       Atomics.store(i32, HDR_COUNT, count);
-      Atomics.store(i32, HDR_STATUS, STATUS_DONE);
     } catch (err) {
       Atomics.store(i32, HDR_COUNT, 0);
-      Atomics.store(i32, HDR_STATUS, STATUS_ERROR);
+      status = STATUS_ERROR;
       if (typeof console !== 'undefined' && console.error) {
         console.error('[liquidFunQuery] service error', err);
       }
     }
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Slot.answer(i32, status);
     return true;
   }
 
   /**
    * Drain a burst of single-flight queries within one physics step.
-   * Same spin/wait pattern as box2dRayCast burst.
+   * See Box2dSyncSlot.serviceBurst.
    * @returns {number} queries serviced
    */
   function servicePendingLiquidFunQueryBurst(queryFn, maxQueries) {
     if (!i32 || typeof queryFn !== 'function') return 0;
-    var max = maxQueries | 0;
-    if (max <= 0) max = 1;
-    var serviced = 0;
-    while (serviced < max) {
-      if (servicePendingLiquidFunQuery(queryFn)) {
-        serviced++;
-        continue;
-      }
-      if (serviced === 0) break;
-
-      var tWait = performance.now();
-      var more = waitForNextRequest();
-      WAIT_METER.ms += performance.now() - tWait;
-      if (!more) break;
-    }
-    return serviced;
-  }
-
-  /**
-   * Spin, then wait up to 2 ms, for the next request of a burst. False ends the
-   * burst. The physics step is blocked on a logic worker here (M4: WAIT_MS).
-   */
-  function waitForNextRequest() {
-    for (var spin = 0; spin < 100000; spin++) {
-      if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_PENDING) return true;
-    }
-    var s2 = Atomics.load(i32, HDR_STATUS) | 0;
-    if (s2 === STATUS_PENDING) return true;
-    if (s2 === STATUS_CLAIMED) {
-      Atomics.wait(i32, HDR_STATUS, STATUS_CLAIMED, 2.0);
-      return true;
-    }
-    Atomics.wait(i32, HDR_STATUS, s2, 2.0);
-    var s3 = Atomics.load(i32, HDR_STATUS) | 0;
-    return s3 === STATUS_PENDING || s3 === STATUS_CLAIMED;
+    return Slot.serviceBurst(i32, servicePendingLiquidFunQuery, queryFn, maxQueries);
   }
 
   global.LiquidFunQuery = {

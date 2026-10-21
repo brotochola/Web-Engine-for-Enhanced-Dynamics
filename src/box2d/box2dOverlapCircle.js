@@ -1,4 +1,5 @@
 // ESM facade over box2dOverlapCircleImpl.js (one logic source for importScripts + import).
+import './box2dSyncSlotImpl.js';
 import './box2dOverlapCircleImpl.js';
 
 const R = globalThis.Box2dOverlapCircle;

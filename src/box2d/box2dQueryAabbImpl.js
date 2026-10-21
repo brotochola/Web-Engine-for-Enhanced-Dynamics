@@ -2,20 +2,23 @@
 // ESM: imported as side-effect by box2dQueryAabb.js
 // Classic: importScripts from weedjsPost.js
 // Writers: logic / GameObject / Scene (main async). Reader+filler: weedjs_post doStep.
+// The status word and every wait on it: box2dSyncSlotImpl.js (loaded first).
 //
-// STATUS: IDLE=0 PENDING=1 DONE=2 ERROR=3 CLAIMED=4
-// Caller CAS IDLE→CLAIMED, writes AABB+filter, stores PENDING, waits DONE/ERROR,
-// copies results into out, stores IDLE.
+// Caller claims the slot, writes AABB+filter, posts, waits DONE/ERROR,
+// copies results into out, releases.
 // Physics: if PENDING, overlapAABB → results, COUNT, DONE, notify.
 
 (function (global) {
-  var STATUS_IDLE = 0;
-  var STATUS_PENDING = 1;
-  var STATUS_DONE = 2;
-  var STATUS_ERROR = 3;
-  var STATUS_CLAIMED = 4;
+  var Slot = global.Box2dSyncSlot;
+  if (!Slot) throw new Error('box2dQueryAabbImpl.js: load box2dSyncSlotImpl.js first');
 
-  var HDR_STATUS = 0;
+  var STATUS_IDLE = Slot.STATUS_IDLE;
+  var STATUS_PENDING = Slot.STATUS_PENDING;
+  var STATUS_DONE = Slot.STATUS_DONE;
+  var STATUS_ERROR = Slot.STATUS_ERROR;
+  var STATUS_CLAIMED = Slot.STATUS_CLAIMED;
+
+  var HDR_STATUS = Slot.HDR_STATUS;
   var HDR_COUNT = 1;
   var HDR_CATEGORY = 2;
   var HDR_MASK = 3;
@@ -87,45 +90,15 @@
     Atomics.store(i32, HDR_CATEGORY, cat);
     Atomics.store(i32, HDR_MASK, mask);
     Atomics.store(i32, HDR_COUNT, 0);
-    Atomics.store(i32, HDR_STATUS, STATUS_PENDING);
-    Atomics.notify(i32, HDR_STATUS, 1);
-  }
-
-  // B-04: the sync variants block with Atomics.wait, which throws a TypeError
-  // on the main thread. Duplicated rather than imported because this file is a
-  // dual-mode script (ESM side-effect import AND importScripts), so it cannot
-  // take a dependency without changing the classic load order - the same reason
-  // the header constants above are duplicated across this family.
-  function assertWorkerThread(syncName, asyncName) {
-    if (typeof window === 'undefined') return; // Worker has no `window`
-    throw new Error(
-      syncName +
-        ' blocks the calling thread with Atomics.wait and cannot run on the main thread. ' +
-        'Use ' +
-        asyncName +
-        ' instead.',
-    );
+    Slot.post(i32);
   }
 
   function claimAndWriteSync(x0, y0, x1, y1, filter) {
-    assertWorkerThread('box2dQueryAABB', 'box2dQueryAABBAsync');
+    Slot.assertWorkerThread('box2dQueryAABB', 'box2dQueryAABBAsync');
     if (!i32) {
       throw new Error('box2dQueryAABB: SAB not bound (wait for box2dReady)');
     }
-    for (;;) {
-      var prev = Atomics.compareExchange(
-        i32,
-        HDR_STATUS,
-        STATUS_IDLE,
-        STATUS_CLAIMED,
-      );
-      if (prev === STATUS_IDLE) break;
-      // M4: another worker holds the slot. A block on a sibling, like the
-      // wait for DONE, so it is metered too.
-      var tClaim = performance.now();
-      Atomics.wait(i32, HDR_STATUS, prev);
-      WAIT_METER.ms += performance.now() - tClaim;
-    }
+    Slot.claimSync(i32);
     writeRequest(x0, y0, x1, y1, filter);
   }
 
@@ -140,33 +113,14 @@
         new Error('box2dQueryAABBAsync: Atomics.waitAsync unavailable'),
       );
     }
-
-    function claimLoop() {
-      var prev = Atomics.compareExchange(
-        i32,
-        HDR_STATUS,
-        STATUS_IDLE,
-        STATUS_CLAIMED,
-      );
-      if (prev === STATUS_IDLE) {
-        writeRequest(x0, y0, x1, y1, filter);
-        return Promise.resolve();
-      }
-      var r = Atomics.waitAsync(i32, HDR_STATUS, prev);
-      if (r.async === false) {
-        return claimLoop();
-      }
-      return r.value.then(claimLoop);
-    }
-
-    return claimLoop();
+    return Slot.claimAsync(i32, function () {
+      writeRequest(x0, y0, x1, y1, filter);
+    });
   }
 
   function copyResultsAndRelease(out) {
-    var status = Atomics.load(i32, HDR_STATUS) | 0;
-    if (status === STATUS_ERROR) {
-      Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
-      Atomics.notify(i32, HDR_STATUS, 1);
+    if (Slot.isError(i32)) {
+      Slot.release(i32);
       throw new Error('box2dQueryAABB: physics reported error');
     }
     var count = Atomics.load(i32, HDR_COUNT) | 0;
@@ -175,29 +129,8 @@
     for (var i = 0; i < n; i++) {
       out[i] = i32[base + i] | 0;
     }
-    Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Slot.release(i32);
     return count;
-  }
-
-  // E-01: the engine blocks on a sibling in exactly one place, and this is it.
-  // Fold the blocked time into the shared meter so WAIT_MS is a measurement
-  // instead of a hardcoded zero. These files are UMD/IIFE loaded by
-  // importScripts, so they cannot import the ESM accessor; the meter is created
-  // lazily on the global that the IIFE already receives. See src/util/waitMeter.js.
-  var WAIT_METER = global.__weedWaitMeter || (global.__weedWaitMeter = { ms: 0 });
-
-  function waitUntilDoneSync() {
-    var s = Atomics.load(i32, HDR_STATUS) | 0;
-    if (s === STATUS_DONE || s === STATUS_ERROR) return;
-    // Clock starts only once we know we are actually going to block.
-    var t0 = performance.now();
-    for (;;) {
-      if (s === STATUS_DONE || s === STATUS_ERROR) break;
-      Atomics.wait(i32, HDR_STATUS, s);
-      s = Atomics.load(i32, HDR_STATUS) | 0;
-    }
-    WAIT_METER.ms += performance.now() - t0;
   }
 
   /**
@@ -207,7 +140,7 @@
   function box2dQueryAABB(x0, y0, x1, y1, out, filter) {
     assertOut(out);
     claimAndWriteSync(x0, y0, x1, y1, filter);
-    waitUntilDoneSync();
+    Slot.waitDoneSync(i32);
     return copyResultsAndRelease(out);
   }
 
@@ -218,18 +151,9 @@
   function box2dQueryAABBAsync(x0, y0, x1, y1, out, filter) {
     assertOut(out);
     return claimAndWriteAsync(x0, y0, x1, y1, filter).then(function () {
-      function waitLoop() {
-        var s = Atomics.load(i32, HDR_STATUS) | 0;
-        if (s === STATUS_DONE || s === STATUS_ERROR) {
-          return Promise.resolve(copyResultsAndRelease(out));
-        }
-        var r = Atomics.waitAsync(i32, HDR_STATUS, s);
-        if (r.async === false) {
-          return waitLoop();
-        }
-        return r.value.then(waitLoop);
-      }
-      return waitLoop();
+      return Slot.waitDoneAsync(i32, function () {
+        return copyResultsAndRelease(out);
+      });
     });
   }
 
@@ -242,7 +166,7 @@
    */
   function servicePendingQuery(overlapFn) {
     if (!i32 || typeof overlapFn !== 'function') return false;
-    if ((Atomics.load(i32, HDR_STATUS) | 0) !== STATUS_PENDING) return false;
+    if (!Slot.isPending(i32)) return false;
 
     var x0 = f32[AABB_F32];
     var y0 = f32[AABB_F32 + 1];
@@ -253,18 +177,18 @@
     var cap = resultCap | 0;
     var results = i32.subarray(RESULTS_I32, RESULTS_I32 + cap);
 
+    var status = STATUS_DONE;
     try {
       var count = overlapFn(x0, y0, x1, y1, cat, mask, results, cap) | 0;
       Atomics.store(i32, HDR_COUNT, count < cap ? count : cap);
-      Atomics.store(i32, HDR_STATUS, STATUS_DONE);
     } catch (err) {
       Atomics.store(i32, HDR_COUNT, 0);
-      Atomics.store(i32, HDR_STATUS, STATUS_ERROR);
+      status = STATUS_ERROR;
       if (typeof console !== 'undefined' && console.error) {
         console.error('[box2dQueryAABB] service error', err);
       }
     }
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Slot.answer(i32, status);
     return true;
   }
 
@@ -310,21 +234,7 @@
   // Wake the physics thread between frames. A sync query posted after doStep
   // otherwise waits for the next requestAnimationFrame (~16 ms inside logic's step).
   function armPendingWake(onPending) {
-    if (!i32 || typeof onPending !== 'function' || typeof Atomics.waitAsync !== 'function') return false;
-    var status = Atomics.load(i32, HDR_STATUS) | 0;
-    if (status === STATUS_PENDING) {
-      onPending();
-      return true;
-    }
-    var wait = Atomics.waitAsync(i32, HDR_STATUS, status);
-    if (!wait || wait.async === false) {
-      onPending();
-      return false;
-    }
-    wait.value.then(function () {
-      onPending();
-    });
-    return true;
+    return Slot.armPendingWake(i32, onPending);
   }
 
   global.Box2dQueryAabb = {

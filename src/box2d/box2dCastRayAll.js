@@ -1,4 +1,5 @@
 // ESM facade over box2dCastRayAllImpl.js (one logic source for importScripts + import).
+import './box2dSyncSlotImpl.js';
 import './box2dCastRayAllImpl.js';
 
 const R = globalThis.Box2dCastRayAll;

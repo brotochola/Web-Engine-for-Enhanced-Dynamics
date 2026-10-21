@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { Box2d } from '../../src/core/box2d.js';
 // Side-effect imports: each impl self-registers on globalThis, which is how the
 // engine's classic-script path loads them too.
+import '../../src/box2d/box2dSyncSlotImpl.js';
 import '../../src/box2d/box2dQueryAabbImpl.js';
 import '../../src/box2d/box2dOverlapCircleImpl.js';
 import '../../src/box2d/box2dRayCastImpl.js';

@@ -2,20 +2,23 @@
 // ESM: imported as side-effect by box2dRayCast.js
 // Classic: importScripts from weedjsPost.js
 // Writers: logic / GameObject / Scene (main async). Reader+filler: weedjs_post doStep.
+// The status word and every wait on it: box2dSyncSlotImpl.js (loaded first).
 //
-// STATUS: IDLE=0 PENDING=1 DONE=2 ERROR=3 CLAIMED=4
-// Caller CAS IDLE→CLAIMED, writes origin+delta+filter, stores PENDING, waits DONE/ERROR,
-// copies hit into out, stores IDLE.
+// Caller claims the slot, writes origin+delta+filter, posts, waits DONE/ERROR,
+// copies hit into out, releases.
 // Physics: if PENDING, castRayClosest → hit fields, DONE, notify.
 
 (function (global) {
-  var STATUS_IDLE = 0;
-  var STATUS_PENDING = 1;
-  var STATUS_DONE = 2;
-  var STATUS_ERROR = 3;
-  var STATUS_CLAIMED = 4;
+  var Slot = global.Box2dSyncSlot;
+  if (!Slot) throw new Error('box2dRayCastImpl.js: load box2dSyncSlotImpl.js first');
 
-  var HDR_STATUS = 0;
+  var STATUS_IDLE = Slot.STATUS_IDLE;
+  var STATUS_PENDING = Slot.STATUS_PENDING;
+  var STATUS_DONE = Slot.STATUS_DONE;
+  var STATUS_ERROR = Slot.STATUS_ERROR;
+  var STATUS_CLAIMED = Slot.STATUS_CLAIMED;
+
+  var HDR_STATUS = Slot.HDR_STATUS;
   var HDR_HIT = 1;
   var HDR_ENTITY = 2;
   var HDR_CATEGORY = 3;
@@ -111,45 +114,15 @@
     Atomics.store(i32, HDR_HIT, 0);
     Atomics.store(i32, HDR_ENTITY, -1);
     Atomics.store(i32, HDR_COUNT, 1);
-    Atomics.store(i32, HDR_STATUS, STATUS_PENDING);
-    Atomics.notify(i32, HDR_STATUS, 1);
-  }
-
-  // B-04: the sync variants block with Atomics.wait, which throws a TypeError
-  // on the main thread. Duplicated rather than imported because this file is a
-  // dual-mode script (ESM side-effect import AND importScripts), so it cannot
-  // take a dependency without changing the classic load order - the same reason
-  // the header constants above are duplicated across this family.
-  function assertWorkerThread(syncName, asyncName) {
-    if (typeof window === 'undefined') return; // Worker has no `window`
-    throw new Error(
-      syncName +
-        ' blocks the calling thread with Atomics.wait and cannot run on the main thread. ' +
-        'Use ' +
-        asyncName +
-        ' instead.',
-    );
+    Slot.post(i32);
   }
 
   function claimAndWriteSync(ox, oy, dx, dy, filter) {
-    assertWorkerThread('box2dCastRayClosest', 'box2dCastRayClosestAsync');
+    Slot.assertWorkerThread('box2dCastRayClosest', 'box2dCastRayClosestAsync');
     if (!i32) {
       throw new Error('box2dCastRayClosest: SAB not bound (wait for box2dReady)');
     }
-    for (;;) {
-      var prev = Atomics.compareExchange(
-        i32,
-        HDR_STATUS,
-        STATUS_IDLE,
-        STATUS_CLAIMED,
-      );
-      if (prev === STATUS_IDLE) break;
-      // M4: another worker holds the slot. A block on a sibling, like the
-      // wait for DONE, so it is metered too.
-      var tClaim = performance.now();
-      Atomics.wait(i32, HDR_STATUS, prev);
-      WAIT_METER.ms += performance.now() - tClaim;
-    }
+    Slot.claimSync(i32);
     writeRequest(ox, oy, dx, dy, filter);
   }
 
@@ -164,33 +137,14 @@
         new Error('box2dCastRayClosestAsync: Atomics.waitAsync unavailable'),
       );
     }
-
-    function claimLoop() {
-      var prev = Atomics.compareExchange(
-        i32,
-        HDR_STATUS,
-        STATUS_IDLE,
-        STATUS_CLAIMED,
-      );
-      if (prev === STATUS_IDLE) {
-        writeRequest(ox, oy, dx, dy, filter);
-        return Promise.resolve();
-      }
-      var r = Atomics.waitAsync(i32, HDR_STATUS, prev);
-      if (r.async === false) {
-        return claimLoop();
-      }
-      return r.value.then(claimLoop);
-    }
-
-    return claimLoop();
+    return Slot.claimAsync(i32, function () {
+      writeRequest(ox, oy, dx, dy, filter);
+    });
   }
 
   function copyResultAndRelease(out) {
-    var status = Atomics.load(i32, HDR_STATUS) | 0;
-    if (status === STATUS_ERROR) {
-      Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
-      Atomics.notify(i32, HDR_STATUS, 1);
+    if (Slot.isError(i32)) {
+      Slot.release(i32);
       throw new Error('box2dCastRayClosest: physics reported error');
     }
     var hit = (Atomics.load(i32, HDR_HIT) | 0) !== 0;
@@ -199,29 +153,8 @@
     out.fraction = hit ? f32[OUT_F32] : 0;
     out.hitX = hit ? f32[OUT_F32 + 1] : 0;
     out.hitY = hit ? f32[OUT_F32 + 2] : 0;
-    Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Slot.release(i32);
     return out;
-  }
-
-  // E-01: the engine blocks on a sibling in exactly one place, and this is it.
-  // Fold the blocked time into the shared meter so WAIT_MS is a measurement
-  // instead of a hardcoded zero. These files are UMD/IIFE loaded by
-  // importScripts, so they cannot import the ESM accessor; the meter is created
-  // lazily on the global that the IIFE already receives. See src/util/waitMeter.js.
-  var WAIT_METER = global.__weedWaitMeter || (global.__weedWaitMeter = { ms: 0 });
-
-  function waitUntilDoneSync() {
-    var s = Atomics.load(i32, HDR_STATUS) | 0;
-    if (s === STATUS_DONE || s === STATUS_ERROR) return;
-    // Clock starts only once we know we are actually going to block.
-    var t0 = performance.now();
-    for (;;) {
-      if (s === STATUS_DONE || s === STATUS_ERROR) break;
-      Atomics.wait(i32, HDR_STATUS, s);
-      s = Atomics.load(i32, HDR_STATUS) | 0;
-    }
-    WAIT_METER.ms += performance.now() - t0;
   }
 
   /**
@@ -236,7 +169,7 @@
   function box2dCastRayClosest(ox, oy, dx, dy, out, filter) {
     var result = ensureOut(out);
     claimAndWriteSync(ox, oy, dx, dy, filter);
-    waitUntilDoneSync();
+    Slot.waitDoneSync(i32);
     return copyResultAndRelease(result);
   }
 
@@ -247,18 +180,9 @@
   function box2dCastRayClosestAsync(ox, oy, dx, dy, out, filter) {
     var result = ensureOut(out);
     return claimAndWriteAsync(ox, oy, dx, dy, filter).then(function () {
-      function waitLoop() {
-        var s = Atomics.load(i32, HDR_STATUS) | 0;
-        if (s === STATUS_DONE || s === STATUS_ERROR) {
-          return Promise.resolve(copyResultAndRelease(result));
-        }
-        var r = Atomics.waitAsync(i32, HDR_STATUS, s);
-        if (r.async === false) {
-          return waitLoop();
-        }
-        return r.value.then(waitLoop);
-      }
-      return waitLoop();
+      return Slot.waitDoneAsync(i32, function () {
+        return copyResultAndRelease(result);
+      });
     });
   }
 
@@ -270,7 +194,7 @@
    */
   function servicePendingRayCast(castFn) {
     if (!i32 || typeof castFn !== 'function') return 0;
-    if ((Atomics.load(i32, HDR_STATUS) | 0) !== STATUS_PENDING) return 0;
+    if (!Slot.isPending(i32)) return 0;
     if ((Atomics.load(i32, HDR_COUNT) | 0) > 1) return serviceRayBatch(castFn);
 
     var ox = f32[RAY_F32];
@@ -280,6 +204,7 @@
     var cat = Atomics.load(i32, HDR_CATEGORY) | 0;
     var mask = Atomics.load(i32, HDR_MASK) | 0;
 
+    var status = STATUS_DONE;
     try {
       var r = castFn(ox, oy, dx, dy, cat, mask) || {};
       var hit = !!r.hit;
@@ -288,16 +213,15 @@
       f32[OUT_F32] = hit ? +r.fraction || 0 : 0;
       f32[OUT_F32 + 1] = hit ? +r.hitX || 0 : 0;
       f32[OUT_F32 + 2] = hit ? +r.hitY || 0 : 0;
-      Atomics.store(i32, HDR_STATUS, STATUS_DONE);
     } catch (err) {
       Atomics.store(i32, HDR_HIT, 0);
       Atomics.store(i32, HDR_ENTITY, -1);
-      Atomics.store(i32, HDR_STATUS, STATUS_ERROR);
+      status = STATUS_ERROR;
       if (typeof console !== 'undefined' && console.error) {
         console.error('[box2dCastRayClosest] service error', err);
       }
     }
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Slot.answer(i32, status);
     return 1;
   }
 
@@ -306,6 +230,7 @@
     if (n > BATCH_CAP) n = BATCH_CAP;
     var cat = Atomics.load(i32, HDR_CATEGORY) | 0;
     var mask = Atomics.load(i32, HDR_MASK) | 0;
+    var status = STATUS_DONE;
     try {
       for (var i = 0; i < n; i++) {
         var b = BATCH_RAY_F32 + i * 4;
@@ -313,34 +238,25 @@
         var hit = !!r.hit;
         Atomics.store(i32, BATCH_ENTITY_I32 + i, hit ? (r.entityIndex | 0) : -1);
       }
-      Atomics.store(i32, HDR_STATUS, STATUS_DONE);
     } catch (err) {
-      Atomics.store(i32, HDR_STATUS, STATUS_ERROR);
+      status = STATUS_ERROR;
       if (typeof console !== 'undefined' && console.error) {
         console.error('[box2dCastRayClosest] batch service error', err);
       }
     }
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Slot.answer(i32, status);
     return 2;
   }
 
   function box2dCastRayClosestBatch(count, rays, entities, filter) {
-    assertWorkerThread('box2dCastRayClosestBatch', 'the box2dCastRayClosestAsync variants');
+    Slot.assertWorkerThread('box2dCastRayClosestBatch', 'the box2dCastRayClosestAsync variants');
     var n = count | 0;
     if (n < 1) return 0;
     if (n > BATCH_CAP) n = BATCH_CAP;
     if (!i32) {
       throw new Error('box2dCastRayClosest: SAB not bound (wait for box2dReady)');
     }
-    for (;;) {
-      var prev = Atomics.compareExchange(i32, HDR_STATUS, STATUS_IDLE, STATUS_CLAIMED);
-      if (prev === STATUS_IDLE) break;
-      // M4: another worker holds the slot. A block on a sibling, like the
-      // wait for DONE, so it is metered too.
-      var tClaim = performance.now();
-      Atomics.wait(i32, HDR_STATUS, prev);
-      WAIT_METER.ms += performance.now() - tClaim;
-    }
+    Slot.claimSync(i32);
     var base = BATCH_RAY_F32;
     var floats = n * 4;
     for (var i = 0; i < floats; i++) f32[base + i] = rays[i];
@@ -349,68 +265,27 @@
     Atomics.store(i32, HDR_CATEGORY, cat);
     Atomics.store(i32, HDR_MASK, mask);
     Atomics.store(i32, HDR_COUNT, n);
-    Atomics.store(i32, HDR_STATUS, STATUS_PENDING);
-    Atomics.notify(i32, HDR_STATUS, 1);
-    waitUntilDoneSync();
-    if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_ERROR) {
+    Slot.post(i32);
+    Slot.waitDoneSync(i32);
+    if (Slot.isError(i32)) {
       Atomics.store(i32, HDR_COUNT, 1);
-      Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
-      Atomics.notify(i32, HDR_STATUS, 1);
+      Slot.release(i32);
       throw new Error('box2dCastRayClosestBatch: physics reported error');
     }
     for (var e = 0; e < n; e++) entities[e] = Atomics.load(i32, BATCH_ENTITY_I32 + e) | 0;
     Atomics.store(i32, HDR_COUNT, 1);
-    Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Slot.release(i32);
     return n;
   }
 
   /**
-   * Drain a burst of single-flight casts within one physics step.
-   * After DONE, logic turnaround is microseconds (IDLE→CLAIMED→PENDING); busy-spin
-   * catches that without bailing on a transient IDLE between DONE and CLAIMED.
-   * Timed wait is a fallback when the caller pauses between casts.
+   * Drain a burst of single-flight casts within one physics step (a batch ends
+   * the burst). See Box2dSyncSlot.serviceBurst.
    * @returns {number} casts serviced
    */
   function servicePendingRayCastBurst(castFn, maxCasts) {
     if (!i32 || typeof castFn !== 'function') return 0;
-    var max = maxCasts | 0;
-    if (max <= 0) max = 1;
-    var serviced = 0;
-    while (serviced < max) {
-      var kind = servicePendingRayCast(castFn);
-      if (kind) {
-        serviced++;
-        if (kind === 2) break;
-        continue;
-      }
-      if (serviced === 0) break;
-
-      var tWait = performance.now();
-      var more = waitForNextRequest();
-      WAIT_METER.ms += performance.now() - tWait;
-      if (!more) break;
-    }
-    return serviced;
-  }
-
-  /**
-   * Spin, then wait up to 2 ms, for the next request of a burst. False ends the
-   * burst. The physics step is blocked on a logic worker here (M4: WAIT_MS).
-   */
-  function waitForNextRequest() {
-    for (var spin = 0; spin < 100000; spin++) {
-      if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_PENDING) return true;
-    }
-    var s2 = Atomics.load(i32, HDR_STATUS) | 0;
-    if (s2 === STATUS_PENDING) return true;
-    if (s2 === STATUS_CLAIMED) {
-      Atomics.wait(i32, HDR_STATUS, STATUS_CLAIMED, 2.0);
-      return true;
-    }
-    Atomics.wait(i32, HDR_STATUS, s2, 2.0);
-    var s3 = Atomics.load(i32, HDR_STATUS) | 0;
-    return s3 === STATUS_PENDING || s3 === STATUS_CLAIMED;
+    return Slot.serviceBurst(i32, servicePendingRayCast, castFn, maxCasts);
   }
 
   global.Box2dRayCast = {

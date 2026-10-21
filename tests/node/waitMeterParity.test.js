@@ -20,6 +20,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Worker } from 'node:worker_threads';
 
 import {
   RENDERER_STATS,
@@ -112,9 +113,11 @@ test('wait meter is reachable by the UMD impls that cannot import ESM', () => {
   assert.equal(typeof globalThis[WAIT_METER_GLOBAL_KEY].ms, 'number');
 });
 
-// ------------------------------------------------- waitUntilDoneSync parity ---
+// ------------------------------------------------------ the shared slot wait ---
 
-const IMPLS = [
+// Review R3: the six sync query kinds share one slot protocol, and every wait
+// on it lives in box2dSyncSlotImpl.js.
+const QUERY_IMPLS = [
   'src/box2d/box2dCastRayAllImpl.js',
   'src/box2d/box2dOverlapCircleImpl.js',
   'src/box2d/box2dQueryAabbImpl.js',
@@ -123,33 +126,83 @@ const IMPLS = [
   'src/box2d/liquidFunQueryImpl.js',
 ];
 
-test('every sync-wait impl is instrumented', () => {
-  for (const rel of IMPLS) {
-    const src = read(rel);
-    assert.match(src, /__weedWaitMeter/, `${rel} does not create the wait meter`);
-    assert.match(src, /WAIT_METER\.ms \+= performance\.now\(\) - t0;/, `${rel} does not fold the blocked time in`);
+const QUERY_KINDS = [
+  { facade: 'box2dQueryAabb.js', create: 'createQueryAabbSab', bind: 'bindQueryAabbSab', service: 'servicePendingQuery', call: 'm.box2dQueryAABB(0, 0, 1, 1, new Int32Array(4))', answer: () => 0 },
+  { facade: 'box2dOverlapCircle.js', create: 'createOverlapCircleSab', bind: 'bindOverlapCircleSab', service: 'servicePendingOverlapCircle', call: 'm.box2dOverlapCircle(0, 0, 1, new Int32Array(4))', answer: () => 0 },
+  { facade: 'box2dRayCast.js', create: 'createRayCastSab', bind: 'bindRayCastSab', service: 'servicePendingRayCast', call: 'm.box2dCastRayClosest(0, 0, 1, 0)', answer: () => ({ hit: false }) },
+  { facade: 'box2dCastRayAll.js', create: 'createCastRayAllSab', bind: 'bindCastRayAllSab', service: 'servicePendingCastRayAll', call: 'm.box2dCastRayAll(0, 0, 1, 0, [])', answer: () => 0 },
+  { facade: 'liquidFunQuery.js', create: 'createLiquidFunQuerySab', bind: 'bindLiquidFunQuerySab', service: 'servicePendingLiquidFunQuery', call: 'm.liquidFunQueryAABB(0, 0, 1, 1, new Int32Array(4))', answer: () => 0 },
+  { facade: 'liquidFunExtract.js', create: 'createLiquidFunExtractSab', bind: 'bindLiquidFunExtractSab', service: 'servicePendingLiquidFunExtract', call: 'm.liquidFunExtract(0, new Int32Array(1), 0)', answer: () => -1 },
+];
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// A worker blocks in the sync call; the main thread answers 30 ms after the
+// request lands. Returns the wait the worker's own meter recorded.
+async function blockedWaitMs(kind) {
+  const url = new URL(`../../src/box2d/${kind.facade}`, import.meta.url).href;
+  const mod = await import(url);
+  const sab = mod[kind.create]();
+  mod[kind.bind](sab);
+  const worker = new Worker(
+    `const { workerData, parentPort } = require('node:worker_threads');
+     (async () => {
+       const m = await import(workerData.url);
+       m[workerData.bind](workerData.sab);
+       const meter = () => globalThis.__weedWaitMeter.ms;
+       const before = meter();
+       ${kind.call};
+       return meter() - before;
+     })().then(
+       (ms) => parentPort.postMessage({ ok: true, ms }),
+       (e) => parentPort.postMessage({ ok: false, e: String((e && e.message) || e) }),
+     );`,
+    { eval: true, workerData: { sab, url, bind: kind.bind } },
+  );
+  const reply = new Promise((r) => worker.once('message', r));
+  try {
+    const i32 = new Int32Array(sab);
+    for (let i = 0; i < 5000 && Atomics.load(i32, 0) !== 1; i++) await sleep(1);
+    await sleep(30);
+    assert.ok(mod[kind.service](kind.answer), `${kind.facade}: nothing was pending`);
+    const msg = await reply;
+    assert.ok(msg.ok, `${kind.facade}: ${msg.e}`);
+    return msg.ms;
+  } finally {
+    await worker.terminate();
+    mod[kind.bind](null);
+  }
+}
+
+test('a sync query blocked on physics counts as wait, for every query kind', async () => {
+  for (const kind of QUERY_KINDS) {
+    const ms = await blockedWaitMs(kind);
+    assert.ok(ms >= 20, `${kind.facade}: blocked ~30 ms, metered ${ms.toFixed(2)} ms`);
   }
 });
 
-test('the instrumented wait keeps the original load/check/wait order', () => {
+test('the slot wait keeps the original load/check/wait order, and only the slot waits', () => {
   // The original was:
   //   for (;;) { s = load(); if (DONE|ERROR) return; wait(s); }
   // The replacement must not add or remove an Atomics.load on any path, or the
   // single-flight protocol with the physics worker changes shape.
-  for (const rel of IMPLS) {
-    const src = read(rel);
-    const body = src.slice(src.indexOf('function waitUntilDoneSync()'));
-    const fn = body.slice(0, body.indexOf('\n  }'));
-    const loads = (fn.match(/Atomics\.load\(i32, HDR_STATUS\)/g) || []).length;
-    assert.equal(loads, 2, `${rel}: expected 2 HDR_STATUS loads in the wait, found ${loads}`);
-    assert.match(fn, /var t0 = performance\.now\(\);/, `${rel}: no clock read`);
-    // The clock must start AFTER the terminal check, so the fast path is free.
-    assert.ok(
-      fn.indexOf('if (s === STATUS_DONE || s === STATUS_ERROR) return;') < fn.indexOf('var t0 = performance.now();'),
-      `${rel}: clock starts before the terminal-status check`,
-    );
-    // And it must break, not return, so the meter is always folded in.
-    assert.match(fn, /if \(s === STATUS_DONE \|\| s === STATUS_ERROR\) break;/, `${rel}: loop must break, not return`);
+  const rel = 'src/box2d/box2dSyncSlotImpl.js';
+  const src = read(rel);
+  const body = src.slice(src.indexOf('function waitDoneSync(i32)'));
+  const fn = body.slice(0, body.indexOf('\n  }'));
+  const loads = (fn.match(/Atomics\.load\(i32, HDR_STATUS\)/g) || []).length;
+  assert.equal(loads, 2, `${rel}: expected 2 HDR_STATUS loads in the wait, found ${loads}`);
+  assert.match(fn, /var t0 = performance\.now\(\);/, `${rel}: no clock read`);
+  // The clock must start AFTER the terminal check, so the fast path is free.
+  assert.ok(
+    fn.indexOf('if (s === STATUS_DONE || s === STATUS_ERROR) return;') < fn.indexOf('var t0 = performance.now();'),
+    `${rel}: clock starts before the terminal-status check`,
+  );
+  // And it must break, not return, so the meter is always folded in.
+  assert.match(fn, /if \(s === STATUS_DONE \|\| s === STATUS_ERROR\) break;/, `${rel}: loop must break, not return`);
+  // A private copy of a wait is how the six files drifted before.
+  for (const impl of QUERY_IMPLS) {
+    assert.doesNotMatch(read(impl), /Atomics\.wait(Async)?\(/, `${impl} waits on its own; use Box2dSyncSlot`);
   }
 });
 
