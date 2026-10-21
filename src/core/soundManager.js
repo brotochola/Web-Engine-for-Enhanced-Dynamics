@@ -66,6 +66,13 @@ export class SoundManager {
   // Tail, one block per bus: [lock, count, quietSlot, quietVol, secondSlot, secondVol, unused ×2, slot ids...]
   // Slot word +7 is the bus in the low 8 bits and that bus's list index above them.
   static MAX_CHANNELS = 8;
+  /**
+   * Header word 6: bumped whenever a voice is released (audio thread or stop).
+   * A bus list can only gain a dead entry through a release, so a bus walks its
+   * list only after this moved since it last looked; tail word 6 holds the
+   * value it last walked at (E-46).
+   */
+  static CHANNEL_RELEASED = 6;
   static CHANNEL_HEADER = 8;
   static CHANNEL_STRIDE = 8;
   static LIST_CAP = 2048;
@@ -648,6 +655,7 @@ export class SoundManager {
         Atomics.store(this._i32, b, this.STATE_FREE);
       }
     }
+    this._noteReleased();
   }
 
   static stopAll() {
@@ -655,6 +663,13 @@ export class SoundManager {
     for (let s = 0; s < this._maxSlots; s++) {
       Atomics.store(this._i32, this.HEADER_SIZE + s * this.SLOT_SIZE, this.STATE_FREE);
     }
+    this._noteReleased();
+  }
+
+  /** After a host-side release: bus lists may now hold dead entries. */
+  static _noteReleased() {
+    const chI = this._channelI32;
+    if (chI) Atomics.add(chI, this.CHANNEL_RELEASED, 1);
   }
 
   static unload(nameOrId) {
@@ -866,6 +881,7 @@ export class SoundManager {
     const s = slot | 0;
     if (!this._i32 || s < 0 || s >= this._maxSlots) return;
     Atomics.store(this._i32, this.HEADER_SIZE + s * this.SLOT_SIZE, this.STATE_FREE);
+    this._noteReleased();
   }
 
   static clearDropped() {
@@ -1107,6 +1123,10 @@ export class SoundManager {
     if (!chI || !i32) return;
     const n = chI[tail + 1] | 0;
     if (n <= 0) return;
+    // No release since this bus last walked: no entry can have died (E-46).
+    const released = Atomics.load(chI, this.CHANNEL_RELEASED);
+    if (chI[tail + 6] === released) return;
+    chI[tail + 6] = released;
     const list = tail + this.TAIL_META;
     const base = this.HEADER_SIZE;
     const stride = this.SLOT_SIZE;

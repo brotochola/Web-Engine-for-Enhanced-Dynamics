@@ -26,12 +26,18 @@ var CH_HEADER = 8;
 var CH_STRIDE = 8;
 var BUS_N = 8;
 
+// Channel header word 6: bumped on every release. The host walks a bus list for
+// dead entries only after it moves (SoundManager.CHANNEL_RELEASED, E-46).
+var CH_RELEASED = 6;
+var releasedI32 = null;
+
 // The audio thread never takes the bus lock. FREE is enough; the host drops
 // dead list entries on the next play. Cursor is cleared only after the
 // exchange wins, so a stolen slot keeps the cursor the host just wrote.
 function releaseVoice(i32, f32, b) {
   if (Atomics.compareExchange(i32, b, 1, 0) !== 1) return;
   f32[b + 6] = 0;
+  if (releasedI32) Atomics.add(releasedI32, CH_RELEASED, 1);
 }
 
 function compressorTarget(peak, threshold, ratio) {
@@ -204,6 +210,7 @@ class MixerProcessor extends AudioWorkletProcessor {
         }
         if (d.channelSab) {
           this._chI32 = new Int32Array(d.channelSab);
+          releasedI32 = this._chI32;
           this._chF32 = new Float32Array(d.channelSab);
           this._channelCount = d.channelCount | 0;
           if (!(this._channelCount > 0)) this._channelCount = 1;
@@ -213,6 +220,7 @@ class MixerProcessor extends AudioWorkletProcessor {
           this._masterEnv = 1;
         } else {
           this._chI32 = null;
+          releasedI32 = null;
           this._chF32 = null;
           this._channelCount = 0;
         }

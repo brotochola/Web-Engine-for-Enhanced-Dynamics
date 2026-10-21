@@ -86,7 +86,7 @@ test('a bus at its cap still accepts a play after those slots were freed', { con
   });
   const held = SoundManager.play('loud', 0.9, 1, 1, 0, 0, Number.NaN, Number.NaN, 'sfx');
   assert.equal(held, 0);
-  Atomics.store(SoundManager._i32, SoundManager.HEADER_SIZE, SoundManager.STATE_FREE);
+  assert.equal(audioThreadRelease(held), SoundManager.STATE_PLAYING);
   const next = SoundManager.play('soft', 0.1, 1, 1, 0, 0, Number.NaN, Number.NaN, 'sfx');
   assert.equal(next, 0);
   assert.equal(SoundManager.getActiveSlotCount(), 1);
@@ -116,10 +116,13 @@ test('a full bus drops a quieter voice and counts it', { concurrency: false }, (
 // The audio thread frees a voice with a CAS 1 -> 0 and never touches the bus lists
 // (audioMixerProcessor.js releaseVoice). The old bus keeps the slot in its list until
 // its next play. If another bus re-claims that slot first, the old entry must not be
-// read as a live voice of the old bus.
+// read as a live voice of the old bus. A won CAS also bumps the release counter, which
+// tells the host its lists may hold dead entries (E-46).
 function audioThreadRelease(slot) {
   const b = SoundManager.HEADER_SIZE + slot * SoundManager.SLOT_SIZE;
-  return Atomics.compareExchange(SoundManager._i32, b, SoundManager.STATE_PLAYING, SoundManager.STATE_FREE);
+  const was = Atomics.compareExchange(SoundManager._i32, b, SoundManager.STATE_PLAYING, SoundManager.STATE_FREE);
+  if (was === SoundManager.STATE_PLAYING) Atomics.add(SoundManager._channelI32, SoundManager.CHANNEL_RELEASED, 1);
+  return was;
 }
 
 function twoBuses() {
@@ -282,4 +285,21 @@ test('a sound far outside the camera takes no slot', { concurrency: false }, () 
   assert.equal(slot, -1);
   assert.equal(SoundManager.getActiveSlotCount(), 0);
   delete globalThis.Camera;
+});
+
+test('E-46: a voice stopped from the host frees its place on a full bus', { concurrency: false }, () => {
+  boot({
+    slots: 4,
+    channels: { sfx: { volume: 1, pan: 0, maxVoices: 2 } },
+  });
+  const a = SoundManager.play('loud', 0.9, 1, 1, 0, 0, Number.NaN, Number.NaN, 'sfx');
+  const b = SoundManager.play('loud', 0.8, 1, 1, 0, 0, Number.NaN, Number.NaN, 'sfx');
+  assert.ok(a >= 0 && b >= 0);
+  SoundManager.stopSlot(a);
+  // The list still names the stopped slot. The stop bumped the release counter, so
+  // the next play walks the list, finds the room and takes it instead of dropping.
+  const quiet = SoundManager.play('quiet', 0.1, 1, 1, 0, 0, Number.NaN, Number.NaN, 'sfx');
+  assert.notEqual(quiet, -1, 'the bus has room for a quiet voice');
+  assert.equal(Atomics.load(SoundManager._i32, SoundManager.HEADER_DROPPED), 0);
+  assert.equal(SoundManager.getActiveSlotCount(), 2);
 });

@@ -35,7 +35,8 @@ const workletSrc = fs.readFileSync(
 
 class StubProcessor {
   constructor() {
-    this.port = { postMessage() {}, set onmessage(_fn) {}, get onmessage() { return null; } };
+    let handler = null;
+    this.port = { postMessage() {}, set onmessage(fn) { handler = fn; }, get onmessage() { return handler; } };
   }
 }
 
@@ -439,4 +440,33 @@ test('B-05: stereo assets stay finite', { concurrency: false }, () => {
     assert.ok(Number.isFinite(out[0][0]), 'left channel finite');
     assert.ok(Number.isFinite(out[1][0]), 'right channel finite');
   }
+});
+
+// E-46. A bus list only gains dead entries when a voice is released, so the host
+// walks its lists only after the release counter (channel header word 6) moves.
+// The audio thread's releaseVoice must bump it, or the host never reclaims.
+test('E-46: a one-shot voice that ends on the audio thread bumps the release counter', { concurrency: false }, () => {
+  const Cls = loadProcessor();
+  const p = new Cls();
+  const slots = 4;
+  const sab = new SharedArrayBuffer((H + slots * S) * 4);
+  const i32 = new Int32Array(sab);
+  const f32 = new Float32Array(sab);
+  f32[2] = 1;
+  f32[3] = 1;
+  const channelSab = new SharedArrayBuffer(4096 * 4);
+  const chI = new Int32Array(channelSab);
+  const port = p.port;
+  port.onmessage({ data: { type: 'init', sab, maxSlots: slots, channelSab: null } });
+  assert.equal(chI[6], 0);
+  port.onmessage({ data: { type: 'init', sab, maxSlots: slots, channelSab, channelCount: 1, voiceCap: 4, maxVoices: [4] } });
+  p._assets = new Map();
+  installAsset(p, 7, [new Float32Array(16).fill(0.25)]);
+  claimSlot(i32, 0, { audioId: 7, loop: 0 });
+  p._mixDirect(i32, f32, new Float32Array(128), new Float32Array(128), 128, 1, Math.PI / 4);
+  assert.equal(Atomics.load(i32, H), 0, 'the voice ended and was released');
+  assert.equal(Atomics.load(chI, 6), 1, 'one release, one bump');
+  // A slot that is not playing is not released again.
+  p._mixDirect(i32, f32, new Float32Array(128), new Float32Array(128), 128, 1, Math.PI / 4);
+  assert.equal(Atomics.load(chI, 6), 1);
 });
