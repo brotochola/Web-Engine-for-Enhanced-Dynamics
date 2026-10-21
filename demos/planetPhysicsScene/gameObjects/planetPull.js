@@ -1,6 +1,8 @@
-// LiquidFun does not read body acceleration. This walks the live particles.
+// LiquidFun does not read body acceleration. Physics pulls the water toward
+// the core itself (LiquidFun.setRadialGravity), one setting instead of a
+// force command per particle per tick (N-17: ~4000 of a 4096-slot ring).
 
-import { CX, CY, G, PARTICLE_MASS, SURFACE_Y } from '../planetGravity.js';
+import { CX, CY, G, SURFACE_Y } from '../planetGravity.js';
 import WEED from '/src/index.js';
 
 const { GameObject, Keyboard, Mouse, LiquidFun, LIQUIDFUN_FLAGS } = WEED;
@@ -11,6 +13,8 @@ export class PlanetPull extends GameObject {
 
   onSpawned(spawnConfig = {}) {
     this._poured = !!spawnConfig.poured;
+    // G is the acceleration radialPull gives bodies; particles get the same.
+    LiquidFun.setRadialGravity(CX, CY, G);
   }
 
   tick() {
@@ -19,18 +23,6 @@ export class PlanetPull extends GameObject {
       this._emit(CX, SURFACE_Y - 70, 36);
     }
     if (Keyboard.isPressed('q')) this._emit(Mouse.x, Mouse.y, 28);
-    const views = LiquidFun.getViews();
-    if (!views || !views.x || !views.count) return;
-    const n = views.count[0] | 0;
-    const xs = views.x;
-    const ys = views.y;
-    // planetGravity.radialPull, inline: per particle it measured 4 % cheaper.
-    for (let i = 0; i < n; i++) {
-      const dx = CX - xs[i];
-      const dy = CY - ys[i];
-      const len = Math.sqrt(dx * dx + dy * dy) || 1;
-      LiquidFun.applyForce(i, (dx / len) * G * PARTICLE_MASS, (dy / len) * G * PARTICLE_MASS);
-    }
   }
 
   _emit(x, y, radius) {

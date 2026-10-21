@@ -23,8 +23,8 @@ export const SURFACE_Y = CY - RADIUS * CELL;
 
 /**
  * Pull toward the core: the unit vector from (x, y) to (CX, CY), times G,
- * into out.x / out.y. PlanetPull keeps its own inline copy: through `out`
- * the per-particle loop measured 4 % slower (review R11).
+ * into out.x / out.y. The water does not come through here: physics pulls
+ * every particle itself (PlanetPull, LiquidFun.setRadialGravity).
  */
 export function radialPull(x, y, out) {
   const dx = CX - x;
