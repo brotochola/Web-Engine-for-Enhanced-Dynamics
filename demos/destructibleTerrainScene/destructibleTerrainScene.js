@@ -158,8 +158,9 @@ export class DestructibleTerrainScene extends Scene {
     this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
   }
 
-  // Only the WorldGrid bytes are saved (Ship, islands and manager are not
-  // serializable): mesh the restored grid and put a fresh ship in.
+  // The save holds the WorldGrid bytes and the loose (dynamic) islands; the ship,
+  // the manager and the static rock are not saved: mesh the restored grid and put
+  // a fresh ship in (N-5).
   onLoadGame() {
     this._spawnShip();
     this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1, resume: true });

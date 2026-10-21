@@ -44,7 +44,12 @@ function applyPolysFlat(collider, polys, dx, dy) {
 }
 
 export class TerrainIsland extends GameObject {
-  static serializable = false;
+  // N-5: loose (dynamic) chunks are saved with their fixtures; static rock is
+  // rebuilt from the saved WorldGrid bytes on load, so it is left out.
+  static serializable = true;
+  static shouldSaveEntity(entityIndex) {
+    return RigidBody.static[entityIndex] !== 1;
+  }
   static instances = [];
   static components = [RigidBody, Collider, MeshRenderer, LightOccluder];
   // static forceProcessOnLogicWorker = 1;
@@ -57,6 +62,15 @@ export class TerrainIsland extends GameObject {
     this.rigidBody.linearDamping = spawnConfig.isStatic ? 0 : 0.4;
     this.rigidBody.angularDamping = spawnConfig.isStatic ? 0 : 0.8;
     if (spawnConfig.isStatic) this.collider.collisionLayer = LAYER_STATIC;
+
+    // A loaded save: the components (tint, tiling, body) are restored, and the
+    // save writes the fixtures after this. Only what is not a component field.
+    if (spawnConfig._saveRestore) {
+      this.meshRenderer.setTexture('rocky');
+      this.setLayer('terrain');
+      this.setAwake(true);
+      return;
+    }
 
     const polys = spawnConfig.polys;
     if (!polys || !polys.length || !applyPolysFlat(this.collider, polys)) {
