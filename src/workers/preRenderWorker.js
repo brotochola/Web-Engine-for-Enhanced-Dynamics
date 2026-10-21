@@ -110,10 +110,6 @@ function copyF32(dst, src, n) {
     for (let i = 0; i < n; i++) dst[i] = src[i];
 }
 
-/**
- * Build the diagnostic label. Only ever called on a warn path.
- * A string `kind` is passed through, so the name-based caller still works.
- */
 // _sortPrefix: insertion sort up to this many items, merge sort above (E-08).
 const SORT_PREFIX_INSERTION_MAX = 64;
 const SORT_PREFIX_RUN = 32;
@@ -171,6 +167,10 @@ function mergeSortPrefix(arr, tmp, n, compare) {
     if (src !== arr) for (let i = 0; i < n; i++) arr[i] = src[i];
 }
 
+/**
+ * Build the diagnostic label. Only ever called on a warn path.
+ * A string `kind` is passed through, so the name-based caller still works.
+ */
 function formatAnimLabel(kind, animIdx) {
     const name = typeof kind === 'string' ? kind : ANIM_LABEL_NAMES[kind];
     // Undefined/null animIdx used to render as "undefined" via template coercion;
