@@ -25,6 +25,7 @@ import {
     clipVisibilityToPolar,
     collectSolidSegments,
     ensureCompoundSolid,
+    markSeenPolarOwners,
     OCC_CIRCLE,
     OCC_POLY,
     polarBinsActive,
@@ -495,6 +496,11 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTileMulY = EMPTY_F32;
         this._vpWriteBuffer = null;
         this._selfLitWriteBuffer = null;
+        // N-19: per self-lit item, 1 if it is a compound solid; per entity, the
+        // stamp of the last light whose polygon showed that solid.
+        this._selfLitSolid = EMPTY_U8;
+        this._selfLitSeen = EMPTY_U32;
+        this._selfLitSeenStamp = 0;
         this._decorationZoomAlpha = 1;
         this._emitWriteCount = 0;
         this._emptyAdobeEntities = null;
@@ -985,6 +991,8 @@ class PreRenderWorker extends AbstractWorker {
             // Self-lit queue (entity under own occluder fill)
             this._selfLitMax = data.visibilityPolygons.maxOccluderSelfLit || 512;
             this._selfLitItemBytes = 28;
+            this._selfLitSolid = new Uint8Array(this._selfLitMax);
+            this._selfLitSeen = new Uint32Array(this.globalEntityCount);
             const selfLitSabs = [
                 data.visibilityPolygons.selfLitDataA,
                 data.visibilityPolygons.selfLitDataB,
@@ -3624,6 +3632,7 @@ class PreRenderWorker extends AbstractWorker {
         const selfLitU16 = selfLitBuf ? selfLitBuf.u16 : null;
         const selfLitU8 = selfLitBuf ? selfLitBuf.u8 : null;
         const selfLitItemBytes = this._selfLitItemBytes || 28;
+        const selfLitSolid = this._selfLitSolid;
 
         const visibleLights = this.visibleLightsData;
         if (!visibleLights) { buf.header[0] = 0; return; }
@@ -3656,6 +3665,8 @@ class PreRenderWorker extends AbstractWorker {
             let vertPool = 0;
             let occluderLimitHit = false;
             clearPolarBins(influenceRadius);
+            const selfLitStart = selfLitCount;
+            let solidsLit = 0;
 
             if (neighborData && stride > 0) {
                 const offset = lightIdx * stride;
@@ -3703,7 +3714,7 @@ class PreRenderWorker extends AbstractWorker {
                         );
                         const hit = collectSolidSegments(
                             solid, wx, wy, c, s, ox, oy,
-                            lx, ly, influenceRadius * influenceRadius
+                            lx, ly, influenceRadius * influenceRadius, nIdx
                         );
                         if (hit > 0 && selfLitI32 && selfLitCount < maxSelfLit) {
                             const byteOff = 4 + selfLitCount * selfLitItemBytes;
@@ -3722,6 +3733,8 @@ class PreRenderWorker extends AbstractWorker {
                             selfLitU16[u16Off + 12] = texId;
                             selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
                             selfLitU8[byteOff + 27] = 0;
+                            selfLitSolid[selfLitCount] = 1;
+                            solidsLit++;
                             selfLitCount++;
                         }
                         continue;
@@ -3824,6 +3837,7 @@ class PreRenderWorker extends AbstractWorker {
                         selfLitU16[u16Off + 12] = texId; // after 6×i32/f32 = 24 bytes
                         selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
                         selfLitU8[byteOff + 27] = 0;
+                        selfLitSolid[selfLitCount] = 0;
                         selfLitCount++;
                     }
 
@@ -3842,10 +3856,16 @@ class PreRenderWorker extends AbstractWorker {
                 kind, cX, cY, cR, vertStart, vertCountArr, vertsX, vertsY,
                 occCount, outX, outY, maxVerts
             );
-            if (polarBinsActive()) {
+            const polarActive = polarBinsActive();
+            if (polarActive) {
                 vertCount = clipVisibilityToPolar(
                     lx, ly, outX, outY, vertCount, outX, outY, maxVerts
                 );
+            }
+            // N-19: a solid is self-lit where this light sees it, not wherever
+            // its segments are in range (rock behind rock stays dark).
+            if (solidsLit > 0) {
+                selfLitCount = this._dropUnseenSolids(selfLitBuf, selfLitStart, selfLitCount, polarActive);
             }
 
             // Layout: [lightIdx:i32, lightX:f32, lightY:f32, vertexCount:i32, x[N]:f32, y[N]:f32]
@@ -3864,6 +3884,38 @@ class PreRenderWorker extends AbstractWorker {
 
         buf.header[0] = lightsWritten;
         if (selfLitBuf) selfLitBuf.header[0] = selfLitCount;
+    }
+
+    /**
+     * N-19. Keep this light's self-lit solids [start, end) only when one of
+     * their polar bins is on its polygon (markSeenPolarOwners); simple
+     * occluders stay. No bin at all (polarActive false) means no solid is
+     * seen. Returns the new item count.
+     */
+    _dropUnseenSolids(buf, start, end, polarActive) {
+        let stamp = (this._selfLitSeenStamp + 1) >>> 0;
+        if (stamp === 0) {
+            this._selfLitSeen.fill(0);
+            stamp = 1;
+        }
+        this._selfLitSeenStamp = stamp;
+        const seen = this._selfLitSeen;
+        if (polarActive && markSeenPolarOwners(seen, stamp) < 0) return end;
+        const solid = this._selfLitSolid;
+        const itemBytes = this._selfLitItemBytes;
+        const i32 = buf.i32;
+        const u8 = buf.u8;
+        let w = start;
+        for (let q = start; q < end; q++) {
+            const off = 4 + q * itemBytes;
+            if (solid[q] && seen[i32[off >> 2]] !== stamp) continue;
+            if (w !== q) {
+                u8.copyWithin(4 + w * itemBytes, off, off + itemBytes);
+                solid[w] = solid[q];
+            }
+            w++;
+        }
+        return w;
     }
 
     /**

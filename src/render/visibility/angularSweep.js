@@ -853,11 +853,14 @@ function chainSolidSegments(solid) {
 
 /**
  * World-space boundary edges of a solid that overlap the light disc.
+ * `owner` is the id the bins this solid wins record (N-19): an integer, passed
+ * down as a parameter. Read from a module variable it cost 8–11 % of this
+ * kernel; as a parameter, with _polarActive set once per span, 0–5 %.
  * @returns {number} 0 when no edge overlaps the light disc; otherwise at least 1
  *   (back-facing edges stop being counted once one edge has)
  */
 export function collectSolidSegments(
-  solid, entityX, entityY, rotC, rotS, offX, offY, lightX, lightY, radiusSq
+  solid, entityX, entityY, rotC, rotS, offX, offY, lightX, lightY, radiusSq, owner
 ) {
   if (!solid || solid.segCount <= 0) return 0;
   if (!solid.chainValid) chainSolidSegments(solid);
@@ -907,7 +910,7 @@ export function collectSolidSegments(
     lastX = x1;
     lastY = y1;
     lastAngle = close;
-    rasterPolarSpan(open, close, x0, y0, x1, y1, lightX, lightY);
+    rasterPolarSpan(open, close, x0, y0, x1, y1, lightX, lightY, owner);
   }
   return hit;
 }
@@ -930,14 +933,23 @@ for (let m = 0; m <= POLAR_BINS * 2; m++) {
   _polarSin[m] = Math.sin(ang);
 }
 const _polarDist = new Float32Array(POLAR_BINS);
+// N-19: who stamped each bin's nearest hit (-1: nothing), so the caller can
+// tell which solids end up on the polygon.
+const _polarOwner = new Int32Array(POLAR_BINS);
 let _polarRadius = 0;
 let _polarActive = 0;
+// The last clipVisibilityToPolar merge, for markSeenPolarOwners: -1 = none ran.
+let _mergeCount = -1;
+let _mergeGroup = 1;
+let _mergeEdges = 0;
 
 export function clearPolarBins(radius) {
   const r = radius > 0 ? radius : 0;
   _polarRadius = r;
   _polarActive = 0;
   _polarDist.fill(r);
+  _polarOwner.fill(-1);
+  _mergeCount = -1;
 }
 
 export function polarBinsActive() {
@@ -957,16 +969,16 @@ function raySegT(ox, oy, dx, dy, ax, ay, bx, by) {
   return Infinity;
 }
 
-function writePolarSegment(x0, y0, x1, y1, lx, ly) {
+function writePolarSegment(x0, y0, x1, y1, lx, ly, owner) {
   rasterPolarSpan(
     normalizeAngleSigned(Math.atan2(y0 - ly, x0 - lx)),
     normalizeAngleSigned(Math.atan2(y1 - ly, x1 - lx)),
-    x0, y0, x1, y1, lx, ly
+    x0, y0, x1, y1, lx, ly, owner
   );
 }
 
 /** Stamp the bins between the ends' angles, each normalizeAngleSigned(atan2(...)). */
-function rasterPolarSpan(open, close, x0, y0, x1, y1, lx, ly) {
+function rasterPolarSpan(open, close, x0, y0, x1, y1, lx, ly, owner) {
   let span = close - open;
   if (span < 0) span += TWO_PI;
   if (span > Math.PI) {
@@ -985,18 +997,22 @@ function rasterPolarSpan(open, close, x0, y0, x1, y1, lx, ly) {
   // b0 through b1, past the last bin to the first when the span wraps. One call
   // site keeps this small enough to inline into collectSolidSegments (E-61).
   const end = open <= close ? b1 : b1 + POLAR_BINS;
+  let stamped = 0;
   for (let v = b0; v <= end; v++) {
-    stampPolarBin(v < POLAR_BINS ? v : v - POLAR_BINS, x0, y0, x1, y1, lx, ly);
+    stamped |= stampPolarBin(v < POLAR_BINS ? v : v - POLAR_BINS, x0, y0, x1, y1, lx, ly, owner);
   }
+  if (stamped) _polarActive = 1;
 }
 
-function stampPolarBin(b, x0, y0, x1, y1, lx, ly) {
+function stampPolarBin(b, x0, y0, x1, y1, lx, ly, owner) {
   const m = 2 * b + 1;
   const t = raySegT(lx, ly, _polarCos[m], _polarSin[m], x0, y0, x1, y1);
   if (t < _polarDist[b]) {
     _polarDist[b] = t;
-    _polarActive = 1;
+    _polarOwner[b] = owner;
+    return 1;
   }
+  return 0;
 }
 
 /**
@@ -1010,7 +1026,10 @@ function stampPolarBin(b, x0, y0, x1, y1, lx, ly) {
  * occluder inside a group. At POLAR_BINS or more it is one vertex per bin.
  */
 export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts) {
-  if (!_polarActive) return n;
+  if (!_polarActive) {
+    _mergeCount = 0;
+    return n;
+  }
   // The caller stores y at x + maxVerts, so the result must never exceed maxVerts.
   const cap = maxVerts | 0;
   if (cap < 3) return n;
@@ -1018,7 +1037,36 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
   const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
   // No copy of the input: mergeSweep reads every vertex before its first write.
   mergeSweep(lx, ly, inX, inY, n, count, group, _polarRadius, outX, outY);
+  _mergeCount = count;
+  _mergeGroup = group;
+  _mergeEdges = n >= 3 ? n : 0;
   return count;
+}
+
+/**
+ * N-19. After clipVisibilityToPolar: set seen[owner] = stamp for every bin
+ * whose hit is on the polygon, i.e. not behind the simple-occluder sweep at
+ * that ray (mergeSweep keeps the bin unless the sweep is strictly nearer).
+ * Every bin counts, not only the nearest of a vertex's group, so a solid seen
+ * in one bin of a group is seen. Returns how many bins marked, or -1 when no
+ * merge ran since clearPolarBins (the caller then cannot tell, and keeps all).
+ */
+export function markSeenPolarOwners(seen, stamp) {
+  if (_mergeCount < 0) return -1;
+  let marked = 0;
+  for (let k = 0; k < _mergeCount; k++) {
+    const b0 = k * _mergeGroup;
+    const b1 = b0 + _mergeGroup < POLAR_BINS ? b0 + _mergeGroup : POLAR_BINS;
+    const sweep = _mergeEdges > 0 ? _rayBest[k] : Infinity;
+    for (let b = b0; b < b1; b++) {
+      const owner = _polarOwner[b];
+      if (owner >= 0 && _polarDist[b] <= sweep) {
+        seen[owner] = stamp;
+        marked++;
+      }
+    }
+  }
+  return marked;
 }
 
 // E-43. The merge took each output ray's nearest hit on the sweep polygon by
@@ -1165,7 +1213,7 @@ function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY) {
   }
 }
 
-/** Raster one world segment into the current polar buffer. For the kernel. */
-export function rasterBoundarySegment(x0, y0, x1, y1, lx, ly) {
-  writePolarSegment(x0, y0, x1, y1, lx, ly);
+/** Raster one world segment into the current polar buffer. For kernels and tests. */
+export function rasterBoundarySegment(x0, y0, x1, y1, lx, ly, owner = -1) {
+  writePolarSegment(x0, y0, x1, y1, lx, ly, owner);
 }
