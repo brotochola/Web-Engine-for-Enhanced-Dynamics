@@ -9,6 +9,19 @@ const SEED = 0x51f01;
 const LIGHTS = 360;
 const OCCLUDERS = 700;
 
+/** `?occluderShape=circle`: round occluders, which Pixi draws as a self-lit fan (E-60). Default box. */
+export const OCCLUDER_SHAPE = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('occluderShape') === 'circle' ? 'circle' : 'box';
+  } catch {
+    return 'box';
+  }
+})();
+
+export const stressSceneConfig = {
+  requested: { occluderShape: OCCLUDER_SHAPE },
+};
+
 /** Bench scene: raycasted lights + occluders. Predator default leaves this path off. */
 export class VisPolyStressScene extends Scene {
   static config = {
@@ -73,6 +86,7 @@ export class VisPolyStressScene extends Scene {
         y: 80 + rng() * (h - 160),
         width: 32 + rng() * 48,
         height: 32 + rng() * 48,
+        circle: OCCLUDER_SHAPE === 'circle' ? 1 : 0,
       });
     }
     Camera.centerOn(w * 0.5, h * 0.5);
