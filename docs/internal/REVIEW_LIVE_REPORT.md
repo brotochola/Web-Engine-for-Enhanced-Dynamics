@@ -17,9 +17,53 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**21:00** — Phase 3: D1–D8 done; the headed smoke is clean. Next: D9–D11.
+**21:38** — Phase 3 (dead code) is done, D1–D11. Next: Phase 4, repeated code.
 
 ## Log
+
+### 21:38 — Phase 3 done; a real bug in two Box2D query APIs (N-22); new N-20, N-21, E-55
+
+- **D9** (`bdfe01e6`): PHYSICS.md's mass section described the old Verlet solver. It now says
+  what Box2D does: `RigidBody.mass` becomes a shape density (mass / area). A section about a
+  function that no longer exists, and a demo line setting a removed knob, are gone.
+- **D10** (`2b760fbd`): the `Box` game object moved into the Balls scene.
+- **D11, bench tools** (`da0b0106`, `a4e85ac7`, `83d895c9`, `59c9b0d8`):
+  - About 270 lines of tournament scoring code that nothing has run since 2026-09-30 are gone
+    from the shared bench library.
+  - 20 closed probe scripts are deleted, plus 6 stress-scene files that only they used. A
+    helper agent checked each one against the logs. I re-checked that nothing in the repo
+    names any of them, and kept three that could still be useful.
+  - Three live tools got pnpm scripts: `trace:wasm-map`, `bench:headed:frame-phase`,
+    `verify:terrain-webgpu`.
+  - **A tool that lied quietly** (`59c9b0d8`): `mapWasmFunctions` mapped the 10-01 build. Its
+    default index list, its cached disassembly and its import numbers were all from that
+    wasm. On today's wasm its "futex" column counted a clock call. It now needs indices and
+    resolves imports by name.
+  - The repo's version hook re-stages `package.json`, so those three scripts landed inside
+    `59c9b0d8` instead of their own commit. From now on I commit package.json edits alone.
+- **N-22 — a real bug in a public API** (`87c4bead`):
+  - `Box2d.queryAABB` and `Box2d.overlapCircle` returned a compound body once per shape. On
+    the shipped wasm a three-shape body came back as `[11, 11, 11]`.
+  - The count also stops at 512 shapes, while the guide promised the full hit count: 600
+    bodies in a box returned 512.
+  - Fixed on the JS side. Physics keeps each id once, warns once when a query reaches the 512
+    cap, and the guide says what the count means. A headless run of the QueryAABB demo passes
+    its self-check.
+  - **Your call:** the clean fix belongs in the C collect callback. Dedupe there, so the 512
+    slots hold 512 bodies, and stop walking the tree once they are full (today it keeps
+    walking). That needs a wasm rebuild in the sibling repo, which I have not touched.
+  - The LiquidFun particle queries made the same false "full count" claim (they stop at
+    4096): comments fixed in `2ef1f1cd`.
+- **N-21** (`599d7750`): QueryAABB and closest-ray had no round-trip test since 09-15. New tests
+  drive them from a real worker thread, including the error path and the ray batch.
+- **N-20** (`5e79bc3b`, `c3abd53b`): the docs named 8 pnpm scripts and 18 files that no longer
+  exist, one of them in a user guide. Fixed. HOW_WE_MEASURE now says not to link into
+  `tests/results/`, which is gitignored; about 200 such links stay, in dated records.
+- **E-55** (parked): Box2D's always-on step profiler calls `performance.now()` through JS
+  several dozen times per step. My estimate is about 0.2 % of physics time, so it stays
+  parked until a trace says otherwise.
+
+Suite: 1341/1341.
 
 ### 21:00 — D5–D8 removed, plus one real bug (`56ee5f6e`, `4102aa1b`, `36537a9c`, `580d8b25`, `b01e3fe5`)
 

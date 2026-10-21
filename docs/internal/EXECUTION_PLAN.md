@@ -1002,6 +1002,18 @@ at 1/2/3/4 workers, load 9004/9000 both. **`4` is still best.** The 4-worker ste
 **Primary:** `physics_STEP_MS` on Balls at 4 workers, the same tree with the two glue
 builds, ABAB. Only then is the gap the runtime's.
 
+### E-55 Box2D's step profiler calls `emscripten_get_now` every step — **parked**
+Found fixing `mapWasmFunctions` (review D11). On the 10-19 wasm, `step_world` (chrome 325)
+has 34 inlined `call $fimport$0` (`_emscripten_get_now`); the C side is Box2D v3's own
+`b2Profile` timers, always on: `b2GetTicks` at 27 sites in `solver.c`, 10 in
+`physics_world.c`, 2 each in `island.c`, `distance.c`, `scheduler.c`. Each is a wasm→JS
+call into `performance.now()`. Estimate: a few hundred calls per step at most, tens of ns
+each, ~10–20 µs against a 6 ms step (~0.2–0.3 %), far under the 3 % bar, so not started.
+LiquidFun's per-pass timers are already gated (`set_lf_pass_profile`). **Reopen** if a
+headed trace of the physics pthreads shows `_emscripten_get_now` frames above ~1 %; the fix
+would be a runtime switch in the C timer that returns 0 while detailed stats are off (the
+engine reads `b2Profile` through `get_profile_byte_offset` for its physics sub-timers).
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at
