@@ -351,6 +351,22 @@ if (this.isCollidingWith(playerIndex)) {
 
 Use collision **callbacks** for edge-triggered logic (enter/exit). Use `isCollidingWith()` inside `tick()` when you need "am I currently overlapping?" without maintaining your own state.
 
+### What did I hit? (`is`, `hasComponent`)
+
+Callbacks get the other entity's **index**. Ask about it without reading SoA by hand:
+
+```javascript
+onCollisionEnter(other) {
+  if (this.is(other, Coin)) this.collect(other);          // Coin or a subclass of it
+  if (this.is(other, Enemy) && this.hasComponent(Shield, other)) this.bounce();
+}
+
+GameObject.isType(index, Enemy);        // same, from Scene or SoA code
+GameObject.hasComponent(index, Shield); // tags count: CollisionListener, your own tags
+```
+
+Both are O(1) for the exact class (a short prototype walk for a base class) and allocate nothing. `other` may be an index or a `GameObject`. An index stays the same while its entity lives, but a pool reuses it after a despawn (the next spawn of that class takes the most recently freed index), so do not keep one across frames and assume it is the same entity.
+
 > **Note:** These are *physics* collision layers, completely separate from *rendering* layers (see Layer System below).
 
 ---

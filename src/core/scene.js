@@ -568,6 +568,7 @@ class Scene {
     const startIndex = this.totalEntityCount;
     const entityTypeId = this.registeredClasses.length;
     EntityClass.entityType = entityTypeId;
+    GameObject.classByType[entityTypeId] = EntityClass;
     if (EntityClass.deriveSpeed === true) this._anyDeriveSpeed = true;
 
     // Register custom components and assign componentId IDs
@@ -941,6 +942,7 @@ class Scene {
 
         const entityTypeId = this.registeredClasses.length;
         ParentClass.entityType = entityTypeId;
+        GameObject.classByType[entityTypeId] = ParentClass;
         if (ParentClass.deriveSpeed === true) this._anyDeriveSpeed = true;
 
         // Auto-detect script path from parent class (for worker script loading)

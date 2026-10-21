@@ -1104,6 +1104,16 @@ export declare class GameObject {
     preAssignedIndex?: number
   ): GameObject | { index: number } | null;
   static get(index: number): GameObject | null;
+  /** Entity class per entity type id (main thread and logic workers). */
+  static classByType: Array<typeof GameObject>;
+  /** True when the entity at index is EntityClass or a subclass of it. */
+  static isType(index: number, EntityClass: Function): boolean;
+  /** True when the entity type at index lists ComponentClass (tags included). */
+  static hasComponent(index: number, ComponentClass: Function): boolean;
+  /** Is the other entity (index or GameObject) an EntityClass or a subclass? */
+  is(other: number | GameObject, EntityClass: Function): boolean;
+  /** Does this entity's type (or other's, when given) list ComponentClass? */
+  hasComponent(ComponentClass: Function, other?: number | GameObject): boolean;
   static getEntityView(entityIndex: number, options?: { cache?: boolean }): GameObject;
   despawn(): void;
   tick(dtRatio?: number, deltaTime?: number): void;

@@ -157,6 +157,13 @@ export class GameObject {
    */
   static scene = null;
 
+  /**
+   * Entity class per entity type id, filled where entity code runs (main
+   * thread, logic workers). Backs is() / hasComponent() on another entity.
+   * @type {Function[]}
+   */
+  static classByType = [];
+
   /** @internal Reused by despawnAll to avoid Set allocation per call */
   static _despawnAllBuffer = new Set();
 
@@ -394,6 +401,57 @@ export class GameObject {
       componentClassMap[camelCaseName] = ComponentClass;
     }
     EntityClass._componentClassMap = componentClassMap;
+    EntityClass._componentList = components;
+  }
+
+  /**
+   * True when the entity at `index` is an EntityClass or a subclass of it.
+   * O(1) for the exact class, a short prototype walk for a base class; no allocation.
+   * @param {number} index
+   * @param {Function} EntityClass
+   * @returns {boolean}
+   */
+  static isType(index, EntityClass) {
+    const type = Transform.entityType[index];
+    if (type === EntityClass.entityType) return true;
+    const C = GameObject.classByType[type];
+    return C !== undefined && C.prototype instanceof EntityClass;
+  }
+
+  /**
+   * True when the entity type at `index` lists ComponentClass (tags included).
+   * @param {number} index
+   * @param {Function} ComponentClass
+   * @returns {boolean}
+   */
+  static hasComponent(index, ComponentClass) {
+    const C = GameObject.classByType[Transform.entityType[index]];
+    const list = C !== undefined ? C._componentList : undefined;
+    return list !== undefined && list.includes(ComponentClass);
+  }
+
+  /**
+   * Is the other entity an EntityClass (or a subclass)? `other` is an index
+   * (what collision callbacks get) or a GameObject.
+   *   onCollisionEnter(other) { if (this.is(other, Coin)) this.collect(other); }
+   * @param {number|GameObject} other
+   * @param {Function} EntityClass
+   * @returns {boolean}
+   */
+  is(other, EntityClass) {
+    return GameObject.isType(typeof other === 'number' ? other : other.index, EntityClass);
+  }
+
+  /**
+   * Does this entity's type list ComponentClass? Pass `other` (index or
+   * GameObject) to ask about another entity.
+   * @param {Function} ComponentClass
+   * @param {number|GameObject} [other]
+   * @returns {boolean}
+   */
+  hasComponent(ComponentClass, other) {
+    const index = other === undefined ? this.index : typeof other === 'number' ? other : other.index;
+    return GameObject.hasComponent(index, ComponentClass);
   }
 
   /**

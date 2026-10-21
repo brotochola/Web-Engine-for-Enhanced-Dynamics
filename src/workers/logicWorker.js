@@ -391,6 +391,7 @@ class LogicWorker extends AbstractWorker {
         EntityClass.endIndex = endIndex;
         EntityClass.entityType = entityType; // Auto-assigned entity type ID
         this._entityClassByType[entityType] = EntityClass;
+        GameObject.classByType[entityType] = EntityClass;
 
         // Pre-computed typed array of all entity indices for this class
         // Uses Uint16 since max entities = 65535 (fits in 16 bits)
