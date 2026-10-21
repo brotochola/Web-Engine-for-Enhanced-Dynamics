@@ -17,6 +17,25 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**16:02** — **N-39 and N-5 fixed, N-8 seen working in the demo** (`b909df57`, `8426a084`, `1e2984e3`).
+
+### 16:02 — Hidden boxes stay dark, broken rock survives a save, shards appear
+
+- **N-39:** after N-19, terrain chunks lit only where the light saw them, but boxes, circles and
+  polygons still lit up by range. The shadow sweep now records which shape each of its points
+  lands on, and shapes it never reaches are dropped from the lit list. Tests show a box in
+  another box's shadow staying dark.
+  - Cost: the sweep kernel −4%, pre-render +1%, both within the bug-fix bar.
+  - Not covered: a box hidden only by terrain.
+- **N-5, saving broken rock:** pieces that broke off the terrain vanished on load.
+  - **Engine:** a serializable class can now leave some of its entities out of a save
+    (`static shouldSaveEntity(index)`, documented and typed).
+  - **Terrain:** it saves its loose chunks and rebuilds static rock from the saved grid, as before.
+  - **Checked headless with a real save and load:** 40 loose chunks before, 44 after; the 4 extra
+    broke off after the load, and without the fix only those 4 remain. The planet scene: 3 and 3.
+- **N-8 seen working:** on the demo page, pressing V and clicking rock turned 37 loose pieces into
+  132, shards visible around the click; before the fix the rock just disappeared.
+
 **15:46** — **N-4, N-3, N-2 and N-10 fixed** (`0dbd7876`, `4fcd8b70`, `ae75b09e`, `72b74120`). The suite is at 1,430.
 N-17 and N-31 wait for you (below).
 
