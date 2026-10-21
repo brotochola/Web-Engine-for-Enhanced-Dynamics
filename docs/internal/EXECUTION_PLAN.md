@@ -1090,6 +1090,25 @@ held (`benchRemesh=1`) and several lit compound bodies in range; first count reb
 frame before and after, to know the regime exists. Balls and Predator (no compounds) must
 tie.
 
+### E-59 The per-particle and per-tween ease is too big for V8 to inline — **not-started**
+Found in review V6 (2026-10-21). TurboFan inlines a callee only when its bytecode is at most
+460 bytes. `applyParticleEase` is **717 bytes**, and `--trace-turbo-inlining` reports it
+`Cannot consider … for inlining (reason: 5)` (exceeds the bytecode limit) in both
+`updateParticlePhysicsBuffers` (`particleIntegrateMicrobench`) and `Tween.tick`
+(`tweenPoolMicrobench`). `Tween._apply` is refused for the same reason. So every tweened or
+spinning particle, and every live tween, makes a real call per frame. A double argument and a
+double result cross that call boxed, which means up to two HeapNumbers per call (G1 found the
+same boxing on non-inlined calls). The 2026-10-17 ease-dispatch kernel (HYPOTHESIS_LOG) already
+showed the gap: the shipped switch takes 9.3 ns a call against 1.0 ns for a direct, inlinable
+curve. That loop was tiny, and the two real callers were never timed. **Change:** a small
+front for `applyParticleEase` that stays under the limit: the `t` clamps, LERP and the
+polynomial curves inline, with a cold function for EXPO, BACK and BOUNCE. Same values bit for
+bit, so a parity test covers every id at many `t`. **Kernel first:** `particleIntegrateMicrobench`
+with every particle tweened (alpha + scale), ids LERP, QUAD_OUT and mixed. Report ops/s, minor
+GCs per 1000 steps, and which tier was timed (N-28). Then `tweenPoolMicrobench`. **Primary:**
+particle `STEP_MS` on ParticleIntegrateStressScene, and logic on TweenStressScene. `Tween._apply`
+is a separate step: split it by kind only if the ease front alone does not close the gap.
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at

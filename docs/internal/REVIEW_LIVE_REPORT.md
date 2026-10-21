@@ -17,10 +17,60 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**01:22** — Phase 5 (GC) is done except G6, which is the save stall (E-49). Next: E-49, then
-Phase 6 (V8).
+**02:16** — Phase 6 (V8) is done. Next: the same field audit for the Pixi worker (N-32's
+open half), then E-59 (the ease that V8 can't inline).
 
 ## Log
+
+### 02:16 — Phase 6: one warning was slowing the renderer for 8 seconds (`45886e4a`, `eb1efc07`, `985755dc`)
+
+I recorded what V8 actually does in 7 scenes (headless, with deopt and IC logging), then
+checked each review item against that log.
+
+- **The big find (N-32, `45886e4a`).** The first time the main render queue fills up, pre-render
+  prints a warning and sets a "warned" flag. That flag was a brand-new property on the worker.
+  A new property changes the object's hidden layout, and V8 throws away all the fast code that
+  assumed the old layout. One pre-render method then fell back to slow code **every frame for
+  about 8 seconds** (688 times in a row) before V8 rebuilt it. I found 47 fields like that in
+  pre-render (warnings, light scratch buffers, GPU packers). All of them now exist from the start.
+  In the particle stress scene, right after the queue fills: **pre-render 5.09 → 4.58 ms
+  (−9.6 %, better in all 4 pairs)**. Predator: nothing worse. A test fails if anyone adds a
+  late field again.
+- **A broken tool (N-33, `eb1efc07`).** The script that summarizes these V8 logs has never
+  counted a single "megamorphic" access, because Chrome writes the states as one letter and the
+  script looked for words. It reads them now and names the function each one is in. With that:
+  the megamorphic accesses are all start-up code that works across many classes, by design. No
+  per-frame code is affected.
+- **V5, a slow cache (`985755dc`).** The lighting outline cache was an array that V8 had silently
+  turned into a hash table whenever the first lit body had an entity index of about 1024 or more.
+  Cache hits are 3× faster now (35 M → 108 M per second). That's microseconds per frame; the
+  stress scene ties.
+- **No change needed, on evidence:** V1 (planet ship), V2 (physics host), V3 (the fields the
+  review named), V4 (the `_weedLoc` tag on typed arrays). Zero deopts or mixed-type accesses
+  in any scene. Details are in REVIEW_PLAN.
+- **V6 became a speed item, E-59.** The easing function used for every particle and every tween
+  is too large for V8 to inline (717 bytes against a 460-byte limit), so each call is a real call
+  that boxes its numbers. An old bench showed 9.3 ns per call against 1 ns for an inlinable curve.
+  It goes through kernel → scene like every speed item.
+
+Suite: 1380/1380.
+
+### 01:51 — E-49: saving no longer stalls for a third of a second (`62537602`, docs `41f7fbfe`)
+
+- You committed the code as `62537602`. Saving 4000 entities used to block the main thread
+  for about 345 ms; now it's about 83 ms. Each field name was turned into bytes again for every
+  entity; now it's done once per save. Each component's field list was also rebuilt per entity;
+  now it's once per class.
+- The save file is the same byte for byte. A test pins its length and checksum, and the old
+  code produces the same checksum.
+- **Not measured:** time-to-save in the browser on Predator. You stopped that run, so the
+  numbers above come from the Node bench, which runs the same code.
+- **Left open:** loading a save still rebuilds the field list per entity (E-49b if a load ever
+  stutters). The file repeats names at ~2.2 KB per entity. A string table would shrink it, but
+  it changes the save format.
+- Housekeeping: your working copy of `package.json` had gone back to 0.11.191 while
+  `version.js` said 0.11.192, which failed the version test. The commit hook put both back at
+  0.11.192 and the tree is clean.
 
 ### 01:22 — Phase 5: garbage, and a 12–18× faster lighting rebuild (`d87c4132` … `096b772e`)
 
