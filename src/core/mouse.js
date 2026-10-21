@@ -526,12 +526,16 @@ export class Mouse {
     this._ids[0] = pointerId;
   }
 
-  static _place(slot, e, camera) {
+  /** The event target's box, or null when it has none. One read per event (review G7). */
+  static _rect(e) {
     const el = e.currentTarget;
+    return el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+  }
+
+  static _place(slot, e, camera, rect = this._rect(e)) {
     let x = e.clientX;
     let y = e.clientY;
-    if (el && el.getBoundingClientRect) {
-      const rect = el.getBoundingClientRect();
+    if (rect) {
       x -= rect.left;
       y -= rect.top;
     }
@@ -539,10 +543,8 @@ export class Mouse {
     if (camera) this._writeWorld(slot, camera);
   }
 
-  static _inside(e) {
-    const el = e.currentTarget;
-    if (!el || !el.getBoundingClientRect) return true;
-    const rect = el.getBoundingClientRect();
+  static _inside(e, rect = this._rect(e)) {
+    if (!rect) return true;
     return e.clientX >= rect.left && e.clientX < rect.right
       && e.clientY >= rect.top && e.clientY < rect.bottom;
   }
@@ -639,7 +641,8 @@ export class Mouse {
       return;
     }
     this._claimCursor(this._pid(e));
-    this._place(0, e, camera);
+    const rect = this._rect(e);
+    this._place(0, e, camera, rect);
     if (typeof e.buttons === 'number') {
       this._syncCursorButtons(e.buttons, false);
     } else {
@@ -649,7 +652,7 @@ export class Mouse {
       else if (button === 2) this._setHeld(this._BTN2, false, this._PRESS2, this._REL2);
     }
     this._releaseCapture(e);
-    if (!this._inside(e)) this._releaseCursor(e);
+    if (!this._inside(e, rect)) this._releaseCursor(e);
   }
 
   /**
