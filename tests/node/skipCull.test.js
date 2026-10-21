@@ -8,7 +8,6 @@ import { PRE_RENDER_DEFAULTS } from '../../src/util/configDefaults.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const preRender = readFileSync(join(root, 'src/workers/preRenderWorker.js'), 'utf8');
-const bunny = readFileSync(join(root, 'demos/bunnyMarkScene/bunnyMarkScene.js'), 'utf8');
 const renderQueue = readFileSync(join(root, 'tests/bench/stressScenes/renderQueueStressScene.js'), 'utf8');
 const catalogRenderQueue = renderQueue.slice(
   0,
@@ -21,9 +20,8 @@ test('sun casters pack from sprite shadowH, not a fused CPU queue', () => {
   assert.match(preRender, /_packGpuShadows\(/);
 });
 
-test('skipCull defaults false and is opt-in on bunny playable only', () => {
+test('skipCull defaults false; the render-queue catalog scene leaves it off', () => {
   assert.equal(PRE_RENDER_DEFAULTS.skipCull, false);
-  assert.match(bunny, /skipCull:\s*true/);
   assert.doesNotMatch(catalogRenderQueue, /skipCull:\s*true/);
 });
 

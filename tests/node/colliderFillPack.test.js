@@ -366,32 +366,6 @@ test('pixiWorker has no Graphics fixture fill', () => {
   assert.equal(src.includes('new PIXI.Graphics'), false);
 });
 
-test('destructibleTerrainScene declares LAYER_KIND.MESH', () => {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const scene = fs.readFileSync(
-    path.join(here, '../../demos/destructibleTerrainScene/destructibleTerrainScene.js'),
-    'utf8'
-  );
-  const island = fs.readFileSync(
-    path.join(here, '../../demos/destructibleTerrainScene/gameObjects/terrainIsland.js'),
-    'utf8'
-  );
-  assert.match(scene, /kind:\s*LAYER_KIND\.MESH/);
-  assert.match(scene, /fragment:\s*'rockContour'/);
-  assert.match(scene, /webgl:\s*'\/demos\/shaders\/rockContour\.frag'/);
-  assert.match(scene, /webgpu:\s*'\/demos\/shaders\/rockContour\.wgsl'/);
-  assert.match(scene, /terrainRendererBackend/);
-  assert.match(scene, /benchRemesh/);
-  assert.equal(scene.includes('fillSpace'), false);
-  assert.match(scene, /rocky:\s*'\/demos\/img\/rocky\.jpg'/);
-  assert.match(island, /MeshRenderer/);
-  assert.match(island, /setTexture\('rocky'\)/);
-  assert.match(island, /setTileWorld\(128\)/);
-  assert.match(island, /visualOutset\s*=\s*2/);
-  assert.equal(island.includes('SpriteRenderer'), false);
-  assert.equal(island.includes('fillTint'), false);
-});
-
 test('colliderFill.wgsl samples the atlas in uniform control flow', () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const wgsl = fs.readFileSync(path.join(here, '../../src/shaders/colliderFill.wgsl'), 'utf8');

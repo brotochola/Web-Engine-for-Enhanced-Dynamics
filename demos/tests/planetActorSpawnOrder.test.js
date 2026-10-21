@@ -9,7 +9,7 @@
 // these used to be regexes over the source.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import '../helpers/registerWebRoot.mjs';
+import '../../tests/helpers/registerWebRoot.mjs';
 
 const { PlanetPhysicsScene } = await import('../../demos/planetPhysicsScene/planetPhysicsScene.js');
 const { PlanetWorldGridManager } = await import('../../demos/planetPhysicsScene/gameObjects/planetWorldGridManager.js');

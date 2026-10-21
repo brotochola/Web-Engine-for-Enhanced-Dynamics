@@ -48,9 +48,9 @@ test('ComputeLayer.compile checks use-before-declare and names the pass', () => 
   assert.match(src, /compute pass "\$\{entry\}"/);
 });
 
-test('repo WGSL: no let/var/const used before declaration in the same fn', () => {
+test('engine and bench WGSL: no let/var/const used before declaration in the same fn', () => {
   const files = [];
-  for (const rel of ['demos', 'tests/bench', 'src']) {
+  for (const rel of ['src', 'tests/bench']) {
     const dir = join(root, rel);
     for (const name of readdirSync(dir, { recursive: true })) {
       if (typeof name === 'string' && name.endsWith('.wgsl')) {
@@ -70,14 +70,3 @@ test('repo WGSL: no let/var/const used before declaration in the same fn', () =>
   assert.equal(failures.length, 0, failures.join('\n'));
 });
 
-test('burningBoxes compute shaders stay clean after engine prelude', () => {
-  const shaderDir = join(root, 'demos/burningBoxesScene/shaders');
-  const names = readdirSync(shaderDir).filter((n) => n.endsWith('.wgsl') && n !== 'fireLook.wgsl');
-  assert.ok(names.includes('fireParticles.wgsl'));
-  for (const name of names) {
-    const raw = readFileSync(join(shaderDir, name), 'utf8');
-    if (!raw.includes('@compute')) continue;
-    const issues = findWgslUseBeforeDeclare(prependComputePrelude(raw, null, null));
-    assert.deepEqual(issues, [], `${name} after prelude: ${JSON.stringify(issues)}`);
-  }
-});

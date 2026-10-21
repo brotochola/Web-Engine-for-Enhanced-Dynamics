@@ -3,7 +3,7 @@
 // ship travels around the disk. Mirrors Camera.worldToScreen's rotation.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import '../helpers/registerWebRoot.mjs';
+import '../../tests/helpers/registerWebRoot.mjs';
 import { radialCameraAngle, CX, CY, N, CELL } from '../../demos/planetPhysicsScene/planetGravity.js';
 
 function rotate(x, y, rot) {

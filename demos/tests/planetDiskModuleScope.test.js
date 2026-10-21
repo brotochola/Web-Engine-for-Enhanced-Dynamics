@@ -9,7 +9,7 @@
 // hook, review M8) and read the result; they used to be regexes over the source.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import '../helpers/registerWebRoot.mjs';
+import '../../tests/helpers/registerWebRoot.mjs';
 
 test('importing the scene module configures the planet disk and grid', async () => {
   const { WorldGrid, ROWS } = await import('../../demos/destructibleTerrainScene/worldGrid.js');
