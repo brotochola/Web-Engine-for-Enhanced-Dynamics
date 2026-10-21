@@ -1253,7 +1253,7 @@ Also check the existing burst tail itself: after servicing ≥ 1 single cast, `w
 spins 100k loads and then waits up to 2 ms inside `doStep`. No scene in the repo issues
 single sync casts, so it was never measured; the single-cast variant measures it.
 
-### E-57 A shorter in-step burst tail for light sync-query use — **not-started**
+### E-57 A shorter in-step burst tail for light sync-query use — **DROPPED 2026-10-21 (a trade, not a win)**
 From E-56. After the last request of a burst, the step spins ~0.45 ms and sleeps up to
 2 ms for one more: on 8 single casts per tick that tail was 1.54 of 1.78 ms of physics
 step. Cutting it to a 0.1 ms spin everywhere gave physics busy −70 % there, but broke a
@@ -1264,6 +1264,18 @@ rest only after N short bursts. **Primary:** physics `STEP_MS + QUERY_WAKE_MS` a
 at matched load (count casts answered per frame: the 1536 scene shows the old cap of 1024
 changes the load), with a load knob that puts the baseline over the floors without
 saturating logic's frame. Not a gameplay win until some scene issues sync single casts.
+**Tried (2026-10-21):** a step burst that has served fewer than 16 requests ends on the wake's
+short spin; past 16 it is a stream and keeps the spin + 2 ms sleep. Knobs `732a8fc0`
+(`?singleCasts`, `?physicsLoad=busy`, `?busyBalls`). Headless, 6 ABAB pairs against HEAD:
+- 8 casts per tick, 6000 balls: physics `STEP_MS + QUERY_WAKE_MS` 4.46 → 2.66 ms (**−38 %, 6/6**),
+  its tail wait −88 %; but **logic0 `STEP_MS` 1.53 → 1.97 ms (+40 %, 5/6)** (busy part unchanged).
+  The long tail had physics wait for logic's next cast. With it short, a cast that comes after
+  the burst ended waits for the rest of the step and the wake.
+- 384-cast stream, 2400 balls: logic0 +3.1 % (4/6), busy +3.4 % (5/6); physics +14 % (4/6).
+Logic0 is a primary and gets worse in both: reverted. Whoever waits, the latency moves between
+the two workers. **Next idea (not started):** physics answers a pending query between its own
+sub-steps (the slot is one load), so a late cast is served mid-step without a tail. That is
+the only shape that frees physics without making logic wait for the step's end.
 
 ### E-58 Rebuild a compound outline only when its own fixtures changed — **DROPPED 2026-10-21 (no product win after G1)**
 **Result.** Built as planned: a per-entity `entityRevision` (Uint32 per entity, appended after

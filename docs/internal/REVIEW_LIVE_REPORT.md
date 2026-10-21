@@ -17,6 +17,27 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**15:16** — **E-57 dropped: it only moves the wait from physics to logic.** All three speed items are
+now decided: E-63 kept, E-70 and E-57 dropped with measurements. A better idea for E-57 is logged.
+
+### 15:16 — Physics' wait after sync raycasts
+
+- **The situation:** a game that asks for a few synchronous raycasts per tick makes physics, after
+  answering them, wait up to about 2.5 ms in case another one comes. With 8 casts per tick, 2.2 ms
+  of physics' 4.5 ms step was that wait.
+- **What I tried:** a short wait until a burst has seen 16 casts (a stream), then the old long
+  one. New scene knobs for this are `732a8fc0`.
+- **Result:**
+  - Physics' step got **38 % shorter** (6 of 6 pairs).
+  - Logic got **40 % slower** (5 of 6): a cast that comes after the shortened burst now waits for
+    physics to finish its whole step.
+  - With a 384-cast stream, logic was ~3 % worse too.
+- So the long wait was physics politely waiting for logic, and shortening it just hands the wait
+  to logic. Reverted.
+- **What would really fix it** (logged, not started): physics checks for a pending query between
+  its own sub-steps, which is one memory read, and answers it there. Then neither side has to
+  wait for the other.
+
 **15:02** — **E-70 dropped: no layout makes the spatial search faster.** I measured three before any
 design work. Next: E-57.
 
