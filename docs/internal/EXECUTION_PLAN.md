@@ -1480,7 +1480,7 @@ is cheaper than it looks; the getter's share is mostly how often demo ticks call
 in how components attach (e.g. own fields set at construction), which is an API and memory question,
 not a quick change.
 
-### E-70 The neighbor search gathers each candidate's position in entity order — **not-started (design)**
+### E-70 The neighbor search gathers each candidate's position in entity order — **DROPPED 2026-10-21 (three layouts, all slower)**
 Predator CPU profile, 2026-10-21: `findNeighborsForOwnedEntities` is ~60 % of spatial (5.4 ms), and
 `entityPosData[entityB * 4]` is 25 % of it, the dedup `processedMarker[entityB]` another 13 %: two
 gathers per candidate in entity order through the cell lists (the 2026-10-06 trace saw the same 23 %).
@@ -1499,6 +1499,19 @@ second; with the skip it would be listed twice. Workers also read Transform whil
 so two workers can compute different cell ranges for one entity. With one spatial worker the skip
 would be exact; Predator runs three. The cell-ordered gather (25 %) is the part left, and it needs
 the layout design above.
+**Measured (2026-10-21), `spatialWorkerMicrobench` (Predator layout, 3 workers, 16,500 entities), 7×7
+rounds against HEAD, checksums equal in every case:**
+- A per-worker, per-frame copy of each cell it reads (ids and positions in cell order, the gather
+  paid once a frame): **−10.0 % (0/49)**. Counted: 20,047 cell visits and 6,019 copies a frame,
+  3.3 reads per copied cell (the tick stagger leaves ~1/15 of entities searching each frame), so a
+  copy costs about what it saves, and the bookkeeping is extra.
+- A shared slot-parallel position array written at insert time (one write per entry, 12 B a slot,
+  4.7 MB for Predator's 3,160 × 130 slots): **−5.2 % (7/49)**. Reading 4.7 MB in order is dearer
+  than gathering from `entityPosData`, which is 264 KB and stays in cache.
+- **E-75**, a branchless candidate append (write the slot, count it when in range): **−4.3 % (1/49)**;
+  V8 keeps a branch for the select and the unconditional store is extra.
+The Chrome profile's 25 % on the position line is the loop's latency charged to its first load,
+not cache misses worth a layout. Do not reopen without a cache-miss measurement in Chrome.
 
 ### E-71 N-32 costs the Node emit kernel ~14 % — **KEPT** (`a49482f4`)
 Found by the merge gate against `main` (2026-10-21): `preRenderWorkerMicrobench` emit was −15.8 % against

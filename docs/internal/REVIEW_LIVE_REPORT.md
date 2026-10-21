@@ -17,6 +17,23 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**15:02** — **E-70 dropped: no layout makes the spatial search faster.** I measured three before any
+design work. Next: E-57.
+
+### 15:02 — The spatial gather was a mirage
+
+- The Chrome profile said 25 % of the neighbour search went to fetching each neighbour's position,
+  and I tried three ways to make that fetch cheaper.
+- **Results** (Predator's layout, 3 workers, against HEAD, same results bit for bit each time):
+  - **Each worker keeps a per-frame copy of the cells it reads: 10 % slower.** I counted why: each
+    copied cell is read only 3.3 times a frame, because just 1 in 15 entities searches each frame,
+    so the copy costs what it saves.
+  - **One shared array of positions laid out by cell: 5.2 % slower.** That array is 4.7 MB; the
+    positions it replaces are 264 KB and already sit in cache.
+  - **Counting a neighbour without an if (E-75): 4.3 % slower.**
+- So the profile's 25 % was the loop's own latency charged to that line, not memory traffic. The
+  plan now says not to reopen this without a cache-miss measurement in Chrome.
+
 **14:58** — **E-63 kept: lighting's visibility sweep is ~9 % cheaper in pre-render** (`fd15ae95`). Next: E-70's
 design, then E-57. (`weed-ab` is back while I measure; I'll delete it again at the end.)
 
