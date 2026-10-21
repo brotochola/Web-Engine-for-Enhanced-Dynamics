@@ -1170,6 +1170,7 @@ Recommended `<head>` meta tags (add these to your HTML — the engine can't inje
 - Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = false` (built-in), `blendMode = BLEND_MODES.NORMAL` (0)
 - Audio: `maxSlots = 128`, `mixGain = 0.5`, `masterVolume = 1.0`, one bus named `main` unless `audio.channels` says otherwise
 - Navigation: `enabled = false` by default
+- Logging: a game's `console.log` prints from every worker (`tick`, callbacks, module top level). The engine's own worker chatter stays off unless `debug.verboseWorkers: true`
 
 See `src/util/configDefaults.js` for the canonical defaults.
 

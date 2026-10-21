@@ -1,5 +1,6 @@
-// Worker / bootstrap console.log gate. Default off — opt in with debug.verboseWorkers.
-// console.warn / console.error stay (capacity contracts, real failures).
+// Engine chatter gate for workers and bootstrap. Default off — opt in with
+// debug.verboseWorkers. A game's own console.log is never touched; console.warn
+// / console.error stay for the engine too (capacity contracts, real failures).
 
 let verboseWorkers = false;
 
@@ -14,12 +15,3 @@ export function isVerboseWorkers() {
 export function debugWorkerLog(...args) {
   if (verboseWorkers) console.log(...args);
 }
-
-/** Mute console.log in this realm when verboseWorkers is off. */
-export function installQuietConsoleLog() {
-  if (verboseWorkers) return;
-  if (typeof console === 'undefined') return;
-  console.log = quietLog;
-}
-
-function quietLog() {}

@@ -35,6 +35,7 @@ self.postMessage({
 });
 
 import { Transform } from '../components/transform.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
@@ -257,13 +258,13 @@ class SpatialWorker extends AbstractWorker {
     this._precomputeCirclePatterns();
 
     if (this.ownedRowCount > 0) {
-      console.log(
+      debugWorkerLog(
         `SPATIAL WORKER ${this.workerId}: Initialized with ${this.ownedRowCount} rows ` +
         `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers}), ` +
         `precomputed ${this._circlePatterns.length} circle patterns`
       );
     } else {
-      console.log(
+      debugWorkerLog(
         `SPATIAL WORKER ${this.workerId}: Initialized with 0 rows, ` +
         `precomputed ${this._circlePatterns.length} circle patterns`
       );

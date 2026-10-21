@@ -9,6 +9,7 @@ self.postMessage({
 // Import engine dependencies
 
 import { Transform } from '../components/transform.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 import { RigidBody } from '../components/rigidBody.js';
 
 import { Collider } from '../components/collider.js';
@@ -1108,7 +1109,7 @@ class PixiRenderer extends AbstractWorker {
     gpuRt.contexts[0] = context;
     if (!this._loggedSwapchainBind) {
       this._loggedSwapchainBind = true;
-      console.log(
+      debugWorkerLog(
         'PIXI WORKER: WebGPU swapchain bound',
         JSON.stringify({
           format,
@@ -1791,7 +1792,7 @@ class PixiRenderer extends AbstractWorker {
       this.entitiesGlowBatch = null;
       this.spriteGlowMesh = null;
       if (this.flatTextures?.length) this.rebuildInstancedTextureLut();
-      console.log(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, one blend)`);
+      debugWorkerLog(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, one blend)`);
       return;
     }
 
@@ -1811,7 +1812,7 @@ class PixiRenderer extends AbstractWorker {
     this.spriteGlowMesh = this.entitiesGlowBatch.mesh;
 
     if (this.flatTextures?.length) this.rebuildInstancedTextureLut();
-    console.log(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, one blend + glow ADD)`);
+    debugWorkerLog(`PIXI WORKER: ENTITIES instanced batch ready (capacity ${maxItems}, one blend + glow ADD)`);
   }
 
   /**
@@ -2198,7 +2199,7 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    console.log(`PIXI WORKER: Created ${this.decalsTotalTiles} decal tile sprites`);
+    debugWorkerLog(`PIXI WORKER: Created ${this.decalsTotalTiles} decal tile sprites`);
   }
 
   /**
@@ -2420,7 +2421,7 @@ LIGHTING SYSTEM SETUP
       this.pixiApp.stage.addChild(this.lightingDisplaySprite);
       this._applyLightingViewport(this.canvasWidth, this.canvasHeight);
 
-      console.log(
+      debugWorkerLog(
         `PIXI WORKER: Lighting RenderTexture created (${this.lightingRT.width}x${this.lightingRT.height})`
       );
     } else {
@@ -2699,7 +2700,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
     this._initTransmitWedge();
 
-    console.log(`PIXI WORKER: Visibility polygon system initialized (${this._visPolyMaxLights} lights, ${this._visPolyMaxVerts} verts, RT: ${rtW}x${rtH})`);
+    debugWorkerLog(`PIXI WORKER: Visibility polygon system initialized (${this._visPolyMaxLights} lights, ${this._visPolyMaxVerts} verts, RT: ${rtW}x${rtH})`);
   }
 
   /**
@@ -3925,7 +3926,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._registerLayerDisplayObject('castedShadows', this.shadowDisplaySprite);
     this.pixiApp.stage.addChild(this.shadowDisplaySprite);
 
-    console.log(
+    debugWorkerLog(
       `PIXI WORKER: Shadow instanced RT (${this.shadowRT.width}x${this.shadowRT.height}, casters ${casterCap})`
     );
   }
@@ -4147,17 +4148,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
           const textureKeys = Object.keys(frameTextures);
 
-          console.log(
+          debugWorkerLog(
             `✅ BigAtlas loaded: ${Object.keys(frameTextures).length} frames available as textures`
           );
 
           // DEBUG: Check if _lightGradient texture is available
           if (this.textures['_lightGradient']) {
-            console.log(`✅ PIXI WORKER: _lightGradient texture found in BigAtlas textures`);
+            debugWorkerLog(`✅ PIXI WORKER: _lightGradient texture found in BigAtlas textures`);
           } else {
             console.warn(`⚠️ PIXI WORKER: _lightGradient texture NOT found in BigAtlas textures`);
-            console.log(`   Available texture keys (first 20):`, textureKeys.slice(0, 20));
-            console.log(
+            debugWorkerLog(`   Available texture keys (first 20):`, textureKeys.slice(0, 20));
+            debugWorkerLog(
               `   Looking for textures with "light" or "gradient" in name:`,
               textureKeys.filter(
                 (k) => k.toLowerCase().includes('light') || k.toLowerCase().includes('gradient')
@@ -4189,7 +4190,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             }
           }
 
-          console.log(`✅ Built flat texture array: ${this.flatTextures.length} textures, ${animNames.length} animations`);
+          debugWorkerLog(`✅ Built flat texture array: ${this.flatTextures.length} textures, ${animNames.length} animations`);
 
           this.rebuildInstancedTextureLut();
         }
@@ -4206,7 +4207,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Create proxy spritesheet entries that redirect to bigAtlas
     if (proxySheets && Object.keys(proxySheets).length > 0) {
-      console.log(`🔗 Creating ${Object.keys(proxySheets).length} proxy spritesheets...`);
+      debugWorkerLog(`🔗 Creating ${Object.keys(proxySheets).length} proxy spritesheets...`);
 
       const bigAtlas = this.spritesheets.bigAtlas;
       if (!bigAtlas) {
@@ -4253,7 +4254,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // Also register in SpriteSheetRegistry (for animation lookups)
         SpriteSheetRegistry.registerProxy(proxyName, proxyData);
 
-        console.log(`  ✅ Proxy "${proxyName}": ${Object.keys(proxyAnimations).length} animations`);
+        debugWorkerLog(`  ✅ Proxy "${proxyName}": ${Object.keys(proxyAnimations).length} animations`);
       }
     }
 
@@ -4269,7 +4270,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
 
-    console.log(`PIXI WORKER: Loading ${Object.keys(tilesetBitmaps).length} tileset textures...`);
+    debugWorkerLog(`PIXI WORKER: Loading ${Object.keys(tilesetBitmaps).length} tileset textures...`);
 
     for (const [tilemapId, bitmap] of Object.entries(tilesetBitmaps)) {
       try {
@@ -4286,7 +4287,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
         this.tilemaps[tilemapId] = { tilesetTexture };
 
-        console.log(`  ✅ Loaded tileset texture: ${tilemapId}`);
+        debugWorkerLog(`  ✅ Loaded tileset texture: ${tilemapId}`);
       } catch (error) {
         console.error(`  ❌ Failed to load tileset texture "${tilemapId}":`, error);
       }
@@ -4310,14 +4311,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
     if (msg === 'liquidFunCleared') return;
-    console.log(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
+    debugWorkerLog(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
 
     if (msg === 'setLayerContent') {
       this.handleSetLayerContent(data);
     } else if (msg === 'setLayerProps') {
       this.handleSetLayerProps(data);
     } else {
-      console.log(`PIXI WORKER: Unhandled message type: ${msg}`);
+      debugWorkerLog(`PIXI WORKER: Unhandled message type: ${msg}`);
     }
   }
 
@@ -5003,7 +5004,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     this._applyCoverSceneryTransforms();
 
-    console.log(`PIXI WORKER: Resized to ${width}x${height}`);
+    debugWorkerLog(`PIXI WORKER: Resized to ${width}x${height}`);
   }
 
   /**
@@ -5555,7 +5556,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Initialize stats buffer for writing metrics
     if (data.buffers.rendererStats) {
       this.stats = createStatsWriter(data.buffers.rendererStats, RENDERER_STATS);
-      console.log('PIXI WORKER: Stats buffer initialized');
+      debugWorkerLog('PIXI WORKER: Stats buffer initialized');
     }
 
     // Store viewport and world dimensions from config
@@ -5624,7 +5625,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     this.maxParticles = data.maxParticles || 0;
     if (data.buffers.componentData.ParticleComponent && this.maxParticles > 0) {
-      console.log(`PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`);
+      debugWorkerLog(`PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`);
     }
 
     // Initialize particle free list for early-exit optimization
@@ -5636,14 +5637,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Note: DecorationComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     this.maxDecorations = data.maxDecorations || 0;
     if (data.buffers.componentData.DecorationComponent && this.maxDecorations > 0) {
-      console.log(
+      debugWorkerLog(
         `PIXI WORKER: DecorationComponent initialized for ${this.maxDecorations} decorations`
       );
     }
 
     // Note: LightEmitter is automatically initialized by AbstractWorker.initializeAllComponents()
     if (data.buffers.componentData.LightEmitter) {
-      console.log(
+      debugWorkerLog(
         `PIXI WORKER: LightEmitter component initialized (${this.globalEntityCount} slots)`
       );
     }
@@ -5765,7 +5766,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Add decal tile container to stage
       this.pixiApp.stage.addChild(this.decalTileContainer);
 
-      console.log(
+      debugWorkerLog(
         `PIXI WORKER: decal decals enabled - ${this.decalsTilesX}×${this.decalsTilesY} tiles (${this.decalsTileSize}px world, ${this.decalsTilePixelSize}px texture @ ${this.decalsResolution}x)`
       );
     }
@@ -5774,7 +5775,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // RENDER QUEUE SYSTEM - Initialize (DOUBLE BUFFERED)
     // ========================================
     if (data.renderQueue && data.renderQueue.dataA && data.renderQueue.dataB) {
-      console.log('PIXI WORKER: Initializing double-buffered render queue system...');
+      debugWorkerLog('PIXI WORKER: Initializing double-buffered render queue system...');
       this.renderQueueEnabled = true;
       this.renderQueueMaxItems = data.renderQueue.maxItems;
 
@@ -5807,7 +5808,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           createGpuQueueViews(data.gpuQueue.dataB, caps),
         ];
         this._gpuQueueRead = this.gpuQueueBuffers[0];
-        console.log(`PIXI WORKER: GPU queues ready (sprites ${caps.maxSprites}, stamp ${caps.maxStamp})`);
+        debugWorkerLog(`PIXI WORKER: GPU queues ready (sprites ${caps.maxSprites}, stamp ${caps.maxStamp})`);
       }
 
       // Entity texture lookup buffer (separate SAB)
@@ -5818,9 +5819,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       this._rqPrevCount = 0;
 
-      console.log(`PIXI WORKER: Double-buffered render queue initialized (max ${maxItems} items)`);
+      debugWorkerLog(`PIXI WORKER: Double-buffered render queue initialized (max ${maxItems} items)`);
     } else {
-      console.log('PIXI WORKER: Render queue NOT enabled');
+      debugWorkerLog('PIXI WORKER: Render queue NOT enabled');
     }
 
     // ========================================
@@ -5843,7 +5844,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       const order = this._ySort ? 'painter' : 'emit order';
       const glow = this._lightGlowAdd ? 'glow ADD' : 'glow in entity list';
-      console.log(`PIXI WORKER: ENTITIES layer using instanced sprite mesh (${order}, ${glow})`);
+      debugWorkerLog(`PIXI WORKER: ENTITIES layer using instanced sprite mesh (${order}, ${glow})`);
     }
 
     // ========================================
@@ -5891,7 +5892,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._createLiquidFunLightSplat(this.liquidFunMaxCount);
     this._createParticleLightSplat(this._particleLightMax);
 
-    console.log(
+    debugWorkerLog(
       `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, shadowLights: ${this.maxShadowCastingLights}, resolution: ${this.lightingResolution}, shadowResolution: ${this.shadowResolution})`
     );
 
@@ -5910,7 +5911,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Note: Sun static class is initialized by AbstractWorker.initializeCommonBuffers()
     if (Sun.isInitialized) {
       this.sunEnabled = Sun.enabled;
-      console.log(`PIXI WORKER: Sun system initialized (enabled: ${this.sunEnabled})`);
+      debugWorkerLog(`PIXI WORKER: Sun system initialized (enabled: ${this.sunEnabled})`);
     }
 
     // Debug visualization is handled by DebugUI on the page thread
@@ -5929,8 +5930,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ========================================
     this.buildLayerRefsMap();
 
-    console.log('PIXI WORKER: Initialization complete, waiting for start signal...');
-    console.log(
+    debugWorkerLog('PIXI WORKER: Initialization complete, waiting for start signal...');
+    debugWorkerLog(
       `PIXI WORKER: Instanced rendering ready (entities: ${this.globalEntityCount} slots, particles: ${this.maxParticles} slots, decorations: ${this.maxDecorations} slots)`
     );
 
@@ -6136,7 +6137,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._registerLayerDisplayObject(cl.layerName, built.mesh, true);
     this.pixiApp.stage.addChild(built.mesh);
     this._applyLayerPresentation(cl.layerName, built.mesh, true);
-    console.log(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}`);
+    debugWorkerLog(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}`);
   }
 
   async initializeCustomLayers(data) {
@@ -6409,7 +6410,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           cl.meshLook = true;
           this._registerLayerDisplayObject(layerName, cl.shaderMesh, true);
           this.pixiApp.stage.addChild(cl.shaderMesh);
-          console.log(
+          debugWorkerLog(
             `PIXI WORKER: Custom MESH look layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h})`
           );
         } else {
@@ -6421,18 +6422,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
           this.pixiApp.stage.addChild(cl.displaySprite);
           const densLabel = isLfDensity ? ', densitySource=liquidFun' : '';
-          console.log(
+          debugWorkerLog(
             `PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h}${densLabel})`
           );
         }
       } else if (fillBatch) {
         this._registerLayerDisplayObject(layerName, fillBatch.mesh, true);
         this.pixiApp.stage.addChild(fillBatch.mesh);
-        console.log(`PIXI WORKER: Custom MESH layer "${layerName}" initialized`);
+        debugWorkerLog(`PIXI WORKER: Custom MESH layer "${layerName}" initialized`);
       } else if (batch) {
         this._registerLayerDisplayObject(layerName, batch.mesh, true);
         this.pixiApp.stage.addChild(batch.mesh);
-        console.log(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
+        debugWorkerLog(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
       } else {
         console.warn(`PIXI WORKER: Layer "${layerName}" skipped (no shader RT and no sprite batch)`);
         continue;
@@ -6782,7 +6783,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._syncLayerRefsFromRuntime();
 
     const layerNames = Object.keys(this.layerRefs);
-    console.log(
+    debugWorkerLog(
       `PIXI WORKER: Layer refs map built (${layerNames.length} layers: ${layerNames.join(', ')})`
     );
   }

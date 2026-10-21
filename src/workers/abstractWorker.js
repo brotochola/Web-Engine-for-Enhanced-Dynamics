@@ -59,7 +59,7 @@ import { Box2d } from '../core/box2d.js';
 import { Decal } from '../core/decal.js';
 import { bindSpawnCommandRing } from '../util/spawnCommandRing.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray, entityIdNone } from '../util/entityIdWidth.js';
-import { setVerboseWorkers, installQuietConsoleLog } from '../util/debugLog.js';
+import { setVerboseWorkers, debugWorkerLog } from '../util/debugLog.js';
 import { bindBox2dHotFields, bindWeedPoseFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
@@ -495,7 +495,6 @@ export class AbstractWorker {
     this.collectDetailedStats = !!(this.config.debug?.collectDetailedStats);
     this.collectGpuStats = !!(this.config.debug?.collectGpuStats);
     setVerboseWorkers(!!this.config.debug?.verboseWorkers);
-    installQuietConsoleLog();
     Ray.collectDetailedStats = this.collectDetailedStats;
     Box2d.collectDetailedStats = this.collectDetailedStats;
     Ray.assertRotCSUnit = !!(this.config.debug?.assertRotCSUnit);
@@ -983,13 +982,13 @@ export class AbstractWorker {
     // Navigation buffer is shared across all workers
     // Logic workers read flowfields/paths, particle worker writes them
     if (data.buffers?.navigationData && data.config?.navigation?.enabled) {
-      console.log(`[${this.constructor.name}] Initializing NavGrid with navigation buffer`);
+      debugWorkerLog(`[${this.constructor.name}] Initializing NavGrid with navigation buffer`);
       NavGrid.initialize(data.buffers.navigationData, {
         worldWidth: data.config.worldWidth,
         worldHeight: data.config.worldHeight,
       });
     } else {
-      console.log(`[${this.constructor.name}] NavGrid NOT initialized - navigationData: ${!!data.buffers?.navigationData}, enabled: ${data.config?.navigation?.enabled}`);
+      debugWorkerLog(`[${this.constructor.name}] NavGrid NOT initialized - navigationData: ${!!data.buffers?.navigationData}, enabled: ${data.config?.navigation?.enabled}`);
       // this.reportLog('NavGrid initialized for pathfinding');
     }
 
@@ -1234,7 +1233,7 @@ export class AbstractWorker {
 
     switch (msg) {
       case 'init':
-        console.log(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
+        debugWorkerLog(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
         if (e.data.pageOrigin) {
           self.__weedPageOrigin = e.data.pageOrigin;
         }
@@ -1243,20 +1242,20 @@ export class AbstractWorker {
           e.data.workerName ?? e.data.frameRateIndex ?? e.data.workerIndex ?? 'worker'
         );
         this.isPaused = true; // Keep paused until "start" message
-        console.log(`[${this.constructor.name}] Initializing common buffers...`);
+        debugWorkerLog(`[${this.constructor.name}] Initializing common buffers...`);
         await this.initializeCommonBuffers(e.data);
-        console.log(`[${this.constructor.name}] Common buffers initialized, setting up worker ports...`);
+        debugWorkerLog(`[${this.constructor.name}] Common buffers initialized, setting up worker ports...`);
         this.initializeWorkerPorts(e.data.workerPorts); // Initialize direct worker communication
-        console.log(`[${this.constructor.name}] Worker ports initialized, calling worker-specific initialize()...`);
+        debugWorkerLog(`[${this.constructor.name}] Worker ports initialized, calling worker-specific initialize()...`);
         await this.initialize(e.data);
-        console.log(`[${this.constructor.name}] Worker-specific initialize() completed`);
+        debugWorkerLog(`[${this.constructor.name}] Worker-specific initialize() completed`);
         // Logic defers reportReady until box2dReady (hot fields bound before onSpawned).
         if (this.shouldReportReadyAfterInit()) {
-          console.log(`[${this.constructor.name}] calling reportReady()...`);
+          debugWorkerLog(`[${this.constructor.name}] calling reportReady()...`);
           this.reportReady();
-          console.log(`[${this.constructor.name}] reportReady() called, waiting for 'start' message...`);
+          debugWorkerLog(`[${this.constructor.name}] reportReady() called, waiting for 'start' message...`);
         } else {
-          console.log(`[${this.constructor.name}] deferring reportReady until box2dReady`);
+          debugWorkerLog(`[${this.constructor.name}] deferring reportReady until box2dReady`);
         }
         break;
 
@@ -1336,7 +1335,7 @@ export class AbstractWorker {
    */
   reportReady() {
     this.reportLog('initialization complete, signaling ready');
-    console.log(`${this.constructor.name}: Sending workerReady message`);
+    debugWorkerLog(`${this.constructor.name}: Sending workerReady message`);
     self.postMessage({ msg: 'workerReady', worker: this.constructor.name });
   }
 
@@ -1361,10 +1360,10 @@ export class AbstractWorker {
     // If this worker has a port to the particle worker, configure NavGrid to use it
     // Logic workers use this to send pathfinding requests to the particle worker
     if (this.workerPorts.has('particle')) {
-      console.log(`[${this.constructor.name}] Setting NavGrid port to particle worker`);
+      debugWorkerLog(`[${this.constructor.name}] Setting NavGrid port to particle worker`);
       NavGrid.setNavWorkerPort(this.workerPorts.get('particle'));
     } else {
-      console.log(`[${this.constructor.name}] No particle port found. Available ports:`, Array.from(this.workerPorts.keys()));
+      debugWorkerLog(`[${this.constructor.name}] No particle port found. Available ports:`, Array.from(this.workerPorts.keys()));
     }
 
     // console.log(

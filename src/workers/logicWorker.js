@@ -8,6 +8,7 @@ self.postMessage({
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
+import { debugWorkerLog } from '../util/debugLog.js';
 import { Joint } from '../core/joint.js';
 import { Mouse } from '../core/mouse.js';
 import { Transform } from '../components/transform.js';
@@ -291,7 +292,7 @@ class LogicWorker extends AbstractWorker {
         LOGIC_STATS,
         this.workerIndex
       );
-      console.log(`LOGIC WORKER ${this.workerIndex}: Stats buffer initialized`);
+      debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: Stats buffer initialized`);
     }
 
     if (data.buffers.bodyGeneration) {
@@ -310,7 +311,7 @@ class LogicWorker extends AbstractWorker {
         for (const [sheetName, proxyData] of Object.entries(data.bigAtlasProxySheets)) {
           SpriteSheetRegistry.registerProxy(sheetName, proxyData);
         }
-        console.log(
+        debugWorkerLog(
           `LOGIC WORKER ${this.workerIndex}: Registered ${Object.keys(data.bigAtlasProxySheets).length
           } proxy sheets`
         );
@@ -1858,7 +1859,7 @@ class LogicWorker extends AbstractWorker {
           // Snap to write head — physics may already be producing events.
           this.box2dContactCursor = initialContactCursor(this.box2dContactRingI32);
           this.useBox2dContacts = true;
-          console.log(`LOGIC WORKER ${this.workerIndex}: Box2D contact ring bound`);
+          debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: Box2D contact ring bound`);
         } else {
           this.box2dContactRingI32 = null;
           this.useBox2dContacts = false;
@@ -1889,7 +1890,7 @@ class LogicWorker extends AbstractWorker {
           this.createGameObjectInstances();
           this._gameObjectInstancesCreated = true;
           this.reportReady();
-          console.log(
+          debugWorkerLog(
             `LOGIC WORKER ${this.workerIndex}: GameObjects created after box2dReady, workerReady sent`
           );
         }
@@ -1948,7 +1949,7 @@ class LogicWorker extends AbstractWorker {
         // - Free list reset (SAB-backed, interleaved)
         const despawnedCount = GameObject.despawnAll(EntityClass);
 
-        console.log(
+        debugWorkerLog(
           `LOGIC WORKER ${this.workerIndex}: Despawned ${despawnedCount} ${className} entities`
         );
         break;
