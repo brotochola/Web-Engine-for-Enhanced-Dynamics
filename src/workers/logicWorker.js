@@ -165,7 +165,12 @@ class LogicWorker extends AbstractWorker {
     const pairView = { has: (key) => this._hasPair(key) };
     this.frameCollisions = pairView;
     this._pairView = pairView;
-    this._beginSet = new Set();
+    // Pairs that began this frame: the slot's stamp equals _contactFrame (E-54).
+    // A Set of keys meant a collisionPairKey and a has() per pair per frame, and in
+    // Chrome a key from minE 16384 on is a heap number (Predator's soldiers, trees
+    // and rocks: 4.2 MB/s of them).
+    this._pairBegan = new Uint32Array(0);
+    this._contactFrame = 0;
     this._onContactRingEvent = this._onContactRingEvent.bind(this);
     this._onHitRingEvent = this._onHitRingEvent.bind(this);
     this._onJointBreakRingEvent = this._onJointBreakRingEvent.bind(this);
@@ -1462,6 +1467,7 @@ class LogicWorker extends AbstractWorker {
     this._pairMax = grow(this._pairMax);
     this._pairGenMin = grow(this._pairGenMin);
     this._pairGenMax = grow(this._pairGenMax);
+    this._pairBegan = grow(this._pairBegan);
     this._pairCapacity = cap;
   }
 
@@ -1475,6 +1481,7 @@ class LogicWorker extends AbstractWorker {
       this._pairMax[slot] = maxE;
       this._pairGenMin[slot] = this._pairGenMin[last];
       this._pairGenMax[slot] = this._pairGenMax[last];
+      this._pairBegan[slot] = this._pairBegan[last];
       this._pairSlot.set(collisionPairKey(minE, maxE), slot);
     }
     this._pairSlot.delete(key);
@@ -1535,7 +1542,6 @@ class LogicWorker extends AbstractWorker {
     this._pairSlot.clear();
     this._pairCount = 0;
     this._foreignCount = 0;
-    this._beginSet.clear();
     if (reason) {
       console.warn(`LOGIC WORKER ${this.workerIndex}: contact state cleared (${reason})`);
     }
@@ -1604,7 +1610,7 @@ class LogicWorker extends AbstractWorker {
     // Box2D orders the event (shapeA, shapeB); the stay loop reads gens as (min, max).
     this._pairGenMin[slot] = (rawA < rawB ? genA : genB) >>> 0;
     this._pairGenMax[slot] = (rawA < rawB ? genB : genA) >>> 0;
-    this._beginSet.add(key);
+    this._pairBegan[slot] = this._contactFrame;
     if (!isNew) return;
     if (minE % this.totalLogicWorkers !== this.workerIndex) return;
     const entityType = Transform.entityType;
@@ -1629,8 +1635,8 @@ class LogicWorker extends AbstractWorker {
   _processBox2dCollisionCallbacks() {
     if (!this.useBox2dContacts || !this.box2dContactRingI32) return;
 
-    const beginSet = this._beginSet;
-    beginSet.clear();
+    // Every slot is stamped when its pair begins, so a fresh stamp starts the frame empty.
+    const frame = (this._contactFrame = (this._contactFrame + 1) >>> 0);
 
     const result = drainContactRing(
       this.box2dContactRingI32,
@@ -1663,6 +1669,7 @@ class LogicWorker extends AbstractWorker {
     const pairMax = this._pairMax;
     const genMin = this._pairGenMin;
     const genMax = this._pairGenMax;
+    const began = this._pairBegan;
 
     // Purge pairs whose generation changed or entities went inactive
     for (let s = 0; s < this._pairCount; ) {
@@ -1678,8 +1685,9 @@ class LogicWorker extends AbstractWorker {
         this._removePairSlot(s, collisionPairKey(minE, maxE));
         continue;
       }
+      const beganNow = began[s] === frame;
       s++;
-      if (beginSet.has(collisionPairKey(minE, maxE))) continue;
+      if (beganNow) continue;
       const aListens = collisionFlags[entityType[minE]];
       const bListens = collisionFlags[entityType[maxE]];
       if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
