@@ -17,8 +17,24 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**04:24** — E-08 and E-52 in. Next: E-51 (a turned camera culls with the box around the
-view), E-53, E-57, E-54.
+**04:35** — E-51 in. Next: E-53 (does the Box2D runtime without a thread pool cost physics
+time?), then the docs phase (DOC1–DOC7).
+
+### 04:35 — Turned cameras stop drawing what's off screen (`f6063781`, knob `c0ad244c`)
+
+- **The problem.** When the camera is rotated (the planet demos turn it all the time),
+  pre-render kept every sprite inside the box *around* the turned screen. At 45° that box is
+  about twice the screen, so half of what was sorted, packed and drawn was invisible.
+- **The change.** With the camera turned, each sprite's position is turned into screen space and
+  checked against the actual screen (plus the usual margin). Unrotated cameras run exactly the
+  code they ran before.
+- **Numbers.** Sprite stress scene at 45°: sprites queued **30,589 → 15,997**, **pre-render
+  4.41 → 2.72 ms (−38 %, all 4 pairs)**, renderer −31 %. At 0° both tie. A test checks that the
+  kept sprites are exactly the ones the engine's own world-to-screen math puts on screen.
+- **Next in this line (E-51b):** particles, decorations and glow still use the box. Same fix,
+  each measured on its own.
+
+**04:24** — E-08 and E-52 in.
 
 ### 04:24 — Light sorting no longer goes quadratic; the laser flash stays lit (`c53f163b`, `7aecfd0e`)
 

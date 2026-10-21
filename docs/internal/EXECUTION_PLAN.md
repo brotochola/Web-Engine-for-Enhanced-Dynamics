@@ -1082,7 +1082,21 @@ frameClock header seqlock protects one int32; `_snapshotVertGen` copies every en
 littleCity `rng()` jitter is invisible; body-create path allocations (MF3 pattern). Each
 is screened on its own kernel before any scene.
 
-### E-51 A turned camera culls with the box around the view — **not-started**
+### E-51 A turned camera culls with the box around the view — **KEPT for sprites (2026-10-21)** (`f6063781`; knob `c0ad244c`)
+Rotation 0 hygiene, `camRot=0&spacing=12`, 4 pairs: pre-render −0.08 % (3.38 ms baseline), renderer
++1.2 %, both ties.
+**Result.** `collectVisibleEntities` runs a copy of its loop when the camera is turned. The copy
+turns each sprite into view space (`u = c·dx − s·dy`, `v = s·dx + c·dy` about the canvas centre,
+the same convention as `viewWorldToScreen`) and tests it against the view plus the same margin.
+Rotation 0 runs the loop it always did. SpritePackStressScene got `?camRot=` (default 0); at
+`camRot=0.785&spacing=14`, 4 ABAB pairs: queued sprites **30,589 → 15,997**, **pre-render 4.41 →
+2.72 ms (−38.3 %, 4/4)**, renderer −31 % (4/4, 0.68 ms baseline, under the floor).
+`turnedCameraCull.test.js` checks on a real worker that the kept set is exactly what
+`viewWorldToScreen` puts in the view, margins and extents included, at four rotations and zooms.
+`skipCull.test.js` now counts the two loops. **E-51b (open):** the other culls (particles in the
+particle worker, decorations, glow, Adobe pieces) still use the box; same treatment, each measured
+on its own.
+
 Found while fixing N-12 (`d7228257`). Culls now keep the axis-aligned box around the
 turned view, which is ~2.2× the screen area at 45° on 16:9, so pre-render queues and Pixi
 draws off-screen sprites the GPU then clips. An exact test (turn the point into view space:
