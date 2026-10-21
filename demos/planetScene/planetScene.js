@@ -111,7 +111,7 @@ export class PlanetScene extends Scene {
       square: '/demos/img/10_10_square.png',
     },
     shaders: {
-      planetWater: '/demos/planetScene/shaders/planetWater.frag',
+      planetWater: '/demos/shaders/planetWater.frag',
     },
   };
 

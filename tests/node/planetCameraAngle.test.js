@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../helpers/registerWebRoot.mjs';
-import { radialCameraAngle, CX, CY } from '../../demos/planetPhysicsScene/planetGravity.js';
+import { radialCameraAngle, CX, CY, N, CELL } from '../../demos/planetPhysicsScene/planetGravity.js';
 
 function rotate(x, y, rot) {
   const c = Math.cos(rot);
@@ -46,7 +46,19 @@ test('create() starts the camera on the ship spawn, rolled to its local up', asy
   const data = new Float32Array(new SharedArrayBuffer(Camera.FLOAT_COUNT * 4));
   Camera.initialize(data, 1280, 720);
   Camera.setWorldBounds(9000, 9000);
-  PlanetPhysicsScene.prototype.create.call({ _spawnWalls() {}, _buildPanel() {} });
+  const walls = [];
+  PlanetPhysicsScene.prototype.create.call({
+    _panel: { build() {} },
+    spawnEntity(type, config) {
+      walls.push(config);
+    },
+  });
+  assert.equal(walls.length, 4, 'four walls');
+  assert.deepEqual(
+    walls.map((w) => [w.x, w.y]),
+    [[N * CELL * 0.5, N * CELL + 92], [N * CELL * 0.5, -92], [-92, N * CELL * 0.5], [N * CELL + 92, N * CELL * 0.5]],
+    'walls frame the N * CELL world',
+  );
   assert.ok(Math.abs(Camera.rotation - radialCameraAngle(SHIP_SPAWN_X, SHIP_SPAWN_Y)) < 1e-6, `rotation ${Camera.rotation}`);
   assert.ok(Math.abs(Camera.centerX - SHIP_SPAWN_X) < 1e-3, `centerX ${Camera.centerX}`);
   assert.ok(Math.abs(Camera.centerY - SHIP_SPAWN_Y) < 1e-3, `centerY ${Camera.centerY}`);

@@ -1,10 +1,12 @@
 // Dropped light. Same pull as every other dynamic body.
 
-import { CX, CY, G } from '../planetGravity.js';
+import { radialPull } from '../planetGravity.js';
 import WEED from '/src/index.js';
 
 const { GameObject, RigidBody, Collider, SpriteRenderer, LightEmitter, enums } = WEED;
 const { ShapeType } = enums;
+
+const _pull = { x: 0, y: 0 };
 
 export class PlanetLamp extends GameObject {
   static serializable = true;
@@ -34,10 +36,8 @@ export class PlanetLamp extends GameObject {
 
   tick() {
     const i = this.index;
-    const dx = CX - this.x;
-    const dy = CY - this.y;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    RigidBody.ax[i] = (dx / len) * G;
-    RigidBody.ay[i] = (dy / len) * G;
+    radialPull(this.x, this.y, _pull);
+    RigidBody.ax[i] = _pull.x;
+    RigidBody.ay[i] = _pull.y;
   }
 }

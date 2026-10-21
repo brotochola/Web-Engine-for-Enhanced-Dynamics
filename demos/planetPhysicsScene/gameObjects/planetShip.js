@@ -7,13 +7,15 @@
 // contacts cannot twist the view.
 
 import { Ship, THRUST_ACCEL } from '/demos/destructibleTerrainScene/gameObjects/ship.js';
-import { CX, CY, G, radialCameraAngle } from '../planetGravity.js';
+import { radialCameraAngle, radialPull } from '../planetGravity.js';
+import { normalizeAngle } from '/src/util/utils.js';
 import WEED from '/src/index.js';
 
 const { Camera, Keyboard, LightEmitter, ShapeType } = WEED;
 
 const CAM_TURN_RATE = 12;
 const SIDE_ACCEL = THRUST_ACCEL * 0.25;
+const _pull = { x: 0, y: 0 };
 
 export class PlanetShip extends Ship {
   static components = [...Ship.components, LightEmitter];
@@ -34,10 +36,8 @@ export class PlanetShip extends Ship {
   }
 
   tick(dtRatio, deltaTime, accumulatedTime) {
-    const dx = CX - this.x;
-    const dy = CY - this.y;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    this.addAcceleration((dx / len) * G, (dy / len) * G);
+    radialPull(this.x, this.y, _pull);
+    this.addAcceleration(_pull.x, _pull.y);
 
     super.tick(dtRatio, deltaTime, accumulatedTime);
 
@@ -48,8 +48,8 @@ export class PlanetShip extends Ship {
     this._rollReady = ready;
     const target = radialCameraAngle(Camera.followUsedX, Camera.followUsedY);
     if (this._camAngle === undefined) this._camAngle = Camera.rotation || 0;
-    let diff = target - this._camAngle;
-    diff = ((diff + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+    // Into [-π, π] whatever the size: _camAngle accumulates over orbits.
+    const diff = normalizeAngle(target - this._camAngle + Math.PI) - Math.PI;
     const dt = dtRatio > 0 ? dtRatio / 60 : 0;
     this._camAngle += diff * (1 - Math.exp(-dt * CAM_TURN_RATE));
     Camera.setAngle(this._camAngle);

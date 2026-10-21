@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { normalizeAngle } from '/src/util/utils.js';
 import { WalkerMotion } from '../components/walkerMotion.js';
 import { PlanetGrid, CELL } from '../planetGrid.js';
 
@@ -170,8 +171,8 @@ export class Walker extends GameObject {
     const a = Math.atan2(uy, ux);
     this.rotation = a + Math.PI / 2;
     const target = -Math.PI / 2 - a;
-    let diff = target - this.cam;
-    diff = ((diff + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+    // Into [-π, π] whatever the size: cam accumulates over orbits.
+    const diff = normalizeAngle(target - this.cam + Math.PI) - Math.PI;
     this.cam += diff * (1 - Math.exp(-dt * 12));
     this.setScale(this.facing * 2.4, 4.8);
   }

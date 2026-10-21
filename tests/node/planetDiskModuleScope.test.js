@@ -50,7 +50,7 @@ test('planet scene clears the main-thread disk on destroy', async () => {
   const superDestroy = Scene.prototype.destroy;
   Scene.prototype.destroy = async function () {};
   try {
-    await PlanetPhysicsScene.prototype.destroy.call({ _removePanel() {} });
+    await PlanetPhysicsScene.prototype.destroy.call({ _panel: { remove() {} } });
   } finally {
     Scene.prototype.destroy = superDestroy;
   }

@@ -7,7 +7,12 @@
 
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { TerrainIsland } from '/demos/destructibleTerrainScene/gameObjects/terrainIsland.js';
-import { WorldGrid, TUNE } from '/demos/destructibleTerrainScene/worldGrid.js';
+import { WorldGrid } from '/demos/destructibleTerrainScene/worldGrid.js';
+import {
+  TerrainPanel,
+  spawnTerrainWalls,
+  terrainBenchRemesh,
+} from '/demos/destructibleTerrainScene/terrainSceneParts.js';
 import { PlanetWorldGridManager } from './gameObjects/planetWorldGridManager.js';
 import { PlanetShip } from './gameObjects/planetShip.js';
 import { PlanetPull } from './gameObjects/planetPull.js';
@@ -24,31 +29,6 @@ const {
   LAYER_SPLAT_FALLOFF,
   LAYER_SCALE_MODE,
 } = WEED;
-
-/** Headed benches: ship lasers straight down so the MESH remesh path actually runs. */
-function planetBenchRemesh() {
-  const search = globalThis.location && globalThis.location.search;
-  const q = typeof search === 'string' ? new URLSearchParams(search).get('benchRemesh') : null;
-  if (q === '1') return true;
-  if (q === '0') return false;
-  const path = globalThis.location && globalThis.location.pathname;
-  return typeof path === 'string' && path.includes('integratedWorkerBenchmark');
-}
-
-const PANEL_CSS =
-  'position:fixed;right:12px;top:56px;width:280px;z-index:950;max-height:calc(100vh - 72px);' +
-  'overflow:auto;pointer-events:auto;color:#e8e8e8;font:12px/1.35 system-ui,sans-serif;' +
-  'background:rgba(12,14,20,0.92);border:1px solid #3a4254;border-radius:10px;' +
-  'padding:10px 12px 16px;box-shadow:0 8px 28px rgba(0,0,0,0.45);';
-
-const SLIDERS = [
-  ['Brush radius', TUNE.BRUSH_RADIUS, 1, 12, 1, 'Radio del pincel Z/X, en celdas.'],
-  ['Brush hardness', TUNE.BRUSH_HARDNESS, 0, 1, 0.01, 'Borde. 0 = suave, 1 = disco duro.'],
-  ['Brush strength', TUNE.BRUSH_STRENGTH, 0.05, 1, 0.01, 'Cuánto pinta o borra por stroke.'],
-  ['Shot power', TUNE.SHOT_POWER, 0.05, 1.5, 0.05, 'Daño en el centro del láser.'],
-  ['Shot radius', TUNE.SHOT_RADIUS, 0.5, 8, 0.5, 'Radio del cráter, en celdas. Igual en grid y en islas dinámicas.'],
-  ['Shot cooldown ms', TUNE.SHOT_COOLDOWN, 4, 200, 1, 'Mínimo entre disparos (C).'],
-];
 
 const WORLD = N * CELL;
 
@@ -197,7 +177,7 @@ export class PlanetPhysicsScene extends Scene {
       rocky: '/demos/img/rocky.jpg',
     },
     shaders: {
-      planetWater: '/demos/planetPhysicsScene/shaders/planetWater.frag',
+      planetWater: '/demos/shaders/planetWater.frag',
       rockContour: {
         webgl: '/demos/shaders/rockContour.frag',
         webgpu: '/demos/shaders/rockContour.wgsl',
@@ -220,22 +200,27 @@ export class PlanetPhysicsScene extends Scene {
 
   constructor(game) {
     super(game);
-    this._sliderRows = [];
+    this._panel = new TerrainPanel({
+      id: 'planet-terrain-panel',
+      title: 'Planet terrain',
+      keys: 'Z draw · X erase · C laser · V shatter · [ ] brush · W/A/D fly · Q water',
+      tip: 'Suelto (sin tocar el núcleo) cae hacia el centro. Q tira agua.',
+    });
   }
 
   create() {
-    this._spawnWalls();
+    spawnTerrainWalls(this, WORLD, WORLD);
     Camera.setFree(false);
     Camera.setZoom(1);
     // Start where the manager spawns the ship, rolled to its local up, so the
     // first follow neither crosses a quarter of the planet nor turns 90 degrees.
     Camera.setAngle(radialCameraAngle(SHIP_SPAWN_X, SHIP_SPAWN_Y));
     Camera.centerOn(SHIP_SPAWN_X, SHIP_SPAWN_Y);
-    this._buildPanel();
+    this._panel.build();
   }
 
   async destroy() {
-    this._removePanel();
+    this._panel.remove();
     WorldGrid.disk = null;
     Camera.setAngle(0);
     await super.destroy();
@@ -248,7 +233,7 @@ export class PlanetPhysicsScene extends Scene {
     // through the disk while the mesh is built.
     this.spawnEntity(PlanetWorldGridManager, {
       forceProcessOnLogicWorker: 1,
-      benchRemesh: planetBenchRemesh(),
+      benchRemesh: terrainBenchRemesh(),
     });
   }
 
@@ -258,152 +243,12 @@ export class PlanetPhysicsScene extends Scene {
   onLoadGame() {
     this.spawnEntity(PlanetWorldGridManager, {
       forceProcessOnLogicWorker: 1,
-      benchRemesh: planetBenchRemesh(),
+      benchRemesh: terrainBenchRemesh(),
       resume: true,
     });
   }
 
   update() {
-    this._syncSliders();
-  }
-
-  _spawnWalls() {
-    const t = 200;
-    this.spawnEntity(Floor, {
-      x: WORLD * 0.5,
-      y: WORLD + t * 0.5 - 8,
-      width: WORLD + t * 2,
-      height: t,
-      tint: 0x2d2d2d,
-      visualRange: t,
-    });
-    this.spawnEntity(Floor, {
-      x: WORLD * 0.5,
-      y: -t * 0.5 + 8,
-      width: WORLD + t * 2,
-      height: t,
-      tint: 0x2d2d2d,
-      visualRange: t,
-    });
-    this.spawnEntity(Floor, {
-      x: -t * 0.5 + 8,
-      y: WORLD * 0.5,
-      width: t,
-      height: WORLD,
-      tint: 0x2d2d2d,
-      visualRange: t,
-    });
-    this.spawnEntity(Floor, {
-      x: WORLD + t * 0.5 - 8,
-      y: WORLD * 0.5,
-      width: t,
-      height: WORLD,
-      tint: 0x2d2d2d,
-      visualRange: t,
-    });
-  }
-
-  _buildPanel() {
-    if (typeof document === 'undefined') return;
-    this._removePanel();
-    const panel = document.createElement('div');
-    panel.id = 'planet-terrain-panel';
-    panel.style.cssText = PANEL_CSS;
-    const block = () => WorldGrid.tuneSet(TUNE.UI_BLOCK, 1);
-    const unblock = () => WorldGrid.tuneSet(TUNE.UI_BLOCK, 0);
-    panel.addEventListener('pointerenter', block);
-    panel.addEventListener('pointerdown', block);
-    panel.addEventListener('pointerleave', unblock);
-
-    const title = document.createElement('div');
-    title.style.cssText = 'font:600 14px/1.2 system-ui;margin:0 0 8px;color:#fff;';
-    title.textContent = 'Planet terrain';
-    panel.appendChild(title);
-    panel.appendChild(this._keysRow('Z draw · X erase · C laser · V shatter · [ ] brush · W/A/D fly · Q water'));
-
-    this._sliderRows = [];
-    for (let i = 0; i < SLIDERS.length; i++) {
-      const [label, idx, min, max, step, tip] = SLIDERS[i];
-      panel.appendChild(this._sliderRow(label, idx, min, max, step, tip));
-    }
-
-    const tip = document.createElement('div');
-    tip.style.cssText =
-      'margin:10px 0 0;padding:8px 0 0;border-top:1px solid #3a4254;' +
-      'color:#b8c0d0;font:11px/1.4 system-ui;min-height:3.2em;';
-    tip.textContent = 'Suelto (sin tocar el núcleo) cae hacia el centro. Q tira agua.';
-    panel.appendChild(tip);
-    this._tipEl = tip;
-
-    document.body.appendChild(panel);
-    this._panel = panel;
-  }
-
-  // A screen-space line: world-space DebugDraw text turns and lags with the camera.
-  _keysRow(text) {
-    const keys = document.createElement('div');
-    keys.style.cssText = 'margin:0 0 8px;color:#b8c0d0;font:11px/1.4 system-ui;';
-    keys.textContent = text;
-    return keys;
-  }
-
-  _syncSliders() {
-    const rows = this._sliderRows;
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const n = WorldGrid.tuneGet(row.idx);
-      if (Math.abs(Number(row.input.value) - n) < 1e-6) continue;
-      row.input.value = String(n);
-      row.val.textContent = String(n);
-    }
-  }
-
-  _sliderRow(label, idx, min, max, step, tip) {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:1fr 48px;gap:6px;align-items:center;margin:4px 0;';
-    if (tip) {
-      row.title = tip;
-      row.addEventListener('pointerenter', () => {
-        if (this._tipEl) this._tipEl.textContent = tip;
-      });
-    }
-    const wrap = document.createElement('label');
-    wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
-    const name = document.createElement('span');
-    name.textContent = label;
-    name.style.cssText = 'opacity:0.85;cursor:help;border-bottom:1px dotted #6a7388;width:fit-content;';
-    const input = document.createElement('input');
-    input.type = 'range';
-    input.min = String(min);
-    input.max = String(max);
-    input.step = String(step);
-    input.value = String(WorldGrid.tuneGet(idx));
-    input.style.width = '100%';
-    const val = document.createElement('span');
-    val.textContent = input.value;
-    val.style.cssText = 'text-align:right;font-variant-numeric:tabular-nums;opacity:0.9;';
-    input.addEventListener('input', () => {
-      const n = Number(input.value);
-      WorldGrid.tuneSet(idx, n);
-      val.textContent = String(n);
-    });
-    wrap.appendChild(name);
-    wrap.appendChild(input);
-    row.appendChild(wrap);
-    row.appendChild(val);
-    this._sliderRows.push({ idx, input, val });
-    return row;
-  }
-
-  _removePanel() {
-    const leftover = typeof document !== 'undefined'
-      ? document.getElementById('planet-terrain-panel')
-      : null;
-    const panel = this._panel || leftover;
-    if (panel?.parentNode) panel.parentNode.removeChild(panel);
-    this._panel = null;
-    this._tipEl = null;
-    this._sliderRows = [];
-    WorldGrid.tuneSet(TUNE.UI_BLOCK, 0);
+    this._panel.sync();
   }
 }

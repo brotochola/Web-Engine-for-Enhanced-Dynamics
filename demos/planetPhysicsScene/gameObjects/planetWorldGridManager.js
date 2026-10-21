@@ -12,13 +12,13 @@ import { TerrainIsland } from '/demos/destructibleTerrainScene/gameObjects/terra
 import { PlanetShip } from './planetShip.js';
 import { PlanetLamp } from './planetLamp.js';
 import { PlanetPull } from './planetPull.js';
-import { CX, CY, G, RADIUS, CELL, SHIP_SPAWN_X, SHIP_SPAWN_Y } from '../planetGravity.js';
+import { CX, SURFACE_Y, SHIP_SPAWN_X, SHIP_SPAWN_Y, radialPull } from '../planetGravity.js';
 import WEED from '/src/index.js';
 
 const { Transform, RigidBody } = WEED;
 
-const SURFACE_Y = CY - RADIUS * CELL;
 const ACTOR_SPAWN_DELAY = 2;
+const _pull = { x: 0, y: 0 };
 
 function hasActive(EntityClass) {
   const active = EntityClass.getAllActive();
@@ -48,11 +48,9 @@ export class PlanetWorldGridManager extends WorldGridManager {
     for (let i = 0; i < list.length; i++) {
       const idx = list[i];
       if (RigidBody.static[idx]) continue;
-      const dx = CX - Transform.x[idx];
-      const dy = CY - Transform.y[idx];
-      const len = Math.sqrt(dx * dx + dy * dy) || 1;
-      RigidBody.ax[idx] = (dx / len) * G;
-      RigidBody.ay[idx] = (dy / len) * G;
+      radialPull(Transform.x[idx], Transform.y[idx], _pull);
+      RigidBody.ax[idx] = _pull.x;
+      RigidBody.ay[idx] = _pull.y;
     }
   }
 

@@ -18,6 +18,22 @@ export const PARTICLE_MASS = 4 * PARTICLE_R * PARTICLE_R;
 /** Ship spawn, east of the disk and 120 px off its surface. The boot camera starts here. */
 export const SHIP_SPAWN_X = CX + RADIUS * CELL + 120;
 export const SHIP_SPAWN_Y = CY;
+/** Top of the disk (north pole), in world px. */
+export const SURFACE_Y = CY - RADIUS * CELL;
+
+/**
+ * Pull toward the core: the unit vector from (x, y) to (CX, CY), times G,
+ * into out.x / out.y. PlanetPull keeps its own inline copy: through `out`
+ * the per-particle loop measured 4 % slower (review R11).
+ */
+export function radialPull(x, y, out) {
+  const dx = CX - x;
+  const dy = CY - y;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  out.x = (dx / len) * G;
+  out.y = (dy / len) * G;
+  return out;
+}
 
 /**
  * Camera angle (radians) that keeps the planet's local "up" at the top of the
