@@ -17,6 +17,17 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**15:25** — **`main` fast-forwarded to `c5d0ee6c`** (local; nothing pushed; undo: `git branch -f main 758e1d92`). The gate passed: Predator, headless, 8 pairs against `main`, no worker 3 % worse at matched load.
+
+| Worker | Median | Pairs worse | At matched load |
+|---|---|---|---|
+| Pre-render | +1.0 % | 5/8 | −105 µs (se 214) |
+| Physics | −1.5 % | 3/8 | −97 µs (se 142) |
+| Logic | +3.6 % / +2.6 % | 5/8, 6/8 | +30 µs (se 111) |
+| Spatial | +1.4 % | 6/8 | −65 µs (se 185) |
+
+Logic's raw median follows its own load (r = 0.72), and this branch doesn't change logic's code. Next, as you asked: the open bugs and hypotheses, starting with N-15.
+
 **15:16** — **E-57 dropped: it only moves the wait from physics to logic.** All three speed items are
 now decided: E-63 kept, E-70 and E-57 dropped with measurements. A better idea for E-57 is logged.
 
