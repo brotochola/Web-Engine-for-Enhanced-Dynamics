@@ -1091,7 +1091,17 @@ two extra mul-adds per entity, behind a loop hoisted on `rot !== 0`) removes tha
 `planetScene` and `planetPhysicsScene` turn the camera every tick); rotation 0 must stay
 bit-identical.
 
-### E-52 Under `particleLights.max` the first lit particles win, not the brightest — **not-started**
+### E-52 Under `particleLights.max` the first lit particles win, not the brightest — **FIXED** (`7aecfd0e`; kernel `c18ac7fa`)
+**Result (2026-10-21).** When the main loop fills the cap with candidates left, the rest go through
+their own copy of the per-light work. The main loop is unchanged, so the under-cap path is the same
+code. Each candidate brighter than the dimmest packed light (screen radius × alpha, through a
+min-heap) replaces it. Kernel, 9 rounds: under the cap ties (+0.9 %). The laser shape (600 dim + 8
+sparks over a 256 cap) costs **3.9 → 14.5 µs**, mostly the per-candidate work for the rest of the
+list. A 1.5× replace threshold saved only 2 µs and lost exact selection, so it was dropped. Terrain
+demo with the laser held: renderer 0.71 ms, under the floor, so no verdict. It read +7 %, with
+spatial and pre-render (untouched) +4–5 % on the same side. Tests: sparks after 300 dim lights are
+kept; a filtered or off-screen bright light is not.
+
 Found in B28. `packParticleLights` takes lit particles in active-list order until the cap.
 The terrain ship's laser lights every beam particle (intensity 10, up to ~600 alive under
 continuous fire at the 60 ms cooldown) and 4–8 impact sparks (intensity 200), so with
@@ -1260,10 +1270,21 @@ returns the same doubles, as in E-42. **Primary:** renderer `STEP_MS` on a vis-p
 many lit circle occluders (`visPolyStressScene` if its occluders are circles; check first),
 baseline ≥ 3 ms. Kernel first, with a checksum of the fan positions.
 
-### E-08 (reopened 2026-10-20) — see the E-08 entry above
+### E-08 (reopened 2026-10-20) — see the E-08 entry above — **kept: adaptive insertion → merge** (`c53f163b`; kernel `7319ff1c`)
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at
 n=360. Plan: hybrid (insertion below ~64, native above), log a row, fix the E-08 text.
+**Result (2026-10-21).** The kept E-08 fix still allocated: `tmp.slice(0, n)` made a new array on
+most frames. Input order decides everything here (new `sortPrefixMicrobench`, real worker, 360
+lights): insertion takes 54 µs on random order but 3.4 µs in grid-cell order and 1.35 µs sorted.
+The visible-light list comes from `queryActiveEntities`, entity order, which is random in y for
+moving lights. A fixed switch at 64 to a merge sort won random (+355 %) but lost cell order
+(−54 %). **Kept: adaptive.** Past 64 items the insertion sort gets a budget of 16 moves per item,
+and a list that spends it finishes in a stable bottom-up merge sort (runs of 32, seams checked,
+in-order halves copied) through a scratch grown once. Kernel, 9 rounds: 360 random **+187 %**,
+128 random +17.5 %; cell order −12 %, sorted −17 %, which is 0.3–0.5 µs; 46 and 20 tie;
+checksums equal. VisPolyStressScene (360 lights): pre-render +1.4 %, a tie. The test now runs on a
+real worker: stable-sort parity for random, ties, sorted and reversed input, and scratch reuse.
 
 ---
 

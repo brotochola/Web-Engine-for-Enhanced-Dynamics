@@ -17,9 +17,25 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**04:24** — E-08 and E-52 in. Next: E-51 (a turned camera culls with the box around the
+view), E-53, E-57, E-54.
+
+### 04:24 — Light sorting no longer goes quadratic; the laser flash stays lit (`c53f163b`, `7aecfd0e`)
+
+- **E-08, light sorting.** Every frame pre-render sorts the visible lights by height on screen.
+  An earlier change made that an insertion sort, which is great when the list is already nearly
+  in order (3.4 µs for 360 lights) but slow when it isn't (54 µs). Moving lights come in random
+  order. Now it starts as an insertion sort and, if the list turns out to be far from sorted,
+  switches to a merge sort. Result: **54 → 19 µs** for random order, and +0.3–0.5 µs for lists
+  that were already in order. The result is identical, including ties, and the light stress
+  scene ties.
+- **E-52, a visual bug.** With more lit particles than the light cap, the engine kept the first
+  ones in memory order, not the brightest. The terrain ship's laser has ~600 dim beam particles
+  and a few bright impact sparks, so the impact flash could vanish. Now the brightest win. That
+  costs nothing under the cap and about 10 µs per frame when over it.
+
 **04:06** — E-50 done. Two small changes kept (`64d0caa9`, `a18d3918`), four screened with
-numbers (not worth changing), and one (body-creation allocations) logged as E-50b. Next:
-E-51–E-57 and E-08.
+numbers (not worth changing), and one (body-creation allocations) logged as E-50b.
 
 ### 04:06 — E-50: the small items, and a lesson about noisy scenes
 
