@@ -1044,6 +1044,37 @@ in the same order. Kernel, 9 rounds: island +4.9 % (80/81), large outline +22.6 
 equal. Compound scene `ringSegments=64`: pre-render −2.5 % (4/4), a tie in the good direction.
 A golden test pins six lights' polar output and hit flag, one light inside the body.
 **E-48** is closed by B11 (see there).
+**Body-dirty list duplicates — kept** `a18d3918`, kernel case `b4370d95`. A deferred mark is listed
+only when the slot's pending flags go from 0. The flush already skipped repeats, so the published
+flags are the same. Kernel, 9 rounds: a 4096-spawn window with 3 marks each **+21.6 % (81/81)**;
+the empty flush ties. SpawnStormScene: logic0, the owner, ties (+0.07 %, 8 pairs). Physics read
++4.5 % (6/8). In a **side-swapped** 8-pair sitting (fix as A, old code as B) it again read worse on
+the fix side, so it wasn't the side. But physics `STEP_MS` tracks `BODY_MOVED_COUNT`
+(r = 0.84 over 32 runs; 760–1428 moving bodies, emergent), and the fix-side runs happened to move
+5.8 % more bodies, outside the 5 % load band. At matched load (residuals of one pooled fit,
+2.4 µs per moving body) the fix side is +0.06 ms (0.8 %) with a 0.094 ms standard error: no
+difference.
+**Screened, no change (2026-10-21):**
+- *`_snapshotVertGen`* (`_captureVertGen` / `_commitVertGen`): two whole-pool `Uint32Array`
+  copies per MESH layer per frame take **13.9 µs** at 65,536 entities in Node. The copy before
+  the reads is what makes a mid-frame vertex write redraw next frame. Per-instance storage would
+  break when instance order changes. Not worth it.
+- *frameClock header seqlock:* `readGen` takes 3 atomic loads where 1 would do, once per worker
+  per frame (ns). It has a byte-parity twin in the physics host (`fcReadGen`) with its own test.
+  Not worth touching two files for this.
+- *Light-splat attenuation:* `I/(I+d²)` with `I = (R/10)²`, `d = |v|·R` is `1/(1 + 100·dot(v,v))`,
+  which saves a `sqrt` per fragment of LiquidFun lit-water splats. It's GPU fill only, which our
+  CPU `STEP_MS` benches can't time, and not bit-identical in f32. Do it if a GPU profile shows
+  those splats fill-bound.
+- *littleCity jitter:* ±0.005 on the separation push, applied only when that push is nonzero
+  (exact overlaps are excluded by `d2 > 1`). Two `rng()` per person-frame, µs for the crowd. It
+  changes how the demo crowd wanders, for nothing measurable.
+**E-50b (open): body-create allocations.** Each body created makes 4–5 objects: the
+`{ ...opts }` spread in `weedjsPost.createBodyForEntity`, `{ ...DEFAULT_MATERIAL, ...options }` in
+`physicsApi`, a `BodyHandle`, a `verts` array, and a malloc/free per polygon. That's per spawn,
+not per frame. A fix is a scalar create path from weedjsPost into the WASM exports. It needs a
+Node kernel with the Box2D WASM (the benches already instantiate it) and SpawnStorm physics as
+the primary.
 
 Light-splat attenuation reduces to `1/(1+100·dot(v,v))`; `collectSolidSegments` divides
 before its back-face test; body-dirty list re-appends already-pending slots;

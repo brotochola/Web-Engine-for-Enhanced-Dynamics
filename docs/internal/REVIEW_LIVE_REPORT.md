@@ -17,9 +17,27 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**03:49** — E-48 is already solved by the B11 fix (closed, no work needed). E-50, first small
-item in (`64d0caa9`): lit-outline edges facing away from a light now skip a division. Kernel
-+5 % / +23 %, the scene −2.5 % (a tie). Next: the rest of E-50.
+**04:06** — E-50 done. Two small changes kept (`64d0caa9`, `a18d3918`), four screened with
+numbers (not worth changing), and one (body-creation allocations) logged as E-50b. Next:
+E-51–E-57 and E-08.
+
+### 04:06 — E-50: the small items, and a lesson about noisy scenes
+
+- **Kept:** lit-outline edges facing away from a light skip a division (kernel +5 % / +23 %);
+  a body marked dirty three times during one spawn is listed once, not three times (kernel +22 %
+  on a 4096-body burst).
+- **A false alarm, run down.** The second change made physics look 4.5 % slower in the spawn
+  stress scene, even though physics never runs that code. I swapped the two sides and it still
+  looked slower on the changed side. The real cause: physics time follows how many bodies are
+  moving (correlation 0.84), and that number swings from 760 to 1428 between runs, because it's a
+  chaotic pile of spawning bodies. Compared at the same number of moving bodies, the difference is
+  0.8 % ± 1.3 %, which is nothing. This also explains the "physics bias" I logged earlier (N-34).
+  I added the rule to HOW_WE_MEASURE.
+- **Screened, numbers in EXECUTION_PLAN:** a 14 µs per-frame copy that guards correctness, a
+  3-atomic read that runs once per frame, a GPU-only shader simplification, and a demo's random
+  jitter. None is worth the change.
+
+**03:49** — E-48 is already solved by the B11 fix (closed, no work needed).
 
 **03:41** — E-46 fixed.
 
