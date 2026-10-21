@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SharedResource } from '../../src/core/sharedResource.js';
-import { PlanetGrid, CELL, GRID } from '../../demos/planetScene/planetGrid.js';
+import { PlanetGrid, CELL, GRID, PLANET_RADIUS } from '../../demos/planetScene/planetGrid.js';
 
 function teardown() {
   SharedResource.resetAll();
@@ -68,6 +68,24 @@ test('configure fills the disk and marks chunks dirty', () => {
     assert.ok(again);
     assert.equal(again.tw, 4);
     assert.equal(again.th, 32);
+  } finally {
+    teardown();
+  }
+});
+
+// N-30. The scene places its start camera and its puddle drops, and the look
+// shader shades depth, from PLANET_RADIUS. configure() caps the radius, so a
+// capped constant put the drops 4 km above the ground and shaded the grass
+// and dirt bands as deep rock.
+test('the scene radius is the radius configure gives the planet', () => {
+  try {
+    PlanetGrid.attach(GRID, GRID);
+    assert.equal(PlanetGrid.configure(GRID, PLANET_RADIUS), true);
+    assert.equal(PlanetGrid.radius, PLANET_RADIUS);
+    const cx = GRID >> 1;
+    const top = (GRID >> 1) - PLANET_RADIUS; // the scene's surface row
+    assert.equal(PlanetGrid.get(cx, top), 1);
+    assert.equal(PlanetGrid.get(cx, top - 1), 0);
   } finally {
     teardown();
   }

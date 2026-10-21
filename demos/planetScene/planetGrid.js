@@ -6,7 +6,12 @@ import { SharedResource } from '../../src/core/sharedResource.js';
 export const CELL = 4;
 export const GRID = 2048;
 export const CHUNK = 32;
-export const PLANET_RADIUS = 2048;
+/**
+ * Cells. The largest disk configure() allows (it keeps 4 cells of margin).
+ * The start camera, the puddle drops and the look shader's depth bands read
+ * this, so it must be the radius the grid really gets.
+ */
+export const PLANET_RADIUS = (GRID >> 1) - 4;
 export const GRAVITY = 600;
 export const VMAX = 1800;
 
