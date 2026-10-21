@@ -16,6 +16,7 @@ import { chromium } from 'playwright';
 
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
 import { parseArgs } from './microbenchHelpers.mjs';
+import { median as benchMedian } from './benchMath.js';
 import { summarizePhase } from './framePhaseSummary.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
@@ -25,10 +26,7 @@ const captureMs = Number(args['capture-ms'] ?? 5000);
 const outDir = path.resolve(repoRoot, String(args.output ?? 'tests/results/e24-frame-phase'));
 
 function median(values) {
-  if (values.length === 0) return null;
-  const sorted = values.slice().sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length & 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return values.length === 0 ? null : benchMedian(values);
 }
 
 function phaseTable(samples) {

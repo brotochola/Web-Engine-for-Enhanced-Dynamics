@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 
 import { GPU_SPRITE_FLOATS } from '../../src/render/gpuQueueLayout.js';
 import { checksumFloats, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { median } from './benchMath.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = path.resolve(HERE, '../results/h02-gather-instanced');
@@ -86,12 +87,6 @@ function makeBuffers(count) {
   // Scattered, like a sorted sprite queue rather than 0..n-1.
   for (let k = 0; k < count; k++) indices[k] = (rng() * count) | 0;
   return { src, dst, indices };
-}
-
-function median(v) {
-  const s = [...v].sort((a, b) => a - b);
-  const m = s.length >> 1;
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
 function main() {

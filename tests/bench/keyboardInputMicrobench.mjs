@@ -23,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 globalThis.window = globalThis.window || {};
 const { Scene } = await import('../../src/core/scene.js');
 import { isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { median } from './benchMath.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = path.resolve(HERE, '../results/h01-keyboard-input');
@@ -118,12 +119,6 @@ function buildPreFix() {
   const file = path.join(REPORT_DIR, 'scene.prefixKeyboardInput.mjs');
   fs.writeFileSync(file, patched, 'utf8');
   return file;
-}
-
-function median(v) {
-  const s = [...v].sort((a, b) => a - b);
-  const m = s.length >> 1;
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
 /**

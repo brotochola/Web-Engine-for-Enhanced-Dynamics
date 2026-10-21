@@ -5,7 +5,8 @@
 //   node tests/bench/liquidFunExtractMicrobench.mjs --k 512 --output tests/results/liquidfun-extract-micro.json
 
 import { parseArgs, writeReport } from './microbenchHelpers.mjs';
-import { instantiateBox2dWasm, median } from './wasmLfBenchLib.mjs';
+import { instantiateBox2dWasm } from './wasmLfBenchLib.mjs';
+import { upperMedian } from './benchMath.js';
 
 const args = parseArgs();
 const RADIUS = Number(args.radius ?? 10);
@@ -65,7 +66,7 @@ for (const k of KS) {
     samples.push(row.elapsedMs);
     last = row;
   }
-  const med = median(samples);
+  const med = upperMedian(samples);
   report.ks[k] = {
     k,
     nGroup: last.nGroup,

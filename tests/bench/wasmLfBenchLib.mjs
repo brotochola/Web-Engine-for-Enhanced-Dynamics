@@ -56,11 +56,6 @@ export function instantiateBox2dWasm() {
   return { fn, memory, instance };
 }
 
-export function median(samples) {
-  const s = samples.slice().sort((a, b) => a - b);
-  return s[(s.length / 2) | 0];
-}
-
 export function lfCounters(fn) {
   return {
     bodyContacts: fn('get_lf_body_contact_count')(),

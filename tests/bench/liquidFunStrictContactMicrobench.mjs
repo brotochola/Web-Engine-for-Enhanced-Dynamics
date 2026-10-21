@@ -5,7 +5,8 @@
 //   node tests/bench/liquidFunStrictContactMicrobench.mjs --output tests/results/liquidfun-strict-contact-micro.json
 
 import { parseArgs, writeReport } from './microbenchHelpers.mjs';
-import { instantiateBox2dWasm, median, lfCounters } from './wasmLfBenchLib.mjs';
+import { instantiateBox2dWasm, lfCounters } from './wasmLfBenchLib.mjs';
+import { upperMedian } from './benchMath.js';
 
 const args = parseArgs();
 const RADIUS = Number(args.radius ?? 10);
@@ -51,7 +52,7 @@ function measure(fn, strict) {
   }
   const counters = lfCounters(fn);
   fn('destroy_particle_system')();
-  return { n, lfMedianMs: median(samples), lfMinMs: Math.min(...samples), lfMaxMs: Math.max(...samples), counters };
+  return { n, lfMedianMs: upperMedian(samples), lfMinMs: Math.min(...samples), lfMaxMs: Math.max(...samples), counters };
 }
 
 const { fn } = instantiateBox2dWasm();
@@ -71,7 +72,7 @@ for (const strict of [false, true]) {
     medians.push(row.lfMedianMs);
     last = row;
   }
-  const lfMedian = median(medians);
+  const lfMedian = upperMedian(medians);
   report.scenes[id] = {
     particleCount: last.n,
     lfMedianMs: lfMedian,

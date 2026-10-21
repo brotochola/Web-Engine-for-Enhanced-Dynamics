@@ -6,11 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export function median(arr) {
-  const s = [...arr].sort((x, y) => x - y);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
+export { median } from './benchMath.js';
 
 export function pctDelta(hyp, base) {
   if (base == null || !(base > 0) || hyp == null) return null;

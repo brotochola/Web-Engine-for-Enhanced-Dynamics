@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
+import { median } from './benchMath.js';
 
 function formatLoadPct(stepMs) {
   return `${workerLoadPct(stepMs).toFixed(0)}%`;
@@ -68,12 +69,6 @@ function stdevSample(arr) {
 function cv(arr) {
   const m = mean(arr);
   return m > 0 ? stdevSample(arr) / m : 0;
-}
-
-function median(arr) {
-  const s = [...arr].sort((x, y) => x - y);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
 function minMax(arr) {

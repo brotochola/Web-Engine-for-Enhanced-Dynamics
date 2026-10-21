@@ -9,7 +9,7 @@
  * Bar, named in EXECUTION_PLAN before this file existed: shape "body" must
  * be at least 0.15 ms/pass cheaper packed (3 % of logic0 at 4.85 ms).
  */
-import { isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const ENTITIES = 17556;
 const STRIDE = 1025;
@@ -17,17 +17,6 @@ const COUNT = 32;
 const TICK_INTERVAL = 4;
 const LIGHTS = 64;
 const SEED = 0xe15a4019;
-
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 function build() {
   const strided = new Uint16Array(ENTITIES * STRIDE);

@@ -9,6 +9,7 @@
 import { PARTICLE_DEFAULTS, PARTICLE_EASE } from '../../src/util/configDefaults.js';
 import { applyParticleEase } from '../../src/util/particleTween.js';
 import { checksumFloats, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { upperMedian } from './benchMath.js';
 
 const SEED = 0xe35e0001;
 const N = 4096;
@@ -273,11 +274,6 @@ function runCase(style, workload) {
   };
 }
 
-function median(values) {
-  const s = [...values].sort((a, b) => a - b);
-  return s[(s.length / 2) | 0];
-}
-
 async function main() {
   const args = parseArgs();
   const { Worker } = await import('node:worker_threads');
@@ -311,8 +307,8 @@ async function main() {
       const sums = new Set(rows.map((r) => r.checksum));
       if (sums.size !== 1) throw new Error(`${workload}/${style} checksum drifted across rounds`);
       cases[workload][style] = {
-        opsPerSec: median(rows.map((r) => r.opsPerSec)),
-        sampleMs: median(rows.map((r) => r.ms)),
+        opsPerSec: upperMedian(rows.map((r) => r.opsPerSec)),
+        sampleMs: upperMedian(rows.map((r) => r.ms)),
         iterations: rows[0].iterations,
         checksum: rows[0].checksum,
         rounds: rows.map((r) => r.opsPerSec),

@@ -5,7 +5,8 @@
 //   node tests/bench/liquidFunReactiveMicrobench.mjs --output tests/results/liquidfun-reactive-micro.json
 
 import { parseArgs, writeReport } from './microbenchHelpers.mjs';
-import { instantiateBox2dWasm, median } from './wasmLfBenchLib.mjs';
+import { instantiateBox2dWasm } from './wasmLfBenchLib.mjs';
+import { upperMedian } from './benchMath.js';
 
 const args = parseArgs();
 const RADIUS = Number(args.radius ?? 10);
@@ -60,8 +61,8 @@ for (let r = 0; r < REPS; r++) {
   lfs.push(row.lfMs);
   last = row;
 }
-const wallMed = median(walls);
-const lfMed = median(lfs);
+const wallMed = upperMedian(walls);
+const lfMed = upperMedian(lfs);
 console.log(
   `SolveReactive first step (${args['spring-only'] ? 'SPRING' : 'SPRING|REACTIVE'} n=${last.n}): lf median ${lfMed.toFixed(3)} ms ` +
     `(min ${Math.min(...lfs).toFixed(3)}, max ${Math.max(...lfs).toFixed(3)}) wall ${wallMed.toFixed(3)} ms n=${REPS}`,

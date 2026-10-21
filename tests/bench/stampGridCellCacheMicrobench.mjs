@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs, timeIt, writeReport, isCli } from './microbenchHelpers.mjs';
+import { parseArgs, timeIt, writeReport, isCli, mulberry32 } from './microbenchHelpers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const src = fs.readFileSync(path.join(ROOT, 'src/render/gpuShadowCasters.js'), 'utf8');
@@ -37,16 +37,6 @@ const DEFAULTS = {
 
 const STAMP_CELL = Number(src.match(/STAMP_CELL\s*=\s*([\d.]+)/)[1]);
 const STAMP_GRID_MAX_CELLS = 128 * 128;
-
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 function build(args) {
   const sf = 4;

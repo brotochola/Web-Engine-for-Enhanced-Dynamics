@@ -7,7 +7,8 @@
 //   node tests/bench/liquidFunOverlapSubstepMicrobench.mjs --output tests/results/liquidfun-overlap-substep-micro.json
 
 import { parseArgs, writeReport } from './microbenchHelpers.mjs';
-import { instantiateBox2dWasm, median, lfCounters } from './wasmLfBenchLib.mjs';
+import { instantiateBox2dWasm, lfCounters } from './wasmLfBenchLib.mjs';
+import { upperMedian } from './benchMath.js';
 
 const args = parseArgs();
 const RADIUS = Number(args.radius ?? 10);
@@ -64,7 +65,7 @@ function measure(fn, setup) {
   }
   const counters = lfCounters(fn);
   fn('destroy_particle_system')();
-  return { n, lfMedianMs: median(samples), lfMinMs: Math.min(...samples), lfMaxMs: Math.max(...samples), counters };
+  return { n, lfMedianMs: upperMedian(samples), lfMinMs: Math.min(...samples), lfMaxMs: Math.max(...samples), counters };
 }
 
 const SCENES = [
@@ -91,7 +92,7 @@ for (const scene of SCENES) {
     medians.push(row.lfMedianMs);
     last = row;
   }
-  const lfMedian = median(medians);
+  const lfMedian = upperMedian(medians);
   report.scenes[scene.id] = {
     particleCount: last.n,
     lfMedianMs: lfMedian,

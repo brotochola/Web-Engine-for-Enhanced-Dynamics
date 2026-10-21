@@ -14,6 +14,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
+import { upperMedian } from './benchMath.js';
 
 export const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
@@ -60,9 +61,7 @@ function bump(map, key, n) {
 }
 
 function median(arr) {
-  if (!arr.length) return 0;
-  const s = [...arr].sort((a, b) => a - b);
-  return s[(s.length / 2) | 0];
+  return arr.length ? upperMedian(arr) : 0;
 }
 
 function newProfile(id, pid, tid) {

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isCli, parseArgs, timeIt } from './microbenchHelpers.mjs';
+import { upperMedian } from './benchMath.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOX2D_DIR = path.resolve(__dirname, '../../src/box2d');
@@ -171,11 +172,6 @@ function measure(wasmPath) {
   return { leftoverByN, clearOps, stepOps, clockPairNs: clockPairCost() * 1e6 };
 }
 
-function median(xs) {
-  const s = xs.slice().sort((a, b) => a - b);
-  return s[(s.length / 2) | 0];
-}
-
 function main() {
   const args = parseArgs();
   if (args.before && args.after) {
@@ -208,9 +204,9 @@ function main() {
     const out = {
       leftoverBefore: rounds[0].before.leftoverByN,
       leftoverAfter: rounds[0].after.leftoverByN,
-      clear32: { before: median(beforeClear32), after: median(afterClear32), roundsWonByAfter: won(beforeClear32, afterClear32, true) },
-      clear96: { before: median(beforeClear96), after: median(afterClear96), roundsWonByAfter: won(beforeClear96, afterClear96, true) },
-      step200: { before: median(beforeStep), after: median(afterStep), roundsWonByAfter: won(beforeStep, afterStep, true) },
+      clear32: { before: upperMedian(beforeClear32), after: upperMedian(afterClear32), roundsWonByAfter: won(beforeClear32, afterClear32, true) },
+      clear96: { before: upperMedian(beforeClear96), after: upperMedian(afterClear96), roundsWonByAfter: won(beforeClear96, afterClear96, true) },
+      step200: { before: upperMedian(beforeStep), after: upperMedian(afterStep), roundsWonByAfter: won(beforeStep, afterStep, true) },
       rounds,
     };
     const text = JSON.stringify(out, null, 2);

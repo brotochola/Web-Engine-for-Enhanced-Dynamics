@@ -17,7 +17,7 @@
 //
 // E-10 in docs/internal/EXECUTION_PLAN.md.
 
-import { parseArgs, timeIt, writeReport, isCli, checksumInts } from './microbenchHelpers.mjs';
+import { parseArgs, timeIt, writeReport, isCli, checksumInts, mulberry32 } from './microbenchHelpers.mjs';
 import { packPair } from '../../src/util/entityIdWidth.js';
 
 const DEFAULTS = {
@@ -31,17 +31,6 @@ const DEFAULTS = {
   minE: 0,
   maxE: 16583,
 };
-
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /** Shipped encoding: packPair as bound at the default 16-bit width, not a copy (review M9). */
 const keyShipped = packPair;

@@ -6,7 +6,8 @@
 //   node tests/bench/liquidFunSparseStepMicrobench.mjs --output tests/results/liquidfun-sparse-step-micro.json
 
 import { parseArgs, writeReport } from './microbenchHelpers.mjs';
-import { instantiateBox2dWasm, median } from './wasmLfBenchLib.mjs';
+import { instantiateBox2dWasm } from './wasmLfBenchLib.mjs';
+import { upperMedian } from './benchMath.js';
 
 const args = parseArgs();
 const RADIUS = Number(args.radius ?? 10);
@@ -50,7 +51,7 @@ function measure(fn) {
   destroyParticleSystem();
   return {
     n,
-    lfMedianMs: median(samples),
+    lfMedianMs: upperMedian(samples),
     lfMinMs: Math.min(...samples),
     lfMaxMs: Math.max(...samples),
     wallPerStepMs: wallMs / MEASURE_STEPS,
@@ -60,8 +61,8 @@ function measure(fn) {
 const { fn } = instantiateBox2dWasm();
 const worlds = [];
 for (let r = 0; r < REPS; r++) worlds.push(measure(fn));
-const lfMed = median(worlds.map((w) => w.lfMedianMs));
-const wallMed = median(worlds.map((w) => w.wallPerStepMs));
+const lfMed = upperMedian(worlds.map((w) => w.lfMedianMs));
+const wallMed = upperMedian(worlds.map((w) => w.wallPerStepMs));
 const last = worlds[worlds.length - 1];
 console.log(
   `sparse step (n=${last.n} spacing=${SPACING}): lf median ${lfMed.toFixed(4)} ms ` +

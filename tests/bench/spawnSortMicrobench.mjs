@@ -40,6 +40,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { median } from './benchMath.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = path.resolve(HERE, '../results/h14-spawn-sort');
@@ -124,12 +125,6 @@ function makeScratch(capacity) {
     sortedClass: new Int32Array(capacity),
     keys: new Float64Array(capacity),
   };
-}
-
-function median(v) {
-  const s = [...v].sort((a, b) => a - b);
-  const m = s.length >> 1;
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
 function runVariant(fn, scratch, idx, classes, n, reps) {

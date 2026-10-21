@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, writeReport } from './microbenchHelpers.mjs';
+import { upperMedian } from './benchMath.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOX2D_DIR = path.resolve(__dirname, '../../src/box2d');
@@ -71,11 +72,6 @@ function instantiateBox2dWasm() {
     return instance.exports[exp];
   };
   return fn;
-}
-
-function median(samples) {
-  const s = samples.slice().sort((a, b) => a - b);
-  return s[(s.length / 2) | 0];
 }
 
 function measureSteps(fn, setup) {
@@ -140,7 +136,7 @@ function measureSteps(fn, setup) {
   destroyParticleSystem();
   return {
     count,
-    lfMedianMs: median(samples),
+    lfMedianMs: upperMedian(samples),
     lfMinMs: Math.min(...samples),
     lfMaxMs: Math.max(...samples),
     wallPerStepMs: wallMs / MEASURE_STEPS,
@@ -204,8 +200,8 @@ for (const scene of SCENES) {
     walls.push(row.wallPerStepMs);
     last = row;
   }
-  const lfMedian = median(medians);
-  const wallMedian = median(walls);
+  const lfMedian = upperMedian(medians);
+  const wallMedian = upperMedian(walls);
   report.scenes[scene.id] = {
     note: scene.note,
     particleCount: last.count,

@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
+import { median } from './benchMath.js';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const runner = path.join(repoRoot, 'tests/bench/runIntegratedWorkerBenchmark.mjs');
@@ -33,12 +34,6 @@ function parseArgs(argv) {
 
 function mean(arr) {
   return arr.reduce((x, y) => x + y, 0) / arr.length;
-}
-
-function median(arr) {
-  const s = [...arr].sort((x, y) => x - y);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
 function stdev(arr) {

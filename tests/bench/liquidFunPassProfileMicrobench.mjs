@@ -6,7 +6,8 @@
 //   node tests/bench/liquidFunPassProfileMicrobench.mjs --workers 4
 
 import { parseArgs, writeReport } from './microbenchHelpers.mjs';
-import { instantiateBox2dWasm, median, lfPasses, LF_PASS_NAMES } from './wasmLfBenchLib.mjs';
+import { instantiateBox2dWasm, lfPasses, LF_PASS_NAMES } from './wasmLfBenchLib.mjs';
+import { upperMedian } from './benchMath.js';
 
 const args = parseArgs();
 const RADIUS = Number(args.radius ?? 8);
@@ -70,10 +71,10 @@ function measure(fn, workerCount, opts = {}) {
     contacts = fn('get_lf_particle_contact_count')();
   }
   fn('destroy_particle_system')();
-  const lfMedianMs = median(samples);
+  const lfMedianMs = upperMedian(samples);
   const passes = {};
   LF_PASS_NAMES.forEach((name, idx) => {
-    const ms = median(passSamples[idx]);
+    const ms = upperMedian(passSamples[idx]);
     passes[name] = { ms, pct: lfMedianMs > 0 ? ms / lfMedianMs : 0 };
   });
   return {
@@ -105,10 +106,10 @@ for (const workers of WORKERS) {
     rows.push(measure(fn, workers, { reuseContacts: CEILING, skipPass: Number.isFinite(SKIP) ? SKIP : null }));
   }
   const last = rows[rows.length - 1];
-  const lfMedian = median(rows.map((r) => r.lfMedianMs));
+  const lfMedian = upperMedian(rows.map((r) => r.lfMedianMs));
   const passMed = {};
   for (const name of LF_PASS_NAMES) {
-    const ms = median(rows.map((r) => r.passes[name].ms));
+    const ms = upperMedian(rows.map((r) => r.passes[name].ms));
     passMed[name] = { ms, pct: lfMedian > 0 ? ms / lfMedian : 0 };
   }
   const winner = LF_PASS_NAMES.reduce((a, b) => (passMed[b].ms > passMed[a].ms ? b : a));

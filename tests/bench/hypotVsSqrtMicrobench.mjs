@@ -20,6 +20,7 @@
 import { isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { median } from './benchMath.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = path.resolve(HERE, '../results/h03-hypot');
@@ -35,12 +36,6 @@ const SCALES = [
   { name: 'world (~1e4)', v: 1e4 },
   { name: 'large (~1e7)', v: 1e7 },
 ];
-
-function median(v) {
-  const s = [...v].sort((a, b) => a - b);
-  const m = s.length >> 1;
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
 
 /**
  * Both variants consume the array and accumulate, so neither call can be

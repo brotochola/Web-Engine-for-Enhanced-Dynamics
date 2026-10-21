@@ -27,6 +27,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
+import { upperMedian } from './benchMath.js';
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(ROOT, 'tests/results/e04b-worker-count');
 fs.mkdirSync(OUT, { recursive: true });
@@ -93,9 +95,8 @@ function runArm(count, round) {
 }
 
 const median = (xs) => {
-  const v = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
-  if (!v.length) return null;
-  return v[(v.length / 2) | 0];
+  const v = xs.filter((x) => Number.isFinite(x));
+  return v.length ? upperMedian(v) : null;
 };
 
 console.log(`E-04b numberOfPhysicsWorkers sweep: counts=${COUNTS.join(',')} rounds=${ROUNDS}`);

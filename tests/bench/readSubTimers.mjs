@@ -9,6 +9,8 @@
 
 import fs from 'node:fs';
 
+import { upperMedian } from './benchMath.js';
+
 const dir = process.argv[2] || 'tests/results/predator-abab/H19-collect-hoist';
 
 function stat(file, key) {
@@ -20,8 +22,8 @@ function stat(file, key) {
 }
 
 function median(xs) {
-  const s = xs.filter((x) => Number.isFinite(x)).slice().sort((a, b) => a - b);
-  return s.length ? s[s.length >> 1] : NaN;
+  const s = xs.filter((x) => Number.isFinite(x));
+  return s.length ? upperMedian(s) : NaN;
 }
 
 const pct = (a, b) => `${a === 0 ? 'n/a' : (((b - a) / a) * 100).toFixed(1)}%`;

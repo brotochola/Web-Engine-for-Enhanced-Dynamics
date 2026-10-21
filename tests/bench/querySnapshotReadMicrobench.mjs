@@ -29,6 +29,7 @@ import {
   QUERY_SNAPSHOT_COUNT,
 } from '../../src/core/querySystem.js';
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { median } from './benchMath.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = path.resolve(HERE, '../results/b02-query-snapshot');
@@ -164,12 +165,6 @@ function benchVariant(label, fns, classes) {
     for (let k = 0; k < n; k++) acc += fns.queryActiveEntities(classes).length;
     return acc;
   });
-}
-
-function median(values) {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 async function main() {

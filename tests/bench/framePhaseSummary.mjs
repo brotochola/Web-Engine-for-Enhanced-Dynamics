@@ -3,12 +3,10 @@
 // Bench logic: it lived in src/util/frameClock.js, which every worker imports,
 // so it shipped in the engine bundle (review D4). The rules are unchanged.
 
+import { median as benchMedian } from './benchMath.js';
+
 function median(values) {
-  if (values.length === 0) return null;
-  const sorted = values.slice().sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  if (sorted.length & 1) return sorted[mid];
-  return (sorted[mid - 1] + sorted[mid]) / 2;
+  return values.length === 0 ? null : benchMedian(values);
 }
 
 /**
