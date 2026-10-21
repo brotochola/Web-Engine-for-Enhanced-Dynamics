@@ -740,6 +740,7 @@ class PixiRenderer extends AbstractWorker {
       zoom: 1,
       cameraX: 0,
       cameraY: 0,
+      cameraRot: 0,
       resolution: 1,
       canvasW: 0,
       canvasH: 0,
@@ -2421,6 +2422,7 @@ LIGHTING SYSTEM SETUP
     o.zoom = this._renderZoom;
     o.cameraX = this._renderCameraX;
     o.cameraY = this._renderCameraY;
+    o.cameraRot = this._renderCameraRot || 0;
     o.resolution = this._lightingPixelScale || this.lightingResolution;
     o.canvasW = this.canvasWidth;
     o.canvasH = this.canvasHeight;
