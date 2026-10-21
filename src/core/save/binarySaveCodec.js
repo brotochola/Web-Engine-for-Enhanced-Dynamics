@@ -33,7 +33,8 @@ export const SECTION = Object.freeze({
   CUSTOM: 20,
 });
 
-const TWEENS2_LAYOUT = 1;
+/** 2: repeat, doneMsg, flags (DX 4.2). Layout 1 saves still read. */
+const TWEENS2_LAYOUT = 2;
 /** Record layout of SHARED_RESOURCES2, CHAINS2, FIXTURES2, MESHES2. Bump on any change. */
 const SECTION_LAYOUT = 1;
 
@@ -822,9 +823,10 @@ function writeTweens(w, slots) {
  * @param {boolean} legacy TWEENS (tag 14): no layout byte, u16 entity.
  */
 function readTweens(r, legacy) {
+  let layout = 1;
   if (!legacy) {
-    const layout = r.u8();
-    if (layout !== TWEENS2_LAYOUT) {
+    layout = r.u8();
+    if (layout > TWEENS2_LAYOUT) {
       console.warn(`[SaveGame] tween section layout ${layout} is newer than this build; tweens skipped`);
       return null;
     }
@@ -836,7 +838,9 @@ function readTweens(r, legacy) {
     for (let f = 0; f < TWEEN_RECORD_FIELDS.length; f++) {
       const name = TWEEN_RECORD_FIELDS[f][0];
       const type = TWEEN_RECORD_FIELDS[f][1];
-      if (type === 'f32') rec[name] = r.f32();
+      const since = TWEEN_RECORD_FIELDS[f][2] || 1;
+      if (since > layout) rec[name] = 0;
+      else if (type === 'f32') rec[name] = r.f32();
       else if (type === 'u32') rec[name] = legacy && name === 'entity' ? r.u16() : r.u32();
       else rec[name] = r.u8();
     }

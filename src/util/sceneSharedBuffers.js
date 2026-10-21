@@ -813,8 +813,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
 
   const maxTweens = config.tween?.maxTweens | 0;
   if (maxTweens > 0) {
-    buffers.tweenData = new SharedArrayBuffer(tweenBufferBytes(maxTweens));
-    Tween.bind(buffers.tweenData, maxTweens);
+    buffers.tweenData = new SharedArrayBuffer(tweenBufferBytes(maxTweens, totalEntityCount));
+    Tween.bind(buffers.tweenData, maxTweens, totalEntityCount);
   } else {
     buffers.tweenData = null;
     Tween.unbind();

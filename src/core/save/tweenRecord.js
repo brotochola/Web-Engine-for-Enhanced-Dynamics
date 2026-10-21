@@ -1,7 +1,8 @@
-// A saved tween slot: [field, codec type], in saved order. The field names are
-// Tween's own arrays. worldBufferSave copies slot <-> record with it and the
-// TWEENS2 writer/reader in binarySaveCodec walk it, so a field is added in one
-// place (plus a TWEENS2_LAYOUT bump for old saves). No imports.
+// A saved tween slot: [field, codec type, layout it appeared in], in saved
+// order. The field names are Tween's own arrays. worldBufferSave copies slot <->
+// record with it and the TWEENS2 writer/reader in binarySaveCodec walk it, so a
+// field is added in one place (plus a TWEENS2_LAYOUT bump; an older save reads
+// the fields its layout had and leaves the rest 0). No imports.
 
 export const TWEEN_RECORD_FIELDS = Object.freeze([
   Object.freeze(['kind', 'u8']),
@@ -20,6 +21,10 @@ export const TWEEN_RECORD_FIELDS = Object.freeze([
   Object.freeze(['to3', 'f32']),
   Object.freeze(['tintFrom', 'u32']),
   Object.freeze(['tintTo', 'u32']),
+  // Layout 2 (DX 4.2): cycles left, onComplete message id + 1, yoyo flag.
+  Object.freeze(['repeat', 'u32', 2]),
+  Object.freeze(['doneMsg', 'u32', 2]),
+  Object.freeze(['flags', 'u8', 2]),
 ]);
 
 /**

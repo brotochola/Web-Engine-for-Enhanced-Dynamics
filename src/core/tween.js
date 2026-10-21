@@ -13,6 +13,7 @@ import { PARTICLE_EASE } from '../util/configDefaults.js';
 import { applyParticleEase, lerpRgb } from '../util/particleTween.js';
 import { logicBlockRange } from '../util/logicOwner.js';
 import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
+import { Messages } from './messages.js';
 
 export const TWEEN_KIND_PAINT = 0;
 export const TWEEN_KIND_XY = 1;
@@ -35,6 +36,10 @@ const PAINT_SCALEY = 4;
 const PAINT_TINT = 8;
 const XY_X = 1;
 const XY_Y = 2;
+
+/** repeat = this: run again forever. */
+export const TWEEN_REPEAT_FOREVER = 0xffff;
+const FLAG_YOYO = 1;
 
 // Paint goes to the entity's sprite, or to its mesh when it has no live sprite.
 const ON_SPRITE = 1;
@@ -69,10 +74,13 @@ function align4(n) {
 
 /**
  * Bytes for a pool of `count` slots. The entity column follows entityIdWidth, so
- * call it after bindEntityIdWidth (Scene and workers do).
+ * call it after bindEntityIdWidth (Scene and workers do). `entityCount` > 0 adds
+ * a live-tween count per entity, so a despawn only scans the pool for an entity
+ * that has tweens.
  * @param {number} count
+ * @param {number} [entityCount]
  */
-export function tweenBufferBytes(count) {
+export function tweenBufferBytes(count, entityCount = 0) {
   const n = count | 0;
   let o = 0;
   o = align4(o + n * 4);
@@ -83,6 +91,10 @@ export function tweenBufferBytes(count) {
   o = align4(o);
   o += n * 4 * 10;
   o += n * 4 * 2;
+  o = align4(o + n * 2); // repeat
+  o = align4(o + n * 2); // doneMsg
+  o = align4(o + n); // flags
+  o += (entityCount | 0) * 2; // live tweens per entity
   return o;
 }
 
@@ -93,6 +105,19 @@ function easeIdOf(ease) {
   }
   const n = ease | 0;
   return n >= 0 && n <= PARTICLE_EASE.BOUNCE_OUT ? n : PARTICLE_EASE.LERP;
+}
+
+function repeatCount(options) {
+  if (!options || options.repeat === undefined) return 0;
+  const r = options.repeat;
+  if (r < 0 || r === Infinity) return TWEEN_REPEAT_FOREVER;
+  return r >= TWEEN_REPEAT_FOREVER ? TWEEN_REPEAT_FOREVER - 1 : r | 0;
+}
+
+/** The same options without onComplete (the second slot of an xy + paint pair, zoom). */
+function withoutDone(options) {
+  if (!options || !options.onComplete) return options;
+  return { delay: options.delay, repeat: options.repeat, yoyo: options.yoyo };
 }
 
 function isDynamic(entityIndex) {
@@ -136,15 +161,24 @@ export class Tween {
   static to3 = null;
   static tintFrom = null;
   static tintTo = null;
+  /** Cycles left after this one (TWEEN_REPEAT_FOREVER = forever). */
+  static repeat = null;
+  /** onComplete message id + 1 (0 = none); sent to the entity when the last cycle ends. */
+  static doneMsg = null;
+  /** bit 0 yoyo. */
+  static flags = null;
+  /** Live tweens per entity (Atomics), so despawn skips the pool scan for an entity without any. */
+  static entityTweens = new Uint16Array(0);
 
   /**
    * @param {SharedArrayBuffer | ArrayBuffer | null} sab
    * @param {number} [count]
    */
-  static bind(sab, count) {
+  static bind(sab, count, entityCount = 0) {
     if (!sab) {
       this.active = null;
       this.capacity = 0;
+      this.entityTweens = new Uint16Array(0);
       return;
     }
     const n = count | 0;
@@ -180,12 +214,21 @@ export class Tween {
     this.tintFrom = new Uint32Array(sab, o, n);
     o += n * 4;
     this.tintTo = new Uint32Array(sab, o, n);
+    o += n * 4;
+    this.repeat = new Uint16Array(sab, o, n);
+    o = align4(o + n * 2);
+    this.doneMsg = new Uint16Array(sab, o, n);
+    o = align4(o + n * 2);
+    this.flags = new Uint8Array(sab, o, n);
+    o = align4(o + n);
+    this.entityTweens = new Uint16Array(sab, o, entityCount | 0);
   }
 
   static unbind() {
     this.active = null;
     this.capacity = 0;
     this._claimCursor = 0;
+    this.entityTweens = new Uint16Array(0);
   }
 
   /**
@@ -193,16 +236,14 @@ export class Tween {
    * @param {{ alpha?: number, tint?: number, scaleX?: number, scaleY?: number, x?: number, y?: number }} props
    * @param {number} ms
    * @param {number|string} [ease]
+   * @param {{ delay?: number, repeat?: number, yoyo?: boolean, onComplete?: string }} [options]
+   *   delay ms before it starts (from values are read now); repeat extra cycles
+   *   (-1 or Infinity = forever); yoyo plays every other cycle backwards;
+   *   onComplete: a name from the scene's static messages, sent to the entity as
+   *   onMessage(name, -1, slot) when the last cycle ends.
    * @returns {number} slot, or -1
    */
-  /**
-   * @param {number} entityIndex
-   * @param {{ alpha?: number, tint?: number, scaleX?: number, scaleY?: number, x?: number, y?: number }} props
-   * @param {number} ms
-   * @param {number|string} [ease]
-   * @returns {number} slot, or -1
-   */
-  static to(entityIndex, props, ms, ease) {
+  static to(entityIndex, props, ms, ease, options) {
     if (!props) return -1;
     const ent = entityIndex | 0;
     const wantsXy = props.x !== undefined || props.y !== undefined;
@@ -211,19 +252,20 @@ export class Tween {
 
     if (wantsXy && isDynamic(ent)) {
       if (!wantsPaint) return -1;
-      return this._start(KIND_PAINT, ent, props, ms, ease);
+      return this._start(KIND_PAINT, ent, props, ms, ease, options);
     }
 
     if (wantsXy && wantsPaint) {
-      const slotXy = this._start(KIND_XY, ent, props, ms, ease);
-      const slotPaint = this._start(KIND_PAINT, ent, props, ms, ease);
+      // One onComplete for the pair: both end on the same frame.
+      const slotXy = this._start(KIND_XY, ent, props, ms, ease, options);
+      const slotPaint = this._start(KIND_PAINT, ent, props, ms, ease, slotXy >= 0 ? withoutDone(options) : options);
       return slotXy >= 0 ? slotXy : slotPaint;
     }
 
     if (wantsXy) {
-      return this._start(KIND_XY, ent, props, ms, ease);
+      return this._start(KIND_XY, ent, props, ms, ease, options);
     }
-    return this._start(KIND_PAINT, ent, props, ms, ease);
+    return this._start(KIND_PAINT, ent, props, ms, ease, options);
   }
 
   /**
@@ -232,12 +274,12 @@ export class Tween {
    * @param {number|string} [ease]
    * @returns {number}
    */
-  static toZoom(zoom, ms, ease) {
+  static toZoom(zoom, ms, ease, options) {
     if (!(ms > 0)) {
       Camera.targetZoom = +zoom;
       return -1;
     }
-    return this._start(KIND_ZOOM, 0, { zoom: +zoom }, ms, ease);
+    return this._start(KIND_ZOOM, 0, { zoom: +zoom }, ms, ease, withoutDone(options));
   }
 
   /**
@@ -252,8 +294,36 @@ export class Tween {
     for (let i = 0; i < this.capacity; i++) {
       if (active[i] !== SLOT_LIVE) continue;
       if (this.entity[i] === ent && (kind === null || this.kind[i] === kind)) {
-        Atomics.store(active, i, SLOT_FREE);
+        this._free(i);
       }
+    }
+  }
+
+  /** A despawn: cancel the entity's tweens, but only scan the pool when it has some. */
+  static cancelForDespawn(entityIndex) {
+    const counts = this.entityTweens;
+    if (entityIndex < counts.length && Atomics.load(counts, entityIndex) > 0) this.cancel(entityIndex);
+  }
+
+  /** LIVE -> FREE once (a cancel and a finishing tick can race); the winner fixes the count. */
+  static _free(slot) {
+    if (Atomics.compareExchange(this.active, slot, SLOT_LIVE, SLOT_FREE) !== SLOT_LIVE) return false;
+    if (this.kind[slot] !== KIND_ZOOM) {
+      const ent = this.entity[slot];
+      if (ent < this.entityTweens.length) Atomics.sub(this.entityTweens, ent, 1);
+    }
+    return true;
+  }
+
+  /** After a save restore wrote slots directly: recount live tweens per entity. */
+  static rebuildEntityCounts() {
+    const counts = this.entityTweens;
+    if (counts.length === 0 || !this.active) return;
+    counts.fill(0);
+    for (let i = 0; i < this.capacity; i++) {
+      if (this.active[i] !== SLOT_LIVE || this.kind[i] === KIND_ZOOM) continue;
+      const ent = this.entity[i];
+      if (ent < counts.length) counts[ent]++;
     }
   }
 
@@ -274,19 +344,25 @@ export class Tween {
     return -1;
   }
 
-  static _start(kind, entityIndex, props, ms, ease) {
+  static _start(kind, entityIndex, props, ms, ease, options) {
     const dur = ms > 0 ? ms : 0;
-    if (!(dur > 0)) {
+    const delay = options && options.delay > 0 ? +options.delay : 0;
+    if (!(dur > 0) && delay === 0) {
       this._applyImmediate(kind, entityIndex, props);
       return -1;
     }
+    // Name check before claiming: a typo throws without leaking a slot.
+    const doneId = options && options.onComplete ? Messages.idOf(options.onComplete) : -1;
     const slot = this._claim();
     if (slot < 0) return -1;
     this.kind[slot] = kind;
     this.entity[slot] = entityIndex;
     this.ease[slot] = easeIdOf(ease);
-    this.duration[slot] = dur;
-    this.elapsed[slot] = 0;
+    this.duration[slot] = dur > 0 ? dur : 1e-6;
+    this.elapsed[slot] = -delay;
+    this.repeat[slot] = repeatCount(options);
+    this.flags[slot] = options && options.yoyo ? FLAG_YOYO : 0;
+    this.doneMsg[slot] = doneId + 1;
     this.mask[slot] = 0;
     this.from0[slot] = 0;
     this.to0[slot] = 0;
@@ -353,6 +429,9 @@ export class Tween {
       this.mask[slot] = mask;
     }
 
+    if (kind !== KIND_ZOOM && entityIndex < this.entityTweens.length) {
+      Atomics.add(this.entityTweens, entityIndex, 1);
+    }
     Atomics.store(this.active, slot, SLOT_LIVE);
     return slot;
   }
@@ -428,16 +507,49 @@ export class Tween {
       const dur = this.duration[i];
       const elapsed = this.elapsed[i] + step;
       this.elapsed[i] = elapsed;
+      if (elapsed < 0) continue; // still in its delay
       let t = dur > 0 ? elapsed / dur : 1;
-      let done = false;
-      if (t >= 1) {
-        t = 1;
-        done = true;
+      if (t < 1) {
+        this._apply(i, applyParticleEase(t, this.ease[i]));
+      } else {
+        this._apply(i, applyParticleEase(1, this.ease[i]));
+        this._cycleEnd(i, elapsed - dur);
       }
-      this._apply(i, applyParticleEase(t, this.ease[i]));
-      if (done) Atomics.store(active, i, SLOT_FREE);
     }
     return n;
+  }
+
+  /** A cycle reached t = 1: run again (repeat, yoyo) or finish (free, onComplete). */
+  static _cycleEnd(slot, overshoot) {
+    const rep = this.repeat[slot];
+    if (rep !== 0) {
+      if (rep !== TWEEN_REPEAT_FOREVER) this.repeat[slot] = rep - 1;
+      this.elapsed[slot] = overshoot < this.duration[slot] ? overshoot : 0;
+      if (this.flags[slot] & FLAG_YOYO) this._swapEnds(slot);
+      return;
+    }
+    const ent = this.entity[slot];
+    const done = this.doneMsg[slot];
+    if (this._free(slot) && done !== 0) Messages.sendId(ent, done - 1, -1, slot);
+  }
+
+  /** Yoyo: the next cycle runs from where this one ended. */
+  static _swapEnds(slot) {
+    let v = this.from0[slot];
+    this.from0[slot] = this.to0[slot];
+    this.to0[slot] = v;
+    v = this.from1[slot];
+    this.from1[slot] = this.to1[slot];
+    this.to1[slot] = v;
+    v = this.from2[slot];
+    this.from2[slot] = this.to2[slot];
+    this.to2[slot] = v;
+    v = this.from3[slot];
+    this.from3[slot] = this.to3[slot];
+    this.to3[slot] = v;
+    v = this.tintFrom[slot];
+    this.tintFrom[slot] = this.tintTo[slot];
+    this.tintTo[slot] = v;
   }
 
   static _apply(slot, eased) {

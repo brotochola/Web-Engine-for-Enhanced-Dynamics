@@ -868,7 +868,7 @@ export class AbstractWorker {
       this._frameClockSlot = data.frameClockSlot;
     }
     if (data.buffers?.tweenData) {
-      Tween.bind(data.buffers.tweenData, data.config?.tween?.maxTweens | 0);
+      Tween.bind(data.buffers.tweenData, data.config?.tween?.maxTweens | 0, data.globalEntityCount | 0);
     }
 
     // Store frame rate buffer index for writing to frameRateData

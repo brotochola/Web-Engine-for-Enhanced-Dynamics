@@ -761,19 +761,31 @@ export interface TweenProps {
 }
 
 /** Scene tween pool (slot count is `config.tween.maxTweens`). */
+/** Tween.to / toZoom options (DX 4.2). */
+export interface TweenOptions {
+  /** ms before it starts; the from values are read when Tween.to is called. */
+  delay?: number;
+  /** Extra cycles after the first; -1 or Infinity = forever (until Tween.cancel). */
+  repeat?: number;
+  /** Every other cycle runs backwards. */
+  yoyo?: boolean;
+  /** A name from the scene's static messages: the entity gets onMessage(name, -1, slot) after the last cycle. */
+  onComplete?: string;
+}
+
 export declare class Tween {
   /** Slot count of the bound pool. 0 until bound. */
   static capacity: number;
-  static bind(sab: SharedArrayBuffer | ArrayBuffer | null, count?: number): void;
+  static bind(sab: SharedArrayBuffer | ArrayBuffer | null, count?: number, entityCount?: number): void;
   static unbind(): void;
   /**
    * Animate props of an entity over `ms`. `ms <= 0` applies the target values at once.
    * @returns the slot, or -1 (immediate, refused, pool full or nothing to animate). With
    * both xy and paint props two slots are used and the xy slot is returned when claimed.
    */
-  static to(entityIndex: number, props: TweenProps, ms: number, ease?: WeedEaseName | number): number;
+  static to(entityIndex: number, props: TweenProps, ms: number, ease?: WeedEaseName | number, options?: TweenOptions): number;
   /** Tween `Camera.targetZoom`. `ms <= 0` sets it at once and returns -1. */
-  static toZoom(zoom: number, ms: number, ease?: WeedEaseName | number): number;
+  static toZoom(zoom: number, ms: number, ease?: WeedEaseName | number, options?: Omit<TweenOptions, 'onComplete'>): number;
   /** Cancel live tweens of an entity; `kind` is 0 paint, 1 xy, 2 zoom, omitted = all. */
   static cancel(entityIndex: number, kind?: number | null): void;
   /** Advance this worker's slot block by `dt` ms. Returns live slots advanced. */

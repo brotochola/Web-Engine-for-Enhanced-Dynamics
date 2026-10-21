@@ -81,15 +81,24 @@ export class Messages {
       }
       return false;
     }
+    return this._push(target, from, this.idOf(name), a, b, c, d);
+  }
+
+  /** Id of a declared name; throws (with the fix) for one the scene does not list. */
+  static idOf(name) {
     const id = this.nameToId.get(name);
-    if (id === undefined) {
-      throw new Error(
-        `WeedJS: message '${name}' is not declared. Add it to the scene's static messages = [${this.names
-          .map((n) => `'${n}'`)
-          .join(', ')}${this.names.length ? ', ' : ''}'${name}'].`
-      );
-    }
-    return this._push(target, from, id, a, b, c, d);
+    if (id !== undefined) return id;
+    throw new Error(
+      `WeedJS: message '${name}' is not declared. Add it to the scene's static messages = [${this.names
+        .map((n) => `'${n}'`)
+        .join(', ')}${this.names.length ? ', ' : ''}'${name}'].`
+    );
+  }
+
+  /** Send by id (Tween onComplete): no-op when the scene has no listener. */
+  static sendId(target, id, from, a) {
+    if (this.inboxI32.length === 0) return false;
+    return this._push(target, from, id, a, 0, 0, 0);
   }
 
   /** Engine messages (animation end, …): id outside the scene's names. */

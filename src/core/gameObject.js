@@ -71,6 +71,7 @@ import { isSpawnCommandRingBound, tryPushSpawn } from '../util/spawnCommandRing.
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from './messages.js';
+import { Tween } from './tween.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
@@ -2162,6 +2163,7 @@ export class GameObject {
   static _deactivateSlotComponents(i) {
     Transform.active[i] = 0;
     Messages.bumpGeneration(i);
+    Tween.cancelForDespawn(i);
     if (RigidBody.active) RigidBody.active[i] = 0;
     // HEAP slot hygiene — destroy is markBodyDirty. Do not setAwake.
     if (RigidBody.sleeping) RigidBody.sleeping[i] = 0;

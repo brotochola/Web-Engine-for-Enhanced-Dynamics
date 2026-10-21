@@ -336,7 +336,10 @@ export function applyTweens(slots, mapGet, restored) {
       !restoredNew.has(ent);
     if (!keep) Atomics.store(Tween.active, i, 0);
   }
-  if (!slots || !slots.length) return;
+  if (!slots || !slots.length) {
+    Tween.rebuildEntityCounts();
+    return;
+  }
   let slot = 0;
   for (let i = 0; i < slots.length; i++) {
     const rec = slots[i];
@@ -361,6 +364,8 @@ export function applyTweens(slots, mapGet, restored) {
     Atomics.store(Tween.active, slot, 1);
     slot++;
   }
+  // Slots were written and cleared directly: recount live tweens per entity.
+  Tween.rebuildEntityCounts();
 }
 
 function remapOne(value, mapGet) {
