@@ -189,6 +189,13 @@ export function resolveParticleColorOp(value, defaultVal = 0xffffff, out) {
 /**
  * Apply ease id to life progress t in [0,1]. No Math.sin.
  * Expo uses LUT256 + lerp (see particle-ease microbench).
+ *
+ * Small on purpose (E-59): TurboFan inlines a callee only up to 460 bytes of
+ * bytecode, and the single switch this replaces was 717, so every tweened
+ * particle and every tween paid a real call with its double boxed. LERP and
+ * the polynomial curves stay here and inline into those loops; the rest are
+ * out of line. The case labels are PARTICLE_EASE ids written as literals (a
+ * jump table, no module-const reads); particleEase.test.js ties them.
  * @param {number} t
  * @param {number} easeId
  * @returns {number}
@@ -197,23 +204,38 @@ export function applyParticleEase(t, easeId) {
   if (t <= 0) return 0;
   if (t >= 1) return 1;
   switch (easeId | 0) {
-    case PARTICLE_EASE.QUAD_IN:
+    case 0: // LERP
+      return t;
+    case 1: // QUAD_IN
       return t * t;
-    case PARTICLE_EASE.QUAD_OUT:
+    case 2: // QUAD_OUT
       return t * (2 - t);
-    case PARTICLE_EASE.QUAD_INOUT:
+    case 3: // QUAD_INOUT
       return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-    case PARTICLE_EASE.CUBIC_IN:
+    case 4: // CUBIC_IN
       return t * t * t;
-    case PARTICLE_EASE.CUBIC_OUT: {
+    case 5: { // CUBIC_OUT
       const u = t - 1;
       return u * u * u + 1;
     }
-    case PARTICLE_EASE.CUBIC_INOUT: {
+    case 6: { // CUBIC_INOUT
       if (t < 0.5) return 4 * t * t * t;
       const u = 2 * t - 2;
       return (t - 1) * u * u + 1;
     }
+    default:
+      return applyRareEase(t, easeId | 0);
+  }
+}
+
+/**
+ * EXPO, BACK and BOUNCE for t in (0,1); an unknown id is LERP.
+ * @param {number} t
+ * @param {number} easeId
+ * @returns {number}
+ */
+function applyRareEase(t, easeId) {
+  switch (easeId) {
     case PARTICLE_EASE.EXPO_IN:
       return sampleExpoLut(EXPO_IN_LUT, t);
     case PARTICLE_EASE.EXPO_OUT:
@@ -253,7 +275,6 @@ export function applyParticleEase(t, easeId) {
       const u = t - 2.625 / d1;
       return n1 * u * u + 0.984375;
     }
-    case PARTICLE_EASE.LERP:
     default:
       return t;
   }
