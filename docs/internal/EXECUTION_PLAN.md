@@ -1127,6 +1127,26 @@ Rotation 0 runs the loop it always did. SpritePackStressScene got `?camRot=` (de
 `skipCull.test.js` now counts the two loops. **E-51b (open):** the other culls (particles in the
 particle worker, decorations, glow, Adobe pieces) still use the box; same treatment, each measured
 on its own.
+**E-51b particles — KEPT** (`de5096a4`; knob `652b91b3`). ParticleIntegrateStressScene got
+`?camRot=`. At 0.785 its render queue hit the scene's 55,000 cap (38,561 at rotation 0), so
+off-screen particles inside the box could crowd on-screen ones out of the frame, and pre-render went
+3.68 → 4.84 ms. `buildActiveAndVisibleListBuffersTurned` (particle worker, rotation ≠ 0 only) turns
+each particle into view space with E-51's expressions and tests the view plus the same margin. The
+first version cost the particle worker +11 % (4/4): not the arithmetic but the visible branch, which
+the box always predicted (nearly everything was in it) and the turned test splits ~73/27. The write is
+now branchless (index always to the next slot, count += flag; kernel 616 → 438 µs on 65k, list
+equal). 4 ABAB pairs at 0.785: queue **55,000 → ~36,000**, **pre-render 4.84 → 3.42 ms (−29.4 %,
+4/4)**, renderer −24.9 % (4/4), particle worker −0.45 % (tie). Rotation 0, 4 pairs: every worker
+ties. `turnedParticleCull.test.js` (real worker) checks the visible set against `viewWorldToScreen`
+at five rotations and zooms, the flags, the box at 45°, and rotation 0. Still open: decorations,
+bullets and entity glow.
+
+### E-65 Branchless visible-list write on the rotation-0 particle cull — **screened 2026-10-21: depends on the scene**
+Found with E-51b. On 65k random particles with 82 % visible, a branchless box loop is 500 → 418 µs
+(−16 %), list equal; with everything visible it is 387 → 419 µs (+8 %), because a branch that is
+always taken costs nothing. Emitters spawn neighbours at neighbouring indices, so in real scenes the
+visible flags come in runs and the branch predicts well. Not taken; the turned path keeps its
+branchless write because it exists for the mixed case.
 
 Found while fixing N-12 (`d7228257`). Culls now keep the axis-aligned box around the
 turned view, which is ~2.2× the screen area at 45° on 16:9, so pre-render queues and Pixi

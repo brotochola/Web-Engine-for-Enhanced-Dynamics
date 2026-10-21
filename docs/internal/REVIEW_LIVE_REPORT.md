@@ -17,6 +17,32 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**06:37** — E-51b (particles) kept, E-65 screened. Next: the rest of E-51b (decorations,
+bullets, glow) and the other open items.
+
+### 06:37 — A turned camera no longer floods the frame with off-screen particles (`652b91b3`, `de5096a4`)
+
+- **The problem, and a hidden bug.** With the camera turned 45°, the particle worker marked
+  as visible everything inside the box around the turned view, about twice the view's area.
+  In the particle stress scene that was almost all 65,000 particles, so the render queue sat
+  at its **55,000 cap**. Off-screen particles were using up the budget, and on-screen ones
+  past the cap could go undrawn.
+- **The fix.** Same as E-51 did for sprites: each particle is tested against the turned view
+  itself. Rotation 0 runs exactly the old code.
+- **A second lesson in this one.** The first version made the particle worker 11 % slower.
+  The extra arithmetic wasn't the cause. The "is it visible?" branch was: the old box test
+  said yes to nearly everything, which the CPU predicts perfectly, while the turned test says
+  yes about three times in four, at random. Writing the result without a branch fixed it.
+- **Numbers**, 4 pairs at 45°: queue **55,000 → ~36,000**, **pre-render 4.84 → 3.42 ms
+  (−29.4 %, 4/4)**, renderer −24.9 % (4/4), particle worker a tie. At rotation 0 everything
+  ties.
+- **E-65, screened.** Would the same branchless trick help the normal, unturned path? On
+  random data it's −16 %, but +8 % when everything is visible. Real emitters place their
+  particles together, so the branch usually predicts well. Not taken.
+- A test on the real worker checks the visible set against the engine's own screen
+  transform, at five angles and zooms.
+- Suite **1407/1407**.
+
 **06:18** — E-61 and E-62 kept, E-64 screened (a wrong premise, now written into the
 measuring guide). E-63 logged. Next: the open items in REVIEW_PLAN.
 
