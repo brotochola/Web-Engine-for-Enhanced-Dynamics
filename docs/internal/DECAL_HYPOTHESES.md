@@ -1,6 +1,6 @@
 # Decal stamp optimization hypotheses
 
-Falsifiable claims for speeding up blood-decal stamping — [`src/util/decalStamp.js`](../../src/util/decalStamp.js) (`stampParticleToTileBuffers`), [`src/workers/particleWorker.js`](../../src/workers/particleWorker.js) (`stampCollectedParticles`), and [`src/core/particleEmitter.js`](../../src/core/particleEmitter.js) (`stampDecal`). Test **headless only** with the three-layer protocol below (Wave A of [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)).
+Falsifiable claims for speeding up blood-decal stamping — `src/util/decalStamp.js` (`stampParticleToTileBuffers`; since `ab581e81` it is `Decal.stampToTileBuffers` in [`src/core/decal.js`](../../src/core/decal.js)), [`src/workers/particleWorker.js`](../../src/workers/particleWorker.js) (`stampCollectedParticles`), and [`src/core/particleEmitter.js`](../../src/core/particleEmitter.js) (`stampDecal`). Test **headless only** with the three-layer protocol below (Wave A of [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)).
 
 ## Protocol (always headless)
 
@@ -10,16 +10,7 @@ Falsifiable claims for speeding up blood-decal stamping — [`src/util/decalStam
 | **L2** | `pnpm bench:feature:decal` (`DecalStampStressScene`) | `particle.DECAL_STAMP_MS` / `STEP_MS` (workload guard: `PARTICLES_STAMPED`) |
 | **L3** | `zenithalParticleTestScene` (opt-in, `--include-l3`) | `particle.STEP_MS` |
 
-Tournament (singles → pairs → stacks):
-
-```bash
-pnpm bench:decal:tournament
-node tests/bench/runDecalHypTournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
-node tests/bench/runDecalHypTournament.mjs --round 2
-node tests/bench/runDecalHypTournament.mjs --round 3
-```
-
-Summaries: `tests/results/decal-hyps/tournament/round{1,2,3}-summary.json`, `tournament-leaderboard.json`.
+Tournament (singles → pairs → stacks). Its runner and patch set were removed in `c40821ec` (2026-09-30); the results below are the record.
 
 **Accept (single)** if L1 correctness OK, target metric improves ≥3% median, non-target L1 not worse than −5%, `PARTICLES_STAMPED` workload drift ≤5%.
 
@@ -38,7 +29,7 @@ Summaries: `tests/results/decal-hyps/tournament/round{1,2,3}-summary.json`, `tou
 | D5 | +4.5% | +4.6% | REJECT (identity / deferred) |
 | D6 | +2.3% | +1.9% | REJECT |
 
-**Champion: D2** (UV integer DDA) — merged into `src/util/decalStamp.js`. Round2/3 skipped (single winner). Baselines in `tests/bench/decal-hyps/` remain pre-opt for patch replay.
+**Champion: D2** (UV integer DDA) — merged into `src/util/decalStamp.js` (now `src/core/decal.js`). Round2/3 skipped (single winner).
 
 ### D2 noise note
 
@@ -57,13 +48,10 @@ Auto-reject fired on non-target L1 multiply case only. Primary targets (multitil
 
 ## Patch layout
 
-- Baselines (pre-opt): `tests/bench/decal-hyps/baselineDecalStamp.js`, `baselineParticleEmitter.js`, `baselineParticleWorker.js`
-- Composable transforms: [`tests/bench/decal-hyps/hypPatches.mjs`](../../tests/bench/decal-hyps/hypPatches.mjs) (`applyCombo`, `CANONICAL_ORDER = D1→D2→D3→D4→D5→D6`)
-- Tournament runner: [`tests/bench/runDecalHypTournament.mjs`](../../tests/bench/runDecalHypTournament.mjs)
+Removed in `c40821ec`: the pre-opt baselines (`decal-hyps/baselineDecalStamp.js`, `baselineParticleEmitter.js`, `baselineParticleWorker.js`), the composable transforms (`decal-hyps/hypPatches.mjs`, `CANONICAL_ORDER = D1→D2→D3→D4→D5→D6`) and the tournament runner (`runDecalHypTournament.mjs`). Still in the tree:
+
 - L1: [`tests/bench/decalMicrobench.mjs`](../../tests/bench/decalMicrobench.mjs)
 - L2: [`tests/bench/stressScenes/decalStampStressScene.js`](../../tests/bench/stressScenes/decalStampStressScene.js) + [`decals/decalStampDriver.js`](../../tests/bench/stressScenes/decals/decalStampDriver.js)
-
-Source files under `src/` are checked out CRLF; `hypPatches.mjs` normalizes to LF in-memory before anchor matching and writes patched output back as LF. `restoreAll()` still restores the original CRLF baseline bytes untouched.
 
 ## Related
 

@@ -5,7 +5,7 @@
 **Scenes:** BallsScene, PredatorScene  
 **Runtime:** headed Chromium, warmup **8 s** / measure **6 s**  
 **Data:** [`tests/results/multigrid-hyps/smoke-summary.json`](../../tests/results/multigrid-hyps/smoke-summary.json), [`confirm-summary.json`](../../tests/results/multigrid-hyps/confirm-summary.json)  
-**Prototype:** [`tests/bench/multigrid-hyps/m1SpatialWorker.js`](../../tests/bench/multigrid-hyps/m1SpatialWorker.js) (not merged)
+**Prototype:** `tests/bench/multigrid-hyps/m1SpatialWorker.js` (not merged; removed in `c40821ec`)
 
 ---
 

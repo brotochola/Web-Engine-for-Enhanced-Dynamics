@@ -12,20 +12,11 @@ three-layer protocol below (Wave B of [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_P
 
 | Layer | Command | Primary metric |
 |-------|---------|----------------|
-| **L1** | `pnpm bench:micro:particle-emit` + `pnpm bench:micro:particle-integrate` (merged by `tests/bench/particleL1Microbench.mjs` for the tournament) | `cases.*.opsPerSec`; exit 0 correctness (full-pool spawn/exhaust/recycle round-trip + flat-integrate checksum + ground/stamp/fade/lifetime despawn round-trip) |
+| **L1** | `pnpm bench:micro:particle-emit` + `pnpm bench:micro:particle-integrate` | `cases.*.opsPerSec`; exit 0 correctness (full-pool spawn/exhaust/recycle round-trip + flat-integrate checksum + ground/stamp/fade/lifetime despawn round-trip) |
 | **L2** | `pnpm bench:feature:particle-emit` (`ParticleEmitStressScene`) / `pnpm bench:feature:particle-integrate` (`ParticleIntegrateStressScene`) | `particle.PARTICLE_PHYSICS_MS` / `particle.BUILD_ACTIVE_VISIBLE_MS` / `particle.STEP_MS` (workload guard: `ACTIVE_PARTICLES`) |
 | **L3** | `zenithalParticleTestScene` (opt-in, `--include-l3`) | `particle.STEP_MS` |
 
-Tournament (singles → pairs → stacks):
-
-```bash
-pnpm bench:particle:tournament
-node tests/bench/runParticleHypTournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
-node tests/bench/runParticleHypTournament.mjs --round 2
-node tests/bench/runParticleHypTournament.mjs --round 3
-```
-
-Summaries: `tests/results/particle-hyps/tournament/round{1,2,3}-summary.json`, `tournament-leaderboard.json`.
+Tournament (singles → pairs → stacks). Its runner, patch set and L1 merger were removed in `c40821ec` (2026-09-30); the results below are the record.
 
 **Accept (single)** if L1 correctness OK, target metric improves ≥3% median, non-target L1 not
 worse than −5%, `ACTIVE_PARTICLES` workload drift ≤5%.
@@ -50,9 +41,9 @@ Round1 winners: **P2, P4, P5, P6** (P1/P3 reject).
 | P2+* pairs | worse vs parents | REJECT |
 | P2+P4+P5+P6 / P4+P5+P6 stacks | lose >3% vs best parent | REJECT |
 
-**Champion: P4+P5** (flat/heighted two-pass integrate + skip unused flat z/vz writes) — merged into `src/util/particleIntegrate.js` + `src/core/particleEmitter.js`. Baselines in `tests/bench/particle-hyps/` remain pre-opt for patch replay.
+**Champion: P4+P5** (flat/heighted two-pass integrate + skip unused flat z/vz writes) — merged into `src/util/particleIntegrate.js` + `src/core/particleEmitter.js`.
 
-**Later singles (2026-09):** P2 and P6 (ACCEPT as singles in the 2026-08 tournament; stacks with P4+P5 lost) are now also in production. `expectedActive` uses `getActiveCount()+32`. Wave J compact bullet list is in `BulletPool`. Re-running `pnpm bench:particle:tournament` still `restoreAll()` to **pre-opt** sources — do not leave that dirty.
+**Later singles (2026-09):** P2 and P6 (ACCEPT as singles in the 2026-08 tournament; stacks with P4+P5 lost) are now also in production. `expectedActive` uses `getActiveCount()+32`. Wave J compact bullet list is in `BulletPool`.
 
 ## Hypotheses
 
@@ -72,23 +63,18 @@ than hand-picking winners.
 
 ## Patch layout
 
-- Baselines (pre-opt): `tests/bench/particle-hyps/baselineParticleEmitter.js`,
-  `baselineParticleIntegrate.js`, `baselineSharedAtomicPool.js`, `baselineAtomicFreeList.js`
-- Composable transforms: [`tests/bench/particle-hyps/hypPatches.mjs`](../../tests/bench/particle-hyps/hypPatches.mjs)
-  (`applyCombo`, `CANONICAL_ORDER = P1→P2→P3→P4→P5→P6`)
-- Tournament runner: [`tests/bench/runParticleHypTournament.mjs`](../../tests/bench/runParticleHypTournament.mjs)
+Removed in `c40821ec`: the pre-opt baselines (`particle-hyps/baselineParticleEmitter.js`,
+`baselineParticleIntegrate.js`, `baselineSharedAtomicPool.js`, `baselineAtomicFreeList.js`), the
+composable transforms (`particle-hyps/hypPatches.mjs`, `CANONICAL_ORDER = P1→P2→P3→P4→P5→P6`), the
+tournament runner (`runParticleHypTournament.mjs`) and the L1 merger (`particleL1Microbench.mjs`).
+Still in the tree:
+
 - L1: [`tests/bench/particleEmitMicrobench.mjs`](../../tests/bench/particleEmitMicrobench.mjs),
   [`tests/bench/particleIntegrateMicrobench.mjs`](../../tests/bench/particleIntegrateMicrobench.mjs)
-  (merged into one report by [`tests/bench/particleL1Microbench.mjs`](../../tests/bench/particleL1Microbench.mjs)
-  for the tournament's single-microRunner contract — `emit_*` / `integrate_*` case prefixes)
 - L2: [`tests/bench/stressScenes/particleEmitStressScene.js`](../../tests/bench/stressScenes/particleEmitStressScene.js)
   + [`particles/particleEmitDriver.js`](../../tests/bench/stressScenes/particles/particleEmitDriver.js);
   [`tests/bench/stressScenes/particleIntegrateStressScene.js`](../../tests/bench/stressScenes/particleIntegrateStressScene.js)
   + [`particles/particleIntegrateDriver.js`](../../tests/bench/stressScenes/particles/particleIntegrateDriver.js)
-
-Source files under `src/` are checked out CRLF; `hypPatches.mjs` normalizes to LF in-memory before
-anchor matching and writes patched output back as LF. `restoreAll()` still restores the original
-CRLF baseline bytes untouched.
 
 ### Gotcha for anyone writing new drivers/microbenches against `ParticleEmitter`
 

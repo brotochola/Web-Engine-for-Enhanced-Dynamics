@@ -262,6 +262,8 @@ Every campaign report (scoreboard, product confirm, isolation) says:
 
 Then update [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). The scoreboard writer in `tests/bench/runScoreboard.mjs` is the template. Do not ship a summary-only report again.
 
+`tests/results/` is gitignored, so a report or a log row that links into it is a dead link for every other reader, and for you after a clean checkout. Put the numbers in the text, and the result path as plain text (the command that wrote it is better), never as a link. The same holds for a script you are about to delete: name the commit that removed it, not the file.
+
 ## Engine-wide claim
 
 The feature catalog is [`tests/bench/engineFeatureCatalog.mjs`](../../tests/bench/engineFeatureCatalog.mjs). To claim “this tree is faster than a git rev” on the engine, run `pnpm bench:scoreboard --vs <rev>`. Every catalog row must be **KEPT** or a tie (inside 3 percent), and none WORSE or FAIL. Until that board is green, do not call the tree the fastest WeedJS.

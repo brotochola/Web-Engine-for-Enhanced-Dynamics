@@ -46,7 +46,6 @@ gameplay scene only if the change can affect a real demo / other workers
 pnpm bench:micro:ray
 pnpm bench:feature:ray
 pnpm bench:feature:ray:predator
-pnpm bench:ray:tournament
 
 # Ray vs Box2D (kernel + busy-physics hyp)
 pnpm bench:micro:ray-vs-box2d
@@ -62,24 +61,19 @@ pnpm bench:feature:ray-vs-box2d:box2d:busy
 # Decals Wave A (champion D2 merged — UV DDA)
 pnpm bench:micro:decal
 pnpm bench:feature:decal
-pnpm bench:decal:tournament
 
 # Particles Wave B (emit + integrate)
 pnpm bench:micro:particle-emit
 pnpm bench:micro:particle-integrate
 pnpm bench:feature:particle-emit
 pnpm bench:feature:particle-integrate
-pnpm bench:particle:tournament
 
 # Compute (WebGPU; skip L2 if no GPU — do not fake WebGL)
 pnpm bench:micro:compute-pack
 pnpm bench:feature:compute
-pnpm bench:feature:compute:headed
 
 # Waves C–K + leftovers (L1 always; L2 needs Playwright)
 pnpm bench:micro:spatial
-pnpm bench:spatial:campaign
-pnpm bench:spatial:tournament
 pnpm bench:feature:spatial
 pnpm bench:micro:query
 pnpm bench:feature:query-churn
@@ -91,11 +85,11 @@ pnpm bench:feature:nav
 pnpm bench:micro:tilemap
 pnpm bench:micro:treiber
 pnpm bench:feature:spawn-storm
-pnpm bench:micro:pose-skip
 pnpm bench:micro:skip-work
 pnpm bench:micro:body-pack
-pnpm bench:micro:particle-l1
 ```
+
+Removed: the four `bench:*:tournament` runners, `bench:spatial:campaign`, `bench:micro:pose-skip` and `bench:micro:particle-l1` (`c40821ec`), and `bench:feature:compute:headed` (`0f7d5fc8`).
 
 Hypothesis index + fill order: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md).
 Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`](./DECAL_HYPOTHESES.md). Particles: [`PARTICLE_HYPOTHESES.md`](./PARTICLE_HYPOTHESES.md). LiquidFun: [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md).
@@ -115,7 +109,7 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | LiquidFun particle step | `lf_particle_system.c` (sibling `Box2d_3.2_C_-_liquidfun`) | `liquidFunCapturePairsMicrobench.mjs` (CapturePairs create-time); `liquidFunComputeDepthMicrobench.mjs` (first step after SOLID create); extract / reactive / sparse-step / rigid-damping; **`liquidFunPassProfileMicrobench.mjs`** (8-bucket pass split) | `stressScenes/LiquidFunStressScene` | `demos/liquidFunDemoScene` + `pnpm test:visual --scene liquidfun,lfstress` (100-step exact after H10) | `LIQUIDFUN_MS` (fluid inside `step_world`); `BOX2D_MS` = full step (rigid + LiquidFun); ~10.2k water + ~2k spring/staticPressure. Pass HUD slots 37–44 (`LF_PASS_*_MS`). **H29 rejected.** |
 | LiquidFun ↔ Box2D coupling | `lf_particle_system.c` public Box2D API (impulse / OverlapAABB / body props / strict qsort) | `liquidFunBodyCoupleMicrobench.mjs`; `liquidFunOverlapSubstepMicrobench.mjs`; `liquidFunStrictContactMicrobench.mjs` | `LiquidFunBodyCoupleStressScene` (100 dynamics); `LiquidFunManyShapesStressScene` (`subSteps:2`, 180 statics) | same L3 as particle step (H26 no-op at `subSteps=1` on lfstress). Do **not** add coupling scenes to exact lockstep catalog. | `LIQUIDFUN_MS` + `BOX2D_MS`; WASM counters `get_lf_*`. **H26 shipped** (reuse query across sub-steps). H24/H25/H27/H28 rejected (&lt;3% ceiling). |
 | LiquidFun QueryAABB / RayCast | `liquidFunQuery.js` | SAB protocol `liquidFunQuery.test.js` | `stressScenes/LiquidFunQueryStressScene` | `demos/liquidFunQueryScene` | physics + logic `STEP_MS` under sync query churn |
-| Box2D QueryAABB | `box2dQueryAabb.js` | `queryAabbBurst.test.js` (protocol) | `stressScenes/QueryAabbStressScene` + demo self-check | — | burst 1024 / physics STEP |
+| Box2D QueryAABB | `box2dQueryAabb.js` | `box2dQueryProtocol.test.js` (protocol) | `stressScenes/QueryAabbStressScene` + demo self-check | — | burst 1024 / physics STEP |
 | NavGrid Dijkstra / A* | `navGrid.js`, particle_worker | `navGridMicrobench.mjs` | `stressScenes/NavStressScene` | car / bichos / Predator | ms/path; respects `maxProcessingMsPerFrame` |
 | AngularSweep visibility | `angularSweep.js` | `angularSweepMicrobench.mjs` | `visPolyStressScene` (`raycasted: true`) | not Predator default (raycasted off) | polygons/s + `VISIBILITY_MS` / pre-render `STEP_MS` |
 | TileMap SAB queries | `tileMap.js` | `tileMapMicrobench.mjs` | `stressScenes/TilemapStressScene` (fixed-rate `getTileId`) | tile demos | ns/`getTileId`; logic0 `STEP_MS` |
@@ -135,7 +129,7 @@ See [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md) for hyp summaries per w
 
 ## L1 scaffold
 
-Shared helpers: [`tests/bench/microbenchHelpers.mjs`](../../tests/bench/microbenchHelpers.mjs) (`mulberry32`, `timeIt`, `writeReport`, `parseArgs`). Tournament helpers: [`tests/bench/featureTournamentLib.mjs`](../../tests/bench/featureTournamentLib.mjs).
+Shared helpers: [`tests/bench/microbenchHelpers.mjs`](../../tests/bench/microbenchHelpers.mjs) (`mulberry32`, `timeIt`, `writeReport`, `parseArgs`). `median`, `pctDelta`, `writeJson`: [`tests/bench/featureTournamentLib.mjs`](../../tests/bench/featureTournamentLib.mjs).
 
 Microbenches import production `src/...` code (no algorithm copies). Run a correctness gate before timing.
 

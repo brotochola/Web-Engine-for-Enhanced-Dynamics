@@ -10,16 +10,7 @@ Falsifiable claims for speeding up [`src/core/ray.js`](../../src/core/ray.js). T
 | **L2** | `pnpm bench:feature:ray` (RayStressScene) | `logic.RAYCAST_MS` (`RAYCAST_COUNT` ~512) |
 | **L3** | `pnpm bench:feature:ray:predator` | `logic.RAYCAST_MS` / `STEP_MS` |
 
-Tournament (singles → pairs → stacks):
-
-```bash
-pnpm bench:ray:tournament
-node tests/bench/runRayHypTournament.mjs --round 1 --runs 2 --warmup-ms 8000 --duration-ms 10000
-node tests/bench/runRayHypTournament.mjs --round 2
-node tests/bench/runRayHypTournament.mjs --round 3
-```
-
-Summaries: `tests/results/ray-hyps/tournament/round{1,2,3}-summary.json`, `tournament-leaderboard.json`.
+Tournament (singles → pairs → stacks). Its runner and patch set were removed in `c40821ec` (2026-09-30); the results below are the record.
 
 **Accept (single)** if L1 correctness OK, target metric improves ≥3% median, non-target L1 not worse than −5%, workload ±5%.
 
@@ -69,9 +60,7 @@ Post-merge sanity (RayStress L2): logic STEP ~2.2 ms (was ~2.8 ms BASE).
 
 ## Patch layout
 
-- Baselines (pre-opt): [`tests/bench/ray-hyps/baselineRay.js`](../../tests/bench/ray-hyps/baselineRay.js), `baselineUtils.js`
-- Composable transforms: [`tests/bench/ray-hyps/hypPatches.mjs`](../../tests/bench/ray-hyps/hypPatches.mjs) (`applyCombo`, `CANONICAL_ORDER = H2→H6→H1→H3→H4→H5`)
-- Tournament runner: [`tests/bench/runRayHypTournament.mjs`](../../tests/bench/runRayHypTournament.mjs)
+Removed in `c40821ec`: the pre-opt baselines (`ray-hyps/baselineRay.js`, `baselineUtils.js`), the composable transforms (`ray-hyps/hypPatches.mjs`, `CANONICAL_ORDER = H2→H6→H1→H3→H4→H5`) and the tournament runner (`runRayHypTournament.mjs`).
 
 ## Related
 

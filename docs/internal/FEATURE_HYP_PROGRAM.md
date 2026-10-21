@@ -53,7 +53,6 @@ Commands:
 ```bash
 pnpm bench:micro:decal
 pnpm bench:feature:decal
-pnpm bench:decal:tournament
 ```
 
 ## Wave B — Particles hyps
@@ -74,7 +73,6 @@ pnpm bench:micro:particle-emit
 pnpm bench:micro:particle-integrate
 pnpm bench:feature:particle-emit
 pnpm bench:feature:particle-integrate
-pnpm bench:particle:tournament
 ```
 
 ## Wave L — LiquidFun particle step (C, sibling repo)
@@ -136,8 +134,6 @@ Production already has Verlet skin (`neighborReuseSkin: 0.04`) and neighbor stag
 
 ```bash
 pnpm bench:micro:spatial
-pnpm bench:spatial:campaign
-pnpm bench:spatial:tournament -- --l1-only
 pnpm bench:feature:spatial
 ```
 
@@ -146,14 +142,14 @@ pnpm bench:feature:spatial
 `servicePendingQueryBurst` was tried. **Dropped.** Isolation on `QueryAabbStressScene`: physics step **+835%**. Do not reintroduce the burst. See [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
 
 ```bash
-pnpm test:node -- tests/node/queryAabbBurst.test.js
+node --test tests/node/box2dQueryProtocol.test.js
 pnpm bench:feature:query-aabb
 ```
 
 ## Wave F / I / J leftovers
 
 - Skip-publish if active lists unchanged: already in logic0; `QUERY_PUBLISH_MS` only when `collectDetailedStats`.
-- P2 `_cfgFieldList` + P6 `popFreeIndices` **kept**. PACT `expectedActive` and compact bullets **dropped** (not in tree). Old `bench:particle:tournament` still patches from **pre-opt baselines** — it overwrites src; do not use as truth.
+- P2 `_cfgFieldList` + P6 `popFreeIndices` **kept**. PACT `expectedActive` and compact bullets **dropped** (not in tree).
 - Spawn ECB: **dropped**. Main thread uses immediate `spawn` / `despawn` `postMessage` (no `spawnDespawnBatch` queue).
 - Monomorphic `tickFn` cache on logic typeInfo: **dropped** (Balls logic0 +27%). Hot path calls `obj.tick`.
 - Physics-pose blend while packing is `preRender.interpolation` (boolean). Display-rate blend of two render queues is `renderer.interpolation`. They are not the same flag.
@@ -166,7 +162,6 @@ pnpm bench:micro:decoration-spatial
 pnpm bench:micro:nav
 pnpm bench:micro:tilemap
 pnpm bench:micro:treiber
-pnpm bench:micro:pose-skip
 pnpm bench:feature:query-churn
 pnpm bench:feature:spawn-storm
 pnpm bench:micro:bullets
@@ -174,8 +169,9 @@ pnpm bench:feature:bullets
 pnpm bench:feature:nav
 pnpm bench:micro:skip-work
 pnpm bench:micro:body-pack
-pnpm bench:micro:particle-l1
 ```
+
+The tournament runners, `bench:spatial:campaign`, `bench:micro:pose-skip` and `bench:micro:particle-l1` were removed in `c40821ec`; the waves above keep their results.
 
 ## Related
 
