@@ -43,6 +43,19 @@ test('overlapCircle service fills entity ids', { concurrency: false }, () => {
   bindOverlapCircleSab(null);
 });
 
+test('overlapCircle service publishes a count above the result capacity as the capacity', { concurrency: false }, () => {
+  const sab = createOverlapCircleSab(64);
+  bindOverlapCircleSab(sab);
+  const i32 = new Int32Array(sab);
+  Atomics.store(i32, HDR_STATUS, 1);
+  servicePendingOverlapCircle((cx, cy, radius, _cat, _mask, results, cap) => {
+    for (let i = 0; i < cap; i++) results[i] = i;
+    return 100;
+  });
+  assert.equal(Atomics.load(i32, HDR_COUNT), 64);
+  bindOverlapCircleSab(null);
+});
+
 test('castRayAll service fills hit records', { concurrency: false }, () => {
   const sab = createCastRayAllSab(8);
   bindCastRayAllSab(sab);

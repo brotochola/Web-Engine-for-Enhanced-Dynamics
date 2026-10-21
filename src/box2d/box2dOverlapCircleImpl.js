@@ -195,7 +195,7 @@
     var results = i32.subarray(RESULTS_I32, RESULTS_I32 + cap);
     try {
       var count = overlapFn(cx, cy, radius, cat, mask, results, cap) | 0;
-      Atomics.store(i32, HDR_COUNT, count);
+      Atomics.store(i32, HDR_COUNT, count < cap ? count : cap);
       Atomics.store(i32, HDR_STATUS, STATUS_DONE);
     } catch (err) {
       Atomics.store(i32, HDR_COUNT, 0);

@@ -9,5 +9,6 @@ export const isQueryAabbBound = R.isQueryAabbBound;
 export const box2dQueryAABB = R.box2dQueryAABB;
 export const box2dQueryAABBAsync = R.box2dQueryAABBAsync;
 export const servicePendingQuery = R.servicePendingQuery;
+export const copyUniqueSlots = R.copyUniqueSlots;
 export const armPendingWake = R.armPendingWake;
 export const BOX2D_QUERY_AABB_DEFAULT_RESULT_CAP = R.DEFAULT_RESULT_CAP;

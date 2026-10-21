@@ -202,7 +202,7 @@
 
   /**
    * Sync QueryAABB (logic workers / GameObject). Blocks with Atomics.wait.
-   * @returns {number} full hit count (may exceed out.length)
+   * @returns {number} entities found, each once (may exceed out.length)
    */
   function box2dQueryAABB(x0, y0, x1, y1, out, filter) {
     assertOut(out);
@@ -236,7 +236,8 @@
   /**
    * Physics: if a query is PENDING, run overlapFn and publish results.
    * overlapFn(x0,y0,x1,y1,categoryBits,maskBits,resultsI32,resultCap) → hit count
-   * (writes up to resultCap slots into resultsI32; may return count > resultCap).
+   * (writes up to resultCap slots into resultsI32; a count above resultCap is
+   * published as resultCap, since only that many slots hold ids).
    * @returns {boolean} true if a query was serviced
    */
   function servicePendingQuery(overlapFn) {
@@ -254,7 +255,7 @@
 
     try {
       var count = overlapFn(x0, y0, x1, y1, cat, mask, results, cap) | 0;
-      Atomics.store(i32, HDR_COUNT, count);
+      Atomics.store(i32, HDR_COUNT, count < cap ? count : cap);
       Atomics.store(i32, HDR_STATUS, STATUS_DONE);
     } catch (err) {
       Atomics.store(i32, HDR_COUNT, 0);
@@ -265,6 +266,45 @@
     }
     Atomics.notify(i32, HDR_STATUS, 1);
     return true;
+  }
+
+  // Physics side of queryAABB and overlapCircle: copy the WASM query slots into
+  // a results view. The WASM reports a body once per overlapping shape, so a
+  // compound body would take several slots with the same id; keep the first.
+  // The WASM fills at most slots.length (its query capacity, counted in shapes)
+  // and drops the rest, so reaching it is warned once per query kind.
+  var seenStamp = new Int32Array(0);
+  var seenGen = 0;
+  var capacityWarned = Object.create(null);
+
+  function copyUniqueSlots(slots, n, results, cap, kind) {
+    if (n >= slots.length) {
+      n = slots.length;
+      if (!capacityWarned[kind] && typeof console !== 'undefined' && console.warn) {
+        capacityWarned[kind] = true;
+        console.warn(
+          '[Box2d.' + kind + '] reached the WASM query capacity (' + n +
+            ' shapes): hits past it are dropped. Query a smaller area.',
+        );
+      }
+    }
+    if (++seenGen === 0x40000000) {
+      seenStamp.fill(0);
+      seenGen = 1;
+    }
+    var w = 0;
+    for (var i = 0; i < n && w < cap; i++) {
+      var s = slots[i] | 0;
+      if (s >= seenStamp.length) {
+        var grown = new Int32Array(Math.max(s + 1, seenStamp.length * 2, 1024));
+        grown.set(seenStamp);
+        seenStamp = grown;
+      }
+      if (seenStamp[s] === seenGen) continue;
+      seenStamp[s] = seenGen;
+      results[w++] = s;
+    }
+    return w;
   }
 
   // Wake the physics thread between frames. A sync query posted after doStep
@@ -300,6 +340,7 @@
     box2dQueryAABB: box2dQueryAABB,
     box2dQueryAABBAsync: box2dQueryAABBAsync,
     servicePendingQuery: servicePendingQuery,
+    copyUniqueSlots: copyUniqueSlots,
     armPendingWake: armPendingWake,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

@@ -1683,13 +1683,7 @@
         categoryBits: categoryBits,
         maskBits: maskBits,
       });
-      var write = n < cap ? n : cap;
-      var slots = world._querySlots;
-      if (write > slots.length) write = slots.length;
-      for (var i = 0; i < write; i++) {
-        results[i] = slots[i] | 0;
-      }
-      return n | 0;
+      return Box2dQueryAabb.copyUniqueSlots(world._querySlots, n, results, cap, 'queryAABB');
     };
     if (typeof Box2dQueryAabb.servicePendingQuery === 'function') {
       Box2dQueryAabb.servicePendingQuery(overlapFn);
@@ -1703,13 +1697,7 @@
         categoryBits: categoryBits,
         maskBits: maskBits,
       });
-      var write = n < cap ? n : cap;
-      var slots = world._querySlots;
-      if (write > slots.length) write = slots.length;
-      for (var i = 0; i < write; i++) {
-        results[i] = slots[i] | 0;
-      }
-      return n | 0;
+      return Box2dQueryAabb.copyUniqueSlots(world._querySlots, n, results, cap, 'overlapCircle');
     };
     if (typeof Box2dOverlapCircle !== 'undefined' && Box2dOverlapCircle.servicePendingOverlapCircle) {
       Box2dOverlapCircle.servicePendingOverlapCircle(overlapFn);
