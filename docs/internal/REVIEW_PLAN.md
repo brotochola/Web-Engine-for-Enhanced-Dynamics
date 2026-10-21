@@ -192,8 +192,8 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [ ] **DOC3 Guide, missing:** camera getters and roll (*`weed.d.ts` Camera members and getter JSDoc done `8222566c`*); raycasted lighting must say occluders come from the light's `Collider.visualRange` neighbors (`LightEmitter.influenceRadius` is the full reach, `fc0fc06e`); `Tween`/`Time` types; WAIT/IDLE/PAIR stats; frameClock SAB; polygon skin; raycasted lighting + compound occluders; audio buses; `ParticleEmitConfig` typings; Ray API gaps.
 - [ ] **DOC4 Guide, contradictions and bad patterns:** one stats table, one worklet table, one camera layout; `getUniform` "zero-alloc"; ENTITY_TEMPLATE sound per tick; per-tick layer lookup; "stable out" objects inside tick; lazy pooled fields; pinch snippet; ALL_CAPS layer names.
 - [ ] **DOC5 Internal:** HYPOTHESIS_LOG rows for E-02, 03, 04b, 05, 07, 08, 10, 13, 16, 17, 21, 26, 27, 29, 32, 37; audit matrix statuses; E-08 docs; pool 4→0; `box2dWorkerCount` in plans/reports; E-17 trail; E-14 premise; E-37 ratio; E-24(a); HL:15 screened.
-- [ ] **DOC6 Process:** one change per commit, title says what code changed (four window commits hid code changes behind unrelated titles).
-- [ ] **DOC7** A `CLAUDE.md` digest of the project rules so a session does not need to read 19,600 lines.
+- [x] **DOC6** — in `CLAUDE.md`'s Commits section (`aa58985a`): one change per commit, the title says what code changed, measurement tools in their own commit. **DOC6 Process:** one change per commit, title says what code changed (four window commits hid code changes behind unrelated titles).
+- [x] **DOC7** — `aa58985a`: `CLAUDE.md` at the root, ~100 lines (engine vs demo, commands, commit and EOL rules, engine code rules learned in this review, the measuring digest, where things are), linking out instead of copying. A `CLAUDE.md` digest of the project rules so a session does not need to read 19,600 lines.
 
 ## Don't re-propose (already measured and rejected)
 
