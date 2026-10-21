@@ -17,9 +17,35 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**00:02** — Phase 4: R10 and R13 done. Next: R11 (demo copies), then R12.
+**00:42** — Phase 4 (repeated code) is done except R8's measure-first lighting copies. Next:
+Phase 5 (GC), starting with G3.
 
 ## Log
+
+### 00:42 — R11, R12, and a planet that had lost its grass (`00c0372d`, `3eab5c52`, `3699a510`)
+
+- **R12, bench helpers** (`3eab5c52`): the seeded random generator was copied six times and the
+  median eleven times. One copy each now, in a module the browser test scenes can load too.
+  There are two medians on purpose: some benches took the upper middle value, some the average of
+  the two middles. Each kept the one it had, so no benchmark number moves. The random sequences
+  are identical, checked.
+- **R11, demo copies** (`00c0372d`): the two terrain demos had copied their whole tuning panel,
+  walls and bench switch; they share one module now. The planet water shader existed twice,
+  byte for byte. The pull toward the planet's core is one function, except in the water loop:
+  through the shared function that loop measured 4 % slower, so it keeps its copy.
+- **N-30, a real demo bug, fixed** (`3699a510`): the walker planet said its radius was 2048 cells,
+  but the grid only fits 1020. So its starting "puddle" of water spawned about 4 km above the
+  ground (still 3.4 km up after 7.5 seconds), and the planet drew all gray: the green grass rim
+  and the brown dirt band never showed. Fixed, with a test; headless screenshots before and
+  after show the gray planet turn into grass, dirt and rock with the puddle on the surface. One
+  part is your call: the planet fills its whole world, so standing on top of it the camera
+  can't show sky.
+- **N-29, checked:** does the game run slower "loop-compiled" (OSR) code in real scenes? In
+  Predator, no. In a light scene there's a hint of it, but it's under 0.1 ms a frame. No action.
+- **N-31, your call:** Predator's team flocking is switched off everywhere but still there. I'd
+  delete it; it's in git if you want it back.
+
+Suite: 1365/1365.
 
 ### 00:02 — R10, R13: the fill row has one table, and a V8 surprise (`a8954e55`, `5fa2f769`)
 
