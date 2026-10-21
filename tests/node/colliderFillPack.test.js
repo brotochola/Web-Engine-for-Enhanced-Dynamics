@@ -13,6 +13,7 @@ import {
   copyMeshFillPoseScratch,
   COLLIDER_FILL_FLOATS,
   MESH_UV_FILL_FLOATS,
+  FILL_ROW,
   resetColliderFillMeshLayerWarn,
   ColliderFillBatch,
 } from '../../src/render/colliderFillBatch.js';
@@ -26,6 +27,7 @@ import {
 import { MeshGeometry, resetMeshGeometryWarns } from '../../src/core/meshGeometry.js';
 import { triangulateSimplePolygon } from '../../src/render/meshTriangulate.js';
 import { Collider } from '../../src/components/collider.js';
+import { SPRITE_TILE_MODE } from '../../src/util/configDefaults.js';
 
 const INV = 0xffff;
 
@@ -908,4 +910,176 @@ test('spawn path resets mesh tile / texture / outset', () => {
   assert.match(src, /visualOutset\[i\]\s*=\s*0/);
   assert.match(src, /paintEpoch/);
   assert.equal(MESH_NO_TEXTURE, 0xffff);
+});
+
+// Fill row layout (review R13). The pack writers index with literals; these
+// tests hold them, both batches' attributes and the WGSL inputs to FILL_ROW.
+const ROW_ATTR = {
+  aV0: 'V0',
+  aV1: 'V1',
+  aV2: 'V2',
+  aInstXY: 'POS',
+  aInstRotCS: 'ROT',
+  aInstTintBits: 'TINT_BITS',
+  aInstDepth: 'DEPTH',
+  aInstTexId: 'TEX_ID',
+  aInstTileInv: 'TILE_INV',
+  aInstTileOff: 'TILE_OFF',
+  aInstBody: 'BODY',
+  aUV0: 'UV0',
+  aUV1: 'UV1',
+  aUV2: 'UV2',
+};
+const FORMAT_FLOATS = { float32: 1, float32x2: 2 };
+
+function wgslFillBatch(Batch) {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const shader = (name) => fs.readFileSync(path.join(here, '../../src/shaders', name), 'utf8');
+  return new Batch({
+    capacity: 2,
+    useWebGpu: true,
+    shaders: { colliderFill: shader('colliderFill.wgsl'), meshUvFill: shader('meshUvFill.wgsl') },
+  });
+}
+
+// Every field gets its own value, so a writer that swaps two slots fails.
+function paintRow(views, i) {
+  const n = views.entityCount;
+  views.meshTextureId = new Uint16Array(n).fill(MESH_NO_TEXTURE);
+  views.meshTileMode = new Uint8Array(n);
+  views.meshRepeatX = new Float32Array(n);
+  views.meshRepeatY = new Float32Array(n);
+  views.meshTileOffU = new Uint16Array(n);
+  views.meshTileOffV = new Uint16Array(n);
+  views.meshTextureId[i] = 7;
+  views.meshTileMode[i] = SPRITE_TILE_MODE.WORLD;
+  views.meshRepeatX[i] = 4;
+  views.meshRepeatY[i] = 2;
+  views.meshTileOffU[i] = 13107;
+  views.meshTileOffV[i] = 26214;
+  views.meshTint[i] = 0x123456;
+  views.meshAlpha[i] = 0.5;
+  views.x[i] = 30;
+  views.y[i] = 40;
+  views.rotC[i] = 0.6;
+  views.rotS[i] = 0.8;
+}
+
+const PAINTED = {
+  POS: [30, 40],
+  ROT: [0.6, 0.8],
+  TINT_BITS: 0x80123456,
+  TEX_ID: 7,
+  TILE_INV: [0.25, 0.5],
+  TILE_OFF: [13107 / 65535, 26214 / 65535],
+  BODY: 1,
+};
+
+function expectRow(out, row, base, want) {
+  const u32 = new Uint32Array(out.buffer, out.byteOffset, out.length);
+  for (const [field, value] of Object.entries(want)) {
+    const at = base + FILL_ROW[field];
+    if (field === 'TINT_BITS') {
+      assert.equal(u32[at], value, `row ${row} ${field}`);
+    } else if (Array.isArray(value)) {
+      assert.equal(out[at], Math.fround(value[0]), `row ${row} ${field}[0]`);
+      assert.equal(out[at + 1], Math.fround(value[1]), `row ${row} ${field}[1]`);
+    } else {
+      assert.equal(out[at], Math.fround(value), `row ${row} ${field}`);
+    }
+  }
+}
+
+test('fill row: both batches read FILL_ROW, field by field, as their WGSL declares', () => {
+  assert.equal(COLLIDER_FILL_FLOATS, FILL_ROW.BODY + 1);
+  assert.equal(MESH_UV_FILL_FLOATS, FILL_ROW.UV2 + 2);
+  for (const [Batch, floats] of [[ColliderFillBatch, COLLIDER_FILL_FLOATS], [MeshUvFillBatch, MESH_UV_FILL_FLOATS]]) {
+    const batch = wgslFillBatch(Batch);
+    const attrs = batch.geometry.attributes;
+    const wgsl = batch.shader.gpuProgram.attributeData;
+    assert.deepEqual(Object.keys(attrs).sort(), Object.keys(wgsl).sort(), Batch.name);
+    const fields = Object.keys(attrs)
+      .filter((name) => name !== 'aTri')
+      .sort((p, q) => attrs[p].offset - attrs[q].offset);
+    let end = 0;
+    for (const name of fields) {
+      const a = attrs[name];
+      assert.equal(a.format, wgsl[name].format, `${Batch.name} ${name}`);
+      assert.equal(a.instance, true, `${Batch.name} ${name}`);
+      assert.equal(a.stride, floats * 4, `${Batch.name} ${name}`);
+      assert.equal(a.offset, FILL_ROW[ROW_ATTR[name]] * 4, `${Batch.name} ${name}`);
+      assert.equal(a.offset, end * 4, `${Batch.name} ${name} leaves a gap or overlaps`);
+      end += FORMAT_FLOATS[a.format];
+    }
+    assert.equal(end, floats, Batch.name);
+  }
+});
+
+test('fill row: the full pack and the pose-only refill write FILL_ROW', () => {
+  const views = makeViews({ entities: 2, fixtures: 1 });
+  views.meshActive[1] = 1;
+  views.meshLayerMask[1] = 1;
+  addTri(views, 1, 0, 1, 2, 3, 4, 5, 6);
+  paintRow(views, 1);
+  const cap = 4;
+  const out = new Float32Array(cap * COLLIDER_FILL_FLOATS);
+  views.instanceEntity = new Uint32Array(cap);
+  assert.equal(packColliderFill(out, cap, 0, views), 1);
+  const row = { V0: [1, 2], V1: [3, 4], V2: [5, 6], ...PAINTED, DEPTH: 1 - 1 / (cap + 1) };
+  expectRow(out, 0, 0, row);
+
+  out.fill(-9, FILL_ROW.POS, FILL_ROW.BODY);
+  assert.equal(packColliderFillPoseOnly(out, cap, 1, views.instanceEntity, views), 1);
+  expectRow(out, 0, 0, row);
+});
+
+test('fill row: the UV pack and both corner rewrites write FILL_ROW', () => {
+  const views = makeViews({ entities: 2, fixtures: 1 });
+  views.meshActive[1] = 1;
+  views.meshLayerMask[1] = 1;
+  attachExplicit(views, 1, [1, 2, 3, 4, 5, 6, 7, 8], [0, 1, 2, 0, 2, 3], [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+  paintRow(views, 1);
+  const cap = 4;
+  const out = new Float32Array(cap * MESH_UV_FILL_FLOATS);
+  views.instanceEntity = new Uint32Array(cap);
+  assert.equal(packMeshUvFill(out, cap, 0, views), 2);
+  const base1 = MESH_UV_FILL_FLOATS;
+  expectRow(out, 0, 0, {
+    V0: [1, 2], V1: [3, 4], V2: [5, 6], UV0: [0.1, 0.2], UV1: [0.3, 0.4], UV2: [0.5, 0.6],
+    ...PAINTED, DEPTH: 1 - 1 / (cap + 1),
+  });
+  expectRow(out, 1, base1, {
+    V0: [1, 2], V1: [5, 6], V2: [7, 8], UV0: [0.1, 0.2], UV1: [0.5, 0.6], UV2: [0.7, 0.8],
+    ...PAINTED, DEPTH: 1 - 2 / (cap + 1),
+  });
+
+  // Indexed rewrite first, then the fan rewrite once the indices are gone.
+  const at = views.meshVertOffset[1];
+  for (let v = 0; v < 4; v++) {
+    views.meshVertexX[at + v] = 10 + v;
+    views.meshVertexY[at + v] = 20 + v;
+    views.meshUvU[at + v] = 0.05 + v / 10;
+    views.meshUvV[at + v] = 0.55 + v / 10;
+  }
+  const last = new Uint32Array(2);
+  views.meshVertGen = new Uint32Array([0, 1]);
+  assert.equal(rewriteExplicitMeshCorners(out, 2, views.instanceEntity, views, MESH_UV_FILL_FLOATS, last), 1);
+  expectRow(out, 0, 0, {
+    V0: [10, 20], V1: [11, 21], V2: [12, 22], UV0: [0.05, 0.55], UV1: [0.15, 0.65], UV2: [0.25, 0.75], ...PAINTED,
+  });
+  expectRow(out, 1, base1, {
+    V0: [10, 20], V1: [12, 22], V2: [13, 23], UV0: [0.05, 0.55], UV1: [0.25, 0.75], UV2: [0.35, 0.85], ...PAINTED,
+  });
+
+  views.meshIndexOffset[1] = -1;
+  views.meshVertexX[at + 2] = 99;
+  views.meshUvV[at + 3] = 0.95;
+  views.meshVertGen[1] = 2;
+  assert.equal(rewriteExplicitMeshCorners(out, 2, views.instanceEntity, views, MESH_UV_FILL_FLOATS, last), 1);
+  expectRow(out, 0, 0, {
+    V0: [10, 20], V1: [11, 21], V2: [99, 22], UV0: [0.05, 0.55], UV1: [0.15, 0.65], UV2: [0.25, 0.75], ...PAINTED,
+  });
+  expectRow(out, 1, base1, {
+    V0: [10, 20], V1: [99, 22], V2: [13, 23], UV0: [0.05, 0.55], UV1: [0.25, 0.75], UV2: [0.35, 0.95], ...PAINTED,
+  });
 });

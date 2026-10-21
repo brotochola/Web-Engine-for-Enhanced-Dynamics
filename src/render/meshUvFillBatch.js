@@ -19,7 +19,7 @@ import {
 import { colliderFillGpuProgram } from './webgpu/colliderFillWgsl.js';
 import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
-import { MESH_UV_FILL_FLOATS, MESH_UV_FILL_STRIDE, sampleMeshFillPose } from './colliderFillBatch.js';
+import { FILL_ROW, MESH_UV_FILL_FLOATS, MESH_UV_FILL_STRIDE, sampleMeshFillPose } from './colliderFillBatch.js';
 
 export class MeshUvFillBatch {
   constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null }) {
@@ -39,20 +39,20 @@ export class MeshUvFillBatch {
     this.geometry = new Geometry({
       attributes: {
         aTri: { buffer: tri, format: 'float32x2' },
-        aV0: { buffer: buf, format: 'float32x2', stride, offset: 0, instance: true },
-        aV1: { buffer: buf, format: 'float32x2', stride, offset: 8, instance: true },
-        aV2: { buffer: buf, format: 'float32x2', stride, offset: 16, instance: true },
-        aInstXY: { buffer: buf, format: 'float32x2', stride, offset: 24, instance: true },
-        aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: 32, instance: true },
-        aInstTintBits: { buffer: buf, format: 'float32', stride, offset: 40, instance: true },
-        aInstDepth: { buffer: buf, format: 'float32', stride, offset: 44, instance: true },
-        aInstTexId: { buffer: buf, format: 'float32', stride, offset: 48, instance: true },
-        aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
-        aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 60, instance: true },
-        aInstBody: { buffer: buf, format: 'float32', stride, offset: 68, instance: true },
-        aUV0: { buffer: buf, format: 'float32x2', stride, offset: 72, instance: true },
-        aUV1: { buffer: buf, format: 'float32x2', stride, offset: 80, instance: true },
-        aUV2: { buffer: buf, format: 'float32x2', stride, offset: 88, instance: true },
+        aV0: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.V0 * 4, instance: true },
+        aV1: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.V1 * 4, instance: true },
+        aV2: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.V2 * 4, instance: true },
+        aInstXY: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.POS * 4, instance: true },
+        aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.ROT * 4, instance: true },
+        aInstTintBits: { buffer: buf, format: 'float32', stride, offset: FILL_ROW.TINT_BITS * 4, instance: true },
+        aInstDepth: { buffer: buf, format: 'float32', stride, offset: FILL_ROW.DEPTH * 4, instance: true },
+        aInstTexId: { buffer: buf, format: 'float32', stride, offset: FILL_ROW.TEX_ID * 4, instance: true },
+        aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.TILE_INV * 4, instance: true },
+        aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.TILE_OFF * 4, instance: true },
+        aInstBody: { buffer: buf, format: 'float32', stride, offset: FILL_ROW.BODY * 4, instance: true },
+        aUV0: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.UV0 * 4, instance: true },
+        aUV1: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.UV1 * 4, instance: true },
+        aUV2: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.UV2 * 4, instance: true },
       },
     });
     this.geometry.instanceCount = 0;

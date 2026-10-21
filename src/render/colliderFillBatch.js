@@ -32,10 +32,48 @@ import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
 import { MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 
-export const COLLIDER_FILL_FLOATS = 18;
+// One fill row, by float. Both batches' vertex attributes (here and in
+// meshUvFillBatch.js) take their offsets from these. The pack writers below
+// index with literals on purpose: in an OSR compile V8 reads a module const
+// from the context with a TDZ check each time, which cost the pose-only
+// refill 7 % (review R13). colliderFillPack.test.js ties the literals
+// to this table.
+const R_V0 = 0; // local corner 0: x, y
+const R_V1 = 2;
+const R_V2 = 4;
+const R_POS = 6; // world x, y
+const R_ROT = 8; // cos, sin
+const R_TINT_BITS = 10; // u32: alpha << 24 | rgb
+const R_DEPTH = 11;
+const R_TEX_ID = 12;
+const R_TILE_INV = 13; // tix, tiy
+const R_TILE_OFF = 15; // tou, tov
+const R_BODY = 17;
+const R_UV0 = 18; // MESH_UV_FILL rows only: u, v per corner
+const R_UV1 = 20;
+const R_UV2 = 22;
+
+export const FILL_ROW = Object.freeze({
+  V0: R_V0,
+  V1: R_V1,
+  V2: R_V2,
+  POS: R_POS,
+  ROT: R_ROT,
+  TINT_BITS: R_TINT_BITS,
+  DEPTH: R_DEPTH,
+  TEX_ID: R_TEX_ID,
+  TILE_INV: R_TILE_INV,
+  TILE_OFF: R_TILE_OFF,
+  BODY: R_BODY,
+  UV0: R_UV0,
+  UV1: R_UV1,
+  UV2: R_UV2,
+});
+
+export const COLLIDER_FILL_FLOATS = R_BODY + 1;
 export const COLLIDER_FILL_STRIDE = COLLIDER_FILL_FLOATS * 4;
 /** Explicit mesh with per-vertex UVs. 18 collider floats plus uv0, uv1, uv2. */
-export const MESH_UV_FILL_FLOATS = 24;
+export const MESH_UV_FILL_FLOATS = R_UV2 + 2;
 export const MESH_UV_FILL_STRIDE = MESH_UV_FILL_FLOATS * 4;
 /** lastRevision < 0 means no packed frame yet (always pack). */
 export const COLLIDER_FILL_PACK_FIRST_FRAME = -1;
@@ -910,17 +948,17 @@ export class ColliderFillBatch {
     this.geometry = new Geometry({
       attributes: {
         aTri: { buffer: tri, format: 'float32x2' },
-        aV0: { buffer: buf, format: 'float32x2', stride, offset: 0, instance: true },
-        aV1: { buffer: buf, format: 'float32x2', stride, offset: 8, instance: true },
-        aV2: { buffer: buf, format: 'float32x2', stride, offset: 16, instance: true },
-        aInstXY: { buffer: buf, format: 'float32x2', stride, offset: 24, instance: true },
-        aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: 32, instance: true },
-        aInstTintBits: { buffer: buf, format: 'float32', stride, offset: 40, instance: true },
-        aInstDepth: { buffer: buf, format: 'float32', stride, offset: 44, instance: true },
-        aInstTexId: { buffer: buf, format: 'float32', stride, offset: 48, instance: true },
-        aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 52, instance: true },
-        aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 60, instance: true },
-        aInstBody: { buffer: buf, format: 'float32', stride, offset: 68, instance: true },
+        aV0: { buffer: buf, format: 'float32x2', stride, offset: R_V0 * 4, instance: true },
+        aV1: { buffer: buf, format: 'float32x2', stride, offset: R_V1 * 4, instance: true },
+        aV2: { buffer: buf, format: 'float32x2', stride, offset: R_V2 * 4, instance: true },
+        aInstXY: { buffer: buf, format: 'float32x2', stride, offset: R_POS * 4, instance: true },
+        aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: R_ROT * 4, instance: true },
+        aInstTintBits: { buffer: buf, format: 'float32', stride, offset: R_TINT_BITS * 4, instance: true },
+        aInstDepth: { buffer: buf, format: 'float32', stride, offset: R_DEPTH * 4, instance: true },
+        aInstTexId: { buffer: buf, format: 'float32', stride, offset: R_TEX_ID * 4, instance: true },
+        aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: R_TILE_INV * 4, instance: true },
+        aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: R_TILE_OFF * 4, instance: true },
+        aInstBody: { buffer: buf, format: 'float32', stride, offset: R_BODY * 4, instance: true },
       },
     });
     this.geometry.instanceCount = 0;
