@@ -625,6 +625,26 @@ export class GameObject {
     }
   }
 
+  /**
+   * Face along a unit direction (cos, sin), with no trig: the rotation setter
+   * without its cos/sin. For a body, `rotation` (the angle) follows after the
+   * next physics step, as physics writes it; without a body it is set here.
+   * @param {number} c cos of the angle (unit vector x)
+   * @param {number} s sin of the angle (unit vector y)
+   */
+  setRotationCS(c, s) {
+    const i = this.index;
+    if (Transform.rotC) {
+      Transform.rotC[i] = c;
+      Transform.rotS[i] = s;
+    }
+    if (isCommandRingBound() && this._hasComponents.RigidBody) {
+      enqueueSetRotCS(i, c, s);
+    } else if (Transform.rotation) {
+      Transform.rotation[i] = Math.atan2(s, c);
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // RIGIDBODY PROPERTIES
   // ─────────────────────────────────────────────────────────────────────────────

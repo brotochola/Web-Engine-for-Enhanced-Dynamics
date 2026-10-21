@@ -1050,6 +1050,8 @@ export declare class GameObject {
   set y(value: number);
   get rotation(): number;
   set rotation(value: number);
+  /** Face along a unit direction (cos, sin) with no trig; for a body, `rotation` follows after the next physics step. */
+  setRotationCS(c: number, s: number): void;
   get vx(): number;
   set vx(value: number);
   get vy(): number;
