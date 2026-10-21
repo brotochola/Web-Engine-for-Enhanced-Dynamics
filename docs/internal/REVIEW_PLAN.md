@@ -169,7 +169,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 ## Phase 7 — Speed (each is a hypothesis in EXECUTION_PLAN.md)
 
 - [x] **E-41** — kept `634baaab`: three edges per bin against the placeholder circle, bit-identical. Compound scene **pre-render −37.2 % (4/4)**. Polar: skip the merge for compound-only lights.
-- [ ] **E-42** Polar: 512-entry cos/sin table.
+- [x] **E-42** — kept `c8db38ea`: bit-identical table. Compound scene **pre-render −42.3 % on top of E-41** (6.47 → 2.32 ms overall). Polar: 512-entry cos/sin table.
 - [ ] **E-43** Polar: two-pointer merge into a separate output buffer.
 - [ ] **E-44** Polar: lazy bin clear (every raycasted light pays a 512-float fill).
 - [ ] **E-45** Re-measure the re-landed X2 (pack fast paths) and H11 (emit shadow hoist).

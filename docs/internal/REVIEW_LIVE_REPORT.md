@@ -17,10 +17,24 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**03:11** — E-41 is in: pre-render −37 % in the compound lighting scene. Next: E-42 (a
-cos/sin table for the same lighting loop), then E-43/E-44.
+**03:18** — E-42 is in. Compound lighting pre-render is now **6.47 → 2.32 ms (−64 %)** across
+E-41 and E-42. Next: the rest of Phase 7 (E-45 re-measures, E-46 audio, E-48 tween split,
+E-50 small items), then E-43/E-44/E-60 with scenes that can judge them.
 
 ## Log
+
+### 03:18 — Another −42 % on compound lighting (`c8db38ea`)
+
+- **What it was.** The same lighting code computed `cos` and `sin` of fixed angles over and over:
+  once per direction for every edge of every shadow-caster, and twice more per output point.
+  Those angles never change.
+- **The change.** A table of the 1025 angles the loops actually use, built with the same formula,
+  so every lookup returns exactly the number the old call returned. A test pins 12 lighting
+  outlines to the values the code produced before E-41, and they still match to the last bit.
+- **Numbers.** Compound lighting scene: **pre-render 4.03 → 2.32 ms (−42 %, all 4 pairs)**. With
+  E-41, that worker went from 6.47 to 2.32 ms. The kernel pieces are 1.75–3.5× faster.
+- **Found on the way (E-60).** Pixi draws lit circles with the same kind of repeated cos/sin.
+  Logged, to be measured on its own.
 
 ### 03:11 — Compound lighting: pre-render 37 % cheaper (`634baaab`, kernel case `87528d3c`)
 

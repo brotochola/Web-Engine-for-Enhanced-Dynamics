@@ -929,7 +929,16 @@ merge when the sweep is the full circle makes pre-render ≥3 % cheaper there.
 **Primary:** `preRender_STEP_MS`. Kernel first: add a full-circle case to
 `angularSweepMicrobench.mjs` (today `cases.polar` passes n=0 and cannot see this).
 
-### E-42 The 512 bin directions call cos/sin per segment per bin — **not-started**
+### E-42 The 512 bin directions call cos/sin per segment per bin — **KEPT** (`c8db38ea`)
+**Result (2026-10-21).** One table of 1025 entries covers both kinds of angle: index m is
+`-π + m·½·(2π/512)`, with a bin centre at m = 2b+1 and a group centre at m = b0+b1. Each is built
+with the loops' own expression, so a lookup is the same double as the `Math.cos/sin` it replaces.
+Kernel, 9 rounds against `f404b2d2`: raster (`polar`) **+252.2 %**, full-circle merge +74.7 % /
++107.9 % (512 / 128), general merge +5.6 % (79/81), sweep tie; checksums equal. **Compound scene,
+4 pairs: pre-render 4.03 → 2.32 ms (−42.3 %, 4/4).** With E-41 the scene went 6.47 → 2.32 ms.
+A golden test pins 12 merged polygons to hashes of the code before E-41, which they still match.
+That scene's pre-render is now under the 3 ms floor, so E-43/E-44 need another row.
+
 `stampPolarBin` and `sweepDistAt` recompute `Math.cos/sin` of a constant bin angle; the
 clip output computes them a third time. A `Float64Array(512)` table built with the same
 expression is bit-identical (same pattern as `_fullCircleC/S`; not H-11b). **Primary:**
@@ -1176,6 +1185,14 @@ with every particle tweened (alpha + scale), ids LERP, QUAD_OUT and mixed. Repor
 GCs per 1000 steps, and which tier was timed (N-28). Then `tweenPoolMicrobench`. **Primary:**
 particle `STEP_MS` on ParticleIntegrateStressScene, and logic on TweenStressScene. `Tween._apply`
 is a separate step: split it by kind only if the ease front alone does not close the gap.
+
+### E-60 Pixi's circle self-lit fan calls cos/sin of fixed angles per circle per light — **not-started**
+Found after E-42 (2026-10-21). `_renderOccluderSelfLit` tessellates every lit circle occluder
+with `a = (si / segs) * 2π; cos(a), sin(a)` for each of `_selfLitCircleSegs` vertices, for
+every light that sees it. The angles never change, so a table built with the same expression
+returns the same doubles, as in E-42. **Primary:** renderer `STEP_MS` on a vis-poly scene with
+many lit circle occluders (`visPolyStressScene` if its occluders are circles; check first),
+baseline ≥ 3 ms. Kernel first, with a checksum of the fan positions.
 
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
