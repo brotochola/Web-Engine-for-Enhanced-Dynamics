@@ -103,7 +103,7 @@ this.setLayer('scenery');
 
 `setMesh(positions, indices, uvs)` — `indices` omitted fans from vertex 0 (convex). `uvs` omitted keeps `setTileWorld` / `setTileLocal`. `setVertices` rewrites positions when the count matches. `clearMesh` falls back to the collider fill. `visualOutset` does not move an explicit mesh.
 
-`replacePolygons` / `replacePolygonsFlat` write the [`ColliderFixture`](../../src/core/colliderFixture.js) pool (intrusive list per entity). Host `clear_shapes` + `body_add_shape_polygon` on `GEOMETRY` dirty. Going back to one shape (`makePolygon`, box, circle; or leaving a chain) clears the body first: `body_set_shape_*` replaces only one Box2D shape, so the other fixtures would stay as invisible colliders. A body that already has one shape is resized in place (its contacts carry over). Mass is the sum of fixture areas. Contacts still key by entity. `Ray` / spatial / debug walk every fixture. Light occluders still use the **primary** Collider shape only (feature gap: they do not walk fixtures).
+`replacePolygons` / `replacePolygonsFlat` write the [`ColliderFixture`](../../src/core/colliderFixture.js) pool (intrusive list per entity). Host `clear_shapes` + `body_add_shape_polygon` on `GEOMETRY` dirty. Going back to one shape (`makePolygon`, box, circle; or leaving a chain) clears the body first: `body_set_shape_*` replaces only one Box2D shape, so the other fixtures would stay as invisible colliders. A body that already has one shape is resized in place (its contacts carry over). Mass is the sum of fixture areas. Contacts still key by entity. `Ray` / spatial / debug walk every fixture. Raycasted light occluders walk the fixtures too: a compound body blocks light through its outline (see "Raycasted lighting with compound occluders" in bible_of_weed_js.md).
 
 A SharedResource (one writer per field) pins its owner with `forceProcessOnLogicWorker: 1` so only `logic1` runs that entity’s `tick` / callbacks / `onSpawned`.
 
@@ -210,6 +210,14 @@ Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.tes
 Numbers match WASM C `b2_game_shape_*` (Box2D language).
 
 **Polygon skin.** On a Polygon (primary or compound fixtures), `Collider.radius` is the Box2D polygon radius: a rounded border around each hull, `0` = sharp. Set it **after** the shape is a polygon (`makePolygon` / `replacePolygons*`, then `collider.radius = 1`); a radius left from a circle is cleared when the shape becomes a polygon, and a polygon keeps its skin across re-shapes. Box2D weighs a skinned polygon by its vertices pushed out by `1.412·r`, so the host divides `RigidBody.mass` by that area (`polygonMassArea` in `weedjsPost.js`) and the body still weighs `RigidBody.mass`. The skin is physics-only: Weed's own rays, spatial queries and `pointInCollider` test the sharp hull. Small skins (about 1 px) seal seams between neighbouring triangles against fast particles.
+
+The default is `0` (sharp hull). There is no scene or engine config key for it: the only control is `collider.radius`, per entity, in the same units as the other collider sizes. Fixtures of a compound polygon all use the entity's one radius. Negative values count as `0`. The Box2D body is built with this radius whenever its polygon shape is created or replaced.
+
+```javascript
+// in onSpawned(): make it a polygon first, then add the skin
+Collider.makePolygon(this.index, [0, 0, 20, 0, 20, 20, 0, 20]);
+this.collider.radius = 1;
+```
 
 Inertia (synced from collider geometry in `RigidBody.syncMassFromCollider`):
 

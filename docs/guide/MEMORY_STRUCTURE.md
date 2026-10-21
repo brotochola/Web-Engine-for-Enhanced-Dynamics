@@ -533,6 +533,44 @@ Every worker exposes **`STEP_MS`** (wall ms for that frame’s work) and **`FPS`
 
 ---
 
+### `frameClock` -- Frame-Phase Timing
+
+`IDLE_MS` says how long a worker waited, not whether the workers ran on the same vsync or took turns. `frameClock` is a separate SAB for that: absolute start/end times of each worker's step. Absolute milliseconds (`performance.timeOrigin + performance.now()`) do not fit the Float32 stats buffers, so they are not a stats slot. `performance.now()` alone is not comparable across workers; the absolute value is. Layout (little-endian) is defined in `src/util/frameClock.js`.
+
+| Constant       | Value | Meaning                                                   |
+| -------------- | ----- | --------------------------------------------------------- |
+| `HEADER_BYTES` | 32    | Header size                                               |
+| `SLOT_BYTES`   | 32    | One slot per worker                                       |
+| `SLOT_COUNT`   | 21    | 5 fixed + `MAX_LOGIC` (8) + `MAX_SPATIAL` (8)               |
+| total          | 704   | `FRAME_CLOCK_BYTES` = 32 + 21 x 32                        |
+
+**Header (32 bytes)**
+
+| Offset | Type  | Field    | Meaning                                                                        |
+| ------ | ----- | -------- | ------------------------------------------------------------------------------ |
+| 0      | f64   | `frameT0` | Absolute ms of the main thread's last animation-frame publish                  |
+| 16     | i32   | `seq`     | Seqlock: even = `frameT0` and `gen` are stable, odd = main is writing          |
+| 20     | i32   | `gen`     | Increments once per main-thread animation frame, from 1                        |
+
+**Slot (32 bytes, at `HEADER_BYTES + slot * SLOT_BYTES`)**
+
+| Offset | Type | Field      | Meaning                                                                    |
+| ------ | ---- | ---------- | -------------------------------------------------------------------------- |
+| 0      | f64  | `startAbs` | Absolute ms the step started                                               |
+| 8      | f64  | `endAbs`   | Absolute ms the step ended                                                 |
+| 16     | i32  | `gen`      | Main-thread `gen` the worker observed when it stamped                      |
+| 20     | i32  | `seq`      | Per-slot seqlock: even = the fields above are a finished step              |
+
+`frameClockSlot(kind, index?)` gives the slot: `main` 0, `physics` 1, `renderer` 2, `particle` 3, `preRender` 4, `logic` i = 5 + i, `spatial` i = 13 + i. It returns `-1` for an unknown kind or an index of 8 or more (such a worker is not stamped).
+
+| Writer                                                                                                                      | Reader                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Main thread: `publishFrame` once per animation frame (header), `stampStep` for slot 0. Each worker: `stampStep` on its own slot after its step (`AbstractWorker`; the physics host has its own copy of `stampStep`) | Main thread: `readPhaseSample` at the start of each animation frame, before it publishes the new frame |
+
+One writer per slot, so slots need no cross-writer lock. Readers use `readFrame` / `readSlot`, which retry a few times on an odd `seq` and return `null` for a slot that never settles. `stampStep` ignores a call with a bad slot, a non-positive start, or an end before the start. `readPhaseSample` returns `{ mainGen, mainT0, slots }` with one `{ name, gen, start, end }` row per slot that has stamped. The main thread keeps up to 600 samples in `scene._phaseLog` when that array exists; `tests/bench/runFramePhase.mjs` is the consumer. Nothing in a normal game reads it.
+
+---
+
 ## 12. Query System Buffers
 
 | Buffer                | Size | Layout |
