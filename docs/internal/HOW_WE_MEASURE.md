@@ -150,7 +150,11 @@ The worker that receives the work may get slower. Scoring that rise as a loss fo
 
 A refactor that merges duplicated code is a hygiene change, but inside a per-point or per-entity loop it can change what V8 generates. Review R8 (2026-10-20, the splat packers, 4096 points): moving the per-pass setup of three packers into one shared helper cost the loops 10 to 30 percent; a loop-invariant `if (turned)` inside one loop cost 21.6 percent even with the other branch untouched (the extra values stay live and spill). Dispatching the rare case to its own copied function kept the common path at +0.7 percent.
 
-So before merging copies inside a hot loop, time HEAD against the tree in one process (load both trees' modules, alternate, compare medians; identical code reads within 1 percent) or run `kernelAb.mjs`. When the merge costs more than the copies are worth, keep the copies and add a test that ties them together.
+So before merging copies inside a hot loop, time HEAD against the tree in one process (load both trees' modules, alternate, compare medians; identical code reads within 1 percent) or run `kernelAb.mjs`. When the merge costs more than the copies are worth, keep the copies and add a test that ties them together. Two more from the fill pack (R10, R13): writing `writeUvTri`'s 18 shared floats through `writeFillTri` cost the UV pack 5.9 percent, and naming the row offsets with module `const`s cost the pose-only refill 7 percent.
+
+### Which tier the kernel timed
+
+A kernel that calls a function a few times with a long loop inside can spend its whole timing in **OSR** code (the loop was compiled while running). Run the timed function once under `node --trace-opt`: if its only TurboFan line says `OSR`, that is the code being timed. OSR code is slower (`packColliderFillPoseOnly`: +46 percent with `--no-use-osr`) and folds less. It does not fold module-level `const`s: each read stays a context load with a TDZ check. So a change that only names constants measured −7 percent in OSR code and a tie in a normal compile. Say which tier a kernel result came from, and when the code it stands for runs per frame, warm it through short calls so a normal compile exists before timing (N-28).
 
 ## More than one worker of the same kind
 

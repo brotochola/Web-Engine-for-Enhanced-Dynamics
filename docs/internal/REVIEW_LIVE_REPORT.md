@@ -17,9 +17,32 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**23:41** — Phase 4: R9 done. Next: R10.
+**00:02** — Phase 4: R10 and R13 done. Next: R11 (demo copies), then R12.
 
 ## Log
+
+### 00:02 — R10, R13: the fill row has one table, and a V8 surprise (`a8954e55`, `5fa2f769`)
+
+- **R10** (`a8954e55`): the 12-field audio metrics object was written out three times; it has one
+  maker now. The renderer had its own copy of a layer's texture-slot lookup; it calls the layer's.
+- **R13** (`5fa2f769`): a fill row's 24 floats were laid out by hand in the pack code, in the
+  renderer's attribute table and again in the UV batch. A named table now drives both attribute
+  tables and the row sizes.
+- **The surprise:** using the names inside the pack loops made the pose-only refill 7 % slower,
+  every round. The optimized code was 20 % bigger. The reason: this benchmark runs that loop in
+  code V8 compiled *while the loop was running* (OSR). In that code each named constant is a
+  memory load plus a check, every time. With that mode off, both versions compile to the same
+  code and tie. So the loops keep plain numbers, and a new test ties every writer, both
+  attribute tables and the shader's inputs to the table. I broke one slot in each of 7 places
+  and every break failed the test.
+- **Bigger finding, logged as N-28/N-29:** in that OSR mode the pose-only refill runs 46 % slower
+  than V8's normal compile, even unchanged. So some kernel benchmarks may time a slower mode
+  than the game runs. N-29 checks whether any worker loop actually runs that way in a real
+  scene; if one does, that is a speed item.
+- **Kept as a copy, measured:** merging the UV triangle writer into the plain one cost the UV pack
+  5.9 % (3 of 225 rounds won). The new test guards the copy instead.
+
+Suite: 1362/1362.
 
 ### 23:41 — R9: tween saves and tween writes (`7db97535`, `7dee0cd9`)
 
