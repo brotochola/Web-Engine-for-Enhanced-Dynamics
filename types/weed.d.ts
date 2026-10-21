@@ -1084,6 +1084,8 @@ export declare class GameObject {
   getJoint(i: number): number;
   getJoints(): number[];
   markDirty(): void;
+  /** Scale the sprite to width × height world px; without height it keeps the aspect. */
+  setDisplaySize(width: number, height?: number): this;
   /** Push for this tick (mass·px/s²); every tick while it should act. See PHYSICS.md "Moving bodies". */
   applyForce(fx: number, fy: number, atX?: number, atY?: number): this;
   /** Turn for this tick; every tick while it should act. */
@@ -2574,6 +2576,8 @@ export declare class SpriteSheetRegistry {
     frameHeight: Uint16Array;
     totalFrames: number;
   } | null;
+  /** First-frame size in px, cached by number (no allocation on a repeat call). */
+  static frameSizeOf(spritesheetId: number, animIndex: number): { w: number; h: number } | null;
   static getFrameDimensionsById(
     spritesheetId: number,
     animIndex: number
@@ -2896,6 +2900,12 @@ export declare class Collider extends Component {
   ): boolean;
   clearFixtures(): void;
   get fixtureCount(): number;
+  /**
+   * Size to the sprite as drawn (frame × scale): a box gets width/height, a circle
+   * half the smaller side; the offset follows the anchor and a flip. Polygons and
+   * chains are left alone. false when there is no sprite to fit.
+   */
+  fitToSprite(factor?: number): boolean;
 }
 
 /**

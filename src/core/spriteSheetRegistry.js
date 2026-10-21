@@ -465,6 +465,30 @@ class SpriteSheetRegistry {
    * @param {number} animIndex - Animation index (from SpriteRenderer.animationState)
    * @returns {{w: number, h: number} | null} Frame dimensions or null if not found
    */
+  /** (spritesheetId, animIndex) → { w, h }; see frameSizeOf. */
+  static _frameSizeCache = new Map();
+
+  /**
+   * First-frame size in px of an animation (or static sprite), the size the
+   * renderer scales: drawn width = w × scaleX. Cached by a numeric key, so a
+   * repeat call allocates nothing (getFrameDimensionsById builds a string
+   * for proxy sheets). null when unknown; an unknown size is not cached.
+   * @param {number} spritesheetId
+   * @param {number} animIndex
+   * @returns {{w: number, h: number} | null}
+   */
+  static frameSizeOf(spritesheetId, animIndex) {
+    if (!(spritesheetId > 0)) return null;
+    const key = spritesheetId * 65536 + (animIndex | 0);
+    let dims = this._frameSizeCache.get(key);
+    if (dims === undefined) {
+      dims = this.getFrameDimensionsById(spritesheetId, animIndex);
+      if (!dims) return null;
+      this._frameSizeCache.set(key, dims);
+    }
+    return dims;
+  }
+
   static getFrameDimensionsById(spritesheetId, animIndex) {
     const sheetName = this.getSpritesheetName(spritesheetId);
     if (!sheetName) return null;
@@ -534,6 +558,7 @@ class SpriteSheetRegistry {
   static deserialize(serialized) {
     this.spritesheets.clear();
     this.frameDimensions.clear();
+    this._frameSizeCache.clear();
 
     // Restore spritesheet ID mappings
     if (serialized.spritesheetNames) {
@@ -571,6 +596,7 @@ class SpriteSheetRegistry {
   static clearForSceneUnload() {
     this.spritesheets.clear();
     this.frameDimensions.clear();
+    this._frameSizeCache.clear();
     this.spritesheetNames = [''];
     this.spritesheetNameToId.clear();
     this.spritesheetNameToId.set('', 0);

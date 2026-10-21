@@ -74,6 +74,19 @@ import { reportWorkerError } from '../util/errorReport.js';
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
 
+/** className → methods already warned about a missing sprite (one warning each). */
+const _warnedNoSprite = new Map();
+function warnNoSpriteOnce(className, method) {
+  let methods = _warnedNoSprite.get(className);
+  if (methods === undefined) {
+    methods = new Set();
+    _warnedNoSprite.set(className, methods);
+  }
+  if (methods.has(method)) return;
+  methods.add(method);
+  console.warn(`WeedJS: ${className}.${method} needs a sprite: call setSprite / setSpritesheet first.`);
+}
+
 export class GameObject {
   // Entity class metadata (for spawning system)
   static startIndex = 0; // Starting index in arrays for this entity type
@@ -1318,6 +1331,27 @@ export class GameObject {
       AdobeAnimComponent.applyClipBounds(this.index);
     }
     return this;
+  }
+
+  /**
+   * Scale the sprite so it draws `width` × `height` world px (its current
+   * sprite or animation, first frame). Without `height` it keeps the aspect.
+   * Call after setSprite / setSpritesheet. Collider untouched: see
+   * this.collider.fitToSprite().
+   * @param {number} width
+   * @param {number} [height]
+   * @returns {this} For chaining
+   */
+  setDisplaySize(width, height) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    const i = this.index;
+    const dims = SpriteSheetRegistry.frameSizeOf(SpriteRenderer.spritesheetId[i], SpriteRenderer.animationState[i]);
+    if (dims === null || !(dims.w > 0) || !(dims.h > 0)) {
+      warnNoSpriteOnce(this.constructor.name, 'setDisplaySize');
+      return this;
+    }
+    const sx = width / dims.w;
+    return this.setScale(sx, height === undefined ? sx : height / dims.h);
   }
 
   /**

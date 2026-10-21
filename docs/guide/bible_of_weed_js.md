@@ -640,6 +640,21 @@ LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('glow');
 
 Omit `layer`/`layers` → entities bit. See `docs/guide/LAYER_ROUTING.md`.
 
+### Sprite size (`setDisplaySize` / `fitToSprite`)
+
+`setScale` is relative to the texture, so sizing a sprite meant knowing its pixel size. `setDisplaySize` takes world px; `this.collider.fitToSprite()` then copies the drawn box onto the collider:
+
+```javascript
+onSpawned() {
+  this.setSprite('crate');
+  this.setDisplaySize(64, 48);      // world px; setDisplaySize(64) keeps the aspect
+  this.collider.fitToSprite();      // box 64 × 48; a circle collider gets radius 24
+  this.collider.fitToSprite(0.8);   // or 80 % of the sprite (a forgiving hitbox)
+}
+```
+
+Sizes come from the sprite's first frame, the size the renderer scales. Call `setDisplaySize` after `setSprite` / `setSpritesheet` (it warns once per class otherwise). `fitToSprite` also sets the collider offset from the sprite anchor, so a sprite anchored at its feet gets a box that sits on the same feet. Polygon and chain colliders keep their shape.
+
 ### Sprite tiling (`setTileWorld` / `setTileLocal`)
 
 `SpriteRenderer.repeatX/Y` is the **world-px period** of one full texture repeat (`0` = stretch the atlas rect across the quad). Three modes:
