@@ -124,6 +124,18 @@ export function readFrame(view) {
   return { t0: f64[0], gen: Atomics.load(i32, HEADER_GEN) };
 }
 
+/** readFrame's generation alone: no object, it runs once per worker per frame (review G5). */
+function readGen(i32) {
+  for (let spin = 0; spin < 8; spin++) {
+    const s1 = Atomics.load(i32, HEADER_SEQ);
+    if (s1 & 1) continue;
+    const gen = Atomics.load(i32, HEADER_GEN);
+    const s2 = Atomics.load(i32, HEADER_SEQ);
+    if (s1 === s2 && (s2 & 1) === 0) return gen;
+  }
+  return Atomics.load(i32, HEADER_GEN);
+}
+
 /**
  * One finished step. Called after the step, with both ends, so a reader never
  * pairs this frame's start with the previous frame's end. The gen stored is the
@@ -133,16 +145,16 @@ export function readFrame(view) {
 export function stampStep(view, slot, startAbs, endAbs) {
   if (!view || slot < 0 || slot >= SLOT_COUNT) return;
   if (!(startAbs > 0) || !(endAbs >= startAbs)) return;
-  const frame = readFrame(view);
   const i32 = view.i32;
   const f64 = view.f64;
+  const gen = readGen(i32);
   const f0 = slotF64(slot);
   const seq = slotI32(slot) + 5;
   const genAt = slotI32(slot) + 4;
   Atomics.add(i32, seq, 1);
   f64[f0] = startAbs;
   f64[f0 + 1] = endAbs;
-  Atomics.store(i32, genAt, frame.gen);
+  Atomics.store(i32, genAt, gen);
   Atomics.add(i32, seq, 1);
 }
 
