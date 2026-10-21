@@ -202,7 +202,7 @@ Some lifecycle callbacks are expensive to check every frame for every entity. Th
 
 Tag components have no `ARRAY_SCHEMA` and allocate no `SharedArrayBuffer`. They exist purely as a declaration in `static components`. The logic worker reads this once at startup and stores per-type flags. The hot loop checks these flags -- not per-entity, but per-type -- so the branch predictor handles it with near-zero overhead.
 
-**Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration — including `isCollidingWith()`). When at least one type has the tag, logic drains the Box2D **contact ring** (begin/end + sensors), keys every live pair (Cantor `min,max`) into a per-worker Set so `isCollidingWith()` works during `tick()`, and dispatches enter/stay/exit only when at least one side listens (`collisionListenerByType`). Callback ownership is partitioned by `minEntity % totalLogicWorkers`; Set population is not. Entities need an active `Collider` (Box2D body with a shape) to show up in the ring — Collider-only entities get an **implicit static** body; RigidBody-only (shapeless) bodies never generate contacts. Toggle at runtime with `this.collider.active` / `this.rigidBody.active` (see [PHYSICS.md](./PHYSICS.md#rigidbody--collider-composition)). Compound extras use `Collider.replacePolygons` / `replacePolygonsFlat` and `physics.maxFixturePoolSize`. Contacts stay entity-keyed. Light occluders stay primary-shape only.
+**Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration — including `isCollidingWith()`). When at least one type has the tag, logic drains the Box2D **contact ring** (begin/end + sensors), keys every live pair (Cantor `min,max`) into a per-worker Set so `isCollidingWith()` works during `tick()`, and dispatches enter/stay/exit only when at least one side listens (`collisionListenerByType`). Callback ownership is partitioned by `minEntity % totalLogicWorkers`; Set population is not. Entities need an active `Collider` (Box2D body with a shape) to show up in the ring — Collider-only entities get an **implicit static** body; RigidBody-only (shapeless) bodies never generate contacts. Toggle at runtime with `this.collider.active` / `this.rigidBody.active` (see [PHYSICS.md](./PHYSICS.md#rigidbody--collider-composition)). Compound extras use `Collider.replacePolygons` / `replacePolygonsFlat` and `physics.maxFixturePoolSize`. Contacts stay entity-keyed. Raycasted light occluders walk the fixtures too (see Raycasted lighting with compound occluders).
 
 **Forced logic worker:** `static forceProcessOnLogicWorker = 1` (or the spawn field) makes `tick` / callbacks / `onSpawned` run only on that worker so a `SharedResource` has one writer. SoA is `GameObject.forceProcessOnLogicWorker` (`Int16`, −1 = stride). Not `this.logicWorker` (the API object).
 
@@ -986,6 +986,118 @@ WEED.SoundManager.setMasterVolume(0.7);
 WEED.SoundManager.setMuted(true);
 // Scene switches call SoundManager.reset() and keep the AudioContext alive.
 // GameEngine.destroy() calls SoundManager.dispose() and closes audio fully.
+```
+
+### Camera reads and turning
+
+The getters read the logic camera, the one in the shared buffer that `follow`, `setPosition`, `setZoom` and the setters write. They do not read the camera that is drawn.
+
+```javascript
+const { Camera } = WEED;
+Camera.zoom;                 // logic zoom (the setter clamps to minZoom..maxZoom)
+Camera.targetZoom;           // zoom that follow / followEntity lerps toward
+Camera.x; Camera.y;          // top-left of the UNTURNED logic view, world px
+Camera.minX; Camera.maxX;    // edges of that unturned view
+Camera.minY; Camera.maxY;
+Camera.centerX; Camera.centerY; // view center; a turned view turns about this point
+Camera.rotation;             // radians, 0 when never set
+```
+
+With `followEntity` the drawn camera snaps to the published pose while `x`/`y` ease toward it, so the two can differ by a few pixels at speed. For what is on screen use the helpers, which read the drawn camera: `Camera.worldToScreen(wx, wy, out?)`, `Camera.screenToWorld(sx, sy, out?)`, `Camera.isOnScreen(wx, wy, margin?)` and `Camera.getViewportBounds(out?)`. Without `out`, the position and bounds helpers return a shared scratch object, so read it before the next call.
+
+`Camera.setAngle(radians)` sets `Camera.rotation` (`setRotation` and the `rotation` setter do the same). The view turns about the center of the canvas, not about `Camera.x`/`y`. A world point at offset `(dx, dy)` from the view center is drawn at `(c*dx - s*dy, s*dx + c*dy) * zoom` from the screen center, with `c = cos(angle)` and `s = sin(angle)`.
+
+```javascript
+Camera.setAngle(Math.PI / 6);
+const w = Camera.screenToWorld(Mouse.canvasXAt(0), Mouse.canvasYAt(0)); // undoes the turn
+const box = Camera.getViewportBounds(); // axis-aligned world box around the turned view
+```
+
+What a turned camera changes:
+- `screenToWorld`, `worldToScreen` and `isOnScreen` account for the turn. The same math is in `src/util/viewBounds.js` (`viewScreenToWorld`, `viewWorldToScreen`, `viewWorldBounds`, `rotatedHalfExtents`) for code that has no `Camera`.
+- `getViewportBounds()` returns the box around the turned view, so it is larger than the screen. Sprite culling tests the turned view itself; particle, decoration and glow culling still use this box.
+- `Camera.minX`, `maxX`, `minY`, `maxY` stay the unturned view's edges. Use `getViewportBounds()` for the area on screen.
+- The world-bounds clamp on the drawn camera is skipped while the angle is not 0, so a turned view can show past the world edge.
+- A `setDeadzone` box is measured in the turned view.
+- Spatial `SoundManager.play` pans and fades by screen position, so it follows the turn.
+
+### Raycasted lighting occluders
+
+With `lighting.raycasted: true` each visible light gets a visibility polygon. A body blocks a light only if both are true:
+
+1. The body has `LightOccluder` in its `static components` (the engine sets `block = 1` and `maskMode = 0`) and an active `Collider`. A `LightOccluder.block` of 0 blocks nothing.
+2. The body is in the light entity's neighbor list. That list holds the entities within the **light entity's own** `Collider.visualRange`.
+
+The light's reach is a separate number. `LightEmitter.influenceRadius` is `sqrt(lightIntensity) * 10` world px, the radius the light is drawn and culled with. An occluder that is inside the influence radius but outside the light entity's `visualRange` is not in the list, so the light passes through it.
+
+So set the light entity's `visualRange` to at least its influence radius, after the intensity is set:
+
+```javascript
+this.lightEmitter.lightIntensity = 14000;
+this.lightEmitter.active = 1;
+// Occluders come from the neighbor list: cover the whole light.
+this.collider.visualRange = this.lightEmitter.influenceRadius; // about 1183 px
+```
+
+Keep it no larger than needed: a bigger `visualRange` means a longer neighbor list and more occluders per light. Each light takes at most 1024 occluders (a one-time warning says when that is hit).
+
+### Raycasted lighting with compound occluders
+
+A body whose shape was set with `Collider.replacePolygons` (or `replacePolygonsFlat`; both need `physics.maxFixturePoolSize > 0`) is a compound body. As an occluder it needs `LightOccluder` and the same neighbor list as above. Then:
+
+- It blocks light through its outline. Edges shared by two fixtures are dropped, so a hole or canyon in the body stays open and light passes through it.
+- Only outline edges that face the light cast. Edges facing away from it are not used.
+- With `LightOccluder.maskMode` 0 (the default) pixi draws a self-lit fill of the polygons, so the side facing the light is lit and the far side stays dark. With `maskMode` 1 the fill uses the sprite's alpha instead.
+- The outline is cached, not rebuilt every frame. It is rebuilt when any fixture in the scene changes (the cache key is pool-wide).
+
+Limits:
+- A compound body is skipped for a light when its center is farther than the light's influence radius plus half the diagonal of its `Collider.width` x `height`. `replacePolygons` sets that width and height to the bounding box of the pieces.
+- Only edges within the influence radius of the light count.
+- A body shaped with `setChain` is never an occluder.
+- Self-lit fills are capped per frame by `lighting.maxOccluderSelfLit` (default 512).
+
+### Audio buses
+
+Every sound plays on a bus. With no `audio.channels` there is one bus named `main`. Declare buses in the scene config, in order. The first one is the default for `play` calls that name no bus. At most 8 buses are allowed; more throws.
+
+```javascript
+audio: {
+  maxSlots: 128,
+  channels: {
+    sfx:   { volume: 1,   pan: 0, maxVoices: 24, compressor: { threshold: 0.6, ratio: 4, attack: 0.01, release: 0.15 } },
+    music: { volume: 0.7, pan: 0, maxVoices: 4,  compressor: false },
+  },
+  // Master compressor: after the buses are summed, before the master volume.
+  compressor: { threshold: 0.85, ratio: 12, attack: 0.005, release: 0.12 },
+},
+```
+
+- `volume` is clamped to 0..1 and `pan` to -1..1.
+- `maxVoices` is the most sounds that can play at once on that bus. A value below 1 or a missing one uses 128. The default `main` bus uses 32.
+- `compressor` is per bus. `false` turns it off. Missing fields take the defaults (threshold 0.6, ratio 4, attack 0.01, release 0.15). Values are clamped: threshold 0..1, ratio 1..100, attack 0..2, release 0..4. The master `audio.compressor` takes the same fields (its defaults are in the example above).
+
+Pick the bus with the last argument of `play`:
+
+```javascript
+// play(nameOrId, volume, rateMin, rateMax, loop, mute, worldX, worldY, channelName?)
+WEED.SoundManager.play('shot', 0.8, 0.95, 1.05, 0, 0, NaN, NaN, 'sfx');
+WEED.SoundManager.play('theme', 1, 1, 1, 1, 0, NaN, NaN, 'music');
+```
+
+It returns the slot, or -1 when nothing played (sound not loaded, bus name not declared, spatial source too far off screen, or the sound was dropped). Leave `worldX`/`worldY` as `NaN` for a non-spatial sound.
+
+When a bus is at its `maxVoices`, a new sound with a volume above the quietest one playing on that bus replaces it. A new sound that is not louder is dropped. Each drop is counted in `SoundManager.getMetrics().dropped` (`SoundManager.clearDropped()` resets it). The compared volume is the one after the spatial fade. Total playing sounds are also capped by `audio.maxSlots`.
+
+Runtime control per bus:
+
+```javascript
+const sfx = WEED.SoundManager.channel('sfx');
+sfx.volume = 0.5;
+sfx.pan = -0.3;
+sfx.muted = true;
+sfx.reduction;                       // compressor gain on this bus, 1 = not cutting
+WEED.SoundManager.listChannels();    // ['sfx', 'music']
+WEED.SoundManager.getMasterReduction();
 ```
 
 ---
