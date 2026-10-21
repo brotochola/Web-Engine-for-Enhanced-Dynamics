@@ -17,6 +17,30 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**08:09** — M8 step (`adae675e`), E-70 logged. Open items now need design or your decision
+(list below).
+
+### 08:09 — One more source-text test made real (M8); a spatial lead logged (E-70)
+
+- **M8.** The test that checked "fixed FPS gives a constant time step" by matching three
+  lines of source now runs the real worker method. It checks four cases: fixed FPS, an
+  injected lockstep step, FPS still read from the wall clock, and plain wall clock. It fails
+  if fixed FPS is ignored. The other listed conversions need the physics engine or the full
+  logic tick in a test harness, so they stay listed.
+- **E-70 (logged, not started).** The spatial worker's neighbour search spends about 38 %
+  of its time fetching neighbours' positions out of order in memory. The obvious fix, a
+  per-cell copy of positions, would cost about 8× the grid's memory because of how the grid
+  is laid out. A compact version needs a design change in how cells are filled, so it's in
+  the plan with that constraint.
+- **Still open, and why:**
+  - E-63 (a lighting change that isn't bit-identical, so it needs a different kind of test);
+  - E-50b (allocations when bodies are created, a per-spawn cost);
+  - E-57 (no scene uses the pattern yet);
+  - E-68 (would change a public callback);
+  - E-51b's decorations, bullets and glow (under the measurement floor).
+- **Your call, unchanged:** N-22 (rebuild the WASM), N-26 (`.gitattributes` for line
+  endings), N-30 (camera framing), N-31 (Predator flocking behaviour).
+
 **08:05** — N-28 done (`8f55ed66`, `6d777088`). Next: M8 (tests that read source text).
 
 ### 08:05 — Do our kernels time the code we think they time? Now checked (N-28)
