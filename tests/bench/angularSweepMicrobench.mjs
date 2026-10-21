@@ -178,6 +178,12 @@ const cases = {
     for (let i = 0; i < iters; i++) runPolarFullCircle(128);
   }, { iterations: Number(args.iters ?? 400) }),
 };
+// Bits of the timed sweep. E-63 changes them by rounding on purpose; the
+// tolerance gate is tests/node/sweepEventDirection.test.js.
+{
+  const m = buildVisibilityPolygon(0, 0, 220, kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY, OCCLUDERS, outX, outY, MAX_VERTS);
+  cases.sweep.checksum = checksumFloats(outX, m) ^ checksumFloats(outY, m);
+}
 cases.polarFullCircle.checksum = fullCircleChecksum(POLAR_BINS);
 cases.polarFullCircle128.checksum = fullCircleChecksum(128);
 assert.equal(fcN, 32, 'the empty light is the 32-segment placeholder');
