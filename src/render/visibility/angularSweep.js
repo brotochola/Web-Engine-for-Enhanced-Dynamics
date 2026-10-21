@@ -900,6 +900,45 @@ function stampPolarBin(b, x0, y0, x1, y1, lx, ly) {
   }
 }
 
+/**
+ * True when xs/ys is buildFullCircle's placeholder around (lx, ly) at r: the
+ * sweep of a light with no simple occluder (all its occluders are compound).
+ * Stateless: compares the vertices, as stored in a Float32 or Float64 buffer.
+ */
+function isFullCircleAt(xs, ys, n, lx, ly, r) {
+  if (n !== FULL_CIRCLE_SEGS) return false;
+  for (let i = 0; i < n; i++) {
+    const x = lx + _fullCircleC[i] * r;
+    const y = ly + _fullCircleS[i] * r;
+    if (xs[i] !== x && xs[i] !== Math.fround(x)) return false;
+    if (ys[i] !== y && ys[i] !== Math.fround(y)) return false;
+  }
+  return true;
+}
+
+/**
+ * sweepDistAt for that placeholder (E-41). A ray from the centre of a convex
+ * polygon only meets the edge whose angular span holds it, or a neighbour at a
+ * corner; every other edge gives Infinity or a negative t. Three raySegT on the
+ * same vertices give the same minimum, bit for bit, as all 32.
+ */
+function fullCircleDistAt(lx, ly, ang, xs, ys, radius) {
+  const dx = Math.cos(ang);
+  const dy = Math.sin(ang);
+  const n = FULL_CIRCLE_SEGS;
+  let k = Math.floor((ang + Math.PI) * (n / TWO_PI));
+  if (k < 0) k = 0;
+  else if (k >= n) k = n - 1;
+  let best = radius;
+  for (let d = n - 1; d <= n + 1; d++) {
+    const i = (k + d) % n;
+    const j = i + 1 < n ? i + 1 : 0;
+    const t = raySegT(lx, ly, dx, dy, xs[i], ys[i], xs[j], ys[j]);
+    if (t < best) best = t;
+  }
+  return best;
+}
+
 function sweepDistAt(lx, ly, ang, xs, ys, n, radius) {
   const dx = Math.cos(ang);
   const dy = Math.sin(ang);
@@ -940,6 +979,23 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
   const group = cap >= POLAR_BINS ? 1 : Math.ceil(POLAR_BINS / cap);
   const count = group === 1 ? POLAR_BINS : Math.ceil(POLAR_BINS / group);
   const radius = _polarRadius;
+  if (holdN >= 3 && isFullCircleAt(_holdX, _holdY, holdN, lx, ly, radius)) {
+    // Same loop, three edges per bin instead of 32 (E-41).
+    for (let k = 0; k < count; k++) {
+      const b0 = k * group;
+      const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
+      let d = _polarDist[b0];
+      for (let b = b0 + 1; b < b1; b++) {
+        if (_polarDist[b] < d) d = _polarDist[b];
+      }
+      const ang = -Math.PI + (b0 + b1) * 0.5 * (TWO_PI / POLAR_BINS);
+      const sd = fullCircleDistAt(lx, ly, ang, _holdX, _holdY, radius);
+      if (sd < d) d = sd;
+      outX[k] = lx + Math.cos(ang) * d;
+      outY[k] = ly + Math.sin(ang) * d;
+    }
+    return count;
+  }
   for (let k = 0; k < count; k++) {
     const b0 = k * group;
     const b1 = b0 + group < POLAR_BINS ? b0 + group : POLAR_BINS;
