@@ -17,6 +17,8 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**17:15** — **Merged:** local `main` fast-forwarded to the branch (24 commits, B7 through N-17), suite 1,443 / 1,443. Not pushed.
+
 **17:08** — **N-17 done: `LiquidFun.setRadialGravity(x, y, accel)`** (`da9dfe76` engine, `ddb7efc9` planet). B7 (`37827604`) and N-26 (`5c6be84d`) were done just before. On the way: N-40, a LiquidFun force quirk, documented (`0cc1d351`). Suite 1,443 / 1,443.
 
 ### 17:08 — One setting pulls the planet's water
