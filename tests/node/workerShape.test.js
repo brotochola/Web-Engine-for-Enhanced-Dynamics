@@ -74,3 +74,11 @@ test('pre-render: the first full-queue and missing-texture warnings keep the wor
   assert.ok(pre._missingTextureWarns.has('n32'), 'the missing-texture path ran');
   assert.deepEqual(Object.keys(pre), keys);
 });
+
+test('pre-render: the emit ref declares every column emitSpriteQueue puts on it', async () => {
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const src = fs.readFileSync(new URL('../../src/workers/preRenderWorker.js', import.meta.url), 'utf8');
+  const written = new Set([...src.matchAll(/\bref\.([A-Za-z_$][\w$]*)\s*=(?!=)/g)].map((m) => m[1]));
+  const missing = [...written].filter((name) => !Object.hasOwn(pre._emitRef, name));
+  assert.deepEqual(missing, [], 'add these to the _emitRef literal');
+});

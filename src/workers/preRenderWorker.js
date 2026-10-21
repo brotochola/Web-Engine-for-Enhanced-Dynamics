@@ -342,6 +342,9 @@ class PreRenderWorker extends AbstractWorker {
             repeatX: null, repeatY: null,
             tileMode: null, tileOffsetU: null, tileOffsetV: null,
             tileMulX: null, tileMulY: null,
+            // Set by emitSpriteQueue each frame; declared so the first frame does not reshape it (N-32).
+            sortKey: null, shadowH: null, shadowOffX: null, shadowOffY: null,
+            scActive: null, scH: null, scOx: null, scOy: null,
         };
 
         // Visible lights SAB: written here, read by pixi (avoids duplicate query)
