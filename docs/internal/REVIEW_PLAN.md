@@ -171,7 +171,8 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [x] **E-41** — kept `634baaab`: three edges per bin against the placeholder circle, bit-identical. Compound scene **pre-render −37.2 % (4/4)**. Polar: skip the merge for compound-only lights.
 - [x] **E-42** — kept `c8db38ea`: bit-identical table. Compound scene **pre-render −42.3 % on top of E-41** (6.47 → 2.32 ms overall). Polar: 512-entry cos/sin table.
 - [ ] **E-43** Polar: two-pointer merge into a separate output buffer.
-- [ ] **E-44** Polar: lazy bin clear (every raycasted light pays a 512-float fill).
+- [~] **E-44** — screened: ~18–36 µs a frame for 360 lights, under 1 % of pre-render. Polar: lazy bin clear (every raycasted light pays a 512-float fill).
+- [x] **E-60** — kept `7c301240`: Pixi's circle fan reads a cos/sin table. Round-occluder vis-poly scene: **renderer −13.2 % (4/4)**.
 - [x] **E-45** — X2 **kept** (without it the Predator renderer is +18.7 %, 4/4; the old rejection was the old kernel). H11 **reverted** `bae431b6` (it lost: emit kernel +8.6 % without it, Predator pre-render better in 4/4). Re-measure the re-landed X2 (pack fast paths) and H11 (emit shadow hoist).
 - [x] **E-46** — confirmed (10× slower on full buses since `8af92002`) and fixed `4f7e3ff6`: the list walk runs only after a release. AudioStorm `plays=2400` logic0 **4.33 → 0.57 ms (−86.6 %)**. E-46b (the per-play closure) is open. Audio `play()` full-bus regime after `8af92002`.
 - [~] **E-47** — screened: in the compound scene the lights (1500 px) dwarf the islands (80 px), so about 10 % of triangles could be skipped, on a 1.7 ms renderer. It needs a scene with small lights over large lit compounds. Pixi self-lit: skip triangles outside the light disc; collapse free fan runs.

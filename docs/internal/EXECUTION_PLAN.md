@@ -953,7 +953,10 @@ output buffer (also removes the 8192-entry hold copy). Gate the polygon at 1e-4 
 feeds the bench's own 24-occluder sweep polygon: **~324 µs per light** against ~30 µs for
 `polar_nearest`. The path this item targets is ~11× what the old kernel showed.
 
-### E-44 Every raycasted light clears 512 bins even with no compound occluder — **not-started**
+### E-44 Every raycasted light clears 512 bins even with no compound occluder — **screened 2026-10-21: under the bar**
+A `Float32Array(512).fill` is ~50–100 ns, so the visPoly row's 360 lights spend ~18–36 µs a frame
+clearing bins, against a pre-render of ~5 ms (under 1 %). A lazy clear on the first stamp would be
+exact, but cannot reach 3 % there. Not done.
 `clearPolarBins` per light (`preRenderWorker.js:3427`) fills 512 floats; the visPoly row
 (360 lights) pays ~184k writes per frame and never uses the bins. Lazy clear on the first
 stamp. **Primary:** visPoly row `preRender_STEP_MS`. Likely under the bar; screen only.
@@ -1282,7 +1285,12 @@ GCs per 1000 steps, and which tier was timed (N-28). Then `tweenPoolMicrobench`.
 particle `STEP_MS` on ParticleIntegrateStressScene, and logic on TweenStressScene. `Tween._apply`
 is a separate step: split it by kind only if the ease front alone does not close the gap.
 
-### E-60 Pixi's circle self-lit fan calls cos/sin of fixed angles per circle per light — **not-started**
+### E-60 Pixi's circle self-lit fan calls cos/sin of fixed angles per circle per light — **KEPT** (`7c301240`; knob `1d91efac`)
+**Result (2026-10-21).** The constructor builds `_selfLitCircleCos/Sin` (16 entries) with the loop's
+own expression, so each lookup is the same double (checked 16/16). No stress scene had lit circle
+occluders, so VisPolyStressScene got `?occluderShape=circle` (default box). With 700 round
+occluders and 360 lights, 4 ABAB pairs: **renderer 6.49 → 5.61 ms (−13.2 %, 4/4)**, pre-render
+−2.2 %. Box occluders never take this branch.
 Found after E-42 (2026-10-21). `_renderOccluderSelfLit` tessellates every lit circle occluder
 with `a = (si / segs) * 2π; cos(a), sin(a)` for each of `_selfLitCircleSegs` vertices, for
 every light that sees it. The angles never change, so a table built with the same expression
