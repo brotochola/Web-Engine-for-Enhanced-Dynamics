@@ -31,6 +31,7 @@ import {
   PRE_RENDER_STATS,
 } from '../../src/util/workersUtils.js';
 import { waitMeterMs, resetWaitMeter, WAIT_METER_GLOBAL_KEY } from '../../src/util/waitMeter.js';
+import { loadWorker } from '../bench/workerHarness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -264,26 +265,36 @@ test('the wait meter is reset before update, after updateFrameTiming', () => {
   assert.ok(reset < report, 'the meter must be reset before reportFPS() publishes it');
 });
 
-test('every worker publishes IDLE_MS outside the collectDetailedStats gate', async () => {
+test('every worker publishes its frame meters with detailed stats off', async () => {
   // The gate is the trap: a stat published only under collectDetailedStats is
   // invisible on exactly the runs that write a verdict, because the protocol
-  // requires detailed stats OFF for the pair that decides.
-  for (const [file, idl] of [
-    ['src/workers/spatialWorker.js', 'SPATIAL_STATS.IDLE_MS'],
-    ['src/workers/logicWorker.js', 'LOGIC_STATS.IDLE_MS'],
-    ['src/workers/particleWorker.js', 'PARTICLE_STATS.IDLE_MS'],
-    ['src/workers/pixiWorker.js', 'RENDERER_STATS.IDLE_MS'],
-    ['src/workers/preRenderWorker.js', 'PRE_RENDER_STATS.IDLE_MS'],
+  // requires detailed stats OFF for the pair that decides. Review R4 put the
+  // four meters in one AbstractWorker._writeFrameMeters; pre-render's WAIT_MS
+  // used to sit behind its gate.
+  for (const [file, key, schema] of [
+    ['spatialWorker.js', 'spatialWorker', SPATIAL_STATS],
+    ['logicWorker.js', 'logicWorker', LOGIC_STATS],
+    ['particleWorker.js', 'particleWorker', PARTICLE_STATS],
+    ['preRenderWorker.js', 'preRenderWorker', PRE_RENDER_STATS],
   ]) {
-    const src = read(file);
-    const at = src.indexOf(idl);
-    assert.ok(at > 0, `${file} never publishes ${idl}`);
-    // The store sits in reportFPS() above its detail gate. (This used to look
-    // for the gate inside the text before the store, so it could not fail:
-    // review M6.)
-    const fnStart = src.lastIndexOf('reportFPS() {', at);
-    assert.ok(fnStart > 0, `${file}: ${idl} is not published in reportFPS()`);
-    const gate = src.indexOf('if (!this.collectDetailedStats) return;', fnStart);
-    assert.ok(gate === -1 || gate > at, `${file}: ${idl} is published after the collectDetailedStats gate`);
+    const w = await loadWorker(file, key);
+    w.stats = new Float32Array(schema.STRIDE_FLOATS);
+    w.collectDetailedStats = false;
+    w.currentFPS = 59;
+    w.stepTimeThisFrame = 4.5;
+    w.idleTimeThisFrame = 12.5;
+    resetWaitMeter();
+    globalThis[WAIT_METER_GLOBAL_KEY].ms += 3;
+    w.reportFPS();
+    assert.deepEqual(
+      [w.stats[schema.FPS], w.stats[schema.STEP_MS], w.stats[schema.IDLE_MS], w.stats[schema.WAIT_MS]],
+      [59, 4.5, 12.5, 3],
+      `${file}: FPS, STEP_MS, IDLE_MS, WAIT_MS with detailed stats off`,
+    );
   }
+  resetWaitMeter();
+  // The Pixi worker needs a GPU context to load; it calls the same helper.
+  const pixi = read('src/workers/pixiWorker.js');
+  const report = pixi.slice(pixi.indexOf('reportFPS() {'));
+  assert.match(report.slice(0, report.indexOf('\n  }')), /this\._writeFrameMeters\(RENDERER_STATS\)/);
 });

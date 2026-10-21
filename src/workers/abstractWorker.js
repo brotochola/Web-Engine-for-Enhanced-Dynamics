@@ -40,7 +40,7 @@ import { TileMap } from '../core/tileMap.js';
 import { Ray } from '../core/ray.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
-import { resetWaitMeter } from '../util/waitMeter.js';
+import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
 import { bindFrameClock, stampStep } from '../util/frameClock.js';
 import { SceneBridge } from '../core/sceneBridge.js';
 import { SharedResource } from '../core/sharedResource.js';
@@ -300,6 +300,21 @@ export class AbstractWorker {
    */
   reportFPS() {
     // Subclasses write to SharedArrayBuffer stats
+  }
+
+  /**
+   * The frame meters every worker publishes whether detailed stats are on or
+   * not (E-01): the protocol decides on runs with them off. FPS, STEP_MS,
+   * IDLE_MS (the gap before this frame) and WAIT_MS (blocked on a sibling,
+   * from the shared meter). Subclasses call it first in reportFPS().
+   * @param {{ FPS: number, STEP_MS: number, IDLE_MS: number, WAIT_MS: number }} schema
+   */
+  _writeFrameMeters(schema) {
+    const stats = this.stats;
+    stats[schema.FPS] = this.currentFPS;
+    stats[schema.STEP_MS] = this.stepTimeThisFrame;
+    stats[schema.IDLE_MS] = this.idleTimeThisFrame;
+    stats[schema.WAIT_MS] = waitMeterMs();
   }
 
   reportLog(message) {

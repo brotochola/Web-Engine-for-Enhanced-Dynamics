@@ -48,7 +48,6 @@ import {
 import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
-import { waitMeterMs } from '../util/waitMeter.js';
 import { bindSpatialPublish } from './spatialPublishClient.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../util/colliderUtils.js';
 
@@ -847,14 +846,9 @@ class SpatialWorker extends AbstractWorker {
    */
   reportFPS() {
     if (!this.stats) return;
-    this.stats[SPATIAL_STATS.FPS] = this.currentFPS;
-    this.stats[SPATIAL_STATS.STEP_MS] = this.stepTimeThisFrame;
+    this._writeFrameMeters(SPATIAL_STATS);
     this.stats[SPATIAL_STATS.NEIGHBORS_REUSED] = this.neighborsReusedThisFrame;
     this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
-    // Always on, not a detailed stat: IDLE_MS is what E-06 needs and it must be
-    // readable with collectDetailedStats off.
-    this.stats[SPATIAL_STATS.IDLE_MS] = this.idleTimeThisFrame;
-    this.stats[SPATIAL_STATS.WAIT_MS] = waitMeterMs();
     if (!this.collectDetailedStats) return;
     this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
     this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;

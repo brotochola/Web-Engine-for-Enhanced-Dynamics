@@ -35,7 +35,6 @@ import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.
 import { Ray } from '../core/ray.js';
 import { Box2d } from '../core/box2d.js';
 import { collisionPairKey } from '../util/utils.js';
-import { waitMeterMs } from '../util/waitMeter.js';
 import { EntityIdArray } from '../util/entityIdWidth.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
@@ -2118,8 +2117,8 @@ class LogicWorker extends AbstractWorker {
    */
   reportFPS() {
     if (!this.stats) return;
-    this.stats[LOGIC_STATS.FPS] = this.currentFPS;
-    this.stats[LOGIC_STATS.STEP_MS] = this.stepTimeThisFrame;
+    // WAIT_MS is the real blocked-on-physics time from the sync Box2D queries.
+    this._writeFrameMeters(LOGIC_STATS);
     this.stats[LOGIC_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
     let markActive = 0;
     const markTypes = this.markActiveTypes;
@@ -2130,10 +2129,6 @@ class LogicWorker extends AbstractWorker {
       }
     }
     this.stats[LOGIC_STATS.MARK_ACTIVE] = markActive;
-    // E-01: always on. IDLE_MS is the scheduler gap E-06 needs; WAIT_MS is the
-    // real blocked-on-physics time from the sync Box2D query protocol.
-    this.stats[LOGIC_STATS.IDLE_MS] = this.idleTimeThisFrame;
-    this.stats[LOGIC_STATS.WAIT_MS] = waitMeterMs();
     // E-27. Always on, like IDLE_MS: the live pair count is a premise, not a
     // detailed diagnostic. Map.size is one load of a field the map already keeps.
     this.stats[LOGIC_STATS.PAIR_COUNT] = this._pairSlot.size;

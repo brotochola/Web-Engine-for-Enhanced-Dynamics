@@ -41,7 +41,6 @@ import {
     lightGlowScale,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
-import { waitMeterMs } from '../util/waitMeter.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
 import {
@@ -3681,13 +3680,10 @@ class PreRenderWorker extends AbstractWorker {
      */
     reportFPS() {
         if (!this.stats) return;
-        this.stats[PRE_RENDER_STATS.FPS] = this.currentFPS;
-        this.stats[PRE_RENDER_STATS.STEP_MS] = this.stepTimeThisFrame;
+        // WAIT_MS stays 0 by construction here: pre-render's only wait on a
+        // sibling is the backpressure skip, counted as SKIPPED_FRAMES below.
+        this._writeFrameMeters(PRE_RENDER_STATS);
         this.stats[PRE_RENDER_STATS.VISIBLE_ENTITIES] = this.visibleEntitiesCount;
-        // E-01: always on. IDLE_MS is the scheduler gap E-06 measures. WAIT_MS
-        // stays 0 by construction here - pre-render's only wait on a sibling is
-        // the backpressure skip, which is counted as SKIPPED_FRAMES below.
-        this.stats[PRE_RENDER_STATS.IDLE_MS] = this.idleTimeThisFrame;
         // M1: a load key of the A/B gate, so it is published with detail off too.
         this.stats[PRE_RENDER_STATS.RENDER_QUEUE_SIZE] = this.renderQueueCount ? this.renderQueueCount[0] : 0;
         if (!this.collectDetailedStats) return;
@@ -3707,9 +3703,6 @@ class PreRenderWorker extends AbstractWorker {
         this.stats[PRE_RENDER_STATS.VISIBLE_LIGHTS_MS] = this.visibleLightsTimeThisFrame;
         this.stats[PRE_RENDER_STATS.VISIBILITY_MS] = this.visibilityTimeThisFrame;
         this.stats[PRE_RENDER_STATS.ADOBE_MS] = this.adobeTimeThisFrame;
-        // Review D3: the shared meter (reset each frame by AbstractWorker), not a
-        // field nothing ever set. 0 unless pre-render calls a blocking query.
-        this.stats[PRE_RENDER_STATS.WAIT_MS] = waitMeterMs();
     }
 }
 
