@@ -720,8 +720,73 @@ export interface ParticleEmitConfig {
   fadeOnTheFloor?: number;
   stayOnTheFloor?: boolean;
   despawnOnGroundContact?: boolean;
+  /** 0 = normal, 1 = multiply (see {@link DECAL_STAMPS_BLEND_MODE}). */
   blendMode?: number;
-  layerId?: number;
+  /** Layer name or id to render on. Omitted (and no `layers`) = the entities layer. */
+  layer?: string | number;
+  /** Layer names / ids; wins over `layer`. */
+  layers?: string | number | Array<string | number>;
+  /** Truthy = drawn by the render pass only. */
+  renderOnly?: boolean;
+  /** Light emitted by the particle: a number or a spawn `{min,max}` range (no over-life form). */
+  lightIntensity?: WeedNumOrRange;
+}
+
+/** Ease name or id (see {@link PARTICLE_EASE}). Unknown values fall back to `lerp`. */
+export type WeedEaseName =
+  | 'lerp'
+  | 'quad.in' | 'quad.out' | 'quad.inout'
+  | 'cubic.in' | 'cubic.out' | 'cubic.inout'
+  | 'expo.in' | 'expo.out' | 'expo.inout'
+  | 'back.in' | 'back.out' | 'back.inout'
+  | 'bounce.out';
+
+/** Properties {@link Tween.to} can animate. */
+export interface TweenProps {
+  /** Sprite alpha, or mesh alpha when the entity has no sprite. */
+  alpha?: number;
+  /** 0xRRGGBB, lerped per channel. Sprite, or mesh when no sprite. */
+  tint?: number;
+  /** Sprite only (ignored on a mesh). */
+  scaleX?: number;
+  /** Sprite only (ignored on a mesh). */
+  scaleY?: number;
+  /** Transform x. Refused on a dynamic RigidBody (then only paint props run). */
+  x?: number;
+  /** Transform y. Refused on a dynamic RigidBody. */
+  y?: number;
+}
+
+/** Scene tween pool (slot count is `config.tween.maxTweens`). */
+export declare class Tween {
+  /** Slot count of the bound pool. 0 until bound. */
+  static capacity: number;
+  static bind(sab: SharedArrayBuffer | ArrayBuffer | null, count?: number): void;
+  static unbind(): void;
+  /**
+   * Animate props of an entity over `ms`. `ms <= 0` applies the target values at once.
+   * @returns the slot, or -1 (immediate, refused, pool full or nothing to animate). With
+   * both xy and paint props two slots are used and the xy slot is returned when claimed.
+   */
+  static to(entityIndex: number, props: TweenProps, ms: number, ease?: WeedEaseName | number): number;
+  /** Tween `Camera.targetZoom`. `ms <= 0` sets it at once and returns -1. */
+  static toZoom(zoom: number, ms: number, ease?: WeedEaseName | number): number;
+  /** Cancel live tweens of an entity; `kind` is 0 paint, 1 xy, 2 zoom, omitted = all. */
+  static cancel(entityIndex: number, kind?: number | null): void;
+  /** Advance this worker's slot block by `dt` ms. Returns live slots advanced. */
+  static tick(dt: number, workerIndex?: number, workerCount?: number): number;
+}
+
+/** Scene clock on a shared Float32. 1 = real time, 0 = hitstop, max 4. */
+export declare class Time {
+  static view: Float32Array | null;
+  static bind(sab: SharedArrayBuffer | ArrayBuffer | null): void;
+  static unbind(): void;
+  /** Sanitized (non-finite = 1, <= 0 = 0, clamped to 4). 1 when unbound. The setter is a no-op when unbound. */
+  static get scale(): number;
+  static set scale(value: number);
+  /** `simMs * Time.scale`. */
+  static scaleSimMs(simMs: number): number;
 }
 
 /** Particle ease ids (`PARTICLE_EASE` / `WEED.enums.PARTICLE_EASE`). */
@@ -3369,7 +3434,10 @@ export declare class ParticleEmitter extends SharedAtomicPool {
   static emit(config: ParticleEmitConfig): number;
   static emitFlat(config: ParticleEmitConfig): number;
   static emitZenithal(config: ParticleEmitConfig): number;
-  static stampDecal(config: ParticleEmitConfig): number;
+  /** Flat particles spread along (x0,y0)-(x1,y1); `count` is the sample count (default 8). */
+  static emitAlongLine(
+    config: Omit<ParticleEmitConfig, 'x' | 'y'> & { x0: number; y0: number; x1: number; y1: number },
+  ): number;
   static reset(): void;
 }
 
@@ -3693,6 +3761,8 @@ export interface WeedNamespace extends WeedEnums {
   Mouse: typeof Mouse;
   Gamepad: typeof Gamepad;
   Camera: typeof Camera;
+  Time: typeof Time;
+  Tween: typeof Tween;
   Noise2D: typeof Noise2D;
   Ray: typeof Ray;
   NavGrid: typeof NavGrid;
