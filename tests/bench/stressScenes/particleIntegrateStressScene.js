@@ -18,8 +18,22 @@ export const TWEEN = (() => {
   }
 })();
 
+/**
+ * `?camRot=<radians>` turns the camera. A turned view culls particles with the
+ * box around it, about twice the view at 45° on 16:9 (review E-51b). Default 0.
+ */
+export const CAM_ROT = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('camRot');
+    const v = raw ? Number(raw) : 0;
+    return Number.isFinite(v) ? v : 0;
+  } catch {
+    return 0;
+  }
+})();
+
 export const stressSceneConfig = {
-  requested: { tween: TWEEN },
+  requested: { tween: TWEEN, camRot: CAM_ROT },
 };
 
 /** L2 intermediate bench: large heighted (gravity + despawnOnGroundContact) population. No decals. */
@@ -66,5 +80,6 @@ export class ParticleIntegrateStressScene extends Scene {
 
     Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
     Camera.setZoom(0.3);
+    if (CAM_ROT) Camera.setAngle(CAM_ROT);
   }
 }
