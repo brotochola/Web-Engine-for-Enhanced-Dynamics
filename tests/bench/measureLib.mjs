@@ -338,6 +338,7 @@ export function parseMeasureArgs(argv, extras = {}) {
     headedOnly: null,
     detailedStats: false,
     smoke: false,
+    noRecheck: false,
     ...extras,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -356,6 +357,7 @@ export function parseMeasureArgs(argv, extras = {}) {
     else if (a === '--skip-node') out.skipNode = true;
     else if (a === '--headless') out.headlessAll = true;
     else if (a === '--detailed-stats') out.detailedStats = true;
+    else if (a === '--no-recheck') out.noRecheck = true;
     else if (a === '--smoke') {
       out.smoke = true;
       out.runs = 1;

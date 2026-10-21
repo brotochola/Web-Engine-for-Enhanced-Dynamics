@@ -14,6 +14,7 @@ import { ENGINE_FEATURES, filterFeatures, getFeature } from './engineFeatureCata
 import {
   SPEED_PCT,
   explainHit,
+  median,
   fmtDeltaPct,
   fmtStat,
   measureSceneSide,
@@ -125,6 +126,63 @@ function decideRow(feature, kernel, scenePair) {
   if (wins.length) return { verdict: 'KEPT', reasons: [...reasons, 'primary ≥3% better, load OK'], hits };
   if (hits.length) return { verdict: 'TIE', reasons: [...reasons, 'within 3%'], hits };
   return { verdict: 'NA', reasons: reasons.length ? reasons : ['no comparable metric'], hits };
+}
+
+/**
+ * N-35. Stress rows run 2 times per side, back to back, and four of the six rows
+ * one scoreboard flagged against main were noise (textureUpload "+15 %" was
+ * -11 % over 4 pairs). Before a row is called WORSE, each regressing hit is
+ * measured again over RECHECK_PAIRS alternating pairs. It stays a regression
+ * only if its median is still SPEED_PCT worse and at least 3 pairs in 4 are worse.
+ */
+const RECHECK_PAIRS = 4;
+
+/**
+ * @param {number[]} deltas per-pair (hyp / base - 1) in percent
+ * @param {boolean} higherBetter kernels (ops/s) true, step times false
+ */
+export function confirmRegression(deltas, higherBetter) {
+  const worseCount = deltas.filter((d) => (higherBetter ? d < 0 : d > 0)).length;
+  const medianPct = deltas.length ? median(deltas) : 0;
+  const medianWorse = higherBetter ? medianPct <= -SPEED_PCT : medianPct >= SPEED_PCT;
+  return {
+    confirmed: deltas.length > 0 && medianWorse && worseCount >= Math.ceil(deltas.length * 0.75),
+    medianPct,
+    worseCount,
+    pairs: deltas.length,
+  };
+}
+
+/** Re-measure a WORSE row's regressing hits over alternating pairs (N-35). */
+export function recheckRegressions(feature, row, args, baseline, outRoot) {
+  const regress = row.decision.hits.filter((h) =>
+    h.higherBetter ? h.deltaPct <= -SPEED_PCT : h.deltaPct >= SPEED_PCT
+  );
+  const dir = path.join(outRoot, feature.id, 'recheck');
+  fs.mkdirSync(dir, { recursive: true });
+  const oneRun = { ...args, runs: 1, stressRuns: 1 };
+  const results = [];
+  for (const hit of regress) {
+    const deltas = [];
+    for (let p = 0; p < RECHECK_PAIRS; p++) {
+      const order = p % 2 === 0 ? ['BASE', 'KEEP'] : ['KEEP', 'BASE'];
+      const v = {};
+      for (const side of order) {
+        const root = side === 'BASE' ? baseline.root : undefined;
+        if (hit.metric === 'kernel') {
+          const json = runKernelScript(feature.kernel.script, path.join(dir, `kernel-${side}-p${p}.json`), root);
+          v[side] = pickOpsWithKey(json, feature.kernel.opsKey);
+        } else {
+          const res = measureSceneSide(`${feature.scene.key}-${side}-p${p}`, feature.scene, oneRun, dir, feature.id, root);
+          v[side] = res.ok ? res.summary[hit.metric]?.median : null;
+        }
+      }
+      const d = pctDelta(v.KEEP, v.BASE);
+      if (d != null) deltas.push(d);
+    }
+    results.push({ metric: hit.metric, deltas, ...confirmRegression(deltas, hit.higherBetter) });
+  }
+  return { pairs: RECHECK_PAIRS, results, confirmed: results.some((r) => r.confirmed) };
 }
 
 function isProtocolCeilingFail(row) {
@@ -515,6 +573,22 @@ function main() {
       }
 
       row.decision = decideRow(feature, row.kernel, row.scene);
+      if (row.decision.verdict === 'WORSE' && !args.noRecheck && !args.smoke) {
+        row.recheck = recheckRegressions(feature, row, args, baseline, outRoot);
+        if (!row.recheck.confirmed) {
+          const seen = row.recheck.results
+            .map((r) => `${r.metric} ${fmtDeltaPct(r.medianPct)} median, ${r.worseCount}/${r.pairs} worse`)
+            .join('; ');
+          row.decision = {
+            verdict: 'TIE',
+            reasons: [
+              ...row.decision.reasons.filter((r) => r !== 'primary ≥3% worse'),
+              `flagged WORSE, not confirmed over ${RECHECK_PAIRS} ABAB pairs (${seen})`,
+            ],
+            hits: row.decision.hits,
+          };
+        }
+      }
       rows.push(row);
       fs.mkdirSync(path.join(outRoot, feature.id), { recursive: true });
       writeJson(path.join(outRoot, feature.id, 'verdict.json'), row);
