@@ -1007,7 +1007,11 @@ lights over islands, if they go through self-lit), and a renderer ≥ 3 ms.
 triangles whose bounding circle misses the light disc; collapse free-bin runs in the
 512-vertex fan. **Primary:** `pixi_STEP_MS` on CompoundVisPolyStressScene.
 
-### E-48 Tween tick split by `entityIndex % W` scans every slot on every worker — **not-started**
+### E-48 Tween tick split by `entityIndex % W` scans every slot on every worker — **CLOSED by B11 (`847070be`), no measurement needed**
+B11's fix gave each logic worker one block of slots (`logicBlockRange` in `Tween.tick`), so no
+worker scans another's slots any more. The total scan is one pass over the pool, as with logic0
+alone, split W ways. The modulo filter this item compared against no longer exists.
+
 Tied to bug B11 (the split is not the tick owner). Compare logic0-only against the modulo
 filter with a W=2 case in `tweenPoolMicrobench.mjs`, then TweenStressScene.
 
@@ -1032,7 +1036,15 @@ Cold path, but a main-thread stall: a synthetic Predator-scale payload took ~930
 encode (~625 ms `TextEncoder` on repeated names). A per-save string table plus a single
 writer. **Primary:** time-to-save on Predator; no STEP_MS claim.
 
-### E-50 Small review items — **not-started**
+### E-50 Small review items — **in progress**
+**`collectSolidSegments` order — kept (kernel)** `64d0caa9`, kernel cases `6b7ad641`. The facing
+test (a cross product) runs before the range test (a division). A back-facing edge is range-tested
+only until something hit, because pre-render reads only `hit > 0`. The polar writes are the same,
+in the same order. Kernel, 9 rounds: island +4.9 % (80/81), large outline +22.6 % (81/81), checksums
+equal. Compound scene `ringSegments=64`: pre-render −2.5 % (4/4), a tie in the good direction.
+A golden test pins six lights' polar output and hit flag, one light inside the body.
+**E-48** is closed by B11 (see there).
+
 Light-splat attenuation reduces to `1/(1+100·dot(v,v))`; `collectSolidSegments` divides
 before its back-face test; body-dirty list re-appends already-pending slots;
 frameClock header seqlock protects one int32; `_snapshotVertGen` copies every entity's gen;

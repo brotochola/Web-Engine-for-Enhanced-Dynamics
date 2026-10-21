@@ -176,7 +176,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [x] **E-46** — confirmed (10× slower on full buses since `8af92002`) and fixed `4f7e3ff6`: the list walk runs only after a release. AudioStorm `plays=2400` logic0 **4.33 → 0.57 ms (−86.6 %)**. E-46b (the per-play closure) is open. Audio `play()` full-bus regime after `8af92002`.
 - [~] **E-47** — screened: in the compound scene the lights (1500 px) dwarf the islands (80 px), so about 10 % of triangles could be skipped, on a 1.7 ms renderer. It needs a scene with small lights over large lit compounds. Pixi self-lit: skip triangles outside the light disc; collapse free fan runs.
 - [ ] **E-08 (reopened)** `_sortPrefix` hybrid.
-- [ ] **E-48** Tween tick: logic0 only vs modulo split.
+- [x] **E-48** — closed by B11 `847070be`: each logic worker ticks its own block, so nothing is scanned twice. Tween tick: logic0 only vs modulo split.
 - [x] **E-49** — kept `62537602` (byte cache + per-class plans, no format change; see G6). The string table stays open, since it changes the save format. Save encode: string table + single writer.
 - [ ] **E-50** Smaller items (light-splat attenuation, `collectSolidSegments` order, body-dirty duplicates, frameClock header lock, `_snapshotVertGen`, littleCity jitter, body-create scratch).
 - [x] **E-58** — dropped. Pre-render tied at 36 and at 128 triangles per island (`remeshEvery=1`), and the renderer stayed under the floor. G1 had already made rebuilds cheap.

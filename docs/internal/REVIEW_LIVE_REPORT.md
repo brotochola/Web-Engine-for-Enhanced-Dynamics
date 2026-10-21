@@ -17,7 +17,11 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**03:41** — E-46 fixed. Next: E-48 (tween split across logic workers), E-50 (small items).
+**03:49** — E-48 is already solved by the B11 fix (closed, no work needed). E-50, first small
+item in (`64d0caa9`): lit-outline edges facing away from a light now skip a division. Kernel
++5 % / +23 %, the scene −2.5 % (a tie). Next: the rest of E-50.
+
+**03:41** — E-46 fixed.
 
 **For you, no rush:** two benchmark processes from an earlier session have been stuck since
 10-19 00:43: `e34ChromeCpuProbe.mjs` (node PID 17256), its Balls bench (PID 2644) and a Chrome
