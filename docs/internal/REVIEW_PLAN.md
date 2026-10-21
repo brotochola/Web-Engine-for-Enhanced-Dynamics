@@ -137,7 +137,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [x] **R4** — `c66ddd32` (FPS, STEP, IDLE, WAIT in one helper; pre-render WAIT_MS was behind its detail gate; the test is behavioral for four workers). IDLE/WAIT publish ×5 → `AbstractWorker._writeFrameMeters()`.
 - [x] **R5** — `a12ec944`, as a test, not a move: the host copy is checked byte for byte against stampStep (the move would need the bundle to embed a sibling from src/util for 25 lines). Physics host hand-copies the frameClock layout → one dual-mode IIFE.
 - [x] **R6** — `357e268e` (viewScreenToWorld / viewWorldToScreen in viewBounds.js; the turned deadzone calls deadzoneCenter; kernel tie −1.7 %; debugCanvas builds a context matrix, a different job, kept). `Mouse._writeWorld` = `Camera.screenToWorld`; rotated deadzone re-implements `deadzoneCenter`; rotation projection ×4.
-- [ ] **R7** `readTimeScale` copy; `GameObject.radius` copies the Collider rule; `despawnAll` vs `despawn`; chainPoints prelude.
+- [x] **R7** — `c9de5973` (the host copy had lost the clamp at 4: a real drift, now with a parity test), `56bc7066` (despawn/despawnAll share `_deactivateSlotComponents`; the radius/width/height fallback copies, unreachable and missing markBodyDirty, are gone), `93294af4` (chain prelude). `readTimeScale` copy; `GameObject.radius` copies the Collider rule; `despawnAll` vs `despawn`; chainPoints prelude.
 - [ ] **R8** Lighting copies (wedge loop minus cull, self-lit write ×2, `ensureCompoundSolid` call ×3, geometry helpers, light-splat packer ×3, zenithal fade).
 - [ ] **R9** Saves/tweens (tween record ×4, apply skeleton ×3, `_applyImmediate`, `mapGet`, `copyInto`, `lerpRgb`).
 - [ ] **R10** Audio metrics literal ×3; `writeUvTri` copy; texture slot ×2.

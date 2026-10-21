@@ -17,9 +17,24 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**23:08** — Phase 4: R3–R6 done. Next: R7.
+**23:15** — Phase 4: R3–R7 done. Next: R8 (lighting copies).
 
 ## Log
+
+### 23:15 — R7: four copies, two of which had drifted (`c9de5973`, `56bc7066`, `93294af4`)
+
+- **Time scale** (`c9de5973`): the physics host keeps its own copy of the time-scale check, and the
+  copy had lost the clamp at 4× that keeps Box2D stable. In the normal loop another cap hid it;
+  manual stepping (`stepOnce`) had none. Fixed, with a test that compares the two copies across
+  NaN, infinities, negatives and values past the clamp. The old copy fails at 4.5.
+- **Despawn** (`56bc7066`): `despawn` and `despawnAll` each had a 25-line component reset; they share
+  one now. `GameObject.radius`, `width` and `height` each kept a fallback copy of the Collider's
+  setter for a case that can't happen. Those copies had lost the step that tells physics the shape
+  changed. They're gone, and the setters delegate.
+- **Chain queries** (`93294af4`): ray and pick on chain shapes shared the same opening; it's one
+  helper now.
+
+Suite: 1354/1354.
 
 ### 23:08 — R4–R6: three more copies folded into one (`c66ddd32`, `a12ec944`, `357e268e`)
 
