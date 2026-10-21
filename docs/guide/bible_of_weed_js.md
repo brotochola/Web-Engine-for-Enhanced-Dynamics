@@ -653,6 +653,8 @@ onSpawned() {
 }
 ```
 
+Flip with `this.flipX = true` / `this.flipY` / `this.setFlip(x, y)` (Adobe clips too; also a spawn-config key: `{ flipX: true }`). A flip is independent of scale: `setScale(2)` keeps it and `this.scaleX` reads `2`. It is stored as the sign of the scale the renderer reads, so it costs nothing to draw. A negative `setScale` still mirrors, as before.
+
 Sizes come from the sprite's first frame, the size the renderer scales. Call `setDisplaySize` after `setSprite` / `setSpritesheet` (it warns once per class otherwise). `fitToSprite` also sets the collider offset from the sprite anchor, so a sprite anchored at its feet gets a box that sits on the same feet. Polygon and chain colliders keep their shape.
 
 ### Sprite tiling (`setTileWorld` / `setTileLocal`)

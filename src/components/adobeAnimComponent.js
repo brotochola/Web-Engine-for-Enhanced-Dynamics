@@ -28,6 +28,8 @@ export class AdobeAnimComponent extends Component {
     boundsHalfH: Float32Array,
     screenX: Float32Array,
     screenY: Float32Array,
+    // bit 0 flipX, bit 1 flipY (sign of scaleX / scaleY), as on SpriteRenderer.
+    flip: Uint8Array,
   };
 
   static applyClipBounds(entityIndex) {

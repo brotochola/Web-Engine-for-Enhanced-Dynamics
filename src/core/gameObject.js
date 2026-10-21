@@ -913,39 +913,116 @@ export class GameObject {
     }
   }
 
-  /** Scale X */
+  // Flip lives in the sign of the stored scale (what the renderers read) and in
+  // a flag, so the scale you set and read stays the scale you meant: with
+  // flipX on, setScale(2) stores -2 and scaleX reads 2. Without a flip,
+  // everything is as before (a negative scale still mirrors).
+
+  /** Scale X (as you set it; a flip is not part of it) */
   get scaleX() {
-    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.scaleX[this.index];
-    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.scaleX[this.index];
+    if (this._hasComponents.SpriteRenderer) {
+      const v = SpriteRenderer.scaleX[this.index];
+      return SpriteRenderer.flip[this.index] & 1 ? -v : v;
+    }
+    if (this._hasComponents.adobeAnimComponent) {
+      const v = AdobeAnimComponent.scaleX[this.index];
+      return AdobeAnimComponent.flip[this.index] & 1 ? -v : v;
+    }
     return 1;
   }
   set scaleX(value) {
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleX[this.index] !== value) {
-      SpriteRenderer.scaleX[this.index] = value;
-      SpriteRenderer.updateBounds(this.index);
-      SpriteRenderer.renderDirty[this.index] = 1;
+    if (this._hasComponents.SpriteRenderer) {
+      const v = SpriteRenderer.flip[this.index] & 1 ? -value : value;
+      if (SpriteRenderer.scaleX[this.index] !== v) {
+        SpriteRenderer.scaleX[this.index] = v;
+        SpriteRenderer.updateBounds(this.index);
+        SpriteRenderer.renderDirty[this.index] = 1;
+      }
     }
-    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.scaleX[this.index] !== value) {
-      AdobeAnimComponent.scaleX[this.index] = value;
-      AdobeAnimComponent.applyClipBounds(this.index);
+    if (this._hasComponents.adobeAnimComponent) {
+      const v = AdobeAnimComponent.flip[this.index] & 1 ? -value : value;
+      if (AdobeAnimComponent.scaleX[this.index] !== v) {
+        AdobeAnimComponent.scaleX[this.index] = v;
+        AdobeAnimComponent.applyClipBounds(this.index);
+      }
     }
   }
 
-  /** Scale Y */
+  /** Scale Y (as you set it; a flip is not part of it) */
   get scaleY() {
-    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.scaleY[this.index];
-    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.scaleY[this.index];
+    if (this._hasComponents.SpriteRenderer) {
+      const v = SpriteRenderer.scaleY[this.index];
+      return SpriteRenderer.flip[this.index] & 2 ? -v : v;
+    }
+    if (this._hasComponents.adobeAnimComponent) {
+      const v = AdobeAnimComponent.scaleY[this.index];
+      return AdobeAnimComponent.flip[this.index] & 2 ? -v : v;
+    }
     return 1;
   }
   set scaleY(value) {
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleY[this.index] !== value) {
-      SpriteRenderer.scaleY[this.index] = value;
-      SpriteRenderer.updateBounds(this.index);
-      SpriteRenderer.renderDirty[this.index] = 1;
+    if (this._hasComponents.SpriteRenderer) {
+      const v = SpriteRenderer.flip[this.index] & 2 ? -value : value;
+      if (SpriteRenderer.scaleY[this.index] !== v) {
+        SpriteRenderer.scaleY[this.index] = v;
+        SpriteRenderer.updateBounds(this.index);
+        SpriteRenderer.renderDirty[this.index] = 1;
+      }
     }
-    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.scaleY[this.index] !== value) {
-      AdobeAnimComponent.scaleY[this.index] = value;
-      AdobeAnimComponent.applyClipBounds(this.index);
+    if (this._hasComponents.adobeAnimComponent) {
+      const v = AdobeAnimComponent.flip[this.index] & 2 ? -value : value;
+      if (AdobeAnimComponent.scaleY[this.index] !== v) {
+        AdobeAnimComponent.scaleY[this.index] = v;
+        AdobeAnimComponent.applyClipBounds(this.index);
+      }
+    }
+  }
+
+  /** Mirror the sprite left-right (Adobe clips too). Independent of scale. */
+  get flipX() {
+    if (this._hasComponents.SpriteRenderer) return (SpriteRenderer.flip[this.index] & 1) !== 0;
+    if (this._hasComponents.adobeAnimComponent) return (AdobeAnimComponent.flip[this.index] & 1) !== 0;
+    return false;
+  }
+  set flipX(on) {
+    this._setFlipBit(1, !!on);
+  }
+
+  /** Mirror the sprite top-bottom (Adobe clips too). Independent of scale. */
+  get flipY() {
+    if (this._hasComponents.SpriteRenderer) return (SpriteRenderer.flip[this.index] & 2) !== 0;
+    if (this._hasComponents.adobeAnimComponent) return (AdobeAnimComponent.flip[this.index] & 2) !== 0;
+    return false;
+  }
+  set flipY(on) {
+    this._setFlipBit(2, !!on);
+  }
+
+  /**
+   * @param {boolean} x - flipX
+   * @param {boolean} [y] - flipY (unchanged when omitted)
+   * @returns {this} For chaining
+   */
+  setFlip(x, y) {
+    this._setFlipBit(1, !!x);
+    if (y !== undefined) this._setFlipBit(2, !!y);
+    return this;
+  }
+
+  _setFlipBit(bit, on) {
+    const i = this.index;
+    if (this._hasComponents.SpriteRenderer && ((SpriteRenderer.flip[i] & bit) !== 0) !== on) {
+      SpriteRenderer.flip[i] ^= bit;
+      if (bit === 1) SpriteRenderer.scaleX[i] = -SpriteRenderer.scaleX[i];
+      else SpriteRenderer.scaleY[i] = -SpriteRenderer.scaleY[i];
+      SpriteRenderer.updateBounds(i);
+      SpriteRenderer.renderDirty[i] = 1;
+    }
+    if (this._hasComponents.adobeAnimComponent && ((AdobeAnimComponent.flip[i] & bit) !== 0) !== on) {
+      AdobeAnimComponent.flip[i] ^= bit;
+      if (bit === 1) AdobeAnimComponent.scaleX[i] = -AdobeAnimComponent.scaleX[i];
+      else AdobeAnimComponent.scaleY[i] = -AdobeAnimComponent.scaleY[i];
+      AdobeAnimComponent.applyClipBounds(i);
     }
   }
 
@@ -1313,21 +1390,28 @@ export class GameObject {
   setScale(x, y) {
     const yVal = y !== undefined ? y : x;
     let changed = false;
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleX[this.index] !== x) {
-      SpriteRenderer.scaleX[this.index] = x;
-      changed = true;
-    }
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleY[this.index] !== yVal) {
-      SpriteRenderer.scaleY[this.index] = yVal;
-      changed = true;
+    if (this._hasComponents.SpriteRenderer) {
+      // A flip stays on: it is the sign of the stored scale.
+      const flip = SpriteRenderer.flip[this.index];
+      const sx = flip & 1 ? -x : x;
+      const sy = flip & 2 ? -yVal : yVal;
+      if (SpriteRenderer.scaleX[this.index] !== sx) {
+        SpriteRenderer.scaleX[this.index] = sx;
+        changed = true;
+      }
+      if (SpriteRenderer.scaleY[this.index] !== sy) {
+        SpriteRenderer.scaleY[this.index] = sy;
+        changed = true;
+      }
     }
     if (this._hasComponents.SpriteRenderer && changed) {
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
-      AdobeAnimComponent.scaleX[this.index] = x;
-      AdobeAnimComponent.scaleY[this.index] = yVal;
+      const flip = AdobeAnimComponent.flip[this.index];
+      AdobeAnimComponent.scaleX[this.index] = flip & 1 ? -x : x;
+      AdobeAnimComponent.scaleY[this.index] = flip & 2 ? -yVal : yVal;
       AdobeAnimComponent.applyClipBounds(this.index);
     }
     return this;
@@ -2626,6 +2710,7 @@ export class GameObject {
       SpriteRenderer.alpha[i] = 1.0;
       SpriteRenderer.scaleX[i] = 1;
       SpriteRenderer.scaleY[i] = 1;
+      SpriteRenderer.flip[i] = 0;
       SpriteRenderer.boundsHalfW[i] = 0;
       SpriteRenderer.boundsHalfH[i] = 0;
       SpriteRenderer.anchorX[i] = 0.5;
@@ -2658,6 +2743,7 @@ export class GameObject {
       AdobeAnimComponent.playing[i] = 1;
       AdobeAnimComponent.scaleX[i] = 1;
       AdobeAnimComponent.scaleY[i] = 1;
+      AdobeAnimComponent.flip[i] = 0;
       AdobeAnimComponent.anchorX[i] = Number.NaN;
       AdobeAnimComponent.anchorY[i] = Number.NaN;
       AdobeAnimComponent.rotC[i] = 1;

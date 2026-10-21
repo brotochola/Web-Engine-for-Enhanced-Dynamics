@@ -1084,6 +1084,13 @@ export declare class GameObject {
   getJoint(i: number): number;
   getJoints(): number[];
   markDirty(): void;
+  /** Mirror left-right / top-bottom (sprite or Adobe clip), independent of scale: setScale keeps it. */
+  get flipX(): boolean;
+  set flipX(on: boolean);
+  get flipY(): boolean;
+  set flipY(on: boolean);
+  /** flipX, and flipY when given. */
+  setFlip(x: boolean, y?: boolean): this;
   /** Scale the sprite to width × height world px; without height it keeps the aspect. */
   setDisplaySize(width: number, height?: number): this;
   /** Push for this tick (mass·px/s²); every tick while it should act. See PHYSICS.md "Moving bodies". */
@@ -3036,6 +3043,8 @@ export declare class SpriteRenderer extends Component {
   static alpha: Float32Array;
   static scaleX: Float32Array;
   static scaleY: Float32Array;
+  /** bit 0 flipX, bit 1 flipY; the flip is the sign of scaleX / scaleY. Use GameObject.flipX / flipY. */
+  static flip: Uint8Array;
   static boundsHalfW: Float32Array;
   static boundsHalfH: Float32Array;
   static anchorX: Float32Array;
@@ -3122,6 +3131,8 @@ export declare class AdobeAnimComponent extends Component {
   static playing: Uint8Array;
   static scaleX: Float32Array;
   static scaleY: Float32Array;
+  /** bit 0 flipX, bit 1 flipY; the flip is the sign of scaleX / scaleY. Use GameObject.flipX / flipY. */
+  static flip: Uint8Array;
   static anchorX: Float32Array;
   static anchorY: Float32Array;
   static rotC: Float32Array;

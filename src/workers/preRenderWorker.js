@@ -2693,8 +2693,8 @@ class PreRenderWorker extends AbstractWorker {
                                     const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
                                     const origW = this.frameWidth[texId] || 0;
                                     const origH = this.frameHeight[texId] || 0;
-                                    const sx = srScaleX[idx] || 1;
-                                    const sy = srScaleY[idx] || 1;
+                                    const sx = Math.abs(srScaleX[idx]) || 1; // flip = negative scale
+                                    const sy = Math.abs(srScaleY[idx]) || 1;
                                     SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
                                     SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
                                 }

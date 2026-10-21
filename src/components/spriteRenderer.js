@@ -81,6 +81,9 @@ export class SpriteRenderer extends Component {
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame
     screenX: Float32Array,
     screenY: Float32Array,
+    // bit 0 flipX, bit 1 flipY. The flip lives in the sign of scaleX / scaleY
+    // (what the renderers read); this remembers it so setScale keeps it.
+    flip: Uint8Array,
   };
 
   /**
@@ -135,8 +138,9 @@ export class SpriteRenderer extends Component {
   static updateBounds(entityIndex) {
     const w = SpriteRenderer.getOriginalWidth(entityIndex) || 0;
     const h = SpriteRenderer.getOriginalHeight(entityIndex) || 0;
-    const sx = SpriteRenderer.scaleX[entityIndex] || 1;
-    const sy = SpriteRenderer.scaleY[entityIndex] || 1;
+    // |scale|: a flip is a negative scale, and culling takes the larger half extent
+    const sx = Math.abs(SpriteRenderer.scaleX[entityIndex]) || 1;
+    const sy = Math.abs(SpriteRenderer.scaleY[entityIndex]) || 1;
     SpriteRenderer.boundsHalfW[entityIndex] = (w * sx) * 0.5;
     SpriteRenderer.boundsHalfH[entityIndex] = (h * sy) * 0.5;
   }
