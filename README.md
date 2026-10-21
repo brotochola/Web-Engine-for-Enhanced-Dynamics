@@ -255,6 +255,17 @@ await game.loadScene(new URL('./scenes/dungeonScene.js', import.meta.url).href);
 
 `loadScene(DungeonScene)` still works (class sugar). The engine infers the file from loaded JS when it can.
 
+Pass parameters with `data`: the scene gets them as `this.data` and as the argument of `preload`, `create` and `createNewGame`.
+
+```javascript
+await game.loadScene(url, { data: { level: 3, difficulty: 'hard' } });
+
+// in the scene
+createNewGame({ level }) {
+  this.spawnLevel(level);
+}
+```
+
 Import **the scene you are about to run**. Do not barrel every level in `main`. A menu should only `import()` / `loadScene` the URL for the level you click.
 
 Several scenes in the debug overlay: register `{ name, url }` (same shape as `demos/index.html`).

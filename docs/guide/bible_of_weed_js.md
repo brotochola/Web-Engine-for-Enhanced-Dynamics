@@ -90,7 +90,9 @@ class MyScene extends WEED.Scene {
 }
 ```
 
-Do **not** branch on `_restorePayload` inside `create()`. Use `createNewGame` / `onLoadGame` instead. Full save API: [`docs/guide/SAVE_GAME.md`](./SAVE_GAME.md).
+Do **not** branch on `_restorePayload` inside `create()`. Use `createNewGame` / `onLoadGame` instead.
+
+`game.loadScene(url, { data })` hands parameters to the scene (level number, a menu choice): `this.data`, also the argument of `preload`, `create` and `createNewGame`. It lives on the main thread; entities get what they need through `spawnConfig` or a `SharedResource`. `scene.loadGame(slot)` remounts with the same `data`. Full save API: [`docs/guide/SAVE_GAME.md`](./SAVE_GAME.md).
 
 ### Prebaked bigAtlas
 

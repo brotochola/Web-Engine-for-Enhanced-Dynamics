@@ -168,6 +168,12 @@ class Scene {
     this.loadedTextures = null;
     /** Absolute scene module href for workers. Set by GameEngine.loadScene. */
     this.sceneScriptUrl = null;
+    /**
+     * What game.loadScene(url, { data }) passed (level number, player choice, …);
+     * null when nothing. Also the argument of preload / create / createNewGame.
+     * Main thread only: entities get what they need through spawnConfig or a SharedResource.
+     */
+    this.data = null;
 
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
@@ -1021,11 +1027,11 @@ class Scene {
     // Scene infrastructure setup (camera, nav grid, dynamic scenery overrides).
     // Messages sent here are processed by workers while they are still paused,
     // so the renderer can build the tilemap and warm up the GPU before the first frame.
-    await this.preload();
+    await this.preload(this.data);
 
     // LIFECYCLE PHASE 2: create()
     // Static / always-on world setup (runs for new game AND save load).
-    await this.create();
+    await this.create(this.data);
 
     // LIFECYCLE PHASE 2b: new game vs save restore
     // Restore awaits logic0 restoreSaveComplete so entities are in the scene
@@ -1039,7 +1045,7 @@ class Scene {
       await this.onLoadGame(payload);
       await this._flushCreateSpawns();
     } else {
-      await this.createNewGame();
+      await this.createNewGame(this.data);
       await this._flushCreateSpawns();
     }
     this._spawnBatchOpen = false;
@@ -1162,8 +1168,9 @@ class Scene {
    *
    * Messages sent here are processed by workers while they are still paused,
    * guaranteeing everything is ready before the first frame renders.
+   * @param {*} data - loadScene's { data } (also this.data), null when none
    */
-  preload() {
+  preload(data) {
     // Override this for scene infrastructure setup
   }
 
@@ -1172,8 +1179,9 @@ class Scene {
    * Runs for **both** new games and save loads.
    * Use for static world setup that is not restored from a save
    * (tile props, lights, decorations, non-serializable entities).
+   * @param {*} data - loadScene's { data } (also this.data), null when none
    */
-  create() {
+  create(data) {
     // Override this to spawn static / always-present world content
   }
 
@@ -1181,8 +1189,9 @@ class Scene {
    * Called after create() only when starting a **new game** (no restore payload).
    * Spawn serializable / dynamic entities here (soldiers, civilians, player, …).
    * Skipped entirely when loading a save — those entities come from the save instead.
+   * @param {*} data - loadScene's { data } (also this.data), null when none
    */
-  createNewGame() {
+  createNewGame(data) {
     // Override for new-game-only spawns
   }
 
@@ -1196,6 +1205,7 @@ class Scene {
   onLoadGame(payload) {
     // Override for post-load scene logic
   }
+
 
   /**
    * Called once per frame on the main thread.
@@ -2656,7 +2666,9 @@ class Scene {
    */
   async loadGame(slotId) {
     const { loadGame } = await import('./save/saveGame.js');
-    return loadGame(this.game, this.constructor, slotId);
+    // The remount keeps this scene's loadScene data; state that must come
+    // from the save belongs in onSaveGame.
+    return loadGame(this.game, this.constructor, slotId, { data: this.data });
   }
 
   /**

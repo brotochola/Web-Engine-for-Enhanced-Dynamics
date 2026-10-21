@@ -1144,7 +1144,8 @@ export declare class GameEngine {
   debugEnabled: boolean;
   debugUI: DebugUI | null;
   constructor(config?: GameEngineConfig);
-  loadScene(source: string | typeof Scene, options?: { restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
+  /** data: handed to the scene as scene.data and as the argument of preload / create / createNewGame. */
+  loadScene(source: string | typeof Scene, options?: { data?: unknown; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
   readonly presenting: boolean;
   setPresenting(on: boolean): void;
   rebindSurface(): void;
@@ -1422,7 +1423,9 @@ export declare class Scene {
   constructor(game: GameEngine);
   init(): Promise<void>;
   exposeGlobalReferences(): void;
-  preload(): void | Promise<void>;
+  /** What game.loadScene(url, { data }) passed; null when nothing. Main thread only. */
+  data: unknown;
+  preload(data?: unknown): void | Promise<void>;
   setBackground(
     textureOrOpts:
       | string
@@ -1434,7 +1437,9 @@ export declare class Scene {
           zoomParallax?: number;
         }
   ): void;
-  create(): void | Promise<void>;
+  create(data?: unknown): void | Promise<void>;
+  /** New game only (skipped when a save is loaded). */
+  createNewGame(data?: unknown): void | Promise<void>;
   update(dtRatio: number, deltaTime: number, accumulatedTime: number, frameNumber: number): void;
   onMessageFromGameObject(
     data: unknown,
