@@ -3496,6 +3496,8 @@ export declare class LiquidFun {
   static joinParticleGroups(groupA: number, groupB: number): void;
   static splitParticleGroup(groupId: number): void;
   static applyForce(index: number, fx: number, fy: number): void;
+  /** Pull every particle toward (x, y) at `accel` px/s² (on top of gravity) until the next call; 0 turns it off. */
+  static setRadialGravity(x: number, y: number, accel: number): void;
   static applyLinearImpulse(index: number, ix: number, iy: number): void;
   static groupApplyForce(groupId: number, fx: number, fy: number): void;
   static groupApplyLinearImpulse(groupId: number, ix: number, iy: number): void;

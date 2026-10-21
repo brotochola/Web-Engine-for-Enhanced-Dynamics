@@ -30,6 +30,7 @@ export const enqueueSetGroupViscousScale = R.enqueueSetGroupViscousScale;
 export const enqueueJoinParticleGroups = R.enqueueJoinParticleGroups;
 export const enqueueSplitParticleGroup = R.enqueueSplitParticleGroup;
 export const enqueueParticleApplyForce = R.enqueueParticleApplyForce;
+export const enqueueSetRadialGravity = R.enqueueSetRadialGravity;
 export const enqueueParticleApplyImpulse = R.enqueueParticleApplyImpulse;
 export const enqueueGroupApplyForce = R.enqueueGroupApplyForce;
 export const enqueueGroupApplyImpulse = R.enqueueGroupApplyImpulse;

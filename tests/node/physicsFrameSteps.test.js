@@ -38,7 +38,7 @@ test('an ordinary frame is one step of its own dt; a long hitch is cut at 4 stab
   assert.equal(hitch.dt, 1 / 30);
 });
 
-function hostStepLoop(steps) {
+function hostStepLoop(steps, radialGravityAccel = 0) {
   const calls = [];
   const world = {
     step: (dt, sub) => calls.push(`step ${dt} ${sub}`),
@@ -48,16 +48,17 @@ function hostStepLoop(steps) {
     _moves: [],
   };
   const fns = new Function(
-    'world', 'calls', 'hostSteps', 'hostEntityCount',
+    'world', 'calls', 'hostSteps', 'hostEntityCount', 'radialGravityAccel',
     `let gatherMovedSlots = null, gatherMovedAsleep = null, gatherMovedAt = null, gatherMovedCount = 0;
     function applyForcesAndTorque() { calls.push('forces'); }
     function cullLiquidFunOutsideWorld() { calls.push('cull'); }
+    function applyRadialGravity(dt) { calls.push('radial ' + dt); }
     function publishContactRingFromWasm() { calls.push('contacts'); }
     function publishHitsFromWasm() { calls.push('hits'); }
     function publishJointBreaksFromWasm() { calls.push('joints'); }
     ${block(post, 'b7-steps')}
     return { stepWorld, gatherMovedFromStep, gathered: () => ({ count: gatherMovedCount, slots: gatherMovedSlots, asleep: gatherMovedAsleep }) };`,
-  )(world, calls, steps, 16);
+  )(world, calls, steps, 16, radialGravityAccel);
   return { calls, world, ...fns };
 }
 
@@ -72,6 +73,15 @@ test('each extra step gets its forces again and gives its events out; the last i
   const one = hostStepLoop(1);
   one.stepWorld(1 / 60, 4);
   assert.deepEqual(one.calls, [`step ${1 / 60} 4`], 'one step: exactly as before');
+});
+
+test('LiquidFun radial gravity (N-17) pulls before every step of the frame, the first included', () => {
+  const { calls, stepWorld } = hostStepLoop(2, 1800);
+  stepWorld(0.025, 4);
+  assert.deepEqual(calls, [
+    'radial 0.025', 'step 0.025 4', 'contacts', 'hits', 'joints',
+    'forces', 'cull', 'radial 0.025', 'step 0.025 4',
+  ]);
 });
 
 test('a body moved in any step is published once, with its latest asleep flag', () => {

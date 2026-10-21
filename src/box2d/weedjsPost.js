@@ -55,6 +55,10 @@
   let hostDt = 0;
   /** B7: ordinary steps of hostDt this frame (physicsHostImpl splits a long frame). */
   let hostSteps = 1;
+  // N-17: LiquidFun.setRadialGravity, kept until the next call (accel 0 = off).
+  let radialGravityX = 0;
+  let radialGravityY = 0;
+  let radialGravityAccel = 0;
   // B7: moved-body events gathered over a frame's earlier steps (allocated on first use).
   let gatherMovedSlots = null;
   let gatherMovedAsleep = null;
@@ -1571,6 +1575,11 @@
       if (!world || typeof world.particleApplyForce !== 'function') return;
       world.particleApplyForce(index, fx, fy);
     },
+    setRadialGravity(x, y, accel) {
+      radialGravityX = x;
+      radialGravityY = y;
+      radialGravityAccel = accel;
+    },
     particleApplyImpulse(index, ix, iy) {
       if (!world || typeof world.particleApplyLinearImpulse !== 'function') return;
       world.particleApplyLinearImpulse(index, ix, iy);
@@ -2357,6 +2366,7 @@
         applyForcesAndTorque();
         cullLiquidFunOutsideWorld();
       }
+      if (radialGravityAccel !== 0) applyRadialGravity(dt);
       world.step(dt, solverSteps);
       if (k < steps - 1) {
         publishContactRingFromWasm();
@@ -2394,6 +2404,37 @@
     }
   }
   // b7-steps-end
+
+  // radial-gravity-start
+  /**
+   * N-17. Pull every LiquidFun particle toward (radialGravityX, radialGravityY):
+   * accel × dt is added to its velocity before each world step, as gravity is,
+   * on the WASM heap. One setting replaces a command per particle per tick.
+   */
+  function applyRadialGravity(dt) {
+    if (!world || typeof world.getParticleCount !== 'function') return;
+    const n = world.getParticleCount() | 0;
+    if (n <= 0 || typeof Module === 'undefined' || !Module.HEAPF32) return;
+    const xs = world.getParticleXByteOffset() >> 2;
+    const ys = world.getParticleYByteOffset() >> 2;
+    const vxs = world.getParticleVxByteOffset() >> 2;
+    const vys = world.getParticleVyByteOffset() >> 2;
+    if (!xs || !ys || !vxs || !vys) return;
+    const heap = Module.HEAPF32;
+    const cx = radialGravityX;
+    const cy = radialGravityY;
+    const dv = radialGravityAccel * dt;
+    for (let i = 0; i < n; i++) {
+      const dx = cx - heap[xs + i];
+      const dy = cy - heap[ys + i];
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (!(len > 0)) continue;
+      const k = dv / len;
+      heap[vxs + i] += dx * k;
+      heap[vys + i] += dy * k;
+    }
+  }
+  // radial-gravity-end
 
   function afterStep() {
     publishContactRingFromWasm();

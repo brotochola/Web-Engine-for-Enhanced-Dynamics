@@ -412,6 +412,19 @@ export class LiquidFun {
     Box2dCommandRing.enqueueParticleApplyForce(index, fx, fy);
   }
 
+  /**
+   * Pull every particle toward (x, y) with an acceleration of `accel` px/s²,
+   * on top of world gravity, until the next call; 0 turns it off. Physics
+   * applies it on each step, so one call replaces a force per particle per tick
+   * (a planet, a black hole, a drain).
+   * @param {number} x
+   * @param {number} y
+   * @param {number} accel
+   */
+  static setRadialGravity(x, y, accel) {
+    Box2dCommandRing.enqueueSetRadialGravity(x, y, accel);
+  }
+
   static applyLinearImpulse(index, ix, iy) {
     Box2dCommandRing.enqueueParticleApplyImpulse(index, ix, iy);
   }

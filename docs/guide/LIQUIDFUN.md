@@ -301,6 +301,7 @@ LiquidFun.joinParticleGroups(a, b);
 LiquidFun.splitParticleGroup(id);
 LiquidFun.applyForce(i, fx, fy);
 LiquidFun.groupApplyLinearImpulse(id, ix, iy);
+LiquidFun.setRadialGravity(x, y, accel); // every particle pulled toward (x, y), px/s², each step; 0 = off
 
 // Logic — sync (Atomics.wait). Main — async (Atomics.waitAsync).
 LiquidFun.queryAABB(x0, y0, x1, y1, out); // out: Int32Array particle indices

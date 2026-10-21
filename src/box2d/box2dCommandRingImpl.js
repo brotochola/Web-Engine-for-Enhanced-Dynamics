@@ -52,6 +52,7 @@
     PARTICLE_APPLY_IMPULSE_RANGE: 40, // entity=first; last i32[3]; ix,iy
     EXTRACT_PARTICLES: 41, // entity=groupId; count, groupFlags, trackGroup (SAB holds indices)
     SET_PARTICLE_USER_DATA_LIST: 42, // indices+add/set in liquidFunUserDataList SAB
+    SET_RADIAL_GRAVITY: 43, // a=x, b=y, c=accel (px/s², 0 = off): pull every particle toward (x, y)
   });
 
   var BOX2D_CMD_HEADER_I32 = 4;
@@ -504,6 +505,12 @@
     return enqueue(BOX2D_CMD.SPLIT_PARTICLE_GROUP, groupId | 0, 0, 0, 0, 0);
   }
 
+  /** N-17: one setting, kept by the host until the next; accel 0 turns it off. */
+  function enqueueSetRadialGravity(x, y, accel) {
+    var ok = typeof accel === 'number' && isFinite(accel);
+    return enqueue(BOX2D_CMD.SET_RADIAL_GRAVITY, 0, +x || 0, +y || 0, ok ? accel : 0, 0);
+  }
+
   function enqueueParticleApplyForce(index, fx, fy) {
     return enqueue(BOX2D_CMD.PARTICLE_APPLY_FORCE, index | 0, fx, fy, 0, 0);
   }
@@ -706,6 +713,9 @@
         case BOX2D_CMD.SET_PARTICLE_USER_DATA_LIST:
           if (handlers.setParticleUserDataList) handlers.setParticleUserDataList();
           break;
+        case BOX2D_CMD.SET_RADIAL_GRAVITY:
+          if (handlers.setRadialGravity) handlers.setRadialGravity(a, b, c);
+          break;
         default:
           break;
       }
@@ -744,6 +754,7 @@
     enqueueJoinParticleGroups: enqueueJoinParticleGroups,
     enqueueSplitParticleGroup: enqueueSplitParticleGroup,
     enqueueParticleApplyForce: enqueueParticleApplyForce,
+    enqueueSetRadialGravity: enqueueSetRadialGravity,
     enqueueParticleApplyImpulse: enqueueParticleApplyImpulse,
     enqueueGroupApplyForce: enqueueGroupApplyForce,
     enqueueGroupApplyImpulse: enqueueGroupApplyImpulse,
