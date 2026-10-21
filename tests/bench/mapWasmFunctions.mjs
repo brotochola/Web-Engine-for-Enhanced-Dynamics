@@ -6,7 +6,9 @@
  * (LTO). Chrome's index includes imports; binaryen `$k` is defined-only, so
  * `$k` = chromeIndex - importFunctionCount.
  *
- *   node tests/bench/mapWasmFunctions.mjs
+ * Indices belong to one build: take them from a trace of the box2dWasm.wasm
+ * that is in the tree now.
+ *
  *   node tests/bench/mapWasmFunctions.mjs --indices 102,285,39
  */
 import { execFileSync } from 'node:child_process';
@@ -20,16 +22,15 @@ const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const WASM = path.join(repoRoot, 'src/box2d/box2dWasm.wasm');
 const JS = path.join(repoRoot, 'src/box2d/box2dWasm.js');
 const WAT = path.join(repoRoot, 'tests/results/wasm-map/box2d.wat');
-const OUT = path.join(repoRoot, 'tests/results/wasm-map/after-keeps.md');
+const OUT = path.join(repoRoot, 'tests/results/wasm-map/indices.md');
 const WASM_DIS = path.resolve(
   repoRoot,
   '../Box2d_3.2_C_-_liquidfun/emsdk/upstream/bin/wasm-dis.exe',
 );
 
-const DEFAULT_HOT = [102, 285, 39, 284, 44, 301, 291, 159, 98, 286, 92, 287, 299];
-
+// The disassembly is cached; a wasm rebuilt after it makes it a different binary.
 function ensureWat() {
-  if (fs.existsSync(WAT) && fs.statSync(WAT).size > 1000) return;
+  if (fs.existsSync(WAT) && fs.statSync(WAT).size > 1000 && fs.statSync(WAT).mtimeMs >= fs.statSync(WASM).mtimeMs) return;
   if (!fs.existsSync(WASM_DIS)) throw new Error(`wasm-dis missing: ${WASM_DIS}`);
   fs.mkdirSync(path.dirname(WAT), { recursive: true });
   execFileSync(WASM_DIS, [WASM, '-o', WAT], { stdio: 'inherit' });
@@ -40,6 +41,17 @@ function parseCExports(js) {
   const re = /Module\["_(\w+)"\]\s*=\s*wasmExports\["([^"]+)"\]/g;
   let m;
   while ((m = re.exec(js))) map.set(m[2], m[1]);
+  return map;
+}
+
+// LTO minifies import names (`a.b`); the glue's assignWasmImports says what each is.
+function parseImportNames(js) {
+  const map = new Map();
+  const block = js.match(/function assignWasmImports\(\)\s*\{([\s\S]*?)\n\}/);
+  if (!block) return map;
+  const re = /(\w+):\s*(\w+)/g;
+  let m;
+  while ((m = re.exec(block[1]))) map.set(m[1], m[2]);
   return map;
 }
 
@@ -56,7 +68,7 @@ function parseWat(text) {
   return { lines, funcLine, exportToFunc };
 }
 
-function profile(lines, funcLine, definedIndex) {
+function profile(lines, funcLine, definedIndex, nowCall) {
   const start = funcLine[definedIndex];
   const end = funcLine[definedIndex + 1] ?? lines.length;
   const body = lines.slice(start, end);
@@ -64,12 +76,12 @@ function profile(lines, funcLine, definedIndex) {
   let atomic = 0;
   let loops = 0;
   let nowCalls = 0;
-  let futexCalls = 0;
+  let waits = 0;
   for (const line of body) {
     if (line.includes('atomic')) atomic++;
     if (line.includes('loop ')) loops++;
-    if (line.includes('call $fimport$0')) nowCalls++;
-    if (line.includes('call $fimport$17')) futexCalls++;
+    if (nowCall && line.includes(nowCall)) nowCalls++;
+    if (line.includes('atomic.wait')) waits++;
     const c = line.match(/call \$(\d+)/);
     if (c) {
       const id = Number(c[1]);
@@ -83,7 +95,7 @@ function profile(lines, funcLine, definedIndex) {
     atomic,
     loops,
     nowCalls,
-    futexCalls,
+    waits,
     top,
     head: lines[start].trim(),
   };
@@ -91,15 +103,26 @@ function profile(lines, funcLine, definedIndex) {
 
 function main() {
   const args = parseArgs();
-  const hot = args.indices
-    ? String(args.indices).split(',').map((n) => Number(n))
-    : DEFAULT_HOT;
+  const hot = args.indices === undefined || args.indices === true
+    ? []
+    : String(args.indices).split(',').map((n) => Number(n)).filter(Number.isInteger);
+  if (!hot.length) {
+    console.error(
+      'usage: node tests/bench/mapWasmFunctions.mjs --indices 102,285,39\n' +
+        'Indices belong to one build: take them from a trace of the current box2dWasm.wasm.',
+    );
+    process.exit(1);
+  }
   ensureWat();
   const wasm = fs.readFileSync(WASM);
   const mod = new WebAssembly.Module(wasm);
   const importFuncs = WebAssembly.Module.imports(mod).filter((i) => i.kind === 'function');
   const nameSections = WebAssembly.Module.customSections(mod, 'name');
-  const cByExport = parseCExports(fs.readFileSync(JS, 'utf8'));
+  const glue = fs.readFileSync(JS, 'utf8');
+  const cByExport = parseCExports(glue);
+  const importNames = parseImportNames(glue);
+  const nowIndex = importFuncs.findIndex((imp) => importNames.get(imp.name) === '_emscripten_get_now');
+  const nowCall = nowIndex >= 0 ? `call $fimport$${nowIndex}` : null;
   const { lines, funcLine, exportToFunc } = parseWat(fs.readFileSync(WAT, 'utf8'));
 
   const cByDefined = new Map();
@@ -108,20 +131,23 @@ function main() {
     if (defined !== undefined) cByDefined.set(defined, cname);
   }
 
-  const importLines = importFuncs.map((imp, i) => `- import[${i}] \`${imp.module}.${imp.name}\`${i === 0 ? ' = `_emscripten_get_now` (LTO name `a.b`)' : ''}`);
+  const importLines = importFuncs.map((imp, i) => {
+    const js = importNames.get(imp.name);
+    return `- import[${i}] \`${imp.module}.${imp.name}\`${js ? ` = \`${js}\`` : ''}`;
+  });
 
   const nowRank = [];
   for (let i = 0; i < funcLine.length; i++) {
-    const p = profile(lines, funcLine, i);
-    if (p.nowCalls || p.futexCalls) nowRank.push({ defined: i, chrome: i + importFuncs.length, ...p });
+    const p = profile(lines, funcLine, i, nowCall);
+    if (p.nowCalls || p.waits) nowRank.push({ defined: i, chrome: i + importFuncs.length, ...p });
   }
-  nowRank.sort((a, b) => (b.nowCalls + b.futexCalls) - (a.nowCalls + a.futexCalls));
+  nowRank.sort((a, b) => (b.nowCalls + b.waits) - (a.nowCalls + a.waits));
 
   const rows = [];
   for (const chrome of hot) {
     const defined = chrome - importFuncs.length;
     const ok = defined >= 0 && defined < funcLine.length;
-    const p = ok ? profile(lines, funcLine, defined) : null;
+    const p = ok ? profile(lines, funcLine, defined, nowCall) : null;
     const cname = cByDefined.get(defined);
     let kind = 'internal';
     if (cname) kind = `export ${cname}`;
@@ -140,30 +166,28 @@ function main() {
   linesOut.push('## Imports');
   linesOut.push(...importLines);
   linesOut.push('');
-  linesOut.push('## Hot indices from after-keeps');
+  linesOut.push('## Requested indices');
   linesOut.push('');
-  linesOut.push('| chrome | defined $ | C export | kind | atomic | loops | get_now | futex | wat lines | top callees |');
+  linesOut.push('| chrome | defined $ | C export | kind | atomic | loops | get_now | atomic.wait | wat lines | top callees |');
   linesOut.push('|---|---|---|---|---|---|---|---|---|---|');
   for (const r of rows) {
     const top = r.p ? r.p.top.map(([id, n]) => `$${id}×${n}`).join(', ') : '';
     const p = r.p;
-    linesOut.push(`| ${r.chrome} | ${r.defined} | ${r.cname || ''} | ${r.kind} | ${p ? p.atomic : ''} | ${p ? p.loops : ''} | ${p ? p.nowCalls : ''} | ${p ? p.futexCalls : ''} | ${p ? p.lines : ''} | ${top} |`);
+    linesOut.push(`| ${r.chrome} | ${r.defined} | ${r.cname || ''} | ${r.kind} | ${p ? p.atomic : ''} | ${p ? p.loops : ''} | ${p ? p.nowCalls : ''} | ${p ? p.waits : ''} | ${p ? p.lines : ''} | ${top} |`);
   }
   linesOut.push('');
-  linesOut.push('## Functions that call `_emscripten_get_now` (`$fimport$0`) or futex (`$fimport$17`)');
+  linesOut.push(`## Functions that call \`_emscripten_get_now\` (${nowCall ? `\`$fimport$${nowIndex}\`` : 'not imported'}) or wait (\`memory.atomic.wait\`)`);
   linesOut.push('');
-  linesOut.push('| chrome | defined $ | C export | get_now | futex | atomic | loops |');
+  linesOut.push('| chrome | defined $ | C export | get_now | atomic.wait | atomic | loops |');
   linesOut.push('|---|---|---|---|---|---|---|');
   for (const r of nowRank.slice(0, 12)) {
-    linesOut.push(`| ${r.chrome} | ${r.defined} | ${cByDefined.get(r.defined) || ''} | ${r.nowCalls} | ${r.futexCalls} | ${r.atomic} | ${r.loops} |`);
+    linesOut.push(`| ${r.chrome} | ${r.defined} | ${cByDefined.get(r.defined) || ''} | ${r.nowCalls} | ${r.waits} | ${r.atomic} | ${r.loops} |`);
   }
   linesOut.push('');
   linesOut.push('## Notes');
   linesOut.push('');
-  linesOut.push('- `a.b` is not a defined function. A pthread that spends samples in `wasm-function[102]` is inside a defined function, not inside the import itself. `_emscripten_get_now` shows up as its own JS frame when the import is called.');
-  linesOut.push('- **after-keeps:** `wasm-function[102]` is defined `$84`. Its body is an Emscripten pthread wait: `call $fimport$0` (`_emscripten_get_now`) plus `i32.atomic.rmw.cmpxchg` on a fixed address, with timeout returns `-73` / `-27` / `-6`. Caller `$80` (chrome 98) is a 64-line wrapper. This is the pool thread parked in the mailbox, not `b2SolverTask`.');
-  linesOut.push('- The Box2D solver spinner (`solver.c` `atomicSyncBits`, `b2Pause()` empty on WASM) is the atomic-heavy internal `$74` (chrome 92). It is **not** in the top of the after-keeps trace. Do not patch `solver.c` hoping to move the 60% `wasm-function[102]` samples.');
-  linesOut.push('- First C/WASM experiment is pthread pool 4 vs 2 (`build_for_weed.bat 2`), which removes idle spinning threads. A solver-spinner patch is only worth it if a later trace shows chrome 92 (or whatever index the new binary gives `$74`) in the top.');
+  linesOut.push('- An import is not a defined function. A pthread whose samples land in `wasm-function[N]` is inside a defined function; `_emscripten_get_now` shows up as its own JS frame when the import is called.');
+  linesOut.push('- What the 2026-10-01 build\'s hot indices turned out to be (the pool thread parked in the mailbox, the solver spinner) is in HYPOTHESIS_LOG, "Trace after-keeps". Those indices do not carry over to another build.');
   linesOut.push('- Do not rebuild with `-g` and then A/B that wasm: LTO changes indices and the speed.');
   linesOut.push('');
 
