@@ -139,7 +139,7 @@ Lifecycle hooks:
 
 ### Attached decorations (`addDecoration`)
 
-Decorations parented to an entity are tracked in a **shared attachment table** (not on the pooled `GameObject` instance). You do **not** need `this._myDeco = this.addDecoration(...)` unless you prefer a cached pool index.
+Decorations parented to an entity are tracked in a **shared attachment table** (not on the pooled `GameObject` instance). You do **not** need `this._myDeco = this.addDecoration(...)`. If you cache the index, declare the field on the class (`_myDeco = -1;`) and set it in `onSpawned`. Never create it lazily in `tick()` (`if (this._myDeco === undefined) ...`): a field added after construction changes the pooled object's hidden class and deoptimizes every tick that reads it.
 
 - `addDecoration(texture, localX, localY, scaleX, scaleY, innerZ, extra?)` → decoration **pool index** (or `-1` if spawn/attach failed). Order of attachment is the order of successful `addDecoration` calls while spawned.
 - **innerZ** is signed, clamped to **`DECORATION_INNER_Z_MIN`..`DECORATION_INNER_Z_MAX`** (default scale **128** → **−127..126**). The entity sprite sorts at implicit **0**; **negative** `innerZ` draws **behind** the parent body. Constants live in `configDefaults.js` / `WEED` exports (`DECORATION_Y_SORT_SCALE`, `DECORATION_INNER_Z_*`). Light glow sprites use a **separate** render path with `ENTITY_GLOW_SORT_BIAS`; the very top slot in the band is reserved for glow, not child decorations.
@@ -156,6 +156,7 @@ Scene config: `decoration.maxAttachedDecorationsPerEntity` caps attachments per 
 When `decoration.maxDecorations > 0`, world-owned decorations (no parent) are indexed in a shared spatial hash (same `spatial.cellSize` as the entity grid). Parented / `addDecoration` props are **not** indexed.
 
 ```javascript
+// Allocate out once (module scope or onSpawned), not inside tick().
 const out = new Uint16Array(64);
 const n = Decoration.queryCircle(worldX, worldY, 100, out);
 for (let i = 0; i < n; i++) {
@@ -297,7 +298,7 @@ Add it to `static components` and use `Query.query([MyTag])` to find entities. N
 | `physics` (classic) | 0..1 | Box2D **3.2.0** WASM host + contact/joint sync. **0** when `physics.enabled` is `false` |
 | `logicWorker` | 1..N | Entity tick + callbacks + lifecycle |
 | `particleWorker` | 1 | Particles, decals, nav, visibility buffers |
-| `preRenderWorker` | 1 | Animation + render/shadow queue build. One writer; there is no `numberOfPreRenderWorkers` |
+| `preRenderWorker` | 1 | Animation + render queue build. One writer; there is no `numberOfPreRenderWorkers` |
 | `pixiWorker` | 1 | OffscreenCanvas/Pixi draw |
 | `AudioMixerProcessor` (worklet) | 1 | Real-time PCM mixing on the audio thread via SAB |
 
@@ -422,7 +423,7 @@ If `fragment` contains `/` or `.` it's treated as a direct URL (backward compat)
 
 Layers **without** a `shader` block are one instanced sprite batch at their own zIndex. With `ySorting`, they share ENTITIES' CPU painter (`orderPainterSlots` + one blend). Layers **with** a `shader` use the two-RT pipeline (density pass + fragment shader post-process).
 
-The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `renderer.useZBuffer` (default false) writes that same key as clip Z and skips the painter. It needs `ySort` or a non-zero zIndex; otherwise Z stays off. Per sprite, `SpriteRenderer.alphaCutOff` is 0–255 (`1` = drop only alpha 0; spawn default). The high cut stays 0. A soft edge still writes Z and hides what is behind it. Opaque cards belong on that path. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh; `'sprite'` leaves them in the entity list.
+The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh; `'sprite'` leaves them in the entity list.
 
 ### LiquidFun buffer density (`LAYER_DENSITY_SOURCE`)
 
@@ -602,23 +603,23 @@ Any renderable type can subscribe via `layer` / `layers`:
 WEED.ParticleEmitter.emit({
   x: this.x, y: this.y,
   texture: 'spark',
-  layer: 'FOREGROUND_FX',
+  layer: 'foregroundFx',
 });
 
 WEED.Decoration.spawn({
   x: 100, y: 200,
   texture: 'tree_canopy',
-  layer: 'CANOPY',
+  layer: 'canopy',
 });
 
 WEED.BulletPool.spawn({
   x: this.x, y: this.y, vx: 10, vy: 0,
   damage: 25, ownerId: this.index,
   texture: 'laser',
-  layer: 'LASER_LAYER',
+  layer: 'laser',
 });
 
-LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('GLOW_LAYER');
+LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('glow');
 ```
 
 Omit `layer`/`layers` → entities bit. See `docs/guide/LAYER_ROUTING.md`.
@@ -656,7 +657,7 @@ const water = WEED.Layer.water;
 water.setUniform('uWaterColor', [0.0, 0.2, 0.8]);
 
 const val   = water.getUniform('uThreshold');   // number
-const color = water.getUniform('uWaterColor');   // Float32Array subview (zero-alloc)
+const color = water.getUniform('uWaterColor');   // Float32Array subview (a new view object per call)
 ```
 
 The pixi worker picks up dirty uniforms each frame via an atomic flag.
@@ -769,7 +770,7 @@ import { BLEND_MODES } from '/src/util/configDefaults.js';
 - Set `maxItems` to a realistic cap. If exceeded, a console warning fires once.
 - Lower `resolution` for expensive shader layers (0.25-0.5 is usually fine for soft effects). Pair with `scaleMode: LAYER_SCALE_MODE.LINEAR` (default) for soft upsample; `NEAREST` looks blocky. Neither is MSAA — the RT is just smaller then stretched.
 - Disable `ySorting` if visual order within the layer doesn't matter.
-- Uniform reads with `getUniform()` return `Float32Array.subarray()` views -- zero allocation, safe for hot paths.
+- `getUniform()` returns a number for a scalar uniform (no allocation). For a vec/mat uniform it returns a new `Float32Array.subarray()` view on every call, so read it once and keep the view, or write with `setUniform`; do not call it per entity per frame.
 - The layer system uses the same `renderQueueLayout.js` as the main queue. One definition, no drift.
 
 ---
@@ -813,7 +814,8 @@ TileMap.myTilemap.getTileId(worldX, worldY, 'walls')
 const ids = TileMap.myTilemap.getAllTileIds(worldX, worldY)
 // ids = { grass: 7, sidewalk: 0, walls: 42 }
 
-// Coordinate helpers (caller-owned output objects)
+// Coordinate helpers (caller-owned output objects). Create tile and world once
+// (module scope or onSpawned), not inside tick().
 const tile = { tileX: 0, tileY: 0 }
 const world = { x: 0, y: 0 }
 TileMap.myTilemap.worldToTile(worldX, worldY, tile)
@@ -874,8 +876,12 @@ if (Mouse.isPressedAt(1)) { ... }       // slot 1 began this frame
 if (Mouse.count >= 2) {
   // Screen distance now / last frame (1 when a finger landed, lifted or the pair
   // changed). Measured in canvas pixels, so it does not feed back through the zoom.
+  // Run this from ONE place (a single controller), not every entity's tick, or the
+  // ratio is applied once per entity. targetZoom only moves the view while
+  // Camera.follow / followEntity runs (or free cam); Camera.setZoom snaps.
   Camera.targetZoom *= Mouse.pinchRatio();
-  pan(Mouse.pinchX, Mouse.pinchY);       // world midpoint of the first two down slots
+  const midX = Mouse.pinchX;            // world midpoint of the first two down slots
+  const midY = Mouse.pinchY;            // e.g. Camera.follow(midX, midY) to pan with it
 }
 // Canvas pixels of a contact: Mouse.canvasXAt(i), Mouse.canvasYAt(i).
 
@@ -1077,7 +1083,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Flash pool is finite (`lighting.maxFlashes`). Flashes also compete for `lighting.maxLights`; persistent lights win when the list is capped. Short muzzle flashes should use `Flash.spawn({ castShadows: false })` so they light without point-shadow grid work.
-- Rendering caps are finite too. One-shot pre-render warnings for visible lights, shadow queues, shadow sprites, and visibility polygon occluders mean the scene is truncating work. Tune `lighting.maxLights`, `lighting.maxFlashes`, `lighting.maxShadowCastingLights`, `lighting.maxShadowsPerLight`, `lighting.maxShadowSprites`, or reduce light/occluder density.
+- Rendering caps are finite too. One-shot pre-render warnings for visible lights, shadow casters, shadow sprites, and visibility polygon occluders mean the scene is truncating work. Tune `lighting.maxLights`, `lighting.maxFlashes`, `lighting.maxShadowCastingLights`, `lighting.maxShadowsPerLight`, `lighting.maxShadowSprites`, or reduce light/occluder density.
 - Sound slots are finite (default 128). One-shot SFX are cheap; don't forget `stop()` on loops. A full bus drops or steals a voice on that bus; `droppedCount` counts plays that found no slot.
 - Spatial sound culls anything a full viewport-width outside the camera. Keep that in mind for ambient loops.
 - Only add `CollisionListener` / `CameraInOutListener` to entity types that actually use the callbacks or `isCollidingWith()`. Without `CollisionListener` anywhere in the scene, the engine skips the entire collision callback/query pass.

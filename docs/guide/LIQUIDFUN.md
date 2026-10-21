@@ -272,7 +272,7 @@ LiquidFun.emit({
   vx: 0, vy: 0, omega: 0,
   lightIntensity: 150, // optional; same units as LightEmitter; reach = 10*sqrt(I)
   layer: 'oil',
-  layers: ['oil', 'fire'], // density + compute; omit = ENTITIES sprites only
+  layers: ['oil', 'fire'], // density + compute; omit = entities-layer sprites only
   shape: 'circle',
   posX, posY, radius: 30,
   texture: '_whiteCircle',

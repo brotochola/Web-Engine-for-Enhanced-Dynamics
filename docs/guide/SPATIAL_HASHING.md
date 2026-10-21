@@ -24,7 +24,6 @@ This trades **strict global consistency** for **one-frame eventual consistency**
    - Clear **local** cell counts (not the shared grid mid-frame).
    - Insert entities that overlap owned rows into the grid.
    - Copy local counts into the shared `gridBuffer` so readers never see a half-cleared grid.
-   - Update a shared per-cell version when an owned cell's membership count/hash changes.
 
 2. **Find neighbors** (`findNeighborsForOwnedEntities`) — per entity whose **home row** this worker owns
    - Gather candidates via precomputed **circle patterns** over grid cells (unless reuse / stagger skips that walk).
@@ -187,6 +186,8 @@ Spatial workers write into `spatialStats` (multi-worker layout). Relevant keys f
 | `MSG_MS` | Message handling time this frame (ms) |
 | `NEIGHBORS_REUSED` | Entities that skipped the cell walk this frame (stagger freeze **or** Verlet re-filter) |
 | `SLEEP_NEIGHBOR_SKIPS` | Entities that took a sleep-neighborhood early-out (campaign / experimental; 0 in production baseline) |
+
+`NO_BODY_COUNT` counts grid actives with a sprite and neither RigidBody nor Collider. `WAIT_MS` and `IDLE_MS` are the common frame meters (MEMORY_STRUCTURE.md, section 11).
 
 When comparing builds, split **`REBUILD_MS`** vs **`NEIGHBOR_MS`**: stagger only affects neighbor search; grid insert still runs every frame.
 

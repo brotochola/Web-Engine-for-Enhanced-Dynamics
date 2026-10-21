@@ -73,7 +73,8 @@ tilemap.getTileId(worldX, worldY, 'walls');
 // { sidewalk: 0, walls: 42, grass: 7 }
 const ids = tilemap.getAllTileIds(worldX, worldY);
 
-// Coordinate conversion (caller-owned output objects, no allocation)
+// Coordinate conversion with caller-owned output objects. Create tile and world once
+// (module scope or onSpawned), not inside tick(), or the call allocates every frame.
 const tile = { tileX: 0, tileY: 0 };
 const world = { x: 0, y: 0 };
 tilemap.worldToTile(worldX, worldY, tile);

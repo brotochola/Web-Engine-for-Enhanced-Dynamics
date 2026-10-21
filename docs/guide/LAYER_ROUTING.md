@@ -90,7 +90,7 @@ Sprite-queue bits: collect **once per bit**. Density bits: splat pose, no type-7
 
 **Particles / LiquidFun:**
 ```javascript
-ParticleEmitter.emit({ x, y, texture: 'spark', layer: 'FOREGROUND_FX' });
+ParticleEmitter.emit({ x, y, texture: 'spark', layer: 'foregroundFx' });
 LiquidFun.emit({ layer: 'oil', ... });
 LiquidFun.emit({ layers: ['oil', 'fire'] });
 ```
@@ -101,7 +101,7 @@ Decoration.spawn({
   x: 100,
   y: 200,
   texture: 'tree_canopy',
-  layer: 'CANOPY',
+  layer: 'canopy',
   anchorY: 0.5,
 });
 ```
@@ -116,7 +116,7 @@ BulletPool.spawn({
   damage: 25,
   ownerId: this.index,
   texture: 'laser',
-  layer: 'LASER_LAYER',
+  layer: 'laser',
 });
 ```
 
@@ -132,7 +132,7 @@ World vs local tiling (`setTileWorld` / `setTileLocal` / `bakeWorldTileToLocal`)
 
 **Light Glows:**
 ```javascript
-LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('GLOW_LAYER');
+LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('glow');
 LightEmitter.layerIdOfGlowSprite[this.index] = 0; // inherit entity layerMask
 ```
 
@@ -162,7 +162,7 @@ preRenderWorker:
   buildCustomLayerQueues()  --> per-layer sortKey, dispatch by type, write to per-layer SABs
 
 pixiWorker:
-  updateSpritesFromRenderQueue()  --> main SAB. Sprite zIndex is the coarse key. With renderer.ySort, Y orders inside that band and the painter reinserts. Emit order when ySort is off and every zIndex is 0. Particles and decorations share that list. Glow stays a later ADD batch, sorted by the same key. renderer.useZBuffer writes that key as clip Z and skips the painter. `SpriteRenderer.alphaCutOff` is 0–255 per sprite (`1` = drop only alpha 0). 0 on a row uses the shader fallback. The high cut stays 0.
+  updateSpritesFromRenderQueue()  --> main SAB. Sprite zIndex is the coarse key. With renderer.ySort, Y orders inside that band and the painter reinserts. Emit order when ySort is off and every zIndex is 0. Particles and decorations share that list. Glow stays a later ADD batch, sorted by the same key.
   updateCustomLayers()            --> each layer SAB. Same CPU painter + one blend as ENTITIES when that layer has ySorting.
 ```
 
@@ -189,8 +189,17 @@ Layer.get("lighting").alpha = 0;
 const a = Layer.get("water").alpha;
 
 // Animate alpha in a tick(). accumulatedTime is ms since the worker started.
+// Look the layer up once, in onSpawned, not on every tick. Keep it at module level
+// but resolve it at spawn: layers are rebuilt on a scene switch.
+let water = null; // module scope, next to your GameObject subclass
+
+// in the subclass:
+onSpawned() {
+  water = Layer.get("water");
+}
+
 tick(dtRatio, deltaTime, accumulatedTime) {
-  Layer.get("water").alpha = Math.sin(accumulatedTime * 0.002) * 0.5 + 0.5;
+  water.alpha = Math.sin(accumulatedTime * 0.002) * 0.5 + 0.5;
 }
 ```
 

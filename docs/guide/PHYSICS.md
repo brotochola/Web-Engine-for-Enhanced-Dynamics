@@ -127,7 +127,7 @@ Command ring `setVelocity` works once `hasBody` (RB-only included). Col-only sta
 
 ## Time scale
 
-`clockData` is one `Float32`, default `1`. `Time.scale` writes it. `0` is a hitstop. A non-finite write is read back as `1`. A negative write is read back as `0`.
+`clockData` is one `Float32`, default `1`. `Time.scale` writes it. `0` is a hitstop. A non-finite write is read back as `1`. A negative write is read back as `0`. A value above `4` is read back as `4` (`MAX_TIME_SCALE`).
 
 [`AbstractWorker.updateFrameTiming`](../../src/workers/abstractWorker.js) multiplies the sim step (`deltaTime` and `dtRatio`, and the accumulated sim clock) by that value. The physics host does the same to the seconds it passes to `weedjsDoStep`, after the 1/20 s hitch cap, in both its own loop and a lockstep `step`. `Scene.update` and the sun day-cycle receive the scaled step. Free-cam uses the wall step.
 
@@ -196,7 +196,7 @@ Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.tes
 
 ### Soft contact knobs
 
-Soft spring bias (`contactHertz` / damping / maxBias) is **not used** by the current resolve path. Prefer tuning `subStepCount`, `linearDamping`, and `angularDamping` instead.
+`physics.contactHertz` (default 30) and `physics.contactDampingRatio` (default 0.7) are passed to the Box2D world (`b2WorldDef`) as its soft contact spring, and `physics.contactSpeed` (default 1000) caps the push-out speed. For stability also tune `subStepCount`, `linearDamping`, and `angularDamping`.
 
 ### Collider shape types
 
@@ -395,7 +395,7 @@ Physics-only fields on `physicsStats` (`PHYSICS_STATS`):
 | `CONTACT_DROPPED` / `SENSOR_DROPPED`         | WASM export drops + contact-ring overrun counter                     |
 | `BODY_SYNC_*` / `JOINT_SYNC_*` / `COMMAND_*` | Nested subphase timings and change counts                            |
 
-With capped FPS (~60), prefer **Step** over FPS to compare worker load.
+With capped FPS (~60), prefer **Step** over FPS to compare worker load. Every worker also writes `WAIT_MS` (wall ms blocked on a sibling inside the step) and `IDLE_MS` (wall ms between frames, not part of `STEP_MS`). Layout and strides: MEMORY_STRUCTURE.md, section 11.
 
 ---
 

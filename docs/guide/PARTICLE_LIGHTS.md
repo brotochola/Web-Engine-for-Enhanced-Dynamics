@@ -82,7 +82,7 @@ These lights do not cast shadows, so a pool shines through rock. If that looks w
 
 ## Demo
 
-The terrain scene turns lighting on, sets `particleLights.enabled`, and uses `baseAmbient` around `0.3`. Lighting multiplies every layer under it, including the ship and the islands. `0.45` washes that out. The line of light samples is a second, shorter `emitAlongLine`. The impact burst is a handful of particles and is not the budget. Look at continuous fire, not a single shot.
+The terrain scene turns lighting on, sets `particleLights.enabled`, and uses a dark `baseAmbient` of `0.05` so the particle lights read clearly. Lighting multiplies every layer under it, including the ship and the islands. A bright ambient such as `0.45` washes the lights out. The line of light samples is a second, shorter `emitAlongLine`. The impact burst is a handful of particles and is not the budget. Look at continuous fire, not a single shot.
 
 ## Tests
 

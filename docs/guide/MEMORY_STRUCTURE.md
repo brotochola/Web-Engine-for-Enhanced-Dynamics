@@ -91,7 +91,7 @@ Every entity gets a visual-range neighbor list (Box2D owns contacts).
 | --------------------- | ------------------------------------------------------------------------------- |
 | **Size**              | `totalEntityCount * (1 + maxNeighbors) * entityIdBytes()` (default `maxNeighbors` = 128; width 16 is `* 2`) |
 | **Per-entity layout** | `[totalCount, neighbors[maxNeighbors]]` in the scene entity-id width                         |
-| **Typed array**       | `Uint16Array` at width 16, `Uint32Array` at width 32                                                                   |
+| **Typed array**       | `Uint16Array` at width 16, `Uint32Array` at width 32. At width 16 with spatial workers on, these rows (and the latched poses, candidate rows and per-worker lists) live in one shared `WebAssembly.Memory` (`src/util/spatialPublishMemory.js`) after a 128 KiB header, so the real buffer is larger than the size above. Width 32 uses plain SharedArrayBuffers. |
 
 | Writer                           | Reader                                      |
 | -------------------------------- | ------------------------------------------- |
@@ -246,23 +246,26 @@ Two identical buffers. Pre_render writes one while pixi reads the other.
 
 **Per-item layout (packed SoA across the buffer):**
 
-| Field         | Type    | Count                    |
-| ------------- | ------- | ------------------------ |
-| `count`       | Int32   | 1 (header)               |
-| `x`           | Float32 | max                      |
-| `y`           | Float32 | max                      |
-| `scaleX`      | Float32 | max                      |
-| `scaleY`      | Float32 | max                      |
-| `rotation`    | Float32 | max                      |
-| `alpha`       | Float32 | max                      |
-| `tint`        | Uint32  | max                      |
-| `textureId`   | Uint16  | max (+ 4-byte align pad) |
-| `anchorX`     | Float32 | max                      |
-| `anchorY`     | Float32 | max                      |
-| `type`        | Uint8   | max (+ 4-byte align pad) |
-| `entityIndex` | Int32   | max                      |
+| Field                        | Type    | Count                    |
+| ---------------------------- | ------- | ------------------------ |
+| `count`                      | Int32   | 1 (header)               |
+| `x`, `y`                     | Float32 | max                      |
+| `scaleX`, `scaleY`           | Float32 | max                      |
+| `rotC`, `rotS`               | Float32 | max (cos/sin of the drawn rotation) |
+| `alpha`                      | Float32 | max                      |
+| `tint`                       | Uint32  | max                      |
+| `textureId`                  | Uint16  | max (+ 4-byte align pad) |
+| `anchorX`, `anchorY`         | Float32 | max                      |
+| `type`                       | Uint8   | max (+ 4-byte align pad) |
+| `sortKey`                    | Float32 | max (painter key when the layer y-sorts) |
+| `repeatX`, `repeatY`         | Uint16  | max (tile period in px; 0 = stretch) |
+| `tileMode`                   | Uint8   | max (+ 4-byte align pad) |
+| `tileOffsetU`, `tileOffsetV` | Uint16  | max (0..65535 = UV 0..1) |
+| `tileMulX`, `tileMulY`       | Float32 | max                      |
+| `shadowH`                    | Float32 | max (ShadowCaster height; 0 = casts nothing) |
+| `shadowOffX`, `shadowOffY`   | Float32 | max (shadow anchor offsets) |
 
-This layout is defined once in `src/render/renderQueueLayout.js` and used by Scene (allocation), preRenderWorker (write views), and pixiWorker (read views). To add a field, edit the `FIELDS` array in that file.
+This layout is defined once, as the `FIELDS` array in `src/render/renderQueueLayout.js`, and used by Scene (allocation), preRenderWorker (write views), and pixiWorker (read views). That array is the source of truth; to add a field, edit it. Each queue also has a 20-byte camera sibling: Float32 `[zoom, x, y, rotation]` plus an Int32 `poseReady`.
 
 | Writer            | Reader      |
 | ----------------- | ----------- |
@@ -296,18 +299,9 @@ Entities are routed to a layer's queue when `SpriteRenderer.layerMask` includes 
 | ------------------------------------------------- | ------ |
 | Pre_render (`readyFrame`), pixi (`consumedFrame`) | Both   |
 
-### Shadow/Light Queue (`shadowRenderQueueDataA` / `shadowRenderQueueDataB`)
+### Shadows
 
-Same double-buffered pattern. Separate queue for shadow casters and lights.
-
-| Property      | Value                                                           |
-| ------------- | --------------------------------------------------------------- |
-| **Size**      | `4 + (maxShadowSprites + maxLights) * 40` bytes per buffer      |
-| **Item size** | 40 bytes (same fields as main queue minus `type`/`entityIndex`) |
-
-| Writer            | Reader      |
-| ----------------- | ----------- |
-| Pre_render worker | Pixi worker |
+There is no separate shadow queue. A sprite casts a shadow when its main-queue row has `shadowH > 0` (`shadowOffX` / `shadowOffY` are its anchor offsets, from `ShadowCaster`). Pre-render compacts those rows into the GPU caster lists, and Pixi draws sun shadows as a second pass over the same sprites.
 
 ### `entityTextureData`
 
@@ -519,15 +513,15 @@ Every worker family writes its own stats SAB. Main thread reads them for DebugUI
 
 Performance rows (aligned columns **Step · Fps · Msg · Details**): Main → Logic → Physics → PreRender → Render → Spatial → Particles → Audio.
 
-All use a strided `Float32Array` layout: **16 floats (64 bytes) per worker slot** (physics uses **32 floats**).
+All use a strided `Float32Array` layout. The stride is per schema (`STRIDE_FLOATS` in `src/util/workersUtils.js`): renderer 39, particle 19, physics 50, spatial 16, logic 18, pre-render 21 floats per worker slot.
 
-Every worker exposes **`STEP_MS`** (wall ms for that frame’s work) and **`FPS`**. DebugUI Performance tab shows **Step**, then **FPS**, then worker-specific fields. With capped FPS (~60), Step is the load signal.
+Every worker exposes **`STEP_MS`** (wall ms for that frame’s work) and **`FPS`**. DebugUI Performance tab shows **Step**, then **FPS**, then worker-specific fields. With capped FPS (~60), Step is the load signal. Every worker also writes `WAIT_MS` (wall ms blocked on a sibling inside the step; always 0 on the renderer) and `IDLE_MS` (wall ms between the end of the previous frame and the start of this one, not part of `STEP_MS`).
 
 | Buffer            | Slots                    | Fields                                                                                                                                              |
 | ----------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rendererStats`   | 1                        | FPS, …, MSG_MS, **STEP_MS**; DRAW_CALLS, VISIBLE_*, SPRITES_CREATED, ACTIVE_DECORATIONS                                                             |
 | `particleStats`   | 1                        | FPS, …, MSG_MS, BUILD_ACTIVE_VISIBLE_MS, PARTICLE_PHYSICS_MS, **STEP_MS**; ACTIVE/TOTAL particles & entities                                        |
-| `physicsStats`    | 1                        | FPS, **STEP_MS**, MSG_MS, BODY_COUNT, JOINT_COUNT, CONTACT_*, SENSOR_*, WEED_JOINTS, subphase timings, HEAP_*, WAIT_MS, IDLE_MS, QUERY_WAKE_MS (stride 50) |
+| `physicsStats`    | 1                        | FPS, **STEP_MS**, MSG_MS, BODY_COUNT, JOINT_COUNT, CONTACT_*, SENSOR_*, WEED_JOINTS, subphase timings, HEAP_*, QUERY_WAKE_MS |
 | `spatialStats`    | N (1 per spatial worker) | FPS, …, MSG_MS, NEIGHBORS_REUSED, **STEP_MS**; NEIGHBOR_CHECKS, GRID_CELLS_CHECKED, ENTITIES_PROCESSED, REBUILD_MS, NEIGHBOR_MS                    |
 | `logicStats`      | N (1 per logic worker)   | FPS, ENTITIES_PROCESSED, SYSTEMS_EXECUTED, MSG_MS, **STEP_MS**; PAIR_COUNT (all tracked pairs, the same on every worker), PAIR_OWN (this worker's)        |
 | `preRenderStats`  | 1                        | FPS, …, MSG_MS, SKIPPED_FRAMES, **STEP_MS**; VISIBLE_*, SHADOWS_UPDATED, RENDER_QUEUE_SIZE                                                          |
@@ -600,12 +594,12 @@ Any thread (logic workers, main thread) can call `SoundManager.play` without `po
 
 The `AudioMixerProcessor.process()` runs on the audio render thread:
 
-1. Iterates all slots, skips any with `state !== 1`
+1. Iterates slots (up to the voice cap), skips any with `state !== 1`, and with buses keeps only the loudest voices per bus; the rest only advance their cursor
 2. Reads PCM from pre-loaded asset buffers, applying linear interpolation for pitch
 3. Equal-power pan: `gL = cos((pan+1) × π/4) × vol × mixGain`, `gR = sin(…)`
 4. Advances `cursor` by `pitch` per output frame, writes it back to SAB
 5. On end-of-buffer: loops (resets cursor) or frees slot (`state = 0`)
-6. Applies `masterVolume` and hard clips at ±1
+6. Applies per-bus gain and compressor, the master compressor, then `masterVolume`, and hard clips at ±1
 
 | Writer                                                            | Reader                                       |
 | ----------------------------------------------------------------- | -------------------------------------------- |
@@ -617,9 +611,10 @@ Audio assets are **not** in the SAB. They are decoded on the main thread and sen
 
 | Message  | Direction      | Payload                                    |
 | -------- | -------------- | ------------------------------------------ |
-| `init`   | Main → Worklet | `{ sab, maxSlots }`                        |
+| `init`   | Main → Worklet | `{ sab, maxSlots, processMsSab, levelsSab, channelSab, channelCount, maxVoices, voiceCap }`                        |
 | `load`   | Main → Worklet | `{ id, channels: Float32Array[], length }` |
 | `unload` | Main → Worklet | `{ id }`                                   |
+| `channels` | Main → Worklet | `{ channelCount, maxVoices, voiceCap }`  |
 
 The worklet stores assets in a `Map<id, { ch, len, nCh }>`. Only slot state travels through the SAB; decoded PCM stays local to the worklet.
 
@@ -634,7 +629,7 @@ The worklet stores assets in a `Map<id, { ch, len, nCh }>`. Only slot state trav
 | `gamepadData`      | 624 bytes (4 × 39 × Float32)| Per pad: `[connected, axes[4], buttons[17], pressCounts[17]]`                          | Main thread (poll)        | All workers               |
 | `clockData`        | 4 bytes (1 × Float32)       | `[timeScale]`. `1` real time, `0` hitstop. Sim dt only; wall `STEP_MS` / FPS do not read it. | Any realm via `Time.scale` | Workers, physics host, main |
 | `tweenData`        | `config.tween.maxTweens` (default 128) slots | Paint / kinematic xy / zoom. Each logic worker ticks its own block of slots (one writer per slot); that is not necessarily the worker that ticks the entity, so do not tween a field the entity's tick also writes. Slot state 0 free, 2 claiming, 1 live. Dynamic body xy is refused. 0 skips the buffer. | Any logic worker `Tween.to` | Every logic worker (its block) |
-| `cameraData`       | 68 bytes (17 × Float32)     | `[zoom, x, y, followTargetX, followTargetY, targetZoom, followEntity+1, followUsedX, followUsedY, rotation, deadzoneHalfW, deadzoneHalfH, shakeAmp, shakeDur, shakeElapsed, shakePhase, followSeq]`. Slot 16 is an Int32 seqlock over every camera write (zoom, x/y, follow fields), so the drawn camera reads them as one set. SAB `x/y` may ease; drawn follow is `renderQueueCamera` (packed pose + look-ahead + shake). | Logic `follow*` / `shake` | Pre-render packs shake |
+| `cameraData`       | 68 bytes (16 × Float32 + 1 Int32 seqlock)     | `[zoom, x, y, followTargetX, followTargetY, targetZoom, followEntity+1, followUsedX, followUsedY, rotation, deadzoneHalfW, deadzoneHalfH, shakeAmp, shakeDur, shakeElapsed, shakePhase, followSeq]`. Slot 16 is an Int32 seqlock over every camera write (zoom, x/y, follow fields), so the drawn camera reads them as one set. SAB `x/y` may ease; drawn follow is `renderQueueCamera` (packed pose + look-ahead + shake). | Logic `follow*` / `shake` | Pre-render packs shake |
 | `debugData`        | 32 bytes                    | `[flagBytes[0..17]: Uint8, pad[18..19], selectedEntityIndex: Int32 @ 20..23]`          | Main thread               | All workers               |
 | `raycastDebugData` | `(1 + 100*7) * 4` bytes     | `[count, per-ray: startX, startY, endX, endY, hitX, hitY, hit]` Float32                | Logic workers             | Main thread               |
 | `sunData`          | 64 bytes                    | Mixed Uint8/Float32/Uint32 (see `Sun.OFFSETS`)                                         | Main thread               | All workers               |
@@ -665,7 +660,7 @@ The big picture. Who writes what, who reads what.
 | Box2D contact/sensor events (HEAP → contact ring) | Nested Box2D WASM (`weedjsPost` publish) | Logic workers (`CollisionListener`) |
 | Impact buffer                                 | Particle worker                                                                              | Logic workers                                |
 | Joint data                               | Logic workers (create), physics (sync)                                                    | Logic, physics                               |
-| Render queues (main + shadow)                 | Pre_render worker                                                                            | Pixi worker                                  |
+| Render queues (main + custom layers)          | Pre_render worker                                                                            | Pixi worker                                  |
 | Custom layer render queues                    | Pre_render worker                                                                            | Pixi worker                                  |
 | Render queue sync                             | Pre_render + pixi (Atomics)                                                                  | Both                                         |
 | Entity texture data                           | Pre_render worker                                                                            | Pixi worker                                  |

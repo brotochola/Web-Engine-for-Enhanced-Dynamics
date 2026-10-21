@@ -35,7 +35,8 @@ if (r.hit) {
   damageEntity(r.entityIndex);
 }
 
-// Stable result storage with no allocation:
+// Result storage you reuse. Create it once (module scope or onSpawned), never inside
+// tick(): a new object per call is the allocation `out` exists to avoid.
 const out = { hit: false, entityIndex: -1, distance: Infinity, hitX: 0, hitY: 0, fixtureIndex: -1 };
 Ray.castWithInfo(gun.x, gun.y, targetX, targetY, Infinity, 0xffffffff, out);
 ```
@@ -53,7 +54,7 @@ for (const h of hits) {
   spawnBulletHole(h.hitX, h.hitY);
 }
 
-// Stable array storage with no per-frame allocation:
+// Create this array once (module scope or onSpawned), never inside tick():
 const outHits = [];
 Ray.castAll(gun.x, gun.y, targetX, targetY, Infinity, 5, 0xffffffff, outHits);
 ```

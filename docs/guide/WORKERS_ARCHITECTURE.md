@@ -15,7 +15,7 @@ Each worker owns its data region so hot paths can avoid broad locking and per-fr
 | `physics` (classic)   |  0..1 | No       | No                  | Box2D 3.2.0 WASM host (`box2dWasm` + `physicsHost`), contacts, joints. **0** when `config.physics.enabled === false` |
 | `logicWorker`        |  1..N | Yes      | **Yes**             | Entity `tick()`, callbacks, lifecycle                    |
 | `particleWorker`     |     1 | No       | No                  | Particles, bullets, decals, navigation, visibility lists |
-| `preRenderWorker`   |     1 | No       | No                  | Animation, visibility, render + shadow queue assembly    |
+| `preRenderWorker`   |     1 | No       | No                  | Animation, visibility, render queue assembly             |
 | `pixiWorker`         |     1 | No       | No                  | PixiJS on OffscreenCanvas. Draws the frame.              |
 | `audioMixerProcessor` |     1 | No       | No                  | Real-time PCM mixing on audio thread (AudioWorklet)      |
 
@@ -127,7 +127,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 | `inputData`              | Read                                 | Keyboard held state + press counters (shared across all workers via `Keyboard`)        |
 | `mouseData`              | Read                                 | Mouse position + buttons                                                               |
 | `gamepadData`            | Read                                 | Multipad axes/buttons + press counters (`Gamepad`; main thread writes via `poll()`)    |
-| `cameraData`             | Read/**Write**                       | Camera state SAB `[zoom,x,y,followX,followY,targetZoom]` (prefer single writer policy) |
+| `cameraData`             | Read/**Write**                       | Camera state SAB, 17 slots, layout in MEMORY_STRUCTURE.md (`zoom, x, y, followTarget*, targetZoom, followEntity+1, followUsed*, rotation, deadzone*, shake*, followSeq`). Prefer a single writer. |
 | `queryResultsSAB`        | Read, **published write** (logic 0)  | Triple-buffered pre-computed active query snapshots                                    |
 | `queryVersionSAB`        | Read/**Write** (logic 0 maintenance) | Shared invalidation counter for cached non-precomputed active queries                  |
 | `Joint` SAB              | **Write**                            | Create joints via `Joint.addDistance` / `addRevolute` / `addPrismatic` / `addWeld`    |
@@ -195,7 +195,7 @@ The multitasker. Handles particles, bullets, decals, navigation computation, vis
 
 ### Pre-Render Worker (1)
 
-Reads visibility lists, advances animations, builds the render and shadow queues that pixi consumes. **Sprite animation is owned entirely here** (main ENTITIES queue and custom-layer queues) — `pixiWorker` only consumes resolved `textureId` values from the render queue.
+Reads visibility lists, advances animations, builds the render queues that pixi consumes (shadow casters are rows with `shadowH > 0`). **Sprite animation is owned entirely here** (main ENTITIES queue and custom-layer queues) — `pixiWorker` only consumes resolved `textureId` values from the render queue.
 
 **What it does each frame:**
 
@@ -208,7 +208,7 @@ Reads visibility lists, advances animations, builds the render and shadow queues
    - density bits skip sprite collect
 5. Build main render queue (SoA packed via `renderQueueLayout.js`). Each item gets a `sortKey` (`worldY * 128`, plus `innerZ` for decorations). No CPU sort here.
 6. Build per-layer custom render queues (same `sortKey`, no CPU sort). Emits `console.warn` if a layer's queue overflows `maxItems`
-7. Build shadow/light render queue (respects `maxShadowsPerEntity` budget across sun + point lights)
+7. Write each caster row's `shadowH` / `shadowOffX` / `shadowOffY`; the GPU sun and point-light caster lists are packed from them, with the `maxShadowsPerEntity` budget applied there
 8. If more than 1 frame ahead of pixi, skip this pre-render tick and let pixi reuse the latest complete queue
 9. Write to alternating double buffer (`renderQueueFrame % 2`)
 10. Signal pixi via `Atomics.store` + `Atomics.notify` on `renderQueueSync`
@@ -222,8 +222,7 @@ Visibility polygon generation uses bounded event/active pools. If those caps ove
 | `poseDataA/B`              | Read           | Latched post-step display pose (SoA x/y/rotation); consume via `poseSync`             |
 | `poseSync`                 | Read/**Write** | Atomics: readyFrame (physics) + consumedFrame (pre_render, like pixi on render queue) |
 | `renderQueueDataA/B`       | **Write**      | Alternating double buffer (layout from `renderQueueLayout.js`)                        |
-| `renderQueueCameraA/B`     | **Write**      | Per-buffer camera snapshot `[zoom,x,y]` frame-locked to render queue generation       |
-| `shadowRenderQueueDataA/B` | **Write**      | Shadow/light queue                                                                    |
+| `renderQueueCameraA/B`     | **Write**      | Per-buffer camera snapshot, Float32 `[zoom,x,y,rotation]` + Int32 `poseReady` (20 bytes), frame-locked to render queue generation       |
 | Per-layer `dataA/B`        | **Write**      | Custom layer render queues (same SoA layout, sized to `config.layers[name].maxItems`) |
 | `renderQueueSync`          | Read/**Write** | Atomics: readyFrame + consumedFrame                                                   |
 | `entityTextureData`        | **Write**      | Per-entity texture ID                                                                 |
@@ -255,7 +254,7 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
 2. If new: take the oldest unread queue (`lastReadFrame + 1`, not the newest — pre-render publishes inside the same vsync and would otherwise be skipped then repeated; with `preRender.backpressure: false` it takes the newest), switch read buffer to `(frame - 1) % 2`, latch `renderQueueCamera`. `Atomics.store(renderQueueSync, 1, readyFrame)` + notify runs after shadows, sprites, and custom layers have read that buffer. A canvas that is not presenting releases immediately so pre-render does not wait.
 3. **Stale-frame gating:** frame-locked GPU passes (visible lights, lighting/shadow RTs, main + custom sprite queue sync, offscreen lighting mesh) run only when a new queue frame arrived, on resume, or before the first frame. When pixi outpaces pre_render, it skips redundant work that would be pixel-identical. Always-on passes: camera transform, layer alpha dirty poll, decal tile upload (driven by particle_worker dirty flags). With `renderer.interpolation: true`, a quiet frame still writes `uPoseAlpha` on the entity batch (time since the last queue publish, over the smoothed gap between publishes). The entity instance record grows to 17 floats (`prevX`, `prevY`) only on that batch. Alpha 0 is the previous queue pose, alpha 1 the new one. A count change snaps. Particles, glow, shadows, and custom layers stay on the 15-float upload and simply hold still between publishes. `uPoseAlpha` is a number, not a `Float32Array`: WebGL's `f32` sync treats the same array as unchanged.
 4. When frame-locked passes run:
-   - Sync main sprites (ENTITIES layer) from the main render queue. With `ySort` or a sprite `zIndex`, Pixi keeps last frame's order and reinserts only the slots whose `sortKey` changed, then draws them back to front in one blend. `zIndex` is the coarse band. `ySort` orders by Y inside that band. Particles, decorations, bullets, Adobe pieces, and liquid join that list. Glow stays a later ADD batch on the `lightGlows` layer when `lighting.lightGlow` is `'add'` (the default). `'sprite'` does not create that layer: the glow quads stay in the entity list, a little in front of the body, and composite source-over (the soft edge can go gray, and the lighting multiply sits on top of them). Custom sprite layers use the same `_uploadSortedSprites` / `orderPainterSlots` path. Without `ySort` and with every zIndex at 0, nothing is sorted (bunny). With no painter and lighting off, the upload is dense: no `idxE` walk. The instance vertex buffer is two Pixi buffers swapped each upload, so `bufferSubData` does not hit the buffer the previous draw is still reading. `useZBuffer` (default off) skips that painter when `ySort` or a sprite `zIndex` gives it a key: the same sort key becomes clip Z (`1 - key / (worldHeight * 128)`), the entity batch depth-tests, and texels under `renderer.alphaCut` (default 1/255) do not write Z. The high cut stays 0. Opaque cards belong there; a soft PNG edge still writes Z and hides what is behind it. Glow ADD, shadows, and lighting do not depth-test. The old coverage pass stays off: on a moving 300k grid that two-pass tied the CPU painter (30.6 ms vs 30.1 ms).
+   - Sync main sprites (ENTITIES layer) from the main render queue. With `ySort` or a sprite `zIndex`, Pixi keeps last frame's order and reinserts only the slots whose `sortKey` changed, then draws them back to front in one blend. `zIndex` is the coarse band. `ySort` orders by Y inside that band. Particles, decorations, bullets, Adobe pieces, and liquid join that list. Glow stays a later ADD batch on the `lightGlows` layer when `lighting.lightGlow` is `'add'` (the default). `'sprite'` does not create that layer: the glow quads stay in the entity list, a little in front of the body, and composite source-over (the soft edge can go gray, and the lighting multiply sits on top of them). Custom sprite layers use the same `_uploadSortedSprites` / `orderPainterSlots` path. Without `ySort` and with every zIndex at 0, nothing is sorted (bunny). With no painter and lighting off, the upload is dense: no `idxE` walk. The instance vertex buffer is two Pixi buffers swapped each upload, so `bufferSubData` does not hit the buffer the previous draw is still reading. Sprites are always ordered by that CPU painter; there is no depth-buffer path.
    - Update shadows, lights, particles, decorations, bullets
    - **For each custom layer** (see pipeline below):
      - Read the layer's double-buffered render queue
@@ -317,7 +316,6 @@ This enables effects like metaball water, fog accumulation, heat distortion -- a
 | -------------------------- | -------------- | ----------------------------------------------------------------- |
 | `renderQueueDataA/B`       | Read           | Main sprite queue (layout from `renderQueueLayout.js`)            |
 | `renderQueueCameraA/B`     | Read           | Camera snapshot matched to the consumed render queue buffer       |
-| `shadowRenderQueueDataA/B` | Read           | Shadow/light queue                                                |
 | Per-layer `dataA/B`        | Read           | Custom layer render queues (same SoA layout)                      |
 | `renderQueueSync`          | Read/**Write** | Atomics: consume frame + notify                                   |
 | `Layer._configSAB`         | Read           | Layer properties (zIndex, blendMode, hasShader, resolution, etc.) |
@@ -362,9 +360,10 @@ Slot word `+7` is the bus in bits 0..7 and that bus's list index in bits 8..23. 
 
 | Message  | Payload                    | Purpose           |
 | -------- | -------------------------- | ----------------- |
-| `init`   | `{ sab, maxSlots }`        | Attach SAB views  |
+| `init`   | `{ sab, maxSlots, processMsSab, levelsSab, channelSab, channelCount, maxVoices, voiceCap }` | Attach SAB views |
 | `load`   | `{ id, channels, length }` | Store decoded PCM |
 | `unload` | `{ id }`                   | Free asset memory |
+| `channels` | `{ channelCount, maxVoices, voiceCap }` | Bus count or voice caps changed |
 
 ---
 
@@ -406,7 +405,7 @@ Slot word `+7` is the bus in bits 0..7 and that bus's list index in bits 8..23. 
                   │                    │
                   │  animation,        │
                   │  render queues,    │
-                  │  shadow queues,    │
+                  │  shadow columns,   │
                   │  custom layer      │
                   │  queues            │
                   └─────────┬──────────┘
@@ -471,9 +470,10 @@ Slot word `+7` is the bus in bits 0..7 and that bus's list index in bits 8..23. 
 
 | Message  | Payload                                    | When                                                 |
 | -------- | ------------------------------------------ | ---------------------------------------------------- |
-| `init`   | `{ sab, maxSlots }`                        | Once, during `SoundManager.initializeAudioWorklet()` |
+| `init`   | `{ sab, maxSlots, processMsSab, levelsSab, channelSab, channelCount, maxVoices, voiceCap }` | Once, during `SoundManager.initializeAudioWorklet()` |
 | `load`   | `{ id, channels: Float32Array[], length }` | Per sound, after `decodeAudioData`                   |
 | `unload` | `{ id }`                                   | On `SoundManager.unload()` / `reset()`               |
+| `channels` | `{ channelCount, maxVoices, voiceCap }`  | When the scene's bus layout changes                  |
 
 ### Workers → Main Thread
 
@@ -556,4 +556,4 @@ Regression harness: `node tests/bench/sceneCycleSmoke.mjs`.
 - Atomics are used where workers share mutable coordination state: render-queue double buffer (pre_render ↔ pixi), physics pose publish (`poseSync`: physics ↔ pre_render; particle latches without consume), Treiber free-list heads (`atomicFreeList.js`), `impactBuffer` batch `seq`, NavGrid slot `status` publication, layer alpha/uniform dirty flags, audio slot CAS, query snapshot versioning, and assorted stats/debug fields. Most component SABs rely on single-writer ownership instead of per-field atomics.
 - Single-writer ownership eliminates the need for locks on frame-critical data.
 - If your game stutters, check `frameRateData` in debug UI to find which worker is the bottleneck.
-- A play claim is still a CAS on the slot. The per-bus voice list takes a short spinlock first. The worklet reads the SAB at hardware sample rate with zero postMessage overhead per frame. If you see `droppedCount` rising, increase `audio.maxSlots` (default 128) or `stop()` looping sounds. A full bus can also steal its quietest voice instead of using another bus's slots.
+- A play claim is still a CAS on the slot. The per-bus voice list takes a short spinlock first. The worklet reads the SAB at hardware sample rate with zero postMessage overhead per frame. If you see `droppedCount` rising, check the bus cap first. Each bus plays at most `maxVoices` at once (the default `main` bus: 32). At the cap a louder play replaces that bus's quietest voice and a quieter one is dropped. Raise `audio.channels.<bus>.maxVoices`. Raise `audio.maxSlots` (default 128, shared by all buses) only when the total of live voices reaches it, or `stop()` looping sounds.

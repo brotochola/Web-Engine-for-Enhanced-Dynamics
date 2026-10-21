@@ -9,6 +9,11 @@ class MyEntity extends GameObject {
   // it (and those methods) if this type does not need collision callbacks.
   static components = [RigidBody, Collider, SpriteRenderer, CollisionListener];
 
+  // Per-instance state: declare every field here so it exists from construction, and
+  // reset it in onSpawned(). Instances are pooled; a field first added in tick() changes
+  // the object's hidden class and deoptimizes the code that reads it.
+  // cooldown = 0;
+
   // Optional: reduce logic frequency when staggered updates are enabled
   // static tickInterval = 2;
   // static tickInterval = 0; // never visit (or just omit tick() entirely)
@@ -68,14 +73,16 @@ class MyEntity extends GameObject {
       // ...
     }
 
-    // Sound playback — works identically on main thread and workers.
-    // play(nameOrId, volume, rateMin, rateMax, loop, mute, worldX, worldY)
-    // Spatial args (worldX/Y) enable distance attenuation + stereo pan.
-    SoundManager.play('step', 0.4, 0.9, 1.1, 0, 0, this.x, this.y);
+    // Sound: do not call SoundManager.play() unconditionally in tick(). tick runs every
+    // frame, so that starts a new overlapping voice every frame. Play on an event (a key
+    // press, onCollisionEnter below) or on a timer you check here.
   }
 
   onCollisionEnter(otherIndex) {
-    // Optional callback
+    // Optional callback. One-shot events are where sounds belong.
+    // play(nameOrId, volume, rateMin, rateMax, loop, mute, worldX, worldY)
+    // Spatial args (worldX/Y) enable distance attenuation + stereo pan.
+    SoundManager.play('hit', 0.4, 0.9, 1.1, 0, 0, this.x, this.y);
   }
 
   onDespawned() {
