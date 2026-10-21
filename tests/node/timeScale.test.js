@@ -98,6 +98,23 @@ test('updateFrameTiming scales sim dt and leaves wall FPS alone', { concurrency:
   }
 });
 
+test("the physics host's readTimeScale is sanitizeTimeScale for every value (R7)", () => {
+  // The host is a classic script and keeps a copy. The copy had lost the
+  // MAX_TIME_SCALE clamp: gameLoop's 1/30 s dt cap hid it, stepOnce has none.
+  const host = readFileSync(join(root, 'src/box2d/physicsHostImpl.js'), 'utf8');
+  const start = host.indexOf('  var MAX_TIME_SCALE = ');
+  const end = host.indexOf('\n  function gameLoop()');
+  assert.ok(start > 0 && end > start, 'readTimeScale block not found in physicsHostImpl.js');
+  const state = { clockScale: new Float32Array(1) };
+  const readTimeScale = new Function('state', `${host.slice(start, end)}\nreturn readTimeScale;`)(state);
+  for (const v of [NaN, Infinity, -Infinity, -2, -0, 0, 1e-6, 0.25, 1, 2.5, MAX_TIME_SCALE, MAX_TIME_SCALE + 0.5, 100]) {
+    state.clockScale[0] = v;
+    assert.equal(readTimeScale(), sanitizeTimeScale(state.clockScale[0]), `scale ${v}`);
+  }
+  state.clockScale = null;
+  assert.equal(readTimeScale(), 1, 'an unbound clock is real time');
+});
+
 test('physics host multiplies solver dt and still times STEP_MS with performance.now', () => {
   const host = readFileSync(join(root, 'src/box2d/physicsHostImpl.js'), 'utf8');
   assert.match(host, /dt \*= readTimeScale\(\)/);

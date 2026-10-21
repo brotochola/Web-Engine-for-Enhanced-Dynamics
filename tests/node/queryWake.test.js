@@ -86,7 +86,7 @@ test('a burst in the host wake only spins; one in the step keeps its wait', asyn
 function loadWakeLoop(state, serviceQueries) {
   const src = readFileSync(new URL('../../src/box2d/physicsHostImpl.js', import.meta.url), 'utf8');
   const start = src.indexOf('  var WAKE_KINDS = [');
-  const end = src.indexOf('\n  // ponytail: classic IIFE cannot import timeScale.js');
+  const end = src.indexOf('\n  // timeScale.js sanitizeTimeScale, copied');
   assert.ok(start > 0 && end > start, 'wake block not found in physicsHostImpl.js');
   const fakes = {};
   const global = {};

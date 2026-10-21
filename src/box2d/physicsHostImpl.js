@@ -1220,13 +1220,17 @@
     if (!armed) wakeArmed[kind] = false;
   }
 
-  // ponytail: classic IIFE cannot import timeScale.js — keep in sync with sanitizeTimeScale.
+  // timeScale.js sanitizeTimeScale, copied: a classic script cannot import it.
+  // tests/node/timeScale.test.js runs this copy against it over a sweep of values.
+  var MAX_TIME_SCALE = 4.0;
+
   function readTimeScale() {
     var view = state.clockScale;
     if (!view) return 1;
     var s = view[0];
     if (typeof s !== 'number' || s !== s || s === Infinity || s === -Infinity) return 1;
     if (s <= 0) return 0;
+    if (s > MAX_TIME_SCALE) return MAX_TIME_SCALE;
     return s;
   }
 
