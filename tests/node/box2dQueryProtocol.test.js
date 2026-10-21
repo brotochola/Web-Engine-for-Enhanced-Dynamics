@@ -172,6 +172,55 @@ test('castRayClosest: a worker gets the hit physics wrote, and a miss reads as a
   }
 });
 
+test('an answer wakes its requester even with another worker queued in front (N-25)', async () => {
+  // The slot used to notify one waiter per transition, and the waiter list is
+  // first in, first out. A second requester queued ahead took the wake meant
+  // for the one whose answer was ready, could not claim, and slept again: both
+  // logic workers hung for good.
+  const STATUS_CLAIMED = 4;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const sab = createRayCastSab();
+  bindRayCastSab(sab);
+  const i32 = new Int32Array(sab);
+  Atomics.store(i32, 0, STATUS_CLAIMED); // requester A holds the slot
+  // B wants a cast too: it queues in the claim wait.
+  const b = inWorker(
+    sab,
+    `const m = await import(base + 'box2dRayCast.js');
+     m.bindRayCastSab(workerData.sab);
+     return m.box2dCastRayClosest(0, 0, 1, 0).hit;`,
+  );
+  try {
+    await sleep(300);
+    // A posts its request: B wakes, cannot claim, and queues again.
+    Atomics.store(i32, 5, 1); // HDR_COUNT: a single cast
+    Atomics.store(i32, 0, STATUS_PENDING);
+    Atomics.notify(i32, 0);
+    await sleep(100);
+    // A waits for its answer, now behind B.
+    const a = inWorker(
+      sab,
+      `const i32 = new Int32Array(workerData.sab);
+       return Atomics.wait(i32, 0, ${STATUS_PENDING}, 2000);`,
+    );
+    await sleep(300);
+    assert.equal(servicePendingRayCast(() => ({ hit: false })), 1);
+    const msg = await a.reply;
+    await a.worker.terminate();
+    assert.ok(msg.ok, msg.e);
+    assert.equal(msg.r, 'ok', 'the requester slept through its own answer');
+    // A releases; B claims, posts, and gets its answer.
+    Atomics.store(i32, 0, STATUS_IDLE);
+    Atomics.notify(i32, 0);
+    await serviceWhenPending(servicePendingRayCast, () => ({ hit: false }));
+    const bMsg = await b.reply;
+    assert.ok(bMsg.ok, bMsg.e);
+  } finally {
+    await b.worker.terminate();
+    bindRayCastSab(null);
+  }
+});
+
 test('castRayClosestBatch: one request carries every ray; each gets its entity or -1', async () => {
   const sab = createRayCastSab();
   bindRayCastSab(sab);

@@ -99,22 +99,28 @@
     return (Atomics.load(i32, HDR_STATUS) | 0) === STATUS_PENDING;
   }
 
+  // Every transition wakes every waiter (N-25). Requesters queued in the claim
+  // loop, the requester waiting for its answer and the physics wake all wait
+  // on this one word, first in, first out; a single wake could go to a claimer
+  // that cannot proceed, and the requester whose answer was ready slept on.
+  // Each waiter rechecks its own condition, and there are a handful at most.
+
   /** Request side: free the slot for the next caller. */
   function release(i32) {
     Atomics.store(i32, HDR_STATUS, STATUS_IDLE);
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Atomics.notify(i32, HDR_STATUS);
   }
 
   /** Request side: the request is written; hand it to physics. */
   function post(i32) {
     Atomics.store(i32, HDR_STATUS, STATUS_PENDING);
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Atomics.notify(i32, HDR_STATUS);
   }
 
   /** Physics: the answer is written (DONE) or the service threw (ERROR). */
   function answer(i32, status) {
     Atomics.store(i32, HDR_STATUS, status);
-    Atomics.notify(i32, HDR_STATUS, 1);
+    Atomics.notify(i32, HDR_STATUS);
   }
 
   /**
