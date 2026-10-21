@@ -12,6 +12,8 @@ const {
 } = WEED;
 
 const MIN_KEEP_AREA = CELL * CELL;
+/** A shard under this is a sliver (N-8): a quarter cell, not a whole one. */
+const MIN_SHARD_AREA = MIN_KEEP_AREA / 4;
 const _scratchVerts = [];
 const _scratchCS = { c: 1, s: 0 };
 const _scratchLocal = { x: 0, y: 0 };
@@ -200,7 +202,7 @@ export class TerrainIsland extends GameObject {
     if (!worldPolys) return;
     for (let i = 0; i < worldPolys.length; i++) {
       const poly = worldPolys[i];
-      if (WorldGrid.polygonArea(poly) < MIN_KEEP_AREA) continue;
+      if (Math.abs(WorldGrid.polygonArea(poly)) < MIN_SHARD_AREA) continue;
       const cen = WorldGrid.centroidFromPolys([poly]);
       if (!cen) continue;
       const local = WorldGrid.polysToLocal([poly], cen.x, cen.y);

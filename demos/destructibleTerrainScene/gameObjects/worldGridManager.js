@@ -607,10 +607,9 @@ export class WorldGridManager extends GameObject {
       TerrainIsland.readLocalFixture(fi, _scratchVerts);
       world.push(TerrainIsland.localToWorldPoly(idx, _scratchVerts));
     });
-    const shards = [];
-    for (let i = 0; i < world.length && shards.length < SHATTER_MAX; i++) {
-      WorldGrid.subdivideConvex(world[i], WorldGrid.tuneGet(TUNE.MIN_KEEP_AREA) * 0.35, SHATTER_MAX, shards);
-    }
+    // N-8: pieces of one to two keep-areas over the whole rock, not slivers of
+    // its first fixture (which the shard spawn then dropped, leaving nothing).
+    const shards = WorldGrid.shatterConvex(world, SHATTER_MAX, WorldGrid.tuneGet(TUNE.MIN_KEEP_AREA));
 
     if (!picked.dynamic && picked.rec) this._clearStaticField(picked.rec);
     this._despawnIndex(idx);

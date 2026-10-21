@@ -765,6 +765,66 @@ function splitConvexAtPoint(poly, x, y, minArea, maxOut) {
   return { keep, drop };
 }
 
+/**
+ * Shatter a rock's convex fixtures into at most maxPieces convex pieces (N-8):
+ * halve the largest piece of the whole rock, again and again, until there are
+ * maxPieces or the largest is under two minPieceArea. Pieces spread over every
+ * fixture and stay about minPieceArea to twice that. subdivideConvex split one
+ * fixture depth-first, so its cap filled with slivers of the first fixture.
+ */
+function shatterConvex(polys, maxPieces, minPieceArea) {
+  const pieces = [];
+  const areas = [];
+  for (let i = 0; i < polys.length; i++) {
+    const p = polys[i];
+    if (!p || p.length < 3) continue;
+    const a = Math.abs(polygonArea(p));
+    if (!(a > 1e-8)) continue;
+    pieces.push(p.map(copyPt));
+    areas.push(a);
+  }
+  while (pieces.length < maxPieces) {
+    let big = -1;
+    for (let i = 0; i < areas.length; i++) {
+      if (big < 0 || areas[i] > areas[big]) big = i;
+    }
+    if (big < 0 || areas[big] < 2 * minPieceArea) break;
+    const kids = halveConvex(pieces[big]);
+    pieces[big] = kids[0];
+    areas[big] = Math.abs(polygonArea(kids[0]));
+    pieces.push(kids[1]);
+    areas.push(Math.abs(polygonArea(kids[1])));
+  }
+  return pieces;
+}
+
+/** Two convex halves: a triangle on its longest edge, a polygon on its most even diagonal. */
+function halveConvex(poly) {
+  if (poly.length === 3) return splitTriLongestEdge(poly);
+  const n = poly.length;
+  const whole = Math.abs(polygonArea(poly));
+  let bestI = 0;
+  let bestJ = 2;
+  let bestDiff = Infinity;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue; // neighbours across the wrap
+      const part = poly.slice(i, j + 1);
+      const diff = Math.abs(2 * Math.abs(polygonArea(part)) - whole);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestI = i;
+        bestJ = j;
+      }
+    }
+  }
+  const a = poly.slice(bestI, bestJ + 1).map(copyPt);
+  const b = [];
+  for (let k = bestJ; k !== bestI; k = (k + 1) % n) b.push(copyPt(poly[k]));
+  b.push(copyPt(poly[bestI]));
+  return [a, b];
+}
+
 function _subdivideConvex(poly, minArea, maxOut, dest) {
   if (dest.length >= maxOut) return;
   const area = polygonArea(poly);
@@ -2190,6 +2250,7 @@ WorldGrid.polygonArea = polygonArea;
 WorldGrid.pointInPolygon = pointInPolygon;
 WorldGrid.pointInConvex = pointInConvex;
 WorldGrid.subdivideConvex = subdivideConvex;
+WorldGrid.shatterConvex = shatterConvex;
 WorldGrid.carveConvexAtPoint = carveConvexAtPoint;
 WorldGrid.splitConvexAtPoint = splitConvexAtPoint;
 WorldGrid.circleRing = circleRing;
