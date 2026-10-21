@@ -790,7 +790,8 @@ export function segmentFacesPoint(x0, y0, x1, y1, px, py) {
 
 /**
  * World-space boundary edges of a solid that overlap the light disc.
- * @returns {number} how many overlapped the light disc
+ * @returns {number} 0 when no edge overlaps the light disc; otherwise at least 1
+ *   (back-facing edges stop being counted once one edge has)
  */
 export function collectSolidSegments(
   solid, entityX, entityY, rotC, rotS, offX, offY, lightX, lightY, radiusSq
@@ -811,16 +812,20 @@ export function collectSolidSegments(
     const y0 = originY + rotS * lx0 + rotC * ly0;
     const x1 = originX + rotC * lx1 - rotS * ly1;
     const y1 = originY + rotS * lx1 + rotC * ly1;
-    const dist = segmentDistSq(lightX, lightY, x0, y0, x1, y1);
-    if (dist > radiusSq) continue;
-    hit++;
     // Solid is on the left of a CCW boundary edge. A light on that side
     // cannot see this edge; the canyon wall faces the empty side and stays.
+    // The facing test is a cross product, the range test a division, so the
+    // range test runs for a back-facing edge only until something hit (E-50).
     const ex = x1 - x0;
     const ey = y1 - y0;
     const tx = lightX - x0;
     const ty = lightY - y0;
-    if (ex * ty - ey * tx >= 0) continue;
+    if (ex * ty - ey * tx >= 0) {
+      if (hit === 0 && segmentDistSq(lightX, lightY, x0, y0, x1, y1) <= radiusSq) hit++;
+      continue;
+    }
+    if (segmentDistSq(lightX, lightY, x0, y0, x1, y1) > radiusSq) continue;
+    hit++;
     writePolarSegment(x0, y0, x1, y1, lightX, lightY);
   }
   return hit;
