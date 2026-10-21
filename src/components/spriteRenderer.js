@@ -107,9 +107,11 @@ export class SpriteRenderer extends Component {
    * @returns {number} Original width in pixels, or 0 if not found
    */
   static getOriginalWidth(entityIndex) {
-    const spritesheetId = SpriteRenderer.spritesheetId[entityIndex];
-    const animIndex = SpriteRenderer.animationState[entityIndex];
-    const dims = SpriteSheetRegistry.getFrameDimensionsById(spritesheetId, animIndex);
+    // frameSizeOf: cached by number; the uncached lookup builds a string per call for proxy sheets
+    const dims = SpriteSheetRegistry.frameSizeOf(
+      SpriteRenderer.spritesheetId[entityIndex],
+      SpriteRenderer.animationState[entityIndex]
+    );
     return dims ? dims.w : 0;
   }
 
@@ -119,9 +121,10 @@ export class SpriteRenderer extends Component {
    * @returns {number} Original height in pixels, or 0 if not found
    */
   static getOriginalHeight(entityIndex) {
-    const spritesheetId = SpriteRenderer.spritesheetId[entityIndex];
-    const animIndex = SpriteRenderer.animationState[entityIndex];
-    const dims = SpriteSheetRegistry.getFrameDimensionsById(spritesheetId, animIndex);
+    const dims = SpriteSheetRegistry.frameSizeOf(
+      SpriteRenderer.spritesheetId[entityIndex],
+      SpriteRenderer.animationState[entityIndex]
+    );
     return dims ? dims.h : 0;
   }
 
