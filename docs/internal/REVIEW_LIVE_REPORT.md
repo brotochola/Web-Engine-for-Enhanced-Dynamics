@@ -17,10 +17,27 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**00:42** — Phase 4 (repeated code) is done except R8's measure-first lighting copies. Next:
-Phase 5 (GC), starting with G3.
+**01:22** — Phase 5 (GC) is done except G6, which is the save stall (E-49). Next: E-49, then
+Phase 6 (V8).
 
 ## Log
+
+### 01:22 — Phase 5: garbage, and a 12–18× faster lighting rebuild (`d87c4132` … `096b772e`)
+
+- **G1, the big one** (`42016755`): when any piece of terrain is re-cut, every lit terrain
+  piece rebuilds its outline for the lighting, in two workers. That rebuild made a text key and
+  an object for every edge. It now counts edges in a reused table. Rebuilds are 12–18 times
+  faster and make no garbage at all (before: up to 154 small GC pauses per 1000 rebuilds). In a
+  test scene where one island is re-cut every frame, the renderer worker got 29 % cheaper in
+  every pair. The output is the same, edge for edge; a test checks it against the old code.
+- **Still to do from G1** (E-58, logged): rebuild only the pieces that actually changed.
+- **G3, G5, G7** (`d87c4132`, `6d24bdef`, `af123af9`, `c17fb711`, `096b772e`): small things made
+  every frame or every click: a sort-key view, a timing object per worker, a closure per debug
+  label, a second layout read on mouse release, a key list per texture layer. Each is gone and
+  each has a test. None changes what you see.
+- **G4, kept:** one view per sort, not per row; an earlier measurement showed those cost nothing.
+
+Suite: 1372/1372.
 
 ### 00:42 — R11, R12, and a planet that had lost its grass (`00c0372d`, `3eab5c52`, `3699a510`)
 

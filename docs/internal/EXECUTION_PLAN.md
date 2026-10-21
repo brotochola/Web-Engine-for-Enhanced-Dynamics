@@ -1059,6 +1059,21 @@ at matched load (count casts answered per frame: the 1536 scene shows the old ca
 changes the load), with a load knob that puts the baseline over the floors without
 saturating logic's frame. Not a gameplay win until some scene issues sync single casts.
 
+### E-58 Rebuild a compound outline only when its own fixtures changed — **not-started**
+
+Found in review G1. `ensureCompoundSolid` caches each compound body's outline by
+`ColliderFixture.revision[0]`, which is pool-wide: any fixture change anywhere (one island
+remeshed by the laser) rebuilds the outline of every lit compound body, in pre-render and
+again in Pixi (each keeps its own cache). G1 made a rebuild 12–18× cheaper and
+allocation-free (`compoundSolidMicrobench`: a 256-triangle island 3.1k → 56k rebuilds/s), so
+what is left is how often it runs. **Change:** a per-entity revision in the ColliderFixture
+SAB, bumped with the pool revision by `replaceForEntity` / `clearFixtures` for that entity
+only and never reset on despawn (a reused slot must not match an old cache), and the cache
+keyed by it. **Primary:** pre-render and renderer STEP_MS on a terrain scene with the laser
+held (`benchRemesh=1`) and several lit compound bodies in range; first count rebuilds per
+frame before and after, to know the regime exists. Balls and Predator (no compounds) must
+tie.
+
 ### E-08 (reopened 2026-10-20) — see the E-08 entry above
 `b69c880e` (titled "load gate") replaced the kept fix with an insertion sort. Review
 kernel: insertion 1.7–2.5 µs vs native 5.1–5.6 µs at n=46; 121–132 µs vs 61–62 µs at

@@ -147,13 +147,13 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 
 ## Phase 5 — GC pressure
 
-- [ ] **G1** `ensureCompoundSolid` per-edge strings/objects; pool-wide revision key.
+- [x] **G1** — `42016755` (allocations and speed); the pool-wide revision key is **E-58**. Edges counted in a reused typed-array table in first-seen order (same outline, same order; a test holds it to a copy of the Map version). Kernel (`compoundSolidMicrobench`, new): rebuilds 12–18× faster, minor GCs per 1000 rebuilds 4–154 → 0. Product (`compoundVisPolyStressScene?remeshEvery=1`, new knob): renderer −29.2 % (4/4), pre-render −4.0 % (2/4, tie). Found on the way: float arguments to a call V8 did not inline were boxed per edge. `ensureCompoundSolid` per-edge strings/objects; pool-wide revision key.
 - [x] **G2** `TrafficCar._avoidAhead` returns an object per car per frame (Demo). — fixed `b1c2f916`.
-- [ ] **G3** `_sortKeyBits` new `Uint32Array` per frame.
-- [ ] **G4** Radix copy-back `subarray`.
-- [ ] **G5** frameClock `readFrame` object per stamp.
+- [x] **G3** — `d87c4132`. Real: the one-entry cache missed every frame (double-buffered queue, GPU layers borrowing its columns). `createViews` makes the u32 alias once per queue; pre-render and Pixi read it. A missing alias would silently skip the painter sort, so a test loads the real pre-render worker and checks every way it binds a queue. Predator hygiene: pre-render −1.4 %, renderer +1.1 %. `_sortKeyBits` new `Uint32Array` per frame.
+- [x] **G4** — kept, no change. One `subarray` per sort call (per frame, not per row) feeding `set()`, a memcpy; H-02 measured such views at zero GC events, and a JS copy loop is slower for large queues. Radix copy-back `subarray`.
+- [x] **G5** — `6d24bdef`. `stampStep` reads the generation alone (same seqlock as the physics host's `fcReadGen`; byte parity test still holds), no `{ t0, gen }` per worker per frame. frameClock `readFrame` object per stamp.
 - [ ] **G6** Save spikes (entity-id remap, copies; field names per entity → **E-49**).
-- [ ] **G7** Small (debug label closures, body-create path, spawn sort comparator, texture-upload `Object.keys`, `getBoundingClientRect` ×2).
+- [x] **G7** — debug labels without a closure each `af123af9` (call logs identical to the old renderer at rotation 0 and 0.5); `pointerup` reads the canvas box once `c17fb711`; shared-picture uploads walk their slots with `for...in` `096b772e`. **Kept:** the spawn sort comparator (H-14 measured its replacement and dropped it). The body-create allocations are in E-50. Small (debug label closures, body-create path, spawn sort comparator, texture-upload `Object.keys`, `getBoundingClientRect` ×2).
 
 ## Phase 6 — V8 deopt risks
 
