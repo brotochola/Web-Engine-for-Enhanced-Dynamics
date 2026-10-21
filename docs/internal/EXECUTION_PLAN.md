@@ -958,7 +958,17 @@ feeds the bench's own 24-occluder sweep polygon: **~324 µs per light** against 
 (360 lights) pays ~184k writes per frame and never uses the bins. Lazy clear on the first
 stamp. **Primary:** visPoly row `preRender_STEP_MS`. Likely under the bar; screen only.
 
-### E-45 `4a7fa4c1` re-landed two rejected ideas on the two hottest functions — **not-started**
+### E-45 `4a7fa4c1` re-landed two rejected ideas on the two hottest functions — **DONE 2026-10-21: X2 kept, H11 reverted**
+- **X2 (pack fast paths): it wins, so it stays.** On the fixed kernel (`gpuQueuePackMicrobench`,
+  one case per worker thread), taking the fast path out makes the pack **46 % slower** (0/81,
+  both queue orders, sprites and casters, checksums equal). Predator, 4 pairs, without it:
+  **renderer +18.7 % (3.46 → 4.05 ms, 4/4)**, pre-render +3.4 % (3/4). The 2026-09-30 rejection
+  most likely came from the old same-process kernel. HYPOTHESIS_LOG X2 is corrected.
+- **H11 (emit shadow hoist): it loses, so it's reverted** (`bae431b6`). With the call restored: emit
+  kernel +8.6 % (70/81), Predator pre-render −2.5 % (better in 4/4). The hoisted columns stay on
+  the emit ref for the other `_writeQueueShadow` callers. That ref now declares them
+  (`bc14d527`, review V3).
+
 A flag-specialized copy of the `packInstancedRows` loop (HYPOTHESIS_LOG X2, rejected in
 kernel: sprites −23.8 %, casters −46.4 %) and the `_emitRef` ShadowCaster column hoist (H11,
 rejected at gate 4), both under a commit titled "Update README". No log row. **Claim to

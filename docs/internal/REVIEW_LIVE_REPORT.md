@@ -17,11 +17,22 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**03:18** — E-42 is in. Compound lighting pre-render is now **6.47 → 2.32 ms (−64 %)** across
-E-41 and E-42. Next: the rest of Phase 7 (E-45 re-measures, E-46 audio, E-48 tween split,
-E-50 small items), then E-43/E-44/E-60 with scenes that can judge them.
+**03:29** — E-45 done. Next: E-46 (audio), E-48 (tween split), E-50 (small items).
 
 ## Log
+
+### 03:29 — Two old ideas re-tested: one stays, one goes (`bae431b6`, `bc14d527`)
+
+On 10-17, a commit titled "Update README" also brought back two code changes that had
+been measured and rejected before. I measured both again, today's way.
+- **The sprite-packing fast path (X2) is a big win. It stays.** Without it, Predator's renderer
+  is **18.7 % slower** (all 4 pairs), and the pack itself 46 % slower. The old "rejected"
+  verdict most likely came from a benchmark that was later found to measure wrong. I corrected
+  the log.
+- **The shadow-column shortcut (H11) is slower. It's reverted.** With the plain call back, the
+  emit kernel is 8.6 % faster and Predator's pre-render is better in all 4 pairs (−2.5 %).
+- **Small correction to my V3 note.** One pre-render object did gain 8 fields on its first
+  frame. That's harmless, but it's declared now, with a test.
 
 ### 03:18 — Another −42 % on compound lighting (`c8db38ea`)
 
