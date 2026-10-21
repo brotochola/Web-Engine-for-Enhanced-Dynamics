@@ -832,6 +832,65 @@ class PixiRenderer extends AbstractWorker {
     this._lightingTransform = new PIXI.Matrix();
     this._meshRtTransform = new PIXI.Matrix();
 
+    // Everything later paths write, declared here (N-32, as in pre-render). A
+    // field first written after the loop starts (first pause, first decal, first
+    // self-lit occluder, a missing texture) changes this object's hidden class
+    // and V8 drops every optimized method that checked the old one. Values have
+    // the kind of the first write: a double field must start as a double, or
+    // its first fractional write moves the object to a new map anyway.
+    this.renderQueueTileMode = null;
+    this.renderQueueTileOffsetU = null;
+    this.renderQueueTileOffsetV = null;
+    this.renderQueueTileMulX = null;
+    this.renderQueueTileMulY = null;
+    this.renderQueueShadowH = null;
+    this.renderQueueShadowOffX = null;
+    this.renderQueueShadowOffY = null;
+    this._poseSnapX = null;
+    this._poseSnapY = null;
+    this._poseSnapRotC = null;
+    this._poseSnapRotS = null;
+    this._poseSnapPrevX = null;
+    this._poseSnapPrevY = null;
+    this._poseSnapPrevRotC = null;
+    this._poseSnapPrevRotS = null;
+    this._loggedSwapchainBind = false;
+    this._renderQueueBindSrc = null;
+    this._pixiLayerPack = null;
+    this._pixiEntityPack = null;
+    this._addSortMs = null;
+    this._writeLayerSprites = null;
+    this._writeEntitySprites = null;
+    this._writeEntityGlow = null;
+    this._packBatch = null;
+    this._packGlowBatch = null;
+    this._packQ = null;
+    this._painter = null;
+    this._lastDt = 1 / 60;
+    this._deferredRenderQueueRelease = 0;
+    this._decalSharedBuffers = null;
+    this._decalCopyBuffers = null;
+    this._visPolyProgramOpts = null;
+    this._selfLitSpriteProgramOpts = null;
+    this._selfLitColliderProgramOpts = null;
+    this._selfLitMaxFillVerts = 0;
+    this._selfLitCenterRadius = null;
+    this._selfLitLastIdxCount = 0;
+    this._selfLitGpuReady = false;
+    this._wedgePositions = null;
+    this._wedgeScales = null;
+    this._wedgeIndices = null;
+    this._wedgeMesh = null;
+    this._wedgeGpuReady = false;
+    this._wedgeLastIdx = 0;
+    this._visPolyShownFrame = 0;
+    this._missingTextureWarns = null;
+    this.shadowUpdateInterval = 1;
+    this._shadowUpdateTick = 0;
+    this.gpuCasterBatch = null;
+    this._gpuSunDrew = false;
+    // NaN: a double, and falsy until the first viewport, like the missing field was.
+    this._lightingPixelScale = NaN;
   }
 
   /**
