@@ -17,7 +17,8 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
 
 ## Commands
 
-- Node suite: `npm run test:node` (≈1400 tests, ~15 s). Commit only when it is green.
+- Node suite: `npm run test:node` (≈1360 tests, ~15 s). Commit only when it is green. It tests
+  the engine only; tests of demo code live in `demos/tests` (`npm run test:demos`).
 - Kernels: `node tests/bench/<name>Microbench.mjs [--output path]` (Node, no browser).
 - Scene runs: `node tests/bench/runIntegratedWorkerBenchmark.mjs --src --scene /path/scene.js
   --scene-export ClassName [--query k=v] [--warmup-ms N --duration-ms N]` (headless Chromium).

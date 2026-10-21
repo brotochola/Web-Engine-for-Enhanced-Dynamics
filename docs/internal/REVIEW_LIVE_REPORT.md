@@ -17,6 +17,22 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**17:54** — **`test:all` passes, and the engine suite tests only the engine** (`9e00ec27`, `aa1f8150`).
+- **The error:** in each bundle pass, `test:all` failed on a planet demo test. The planet ship
+  imports `normalizeAngle` from `/src/util/utils.js`, which no bundle exports, so the chain also
+  stopped before the browser smokes.
+- **The move:** 12 test files that tested only demo code went to `demos/tests`, and the demo
+  checks inside four engine test files went with them. Demo tests run with `npm run test:demos`
+  (82 tests), outside `test:all`.
+- **Engine-only now:** the engine suite is 1,363 tests. Its two shader-layout tests read small
+  fixtures instead of the burning-boxes shaders.
+- **Now green:** the Node suite; all 8 bundles (260 / 260 each); the bundle browser smoke (8 / 8);
+  the scene-cycle smoke (heap 9.5 MB flat over 4 cycles).
+- **Left over:** `dist/` was rebuilt by the run; I put it back to the committed 0.11.18 build. A
+  release is yours.
+- **N-41, your call:** demos import engine internals by path in 58 places, which breaks them
+  against a bundle.
+
 **17:15** — **Merged:** local `main` fast-forwarded to the branch (24 commits, B7 through N-17), suite 1,443 / 1,443. Not pushed.
 
 **17:08** — **N-17 done: `LiquidFun.setRadialGravity(x, y, accel)`** (`da9dfe76` engine, `ddb7efc9` planet). B7 (`37827604`) and N-26 (`5c6be84d`) were done just before. On the way: N-40, a LiquidFun force quirk, documented (`0cc1d351`). Suite 1,443 / 1,443.
