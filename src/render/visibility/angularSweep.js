@@ -833,6 +833,16 @@ export function collectSolidSegments(
  */
 export const POLAR_BINS = 512;
 const POLAR_BIN_SCALE = POLAR_BINS / TWO_PI;
+// cos/sin of every angle the polar loops use: index m is -π + m·½·(2π/POLAR_BINS),
+// the loops' own expression (bin b centre: m = 2b + 1; a group b0..b1: m = b0 + b1),
+// so a lookup gives the same double as the call it replaces (E-42).
+const _polarCos = new Float64Array(POLAR_BINS * 2 + 1);
+const _polarSin = new Float64Array(POLAR_BINS * 2 + 1);
+for (let m = 0; m <= POLAR_BINS * 2; m++) {
+  const ang = -Math.PI + m * 0.5 * (TWO_PI / POLAR_BINS);
+  _polarCos[m] = Math.cos(ang);
+  _polarSin[m] = Math.sin(ang);
+}
 const _polarDist = new Float32Array(POLAR_BINS);
 // The sweep polygon, copied because in and out may alias. Grows to the largest
 // sweep seen: maxPolygonVertices has no cap.
@@ -892,8 +902,8 @@ function writePolarSegment(x0, y0, x1, y1, lx, ly) {
 }
 
 function stampPolarBin(b, x0, y0, x1, y1, lx, ly) {
-  const ang = -Math.PI + (b + 0.5) * (TWO_PI / POLAR_BINS);
-  const t = raySegT(lx, ly, Math.cos(ang), Math.sin(ang), x0, y0, x1, y1);
+  const m = 2 * b + 1;
+  const t = raySegT(lx, ly, _polarCos[m], _polarSin[m], x0, y0, x1, y1);
   if (t < _polarDist[b]) {
     _polarDist[b] = t;
     _polarActive = 1;
@@ -922,9 +932,7 @@ function isFullCircleAt(xs, ys, n, lx, ly, r) {
  * corner; every other edge gives Infinity or a negative t. Three raySegT on the
  * same vertices give the same minimum, bit for bit, as all 32.
  */
-function fullCircleDistAt(lx, ly, ang, xs, ys, radius) {
-  const dx = Math.cos(ang);
-  const dy = Math.sin(ang);
+function fullCircleDistAt(lx, ly, ang, dx, dy, xs, ys, radius) {
   const n = FULL_CIRCLE_SEGS;
   let k = Math.floor((ang + Math.PI) * (n / TWO_PI));
   if (k < 0) k = 0;
@@ -939,9 +947,7 @@ function fullCircleDistAt(lx, ly, ang, xs, ys, radius) {
   return best;
 }
 
-function sweepDistAt(lx, ly, ang, xs, ys, n, radius) {
-  const dx = Math.cos(ang);
-  const dy = Math.sin(ang);
+function sweepDistAt(lx, ly, dx, dy, xs, ys, n, radius) {
   let best = radius;
   for (let i = 0; i < n; i++) {
     const j = i + 1 < n ? i + 1 : 0;
@@ -988,11 +994,14 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
       for (let b = b0 + 1; b < b1; b++) {
         if (_polarDist[b] < d) d = _polarDist[b];
       }
-      const ang = -Math.PI + (b0 + b1) * 0.5 * (TWO_PI / POLAR_BINS);
-      const sd = fullCircleDistAt(lx, ly, ang, _holdX, _holdY, radius);
+      const m = b0 + b1;
+      const ang = -Math.PI + m * 0.5 * (TWO_PI / POLAR_BINS);
+      const c = _polarCos[m];
+      const s = _polarSin[m];
+      const sd = fullCircleDistAt(lx, ly, ang, c, s, _holdX, _holdY, radius);
       if (sd < d) d = sd;
-      outX[k] = lx + Math.cos(ang) * d;
-      outY[k] = ly + Math.sin(ang) * d;
+      outX[k] = lx + c * d;
+      outY[k] = ly + s * d;
     }
     return count;
   }
@@ -1003,13 +1012,15 @@ export function clipVisibilityToPolar(lx, ly, inX, inY, n, outX, outY, maxVerts)
     for (let b = b0 + 1; b < b1; b++) {
       if (_polarDist[b] < d) d = _polarDist[b];
     }
-    const ang = -Math.PI + (b0 + b1) * 0.5 * (TWO_PI / POLAR_BINS);
+    const m = b0 + b1;
+    const c = _polarCos[m];
+    const s = _polarSin[m];
     if (holdN >= 3) {
-      const sd = sweepDistAt(lx, ly, ang, _holdX, _holdY, holdN, radius);
+      const sd = sweepDistAt(lx, ly, c, s, _holdX, _holdY, holdN, radius);
       if (sd < d) d = sd;
     }
-    outX[k] = lx + Math.cos(ang) * d;
-    outY[k] = ly + Math.sin(ang) * d;
+    outX[k] = lx + c * d;
+    outY[k] = ly + s * d;
   }
   return count;
 }
