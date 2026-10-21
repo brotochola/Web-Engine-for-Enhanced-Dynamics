@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { computeBufferSize, createViews } from '../../src/render/renderQueueLayout.js';
 
 // N-32. A field a worker first writes after its frame loop starts changes the
 // worker's hidden class, and V8 throws away every optimized method that
@@ -81,4 +82,18 @@ test('pre-render: the emit ref declares every column emitSpriteQueue puts on it'
   const written = new Set([...src.matchAll(/\bref\.([A-Za-z_$][\w$]*)\s*=(?!=)/g)].map((m) => m[1]));
   const missing = [...written].filter((name) => !Object.hasOwn(pre._emitRef, name));
   assert.deepEqual(missing, [], 'add these to the _emitRef literal');
+});
+
+// E-71. A column declared null has field type Any in V8, so optimized code
+// checks the array's class before it indexes it. Declared as an empty array of
+// the class its view will have, the field keeps that type.
+test('pre-render: render-queue columns start as arrays of their view\'s class', async () => {
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const views = createViews(new SharedArrayBuffer(computeBufferSize(4)), 4);
+  const columns = ['tileMode', 'tileOffsetU', 'tileOffsetV', 'tileMulX', 'tileMulY', 'shadowH', 'shadowOffX', 'shadowOffY'];
+  const wrong = columns
+    .map((name) => [`renderQueue${name[0].toUpperCase()}${name.slice(1)}`, views[name].constructor])
+    .filter(([field, Ctor]) => !(pre[field] instanceof Ctor))
+    .map(([field, Ctor]) => `${field} (want ${Ctor.name})`);
+  assert.deepEqual(wrong, []);
 });

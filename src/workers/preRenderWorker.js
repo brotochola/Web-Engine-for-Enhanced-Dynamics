@@ -83,6 +83,10 @@ import { LiquidFun } from '../core/liquidFun.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 const INVALID_TEXTURE_ID = 0xFFFF;
 const EMPTY_OWNED_IDS = new Uint32Array(0);
+// Placeholders for render-queue columns until initialize() binds the real views.
+const EMPTY_F32 = new Float32Array(0);
+const EMPTY_U8 = new Uint8Array(0);
+const EMPTY_U16 = new Uint16Array(0);
 const TILE_MODE_LOCAL = SPRITE_TILE_MODE.LOCAL;
 
 /**
@@ -476,14 +480,17 @@ class PreRenderWorker extends AbstractWorker {
         // After the first full-queue warning, one method deoptimized every frame
         // for ~8 s before V8 compiled it again.
         // initialize() and the paths below overwrite these as before.
-        this.renderQueueShadowH = null;
-        this.renderQueueShadowOffX = null;
-        this.renderQueueShadowOffY = null;
-        this.renderQueueTileMode = null;
-        this.renderQueueTileOffsetU = null;
-        this.renderQueueTileOffsetV = null;
-        this.renderQueueTileMulX = null;
-        this.renderQueueTileMulY = null;
+        // A column starts as an empty array of its own class, not null (E-71).
+        // From null, V8 types the field Any, and optimized code checks the
+        // array's class before it indexes it: 15 % of the emit kernel.
+        this.renderQueueShadowH = EMPTY_F32;
+        this.renderQueueShadowOffX = EMPTY_F32;
+        this.renderQueueShadowOffY = EMPTY_F32;
+        this.renderQueueTileMode = EMPTY_U8;
+        this.renderQueueTileOffsetU = EMPTY_U16;
+        this.renderQueueTileOffsetV = EMPTY_U16;
+        this.renderQueueTileMulX = EMPTY_F32;
+        this.renderQueueTileMulY = EMPTY_F32;
         this._vpWriteBuffer = null;
         this._selfLitWriteBuffer = null;
         this._decorationZoomAlpha = 1;
