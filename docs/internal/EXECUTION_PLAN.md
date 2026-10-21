@@ -1398,13 +1398,30 @@ wrong sign, the ends are within the pad and are taken in order. The polygon stil
 +6.2 % / +10.5 % (512 / 128), all 49/49; raster-only ties. Compound scene `boxes=100`, CPU profiles of 7.6 s with the same total busy time: `mergeSweep` inclusive time **346 → 233 ms (−33 %)**, about 0.25 ms a frame. Its `STEP_MS`, 6 ABAB pairs: −0.5 % (4/6), a tie; the scene's run-to-run load spread (±10 %) hides ~6 %. At `boxes=60` (−7.5 %, 5/6) two tree runs fell under the 3 ms floor, so that row fails. Kept on the kernel; the scene is not worse. (The commit message's −60 % is `mergeSweep`'s self time alone, without its inlined callees.) Injected bugs (shrunk arc,
 wrong way round, no unwrap, no high wrap) each fail `polarMergeScatter.test.js`.
 
-### E-63 The sweep takes cos/sin of an atan2 angle at every event — **not-started**
+### E-63 The sweep takes cos/sin of an atan2 angle at every event — **KEPT** (`fd15ae95`; gate `64a399e3`)
 From the same profile: `buildVisibilityPolygon` was 7.9 % of pre-render busy, 44 % of it on
 `Math.cos(angle)` / `Math.sin(angle)` per event and 28 % on the two tangent `atan2` per occluder.
-An event's ray points at its own tangent vertex, so `dx/r, dy/r` would replace cos/sin of its
-`atan2`. That is not bit for bit: every polygon moves by rounding-sized amounts. It needs a
-tolerance argument (a visual or geometric golden, not the hash goldens) and a kernel first.
-**Primary:** pre-render on CompoundVisPolyStressScene `boxes=100` or VisPolyStressScene.
+Each event now stores its ray direction: `dx/r, dy/r` of the tangent vertex (cos/sin of the angle
+when the light sits on the vertex), and for a circle the centre direction turned by
+`sin = r/dist`, `cos = sqrt(1 − sin²)` (the tangent half angle is `asin(r/dist)`). **Gate**, set before
+the edit (H-06's 1e-4 world units): `tests/helpers/sweepReference.mjs` freezes the pre-E-63 sweep,
+and `sweepEventDirection.test.js` runs 3000 seeded scenes of circles, boxes and 3–8-sided polygons
+through both: 127,567 vertices, same counts, **max move 1.2e-10**. **Measured:** kernel sweep
+129,910 → 151,433 polygons/s (+16.6 %, 49/49, the Float32 checksum unchanged). Headless, 6 ABAB
+pairs: VisPolyStressScene pre-render **−9.0 % (5/6)**; CompoundVisPoly `boxes=100` **−3.9 % (5/6)**.
+The renderer leaned +5–8 % (4/6) in both scenes; an A/A of VisPoly in the same sitting moved its
+pairs from −9.5 % to +35.8 % (median −2.2 %), so that lean is the scene's noise.
+**After E-63** (kernel profile, self time): `emitVertex` 41 %, the sweep body 31 %, the event sort
+11 %, `distSqToConvex` 8 %, the tangent `atan2` lines ~8 %, `asin` 2 %. **E-63b** (order-only
+pseudo-angles instead of the `atan2`, as E-62 did) is not pursued: ~10 % of the sweep, the free-arc
+code needs radians for gaps over π/2, and the event order must stay the same at near-ties.
+
+### E-74 `rayPolyDist` divides only for edges the ray crosses — **DROPPED 2026-10-21**
+`emitVertex` is 41 % of the sweep after E-63, mostly `rayPolyDist`: two divisions per polygon edge
+per sample. Testing `u ∈ [0, 1]` as `uNum` between 0 and `denom` and dividing `t` only for edges that
+pass (plus `i + 1 < count` instead of `% count`): parity gate unchanged, kernel +2.3 % (33/49).
+Below 3 %; reverted.
+
 
 ### E-64 The merge's binary searches look un-inlined in Chrome — **screened 2026-10-21: premise wrong, reverted**
 The `boxes=100` profile listed `firstRayAfter` / `firstRayAtOrAfter` as their own frames (~5 % of

@@ -17,6 +17,30 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
+**14:58** — **E-63 kept: lighting's visibility sweep is ~9 % cheaper in pre-render** (`fd15ae95`). Next: E-70's
+design, then E-57. (`weed-ab` is back while I measure; I'll delete it again at the end.)
+
+### 14:58 — The sweep stops recomputing directions it already had
+
+- **What changed:** each light's shadow sweep worked out an angle with `atan2` from a corner, then
+  took `cos`/`sin` of that same angle to get the direction back. It now keeps the direction it
+  started from.
+- **Not bit for bit, so it got a tolerance gate first** (`64a399e3`), the same 1e-4 world units an
+  earlier change used:
+  - a frozen copy of the old sweep;
+  - 3,000 random scenes of circles, boxes and polygons;
+  - 127,567 vertices with the same count everywhere, the largest move **0.00000000012** units.
+- **Measured:**
+  - kernel **+16.6 %** (49 of 49 rounds);
+  - visibility stress scene pre-render **−9.0 %** (5 of 6 pairs);
+  - compound scene with 100 boxes **−3.9 %** (5 of 6).
+- **The renderer looked 5–8 % worse in both scenes**, though it draws the same polygons. With
+  identical code on both sides, its pairs swung from −9.5 % to +36 % in this scene, so that's
+  noise.
+- **Tried and dropped:**
+  - E-74, fewer divisions in the ray tests: +2.3 %, under the 3 % bar.
+  - E-63b, replacing the remaining angle math: about 1 % of pre-render, with ordering risk.
+
 **14:28** — **`D:/xampp/htdocs/weed-ab` deleted**, as asked. It held 64 A/B baseline worktrees, each with a junction to this repo's `node_modules`. I unlinked every junction first, so the deletion couldn't reach the real `node_modules` (still intact), then removed the worktrees through git. Five experiment helpers from E-05, E-07 and E-17 that were in no commit are saved in my scratchpad. The A/B tools recreate that folder the next time one runs.
 
 **14:18** — **N-18 closed: the water bug was in the probe, not the engine** (`59d9cd6d`).
