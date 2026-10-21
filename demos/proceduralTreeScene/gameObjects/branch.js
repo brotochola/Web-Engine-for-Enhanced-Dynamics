@@ -372,14 +372,11 @@ export class Branch extends GameObject {
 
     const k = 18 * hold * (0.4 + 0.6 * thin);
     const damp = 6;
-    const w = this._width;
-    const h = this._length > 1 ? this._length : 1;
-    const iOverM = (w * w + h * h) / 12;
     let alpha = -k * err - damp * this.angularVelocity;
     const cap = 10 * hold;
     if (alpha > cap) alpha = cap;
     else if (alpha < -cap) alpha = -cap;
-    RigidBody.angularAccel[this.index] = iOverM * alpha;
+    RigidBody.angularAccel[this.index] = alpha;
   }
 
   _applyWind(tree) {

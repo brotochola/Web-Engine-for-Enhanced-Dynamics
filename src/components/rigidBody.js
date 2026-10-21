@@ -36,6 +36,8 @@ export class RigidBody extends Component {
     py: Float32Array,
     pRotation: Float32Array,
 
+    // Angular acceleration (rad/s²) for this step: physics applies torque =
+    // angularAccel × inertia (mass for a body without inertia; N-4).
     angularAccel: Float32Array,
 
     // Mass properties

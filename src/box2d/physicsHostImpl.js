@@ -658,6 +658,7 @@
         pRotation: packView(R.pRotation),
         angularAccel: packView(R.angularAccel),
         mass: packView(R.mass),
+        inertia: packView(R.inertia),
         linearDamping: packView(R.linearDamping),
         angularDamping: packView(R.angularDamping),
         fixedRotation: packView(R.fixedRotation),

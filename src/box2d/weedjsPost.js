@@ -269,6 +269,7 @@
       angularVelocity: null,
       angularAccel: viewFromDesc(desc.angularAccel, Float32Array),
       mass: viewFromDesc(desc.mass, Float32Array),
+      inertia: desc.inertia ? viewFromDesc(desc.inertia, Float32Array) : null,
       linearDamping: viewFromDesc(desc.linearDamping, Float32Array),
       angularDamping: viewFromDesc(desc.angularDamping, Float32Array),
       sleeping: null,
@@ -1806,6 +1807,19 @@
     }
   }
 
+  // angular-mass-start
+  /**
+   * What RigidBody.angularAccel is multiplied by to make a torque (N-4): the
+   * body's rotational inertia, so angularAccel is an angular acceleration
+   * (rad/s²). A body without inertia (no collider shape) keeps the mass, as
+   * every body did before.
+   */
+  function angularMass(inertiaView, i, mass) {
+    const inertia = inertiaView ? inertiaView[i] : 0;
+    return inertia > 0 ? inertia : mass;
+  }
+  // angular-mass-end
+
   function applyForcesAndTorque() {
     for (let n = 0; n < denseCount; n++) {
       const i = denseList[n];
@@ -1824,7 +1838,7 @@
       }
       const aa = views.angularAccel[i];
       if (aa !== 0 && !isFixedRotation(i)) {
-        bodyApplyTorqueFn(i, aa * mass, 1);
+        bodyApplyTorqueFn(i, aa * angularMass(views.inertia, i, mass), 1);
       }
       // Keep ax/ay/angularAccel: logic replaces them on the entity's next tick.
     }

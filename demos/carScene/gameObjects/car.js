@@ -110,15 +110,6 @@ export class Car extends GameObject {
         this._halfDiag = 0;
     }
 
-    /** Host applies torque = angularAccel * mass; map desired alpha → angularAccel via I/m. */
-    _alphaToAngularAccel(alpha) {
-        const i = this.index;
-        const mass = RigidBody.mass[i];
-        const inertia = RigidBody.inertia[i];
-        if (!(mass > 0) || !(inertia > 0)) return alpha;
-        return (alpha * inertia) / mass;
-    }
-
     /** Soft lateral tire friction only — forward coast/top-speed is linearDamping. */
     _updateFriction() {
         const i = this.index;
@@ -158,7 +149,7 @@ export class Car extends GameObject {
                 const steerDirection = currentSpeed >= 0 ? 1 : -1;
                 const alpha =
                     turnInput * this.carComponent.turnTorque * steerFactor * steerDirection;
-                RigidBody.angularAccel[i] += this._alphaToAngularAccel(alpha);
+                RigidBody.angularAccel[i] += alpha;
             }
         }
 
