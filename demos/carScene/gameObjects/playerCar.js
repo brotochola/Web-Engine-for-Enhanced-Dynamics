@@ -4,9 +4,8 @@
 import WEED from '/src/index.js';
 import { Car } from './car.js';
 import { CarComponent } from '../components/carComponent.js';
-import { dot2 } from '/src/util/utils.js';
 
-const { Keyboard, SpriteRenderer, RigidBody, Collider, CollisionListener, Camera, Transform } = WEED;
+const { Keyboard, SpriteRenderer, RigidBody, Collider, CollisionListener, Camera, Transform, dot2 } = WEED;
 
 const ZOOM_AT_MIN_SPEED = 1.0;
 const ZOOM_AT_MAX_SPEED = 0.5;

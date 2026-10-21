@@ -4,13 +4,11 @@
 import WEED from '/src/index.js';
 import { AICar } from './gameObjects/aiCar.js';
 import { PlayerCar } from './gameObjects/playerCar.js';
-import { NavGrid } from '/src/core/navGrid.js';
-import { rng } from '/src/util/utils.js';
 import { Rock } from '/demos/predatorScene/gameObjects/rock.js';
 
 import { PersonThatFollowsAFlowfield } from './gameObjects/personThatFollowsAFlowfield.js';
 
-const { Camera, Transform, LAYER_KIND } = WEED;
+const { Camera, Transform, LAYER_KIND, NavGrid, rng } = WEED;
 const excludedLPCAnimations = [
     'spellcast_up',
     'spellcast_left',

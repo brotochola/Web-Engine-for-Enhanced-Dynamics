@@ -1,11 +1,10 @@
 // CityPerson — calm pedestrian: follows sidewalks flowfield, walk/idle only (no flee, no run)
 
 import WEED from '/src/index.js';
-import { NavGrid } from '/src/core/navGrid.js';
 import { CarComponent } from '/demos/carScene/components/carComponent.js';
 import { CityPersonComponent } from '../components/cityPersonComponent.js';
 
-const { rng, GameObject, RigidBody, Collider, SpriteRenderer, Transform } = WEED;
+const { rng, GameObject, RigidBody, Collider, SpriteRenderer, Transform, NavGrid } = WEED;
 
 const _navVec = { x: 0, y: 0 };
 

@@ -1,5 +1,7 @@
-import { Component } from '/src/core/component.js';
+import WEED from '/src/index.js';
 import { GRAVITY, VMAX } from '../planetGrid.js';
+
+const { Component } = WEED;
 
 const F = new Float32Array(4);
 

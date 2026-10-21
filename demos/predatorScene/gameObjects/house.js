@@ -1,4 +1,3 @@
-import { ShadowCaster } from '/src/components/shadowCaster.js';
 import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
@@ -12,6 +11,7 @@ const {
   Flash,
   ParticleEmitter,
   enums,
+  ShadowCaster,
 } = WEED;
 const { ShapeType } = enums;
 

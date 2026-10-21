@@ -1,14 +1,12 @@
 // LittleCityScene — tilemap city, sidewalk people, road-only traffic, free cam
 
 import WEED from '/src/index.js';
-import { NavGrid } from '/src/core/navGrid.js';
-import { rng } from '/src/util/utils.js';
 import { TrafficCar } from './gameObjects/trafficCar.js';
 import { CityPerson } from './gameObjects/cityPerson.js';
 import { CityHouse } from './gameObjects/cityHouse.js';
 import { CityTree } from './gameObjects/cityTree.js';
 
-const { Camera, LAYER_KIND } = WEED;
+const { Camera, LAYER_KIND, NavGrid, rng } = WEED;
 
 const useBaked = true;
 

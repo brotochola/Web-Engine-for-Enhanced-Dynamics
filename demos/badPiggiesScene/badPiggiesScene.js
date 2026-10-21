@@ -5,14 +5,6 @@ import { GhostMachineBox } from './gameObjects/ghostMachineBox.js';
 import { GhostMachineWheel } from './gameObjects/ghostMachineWheel.js';
 import { GhostMachineRocket } from './gameObjects/ghostMachineRocket.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/camera.js';
-import {
-  BLEND_MODES,
-  LAYER_DENSITY_SOURCE,
-  LAYER_KIND,
-  LAYER_SCALE_MODE,
-  LAYER_SPLAT_FALLOFF,
-} from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 import {
   CELL,
@@ -33,8 +25,7 @@ import {
   worldToCell,
 } from './utils/badPiggiesGrid.js';
 
-const { Scene, Mouse, Keyboard, Transform, RigidBody, Joint, Noise2D, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } =
-  WEED;
+const { Scene, Mouse, Keyboard, Transform, RigidBody, Joint, Noise2D, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS, Camera, BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_KIND, LAYER_SCALE_MODE, LAYER_SPLAT_FALLOFF } = WEED;
 
 const F = LIQUIDFUN_FLAGS;
 const GF = LIQUIDFUN_GROUP_FLAGS;

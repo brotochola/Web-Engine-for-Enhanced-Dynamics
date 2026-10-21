@@ -18,7 +18,6 @@
 // The water picture is the dulceDeLeche fragment, sampled from LiquidFun
 // density, tinted as water. The rope samples rocky.jpg.
 
-import { BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 
 const {
@@ -35,6 +34,10 @@ const {
   LIQUIDFUN_FLAGS,
   LAYER_KIND,
   rng,
+  BLEND_MODES,
+  LAYER_DENSITY_SOURCE,
+  LAYER_SPLAT_FALLOFF,
+  LAYER_SCALE_MODE,
 } = WEED;
 
 const WORLD_W = 1400;

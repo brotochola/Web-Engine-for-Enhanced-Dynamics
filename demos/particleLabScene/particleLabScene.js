@@ -1,14 +1,13 @@
 // particleLabScene.js — ParticleEmitter playground: presets + sliders + click/spray
 
 import WEED from '/src/index.js';
-import { PARTICLE_EASE } from '/src/util/configDefaults.js';
 import {
   PARTICLE_LAB_PRESETS,
   PARTICLE_LAB_PRESET_ORDER,
 } from './particleLabPresets.js';
 import { ParticleLabStub } from './gameObjects/particleLabStub.js';
 
-const { Scene, Camera, Mouse, ParticleEmitter } = WEED;
+const { Scene, Camera, Mouse, ParticleEmitter, PARTICLE_EASE } = WEED;
 
 const EASE_KEYS = Object.keys(PARTICLE_EASE);
 const TEXTURES = ['_whiteCircle', 'blood', 'cloud', 'smoke'];

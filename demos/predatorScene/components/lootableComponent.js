@@ -1,7 +1,9 @@
 // ExplosionComponent.js - Data for explosion entities
 // Tracks lifecycle, intensity, radius growth/shrink, and visual state
 
-import { Component } from '/src/core/component.js';
+import WEED from '/src/index.js';
+
+const { Component } = WEED;
 
 export class LootableComponent extends Component {
   static ARRAY_SCHEMA = {

@@ -1,7 +1,9 @@
 // ConstraintBoxComponent - Data for car-style square boxes
 // 4 corner parts + 1 center part; 4 sides + 2 diagonals + 4 spokes = 10 constraints
 
-import { Component } from '/src/core/component.js';
+import WEED from '/src/index.js';
+
+const { Component } = WEED;
 
 export const CONSTRAINT_BOX_DEFAULTS = {
     size: 100,

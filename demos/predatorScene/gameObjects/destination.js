@@ -3,7 +3,6 @@
 
 import WEED from '/src/index.js';
 
-import { Mouse } from '/src/core/mouse.js';
 import { containerRadius } from '/src/index.js';
 import { MySoldier } from './mySoldier.js';
 
@@ -12,6 +11,7 @@ const {
 
   Collider,
   SpriteRenderer,
+  Mouse,
 } = WEED;
 
 export class Destination extends GameObject {

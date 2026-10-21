@@ -5,16 +5,9 @@ import { Lamp } from './gameObjects/lamp.js';
 import { MamushkaBox, ORDER1_CELL, weldTouchingMamushkas } from './gameObjects/mamushkaBox.js';
 import { buildOccupancy, packMamushkaRoots } from './mamushkaPack.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/camera.js';
-import {
-  BLEND_MODES,
-  LAYER_DENSITY_SOURCE,
-  LAYER_SPLAT_FALLOFF,
-  LAYER_SCALE_MODE,
-} from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 
-const { Transform, LiquidFun } = WEED;
+const { Transform, LiquidFun, Camera, BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } = WEED;
 
 const MAX_PACK_ORDER = 6;
 const GRID_COLS = 120;

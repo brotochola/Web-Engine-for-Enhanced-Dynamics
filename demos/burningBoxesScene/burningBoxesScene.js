@@ -2,18 +2,9 @@ import { BurningBox } from './gameObjects/burningBox.js';
 import { Blower } from './gameObjects/blower.js';
 import { RocketBox } from './gameObjects/rocketBox.js';
 import { OccludingFloor } from './gameObjects/occludingFloor.js';
-import { Camera } from '/src/core/camera.js';
-import {
-  BLEND_MODES,
-  LAYER_COMPUTE_SOURCE,
-  LAYER_DENSITY_SOURCE,
-  LAYER_KIND,
-  LAYER_SPLAT_FALLOFF,
-  LAYER_SCALE_MODE,
-} from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 
-const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } = WEED;
+const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS, Camera, BLEND_MODES, LAYER_COMPUTE_SOURCE, LAYER_DENSITY_SOURCE, LAYER_KIND, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } = WEED;
 
 const OIL_LAYER = 'oil';
 

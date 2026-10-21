@@ -3,7 +3,6 @@
 
 import WEED from '/src/index.js';
 
-import { NavGrid } from '/src/core/navGrid.js';
 
 import { Destination } from './destination.js';
 import { Lootable } from './lootable.js';
@@ -23,7 +22,7 @@ import {
   randomColor,
 } from '/src/index.js';
 
-const { LightOccluder, ShadowCaster, RigidBody, Collider, SpriteRenderer, Transform, rng } = WEED;
+const { LightOccluder, ShadowCaster, RigidBody, Collider, SpriteRenderer, Transform, rng, NavGrid } = WEED;
 
 export class Person extends Lootable {
   static deriveSpeed = true;

@@ -2,7 +2,6 @@
 // Demonstrates the new Scene-based architecture for WeedJS
 
 import WEED from '/src/index.js';
-import { TileMap } from '/src/core/tileMap.js';
 
 // import { Player } from "/demos/predatorScene/gameObjects/player.js";
 import { TallLight } from '/demos/predatorScene/gameObjects/tallLight.js';
@@ -16,8 +15,6 @@ import { Fire } from '/demos/predatorScene/gameObjects/fire.js';
 import { Explosion } from '/demos/predatorScene/gameObjects/explosion.js';
 import { MySoldier } from '/demos/predatorScene/gameObjects/mySoldier.js';
 import { Destination } from '/demos/predatorScene/gameObjects/destination.js';
-import { NavGrid } from '/src/core/navGrid.js';
-import { containerRadius } from '/src/util/utils.js';
 import { DropMoney } from '/demos/predatorScene/gameObjects/dropMoney.js';
 import { DropAk47 } from '/demos/predatorScene/gameObjects/dropAk47.js';
 import { DropShotgun } from '/demos/predatorScene/gameObjects/dropShotgun.js';
@@ -26,7 +23,7 @@ import { Civilian } from '/demos/predatorScene/gameObjects/civilian.js';
 import { Trash } from '/demos/predatorScene/gameObjects/trash.js';
 import { Bug } from './gameObjects/bug.js';
 
-const { Decoration, Mouse, Camera, LAYER_KIND } = WEED;
+const { Decoration, Mouse, Camera, LAYER_KIND, TileMap, NavGrid, containerRadius } = WEED;
 
 export class BichosScene extends WEED.Scene {
   // ========================================

@@ -2,11 +2,9 @@
 
 import { WeldBreakBox } from './gameObjects/weldBreakBox.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
-import { Camera } from '/src/core/camera.js';
-import { BLEND_MODES } from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 
-const { Joint } = WEED;
+const { Joint, Camera, BLEND_MODES } = WEED;
 
 /** Tuned so stacks hold under self-weight; heavy drop / mouse toss can snap welds. */
 const WELD_FORCE_THRESHOLD = 50e8;

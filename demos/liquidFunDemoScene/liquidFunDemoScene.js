@@ -5,11 +5,9 @@
 
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { Box } from '/demos/ballsScene/gameObjects/box.js';
-import { Camera } from '/src/core/camera.js';
-import { BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 
-const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } = WEED;
+const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS, Camera, BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } = WEED;
 
 const F = LIQUIDFUN_FLAGS;
 const GF = LIQUIDFUN_GROUP_FLAGS;

@@ -1,4 +1,6 @@
-import { Component } from '/src/core/component.js';
+import WEED from '/src/index.js';
+
+const { Component } = WEED;
 
 export class BunnyMotion extends Component {
     static ARRAY_SCHEMA = {

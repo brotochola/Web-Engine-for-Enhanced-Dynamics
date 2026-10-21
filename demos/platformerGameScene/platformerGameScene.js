@@ -1,9 +1,8 @@
 import WEED from '/src/index.js';
 import { BluePlatformerPlayer } from './gameObjects/bluePlatformerPlayer.js';
 import { Platform } from './gameObjects/platform.js';
-import { BLEND_MODES } from '/src/util/configDefaults.js';
 
-const { Scene, Camera, Transform, Layer } = WEED;
+const { Scene, Camera, Transform, Layer, BLEND_MODES } = WEED;
 
 const BLOOM_LAYER = 'bloom';
 const BLOOM_RESOLUTION = 1;

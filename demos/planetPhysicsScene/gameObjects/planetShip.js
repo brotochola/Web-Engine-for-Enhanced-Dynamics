@@ -8,10 +8,9 @@
 
 import { Ship, THRUST_ACCEL } from '/demos/destructibleTerrainScene/gameObjects/ship.js';
 import { radialCameraAngle, radialPull } from '../planetGravity.js';
-import { normalizeAngle } from '/src/util/utils.js';
 import WEED from '/src/index.js';
 
-const { Camera, Keyboard, LightEmitter, ShapeType } = WEED;
+const { Camera, Keyboard, LightEmitter, ShapeType, normalizeAngle } = WEED;
 
 const CAM_TURN_RATE = 12;
 const SIDE_ACCEL = THRUST_ACCEL * 0.25;

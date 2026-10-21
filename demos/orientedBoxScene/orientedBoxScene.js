@@ -3,8 +3,9 @@
 import { OrientedBox } from './gameObjects/orientedBox.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { Ball } from '/demos/ballsScene/gameObjects/ball.js';
-import { Camera } from '/src/core/camera.js';
 import WEED from '/src/index.js';
+
+const { Camera } = WEED;
 
 export class OrientedBoxScene extends WEED.Scene {
     static config = {
@@ -71,7 +72,6 @@ export class OrientedBoxScene extends WEED.Scene {
         Camera.setFreeTarget(cx, cy);
         Camera.centerOn(cx, cy);
 
-
     }
 
     
@@ -89,7 +89,6 @@ export class OrientedBoxScene extends WEED.Scene {
                 angularVelocity: (this.rng() - 0.5) * 0.15,
             });
         }
-
 
     }
 

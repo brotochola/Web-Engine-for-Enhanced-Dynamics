@@ -1,9 +1,8 @@
 import WEED from '/src/index.js';
-import { normalizeAngle } from '/src/util/utils.js';
 import { WalkerMotion } from '../components/walkerMotion.js';
 import { PlanetGrid, CELL } from '../planetGrid.js';
 
-const { GameObject, SpriteRenderer, Keyboard, Camera } = WEED;
+const { GameObject, SpriteRenderer, Keyboard, Camera, normalizeAngle } = WEED;
 
 const PW = 12;
 const PH = 24;
