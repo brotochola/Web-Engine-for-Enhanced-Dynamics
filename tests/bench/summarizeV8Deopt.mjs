@@ -16,10 +16,24 @@ import readline from 'node:readline';
 
 import { DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs';
 import { normalizeUrl, readCpuTrace, summarizeCpuTrace } from './cpuTraceLib.mjs';
+import { isCli } from './microbenchHelpers.mjs';
 
-const NOISE_URL = /(?:chrome-extension:|devtools:\/\/|node:internal)/i;
-const IC_KINDS = /^(LoadIC|StoreIC|KeyedLoadIC|KeyedStoreIC|LoadGlobalIC|StoreInArrayLiteralIC),/;
+const NOISE_URL = /(?:chrome-extension:|chrome:\/\/|devtools:\/\/|node:internal)/i;
+const IC_KINDS = /^(LoadIC|StoreIC|KeyedLoadIC|KeyedStoreIC|LoadGlobalIC|StoreGlobalIC|StoreInArrayLiteralIC|DefineKeyedOwnIC|DefineNamedOwnIC),/;
 const IC_STATE_RE = /uninitialized|premonomorphic|monomorphic|polymorphic|megamorphic|recompute/i;
+// Current V8 logs `kind,pc,time,line,column,old,new,map,key,modifier,slowReason`
+// with one-letter states (ic.cc TransitionMarkFromState). Matching the words
+// alone found none of them, so every summary said "no megamorphic IC lines" (N-33).
+const IC_STATE_CODES = {
+  X: 'no-feedback',
+  0: 'uninitialized',
+  1: 'monomorphic',
+  '^': 'recompute',
+  P: 'polymorphic',
+  N: 'megamorphic',
+  D: 'megadom',
+  G: 'generic',
+};
 
 function parseArgs(argv) {
   const out = { dir: null, trace: null, limit: 40, warmupMs: DEFAULT_WARMUP_MS };
@@ -76,6 +90,56 @@ function stripHost(url) {
   return String(url || '').replace(/^https?:\/\/127\.0\.0\.1:\d+/, '').replace(/^https?:\/\/[^/]+/, '');
 }
 
+/**
+ * One IC line. `state` is the state it moved to; `pc` locates the code that
+ * owns the IC (see codeAt).
+ * @returns {{ kind: string, pc: number, tsUs: number, line: string, col: string, state: string, key: string } | null}
+ */
+export function parseIcLine(line) {
+  const kind = line.match(IC_KINDS);
+  if (!kind) return null;
+  const cols = line.split(',');
+  const coded = IC_STATE_CODES[cols[6]];
+  const worded = coded ? null : (IC_STATE_RE.test(cols[6] || '') ? [cols[6]] : line.match(IC_STATE_RE));
+  return {
+    kind: kind[1],
+    pc: parseInt(cols[1], 16),
+    tsUs: Number(cols[2]) || 0,
+    line: cols[3],
+    col: cols[4],
+    state: coded || (worded ? worded[0].toLowerCase() : '?'),
+    key: cols[8] ?? '',
+  };
+}
+
+/** `code-creation,<tag>,<kind>,<ts>,<addr>,<size>,<name...>,<sfi>,<tier>` → a code range. */
+export function parseCodeCreation(line) {
+  if (!line.startsWith('code-creation,')) return null;
+  const cols = line.split(',');
+  const start = parseInt(cols[4], 16);
+  const size = Number(cols[5]);
+  if (!Number.isFinite(start) || !(size > 0)) return null;
+  const name = cols.slice(6, -2).join(',');
+  return { start, end: start + size, name: normalizeUrl(stripHost(name.replace(/ https?:\/\/[^/]+/, ' '))) };
+}
+
+/** The code range containing pc, from ranges sorted by start. */
+export function codeAt(ranges, pc) {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  let hit = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (ranges[mid].start <= pc) {
+      hit = ranges[mid];
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return hit && pc < hit.end ? hit : null;
+}
+
 function parseCodeDeopt(line) {
   if (!line.startsWith('code-deopt,')) return null;
   const locMatch = line.match(/<([^>]+)>/);
@@ -109,7 +173,15 @@ async function parseTextLogs(files, warmupMs) {
       input: fs.createReadStream(file, { encoding: 'utf8' }),
       crlfDelay: Infinity,
     });
+    // Code addresses are per isolate, so each log resolves its own ICs.
+    const ranges = [];
+    const megaEvents = [];
     for await (const line of rl) {
+      const code = parseCodeCreation(line);
+      if (code) {
+        ranges.push(code);
+        continue;
+      }
       const deopt = parseCodeDeopt(line);
       if (deopt) {
         deoptLines++;
@@ -123,19 +195,22 @@ async function parseTextLogs(files, warmupMs) {
         continue;
       }
       if (line.length > 500) continue;
-      if (IC_KINDS.test(line)) {
+      const ic = parseIcLine(line);
+      if (ic) {
         icLines++;
-        const cols = line.split(',');
-        const kind = cols[0];
-        const stateMatch = line.match(IC_STATE_RE);
-        const state = stateMatch ? stateMatch[0].toLowerCase() : '?';
-        bump(icState, `${kind} ${state}`);
-        if (state === 'megamorphic' || /megamorph/i.test(line)) {
+        bump(icState, `${ic.kind} ${ic.state}`);
+        if (ic.state === 'megamorphic' || ic.state === 'generic') {
           megaLines++;
-          const loc = stripHost(cols.slice(4).join(',').slice(0, 160));
-          bump(megaIc, `${kind} ${loc}`);
+          megaEvents.push(ic);
         }
       }
+    }
+    ranges.sort((a, b) => a.start - b.start);
+    for (const ic of megaEvents) {
+      const fn = codeAt(ranges, ic.pc);
+      if (fn && NOISE_URL.test(fn.name)) continue;
+      const phase = ic.tsUs >= warmupMs * 1000 ? 'steady' : 'warm-up';
+      bump(megaIc, `${phase} ${ic.state} ${ic.kind} ${fn ? fn.name : '(no code)'} @${ic.line}:${ic.col} key=${ic.key}`);
     }
   }
 
@@ -272,7 +347,9 @@ async function main() {
   console.log(`\nWrote ${outJson}`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
-});
+if (isCli(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
+}
