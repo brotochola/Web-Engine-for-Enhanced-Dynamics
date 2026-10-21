@@ -362,7 +362,10 @@ class PreRenderWorker extends AbstractWorker {
         this.entityFrameAccumulator = null;
 
         // Scratch for published physics pose / Transform (no per-call alloc)
-        this._displayPoseOut = { x: 0, y: 0, rotC: 1, rotS: 0 };
+        // Display pose scratch: [x, y, rotC, rotS]. A typed array, as Chrome boxed the
+        // doubles stored into an object's x and y here: two heap numbers per drawn
+        // entity per frame, 17.6 MB/s in Predator (E-66).
+        this._displayPoseOut = Float64Array.of(0, 0, 1, 0);
         this.backpressure = true;
 
         // Physics pose publish latch (mirror renderQueueSync)
@@ -1856,10 +1859,10 @@ class PreRenderWorker extends AbstractWorker {
      * Sort key for a sprite (type 0) or an Adobe root (type 6). An Adobe root
      * has no sprite frame, so its line is the pose: the sprite path would miss
      * the feet fast path on its zero anchors and resolve a texture it does not
-     * have, every frame, to get the same pose.y.
+     * have, every frame, to get the same pose y.
      */
     _entitySortY(type, index, pose) {
-        return type === 6 ? spriteYSortKey(pose.y, Y_SORT_K) : this._spriteSortY(index, pose);
+        return type === 6 ? spriteYSortKey(pose[1], Y_SORT_K) : this._spriteSortY(index, pose);
     }
 
     /**
@@ -1888,7 +1891,7 @@ class PreRenderWorker extends AbstractWorker {
         const src = this._spriteSortSrc();
         // Same fast path the helper takes, before the frame lookup: feet-anchored
         // sprites are the common case and never need the texture resolved.
-        if (src.anchorX[index] === 0.5 && src.anchorY[index] === 1.0) return pose.y;
+        if (src.anchorX[index] === 0.5 && src.anchorY[index] === 1.0) return pose[1];
         const textureId = this._entityTextureIdOrResolve(index);
         let w = 0;
         let h = 0;
@@ -1896,7 +1899,7 @@ class PreRenderWorker extends AbstractWorker {
             w = this.frameWidth[textureId] || 0;
             h = this.frameHeight[textureId] || 0;
         }
-        return spriteSortFootY(src, index, pose.y, pose.rotC, pose.rotS, w, h);
+        return spriteSortFootY(src, index, pose[1], pose[2], pose[3], w, h);
     }
 
     _writeRenderable(type, index, y, layerId) {
@@ -1937,19 +1940,19 @@ class PreRenderWorker extends AbstractWorker {
         if (type === 0 || type === 6) {
             const pose = this._displayPoseOut;
             this._displayPose(index, pose);
-            this._renderablePx[writeIdx] = pose.x;
-            this._renderablePy[writeIdx] = pose.y;
-            this._renderableRotC[writeIdx] = pose.rotC;
-            this._renderableRotS[writeIdx] = pose.rotS;
-            // Drawn Y, whole pixels. A raw pose.y key changes bits on a
+            this._renderablePx[writeIdx] = pose[0];
+            this._renderablePy[writeIdx] = pose[1];
+            this._renderableRotC[writeIdx] = pose[2];
+            this._renderableRotS[writeIdx] = pose[3];
+            // Drawn Y, whole pixels. A raw pose[1] key changes bits on a
             // fraction of a pixel and the painter swaps two sprites that
             // did not cross.
             this._renderableY[writeIdx] = this._entitySortY(type, index, pose);
         } else if (type === 2) {
             const pose = this._displayPoseOut;
             this._decorationWorldXY(index, pose);
-            this._renderablePx[writeIdx] = pose.x;
-            this._renderablePy[writeIdx] = pose.y;
+            this._renderablePx[writeIdx] = pose[0];
+            this._renderablePy[writeIdx] = pose[1];
             this._renderableRotC[writeIdx] = DecorationComponent.rotC[index];
             this._renderableRotS[writeIdx] = DecorationComponent.rotS[index];
         }
@@ -2103,10 +2106,10 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Display pose: published post-step snapshot when latched, else Transform (boot).
-     * Writes into caller-provided `out` (no alloc). Applies preRender.interpolation
+     * Writes [x, y, rotC, rotS] into the caller's `out` (no alloc). Applies preRender.interpolation
      * (mode 'interpolate' | 'off') when a published pose is available.
      * @param {number} idx
-     * @param {{ x: number, y: number, rotC: number, rotS: number }} out
+     * @param {Float64Array} out [x, y, rotC, rotS]
      */
     _displayPose(idx, out) {
         const poseX = this._poseX;
@@ -2126,8 +2129,8 @@ class PreRenderWorker extends AbstractWorker {
                 const alpha = this._poseAlpha;
                 const px = prevPoseX[idx];
                 const py = this._prevPoseY[idx];
-                out.x = px + (poseX[idx] - px) * alpha;
-                out.y = py + (this._poseY[idx] - py) * alpha;
+                out[0] = px + (poseX[idx] - px) * alpha;
+                out[1] = py + (this._poseY[idx] - py) * alpha;
                 const pc = prevPoseRotC[idx];
                 const ps = prevPoseRotS[idx];
                 const c = poseRotC[idx];
@@ -2137,8 +2140,8 @@ class PreRenderWorker extends AbstractWorker {
                     // or a rotating body momentarily still) - any alpha blend
                     // is exactly this same value, already unit length. Skip
                     // the lerp+renormalize below entirely (exact, not lossy).
-                    out.rotC = c;
-                    out.rotS = s;
+                    out[2] = c;
+                    out[3] = s;
                     return;
                 }
                 const rc = pc + (c - pc) * alpha;
@@ -2147,22 +2150,22 @@ class PreRenderWorker extends AbstractWorker {
                 // sqrt, not Math.hypot (its overflow/underflow guard is wasted
                 // cost here; c,s are always small, bounded values).
                 const len = Math.sqrt(rc * rc + rs * rs) || 1;
-                out.rotC = rc / len;
-                out.rotS = rs / len;
+                out[2] = rc / len;
+                out[3] = rs / len;
                 return;
             }
-            out.x = poseX[idx];
-            out.y = this._poseY[idx];
-            out.rotC = poseRotC[idx];
-            out.rotS = poseRotS[idx];
+            out[0] = poseX[idx];
+            out[1] = this._poseY[idx];
+            out[2] = poseRotC[idx];
+            out[3] = poseRotS[idx];
             return;
         }
-        out.x = Transform.x[idx];
-        out.y = Transform.y[idx];
+        out[0] = Transform.x[idx];
+        out[1] = Transform.y[idx];
         const rotC = Transform.rotC;
         const rotS = Transform.rotS;
-        out.rotC = rotC && rotC[idx] !== undefined ? rotC[idx] : 1;
-        out.rotS = rotS ? (rotS[idx] || 0) : 0;
+        out[2] = rotC && rotC[idx] !== undefined ? rotC[idx] : 1;
+        out[3] = rotS ? (rotS[idx] || 0) : 0;
     }
 
     /**
@@ -2178,18 +2181,18 @@ class PreRenderWorker extends AbstractWorker {
             const lx = DecorationComponent.localX[decoIdx];
             const ly = DecorationComponent.localY[decoIdx];
             if (DecorationComponent.inheritParentRotation[decoIdx]) {
-                const c = out.rotC;
-                const s = out.rotS;
-                out.x += c * lx - s * ly + ox;
-                out.y += s * lx + c * ly + oy;
+                const c = out[2];
+                const s = out[3];
+                out[0] += c * lx - s * ly + ox;
+                out[1] += s * lx + c * ly + oy;
             } else {
-                out.x += lx + ox;
-                out.y += ly + oy;
+                out[0] += lx + ox;
+                out[1] += ly + oy;
             }
             return;
         }
-        out.x = DecorationComponent.x[decoIdx] + ox;
-        out.y = DecorationComponent.y[decoIdx] + oy;
+        out[0] = DecorationComponent.x[decoIdx] + ox;
+        out[1] = DecorationComponent.y[decoIdx] + oy;
     }
 
     _emitAdobePieces(ref, writeIndex, entityIndex, sortKey = 0, stashedPose = null) {
@@ -2223,17 +2226,17 @@ class PreRenderWorker extends AbstractWorker {
 
         let rootX, rootY, poseC, poseS;
         if (stashedPose) {
-            rootX = stashedPose.x;
-            rootY = stashedPose.y;
-            poseC = stashedPose.rotC;
-            poseS = stashedPose.rotS;
+            rootX = stashedPose[0];
+            rootY = stashedPose[1];
+            poseC = stashedPose[2];
+            poseS = stashedPose[3];
         } else {
             const pose = this._displayPoseOut;
             this._displayPose(entityIndex, pose);
-            rootX = pose.x;
-            rootY = pose.y;
-            poseC = pose.rotC;
-            poseS = pose.rotS;
+            rootX = pose[0];
+            rootY = pose[1];
+            poseC = pose[2];
+            poseS = pose[3];
         }
         // body pose CS × AdobeAnimComponent CS (inline — hot piece loop)
         const ac = AdobeAnimComponent.rotC[entityIndex];
@@ -2556,10 +2559,10 @@ class PreRenderWorker extends AbstractWorker {
 
             if (type === 6) {
                 if (stashPx) {
-                    stashPose.x = stashPx[i];
-                    stashPose.y = stashPy[i];
-                    stashPose.rotC = stashRc[i];
-                    stashPose.rotS = stashRs[i];
+                    stashPose[0] = stashPx[i];
+                    stashPose[1] = stashPy[i];
+                    stashPose[2] = stashRc[i];
+                    stashPose[3] = stashRs[i];
                     writeCount = this._emitAdobePieces(ref, writeCount, idx, sk, stashPose);
                 } else {
                     writeCount = this._emitAdobePieces(ref, writeCount, idx, sk, null);
@@ -2594,11 +2597,11 @@ class PreRenderWorker extends AbstractWorker {
                     }
                 } else {
                     this._displayPose(idx, stashPose);
-                    currX = stashPose.x;
-                    currY = stashPose.y;
+                    currX = stashPose[0];
+                    currY = stashPose[1];
                     if (srInheritTransformRotation[idx]) {
-                        rc = stashPose.rotC;
-                        rs = stashPose.rotS;
+                        rc = stashPose[2];
+                        rs = stashPose[3];
                     } else {
                         rc = srSpriteRotC[idx];
                         rs = srSpriteRotS[idx];
@@ -2782,8 +2785,8 @@ class PreRenderWorker extends AbstractWorker {
                     decoRotSin = stashRs[i];
                 } else {
                     this._decorationWorldXY(idx, stashPose);
-                    decoWorldX = stashPose.x;
-                    decoWorldY = stashPose.y;
+                    decoWorldX = stashPose[0];
+                    decoWorldY = stashPose[1];
                     decoRotCos = decoRotC[idx];
                     decoRotSin = decoRotS[idx];
                 }
@@ -3639,8 +3642,8 @@ class PreRenderWorker extends AbstractWorker {
 
             // Same display pose as sprites (post-step publish), not live Transform
             this._displayPose(lightIdx, pose);
-            const lx = pose.x;
-            const ly = pose.y;
+            const lx = pose[0];
+            const ly = pose[1];
             const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
 
             let occCount = 0;
@@ -3661,10 +3664,10 @@ class PreRenderWorker extends AbstractWorker {
                     if (occluderBlock && !(occluderBlock[nIdx] > 0)) continue;
 
                     this._displayPose(nIdx, pose);
-                    const wx = pose.x;
-                    const wy = pose.y;
-                    const c = pose.rotC;
-                    const s = pose.rotS;
+                    const wx = pose[0];
+                    const wy = pose[1];
+                    const c = pose[2];
+                    const s = pose[3];
 
                     const shape = shapeType[nIdx];
                     if (shape === ShapeType.Chain) continue;
