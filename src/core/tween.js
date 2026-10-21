@@ -36,6 +36,16 @@ const PAINT_TINT = 8;
 const XY_X = 1;
 const XY_Y = 2;
 
+// Paint goes to the entity's sprite, or to its mesh when it has no live sprite.
+const ON_SPRITE = 1;
+const ON_MESH = 2;
+
+function paintTarget(ent) {
+  if (SpriteRenderer.active && SpriteRenderer.active[ent]) return ON_SPRITE;
+  if (MeshRenderer.active && MeshRenderer.active[ent]) return ON_MESH;
+  return 0;
+}
+
 const EASE_NAME = Object.freeze({
   lerp: PARTICLE_EASE.LERP,
   'quad.in': PARTICLE_EASE.QUAD_IN,
@@ -307,14 +317,14 @@ export class Tween {
       }
       this.mask[slot] = mask;
     } else {
-      const spriteOn = SpriteRenderer.active && SpriteRenderer.active[entityIndex];
-      const meshOn = !spriteOn && MeshRenderer.active && MeshRenderer.active[entityIndex];
+      const on = paintTarget(entityIndex);
+      const spriteOn = on === ON_SPRITE;
       let mask = 0;
       if (props.alpha !== undefined) {
         mask |= PAINT_ALPHA;
         const cur = spriteOn
           ? SpriteRenderer.alpha[entityIndex]
-          : meshOn
+          : on === ON_MESH
             ? MeshRenderer.alpha[entityIndex]
             : 1;
         this.from0[slot] = cur;
@@ -334,7 +344,7 @@ export class Tween {
         mask |= PAINT_TINT;
         const cur = spriteOn
           ? SpriteRenderer.tint[entityIndex]
-          : meshOn
+          : on === ON_MESH
             ? MeshRenderer.tint[entityIndex]
             : 0xffffff;
         this.tintFrom[slot] = cur >>> 0;
@@ -357,29 +367,35 @@ export class Tween {
       if (props.y !== undefined && Transform.y) Transform.y[entityIndex] = +props.y;
       return;
     }
-    const spriteOn = SpriteRenderer.active && SpriteRenderer.active[entityIndex];
-    const meshOn = !spriteOn && MeshRenderer.active && MeshRenderer.active[entityIndex];
-    if (props.alpha !== undefined) {
-      const a = +props.alpha;
-      if (spriteOn) SpriteRenderer.alpha[entityIndex] = a;
-      else if (meshOn) MeshRenderer.alpha[entityIndex] = a;
-    }
-    if (props.scaleX !== undefined && spriteOn) {
-      SpriteRenderer.scaleX[entityIndex] = +props.scaleX;
-    }
-    if (props.scaleY !== undefined && spriteOn) {
-      SpriteRenderer.scaleY[entityIndex] = +props.scaleY;
-    }
-    if (props.tint !== undefined) {
-      const c = props.tint >>> 0;
-      if (spriteOn) SpriteRenderer.tint[entityIndex] = c;
-      else if (meshOn) MeshRenderer.tint[entityIndex] = c;
-    }
-    if (spriteOn && SpriteRenderer.renderDirty) SpriteRenderer.renderDirty[entityIndex] = 1;
-    if (meshOn && MeshRenderer.renderDirty && !MeshRenderer.renderDirty[entityIndex]) {
-      MeshRenderer.renderDirty[entityIndex] = 1;
-      const ep = MeshRenderer.paintEpoch;
-      if (ep) ep[0] = (ep[0] + 1) >>> 0;
+    let mask = 0;
+    if (props.alpha !== undefined) mask |= PAINT_ALPHA;
+    if (props.scaleX !== undefined) mask |= PAINT_SCALEX;
+    if (props.scaleY !== undefined) mask |= PAINT_SCALEY;
+    if (props.tint !== undefined) mask |= PAINT_TINT;
+    this._writePaint(entityIndex, mask, +props.alpha, +props.scaleX, +props.scaleY, props.tint >>> 0);
+  }
+
+  /**
+   * Paint values onto an entity: alpha and tint on its sprite or mesh, scale on
+   * a sprite only; then mark it for re-render. The tick (eased values) and a
+   * zero-duration tween (target values) both end here.
+   */
+  static _writePaint(ent, mask, alpha, scaleX, scaleY, tint) {
+    const on = paintTarget(ent);
+    if (on === ON_SPRITE) {
+      if (mask & PAINT_ALPHA) SpriteRenderer.alpha[ent] = alpha;
+      if (mask & PAINT_SCALEX) SpriteRenderer.scaleX[ent] = scaleX;
+      if (mask & PAINT_SCALEY) SpriteRenderer.scaleY[ent] = scaleY;
+      if (mask & PAINT_TINT) SpriteRenderer.tint[ent] = tint;
+      if (SpriteRenderer.renderDirty) SpriteRenderer.renderDirty[ent] = 1;
+    } else if (on === ON_MESH) {
+      if (mask & PAINT_ALPHA) MeshRenderer.alpha[ent] = alpha;
+      if (mask & PAINT_TINT) MeshRenderer.tint[ent] = tint;
+      if (MeshRenderer.renderDirty && !MeshRenderer.renderDirty[ent]) {
+        MeshRenderer.renderDirty[ent] = 1;
+        const ep = MeshRenderer.paintEpoch;
+        if (ep) ep[0] = (ep[0] + 1) >>> 0;
+      }
     }
   }
 
@@ -441,8 +457,11 @@ export class Tween {
       }
       return;
     }
-    const spriteOn = SpriteRenderer.active && SpriteRenderer.active[ent];
-    const meshOn = !spriteOn && MeshRenderer.active && MeshRenderer.active[ent];
+    // The same writes as _writePaint, inline: calling it from the tick cost
+    // the 65535-tween kernel 4.9 % (review R9).
+    const on = paintTarget(ent);
+    const spriteOn = on === ON_SPRITE;
+    const meshOn = on === ON_MESH;
     if (mask & PAINT_ALPHA) {
       const a = this.from0[slot] + (this.to0[slot] - this.from0[slot]) * eased;
       if (spriteOn) SpriteRenderer.alpha[ent] = a;
