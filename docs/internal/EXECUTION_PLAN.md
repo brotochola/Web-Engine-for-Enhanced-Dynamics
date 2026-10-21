@@ -1090,7 +1090,40 @@ held (`benchRemesh=1`) and several lit compound bodies in range; first count reb
 frame before and after, to know the regime exists. Balls and Predator (no compounds) must
 tie.
 
-### E-59 The per-particle and per-tween ease is too big for V8 to inline — **not-started**
+### E-59 The per-particle and per-tween ease is too big for V8 to inline — **KEPT** (`7e56612e`; tools `e79834c1`)
+Predator hygiene, 4 pairs: the owners don't regress (particle +3.4 % but 2/4, under its floor;
+logic −9.7 % / −2.9 %). Physics +4.8 % (3/4) is a worker this change does not touch; the same
+harness gave physics +2.85 % (3/4) in an A/A sitting (review N-34).
+**Scene (2026-10-21), 4 ABAB pairs, headless, `--src`:**
+- **ParticleIntegrateStressScene `?tween=1`: particle 4.62 → 4.12 ms (−10.3 %, 4/4).** That is
+  the verdict. Every other worker ties or improves.
+- TweenStressScene: logic0 2.36 → 1.95 ms (−15.9 %, 4/4). The baseline is under the 3 ms floor,
+  and its 65,535 tweens are already the 16-bit entity maximum, so this one is screening, in the
+  same direction as the kernel.
+**Kernel (2026-10-21):** the new front is **245 bytes** (was 717), with literal case labels
+(a jump table) for LERP and the six polynomial curves, and EXPO/BACK/BOUNCE in `applyRareEase`
+(451 bytes; V8 still inlines it into particle integrate with mixed ids, within the cumulative
+budget). `--trace-turbo-inlining` now shows it inlined into `updateParticlePhysicsBuffers` and
+`Tween.tick`. `particleIntegrateMicrobench`, 3 new cases (2048 particles with alpha+scale
+tweened; the kernel calls the integrate function once per step, so it gets a normal compile),
+9 alternating rounds against `e3524a0b`:
+
+| Case | Before (steps/s) | After (steps/s) | Change | Rounds won |
+|---|---|---|---|---|
+| LERP | 10,024 | 12,802 | +27.7 % | 81/81 |
+| QUAD_OUT | 10,124 | 13,021 | +28.6 % | 81/81 |
+| 14 ids mixed | 9,654 | 12,451 | +29.0 % | 81/81 |
+| rotation tween | 10,175 | 12,370 | +21.6 % | 81/81 |
+| untweened (flat, mixed) | | | tie | |
+
+Checksums match on every case (the alpha/scale bits after a fixed replay). Minor GCs per 1000
+steps fell from 8 / 16 / 15 to 0 / 1 / 0, so the boxing was real. `tweenPoolMicrobench` (65,535
+LERP tweens): 535 → 708 ticks/s (+32.4 %). That's 72/81 cross-round wins; one of the ten new rounds
+came in at 482, the others at 644–713 against HEAD's 508–548. A parity test holds every id
+against the old single switch, bit for bit. **The planned primary scene was wrong:**
+ParticleIntegrateStressScene spawns its particles untweened, so it never ran the ease. It now
+has `?tween=1` (fade and shrink with a rotating ease; off by default, so the plain scene is
+unchanged).
 Found in review V6 (2026-10-21). TurboFan inlines a callee only when its bytecode is at most
 460 bytes. `applyParticleEase` is **717 bytes**, and `--trace-turbo-inlining` reports it
 `Cannot consider … for inlining (reason: 5)` (exceeds the bytecode limit) in both

@@ -17,10 +17,44 @@ Newest entry first. I update this file as I work, so you can keep it open in VS 
 
 ## Now
 
-**02:16** — Phase 6 (V8) is done. Next: the same field audit for the Pixi worker (N-32's
-open half), then E-59 (the ease that V8 can't inline).
+**02:51** — E-59 is in. Next: E-58 (rebuild a lit outline only when its own piece changed),
+then the rest of Phase 7, one hypothesis at a time.
 
 ## Log
+
+### 02:51 — Fading particles are 10 % cheaper (`7e56612e`, tools `e79834c1`)
+
+- **What it was.** Every particle that fades, shrinks or spins over its life calls the easing
+  function once per frame, and so does every tween. That function was too big for V8 to inline
+  (717 bytes, limit 460). So each call was a real call, and its numbers were boxed into fresh
+  heap objects: 8–16 small GC pauses per 1000 frames of 2048 particles.
+- **The change.** The common curves (linear, quad, cubic) stay in a small front (245 bytes),
+  and the rare ones (expo, back, bounce) move out. V8 now inlines it into both the particle loop
+  and the tween loop. The results are identical bit for bit, checked by a test for every curve
+  at a thousand points.
+- **Numbers.** Particle kernel: +28 % on tweened particles, with no GC pauses left. Tween
+  kernel: +32 %. In the particle stress scene with fading particles: **particle worker
+  4.62 → 4.12 ms (−10.3 %, all 4 pairs)**. The tween stress scene: logic −16 %, but under the
+  3 ms floor, so that one is supporting evidence only.
+- **Found on the way.** The particle stress scene never faded its particles, so it could not
+  have shown this. It has a `?tween=1` switch now. Also, the A/B harness reads physics a few
+  percent worse on the working-tree side even when both sides run the same code (N-34). I'm
+  treating small physics deltas with care until that's understood.
+
+### 02:41 — The renderer gets the same fix (`e3524a0b`)
+
+- Same problem as in pre-render, in the Pixi renderer: 52 fields appeared only the first
+  time something happened (first pause, first decal, first lit compound, a missing texture).
+  Each could reshape the renderer and slow it until V8 recompiled. All of them exist from the
+  start now, and the shape test checks both workers.
+- One subtlety, checked in Node: a field that starts as a whole number and later gets a fraction
+  also reshapes the object. So the one fractional field starts as `NaN`. That's still "unset",
+  as before, but already the right kind of number.
+- **A judgment call for you to check.** The renderer's own time ties (−0.05 % over 8 Predator
+  pairs). One logic worker read +5.75 % (6 of 8 pairs), but its twin logic worker, which runs
+  the same code, tied. The change only runs in the renderer thread. A control run with the
+  **same code on both sides** moved that logic worker by −14 % to +14 % per pair, so I read it
+  as noise and kept the change. If you'd rather drop it on that number, say so.
 
 ### 02:16 — Phase 6: one warning was slowing the renderer for 8 seconds (`45886e4a`, `eb1efc07`, `985755dc`)
 
