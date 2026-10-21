@@ -67,6 +67,21 @@ try {
       }
     }
 
+    // ESM bundles: named imports work and are the same objects as WEED.X.
+    if (result?.ok && bundle.includes('.esm.')) {
+      const bad = await page.evaluate(async (file) => {
+        const mod = await import(`/dist/${file}`);
+        const names = ['Scene', 'GameEngine', 'GameObject', 'RigidBody', 'Collider', 'Tween', 'Camera', 'Keyboard'];
+        return names.filter((n) => typeof mod[n] !== 'function' || mod[n] !== mod.default[n]);
+      }, bundle).catch((e) => [`import failed: ${e.message}`]);
+      if (bad.length) {
+        result.ok = false;
+        result.text = `${result.text || ''} (named exports missing or not WEED.X: ${bad.join(', ')})`;
+      } else {
+        console.log('  named exports OK');
+      }
+    }
+
     await page.close();
 
     const fatal = errors.filter((e) =>

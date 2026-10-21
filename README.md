@@ -147,7 +147,7 @@ import WEED from '@weed.js/engine/debug';
 
 Or, if you load a `<script>` / CDN URL, change `weed.bundle*.min.js` to `weed.prod.bundle*.min.js`. Same `WEED` gameplay API either way; `new GameEngine({ debug: true })` is a no-op overlay on prod.
 
-The published bundle is a **default export only**. Destructure from `WEED`. `import { Scene } from '@weed.js/engine'` may type-check (the `.d.ts` also exports class names) but fails at runtime.
+Both styles work: `import WEED from '@weed.js/engine'` and then `WEED.Scene`, or named imports, `import { Scene, GameObject } from '@weed.js/engine'` (the ESM build exports every name, and they are the same objects as `WEED.X`). The UMD / `require` build returns the `WEED` object, so `const { Scene } = require('@weed.js/engine')` works too.
 
 `SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game. Per-host setup (Vercel, Netlify, GitHub Pages, itch.io): [`docs/guide/DEPLOY.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md).
 
