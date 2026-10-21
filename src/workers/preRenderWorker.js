@@ -2487,12 +2487,7 @@ class PreRenderWorker extends AbstractWorker {
                 const ax = srAnchorX[idx];
                 const ay = srAnchorY[idx];
                 rqAlpha[out] = a;
-                if (rqShadowH) {
-                    const cast = scActive && scActive[idx];
-                    rqShadowH[out] = cast ? (scH ? (scH[idx] || 0) : 0) : 0;
-                    if (rqShadowOffX) rqShadowOffX[out] = cast ? (scOx ? (scOx[idx] || 0) : 0) : 0;
-                    if (rqShadowOffY) rqShadowOffY[out] = cast ? (scOy ? (scOy[idx] || 0) : 0) : 0;
-                }
+                this._writeQueueShadow(out, idx);
                 const rx0 = srRepeatX[idx];
                 const ry0 = srRepeatY[idx];
                 if (rx0 !== 0 || ry0 !== 0) {
