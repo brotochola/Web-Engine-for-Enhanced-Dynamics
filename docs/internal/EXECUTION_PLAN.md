@@ -1138,8 +1138,13 @@ now branchless (index always to the next slot, count += flag; kernel 616 → 438
 equal). 4 ABAB pairs at 0.785: queue **55,000 → ~36,000**, **pre-render 4.84 → 3.42 ms (−29.4 %,
 4/4)**, renderer −24.9 % (4/4), particle worker −0.45 % (tie). Rotation 0, 4 pairs: every worker
 ties. `turnedParticleCull.test.js` (real worker) checks the visible set against `viewWorldToScreen`
-at five rotations and zooms, the flags, the box at 45°, and rotation 0. Still open: decorations,
-bullets and entity glow.
+at five rotations and zooms, the flags, the box at 45°, and rotation 0.
+**E-51b decorations, bullets, glow — parked 2026-10-21: no row above the floor.** A `camRot` knob on
+DecorationSwayStressScene (40k decorations, zoom 0.15) showed the premise: at 0.785 the particle
+worker sways the box's decorations, 0.85 → 1.03 ms (+22 %). But it stays under the 3 ms floor even at
+the pool cap (65,535), the scene draws none of them, and no demo turns the camera with decorations
+or bullets (the planet demos have none). Same treatment as particles when a scene needs it; the knob
+was not committed.
 
 ### E-65 Branchless visible-list write on the rotation-0 particle cull — **screened 2026-10-21: depends on the scene**
 Found with E-51b. On 65k random particles with 82 % visible, a branchless box loop is 500 → 418 µs
