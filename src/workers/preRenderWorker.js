@@ -54,6 +54,7 @@ import {
     ShapeType,
     MAX_POLYGON_VERTICES,
     SPRITE_TILE_MODE,
+    resolveZenithalMaxHeight,
 } from '../util/configDefaults.js';
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
@@ -550,7 +551,7 @@ class PreRenderWorker extends AbstractWorker {
 
         // Zenithal projection curve (scene-level). Mode is per-particle (viewMode).
         const particleConfig = this.config.particle || {};
-        this.zenithalMaxHeight = particleConfig.zenithalMaxHeight ?? 50;
+        this.zenithalMaxHeight = resolveZenithalMaxHeight(particleConfig);
         this.zenithalScaleFactor = particleConfig.zenithalScaleFactor ?? 0.5;
         this.zenithalAlphaFade = particleConfig.zenithalAlphaFade ?? 0;
 

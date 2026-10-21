@@ -470,6 +470,18 @@ export const PARTICLE_DEFAULTS = Object.freeze({
   zenithalAlphaFade: 0,
 });
 
+/**
+ * The zenithal curve's height for a scene's particle config. Pre-render scales
+ * and fades by height / this and the particle-light splat fades by it, so 0 or
+ * a negative would divide by zero: it takes the default, in both workers.
+ * @param {{ zenithalMaxHeight?: number }|null|undefined} particleConfig
+ * @returns {number}
+ */
+export function resolveZenithalMaxHeight(particleConfig) {
+  const h = particleConfig ? particleConfig.zenithalMaxHeight : undefined;
+  return h > 0 ? h : PARTICLE_DEFAULTS.zenithalMaxHeight;
+}
+
 // ============================================================================
 // DECORATION DEFAULTS
 // ============================================================================
