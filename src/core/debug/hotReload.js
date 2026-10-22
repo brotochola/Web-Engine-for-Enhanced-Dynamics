@@ -86,6 +86,23 @@ export class HotReload {
     return { restoreSlot: SLOT, data: rec.data ?? null };
   }
 
+  /**
+   * The state saved before the reload, or null when it is gone (the page
+   * unloaded before the save committed) or does not decode. A hot reload must
+   * never stop the scene from loading: with null, loadScene starts it fresh.
+   */
+  static async readSlot() {
+    try {
+      const { SaveStore, decodeSave } = await import('../save/saveGame.js');
+      const blob = await SaveStore.get(SLOT);
+      if (blob) return await decodeSave(blob);
+      console.warn('[WeedJS] hot reload: the saved state is gone; starting the scene fresh');
+    } catch (error) {
+      console.warn('[WeedJS] hot reload: could not read the saved state; starting the scene fresh', error);
+    }
+    return null;
+  }
+
   /** After the restore: the reserved slot is not a save the player made. */
   static async discardSlot() {
     try {

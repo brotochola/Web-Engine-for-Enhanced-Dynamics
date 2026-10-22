@@ -107,3 +107,39 @@ test('the restore note is used once, and only restores the scene that was runnin
     delete globalThis.sessionStorage;
   }
 });
+
+test('a lost or unreadable hot-reload save reads as null: the scene starts fresh, it does not fail', async () => {
+  const { SaveStore, encodeSave } = await import('../../src/core/save/saveGame.js');
+  const realGet = SaveStore.get;
+  const realWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    SaveStore.get = async () => null; // the page unloaded before the save committed
+    assert.equal(await HotReload.readSlot(), null);
+
+    SaveStore.get = async () => new Uint8Array([1, 2, 3]); // not a save
+    assert.equal(await HotReload.readSlot(), null);
+
+    SaveStore.get = async () => {
+      throw new Error('IndexedDB blocked');
+    };
+    assert.equal(await HotReload.readSlot(), null);
+    assert.equal(warnings.length, 3);
+
+    const blob = await encodeSave({
+      sceneName: 'Level',
+      engineVersion: '0',
+      layout: { types: [], totalEntityCount: 0 },
+      camera: null,
+      sun: null,
+      entities: [],
+      joints: [],
+    });
+    SaveStore.get = async (slot) => (slot === HotReload.SLOT ? blob : null);
+    assert.equal((await HotReload.readSlot()).sceneName, 'Level');
+  } finally {
+    SaveStore.get = realGet;
+    console.warn = realWarn;
+  }
+});

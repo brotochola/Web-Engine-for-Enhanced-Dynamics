@@ -344,13 +344,15 @@ class GameEngine {
       if (this.debugEnabled && !options.restorePayload && !options.restoreSlot) {
         const hot = HotReload.takeRestore(sceneScriptUrl);
         if (hot) {
-          options = { ...options, restoreSlot: hot.restoreSlot, data: options.data ?? hot.data };
+          options = { ...options, data: options.data ?? hot.data };
           hotRestore = true;
         }
       }
 
       let restorePayload = options.restorePayload || null;
-      if (!restorePayload && options.restoreSlot) {
+      if (hotRestore) {
+        restorePayload = await HotReload.readSlot(); // null: start fresh, never fail the load
+      } else if (!restorePayload && options.restoreSlot) {
         const { SaveStore, decodeSave } = await import('./save/saveGame.js');
         const blob = await SaveStore.get(options.restoreSlot);
         if (!blob) throw new Error(`Save slot not found: ${options.restoreSlot}`);

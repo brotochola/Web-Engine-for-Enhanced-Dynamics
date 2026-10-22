@@ -7,5 +7,8 @@ export class HotReload {
   static takeRestore() {
     return null;
   }
+  static async readSlot() {
+    return null;
+  }
   static async discardSlot() {}
 }
