@@ -9,7 +9,7 @@
     "preview": "node scripts/dev.mjs dist"
   },
   "dependencies": {
-    "@weed.js/engine": "^0.11.361"
+    "@weed.js/engine": "^0.11.366"
   },
   "engines": {
     "node": ">=20"
