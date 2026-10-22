@@ -119,7 +119,12 @@ class Wall extends GameObject {
 }
 ```
 
-A `Collider` without a `RigidBody` is a static body: it blocks, but never moves. The scene spawns the four walls in `create()`, which runs for a new game and for a loaded save alike.
+```js
+// in the scene's create(), once per side
+Wall.spawn({ x: WORLD_W / 2, y: t / 2, w: WORLD_W, h: t });
+```
+
+A `Collider` without a `RigidBody` is a static body: it blocks, but never moves. The scene spawns the four walls in `create()`, which runs for a new game and for a loaded save alike. `Wall.spawn(config)` is the same call in the scene and in an entity's code; `Coin.despawn(index)` removes another entity, and `this.despawn()` removes this one.
 
 ## 7. Coins: sensors, messages and `is`
 

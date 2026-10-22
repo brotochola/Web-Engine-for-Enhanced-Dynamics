@@ -147,28 +147,28 @@ export class WaterAndBoxesScene extends WEED.Scene {
     const worldWidth = this.config.worldWidth;
     const worldHeight = this.config.worldHeight;
 
-    this.spawnEntity(Floor, {
+    Floor.spawn({
       x: worldWidth / 2,
       y: worldHeight + wallThickness / 4,
       width: worldWidth + wallThickness * 2,
       height: wallThickness,
     });
 
-    this.spawnEntity(Floor, {
+    Floor.spawn({
       x: worldWidth / 2,
       y: -wallThickness / 2,
       width: worldWidth + wallThickness * 2,
       height: wallThickness,
     });
 
-    this.spawnEntity(Floor, {
+    Floor.spawn({
       x: -wallThickness / 2,
       y: worldHeight / 2,
       width: wallThickness,
       height: worldHeight + wallThickness * 2,
     });
 
-    this.spawnEntity(Floor, {
+    Floor.spawn({
       x: worldWidth + wallThickness / 2,
       y: worldHeight / 2,
       width: wallThickness,
@@ -178,7 +178,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
 
   spawnWaterBalls(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity('WaterBall', {
+      WaterBall.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -187,7 +187,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
 
   spawnBoxes(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity('Box', {
+      Box.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });

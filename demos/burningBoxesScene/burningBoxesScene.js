@@ -294,10 +294,10 @@ export class BurningBoxesScene extends WEED.Scene {
     const w = this.config.worldWidth;
     const h = this.config.worldHeight;
     const floorY = h * 0.72;
-    this.spawnEntity(OccludingFloor, { x: w / 2, y: floorY, width: 6800, height: 80, sprite: '_white', tint: 0x3a322c, layers: ['entities', 'fire'] });
-    this.spawnEntity(OccludingFloor, { x: w / 2 - 420, y: floorY - 220, width: 380, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
-    this.spawnEntity(OccludingFloor, { x: w / 2 + 380, y: floorY - 340, width: 320, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
-    // this.spawnEntity(OccludingFloor, { x: this.config.worldWidth / 2 - 80, y: floorY - 480, width: 36, height: 70, sprite: '_white', tint: 0x2c2622, layers: ['entities', 'fire'] });
+    OccludingFloor.spawn({ x: w / 2, y: floorY, width: 6800, height: 80, sprite: '_white', tint: 0x3a322c, layers: ['entities', 'fire'] });
+    OccludingFloor.spawn({ x: w / 2 - 420, y: floorY - 220, width: 380, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
+    OccludingFloor.spawn({ x: w / 2 + 380, y: floorY - 340, width: 320, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['entities', 'fire'] });
+    // OccludingFloor.spawn({ x: this.config.worldWidth / 2 - 80, y: floorY - 480, width: 36, height: 70, sprite: '_white', tint: 0x2c2622, layers: ['entities', 'fire'] });
   }
 
   spawnCrates() {
@@ -309,7 +309,7 @@ export class BurningBoxesScene extends WEED.Scene {
       for (let row = 0; row < 4; row++) {
         const x = cx - 280 + col * 92;
         const y = floorY - row * 92;
-        this.spawnEntity(BurningBox, {
+        BurningBox.spawn({
           x,
           y,
           width: 88,
@@ -318,7 +318,7 @@ export class BurningBoxesScene extends WEED.Scene {
         });
       }
     }
-    // this.spawnEntity(BurningBox, { x: cx + 420, y: floorY - 40, width: 110, height: 70, startIgnited: true });
+    // BurningBox.spawn({ x: cx + 420, y: floorY - 40, width: 110, height: 70, startIgnited: true });
   }
 
   spawnGadgets() {
@@ -326,8 +326,8 @@ export class BurningBoxesScene extends WEED.Scene {
     // const h = this.config.worldHeight;
     // const floorY = h * 0.72 - 80;
     // const cx = w / 2;
-    // this.spawnEntity(Blower, { x: cx - 520, y: floorY - 40, width: 64, height: 40, rotation: 0 });
-    // this.spawnEntity(RocketBox, { x: cx + 200, y: floorY - 360, width: 96, height: 44, rotation: 0 });
+    // Blower.spawn({ x: cx - 520, y: floorY - 40, width: 64, height: 40, rotation: 0 });
+    // RocketBox.spawn({ x: cx + 200, y: floorY - 360, width: 96, height: 44, rotation: 0 });
   }
 
   emitOil(x, y, radius, burning) {

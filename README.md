@@ -236,7 +236,7 @@ export class ZombieScene extends Scene {
   // New game only — serializable / dynamic entities
   createNewGame() {
     for (let i = 0; i < 20000; i++) {
-      this.spawnEntity(Zombie, {
+      Zombie.spawn({
         x: this.rng() * 5000,
         y: this.rng() * 3000,
       });

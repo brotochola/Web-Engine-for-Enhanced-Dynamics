@@ -1159,7 +1159,7 @@ export declare class GameObject {
   /** Play an animation of the current spritesheet; loop false = play once (then onAnimationEnd). */
   setAnimation(animationName: string, loop?: boolean): void;
   setAnimationLoop(loop: boolean): this;
-  /** Frames per tick at 60 Hz (0.25 = 15 fps). The spawn default 0 does not play. */
+  /** Frames per 1/60 s, so fps / 60 (0.25 = 15 fps). Spawn default 0.2 (12 fps); 0 holds the frame. */
   setAnimationSpeed(speed: number): this;
   setAnimationState(state: number): this;
   setScale(x: number, y?: number): this;
@@ -1218,11 +1218,22 @@ export declare class GameObject {
   setTileLocal(periodX: number, periodY?: number, u0?: number, v0?: number): this;
   clearTile(): this;
   bakeWorldTileToLocal(): this;
+  /**
+   * Enemy.spawn({ x, y }): the same call in the scene and in entities. Returns the entity in a
+   * logic worker, { index } on the main thread (both have .index); null when the pool is full.
+   */
   static spawn(
     EntityClassOrConfig: typeof GameObject | SpawnConfig,
     spawnConfig?: SpawnConfig,
     preAssignedIndex?: number
   ): GameObject | { index: number } | null;
+  /**
+   * Enemy.despawn(index): despawn another entity, from the scene or an entity. Takes an index or
+   * what spawn returned. On a class, only its entities (subclasses count); GameObject.despawn takes
+   * any. On the main thread it is sent to logic0 (true = sent). False when it is not an entity of
+   * the class or, in a worker, not alive. An entity ends itself with this.despawn().
+   */
+  static despawn(entity: number | { index: number }): boolean;
   static get(index: number): GameObject | null;
   /** Component classes the type lists (static components). */
   static components: Array<typeof Component>;
@@ -1292,7 +1303,9 @@ export declare class GameEngine {
   rebindSurface(): void;
   pause(): void;
   resume(): void;
+  /** @deprecated Use Enemy.spawn(config): the same call works in the scene and in entities. */
   spawnEntity(EntityClassOrName: string | typeof GameObject, data?: SpawnConfig): void;
+  /** @deprecated Use Enemy.despawnAll(). */
   despawnAllEntities(className: string): void;
   getPoolStats(EntityClass: string | typeof GameObject): {
     total: number;
@@ -1643,8 +1656,11 @@ export declare class Scene {
   setPresenting(on: boolean): void;
   rebindSurface(): void;
   resize(width: number, height: number): void;
-  spawnEntity(EntityClassOrName: string | typeof GameObject, spawnConfig?: SpawnConfig): void;
+  /** @deprecated Use Enemy.spawn(config): the same call works in the scene and in entities. */
+  spawnEntity(EntityClassOrName: string | typeof GameObject, spawnConfig?: SpawnConfig): { index: number } | null;
+  /** @deprecated Use Enemy.despawn(index) (or GameObject.despawn(index) for any entity). */
   despawnEntity(entityIndex: number): void;
+  /** @deprecated Use Enemy.despawnAll(). */
   despawnAllEntities(className: string): void;
   getPoolStats(EntityClass: string | typeof GameObject): {
     total: number;

@@ -17,6 +17,12 @@ export function packTileOffset01(u) {
   return v < 0 ? 0 : v > 65535 ? 65535 : v;
 }
 
+/**
+ * animationSpeed a spawn starts with: frames per 1/60 s, so 0.2 = 12 fps.
+ * Not 0: setAnimation alone plays, instead of showing one frozen frame.
+ */
+export const DEFAULT_ANIMATION_SPEED = 0.2;
+
 export function unpackTileOffset01(u16) {
   return (u16 & 65535) / 65535;
 }
@@ -40,7 +46,7 @@ export class SpriteRenderer extends Component {
     spritesheetId: Uint8Array, // Which spritesheet to use (civil1, civil2, bunny, etc.) - proxies to bigAtlas
     animationState: Uint8Array, // Current animation index (0-255)
     animationFrame: Uint16Array, // Current frame within the animation
-    animationSpeed: Float32Array, // Playback speed multiplier (1.0 = normal)
+    animationSpeed: Float32Array, // Frames per 1/60 s (0.2 = 12 fps, 1 = 60 fps); spawn sets DEFAULT_ANIMATION_SPEED
     loop: Uint8Array, // 0 = no loop, 1 = loop
 
     // Visual effects

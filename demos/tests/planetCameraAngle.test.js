@@ -46,13 +46,16 @@ test('create() starts the camera on the ship spawn, rolled to its local up', asy
   const data = new Float32Array(new SharedArrayBuffer(Camera.FLOAT_COUNT * 4));
   Camera.initialize(data, 1280, 720);
   Camera.setWorldBounds(9000, 9000);
+  const { Floor } = await import('../../demos/ballsScene/gameObjects/floor.js');
   const walls = [];
-  PlanetPhysicsScene.prototype.create.call({
-    _panel: { build() {} },
-    spawnEntity(type, config) {
-      walls.push(config);
-    },
-  });
+  const own = Object.getOwnPropertyDescriptor(Floor, 'spawn');
+  Object.defineProperty(Floor, 'spawn', { value: (config) => walls.push(config), configurable: true, writable: true });
+  try {
+    PlanetPhysicsScene.prototype.create.call({ _panel: { build() {} } });
+  } finally {
+    if (own) Object.defineProperty(Floor, 'spawn', own);
+    else delete Floor.spawn;
+  }
   assert.equal(walls.length, 4, 'four walls');
   assert.deepEqual(
     walls.map((w) => [w.x, w.y]),

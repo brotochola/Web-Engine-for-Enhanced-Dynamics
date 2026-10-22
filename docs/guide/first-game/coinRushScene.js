@@ -173,22 +173,22 @@ export class CoinRushScene extends Scene {
       hud('msg', 'Game over: press R');
     });
     const t = 20;
-    this.spawnEntity(Wall, { x: WORLD_W / 2, y: t / 2, w: WORLD_W, h: t });
-    this.spawnEntity(Wall, { x: WORLD_W / 2, y: WORLD_H - t / 2, w: WORLD_W, h: t });
-    this.spawnEntity(Wall, { x: t / 2, y: WORLD_H / 2, w: t, h: WORLD_H });
-    this.spawnEntity(Wall, { x: WORLD_W - t / 2, y: WORLD_H / 2, w: t, h: WORLD_H });
+    Wall.spawn({ x: WORLD_W / 2, y: t / 2, w: WORLD_W, h: t });
+    Wall.spawn({ x: WORLD_W / 2, y: WORLD_H - t / 2, w: WORLD_W, h: t });
+    Wall.spawn({ x: t / 2, y: WORLD_H / 2, w: t, h: WORLD_H });
+    Wall.spawn({ x: WORLD_W - t / 2, y: WORLD_H / 2, w: t, h: WORLD_H });
     hud('msg', `Level ${this.level}: WASD`);
     hud('hp', 'HP 3');
   }
 
   createNewGame() {
-    this.spawnEntity(Player, { x: WORLD_W / 2, y: WORLD_H / 2 });
+    Player.spawn({ x: WORLD_W / 2, y: WORLD_H / 2 });
     const coins = 8 + this.level * 4;
     for (let i = 0; i < coins; i++) {
-      this.spawnEntity(Coin, { x: 80 + this.rng() * (WORLD_W - 160), y: 80 + this.rng() * (WORLD_H - 160) });
+      Coin.spawn({ x: 80 + this.rng() * (WORLD_W - 160), y: 80 + this.rng() * (WORLD_H - 160) });
     }
     for (let i = 0; i < this.level * 2; i++) {
-      this.spawnEntity(Slime, { x: 100 + this.rng() * (WORLD_W - 200), y: this.rng() < 0.5 ? 100 : WORLD_H - 100 });
+      Slime.spawn({ x: 100 + this.rng() * (WORLD_W - 200), y: this.rng() < 0.5 ? 100 : WORLD_H - 100 });
     }
     this.coinsLeft = coins;
     this.showScore();

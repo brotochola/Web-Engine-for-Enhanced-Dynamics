@@ -88,7 +88,7 @@ export class AdobeAnimateScene extends Scene {
     for (let i = 0; i < totalCharacters; i++) {
       const col = i % gridCols;
       const row = Math.floor(i / gridCols);
-      this.spawnEntity(AdobeAnimateCharacter, {
+      AdobeAnimateCharacter.spawn({
         x: startX + col * spacingX,
         y: startY + row * spacingY,
         playbackRate: 1 + i * 0.001,

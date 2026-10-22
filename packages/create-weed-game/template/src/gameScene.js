@@ -80,16 +80,16 @@ export class GameScene extends Scene {
       this.showHud();
     });
     const t = 20;
-    this.spawnEntity(Wall, { x: WORLD_W / 2, y: t / 2, w: WORLD_W, h: t });
-    this.spawnEntity(Wall, { x: WORLD_W / 2, y: WORLD_H - t / 2, w: WORLD_W, h: t });
-    this.spawnEntity(Wall, { x: t / 2, y: WORLD_H / 2, w: t, h: WORLD_H });
-    this.spawnEntity(Wall, { x: WORLD_W - t / 2, y: WORLD_H / 2, w: t, h: WORLD_H });
+    Wall.spawn({ x: WORLD_W / 2, y: t / 2, w: WORLD_W, h: t });
+    Wall.spawn({ x: WORLD_W / 2, y: WORLD_H - t / 2, w: WORLD_W, h: t });
+    Wall.spawn({ x: t / 2, y: WORLD_H / 2, w: t, h: WORLD_H });
+    Wall.spawn({ x: WORLD_W - t / 2, y: WORLD_H / 2, w: t, h: WORLD_H });
     this.showHud();
   }
 
   // Only for a new game: a loaded save brings the player back by itself.
   createNewGame() {
-    this.spawnEntity(Player, { x: WORLD_W / 2, y: WORLD_H / 2 });
+    Player.spawn({ x: WORLD_W / 2, y: WORLD_H / 2 });
   }
 
   // Scene state outside entities, kept by saves and hot reload.

@@ -141,7 +141,7 @@ export class DestructibleTerrainScene extends Scene {
   }
 
   create() {
-    spawnTerrainWalls(this, WORLD_W, WORLD_H);
+    spawnTerrainWalls(WORLD_W, WORLD_H);
     Camera.setFree(false);
     Camera.setZoom(0.9);
     Camera.centerOn(WORLD_W * 0.5, Math.max(48, WORLD_H * 0.08));
@@ -155,7 +155,7 @@ export class DestructibleTerrainScene extends Scene {
 
   createNewGame() {
     this._spawnShip();
-    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1 });
+    WorldGridManager.spawn({ forceProcessOnLogicWorker: 1 });
   }
 
   // The save holds the WorldGrid bytes and the loose (dynamic) islands; the ship,
@@ -164,12 +164,12 @@ export class DestructibleTerrainScene extends Scene {
   onLoadGame(payload) {
     if (payload?.hotReload) return;
     this._spawnShip();
-    this.spawnEntity(WorldGridManager, { forceProcessOnLogicWorker: 1, resume: true });
+    WorldGridManager.spawn({ forceProcessOnLogicWorker: 1, resume: true });
   }
 
   _spawnShip() {
     const bench = terrainBenchRemesh();
-    this.spawnEntity(Ship, {
+    Ship.spawn({
       x: WORLD_W * 0.5,
       // In-solid spawn makes castRay skip the local rock and hit the far wall.
       y: bench ? WORLD_H * 0.26 : Math.max(48, WORLD_H * 0.08),

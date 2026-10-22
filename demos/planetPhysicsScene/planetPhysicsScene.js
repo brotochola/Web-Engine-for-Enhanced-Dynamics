@@ -209,7 +209,7 @@ export class PlanetPhysicsScene extends Scene {
   }
 
   create() {
-    spawnTerrainWalls(this, WORLD, WORLD);
+    spawnTerrainWalls(WORLD, WORLD);
     Camera.setFree(false);
     Camera.setZoom(1);
     // Start where the manager spawns the ship, rolled to its local up, so the
@@ -231,7 +231,7 @@ export class PlanetPhysicsScene extends Scene {
     // lamp and water emitter itself. Spawning them here would create their
     // bodies before the static terrain fixtures exist and the ship would fall
     // through the disk while the mesh is built.
-    this.spawnEntity(PlanetWorldGridManager, {
+    PlanetWorldGridManager.spawn({
       forceProcessOnLogicWorker: 1,
       benchRemesh: terrainBenchRemesh(),
     });
@@ -243,7 +243,7 @@ export class PlanetPhysicsScene extends Scene {
   // were (TerrainIsland.shouldSaveEntity, N-5). A hot reload brought the manager back.
   onLoadGame(payload) {
     if (payload?.hotReload) return;
-    this.spawnEntity(PlanetWorldGridManager, {
+    PlanetWorldGridManager.spawn({
       forceProcessOnLogicWorker: 1,
       benchRemesh: terrainBenchRemesh(),
       resume: true,

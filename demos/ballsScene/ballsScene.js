@@ -155,7 +155,7 @@ export class BallsScene extends Scene {
     const worldHeight = this.config.worldHeight;
 
     // Floor - at the bottom
-    this.spawnEntity(Floor, {
+    Floor.spawn({
       x: worldWidth / 2,
       y: worldHeight + wallThickness * 0.5 - 50,
       width: worldWidth,
@@ -163,7 +163,7 @@ export class BallsScene extends Scene {
     });
 
     // Top wall
-    this.spawnEntity(Floor, {
+    Floor.spawn({
       x: worldWidth / 2,
       y: -wallThickness / 2,
       width: worldWidth,
@@ -171,7 +171,7 @@ export class BallsScene extends Scene {
     });
 
     // Left wall
-    this.spawnEntity(Floor, {
+    Floor.spawn({
       x: -wallThickness / 2 + 50,
       y: worldHeight / 2,
       width: wallThickness,
@@ -179,7 +179,7 @@ export class BallsScene extends Scene {
     });
 
     // Right wall
-    this.spawnEntity(Floor, {
+    Floor.spawn({
       x: worldWidth + wallThickness / 2 - 50,
       y: worldHeight / 2,
       width: wallThickness,
@@ -193,7 +193,7 @@ export class BallsScene extends Scene {
     const xSpan = this.config.worldWidth * 0.6;
     const ySpan = this.config.worldHeight * 0.6;
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(Ball, {
+      Ball.spawn({
         x: x0 + this.rng() * xSpan,
         y: y0 + this.rng() * ySpan,
         vx: 0,
@@ -207,7 +207,7 @@ export class BallsScene extends Scene {
   // ========================================
 
   spawnRandomBall() {
-    this.spawnEntity(Ball, {
+    Ball.spawn({
       x: this.rng() * this.config.worldWidth,
       y: this.rng() * this.config.worldHeight,
       vx: 0,
@@ -217,7 +217,7 @@ export class BallsScene extends Scene {
 
   async spawnBallAtMouse() {
     if (Mouse.x > 0 && Mouse.y > 0) {
-      this.spawnEntity(Ball, {
+      Ball.spawn({
         x: Mouse.x,
         y: Mouse.y,
         vx: 0,

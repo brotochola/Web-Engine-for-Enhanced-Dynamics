@@ -32,11 +32,18 @@ async function withStatics(patches, fn) {
   }
 }
 
-test('createNewGame spawns only the manager', () => {
+test('createNewGame spawns only the manager', async () => {
   const spawned = [];
-  PlanetPhysicsScene.prototype.createNewGame.call({
-    spawnEntity: (Cls) => spawned.push(Cls.name),
-  });
+  const rec = (name) => () => spawned.push(name);
+  await withStatics(
+    [
+      [PlanetWorldGridManager, 'spawn', rec('PlanetWorldGridManager')],
+      [PlanetShip, 'spawn', rec('PlanetShip')],
+      [PlanetLamp, 'spawn', rec('PlanetLamp')],
+      [PlanetPull, 'spawn', rec('PlanetPull')],
+    ],
+    () => PlanetPhysicsScene.prototype.createNewGame.call({}),
+  );
   assert.deepEqual(spawned, ['PlanetWorldGridManager']);
 });
 

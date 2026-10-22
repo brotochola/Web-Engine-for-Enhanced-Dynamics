@@ -103,7 +103,7 @@ export class PlatformerGameScene extends Scene {
   }
 
   createNewGame() {
-    const playerHandle = this.spawnEntity(BluePlatformerPlayer, {
+    const playerHandle = BluePlatformerPlayer.spawn({
       x: 240,
       y: 1700,
       scaleX: 0.42,
@@ -138,7 +138,7 @@ export class PlatformerGameScene extends Scene {
 
     for (let i = 0; i < defs.length; i++) {
       defs[i].layer = BLOOM_LAYER;
-      this.spawnEntity(Platform, defs[i]);
+      Platform.spawn(defs[i]);
     }
   }
 

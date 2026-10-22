@@ -92,7 +92,7 @@ export class BoidsScene extends Scene {
 
   spawnBoids(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(Boid, {
+      Boid.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
         vx: (this.rng() - 0.5) * 800,

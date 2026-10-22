@@ -16,9 +16,9 @@ export function terrainBenchRemesh() {
 }
 
 /** Four static walls just outside a width × height world. */
-export function spawnTerrainWalls(scene, width, height) {
+export function spawnTerrainWalls(width, height) {
   const t = 200;
-  scene.spawnEntity(Floor, {
+  Floor.spawn({
     x: width * 0.5,
     y: height + t * 0.5 - 8,
     width: width + t * 2,
@@ -26,7 +26,7 @@ export function spawnTerrainWalls(scene, width, height) {
     tint: 0x2d2d2d,
     visualRange: t,
   });
-  scene.spawnEntity(Floor, {
+  Floor.spawn({
     x: width * 0.5,
     y: -t * 0.5 + 8,
     width: width + t * 2,
@@ -34,7 +34,7 @@ export function spawnTerrainWalls(scene, width, height) {
     tint: 0x2d2d2d,
     visualRange: t,
   });
-  scene.spawnEntity(Floor, {
+  Floor.spawn({
     x: -t * 0.5 + 8,
     y: height * 0.5,
     width: t,
@@ -42,7 +42,7 @@ export function spawnTerrainWalls(scene, width, height) {
     tint: 0x2d2d2d,
     visualRange: t,
   });
-  scene.spawnEntity(Floor, {
+  Floor.spawn({
     x: width + t * 0.5 - 8,
     y: height * 0.5,
     width: t,

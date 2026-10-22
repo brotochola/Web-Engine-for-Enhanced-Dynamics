@@ -199,16 +199,16 @@ export class LiquidFunDemoScene extends WEED.Scene {
     const wallH = wallBottom - wallTop;
     const wallY = (wallTop + wallBottom) / 2;
 
-    this.spawnEntity(Floor, { x: floorX, y: floorY, width: floorW, height: floorH, tint: 0x444455 });
-    this.spawnEntity(Floor, { x: wallX0, y: wallY, width: wallW, height: wallH, tint: 0x444455 });
-    this.spawnEntity(Floor, { x: wallX1, y: wallY, width: wallW, height: wallH, tint: 0x444455 });
+    Floor.spawn({ x: floorX, y: floorY, width: floorW, height: floorH, tint: 0x444455 });
+    Floor.spawn({ x: wallX0, y: wallY, width: wallW, height: wallH, tint: 0x444455 });
+    Floor.spawn({ x: wallX1, y: wallY, width: wallW, height: wallH, tint: 0x444455 });
 
-    this.spawnEntity(Floor, { x: 1400, y: 900, width: 800, height: 240, rotation: 0.4, tint: 0x667799 });
-    this.spawnEntity(Floor, { x: 2600, y: 900, width: 800, height: 240, rotation: -0.4, tint: 0x667799 });
+    Floor.spawn({ x: 1400, y: 900, width: 800, height: 240, rotation: 0.4, tint: 0x667799 });
+    Floor.spawn({ x: 2600, y: 900, width: 800, height: 240, rotation: -0.4, tint: 0x667799 });
 
-    this.spawnEntity(Floor, { x: 1800, y: 1300, width: 120, height: 240, rotation: -0.2, tint: 0x99aa88 });
-    this.spawnEntity(Floor, { x: 2200, y: 1500, width: 120, height: 240, rotation: 0.2, tint: 0x99aa88 });
-    this.spawnEntity(Floor, { x: 2000, y: 1750, width: 200, height: 240, rotation: 0, tint: 0xaa8899 });
+    Floor.spawn({ x: 1800, y: 1300, width: 120, height: 240, rotation: -0.2, tint: 0x99aa88 });
+    Floor.spawn({ x: 2200, y: 1500, width: 120, height: 240, rotation: 0.2, tint: 0x99aa88 });
+    Floor.spawn({ x: 2000, y: 1750, width: 200, height: 240, rotation: 0, tint: 0xaa8899 });
   }
 
   spawnBoxes() {
@@ -228,7 +228,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
       { x: 2000, y: 450 },
     ];
     for (let i = 0; i < spots.length; i++) {
-      this.spawnEntity(Box, { x: spots[i].x, y: spots[i].y });
+      Box.spawn({ x: spots[i].x, y: spots[i].y });
     }
   }
 

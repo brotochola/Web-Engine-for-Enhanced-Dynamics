@@ -77,11 +77,11 @@ class MyScene extends WEED.Scene {
   }
 
   create() {
-    this.spawnEntity(Tree, { x: 100, y: 100 }); // static — always
+    Tree.spawn({ x: 100, y: 100 }); // static — always
   }
 
   createNewGame() {
-    this.spawnEntity(MySoldier, { x: 200, y: 200 }); // skipped when loading a save
+    MySoldier.spawn({ x: 200, y: 200 }); // skipped when loading a save
   }
 
   onLoadGame(payload) {
@@ -132,6 +132,7 @@ static assets = {
 - Entities are pooled; no runtime allocation per spawn.
 - `GameObject` is a facade over typed arrays.
 - Component sets are fixed per class (`static components`).
+- Spawn and despawn through the class, the same call in the scene and in entities: `Enemy.spawn({ x, y })`, `Enemy.despawn(index)`, `Enemy.despawnAll()`. An entity ends itself with `this.despawn()`. In a logic worker `spawn` returns the entity, on the main thread `{ index }`; both have `.index`, and a full pool gives `null`.
 - Neighbor access in hot paths:
   - `this.neighborCount`
   - `this.getNeighbor(i)`
@@ -421,7 +422,7 @@ scene.sendToEntity(heroIndex, 'heal', 25);          // from the scene: from = -1
 ```javascript
 attack() {
   this.setAnimation('slash', false); // play once
-  this.setAnimationSpeed(0.3);       // a sprite animation does not play at speed 0 (the spawn default)
+  this.setAnimationSpeed(0.3);       // 18 fps (frames per 1/60 s; a spawn starts at 0.2)
 }
 
 onAnimationEnd(name) {

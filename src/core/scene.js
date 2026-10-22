@@ -2817,6 +2817,8 @@ class Scene {
 
   /**
    * Main-thread spawn: CAS-pop a pool index, then ask logic0 to finish setup.
+   * What Enemy.spawn(config) runs on the main thread; scene code calls that, the
+   * same call entities use (this is kept for older scenes and string names).
    * @param {Function|string} EntityClassOrName
    * @param {object} [spawnConfig]
    * @returns {{index:number}|null}
@@ -2926,7 +2928,8 @@ class Scene {
   }
 
   /**
-   * Ask logic0 to despawn a global entity index.
+   * Ask logic0 to despawn a global entity index. What Enemy.despawn(index) runs
+   * on the main thread; scene code calls that.
    * @param {number} entityIndex
    */
   despawnEntity(entityIndex) {

@@ -134,14 +134,14 @@ export class PlanetScene extends Scene {
   }
 
   createNewGame() {
-    this.spawnEntity(PlanetManager, { forceProcessOnLogicWorker: 0 });
-    this.spawnEntity(Walker, { forceProcessOnLogicWorker: 0 });
+    PlanetManager.spawn({ forceProcessOnLogicWorker: 0 });
+    Walker.spawn({ forceProcessOnLogicWorker: 0 });
     const pcx = (GRID >> 1) * CELL;
     const surface = (GRID >> 1) * CELL - PLANET_RADIUS * CELL;
     for (let i = 0; i < PUDDLE; i++) {
       const col = i % 12;
       const row = (i / 12) | 0;
-      this.spawnEntity(WaterDrop, {
+      WaterDrop.spawn({
         x: pcx + (col - 5.5) * 10,
         y: surface - 24 - row * 10,
         vy: 80,

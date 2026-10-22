@@ -42,8 +42,8 @@ export class LiquidFunQueryScene extends Scene {
   ];
 
   create() {
-    this.spawnEntity(Floor, { x: 1000, y: 1600, width: 1800, height: 80, tint: 0x444455 });
-    this.spawnEntity(LiquidFunQueryProbe, { x: 1000, y: 900, expectedMin: 10 });
+    Floor.spawn({ x: 1000, y: 1600, width: 1800, height: 80, tint: 0x444455 });
+    LiquidFunQueryProbe.spawn({ x: 1000, y: 900, expectedMin: 10 });
     Camera.centerOn(1000, 1100);
     Camera.setZoom(0.6);
   }

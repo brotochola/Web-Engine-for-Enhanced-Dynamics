@@ -25,8 +25,8 @@ What follows from that:
 | --- | --- | --- | --- | --- |
 | A game object | `GameObject` + `MonoBehaviour` | `Node2D` script | `Sprite` / custom class | `class Enemy extends GameObject` with `static components = […]` |
 | A prefab | Prefab | `PackedScene` | a config object | the class itself, plus a spawn config |
-| Create one | `Instantiate` | `instance()` + `add_child` | `this.add.sprite` | `this.spawnEntity(Enemy, { x, y })` (scene), `Enemy.spawn({ x, y })` (anywhere) |
-| Destroy it | `Destroy` | `queue_free` | `destroy()` | `this.despawn()` |
+| Create one | `Instantiate` | `instance()` + `add_child` | `this.add.sprite` | `Enemy.spawn({ x, y })`, the same call in the scene and in entities |
+| Destroy it | `Destroy` | `queue_free` | `destroy()` | `this.despawn()`; another one: `Enemy.despawn(index)` |
 | Per-object data | fields, `[SerializeField]` | `@export var` | properties | component fields: `static ARRAY_SCHEMA = { hp: Float32Array }`, then `this.health.hp` |
 | Get a component | `GetComponent<T>()` | `get_node` | — | `this.rigidBody`, `this.health` (camelCase class name) |
 | Does it have one? | `TryGetComponent` | `has_node` | — | `this.hasComponent(Shield)`, `GameObject.hasComponent(other, Shield)` |
@@ -63,7 +63,7 @@ What follows from that:
 
 - **Tag components gate callbacks.** `onCollisionEnter` runs only for classes that list `CollisionListener` (`onScreenEnter` needs `CameraInOutListener`, `onJointBreak` needs `JointBreakListener`). The scene warns at load when a hook has no tag.
 - **An empty `tick() {}` still counts.** The logic worker visits every entity of the type each frame. Leave `tick` out of entities that do nothing per frame.
-- **A sprite animation needs a speed.** The spawn default is `0` (frozen): call `setAnimationSpeed(…)` after `setAnimation`.
+- **Animation speed is frames per 1/60 s.** A spawn plays at `0.2` (12 fps); `setAnimationSpeed(fps / 60)` changes it, and `0` holds the current frame.
 - **Animations advance while drawn.** An off-screen animation waits, and so does its `onAnimationEnd`.
 - **Forces hold until the next `tick`.** `addAcceleration` and `applyForce` are for pushes that last; a jump or a hit is `addVelocity` or `applyImpulse`, applied once.
 - **Units are pixels and seconds.** Velocity is px/s, acceleration px/s². Mass comes from the collider area unless you set `this.rigidBody.mass`.

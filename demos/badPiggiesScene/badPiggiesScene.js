@@ -530,20 +530,20 @@ export class BadPiggiesScene extends Scene {
     if (!rec) return;
 
     if (kind === 'wheel' && rec.wheelIndex >= 0) {
-      this.despawnEntity(rec.wheelIndex);
+      MachineWheel.despawn(rec.wheelIndex);
       rec.wheelIndex = -1;
       return;
     }
 
     if (kind === 'rocket' && rec.rocketIndex >= 0) {
-      this.despawnEntity(rec.rocketIndex);
+      MachineRocket.despawn(rec.rocketIndex);
       rec.rocketIndex = -1;
       return;
     }
 
-    if (rec.wheelIndex >= 0) this.despawnEntity(rec.wheelIndex);
-    if (rec.rocketIndex >= 0) this.despawnEntity(rec.rocketIndex);
-    this.despawnEntity(rec.boxIndex);
+    if (rec.wheelIndex >= 0) MachineWheel.despawn(rec.wheelIndex);
+    if (rec.rocketIndex >= 0) MachineRocket.despawn(rec.rocketIndex);
+    MachineBox.despawn(rec.boxIndex);
     this.occupancy.delete(key);
   }
 

@@ -214,7 +214,7 @@ export class BichosScene extends WEED.Scene {
 
   spawnTrash(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(Trash, {
+      Trash.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -225,14 +225,14 @@ export class BichosScene extends WEED.Scene {
       .then((response) => response.json())
       .then((data) => {
         data.rocks.forEach((rock) => {
-          this.spawnEntity(Rock, {
+          Rock.spawn({
             x: rock.x,
             y: rock.y,
             radius: rock.radius,
           });
         });
         data.trees.forEach((tree) => {
-          this.spawnEntity(Tree, {
+          Tree.spawn({
             x: tree.x,
             y: tree.y,
             radius: tree.radius,
@@ -240,7 +240,7 @@ export class BichosScene extends WEED.Scene {
         });
         data.houses.forEach((house, i) => {
           if (i % 2 == 0) return;
-          this.spawnEntity(House, {
+          House.spawn({
             x: house.x,
             y: house.y,
           });
@@ -321,7 +321,7 @@ export class BichosScene extends WEED.Scene {
   // ========================================
 
   // spawnPlayer() {
-  //   this.playerEntity = this.spawnEntity(Player, {
+  //   this.playerEntity = Player.spawn({
   //     x: this.config.worldWidth / 2,
   //     y: this.config.worldHeight / 2,
   //     vx: 0,
@@ -331,7 +331,7 @@ export class BichosScene extends WEED.Scene {
 
   spawnRocks(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(Rock, {
+      Rock.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -339,7 +339,7 @@ export class BichosScene extends WEED.Scene {
   }
   spawnLights(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(TallLight, {
+      TallLight.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -348,7 +348,7 @@ export class BichosScene extends WEED.Scene {
 
   spawnBugs(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(Bug, {
+      Bug.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -357,7 +357,7 @@ export class BichosScene extends WEED.Scene {
 
   spawnCivilians(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(Civilian, {
+      Civilian.spawn({
         x: this.config.worldWidth * rng(),
         y: this.config.worldHeight * rng(),
       });
@@ -443,7 +443,7 @@ export class BichosScene extends WEED.Scene {
 
   spawnTrees(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(Tree, {
+      Tree.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });

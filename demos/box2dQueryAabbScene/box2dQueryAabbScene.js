@@ -50,11 +50,11 @@ export class Box2dQueryAabbScene extends Scene {
   create() {
     const cx = 1000;
     const cy = 1000;
-    this.spawnEntity(Box2dQueryAabbTarget, { x: cx - 40, y: cy, size: 40 });
-    this.spawnEntity(Box2dQueryAabbTarget, { x: cx + 40, y: cy, size: 40 });
-    this.spawnEntity(Box2dQueryAabbTarget, { x: cx, y: cy - 40, size: 40 });
+    Box2dQueryAabbTarget.spawn({ x: cx - 40, y: cy, size: 40 });
+    Box2dQueryAabbTarget.spawn({ x: cx + 40, y: cy, size: 40 });
+    Box2dQueryAabbTarget.spawn({ x: cx, y: cy - 40, size: 40 });
     // Probe + 3 targets in AABB → expectedMin 4
-    this.spawnEntity(Box2dQueryAabbProbe, {
+    Box2dQueryAabbProbe.spawn({
       x: cx,
       y: cy,
       expectedMin: 4,

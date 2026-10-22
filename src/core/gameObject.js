@@ -6,7 +6,7 @@ import { Camera } from './camera.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
-import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { SpriteRenderer, DEFAULT_ANIMATION_SPEED } from '../components/spriteRenderer.js';
 import { MeshRenderer, MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
@@ -87,6 +87,18 @@ function warnNoSpriteOnce(className, method) {
   if (methods.has(method)) return;
   methods.add(method);
   console.warn(`WeedJS: ${className}.${method} needs a sprite: call setSprite / setSpritesheet first.`);
+}
+
+/** Classes already warned that despawn(index) got another class's entity. */
+const _warnedDespawnOtherClass = new Set();
+function warnDespawnOtherClassOnce(className, index) {
+  if (_warnedDespawnOtherClass.has(className)) return;
+  _warnedDespawnOtherClass.add(className);
+  const other = GameObject.classByType[Transform.entityType[index]];
+  console.warn(
+    `WeedJS: ${className}.despawn(${index}) did nothing: entity ${index} is a ${other ? other.name : 'different class'}. ` +
+    `Use ${other ? other.name : 'its class'}.despawn(index), or GameObject.despawn(index) for any entity.`
+  );
 }
 
 export class GameObject {
@@ -1498,8 +1510,9 @@ export class GameObject {
   }
 
   /**
-   * Set animation speed multiplier
-   * @param {number} speed - Animation speed (1.0 = normal)
+   * Set animation speed: frames per 1/60 s, so fps / 60 (0.2 = 12 fps, the
+   * spawn default). 0 holds the current frame.
+   * @param {number} speed
    * @returns {this} For chaining
    */
   setAnimationSpeed(speed) {
@@ -2248,6 +2261,45 @@ export class GameObject {
   }
 
   /**
+   * Despawn another entity by index, with the same call in the scene and in
+   * entities (the counterpart of Enemy.spawn):
+   *   onCollisionEnter(other) { if (GameObject.is(other, Coin)) Coin.despawn(other); }
+   * Also takes what spawn returned ({ index } on the main thread, the entity in
+   * a worker). On a class it despawns only that class's entities (subclasses
+   * count); GameObject.despawn(index) takes any. An entity ends itself with
+   * this.despawn(), which also works inside its own onSpawned.
+   * On the main thread it is sent to logic0, as spawn is, and runs there.
+   * @param {number|{index:number}} entity
+   * @returns {boolean} false when nothing was despawned or sent: not an entity
+   *   of this class, or (in a worker) not alive
+   */
+  static despawn(entity) {
+    const i = typeof entity === 'number' ? entity : entity != null ? entity.index : -1;
+    const types = Transform.entityType;
+    if (!types || !(i >= 0 && (i | 0) === i && i < types.length)) return false;
+    if (this !== GameObject && !GameObject.is(i, this)) {
+      warnDespawnOtherClassOnce(this.name, i);
+      return false;
+    }
+
+    const isMainThread = typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
+    if (isMainThread) {
+      // No active check here: a spawn sent from this thread is not active yet.
+      const scene = window.scene;
+      if (!scene || typeof scene.despawnEntity !== 'function') return false;
+      scene.despawnEntity(i);
+      return true;
+    }
+
+    if (Transform.active[i] !== 1) return false;
+    const C = GameObject.classByType[types[i]];
+    const instance = C !== undefined ? C.instances[i - C.startIndex] : undefined;
+    if (instance === undefined) return false;
+    instance.despawn();
+    return true;
+  }
+
+  /**
    * Get count of neighbors for this entity
    * Reads directly from spatial worker's SAB - always current
    * @returns {number} Number of neighbors
@@ -2526,6 +2578,9 @@ export class GameObject {
    *
    * Works from BOTH main thread and logic workers with the same syntax:
    *   Ball.spawn({ x: 100, y: 200 })
+   * In a logic worker it returns the entity; on the main thread (the scene)
+   * { index }, since the entity is set up on a logic worker. Both have .index.
+   * Ball.despawn(index) is the counterpart.
    *
    * THREAD-SAFE ARCHITECTURE:
    * - Any thread can do atomic freeList pop and get index IMMEDIATELY
@@ -2800,6 +2855,7 @@ export class GameObject {
       SpriteRenderer.animationState[i] = -1;
       SpriteRenderer.spritesheetId[i] = 0;
       SpriteRenderer.loop[i] = 1; // Default: animations loop
+      SpriteRenderer.animationSpeed[i] = DEFAULT_ANIMATION_SPEED;
       SpriteRenderer.renderDirty[i] = 1;
       SpriteRenderer.layerMask[i] = 0;
     }
