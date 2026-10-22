@@ -260,6 +260,19 @@ function inlineWorkerWasmAssets(source, label) {
     return next;
 }
 
+/**
+ * Engine shaders by the path pixiWorker fetches them from (/src/shaders/…).
+ * npm installs ship dist/ only, so bundles carry them.
+ */
+export function readEngineShaders() {
+    const dir = path.join(rootDir, 'src', 'shaders');
+    const shaders = {};
+    for (const name of fs.readdirSync(dir).sort()) {
+        shaders['/src/shaders/' + name] = fs.readFileSync(path.join(dir, name), 'utf8');
+    }
+    return shaders;
+}
+
 function readWorkerArtifacts() {
     const workers = {};
     const sizes = {};
@@ -313,6 +326,7 @@ function writeBundleEntry({
     box2dWorkerSource,
     audioWorkletSource,
     debugUICSS,
+    engineShaders,
     compressed,
     prod,
 }) {
@@ -324,6 +338,10 @@ function writeBundleEntry({
     const embeddedBox2d = embedPayload(box2dWorkerSource, compressed);
     const embeddedAudio = embedPayload(audioWorkletSource, compressed);
     const embeddedCss = prod ? '' : embedPayload(debugUICSS, compressed);
+    const embeddedShaders = {};
+    for (const [shaderPath, source] of Object.entries(engineShaders)) {
+        embeddedShaders[shaderPath] = embedPayload(source, compressed);
+    }
 
     const workerSourceLines = WORKER_NAMES.map(
         (name) => `  ${name}: ${JSON.stringify(embeddedWorkers[name])},`,
@@ -346,6 +364,7 @@ let workerCommonSource = ${JSON.stringify(embeddedCommon)};
 let box2dWorkerSource = ${JSON.stringify(embeddedBox2d)};
 let audioWorkletSource = ${JSON.stringify(embeddedAudio)};
 let debugUICSS = ${JSON.stringify(embeddedCss)};
+let engineShaders = Object.freeze(${JSON.stringify(embeddedShaders)});
 
 const EMBED_COMPRESSED = ${compressed ? 'true' : 'false'};
 let embedReady = !EMBED_COMPRESSED;
@@ -388,6 +407,13 @@ function ensureEmbeddedSources() {
     box2dWorkerSource = await weedGunzipUtf8(box2dWorkerSource);
     audioWorkletSource = await weedGunzipUtf8(audioWorkletSource);
     debugUICSS = await weedGunzipUtf8(debugUICSS);
+    var shaderPaths = Object.keys(engineShaders);
+    var shaderValues = await Promise.all(shaderPaths.map(function (p) {
+      return weedGunzipUtf8(engineShaders[p]);
+    }));
+    var shaders = {};
+    for (var j = 0; j < shaderPaths.length; j++) shaders[shaderPaths[j]] = shaderValues[j];
+    engineShaders = Object.freeze(shaders);
     embedReady = true;
   })();
   return embedPromise;
@@ -400,6 +426,8 @@ const WEED = Object.freeze({
   get Box2dWorkerSource() { return box2dWorkerSource; },
   get AudioWorkletSource() { return audioWorkletSource; },
   get DebugUICSS() { return debugUICSS; },
+  /** Engine shader sources by /src/shaders/… path, for the renderer worker. */
+  get EngineShaders() { return engineShaders; },
   BUNDLE_MODE: true,
   EMBED_COMPRESSED,
   ensureEmbeddedSources,
@@ -454,7 +482,7 @@ function printSizeBreakdown(label, sizes, box2dSourceLen) {
     console.log(`   Box2dWorkerSource: ${kb(box2dSourceLen)}`);
 }
 
-function webpackBundle({ prod, compressed, workers, workerCommon, box2dWorkerSource, audioWorkletSource, debugUICSS }) {
+function webpackBundle({ prod, compressed, workers, workerCommon, box2dWorkerSource, audioWorkletSource, debugUICSS, engineShaders }) {
     const env = makeBuildEnv(prod, compressed);
     const label = `${prod ? 'prod' : 'debug'} ${compressed ? 'compressed' : 'raw'}`;
     const bundleEntryPath = path.join(rootDir, 'src', 'index.bundle.js');
@@ -468,6 +496,7 @@ function webpackBundle({ prod, compressed, workers, workerCommon, box2dWorkerSou
             box2dWorkerSource,
             audioWorkletSource,
             debugUICSS,
+            engineShaders,
             compressed,
             prod,
         }),
@@ -502,6 +531,8 @@ function buildProdAxis({ prod, box2dWorkerSource, audioWorkletSource }) {
         ? ''
         : fs.readFileSync(path.join(rootDir, 'src', 'core', 'debug', 'debugUi.css'), 'utf8');
 
+    const engineShaders = readEngineShaders();
+
     printSizeBreakdown(label, sizes, Buffer.byteLength(box2dWorkerSource, 'utf8'));
 
     const names = [];
@@ -515,6 +546,7 @@ function buildProdAxis({ prod, box2dWorkerSource, audioWorkletSource }) {
                 box2dWorkerSource,
                 audioWorkletSource,
                 debugUICSS,
+                engineShaders,
             }),
         );
     }

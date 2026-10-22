@@ -244,7 +244,14 @@ import {
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 
+// Bundles embed the engine shaders (WEED.EngineShaders, posted at init): an npm
+// install has no /src/shaders to fetch. Source builds fetch them.
+let embeddedEngineShaders = null;
+
 function fetchEngineShader(path) {
+  if (embeddedEngineShaders !== null && embeddedEngineShaders[path] !== undefined) {
+    return Promise.resolve(embeddedEngineShaders[path]);
+  }
   const slash = path.lastIndexOf('/');
   const name = slash >= 0 ? path.slice(slash + 1) : path;
   // Blob workers have an opaque origin — root-relative `/src/...` is not a
@@ -5420,6 +5427,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._rendererBackend = backend;
     this._useWebGpu = backend === RENDERER_BACKEND_WEBGPU;
 
+    embeddedEngineShaders = data.engineShaders || null;
     this._engineShaders = {};
     const sh = this._engineShaders;
     const shaderFetches = [];

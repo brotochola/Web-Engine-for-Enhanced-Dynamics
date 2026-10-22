@@ -226,6 +226,12 @@ function buildComponentPoolsInfo(scene) {
   );
 }
 
+/** Bundles embed the engine shaders; source builds let the renderer fetch /src/shaders. */
+function bundleEngineShaders() {
+  if (typeof window === 'undefined' || !window.WEED?.BUNDLE_MODE) return null;
+  return window.WEED.EngineShaders || null;
+}
+
 function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
   if (scene.config.physics) {
     scene.config.physics.publishContactRing = scene._anyCollisionListener === true;
@@ -534,6 +540,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
       frameClockSlot: frameClockSlot('renderer'),
       workerPorts: workerPorts.renderer,
       presentingFlag: scene.game?._presentingFlag || null,
+      engineShaders: bundleEngineShaders(),
     },
     transferables
   );
