@@ -732,6 +732,9 @@ class LogicWorker extends AbstractWorker {
     // here and described a key this code does not build (review). Read
     // HYPOTHESIS_LOG before re-proposing it. Two spawns of one index compare
     // equal; they carry the same class, so their order does not change the lists.
+    // They are kept once: a short life whose index was reused at once (LIFO)
+    // spawns twice in one batch, and the merge below only skips an index the list
+    // already holds, so both copies were listed and the entity ticked twice.
     let m = 0;
     for (let i = 0; i < n; i++) perm[i] = i;
     perm.subarray(0, n).sort((a, b) => idx[a] - idx[b]);
@@ -739,6 +742,7 @@ class LogicWorker extends AbstractWorker {
       const src = perm[i];
       const entityIndex = idx[src];
       if (transformActive[entityIndex] !== 1) continue;
+      if (m > 0 && sorted[m - 1] === entityIndex) continue;
       sorted[m] = entityIndex;
       sortedClass[m] = classes[src];
       m++;
@@ -782,15 +786,21 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
-   * Process despawn list updates - remove entities from active lists
-   * No active-state guard: despawns are processed BEFORE spawns, so a re-spawned
-   * entity will be re-added in the subsequent spawn pass (with dedup protection).
+   * Process despawn list updates - remove entities from active lists.
+   * A despawn queued by another worker can arrive a batch after the index was
+   * freed, reused and its new life's spawn already processed (the free list is
+   * LIFO: a short-lived Flash gets the index back at once). That spawn found
+   * the index still listed and kept it; removing it now would leave the new
+   * life active, unlisted and never ticked. So an index alive again is skipped,
+   * as the spawn pass skips one that is no longer alive.
    */
   _processDespawnSoA(idx, classes, n) {
     if (n === 0) return false;
+    const transformActive = Transform.active;
     for (let i = 0; i < n; i++) {
       const entityIndex = idx[i];
       const EntityClass = classes[i];
+      if (transformActive[entityIndex] === 1) continue;
       GameObject._removeFromActiveEntities(entityIndex);
       GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
     }
@@ -804,6 +814,7 @@ class LogicWorker extends AbstractWorker {
 
     for (const update of updates) {
       const { entityIndex, EntityClass } = update;
+      if (Transform.active[entityIndex] === 1) continue; // a newer life owns the index (see _processDespawnSoA)
       GameObject._removeFromActiveEntities(entityIndex);
       GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
     }
