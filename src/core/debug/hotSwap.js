@@ -13,8 +13,10 @@
 // What the engine built from a class's shape cannot change in place, and the
 // caller falls back to the full save/reload/restore: components, ARRAY_SCHEMA,
 // pools and scene config, which hooks a class defines (it decides who ticks and
-// who gets callbacks), tickInterval, logic-worker pins, and exports that are
-// not classes when their value changed (other modules keep the old binding).
+// who gets callbacks), tickInterval, logic-worker pins, an entity's instance
+// fields (the running instances were built without a new one), and exports
+// that are not classes when their value changed (other modules keep the old
+// binding).
 
 /** Statics the engine writes on registered classes; the running class keeps them. */
 const ENGINE_STATICS = new Set([
@@ -134,7 +136,24 @@ export function shapeChange(old, fresh) {
   if ((typeof old.tickAll === 'function') !== (typeof fresh.tickAll === 'function')) {
     return `${old.name}: tickAll was added or removed`;
   }
+  // A field the new class declares would be missing on the running instances
+  // (or start undefined instead of at its initializer).
+  const fields = instanceFields(old);
+  if (fields !== null && fields !== instanceFields(fresh)) {
+    return `${old.name}: its instance fields changed`;
+  }
   return null;
+}
+
+/** An entity class's instance fields, from one detached instance; null for other classes. */
+function instanceFields(C) {
+  if (typeof C.prototype?.bindToEntitySlot !== 'function') return null;
+  try {
+    // A page instance: it builds the fields, writes no shared memory, joins no pool.
+    return Object.keys(new C(0, {}, null, { page: true })).sort().join(',');
+  } catch {
+    return 'unbuildable';
+  }
 }
 
 /** Why a non-class export cannot be swapped (other modules keep its old binding), or null. */

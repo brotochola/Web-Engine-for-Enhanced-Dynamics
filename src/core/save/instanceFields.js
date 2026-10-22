@@ -109,7 +109,8 @@ export function collectInstanceFields(instanceAt, active) {
 }
 
 /**
- * Put collected fields back on the instances.
+ * Put collected fields back on the instances. A field the edited class no
+ * longer declares is skipped when the instance takes no new fields.
  * @param {(index: number) => object|undefined} instanceAt
  * @param {Array<[number, Record<string, unknown>]>} entries
  * @returns {number} instances written
@@ -120,7 +121,10 @@ export function applyInstanceFields(instanceAt, entries) {
     const [index, fields] = entries[e];
     const instance = instanceAt(index);
     if (!instance) continue;
-    for (const key of Object.keys(fields)) instance[key] = fromWire(fields[key]);
+    const extensible = Object.isExtensible(instance);
+    for (const key of Object.keys(fields)) {
+      if (extensible || Object.prototype.hasOwnProperty.call(instance, key)) instance[key] = fromWire(fields[key]);
+    }
     applied++;
   }
   return applied;

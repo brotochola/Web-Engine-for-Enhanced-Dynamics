@@ -88,6 +88,16 @@ test('what the engine built from a class’s shape asks for a reload, and nothin
   assert.match(String(swapModule({ FlockScene: live.FlockScene }, { FlockScene: bigger.FlockScene }).reload), /entities changed/);
 });
 
+test('an entity field added or removed asks for a reload; a new initial value swaps', () => {
+  const withField = (extra) => register(version({ extra }));
+  const added = swapModule({ FlockScene: withField('').FlockScene }, { FlockScene: version({ extra: 'grounded = 0;' }).FlockScene });
+  assert.match(String(added.reload), /Boid: its instance fields changed/);
+  const removed = swapModule({ FlockScene: withField('grounded = 0;').FlockScene }, { FlockScene: version().FlockScene });
+  assert.match(String(removed.reload), /Boid: its instance fields changed/);
+  const sameFields = swapModule({ FlockScene: withField('grounded = 0;').FlockScene }, { FlockScene: version({ extra: 'grounded = 1;' }).FlockScene });
+  assert.equal(sameFields.reload, null);
+});
+
 test('exports that are not classes swap only when unchanged', () => {
   const same = function helper(a) { return a + 1; };
   const sameAgain = function helper(a) { return a + 1; };

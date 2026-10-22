@@ -61,6 +61,15 @@ test('plain fields survive the trip (through JSON, as in a save); the rest stays
   assert.equal(back.index, 1, 'engine fields are not written');
 });
 
+test('a field the edited class dropped is skipped on an instance that takes no new fields', () => {
+  const entries = [[0, { kept: 2, dropped: 3 }], [1, { kept: 4, dropped: 5 }]];
+  const sealed = Object.preventExtensions({ kept: 0 });
+  const open = { kept: 0 };
+  assert.equal(applyInstanceFields((i) => [sealed, open][i], entries), 2);
+  assert.deepEqual({ ...sealed }, { kept: 2 });
+  assert.deepEqual({ ...open }, { kept: 4, dropped: 5 }, 'a field added after construction still comes back');
+});
+
 test('the engine sets no instance field outside ENGINE_INSTANCE_KEYS', () => {
   class Probe extends GameObject {}
   Probe.instances = [];
