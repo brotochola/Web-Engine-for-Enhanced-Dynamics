@@ -240,8 +240,9 @@ export class PlanetPhysicsScene extends Scene {
   // A save restores the WorldGrid bytes, the lamp and the LiquidFun water. The manager
   // meshes the restored grid instead of seeding, then spawns the ship (and the water
   // pull, marked as already poured). Broken-off chunks are saved and come back as they
-  // were (TerrainIsland.shouldSaveEntity, N-5).
-  onLoadGame() {
+  // were (TerrainIsland.shouldSaveEntity, N-5). A hot reload brought the manager back.
+  onLoadGame(payload) {
+    if (payload?.hotReload) return;
     this.spawnEntity(PlanetWorldGridManager, {
       forceProcessOnLogicWorker: 1,
       benchRemesh: terrainBenchRemesh(),
