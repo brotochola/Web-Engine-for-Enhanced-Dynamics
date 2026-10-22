@@ -131,6 +131,19 @@ The same picker also has Adobe Animate playback, tilemap navigation, ray casting
 
 ## Install from npm
 
+### Start a new game
+
+```bash
+npm create weed-game my-game
+cd my-game
+npm install
+npm run dev
+```
+
+You get a page, one scene with a player and walls, and an HTML HUD, with no bundler. `npm run dev` serves it with the two headers `SharedArrayBuffer` needs and reloads the game where you were when you save. `npm run build` writes `dist/` with the production engine.
+
+### Add it to a project
+
 ```bash
 npm i @weed.js/engine
 ```
@@ -150,6 +163,8 @@ import WEED from '@weed.js/engine/debug';
 Or, if you load a `<script>` / CDN URL, change `weed.bundle*.min.js` to `weed.prod.bundle*.min.js`. Same `WEED` gameplay API either way; `new GameEngine({ debug: true })` is a no-op overlay on prod.
 
 Both styles work: `import WEED from '@weed.js/engine'` and then `WEED.Scene`, or named imports, `import { Scene, GameObject } from '@weed.js/engine'` (the ESM build exports every name, and they are the same objects as `WEED.X`). The UMD / `require` build returns the `WEED` object, so `const { Scene } = require('@weed.js/engine')` works too.
+
+**Scene files use the global `WEED`.** The workers load your scene file too, so write it without an import: `const { Scene, GameObject } = WEED;`. The page's import defines `WEED`, and each worker defines its own. The file then runs on whichever build the page loaded. An import of the other build from a scene file would load a second engine.
 
 `SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game. Per-host setup (Vercel, Netlify, GitHub Pages, itch.io): [`docs/guide/DEPLOY.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md).
 
@@ -180,8 +195,7 @@ Pin a version for real apps: `@<version>/...`, with the version you installed (i
 You define pooled entities, attach fixed components, and implement lifecycle hooks.
 
 ```javascript
-import WEED from '@weed.js/engine';
-
+// zombieScene.js: the scene and its entities. Workers load this file too.
 const { GameObject, Scene, RigidBody, Collider, SpriteRenderer } = WEED;
 
 class Zombie extends GameObject {
@@ -205,7 +219,7 @@ class Zombie extends GameObject {
   }
 }
 
-class ZombieScene extends Scene {
+export class ZombieScene extends Scene {
   static config = {
     worldWidth: 5000,
     worldHeight: 3000,
@@ -232,12 +246,20 @@ class ZombieScene extends Scene {
   // After a save restore (optional)
   onLoadGame(payload) {}
 }
-
-const game = new WEED.GameEngine({ debug: true });
-await game.loadScene(import.meta.url);
 ```
 
-Keeping `Zombie` and `ZombieScene` in one file is fine for a small game. Workers `import()` that same file — no `scriptUrl` on entities.
+The page starts the engine and loads that file:
+
+```html
+<script type="module">
+  import WEED from '@weed.js/engine/debug';
+
+  const game = new WEED.GameEngine({ debug: true });
+  await game.loadScene(new URL('./zombieScene.js', import.meta.url).href);
+</script>
+```
+
+Keep the scene and its entities in one file, or import entities from sibling files. Export the scene class, and keep the code that starts the game out of the scene file: the workers run that file too. No `scriptUrl` on entities.
 
 ---
 
@@ -249,7 +271,7 @@ Keeping `Zombie` and `ZombieScene` in one file is fine for a small game. Workers
 await game.loadScene('/demos/predatorScene/predatorScene.js');
 ```
 
-Same file as the example above: `await game.loadScene(import.meta.url)`.
+From a scene's own methods (a restart, the next level): `this.game.loadScene(import.meta.url, { data })`.
 
 Bundlers — pass a static URL so the chunk is emitted:
 

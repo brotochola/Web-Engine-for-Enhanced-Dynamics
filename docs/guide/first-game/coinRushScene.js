@@ -1,8 +1,8 @@
 // Coin Rush — the game docs/guide/FIRST_GAME.md builds, step by step.
 // Run it: npm run dev, then http://localhost:8000/docs/guide/first-game/
 // Built-in textures only (_white, _whiteCircle): no assets to download.
-import WEED from '/src/index.js'; // in your project: import WEED from '@weed.js/engine';
 
+// No import: the page imported the engine, which defines WEED here and in every worker.
 const { Scene, GameObject, Component, RigidBody, Collider, SpriteRenderer, CollisionListener } = WEED;
 const { Keyboard, Camera, Tween, Transform, ShapeType } = WEED;
 

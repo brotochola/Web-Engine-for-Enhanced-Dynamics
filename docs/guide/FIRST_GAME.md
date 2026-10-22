@@ -18,13 +18,21 @@ If you know Unity, Godot or Phaser, keep [COMING_FROM.md](./COMING_FROM.md) open
 ```
 
 - The page must be served with the two isolation headers (`npm run dev` sends them; for hosting see [DEPLOY.md](./DEPLOY.md)).
+- A browser resolves `'@weed.js/engine/debug'` only with a bundler or an import map. `npm create weed-game my-game` sets up the page with an import map, a dev server and a build, and you can put this game in its `src/`.
 - `debug: true` gives the debug panel and clearer warnings; ship the production build later.
-- `loadScene` takes the URL of the scene module (workers import the same file) and `data` for the scene.
+- `loadScene` takes the URL of the scene module (workers load the same file) and `data` for the scene.
 - `hotReload: true`: with `npm run dev`, saving a file reloads the game where you were.
 
 ## 2. The scene
 
 A scene declares its settings, how many of each entity it may hold, and the message names its entities send each other.
+
+The file does not import the engine. The workers load it too, and `WEED` is already defined: by the page's import, and by each worker for itself. So the file starts with the names it uses:
+
+```js
+const { Scene, GameObject, Component, RigidBody, Collider, SpriteRenderer, CollisionListener } = WEED;
+const { Keyboard, Camera, Tween, Transform, ShapeType } = WEED;
+```
 
 ```js
 export class CoinRushScene extends Scene {

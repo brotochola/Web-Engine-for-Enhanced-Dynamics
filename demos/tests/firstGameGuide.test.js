@@ -7,6 +7,7 @@ import '../../tests/helpers/registerWebRoot.mjs';
 // (Played end to end in Chromium when it was written: pickup, hits, game over, restart.)
 
 const url = new URL('../../docs/guide/first-game/coinRushScene.js', import.meta.url);
+globalThis.WEED = (await import('../../src/index.js')).default; // the scene uses the page's global WEED
 const { CoinRushScene } = await import(url.href);
 const { GameObject } = await import('../../src/core/gameObject.js');
 const { warnMissingListenerTags } = await import('../../src/util/listenerTags.js');

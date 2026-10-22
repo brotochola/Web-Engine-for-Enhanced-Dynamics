@@ -4,6 +4,8 @@ These notes are for someone writing a game on the engine. Specs live here. The m
 
 ## Start here
 
+A new project: `npm create weed-game my-game`, then `npm install` and `npm run dev` in it.
+
 | File | Use it for |
 | --- | --- |
 | [`FIRST_GAME.md`](./FIRST_GAME.md) | A complete small game in 13 steps (runnable: [`first-game/`](./first-game/)) |

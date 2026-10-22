@@ -1,6 +1,6 @@
 # Coming from Unity, Godot or Phaser
 
-WeedJS uses ideas you already know (entities, components, scenes, physics callbacks), but it runs your game on several threads at once. That one difference explains most of what looks unfamiliar. This page shows where your code runs, then maps the names you know to the WeedJS ones. For a first game, see [FIRST_GAME.md](./FIRST_GAME.md).
+WeedJS uses ideas you already know (entities, components, scenes, physics callbacks), but it runs your game on several threads at once. That one difference explains most of what looks unfamiliar. This page shows where your code runs, then maps the names you know to the WeedJS ones. To start a project, run `npm create weed-game my-game`. For a first game, see [FIRST_GAME.md](./FIRST_GAME.md).
 
 ## Where your code runs
 
@@ -16,6 +16,7 @@ What follows from that:
 - **State lives in components, not in plain fields.** A `GameObject` has a copy on each logic worker, so `this.hp = 3` is not shared between them and a save does not keep it. Declare the data on a component (`static ARRAY_SCHEMA = { hp: Float32Array }`) and use `this.health.hp`, or `Health.hp[index]` for another entity. That memory is shared by every thread, and saves keep it.
 - **Entities are referred to by index.** Collision callbacks and messages give you a number. Ask about it with `this.is(other, Enemy)` and `this.hasComponent(Shield, other)`, and read its data from component arrays (`Transform.x[other]`). An index is reused once its entity despawns, so do not keep one across frames as if it were the same entity.
 - **Entities cannot touch the page.** Use `this.emit('died', data)` and `scene.on('died', fn)`.
+- **The workers load your scene file too.** It reads the engine from the global `WEED` (`const { Scene, GameObject } = WEED;`) instead of importing it. Put page-only code (the DOM, starting the engine) in the page or in scene methods, not at the top of the file.
 - **Pools are fixed.** `static entities = [[Enemy, 500]]` reserves 500 enemies up front, and spawning takes one from the pool. Spawning into a full pool returns `null`, and warns once.
 
 ## The same things, by name
