@@ -29,6 +29,12 @@ try {
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
+    // npm installs ship dist/ only: a bundle must not reach into /src/ (this server has it, a game's would not).
+    const srcRequests = [];
+    page.on('request', (r) => {
+      const p = new URL(r.url()).pathname;
+      if (p.startsWith('/src/')) srcRequests.push(p);
+    });
 
     const url = `http://127.0.0.1:${server.port}/dist/index.html?bundle=${encodeURIComponent(bundle)}`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -83,6 +89,11 @@ try {
     }
 
     await page.close();
+
+    if (srcRequests.length && result) {
+      result.ok = false;
+      result.text = `${result.text || ''} (fetched ${srcRequests.length} file(s) from /src/, e.g. ${srcRequests[0]})`;
+    }
 
     const fatal = errors.filter((e) =>
       /importScripts|worker_common|Failed to fetch|DecompressionStream|WebAssembly|invalid URL/i.test(e),
