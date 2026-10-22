@@ -247,6 +247,7 @@ export class GameObject {
     this.entityTypeHasForcedLogicWorker = entityTypeHasForcedLogicWorkerBuffer
       ? new Uint8Array(entityTypeHasForcedLogicWorkerBuffer)
       : null;
+    Messages.pins = this.forceProcessOnLogicWorker;
     this.entityTypeForcedLogicWorkerCount = entityTypeForcedLogicWorkerCountBuffer
       ? new Uint16Array(entityTypeForcedLogicWorkerCountBuffer)
       : null;

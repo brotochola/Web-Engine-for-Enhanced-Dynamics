@@ -1030,6 +1030,7 @@ export function teardownSceneSharedState(scene) {
   bindEntityIdWidth(16);
   GameObject.activeEntitiesData = null;
   GameObject.forceProcessOnLogicWorker = null;
+  Messages.pins = null;
   GameObject.entityTypeHasForcedLogicWorker = null;
   GameObject.entityTypeForcedLogicWorkerCount = null;
   bindBodySyncBuffers(null);

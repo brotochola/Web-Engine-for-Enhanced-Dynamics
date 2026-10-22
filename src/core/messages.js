@@ -1,6 +1,7 @@
 // Messages.js — entity-to-entity messages over per-logic-worker SAB inboxes.
 // this.sendTo(other, 'hit', a, b, c, d) → other.onMessage('hit', from, a, b, c, d)
-// on the logic worker that owns the target (target % workers), next frame,
+// on the logic worker that owns the target (its pinned worker, else target %
+// workers), next frame,
 // before tick. Names are the scene's `static messages`, so every realm maps a
 // name to the same id. Numbers only: no allocation to send or deliver.
 
@@ -18,6 +19,8 @@ export class Messages {
   static nameToId = new Map();
   /** Per-entity spawn generation (Uint16); bumped on every despawn. */
   static spawnGen = new Uint16Array(0);
+  /** GameObject.forceProcessOnLogicWorker (Int16, −1 = not pinned), set with it. */
+  static pins = null;
   static _warnedUnbound = false;
 
   /** Scene side: one inbox per logic worker, plus the generation column. */
@@ -108,7 +111,10 @@ export class Messages {
   }
 
   static _push(target, from, id, a, b, c, d) {
-    const w = target % this.inboxI32.length;
+    // A pinned entity's onMessage runs on its worker, as its tick does.
+    const pins = this.pins;
+    const pin = pins !== null && target < pins.length ? pins[target] : -1;
+    const w = pin >= 0 ? pin : target % this.inboxI32.length;
     const i32 = this.inboxI32[w];
     const gen = target < this.spawnGen.length ? this.spawnGen[target] : 0;
     if (pushMessage(i32, this.inboxF64[w], target, from, id, gen, +a || 0, +b || 0, +c || 0, +d || 0)) return true;

@@ -145,10 +145,11 @@ class LogicWorker extends AbstractWorker {
     // Tracked contact pairs: collisionPairKey → slot in dense columns
     // (min, max, gen of min, gen of max). Delete swaps the last slot in, so the
     // stay loop walks the columns without iterating a Set or unpacking keys.
-    // Pairs this worker owns (minE % workers === index, the only ones it fires
-    // callbacks for) are validated every frame. Pairs another worker owns sit in
-    // the foreign columns and are validated when isCollidingWith asks, plus a
-    // sweep every FOREIGN_SWEEP_FRAMES. Map value: slot ≥ 0 own, −(slot+1) foreign.
+    // Pairs this worker fires callbacks for (one side at least: see
+    // _runsCallbacksOf) are validated every frame; _pairSides says which sides.
+    // The others sit in the foreign columns and are validated when
+    // isCollidingWith asks, plus a sweep every FOREIGN_SWEEP_FRAMES.
+    // Map value: slot ≥ 0 own, −(slot+1) foreign.
     /** @type {Map<number, number>} */
     this._pairSlot = new Map();
     // The key is `collisionPairKey(minE, maxE)`, which is `packPair` bound by
@@ -185,6 +186,8 @@ class LogicWorker extends AbstractWorker {
     // Chrome a key from minE 16384 on is a heap number (Predator's soldiers, trees
     // and rocks: 4.2 MB/s of them).
     this._pairBegan = new Uint32Array(0);
+    // Bit 0: this worker runs the lower index's callbacks, bit 1 the higher's.
+    this._pairSides = new Uint8Array(0);
     this._contactFrame = 0;
     this._onContactRingEvent = this._onContactRingEvent.bind(this);
     this._onHitRingEvent = this._onHitRingEvent.bind(this);
@@ -1516,12 +1519,14 @@ class LogicWorker extends AbstractWorker {
     if (this._entityGen(a) !== (genA | 0) || this._entityGen(b) !== (genB | 0)) return;
     if (!Transform.active[a] || !Transform.active[b]) return;
     const minE = a < b ? a : b;
-    if (minE % this.totalLogicWorkers !== this.workerIndex) return;
+    const runA = this._runsCallbacksOf(a, minE);
+    const runB = this._runsCallbacksOf(b, minE);
+    if (!runA && !runB) return;
     const entityType = Transform.entityType;
     const collisionFlags = this.collisionListenerByType;
     const gameObjects = this.gameObjects;
-    const aListens = collisionFlags[entityType[a]];
-    const bListens = collisionFlags[entityType[b]];
+    const aListens = runA && collisionFlags[entityType[a]];
+    const bListens = runB && collisionFlags[entityType[b]];
     // A throw is caught per call so the ring drain still advances its cursor.
     if (aListens) {
       try {
@@ -1556,12 +1561,14 @@ class LogicWorker extends AbstractWorker {
     if (this._entityGen(entityA) !== (genA | 0) || this._entityGen(entityB) !== (genB | 0)) return;
     if (!Transform.active[entityA] || !Transform.active[entityB]) return;
     const minE = entityA < entityB ? entityA : entityB;
-    if (minE % this.totalLogicWorkers !== this.workerIndex) return;
+    const runA = this._runsCallbacksOf(entityA, minE);
+    const runB = this._runsCallbacksOf(entityB, minE);
+    if (!runA && !runB) return;
     const entityType = Transform.entityType;
     const jointBreakFlags = this.jointBreakListenerByType;
     const gameObjects = this.gameObjects;
-    const aListens = jointBreakFlags[entityType[entityA]];
-    const bListens = jointBreakFlags[entityType[entityB]];
+    const aListens = runA && jointBreakFlags[entityType[entityA]];
+    const bListens = runB && jointBreakFlags[entityType[entityB]];
     if (!aListens && !bListens) return;
     if (aListens) {
       try {
@@ -1620,6 +1627,17 @@ class LogicWorker extends AbstractWorker {
     reportWorkerError(error, phase, className, entityIndex);
   }
 
+  /**
+   * Does this worker run entity e's callbacks for a pair whose lower index is
+   * minE? A pinned entity's run on its worker (one writer, as for its tick);
+   * the others on minE % workers, which runs both sides of the pair.
+   */
+  _runsCallbacksOf(e, minE) {
+    const pins = GameObject.forceProcessOnLogicWorker;
+    const pin = pins ? pins[e] : -1;
+    return pin >= 0 ? pin === this.workerIndex : minE % this.totalLogicWorkers === this.workerIndex;
+  }
+
   _entityGen(i) {
     return this.bodyGeneration ? Atomics.load(this.bodyGeneration, i) | 0 : 0;
   }
@@ -1636,6 +1654,9 @@ class LogicWorker extends AbstractWorker {
     this._pairGenMin = grow(this._pairGenMin);
     this._pairGenMax = grow(this._pairGenMax);
     this._pairBegan = grow(this._pairBegan);
+    const sides = new Uint8Array(cap);
+    sides.set(this._pairSides);
+    this._pairSides = sides;
     this._pairCapacity = cap;
   }
 
@@ -1650,6 +1671,7 @@ class LogicWorker extends AbstractWorker {
       this._pairGenMin[slot] = this._pairGenMin[last];
       this._pairGenMax[slot] = this._pairGenMax[last];
       this._pairBegan[slot] = this._pairBegan[last];
+      this._pairSides[slot] = this._pairSides[last];
       this._pairSlot.set(collisionPairKey(minE, maxE), slot);
     }
     this._pairSlot.delete(key);
@@ -1728,14 +1750,14 @@ class LogicWorker extends AbstractWorker {
     const match =
       this._pairGenMin[slot] === ((rawA < rawB ? genA : genB) >>> 0) &&
       this._pairGenMax[slot] === ((rawA < rawB ? genB : genA) >>> 0);
+    const sides = this._pairSides[slot];
     this._removePairSlot(slot, key);
     if (!match) return;
-    if (minE % this.totalLogicWorkers !== this.workerIndex) return;
     const entityType = Transform.entityType;
     const collisionFlags = this.collisionListenerByType;
     const gameObjects = this.gameObjects;
-    const aListens = collisionFlags[entityType[minE]];
-    const bListens = collisionFlags[entityType[maxE]];
+    const aListens = (sides & 1) !== 0 && collisionFlags[entityType[minE]];
+    const bListens = (sides & 2) !== 0 && collisionFlags[entityType[maxE]];
     if (aListens) {
       try {
         gameObjects[minE]?.onCollisionExit(maxE);
@@ -1762,7 +1784,8 @@ class LogicWorker extends AbstractWorker {
     const minE = rawA < rawB ? rawA : rawB;
     const maxE = rawA < rawB ? rawB : rawA;
     const key = collisionPairKey(minE, maxE);
-    if (minE % this.totalLogicWorkers !== this.workerIndex) {
+    const sides = (this._runsCallbacksOf(minE, minE) ? 1 : 0) | (this._runsCallbacksOf(maxE, minE) ? 2 : 0);
+    if (sides === 0) {
       const v = this._pairSlot.get(key);
       let f;
       if (v === undefined) {
@@ -1791,13 +1814,14 @@ class LogicWorker extends AbstractWorker {
     this._pairGenMin[slot] = (rawA < rawB ? genA : genB) >>> 0;
     this._pairGenMax[slot] = (rawA < rawB ? genB : genA) >>> 0;
     this._pairBegan[slot] = this._contactFrame;
+    this._pairSides[slot] = sides;
     if (!isNew) return;
-    if (minE % this.totalLogicWorkers !== this.workerIndex) return;
     const entityType = Transform.entityType;
     const collisionFlags = this.collisionListenerByType;
     const gameObjects = this.gameObjects;
-    const aListens = collisionFlags[entityType[rawA]];
-    const bListens = collisionFlags[entityType[rawB]];
+    const sideA = rawA === minE ? 1 : 2;
+    const aListens = (sides & sideA) !== 0 && collisionFlags[entityType[rawA]];
+    const bListens = (sides & (3 ^ sideA)) !== 0 && collisionFlags[entityType[rawB]];
     if (!aListens && !bListens) return;
     if (aListens) {
       try {
@@ -1862,6 +1886,7 @@ class LogicWorker extends AbstractWorker {
     const genMin = this._pairGenMin;
     const genMax = this._pairGenMax;
     const began = this._pairBegan;
+    const pairSides = this._pairSides;
 
     // Purge pairs whose generation changed or entities went inactive.
     // A throwing onCollisionStay is reported and the walk resumes at the next
@@ -1886,8 +1911,9 @@ class LogicWorker extends AbstractWorker {
           const beganNow = began[s] === frame;
           s++;
           if (beganNow) continue;
-          const aListens = collisionFlags[entityType[minE]];
-          const bListens = collisionFlags[entityType[maxE]];
+          const sides = pairSides[s - 1];
+          const aListens = (sides & 1) !== 0 && collisionFlags[entityType[minE]];
+          const bListens = (sides & 2) !== 0 && collisionFlags[entityType[maxE]];
           calling = minE;
           if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
           calling = maxE;
