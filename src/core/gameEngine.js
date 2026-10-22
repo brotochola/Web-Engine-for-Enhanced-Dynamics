@@ -431,18 +431,6 @@ class GameEngine {
     }
   }
 
-  spawnEntity(EntityClassOrName, data) {
-    if (this.currentScene) {
-      this.currentScene.spawnEntity(EntityClassOrName, data);
-    }
-  }
-
-  despawnAllEntities(className) {
-    if (this.currentScene) {
-      this.currentScene.despawnAllEntities(className);
-    }
-  }
-
   getPoolStats(EntityClass) {
     if (this.currentScene) {
       return this.currentScene.getPoolStats(EntityClass);

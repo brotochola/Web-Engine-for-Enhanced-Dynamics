@@ -51,7 +51,7 @@ export class ContactDrainHuntScene extends Scene {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 
-    this.spawnEntity(ContactDrainBody, {
+    ContactDrainBody.spawn({
       x: WORLD_W * 0.5,
       y: WORLD_H - 24,
       shape: 'box',
@@ -59,7 +59,7 @@ export class ContactDrainHuntScene extends Scene {
       height: 48,
       isStatic: true,
     });
-    this.spawnEntity(ContactDrainBody, {
+    ContactDrainBody.spawn({
       x: 24,
       y: WORLD_H * 0.5,
       shape: 'box',
@@ -67,7 +67,7 @@ export class ContactDrainHuntScene extends Scene {
       height: WORLD_H,
       isStatic: true,
     });
-    this.spawnEntity(ContactDrainBody, {
+    ContactDrainBody.spawn({
       x: WORLD_W - 24,
       y: WORLD_H * 0.5,
       shape: 'box',
@@ -82,7 +82,7 @@ export class ContactDrainHuntScene extends Scene {
     for (let i = 0; i < CONTACT_DRAIN_HUNT.balls; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(ContactDrainBody, {
+      ContactDrainBody.spawn({
         x: cx - 240 + col * 16 + rng() * 4,
         y: pileTop + row * 12 + rng() * 4,
         radius: 7 + rng() * 3,
@@ -124,7 +124,7 @@ export class ContactDrainBest32Scene extends ContactDrainHuntScene {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 
-    this.spawnEntity(ContactDrainBody, {
+    ContactDrainBody.spawn({
       x: WORLD_W * 0.5,
       y: WORLD_H - 24,
       shape: 'box',
@@ -132,7 +132,7 @@ export class ContactDrainBest32Scene extends ContactDrainHuntScene {
       height: 48,
       isStatic: true,
     });
-    this.spawnEntity(ContactDrainBody, {
+    ContactDrainBody.spawn({
       x: 24,
       y: WORLD_H * 0.5,
       shape: 'box',
@@ -140,7 +140,7 @@ export class ContactDrainBest32Scene extends ContactDrainHuntScene {
       height: WORLD_H,
       isStatic: true,
     });
-    this.spawnEntity(ContactDrainBody, {
+    ContactDrainBody.spawn({
       x: WORLD_W - 24,
       y: WORLD_H * 0.5,
       shape: 'box',
@@ -155,7 +155,7 @@ export class ContactDrainBest32Scene extends ContactDrainHuntScene {
     for (let i = 0; i < CONTACT_DRAIN_BEST32.balls; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(ContactDrainBody, {
+      ContactDrainBody.spawn({
         x: cx - 320 + col * 16 + rng() * 4,
         y: pileTop + row * 11 + rng() * 4,
         radius: 6 + rng() * 3,

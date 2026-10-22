@@ -45,13 +45,13 @@ export class QueryAabbStressScene extends Scene {
     for (let i = 0; i < 200; i++) {
       const col = i % 20;
       const row = (i / 20) | 0;
-      this.spawnEntity(Box2dQueryAabbTarget, {
+      Box2dQueryAabbTarget.spawn({
         x: 900 + col * 48,
         y: 900 + row * 48,
         size: 28,
       });
     }
-    this.spawnEntity(QueryAabbChurnProbe, { x: cx, y: cy });
+    QueryAabbChurnProbe.spawn({ x: cx, y: cy });
     Camera.centerOn(cx, cy);
     Camera.setZoom(0.45);
   }

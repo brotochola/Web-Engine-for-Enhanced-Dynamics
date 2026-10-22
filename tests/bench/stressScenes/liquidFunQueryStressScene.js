@@ -58,9 +58,9 @@ export class LiquidFunQueryStressScene extends WEED.Scene {
     const wallH = floorY - wallTop;
     const wallY = (wallTop + floorY) / 2;
 
-    this.spawnEntity(Floor, { x: 2500, y: floorY, width: 4800, height: 260, tint: 0x444455 });
-    this.spawnEntity(Floor, { x: 200, y: wallY, width: 260, height: wallH, tint: 0x444455 });
-    this.spawnEntity(Floor, { x: 4800, y: wallY, width: 260, height: wallH, tint: 0x444455 });
+    Floor.spawn({ x: 2500, y: floorY, width: 4800, height: 260, tint: 0x444455 });
+    Floor.spawn({ x: 200, y: wallY, width: 260, height: wallH, tint: 0x444455 });
+    Floor.spawn({ x: 4800, y: wallY, width: 260, height: wallH, tint: 0x444455 });
 
     LiquidFun.emit({
       flags: LIQUIDFUN_FLAGS.WATER | LIQUIDFUN_FLAGS.TENSILE,
@@ -73,7 +73,7 @@ export class LiquidFunQueryStressScene extends WEED.Scene {
       texture: '_whiteCircle',
     });
 
-    this.spawnEntity(LiquidFunQueryChurn, { x: 2000, y: 900 });
+    LiquidFunQueryChurn.spawn({ x: 2000, y: 900 });
 
     Camera.setWorldBounds(Infinity, Infinity);
     Camera.setZoom(0.25);

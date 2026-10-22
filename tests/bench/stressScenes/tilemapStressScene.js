@@ -45,7 +45,7 @@ export class TilemapStressScene extends Scene {
 
   create() {
     for (let i = 0; i < QUERIERS; i++) {
-      this.spawnEntity(TilemapStressQuerier, {
+      TilemapStressQuerier.spawn({
         x: 80 + (i % 8) * 40,
         y: 80 + ((i / 8) | 0) * 40,
         salt: i * 17,

@@ -15,7 +15,7 @@ export class TallLight extends GameObject {
   /**
    * LIFECYCLE: Called when the light is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn
-   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
+   * @param {Object} spawnConfig - Spawn-time parameters passed to spawn()
    */
   onSpawned(spawnConfig = {}) {
     // this.rigidBody.static = 1;

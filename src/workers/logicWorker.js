@@ -37,7 +37,7 @@ import { JointBreakListener } from '../components/jointBreakListener.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
 import { AbstractWorker } from './abstractWorker.js';
-import { logicBlockRange, logicWorkerThatShouldTick, resolveForceProcessOnLogicWorker, tickBucketPhase } from '../util/logicOwner.js';
+import { logicBlockRange, logicWorkerThatShouldTick, tickBucketPhase } from '../util/logicOwner.js';
 
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
@@ -284,10 +284,9 @@ class LogicWorker extends AbstractWorker {
     this._spawnSortedClass = new Array(256);
 
     this._spawnN = 0;
-    this._spawnXyScratch = { x: 0, y: 0 };
+    this._spawnXyScratch = { x: 0, y: 0, forceProcessOnLogicWorker: -1 };
     this._listMergeScratch = null;
     this._entityClassByType = [];
-    this._drainingSpawnRing = false;
     this._pendingDrainExtras = null;
     this._despawnCap = 256;
     this._despawnIdx = new Int32Array(256);
@@ -535,10 +534,6 @@ class LogicWorker extends AbstractWorker {
   // SPAWN/DESPAWN LIST UPDATE QUEUE METHODS
   // ========================================
 
-  /**
-   * Queue a spawn list update (called by GameObject.spawn)
-   * The actual list insertion will be done by logic0 at start of frame
-   */
   _growPending(kind) {
     const capKey = kind === 'spawn' ? '_spawnCap' : '_despawnCap';
     const next = this[capKey] * 2;
@@ -567,6 +562,10 @@ class LogicWorker extends AbstractWorker {
     }
   }
 
+  /**
+   * Queue a spawn list update (called by GameObject.spawn)
+   * The actual list insertion will be done by logic0 at start of frame
+   */
   queueSpawnListUpdate(entityIndex, entityType, EntityClass) {
     let n = this._spawnN;
     if (n === this._spawnCap) this._growPending('spawn');
@@ -590,7 +589,6 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
-   /**
    * B-09 / H-17. Add one batch of received spawn/despawn updates to the pending
    * queue, keeping the queue bounded.
    *
@@ -770,21 +768,6 @@ class LogicWorker extends AbstractWorker {
     return true;
   }
 
-  _processSpawnUpdates(updates) {
-    if (!updates || updates.length === 0) return false;
-    let changed = false;
-    for (const update of updates) {
-      const { entityIndex, EntityClass } = update;
-      // Only add if entity is still active (wasn't despawned in same frame)
-      if (Transform.active[entityIndex] === 1) {
-        GameObject._addToActiveEntities(entityIndex);
-        GameObject._addToTypeActiveList(EntityClass, entityIndex);
-        changed = true;
-      }
-    }
-    return changed;
-  }
-
   /**
    * Process despawn list updates - remove entities from active lists.
    * A despawn queued by another worker can arrive a batch after the index was
@@ -807,20 +790,6 @@ class LogicWorker extends AbstractWorker {
     return true;
   }
 
-  _processDespawnUpdates(updates) {
-    if (!updates || updates.length === 0) {
-      return false;
-    }
-
-    for (const update of updates) {
-      const { entityIndex, EntityClass } = update;
-      if (Transform.active[entityIndex] === 1) continue; // a newer life owns the index (see _processDespawnSoA)
-      GameObject._removeFromActiveEntities(entityIndex);
-      GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
-    }
-    return true;
-  }
-
   /**
    * Send pending list updates to logic0 (called at end of frame by non-logic0 workers)
    */
@@ -829,7 +798,41 @@ class LogicWorker extends AbstractWorker {
       return true;
     }
 
-    // Serialize EntityClass to class name for message passing (reuse buffers to avoid .map() allocation)
+    this._serializeListUpdates();
+    const sent = this.sendDataToWorker('logic0', {
+      msg: 'listUpdates',
+      spawns: this._spawnSerializedBuffer,
+      despawns: this._despawnSerializedBuffer,
+    });
+
+    if (sent) {
+      this._spawnN = 0;
+      this._despawnN = 0;
+    }
+
+    return sent;
+  }
+
+  /**
+   * create()'s barrier on a worker that got pinned spawns by message: they are
+   * set up (messages run in order), so hand their list updates to the page,
+   * which passes them to logic0 before the first frame.
+   */
+  _answerSpawnBarrier() {
+    this._serializeListUpdates();
+    self.postMessage({
+      msg: 'spawnBatchComplete',
+      workerIndex: this.workerIndex,
+      spawns: this._spawnSerializedBuffer,
+      despawns: this._despawnSerializedBuffer,
+    });
+    this._spawnN = 0;
+    this._despawnN = 0;
+  }
+
+  /** Pending list updates as { entityIndex, entityType, className } (reused buffers). */
+  _serializeListUpdates() {
+    // Class names for message passing (reuse buffers to avoid .map() allocation)
     const spawns = this._spawnSerializedBuffer;
     const despawns = this._despawnSerializedBuffer;
     const sn = this._spawnN;
@@ -856,19 +859,6 @@ class LogicWorker extends AbstractWorker {
       o.className = this._despawnClass[i].name;
     }
     despawns.length = dn;
-
-    const sent = this.sendDataToWorker('logic0', {
-      msg: 'listUpdates',
-      spawns,
-      despawns,
-    });
-
-    if (sent) {
-      this._spawnN = 0;
-      this._despawnN = 0;
-    }
-
-    return sent;
   }
 
   /** Read-only pose latch for Camera.followEntity. Pre_render owns sync[1]. */
@@ -1981,7 +1971,7 @@ class LogicWorker extends AbstractWorker {
 
     for (let i = 0; i < serializableClassNames.length; i++) {
       const EntityClass = self[serializableClassNames[i]];
-      if (EntityClass) GameObject.despawnAll(EntityClass);
+      if (EntityClass) GameObject.despawnAll.call(EntityClass);
     }
 
     if (typeof Joint.clearAllActive === 'function') {
@@ -2015,7 +2005,7 @@ class LogicWorker extends AbstractWorker {
       }
       let at = -1;
       if (ownIndex !== null && ownIndex.delete(rec.entityIndex | 0)) at = rec.entityIndex | 0;
-      const instance = GameObject.spawn(EntityClass, spawnConfig, at);
+      const instance = GameObject._spawnAt(EntityClass, spawnConfig, at);
       if (!instance) {
         noRoom.set(rec.typeName, (noRoom.get(rec.typeName) || 0) + 1);
         failed++;
@@ -2156,6 +2146,11 @@ class LogicWorker extends AbstractWorker {
       }
       case 'drainSpawnCommands': {
         if (this.workerIndex !== 0) break;
+        if (data.listUpdates) {
+          for (let b = 0; b < data.listUpdates.length; b++) {
+            this._receiveListUpdates(data.listUpdates[b].spawns, data.listUpdates[b].despawns);
+          }
+        }
         if (data.extras && data.extras.length) {
           const extras = new Map();
           for (let i = 0; i < data.extras.length; i++) {
@@ -2170,6 +2165,10 @@ class LogicWorker extends AbstractWorker {
       }
       case 'spawn': {
         this._mainThreadSpawn(data);
+        break;
+      }
+      case 'spawnBarrier': {
+        this._answerSpawnBarrier();
         break;
       }
 
@@ -2205,7 +2204,7 @@ class LogicWorker extends AbstractWorker {
         // - Active list removal
         // - Query cache updates
         // - Free list reset (SAB-backed, interleaved)
-        const despawnedCount = GameObject.despawnAll(EntityClass);
+        const despawnedCount = GameObject.despawnAll.call(EntityClass);
 
         debugWorkerLog(
           `LOGIC WORKER ${this.workerIndex}: Despawned ${despawnedCount} ${className} entities`
@@ -2269,7 +2268,7 @@ class LogicWorker extends AbstractWorker {
           const EntityClass = self[classInfo.name];
           if (!EntityClass) continue;
 
-          totalDespawned += GameObject.despawnAll(EntityClass);
+          totalDespawned += GameObject.despawnAll.call(EntityClass);
         }
 
         // console.log(
@@ -2284,39 +2283,47 @@ class LogicWorker extends AbstractWorker {
           break;
         }
 
-        // Deserialize class names to EntityClass references (single-pass loop avoids .map/.filter intermediates)
-        const { spawns, despawns } = data;
-        const deserializedSpawns = [];
-        const deserializedDespawns = [];
-
-        if (spawns) {
-          for (let i = 0; i < spawns.length; i++) {
-            const u = spawns[i];
-            const EntityClass = self[u.className];
-            if (EntityClass) {
-              deserializedSpawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, EntityClass });
-            }
-          }
-        }
-        if (despawns) {
-          for (let i = 0; i < despawns.length; i++) {
-            const u = despawns[i];
-            const EntityClass = self[u.className];
-            if (EntityClass) {
-              deserializedDespawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, EntityClass });
-            }
-          }
-        }
-
-        if (deserializedSpawns.length > 0 || deserializedDespawns.length > 0) {
-          this.enqueueListUpdateBatch(deserializedSpawns, deserializedDespawns);
-        }
+        this._receiveListUpdates(data.spawns, data.despawns);
         break;
       }
 
       default:
         super.handleCustomMessage(data);
         break;
+    }
+  }
+
+  /**
+   * logic0: queue list updates another worker sent (class names to classes;
+   * single-pass loops avoid .map/.filter intermediates).
+   * @param {Array} spawns
+   * @param {Array} despawns
+   */
+  _receiveListUpdates(spawns, despawns) {
+    const deserializedSpawns = [];
+    const deserializedDespawns = [];
+
+    if (spawns) {
+      for (let i = 0; i < spawns.length; i++) {
+        const u = spawns[i];
+        const EntityClass = self[u.className];
+        if (EntityClass) {
+          deserializedSpawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, EntityClass });
+        }
+      }
+    }
+    if (despawns) {
+      for (let i = 0; i < despawns.length; i++) {
+        const u = despawns[i];
+        const EntityClass = self[u.className];
+        if (EntityClass) {
+          deserializedDespawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, EntityClass });
+        }
+      }
+    }
+
+    if (deserializedSpawns.length > 0 || deserializedDespawns.length > 0) {
+      this.enqueueListUpdateBatch(deserializedSpawns, deserializedDespawns);
     }
   }
 
@@ -2331,7 +2338,7 @@ class LogicWorker extends AbstractWorker {
       );
       return;
     }
-    const instance = GameObject.spawn(EntityClass, spawnConfig, entityIndex);
+    const instance = GameObject._spawnAt(EntityClass, spawnConfig, entityIndex);
     if (!instance) {
       // The index was reserved on main (an empty pool is reported there), so a
       // null here is onSpawned despawning its own entity: a choice, not an error.
@@ -2340,27 +2347,15 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
-   * Ring drain runs on logic0. A class pinned to another worker makes spawn()
-   * post the setup there and return null. That null is the handoff, not a miss.
+   * logic0: set up the spawns the page and other workers put on the ring (their
+   * owner is logic0, or none), and run its despawns.
    */
-  _ringSpawnHandedOff(EntityClass, cfg) {
-    const requested =
-      cfg && typeof cfg.forceProcessOnLogicWorker === 'number'
-        ? cfg.forceProcessOnLogicWorker
-        : typeof EntityClass.forceProcessOnLogicWorker === 'number'
-          ? EntityClass.forceProcessOnLogicWorker
-          : -1;
-    const owner = resolveForceProcessOnLogicWorker(requested, this.totalLogicWorkers);
-    return owner >= 0 && owner !== this.workerIndex;
-  }
-
   _drainSpawnCommandRing() {
     if (!isSpawnCommandRingBound()) return 0;
-    this._drainingSpawnRing = true;
     const extras = this._pendingDrainExtras;
     const xy = this._spawnXyScratch;
     const byType = this._entityClassByType;
-    const n = drainSpawnCommands((kind, typeId, entityIndex, x, y) => {
+    const n = drainSpawnCommands((kind, typeId, entityIndex, x, y, owner) => {
       if (kind === SPAWN_CMD_KIND.DESPAWN) {
         this._mainThreadDespawn(entityIndex);
         return;
@@ -2375,6 +2370,7 @@ class LogicWorker extends AbstractWorker {
         EntityClass = byType[typeId];
         xy.x = x;
         xy.y = y;
+        xy.forceProcessOnLogicWorker = owner;
         cfg = xy;
       }
       if (!EntityClass) {
@@ -2383,15 +2379,13 @@ class LogicWorker extends AbstractWorker {
         );
         return;
       }
-      const instance = GameObject.spawn(EntityClass, cfg, entityIndex);
-      if (!instance && !this._ringSpawnHandedOff(EntityClass, cfg)) {
-        console.warn(
-          `LOGIC WORKER ${this.workerIndex}: Failed ring spawn ${EntityClass.name}`,
-        );
+      if (!GameObject._spawnAt(EntityClass, cfg, entityIndex)) {
+        // The pusher reserved the index (an empty pool is reported there), so a
+        // null here is onSpawned despawning its own entity: a choice, not an error.
+        debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: ${EntityClass.name}[${entityIndex}] spawn did not complete`);
       }
     });
     this._pendingDrainExtras = null;
-    this._drainingSpawnRing = false;
     return n;
   }
 

@@ -966,10 +966,6 @@ export function teardownSceneSharedState(scene) {
   scene.keyboard = {};
   Keyboard.initialize(null, null);
 
-  if (scene._entityViewCache) {
-    scene._entityViewCache.clear();
-  }
-
   for (const registration of scene.registeredClasses) {
     const EntityClass = registration.class;
     if (EntityClass.instances) EntityClass.instances = [];

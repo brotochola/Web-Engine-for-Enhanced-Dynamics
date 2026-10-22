@@ -42,7 +42,7 @@ export class DecoQueryCircleStressScene extends Scene {
 
   create() {
     const rng = mulberry32(SEED);
-    this.spawnEntity(DecoQueryCircleDriver, { x: WORLD * 0.5, y: WORLD * 0.5 });
+    DecoQueryCircleDriver.spawn({ x: WORLD * 0.5, y: WORLD * 0.5 });
     for (let i = 0; i < PLANT; i++) {
       Decoration.spawn({
         x: 32 + rng() * (WORLD - 64),

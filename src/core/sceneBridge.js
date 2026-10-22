@@ -15,6 +15,16 @@ function resolveWorkerContext() {
 export class SceneBridge {
   /** gameObject.emit(name, data) → scene.on(name, fn). */
   static emitToScene(name, data, sender = null) {
+    // A page instance is already where the listeners are.
+    if (typeof window !== 'undefined' && window.scene && typeof self.logicWorker === 'undefined') {
+      window.scene._dispatchEntityEvent(
+        name,
+        data,
+        Number.isInteger(sender?.index) ? sender.index : -1,
+        sender?.constructor?.name || null,
+      );
+      return true;
+    }
     const payload = {
       msg: 'gameObjectEvent',
       name,

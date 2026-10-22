@@ -17,6 +17,7 @@ import {
   rng,
 } from '../../../util/utils.js';
 import { pointInCollider } from '../../../util/colliderUtils.js';
+import { GameObject } from '../../gameObject.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
 
 const PICK_CAP = 64;
@@ -369,8 +370,8 @@ export class ToolManager {
   }
 
   _spawnEntityAtMouse(className) {
-    const engine = this.debugUI.gameEngine;
-    if (!engine) return;
+    const EntityClass = this.debugUI.scene?.registeredClasses.find((r) => r.class.name === className)?.class;
+    if (!EntityClass) return;
 
     const count = this.bulkSpawnEnabled ? 50 : 1;
     const spread = 30;
@@ -378,7 +379,7 @@ export class ToolManager {
     for (let i = 0; i < count; i++) {
       const ox = count > 1 ? (rng() - 0.5) * spread * 2 : 0;
       const oy = count > 1 ? (rng() - 0.5) * spread * 2 : 0;
-      engine.spawnEntity(className, { x: Mouse.x + ox, y: Mouse.y + oy });
+      EntityClass.spawn({ x: Mouse.x + ox, y: Mouse.y + oy });
     }
   }
 
@@ -386,7 +387,7 @@ export class ToolManager {
     const scene = this.debugUI.scene;
     if (!scene || !this.debugUI.gameEngine) return;
     const nearest = this._pickEntity(Mouse.x, Mouse.y, 50, false);
-    if (nearest >= 0) scene.despawnEntity(nearest);
+    if (nearest >= 0) GameObject.despawn(nearest);
   }
 
   _selectAtMouse() {

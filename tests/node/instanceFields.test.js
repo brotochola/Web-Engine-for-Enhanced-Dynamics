@@ -64,7 +64,7 @@ test('plain fields survive the trip (through JSON, as in a save); the rest stays
 test('the engine sets no instance field outside ENGINE_INSTANCE_KEYS', () => {
   class Probe extends GameObject {}
   Probe.instances = [];
-  const go = new Probe(0, {}, null, { view: true });
+  const go = new Probe(0, {}, null, { page: true });
   const unknown = Object.keys(go).filter((k) => !ENGINE_INSTANCE_KEYS.has(k));
   assert.deepEqual(unknown, [], 'add new engine fields to ENGINE_INSTANCE_KEYS');
 });

@@ -73,15 +73,15 @@ export class VisPolyStressScene extends Scene {
     const w = this.config.worldWidth;
     const h = this.config.worldHeight;
     // Multiply lighting × black clear = black. One white sprite is the albedo.
-    this.spawnEntity(VisPolyAlbedo, { x: w * 0.5, y: h * 0.5, width: w, height: h });
+    VisPolyAlbedo.spawn({ x: w * 0.5, y: h * 0.5, width: w, height: h });
     for (let i = 0; i < LIGHTS; i++) {
-      this.spawnEntity(VisPolyLight, {
+      VisPolyLight.spawn({
         x: 400 + rng() * (w - 800),
         y: 400 + rng() * (h - 800),
       });
     }
     for (let i = 0; i < OCCLUDERS; i++) {
-      this.spawnEntity(VisPolyOccluder, {
+      VisPolyOccluder.spawn({
         x: 80 + rng() * (w - 160),
         y: 80 + rng() * (h - 160),
         width: 32 + rng() * 48,

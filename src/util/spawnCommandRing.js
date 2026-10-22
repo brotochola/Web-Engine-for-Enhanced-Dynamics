@@ -11,7 +11,12 @@
  *   3 entityIndex — values are Uint16 today (MAX_ENTITIES 65535); field
  *                   is i32 so a later Uint32 pool does not change the protocol.
  *   4–5 x, y as f32
- *   6–7 pad
+ *   6 owner       — the spawn's resolved forceProcessOnLogicWorker (−1 = none),
+ *                   so a pin passed in the config survives the trip
+ *   7 pad
+ *
+ * Only spawns whose owner is logic0 (or none) ride the ring: logic0 drains it,
+ * and a spawn owned by another worker goes straight there by message.
  *
  * Capacity is the entity pool (covers one create() of 65k). Full ring
  * returns false; callers escape to the existing postMessage spawn/despawn.
@@ -73,7 +78,7 @@ export function spawnCommandRingOverflowCount() {
   return ringI32 ? Atomics.load(ringI32, HDR_OVERFLOW) : 0;
 }
 
-function tryPush(kind, typeId, entityIndex, x, y) {
+function tryPush(kind, typeId, entityIndex, x, y, owner) {
   if (!ringI32) return false;
   const cap = capacity;
   for (;;) {
@@ -95,22 +100,24 @@ function tryPush(kind, typeId, entityIndex, x, y) {
     ringI32[base + 3] = entityIndex | 0;
     ringF32[base + 4] = x;
     ringF32[base + 5] = y;
+    ringI32[base + 6] = owner | 0;
     Atomics.store(ringI32, base, write + 1);
     return true;
   }
 }
 
-export function tryPushSpawn(typeId, entityIndex, x, y) {
-  return tryPush(SPAWN_CMD_KIND.SPAWN, typeId, entityIndex, x, y);
+/** @param {number} [owner] resolved forceProcessOnLogicWorker: 0, or −1 for none */
+export function tryPushSpawn(typeId, entityIndex, x, y, owner = -1) {
+  return tryPush(SPAWN_CMD_KIND.SPAWN, typeId, entityIndex, x, y, owner);
 }
 
 export function tryPushDespawn(entityIndex) {
-  return tryPush(SPAWN_CMD_KIND.DESPAWN, 0, entityIndex, 0, 0);
+  return tryPush(SPAWN_CMD_KIND.DESPAWN, 0, entityIndex, 0, 0, -1);
 }
 
 /**
  * Single consumer (logic0). No alloc. Returns drained count.
- * @param {(kind: number, typeId: number, entityIndex: number, x: number, y: number) => void} visitor
+ * @param {(kind: number, typeId: number, entityIndex: number, x: number, y: number, owner: number) => void} visitor
  */
 export function drainSpawnCommands(visitor) {
   if (!ringI32 || typeof visitor !== 'function') return 0;
@@ -127,6 +134,7 @@ export function drainSpawnCommands(visitor) {
       ringI32[base + 3] | 0,
       ringF32[base + 4],
       ringF32[base + 5],
+      ringI32[base + 6] | 0,
     );
     Atomics.store(ringI32, base, read + cap);
     Atomics.store(ringI32, HDR_READ, read + 1);

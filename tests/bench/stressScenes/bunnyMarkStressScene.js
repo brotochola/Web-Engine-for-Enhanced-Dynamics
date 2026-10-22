@@ -51,7 +51,7 @@ const SHARED = {
 function spawnBunnies(scene, EntityClass, n) {
   const rng = globalThis.rng;
   for (let i = 0; i < n; i++) {
-    scene.spawnEntity(EntityClass, {
+    EntityClass.spawn({
       x: WORLD_W * rng(),
       y: WORLD_H * rng(),
     });
@@ -158,25 +158,25 @@ export class BunnyMarkStressDScene extends Scene {
 
   create() {
     const t = 80;
-    this.spawnEntity(WorldWall, {
+    WorldWall.spawn({
       x: -t * 0.5,
       y: WORLD_H * 0.5,
       width: t,
       height: WORLD_H + t * 2,
     });
-    this.spawnEntity(WorldWall, {
+    WorldWall.spawn({
       x: WORLD_W + t * 0.5,
       y: WORLD_H * 0.5,
       width: t,
       height: WORLD_H + t * 2,
     });
-    this.spawnEntity(WorldWall, {
+    WorldWall.spawn({
       x: WORLD_W * 0.5,
       y: -t * 0.5,
       width: WORLD_W + t * 2,
       height: t,
     });
-    this.spawnEntity(WorldWall, {
+    WorldWall.spawn({
       x: WORLD_W * 0.5,
       y: WORLD_H + t * 0.5,
       width: WORLD_W + t * 2,

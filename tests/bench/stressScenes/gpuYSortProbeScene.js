@@ -69,7 +69,7 @@ export class GpuYSortProbeScene extends Scene {
       const row = CASES[c];
       for (let s = 0; s < row.sprites.length; s++) {
         const src = row.sprites[s];
-        this.spawnEntity(ProbeSprite, {
+        ProbeSprite.spawn({
           x: row.x,
           y: src.y,
           tint: src.tint,

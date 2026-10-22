@@ -45,7 +45,7 @@ function decoFixedConfig(numberOfLogicWorkers) {
 
 function plantFixedDecos(scene) {
   const rng = mulberry32(SEED);
-  scene.spawnEntity(DecoFixedAnchor, { x: -10000, y: -10000 });
+  DecoFixedAnchor.spawn({ x: -10000, y: -10000 });
   for (let i = 0; i < PLANT; i++) {
     Decoration.spawn({
       x: 64 + rng() * (WORLD_W - 128),

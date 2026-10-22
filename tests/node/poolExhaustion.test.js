@@ -48,7 +48,7 @@ test('spawning into a full pool warns once and counts every failed spawn', () =>
   bindEmptyCratePool();
   try {
     const lines = captureWarnings(() => {
-      for (let k = 0; k < 500; k++) assert.equal(GameObject.spawn(Crate, { x: k }), null);
+      for (let k = 0; k < 500; k++) assert.equal(Crate.spawn({ x: k }), null);
     });
     assert.equal(lines.length, 1);
     assert.match(lines[0], /the Crate pool is full \(2 slots\)/);

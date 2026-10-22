@@ -72,7 +72,7 @@ function spawnRenderQueueGrid(scene) {
   for (let i = 0; i < 48000; i++) {
     const col = i % cols;
     const row = (i / cols) | 0;
-    scene.spawnEntity(RenderQueueStressEntity, {
+    RenderQueueStressEntity.spawn({
       x: startX + col * spacingX,
       y: startY + row * spacingY,
       scale: 0.75 + (i % 5) * 0.06,

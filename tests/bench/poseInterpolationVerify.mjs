@@ -64,7 +64,7 @@ async function sampleMode(browser, baseUrl, mode) {
         // Spawn above camera center so it free-falls through the visible
         // viewport well clear of the floor (worldHeight+ away) for the whole
         // sample window - a clean constant-acceleration case.
-        const spawned = scene.spawnEntity(Ball, { x: cx, y: cy - 400, vx: 0, vy: 0 });
+        const spawned = Ball.spawn({ x: cx, y: cy - 400, vx: 0, vy: 0 });
         const targetIndex = spawned.index;
         // Queue has no entity id. 2.5 is unique among Balls (default scale 1) and exact in float32.
         const poseMarkScaleX = 2.5;

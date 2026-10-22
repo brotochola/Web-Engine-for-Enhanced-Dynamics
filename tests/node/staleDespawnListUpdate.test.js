@@ -26,10 +26,6 @@ test('a late despawn does not unlist the new life that reused the index', async 
     Transform.active[2] = 0; // really gone
     worker._processDespawnSoA(Int32Array.from([1, 2]), [Flashy, Flashy], 2);
     assert.deepEqual(removed, [2]);
-
-    removed.length = 0;
-    worker._processDespawnUpdates([{ entityIndex: 1, EntityClass: Flashy }, { entityIndex: 2, EntityClass: Flashy }]);
-    assert.deepEqual(removed, [2]);
   } finally {
     GameObject._removeFromActiveEntities = real.all;
     GameObject._removeFromTypeActiveList = real.type;

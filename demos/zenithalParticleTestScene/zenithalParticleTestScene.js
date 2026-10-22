@@ -5,7 +5,7 @@ import WEED from '/src/index.js';
 import { ZenithalCar } from './gameObjects/zenithalCar.js';
 import { ZenithalLight } from './gameObjects/zenithalLight.js';
 
-const { rng, ParticleEmitter, Scene, Camera, Mouse, Transform, RigidBody, LAYER_KIND } = WEED;
+const { rng, GameObject, ParticleEmitter, Scene, Camera, Mouse, Transform, RigidBody, LAYER_KIND } = WEED;
 
 const DRAG_PICK_RADIUS_SQ = 50 * 50;
 
@@ -117,7 +117,7 @@ export class ZenithalParticleTestScene extends Scene {
 
     if (this._dragIdx != null) {
       if (Mouse.isButton0Down) {
-        const body = this.getEntityView(this._dragIdx, { cache: true });
+        const body = GameObject.get(this._dragIdx);
         body.setPosition(Mouse.x, Mouse.y);
         body.setVelocity(0, 0);
         RigidBody.sleeping[this._dragIdx] = 0;

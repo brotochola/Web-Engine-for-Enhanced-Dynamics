@@ -62,28 +62,28 @@ export class BulletStressScene extends Scene {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 
-    this.spawnEntity(RayStressEntity, {
+    RayStressEntity.spawn({
       x: WORLD_W * 0.5,
       y: WALL * 0.5,
       shape: 'box',
       width: WORLD_W,
       height: WALL,
     });
-    this.spawnEntity(RayStressEntity, {
+    RayStressEntity.spawn({
       x: WORLD_W * 0.5,
       y: WORLD_H - WALL * 0.5,
       shape: 'box',
       width: WORLD_W,
       height: WALL,
     });
-    this.spawnEntity(RayStressEntity, {
+    RayStressEntity.spawn({
       x: WALL * 0.5,
       y: WORLD_H * 0.5,
       shape: 'box',
       width: WALL,
       height: WORLD_H,
     });
-    this.spawnEntity(RayStressEntity, {
+    RayStressEntity.spawn({
       x: WORLD_W - WALL * 0.5,
       y: WORLD_H * 0.5,
       shape: 'box',
@@ -93,7 +93,7 @@ export class BulletStressScene extends Scene {
 
     const inner = WALL + 80;
     for (let i = 0; i < INTERIOR; i++) {
-      this.spawnEntity(RayStressEntity, {
+      RayStressEntity.spawn({
         x: inner + rng() * (WORLD_W - 2 * inner),
         y: inner + rng() * (WORLD_H - 2 * inner),
         shape: rng() >= 0.7 ? 'box' : 'circle',
@@ -104,7 +104,7 @@ export class BulletStressScene extends Scene {
     }
 
     for (let s = 0; s < 8; s++) {
-      this.spawnEntity(BulletStressDriver, { seed: SEED + s * 97, spawnPerTick: 180 });
+      BulletStressDriver.spawn({ seed: SEED + s * 97, spawnPerTick: 180 });
     }
 
     Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);

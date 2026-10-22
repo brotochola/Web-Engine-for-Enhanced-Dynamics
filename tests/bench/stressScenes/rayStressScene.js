@@ -72,7 +72,7 @@ export class RayStressScene extends Scene {
 
     for (let i = 0; i < OBSTACLE_COUNT; i++) {
       const isBox = rng() >= 0.7;
-      this.spawnEntity(RayStressEntity, {
+      RayStressEntity.spawn({
         x: margin + rng() * (worldW - 2 * margin),
         y: margin + rng() * (worldH - 2 * margin),
         shape: isBox ? 'box' : 'circle',
@@ -83,7 +83,7 @@ export class RayStressScene extends Scene {
       });
     }
 
-    this.spawnEntity(RayStressDriver, { seed: SEED });
+    RayStressDriver.spawn({ seed: SEED });
 
     Camera.centerOn(worldW * 0.5, worldH * 0.5);
     Camera.setZoom(0.45);

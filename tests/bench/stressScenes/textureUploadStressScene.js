@@ -87,7 +87,7 @@ export class TextureUploadStressScene extends Scene {
   ]];
 
   create() {
-    this.spawnEntity(UploadDriver, { x: 0, y: 0, forceProcessOnLogicWorker: 0 });
+    UploadDriver.spawn({ x: 0, y: 0, forceProcessOnLogicWorker: 0 });
     Camera.setFree(false);
     Camera.centerOn(200, 200);
     Camera.setZoom(1);
@@ -98,7 +98,7 @@ export class TextureUploadRowScene extends TextureUploadStressScene {
   static entities = [[UploadRowDriver, 1]];
 
   create() {
-    this.spawnEntity(UploadRowDriver, { x: 0, y: 0, forceProcessOnLogicWorker: 0 });
+    UploadRowDriver.spawn({ x: 0, y: 0, forceProcessOnLogicWorker: 0 });
     Camera.setFree(false);
     Camera.centerOn(200, 200);
     Camera.setZoom(1);

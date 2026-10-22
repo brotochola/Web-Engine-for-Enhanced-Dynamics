@@ -91,7 +91,7 @@ export class MeshFillLookPanScene extends Scene {
     for (let i = 0; i < ISLAND_COUNT; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(MeshFillIsland, {
+      MeshFillIsland.spawn({
         x: startX + col * spacing,
         y: startY + row * spacing,
         triangles: TRIANGLES_PER_ISLAND,
@@ -100,7 +100,7 @@ export class MeshFillLookPanScene extends Scene {
         spin: 0,
       });
     }
-    this.spawnEntity(CameraOrbitDriver, {
+    CameraOrbitDriver.spawn({
       cx: WORLD_W * 0.5,
       cy: WORLD_H * 0.5,
       radius: 720,

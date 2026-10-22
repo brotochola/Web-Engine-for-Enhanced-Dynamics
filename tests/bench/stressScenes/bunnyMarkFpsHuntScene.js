@@ -52,12 +52,12 @@ export class BunnyMarkFpsHuntScene extends Scene {
     Camera.centerOn(cx, cy);
     const rng = globalThis.rng;
     for (let i = 0; i < N; i++) {
-      this.spawnEntity(Bunny, {
+      Bunny.spawn({
         x: this.config.worldWidth * rng(),
         y: this.config.worldHeight * rng(),
       });
     }
-    this.spawnEntity(BunnySpawner, { x: cx, y: cy });
+    BunnySpawner.spawn({ x: cx, y: cy });
     void GameObject.getPoolStats(Bunny).active;
   }
 }

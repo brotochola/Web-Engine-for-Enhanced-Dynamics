@@ -13,7 +13,7 @@ export const ENGINE_INSTANCE_KEYS = new Set([
   'index',
   'config',
   'logicWorker',
-  '_isEntityView',
+  '_onPage',
   '_hasComponents',
   '_neighborOffset',
   '_neighbors',

@@ -97,7 +97,7 @@ test('physics that sees a spawned slot active already sees its new body life', {
   });
 
   try {
-    assert.equal(GameObject.spawn(B19Entity, {}), pooled);
+    assert.equal(B19Entity.spawn({}), pooled);
   } finally {
     Transform.active = real;
     GameObject.nextTick = prevNextTick;

@@ -266,11 +266,15 @@ class Scene {
     this._stepSeq = 0;
     this._stepWaiters = new Map();
 
-    // create()/createNewGame() push spawnEntity onto the SAB ring; one drain+ack.
+    // create()/createNewGame() spawns: see _flushCreateSpawns.
     this._spawnBatchOpen = true;
     this._createSpawnExtras = [];
-    this._createRingPushes = 0;
+    this._createLogic0Spawns = 0;
+    /** Logic workers (≥ 1) sent pinned spawns by message during create(). */
+    this._createOwnerSpawns = new Set();
     this._pendingSpawnBatch = null;
+    /** Classes already told they are not in this scene (Enemy.spawn on the page). */
+    this._warnedNotInScene = new Set();
 
     // Worker synchronization
     this.workerReadyStates = {
@@ -435,8 +439,6 @@ class Scene {
     this._anyGrabType = false;
     this._anyCollisionListener = false;
     this._anyDeriveSpeed = false;
-    /** @type {Map<number, GameObject>} */
-    this._entityViewCache = new Map();
 
     // Key mapping for input buffer
     this.keyMap = {};
@@ -650,46 +652,24 @@ class Scene {
   }
 
   /**
-   * Main-thread wrapper over an existing entity slot (SharedArrayBuffers).
-   * Does not spawn/despawn. Logic (`tick`, collisions, …) still runs on workers only.
-   *
-   * @param {number} index - Global entity index
-   * @param {Object} [options] - If cache is true, reuse the same instance until releaseEntityView(index)
-   * @param {boolean} [options.cache]
-   * @returns {GameObject}
+   * One instance per pool slot on the page, as each logic worker has, so
+   * Enemy.spawn, GameObject.get and Enemy.getFirstActiveInstance return entities
+   * here too. They read and write the slot's shared data; ticks and hooks run
+   * on the logic workers.
    */
-  getEntityView(index, options = {}) {
-    const cache = options.cache === true;
-    if (index < 0 || index >= this.totalEntityCount) {
-      throw new RangeError(
-        `getEntityView: index ${index} out of range (0..${this.totalEntityCount - 1})`
-      );
+  _createPageInstances() {
+    const all = new Array(this.totalEntityCount);
+    for (let r = 0; r < this.registeredClasses.length; r++) {
+      const { class: EntityClass, count, startIndex } = this.registeredClasses[r];
+      const own = new Array(count);
+      for (let k = 0; k < count; k++) {
+        const instance = new EntityClass(startIndex + k, this.config, null, { page: true });
+        own[k] = instance;
+        all[startIndex + k] = instance;
+      }
+      EntityClass.instances = own;
     }
-    if (!Transform.entityType || Transform.entityType.length <= index) {
-      throw new Error('getEntityView: Transform not initialized (call after Scene buffers are ready)');
-    }
-    if (cache && this._entityViewCache.has(index)) {
-      return this._entityViewCache.get(index);
-    }
-    const typeId = Transform.entityType[index];
-    const reg = this.registeredClasses[typeId];
-    if (!reg || !reg.class) {
-      throw new Error(`getEntityView: unknown entityType ${typeId} at index ${index}`);
-    }
-    const EntityClass = reg.class;
-    const instance = new EntityClass(index, this.config, null, { view: true });
-    if (cache) {
-      this._entityViewCache.set(index, instance);
-    }
-    return instance;
-  }
-
-  /**
-   * Drop a cached main-thread view only (does not despawn the entity).
-   * @param {number} index
-   */
-  releaseEntityView(index) {
-    this._entityViewCache.delete(index);
+    GameObject.instances = all;
   }
 
   /**
@@ -1053,6 +1033,7 @@ class Scene {
 
     // Expose scene and component references globally for console access
     this.exposeGlobalReferences();
+    this._createPageInstances();
 
     // Scenery declared in config.layers (cover / tiling / tilemap) before preload().
     await Layer.applyConfiguredContent();
@@ -1273,6 +1254,14 @@ class Scene {
     if (list === undefined) return;
     const i = list.indexOf(fn);
     if (i >= 0) list.splice(i, 1);
+  }
+
+  /** Run the scene.on listeners of an entity's emit (from a worker, or a page instance). */
+  _dispatchEntityEvent(name, data, entityIndex, className) {
+    const list = this._eventListeners.get(name);
+    if (list !== undefined) {
+      for (let i = 0; i < list.length; i++) list[i](data, entityIndex, className);
+    }
   }
 
   /**
@@ -1893,10 +1882,7 @@ class Scene {
       // Show a visible error message on the page
       this._showFatalErrorMessage(workerName, title, message);
     } else if (e.data.msg === 'gameObjectEvent') {
-      const list = this._eventListeners.get(e.data.name);
-      if (list !== undefined) {
-        for (let i = 0; i < list.length; i++) list[i](e.data.data, e.data.entityIndex, e.data.className);
-      }
+      this._dispatchEntityEvent(e.data.name, e.data.data, e.data.entityIndex, e.data.className);
     } else if (e.data.msg === 'entityError' || e.data.msg === 'entityErrorCount') {
       this._onEntityError(e.data);
     } else if (e.data.msg === 'box2dReady') {
@@ -2016,7 +2002,7 @@ class Scene {
       const pending = this._pendingSpawnBatch?.get(workerIndex);
       if (pending) {
         this._pendingSpawnBatch.delete(workerIndex);
-        pending.resolve();
+        pending.resolve(e.data);
       }
     } else if (e.data.msg === 'messageFromGameObject') {
       this.onMessageFromGameObject(
@@ -2791,167 +2777,128 @@ class Scene {
   }
 
   /**
-   * One drain of the SAB spawn ring on logic0. Extras sidecar only for
-   * non-xy create configs. Lists flush before start / stepFrame.
+   * Finish the spawns create() / createNewGame() made before the first frame.
+   * Each worker that got pinned spawns by message confirms them (it handles
+   * messages in order) and hands over their list updates; then logic0 drains
+   * the ring once (the extras sidecar carries the non-x/y keys of ring spawns),
+   * adds those lists and confirms. Every entity is listed before frame 1.
    */
   async _flushCreateSpawns() {
     const extras = this._createSpawnExtras;
     this._createSpawnExtras = [];
-    const pushed = this._createRingPushes;
-    this._createRingPushes = 0;
-    if (pushed === 0 && extras.length === 0) return;
+    const logic0Spawns = this._createLogic0Spawns;
+    this._createLogic0Spawns = 0;
+    const owners = this._createOwnerSpawns;
+    this._createOwnerSpawns = new Set();
+    if (logic0Spawns === 0 && extras.length === 0 && owners.size === 0) return;
+    if (!this.workers.logicWorkers?.[0]) return;
 
-    const worker = this.workers.logicWorkers?.[0];
-    if (!worker) return;
-
-    if (!this._pendingSpawnBatch) this._pendingSpawnBatch = new Map();
-    const done = new Promise((resolve, reject) => {
-      this._pendingSpawnBatch.set(0, { resolve, reject });
-    });
-    worker.postMessage({
+    const listUpdates = [];
+    await Promise.all(
+      Array.from(owners, async (w) => {
+        const reply = await this._awaitSpawnAck(w, { msg: 'spawnBarrier' });
+        if (reply.spawns.length > 0 || reply.despawns.length > 0) {
+          listUpdates.push({ spawns: reply.spawns, despawns: reply.despawns });
+        }
+      }),
+    );
+    await this._awaitSpawnAck(0, {
       msg: 'drainSpawnCommands',
       extras: extras.length ? extras : undefined,
+      listUpdates: listUpdates.length ? listUpdates : undefined,
     });
-    await done;
+  }
+
+  /** Post to a logic worker and wait for its spawn ack; resolves with the reply. */
+  _awaitSpawnAck(workerIndex, message) {
+    if (!this._pendingSpawnBatch) this._pendingSpawnBatch = new Map();
+    const done = new Promise((resolve, reject) => {
+      this._pendingSpawnBatch.set(workerIndex, { resolve, reject });
+    });
+    this.workers.logicWorkers[workerIndex].postMessage(message);
+    return done;
   }
 
   /**
-   * Main-thread spawn: CAS-pop a pool index, then ask logic0 to finish setup.
-   * What Enemy.spawn(config) runs on the main thread; scene code calls that, the
-   * same call entities use (this is kept for older scenes and string names).
-   * @param {Function|string} EntityClassOrName
-   * @param {object} [spawnConfig]
-   * @returns {{index:number}|null}
+   * @internal What Enemy.spawn runs on the page: reserve a pool index (atomic
+   * pop), then hand the setup to the logic worker that owns the entity. logic0
+   * takes it from the ring when the config fits (x/y only; inside create() the
+   * other keys ride a sidecar); a spawn pinned to another worker goes there by
+   * message.
+   * @param {Function} EntityClass
+   * @param {object} spawnConfig
+   * @returns {number} the index, or −1 (pool full, or not an entity of this scene)
    */
-  spawnEntity(EntityClassOrName, spawnConfig = {}) {
-    // Accept either a class or a string name
-    let EntityClass;
-    let className;
-
-    if (typeof EntityClassOrName === 'function') {
-      EntityClass = EntityClassOrName;
-      className = EntityClass.name;
-    } else {
-      className = EntityClassOrName;
-      // Look up the class from registered classes
-      const registration = this.registeredClasses.find(r => r.class.name === className);
-      EntityClass = registration?.class;
-    }
-
-    // ========================================
-    // ATOMIC SPAWN: Reserve index on main thread
-    // ========================================
-    // This enables immediate use of entity index (e.g., for joints)
-    // Owner worker receives the pre-assigned index (ring drain or spawn escape) and:
-    // 1. Sets up component data and calls lifecycle hooks
-    // 2. Queues list updates (activeEntities, perTypeActive, queries)
-    // 3. create() batches flush lists before start; runtime flushes next logic0 frame
-    let entityIndex = -1;
-
-    if (EntityClass && EntityClass.freeList && EntityClass.freeListTop) {
-      // Lock-free CAS pop (Treiber stack) - safe against concurrent
-      // spawns/despawns on logic workers
-      entityIndex = popEntity(
-        EntityClass.freeListTop,
-        EntityClass.freeList,
-        EntityClass.startIndex
-      );
-
-      if (entityIndex >= 0) {
-        // NOTE: Do NOT set Transform.active here!
-        // Worker 0 will set Transform.active = 1 after full setup.
-        // Setting it here would cause spatial_worker to add entity to Grid
-        // before it's in the active list (so it would never tick/despawn).
-        //
-        // We only set position so joints can use the index immediately.
-        Transform.x[entityIndex] = spawnConfig.x ?? 0;
-        Transform.y[entityIndex] = spawnConfig.y ?? 0;
-      } else {
-        // Pool exhausted: one warning per type per scene, the rest are counted
-        reportPoolExhausted(EntityClass);
-        return null;
+  _spawnFromPage(EntityClass, spawnConfig) {
+    if (!EntityClass.freeList || !EntityClass.freeListTop) {
+      if (!this._warnedNotInScene.has(EntityClass.name)) {
+        this._warnedNotInScene.add(EntityClass.name);
+        console.error(`WeedJS: ${EntityClass.name}.spawn(): ${EntityClass.name} is not in this scene's static entities.`);
       }
+      return -1;
+    }
+    // Lock-free CAS pop (Treiber stack): safe against spawns/despawns on logic workers
+    const entityIndex = popEntity(EntityClass.freeListTop, EntityClass.freeList, EntityClass.startIndex);
+    if (entityIndex < 0) {
+      // Pool exhausted: one warning per type per scene, the rest are counted
+      reportPoolExhausted(EntityClass);
+      return -1;
     }
 
-    // ========================================
-    // NOTIFY OWNER WORKER
-    // ========================================
-    // Ring (or leftover postMessage escape) finishes setup on the owner.
-    const requestedForceProcessOnLogicWorker =
-      typeof spawnConfig.forceProcessOnLogicWorker === 'number'
-        ? spawnConfig.forceProcessOnLogicWorker
-        : typeof EntityClass?.forceProcessOnLogicWorker === 'number'
-          ? EntityClass.forceProcessOnLogicWorker
-          : -1;
-    const forcedLogicWorker = resolveForceProcessOnLogicWorker(
-      requestedForceProcessOnLogicWorker,
-      this.numberOfLogicWorkers,
-    );
-    if (entityIndex >= 0) {
-      GameObject.writeForceProcessOnLogicWorker(
-        entityIndex,
-        EntityClass?.entityType,
-        forcedLogicWorker,
-      );
-    }
-
-    if (entityIndex < 0) return null;
-
+    // Not active yet: the owner sets Transform.active after the setup (the
+    // spatial worker would grid an entity that is not listed). The position is
+    // written now so a joint can use the index at once.
     const x = spawnConfig.x ?? 0;
     const y = spawnConfig.y ?? 0;
-    const typeId = EntityClass?.entityType | 0;
+    Transform.x[entityIndex] = x;
+    Transform.y[entityIndex] = y;
+
+    const owner = resolveForceProcessOnLogicWorker(
+      typeof spawnConfig.forceProcessOnLogicWorker === 'number'
+        ? spawnConfig.forceProcessOnLogicWorker
+        : typeof EntityClass.forceProcessOnLogicWorker === 'number'
+          ? EntityClass.forceProcessOnLogicWorker
+          : -1,
+      this.numberOfLogicWorkers,
+    );
+    GameObject.writeForceProcessOnLogicWorker(entityIndex, EntityClass.entityType, owner);
+
     if (
+      owner <= 0 &&
       isSpawnCommandRingBound() &&
       ringCarriesSpawnConfig(spawnConfig, this._spawnBatchOpen) &&
-      tryPushSpawn(typeId, entityIndex, x, y)
+      tryPushSpawn(EntityClass.entityType | 0, entityIndex, x, y, owner)
     ) {
       if (this._spawnBatchOpen) {
-        this._createRingPushes++;
+        this._createLogic0Spawns++;
         if (!isXyOnlySpawnConfig(spawnConfig)) {
-          this._createSpawnExtras.push({ entityIndex, className, spawnConfig });
+          this._createSpawnExtras.push({ entityIndex, className: EntityClass.name, spawnConfig });
         }
       }
-      return { index: entityIndex };
+      return entityIndex;
     }
 
-    const workerIndex = forcedLogicWorker >= 0 ? forcedLogicWorker : 0;
-    const targetWorker = this.workers.logicWorkers?.[workerIndex];
-    if (targetWorker) {
-      targetWorker.postMessage({
-        msg: 'spawn',
-        className,
-        spawnConfig,
-        entityIndex,
-      });
+    const workerIndex = owner >= 0 ? owner : 0;
+    const target = this.workers.logicWorkers?.[workerIndex];
+    if (target) {
+      target.postMessage({ msg: 'spawn', className: EntityClass.name, spawnConfig, entityIndex });
+      if (this._spawnBatchOpen) {
+        if (workerIndex === 0) this._createLogic0Spawns++;
+        else this._createOwnerSpawns.add(workerIndex);
+      }
     }
-    return { index: entityIndex };
+    return entityIndex;
   }
 
-  /**
-   * Ask logic0 to despawn a global entity index. What Enemy.despawn(index) runs
-   * on the main thread; scene code calls that.
-   * @param {number} entityIndex
-   */
-  despawnEntity(entityIndex) {
+  /** @internal What Enemy.despawn runs on the page: logic0 despawns the index. */
+  _despawnFromPage(entityIndex) {
     if (isSpawnCommandRingBound() && tryPushDespawn(entityIndex)) return;
-    const worker0 = this.workers.logicWorkers?.[0];
-    if (worker0) {
-      worker0.postMessage({
-        msg: 'despawn',
-        entityIndex: entityIndex,
-      });
-    }
+    this.workers.logicWorkers?.[0]?.postMessage({ msg: 'despawn', entityIndex });
   }
 
-  despawnAllEntities(className) {
-    // Only worker 0 handles despawnAll messages
-    const worker0 = this.workers.logicWorkers?.[0];
-    if (worker0) {
-      worker0.postMessage({
-        msg: 'despawnAll',
-        className: className,
-      });
-    }
+  /** @internal What Enemy.despawnAll runs on the page: logic0 handles it. */
+  _despawnAllFromPage(className) {
+    this.workers.logicWorkers?.[0]?.postMessage({ msg: 'despawnAll', className });
   }
 
   getPoolStats(EntityClass) {

@@ -49,7 +49,7 @@ export class DecalStampStressScene extends Scene {
   static entities = [[DecalStampDriver, 1]];
 
   create() {
-    this.spawnEntity(DecalStampDriver, { seed: SEED });
+    DecalStampDriver.spawn({ seed: SEED });
 
     Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
     Camera.setZoom(0.6);

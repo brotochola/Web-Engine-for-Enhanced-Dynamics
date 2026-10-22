@@ -47,7 +47,7 @@ export class BunnyMarkN1HuntScene extends Scene {
     const w = this.config.worldWidth;
     const h = this.config.worldHeight;
     for (let i = 0; i < N; i++) {
-      this.spawnEntity(Bunny, { x: w * rng(), y: h * rng() });
+      Bunny.spawn({ x: w * rng(), y: h * rng() });
     }
     Camera.setZoom(1);
     Camera.centerOn(w * 0.5, h * 0.5);

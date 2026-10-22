@@ -261,7 +261,7 @@ static assets = { textures: { sprite: '/demos/img/bunny.png' } };
     for (let i = 0; i < SPRITE_COUNT; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(PackedSprite, {
+      PackedSprite.spawn({
         x: SPACING * (col + 0.5),
         y: SPACING * (row + 0.5),
       });

@@ -7,6 +7,7 @@ import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { pointInCollider } from '../util/colliderUtils.js';
+import { GameObject } from './gameObject.js';
 
 function isExplicitStatic(i) {
   return !!(RigidBody.active && RigidBody.active[i] && RigidBody.static[i]);
@@ -130,7 +131,7 @@ export class GrabSystem {
     this._prevMouseX = mx;
     this._prevMouseY = my;
 
-    const box = scene.getEntityView(i, { cache: true });
+    const box = GameObject.get(i);
     box.setPosition(mx + this._dragOffX, my + this._dragOffY);
     if (isDynamicRigidBody(i)) {
       box.setVelocity(0, 0);
@@ -144,7 +145,7 @@ export class GrabSystem {
     this._dragIdx = null;
     if (i == null || !Transform.active || !Transform.active[i]) return;
     if (!isDynamicRigidBody(i)) return;
-    const box = scene.getEntityView(i, { cache: true });
+    const box = GameObject.get(i);
     box.setVelocity(this._tossVx, this._tossVy);
     box.angularVelocity = this._tossOmega;
     RigidBody.sleeping[i] = 0;

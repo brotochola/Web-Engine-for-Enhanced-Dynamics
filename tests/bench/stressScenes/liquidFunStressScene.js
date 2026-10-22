@@ -67,9 +67,9 @@ export class LiquidFunStressScene extends WEED.Scene {
     const wallH = floorY - wallTop;
     const wallY = (wallTop + floorY) / 2;
 
-    this.spawnEntity(Floor, { x: 2500, y: floorY, width: 4800, height: 260, tint: 0x444455 });
-    this.spawnEntity(Floor, { x: 200, y: wallY, width: 260, height: wallH, tint: 0x444455 });
-    this.spawnEntity(Floor, { x: 4800, y: wallY, width: 260, height: wallH, tint: 0x444455 });
+    Floor.spawn({ x: 2500, y: floorY, width: 4800, height: 260, tint: 0x444455 });
+    Floor.spawn({ x: 200, y: wallY, width: 260, height: wallH, tint: 0x444455 });
+    Floor.spawn({ x: 4800, y: wallY, width: 260, height: wallH, tint: 0x444455 });
 
     // ~10.2k water: radius 8 -> diameter 16 -> default spacing 12 (0.75x). 201x51 grid.
     // Left edge (400) clears the left wall's right face (330) with margin;

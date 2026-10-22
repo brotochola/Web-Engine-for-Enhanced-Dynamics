@@ -76,9 +76,9 @@ export class YSortOverlayScene extends Scene {
   };
 
   create() {
-    this.spawnEntity(OverlayBlend, OVERLAY.front);
-    this.spawnEntity(OverlayCutout, {});
-    this.spawnEntity(OverlayBlend, OVERLAY.back);
+    OverlayBlend.spawn(OVERLAY.front);
+    OverlayCutout.spawn({});
+    OverlayBlend.spawn(OVERLAY.back);
     Camera.setZoom(1);
     Camera.centerOn(OVERLAY.camX, OVERLAY.camY);
   }

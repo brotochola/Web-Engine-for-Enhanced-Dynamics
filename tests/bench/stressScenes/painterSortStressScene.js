@@ -66,7 +66,7 @@ export class PainterSortStressScene extends Scene {
     for (let i = 0; i < N; i++) {
       const col = i % COLS;
       const row = (i / COLS) | 0;
-      this.spawnEntity(RenderQueueStressEntity, {
+      RenderQueueStressEntity.spawn({
         x: 40 + col * 24,
         y: 40 + row * 22,
         scale: 0.75 + (i % 5) * 0.06,

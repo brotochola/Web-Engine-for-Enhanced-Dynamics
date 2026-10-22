@@ -52,7 +52,7 @@ export class CompoundFixtureSpatialScene extends Scene {
     for (let i = 0; i < ISLAND_COUNT; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(CompoundSpatialIsland, {
+      CompoundSpatialIsland.spawn({
         x: startX + col * spacing,
         y: startY + row * spacing,
         rotation: (i * 0.17) % (Math.PI * 2),

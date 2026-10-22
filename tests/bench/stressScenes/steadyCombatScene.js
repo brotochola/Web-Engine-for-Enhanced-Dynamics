@@ -57,7 +57,7 @@ export class SteadyCombatScene extends Scene {
     const w = this.config.worldWidth;
     const h = this.config.worldHeight;
     for (let i = 0; i < BOXES; i++) {
-      this.spawnEntity(RayStressEntity, {
+      RayStressEntity.spawn({
         x: 80 + rng() * (w - 160),
         y: 80 + rng() * (h - 160),
         shape: 'box',
@@ -66,7 +66,7 @@ export class SteadyCombatScene extends Scene {
       });
     }
     for (let i = 0; i < MOVERS; i++) {
-      this.spawnEntity(SteadyMover, {
+      SteadyMover.spawn({
         x: 200 + rng() * (w - 400),
         y: 200 + rng() * (h - 400),
         vx: (rng() - 0.5) * 120,
@@ -74,7 +74,7 @@ export class SteadyCombatScene extends Scene {
       });
     }
     for (let i = 0; i < EMITTERS; i++) {
-      this.spawnEntity(SteadyEmitter, {
+      SteadyEmitter.spawn({
         x: 400 + (i * (w - 800)) / Math.max(1, EMITTERS - 1),
         y: 400,
         count: 20,

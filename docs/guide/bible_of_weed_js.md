@@ -132,7 +132,9 @@ static assets = {
 - Entities are pooled; no runtime allocation per spawn.
 - `GameObject` is a facade over typed arrays.
 - Component sets are fixed per class (`static components`).
-- Spawn and despawn through the class, the same call in the scene and in entities: `Enemy.spawn({ x, y })`, `Enemy.despawn(index)`, `Enemy.despawnAll()`. An entity ends itself with `this.despawn()`. In a logic worker `spawn` returns the entity, on the main thread `{ index }`; both have `.index`, and a full pool gives `null`.
+- Spawn and despawn through the class, the same call in the scene and in entities: `const e = Enemy.spawn({ x, y })` returns the Enemy (`null` when the pool is full), `Enemy.despawn(e)` (or its index), `Enemy.despawnAll()`. An entity ends itself with `this.despawn()`.
+- A spawn is live at once when your thread sets it up. From the scene, or for a class pinned to another logic worker, a logic worker sets it up next frame: pass its setup in the spawn config, because the spawn overwrites anything written to it before.
+- The page holds an instance per pool slot too, so `GameObject.get(i)`, `Enemy.getFirstActiveInstance()` and the components (`e.health.hp`, `e.x`) work in scene code. `tick` and the callbacks run on the logic workers only.
 - Neighbor access in hot paths:
   - `this.neighborCount`
   - `this.getNeighbor(i)`

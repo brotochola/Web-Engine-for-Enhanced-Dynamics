@@ -115,7 +115,7 @@ export class Flash extends GameObject {
     s.castShadows =
       config.castShadows !== 0 && config.castShadows !== false ? 1 : 0;
 
-    return GameObject.spawn(this, s);
+    return super.spawn(s);
   }
 
   /**

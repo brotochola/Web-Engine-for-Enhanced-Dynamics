@@ -89,7 +89,7 @@ export class ComputeStressScene extends Scene {
     const worldW = this.config.worldWidth;
     const worldH = this.config.worldHeight;
     for (let i = 0; i < BOX_COUNT; i++) {
-      this.spawnEntity(ComputeStressBox, {
+      ComputeStressBox.spawn({
         x: margin + rng() * (worldW - 2 * margin),
         y: margin + rng() * (worldH - 2 * margin),
         width: 16 + rng() * 24,

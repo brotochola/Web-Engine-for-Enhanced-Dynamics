@@ -54,7 +54,7 @@ function place(scene) {
     const col = i % cols;
     const row = (i / cols) | 0;
     const spin = i % SPIN_EVERY === 0;
-    scene.spawnEntity(spin ? MeshFillSpinner : MeshFillIsland, {
+    (spin ? MeshFillSpinner : MeshFillIsland).spawn({
       x: startX + col * spacing,
       y: startY + row * spacing,
       triangles: TRIANGLES,

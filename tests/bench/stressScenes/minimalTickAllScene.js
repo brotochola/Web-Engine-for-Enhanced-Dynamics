@@ -47,7 +47,7 @@ export class MinimalTickAllScene extends Scene {
     for (let i = 0; i < PROP_COUNT; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(MinimalTickAllProp, {
+      MinimalTickAllProp.spawn({
         x: startX + col * spacing,
         y: startY + row * spacing,
       });

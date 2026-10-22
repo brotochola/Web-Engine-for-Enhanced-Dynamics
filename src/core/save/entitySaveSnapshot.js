@@ -1,5 +1,5 @@
 // Sparse entity save snapshot: pack/unpack SoA fields for serializable active entities.
-// Used by SaveGame encode/decode and by GameObject.spawn(_saveRestore).
+// Used by SaveGame encode/decode and by GameObject._spawnAt (_saveRestore).
 
 import { Component } from '../component.js';
 import { Transform } from '../../components/transform.js';

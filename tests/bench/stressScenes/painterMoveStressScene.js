@@ -105,7 +105,7 @@ function spawn(scene) {
   for (let i = 0; i < N; i++) {
     const col = i % COLS;
     const row = (i / COLS) | 0;
-    scene.spawnEntity(PainterMoveEntity, {
+    PainterMoveEntity.spawn({
       x: 40 + col * 24,
       y: 40 + row * ROW,
       scale: 0.75 + (i % 5) * 0.06,

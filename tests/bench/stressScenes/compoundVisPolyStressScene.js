@@ -119,7 +119,7 @@ export class CompoundVisPolyStressScene extends Scene {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 
-    this.spawnEntity(VisPolyAlbedo, {
+    VisPolyAlbedo.spawn({
       x: WORLD_W * 0.5,
       y: WORLD_H * 0.5,
       width: WORLD_W,
@@ -135,7 +135,7 @@ export class CompoundVisPolyStressScene extends Scene {
       const row = (i / cols) | 0;
       const dir = rng() * Math.PI * 2;
       const speed = 30 + rng() * 50;
-      this.spawnEntity(CompoundVisIsland, {
+      CompoundVisIsland.spawn({
         x: originX + col * spacing,
         y: originY + row * spacing,
         rotation: rng() * Math.PI * 2,
@@ -149,7 +149,7 @@ export class CompoundVisPolyStressScene extends Scene {
     for (let i = 0; i < LIGHTS; i++) {
       const dir = rng() * Math.PI * 2;
       const speed = 40 + rng() * 70;
-      this.spawnEntity(CompoundVisLight, {
+      CompoundVisLight.spawn({
         x: 300 + rng() * (WORLD_W - 600),
         y: 300 + rng() * (WORLD_H - 600),
         vx: Math.cos(dir) * speed,
@@ -158,7 +158,7 @@ export class CompoundVisPolyStressScene extends Scene {
     }
     // After the lights, so the default scene draws the same random numbers.
     for (let i = 0; i < BOXES; i++) {
-      this.spawnEntity(VisPolyOccluder, {
+      VisPolyOccluder.spawn({
         x: 160 + rng() * (WORLD_W - 320),
         y: 160 + rng() * (WORLD_H - 320),
         width: 24 + rng() * 40,

@@ -43,7 +43,7 @@ export class NavStressScene extends Scene {
       const t = i % targets;
       const col = t % 6;
       const row = (t / 6) | 0;
-      this.spawnEntity(NavStressAgent, {
+      NavStressAgent.spawn({
         x: 80 + (i % 8) * 40,
         y: 80 + ((i / 8) | 0) * 40,
         tx: 400 + col * 220,

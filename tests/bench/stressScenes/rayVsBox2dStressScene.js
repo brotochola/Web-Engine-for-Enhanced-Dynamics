@@ -101,7 +101,7 @@ export class RayVsBox2dStressScene extends Scene {
 
     for (let i = 0; i < OBSTACLE_COUNT; i++) {
       const isBox = rng() >= 0.7;
-      this.spawnEntity(RayStressEntity, {
+      RayStressEntity.spawn({
         x: margin + rng() * (worldW - 2 * margin),
         y: margin + rng() * (worldH - 2 * margin),
         shape: isBox ? 'box' : 'circle',
@@ -114,7 +114,7 @@ export class RayVsBox2dStressScene extends Scene {
 
     if (busy) {
       // Floor strip so the pile stays awake/colliding.
-      this.spawnEntity(RayStressEntity, {
+      RayStressEntity.spawn({
         x: worldW * 0.5,
         y: worldH - 40,
         shape: 'box',
@@ -123,7 +123,7 @@ export class RayVsBox2dStressScene extends Scene {
         collisionLayer: 0,
       });
       for (let i = 0; i < BUSY_BALL_COUNT; i++) {
-        this.spawnEntity(RayStressBusyBall, {
+        RayStressBusyBall.spawn({
           x: margin + 200 + rng() * (worldW - 2 * margin - 400),
           y: margin + rng() * (worldH * 0.55),
           radius: 6 + rng() * 10,
@@ -133,7 +133,7 @@ export class RayVsBox2dStressScene extends Scene {
 
     const castsKnob = parseInt(queryParam('singleCasts'), 10);
     const singleCasts = castsKnob > 0 ? castsKnob : this.constructor.singleCasts;
-    this.spawnEntity(RayStressDriver, { seed: SEED, backend, singleCasts });
+    RayStressDriver.spawn({ seed: SEED, backend, singleCasts });
 
     Camera.centerOn(worldW * 0.5, worldH * 0.5);
     Camera.setZoom(0.45);

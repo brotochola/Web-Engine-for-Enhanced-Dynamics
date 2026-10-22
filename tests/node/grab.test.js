@@ -70,6 +70,7 @@ function makeScene(views) {
   GameObject._assignComponentClassMap(ColOnly);
   bindActive(GrabBox, [0]);
   bindActive(OtherBox, [1]);
+  GameObject.instances = Object.assign([], views); // the page's instances, by index
   return {
     _anyGrabType: true,
     grabByType: [1, 0],
@@ -77,9 +78,6 @@ function makeScene(views) {
       { class: GrabBox, entityType: 0 },
       { class: OtherBox, entityType: 1 },
     ],
-    getEntityView(index) {
-      return views[index];
-    },
   };
 }
 
@@ -221,7 +219,7 @@ test('collider-only setPosition enqueues SET_TRANSFORM', () => {
   const sab = createCommandRingSab(64);
   bindCommandRing(sab);
   GameObject._assignComponentClassMap(ColOnly);
-  const go = new ColOnly(0, {}, null, { view: true });
+  const go = new ColOnly(0, {}, null, { page: true });
   Transform.x[0] = 0;
   Transform.y[0] = 0;
   go.setPosition(12, 34);

@@ -62,7 +62,7 @@ export class SceneryCamStressScene extends Scene {
   static entities = [[CameraOrbitDriver, 1]];
 
   create() {
-    this.spawnEntity(CameraOrbitDriver, {
+    CameraOrbitDriver.spawn({
       cx: WORLD_W * 0.5,
       cy: WORLD_H * 0.5,
       radius: 640,

@@ -57,7 +57,7 @@ export class DecalBlitStressScene extends Scene {
   static entities = [[DecalBlitDriver, 1]];
 
   create() {
-    this.spawnEntity(DecalBlitDriver, {
+    DecalBlitDriver.spawn({
       seed: 0xdecb11,
       tilesX: TILES_X,
       tilesY: TILES_Y,

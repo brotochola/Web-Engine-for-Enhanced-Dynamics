@@ -44,7 +44,7 @@ export class StationarySpatialHuntScene extends Scene {
     for (let i = 0; i < n; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(StationarySpatialEntity, {
+      StationarySpatialEntity.spawn({
         x: startX + col * spacing,
         y: startY + row * spacing,
         radius,

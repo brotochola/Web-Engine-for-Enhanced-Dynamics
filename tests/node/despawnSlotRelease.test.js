@@ -70,7 +70,7 @@ test('despawnAll frees fixtures and chain points and clears the sprite slot', ()
   assert.equal(freeListTop[1], freeBefore - 2);
   assert.equal(ChainPoints.setForEntity(1, chain, 4, true), true);
 
-  GameObject.despawnAll(SlotEntity);
+  SlotEntity.despawnAll();
 
   assert.equal(ColliderFixture.head[0], INV, 'fixtures unlinked');
   assert.equal(freeListTop[1], freeBefore, 'fixtures back in the pool');

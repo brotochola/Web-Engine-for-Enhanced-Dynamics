@@ -25,7 +25,7 @@ import {
   worldToCell,
 } from './utils/badPiggiesGrid.js';
 
-const { Scene, Mouse, Keyboard, Transform, RigidBody, Joint, Noise2D, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS, Camera, BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_KIND, LAYER_SCALE_MODE, LAYER_SPLAT_FALLOFF } = WEED;
+const { Scene, GameObject, Mouse, Keyboard, Transform, RigidBody, Joint, Noise2D, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS, Camera, BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_KIND, LAYER_SCALE_MODE, LAYER_SPLAT_FALLOFF } = WEED;
 
 const F = LIQUIDFUN_FLAGS;
 const GF = LIQUIDFUN_GROUP_FLAGS;
@@ -570,7 +570,7 @@ export class BadPiggiesScene extends Scene {
 
   _view(index) {
     if (index < 0 || !Transform.active || !Transform.active[index]) return null;
-    return this.getEntityView(index, { cache: true });
+    return GameObject.get(index);
   }
 
   _moveEntity(index, x, y, resetPose = false, rotation = null) {

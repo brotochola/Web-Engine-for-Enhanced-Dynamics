@@ -99,7 +99,7 @@ test('logic0 puts each entity back at its own index on a hot restore, and warns 
   const spawns = [];
   const hotFlags = [];
   const real = {
-    spawn: GameObject.spawn,
+    spawnAt: GameObject._spawnAt,
     despawnAll: GameObject.despawnAll,
     take: GameObject._takeFreeIndices,
     flush: worker.processListUpdates,
@@ -109,7 +109,7 @@ test('logic0 puts each entity back at its own index on a hot restore, and warns 
   GameObject.despawnAll = () => 0;
   GameObject._takeFreeIndices = (C, wanted) => new Set(wanted);
   let full = 0;
-  GameObject.spawn = (C, config, at = -1) => {
+  GameObject._spawnAt = (C, config, at = -1) => {
     spawns.push(at);
     hotFlags.push(config._hotRestore);
     if (at < 0 && ++full > 1) return null; // pool full after one
@@ -131,7 +131,7 @@ test('logic0 puts each entity back at its own index on a hot restore, and warns 
     assert.deepEqual(spawns, [-1, -1], 'a player save lets the pool choose');
     assert.deepEqual(hotFlags, [true, true, true, true, true, false, false], 'onSpawned is skipped on a hot restore only');
   } finally {
-    GameObject.spawn = real.spawn;
+    GameObject._spawnAt = real.spawnAt;
     GameObject.despawnAll = real.despawnAll;
     GameObject._takeFreeIndices = real.take;
     worker.processListUpdates = real.flush;
@@ -155,9 +155,9 @@ test('spawn skips onSpawned for a hot restore and runs it otherwise', () => {
   GameObject.nextTick = null;
   GameObject.forceProcessOnLogicWorker = null;
   try {
-    assert.equal(GameObject.spawn(Hot, { _saveRestore: {}, _hotRestore: true }, 1), pooled[1]);
+    assert.equal(GameObject._spawnAt(Hot, { _saveRestore: {}, _hotRestore: true }, 1), pooled[1]);
     assert.equal(calls, 0, 'the saved components already hold what onSpawned did');
-    GameObject.spawn(Hot, {});
+    Hot.spawn({});
     assert.equal(calls, 1);
   } finally {
     GameObject.nextTick = prev.nextTick;
@@ -213,10 +213,10 @@ test('a hot restore pins each entity to its saved worker; unpinned ones are unpi
   }
   self.Manager = Manager;
   const configs = [];
-  const real = { spawn: GameObject.spawn, despawnAll: GameObject.despawnAll, take: GameObject._takeFreeIndices, flush: worker.processListUpdates };
+  const real = { spawnAt: GameObject._spawnAt, despawnAll: GameObject.despawnAll, take: GameObject._takeFreeIndices, flush: worker.processListUpdates };
   GameObject.despawnAll = () => 0;
   GameObject._takeFreeIndices = (C, wanted) => new Set(wanted);
-  GameObject.spawn = (C, config, at) => (configs.push(config), { index: at });
+  GameObject._spawnAt = (C, config, at) => (configs.push(config), { index: at });
   worker.processListUpdates = () => {};
   try {
     const entities = [0, 1].map((entityIndex) => ({ typeName: 'Manager', entityIndex, components: {} }));
@@ -226,7 +226,7 @@ test('a hot restore pins each entity to its saved worker; unpinned ones are unpi
     worker._restoreSave({ serializableClassNames: ['Manager'], entities, exactIndices: true });
     assert.deepEqual(configs.map((c) => c.forceProcessOnLogicWorker), [undefined, undefined], 'no pins saved: classes decide');
   } finally {
-    GameObject.spawn = real.spawn;
+    GameObject._spawnAt = real.spawnAt;
     GameObject.despawnAll = real.despawnAll;
     GameObject._takeFreeIndices = real.take;
     worker.processListUpdates = real.flush;
@@ -252,10 +252,11 @@ test('a hot restore spawns a pinned class right here; a normal spawn hands it to
   GameObject.forceProcessOnLogicWorker = new Int16Array(N).fill(-1);
   globalThis.self = { ...(globalThis.self || {}), logicWorker: { workerIndex: 0, totalLogicWorkers: 2, sendDataToWorker: (to) => sent.push(to), queueSpawnListUpdate() {} } };
   try {
-    assert.equal(GameObject.spawn(Pinned, { _saveRestore: {}, _hotRestore: true }, 1), pooled[1]);
+    assert.equal(GameObject._spawnAt(Pinned, { _saveRestore: {}, _hotRestore: true }, 1), pooled[1]);
     assert.equal(sent.length, 0);
     assert.equal(GameObject.forceProcessOnLogicWorker[1], 1, 'still pinned to logic1');
-    assert.equal(GameObject.spawn(Pinned, { y: 1 }), null);
+    const handedOff = Pinned.spawn({ y: 1 });
+    assert.equal(handedOff, pooled[handedOff.index], 'this worker\'s copy, live once logic1 sets it up');
     assert.deepEqual(sent, ['logic1']);
   } finally {
     GameObject.nextTick = prev.nextTick;

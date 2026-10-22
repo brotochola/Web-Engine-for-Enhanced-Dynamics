@@ -110,7 +110,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   ];
 
   try {
-    const despawned = GameObject.despawnAll(BulkDespawnEntity);
+    const despawned = BulkDespawnEntity.despawnAll();
 
     assert.equal(despawned, 2);
     assert.deepEqual(onDespawnedCalls, [0, 2]);
@@ -298,7 +298,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   SpawnFlashEntity._componentClassMap = {};
 
   try {
-    const spawned = GameObject.spawn(SpawnFlashEntity, {});
+    const spawned = SpawnFlashEntity.spawn({});
 
     assert.strictEqual(spawned, pooledInstance);
     assert.deepEqual(Array.from(Transform.active), [1]);
@@ -386,7 +386,7 @@ test('despawnAll forwards non-logic0 logic workers to logic0 without mutating lo
   };
 
   try {
-    const result = GameObject.despawnAll(ForwardedDespawnEntity);
+    const result = ForwardedDespawnEntity.despawnAll();
 
     assert.equal(result, undefined);
     assert.deepEqual(forwardedMessages, [
@@ -455,7 +455,7 @@ test('despawnAll returns 0 and preserves local state when non-logic0 forwarding 
   };
 
   try {
-    const result = GameObject.despawnAll(FailedForwardDespawnEntity);
+    const result = FailedForwardDespawnEntity.despawnAll();
 
     assert.equal(result, 0);
     assert.deepEqual(onDespawnedCalls, []);
@@ -722,7 +722,7 @@ test('onSpawned despawn aborts before Transform.active=1', { concurrency: false 
   AbortSpawnEntity._componentClassMap = {};
 
   try {
-    const spawned = GameObject.spawn(AbortSpawnEntity, {});
+    const spawned = AbortSpawnEntity.spawn({});
     assert.equal(spawned, null);
     assert.equal(Transform.active[0], 0);
     assert.equal(pooledInstance._spawnAborted, false);
@@ -737,7 +737,10 @@ test('onSpawned despawn aborts before Transform.active=1', { concurrency: false 
   }
 });
 
-test('spawn with forceProcessOnLogicWorker on another worker pushes the ring', { concurrency: false }, () => {
+// A spawn pinned to another worker is set up there: logic0 through the ring
+// (x/y only, the pin rides the entry), any other worker by message, never
+// through logic0 on the way. The caller gets its own copy back.
+function withForwardSetup(workerIndex, fn) {
   class ForcedForwardEntity extends GameObject {}
 
   const previousSelf = globalThis.self;
@@ -760,17 +763,18 @@ test('spawn with forceProcessOnLogicWorker on another worker pushes the ring', {
   const freeListLinks = new Uint16Array(1);
   resetFreeList(freeListTop, freeListLinks, 1, 1);
 
+  const pooled = { index: 0, _hasComponents: {} };
   ForcedForwardEntity.startIndex = 0;
   ForcedForwardEntity.poolSize = 1;
   ForcedForwardEntity.entityType = 0;
   ForcedForwardEntity.freeList = freeListLinks;
   ForcedForwardEntity.freeListTop = freeListTop;
-  ForcedForwardEntity.instances = [{ index: 0, _hasComponents: {} }];
+  ForcedForwardEntity.instances = [pooled];
   ForcedForwardEntity._componentClassMap = {};
 
   globalThis.self = {
     logicWorker: {
-      workerIndex: 0,
+      workerIndex,
       totalLogicWorkers: 2,
       sendDataToWorker(workerName, data) {
         forwarded.push({ workerName, data });
@@ -780,19 +784,12 @@ test('spawn with forceProcessOnLogicWorker on another worker pushes the ring', {
   };
 
   try {
-    const spawned = GameObject.spawn(ForcedForwardEntity, { x: 3, y: 4, forceProcessOnLogicWorker: 1 });
-    assert.equal(spawned, null);
-    assert.equal(forwarded.length, 0);
     const drained = [];
-    drainSpawnCommands((kind, typeId, entityIndex, x, y) => {
-      drained.push({ kind, typeId, entityIndex, x, y });
-    });
-    assert.equal(drained.length, 1);
-    assert.equal(drained[0].kind, SPAWN_CMD_KIND.SPAWN);
-    assert.equal(drained[0].entityIndex, 0);
-    assert.equal(drained[0].x, 3);
-    assert.equal(drained[0].y, 4);
-    assert.equal(GameObject.forceProcessOnLogicWorker[0], 1);
+    const drain = () =>
+      drainSpawnCommands((kind, typeId, entityIndex, x, y, owner) => {
+        drained.push({ kind, typeId, entityIndex, x, y, owner });
+      });
+    fn({ ForcedForwardEntity, pooled, forwarded, drained, drain });
   } finally {
     bindSpawnCommandRing(null);
     GameObject.forceProcessOnLogicWorker = previousForce;
@@ -802,4 +799,31 @@ test('spawn with forceProcessOnLogicWorker on another worker pushes the ring', {
     if (previousSelf === undefined) delete globalThis.self;
     else globalThis.self = previousSelf;
   }
+}
+
+test('a spawn pinned to logic1 goes to logic1 by message and returns this worker\'s copy', { concurrency: false }, () => {
+  withForwardSetup(0, ({ ForcedForwardEntity, pooled, forwarded, drain }) => {
+    const spawned = ForcedForwardEntity.spawn({ x: 3, y: 4, forceProcessOnLogicWorker: 1 });
+    assert.equal(spawned, pooled);
+    assert.equal(drain(), 0, 'not through logic0');
+    assert.equal(forwarded.length, 1);
+    assert.equal(forwarded[0].workerName, 'logic1');
+    assert.equal(forwarded[0].data.entityIndex, 0);
+    assert.equal(GameObject.forceProcessOnLogicWorker[0], 1);
+    assert.equal(Transform.active[0], 0, 'logic1 activates it');
+  });
+});
+
+test('a spawn pinned to logic0 rides the ring with its pin', { concurrency: false }, () => {
+  withForwardSetup(1, ({ ForcedForwardEntity, pooled, forwarded, drained, drain }) => {
+    const spawned = ForcedForwardEntity.spawn({ x: 3, y: 4, forceProcessOnLogicWorker: 0 });
+    assert.equal(spawned, pooled);
+    assert.equal(forwarded.length, 0);
+    assert.equal(drain(), 1);
+    assert.equal(drained[0].kind, SPAWN_CMD_KIND.SPAWN);
+    assert.equal(drained[0].entityIndex, 0);
+    assert.equal(drained[0].x, 3);
+    assert.equal(drained[0].y, 4);
+    assert.equal(drained[0].owner, 0, 'the pin survives the ring');
+  });
 });

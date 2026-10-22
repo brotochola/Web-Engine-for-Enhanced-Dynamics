@@ -55,7 +55,7 @@ export class MinimalTickIntervalScene extends Scene {
     for (let i = 0; i < N; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(MinimalTickIntervalProp, {
+      MinimalTickIntervalProp.spawn({
         x: startX + col * spacing,
         y: startY + row * spacing,
       });

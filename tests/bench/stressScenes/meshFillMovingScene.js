@@ -52,7 +52,7 @@ export class MeshFillMovingScene extends Scene {
     for (let i = 0; i < ISLAND_COUNT; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(MeshFillSpinner, {
+      MeshFillSpinner.spawn({
         x: startX + col * spacing,
         y: startY + row * spacing,
         triangles: TRIANGLES_PER_ISLAND,

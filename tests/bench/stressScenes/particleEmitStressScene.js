@@ -45,7 +45,7 @@ export class ParticleEmitStressScene extends Scene {
   static entities = [[ParticleEmitDriver, 1]];
 
   create() {
-    this.spawnEntity(ParticleEmitDriver, { seed: SEED });
+    ParticleEmitDriver.spawn({ seed: SEED });
 
     Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
     Camera.setZoom(0.3);
@@ -65,7 +65,7 @@ export class ParticleEmitStressScene3W extends Scene {
 
   create() {
     for (let i = 0; i < 4; i++) {
-      this.spawnEntity(ParticleEmitDriver32, { seed: SEED + i * 17, emitPerTick: 32 });
+      ParticleEmitDriver32.spawn({ seed: SEED + i * 17, emitPerTick: 32 });
     }
     Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
     Camera.setZoom(0.3);

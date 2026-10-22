@@ -289,25 +289,25 @@ export class Floor extends GameObject {
         const worldWidth = this.config.worldWidth;
         const worldHeight = this.config.worldHeight;
 
-        this.spawnEntity(Floor, {
+        Floor.spawn({
           x: worldWidth / 2,
           y: worldHeight + wallThickness * 0.5 - 50,
           width: worldWidth,
           height: wallThickness,
         });
-        this.spawnEntity(Floor, {
+        Floor.spawn({
           x: worldWidth / 2,
           y: -wallThickness / 2,
           width: worldWidth,
           height: wallThickness,
         });
-        this.spawnEntity(Floor, {
+        Floor.spawn({
           x: -wallThickness / 2 + 50,
           y: worldHeight / 2,
           width: wallThickness,
           height: worldHeight,
         });
-        this.spawnEntity(Floor, {
+        Floor.spawn({
           x: worldWidth + wallThickness / 2 - 50,
           y: worldHeight / 2,
           width: wallThickness,
@@ -319,7 +319,7 @@ export class Floor extends GameObject {
         const worldWidth = this.config.worldWidth;
         const worldHeight = this.config.worldHeight;
         for (let i = 0; i < count; i++) {
-          this.spawnEntity(Ball, {
+          Ball.spawn({
             x: 0.2 * worldWidth + this.rng() * worldWidth * 0.6,
             y: 0.2 * worldHeight + this.rng() * worldHeight * 0.6,
             vx: 0,

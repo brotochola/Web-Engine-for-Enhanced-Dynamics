@@ -1219,35 +1219,34 @@ export declare class GameObject {
   clearTile(): this;
   bakeWorldTileToLocal(): this;
   /**
-   * Enemy.spawn({ x, y }): the same call in the scene and in entities. Returns the entity in a
-   * logic worker, { index } on the main thread (both have .index); null when the pool is full.
+   * Enemy.spawn({ x, y }): the same call in the scene and in entities. Returns the Enemy, or null
+   * when the pool is full. Live at once when this thread sets it up; on the page, or when the class
+   * is pinned to another logic worker, from the next frame (until then the spawn overwrites what you
+   * write to it, so pass its setup in the config).
    */
-  static spawn(
-    EntityClassOrConfig: typeof GameObject | SpawnConfig,
-    spawnConfig?: SpawnConfig,
-    preAssignedIndex?: number
-  ): GameObject | { index: number } | null;
+  static spawn<T extends typeof GameObject>(this: T, spawnConfig?: SpawnConfig): InstanceType<T> | null;
   /**
-   * Enemy.despawn(index): despawn another entity, from the scene or an entity. Takes an index or
-   * what spawn returned. On a class, only its entities (subclasses count); GameObject.despawn takes
-   * any. On the main thread it is sent to logic0 (true = sent). False when it is not an entity of
-   * the class or, in a worker, not alive. An entity ends itself with this.despawn().
+   * Enemy.despawn(enemy): despawn another entity, from the scene or an entity. Takes the entity or
+   * its index (callbacks give indices). On a class, only its entities (subclasses count);
+   * GameObject.despawn takes any. On the page it is sent to logic0 (true = sent). False when it is
+   * not an entity of the class or, in a worker, not alive. An entity ends itself with this.despawn().
    */
-  static despawn(entity: number | { index: number }): boolean;
-  static get(index: number): GameObject | null;
+  static despawn(entity: number | GameObject): boolean;
+  /** The entity at a global index, on any thread (the page holds one instance per slot too). */
+  static get(index: number): GameObject | undefined;
   /** Component classes the type lists (static components). */
   static components: Array<typeof Component>;
   /** Live entities of this class (call on the class: Zombie.activeCount). */
   static readonly activeCount: number;
   /** Indices of this class's live entities. */
   static getAllActive(): ArrayLike<number>;
-  /** Their pooled instances (allocates an array). */
-  static getAllActiveInstances(): GameObject[];
+  /** Their instances, on any thread (allocates an array). */
+  static getAllActiveInstances<T extends typeof GameObject>(this: T): InstanceType<T>[];
   static getFirstActiveIndex(): number;
-  static getFirstActiveInstance(): GameObject | null;
+  static getFirstActiveInstance<T extends typeof GameObject>(this: T): InstanceType<T> | null;
   static getPoolStats(EntityClass?: typeof GameObject): { total: number; active: number; available: number; dropped: number };
   /** Despawn every live entity of the class. */
-  static despawnAll(EntityClass?: typeof GameObject): void;
+  static despawnAll(): void;
   /** Writes [forwardX, forwardY, rightX, rightY] of entity `index` into `out`. */
   static getHeadingAxes(index: number, out: Float32Array | Float64Array | number[]): void;
   /** Entity class per entity type id (main thread and logic workers). */
@@ -1275,7 +1274,7 @@ export declare class GameObject {
   is(EntityClass: Function): boolean;
   /** Does this entity's type list ComponentClass? Another entity: GameObject.hasComponent(index, ComponentClass). */
   hasComponent(ComponentClass: Function): boolean;
-  static getEntityView(entityIndex: number, options?: { cache?: boolean }): GameObject;
+  /** End this entity (on the page: logic0 does it). Another one: Enemy.despawn(other). */
   despawn(): void;
   tick(dtRatio?: number, deltaTime?: number): void;
 }
@@ -1303,10 +1302,6 @@ export declare class GameEngine {
   rebindSurface(): void;
   pause(): void;
   resume(): void;
-  /** @deprecated Use Enemy.spawn(config): the same call works in the scene and in entities. */
-  spawnEntity(EntityClassOrName: string | typeof GameObject, data?: SpawnConfig): void;
-  /** @deprecated Use Enemy.despawnAll(). */
-  despawnAllEntities(className: string): void;
   getPoolStats(EntityClass: string | typeof GameObject): {
     total: number;
     active: number;
@@ -1656,12 +1651,6 @@ export declare class Scene {
   setPresenting(on: boolean): void;
   rebindSurface(): void;
   resize(width: number, height: number): void;
-  /** @deprecated Use Enemy.spawn(config): the same call works in the scene and in entities. */
-  spawnEntity(EntityClassOrName: string | typeof GameObject, spawnConfig?: SpawnConfig): { index: number } | null;
-  /** @deprecated Use Enemy.despawn(index) (or GameObject.despawn(index) for any entity). */
-  despawnEntity(entityIndex: number): void;
-  /** @deprecated Use Enemy.despawnAll(). */
-  despawnAllEntities(className: string): void;
   getPoolStats(EntityClass: string | typeof GameObject): {
     total: number;
     active: number;
@@ -1674,8 +1663,6 @@ export declare class Scene {
     count: number,
     scriptPath?: string | null
   ): void;
-  getEntityView(index: number, options?: { cache?: boolean }): GameObject;
-  releaseEntityView(index: number): void;
   loadEntityScriptsInMainThread(): Promise<void>;
   getMemoryUsageSummary(): MemoryUsageSummary;
   getMemoryUsageReport(): SceneMemoryUsageReport;

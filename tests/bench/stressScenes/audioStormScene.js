@@ -102,7 +102,7 @@ export class AudioStormScene extends Scene {
   static entities = [[AudioStormDriver, 1]];
 
   create() {
-    this.spawnEntity(AudioStormDriver, {
+    AudioStormDriver.spawn({
       playsPerTick: PLAYS_PER_TICK,
       activeLoops: ACTIVE_LOOPS,
     });

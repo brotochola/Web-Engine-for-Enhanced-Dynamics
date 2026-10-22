@@ -321,7 +321,7 @@ export class MeshApiStressScene extends Scene {
     const spawn = (Cls, n, extra) => {
       for (let k = 0; k < n; k++) {
         const p = place(i++);
-        this.spawnEntity(Cls, extra ? { ...p, ...extra(k) } : p);
+        Cls.spawn(extra ? { ...p, ...extra(k) } : p);
       }
     };
     spawn(MeshApiRigid, RIGID);

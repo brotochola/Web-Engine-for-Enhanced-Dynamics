@@ -76,7 +76,7 @@ export class ParticleIntegrateStressScene extends Scene {
   static entities = [[ParticleIntegrateDriver, 1]];
 
   create() {
-    this.spawnEntity(ParticleIntegrateDriver, { seed: SEED, tween: TWEEN });
+    ParticleIntegrateDriver.spawn({ seed: SEED, tween: TWEEN });
 
     Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
     Camera.setZoom(0.3);

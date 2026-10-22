@@ -121,7 +121,7 @@ export class DecorationSwayStressScene extends Scene {
   static entities = [[SwaySceneAnchor, 1]];
 
   create() {
-    this.spawnEntity(SwaySceneAnchor, { x: WORLD_W * 0.5, y: WORLD_H * 0.5 });
+    SwaySceneAnchor.spawn({ x: WORLD_W * 0.5, y: WORLD_H * 0.5 });
 
     const cols = Math.max(1, Math.ceil(Math.sqrt(DECORATION_COUNT)));
     const spacing = 100;

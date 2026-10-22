@@ -52,7 +52,7 @@ export class TilemapCullStressScene extends Scene {
   static entities = [[TilemapCullPanDriver, 1]];
 
   create() {
-    this.spawnEntity(TilemapCullPanDriver, { seed: SEED });
+    TilemapCullPanDriver.spawn({ seed: SEED });
     Camera.setZoom(0.55);
     Camera.centerOn(MAP_PX * 0.5, MAP_PX * 0.5);
   }

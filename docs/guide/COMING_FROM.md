@@ -13,7 +13,7 @@ WeedJS uses ideas you already know (entities, components, scenes, physics callba
 
 What follows from that:
 
-- **State lives in components, not in plain fields.** A `GameObject` has a copy on each logic worker, so `this.hp = 3` is not shared between them and a save does not keep it. Declare the data on a component (`static ARRAY_SCHEMA = { hp: Float32Array }`) and use `this.health.hp`, or `Health.hp[index]` for another entity. That memory is shared by every thread, and saves keep it.
+- **State lives in components, not in plain fields.** A `GameObject` has a copy on each logic worker and on the page, so `this.hp = 3` is not shared between them and a save does not keep it. Declare the data on a component (`static ARRAY_SCHEMA = { hp: Float32Array }`) and use `this.health.hp`, or `Health.hp[index]` for another entity. That memory is shared by every thread, and saves keep it.
 - **Entities are referred to by index.** Collision callbacks and messages give you a number. Ask about it with `GameObject.is(other, Enemy)` and `GameObject.hasComponent(other, Shield)`, and read its data from component arrays (`Transform.x[other]`). An index is reused once its entity despawns, so do not keep one across frames as if it were the same entity.
 - **Entities cannot touch the page.** Use `this.emit('died', data)` and `scene.on('died', fn)`.
 - **The workers load your scene file too.** It reads the engine from the global `WEED` (`const { Scene, GameObject } = WEED;`) instead of importing it. Put page-only code (the DOM, starting the engine) in the page or in scene methods, not at the top of the file.
@@ -25,8 +25,8 @@ What follows from that:
 | --- | --- | --- | --- | --- |
 | A game object | `GameObject` + `MonoBehaviour` | `Node2D` script | `Sprite` / custom class | `class Enemy extends GameObject` with `static components = […]` |
 | A prefab | Prefab | `PackedScene` | a config object | the class itself, plus a spawn config |
-| Create one | `Instantiate` | `instance()` + `add_child` | `this.add.sprite` | `Enemy.spawn({ x, y })`, the same call in the scene and in entities |
-| Destroy it | `Destroy` | `queue_free` | `destroy()` | `this.despawn()`; another one: `Enemy.despawn(index)` |
+| Create one | `Instantiate` | `instance()` + `add_child` | `this.add.sprite` | `const e = Enemy.spawn({ x, y })`, the same call in the scene and in entities |
+| Destroy it | `Destroy` | `queue_free` | `destroy()` | `this.despawn()`; another one: `Enemy.despawn(e)` or `Enemy.despawn(index)` |
 | Per-object data | fields, `[SerializeField]` | `@export var` | properties | component fields: `static ARRAY_SCHEMA = { hp: Float32Array }`, then `this.health.hp` |
 | Get a component | `GetComponent<T>()` | `get_node` | — | `this.rigidBody`, `this.health` (camelCase class name) |
 | Does it have one? | `TryGetComponent` | `has_node` | — | `this.hasComponent(Shield)`, `GameObject.hasComponent(other, Shield)` |
@@ -63,6 +63,7 @@ What follows from that:
 
 - **Tag components gate callbacks.** `onCollisionEnter` runs only for classes that list `CollisionListener` (`onScreenEnter` needs `CameraInOutListener`, `onJointBreak` needs `JointBreakListener`). The scene warns at load when a hook has no tag.
 - **An empty `tick() {}` still counts.** The logic worker visits every entity of the type each frame. Leave `tick` out of entities that do nothing per frame.
+- **A spawn from the scene is live next frame.** `Enemy.spawn(…)` returns the Enemy at once, but a logic worker sets it up (`onSpawned`) on its next frame and overwrites what you wrote to it before. Pass the setup in the config, which `onSpawned(config)` receives: `Enemy.spawn({ x, y, hp: 3 })`. The same holds for a class pinned to another logic worker.
 - **Animation speed is frames per 1/60 s.** A spawn plays at `0.2` (12 fps); `setAnimationSpeed(fps / 60)` changes it, and `0` holds the current frame.
 - **Animations advance while drawn.** An off-screen animation waits, and so does its `onAnimationEnd`.
 - **Forces hold until the next `tick`.** `addAcceleration` and `applyForce` are for pushes that last; a jump or a hit is `addVelocity` or `applyImpulse`, applied once.

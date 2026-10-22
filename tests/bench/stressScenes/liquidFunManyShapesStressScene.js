@@ -35,14 +35,14 @@ export class LiquidFunManyShapesStressScene extends WEED.Scene {
 
   create() {
     const floorY = 2800;
-    this.spawnEntity(Floor, { x: 2500, y: floorY, width: 5000, height: 200, tint: 0x333344 });
-    this.spawnEntity(Floor, { x: 200, y: 1500, width: 200, height: 2400, tint: 0x333344 });
-    this.spawnEntity(Floor, { x: 4800, y: 1500, width: 200, height: 2400, tint: 0x333344 });
+    Floor.spawn({ x: 2500, y: floorY, width: 5000, height: 200, tint: 0x333344 });
+    Floor.spawn({ x: 200, y: 1500, width: 200, height: 2400, tint: 0x333344 });
+    Floor.spawn({ x: 4800, y: 1500, width: 200, height: 2400, tint: 0x333344 });
 
     for (let i = 0; i < 180; i++) {
       const col = i % 18;
       const row = (i / 18) | 0;
-      this.spawnEntity(Floor, {
+      Floor.spawn({
         x: 500 + col * 220,
         y: 500 + row * 160,
         width: 140,

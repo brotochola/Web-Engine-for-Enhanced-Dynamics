@@ -8,7 +8,7 @@ import {
 } from './components/constraintBoxComponent.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import WEED from '/src/index.js';
-const { Mouse, Transform, RigidBody, Camera } = WEED;
+const { GameObject, Mouse, Transform, RigidBody, Camera } = WEED;
 
 export class ConstraintBoxScene extends WEED.Scene {
     static config = {
@@ -145,7 +145,7 @@ export class ConstraintBoxScene extends WEED.Scene {
             const tossVx = this._tossVx;
             const tossVy = this._tossVy;
             this._forEachPart(this._dragIdx, (partIdx) => {
-                const part = this.getEntityView(partIdx, { cache: true });
+                const part = GameObject.get(partIdx);
                 part.setVelocity(tossVx, tossVy);
                 RigidBody.sleeping[partIdx] = 0;
             });
@@ -164,7 +164,7 @@ export class ConstraintBoxScene extends WEED.Scene {
         const dy = targetY - Transform.y[this._dragIdx];
 
         this._forEachPart(this._dragIdx, (partIdx) => {
-            const part = this.getEntityView(partIdx, { cache: true });
+            const part = GameObject.get(partIdx);
             part.setPosition(Transform.x[partIdx] + dx, Transform.y[partIdx] + dy);
             part.setVelocity(0, 0);
             RigidBody.sleeping[partIdx] = 0;

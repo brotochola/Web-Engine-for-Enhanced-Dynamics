@@ -36,7 +36,7 @@ export class CmdSamePoseStressScene extends Scene {
     for (let i = 0; i < BODY_COUNT; i++) {
       const col = i % cols;
       const row = (i / cols) | 0;
-      this.spawnEntity(CmdSamePoseBody, {
+      CmdSamePoseBody.spawn({
         x: 40 + col * 16,
         y: 40 + row * 16,
       });

@@ -147,7 +147,7 @@ export class EntitiesPanel {
       const clearBtn = document.createElement('button');
       clearBtn.className = 'debug-ui-btn danger';
       clearBtn.textContent = 'Clear';
-      clearBtn.onclick = () => gameEngine.despawnAllEntities(name);
+      clearBtn.onclick = () => reg.class.despawnAll();
       chip.appendChild(clearBtn);
 
       container.appendChild(chip);

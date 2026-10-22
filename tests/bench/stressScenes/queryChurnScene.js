@@ -55,12 +55,12 @@ export class QueryChurnScene extends Scene {
   static queries = [[QueryChurnTag, SpriteRenderer]];
 
   create() {
-    this.spawnEntity(QueryChurnDriver, {});
+    QueryChurnDriver.spawn({});
 
     for (let i = 0; i < 8192; i++) {
       const col = i % 96;
       const row = (i / 96) | 0;
-      this.spawnEntity(QueryChurnEntity, {
+      QueryChurnEntity.spawn({
         x: 250 + col * 42,
         y: 250 + row * 42,
       });

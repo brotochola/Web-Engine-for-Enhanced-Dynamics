@@ -89,6 +89,11 @@ function warnNoSpriteOnce(className, method) {
   console.warn(`WeedJS: ${className}.${method} needs a sprite: call setSprite / setSpritesheet first.`);
 }
 
+/** The page (main thread), not a worker: a window, and no logic worker set up here. */
+function isMainThread() {
+  return typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
+}
+
 /** Classes already warned that despawn(index) got another class's entity. */
 const _warnedDespawnOtherClass = new Set();
 function warnDespawnOtherClassOnce(className, index) {
@@ -195,37 +200,13 @@ export class GameObject {
   static _despawnAllBuffer = new Set();
 
   /**
-   * Worker: pooled instance at global index. Main thread (after scene init): lazy entity view over SABs.
-   * From DevTools: `GameObject.get(12)` once `exposeGlobalReferences` has run.
+   * The entity at a global index, on any thread: every logic worker and the
+   * page hold one instance per pool slot. From DevTools: `GameObject.get(12)`.
+   * @param {number} entityIndex
+   * @returns {GameObject|undefined}
    */
   static get(entityIndex) {
-    const scene = GameObject.scene;
-    if (scene && typeof scene.getEntityView === 'function') {
-      return scene.getEntityView(entityIndex);
-    }
     return GameObject.instances[entityIndex];
-  }
-
-  /**
-   * Main-thread handle for an entity slot (same SABs as workers). Requires `window.scene`.
-   * Engine callbacks (`tick`, collisions, etc.) still run only on logic workers.
-   *
-   * @param {number} entityIndex
-   * @param {Object} [options] - cache=true reuses one instance per index until releaseEntityView
-   * @param {boolean} [options.cache]
-   * @returns {GameObject}
-   */
-  static getEntityView(entityIndex, options = {}) {
-    const scene =
-      GameObject.scene ||
-      (typeof globalThis !== 'undefined' && globalThis.window && globalThis.window.scene) ||
-      null;
-    if (!scene || typeof scene.getEntityView !== 'function') {
-      throw new Error(
-        'GameObject.getEntityView: no active Scene (set GameObject.scene / window.scene via Scene.exposeGlobalReferences)'
-      );
-    }
-    return scene.getEntityView(entityIndex, options);
   }
 
   /**
@@ -482,10 +463,11 @@ export class GameObject {
   /**
    * Constructor - stores entity index
    * @param {number} index - Entity index (unique across all entities)
-   * @param {Object} config - Spawn/view config for this entity slot
+   * @param {Object} config - Scene config
    * @param {Object} logicWorker - Logic worker reference
    * @param {Object} [options]
-   * @param {boolean} [options.view] - Main-thread view: do not touch pool Transform.active / instances
+   * @param {boolean} [options.page] - The page's instance: reads and writes the
+   *   slot's shared data, but resets nothing and joins no pool (the scene does)
    *
    * DENSE COMPONENT ALLOCATION:
    * All components are allocated for all entities. Entity index === component index.
@@ -497,7 +479,7 @@ export class GameObject {
     this.config = config;
     // LogicWorker API object (postMessage, queues). Not forceProcessOnLogicWorker.
     this.logicWorker = logicWorker;
-    this.bindToEntitySlot({ view: options.view === true });
+    this.bindToEntitySlot({ page: options.page === true });
   }
 
   /**
@@ -505,14 +487,14 @@ export class GameObject {
    * neighbor slice, accessors.
    *
    * @param {Object} opts
-   * @param {boolean} [opts.view=false] - When true (main-thread view): only attach read/write
-   *   facades over existing SAB data — do not reset Transform or push into pools.
+   * @param {boolean} [opts.page=false] - The page's instance: attach the
+   *   component accessors only; do not reset Transform or push into pools.
    */
-  bindToEntitySlot({ view = false } = {}) {
+  bindToEntitySlot({ page = false } = {}) {
     const index = this.index;
     const Ctor = this.constructor;
 
-    this._isEntityView = view;
+    this._onPage = page;
 
     // One flag object per class. Composition does not vary per instance.
     let flags = Ctor._sharedHasComponents;
@@ -528,7 +510,7 @@ export class GameObject {
     }
     this._hasComponents = flags;
 
-    if (!view) {
+    if (!page) {
       Transform.entityType[index] = Ctor.entityType || 0;
       Transform.active[index] = 0;
       GameObject.instances.push(this);
@@ -1976,7 +1958,7 @@ export class GameObject {
    * Override to set type defaults and this life's state (sprite, pose, HP).
    * Spawn applies `spawnConfig` keys first; this hook can override them.
    *
-   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
+   * @param {Object} spawnConfig - Spawn-time parameters passed to spawn()
    *
    * Example:
    *   onSpawned(spawnConfig) {
@@ -2209,6 +2191,11 @@ export class GameObject {
   }
 
   despawn() {
+    // The page's instance asks logic0, which runs the despawn.
+    if (this._onPage) {
+      GameObject.despawn(this.index);
+      return;
+    }
     const i = this.index;
     const activeState = Transform.active[i];
     // Prevent double-despawn which corrupts the free list
@@ -2261,15 +2248,14 @@ export class GameObject {
   }
 
   /**
-   * Despawn another entity by index, with the same call in the scene and in
-   * entities (the counterpart of Enemy.spawn):
+   * Despawn another entity, with the same call in the scene and in entities
+   * (the counterpart of Enemy.spawn):
    *   onCollisionEnter(other) { if (GameObject.is(other, Coin)) Coin.despawn(other); }
-   * Also takes what spawn returned ({ index } on the main thread, the entity in
-   * a worker). On a class it despawns only that class's entities (subclasses
-   * count); GameObject.despawn(index) takes any. An entity ends itself with
-   * this.despawn(), which also works inside its own onSpawned.
-   * On the main thread it is sent to logic0, as spawn is, and runs there.
-   * @param {number|{index:number}} entity
+   * Takes the entity or its index (callbacks give indices). On a class it
+   * despawns only that class's entities (subclasses count); GameObject.despawn
+   * takes any. An entity ends itself with this.despawn(), which also works
+   * inside its own onSpawned. On the page it is sent to logic0 and runs there.
+   * @param {number|GameObject} entity
    * @returns {boolean} false when nothing was despawned or sent: not an entity
    *   of this class, or (in a worker) not alive
    */
@@ -2282,12 +2268,11 @@ export class GameObject {
       return false;
     }
 
-    const isMainThread = typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
-    if (isMainThread) {
+    if (isMainThread()) {
       // No active check here: a spawn sent from this thread is not active yet.
       const scene = window.scene;
-      if (!scene || typeof scene.despawnEntity !== 'function') return false;
-      scene.despawnEntity(i);
+      if (!scene) return false;
+      scene._despawnFromPage(i);
       return true;
     }
 
@@ -2576,11 +2561,13 @@ export class GameObject {
   /**
    * SPAWNING SYSTEM: Spawn an entity from the pool (activate an inactive entity)
    *
-   * Works from BOTH main thread and logic workers with the same syntax:
+   * The same call on the page (the scene) and in logic workers:
    *   Ball.spawn({ x: 100, y: 200 })
-   * In a logic worker it returns the entity; on the main thread (the scene)
-   * { index }, since the entity is set up on a logic worker. Both have .index.
-   * Ball.despawn(index) is the counterpart.
+   * Returns the Ball, or null when the pool is full. It is live at once when
+   * this thread sets it up. On the page, or when the class is pinned to another
+   * logic worker, a logic worker sets it up next frame: until then the spawn
+   * overwrites what you write to it, so pass its setup in the config.
+   * Ball.despawn(ball) is the counterpart.
    *
    * THREAD-SAFE ARCHITECTURE:
    * - Any thread can do atomic freeList pop and get index IMMEDIATELY
@@ -2588,37 +2575,41 @@ export class GameObject {
    * - List updates (activeEntities, perTypeActive, queries) are QUEUED
    * - Only logic0 processes list updates (at start of each frame)
    *
-   * @param {Class|Object} EntityClassOrConfig - Entity class OR spawn config (when called as Ball.spawn(config))
-   * @param {Object} spawnConfig - Initial configuration (position, velocity, etc.)
-   * @param {number} [preAssignedIndex] - Optional pre-assigned entity index (from main thread)
-   * @returns {GameObject|{index:number}|null} - Instance (worker) or {index} (main thread), null if pool exhausted
+   * @param {Object} [spawnConfig] - Initial configuration (position, velocity, etc.)
+   * @returns {GameObject|null}
    */
-  static spawn(EntityClassOrConfig, spawnConfig = {}, preAssignedIndex = -1) {
-    // Support two calling conventions:
-    // 1. GameObject.spawn(EntityClass, config) - for dynamic class spawning
-    // 2. Ball.spawn(config) - `this` is the EntityClass
-    let EntityClass;
-    if (typeof EntityClassOrConfig === 'function') {
-      // GameObject.spawn(EntityClass, config)
-      EntityClass = EntityClassOrConfig;
-    } else {
-      // Ball.spawn(config) — `this` is the EntityClass
-      EntityClass = this;
-      spawnConfig = EntityClassOrConfig || {};
+  static spawn(spawnConfig = {}) {
+    const EntityClass = this;
+    if (typeof spawnConfig === 'function' || EntityClass === GameObject) {
+      const name = typeof spawnConfig === 'function' ? spawnConfig.name : 'Enemy';
+      console.error(`WeedJS: spawn on the entity class: ${name}.spawn(config).`);
+      return null;
     }
+    if (spawnConfig === null) spawnConfig = {};
 
-    // ========================================
-    // CONTEXT DETECTION: Main thread vs Worker
-    // ========================================
-    // Main thread: delegate to Scene.spawnEntity (handles messaging to workers)
-    // Worker: execute spawn directly with atomic operations
-    const isMainThread = typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
-
-    if (isMainThread && typeof window.scene?.spawnEntity === 'function') {
-      // Main thread - delegate to Scene which handles worker messaging
-      return window.scene.spawnEntity(EntityClass, spawnConfig);
+    if (isMainThread()) {
+      // The page reserves the index; a logic worker sets the entity up.
+      const scene = window.scene;
+      if (!scene) {
+        console.error(`WeedJS: ${EntityClass.name}.spawn(): no scene is running.`);
+        return null;
+      }
+      const index = scene._spawnFromPage(EntityClass, spawnConfig);
+      return index < 0 ? null : EntityClass.instances[index - EntityClass.startIndex];
     }
+    return GameObject._spawnAt(EntityClass, spawnConfig, -1);
+  }
 
+  /**
+   * @internal Spawn on this logic worker. preAssignedIndex ≥ 0 is an index
+   * another thread already reserved (the page, the ring, an owner handoff);
+   * −1 pops one here.
+   * @param {Function} EntityClass
+   * @param {Object} spawnConfig
+   * @param {number} preAssignedIndex
+   * @returns {GameObject|null}
+   */
+  static _spawnAt(EntityClass, spawnConfig, preAssignedIndex) {
     // Validate EntityClass has required metadata
     if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
       console.error(
@@ -2680,6 +2671,11 @@ export class GameObject {
     );
     GameObject.writeForceProcessOnLogicWorker(i, EntityClass.entityType, forcedLogicWorker);
 
+    // A spawn pinned to another logic worker is set up there: onSpawned writes
+    // that worker's copy, the one its ticks read. logic0 takes it from the ring
+    // (which logic0 drains) when the config is x/y only; any other owner gets a
+    // message, so nothing passes through logic0 on its way. The caller gets its
+    // own copy back, live from the owner's next frame.
     // A hot restore spawns here: no onSpawned runs, so nothing needs the owner's
     // thread, and the restore must account for every entity it places.
     if (
@@ -2689,28 +2685,18 @@ export class GameObject {
       typeof logicWorkerCtx.sendDataToWorker === 'function' &&
       spawnConfig._hotRestore !== true
     ) {
-      const sx = spawnConfig.x ?? 0;
-      const sy = spawnConfig.y ?? 0;
-      if (
-        !logicWorkerCtx._drainingSpawnRing &&
-        isXyOnlySpawnConfig(spawnConfig) &&
-        isSpawnCommandRingBound() &&
-        tryPushSpawn(EntityClass.entityType | 0, i, sx, sy)
-      ) {
-        return null;
-      }
-      const sent = logicWorkerCtx.sendDataToWorker(`logic${forcedLogicWorker}`, {
-        msg: 'spawn',
-        className: EntityClass.name,
-        spawnConfig,
-        entityIndex: i,
-      });
-      if (sent) {
-        debugWorkerLog(
-          `GameObject.spawn: forwarded ${EntityClass.name}[${i}] to logic${forcedLogicWorker}; caller must not use a half-built instance`,
-        );
-        return null;
-      }
+      const handedOff =
+        (forcedLogicWorker === 0 &&
+          isXyOnlySpawnConfig(spawnConfig) &&
+          isSpawnCommandRingBound() &&
+          tryPushSpawn(EntityClass.entityType | 0, i, spawnConfig.x ?? 0, spawnConfig.y ?? 0, 0)) ||
+        logicWorkerCtx.sendDataToWorker(`logic${forcedLogicWorker}`, {
+          msg: 'spawn',
+          className: EntityClass.name,
+          spawnConfig,
+          entityIndex: i,
+        });
+      if (handedOff) return instance;
     }
 
     // ========================================
@@ -3063,24 +3049,15 @@ export class GameObject {
    * mutations still happen in the same place as normal spawn/despawn list updates.
    * Complexity: O(N) instead of O(N²) for large pools
    *
-   * @param {Class} [EntityClass] - The entity class to despawn (optional when called as Ball.despawnAll())
    * @returns {number|undefined} - Number of entities despawned when executed locally
    */
-  static despawnAll(EntityClass) {
-    // Support calling as Ball.despawnAll() without passing the class
-    if (!EntityClass || EntityClass === GameObject) {
-      EntityClass = this;
-    }
+  static despawnAll() {
+    const EntityClass = this;
 
-    // ========================================
-    // CONTEXT DETECTION: Main thread vs Worker
-    // ========================================
-    const isMainThread = typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
-
-    if (isMainThread && typeof window.scene?.despawnAllEntities === 'function') {
-      // Main thread - delegate to Scene which handles worker messaging
-      window.scene.despawnAllEntities(EntityClass.name);
-      return; // Main thread doesn't know the count (async)
+    if (isMainThread()) {
+      // logic0 runs it; the page does not know the count (async)
+      window.scene?._despawnAllFromPage(EntityClass.name);
+      return;
     }
 
     const forwardedToLogic0 = GameObject._forwardDespawnAllToLogic0(EntityClass);

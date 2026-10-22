@@ -41,7 +41,7 @@ export class StationarySpatial30kScene extends Scene {
     for (let i = 0; i < N; i++) {
       const col = i % COLS;
       const row = (i / COLS) | 0;
-      this.spawnEntity(StationarySpatialEntity, {
+      StationarySpatialEntity.spawn({
         x: startX + col * SPACING,
         y: startY + row * SPACING,
         radius: 10,

@@ -47,7 +47,7 @@ function placeStill(scene, visualRange) {
   for (let i = 0; i < STILL_COUNT; i++) {
     const col = i % COLS;
     const row = (i / COLS) | 0;
-    scene.spawnEntity(MovedBody, {
+    MovedBody.spawn({
       x: start + col * SPACING,
       y: start + row * SPACING,
       dynamic: false,
@@ -80,7 +80,7 @@ export class MovedBodiesStillNeighborsScene extends Scene {
     for (let i = 0; i < STILL_NEIGHBOR_COUNT; i++) {
       const col = i % COLS;
       const row = (i / COLS) | 0;
-      this.spawnEntity(MovedBody, {
+      MovedBody.spawn({
         x: start + col * SPACING,
         y: start + row * SPACING,
         dynamic: false,
@@ -102,7 +102,7 @@ export class MovedBodiesAwakeScene extends Scene {
     for (let i = 0; i < STILL_COUNT; i++) {
       const col = i % COLS;
       const row = (i / COLS) | 0;
-      this.spawnEntity(MovedBody, {
+      MovedBody.spawn({
         x: start + col * SPACING,
         y: start + row * SPACING,
         dynamic: true,
@@ -128,7 +128,7 @@ export class MovedBodiesAwakeNeighborsScene extends Scene {
     for (let i = 0; i < AWAKE_NEIGHBOR_COUNT; i++) {
       const col = i % COLS;
       const row = (i / COLS) | 0;
-      this.spawnEntity(MovedBody, {
+      MovedBody.spawn({
         x: start + col * SPACING,
         y: start + row * SPACING,
         dynamic: true,

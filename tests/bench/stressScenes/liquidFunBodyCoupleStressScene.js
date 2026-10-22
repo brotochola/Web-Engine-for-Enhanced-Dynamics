@@ -47,9 +47,9 @@ export class LiquidFunBodyCoupleStressScene extends WEED.Scene {
     const wallH = floorY - wallTop;
     const wallY = (wallTop + floorY) / 2;
 
-    this.spawnEntity(Floor, { x: 2500, y: floorY, width: 4800, height: 260, tint: 0x444455 });
-    this.spawnEntity(Floor, { x: 200, y: wallY, width: 260, height: wallH, tint: 0x444455 });
-    this.spawnEntity(Floor, { x: 4800, y: wallY, width: 260, height: wallH, tint: 0x444455 });
+    Floor.spawn({ x: 2500, y: floorY, width: 4800, height: 260, tint: 0x444455 });
+    Floor.spawn({ x: 200, y: wallY, width: 260, height: wallH, tint: 0x444455 });
+    Floor.spawn({ x: 4800, y: wallY, width: 260, height: wallH, tint: 0x444455 });
 
     LiquidFun.emit({
       flags: LIQUIDFUN_FLAGS.WATER | LIQUIDFUN_FLAGS.TENSILE,
@@ -65,7 +65,7 @@ export class LiquidFunBodyCoupleStressScene extends WEED.Scene {
     for (let i = 0; i < 100; i++) {
       const col = i % 10;
       const row = (i / 10) | 0;
-      this.spawnEntity(Box, { x: 900 + col * 160, y: 400 + row * 90 });
+      Box.spawn({ x: 900 + col * 160, y: 400 + row * 90 });
     }
 
     Camera.setWorldBounds(Infinity, Infinity);

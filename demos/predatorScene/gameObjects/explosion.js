@@ -111,7 +111,7 @@ export class Explosion extends GameObject {
     // Despawn when animation is complete
 
     if (progress >= 1) {
-      GameObject.spawn(Fire, {
+      Fire.spawn({
         x: this.x,
         y: this.y,
         scale: this.explosionComponent.baseScale * 0.5,

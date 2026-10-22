@@ -49,7 +49,7 @@ function placeMixed(scene) {
     const col = i % COLS;
     const row = (i / COLS) | 0;
     const dynamic = i % MIXED_DYNAMIC_EVERY === 0;
-    scene.spawnEntity(MovedTicker, {
+    MovedTicker.spawn({
       x: start + col * SPACING,
       y: start + row * SPACING,
       dynamic,

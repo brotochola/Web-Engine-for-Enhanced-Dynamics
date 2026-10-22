@@ -54,7 +54,7 @@ export class TweenStressScene extends Scene {
 
   create() {
     for (let i = 0; i < ENTITY_COUNT; i++) {
-      const spawned = this.spawnEntity(TweenEntity, { x: 100, y: 100 });
+      const spawned = TweenEntity.spawn({ x: 100, y: 100 });
       if (!spawned) throw new Error(`tween stress: spawn failed at ${i}`);
       const slot = Tween.to(spawned.index, { alpha: 0 }, 1e9, 0);
       if (slot < 0) throw new Error(`tween stress: tween failed at ${i}`);

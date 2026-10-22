@@ -17,7 +17,7 @@ class Box extends GameObject {
   /**
    * LIFECYCLE: Called when box is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn
-   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
+   * @param {Object} spawnConfig - Spawn-time parameters passed to spawn()
    */
   onSpawned(spawnConfig = {}) {
     // Configure RigidBody physics properties (same for all boxes)

@@ -46,7 +46,7 @@ function churnConfig(numberOfLogicWorkers) {
 
 function plantChurnDrivers(scene) {
   for (let s = 0; s < DRIVERS; s++) {
-    scene.spawnEntity(DecoChurnDriver, {
+    DecoChurnDriver.spawn({
       seed: SEED + s * 41,
       spawnPerTick: SPAWN_PER_TICK,
       despawnPerTick: DESPAWN_PER_TICK,

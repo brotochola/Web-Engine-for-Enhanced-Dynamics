@@ -88,7 +88,7 @@ function spawn(scene) {
   for (let i = 0; i < N; i++) {
     const col = i % COLS;
     const row = (i / COLS) | 0;
-    scene.spawnEntity(PainterAdobeEntity, {
+    PainterAdobeEntity.spawn({
       x: 80 + col * 90,
       y: 80 + row * ROW,
       scale: 0.45 + (i % 4) * 0.04,
