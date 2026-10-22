@@ -1429,6 +1429,107 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
   return loadedClasses;
 }
 
+/**
+ * Scripts a bundled (blob) worker evaluated, by URL, as first loaded. Hot swap
+ * pairs a changed script's new classes with these running ones.
+ * @type {Map<string, object>}
+ */
+export const blobModules = new Map();
+
+/**
+ * Evaluate a scene or entity script in a bundled (blob) worker, which cannot
+ * import(): rewrite it as a function body and run it with the engine names.
+ * Registers nothing; returns its exports.
+ * @param {string} scriptText
+ * @param {string} scriptPath
+ * @param {object} globalContext the worker global (self)
+ * @returns {object} exports
+ */
+export function evaluateBlobModule(scriptText, scriptPath, globalContext) {
+  // Create a module-like wrapper that captures exports
+  // We need to handle ES module syntax (export class, export const, etc.)
+  const exports = {};
+
+  const transformedScript = transformBlobScript(scriptText, scriptPath);
+
+  // Build the wrapper with WEED globals as function parameters, for
+  // scripts that use engine names without destructuring them.
+  const moduleWrapper = new Function(
+    'exports', 'WEED',
+    'GameObject', 'Component', 'SharedResource', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
+    'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter', 'FlashComponent',
+    'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Box2d', 'Decal', 'Query', 'LiquidFun', 'Decoration', 'Mouse', 'Camera',
+    'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle', 'getDirection8FromVector',
+    'containerRadius', 'SpriteSheetRegistry', 'Keyboard', 'SoundManager',
+    'CollisionListener', 'CameraInOutListener', 'JointBreakListener', 'Grab',
+    'BLEND_MODES', 'DEFAULT_LAYERS', 'CAMERA_TYPES', 'DECAL_STAMPS_BLEND_MODE',
+    'DEBUG_FLAGS', 'DEBUG_SELECTED_ENTITY_OFFSET',
+    transformedScript
+  );
+
+  // Workers set self.WEED (workerWeed.js) and the same names on self.
+  const WEED = globalContext.WEED || globalContext;
+  const g = globalContext; // shorthand for getting classes
+  const e = WEED.enums || {};
+
+  try {
+    moduleWrapper(
+      exports, WEED,
+      g.GameObject || WEED.GameObject,
+      g.Component || WEED.Component,
+      g.SharedResource || WEED.SharedResource,
+      g.FSM || WEED.FSM,
+      g.FSMState || WEED.FSMState,
+      g.Transform || WEED.Transform,
+      g.RigidBody || WEED.RigidBody,
+      g.Collider || WEED.Collider,
+      g.SpriteRenderer || WEED.SpriteRenderer,
+      g.ParticleComponent || WEED.ParticleComponent,
+      g.ShadowCaster || WEED.ShadowCaster,
+      g.LightEmitter || WEED.LightEmitter,
+      g.FlashComponent || WEED.FlashComponent,
+      g.DecorationComponent || WEED.DecorationComponent,
+      g.ParticleEmitter || WEED.ParticleEmitter,
+      g.DecorationPool || WEED.DecorationPool,
+      g.Flash || WEED.Flash,
+      g.Box2d || WEED.Box2d,
+      g.Decal || WEED.Decal,
+      g.Query || WEED.Query,
+      g.LiquidFun || WEED.LiquidFun,
+      g.Decoration || WEED.Decoration,
+      g.Mouse || WEED.Mouse,
+      g.Camera || WEED.Camera,
+      g.NavGrid || WEED.NavGrid,
+      g.Ray || WEED.Ray,
+      g.ShapeType || e.ShapeType,
+      g.rng || WEED.rng,
+      g.randomColor || WEED.randomColor,
+      g.distanceSq2D || WEED.distanceSq2D,
+      g.getDirectionFromAngle || WEED.getDirectionFromAngle,
+      g.getDirection8FromVector || WEED.getDirection8FromVector,
+      g.containerRadius || WEED.containerRadius,
+      g.SpriteSheetRegistry || WEED.SpriteSheetRegistry,
+      g.Keyboard || WEED.Keyboard,
+      g.SoundManager || WEED.SoundManager,
+      g.CollisionListener || WEED.CollisionListener,
+      g.CameraInOutListener || WEED.CameraInOutListener,
+      g.JointBreakListener || WEED.JointBreakListener,
+      g.Grab || WEED.Grab,
+      e.BLEND_MODES,
+      e.DEFAULT_LAYERS,
+      e.CAMERA_TYPES,
+      e.DECAL_STAMPS_BLEND_MODE,
+      e.DEBUG_FLAGS,
+      e.DEBUG_SELECTED_ENTITY_OFFSET
+    );
+  } catch (evalError) {
+    console.error(`  ✗ Error evaluating ${scriptPath}:`, evalError);
+    console.error('First 500 chars of transformed script:', transformedScript.substring(0, 500));
+    throw evalError;
+  }
+  return exports;
+}
+
 async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlobWorker, contextName, verbose) {
   try {
     let module;
@@ -1442,89 +1543,8 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
       }
       const scriptText = await response.text();
 
-      // Create a module-like wrapper that captures exports
-      // We need to handle ES module syntax (export class, export const, etc.)
-      const exports = {};
-
-      const transformedScript = transformBlobScript(scriptText, scriptPath);
-
-      // Build the wrapper with WEED globals as function parameters, for
-      // scripts that use engine names without destructuring them.
-      const moduleWrapper = new Function(
-        'exports', 'WEED',
-        'GameObject', 'Component', 'SharedResource', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
-        'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter', 'FlashComponent',
-        'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Box2d', 'Decal', 'Query', 'LiquidFun', 'Decoration', 'Mouse', 'Camera',
-        'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle', 'getDirection8FromVector',
-        'containerRadius', 'SpriteSheetRegistry', 'Keyboard', 'SoundManager',
-        'CollisionListener', 'CameraInOutListener', 'JointBreakListener', 'Grab',
-        'BLEND_MODES', 'DEFAULT_LAYERS', 'CAMERA_TYPES', 'DECAL_STAMPS_BLEND_MODE',
-        'DEBUG_FLAGS', 'DEBUG_SELECTED_ENTITY_OFFSET',
-        transformedScript
-      );
-
-      // Workers set self.WEED (workerWeed.js) and the same names on self.
-      const WEED = globalContext.WEED || globalContext;
-      const g = globalContext; // shorthand for getting classes
-      const e = WEED.enums || {};
-
-      try {
-        moduleWrapper(
-          exports, WEED,
-          g.GameObject || WEED.GameObject,
-          g.Component || WEED.Component,
-          g.SharedResource || WEED.SharedResource,
-          g.FSM || WEED.FSM,
-          g.FSMState || WEED.FSMState,
-          g.Transform || WEED.Transform,
-          g.RigidBody || WEED.RigidBody,
-          g.Collider || WEED.Collider,
-          g.SpriteRenderer || WEED.SpriteRenderer,
-          g.ParticleComponent || WEED.ParticleComponent,
-          g.ShadowCaster || WEED.ShadowCaster,
-          g.LightEmitter || WEED.LightEmitter,
-          g.FlashComponent || WEED.FlashComponent,
-          g.DecorationComponent || WEED.DecorationComponent,
-          g.ParticleEmitter || WEED.ParticleEmitter,
-          g.DecorationPool || WEED.DecorationPool,
-          g.Flash || WEED.Flash,
-          g.Box2d || WEED.Box2d,
-          g.Decal || WEED.Decal,
-          g.Query || WEED.Query,
-          g.LiquidFun || WEED.LiquidFun,
-          g.Decoration || WEED.Decoration,
-          g.Mouse || WEED.Mouse,
-          g.Camera || WEED.Camera,
-          g.NavGrid || WEED.NavGrid,
-          g.Ray || WEED.Ray,
-          g.ShapeType || e.ShapeType,
-          g.rng || WEED.rng,
-          g.randomColor || WEED.randomColor,
-          g.distanceSq2D || WEED.distanceSq2D,
-          g.getDirectionFromAngle || WEED.getDirectionFromAngle,
-          g.getDirection8FromVector || WEED.getDirection8FromVector,
-          g.containerRadius || WEED.containerRadius,
-          g.SpriteSheetRegistry || WEED.SpriteSheetRegistry,
-          g.Keyboard || WEED.Keyboard,
-          g.SoundManager || WEED.SoundManager,
-          g.CollisionListener || WEED.CollisionListener,
-          g.CameraInOutListener || WEED.CameraInOutListener,
-          g.JointBreakListener || WEED.JointBreakListener,
-          g.Grab || WEED.Grab,
-          e.BLEND_MODES,
-          e.DEFAULT_LAYERS,
-          e.CAMERA_TYPES,
-          e.DECAL_STAMPS_BLEND_MODE,
-          e.DEBUG_FLAGS,
-          e.DEBUG_SELECTED_ENTITY_OFFSET
-        );
-      } catch (evalError) {
-        console.error(`  ✗ Error evaluating ${scriptPath}:`, evalError);
-        console.error('First 500 chars of transformed script:', transformedScript.substring(0, 500));
-        throw evalError;
-      }
-
-      module = exports;
+      module = evaluateBlobModule(scriptText, scriptPath, globalContext);
+      blobModules.set(scriptPath, module);
     } else {
       // Standard dynamic import for module-based workers and main thread
       module = await nativeImport(scriptPath);

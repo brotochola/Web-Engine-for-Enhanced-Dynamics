@@ -138,10 +138,10 @@ export class PackageScene extends Scene {
 
 test('every demo and guide script that is a scene or entity module compiles after the blob transform', () => {
   const utils = fs.readFileSync(path.join(ROOT, 'src/util/utils.js'), 'utf8');
-  const wrapper = utils.slice(
-    utils.indexOf('const moduleWrapper = new Function('),
-    utils.indexOf('transformedScript\n      );'),
-  );
+  const start = utils.indexOf('const moduleWrapper = new Function(');
+  const end = utils.indexOf('transformedScript', start + 1);
+  assert.ok(start >= 0 && end > start, 'wrapper not found');
+  const wrapper = utils.slice(start, end);
   const params = [...wrapper.matchAll(/'([A-Za-z_$][\w$]*)'/g)].map((m) => m[1]);
   assert.ok(params.includes('WEED') && params.includes('GameObject'), 'wrapper params not found');
 
