@@ -88,7 +88,6 @@ export class AbstractWorker {
   constructor(selfRef) {
     this.self = selfRef;
 
-
     // Explicit queue preserves ordering without building a promise chain per message.
     this._pendingMessages = [];
     this._pendingMessageReadIndex = 0;
