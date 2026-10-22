@@ -180,7 +180,16 @@ Load remounts the scene: `create()` builds statics, then logic worker `restoreSa
 
 ## Hot reload (debug)
 
-`new GameEngine({ debug: true, hotReload: true })` on a page served by `npm run dev`: when a served file changes, the engine saves the running scene to a reserved slot, reloads the page, and the next `loadScene` of the same scene restores it once (with the same `data`), then deletes the slot. What comes back is what a save keeps (this page), so state in plain JS fields does not. A save that fails reloads without state, with a warning. A schema change between the two runs loads best-effort, as any save would.
+`new GameEngine({ debug: true, hotReload: true })` on a page served by `npm run dev`: when a served file changes, the engine saves the running scene to a reserved slot, reloads the page, and the next `loadScene` of the same scene restores it once (with the same `data`), then deletes the slot.
+
+A hot reload keeps the whole scene, not only what a player's save keeps:
+
+- **Every entity**, serializable or not, and `shouldSaveEntity` is not asked. Each goes back to its own index, with its components, its joints, chains, fixtures and meshes, and the logic worker it was pinned to.
+- **`onSpawned` does not run again**: the entity is not spawning, it continues.
+- **Plain JS fields on instances** come back too, each logic worker getting its own copies: numbers, strings, booleans, null, arrays, plain objects and typed arrays. Functions and class instances do not; create those in the constructor.
+- The scene's own state comes back through `onSaveGame` / `onLoadGame` as in any save. `onLoadGame(payload)` sees `payload.hotReload === true`: every entity is already back, so do not spawn entities there again.
+
+A save that fails reloads without state, with a warning. If the saved state is gone, does not decode, or belongs to another scene class, the scene starts fresh instead, with a warning. An entity type the edit removed is skipped, and a component schema change loads best-effort, one warning per type and component.
 
 ## Debug UI
 

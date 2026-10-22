@@ -351,7 +351,10 @@ class GameEngine {
 
       let restorePayload = options.restorePayload || null;
       if (hotRestore) {
-        restorePayload = await HotReload.readSlot(); // null: start fresh, never fail the load
+        // null (gone, unreadable, another scene): start fresh, never fail the load
+        restorePayload = await HotReload.readSlot(SceneClass.name);
+        // onLoadGame sees it: every entity is back already, do not spawn them again.
+        if (restorePayload) restorePayload.hotReload = true;
       } else if (!restorePayload && options.restoreSlot) {
         const { SaveStore, decodeSave } = await import('./save/saveGame.js');
         const blob = await SaveStore.get(options.restoreSlot);
@@ -385,6 +388,7 @@ class GameEngine {
       if (typeof options.onProgress === 'function') this.currentScene._onProgressOption = options.onProgress;
       if (restorePayload) {
         this.currentScene._restorePayload = restorePayload;
+        this.currentScene._restoreAllTypes = hotRestore; // the hot save holds every entity
       }
 
       // Engine owns canvas dimensions — inject into scene config before init

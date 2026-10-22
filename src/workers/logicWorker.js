@@ -78,6 +78,13 @@ import {
   drainSpawnCommands,
   isSpawnCommandRingBound,
 } from '../util/spawnCommandRing.js';
+import { collectInstanceFields, applyInstanceFields } from '../core/save/instanceFields.js';
+
+/** This worker's instance of the entity at `index` (hot reload field carry). */
+function instanceAtIndex(index) {
+  const EntityClass = GameObject.classByType[Transform.entityType[index]];
+  return EntityClass && EntityClass.instances ? EntityClass.instances[index - EntityClass.startIndex] : undefined;
+}
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -1913,9 +1920,35 @@ class LogicWorker extends AbstractWorker {
    * Implements spawning and despawning commands
    */
   /**
+   * Hot reload restore: take each saved entity's own index out of its class's
+   * free list, when the index is still that class's. Returns the taken indices.
+   * @param {object[]} entities save records
+   * @returns {Set<number>}
+   */
+  _takeSavedIndices(entities) {
+    const byClass = new Map();
+    for (let r = 0; r < entities.length; r++) {
+      const rec = entities[r];
+      const EntityClass = self[rec.typeName];
+      const index = rec.entityIndex;
+      if (!EntityClass || index == null) continue;
+      if (index < EntityClass.startIndex || index >= EntityClass.startIndex + EntityClass.poolSize) continue;
+      let wanted = byClass.get(EntityClass);
+      if (!wanted) byClass.set(EntityClass, (wanted = new Set()));
+      wanted.add(index | 0);
+    }
+    const taken = new Set();
+    for (const [EntityClass, wanted] of byClass) {
+      for (const index of GameObject._takeFreeIndices(EntityClass, wanted)) taken.add(index);
+    }
+    return taken;
+  }
+
+  /**
    * Logic0 side of a save load: despawn the serializable types, respawn the
    * saved entities, then chains, fixtures, meshes, tweens, id remaps and
-   * joints. Returns the restoreSaveComplete reply.
+   * joints. Returns the restoreSaveComplete reply. With exactIndices (hot
+   * reload) each entity goes back to its own index when it can.
    * @param {object} data restoreSave message
    * @returns {object}
    */
@@ -1923,6 +1956,8 @@ class LogicWorker extends AbstractWorker {
     const {
       serializableClassNames = [],
       entities = [],
+      exactIndices = false,
+      forcedWorkers = null,
       joints = [],
       chains = [],
       fixtures = [],
@@ -1942,13 +1977,17 @@ class LogicWorker extends AbstractWorker {
       Joint.clearAllActive();
     }
 
+    const ownIndex = exactIndices ? this._takeSavedIndices(entities) : null;
+    // Hot reload: each entity goes back to the logic worker it was pinned to (or none).
+    const pinned = forcedWorkers ? new Map(forcedWorkers) : null;
+    const missingClass = new Map(); // one warning per type, not per entity
+    const noRoom = new Map();
+
     for (let i = 0; i < entities.length; i++) {
       const rec = entities[i];
       const EntityClass = self[rec.typeName];
       if (!EntityClass) {
-        console.error(
-          `LOGIC WORKER ${this.workerIndex}: restoreSave missing class ${rec.typeName}`
-        );
+        missingClass.set(rec.typeName, (missingClass.get(rec.typeName) || 0) + 1);
         failed++;
         continue;
       }
@@ -1957,12 +1996,17 @@ class LogicWorker extends AbstractWorker {
         x: fields.x ?? 0,
         y: fields.y ?? 0,
         _saveRestore: rec.components,
+        _hotRestore: exactIndices, // no onSpawned: the entity comes back as it was
       };
-      const instance = GameObject.spawn(EntityClass, spawnConfig);
+      if (pinned !== null) {
+        const worker = pinned.get(rec.entityIndex | 0);
+        spawnConfig.forceProcessOnLogicWorker = worker === undefined ? -1 : worker;
+      }
+      let at = -1;
+      if (ownIndex !== null && ownIndex.delete(rec.entityIndex | 0)) at = rec.entityIndex | 0;
+      const instance = GameObject.spawn(EntityClass, spawnConfig, at);
       if (!instance) {
-        console.warn(
-          `LOGIC WORKER ${this.workerIndex}: restoreSave spawn failed for ${rec.typeName}`
-        );
+        noRoom.set(rec.typeName, (noRoom.get(rec.typeName) || 0) + 1);
         failed++;
       } else {
         restored++;
@@ -1970,6 +2014,13 @@ class LogicWorker extends AbstractWorker {
           oldToNew.set(rec.entityIndex | 0, instance.index | 0);
         }
       }
+    }
+
+    for (const [typeName, n] of missingClass) {
+      console.error(`LOGIC WORKER ${this.workerIndex}: restoreSave missing class ${typeName} (${n} entities)`);
+    }
+    for (const [typeName, n] of noRoom) {
+      console.warn(`LOGIC WORKER ${this.workerIndex}: restoreSave could not spawn ${n} ${typeName} (pool full?)`);
     }
 
     const restoredPairs = [];
@@ -2170,6 +2221,28 @@ class LogicWorker extends AbstractWorker {
           };
         }
         self.postMessage(reply);
+        break;
+      }
+
+      // Hot reload: this worker's instances' plain JS fields, before and after the reload.
+      case 'collectInstanceFields': {
+        let entries = [];
+        try {
+          entries = collectInstanceFields(instanceAtIndex, Transform.active);
+        } catch (err) {
+          console.warn(`LOGIC WORKER ${this.workerIndex}: could not collect instance fields`, err);
+        }
+        self.postMessage({ msg: 'instanceFields', workerIndex: this.workerIndex, entries });
+        break;
+      }
+
+      case 'applyInstanceFields': {
+        try {
+          applyInstanceFields(instanceAtIndex, data.entries || []);
+        } catch (err) {
+          console.warn(`LOGIC WORKER ${this.workerIndex}: could not apply instance fields`, err);
+        }
+        self.postMessage({ msg: 'instanceFieldsApplied', workerIndex: this.workerIndex });
         break;
       }
 

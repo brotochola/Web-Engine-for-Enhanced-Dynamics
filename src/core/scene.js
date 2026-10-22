@@ -1075,7 +1075,8 @@ class Scene {
       await this._flushCreateSpawns();
       const payload = this._restorePayload;
       const { applySavePayloadToScene } = await import('./save/saveGame.js');
-      await applySavePayloadToScene(this, payload);
+      // A hot reload's save holds every entity: replace them all, at their own indices.
+      await applySavePayloadToScene(this, payload, { allTypes: this._restoreAllTypes === true });
       await this.onLoadGame(payload);
       await this._flushCreateSpawns();
     } else {
@@ -2001,6 +2002,10 @@ class Scene {
           idPairs: e.data.idPairs || [],
         });
       }
+    } else if (e.data.msg === 'instanceFields') {
+      if (this._pendingInstanceFields) this._pendingInstanceFields(e.data.workerIndex | 0, e.data.entries || []);
+    } else if (e.data.msg === 'instanceFieldsApplied') {
+      if (this._pendingInstanceFieldsApplied) this._pendingInstanceFieldsApplied();
     } else if (
       e.data.msg === 'drainSpawnCommandsComplete' ||
       e.data.msg === 'spawnBatchComplete'

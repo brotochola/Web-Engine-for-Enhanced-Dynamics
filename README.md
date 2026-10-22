@@ -109,7 +109,7 @@ New here? Build [Coin Rush](https://github.com/brotochola/Web-Engine-for-Enhance
 
 `SharedArrayBuffer` needs cross-origin isolation (COOP/COEP). Same headers unlock Box2D’s pthread pool. The included `npm run dev` server already sends them.
 
-**Hot reload.** With `npm run dev` and `new GameEngine({ debug: true, hotReload: true })` (the demo page has it on), saving a file reloads the page and restores the running scene where it was: serializable entities, shared resources, camera, tweens and `onSaveGame` data come back from a save the engine takes just before the reload. `WEED_HOT_RELOAD=0 npm run dev` turns the server side off.
+**Hot reload.** With `npm run dev` and `new GameEngine({ debug: true, hotReload: true })` (the demo page has it on), saving a file reloads the page and restores the running scene where it was: every entity at its own index (serializable or not, without running `onSpawned` again), its plain JS fields, shared resources, camera, tweens and `onSaveGame` data come back from a save the engine takes just before the reload ([SAVE_GAME.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/SAVE_GAME.md#hot-reload-debug)). `WEED_HOT_RELOAD=0 npm run dev` turns the server side off.
 
 ---
 

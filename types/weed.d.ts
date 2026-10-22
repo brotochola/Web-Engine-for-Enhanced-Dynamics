@@ -1570,8 +1570,12 @@ export declare class Scene {
   create(data?: unknown): void | Promise<void>;
   /** New game only (skipped when a save is loaded). */
   createNewGame(data?: unknown): void | Promise<void>;
-  /** After a save is applied; payload.custom is what onSaveGame returned (null if nothing). */
-  onLoadGame(payload: { custom: unknown; [key: string]: unknown }): void | Promise<void>;
+  /**
+   * After a save is applied; payload.custom is what onSaveGame returned (null if nothing).
+   * payload.hotReload is true after a hot reload: every entity is back already (serializable
+   * or not), so do not spawn entities here again.
+   */
+  onLoadGame(payload: { custom: unknown; hotReload?: boolean; [key: string]: unknown }): void | Promise<void>;
   /** While a save is built: scene state outside entities (score, flags, level), as JSON data. */
   onSaveGame(): unknown;
   /** Names entities may send each other (sendTo / onMessage). */
@@ -2870,6 +2874,11 @@ export declare class SaveStore {
 export function saveGame(
   scene: Scene,
   slotId?: string,
+  /**
+   * allEntities: every entity, not only the serializable types (shouldSaveEntity is not asked).
+   * instanceFields: also each logic worker's plain JS fields on instances. Hot reload uses both.
+   */
+  options?: { allEntities?: boolean; instanceFields?: boolean },
 ): Promise<{ meta: SaveMeta; bytes: number; entityCount: number; particleCount: number }>;
 export function loadGame(
   gameEngine: GameEngine,

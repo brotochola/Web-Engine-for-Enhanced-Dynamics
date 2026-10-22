@@ -45,7 +45,10 @@ export class HotReload {
     this._source = null;
   }
 
-  /** Save the running scene, remember which one it was, reload the page. */
+  /**
+   * Save the running scene, remember which one it was, reload the page. The save
+   * holds every entity, serializable or not: the whole scene comes back.
+   */
   static async reloadKeepingState(game) {
     if (this._busy) return;
     this._busy = true;
@@ -54,7 +57,7 @@ export class HotReload {
     try {
       if (store && scene && scene.sceneScriptUrl && game.state === 1) {
         const { saveGame } = await import('../save/saveGame.js');
-        await saveGame(scene, SLOT);
+        await saveGame(scene, SLOT, { allEntities: true, instanceFields: true });
         store.setItem(KEY, JSON.stringify({ url: scene.sceneScriptUrl, data: scene.data ?? null }));
       }
     } catch (error) {
@@ -88,14 +91,21 @@ export class HotReload {
 
   /**
    * The state saved before the reload, or null when it is gone (the page
-   * unloaded before the save committed) or does not decode. A hot reload must
-   * never stop the scene from loading: with null, loadScene starts it fresh.
+   * unloaded before the save committed), does not decode, or belongs to another
+   * scene class (the edit renamed it). A hot reload must never stop the scene
+   * from loading: with null, loadScene starts it fresh.
+   * @param {string} [sceneName] the scene class about to load
    */
-  static async readSlot() {
+  static async readSlot(sceneName) {
     try {
       const { SaveStore, decodeSave } = await import('../save/saveGame.js');
       const blob = await SaveStore.get(SLOT);
-      if (blob) return await decodeSave(blob);
+      if (blob) {
+        const payload = await decodeSave(blob);
+        if (!sceneName || !payload.sceneName || payload.sceneName === sceneName) return payload;
+        console.warn(`[WeedJS] hot reload: the saved state is ${payload.sceneName}'s, not ${sceneName}'s; starting the scene fresh`);
+        return null;
+      }
       console.warn('[WeedJS] hot reload: the saved state is gone; starting the scene fresh');
     } catch (error) {
       console.warn('[WeedJS] hot reload: could not read the saved state; starting the scene fresh', error);

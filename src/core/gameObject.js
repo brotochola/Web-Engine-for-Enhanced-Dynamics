@@ -2497,6 +2497,31 @@ export class GameObject {
   }
 
   /**
+   * Take `wanted` out of EntityClass's free list, so spawn(EntityClass, config, index)
+   * can put entities back at exactly those indices (a hot reload restores the scene
+   * where it was). The other free indices keep their order. Restore time only: O(pool).
+   * @param {Function} EntityClass
+   * @param {Set<number>} wanted
+   * @returns {Set<number>} the wanted indices that were free and are now taken
+   */
+  static _takeFreeIndices(EntityClass, wanted) {
+    const taken = new Set();
+    const top = EntityClass.freeListTop;
+    const links = EntityClass.freeList;
+    if (!top || !links || wanted.size === 0) return taken;
+    const start = EntityClass.startIndex;
+    const free = [];
+    for (let i = popEntity(top, links, start); i >= 0; i = popEntity(top, links, start)) free.push(i);
+    // Push back in reverse so the first one popped is on top again.
+    for (let k = free.length - 1; k >= 0; k--) {
+      const i = free[k];
+      if (wanted.has(i)) taken.add(i);
+      else pushEntity(top, links, i, start);
+    }
+    return taken;
+  }
+
+  /**
    * SPAWNING SYSTEM: Spawn an entity from the pool (activate an inactive entity)
    *
    * Works from BOTH main thread and logic workers with the same syntax:
@@ -2600,11 +2625,14 @@ export class GameObject {
     );
     GameObject.writeForceProcessOnLogicWorker(i, EntityClass.entityType, forcedLogicWorker);
 
+    // A hot restore spawns here: no onSpawned runs, so nothing needs the owner's
+    // thread, and the restore must account for every entity it places.
     if (
       forcedLogicWorker >= 0 &&
       logicWorkerCtx &&
       logicWorkerCtx.workerIndex !== forcedLogicWorker &&
-      typeof logicWorkerCtx.sendDataToWorker === 'function'
+      typeof logicWorkerCtx.sendDataToWorker === 'function' &&
+      spawnConfig._hotRestore !== true
     ) {
       const sx = spawnConfig.x ?? 0;
       const sy = spawnConfig.y ?? 0;
@@ -2838,7 +2866,9 @@ export class GameObject {
         instance.setLayer(spawnConfig.layer);
       }
 
-      if (instance.onSpawned) {
+      // A hot reload puts the entity back as it was: its saved components already
+      // hold what onSpawned did, and onSpawned again would spawn children twice.
+      if (instance.onSpawned && spawnConfig._hotRestore !== true) {
         try {
           instance.onSpawned(spawnConfig);
         } catch (error) {

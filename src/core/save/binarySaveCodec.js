@@ -31,6 +31,8 @@ export const SECTION = Object.freeze({
   MESHES2: 19,
   /** u8 layout, then the JSON text of Scene.onSaveGame()'s value. Absent when it returned nothing. */
   CUSTOM: 20,
+  /** u8 layout, then JSON: plain JS fields of instances, per logic worker. Hot reload saves only. */
+  INSTANCE_FIELDS: 21,
 });
 
 /** 2: repeat, doneMsg, flags (DX 4.2). Layout 1 saves still read. */
@@ -791,6 +793,11 @@ function readCustom(r) {
   return JSON.parse(r.str());
 }
 
+function writeInstanceFields(w, value) {
+  w.u8(SECTION_LAYOUT);
+  w.str(JSON.stringify(value));
+}
+
 function writeTime(w, scale) {
   w.f32(+scale);
 }
@@ -893,6 +900,9 @@ export function encodeBinarySaveBody(payload) {
   if (payload.custom !== undefined && payload.custom !== null) {
     pushSection(sections, SECTION.CUSTOM, (w) => writeCustom(w, payload.custom));
   }
+  if (payload.instanceFields) {
+    pushSection(sections, SECTION.INSTANCE_FIELDS, (w) => writeInstanceFields(w, payload.instanceFields));
+  }
 
   const out = new Writer();
   out.u16(sections.length);
@@ -967,5 +977,6 @@ export function decodeBinarySaveBody(bytes) {
         : null,
     // Older saves have no CUSTOM section: null, not an error.
     custom: readVersioned(map, SECTION.CUSTOM, -1, 'custom', readCustom),
+    instanceFields: readVersioned(map, SECTION.INSTANCE_FIELDS, -1, 'instance fields', readCustom),
   };
 }
