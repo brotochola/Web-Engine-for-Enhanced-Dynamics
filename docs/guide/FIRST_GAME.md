@@ -88,7 +88,7 @@ class Health extends Component {
 }
 ```
 
-Your code runs on several worker threads. A plain field like `this.hp = 3` exists only in the copy of the object on one thread, and a save does not keep it. Component fields live in shared memory: every thread sees them, and saves keep them. Read and write them as `this.health.hp`, or as `Health.hp[index]` for another entity.
+Your code runs on several worker threads, and an entity's code does not always run on the same one. A plain field like `this.hp = 3` exists only in the copy of the object on one thread, and a save does not keep it. Keep plain fields for scratch you can rebuild (a cache, a temp buffer). Component fields live in shared memory: every thread sees them, and saves keep them. Read and write them as `this.health.hp`, or as `Health.hp[index]` for another entity.
 
 ## 5. Moving
 

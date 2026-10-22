@@ -499,6 +499,7 @@ export class GameObject {
     const Ctor = this.constructor;
 
     this._onPage = page;
+    this._spawnAborted = false;
 
     // One flag object per class. Composition does not vary per instance.
     let flags = Ctor._sharedHasComponents;
@@ -2304,12 +2305,14 @@ export class GameObject {
   _neighborView() {
     if (this._neighbors) return this._neighbors;
     if (this._neighborOffset < 0 || !Grid.neighborData) return null;
-    this._neighbors = new (EntityIdArray())(
+    const view = new (EntityIdArray())(
       Grid.neighborData.buffer,
       Grid.neighborData.byteOffset + (this._neighborOffset + 1) * entityIdBytes(),
       Grid.maxNeighbors
     );
-    return this._neighbors;
+    // A page instance is frozen: it builds the view on each call.
+    if (!this._onPage) this._neighbors = view;
+    return view;
   }
 
   /** Valid for 0 ≤ i < neighborCount; past that it reads the next entity's row. */

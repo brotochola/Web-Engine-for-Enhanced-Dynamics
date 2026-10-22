@@ -656,6 +656,11 @@ class Scene {
    * Enemy.spawn, GameObject.get and Enemy.getFirstActiveInstance return entities
    * here too. They read and write the slot's shared data; ticks and hooks run
    * on the logic workers.
+   *
+   * Frozen: entity code never runs on the page, so a plain field written here
+   * (enemy.hp = 2) would reach no tick. It throws instead. Accessors still
+   * write (enemy.x, enemy.health.hp, enemy.setTint): they live on the prototype
+   * and the component objects.
    */
   _createPageInstances() {
     const all = new Array(this.totalEntityCount);
@@ -663,7 +668,7 @@ class Scene {
       const { class: EntityClass, count, startIndex } = this.registeredClasses[r];
       const own = new Array(count);
       for (let k = 0; k < count; k++) {
-        const instance = new EntityClass(startIndex + k, this.config, null, { page: true });
+        const instance = Object.freeze(new EntityClass(startIndex + k, this.config, null, { page: true }));
         own[k] = instance;
         all[startIndex + k] = instance;
       }

@@ -184,6 +184,17 @@ test('the page builds one instance per slot and resets no shared state', { concu
   assert.deepEqual(Crate.getAllActiveInstances(), [Crate.instances[2], Crate.instances[0]]);
 });
 
+test('a page instance takes writes through accessors; a plain field throws', { concurrency: false }, () => {
+  buildPageInstances();
+  const crate = GameObject.get(1);
+  crate.x = 42; // an accessor: shared memory, seen by the tick on a logic worker
+  assert.equal(Transform.x[1], 42);
+  // A plain field would stay on the page, where no tick reads it.
+  assert.throws(() => { crate.hp = 2; }, TypeError, 'a new field');
+  assert.throws(() => { crate.index = 2; }, TypeError, 'an existing one');
+  assert.ok(Object.isFrozen(crate));
+});
+
 test('on the page Enemy.spawn returns the entity (null when the pool is full)', { concurrency: false }, () => {
   buildPageInstances();
   const configs = [];
