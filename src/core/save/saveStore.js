@@ -49,6 +49,18 @@ function idbReq(request) {
   });
 }
 
+/**
+ * A write is safe once its transaction commits, after the request's success.
+ * A page that unloads in between (hot reload reloads right after saving) loses it.
+ */
+function idbCommit(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('IndexedDB write failed'));
+    tx.onabort = () => reject(tx.error || new Error('IndexedDB write aborted'));
+  });
+}
+
 export class SaveStore {
   /**
    * @returns {Promise<SaveMeta[]>}
@@ -88,7 +100,9 @@ export class SaveStore {
     const db = await openDb();
     try {
       const tx = db.transaction(STORE_BLOBS, 'readwrite');
-      await idbReq(tx.objectStore(STORE_BLOBS).put(bytes, slotId));
+      const committed = idbCommit(tx);
+      tx.objectStore(STORE_BLOBS).put(bytes, slotId);
+      await committed;
     } finally {
       db.close();
     }
@@ -131,7 +145,9 @@ export class SaveStore {
     const db = await openDb();
     try {
       const tx = db.transaction(STORE_BLOBS, 'readwrite');
-      await idbReq(tx.objectStore(STORE_BLOBS).delete(slotId));
+      const committed = idbCommit(tx);
+      tx.objectStore(STORE_BLOBS).delete(slotId);
+      await committed;
     } finally {
       db.close();
     }
