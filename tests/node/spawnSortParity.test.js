@@ -144,11 +144,18 @@ function referenceLists(indices, classes) {
   return { activeAll, byClass };
 }
 
-/** Independent reference: sort (index, position) pairs the obvious way. */
+/**
+ * Independent reference: sort (index, position) pairs the obvious way, and keep
+ * each index once. An active list is a set: a batch that spawns one index twice
+ * (a short life reused at once) used to list it twice, and that entity ticked
+ * twice per frame (fix(logic), 2026-10-22).
+ */
 function reference(indices, classes) {
   // Array.from, not indices.map - `Int32Array.prototype.map` returns an
   // Int32Array, so the `[v, i]` pairs would be coerced straight to NaN.
-  const pairs = Array.from(indices, (v, i) => [v, i]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const pairs = Array.from(indices, (v, i) => [v, i])
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    .filter((p, k, all) => k === 0 || all[k - 1][0] !== p[0]);
   return {
     sorted: pairs.map((p) => p[0]),
     sortedClass: pairs.map((p) => classes[p[1]]),
@@ -184,7 +191,7 @@ test('H-14: a random batch sorts ascending with matching classes', { concurrency
   }
 });
 
-test('H-14: duplicates keep their spawn order and land adjacent', { concurrency: false }, () => {
+test('H-14: an index spawned twice in a batch is listed once', { concurrency: false }, () => {
   const [A, B] = makeClasses();
   const idx = new Int32Array([7, 7, 3, 7, 3, 9]);
   const classes = [A, A, B, A, B, B];
@@ -195,12 +202,9 @@ test('H-14: duplicates keep their spawn order and land adjacent', { concurrency:
   assert.deepEqual(got.activeAll, want.activeAll);
   assert.deepEqual(got.byClass.A, want.byClass.A);
   assert.deepEqual(got.byClass.B, want.byClass.B);
-  // Duplicates of one index stay contiguous in the merged list.
+  assert.deepEqual(got.activeAll, [3, 7, 9]);
   for (let i = 1; i < got.activeAll.length; i++) {
-    assert.ok(
-      got.activeAll[i] >= got.activeAll[i - 1],
-      'the merged active list must be non-decreasing',
-    );
+    assert.ok(got.activeAll[i] > got.activeAll[i - 1], 'the merged active list is strictly increasing');
   }
 });
 
