@@ -180,6 +180,47 @@ class MaxRectsPacker {
  * 3. Entities: Look up animation indices once during setup
  * 4. Game loop: Use numeric indices (no registry access)
  */
+/**
+ * Put the atlas inputs back in the order the scene declares its assets. Loads
+ * finish in network order, but animation indices and spritesheet ids come from
+ * insertion order and are stored in components (saves, hot reload): a load in a
+ * different order would make a saved id name another sheet. Built-ins (_empty
+ * first) and anything undeclared keep their place after the declared assets.
+ * Sorts are stable, so a sheet's frames and animations keep their own order.
+ * @param {object} assetsConfig images by name, plus { spritesheets }
+ * @param {Array<{ name: string }>} imagesToPack sorted in place
+ * @param {Record<string, string[]>} animations reordered in place
+ * @param {Record<string, object>} proxySheets reordered in place
+ */
+export function orderAtlasByDeclaration(assetsConfig, imagesToPack, animations, proxySheets) {
+  const declaredImages = Object.keys(assetsConfig).filter(
+    (name) => name !== 'spritesheets' && typeof assetsConfig[name] === 'string',
+  );
+  const declaredSheets = Object.keys(assetsConfig.spritesheets || {});
+  const imageRank = new Map(declaredImages.map((name, i) => [name, i]));
+  // Longest prefix first, so "car_red_" wins over "car_".
+  const sheetsByPrefix = declaredSheets
+    .map((name, i) => ({ prefix: `${name}_`, rank: declaredImages.length + i }))
+    .sort((a, b) => b.prefix.length - a.prefix.length);
+  const rankOf = (name) => {
+    if (name === '_empty') return -1;
+    if (imageRank.has(name)) return imageRank.get(name);
+    for (const sheet of sheetsByPrefix) if (name.startsWith(sheet.prefix)) return sheet.rank;
+    return Number.MAX_SAFE_INTEGER;
+  };
+  imagesToPack.sort((a, b) => rankOf(a.name) - rankOf(b.name));
+  reorderKeys(animations, Object.keys(animations).sort((a, b) => rankOf(a) - rankOf(b)));
+  reorderKeys(proxySheets, declaredSheets);
+}
+
+/** Rebuild obj's key order: keys in `order` first (missing ones skipped), then the rest. */
+function reorderKeys(obj, order) {
+  const copy = { ...obj };
+  for (const key of Object.keys(obj)) delete obj[key];
+  for (const key of order) if (key in copy && !(key in obj)) obj[key] = copy[key];
+  for (const key of Object.keys(copy)) if (!(key in obj)) obj[key] = copy[key];
+}
+
 class SpriteSheetRegistry {
   // Main registry: Map<sheetName, metadata>
   static spritesheets = new Map();
@@ -1013,6 +1054,9 @@ class SpriteSheetRegistry {
 
     // Wait for all assets to load
     await Promise.all([...individualImagePromises, ...spritesheetPromises]);
+
+    // Loads finish in network order; ids and indices must not (see orderAtlasByDeclaration).
+    orderAtlasByDeclaration(assetsConfig, imagesToPack, animations, proxySheets);
 
     // ========================================
     // INJECT BUILT-IN TEXTURES
