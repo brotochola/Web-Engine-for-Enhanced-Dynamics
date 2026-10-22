@@ -1,0 +1,28 @@
+{
+  "name": "create-weed-game",
+  "version": "0.1.0",
+  "description": "Start a WeedJS game: npm create weed-game",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "create-weed-game": "index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "template"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics.git",
+    "directory": "packages/create-weed-game"
+  },
+  "keywords": [
+    "weedjs",
+    "game",
+    "template",
+    "create"
+  ]
+}

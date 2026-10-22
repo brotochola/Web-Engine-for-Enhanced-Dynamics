@@ -1,0 +1,17 @@
+{
+  "name": "weed-game",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/dev.mjs dist"
+  },
+  "dependencies": {
+    "@weed.js/engine": "^0.11.361"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

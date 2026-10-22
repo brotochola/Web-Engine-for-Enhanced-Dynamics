@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>My WeedJS game</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+      .hud {
+        position: fixed;
+        left: 12px;
+        z-index: 5;
+        color: #fff;
+        font: 16px/1.5 system-ui, sans-serif;
+        text-shadow: 0 1px 2px #000;
+        pointer-events: none;
+      }
+    </style>
+    <!-- npm run build swaps in the production engine -->
+    <script type="importmap">
+      { "imports": { "@weed.js/engine": "./node_modules/@weed.js/engine/dist/weed.bundle.esm.min.js" } }
+    </script>
+  </head>
+  <body>
+    <!-- The HUD is plain HTML: src/gameScene.js writes into these. -->
+    <div id="hud" class="hud" style="top: 12px"></div>
+    <div id="loading" class="hud" style="top: 40px"></div>
+
+    <script type="module">
+      import WEED from '@weed.js/engine';
+
+      const DEV = true; // npm run build sets this to false
+      const game = new WEED.GameEngine({ debug: DEV, hotReload: DEV });
+      await game.loadScene(new URL('./src/gameScene.js', import.meta.url).href);
+    </script>
+  </body>
+</html>
