@@ -180,9 +180,22 @@ Load remounts the scene: `create()` builds statics, then logic worker `restoreSa
 
 ## Hot reload (debug)
 
-`new GameEngine({ debug: true, hotReload: true })` on a page served by `npm run dev`: when a served file changes, the engine saves the running scene to a reserved slot, reloads the page, and the next `loadScene` of the same scene restores it once (with the same `data`), then deletes the slot.
+`new GameEngine({ debug: true, hotReload: true })` on a page served by `npm run dev`. What happens when you save a file depends on the file and the change.
 
-A hot reload keeps the whole scene, not only what a player's save keeps:
+### A script of the running scene: swapped in place
+
+Saving the scene file, or a file it imports, puts the new code into the running game with no reload. The page and every worker load the new version and copy its methods onto the classes already running, so every entity runs the new code from its next call. The shared memory, the entities, their JS fields, the workers and the camera stay as they are. The console names what was swapped: `[WeedJS] hot swapped demos/x/slime.js (Slime)`.
+
+What applies at once: method bodies (`tick`, callbacks, helpers, the scene's `update`), getters and setters, static methods and values, and the constants and functions of the changed file. Code that already ran does not run again: `onSpawned` and `create()` keep their old effect on what exists, and new spawns use the new code. Two limits: module-level state of the changed file (a `let` at its top) starts over, and a static field your code changes at runtime gets its source value back when its class is swapped.
+
+### Anything else: a reload that keeps the state
+
+The page reloads with the scene's state when the change cannot go into the running game:
+
+- an asset, a shader, the page itself, an engine file, or a script the scene does not import;
+- a change to what the engine built from a class: `static components`, `ARRAY_SCHEMA`, the scene's `entities` (pools), `config`, `assets` or `messages`, `tickInterval`, `forceProcessOnLogicWorker`, adding or removing a hook (`tick`, `onCollisionEnter`, `onMessage`, `onAnimationEnd`, …), or a changed export that is not a class (other modules keep its old value).
+
+The console says why: `[WeedJS] hot reload: Wall: onMessage() was added; reloading the page with the scene's state`. The engine saves the running scene to a reserved slot, reloads the page, and the next `loadScene` of the same scene restores it once (with the same `data`), then deletes the slot. That reload keeps the whole scene, not only what a player's save keeps:
 
 - **Every entity**, serializable or not, and `shouldSaveEntity` is not asked. Each goes back to its own index, with its components, its joints, chains, fixtures and meshes, and the logic worker it was pinned to.
 - **`onSpawned` does not run again**: the entity is not spawning, it continues.

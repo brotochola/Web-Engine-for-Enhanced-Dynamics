@@ -1,4 +1,4 @@
-// Your game. Save this file while `npm run dev` runs: the game reloads where you were.
+// Your game. Save this file while `npm run dev` runs: the running game takes the new code.
 // Guide: https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/FIRST_GAME.md
 
 // No import: the page imported the engine, which defines WEED here and in every worker.
@@ -10,7 +10,7 @@ const WORLD_H = 1000;
 
 class Player extends GameObject {
   static components = [RigidBody, Collider, SpriteRenderer];
-  static serializable = true; // saves and hot reload keep it
+  static serializable = true; // a player's save keeps it
 
   // Runs on every spawn from the pool.
   onSpawned({ x, y }) {
@@ -72,7 +72,7 @@ export class GameScene extends Scene {
     setText('loading', done < total ? `Loading… ${Math.round((100 * done) / total)} %` : '');
   }
 
-  // Runs for a new game and for a loaded save (hot reload too). The scene runs on the page.
+  // Runs for a new game and for a loaded save. The scene runs on the page.
   create() {
     this.dashes = 0;
     this.on('dash', () => {

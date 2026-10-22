@@ -21,7 +21,7 @@ If you know Unity, Godot or Phaser, keep [COMING_FROM.md](./COMING_FROM.md) open
 - A browser resolves `'@weed.js/engine/debug'` only with a bundler or an import map. `npm create weed-game my-game` sets up the page with an import map, a dev server and a build, and you can put this game in its `src/`.
 - `debug: true` gives the debug panel and clearer warnings; ship the production build later.
 - `loadScene` takes the URL of the scene module (workers load the same file) and `data` for the scene.
-- `hotReload: true`: with `npm run dev`, saving a file reloads the game where you were.
+- `hotReload: true`: with `npm run dev`, saving the scene file puts the new code into the running game, with no reload ([SAVE_GAME.md](./SAVE_GAME.md#hot-reload-debug)).
 
 ## 2. The scene
 

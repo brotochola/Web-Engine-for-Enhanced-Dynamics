@@ -17,10 +17,14 @@ import { WORKER_WEED } from './workerWeed.js';
 import {
   bindSceneGraph,
   missingWorkerEntityClasses,
+  nativeImport,
 } from '../util/sceneScript.js';
+import { swapModule, hotModuleUrl } from '../core/debug/hotSwap.js';
 import {
   seededRandom,
   loadEntityScripts,
+  evaluateBlobModule,
+  blobModules,
   collectAllComponentsFromClasses,
   initializeComponentViews,
   exposeComponentsGlobally,
@@ -1264,9 +1268,42 @@ export class AbstractWorker {
         this.rebindSurface();
         break;
 
+      case 'hotSwap':
+        this.hotSwap(e.data).then((result) => {
+          self.postMessage({ msg: 'hotSwapResult', id: e.data.id, worker: this.constructor.name, ...result });
+        });
+        break;
+
       default:
         this.handleCustomMessage(e.data);
         break;
+    }
+  }
+
+  /**
+   * Debug hot swap (core/debug/hotSwap.js): load the new version of a game script
+   * and copy its code onto the classes this worker runs. A worker that never
+   * loaded the script has nothing to swap.
+   * @param {{ url: string, version: number }} data
+   * @returns {Promise<{ swapped: string[], reload: string|null }>}
+   */
+  async hotSwap({ url, version }) {
+    try {
+      let oldNs;
+      let freshNs;
+      if (typeof self.location?.href === 'string' && self.location.href.startsWith('blob:')) {
+        oldNs = blobModules.get(url);
+        if (!oldNs) return { swapped: [], reload: null };
+        const response = await fetch(hotModuleUrl(url, version));
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        freshNs = evaluateBlobModule(await response.text(), url, self);
+      } else {
+        oldNs = await nativeImport(url);
+        freshNs = await nativeImport(hotModuleUrl(url, version));
+      }
+      return swapModule(oldNs, freshNs);
+    } catch (error) {
+      return { swapped: [], reload: `could not load the new ${url} (${error && error.message})` };
     }
   }
 

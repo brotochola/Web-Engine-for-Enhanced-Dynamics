@@ -109,7 +109,7 @@ New here? Build [Coin Rush](https://github.com/brotochola/Web-Engine-for-Enhance
 
 `SharedArrayBuffer` needs cross-origin isolation (COOP/COEP). Same headers unlock Box2D’s pthread pool. The included `npm run dev` server already sends them.
 
-**Hot reload.** With `npm run dev` and `new GameEngine({ debug: true, hotReload: true })` (the demo page has it on), saving a file reloads the page and restores the running scene where it was: every entity at its own index (serializable or not, without running `onSpawned` again), its plain JS fields, shared resources, camera, tweens and `onSaveGame` data come back from a save the engine takes just before the reload ([SAVE_GAME.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/SAVE_GAME.md#hot-reload-debug)). `WEED_HOT_RELOAD=0 npm run dev` turns the server side off.
+**Hot reload.** With `npm run dev` and `new GameEngine({ debug: true, hotReload: true })` (the demo page has it on), saving a script of the running scene puts the new code into the running game with no reload: every entity runs it from its next call, and the shared memory, entities and workers stay as they are. A change the running game cannot take (components, pools, adding a hook, an asset, the page) reloads the page instead and restores the scene where it was: every entity at its own index, its plain JS fields, shared resources, camera, tweens and `onSaveGame` data ([SAVE_GAME.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/SAVE_GAME.md#hot-reload-debug)). `WEED_HOT_RELOAD=0 npm run dev` turns the server side off.
 
 ---
 
@@ -140,7 +140,7 @@ npm install
 npm run dev
 ```
 
-You get a page, one scene with a player and walls, and an HTML HUD, with no bundler. `npm run dev` serves it with the two headers `SharedArrayBuffer` needs and reloads the game where you were when you save. `npm run build` writes `dist/` with the production engine.
+You get a page, one scene with a player and walls, and an HTML HUD, with no bundler. `npm run dev` serves it with the two headers `SharedArrayBuffer` needs, and saving a script puts the new code into the running game. `npm run build` writes `dist/` with the production engine.
 
 ### Add it to a project
 

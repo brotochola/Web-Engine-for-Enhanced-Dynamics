@@ -39,7 +39,8 @@ const TYPES = {
 };
 
 // Hot reload: a saved file pings /__weed/reload (Server-Sent Events). The engine's
-// debug build saves the running scene, reloads the page and loads that save.
+// debug build puts a changed game script into the running game; other changes
+// reload the page and restore the scene.
 const clients = new Set();
 const SKIP = /(^|[\\/])(node_modules|dist|\.git)([\\/]|$)/;
 const WATCHED = new Set(['.html', '.js', '.mjs', '.css', '.json', '.png', '.jpg', '.jpeg', '.webp', '.svg', '.glsl', '.frag', '.vert', '.wgsl']);

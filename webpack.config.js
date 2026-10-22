@@ -37,6 +37,8 @@ const debugStubAliases = isProd ? {
         path.resolve(__dirname, 'src/core/debug/stubs/debugUi.js'),
     [path.resolve(__dirname, 'src/core/debug/debugFlags.js')]:
         path.resolve(__dirname, 'src/core/debug/stubs/debugFlags.js'),
+    [path.resolve(__dirname, 'src/core/debug/hotSwap.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/hotSwap.js'),
 } : {};
 
 // Obfuscator options

@@ -28,5 +28,5 @@ Your game is in ${folder}. Next:
   npm install
   npm run dev
 
-Then open http://localhost:8000 and edit src/gameScene.js: the game reloads where you were.
+Then open http://localhost:8000 and edit src/gameScene.js: the running game takes the new code.
 `);

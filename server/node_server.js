@@ -11,7 +11,8 @@ import path from 'path';
 const PORT = Number(process.env.PORT) || 8000;
 
 // Hot reload: a change under the served folder pings /__weed/reload (Server-Sent
-// Events). The engine's debug build saves the running scene and reloads with it.
+// Events). The engine's debug build puts a changed game script into the running
+// game; other changes reload the page and restore the scene.
 // WEED_HOT_RELOAD=0 turns it off.
 const HOT_RELOAD = process.env.WEED_HOT_RELOAD !== '0';
 const reloadClients = new Set();

@@ -2002,6 +2002,8 @@ class Scene {
           idPairs: e.data.idPairs || [],
         });
       }
+    } else if (e.data.msg === 'hotSwapResult') {
+      if (this._hotSwapReply) this._hotSwapReply(e.data);
     } else if (e.data.msg === 'instanceFields') {
       if (this._pendingInstanceFields) this._pendingInstanceFields(e.data.workerIndex | 0, e.data.entries || []);
     } else if (e.data.msg === 'instanceFieldsApplied') {
