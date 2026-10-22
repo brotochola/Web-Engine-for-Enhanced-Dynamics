@@ -173,3 +173,16 @@ test('every demo and guide script that is a scene or entity module compiles afte
   assert.ok(checked > 50, `only ${checked} scripts checked`);
   assert.deepEqual(failures, []);
 });
+
+test('registerCoreClasses keeps the worker seeded rng; WEED.rng is the wrapper that calls it', async () => {
+  // In a browser worker self === globalThis: WEED.rng on self.rng calls itself forever.
+  const { loadWorker } = await import('../bench/workerHarness.mjs');
+  const worker = await loadWorker('logicWorker.js', 'logicWorker');
+  worker.initSeededRandom(42, 'w');
+  const seeded = self.rng;
+  worker.registerCoreClasses();
+  assert.equal(self.rng, seeded);
+  assert.equal(self.WEED, WORKER_WEED);
+  assert.equal(self.Scene, WORKER_WEED.Scene);
+  assert.equal(self.Tween, WORKER_WEED.Tween);
+});

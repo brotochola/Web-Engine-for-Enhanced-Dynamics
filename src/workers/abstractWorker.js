@@ -1009,6 +1009,9 @@ export class AbstractWorker {
     self.WEED = WORKER_WEED;
     const names = Object.keys(WORKER_WEED);
     for (let i = 0; i < names.length; i++) {
+      // self.rng is this worker's seeded generator (initSeededRandom). WEED.rng
+      // is the wrapper that calls it: on self it would call itself forever.
+      if (names[i] === 'rng') continue;
       self[names[i]] = WORKER_WEED[names[i]];
     }
   }
