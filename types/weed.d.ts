@@ -1241,8 +1241,8 @@ export declare class GameObject {
   static getHeadingAxes(index: number, out: Float32Array | Float64Array | number[]): void;
   /** Entity class per entity type id (main thread and logic workers). */
   static classByType: Array<typeof GameObject>;
-  /** True when the entity at index is EntityClass or a subclass of it. */
-  static isType(index: number, EntityClass: Function): boolean;
+  /** True when the entity at index (e.g. a collision callback's other) is EntityClass or a subclass of it. */
+  static is(index: number, EntityClass: Function): boolean;
   /** True when the entity type at index lists ComponentClass (tags included). */
   static hasComponent(index: number, ComponentClass: Function): boolean;
   /**
@@ -1260,10 +1260,10 @@ export declare class GameObject {
   onAnimationEnd(name: string): void;
   /** Override to receive sendTo / scene.sendToEntity messages. from = -1 for the scene. */
   onMessage(name: string, from: number, a: number, b: number, c: number, d: number): void;
-  /** Is the other entity (index or GameObject) an EntityClass or a subclass? */
-  is(other: number | GameObject, EntityClass: Function): boolean;
-  /** Does this entity's type (or other's, when given) list ComponentClass? */
-  hasComponent(ComponentClass: Function, other?: number | GameObject): boolean;
+  /** Is this entity an EntityClass or a subclass? Another entity: GameObject.is(index, EntityClass). */
+  is(EntityClass: Function): boolean;
+  /** Does this entity's type list ComponentClass? Another entity: GameObject.hasComponent(index, ComponentClass). */
+  hasComponent(ComponentClass: Function): boolean;
   static getEntityView(entityIndex: number, options?: { cache?: boolean }): GameObject;
   despawn(): void;
   tick(dtRatio?: number, deltaTime?: number): void;

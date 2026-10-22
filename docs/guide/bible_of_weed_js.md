@@ -392,7 +392,7 @@ class Arena extends WEED.Scene {
 
 class Slime extends GameObject {
   onCollisionEnter(other) {
-    if (this.is(other, Hero)) this.sendTo(other, 'hit', 10); // name, then up to 4 numbers
+    if (GameObject.is(other, Hero)) this.sendTo(other, 'hit', 10); // name, then up to 4 numbers
   }
 }
 
@@ -437,15 +437,15 @@ Callbacks get the other entity's **index**. Ask about it without reading SoA by 
 
 ```javascript
 onCollisionEnter(other) {
-  if (this.is(other, Coin)) this.collect(other);          // Coin or a subclass of it
-  if (this.is(other, Enemy) && this.hasComponent(Shield, other)) this.bounce();
+  if (GameObject.is(other, Coin)) this.collect(other);    // Coin or a subclass of it
+  if (GameObject.is(other, Enemy) && GameObject.hasComponent(other, Shield)) this.bounce();
 }
 
-GameObject.isType(index, Enemy);        // same, from Scene or SoA code
-GameObject.hasComponent(index, Shield); // tags count: CollisionListener, your own tags
+this.is(Enemy);                // this entity
+this.hasComponent(Shield);     // tags count: CollisionListener, your own tags
 ```
 
-Both are O(1) for the exact class (a short prototype walk for a base class) and allocate nothing. `other` may be an index or a `GameObject`. An index stays the same while its entity lives, but a pool reuses it after a despawn (the next spawn of that class takes the most recently freed index), so do not keep one across frames and assume it is the same entity.
+`GameObject.is(index, Class)` and `GameObject.hasComponent(index, Component)` ask about any entity (from an entity, the scene or SoA code); `this.is` and `this.hasComponent` ask about this one. Both are O(1) for the exact class (a short prototype walk for a base class) and allocate nothing. An index stays the same while its entity lives, but a pool reuses it after a despawn (the next spawn of that class takes the most recently freed index), so do not keep one across frames and assume it is the same entity.
 
 > **Note:** These are *physics* collision layers, completely separate from *rendering* layers (see Layer System below).
 

@@ -135,12 +135,12 @@ class Coin extends GameObject {
 
 // in Player
 onCollisionEnter(other) {
-  if (this.is(other, Coin)) this.sendTo(other, 'collect');
+  if (GameObject.is(other, Coin)) this.sendTo(other, 'collect');
 }
 ```
 
 - `onCollisionEnter` only runs for types that list `CollisionListener` (the scene warns at load if you forget it). `other` is the other entity's **index**.
-- `this.is(other, Coin)` asks what it is (subclasses count).
+- `GameObject.is(other, Coin)` asks what the entity at that index is (subclasses count). `this.is(Coin)` asks about this one.
 - `sendTo(other, 'collect')` delivers `onMessage('collect', …)` on the coin, next frame, on the thread that owns the coin. Names come from the scene's `static messages`, and the payload is up to four numbers.
 
 ## 8. Tweens: a pulse and a fade
@@ -179,7 +179,7 @@ class Slime extends GameObject {
   }
 
   onCollisionEnter(other) {
-    if (!this.is(other, Player)) return;
+    if (!GameObject.is(other, Player)) return;
     this.sendTo(other, 'hit', 1);
     const dx = this.x - Transform.x[other];
     const dy = this.y - Transform.y[other];

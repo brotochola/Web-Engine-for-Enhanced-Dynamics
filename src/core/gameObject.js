@@ -174,7 +174,7 @@ export class GameObject {
 
   /**
    * Entity class per entity type id, filled where entity code runs (main
-   * thread, logic workers). Backs is() / hasComponent() on another entity.
+   * thread, logic workers). Backs GameObject.is() / hasComponent().
    * @type {Function[]}
    */
   static classByType = [];
@@ -421,12 +421,14 @@ export class GameObject {
 
   /**
    * True when the entity at `index` is an EntityClass or a subclass of it.
+   * For the index a collision callback or a message gets:
+   *   onCollisionEnter(other) { if (GameObject.is(other, Coin)) this.sendTo(other, 'collect'); }
    * O(1) for the exact class, a short prototype walk for a base class; no allocation.
    * @param {number} index
    * @param {Function} EntityClass
    * @returns {boolean}
    */
-  static isType(index, EntityClass) {
+  static is(index, EntityClass) {
     const type = Transform.entityType[index];
     if (type === EntityClass.entityType) return true;
     const C = GameObject.classByType[type];
@@ -446,27 +448,23 @@ export class GameObject {
   }
 
   /**
-   * Is the other entity an EntityClass (or a subclass)? `other` is an index
-   * (what collision callbacks get) or a GameObject.
-   *   onCollisionEnter(other) { if (this.is(other, Coin)) this.collect(other); }
-   * @param {number|GameObject} other
+   * Is this entity an EntityClass (or a subclass)? For another entity, use
+   * GameObject.is(index, EntityClass).
    * @param {Function} EntityClass
    * @returns {boolean}
    */
-  is(other, EntityClass) {
-    return GameObject.isType(typeof other === 'number' ? other : other.index, EntityClass);
+  is(EntityClass) {
+    return GameObject.is(this.index, EntityClass);
   }
 
   /**
-   * Does this entity's type list ComponentClass? Pass `other` (index or
-   * GameObject) to ask about another entity.
+   * Does this entity's type list ComponentClass? For another entity, use
+   * GameObject.hasComponent(index, ComponentClass).
    * @param {Function} ComponentClass
-   * @param {number|GameObject} [other]
    * @returns {boolean}
    */
-  hasComponent(ComponentClass, other) {
-    const index = other === undefined ? this.index : typeof other === 'number' ? other : other.index;
-    return GameObject.hasComponent(index, ComponentClass);
+  hasComponent(ComponentClass) {
+    return GameObject.hasComponent(this.index, ComponentClass);
   }
 
   /**

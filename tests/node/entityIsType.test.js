@@ -42,30 +42,37 @@ function at(index) {
   return go;
 }
 
-test('is(): exact class, subclass of a base class, not a sibling', () => {
+test('GameObject.is(index, Class): exact class, subclass of a base class, not a sibling', () => {
   register();
-  const soldier = at(2);
-  assert.equal(soldier.is(3, Soldier), true);
-  assert.equal(soldier.is(3, Person), true, 'a Soldier is a Person');
-  assert.equal(soldier.is(0, Soldier), false, 'a Person is not a Soldier');
-  assert.equal(soldier.is(4, Person), false);
-  assert.equal(soldier.is(at(5), Coin), true, 'a GameObject works as well as an index');
-  assert.equal(GameObject.isType(1, Person), true);
+  assert.equal(GameObject.is(3, Soldier), true);
+  assert.equal(GameObject.is(3, Person), true, 'a Soldier is a Person');
+  assert.equal(GameObject.is(0, Soldier), false, 'a Person is not a Soldier');
+  assert.equal(GameObject.is(4, Person), false);
+  assert.equal(GameObject.is(5, Coin), true);
 });
 
-test('hasComponent(): own type, another entity, tags and inherited components', () => {
+test('this.is(Class) asks about this entity', () => {
+  register();
+  const soldier = at(2);
+  assert.equal(soldier.is(Soldier), true);
+  assert.equal(soldier.is(Person), true, 'a Soldier is a Person');
+  assert.equal(soldier.is(Coin), false);
+  assert.equal(at(0).is(Soldier), false, 'a Person is not a Soldier');
+});
+
+test('this.hasComponent(C) for this entity, GameObject.hasComponent(index, C) for any', () => {
   register();
   const soldier = at(2);
   assert.equal(soldier.hasComponent(CollisionListener), true);
   assert.equal(soldier.hasComponent(RigidBody), true, 'inherited from Person');
-  assert.equal(soldier.hasComponent(RigidBody, 4), false, 'a Coin has no RigidBody');
-  assert.equal(soldier.hasComponent(Collider, at(4)), true);
+  assert.equal(at(4).hasComponent(RigidBody), false, 'a Coin has no RigidBody');
+  assert.equal(GameObject.hasComponent(4, Collider), true);
   assert.equal(GameObject.hasComponent(0, CollisionListener), false);
 });
 
 test('an unregistered type answers false instead of throwing', () => {
   register();
   GameObject.classByType.length = 0;
-  assert.equal(GameObject.isType(4, Person), false);
+  assert.equal(GameObject.is(4, Person), false);
   assert.equal(GameObject.hasComponent(4, Collider), false);
 });

@@ -21,7 +21,7 @@ export class BluePlatformerPlayer extends GameObject {
   });
 
   onCollisionEnter(other) {
-    if (!this.is(other, Platform)) return;
+    if (!GameObject.is(other, Platform)) return;
     this.vx *= 0.5;
 
     if (Transform.y[other] > this.y) {
@@ -53,7 +53,7 @@ export class BluePlatformerPlayer extends GameObject {
   }
 
   onCollisionStay(other) {
-    if (!this.is(other, Platform)) return;
+    if (!GameObject.is(other, Platform)) return;
     // Refresh ground contact — Exit can fire on sleep without a matching Enter later
     if (Transform.y[other] > this.y) {
       this.platformerCharacterComponent.isItStandingOnPlatform = other;

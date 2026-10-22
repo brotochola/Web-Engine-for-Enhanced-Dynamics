@@ -14,7 +14,7 @@ WeedJS uses ideas you already know (entities, components, scenes, physics callba
 What follows from that:
 
 - **State lives in components, not in plain fields.** A `GameObject` has a copy on each logic worker, so `this.hp = 3` is not shared between them and a save does not keep it. Declare the data on a component (`static ARRAY_SCHEMA = { hp: Float32Array }`) and use `this.health.hp`, or `Health.hp[index]` for another entity. That memory is shared by every thread, and saves keep it.
-- **Entities are referred to by index.** Collision callbacks and messages give you a number. Ask about it with `this.is(other, Enemy)` and `this.hasComponent(Shield, other)`, and read its data from component arrays (`Transform.x[other]`). An index is reused once its entity despawns, so do not keep one across frames as if it were the same entity.
+- **Entities are referred to by index.** Collision callbacks and messages give you a number. Ask about it with `GameObject.is(other, Enemy)` and `GameObject.hasComponent(other, Shield)`, and read its data from component arrays (`Transform.x[other]`). An index is reused once its entity despawns, so do not keep one across frames as if it were the same entity.
 - **Entities cannot touch the page.** Use `this.emit('died', data)` and `scene.on('died', fn)`.
 - **The workers load your scene file too.** It reads the engine from the global `WEED` (`const { Scene, GameObject } = WEED;`) instead of importing it. Put page-only code (the DOM, starting the engine) in the page or in scene methods, not at the top of the file.
 - **Pools are fixed.** `static entities = [[Enemy, 500]]` reserves 500 enemies up front, and spawning takes one from the pool. Spawning into a full pool returns `null`, and warns once.
@@ -29,8 +29,8 @@ What follows from that:
 | Destroy it | `Destroy` | `queue_free` | `destroy()` | `this.despawn()` |
 | Per-object data | fields, `[SerializeField]` | `@export var` | properties | component fields: `static ARRAY_SCHEMA = { hp: Float32Array }`, then `this.health.hp` |
 | Get a component | `GetComponent<T>()` | `get_node` | — | `this.rigidBody`, `this.health` (camelCase class name) |
-| Does it have one? | `TryGetComponent` | `has_node` | — | `this.hasComponent(Shield)`, `this.hasComponent(Shield, other)` |
-| What is that object? | `CompareTag`, `is` | `is_in_group`, `is` | `instanceof` | `this.is(other, Coin)` (subclasses count) |
+| Does it have one? | `TryGetComponent` | `has_node` | — | `this.hasComponent(Shield)`, `GameObject.hasComponent(other, Shield)` |
+| What is that object? | `CompareTag`, `is` | `is_in_group`, `is` | `instanceof` | `this.is(Coin)`, `GameObject.is(other, Coin)` (subclasses count) |
 | Setup | `Awake` / `Start` | `_ready` | `create` | `onSpawned(spawnConfig)`, on every spawn from the pool |
 | Every frame | `Update` | `_process` | `update` | `tick(dtRatio, deltaTime)` |
 | Physics step | `FixedUpdate` | `_physics_process` | — | Box2D steps on its own thread. A force applied in `tick` holds until the next `tick` |

@@ -54,7 +54,7 @@ class Player extends GameObject {
   }
 
   onCollisionEnter(other) {
-    if (this.is(other, Coin)) this.sendTo(other, 'collect');
+    if (GameObject.is(other, Coin)) this.sendTo(other, 'collect');
   }
 
   onMessage(name, from, amount) {
@@ -120,7 +120,7 @@ class Slime extends GameObject {
   }
 
   onCollisionEnter(other) {
-    if (!this.is(other, Player)) return;
+    if (!GameObject.is(other, Player)) return;
     this.sendTo(other, 'hit', 1);
     // Bounce back: one kick, heavier slimes would move less.
     const dx = this.x - Transform.x[other];
