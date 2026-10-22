@@ -1036,6 +1036,7 @@ export function teardownSceneSharedState(scene) {
   bindBodySyncBuffers(null);
   GameObject.instances = [];
   GameObject._globalAnimationCache = {};
+  GameObject._animIndexBySheet = [];
 
   if (Sun.isInitialized) {
     Sun._sab = null;

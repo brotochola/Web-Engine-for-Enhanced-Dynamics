@@ -199,6 +199,9 @@ export class GameObject {
   /** @internal Reused by despawnAll to avoid Set allocation per call */
   static _despawnAllBuffer = new Set();
 
+  /** @internal setAnimation: per spritesheet id, a Map of animation name → index. */
+  static _animIndexBySheet = [];
+
   /**
    * The entity at a global index, on any thread: every logic worker and the
    * page hold one instance per pool slot. From DevTools: `GameObject.get(12)`.
@@ -1754,11 +1757,11 @@ export class GameObject {
    * this.setAnimation("walk_right");  // Uses civil1's walk_right animation
    */
   setAnimation(animationName, loop = true) {
-    if (!this.spriteRenderer) return;
+    if (!this._hasComponents.SpriteRenderer) return;
 
     // Get which spritesheet is currently set
-    const spritesheetId = this.spriteRenderer.spritesheetId;
-    if (!spritesheetId || spritesheetId === 0) {
+    const spritesheetId = SpriteRenderer.spritesheetId[this.index];
+    if (!spritesheetId) {
       console.error(
         `❌ ${this.constructor.name}: Call setSpritesheet() before setAnimation(). ` +
         `Or use setSprite() for static sprites.`
@@ -1766,40 +1769,13 @@ export class GameObject {
       return;
     }
 
-    const spritesheet = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
-    if (!spritesheet) {
-      console.error(`❌ ${this.constructor.name}: Invalid spritesheetId ${spritesheetId}`);
-      return;
-    }
-
-    // PERFORMANCE: Global cache keyed by "sheet:animName"
-    if (!GameObject._globalAnimationCache) {
-      GameObject._globalAnimationCache = {};
-    }
-
-    const cacheKey = `${spritesheet}:${animationName}`;
-    let animIndex = GameObject._globalAnimationCache[cacheKey];
-
+    // Name → index per sheet id: no string is built per call, so a tick can
+    // call this every frame and pay only when the animation changes.
+    const byName = GameObject._animIndexBySheet[spritesheetId];
+    let animIndex = byName !== undefined ? byName.get(animationName) : undefined;
     if (animIndex === undefined) {
-      // First time this animation is used - look it up via proxy
-      animIndex = SpriteSheetRegistry.getAnimationIndex(spritesheet, animationName);
-
-      if (animIndex === undefined) {
-        // Animation not found
-        const availableAnims = Object.keys(
-          SpriteSheetRegistry.spritesheets.get(spritesheet)?.animations || {}
-        );
-
-        console.error(
-          `❌ ${this.constructor.name}: Animation "${animationName}" not found in "${spritesheet}". ` +
-          `Available: ${availableAnims.slice(0, 10).join(', ')}${availableAnims.length > 10 ? '...' : ''
-          }`
-        );
-        return;
-      }
-
-      // Cache it globally
-      GameObject._globalAnimationCache[cacheKey] = animIndex;
+      animIndex = GameObject._lookUpAnimation(this.constructor.name, spritesheetId, animationName);
+      if (animIndex === undefined) return;
     }
 
     const loopFlag = loop ? 1 : 0;
@@ -1813,6 +1789,34 @@ export class GameObject {
     // Set the animation and loop flag
     this.setAnimationState(animIndex);
     SpriteRenderer.loop[this.index] = loopFlag;
+  }
+
+  /**
+   * setAnimation's first call for a name on a sheet: find its index and keep it.
+   * @returns {number|undefined} undefined when there is none (reported)
+   */
+  static _lookUpAnimation(className, spritesheetId, animationName) {
+    const spritesheet = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
+    if (!spritesheet) {
+      console.error(`❌ ${className}: Invalid spritesheetId ${spritesheetId}`);
+      return undefined;
+    }
+    // Proxy sheets answer with their own index (the one animationState stores)
+    const animIndex = SpriteSheetRegistry.getAnimationIndex(spritesheet, animationName);
+    if (animIndex === undefined) {
+      const availableAnims = Object.keys(
+        SpriteSheetRegistry.spritesheets.get(spritesheet)?.animations || {}
+      );
+      console.error(
+        `❌ ${className}: Animation "${animationName}" not found in "${spritesheet}". ` +
+        `Available: ${availableAnims.slice(0, 10).join(', ')}${availableAnims.length > 10 ? '...' : ''}`
+      );
+      return undefined;
+    }
+    let byName = GameObject._animIndexBySheet[spritesheetId];
+    if (byName === undefined) GameObject._animIndexBySheet[spritesheetId] = byName = new Map();
+    byName.set(animationName, animIndex);
+    return animIndex;
   }
 
   /**
