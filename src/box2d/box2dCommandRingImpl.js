@@ -53,6 +53,8 @@
     EXTRACT_PARTICLES: 41, // entity=groupId; count, groupFlags, trackGroup (SAB holds indices)
     SET_PARTICLE_USER_DATA_LIST: 42, // indices+add/set in liquidFunUserDataList SAB
     SET_RADIAL_GRAVITY: 43, // a=x, b=y, c=accel (px/s², 0 = off): pull every particle toward (x, y)
+    APPLY_IMPULSE: 44, // entity, ix, iy, px, py (mass·px/s; NaN point = centre of mass); wakes
+    APPLY_ANGULAR_IMPULSE: 45, // entity, impulse; wakes
   });
 
   var BOX2D_CMD_HEADER_I32 = 4;
@@ -167,6 +169,20 @@
 
   function enqueueSetAngularVelocity(entity, w) {
     return enqueue(BOX2D_CMD.SET_ANGULAR_VELOCITY, entity, w, 0, 0, 0);
+  }
+
+  /**
+   * One impulse through Box2D's own b2Body_ApplyLinearImpulse: several in one
+   * frame add up, from any worker. No point (null / NaN) = centre of mass.
+   */
+  function enqueueApplyImpulse(entity, ix, iy, px, py) {
+    var x = px == null ? NaN : px;
+    var y = py == null ? NaN : py;
+    return enqueue(BOX2D_CMD.APPLY_IMPULSE, entity, ix, iy, x, y);
+  }
+
+  function enqueueApplyAngularImpulse(entity, impulse) {
+    return enqueue(BOX2D_CMD.APPLY_ANGULAR_IMPULSE, entity, impulse, 0, 0, 0);
   }
 
   function enqueueSetFixedRotation(entity, flag) {
@@ -599,6 +615,12 @@
         case BOX2D_CMD.SET_ANGULAR_VELOCITY:
           if (handlers.setAngularVelocity) handlers.setAngularVelocity(entity, a);
           break;
+        case BOX2D_CMD.APPLY_IMPULSE:
+          if (handlers.applyImpulse) handlers.applyImpulse(entity, a, b, c, d);
+          break;
+        case BOX2D_CMD.APPLY_ANGULAR_IMPULSE:
+          if (handlers.applyAngularImpulse) handlers.applyAngularImpulse(entity, a);
+          break;
         case BOX2D_CMD.SET_FIXED_ROTATION:
           if (handlers.setFixedRotation) handlers.setFixedRotation(entity, a);
           break;
@@ -739,6 +761,8 @@
     enqueueSetVelocity: enqueueSetVelocity,
     enqueueSetRotCS: enqueueSetRotCS,
     enqueueSetAngularVelocity: enqueueSetAngularVelocity,
+    enqueueApplyImpulse: enqueueApplyImpulse,
+    enqueueApplyAngularImpulse: enqueueApplyAngularImpulse,
     enqueueSetFixedRotation: enqueueSetFixedRotation,
     enqueueExplode: enqueueExplode,
     enqueueSetSleepThreshold: enqueueSetSleepThreshold,

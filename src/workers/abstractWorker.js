@@ -1,7 +1,7 @@
 // AbstractWorker.js - Base class for all game engine workers
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
-import { GameObject, SpriteSheetRegistry } from '../core/gameObject.js';
+import { GameObject } from '../core/gameObject.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import Keyboard from '../core/keyboard.js';
 import { Mouse } from '../core/mouse.js';
@@ -9,12 +9,11 @@ import { Gamepad } from '../core/gamepad.js';
 import { ParticleEmitter } from '../core/particleEmitter.js';
 import { DecorationPool } from '../core/decorationPool.js';
 import { DecorationSpatial } from '../core/decorationSpatial.js';
-import { Decoration } from '../core/decoration.js';
 import { BulletPool } from '../core/bulletPool.js';
 import { BulletComponent } from '../components/bulletComponent.js';
-import { Flash } from '../core/flash.js';
 import { Time } from '../core/timeScale.js';
 import { Tween } from '../core/tween.js';
+import { WORKER_WEED } from './workerWeed.js';
 import {
   bindSceneGraph,
   missingWorkerEntityClasses,
@@ -26,12 +25,6 @@ import {
   initializeComponentViews,
   exposeComponentsGlobally,
   exposeEntityClassesGlobally,
-  randomColor,
-  distanceSq2D,
-  getDirectionFromAngle,
-  getDirectionFromVector,
-  getDirection8FromVector,
-  containerRadius,
 } from '../util/utils.js';
 import { Camera } from '../core/camera.js';
 import { Sun } from '../core/sun.js';
@@ -42,7 +35,6 @@ import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
 import { bindFrameClock, stampStep } from '../util/frameClock.js';
-import { SceneBridge } from '../core/sceneBridge.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
 import { Grid } from '../core/grid.js';
@@ -59,7 +51,7 @@ import { Box2d } from '../core/box2d.js';
 import { Decal } from '../core/decal.js';
 import { bindSpawnCommandRing } from '../util/spawnCommandRing.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray, entityIdNone } from '../util/entityIdWidth.js';
-import { setVerboseWorkers, installQuietConsoleLog } from '../util/debugLog.js';
+import { setVerboseWorkers, debugWorkerLog } from '../util/debugLog.js';
 import { bindBox2dHotFields, bindWeedPoseFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
@@ -73,8 +65,6 @@ import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { bindBodySyncBuffers, bindPoseSlotBuffers } from '../box2d/box2dBodySync.js';
 
 import { Component } from '../core/component.js';
-import { FSM } from '../core/fsm.js';
-import { FSMState } from '../core/fsmState.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
@@ -86,11 +76,9 @@ import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
-import { CameraInOutListener } from '../components/cameraInOutListener.js';
-import { CollisionListener } from '../components/collisionListener.js';
-import { JointBreakListener } from '../components/jointBreakListener.js';
-import { Grab } from '../components/grab.js';
-import { ShapeType } from '../util/configDefaults.js';
+import { bindPoolExhaustion } from '../util/poolExhaustion.js';
+import { reportWorkerError } from '../util/errorReport.js';
+import { Messages } from '../core/messages.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -344,7 +332,12 @@ export class AbstractWorker {
   gameLoop(resuming = false) {
     if (this.isPaused) return;
 
-    this._runFrame(resuming);
+    try {
+      this._runFrame(resuming);
+    } catch (error) {
+      // A throw used to skip scheduleNextFrame below and stop this worker for good.
+      reportWorkerError(error, 'frame');
+    }
 
     // Schedule next frame (only if not using custom scheduler)
     if (!this.usesCustomScheduler) {
@@ -495,7 +488,6 @@ export class AbstractWorker {
     this.collectDetailedStats = !!(this.config.debug?.collectDetailedStats);
     this.collectGpuStats = !!(this.config.debug?.collectGpuStats);
     setVerboseWorkers(!!this.config.debug?.verboseWorkers);
-    installQuietConsoleLog();
     Ray.collectDetailedStats = this.collectDetailedStats;
     Box2d.collectDetailedStats = this.collectDetailedStats;
     Ray.assertRotCSUnit = !!(this.config.debug?.assertRotCSUnit);
@@ -848,12 +840,19 @@ export class AbstractWorker {
     if (data.buffers?.clockData) {
       Time.bind(data.buffers.clockData);
     }
+    if (data.buffers?.poolExhaustionData) {
+      bindPoolExhaustion(data.buffers.poolExhaustionData);
+    }
+    Messages.bind(
+      data.buffers?.messageInboxes ? { inboxes: data.buffers.messageInboxes, spawnGen: data.buffers.messageSpawnGen } : null,
+      data.messageNames
+    );
     if (data.buffers?.frameClock && Number.isInteger(data.frameClockSlot)) {
       this._frameClock = bindFrameClock(data.buffers.frameClock);
       this._frameClockSlot = data.frameClockSlot;
     }
     if (data.buffers?.tweenData) {
-      Tween.bind(data.buffers.tweenData, data.config?.tween?.maxTweens | 0);
+      Tween.bind(data.buffers.tweenData, data.config?.tween?.maxTweens | 0, data.globalEntityCount | 0);
     }
 
     // Store frame rate buffer index for writing to frameRateData
@@ -983,13 +982,13 @@ export class AbstractWorker {
     // Navigation buffer is shared across all workers
     // Logic workers read flowfields/paths, particle worker writes them
     if (data.buffers?.navigationData && data.config?.navigation?.enabled) {
-      console.log(`[${this.constructor.name}] Initializing NavGrid with navigation buffer`);
+      debugWorkerLog(`[${this.constructor.name}] Initializing NavGrid with navigation buffer`);
       NavGrid.initialize(data.buffers.navigationData, {
         worldWidth: data.config.worldWidth,
         worldHeight: data.config.worldHeight,
       });
     } else {
-      console.log(`[${this.constructor.name}] NavGrid NOT initialized - navigationData: ${!!data.buffers?.navigationData}, enabled: ${data.config?.navigation?.enabled}`);
+      debugWorkerLog(`[${this.constructor.name}] NavGrid NOT initialized - navigationData: ${!!data.buffers?.navigationData}, enabled: ${data.config?.navigation?.enabled}`);
       // this.reportLog('NavGrid initialized for pathfinding');
     }
 
@@ -1002,69 +1001,18 @@ export class AbstractWorker {
   }
 
   /**
-   * Register core engine classes globally for all workers
-   * These are the fundamental engine classes needed across all worker types
+   * Scene and entity scripts read engine names from `WEED` or as globals.
+   * Bundled workers evaluate those files without imports (see loadSingleScript).
    */
   registerCoreClasses() {
-    self.GameObject = GameObject;
-    self.Component = Component;
-    self.SharedResource = SharedResource;
-    self.FSM = FSM;
-    self.FSMState = FSMState;
-    self.Mouse = Mouse;
-    self.Keyboard = Keyboard;
-    self.Ray = Ray;
-    self.DebugDraw = DebugDraw;
-    self.DebugUI = DebugDraw; // alias so game scripts can use DebugUI.drawLine(...)
-    self.Grid = Grid;
-    self.NavGrid = NavGrid;
-    self.Camera = Camera;
-    self.Sun = Sun;
-    self.SpriteSheetRegistry = SpriteSheetRegistry;
-    self.AdobeAnimRegistry = AdobeAnimRegistry;
-    self.SoundManager = SoundManager;
-    self.Joint = Joint;
-    self.Layer = Layer;
-    self.SceneBridge = SceneBridge;
-    self.Gamepad = Gamepad;
-    self.Box2d = Box2d;
-    self.Decal = Decal;
-    self.Query = Query;
-    self.LiquidFun = LiquidFun;
-
-    // Components (required for blob worker entity script evaluation)
-    self.Transform = Transform;
-    self.RigidBody = RigidBody;
-    self.Collider = Collider;
-    self.SpriteRenderer = SpriteRenderer;
-    self.MeshRenderer = MeshRenderer;
-    self.AdobeAnimComponent = AdobeAnimComponent;
-    self.ParticleComponent = ParticleComponent;
-    self.LightEmitter = LightEmitter;
-    self.ShadowCaster = ShadowCaster;
-    self.FlashComponent = FlashComponent;
-    self.DecorationComponent = DecorationComponent;
-    self.BulletComponent = BulletComponent;
-    self.CameraInOutListener = CameraInOutListener;
-    self.CollisionListener = CollisionListener;
-    self.JointBreakListener = JointBreakListener;
-    self.Grab = Grab;
-
-    // Systems
-    self.ParticleEmitter = ParticleEmitter;
-    self.DecorationPool = DecorationPool;
-    self.Decoration = Decoration;
-    self.BulletPool = BulletPool;
-    self.Flash = Flash;
-
-    // Enums & utilities
-    self.ShapeType = ShapeType;
-    self.randomColor = randomColor;
-    self.distanceSq2D = distanceSq2D;
-    self.getDirectionFromAngle = getDirectionFromAngle;
-    self.getDirectionFromVector = getDirectionFromVector;
-    self.getDirection8FromVector = getDirection8FromVector;
-    self.containerRadius = containerRadius;
+    self.WEED = WORKER_WEED;
+    const names = Object.keys(WORKER_WEED);
+    for (let i = 0; i < names.length; i++) {
+      // self.rng is this worker's seeded generator (initSeededRandom). WEED.rng
+      // is the wrapper that calls it: on self it would call itself forever.
+      if (names[i] === 'rng') continue;
+      self[names[i]] = WORKER_WEED[names[i]];
+    }
   }
 
   /**
@@ -1234,7 +1182,7 @@ export class AbstractWorker {
 
     switch (msg) {
       case 'init':
-        console.log(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
+        debugWorkerLog(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
         if (e.data.pageOrigin) {
           self.__weedPageOrigin = e.data.pageOrigin;
         }
@@ -1243,20 +1191,20 @@ export class AbstractWorker {
           e.data.workerName ?? e.data.frameRateIndex ?? e.data.workerIndex ?? 'worker'
         );
         this.isPaused = true; // Keep paused until "start" message
-        console.log(`[${this.constructor.name}] Initializing common buffers...`);
+        debugWorkerLog(`[${this.constructor.name}] Initializing common buffers...`);
         await this.initializeCommonBuffers(e.data);
-        console.log(`[${this.constructor.name}] Common buffers initialized, setting up worker ports...`);
+        debugWorkerLog(`[${this.constructor.name}] Common buffers initialized, setting up worker ports...`);
         this.initializeWorkerPorts(e.data.workerPorts); // Initialize direct worker communication
-        console.log(`[${this.constructor.name}] Worker ports initialized, calling worker-specific initialize()...`);
+        debugWorkerLog(`[${this.constructor.name}] Worker ports initialized, calling worker-specific initialize()...`);
         await this.initialize(e.data);
-        console.log(`[${this.constructor.name}] Worker-specific initialize() completed`);
+        debugWorkerLog(`[${this.constructor.name}] Worker-specific initialize() completed`);
         // Logic defers reportReady until box2dReady (hot fields bound before onSpawned).
         if (this.shouldReportReadyAfterInit()) {
-          console.log(`[${this.constructor.name}] calling reportReady()...`);
+          debugWorkerLog(`[${this.constructor.name}] calling reportReady()...`);
           this.reportReady();
-          console.log(`[${this.constructor.name}] reportReady() called, waiting for 'start' message...`);
+          debugWorkerLog(`[${this.constructor.name}] reportReady() called, waiting for 'start' message...`);
         } else {
-          console.log(`[${this.constructor.name}] deferring reportReady until box2dReady`);
+          debugWorkerLog(`[${this.constructor.name}] deferring reportReady until box2dReady`);
         }
         break;
 
@@ -1336,7 +1284,7 @@ export class AbstractWorker {
    */
   reportReady() {
     this.reportLog('initialization complete, signaling ready');
-    console.log(`${this.constructor.name}: Sending workerReady message`);
+    debugWorkerLog(`${this.constructor.name}: Sending workerReady message`);
     self.postMessage({ msg: 'workerReady', worker: this.constructor.name });
   }
 
@@ -1361,10 +1309,10 @@ export class AbstractWorker {
     // If this worker has a port to the particle worker, configure NavGrid to use it
     // Logic workers use this to send pathfinding requests to the particle worker
     if (this.workerPorts.has('particle')) {
-      console.log(`[${this.constructor.name}] Setting NavGrid port to particle worker`);
+      debugWorkerLog(`[${this.constructor.name}] Setting NavGrid port to particle worker`);
       NavGrid.setNavWorkerPort(this.workerPorts.get('particle'));
     } else {
-      console.log(`[${this.constructor.name}] No particle port found. Available ports:`, Array.from(this.workerPorts.keys()));
+      debugWorkerLog(`[${this.constructor.name}] No particle port found. Available ports:`, Array.from(this.workerPorts.keys()));
     }
 
     // console.log(

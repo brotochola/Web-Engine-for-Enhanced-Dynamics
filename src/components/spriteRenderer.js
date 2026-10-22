@@ -81,6 +81,9 @@ export class SpriteRenderer extends Component {
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame
     screenX: Float32Array,
     screenY: Float32Array,
+    // bit 0 flipX, bit 1 flipY. The flip lives in the sign of scaleX / scaleY
+    // (what the renderers read); this remembers it so setScale keeps it.
+    flip: Uint8Array,
   };
 
   /**
@@ -107,9 +110,11 @@ export class SpriteRenderer extends Component {
    * @returns {number} Original width in pixels, or 0 if not found
    */
   static getOriginalWidth(entityIndex) {
-    const spritesheetId = SpriteRenderer.spritesheetId[entityIndex];
-    const animIndex = SpriteRenderer.animationState[entityIndex];
-    const dims = SpriteSheetRegistry.getFrameDimensionsById(spritesheetId, animIndex);
+    // frameSizeOf: cached by number; the uncached lookup builds a string per call for proxy sheets
+    const dims = SpriteSheetRegistry.frameSizeOf(
+      SpriteRenderer.spritesheetId[entityIndex],
+      SpriteRenderer.animationState[entityIndex]
+    );
     return dims ? dims.w : 0;
   }
 
@@ -119,9 +124,10 @@ export class SpriteRenderer extends Component {
    * @returns {number} Original height in pixels, or 0 if not found
    */
   static getOriginalHeight(entityIndex) {
-    const spritesheetId = SpriteRenderer.spritesheetId[entityIndex];
-    const animIndex = SpriteRenderer.animationState[entityIndex];
-    const dims = SpriteSheetRegistry.getFrameDimensionsById(spritesheetId, animIndex);
+    const dims = SpriteSheetRegistry.frameSizeOf(
+      SpriteRenderer.spritesheetId[entityIndex],
+      SpriteRenderer.animationState[entityIndex]
+    );
     return dims ? dims.h : 0;
   }
 
@@ -132,8 +138,9 @@ export class SpriteRenderer extends Component {
   static updateBounds(entityIndex) {
     const w = SpriteRenderer.getOriginalWidth(entityIndex) || 0;
     const h = SpriteRenderer.getOriginalHeight(entityIndex) || 0;
-    const sx = SpriteRenderer.scaleX[entityIndex] || 1;
-    const sy = SpriteRenderer.scaleY[entityIndex] || 1;
+    // |scale|: a flip is a negative scale, and culling takes the larger half extent
+    const sx = Math.abs(SpriteRenderer.scaleX[entityIndex]) || 1;
+    const sy = Math.abs(SpriteRenderer.scaleY[entityIndex]) || 1;
     SpriteRenderer.boundsHalfW[entityIndex] = (w * sx) * 0.5;
     SpriteRenderer.boundsHalfH[entityIndex] = (h * sy) * 0.5;
   }

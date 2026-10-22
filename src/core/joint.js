@@ -6,6 +6,7 @@ import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { Transform } from '../components/transform.js';
 import { JOINT_TYPE } from '../box2d/box2dConstants.js';
 import { entityIdBytes } from '../util/entityIdWidth.js';
+import { reportJointPoolExhausted } from '../util/poolExhaustion.js';
 
 function jointGetAPacked(idx) {
   return Joint.pairs[idx] >>> 16;
@@ -375,7 +376,7 @@ export class Joint extends SharedAtomicPool {
   static _acquireOrWarn() {
     const idx = this.acquireIndex();
     if (idx === -1) {
-      console.warn('Joint: Pool exhausted');
+      reportJointPoolExhausted(this.type ? this.type.length : 0);
     }
     return idx;
   }

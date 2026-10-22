@@ -94,6 +94,7 @@
     const game = new GameEngine({
       autoResize: true,
       debug: params.get('debug') !== '0',
+      hotReload: true, // npm run dev: a file change reloads the scene with its state
     });
     window.game = game;
 
@@ -132,6 +133,12 @@
 
     async function startScene(entry) {
       document.getElementById('scene_list').style.display = 'none';
+      // Keep the scene in the URL, so a reload (or a hot reload) comes back to it.
+      const key = sceneKeys(entry).values().next().value;
+      if (key && params.get('scene') !== key) {
+        params.set('scene', key);
+        history.replaceState(null, '', `${location.pathname}?${params}`);
+      }
       await game.loadScene(entry.url, { export: entry.export });
     }
 

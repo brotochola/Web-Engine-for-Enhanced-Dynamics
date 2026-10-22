@@ -261,13 +261,19 @@ export class BadPiggiesScene extends Scene {
     this._refreshHud();
   }
 
-  onLoadGame(_payload) {
+  onLoadGame(payload) {
     this._rebuildOccupancyFromEntities();
     this._rebuildWheelJointsFromActive();
+    if (payload?.hotReload) {
+      // A hot reload brought the ghost previews back too: find them.
+      this.ghostBoxIdx = GhostMachineBox.getFirstActiveIndex() ?? -1;
+      this.ghostWheelIdx = GhostMachineWheel.getFirstActiveIndex() ?? -1;
+      this.ghostRocketIdx = GhostMachineRocket.getFirstActiveIndex() ?? -1;
+    }
     // Ghosts are non-serializable; ensure previews exist after remount.
     if (this.ghostBoxIdx < 0) {
-      const ghostBox = GhostGhostMachineBox.spawn({ x: -9999, y: -9999, ghost: true });
-      const ghostWheel = GhostGhostMachineWheel.spawn({ x: -9999, y: -9999, ghost: true });
+      const ghostBox = GhostMachineBox.spawn({ x: -9999, y: -9999, ghost: true });
+      const ghostWheel = GhostMachineWheel.spawn({ x: -9999, y: -9999, ghost: true });
       const ghostRocket = GhostMachineRocket.spawn({
         x: -9999,
         y: -9999,

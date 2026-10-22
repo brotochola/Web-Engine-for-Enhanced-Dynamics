@@ -83,6 +83,7 @@ import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
+import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
 const INVALID_TEXTURE_ID = 0xFFFF;
 const EMPTY_OWNED_IDS = new Uint32Array(0);
 // Placeholders for render-queue columns until initialize() binds the real views.
@@ -369,6 +370,11 @@ class PreRenderWorker extends AbstractWorker {
         // Animation frame tracking
         this.entityFrameIndex = null;
         this.entityFrameAccumulator = null;
+        // onAnimationEnd: types that define it, and the last (animation + 1,
+        // spawn generation) reported per entity, so a held last frame reports once.
+        this._animEndByType = new Uint8Array(0);
+        this._animEndAnim = new Uint16Array(0);
+        this._animEndGen = new Uint16Array(0);
 
         // Scratch for published physics pose / Transform (no per-call alloc)
         // Display pose scratch: [x, y, rotC, rotS]. A typed array, as Chrome boxed the
@@ -777,6 +783,7 @@ class PreRenderWorker extends AbstractWorker {
                 this.entityFrameIndex = new Uint16Array(this.globalEntityCount);
                 this.entityFrameAccumulator = new Float32Array(this.globalEntityCount);
             }
+            this._bindAnimationEndTypes(data.registeredClasses);
 
             // Pre-allocate renderable collector buffers
             this._renderableY = new Float32Array(maxItems);
@@ -1560,6 +1567,41 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    /** Types whose class defines onAnimationEnd (main computed it per registered class). */
+    _bindAnimationEndTypes(registeredClasses) {
+        const list = registeredClasses || [];
+        let maxType = -1;
+        for (let r = 0; r < list.length; r++) if (list[r].entityType > maxType) maxType = list[r].entityType;
+        this._animEndByType = new Uint8Array(maxType + 1);
+        let any = false;
+        for (let r = 0; r < list.length; r++) {
+            if (list[r].animationEnd) {
+                this._animEndByType[list[r].entityType] = 1;
+                any = true;
+            }
+        }
+        const n = any ? this.globalEntityCount | 0 : 0;
+        this._animEndAnim = new Uint16Array(n);
+        this._animEndGen = new Uint16Array(n);
+    }
+
+    /** Report once per (animation, spawn): the last frame is held, so this runs again every frame duration. */
+    _spriteAnimationEnded(idx, animState) {
+        if (idx >= this._animEndAnim.length) return;
+        const anim = (animState + 1) & 0xffff;
+        const gen = idx < Messages.spawnGen.length ? Messages.spawnGen[idx] : 0;
+        if (this._animEndAnim[idx] === anim && this._animEndGen[idx] === gen) return;
+        this._animEndAnim[idx] = anim;
+        this._animEndGen[idx] = gen;
+        Messages.sendSystem(idx, MESSAGE_ANIMATION_END, 0, animState);
+    }
+
+    /** A play-once Adobe clip reached its end (playing went 0, so this runs once per play). */
+    _adobeAnimationEnded(i) {
+        if (this._animEndByType[Transform.entityType[i]] !== 1) return;
+        Messages.sendSystem(i, MESSAGE_ANIMATION_END, 1, AdobeAnimComponent.clipId[i]);
+    }
+
     advanceAdobeAnimations(deltaTime) {
         if (!AdobeAnimComponent.active) return;
 
@@ -1593,9 +1635,11 @@ class PreRenderWorker extends AbstractWorker {
             } else if (nextTime >= duration) {
                 time[i] = duration;
                 playing[i] = 0;
+                this._adobeAnimationEnded(i);
             } else if (nextTime <= 0) {
                 time[i] = 0;
                 playing[i] = 0;
+                this._adobeAnimationEnded(i);
             } else {
                 time[i] = nextTime;
             }
@@ -2686,15 +2730,20 @@ class PreRenderWorker extends AbstractWorker {
                             const isLastFrame = currentFrame >= animFrameCount - 1;
                             const shouldLoop = srLoop[idx] === 1;
 
-                            if (shouldLoop || !isLastFrame) {
+                            if (!shouldLoop && isLastFrame) {
+                                // The last frame of a play-once animation finished showing.
+                                if (this._animEndByType[Transform.entityType[idx]] === 1) {
+                                    this._spriteAnimationEnded(idx, animState);
+                                }
+                            } else {
                                 frameIndex[idx] = (currentFrame + 1) % animFrameCount;
                                 // Bounds may change (variable frame sizes)
                                 if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
                                     const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
                                     const origW = this.frameWidth[texId] || 0;
                                     const origH = this.frameHeight[texId] || 0;
-                                    const sx = srScaleX[idx] || 1;
-                                    const sy = srScaleY[idx] || 1;
+                                    const sx = Math.abs(srScaleX[idx]) || 1; // flip = negative scale
+                                    const sy = Math.abs(srScaleY[idx]) || 1;
                                     SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
                                     SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
                                 }

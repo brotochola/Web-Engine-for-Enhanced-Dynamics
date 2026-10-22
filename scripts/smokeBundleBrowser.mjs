@@ -29,6 +29,12 @@ try {
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
+    // npm installs ship dist/ only: a bundle must not reach into /src/ (this server has it, a game's would not).
+    const srcRequests = [];
+    page.on('request', (r) => {
+      const p = new URL(r.url()).pathname;
+      if (p.startsWith('/src/')) srcRequests.push(p);
+    });
 
     const url = `http://127.0.0.1:${server.port}/dist/index.html?bundle=${encodeURIComponent(bundle)}`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -67,7 +73,27 @@ try {
       }
     }
 
+    // ESM bundles: named imports work and are the same objects as WEED.X.
+    if (result?.ok && bundle.includes('.esm.')) {
+      const bad = await page.evaluate(async (file) => {
+        const mod = await import(`/dist/${file}`);
+        const names = ['Scene', 'GameEngine', 'GameObject', 'RigidBody', 'Collider', 'Tween', 'Camera', 'Keyboard'];
+        return names.filter((n) => typeof mod[n] !== 'function' || mod[n] !== mod.default[n]);
+      }, bundle).catch((e) => [`import failed: ${e.message}`]);
+      if (bad.length) {
+        result.ok = false;
+        result.text = `${result.text || ''} (named exports missing or not WEED.X: ${bad.join(', ')})`;
+      } else {
+        console.log('  named exports OK');
+      }
+    }
+
     await page.close();
+
+    if (srcRequests.length && result) {
+      result.ok = false;
+      result.text = `${result.text || ''} (fetched ${srcRequests.length} file(s) from /src/, e.g. ${srcRequests[0]})`;
+    }
 
     const fatal = errors.filter((e) =>
       /importScripts|worker_common|Failed to fetch|DecompressionStream|WebAssembly|invalid URL/i.test(e),

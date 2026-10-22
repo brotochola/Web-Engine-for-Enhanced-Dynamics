@@ -30,6 +30,4 @@ export class Platform extends GameObject {
     this.setTint(spawnConfig.tint ?? 0x495870);
     this.setAlpha(spawnConfig.alpha ?? 1);
   }
-
-  tick() { }
 }

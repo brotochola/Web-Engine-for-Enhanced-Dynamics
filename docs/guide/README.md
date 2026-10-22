@@ -4,13 +4,18 @@ These notes are for someone writing a game on the engine. Specs live here. The m
 
 ## Start here
 
+A new project: `npm create weed-game my-game`, then `npm install` and `npm run dev` in it.
+
 | File | Use it for |
 | --- | --- |
+| [`FIRST_GAME.md`](./FIRST_GAME.md) | A complete small game in 13 steps (runnable: [`first-game/`](./first-game/)) |
+| [`COMING_FROM.md`](./COMING_FROM.md) | Unity / Godot / Phaser names for WeedJS concepts, and where your code runs |
 | [`bible_of_weed_js.md`](./bible_of_weed_js.md) | Scene contract, entity lifecycle, tags, collision, layers, audio, common limits |
 | [`SAVE_GAME.md`](./SAVE_GAME.md) | Sparse save/load, `create` / `createNewGame` / `onLoadGame`, IndexedDB, the Saves tab |
 | [`WORKERS_ARCHITECTURE.md`](./WORKERS_ARCHITECTURE.md) | Worker roles, data flow, scaling, message protocols |
 | [`MEMORY_STRUCTURE.md`](./MEMORY_STRUCTURE.md) | SharedArrayBuffer layouts, who writes, who reads, SharedResource blobs |
 | [`ENTITY_TEMPLATE.js`](./ENTITY_TEMPLATE.js) | A minimal entity, with worker-safe imports and lifecycle hooks |
+| [`DEPLOY.md`](./DEPLOY.md) | The two headers `SharedArrayBuffer` needs, per host (Vercel, Netlify, GitHub Pages, itch.io, …) |
 
 ## Subsystems
 

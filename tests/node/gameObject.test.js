@@ -480,6 +480,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   const previousSpriteVisible = SpriteRenderer.renderVisible;
   const previousSpriteScaleX = SpriteRenderer.scaleX;
   const previousSpriteScaleY = SpriteRenderer.scaleY;
+  const previousSpriteFlip = SpriteRenderer.flip;
   const previousSpriteDirty = SpriteRenderer.renderDirty;
   const previousSpriteOnScreen = SpriteRenderer.isItOnScreen;
   const previousSpriteLayerMask = SpriteRenderer.layerMask;
@@ -490,6 +491,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   const previousAdobeVisible = AdobeAnimComponent.renderVisible;
   const previousAdobeScaleX = AdobeAnimComponent.scaleX;
   const previousAdobeScaleY = AdobeAnimComponent.scaleY;
+  const previousAdobeFlip = AdobeAnimComponent.flip;
   const previousAdobeOnScreen = AdobeAnimComponent.isItOnScreen;
   const previousAdobeLayerMask = AdobeAnimComponent.layerMask;
   const previousAdobeApplyClipBounds = AdobeAnimComponent.applyClipBounds;
@@ -508,6 +510,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   SpriteRenderer.tint = new Uint32Array([0xffffff, 0xffffff]);
   SpriteRenderer.renderVisible = new Uint8Array([0, 1]);
   SpriteRenderer.scaleX = new Float32Array([1, 1]);
+  SpriteRenderer.flip = new Uint8Array(2);
   SpriteRenderer.scaleY = new Float32Array([1, 1]);
   SpriteRenderer.renderDirty = new Uint8Array([0, 0]);
   SpriteRenderer.isItOnScreen = new Uint8Array([0, 1]);
@@ -518,6 +521,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   AdobeAnimComponent.tint = new Uint32Array([0xffffff, 0xffffff]);
   AdobeAnimComponent.renderVisible = new Uint8Array([0, 1]);
   AdobeAnimComponent.scaleX = new Float32Array([1, 1]);
+  AdobeAnimComponent.flip = new Uint8Array(2);
   AdobeAnimComponent.scaleY = new Float32Array([1, 1]);
   AdobeAnimComponent.isItOnScreen = new Uint8Array([1, 0]);
   AdobeAnimComponent.layerMask = new Uint16Array([1 << 7, 1 << 3]);
@@ -600,6 +604,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
     SpriteRenderer.renderVisible = previousSpriteVisible;
     SpriteRenderer.scaleX = previousSpriteScaleX;
     SpriteRenderer.scaleY = previousSpriteScaleY;
+    SpriteRenderer.flip = previousSpriteFlip;
     SpriteRenderer.renderDirty = previousSpriteDirty;
     SpriteRenderer.isItOnScreen = previousSpriteOnScreen;
     SpriteRenderer.layerMask = previousSpriteLayerMask;
@@ -610,6 +615,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
     AdobeAnimComponent.renderVisible = previousAdobeVisible;
     AdobeAnimComponent.scaleX = previousAdobeScaleX;
     AdobeAnimComponent.scaleY = previousAdobeScaleY;
+    AdobeAnimComponent.flip = previousAdobeFlip;
     AdobeAnimComponent.isItOnScreen = previousAdobeOnScreen;
     AdobeAnimComponent.layerMask = previousAdobeLayerMask;
     AdobeAnimComponent.applyClipBounds = previousAdobeApplyClipBounds;
@@ -637,6 +643,7 @@ test('Scene.getPoolStats handles entity classes that start at index 0', () => {
       total: 3,
       active: 2,
       available: 1,
+      dropped: 0,
     });
   } finally {
     Transform.active = previousTransformActive;

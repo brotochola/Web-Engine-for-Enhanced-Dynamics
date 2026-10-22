@@ -29,9 +29,14 @@ export const SECTION = Object.freeze({
   CHAINS2: 17,
   FIXTURES2: 18,
   MESHES2: 19,
+  /** u8 layout, then the JSON text of Scene.onSaveGame()'s value. Absent when it returned nothing. */
+  CUSTOM: 20,
+  /** u8 layout, then JSON: plain JS fields of instances, per logic worker. Hot reload saves only. */
+  INSTANCE_FIELDS: 21,
 });
 
-const TWEENS2_LAYOUT = 1;
+/** 2: repeat, doneMsg, flags (DX 4.2). Layout 1 saves still read. */
+const TWEENS2_LAYOUT = 2;
 /** Record layout of SHARED_RESOURCES2, CHAINS2, FIXTURES2, MESHES2. Bump on any change. */
 const SECTION_LAYOUT = 1;
 
@@ -773,6 +778,26 @@ function readNav(r) {
   };
 }
 
+function writeCustom(w, value) {
+  let text;
+  try {
+    text = JSON.stringify(value);
+  } catch (err) {
+    throw new Error(`SaveGame: onSaveGame() must return JSON data (${err.message})`);
+  }
+  w.u8(SECTION_LAYOUT);
+  w.str(text);
+}
+
+function readCustom(r) {
+  return JSON.parse(r.str());
+}
+
+function writeInstanceFields(w, value) {
+  w.u8(SECTION_LAYOUT);
+  w.str(JSON.stringify(value));
+}
+
 function writeTime(w, scale) {
   w.f32(+scale);
 }
@@ -805,9 +830,10 @@ function writeTweens(w, slots) {
  * @param {boolean} legacy TWEENS (tag 14): no layout byte, u16 entity.
  */
 function readTweens(r, legacy) {
+  let layout = 1;
   if (!legacy) {
-    const layout = r.u8();
-    if (layout !== TWEENS2_LAYOUT) {
+    layout = r.u8();
+    if (layout > TWEENS2_LAYOUT) {
       console.warn(`[SaveGame] tween section layout ${layout} is newer than this build; tweens skipped`);
       return null;
     }
@@ -819,7 +845,9 @@ function readTweens(r, legacy) {
     for (let f = 0; f < TWEEN_RECORD_FIELDS.length; f++) {
       const name = TWEEN_RECORD_FIELDS[f][0];
       const type = TWEEN_RECORD_FIELDS[f][1];
-      if (type === 'f32') rec[name] = r.f32();
+      const since = TWEEN_RECORD_FIELDS[f][2] || 1;
+      if (since > layout) rec[name] = 0;
+      else if (type === 'f32') rec[name] = r.f32();
       else if (type === 'u32') rec[name] = legacy && name === 'entity' ? r.u16() : r.u32();
       else rec[name] = r.u8();
     }
@@ -868,6 +896,12 @@ export function encodeBinarySaveBody(payload) {
   }
   if (payload.tweens?.length) {
     pushSection(sections, SECTION.TWEENS2, (w) => writeTweens(w, payload.tweens));
+  }
+  if (payload.custom !== undefined && payload.custom !== null) {
+    pushSection(sections, SECTION.CUSTOM, (w) => writeCustom(w, payload.custom));
+  }
+  if (payload.instanceFields) {
+    pushSection(sections, SECTION.INSTANCE_FIELDS, (w) => writeInstanceFields(w, payload.instanceFields));
   }
 
   const out = new Writer();
@@ -941,5 +975,8 @@ export function decodeBinarySaveBody(bytes) {
       : map[SECTION.TWEENS]
         ? readTweens(new Reader(map[SECTION.TWEENS]), true)
         : null,
+    // Older saves have no CUSTOM section: null, not an error.
+    custom: readVersioned(map, SECTION.CUSTOM, -1, 'custom', readCustom),
+    instanceFields: readVersioned(map, SECTION.INSTANCE_FIELDS, -1, 'instance fields', readCustom),
   };
 }

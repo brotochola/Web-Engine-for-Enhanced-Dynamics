@@ -8,7 +8,35 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 
-const PORT = 8000;
+const PORT = Number(process.env.PORT) || 8000;
+
+// Hot reload: a change under the served folder pings /__weed/reload (Server-Sent
+// Events). The engine's debug build saves the running scene and reloads with it.
+// WEED_HOT_RELOAD=0 turns it off.
+const HOT_RELOAD = process.env.WEED_HOT_RELOAD !== '0';
+const reloadClients = new Set();
+const WATCHED_EXT = new Set(['.js', '.mjs', '.json', '.frag', '.vert', '.glsl', '.wgsl', '.png', '.jpg', '.css', '.html']);
+const IGNORED = /(^|[\\/])(node_modules|\.git|dist|scratch|\.claude)([\\/]|$)|(^|[\\/])tests[\\/]results([\\/]|$)/;
+let reloadTimer = null;
+let reloadFile = '';
+
+function watchForReload() {
+  try {
+    fs.watch('.', { recursive: true }, (event, file) => {
+      if (!file || IGNORED.test(file) || !WATCHED_EXT.has(path.extname(file).toLowerCase())) return;
+      reloadFile = file;
+      // Editors write a file in several steps: one ping per burst.
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        const msg = 'data: ' + JSON.stringify({ file: reloadFile.replace(/\\/g, '/') }) + '\n\n';
+        for (const res of reloadClients) res.write(msg);
+        if (reloadClients.size) console.log('♻️  ' + reloadFile + ' changed: hot reload (' + reloadClients.size + ' page(s))');
+      }, 150);
+    });
+  } catch (err) {
+    console.log('⚠️ Hot reload off: this platform cannot watch folders recursively', err.message);
+  }
+}
 
 // MIME types for common files
 const mimeTypes = {
@@ -34,6 +62,26 @@ const server = http.createServer((req, res) => {
 
   // Parse URL and strip query parameters
   const [urlPath, query = ''] = req.url.split('?');
+
+  if (urlPath === '/__weed/reload') {
+    if (!HOT_RELOAD) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    });
+    res.write(': hot reload\n\n');
+    reloadClients.add(res);
+    req.on('close', () => reloadClients.delete(res));
+    return;
+  }
   const querySuffix = query ? `?${query}` : '';
 
   // Get file path
@@ -112,4 +160,5 @@ const startServer = (port) => {
   });
 };
 
+if (HOT_RELOAD) watchForReload();
 startServer(PORT);

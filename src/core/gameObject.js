@@ -68,9 +68,26 @@ import {
 } from '../util/logicOwner.js';
 import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
 import { isSpawnCommandRingBound, tryPushSpawn } from '../util/spawnCommandRing.js';
+import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
+import { reportWorkerError } from '../util/errorReport.js';
+import { Messages } from './messages.js';
+import { Tween } from './tween.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
+
+/** className → methods already warned about a missing sprite (one warning each). */
+const _warnedNoSprite = new Map();
+function warnNoSpriteOnce(className, method) {
+  let methods = _warnedNoSprite.get(className);
+  if (methods === undefined) {
+    methods = new Set();
+    _warnedNoSprite.set(className, methods);
+  }
+  if (methods.has(method)) return;
+  methods.add(method);
+  console.warn(`WeedJS: ${className}.${method} needs a sprite: call setSprite / setSpritesheet first.`);
+}
 
 export class GameObject {
   // Entity class metadata (for spawning system)
@@ -154,6 +171,13 @@ export class GameObject {
    * @type {Object|null}
    */
   static scene = null;
+
+  /**
+   * Entity class per entity type id, filled where entity code runs (main
+   * thread, logic workers). Backs GameObject.is() / hasComponent().
+   * @type {Function[]}
+   */
+  static classByType = [];
 
   /** @internal Reused by despawnAll to avoid Set allocation per call */
   static _despawnAllBuffer = new Set();
@@ -392,6 +416,55 @@ export class GameObject {
       componentClassMap[camelCaseName] = ComponentClass;
     }
     EntityClass._componentClassMap = componentClassMap;
+    EntityClass._componentList = components;
+  }
+
+  /**
+   * True when the entity at `index` is an EntityClass or a subclass of it.
+   * For the index a collision callback or a message gets:
+   *   onCollisionEnter(other) { if (GameObject.is(other, Coin)) this.sendTo(other, 'collect'); }
+   * O(1) for the exact class, a short prototype walk for a base class; no allocation.
+   * @param {number} index
+   * @param {Function} EntityClass
+   * @returns {boolean}
+   */
+  static is(index, EntityClass) {
+    const type = Transform.entityType[index];
+    if (type === EntityClass.entityType) return true;
+    const C = GameObject.classByType[type];
+    return C !== undefined && C.prototype instanceof EntityClass;
+  }
+
+  /**
+   * True when the entity type at `index` lists ComponentClass (tags included).
+   * @param {number} index
+   * @param {Function} ComponentClass
+   * @returns {boolean}
+   */
+  static hasComponent(index, ComponentClass) {
+    const C = GameObject.classByType[Transform.entityType[index]];
+    const list = C !== undefined ? C._componentList : undefined;
+    return list !== undefined && list.includes(ComponentClass);
+  }
+
+  /**
+   * Is this entity an EntityClass (or a subclass)? For another entity, use
+   * GameObject.is(index, EntityClass).
+   * @param {Function} EntityClass
+   * @returns {boolean}
+   */
+  is(EntityClass) {
+    return GameObject.is(this.index, EntityClass);
+  }
+
+  /**
+   * Does this entity's type list ComponentClass? For another entity, use
+   * GameObject.hasComponent(index, ComponentClass).
+   * @param {Function} ComponentClass
+   * @returns {boolean}
+   */
+  hasComponent(ComponentClass) {
+    return GameObject.hasComponent(this.index, ComponentClass);
   }
 
   /**
@@ -460,6 +533,30 @@ export class GameObject {
 
     this._componentCache = {};
     Ctor._ensureComponentAccessors();
+  }
+
+  /**
+   * Send a message to another entity: it runs other.onMessage(name, this.index,
+   * a, b, c, d) next frame, before its tick, on the logic worker that owns it.
+   * `name` must be in the scene's static messages; a, b, c, d are numbers.
+   * Dropped if the target despawns first. No allocation.
+   * @param {number|GameObject} other
+   * @param {string} name
+   * @returns {boolean} false when not sent (no listener in the scene, inbox full)
+   */
+  sendTo(other, name, a = 0, b = 0, c = 0, d = 0) {
+    return Messages.send(typeof other === 'number' ? other : other.index, name, this.index, a, b, c, d);
+  }
+
+  /**
+   * Tell the main thread something happened: scene.on(name, fn) gets
+   * fn(data, entityIndex, className). `data` is structured-cloned (allocates):
+   * for rare events (died, won, picked up), not every frame.
+   * @param {string} name
+   * @param {*} [data]
+   */
+  emit(name, data) {
+    return SceneBridge.emitToScene(name, data, this);
   }
 
   /** Worker→Scene postMessage helper (`SceneBridge`). */
@@ -840,39 +937,116 @@ export class GameObject {
     }
   }
 
-  /** Scale X */
+  // Flip lives in the sign of the stored scale (what the renderers read) and in
+  // a flag, so the scale you set and read stays the scale you meant: with
+  // flipX on, setScale(2) stores -2 and scaleX reads 2. Without a flip,
+  // everything is as before (a negative scale still mirrors).
+
+  /** Scale X (as you set it; a flip is not part of it) */
   get scaleX() {
-    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.scaleX[this.index];
-    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.scaleX[this.index];
+    if (this._hasComponents.SpriteRenderer) {
+      const v = SpriteRenderer.scaleX[this.index];
+      return SpriteRenderer.flip[this.index] & 1 ? -v : v;
+    }
+    if (this._hasComponents.adobeAnimComponent) {
+      const v = AdobeAnimComponent.scaleX[this.index];
+      return AdobeAnimComponent.flip[this.index] & 1 ? -v : v;
+    }
     return 1;
   }
   set scaleX(value) {
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleX[this.index] !== value) {
-      SpriteRenderer.scaleX[this.index] = value;
-      SpriteRenderer.updateBounds(this.index);
-      SpriteRenderer.renderDirty[this.index] = 1;
+    if (this._hasComponents.SpriteRenderer) {
+      const v = SpriteRenderer.flip[this.index] & 1 ? -value : value;
+      if (SpriteRenderer.scaleX[this.index] !== v) {
+        SpriteRenderer.scaleX[this.index] = v;
+        SpriteRenderer.updateBounds(this.index);
+        SpriteRenderer.renderDirty[this.index] = 1;
+      }
     }
-    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.scaleX[this.index] !== value) {
-      AdobeAnimComponent.scaleX[this.index] = value;
-      AdobeAnimComponent.applyClipBounds(this.index);
+    if (this._hasComponents.adobeAnimComponent) {
+      const v = AdobeAnimComponent.flip[this.index] & 1 ? -value : value;
+      if (AdobeAnimComponent.scaleX[this.index] !== v) {
+        AdobeAnimComponent.scaleX[this.index] = v;
+        AdobeAnimComponent.applyClipBounds(this.index);
+      }
     }
   }
 
-  /** Scale Y */
+  /** Scale Y (as you set it; a flip is not part of it) */
   get scaleY() {
-    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.scaleY[this.index];
-    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.scaleY[this.index];
+    if (this._hasComponents.SpriteRenderer) {
+      const v = SpriteRenderer.scaleY[this.index];
+      return SpriteRenderer.flip[this.index] & 2 ? -v : v;
+    }
+    if (this._hasComponents.adobeAnimComponent) {
+      const v = AdobeAnimComponent.scaleY[this.index];
+      return AdobeAnimComponent.flip[this.index] & 2 ? -v : v;
+    }
     return 1;
   }
   set scaleY(value) {
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleY[this.index] !== value) {
-      SpriteRenderer.scaleY[this.index] = value;
-      SpriteRenderer.updateBounds(this.index);
-      SpriteRenderer.renderDirty[this.index] = 1;
+    if (this._hasComponents.SpriteRenderer) {
+      const v = SpriteRenderer.flip[this.index] & 2 ? -value : value;
+      if (SpriteRenderer.scaleY[this.index] !== v) {
+        SpriteRenderer.scaleY[this.index] = v;
+        SpriteRenderer.updateBounds(this.index);
+        SpriteRenderer.renderDirty[this.index] = 1;
+      }
     }
-    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.scaleY[this.index] !== value) {
-      AdobeAnimComponent.scaleY[this.index] = value;
-      AdobeAnimComponent.applyClipBounds(this.index);
+    if (this._hasComponents.adobeAnimComponent) {
+      const v = AdobeAnimComponent.flip[this.index] & 2 ? -value : value;
+      if (AdobeAnimComponent.scaleY[this.index] !== v) {
+        AdobeAnimComponent.scaleY[this.index] = v;
+        AdobeAnimComponent.applyClipBounds(this.index);
+      }
+    }
+  }
+
+  /** Mirror the sprite left-right (Adobe clips too). Independent of scale. */
+  get flipX() {
+    if (this._hasComponents.SpriteRenderer) return (SpriteRenderer.flip[this.index] & 1) !== 0;
+    if (this._hasComponents.adobeAnimComponent) return (AdobeAnimComponent.flip[this.index] & 1) !== 0;
+    return false;
+  }
+  set flipX(on) {
+    this._setFlipBit(1, !!on);
+  }
+
+  /** Mirror the sprite top-bottom (Adobe clips too). Independent of scale. */
+  get flipY() {
+    if (this._hasComponents.SpriteRenderer) return (SpriteRenderer.flip[this.index] & 2) !== 0;
+    if (this._hasComponents.adobeAnimComponent) return (AdobeAnimComponent.flip[this.index] & 2) !== 0;
+    return false;
+  }
+  set flipY(on) {
+    this._setFlipBit(2, !!on);
+  }
+
+  /**
+   * @param {boolean} x - flipX
+   * @param {boolean} [y] - flipY (unchanged when omitted)
+   * @returns {this} For chaining
+   */
+  setFlip(x, y) {
+    this._setFlipBit(1, !!x);
+    if (y !== undefined) this._setFlipBit(2, !!y);
+    return this;
+  }
+
+  _setFlipBit(bit, on) {
+    const i = this.index;
+    if (this._hasComponents.SpriteRenderer && ((SpriteRenderer.flip[i] & bit) !== 0) !== on) {
+      SpriteRenderer.flip[i] ^= bit;
+      if (bit === 1) SpriteRenderer.scaleX[i] = -SpriteRenderer.scaleX[i];
+      else SpriteRenderer.scaleY[i] = -SpriteRenderer.scaleY[i];
+      SpriteRenderer.updateBounds(i);
+      SpriteRenderer.renderDirty[i] = 1;
+    }
+    if (this._hasComponents.adobeAnimComponent && ((AdobeAnimComponent.flip[i] & bit) !== 0) !== on) {
+      AdobeAnimComponent.flip[i] ^= bit;
+      if (bit === 1) AdobeAnimComponent.scaleX[i] = -AdobeAnimComponent.scaleX[i];
+      else AdobeAnimComponent.scaleY[i] = -AdobeAnimComponent.scaleY[i];
+      AdobeAnimComponent.applyClipBounds(i);
     }
   }
 
@@ -1240,24 +1414,52 @@ export class GameObject {
   setScale(x, y) {
     const yVal = y !== undefined ? y : x;
     let changed = false;
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleX[this.index] !== x) {
-      SpriteRenderer.scaleX[this.index] = x;
-      changed = true;
-    }
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleY[this.index] !== yVal) {
-      SpriteRenderer.scaleY[this.index] = yVal;
-      changed = true;
+    if (this._hasComponents.SpriteRenderer) {
+      // A flip stays on: it is the sign of the stored scale.
+      const flip = SpriteRenderer.flip[this.index];
+      const sx = flip & 1 ? -x : x;
+      const sy = flip & 2 ? -yVal : yVal;
+      if (SpriteRenderer.scaleX[this.index] !== sx) {
+        SpriteRenderer.scaleX[this.index] = sx;
+        changed = true;
+      }
+      if (SpriteRenderer.scaleY[this.index] !== sy) {
+        SpriteRenderer.scaleY[this.index] = sy;
+        changed = true;
+      }
     }
     if (this._hasComponents.SpriteRenderer && changed) {
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
-      AdobeAnimComponent.scaleX[this.index] = x;
-      AdobeAnimComponent.scaleY[this.index] = yVal;
+      const flip = AdobeAnimComponent.flip[this.index];
+      AdobeAnimComponent.scaleX[this.index] = flip & 1 ? -x : x;
+      AdobeAnimComponent.scaleY[this.index] = flip & 2 ? -yVal : yVal;
       AdobeAnimComponent.applyClipBounds(this.index);
     }
     return this;
+  }
+
+  /**
+   * Scale the sprite so it draws `width` × `height` world px (its current
+   * sprite or animation, first frame). Without `height` it keeps the aspect.
+   * Call after setSprite / setSpritesheet. Collider untouched: see
+   * this.collider.fitToSprite().
+   * @param {number} width
+   * @param {number} [height]
+   * @returns {this} For chaining
+   */
+  setDisplaySize(width, height) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    const i = this.index;
+    const dims = SpriteSheetRegistry.frameSizeOf(SpriteRenderer.spritesheetId[i], SpriteRenderer.animationState[i]);
+    if (dims === null || !(dims.w > 0) || !(dims.h > 0)) {
+      warnNoSpriteOnce(this.constructor.name, 'setDisplaySize');
+      return this;
+    }
+    const sx = width / dims.w;
+    return this.setScale(sx, height === undefined ? sx : height / dims.h);
   }
 
   /**
@@ -1436,6 +1638,56 @@ export class GameObject {
       RigidBody.ax[this.index] += x;
       RigidBody.ay[this.index] += y;
     }
+    return this;
+  }
+
+  /**
+   * Push for this tick; call it every tick while it should act. Heavier bodies
+   * react less. Holds until this body's next tick, like addAcceleration: to
+   * push another body, use applyImpulse.
+   * @param {number} fx - Force X (mass·px/s²)
+   * @param {number} fy - Force Y (mass·px/s²)
+   * @param {number} [atX] - World point; with atY the force also turns the body
+   * @param {number} [atY]
+   * @returns {this} For chaining
+   */
+  applyForce(fx, fy, atX, atY) {
+    if (this._hasComponents.RigidBody) RigidBody.applyForce(this.index, fx, fy, atX, atY);
+    return this;
+  }
+
+  /**
+   * Turn for this tick; call it every tick while it should act.
+   * @param {number} torque - mass·px²/s² (rad/s² × inertia)
+   * @returns {this} For chaining
+   */
+  applyTorque(torque) {
+    if (this._hasComponents.RigidBody) RigidBody.applyTorque(this.index, torque);
+    return this;
+  }
+
+  /**
+   * One kick on the next physics step (Box2D's own impulse). Heavier bodies
+   * react less; several in one frame add up, from any worker. this.vx / vy
+   * show it after that step.
+   * @param {number} ix - Impulse X (mass·px/s)
+   * @param {number} iy - Impulse Y (mass·px/s)
+   * @param {number} [atX] - World point; with atY the impulse also spins the body
+   * @param {number} [atY]
+   * @returns {this} For chaining
+   */
+  applyImpulse(ix, iy, atX, atY) {
+    if (this._hasComponents.RigidBody) RigidBody.applyImpulse(this.index, ix, iy, atX, atY);
+    return this;
+  }
+
+  /**
+   * One spin kick on the next physics step.
+   * @param {number} impulse - mass·px²/s
+   * @returns {this} For chaining
+   */
+  applyAngularImpulse(impulse) {
+    if (this._hasComponents.RigidBody) RigidBody.applyAngularImpulse(this.index, impulse);
     return this;
   }
 
@@ -1908,6 +2160,8 @@ export class GameObject {
    */
   static _deactivateSlotComponents(i) {
     Transform.active[i] = 0;
+    Messages.bumpGeneration(i);
+    Tween.cancelForDespawn(i);
     if (RigidBody.active) RigidBody.active[i] = 0;
     // HEAP slot hygiene — destroy is markBodyDirty. Do not setAwake.
     if (RigidBody.sleeping) RigidBody.sleeping[i] = 0;
@@ -2115,6 +2369,23 @@ export class GameObject {
    *
    * @param {number} otherIndex - Index of the other entity in collision
    */
+  /**
+   * A message from sendTo / scene.sendToEntity (override it; the scene must
+   * list the name in static messages). Runs before tick on the owning worker.
+   * @param {string} name
+   * @param {number} from - sender's entity index, -1 for the scene
+   */
+  onMessage(name, from, a, b, c, d) {}
+
+  /**
+   * A play-once animation finished: a spritesheet animation (setAnimation(name, false))
+   * after its last frame has shown, or an Adobe clip played without loop. Override
+   * it; runs on the logic worker that owns the entity, the frame after. Animations
+   * advance while the sprite is drawn, so an off-screen one waits.
+   * @param {string} name - animation or clip name
+   */
+  onAnimationEnd(name) {}
+
   onCollisionEnter(otherIndex) {
     // Override in subclasses
   }
@@ -2226,6 +2497,31 @@ export class GameObject {
   }
 
   /**
+   * Take `wanted` out of EntityClass's free list, so spawn(EntityClass, config, index)
+   * can put entities back at exactly those indices (a hot reload restores the scene
+   * where it was). The other free indices keep their order. Restore time only: O(pool).
+   * @param {Function} EntityClass
+   * @param {Set<number>} wanted
+   * @returns {Set<number>} the wanted indices that were free and are now taken
+   */
+  static _takeFreeIndices(EntityClass, wanted) {
+    const taken = new Set();
+    const top = EntityClass.freeListTop;
+    const links = EntityClass.freeList;
+    if (!top || !links || wanted.size === 0) return taken;
+    const start = EntityClass.startIndex;
+    const free = [];
+    for (let i = popEntity(top, links, start); i >= 0; i = popEntity(top, links, start)) free.push(i);
+    // Push back in reverse so the first one popped is on top again.
+    for (let k = free.length - 1; k >= 0; k--) {
+      const i = free[k];
+      if (wanted.has(i)) taken.add(i);
+      else pushEntity(top, links, i, start);
+    }
+    return taken;
+  }
+
+  /**
    * SPAWNING SYSTEM: Spawn an entity from the pool (activate an inactive entity)
    *
    * Works from BOTH main thread and logic workers with the same syntax:
@@ -2299,7 +2595,8 @@ export class GameObject {
       i = popEntity(EntityClass.freeListTop, EntityClass.freeList, EntityClass.startIndex);
 
       if (i < 0) {
-        // Pool exhausted
+        // Pool exhausted: one warning per type per scene, the rest are counted
+        reportPoolExhausted(EntityClass);
         return null;
       }
     }
@@ -2328,11 +2625,14 @@ export class GameObject {
     );
     GameObject.writeForceProcessOnLogicWorker(i, EntityClass.entityType, forcedLogicWorker);
 
+    // A hot restore spawns here: no onSpawned runs, so nothing needs the owner's
+    // thread, and the restore must account for every entity it places.
     if (
       forcedLogicWorker >= 0 &&
       logicWorkerCtx &&
       logicWorkerCtx.workerIndex !== forcedLogicWorker &&
-      typeof logicWorkerCtx.sendDataToWorker === 'function'
+      typeof logicWorkerCtx.sendDataToWorker === 'function' &&
+      spawnConfig._hotRestore !== true
     ) {
       const sx = spawnConfig.x ?? 0;
       const sy = spawnConfig.y ?? 0;
@@ -2481,6 +2781,7 @@ export class GameObject {
       SpriteRenderer.alpha[i] = 1.0;
       SpriteRenderer.scaleX[i] = 1;
       SpriteRenderer.scaleY[i] = 1;
+      SpriteRenderer.flip[i] = 0;
       SpriteRenderer.boundsHalfW[i] = 0;
       SpriteRenderer.boundsHalfH[i] = 0;
       SpriteRenderer.anchorX[i] = 0.5;
@@ -2513,6 +2814,7 @@ export class GameObject {
       AdobeAnimComponent.playing[i] = 1;
       AdobeAnimComponent.scaleX[i] = 1;
       AdobeAnimComponent.scaleY[i] = 1;
+      AdobeAnimComponent.flip[i] = 0;
       AdobeAnimComponent.anchorX[i] = Number.NaN;
       AdobeAnimComponent.anchorY[i] = Number.NaN;
       AdobeAnimComponent.rotC[i] = 1;
@@ -2564,8 +2866,17 @@ export class GameObject {
         instance.setLayer(spawnConfig.layer);
       }
 
-      if (instance.onSpawned) {
-        instance.onSpawned(spawnConfig);
+      // A hot reload puts the entity back as it was: its saved components already
+      // hold what onSpawned did, and onSpawned again would spawn children twice.
+      if (instance.onSpawned && spawnConfig._hotRestore !== true) {
+        try {
+          instance.onSpawned(spawnConfig);
+        } catch (error) {
+          // In a worker, report it and finish the spawn (Unity keeps an object
+          // whose Awake threw); elsewhere (tests, tools) keep throwing.
+          if (!logicWorkerCtx) throw error;
+          reportWorkerError(error, 'onSpawned', EntityClass.name, i);
+        }
       }
 
       if (has.RigidBody && RigidBody.active[i]) {
@@ -2652,7 +2963,7 @@ export class GameObject {
    */
   static getPoolStats(EntityClass) {
     if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
-      return { total: 0, active: 0, available: 0 };
+      return { total: 0, active: 0, available: 0, dropped: 0 };
     }
 
     // If free list exists, use it for O(1) stats
@@ -2662,6 +2973,7 @@ export class GameObject {
         total: EntityClass.poolSize,
         active: EntityClass.poolSize - available,
         available: available,
+        dropped: droppedSpawns(EntityClass),
       };
     }
 
@@ -2680,6 +2992,7 @@ export class GameObject {
       total: total,
       active: activeCount,
       available: total - activeCount,
+      dropped: droppedSpawns(EntityClass),
     };
   }
 

@@ -8,9 +8,17 @@ self.postMessage({
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
+import { debugWorkerLog } from '../util/debugLog.js';
+import { reportWorkerError } from '../util/errorReport.js';
+import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
+import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
+import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
+import { drainMessages } from '../util/messageRing.js';
+import { definesBelow } from '../util/listenerTags.js';
 import { Joint } from '../core/joint.js';
 import { Mouse } from '../core/mouse.js';
 import { Transform } from '../components/transform.js';
+import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Camera } from '../core/camera.js';
 import { Tween } from '../core/tween.js';
@@ -70,6 +78,13 @@ import {
   drainSpawnCommands,
   isSpawnCommandRingBound,
 } from '../util/spawnCommandRing.js';
+import { collectInstanceFields, applyInstanceFields } from '../core/save/instanceFields.js';
+
+/** This worker's instance of the entity at `index` (hot reload field carry). */
+function instanceAtIndex(index) {
+  const EntityClass = GameObject.classByType[Transform.entityType[index]];
+  return EntityClass && EntityClass.instances ? EntityClass.instances[index - EntityClass.startIndex] : undefined;
+}
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -174,6 +189,7 @@ class LogicWorker extends AbstractWorker {
     this._onContactRingEvent = this._onContactRingEvent.bind(this);
     this._onHitRingEvent = this._onHitRingEvent.bind(this);
     this._onJointBreakRingEvent = this._onJointBreakRingEvent.bind(this);
+    this._onMessageEvent = this._onMessageEvent.bind(this);
 
     // Box2D sequenced contact ring (msg box2dReady)
     this.box2dContactRingI32 = null;
@@ -201,6 +217,10 @@ class LogicWorker extends AbstractWorker {
 
     // Joint-break listener per-type flags (indexed by entityType)
     this.jointBreakListenerByType = null; // Uint8Array sized to max entity types
+
+    // onMessage per-type flags (indexed by entityType); filled with the instances
+    this.messageListenerByType = new Uint8Array(0);
+    this.animEndListenerByType = new Uint8Array(0);
     this.anyTypeNeedsJointBreaks = false; // Scene-level kill switch
 
     // ========================================
@@ -291,7 +311,7 @@ class LogicWorker extends AbstractWorker {
         LOGIC_STATS,
         this.workerIndex
       );
-      console.log(`LOGIC WORKER ${this.workerIndex}: Stats buffer initialized`);
+      debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: Stats buffer initialized`);
     }
 
     if (data.buffers.bodyGeneration) {
@@ -310,7 +330,7 @@ class LogicWorker extends AbstractWorker {
         for (const [sheetName, proxyData] of Object.entries(data.bigAtlasProxySheets)) {
           SpriteSheetRegistry.registerProxy(sheetName, proxyData);
         }
-        console.log(
+        debugWorkerLog(
           `LOGIC WORKER ${this.workerIndex}: Registered ${Object.keys(data.bigAtlasProxySheets).length
           } proxy sheets`
         );
@@ -374,6 +394,8 @@ class LogicWorker extends AbstractWorker {
     const numTypes = this.registeredClasses.length;
     this.collisionListenerByType = new Uint8Array(numTypes);
     this.jointBreakListenerByType = new Uint8Array(numTypes);
+    this.messageListenerByType = new Uint8Array(numTypes);
+    this.animEndListenerByType = new Uint8Array(numTypes);
     this.markActiveTypes = [];
     this._entityClassByType = [];
 
@@ -389,6 +411,7 @@ class LogicWorker extends AbstractWorker {
         EntityClass.endIndex = endIndex;
         EntityClass.entityType = entityType; // Auto-assigned entity type ID
         this._entityClassByType[entityType] = EntityClass;
+        GameObject.classByType[entityType] = EntityClass;
 
         // Pre-computed typed array of all entity indices for this class
         // Uses Uint16 since max entities = 65535 (fits in 16 bits)
@@ -421,6 +444,12 @@ class LogicWorker extends AbstractWorker {
         }
         if (needsJointBreakCallbacks) {
           this.jointBreakListenerByType[entityType] = 1;
+        }
+        if (definesBelow(EntityClass, GameObject, 'onMessage')) {
+          this.messageListenerByType[entityType] = 1;
+        }
+        if (definesBelow(EntityClass, GameObject, 'onAnimationEnd')) {
+          this.animEndListenerByType[entityType] = 1;
         }
         if (EntityClass.reportMarkActive) {
           this.markActiveTypes.push(EntityClass);
@@ -703,6 +732,9 @@ class LogicWorker extends AbstractWorker {
     // here and described a key this code does not build (review). Read
     // HYPOTHESIS_LOG before re-proposing it. Two spawns of one index compare
     // equal; they carry the same class, so their order does not change the lists.
+    // They are kept once: a short life whose index was reused at once (LIFO)
+    // spawns twice in one batch, and the merge below only skips an index the list
+    // already holds, so both copies were listed and the entity ticked twice.
     let m = 0;
     for (let i = 0; i < n; i++) perm[i] = i;
     perm.subarray(0, n).sort((a, b) => idx[a] - idx[b]);
@@ -710,6 +742,7 @@ class LogicWorker extends AbstractWorker {
       const src = perm[i];
       const entityIndex = idx[src];
       if (transformActive[entityIndex] !== 1) continue;
+      if (m > 0 && sorted[m - 1] === entityIndex) continue;
       sorted[m] = entityIndex;
       sortedClass[m] = classes[src];
       m++;
@@ -753,15 +786,21 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
-   * Process despawn list updates - remove entities from active lists
-   * No active-state guard: despawns are processed BEFORE spawns, so a re-spawned
-   * entity will be re-added in the subsequent spawn pass (with dedup protection).
+   * Process despawn list updates - remove entities from active lists.
+   * A despawn queued by another worker can arrive a batch after the index was
+   * freed, reused and its new life's spawn already processed (the free list is
+   * LIFO: a short-lived Flash gets the index back at once). That spawn found
+   * the index still listed and kept it; removing it now would leave the new
+   * life active, unlisted and never ticked. So an index alive again is skipped,
+   * as the spawn pass skips one that is no longer alive.
    */
   _processDespawnSoA(idx, classes, n) {
     if (n === 0) return false;
+    const transformActive = Transform.active;
     for (let i = 0; i < n; i++) {
       const entityIndex = idx[i];
       const EntityClass = classes[i];
+      if (transformActive[entityIndex] === 1) continue;
       GameObject._removeFromActiveEntities(entityIndex);
       GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
     }
@@ -775,6 +814,7 @@ class LogicWorker extends AbstractWorker {
 
     for (const update of updates) {
       const { entityIndex, EntityClass } = update;
+      if (Transform.active[entityIndex] === 1) continue; // a newer life owns the index (see _processDespawnSoA)
       GameObject._removeFromActiveEntities(entityIndex);
       GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
     }
@@ -902,6 +942,11 @@ class LogicWorker extends AbstractWorker {
       this.systemsExecutedThisFrame++;
     }
 
+    // Entity messages sent since the last frame (sendTo / sendToEntity / engine).
+    if (Messages.enabled) {
+      drainMessages(Messages.inboxI32[this.workerIndex], Messages.inboxF64[this.workerIndex], this._onMessageEvent);
+    }
+
     // Count active entities while processing
     let activeCount = 0;
 
@@ -945,26 +990,37 @@ class LogicWorker extends AbstractWorker {
         entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
       );
 
+      // A throw from game code reports that entity and resumes after it. The
+      // try sits outside the inner loop so the loop body compiles as before.
       if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
-        for (let idx = 0; idx < count; idx++) {
-          const entityIndex = activeList[1 + idx];
-          if (
-            logicWorkerThatShouldTick(
-              idx,
-              entityIndex,
-              totalWorkers,
-              forceProcessOnLogicWorker,
-            ) !== myIndex
-          ) {
-            continue;
+        let idx = 0;
+        for (;;) {
+          try {
+            for (; idx < count; idx++) {
+              const entityIndex = activeList[1 + idx];
+              if (
+                logicWorkerThatShouldTick(
+                  idx,
+                  entityIndex,
+                  totalWorkers,
+                  forceProcessOnLogicWorker,
+                ) !== myIndex
+              ) {
+                continue;
+              }
+              const n = this._tickNonDecimatedOne(
+                entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                needsScreenCallbacks, transformActive, gameObjects,
+                rbAx, rbAy, rbAa, collectDetailed
+              );
+              activeCount += n;
+              if (collectDetailed) tickMs += this._lastTickMs;
+            }
+            break;
+          } catch (error) {
+            this._entityThrew(error, activeList[1 + idx], 'tick');
+            idx++;
           }
-          const n = this._tickNonDecimatedOne(
-            entityIndex, dtRatio, deltaTime, accTime, frameNum,
-            needsScreenCallbacks, transformActive, gameObjects,
-            rbAx, rbAy, rbAa, collectDetailed
-          );
-          activeCount += n;
-          if (collectDetailed) tickMs += this._lastTickMs;
         }
       } else {
         let from = myIndex;
@@ -976,15 +1032,24 @@ class LogicWorker extends AbstractWorker {
           to = range.end;
           step = 1;
         }
-        for (let idx = from; idx < to; idx += step) {
-          const entityIndex = activeList[1 + idx];
-          const n = this._tickNonDecimatedOne(
-            entityIndex, dtRatio, deltaTime, accTime, frameNum,
-            needsScreenCallbacks, transformActive, gameObjects,
-            rbAx, rbAy, rbAa, collectDetailed
-          );
-          activeCount += n;
-          if (collectDetailed) tickMs += this._lastTickMs;
+        let idx = from;
+        for (;;) {
+          try {
+            for (; idx < to; idx += step) {
+              const entityIndex = activeList[1 + idx];
+              const n = this._tickNonDecimatedOne(
+                entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                needsScreenCallbacks, transformActive, gameObjects,
+                rbAx, rbAy, rbAa, collectDetailed
+              );
+              activeCount += n;
+              if (collectDetailed) tickMs += this._lastTickMs;
+            }
+            break;
+          } catch (error) {
+            this._entityThrew(error, activeList[1 + idx], 'tick');
+            idx += step;
+          }
         }
       }
     }
@@ -1024,27 +1089,36 @@ class LogicWorker extends AbstractWorker {
         }
 
         if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
-          for (let idx = 0; idx < count; idx++) {
-            const entityIndex = activeList[1 + idx];
-            if (
-              logicWorkerThatShouldTick(
-                idx,
-                entityIndex,
-                totalWorkers,
-                forceProcessOnLogicWorker,
-              ) !== myIndex
-            ) {
-              continue;
-            }
-            const n = this._tickDecimatedOne(
-              entityIndex, dtRatio, deltaTime, accTime, frameNum,
-              tickInterval, needsScreenCallbacks, transformActive, gameObjects,
-              rbAx, rbAy, rbAa, nextTick, collectDetailed
-            );
-            activeCount += n;
-            if (collectDetailed) {
-              decimateMs += this._lastDecimateMs;
-              tickMs += this._lastTickMs;
+          let idx = 0;
+          for (;;) {
+            try {
+              for (; idx < count; idx++) {
+                const entityIndex = activeList[1 + idx];
+                if (
+                  logicWorkerThatShouldTick(
+                    idx,
+                    entityIndex,
+                    totalWorkers,
+                    forceProcessOnLogicWorker,
+                  ) !== myIndex
+                ) {
+                  continue;
+                }
+                const n = this._tickDecimatedOne(
+                  entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                  tickInterval, needsScreenCallbacks, transformActive, gameObjects,
+                  rbAx, rbAy, rbAa, nextTick, collectDetailed
+                );
+                activeCount += n;
+                if (collectDetailed) {
+                  decimateMs += this._lastDecimateMs;
+                  tickMs += this._lastTickMs;
+                }
+              }
+              break;
+            } catch (error) {
+              this._entityThrew(error, activeList[1 + idx], 'tick');
+              idx++;
             }
           }
         } else {
@@ -1057,17 +1131,26 @@ class LogicWorker extends AbstractWorker {
             to = range.end;
             step = 1;
           }
-          for (let idx = from; idx < to; idx += step) {
-            const entityIndex = activeList[1 + idx];
-            const n = this._tickDecimatedOne(
-              entityIndex, dtRatio, deltaTime, accTime, frameNum,
-              tickInterval, needsScreenCallbacks, transformActive, gameObjects,
-              rbAx, rbAy, rbAa, nextTick, collectDetailed
-            );
-            activeCount += n;
-            if (collectDetailed) {
-              decimateMs += this._lastDecimateMs;
-              tickMs += this._lastTickMs;
+          let idx = from;
+          for (;;) {
+            try {
+              for (; idx < to; idx += step) {
+                const entityIndex = activeList[1 + idx];
+                const n = this._tickDecimatedOne(
+                  entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                  tickInterval, needsScreenCallbacks, transformActive, gameObjects,
+                  rbAx, rbAy, rbAa, nextTick, collectDetailed
+                );
+                activeCount += n;
+                if (collectDetailed) {
+                  decimateMs += this._lastDecimateMs;
+                  tickMs += this._lastTickMs;
+                }
+              }
+              break;
+            } catch (error) {
+              this._entityThrew(error, activeList[1 + idx], 'tick');
+              idx += step;
             }
           }
         }
@@ -1170,7 +1253,13 @@ class LogicWorker extends AbstractWorker {
           scratch[n++] = entityIndex;
         }
       }
-      if (n > 0) typeInfo.EntityClass.tickAll(scratch, n, dtRatio);
+      if (n > 0) {
+        try {
+          typeInfo.EntityClass.tickAll(scratch, n, dtRatio);
+        } catch (error) {
+          reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
+        }
+      }
       this.entitiesProcessedThisFrame += n;
       packed += n;
     }
@@ -1214,37 +1303,56 @@ class LogicWorker extends AbstractWorker {
     }
 
     let visited = 0;
+    // Same resume-after-the-throw shape as update(): try outside the loop.
     if (forcedScan) {
-      for (let i = 0; i < nAll; i++) {
-        const entityIndex = list[i];
-        if (
-          logicWorkerThatShouldTick(i, entityIndex, totalWorkers, forceProcessOnLogicWorker) !==
-          myIndex
-        ) {
-          continue;
+      let i = 0;
+      for (;;) {
+        try {
+          for (; i < nAll; i++) {
+            const entityIndex = list[i];
+            if (
+              logicWorkerThatShouldTick(i, entityIndex, totalWorkers, forceProcessOnLogicWorker) !==
+              myIndex
+            ) {
+              continue;
+            }
+            if (transformActive[entityIndex] === 0) continue;
+            const obj = gameObjects[entityIndex];
+            if (!obj || typeof obj.tick !== 'function') continue;
+            rbAx[entityIndex] = 0;
+            rbAy[entityIndex] = 0;
+            rbAa[entityIndex] = 0;
+            obj.tick(dtRatio, deltaTime, accTime, frameNum);
+            this.entitiesProcessedThisFrame++;
+            visited++;
+          }
+          break;
+        } catch (error) {
+          this._entityThrew(error, list[i], 'tick');
+          i++;
         }
-        if (transformActive[entityIndex] === 0) continue;
-        const obj = gameObjects[entityIndex];
-        if (!obj || typeof obj.tick !== 'function') continue;
-        rbAx[entityIndex] = 0;
-        rbAy[entityIndex] = 0;
-        rbAa[entityIndex] = 0;
-        obj.tick(dtRatio, deltaTime, accTime, frameNum);
-        this.entitiesProcessedThisFrame++;
-        visited++;
       }
     } else {
-      for (let i = from; i < to; i++) {
-        const entityIndex = list[i];
-        if (transformActive[entityIndex] === 0) continue;
-        const obj = gameObjects[entityIndex];
-        if (!obj || typeof obj.tick !== 'function') continue;
-        rbAx[entityIndex] = 0;
-        rbAy[entityIndex] = 0;
-        rbAa[entityIndex] = 0;
-        obj.tick(dtRatio, deltaTime, accTime, frameNum);
-        this.entitiesProcessedThisFrame++;
-        visited++;
+      let i = from;
+      for (;;) {
+        try {
+          for (; i < to; i++) {
+            const entityIndex = list[i];
+            if (transformActive[entityIndex] === 0) continue;
+            const obj = gameObjects[entityIndex];
+            if (!obj || typeof obj.tick !== 'function') continue;
+            rbAx[entityIndex] = 0;
+            rbAy[entityIndex] = 0;
+            rbAa[entityIndex] = 0;
+            obj.tick(dtRatio, deltaTime, accTime, frameNum);
+            this.entitiesProcessedThisFrame++;
+            visited++;
+          }
+          break;
+        } catch (error) {
+          this._entityThrew(error, list[i], 'tick');
+          i++;
+        }
       }
     }
     return visited;
@@ -1369,7 +1477,11 @@ class LogicWorker extends AbstractWorker {
 
       const obj = gameObjects[targetId];
       if (obj && obj.onGotShot) {
-        obj.onGotShot(damage, hitX, hitY, ownerId, shooterEntityType);
+        try {
+          obj.onGotShot(damage, hitX, hitY, ownerId, shooterEntityType);
+        } catch (error) {
+          this._entityThrew(error, targetId, 'onGotShot');
+        }
       }
     }
   }
@@ -1420,8 +1532,21 @@ class LogicWorker extends AbstractWorker {
     const gameObjects = this.gameObjects;
     const aListens = collisionFlags[entityType[a]];
     const bListens = collisionFlags[entityType[b]];
-    if (aListens) gameObjects[a]?.onCollisionHit(b, px, py, nx, ny, speed);
-    if (bListens) gameObjects[b]?.onCollisionHit(a, px, py, -nx, -ny, speed);
+    // A throw is caught per call so the ring drain still advances its cursor.
+    if (aListens) {
+      try {
+        gameObjects[a]?.onCollisionHit(b, px, py, nx, ny, speed);
+      } catch (error) {
+        this._entityThrew(error, a, 'onCollisionHit');
+      }
+    }
+    if (bListens) {
+      try {
+        gameObjects[b]?.onCollisionHit(a, px, py, -nx, -ny, speed);
+      } catch (error) {
+        this._entityThrew(error, b, 'onCollisionHit');
+      }
+    }
   }
 
   /**
@@ -1448,8 +1573,61 @@ class LogicWorker extends AbstractWorker {
     const aListens = jointBreakFlags[entityType[entityA]];
     const bListens = jointBreakFlags[entityType[entityB]];
     if (!aListens && !bListens) return;
-    if (aListens) gameObjects[entityA]?.onJointBreak(jointIndex, entityA, entityB);
-    if (bListens) gameObjects[entityB]?.onJointBreak(jointIndex, entityA, entityB);
+    if (aListens) {
+      try {
+        gameObjects[entityA]?.onJointBreak(jointIndex, entityA, entityB);
+      } catch (error) {
+        this._entityThrew(error, entityA, 'onJointBreak');
+      }
+    }
+    if (bListens) {
+      try {
+        gameObjects[entityB]?.onJointBreak(jointIndex, entityA, entityB);
+      } catch (error) {
+        this._entityThrew(error, entityB, 'onJointBreak');
+      }
+    }
+  }
+
+  /** One inbox message: dropped if its target despawned since it was sent. */
+  _onMessageEvent(target, from, nameId, gen, a, b, c, d) {
+    if (Transform.active[target] === 0 || Messages.spawnGen[target] !== gen) return;
+    const obj = this.gameObjects[target];
+    if (!obj) return;
+    if (nameId === MESSAGE_ANIMATION_END) {
+      this._deliverAnimationEnd(obj, target, a, b);
+      return;
+    }
+    if (this.messageListenerByType[Transform.entityType[target]] !== 1) return;
+    try {
+      obj.onMessage(Messages.names[nameId], from, a, b, c, d);
+    } catch (error) {
+      this._entityThrew(error, target, 'onMessage');
+    }
+  }
+
+  /** kind 0: sprite animation `id`; kind 1: Adobe clip `id`. Delivered by name. */
+  _deliverAnimationEnd(obj, target, kind, id) {
+    if (this.animEndListenerByType[Transform.entityType[target]] !== 1) return;
+    let name;
+    if (kind === 0) {
+      const sheet = SpriteSheetRegistry.getSpritesheetName(SpriteRenderer.spritesheetId[target]);
+      name = sheet ? SpriteSheetRegistry.getAnimationName(sheet, id) : undefined;
+    } else {
+      name = AdobeAnimRegistry.getClipName(AdobeAnimComponent.assetId[target], id);
+    }
+    try {
+      obj.onAnimationEnd(name === undefined || name === null ? '' : name);
+    } catch (error) {
+      this._entityThrew(error, target, 'onAnimationEnd');
+    }
+  }
+
+  /** Report a throw from game code on one entity (class + index + phase). Error path only. */
+  _entityThrew(error, entityIndex, phase) {
+    const obj = entityIndex >= 0 ? this.gameObjects[entityIndex] : null;
+    const className = obj && obj.constructor ? obj.constructor.name : '';
+    reportWorkerError(error, phase, className, entityIndex);
   }
 
   _entityGen(i) {
@@ -1568,8 +1746,20 @@ class LogicWorker extends AbstractWorker {
     const gameObjects = this.gameObjects;
     const aListens = collisionFlags[entityType[minE]];
     const bListens = collisionFlags[entityType[maxE]];
-    if (aListens) gameObjects[minE]?.onCollisionExit(maxE);
-    if (bListens) gameObjects[maxE]?.onCollisionExit(minE);
+    if (aListens) {
+      try {
+        gameObjects[minE]?.onCollisionExit(maxE);
+      } catch (error) {
+        this._entityThrew(error, minE, 'onCollisionExit');
+      }
+    }
+    if (bListens) {
+      try {
+        gameObjects[maxE]?.onCollisionExit(minE);
+      } catch (error) {
+        this._entityThrew(error, maxE, 'onCollisionExit');
+      }
+    }
   }
 
   _applyContactBegin(rawA, rawB, genA, genB) {
@@ -1619,8 +1809,20 @@ class LogicWorker extends AbstractWorker {
     const aListens = collisionFlags[entityType[rawA]];
     const bListens = collisionFlags[entityType[rawB]];
     if (!aListens && !bListens) return;
-    if (aListens) gameObjects[rawA]?.onCollisionEnter(rawB);
-    if (bListens) gameObjects[rawB]?.onCollisionEnter(rawA);
+    if (aListens) {
+      try {
+        gameObjects[rawA]?.onCollisionEnter(rawB);
+      } catch (error) {
+        this._entityThrew(error, rawA, 'onCollisionEnter');
+      }
+    }
+    if (bListens) {
+      try {
+        gameObjects[rawB]?.onCollisionEnter(rawA);
+      } catch (error) {
+        this._entityThrew(error, rawB, 'onCollisionEnter');
+      }
+    }
   }
 
   _onContactRingEvent(kind, a, b, genA, genB) {
@@ -1671,27 +1873,40 @@ class LogicWorker extends AbstractWorker {
     const genMax = this._pairGenMax;
     const began = this._pairBegan;
 
-    // Purge pairs whose generation changed or entities went inactive
-    for (let s = 0; s < this._pairCount; ) {
-      const minE = pairMin[s];
-      const maxE = pairMax[s];
-      const valid =
-        active[minE] &&
-        active[maxE] &&
-        (gen
-          ? (Atomics.load(gen, minE) >>> 0) === genMin[s] && (Atomics.load(gen, maxE) >>> 0) === genMax[s]
-          : genMin[s] === 0 && genMax[s] === 0);
-      if (!valid) {
-        this._removePairSlot(s, collisionPairKey(minE, maxE));
-        continue;
+    // Purge pairs whose generation changed or entities went inactive.
+    // A throwing onCollisionStay is reported and the walk resumes at the next
+    // pair (s is already past it); the try sits outside the loop.
+    let s = 0;
+    let calling = -1;
+    for (;;) {
+      try {
+        while (s < this._pairCount) {
+          const minE = pairMin[s];
+          const maxE = pairMax[s];
+          const valid =
+            active[minE] &&
+            active[maxE] &&
+            (gen
+              ? (Atomics.load(gen, minE) >>> 0) === genMin[s] && (Atomics.load(gen, maxE) >>> 0) === genMax[s]
+              : genMin[s] === 0 && genMax[s] === 0);
+          if (!valid) {
+            this._removePairSlot(s, collisionPairKey(minE, maxE));
+            continue;
+          }
+          const beganNow = began[s] === frame;
+          s++;
+          if (beganNow) continue;
+          const aListens = collisionFlags[entityType[minE]];
+          const bListens = collisionFlags[entityType[maxE]];
+          calling = minE;
+          if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
+          calling = maxE;
+          if (bListens) gameObjects[maxE]?.onCollisionStay(minE);
+        }
+        break;
+      } catch (error) {
+        this._entityThrew(error, calling, 'onCollisionStay');
       }
-      const beganNow = began[s] === frame;
-      s++;
-      if (beganNow) continue;
-      const aListens = collisionFlags[entityType[minE]];
-      const bListens = collisionFlags[entityType[maxE]];
-      if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
-      if (bListens) gameObjects[maxE]?.onCollisionStay(minE);
     }
   }
 
@@ -1716,9 +1931,35 @@ class LogicWorker extends AbstractWorker {
    * Implements spawning and despawning commands
    */
   /**
+   * Hot reload restore: take each saved entity's own index out of its class's
+   * free list, when the index is still that class's. Returns the taken indices.
+   * @param {object[]} entities save records
+   * @returns {Set<number>}
+   */
+  _takeSavedIndices(entities) {
+    const byClass = new Map();
+    for (let r = 0; r < entities.length; r++) {
+      const rec = entities[r];
+      const EntityClass = self[rec.typeName];
+      const index = rec.entityIndex;
+      if (!EntityClass || index == null) continue;
+      if (index < EntityClass.startIndex || index >= EntityClass.startIndex + EntityClass.poolSize) continue;
+      let wanted = byClass.get(EntityClass);
+      if (!wanted) byClass.set(EntityClass, (wanted = new Set()));
+      wanted.add(index | 0);
+    }
+    const taken = new Set();
+    for (const [EntityClass, wanted] of byClass) {
+      for (const index of GameObject._takeFreeIndices(EntityClass, wanted)) taken.add(index);
+    }
+    return taken;
+  }
+
+  /**
    * Logic0 side of a save load: despawn the serializable types, respawn the
    * saved entities, then chains, fixtures, meshes, tweens, id remaps and
-   * joints. Returns the restoreSaveComplete reply.
+   * joints. Returns the restoreSaveComplete reply. With exactIndices (hot
+   * reload) each entity goes back to its own index when it can.
    * @param {object} data restoreSave message
    * @returns {object}
    */
@@ -1726,6 +1967,8 @@ class LogicWorker extends AbstractWorker {
     const {
       serializableClassNames = [],
       entities = [],
+      exactIndices = false,
+      forcedWorkers = null,
       joints = [],
       chains = [],
       fixtures = [],
@@ -1745,13 +1988,17 @@ class LogicWorker extends AbstractWorker {
       Joint.clearAllActive();
     }
 
+    const ownIndex = exactIndices ? this._takeSavedIndices(entities) : null;
+    // Hot reload: each entity goes back to the logic worker it was pinned to (or none).
+    const pinned = forcedWorkers ? new Map(forcedWorkers) : null;
+    const missingClass = new Map(); // one warning per type, not per entity
+    const noRoom = new Map();
+
     for (let i = 0; i < entities.length; i++) {
       const rec = entities[i];
       const EntityClass = self[rec.typeName];
       if (!EntityClass) {
-        console.error(
-          `LOGIC WORKER ${this.workerIndex}: restoreSave missing class ${rec.typeName}`
-        );
+        missingClass.set(rec.typeName, (missingClass.get(rec.typeName) || 0) + 1);
         failed++;
         continue;
       }
@@ -1760,12 +2007,17 @@ class LogicWorker extends AbstractWorker {
         x: fields.x ?? 0,
         y: fields.y ?? 0,
         _saveRestore: rec.components,
+        _hotRestore: exactIndices, // no onSpawned: the entity comes back as it was
       };
-      const instance = GameObject.spawn(EntityClass, spawnConfig);
+      if (pinned !== null) {
+        const worker = pinned.get(rec.entityIndex | 0);
+        spawnConfig.forceProcessOnLogicWorker = worker === undefined ? -1 : worker;
+      }
+      let at = -1;
+      if (ownIndex !== null && ownIndex.delete(rec.entityIndex | 0)) at = rec.entityIndex | 0;
+      const instance = GameObject.spawn(EntityClass, spawnConfig, at);
       if (!instance) {
-        console.warn(
-          `LOGIC WORKER ${this.workerIndex}: restoreSave spawn failed for ${rec.typeName}`
-        );
+        noRoom.set(rec.typeName, (noRoom.get(rec.typeName) || 0) + 1);
         failed++;
       } else {
         restored++;
@@ -1773,6 +2025,13 @@ class LogicWorker extends AbstractWorker {
           oldToNew.set(rec.entityIndex | 0, instance.index | 0);
         }
       }
+    }
+
+    for (const [typeName, n] of missingClass) {
+      console.error(`LOGIC WORKER ${this.workerIndex}: restoreSave missing class ${typeName} (${n} entities)`);
+    }
+    for (const [typeName, n] of noRoom) {
+      console.warn(`LOGIC WORKER ${this.workerIndex}: restoreSave could not spawn ${n} ${typeName} (pool full?)`);
     }
 
     const restoredPairs = [];
@@ -1858,7 +2117,7 @@ class LogicWorker extends AbstractWorker {
           // Snap to write head — physics may already be producing events.
           this.box2dContactCursor = initialContactCursor(this.box2dContactRingI32);
           this.useBox2dContacts = true;
-          console.log(`LOGIC WORKER ${this.workerIndex}: Box2D contact ring bound`);
+          debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: Box2D contact ring bound`);
         } else {
           this.box2dContactRingI32 = null;
           this.useBox2dContacts = false;
@@ -1889,7 +2148,7 @@ class LogicWorker extends AbstractWorker {
           this.createGameObjectInstances();
           this._gameObjectInstancesCreated = true;
           this.reportReady();
-          console.log(
+          debugWorkerLog(
             `LOGIC WORKER ${this.workerIndex}: GameObjects created after box2dReady, workerReady sent`
           );
         }
@@ -1948,7 +2207,7 @@ class LogicWorker extends AbstractWorker {
         // - Free list reset (SAB-backed, interleaved)
         const despawnedCount = GameObject.despawnAll(EntityClass);
 
-        console.log(
+        debugWorkerLog(
           `LOGIC WORKER ${this.workerIndex}: Despawned ${despawnedCount} ${className} entities`
         );
         break;
@@ -1973,6 +2232,28 @@ class LogicWorker extends AbstractWorker {
           };
         }
         self.postMessage(reply);
+        break;
+      }
+
+      // Hot reload: this worker's instances' plain JS fields, before and after the reload.
+      case 'collectInstanceFields': {
+        let entries = [];
+        try {
+          entries = collectInstanceFields(instanceAtIndex, Transform.active);
+        } catch (err) {
+          console.warn(`LOGIC WORKER ${this.workerIndex}: could not collect instance fields`, err);
+        }
+        self.postMessage({ msg: 'instanceFields', workerIndex: this.workerIndex, entries });
+        break;
+      }
+
+      case 'applyInstanceFields': {
+        try {
+          applyInstanceFields(instanceAtIndex, data.entries || []);
+        } catch (err) {
+          console.warn(`LOGIC WORKER ${this.workerIndex}: could not apply instance fields`, err);
+        }
+        self.postMessage({ msg: 'instanceFieldsApplied', workerIndex: this.workerIndex });
         break;
       }
 
@@ -2052,9 +2333,9 @@ class LogicWorker extends AbstractWorker {
     }
     const instance = GameObject.spawn(EntityClass, spawnConfig, entityIndex);
     if (!instance) {
-      console.warn(
-        `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`
-      );
+      // The index was reserved on main (an empty pool is reported there), so a
+      // null here is onSpawned despawning its own entity: a choice, not an error.
+      debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: ${className}[${entityIndex}] spawn did not complete`);
     }
   }
 

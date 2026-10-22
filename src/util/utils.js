@@ -1247,6 +1247,32 @@ export function rewriteBlobImports(scriptText) {
 }
 
 /**
+ * `const { … } = WEED` and `= enums`, one level of nested braces. Blob eval
+ * turns them into `var`: a `var` may repeat a wrapper parameter, a `const`
+ * may not, and the line still binds every name it lists, renames included.
+ */
+const BLOB_WEED_DESTRUCTURE = /\b(?:const|let)(\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*=\s*(?:WEED|enums)\b)/g;
+
+/**
+ * A scene or entity module as a `new Function` body: imports become globals
+ * (rewriteBlobImports), exports become `exports.X = …`.
+ */
+export function transformBlobScript(scriptText, scriptPath) {
+  return rewriteBlobImports(scriptText)
+    .replace(BLOB_WEED_DESTRUCTURE, 'var$1')
+    .replace(/import\.meta\.url/g, `'${scriptPath}'`)
+    .replace(/export\s+class\s+(\w+)/g, 'exports.$1 = class $1')
+    .replace(/export\s+const\s+(\w+)\s*=/g, 'exports.$1 =')
+    .replace(/export\s+function\s+(\w+)/g, 'exports.$1 = function $1')
+    .replace(/export\s+\{\s*([^}]+)\s*\}/g, (match, names) => {
+      return names.split(',').map(n => {
+        const name = n.trim().split(/\s+as\s+/);
+        return `exports.${name[name.length - 1].trim()} = ${name[0].trim()};`;
+      }).join('\n');
+    });
+}
+
+/**
  * Relative / demo / test module specifiers blob-eval must fetch.
  * `/src/` is already in the worker bundle — do not fetch it as an entity script.
  */
@@ -1420,36 +1446,10 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
       // We need to handle ES module syntax (export class, export const, etc.)
       const exports = {};
 
-      // Transform the script to work in non-module context
-      let transformedScript = rewriteBlobImports(scriptText)
-        // Remove const/let destructuring from WEED (we provide these as parameters).
-        // Also strip destructuring of any local that came from WEED (e.g.
-        // `const { ShapeType } = enums;` after `const { enums } = WEED;` was stripped).
-        // The names destructured from `enums` collide with same-named Function
-        // parameters below (`ShapeType`, etc.) and would crash the wrapper with
-        // "Identifier 'X' has already been declared". Stripping the line is safe
-        // because every member that scripts use from `enums` is already provided
-        // as a wrapper parameter.
-        .replace(/const\s*\{[\s\S]*?\}\s*=\s*WEED\s*;?/g, '')
-        .replace(/let\s*\{[\s\S]*?\}\s*=\s*WEED\s*;?/g, '')
-        .replace(/const\s*\{[\s\S]*?\}\s*=\s*enums\s*;?/g, '')
-        .replace(/let\s*\{[\s\S]*?\}\s*=\s*enums\s*;?/g, '')
-        // Replace import.meta.url with the script path
-        .replace(/import\.meta\.url/g, `'${scriptPath}'`)
-        // Transform exports to assignments on our exports object
-        .replace(/export\s+class\s+(\w+)/g, 'exports.$1 = class $1')
-        .replace(/export\s+const\s+(\w+)\s*=/g, 'exports.$1 =')
-        .replace(/export\s+function\s+(\w+)/g, 'exports.$1 = function $1')
-        .replace(/export\s+\{\s*([^}]+)\s*\}/g, (match, names) => {
-          return names.split(',').map(n => {
-            const name = n.trim().split(/\s+as\s+/);
-            return `exports.${name[name.length - 1].trim()} = ${name[0].trim()};`;
-          }).join('\n');
-        });
+      const transformedScript = transformBlobScript(scriptText, scriptPath);
 
-      // Build the wrapper with WEED globals as function parameters.
-      // All enum members are passed individually so scripts can reference them
-      // even after we strip their `const { X } = enums;` line above.
+      // Build the wrapper with WEED globals as function parameters, for
+      // scripts that use engine names without destructuring them.
       const moduleWrapper = new Function(
         'exports', 'WEED',
         'GameObject', 'Component', 'SharedResource', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
@@ -1458,15 +1458,12 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
         'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle', 'getDirection8FromVector',
         'containerRadius', 'SpriteSheetRegistry', 'Keyboard', 'SoundManager',
         'CollisionListener', 'CameraInOutListener', 'JointBreakListener', 'Grab',
-        // Enum members (previously only ShapeType — anything destructured from
-        // `enums` in user scripts must be provided here, otherwise the script
-        // gets a ReferenceError after we strip the destructuring line).
         'BLEND_MODES', 'DEFAULT_LAYERS', 'CAMERA_TYPES', 'DECAL_STAMPS_BLEND_MODE',
         'DEBUG_FLAGS', 'DEBUG_SELECTED_ENTITY_OFFSET',
         transformedScript
       );
 
-      // Get references - in workers, classes are directly on self, not self.WEED
+      // Workers set self.WEED (workerWeed.js) and the same names on self.
       const WEED = globalContext.WEED || globalContext;
       const g = globalContext; // shorthand for getting classes
       const e = WEED.enums || {};

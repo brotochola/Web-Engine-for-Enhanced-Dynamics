@@ -15,6 +15,8 @@ import { ColliderFixture } from '../core/colliderFixture.js';
 import { ChainPoints } from '../core/chainPoints.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
+import { SpriteRenderer } from './spriteRenderer.js';
+import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
 const _chainFailWarned = new Set();
 
@@ -359,6 +361,42 @@ class Collider extends Component {
     Collider.shapeType[this.index] = value | 0;
     RigidBody.syncMassFromCollider(this.index);
     markBodyDirty(this.index, BODY_DIRTY.GEOMETRY);
+  }
+
+  /**
+   * Size the collider to the sprite as drawn (frame × scale): a box gets its
+   * width and height, a circle a radius of half the smaller side. The offset
+   * follows the sprite anchor (and a flip), so box and sprite line up.
+   * Polygons and chains are left alone. Call after setSprite and setScale.
+   * @param {number} [factor=1] - 0.8 = a collider 80 % of the sprite
+   * @returns {boolean} false when there is no sprite to fit
+   */
+  fitToSprite(factor = 1) {
+    const i = this.index;
+    const shape = Collider.shapeType[i];
+    if (shape === ShapeType.Polygon || shape === ShapeType.Chain) {
+      console.warn('Collider.fitToSprite: polygon and chain colliders keep their shape');
+      return false;
+    }
+    const active = SpriteRenderer.active;
+    const dims = active && active[i]
+      ? SpriteSheetRegistry.frameSizeOf(SpriteRenderer.spritesheetId[i], SpriteRenderer.animationState[i])
+      : null;
+    if (dims === null || !(dims.w > 0) || !(dims.h > 0)) return false;
+    const sx = SpriteRenderer.scaleX[i];
+    const sy = SpriteRenderer.scaleY[i];
+    const w = dims.w * (sx < 0 ? -sx : sx) * factor;
+    const h = dims.h * (sy < 0 ? -sy : sy) * factor;
+    if (shape === ShapeType.Circle) {
+      this.radius = (w < h ? w : h) * 0.5;
+    } else {
+      this.width = w;
+      this.height = h;
+    }
+    // The sprite's centre sits at (0.5 - anchor) × drawn size from the transform.
+    this.offsetX = (0.5 - SpriteRenderer.anchorX[i]) * dims.w * sx;
+    this.offsetY = (0.5 - SpriteRenderer.anchorY[i]) * dims.h * sy;
+    return true;
   }
 
   get offsetX() {

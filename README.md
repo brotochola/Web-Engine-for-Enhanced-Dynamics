@@ -105,7 +105,11 @@ npm run dev
 
 Open `http://localhost:8000/demos/`, or use the port printed by the server if `8000` is already in use.
 
+New here? Build [Coin Rush](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/FIRST_GAME.md), a small complete game (`http://localhost:8000/docs/guide/first-game/` runs the finished one), and keep [Coming from Unity, Godot or Phaser](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/COMING_FROM.md) open beside it.
+
 `SharedArrayBuffer` needs cross-origin isolation (COOP/COEP). Same headers unlock Box2D’s pthread pool. The included `npm run dev` server already sends them.
+
+**Hot reload.** With `npm run dev` and `new GameEngine({ debug: true, hotReload: true })` (the demo page has it on), saving a file reloads the page and restores the running scene where it was: every entity at its own index (serializable or not, without running `onSpawned` again), its plain JS fields, shared resources, camera, tweens and `onSaveGame` data come back from a save the engine takes just before the reload ([SAVE_GAME.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/SAVE_GAME.md#hot-reload-debug)). `WEED_HOT_RELOAD=0 npm run dev` turns the server side off.
 
 ---
 
@@ -127,6 +131,19 @@ The same picker also has Adobe Animate playback, tilemap navigation, ray casting
 
 ## Install from npm
 
+### Start a new game
+
+```bash
+npm create weed-game my-game
+cd my-game
+npm install
+npm run dev
+```
+
+You get a page, one scene with a player and walls, and an HTML HUD, with no bundler. `npm run dev` serves it with the two headers `SharedArrayBuffer` needs and reloads the game where you were when you save. `npm run build` writes `dist/` with the production engine.
+
+### Add it to a project
+
 ```bash
 npm i @weed.js/engine
 ```
@@ -145,9 +162,11 @@ import WEED from '@weed.js/engine/debug';
 
 Or, if you load a `<script>` / CDN URL, change `weed.bundle*.min.js` to `weed.prod.bundle*.min.js`. Same `WEED` gameplay API either way; `new GameEngine({ debug: true })` is a no-op overlay on prod.
 
-The published bundle is a **default export only**. Destructure from `WEED`. `import { Scene } from '@weed.js/engine'` may type-check (the `.d.ts` also exports class names) but fails at runtime.
+Both styles work: `import WEED from '@weed.js/engine'` and then `WEED.Scene`, or named imports, `import { Scene, GameObject } from '@weed.js/engine'` (the ESM build exports every name, and they are the same objects as `WEED.X`). The UMD / `require` build returns the `WEED` object, so `const { Scene } = require('@weed.js/engine')` works too.
 
-`SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game.
+**Scene files use the global `WEED`.** The workers load your scene file too, so write it without an import: `const { Scene, GameObject } = WEED;`. The page's import defines `WEED`, and each worker defines its own. The file then runs on whichever build the page loaded. An import of the other build from a scene file would load a second engine.
+
+`SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game. Per-host setup (Vercel, Netlify, GitHub Pages, itch.io): [`docs/guide/DEPLOY.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md).
 
 ### CDN (jsDelivr)
 
@@ -176,8 +195,7 @@ Pin a version for real apps: `@<version>/...`, with the version you installed (i
 You define pooled entities, attach fixed components, and implement lifecycle hooks.
 
 ```javascript
-import WEED from '@weed.js/engine';
-
+// zombieScene.js: the scene and its entities. Workers load this file too.
 const { GameObject, Scene, RigidBody, Collider, SpriteRenderer } = WEED;
 
 class Zombie extends GameObject {
@@ -201,7 +219,7 @@ class Zombie extends GameObject {
   }
 }
 
-class ZombieScene extends Scene {
+export class ZombieScene extends Scene {
   static config = {
     worldWidth: 5000,
     worldHeight: 3000,
@@ -228,12 +246,20 @@ class ZombieScene extends Scene {
   // After a save restore (optional)
   onLoadGame(payload) {}
 }
-
-const game = new WEED.GameEngine({ debug: true });
-await game.loadScene(import.meta.url);
 ```
 
-Keeping `Zombie` and `ZombieScene` in one file is fine for a small game. Workers `import()` that same file — no `scriptUrl` on entities.
+The page starts the engine and loads that file:
+
+```html
+<script type="module">
+  import WEED from '@weed.js/engine/debug';
+
+  const game = new WEED.GameEngine({ debug: true });
+  await game.loadScene(new URL('./zombieScene.js', import.meta.url).href);
+</script>
+```
+
+Keep the scene and its entities in one file, or import entities from sibling files. Export the scene class, and keep the code that starts the game out of the scene file: the workers run that file too. No `scriptUrl` on entities.
 
 ---
 
@@ -245,7 +271,7 @@ Keeping `Zombie` and `ZombieScene` in one file is fine for a small game. Workers
 await game.loadScene('/demos/predatorScene/predatorScene.js');
 ```
 
-Same file as the example above: `await game.loadScene(import.meta.url)`.
+From a scene's own methods (a restart, the next level): `this.game.loadScene(import.meta.url, { data })`.
 
 Bundlers — pass a static URL so the chunk is emitted:
 
@@ -254,6 +280,17 @@ await game.loadScene(new URL('./scenes/dungeonScene.js', import.meta.url).href);
 ```
 
 `loadScene(DungeonScene)` still works (class sugar). The engine infers the file from loaded JS when it can.
+
+Pass parameters with `data`: the scene gets them as `this.data` and as the argument of `preload`, `create` and `createNewGame`.
+
+```javascript
+await game.loadScene(url, { data: { level: 3, difficulty: 'hard' } });
+
+// in the scene
+createNewGame({ level }) {
+  this.spawnLevel(level);
+}
+```
 
 Import **the scene you are about to run**. Do not barrel every level in `main`. A menu should only `import()` / `loadScene` the URL for the level you click.
 
@@ -360,6 +397,8 @@ Docs live in the GitHub repo, not in the npm tarball. Start with the [docs index
 
 | File                                                                                                                                  | Contents                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [docs/guide/FIRST_GAME.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/FIRST_GAME.md)                       | Your first game, step by step (Coin Rush)                       |
+| [docs/guide/COMING_FROM.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/COMING_FROM.md)                     | Unity / Godot / Phaser concept map                              |
 | [docs/guide/bible_of_weed_js.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/bible_of_weed_js.md)         | Practical quick reference and engine contracts                  |
 | [docs/internal/DEVLOG.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/internal/DEVLOG.md)                             | Dated project journal (stories; fill gaps)                      |
 | [docs/guide/WORKERS_ARCHITECTURE.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/WORKERS_ARCHITECTURE.md) | Worker roles, data flow, message protocols                      |
@@ -376,6 +415,7 @@ Docs live in the GitHub repo, not in the npm tarball. Start with the [docs index
 | [docs/guide/TILEMAP.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/TILEMAP.md)                           | SAB-backed Tiled map API                                        |
 | [docs/guide/RAYCASTING.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/RAYCASTING.md)                     | Grid-based raycast API                                          |
 | [docs/guide/ENTITY_TEMPLATE.js](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/ENTITY_TEMPLATE.js)           | Copy-paste entity starter                                       |
+| [docs/guide/DEPLOY.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md)                             | Headers for SharedArrayBuffer per host (Vercel, Netlify, GitHub Pages, itch.io) |
 
 ---
 

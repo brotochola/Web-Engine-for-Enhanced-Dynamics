@@ -146,6 +146,11 @@ export interface GameEngineConfig {
   canvasWidth?: number;
   canvasHeight?: number;
   debug?: boolean;
+  /**
+   * Debug builds, pages served by npm run dev: a file change saves the running scene,
+   * reloads the page and restores it. Off by default (other servers have no endpoint).
+   */
+  hotReload?: boolean;
   debugUpdateInterval?: number;
   debugDefaultOpen?: boolean | string | null;
   transitionCooldown?: number;
@@ -761,19 +766,31 @@ export interface TweenProps {
 }
 
 /** Scene tween pool (slot count is `config.tween.maxTweens`). */
+/** Tween.to / toZoom options (DX 4.2). */
+export interface TweenOptions {
+  /** ms before it starts; the from values are read when Tween.to is called. */
+  delay?: number;
+  /** Extra cycles after the first; -1 or Infinity = forever (until Tween.cancel). */
+  repeat?: number;
+  /** Every other cycle runs backwards. */
+  yoyo?: boolean;
+  /** A name from the scene's static messages: the entity gets onMessage(name, -1, slot) after the last cycle. */
+  onComplete?: string;
+}
+
 export declare class Tween {
   /** Slot count of the bound pool. 0 until bound. */
   static capacity: number;
-  static bind(sab: SharedArrayBuffer | ArrayBuffer | null, count?: number): void;
+  static bind(sab: SharedArrayBuffer | ArrayBuffer | null, count?: number, entityCount?: number): void;
   static unbind(): void;
   /**
    * Animate props of an entity over `ms`. `ms <= 0` applies the target values at once.
    * @returns the slot, or -1 (immediate, refused, pool full or nothing to animate). With
    * both xy and paint props two slots are used and the xy slot is returned when claimed.
    */
-  static to(entityIndex: number, props: TweenProps, ms: number, ease?: WeedEaseName | number): number;
+  static to(entityIndex: number, props: TweenProps, ms: number, ease?: WeedEaseName | number, options?: TweenOptions): number;
   /** Tween `Camera.targetZoom`. `ms <= 0` sets it at once and returns -1. */
-  static toZoom(zoom: number, ms: number, ease?: WeedEaseName | number): number;
+  static toZoom(zoom: number, ms: number, ease?: WeedEaseName | number, options?: Omit<TweenOptions, 'onComplete'>): number;
   /** Cancel live tweens of an entity; `kind` is 0 paint, 1 xy, 2 zoom, omitted = all. */
   static cancel(entityIndex: number, kind?: number | null): void;
   /** Advance this worker's slot block by `dt` ms. Returns live slots advanced. */
@@ -1084,6 +1101,117 @@ export declare class GameObject {
   getJoint(i: number): number;
   getJoints(): number[];
   markDirty(): void;
+
+  // Lifecycle hooks (override). The collision / screen / joint ones need their tag
+  // component in static components; the scene warns at load when one is missing.
+  /** Each spawn from the pool; spawnConfig keys were applied first. */
+  onSpawned(spawnConfig?: SpawnConfig): void;
+  /** Before the entity returns to the pool. */
+  onDespawned(): void;
+  /** Needs CollisionListener. */
+  onCollisionEnter(otherIndex: number): void;
+  /** Needs CollisionListener. */
+  onCollisionStay(otherIndex: number): void;
+  /** Needs CollisionListener. */
+  onCollisionExit(otherIndex: number): void;
+  /** Needs CollisionListener and Collider.enableHitEvents. Normal points from this entity to the other. */
+  onCollisionHit(otherIndex: number, px: number, py: number, nx: number, ny: number, approachSpeed: number): void;
+  /** Needs JointBreakListener. */
+  onJointBreak(jointIndex: number, entityA: number, entityB: number): void;
+  /** Needs CameraInOutListener. */
+  onScreenEnter(): void;
+  /** Needs CameraInOutListener. */
+  onScreenExit(): void;
+  /** A BulletPool bullet hit this entity. */
+  onGotShot(damage: number, hitX: number, hitY: number, ownerId: number, shooterEntityType: number): void;
+
+  // Transform and physics
+  setPosition(x: number, y: number): this;
+  get angularVelocity(): number;
+  set angularVelocity(value: number);
+  get fixedRotation(): boolean;
+  set fixedRotation(value: boolean);
+  setFixedRotation(flag: boolean | number): this;
+  /** Unit vector the entity faces (rotation). */
+  get forwardX(): number;
+  get forwardY(): number;
+  /** Unit vector to the entity's right. */
+  get rightX(): number;
+  get rightY(): number;
+  /** Absolute velocity (px/s). */
+  setVelocity(vx: number, vy: number): this;
+  /** Add to velocity once (px/s), ignoring mass: a jump, a dash. */
+  addVelocity(dvx: number, dvy: number): this;
+  /** Multiply velocity (0.95 = 5 % slower). */
+  scaleVelocity(factor: number): this;
+  /** Push for this tick (px/s², ignores mass); holds until the next tick. */
+  addAcceleration(x: number, y: number): this;
+  /** addAcceleration of `acc` px/s² toward (x, y). */
+  accelerateTowards(x: number, y: number, acc: number): this;
+  /** Wake or sleep the Box2D body. */
+  setAwake(awake?: boolean): this;
+  /** Poll: touching `other` this frame? Needs a CollisionListener type in the scene. */
+  isCollidingWith(other: number | GameObject): boolean;
+
+  // Sprite and animation
+  setSprite(spriteNameOrSheet: string, animation?: string, frameIndex?: number): this;
+  setSpritesheet(spritesheetName: string): void;
+  /** Play an animation of the current spritesheet; loop false = play once (then onAnimationEnd). */
+  setAnimation(animationName: string, loop?: boolean): void;
+  setAnimationLoop(loop: boolean): this;
+  /** Frames per tick at 60 Hz (0.25 = 15 fps). The spawn default 0 does not play. */
+  setAnimationSpeed(speed: number): this;
+  setAnimationState(state: number): this;
+  setScale(x: number, y?: number): this;
+  setAnchor(x: number, y: number): this;
+  setVisible(value: boolean): this;
+
+  // Layers
+  setLayer(layerName: string): this;
+  setLayers(names: string[]): this;
+  setFeedBits(bits: number): this;
+  getFeedBits(): number;
+
+  // Neighbors (spatial grid; filled by the spatial workers)
+  getNeighbor(i: number): number;
+  /** View of this frame's neighbor indices (do not keep it). */
+  getAllNeighborIds(): Uint16Array | Uint32Array;
+  /** Allocates an array: prefer getNeighbor in hot code. */
+  getAllNeighborInstances(): GameObject[];
+  /** Fills `out` (cleared first) and returns it. */
+  getAllNeighborInstancesMut(out: GameObject[]): GameObject[];
+
+  // Attached decorations
+  /** Returns the decoration pool index, or -1. Negative zIndex draws behind the entity. */
+  addDecoration(
+    texture: string,
+    localX: number,
+    localY: number,
+    scaleX?: number,
+    scaleY?: number,
+    zIndex?: number,
+    extra?: Record<string, unknown>
+  ): number;
+  getAttachedDecorationCount(): number;
+  getAttachedDecorationIndex(slot: number): number;
+  getAttachedDecoration(slot: number): Decoration | null;
+  /** Mirror left-right / top-bottom (sprite or Adobe clip), independent of scale: setScale keeps it. */
+  get flipX(): boolean;
+  set flipX(on: boolean);
+  get flipY(): boolean;
+  set flipY(on: boolean);
+  /** flipX, and flipY when given. */
+  setFlip(x: boolean, y?: boolean): this;
+  /** Scale the sprite to width × height world px; without height it keeps the aspect. */
+  setDisplaySize(width: number, height?: number): this;
+  /** Push for this tick (mass·px/s²); every tick while it should act. See PHYSICS.md "Moving bodies". */
+  applyForce(fx: number, fy: number, atX?: number, atY?: number): this;
+  /** Turn for this tick; every tick while it should act. */
+  applyTorque(torque: number): this;
+  /** One kick on the next physics step (mass·px/s); several add up. */
+  applyImpulse(ix: number, iy: number, atX?: number, atY?: number): this;
+  /** One spin kick on the next physics step. */
+  applyAngularImpulse(impulse: number): this;
   setAlpha(value: number): this;
   setTint(value: number): this;
   setTileWorld(periodX: number, periodY?: number, u0?: number, v0?: number): this;
@@ -1096,6 +1224,46 @@ export declare class GameObject {
     preAssignedIndex?: number
   ): GameObject | { index: number } | null;
   static get(index: number): GameObject | null;
+  /** Component classes the type lists (static components). */
+  static components: Array<typeof Component>;
+  /** Live entities of this class (call on the class: Zombie.activeCount). */
+  static readonly activeCount: number;
+  /** Indices of this class's live entities. */
+  static getAllActive(): ArrayLike<number>;
+  /** Their pooled instances (allocates an array). */
+  static getAllActiveInstances(): GameObject[];
+  static getFirstActiveIndex(): number;
+  static getFirstActiveInstance(): GameObject | null;
+  static getPoolStats(EntityClass?: typeof GameObject): { total: number; active: number; available: number; dropped: number };
+  /** Despawn every live entity of the class. */
+  static despawnAll(EntityClass?: typeof GameObject): void;
+  /** Writes [forwardX, forwardY, rightX, rightY] of entity `index` into `out`. */
+  static getHeadingAxes(index: number, out: Float32Array | Float64Array | number[]): void;
+  /** Entity class per entity type id (main thread and logic workers). */
+  static classByType: Array<typeof GameObject>;
+  /** True when the entity at index (e.g. a collision callback's other) is EntityClass or a subclass of it. */
+  static is(index: number, EntityClass: Function): boolean;
+  /** True when the entity type at index lists ComponentClass (tags included). */
+  static hasComponent(index: number, ComponentClass: Function): boolean;
+  /**
+   * Send a message: other.onMessage(name, this.index, a, b, c, d) runs next frame, before its tick,
+   * on the logic worker that owns it. name must be in the scene's static messages. Numbers only.
+   */
+  sendTo(other: number | GameObject, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
+  /** Tell the main thread: scene.on(name, fn) gets fn(data, entityIndex, className). Structured-cloned. */
+  emit(name: string, data?: unknown): boolean;
+  /**
+   * A play-once animation finished (setAnimation(name, false) after its last frame showed, or an
+   * Adobe clip played without loop). Runs the frame after, on the owning logic worker. Animations
+   * advance while drawn, so an off-screen one waits.
+   */
+  onAnimationEnd(name: string): void;
+  /** Override to receive sendTo / scene.sendToEntity messages. from = -1 for the scene. */
+  onMessage(name: string, from: number, a: number, b: number, c: number, d: number): void;
+  /** Is this entity an EntityClass or a subclass? Another entity: GameObject.is(index, EntityClass). */
+  is(EntityClass: Function): boolean;
+  /** Does this entity's type list ComponentClass? Another entity: GameObject.hasComponent(index, ComponentClass). */
+  hasComponent(ComponentClass: Function): boolean;
   static getEntityView(entityIndex: number, options?: { cache?: boolean }): GameObject;
   despawn(): void;
   tick(dtRatio?: number, deltaTime?: number): void;
@@ -1117,7 +1285,8 @@ export declare class GameEngine {
   debugEnabled: boolean;
   debugUI: DebugUI | null;
   constructor(config?: GameEngineConfig);
-  loadScene(source: string | typeof Scene, options?: { restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
+  /** data: handed to the scene as scene.data and as the argument of preload / create / createNewGame. */
+  loadScene(source: string | typeof Scene, options?: { data?: unknown; onProgress?: (done: number, total: number, stage: string) => void; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
   readonly presenting: boolean;
   setPresenting(on: boolean): void;
   rebindSurface(): void;
@@ -1129,6 +1298,8 @@ export declare class GameEngine {
     total: number;
     active: number;
     available: number;
+    /** Spawns that found the pool empty this scene (one warning, then counted). */
+    dropped: number;
   };
   /** Scene debug flags buffer (same as {@link Scene.debugFlags}). */
   get debug(): DebugFlags | undefined;
@@ -1393,19 +1564,31 @@ export declare class Scene {
   constructor(game: GameEngine);
   init(): Promise<void>;
   exposeGlobalReferences(): void;
-  preload(): void | Promise<void>;
-  setBackground(
-    textureOrOpts:
-      | string
-      | {
-          texture?: string;
-          textureId?: string;
-          parallax?: number | { x?: number; y?: number };
-          margin?: number;
-          zoomParallax?: number;
-        }
-  ): void;
-  create(): void | Promise<void>;
+  /** What game.loadScene(url, { data }) passed; null when nothing. Main thread only. */
+  data: unknown;
+  preload(data?: unknown): void | Promise<void>;
+  create(data?: unknown): void | Promise<void>;
+  /** New game only (skipped when a save is loaded). */
+  createNewGame(data?: unknown): void | Promise<void>;
+  /**
+   * After a save is applied; payload.custom is what onSaveGame returned (null if nothing).
+   * payload.hotReload is true after a hot reload: every entity is back already (serializable
+   * or not), so do not spawn entities here again.
+   */
+  onLoadGame(payload: { custom: unknown; hotReload?: boolean; [key: string]: unknown }): void | Promise<void>;
+  /** While a save is built: scene state outside entities (score, flags, level), as JSON data. */
+  onSaveGame(): unknown;
+  /** Names entities may send each other (sendTo / onMessage). */
+  static messages: string[];
+  /** Send an entity a message from the scene: onMessage(name, -1, a, b, c, d) next frame. */
+  sendToEntity(index: number, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
+  /** Listen to gameObject.emit(name, data). Returns a function that removes the listener. */
+  on(name: string, fn: (data: unknown, entityIndex: number, className: string) => void): () => void;
+  off(name: string, fn: (data: unknown, entityIndex: number, className: string) => void): void;
+  /** Steps onLoadProgress reports, in boot order. */
+  static readonly LOAD_STEPS: readonly string[];
+  /** Once per finished boot step (main thread): drive an HTML loading screen. Last call: 'world'. */
+  onLoadProgress(done: number, total: number, stage: string): void;
   update(dtRatio: number, deltaTime: number, accumulatedTime: number, frameNumber: number): void;
   onMessageFromGameObject(
     data: unknown,
@@ -1467,6 +1650,8 @@ export declare class Scene {
     total: number;
     active: number;
     available: number;
+    /** Spawns that found the pool empty this scene (one warning, then counted). */
+    dropped: number;
   };
   registerEntityClass(
     EntityClass: typeof GameObject,
@@ -1478,6 +1663,25 @@ export declare class Scene {
   loadEntityScriptsInMainThread(): Promise<void>;
   getMemoryUsageSummary(): MemoryUsageSummary;
   getMemoryUsageReport(): SceneMemoryUsageReport;
+  /** Save to IndexedDB (auto slot id when omitted). Pauses for a consistent snapshot. */
+  saveGame(slotId?: string): Promise<unknown>;
+  /** Remount this scene from a slot (keeps this.data). */
+  loadGame(slotId: string): Promise<unknown>;
+  /** Pause every worker and wait until they all stopped (saves use it). */
+  pauseAndSettle(timeoutMs?: number): Promise<void>;
+  get numberOfPreRenderWorkers(): number;
+  /**
+   * Game-code errors from workers this scene, one row per distinct (class, phase, message).
+   * The worker printed the first one; repeats are counted here.
+   */
+  getEntityErrors(): Array<{
+    phase: string;
+    className: string;
+    entityIndex: number;
+    message: string;
+    stack: string;
+    count: number;
+  }>;
   getSharedBufferSize(includeBreakdown?: false): number;
   getSharedBufferSize(includeBreakdown: true): SharedBufferSizeBreakdown;
   getSharedBufferSize(includeBreakdown?: boolean): number | SharedBufferSizeBreakdown;
@@ -2540,6 +2744,8 @@ export declare class SpriteSheetRegistry {
     frameHeight: Uint16Array;
     totalFrames: number;
   } | null;
+  /** First-frame size in px, cached by number (no allocation on a repeat call). */
+  static frameSizeOf(spritesheetId: number, animIndex: number): { w: number; h: number } | null;
   static getFrameDimensionsById(
     spritesheetId: number,
     animIndex: number
@@ -2668,6 +2874,11 @@ export declare class SaveStore {
 export function saveGame(
   scene: Scene,
   slotId?: string,
+  /**
+   * allEntities: every entity, not only the serializable types (shouldSaveEntity is not asked).
+   * instanceFields: also each logic worker's plain JS fields on instances. Hot reload uses both.
+   */
+  options?: { allEntities?: boolean; instanceFields?: boolean },
 ): Promise<{ meta: SaveMeta; bytes: number; entityCount: number; particleCount: number }>;
 export function loadGame(
   gameEngine: GameEngine,
@@ -2772,7 +2983,25 @@ export declare class RigidBody extends Component {
   static sleeping: Uint8Array;
   static sleepThreshold: Float32Array;
   static syncMassFromCollider(index: number): boolean;
+  /**
+   * Push for this tick (mass·px/s²); call it every tick while it should act.
+   * Holds until the body's next tick. With atX/atY (world point) it also turns the body.
+   */
+  static applyForce(index: number, fx: number, fy: number, atX?: number, atY?: number): void;
+  /** Turn for this tick (rad/s² × inertia); every tick while it should act. */
+  static applyTorque(index: number, torque: number): void;
+  /** One kick on the next physics step (mass·px/s); several add up. With atX/atY it also spins the body. */
+  static applyImpulse(index: number, ix: number, iy: number, atX?: number, atY?: number): void;
+  /** One spin kick on the next physics step. */
+  static applyAngularImpulse(index: number, impulse: number): void;
   syncMassFromCollider(): boolean;
+  applyForce(fx: number, fy: number, atX?: number, atY?: number): void;
+  applyTorque(torque: number): void;
+  applyImpulse(ix: number, iy: number, atX?: number, atY?: number): void;
+  applyAngularImpulse(impulse: number): void;
+  get mass(): number;
+  set mass(value: number);
+  get inertia(): number;
   get static(): number;
   set static(value: number | boolean);
 }
@@ -2844,6 +3073,12 @@ export declare class Collider extends Component {
   ): boolean;
   clearFixtures(): void;
   get fixtureCount(): number;
+  /**
+   * Size to the sprite as drawn (frame × scale): a box gets width/height, a circle
+   * half the smaller side; the offset follows the anchor and a flip. Polygons and
+   * chains are left alone. false when there is no sprite to fit.
+   */
+  fitToSprite(factor?: number): boolean;
 }
 
 /**
@@ -2974,6 +3209,8 @@ export declare class SpriteRenderer extends Component {
   static alpha: Float32Array;
   static scaleX: Float32Array;
   static scaleY: Float32Array;
+  /** bit 0 flipX, bit 1 flipY; the flip is the sign of scaleX / scaleY. Use GameObject.flipX / flipY. */
+  static flip: Uint8Array;
   static boundsHalfW: Float32Array;
   static boundsHalfH: Float32Array;
   static anchorX: Float32Array;
@@ -3060,6 +3297,8 @@ export declare class AdobeAnimComponent extends Component {
   static playing: Uint8Array;
   static scaleX: Float32Array;
   static scaleY: Float32Array;
+  /** bit 0 flipX, bit 1 flipY; the flip is the sign of scaleX / scaleY. Use GameObject.flipX / flipY. */
+  static flip: Uint8Array;
   static anchorX: Float32Array;
   static anchorY: Float32Array;
   static rotC: Float32Array;
@@ -3825,6 +4064,15 @@ export interface WeedNamespace extends WeedEnums {
   SWAY_OFF: 0;
   SWAY_LOOP: 1;
   SWAY_IMPULSE: 2;
+  SWAY_LOOP_SKEW: 3;
+  DECORATION_Y_SORT_SCALE: number;
+  DECORATION_INNER_Z_MIN: number;
+  DECORATION_INNER_Z_MAX: number;
+  ENTITY_GLOW_SORT_BIAS: number;
+  DECORATION_NO_PARENT: number;
+  /** The "no parent" id for the scene's entity id width. */
+  decorationNoParent(): number;
+  SharedResourceMailbox: typeof SharedResourceMailbox;
   BulletPool: typeof BulletPool;
   BulletComponent: typeof BulletComponent;
   Joint: typeof Joint;
@@ -3862,4 +4110,10 @@ declare global {
     /** Populated when the UMD/global build assigns `window.WEED`. */
     WEED?: Readonly<WeedNamespace>;
   }
+  /**
+   * The engine, for scene and entity files that do not import it. Importing the
+   * engine on the page defines it; each worker defines its own, without the
+   * main-thread-only names (GameEngine, saveGame, …).
+   */
+  var WEED: Readonly<WeedNamespace>;
 }

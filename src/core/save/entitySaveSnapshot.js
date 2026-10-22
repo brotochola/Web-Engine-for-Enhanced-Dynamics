@@ -146,6 +146,9 @@ export function readEntityComponents(EntityClass, entityIndex, plans = new Map()
  * @param {Function} EntityClass
  * @param {Record<string, { fingerprint?: number, fields: Record<string, number|number[]> }>} components
  */
+/** "Class|Component" pairs already warned about: one schema-drift warning each, not one per entity. */
+const driftWarned = new Set();
+
 export function applyEntitySaveRestore(entityIndex, EntityClass, components) {
   if (!components) return;
   const map = EntityClass._componentClassMap || {};
@@ -160,9 +163,13 @@ export function applyEntitySaveRestore(entityIndex, EntityClass, components) {
       saved.fingerprint != null &&
       saved.fingerprint !== componentSchemaFingerprint(ComponentClass)
     ) {
-      console.warn(
-        `[SaveGame] schema drift for ${ComponentClass.name} on ${EntityClass.name}; applying best-effort`
-      );
+      const key = EntityClass.name + '|' + ComponentClass.name;
+      if (!driftWarned.has(key)) {
+        driftWarned.add(key);
+        console.warn(
+          `[SaveGame] schema drift for ${ComponentClass.name} on ${EntityClass.name}; applying best-effort`
+        );
+      }
     }
 
     const fields = saved.fields;
@@ -211,22 +218,26 @@ export function applyEntitySaveRestore(entityIndex, EntityClass, components) {
 /**
  * Collect active serializable entity records from a scene.
  * @param {{ registeredClasses: Array<{ class: Function, name?: string }> }} scene
+ * @param {{ allEntities?: boolean }} [options] allEntities: every registered type,
+ *   serializable or not (hot reload keeps the whole scene)
  * @returns {{ typeName: string, components: object }[]}
  */
-export function collectSerializableEntities(scene) {
+export function collectSerializableEntities(scene, options = {}) {
+  const allEntities = options.allEntities === true;
   const records = [];
   const registered = scene.registeredClasses || [];
   const plans = new Map();
 
   for (let r = 0; r < registered.length; r++) {
     const EntityClass = registered[r].class;
-    if (!EntityClass || !isEntityClassSerializable(EntityClass)) continue;
+    if (!EntityClass || (!allEntities && !isEntityClassSerializable(EntityClass))) continue;
 
     const typeName = EntityClass.name;
     const active = EntityClass.getAllActive?.();
     if (!active || active.length === 0) continue;
 
-    const filter = typeof EntityClass.shouldSaveEntity === 'function' ? EntityClass : null;
+    // A hot reload keeps everything; shouldSaveEntity trims what a player's save holds.
+    const filter = !allEntities && typeof EntityClass.shouldSaveEntity === 'function' ? EntityClass : null;
     for (let a = 0; a < active.length; a++) {
       const entityIndex = active[a];
       if (Transform.active && Transform.active[entityIndex] !== 1) continue;
@@ -246,10 +257,10 @@ export function collectSerializableEntities(scene) {
  * Soft layout hint from scene registry (detect missing types on load).
  * @param {object} scene
  */
-export function buildLayoutHint(scene) {
+export function buildLayoutHint(scene, allEntities = false) {
   const types = [];
   for (const reg of scene.registeredClasses || []) {
-    if (!isEntityClassSerializable(reg.class)) continue;
+    if (!allEntities && !isEntityClassSerializable(reg.class)) continue;
     types.push({ name: reg.class.name, poolSize: reg.count | 0 });
   }
   types.sort((a, b) => a.name.localeCompare(b.name));
@@ -299,16 +310,18 @@ export function applySunGlobals(sun) {
  * Build a logical save payload object (typed arrays OK; binary codec serializes).
  * @param {object} scene
  * @param {{ camera?: number[]|null, sun?: number[]|null }} [globals]
+ * @param {{ allEntities?: boolean }} [options] see collectSerializableEntities
  */
-export function buildSavePayload(scene, globals = {}) {
-  const entities = collectSerializableEntities(scene);
+export function buildSavePayload(scene, globals = {}, options = {}) {
+  const allEntities = options.allEntities === true;
+  const entities = collectSerializableEntities(scene, { allEntities });
   const joints = typeof Joint.serializeActive === 'function' ? Joint.serializeActive() : [];
   const payload = {
     magic: SAVE_MAGIC,
     formatVersion: SAVE_FORMAT_VERSION,
     engineVersion: VERSION,
     sceneName: scene.constructor?.name || 'Scene',
-    layout: buildLayoutHint(scene),
+    layout: buildLayoutHint(scene, allEntities),
     camera: globals.camera !== undefined ? globals.camera : readCameraGlobals(),
     sun: globals.sun !== undefined ? globals.sun : readSunGlobals(),
     entities,
@@ -341,6 +354,10 @@ export function buildSavePayload(scene, globals = {}) {
   if (timeScale != null) payload.timeScale = timeScale;
   const tweens = packTweens();
   if (tweens) payload.tweens = tweens;
+  // Scene state outside entities (score, quest flags, level): JSON, back as payload.custom.
+  const custom = typeof scene.onSaveGame === 'function' ? scene.onSaveGame() : undefined;
+  if (custom !== undefined && custom !== null) payload.custom = custom;
+  if (globals.instanceFields) payload.instanceFields = globals.instanceFields;
   return payload;
 }
 

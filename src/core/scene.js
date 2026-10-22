@@ -132,6 +132,10 @@ import {
   resolveSpritePipeline,
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
+import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
+import { Messages } from './messages.js';
+import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
+import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import {
   isSpawnCommandRingBound,
   tryPushDespawn,
@@ -139,6 +143,12 @@ import {
 } from '../util/spawnCommandRing.js';
 
 class Scene {
+  /** Steps onLoadProgress reports, in boot order (the asset ones overlap). */
+  static LOAD_STEPS = Object.freeze([
+    'audio', 'scripts', 'buffers', 'adobe', 'atlas', 'tilemaps',
+    'flowfields', 'shaders', 'sounds', 'workers', 'world',
+  ]);
+
   // Worker index constants for FrameRate SharedArrayBuffer
   // Spatial workers use indices 0..N-1 (N = numberOfSpatialWorkers).
   // Other roles offset by numberOfSpatialWorkers.
@@ -159,12 +169,24 @@ class Scene {
   static entities = []; // [[EntityClass, poolSize], ...]
   static sharedResources = []; // [[SharedResourceClass, schema], ...]
   static queries = []; // [[ComponentClass, ...], ...] custom active queries to precompute
+  /** Names entities may send each other (sendTo / onMessage): ['hit', 'heal', …]. */
+  static messages = [];
 
   constructor(game) {
     this.game = game; // Reference to GameEngine orchestrator
     this.loadedTextures = null;
     /** Absolute scene module href for workers. Set by GameEngine.loadScene. */
     this.sceneScriptUrl = null;
+    /**
+     * What game.loadScene(url, { data }) passed (level number, player choice, …);
+     * null when nothing. Also the argument of preload / create / createNewGame.
+     * Main thread only: entities get what they need through spawnConfig or a SharedResource.
+     */
+    this.data = null;
+    /** Load steps finished so far (onLoadProgress). */
+    this._loadStepsDone = 0;
+    /** loadScene's { onProgress }, set by GameEngine; null when none. */
+    this._onProgressOption = null;
 
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
@@ -198,6 +220,13 @@ class Scene {
     };
     /** Render-queue camera views bound by _drawnCameraViews(). */
     this._drawnCam = null;
+    /** Game-code errors from workers: key → { phase, className, entityIndex, message, counts: Map<worker, n> }. */
+    this._entityErrors = new Map();
+    /** True when a registered type defines onMessage (or onAnimationEnd): the inboxes exist. */
+    this._anyMessageListener = false;
+    /** gameObject.emit listeners: name → fn[]. */
+    this._eventListeners = new Map();
+    this._entityErrorsDismissed = false;
     /** Pending pauseAndSettle barrier: { id, left, resolve }. */
     this._barrier = null;
     this._barrierSeq = 0;
@@ -283,6 +312,9 @@ class Scene {
       inputData: null,
       cameraData: null,
       clockData: null,
+      poolExhaustionData: null,
+      messageInboxes: null,
+      messageSpawnGen: null,
       tweenData: null,
       debugData: null,
       debugDrawData: null, // Debug draw ring buffer (DebugDraw API)
@@ -488,6 +520,19 @@ class Scene {
     for (const [EntityClass, poolSize] of this.constructor.entities) {
       this.registerEntityClass(EntityClass, poolSize);
     }
+    // A hook without its tag never runs, silently: say so once, here.
+    warnMissingListenerTags(this.registeredClasses, GameObject);
+    const messageNames = this.constructor.messages || [];
+    for (const r of this.registeredClasses) {
+      const onMessage = definesBelow(r.class, GameObject, 'onMessage');
+      if (onMessage || definesBelow(r.class, GameObject, 'onAnimationEnd')) this._anyMessageListener = true;
+      if (onMessage && messageNames.length === 0) {
+        console.warn(
+          `WeedJS: ${r.class.name} defines onMessage but ${this.constructor.name} declares no static messages, ` +
+            "so nothing can be sent to it. Add static messages = ['hit', …] to the scene."
+        );
+      }
+    }
 
     // Lighting / flash flags may need optional SoA even with no entity listing them yet
     this.ensureOptionalComponentPools();
@@ -559,6 +604,7 @@ class Scene {
     const startIndex = this.totalEntityCount;
     const entityTypeId = this.registeredClasses.length;
     EntityClass.entityType = entityTypeId;
+    GameObject.classByType[entityTypeId] = EntityClass;
     if (EntityClass.deriveSpeed === true) this._anyDeriveSpeed = true;
 
     // Register custom components and assign componentId IDs
@@ -932,6 +978,7 @@ class Scene {
 
         const entityTypeId = this.registeredClasses.length;
         ParentClass.entityType = entityTypeId;
+        GameObject.classByType[entityTypeId] = ParentClass;
         if (ParentClass.deriveSpeed === true) this._anyDeriveSpeed = true;
 
         // Auto-detect script path from parent class (for worker script loading)
@@ -965,9 +1012,13 @@ class Scene {
   async init() {
     debugWorkerLog(`🎬 Scene ${this.constructor.name}: Initializing...`);
 
-    // Check SharedArrayBuffer support
-    if (typeof SharedArrayBuffer === 'undefined') {
-      throw new Error('SharedArrayBuffer not available! Check CORS headers.');
+    // Check SharedArrayBuffer support: on the page too, a blank canvas says nothing
+    const isolationError = sharedArrayBufferMissing();
+    if (isolationError) {
+      if (typeof document !== 'undefined') {
+        this._showFatalErrorMessage('page', 'SharedArrayBuffer unavailable', isolationError);
+      }
+      throw new Error(isolationError);
     }
 
     // Initialize AudioWorklet mixer and autoplay gate
@@ -980,14 +1031,17 @@ class Scene {
       audioConfig.compressor
     );
     SoundManager.initializeAutoplayGate();
+    this._loadStep('audio');
 
     // Load entity scripts dynamically in main thread (like workers do)
 
     await this.loadEntityScriptsInMainThread();
+    this._loadStep('scripts');
 
     // Create shared buffers
 
     this.createSharedBuffers();
+    this._loadStep('buffers');
 
     // Create workers
 
@@ -995,6 +1049,7 @@ class Scene {
 
     // Wait for all workers to be ready (workers stay paused until we send 'start')
     await this.readyPromise;
+    this._loadStep('workers');
 
     // Expose scene and component references globally for console access
     this.exposeGlobalReferences();
@@ -1006,11 +1061,11 @@ class Scene {
     // Scene infrastructure setup (camera, nav grid, dynamic scenery overrides).
     // Messages sent here are processed by workers while they are still paused,
     // so the renderer can build the tilemap and warm up the GPU before the first frame.
-    await this.preload();
+    await this.preload(this.data);
 
     // LIFECYCLE PHASE 2: create()
     // Static / always-on world setup (runs for new game AND save load).
-    await this.create();
+    await this.create(this.data);
 
     // LIFECYCLE PHASE 2b: new game vs save restore
     // Restore awaits logic0 restoreSaveComplete so entities are in the scene
@@ -1020,13 +1075,15 @@ class Scene {
       await this._flushCreateSpawns();
       const payload = this._restorePayload;
       const { applySavePayloadToScene } = await import('./save/saveGame.js');
-      await applySavePayloadToScene(this, payload);
+      // A hot reload's save holds every entity: replace them all, at their own indices.
+      await applySavePayloadToScene(this, payload, { allTypes: this._restoreAllTypes === true });
       await this.onLoadGame(payload);
       await this._flushCreateSpawns();
     } else {
-      await this.createNewGame();
+      await this.createNewGame(this.data);
       await this._flushCreateSpawns();
     }
+    this._loadStep('world');
     this._spawnBatchOpen = false;
 
     // LIFECYCLE PHASE 3: Start everything.
@@ -1147,8 +1204,9 @@ class Scene {
    *
    * Messages sent here are processed by workers while they are still paused,
    * guaranteeing everything is ready before the first frame renders.
+   * @param {*} data - loadScene's { data } (also this.data), null when none
    */
-  preload() {
+  preload(data) {
     // Override this for scene infrastructure setup
   }
 
@@ -1157,8 +1215,9 @@ class Scene {
    * Runs for **both** new games and save loads.
    * Use for static world setup that is not restored from a save
    * (tile props, lights, decorations, non-serializable entities).
+   * @param {*} data - loadScene's { data } (also this.data), null when none
    */
-  create() {
+  create(data) {
     // Override this to spawn static / always-present world content
   }
 
@@ -1166,8 +1225,9 @@ class Scene {
    * Called after create() only when starting a **new game** (no restore payload).
    * Spawn serializable / dynamic entities here (soldiers, civilians, player, …).
    * Skipped entirely when loading a save — those entities come from the save instead.
+   * @param {*} data - loadScene's { data } (also this.data), null when none
    */
-  createNewGame() {
+  createNewGame(data) {
     // Override for new-game-only spawns
   }
 
@@ -1176,10 +1236,78 @@ class Scene {
    * (serializable entities restored + active lists flushed, camera/sun applied).
    * Runs only after logic0 restoreSaveComplete — before play starts.
    * Override for load-only hooks (UI, quests, follow-up spawns).
+   * payload.custom is what onSaveGame() returned (null for a save without it).
    * @param {object} payload - Decoded save payload
    */
   onLoadGame(payload) {
     // Override for post-load scene logic
+  }
+
+  /**
+   * Send an entity a message from the scene (main thread): it runs
+   * onMessage(name, -1, a, b, c, d) next frame. `name` must be in static messages.
+   * @returns {boolean} false when not sent
+   */
+  sendToEntity(index, name, a = 0, b = 0, c = 0, d = 0) {
+    return Messages.send(index, name, -1, a, b, c, d);
+  }
+
+  /**
+   * Listen to gameObject.emit(name, data): fn(data, entityIndex, className).
+   * @param {string} name
+   * @param {(data: *, entityIndex: number, className: string) => void} fn
+   * @returns {() => void} removes the listener
+   */
+  on(name, fn) {
+    let list = this._eventListeners.get(name);
+    if (list === undefined) {
+      list = [];
+      this._eventListeners.set(name, list);
+    }
+    list.push(fn);
+    return () => this.off(name, fn);
+  }
+
+  off(name, fn) {
+    const list = this._eventListeners.get(name);
+    if (list === undefined) return;
+    const i = list.indexOf(fn);
+    if (i >= 0) list.splice(i, 1);
+  }
+
+  /**
+   * Called on the main thread while the scene loads, once per finished step:
+   * audio, scripts, buffers, adobe, atlas, tilemaps, flowfields, shaders,
+   * sounds, workers, world (the asset steps finish in any order). `done` goes
+   * 1 … `total`; the last call is 'world', right before the first frame.
+   * Drive an HTML loading screen from here; a throw is logged, not fatal.
+   * @param {number} done
+   * @param {number} total
+   * @param {string} stage - the step that just finished
+   */
+  onLoadProgress(done, total, stage) {}
+
+  /** @internal One load step finished: scene hook, then loadScene's onProgress. */
+  _loadStep(stage) {
+    const done = ++this._loadStepsDone;
+    const total = Scene.LOAD_STEPS.length;
+    try {
+      this.onLoadProgress(done, total, stage);
+      if (this._onProgressOption !== null) this._onProgressOption(done, total, stage);
+    } catch (error) {
+      console.error('WeedJS: onLoadProgress threw (loading continues):', error);
+    }
+  }
+
+  /**
+   * Called on the main thread while a save is built. Return the scene state
+   * that lives outside entities and SharedResources (score, quest flags, level
+   * number, …) as JSON data; onLoadGame gets it back as payload.custom.
+   * Return undefined (the default) to save nothing extra.
+   * @returns {*} JSON-serializable value or undefined
+   */
+  onSaveGame() {
+    return undefined;
   }
 
   /**
@@ -1479,6 +1607,11 @@ class Scene {
     const sceneSpritesheets = imageUrls?.spritesheets || {};
     const adobeAnimateAnimations = imageUrls?.AdobeAnimateAnimations || {};
     const preparedAdobeAssets = await this.prepareAdobeAnimateAssets(adobeAnimateAnimations);
+    this._loadStep('adobe');
+    const step = (stage) => (value) => {
+      this._loadStep(stage);
+      return value;
+    };
     const bakedBigAtlas = imageUrls?.bigAtlas;
     const atlasOptions = this.config.assets;
 
@@ -1516,11 +1649,11 @@ class Scene {
     );
 
     const [atlasResult, , , , loadedAudioNames] = await Promise.all([
-      atlasPromise,
-      this._loadTilemapsParallel(imageUrls?.tilemaps),
-      flowfieldsPromise,
-      this._loadShaderSources(imageUrls),
-      audioPromise,
+      atlasPromise.then(step('atlas')),
+      this._loadTilemapsParallel(imageUrls?.tilemaps).then(step('tilemaps')),
+      flowfieldsPromise.then(step('flowfields')),
+      this._loadShaderSources(imageUrls).then(step('shaders')),
+      audioPromise.then(step('sounds')),
     ]);
 
     this._installBigAtlas(atlasResult, preparedAdobeAssets.compiledAssets);
@@ -1759,6 +1892,13 @@ class Scene {
 
       // Show a visible error message on the page
       this._showFatalErrorMessage(workerName, title, message);
+    } else if (e.data.msg === 'gameObjectEvent') {
+      const list = this._eventListeners.get(e.data.name);
+      if (list !== undefined) {
+        for (let i = 0; i < list.length; i++) list[i](e.data.data, e.data.entityIndex, e.data.className);
+      }
+    } else if (e.data.msg === 'entityError' || e.data.msg === 'entityErrorCount') {
+      this._onEntityError(e.data);
     } else if (e.data.msg === 'box2dReady') {
       const payload = {
         msg: 'box2dReady',
@@ -1862,6 +2002,10 @@ class Scene {
           idPairs: e.data.idPairs || [],
         });
       }
+    } else if (e.data.msg === 'instanceFields') {
+      if (this._pendingInstanceFields) this._pendingInstanceFields(e.data.workerIndex | 0, e.data.entries || []);
+    } else if (e.data.msg === 'instanceFieldsApplied') {
+      if (this._pendingInstanceFieldsApplied) this._pendingInstanceFieldsApplied();
     } else if (
       e.data.msg === 'drainSpawnCommandsComplete' ||
       e.data.msg === 'spawnBatchComplete'
@@ -1883,6 +2027,97 @@ class Scene {
     } else {
       // Log unexpected messages for debugging
       debugWorkerLog(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);
+    }
+  }
+
+  /**
+   * A worker's ErrorReporter posts the first throw of each distinct error, then
+   * counts at most once a second. The worker already printed the Error; here
+   * the scene keeps the list (getEntityErrors) and, in debug, shows it.
+   * @param {object} data - entityError or entityErrorCount message
+   */
+  _onEntityError(data) {
+    let rec = this._entityErrors.get(data.key);
+    if (data.msg === 'entityError') {
+      if (!rec) {
+        rec = {
+          phase: data.phase,
+          className: data.className,
+          entityIndex: data.entityIndex,
+          message: data.message,
+          stack: data.stack,
+          counts: new Map(),
+        };
+        this._entityErrors.set(data.key, rec);
+      }
+    } else if (!rec) {
+      return;
+    }
+    rec.counts.set(data.workerName, data.count);
+    this._renderEntityErrors();
+  }
+
+  /**
+   * Game-code errors seen this scene, one row per distinct (class, phase, message).
+   * @returns {{ phase: string, className: string, entityIndex: number, message: string, stack: string, count: number }[]}
+   */
+  getEntityErrors() {
+    const out = [];
+    for (const rec of this._entityErrors.values()) {
+      let count = 0;
+      for (const n of rec.counts.values()) count += n;
+      out.push({
+        phase: rec.phase,
+        className: rec.className,
+        entityIndex: rec.entityIndex,
+        message: rec.message,
+        stack: rec.stack,
+        count,
+      });
+    }
+    return out;
+  }
+
+  /** Debug builds only: a small list in the corner, not the fatal overlay. */
+  _renderEntityErrors() {
+    if (typeof document === 'undefined' || !this.game || !this.game.debugEnabled) return;
+    if (this._entityErrorsDismissed) return;
+    let box = document.getElementById('weed-entity-errors');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'weed-entity-errors';
+      box.style.cssText =
+        'position:fixed;left:12px;bottom:12px;max-width:560px;z-index:10000;' +
+        'background:rgba(110,0,0,0.92);color:#fff;font:12px/1.4 monospace;' +
+        'padding:8px 10px;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.5);';
+      document.body.appendChild(box);
+    }
+    box.textContent = '';
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;justify-content:space-between;gap:12px;font-weight:bold;margin-bottom:4px;';
+    head.textContent = 'Game code threw (details in the console)';
+    const close = document.createElement('button');
+    close.textContent = '×';
+    close.style.cssText = 'background:none;border:0;color:#fff;font:bold 14px monospace;cursor:pointer;';
+    close.onclick = () => {
+      this._entityErrorsDismissed = true;
+      box.remove();
+    };
+    head.appendChild(close);
+    box.appendChild(head);
+    const rows = this.getEntityErrors();
+    const shown = rows.length > 8 ? 8 : rows.length;
+    for (let r = 0; r < shown; r++) {
+      const e = rows[r];
+      const line = document.createElement('div');
+      const who = e.className ? `${e.className}${e.entityIndex >= 0 ? ` #${e.entityIndex}` : ''} · ` : '';
+      line.textContent = `${who}${e.phase}: ${e.message}  ×${e.count}`;
+      box.appendChild(line);
+    }
+    if (rows.length > shown) {
+      const more = document.createElement('div');
+      more.textContent = `… ${rows.length - shown} more (scene.getEntityErrors())`;
+      box.appendChild(more);
     }
   }
 
@@ -2399,6 +2634,7 @@ class Scene {
 
     Camera.setFree(false);
     GrabSystem.reset();
+    if (typeof document !== 'undefined') document.getElementById('weed-entity-errors')?.remove();
 
     // =========================================================================
     // CRITICAL: Clear global references FIRST to allow GC of the scene
@@ -2547,7 +2783,9 @@ class Scene {
    */
   async loadGame(slotId) {
     const { loadGame } = await import('./save/saveGame.js');
-    return loadGame(this.game, this.constructor, slotId);
+    // The remount keeps this scene's loadScene data; state that must come
+    // from the save belongs in onSaveGame.
+    return loadGame(this.game, this.constructor, slotId, { data: this.data });
   }
 
   /**
@@ -2625,8 +2863,8 @@ class Scene {
         Transform.x[entityIndex] = spawnConfig.x ?? 0;
         Transform.y[entityIndex] = spawnConfig.y ?? 0;
       } else {
-        // Pool exhausted
-        console.warn(`spawnEntity: Pool exhausted for ${className}`);
+        // Pool exhausted: one warning per type per scene, the rest are counted
+        reportPoolExhausted(EntityClass);
         return null;
       }
     }
@@ -2713,7 +2951,7 @@ class Scene {
 
   getPoolStats(EntityClass) {
     if (EntityClass.startIndex == null || EntityClass.poolSize == null) {
-      return { total: 0, active: 0, available: 0 };
+      return { total: 0, active: 0, available: 0, dropped: 0 };
     }
 
     const startIndex = EntityClass.startIndex;
@@ -2730,6 +2968,7 @@ class Scene {
       total: total,
       active: activeCount,
       available: total - activeCount,
+      dropped: droppedSpawns(EntityClass),
     };
   }
 

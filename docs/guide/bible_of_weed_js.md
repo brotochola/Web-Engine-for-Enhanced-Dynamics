@@ -90,7 +90,18 @@ class MyScene extends WEED.Scene {
 }
 ```
 
-Do **not** branch on `_restorePayload` inside `create()`. Use `createNewGame` / `onLoadGame` instead. Full save API: [`docs/guide/SAVE_GAME.md`](./SAVE_GAME.md).
+Do **not** branch on `_restorePayload` inside `create()`. Use `createNewGame` / `onLoadGame` instead.
+
+`game.loadScene(url, { data })` hands parameters to the scene (level number, a menu choice): `this.data`, also the argument of `preload`, `create` and `createNewGame`. It lives on the main thread; entities get what they need through `spawnConfig` or a `SharedResource`. `scene.loadGame(slot)` remounts with the same `data`.
+
+**Loading screen.** `onLoadProgress(done, total, stage)` runs on the main thread once per finished boot step: `audio`, `scripts`, `buffers`, `adobe`, `atlas`, `tilemaps`, `flowfields`, `shaders`, `sounds` (the asset steps finish in any order), `workers`, `world` (last, right before the first frame). Drive an HTML bar from it; when the menu owns the bar, pass the same callback as `loadScene(url, { onProgress })`. A throw in it is logged and loading goes on.
+
+```javascript
+onLoadProgress(done, total, stage) {
+  bar.style.width = `${(100 * done) / total}%`;
+  label.textContent = stage;
+}
+``` Full save API: [`docs/guide/SAVE_GAME.md`](./SAVE_GAME.md).
 
 ### Prebaked bigAtlas
 
@@ -266,7 +277,7 @@ class Enemy extends GameObject {
 }
 ```
 
-Entity types without the tag component can still define `onCollisionEnter` etc. on their prototype, but they will **never be called**. The tag is the gate.
+Entity types without the tag component can still define `onCollisionEnter` etc. on their prototype, but they will **never be called**. The tag is the gate. The scene warns once at load for each class that defines a gated hook without its tag, and when a class calls `isCollidingWith` while no type in the scene lists `CollisionListener`.
 
 ### Querying by tag
 
@@ -277,6 +288,24 @@ const listeners = Query.query([CollisionListener]); // all matching slots, inclu
 const listenerSlots = Query.queryActiveEntities([CameraInOutListener]); // active precomputed query
 const visibleListeners = Query.queryActiveEntitiesSlow([CameraInOutListener, SpriteRenderer]); // explicit slow path
 ```
+
+### TypeScript and your own components
+
+`types/weed.d.ts` types the engine (`npm run check:types` also fails when a public runtime member of `GameObject`, `Scene`, `GameEngine` or `WEED` is not declared). A component you add is reached through an accessor the engine defines on your class's prototype (`this.health` for `Health`), which TypeScript cannot see. Declare it, **without an initializer**:
+
+```ts
+class Health extends Component {
+  static ARRAY_SCHEMA = { hp: Float32Array };
+  declare hp: number;
+}
+
+class Hero extends GameObject {
+  static components = [Health, RigidBody, Collider];
+  declare health: Health;            // TypeScript: `declare` emits nothing
+}
+```
+
+In plain JavaScript, do **not** write a class field with that name (`health;` or `/** @type {Health} */ health;`): a class field is an own property set to `undefined`, and it hides the engine's accessor. Use a JSDoc `@property` on the class instead.
 
 ### Creating your own tag components
 
@@ -350,6 +379,73 @@ if (this.isCollidingWith(playerIndex)) {
 ```
 
 Use collision **callbacks** for edge-triggered logic (enter/exit). Use `isCollidingWith()` inside `tick()` when you need "am I currently overlapping?" without maintaining your own state.
+
+### Messages between entities (`sendTo` / `onMessage`), and to the scene (`emit` / `on`)
+
+An entity can tell another one something without sharing a component field:
+
+```javascript
+class Arena extends WEED.Scene {
+  static messages = ['hit', 'heal'];   // the names entities may send
+  static entities = [[Hero, 1], [Slime, 200]];
+}
+
+class Slime extends GameObject {
+  onCollisionEnter(other) {
+    if (GameObject.is(other, Hero)) this.sendTo(other, 'hit', 10); // name, then up to 4 numbers
+  }
+}
+
+class Hero extends GameObject {
+  static components = [Health, CollisionListener];
+  onMessage(name, from, a) {
+    if (name === 'hit') this.health.hp -= a;
+    if (this.health.hp <= 0) this.emit('died', { score: this.health.score }); // to the main thread
+  }
+}
+
+// main thread
+scene.on('died', (data, entityIndex, className) => showGameOver(data.score));
+scene.sendToEntity(heroIndex, 'heal', 25);          // from the scene: from = -1
+```
+
+- `onMessage(name, from, a, b, c, d)` runs **next frame, before `tick`**, on the logic worker that owns the target (`target % numberOfLogicWorkers`, like collision callbacks). `from` is the sender's index, `-1` for the scene.
+- Names must be in the scene's `static messages` (every worker maps them to the same id); an unknown name throws and says what to add. A class with `onMessage` in a scene without `static messages` gets a warning at load.
+- Payload: up to four numbers. Nothing is allocated to send or deliver. Each logic worker's inbox holds `logic.maxMessages` (default 4096) between two frames; a full inbox warns once and drops.
+- A message to an entity that despawns before delivery is dropped, even if a new entity took its index.
+- The inboxes exist only when some type defines `onMessage` (or `onAnimationEnd`); otherwise `sendTo` warns once and does nothing.
+- `emit(name, data)` goes to the main thread by `postMessage` (`data` is structured-cloned): for rare events (died, level won), not every frame. `scene.on` returns a function that removes the listener.
+
+### When a play-once animation ends (`onAnimationEnd`)
+
+```javascript
+attack() {
+  this.setAnimation('slash', false); // play once
+  this.setAnimationSpeed(0.3);       // a sprite animation does not play at speed 0 (the spawn default)
+}
+
+onAnimationEnd(name) {
+  if (name === 'slash') this.setAnimation('idle');
+}
+```
+
+Spritesheet animations call it after their last frame has shown; an Adobe clip played without loop (`adobeAnimComponent.play(name, false)`) when it reaches its end. It runs on the logic worker that owns the entity, the frame after, once per play. Animations advance while the sprite is drawn, so an off-screen one ends when it is back on screen. It travels on the same inboxes as `sendTo` (they exist when a type defines `onMessage` or `onAnimationEnd`); `static messages` is not needed for it.
+
+### What did I hit? (`is`, `hasComponent`)
+
+Callbacks get the other entity's **index**. Ask about it without reading SoA by hand:
+
+```javascript
+onCollisionEnter(other) {
+  if (GameObject.is(other, Coin)) this.collect(other);    // Coin or a subclass of it
+  if (GameObject.is(other, Enemy) && GameObject.hasComponent(other, Shield)) this.bounce();
+}
+
+this.is(Enemy);                // this entity
+this.hasComponent(Shield);     // tags count: CollisionListener, your own tags
+```
+
+`GameObject.is(index, Class)` and `GameObject.hasComponent(index, Component)` ask about any entity (from an entity, the scene or SoA code); `this.is` and `this.hasComponent` ask about this one. Both are O(1) for the exact class (a short prototype walk for a base class) and allocate nothing. An index stays the same while its entity lives, but a pool reuses it after a despawn (the next spawn of that class takes the most recently freed index), so do not keep one across frames and assume it is the same entity.
 
 > **Note:** These are *physics* collision layers, completely separate from *rendering* layers (see Layer System below).
 
@@ -623,6 +719,23 @@ LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('glow');
 ```
 
 Omit `layer`/`layers` → entities bit. See `docs/guide/LAYER_ROUTING.md`.
+
+### Sprite size (`setDisplaySize` / `fitToSprite`)
+
+`setScale` is relative to the texture, so sizing a sprite meant knowing its pixel size. `setDisplaySize` takes world px; `this.collider.fitToSprite()` then copies the drawn box onto the collider:
+
+```javascript
+onSpawned() {
+  this.setSprite('crate');
+  this.setDisplaySize(64, 48);      // world px; setDisplaySize(64) keeps the aspect
+  this.collider.fitToSprite();      // box 64 × 48; a circle collider gets radius 24
+  this.collider.fitToSprite(0.8);   // or 80 % of the sprite (a forgiving hitbox)
+}
+```
+
+Flip with `this.flipX = true` / `this.flipY` / `this.setFlip(x, y)` (Adobe clips too; also a spawn-config key: `{ flipX: true }`). A flip is independent of scale: `setScale(2)` keeps it and `this.scaleX` reads `2`. It is stored as the sign of the scale the renderer reads, so it costs nothing to draw. A negative `setScale` still mirrors, as before.
+
+Sizes come from the sprite's first frame, the size the renderer scales. Call `setDisplaySize` after `setSprite` / `setSpritesheet` (it warns once per class otherwise). `fitToSprite` also sets the collider offset from the sprite anchor, so a sprite anchored at its feet gets a box that sits on the same feet. Polygon and chain colliders keep their shape.
 
 ### Sprite tiling (`setTileWorld` / `setTileLocal`)
 
@@ -906,6 +1019,10 @@ WEED.Camera.followEntity(index, lookAheadSec, smoothing, dtRatio); // pose xy + 
 WEED.Camera.setDeadzone(80, 60); // world-pixel box; the camera holds while the entity stays inside
 WEED.Camera.shake(12, 180);      // punch added when the camera is packed; decays on sim time
 WEED.Tween.to(this.index, { alpha: 0 }, 200, 'quad.out'); // sprite or mesh; not a dynamic body's x/y
+// Options: delay (ms), repeat (extra cycles; -1 = forever), yoyo, onComplete (a static messages name):
+WEED.Tween.to(this.index, { scaleX: 1.2, scaleY: 1.2 }, 150, 'quad.out', { repeat: -1, yoyo: true }); // pulse
+WEED.Tween.to(this.index, { alpha: 0 }, 300, 'lerp', { delay: 500, onComplete: 'faded' });
+//   → onMessage('faded', -1, slot) on this entity after the last cycle. A despawn cancels the entity's tweens.
 WEED.Tween.toZoom(0.5, 400, 'quad.out');
 WEED.Camera.targetZoom = 0.5; // then follow / followEntity — lerps zoom, keeps screen center
 WEED.Camera.setZoom(1.5);     // snap zoom (do not call every tick while following)
@@ -1170,6 +1287,8 @@ Recommended `<head>` meta tags (add these to your HTML — the engine can't inje
 - Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = false` (built-in), `blendMode = BLEND_MODES.NORMAL` (0)
 - Audio: `maxSlots = 128`, `mixGain = 0.5`, `masterVolume = 1.0`, one bus named `main` unless `audio.channels` says otherwise
 - Navigation: `enabled = false` by default
+- Logging: a game's `console.log` prints from every worker (`tick`, callbacks, module top level). The engine's own worker chatter stays off unless `debug.verboseWorkers: true`
+- Errors: when game code throws (`tick`, `tickAll`, `onSpawned`, a collision / hit / joint / shot callback), the worker keeps running. That entity misses that one call, the others still run, and the error is printed once with its class, index and phase; repeats are counted, not printed. The debug build lists them in a small panel; `scene.getEntityErrors()` returns them in any build.
 
 See `src/util/configDefaults.js` for the canonical defaults.
 
@@ -1197,6 +1316,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 - Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. If both `tick` and `tickAll` exist, instance `tick` wins.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
+- Entity pools (`static entities`) and the joint pool are finite too. A spawn into a full pool returns `null` (a joint returns `-1`); the first one warns once per scene, from whichever thread hit it, and the rest are counted in `getPoolStats(Type).dropped`.
 - Flash pool is finite (`lighting.maxFlashes`). Flashes also compete for `lighting.maxLights`; persistent lights win when the list is capped. Short muzzle flashes should use `Flash.spawn({ castShadows: false })` so they light without point-shadow grid work.
 - Rendering caps are finite too. One-shot pre-render warnings for visible lights, shadow casters, shadow sprites, and visibility polygon occluders mean the scene is truncating work. Tune `lighting.maxLights`, `lighting.maxFlashes`, `lighting.maxShadowCastingLights`, `lighting.maxShadowsPerLight`, `lighting.maxShadowSprites`, or reduce light/occluder density.
 - Sound slots are finite (default 128). One-shot SFX are cheap; don't forget `stop()` on loops. A full bus drops or steals a voice on that bus; `droppedCount` counts plays that found no slot.

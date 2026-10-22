@@ -2,6 +2,7 @@
 // Manages canvas, scene lifecycle, input listeners, browser hardening, and debug UI
 
 import { DebugUI } from './debug/debugUi.js';
+import { HotReload } from './debug/hotReload.js';
 import { Mouse } from './mouse.js';
 import { SoundManager } from './soundManager.js';
 import { Scene } from './scene.js';
@@ -64,6 +65,9 @@ class GameEngine {
         updateInterval: config.debugUpdateInterval ?? DEBUG_DEFAULTS.updateInterval,
         defaultOpen: config.debugDefaultOpen ?? DEBUG_DEFAULTS.defaultOpen,
       });
+      // Opt-in (hotReload: true), for pages served by npm run dev: reload on a file
+      // change, keeping the running scene's state. Other servers would 404 the endpoint.
+      if (config.hotReload === true) HotReload.start(this);
     }
 
     // Browser environment hardening
@@ -287,7 +291,11 @@ class GameEngine {
    * and workers load that same file (entity graph, no per-entity scriptUrl).
    * Class: same as today; engine infers the file from loaded JS when it can.
    * @param {string|Function} source
-   * @param {{ restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string }} [options]
+   * @param {{ data?: unknown, onProgress?: (done: number, total: number, stage: string) => void, restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string }} [options]
+   *   data: handed to the scene as scene.data and as the argument of preload / create /
+   *   createNewGame (level number, a menu choice, …).
+   *   onProgress(done, total, stage): the same calls as Scene.onLoadProgress, for a
+   *   loading screen the caller owns.
    * @returns {boolean} - true if scene change accepted, false if busy
    */
   async loadScene(source, options = {}) {
@@ -331,8 +339,23 @@ class GameEngine {
         SceneClass.scriptUrl = sceneScriptUrl;
       }
 
+      // A hot reload of this very scene: restore what was running (once).
+      let hotRestore = false;
+      if (this.debugEnabled && !options.restorePayload && !options.restoreSlot) {
+        const hot = HotReload.takeRestore(sceneScriptUrl);
+        if (hot) {
+          options = { ...options, data: options.data ?? hot.data };
+          hotRestore = true;
+        }
+      }
+
       let restorePayload = options.restorePayload || null;
-      if (!restorePayload && options.restoreSlot) {
+      if (hotRestore) {
+        // null (gone, unreadable, another scene): start fresh, never fail the load
+        restorePayload = await HotReload.readSlot(SceneClass.name);
+        // onLoadGame sees it: every entity is back already, do not spawn them again.
+        if (restorePayload) restorePayload.hotReload = true;
+      } else if (!restorePayload && options.restoreSlot) {
         const { SaveStore, decodeSave } = await import('./save/saveGame.js');
         const blob = await SaveStore.get(options.restoreSlot);
         if (!blob) throw new Error(`Save slot not found: ${options.restoreSlot}`);
@@ -361,8 +384,11 @@ class GameEngine {
       debugWorkerLog(`📥 Loading scene: ${SceneClass.name}`);
       this.currentScene = new SceneClass(this);
       this.currentScene.sceneScriptUrl = sceneScriptUrl;
+      this.currentScene.data = options.data === undefined ? null : options.data;
+      if (typeof options.onProgress === 'function') this.currentScene._onProgressOption = options.onProgress;
       if (restorePayload) {
         this.currentScene._restorePayload = restorePayload;
+        this.currentScene._restoreAllTypes = hotRestore; // the hot save holds every entity
       }
 
       // Engine owns canvas dimensions — inject into scene config before init
@@ -383,6 +409,7 @@ class GameEngine {
 
       // Scene loaded successfully
       this.state = GameEngine.states.READY;
+      if (hotRestore) HotReload.discardSlot();
       return true;
     } catch (error) {
       console.error('❌ Error loading scene:', error);

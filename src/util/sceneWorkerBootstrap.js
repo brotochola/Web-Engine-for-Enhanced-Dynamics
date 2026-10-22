@@ -12,6 +12,8 @@ import { SoundManager } from '../core/soundManager.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { collectWorkerScriptsToLoad } from './sceneScript.js';
 import { frameClockSlot } from './frameClock.js';
+import { definesBelow } from './listenerTags.js';
+import { GameObject } from '../core/gameObject.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -155,6 +157,9 @@ function buildSceneSharedBuffers(scene) {
     inputData: scene.buffers.inputData,
     cameraData: scene.buffers.cameraData,
     clockData: scene.buffers.clockData,
+    poolExhaustionData: scene.buffers.poolExhaustionData,
+    messageInboxes: scene.buffers.messageInboxes || null,
+    messageSpawnGen: scene.buffers.messageSpawnGen || null,
     tweenData: scene.buffers.tweenData,
     debugData: scene.buffers.debugData,
     debugDrawData: scene.buffers.debugDrawData,
@@ -203,6 +208,7 @@ function buildRegisteredClassesInfo(scene) {
     endIndex: r.startIndex + r.count,
     entityType: r.entityType,
     deriveSpeed: r.class.deriveSpeed === true,
+    animationEnd: definesBelow(r.class, GameObject, 'onAnimationEnd'),
     engineProvided: r.class.scriptUrl === null,
     components: r.components.map((c) => c.name),
   }));
@@ -218,6 +224,12 @@ function buildComponentPoolsInfo(scene) {
       },
     ])
   );
+}
+
+/** Bundles embed the engine shaders; source builds let the renderer fetch /src/shaders. */
+function bundleEngineShaders() {
+  if (typeof window === 'undefined' || !window.WEED?.BUNDLE_MODE) return null;
+  return window.WEED.EngineShaders || null;
 }
 
 function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
@@ -239,6 +251,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     scriptsToLoad,
     sceneScriptUrl: scene.sceneScriptUrl || null,
     sceneClassName: scene.constructor.name,
+    messageNames: scene.constructor.messages || [],
     registeredClasses: buildRegisteredClassesInfo(scene),
     componentPools: buildComponentPoolsInfo(scene),
     sharedResources: buildSharedResourcesInit(scene),
@@ -527,6 +540,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
       frameClockSlot: frameClockSlot('renderer'),
       workerPorts: workerPorts.renderer,
       presentingFlag: scene.game?._presentingFlag || null,
+      engineShaders: bundleEngineShaders(),
     },
     transferables
   );

@@ -533,6 +533,8 @@ export const LOGIC_DEFAULTS = Object.freeze({
   staggeredUpdates: false,
   noLimitFPS: false,
   fixedFps: 0,
+  /** Entity messages each logic worker's inbox holds between two frames (sendTo / sendToEntity). */
+  maxMessages: 4096,
 });
 
 // ============================================================================

@@ -6,6 +6,7 @@
 import { Component } from '../core/component.js';
 import { Collider } from './collider.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
+import { Transform } from './transform.js';
 import { updateMassFromCircle, updateMassFromBox } from '../util/utils.js';
 import { ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
@@ -318,4 +319,134 @@ export class RigidBody extends Component {
     markBodyDirty(this.index, BODY_DIRTY.MASS);
   }
 
+  get inertia() {
+    return RigidBody.inertia[this.index];
+  }
+
+  // ─── Forces and impulses ─────────────────────────────────────────────────
+  // Every tick: applyForce / applyTorque write ax / ay / angularAccel (force ×
+  // invMass, torque × invInertia). Logic clears those just before the body's
+  // next tick, and the physics worker applies them on every step in between
+  // as ax × mass and angularAccel × inertia: the force and torque asked for,
+  // however the logic and physics frames line up. Once: applyImpulse /
+  // applyAngularImpulse run Box2D's own impulse through the command ring, so
+  // several in one frame add up, from any worker.
+
+  /**
+   * Push for this tick (call it every tick while it should act). Heavier bodies react less.
+   * @param {number} index - entity index
+   * @param {number} fx - mass·px/s²
+   * @param {number} fy
+   * @param {number} [atX] - world point; with atY the force also turns the body
+   * @param {number} [atY]
+   */
+  static applyForce(index, fx, fy, atX, atY) {
+    const invMass = RigidBody.invMass[index];
+    RigidBody.ax[index] += fx * invMass;
+    RigidBody.ay[index] += fy * invMass;
+    if (atX !== undefined && atY !== undefined) {
+      writeCenterOfMass(index);
+      const rx = atX - _com[0];
+      const ry = atY - _com[1];
+      RigidBody.angularAccel[index] += (rx * fy - ry * fx) * RigidBody.invInertia[index];
+    }
+  }
+
+  /** Turn for this tick (every tick while it should act). @param {number} index @param {number} torque */
+  static applyTorque(index, torque) {
+    RigidBody.angularAccel[index] += torque * RigidBody.invInertia[index];
+  }
+
+  /**
+   * One kick on the next physics step (mass·px/s). Heavier bodies react less.
+   * @param {number} index
+   * @param {number} ix
+   * @param {number} iy
+   * @param {number} [atX] - world point; with atY the impulse also spins the body
+   * @param {number} [atY]
+   */
+  static applyImpulse(index, ix, iy, atX, atY) {
+    const ring = globalThis.Box2dCommandRing;
+    if (ring && ring.isCommandRingBound()) ring.enqueueApplyImpulse(index, ix, iy, atX, atY);
+  }
+
+  /** One spin kick on the next physics step. @param {number} index @param {number} impulse */
+  static applyAngularImpulse(index, impulse) {
+    const ring = globalThis.Box2dCommandRing;
+    if (ring && ring.isCommandRingBound()) ring.enqueueApplyAngularImpulse(index, impulse);
+  }
+
+  applyForce(fx, fy, atX, atY) {
+    RigidBody.applyForce(this.index, fx, fy, atX, atY);
+  }
+
+  applyTorque(torque) {
+    RigidBody.applyTorque(this.index, torque);
+  }
+
+  applyImpulse(ix, iy, atX, atY) {
+    RigidBody.applyImpulse(this.index, ix, iy, atX, atY);
+  }
+
+  applyAngularImpulse(impulse) {
+    RigidBody.applyAngularImpulse(this.index, impulse);
+  }
+}
+
+/** World centre of mass scratch for applyForce at a point (no allocation). */
+const _com = new Float64Array(2);
+
+/**
+ * The collider offset plus: nothing for a box or a circle, the centroid for a
+ * polygon, the area-weighted fixture centroid for a compound collider (the
+ * physics host shifts every shape by offsetX / offsetY); rotated into the world.
+ */
+function writeCenterOfMass(index) {
+  let lx = 0;
+  let ly = 0;
+  if (Collider.active && Collider.active[index]) {
+    const extras = Collider.fixtureCount ? Collider.fixtureCount[index] | 0 : 0;
+    if (extras > 0 && ColliderFixture.head && ColliderFixture.active) {
+      const vx = ColliderFixture.vertexX;
+      const vy = ColliderFixture.vertexY;
+      const inv = ColliderFixture.INVALID_INDEX;
+      const max = ColliderFixture.maxCount | 0;
+      let areaTwice = 0;
+      let cx = 0;
+      let cy = 0;
+      let cur = ColliderFixture.headOf(index);
+      let guard = 0;
+      while (cur !== inv && guard++ < max) {
+        if (ColliderFixture.active[cur]) {
+          const count = ColliderFixture.vertCount[cur] | 0;
+          const base = ColliderFixture.vertBase(cur);
+          for (let i = 0; i < count; i++) {
+            const j = i + 1 < count ? i + 1 : 0;
+            const ax = vx[base + i];
+            const ay = vy[base + i];
+            const bx = vx[base + j];
+            const by = vy[base + j];
+            const cross = ax * by - bx * ay;
+            areaTwice += cross;
+            cx += (ax + bx) * cross;
+            cy += (ay + by) * cross;
+          }
+        }
+        cur = ColliderFixture.next[cur];
+      }
+      if (areaTwice > 1e-12 || areaTwice < -1e-12) {
+        lx = cx / (3 * areaTwice);
+        ly = cy / (3 * areaTwice);
+      }
+    } else if (Collider.shapeType[index] === ShapeType.Polygon && Collider.polyCount[index] >= 3) {
+      lx = Collider.polyCentroidX[index];
+      ly = Collider.polyCentroidY[index];
+    }
+    lx += Collider.offsetX[index];
+    ly += Collider.offsetY[index];
+  }
+  const c = Transform.rotC[index];
+  const s = Transform.rotS[index];
+  _com[0] = Transform.x[index] + c * lx - s * ly;
+  _com[1] = Transform.y[index] + s * lx + c * ly;
 }
