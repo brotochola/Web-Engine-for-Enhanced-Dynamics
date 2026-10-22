@@ -1214,14 +1214,20 @@ function blobImportBinding(imported, local) {
     return '';
   }
   const from = imported && /^[A-Za-z_$][\w$]*$/.test(imported) ? imported : local;
-  return `if (!globalThis.${from}) throw new Error('blob-dep ${from}');
+  // Same name: no binding. The name reads the worker global when the code runs,
+  // like a module's live import, so modules that import each other (Person ↔
+  // Destination) load in any order. A top-level read before the other module
+  // is loaded throws, and the loader retries the script on its next pass.
+  if (from === local) return '';
+  // Renamed: bound once. `in`, not truthiness: `export const UP = 0` is loaded.
+  return `if (!('${from}' in globalThis)) throw new Error('blob-dep ${from}');
 const ${local} = globalThis.${from};`;
 }
 
 /**
  * Blob eval cannot `import()`. Devs still write `import { MySoldier }`.
- * Engine specs are dropped (wrapper params). Sibling/demo imports become
- * `const Name = globalThis.Name` so tick sees the class after it is registered.
+ * Engine specs are dropped (wrapper params). Sibling/demo imports read the
+ * worker global the loader registers each export on (see blobImportBinding).
  */
 export function rewriteBlobImports(scriptText) {
   return scriptText
@@ -1255,21 +1261,29 @@ const BLOB_WEED_DESTRUCTURE = /\b(?:const|let)(\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*=\
 
 /**
  * A scene or entity module as a `new Function` body: imports become globals
- * (rewriteBlobImports), exports become `exports.X = …`.
+ * (rewriteBlobImports), exports become `exports.X = …`. Strict, as the module
+ * is: in sloppy code a write to a frozen or non-extensible object fails silently.
  */
 export function transformBlobScript(scriptText, scriptPath) {
-  return rewriteBlobImports(scriptText)
+  // An exported declaration stays a declaration, so the module's own code can
+  // name it (`export const UP = 1; const MASK = 1 << UP;`); `exports` is filled
+  // at the end, once the whole module has run (the loader reads it then).
+  const exported = [];
+  const body = rewriteBlobImports(scriptText)
     .replace(BLOB_WEED_DESTRUCTURE, 'var$1')
     .replace(/import\.meta\.url/g, `'${scriptPath}'`)
-    .replace(/export\s+class\s+(\w+)/g, 'exports.$1 = class $1')
-    .replace(/export\s+const\s+(\w+)\s*=/g, 'exports.$1 =')
-    .replace(/export\s+function\s+(\w+)/g, 'exports.$1 = function $1')
+    .replace(/export\s+(class|(?:async\s+)?function\s*\*?|const|let|var)\s*([A-Za-z_$][\w$]*)/g, (match, kind, name) => {
+      exported.push(name);
+      return `${kind.trim()} ${name}`;
+    })
     .replace(/export\s+\{\s*([^}]+)\s*\}/g, (match, names) => {
       return names.split(',').map(n => {
         const name = n.trim().split(/\s+as\s+/);
         return `exports.${name[name.length - 1].trim()} = ${name[0].trim()};`;
       }).join('\n');
     });
+  const tail = exported.map((name) => `exports.${name} = ${name};`).join('\n');
+  return "'use strict';\n" + body + (tail ? `\n${tail}\n` : '');
 }
 
 /**

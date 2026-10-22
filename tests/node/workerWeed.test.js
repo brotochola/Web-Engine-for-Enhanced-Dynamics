@@ -58,7 +58,8 @@ export class S extends Base {}
   );
   assert.equal(
     out,
-    `var { Scene: Base, GameObject } = WEED;
+    `'use strict';
+var { Scene: Base, GameObject } = WEED;
 var {
   Tween,
   enums: { ShapeType },
@@ -66,9 +67,38 @@ var {
 var { BLEND_MODES } = enums;
 var { CAMERA_TYPES } = WEED.enums;
 const { a } = other; var { Time } = WEED;
-exports.S = class S extends Base {}
+class S extends Base {}
+
+exports.S = S;
 `,
   );
+});
+
+test('a blob module names its own exports at top level, as an ES module can', () => {
+  const run = new Function(
+    'exports',
+    transformBlobScript(
+      `export const UP = 1;
+export const MASK = 1 << UP;
+export function twice(n) { return n * 2; }
+export class Grid { static SIZE = twice(MASK); }
+export const SIZE = Grid.SIZE;
+export async function later() { return UP; }
+`,
+      'http://x/s.js',
+    ),
+  );
+  const exports = {};
+  run(exports);
+  assert.equal(exports.MASK, 2);
+  assert.equal(exports.Grid.SIZE, 4);
+  assert.equal(exports.SIZE, 4);
+  assert.equal(typeof exports.later, 'function');
+});
+
+test('a blob script runs strict, as the module it was: a write to a frozen object throws', () => {
+  const run = new Function('o', transformBlobScript('function set(o) { o.hp = 2; }\nset(o);\n', 'http://x/s.js'));
+  assert.throws(() => run(Object.freeze({})), TypeError);
 });
 
 /** Load `files` the way a bundled (blob) worker does, with `globals` on the worker's global. */
