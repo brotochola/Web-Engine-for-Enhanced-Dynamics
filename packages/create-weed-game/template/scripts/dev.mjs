@@ -45,11 +45,30 @@ const clients = new Set();
 const SKIP = /(^|[\\/])(node_modules|dist|\.git)([\\/]|$)/;
 const WATCHED = new Set(['.html', '.js', '.mjs', '.css', '.json', '.png', '.jpg', '.jpeg', '.webp', '.svg', '.glsl', '.frag', '.vert', '.wgsl']);
 
+// Serving a file reads it, and on Windows a read is reported as a change (its
+// last-access time moves): ping only when the modification time or size is new.
+const stamps = new Map();
+const startedAt = Date.now();
+function contentChanged(file) {
+  let st;
+  try {
+    st = fs.statSync(file);
+  } catch {
+    stamps.delete(file);
+    return true; // removed or renamed
+  }
+  const stamp = `${st.mtimeMs}:${st.size}`;
+  const before = stamps.get(file);
+  stamps.set(file, stamp);
+  return before === undefined ? st.mtimeMs >= startedAt : before !== stamp;
+}
+
 if (hotReload) {
   let timer = null;
   try {
     fs.watch(root, { recursive: true }, (event, file) => {
       if (!file || SKIP.test(file) || !WATCHED.has(path.extname(file).toLowerCase())) return;
+      if (!contentChanged(path.join(root, file))) return;
       clearTimeout(timer); // editors write a file in several steps: one ping per burst
       timer = setTimeout(() => {
         const msg = `data: ${JSON.stringify({ file: file.replace(/\\/g, '/') })}\n\n`;

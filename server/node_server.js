@@ -21,10 +21,32 @@ const IGNORED = /(^|[\\/])(node_modules|\.git|dist|scratch|\.claude)([\\/]|$)|(^
 let reloadTimer = null;
 let reloadFile = '';
 
+// Serving a file reads it, and on Windows a read is reported as a change (its
+// last-access time moves, at most once an hour per file): a ping per event
+// reloaded the page again and again while it loaded. Ping only when the file's
+// modification time or size is new; a removed or renamed file pings too.
+const fileStamps = new Map();
+const watchStartedAt = Date.now();
+function contentChanged(file) {
+  let st;
+  try {
+    st = fs.statSync(file);
+  } catch {
+    fileStamps.delete(file);
+    return true;
+  }
+  const stamp = `${st.mtimeMs}:${st.size}`;
+  const before = fileStamps.get(file);
+  fileStamps.set(file, stamp);
+  // First event for this file: written since the server started, or only read.
+  return before === undefined ? st.mtimeMs >= watchStartedAt : before !== stamp;
+}
+
 function watchForReload() {
   try {
     fs.watch('.', { recursive: true }, (event, file) => {
       if (!file || IGNORED.test(file) || !WATCHED_EXT.has(path.extname(file).toLowerCase())) return;
+      if (!contentChanged(file)) return;
       reloadFile = file;
       // Editors write a file in several steps: one ping per burst.
       clearTimeout(reloadTimer);
