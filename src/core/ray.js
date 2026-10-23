@@ -15,6 +15,9 @@ import { ChainPoints } from './chainPoints.js';
 // to a call that is not inlined, returned from one, or stored in a shared object field became a
 // heap number: per ray, per cell visited and per candidate, 272 MB/s in bulletStressScene. Their
 // callers write the ray into RAY and pass only integers (entity, cell, mask) and objects.
+// The public methods do the same at the game's boundary (E-90): each writes its doubles into RAY and
+// calls a body that takes integers and objects, and is small enough to inline into the game code
+// that calls it. Not inlined, every double argument of a call from game code was a heap number.
 const RAY = new Float64Array(9);
 const RAY_X = 0;
 const RAY_Y = 1;
@@ -180,10 +183,20 @@ export class Ray {
    * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
    * @returns {number} Entity index or -1
    */
-  static cast(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF) {
+  static cast(xFrom, yFrom, xTo, yTo, maxDist = INF, mask = 0xFFFFFFFF) {
+    const ray = RAY;
+    ray[RAY_X] = xFrom;
+    ray[RAY_Y] = yFrom;
+    ray[RAY_TO_X] = xTo;
+    ray[RAY_TO_Y] = yTo;
+    ray[RAY_MAX] = maxDist;
+    return Ray.collectDetailedStats ? Ray._castTimed(mask | 0) : Ray._castImpl(mask | 0);
+  }
+
+  static _castTimed(mask) {
     Ray._enterStats();
     try {
-      return Ray._castImpl(xFrom, yFrom, xTo, yTo, maxDist, mask);
+      return Ray._castImpl(mask);
     } finally {
       Ray._leaveStats();
     }
@@ -194,37 +207,59 @@ export class Ray {
    * @param {number} maxDist must be finite and > 0
    */
   static castDir(x, y, dirX, dirY, maxDist, mask = 0xFFFFFFFF) {
+    const ray = RAY;
+    ray[RAY_X] = x;
+    ray[RAY_Y] = y;
+    ray[RAY_DIR_X] = dirX;
+    ray[RAY_DIR_Y] = dirY;
+    ray[RAY_LEN] = maxDist;
+    return Ray.collectDetailedStats ? Ray._castDirTimed(mask | 0) : Ray._castDirImpl(mask | 0);
+  }
+
+  static _castDirTimed(mask) {
     Ray._enterStats();
     try {
-      if (!(maxDist > 0) || maxDist === Infinity) return -1;
-      if (Ray.assertRotCSUnit) {
-        const n = dirX * dirX + dirY * dirY;
-        if (!(n > 0.998 && n < 1.002) || !Number.isFinite(dirX) || !Number.isFinite(dirY)) {
-          console.warn('Ray.castDir: non-unit dir', dirX, dirY, 'normSq=', n);
-        }
-      }
-      const ray = RAY;
-      ray[RAY_X] = x;
-      ray[RAY_Y] = y;
-      ray[RAY_DIR_X] = dirX;
-      ray[RAY_DIR_Y] = dirY;
-      ray[RAY_LEN] = maxDist;
-      ray[RAY_TO_X] = x + dirX * maxDist;
-      ray[RAY_TO_Y] = y + dirY * maxDist;
-      return Ray._castUnitDir(mask);
+      return Ray._castDirImpl(mask);
     } finally {
       Ray._leaveStats();
     }
   }
 
-  static _castImpl(xFrom, yFrom, xTo, yTo, maxDist, mask) {
+  /** castDir's ray in RAY: origin, unit direction, and the length in RAY_LEN. */
+  static _castDirImpl(mask) {
+    const ray = RAY;
+    const maxDist = ray[RAY_LEN];
+    if (!(maxDist > 0) || maxDist === INF) return -1;
+    const x = ray[RAY_X];
+    const y = ray[RAY_Y];
+    const dirX = ray[RAY_DIR_X];
+    const dirY = ray[RAY_DIR_Y];
+    if (Ray.assertRotCSUnit) {
+      const n = dirX * dirX + dirY * dirY;
+      if (!(n > 0.998 && n < 1.002) || !Number.isFinite(dirX) || !Number.isFinite(dirY)) {
+        console.warn('Ray.castDir: non-unit dir', dirX, dirY, 'normSq=', n);
+      }
+    }
+    ray[RAY_TO_X] = x + dirX * maxDist;
+    ray[RAY_TO_Y] = y + dirY * maxDist;
+    return Ray._castUnitDir(mask);
+  }
+
+  /** cast's segment in RAY: X, Y, TO_X, TO_Y, and maxDist in RAY_MAX. */
+  static _castImpl(mask) {
+    const ray = RAY;
+    const xFrom = ray[RAY_X];
+    const yFrom = ray[RAY_Y];
+    const xTo = ray[RAY_TO_X];
+    const yTo = ray[RAY_TO_Y];
+    const maxDist = ray[RAY_MAX];
     // Calculate ray direction and length
     const dx = xTo - xFrom;
     const dy = yTo - yFrom;
     const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first for early exit check
 
     // Early exit if ray is too short or too long (avoid sqrt if possible)
-    if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
+    if (distSq === 0 || (maxDist !== INF && distSq > maxDist * maxDist)) {
       return -1;
     }
 
@@ -234,10 +269,7 @@ export class Ray {
     // Normalize direction
     const dirX = dx / rayLength;
     const dirY = dy / rayLength;
-    const capped = maxDist !== Infinity && maxDist < rayLength ? maxDist : rayLength;
-    const ray = RAY;
-    ray[RAY_X] = xFrom;
-    ray[RAY_Y] = yFrom;
+    const capped = maxDist !== INF && maxDist < rayLength ? maxDist : rayLength;
     ray[RAY_DIR_X] = dirX;
     ray[RAY_DIR_Y] = dirY;
     ray[RAY_LEN] = capped;
@@ -382,62 +414,79 @@ export class Ray {
    *     damageEntity(result.entityIndex);
    *   }
    */
-  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF, out = null, excludeEntity = -1) {
+  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = INF, mask = 0xFFFFFFFF, out = null, excludeEntity = -1) {
+    const ray = RAY;
+    ray[RAY_X] = xFrom;
+    ray[RAY_Y] = yFrom;
+    ray[RAY_TO_X] = xTo;
+    ray[RAY_TO_Y] = yTo;
+    ray[RAY_MAX] = maxDist;
+    return Ray.collectDetailedStats
+      ? Ray._castWithInfoTimed(mask | 0, out, excludeEntity)
+      : Ray._castWithInfoImpl(mask | 0, out, excludeEntity);
+  }
+
+  static _castWithInfoTimed(mask, out, excludeEntity) {
     Ray._enterStats();
     try {
-      // Reset temp result
-      const info = out || Ray._tempHitInfo;
-      info.hit = false;
-      info.entityIndex = -1;
-      info.distance = Infinity;
-      info.hitX = xTo;
-      info.hitY = yTo;
-      info.fixtureIndex = -1;
-
-      // Calculate ray direction and length
-      const dx = xTo - xFrom;
-      const dy = yTo - yFrom;
-      const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first for early exit check
-
-      // Early exit if ray is too short or too long (avoid sqrt if possible)
-      if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
-        return info;
-      }
-
-      // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
-      const rayLength = Math.sqrt(distSq);
-
-      // Normalize direction
-      const dirX = dx / rayLength;
-      const dirY = dy / rayLength;
-
-      // Use internal traversal
-      const ray = RAY;
-      ray[RAY_X] = xFrom;
-      ray[RAY_Y] = yFrom;
-      ray[RAY_DIR_X] = dirX;
-      ray[RAY_DIR_Y] = dirY;
-      ray[RAY_LEN] = rayLength;
-      ray[RAY_TO_X] = xTo;
-      ray[RAY_TO_Y] = yTo;
-      ray[RAY_MAX] = maxDist;
-      Ray._traverseGrid(null, mask, excludeEntity);
-
-      const hitE = TRAVERSE_HIT[0];
-      if (hitE !== -1) {
-        const distance = TRAVERSE_DIST[0];
-        info.hit = true;
-        info.entityIndex = hitE;
-        info.distance = distance;
-        info.hitX = xFrom + dirX * distance;
-        info.hitY = yFrom + dirY * distance;
-        info.fixtureIndex = TRAVERSE_HIT[1];
-      }
-
-      return info;
+      return Ray._castWithInfoImpl(mask, out, excludeEntity);
     } finally {
       Ray._leaveStats();
     }
+  }
+
+  /** castWithInfo's segment in RAY: X, Y, TO_X, TO_Y, and maxDist in RAY_MAX. */
+  static _castWithInfoImpl(mask, out, excludeEntity) {
+    const ray = RAY;
+    const xFrom = ray[RAY_X];
+    const yFrom = ray[RAY_Y];
+    const xTo = ray[RAY_TO_X];
+    const yTo = ray[RAY_TO_Y];
+    const maxDist = ray[RAY_MAX];
+    // Reset temp result
+    const info = out || Ray._tempHitInfo;
+    info.hit = false;
+    info.entityIndex = -1;
+    info.distance = INF;
+    info.hitX = xTo;
+    info.hitY = yTo;
+    info.fixtureIndex = -1;
+
+    // Calculate ray direction and length
+    const dx = xTo - xFrom;
+    const dy = yTo - yFrom;
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first for early exit check
+
+    // Early exit if ray is too short or too long (avoid sqrt if possible)
+    if (distSq === 0 || (maxDist !== INF && distSq > maxDist * maxDist)) {
+      return info;
+    }
+
+    // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
+    const rayLength = Math.sqrt(distSq);
+
+    // Normalize direction
+    const dirX = dx / rayLength;
+    const dirY = dy / rayLength;
+
+    // Use internal traversal (origin, end and RAY_MAX are in RAY already)
+    ray[RAY_DIR_X] = dirX;
+    ray[RAY_DIR_Y] = dirY;
+    ray[RAY_LEN] = rayLength;
+    Ray._traverseGrid(null, mask, excludeEntity);
+
+    const hitE = TRAVERSE_HIT[0];
+    if (hitE !== -1) {
+      const distance = TRAVERSE_DIST[0];
+      info.hit = true;
+      info.entityIndex = hitE;
+      info.distance = distance;
+      info.hitX = xFrom + dirX * distance;
+      info.hitY = yFrom + dirY * distance;
+      info.fixtureIndex = TRAVERSE_HIT[1];
+    }
+
+    return info;
   }
 
   /**
@@ -462,30 +511,46 @@ export class Ray {
    *   }
    */
   static linecast(x1, y1, x2, y2, excludeEntities = null, mask = 0xFFFFFFFF, out = null) {
+    const ray = RAY;
+    ray[RAY_X] = x1;
+    ray[RAY_Y] = y1;
+    ray[RAY_TO_X] = x2;
+    ray[RAY_TO_Y] = y2;
+    return Ray.collectDetailedStats
+      ? Ray._linecastTimed(excludeEntities, mask | 0, out)
+      : Ray._linecastImpl(excludeEntities, mask | 0, out);
+  }
+
+  static _linecastTimed(excludeEntities, mask, out) {
     Ray._enterStats();
     try {
-      const result = out || Ray._tempLinecastResult;
-      result.blocked = false;
-      result.entityIndex = -1;
-      result.distance = Infinity;
-
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const distSq = dx * dx + dy * dy;
-
-      if (distSq === 0) {
-        return result;
-      }
-
-      const rayLength = Math.sqrt(distSq);
-      return Ray._linecastDirImpl(
-        x1, y1, x2, y2,
-        dx / rayLength, dy / rayLength, rayLength,
-        excludeEntities, mask, result
-      );
+      return Ray._linecastImpl(excludeEntities, mask, out);
     } finally {
       Ray._leaveStats();
     }
+  }
+
+  /** linecast's segment in RAY: X, Y, TO_X, TO_Y. */
+  static _linecastImpl(excludeEntities, mask, out) {
+    const result = out || Ray._tempLinecastResult;
+    result.blocked = false;
+    result.entityIndex = -1;
+    result.distance = INF;
+
+    const ray = RAY;
+    const dx = ray[RAY_TO_X] - ray[RAY_X];
+    const dy = ray[RAY_TO_Y] - ray[RAY_Y];
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq === 0) {
+      return result;
+    }
+
+    const rayLength = Math.sqrt(distSq);
+    ray[RAY_DIR_X] = dx / rayLength;
+    ray[RAY_DIR_Y] = dy / rayLength;
+    ray[RAY_LEN] = rayLength;
+    return Ray._linecastFromRay(excludeEntities, mask, result, -1, -1);
   }
 
   /**
@@ -494,48 +559,61 @@ export class Ray {
    * `excludeEntities` may be a Set, an array, or a single entity index (number).
    */
   static linecastDir(x1, y1, dirX, dirY, rayLength, excludeEntities = null, mask = 0xFFFFFFFF, out = null) {
-    Ray._enterStats();
-    try {
-      const result = out || Ray._tempLinecastResult;
-      result.blocked = false;
-      result.entityIndex = -1;
-      result.distance = Infinity;
-      if (!(rayLength > 0)) return result;
-      if (Ray.assertRotCSUnit) {
-        const n = dirX * dirX + dirY * dirY;
-        if (!(n > 0.998 && n < 1.002) || !Number.isFinite(dirX) || !Number.isFinite(dirY)) {
-          console.warn('Ray.linecastDir: non-unit dir', dirX, dirY, 'normSq=', n);
-        }
-      }
-      const x2 = x1 + dirX * rayLength;
-      const y2 = y1 + dirY * rayLength;
-      let excludeA = -1;
-      let excludeObj = excludeEntities;
-      if (typeof excludeEntities === 'number') {
-        excludeA = excludeEntities;
-        excludeObj = null;
-      }
-      return Ray._linecastDirImpl(
-        x1, y1, x2, y2, dirX, dirY, rayLength, excludeObj, mask, result, excludeA
-      );
-    } finally {
-      Ray._leaveStats();
-    }
-  }
-
-  /** @private */
-  static _linecastDirImpl(
-    x1, y1, x2, y2, dirX, dirY, rayLength, excludeEntities, mask, result, excludeA = -1, excludeB = -1
-  ) {
     const ray = RAY;
     ray[RAY_X] = x1;
     ray[RAY_Y] = y1;
     ray[RAY_DIR_X] = dirX;
     ray[RAY_DIR_Y] = dirY;
     ray[RAY_LEN] = rayLength;
-    ray[RAY_TO_X] = x2;
-    ray[RAY_TO_Y] = y2;
-    ray[RAY_MAX] = rayLength;
+    return Ray.collectDetailedStats
+      ? Ray._linecastDirTimed(excludeEntities, mask | 0, out)
+      : Ray._linecastDirImpl(excludeEntities, mask | 0, out);
+  }
+
+  static _linecastDirTimed(excludeEntities, mask, out) {
+    Ray._enterStats();
+    try {
+      return Ray._linecastDirImpl(excludeEntities, mask, out);
+    } finally {
+      Ray._leaveStats();
+    }
+  }
+
+  /** linecastDir's ray in RAY: origin, unit direction, and the length in RAY_LEN. */
+  static _linecastDirImpl(excludeEntities, mask, out) {
+    const result = out || Ray._tempLinecastResult;
+    result.blocked = false;
+    result.entityIndex = -1;
+    result.distance = INF;
+    const ray = RAY;
+    const rayLength = ray[RAY_LEN];
+    if (!(rayLength > 0)) return result;
+    const dirX = ray[RAY_DIR_X];
+    const dirY = ray[RAY_DIR_Y];
+    if (Ray.assertRotCSUnit) {
+      const n = dirX * dirX + dirY * dirY;
+      if (!(n > 0.998 && n < 1.002) || !Number.isFinite(dirX) || !Number.isFinite(dirY)) {
+        console.warn('Ray.linecastDir: non-unit dir', dirX, dirY, 'normSq=', n);
+      }
+    }
+    ray[RAY_TO_X] = ray[RAY_X] + dirX * rayLength;
+    ray[RAY_TO_Y] = ray[RAY_Y] + dirY * rayLength;
+    let excludeA = -1;
+    let excludeObj = excludeEntities;
+    if (typeof excludeEntities === 'number') {
+      excludeA = excludeEntities;
+      excludeObj = null;
+    }
+    return Ray._linecastFromRay(excludeObj, mask, result, excludeA, -1);
+  }
+
+  /**
+   * The first hit on the ray in RAY (origin, unit direction, length, end) into `result`.
+   * @private
+   */
+  static _linecastFromRay(excludeEntities, mask, result, excludeA, excludeB) {
+    const ray = RAY;
+    ray[RAY_MAX] = ray[RAY_LEN];
     Ray._traverseGrid(excludeEntities, mask, excludeA, excludeB);
     const hitE = TRAVERSE_HIT[0];
     if (hitE !== -1) {
@@ -607,6 +685,14 @@ export class Ray {
   }
 
   static linecastBetweenEntities(entityIndexA, entityIndexB, mask = 0xFFFFFFFF, out = null) {
+    // Small, like the casts (E-90): a try/finally here took inlining budget from the casts that
+    // game code calls beside it.
+    return Ray.collectDetailedStats
+      ? Ray._linecastBetweenEntitiesTimed(entityIndexA, entityIndexB, mask | 0, out)
+      : Ray._linecastBetweenEntitiesImpl(entityIndexA, entityIndexB, mask | 0, out);
+  }
+
+  static _linecastBetweenEntitiesTimed(entityIndexA, entityIndexB, mask, out) {
     Ray._enterStats();
     try {
       return Ray._linecastBetweenEntitiesImpl(entityIndexA, entityIndexB, mask, out);
@@ -624,12 +710,7 @@ export class Ray {
    * @returns {boolean} true if clear line of sight, false if blocked
    */
   static hasLineOfSight(entityIndexA, entityIndexB, mask = 0xFFFFFFFF) {
-    Ray._enterStats();
-    try {
-      return !Ray._linecastBetweenEntitiesImpl(entityIndexA, entityIndexB, mask, null).blocked;
-    } finally {
-      Ray._leaveStats();
-    }
+    return !Ray.linecastBetweenEntities(entityIndexA, entityIndexB, mask, null).blocked;
   }
 
   /**
@@ -670,16 +751,35 @@ export class Ray {
    *     spawnBulletHole(hit.hitX, hit.hitY);
    *   }
    */
-  static castAll(xFrom, yFrom, xTo, yTo, maxDist = Infinity, maxHits = 10, mask = 0xFFFFFFFF, out = null) {
+  static castAll(xFrom, yFrom, xTo, yTo, maxDist = INF, maxHits = 10, mask = 0xFFFFFFFF, out = null) {
+    const ray = RAY;
+    ray[RAY_X] = xFrom;
+    ray[RAY_Y] = yFrom;
+    ray[RAY_TO_X] = xTo;
+    ray[RAY_TO_Y] = yTo;
+    ray[RAY_MAX] = maxDist;
+    return Ray.collectDetailedStats
+      ? Ray._castAllTimed(maxHits, mask | 0, out)
+      : Ray._castAllImpl(maxHits, mask | 0, out);
+  }
+
+  static _castAllTimed(maxHits, mask, out) {
     Ray._enterStats();
     try {
-      return Ray._castAllImpl(xFrom, yFrom, xTo, yTo, maxDist, maxHits, mask, out);
+      return Ray._castAllImpl(maxHits, mask, out);
     } finally {
       Ray._leaveStats();
     }
   }
 
-  static _castAllImpl(xFrom, yFrom, xTo, yTo, maxDist, maxHits, mask, out) {
+  /** castAll's segment in RAY: X, Y, TO_X, TO_Y, and maxDist in RAY_MAX. */
+  static _castAllImpl(maxHits, mask, out) {
+    const ray = RAY;
+    const xFrom = ray[RAY_X];
+    const yFrom = ray[RAY_Y];
+    const xTo = ray[RAY_TO_X];
+    const yTo = ray[RAY_TO_Y];
+    const maxDist = ray[RAY_MAX];
     const outHits = out || Ray._tempHitsArray;
     Ray._tempAllHitsCount = 0;
     TOP_FAR[0] = -1;
@@ -689,7 +789,7 @@ export class Ray {
     const dy = yTo - yFrom;
     const distSq = dx * dx + dy * dy;
 
-    if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
+    if (distSq === 0 || (maxDist !== INF && distSq > maxDist * maxDist)) {
       outHits.length = 0;
       return outHits;
     }
@@ -702,9 +802,6 @@ export class Ray {
       Ray._topEntity = new Int32Array(hitCap);
       Ray._topDist = new Float64Array(hitCap);
     }
-    const ray = RAY;
-    ray[RAY_X] = xFrom;
-    ray[RAY_Y] = yFrom;
     ray[RAY_DIR_X] = dirX;
     ray[RAY_DIR_Y] = dirY;
     ray[RAY_LEN] = rayLength;

@@ -807,13 +807,17 @@ straight to the entities collector without `collectRenderable`'s type dispatch.
 21.1 → 10.1 ms per new queue since E-97. Left: the stash-then-copy of each pose (`_writeRenderable` then
 `_writeType0PosesOnly`), the separate persist-check pass, the shadow terms on the persist path; W4 for the rest.
 
-### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
+### E-90 Public `Ray` methods small enough to inline into game code — **kept (hygiene), 2026-10-23**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls
 `Ray.cast`, `castAll`, `linecastBetweenEntities` with doubles, and the public methods (stats wrap,
 `try`/`finally`, the setup math) are too big to inline into it, so each call boxes its arguments.
 A public method that only writes `RAY` and calls an integer-argument body would inline into the
 caller. Measure: `rayStressScene` logic (heap pass, then a pair); Predator's `hasLineOfSight` calls
 take entity indices, which are Smis, so it gains nothing there.
+**Done (2026-10-23):** every public method writes its doubles into `RAY` and calls an integer-argument body;
+the stats `try`/`finally` lives in `_xTimed` copies. The line-of-sight methods had to shrink too: the budget
+is per caller, and game code calls them beside the casts. `rayStressScene?casts=12288` logic allocation
+**17.6 → 0.29 MB/s**, logic −1.9 % (0/4 worse), a tie on time.
 
 ### E-89 `markSeenPolarOwners` merges a global `Infinity` with a typed-array double — **open (from E-85)**
 `angularSweep.js`: `const sweep = _mergeEdges > 0 ? _rayBest[k] : Infinity` per merged ray. If

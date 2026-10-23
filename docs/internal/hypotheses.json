@@ -51,7 +51,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 5
+      "rank": 4
     },
     {
       "id": "W7",
@@ -67,7 +67,7 @@
       ],
       "aliases": [],
       "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
-      "rank": 5
+      "rank": 4
     },
     {
       "id": "E-82",
@@ -99,7 +99,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "W26",
@@ -115,7 +115,7 @@
       ],
       "aliases": [],
       "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 7
+      "rank": 6
     },
     {
       "id": "W14",
@@ -132,7 +132,7 @@
       ],
       "aliases": [],
       "next": "navStressScene: flowfield 89 % of particle.",
-      "rank": 9
+      "rank": 8
     },
     {
       "id": "E-85",
@@ -166,7 +166,7 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 10
+      "rank": 9
     },
     {
       "id": "W11",
@@ -182,7 +182,7 @@
       ],
       "aliases": [],
       "next": "meshApiStressScene Pixi 53 %.",
-      "rank": 11
+      "rank": 10
     },
     {
       "id": "W21c",
@@ -197,7 +197,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 12
+      "rank": 11
     },
     {
       "id": "W2a",
@@ -212,7 +212,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 13
+      "rank": 12
     },
     {
       "id": "W1",
@@ -227,7 +227,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 13
     },
     {
       "id": "W10",
@@ -242,7 +242,7 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 14
     },
     {
       "id": "W23",
@@ -257,7 +257,7 @@
         "WASM_HYPOTHESES.md#L177"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 15
     },
     {
       "id": "W27",
@@ -272,7 +272,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 17
+      "rank": 16
     },
     {
       "id": "W28",
@@ -287,7 +287,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 18
+      "rank": 17
     },
     {
       "id": "W4",
@@ -303,7 +303,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision (Box2D's memory).",
-      "rank": 19
+      "rank": 18
     },
     {
       "id": "W18",
@@ -319,7 +319,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 20
+      "rank": 19
     },
     {
       "id": "W2b",
@@ -335,7 +335,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 21
+      "rank": 20
     },
     {
       "id": "E-76",
@@ -6779,18 +6779,17 @@
     {
       "id": "E-90",
       "title": "Public `Ray` methods small enough to inline into game code",
-      "status": "open",
-      "statusText": "open (from E-85)",
+      "status": "kept-hygiene",
+      "statusText": "kept (hygiene) 2026-10-23",
       "date": "2026-10-23",
-      "result": "rayStressScene logic still allocates 4.3 MB/s after E-85, in the driver's own calls into Ray.cast / castAll / linecastBetweenEntities: the public methods are too big to inline into game code, so the doubles game code passes are boxed at that call.",
+      "result": "Public Ray methods write their doubles into RAY and call integer-argument bodies; stats wrappers apart; the line-of-sight methods slimmed too (the inlining budget is per caller). rayStressScene?casts=12288 logic allocation 17.6 → 0.29 MB/s; logic −1.9 %, 0/4 worse (a tie).",
       "area": "logic",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L696"
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L810"
       ],
-      "aliases": [],
-      "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
-      "rank": 1
+      "aliases": []
     },
     {
       "id": "E-91",
@@ -6917,7 +6916,7 @@
       ],
       "aliases": [],
       "next": "Batch the per-light lighting passes (a rendering change); first the cheap _emitTransmitWedge part.",
-      "rank": 8
+      "rank": 7
     },
     {
       "id": "E-97",
@@ -6967,7 +6966,7 @@
       ],
       "aliases": [],
       "next": "The stash-then-copy of each pose, the separate persist-check pass, the persist path's shadow terms; W4 for the rest.",
-      "rank": 2
+      "rank": 1
     },
     {
       "id": "E-82b",
@@ -6984,7 +6983,7 @@
       ],
       "aliases": [],
       "next": "A scene with interpolation off at a high sprite count; the same two streams.",
-      "rank": 4
+      "rank": 3
     },
     {
       "id": "N-64",
@@ -7016,7 +7015,7 @@
       ],
       "aliases": [],
       "next": "A copy loop; visPolyStressScene pre-render pair as hygiene.",
-      "rank": 3
+      "rank": 2
     }
   ],
   "leads": [
