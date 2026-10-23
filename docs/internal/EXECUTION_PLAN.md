@@ -842,6 +842,23 @@ frame moved on a persist frame updates that buffer's remembered frame; repairs b
 60 persist frames before, 58 after (each buffer's first is a full emit), both buffers showing the current
 frame. `animatedSpriteStressScene` (100 000 animated sprites, still, all in view): pre-render **8.887 → 7.098 ms,
 −19.3 %, worse 0/4**.
+**E-98h (2026-10-23): dropped.** The persist check and the pose pass in one walk (animated rows advanced only
+after every row passed, so a walk that misses late does not advance them twice): BunnyMark pre-render
+**6.174 → 6.244 ms, −0.3 %, worse 2/4**. Each row's own work is the cost, not the second walk. Left: W4, and
+Predator's chain after it (fresh profile, 2026-10-23: `emitSpriteQueue` 17.2 %, `collectVisibleEntities` 9.6 %,
+`_storeEntitySortY` 5.1 %, `_displayPose` 5.0 %, `_writeQueueShadow` 4.1 % of pre-render; the shadow stamp
+chain 37 %).
+
+### E-104 Query type masks walked in BigInt — **KEPT (hygiene)** (`564fccc4`)
+Every frame the logic worker publishes the precomputed queries, and `copyActiveMatchesToBuffer` walked each
+type mask in BigInt (`countTrailingZeros`, `mask &= mask - 1n`): 199 KB/s in each Predator logic worker. The
+mask's type indices are an `Int32Array` built with the query, lowest first. Measured with E-105.
+
+### E-105 FSM time in whole milliseconds — **KEPT** (`6b2ed599`; supersedes E-68)
+`onUpdate(owner, i, dt, FSMClass.time[i] | 0)`: the time crosses the uninlined call as a small integer instead
+of a heap number. The heap profile had charged the boxing to the game ticks that inline `FSM.tick`
+(`civilian.js:76` 1.7 MB/s). Predator logic garbage with E-104: 2.8 → 0.2 MB/s per worker (−92 %); logic
+4.458 → 4.307 ms, −1.9 %, NEUTRAL at 4 pairs.
 
 ### E-99 Caster positions in bin order for the shadow stamp — **rejected in the kernel, 2026-10-23**
 Predator's profile put 42 % of `stampLightRange` on `sun[c * floats]` per binned caster. Copying x and y in bin
@@ -1782,7 +1799,7 @@ is left in logic is demo code (`civilian.js`, `mySoldier.js` ticks) and E-68. CL
 to keep per-entity doubles in typed arrays and not return them from calls a big caller may not
 inline.
 
-### E-68 FSM.tick boxes the time in state for every onUpdate — **screened 2026-10-21: API change for ~0.5 %**
+### E-68 FSM.tick boxes the time in state for every onUpdate — **screened 2026-10-21: API change for ~0.5 %; superseded by E-105**
 `CurrentState.onUpdate(owner, i, dt, FSMClass.time[i])` is a polymorphic call, so the time is boxed:
 about one heap number per FSM tick, 0.8 MB/s per logic worker in Predator, ~20 µs a frame against a
 ~4 ms logic step. Avoiding it means changing the public onUpdate signature. Not done.

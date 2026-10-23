@@ -38,6 +38,38 @@
       "next": "The Predator gate (pre-render packs its sun casters)."
     },
     {
+      "id": "E-104",
+      "title": "Query type masks walked in BigInt every publish",
+      "status": "kept-hygiene",
+      "statusText": "kept (hygiene), 2026-10-23",
+      "date": "2026-10-23",
+      "result": "copyActiveMatchesToBuffer, query() and _buildQueryResult walked type masks in BigInt (199 KB/s in each Predator logic worker); now Int32Array index lists built with the query. Measured with E-105: logic garbage −92 %, logic −1.9 % NEUTRAL.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L15",
+        "EXECUTION_PLAN.md#L852"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "E-105",
+      "title": "FSM.tick boxed the time in state for every onUpdate",
+      "status": "kept",
+      "statusText": "kept, 2026-10-23 (supersedes E-68)",
+      "date": "2026-10-23",
+      "result": "onUpdate gets the time in whole ms (time | 0), a small integer instead of a heap number. Predator logic garbage with E-104: 2 848 / 2 672 → 212 / 272 KB/s per worker (−92 %); logic 4.458 → 4.307 ms, −1.9 %, NEUTRAL at 4 pairs.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L17",
+        "EXECUTION_PLAN.md#L857"
+      ],
+      "aliases": [
+        "E-68"
+      ]
+    },
+    {
       "id": "W6",
       "title": "`rebuildOwnedRows`",
       "status": "screened",
@@ -47,7 +79,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L13",
+        "HYPOTHESIS_LOG.md#L19",
         "WASM_HYPOTHESES.md#L155"
       ],
       "aliases": [],
@@ -3898,10 +3930,10 @@
     {
       "id": "E-68",
       "title": "FSM.tick boxes the time in state for every onUpdate",
-      "status": "screened",
-      "statusText": "screened 2026-10-21: API change for ~0.5 %",
+      "status": "superseded",
+      "statusText": "screened 2026-10-21; superseded by E-105 (2026-10-23)",
       "date": "2026-10-21",
-      "result": "screened. One heap number per FSM tick (0.8 MB/s per logic worker in Predator, ~20 µs a frame). Needs a public signature change.",
+      "result": "screened. One heap number per FSM tick (0.8 MB/s per logic worker in Predator, ~20 µs a frame). Needs a public signature change. E-105 did it without a signature change (whole ms), measured at 2.6 MB/s per worker.",
       "area": "logic",
       "kind": "js",
       "refs": [
@@ -6972,18 +7004,17 @@
       "id": "E-98",
       "title": "Pre-render's full emit at 250 000 sprites takes more than a frame",
       "status": "open",
-      "statusText": "E-98a–g kept; open",
+      "statusText": "E-98a–g kept, E-98h dropped; open",
       "date": "2026-10-23",
-      "result": "bunnyMarkScene pre-render 21.1 → 6.1 ms per new queue (E-98a–f: no sort line without Y-sort −36.4 %, no emit loop on a sprites-only persist frame −3.7 %, unmasked sprites straight to the collector −14.2 %, poses straight into the queue −14.1 %, the collect writes its rows −15.8 %, bodiless poses inline −18.4 %). E-98g: a frame the other buffer moved is repaired, not a full emit: animatedSpriteStressScene pre-render 8.887 → 7.098 ms, −19.3 %.",
+      "result": "bunnyMarkScene pre-render 21.1 → 6.1 ms per new queue (E-98a–f: no sort line without Y-sort −36.4 %, no emit loop on a sprites-only persist frame −3.7 %, unmasked sprites straight to the collector −14.2 %, poses straight into the queue −14.1 %, the collect writes its rows −15.8 %, bodiless poses inline −18.4 %). E-98g: a frame the other buffer moved is repaired, not a full emit: animatedSpriteStressScene pre-render 8.887 → 7.098 ms, −19.3 %. E-98h (one walk for the persist check and the pose pass) tied: BunnyMark pre-render 6.174 → 6.244 ms, −0.3 %.",
       "area": "preRender",
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#L808",
-        "HYPOTHESIS_LOG.md#L13",
-        "HYPOTHESIS_LOG.md#L15"
+        "HYPOTHESIS_LOG.md#L13"
       ],
       "aliases": [],
-      "next": "Profile after E-98g (bunnyMarkScene, 293 ms/s): collectVisibleEntities 54.1 %, _type0PersistHit 23.3 % (its frame and animation-state loads), _writeType0PosesOnly 16.9 %. Fusing the two walks would save their shared loads, est. 5–8 % of pre-render; four tests call them by name. W4 for the rest.",
+      "next": "W4 for the rest. Predator profile 2026-10-23: emitSpriteQueue 17.2 %, collectVisibleEntities 9.6 %, _storeEntitySortY 5.1 %, _displayPose 5.0 %, _writeQueueShadow 4.1 % of pre-render; the shadow stamp chain 37 % (W23).",
       "rank": 1
     },
     {
