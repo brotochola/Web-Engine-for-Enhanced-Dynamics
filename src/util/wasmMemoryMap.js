@@ -50,17 +50,25 @@ export function layoutRegions(regions) {
  * @param {number} spatialWorkers
  */
 export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers) {
+  const { regions, listStride } = spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers);
+  return { ...layoutRegions(regions), listStride };
+}
+
+/** The same regions as a list, for a layout that appends more (the coexistence test). */
+export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers) {
   const count = entityCount | 0;
   const workers = Math.max(1, spatialWorkers | 0);
   const rowBytes = count * (1 + (maxNeighbors | 0)) * 2;
   const listStride = alignToLine(count * 2);
-  const layout = layoutRegions([
-    { name: 'guard', owner: 'none', bytes: NULL_GUARD_BYTES },
-    { name: 'pos', owner: 'spatial', bytes: count * 16 },
-    { name: 'range', owner: 'spatial', bytes: count * 4 },
-    { name: 'rows', owner: 'spatial (publish_batch)', bytes: rowBytes },
-    { name: 'cand', owner: 'spatial', bytes: rowBytes },
-    { name: 'lists', owner: 'spatial, one slice per worker', bytes: workers * listStride },
-  ]);
-  return { ...layout, listStride };
+  return {
+    regions: [
+      { name: 'guard', owner: 'none', bytes: NULL_GUARD_BYTES },
+      { name: 'pos', owner: 'spatial', bytes: count * 16 },
+      { name: 'range', owner: 'spatial', bytes: count * 4 },
+      { name: 'rows', owner: 'spatial (publish_batch)', bytes: rowBytes },
+      { name: 'cand', owner: 'spatial', bytes: rowBytes },
+      { name: 'lists', owner: 'spatial, one slice per worker', bytes: workers * listStride },
+    ],
+    listStride,
+  };
 }

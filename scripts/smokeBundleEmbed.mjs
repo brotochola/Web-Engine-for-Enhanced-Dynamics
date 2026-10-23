@@ -11,9 +11,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const weedPost = fs.readFileSync(path.join(root, 'src', 'box2d', 'weedjsPost.js'), 'utf8');
 const siblingNames = extractImportScriptNames(weedPost);
-// Engine WASM kernels (E-76 T5): each must be embedded in every artifact as the base64 of its
+// Engine WASM kernels (E-76 T5; test modules are not shipped): each must be embedded in every artifact as the base64 of its
 // committed bytes (a data URL the worker loads, raw or inside a gzipped worker payload).
-const kernelModules = JSON.parse(fs.readFileSync(path.join(root, 'wasm', 'modules.json'), 'utf8')).modules.map((m) => ({
+const kernelModules = JSON.parse(fs.readFileSync(path.join(root, 'wasm', 'modules.json'), 'utf8')).modules.filter((m) => !m.test).map((m) => ({
   name: m.name,
   output: m.output,
   b64: fs.readFileSync(path.join(root, m.output)).toString('base64'),

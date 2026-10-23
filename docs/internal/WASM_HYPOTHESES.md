@@ -510,3 +510,15 @@ defaults):
   2 s: default `wasmRan.spatialPublish` true, spatial 2.044 ms; `wasmOff=spatialPublish` false,
   2.095 ms (a check that both paths run, not a measurement). `tests/node/wasmSwitch.test.js` builds
   the scene buffers both ways.
+- **2026-10-22, T8.** `tests/node/wasmCoexistence.test.js` runs in `npm run test:node`. It puts the
+  spatial module and two test modules in one memory laid out by the map: `coexistScale`, an `f32x4`
+  map, and `coexistHistogram`, which zeroes its bins and then scatters increments into them. Both are
+  built by `buildWasm.mjs` from `wasm/test/` into `tests/fixtures/wasm/` (`"test": true` in the
+  manifest, never bundled) under the same T6 rules. Every byte starts as a canary. First, one thread
+  runs each of the 12 jobs alone, and each may change only its own region: its worker's entities' rows,
+  its scale output, its bins. Then four `worker_threads` (the spatial0, spatial1, logic0 and particle
+  roles) load all three modules through the product loader and run every job 200 times at the same
+  time; the memory must end byte for byte as the solo run left it. Two sabotaged copies fail as they
+  should. One moves a scale output 64 bytes past its region ("logic0 scale_f32 wrote outside its
+  region"); the other changes one worker's scale factor in the concurrent run only ("the concurrent
+  run differs from the solo run"). The module half of REVIEW_PLAN N-62 is fixed.
