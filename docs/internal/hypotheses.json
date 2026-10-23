@@ -104,18 +104,19 @@
     {
       "id": "W26",
       "title": "decal stamping `stampToTileBuffers` in decal.js (new from Q1b)",
-      "status": "open",
-      "statusText": "open",
+      "status": "screened",
+      "statusText": "screened 2026-10-23: scalar port ties JS",
       "date": null,
-      "result": "A WASM pixel loop beats JS. Q1b: 95.2 % of particle (331 ms/s) in `decalStampStressScene`, 88.2 % in `decalBlitStressScene`. Tiles are worker buffers: a decal memory",
+      "result": "A bit-exact C port of stampToTileBuffers over a batch wrote the same bytes and ran ×0.99 of JS in Node (49.9 vs 50.2 ms, 5 000 stamps). The loop is byte traffic and branches.",
       "area": "particle",
       "kind": "wasm",
       "refs": [
+        "HYPOTHESIS_LOG.md#L13",
         "WASM_HYPOTHESES.md#L180"
       ],
       "aliases": [],
-      "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 5
+      "next": "SIMD blending with a ±1 tolerance, or GPU stamping into tile render textures (an architecture item).",
+      "rank": 6
     },
     {
       "id": "W14",
@@ -6916,7 +6917,7 @@
       ],
       "aliases": [],
       "next": "Batch the per-light lighting passes (a rendering change); first the cheap _emitTransmitWedge part.",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "E-97",
@@ -7028,6 +7029,20 @@
       "refs": [
         "HYPOTHESIS_LOG.md#L13",
         "EXECUTION_PLAN.md#L813"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "E-100",
+      "title": "The decal pixel loop split by blend mode",
+      "status": "rejected",
+      "statusText": "rejected in the kernel 2026-10-23",
+      "date": "2026-10-23",
+      "result": "One copy of the pixel loop per blend mode matched the reference; decalMicrobench tied (primary −0.3 %).",
+      "area": "particle",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L15"
       ],
       "aliases": []
     }
