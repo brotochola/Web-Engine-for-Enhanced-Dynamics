@@ -164,7 +164,7 @@ the per-candidate facts behind each row are in the [inventory](#phase-0-inventor
 | **W14** | particle | `computeFlowfield` / `computePath` in [`particleWorker.js`](../../src/workers/particleWorker.js) (not `navGrid.js`, which holds the layout) | WASM search beats JS | integer grids | Q1: nav 5.9 % inclusive of Predator particle; in NavStress the search is deadline-bound, so `STEP_MS` cannot fall | desk | **screened (ceiling)** 1.0 % |
 | **W15** | physics | `publishPose` in [`weedjsPost.js`](../../src/box2d/weedjsPost.js) | The pose copy in C beats JS | small | Q1: ~8 % of the physics JS thread. PH1: kernel +147 %, Predator physics −0.8 %. A C copy cannot write the pose SABs from Box2D's memory | desk | **screened (ceiling)** 1.8 % |
 | **W16** | physics | LiquidFun particle sync and extract | — | — | already C (LIQUIDFUN H8, H14); JS does bulk `.set` copies | — | **screened (already C)** |
-| **W17** | physics | `drainCommandRing` in [`box2dCommandRingImpl.js`](../../src/box2d/box2dCommandRingImpl.js) | One bulk copy of the ring into the Box2D heap and one export that applies every command beats a JS handler plus an export call per command | removes one JS → WASM call per command | absent from the Predator trace; SpawnStorm share unknown. The ring is a Weed SAB, not Box2D memory; related: the scalar create path (E-50b) | Q4; `spawnStormScene` physics | open |
+| **W17** | physics | `drainCommandRing` in [`box2dCommandRingImpl.js`](../../src/box2d/box2dCommandRingImpl.js) | One bulk copy of the ring into the Box2D heap and one export that applies every command beats a JS handler plus an export call per command | removes one JS → WASM call per command | absent from the Predator trace; SpawnStorm share unknown. The ring is a Weed SAB, not Box2D memory; related: the scalar create path (E-50b). Q4: a JS → WASM call costs about 4 ns, so the per-command export call is not the cost | a SpawnStorm trace first; `spawnStormScene` physics | open, premise weak (Q4) |
 | **W18** | logic | contact begin/stay classification in `logicWorker.js` | WASM classification beats JS; callbacks stay JS | a C hash table instead of the `Map` keyed by heap numbers | Q1: 11.3 % inclusive of Predator logic (2.6–3.7 % ceiling). E-54 per-slot stamp already −9.5 %. Inputs in four SABs plus the ring | `contactsMicrobench`; `contactDrainStressScene` | open, blocked on Phase 4 |
 | **W19** | particle | batched bullet linecasts: `BulletPool.tick` → `Ray.linecastDir`, geometry in [`ray.js`](../../src/core/ray.js) (`querySystem.js` has none) | WASM batched casts beat JS | batching | absent from the Predator trace; per-query game calls lose to the boundary (Q4) and are out of scope | `rayMicrobench`; `bulletStressScene` particle | open, blocked on Phase 4 |
 | **W20** | audio | `mixVoice` and the compressor in [`audioMixerProcessor.js`](../../src/workers/audioMixerProcessor.js) | No GC or tier-up stalls on the audio thread | predictability, not speed | 128 voices ≈ 0.1 ms of a 2.67 ms quantum; the worklet is absent from traces; `audioMixerMicrobench` times `_mixDirect`, not the product's `_mixBuses` | only if glitches are heard | **screened (parked)** |
@@ -574,3 +574,15 @@ defaults):
   it is the same everywhere), or the angles stay in JS. That choice is the owner's, at those sittings.
   The repo's bit-identical golden tests run in Node, whose `atan2` is fdlibm; they do not show what
   Chrome computes.
+- **2026-10-22, Q4.** `tests/bench/wasmCallCostMicrobench.mjs`, with the test module `wasm/test/callCost.c`,
+  times one call per argument shape, all sides alternating in one process, 9 rounds. Each side has
+  its own loop literal: the first draft shared one between the JS baseline and `sum4d`, which made
+  that call site polymorphic and read 13–16 ns. Medians of 3 runs, ns per call, JS baseline (four
+  adds, inlined) first. **Node 22:** JS 1.7; `nop0` 0.47 (elided); `sum4i` 3.1, `sum8i` 3.6,
+  `sum4d` 3.4, `sum8d` 4.8, `load1` 3.3. **Chrome 155** (`chromeKernel.mjs`): JS 1.42; `nop0` 0.41;
+  `sum4i` 3.9, `sum8i` 4.8, `sum4d` 4.4, `sum8d` 5.3, `load1` 4.2. So a call from optimized JS costs
+  about 4 ns, 2.5–4 ns more than an inlined JS call. Per frame, per batch or per light it is free
+  (360 lights, about 1.4 µs). Per entity it is about 66 µs a frame at 16.5 k entities, and per
+  particle about 0.26 ms at 65 k, about 6 % of the particle stress scene's worker: batch it. **W17**
+  loses its premise: the export call per command is about 4 ns, so a command drain only pays if
+  the handler's JS work itself is a large share, which needs the SpawnStorm trace first.

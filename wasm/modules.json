@@ -39,6 +39,21 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "callCost",
+      "source": "wasm/test/callCost.c",
+      "output": "tests/fixtures/wasm/callCost.wasm",
+      "exports": [
+        "nop0",
+        "sum4i",
+        "sum8i",
+        "sum4d",
+        "sum8d",
+        "load1"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
