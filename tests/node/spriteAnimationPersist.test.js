@@ -69,6 +69,7 @@ test('an animated sprite keeps animating in a scene where nothing else changes',
     let gen = w._staticGen;
     for (let f = 0; f < 60; f++) {
       w._renderableCount = 0;
+      w._bindCollectPoses();
       w.collectRenderable(0, 0);
       w.buildRenderQueue(1000 / 60);
       seen.add(w.entityFrameIndex[0]);
@@ -87,7 +88,9 @@ test('an animated sprite keeps animating in a scene where nothing else changes',
 
 // E-98b. A persist frame of sprites only skips the emit loop, which would only count the rows: the
 // count it publishes and the poses _writeType0PosesOnly wrote must be what the loop gave.
-test('a persist frame of sprites only publishes every row and its pose', async () => {
+// E-98d. With no Adobe root the collect writes poses straight into the queue; with one, into the
+// stash the emit copies from. Both arrangements must publish the same queue.
+for (const adobe of [null, [N + 7]]) test(`a persist frame of sprites only publishes every row and its pose (${adobe ? 'stash' : 'poses in the queue'})`, async () => {
   Layer.reset();
   Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
   try {
@@ -128,6 +131,9 @@ test('a persist frame of sprites only publishes every row and its pose', async (
         Transform.y[e] = 5 * e;
       }
       w._renderableCount = 0;
+      w._frameAdobeEntities = adobe;
+      w._bindCollectPoses();
+      assert.equal(w._collectPx === w.renderQueueX, adobe === null, 'where the collect writes poses');
       for (let e = 0; e < N; e++) w.collectRenderable(0, e);
       w.buildRenderQueue(1000 / 60);
       assert.equal(w.renderQueueCount[0], N, `frame ${f}: every row published`);

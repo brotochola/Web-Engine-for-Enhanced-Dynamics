@@ -449,6 +449,13 @@ class PreRenderWorker extends AbstractWorker {
         this._renderablePy = null;
         this._renderableRotC = null;
         this._renderableRotS = null;
+        // E-98d. Where this frame's collect writes poses: the stash above, or the main queue's own
+        // x, y, rotC, rotS columns when no row can expand (no Adobe root), queue row i being
+        // collector row i. Then the persist frame has no pose copy left to do.
+        this._collectPx = EMPTY_F32;
+        this._collectPy = EMPTY_F32;
+        this._collectRotC = EMPTY_F32;
+        this._collectRotS = EMPTY_F32;
         this._renderableCount = 0;
 
         // Pre-allocated query arrays
@@ -1223,6 +1230,7 @@ class PreRenderWorker extends AbstractWorker {
         this._frameAdobeEntities = AdobeAnimComponent.active
             ? Query.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent])
             : (this._emptyAdobeEntities || (this._emptyAdobeEntities = []));
+        this._bindCollectPoses();
 
         const detail = this.collectDetailedStats;
         let started = 0;
@@ -1966,6 +1974,20 @@ class PreRenderWorker extends AbstractWorker {
      * whose animation moved to a new frame go to _persistFramesMoved. Both are new statics for
      * E-82's staticGen.
      */
+    /**
+     * E-98d. An Adobe root is the only row the emit expands into several; without one, the emit
+     * writes queue row i from collector row i, so the collect can write poses there directly.
+     */
+    _bindCollectPoses() {
+        const adobe = this._frameAdobeEntities;
+        const inQueue = (adobe === null || adobe.length === 0) && this._renderablePx !== null
+            && this.renderQueueX.length >= this._renderablePx.length;
+        this._collectPx = inQueue ? this.renderQueueX : (this._renderablePx || EMPTY_F32);
+        this._collectPy = inQueue ? this.renderQueueY : (this._renderablePy || EMPTY_F32);
+        this._collectRotC = inQueue ? this.renderQueueRotC : (this._renderableRotC || EMPTY_F32);
+        this._collectRotS = inQueue ? this.renderQueueRotS : (this._renderableRotS || EMPTY_F32);
+    }
+
     _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime) {
         const rqX = this.renderQueueX;
         const rqY = this.renderQueueY;
@@ -1983,6 +2005,26 @@ class PreRenderWorker extends AbstractWorker {
         PERSIST_DT[0] = deltaTime / 1000;
         let others = 0;
         let moved = 0;
+        if (stashPx === rqX) {
+            // E-98d. The collect wrote the poses into these columns: only a sprite drawn with its
+            // own facing needs its rotation. A copy of the loop below.
+            for (let i = 0; i < count; i++) {
+                if (collectorType[i] !== 0) {
+                    others++;
+                    continue;
+                }
+                const idx = collectorIndex[i];
+                if (inherit && !inherit[idx] && spriteC && spriteS) {
+                    rqRotC[i] = spriteC[idx];
+                    rqRotS[i] = spriteS[idx];
+                }
+                if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], ySort);
+                this._writeQueueShadow(i, idx);
+                if (animated !== null && animated[idx]) moved += this._advancePersistFrame(i, idx);
+            }
+            this._persistFramesMoved = moved;
+            return others;
+        }
         for (let i = 0; i < count; i++) {
             if (collectorType[i] !== 0) {
                 others++;
@@ -2138,10 +2180,10 @@ class PreRenderWorker extends AbstractWorker {
         if (type === 0 || type === 6) {
             const pose = this._displayPoseOut;
             this._displayPose(index, pose);
-            this._renderablePx[writeIdx] = pose[0];
-            this._renderablePy[writeIdx] = pose[1];
-            this._renderableRotC[writeIdx] = pose[2];
-            this._renderableRotS[writeIdx] = pose[3];
+            this._collectPx[writeIdx] = pose[0];
+            this._collectPy[writeIdx] = pose[1];
+            this._collectRotC[writeIdx] = pose[2];
+            this._collectRotS[writeIdx] = pose[3];
             // Drawn Y, whole pixels. A raw pose[1] key changes bits on a
             // fraction of a pixel and the painter swaps two sprites that
             // did not cross. Read only under Y-sort (E-98), and by an Adobe root's pieces.
@@ -2151,10 +2193,10 @@ class PreRenderWorker extends AbstractWorker {
         } else if (type === 2) {
             const pose = this._displayPoseOut;
             this._decorationWorldXY(index, pose);
-            this._renderablePx[writeIdx] = pose[0];
-            this._renderablePy[writeIdx] = pose[1];
-            this._renderableRotC[writeIdx] = DecorationComponent.rotC[index];
-            this._renderableRotS[writeIdx] = DecorationComponent.rotS[index];
+            this._collectPx[writeIdx] = pose[0];
+            this._collectPy[writeIdx] = pose[1];
+            this._collectRotC[writeIdx] = DecorationComponent.rotC[index];
+            this._collectRotS[writeIdx] = DecorationComponent.rotS[index];
         }
         this._renderableCount = writeIdx + 1;
     }
@@ -2548,10 +2590,10 @@ class PreRenderWorker extends AbstractWorker {
             this._renderableY,
             this._renderableType,
             this._renderableIndex,
-            this._renderablePx,
-            this._renderablePy,
-            this._renderableRotC,
-            this._renderableRotS,
+            this._collectPx,
+            this._collectPy,
+            this._collectRotC,
+            this._collectRotS,
             true,
             hasOrder,
             hasOrder && this._entityYSort()

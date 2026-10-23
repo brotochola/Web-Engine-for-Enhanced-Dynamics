@@ -37,6 +37,9 @@ async function setup() {
   pre._renderablePy = new Float32Array(8);
   pre._renderableRotC = new Float32Array(8);
   pre._renderableRotS = new Float32Array(8);
+  // As update() does before the collect (E-98d): no queue bound here, so poses go to the stash.
+  pre._frameAdobeEntities = null;
+  pre._bindCollectPoses();
   pre.entityLastTextureId = new Uint16Array(N).fill(0xffff);
   let resolves = 0;
   const resolve = pre._resolveEntitySpriteTextureId;
