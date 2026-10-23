@@ -440,3 +440,15 @@ defaults):
 - **2026-10-22, T1.** `spatialPublish.c` moved from `tests/bench/wasm/` to `wasm/`; the duplicate binary there
   is gone and `spatialPublishWasmMicrobench` loads the shipped `src/workers/spatialPublish.wasm`. Shipped
   bytes unchanged (SHA-256 `265df41d…`).
+- **2026-10-22, T2 with T6.** `scripts/buildWasm.mjs` builds every module of `wasm/modules.json` (clang
+  `--target=wasm32 -std=c11 -O3 -msimd128 -matomics -mbulk-memory -nostdlib -ffreestanding
+  -ffp-contract=off -Wall -Werror`; wasm-ld `--no-entry --import-memory --shared-memory
+  --max-memory=<manifest>`; wasm-opt `-O3 -g --strip-producers --strip-target-features`, so only the name
+  section stays) and `--check` rebuilds into `tests/results/wasm-build/` and compares bytes. The T6
+  rules live in `scripts/wasmKernelRules.mjs` (a binary-section reader, no toolchain needed) and run after
+  every build: one import, `env.memory`, shared, with the manifest's maximum; only the listed function
+  exports; no start function, globals, data, tables or own memory; a name section.
+  `tests/node/wasmKernelRules.test.js` plants each violation in a hand-assembled module. On the shipped
+  emcc binary the check reports the N-62 list (five extra imports, a start function, a global, a table,
+  four extra exports, no names), so `--check` fails until T3. A freestanding build of the same source
+  is 883 bytes and deterministic (two builds, same bytes).

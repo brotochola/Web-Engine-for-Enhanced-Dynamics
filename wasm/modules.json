@@ -1,0 +1,17 @@
+{
+  "comment": "WebAssembly kernel modules (E-76). Built by scripts/buildWasm.mjs; rules in scripts/wasmKernelRules.mjs.",
+  "toolchain": {
+    "clang": ["clang version 24.0.0git", "c050c487e9edb97ef44f53cb29fe1d8bcddb8f76"],
+    "wasmOpt": ["wasm-opt version 131", "version_131-18-gbbeae83f8"]
+  },
+  "modules": [
+    {
+      "name": "spatialPublish",
+      "source": "wasm/spatialPublish.c",
+      "output": "src/workers/spatialPublish.wasm",
+      "exports": ["publish_batch"],
+      "maxMemoryPages": 8192,
+      "builtBy": "emcc, command not recorded (REVIEW_PLAN N-62); E-76 T3 rebuilds it with this script"
+    }
+  ]
+}
