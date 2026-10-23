@@ -26,8 +26,26 @@ const MIME_TYPES = {
   '.vert': 'text/plain',
 };
 
-export async function createStaticBenchmarkServer(rootDirectory, preferredPort = 0) {
+/** COOP, COEP and CORP: what makes a page cross-origin isolated, so SharedArrayBuffer exists. */
+const ISOLATION_HEADERS = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'cross-origin',
+};
+
+/**
+ * @param {string} rootDirectory
+ * @param {number} [preferredPort] 0 picks a free port; a second server on another port is another origin
+ * @param {object} [options]
+ * @param {boolean} [options.isolationHeaders] false serves like GitHub Pages or `npx serve`: no COOP, COEP
+ *   or CORP, so a page is not isolated unless something else (weed-sw.js, DX-SW) adds them
+ * @param {Record<string, string>} [options.files] URL path → file under the root, served in its place
+ *   (e.g. '/weed-sw.js' → the source of the isolation service worker)
+ */
+export async function createStaticBenchmarkServer(rootDirectory, preferredPort = 0, options = {}) {
   const normalizedRoot = path.resolve(rootDirectory);
+  const isolationHeaders = options.isolationHeaders !== false ? ISOLATION_HEADERS : null;
+  const files = options.files || {};
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -39,7 +57,8 @@ export async function createStaticBenchmarkServer(rootDirectory, preferredPort =
         res.end();
         return;
       }
-      const relativePath = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
+      const mapped = Object.hasOwn(files, url.pathname) ? '/' + files[url.pathname].replace(/^[/]+/, '') : url.pathname;
+      const relativePath = decodeURIComponent(mapped === '/' ? '/index.html' : mapped);
       const candidatePath = path.resolve(normalizedRoot, '.' + relativePath);
 
       if (!candidatePath.startsWith(normalizedRoot)) {
@@ -60,9 +79,7 @@ export async function createStaticBenchmarkServer(rootDirectory, preferredPort =
 
       res.writeHead(200, {
         'Content-Type': contentType,
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'require-corp',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
+        ...isolationHeaders,
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': ext === '.js' || ext === '.mjs' ? 'no-cache, no-store, must-revalidate' : 'no-cache',
         Pragma: 'no-cache',

@@ -2,7 +2,7 @@
 
 **Opened:** 2026-10-22 (planned in a chat session), saved here 2026-10-23. **Status:** in progress
 on branch `isolation_sw` (from 2026-10-23); the four decisions are taken (see "Decisions").
-**Next step:** SW-2, the static server without the isolation headers. **Registry:** `DX-SW` in
+**Next step:** SW-3, `weed-sw.js`, the gate and the `GameEngine` wiring. **Registry:** `DX-SW` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: WeedJS runs exactly as it does today, with SharedArrayBuffers and Box2D's 4 threads,
@@ -262,10 +262,13 @@ a server without isolation headers, with the worker at the root (src mode) or ne
 ## 5. Items (one commit each)
 
 - [x] **SW-1** `fix(engine)`: `GameEngine` survives a page without SharedArrayBuffer, so the
-  existing message becomes reachable. Done 2026-10-23: the presenting flag falls back to a plain
+  existing message becomes reachable. Done 2026-10-23 (`2da0511c`): the presenting flag falls back to a plain
   `ArrayBuffer`; `tests/node/engineWithoutIsolation.test.js` runs the real constructor and
   `Scene.init` on a fake page with SharedArrayBuffer deleted (the old code throws the ReferenceError).
-- [ ] **SW-2** `test(helpers)`: the static server can omit the isolation headers; second origin.
+- [x] **SW-2** `test(helpers)`: the static server can omit the isolation headers; second origin.
+  Done 2026-10-23: `createStaticBenchmarkServer(root, port, { isolationHeaders: false, files })`;
+  `files` maps a URL to another file under the root (`/weed-sw.js` → the worker's source). A second
+  instance on another port is the second origin. `tests/node/staticBenchmarkServer.test.js`.
 - [ ] **SW-3** `feat(engine)`: `weed-sw.js`, the gate and the `GameEngine` wiring, with the
   phase 1 Node tests.
 - [ ] **SW-4** `test(bench)`: the phase 2 end-to-end isolation smoke test.
@@ -299,4 +302,5 @@ a server without isolation headers, with the worker at the root (src mode) or ne
 
 ## Found during implementation
 
-(nothing yet)
+- Phase 0's "install Playwright's Firefox" waits for the owner: sessions here install nothing
+  unasked. Chromium covers phase 2 until then.
