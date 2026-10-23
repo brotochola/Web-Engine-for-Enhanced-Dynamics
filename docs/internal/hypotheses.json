@@ -38,6 +38,65 @@
       "next": "The Predator gate (pre-render packs its sun casters)."
     },
     {
+      "id": "E-106",
+      "title": "`rng()` calls a closure it cannot inline",
+      "status": "dropped",
+      "statusText": "no change; reverted 2026-10-23",
+      "date": "2026-10-23",
+      "result": "Stepping the seeded state inside rng() left littleCity logic at 4.2 MB/s in rng: the box is at the uninlined game caller.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L17"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "E-107",
+      "title": "Decal tile premultiply made two views per upload",
+      "status": "kept-hygiene",
+      "statusText": "kept (hygiene), 2026-10-23",
+      "date": "2026-10-23",
+      "result": "Pixi 3 658 → 76 KB/s in decalBlitStressScene: the Uint32Array views live beside the tile buffers.",
+      "area": "pixi",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L15"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "E-108",
+      "title": "`Decal.stamp` boxed its doubles",
+      "status": "kept-hygiene",
+      "statusText": "kept (hygiene), 2026-10-23",
+      "date": "2026-10-23",
+      "result": "Plain numbers as given; x, y, scale, alpha to the ring through a Float64Array. Logic 7 923 → 4 746 KB/s in decalStampStressScene (the rest is the driver).",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L13"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "E-109",
+      "title": "Leads from the 2026-10-23 heap pass",
+      "status": "open",
+      "statusText": "open",
+      "date": "2026-10-23",
+      "result": "GameObject instance fields with fractional doubles allocate per write in Chrome (21 MB/s painterMove, 7 MB/s bichos, game code); Pixi vendored WebGL bind for…in (0.5–0.7 MB/s); _emscripten_get_now (0.2–0.3 MB/s); Pixi updateLighting (0.2–0.3 MB/s); syncParticleFeed (0.1–0.2 MB/s).",
+      "area": "engine",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L19",
+        "EXECUTION_PLAN.md#L872"
+      ],
+      "aliases": [],
+      "next": "A guide note on per-entity doubles (components, not instance fields); then the Box2D clock and updateLighting.",
+      "rank": 19
+    },
+    {
       "id": "E-104",
       "title": "Query type masks walked in BigInt every publish",
       "status": "kept-hygiene",
@@ -47,7 +106,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L15",
+        "HYPOTHESIS_LOG.md#L23",
         "EXECUTION_PLAN.md#L852"
       ],
       "aliases": []
@@ -62,7 +121,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L25",
         "EXECUTION_PLAN.md#L857"
       ],
       "aliases": [
@@ -79,7 +138,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L19",
+        "HYPOTHESIS_LOG.md#L27",
         "WASM_HYPOTHESES.md#L155"
       ],
       "aliases": [],
@@ -7011,7 +7070,7 @@
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#L808",
-        "HYPOTHESIS_LOG.md#L13"
+        "HYPOTHESIS_LOG.md#L21"
       ],
       "aliases": [],
       "next": "W4 for the rest. Predator profile 2026-10-23: emitSpriteQueue 17.2 %, collectVisibleEntities 9.6 %, _storeEntitySortY 5.1 %, _displayPose 5.0 %, _writeQueueShadow 4.1 % of pre-render; the shadow stamp chain 37 % (W23).",

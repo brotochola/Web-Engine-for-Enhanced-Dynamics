@@ -860,6 +860,21 @@ of a heap number. The heap profile had charged the boxing to the game ticks that
 (`civilian.js:76` 1.7 MB/s). Predator logic garbage with E-104: 2.8 → 0.2 MB/s per worker (−92 %); logic
 4.458 → 4.307 ms, −1.9 %, NEUTRAL at 4 pairs.
 
+### E-106 `rng()` steps the seeded state itself — **no change, reverted 2026-10-23**
+The boxed double is at the uninlined game caller, not inside `rng()`.
+
+### E-107 Decal tile premultiply word views — **KEPT (hygiene)** (`3c806eae`)
+Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
+
+### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
+Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
+
+### E-109 Leads from the 2026-10-23 heap pass — **open**
+GameObject instance fields that hold fractional doubles allocate per write in Chrome (`painterMoveStressScene`
+21 MB/s, `bichosScene` 7 MB/s in game code): a guide note, or an engine-side per-entity scratch. Pixi's
+vendored WebGL bind (`for…in` per draw, 0.5–0.7 MB/s). `_emscripten_get_now` in the Box2D thread
+(0.2–0.3 MB/s). Pixi `updateLighting` (0.2–0.3 MB/s in Predator). `syncParticleFeed` (0.1–0.2 MB/s).
+
 ### E-99 Caster positions in bin order for the shadow stamp — **rejected in the kernel, 2026-10-23**
 Predator's profile put 42 % of `stampLightRange` on `sun[c * floats]` per binned caster. Copying x and y in bin
 order during `buildStampGrid` tied in `shadowStampMicrobench` (666 → 658 ops/s, −1.2 %): the caster rows fit in
