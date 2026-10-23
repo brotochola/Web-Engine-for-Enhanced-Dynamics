@@ -520,6 +520,9 @@ async function main() {
     extraArgs: [
       ...(args['canvas-width'] ? ['--canvas-width', String(Number(args['canvas-width']))] : []),
       ...(args['canvas-height'] ? ['--canvas-height', String(Number(args['canvas-height']))] : []),
+      // The camera zoom the runner sets (min, or a number): adobeAnimateScene draws all 10 000
+      // characters only at the minimum zoom, and saturates pre-render there.
+      ...(args['camera-zoom'] ? ['--camera-zoom', String(args['camera-zoom'])] : []),
     ],
   };
   const scene = resolveScene(args);
