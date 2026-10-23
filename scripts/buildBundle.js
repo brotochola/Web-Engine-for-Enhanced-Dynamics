@@ -55,7 +55,15 @@ export const BUNDLE_ARTIFACTS = [
     'weed.prod.bundle.esm.compressed.min.js',
 ];
 
-const KEEP_DIST_FILES = new Set([...BUNDLE_ARTIFACTS, 'index.html']);
+/**
+ * The isolation service worker (DX-SW), published next to the bundles as its own file: browsers
+ * register a service worker only from a same-origin URL, never from a bundle's blob. A plain copy
+ * of src/workers/isolationServiceWorker.js: its bytes carry no version, since any change makes
+ * every visitor's browser reinstall it.
+ */
+export const ISOLATION_SERVICE_WORKER_FILE = 'weed-sw.js';
+
+const KEEP_DIST_FILES = new Set([...BUNDLE_ARTIFACTS, 'index.html', ISOLATION_SERVICE_WORKER_FILE]);
 
 const BOX2D_ALWAYS_SIBLINGS = ['weedjsPost.js', 'physicsHostImpl.js'];
 
@@ -565,6 +573,17 @@ function cleanupDistTemps() {
     }
 }
 
+/**
+ * Writes dist/weed-sw.js (or into `dir`), byte for byte from its source.
+ * @param {string} [dir]
+ * @returns {string} the path written
+ */
+export function writeIsolationServiceWorker(dir = distDir) {
+    const target = path.join(dir, ISOLATION_SERVICE_WORKER_FILE);
+    fs.copyFileSync(path.join(rootDir, 'src', 'workers', 'isolationServiceWorker.js'), target);
+    return target;
+}
+
 function copySmokeTest() {
     console.log('\n🧪 Generating bundle smoke test...');
     const testSrcDir = path.join(rootDir, 'scripts', 'bundle-test');
@@ -605,6 +624,8 @@ function main() {
 
     cleanupDistTemps();
     copySmokeTest();
+    writeIsolationServiceWorker();
+    console.log('   Copied: ' + ISOLATION_SERVICE_WORKER_FILE);
 
     // Exact build stamp. distVersion.js refuses a bench run whose stamp does not
     // match src/version.js, because a stale dist/ measures a different engine

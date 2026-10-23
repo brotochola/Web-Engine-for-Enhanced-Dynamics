@@ -6722,7 +6722,7 @@
       "id": "DX-SW",
       "title": "SharedArrayBuffer without COOP/COEP headers: our own isolation service worker (`weed-sw.js`)",
       "status": "open",
-      "statusText": "in progress on branch isolation_sw: SW-1 to SW-4 done (the worker, the gate, the engine wiring, a Chromium smoke test of 11 cases passing)",
+      "statusText": "in progress on branch isolation_sw: SW-1 to SW-5 done (the worker, the gate, the engine wiring, a Chromium smoke test of 11 cases passing, dist/weed-sw.js)",
       "date": "2026-10-22",
       "result": "Plan only. Built from coi-serviceworker v0.1.7 principles, not vendored: reload only after `activated`, no worker state, rewrite only page loads and worker scripts, never replace another service worker, guarded reload marker, the gate runs inside engine boot with the screen black, every failure named in the error overlay. SW-1 done: `new GameEngine()` threw a ReferenceError without SharedArrayBuffer, so the friendly message DEPLOY.md promises never showed; its flag now falls back to a plain buffer. Hot reload is unaffected (the dev servers send the headers).",
       "area": "engine",
@@ -6734,7 +6734,7 @@
       "aliases": [
         "coi-serviceworker"
       ],
-      "next": "SW-5: dist/weed-sw.js from the bundle build; then the package files, the template and DEPLOY.md."
+      "next": "SW-6: package.json files and exports for weed-sw.js (its own commit); then the template copy and DEPLOY.md."
     },
     {
       "id": "E-86",
