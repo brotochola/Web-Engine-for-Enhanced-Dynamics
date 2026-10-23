@@ -708,11 +708,23 @@ given id" (since `43fa7be9` it reports this instead of crashing): the session it
 mid-sample. Either the page starts a worker twice (a bug worth finding on its own) or the sampler
 attached to a short-lived one. Until fixed, pre-render allocation in that scene is unseen.
 
-### E-91 The physics JS thread is never heap-sampled — **open (from E-87)**
+### E-91 The physics JS thread is never heap-sampled — **kept (hygiene), 2026-10-23**
+The sweep samples the Box2D worker now (`a30101ae`). Its allocation in `spawnStormScene` was
+`createBodyForEntity`: an options object, two spread copies and a handle per body. It calls the wasm
+creators with the numbers; physics allocation at `?storm=5000` **24.08 → 0.41 MB/s**. The pair failed
+on load (B kept 25 % more bodies alive at −0.5 % physics time), so kept as hygiene; a load-matched
+kernel would decide the speed. The entry as opened:
 The sweep's heap pass samples workers whose URL contains `Worker`; the Box2D worker is
 `box2dWasm.js`, so physics never shows. `spawnStormScene`'s physics JS thread spends **34 ms/s in
 GC** (Q1b inventory), the largest GC time left in the sweep. Sample it (`--workers Worker,box2d`), find
 the sites, then fix them: the dirty-word drain is one candidate (E-87).
+
+### E-92 Every spawn builds a closure for the dirty-mark window — **open (from E-91)**
+`_spawnAt` wraps its setup in `withBodyDirtyDeferred(() => { … })`, a new closure and context per
+spawn, and `_spawnAt` is far too big for TurboFan to inline the call away: `spawnStormScene` logic
+8.6 MB/s in `_spawnAt`, about 80 bytes per spawn at 108 000 spawns/s. The body has no `return`,
+`this` or `arguments`, so a begin/end pair around a `try`/`finally` does the same without the
+closure. Also in that profile: `sort` from `_processSpawnSoA` 0.85 MB/s and `setSprite` 0.85 MB/s.
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls

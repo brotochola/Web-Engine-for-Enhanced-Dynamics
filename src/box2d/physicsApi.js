@@ -2281,5 +2281,8 @@ function createPhysicsApi(Module) {
 
   }
 
-  return { PhysicsWorld, BodyHandle, JointHandle };
+  // The raw creators, for the engine's own body sync (weedjsPost.js createBodyForEntity): one call
+  // with the numbers, no option objects, spread copies or handle per body (E-91).
+  const bodyCreators = { createBody, createBodyBox, createBodyCircle };
+  return { PhysicsWorld, BodyHandle, JointHandle, bodyCreators };
 }

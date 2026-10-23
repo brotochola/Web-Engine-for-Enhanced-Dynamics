@@ -47,6 +47,8 @@
   // Units: px, px/s, px/s², rad, rad/s (Box2D native — no frame-unit scale).
 
   let world = null;
+  /** createPhysicsApi's raw body creators (createBodyForEntity, E-91). */
+  let bodyCreators = null;
   let verdletSubSteps = 4;
   /** Set by physicsHostImpl before init (weedjsEnableHostMode). */
   let hostMode = false;
@@ -800,45 +802,34 @@
     const enableHitEvents = views.enableHitEvents[i] !== 0;
     const linearDamping = views.linearDamping[i] || 0;
     const angularDamping = views.angularDamping[i] || 0;
-    const angle = isFixedRotation(i) ? 0 : views.rotation[i];
-    const opts = {
-      type,
-      x: views.x[i],
-      y: views.y[i],
-      angle,
-      offsetX: views.offsetX[i],
-      offsetY: views.offsetY[i],
-      density: densityForEntity(i, shape),
-      friction,
-      restitution,
-      linearDamping,
-      angularDamping,
-      gravityScale: 1,
-      vx: views.vx[i],
-      vy: views.vy[i],
-      angularVelocity: views.angularVelocity[i],
-      isSensor: views.isTrigger[i] !== 0,
-      enableHitEvents,
-      categoryBits: categoryBitsFor(i),
-      maskBits: views.collisionMask[i] >>> 0,
-      groupIndex: views.collisionGroupIndex[i] | 0,
-      fixedRotation: isFixedRotation(i),
-      entityIndex: i,
-    };
+    const fixedRotation = isFixedRotation(i);
+    const angle = fixedRotation ? 0 : views.rotation[i];
+    const x = views.x[i];
+    const y = views.y[i];
+    const vx = views.vx[i];
+    const vy = views.vy[i];
+    const angularVelocity = views.angularVelocity[i];
+    const fixed = fixedRotation ? 1 : 0;
+    const worldId = world.worldId;
+    // Circles, boxes and shapeless bodies go straight to the wasm creators, with the values the
+    // option-object API merged from these fields (every material field is set here, so its
+    // defaults never applied). The object, its spread copies and the handle were 8.6 MB/s of the
+    // physics thread's allocation in spawnStormScene (E-91). Polygons build a vertex array anyway.
 
     multiShape[i] = 0;
     try {
-      // RigidBody without Collider: shapeless body (moves, no contacts).
-      if (rb && !col) {
-        world.create(opts);
-        return true;
-      }
-      if (!col) return false;
-      const extras = views.fixtureCount ? views.fixtureCount[i] | 0 : 0;
-      if (extras > 0) {
-        world.create(opts);
+      if (!rb && !col) return false;
+      const extras = col && views.fixtureCount ? views.fixtureCount[i] | 0 : 0;
+      // A shapeless body: a RigidBody without Collider (moves, no contacts), or one that gets its
+      // shapes next, from its fixtures or its chain.
+      if (!col || extras > 0 || shape === ShapeType.Chain) {
+        const slot = bodyCreators.createBody(
+          worldId, type, x, y, angle, linearDamping, angularDamping, 1, vx, vy, angularVelocity, fixed, i
+        );
+        if (slot < 0) throw new Error('create failed');
+        if (!col) return true;
         multiShape[i] = 1;
-        if (!addAllFixtures(i)) {
+        if (!(extras > 0 ? addAllFixtures(i) : syncChain(i))) {
           try {
             world.destroyBody(i);
           } catch (_) {
@@ -848,28 +839,31 @@
         }
         return true;
       }
-      if (shape === ShapeType.Chain) {
-        world.create(opts);
-        multiShape[i] = 1;
-        if (!syncChain(i)) {
-          try {
-            world.destroyBody(i);
-          } catch (_) {
-            /* slot may already be clear */
-          }
-          return false;
-        }
-        return true;
-      }
+      const density = densityForEntity(i, shape);
+      const sensor = views.isTrigger[i] !== 0 ? 1 : 0;
+      const hits = enableHitEvents ? 1 : 0;
+      const categoryBits = categoryBitsFor(i);
+      const maskBits = views.collisionMask[i] >>> 0;
+      const groupIndex = views.collisionGroupIndex[i] | 0;
       if (shape === ShapeType.Circle) {
         const r = views.radius[i];
         if (!(r > 0)) return false;
-        world.createCircle({ ...opts, radius: r });
+        const slot = bodyCreators.createBodyCircle(
+          worldId, type, x, y, angle, r, views.offsetX[i], views.offsetY[i],
+          density, friction, restitution, linearDamping, angularDamping, 1, vx, vy, angularVelocity,
+          sensor, hits, categoryBits, maskBits, groupIndex, fixed, i
+        );
+        if (slot < 0) throw new Error('createCircle failed');
       } else if (shape === ShapeType.Box) {
         const hx = views.width[i] * 0.5;
         const hy = views.height[i] * 0.5;
         if (!(hx > 0 && hy > 0)) return false;
-        world.createBox({ ...opts, hx, hy });
+        const slot = bodyCreators.createBodyBox(
+          worldId, type, x, y, angle, hx, hy, views.offsetX[i], views.offsetY[i],
+          density, friction, restitution, linearDamping, angularDamping, 1, vx, vy, angularVelocity,
+          sensor, hits, categoryBits, maskBits, groupIndex, fixed, i
+        );
+        if (slot < 0) throw new Error('createBox failed');
       } else if (shape === ShapeType.Polygon) {
         const count = views.polyCount[i] | 0;
         if (count < 3) return false;
@@ -878,7 +872,12 @@
         for (let v = 0; v < count; v++) {
           verts.push(views.polyVertexX[base + v], views.polyVertexY[base + v]);
         }
-        world.createPolygon({ ...opts, verts, radius: polygonSkin(i) });
+        world.createPolygon({
+          type, x, y, angle, offsetX: views.offsetX[i], offsetY: views.offsetY[i],
+          density, friction, restitution, linearDamping, angularDamping, gravityScale: 1,
+          vx, vy, angularVelocity, isSensor: sensor === 1, enableHitEvents, categoryBits, maskBits,
+          groupIndex, fixedRotation, entityIndex: i, verts, radius: polygonSkin(i),
+        });
       } else {
         return false;
       }
@@ -2700,7 +2699,9 @@
   }
 
   function handleInit(data) {
-    const { PhysicsWorld } = createPhysicsApi(Module);
+    const physicsApi = createPhysicsApi(Module);
+    const { PhysicsWorld } = physicsApi;
+    bodyCreators = physicsApi.bodyCreators;
     const maxBodies = data.maxBodies | 0;
     verdletSubSteps = Math.max(1, data.subSteps | 0 || 4);
     sleepingEnabled = data.sleeping !== false;
