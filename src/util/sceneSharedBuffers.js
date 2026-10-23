@@ -205,11 +205,10 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   const maxNeighbors = config.spatial.maxNeighbors;
   scene.spatialPublish = null;
   if (spatialOn) {
-    scene.spatialPublish = createSpatialPublishMemory(
-      totalEntityCount,
-      maxNeighbors,
-      config.spatial.numberOfSpatialWorkers | 0,
-    );
+    // wasm.spatialPublish false (E-76 T7) takes the plain-SAB JS path, as 32-bit ids do.
+    scene.spatialPublish = config.wasm?.spatialPublish === false
+      ? null
+      : createSpatialPublishMemory(totalEntityCount, maxNeighbors, config.spatial.numberOfSpatialWorkers | 0);
     buffers.neighborData = scene.spatialPublish
       ? scene.spatialPublish.buffer
       : new SharedArrayBuffer(totalEntityCount * (1 + maxNeighbors) * entityIdBytes());

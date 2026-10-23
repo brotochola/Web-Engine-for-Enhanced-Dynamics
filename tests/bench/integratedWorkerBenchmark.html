@@ -201,6 +201,9 @@
           canvasHeight: config.canvasHeight,
           spatialWorkers: scene.config.spatial.numberOfSpatialWorkers,
           logicWorkers: scene.config.logic.numberOfLogicWorkers,
+          // Which WASM kernels this run used (E-76 T7): the switches, and what actually ran.
+          wasm: { ...(scene.config.wasm || {}) },
+          wasmRan: { spatialPublish: Boolean(scene.spatialPublish) },
           worldWidth: config.worldWidth,
           worldHeight: config.worldHeight,
           warmupMs: config.warmupMs,
@@ -226,6 +229,9 @@
         summarizeWorkerBenchmarkWindow,
       } = await loadModules(config.sceneModule, config.sceneExport);
 
+      // ?wasmOff=spatialPublish[,…] runs those WASM kernels' JavaScript paths (E-76 T7).
+      const wasmOff = (new URLSearchParams(location.search).get('wasmOff') || '').split(',').filter(Boolean);
+
       // Override scene debug flags before Scene applies defaults / boots workers
       SceneClass.config = {
         ...SceneClass.config,
@@ -234,6 +240,9 @@
           collectDetailedStats: config.collectDetailedStats,
           collectGpuStats: config.collectGpuStats,
         },
+        ...(wasmOff.length
+          ? { wasm: { ...(SceneClass.config.wasm || {}), ...Object.fromEntries(wasmOff.map((name) => [name, false])) } }
+          : {}),
       };
 
       await cleanupCurrentGame();

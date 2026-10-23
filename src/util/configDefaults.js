@@ -411,6 +411,20 @@ export const SPATIAL_DEFAULTS = Object.freeze({
 });
 
 // ============================================================================
+// WASM KERNEL DEFAULTS
+// ============================================================================
+
+/**
+ * WebAssembly kernels (E-76), one switch per module. `false` runs that module's JavaScript path,
+ * the one the engine also takes when the module cannot run (the spatial publish needs 16-bit
+ * entity ids). Benches flip a switch with `?wasmOff=<name>` to time both paths in one build.
+ */
+export const WASM_DEFAULTS = Object.freeze({
+  /** Spatial neighbour publish (`spatialPublish.wasm`). */
+  spatialPublish: true,
+});
+
+// ============================================================================
 // PARTICLE DEFAULTS
 // ============================================================================
 

@@ -81,6 +81,7 @@ import {
   SCENE_DEFAULTS,
   PHYSICS_DEFAULTS,
   SPATIAL_DEFAULTS,
+  WASM_DEFAULTS,
   PARTICLE_DEFAULTS,
   DECORATION_DEFAULTS,
   BULLET_DEFAULTS,
@@ -714,6 +715,12 @@ class Scene {
     this.config.spatial = {
       ...SPATIAL_DEFAULTS,
       ...(this.config.spatial || {}),
+    };
+
+    // WASM kernel switches (E-76 T7)
+    this.config.wasm = {
+      ...WASM_DEFAULTS,
+      ...(this.config.wasm || {}),
     };
 
     // Particle defaults from centralized config

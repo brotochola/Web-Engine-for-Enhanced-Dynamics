@@ -200,6 +200,7 @@ When comparing builds, split **`REBUILD_MS`** vs **`NEIGHBOR_MS`**: stagger only
 - **`neighborReuseSkin`** — fraction of `visualRange` (default **0.04**). `0` disables Verlet candidate reuse.
 - **`neighborReuseMaxFrames`** — max frames a candidate list / freeze may live (default **15**). Dense/fast scenes may override; e.g. Predator uses **0.01 / 30**.
 - **`neighborTickInterval`** — refresh cadence, staggered by entity index (default **1** = every frame). `> 1` enables stagger: off-tick keeps last `neighborData`; on-tick still uses Verlet when skin allows. No separate `staggeredUpdates` flag (unlike logic).
+- **`wasm.spatialPublish`** (scene config, default **true**) — the final range filter that writes `neighborData` runs as one WebAssembly call per worker per frame, on a shared `WebAssembly.Memory` that holds the poses, candidates and rows. It needs 16-bit entity ids (`entityIdWidth` 16); at 32 the JavaScript filter runs. `wasm: { spatialPublish: false }` forces the JavaScript filter.
 
 Scene example (Predator):
 

@@ -501,3 +501,12 @@ defaults):
   load error. `tests/node/wasmKernel.test.js` covers file and data URLs, compile-once, the emcc
   fixture refused for its WASI imports, a missing export, and the real spatial worker binding the
   module in Node through the loader (worker 1 on the second list slice).
+- **2026-10-22, T7.** There is one switch per module in the scene config: `wasm: { spatialPublish }`, from
+  `WASM_DEFAULTS` (default true; typed in `weed.d.ts`; noted in `docs/guide/SPATIAL_HASHING.md`).
+  When it is false, `createSceneSharedBuffers` builds no publish memory, so the spatial worker runs its
+  plain-SAB JavaScript publish, the path 32-bit ids take. The bench page reads `?wasmOff=<name>[,…]`
+  (`runIntegratedWorkerBenchmark --query wasmOff=spatialPublish`) and writes `metadata.wasm` (the
+  switches) and `metadata.wasmRan` (what ran) into every result. MinimalTick in source mode, 3 s +
+  2 s: default `wasmRan.spatialPublish` true, spatial 2.044 ms; `wasmOff=spatialPublish` false,
+  2.095 ms (a check that both paths run, not a measurement). `tests/node/wasmSwitch.test.js` builds
+  the scene buffers both ways.

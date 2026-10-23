@@ -278,6 +278,14 @@ export type SceneConfig = Record<string, unknown> & {
     /** @deprecated one-release alias of maxFixturePoolSize */
     maxFixtures?: number;
   };
+  /**
+   * WebAssembly kernels, one switch per module (default true). false runs that module's
+   * JavaScript path instead, for example to time one against the other in the same build.
+   */
+  wasm?: {
+    /** Spatial neighbour publish. Needs 16-bit entity ids; at 32 the JavaScript path runs anyway. */
+    spatialPublish?: boolean;
+  };
 };
 
 export interface DebugFlagConstants {
