@@ -96,6 +96,16 @@
         "pack_casters_scatter"
       ],
       "maxMemoryPages": 8192
+    },
+    {
+      "name": "spatialRebuild",
+      "source": "wasm/test/spatialRebuild.c",
+      "output": "tests/fixtures/wasm/spatialRebuild.wasm",
+      "exports": [
+        "rebuild_rows"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
