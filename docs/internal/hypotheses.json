@@ -104,8 +104,8 @@
     {
       "id": "W26",
       "title": "decal stamping `stampToTileBuffers` in decal.js (new from Q1b)",
-      "status": "screened",
-      "statusText": "screened 2026-10-23: scalar port ties JS",
+      "status": "open",
+      "statusText": "open: the scalar port ties JS (screened 2026-10-23)",
       "date": null,
       "result": "A bit-exact C port of stampToTileBuffers over a batch wrote the same bytes and ran ×0.99 of JS in Node (49.9 vs 50.2 ms, 5 000 stamps). The loop is byte traffic and branches.",
       "area": "particle",
