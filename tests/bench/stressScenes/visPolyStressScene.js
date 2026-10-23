@@ -18,8 +18,21 @@ export const OCCLUDER_SHAPE = (() => {
   }
 })();
 
+/**
+ * `?selfLit=N`: `lighting.maxOccluderSelfLit`, the self-lit fills per frame (default 512, the engine's).
+ * At 512 only the first few dozen lights get one; raise it to light every occluder (E-96b).
+ */
+export const SELF_LIT = (() => {
+  try {
+    const n = Number(new URLSearchParams(globalThis.location?.search || '').get('selfLit'));
+    return n > 0 ? Math.min(n | 0, 1 << 20) : 512;
+  } catch {
+    return 512;
+  }
+})();
+
 export const stressSceneConfig = {
-  requested: { occluderShape: OCCLUDER_SHAPE },
+  requested: { occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT },
 };
 
 /** Bench scene: raycasted lights + occluders. Predator default leaves this path off. */
@@ -51,6 +64,7 @@ export class VisPolyStressScene extends Scene {
       shadowsEnabled: true,
       raycasted: true,
       maxPolygonVertices: 5000,
+      maxOccluderSelfLit: SELF_LIT,
     },
   };
 
