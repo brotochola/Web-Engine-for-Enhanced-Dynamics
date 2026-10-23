@@ -264,6 +264,11 @@ function writeEntityTileFields(
 }
 /** Composite depth sort: worldY * scale + innerZ (entities, decorations, bullets) */
 const Y_SORT_K = DECORATION_Y_SORT_SCALE;
+// The sort key of the renderable being collected (E-86). collectRenderable and _writeRenderable are
+// too big for TurboFan to inline into the collect loops, and the key passed as an argument was a
+// heap number per visible particle, bullet, decoration and glow. Callers write it here first.
+// Sprites (types 0 and 6) need none: _writeRenderable stores their drawn Y.
+const COLLECT_Y = new Float64Array(1);
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
  *
@@ -1348,7 +1353,8 @@ class PreRenderWorker extends AbstractWorker {
                 : isFlat
                     ? y[i] * Y_SORT_K
                     : (y[i] + z[i]) * Y_SORT_K;
-            this.collectRenderable(1, i, sortKey);
+            COLLECT_Y[0] = sortKey;
+            this.collectRenderable(1, i);
             this.visibleParticlesCount++;
         }
     }
@@ -1366,7 +1372,8 @@ class PreRenderWorker extends AbstractWorker {
         const bounds = this._frameCameraBoundsValid ? this.calculateCameraBounds() : null;
         if (!bounds) {
             for (let i = from; i < to; i++) {
-                this.collectRenderable(7, i, y[i] * Y_SORT_K);
+                COLLECT_Y[0] = y[i] * Y_SORT_K;
+                this.collectRenderable(7, i);
                 this.visibleParticlesCount++;
             }
             return;
@@ -1383,7 +1390,8 @@ class PreRenderWorker extends AbstractWorker {
             const sx = x[i] * camZoom - camOffX;
             const sy = y[i] * camZoom - camOffY;
             if (sx > minX && sx < maxX && sy > minY && sy < maxY) {
-                this.collectRenderable(7, i, y[i] * Y_SORT_K);
+                COLLECT_Y[0] = y[i] * Y_SORT_K;
+                this.collectRenderable(7, i);
                 this.visibleParticlesCount++;
             }
         }
@@ -1494,7 +1502,7 @@ class PreRenderWorker extends AbstractWorker {
                 if (u < -w || u > w || v < -h || v > h) continue;
 
                 if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
-                    this.collectRenderable(0, i, 0);
+                    this.collectRenderable(0, i);
                     visibleCount++;
                 }
             }
@@ -1530,7 +1538,7 @@ class PreRenderWorker extends AbstractWorker {
 
             // sheetId 0 = unset (spawn reset / pool recycle). Never queue.
             if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
-                this.collectRenderable(0, i, 0);
+                this.collectRenderable(0, i);
                 visibleCount++;
             }
             // Sun shadows are a second draw of this sprite. No shadow-queue row.
@@ -1580,7 +1588,8 @@ class PreRenderWorker extends AbstractWorker {
                             sy < screenMinY - extent || sy > screenMaxY + extent
                         ) continue;
                     }
-                    this.collectRenderable(3, i, y[i] * Y_SORT_K + ENTITY_GLOW_SORT_BIAS);
+                    COLLECT_Y[0] = y[i] * Y_SORT_K + ENTITY_GLOW_SORT_BIAS;
+                    this.collectRenderable(3, i);
                 }
             }
         }
@@ -1708,7 +1717,7 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             if (renderVisible[i]) {
-                this.collectRenderable(6, i, 0);
+                this.collectRenderable(6, i);
                 this.visibleEntitiesCount++;
             }
         }
@@ -1743,7 +1752,8 @@ class PreRenderWorker extends AbstractWorker {
             } else {
                 sortY = y[i] * Y_SORT_K + innerZ[i];
             }
-            this.collectRenderable(2, i, sortY);
+            COLLECT_Y[0] = sortY;
+            this.collectRenderable(2, i);
             this.visibleDecorationsCount++;
         }
     }
@@ -1766,9 +1776,12 @@ class PreRenderWorker extends AbstractWorker {
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
             if (!active[i]) continue;
-            this.collectRenderable(4, i, y[i] * Y_SORT_K);
+            const key = y[i] * Y_SORT_K;
+            COLLECT_Y[0] = key;
+            this.collectRenderable(4, i);
             if (trailWidth[i] > 0) {
-                this.collectRenderable(5, i, y[i] * Y_SORT_K - 1);
+                COLLECT_Y[0] = key - 1;
+                this.collectRenderable(5, i);
             }
         }
     }
@@ -1794,10 +1807,10 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Collect a visible renderable for the render queue.
+     * Collect a visible renderable for the render queue, its sort key in COLLECT_Y[0].
      * layerMask bits route to each sprite-queue layer. Density bits are splat, not queued.
      */
-    collectRenderable(type, index, y) {
+    collectRenderable(type, index) {
         if (!this.renderQueueEnabled) return;
 
         let mask = 0;
@@ -1829,12 +1842,12 @@ class PreRenderWorker extends AbstractWorker {
         while (bits) {
             const lsb = bits & -bits;
             const layerId = 31 - Math.clz32(lsb);
-            this._writeRenderable(type, index, y, layerId);
+            this._writeRenderable(type, index, layerId);
             wroteSprite = true;
             bits ^= lsb;
         }
         if (!wroteSprite && !isParticle) {
-            this._writeRenderable(type, index, y, Layer.entitiesId);
+            this._writeRenderable(type, index, Layer.entitiesId);
         }
     }
 
@@ -1985,7 +1998,9 @@ class PreRenderWorker extends AbstractWorker {
         return src;
     }
 
-    _writeRenderable(type, index, y, layerId) {
+    /** One renderable into the main collector or a custom layer's; its sort key is COLLECT_Y[0]. */
+    _writeRenderable(type, index, layerId) {
+        const y = COLLECT_Y[0];
         if (this._customLayerCollectors && layerId !== Layer.entitiesId) {
             const collector = this._customLayerCollectors[layerId];
             if (collector) {

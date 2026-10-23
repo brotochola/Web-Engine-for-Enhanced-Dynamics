@@ -33,8 +33,8 @@
         "WASM_HYPOTHESES.md#L159"
       ],
       "aliases": [],
-      "rank": 5,
-      "next": "Kernel sitting on pre-render's pack (38–40 % of a saturated pre-render in sprite-heavy scenes), the render queue in a memory WASM can read."
+      "next": "Kernel sitting on pre-render's pack (38–40 % of a saturated pre-render in sprite-heavy scenes), the render queue in a memory WASM can read.",
+      "rank": 3
     },
     {
       "id": "W6",
@@ -49,8 +49,8 @@
         "WASM_HYPOTHESES.md#L155"
       ],
       "aliases": [],
-      "rank": 6,
-      "next": "With W7."
+      "next": "With W7.",
+      "rank": 4
     },
     {
       "id": "W7",
@@ -65,8 +65,8 @@
         "WASM_HYPOTHESES.md#L156"
       ],
       "aliases": [],
-      "rank": 6,
-      "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call."
+      "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
+      "rank": 4
     },
     {
       "id": "E-82",
@@ -81,8 +81,8 @@
         "EXECUTION_PLAN.md#L638"
       ],
       "aliases": [],
-      "rank": 7,
-      "next": "Packed vertex formats (≈40 B/sprite), then the pose/static split (24–28 B); judged on bunnyMarkScene Pixi."
+      "next": "Packed vertex formats (≈40 B/sprite), then the pose/static split (24–28 B); judged on bunnyMarkScene Pixi.",
+      "rank": 5
     },
     {
       "id": "W22",
@@ -97,8 +97,8 @@
         "WASM_HYPOTHESES.md#L176"
       ],
       "aliases": [],
-      "rank": 8,
-      "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle."
+      "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
+      "rank": 6
     },
     {
       "id": "W26",
@@ -113,8 +113,8 @@
         "WASM_HYPOTHESES.md#L180"
       ],
       "aliases": [],
-      "rank": 9,
-      "next": "A decal memory for the tile buffers; SIMD blend."
+      "next": "A decal memory for the tile buffers; SIMD blend.",
+      "rank": 7
     },
     {
       "id": "W14",
@@ -130,8 +130,8 @@
         "WASM_HYPOTHESES.md#L164"
       ],
       "aliases": [],
-      "rank": 11,
-      "next": "navStressScene: flowfield 89 % of particle."
+      "next": "navStressScene: flowfield 89 % of particle.",
+      "rank": 9
     },
     {
       "id": "E-85",
@@ -143,13 +143,13 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L13",
+        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L19",
         "HYPOTHESIS_LOG.md#L15",
         "EXECUTION_PLAN.md#L657",
         "reports/E-85-ray-path-boxing.md"
       ],
-      "aliases": [],
-      "next": "Predator gate with W24 (Predator fires bullets and checks line of sight)."
+      "aliases": []
     },
     {
       "id": "W19",
@@ -164,8 +164,8 @@
         "WASM_HYPOTHESES.md#L169"
       ],
       "aliases": [],
-      "rank": 12,
-      "next": "With E-85: allocation sites first (heap pass), then the batched casts."
+      "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
+      "rank": 10
     },
     {
       "id": "W11",
@@ -180,8 +180,8 @@
         "WASM_HYPOTHESES.md#L161"
       ],
       "aliases": [],
-      "rank": 13,
-      "next": "meshApiStressScene Pixi 53 %."
+      "next": "meshApiStressScene Pixi 53 %.",
+      "rank": 11
     },
     {
       "id": "W21c",
@@ -196,7 +196,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 12
     },
     {
       "id": "W2a",
@@ -211,7 +211,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 13
     },
     {
       "id": "W1",
@@ -226,7 +226,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 14
     },
     {
       "id": "W10",
@@ -241,7 +241,7 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 17
+      "rank": 15
     },
     {
       "id": "W23",
@@ -256,7 +256,7 @@
         "WASM_HYPOTHESES.md#L177"
       ],
       "aliases": [],
-      "rank": 18
+      "rank": 16
     },
     {
       "id": "W27",
@@ -271,7 +271,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 19
+      "rank": 17
     },
     {
       "id": "W28",
@@ -286,7 +286,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 20
+      "rank": 18
     },
     {
       "id": "W4",
@@ -301,8 +301,8 @@
         "WASM_HYPOTHESES.md#L153"
       ],
       "aliases": [],
-      "rank": 21,
-      "next": "Unblocked by the Phase 4 decision (Box2D's memory)."
+      "next": "Unblocked by the Phase 4 decision (Box2D's memory).",
+      "rank": 19
     },
     {
       "id": "W18",
@@ -317,8 +317,8 @@
         "WASM_HYPOTHESES.md#L168"
       ],
       "aliases": [],
-      "rank": 22,
-      "next": "Unblocked by the Phase 4 decision."
+      "next": "Unblocked by the Phase 4 decision.",
+      "rank": 20
     },
     {
       "id": "W2b",
@@ -333,8 +333,8 @@
         "WASM_HYPOTHESES.md#L151"
       ],
       "aliases": [],
-      "rank": 23,
-      "next": "Unblocked by the Phase 4 decision."
+      "next": "Unblocked by the Phase 4 decision.",
+      "rank": 21
     },
     {
       "id": "E-76",
@@ -795,17 +795,18 @@
       "status": "kept-hygiene",
       "statusText": "kept (hygiene), a tie",
       "date": "2026-10-23",
-      "result": "Box2D 3b2d4c8: emscripten_get_now for ticks, per-stage solver timers off, the idle spin reads the clock every 64th spin. ballsHeavyStressScene physics 8.861 → 8.734 ms, −2.1 %, worse 1/4 (4 pairs). The spin itself still burns its windows (E-34).",
+      "result": "Box2D 3b2d4c8: emscripten_get_now for ticks, per-stage solver timers off, the idle spin reads the clock every 64th spin. ballsHeavyStressScene physics 8.861 → 8.734 ms, −2.1 %, worse 1/4 (4 pairs). Predator gate passed: alone in Predator, physics +2.3 %, worse 4/8 (8 pairs). The spin itself still burns its windows (E-34).",
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L178"
+        "WASM_HYPOTHESES.md#L178",
+        "HYPOTHESIS_LOG.md#L15",
+        "EXECUTION_PLAN.md#L1352"
       ],
       "aliases": [
         "E-55",
         "E-34"
-      ],
-      "next": "Predator gate with the next batch of physics-path changes."
+      ]
     },
     {
       "id": "E-81",
@@ -6718,18 +6719,18 @@
     {
       "id": "E-86",
       "title": "`collectRenderable`'s sort key is a heap number per renderable",
-      "status": "open",
-      "statusText": "open (from E-85)",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
       "date": "2026-10-23",
-      "result": "Pre-render passes `y[i] * Y_SORT_K` (a double) to collectRenderable, far over the inline limit, once per visible particle, LiquidFun particle, bullet (twice), decoration and glow. liquidFunStressScene pre-render: 8.6 MB/s in collectVisibleLiquidFun. bulletStressScene pre-render (3.4 ms) not sampled yet (E-88).",
+      "result": "Callers write the sort key into a module Float64Array that _writeRenderable reads, so neither collect call takes a double. Pre-render allocation bulletStressScene 22.3 → 0.05 MB/s, liquidFunStressScene 8.66 → 0.04 MB/s; bulletStressScene pre-render 3.448 → 3.245 ms, −4.0 %, worse 0/4 (4 pairs).",
       "area": "preRender",
       "kind": "js",
       "refs": [
+        "HYPOTHESIS_LOG.md#L13",
         "EXECUTION_PLAN.md#L670"
       ],
       "aliases": [],
-      "rank": 2,
-      "next": "Callers write the key into a scratch Float64Array; liquidFunStressScene and bulletStressScene pre-render pairs."
+      "next": "Predator gate with the next batch (20 000 decorations go through the same call)."
     },
     {
       "id": "E-87",
@@ -6744,23 +6745,22 @@
         "EXECUTION_PLAN.md#L680"
       ],
       "aliases": [],
-      "rank": 3,
-      "next": "treiberMicrobench under heapSampleNode.mjs; keep heads under 2^30; spawnStormScene logic pair."
+      "next": "treiberMicrobench under heapSampleNode.mjs; keep heads under 2^30; spawnStormScene logic pair.",
+      "rank": 1
     },
     {
       "id": "E-88",
       "title": "The heap sampler loses workers in some scenes",
-      "status": "open",
-      "statusText": "open (measurement tool)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-23",
       "date": "2026-10-23",
-      "result": "bulletStressScene: pre-render and one logic worker 'ended before the sample stopped'. Either the page starts a worker twice or the sampler attached to a short-lived one; pre-render allocation there is unseen.",
+      "result": "The page ran 2 s past the sample window and the stops were sequential; a busy worker's profile took longer, and the scene ended first. Stops go out together, the scene runs 60 s past the window. bulletStressScene: all seven workers sampled.",
       "area": "engine",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L690"
+        "EXECUTION_PLAN.md#L694"
       ],
-      "aliases": [],
-      "rank": 1
+      "aliases": []
     },
     {
       "id": "E-89",
@@ -6775,8 +6775,8 @@
         "EXECUTION_PLAN.md#L704"
       ],
       "aliases": [],
-      "rank": 10,
-      "next": "Heap pass of visPolyStressScene first; keep only if the site shows up."
+      "next": "Heap pass of visPolyStressScene first; keep only if the site shows up.",
+      "rank": 8
     },
     {
       "id": "E-90",
@@ -6791,8 +6791,8 @@
         "EXECUTION_PLAN.md#L696"
       ],
       "aliases": [],
-      "rank": 4,
-      "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair."
+      "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
+      "rank": 2
     }
   ],
   "leads": [

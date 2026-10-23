@@ -49,7 +49,7 @@ test('an Adobe root sorts on its pose and never resolves a sprite texture', asyn
   Transform.y[1] = 123.25;
   for (let frame = 0; frame < 3; frame++) {
     pre._renderableCount = 0;
-    pre._writeRenderable(6, 1, 0, 0);
+    pre._writeRenderable(6, 1, 0);
   }
   assert.equal(resolves(), 0, 'no texture lookups');
   assert.equal(pre._renderableY[0], spriteYSortKey(123.25, DECORATION_Y_SORT_SCALE));
@@ -62,6 +62,6 @@ test('a sprite still sorts on its foot line', async () => {
   SpriteRenderer.anchorX[2] = 0.5;
   SpriteRenderer.anchorY[2] = 1;
   pre._renderableCount = 0;
-  pre._writeRenderable(0, 2, 0, 0);
+  pre._writeRenderable(0, 2, 0);
   assert.equal(pre._renderableY[0], spriteYSortKey(50, DECORATION_Y_SORT_SCALE));
 });

@@ -667,7 +667,11 @@ result objects (it built new ones every call): `rayStressScene` logic allocation
 logic **3.692 → 2.741 ms, −25.8 %, worse 0/4**. Predator gate with W24 next. W19 (WASM batched
 casts) now starts from this faster JS.
 
-### E-86 `collectRenderable`'s sort key is a heap number per renderable — **open (from E-85)**
+### E-86 `collectRenderable`'s sort key is a heap number per renderable — **kept (product), 2026-10-23**
+Done: the callers write the key into a module `Float64Array` (`COLLECT_Y`) that `_writeRenderable`
+reads, so neither call takes a double. Pre-render allocation `bulletStressScene` 22.3 → 0.05 MB/s,
+`liquidFunStressScene` 8.66 → 0.04 MB/s; `bulletStressScene` pre-render **3.448 → 3.245 ms, −4.0 %,
+worse 0/4**. Predator gate with the next batch. The entry as opened:
 Pre-render calls `this.collectRenderable(type, index, y)` once per visible particle (`sortKey`),
 LiquidFun particle and bullet (`y[i] * Y_SORT_K`, twice per bullet), decoration and glow, and the
 function is far over TurboFan's inline limit, so `y` is boxed per call (the E-85 pattern; sprites
@@ -687,7 +691,11 @@ dirty word with bit 31 set does the same. Fix: keep packed heads under 2^30 (a 1
 FL4 to 19 + 11, or test before the atomic op), and read a dirty bit before setting it. Measure:
 `treiberMicrobench` with `heapSampleNode.mjs`, then `spawnStormScene` logic.
 
-### E-88 The heap sampler loses workers in some scenes — **open (measurement tool)**
+### E-88 The heap sampler loses workers in some scenes — **fixed, 2026-10-23 (`e1f207af`)**
+The page ran only 2 s past the sample window and the stops went one after another; a busy worker's
+profile took longer than that to come back, and the scene (with its workers) ended first. The stops
+now go out together and the scene runs 60 s past the window. `bulletStressScene`: all seven workers
+sampled. The entry as opened:
 In `bulletStressScene` the sampler stopped pre-render and one logic worker with "No session with
 given id" (since `43fa7be9` it reports this instead of crashing): the session it attached to ended
 mid-sample. Either the page starts a worker twice (a bug worth finding on its own) or the sampler
@@ -1348,7 +1356,8 @@ and done in the Box2D repo (`3b2d4c8`): `b2GetTicks` calls `emscripten_get_now` 
 into no-ops (the five times Weed reads are still timed), and the scheduler's idle spin reads the clock
 every 64th spin. `ballsHeavyStressScene` (12 000 bodies), 4 pairs: physics **8.861 → 8.734 ms, −2.1 %,
 worse 1/4**, cv 6/3 %, load identical: a tie, kept as hygiene (work nobody read). The spin still burns
-its 50 µs windows (E-34); the Predator gate comes with the next batch.
+its 50 µs windows (E-34). Predator gate (with E-85, 8 pairs) NEUTRAL; physics read +6.7 % at 5/8 worse,
+so W24 sat alone in Predator: physics +2.3 %, worse 4/8, NEUTRAL. Kept.
 
 The entry as parked:
 Found fixing `mapWasmFunctions` (review D11). On the 10-19 wasm, `step_world` (chrome 325)
