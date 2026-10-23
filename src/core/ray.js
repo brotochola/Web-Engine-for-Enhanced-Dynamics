@@ -1015,49 +1015,6 @@ export class Ray {
   }
 
   /**
-   * Internal: Collect ALL hits in a cell (for castAll)
-   * @private
-   */
-  static _collectCellHits(cellIndex, rayX, rayY, dirX, dirY, rayLength, checkedEntities, allHits, rayMask = 0xFFFFFFFF) {
-    const count = Grid.getCellCount(cellIndex);
-    if (count === 0) return;
-
-    const cellBase = Grid.getCellBase(cellIndex);
-    const gridEntities = Grid._gridEntities;
-
-    const active = Transform.active;
-    const colliderActive = Collider.active;
-    const cCollisionLayer = Collider.collisionLayer;
-
-    const stamp = Ray._rayGenStamp;
-    const gen = Ray._rayGen;
-
-    for (let i = 0; i < count; i++) {
-      const entityIndex = gridEntities[cellBase + i];
-
-      if (stamp[entityIndex] === gen) continue;
-      stamp[entityIndex] = gen;
-
-      if (!active[entityIndex]) continue;
-      if (!colliderActive[entityIndex]) continue;
-      if (!((1 << (cCollisionLayer[entityIndex] & 31)) & rayMask)) continue;
-
-      const distance = Ray._shapeRayDistance(entityIndex, rayX, rayY, dirX, dirY, rayLength);
-
-      if (distance >= 0) {
-        const hitIndex = Ray._tempAllHitsCount++;
-        let hit = allHits[hitIndex];
-        if (!hit) {
-          hit = { entityIndex: -1, distance: 0 };
-          allHits[hitIndex] = hit;
-        }
-        hit.entityIndex = entityIndex;
-        hit.distance = distance;
-      }
-    }
-  }
-
-  /**
    * Check all entities in a cell for ray collision
    * Mutates Ray._tempResult with entity index and distance, or {-1, Infinity} if no hit
    * @private

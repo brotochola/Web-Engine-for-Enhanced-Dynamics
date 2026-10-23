@@ -185,7 +185,7 @@ The ray checks `(1 << (entity.collisionLayer & 31)) & mask` per entity -- one bi
 
 - **DDA grid traversal**: rays step through spatial grid cells, only testing entities in cells the ray actually crosses.
 - **Cell-exit early-out**: once the closest hit distance is not past the current cell's DDA exit boundary (`min(tMaxX, tMaxY)`), traversal stops. Valid because spatial workers insert each entity into **every** cell its AABB overlaps — a closer hit cannot appear in a later cell. Used in `_traverseGrid` and the inlined `cast` loop.
-- **Two internal functions**: `_checkCellEntities` (finds closest hit per cell) and `_collectCellHits` (collects all hits for `castAll`).
+- **Two internal functions**: `_checkCellEntities` (finds closest hit per cell) and `_collectCellHitsTopN` (keeps the closest `maxHits` hits for `castAll`).
 - `_traverseGrid`: shared DDA loop used by `cast`, `castWithInfo`, and `linecast`. Returns a borrowed static `{ entityIndex, distance }` consumed immediately by callers.
 - `cast` and `castAll` have their own inlined DDA loops for performance.
 - All temp objects (`_tempResult`, `_tempHitInfo`, `_tempLinecastResult`, `_tempHitsArray`, `_traverseResult`) are static and reused across calls unless you pass an explicit `out`.
