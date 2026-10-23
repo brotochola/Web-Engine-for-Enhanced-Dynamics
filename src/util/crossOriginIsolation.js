@@ -41,8 +41,9 @@ export const ISOLATION_REASONS = Object.freeze({
   notApplied:
     'weed-sw.js controls this page, but the browser did not apply the headers it added.',
   reloadLoop:
-    'The page reloaded twice to start weed-sw.js and is still not controlled by it. DevTools\' ' +
-    '"Bypass for network" (Application, Service workers) does this.',
+    'The page reloaded twice and weed-sw.js still does not control it. If DevTools is open, untick ' +
+    '"Bypass for network" (Application, Service workers) and reload: it keeps every service worker ' +
+    'off the page.',
   timeout: 'weed-sw.js did not activate within 10 s.',
   redundant: 'weed-sw.js failed to install.',
   storage:
