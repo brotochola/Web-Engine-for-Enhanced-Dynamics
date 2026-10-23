@@ -15,8 +15,8 @@ import { HotReload } from '../../src/core/debug/hotReload.js';
 
 const SERVER = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../server/node_server.js');
 
-function startServer(root, port, env = {}) {
-  const child = spawn(process.execPath, [SERVER], {
+function startServer(root, port, env = {}, args = []) {
+  const child = spawn(process.execPath, [SERVER, ...args], {
     cwd: root,
     env: { ...process.env, PORT: String(port), ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -141,5 +141,39 @@ test('a lost or unreadable hot-reload save reads as null: the scene starts fresh
   } finally {
     SaveStore.get = realGet;
     console.warn = realWarn;
+  }
+});
+
+// DX-SW. npm run dev:sw serves like GitHub Pages: no isolation headers anywhere (pages, the
+// reload stream), and /weed-sw.js is the engine's isolation service worker, whatever the folder.
+test('--sw serves without the isolation headers and serves weed-sw.js at the root', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'weed-hot-'));
+  writeFileSync(path.join(root, 'index.html'), '<!doctype html><title>game</title>');
+  const port = 20000 + Math.floor(Math.random() * 1000);
+  const child = await startServer(root, port, {}, ['--sw']);
+  try {
+    const read = (urlPath) => new Promise((resolve) => {
+      http.get({ host: '127.0.0.1', port, path: urlPath }, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => (body += c));
+        res.on('end', () => resolve({ res, body }));
+      });
+    });
+    const page = await read('/index.html');
+    assert.equal(page.res.statusCode, 200);
+    for (const h of ['cross-origin-opener-policy', 'cross-origin-embedder-policy', 'cross-origin-resource-policy']) {
+      assert.equal(page.res.headers[h], undefined, h);
+    }
+    const sw = await read('/weed-sw.js');
+    assert.equal(sw.res.statusCode, 200);
+    assert.equal(sw.res.headers['content-type'], 'text/javascript');
+    assert.match(sw.body, /Cross-Origin-Embedder-Policy/);
+    const { res, req } = await get(port, '/__weed/reload');
+    assert.equal(res.headers['cross-origin-embedder-policy'], undefined);
+    req.destroy();
+  } finally {
+    await stopServer(child);
+    rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
