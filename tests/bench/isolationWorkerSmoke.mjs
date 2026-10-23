@@ -64,6 +64,26 @@ async function inspect(frame) {
   }));
 }
 
+/**
+ * Before the page is isolated (the first visit, until its reload), every frame: is the smoke page's
+ * white UI on top at its centre (exposed), or under something (the engine's veil)? Hit testing
+ * sees the top layer, and runs every frame, where a screenshot is too slow to catch a flash.
+ */
+const UI_WATCH = () => {
+  if (self.crossOriginIsolated) return;
+  const tick = () => {
+    const ui = document.getElementById('smoke-ui');
+    if (ui) {
+      const r = ui.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (hit === ui) window.__smokeUiExposed?.();
+      else window.__smokeUiCovered?.();
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+};
+
 /** Notes an error overlay even if it shows and goes before the test looks. */
 const OVERLAY_WATCH = () => {
   new MutationObserver(() => {
@@ -150,8 +170,15 @@ try {
   let player = null;
   await runCase('first-visit', async (checks) => {
     player = await newPage(browser);
+    // Until the reload, the UI the page draws must stay under the engine's black veil.
+    const frames = { exposed: 0, covered: 0 };
+    await player.page.exposeFunction('__smokeUiExposed', () => frames.exposed++);
+    await player.page.exposeFunction('__smokeUiCovered', () => frames.covered++);
+    await player.context.addInitScript(UI_WATCH);
     const r = await visit(player, at(plain));
     expectRunning(r, 2, checks);
+    checks.push(['UI hidden before the reload', frames.covered > 0 && frames.exposed === 0,
+      `${frames.covered} frames covered, ${frames.exposed} exposed`]);
     checks.push(['registered', JSON.stringify(r.registrations) === JSON.stringify([`http://127.0.0.1:${plain.port}/weed-sw.js`]), JSON.stringify(r.registrations)]);
   });
   await runCase('return-visit', async (checks) => {
