@@ -8,8 +8,12 @@ import { Query } from '../core/query.js';
 import { STATE_CHANNEL_COUNT } from '../box2d/box2dConstants.js';
 import { PHYSICS_STATS } from './workersUtils.js';
 
-function summarizeBufferNode(value, path, flatBreakdown) {
+function summarizeBufferNode(value, path, flatBreakdown, seen) {
   if (value instanceof SharedArrayBuffer) {
+    // A WASM memory's buffer sits under several keys (its regions: E-78, E-79). Count it once,
+    // at the first key that holds it.
+    if (seen.has(value)) return null;
+    seen.add(value);
     const bytes = value.byteLength;
     flatBreakdown[path] = bytes;
     return {
@@ -32,7 +36,7 @@ function summarizeBufferNode(value, path, flatBreakdown) {
   for (const [rawKey, childValue] of entries) {
     const key = String(rawKey);
     const childPath = `${path}.${key}`;
-    const childSummary = summarizeBufferNode(childValue, childPath, flatBreakdown);
+    const childSummary = summarizeBufferNode(childValue, childPath, flatBreakdown, seen);
     if (!childSummary) continue;
 
     children[key] = childSummary;
@@ -76,9 +80,10 @@ export function buildMemoryUsageSummary(buffers) {
 
   let totalBytes = 0;
   let bufferCount = 0;
+  const seen = new Set();
 
   for (const [key, value] of Object.entries(buffers)) {
-    const summary = summarizeBufferNode(value, key, flatBreakdown);
+    const summary = summarizeBufferNode(value, key, flatBreakdown, seen);
     if (!summary) continue;
     categories[key] = summary;
     totalBytes += summary.totalBytes;
