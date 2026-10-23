@@ -51,7 +51,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "W7",
@@ -67,7 +67,7 @@
       ],
       "aliases": [],
       "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "E-82",
@@ -99,7 +99,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 7
+      "rank": 6
     },
     {
       "id": "W26",
@@ -115,7 +115,7 @@
       ],
       "aliases": [],
       "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 8
+      "rank": 7
     },
     {
       "id": "W14",
@@ -132,7 +132,7 @@
       ],
       "aliases": [],
       "next": "navStressScene: flowfield 89 % of particle.",
-      "rank": 10
+      "rank": 9
     },
     {
       "id": "E-85",
@@ -166,7 +166,7 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 11
+      "rank": 10
     },
     {
       "id": "W11",
@@ -182,7 +182,7 @@
       ],
       "aliases": [],
       "next": "meshApiStressScene Pixi 53 %.",
-      "rank": 12
+      "rank": 11
     },
     {
       "id": "W21c",
@@ -197,7 +197,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 13
+      "rank": 12
     },
     {
       "id": "W2a",
@@ -212,7 +212,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 13
     },
     {
       "id": "W1",
@@ -227,7 +227,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 14
     },
     {
       "id": "W10",
@@ -242,7 +242,7 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 15
     },
     {
       "id": "W23",
@@ -257,7 +257,7 @@
         "WASM_HYPOTHESES.md#L177"
       ],
       "aliases": [],
-      "rank": 17
+      "rank": 16
     },
     {
       "id": "W27",
@@ -272,7 +272,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 18
+      "rank": 17
     },
     {
       "id": "W28",
@@ -287,7 +287,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 19
+      "rank": 18
     },
     {
       "id": "W4",
@@ -303,7 +303,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision (Box2D's memory).",
-      "rank": 20
+      "rank": 19
     },
     {
       "id": "W18",
@@ -319,7 +319,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 21
+      "rank": 20
     },
     {
       "id": "W2b",
@@ -335,7 +335,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 22
+      "rank": 21
     },
     {
       "id": "E-76",
@@ -6748,7 +6748,7 @@
       ],
       "aliases": [],
       "next": "16 bits per dirty word, so every value is a Smi; spawnStormScene logic and physics.",
-      "rank": 3
+      "rank": 2
     },
     {
       "id": "E-88",
@@ -6792,7 +6792,7 @@
       ],
       "aliases": [],
       "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
-      "rank": 4
+      "rank": 3
     },
     {
       "id": "E-91",
@@ -6919,7 +6919,7 @@
       ],
       "aliases": [],
       "next": "Batch the per-light lighting passes (a rendering change); first the cheap _emitTransmitWedge part.",
-      "rank": 9
+      "rank": 8
     },
     {
       "id": "E-97",
@@ -6940,18 +6940,17 @@
     {
       "id": "E-97b",
       "title": "Pace Pixi's WebGPU path",
-      "status": "open",
-      "statusText": "open (from E-97)",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
       "date": "2026-10-23",
-      "result": "A WebGPU bunnyMarkScene presents 43.2 fps with Pixi at 2.5 ms: the E-97 symptom, unpaced.",
+      "result": "onSubmittedWorkDone completions counted against submissions. bunnyMarkScene?backend=webgpu presented frames 43.4 → 60.0 fps, +38.4 %, 4/4. Renderer mean step +29 % is the frame mix: CPU trace 3.2 → 2.9 ms of Pixi per presented frame.",
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "EXECUTION_PLAN.md#L779"
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L781"
       ],
-      "aliases": [],
-      "next": "A backend knob on bunnyMarkScene; onSubmittedWorkDone completions counted against submissions.",
-      "rank": 1
+      "aliases": []
     },
     {
       "id": "E-98",
@@ -6967,7 +6966,7 @@
       ],
       "aliases": [],
       "next": "Read why spriteYSortKey / _storeEntitySortY run with ySort off; then the collect loop.",
-      "rank": 2
+      "rank": 1
     },
     {
       "id": "E-82b",
@@ -6984,7 +6983,7 @@
       ],
       "aliases": [],
       "next": "A scene with interpolation off at a high sprite count; the same two streams.",
-      "rank": 5
+      "rank": 4
     }
   ],
   "leads": [

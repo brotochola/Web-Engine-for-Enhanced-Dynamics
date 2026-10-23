@@ -778,11 +778,12 @@ browser dropped frames it never showed, and Pixi's slow CPU side had been the on
 per frame, read two frames later (`src/render/gpuFramePacer.js`): `bunnyMarkScene` presented frames
 **54.8 → 59.9 fps, +9.1 %, 4/4**. Lockstep always draws; a paced tick publishes no stats.
 
-### E-97b Pace Pixi's WebGPU path — **open (from E-97)**
+### E-97b Pace Pixi's WebGPU path — **KEPT 2026-10-23**
 WebGPU has no fence in E-97. A scratch WebGPU `bunnyMarkScene` (with E-82) presents **43.2 fps** with Pixi
 at 2.5 ms: the same oversubscription. `device.queue.onSubmittedWorkDone()` resolves in submission order,
-so completions counted against submissions pace it without a closure per frame. Needs a backend knob on
-the scene to sit.
+so completions counted against submissions pace it without a closure per frame. `?backend=webgpu`
+(`e55c15a0`): presented frames **43.4 → 60.0 fps, +38.4 %, 4/4**. The renderer's mean step rose 29 %; a CPU
+trace puts Pixi at 3.2 → 2.9 ms per presented frame (it draws 46 % more of them).
 
 ### E-98 Pre-render's full emit at 250 000 sprites takes more than a frame — **open (from E-97)**
 Paced, `bunnyMarkScene`'s Pixi draws 60 frames a second and pre-render's step per worked frame is

@@ -426,10 +426,9 @@ class PixiRenderer extends AbstractWorker {
     this._presenting = true;
     this._presentingFlag = null;
     // E-97. Frames in flight on the GPU: a tick submits nothing while the frame before last is
-    // unfinished. _pacingGl is the WebGL2 context once bound (null on WebGPU); _pacedTick marks
-    // a tick that submitted nothing, which publishes no stats.
+    // unfinished. Bound to the WebGL2 context or the WebGPU device once the renderer exists;
+    // _pacedTick marks a tick that submitted nothing, which publishes no stats.
     this._framePacer = new GpuFramePacer();
-    this._pacingGl = null;
     this._pacedTick = false;
     this._pendingResizeW = null;
     this._pendingResizeH = null;
@@ -1058,11 +1057,15 @@ class PixiRenderer extends AbstractWorker {
    * Hook into WebGL context to count draw calls per frame
    */
   setupWebGLHooks() {
-    if (this._useWebGpu) return;
+    if (this._useWebGpu) {
+      // E-97b. Pixi's WebGPU renderer owns the device; nothing else here hooks it.
+      this._framePacer.bindDevice(this.pixiApp.renderer?.gpu?.device);
+      return;
+    }
     this.setupDrawCallMonitoring();
 
     const gl = this.pixiApp.renderer.gl;
-    this._pacingGl = gl && typeof gl.fenceSync === 'function' ? gl : null;
+    this._framePacer.bindGl(gl);
     if (gl && gl.canvas) {
       gl.canvas.addEventListener(
         'webglcontextlost',
@@ -2037,8 +2040,8 @@ class PixiRenderer extends AbstractWorker {
       return;
     }
     // E-97. Also before the queue is taken. A lockstep step always draws.
-    const pacingGl = this._injectedDeltaTime > 0 ? null : this._pacingGl;
-    if (pacingGl !== null && this._framePacer.busy(pacingGl)) {
+    const paced = this._injectedDeltaTime === 0 && this._framePacer.enabled;
+    if (paced && this._framePacer.busy()) {
       this._pacedTick = true;
       this._newQueueThisFrame = 0;
       return;
@@ -2076,7 +2079,7 @@ class PixiRenderer extends AbstractWorker {
       }
       this.applyLayerVisibility();
       this.presentStage();
-      if (pacingGl !== null) this._framePacer.submitted(pacingGl);
+      if (paced) this._framePacer.submitted();
     } finally {
       this.releaseRenderQueueIfHeld();
     }

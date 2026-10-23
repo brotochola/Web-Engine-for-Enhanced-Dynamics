@@ -73,7 +73,6 @@ function makeContext({ sync, gpuLive, presenting = true, backpressure = true }) 
     _gpuClockStart: 0,
     _injectedDeltaTime: 0,
     _framePacer: new GpuFramePacer(),
-    _pacingGl: null,
     _pacedTick: false,
     _gpuLive: () => gpuLive,
     presentationIsActive() {
@@ -256,7 +255,7 @@ test('E-97: a paced tick takes no queue and strands nothing; the next free tick 
   const sync = makeSync();
   const ctx = drawableContext(sync);
   const gl = busyGl();
-  ctx._pacingGl = gl;
+  ctx._framePacer.bindGl(gl);
 
   Atomics.store(sync, 0, 1);
   update(ctx);
@@ -284,7 +283,7 @@ test('E-97: a paced tick takes no queue and strands nothing; the next free tick 
 test('E-97: a lockstep step draws while the GPU is busy', { concurrency: false }, () => {
   const sync = makeSync();
   const ctx = drawableContext(sync);
-  ctx._pacingGl = busyGl();
+  ctx._framePacer.bindGl(busyGl());
   for (let f = 1; f <= 4; f++) {
     Atomics.store(sync, 0, f);
     ctx._injectedDeltaTime = 16.67;
