@@ -427,6 +427,17 @@ physics gets a stand-in memory with the same regions; a scene whose regions do n
 memories and the JS paths. Kernels still own nothing (T6). Particles and audio keep their own memories:
 they read no physics state. First mover: spatial (W6 + W7), then W4.
 
+**Implementation notes (2026-10-23).** Box2D's memory exists only once the physics worker's Emscripten module
+has run, after the main thread made the component buffers and every worker bound them at init, and nothing
+waits for `box2dReady` before `start` today. So the move needs a boot barrier: physics mallocs the engine
+regions and sends their offsets, and the `WebAssembly.Memory` itself (a kernel imports the memory, not its
+buffer), with `box2dReady`; the main thread copies the component buffers in, every worker rebinds those views
+and acks, and only then does `start` go out. Scenes without physics get a stand-in memory with the same regions.
+What W7 can still win, from a Predator CPU profile the same day (spatial 325 ms/s): `gather_batch` 38 % and
+`publish_batch` 34 % are WASM already; the JS left is `rebuildOwnedRows` 12 % and the kernels' glue 8 %, so the
+ceiling of one C call per frame is about 10–15 % of spatial. W4 (the emit and collect chain) is the larger prize
+behind the same barrier.
+
 **Phase 5 — Product wiring, per winner, one at a time.** T7 switch first. Scene pair, then the Predator
 gate. Boot cost and dist sizes on record. One commit per port. Winners land in sequence, so each one's
 scene pair runs against a base that already has the earlier ones.

@@ -810,6 +810,19 @@ straight to the entities collector without `collectRenderable`'s type dispatch.
 into the queue's columns: **10.100 → 8.665 ms, −14.1 %, worse 0/4**. Left: the persist-check pass (12 %),
 the persist path's shadow terms; W4.
 
+### E-99 Caster positions in bin order for the shadow stamp — **rejected in the kernel, 2026-10-23**
+Predator's profile put 42 % of `stampLightRange` on `sun[c * floats]` per binned caster. Copying x and y in bin
+order during `buildStampGrid` tied in `shadowStampMicrobench` (666 → 658 ops/s, −1.2 %): the caster rows fit in
+cache and the samples were load stalls. The stamp is about a third of Predator's pre-render (`stampLightRange`,
+`buildStampGrid`, `partitionOrder`, `copyTypedRange`, `noteNearest`); W23 is the next look at it.
+
+### E-82b The split upload for sprites without pose interpolation — **open (from E-82)**
+Scenes with `renderer.interpolation` off (the default) upload 15 floats per sprite every frame. With the
+default `packGpuSprites: 'preRender'` those rows come from pre-render's WASM packer (`gpuPack.wasm`) and Pixi
+copies them in `_commitPackedBatch`, so the split needs the packer to write a pose stream and a static stream
+and Pixi a two-buffer geometry for the plain path; `staticGen` already says when statics changed. It pays only
+on persist frames, which a moving camera rarely gives (Predator), so measure it on a static high-count scene.
+
 ### E-90 Public `Ray` methods small enough to inline into game code — **kept (hygiene), 2026-10-23**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls
 `Ray.cast`, `castAll`, `linecastBetweenEntities` with doubles, and the public methods (stats wrap,

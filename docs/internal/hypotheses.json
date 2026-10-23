@@ -66,7 +66,7 @@
         "WASM_HYPOTHESES.md#L156"
       ],
       "aliases": [],
-      "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
+      "next": "Boot barrier first (Box2D memory + offsets with box2dReady, rebind before start). Ceiling measured: JS left in Predator spatial is rebuildOwnedRows 12 % + glue 8 %, so one C call ≈ 10–15 % of spatial.",
       "rank": 3
     },
     {
@@ -6979,11 +6979,11 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L638",
+        "EXECUTION_PLAN.md#L819",
         "reports/E-82-split-instance-upload.md"
       ],
       "aliases": [],
-      "next": "A scene with interpolation off at a high sprite count; the same two streams.",
+      "next": "The default path is pre-render's gpuPack: the packer writes two streams, Pixi a two-buffer plain geometry; measure on a static high-count scene.",
       "rank": 2
     },
     {
@@ -7013,6 +7013,21 @@
       "refs": [
         "HYPOTHESIS_LOG.md#L13",
         "REVIEW_PLAN.md"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "E-99",
+      "title": "Caster positions in bin order for the shadow stamp",
+      "status": "rejected",
+      "statusText": "rejected in the kernel 2026-10-23",
+      "date": "2026-10-23",
+      "result": "buildStampGrid copied caster x, y in bin order for the light walk. shadowStampMicrobench 666 → 658 ops/s (−1.2 %, a tie): the rows fit in cache, the profile's samples were load stalls.",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L813"
       ],
       "aliases": []
     }
