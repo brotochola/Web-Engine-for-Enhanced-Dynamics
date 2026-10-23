@@ -7,21 +7,24 @@ import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Collider } from '../../src/components/collider.js';
 import { Layer } from '../../src/core/layer.js';
 
-// E-98c. The sprite collect sends a sprite with no layer mask straight to the entities collector,
-// past collectRenderable's type dispatch and bit scan. That has to be where collectRenderable
-// itself would have sent it, and a masked sprite still goes through collectRenderable.
+// E-98c and E-98e. The sprite collect sends a sprite with no layer mask straight to the entities
+// collector, past collectRenderable's type dispatch and bit scan, and writes its row itself (E-98e)
+// instead of calling _writeRenderable. The collectors must come out as collectRenderable fills them
+// for every sprite, and a masked sprite still goes through collectRenderable.
 
 const N = 6;
 
 function setup(pre) {
-  Transform.x = new Float32Array(N).map((_, i) => 100 + i);
-  Transform.y = new Float32Array(N).fill(100);
+  Transform.x = new Float32Array(N).map((_, i) => 100 + i * 3.25);
+  Transform.y = new Float32Array(N).map((_, i) => 100 - i * 1.5);
   Transform.active = new Uint8Array(N).fill(1);
   SpriteRenderer.active = new Uint8Array(N).fill(1);
   SpriteRenderer.renderVisible = new Uint8Array(N).fill(1);
   SpriteRenderer.spritesheetId = new Uint16Array(N).fill(1);
   SpriteRenderer.boundsHalfW = new Float32Array(N).fill(4);
   SpriteRenderer.boundsHalfH = new Float32Array(N).fill(4);
+  SpriteRenderer.anchorX = new Float32Array(N).fill(0.5);
+  SpriteRenderer.anchorY = new Float32Array(N).fill(1);
   SpriteRenderer.layerMask = new Uint16Array(N);
   Collider.visualRange = new Float32Array(N);
   pre.globalEntityCount = N;
@@ -37,41 +40,77 @@ function setup(pre) {
   pre._frameCameraRot = 0;
   pre.visibleEntitiesCount = 0;
   pre.renderQueueEnabled = true;
+  pre._spriteSortArrays = null;
   pre._collectEntityGlow = () => {};
 }
 
-test('an unmasked sprite goes where collectRenderable sends it; a masked one through it', async () => {
-  Layer.reset();
-  Layer.initializeFromConfig({ fx: {} }, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
-  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-  const realCollect = pre.collectRenderable;
-  const realWrite = pre._writeRenderable;
-  try {
-    setup(pre);
-    const fx = Layer.get('fx').id;
-    SpriteRenderer.layerMask[2] = 1 << fx;
-    SpriteRenderer.layerMask[4] = (1 << fx) | Layer.entitiesMask();
-    const writes = [];
-    const generic = [];
-    pre._writeRenderable = (type, i, layerId) => writes.push([type, i, layerId]);
-    pre.collectRenderable = (type, i) => {
-      generic.push(i);
-      realCollect.call(pre, type, i);
-    };
-    pre.collectVisibleEntities();
-    assert.deepEqual(generic, [2, 4], 'only the masked sprites take the generic path');
-    const direct = writes.filter(([, i]) => i !== 2 && i !== 4);
-    assert.deepEqual(direct, [0, 1, 3, 5].map((i) => [0, i, Layer.entitiesId]));
-    assert.deepEqual(writes.filter(([, i]) => i === 4).map(([, , l]) => l).sort(), [Layer.entitiesId, fx].sort());
+/** Empty main and fx collectors, sized for the scene. */
+function collectors(pre, fx) {
+  pre._renderableY = new Float32Array(N);
+  pre._renderableType = new Uint8Array(N);
+  pre._renderableIndex = new Int32Array(N);
+  pre._collectPx = new Float32Array(N);
+  pre._collectPy = new Float32Array(N);
+  pre._collectRotC = new Float32Array(N);
+  pre._collectRotS = new Float32Array(N);
+  pre._renderableCount = 0;
+  pre.renderQueueMaxItems = N;
+  pre._customLayerCollectors = {
+    [fx]: {
+      y: new Float32Array(N), type: new Uint8Array(N), index: new Int32Array(N),
+      count: 0, maxItems: N, ySorting: false, _overflowWarned: false,
+    },
+  };
+}
 
-    // The generic path, for an unmasked sprite, picks the same collector the shortcut does.
-    writes.length = 0;
-    realCollect.call(pre, 0, 1);
-    assert.deepEqual(writes, [[0, 1, Layer.entitiesId]]);
-  } finally {
-    delete pre.collectRenderable;
-    delete pre._writeRenderable;
-    if (pre.collectRenderable !== realCollect || pre._writeRenderable !== realWrite) throw new Error('worker not restored');
+function snapshot(pre, fx) {
+  const n = pre._renderableCount;
+  const rows = (a, k) => Array.from(a.subarray(0, k));
+  const c = pre._customLayerCollectors[fx];
+  return {
+    main: {
+      type: rows(pre._renderableType, n), index: rows(pre._renderableIndex, n), y: rows(pre._renderableY, n),
+      px: rows(pre._collectPx, n), py: rows(pre._collectPy, n),
+      rotC: rows(pre._collectRotC, n), rotS: rows(pre._collectRotS, n),
+    },
+    fx: { type: rows(c.type, c.count), index: rows(c.index, c.count), y: rows(c.y, c.count) },
+  };
+}
+
+for (const sortY of [false, true]) {
+  test(`the sprite collect fills the collectors as collectRenderable does (Y-sort ${sortY ? 'on' : 'off'})`, async () => {
     Layer.reset();
-  }
-});
+    Layer.initializeFromConfig({ fx: {} }, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
+    const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+    const realCollect = pre.collectRenderable;
+    try {
+      setup(pre);
+      pre._entitySortY = sortY;
+      const fx = Layer.get('fx').id;
+      SpriteRenderer.layerMask[2] = 1 << fx;
+      SpriteRenderer.layerMask[4] = (1 << fx) | Layer.entitiesMask();
+
+      collectors(pre, fx);
+      const generic = [];
+      pre.collectRenderable = (type, i) => {
+        generic.push(i);
+        realCollect.call(pre, type, i);
+      };
+      pre.collectVisibleEntities();
+      delete pre.collectRenderable;
+      assert.deepEqual(generic, [2, 4], 'only the masked sprites take the generic path');
+      const got = snapshot(pre, fx);
+      assert.deepEqual(got.main.index, [0, 1, 3, 4, 5]);
+      assert.deepEqual(got.fx.index, [2, 4]);
+
+      // Every sprite through collectRenderable, in the loop's order.
+      collectors(pre, fx);
+      for (let i = 0; i < N; i++) realCollect.call(pre, 0, i);
+      assert.deepEqual(got, snapshot(pre, fx));
+    } finally {
+      delete pre.collectRenderable;
+      if (pre.collectRenderable !== realCollect) throw new Error('worker not restored');
+      Layer.reset();
+    }
+  });
+}

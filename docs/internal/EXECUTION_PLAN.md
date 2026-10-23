@@ -826,6 +826,12 @@ straight to the entities collector without `collectRenderable`'s type dispatch.
 **E-98d (2026-10-23):** without an Adobe root (the only expanding row) the collect writes poses straight
 into the queue's columns: **10.100 → 8.665 ms, −14.1 %, worse 0/4**. Left: the persist-check pass (12 %),
 the persist path's shadow terms; W4.
+**E-98e (2026-10-23):** profile after E-98d: `_writeRenderable` 39 %, `_type0PersistHit` 17 %, the collect loop 15 %,
+`_displayPose` 14 %, `_writeType0PosesOnly` 12 %. The E-98c sprites (no layer mask, so always the main
+collector) are written by the collect loop itself, the collector's columns taken once (`_writeRenderable`
+re-read a dozen fields per sprite): **8.690 → 7.314 ms, −15.8 %, worse 0/4**. The persist check's per-row
+animation-state test stays: a direct `spriteRenderer.animationState` write sets no dirty flag. Left: the
+persist check and the poses-only pass as two walks of every row; `_displayPose` per sprite; W4.
 
 ### E-99 Caster positions in bin order for the shadow stamp — **rejected in the kernel, 2026-10-23**
 Predator's profile put 42 % of `stampLightRange` on `sun[c * floats]` per binned caster. Copying x and y in bin

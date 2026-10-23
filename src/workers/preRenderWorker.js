@@ -1510,6 +1510,21 @@ class PreRenderWorker extends AbstractWorker {
         const queueSprites = this.renderQueueEnabled;
         const spriteLayerMask = SpriteRenderer.layerMask || null;
         const entitiesId = Layer.entitiesId;
+        // E-98e. Those sprites go to the main collector, written here as _writeRenderable writes
+        // them: it re-read a dozen fields per sprite. `n` is its count; collectRenderable, for
+        // masked sprites, updates the field, so it is synced around that call and after the loop.
+        const rY = this._renderableY;
+        const rType = this._renderableType;
+        const rIndex = this._renderableIndex;
+        const cPx = this._collectPx;
+        const cPy = this._collectPy;
+        const cRotC = this._collectRotC;
+        const cRotS = this._collectRotS;
+        const pose = this._displayPoseOut;
+        const sortY = this._entitySortY;
+        const maxItems = this.renderQueueMaxItems;
+        const keyY = COLLECT_Y[0];
+        let n = this._renderableCount;
 
         const rot = this._frameCameraRot || 0;
         if (rot && !skipCull) {
@@ -1548,13 +1563,29 @@ class PreRenderWorker extends AbstractWorker {
 
                 if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
                     if (queueSprites && (spriteLayerMask === null || spriteLayerMask[i] === 0)) {
-                        this._writeRenderable(0, i, entitiesId);
+                        if (n < maxItems) {
+                            rY[n] = keyY;
+                            rType[n] = 0;
+                            rIndex[n] = i;
+                            this._displayPose(i, pose);
+                            cPx[n] = pose[0];
+                            cPy[n] = pose[1];
+                            cRotC[n] = pose[2];
+                            cRotS[n] = pose[3];
+                            if (sortY) this._storeEntitySortY(0, i, pose, rY, n);
+                            n++;
+                        } else {
+                            this._collectorFull();
+                        }
                     } else {
+                        this._renderableCount = n;
                         this.collectRenderable(0, i);
+                        n = this._renderableCount;
                     }
                     visibleCount++;
                 }
             }
+            this._renderableCount = n;
             this.visibleEntitiesCount += visibleCount;
             this._collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
                 screenMinX, screenMaxX, screenMinY, screenMaxY);
@@ -1588,15 +1619,31 @@ class PreRenderWorker extends AbstractWorker {
             // sheetId 0 = unset (spawn reset / pool recycle). Never queue.
             if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
                 if (queueSprites && (spriteLayerMask === null || spriteLayerMask[i] === 0)) {
-                    this._writeRenderable(0, i, entitiesId);
+                    if (n < maxItems) {
+                        rY[n] = keyY;
+                        rType[n] = 0;
+                        rIndex[n] = i;
+                        this._displayPose(i, pose);
+                        cPx[n] = pose[0];
+                        cPy[n] = pose[1];
+                        cRotC[n] = pose[2];
+                        cRotS[n] = pose[3];
+                        if (sortY) this._storeEntitySortY(0, i, pose, rY, n);
+                        n++;
+                    } else {
+                        this._collectorFull();
+                    }
                 } else {
+                    this._renderableCount = n;
                     this.collectRenderable(0, i);
+                    n = this._renderableCount;
                 }
                 visibleCount++;
             }
             // Sun shadows are a second draw of this sprite. No shadow-queue row.
         }
 
+        this._renderableCount = n;
         this.visibleEntitiesCount += visibleCount;
 
         // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
@@ -2145,6 +2192,13 @@ class PreRenderWorker extends AbstractWorker {
         return src;
     }
 
+    /** Warns once that the main collector is full. */
+    _collectorFull() {
+        if (this._renderQueueOverflowWarned) return;
+        this._renderQueueOverflowWarned = true;
+        console.warn(`[PRE_RENDER] Main render queue collector full (max ${this.renderQueueMaxItems}). Increase renderer.maxVisibleRenderables.`);
+    }
+
     /** One renderable into the main collector or a custom layer's; its sort key is COLLECT_Y[0]. */
     _writeRenderable(type, index, layerId) {
         const y = COLLECT_Y[0];
@@ -2173,10 +2227,7 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         if (this._renderableCount >= this.renderQueueMaxItems) {
-            if (!this._renderQueueOverflowWarned) {
-                this._renderQueueOverflowWarned = true;
-                console.warn(`[PRE_RENDER] Main render queue collector full (max ${this.renderQueueMaxItems}). Increase renderer.maxVisibleRenderables.`);
-            }
+            this._collectorFull();
             return;
         }
         const writeIdx = this._renderableCount;
