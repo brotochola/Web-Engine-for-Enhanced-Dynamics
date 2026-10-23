@@ -87,9 +87,14 @@ export class DebugUI {
       this.panels.navigation,
     ];
 
-    // Build DOM
-    injectStyles();
+    // Build DOM. From source the stylesheet is a fetch: the bar stays hidden until it is in, or its
+    // bare HTML shows for a frame or two.
+    const styled = injectStyles();
     this._createUI();
+    this.container.style.visibility = 'hidden';
+    styled.finally(() => {
+      if (this.container) this.container.style.visibility = '';
+    });
     this.tools.init();
   }
 
