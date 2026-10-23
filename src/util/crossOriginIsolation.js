@@ -78,6 +78,40 @@ export function defaultIsolationServiceWorker(scope = globalThis) {
   return scope.WEED && scope.WEED.BUNDLE_MODE ? 'weed-sw.js' : '/weed-sw.js';
 }
 
+/**
+ * DX-SW. A black cover over the whole page while ensureCrossOriginIsolation() works on a page that
+ * is not isolated yet. On a first visit the page reloads once, and what it drew meanwhile (a menu,
+ * the debug bar) flashed and vanished. In the browser's top layer (popover) where there is one, so
+ * nothing the page stacks with z-index rises above it; the highest z-index otherwise.
+ * @param {Document} [doc]
+ * @returns {() => void} removes it
+ */
+export function showIsolationVeil(doc = globalThis.document) {
+  if (!doc || !doc.documentElement || typeof doc.createElement !== 'function') return () => {};
+  const veil = doc.createElement('div');
+  veil.id = 'weed-isolation-veil';
+  veil.style.cssText =
+    'position:fixed;inset:0;width:100vw;height:100vh;max-width:none;max-height:none;margin:0;' +
+    'padding:0;border:0;background:#000;z-index:2147483647;pointer-events:all;';
+  doc.documentElement.appendChild(veil);
+  if (typeof veil.showPopover === 'function') {
+    try {
+      veil.popover = 'manual';
+      veil.showPopover();
+    } catch {
+      // No top layer: the z-index above still covers the page.
+    }
+  }
+  return () => {
+    try {
+      if (typeof veil.hidePopover === 'function' && veil.matches(':popover-open')) veil.hidePopover();
+    } catch {
+      // Removed below either way.
+    }
+    if (veil.parentNode) veil.parentNode.removeChild(veil);
+  };
+}
+
 let isolationFailure = null;
 
 /** Why the last ensureCrossOriginIsolation() failed, or null. */
