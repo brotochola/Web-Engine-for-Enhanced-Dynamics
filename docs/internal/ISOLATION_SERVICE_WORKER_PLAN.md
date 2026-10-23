@@ -2,7 +2,7 @@
 
 **Opened:** 2026-10-22 (planned in a chat session), saved here 2026-10-23. **Status:** in progress
 on branch `isolation_sw` (from 2026-10-23); the four decisions are taken (see "Decisions").
-**Next step:** SW-4, the browser end-to-end smoke test. **Registry:** `DX-SW` in
+**Next step:** SW-5, the `dist/weed-sw.js` artifact. **Registry:** `DX-SW` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: WeedJS runs exactly as it does today, with SharedArrayBuffers and Box2D's 4 threads,
@@ -272,12 +272,21 @@ a server without isolation headers, with the worker at the root (src mode) or ne
 - [x] **SW-3** `feat(engine)`: `weed-sw.js`, the gate and the `GameEngine` wiring, with the
   phase 1 Node tests. Done 2026-10-23: `src/workers/isolationServiceWorker.js`;
   `ensureCrossOriginIsolation()` in `src/util/crossOriginIsolation.js` (the table's rows, reasons in
-  `ISOLATION_REASONS`, the marker `weed.isolationReload`); `GameEngine` starts it in the constructor
+  `ISOLATION_REASONS`, the marker `weed.isolationReload`; commit `d8a01c5b`); `GameEngine` starts it in the constructor
   and `loadScene` waits for it; option `isolationServiceWorker` (default `'weed-sw.js'`) in
   `ENGINE_DEFAULTS` and `types/weed.d.ts`. Tests: `isolationServiceWorker.test.js` (the worker in a
   `vm`, restarts included), `crossOriginIsolation.test.js` (every row), `engineWithoutIsolation.test.js`
   (the real constructor, `Scene.init` and `loadScene`).
-- [ ] **SW-4** `test(bench)`: the phase 2 end-to-end isolation smoke test.
+- [x] **SW-4** `test(bench)`: the phase 2 end-to-end isolation smoke test. Done 2026-10-23
+  (`ab8dc717`): `tests/bench/isolationWorkerSmoke.mjs`, Chromium, 11 cases, all passing twice in a
+  row with the gate fix that followed (see "Found during implementation"): first visit (2 loads,
+  isolated, the scene draws, no overlay), return visit (1), hard reload (2), stopped worker (1),
+  real headers (no registration), a 404 worker, no service worker API, another worker owning the
+  folder (not replaced), an embedding page on another origin (2 frame loads, the embedded
+  reason), plain HTTP, and the folder rule (worker next to the page in src mode: the scene does
+  not start). Not covered yet: Firefox (not installed), the hot-reload rows (need `npm run dev`),
+  the AudioWorklet row, the frame inside an isolated parent with `allow="cross-origin-isolated"`,
+  and black-until-first-frame screenshots.
 - [ ] **SW-5** `build`: the `dist/weed-sw.js` artifact.
 - [ ] **SW-6** `package.json`: `files` and `exports` for `weed-sw.js`, on its own.
 - [ ] **SW-7** `template`: copy `weed-sw.js`, with its test.
@@ -314,3 +323,14 @@ a server without isolation headers, with the worker at the root (src mode) or ne
   support, the worker's site and folder, the controller (ours: no reload can help; another: never
   replaced), another registration for the page, the reload marker, then register. The folder test
   comes before the controller so a misplaced file is named even on a page another worker controls.
+- **The isolated page has its own copy of sessionStorage** (SW-4, Chromium). COOP moves it into a
+  new browsing context group, which gets a copy of the tab's sessionStorage taken at the switch.
+  Writes there, including clearing the reload marker, never reach the copy a later page without
+  COOP sees; a hard reload, which bypasses the worker and so has no COOP, sees the first visit's
+  marker again. With a one-reload guard, a hard reload within 10 s of the first visit failed as
+  a loop. The marker now counts reloads (`time:count`) and allows two in 10 s; a real loop
+  (DevTools "Bypass for network") still stops at the second. The smoke test counts loads as
+  navigation commits for the same reason (its first version kept a log in sessionStorage).
+- **A reload issued while a hard reload is still loading comes back uncontrolled** (SW-4,
+  Chromium); issued after `load` it is controlled. The gate now waits for the page's `load`
+  event before reloading. The screen is black either way.
