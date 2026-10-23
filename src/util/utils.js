@@ -947,9 +947,16 @@ export function mixSeed(seed, workerId = 0) {
 }
 
 export function seededRandom(seed, workerId) {
-  let t = workerId == null ? seed : mixSeed(seed, workerId);
+  // mulberry32, with its 32-bit state in an Int32Array that wraps like the
+  // reference (`t + 0x6d2b79f5 | 0`). It used to be a closure `let` that only
+  // ever grew: a double that passed 2^53 after 4,917,760 calls and from then
+  // on was no longer mulberry32 (it would eventually stop changing). The first
+  // 4,917,760 outputs of every stream are the same as before.
+  const state = new Int32Array(1);
+  state[0] = workerId == null ? seed : mixSeed(seed, workerId);
   const fn = function () {
-    t += 0x6d2b79f5;
+    const t = (state[0] + 0x6d2b79f5) | 0;
+    state[0] = t;
     let r = Math.imul(t ^ (t >>> 15), 1 | t);
     r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
     return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
