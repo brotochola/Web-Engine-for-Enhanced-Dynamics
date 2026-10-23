@@ -6734,7 +6734,7 @@
       "aliases": [
         "coi-serviceworker"
       ],
-      "next": "SW-2: the static test server can omit the isolation headers (and a second origin); then SW-3, weed-sw.js and the gate."
+      "next": "SW-3: weed-sw.js, the gate (ensureCrossOriginIsolation) and the GameEngine wiring, with the Node tests."
     },
     {
       "id": "E-86",
