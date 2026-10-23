@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { GpuFramePacer } from '../../src/render/gpuFramePacer.js';
+
 // pixiWorker.js registers its instance on `self` rather than exporting it, and
 // it reads `self` at module scope. Stub first, import, then read the prototype.
 const previousSelf = globalThis.self;
@@ -69,6 +71,10 @@ function makeContext({ sync, gpuLive, presenting = true, backpressure = true }) 
     _cameraInitialized: false,
     _poseSnap: false,
     _gpuClockStart: 0,
+    _injectedDeltaTime: 0,
+    _framePacer: new GpuFramePacer(),
+    _pacingGl: null,
+    _pacedTick: false,
     _gpuLive: () => gpuLive,
     presentationIsActive() {
       return true;
@@ -212,4 +218,93 @@ test('B-01: catch-up after an outage walks forward one frame at a time', { concu
   update(ctx);
   assert.equal(ctx.lastReadFrame, 3, 'the next frame follows on the next tick');
   assert.equal(Atomics.load(sync, 1), 3);
+});
+
+// E-97. A fake WebGL2 context whose fences stay unsignaled until the test says so.
+function busyGl() {
+  return {
+    SYNC_STATUS: 0x9114,
+    SYNC_GPU_COMMANDS_COMPLETE: 0x9117,
+    fences: [],
+    fenceSync() {
+      const f = { done: false };
+      this.fences.push(f);
+      return f;
+    },
+    getSyncParameter(f) {
+      return f.done ? 0x9119 : 0x9118;
+    },
+    deleteSync() {},
+  };
+}
+
+function drawableContext(sync) {
+  const ctx = makeContext({ sync, gpuLive: true });
+  ctx.tickInterpolatedPose = () => {};
+  ctx.ensureCameraBeforeFirstFrame = () => {};
+  ctx.updateCameraTransform = () => {};
+  ctx.syncLayerAlphaFromSharedState = () => {};
+  ctx.updateDecalTiles = () => {};
+  ctx.shouldDrawFrameLockedPasses = () => false;
+  ctx.applyLayerVisibility = () => {};
+  ctx.presents = 0;
+  ctx.presentStage = () => { ctx.presents++; };
+  return ctx;
+}
+
+test('E-97: a paced tick takes no queue and strands nothing; the next free tick takes it', { concurrency: false }, () => {
+  const sync = makeSync();
+  const ctx = drawableContext(sync);
+  const gl = busyGl();
+  ctx._pacingGl = gl;
+
+  Atomics.store(sync, 0, 1);
+  update(ctx);
+  Atomics.store(sync, 0, 2);
+  update(ctx);
+  assert.equal(ctx.presents, 2, 'two frames in flight');
+  assert.equal(ctx.lastReadFrame, 2);
+
+  Atomics.store(sync, 0, 3);
+  update(ctx); // frame 1 still on the GPU
+  assert.equal(ctx._pacedTick, true);
+  assert.equal(ctx.presents, 2, 'nothing submitted');
+  assert.equal(ctx.lastReadFrame, 2, 'queue 3 is not taken');
+  assert.equal(Atomics.load(sync, 1), 2, 'and nothing is held');
+  assert.equal(ctx._deferredRenderQueueRelease, 0);
+
+  gl.fences[0].done = true;
+  update(ctx);
+  assert.equal(ctx._pacedTick, false);
+  assert.equal(ctx.presents, 3);
+  assert.equal(ctx.lastReadFrame, 3);
+  assert.equal(Atomics.load(sync, 1), 3);
+});
+
+test('E-97: a lockstep step draws while the GPU is busy', { concurrency: false }, () => {
+  const sync = makeSync();
+  const ctx = drawableContext(sync);
+  ctx._pacingGl = busyGl();
+  for (let f = 1; f <= 4; f++) {
+    Atomics.store(sync, 0, f);
+    ctx._injectedDeltaTime = 16.67;
+    update(ctx);
+  }
+  assert.equal(ctx.presents, 4);
+  assert.equal(ctx.lastReadFrame, 4);
+});
+
+test('E-97: a paced tick publishes no stats', { concurrency: false }, () => {
+  const r = globalThis.pixiRenderer;
+  const stats = new Float32Array(64).fill(-1);
+  const prevStats = r.stats;
+  r.stats = stats;
+  try {
+    r._pacedTick = true;
+    r.reportFPS();
+    assert.ok(stats.every((v) => v === -1), 'a paced tick wrote a stat');
+  } finally {
+    r._pacedTick = false;
+    r.stats = prevStats;
+  }
 });

@@ -51,7 +51,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 4
+      "rank": 5
     },
     {
       "id": "W7",
@@ -67,23 +67,24 @@
       ],
       "aliases": [],
       "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
-      "rank": 4
+      "rank": 5
     },
     {
       "id": "E-82",
       "title": "The instanced sprite upload diet",
       "status": "open",
-      "statusText": "open (from Q1b)",
-      "date": null,
-      "result": "BunnyMark at 250 000 bunnies: Pixi 828 ms/s, 41 fps, 96 % uploading poses (`updateBuffer` 66.7 %, `_uploadPose` 29.3 %). …",
+      "statusText": "split built; re-measure on top of E-97",
+      "date": "2026-10-23",
+      "result": "Pose stream 24 B every frame, statics 44 B per ring slot when pre-render's staticGen moves. bunnyMarkScene renderer 13.603 → 3.238 ms, −76.4 %, worse 0/4, but the page 55 → 44 fps: a fast Pixi oversubscribed the full GPU (E-97).",
       "area": "pixi",
       "kind": "js",
       "refs": [
+        "HYPOTHESIS_LOG.md#L15",
         "EXECUTION_PLAN.md#L638"
       ],
       "aliases": [],
-      "next": "Packed vertex formats (≈40 B/sprite), then the pose/static split (24–28 B); judged on bunnyMarkScene Pixi.",
-      "rank": 3
+      "next": "The stashed split again on top of E-97: renderer owner, presented frames guarding.",
+      "rank": 1
     },
     {
       "id": "W22",
@@ -99,7 +100,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 5
+      "rank": 6
     },
     {
       "id": "W26",
@@ -115,7 +116,7 @@
       ],
       "aliases": [],
       "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 6
+      "rank": 7
     },
     {
       "id": "W14",
@@ -132,7 +133,7 @@
       ],
       "aliases": [],
       "next": "navStressScene: flowfield 89 % of particle.",
-      "rank": 8
+      "rank": 10
     },
     {
       "id": "E-85",
@@ -166,7 +167,7 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 9
+      "rank": 11
     },
     {
       "id": "W11",
@@ -182,7 +183,7 @@
       ],
       "aliases": [],
       "next": "meshApiStressScene Pixi 53 %.",
-      "rank": 10
+      "rank": 12
     },
     {
       "id": "W21c",
@@ -197,7 +198,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 11
+      "rank": 13
     },
     {
       "id": "W2a",
@@ -212,7 +213,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 12
+      "rank": 14
     },
     {
       "id": "W1",
@@ -227,7 +228,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 13
+      "rank": 15
     },
     {
       "id": "W10",
@@ -242,7 +243,7 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 16
     },
     {
       "id": "W23",
@@ -257,7 +258,7 @@
         "WASM_HYPOTHESES.md#L177"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 17
     },
     {
       "id": "W27",
@@ -272,7 +273,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 18
     },
     {
       "id": "W28",
@@ -287,7 +288,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 17
+      "rank": 19
     },
     {
       "id": "W4",
@@ -303,7 +304,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision (Box2D's memory).",
-      "rank": 18
+      "rank": 20
     },
     {
       "id": "W18",
@@ -319,7 +320,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 19
+      "rank": 21
     },
     {
       "id": "W2b",
@@ -335,7 +336,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 20
+      "rank": 22
     },
     {
       "id": "E-76",
@@ -6748,7 +6749,7 @@
       ],
       "aliases": [],
       "next": "16 bits per dirty word, so every value is a Smi; spawnStormScene logic and physics.",
-      "rank": 1
+      "rank": 3
     },
     {
       "id": "E-88",
@@ -6792,7 +6793,7 @@
       ],
       "aliases": [],
       "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
-      "rank": 2
+      "rank": 4
     },
     {
       "id": "E-91",
@@ -6919,7 +6920,55 @@
       ],
       "aliases": [],
       "next": "Batch the per-light lighting passes (a rendering change); first the cheap _emitTransmitWedge part.",
-      "rank": 7
+      "rank": 9
+    },
+    {
+      "id": "E-97",
+      "title": "Pixi paces its frames to the GPU",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
+      "date": "2026-10-23",
+      "result": "A WebGL2 fence per frame, read two frames later; a busy GPU gets no new frame. bunnyMarkScene presented frames 54.8 → 59.9 fps, +9.1 %, 4/4 higher (GPU ~98 % on both sides).",
+      "area": "pixi",
+      "kind": "gpu",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L772",
+        "reports/E-97-gpu-frame-pacing.md"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "E-97b",
+      "title": "Pace Pixi's WebGPU path",
+      "status": "open",
+      "statusText": "open (from E-97)",
+      "date": "2026-10-23",
+      "result": "E-97 fences WebGL only. Whether WebGPU oversubscribes a full GPU the same way is unmeasured.",
+      "area": "pixi",
+      "kind": "gpu",
+      "refs": [
+        "EXECUTION_PLAN.md#L779"
+      ],
+      "aliases": [],
+      "next": "A WebGPU bunnyMarkScene variant; presented vs drawn frames; onSubmittedWorkDone as the fence.",
+      "rank": 8
+    },
+    {
+      "id": "E-98",
+      "title": "Pre-render's full emit at 250 000 sprites takes more than a frame",
+      "status": "open",
+      "statusText": "open (from E-97)",
+      "date": "2026-10-23",
+      "result": "Paced bunnyMarkScene: pre-render ~21 ms per worked frame (COLLECT 14.3, EMIT 4.7), fewer new queues than Pixi's 60 frames. Sort-key work is 29 % of its profile in a scene with ySort off.",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L784"
+      ],
+      "aliases": [],
+      "next": "Read why spriteYSortKey / _storeEntitySortY run with ySort off; then the collect loop.",
+      "rank": 2
     }
   ],
   "leads": [

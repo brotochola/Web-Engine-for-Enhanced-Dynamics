@@ -243,6 +243,7 @@ import {
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
+import { GpuFramePacer } from '../render/gpuFramePacer.js';
 
 // Bundles embed the engine shaders (WEED.EngineShaders, posted at init): an npm
 // install has no /src/shaders to fetch. Source builds fetch them.
@@ -422,6 +423,12 @@ class PixiRenderer extends AbstractWorker {
     this.usesCustomScheduler = true;
     this._presenting = true;
     this._presentingFlag = null;
+    // E-97. Frames in flight on the GPU: a tick submits nothing while the frame before last is
+    // unfinished. _pacingGl is the WebGL2 context once bound (null on WebGPU); _pacedTick marks
+    // a tick that submitted nothing, which publishes no stats.
+    this._framePacer = new GpuFramePacer();
+    this._pacingGl = null;
+    this._pacedTick = false;
     this._pendingResizeW = null;
     this._pendingResizeH = null;
     this._surfaceUnconfigured = false;
@@ -1051,11 +1058,13 @@ class PixiRenderer extends AbstractWorker {
     this.setupDrawCallMonitoring();
 
     const gl = this.pixiApp.renderer.gl;
+    this._pacingGl = gl && typeof gl.fenceSync === 'function' ? gl : null;
     if (gl && gl.canvas) {
       gl.canvas.addEventListener(
         'webglcontextlost',
         (e) => {
           e.preventDefault();
+          this._framePacer.reset();
           this.reportError(
             'WebGL Context Lost',
             new Error(
@@ -1069,6 +1078,7 @@ class PixiRenderer extends AbstractWorker {
       gl.canvas.addEventListener(
         'webglcontextrestored',
         () => {
+          this._framePacer.reset();
           this.reportLog('WebGL context restored');
         },
         false
@@ -1172,6 +1182,8 @@ class PixiRenderer extends AbstractWorker {
    * Override reportFPS to write stats to SharedArrayBuffer
    */
   reportFPS() {
+    // A paced tick did no work; like a pre-render skip, it leaves the last drawn frame's meters.
+    if (this._pacedTick) return;
     if (this.stats) {
       // The renderer never blocks on a sibling (it has no sync query API), so
       // WAIT_MS is 0 by construction; IDLE_MS is the real number.
@@ -2004,6 +2016,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   update(deltaTime, dtRatio, resuming) {
+    this._pacedTick = false;
     if (!this.presentationIsActive()) this._stopGpuClock();
     this.rememberDeltaTime(deltaTime);
     this.presentTimeThisFrame = 0;
@@ -2014,6 +2027,13 @@ class PixiRenderer extends AbstractWorker {
     // queue taken; lastReadFrame holds and the backpressure clamp walks us
     // forward one frame at a time when it comes back.
     if (!this.gpuIsAvailable()) {
+      this._newQueueThisFrame = 0;
+      return;
+    }
+    // E-97. Also before the queue is taken. A lockstep step always draws.
+    const pacingGl = this._injectedDeltaTime > 0 ? null : this._pacingGl;
+    if (pacingGl !== null && this._framePacer.busy(pacingGl)) {
+      this._pacedTick = true;
       this._newQueueThisFrame = 0;
       return;
     }
@@ -2050,6 +2070,7 @@ class PixiRenderer extends AbstractWorker {
       }
       this.applyLayerVisibility();
       this.presentStage();
+      if (pacingGl !== null) this._framePacer.submitted(pacingGl);
     } finally {
       this.releaseRenderQueueIfHeld();
     }
