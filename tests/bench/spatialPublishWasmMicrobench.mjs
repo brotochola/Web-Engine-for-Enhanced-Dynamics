@@ -102,7 +102,8 @@ function checksumNeighbor(memory, byteOff) {
 }
 
 async function main() {
-  const wasmPath = join(dirname(fileURLToPath(import.meta.url)), 'wasm', 'spatialPublish.wasm');
+  // The shipped module; its C source is wasm/spatialPublish.c.
+  const wasmPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'workers', 'spatialPublish.wasm');
   const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
   fill(memory);
   const env = new Proxy(
