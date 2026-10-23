@@ -72,6 +72,20 @@
         "integrate_batch"
       ],
       "maxMemoryPages": 8192
+    },
+    {
+      "name": "particleLists",
+      "source": "wasm/particleLists.c",
+      "output": "tests/fixtures/wasm/particleLists.wasm",
+      "exports": [
+        "build_lists",
+        "build_lists_turned",
+        "build_active",
+        "build_lists_simd",
+        "build_lists_turned_simd"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }

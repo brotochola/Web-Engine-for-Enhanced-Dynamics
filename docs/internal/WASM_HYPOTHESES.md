@@ -160,7 +160,7 @@ the per-candidate facts behind each row are in the [inventory](#phase-0-inventor
 | **W10** | Pixi | `radixSortIndicesBySortKey`, `radixPainterOrder`, `reinsertChangedSlots` in [`sortIndexByKey.js`](../../src/util/sortIndexByKey.js) | WASM radix beats JS | small: gather + bucket scatter | Q1: 11.8 % inclusive of Predator Pixi (2.0 % ceiling there); no painter stress scene share on record | Q3; `painterRadixMicrobench` | **reopened** (decision 6): ~3.4 % of Pixi at 1.4× |
 | **W11** | Pixi | `rewriteExplicitMeshCorners`, `uploadPoseTable` ([`colliderFillBatch.js`](../../src/render/colliderFillBatch.js)) | WASM mesh writes beat JS | a strided copy with an index gather | `writeExplicitTriCorners`, first named here, was folded into `rewriteExplicitMeshCorners` in `d72c638c` (meshApi renderer 3.779 → 2.896 ms); the 25.3 % share predates that | a meshApi trace at a load over 3 ms; park if the rewrite and pose table are under ~18 % of Pixi | open |
 | **W12** | particle | `updateParticlePhysicsBuffers` in [`particleIntegrate.js`](../../src/util/particleIntegrate.js) | WASM integrate beats JS | no boxing; every column is on one SAB (an own Memory, no arena) | Q1: 75.3 % inclusive of the particle worker in `particleIntegrateStressScene?tween=1` (65 k live), 0.7 % in Predator (~100 live). `returnToPool` per dead particle would become a dead list; E-59 tuned the ease front. Q2: fdlibm `sin`/`cos` equal Chrome's after float32 rounding (0 of 102 M) | `particleIntegrateMicrobench`; `particleIntegrateStressScene?tween=1` particle (not `bulletStressScene`, which has `maxParticles: 0`) | **kept (product)** E-79: stress particle −31.3 % |
-| **W13** | particle | `buildActiveAndVisibleListBuffers` (and `…Turned`) | WASM compaction and cull beats JS | `i8x16` over the contiguous `active` column skips empty slots; no compress instruction for the dense case | Q1: 22.6 % of the particle worker in the stress scene, 3.3 % in Predator. Every call sweeps all `maxParticles` slots (`expectedActive = maxParticles`) | with W12, one call per frame | open |
+| **W13** | particle | `buildActiveAndVisibleListBuffers` (and `…Turned`) | WASM compaction and cull beats JS | `i8x16` over the contiguous `active` column skips empty slots; no compress instruction for the dense case | Q1: 22.6 % of the particle worker in the stress scene, 3.3 % in Predator. Every call sweeps all `maxParticles` slots (`expectedActive = maxParticles`) | with W12, one call per frame | **kernel win** +329 % stress, +764 % zoomed (E-80); wiring next |
 | **W14** | particle | `computeFlowfield` / `computePath` in [`particleWorker.js`](../../src/workers/particleWorker.js) (not `navGrid.js`, which holds the layout) | WASM search beats JS | integer grids | Q1: nav 5.9 % inclusive of Predator particle; in NavStress the search is deadline-bound, so `STEP_MS` cannot fall | desk | **screened (ceiling)** 1.0 % |
 | **W15** | physics | `publishPose` in [`weedjsPost.js`](../../src/box2d/weedjsPost.js) | The pose copy in C beats JS | small | Q1: ~8 % of the physics JS thread. PH1: kernel +147 %, Predator physics −0.8 %. A C copy cannot write the pose SABs from Box2D's memory | desk | **screened (ceiling)** 1.8 % |
 | **W16** | physics | LiquidFun particle sync and extract | — | — | already C (LIQUIDFUN H8, H14); JS does bulk `.set` copies | — | **screened (already C)** |
@@ -686,3 +686,33 @@ defaults):
   within 0.0 %. **Predator gate: NEUTRAL** (particle under the floor at ~100 particles; logic +2.6 %
   (5/6), physics +2.2 %, spatial +1.4 %, none at 3 %). Report:
   [`reports/E-79-particle-integrate-wasm.md`](./reports/E-79-particle-integrate-wasm.md).
+- **2026-10-23, owner question on `fdlibmSincos.h`.** WebAssembly has no sin or cos instruction, and
+  C's `sin` would link this same musl code, whose large reduction needs the stack T6 forbids; a
+  `Math.sin` import would be a second import and a boundary call per particle. Only accuracy was
+  measured (Q2) and the whole kernel (spin +107.9 %), never the trig alone against a cheaper one. Open
+  as a W12 variant under decision 5: a float32 polynomial sincos, timed in the spin case (only
+  rotating particles reach it; the stress mix and Predator do not).
+- **2026-10-23, W13 kernel sitting (E-80).** `wasm/particleLists.c` (a candidate):
+  `buildActiveAndVisibleListBuffers` and `…Turned` over the whole pool, and the no-camera list. The
+  active column is read 16 slots at a time (`i8x16`): an empty block is skipped, a full one runs
+  straight through, a partial one visits its live slots in order. Each list is u16 [count, …], and the
+  visible list may hold one index past its count (the index goes in before the test decides);
+  `isItOnScreen` is written for live particles only, as JS writes it. The published active list
+  is the integrate's input, so the worker's local copy goes. Two variants, both bit-identical: scalar
+  (each particle in double) and **f64x2** (a full block's tests two particles per operation on the
+  same doubles, its flags and active indices stored as vectors). `particleListsWasmMicrobench`: the
+  `?tween=1` stress population aged 300 frames by the shipped integrate (65 174 live of 65 535; 3 752
+  full blocks, 343 partial), four cameras. Same checksum as JS over both lists and every flag.
+  Alternating processes, 5 rounds (Node 22, AC; TurboFan, checked with natives in a single run):
+  | case | JS | scalar | f64x2 |
+  | --- | --- | --- | --- |
+  | stress (zoom 0.3, 51 792 visible) | 1 742.9 ops/s | 5 999.0, +244.2 % | **7 469.1, +328.6 %** |
+  | zoomed (zoom 1, 13 822 visible) | 852.1 | 5 990.9, +603.0 % | **7 364.8, +764.3 %** |
+  | turned (zoom 0.6, 0.785 rad) | 3 653.5 | 4 488.3, +22.9 % | **5 859.8, +60.4 %** |
+  | sparse (10 000 slots, 148 live) | 63 366.3 | 639 250.6, +908.8 % | **741 373.4, +1 070.0 %** |
+
+  f64x2 beats JS 25/25 in every case and the scalar variant 25/25 in the three dense ones (sparse
+  runs the same code in both: 20/25). The JS unturned loop branches on the test, so a camera that
+  sees part of the pool costs it 2× (1.17 ms at 65 k); the turned loop is branchless already. Kernel →
+  scene gate: 22.6 % of the stress scene's particle worker before W12 (Q1), about a third after it;
+  0.574 → 0.134 ms a call here. Next: wiring, f64x2 only.
