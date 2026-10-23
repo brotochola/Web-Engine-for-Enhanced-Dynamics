@@ -1292,7 +1292,16 @@ at 1/2/3/4 workers, load 9004/9000 both. **`4` is still best.** The 4-worker ste
 **Primary:** `physics_STEP_MS` on Balls at 4 workers, the same tree with the two glue
 builds, ABAB. Only then is the gap the runtime's.
 
-### E-55 Box2D's step profiler calls `emscripten_get_now` every step — **parked**
+### E-55 Box2D's step profiler calls `emscripten_get_now` every step — **kept (hygiene), a tie, 2026-10-23 (E-76 W24)**
+**Reopened by Q1b** (`_emscripten_get_now` 3–10 % of each solver thread, 5–36 % of the physics JS thread)
+and done in the Box2D repo (`3b2d4c8`): `b2GetTicks` calls `emscripten_get_now` directly (WASI's
+`clock_time_get` built a BigInt per call), `B2_WEED_NO_STAGE_TIMERS` turns the solver's per-stage timers
+into no-ops (the five times Weed reads are still timed), and the scheduler's idle spin reads the clock
+every 64th spin. `ballsHeavyStressScene` (12 000 bodies), 4 pairs: physics **8.861 → 8.734 ms, −2.1 %,
+worse 1/4**, cv 6/3 %, load identical: a tie, kept as hygiene (work nobody read). The spin still burns
+its 50 µs windows (E-34); the Predator gate comes with the next batch.
+
+The entry as parked:
 Found fixing `mapWasmFunctions` (review D11). On the 10-19 wasm, `step_world` (chrome 325)
 has 34 inlined `call $fimport$0` (`_emscripten_get_now`); the C side is Box2D v3's own
 `b2Profile` timers, always on: `b2GetTicks` at 27 sites in `solver.c`, 10 in

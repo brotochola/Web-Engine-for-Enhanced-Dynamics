@@ -789,10 +789,10 @@
     {
       "id": "W24",
       "title": "Box2D clock reads (new from Q1b): `b2GetTicks` through WASI `clock_time_get` (a BigInt per call) in the …",
-      "status": "blocked",
-      "statusText": "open, waiting for the owner's OK to build in the Box2D repo",
-      "date": null,
-      "result": "Fewer, cheaper clock calls make the physics threads cheaper. Q1b: `_emscripten_get_now` 3–10 % of each solver thread, 5–36 % of the physics JS thread (`ballsHeavyStressScene` 9.5 %, `orientedBoxScene` 36 %). …",
+      "status": "kept-hygiene",
+      "statusText": "kept (hygiene), a tie",
+      "date": "2026-10-23",
+      "result": "Box2D 3b2d4c8: emscripten_get_now for ticks, per-stage solver timers off, the idle spin reads the clock every 64th spin. ballsHeavyStressScene physics 8.861 → 8.734 ms, −2.1 %, worse 1/4 (4 pairs). The spin itself still burns its windows (E-34).",
       "area": "physics",
       "kind": "wasm",
       "refs": [
@@ -802,7 +802,7 @@
         "E-55",
         "E-34"
       ],
-      "next": "Patch drafted in the Box2D repo; waiting for the owner's OK to build there."
+      "next": "Predator gate with the next batch of physics-path changes."
     },
     {
       "id": "E-81",
@@ -6758,6 +6758,11 @@
       "source": "Pending passes",
       "finding": "The deopt and heap passes of the sweep have not run yet.",
       "next": "node tests/bench/profileSceneSweep.mjs --pass deopt / --pass heap on the ~20 busiest scenes."
+    },
+    {
+      "source": "W24 (2026-10-23)",
+      "finding": "Box2D's scheduler spins 50 µs between tasks with an empty b2Pause in WASM; E-34 measured ~2.4 cores burnt in the waits.",
+      "next": "Time a shorter spin, or a futex wait, against physics STEP_MS and the other workers' CPU in Predator."
     }
   ],
   "howToFindNew": [
