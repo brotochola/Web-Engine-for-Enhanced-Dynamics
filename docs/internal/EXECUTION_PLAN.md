@@ -800,6 +800,9 @@ rewrites its three shadow terms on the persist path, zeros in a scene with no ca
 Profile after E-98a: `_writeRenderable` 30 %, `_writeType0PosesOnly` 17 %, `collectRenderable` 13 %,
 `_type0PersistHit` 12 %, `collectVisibleEntities` 9 %, `_displayPose` 9 %. Next: E-98c, unmasked sprites
 straight to the entities collector without `collectRenderable`'s type dispatch.
+**E-98c (2026-10-23):** done that way: **11.753 → 10.053 ms, −14.2 %, worse 0/4**. BunnyMark pre-render is
+21.1 → 10.1 ms per new queue since E-97. Left: the stash-then-copy of each pose (`_writeRenderable` then
+`_writeType0PosesOnly`), the separate persist-check pass, the shadow terms on the persist path; W4 for the rest.
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls

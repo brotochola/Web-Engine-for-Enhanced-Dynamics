@@ -6958,16 +6958,17 @@
       "status": "open",
       "statusText": "E-98a kept; open",
       "date": "2026-10-23",
-      "result": "E-98a: no sprite sort line without Y-sort, 18.943 → 12.014 ms (−36.4 %). E-98b: no emit loop on a sprites-only persist frame, 12.319 → 11.833 ms (−3.7 %). bunnyMarkScene pre-render, 250 000 sprites.",
+      "result": "bunnyMarkScene pre-render 21.1 → 10.1 ms per new queue: E-98a no sort line without Y-sort (−36.4 %), E-98b no emit loop on a sprites-only persist frame (−3.7 %), E-98c unmasked sprites straight to the entities collector (−14.2 %).",
       "area": "preRender",
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L13",
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L15",
+        "HYPOTHESIS_LOG.md#L19",
         "EXECUTION_PLAN.md#L788"
       ],
       "aliases": [],
-      "next": "E-98c: unmasked sprites straight to the entities collector (collectRenderable is 13 %).",
+      "next": "The stash-then-copy of each pose, the separate persist-check pass, the persist path's shadow terms; W4 for the rest.",
       "rank": 1
     },
     {

@@ -1491,6 +1491,11 @@ class PreRenderWorker extends AbstractWorker {
         const hasSheetId = !!spritesheetId;
         const useIterSource = iterSource !== null && iterSource !== undefined;
         let visibleCount = 0;
+        // E-98c. A sprite with no layer mask goes to the entities collector: what collectRenderable's
+        // type dispatch and bit scan come to for it, without them. Masked sprites take that path.
+        const queueSprites = this.renderQueueEnabled;
+        const spriteLayerMask = SpriteRenderer.layerMask || null;
+        const entitiesId = Layer.entitiesId;
 
         const rot = this._frameCameraRot || 0;
         if (rot && !skipCull) {
@@ -1528,7 +1533,11 @@ class PreRenderWorker extends AbstractWorker {
                 if (u < -w || u > w || v < -h || v > h) continue;
 
                 if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
-                    this.collectRenderable(0, i);
+                    if (queueSprites && (spriteLayerMask === null || spriteLayerMask[i] === 0)) {
+                        this._writeRenderable(0, i, entitiesId);
+                    } else {
+                        this.collectRenderable(0, i);
+                    }
                     visibleCount++;
                 }
             }
@@ -1564,7 +1573,11 @@ class PreRenderWorker extends AbstractWorker {
 
             // sheetId 0 = unset (spawn reset / pool recycle). Never queue.
             if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
-                this.collectRenderable(0, i);
+                if (queueSprites && (spriteLayerMask === null || spriteLayerMask[i] === 0)) {
+                    this._writeRenderable(0, i, entitiesId);
+                } else {
+                    this.collectRenderable(0, i);
+                }
                 visibleCount++;
             }
             // Sun shadows are a second draw of this sprite. No shadow-queue row.
