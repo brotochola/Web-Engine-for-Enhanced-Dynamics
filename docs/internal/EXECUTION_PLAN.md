@@ -627,6 +627,32 @@ published lists in the particle memory, viewed at an offset, the integrate readi
 `particleIntegrateStressScene?tween=1&spin=1` particle **4.885 → 4.150 ms (−15.1 %, 0/6 worse), KEPT
 (product)**; Predator gate NEUTRAL. Report: [`reports/E-80-particle-lists-wasm.md`](./reports/E-80-particle-lists-wasm.md).
 
+### E-81 The WASM gather in home-cell order (E-76 W25) — **KERNEL WIN 2026-10-23; scene pair running**
+`order_batch_by_cell` puts each spatial worker's rebuild batch in home-cell order before
+`gather_batch`; what the gather and the publish store per entity does not depend on the order (the
+parity test runs it both ways). Kernel: **+21.7 %** with every list rebuilt, +2.3 % (tie) with Predator's
+reuse. Boids pair, then the Predator gate.
+
+### E-82 The instanced sprite upload diet — **open (from Q1b)**
+BunnyMark at 250 000 bunnies: Pixi 828 ms/s, 41 fps, 96 % uploading poses (`updateBuffer` 66.7 %,
+`_uploadPose` 29.3 %). The pose-interpolated instance is 17 floats (68 bytes): xy, scale, anchor, rotCS,
+depth, tint, texture, tile terms, previous xy. Packed formats (anchor and rotation as 16-bit pairs, scale
+as halves, tile terms only for tiled sprites) bring a plain sprite to about 40 bytes; splitting the
+per-frame pose (xy, previous xy, rotation) from per-sprite statics kept in a slot texture brings it to
+24–28. Judged on `bunnyMarkScene` Pixi `STEP_MS − WAIT_MS`, and the bunny count at 60 fps.
+
+### E-83 `TileMap.getTileId` — **open (from Q1b)**
+`tilemapStressScene`: logic 566 ms/s, `getTileId` 80.3 % self. A per-tile lookup the game calls; read
+it before measuring.
+
+### E-84 Adobe Animate registry lookups per entity — **open (from Q1b)**
+Adobe Animate (zoom 1.4): pre-render `getAsset` 9.7 % and `getClipFrameRate` 6.0 % self, per entity per
+frame. Cache per entity type or clip.
+
+### E-85 GC in the bullet and ray path — **open (from Q1b)**
+`bulletStressScene`: particle 493 ms/s with **29.6 ms/s of GC**, the only GC pressure in the sweep;
+`rayStressScene` 5.2 ms/s. Find the allocation sites with `heapSampleWorkers.mjs`, then W19.
+
 ---
 
 ## Not doing (read the log first)
