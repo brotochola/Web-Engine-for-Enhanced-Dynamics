@@ -34,7 +34,7 @@
       ],
       "aliases": [],
       "next": "Kernel sitting on pre-render's pack (38–40 % of a saturated pre-render in sprite-heavy scenes), the render queue in a memory WASM can read.",
-      "rank": 3
+      "rank": 4
     },
     {
       "id": "W6",
@@ -50,7 +50,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 4
+      "rank": 5
     },
     {
       "id": "W7",
@@ -66,7 +66,7 @@
       ],
       "aliases": [],
       "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
-      "rank": 4
+      "rank": 5
     },
     {
       "id": "E-82",
@@ -82,7 +82,7 @@
       ],
       "aliases": [],
       "next": "Packed vertex formats (≈40 B/sprite), then the pose/static split (24–28 B); judged on bunnyMarkScene Pixi.",
-      "rank": 5
+      "rank": 6
     },
     {
       "id": "W22",
@@ -98,7 +98,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 6
+      "rank": 7
     },
     {
       "id": "W26",
@@ -114,7 +114,7 @@
       ],
       "aliases": [],
       "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 7
+      "rank": 8
     },
     {
       "id": "W14",
@@ -131,7 +131,7 @@
       ],
       "aliases": [],
       "next": "navStressScene: flowfield 89 % of particle.",
-      "rank": 9
+      "rank": 10
     },
     {
       "id": "E-85",
@@ -165,7 +165,7 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 10
+      "rank": 11
     },
     {
       "id": "W11",
@@ -181,7 +181,7 @@
       ],
       "aliases": [],
       "next": "meshApiStressScene Pixi 53 %.",
-      "rank": 11
+      "rank": 12
     },
     {
       "id": "W21c",
@@ -196,7 +196,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 12
+      "rank": 13
     },
     {
       "id": "W2a",
@@ -211,7 +211,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 13
+      "rank": 14
     },
     {
       "id": "W1",
@@ -226,7 +226,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 15
     },
     {
       "id": "W10",
@@ -241,7 +241,7 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 16
     },
     {
       "id": "W23",
@@ -256,7 +256,7 @@
         "WASM_HYPOTHESES.md#L177"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 17
     },
     {
       "id": "W27",
@@ -271,7 +271,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 17
+      "rank": 18
     },
     {
       "id": "W28",
@@ -286,7 +286,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 18
+      "rank": 19
     },
     {
       "id": "W4",
@@ -302,7 +302,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision (Box2D's memory).",
-      "rank": 19
+      "rank": 20
     },
     {
       "id": "W18",
@@ -318,7 +318,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 20
+      "rank": 21
     },
     {
       "id": "W2b",
@@ -334,7 +334,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 21
+      "rank": 22
     },
     {
       "id": "E-76",
@@ -6736,17 +6736,18 @@
       "id": "E-87",
       "title": "Atomics results outside the Smi range (free-list heads, dirty words)",
       "status": "open",
-      "statusText": "open (from E-85)",
+      "statusText": "free list kept (hygiene) 2026-10-23; dirty words open",
       "date": "2026-10-23",
-      "result": "Chrome allocates inside Atomics builtins: compareExchange from popU16 3.8 MB/s and Atomics.or from markBodyDirty 3.5 MB/s (spawnStormScene logic), compareExchange/load from the bullet pool 1.6 MB/s (bulletStressScene particle). Packed heads (16-bit tag over the index; FL4 19 + 13 bits) and dirty words with bit 31 set are outside the 31-bit Smi range.",
+      "result": "Chrome runs Atomics as builtins: an out-of-range value is a heap number per call (1.83 GB per 20 M steps, 70 vs 28.5 ns). The u16 free-list head keeps a 15-bit tag with bit 31 copying bit 30: bulletStressScene particle 2.1 → 0.04 MB/s, spawnStormScene logic 24.0 → 17.9 MB/s, logic a tie (+0.7 %, load +3.9 %). Left: the body dirty words (markBodyDirty's Atomics.or, physics' exchange drain).",
       "area": "logic",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L680"
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L684"
       ],
       "aliases": [],
-      "next": "treiberMicrobench under heapSampleNode.mjs; keep heads under 2^30; spawnStormScene logic pair.",
-      "rank": 1
+      "next": "16 bits per dirty word, so every value is a Smi; spawnStormScene logic and physics.",
+      "rank": 2
     },
     {
       "id": "E-88",
@@ -6776,7 +6777,7 @@
       ],
       "aliases": [],
       "next": "Heap pass of visPolyStressScene first; keep only if the site shows up.",
-      "rank": 8
+      "rank": 9
     },
     {
       "id": "E-90",
@@ -6792,7 +6793,23 @@
       ],
       "aliases": [],
       "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
-      "rank": 2
+      "rank": 3
+    },
+    {
+      "id": "E-91",
+      "title": "The physics JS thread is never heap-sampled",
+      "status": "open",
+      "statusText": "open (from E-87)",
+      "date": "2026-10-23",
+      "result": "The heap pass samples workers whose URL contains `Worker`; the Box2D worker is box2dWasm.js. spawnStormScene's physics JS thread spends 34 ms/s in GC (Q1b), the largest GC time left in the sweep.",
+      "area": "physics",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L711"
+      ],
+      "aliases": [],
+      "next": "Sample with --workers Worker,box2d; fix the sites (the dirty-word drain is one candidate).",
+      "rank": 1
     }
   ],
   "leads": [

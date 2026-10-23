@@ -681,7 +681,14 @@ pass `0`, a Smi, and are free). `liquidFunStressScene` pre-render allocates 8.6 
 the key into a scratch `Float64Array` the function reads. Measure: `liquidFunStressScene` and
 `bulletStressScene` pre-render pairs, heap pass before and after.
 
-### E-87 Atomics results outside the Smi range — **open (from E-85)**
+### E-87 Atomics results outside the Smi range — **free list kept (hygiene), 2026-10-23; dirty words open**
+Confirmed in a Chrome worker: 1.83 GB per 20 M out-of-range load + compareExchange + or steps, 0 with
+small values, 70 vs 28.5 ns per step. The u16 free-list head keeps a 15-bit tag with bit 31 a copy of
+bit 30 (always a Smi): `bulletStressScene` particle 2.1 → 0.04 MB/s, `spawnStormScene` logic 24.0 →
+17.9 MB/s, logic a tie (+0.7 %, load +3.9 %). Left: the body dirty words (`markBodyDirty`'s
+`Atomics.or` with `1 << 31`, physics' `Atomics.exchange` drain, words with bits 30–31 set): 16 bits
+per word would keep every value a Smi. `spawnStormScene`'s physics JS thread spends 34 ms/s in GC,
+unsampled so far (E-91). The entry as opened:
 Chrome's heap profiles put allocation inside the Atomics builtins: `compareExchange` from `popU16`
 3.8 MB/s and `Atomics.or` from `markBodyDirty` 3.5 MB/s in `spawnStormScene` logic, `compareExchange`
 and `load` from the bullet pool 1.6 MB/s in `bulletStressScene` particle (the last 2.1 MB/s E-85 left).
@@ -700,6 +707,12 @@ In `bulletStressScene` the sampler stopped pre-render and one logic worker with 
 given id" (since `43fa7be9` it reports this instead of crashing): the session it attached to ended
 mid-sample. Either the page starts a worker twice (a bug worth finding on its own) or the sampler
 attached to a short-lived one. Until fixed, pre-render allocation in that scene is unseen.
+
+### E-91 The physics JS thread is never heap-sampled — **open (from E-87)**
+The sweep's heap pass samples workers whose URL contains `Worker`; the Box2D worker is
+`box2dWasm.js`, so physics never shows. `spawnStormScene`'s physics JS thread spends **34 ms/s in
+GC** (Q1b inventory), the largest GC time left in the sweep. Sample it (`--workers Worker,box2d`), find
+the sites, then fix them: the dirty-word drain is one candidate (E-87).
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls

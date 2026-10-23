@@ -251,3 +251,29 @@ test('MPMC stress: exhaustion churn (more threads than slots)', async () => {
   assert.equal(chainSize, capacity, `free list lost ${capacity - chainSize} indices`);
   assert.equal(getFreeListCount(top), capacity);
 });
+
+test('the u16 head stays a Smi through full tag wraps (E-87)', () => {
+  // Chrome runs Atomics as builtins: a head outside [-2^30, 2^30) came back as a heap number from
+  // every load and exchange. 140 000 pops and pushes wrap the 15-bit tag four times.
+  const { top, links } = makeList(4);
+  resetFreeList(top, links, 4, 1);
+  const tags = new Set();
+  const check = () => {
+    const head = top[0];
+    assert.ok(head >= -(2 ** 30) && head < 2 ** 30, `head ${head} is not a Smi`);
+    assert.equal((head >> 30) & 1, (head >>> 31) & 1, 'bit 31 copies bit 30');
+    tags.add((head >>> 16) & 0x7fff);
+  };
+  for (let k = 0; k < 70000; k++) {
+    const i = popFreeIndex(top, links);
+    assert.ok(i >= 0 && i < 4);
+    check();
+    pushFreeIndex(top, links, i);
+    check();
+  }
+  assert.equal(tags.size, 32768, 'every 15-bit tag is used');
+  assert.equal(getFreeListCount(top), 4);
+  const seen = new Set([popFreeIndex(top, links), popFreeIndex(top, links), popFreeIndex(top, links), popFreeIndex(top, links)]);
+  assert.equal(seen.size, 4);
+  assert.equal(popFreeIndex(top, links), -1);
+});
