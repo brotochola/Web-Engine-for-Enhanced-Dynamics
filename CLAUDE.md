@@ -14,6 +14,9 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   `docs/internal/HOW_WE_MEASURE.md`. A row is evidence about one sitting, not a ban.
 - **Plans and open items:** `docs/internal/EXECUTION_PLAN.md` (speed hypotheses E-xx),
   `docs/internal/REVIEW_PLAN.md` (review items B/M/D/R/G/V/N/DOC). New findings go there.
+- **Index of every hypothesis:** `docs/internal/hypotheses.json`, one short entry each (status, result,
+  rank when pending, links to the evidence), read as `docs/internal/hypotheses.html`. After a sitting,
+  update its entry and run `node scripts/buildHypothesesPage.mjs` (a node test fails when they differ).
 
 ## Commands
 

@@ -389,7 +389,7 @@ Every campaign report (scoreboard, product confirm, isolation) says:
 - Why the verdict is KEPT, TIE, WORSE, FAIL, or screened, in words a junior can read.
 - What you learned.
 
-Then update [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). The scoreboard writer in `tests/bench/runScoreboard.mjs` is the template. Do not ship a summary-only report again.
+Then update [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md), and the hypothesis's entry in [`hypotheses.json`](./hypotheses.json) (status, one-line result, links), then run `node scripts/buildHypothesesPage.mjs` so [`hypotheses.html`](./hypotheses.html) shows it. The scoreboard writer in `tests/bench/runScoreboard.mjs` is the template. Do not ship a summary-only report again.
 
 `tests/results/` is gitignored, so a report or a log row that links into it is a dead link for every other reader, and for you after a clean checkout. Put the numbers in the text, and the result path as plain text (the command that wrote it is better), never as a link. The same holds for a script you are about to delete: name the commit that removed it, not the file.
 
