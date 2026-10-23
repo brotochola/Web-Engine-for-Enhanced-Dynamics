@@ -18,3 +18,10 @@ test('npm default is prod; ./debug is the debug bundle', () => {
   assert.equal(pkg.exports['./debug'].import, './dist/weed.bundle.esm.min.js');
   assert.equal(pkg.exports['./debug'].require, './dist/weed.bundle.min.js');
 });
+
+// DX-SW, SW-6. The isolation service worker ships with the package and resolves as
+// `@weed.js/engine/weed-sw.js`, so a game's build can copy it next to its index.html.
+test('weed-sw.js is in the package and has its own export', () => {
+  assert.ok(pkg.files.includes('dist/weed-sw.js'));
+  assert.equal(pkg.exports['./weed-sw.js'], './dist/weed-sw.js');
+});

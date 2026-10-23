@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.12.110",
+  "version": "0.12.111",
   "description": "A multi-threaded 2D web game engine for high-entity-count browser games",
   "type": "module",
   "main": "dist/weed.prod.bundle.min.js",
@@ -20,10 +20,12 @@
       "import": "./dist/weed.bundle.esm.min.js",
       "require": "./dist/weed.bundle.min.js",
       "default": "./dist/weed.bundle.min.js"
-    }
+    },
+    "./weed-sw.js": "./dist/weed-sw.js"
   },
   "files": [
     "dist/*.min.js",
+    "dist/weed-sw.js",
     "types",
     "README.md",
     "LICENSE"
