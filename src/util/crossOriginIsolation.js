@@ -5,9 +5,9 @@
  */
 export const SHARED_ARRAY_BUFFER_MISSING =
   'WeedJS needs SharedArrayBuffer, which browsers only enable on a cross-origin isolated page. ' +
-  'Serve the HTML page with "Cross-Origin-Opener-Policy: same-origin" and ' +
-  '"Cross-Origin-Embedder-Policy: require-corp". Per-host setup (Vercel, Netlify, GitHub Pages, itch.io): ' +
-  'docs/guide/DEPLOY.md.';
+  'Put weed-sw.js (it ships with WeedJS) next to index.html, or serve the HTML page with ' +
+  '"Cross-Origin-Opener-Policy: same-origin" and "Cross-Origin-Embedder-Policy: require-corp". ' +
+  'Per-host setup (Vercel, Netlify, GitHub Pages, itch.io): docs/guide/DEPLOY.md.';
 
 /**
  * sessionStorage key: "time:count", when ensureCrossOriginIsolation last reloaded the page (ms since

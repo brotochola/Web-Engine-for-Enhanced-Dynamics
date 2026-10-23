@@ -7,9 +7,44 @@ Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-Without them the scene fails to load with `WeedJS needs SharedArrayBuffer…`. To check a deployed page, open DevTools and type `crossOriginIsolated` in the console: it must print `true`.
+If your host can send them, set them (see [Hosts](#hosts)). If it cannot, WeedJS can do it for you: put **`weed-sw.js`**, which ships with the engine, next to your `index.html` (see [Without headers](#without-headers-weed-swjs)). Games made with `create-weed-game` already do: `npm run build` copies it.
 
-`npm run dev` already sends both headers, so the demos work locally. Anything you host yourself needs them too.
+When the page is not isolated, the scene does not start and the page shows an error that says why (no HTTPS, a private window, a missing `weed-sw.js`, …). To check a deployed page, open DevTools and type `crossOriginIsolated` in the console: it must print `true`.
+
+`npm run dev` already sends both headers, so the demos work locally.
+
+## Without headers: `weed-sw.js`
+
+`weed-sw.js` is a small service worker. It adds the two headers to your page and to the engine's worker scripts as the browser loads them, and leaves every other request alone. The browser treats them exactly like headers from the server.
+
+- **Where:** next to your `index.html`, on your own site (a service worker cannot come from a CDN). With npm, copy `node_modules/@weed.js/engine/dist/weed-sw.js`; `create-weed-game`'s `npm run build` does it for you. With the CDN build, download `weed-sw.js` from the same version's `dist/` folder and upload it with your game.
+- **First visit:** the engine registers it before anything else loads, waits until it is active, and reloads the page once; the screen stays black meanwhile. Later visits load once.
+- **Headers already there:** if the page is isolated (your host sends the headers, or `npm run dev`), the engine does nothing: no service worker is registered.
+- **Its folder:** a service worker covers the folder it sits in and everything below it. Next to `index.html` covers the game. Worker scripts loaded by URL count too, so if you serve the engine's source (`src/`) rather than a bundle, put `weed-sw.js` at your site's root.
+- **Another service worker:** if your site already has one (an offline cache, a PWA) over the game's folder, the engine never replaces it and shows an error instead. Add the two headers to that worker's responses.
+- **Where it cannot help:** plain HTTP (browsers allow it only over HTTPS, or on `localhost`); Firefox private windows and the browsers built into apps, which block service workers; and a game embedded in a page on another site that is not isolated itself (see [Game portals](#game-portals-and-other-iframes)). The error says which.
+- **Your own page:** the rules in [What `require-corp` changes](#what-require-corp-changes-for-your-own-page) apply as with real headers.
+
+The engine looks for `weed-sw.js` next to the page by default. To use another URL, or none:
+
+```js
+new GameEngine({ isolationServiceWorker: '/weed-sw.js' }); // at the site root
+new GameEngine({ isolationServiceWorker: false });          // never register one
+```
+
+**Removing it** once your host sends the headers: `isolationServiceWorker: false` stops new visitors from getting it, but players who already have it keep it. Replace your `weed-sw.js` with this file, which removes itself and reloads the open pages:
+
+```js
+// weed-sw.js that removes itself
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    self.registration.unregister()
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then((pages) => Promise.all(pages.map((page) => page.navigate(page.url)))),
+  );
+});
+```
 
 ## Hosts
 
@@ -76,13 +111,7 @@ export default {
 
 ### GitHub Pages
 
-GitHub Pages cannot set response headers. The usual workaround is [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker): a service worker that adds the two headers to every response. Copy `coi-serviceworker.js` next to your `index.html` (it must be served from your own origin, not a CDN) and load it before anything else:
-
-```html
-<script src="coi-serviceworker.js"></script>
-```
-
-The first visit installs the service worker and reloads the page once. It needs HTTPS, which GitHub Pages provides.
+GitHub Pages cannot set response headers: put `weed-sw.js` next to your `index.html` (see [Without headers](#without-headers-weed-swjs)). GitHub Pages serves over HTTPS, which it needs. You do not need coi-serviceworker: `weed-sw.js` does the same job, and the engine registers it for you.
 
 ### itch.io
 
@@ -111,7 +140,7 @@ Module scripts are always fetched with CORS, and jsDelivr allows any origin, so 
 
 ## Checklist
 
-1. `crossOriginIsolated` is `true` on the deployed page.
+1. `crossOriginIsolated` is `true` on the deployed page (with `weed-sw.js`, after the first visit's reload).
 2. Every cross-origin asset loads (DevTools **Network** shows no `blocked:NotSameOriginAfterDefaultedToSameOriginByCoep`).
 3. The production build is the one being served.
 4. Audio starts after the first click or key press (browsers block sound until a user gesture).

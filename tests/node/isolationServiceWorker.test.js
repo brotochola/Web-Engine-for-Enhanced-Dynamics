@@ -99,3 +99,34 @@ test('install skips waiting, activate claims the open pages, and a restart behav
     assert.equal(res.headers.get('cross-origin-embedder-policy'), 'require-corp');
   }
 });
+
+// DEPLOY.md's self-removing weed-sw.js: what a game deploys once its host sends the headers. It
+// must unregister and reload the pages it controlled (guide examples have to run).
+test("the guide's self-removing weed-sw.js unregisters and reloads its pages", async () => {
+  const guide = readFileSync(join(root, 'docs/guide/DEPLOY.md'), 'utf8');
+  const block = /```js\n(\/\/ weed-sw\.js that removes itself\n[\s\S]*?)```/.exec(guide);
+  assert.ok(block, 'the snippet is in DEPLOY.md');
+  const listeners = {};
+  const done = { skipWaiting: 0, unregister: 0, navigated: [] };
+  const pages = ['https://game.test/a.html', 'https://game.test/b.html'].map((url) => ({
+    url,
+    navigate: async (to) => done.navigated.push(to),
+  }));
+  const self = {
+    addEventListener: (type, fn) => {
+      listeners[type] = fn;
+    },
+    skipWaiting: () => {
+      done.skipWaiting++;
+    },
+    registration: { unregister: async () => (done.unregister++, true) },
+    // opts comes from the vm's realm: compare the field, not the object.
+    clients: { matchAll: async (opts) => (assert.equal(opts.type, 'window'), pages) },
+  };
+  vm.runInNewContext(block[1], { self });
+  listeners.install({});
+  let waited = null;
+  listeners.activate({ waitUntil: (p) => { waited = p; } });
+  await waited;
+  assert.deepEqual(done, { skipWaiting: 1, unregister: 1, navigated: pages.map((p) => p.url) });
+});

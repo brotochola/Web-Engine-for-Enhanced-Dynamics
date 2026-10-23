@@ -2,7 +2,8 @@
 
 **Opened:** 2026-10-22 (planned in a chat session), saved here 2026-10-23. **Status:** in progress
 on branch `isolation_sw` (from 2026-10-23); the four decisions are taken (see "Decisions").
-**Next step:** SW-8, DEPLOY.md and the error text. **Registry:** `DX-SW` in
+**Next step:** phase 3 (load time; Predator through the worker) and the phase 2 rows not run yet
+(Firefox, hot reload, audio, the allowed frame). SW-1 to SW-8 are done. **Registry:** `DX-SW` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: WeedJS runs exactly as it does today, with SharedArrayBuffers and Box2D's 4 threads,
@@ -295,9 +296,15 @@ a server without isolation headers, with the worker at the root (src mode) or ne
   (`e27a3f55`): `dist/weed-sw.js` in `files`, `"./weed-sw.js"` in `exports`; `npm pack --dry-run`
   lists it; `packageExports.test.js`.
 - [x] **SW-7** `template`: copy `weed-sw.js`, with its test. Done 2026-10-23: `scripts/build.mjs` copies
-  it next to `dist/index.html` when the installed engine has it, and keeps `_headers`;
+  it next to `dist/index.html` when the installed engine has it, and keeps `_headers` (`93042637`);
   `createWeedGame.test.js` builds once without it (an older engine) and once with it.
-- [ ] **SW-8** `docs`: DEPLOY.md and the error text.
+- [x] **SW-8** `docs`: DEPLOY.md and the error text. Done 2026-10-23: DEPLOY.md's opening now offers
+  `weed-sw.js` beside the headers, a "Without headers" section (where it goes for npm, the
+  template and the CDN; the first visit; real headers make it inert; the folder rule; another
+  service worker; the limits; the option; removal with a self-removing `weed-sw.js`, whose snippet
+  `isolationServiceWorker.test.js` runs from the guide's text), GitHub Pages without
+  coi-serviceworker; `SHARED_ARRAY_BUFFER_MISSING` names `weed-sw.js` first; the README, the CLI's
+  README and the template's README say the same.
 - [ ] **SW-9** optional, only with phase 3 numbers: rewrite everything if the narrow worker
   loses, or send static assets past the worker with Chrome's Static Routing API.
 
