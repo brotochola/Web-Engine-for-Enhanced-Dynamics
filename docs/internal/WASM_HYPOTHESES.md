@@ -452,3 +452,14 @@ defaults):
   emcc binary the check reports the N-62 list (five extra imports, a start function, a global, a table,
   four extra exports, no names), so `--check` fails until T3. A freestanding build of the same source
   is 883 bytes and deterministic (two builds, same bytes).
+- **2026-10-22, T3.** `src/workers/spatialPublish.wasm` is now built by `buildWasm.mjs`: 876 bytes (513 gzip)
+  against the emcc binary's 1 354; one import (`env.memory`), one export (`publish_batch`), no start function,
+  no stack, names kept. The emcc binary stays as `tests/fixtures/spatialPublish.emcc.wasm`.
+  `tests/node/spatialPublishWasm.test.js`: the new module, the emcc binary and a float32 model of the C
+  publish the same rows on five frames (maxNeighbors 1 024, 64, 7, 3 and 0, a third of the candidates one
+  float32 step inside or outside the range edge). Kernel tie (Node 22, V8 12.4; scratch script, one process
+  per sample, 5 alternating rounds per side after a discarded warm-up, 4 096 entities, 48 candidates,
+  batch 2 048): default tiering emcc 6 675 against 7 776 ops/s (+16.5 %, faster in 14 of 25 comparisons);
+  `--no-liftoff` (TurboFan only) 8 105 against 8 258 (+1.9 %, 19 of 25). Both ties. Process medians spread from
+  4 500 to 8 800 ops/s on this laptop (Ryzen 7 4800H, the owner's Chrome open): kernel sittings here need
+  that noise handled before a 3 % verdict means anything.

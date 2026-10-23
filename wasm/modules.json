@@ -10,8 +10,7 @@
       "source": "wasm/spatialPublish.c",
       "output": "src/workers/spatialPublish.wasm",
       "exports": ["publish_batch"],
-      "maxMemoryPages": 8192,
-      "builtBy": "emcc, command not recorded (REVIEW_PLAN N-62); E-76 T3 rebuilds it with this script"
+      "maxMemoryPages": 8192
     }
   ]
 }
