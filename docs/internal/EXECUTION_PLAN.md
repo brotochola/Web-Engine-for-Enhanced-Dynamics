@@ -574,7 +574,7 @@ source does not support — `_getNeighborCells` "one `Map.get` per entity" and
 the counter that measures it or read the exits in front of it.** E-13 was rejected for
 free; had it gone to a scene it would have cost a Predator pair to confirm a zero.
 
-### E-76 WASM migration: which JavaScript hot loops are faster as WebAssembly — **IN PROGRESS (Phase 0 done 2026-10-22)**
+### E-76 WASM migration: which JavaScript hot loops are faster as WebAssembly — **IN PROGRESS (Phases 0–2 done 2026-10-22)**
 The plan, its gates and its ids (T tools, Q premises, W candidates, L checks) live in
 [`WASM_HYPOTHESES.md`](./WASM_HYPOTHESES.md); this entry is its index here. The rule from the record:
 WASM pays when the data already lives in WASM memory, one call does a batch, and the loop needs
@@ -583,7 +583,20 @@ something JavaScript does badly (SIMD over contiguous data, freedom from boxing 
 (boot only). Strongest ceilings: particle integrate in its stress scene (W12, ~17 %), the per-light
 sweep in visPoly (W2a, ~11 %), the compound edge loop (W1, ~10 % once the native `atan2` is set aside).
 The shipped spatial module's build defect is N-62. A candidate that reaches a kernel sitting gets its
-own E-number here at that point.
+own E-number here at that point. Phases 1–2 (2026-10-22): the ten tools are in, N-62 is closed (W8a
+shipped the publish in double), Q2–Q5 are answered and Q3's floor screen was withdrawn for gather
+loops; report [`reports/E-76-wasm-phase-1-2.md`](./reports/E-76-wasm-phase-1-2.md).
+
+### E-78 The spatial candidate gather in WASM (E-76 W5) — **KERNEL WIN 2026-10-22; product wiring next**
+`wasm/spatialGather.c` is the cell walk, dedup and range test of `findNeighborsForOwnedEntities` with
+the JS arithmetic (double) and the worker's circle-pattern order, over a batch of the entities whose
+lists rebuild this frame. In `spatialGatherWasmMicrobench` it runs as a variant on real workers in WASM
+mode, in a memory laid out as the product would: the publish regions plus the grid cells, a marker, truncation flags and a
+rebuild list per worker, and the patterns. Rows and counters are checked equal over 45 frames.
+Node 22, AC, alternating processes, 5 rounds: with Predator's spatial settings and drift, 3 workers,
+16 500 entities, 267.1 → 341.9 frames/s (**+28.0 %, 25/25**); with every list rebuilt, 31.6 → 39.7
+(+25.5 %, 25/25). The kernel frame is the worker's whole step, so Predator spatial is expected to drop
+by about a fifth. Chrome has to confirm it (the Predator gate, after the wiring).
 
 ---
 

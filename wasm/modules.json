@@ -54,6 +54,17 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "spatialGather",
+      "source": "wasm/spatialGather.c",
+      "output": "tests/fixtures/wasm/spatialGather.wasm",
+      "exports": [
+        "gather_batch"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true,
+      "note": "E-76 W5 candidate: not shipped until its Phase 5 wiring"
     }
   ]
 }

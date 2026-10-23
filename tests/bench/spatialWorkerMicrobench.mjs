@@ -86,6 +86,21 @@ export async function setupSpatialKernel(opts = {}) {
   const cfg = { ...PREDATOR_SPATIAL, ...(opts.spatial || {}) };
   const { buffers, gridMetadata } = spatialBuffers(cfg, n);
   buffers.componentData = coreComponentData(n);
+  // WASM mode (E-76): poses, rows and candidates in the publish memory, as sceneSharedBuffers
+  // builds it at 16-bit ids. A factory, so a kernel can lay out more regions in the same memory.
+  const mem = opts.publishMemory ? opts.publishMemory(n, cfg.maxNeighbors, workersCount, gridMetadata) : null;
+  if (mem) {
+    buffers.entityPosData = mem.buffer;
+    buffers.neighborData = mem.buffer;
+    Object.assign(gridMetadata, {
+      posByte: mem.posByte,
+      rangeByte: mem.rangeByte,
+      neighborByte: mem.neighborByte,
+      candByte: mem.candByte,
+      listByte: mem.listByte,
+      listStride: mem.listStride,
+    });
+  }
 
   const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base', opts.make);
   for (let w = 0; w < workers.length; w++) {
@@ -94,7 +109,12 @@ export async function setupSpatialKernel(opts = {}) {
       globalEntityCount: n,
       buffers,
       gridMetadata,
-      extra: { workerIndex: w, totalSpatialWorkers: workers.length, frameRateIndex: w },
+      extra: {
+        workerIndex: w,
+        totalSpatialWorkers: workers.length,
+        frameRateIndex: w,
+        ...(mem ? { spatialPublishMemory: mem.memory } : {}),
+      },
     });
   }
 
@@ -190,7 +210,7 @@ export async function setupSpatialKernel(opts = {}) {
     return h >>> 0;
   }
 
-  return { n, workers, frame, checksum, cfg };
+  return { n, workers, frame, checksum, cfg, mem, gridMetadata };
 }
 
 async function main() {
