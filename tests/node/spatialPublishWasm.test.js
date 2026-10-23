@@ -4,73 +4,39 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { spatialPublishRegions } from '../../src/util/wasmMemoryMap.js';
+import { Grid } from '../../src/core/grid.js';
+import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
+import { initWorker, loadWorker, spatialBuffers } from '../bench/workerHarness.mjs';
 
-// E-76 T3: the spatial publish module is built freestanding by scripts/buildWasm.mjs. It must
-// publish exactly what the emcc binary it replaced published (kept as a fixture), and both must
-// match a float32 model of wasm/spatialPublish.c: every operation rounds to float, as the C does.
+// The spatial publish module (wasm/spatialPublish.c, built by scripts/buildWasm.mjs) must publish
+// exactly what the JavaScript path publishes: SpatialWorker._publishFilteredNeighbors on a real
+// worker, the path taken at 32-bit ids or with wasm.spatialPublish false. Since E-76 W8a the C
+// does the JS arithmetic (float32 inputs widened, every operation in double); in float32 the two
+// disagreed within ~3e-7 of the range edge, so a third of the candidates here sit on that edge.
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SHIPPED = path.join(root, 'src/workers/spatialPublish.wasm');
-const EMCC = path.join(root, 'tests/fixtures/spatialPublish.emcc.wasm');
 
 async function instantiateShipped(memory) {
-  // Only the memory: the freestanding module imports nothing else.
+  // Only the memory: the module imports nothing else.
   const { instance } = await WebAssembly.instantiate(fs.readFileSync(SHIPPED), { env: { memory } });
   return instance.exports.publish_batch;
 }
 
-async function instantiateEmcc(memory) {
-  // The emcc binary imports WASI and Emscripten stubs; the old loader answered them with 0.
-  const env = new Proxy({ memory }, { get: (t, p) => (p in t ? t[p] : () => 0) });
-  const wasi = new Proxy({}, { get: () => () => 0 });
-  const { instance } = await WebAssembly.instantiate(fs.readFileSync(EMCC), { env, wasi_snapshot_preview1: wasi });
-  return instance.exports.publish_batch;
-}
-
-/**
- * The product layout (the memory map), in a memory of at least 2 pages: the emcc fixture's import
- * asks for 2, the freestanding module's for 1.
- */
-function publishMemory(count, maxN) {
-  const layout = spatialPublishRegions(count, maxN, 1);
-  const pages = Math.max(2, layout.pages);
-  const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
-  const r = layout.regions;
-  return {
-    memory,
-    buffer: memory.buffer,
-    posByte: r.pos.byte,
-    rangeByte: r.range.byte,
-    neighborByte: r.rows.byte,
-    candByte: r.cand.byte,
-    listByte: r.lists.byte,
-  };
-}
-
-const f = Math.fround;
-
-/** The C predicate, operation by operation in float32. */
-function publishF32(pos, range, cand, list, n, maxN) {
-  const stride = 1 + maxN;
-  const rows = [];
-  for (let k = 0; k < n; k++) {
-    const a = list[k];
-    const base = a * stride;
-    const myX = pos[a * 4];
-    const myY = pos[a * 4 + 1];
-    const myRange = range[a];
-    const row = [];
-    for (let i = 0; i < cand[base] && row.length < maxN; i++) {
-      const b = cand[base + 1 + i];
-      const dx = f(pos[b * 4] - myX);
-      const dy = f(pos[b * 4 + 1] - myY);
-      const er = f(myRange + pos[b * 4 + 2]);
-      if (f(f(dx * dx) + f(dy * dy)) < f(er * er)) row.push(b);
-    }
-    rows.push(row);
-  }
-  return rows;
+/** A real spatial worker in JS mode (no publish memory), sized for this frame. */
+async function jsWorker(count, maxN) {
+  const cfg = { worldWidth: 4096, worldHeight: 2048, cellSize: 128, maxEntitiesPerCell: 16, maxNeighbors: maxN };
+  const worker = await loadWorker('spatialWorker.js', 'spatialWorker');
+  const { buffers, gridMetadata } = spatialBuffers(cfg, count);
+  await initWorker(worker, {
+    config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg },
+    globalEntityCount: count,
+    buffers,
+    gridMetadata,
+    extra: { workerIndex: 0, totalSpatialWorkers: 1 },
+  });
+  assert.equal(worker._wasmPub, null, 'the reference worker runs the JS path');
+  return worker;
 }
 
 function readRows(neighbor, list, n, maxN) {
@@ -90,6 +56,8 @@ function lcg(seed) {
     return s / 4294967296;
   };
 }
+
+const f = Math.fround;
 
 /**
  * Fill one frame: positions, ranges, a batch list and candidate rows. A third of the candidates
@@ -139,14 +107,15 @@ function fillFrame(views, count, maxN, batch, seed) {
 const CONFIGS = [
   { count: 4096, maxN: 1024, batch: 512, seed: 1 },
   { count: 4096, maxN: 64, batch: 2048, seed: 2 },
-  { count: 1000, maxN: 7, batch: 1000, seed: 3 }, // truncation in the SIMD and tail loops
-  { count: 300, maxN: 3, batch: 300, seed: 4 }, // under one SIMD group
+  { count: 1000, maxN: 7, batch: 1000, seed: 3 }, // rows truncate at maxNeighbors
+  { count: 300, maxN: 3, batch: 300, seed: 4 },
   { count: 64, maxN: 0, batch: 64, seed: 5 }, // no row space at all
 ];
 
-test('the freestanding spatial module publishes what the emcc binary did, in float32', async () => {
+test('the spatial module publishes exactly what the JS path publishes, on the range edge too', async () => {
   for (const cfg of CONFIGS) {
-    const mem = publishMemory(cfg.count, cfg.maxN);
+    const mem = createSpatialPublishMemory(cfg.count, cfg.maxN, 1);
+    assert.ok(mem, 'spatial publish memory');
     const { buffer } = mem;
     const stride = 1 + cfg.maxN;
     const views = {
@@ -156,22 +125,27 @@ test('the freestanding spatial module publishes what the emcc binary did, in flo
       list: new Uint16Array(buffer, mem.listByte, cfg.count),
     };
     const neighbor = new Uint16Array(buffer, mem.neighborByte, cfg.count * stride);
-    // Instantiate before filling the frame: the emcc binary's start function writes its init flag
-    // and a static at addresses 1024 and 1028 (N-62), inside the pose region since T9.
-    const emccPublish = await instantiateEmcc(mem.memory);
-    const shippedPublish = await instantiateShipped(mem.memory);
     const n = fillFrame(views, cfg.count, cfg.maxN, cfg.batch, cfg.seed);
-    const run = (fn) => {
-      neighbor.fill(0xbeef);
-      fn(n, cfg.maxN, mem.posByte, mem.rangeByte, mem.candByte, mem.neighborByte, mem.listByte);
-      return readRows(neighbor, views.list, n, cfg.maxN);
-    };
-    const emcc = run(emccPublish);
-    const shipped = run(shippedPublish);
-    const model = publishF32(views.pos, views.range, views.cand, views.list, n, cfg.maxN);
+
+    neighbor.fill(0xbeef);
+    const publish = await instantiateShipped(mem.memory);
+    publish(n, cfg.maxN, mem.posByte, mem.rangeByte, mem.candByte, mem.neighborByte, mem.listByte);
+    const shipped = readRows(neighbor, views.list, n, cfg.maxN);
+
+    // The same bytes in the JS path's own storage: poses, candidates, rows in Grid.neighborData.
+    const worker = await jsWorker(cfg.count, cfg.maxN);
+    worker.entityPosData.set(views.pos);
+    worker._neighborCandidateData.set(views.cand);
+    const rows = Grid.neighborData;
+    rows.fill(0xbeef);
+    for (let k = 0; k < n; k++) {
+      const a = views.list[k];
+      worker._publishFilteredNeighbors(a, views.pos[a * 4], views.pos[a * 4 + 1], views.range[a], a * stride, cfg.maxN, worker.entityPosData, rows);
+    }
+    const js = readRows(rows, views.list, n, cfg.maxN);
+
     const label = JSON.stringify(cfg);
-    assert.deepEqual(shipped, emcc, `${label}: shipped vs emcc`);
-    assert.deepEqual(shipped, model, `${label}: shipped vs float32 model`);
+    assert.deepEqual(shipped, js, `${label}: shipped module vs JS path`);
     const published = shipped.reduce((s, r) => s + r.length, 0);
     if (cfg.maxN > 0) assert.ok(published > 0, `${label}: something was published`);
   }
