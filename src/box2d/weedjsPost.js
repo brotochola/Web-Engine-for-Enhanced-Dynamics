@@ -84,6 +84,8 @@
   let lastBodySyncVisited = 0;
   let bodyDirtyFlags = null;
   let bodyDirtyWords = null;
+  // The same bytes 16 bits a word, so an Atomics result is always a Smi (E-87, box2dBodySync.js).
+  let bodyDirtyHalves = null;
   let bodyGeneration = null;
   let seenBodyGeneration = null;
   // Bumped in bumpBodyGeneration. publishPose skips per-body Atomics.load when it matches.
@@ -351,12 +353,14 @@
     if (!desc) {
       bodyDirtyFlags = null;
       bodyDirtyWords = null;
+      bodyDirtyHalves = null;
       bodyGeneration = null;
       poseGenEpoch = null;
       return;
     }
     bodyDirtyFlags = viewFromDesc(desc.dirtyFlags, Int32Array);
     bodyDirtyWords = viewFromDesc(desc.dirtyWords, Int32Array);
+    bodyDirtyHalves = new Uint16Array(desc.dirtyWords.sab, desc.dirtyWords.byteOffset, desc.dirtyWords.length * 2);
     bodyGeneration = viewFromDesc(desc.generation, Int32Array);
     poseGenEpoch = desc.epoch ? viewFromDesc(desc.epoch, Int32Array) : null;
   }
@@ -1052,7 +1056,7 @@
         }
         if (bodyDirtyFlags && bodyDirtyWords) {
           Atomics.or(bodyDirtyFlags, i, BODY_DIRTY.LIFECYCLE);
-          Atomics.or(bodyDirtyWords, i >>> 5, 1 << (i & 31));
+          Atomics.or(bodyDirtyHalves, i >>> 4, 1 << (i & 15));
         }
       }
     }
@@ -1073,18 +1077,28 @@
     }
     let changes = 0;
     let visited = 0;
-    for (let wordIndex = 0; wordIndex < bodyDirtyWords.length; wordIndex++) {
-      let bits = Atomics.exchange(bodyDirtyWords, wordIndex, 0) >>> 0;
-      while (bits !== 0) {
-        const bit = 31 - Math.clz32(bits & -bits);
-        const i = (wordIndex << 5) + bit;
-        bits = (bits & (bits - 1)) >>> 0;
-        if (i >= entityCount) continue;
-        const flags = Atomics.exchange(bodyDirtyFlags, i, 0);
-        visited++;
-        changes += syncBodySlot(i, flags);
+    // sync-bodies-drain-start
+    const words = bodyDirtyWords;
+    const halves = bodyDirtyHalves;
+    for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
+      // A plain read first: most words are empty, and in Chrome every Atomics call is a builtin
+      // call. A bit set after this read is drained next step, as one set after the exchange always
+      // was. Each half is exchanged on its own so the result stays a Smi (E-87).
+      if (words[wordIndex] === 0) continue;
+      for (let h = wordIndex << 1, hEnd = h + 2; h < hEnd; h++) {
+        let bits = Atomics.exchange(halves, h, 0);
+        while (bits !== 0) {
+          const bit = 31 - Math.clz32(bits & -bits);
+          const i = (h << 4) + bit;
+          bits &= bits - 1;
+          if (i >= entityCount) continue;
+          const flags = Atomics.exchange(bodyDirtyFlags, i, 0);
+          visited++;
+          changes += syncBodySlot(i, flags);
+        }
       }
     }
+    // sync-bodies-drain-end
     lastBodySyncVisited = visited;
     return changes;
   }

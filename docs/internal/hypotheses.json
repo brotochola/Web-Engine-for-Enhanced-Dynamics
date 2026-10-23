@@ -6736,19 +6736,17 @@
     {
       "id": "E-87",
       "title": "Atomics results outside the Smi range (free-list heads, dirty words)",
-      "status": "open",
-      "statusText": "free list kept (hygiene) 2026-10-23; dirty words open",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
       "date": "2026-10-23",
-      "result": "Chrome runs Atomics as builtins: an out-of-range value is a heap number per call (1.83 GB per 20 M steps, 70 vs 28.5 ns). The u16 free-list head keeps a 15-bit tag with bit 31 copying bit 30: bulletStressScene particle 2.1 → 0.04 MB/s, spawnStormScene logic 24.0 → 17.9 MB/s, logic a tie (+0.7 %, load +3.9 %). Left: the body dirty words (markBodyDirty's Atomics.or, physics' exchange drain).",
+      "result": "Free list: 15-bit tag, always a Smi (hygiene). Dirty words: a Uint16Array over the same bytes and a plain pre-check in the drain; Atomics allocation 3.66 MB/s logic + 153 KB/s physics to 0; spawnStormScene logic 5.302 → 5.184 ms, −4.0 %, worse 0/4.",
       "area": "logic",
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L13",
-        "EXECUTION_PLAN.md#L684"
+        "EXECUTION_PLAN.md#L693"
       ],
-      "aliases": [],
-      "next": "16 bits per dirty word, so every value is a Smi; spawnStormScene logic and physics.",
-      "rank": 2
+      "aliases": []
     },
     {
       "id": "E-88",
@@ -6792,7 +6790,7 @@
       ],
       "aliases": [],
       "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
-      "rank": 3
+      "rank": 1
     },
     {
       "id": "E-91",
@@ -6969,7 +6967,7 @@
       ],
       "aliases": [],
       "next": "The stash-then-copy of each pose, the separate persist-check pass, the persist path's shadow terms; W4 for the rest.",
-      "rank": 1
+      "rank": 2
     },
     {
       "id": "E-82b",
@@ -7002,6 +7000,23 @@
         "REVIEW_PLAN.md"
       ],
       "aliases": []
+    },
+    {
+      "id": "N-1",
+      "title": "The visibility polygon copy builds two subarray views per light per frame",
+      "status": "open",
+      "statusText": "open (review N-1)",
+      "date": "2026-10-23",
+      "result": "buildVisibilityPolygons copies each light's polygon with f32.set(outX.subarray(0, n)): 2.2 MB/s in visPolyStressScene pre-render (E-95 heap pass).",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "REVIEW_PLAN.md",
+        "EXECUTION_PLAN.md#L758"
+      ],
+      "aliases": [],
+      "next": "A copy loop; visPolyStressScene pre-render pair as hygiene.",
+      "rank": 3
     }
   ],
   "leads": [
