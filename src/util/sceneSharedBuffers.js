@@ -1077,7 +1077,7 @@ export function teardownSceneSharedState(scene) {
   GameObject.entityTypeForcedLogicWorkerCount = null;
   bindBodySyncBuffers(null);
   GameObject.instances = [];
-  GameObject._globalAnimationCache = {};
+  GameObject._globalAnimationCache = Object.create(null);
   GameObject._animIndexBySheet = [];
 
   if (Sun.isInitialized) {

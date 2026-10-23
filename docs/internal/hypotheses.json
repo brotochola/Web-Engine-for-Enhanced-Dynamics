@@ -6825,6 +6825,22 @@
         "EXECUTION_PLAN.md#L722"
       ],
       "aliases": []
+    },
+    {
+      "id": "E-93",
+      "title": "`setSprite` builds its cache key per call",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
+      "date": "2026-10-23",
+      "result": "The animation-index cache was keyed by `bigAtlas:${spriteName}`, a new string per call; now by the name in a null-prototype object. spawnStormScene logic allocation 10.6 → 8.5 MB/s; logic 5.328 → 5.140 ms, −3.1 %, worse 0/4 (4 pairs).",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L731"
+      ],
+      "aliases": [],
+      "next": "Predator gate with the next batch."
     }
   ],
   "leads": [
@@ -6887,6 +6903,11 @@
       "source": "E-85 (2026-10-23)",
       "finding": "Any engine function too big to inline that takes or returns doubles boxes them per call (E-59, E-66, E-85). The heap sweep finds the hot ones; --trace-turbo-inlining names the calls left out.",
       "next": "After each new kernel or worker change, a heap pass of its stress scene (profileSceneSweep --pass heap --only …) before the pair."
+    },
+    {
+      "source": "E-93 (2026-10-23)",
+      "finding": "_processSpawnSoA sorts its permutation with a comparator, which copies the elements per batch (0.85 MB/s in spawnStormScene logic). H-14 (numeric sort of packed keys) won its kernel by +106..147 % and was dropped on a sitting a stray Chromium launch contaminated.",
+      "next": "Re-sit H-14 on a quiet machine (spawnStormScene logic, 4 pairs) before re-proposing it; read its log row first."
     }
   ],
   "howToFindNew": [

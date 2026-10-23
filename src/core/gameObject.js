@@ -1917,14 +1917,14 @@ export class GameObject {
     // Static sprites use bigAtlas directly
     const sheetName = 'bigAtlas';
 
-    // PERFORMANCE: Global cache keyed by "bigAtlas:spriteName"
-    // Avoids repeated registry lookups for the same sprite
+    // PERFORMANCE: Global cache of bigAtlas animation indices, keyed by the sprite name alone: the
+    // sheet is always bigAtlas here, and a "bigAtlas:name" key built per call was a new string per
+    // spawn (E-93). No prototype, so a sprite named "constructor" is an ordinary key.
     if (!GameObject._globalAnimationCache) {
-      GameObject._globalAnimationCache = {};
+      GameObject._globalAnimationCache = Object.create(null);
     }
 
-    const cacheKey = `${sheetName}:${spriteName}`;
-    let animIndex = GameObject._globalAnimationCache[cacheKey];
+    let animIndex = GameObject._globalAnimationCache[spriteName];
 
     if (animIndex === undefined) {
       // First time this sprite is used - look it up in bigAtlas
@@ -1940,7 +1940,7 @@ export class GameObject {
       }
 
       // Cache it globally for future use
-      GameObject._globalAnimationCache[cacheKey] = animIndex;
+      GameObject._globalAnimationCache[spriteName] = animIndex;
     }
 
     // Store which spritesheet to use (bigAtlas for static sprites)

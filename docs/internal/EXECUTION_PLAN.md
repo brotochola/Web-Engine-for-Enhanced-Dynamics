@@ -728,6 +728,12 @@ spawn, and `_spawnAt` is far too big for TurboFan to inline the call away: `spaw
 `this` or `arguments`, so a begin/end pair around a `try`/`finally` does the same without the
 closure. Also in that profile: `sort` from `_processSpawnSoA` 0.85 MB/s and `setSprite` 0.85 MB/s.
 
+### E-93 `setSprite` builds its cache key per call — **kept (product), 2026-10-23**
+The animation-index cache was keyed by `` `bigAtlas:${spriteName}` ``, a new string per call; it is keyed
+by the name in a null-prototype object. `spawnStormScene` logic allocation 10.6 → 8.5 MB/s, logic
+**5.328 → 5.140 ms, −3.1 %, worse 0/4**. Left there: `markBodyDirty`'s `Atomics.or` (E-87), the spawn
+sort's copy (H-14, dropped on a contaminated sitting: re-sit it clean before re-proposing).
+
 ### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls
 `Ray.cast`, `castAll`, `linecastBetweenEntities` with doubles, and the public methods (stats wrap,
