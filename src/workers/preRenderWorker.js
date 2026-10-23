@@ -4041,6 +4041,14 @@ class PreRenderWorker extends AbstractWorker {
      */
     reportFPS() {
         if (!this.stats) return;
+        // A backpressure skip did no work. Its near-zero step was averaged into
+        // STEP_MS, so a Pixi that consumed faster (fewer skips) read as a slower
+        // pre-render: +217 % in the E-82 sitting for the same busy time. It
+        // publishes the skip and leaves the last frame that worked in the meters.
+        if (this.skippedFramesThisFrame) {
+            if (this.collectDetailedStats) this.stats[PRE_RENDER_STATS.SKIPPED_FRAMES] = 1;
+            return;
+        }
         // WAIT_MS stays 0 by construction here: pre-render's only wait on a
         // sibling is the backpressure skip, counted as SKIPPED_FRAMES below.
         this._writeFrameMeters(PRE_RENDER_STATS);
