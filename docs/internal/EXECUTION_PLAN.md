@@ -763,7 +763,7 @@ pre-render **5.538 → 5.280 ms, −4.1 %, worse 0/4**. Left: a `subarray` per l
 `buildVisibilityPolygons` (2.2 MB/s), and Pixi's 36.5 MB/s in the vendor draw that
 `_renderOccluderSelfLit` drives in the same scene (E-96).
 
-### E-96 Pixi's lighting draw allocates 36 MB/s — **open (from E-95)**
+### E-96 Pixi's lighting draw allocates 36 MB/s — **KEPT 2026-10-23**
 `visPolyStressScene` Pixi: 36.5 MB/s inside Pixi's vendor code (`G_` from `draw`), reached from
 `renderVisibilityLighting` → `_renderOccluderSelfLit`, which also calls `removeChildren` / `addChild`
 every frame. Found: `G_` is Pixi's per-draw shader binding (`for … in` over the shader's groups and
@@ -773,6 +773,10 @@ change; the lever is fewer draws, the per-light passes batched (one mesh per pas
 its vertices). A rendering change, ranked with the large items. `_renderOccluderSelfLit`'s own
 1.6 MB/s is `_emitTransmitWedge(lx, ly, lightR, …)`: nine doubles per occluder per light (the E-85
 pattern), the cheap part.
+**Done (2026-10-23):** every light's disc and fan in one mesh with the light's terms as vertex attributes,
+pixel-identical on WebGL and WebGPU: renderer **5.472 → 1.361 ms, −75.2 %, worse 0/4**; Pixi allocation
+36.5 → 8.7 MB/s. Report: [`reports/E-96-light-batch.md`](./reports/E-96-light-batch.md). Next (E-96b): the
+self-lit pass refills its container every frame (~0.7 MB/s) and passes nine doubles per wedge (1.6 MB/s).
 
 ### E-97 Pixi submits frames faster than a full GPU finishes them — **KEPT 2026-10-23**
 Report: [`reports/E-97-gpu-frame-pacing.md`](./reports/E-97-gpu-frame-pacing.md). A worker's rAF fires at the

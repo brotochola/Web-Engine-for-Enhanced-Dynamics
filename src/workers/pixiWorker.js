@@ -326,6 +326,8 @@ function gpuFromWgsl(source, name) {
 const UMBRA_FLOOR = 0.33;
 /** Rest of the radial, added by the visibility fan and by the lit face. */
 const VIS_REST = 1 - UMBRA_FLOOR;
+/** E-96. Floats per vertex of the light batch: x, y; the light's x, y, intensity, radius; r, g, b, attenuation scale. */
+const VIS_BATCH_FLOATS = 10;
 const WEDGE_MAX_QUADS = 256;
 
 function crossOrigin(ox, oy, ax, ay, bx, by) {
@@ -818,8 +820,10 @@ class PixiRenderer extends AbstractWorker {
     this._visPolyMaxLights = 10;
     this._visPolySlotBytes = 0;
     this._visPolyContainer = null;   // Container for light meshes
-    this._visPolyMeshes = [];        // Reusable PIXI.Mesh pool
-    this._umbraDiscs = [];
+    // E-96. Every light's umbra disc and visibility fan in one mesh: { mesh, geometry, vbuf, data,
+    // indices, uniforms, vertCap, idxCap, idxUsed, gpuReady }. Two draws per light were ~60 % of
+    // Pixi in visPolyStressScene, most of it Pixi's per-draw binding and buffer bookkeeping.
+    this._visBatch = null;
     this._visPolyRT = null;          // RenderTexture for visibility lighting
     this._visPolyDisplaySprite = null; // Sprite displaying the RT with multiply blend
     this._selfLitBuffers = [null, null];
@@ -897,6 +901,7 @@ class PixiRenderer extends AbstractWorker {
     this._decalSharedBuffers = null;
     this._decalCopyBuffers = null;
     this._visPolyProgramOpts = null;
+    this._visBatchProgramOpts = null;
     this._selfLitSpriteProgramOpts = null;
     this._selfLitColliderProgramOpts = null;
     this._selfLitMaxFillVerts = 0;
@@ -909,7 +914,6 @@ class PixiRenderer extends AbstractWorker {
     this._wedgeMesh = null;
     this._wedgeGpuReady = false;
     this._wedgeLastIdx = 0;
-    this._visPolyShownFrame = 0;
     this._missingTextureWarns = null;
     this.shadowUpdateInterval = 1;
     this._shadowUpdateTick = 0;
@@ -2672,6 +2676,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
     if (this._useWebGpu) {
       this._visPolyProgramOpts = { gpuProgram: gpuFromWgsl(this._visPolyWgsl, 'visibility-polygon') };
+      this._visBatchProgramOpts = { gpuProgram: gpuFromWgsl(this._visBatchWgsl, 'visibility-polygon-batch') };
       if (this._selfLitSpriteWgsl) {
         this._selfLitSpriteProgramOpts = {
           gpuProgram: gpuFromWgsl(this._selfLitSpriteWgsl, 'occluder-self-lit-sprite'),
@@ -2687,6 +2692,12 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         glProgram: new PIXI.GlProgram({
           vertex: this._visPolyVertexShader,
           fragment: this._visPolyFragmentShader,
+        }),
+      };
+      this._visBatchProgramOpts = {
+        glProgram: new PIXI.GlProgram({
+          vertex: this._visBatchVertexShader,
+          fragment: this._visBatchFragmentShader,
         }),
       };
       if (this._selfLitSpriteVertShader && this._selfLitSpriteFragShader) {
@@ -2744,36 +2755,62 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
    * Get or create a PIXI.Mesh for rendering a light's visibility polygon.
    * Meshes are pooled and reused across frames.
    */
-  _getVisPolyMesh(index) {
-    if (this._visPolyMeshes[index]) return this._visPolyMeshes[index];
-
-    const scale = new Float32Array(this._visPolyMaxVerts + 1);
-    scale.fill(1);
+  /**
+   * E-96. The light batch, with room for `verts` vertices and `idx` indices. It grows to a quarter past
+   * the need and stays there: Pixi draws the whole index buffer, so the tail past this frame's triangles
+   * is zeros (degenerate), as few as the high-water mark leaves.
+   */
+  _ensureVisBatch(verts, idx) {
+    const old = this._visBatch;
+    if (old && verts <= old.vertCap && idx <= old.idxCap) return old;
+    const vertCap = Math.ceil(Math.max(verts, old ? old.vertCap : 0, 64) * 1.25);
+    const idxCap = Math.ceil(Math.max(idx, old ? old.idxCap : 0, 192) * 1.25);
+    const data = new Float32Array(vertCap * VIS_BATCH_FLOATS);
+    const indices = new Uint32Array(idxCap);
+    const vbuf = new Buffer({
+      data,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      shrinkToFit: false,
+    });
+    const stride = VIS_BATCH_FLOATS * 4;
     const geometry = new PIXI.Geometry({
       attributes: {
-        aPosition: {
-          buffer: this._dynBuf(new Float32Array((this._visPolyMaxVerts + 1) * 2), BufferUsage.VERTEX),
-          size: 2,
-        },
-        aScale: {
-          buffer: this._dynBuf(scale, BufferUsage.VERTEX),
-          size: 1,
-        },
+        aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
+        aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 8 },
+        aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 24 },
       },
-      indexBuffer: this._dynBuf(new Uint16Array(this._visPolyMaxVerts * 3), BufferUsage.INDEX),
+      indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
     });
-
-    const shader = new PIXI.Shader({
-      ...this._visPolyProgramOpts,
-      resources: this._lightUniformResources(VIS_REST),
-    });
-
+    // The camera only, in the WGSL struct's order.
+    const resources = {
+      uniforms: {
+        uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+        uZoom: { value: 1.0, type: 'f32' },
+        uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
+        uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
+      },
+    };
+    const shader = new PIXI.Shader({ ...this._visBatchProgramOpts, resources });
     const mesh = new PIXI.Mesh({ geometry, shader });
     mesh.blendMode = 'add';
-    geometry.attributes.aScale.buffer.update();
-
-    this._visPolyMeshes[index] = { mesh, geometry, shader };
-    return this._visPolyMeshes[index];
+    if (old) {
+      if (old.mesh.parent) old.mesh.parent.removeChild(old.mesh);
+      old.mesh.destroy();
+      old.geometry.destroy();
+    }
+    this._visBatch = {
+      mesh,
+      geometry,
+      vbuf,
+      data,
+      indices,
+      uniforms: shader.resources.uniforms.uniforms,
+      vertCap,
+      idxCap,
+      idxUsed: 0,
+      gpuReady: false,
+    };
+    return this._visBatch;
   }
 
   _stampLightCamera(uniforms, cameraX, cameraY, zoom) {
@@ -2801,35 +2838,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         uAttenScale: { value: attenScale, type: 'f32' },
       },
     };
-  }
-
-  /** One quad per light. aScale stays 1. uAttenScale is the umbra floor. */
-  _getUmbraDisc(index) {
-    if (this._umbraDiscs[index]) return this._umbraDiscs[index];
-    const scale = new Float32Array(4);
-    scale.fill(1);
-    const geometry = new PIXI.Geometry({
-      attributes: {
-        aPosition: {
-          buffer: this._dynBuf(new Float32Array(8), BufferUsage.VERTEX),
-          size: 2,
-        },
-        aScale: {
-          buffer: this._dynBuf(scale, BufferUsage.VERTEX),
-          size: 1,
-        },
-      },
-      indexBuffer: this._dynBuf(new Uint16Array([0, 1, 2, 0, 2, 3]), BufferUsage.INDEX),
-    });
-    const shader = new PIXI.Shader({
-      ...this._visPolyProgramOpts,
-      resources: this._lightUniformResources(UMBRA_FLOOR),
-    });
-    const mesh = new PIXI.Mesh({ geometry, shader });
-    mesh.blendMode = 'add';
-    geometry.attributes.aScale.buffer.update();
-    this._umbraDiscs[index] = { mesh, geometry, shader };
-    return this._umbraDiscs[index];
   }
 
   /** Shadow wedges for block < 1. One mesh, rewritten per light. aScale carries (1-block)*VIS_REST. */
@@ -3067,9 +3075,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const cameraY = this._renderCameraY;
 
     const container = this._visPolyContainer;
-    let shownFrame = (this._visPolyShownFrame + 1) | 0;
-    if (shownFrame === 0) shownFrame = 1;
-    this._visPolyShownFrame = shownFrame;
 
     // LightEmitter data for color
     const lightColor = LightEmitter.lightColor;
@@ -3078,6 +3083,22 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightHeight = LightEmitter.height;
 
     const rgb = this._rgbResult;
+
+    // E-96. Each light's umbra disc, then its visibility fan (the order the per-light meshes were
+    // added to the container in, so the additive blend sums in the same sequence), into one mesh.
+    let needVerts = 0;
+    let needIdx = 0;
+    for (let li = 0; li < lightCount; li++) {
+      const vc = i32[((4 + li * slotBytes) >> 2) + 3];
+      if (vc < 3) continue;
+      needVerts += vc + 5;
+      needIdx += vc * 3 + 6;
+    }
+    const batch = this._ensureVisBatch(needVerts, needIdx);
+    const data = batch.data;
+    const indices = batch.indices;
+    let vtx = 0;
+    let iCount = 0;
 
     for (let li = 0; li < lightCount; li++) {
       const baseIndex = (4 + li * slotBytes) >> 2;
@@ -3090,114 +3111,85 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
       const xStart = baseIndex + 4;
       const yStart = xStart + maxVerts;
+      const lightY = ly - (lightHeight[lightIdx] || 0);
+      const intensity = lightIntensityArr[lightIdx];
+      const radius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
+      extractRGBNormalizedMut(lightColor[lightIdx], rgb);
+      const r = rgb.r;
+      const g = rgb.g;
+      const b = rgb.b;
 
-      const pack = this._getVisPolyMesh(li);
-      pack.shownFrame = shownFrame;
-      const { mesh, geometry, shader } = pack;
-
-      // Build triangle fan: center = light position, fan around polygon vertices
-      const posBuffer = geometry.attributes.aPosition.buffer;
-      const positions = posBuffer.data;
-      const indexBuffer = geometry.indexBuffer;
-      const indices = indexBuffer.data;
-
-      // Vertex 0 = light center
-      positions[0] = lx;
-      positions[1] = ly - (lightHeight[lightIdx] || 0);
-
-      // Vertices 1..vertCount = polygon boundary
-      for (let v = 0; v < vertCount; v++) {
-        positions[(v + 1) * 2] = f32[xStart + v];
-        positions[(v + 1) * 2 + 1] = f32[yStart + v];
+      // The umbra disc: a quad around the light at the umbra floor.
+      const disc = vtx;
+      for (let c = 0; c < 4; c++) {
+        const o = (vtx++) * VIS_BATCH_FLOATS;
+        data[o] = c === 0 || c === 3 ? lx - radius : lx + radius;
+        data[o + 1] = c < 2 ? lightY - radius : lightY + radius;
+        data[o + 2] = lx;
+        data[o + 3] = lightY;
+        data[o + 4] = intensity;
+        data[o + 5] = radius;
+        data[o + 6] = r;
+        data[o + 7] = g;
+        data[o + 8] = b;
+        data[o + 9] = UMBRA_FLOOR;
       }
+      indices[iCount++] = disc;
+      indices[iCount++] = disc + 1;
+      indices[iCount++] = disc + 2;
+      indices[iCount++] = disc;
+      indices[iCount++] = disc + 2;
+      indices[iCount++] = disc + 3;
 
-      // Triangle fan indices: (0, v, v+1) for each consecutive boundary pair
-      let iCount = 0;
+      // The visibility fan: the light, then the polygon boundary.
+      const center = vtx;
+      for (let v = -1; v < vertCount; v++) {
+        const o = (vtx++) * VIS_BATCH_FLOATS;
+        data[o] = v < 0 ? lx : f32[xStart + v];
+        data[o + 1] = v < 0 ? lightY : f32[yStart + v];
+        data[o + 2] = lx;
+        data[o + 3] = lightY;
+        data[o + 4] = intensity;
+        data[o + 5] = radius;
+        data[o + 6] = r;
+        data[o + 7] = g;
+        data[o + 8] = b;
+        data[o + 9] = VIS_REST;
+      }
+      // Triangle fan: (center, v, v+1) for each boundary pair, then back to the first.
       for (let v = 1; v < vertCount; v++) {
-        indices[iCount++] = 0;
-        indices[iCount++] = v;
-        indices[iCount++] = v + 1;
+        indices[iCount++] = center;
+        indices[iCount++] = center + v;
+        indices[iCount++] = center + v + 1;
       }
-      // Close the fan: last boundary vertex connects back to first
-      indices[iCount++] = 0;
-      indices[iCount++] = vertCount;
-      indices[iCount++] = 1;
+      indices[iCount++] = center;
+      indices[iCount++] = center + vertCount;
+      indices[iCount++] = center + 1;
+    }
 
-      // Pixi draws indexBuffer.data.length, not the byte count passed to update().
-      // Tail stays 0. First upload sends the whole buffer; later uploads send the fan
-      // plus any indices just cleared because the fan shrank.
-      const prev = pack.indexUsed | 0;
-      if (iCount < prev) {
-        for (let j = iCount; j < prev; j++) indices[j] = 0;
-      }
-      const uploadIndexCount = iCount > prev ? iCount : prev;
-      pack.indexUsed = iCount;
-      if (!pack.indexGpuReady) {
-        posBuffer.update();
+    // Pixi draws the whole index buffer: what the last frame used past this one's end goes back to 0.
+    const prevIdx = batch.idxUsed;
+    if (iCount < prevIdx) indices.fill(0, iCount, prevIdx);
+    batch.idxUsed = iCount;
+    const batchMesh = batch.mesh;
+    if (iCount === 0) {
+      batchMesh.visible = false;
+    } else {
+      const indexBuffer = batch.geometry.indexBuffer;
+      if (!batch.gpuReady) {
+        batch.vbuf.update();
         indexBuffer.update();
-        pack.indexGpuReady = true;
+        batch.gpuReady = true;
       } else {
-        posBuffer.update((vertCount + 1) * 8);
-        indexBuffer.update(uploadIndexCount * 2);
+        batch.vbuf.update(vtx * VIS_BATCH_FLOATS * 4);
+        indexBuffer.update((iCount > prevIdx ? iCount : prevIdx) * 4);
       }
-
-      // Update shader uniforms
-      const uniforms = shader.resources.uniforms.uniforms;
+      const uniforms = batch.uniforms;
       this._stampLightCamera(uniforms, cameraX, cameraY, zoom);
       uniforms.uCanvasSize[0] = this.canvasWidth;
       uniforms.uCanvasSize[1] = this.canvasHeight;
-      uniforms.uLightPos[0] = lx;
-      uniforms.uLightPos[1] = ly - (lightHeight[lightIdx] || 0);
-      uniforms.uLightIntensity = lightIntensityArr[lightIdx];
-      uniforms.uLightRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
-
-      extractRGBNormalizedMut(lightColor[lightIdx], rgb);
-      uniforms.uLightColor[0] = rgb.r;
-      uniforms.uLightColor[1] = rgb.g;
-      uniforms.uLightColor[2] = rgb.b;
-
-      const lightY = ly - (lightHeight[lightIdx] || 0);
-      const disc = this._getUmbraDisc(li);
-      disc.shownFrame = shownFrame;
-      const radius = uniforms.uLightRadius;
-      const discPos = disc.geometry.attributes.aPosition.buffer;
-      const dp = discPos.data;
-      dp[0] = lx - radius;
-      dp[1] = lightY - radius;
-      dp[2] = lx + radius;
-      dp[3] = lightY - radius;
-      dp[4] = lx + radius;
-      dp[5] = lightY + radius;
-      dp[6] = lx - radius;
-      dp[7] = lightY + radius;
-      discPos.update(32);
-      const du = disc.shader.resources.uniforms.uniforms;
-      this._stampLightCamera(du, cameraX, cameraY, zoom);
-      du.uCanvasSize[0] = this.canvasWidth;
-      du.uCanvasSize[1] = this.canvasHeight;
-      du.uLightPos[0] = lx;
-      du.uLightPos[1] = lightY;
-      du.uLightIntensity = lightIntensityArr[lightIdx];
-      du.uLightRadius = radius;
-      du.uLightColor[0] = rgb.r;
-      du.uLightColor[1] = rgb.g;
-      du.uLightColor[2] = rgb.b;
-      if (disc.mesh.parent !== container) container.addChild(disc.mesh);
-      disc.mesh.visible = true;
-
-      if (mesh.parent !== container) container.addChild(mesh);
-      mesh.visible = true;
-    }
-
-    const visMeshes = this._visPolyMeshes;
-    for (let mi = 0; mi < visMeshes.length; mi++) {
-      const pooled = visMeshes[mi];
-      if (pooled && pooled.shownFrame !== shownFrame) pooled.mesh.visible = false;
-    }
-    const discs = this._umbraDiscs;
-    for (let mi = 0; mi < discs.length; mi++) {
-      const pooled = discs[mi];
-      if (pooled && pooled.shownFrame !== shownFrame) pooled.mesh.visible = false;
+      if (batchMesh.parent !== container) container.addChild(batchMesh);
+      batchMesh.visible = true;
     }
 
     // Render to the visibility RT
@@ -5558,6 +5550,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           fetchEngineShader('/src/shaders/visibilityPolygon.wgsl').then((s) => {
             this._visPolyWgsl = s;
           }),
+          fetchEngineShader('/src/shaders/visibilityPolygonBatch.wgsl').then((s) => {
+            this._visBatchWgsl = s;
+          }),
           fetchEngineShader('/src/shaders/occluderSelfLitSprite.wgsl').then((s) => {
             this._selfLitSpriteWgsl = s;
           }),
@@ -5572,6 +5567,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }),
           fetchEngineShader('/src/shaders/visibilityPolygon.frag.glsl').then((s) => {
             this._visPolyFragmentShader = s;
+          }),
+          fetchEngineShader('/src/shaders/visibilityPolygonBatch.vert.glsl').then((s) => {
+            this._visBatchVertexShader = s;
+          }),
+          fetchEngineShader('/src/shaders/visibilityPolygonBatch.frag.glsl').then((s) => {
+            this._visBatchFragmentShader = s;
           }),
           fetchEngineShader('/src/shaders/occluderSelfLitSprite.vert.glsl').then((s) => {
             this._selfLitSpriteVertShader = s;

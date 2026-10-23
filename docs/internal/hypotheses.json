@@ -51,7 +51,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 3
+      "rank": 4
     },
     {
       "id": "W7",
@@ -67,7 +67,7 @@
       ],
       "aliases": [],
       "next": "Boot barrier first (Box2D memory + offsets with box2dReady, rebind before start). Ceiling measured: JS left in Predator spatial is rebuildOwnedRows 12 % + glue 8 %, so one C call ≈ 10–15 % of spatial.",
-      "rank": 3
+      "rank": 4
     },
     {
       "id": "E-82",
@@ -99,7 +99,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 4
+      "rank": 5
     },
     {
       "id": "W26",
@@ -6906,18 +6906,18 @@
     {
       "id": "E-96",
       "title": "Pixi's lighting draw allocates 36 MB/s",
-      "status": "open",
-      "statusText": "open (from E-95)",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
       "date": "2026-10-23",
-      "result": "visPolyStressScene Pixi: 36.5 MB/s inside Pixi's per-draw shader binding (G_: for-in over groups and resources, uniform updates), scaling with ~1 000 draws a frame (≈360 lights). Fix is fewer draws: batch the per-light passes. _emitTransmitWedge's nine doubles per occluder (1.6 MB/s) is the cheap part.",
+      "result": "Every light's disc and fan in one mesh, the light's terms as vertex attributes; pixel-identical on WebGL and WebGPU. visPolyStressScene renderer 5.472 → 1.361 ms, −75.2 %, worse 0/4; Pixi allocation 36.5 → 8.7 MB/s.",
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L754"
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L766",
+        "reports/E-96-light-batch.md"
       ],
-      "aliases": [],
-      "next": "Batch the per-light lighting passes (a rendering change); first the cheap _emitTransmitWedge part.",
-      "rank": 5
+      "aliases": []
     },
     {
       "id": "E-97",
@@ -6968,7 +6968,7 @@
       ],
       "aliases": [],
       "next": "The persist-check pass (12 %), the persist path's shadow terms; W4.",
-      "rank": 1
+      "rank": 2
     },
     {
       "id": "E-82b",
@@ -6985,7 +6985,7 @@
       ],
       "aliases": [],
       "next": "The default path is pre-render's gpuPack: the packer writes two streams, Pixi a two-buffer plain geometry; measure on a static high-count scene.",
-      "rank": 2
+      "rank": 3
     },
     {
       "id": "N-64",
@@ -7045,6 +7045,23 @@
         "HYPOTHESIS_LOG.md#L15"
       ],
       "aliases": []
+    },
+    {
+      "id": "E-96b",
+      "title": "The self-lit pass refills its container and boxes nine doubles per wedge",
+      "status": "open",
+      "statusText": "open (from E-96)",
+      "date": "2026-10-23",
+      "result": "visPolyStressScene Pixi after E-96: _renderOccluderSelfLit 1.6 MB/s (_emitTransmitWedge's nine double arguments), removeChildren/addChild every frame ~0.7 MB/s.",
+      "area": "pixi",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L766",
+        "reports/E-96-light-batch.md"
+      ],
+      "aliases": [],
+      "next": "Doubles through a module Float64Array; children kept and toggled visible.",
+      "rank": 1
     }
   ],
   "leads": [
