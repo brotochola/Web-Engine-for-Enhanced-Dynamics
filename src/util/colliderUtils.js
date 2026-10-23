@@ -5,11 +5,20 @@
 // - Caller should pre-compute invariants (invCellSize, maxCol, maxRow) outside loops
 // - For ultra-hot paths (every frame, thousands of entities), inline the math instead
 
-import { Transform } from '../components/transform.js';
-import { Collider } from '../components/collider.js';
-import { ColliderFixture } from '../core/colliderFixture.js';
-import { ChainPoints } from '../core/chainPoints.js';
-import { MAX_POLYGON_VERTICES, ShapeType } from './configDefaults.js';
+import { Transform as TransformImport } from '../components/transform.js';
+import { Collider as ColliderImport } from '../components/collider.js';
+import { ColliderFixture as ColliderFixtureImport } from '../core/colliderFixture.js';
+import { ChainPoints as ChainPointsImport } from '../core/chainPoints.js';
+import { MAX_POLYGON_VERTICES as MAX_POLYGON_VERTICESImport, ShapeType } from './configDefaults.js';
+
+// Hot code reads these as module consts, not imports. TurboFan folds a module
+// const (and the typed arrays its class holds); an import is a cell it reads
+// at run time. See HOW_WE_MEASURE, "Imports in hot code".
+const Transform = TransformImport;
+const Collider = ColliderImport;
+const ColliderFixture = ColliderFixtureImport;
+const ChainPoints = ChainPointsImport;
+const MAX_POLYGON_VERTICES = MAX_POLYGON_VERTICESImport;
 
 /**
  * Shape type constants — aliases for ShapeType (Box2D / WASM C numbers).

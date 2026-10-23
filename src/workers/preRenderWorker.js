@@ -2,23 +2,23 @@
 // Handles all visual calculations AFTER physics, BEFORE pixi_worker renders
 // This worker is purely visual - no physics or game logic
 
-import { ParticleComponent } from '../components/particleComponent.js';
-import { DecorationComponent } from '../components/decorationComponent.js';
-import { BulletComponent } from '../components/bulletComponent.js';
-import { Transform } from '../components/transform.js';
-import { RigidBody } from '../components/rigidBody.js';
-import { Collider } from '../components/collider.js';
+import { ParticleComponent as ParticleComponentImport } from '../components/particleComponent.js';
+import { DecorationComponent as DecorationComponentImport } from '../components/decorationComponent.js';
+import { BulletComponent as BulletComponentImport } from '../components/bulletComponent.js';
+import { Transform as TransformImport } from '../components/transform.js';
+import { RigidBody as RigidBodyImport } from '../components/rigidBody.js';
+import { Collider as ColliderImport } from '../components/collider.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
-import { LightEmitter } from '../components/lightEmitter.js';
-import { SpriteRenderer } from '../components/spriteRenderer.js';
-import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
-import { ShadowCaster } from '../components/shadowCaster.js';
-import { FlashComponent } from '../components/flashComponent.js';
-import { LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
+import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.js';
+import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRenderer.js';
+import { AdobeAnimComponent as AdobeAnimComponentImport } from '../components/adobeAnimComponent.js';
+import { ShadowCaster as ShadowCasterImport } from '../components/shadowCaster.js';
+import { FlashComponent as FlashComponentImport } from '../components/flashComponent.js';
+import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { Camera } from '../core/camera.js';
-import { Query } from '../core/query.js';
+import { Query as QueryImport } from '../core/query.js';
 import {
     buildVisibilityPolygon,
     clearPolarBins,
@@ -33,7 +33,7 @@ import {
     writeOrientedBoxVerts,
     writePolygonVerts,
 } from '../render/visibility/angularSweep.js';
-import { Grid } from '../core/grid.js';
+import { Grid as GridImport } from '../core/grid.js';
 import { Sun } from '../core/sun.js';
 import {
     calculateCameraScreenBounds,
@@ -84,6 +84,25 @@ import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
+
+// Hot code reads these as module consts, not imports. TurboFan folds a module
+// const (and the typed arrays its class holds); an import is a cell it reads
+// at run time. See HOW_WE_MEASURE, "Imports in hot code".
+const ParticleComponent = ParticleComponentImport;
+const DecorationComponent = DecorationComponentImport;
+const BulletComponent = BulletComponentImport;
+const Transform = TransformImport;
+const RigidBody = RigidBodyImport;
+const Collider = ColliderImport;
+const LightEmitter = LightEmitterImport;
+const SpriteRenderer = SpriteRendererImport;
+const AdobeAnimComponent = AdobeAnimComponentImport;
+const ShadowCaster = ShadowCasterImport;
+const FlashComponent = FlashComponentImport;
+const LightOccluder = LightOccluderImport;
+const Query = QueryImport;
+const Grid = GridImport;
+
 const INVALID_TEXTURE_ID = 0xFFFF;
 const EMPTY_OWNED_IDS = new Uint32Array(0);
 // Placeholders for render-queue columns until initialize() binds the real views.

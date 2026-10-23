@@ -1,53 +1,94 @@
 // particle_worker.js - Dedicated worker for particle physics, navigation, and derived properties
 // Handles: particle physics, blood decals, decoration sway, flowfields, A*, walkability, derived properties
 
-import { ParticleComponent } from '../components/particleComponent.js';
-import { ParticleEmitter } from '../core/particleEmitter.js';
-import { DecorationComponent } from '../components/decorationComponent.js';
-import { DecorationPool } from '../core/decorationPool.js';
+import { ParticleComponent as ParticleComponentImport } from '../components/particleComponent.js';
+import { ParticleEmitter as ParticleEmitterImport } from '../core/particleEmitter.js';
+import { DecorationComponent as DecorationComponentImport } from '../components/decorationComponent.js';
+import { DecorationPool as DecorationPoolImport } from '../core/decorationPool.js';
 import {
-  SWAY_LOOP,
-  SWAY_LOOP_SKEW,
-  SWAY_IMPULSE,
-  SWAY_OFF,
-  SWAY_SKEW_C,
-  SWAY_ANGLE_PER_MS,
-  IMPULSE_DONE,
-  advanceImpulsePhase,
-  swayFrequencyForBucket,
-  bucketFromSwayFrequency,
+  SWAY_LOOP as SWAY_LOOPImport,
+  SWAY_LOOP_SKEW as SWAY_LOOP_SKEWImport,
+  SWAY_IMPULSE as SWAY_IMPULSEImport,
+  SWAY_OFF as SWAY_OFFImport,
+  SWAY_SKEW_C as SWAY_SKEW_CImport,
+  SWAY_ANGLE_PER_MS as SWAY_ANGLE_PER_MSImport,
+  IMPULSE_DONE as IMPULSE_DONEImport,
+  advanceImpulsePhase as advanceImpulsePhaseImport,
+  swayFrequencyForBucket as swayFrequencyForBucketImport,
+  bucketFromSwayFrequency as bucketFromSwayFrequencyImport,
 } from '../util/decorationSway.js';
-import { BulletPool } from '../core/bulletPool.js';
-import { BulletComponent } from '../components/bulletComponent.js';
-import { Transform } from '../components/transform.js';
-import { RigidBody } from '../components/rigidBody.js';
-import { Collider } from '../components/collider.js';
-import { Camera } from '../core/camera.js';
-import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { BulletPool as BulletPoolImport } from '../core/bulletPool.js';
+import { BulletComponent as BulletComponentImport } from '../components/bulletComponent.js';
+import { Transform as TransformImport } from '../components/transform.js';
+import { RigidBody as RigidBodyImport } from '../components/rigidBody.js';
+import { Collider as ColliderImport } from '../components/collider.js';
+import { Camera as CameraImport } from '../core/camera.js';
+import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRenderer.js';
 import { AbstractWorker } from './abstractWorker.js';
-import { Query } from '../core/query.js';
-import { Grid } from '../core/grid.js';
-import { NavGrid, DIRECTION, DIR_TO_VEC } from '../core/navGrid.js';
+import { Query as QueryImport } from '../core/query.js';
+import { Grid as GridImport } from '../core/grid.js';
+import { NavGrid as NavGridImport, DIRECTION as DIRECTIONImport, DIR_TO_VEC as DIR_TO_VECImport } from '../core/navGrid.js';
 import {
-  calculateSpeed,
+  calculateSpeed as calculateSpeedImport,
   calculateCameraScreenBounds,
   screenBoundsToWorldBounds,
 } from '../util/utils.js';
-import { Decal } from '../core/decal.js';
+import { Decal as DecalImport } from '../core/decal.js';
 import {
-  updateParticlePhysicsBuffers,
-  buildActiveListBuffers,
-  buildActiveAndVisibleListBuffers,
-  buildActiveAndVisibleListBuffersTurned,
+  updateParticlePhysicsBuffers as updateParticlePhysicsBuffersImport,
+  buildActiveListBuffers as buildActiveListBuffersImport,
+  buildActiveAndVisibleListBuffers as buildActiveAndVisibleListBuffersImport,
+  buildActiveAndVisibleListBuffersTurned as buildActiveAndVisibleListBuffersTurnedImport,
 } from '../util/particleIntegrate.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
 import {
-  getColliderBounds,
-  getCellRange,
-  _boundsResult,
-  _cellRangeResult,
+  getColliderBounds as getColliderBoundsImport,
+  getCellRange as getCellRangeImport,
+  _boundsResult as _boundsResultImport,
+  _cellRangeResult as _cellRangeResultImport,
 } from '../util/colliderUtils.js';
+
+// Hot code reads these as module consts, not imports. TurboFan folds a module
+// const (and the typed arrays its class holds); an import is a cell it reads
+// at run time. See HOW_WE_MEASURE, "Imports in hot code".
+const ParticleComponent = ParticleComponentImport;
+const ParticleEmitter = ParticleEmitterImport;
+const DecorationComponent = DecorationComponentImport;
+const DecorationPool = DecorationPoolImport;
+const SWAY_LOOP = SWAY_LOOPImport;
+const SWAY_LOOP_SKEW = SWAY_LOOP_SKEWImport;
+const SWAY_IMPULSE = SWAY_IMPULSEImport;
+const SWAY_OFF = SWAY_OFFImport;
+const SWAY_SKEW_C = SWAY_SKEW_CImport;
+const SWAY_ANGLE_PER_MS = SWAY_ANGLE_PER_MSImport;
+const IMPULSE_DONE = IMPULSE_DONEImport;
+const advanceImpulsePhase = advanceImpulsePhaseImport;
+const swayFrequencyForBucket = swayFrequencyForBucketImport;
+const bucketFromSwayFrequency = bucketFromSwayFrequencyImport;
+const BulletPool = BulletPoolImport;
+const BulletComponent = BulletComponentImport;
+const Transform = TransformImport;
+const RigidBody = RigidBodyImport;
+const Collider = ColliderImport;
+const Camera = CameraImport;
+const SpriteRenderer = SpriteRendererImport;
+const Query = QueryImport;
+const Grid = GridImport;
+const NavGrid = NavGridImport;
+const DIRECTION = DIRECTIONImport;
+const DIR_TO_VEC = DIR_TO_VECImport;
+const calculateSpeed = calculateSpeedImport;
+const Decal = DecalImport;
+const updateParticlePhysicsBuffers = updateParticlePhysicsBuffersImport;
+const buildActiveListBuffers = buildActiveListBuffersImport;
+const buildActiveAndVisibleListBuffers = buildActiveAndVisibleListBuffersImport;
+const buildActiveAndVisibleListBuffersTurned = buildActiveAndVisibleListBuffersTurnedImport;
+const getColliderBounds = getColliderBoundsImport;
+const getCellRange = getCellRangeImport;
+const _boundsResult = _boundsResultImport;
+const _cellRangeResult = _cellRangeResultImport;
+
 
 const EMPTY_SLOT = 0;
 const OCCUPIED_SLOT = 1;

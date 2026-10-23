@@ -156,6 +156,30 @@ So before merging copies inside a hot loop, time HEAD against the tree in one pr
 
 A kernel that calls a function a few times with a long loop inside can spend its whole timing in **OSR** code (the loop was compiled while running). Run the timed function once under `node --trace-opt`: if its only TurboFan line says `OSR`, that is the code being timed. OSR code is slower (`packColliderFillPoseOnly`: +46 percent with `--no-use-osr`) and folds less. It does not fold module-level `const`s: each read stays a context load with a TDZ check. So a change that only names constants measured −7 percent in OSR code and a tie in a normal compile. Say which tier a kernel result came from, and when the code it stands for runs per frame, warm it through short calls so a normal compile exists before timing (N-28): `warmNormalCompile(() => fn(smallSlice))` from `microbenchHelpers.mjs`. A game reaches a normal compile after its first frames, so OSR code is what a kernel should not time. `node tests/bench/kernelTierAudit.mjs [names]` runs kernels under `--trace-opt --trace-turbo-inlining` and lists shipped functions whose only TurboFan code was OSR and that no normal compile inlined; on 2026-10-21 that was three timed functions out of 86 kernels (fixed) and four setup helpers (left).
 
+## Imports in hot code
+
+In Chrome, hot code that reads an imported name pays for it in source mode and not in the bundle (2026-10-22). A native ES module reads an import from a cell at run time, with a TDZ check, and TurboFan does not fold it. Webpack turns the same import into a getter on the exporter's namespace object, which TurboFan inlines and folds. The fold reaches past the name: once `Transform` is a known constant, `Transform.x` is a known typed array (V8 tracks a static field written once as constant), so the loop indexes an array whose data pointer and length are compile-time facts. In a V8 code log of MinimalTick, the bundle's `rebuildOwnedRows` was 5 564 bytes of TurboFan code against 6 940 in source, and `collectVisibleEntities` 6 496 against 8 256. The same functions ran 15 % and 22 % cheaper in the bundle.
+
+The fix is to re-declare the import as a module const right after the import block:
+
+```js
+import { Transform as TransformImport } from '../components/transform.js';
+const Transform = TransformImport;
+```
+
+TurboFan folds a module const in a normal compile, and the methods keep their names. In MinimalTick (source, 3 rounds) that took spatial −16 to −20 % and pre-render −16 to −23 %, the whole gap to the bundle. Copying the import into a local at function entry only saves the per-read load (−2 to −6 %, not reproduced in a second sitting): the array behind it stays unknown.
+
+The bundle gains too, for a second reason. Each webpack getter has to be inlined before it folds, and inlining spends TurboFan's per-function budget. In the bundle's particle worker the large integrate functions inlined nothing at all, and `_updateDecorationSwayBuckets` spent its budget on four getters (4 024 bytes); read as module consts, the same functions inline their real callees (`returnToPool` and its chain) and the sway function compiles to 2 636 bytes. Predator, headed, 6 rounds: particle −17.9 % in the bundle and −27.6 % in source, 6/6 each. Where the getters were already inlined (spatial, `collectVisibleEntities`) the bundle compiles to the same or fewer bytes.
+
+Two limits, checked by `tests/node/importAliases.test.js`:
+
+- **Not inside an import cycle.** The alias runs when its module evaluates. If the exporter is in the importer's own cycle it may not have evaluated yet, and the alias throws. `src/` has one cycle of 19 modules (the core components, `gameObject`, `grid`, `utils`, …); the workers and `colliderUtils` are outside it.
+- **Not an export that its module reassigns.** `export let` bindings (`popEntity`/`pushEntity` in `atomicFreeList`, `packPair`/`unpackPair`/`entityIdNone` in `entityIdWidth`) switch with the entity-id width; an alias would keep the first value.
+
+Where it pays: modules whose methods run per entity and read component classes or per-entity helpers. In Pixi, logic and `abstractWorker` it bought nothing measurable (their imported reads are per frame, not per entity), so they keep plain imports.
+
+Two consequences for measuring. **Node does not show it:** Node 22's V8 12.4 timed the spatial kernel within 4 % across all four forms, where Chrome's V8 15.5 showed 19 %; a claim about import forms needs Chrome. **A `methodVariant.mjs` variant is not in source form:** `patchMethod` compiles the method with its imports as closure parameters, the bundle's form, so in Chrome a variant of a method that reads imports differs from the shipped method before any edit. In Node it measured +3.7 %, inside the noise.
+
 ## More than one worker of the same kind
 
 When more than one pre-render worker (or more than one logic or spatial worker) runs the changed code, the primary is the **maximum** `STEP_MS` across those workers. The average hides a worker that fell behind.

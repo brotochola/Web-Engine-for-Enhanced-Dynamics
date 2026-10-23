@@ -34,13 +34,13 @@ self.postMessage({
   when: Date.now(),
 });
 
-import { Transform } from '../components/transform.js';
+import { Transform as TransformImport } from '../components/transform.js';
 import { debugWorkerLog } from '../util/debugLog.js';
-import { RigidBody } from '../components/rigidBody.js';
-import { Collider } from '../components/collider.js';
-import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { RigidBody as RigidBodyImport } from '../components/rigidBody.js';
+import { Collider as ColliderImport } from '../components/collider.js';
+import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRenderer.js';
 import { AbstractWorker } from './abstractWorker.js';
-import { Grid } from '../core/grid.js';
+import { Grid as GridImport } from '../core/grid.js';
 import {
   SPATIAL_STATS,
   createMultiWorkerStatsWriter,
@@ -48,9 +48,24 @@ import {
 } from '../util/workersUtils.js';
 import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
-import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
+import { EntityIdArray, packSpatialPairStamp as packSpatialPairStampImport, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
 import { bindSpatialPublish } from './spatialPublishClient.js';
-import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../util/colliderUtils.js';
+import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRangeImport, _boundsResult as _boundsResultImport, _cellRangeResult as _cellRangeResultImport, SHAPE_CIRCLE as SHAPE_CIRCLEImport } from '../util/colliderUtils.js';
+
+// Hot code reads these as module consts, not imports. TurboFan folds a module
+// const (and the typed arrays its class holds); an import is a cell it reads
+// at run time. See HOW_WE_MEASURE, "Imports in hot code".
+const Transform = TransformImport;
+const RigidBody = RigidBodyImport;
+const Collider = ColliderImport;
+const SpriteRenderer = SpriteRendererImport;
+const Grid = GridImport;
+const packSpatialPairStamp = packSpatialPairStampImport;
+const getColliderBounds = getColliderBoundsImport;
+const getCellRange = getCellRangeImport;
+const _boundsResult = _boundsResultImport;
+const _cellRangeResult = _cellRangeResultImport;
+const SHAPE_CIRCLE = SHAPE_CIRCLEImport;
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
