@@ -1599,6 +1599,17 @@ in-order halves copied) through a scratch grown once. Kernel, 9 rounds: 360 rand
 checksums equal. VisPolyStressScene (360 lights): pre-render +1.4 %, a tie. The test now runs on a
 real worker: stable-sort parity for random, ties, sorted and reversed input, and scratch reuse.
 
+### E-77 Hot code read its imports as cells (source) or through getters (bundle) — **KEPT 2026-10-22**
+The bundle ran spatial 15–19 % and pre-render 11–22 % cheaper than source mode (MinimalTick), with
+the same functions on top of both profiles. A V8 code log showed why: TurboFan folds webpack's
+getter, and with it the class and the typed array the hot loop indexes, but reads a native
+import's cell at run time. Fix: hot modules re-declare those imports as module consts (HOW_WE_MEASURE,
+"Imports in hot code"), in `spatialWorker`, `preRenderWorker`, `particleWorker`, `colliderUtils`.
+That also helps the bundle wherever the getters used up TurboFan's inlining budget: particle −17.9 %
+there (Predator headed, 6/6), −27.6 % in source. Numbers in HYPOTHESIS_LOG. **Next, if wanted:**
+the same V8 code log on the bundle's Pixi and logic workers, looking for large hot functions that
+inline nothing (the particle sign); aliasing all their imports blindly measured nothing.
+
 ---
 
 ## Not doing (read the log first)
