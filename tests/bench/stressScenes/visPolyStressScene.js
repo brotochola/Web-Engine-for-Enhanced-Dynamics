@@ -31,8 +31,22 @@ export const SELF_LIT = (() => {
   }
 })();
 
+/**
+ * `?block=X`: the occluders' `LightOccluder.block` (default 1). Under 1 each occluder lets part of the
+ * light through and adds a transmit wedge per light, which no other scene draws (E-96c).
+ */
+export const BLOCK = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('block');
+    const n = raw === null ? NaN : Number(raw);
+    return n >= 0 && n <= 1 ? n : 1;
+  } catch {
+    return 1;
+  }
+})();
+
 export const stressSceneConfig = {
-  requested: { occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT },
+  requested: { occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT, block: BLOCK },
 };
 
 /** Bench scene: raycasted lights + occluders. Predator default leaves this path off. */
@@ -101,6 +115,7 @@ export class VisPolyStressScene extends Scene {
         width: 32 + rng() * 48,
         height: 32 + rng() * 48,
         circle: OCCLUDER_SHAPE === 'circle' ? 1 : 0,
+        block: BLOCK,
       });
     }
     Camera.centerOn(w * 0.5, h * 0.5);

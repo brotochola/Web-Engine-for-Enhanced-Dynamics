@@ -6,7 +6,7 @@ const { ShapeType } = enums;
 export class VisPolyOccluder extends GameObject {
   static components = [RigidBody, Collider, LightOccluder];
 
-  onSpawned({ x = 0, y = 0, width = 48, height = 48, circle = 0 } = {}) {
+  onSpawned({ x = 0, y = 0, width = 48, height = 48, circle = 0, block = 1 } = {}) {
     this.x = x;
     this.y = y;
     this.rotation = 0;
@@ -21,5 +21,6 @@ export class VisPolyOccluder extends GameObject {
     }
     this.collider.visualRange = 80;
     this.lightOccluder.active = 1;
+    this.lightOccluder.block = block;
   }
 }
