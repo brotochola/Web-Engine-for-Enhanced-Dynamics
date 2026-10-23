@@ -23,6 +23,7 @@ test('npm run dev: the logo, the version, the URLs, the headers and hot reload',
   assert.match(text, /Serving \/games/);
   assert.match(text, /COOP\/COEP headers on every response/);
   assert.match(text, /Hot reload  on/);
+  assert.match(text, /Requests    only failures are logged; WEED_LOG_REQUESTS=1 logs every one/);
   assert.doesNotMatch(text, /\x1b\[/, 'no colour codes in a pipe');
 });
 

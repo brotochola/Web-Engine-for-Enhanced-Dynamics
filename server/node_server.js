@@ -33,6 +33,9 @@ const ISOLATION_HEADERS = SW_MODE
 // game; other changes reload the page and restore the scene.
 // WEED_HOT_RELOAD=0 turns it off.
 const HOT_RELOAD = process.env.WEED_HOT_RELOAD !== '0';
+// A page of the demos asks for hundreds of modules: by default only failures are logged, so the
+// banner stays readable. WEED_LOG_REQUESTS=1 logs every request.
+const LOG_REQUESTS = process.env.WEED_LOG_REQUESTS === '1';
 const reloadClients = new Set();
 const WATCHED_EXT = new Set(['.js', '.mjs', '.json', '.frag', '.vert', '.glsl', '.wgsl', '.png', '.jpg', '.css', '.html']);
 const IGNORED = /(^|[\\/])(node_modules|\.git|dist|scratch|\.claude)([\\/]|$)|(^|[\\/])tests[\\/]results([\\/]|$)/;
@@ -99,7 +102,7 @@ const mimeTypes = {
 };
 
 const server = http.createServer((req, res) => {
-  console.log(`${req.method} ${req.url}`);
+  if (LOG_REQUESTS) console.log(`${req.method} ${req.url}`);
 
   // Parse URL and strip query parameters
   const [urlPath, query = ''] = req.url.split('?');
@@ -156,6 +159,7 @@ const server = http.createServer((req, res) => {
   // Read and serve file
   fs.readFile(filePath, (error, content) => {
     if (error) {
+      console.log(`${error.code === 'ENOENT' ? '404' : '500'} ${req.method} ${req.url}`);
       if (error.code === 'ENOENT') {
         res.writeHead(404, { 'Content-Type': 'text/html' });
         res.end('<h1>404 Not Found</h1>', 'utf-8');
@@ -182,7 +186,7 @@ const server = http.createServer((req, res) => {
 
 const startServer = (port) => {
   server.listen(port, () => {
-    console.log(devBanner({ port, swMode: SW_MODE, hotReload: HOT_RELOAD, root: process.cwd() }));
+    console.log(devBanner({ port, swMode: SW_MODE, hotReload: HOT_RELOAD, logRequests: LOG_REQUESTS, root: process.cwd() }));
   });
 
   server.on('error', (e) => {

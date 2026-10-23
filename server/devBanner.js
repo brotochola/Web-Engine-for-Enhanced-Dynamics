@@ -81,11 +81,11 @@ export function terminalPaint(stream = process.stdout) {
 }
 
 /**
- * @param {{ port: number, swMode: boolean, hotReload: boolean, root: string,
+ * @param {{ port: number, swMode: boolean, hotReload: boolean, logRequests?: boolean, root: string,
  *   paint?: ReturnType<typeof terminalPaint> }} options
  * @returns {string}
  */
-export function devBanner({ port, swMode, hotReload, root, paint = terminalPaint() }) {
+export function devBanner({ port, swMode, hotReload, logRequests = false, root, paint = terminalPaint() }) {
   const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const url = `http://localhost:${port}/`;
   const out = [''];
@@ -117,6 +117,7 @@ export function devBanner({ port, swMode, hotReload, root, paint = terminalPaint
   } else {
     row('Hot reload', 'off (WEED_HOT_RELOAD=0).');
   }
+  row('Requests', logRequests ? 'every one is logged (WEED_LOG_REQUESTS=1).' : 'only failures are logged; WEED_LOG_REQUESTS=1 logs every one.');
   out.push('');
   out.push(`  ${paint.dim('Ctrl+C stops.')}`);
   out.push('');
