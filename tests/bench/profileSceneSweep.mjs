@@ -6,7 +6,8 @@
  *          summarized per thread by summarizeChromeCpuTrace.mjs (self time, GC ms)
  *   deopt  the same run with V8's deopt and IC logs, summarized by summarizeV8Deopt.mjs: deopts in
  *          steady state ranked by count × that function's self ms, megamorphic ICs
- *   heap   a sampling heap profile of every worker the page starts (heapSampleWorkers.mjs): KB/s
+ *   heap   a sampling heap profile of every worker the page starts, the Box2D worker (box2dWasm.js)
+ *          included (heapSampleWorkers.mjs): KB/s
  *          allocated per worker and the sites that allocate it
  *
  * For each scene, <out>/<name>/ gets the cpu pass's stress.json, cpu-summary.json, hot-lines.md and
@@ -142,7 +143,7 @@ function deoptPass(file, dir, opts) {
 function heapPass(file, dir, opts) {
   const name = sceneName(file);
   const run = spawn([
-    bench('heapSampleWorkers.mjs'), '--scene', file, '--scene-export', sceneExport(file), '--workers', 'Worker',
+    bench('heapSampleWorkers.mjs'), '--scene', file, '--scene-export', sceneExport(file), '--workers', 'Worker,box2d',
     '--warmup-ms', String(opts.warmupMs), '--sample-ms', String(opts.durationMs), '--output', path.join(dir, 'heap.json'),
     ...(SCENE_ARGS[name] || []),
   ], opts);
