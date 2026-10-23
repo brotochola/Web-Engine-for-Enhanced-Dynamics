@@ -2,7 +2,7 @@
 
 **Opened:** 2026-10-22 (planned in a chat session), saved here 2026-10-23. **Status:** in progress
 on branch `isolation_sw` (from 2026-10-23); the four decisions are taken (see "Decisions").
-**Next step:** SW-5, the `dist/weed-sw.js` artifact. **Registry:** `DX-SW` in
+**Next step:** SW-6, `package.json` `files` and `exports` for `weed-sw.js`. **Registry:** `DX-SW` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: WeedJS runs exactly as it does today, with SharedArrayBuffers and Box2D's 4 threads,
@@ -287,7 +287,10 @@ a server without isolation headers, with the worker at the root (src mode) or ne
   not start). Not covered yet: Firefox (not installed), the hot-reload rows (need `npm run dev`),
   the AudioWorklet row, the frame inside an isolated parent with `allow="cross-origin-isolated"`,
   and black-until-first-frame screenshots.
-- [ ] **SW-5** `build`: the `dist/weed-sw.js` artifact.
+- [x] **SW-5** `build`: the `dist/weed-sw.js` artifact. Done 2026-10-23: `writeIsolationServiceWorker()`
+  in `scripts/buildBundle.js` copies the source byte for byte after the bundles, and the cleanup keeps
+  it. `dist/` is committed, so `dist/weed-sw.js` was written by that function alone (no bundle
+  rebuild); `isolationServiceWorkerArtifact.test.js` fails when it goes stale.
 - [ ] **SW-6** `package.json`: `files` and `exports` for `weed-sw.js`, on its own.
 - [ ] **SW-7** `template`: copy `weed-sw.js`, with its test.
 - [ ] **SW-8** `docs`: DEPLOY.md and the error text.
