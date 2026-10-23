@@ -29,6 +29,14 @@ let atlasTilesY = 0;
 
 const stampOpA = { from: 0, to: 0, tween: false, ease: 0 };
 const stampOpB = { from: 0, to: 0, tween: false, ease: 0 };
+// E-108. One stamp's doubles (x, y, scaleX, scaleY, alpha) on their way into the ring: through
+// this array only integers cross the call, which made a heap number per double before.
+const STAMP_IN = new Float64Array(5);
+
+/** A stamp field: a plain number as given, anything else (a range, a from/to) resolved. */
+function stampNumber(value, defaultVal, op) {
+  return typeof value === 'number' ? value : resolveParticleOp(value, defaultVal, op).from;
+}
 
 function resolveStampTextureId(config) {
   let textureName = config.texture;
@@ -177,6 +185,16 @@ export class Decal {
   }
 
   static enqueueStamp(x, y, textureId, scaleX, scaleY, tint, alpha, blendMode) {
+    STAMP_IN[0] = x;
+    STAMP_IN[1] = y;
+    STAMP_IN[2] = scaleX;
+    STAMP_IN[3] = scaleY;
+    STAMP_IN[4] = alpha;
+    return this._enqueueStampIn(textureId, tint, blendMode);
+  }
+
+  /** enqueueStamp with the doubles already in STAMP_IN (E-108). */
+  static _enqueueStampIn(textureId, tint, blendMode) {
     if (!stampRingI32) return false;
     const cap = stampRingCap;
     for (;;) {
@@ -200,11 +218,11 @@ export class Decal {
       stampRingI32[base + 1] = textureId | 0;
       stampRingI32[base + 2] = tint | 0;
       stampRingI32[base + 3] = blendMode | 0;
-      stampRingF32[base + 4] = x;
-      stampRingF32[base + 5] = y;
-      stampRingF32[base + 6] = scaleX;
-      stampRingF32[base + 7] = scaleY;
-      stampRingF32[base + 8] = alpha;
+      stampRingF32[base + 4] = STAMP_IN[0];
+      stampRingF32[base + 5] = STAMP_IN[1];
+      stampRingF32[base + 6] = STAMP_IN[2];
+      stampRingF32[base + 7] = STAMP_IN[3];
+      stampRingF32[base + 8] = STAMP_IN[4];
       Atomics.store(stampRingI32, base, write + 1);
       return true;
     }
@@ -256,24 +274,31 @@ export class Decal {
       let scaleX;
       let scaleY;
       if (config.scale == null && config.scaleX != null && config.scaleY != null) {
-        scaleX = resolveParticleOp(config.scaleX, 1, stampOpA).from;
-        scaleY = resolveParticleOp(config.scaleY, 1, stampOpB).from;
+        scaleX = stampNumber(config.scaleX, 1, stampOpA);
+        scaleY = stampNumber(config.scaleY, 1, stampOpB);
       } else {
-        const s = resolveParticleOp(config.scale ?? config.scaleX ?? config.scaleY, 1, stampOpA).from;
+        const s = stampNumber(config.scale ?? config.scaleX ?? config.scaleY, 1, stampOpA);
         scaleX = s;
         scaleY = s;
       }
       const x = randomRange(config.x);
       const y = randomRange(config.y);
-      const tint = resolveParticleColorOp(config.tint, 0xffffff, stampOpA).from;
-      const alpha = resolveParticleOp(config.alpha, 1, stampOpA).from;
+      const tint = typeof config.tint === 'number'
+        ? config.tint
+        : resolveParticleColorOp(config.tint, 0xffffff, stampOpA).from;
+      const alpha = stampNumber(config.alpha, 1, stampOpA);
       const blendMode = config.blendMode ?? 0;
       if (apply) {
         apply(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode);
         n++;
         continue;
       }
-      if (!this.enqueueStamp(x, y, textureId, scaleX, scaleY, tint, alpha, blendMode)) break;
+      STAMP_IN[0] = x;
+      STAMP_IN[1] = y;
+      STAMP_IN[2] = scaleX;
+      STAMP_IN[3] = scaleY;
+      STAMP_IN[4] = alpha;
+      if (!this._enqueueStampIn(textureId, tint, blendMode)) break;
       n++;
     }
     return n;
