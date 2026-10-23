@@ -785,6 +785,11 @@ light pass after the fans; only sprite-masked occluders keep a pass per light. P
 wedges, circles, compound in the lockstep suite). `visPolyStressScene?selfLit=65536` renderer **3.395 → 1.197 ms,
 −64.9 %, worse 0/4**; Pixi allocation 8.7 → 1.8 MB/s. Report: [`reports/E-96b-self-lit-batch.md`](./reports/E-96b-self-lit-batch.md).
 Next (E-96c): 1.4 MB/s of what is left is `_emitTransmitWedge`'s nine boxed doubles, even where it returns at once.
+**E-96c (2026-10-23), kept (hygiene):** the call is made only for `block < 1`; on that path the light and pose go
+through a module `WEDGE_IN` (E-85's pattern), and the box, polygon and tangent helpers it called with doubles
+read them there (copies term for term). Pixi allocation in `visPolyStressScene?selfLit=65536` **6.8 → 0.32 MB/s**,
+with `&block=0.5` (wedges, the new `?block=X`) **8.4 → 0.33 MB/s**; pixel-identical. No timing pair: Pixi stays
+under the 3 ms floor at every load the scene reaches (pre-render saturates first).
 
 ### E-97 Pixi submits frames faster than a full GPU finishes them — **KEPT 2026-10-23**
 Report: [`reports/E-97-gpu-frame-pacing.md`](./reports/E-97-gpu-frame-pacing.md). A worker's rAF fires at the

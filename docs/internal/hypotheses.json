@@ -51,7 +51,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 4
+      "rank": 3
     },
     {
       "id": "W7",
@@ -67,7 +67,7 @@
       ],
       "aliases": [],
       "next": "Boot barrier first (Box2D memory + offsets with box2dReady, rebind before start). Ceiling measured: JS left in Predator spatial is rebuildOwnedRows 12 % + glue 8 %, so one C call ≈ 10–15 % of spatial.",
-      "rank": 4
+      "rank": 3
     },
     {
       "id": "E-82",
@@ -99,7 +99,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 5
+      "rank": 4
     },
     {
       "id": "W26",
@@ -116,7 +116,7 @@
       ],
       "aliases": [],
       "next": "SIMD blending with a ±1 tolerance, or GPU stamping into tile render textures (an architecture item).",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "W14",
@@ -133,7 +133,7 @@
       ],
       "aliases": [],
       "next": "navStressScene: flowfield 89 % of particle.",
-      "rank": 7
+      "rank": 6
     },
     {
       "id": "E-85",
@@ -167,7 +167,7 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 8
+      "rank": 7
     },
     {
       "id": "W11",
@@ -183,7 +183,7 @@
       ],
       "aliases": [],
       "next": "meshApiStressScene Pixi 53 %.",
-      "rank": 9
+      "rank": 8
     },
     {
       "id": "W21c",
@@ -198,7 +198,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 10
+      "rank": 9
     },
     {
       "id": "W2a",
@@ -213,7 +213,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 11
+      "rank": 10
     },
     {
       "id": "W1",
@@ -228,7 +228,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 12
+      "rank": 11
     },
     {
       "id": "W10",
@@ -243,7 +243,7 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 13
+      "rank": 12
     },
     {
       "id": "W23",
@@ -258,7 +258,7 @@
         "WASM_HYPOTHESES.md#L177"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 13
     },
     {
       "id": "W27",
@@ -273,7 +273,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 14
     },
     {
       "id": "W28",
@@ -288,7 +288,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 15
     },
     {
       "id": "W4",
@@ -304,7 +304,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision (Box2D's memory).",
-      "rank": 17
+      "rank": 16
     },
     {
       "id": "W18",
@@ -320,7 +320,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 18
+      "rank": 17
     },
     {
       "id": "W2b",
@@ -336,7 +336,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 19
+      "rank": 18
     },
     {
       "id": "E-76",
@@ -6968,7 +6968,7 @@
       ],
       "aliases": [],
       "next": "The persist-check pass (12 %), the persist path's shadow terms; W4.",
-      "rank": 2
+      "rank": 1
     },
     {
       "id": "E-82b",
@@ -6985,7 +6985,7 @@
       ],
       "aliases": [],
       "next": "The default path is pre-render's gpuPack: the packer writes two streams, Pixi a two-buffer plain geometry; measure on a static high-count scene.",
-      "rank": 3
+      "rank": 2
     },
     {
       "id": "N-64",
@@ -7123,19 +7123,17 @@
     {
       "id": "E-96c",
       "title": "`_emitTransmitWedge` boxes nine doubles per occluder per light",
-      "status": "open",
-      "statusText": "open (from E-96b)",
+      "status": "kept-hygiene",
+      "statusText": "kept (hygiene), 2026-10-23",
       "date": "2026-10-23",
-      "result": "After E-96b, 1.4 of Pixi's 1.8 MB/s in visPolyStressScene is allocated in _buildSelfLitBatch: the wedge emitter's double arguments, boxed even when it returns at its first line (block 1).",
+      "result": "The wedge call only for block < 1, its doubles through a module Float64Array; the helpers it called read them there. Pixi allocation 6.8 → 0.32 MB/s (block 1), 8.4 → 0.33 MB/s (block 0.5); pixel-identical. No pair: Pixi under the 3 ms floor at every load.",
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L782",
-        "reports/E-96b-self-lit-batch.md"
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L788"
       ],
-      "aliases": [],
-      "next": "Test block < 1 at the call site; the doubles through a module Float64Array for the wedge path.",
-      "rank": 1
+      "aliases": []
     }
   ],
   "leads": [

@@ -336,6 +336,14 @@ const WEDGE_MAX_QUADS = 256;
 const SELF_LIT_BATCH_FLOATS = 13;
 /** A transmit wedge's radius in the self-lit batch: past any light's distance, so its facing term is 1. */
 const SELF_LIT_NO_FACING = 1e30;
+/**
+ * E-96c. The transmit wedge's doubles. Neither _emitTransmitWedge nor _pushWedge inlines into the
+ * self-lit batch, so each double passed to them was a heap number (6.5 MB/s with every occluder
+ * calling, even at block 1). The caller writes them here and passes the entity.
+ * 0 light x, 1 light y, 2 light radius, 3–4 pose x y, 5–6 pose cos sin, 7–8 collider offset, 9 block;
+ * then for _pushWedge: 10 scale, 11–14 the edge a, b.
+ */
+const WEDGE_IN = new Float64Array(15);
 
 function crossOrigin(ox, oy, ax, ay, bx, by) {
   return (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
@@ -354,8 +362,16 @@ function pointInConvex(px, py, xs, ys, count) {
   return sign !== 0;
 }
 
-/** Tangent points from an external light. Writes t0x,t0y,t1x,t1y into out. False if the light is inside. */
-function circleTangentPoints(lx, ly, cx, cy, r, out) {
+/**
+ * Tangent points from an external light to the collider circle of `entityIdx`, the light and the pose in
+ * WEDGE_IN (E-96c). Writes t0x,t0y,t1x,t1y into out. False if the light is inside.
+ */
+function circleTangentPoints(entityIdx, out) {
+  const lx = WEDGE_IN[0];
+  const ly = WEDGE_IN[1];
+  const cx = WEDGE_IN[3] + WEDGE_IN[7];
+  const cy = WEDGE_IN[4] + WEDGE_IN[8];
+  const r = Collider.radius[entityIdx];
   const dx = cx - lx;
   const dy = cy - ly;
   const d2 = dx * dx + dy * dy;
@@ -373,8 +389,11 @@ function circleTangentPoints(lx, ly, cx, cy, r, out) {
   return true;
 }
 
-function polyTangentPoints(lx, ly, xs, ys, count, out) {
+/** The silhouette's tangent corners from the light in WEDGE_IN (E-96c). False if the light is inside. */
+function polyTangentPoints(xs, ys, count, out) {
   if (count < 3) return false;
+  const lx = WEDGE_IN[0];
+  const ly = WEDGE_IN[1];
   if (pointInConvex(lx, ly, xs, ys, count)) return false;
   let iLeft = 0;
   let iRight = 0;
@@ -387,6 +406,54 @@ function polyTangentPoints(lx, ly, xs, ys, count, out) {
   out[2] = xs[iRight];
   out[3] = ys[iRight];
   return true;
+}
+
+/**
+ * writeOrientedBoxVerts for the wedge emitter: the pose from WEDGE_IN and the size from the collider, so
+ * no double crosses the call (E-96c). The same arithmetic, term for term.
+ */
+function wedgeBoxVerts(outX, outY, entityIdx) {
+  const entityX = WEDGE_IN[3];
+  const entityY = WEDGE_IN[4];
+  const c = WEDGE_IN[5];
+  const s = WEDGE_IN[6];
+  const offsetX = WEDGE_IN[7];
+  const offsetY = WEDGE_IN[8];
+  const hw = Collider.width[entityIdx] * 0.5;
+  const hh = Collider.height[entityIdx] * 0.5;
+  const wx = entityX + c * offsetX - s * offsetY;
+  const wy = entityY + s * offsetX + c * offsetY;
+
+  // CCW: BL, BR, TR, TL.
+  outX[0] = wx + c * -hw - s * -hh;
+  outY[0] = wy + s * -hw + c * -hh;
+  outX[1] = wx + c * hw - s * -hh;
+  outY[1] = wy + s * hw + c * -hh;
+  outX[2] = wx + c * hw - s * hh;
+  outY[2] = wy + s * hw + c * hh;
+  outX[3] = wx + c * -hw - s * hh;
+  outY[3] = wy + s * -hw + c * hh;
+}
+
+/** writePolygonVerts for the wedge emitter, as wedgeBoxVerts (E-96c). */
+function wedgePolygonVerts(outX, outY, entityIdx, count) {
+  const entityX = WEDGE_IN[3];
+  const entityY = WEDGE_IN[4];
+  const c = WEDGE_IN[5];
+  const s = WEDGE_IN[6];
+  const offsetX = WEDGE_IN[7];
+  const offsetY = WEDGE_IN[8];
+  const localX = Collider.polyVertexX;
+  const localY = Collider.polyVertexY;
+  const localBase = entityIdx * MAX_POLYGON_VERTICES;
+  const wx = entityX + c * offsetX - s * offsetY;
+  const wy = entityY + s * offsetX + c * offsetY;
+  for (let i = 0; i < count; i++) {
+    const lx = localX[localBase + i];
+    const ly = localY[localBase + i];
+    outX[i] = wx + c * lx - s * ly;
+    outY[i] = wy + s * lx + c * ly;
+  }
 }
 
 // Create PIXI-like namespace for compatibility with existing code patterns
@@ -2861,9 +2928,18 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     this._wedgeVerts = 0;
   }
 
-  _pushWedge(lx, ly, lightR, ax, ay, bx, by, scale) {
+  /** One wedge from the light past edge a–b, its terms in WEDGE_IN (E-96c). */
+  _pushWedge() {
     const n = this._wedgeVerts;
     if (n + 4 > WEDGE_MAX_QUADS * 4) return;
+    const lx = WEDGE_IN[0];
+    const ly = WEDGE_IN[1];
+    const lightR = WEDGE_IN[2];
+    const scale = WEDGE_IN[10];
+    const ax = WEDGE_IN[11];
+    const ay = WEDGE_IN[12];
+    const bx = WEDGE_IN[13];
+    const by = WEDGE_IN[14];
     let dx = ax - lx;
     let dy = ay - ly;
     // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted here.
@@ -2906,7 +2982,17 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
   }
 
   // transmit-wedge-start
-  _emitTransmitWedge(lx, ly, lightR, entityIdx, ex, ey, c, s, ox, oy, block) {
+  _emitTransmitWedge(entityIdx) {
+    const lx = WEDGE_IN[0];
+    const ly = WEDGE_IN[1];
+    const lightR = WEDGE_IN[2];
+    const ex = WEDGE_IN[3];
+    const ey = WEDGE_IN[4];
+    const c = WEDGE_IN[5];
+    const s = WEDGE_IN[6];
+    const ox = WEDGE_IN[7];
+    const oy = WEDGE_IN[8];
+    const block = WEDGE_IN[9];
     if (!(block < 1)) return;
     const scale = (1 - block) * VIS_REST;
     if (!(scale > 0)) return;
@@ -2938,7 +3024,12 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         // of a single shape.
         if (!segmentFacesPoint(x0, y0, x1, y1, lx, ly)) continue;
         if (segmentDistSq(lx, ly, x0, y0, x1, y1) > radiusSq) continue;
-        this._pushWedge(lx, ly, lightR, x0, y0, x1, y1, scale);
+        WEDGE_IN[10] = scale;
+        WEDGE_IN[11] = x0;
+        WEDGE_IN[12] = y0;
+        WEDGE_IN[13] = x1;
+        WEDGE_IN[14] = y1;
+        this._pushWedge();
       }
       return;
     }
@@ -2946,7 +3037,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     if (shape === ShapeType.Circle) {
       const r = Collider.radius[entityIdx];
       if (!(r > 0)) return;
-      ok = circleTangentPoints(lx, ly, ex + ox, ey + oy, r, tan);
+      ok = circleTangentPoints(entityIdx, tan);
     } else {
       const xs = this._wedgePolyX;
       const ys = this._wedgePolyY;
@@ -2955,29 +3046,30 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         const w = Collider.width[entityIdx];
         const h = Collider.height[entityIdx];
         if (!(w > 0) || !(h > 0)) return;
-        writeOrientedBoxVerts(xs, ys, 0, ex, ey, w, h, c, s, ox, oy);
+        wedgeBoxVerts(xs, ys, entityIdx);
         count = 4;
       } else {
         const pc = Collider.polyCount[entityIdx] | 0;
         if (pc >= 3 && pc <= xs.length) {
-          const base = entityIdx * MAX_POLYGON_VERTICES;
-          writePolygonVerts(
-            xs, ys, 0, ex, ey, c, s, ox, oy,
-            Collider.polyVertexX, Collider.polyVertexY, base, pc
-          );
+          wedgePolygonVerts(xs, ys, entityIdx, pc);
           count = pc;
         } else {
           const w = Collider.width[entityIdx];
           const h = Collider.height[entityIdx];
           if (!(w > 0) || !(h > 0)) return;
-          writeOrientedBoxVerts(xs, ys, 0, ex, ey, w, h, c, s, ox, oy);
+          wedgeBoxVerts(xs, ys, entityIdx);
           count = 4;
         }
       }
-      ok = polyTangentPoints(lx, ly, xs, ys, count, tan);
+      ok = polyTangentPoints(xs, ys, count, tan);
     }
     if (!ok) return;
-    this._pushWedge(lx, ly, lightR, tan[0], tan[1], tan[2], tan[3], scale);
+    WEDGE_IN[10] = scale;
+    WEDGE_IN[11] = tan[0];
+    WEDGE_IN[12] = tan[1];
+    WEDGE_IN[13] = tan[2];
+    WEDGE_IN[14] = tan[3];
+    this._pushWedge();
   }
   // transmit-wedge-end
 
@@ -3229,7 +3321,19 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         const c = f32[i32Off + 4];
         const s = f32[i32Off + 5];
         const block = occluderBlock ? occluderBlock[entityIdx] : 1;
-        this._emitTransmitWedge(lx, ly, lightR, entityIdx, ex, ey, c, s, ox, oy, block);
+        if (block < 1) {
+          WEDGE_IN[0] = lx;
+          WEDGE_IN[1] = ly;
+          WEDGE_IN[2] = lightR;
+          WEDGE_IN[3] = ex;
+          WEDGE_IN[4] = ey;
+          WEDGE_IN[5] = c;
+          WEDGE_IN[6] = s;
+          WEDGE_IN[7] = ox;
+          WEDGE_IN[8] = oy;
+          WEDGE_IN[9] = block;
+          this._emitTransmitWedge(entityIdx);
+        }
         if (maskMode === LIGHT_OCCLUDER_MASK_SPRITE) continue;
 
         const nFixtures = Collider.fixtureCount ? (Collider.fixtureCount[entityIdx] | 0) : 0;
