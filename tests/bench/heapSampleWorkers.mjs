@@ -105,6 +105,8 @@ try {
     // --camera-zoom min|<zoom>, as the benchmark runner takes it.
     ...(args['camera-zoom'] ? { cameraZoom: args['camera-zoom'] } : {}),
   });
+  // Ends when the browser closes; attached now, so an error below is the one reported.
+  run.catch(() => {});
 
   await new Promise((r) => setTimeout(r, warmupMs));
   for (const sid of [...sessions.keys()]) {
@@ -164,7 +166,6 @@ try {
       console.log(`${String(t.kbPerS).padStart(9)} KB/s  ${t.site}   <- ${t.from.map((f) => `${f.caller} (${f.kbPerS})`).join(' | ')}`);
     }
   }
-  run.catch(() => {}); // ends when the browser closes
 } finally {
   await browser.close();
   await server.close();
