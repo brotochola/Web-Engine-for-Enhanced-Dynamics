@@ -63,6 +63,17 @@
         "gather_batch"
       ],
       "maxMemoryPages": 8192
+    },
+    {
+      "name": "particleIntegrate",
+      "source": "wasm/particleIntegrate.c",
+      "output": "tests/fixtures/wasm/particleIntegrate.wasm",
+      "exports": [
+        "integrate_batch"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true,
+      "note": "E-76 W12 candidate: not shipped until its Phase 5 wiring"
     }
   ]
 }

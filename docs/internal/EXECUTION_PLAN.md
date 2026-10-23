@@ -600,6 +600,18 @@ by about a fifth. Wired (`_findNeighborsWasmGather`, the grid in the spatial mem
 Predator gate, 6 pairs, owner spatial, **5.203 → 4.205 ms (−18.6 %, 0/6 worse), KEPT (product)**.
 Report: [`reports/E-78-spatial-gather-wasm.md`](./reports/E-78-spatial-gather-wasm.md).
 
+### E-79 The particle integrate in WASM (E-76 W12) — **KERNEL WIN 2026-10-23; product wiring next**
+`wasm/particleIntegrate.c` is `updateParticlePhysicsBuffers` for the active list, with its arithmetic in
+double and every store converted at its column's type. What JS does outside the loop stays in JS:
+`returnToPool` for the C's dead list, in JS's order; `Math.cos`/`Math.sin` for an angle past fdlibm's
+medium reduction; `renderOnlyLive`. Rotation uses musl's fdlibm `sin`/`cos` (`wasm/fdlibmSincos.h`),
+inlined so the kernel needs no stack, and equal to `Math.*` after float32 rounding (Q2). In
+`particleIntegrateWasmMicrobench` (the `?tween=1` stress scene's emits through the shipped
+`ParticleEmitter.emit`, 65 535 particles, `ParticleComponent` in a shared `WebAssembly.Memory`), the
+particle state after every one of 60 frames is identical. Node 22, AC, alternating processes, 5
+rounds: the stress mix **+61.0 % (25/25)**; with rotation, spin and tint tweens on every particle
+**+107.9 % (25/25)**.
+
 ---
 
 ## Not doing (read the log first)
