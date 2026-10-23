@@ -7062,6 +7062,21 @@
       "aliases": [],
       "next": "Doubles through a module Float64Array; children kept and toggled visible.",
       "rank": 1
+    },
+    {
+      "id": "W9d",
+      "title": "Pixi's plain sprite pack through gpuPack.wasm",
+      "status": "rejected",
+      "statusText": "rejected 2026-10-23 (logic regression in Predator)",
+      "date": "2026-10-23",
+      "result": "Pixi's entity rows in the render-queue memory, packed by the W9 kernel: Predator renderer −9.1 % (0/8) but logic +5.9 % (7/8), a worker it cannot reach; layout-only control NEUTRAL, A/A logic −0.9 %. A faster Pixi changes the workers' overlap.",
+      "area": "pixi",
+      "kind": "wasm",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L13"
+      ],
+      "aliases": [],
+      "next": "Retry when the workers' phasing changes (diff kept outside the tree)."
     }
   ],
   "leads": [
