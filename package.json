@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.12.116",
+  "version": "0.12.117",
   "description": "A multi-threaded 2D web game engine for high-entity-count browser games",
   "type": "module",
   "main": "dist/weed.prod.bundle.min.js",
@@ -41,6 +41,7 @@
     "check:dist": "node scripts/assertDistFresh.js",
     "sync:version": "node scripts/syncVersion.js",
     "dev": "node server/node_server.js",
+    "dev:sw": "node server/node_server.js --sw",
     "pretest:node": "node scripts/syncVersion.js",
     "test": "npm run test:node",
     "test:node": "node --test --test-concurrency=4 tests/node/*.test.js",
