@@ -83,6 +83,8 @@ try {
       sessions.set(sessionId, targetInfo.url.split('/').pop().split('?')[0]);
     }
   });
+  // A worker that ends (a short-lived helper) detaches; sampling it again would throw.
+  cdp.on('Target.detachedFromTarget', ({ sessionId }) => sessions.delete(sessionId));
   await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: false });
 
   const qs = ['src=1'];
@@ -103,18 +105,29 @@ try {
   });
 
   await new Promise((r) => setTimeout(r, warmupMs));
-  for (const sid of sessions.keys()) {
-    await sendTo(sid, 'HeapProfiler.enable');
-    await sendTo(sid, 'HeapProfiler.startSampling', {
-      samplingInterval: 1024, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true,
-    });
+  for (const sid of [...sessions.keys()]) {
+    try {
+      await sendTo(sid, 'HeapProfiler.enable');
+      await sendTo(sid, 'HeapProfiler.startSampling', {
+        samplingInterval: 1024, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true,
+      });
+    } catch (err) {
+      console.warn(`[heap] ${sessions.get(sid)}: not sampled (${err.message})`);
+      sessions.delete(sid);
+    }
   }
   await new Promise((r) => setTimeout(r, sampleMs));
 
   const report = {};
   const perS = (bytes) => +(bytes / 1024 / (sampleMs / 1000)).toFixed(1);
-  for (const [sid, name] of sessions) {
-    const { profile } = await sendTo(sid, 'HeapProfiler.stopSampling');
+  for (const [sid, name] of [...sessions]) {
+    let profile;
+    try {
+      ({ profile } = await sendTo(sid, 'HeapProfiler.stopSampling'));
+    } catch (err) {
+      console.warn(`[heap] ${name}: ended before the sample stopped (${err.message})`);
+      continue;
+    }
     const rows = new Map();
     let total = 0;
     const walk = (node, parent) => {
