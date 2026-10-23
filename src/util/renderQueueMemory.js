@@ -38,6 +38,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes) {
         gpuBByte: r.gpuB.byte,
         indexByte: r.packIndices.byte,
         indexCap: n,
+        inverseByte: r.packInverse.byte,
         tableByte: r.packTables.byte,
         tableSlots: GPU_PACK_TABLE_SLOTS,
         particlesByte: r.packResults.byte,

@@ -35,7 +35,7 @@
         "reports/E-94-gpu-pack-wasm.md"
       ],
       "aliases": [],
-      "next": "A scatter variant (read in queue order, write to the painter slot); the Predator gate (pre-render packs its sun casters)."
+      "next": "The Predator gate (pre-render packs its sun casters)."
     },
     {
       "id": "W6",
@@ -6863,17 +6863,33 @@
     {
       "id": "W9b",
       "title": "The instanced-row pack as a scatter (rows in queue order, written to their painter slot)",
-      "status": "open",
-      "statusText": "open (from E-94)",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
       "date": "2026-10-23",
-      "result": "At 300 000 rows the WASM pack is bound by its painter-order gather across a 14 MB queue (pack_sprites 33.6 % of painterSort pre-render). Reading in queue order and writing through the inverse permutation turns 18 scattered reads per row into one scattered row write.",
+      "result": "pack_*_scatter invert the index list, read the queue in order and write each row to its slot (a repeated or out-of-range row declines to the gather). painterSortStressScene pre-render 42.474 → 34.324 ms, −18.3 %, worse 0/4; 44.4 → 34.3 ms with W9.",
       "area": "preRender",
+      "kind": "wasm",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L737",
+        "reports/E-94-gpu-pack-wasm.md"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "W9c",
+      "title": "Pixi's pack in queue order (Predator packs sprites in Pixi)",
+      "status": "open",
+      "statusText": "open (from W9b)",
+      "date": "2026-10-23",
+      "result": "Pixi's InstancedSpriteBatch.upload runs packInstancedRows (JS) in painter order over rows pre-render wrote on another core: 33.9 % of Predator's Pixi (Q1). W9b showed the order is what costs at scale.",
+      "area": "pixi",
       "kind": "wasm",
       "refs": [
         "reports/E-94-gpu-pack-wasm.md"
       ],
       "aliases": [],
-      "next": "A kernel variant at 300 000 rows (gpuPackWasmMicrobench --rows 300000); keep it only if Chrome confirms.",
+      "next": "A scatter JS loop in Pixi's pack, or the kernel with Pixi's instance buffer in a memory; Predator Pixi pair.",
       "rank": 1
     }
   ],

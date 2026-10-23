@@ -61,6 +61,7 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * - queueA, queueB: the render queue's two buffers (renderQueueLayout.js), odd and even frames;
  * - gpuA, gpuB: the GPU queue's two buffers (gpuQueueLayout.js), packed by pre-render, uploaded by Pixi;
  * - packIndices: the pack's index scratch, for index lists kept outside this memory (u32);
+ * - packInverse: the scatter pack's inverse of the index list, one u32 per queue row (W9b);
  * - packTables: one column table per queue the pack reads (u32 byte offsets, gpuPackClient.js);
  * - packResults: the kernel's particle count (u32).
  * @param {number} queueBytes computeBufferSize(maxItems)
@@ -76,6 +77,7 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
     { name: 'gpuA', owner: 'pre-render packs; Pixi uploads', bytes: gpuQueueBytes },
     { name: 'gpuB', owner: 'pre-render packs; Pixi uploads', bytes: gpuQueueBytes },
     { name: 'packIndices', owner: 'pre-render', bytes: (maxItems | 0) * 4 },
+    { name: 'packInverse', owner: 'pre-render', bytes: (maxItems | 0) * 4 },
     { name: 'packTables', owner: 'pre-render', bytes: tableBytes },
     { name: 'packResults', owner: 'pre-render', bytes: 16 },
   ]);

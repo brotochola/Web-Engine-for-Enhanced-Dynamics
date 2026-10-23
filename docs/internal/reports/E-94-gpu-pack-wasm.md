@@ -66,11 +66,30 @@ kernel's 2.3×: at 300 000 rows the pack reads 18 columns in painter order, whic
 queue, so it waits on memory and WASM cannot hurry that. At 16 000 rows, hot in cache, the arithmetic
 is what the kernel speeds up.
 
+## The scatter form (W9b)
+
+`pack_sprites_scatter` and `pack_casters_scatter` write the inverse of the index list into a region
+of the memory (`packInverse`, one u32 per queue row), then read the queue in order and write each
+listed row to its slot, with the slot's depth. The reads are sequential and prefetched; the writes
+jump, and a store does not stall the way a load does. A repeated or out-of-range row makes the
+kernel decline before it writes anything, and the gather packs. The client scatters lists of at
+least 4 096 rows that cover half the queue (the inverse costs a pass over every queue row).
+`gpuPackScatter.test.js` checks the bits against the JS pack, the fallbacks, and that the scatter
+ran.
+
+In an isolated Chrome worker (warm queue) the scatter was only 1.17× the gather at 300 000 rows. In
+the scene the queue is cold, and the sitting decided:
+
+| worker | gather (W9) | scatter (W9b) | paired | worse |
+|---|---:|---:|---:|---:|
+| **pre-render** | 42.474 ms | 34.324 ms | **−18.3 %** | 0/4, cv 1/2 % |
+
+With W9, `painterSortStressScene`'s pre-render went 44.446 → 34.3 ms.
+
 ## Next
 
-- **A scatter form:** read the rows in queue order, sequential and prefetched, and write each one to
-  its painter slot through the inverse permutation. Scattered writes do not stall the way scattered
-  reads do. To try in the kernel at 300 000 rows first.
+- **W9c:** Pixi's own pack (Predator's `packGpuSprites: 'pixi'`) gathers in painter order too; the
+  same order in its JS loop, or the kernel with Pixi's buffer in a memory.
 - **The Predator gate:** Predator packs its sprites in Pixi, but pre-render packs its 13 000 sun
   casters, so the change is on its path.
 - The index copy for lists kept outside the memory (painter order, entity and glow lists) could go

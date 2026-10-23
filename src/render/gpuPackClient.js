@@ -10,6 +10,9 @@ import { GPU_CASTER_FLOATS, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
 // Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
 const wasmUrl = new URL('./gpuPack.wasm', import.meta.url);
 
+/** Lists shorter than this pack by gathering: the scatter's inverse costs a pass over the queue. */
+export const SCATTER_MIN_ROWS = 4096;
+
 /** The queue columns the kernel reads, in its column-table order (wasm/gpuPack.c). */
 export const GPU_PACK_COLUMNS = [
   'x', 'y', 'scaleX', 'scaleY', 'rotC', 'rotS', 'alpha', 'tint', 'textureId', 'anchorX', 'anchorY',
@@ -21,14 +24,18 @@ export const GPU_PACK_COLUMNS = [
  * @param {WebAssembly.Memory} memory
  * @param {{ tableByte: number, tableSlots: number, indexByte: number, indexCap: number, particlesByte: number }} layout
  *   createRenderQueueMemory's layout: room for `tableSlots` column tables, an index scratch of
- *   `indexCap` u32, and one u32 for the particle count
+ *   `indexCap` u32, the scatter's inverse (`inverseByte`, one u32 per queue row; 0 for none) and one
+ *   u32 for the particle count
  */
 export async function bindGpuPack(memory, layout) {
-  const k = await loadWasmKernel('gpuPack', wasmUrl, memory, ['pack_sprites', 'pack_casters']);
+  const k = await loadWasmKernel('gpuPack', wasmUrl, memory, ['pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter']);
   return {
     buffer: memory.buffer,
     sprites: k.pack_sprites,
     casters: k.pack_casters,
+    spritesScatter: k.pack_sprites_scatter,
+    castersScatter: k.pack_casters_scatter,
+    inverseByte: layout.inverseByte | 0,
     u32: new Uint32Array(memory.buffer),
     tableByte: layout.tableByte,
     tableSlots: layout.tableSlots,
@@ -106,8 +113,19 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
   }
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
-  const pack = shadowCast ? b.casters : b.sprites;
-  const out = pack(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeArr ? typeArr.byteOffset : 0, b.particlesByte);
+  const typeByte = typeArr ? typeArr.byteOffset : 0;
+  let out = -1;
+  // W9b: a long list over most of the queue goes through its inverse, reading the queue in order.
+  // The kernel declines (-1) a list with a repeated or out-of-range row, and the gather packs it.
+  const rows = q.count | 0;
+  if (indexByte && b.inverseByte && count >= SCATTER_MIN_ROWS && count * 2 >= rows && rows <= b.indexCap) {
+    const scatter = shadowCast ? b.castersScatter : b.spritesScatter;
+    out = scatter(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte, b.inverseByte, rows);
+  }
+  if (out < 0) {
+    const pack = shadowCast ? b.casters : b.sprites;
+    out = pack(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte);
+  }
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;
 }

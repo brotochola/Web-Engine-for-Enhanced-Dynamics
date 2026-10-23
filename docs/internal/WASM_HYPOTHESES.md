@@ -803,3 +803,9 @@ defaults):
   more: `pack_sprites` still 33.6 % of the saturated worker, against 38.9 % for the JS pack: at 300 000
   rows the painter-order gather over a 14 MB queue is the cost. Next: a scatter variant (read in queue
   order, write to the painter slot), then the Predator gate (pre-render packs its sun casters).
+- **2026-10-23, W9b kept (E-94).** The scatter form: `pack_sprites_scatter` / `pack_casters_scatter`
+  invert the index list, read the queue in order and write each row to its slot (a repeated or
+  out-of-range row declines to the gather). The client scatters lists of ≥ 4 096 rows over half the
+  queue. Warm, in a Chrome worker, it was only 1.17× the gather at 300 000 rows; on the scene's cold
+  queue: **painterSort pre-render 42.474 → 34.324 ms, −18.3 %, worse 0/4, KEPT (product)**; 44.4 → 34.3 ms
+  with W9. W9c (new): Pixi's JS pack (Predator packs there) gathers in painter order too.

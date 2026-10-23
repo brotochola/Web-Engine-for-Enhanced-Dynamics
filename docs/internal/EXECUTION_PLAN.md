@@ -738,8 +738,10 @@ sort's copy (H-14, dropped on a contaminated sitting: re-sit it clean before re-
 Report: [`reports/E-94-gpu-pack-wasm.md`](./reports/E-94-gpu-pack-wasm.md). The render queues live in one
 `WebAssembly.Memory`; pre-render packs sprite and caster rows with `gpuPack.wasm` (bit-identical, JS
 fallback for the other paths). Kernel 2.3–3.1×; `painterSortStressScene` pre-render **44.446 → 42.561 ms,
-−3.5 %, worse 0/4**, bound by the painter-order gather at 300 000 rows. Next: the scatter form, the
-Predator gate.
+−3.5 %, worse 0/4**, bound by the painter-order gather at 300 000 rows. **W9b, the scatter form** (rows
+read in queue order, written to their painter slot): pre-render **42.474 → 34.324 ms, −18.3 %, worse
+0/4**. Next: the Predator gate (pre-render packs its sun casters), and W9c, the same order for Pixi's
+pack.
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls

@@ -73,6 +73,46 @@ INLINE uint32_t pack(const uint32_t *t, uint32_t indices, uint32_t count, uint32
   return n;
 }
 
+/* W9b. The same rows through the inverse of the index list: inv[queue row] = output slot, then the
+   queue read in order and each listed row written to its slot. The reads go in order instead of
+   jumping across the queue; the writes jump instead. The output is the gather's when every listed row
+   is listed once and below rowCount; otherwise nothing is written and 0xffffffff comes back, and the
+   caller gathers. inv holds rowCount u32. */
+INLINE uint32_t pack_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
+                             float *dst, uint32_t typeByte, uint32_t *particles, uint32_t invByte, uint32_t rowCount,
+                             int caster) {
+  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+  const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
+  uint32_t *inv = (uint32_t *)(uintptr_t)invByte;
+  const uint32_t n = count < cap ? count : cap;
+  const uint32_t stride = caster ? 22 : 15;
+  for (uint32_t i = 0; i < rowCount; i++) inv[i] = 0xffffffffu;
+  for (uint32_t k = 0; k < n; k++) {
+    const uint32_t r = idx[k];
+    if (r >= rowCount || inv[r] != 0xffffffffu) return 0xffffffffu;
+    inv[r] = k;
+  }
+  uint32_t p = 0;
+  for (uint32_t i = 0; i < rowCount; i++) {
+    const uint32_t k = inv[i];
+    if (k == 0xffffffffu) continue;
+    if (type) p += type[i] == 1;
+    float *d = dst + k * stride;
+    sprite_row(t, i, d, 1.0 - (double)(k + 1) * invDepthDenom);
+    if (caster) {
+      d[15] = F32(t, COL_SHADOW_H)[i];
+      d[16] = F32(t, COL_SHADOW_OFF_X)[i];
+      d[17] = F32(t, COL_SHADOW_OFF_Y)[i];
+      d[18] = 0;
+      d[19] = 0;
+      d[20] = 0;
+      d[21] = 0;
+    }
+  }
+  *particles = p;
+  return n;
+}
+
 __attribute__((export_name("pack_sprites")))
 uint32_t pack_sprites(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
                       uint32_t dst, uint32_t typeByte, uint32_t particlesOut) {
@@ -85,4 +125,18 @@ uint32_t pack_casters(uint32_t table, uint32_t indices, uint32_t count, uint32_t
                       uint32_t dst, uint32_t typeByte, uint32_t particlesOut) {
   return pack((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
               (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, 1);
+}
+
+__attribute__((export_name("pack_sprites_scatter")))
+uint32_t pack_sprites_scatter(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
+                              uint32_t dst, uint32_t typeByte, uint32_t particlesOut, uint32_t invByte, uint32_t rowCount) {
+  return pack_scatter((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
+                      (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount, 0);
+}
+
+__attribute__((export_name("pack_casters_scatter")))
+uint32_t pack_casters_scatter(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
+                              uint32_t dst, uint32_t typeByte, uint32_t particlesOut, uint32_t invByte, uint32_t rowCount) {
+  return pack_scatter((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
+                      (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount, 1);
 }
