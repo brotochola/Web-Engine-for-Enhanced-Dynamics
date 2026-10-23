@@ -574,6 +574,17 @@ source does not support — `_getNeighborCells` "one `Map.get` per entity" and
 the counter that measures it or read the exits in front of it.** E-13 was rejected for
 free; had it gone to a scene it would have cost a Predator pair to confirm a zero.
 
+### E-76 WASM migration: which JavaScript hot loops are faster as WebAssembly — **IN PROGRESS (Phase 0 done 2026-10-22)**
+The plan, its gates and its ids (T tools, Q premises, W candidates, L checks) live in
+[`WASM_HYPOTHESES.md`](./WASM_HYPOTHESES.md); this entry is its index here. The rule from the record:
+WASM pays when the data already lives in WASM memory, one call does a batch, and the loop needs
+something JavaScript does badly (SIMD over contiguous data, freedom from boxing and deopts). Phase 0
+(2026-10-22) profiled four scenes after E-77 and parked W3, W9, W14, W15, W20 (ceiling) and W21b/d/e
+(boot only). Strongest ceilings: particle integrate in its stress scene (W12, ~17 %), the per-light
+sweep in visPoly (W2a, ~11 %), the compound edge loop (W1, ~10 % once the native `atan2` is set aside).
+The shipped spatial module's build defect is N-62. A candidate that reaches a kernel sitting gets its
+own E-number here at that point.
+
 ---
 
 ## Not doing (read the log first)
