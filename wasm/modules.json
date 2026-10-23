@@ -84,6 +84,16 @@
         "build_active"
       ],
       "maxMemoryPages": 8192
+    },
+    {
+      "name": "gpuPack",
+      "source": "wasm/gpuPack.c",
+      "output": "src/render/gpuPack.wasm",
+      "exports": [
+        "pack_sprites",
+        "pack_casters"
+      ],
+      "maxMemoryPages": 8192
     }
   ]
 }
