@@ -2,12 +2,16 @@ export class AdobeAnimRegistry {
   static assets = new Map();
   static assetNames = [''];
   static assetNameToId = new Map([['', 0]]);
+  // Assets by id: pre-render looks one up per character per frame, and a name lookup hashed a
+  // string each time (E-84).
+  static assetById = [null];
 
   static clearForSceneUnload() {
     this.assets.clear();
     this.assetNames = [''];
     this.assetNameToId.clear();
     this.assetNameToId.set('', 0);
+    this.assetById = [null];
   }
 
   static register(name, asset) {
@@ -23,6 +27,7 @@ export class AdobeAnimRegistry {
     asset.id = assetId;
     asset.name = name;
     this.assets.set(name, asset);
+    this.assetById[assetId] = asset;
     return assetId;
   }
 
@@ -34,8 +39,7 @@ export class AdobeAnimRegistry {
     if (typeof assetOrId === 'string') {
       return this.assets.get(assetOrId) || null;
     }
-    const name = this.assetNames[assetOrId] || '';
-    return name ? this.assets.get(name) || null : null;
+    return this.assetById[assetOrId] || null;
   }
 
   static getClipId(assetOrId, clipName) {
@@ -144,6 +148,8 @@ export class AdobeAnimRegistry {
     const assets = serialized.assets || {};
     for (const [name, asset] of Object.entries(assets)) {
       this.assets.set(name, asset);
+      const id = this.assetNameToId.get(name);
+      if (id) this.assetById[id] = asset;
     }
   }
 }

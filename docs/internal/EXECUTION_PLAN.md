@@ -647,9 +647,12 @@ per-frame pose (xy, previous xy, rotation) from per-sprite statics kept in a slo
 `tilemapStressScene`: logic 566 ms/s, `getTileId` 80.3 % self. A per-tile lookup the game calls; read
 it before measuring.
 
-### E-84 Adobe Animate registry lookups per entity — **open (from Q1b)**
+### E-84 Adobe Animate registry lookups per entity — **KEPT 2026-10-23**
 Adobe Animate (zoom 1.4): pre-render `getAsset` 9.7 % and `getClipFrameRate` 6.0 % self, per entity per
-frame. Cache per entity type or clip.
+frame: each id lookup went through the asset name and a string-keyed `Map`. `AdobeAnimRegistry.assetById`
+looks assets up by id (kept in step by `register`, `deserialize` and the unload; `adobeAnimRegistry.test.js`).
+`adobeAnimateScene` pre-render **3.514 → 3.214 ms (−9.6 %, 0/4 worse), KEPT (product)**, four pairs, load
+identical; no Predator gate (Predator loads no Adobe Animate asset).
 
 ### E-85 GC in the bullet and ray path — **open (from Q1b)**
 `bulletStressScene`: particle 493 ms/s with **29.6 ms/s of GC**, the only GC pressure in the sweep;

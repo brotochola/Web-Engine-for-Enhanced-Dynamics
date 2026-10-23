@@ -380,17 +380,16 @@
     {
       "id": "E-84",
       "title": "Adobe Animate registry lookups per entity",
-      "status": "running",
-      "statusText": "open (from Q1b)",
-      "date": null,
-      "result": "Adobe Animate (zoom 1.4): pre-render `getAsset` 9.7 % and `getClipFrameRate` 6.0 % self, per entity per frame. Cache per entity type or clip. …",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
+      "date": "2026-10-23",
+      "result": "AdobeAnimRegistry.assetById: an asset by id instead of name + string Map per character per frame. adobeAnimateScene pre-render 3.514 → 3.214 ms, −9.6 %, worse 0/4 (4 pairs); no Predator gate (no Adobe Animate there).",
       "area": "particle",
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#L650"
       ],
-      "aliases": [],
-      "next": "Implemented (id-indexed assetById), unmeasured: Adobe Animate pre-render pair."
+      "aliases": []
     },
     {
       "id": "E-31",
