@@ -17,6 +17,12 @@
  * function inlined. A setup helper called once with a loop inside still shows
  * up (it is not timed); check the bench before changing it. Timings are
  * meaningless here: the traces print during the run.
+ *
+ * WASM kernels (E-76 T4): the run also prints `--trace-wasm-compilation-times`.
+ * A bench on wasmKernelHelpers.mjs prints a marker when timing starts; a WASM
+ * function compiled with Liftoff whose TurboFan code was not installed before
+ * that marker was timed (in part or all) in Liftoff, which Chrome leaves after
+ * the first frames. Those are reported as `wasm Liftoff`.
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -60,6 +66,9 @@ function srcFunctionNames() {
 
 const COMPILE_RE = /\[compiling method [^<]*<JSFunction ([^ >]+)[^>]*> \(target (TURBOFAN|MAGLEV)\)( OSR)?/;
 const INLINE_RE = /^Inlining .*<SharedFunctionInfo ([^>]+)>.* into .*<SharedFunctionInfo ([^>]+)>/;
+// "Compiled function 000002E35EAE0730#0 using TurboFan, …": native module address, function index.
+const WASM_COMPILE_RE = /^Compiled function ([0-9A-Fa-f]+#\d+) using (Liftoff|TurboFan)/;
+const WASM_TIMING_MARKER = '[wasm-kernel] timing starts';
 
 /** Names the bench file defines itself: they shadow any src function of that name. */
 function benchLocalNames(file) {
@@ -73,11 +82,14 @@ function benchLocalNames(file) {
 function auditOne(file) {
   return new Promise((resolve) => {
     const out = path.join(os.tmpdir(), `kernel-tier-${process.pid}-${path.basename(file)}.json`);
-    const child = spawn(process.execPath, ['--trace-opt', '--trace-turbo-inlining', file, '--output', out], { cwd: repoRoot });
+    const child = spawn(process.execPath, ['--trace-opt', '--trace-turbo-inlining', '--trace-wasm-compilation-times', file, '--output', out], { cwd: repoRoot });
     const tiers = new Map();
     // Inlined into a normal (non-OSR) TurboFan compile: the timed code may well be that one.
     const inlinedNormal = new Set();
     let compiling = null;
+    // WASM functions: compiled with Liftoff, and whether TurboFan code existed before timing.
+    const wasm = new Map();
+    let timing = false;
     let buf = '';
     const onData = (chunk) => {
       buf += chunk;
@@ -85,6 +97,18 @@ function auditOne(file) {
       while ((nl = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, nl);
         buf = buf.slice(nl + 1);
+        if (line.startsWith(WASM_TIMING_MARKER)) {
+          timing = true;
+          continue;
+        }
+        const w = line.match(WASM_COMPILE_RE);
+        if (w) {
+          const f = wasm.get(w[1]) || { liftoff: false, turbofanBeforeTiming: false };
+          if (w[2] === 'Liftoff') f.liftoff = true;
+          else if (!timing) f.turbofanBeforeTiming = true;
+          wasm.set(w[1], f);
+          continue;
+        }
         const inl = line.match(INLINE_RE);
         if (inl) {
           if (compiling && !compiling.osr && compiling.name === inl[2]) inlinedNormal.add(inl[1]);
@@ -106,7 +130,7 @@ function auditOne(file) {
     child.on('close', (code) => {
       clearTimeout(timer);
       fs.rmSync(out, { force: true });
-      resolve({ file, code, tiers, inlinedNormal });
+      resolve({ file, code, tiers, inlinedNormal, wasm, timing });
     });
   });
 }
@@ -129,8 +153,15 @@ async function worker() {
       .filter(([name, t]) => t.osr > 0 && t.normal === 0 && srcNames.has(name) && !local.has(name) && !r.inlinedNormal.has(name))
       .map(([name]) => name)
       .sort();
-    results.push({ bench: path.basename(r.file), exit: r.code, osrOnly });
-    console.log(`${path.basename(r.file)}${r.code ? ` (exit ${r.code})` : ''}: ${osrOnly.length ? 'OSR only: ' + osrOnly.join(', ') : 'ok'}`);
+    // Only benches that print the timing marker say which WASM code they time.
+    const wasmLiftoff = r.timing
+      ? [...r.wasm].filter(([, f]) => f.liftoff && !f.turbofanBeforeTiming).map(([id]) => id).sort()
+      : [];
+    results.push({ bench: path.basename(r.file), exit: r.code, osrOnly, wasmLiftoff });
+    const problems = [];
+    if (osrOnly.length) problems.push('OSR only: ' + osrOnly.join(', '));
+    if (wasmLiftoff.length) problems.push('wasm Liftoff: ' + wasmLiftoff.join(', '));
+    console.log(`${path.basename(r.file)}${r.code ? ` (exit ${r.code})` : ''}: ${problems.length ? problems.join('; ') : 'ok'}`);
   }
 }
 await Promise.all(Array.from({ length: Math.min(jobs, files.length) }, worker));
@@ -138,3 +169,5 @@ results.sort((a, b) => a.bench.localeCompare(b.bench));
 if (output) fs.writeFileSync(output, JSON.stringify(results, null, 2));
 const flagged = results.filter((r) => r.osrOnly.length);
 console.log(`\n${flagged.length} of ${results.length} kernels time a src function only through OSR code.`);
+const wasmFlagged = results.filter((r) => r.wasmLiftoff.length);
+if (wasmFlagged.length) console.log(`${wasmFlagged.length} kernels time WASM code that was still Liftoff when timing started.`);

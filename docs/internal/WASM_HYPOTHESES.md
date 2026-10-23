@@ -463,3 +463,17 @@ defaults):
   `--no-liftoff` (TurboFan only) 8 105 against 8 258 (+1.9 %, 19 of 25). Both ties. Process medians spread from
   4 500 to 8 800 ops/s on this laptop (Ryzen 7 4800H, the owner's Chrome open): kernel sittings here need
   that noise handled before a 3 % verdict means anything.
+- **2026-10-22, T4.** The laptop was on battery during T3 and T4 (`PowerOnline` false, about 17 W of
+  discharge), which explains most of that spread. New: `tests/bench/wasmKernelHelpers.mjs`, with four parts.
+  `instantiateKernel` links a manifest module to the memory and nothing else, so a module that needs
+  more fails to link. `warmWasm` makes short calls until the TurboFan code is in; under
+  `--allow-natives-syntax` it checks `%IsTurboFanFunction` and throws on Liftoff. `abab` alternates the
+  sides in one process for 9 rounds of `timeIt` samples; its verdict needs 3 % and 90 % of the cross
+  comparisons, and it also reports paired wins. `machineState` records Node, V8, the CPU and the power
+  source. `kernelTierAudit.mjs` now also reads `--trace-wasm-compilation-times`, and reports WASM code
+  still in Liftoff when the harness prints its timing marker (checked on a cold scratch bench).
+  `spatialPublishWasmMicrobench` times the shipped `_publishFilteredNeighbors` on a real worker in JS
+  mode against `publish_batch` on the product memory. It has two cases: `uniform` (the 2026-10-06 data)
+  and `predator` (rows from the real gather). Results on battery: +73.5 to +87.4 % and +66.4 %, against
+  the +118 % on record, which was measured against a JS copy (HYPOTHESIS_LOG row). In-process
+  alternation gave 81/81 in every process; the delta moved by ±7 points from one process to the next.

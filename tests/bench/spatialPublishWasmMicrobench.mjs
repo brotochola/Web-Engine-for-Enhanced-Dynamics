@@ -1,137 +1,194 @@
+#!/usr/bin/env node
 /**
- * Kernel: WASM SIMD publish of neighbor lists vs the JS predicate in
- * SpatialWorker._publishFilteredNeighbors. Same SharedArrayBuffer.
+ * Kernel: the spatial neighbour publish, shipped JS against the shipped WASM module (E-76 T4).
  *
- *   node tests/bench/spatialPublishWasmMicrobench.mjs
+ * JS: `SpatialWorker._publishFilteredNeighbors` on a real worker in JS mode, the path the engine
+ * takes without a publish memory (32-bit ids, or the module failed to load), called per entity as
+ * `findNeighborsForOwnedEntities` calls it. It keeps that path's storage: poses in the
+ * `entityPosData` SAB, candidates in the worker's own array, rows in `Grid.neighborData`.
+ * WASM: `publish_batch` on the product memory (`createSpatialPublishMemory`), one call for the
+ * batch, as the worker makes it at the end of a frame. Both sides read the same bytes; the rows
+ * they write are compared before anything is timed.
+ *
+ * Cases (one per process, `--case`):
+ *   uniform   4 096 entities over 10 000 × 5 000, 48 random candidates each, a batch of 2 048
+ *             (the distribution of the 2026-10-06 rows; almost every candidate fails the range)
+ *   predator  the candidate rows the real gather builds for one worker's owned entities, on
+ *             spatialWorkerMicrobench's Predator mix (16 500 entities, 3 workers, 45 frames)
+ *
+ *   node tests/bench/spatialPublishWasmMicrobench.mjs [--case uniform|predator] [--rounds 9] [--output path]
+ *   node --allow-natives-syntax tests/bench/spatialPublishWasmMicrobench.mjs   (also checks the WASM tier)
  */
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
 
-import { checksumInts, isCli, timeIt } from './microbenchHelpers.mjs';
+import { Collider } from '../../src/components/collider.js';
+import { Grid } from '../../src/core/grid.js';
+import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
+import { isCli, parseArgs, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
+import { setupSpatialKernel } from './spatialWorkerMicrobench.mjs';
+import { abab, instantiateKernel, machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { initWorker, loadWorker, spatialBuffers } from './workerHarness.mjs';
 
-const ENTITIES = 4096;
-const MAX_NEIGHBORS = 1024;
-const STRIDE = 1 + MAX_NEIGHBORS;
-const CAND = 48;
-const BATCH = 2048;
+const UNIFORM = { count: 4096, maxNeighbors: 1024, candidates: 48, batch: 2048, seed: 0x1234567 };
 
-const POS_FLOATS = ENTITIES * 4;
-const RANGE_FLOATS = ENTITIES;
-const LIST_U16 = BATCH;
-const ROW_U16 = ENTITIES * STRIDE;
-const align4 = (n) => (n + 3) & ~3;
-
-const posByte = 0;
-const rangeByte = POS_FLOATS * 4;
-const listByte = align4(rangeByte + RANGE_FLOATS * 4);
-const candByte = align4(listByte + LIST_U16 * 2);
-const neighborJsByte = align4(candByte + ROW_U16 * 2);
-const neighborWasmByte = align4(neighborJsByte + ROW_U16 * 2);
-const bytes = neighborWasmByte + ROW_U16 * 2;
-const pages = Math.max(2, Math.ceil(bytes / 65536));
-if (pages > 8192) throw new Error(`layout ${bytes} exceeds wasm memory`);
-
-function fill(memory) {
-  const pos = new Float32Array(memory.buffer, posByte, POS_FLOATS);
-  const range = new Float32Array(memory.buffer, rangeByte, RANGE_FLOATS);
-  const list = new Uint16Array(memory.buffer, listByte, LIST_U16);
-  const cand = new Uint16Array(memory.buffer, candByte, ROW_U16);
-  let s = 0x1234567;
-  const rnd = () => {
+function lcg(seed) {
+  let s = seed >>> 0;
+  return () => {
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
     return s / 4294967296;
   };
-  for (let e = 0; e < ENTITIES; e++) {
-    pos[e * 4] = rnd() * 10000;
-    pos[e * 4 + 1] = rnd() * 5000;
-    pos[e * 4 + 2] = 4 + rnd() * 12;
-    range[e] = 80 + rnd() * 120;
-  }
-  for (let n = 0; n < BATCH; n++) list[n] = (rnd() * ENTITIES) | 0;
-  for (let n = 0; n < BATCH; n++) {
-    const entityA = list[n];
-    const base = entityA * STRIDE;
-    cand[base] = CAND;
-    for (let i = 0; i < CAND; i++) {
-      let b = (rnd() * ENTITIES) | 0;
-      if (b === entityA) b = (b + 1) % ENTITIES;
-      cand[base + 1 + i] = b;
-    }
-  }
 }
 
-function publishJs(memory) {
-  const pos = new Float32Array(memory.buffer, posByte, POS_FLOATS);
-  const range = new Float32Array(memory.buffer, rangeByte, RANGE_FLOATS);
-  const list = new Uint16Array(memory.buffer, listByte, LIST_U16);
-  const cand = new Uint16Array(memory.buffer, candByte, ROW_U16);
-  const neighbor = new Uint16Array(memory.buffer, neighborJsByte, ROW_U16);
-  for (let n = 0; n < BATCH; n++) {
-    const entityA = list[n];
-    const myX = pos[entityA * 4];
-    const myY = pos[entityA * 4 + 1];
-    const myRange = range[entityA];
-    const base = entityA * STRIDE;
-    const candCount = cand[base];
-    let published = 0;
-    for (let i = 0; i < candCount && published < MAX_NEIGHBORS; i++) {
-      const b = cand[base + 1 + i];
-      const dx = pos[b * 4] - myX;
-      const dy = pos[b * 4 + 1] - myY;
-      const er = myRange + pos[b * 4 + 2];
-      if (dx * dx + dy * dy < er * er) {
-        neighbor[base + 1 + published] = b;
-        published++;
-      }
-    }
-    neighbor[base] = published;
-  }
+/** Views of the product memory, by the offsets createSpatialPublishMemory chose. */
+function memoryViews(mem, count, maxN) {
+  const b = mem.buffer;
+  const stride = 1 + maxN;
+  return {
+    pos: new Float32Array(b, mem.posByte, count * 4),
+    range: new Float32Array(b, mem.rangeByte, count),
+    rows: new Uint16Array(b, mem.neighborByte, count * stride),
+    cand: new Uint16Array(b, mem.candByte, count * stride),
+    list: new Uint16Array(b, mem.listByte, count),
+  };
 }
 
-function checksumNeighbor(memory, byteOff) {
-  const neighbor = new Uint16Array(memory.buffer, byteOff, ROW_U16);
-  const list = new Uint16Array(memory.buffer, listByte, LIST_U16);
+/** The 2026-10-06 distribution, same generator and order as the bench of that day. */
+async function uniformCase() {
+  const { count, maxNeighbors: maxN, candidates, batch, seed } = UNIFORM;
+  const stride = 1 + maxN;
+  const mem = createSpatialPublishMemory(count, maxN, 1);
+  assert.ok(mem, 'publish memory (16-bit ids)');
+  const m = memoryViews(mem, count, maxN);
+  const rnd = lcg(seed);
+  for (let e = 0; e < count; e++) {
+    m.pos[e * 4] = rnd() * 10000;
+    m.pos[e * 4 + 1] = rnd() * 5000;
+    m.pos[e * 4 + 2] = 4 + rnd() * 12;
+    m.range[e] = 80 + rnd() * 120;
+  }
+  for (let k = 0; k < batch; k++) m.list[k] = (rnd() * count) | 0;
+  for (let k = 0; k < batch; k++) {
+    const a = m.list[k];
+    const base = a * stride;
+    m.cand[base] = candidates;
+    for (let i = 0; i < candidates; i++) {
+      let b = (rnd() * count) | 0;
+      if (b === a) b = (b + 1) % count;
+      m.cand[base + 1 + i] = b;
+    }
+  }
+
+  const cfg = { worldWidth: 10000, worldHeight: 5000, cellSize: 128, maxEntitiesPerCell: 128, maxNeighbors: maxN };
+  const worker = await loadWorker('spatialWorker.js', 'spatialWorker');
+  const { buffers, gridMetadata } = spatialBuffers(cfg, count);
+  await initWorker(worker, {
+    config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg },
+    globalEntityCount: count,
+    buffers,
+    gridMetadata,
+    extra: { workerIndex: 0, totalSpatialWorkers: 1 },
+  });
+  assert.equal(worker._wasmPub, null, 'the worker runs the JS path');
+  worker.entityPosData.set(m.pos);
+  worker._neighborCandidateData.set(m.cand);
+  const range = Float32Array.from(m.range);
+  return { mem, m, worker, range, list: Uint16Array.from(m.list.subarray(0, batch)), n: batch, count, maxN };
+}
+
+/** Candidate rows from the real gather (JS mode), copied into the product memory for the WASM. */
+async function predatorCase() {
+  const k = await setupSpatialKernel({ n: 16500, workers: 3 });
+  for (let f = 0; f < 45; f++) k.frame();
+  const worker = k.workers[0];
+  const maxN = Grid.maxNeighbors;
+  const stride = 1 + maxN;
+  const count = k.n;
+  const visualRange = Collider.visualRange;
+  const ids = [];
+  for (let i = 0; i < worker._ownedEntityCount; i++) {
+    const a = worker._ownedEntityList[i];
+    if (visualRange[a] > 0) ids.push(a);
+  }
+  const mem = createSpatialPublishMemory(count, maxN, 1);
+  assert.ok(mem, 'publish memory (16-bit ids)');
+  const m = memoryViews(mem, count, maxN);
+  m.pos.set(worker.entityPosData.subarray(0, count * 4));
+  m.range.set(visualRange.subarray(0, count));
+  for (let i = 0; i < ids.length; i++) {
+    const base = ids[i] * stride;
+    m.list[i] = ids[i];
+    m.cand.set(worker._neighborCandidateData.subarray(base, base + 1 + worker._neighborCandidateData[base]), base);
+  }
+  const range = Float32Array.from(visualRange.subarray(0, count));
+  return { mem, m, worker, range, list: Uint16Array.from(ids), n: ids.length, count, maxN };
+}
+
+/** FNV-1a over each batch entity's row (count, then ids), in batch order. */
+function checksumRows(rows, list, n, stride) {
   let h = 2166136261;
-  for (let n = 0; n < BATCH; n++) {
-    const base = list[n] * STRIDE;
-    const count = neighbor[base];
-    h = checksumInts(neighbor.subarray(base, base + 1 + count), count + 1) ^ h;
+  for (let k = 0; k < n; k++) {
+    const base = list[k] * stride;
+    const c = rows[base];
+    for (let i = 0; i <= c; i++) h = Math.imul(h ^ rows[base + i], 16777619) >>> 0;
   }
   return h >>> 0;
 }
 
 async function main() {
-  // The shipped module; its C source is wasm/spatialPublish.c.
-  const wasmPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'workers', 'spatialPublish.wasm');
-  const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
-  fill(memory);
-  const env = new Proxy(
-    { memory },
-    { get: (target, prop) => (prop in target ? target[prop] : () => 0) },
-  );
-  const wasi = new Proxy({}, { get: () => () => 0 });
-  const { instance } = await WebAssembly.instantiate(readFileSync(wasmPath), {
-    env,
-    wasi_snapshot_preview1: wasi,
-  });
-  const publishWasm = instance.exports.publish_batch;
-  publishJs(memory);
-  publishWasm(BATCH, MAX_NEIGHBORS, posByte, rangeByte, candByte, neighborWasmByte, listByte);
-  const jsSum = checksumNeighbor(memory, neighborJsByte);
-  const wasmSum = checksumNeighbor(memory, neighborWasmByte);
-  if (jsSum !== wasmSum) {
-    console.error(`checksum JS ${jsSum} WASM ${wasmSum}`);
-    process.exit(1);
-  }
-  console.log(`checksum ${jsSum} pages ${pages}`);
-  const js = timeIt('js-publish', () => publishJs(memory));
-  const wasm = timeIt('wasm-publish', () => {
-    publishWasm(BATCH, MAX_NEIGHBORS, posByte, rangeByte, candByte, neighborWasmByte, listByte);
-  });
-  const delta = ((wasm.opsPerSec - js.opsPerSec) / js.opsPerSec) * 100;
-  console.log(`delta ${delta.toFixed(1)}% ops/s (wasm vs js)`);
-  return { js, wasm, delta, checksum: jsSum };
+  const args = parseArgs();
+  const caseName = String(args.case || 'uniform');
+  const rounds = Number(args.rounds ?? 9);
+  const setup = caseName === 'uniform' ? await uniformCase() : caseName === 'predator' ? await predatorCase() : null;
+  if (!setup) throw new Error(`unknown case ${caseName}`);
+  const { mem, m, worker, range, list, n, maxN } = setup;
+  const stride = 1 + maxN;
+  const posJs = worker.entityPosData;
+  const rowsJs = Grid.neighborData;
+  const publish = instantiateKernel('spatialPublish', mem.memory).publish_batch;
+
+  const js = (count) => {
+    for (let k = 0; k < count; k++) {
+      const a = list[k];
+      const p = a * 4;
+      worker._publishFilteredNeighbors(a, posJs[p], posJs[p + 1], range[a], a * stride, maxN, posJs, rowsJs);
+    }
+  };
+  const wasm = (count) => publish(count, maxN, mem.posByte, mem.rangeByte, mem.candByte, mem.neighborByte, mem.listByte);
+
+  // Parity on the full batch, before any timing.
+  rowsJs.fill(0xbeef);
+  m.rows.fill(0xbeef);
+  js(n);
+  wasm(n);
+  const jsSum = checksumRows(rowsJs, list, n, stride);
+  const wasmSum = checksumRows(m.rows, list, n, stride);
+  assert.equal(wasmSum, jsSum, 'WASM rows equal the shipped JS rows');
+  let pairs = 0;
+  for (let k = 0; k < n; k++) pairs += rowsJs[list[k] * stride];
+  console.log(`${caseName}: ${n} entities in the batch, ${pairs} neighbours published, checksum ${jsSum}`);
+
+  // Warm both on a slice, then time the whole batch.
+  const slice = Math.min(n, 64);
+  warmNormalCompile(() => js(slice));
+  const tier = await warmWasm(publish, () => wasm(slice));
+  const result = abab({ js: () => js(n), wasm: () => wasm(n) }, { rounds, label: `publish ${caseName}` });
+
+  const report = {
+    feature: 'spatial-publish-wasm',
+    case: caseName,
+    functions: ['SpatialWorker._publishFilteredNeighbors', 'spatialPublish.publish_batch'],
+    n,
+    seed: caseName === 'uniform' ? UNIFORM.seed : 0x5a71a1,
+    checksum: jsSum,
+    publishedPairs: pairs,
+    wasmTier: tier,
+    machine: machineState(),
+    rounds,
+    cases: result.cases,
+    comparisons: result.comparisons,
+  };
+  if (args.output) writeReport(String(args.output), report);
+  return report;
 }
 
 if (isCli(import.meta.url)) {
