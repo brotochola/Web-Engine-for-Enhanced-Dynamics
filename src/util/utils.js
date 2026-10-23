@@ -6,6 +6,7 @@
 import { nativeImport } from './sceneScript.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
+import { WEED_LOGO_ART } from './weedLogo.js';
 import { rotatedHalfExtents } from './viewBounds.js';
 import { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius } from './lightRadius.js';
 export {
@@ -1740,30 +1741,7 @@ export function urlToPath(url) {
 export function printLogo() {
   debugWorkerLog(
     `%c
-  +%                                           :
-  *@             .                            +@-
-  #@            #@                             @#
-  #@            @%     -***:   :*@@@@@-        %%
-  @%            @#   :%@#*@@  +@%=:::@*        #%
-  @*      :    :@+  .@@. =@+ +@+   .#@-    ..  %%
-  @*     =@+   =@   @@  *@#  @@ .-*@@-   -%@@#-@*
-  @*    .@@=   @%  -@+-@@=   @@@@@#=    +@#:-%@@-
-  @#    =@@=  =@:  @@%@*    +@-:.      -@+   .@@:
-  %%   .@@@= .@%  .@@+.   : *@.        *@.    %@.
-  *@  .%@+@= #@:  :@.    =@##@.      =+*@.    %@::
-  -@%*@@:.@@%@-   .@*-=*@@* :@:   .=%@*:@@=:.:@@@%
-   :**+.  :+*:     =%@@#=    %@%%@@@+.  .+@@@@%*-
-                      :+=     :==-:         .
-                 :=*#@@@+   =#%@@@@%
-             =+#@@@@+-.    @@*=----.
-            :%#+-..@%     @@.
-                   +@:    @@
-                    @@    @@-.   ..:.
-                    :@:   .#@@@@@@@@@
-                     @%      .:::=@@:
-              .%=    @%      -=*@@#:
-               +@@*-:@@   -%@@%#=.
-                 =#@@%-   =*-
+${WEED_LOGO_ART}
 
 %c
 🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿

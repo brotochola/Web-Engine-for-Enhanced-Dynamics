@@ -14,6 +14,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import { devBanner } from './devBanner.js';
+
 const SW_MODE = process.argv.includes('--sw');
 const PORT = Number(process.env.PORT) || (SW_MODE ? 8090 : 8000);
 const ISOLATION_WORKER = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/workers/isolationServiceWorker.js');
@@ -180,15 +182,7 @@ const server = http.createServer((req, res) => {
 
 const startServer = (port) => {
   server.listen(port, () => {
-    console.log('🚀 Server running at http://localhost:' + port + '/');
-    console.log('📁 Serving files from: ' + process.cwd());
-    if (SW_MODE) {
-      console.log('🧪 No COOP/COEP headers: SharedArrayBuffer through weed-sw.js (the first visit reloads once)');
-      console.log('   To start over: DevTools, Application, Storage, "Clear site data".');
-    } else {
-      console.log('✅ SharedArrayBuffer enabled (COOP & COEP headers set)');
-    }
-    console.log('Press Ctrl+C to stop\n');
+    console.log(devBanner({ port, swMode: SW_MODE, hotReload: HOT_RELOAD, root: process.cwd() }));
   });
 
   server.on('error', (e) => {
