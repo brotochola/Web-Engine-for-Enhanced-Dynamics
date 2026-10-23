@@ -58,6 +58,15 @@ const EXPO_INOUT_LUT = buildExpoLut((t) =>
 );
 
 /**
+ * The EXPO ease tables (in, out, in-out) as this module samples them. The WASM integrate (E-79)
+ * copies these, so both paths read the same values: Math.pow may round differently by engine.
+ * @returns {Float32Array[]}
+ */
+export function expoLutTables() {
+  return [EXPO_IN_LUT, EXPO_OUT_LUT, EXPO_INOUT_LUT];
+}
+
+/**
  * @param {Float32Array} lut
  * @param {number} t
  * @returns {number}

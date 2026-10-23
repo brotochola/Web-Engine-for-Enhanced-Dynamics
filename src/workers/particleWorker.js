@@ -3,6 +3,7 @@
 
 import { ParticleComponent as ParticleComponentImport } from '../components/particleComponent.js';
 import { ParticleEmitter as ParticleEmitterImport } from '../core/particleEmitter.js';
+import { bindParticleIntegrate, integrateParticlesWasm } from './particleIntegrateClient.js';
 import { DecorationComponent as DecorationComponentImport } from '../components/decorationComponent.js';
 import { DecorationPool as DecorationPoolImport } from '../core/decorationPool.js';
 import {
@@ -421,6 +422,8 @@ class ParticleWorker extends AbstractWorker {
 
     // Active particle tracking
     this.activeParticleIndices = null;
+    // The WASM integrate (E-79), bound in initialize when the scene gives a particle memory.
+    this._wasmIntegrate = null;
 
     // Screen visibility (camera bounds)
     this.canvasWidth = 0;
@@ -499,6 +502,18 @@ class ParticleWorker extends AbstractWorker {
     if (this.maxParticles > 0 && data.buffers.componentData.ParticleComponent) {
       this.particlesToStamp = new Uint16Array(this.maxParticles);
       this.activeParticleIndices = new Uint16Array(this.maxParticles);
+      // E-79: the integrate in WASM on the particle memory; these two lists become views of it.
+      this._wasmIntegrate = null;
+      if (data.particleMemory && data.particleLayout && this.config?.wasm?.particleIntegrate !== false) {
+        try {
+          this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles);
+          this.particlesToStamp = this._wasmIntegrate.stamp;
+          this.activeParticleIndices = this._wasmIntegrate.indices;
+        } catch (err) {
+          console.error('[particle] integrate wasm unavailable', err);
+          this._wasmIntegrate = null;
+        }
+      }
     }
     if (this.maxDecorations > 0) {
       this._activeDecorationSnapshot = new Uint16Array(this.maxDecorations);
@@ -1108,15 +1123,25 @@ class ParticleWorker extends AbstractWorker {
   updateParticlePhysics(deltaTime, dtRatio) {
     if (this.maxParticles === 0) return 0;
 
-    const { activeCount, stampedCount } = updateParticlePhysicsBuffers(
-      ParticleComponent,
-      this.activeParticleIndices,
-      this.activeParticleCount,
-      deltaTime,
-      dtRatio,
-      this.decalsEnabled,
-      this.particlesToStamp,
-    );
+    // E-79: chosen here, per frame; both write the same state (tests/node/particleIntegrateWasm.test.js).
+    const { activeCount, stampedCount } = this._wasmIntegrate
+      ? integrateParticlesWasm(
+        this._wasmIntegrate,
+        ParticleComponent,
+        this.activeParticleCount,
+        deltaTime,
+        dtRatio,
+        this.decalsEnabled && this.particlesToStamp,
+      )
+      : updateParticlePhysicsBuffers(
+        ParticleComponent,
+        this.activeParticleIndices,
+        this.activeParticleCount,
+        deltaTime,
+        dtRatio,
+        this.decalsEnabled,
+        this.particlesToStamp,
+      );
 
     this.particlesToStampCount = stampedCount;
     return activeCount;

@@ -423,6 +423,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     // Boot payload: pose SAB when physics is off. Workers bind once; ticks do not re-read this.
     weedPose: scene.weedPose || null,
     spatialPublishMemory: scene.spatialPublish?.memory || null,
+    particleMemory: scene.particleMemory?.memory || null,
+    particleLayout: scene.particleMemory?.layout || null,
   };
 }
 

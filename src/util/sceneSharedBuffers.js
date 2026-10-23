@@ -1,5 +1,6 @@
 import { debugWorkerLog } from './debugLog.js';
 import { createSpatialPublishMemory } from './spatialPublishMemory.js';
+import { createParticleMemory } from './particleMemory.js';
 import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -254,6 +255,7 @@ function initializeCoreEntityAndComponentBuffers(scene) {
 function initializeParticleBuffers(scene) {
   const { buffers, config } = scene;
   const maxParticles = config.particle.maxParticles;
+  scene.particleMemory = null;
 
   ParticleEmitter.reset();
   LiquidFun.unbindSabs();
@@ -261,7 +263,12 @@ function initializeParticleBuffers(scene) {
   if (maxParticles <= 0) return;
 
   const particleBufferSize = ParticleComponent.getBufferSize(maxParticles);
-  buffers.componentData.ParticleComponent = new SharedArrayBuffer(particleBufferSize);
+  // E-79: with the WASM integrate the component lives at byte 0 of a shared WebAssembly.Memory
+  // (every worker's views are the same); wasm.particleIntegrate false keeps a plain SAB.
+  scene.particleMemory = config.wasm?.particleIntegrate === false ? null : createParticleMemory(maxParticles, particleBufferSize);
+  buffers.componentData.ParticleComponent = scene.particleMemory
+    ? scene.particleMemory.buffer
+    : new SharedArrayBuffer(particleBufferSize);
   ParticleComponent.initializeArrays(buffers.componentData.ParticleComponent, maxParticles);
   ParticleComponent.particleCount = maxParticles;
 

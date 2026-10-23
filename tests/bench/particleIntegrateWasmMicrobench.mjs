@@ -5,13 +5,13 @@
  * ParticleEmitter.emit, seeded. 60 000 heighted particles fall for 8–20 s fading and shrinking
  * with seven eases, despawn on ground contact, and 4 000 more are emitted every frame.
  *
- *   base  updateParticlePhysicsBuffers (src/util/particleIntegrate.js)
- *   wasm  a hypothesis variant (here until it is decided): integrate_batch (wasm/particleIntegrate.c)
- *         on the same memory, then ParticleEmitter.returnToPool for its dead list, in order, and
+ *   base  updateParticlePhysicsBuffers (src/util/particleIntegrate.js), the JS path
+ *   wasm  integrateParticlesWasm (src/workers/particleIntegrateClient.js): integrate_batch
+ *         (wasm/particleIntegrate.c), then returnToPool for its dead list, in order, and
  *         Math.cos / Math.sin for its trig list
  *
- * Both run on a ParticleComponent laid out in a shared WebAssembly.Memory, with the active list,
- * the stamp list and the kernel's scratch after it. One variant per process: runKernelVariants.mjs
+ * Both run on the particle memory the scene builds (createParticleMemory: ParticleComponent from
+ * byte 0 of a shared WebAssembly.Memory, the lists and the kernel's scratch after it). One variant per process: runKernelVariants.mjs
  * alternates them and rejects a variant whose checksum differs; the checksum covers the particle
  * state after every frame.
  *
@@ -23,62 +23,21 @@
  */
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
-import { PARTICLE_DEFAULTS } from '../../src/util/configDefaults.js';
 import { buildActiveListBuffers, updateParticlePhysicsBuffers } from '../../src/util/particleIntegrate.js';
 import { seededRandom } from '../../src/util/utils.js';
-import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
+import { createParticleMemory } from '../../src/util/particleMemory.js';
+import { bindParticleIntegrate, integrateParticlesWasm } from '../../src/workers/particleIntegrateClient.js';
 import { isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
-import { instantiateKernel, machineState, wasmTier } from './wasmKernelHelpers.mjs';
+import { machineState, wasmTier } from './wasmKernelHelpers.mjs';
 
 const MAX_PARTICLES = 65535;
 const INITIAL_BURST = 60000;
 const TOPUP_PER_FRAME = 4000;
 const DT = 1000 / 60;
 const EASES = ['lerp', 'quad.out', 'cubic.in', 'quad.inout', 'expo.out', 'back.in', 'bounce.out'];
-const LUT_SIZE = PARTICLE_DEFAULTS.expoLutSize | 0;
-// The column order of wasm/particleIntegrate.c's table.
-const COLUMNS = [
-  'active', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'lifespan', 'currentLife', 'gravity', 'scaleX', 'scaleY',
-  'alpha', 'tint', 'baseTint', 'textureId', 'rotC', 'rotS', 'fadeOnTheFloor', 'timeOnFloor', 'initialAlpha',
-  'stayOnTheFloor', 'despawnOnGroundContact', 'tweenMask', 'easeId', 'alphaFrom', 'alphaTo', 'scaleXFrom',
-  'scaleXTo', 'scaleYFrom', 'scaleYTo', 'tintFrom', 'tintTo', 'rotFrom', 'rotTo', 'angularVelFrom',
-  'angularVelTo', 'hasAngularVel', 'animCount', 'animMode', 'animFrames', 'flat', 'renderOnly',
-];
+export const PARTICLE_EASES = EASES;
 
-/** The memory: ParticleComponent from byte 0 (its own layout), then the lists and the kernel's state. */
-function particleMemory(n) {
-  const layout = layoutRegions([
-    { name: 'component', owner: 'every worker', bytes: ParticleComponent.getBufferSize(n) },
-    { name: 'indices', owner: 'particle', bytes: n * 2 },
-    { name: 'stamp', owner: 'particle', bytes: n * 2 },
-    { name: 'flat', owner: 'particle', bytes: 65536 * 2 },
-    { name: 'heighted', owner: 'particle', bytes: 65536 * 2 },
-    { name: 'dead', owner: 'particle', bytes: n * 2 },
-    { name: 'trig', owner: 'particle', bytes: n * 2 },
-    { name: 'trigAngle', owner: 'particle', bytes: n * 8 },
-    { name: 'luts', owner: 'particle, read only', bytes: 3 * (LUT_SIZE + 1) * 4 },
-    { name: 'columns', owner: 'particle, read only', bytes: COLUMNS.length * 4 },
-    { name: 'results', owner: 'particle', bytes: 16 },
-  ]);
-  const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
-  return { memory, buffer: memory.buffer, regions: layout.regions };
-}
-
-/** The EXPO tables as particleTween.js builds them (same formulas, same engine). */
-function expoLuts() {
-  const build = (fn) => {
-    const lut = new Float32Array(LUT_SIZE + 1);
-    for (let i = 0; i <= LUT_SIZE; i++) lut[i] = fn(i / LUT_SIZE);
-    return lut;
-  };
-  return [
-    build((t) => Math.pow(2, 10 * (t - 1))),
-    build((t) => 1 - Math.pow(2, -10 * t)),
-    build((t) => (t < 0.5 ? 0.5 * Math.pow(2, 20 * t - 10) : 1 - 0.5 * Math.pow(2, -20 * t + 10))),
-  ];
-}
-
-function emitConfig(mix, count, ease, area) {
+export function emitConfig(mix, count, ease, area) {
   const cfg = {
     count,
     x: area.x,
@@ -101,47 +60,10 @@ function emitConfig(mix, count, ease, area) {
   return cfg;
 }
 
-function makeWasmIntegrate(mem) {
-  const r = mem.regions;
-  const columns = new Uint32Array(mem.buffer, r.columns.byte, COLUMNS.length);
-  COLUMNS.forEach((name, k) => {
-    columns[k] = ParticleComponent[name].byteOffset;
-  });
-  const luts = expoLuts();
-  luts.forEach((lut, k) => new Float32Array(mem.buffer, r.luts.byte + k * (LUT_SIZE + 1) * 4, LUT_SIZE + 1).set(lut));
-  const integrate = instantiateKernel('particleIntegrate', mem.memory).integrate_batch;
-  const results = new Int32Array(mem.buffer, r.results.byte, 4);
-  const dead = new Uint16Array(mem.buffer, r.dead.byte, MAX_PARTICLES);
-  const trig = new Uint16Array(mem.buffer, r.trig.byte, MAX_PARTICLES);
-  const trigAngle = new Float64Array(mem.buffer, r.trigAngle.byte, MAX_PARTICLES);
-  const out = { activeCount: 0, stampedCount: 0 };
-  const run = (count, deltaTime, dtRatio, decalsEnabled, particlesToStamp) => {
-    const pc = ParticleComponent;
-    const skipRenderOnly = pc.renderOnlyLive && Atomics.load(pc.renderOnlyLive, 0) > 0 ? 1 : 0;
-    integrate(
-      r.columns.byte, r.indices.byte, count, deltaTime, dtRatio, decalsEnabled && particlesToStamp ? 1 : 0,
-      skipRenderOnly, r.stamp.byte, r.flat.byte, r.heighted.byte, r.dead.byte, r.trig.byte, r.trigAngle.byte,
-      r.luts.byte, LUT_SIZE, r.results.byte,
-    );
-    const deadCount = results[2];
-    for (let k = 0; k < deadCount; k++) ParticleEmitter.returnToPool(dead[k]);
-    const trigCount = results[3];
-    for (let k = 0; k < trigCount; k++) {
-      const i = trig[k];
-      pc.rotC[i] = Math.cos(trigAngle[k]);
-      pc.rotS[i] = Math.sin(trigAngle[k]);
-    }
-    out.activeCount = results[0];
-    out.stampedCount = results[1];
-    return out;
-  };
-  return { run, integrate };
-}
-
 /** FNV-1a over the state the integrate writes, for every active particle. */
 const _f = new Float32Array(1);
 const _u = new Uint32Array(_f.buffer);
-function checksum(indices, count) {
+export function checksum(indices, count) {
   const pc = ParticleComponent;
   let h = 2166136261;
   const mix = (v) => {
@@ -177,17 +99,18 @@ async function main() {
   if (!['base', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   if (!['tween', 'spin'].includes(mix)) throw new Error(`unknown case ${mix}`);
 
-  const mem = particleMemory(MAX_PARTICLES);
+  const mem = createParticleMemory(MAX_PARTICLES, ParticleComponent.getBufferSize(MAX_PARTICLES));
   ParticleComponent.initializeArrays(mem.buffer, MAX_PARTICLES);
   ParticleEmitter.initialize(MAX_PARTICLES);
   ParticleEmitter.initializeFreeList(new SharedArrayBuffer(MAX_PARTICLES * 2), new SharedArrayBuffer(8));
   ParticleEmitter.resetFreeListInterleaved();
   globalThis.rng = seededRandom(0xc0de1234, 'kernel');
-  const indices = new Uint16Array(mem.buffer, mem.regions.indices.byte, MAX_PARTICLES);
-  const stamp = new Uint16Array(mem.buffer, mem.regions.stamp.byte, MAX_PARTICLES);
-  const wasm = variant === 'wasm' ? makeWasmIntegrate(mem) : null;
-  const integrate = wasm
-    ? wasm.run
+  const binding = await bindParticleIntegrate(mem.memory, mem.layout, ParticleComponent, MAX_PARTICLES);
+  const indices = binding.indices;
+  const stamp = binding.stamp;
+  const integrate = variant === 'wasm'
+    ? (count, deltaTime, dtRatio, decalsEnabled, particlesToStamp) =>
+        integrateParticlesWasm(binding, ParticleComponent, count, deltaTime, dtRatio, decalsEnabled && particlesToStamp)
     : (count, deltaTime, dtRatio, decalsEnabled, particlesToStamp) =>
         updateParticlePhysicsBuffers(ParticleComponent, indices, count, deltaTime, dtRatio, decalsEnabled, particlesToStamp);
 
@@ -226,16 +149,16 @@ async function main() {
     feature: 'particle-integrate-wasm',
     variant,
     case: mix,
-    functions: ['updateParticlePhysicsBuffers', variant === 'wasm' ? 'particleIntegrate.integrate_batch' : null].filter(Boolean),
+    functions: [variant === 'wasm' ? 'integrateParticlesWasm (particleIntegrate.integrate_batch)' : 'updateParticlePhysicsBuffers'],
     n: count,
     seed: 0xc0de1234,
     checksum: sum,
-    wasmTier: wasm ? wasmTier(wasm.integrate) : null,
+    wasmTier: variant === 'wasm' ? wasmTier(binding.integrate) : null,
     machine: machineState(),
     cases,
   };
   if (args.output) writeReport(String(args.output), report);
-  else console.log(`checksum ${sum} active ${count}${wasm ? ` tier ${report.wasmTier}` : ''}`);
+  else console.log(`checksum ${sum} active ${count}${variant === 'wasm' ? ` tier ${report.wasmTier}` : ''}`);
 }
 
 if (isCli(import.meta.url)) await main();

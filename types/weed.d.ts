@@ -287,6 +287,8 @@ export type SceneConfig = Record<string, unknown> & {
     spatialPublish?: boolean;
     /** Spatial candidate gather (the cell walk before the publish). Runs only with spatialPublish. */
     spatialGather?: boolean;
+    /** Particle integrate (lifetime, tweens, motion, floor) for the CPU particle pool. */
+    particleIntegrate?: boolean;
   };
 };
 

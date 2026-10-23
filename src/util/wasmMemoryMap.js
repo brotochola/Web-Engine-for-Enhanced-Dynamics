@@ -55,6 +55,39 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
 }
 
 /**
+ * The particle memory (E-79, `particleIntegrate.wasm`, created by particleMemory.js). The
+ * ParticleComponent lays its columns out from byte 0 of its buffer in every worker
+ * (Component.initializeArrays), so this memory starts with the component and has no guard: the
+ * kernel takes every column's offset from the table JS writes. After it, the particle worker's own:
+ * - indices: the active list (u16), written by the list build, read by the integrate;
+ * - stamp: stayOnTheFloor particles to stamp (u16);
+ * - flat, heighted: the integrate's scratch lists (u16, 65 536 each);
+ * - dead: the indices JS returns to the pool after the call, in order (u16);
+ * - trig, trigAngle: particles whose angle needs Math.cos / Math.sin, and those angles (u16, f64);
+ * - luts: the EXPO ease tables, copied from particleTween.js (f32);
+ * - columns: one u32 byte offset per column the kernel reads; results: four i32.
+ * @param {number} maxParticles
+ * @param {number} componentBytes ParticleComponent.getBufferSize(maxParticles)
+ * @param {number} lutFloats every EXPO table's entries together
+ */
+export function particleIntegrateRegions(maxParticles, componentBytes, lutFloats) {
+  const n = maxParticles | 0;
+  return layoutRegions([
+    { name: 'component', owner: 'every worker (the ParticleComponent views)', bytes: componentBytes },
+    { name: 'indices', owner: 'particle', bytes: n * 2 },
+    { name: 'stamp', owner: 'particle', bytes: n * 2 },
+    { name: 'flat', owner: 'particle', bytes: 65536 * 2 },
+    { name: 'heighted', owner: 'particle', bytes: 65536 * 2 },
+    { name: 'dead', owner: 'particle', bytes: n * 2 },
+    { name: 'trig', owner: 'particle', bytes: n * 2 },
+    { name: 'trigAngle', owner: 'particle', bytes: n * 8 },
+    { name: 'luts', owner: 'particle, read only', bytes: lutFloats * 4 },
+    { name: 'columns', owner: 'particle, read only', bytes: CACHE_LINE_BYTES * 4 },
+    { name: 'results', owner: 'particle', bytes: 16 },
+  ]);
+}
+
+/**
  * Bytes the circle-pattern table may take: i32 [dr, dc] pairs for every radius up to
  * `maxCellRadius`, then i32 [first pair, pair count] per radius. A pattern of radius r fits in
  * the (2r + 3)² cells around its centre, so this bounds what the spatial workers write.

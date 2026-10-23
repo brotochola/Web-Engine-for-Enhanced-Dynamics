@@ -424,6 +424,8 @@ export const WASM_DEFAULTS = Object.freeze({
   spatialPublish: true,
   /** Spatial candidate gather (`spatialGather.wasm`, E-78); needs spatialPublish's memory. */
   spatialGather: true,
+  /** Particle integrate (`particleIntegrate.wasm`, E-79): ParticleComponent in a WebAssembly.Memory. */
+  particleIntegrate: true,
 });
 
 // ============================================================================
