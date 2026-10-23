@@ -354,6 +354,12 @@ a server without isolation headers, with the worker at the root (src mode) or ne
   the hot-reload stream) and serves `/weed-sw.js` from the engine, on port 8090 by default so the
   registration never lands on the usual dev origin. The demo launcher runs through it, Predator
   included, and a hot reload keeps the page isolated with the scene restored.
+- **The first visit hid nothing before its reload** (seen by the owner, 2026-10-23): the debug bar and
+  the demo menu showed for about 1.2 s (75 frames in the smoke test) and vanished with the reload.
+  `GameEngine` now puts a black veil over the page from its constructor whenever the gate will try
+  the worker (`showIsolationVeil`, in the top layer as a popover, the highest z-index otherwise) and
+  takes it off unless the page reloads, so a failure still shows its error. The smoke test hit-tests
+  the page's UI every frame before the reload: covered on every frame now.
 - **A reload issued while a hard reload is still loading comes back uncontrolled** (SW-4,
   Chromium); issued after `load` it is controlled. The gate now waits for the page's `load`
   event before reloading. The screen is black either way.
