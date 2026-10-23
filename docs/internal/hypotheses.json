@@ -6958,15 +6958,16 @@
       "status": "open",
       "statusText": "E-98a kept; open",
       "date": "2026-10-23",
-      "result": "E-98a: no sprite sort line where the layer is not Y-sorted (the key is the zIndex alone): bunnyMarkScene pre-render 18.943 → 12.014 ms, −36.4 %, worse 0/4. ~12 ms per new queue at 250 000 sprites left.",
+      "result": "E-98a: no sprite sort line without Y-sort, 18.943 → 12.014 ms (−36.4 %). E-98b: no emit loop on a sprites-only persist frame, 12.319 → 11.833 ms (−3.7 %). bunnyMarkScene pre-render, 250 000 sprites.",
       "area": "preRender",
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L13",
+        "HYPOTHESIS_LOG.md#L17",
         "EXECUTION_PLAN.md#L788"
       ],
       "aliases": [],
-      "next": "Profile the rest: the persist check and the pose copy each walk all rows; the per-row shadow terms on the persist path.",
+      "next": "E-98c: unmasked sprites straight to the entities collector (collectRenderable is 13 %).",
       "rank": 1
     },
     {
@@ -6985,6 +6986,21 @@
       "aliases": [],
       "next": "A scene with interpolation off at a high sprite count; the same two streams.",
       "rank": 4
+    },
+    {
+      "id": "N-64",
+      "title": "Sprite animations froze on persist frames",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-23",
+      "date": "2026-10-23",
+      "result": "Animations advanced only in the full emit, which a persist frame skips: a scene whose rows held still froze every animation. The persist loop runs the same clock. bunnyMarkScene pre-render +0.9 %.",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L15",
+        "REVIEW_PLAN.md"
+      ],
+      "aliases": []
     }
   ],
   "leads": [

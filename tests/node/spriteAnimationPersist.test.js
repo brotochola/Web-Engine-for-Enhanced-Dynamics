@@ -84,3 +84,59 @@ test('an animated sprite keeps animating in a scene where nothing else changes',
     Layer.reset();
   }
 });
+
+// E-98b. A persist frame of sprites only skips the emit loop, which would only count the rows: the
+// count it publishes and the poses _writeType0PosesOnly wrote must be what the loop gave.
+test('a persist frame of sprites only publishes every row and its pose', async () => {
+  Layer.reset();
+  Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
+  try {
+    const w = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+    const componentData = coreComponentData(N);
+    await initWorker(w, {
+      config: { worldWidth: 1000, worldHeight: 1000, preRender: { interpolation: false } },
+      globalEntityCount: N,
+      buffers: { componentData },
+      extra: { renderQueue: renderQueuePayload(8) },
+    });
+    for (const C of [Transform, SpriteRenderer]) C.initializeArrays(componentData[C.name], N);
+    bindPoseColumns(N);
+    w.proxyToGlobalAnim = [null, [0]];
+    w.animationFrameStart = [0];
+    w.animationFrameCount = [1];
+    w.frameWidth = new Uint16Array(1).fill(16);
+    w.frameHeight = new Uint16Array(1).fill(16);
+    for (let e = 0; e < N; e++) {
+      Transform.active[e] = 1;
+      Transform.rotC[e] = 1;
+      SpriteRenderer.active[e] = 1;
+      SpriteRenderer.spritesheetId[e] = 1;
+      SpriteRenderer.scaleX[e] = 1;
+      SpriteRenderer.scaleY[e] = 1;
+      SpriteRenderer.alpha[e] = 1;
+    }
+    const hit = w._type0PersistHit;
+    let hits = 0;
+    w._type0PersistHit = function (...args) {
+      const h = hit.apply(this, args);
+      if (h) hits++;
+      return h;
+    };
+    for (let f = 0; f < 6; f++) {
+      for (let e = 0; e < N; e++) {
+        Transform.x[e] = 10 * e + f;
+        Transform.y[e] = 5 * e;
+      }
+      w._renderableCount = 0;
+      for (let e = 0; e < N; e++) w.collectRenderable(0, e);
+      w.buildRenderQueue(1000 / 60);
+      assert.equal(w.renderQueueCount[0], N, `frame ${f}: every row published`);
+      for (let e = 0; e < N; e++) assert.equal(w.renderQueueX[e], 10 * e + f, `frame ${f}: row ${e} pose`);
+      w._queueBuf ^= 1;
+    }
+    delete w._type0PersistHit; // the shared worker gets its own method back
+    assert.equal(hits, 4, 'frames 2 to 5 were persist frames');
+  } finally {
+    Layer.reset();
+  }
+});

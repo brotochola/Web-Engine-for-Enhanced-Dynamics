@@ -795,6 +795,11 @@ busy time. The scene has `ySort: false`, so the sort-key work (29 %) is the firs
 where the destination layer Y-sorts (Adobe roots always): pre-render **18.943 → 12.014 ms, −36.4 %, worse
 0/4**. Next: profile what is left (the persist check and pose copy each walk all rows; each sprite row
 rewrites its three shadow terms on the persist path, zeros in a scene with no casters).
+**E-98b (2026-10-23):** no emit loop on a sprites-only persist frame (it only counted): **12.319 → 11.833 ms,
+−3.7 %, worse 1/4**. Found on the way: N-64, sprite animations froze on persist frames (fixed, hygiene).
+Profile after E-98a: `_writeRenderable` 30 %, `_writeType0PosesOnly` 17 %, `collectRenderable` 13 %,
+`_type0PersistHit` 12 %, `collectVisibleEntities` 9 %, `_displayPose` 9 %. Next: E-98c, unmasked sprites
+straight to the entities collector without `collectRenderable`'s type dispatch.
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls

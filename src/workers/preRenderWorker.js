@@ -376,6 +376,8 @@ class PreRenderWorker extends AbstractWorker {
         /** The main queue's staticGen column (renderQueueLayout.js), and the count written there. */
         this.renderQueueStaticGen = EMPTY_U32;
         this._staticGen = 1;
+        // Sprites whose animation moved to a new frame on the last persist frame (a new texture).
+        this._persistFramesMoved = 0;
         this.renderQueueType = EMPTY_U8;
         /** The instanced-row pack kernel (E-76 W9), bound when the queues live in the render-queue memory. */
         this._gpuPackWasm = null;
@@ -1947,8 +1949,9 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * The persist frame's sprite rows: poses, sort keys and shadow terms, and the animation clock.
-     * Returns how many rows changed statics (rows of other types, rewritten in full, and sprites
-     * whose animation moved to a new frame), for E-82's staticGen.
+     * Returns how many rows are of other types (rewritten in full by the emit loop); the sprites
+     * whose animation moved to a new frame go to _persistFramesMoved. Both are new statics for
+     * E-82's staticGen.
      */
     _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime) {
         const rqX = this.renderQueueX;
@@ -1966,6 +1969,7 @@ class PreRenderWorker extends AbstractWorker {
         const animated = SpriteRenderer.isAnimated || null;
         PERSIST_DT[0] = deltaTime / 1000;
         let others = 0;
+        let moved = 0;
         for (let i = 0; i < count; i++) {
             if (collectorType[i] !== 0) {
                 others++;
@@ -1983,8 +1987,9 @@ class PreRenderWorker extends AbstractWorker {
             }
             if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], ySort);
             this._writeQueueShadow(i, idx);
-            if (animated !== null && animated[idx]) others += this._advancePersistFrame(i, idx);
+            if (animated !== null && animated[idx]) moved += this._advancePersistFrame(i, idx);
         }
+        this._persistFramesMoved = moved;
         return others;
     }
 
@@ -2728,17 +2733,23 @@ class PreRenderWorker extends AbstractWorker {
         const persistOthers = persistHit
             ? this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime)
             : 0;
+        // E-98b. On a persist frame of sprites only, the loop below would only count the rows.
+        let loopCount = count;
+        if (persistHit && persistOthers === 0) {
+            writeCount = count < maxItems ? count : maxItems;
+            loopCount = 0;
+        }
 
-        for (let i = 0; i < count && writeCount < maxItems; i++) {
+        for (let i = 0; i < loopCount && writeCount < maxItems; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
-            const yKey = collectorY[i];
-            const sk = writeSortKey ? this._orderKey(type, idx, yKey, ySort) : yKey;
 
             if (persistHit && type === 0) {
                 writeCount++;
                 continue;
             }
+            const yKey = collectorY[i];
+            const sk = writeSortKey ? this._orderKey(type, idx, yKey, ySort) : yKey;
 
             if (type === 6) {
                 if (stashPx) {
@@ -3096,7 +3107,9 @@ class PreRenderWorker extends AbstractWorker {
         if (source.persist) {
             // E-82. A frame that only moved sprites keeps the count; anything else is a new one
             // (0 is skipped: it means unknown).
-            if (!persistHit || persistOthers > 0) this._staticGen = ((this._staticGen + 1) >>> 0) || 1;
+            if (!persistHit || persistOthers > 0 || this._persistFramesMoved > 0) {
+                this._staticGen = ((this._staticGen + 1) >>> 0) || 1;
+            }
             if (this.renderQueueStaticGen.length) this.renderQueueStaticGen[0] = this._staticGen;
         }
         return writeCount;
