@@ -122,6 +122,8 @@ The primary metric is worker step time in milliseconds (`STEP_MS`), or **Load%**
 
 Frame rate at a 60 Hz cap is not evidence. A scene locked at 60 FPS can hide a 4 ms regression.
 
+Below the cap, frames the page presents are a guard on every pair. `runPredatorAbab` reads the main thread's FPS (the rate the compositor produces frames) as `presented`, and a drop of 3 percent or more in at least 75 percent of the pairs is a **regression** whatever the owner did. E-82 is why: Pixi's step fell 76 % in `bunnyMarkScene` while the page went from 55 to 44 frames a second, because the GPU, already full, was handed more frames than it could finish. No worker's step shows that. A change whose aim is the frame rate itself names `--owner presented`, and is kept when presented frames rise at least 3 percent in at least 75 percent of the pairs.
+
 Name the primary in the hypothesis before you run. The default primary is the step of the worker whose hot path you changed. Two cases below replace that default: work that moves between pre-render and Pixi, and more than one worker of the same kind.
 
 ## Floors

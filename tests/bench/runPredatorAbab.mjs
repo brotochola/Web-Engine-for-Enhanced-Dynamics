@@ -10,8 +10,10 @@
  *   node tests/bench/runPredatorAbab.mjs --name branch-vs-main --vs main --pairs 8
  *
  * Verdict per kind: median of the paired deltas (B−A)/A. REGRESSION if any
- * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), or a load key
- * drifts more than 5 %. KEPT (product) if the owner kind is ≤ −3 %.
+ * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), if the frames
+ * the page presents (main-thread FPS) drop ≥ 3 % in ≥ 75 % of the pairs, or a
+ * load key drifts more than 5 %. KEPT (product) if the owner kind is ≤ −3 %, or
+ * with `--owner presented` if the presented frames rise ≥ 3 %.
  * Otherwise NEUTRAL: with a kernel win that is `kept (kernel, producto neutro)`.
  */
 import fs from 'node:fs';
@@ -173,6 +175,14 @@ const SUB_TIMERS = [
 // E-78 sitting (2026-10-22) one flow field in one baseline run of twelve (0.03 a frame, median 0
 // on both sides) read as a 245 % cv and failed a pair the change could not reach. A nav
 // hypothesis runs NavStress, far above one a frame, where the band and the cv apply.
+/**
+ * Presented frames: the main thread's rAF rate, which runs at the rate the compositor
+ * produces frames. E-82 is why it is judged: Pixi's step fell 76 % while the page
+ * went from 55 to 44 frames a second, because a GPU-bound scene then got more frames
+ * submitted than it could finish. No worker's STEP_MS shows that.
+ */
+const PRESENTED_KEY = 'MAIN_FPS';
+
 const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8, FLOWFIELDS_COMPUTED: 1, FLOWFIELDS_SERVICED: 1, PATHS_COMPUTED: 1 };
 
 // HOW_WE_MEASURE: a load key outside 5% fails the pair. A coefficient of
@@ -209,6 +219,8 @@ export function predatorMetrics(report) {
     }
   }
   for (const lk of LOAD_KEYS) if (lk in published) out[lk] = published[lk];
+  const mainFps = report.mainThread?.averageFPS;
+  if (Number.isFinite(mainFps)) out[PRESENTED_KEY] = mainFps;
 
   // Sub-timers, namespaced by worker kind so two workers can publish the same
   // one without colliding (`preRender_EMIT_MS` is not `renderer_EMIT_MS`).
@@ -239,7 +251,7 @@ function parseOverrides(raw) {
 function sittingStamp(scene, opts, args, baseline) {
   const git = (argv, encoding) => execFileSync('git', argv, { cwd: repoRoot, encoding, maxBuffer: 1 << 28 });
   return {
-    schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS },
+    schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS, presented: PRESENTED_KEY },
     scene: { path: scene.path, exportName: scene.exportName },
     protocol: {
       headed: opts.headed,
@@ -389,8 +401,31 @@ export function decideAbab(pairs, owner, metric = null) {
     if (consistent && (quiet || kind === owner)) regress.push(tag);
     else noisy.push(`${tag}, not blocking`);
   }
+  // Higher is better here. Judged only when every pair has it (sittings written
+  // before it was collected are re-decided without it).
+  let presented = null;
+  const fa = pairs.map((p) => p.A?.[PRESENTED_KEY]).filter(Number.isFinite);
+  const fb = pairs.map((p) => p.B?.[PRESENTED_KEY]).filter(Number.isFinite);
+  if (pairs.length && fa.length === pairs.length && fb.length === pairs.length) {
+    const deltas = pairs.map((p) => pctDelta(p.B[PRESENTED_KEY], p.A[PRESENTED_KEY]));
+    presented = {
+      baseMedian: median(fa),
+      hypMedian: median(fb),
+      pairedDeltaPct: median(deltas),
+      deltas,
+      lowerFraction: deltas.filter((d) => d < 0).length / deltas.length,
+      higherFraction: deltas.filter((d) => d > 0).length / deltas.length,
+      cvBase: cv(fa),
+      cvHyp: cv(fb),
+    };
+    if (presented.pairedDeltaPct <= -3 && presented.lowerFraction >= CONSISTENT) {
+      regress.push(
+        `presented frames ${presented.pairedDeltaPct.toFixed(1)}% (${Math.round(presented.lowerFraction * deltas.length)}/${deltas.length} pairs fewer)`,
+      );
+    }
+  }
   let verdict = 'NEUTRAL';
-  const o = owner ? kinds[owner] : null;
+  const o = owner && owner !== 'presented' ? kinds[owner] : null;
   // An owner below the floor cannot earn a KEPT verdict. It is not that the
   // improvement is unmeasured - it is that the protocol forbids judging it, so
   // the honest verdict is NEUTRAL-with-reasons rather than a keep.
@@ -399,6 +434,9 @@ export function decideAbab(pairs, owner, metric = null) {
   else if (!ownerJudged && o) verdict = 'NEUTRAL (below floor)';
   else if (regress.length) verdict = 'REGRESSION';
   else if (ownerJudged && o.pairedDeltaPct <= -3 && 1 - o.worseFraction >= CONSISTENT) {
+    verdict = 'KEPT (product)';
+  } else if (owner === 'presented' && presented && presented.pairedDeltaPct >= 3
+    && presented.higherFraction >= CONSISTENT) {
     verdict = 'KEPT (product)';
   }
 
@@ -434,7 +472,7 @@ export function decideAbab(pairs, owner, metric = null) {
     }
   }
 
-  return { verdict, owner, ownerJudged, metric, attributed, kinds, load, reasons, muted, regress, noisy, belowFloor };
+  return { verdict, owner, ownerJudged, metric, attributed, kinds, presented, load, reasons, muted, regress, noisy, belowFloor };
 }
 
 async function main() {
@@ -632,6 +670,15 @@ function printDecision(name, decision) {
     }
     console.log(
       `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%`
+    );
+  }
+  if (decision.presented) {
+    const pr = decision.presented;
+    console.log(
+      `${'presented'.padEnd(10)} ${pr.baseMedian.toFixed(1)} → ${pr.hypMedian.toFixed(1)} fps  ` +
+        `paired ${pr.pairedDeltaPct >= 0 ? '+' : ''}${pr.pairedDeltaPct.toFixed(1)}%  ` +
+        `fewer ${Math.round(pr.lowerFraction * pr.deltas.length)}/${pr.deltas.length}  ` +
+        `cv ${(pr.cvBase * 100).toFixed(0)}/${(pr.cvHyp * 100).toFixed(0)}%`,
     );
   }
   // E-32. A muted key prints its numbers, its cv and the band it was measured
