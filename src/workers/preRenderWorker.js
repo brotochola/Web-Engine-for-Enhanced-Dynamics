@@ -378,6 +378,8 @@ class PreRenderWorker extends AbstractWorker {
         this._staticGen = 1;
         // Sprites whose animation moved to a new frame on the last persist frame (a new texture).
         this._persistFramesMoved = 0;
+        // E-98g: rows the last persist check repaired (a frame another buffer moved). Bumps staticGen.
+        this._persistFramesRepaired = 0;
         // E-102b. The tileMode columns a repeating sprite has written (one per queue buffer, and per
         // custom layer's). A column set starts at zero and only that branch writes anything else, so
         // until it has, the other rows need not write zeros there (repeat, tile mode, offsets, muls).
@@ -1979,6 +1981,8 @@ class PreRenderWorker extends AbstractWorker {
         const dirty = SpriteRenderer.renderDirty;
         const frameIndex = this.entityFrameIndex;
         const animState = SpriteRenderer.animationState;
+        let repaired = 0;
+        this._persistFramesRepaired = 0;
         for (let i = 0; i < count; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
@@ -1989,9 +1993,36 @@ class PreRenderWorker extends AbstractWorker {
             if (type === 6) return false;
             if (type !== 0) continue;
             if (dirty && dirty[idx]) return false;
-            if (frameIndex && prevF[i] !== (frameIndex[idx] | 0)) return false;
             if (animState && prevA[i] !== (animState[idx] | 0)) return false;
+            // E-98g. The frame moved since this buffer last showed the row: the other buffer's emit or
+            // persist frame advanced it. The row gets the current frame's texture; a full emit for
+            // that made every frame of an animated scene a full one.
+            if (frameIndex && prevF[i] !== (frameIndex[idx] | 0)) {
+                if (!this._repairPersistFrame(i, idx)) return false;
+                prevF[i] = frameIndex[idx];
+                repaired++;
+            }
         }
+        this._persistFramesRepaired = repaired;
+        return true;
+    }
+
+    /**
+     * E-98g. Row i of the queue being written gets entity idx's current frame, as the full emit
+     * writes it (animStart + frame). False when the full emit must decide: no animation entry, or a
+     * frame past the animation's end (the emit resets it).
+     */
+    _repairPersistFrame(i, idx) {
+        const proxyMap = this.proxyToGlobalAnim?.[SpriteRenderer.spritesheetId[idx]];
+        const globalAnimIdx = proxyMap?.[SpriteRenderer.animationState[idx]];
+        if (globalAnimIdx === undefined) return false;
+        const animStart = this.animationFrameStart?.[globalAnimIdx];
+        if (animStart === undefined) return false;
+        const frame = this.entityFrameIndex[idx];
+        if (frame >= (this.animationFrameCount?.[globalAnimIdx] ?? 1)) return false;
+        const tex = animStart + frame;
+        this.renderQueueTextureId[i] = tex;
+        if (this.entityLastTextureId) this.entityLastTextureId[idx] = tex;
         return true;
     }
 
@@ -2152,6 +2183,9 @@ class PreRenderWorker extends AbstractWorker {
         const tex = animStart + frameIndex[idx];
         this.renderQueueTextureId[i] = tex;
         if (this.entityLastTextureId) this.entityLastTextureId[idx] = tex;
+        // This buffer now shows the new frame: its next check needs no repair (E-98g).
+        const prevF = this._persistFrame && this._persistFrame[this._queueBuf];
+        if (prevF) prevF[i] = frameIndex[idx];
         // Bounds may change (variable frame sizes)
         if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
             const sx = Math.abs(SpriteRenderer.scaleX[idx]) || 1; // flip = negative scale
@@ -3248,7 +3282,7 @@ class PreRenderWorker extends AbstractWorker {
         if (source.persist) {
             // E-82. A frame that only moved sprites keeps the count; anything else is a new one
             // (0 is skipped: it means unknown).
-            if (!persistHit || persistOthers > 0 || this._persistFramesMoved > 0) {
+            if (!persistHit || persistOthers > 0 || this._persistFramesMoved > 0 || this._persistFramesRepaired > 0) {
                 this._staticGen = ((this._staticGen + 1) >>> 0) || 1;
             }
             if (this.renderQueueStaticGen.length) this.renderQueueStaticGen[0] = this._staticGen;

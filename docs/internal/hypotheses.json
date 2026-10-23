@@ -6972,9 +6972,9 @@
       "id": "E-98",
       "title": "Pre-render's full emit at 250 000 sprites takes more than a frame",
       "status": "open",
-      "statusText": "E-98a–f kept; open",
+      "statusText": "E-98a–g kept; open",
       "date": "2026-10-23",
-      "result": "bunnyMarkScene pre-render 21.1 → 6.1 ms per new queue: E-98a no sort line without Y-sort (−36.4 %), E-98b no emit loop on a sprites-only persist frame (−3.7 %), E-98c unmasked sprites straight to the entities collector (−14.2 %), E-98d poses collected straight into the queue (−14.1 %), E-98e the collect writes those rows itself (−15.8 %), E-98f bodiless sprites read their pose inline (−18.4 %).",
+      "result": "bunnyMarkScene pre-render 21.1 → 6.1 ms per new queue (E-98a–f: no sort line without Y-sort −36.4 %, no emit loop on a sprites-only persist frame −3.7 %, unmasked sprites straight to the collector −14.2 %, poses straight into the queue −14.1 %, the collect writes its rows −15.8 %, bodiless poses inline −18.4 %). E-98g: a frame the other buffer moved is repaired, not a full emit: animatedSpriteStressScene pre-render 8.887 → 7.098 ms, −19.3 %.",
       "area": "preRender",
       "kind": "js",
       "refs": [
@@ -6983,7 +6983,7 @@
         "HYPOTHESIS_LOG.md#L15"
       ],
       "aliases": [],
-      "next": "E-98g: animated rows rewrite their texture on every persist frame, so the per-row frame comparison goes (it misses persist on both buffers after any frame change); then fuse the persist check with the poses-only pass.",
+      "next": "The persist check and the poses-only pass are still two walks of every row; W4 for the rest.",
       "rank": 1
     },
     {

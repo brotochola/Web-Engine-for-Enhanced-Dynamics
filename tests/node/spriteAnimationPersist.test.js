@@ -203,3 +203,76 @@ test('a row a repeating sprite left is cleared when a plain sprite takes it', as
     Layer.reset();
   }
 });
+
+// E-98g. The queue's two buffers alternate. When one buffer's frame moves an animated sprite on,
+// the other still shows the old frame, and its persist check used to give up: in an animated scene
+// nearly every frame became a full emit. The check now gives that row the current frame instead.
+test('both queue buffers show the current frame, and an animated scene keeps its persist frames', async () => {
+  Layer.reset();
+  Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
+  try {
+    const w = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+    const componentData = coreComponentData(N);
+    await initWorker(w, {
+      config: { worldWidth: 1000, worldHeight: 1000, preRender: { interpolation: false } },
+      globalEntityCount: N,
+      buffers: { componentData },
+      extra: { renderQueue: renderQueuePayload(8) },
+    });
+    for (const C of [Transform, SpriteRenderer]) C.initializeArrays(componentData[C.name], N);
+    bindPoseColumns(N);
+    // One sheet with one 4-frame animation, textures 0..3: a row's texture is its frame.
+    w.proxyToGlobalAnim = [null, [0]];
+    w.animationFrameStart = [0];
+    w.animationFrameCount = [4];
+    w.frameWidth = new Uint16Array(4).fill(16);
+    w.frameHeight = new Uint16Array(4).fill(16);
+    for (let e = 0; e < N; e++) {
+      Transform.active[e] = 1;
+      Transform.x[e] = 100 + 50 * e;
+      Transform.y[e] = 100;
+      Transform.rotC[e] = 1;
+      SpriteRenderer.active[e] = 1;
+      SpriteRenderer.spritesheetId[e] = 1;
+      SpriteRenderer.animationState[e] = 0;
+      SpriteRenderer.isAnimated[e] = 1;
+      SpriteRenderer.loop[e] = 1;
+      SpriteRenderer.scaleX[e] = 1;
+      SpriteRenderer.scaleY[e] = 1;
+      SpriteRenderer.alpha[e] = 1;
+    }
+    SpriteRenderer.animationSpeed[0] = 0.25; // a frame every 4 ticks
+    SpriteRenderer.animationSpeed[1] = 1 / 3; // every 3: the two change on different ticks
+
+    const hit = w._type0PersistHit;
+    let hits = 0;
+    w._type0PersistHit = function (...args) {
+      const h = hit.apply(this, args);
+      if (h) hits++;
+      return h;
+    };
+    const shown = [[-1, -1], [-1, -1]]; // per buffer, the texture each row last showed
+    for (let f = 0; f < 60; f++) {
+      const buf = w._queueBuf;
+      w.selectWriteBuffers();
+      const gen = w._staticGen;
+      w._renderableCount = 0;
+      w._bindCollectPoses();
+      for (let e = 0; e < N; e++) w.collectRenderable(0, e);
+      w.buildRenderQueue(1000 / 60);
+      let changed = false;
+      for (let e = 0; e < N; e++) {
+        assert.equal(w.renderQueueTextureId[e], w.entityFrameIndex[e], `tick ${f}, buffer ${buf}: row ${e} shows the current frame`);
+        if (w.renderQueueTextureId[e] !== shown[buf][e]) changed = true;
+        shown[buf][e] = w.renderQueueTextureId[e];
+      }
+      // New textures in this buffer are new statics: Pixi re-uploads them (E-82).
+      if (changed) assert.notEqual(w._staticGen, gen, `tick ${f}: staticGen moved`);
+      w._queueBuf ^= 1;
+    }
+    // The first frame of each buffer is a full emit; every later one keeps the rows.
+    assert.equal(hits, 58, `persist frames: ${hits} of 60`);
+  } finally {
+    Layer.reset();
+  }
+});

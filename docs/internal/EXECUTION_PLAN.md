@@ -836,6 +836,12 @@ persist check and the poses-only pass as two walks of every row; `_displayPose` 
 `_displayPose` call per sprite (bodies still call it): **7.441 → 6.070 ms, −18.4 %, worse 0/4**. BunnyMark
 pre-render is 21.1 → 6.1 ms per new queue. Found: `_advancePersistFrame` moves `entityFrameIndex` but not the
 remembered frame, so after any animated sprite changes frame both queue buffers miss persist (E-98g).
+**E-98g (2026-10-23):** the persist check repairs such a row (the current frame's texture, as the full emit
+writes it; the animation-state test first, so a changed animation still misses) instead of missing, and a
+frame moved on a persist frame updates that buffer's remembered frame; repairs bump staticGen. Unit test: 20 of
+60 persist frames before, 58 after (each buffer's first is a full emit), both buffers showing the current
+frame. `animatedSpriteStressScene` (100 000 animated sprites, still, all in view): pre-render **8.887 → 7.098 ms,
+−19.3 %, worse 0/4**.
 
 ### E-99 Caster positions in bin order for the shadow stamp — **rejected in the kernel, 2026-10-23**
 Predator's profile put 42 % of `stampLightRange` on `sun[c * floats]` per binned caster. Copying x and y in bin
