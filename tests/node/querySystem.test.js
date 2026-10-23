@@ -490,3 +490,51 @@ test('worker queryActiveEntitiesSlow caches until query version changes', () => 
     restoreWorkerActiveListGlobals(installed.previous);
   }
 });
+
+// E-104. The walks read each type mask as a list of type indices, lowest first, built once; the
+// BigInt walk they replace allocated per bit. Types past bit 31 and 32 are where a 32-bit shortcut
+// would go wrong.
+test('worker queries visit a sparse 64-type mask in ascending type order', () => {
+  const types = 64;
+  const per = 10;
+  const matching = new Set([0, 5, 33, 63]);
+  const metadata = [];
+  for (let t = 0; t < types; t++) {
+    metadata.push({
+      entityType: t,
+      className: `QueryWideType${t}`,
+      componentMask: (matching.has(t) ? 3n : 1n).toString(),
+      startIndex: t * per,
+      endIndex: (t + 1) * per,
+      poolSize: per,
+    });
+  }
+  const capacity = types * per;
+  // Every third slot active, as a sorted active list.
+  const active = [];
+  for (let i = 0; i < capacity; i += 3) active.push(i);
+  const activeEntitiesData = createUint16View([active.length, ...active]);
+  let typeMask = 0n;
+  for (const t of matching) typeMask |= 1n << BigInt(t);
+  const queryFunctions = createWorkerQueryFunctions(
+    {
+      metadata,
+      queryEntityCapacity: capacity,
+      precomputedQueries: [{ name: 'A+B', queryMask: '3', typeMask: typeMask.toString(), resultOffset: 0 }],
+    },
+    {
+      entityMetadataSAB: new SharedArrayBuffer(0),
+      queryCacheSAB: new SharedArrayBuffer(0),
+      queryResultsSAB: new SharedArrayBuffer(calculateQueryResultsSABSize(1, capacity)),
+    },
+    activeEntitiesData,
+    createQueryVersionData()
+  );
+  const ordered = [...matching].sort((a, b) => a - b);
+  const all = ordered.flatMap((t) => Array.from({ length: per }, (_, k) => t * per + k));
+  assert.deepEqual(Array.from(queryFunctions.query([QueryTestComponentA, QueryTestComponentB])), all);
+  const activeMatches = all.filter((i) => i % 3 === 0);
+  assert.deepEqual(Array.from(queryFunctions.queryActiveEntitiesSlow([QueryTestComponentA, QueryTestComponentB])), activeMatches);
+  queryFunctions.publishPrecomputedActiveQueries(1);
+  assert.deepEqual(Array.from(queryFunctions.queryActiveEntities([QueryTestComponentA, QueryTestComponentB])), activeMatches);
+});

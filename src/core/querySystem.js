@@ -14,7 +14,7 @@
  * Box2d.queryAABB is fixtures; Query.query is ECS.
  */
 
-import { collectComponents, countTrailingZeros } from '../util/utils.js';
+import { collectComponents } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { Transform } from '../components/transform.js';
 import { GameObject } from './gameObject.js';
@@ -169,8 +169,27 @@ function copySortedRangeToBuffer(activeEntitiesData, start, end, buffer, writeIn
   return writeIndex;
 }
 
+/**
+ * The entity type indices a type mask selects, lowest first: the order a walk of its bits visits
+ * them. Computed once per mask; the walks below read this list, because walking the BigInt
+ * itself allocated a BigInt per step (E-104: 199 KB/s in each Predator logic worker).
+ */
+function typeIndicesOf(typeMask) {
+  const out = [];
+  let m = typeMask;
+  for (let i = 0; m !== 0n; i++, m >>= 1n) {
+    if ((m & 1n) !== 0n) out.push(i);
+  }
+  return Int32Array.from(out);
+}
+
+/** A precomputed query's type indices (set when the query is built; computed once if not). */
+function queryTypeIndices(query) {
+  return query.typeIndices || (query.typeIndices = typeIndicesOf(query.typeMask));
+}
+
 function copyActiveMatchesToBuffer(
-  typeMask,
+  typeIndices,
   entityMetadata,
   activeEntitiesData,
   buffer,
@@ -178,10 +197,9 @@ function copyActiveMatchesToBuffer(
   initialWriteIndex = 0
 ) {
   let writeIndex = initialWriteIndex;
-  let mask = typeMask;
 
-  while (mask !== 0n) {
-    const typeIndex = countTrailingZeros(mask);
+  for (let t = 0; t < typeIndices.length; t++) {
+    const typeIndex = typeIndices[t];
     const typeActiveList = getTypeActiveList ? getTypeActiveList(typeIndex) : null;
 
     if (typeActiveList) {
@@ -196,8 +214,6 @@ function copyActiveMatchesToBuffer(
         writeIndex
       );
     }
-
-    mask &= mask - 1n;
   }
 
   return writeIndex;
@@ -319,10 +335,12 @@ export class QuerySystem {
      * Cached locally for query() calls (all entities, no SAB needed)
      */
     this.queryToTypeMask = new Map();
+    /** queryMask (BigInt) → its type indices (Int32Array), for the walks (E-104). */
+    this.queryToTypeIndices = new Map();
 
     /**
      * Pre-computed query definitions
-     * Array of { name, componentClasses, queryMask, typeMask, resultOffset }
+     * Array of { name, componentClasses, queryMask, typeMask, typeIndices, resultOffset }
      */
     this.precomputedQueries = [];
 
@@ -360,6 +378,8 @@ export class QuerySystem {
     this.queryVersionData = null;
     this.queryResultViews = []; // Snapshot views, one per pre-computed query
     this._fallbackActiveQueryCache = new Map();
+    // One closure for every copy, not one per query per publish.
+    this._typeActiveListOf = (typeIndex) => this._getTypeActiveList(typeIndex);
 
     /**
      * Reusable buffer for query() results - avoids GC pressure from repeated allocations.
@@ -511,6 +531,7 @@ export class QuerySystem {
         componentClasses: queryDef.components,
         queryMask,
         typeMask,
+        typeIndices: typeIndicesOf(typeMask),
         resultOffset,
       });
 
@@ -755,15 +776,23 @@ export class QuerySystem {
     const queryMask = this._generateQueryMask(componentClasses);
 
     // Check local cache
-    let typeMask = this.queryToTypeMask.get(queryMask);
-    if (typeMask === undefined) {
-      // Compute and cache
-      typeMask = this._computeTypeMask(queryMask);
-      this.queryToTypeMask.set(queryMask, typeMask);
-    }
-
     // Build result from matching entity type ranges
-    return this._buildQueryResult(typeMask);
+    return this._buildQueryResult(this._typeIndicesForQuery(queryMask));
+  }
+
+  /** The type indices of a query mask, computed once (E-104). @private */
+  _typeIndicesForQuery(queryMask) {
+    let typeIndices = this.queryToTypeIndices.get(queryMask);
+    if (typeIndices === undefined) {
+      let typeMask = this.queryToTypeMask.get(queryMask);
+      if (typeMask === undefined) {
+        typeMask = this._computeTypeMask(queryMask);
+        this.queryToTypeMask.set(queryMask, typeMask);
+      }
+      typeIndices = typeIndicesOf(typeMask);
+      this.queryToTypeIndices.set(queryMask, typeIndices);
+    }
+    return typeIndices;
   }
 
   /**
@@ -771,22 +800,18 @@ export class QuerySystem {
    * Uses reusable buffer to avoid GC pressure. Result is a temporary view - consume immediately, do not store.
    * @private
    */
-  _buildQueryResult(typeMask) {
+  _buildQueryResult(typeIndices) {
     const buffer = this._queryResultBuffer;
     if (!buffer) return new Uint16Array(0);
 
     let writeIndex = 0;
-    let mask = typeMask;
 
-    while (mask !== 0n) {
-      const typeIndex = countTrailingZeros(mask);
-      const meta = this.entityMetadata[typeIndex];
+    for (let t = 0; t < typeIndices.length; t++) {
+      const meta = this.entityMetadata[typeIndices[t]];
 
       for (let i = meta.startIndex; i < meta.endIndex; i++) {
         buffer[writeIndex++] = i;
       }
-
-      mask &= mask - 1n;
     }
 
     return buffer.subarray(0, writeIndex);
@@ -842,11 +867,7 @@ export class QuerySystem {
    * @private
    */
   _computeActiveQueryFromMask(queryMask) {
-    let typeMask = this.queryToTypeMask.get(queryMask);
-    if (typeMask === undefined) {
-      typeMask = this._computeTypeMask(queryMask);
-      this.queryToTypeMask.set(queryMask, typeMask);
-    }
+    const typeIndices = this._typeIndicesForQuery(queryMask);
 
     const currentVersion = this.queryVersionData ? Atomics.load(this.queryVersionData, 0) : -1;
     let cachedEntry = currentVersion !== -1 ? this._fallbackActiveQueryCache.get(queryMask) : null;
@@ -866,11 +887,11 @@ export class QuerySystem {
         return updateCachedQueryEntry(cachedEntry, 0, currentVersion);
       }
       const count = copyActiveMatchesToBuffer(
-        typeMask,
+        typeIndices,
         this.entityMetadata,
         activeData,
         cachedEntry.buffer,
-        (typeIndex) => this._getTypeActiveList(typeIndex)
+        this._typeActiveListOf
       );
       return updateCachedQueryEntry(cachedEntry, count, currentVersion);
     }
@@ -882,11 +903,11 @@ export class QuerySystem {
     }
 
     const count = copyActiveMatchesToBuffer(
-      typeMask,
+      typeIndices,
       this.entityMetadata,
       activeData,
       buffer,
-      (typeIndex) => this._getTypeActiveList(typeIndex)
+      this._typeActiveListOf
     );
 
     return count === 0 ? EMPTY_QUERY_RESULT : buffer.subarray(0, count);
@@ -908,11 +929,11 @@ export class QuerySystem {
       const buffer = snapshotView.snapshots[writeSnapshot];
       const count =
         copyActiveMatchesToBuffer(
-          query.typeMask,
+          queryTypeIndices(query),
           this.entityMetadata,
           activeData,
           buffer,
-          (typeIndex) => this._getTypeActiveList(typeIndex),
+          this._typeActiveListOf,
           1
         ) - 1;
       publishQuerySnapshot(snapshotView, count, frameNumber);
@@ -994,6 +1015,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     ...q,
     queryMask: BigInt(q.queryMask),
     typeMask: BigInt(q.typeMask),
+    typeIndices: typeIndicesOf(BigInt(q.typeMask)),
   }));
 
   // Build queryMask → index lookup
@@ -1002,11 +1024,20 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     queryMaskToIndex.set(q.queryMask, i);
   });
 
-  // Build queryMask → typeMask cache
-  const queryToTypeMask = new Map();
+  // Build queryMask → type indices cache (E-104: the walks read index lists, not BigInt masks)
+  const queryToTypeIndices = new Map();
   precomputedQueries.forEach((q) => {
-    queryToTypeMask.set(q.queryMask, q.typeMask);
+    queryToTypeIndices.set(q.queryMask, q.typeIndices);
   });
+
+  function typeIndicesForQuery(queryMask) {
+    let typeIndices = queryToTypeIndices.get(queryMask);
+    if (typeIndices === undefined) {
+      typeIndices = typeIndicesOf(computeTypeMask(queryMask));
+      queryToTypeIndices.set(queryMask, typeIndices);
+    }
+    return typeIndices;
+  }
 
   // Create result views for pre-computed queries
   const queryEntityCapacity =
@@ -1117,26 +1148,17 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
    * Result is a temporary view - consume immediately, do not store.
    */
   function query(componentClasses) {
-    const queryMask = generateQueryMask(componentClasses);
-
-    let typeMask = queryToTypeMask.get(queryMask);
-    if (typeMask === undefined) {
-      typeMask = computeTypeMask(queryMask);
-      queryToTypeMask.set(queryMask, typeMask);
-    }
+    const typeIndices = typeIndicesForQuery(generateQueryMask(componentClasses));
 
     const buffer = queryResultBuffers[queryResultBufferIndex];
     queryResultBufferIndex = (queryResultBufferIndex + 1) % QUERY_BUFFER_POOL_SIZE;
     let writeIndex = 0;
-    let mask = typeMask;
 
-    while (mask !== 0n) {
-      const typeIndex = countTrailingZeros(mask);
-      const meta = entityMetadata[typeIndex];
+    for (let t = 0; t < typeIndices.length; t++) {
+      const meta = entityMetadata[typeIndices[t]];
       for (let i = meta.startIndex; i < meta.endIndex; i++) {
         buffer[writeIndex++] = i;
       }
-      mask &= mask - 1n;
     }
 
     return buffer.subarray(0, writeIndex);
@@ -1174,12 +1196,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
 
   function queryActiveEntitiesSlow(componentClasses) {
     const queryMask = generateQueryMask(componentClasses);
-
-    let typeMask = queryToTypeMask.get(queryMask);
-    if (typeMask === undefined) {
-      typeMask = computeTypeMask(queryMask);
-      queryToTypeMask.set(queryMask, typeMask);
-    }
+    const typeIndices = typeIndicesForQuery(queryMask);
 
     const currentVersion = queryVersionData ? Atomics.load(queryVersionData, 0) : -1;
     let cachedEntry = currentVersion !== -1 ? fallbackActiveQueryCache.get(queryMask) : null;
@@ -1197,7 +1214,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
         return updateCachedQueryEntry(cachedEntry, 0, currentVersion);
       }
       const count = copyActiveMatchesToBuffer(
-        typeMask,
+        typeIndices,
         entityMetadata,
         activeEntitiesData,
         cachedEntry.buffer,
@@ -1213,7 +1230,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     const buffer = queryResultBuffers[queryResultBufferIndex];
     queryResultBufferIndex = (queryResultBufferIndex + 1) % QUERY_BUFFER_POOL_SIZE;
     const count = copyActiveMatchesToBuffer(
-      typeMask,
+      typeIndices,
       entityMetadata,
       activeEntitiesData,
       buffer,
@@ -1237,7 +1254,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
         const buffer = snapshotView.snapshots[writeSnapshot];
         const count =
           copyActiveMatchesToBuffer(
-            queryDef.typeMask,
+            queryTypeIndices(queryDef),
             entityMetadata,
             activeEntitiesData,
             buffer,
