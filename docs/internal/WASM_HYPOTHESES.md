@@ -302,7 +302,7 @@ W11 needs a meshApi trace at a load over 3 ms. W8 goes to Q5.
 ParticleComponent SAB), W2a (per light), W1 (per light and solid), W21c (decal tiles), W22 (sway, if
 it passes Q3).
 
-**Open, blocked on the Phase 4 memory decision:** W2b, W4, W6/W7, W18, W19.
+**Unblocked by the Phase 4 decision (Box2D's memory, 2026-10-23):** W2b, W4, W6/W7, W18, W19.
 
 ### Order for Phase 3
 
@@ -375,6 +375,15 @@ One Memory per candidate (spatial today) or one **scene arena**: a shared `WebAs
 every worker at offsets. Questions: maximum size and its commit on Windows (N-7: 512 MB commits starved
 the test suite), 32-bit ids, growth (a shared memory cannot shrink, so a fixed size per scene), whether
 Box2D's own memory can hold the pose buffer (W15). With one winner, it gets its own Memory.
+
+**Decided 2026-10-23 (owner): Box2D's memory**, for the data kernels read together with physics state.
+Poses and velocities already live there (the Transform and RigidBody state channels every worker
+views); the Weed build's memory is fixed at 512 MB with no growth and already exports `_malloc`, and
+it is committed in every physics scene, so buffers moved into it add nothing. Engine regions are
+allocated with Box2D's `_malloc` at boot and their offsets go out with `box2dReady`; a scene without
+physics gets a stand-in memory with the same regions; a scene whose regions do not fit keeps separate
+memories and the JS paths. Kernels still own nothing (T6). Particles and audio keep their own memories:
+they read no physics state. First mover: spatial (W6 + W7), then W4.
 
 **Phase 5 — Product wiring, per winner, one at a time.** T7 switch first. Scene pair, then the Predator
 gate. Boot cost and dist sizes on record. One commit per port. Winners land in sequence, so each one's
