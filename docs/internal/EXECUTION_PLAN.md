@@ -832,6 +832,10 @@ collector) are written by the collect loop itself, the collector's columns taken
 re-read a dozen fields per sprite): **8.690 → 7.314 ms, −15.8 %, worse 0/4**. The persist check's per-row
 animation-state test stays: a direct `spriteRenderer.animationState` write sets no dirty flag. Left: the
 persist check and the poses-only pass as two walks of every row; `_displayPose` per sprite; W4.
+**E-98f (2026-10-23):** a sprite with no body reads its Transform pose in the collect loop instead of a
+`_displayPose` call per sprite (bodies still call it): **7.441 → 6.070 ms, −18.4 %, worse 0/4**. BunnyMark
+pre-render is 21.1 → 6.1 ms per new queue. Found: `_advancePersistFrame` moves `entityFrameIndex` but not the
+remembered frame, so after any animated sprite changes frame both queue buffers miss persist (E-98g).
 
 ### E-99 Caster positions in bin order for the shadow stamp — **rejected in the kernel, 2026-10-23**
 Predator's profile put 42 % of `stampLightRange` on `sun[c * floats]` per binned caster. Copying x and y in bin

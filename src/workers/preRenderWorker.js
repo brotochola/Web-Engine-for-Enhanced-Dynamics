@@ -1525,6 +1525,11 @@ class PreRenderWorker extends AbstractWorker {
         const maxItems = this.renderQueueMaxItems;
         const keyY = COLLECT_Y[0];
         let n = this._renderableCount;
+        // E-98f. A sprite with no body takes _displayPose's Transform branch, read here instead of
+        // in a call per sprite; a body (a published physics pose) still goes through _displayPose.
+        const bodyPoses = this._poseX && this._rbActive ? this._rbActive : null;
+        const tRotC = Transform.rotC;
+        const tRotS = Transform.rotS;
 
         const rot = this._frameCameraRot || 0;
         if (rot && !skipCull) {
@@ -1567,7 +1572,14 @@ class PreRenderWorker extends AbstractWorker {
                             rY[n] = keyY;
                             rType[n] = 0;
                             rIndex[n] = i;
-                            this._displayPose(i, pose);
+                            if (bodyPoses !== null && bodyPoses[i]) {
+                                this._displayPose(i, pose);
+                            } else {
+                                pose[0] = x[i];
+                                pose[1] = y[i];
+                                pose[2] = tRotC && tRotC[i] !== undefined ? tRotC[i] : 1;
+                                pose[3] = tRotS ? (tRotS[i] || 0) : 0;
+                            }
                             cPx[n] = pose[0];
                             cPy[n] = pose[1];
                             cRotC[n] = pose[2];
@@ -1623,7 +1635,14 @@ class PreRenderWorker extends AbstractWorker {
                         rY[n] = keyY;
                         rType[n] = 0;
                         rIndex[n] = i;
-                        this._displayPose(i, pose);
+                        if (bodyPoses !== null && bodyPoses[i]) {
+                            this._displayPose(i, pose);
+                        } else {
+                            pose[0] = x[i];
+                            pose[1] = y[i];
+                            pose[2] = tRotC && tRotC[i] !== undefined ? tRotC[i] : 1;
+                            pose[3] = tRotS ? (tRotS[i] || 0) : 0;
+                        }
                         cPx[n] = pose[0];
                         cPy[n] = pose[1];
                         cRotC[n] = pose[2];

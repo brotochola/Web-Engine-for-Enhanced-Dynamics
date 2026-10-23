@@ -7,10 +7,11 @@ import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Collider } from '../../src/components/collider.js';
 import { Layer } from '../../src/core/layer.js';
 
-// E-98c and E-98e. The sprite collect sends a sprite with no layer mask straight to the entities
-// collector, past collectRenderable's type dispatch and bit scan, and writes its row itself (E-98e)
-// instead of calling _writeRenderable. The collectors must come out as collectRenderable fills them
-// for every sprite, and a masked sprite still goes through collectRenderable.
+// E-98c, E-98e and E-98f. The sprite collect sends a sprite with no layer mask straight to the
+// entities collector, past collectRenderable's type dispatch and bit scan, writes its row itself (E-98e)
+// instead of calling _writeRenderable, and reads a bodiless sprite's Transform pose itself (E-98f). The
+// collectors must come out as collectRenderable fills them for every sprite, bodies or not, and a
+// masked sprite still goes through collectRenderable.
 
 const N = 6;
 
@@ -18,6 +19,8 @@ function setup(pre) {
   Transform.x = new Float32Array(N).map((_, i) => 100 + i * 3.25);
   Transform.y = new Float32Array(N).map((_, i) => 100 - i * 1.5);
   Transform.active = new Uint8Array(N).fill(1);
+  Transform.rotC = new Float32Array(N).map((_, i) => Math.cos(i * 0.7));
+  Transform.rotS = new Float32Array(N).map((_, i) => Math.sin(i * 0.7));
   SpriteRenderer.active = new Uint8Array(N).fill(1);
   SpriteRenderer.renderVisible = new Uint8Array(N).fill(1);
   SpriteRenderer.spritesheetId = new Uint16Array(N).fill(1);
@@ -42,6 +45,18 @@ function setup(pre) {
   pre.renderQueueEnabled = true;
   pre._spriteSortArrays = null;
   pre._collectEntityGlow = () => {};
+  pre._poseX = null;
+  pre._rbActive = null;
+  pre.interpolatePhysicsPose = false;
+}
+
+/** Sprites 1, 3 and 4 are bodies with a published pose; 4's rotation is not live, so it uses the Transform. */
+function bodies(pre) {
+  pre._rbActive = Uint8Array.from([0, 1, 0, 1, 1, 0]);
+  pre._poseX = new Float32Array(N).map((_, i) => 500 + i * 7.5);
+  pre._poseY = new Float32Array(N).map((_, i) => 300 - i * 2.25);
+  pre._poseRotC = new Float32Array(N).map((_, i) => (i === 4 ? 0 : Math.cos(i)));
+  pre._poseRotS = new Float32Array(N).map((_, i) => (i === 4 ? 0 : Math.sin(i)));
 }
 
 /** Empty main and fx collectors, sized for the scene. */
@@ -77,8 +92,8 @@ function snapshot(pre, fx) {
   };
 }
 
-for (const sortY of [false, true]) {
-  test(`the sprite collect fills the collectors as collectRenderable does (Y-sort ${sortY ? 'on' : 'off'})`, async () => {
+for (const [sortY, withBodies] of [[false, false], [true, false], [false, true], [true, true]]) {
+  test(`the sprite collect fills the collectors as collectRenderable does (Y-sort ${sortY ? 'on' : 'off'}, ${withBodies ? 'bodies' : 'no bodies'})`, async () => {
     Layer.reset();
     Layer.initializeFromConfig({ fx: {} }, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
     const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
@@ -86,6 +101,7 @@ for (const sortY of [false, true]) {
     try {
       setup(pre);
       pre._entitySortY = sortY;
+      if (withBodies) bodies(pre);
       const fx = Layer.get('fx').id;
       SpriteRenderer.layerMask[2] = 1 << fx;
       SpriteRenderer.layerMask[4] = (1 << fx) | Layer.entitiesMask();
