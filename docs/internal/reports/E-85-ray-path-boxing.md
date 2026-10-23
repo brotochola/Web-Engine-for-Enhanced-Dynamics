@@ -106,10 +106,30 @@ now in `CLAUDE.md` because they hold beyond rays: on a hot path, pass doubles th
 `Float64Array` rather than as arguments of a function TurboFan may leave out, and write a rare
 `Infinity` as a module constant.
 
+## The second change: `castAll`
+
+`castAll` cut its "reusable" arrays to length 0 at the start of every call, so every call built
+new internal hit objects and new result objects, although its JSDoc says they are reused, and the
+hit distances were tagged fields (the E-66 pattern): 47.2 MB/s of the 77.3 in `rayStressScene`.
+The closest hits now live in two typed arrays (`_topEntity`, `_topDist`) with the farthest kept
+hit in a typed slot; an insertion sort orders them (stable, as the Array sort was, so the order is
+the same); the borrowed result objects come from a pool kept across calls, and a caller's `out`
+array keeps its own objects. `tests/node/rayCastAll.test.js` checks the results against brute
+force with exact distances and points, and the reuse (the old code fails the reuse tests).
+
+- Chrome heap pass, `rayStressScene` logic: 47.2 → **4.4 MB/s**.
+- Kernel (5 rounds, checksums equal): `castAll` 244 192 → 554 185 ops/s, **+126.9 %**; the primary
+  `cast` 1 878 298 → 1 860 138 (−1.0 %, a tie: the change does not reach it). The cases timed
+  after `castAll` in the same process also moved (`hasLineOfSight` +72 %, masked cast +55 %)
+  without a change on their path; that is the old `castAll`'s garbage collected during them, not
+  a gain of theirs.
+- `rayStressScene` pair, logic owner, 4 pairs: **3.692 → 2.741 ms, −25.8 %, worse 0/4**, cv 0/2 %,
+  `BODY_COUNT` 2 000 both sides.
+
 ## Leads it left
 
-- `castAll` builds its hit objects anew on every call (its borrowed arrays are cut to length 0
-  first), and their distance fields are tagged: 47 MB/s left in `rayStressScene`. Next change.
+- The 4.3 MB/s left in `rayStressScene` is the driver's calls into the public `Ray` methods, which
+  are too big to inline into game code, so their double arguments are boxed at that call (E-90).
 - The bullet pool's free list allocates in the Atomics builtins (E-86).
 - `markSeenPolarOwners` (`angularSweep.js`) merges a global `Infinity` with a typed-array double
   per merged ray; if lighting scenes always merge edges, that branch never runs.

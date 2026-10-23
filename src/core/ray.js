@@ -36,10 +36,8 @@ const TRAVERSE_HIT = new Int32Array(2);
 const TRAVERSE_DIST = new Float64Array(1);
 const SHAPE_DIST = new Float64Array(1);
 
-/** castAll's hit order. A sign, not a - b: the comparator's double result was boxed per comparison. */
-function byDistance(a, b) {
-  return a.distance < b.distance ? -1 : a.distance > b.distance ? 1 : 0;
-}
+/** castAll: the farthest of the hits it keeps, or -1 before the first. */
+const TOP_FAR = new Float64Array(1);
 
 /**
  * Ray - Static class for raycasting against entities in the spatial grid
@@ -104,10 +102,13 @@ export class Ray {
     distance: Infinity,
   };
   static _tempHitsArray = []; // Reusable array for castAll
-  static _tempAllHitsArray = []; // Reusable array for castAll internal hits
-  static _tempAllHitsCount = 0; // Reused counter to avoid allocations
-  static _tempAllHitsFarthest = -1; // H1: farthest distance among top-N castAll hits
-  static _checkedEntities = new Set(); // Reused Set for castAll
+  /** castAll's result objects, kept across calls (the borrowed array is cut to each call's count). */
+  static _tempHitSlots = [];
+  // H1: castAll keeps its closest hits (at most maxHits) in typed arrays, entity and distance: as
+  // fields of hit objects the distances were heap numbers (E-85). Grown when maxHits is larger.
+  static _topEntity = new Int32Array(16);
+  static _topDist = new Float64Array(16);
+  static _tempAllHitsCount = 0;
   // Per-cast generation stamp (skip entities already shape-tested this ray)
   static _rayGen = 1;
   static _rayGenStamp = new Uint32Array(0);
@@ -680,10 +681,8 @@ export class Ray {
 
   static _castAllImpl(xFrom, yFrom, xTo, yTo, maxDist, maxHits, mask, out) {
     const outHits = out || Ray._tempHitsArray;
-    outHits.length = 0;
-    Ray._tempAllHitsArray.length = 0;
     Ray._tempAllHitsCount = 0;
-    Ray._tempAllHitsFarthest = -1;
+    TOP_FAR[0] = -1;
     Ray._beginRayGen();
 
     const dx = xTo - xFrom;
@@ -691,6 +690,7 @@ export class Ray {
     const distSq = dx * dx + dy * dy;
 
     if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
+      outHits.length = 0;
       return outHits;
     }
 
@@ -698,6 +698,10 @@ export class Ray {
     const dirX = dx / rayLength;
     const dirY = dy / rayLength;
     const hitCap = maxHits > 0 ? maxHits : 1;
+    if (Ray._topEntity.length < hitCap) {
+      Ray._topEntity = new Int32Array(hitCap);
+      Ray._topDist = new Float64Array(hitCap);
+    }
     const ray = RAY;
     ray[RAY_X] = xFrom;
     ray[RAY_Y] = yFrom;
@@ -709,8 +713,6 @@ export class Ray {
     const gridCols = Grid.gridWidth;
     const gridRows = Grid.gridHeight;
     const cellSize = Grid.cellSize;
-
-    const allHits = Ray._tempAllHitsArray;
 
     const startCellX = Math.floor(xFrom * invCellSize);
     const startCellY = Math.floor(yFrom * invCellSize);
@@ -756,11 +758,11 @@ export class Ray {
         currentCellY < gridRows
       ) {
         const cellIndex = currentCellY * gridCols + currentCellX;
-        Ray._collectCellHitsTopN(cellIndex, allHits, mask, hitCap);
+        Ray._collectCellHitsTopN(cellIndex, mask, hitCap);
       }
 
       const cellExit = tMaxX < tMaxY ? tMaxX : tMaxY;
-      if (Ray._tempAllHitsCount >= hitCap && Ray._tempAllHitsFarthest <= cellExit) {
+      if (Ray._tempAllHitsCount >= hitCap && TOP_FAR[0] <= cellExit) {
         break;
       }
 
@@ -777,21 +779,39 @@ export class Ray {
       }
     }
 
-    allHits.length = Ray._tempAllHitsCount;
-    allHits.sort(byDistance);
-
-    const count = allHits.length;
-    for (let i = 0; i < count; i++) {
-      const hit = allHits[i];
-      let slot = outHits[i];
-      if (!slot) {
-        slot = { entityIndex: -1, distance: 0, hitX: 0, hitY: 0 };
-        outHits[i] = slot;
+    // The kept hits nearest first. Insertion sort: as stable as the Array sort it replaces, and
+    // there are at most maxHits of them.
+    const count = Ray._tempAllHitsCount;
+    const topEntity = Ray._topEntity;
+    const topDist = Ray._topDist;
+    for (let i = 1; i < count; i++) {
+      const e = topEntity[i];
+      const d = topDist[i];
+      let j = i - 1;
+      while (j >= 0 && topDist[j] > d) {
+        topEntity[j + 1] = topEntity[j];
+        topDist[j + 1] = topDist[j];
+        j--;
       }
-      slot.entityIndex = hit.entityIndex;
-      slot.distance = hit.distance;
-      slot.hitX = xFrom + dirX * hit.distance;
-      slot.hitY = yFrom + dirY * hit.distance;
+      topEntity[j + 1] = e;
+      topDist[j + 1] = d;
+    }
+
+    // Result objects are reused: the borrowed array's from the slot pool, a caller's `out` its own.
+    const pool = out ? null : Ray._tempHitSlots;
+    for (let i = 0; i < count; i++) {
+      let slot = pool ? pool[i] : outHits[i];
+      if (typeof slot !== 'object' || slot === null) {
+        // Doubles from the start, so the fields never change representation.
+        slot = { entityIndex: -1, distance: NaN, hitX: NaN, hitY: NaN };
+        if (pool) pool[i] = slot;
+      }
+      const distance = topDist[i];
+      slot.entityIndex = topEntity[i];
+      slot.distance = distance;
+      slot.hitX = xFrom + dirX * distance;
+      slot.hitY = yFrom + dirY * distance;
+      outHits[i] = slot;
     }
     outHits.length = count;
 
@@ -1074,10 +1094,11 @@ export class Ray {
   }
 
   /**
-   * H1: Collect hits into a top-N buffer (closest maxHits only), deduped via generation stamp.
+   * H1: Collect hits into the top-N buffer (_topEntity, _topDist: closest maxHits only), deduped
+   * via generation stamp. The farthest kept hit is TOP_FAR[0].
    * @private
    */
-  static _collectCellHitsTopN(cellIndex, allHits, rayMask, maxHits) {
+  static _collectCellHitsTopN(cellIndex, rayMask, maxHits) {
     const count = Grid.getCellCount(cellIndex);
     if (count === 0) return;
 
@@ -1090,6 +1111,9 @@ export class Ray {
     const cCollisionLayer = Collider.collisionLayer;
     const stamp = Ray._rayGenStamp;
     const gen = Ray._rayGen;
+    const topEntity = Ray._topEntity;
+    const topDist = Ray._topDist;
+    const far = TOP_FAR;
 
     for (let i = 0; i < count; i++) {
       const entityIndex = gridEntities[cellBase + i];
@@ -1101,44 +1125,35 @@ export class Ray {
       if (!colliderActive[entityIndex]) continue;
       if (!((1 << (cCollisionLayer[entityIndex] & 31)) & rayMask)) continue;
 
-      const shapeMax =
-        Ray._tempAllHitsCount >= maxHits && Ray._tempAllHitsFarthest >= 0
-          ? Ray._tempAllHitsFarthest
-          : rayLength;
-      ray[RAY_SHAPE_MAX] = shapeMax;
+      const kept = Ray._tempAllHitsCount;
+      ray[RAY_SHAPE_MAX] = kept >= maxHits && far[0] >= 0 ? far[0] : rayLength;
       Ray._shapeRayDistance(entityIndex);
       const distance = SHAPE_DIST[0];
       if (distance < 0) continue;
 
-      let hitCount = Ray._tempAllHitsCount;
-      if (hitCount < maxHits) {
-        let hit = allHits[hitCount];
-        if (!hit) {
-          hit = { entityIndex: -1, distance: 0 };
-          allHits[hitCount] = hit;
-        }
-        hit.entityIndex = entityIndex;
-        hit.distance = distance;
-        Ray._tempAllHitsCount = hitCount + 1;
-        if (distance > Ray._tempAllHitsFarthest) Ray._tempAllHitsFarthest = distance;
-      } else if (distance < Ray._tempAllHitsFarthest) {
+      if (kept < maxHits) {
+        topEntity[kept] = entityIndex;
+        topDist[kept] = distance;
+        Ray._tempAllHitsCount = kept + 1;
+        if (distance > far[0]) far[0] = distance;
+      } else if (distance < far[0]) {
         let worst = 0;
-        let worstDist = allHits[0].distance;
+        let worstDist = topDist[0];
         for (let h = 1; h < maxHits; h++) {
-          const d = allHits[h].distance;
+          const d = topDist[h];
           if (d > worstDist) {
             worstDist = d;
             worst = h;
           }
         }
-        allHits[worst].entityIndex = entityIndex;
-        allHits[worst].distance = distance;
-        let far = allHits[0].distance;
+        topEntity[worst] = entityIndex;
+        topDist[worst] = distance;
+        let farthest = topDist[0];
         for (let h = 1; h < maxHits; h++) {
-          const d = allHits[h].distance;
-          if (d > far) far = d;
+          const d = topDist[h];
+          if (d > farthest) farthest = d;
         }
-        Ray._tempAllHitsFarthest = far;
+        far[0] = farthest;
       }
     }
   }

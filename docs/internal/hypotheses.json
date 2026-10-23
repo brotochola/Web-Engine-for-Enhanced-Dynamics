@@ -33,7 +33,7 @@
         "WASM_HYPOTHESES.md#L159"
       ],
       "aliases": [],
-      "rank": 1,
+      "rank": 5,
       "next": "Kernel sitting on pre-render's pack (38–40 % of a saturated pre-render in sprite-heavy scenes), the render queue in a memory WASM can read."
     },
     {
@@ -49,7 +49,7 @@
         "WASM_HYPOTHESES.md#L155"
       ],
       "aliases": [],
-      "rank": 2,
+      "rank": 6,
       "next": "With W7."
     },
     {
@@ -65,7 +65,7 @@
         "WASM_HYPOTHESES.md#L156"
       ],
       "aliases": [],
-      "rank": 2,
+      "rank": 6,
       "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call."
     },
     {
@@ -81,7 +81,7 @@
         "EXECUTION_PLAN.md#L638"
       ],
       "aliases": [],
-      "rank": 3,
+      "rank": 7,
       "next": "Packed vertex formats (≈40 B/sprite), then the pose/static split (24–28 B); judged on bunnyMarkScene Pixi."
     },
     {
@@ -97,7 +97,7 @@
         "WASM_HYPOTHESES.md#L176"
       ],
       "aliases": [],
-      "rank": 4,
+      "rank": 8,
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle."
     },
     {
@@ -113,7 +113,7 @@
         "WASM_HYPOTHESES.md#L180"
       ],
       "aliases": [],
-      "rank": 5,
+      "rank": 9,
       "next": "A decal memory for the tile buffers; SIMD blend."
     },
     {
@@ -130,7 +130,7 @@
         "WASM_HYPOTHESES.md#L164"
       ],
       "aliases": [],
-      "rank": 6,
+      "rank": 11,
       "next": "navStressScene: flowfield 89 % of particle."
     },
     {
@@ -139,16 +139,17 @@
       "status": "kept",
       "statusText": "KEPT 2026-10-23",
       "date": "2026-10-23",
-      "result": "Doubles boxed as arguments of ray functions TurboFan does not inline, and the global `Infinity` in branches that never run. The traced ray lives in a module Float64Array; Ray tests circles and boxes with its own copies of the helpers. bulletStressScene particle allocation 278.5 → 2.1 MB/s; ray cast kernel +20.9 %, bullet tick +41.6 %; bulletStressScene particle 6.593 → 4.873 ms, −26.6 %, worse 0/4 (4 pairs).",
+      "result": "Doubles boxed as arguments of ray functions TurboFan does not inline, and the global `Infinity` in branches that never run. The traced ray lives in a module Float64Array; Ray tests circles and boxes with its own copies of the helpers. bulletStressScene particle allocation 278.5 → 2.1 MB/s; ray cast kernel +20.9 %, bullet tick +41.6 %; bulletStressScene particle 6.593 → 4.873 ms, −26.6 %, worse 0/4. Second change: castAll keeps its hits in typed arrays and reuses its result objects (it built new ones every call): rayStressScene logic allocation 47.2 → 4.4 MB/s, castAll kernel +126.9 %, logic 3.692 → 2.741 ms, −25.8 %, worse 0/4.",
       "area": "particle",
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L13",
+        "HYPOTHESIS_LOG.md#L15",
         "EXECUTION_PLAN.md#L657",
         "reports/E-85-ray-path-boxing.md"
       ],
       "aliases": [],
-      "next": "castAll's hit objects (47 MB/s left in rayStressScene); the Predator gate with W24."
+      "next": "Predator gate with W24 (Predator fires bullets and checks line of sight)."
     },
     {
       "id": "W19",
@@ -163,7 +164,7 @@
         "WASM_HYPOTHESES.md#L169"
       ],
       "aliases": [],
-      "rank": 7,
+      "rank": 12,
       "next": "With E-85: allocation sites first (heap pass), then the batched casts."
     },
     {
@@ -179,7 +180,7 @@
         "WASM_HYPOTHESES.md#L161"
       ],
       "aliases": [],
-      "rank": 8,
+      "rank": 13,
       "next": "meshApiStressScene Pixi 53 %."
     },
     {
@@ -195,7 +196,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 9
+      "rank": 14
     },
     {
       "id": "W2a",
@@ -210,7 +211,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 10
+      "rank": 15
     },
     {
       "id": "W1",
@@ -225,7 +226,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 11
+      "rank": 16
     },
     {
       "id": "W10",
@@ -240,7 +241,7 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 12
+      "rank": 17
     },
     {
       "id": "W23",
@@ -255,7 +256,7 @@
         "WASM_HYPOTHESES.md#L177"
       ],
       "aliases": [],
-      "rank": 13
+      "rank": 18
     },
     {
       "id": "W27",
@@ -270,7 +271,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 19
     },
     {
       "id": "W28",
@@ -285,7 +286,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 20
     },
     {
       "id": "W4",
@@ -300,7 +301,7 @@
         "WASM_HYPOTHESES.md#L153"
       ],
       "aliases": [],
-      "rank": 16,
+      "rank": 21,
       "next": "Unblocked by the Phase 4 decision (Box2D's memory)."
     },
     {
@@ -316,7 +317,7 @@
         "WASM_HYPOTHESES.md#L168"
       ],
       "aliases": [],
-      "rank": 17,
+      "rank": 22,
       "next": "Unblocked by the Phase 4 decision."
     },
     {
@@ -332,7 +333,7 @@
         "WASM_HYPOTHESES.md#L151"
       ],
       "aliases": [],
-      "rank": 18,
+      "rank": 23,
       "next": "Unblocked by the Phase 4 decision."
     },
     {
@@ -6713,6 +6714,85 @@
         "HYPOTHESIS_LOG.md#L543"
       ],
       "aliases": []
+    },
+    {
+      "id": "E-86",
+      "title": "`collectRenderable`'s sort key is a heap number per renderable",
+      "status": "open",
+      "statusText": "open (from E-85)",
+      "date": "2026-10-23",
+      "result": "Pre-render passes `y[i] * Y_SORT_K` (a double) to collectRenderable, far over the inline limit, once per visible particle, LiquidFun particle, bullet (twice), decoration and glow. liquidFunStressScene pre-render: 8.6 MB/s in collectVisibleLiquidFun. bulletStressScene pre-render (3.4 ms) not sampled yet (E-88).",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L670"
+      ],
+      "aliases": [],
+      "rank": 2,
+      "next": "Callers write the key into a scratch Float64Array; liquidFunStressScene and bulletStressScene pre-render pairs."
+    },
+    {
+      "id": "E-87",
+      "title": "Atomics results outside the Smi range (free-list heads, dirty words)",
+      "status": "open",
+      "statusText": "open (from E-85)",
+      "date": "2026-10-23",
+      "result": "Chrome allocates inside Atomics builtins: compareExchange from popU16 3.8 MB/s and Atomics.or from markBodyDirty 3.5 MB/s (spawnStormScene logic), compareExchange/load from the bullet pool 1.6 MB/s (bulletStressScene particle). Packed heads (16-bit tag over the index; FL4 19 + 13 bits) and dirty words with bit 31 set are outside the 31-bit Smi range.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L680"
+      ],
+      "aliases": [],
+      "rank": 3,
+      "next": "treiberMicrobench under heapSampleNode.mjs; keep heads under 2^30; spawnStormScene logic pair."
+    },
+    {
+      "id": "E-88",
+      "title": "The heap sampler loses workers in some scenes",
+      "status": "open",
+      "statusText": "open (measurement tool)",
+      "date": "2026-10-23",
+      "result": "bulletStressScene: pre-render and one logic worker 'ended before the sample stopped'. Either the page starts a worker twice or the sampler attached to a short-lived one; pre-render allocation there is unseen.",
+      "area": "engine",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L690"
+      ],
+      "aliases": [],
+      "rank": 1
+    },
+    {
+      "id": "E-89",
+      "title": "`markSeenPolarOwners` merges a global `Infinity` with a typed-array double",
+      "status": "open",
+      "statusText": "open (from E-85)",
+      "date": "2026-10-23",
+      "result": "angularSweep.js: `_mergeEdges > 0 ? _rayBest[k] : Infinity` per merged ray; if the Infinity branch never runs, the double is boxed per ray per light (the E-85 pattern).",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L704"
+      ],
+      "aliases": [],
+      "rank": 10,
+      "next": "Heap pass of visPolyStressScene first; keep only if the site shows up."
+    },
+    {
+      "id": "E-90",
+      "title": "Public `Ray` methods small enough to inline into game code",
+      "status": "open",
+      "statusText": "open (from E-85)",
+      "date": "2026-10-23",
+      "result": "rayStressScene logic still allocates 4.3 MB/s after E-85, in the driver's own calls into Ray.cast / castAll / linecastBetweenEntities: the public methods are too big to inline into game code, so the doubles game code passes are boxed at that call.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L696"
+      ],
+      "aliases": [],
+      "rank": 4,
+      "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair."
     }
   ],
   "leads": [
@@ -6765,6 +6845,16 @@
       "source": "W24 (2026-10-23)",
       "finding": "Box2D's scheduler spins 50 µs between tasks with an empty b2Pause in WASM; E-34 measured ~2.4 cores burnt in the waits.",
       "next": "Time a shorter spin, or a futex wait, against physics STEP_MS and the other workers' CPU in Predator."
+    },
+    {
+      "source": "E-85 heap passes (2026-10-23)",
+      "finding": "Game code allocates on its own double fields: painterMoveStressScene's entity tick (`this._phase += …`, fields first set in onSpawned) made 21 MB/s in logic, Predator's civilian and person ticks 1–2 MB/s.",
+      "next": "Developer-experience: a guide note on declaring per-entity fields (doubles from the start) in the constructor; the engine itself is not the site."
+    },
+    {
+      "source": "E-85 (2026-10-23)",
+      "finding": "Any engine function too big to inline that takes or returns doubles boxes them per call (E-59, E-66, E-85). The heap sweep finds the hot ones; --trace-turbo-inlining names the calls left out.",
+      "next": "After each new kernel or worker change, a heap pass of its stress scene (profileSceneSweep --pass heap --only …) before the pair."
     }
   ],
   "howToFindNew": [

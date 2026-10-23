@@ -662,8 +662,50 @@ does not inline, and the global `Infinity` in branches that never run (its load 
 so the other branch's double was boxed). The traced ray now lives in a module `Float64Array`; Ray
 tests circles and boxes with its own copies of the helpers. Particle allocation **278.5 → 2.1 MB/s**;
 kernels: ray cast +20.9 %, bullet tick +41.6 %; `bulletStressScene` particle **6.593 → 4.873 ms,
-−26.6 %, worse 0/4**. Next: `castAll`'s hit objects (47 MB/s left in `rayStressScene`), then the
-Predator gate with W24. W19 (WASM batched casts) now starts from this faster JS.
+−26.6 %, worse 0/4**. Second change: `castAll` keeps its hits in typed arrays and reuses its
+result objects (it built new ones every call): `rayStressScene` logic allocation 47.2 → **4.4 MB/s**,
+logic **3.692 → 2.741 ms, −25.8 %, worse 0/4**. Predator gate with W24 next. W19 (WASM batched
+casts) now starts from this faster JS.
+
+### E-86 `collectRenderable`'s sort key is a heap number per renderable — **open (from E-85)**
+Pre-render calls `this.collectRenderable(type, index, y)` once per visible particle (`sortKey`),
+LiquidFun particle and bullet (`y[i] * Y_SORT_K`, twice per bullet), decoration and glow, and the
+function is far over TurboFan's inline limit, so `y` is boxed per call (the E-85 pattern; sprites
+pass `0`, a Smi, and are free). `liquidFunStressScene` pre-render allocates 8.6 MB/s in
+`collectVisibleLiquidFun`, about 12 000 particles a frame. `bulletStressScene` pre-render (3.4 ms,
+33 000 bullets) was never sampled: the heap sampler lost that worker (E-88). Fix: the callers write
+the key into a scratch `Float64Array` the function reads. Measure: `liquidFunStressScene` and
+`bulletStressScene` pre-render pairs, heap pass before and after.
+
+### E-87 Atomics results outside the Smi range — **open (from E-85)**
+Chrome's heap profiles put allocation inside the Atomics builtins: `compareExchange` from `popU16`
+3.8 MB/s and `Atomics.or` from `markBodyDirty` 3.5 MB/s in `spawnStormScene` logic, `compareExchange`
+and `load` from the bullet pool 1.6 MB/s in `bulletStressScene` particle (the last 2.1 MB/s E-85 left).
+The u16 free-list head packs a 16-bit tag above the index, and the FL4 head 19 + 13 bits, so a head
+is often outside the 31-bit Smi range and every load or exchange returns a fresh heap number; a
+dirty word with bit 31 set does the same. Fix: keep packed heads under 2^30 (a 14-bit tag for u16,
+FL4 to 19 + 11, or test before the atomic op), and read a dirty bit before setting it. Measure:
+`treiberMicrobench` with `heapSampleNode.mjs`, then `spawnStormScene` logic.
+
+### E-88 The heap sampler loses workers in some scenes — **open (measurement tool)**
+In `bulletStressScene` the sampler stopped pre-render and one logic worker with "No session with
+given id" (since `43fa7be9` it reports this instead of crashing): the session it attached to ended
+mid-sample. Either the page starts a worker twice (a bug worth finding on its own) or the sampler
+attached to a short-lived one. Until fixed, pre-render allocation in that scene is unseen.
+
+### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
+After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls
+`Ray.cast`, `castAll`, `linecastBetweenEntities` with doubles, and the public methods (stats wrap,
+`try`/`finally`, the setup math) are too big to inline into it, so each call boxes its arguments.
+A public method that only writes `RAY` and calls an integer-argument body would inline into the
+caller. Measure: `rayStressScene` logic (heap pass, then a pair); Predator's `hasLineOfSight` calls
+take entity indices, which are Smis, so it gains nothing there.
+
+### E-89 `markSeenPolarOwners` merges a global `Infinity` with a typed-array double — **open (from E-85)**
+`angularSweep.js`: `const sweep = _mergeEdges > 0 ? _rayBest[k] : Infinity` per merged ray. If
+lighting scenes always merge edges, the `Infinity` branch never runs and the double is boxed per
+ray per light (E-85). One `const INF`; measure with a heap pass of a lighting scene first
+(`visPolyStressScene`), and keep it only if the site shows up.
 
 ---
 
