@@ -184,3 +184,50 @@ test('stamp grid matches the full scan, including a caster on the circle', () =>
   }
   assert.deepEqual(run(true), run(false));
 });
+
+// E-110. With maxPerEntity the grid walk no longer sorts each light's candidates by caster index:
+// each kept caster only takes the light into its own slots, so the order inside one light changes
+// nothing. Dense random casters and lights, light caps on: the grid gives the full scan's rows exactly.
+// Positions are continuous: at a per-light cap, equal distances make the pick depend on the walk order,
+// grid or not. Duplicated lights tie every caster's distance, which the light-index tie-break settles.
+test('stamp grid matches the full scan with maxPerEntity on a dense random field', () => {
+  const fp = GPU_CASTER_FLOATS;
+  let seed = 12345;
+  const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
+  const sunN = 400;
+  const sun = new Float32Array(sunN * fp);
+  for (let i = 0; i < sunN; i++) {
+    sun[i * fp] = rnd() * 1000;
+    sun[i * fp + 1] = rnd() * 1000;
+  }
+  const lights = [];
+  for (let l = 0; l < 20; l++) {
+    lights.push({ x: rnd() * 1000, y: rnd() * 1000, intensity: 1, rangeSq: 300 * 300, maxShadows: l % 4 === 0 ? 5 : 0 });
+  }
+  for (let l = 0; l < 4; l++) lights.push({ ...lights[l * 3 + 1] });
+  function run(useGrid) {
+    const cap = 4096;
+    const stamp = new Float32Array(cap * fp);
+    const lightIdx = new Uint16Array(cap);
+    const n = stampLightRange({
+      sun, sunN, sunFloats: fp, lights,
+      lightBegin: 0, lightEnd: lights.length, lightStride: 1,
+      maxPerLight: 64, maxPerEntity: 3,
+      tmpIdx: new Uint32Array(sunN),
+      dist: new Float32Array(sunN),
+      order: new Uint32Array(sunN),
+      keepIdx: new Uint32Array(sunN),
+      gridCounts: useGrid ? new Int32Array(128 * 128) : null,
+      gridStarts: useGrid ? new Int32Array(128 * 128 + 1) : null,
+      gridItems: useGrid ? new Uint32Array(sunN) : null,
+      stamp, stampFloats: fp, stampCap: cap, stampBase: 0,
+      stampLightIdx: lightIdx, lightVec: new Float32Array(4),
+    });
+    const rows = [];
+    for (let i = 0; i < n; i++) rows.push(`${lightIdx[i]}:${stamp[i * fp]},${stamp[i * fp + 1]}`);
+    return rows;
+  }
+  const full = run(false);
+  assert.ok(full.length > 300, `pairs ${full.length}`);
+  assert.deepEqual(run(true), full);
+});

@@ -302,8 +302,10 @@ export function stampLightRange({
       }
     }
     // takeClosest already sorts by dist when m > lim; index order only matters
-    // when the whole pair set is copied through (grid vs serial parity).
-    if (grid && m > 1 && !(lim > 0 && m > lim)) {
+    // when the whole pair set is copied through (grid vs serial parity). With
+    // maxPerEntity each kept caster only takes this light into its own slots, so
+    // the order inside one light changes nothing (E-110).
+    if (grid && m > 1 && maxPE <= 0 && !(lim > 0 && m > lim)) {
       sortPairsByIndex(tmpIdx, dist, m, order, keepIdx);
     }
     if (m <= 0) continue;
