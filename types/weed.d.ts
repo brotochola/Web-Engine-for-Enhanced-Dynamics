@@ -291,6 +291,8 @@ export type SceneConfig = Record<string, unknown> & {
     particleIntegrate?: boolean;
     /** Particle active and visible lists (the per-frame sweep of the pool and the screen test). */
     particleLists?: boolean;
+    /** Instanced-row pack in pre-render (the render queues live in one WebAssembly.Memory). */
+    gpuPack?: boolean;
   };
 };
 

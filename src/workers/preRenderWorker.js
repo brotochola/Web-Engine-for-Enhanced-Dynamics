@@ -784,10 +784,11 @@ class PreRenderWorker extends AbstractWorker {
 
             // Create typed array views for BOTH buffers
             const bufferSABs = [data.renderQueue.dataA, data.renderQueue.dataB];
+            const bufferBytes = [data.renderQueue.dataAByte | 0, data.renderQueue.dataBByte | 0];
             const cameraSABs = [data.renderQueue.cameraA || null, data.renderQueue.cameraB || null];
 
             for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
-                this.renderQueueBuffers[bufIdx] = createRenderQueueViews(bufferSABs[bufIdx], maxItems);
+                this.renderQueueBuffers[bufIdx] = createRenderQueueViews(bufferSABs[bufIdx], maxItems, bufferBytes[bufIdx]);
                 const camViews = createRenderQueueCameraViews(cameraSABs[bufIdx]);
                 this.renderQueueCameraBuffers[bufIdx] = camViews ? camViews.camera : null;
                 this.renderQueuePoseReadyBuffers[bufIdx] = camViews ? camViews.poseReady : null;
@@ -832,8 +833,8 @@ class PreRenderWorker extends AbstractWorker {
                 const caps = data.gpuQueue.caps;
                 this.gpuQueueCaps = caps;
                 this.gpuQueueBuffers = [
-                    createGpuQueueViews(data.gpuQueue.dataA, caps),
-                    createGpuQueueViews(data.gpuQueue.dataB, caps),
+                    createGpuQueueViews(data.gpuQueue.dataA, caps, data.gpuQueue.dataAByte | 0),
+                    createGpuQueueViews(data.gpuQueue.dataB, caps, data.gpuQueue.dataBByte | 0),
                 ];
                 this._gpuIdxEntity = new Uint32Array(maxItems);
                 this._gpuIdxGlow = new Uint32Array(maxItems);

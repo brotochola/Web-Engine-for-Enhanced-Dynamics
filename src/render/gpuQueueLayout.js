@@ -90,9 +90,11 @@ function regionF32(sab, offset, count) {
   return { view, u32, next: offset + bytes };
 }
 
-export function createGpuQueueViews(sab, caps) {
+/** The GPU queue's views on `sab`, from byte `base` (a region of the render-queue memory, or 0). */
+export function createGpuQueueViews(sab, caps, base = 0) {
   const c = caps || gpuQueueCaps(1, null);
-  let offset = 0;
+  const start = base | 0;
+  let offset = start;
   const header = new Int32Array(sab, offset, GPU_HEADER_INTS);
   offset += GPU_HEADER_INTS * 4;
   const sprites = regionF32(sab, offset, (c.maxSprites | 0) * GPU_SPRITE_FLOATS);
@@ -124,7 +126,7 @@ export function createGpuQueueViews(sab, caps) {
     cookieU32: cookie.u32,
     stampLightIdx,
     caps: c,
-    byteLength: offset,
+    byteLength: offset - start,
   };
 }
 

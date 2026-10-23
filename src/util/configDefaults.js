@@ -434,6 +434,8 @@ export const WASM_DEFAULTS = Object.freeze({
   particleIntegrate: true,
   /** Particle list build (`particleLists.wasm`, E-80): the active and visible lists in that memory. */
   particleLists: true,
+  /** Instanced-row pack (`gpuPack.wasm`, E-76 W9): the render queues in a WebAssembly.Memory, packed there by pre-render. */
+  gpuPack: true,
 });
 
 // ============================================================================

@@ -55,6 +55,33 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
 }
 
 /**
+ * The render-queue memory (E-76 W9 `gpuPack.wasm`, created by renderQueueMemory.js): the queues
+ * pre-render writes and Pixi reads, so the pack kernel reads the rows where pre-render wrote them.
+ * - guard: nothing at address 0 (the kernel takes a type offset of 0 as "no type column");
+ * - queueA, queueB: the render queue's two buffers (renderQueueLayout.js), odd and even frames;
+ * - gpuA, gpuB: the GPU queue's two buffers (gpuQueueLayout.js), packed by pre-render, uploaded by Pixi;
+ * - packIndices: the pack's index scratch, for index lists kept outside this memory (u32);
+ * - packTables: one column table per queue the pack reads (u32 byte offsets, gpuPackClient.js);
+ * - packResults: the kernel's particle count (u32).
+ * @param {number} queueBytes computeBufferSize(maxItems)
+ * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
+ * @param {number} maxItems the queue's rows
+ * @param {number} tableBytes packTables' size
+ */
+export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes) {
+  return layoutRegions([
+    { name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES },
+    { name: 'queueA', owner: 'pre-render writes; Pixi reads', bytes: queueBytes },
+    { name: 'queueB', owner: 'pre-render writes; Pixi reads', bytes: queueBytes },
+    { name: 'gpuA', owner: 'pre-render packs; Pixi uploads', bytes: gpuQueueBytes },
+    { name: 'gpuB', owner: 'pre-render packs; Pixi uploads', bytes: gpuQueueBytes },
+    { name: 'packIndices', owner: 'pre-render', bytes: (maxItems | 0) * 4 },
+    { name: 'packTables', owner: 'pre-render', bytes: tableBytes },
+    { name: 'packResults', owner: 'pre-render', bytes: 16 },
+  ]);
+}
+
+/**
  * The particle memory (E-79 `particleIntegrate.wasm`, E-80 `particleLists.wasm`, created by
  * particleMemory.js). The ParticleComponent lays its columns out from byte 0 of its buffer in every
  * worker (Component.initializeArrays), so this memory starts with the component and has no guard:

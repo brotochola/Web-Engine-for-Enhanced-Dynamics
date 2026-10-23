@@ -1,6 +1,7 @@
 import { debugWorkerLog } from './debugLog.js';
 import { createSpatialPublishMemory } from './spatialPublishMemory.js';
 import { createParticleMemory } from './particleMemory.js';
+import { createRenderQueueMemory } from './renderQueueMemory.js';
 import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -539,9 +540,20 @@ function initializeLightingAndRenderBuffers(scene) {
 
   const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
   const renderQueueBufferSize = computeRenderQueueBufferSize(maxVisibleRenderables);
+  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
+  const gpuQueueBufferSize = computeGpuQueueBufferSize(gpuCaps);
 
-  buffers.renderQueueDataA = new SharedArrayBuffer(renderQueueBufferSize);
-  buffers.renderQueueDataB = new SharedArrayBuffer(renderQueueBufferSize);
+  // E-76 W9: both queues in one WebAssembly.Memory, so pre-render's pack kernel reads the rows
+  // where it wrote them. Each key still holds a buffer, now with a byte offset beside it (0 for a
+  // plain SharedArrayBuffer).
+  scene.renderQueueMemory = config.wasm?.gpuPack === false
+    ? null
+    : createRenderQueueMemory(maxVisibleRenderables, renderQueueBufferSize, gpuQueueBufferSize);
+  const rqm = scene.renderQueueMemory;
+  buffers.renderQueueDataA = rqm ? rqm.buffer : new SharedArrayBuffer(renderQueueBufferSize);
+  buffers.renderQueueDataB = rqm ? rqm.buffer : new SharedArrayBuffer(renderQueueBufferSize);
+  buffers.renderQueueDataAByte = rqm ? rqm.layout.queueAByte : 0;
+  buffers.renderQueueDataBByte = rqm ? rqm.layout.queueBByte : 0;
   buffers.renderQueueCameraA = new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES);
   buffers.renderQueueCameraB = new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES);
   buffers.renderQueueSync = new SharedArrayBuffer(8);
@@ -549,10 +561,10 @@ function initializeLightingAndRenderBuffers(scene) {
   new Int32Array(buffers.renderQueueSync)[1] = 0;
   scene.maxVisibleRenderables = maxVisibleRenderables;
 
-  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
-  const gpuQueueBufferSize = computeGpuQueueBufferSize(gpuCaps);
-  buffers.gpuQueueDataA = new SharedArrayBuffer(gpuQueueBufferSize);
-  buffers.gpuQueueDataB = new SharedArrayBuffer(gpuQueueBufferSize);
+  buffers.gpuQueueDataA = rqm ? rqm.buffer : new SharedArrayBuffer(gpuQueueBufferSize);
+  buffers.gpuQueueDataB = rqm ? rqm.buffer : new SharedArrayBuffer(gpuQueueBufferSize);
+  buffers.gpuQueueDataAByte = rqm ? rqm.layout.gpuAByte : 0;
+  buffers.gpuQueueDataBByte = rqm ? rqm.layout.gpuBByte : 0;
   scene.gpuQueueCaps = gpuCaps;
 
   // Physics pose publish (post-step snapshot for visuals) — SoA x,y,rotC,rotS × 2 buffers

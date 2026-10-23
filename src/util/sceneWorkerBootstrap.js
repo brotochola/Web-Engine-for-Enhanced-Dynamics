@@ -302,6 +302,10 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     renderQueue: {
       dataA: scene.buffers.renderQueueDataA,
       dataB: scene.buffers.renderQueueDataB,
+      // Byte offsets of the two buffers in their SharedArrayBuffers (the render-queue memory's
+      // regions, or 0).
+      dataAByte: scene.buffers.renderQueueDataAByte | 0,
+      dataBByte: scene.buffers.renderQueueDataBByte | 0,
       cameraA: scene.buffers.renderQueueCameraA,
       cameraB: scene.buffers.renderQueueCameraB,
       sync: scene.buffers.renderQueueSync,
@@ -313,6 +317,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
       ? {
           dataA: scene.buffers.gpuQueueDataA,
           dataB: scene.buffers.gpuQueueDataB,
+          dataAByte: scene.buffers.gpuQueueDataAByte | 0,
+          dataBByte: scene.buffers.gpuQueueDataBByte | 0,
           caps: scene.gpuQueueCaps,
         }
       : null,
@@ -427,6 +433,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     spatialPublishMemory: scene.spatialPublish?.memory || null,
     particleMemory: scene.particleMemory?.memory || null,
     particleLayout: scene.particleMemory?.layout || null,
+    // E-76 W9: the render-queue memory, for pre-render's pack kernel.
+    renderQueueMemory: scene.renderQueueMemory?.memory || null,
+    renderQueueLayout: scene.renderQueueMemory?.layout || null,
   };
 }
 

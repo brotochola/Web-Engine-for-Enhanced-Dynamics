@@ -101,9 +101,10 @@ export function computeBufferSize(maxItems) {
     return offset;
 }
 
-export function createViews(sab, maxItems) {
+/** The queue's views on `sab`, from byte `base` (a region of the render-queue memory, or 0). */
+export function createViews(sab, maxItems, base = 0) {
     const views = {};
-    let offset = 0;
+    let offset = base | 0;
     for (let i = 0; i < FIELDS.length; i++) {
         const [name, TypedArrayCtor, bpe, fixed] = FIELDS[i];
         const count = fixed || maxItems;

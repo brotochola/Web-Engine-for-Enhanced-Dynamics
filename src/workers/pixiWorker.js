@@ -5795,10 +5795,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Create typed array views for BOTH buffers (must match RenderQueueLayout / Scene alloc)
       const bufferSABs = [data.renderQueue.dataA, data.renderQueue.dataB];
+      const bufferBytes = [data.renderQueue.dataAByte | 0, data.renderQueue.dataBByte | 0];
       const cameraSABs = [data.renderQueue.cameraA || null, data.renderQueue.cameraB || null];
 
       for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
-        const views = createRenderQueueViews(bufferSABs[bufIdx], maxItems);
+        const views = createRenderQueueViews(bufferSABs[bufIdx], maxItems, bufferBytes[bufIdx]);
         this.renderQueueBuffers[bufIdx] = views;
         this._sortKeyU32ByBuf[bufIdx] = views.sortKeyU32;
         const camViews = createRenderQueueCameraViews(cameraSABs[bufIdx]);
@@ -5812,8 +5813,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (data.gpuQueue && data.gpuQueue.dataA && data.gpuQueue.dataB && data.gpuQueue.caps) {
         const caps = data.gpuQueue.caps;
         this.gpuQueueBuffers = [
-          createGpuQueueViews(data.gpuQueue.dataA, caps),
-          createGpuQueueViews(data.gpuQueue.dataB, caps),
+          createGpuQueueViews(data.gpuQueue.dataA, caps, data.gpuQueue.dataAByte | 0),
+          createGpuQueueViews(data.gpuQueue.dataB, caps, data.gpuQueue.dataBByte | 0),
         ];
         this._gpuQueueRead = this.gpuQueueBuffers[0];
         debugWorkerLog(`PIXI WORKER: GPU queues ready (sprites ${caps.maxSprites}, stamp ${caps.maxStamp})`);
