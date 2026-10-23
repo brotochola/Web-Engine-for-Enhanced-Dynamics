@@ -341,8 +341,8 @@ same layers, with these additions:
   tolerance when exactness would cost speed. Either way a test holds it against the real worker:
   `tests/node/*Wasm.test.js` boot real workers in threads and compare frame by frame.
 - **Every kernel gets the optimization pass,** shipped ones included: build flags
-  (`-mnontrapping-fptoint`, `-mrelaxed-simd` where a fused multiply-add is within tolerance, wasm-opt
-  levels), SIMD, float32 where the tolerance allows (four lanes to double's two), data layout and
+  (`-mnontrapping-fptoint` is already the pinned clang's default: identical bytes, 2026-10-23;
+  `-mrelaxed-simd` where a fused multiply-add is within tolerance; wasm-opt levels: `-O4` tied `-O3`), SIMD, float32 where the tolerance allows (four lanes to double's two), data layout and
   processing order (E-81's cell order gained 21.7 % with the same arithmetic). Each is adopted on its
   Chrome numbers.
 
