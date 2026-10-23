@@ -154,8 +154,9 @@ export class FSM extends Component {
       const tickInterval = owner?.constructor?.tickInterval || 1;
       FSMClass.time[i] += dt * 16.67 * tickInterval;
 
-      // Call state's onUpdate
-      CurrentState.onUpdate(owner, i, dt, FSMClass.time[i]);
+      // Call state's onUpdate. The time goes as whole ms: a fractional double crossing this call
+      // (a different onUpdate per state, never inlined) was a heap number per tick (E-105).
+      CurrentState.onUpdate(owner, i, dt, FSMClass.time[i] | 0);
     }
   }
 

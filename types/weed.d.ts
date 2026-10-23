@@ -1748,6 +1748,7 @@ export declare class FSMState {
   static stateIndex: number;
   static onEnter(owner: GameObject, i: number, fromState: string | null): void;
   static onExit(owner: GameObject, i: number, toState: string): void;
+  /** `timeInState`: time in this state, in whole milliseconds. */
   static onUpdate(owner: GameObject, i: number, dt: number, timeInState?: number): void;
 }
 
