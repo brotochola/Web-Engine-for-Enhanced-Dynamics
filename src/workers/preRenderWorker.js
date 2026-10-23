@@ -4096,9 +4096,15 @@ class PreRenderWorker extends AbstractWorker {
             f32[baseIndex + 2] = ly;
             i32[baseIndex + 3] = vertCount;
 
+            // A loop, not set(subarray(...)): two views per light per frame were 2.2 MB/s of garbage
+            // in visPolyStressScene (N-1). The same Float32 rounding either way.
             const xStart = baseIndex + 4;
-            f32.set(outX.subarray(0, vertCount), xStart);
-            f32.set(outY.subarray(0, vertCount), xStart + maxVerts);
+            const yStart = xStart + maxVerts;
+            const copyCount = vertCount < maxVerts ? vertCount : maxVerts; // subarray clamped too
+            for (let v = 0; v < copyCount; v++) {
+                f32[xStart + v] = outX[v];
+                f32[yStart + v] = outY[v];
+            }
 
             lightsWritten++;
         }

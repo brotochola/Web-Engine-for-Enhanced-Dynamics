@@ -51,7 +51,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 4
+      "rank": 3
     },
     {
       "id": "W7",
@@ -67,7 +67,7 @@
       ],
       "aliases": [],
       "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
-      "rank": 4
+      "rank": 3
     },
     {
       "id": "E-82",
@@ -99,7 +99,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 5
+      "rank": 4
     },
     {
       "id": "W26",
@@ -115,7 +115,7 @@
       ],
       "aliases": [],
       "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "W14",
@@ -132,7 +132,7 @@
       ],
       "aliases": [],
       "next": "navStressScene: flowfield 89 % of particle.",
-      "rank": 8
+      "rank": 7
     },
     {
       "id": "E-85",
@@ -166,7 +166,7 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 9
+      "rank": 8
     },
     {
       "id": "W11",
@@ -182,7 +182,7 @@
       ],
       "aliases": [],
       "next": "meshApiStressScene Pixi 53 %.",
-      "rank": 10
+      "rank": 9
     },
     {
       "id": "W21c",
@@ -197,7 +197,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 11
+      "rank": 10
     },
     {
       "id": "W2a",
@@ -212,7 +212,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 12
+      "rank": 11
     },
     {
       "id": "W1",
@@ -227,7 +227,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 13
+      "rank": 12
     },
     {
       "id": "W10",
@@ -242,7 +242,7 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 13
     },
     {
       "id": "W23",
@@ -257,7 +257,7 @@
         "WASM_HYPOTHESES.md#L177"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 14
     },
     {
       "id": "W27",
@@ -272,7 +272,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 15
     },
     {
       "id": "W28",
@@ -287,7 +287,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 17
+      "rank": 16
     },
     {
       "id": "W4",
@@ -303,7 +303,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision (Box2D's memory).",
-      "rank": 18
+      "rank": 17
     },
     {
       "id": "W18",
@@ -319,7 +319,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 19
+      "rank": 18
     },
     {
       "id": "W2b",
@@ -335,7 +335,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 20
+      "rank": 19
     },
     {
       "id": "E-76",
@@ -6916,7 +6916,7 @@
       ],
       "aliases": [],
       "next": "Batch the per-light lighting passes (a rendering change); first the cheap _emitTransmitWedge part.",
-      "rank": 7
+      "rank": 6
     },
     {
       "id": "E-97",
@@ -6983,7 +6983,7 @@
       ],
       "aliases": [],
       "next": "A scene with interpolation off at a high sprite count; the same two streams.",
-      "rank": 3
+      "rank": 2
     },
     {
       "id": "N-64",
@@ -7003,19 +7003,17 @@
     {
       "id": "N-1",
       "title": "The visibility polygon copy builds two subarray views per light per frame",
-      "status": "open",
-      "statusText": "open (review N-1)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-23",
       "date": "2026-10-23",
-      "result": "buildVisibilityPolygons copies each light's polygon with f32.set(outX.subarray(0, n)): 2.2 MB/s in visPolyStressScene pre-render (E-95 heap pass).",
+      "result": "A copy loop instead of set(subarray(...)) per light: no views per frame; visPolyStressScene pre-render −0.3 % (hygiene).",
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "REVIEW_PLAN.md",
-        "EXECUTION_PLAN.md#L758"
+        "HYPOTHESIS_LOG.md#L13",
+        "REVIEW_PLAN.md"
       ],
-      "aliases": [],
-      "next": "A copy loop; visPolyStressScene pre-render pair as hygiene.",
-      "rank": 2
+      "aliases": []
     }
   ],
   "leads": [
