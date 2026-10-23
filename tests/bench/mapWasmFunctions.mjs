@@ -9,7 +9,14 @@
  * Indices belong to one build: take them from a trace of the box2dWasm.wasm
  * that is in the tree now.
  *
+ * Engine kernels (wasm/modules.json, E-76 T10) keep a name section, so Chrome
+ * profiles already name their functions. `--module` prints each module's
+ * function table (Chrome index, name, export, body size), which is also how
+ * an index from a trace of a build without names is read.
+ *
  *   node tests/bench/mapWasmFunctions.mjs --indices 102,285,39
+ *   node tests/bench/mapWasmFunctions.mjs --module spatialPublish   (or --module all)
+ *   node tests/bench/mapWasmFunctions.mjs --wasm path/to/any.wasm
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -17,6 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
+import { readWasmStructure } from '../../scripts/wasmKernelRules.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const WASM = path.join(repoRoot, 'src/box2d/box2dWasm.wasm');
@@ -101,8 +109,51 @@ function profile(lines, funcLine, definedIndex, nowCall) {
   };
 }
 
+/** Function table of one module. Chrome's index counts the imported functions first. */
+function moduleTable(label, file) {
+  const bytes = fs.readFileSync(file);
+  const s = readWasmStructure(bytes);
+  const importFuncs = s.imports.filter((i) => i.kind === 'function');
+  const exported = new Map();
+  for (const e of s.exports) if (e.kind === 'function') exported.set(e.index, e.name);
+  const names = s.names?.functions ?? new Map();
+  const rel = path.relative(repoRoot, file).split(path.sep).join('/');
+  const out = [`## ${label}`, ''];
+  out.push(`\`${rel}\`, ${bytes.length} bytes, ${importFuncs.length} imported and ${s.codeSizes.length} defined functions.`);
+  out.push(
+    s.names
+      ? `Name section: module "${s.names.module ?? ''}", ${names.size} function name(s); Chrome profiles show these names.`
+      : 'No name section: Chrome profiles show wasm-function[N] with the index below.',
+  );
+  out.push('', '| chrome index | name | exported as | body bytes |', '|---|---|---|---|');
+  importFuncs.forEach((imp, i) => out.push(`| ${i} | import \`${imp.module}.${imp.field}\` |  |  |`));
+  s.codeSizes.forEach((size, d) => {
+    const index = importFuncs.length + d;
+    out.push(`| ${index} | ${names.get(index) ?? ''} | ${exported.get(index) ?? ''} | ${size} |`);
+  });
+  out.push('');
+  return out;
+}
+
+function mainModules(args) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'wasm', 'modules.json'), 'utf8'));
+  const picked = args.wasm
+    ? [{ name: path.basename(String(args.wasm)), file: path.resolve(String(args.wasm)) }]
+    : manifest.modules
+        .filter((m) => args.module === 'all' || m.name === String(args.module))
+        .map((m) => ({ name: m.name, file: path.join(repoRoot, m.output) }));
+  if (!picked.length) throw new Error(`no module named ${args.module} in wasm/modules.json`);
+  const lines = ['# wasm function tables', ''];
+  for (const m of picked) lines.push(...moduleTable(m.name, m.file));
+  console.log(lines.join('\n'));
+}
+
 function main() {
   const args = parseArgs();
+  if (args.module !== undefined || args.wasm !== undefined) {
+    mainModules(args);
+    return;
+  }
   const hot = args.indices === undefined || args.indices === true
     ? []
     : String(args.indices).split(',').map((n) => Number(n)).filter(Number.isInteger);

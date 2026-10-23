@@ -100,5 +100,13 @@ test('every module built by scripts/buildWasm.mjs passes the kernel rules', () =
     const bytes = fs.readFileSync(path.join(root, mod.output));
     const problems = kernelRuleProblems(bytes, { exports: mod.exports, maxMemoryPages: mod.maxMemoryPages, names: true });
     assert.deepEqual(problems, [], `${mod.output}: ${problems.join('; ')}`);
+    // The names Chrome profiles show (T10): module name from the linked file, function names by index.
+    const s = readWasmStructure(bytes);
+    assert.equal(s.names.module, `${mod.name}.wasm`, `${mod.output}: module name`);
+    for (const name of mod.exports) {
+      const index = s.exports.find((e) => e.name === name).index;
+      assert.equal(s.names.functions.get(index), name, `${mod.output}: ${name} is named in the name section`);
+    }
+    assert.equal(s.codeSizes.length, s.counts.function, `${mod.output}: one body per function`);
   }
 });

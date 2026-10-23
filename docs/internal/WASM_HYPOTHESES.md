@@ -522,3 +522,11 @@ defaults):
   should. One moves a scale output 64 bytes past its region ("logic0 scale_f32 wrote outside its
   region"); the other changes one worker's scale factor in the concurrent run only ("the concurrent
   run differs from the solo run"). The module half of REVIEW_PLAN N-62 is fixed.
+- **2026-10-22, T10.** `readWasmStructure` now reads the name section (the module name, and function
+  names by the index Chrome prints, imports first) and each function's body size. `mapWasmFunctions.mjs
+  --module <name|all>` (or `--wasm <path>`) prints a module's function table: Chrome index, name,
+  export, body bytes. The Box2D `--indices` mode is unchanged. The emcc fixture's table shows that the
+  Q1 Predator trace's `wasm-function[7] wasm://wasm/6c1552f6` was `publish_batch`. In a 3 s CPU trace of
+  `stationarySpatialScene` (source, headless), Chrome names the shipped module's frames `publish_batch`
+  under `wasm://wasm/spatialPublish.wasm-31a93722`. `wasmKernelRules.test.js` checks the names of every
+  committed module. **Phase 1 (T1–T10) is complete.**
