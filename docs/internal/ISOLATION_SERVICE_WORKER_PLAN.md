@@ -2,7 +2,7 @@
 
 **Opened:** 2026-10-22 (planned in a chat session), saved here 2026-10-23. **Status:** in progress
 on branch `isolation_sw` (from 2026-10-23); the four decisions are taken (see "Decisions").
-**Next step:** SW-1, which is worth shipping on its own. **Registry:** `DX-SW` in
+**Next step:** SW-2, the static server without the isolation headers. **Registry:** `DX-SW` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: WeedJS runs exactly as it does today, with SharedArrayBuffers and Box2D's 4 threads,
@@ -261,8 +261,10 @@ a server without isolation headers, with the worker at the root (src mode) or ne
 
 ## 5. Items (one commit each)
 
-- [ ] **SW-1** `fix(engine)`: `GameEngine` survives a page without SharedArrayBuffer, so the
-  existing message becomes reachable.
+- [x] **SW-1** `fix(engine)`: `GameEngine` survives a page without SharedArrayBuffer, so the
+  existing message becomes reachable. Done 2026-10-23: the presenting flag falls back to a plain
+  `ArrayBuffer`; `tests/node/engineWithoutIsolation.test.js` runs the real constructor and
+  `Scene.init` on a fake page with SharedArrayBuffer deleted (the old code throws the ReferenceError).
 - [ ] **SW-2** `test(helpers)`: the static server can omit the isolation headers; second origin.
 - [ ] **SW-3** `feat(engine)`: `weed-sw.js`, the gate and the `GameEngine` wiring, with the
   phase 1 Node tests.

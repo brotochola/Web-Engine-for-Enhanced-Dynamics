@@ -36,7 +36,10 @@ class GameEngine {
     this.presentWhenHidden = config.presentWhenHidden ?? ENGINE_DEFAULTS.presentWhenHidden;
     this._presenting = true;
     // Renderer reads this between GPU passes. postMessage cannot interrupt the current frame.
-    this._presentingFlag = new Int32Array(new SharedArrayBuffer(4));
+    // A plain buffer on a page without SharedArrayBuffer (not cross-origin isolated): the
+    // constructor must not throw there, so Scene.init can say why the engine cannot start.
+    const FlagBuffer = typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : ArrayBuffer;
+    this._presentingFlag = new Int32Array(new FlagBuffer(4));
     Atomics.store(this._presentingFlag, 0, 1);
     this._hidePresentingTimer = null;
     this._abandoned = false;
