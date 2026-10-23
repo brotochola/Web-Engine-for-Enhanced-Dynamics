@@ -241,7 +241,7 @@ class SpatialWorker extends AbstractWorker {
     this._maxReuseFrames = maxFrames > 0 ? maxFrames | 0 : this._neighborReuseSkin > 0 ? 15 : 0;
     const tickInterval = Number(spatialCfg.neighborTickInterval);
     this._neighborTickInterval = tickInterval > 1 ? tickInterval | 0 : 1;
-    this._gatherCellOrder = spatialCfg.gatherCellOrder === true;
+    this._gatherCellOrder = spatialCfg.gatherCellOrder !== false;
     if (this._neighborTickInterval > 1) {
       const nextTick = new Uint8Array(this.globalEntityCount);
       const interval = this._neighborTickInterval;

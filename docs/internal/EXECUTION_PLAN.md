@@ -627,11 +627,13 @@ published lists in the particle memory, viewed at an offset, the integrate readi
 `particleIntegrateStressScene?tween=1&spin=1` particle **4.885 → 4.150 ms (−15.1 %, 0/6 worse), KEPT
 (product)**; Predator gate NEUTRAL. Report: [`reports/E-80-particle-lists-wasm.md`](./reports/E-80-particle-lists-wasm.md).
 
-### E-81 The WASM gather in home-cell order (E-76 W25) — **KERNEL WIN 2026-10-23; scene pair running**
+### E-81 The WASM gather in home-cell order (E-76 W25) — **KEPT 2026-10-23**
 `order_batch_by_cell` puts each spatial worker's rebuild batch in home-cell order before
 `gather_batch`; what the gather and the publish store per entity does not depend on the order (the
 parity test runs it both ways). Kernel: **+21.7 %** with every list rebuilt, +2.3 % (tie) with Predator's
-reuse. Boids pair, then the Predator gate.
+reuse. `boidsScene` spatial **7.462 → 6.942 ms (−8.4 %, 0/6 worse), KEPT (product)**. Predator flagged
+spatial +6.6 % with every unreachable worker +2–6 % the same run; the sort costs 11 µs a frame there
+(0.25 %), so that was drift (WASM_HYPOTHESES Results log).
 
 ### E-82 The instanced sprite upload diet — **open (from Q1b)**
 BunnyMark at 250 000 bunnies: Pixi 828 ms/s, 41 fps, 96 % uploading poses (`updateBuffer` 66.7 %,
