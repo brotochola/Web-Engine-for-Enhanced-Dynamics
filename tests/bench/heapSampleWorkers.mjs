@@ -97,7 +97,9 @@ try {
   }, { sceneModule, sceneExport });
   await page.setViewportSize({ width: 1280, height: 720 });
   const run = page.evaluate((o) => window.__WEED_BENCHMARK__.run(o), {
-    warmupMs: warmupMs + sampleMs, durationMs: 2000, sampleIntervalMs: 250, sceneModule, sceneExport,
+    // The scene must outlive the stops below (a busy worker's profile takes seconds to come back);
+    // the browser closes once they are in, so the long window costs nothing.
+    warmupMs: warmupMs + sampleMs, durationMs: 60000, sampleIntervalMs: 250, sceneModule, sceneExport,
     collectDetailedStats: false, collectGpuStats: false, canvasWidth: 1280, canvasHeight: 720,
     worldWidth: dims.width, worldHeight: dims.height,
     // --camera-zoom min|<zoom>, as the benchmark runner takes it.
@@ -120,14 +122,17 @@ try {
 
   const report = {};
   const perS = (bytes) => +(bytes / 1024 / (sampleMs / 1000)).toFixed(1);
-  for (const [sid, name] of [...sessions]) {
-    let profile;
-    try {
-      ({ profile } = await sendTo(sid, 'HeapProfiler.stopSampling'));
-    } catch (err) {
-      console.warn(`[heap] ${name}: ended before the sample stopped (${err.message})`);
+  // Every worker stops at once: one after another, the scene had ended (and its workers with it)
+  // before the last stops of bulletStressScene came back (E-88).
+  const live = [...sessions];
+  const stops = await Promise.allSettled(live.map(([sid]) => sendTo(sid, 'HeapProfiler.stopSampling')));
+  for (let k = 0; k < live.length; k++) {
+    const [sid, name] = live[k];
+    if (stops[k].status === 'rejected') {
+      console.warn(`[heap] ${name}: ended before the sample stopped (${stops[k].reason.message})`);
       continue;
     }
+    const { profile } = stops[k].value;
     const rows = new Map();
     let total = 0;
     const walk = (node, parent) => {
@@ -159,7 +164,7 @@ try {
       console.log(`${String(t.kbPerS).padStart(9)} KB/s  ${t.site}   <- ${t.from.map((f) => `${f.caller} (${f.kbPerS})`).join(' | ')}`);
     }
   }
-  await run.catch(() => {});
+  run.catch(() => {}); // ends when the browser closes
 } finally {
   await browser.close();
   await server.close();
