@@ -976,6 +976,9 @@ class PixiRenderer extends AbstractWorker {
     this._deferredRenderQueueRelease = 0;
     this._decalSharedBuffers = null;
     this._decalCopyBuffers = null;
+    // Uint32Array views of the two above, per tile, for copyPremultiplyRgba (E-107).
+    this._decalSharedWords = null;
+    this._decalCopyWords = null;
     this._visBatchProgramOpts = null;
     this._selfLitSpriteProgramOpts = null;
     this._selfLitBatchProgramOpts = null;
@@ -2375,7 +2378,17 @@ class PixiRenderer extends AbstractWorker {
         tileRGBA = new Uint8ClampedArray(bytesPerTile);
         this._decalCopyBuffers[tileIndex] = tileRGBA;
       }
-      copyPremultiplyRgba(tileRGBA, tileRGBAShared);
+      let sharedWords = this._decalSharedWords?.[tileIndex];
+      let copyWords = this._decalCopyWords?.[tileIndex];
+      if (!sharedWords || !copyWords) {
+        this._decalSharedWords ??= [];
+        this._decalCopyWords ??= [];
+        sharedWords = this._decalSharedWords[tileIndex] = new Uint32Array(
+          tileRGBAShared.buffer, tileRGBAShared.byteOffset, bytesPerTile >> 2
+        );
+        copyWords = this._decalCopyWords[tileIndex] = new Uint32Array(tileRGBA.buffer, 0, bytesPerTile >> 2);
+      }
+      copyPremultiplyRgba(tileRGBA, tileRGBAShared, copyWords, sharedWords);
 
       const sprite = this.decalTileSprites[tileIndex];
       let source = this.decalTileTextureSources[tileIndex];
