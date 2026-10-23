@@ -9,10 +9,20 @@ export const SHARED_ARRAY_BUFFER_MISSING =
   '"Cross-Origin-Embedder-Policy: require-corp". Per-host setup (Vercel, Netlify, GitHub Pages, itch.io): ' +
   'docs/guide/DEPLOY.md.';
 
-/** sessionStorage key: when ensureCrossOriginIsolation last reloaded the page (ms since the epoch). */
+/**
+ * sessionStorage key: "time:count", when ensureCrossOriginIsolation last reloaded the page (ms since
+ * the epoch) and how many reloads it made inside the window.
+ */
 export const ISOLATION_RELOAD_KEY = 'weed.isolationReload';
-/** A reload newer than this that left the page uncontrolled will not be tried again. */
+/** Reloads that leave the page uncontrolled are tried at most MAX_RELOADS times inside this window. */
 const RELOAD_WINDOW_MS = 10000;
+/**
+ * Two, not one: the isolated page's COOP moves it into a new browsing context group with its own
+ * copy of sessionStorage, so clearing the marker there does not reach the copy a later page
+ * without COOP sees (a hard reload bypasses the worker). That page finds the first visit's marker;
+ * one more reload is right then. A real loop (DevTools' "Bypass for network") stops at the second.
+ */
+const MAX_RELOADS = 2;
 /** How long the service worker gets to install and activate. */
 const ACTIVATE_TIMEOUT_MS = 10000;
 
@@ -31,8 +41,8 @@ export const ISOLATION_REASONS = Object.freeze({
   notApplied:
     'weed-sw.js controls this page, but the browser did not apply the headers it added.',
   reloadLoop:
-    'The page reloaded to start weed-sw.js and is still not controlled by it. DevTools\' "Bypass for network" ' +
-    '(Application, Service workers) does this, as does a second hard reload right after the first.',
+    'The page reloaded twice to start weed-sw.js and is still not controlled by it. DevTools\' ' +
+    '"Bypass for network" (Application, Service workers) does this.',
   timeout: 'weed-sw.js did not activate within 10 s.',
   redundant: 'weed-sw.js failed to install.',
   storage:
@@ -72,20 +82,23 @@ export function sharedArrayBufferMissing(scope = globalThis) {
   return isolationFailure ? `${isolationFailure} ${SHARED_ARRAY_BUFFER_MISSING}` : SHARED_ARRAY_BUFFER_MISSING;
 }
 
+/** { t, n } from the marker, or null. */
 function readMarker(scope) {
   try {
     const raw = scope.sessionStorage.getItem(ISOLATION_RELOAD_KEY);
-    const t = raw === null ? NaN : Number(raw);
-    return Number.isFinite(t) ? t : null;
+    if (raw === null) return null;
+    const [t, n] = raw.split(':').map(Number);
+    return Number.isFinite(t) && n >= 1 ? { t, n } : null;
   } catch {
     return null;
   }
 }
 
-function writeMarker(scope, now) {
+function writeMarker(scope, now, count) {
+  const value = `${now}:${count}`;
   try {
-    scope.sessionStorage.setItem(ISOLATION_RELOAD_KEY, String(now));
-    return scope.sessionStorage.getItem(ISOLATION_RELOAD_KEY) === String(now);
+    scope.sessionStorage.setItem(ISOLATION_RELOAD_KEY, value);
+    return scope.sessionStorage.getItem(ISOLATION_RELOAD_KEY) === value;
   } catch {
     return false;
   }
@@ -99,6 +112,17 @@ function clearMarker(scope) {
   } catch {
     // Storage blocked: there is no marker to clear.
   }
+}
+
+/**
+ * Resolves once the page has loaded. Chromium keeps a reload issued while a hard reload is still
+ * loading out of the service worker's reach (the next page is uncontrolled again); issued after
+ * `load` it is controlled. Found by the isolation smoke test (DX-SW, SW-4).
+ */
+function whenLoaded(scope) {
+  const doc = scope.document;
+  if (!doc || doc.readyState === 'complete' || typeof scope.addEventListener !== 'function') return Promise.resolve();
+  return new Promise((resolve) => scope.addEventListener('load', () => resolve(), { once: true }));
 }
 
 /** 'activated', 'redundant' or 'timeout'. */
@@ -184,7 +208,8 @@ export async function ensureCrossOriginIsolation(options = {}, scope = globalThi
 
     const now = options.now ?? Date.now();
     const last = readMarker(scope);
-    if (last !== null && now - last >= 0 && now - last < RELOAD_WINDOW_MS) return fail(ISOLATION_REASONS.reloadLoop);
+    const recent = last !== null && now - last.t >= 0 && now - last.t < RELOAD_WINDOW_MS;
+    if (recent && last.n >= MAX_RELOADS) return fail(ISOLATION_REASONS.reloadLoop);
 
     if (!registered) {
       try {
@@ -195,7 +220,8 @@ export async function ensureCrossOriginIsolation(options = {}, scope = globalThi
     }
     const state = await whenActivated(registration, scope, options.timeoutMs ?? ACTIVATE_TIMEOUT_MS);
     if (state !== 'activated') return fail(state === 'timeout' ? ISOLATION_REASONS.timeout : ISOLATION_REASONS.redundant);
-    if (!writeMarker(scope, now)) return fail(ISOLATION_REASONS.storage);
+    if (!writeMarker(scope, now, recent ? last.n + 1 : 1)) return fail(ISOLATION_REASONS.storage);
+    await whenLoaded(scope);
     scope.location.reload();
     return 'reloading';
   } catch (err) {

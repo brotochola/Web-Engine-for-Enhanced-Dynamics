@@ -93,7 +93,7 @@ function fakePage(opts = {}) {
 
 test('real headers: isolated, the reload marker cleared, nothing registered', async () => {
   const storage = fakeStorage();
-  storage.setItem(ISOLATION_RELOAD_KEY, '123');
+  storage.setItem(ISOLATION_RELOAD_KEY, '123:1');
   const { scope, calls } = fakePage({ storage });
   scope.SharedArrayBuffer = SharedArrayBuffer;
   assert.equal(await ensureCrossOriginIsolation({}, scope), 'isolated');
@@ -143,21 +143,50 @@ test('ours controls the page and it is still not isolated: no reload; embedded p
   assert.equal(top.calls.reload + framed.calls.reload, 0);
 });
 
-test('a reload of our own under 10 s ago that left the page uncontrolled is not tried again', async () => {
+test('two reloads of our own under 10 s that left the page uncontrolled are not tried a third time', async () => {
+  // One recent reload: a hard reload right after the first visit finds that visit's marker (the
+  // isolated page cleared only its own copy of sessionStorage), so one more reload is allowed.
   const storage = fakeStorage();
-  storage.setItem(ISOLATION_RELOAD_KEY, '50000');
+  storage.setItem(ISOLATION_RELOAD_KEY, '50000:1');
   const active = fakeWorker(SW, 'activated');
-  const recent = fakePage({ storage, registration: { active } });
-  assert.equal(await ensureCrossOriginIsolation({ now: 55000 }, recent.scope), 'failed');
-  assert.equal(isolationFailureReason(), ISOLATION_REASONS.reloadLoop);
-  assert.equal(recent.calls.reload, 0);
+  const second = fakePage({ storage, registration: { active } });
+  assert.equal(await ensureCrossOriginIsolation({ now: 53000 }, second.scope), 'reloading');
+  assert.equal(storage.getItem(ISOLATION_RELOAD_KEY), '53000:2');
 
-  // Older than the window (a hard reload long after the first visit): reload again.
+  const third = fakePage({ storage, registration: { active } });
+  assert.equal(await ensureCrossOriginIsolation({ now: 55000 }, third.scope), 'failed');
+  assert.equal(isolationFailureReason(), ISOLATION_REASONS.reloadLoop);
+  assert.equal(third.calls.reload, 0);
+
+  // Older than the window (a hard reload long after): the count starts again.
   const old = fakePage({ storage, registration: { active } });
   assert.equal(await ensureCrossOriginIsolation({ now: 70000 }, old.scope), 'reloading');
   assert.equal(old.calls.reload, 1);
   assert.equal(old.calls.register.length, 0, 'the active registration is reused');
-  assert.equal(storage.getItem(ISOLATION_RELOAD_KEY), '70000');
+  assert.equal(storage.getItem(ISOLATION_RELOAD_KEY), '70000:1');
+
+  // A marker it cannot read counts as none.
+  storage.setItem(ISOLATION_RELOAD_KEY, 'garbage');
+  const garbled = fakePage({ storage, registration: { active } });
+  assert.equal(await ensureCrossOriginIsolation({ now: 71000 }, garbled.scope), 'reloading');
+  assert.equal(storage.getItem(ISOLATION_RELOAD_KEY), '71000:1');
+});
+
+test('the reload waits for the page to finish loading', async () => {
+  // A reload issued while a hard reload is still loading comes back uncontrolled in Chromium.
+  const { scope, calls } = fakePage({ registered: { active: fakeWorker(SW, 'activated') } });
+  let onLoad = null;
+  scope.document.readyState = 'interactive';
+  scope.addEventListener = (type, fn) => {
+    if (type === 'load') onLoad = fn;
+  };
+  const result = ensureCrossOriginIsolation({ now: 1 }, scope);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls.reload, 0);
+  assert.equal(typeof onLoad, 'function');
+  onLoad();
+  assert.equal(await result, 'reloading');
+  assert.equal(calls.reload, 1);
 });
 
 test('the worker must cover the page and be on its site', async () => {
@@ -189,7 +218,7 @@ test('first visit: register next to the page, wait for activated, mark, reload o
   installing.setState('activated');
   assert.equal(await result, 'reloading');
   assert.equal(calls.reload, 1);
-  assert.equal(scope.sessionStorage.getItem(ISOLATION_RELOAD_KEY), '1000');
+  assert.equal(scope.sessionStorage.getItem(ISOLATION_RELOAD_KEY), '1000:1');
 });
 
 test('a worker that fails to install, never activates, or cannot be fetched is named; no reload', async () => {
