@@ -51,7 +51,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 3
+      "rank": 1
     },
     {
       "id": "W7",
@@ -67,7 +67,7 @@
       ],
       "aliases": [],
       "next": "Boot barrier first (Box2D memory + offsets with box2dReady, rebind before start). Ceiling measured: JS left in Predator spatial is rebuildOwnedRows 12 % + glue 8 %, so one C call ≈ 10–15 % of spatial.",
-      "rank": 3
+      "rank": 1
     },
     {
       "id": "E-82",
@@ -99,7 +99,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 4
+      "rank": 3
     },
     {
       "id": "W26",
@@ -116,7 +116,7 @@
       ],
       "aliases": [],
       "next": "SIMD blending with a ±1 tolerance, or GPU stamping into tile render textures (an architecture item).",
-      "rank": 5
+      "rank": 4
     },
     {
       "id": "W14",
@@ -133,7 +133,7 @@
       ],
       "aliases": [],
       "next": "navStressScene: flowfield 89 % of particle.",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "E-85",
@@ -167,7 +167,7 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 7
+      "rank": 6
     },
     {
       "id": "W11",
@@ -183,7 +183,7 @@
       ],
       "aliases": [],
       "next": "meshApiStressScene Pixi 53 %.",
-      "rank": 8
+      "rank": 7
     },
     {
       "id": "W21c",
@@ -6983,8 +6983,8 @@
         "HYPOTHESIS_LOG.md#L15"
       ],
       "aliases": [],
-      "next": "The persist check and the poses-only pass are still two walks of every row; W4 for the rest.",
-      "rank": 1
+      "next": "Profile after E-98g (bunnyMarkScene, 293 ms/s): collectVisibleEntities 54.1 %, _type0PersistHit 23.3 % (its frame and animation-state loads), _writeType0PosesOnly 16.9 %. Fusing the two walks would save their shared loads, est. 5–8 % of pre-render; four tests call them by name. W4 for the rest.",
+      "rank": 2
     },
     {
       "id": "E-82b",
@@ -7000,8 +7000,8 @@
         "reports/E-82-split-instance-upload.md"
       ],
       "aliases": [],
-      "next": "The default path is pre-render's gpuPack: the packer writes two streams, Pixi a two-buffer plain geometry; measure on a static high-count scene.",
-      "rank": 2
+      "next": "Pays only on frames that keep their rows (a still camera); an animation frame change bumps staticGen, so animated scenes would re-upload statics as often as now unless the texture moves to the pose stream. Measure on animatedSpriteStressScene?sprites=250000 if taken up.",
+      "rank": 8
     },
     {
       "id": "N-64",
