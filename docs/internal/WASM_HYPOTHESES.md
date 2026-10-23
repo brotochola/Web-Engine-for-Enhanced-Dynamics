@@ -637,3 +637,10 @@ defaults):
   have a gate floor (`452f53c6`) and the sitting re-decided. Logic +4.3 % (4/6) is under the 75 % bar.
   Report: [`reports/E-78-spatial-gather-wasm.md`](./reports/E-78-spatial-gather-wasm.md). Two
   modules ship now, so Phase 6's L1 applies: the coexistence test must cover the gather.
+- **2026-10-22, L1 (two shipped modules).** `wasmCoexistence.test.js` now runs both shipped modules
+  (the publish and the gather) and the two test modules in four workers on one memory laid out by the
+  map with the gather's regions, a binned grid and the pattern table. Each worker gathers then
+  publishes its own entities. The gather's dedup stamp advances on every pass, as the frame counter
+  does, so the solo reference runs each worker's 200 passes in the same order, and its per-job write
+  check is on the first pass. Byte for byte equal. A sabotaged copy, worker 2's gather pointed at
+  worker 3's marker slice, fails ("logic0 gather_batch wrote outside its region").

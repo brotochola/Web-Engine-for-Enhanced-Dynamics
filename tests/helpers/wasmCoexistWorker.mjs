@@ -13,6 +13,10 @@ const start = new Int32Array(gate);
 parentPort.postMessage('ready');
 Atomics.wait(start, 0, 0);
 for (let i = 0; i < iterations; i++) {
-  for (const job of jobs) kernels[job.module][job.fn](...job.args);
+  for (const job of jobs) {
+    // A job with a stamp argument (the spatial gather's dedup frame) gets a new one each pass.
+    if (job.stampArg !== undefined) job.args[job.stampArg] = i + 1;
+    kernels[job.module][job.fn](...job.args);
+  }
 }
 parentPort.postMessage('done');
