@@ -60,7 +60,8 @@ import {
   advanceBodyGeneration,
   bumpBodyGeneration,
   markBodyDirty,
-  withBodyDirtyDeferred,
+  beginBodyDirtyDeferred,
+  endBodyDirtyDeferred,
 } from '../box2d/box2dBodySync.js';
 import {
   FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
@@ -2886,7 +2887,8 @@ export class GameObject {
     // saved marks; the LIFECYCLE published after activation (below) carries
     // any this entity still holds, so a child spawned from a parent's
     // onSpawned gets a body with the real shape.
-    withBodyDirtyDeferred(() => {
+    beginBodyDirtyDeferred();
+    try {
       // Size before other spawnConfig keys (and before onSpawned damping/static).
       // Skip active — Transform.active stays 0 until the bump below.
       if (has.Collider) {
@@ -2950,7 +2952,9 @@ export class GameObject {
       if (spawnConfig && spawnConfig._saveRestore) {
         applyEntitySaveRestore(i, EntityClass, spawnConfig._saveRestore);
       }
-    });
+    } finally {
+      endBodyDirtyDeferred();
+    }
 
     // Initialize tick decimation countdown (if staggeredUpdates enabled)
     // Stagger entities across frames using index offset: (index % tickInterval) + 1

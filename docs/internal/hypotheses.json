@@ -34,7 +34,7 @@
       ],
       "aliases": [],
       "next": "Kernel sitting on pre-render's pack (38–40 % of a saturated pre-render in sprite-heavy scenes), the render queue in a memory WASM can read.",
-      "rank": 4
+      "rank": 3
     },
     {
       "id": "W6",
@@ -50,7 +50,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 5
+      "rank": 4
     },
     {
       "id": "W7",
@@ -66,7 +66,7 @@
       ],
       "aliases": [],
       "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
-      "rank": 5
+      "rank": 4
     },
     {
       "id": "E-82",
@@ -82,7 +82,7 @@
       ],
       "aliases": [],
       "next": "Packed vertex formats (≈40 B/sprite), then the pose/static split (24–28 B); judged on bunnyMarkScene Pixi.",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "W22",
@@ -98,7 +98,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 7
+      "rank": 6
     },
     {
       "id": "W26",
@@ -114,7 +114,7 @@
       ],
       "aliases": [],
       "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 8
+      "rank": 7
     },
     {
       "id": "W14",
@@ -131,7 +131,7 @@
       ],
       "aliases": [],
       "next": "navStressScene: flowfield 89 % of particle.",
-      "rank": 10
+      "rank": 9
     },
     {
       "id": "E-85",
@@ -165,7 +165,7 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 11
+      "rank": 10
     },
     {
       "id": "W11",
@@ -181,7 +181,7 @@
       ],
       "aliases": [],
       "next": "meshApiStressScene Pixi 53 %.",
-      "rank": 12
+      "rank": 11
     },
     {
       "id": "W21c",
@@ -196,7 +196,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 13
+      "rank": 12
     },
     {
       "id": "W2a",
@@ -211,7 +211,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 13
     },
     {
       "id": "W1",
@@ -226,7 +226,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 14
     },
     {
       "id": "W10",
@@ -241,7 +241,7 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 15
     },
     {
       "id": "W23",
@@ -256,7 +256,7 @@
         "WASM_HYPOTHESES.md#L177"
       ],
       "aliases": [],
-      "rank": 17
+      "rank": 16
     },
     {
       "id": "W27",
@@ -271,7 +271,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 18
+      "rank": 17
     },
     {
       "id": "W28",
@@ -286,7 +286,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 19
+      "rank": 18
     },
     {
       "id": "W4",
@@ -302,7 +302,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision (Box2D's memory).",
-      "rank": 20
+      "rank": 19
     },
     {
       "id": "W18",
@@ -318,7 +318,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 21
+      "rank": 20
     },
     {
       "id": "W2b",
@@ -334,7 +334,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 22
+      "rank": 21
     },
     {
       "id": "E-76",
@@ -6747,7 +6747,7 @@
       ],
       "aliases": [],
       "next": "16 bits per dirty word, so every value is a Smi; spawnStormScene logic and physics.",
-      "rank": 2
+      "rank": 1
     },
     {
       "id": "E-88",
@@ -6777,7 +6777,7 @@
       ],
       "aliases": [],
       "next": "Heap pass of visPolyStressScene first; keep only if the site shows up.",
-      "rank": 9
+      "rank": 8
     },
     {
       "id": "E-90",
@@ -6793,7 +6793,7 @@
       ],
       "aliases": [],
       "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
-      "rank": 3
+      "rank": 2
     },
     {
       "id": "E-91",
@@ -6814,18 +6814,17 @@
     {
       "id": "E-92",
       "title": "Every spawn builds a closure for the dirty-mark window",
-      "status": "open",
-      "statusText": "open (from E-91)",
+      "status": "kept-hygiene",
+      "statusText": "kept (hygiene) 2026-10-23",
       "date": "2026-10-23",
-      "result": "_spawnAt wraps its setup in withBodyDirtyDeferred(() => …): a closure and context per spawn, not inlined away. spawnStormScene logic 8.6 MB/s in _spawnAt (~80 B per spawn).",
+      "result": "beginBodyDirtyDeferred / endBodyDirtyDeferred around a try/finally instead of a closure per spawn: spawnStormScene logic 17.9 → 10.6 MB/s; logic 5.243 → 5.234 ms, −0.7 %, worse 1/4 (a tie).",
       "area": "logic",
       "kind": "js",
       "refs": [
+        "HYPOTHESIS_LOG.md#L13",
         "EXECUTION_PLAN.md#L722"
       ],
-      "aliases": [],
-      "next": "A begin/end pair around try/finally; spawnStormScene heap pass and logic pair.",
-      "rank": 1
+      "aliases": []
     }
   ],
   "leads": [

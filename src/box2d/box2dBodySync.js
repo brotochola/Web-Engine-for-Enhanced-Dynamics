@@ -145,13 +145,25 @@ function flushPendingBodyDirty() {
 }
 
 export function withBodyDirtyDeferred(fn) {
-  dirtyDeferDepth++;
+  beginBodyDirtyDeferred();
   try {
     return fn();
   } finally {
-    dirtyDeferDepth--;
-    if (dirtyDeferDepth === 0) flushPendingBodyDirty();
+    endBodyDirtyDeferred();
   }
+}
+
+/**
+ * The same window without a closure, for the per-spawn path (E-92: a closure per spawn was
+ * 8.6 MB/s in spawnStormScene). Pair every call with endBodyDirtyDeferred in a `finally`.
+ */
+export function beginBodyDirtyDeferred() {
+  dirtyDeferDepth++;
+}
+
+export function endBodyDirtyDeferred() {
+  dirtyDeferDepth--;
+  if (dirtyDeferDepth === 0) flushPendingBodyDirty();
 }
 
 function publishBodyDirty(i, flags) {

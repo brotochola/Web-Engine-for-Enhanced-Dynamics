@@ -719,7 +719,9 @@ The sweep's heap pass samples workers whose URL contains `Worker`; the Box2D wor
 GC** (Q1b inventory), the largest GC time left in the sweep. Sample it (`--workers Worker,box2d`), find
 the sites, then fix them: the dirty-word drain is one candidate (E-87).
 
-### E-92 Every spawn builds a closure for the dirty-mark window — **open (from E-91)**
+### E-92 Every spawn builds a closure for the dirty-mark window — **kept (hygiene), 2026-10-23**
+Done with a begin/end pair around a `try`/`finally`: `spawnStormScene` logic 17.9 → 10.6 MB/s; logic
+−0.7 % (a tie). The entry as opened:
 `_spawnAt` wraps its setup in `withBodyDirtyDeferred(() => { … })`, a new closure and context per
 spawn, and `_spawnAt` is far too big for TurboFan to inline the call away: `spawnStormScene` logic
 8.6 MB/s in `_spawnAt`, about 80 bytes per spawn at 108 000 spawns/s. The body has no `return`,
