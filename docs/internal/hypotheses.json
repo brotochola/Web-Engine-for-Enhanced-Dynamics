@@ -6724,7 +6724,7 @@
       "status": "open",
       "statusText": "in progress on branch isolation_sw; decisions taken 2026-10-23 (on by default, narrow rewrite, reasons worded for whoever can fix them, a self-unregistering file to remove it)",
       "date": "2026-10-22",
-      "result": "Plan only. Built from coi-serviceworker v0.1.7 principles, not vendored: reload only after `activated`, no worker state, rewrite only page loads and worker scripts, never replace another service worker, guarded reload marker, the gate runs inside engine boot with the screen black, every failure named in the error overlay. Found: `new GameEngine()` throws a ReferenceError without SharedArrayBuffer, so the friendly message DEPLOY.md promises never shows. Hot reload is unaffected (the dev servers send the headers).",
+      "result": "Plan only. Built from coi-serviceworker v0.1.7 principles, not vendored: reload only after `activated`, no worker state, rewrite only page loads and worker scripts, never replace another service worker, guarded reload marker, the gate runs inside engine boot with the screen black, every failure named in the error overlay. SW-1 done: `new GameEngine()` threw a ReferenceError without SharedArrayBuffer, so the friendly message DEPLOY.md promises never showed; its flag now falls back to a plain buffer. Hot reload is unaffected (the dev servers send the headers).",
       "area": "engine",
       "kind": "dx",
       "refs": [
@@ -6734,7 +6734,7 @@
       "aliases": [
         "coi-serviceworker"
       ],
-      "next": "SW-1: GameEngine survives a page without SharedArrayBuffer, so the existing message becomes reachable."
+      "next": "SW-2: the static test server can omit the isolation headers (and a second origin); then SW-3, weed-sw.js and the gate."
     },
     {
       "id": "E-86",
