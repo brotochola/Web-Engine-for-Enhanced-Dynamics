@@ -477,3 +477,14 @@ defaults):
   and `predator` (rows from the real gather). Results on battery: +73.5 to +87.4 % and +66.4 %, against
   the +118 % on record, which was measured against a JS copy (HYPOTHESIS_LOG row). In-process
   alternation gave 81/81 in every process; the delta moved by ±7 points from one process to the next.
+- **2026-10-22, T9.** `src/util/wasmMemoryMap.js` declares every region of a kernel memory with its
+  owner and size. `layoutRegions` places them in order, each on a 64-byte line;
+  `spatialPublishRegions` is the spatial memory: a 64-byte guard at address 0, then pos, range, rows,
+  cand, and one list slice per spatial worker (`listStride`, passed in `gridMetadata`). Two changes to
+  the shipped layout follow. The 128 KB header that held emcc's stack and statics is now that 64-byte
+  guard, because kernels own no memory since T3. And regions that started on 16-, 4- and 2-byte
+  boundaries, with the workers' lists back to back, now each start on their own line. The guard still
+  matters: the emcc fixture's start function writes at 1024 and 1028, now inside the pose region, so
+  the T3 parity test instantiates it before filling the frame. That test also builds its own
+  map-laid memory of at least 2 pages, because the fixture's import asks for 2.
+  `tests/node/wasmMemoryMap.test.js` checks the layout properties.

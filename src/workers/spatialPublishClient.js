@@ -23,7 +23,7 @@ async function loadWasmBytes() {
 
 /**
  * @param {WebAssembly.Memory} memory
- * @param {{ posByte: number, rangeByte: number, neighborByte: number, candByte: number, listByte: number }} layout
+ * @param {{ posByte: number, rangeByte: number, neighborByte: number, candByte: number, listByte: number, listStride: number }} layout
  * @param {number} workerIndex
  * @param {number} entityCount
  * @param {number} maxNeighbors
@@ -41,7 +41,8 @@ export async function bindSpatialPublish(memory, layout, workerIndex, entityCoun
   });
   const count = entityCount | 0;
   const stride = 1 + (maxNeighbors | 0);
-  const listByte = (layout.listByte | 0) + (workerIndex | 0) * count * 2;
+  // Each spatial worker's batch list is its own slice, on its own cache lines.
+  const listByte = (layout.listByte | 0) + (workerIndex | 0) * (layout.listStride | 0);
   const buffer = memory.buffer;
   const pub = {
     range: new Float32Array(buffer, layout.rangeByte, count),

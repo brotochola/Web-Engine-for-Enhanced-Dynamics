@@ -878,6 +878,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
       candByte: publish ? publish.candByte : 0,
       rangeByte: publish ? publish.rangeByte : 0,
       listByte: publish ? publish.listByte : 0,
+      listStride: publish ? publish.listStride : 0,
     };
 
     Grid.initialize(

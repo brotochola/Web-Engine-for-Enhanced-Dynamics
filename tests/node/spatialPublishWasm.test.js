@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
+import { spatialPublishRegions } from '../../src/util/wasmMemoryMap.js';
 
 // E-76 T3: the spatial publish module is built freestanding by scripts/buildWasm.mjs. It must
 // publish exactly what the emcc binary it replaced published (kept as a fixture), and both must
@@ -26,6 +26,26 @@ async function instantiateEmcc(memory) {
   const wasi = new Proxy({}, { get: () => () => 0 });
   const { instance } = await WebAssembly.instantiate(fs.readFileSync(EMCC), { env, wasi_snapshot_preview1: wasi });
   return instance.exports.publish_batch;
+}
+
+/**
+ * The product layout (the memory map), in a memory of at least 2 pages: the emcc fixture's import
+ * asks for 2, the freestanding module's for 1.
+ */
+function publishMemory(count, maxN) {
+  const layout = spatialPublishRegions(count, maxN, 1);
+  const pages = Math.max(2, layout.pages);
+  const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+  const r = layout.regions;
+  return {
+    memory,
+    buffer: memory.buffer,
+    posByte: r.pos.byte,
+    rangeByte: r.range.byte,
+    neighborByte: r.rows.byte,
+    candByte: r.cand.byte,
+    listByte: r.lists.byte,
+  };
 }
 
 const f = Math.fround;
@@ -126,8 +146,7 @@ const CONFIGS = [
 
 test('the freestanding spatial module publishes what the emcc binary did, in float32', async () => {
   for (const cfg of CONFIGS) {
-    const mem = createSpatialPublishMemory(cfg.count, cfg.maxN, 1);
-    assert.ok(mem, 'spatial publish memory');
+    const mem = publishMemory(cfg.count, cfg.maxN);
     const { buffer } = mem;
     const stride = 1 + cfg.maxN;
     const views = {
@@ -137,14 +156,18 @@ test('the freestanding spatial module publishes what the emcc binary did, in flo
       list: new Uint16Array(buffer, mem.listByte, cfg.count),
     };
     const neighbor = new Uint16Array(buffer, mem.neighborByte, cfg.count * stride);
+    // Instantiate before filling the frame: the emcc binary's start function writes its init flag
+    // and a static at addresses 1024 and 1028 (N-62), inside the pose region since T9.
+    const emccPublish = await instantiateEmcc(mem.memory);
+    const shippedPublish = await instantiateShipped(mem.memory);
     const n = fillFrame(views, cfg.count, cfg.maxN, cfg.batch, cfg.seed);
     const run = (fn) => {
       neighbor.fill(0xbeef);
       fn(n, cfg.maxN, mem.posByte, mem.rangeByte, mem.candByte, mem.neighborByte, mem.listByte);
       return readRows(neighbor, views.list, n, cfg.maxN);
     };
-    const emcc = run(await instantiateEmcc(mem.memory));
-    const shipped = run(await instantiateShipped(mem.memory));
+    const emcc = run(emccPublish);
+    const shipped = run(shippedPublish);
     const model = publishF32(views.pos, views.range, views.cand, views.list, n, cfg.maxN);
     const label = JSON.stringify(cfg);
     assert.deepEqual(shipped, emcc, `${label}: shipped vs emcc`);

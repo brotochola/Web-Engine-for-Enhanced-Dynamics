@@ -234,7 +234,8 @@ export class GameObject {
     this.globalEntityCount = count;
 
     // Initialize neighbor data if provided.
-    // neighborByte skips a wasm stack header when the buffer is a WebAssembly.Memory.
+    // neighborByte is the rows region's offset when the buffer is the spatial publish memory
+    // (wasmMemoryMap.js).
     this.neighborData = neighborBuffer
       ? new (EntityIdArray())(neighborBuffer, neighborByte | 0)
       : null;

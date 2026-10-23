@@ -1,15 +1,12 @@
 // One shared WebAssembly.Memory for neighbor rows, latched poses, and candidate lists.
-// Rows start after the wasm stack. Callers view them with this byte offset.
-// Uint16 entity ids only. Wider ids keep the plain SharedArrayBuffers.
+// The regions and their offsets come from the memory map (wasmMemoryMap.js); callers view them
+// with those byte offsets. Uint16 entity ids only. Wider ids keep the plain SharedArrayBuffers.
 
 import { entityIdBytes } from './entityIdWidth.js';
+import { spatialPublishRegions } from './wasmMemoryMap.js';
 
-export const SPATIAL_PUBLISH_HEADER = 131072;
+// The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
 const WASM_MAX_PAGES = 8192;
-
-function align(n, a) {
-  return (n + (a - 1)) & ~(a - 1);
-}
 
 /**
  * @param {number} entityCount
@@ -23,41 +20,31 @@ function align(n, a) {
  *   neighborByte: number,
  *   candByte: number,
  *   listByte: number,
+ *   listStride: number,
+ *   regions: Record<string, { byte: number, bytes: number, owner: string }>,
  * }}
  */
 export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWorkers) {
   if (entityIdBytes() !== 2) return null;
   const count = entityCount | 0;
   const maxN = maxNeighbors | 0;
-  const workers = Math.max(1, spatialWorkers | 0);
   if (count <= 0 || maxN < 0) return null;
-  const stride = 1 + maxN;
-  const rowBytes = count * stride * 2;
-
-  let off = SPATIAL_PUBLISH_HEADER;
-  const posByte = align(off, 16);
-  off = posByte + count * 16;
-  const rangeByte = align(off, 4);
-  off = rangeByte + count * 4;
-  const neighborByte = align(off, 2);
-  off = neighborByte + rowBytes;
-  const candByte = align(off, 2);
-  off = candByte + rowBytes;
-  const listByte = align(off, 2);
-  off = listByte + workers * count * 2;
-  const pages = Math.max(2, Math.ceil(off / 65536));
-  if (pages > WASM_MAX_PAGES) return null;
+  const layout = spatialPublishRegions(count, maxN, spatialWorkers);
+  if (layout.pages > WASM_MAX_PAGES) return null;
+  const { regions } = layout;
 
   try {
-    const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+    const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
     return {
       memory,
       buffer: memory.buffer,
-      posByte,
-      rangeByte,
-      neighborByte,
-      candByte,
-      listByte,
+      posByte: regions.pos.byte,
+      rangeByte: regions.range.byte,
+      neighborByte: regions.rows.byte,
+      candByte: regions.cand.byte,
+      listByte: regions.lists.byte,
+      listStride: layout.listStride,
+      regions,
     };
   } catch {
     return null;
