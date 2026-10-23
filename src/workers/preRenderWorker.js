@@ -270,6 +270,9 @@ const Y_SORT_K = DECORATION_Y_SORT_SCALE;
 // heap number per visible particle, bullet, decoration and glow. Callers write it here first.
 // Sprites (types 0 and 6) need none: _writeRenderable stores their drawn Y.
 const COLLECT_Y = new Float64Array(1);
+// The frame's step in seconds for _advancePersistFrame, written once per persist frame (a double
+// passed to it per animated sprite would be a heap number each).
+const PERSIST_DT = new Float64Array(1);
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
  *
@@ -1942,7 +1945,12 @@ class PreRenderWorker extends AbstractWorker {
         if (offY) offY[out] = cast ? (scOy ? (scOy[i] || 0) : 0) : 0;
     }
 
-    _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs) {
+    /**
+     * The persist frame's sprite rows: poses, sort keys and shadow terms, and the animation clock.
+     * Returns how many rows changed statics (rows of other types, rewritten in full, and sprites
+     * whose animation moved to a new frame), for E-82's staticGen.
+     */
+    _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime) {
         const rqX = this.renderQueueX;
         const rqY = this.renderQueueY;
         const rqRotC = this.renderQueueRotC;
@@ -1953,6 +1961,10 @@ class PreRenderWorker extends AbstractWorker {
         const inherit = SpriteRenderer.inheritTransformRotation;
         const spriteC = SpriteRenderer.spriteRotC;
         const spriteS = SpriteRenderer.spriteRotS;
+        // Animations advance here too, not only in the full emit: a persist frame skips the
+        // sprite rows there, so in a scene whose rows held still every animation froze.
+        const animated = SpriteRenderer.isAnimated || null;
+        PERSIST_DT[0] = deltaTime / 1000;
         let others = 0;
         for (let i = 0; i < count; i++) {
             if (collectorType[i] !== 0) {
@@ -1971,8 +1983,51 @@ class PreRenderWorker extends AbstractWorker {
             }
             if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], ySort);
             this._writeQueueShadow(i, idx);
+            if (animated !== null && animated[idx]) others += this._advancePersistFrame(i, idx);
         }
         return others;
+    }
+
+    /**
+     * One animated sprite's clock on a persist frame: the full emit's advance, copied (the emit
+     * loop is too hot to share it). When the frame moves, row i gets the new texture.
+     * Returns 1 when it did, else 0.
+     */
+    _advancePersistFrame(i, idx) {
+        const animState = SpriteRenderer.animationState[idx];
+        const proxyMap = this.proxyToGlobalAnim?.[SpriteRenderer.spritesheetId[idx]];
+        const globalAnimIdx = proxyMap?.[animState];
+        if (globalAnimIdx === undefined) return 0;
+        const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+        if (animFrameCount <= 1) return 0;
+        const frameIndex = this.entityFrameIndex;
+        const frameAccum = this.entityFrameAccumulator;
+        frameAccum[idx] += PERSIST_DT[0];
+        const frameDuration = 1 / (SpriteRenderer.animationSpeed[idx] * 60);
+        if (frameAccum[idx] < frameDuration) return 0;
+        frameAccum[idx] -= frameDuration;
+        const currentFrame = frameIndex[idx];
+        if (SpriteRenderer.loop[idx] !== 1 && currentFrame >= animFrameCount - 1) {
+            // The last frame of a play-once animation finished showing.
+            if (this._animEndByType[Transform.entityType[idx]] === 1) {
+                this._spriteAnimationEnded(idx, animState);
+            }
+            return 0;
+        }
+        frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+        const animStart = this.animationFrameStart?.[globalAnimIdx];
+        if (animStart === undefined) return 0;
+        const tex = animStart + frameIndex[idx];
+        this.renderQueueTextureId[i] = tex;
+        if (this.entityLastTextureId) this.entityLastTextureId[idx] = tex;
+        // Bounds may change (variable frame sizes)
+        if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
+            const sx = Math.abs(SpriteRenderer.scaleX[idx]) || 1; // flip = negative scale
+            const sy = Math.abs(SpriteRenderer.scaleY[idx]) || 1;
+            SpriteRenderer.boundsHalfW[idx] = ((this.frameWidth[tex] || 0) * sx) * 0.5;
+            SpriteRenderer.boundsHalfH[idx] = ((this.frameHeight[tex] || 0) * sy) * 0.5;
+        }
+        return 1;
     }
 
     /**
@@ -2671,7 +2726,7 @@ class PreRenderWorker extends AbstractWorker {
             : false;
         // Rows other than sprites are rewritten in full on a persist frame too (E-82 staticGen).
         const persistOthers = persistHit
-            ? this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs)
+            ? this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime)
             : 0;
 
         for (let i = 0; i < count && writeCount < maxItems; i++) {
