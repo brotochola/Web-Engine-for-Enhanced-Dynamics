@@ -754,7 +754,13 @@ pre-render **5.538 → 5.280 ms, −4.1 %, worse 0/4**. Left: a `subarray` per l
 ### E-96 Pixi's lighting draw allocates 36 MB/s — **open (from E-95)**
 `visPolyStressScene` Pixi: 36.5 MB/s inside Pixi's vendor code (`G_` from `draw`), reached from
 `renderVisibilityLighting` → `_renderOccluderSelfLit`, which also calls `removeChildren` / `addChild`
-every frame. Find what is rebuilt per frame (graphics or geometry) and keep it.
+every frame. Found: `G_` is Pixi's per-draw shader binding (`for … in` over the shader's groups and
+each group's resources, then uniform-group updates), so the allocation scales with draw calls: about
+360 lights with several draws each, ~1 000 draws a frame, ~600 bytes a draw. Pixi's code is not ours to
+change; the lever is fewer draws, the per-light passes batched (one mesh per pass with the light in
+its vertices). A rendering change, ranked with the large items. `_renderOccluderSelfLit`'s own
+1.6 MB/s is `_emitTransmitWedge(lx, ly, lightR, …)`: nine doubles per occluder per light (the E-85
+pattern), the cheap part.
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls

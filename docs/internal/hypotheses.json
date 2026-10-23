@@ -83,7 +83,7 @@
       ],
       "aliases": [],
       "next": "Packed vertex formats (≈40 B/sprite), then the pose/static split (24–28 B); judged on bunnyMarkScene Pixi.",
-      "rank": 5
+      "rank": 3
     },
     {
       "id": "W22",
@@ -99,7 +99,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "W26",
@@ -115,7 +115,7 @@
       ],
       "aliases": [],
       "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 7
+      "rank": 6
     },
     {
       "id": "W14",
@@ -6748,7 +6748,7 @@
       ],
       "aliases": [],
       "next": "16 bits per dirty word, so every value is a Smi; spawnStormScene logic and physics.",
-      "rank": 2
+      "rank": 1
     },
     {
       "id": "E-88",
@@ -6792,7 +6792,7 @@
       ],
       "aliases": [],
       "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
-      "rank": 3
+      "rank": 2
     },
     {
       "id": "E-91",
@@ -6911,15 +6911,15 @@
       "status": "open",
       "statusText": "open (from E-95)",
       "date": "2026-10-23",
-      "result": "visPolyStressScene Pixi: 36.5 MB/s inside Pixi's draw (G_), reached from _renderOccluderSelfLit, which also calls removeChildren/addChild every frame.",
+      "result": "visPolyStressScene Pixi: 36.5 MB/s inside Pixi's per-draw shader binding (G_: for-in over groups and resources, uniform updates), scaling with ~1 000 draws a frame (≈360 lights). Fix is fewer draws: batch the per-light passes. _emitTransmitWedge's nine doubles per occluder (1.6 MB/s) is the cheap part.",
       "area": "pixi",
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#L754"
       ],
       "aliases": [],
-      "next": "Find what is rebuilt per frame (graphics or geometry) and keep it; Pixi pair on visPolyStressScene.",
-      "rank": 1
+      "next": "Batch the per-light lighting passes (a rendering change); first the cheap _emitTransmitWedge part.",
+      "rank": 7
     }
   ],
   "leads": [
