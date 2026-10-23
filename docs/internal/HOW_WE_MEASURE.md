@@ -8,6 +8,22 @@ The living record of claims that were already tried is [`HYPOTHESIS_LOG.md`](./H
 
 The per-feature map (what each catalog row is, what was already measured, and how to measure it against its own champion) is [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md). A night of scoreboard work also writes a diary in [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md). Expect a map per row, not a single “best WeedJS” medal.
 
+## Why we measure
+
+WeedJS exists to run the most entities, particles and effects a browser can hold at frame rate. A
+change earns its place by making a worker's step cheaper in a scene that runs it, without making
+another worker more expensive. Measuring is how we tell that apart from what only looks like a win:
+a kernel that is faster in isolation, a large share in a profile, one lucky run, or drift that landed
+on one side of a pair have all looked like wins in this repo and were not (the log has each case). It
+is also how we spend the machine's time: every sitting answers one question, at the cheapest layer
+that can answer it.
+
+Two owner decisions (2026-10-23) set what "correct" means here. Speed comes before bit-exact numbers:
+a faster path may differ from the old one within a stated tolerance, held by a test; bit-identity is
+kept when it costs nothing. And only engine code is ported or tuned: game code in scenes and
+gameobjects stays as the developer wrote it, so a hot spot in demo code is not a target (an engine
+accessor that game code calls per entity is, as JS).
+
 ## Three layers
 
 Measure at the lowest layer that can actually see the change. A kernel win that no demo calls is not a gameplay win.
@@ -60,9 +76,45 @@ Use this when Balls or Predator never execute the code you changed (a QueryAABB 
 
 A demo that actually runs the changed code: [`demos/ballsScene`](../../demos/ballsScene/), [`demos/predatorScene`](../../demos/predatorScene/), `steadyCombatScene`, and others.
 
-Chromium with a visible window. Do not minimize. Two runs. Warmup 10 seconds, measure 10 seconds (`pnpm bench:headed:median`, or the integrated runner with those defaults). The previous default was five runs with 25 seconds of warmup and 18 seconds of measure; that schedule is retired. A pair that follows 2×10 s/10 s is the protocol. Do not mark it `screened` only because it is shorter than the old default. Rows already written under 5×25/18 stay as evidence of that sitting.
+Chromium with a visible window. Do not minimize. Two runs. Warmup 10 seconds, measure 10 seconds (`pnpm bench:headed:median`, whose default is exactly that, or the integrated runner with those defaults). The previous default was five runs with 25 seconds of warmup and 18 seconds of measure; that schedule is retired. A pair that follows 2×10 s/10 s is the protocol. Do not mark it `screened` only because it is shorter than the old default. Rows already written under 5×25/18 stay as evidence of that sitting.
 
 Use this when you claim a real game got cheaper.
+
+## Spending the machine's time
+
+A sitting costs minutes and a wrong verdict costs more, so choose the cheapest sitting that can
+decide the question, and stop once it has.
+
+- **Climb only as far as the claim needs.** A kernel that loses its checksum, or does not win, ends
+  the hypothesis there. A kernel win goes to a scene that runs the code in the regime the hypothesis
+  names (the owner pair). Predator comes after that, and only for the reasons below.
+- **Pairs are sequential.** Start with 4 (`runPredatorAbab.mjs`'s default, for the owner scene and
+  for Predator). Decide when the owner's median is past 3 percent with at least 3 of the 4 pairs on
+  its side and its cv at most 10 percent: W13 (−15.1 %) and E-81 (−8.4 %) were each 0 of 6 worse, and
+  four pairs would have said the same. When the median clears 3 percent but the pairs do not, or the
+  cv is above 10 percent, add 4 with `--append` and read all 8. The extension to 16 below (G1) holds.
+- **The Predator gate is for changes on Predator's hot path.** Look the changed code up in the latest
+  profile (Q1, Q1b in [`WASM_HYPOTHESES.md`](./WASM_HYPOTHESES.md)). When it is under 1 percent of
+  every Predator worker (an integrate at ~100 particles, a list of ~70, an Adobe Animate path Predator
+  never loads), a Predator gate measures only drift: the owner pair and the parity test carry the
+  verdict, and the log says the gate was skipped and why. A change to shared infrastructure (scene
+  buffers, the boot payload, a worker's frame loop, a component layout) always takes the gate.
+- **Gate a batch, not each change.** When several changes have each passed their owner pair, one
+  Predator gate against the revision before the batch checks them together. If it regresses, the
+  worker kind that regressed points at the change to look at first.
+- **Know the session's noise.** One A/A sitting (the same code on both sides) per session, or after
+  anything on the machine changes, gives each worker kind its paired spread. When every worker the
+  change cannot reach moves the same way in a sitting, that is drift: read the owner against it (its
+  median minus the median of the unreachable workers) and write both. E-81 (2026-10-23): a Predator
+  gate read spatial +6.6 % while logic, physics, renderer and pre-render, which the change cannot
+  reach, read +2.1 to +5.9 %; the change itself costs 11 µs a frame there (0.25 %).
+- **A quiet machine.** No other bench running (another session's Playwright Chrome), no busy
+  application (a browser playing video put one gate at cv 12–21 %), AC power. When the unreachable
+  workers' cv is above 10 percent the session is noisy: stop and run later rather than reading it.
+- **Do not edit the working tree while a sitting reads it.** Side B is the working tree and every run
+  loads it again; an edit mid-sitting puts two versions in one sample.
+- **Measurement tools first.** A new kernel case, scene knob or harness option goes in its own commit
+  before the change it measures, so the baseline worktree has it too.
 
 ## The primary number
 
@@ -220,12 +272,12 @@ A micro-optimization found in the engine trace goes through these gates, in orde
 3. **Kernel win:** at least 3 percent more ops/s, same `n` and `seed`, in the regime the trace shows (Predator saturates audio slots, runs 16k bodies, 48 shadow lights). A win outside the product regime is noted, not kept.
 4. **Re-run the kernel against the patched `src/`** (`runKernelsVsRev.mjs --overlay`). A local variant can win while the worker's hidden class eats the gain; this gate catches it before any scene.
 5. **Parity test** in `tests/node/`: the new code against a reference of the old behavior, frame by frame (for example `contactPairParity.test.js`, `soundSlotClaim.test.js`). `pnpm test:node` stays green.
-6. **Predator ABAB** ([`runPredatorAbab.mjs`](../../tests/bench/runPredatorAbab.mjs)): headed, detailed stats off, `--src`, seed 123456, A = baseline worktree (the working tree with the hypothesis files swapped back), B = working tree, 8 pairs of 10 s / 10 s. The order inside a pair is counterbalanced (AB, BA, AB, …): with a fixed A-then-B order, drift inside the pair always landed on B, and S4 once showed every untouched worker +2 to +6 % in 5 of 8 pairs. Every worker kind is watched, not only the owner.
+6. **Predator ABAB** ([`runPredatorAbab.mjs`](../../tests/bench/runPredatorAbab.mjs)), when the change is on Predator's hot path or touches shared infrastructure ([Spending the machine's time](#spending-the-machines-time)): headed, detailed stats off, `--src`, seed 123456, A = baseline worktree (the working tree with the hypothesis files swapped back, or `--vs <rev>`), B = working tree, 4 pairs of 10 s / 10 s, 4 more with `--append` when the first 4 do not decide. The order inside a pair is counterbalanced (AB, BA, AB, …): with a fixed A-then-B order, drift inside the pair always landed on B, and S4 once showed every untouched worker +2 to +6 % in 5 of 8 pairs. Every worker kind is watched, not only the owner.
 7. **Other scenes:** `runKernelsVsRev.mjs --changed` and the catalog rows whose `module` the diff touches.
 
 The Predator verdict per worker kind is the median of the paired deltas (B − A) / A:
 
-- **Regression:** the median is at least +3 percent **and** at least 75 percent of the pairs are worse, on a kind whose coefficient of variation is at most 10 percent (or on the owner kind). Eight scattered pairs with a +3 percent median are noise; a sign that holds in six of eight is not.
+- **Regression:** the median is at least +3 percent **and** at least 75 percent of the pairs are worse, on a kind whose coefficient of variation is at most 10 percent (or on the owner kind). Eight scattered pairs with a +3 percent median are noise; a sign that holds in six of eight is not. When the kinds the change cannot reach moved the same way in that sitting, read the regression against that drift (above) before calling it.
 - **Load:** every key in `runPredatorAbab.mjs`'s `LOAD_KEYS` (`BODY_COUNT`, `GPU_CASTERS`, `GPU_SHADOW_LIGHTS`, `ACTIVE_PARTICLES`, `VISIBLE_ENTITIES`, `RENDER_QUEUE_SIZE`, the decoration, decal and nav counts) that the workers publish: median within 5 percent, coefficient of variation under 50 percent. A key published in only some pairs fails the sitting, and so does a baseline of 0 against a non-zero hypothesis. Two keys have floors, `ACTIVE_PARTICLES` 1000 (Predator emits about 100, and Poisson noise alone is 10 percent) and `DECAL_TILES_DIRTY` 8: a key is muted only when **both** medians are under its floor; one side above it is a normal 5 percent check. (Aligned with the code by review M9.)
 - **Kept (product):** the owner kind is at least 3 percent cheaper with at least 75 percent of the pairs better, and nothing regresses.
 - **Kept (kernel, product-neutral):** the kernel gates passed, Predator does not regress anywhere, and the owner did not move 3 percent. The change stays. The log says it is a kernel claim.
@@ -253,6 +305,43 @@ Allocation is engine-specific: Chrome's V8 boxed doubles that Node's did not (E-
 A function TurboFan inlined still has its own row: the profiler maps inlined code back to its source function. A small helper in the list is not evidence of a call that boxes its doubles (E-64); `--trace-turbo-inlining` (`--js-flags=` in Chrome) is. For the same reason, compare a function's **inclusive** time between two traces when the change moves work into or out of an inlined callee: self time alone credited E-62 with −60 % where the merge as a whole went −33 %.
 
 On Windows the tracing profiler samples about every 630 µs; `--js-flags=--cpu-profiler-sampling-interval=100` does not change that interval. CPU samples are where time goes, not a speed verdict: the verdict is always `STEP_MS`.
+
+**Inventories.** `node tests/bench/profileSceneSweep.mjs` profiles every demo and the stress scenes
+this way (6 s warm-up, 8 s window), one scene at a time, and writes `inventory.md`: per busy worker,
+its ms/s, its GC ms/s, its hottest engine functions, and the shares of game code and of Pixi's vendor
+code apart. `--pass deopt` adds steady-state deopts and megamorphic ICs, `--pass heap` each worker's
+allocation rate. Use it to choose what to work on, never to judge a change. Three things in it read
+wrong at first: Box2D's solver threads show 1000 ms/s busy because the Windows sampler counts a thread
+blocked in `memory.atomic.wait32` (Emscripten's futex wait, `wasm-function[110]` today) as busy;
+Box2D's own functions are `wasm-function[N]` (its build keeps no names) while the engine's kernels
+have names; and a stress scene at its default knobs may load no worker at all, so raise its knob
+before reading it.
+
+## WebAssembly kernels
+
+Engine kernels in C (`wasm/`, built by `scripts/buildWasm.mjs` with pinned flags, E-76) follow the
+same layers, with these additions:
+
+- **Node screens, Chrome decides.** Node 22's V8 (12.4) and Chrome's (15.5) compile WASM and JS
+  differently. Choose between variants (SIMD, float32, a build flag) on Chrome numbers
+  (`tests/bench/chromeKernel.mjs` runs a kernel module in a page); the scene pair is Chrome anyway.
+- **Say the tier.** V8 runs a WASM function in Liftoff first and moves it to TurboFan once it is hot.
+  Time TurboFan: `warmWasm` and `wasmTier` in `wasmKernelHelpers.mjs`, under `--allow-natives-syntax`.
+  A Liftoff timing is another program.
+- **One boundary call per batch.** A call across the JS/WASM boundary costs nanoseconds
+  (`wasmCallCostMicrobench`), so a kernel called per entity loses to JS. Call once per frame or batch.
+- **Kernels own no memory (T6).** One import, the shared memory; scratch comes in by pointer from a JS
+  layout (`wasmMemoryMap.js`). `buildWasm.mjs --check` enforces it, and the coexistence test checks
+  that each kernel writes only its regions. A binding whose region is missing exposes no kernel
+  (E-81: the order kernel would otherwise have written at byte 0).
+- **Parity** is bit-exact when that costs nothing (W5, W8a, W12, W13, E-81 were) and a stated
+  tolerance when exactness would cost speed. Either way a test holds it against the real worker:
+  `tests/node/*Wasm.test.js` boot real workers in threads and compare frame by frame.
+- **Every kernel gets the optimization pass,** shipped ones included: build flags
+  (`-mnontrapping-fptoint`, `-mrelaxed-simd` where a fused multiply-add is within tolerance, wasm-opt
+  levels), SIMD, float32 where the tolerance allows (four lanes to double's two), data layout and
+  processing order (E-81's cell order gained 21.7 % with the same arithmetic). Each is adopted on its
+  Chrome numbers.
 
 ## Detailed stats
 
@@ -313,7 +402,7 @@ Product “faster than main”: the load keys match, some of physics, logic0, pa
 ## Commands
 
 ```bash
-# Gameplay (visible window, 5-run median)
+# Gameplay (visible window, 2-run median of 10 s / 10 s)
 pnpm bench:headed:median
 
 # Engine feature scoreboard versus a git rev (default main 0695a8d)
@@ -353,6 +442,12 @@ node tests/bench/runLockstepVisual.mjs --scene predator
 # Predator branch against a revision (A = src/ from the rev)
 node tests/bench/runPredatorAbab.mjs --name branch-vs-main --vs main --pairs 8
 
+# Owner pair on the scene that runs the change, 4 pairs, 4 more only if they do not decide
+node tests/bench/runPredatorAbab.mjs --name E81-boids --vs HEAD --owner spatial \
+  --scene /demos/boidsScene/boidsScene.js --scene-export BoidsScene
+node tests/bench/runPredatorAbab.mjs --name E81-boids --vs HEAD --owner spatial --append --pairs 4 \
+  --scene /demos/boidsScene/boidsScene.js --scene-export BoidsScene
+
 # Predator product gate for one hypothesis
 node tests/bench/runPredatorAbab.mjs --name L1 --owner logic --pairs 8 \
   --override src/workers/logicWorker.js=tests/results/hyp-baselines/L1.logicWorker.js
@@ -360,6 +455,10 @@ node tests/bench/runPredatorAbab.mjs --name L1 --owner logic --pairs 8 \
 # Trace
 pnpm bench:headed:trace-cpu --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
 pnpm trace:summary tests/results/<dir>/engine_trace.json
+
+# Inventory of every scene (cpu, then deopt and heap on chosen scenes)
+node tests/bench/profileSceneSweep.mjs
+node tests/bench/profileSceneSweep.mjs --pass heap --only bulletStressScene,predatorScene
 ```
 
 Harness defaults: [`tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md). Feature catalog: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md).

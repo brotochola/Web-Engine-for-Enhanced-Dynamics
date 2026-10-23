@@ -80,7 +80,14 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   A kernel claim needs the kernel win and the scene must not get 3 % worse.
 - Hygiene keep (bug fix, dead code): stays unless a primary worker is ≥ 3 % worse.
 - A worker the change cannot reach "regresses": run an A/A, and in emergent scenes fit its time
-  against its own load key before calling it (review E-50: physics vs `BODY_MOVED_COUNT`).
+  against its own load key before calling it (review E-50: physics vs `BODY_MOVED_COUNT`). When every
+  unreachable worker moved the same way, that is drift: read the owner against it.
+- Spend the machine's time: pairs start at 4 and grow by 4 (`--append`) only when they do not
+  decide; Predator gates only changes on its hot path or shared infrastructure, and one gate can
+  cover a batch of kept changes; one A/A per session is the noise reference; quiet machine, and no
+  edits to the working tree while a sitting reads it.
+- WASM kernels: Node screens, Chrome decides between variants; time TurboFan, not Liftoff; one
+  boundary call per batch; every kernel gets the flags/SIMD/float32 pass (HOW_WE_MEASURE).
 - After measuring, update `HYPOTHESIS_LOG.md` / `EXECUTION_PLAN.md`; reports in full prose.
 
 ## Where things are
