@@ -13,6 +13,7 @@ These files are for us: how a speed claim gets kept or dropped, what was already
 | [`EXECUTION_PLAN.md`](./EXECUTION_PLAN.md) | The living hypothesis plan (E-xx ids, status, primary, report link). |
 | [`REVIEW_PLAN.md`](./REVIEW_PLAN.md) | Bugs, cleanups and docs from the 2026-10-20 review of 47 commits, with status. |
 | [`REVIEW_LIVE_REPORT.md`](./REVIEW_LIVE_REPORT.md) | Progress log for that review, newest first. |
+| [`VISUAL_EDITOR_PLAN.md`](./VISUAL_EDITOR_PLAN.md) | The visual editor: goals, design, stages and items (ED-xx), open decisions. |
 | [`reports/`](./reports/) | One-sitting reports, one per hypothesis. |
 
 The rest of this folder is campaign notes: hypothesis lists, audit logs, and one-sitting reports. A public subsystem guide, when one of those campaigns changed an API, lives in [`../guide/`](../guide/README.md).
