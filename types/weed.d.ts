@@ -285,6 +285,8 @@ export type SceneConfig = Record<string, unknown> & {
   wasm?: {
     /** Spatial neighbour publish. Needs 16-bit entity ids; at 32 the JavaScript path runs anyway. */
     spatialPublish?: boolean;
+    /** Spatial candidate gather (the cell walk before the publish). Runs only with spatialPublish. */
+    spatialGather?: boolean;
   };
 };
 

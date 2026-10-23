@@ -21,6 +21,7 @@ import { Grid } from '../../src/core/grid.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
 import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../../src/util/entityIdWidth.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../../src/util/colliderUtils.js';
+import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
   bindPoseColumns,
@@ -86,12 +87,22 @@ export async function setupSpatialKernel(opts = {}) {
   const cfg = { ...PREDATOR_SPATIAL, ...(opts.spatial || {}) };
   const { buffers, gridMetadata } = spatialBuffers(cfg, n);
   buffers.componentData = coreComponentData(n);
-  // WASM mode (E-76): poses, rows and candidates in the publish memory, as sceneSharedBuffers
-  // builds it at 16-bit ids. A factory, so a kernel can lay out more regions in the same memory.
-  const mem = opts.publishMemory ? opts.publishMemory(n, cfg.maxNeighbors, workersCount, gridMetadata) : null;
+  // WASM mode (E-76): poses, rows, candidates and (E-78) the grid in the publish memory, as
+  // sceneSharedBuffers builds it at 16-bit ids. 'product' is that memory; a function is a factory,
+  // so a kernel can lay out more regions. `opts.wasm` is the scene's wasm switches (T7).
+  const mem = opts.publishMemory === 'product'
+    ? createSpatialPublishMemory(n, cfg.maxNeighbors, workersCount, {
+        totalCells: gridMetadata.totalCells,
+        cellByteSize: 4 + cfg.maxEntitiesPerCell * gridMetadata.entityIdBytes,
+      })
+    : opts.publishMemory
+      ? opts.publishMemory(n, cfg.maxNeighbors, workersCount, gridMetadata)
+      : null;
+  if (opts.publishMemory && !mem) throw new Error('no publish memory (16-bit entity ids only)');
   if (mem) {
     buffers.entityPosData = mem.buffer;
     buffers.neighborData = mem.buffer;
+    if (mem.gridByte) buffers.gridBuffer = mem.buffer;
     Object.assign(gridMetadata, {
       posByte: mem.posByte,
       rangeByte: mem.rangeByte,
@@ -99,13 +110,22 @@ export async function setupSpatialKernel(opts = {}) {
       candByte: mem.candByte,
       listByte: mem.listByte,
       listStride: mem.listStride,
+      gridByte: mem.gridByte | 0,
+      markerByte: mem.markerByte | 0,
+      markerStride: mem.markerStride | 0,
+      truncatedByte: mem.truncatedByte | 0,
+      truncatedStride: mem.truncatedStride | 0,
+      rebuildByte: mem.rebuildByte | 0,
+      rebuildStride: mem.rebuildStride | 0,
+      patternByte: mem.patternByte | 0,
+      patternBytes: mem.patternBytes | 0,
     });
   }
 
   const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base', opts.make);
   for (let w = 0; w < workers.length; w++) {
     await initWorker(workers[w], {
-      config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg },
+      config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg, ...(opts.wasm ? { wasm: opts.wasm } : {}) },
       globalEntityCount: n,
       buffers,
       gridMetadata,

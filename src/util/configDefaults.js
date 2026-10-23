@@ -422,6 +422,8 @@ export const SPATIAL_DEFAULTS = Object.freeze({
 export const WASM_DEFAULTS = Object.freeze({
   /** Spatial neighbour publish (`spatialPublish.wasm`). */
   spatialPublish: true,
+  /** Spatial candidate gather (`spatialGather.wasm`, E-78); needs spatialPublish's memory. */
+  spatialGather: true,
 });
 
 // ============================================================================

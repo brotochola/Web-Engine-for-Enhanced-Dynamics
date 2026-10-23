@@ -49,26 +49,56 @@ export function layoutRegions(regions) {
  * @param {number} maxNeighbors
  * @param {number} spatialWorkers
  */
-export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers) {
-  const { regions, listStride } = spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers);
-  return { ...layoutRegions(regions), listStride };
+export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers, gather = null) {
+  const { regions, ...strides } = spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather);
+  return { ...layoutRegions(regions), ...strides };
 }
 
-/** The same regions as a list, for a layout that appends more (the coexistence test). */
-export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers) {
+/**
+ * Bytes the circle-pattern table may take: i32 [dr, dc] pairs for every radius up to
+ * `maxCellRadius`, then i32 [first pair, pair count] per radius. A pattern of radius r fits in
+ * the (2r + 3)² cells around its centre, so this bounds what the spatial workers write.
+ */
+export function spatialPatternTableBytes(maxCellRadius) {
+  let cells = 0;
+  for (let r = 0; r <= maxCellRadius; r++) cells += (2 * r + 3) * (2 * r + 3);
+  return alignToLine(cells * 8) + alignToLine((maxCellRadius + 1) * 8);
+}
+
+/**
+ * The same regions as a list, for a layout that appends more (the coexistence test).
+ * With `gather` ({ gridBytes, patternBytes }), the regions of the WASM candidate gather (E-78)
+ * follow the publish's:
+ * - grid: the spatial grid cells (u8 count at each cell's first byte, entity ids after), each
+ *   spatial worker writing its own rows, every worker reading;
+ * - markers: one i32-per-entity dedup slice per spatial worker (its processedMarker);
+ * - truncated: one u8-per-entity slice per spatial worker (its truncation flags);
+ * - rebuilds: one u16 list slice per spatial worker (the entities whose lists rebuild this frame);
+ * - patterns: the circle-pattern table, the same in every worker (spatialPatternTableBytes).
+ */
+export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather = null) {
   const count = entityCount | 0;
   const workers = Math.max(1, spatialWorkers | 0);
   const rowBytes = count * (1 + (maxNeighbors | 0)) * 2;
   const listStride = alignToLine(count * 2);
-  return {
-    regions: [
-      { name: 'guard', owner: 'none', bytes: NULL_GUARD_BYTES },
-      { name: 'pos', owner: 'spatial', bytes: count * 16 },
-      { name: 'range', owner: 'spatial', bytes: count * 4 },
-      { name: 'rows', owner: 'spatial (publish_batch)', bytes: rowBytes },
-      { name: 'cand', owner: 'spatial', bytes: rowBytes },
-      { name: 'lists', owner: 'spatial, one slice per worker', bytes: workers * listStride },
-    ],
-    listStride,
-  };
+  const regions = [
+    { name: 'guard', owner: 'none', bytes: NULL_GUARD_BYTES },
+    { name: 'pos', owner: 'spatial', bytes: count * 16 },
+    { name: 'range', owner: 'spatial', bytes: count * 4 },
+    { name: 'rows', owner: 'spatial (publish_batch)', bytes: rowBytes },
+    { name: 'cand', owner: 'spatial', bytes: rowBytes },
+    { name: 'lists', owner: 'spatial, one slice per worker', bytes: workers * listStride },
+  ];
+  if (!gather) return { regions, listStride };
+  const markerStride = alignToLine(count * 4);
+  const truncatedStride = alignToLine(count);
+  const rebuildStride = alignToLine(count * 2);
+  regions.push(
+    { name: 'grid', owner: 'spatial, each worker its own rows', bytes: gather.gridBytes },
+    { name: 'markers', owner: 'spatial, one slice per worker', bytes: workers * markerStride },
+    { name: 'truncated', owner: 'spatial, one slice per worker', bytes: workers * truncatedStride },
+    { name: 'rebuilds', owner: 'spatial, one slice per worker', bytes: workers * rebuildStride },
+    { name: 'patterns', owner: 'spatial, identical in every worker', bytes: gather.patternBytes },
+  );
+  return { regions, listStride, markerStride, truncatedStride, rebuildStride };
 }

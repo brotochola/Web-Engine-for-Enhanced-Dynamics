@@ -587,7 +587,7 @@ own E-number here at that point. Phases 1–2 (2026-10-22): the ten tools are in
 shipped the publish in double), Q2–Q5 are answered and Q3's floor screen was withdrawn for gather
 loops; report [`reports/E-76-wasm-phase-1-2.md`](./reports/E-76-wasm-phase-1-2.md).
 
-### E-78 The spatial candidate gather in WASM (E-76 W5) — **KERNEL WIN 2026-10-22; product wiring next**
+### E-78 The spatial candidate gather in WASM (E-76 W5) — **KEPT 2026-10-22**
 `wasm/spatialGather.c` is the cell walk, dedup and range test of `findNeighborsForOwnedEntities` with
 the JS arithmetic (double) and the worker's circle-pattern order, over a batch of the entities whose
 lists rebuild this frame. In `spatialGatherWasmMicrobench` it runs as a variant on real workers in WASM
@@ -595,8 +595,10 @@ mode, in a memory laid out as the product would: the publish regions plus the gr
 rebuild list per worker, and the patterns. Rows and counters are checked equal over 45 frames.
 Node 22, AC, alternating processes, 5 rounds: with Predator's spatial settings and drift, 3 workers,
 16 500 entities, 267.1 → 341.9 frames/s (**+28.0 %, 25/25**); with every list rebuilt, 31.6 → 39.7
-(+25.5 %, 25/25). The kernel frame is the worker's whole step, so Predator spatial is expected to drop
-by about a fifth. Chrome has to confirm it (the Predator gate, after the wiring).
+(+25.5 %, 25/25). The kernel frame is the worker's whole step, so Predator spatial was expected to drop
+by about a fifth. Wired (`_findNeighborsWasmGather`, the grid in the spatial memory, `wasm.spatialGather`):
+Predator gate, 6 pairs, owner spatial, **5.203 → 4.205 ms (−18.6 %, 0/6 worse), KEPT (product)**.
+Report: [`reports/E-78-spatial-gather-wasm.md`](./reports/E-78-spatial-gather-wasm.md).
 
 ---
 

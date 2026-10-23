@@ -201,6 +201,7 @@ When comparing builds, split **`REBUILD_MS`** vs **`NEIGHBOR_MS`**: stagger only
 - **`neighborReuseMaxFrames`** — max frames a candidate list / freeze may live (default **15**). Dense/fast scenes may override; e.g. Predator uses **0.01 / 30**.
 - **`neighborTickInterval`** — refresh cadence, staggered by entity index (default **1** = every frame). `> 1` enables stagger: off-tick keeps last `neighborData`; on-tick still uses Verlet when skin allows. No separate `staggeredUpdates` flag (unlike logic).
 - **`wasm.spatialPublish`** (scene config, default **true**) — the final range filter that writes `neighborData` runs as one WebAssembly call per worker per frame, on a shared `WebAssembly.Memory` that holds the poses, candidates and rows. It needs 16-bit entity ids (`entityIdWidth` 16); at 32 the JavaScript filter runs. `wasm: { spatialPublish: false }` forces the JavaScript filter.
+- **`wasm.spatialGather`** (scene config, default **true**) — with the publish memory, the cell walk that builds candidate lists also runs in WebAssembly: one call per worker per frame for every entity whose list rebuilds, the same arithmetic and cell order as the JavaScript walk, so the lists are the same. The grid cells live in that memory. `wasm: { spatialGather: false }` keeps the walk in JavaScript (the publish stays in WebAssembly).
 
 Scene example (Predator):
 

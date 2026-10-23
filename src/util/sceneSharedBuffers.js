@@ -208,7 +208,7 @@ function initializeCoreEntityAndComponentBuffers(scene) {
     // wasm.spatialPublish false (E-76 T7) takes the plain-SAB JS path, as 32-bit ids do.
     scene.spatialPublish = config.wasm?.spatialPublish === false
       ? null
-      : createSpatialPublishMemory(totalEntityCount, maxNeighbors, config.spatial.numberOfSpatialWorkers | 0);
+      : createSpatialPublishMemory(totalEntityCount, maxNeighbors, config.spatial.numberOfSpatialWorkers | 0, spatialGridSpec(config));
     buffers.neighborData = scene.spatialPublish
       ? scene.spatialPublish.buffer
       : new SharedArrayBuffer(totalEntityCount * (1 + maxNeighbors) * entityIdBytes());
@@ -848,16 +848,12 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
 
   const maxNeighbors = config.spatial.maxNeighbors;
   if ((numberOfSpatialWorkers | 0) > 0) {
-    const cellSize = config.spatial?.cellSize || config.cellSize;
-    const gridCols = Math.ceil(config.worldWidth / cellSize);
-    const gridRows = Math.ceil(config.worldHeight / cellSize);
-    const totalCells = gridCols * gridRows;
-    const maxEntitiesPerCell = config.spatial.maxEntitiesPerCell;
-    const cellByteSize = 4 + maxEntitiesPerCell * entityIdBytes(); // [count:u8][pad:3][entities×mec]
-
-    buffers.gridBuffer = new SharedArrayBuffer(totalCells * cellByteSize);
-    buffers.cellSleepingBuffer = new SharedArrayBuffer(totalCells);
+    const { cellSize, gridCols, gridRows, totalCells, maxEntitiesPerCell, cellByteSize } = spatialGridSpec(config);
     const publish = scene.spatialPublish;
+
+    // With the publish memory the grid is one of its regions (E-78: the WASM gather reads it).
+    buffers.gridBuffer = publish && publish.gridByte ? publish.buffer : new SharedArrayBuffer(totalCells * cellByteSize);
+    buffers.cellSleepingBuffer = new SharedArrayBuffer(totalCells);
     buffers.entityPosData = publish
       ? publish.buffer
       : new SharedArrayBuffer(totalEntityCount * 4 * 4);
@@ -878,6 +874,16 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
       rangeByte: publish ? publish.rangeByte : 0,
       listByte: publish ? publish.listByte : 0,
       listStride: publish ? publish.listStride : 0,
+      // The WASM candidate gather's regions (E-78); 0 without the publish memory.
+      gridByte: publish ? publish.gridByte : 0,
+      markerByte: publish ? publish.markerByte : 0,
+      markerStride: publish ? publish.markerStride : 0,
+      truncatedByte: publish ? publish.truncatedByte : 0,
+      truncatedStride: publish ? publish.truncatedStride : 0,
+      rebuildByte: publish ? publish.rebuildByte : 0,
+      rebuildStride: publish ? publish.rebuildStride : 0,
+      patternByte: publish ? publish.patternByte : 0,
+      patternBytes: publish ? publish.patternBytes : 0,
     };
 
     Grid.initialize(
@@ -897,6 +903,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
         rowsPerBlock: config.spatial.rowsPerBlock,
         entityIdBytes: entityIdBytes(),
         neighborByte: scene.gridMetadata.neighborByte,
+        gridByte: scene.gridMetadata.gridByte,
       }
     );
   } else {
@@ -926,6 +933,20 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   scene.camera.y = config.worldHeight / 2 - config.canvasHeight / 2;
   views.camera[1] = scene.camera.x;
   views.camera[2] = scene.camera.y;
+}
+
+/**
+ * The spatial grid's dimensions from the scene config. The publish memory reserves the grid
+ * region from these before the grid section below allocates it, so both use this one place.
+ */
+function spatialGridSpec(config) {
+  const cellSize = config.spatial?.cellSize || config.cellSize;
+  const gridCols = Math.ceil(config.worldWidth / cellSize);
+  const gridRows = Math.ceil(config.worldHeight / cellSize);
+  const totalCells = gridCols * gridRows;
+  const maxEntitiesPerCell = config.spatial.maxEntitiesPerCell;
+  const cellByteSize = 4 + maxEntitiesPerCell * entityIdBytes(); // [count:u8][pad:3][entities×mec]
+  return { cellSize, gridCols, gridRows, totalCells, maxEntitiesPerCell, cellByteSize };
 }
 
 export function createSceneSharedBuffers(scene) {

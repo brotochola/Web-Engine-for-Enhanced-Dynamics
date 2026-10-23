@@ -156,8 +156,11 @@ export class Grid {
     // ===== SPATIAL GRID (Single Buffer) =====
     if (buffers.gridBuffer) {
       Grid._gridBuffer = buffers.gridBuffer;
-      Grid._gridCounts = new Uint8Array(buffers.gridBuffer);
-      Grid._gridEntities = new (idBytes === 4 ? Uint32Array : Uint16Array)(buffers.gridBuffer);
+      // gridByte is the grid region's offset when the buffer is the spatial publish memory (E-78).
+      const gridByte = metadata.gridByte | 0;
+      const gridBytes = gridByte ? Grid.totalCells * Grid.cellByteSize : buffers.gridBuffer.byteLength;
+      Grid._gridCounts = new Uint8Array(buffers.gridBuffer, gridByte, gridBytes);
+      Grid._gridEntities = new (idBytes === 4 ? Uint32Array : Uint16Array)(buffers.gridBuffer, gridByte, gridBytes / idBytes);
     }
 
     // ===== NEIGHBOR DATA (Single Buffer) =====
