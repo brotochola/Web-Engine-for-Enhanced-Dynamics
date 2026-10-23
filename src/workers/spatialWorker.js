@@ -148,6 +148,8 @@ class SpatialWorker extends AbstractWorker {
     this._neighborReuseSkin = 0;
     /** Full candidate rebuild every N frames (1 = every frame). */
     this._neighborTickInterval = 1;
+    // spatial.gatherCellOrder: the WASM gather walks its batch in home-cell order.
+    this._gatherCellOrder = false;
     /** Countdown to next full rebuild when neighborTickInterval > 1. */
     this._entityNeighborNextTick = null;
     /** Per-entity expanded candidate lists: [count, id0, ...] stride = 1+maxNeighbors */
@@ -239,6 +241,7 @@ class SpatialWorker extends AbstractWorker {
     this._maxReuseFrames = maxFrames > 0 ? maxFrames | 0 : this._neighborReuseSkin > 0 ? 15 : 0;
     const tickInterval = Number(spatialCfg.neighborTickInterval);
     this._neighborTickInterval = tickInterval > 1 ? tickInterval | 0 : 1;
+    this._gatherCellOrder = spatialCfg.gatherCellOrder === true;
     if (this._neighborTickInterval > 1) {
       const nextTick = new Uint8Array(this.globalEntityCount);
       const interval = this._neighborTickInterval;
@@ -929,6 +932,10 @@ class SpatialWorker extends AbstractWorker {
 
     if (rebuilds) {
       const meta = this._wasmMeta;
+      // The same results in any order; in cell order the cells each entity walks are still in cache.
+      if (this._gatherCellOrder && g.order) {
+        g.order(rebuilds, g.rebuildByte, meta.posByte, this.invCellSize, this.gridWidth, this.gridHeight, g.orderByte);
+      }
       this.cellsCheckedThisFrame += g.gather(
         rebuilds,
         g.rebuildByte,

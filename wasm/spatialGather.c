@@ -21,6 +21,55 @@ static inline int32_t trunc_cells(double v) {
   return (int32_t)v;
 }
 
+/* Reorders a rebuild list by home cell, stably, so the entities that walk the same cells run one
+   after another and find those cells' ids and positions still in cache. What the gather and the
+   publish store for an entity does not depend on the order. Two LSD radix passes on the 16-bit cell
+   index (the cell gather_batch computes); a grid of more than 65 536 cells keeps its order.
+   scratch: u32 histogram[256], then u16 keys, keys2 and list2 of batchCount each. Returns 1 when
+   it reordered. */
+__attribute__((export_name("order_batch_by_cell")))
+uint32_t order_batch_by_cell(uint32_t batchCount, uint32_t listByte, uint32_t posByte, double invCellSize,
+                             int32_t gridWidth, int32_t gridHeight, uint32_t scratchByte) {
+  if (batchCount < 2 || (uint64_t)(uint32_t)gridWidth * (uint64_t)(uint32_t)gridHeight > 65536u) return 0;
+  uint16_t *list = (uint16_t *)(uintptr_t)listByte;
+  const float *pos = (const float *)(uintptr_t)posByte;
+  uint32_t *hist = (uint32_t *)(uintptr_t)scratchByte;
+  uint16_t *keys = (uint16_t *)(uintptr_t)(scratchByte + 1024u);
+  uint16_t *keys2 = keys + batchCount;
+  uint16_t *list2 = keys2 + batchCount;
+  const int32_t maxRow = gridHeight - 1;
+  const int32_t maxCol = gridWidth - 1;
+  for (uint32_t n = 0; n < batchCount; n++) {
+    const uint32_t e = list[n];
+    const int32_t row = clamp_index((double)pos[e * 4u + 1u] * invCellSize, maxRow);
+    const int32_t col = clamp_index((double)pos[e * 4u] * invCellSize, maxCol);
+    keys[n] = (uint16_t)(row * gridWidth + col);
+  }
+  for (uint32_t b = 0; b < 256u; b++) hist[b] = 0;
+  for (uint32_t n = 0; n < batchCount; n++) hist[keys[n] & 255u]++;
+  uint32_t sum = 0;
+  for (uint32_t b = 0; b < 256u; b++) {
+    const uint32_t c = hist[b];
+    hist[b] = sum;
+    sum += c;
+  }
+  for (uint32_t n = 0; n < batchCount; n++) {
+    const uint32_t d = hist[keys[n] & 255u]++;
+    list2[d] = list[n];
+    keys2[d] = keys[n];
+  }
+  for (uint32_t b = 0; b < 256u; b++) hist[b] = 0;
+  for (uint32_t n = 0; n < batchCount; n++) hist[keys2[n] >> 8]++;
+  sum = 0;
+  for (uint32_t b = 0; b < 256u; b++) {
+    const uint32_t c = hist[b];
+    hist[b] = sum;
+    sum += c;
+  }
+  for (uint32_t n = 0; n < batchCount; n++) list[hist[keys2[n] >> 8]++] = list2[n];
+  return 1;
+}
+
 __attribute__((export_name("gather_batch")))
 uint32_t gather_batch(
     uint32_t batchCount,

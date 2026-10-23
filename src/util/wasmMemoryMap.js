@@ -129,12 +129,15 @@ export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorke
   const markerStride = alignToLine(count * 4);
   const truncatedStride = alignToLine(count);
   const rebuildStride = alignToLine(count * 2);
+  // order_batch_by_cell: a u32 histogram[256], then three u16 lists of the entity count.
+  const orderStride = alignToLine(1024 + count * 6);
   regions.push(
     { name: 'grid', owner: 'spatial, each worker its own rows', bytes: gather.gridBytes },
     { name: 'markers', owner: 'spatial, one slice per worker', bytes: workers * markerStride },
     { name: 'truncated', owner: 'spatial, one slice per worker', bytes: workers * truncatedStride },
     { name: 'rebuilds', owner: 'spatial, one slice per worker', bytes: workers * rebuildStride },
     { name: 'patterns', owner: 'spatial, identical in every worker', bytes: gather.patternBytes },
+    { name: 'orders', owner: 'spatial, one slice per worker', bytes: workers * orderStride },
   );
-  return { regions, listStride, markerStride, truncatedStride, rebuildStride };
+  return { regions, listStride, markerStride, truncatedStride, rebuildStride, orderStride };
 }

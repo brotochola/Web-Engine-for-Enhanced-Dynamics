@@ -60,7 +60,8 @@
       "source": "wasm/spatialGather.c",
       "output": "src/workers/spatialGather.wasm",
       "exports": [
-        "gather_batch"
+        "gather_batch",
+        "order_batch_by_cell"
       ],
       "maxMemoryPages": 8192
     },

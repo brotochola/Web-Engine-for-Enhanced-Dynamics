@@ -901,6 +901,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
       truncatedStride: publish ? publish.truncatedStride : 0,
       rebuildByte: publish ? publish.rebuildByte : 0,
       rebuildStride: publish ? publish.rebuildStride : 0,
+      orderByte: publish ? publish.orderByte : 0,
+      orderStride: publish ? publish.orderStride : 0,
       patternByte: publish ? publish.patternByte : 0,
       patternBytes: publish ? publish.patternBytes : 0,
     };

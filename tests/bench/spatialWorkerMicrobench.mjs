@@ -117,6 +117,8 @@ export async function setupSpatialKernel(opts = {}) {
       truncatedStride: mem.truncatedStride | 0,
       rebuildByte: mem.rebuildByte | 0,
       rebuildStride: mem.rebuildStride | 0,
+      orderByte: mem.orderByte | 0,
+      orderStride: mem.orderStride | 0,
       patternByte: mem.patternByte | 0,
       patternBytes: mem.patternBytes | 0,
     });

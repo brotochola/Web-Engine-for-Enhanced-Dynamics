@@ -7,12 +7,14 @@
  *   base  wasm.spatialGather false: findNeighborsForOwnedEntities, the JS gather, the WASM publish
  *   wasm  wasm.spatialGather true (the default): _findNeighborsWasmGather, one gather_batch call
  *         per worker (wasm/spatialGather.c) for every list that rebuilds, the same WASM publish
+ *   ordered  wasm with spatial.gatherCellOrder: order_batch_by_cell puts each batch in home-cell
+ *         order before the gather (the publish then runs in that order too)
  *
  * One variant per process: run it through runKernelVariants.mjs, which alternates processes and
  * rejects a variant whose checksum differs. The checksum covers every warm-up frame's rows and
  * counters (45 frames), not only the last.
  *
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/spatialGatherWasmMicrobench.mjs --variants base,wasm --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/spatialGatherWasmMicrobench.mjs --variants base,wasm,ordered --rounds 5
  *   node tests/bench/spatialGatherWasmMicrobench.mjs --variant wasm [--config predator|rebuild] [--output path]
  *
  * predator: Predator's spatial settings (skin 0.01, 30 frames, stagger 15) and drift, 3 workers.
@@ -27,19 +29,19 @@ async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'base');
   const config = String(args.config || 'predator');
-  if (!['base', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  if (!['base', 'wasm', 'ordered'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const spatial = config === 'rebuild' ? { neighborReuseSkin: 0, neighborTickInterval: 1 } : config === 'predator' ? {} : null;
   if (!spatial) throw new Error(`unknown config ${config}`);
   const k = await setupSpatialKernel({
     n: Number(args.n ?? 16500),
     workers: 3,
-    spatial,
+    spatial: { ...spatial, gatherCellOrder: variant === 'ordered' },
     publishMemory: 'product',
-    wasm: { spatialGather: variant === 'wasm' },
+    wasm: { spatialGather: variant !== 'base' },
   });
   if (!k.workers.every((w) => w._wasmPub)) throw new Error('the workers did not bind the WASM publish');
   const gather = k.workers[0]._wasmGather;
-  if (Boolean(gather) !== (variant === 'wasm')) throw new Error(`variant ${variant}: the gather is ${gather ? 'bound' : 'not bound'}`);
+  if (Boolean(gather) !== (variant !== 'base')) throw new Error(`variant ${variant}: the gather is ${gather ? 'bound' : 'not bound'}`);
 
   // 45 frames, as spatialWorkerMicrobench: every entity passes a full rebuild and the stagger twice.
   let checksum = 2166136261;

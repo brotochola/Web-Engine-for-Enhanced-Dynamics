@@ -404,6 +404,11 @@ export const SPATIAL_DEFAULTS = Object.freeze({
    */
   neighborTickInterval: 1,
   /**
+   * The WASM candidate gather walks each frame's rebuild batch in home-cell order: the same
+   * neighbours, with the cells each entity walks still in cache. Needs the WASM gather.
+   */
+  gatherCellOrder: false,
+  /**
    * Particle worker writes Grid.cellSleepingData each frame (Sleep Cells overlay).
    * Production spatial does not read it. Off skips that full-grid scan.
    */

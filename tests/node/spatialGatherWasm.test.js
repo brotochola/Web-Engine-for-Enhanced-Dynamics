@@ -26,11 +26,18 @@ const CONFIGS = {
 for (const [name, spatial] of Object.entries(CONFIGS)) {
   test(`WASM gather publishes what the JS gather publishes (${name})`, async () => {
     const base = { spatial, n: 4000, workers: 3, frames: 40 };
-    const [js, wasm] = await Promise.all([run({ ...base, gather: false }), run({ ...base, gather: true })]);
+    const [js, wasm, ordered] = await Promise.all([
+      run({ ...base, gather: false }),
+      run({ ...base, gather: true }),
+      // spatial.gatherCellOrder: the batch in home-cell order gathers and publishes the same rows.
+      run({ ...base, spatial: { ...spatial, gatherCellOrder: true }, gather: true }),
+    ]);
     assert.deepEqual(js.bound, [false, false, false], 'wasm.spatialGather false keeps the JS gather');
     assert.deepEqual(wasm.bound, [true, true, true], 'the WASM gather is bound in every spatial worker');
     assert.ok(js.published > 0, 'neighbours are published');
     const first = js.sums.findIndex((s, i) => s !== wasm.sums[i]);
     assert.equal(first, -1, `rows or counters differ from frame ${first}`);
+    const firstOrdered = js.sums.findIndex((s, i) => s !== ordered.sums[i]);
+    assert.equal(firstOrdered, -1, `in cell order, rows or counters differ from frame ${firstOrdered}`);
   });
 }

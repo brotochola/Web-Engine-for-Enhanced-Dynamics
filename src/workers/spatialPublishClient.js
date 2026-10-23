@@ -13,14 +13,17 @@ const gatherUrl = new URL('./spatialGather.wasm', import.meta.url);
  * the publish memory. Writes the worker's circle patterns into the shared table (every spatial
  * worker writes the same bytes) and returns where the table's index starts.
  * @param {WebAssembly.Memory} memory
- * @param {{ markerByte: number, markerStride: number, truncatedByte: number, truncatedStride: number, rebuildByte: number, rebuildStride: number, patternByte: number, patternBytes: number }} layout
+ * @param {{ markerByte: number, markerStride: number, truncatedByte: number, truncatedStride: number, rebuildByte: number, rebuildStride: number, orderByte: number, orderStride: number, patternByte: number, patternBytes: number }} layout
  * @param {number} workerIndex
  * @param {number} entityCount
  * @param {Int32Array[]} circlePatterns [dr, dc] pairs per radius, 0..maxCellRadius
  * @param {number} maxCellRadius
  */
 export async function bindSpatialGather(memory, layout, workerIndex, entityCount, circlePatterns, maxCellRadius) {
-  const { gather_batch: gather } = await loadWasmKernel('spatialGather', gatherUrl, memory, ['gather_batch']);
+  const { gather_batch: gather, order_batch_by_cell: order } = await loadWasmKernel('spatialGather', gatherUrl, memory, [
+    'gather_batch',
+    'order_batch_by_cell',
+  ]);
   const count = entityCount | 0;
   const w = workerIndex | 0;
   const buffer = memory.buffer;
@@ -45,14 +48,18 @@ export async function bindSpatialGather(memory, layout, workerIndex, entityCount
   const markerByte = (layout.markerByte | 0) + w * (layout.markerStride | 0);
   const truncatedByte = (layout.truncatedByte | 0) + w * (layout.truncatedStride | 0);
   const rebuildByte = (layout.rebuildByte | 0) + w * (layout.rebuildStride | 0);
+  const orderByte = (layout.orderByte | 0) + w * (layout.orderStride | 0);
   return {
     gather,
+    // Without its scratch region the order kernel would write at byte 0: no ordering then.
+    order: layout.orderByte ? order : null,
     marker: new Int32Array(buffer, markerByte, count),
     truncated: new Uint8Array(buffer, truncatedByte, count),
     rebuild: new Uint16Array(buffer, rebuildByte, count),
     markerByte,
     truncatedByte,
     rebuildByte,
+    orderByte,
     patternByte,
     patternIndexByte,
   };
