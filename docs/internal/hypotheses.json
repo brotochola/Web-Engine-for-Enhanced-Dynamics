@@ -51,7 +51,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 3
+      "rank": 4
     },
     {
       "id": "W7",
@@ -67,7 +67,7 @@
       ],
       "aliases": [],
       "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
-      "rank": 3
+      "rank": 4
     },
     {
       "id": "E-82",
@@ -83,7 +83,7 @@
       ],
       "aliases": [],
       "next": "Packed vertex formats (≈40 B/sprite), then the pose/static split (24–28 B); judged on bunnyMarkScene Pixi.",
-      "rank": 4
+      "rank": 5
     },
     {
       "id": "W22",
@@ -99,7 +99,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 5
+      "rank": 6
     },
     {
       "id": "W26",
@@ -115,7 +115,7 @@
       ],
       "aliases": [],
       "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 6
+      "rank": 7
     },
     {
       "id": "W14",
@@ -6748,7 +6748,7 @@
       ],
       "aliases": [],
       "next": "16 bits per dirty word, so every value is a Smi; spawnStormScene logic and physics.",
-      "rank": 1
+      "rank": 2
     },
     {
       "id": "E-88",
@@ -6767,18 +6767,16 @@
     {
       "id": "E-89",
       "title": "`markSeenPolarOwners` merges a global `Infinity` with a typed-array double",
-      "status": "open",
-      "statusText": "open (from E-85)",
+      "status": "screened",
+      "statusText": "screened 2026-10-23 (not a site)",
       "date": "2026-10-23",
-      "result": "angularSweep.js: `_mergeEdges > 0 ? _rayBest[k] : Infinity` per merged ray; if the Infinity branch never runs, the double is boxed per ray per light (the E-85 pattern).",
+      "result": "The heap pass of visPolyStressScene showed no allocation in markSeenPolarOwners; the sweep's allocation was elsewhere (E-95).",
       "area": "preRender",
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#L704"
       ],
-      "aliases": [],
-      "next": "Heap pass of visPolyStressScene first; keep only if the site shows up.",
-      "rank": 7
+      "aliases": []
     },
     {
       "id": "E-90",
@@ -6794,7 +6792,7 @@
       ],
       "aliases": [],
       "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
-      "rank": 2
+      "rank": 3
     },
     {
       "id": "E-91",
@@ -6891,6 +6889,37 @@
       ],
       "aliases": [],
       "next": "Only with a threshold of tens of thousands of rows, measured on a scene that packs that many in Pixi."
+    },
+    {
+      "id": "E-95",
+      "title": "The visibility sweep makes heap numbers",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
+      "date": "2026-10-23",
+      "result": "Doubles crossing non-inlined calls, a loop variable seeded from an unchecked parameter, small helpers outside the inlining budget. Bit-identical. visPolyStressScene pre-render allocation 37.0 → 2.7 MB/s; pre-render 5.538 → 5.280 ms, −4.1 %, worse 0/4.",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L746"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "E-96",
+      "title": "Pixi's lighting draw allocates 36 MB/s",
+      "status": "open",
+      "statusText": "open (from E-95)",
+      "date": "2026-10-23",
+      "result": "visPolyStressScene Pixi: 36.5 MB/s inside Pixi's draw (G_), reached from _renderOccluderSelfLit, which also calls removeChildren/addChild every frame.",
+      "area": "pixi",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L754"
+      ],
+      "aliases": [],
+      "next": "Find what is rebuilt per frame (graphics or geometry) and keep it; Pixi pair on visPolyStressScene.",
+      "rank": 1
     }
   ],
   "leads": [

@@ -743,6 +743,19 @@ read in queue order, written to their painter slot): pre-render **42.474 → 34.
 0/4**. Next: the Predator gate (pre-render packs its sun casters), and W9c, the same order for Pixi's
 pack.
 
+### E-95 The visibility sweep makes heap numbers — **KEPT 2026-10-23**
+`visPolyStressScene` pre-render allocated 37 MB/s in `angularSweep.js`: doubles crossing calls TurboFan does
+not inline, a loop variable seeded from an unchecked parameter, and small helpers left out of the
+inlining budget of a very large function. Bit-identical rework; pre-render allocation **37.0 → 2.7 MB/s**,
+pre-render **5.538 → 5.280 ms, −4.1 %, worse 0/4**. Left: a `subarray` per light in
+`buildVisibilityPolygons` (2.2 MB/s), and Pixi's 36.5 MB/s in the vendor draw that
+`_renderOccluderSelfLit` drives in the same scene (E-96).
+
+### E-96 Pixi's lighting draw allocates 36 MB/s — **open (from E-95)**
+`visPolyStressScene` Pixi: 36.5 MB/s inside Pixi's vendor code (`G_` from `draw`), reached from
+`renderVisibilityLighting` → `_renderOccluderSelfLit`, which also calls `removeChildren` / `addChild`
+every frame. Find what is rebuilt per frame (graphics or geometry) and keep it.
+
 ### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls
 `Ray.cast`, `castAll`, `linecastBetweenEntities` with doubles, and the public methods (stats wrap,

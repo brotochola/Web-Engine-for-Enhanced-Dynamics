@@ -22,46 +22,79 @@ const MAX_FREE_GAP = Math.PI / 2;
 /** 1/cos(MAX_FREE_GAP/2) — chord of a max free sector lies on/outside radius R. */
 const FREE_OVERSIZE = 1 / Math.cos(MAX_FREE_GAP * 0.5);
 
+// The ray being sampled and the helpers' results (E-95). buildVisibilityPolygon, emitVertex and
+// emitArcVertices are too big for TurboFan to inline, and a double computed in one and passed to the
+// next (a sample direction, an arc's angles) or returned (a hit distance) became a heap number per
+// event and per occluder test: 37 MB/s in visPolyStressScene's pre-render. Values passed straight
+// through (the light) stay arguments; the rest goes through these slots.
+const SWEEP = new Float64Array(7);
+const S_DIR_X = 0; // the sample's unit direction
+const S_DIR_Y = 1;
+const S_ARC_FROM = 2; // emitArcVertices' free arc
+const S_ARC_TO = 3;
+const S_HIT = 4; // rayCircleDist / rayPolyDist / distSqToConvex
+const S_OPEN = 5; // an occluder's open and close angles, normalized in place (normalizeSweepPair)
+const S_CLOSE = 6;
+const INF = Infinity;
+
+/**
+ * normalizeAngleSigned (util/utils.js) on SWEEP[S_OPEN] and SWEEP[S_CLOSE], in place, the same
+ * arithmetic: buildVisibilityPolygon is too big for TurboFan to inline all four of its calls, and
+ * the ones left out boxed the angle going in and coming back.
+ */
+function normalizeSweepPair() {
+  const TWO_PI = Math.PI * 2;
+  for (let slot = S_OPEN; slot <= S_CLOSE; slot++) {
+    let angle = SWEEP[slot];
+    if (angle > Math.PI) {
+      angle -= TWO_PI;
+      if (angle > Math.PI) angle -= TWO_PI;
+    } else if (angle <= -Math.PI) {
+      angle += TWO_PI;
+      if (angle <= -Math.PI) angle += TWO_PI;
+    }
+    SWEEP[slot] = angle;
+  }
+}
+
 /** Circle occluder (analytical tangents + ray-circle). */
 export const OCC_CIRCLE = 0;
 /** Convex polygon occluder (world-space verts in shared pool). */
 export const OCC_POLY = 1;
 
 /**
- * Compute the two tangent angles from a point to a circle.
- * Returns -1 if the point is inside the circle (no valid tangent).
+ * Ray-circle intersection: nearest positive hit distance, or Infinity, into SWEEP[S_HIT]. The ray
+ * leaves (ox, oy) along the unit direction in SWEEP (cos/sin of its angle, no trig here); the circle
+ * is occluder oi.
  */
-function tangentHalfAngle(dist, radius) {
-  if (dist <= radius) return -1;
-  return Math.asin(radius / dist);
-}
-
-/**
- * Ray-circle intersection: nearest positive hit distance, or Infinity.
- * Pass unit dir (cos/sin of ray angle) — no trig here.
- */
-function rayCircleDist(ox, oy, dirX, dirY, cx, cy, r) {
-  const dx = cx - ox;
-  const dy = cy - oy;
+function rayCircleDist(ox, oy, oi, cxs, cys, crs) {
+  const dirX = SWEEP[S_DIR_X];
+  const dirY = SWEEP[S_DIR_Y];
+  const dx = cxs[oi] - ox;
+  const dy = cys[oi] - oy;
+  SWEEP[S_HIT] = INF;
 
   const tca = dx * dirX + dy * dirY;
-  if (tca < 0) return Infinity;
+  if (tca < 0) return;
 
   const d2 = dx * dx + dy * dy - tca * tca;
+  const r = crs[oi];
   const r2 = r * r;
-  if (d2 > r2) return Infinity;
+  if (d2 > r2) return;
 
   const thc = Math.sqrt(r2 - d2);
   const t0 = tca - thc;
-  return t0 > 0 ? t0 : tca + thc;
+  SWEEP[S_HIT] = t0 > 0 ? t0 : tca + thc;
 }
 
 /**
- * Ray vs convex polygon edges: nearest positive hit, or Infinity.
- * Pass unit dir (cos/sin of ray angle) — no trig here.
+ * Ray vs convex polygon edges: nearest positive hit, or Infinity, into SWEEP[S_HIT]. The ray's unit
+ * direction is SWEEP's (cos/sin of its angle, no trig here).
  */
-function rayPolyDist(ox, oy, dirX, dirY, vertsX, vertsY, start, count) {
-  let minT = Infinity;
+function rayPolyDist(ox, oy, vertsX, vertsY, start, count) {
+  const dirX = SWEEP[S_DIR_X];
+  const dirY = SWEEP[S_DIR_Y];
+  let minT = INF;
 
   for (let i = 0; i < count; i++) {
     const i0 = start + i;
@@ -83,7 +116,7 @@ function rayPolyDist(ox, oy, dirX, dirY, vertsX, vertsY, start, count) {
       minT = t;
     }
   }
-  return minT;
+  SWEEP[S_HIT] = minT;
 }
 
 /** Cross (a - o) × (b - o) */
@@ -109,10 +142,13 @@ function pointInConvex(px, py, vertsX, vertsY, start, count) {
   return sign !== 0;
 }
 
-/** Squared distance from a point to a convex polygon. 0 if inside. Edges, not just corners. */
+/** Squared distance from a point to a convex polygon, into SWEEP[S_HIT]. 0 if inside. Edges, not just corners. */
 function distSqToConvex(px, py, vertsX, vertsY, start, count) {
-  if (pointInConvex(px, py, vertsX, vertsY, start, count)) return 0;
-  let minSq = Infinity;
+  if (pointInConvex(px, py, vertsX, vertsY, start, count)) {
+    SWEEP[S_HIT] = 0;
+    return;
+  }
+  let minSq = INF;
   for (let i = 0; i < count; i++) {
     const i0 = start + i;
     const i1 = start + ((i + 1) % count);
@@ -131,7 +167,7 @@ function distSqToConvex(px, py, vertsX, vertsY, start, count) {
     const dSq = dx * dx + dy * dy;
     if (dSq < minSq) minSq = dSq;
   }
-  return minSq;
+  SWEEP[S_HIT] = minSq;
 }
 
 /** Squared distance from a point to a segment. */
@@ -287,11 +323,16 @@ export function buildVisibilityPolygon(
       if (dist - r > maxRadius) continue;
 
       const centerAngle = Math.atan2(dy, dx);
-      const halfAngle = tangentHalfAngle(dist, r);
+      // The half angle of the tangents from the light; -1 inside the circle. Inline: a call left out
+      // of the inlining budget boxed both ways.
+      const halfAngle = dist <= r ? -1 : Math.asin(r / dist);
       if (halfAngle < 0) continue;
 
-      const openAngle = normalizeAngleSigned(centerAngle - halfAngle);
-      const closeAngle = normalizeAngleSigned(centerAngle + halfAngle);
+      SWEEP[S_OPEN] = centerAngle - halfAngle;
+      SWEEP[S_CLOSE] = centerAngle + halfAngle;
+      normalizeSweepPair();
+      const openAngle = SWEEP[S_OPEN];
+      const closeAngle = SWEEP[S_CLOSE];
       if (i < MAX_OCC_CACHE) {
         _occOpen[i] = openAngle;
         _occClose[i] = closeAngle;
@@ -330,7 +371,8 @@ export function buildVisibilityPolygon(
 
       // Skip only if the whole polygon is outside the light. Corners of a long
       // slab can all sit past the radius while an edge passes next to the light.
-      if (distSqToConvex(lightX, lightY, vertsX, vertsY, vs, vc) > maxRadiusSq) continue;
+      distSqToConvex(lightX, lightY, vertsX, vertsY, vs, vc);
+      if (SWEEP[S_HIT] > maxRadiusSq) continue;
 
       if (!polyTangentIndices(lightX, lightY, vertsX, vertsY, vs, vc, _tangentOut)) {
         continue; // light inside poly
@@ -342,8 +384,11 @@ export function buildVisibilityPolygon(
       const oY = vertsY[vs + iLeft] - lightY;
       const kX = vertsX[vs + iRight] - lightX;
       const kY = vertsY[vs + iRight] - lightY;
-      const openN = normalizeAngleSigned(Math.atan2(oY, oX));
-      const closeN = normalizeAngleSigned(Math.atan2(kY, kX));
+      SWEEP[S_OPEN] = Math.atan2(oY, oX);
+      SWEEP[S_CLOSE] = Math.atan2(kY, kX);
+      normalizeSweepPair();
+      const openN = SWEEP[S_OPEN];
+      const closeN = SWEEP[S_CLOSE];
       if (i < MAX_OCC_CACHE) {
         _occOpen[i] = openN;
         _occClose[i] = closeN;
@@ -404,7 +449,9 @@ export function buildVisibilityPolygon(
   const startDirC = -1;
   const startDirS = 0;
 
-  vertCountOut = emitVertex(lightX, lightY, startDirC, startDirS, maxRadius,
+  SWEEP[S_DIR_X] = startDirC;
+  SWEEP[S_DIR_Y] = startDirS;
+  vertCountOut = emitVertex(lightX, lightY, maxRadius,
     kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
     outX, outY, vertCountOut, maxVertices);
 
@@ -417,7 +464,9 @@ export function buildVisibilityPolygon(
     const isOpen = _eventType[idx];
 
     const preAngle = angle - EPSILON;
-    vertCountOut = emitArcVertices(lightX, lightY, lastAngle, preAngle, maxRadius,
+    SWEEP[S_ARC_FROM] = lastAngle;
+    SWEEP[S_ARC_TO] = preAngle;
+    vertCountOut = emitArcVertices(lightX, lightY, maxRadius,
       kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
       outX, outY, vertCountOut, maxVertices);
 
@@ -433,7 +482,9 @@ export function buildVisibilityPolygon(
 
     // Pre-toggle sample slightly before event (active-set state before open/close)
     if (vertCountOut < maxVertices) {
-      vertCountOut = emitVertex(lightX, lightY, preC, preS, maxRadius,
+      SWEEP[S_DIR_X] = preC;
+      SWEEP[S_DIR_Y] = preS;
+      vertCountOut = emitVertex(lightX, lightY, maxRadius,
         kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
         outX, outY, vertCountOut, maxVertices);
     }
@@ -459,7 +510,9 @@ export function buildVisibilityPolygon(
     const postS = sa + EPSILON * ca;
     // Post-toggle sample slightly after event
     if (vertCountOut < maxVertices) {
-      vertCountOut = emitVertex(lightX, lightY, postC, postS, maxRadius,
+      SWEEP[S_DIR_X] = postC;
+      SWEEP[S_DIR_Y] = postS;
+      vertCountOut = emitVertex(lightX, lightY, maxRadius,
         kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
         outX, outY, vertCountOut, maxVertices);
     }
@@ -467,12 +520,16 @@ export function buildVisibilityPolygon(
     lastAngle = postAngle;
   }
 
-  vertCountOut = emitArcVertices(lightX, lightY, lastAngle, endAngle, maxRadius,
+  SWEEP[S_ARC_FROM] = lastAngle;
+  SWEEP[S_ARC_TO] = endAngle;
+  vertCountOut = emitArcVertices(lightX, lightY, maxRadius,
     kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
     outX, outY, vertCountOut, maxVertices);
 
   if (vertCountOut < maxVertices) {
-    vertCountOut = emitVertex(lightX, lightY, END_DIR_C, END_DIR_S, maxRadius,
+    SWEEP[S_DIR_X] = END_DIR_C;
+    SWEEP[S_DIR_Y] = END_DIR_S;
+    vertCountOut = emitVertex(lightX, lightY, maxRadius,
       kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
       outX, outY, vertCountOut, maxVertices);
   }
@@ -480,25 +537,29 @@ export function buildVisibilityPolygon(
   return vertCountOut;
 }
 
-/** @param {number} dirX unit cos @param {number} dirY unit sin — no trig here */
+/** One sample along SWEEP's unit direction (cos, sin; no trig here). */
 function emitVertex(
-  lightX, lightY, dirX, dirY, maxRadius,
+  lightX, lightY, maxRadius,
   kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
   outX, outY, vertCountOut, maxVertices
 ) {
   if (vertCountOut >= maxVertices) return vertCountOut;
+  const dirX = SWEEP[S_DIR_X];
+  const dirY = SWEEP[S_DIR_Y];
 
-  let minDist = maxRadius;
+  // `+` types the seed as a number: from the bare parameter the loop's merge was any value, and each
+  // closer hit was boxed into it.
+  let minDist = +maxRadius;
   let hitOcc = -1;
 
   for (let a = 0; a < _activeCount; a++) {
     const oi = _activeOcc[a];
-    let d;
     if (kind[oi] === OCC_CIRCLE) {
-      d = rayCircleDist(lightX, lightY, dirX, dirY, cx[oi], cy[oi], cr[oi]);
+      rayCircleDist(lightX, lightY, oi, cx, cy, cr);
     } else {
-      d = rayPolyDist(lightX, lightY, dirX, dirY, vertsX, vertsY, vertStart[oi], vertCount[oi] | 0);
+      rayPolyDist(lightX, lightY, vertsX, vertsY, vertStart[oi], vertCount[oi] | 0);
     }
+    const d = SWEEP[S_HIT];
     if (d < minDist) {
       minDist = d;
       hitOcc = oi;
@@ -530,11 +591,12 @@ function emitVertex(
  * ~240° free arcs — that leaves two >90° sectors whose chords cut inside R).
  */
 function emitArcVertices(
-  lightX, lightY, fromAngle, toAngle, maxRadius,
+  lightX, lightY, maxRadius,
   kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
   outX, outY, vertCountOut, maxVertices
 ) {
-  const gap = toAngle - fromAngle;
+  const fromAngle = SWEEP[S_ARC_FROM];
+  const gap = SWEEP[S_ARC_TO] - fromAngle;
   if (gap <= MAX_FREE_GAP || gap <= 0) return vertCountOut;
 
   // ceil so each step ≤ MAX_FREE_GAP (e.g. 242° → 3 steps → 2 midpoints)
@@ -553,7 +615,9 @@ function emitArcVertices(
     const ns = s * ch + c * sh;
     c = nc;
     s = ns;
-    vertCountOut = emitVertex(lightX, lightY, c, s, maxRadius,
+    SWEEP[S_DIR_X] = c;
+    SWEEP[S_DIR_Y] = s;
+    vertCountOut = emitVertex(lightX, lightY, maxRadius,
       kind, cx, cy, cr, vertStart, vertCount, vertsX, vertsY,
       outX, outY, vertCountOut, maxVertices);
   }

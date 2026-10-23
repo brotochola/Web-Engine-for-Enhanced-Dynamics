@@ -66,7 +66,10 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   and pass integers; results come back the same way (E-85: the ray path made 279 MB/s of heap
   numbers). The global `Infinity` in a branch that never ran is a load without feedback, and
   TurboFan then boxed the double the other branch stored in the same variable: use a module
-  `const INF = Infinity`. `tests/bench/heapSampleNode.mjs` shows both in Node.
+  `const INF = Infinity`. A loop variable seeded from a parameter that was never used as a number
+  (`let min = maxRadius`) is typed any value, and each double assigned to it is boxed: seed it
+  with `+maxRadius` (E-95). `tests/bench/heapSampleNode.mjs` shows these in Node; run the kernel
+  long enough that warm-up (which boxes everything) does not dominate.
 - **Per-entity doubles in typed arrays, not object fields.** In Chrome, x and y stored into a
   scratch object allocated a heap number each (shared map transitions make such fields tagged),
   and a double returned from a callee that a big caller did not inline was boxed: pre-render made
