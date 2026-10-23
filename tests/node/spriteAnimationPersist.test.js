@@ -146,3 +146,60 @@ for (const adobe of [null, [N + 7]]) test(`a persist frame of sprites only publi
     Layer.reset();
   }
 });
+
+// E-102b. Rows only clear the tile columns once a repeating sprite has written this queue's: a row
+// that held one must be back to zero when a plain sprite takes it.
+test('a row a repeating sprite left is cleared when a plain sprite takes it', async () => {
+  Layer.reset();
+  Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
+  try {
+    const w = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+    const componentData = coreComponentData(N);
+    await initWorker(w, {
+      config: { worldWidth: 1000, worldHeight: 1000, preRender: { interpolation: false } },
+      globalEntityCount: N,
+      buffers: { componentData },
+      extra: { renderQueue: renderQueuePayload(8) },
+    });
+    for (const C of [Transform, SpriteRenderer]) C.initializeArrays(componentData[C.name], N);
+    bindPoseColumns(N);
+    w.proxyToGlobalAnim = [null, [0]];
+    w.animationFrameStart = [0];
+    w.animationFrameCount = [1];
+    w.frameWidth = new Uint16Array(1).fill(16);
+    w.frameHeight = new Uint16Array(1).fill(16);
+    Transform.active[0] = 1;
+    Transform.rotC[0] = 1;
+    SpriteRenderer.active[0] = 1;
+    SpriteRenderer.spritesheetId[0] = 1;
+    SpriteRenderer.scaleX[0] = 1;
+    SpriteRenderer.scaleY[0] = 1;
+    SpriteRenderer.alpha[0] = 1;
+    SpriteRenderer.repeatX[0] = 32;
+    SpriteRenderer.repeatY[0] = 16;
+    const frame = () => {
+      SpriteRenderer.renderDirty[0] = 1; // a full emit every frame
+      w._renderableCount = 0;
+      w._frameAdobeEntities = null;
+      w._bindCollectPoses();
+      w.collectRenderable(0, 0);
+      w.buildRenderQueue(1000 / 60);
+    };
+    for (let f = 0; f < 2; f++) {
+      frame();
+      assert.ok(w.renderQueueTileMulX[0] > 0, `frame ${f}: the repeating sprite's row tiles`);
+      w._queueBuf ^= 1;
+    }
+    SpriteRenderer.repeatX[0] = 0;
+    SpriteRenderer.repeatY[0] = 0;
+    for (let f = 2; f < 4; f++) {
+      frame();
+      assert.equal(w.renderQueueTileMulX[0], 0, `frame ${f}: the plain sprite's row stretches`);
+      assert.equal(w.renderQueueTileMulY[0], 0);
+      assert.equal(w.renderQueueRepeatX[0], 0);
+      w._queueBuf ^= 1;
+    }
+  } finally {
+    Layer.reset();
+  }
+});

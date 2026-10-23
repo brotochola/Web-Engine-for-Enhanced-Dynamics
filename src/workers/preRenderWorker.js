@@ -378,6 +378,10 @@ class PreRenderWorker extends AbstractWorker {
         this._staticGen = 1;
         // Sprites whose animation moved to a new frame on the last persist frame (a new texture).
         this._persistFramesMoved = 0;
+        // E-102b. The tileMode columns a repeating sprite has written (one per queue buffer, and per
+        // custom layer's). A column set starts at zero and only that branch writes anything else, so
+        // until it has, the other rows need not write zeros there (repeat, tile mode, offsets, muls).
+        this._tiledTileColumns = new Set();
         this.renderQueueType = EMPTY_U8;
         /** The instanced-row pack kernel (E-76 W9), bound when the queues live in the render-queue memory. */
         this._gpuPackWasm = null;
@@ -479,6 +483,8 @@ class PreRenderWorker extends AbstractWorker {
             repeatX: null, repeatY: null,
             tileMode: null, tileOffsetU: null, tileOffsetV: null,
             tileMulX: null, tileMulY: null,
+            // E-102b: whether this queue's tile columns may hold a repeating sprite's values.
+            tilesDirty: false,
             // Set by emitSpriteQueue each frame; declared so the first frame does not reshape it (N-32).
             sortKey: null, shadowH: null, shadowOffX: null, shadowOffY: null,
             scActive: null, scH: null, scOx: null, scOy: null,
@@ -2534,9 +2540,11 @@ class PreRenderWorker extends AbstractWorker {
             ref.anchorX[writeIndex] = pieceAnchorX[p];
             ref.anchorY[writeIndex] = pieceAnchorY[p];
             this._setQueueType(ref, writeIndex, 6, entityIndex);
-            if (ref.repeatX) ref.repeatX[writeIndex] = 0;
-            if (ref.repeatY) ref.repeatY[writeIndex] = 0;
-            clearTileFields(ref, writeIndex);
+            if (ref.tilesDirty) {
+                if (ref.repeatX) ref.repeatX[writeIndex] = 0;
+                if (ref.repeatY) ref.repeatY[writeIndex] = 0;
+                clearTileFields(ref, writeIndex);
+            }
             if (ref.sortKey) ref.sortKey[writeIndex] = sortKey;
             if (ref.shadowH) {
                 ref.shadowH[writeIndex] = 0;
@@ -2759,6 +2767,9 @@ class PreRenderWorker extends AbstractWorker {
         ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
         ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;
         ref.tileMulX = rqTileMulX; ref.tileMulY = rqTileMulY;
+        const tilesDirty = rqTileMode !== null && this._tiledTileColumns.has(rqTileMode);
+        ref.tilesDirty = tilesDirty;
+        let tiledRows = false;
         const rqShadowH = this.renderQueueShadowH;
         const rqShadowOffX = this.renderQueueShadowOffX;
         const rqShadowOffY = this.renderQueueShadowOffY;
@@ -2822,9 +2833,11 @@ class PreRenderWorker extends AbstractWorker {
             const out = writeCount++;
             if (writeSortKey) rqSortKey[out] = sk;
             if (type !== 0) {
-                if (rqRepeatX) rqRepeatX[out] = 0;
-                if (rqRepeatY) rqRepeatY[out] = 0;
-                clearTileFields(ref, out);
+                if (tilesDirty) {
+                    if (rqRepeatX) rqRepeatX[out] = 0;
+                    if (rqRepeatY) rqRepeatY[out] = 0;
+                    clearTileFields(ref, out);
+                }
                 clearQueueShadow(ref, out);
             }
 
@@ -2867,6 +2880,7 @@ class PreRenderWorker extends AbstractWorker {
                 const rx0 = srRepeatX[idx];
                 const ry0 = srRepeatY[idx];
                 if (rx0 !== 0 || ry0 !== 0) {
+                    tiledRows = true;
                     if (rqRepeatX) rqRepeatX[out] = rx0;
                     if (rqRepeatY) rqRepeatY[out] = ry0;
                     writeEntityTileFields(
@@ -2874,7 +2888,7 @@ class PreRenderWorker extends AbstractWorker {
                         srTileMode, srTileOffsetU, srTileOffsetV,
                         srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
                     );
-                } else {
+                } else if (tilesDirty) {
                     if (rqRepeatX) rqRepeatX[out] = 0;
                     if (rqRepeatY) rqRepeatY[out] = 0;
                     if (rqTileMulX) rqTileMulX[out] = 0;
@@ -3156,6 +3170,8 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
+        // E-102b: from now on this queue's other rows must clear what a repeating sprite left.
+        if (tiledRows && rqTileMode !== null) this._tiledTileColumns.add(rqTileMode);
         if (source.persist && !persistHit) {
             this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
         }

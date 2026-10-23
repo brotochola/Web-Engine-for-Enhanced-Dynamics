@@ -7077,6 +7077,35 @@
       ],
       "aliases": [],
       "next": "Retry when the workers' phasing changes (diff kept outside the tree)."
+    },
+    {
+      "id": "E-102",
+      "title": "The Adobe piece loop with its queue columns hoisted",
+      "status": "rejected",
+      "statusText": "rejected 2026-10-23 (regression)",
+      "date": "2026-10-23",
+      "result": "23 columns in locals and two helpers inline in _emitAdobePieces: adobeAnimateScene pre-render +3.6 %, worse 4/4. More live values than the loop could hold.",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L15"
+      ],
+      "aliases": []
+    },
+    {
+      "id": "E-102b",
+      "title": "Tile columns cleared only once something tiled",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
+      "date": "2026-10-23",
+      "result": "The emit skips zero writes into repeat and tile columns no repeating sprite has written. adobeAnimateScene (min zoom) pre-render 26.066 → 23.613 ms, −10.2 %, worse 0/4.",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L13"
+      ],
+      "aliases": [],
+      "next": "Predator gate with the next batch."
     }
   ],
   "leads": [
