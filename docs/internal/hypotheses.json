@@ -7106,6 +7106,20 @@
       ],
       "aliases": [],
       "next": "Predator gate with the next batch."
+    },
+    {
+      "id": "E-103",
+      "title": "The painter sorts runs of equal keys as one",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
+      "date": "2026-10-23",
+      "result": "radixPainterOrder sorts runs of consecutive equal-key slots (Adobe pieces) by their first slot and expands them; identical order. Kernel pieces +287 %; adobeAnimateScene (min zoom) pre-render 23.452 → 21.157 ms, −9.8 %, worse 0/4.",
+      "area": "preRender",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L13"
+      ],
+      "aliases": []
     }
   ],
   "leads": [
