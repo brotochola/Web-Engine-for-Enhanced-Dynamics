@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { GameEngine } from '../../src/core/gameEngine.js';
 import { Scene } from '../../src/core/scene.js';
-import { SHARED_ARRAY_BUFFER_MISSING } from '../../src/util/crossOriginIsolation.js';
+import { ISOLATION_REASONS, SHARED_ARRAY_BUFFER_MISSING } from '../../src/util/crossOriginIsolation.js';
 
 // DX-SW, SW-1. On a page that is not cross-origin isolated the browser does not define
 // SharedArrayBuffer. new GameEngine() made one for its presenting flag and threw a ReferenceError,
@@ -47,19 +47,54 @@ async function withoutIsolation(fn) {
   }
 }
 
+const CONFIG = { injectStyles: false, autoResize: false, canvasWidth: 640, canvasHeight: 360 };
+
+/** Scene.init on a fresh scene of `game`: the message it rejects with, and the overlays it showed. */
+async function initMessage(game) {
+  const scene = new Scene(game);
+  const shown = [];
+  scene._showFatalErrorMessage = (where, title, message) => shown.push({ where, title, message });
+  let message = null;
+  await scene.init().catch((err) => {
+    message = err.message;
+  });
+  return { message, shown };
+}
+
 test('the engine is constructed without SharedArrayBuffer, and the scene says why it cannot start', async () => {
   await withoutIsolation(async () => {
     assert.equal(typeof SharedArrayBuffer, 'undefined');
-    const game = new GameEngine({ injectStyles: false, autoResize: false, canvasWidth: 640, canvasHeight: 360 });
+    // The isolation service worker off (DX-SW): today's message about the headers.
+    const game = new GameEngine({ ...CONFIG, isolationServiceWorker: false });
     assert.equal(Atomics.load(game._presentingFlag, 0), 1, 'the presenting flag still works');
-
-    const scene = new Scene(game);
-    const shown = [];
-    scene._showFatalErrorMessage = (where, title, message) => shown.push({ where, title, message });
-    await assert.rejects(scene.init(), (err) => err.message === SHARED_ARRAY_BUFFER_MISSING);
+    assert.equal(await game._isolation, 'failed');
+    const { message, shown } = await initMessage(game);
+    assert.equal(message, SHARED_ARRAY_BUFFER_MISSING);
     assert.deepEqual(shown, [{ where: 'page', title: 'SharedArrayBuffer unavailable', message: SHARED_ARRAY_BUFFER_MISSING }]);
   });
   assert.equal(typeof SharedArrayBuffer, 'function', 'restored');
+});
+
+test('by default the gate runs first, and its reason leads the message (here: no service workers)', async () => {
+  await withoutIsolation(async () => {
+    const game = new GameEngine(CONFIG);
+    assert.equal(await game._isolation, 'failed');
+    const { message } = await initMessage(game);
+    assert.equal(message, `${ISOLATION_REASONS.noServiceWorker} ${SHARED_ARRAY_BUFFER_MISSING}`);
+  });
+});
+
+test('loadScene never settles while the page reloads into an isolated one', async () => {
+  await withoutIsolation(async () => {
+    const game = new GameEngine({ ...CONFIG, isolationServiceWorker: false });
+    game._isolation = Promise.resolve('reloading');
+    const outcome = await Promise.race([
+      game.loadScene(Scene).then(() => 'settled', () => 'rejected'),
+      new Promise((r) => setTimeout(() => r('pending'), 50)),
+    ]);
+    assert.equal(outcome, 'pending');
+    assert.equal(game.currentScene, null, 'no scene was created');
+  });
 });
 
 test('on an isolated page the presenting flag is shared', async () => {
