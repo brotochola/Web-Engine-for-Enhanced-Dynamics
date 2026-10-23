@@ -607,3 +607,8 @@ defaults):
   rule is withdrawn for gather loops. Outcome: **W5 open and first** (about 18 % of Predator spatial at
   the publish's 1.4×); **W22 open**; **W23 open, borderline**; **W10 screened (ceiling)**, 2.0 % of
   Predator Pixi with no painter stress scene on record.
+- **2026-10-22, N-63 (found preparing W5).** The C gather has to reproduce the JS dedup marker. The JS
+  marker turned out to fail from stamp frame 4096: an int32 stamp read back from a `Uint32Array` never
+  matched it, so candidates in several cells were published once per cell, for half of every
+  8 191-frame cycle. Fixed in JS (`processedMarker` is an `Int32Array`), with a test; REVIEW_PLAN N-63.
+  The C compares the 32 bits as they are.
