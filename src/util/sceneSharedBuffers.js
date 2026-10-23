@@ -263,9 +263,10 @@ function initializeParticleBuffers(scene) {
   if (maxParticles <= 0) return;
 
   const particleBufferSize = ParticleComponent.getBufferSize(maxParticles);
-  // E-79: with the WASM integrate the component lives at byte 0 of a shared WebAssembly.Memory
-  // (every worker's views are the same); wasm.particleIntegrate false keeps a plain SAB.
-  scene.particleMemory = config.wasm?.particleIntegrate === false ? null : createParticleMemory(maxParticles, particleBufferSize);
+  // E-79, E-80: for the WASM integrate and list build the component lives at byte 0 of a shared
+  // WebAssembly.Memory (every worker's views are the same); with both switched off, a plain SAB.
+  const wasmParticles = config.wasm?.particleIntegrate !== false || config.wasm?.particleLists !== false;
+  scene.particleMemory = wasmParticles ? createParticleMemory(maxParticles, particleBufferSize) : null;
   buffers.componentData.ParticleComponent = scene.particleMemory
     ? scene.particleMemory.buffer
     : new SharedArrayBuffer(particleBufferSize);
@@ -283,7 +284,18 @@ function initializeParticleBuffers(scene) {
   ParticleEmitter.initialize(maxParticles);
   ParticleEmitter.initializeFreeList(buffers.particleFreeList, buffers.particleFreeListTop);
 
-  createCompactUint16ListPair(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles);
+  // The published lists. In the particle memory they are two of its regions (the list kernel writes
+  // them there); readers view them at these byte offsets.
+  if (scene.particleMemory) {
+    buffers.activeParticlesData = scene.particleMemory.buffer;
+    buffers.visibleParticlesData = scene.particleMemory.buffer;
+    buffers.activeParticlesByte = scene.particleMemory.layout.activeListByte;
+    buffers.visibleParticlesByte = scene.particleMemory.layout.visibleListByte;
+  } else {
+    createCompactUint16ListPair(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles);
+    buffers.activeParticlesByte = 0;
+    buffers.visibleParticlesByte = 0;
+  }
 }
 
 function initializeLiquidFunRenderBuffer(scene) {

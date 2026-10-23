@@ -1,10 +1,10 @@
-// The particle memory (E-79): ParticleComponent's buffer as a shared WebAssembly.Memory, with the
-// particle worker's lists and the WASM integrate's scratch after the component. Every worker views
+// The particle memory (E-79, E-80): ParticleComponent's buffer as a shared WebAssembly.Memory, with the
+// published particle lists and the WASM kernels' scratch after the component. Every worker views
 // the component exactly as it views a plain SharedArrayBuffer (its columns start at byte 0). The
 // regions and their offsets come from the memory map (wasmMemoryMap.js).
 
 import { PARTICLE_DEFAULTS } from './configDefaults.js';
-import { particleIntegrateRegions } from './wasmMemoryMap.js';
+import { particleMemoryRegions } from './wasmMemoryMap.js';
 
 // The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
 const WASM_MAX_PAGES = 8192;
@@ -20,7 +20,7 @@ export const PARTICLE_LUT_ENTRIES = (PARTICLE_DEFAULTS.expoLutSize | 0) + 1;
 export function createParticleMemory(maxParticles, componentBytes) {
   const n = maxParticles | 0;
   if (n <= 0 || n > 65535) return null;
-  const map = particleIntegrateRegions(n, componentBytes | 0, 3 * PARTICLE_LUT_ENTRIES);
+  const map = particleMemoryRegions(n, componentBytes | 0, 3 * PARTICLE_LUT_ENTRIES);
   if (map.pages > WASM_MAX_PAGES) return null;
   const r = map.regions;
   try {
@@ -30,7 +30,10 @@ export function createParticleMemory(maxParticles, componentBytes) {
       buffer: memory.buffer,
       // Plain numbers, so the layout posts to workers as it is.
       layout: {
-        indicesByte: r.indices.byte,
+        activeListByte: r.activeList.byte,
+        visibleListByte: r.visibleList.byte,
+        // The integrate's input: the published active list after its count.
+        indicesByte: r.activeList.byte + 2,
         stampByte: r.stamp.byte,
         flatByte: r.flat.byte,
         heightedByte: r.heighted.byte,

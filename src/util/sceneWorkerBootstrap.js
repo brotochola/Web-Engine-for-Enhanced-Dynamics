@@ -264,6 +264,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     particleFreeListTop: scene.buffers.particleFreeListTop || null,
     activeParticlesData: scene.buffers.activeParticlesData || null,
     visibleParticlesData: scene.buffers.visibleParticlesData || null,
+    activeParticlesByte: scene.buffers.activeParticlesByte | 0,
+    visibleParticlesByte: scene.buffers.visibleParticlesByte | 0,
     maxDecorations: scene.config.decoration.maxDecorations,
     maxAttachedDecorationsPerEntity: scene.config.decoration.maxAttachedDecorationsPerEntity,
     decorationFreeList: scene.buffers.decorationFreeList || null,

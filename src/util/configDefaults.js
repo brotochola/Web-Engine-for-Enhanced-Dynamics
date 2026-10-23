@@ -426,6 +426,8 @@ export const WASM_DEFAULTS = Object.freeze({
   spatialGather: true,
   /** Particle integrate (`particleIntegrate.wasm`, E-79): ParticleComponent in a WebAssembly.Memory. */
   particleIntegrate: true,
+  /** Particle list build (`particleLists.wasm`, E-80): the active and visible lists in that memory. */
+  particleLists: true,
 });
 
 // ============================================================================

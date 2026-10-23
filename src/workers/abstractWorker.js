@@ -732,14 +732,16 @@ export class AbstractWorker {
 
     // Initialize particle compact lists (for optimized iteration)
     if (data.maxParticles && data.maxParticles > 0) {
-      // activeParticlesData: rebuilt each frame by particle_worker
+      // activeParticlesData: rebuilt each frame by particle_worker. In the particle memory (E-80)
+      // both lists sit at a byte offset; a plain SAB starts at 0.
+      const listLength = (data.maxParticles | 0) + 1;
       if (data.activeParticlesData) {
-        this.activeParticlesData = new Uint16Array(data.activeParticlesData);
+        this.activeParticlesData = new Uint16Array(data.activeParticlesData, data.activeParticlesByte | 0, listLength);
         this.reportLog(`initialized activeParticlesData`);
       }
       // visibleParticlesData: subset of active particles that are on-screen
       if (data.visibleParticlesData) {
-        this.visibleParticlesData = new Uint16Array(data.visibleParticlesData);
+        this.visibleParticlesData = new Uint16Array(data.visibleParticlesData, data.visibleParticlesByte | 0, listLength);
         this.reportLog(`initialized visibleParticlesData`);
       }
     }

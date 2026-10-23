@@ -614,7 +614,7 @@ rounds: the stress mix **+61.0 % (25/25)**; with rotation, spin and tint tweens 
 `particleIntegrateStressScene?tween=1` particle **4.249 → 2.935 ms (−31.3 %, 0/6 worse), KEPT (product)**;
 Predator gate NEUTRAL (no worker 3 % worse). Report: [`reports/E-79-particle-integrate-wasm.md`](./reports/E-79-particle-integrate-wasm.md).
 
-### E-80 The particle list build in WASM (E-76 W13) — **KERNEL WIN 2026-10-23; product wiring next**
+### E-80 The particle list build in WASM (E-76 W13) — **KEPT 2026-10-23**
 `wasm/particleLists.c` is `buildActiveAndVisibleListBuffers` and `…Turned` for the whole pool: 16
 slots of the active column at a time (an empty block skipped, a full one straight through), the
 screen test in the same doubles as JS, the visible index written before the test decides. The f64x2
@@ -622,8 +622,10 @@ variant tests a full block two particles per operation and stores its flags and 
 vectors. Bit-identical to JS (both lists, every `isItOnScreen` byte). `particleListsWasmMicrobench`
 (the `?tween=1` stress population aged 300 frames, 65 174 live), Node 22, AC, 5 alternating rounds:
 stress camera **+328.6 %**, zoomed **+764.3 %**, turned **+60.4 %**, Predator-size sparse pool
-**+1 070 %**, 25/25 each. Wiring: both published lists into the particle memory (pre-render and Pixi
-view them at an offset), the integrate reading the published active list.
+**+1 070 %**, 25/25 each. Wired (`particleLists.wasm`, `buildParticleListsWasm`, `wasm.particleLists`): both
+published lists in the particle memory, viewed at an offset, the integrate reading the active one.
+`particleIntegrateStressScene?tween=1&spin=1` particle **4.885 → 4.150 ms (−15.1 %, 0/6 worse), KEPT
+(product)**; Predator gate NEUTRAL. Report: [`reports/E-80-particle-lists-wasm.md`](./reports/E-80-particle-lists-wasm.md).
 
 ---
 

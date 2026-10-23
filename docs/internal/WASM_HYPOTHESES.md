@@ -160,7 +160,7 @@ the per-candidate facts behind each row are in the [inventory](#phase-0-inventor
 | **W10** | Pixi | `radixSortIndicesBySortKey`, `radixPainterOrder`, `reinsertChangedSlots` in [`sortIndexByKey.js`](../../src/util/sortIndexByKey.js) | WASM radix beats JS | small: gather + bucket scatter | Q1: 11.8 % inclusive of Predator Pixi (2.0 % ceiling there); no painter stress scene share on record | Q3; `painterRadixMicrobench` | **reopened** (decision 6): ~3.4 % of Pixi at 1.4× |
 | **W11** | Pixi | `rewriteExplicitMeshCorners`, `uploadPoseTable` ([`colliderFillBatch.js`](../../src/render/colliderFillBatch.js)) | WASM mesh writes beat JS | a strided copy with an index gather | `writeExplicitTriCorners`, first named here, was folded into `rewriteExplicitMeshCorners` in `d72c638c` (meshApi renderer 3.779 → 2.896 ms); the 25.3 % share predates that | a meshApi trace at a load over 3 ms; park if the rewrite and pose table are under ~18 % of Pixi | open |
 | **W12** | particle | `updateParticlePhysicsBuffers` in [`particleIntegrate.js`](../../src/util/particleIntegrate.js) | WASM integrate beats JS | no boxing; every column is on one SAB (an own Memory, no arena) | Q1: 75.3 % inclusive of the particle worker in `particleIntegrateStressScene?tween=1` (65 k live), 0.7 % in Predator (~100 live). `returnToPool` per dead particle would become a dead list; E-59 tuned the ease front. Q2: fdlibm `sin`/`cos` equal Chrome's after float32 rounding (0 of 102 M) | `particleIntegrateMicrobench`; `particleIntegrateStressScene?tween=1` particle (not `bulletStressScene`, which has `maxParticles: 0`) | **kept (product)** E-79: stress particle −31.3 % |
-| **W13** | particle | `buildActiveAndVisibleListBuffers` (and `…Turned`) | WASM compaction and cull beats JS | `i8x16` over the contiguous `active` column skips empty slots; no compress instruction for the dense case | Q1: 22.6 % of the particle worker in the stress scene, 3.3 % in Predator. Every call sweeps all `maxParticles` slots (`expectedActive = maxParticles`) | with W12, one call per frame | **kernel win** +329 % stress, +764 % zoomed (E-80); wiring next |
+| **W13** | particle | `buildActiveAndVisibleListBuffers` (and `…Turned`) | WASM compaction and cull beats JS | `i8x16` over the contiguous `active` column skips empty slots; no compress instruction for the dense case | Q1: 22.6 % of the particle worker in the stress scene, 3.3 % in Predator. Every call sweeps all `maxParticles` slots (`expectedActive = maxParticles`) | with W12, one call per frame | **kept (product)** E-80: stress particle −15.1 % |
 | **W14** | particle | `computeFlowfield` / `computePath` in [`particleWorker.js`](../../src/workers/particleWorker.js) (not `navGrid.js`, which holds the layout) | WASM search beats JS | integer grids | Q1: nav 5.9 % inclusive of Predator particle; in NavStress the search is deadline-bound, so `STEP_MS` cannot fall | desk | **screened (ceiling)** 1.0 % |
 | **W15** | physics | `publishPose` in [`weedjsPost.js`](../../src/box2d/weedjsPost.js) | The pose copy in C beats JS | small | Q1: ~8 % of the physics JS thread. PH1: kernel +147 %, Predator physics −0.8 %. A C copy cannot write the pose SABs from Box2D's memory | desk | **screened (ceiling)** 1.8 % |
 | **W16** | physics | LiquidFun particle sync and extract | — | — | already C (LIQUIDFUN H8, H14); JS does bulk `.set` copies | — | **screened (already C)** |
@@ -716,3 +716,18 @@ defaults):
   sees part of the pool costs it 2× (1.17 ms at 65 k); the turned loop is branchless already. Kernel →
   scene gate: 22.6 % of the stress scene's particle worker before W12 (Q1), about a third after it;
   0.574 → 0.134 ms a call here. Next: wiring, f64x2 only.
+- **2026-10-23, W13 wired and kept (E-80).** The f64x2 build is `particleLists.wasm`; both published
+  lists are regions of the particle memory (`particleMemoryRegions`), and pre-render and Pixi view
+  them at a byte offset (`activeParticlesByte`, `visibleParticlesByte`). The integrate reads the
+  published active list, so the worker's own copy is gone. `buildParticleListsWasm` behind
+  `wasm.particleLists` (default on); the memory exists when either particle switch is on.
+  `tests/node/particleListsWasm.test.js`: real workers in three threads (JS; WASM lists and integrate;
+  WASM lists, JS integrate), six cameras, 30 frames, identical; a 1.001 error in the turned terms fails
+  it at the first turned frame. Bundles: four modules embedded and loading in all 8. The stress
+  scene's particle worker was under the 3 ms floor after W12, so it gained `?spin=1` (`60d867d2`).
+  **Stress pair (`?tween=1&spin=1`, 6 pairs): particle 4.885 → 4.150 ms, −15.1 %, worse 0/6,
+  KEPT (product)**; pre-render −2.6 % (0/6). **Predator gate: NEUTRAL** (particle under the floor at
+  about 70 particles; pre-render +6.1 % at 4/6 and physics +3.3 % at 3/6, both short of the 75 % of
+  pairs, physics unreachable and pre-render reaching only the ~70-entry visible list). The memory
+  report now counts a buffer held under several keys once (`957c34c5`). Report:
+  [`reports/E-80-particle-lists-wasm.md`](./reports/E-80-particle-lists-wasm.md).

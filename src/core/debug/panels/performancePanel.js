@@ -409,8 +409,10 @@ export class PerformancePanel {
   _bindPoolLists() {
     const buffers = this.debugUI.scene?.buffers;
     const view = (sab) => (sab ? new Uint16Array(sab) : null);
-    this._activeParticles = view(buffers?.activeParticlesData);
-    this._visibleParticles = view(buffers?.visibleParticlesData);
+    // The particle lists may sit in the particle memory at a byte offset (E-80).
+    const listView = (sab, byte) => (sab ? new Uint16Array(sab, byte | 0, 1) : null);
+    this._activeParticles = listView(buffers?.activeParticlesData, buffers?.activeParticlesByte);
+    this._visibleParticles = listView(buffers?.visibleParticlesData, buffers?.visibleParticlesByte);
     this._activeBullets = view(buffers?.activeBulletsData);
     this._visibleBullets = view(buffers?.visibleBulletsData);
     this._visibleDecorations = view(buffers?.visibleDecorationsData);

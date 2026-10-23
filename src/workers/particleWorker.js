@@ -4,6 +4,7 @@
 import { ParticleComponent as ParticleComponentImport } from '../components/particleComponent.js';
 import { ParticleEmitter as ParticleEmitterImport } from '../core/particleEmitter.js';
 import { bindParticleIntegrate, integrateParticlesWasm } from './particleIntegrateClient.js';
+import { bindParticleLists, buildActiveParticleListWasm, buildParticleListsWasm } from './particleListsClient.js';
 import { DecorationComponent as DecorationComponentImport } from '../components/decorationComponent.js';
 import { DecorationPool as DecorationPoolImport } from '../core/decorationPool.js';
 import {
@@ -422,8 +423,10 @@ class ParticleWorker extends AbstractWorker {
 
     // Active particle tracking
     this.activeParticleIndices = null;
-    // The WASM integrate (E-79), bound in initialize when the scene gives a particle memory.
+    // The WASM integrate (E-79) and list build (E-80), bound in initialize when the scene gives a
+    // particle memory.
     this._wasmIntegrate = null;
+    this._wasmLists = null;
 
     // Screen visibility (camera bounds)
     this.canvasWidth = 0;
@@ -502,16 +505,29 @@ class ParticleWorker extends AbstractWorker {
     if (this.maxParticles > 0 && data.buffers.componentData.ParticleComponent) {
       this.particlesToStamp = new Uint16Array(this.maxParticles);
       this.activeParticleIndices = new Uint16Array(this.maxParticles);
-      // E-79: the integrate in WASM on the particle memory; these two lists become views of it.
       this._wasmIntegrate = null;
-      if (data.particleMemory && data.particleLayout && this.config?.wasm?.particleIntegrate !== false) {
-        try {
-          this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles);
-          this.particlesToStamp = this._wasmIntegrate.stamp;
-          this.activeParticleIndices = this._wasmIntegrate.indices;
-        } catch (err) {
-          console.error('[particle] integrate wasm unavailable', err);
-          this._wasmIntegrate = null;
+      this._wasmLists = null;
+      if (data.particleMemory && data.particleLayout) {
+        // E-80: the integrate's input is the published active list, which is in the particle memory.
+        this.activeParticleIndices = new Uint16Array(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
+        // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
+        if (this.config?.wasm?.particleIntegrate !== false) {
+          try {
+            this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles);
+            this.particlesToStamp = this._wasmIntegrate.stamp;
+          } catch (err) {
+            console.error('[particle] integrate wasm unavailable', err);
+            this._wasmIntegrate = null;
+          }
+        }
+        // E-80: the active and visible lists built in WASM.
+        if (this.config?.wasm?.particleLists !== false) {
+          try {
+            this._wasmLists = await bindParticleLists(data.particleMemory, data.particleLayout, ParticleComponent);
+          } catch (err) {
+            console.error('[particle] list wasm unavailable', err);
+            this._wasmLists = null;
+          }
         }
       }
     }
@@ -841,6 +857,10 @@ class ParticleWorker extends AbstractWorker {
 
     // Early exit if camera not ready (can't calculate visibility)
     if (!this.cameraData) {
+      if (this._wasmLists) {
+        this.activeParticleCount = buildActiveParticleListWasm(this._wasmLists, maxParticles);
+        return;
+      }
       this.activeParticleCount = buildActiveListBuffers(
         maxParticles,
         active,
@@ -858,6 +878,18 @@ class ParticleWorker extends AbstractWorker {
     // _frameCameraBounds filled _drawnCam this frame. A turned camera tests each
     // particle in view space, not in the box around the view (E-51b).
     const rotation = this._drawnCam.rotation;
+    if (this._wasmLists) {
+      this.activeParticleCount = buildParticleListsWasm(
+        this._wasmLists,
+        maxParticles,
+        cameraBounds,
+        rotation,
+        this.canvasWidth,
+        this.canvasHeight,
+        this.cullingRatio,
+      );
+      return;
+    }
     const { activeCount } = rotation
       ? buildActiveAndVisibleListBuffersTurned(
         ParticleComponent,

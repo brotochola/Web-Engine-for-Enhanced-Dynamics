@@ -55,11 +55,13 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
 }
 
 /**
- * The particle memory (E-79, `particleIntegrate.wasm`, created by particleMemory.js). The
- * ParticleComponent lays its columns out from byte 0 of its buffer in every worker
- * (Component.initializeArrays), so this memory starts with the component and has no guard: the
- * kernel takes every column's offset from the table JS writes. After it, the particle worker's own:
- * - indices: the active list (u16), written by the list build, read by the integrate;
+ * The particle memory (E-79 `particleIntegrate.wasm`, E-80 `particleLists.wasm`, created by
+ * particleMemory.js). The ParticleComponent lays its columns out from byte 0 of its buffer in every
+ * worker (Component.initializeArrays), so this memory starts with the component and has no guard:
+ * the kernels take every column's offset from JS. After it:
+ * - activeList, visibleList: the published lists, u16 [count, index …] with room for one index past
+ *   the count; pre-render reads the visible one, Pixi the active one, and the integrate reads the
+ *   active one's indices;
  * - stamp: stayOnTheFloor particles to stamp (u16);
  * - flat, heighted: the integrate's scratch lists (u16, 65 536 each);
  * - dead: the indices JS returns to the pool after the call, in order (u16);
@@ -70,11 +72,12 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * @param {number} componentBytes ParticleComponent.getBufferSize(maxParticles)
  * @param {number} lutFloats every EXPO table's entries together
  */
-export function particleIntegrateRegions(maxParticles, componentBytes, lutFloats) {
+export function particleMemoryRegions(maxParticles, componentBytes, lutFloats) {
   const n = maxParticles | 0;
   return layoutRegions([
     { name: 'component', owner: 'every worker (the ParticleComponent views)', bytes: componentBytes },
-    { name: 'indices', owner: 'particle', bytes: n * 2 },
+    { name: 'activeList', owner: 'particle; Pixi reads', bytes: (n + 2) * 2 },
+    { name: 'visibleList', owner: 'particle; pre-render reads', bytes: (n + 2) * 2 },
     { name: 'stamp', owner: 'particle', bytes: n * 2 },
     { name: 'flat', owner: 'particle', bytes: 65536 * 2 },
     { name: 'heighted', owner: 'particle', bytes: 65536 * 2 },

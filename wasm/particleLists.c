@@ -1,8 +1,9 @@
-/* Particle list build (E-76 W13, a candidate kernel): buildActiveAndVisibleListBuffers and
+/* Particle list build (E-76 W13, E-80): buildActiveAndVisibleListBuffers and
    buildActiveAndVisibleListBuffersTurned (src/util/particleIntegrate.js) for the whole pool, with
    their arithmetic: each position widened to double and tested in double, as JS tests it. The
    active column is read 16 slots at a time: a block with no live particle is skipped, a full block
-   runs straight through, and the rest visit their live slots in order. Each list is u16
+   is tested two particles per operation (f64x2, the same doubles) and its flags and active indices
+   are stored as vectors, and a partial block visits its live slots in order. Each list is u16
    [count, index, ...] and may hold one index past its count (the visible index is written before
    the test decides whether it counts). isItOnScreen is written for live particles only, as JS
    writes it. Pointers are byte offsets into the imported shared memory. */
@@ -25,54 +26,6 @@ INLINE uint32_t on_box(const float *x, const float *y, uint32_t k, double zoom, 
   return (uint32_t)(sx > minX) & (uint32_t)(sx < maxX) & (uint32_t)(sy > minY) & (uint32_t)(sy < maxY);
 }
 
-/* Returns the active count. lists: activeList, visibleList (u16, [count, ...]). */
-__attribute__((export_name("build_lists")))
-uint32_t build_lists(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
-                     uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX, double offY,
-                     double minX, double maxX, double minY, double maxY) {
-  const uint8_t *active = (const uint8_t *)activeByte;
-  const float *x = (const float *)xByte;
-  const float *y = (const float *)yByte;
-  uint8_t *on = (uint8_t *)onScreenByte;
-  uint16_t *al = (uint16_t *)activeListByte;
-  uint16_t *vl = (uint16_t *)visibleListByte;
-  uint32_t ac = 0, vc = 0, i = 0;
-  for (; i + 16 <= n; i += 16) {
-    uint32_t mask = live_mask(active, i);
-    if (mask == 0) continue;
-    if (mask == 0xffff) {
-      for (uint32_t k = i; k < i + 16; k++) {
-        const uint32_t v = on_box(x, y, k, zoom, offX, offY, minX, maxX, minY, maxY);
-        al[1 + ac++] = (uint16_t)k;
-        on[k] = (uint8_t)v;
-        vl[1 + vc] = (uint16_t)k;
-        vc += v;
-      }
-      continue;
-    }
-    do {
-      const uint32_t k = i + (uint32_t)__builtin_ctz(mask);
-      mask &= mask - 1;
-      const uint32_t v = on_box(x, y, k, zoom, offX, offY, minX, maxX, minY, maxY);
-      al[1 + ac++] = (uint16_t)k;
-      on[k] = (uint8_t)v;
-      vl[1 + vc] = (uint16_t)k;
-      vc += v;
-    } while (mask);
-  }
-  for (; i < n; i++) {
-    if (!active[i]) continue;
-    const uint32_t v = on_box(x, y, i, zoom, offX, offY, minX, maxX, minY, maxY);
-    al[1 + ac++] = (uint16_t)i;
-    on[i] = (uint8_t)v;
-    vl[1 + vc] = (uint16_t)i;
-    vc += v;
-  }
-  al[0] = (uint16_t)ac;
-  vl[0] = (uint16_t)vc;
-  return ac;
-}
-
 /* One live particle in the turned view: (u, v) about the canvas centre against the view plus margin. */
 INLINE uint32_t on_turned(const float *x, const float *y, uint32_t k, double zoom, double offX, double offY,
                           double halfCw, double halfCh, double rc, double rs, double limW, double limH) {
@@ -82,77 +35,6 @@ INLINE uint32_t on_turned(const float *x, const float *y, uint32_t k, double zoo
   const double v = rs * dx + rc * dy;
   return (uint32_t)(u > -limW) & (uint32_t)(u < limW) & (uint32_t)(v > -limH) & (uint32_t)(v < limH);
 }
-
-/* buildActiveAndVisibleListBuffersTurned: rc, rs, limW and limH as JS computes them. */
-__attribute__((export_name("build_lists_turned")))
-uint32_t build_lists_turned(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
-                            uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX, double offY,
-                            double halfCw, double halfCh, double rc, double rs, double limW, double limH) {
-  const uint8_t *active = (const uint8_t *)activeByte;
-  const float *x = (const float *)xByte;
-  const float *y = (const float *)yByte;
-  uint8_t *on = (uint8_t *)onScreenByte;
-  uint16_t *al = (uint16_t *)activeListByte;
-  uint16_t *vl = (uint16_t *)visibleListByte;
-  uint32_t ac = 0, vc = 0, i = 0;
-  for (; i + 16 <= n; i += 16) {
-    uint32_t mask = live_mask(active, i);
-    if (mask == 0) continue;
-    if (mask == 0xffff) {
-      for (uint32_t k = i; k < i + 16; k++) {
-        const uint32_t v = on_turned(x, y, k, zoom, offX, offY, halfCw, halfCh, rc, rs, limW, limH);
-        al[1 + ac++] = (uint16_t)k;
-        on[k] = (uint8_t)v;
-        vl[1 + vc] = (uint16_t)k;
-        vc += v;
-      }
-      continue;
-    }
-    do {
-      const uint32_t k = i + (uint32_t)__builtin_ctz(mask);
-      mask &= mask - 1;
-      const uint32_t v = on_turned(x, y, k, zoom, offX, offY, halfCw, halfCh, rc, rs, limW, limH);
-      al[1 + ac++] = (uint16_t)k;
-      on[k] = (uint8_t)v;
-      vl[1 + vc] = (uint16_t)k;
-      vc += v;
-    } while (mask);
-  }
-  for (; i < n; i++) {
-    if (!active[i]) continue;
-    const uint32_t v = on_turned(x, y, i, zoom, offX, offY, halfCw, halfCh, rc, rs, limW, limH);
-    al[1 + ac++] = (uint16_t)i;
-    on[i] = (uint8_t)v;
-    vl[1 + vc] = (uint16_t)i;
-    vc += v;
-  }
-  al[0] = (uint16_t)ac;
-  vl[0] = (uint16_t)vc;
-  return ac;
-}
-
-/* buildActiveListBuffers (no camera yet): the active list only; the visible count is set to 0. */
-__attribute__((export_name("build_active")))
-uint32_t build_active(uint32_t activeByte, uint32_t n, uint32_t activeListByte, uint32_t visibleListByte) {
-  const uint8_t *active = (const uint8_t *)activeByte;
-  uint16_t *al = (uint16_t *)activeListByte;
-  uint32_t ac = 0, i = 0;
-  for (; i + 16 <= n; i += 16) {
-    uint32_t mask = live_mask(active, i);
-    while (mask) {
-      al[1 + ac++] = (uint16_t)(i + (uint32_t)__builtin_ctz(mask));
-      mask &= mask - 1;
-    }
-  }
-  for (; i < n; i++) {
-    if (active[i]) al[1 + ac++] = (uint16_t)i;
-  }
-  al[0] = (uint16_t)ac;
-  ((uint16_t *)visibleListByte)[0] = 0;
-  return ac;
-}
-
-/* ---- f64x2 variants (the same doubles, two lanes at a time) ---- */
 
 /* The i32x4 lanes of two f64x2 masks (lanes 0 and 1 of each). */
 INLINE v128_t narrow64(v128_t lo, v128_t hi) { return wasm_i32x4_shuffle(lo, hi, 0, 2, 4, 6); }
@@ -214,10 +96,11 @@ INLINE void emit_full_block(uint32_t i, v128_t m16, uint8_t *on, uint16_t *al, u
   *vc = c;
 }
 
-__attribute__((export_name("build_lists_simd")))
-uint32_t build_lists_simd(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
-                          uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX, double offY,
-                          double minX, double maxX, double minY, double maxY) {
+/* buildActiveAndVisibleListBuffers. Returns the active count; lists are u16 [count, ...]. */
+__attribute__((export_name("build_lists")))
+uint32_t build_lists(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
+                     uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX, double offY,
+                     double minX, double maxX, double minY, double maxY) {
   const uint8_t *active = (const uint8_t *)activeByte;
   const float *x = (const float *)xByte;
   const float *y = (const float *)yByte;
@@ -262,11 +145,11 @@ uint32_t build_lists_simd(uint32_t activeByte, uint32_t xByte, uint32_t yByte, u
   return ac;
 }
 
-__attribute__((export_name("build_lists_turned_simd")))
-uint32_t build_lists_turned_simd(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
-                                 uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX,
-                                 double offY, double halfCw, double halfCh, double rc, double rs, double limW,
-                                 double limH) {
+/* buildActiveAndVisibleListBuffersTurned: rc, rs, limW and limH as JS computes them. */
+__attribute__((export_name("build_lists_turned")))
+uint32_t build_lists_turned(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
+                            uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX, double offY,
+                            double halfCw, double halfCh, double rc, double rs, double limW, double limH) {
   const uint8_t *active = (const uint8_t *)activeByte;
   const float *x = (const float *)xByte;
   const float *y = (const float *)yByte;
@@ -310,5 +193,26 @@ uint32_t build_lists_turned_simd(uint32_t activeByte, uint32_t xByte, uint32_t y
   }
   al[0] = (uint16_t)ac;
   vl[0] = (uint16_t)vc;
+  return ac;
+}
+
+/* buildActiveListBuffers (no camera yet): the active list only; the visible count is set to 0. */
+__attribute__((export_name("build_active")))
+uint32_t build_active(uint32_t activeByte, uint32_t n, uint32_t activeListByte, uint32_t visibleListByte) {
+  const uint8_t *active = (const uint8_t *)activeByte;
+  uint16_t *al = (uint16_t *)activeListByte;
+  uint32_t ac = 0, i = 0;
+  for (; i + 16 <= n; i += 16) {
+    uint32_t mask = live_mask(active, i);
+    while (mask) {
+      al[1 + ac++] = (uint16_t)(i + (uint32_t)__builtin_ctz(mask));
+      mask &= mask - 1;
+    }
+  }
+  for (; i < n; i++) {
+    if (active[i]) al[1 + ac++] = (uint16_t)i;
+  }
+  al[0] = (uint16_t)ac;
+  ((uint16_t *)visibleListByte)[0] = 0;
   return ac;
 }

@@ -289,6 +289,8 @@ export type SceneConfig = Record<string, unknown> & {
     spatialGather?: boolean;
     /** Particle integrate (lifetime, tweens, motion, floor) for the CPU particle pool. */
     particleIntegrate?: boolean;
+    /** Particle active and visible lists (the per-frame sweep of the pool and the screen test). */
+    particleLists?: boolean;
   };
 };
 

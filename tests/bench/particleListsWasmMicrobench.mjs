@@ -7,11 +7,12 @@
  *
  *   base  buildActiveAndVisibleListBuffers / …Turned (src/util/particleIntegrate.js), with the
  *         worker's local index list and the two published lists, as the particle worker calls them
- *   wasm  a hypothesis variant (here until it is decided): build_lists / build_lists_turned
- *         (wasm/particleLists.c) writing the published lists only, the integrate's input being the
- *         published active list
- *   simd  the same with the full 16-slot blocks tested two particles at a time (f64x2, the same
- *         doubles) and their flags and active indices stored as vectors
+ *   wasm  buildParticleListsWasm (src/workers/particleListsClient.js): build_lists /
+ *         build_lists_turned (wasm/particleLists.c, f64x2 on full 16-slot blocks) writing the
+ *         published lists only, the integrate's input being the published active list
+ *
+ * Both run on the particle memory the scene builds (createParticleMemory). E-80's kernel sitting
+ * also timed a scalar build (every particle alone, in double): f64x2 beat it 25/25 in the dense cases.
  *
  * Cases, one process each variant (runKernelVariants.mjs alternates them and rejects a checksum that
  * differs; the checksum covers both lists and every isItOnScreen byte after each case):
@@ -20,7 +21,7 @@
  *   turned  zoom 0.6 at the centre turned 0.785 rad (the turned loop)
  *   sparse  Predator's pool: 10 000 slots, 150 live ones scattered (the sweep over empty slots)
  *
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleListsWasmMicrobench.mjs --variants base,wasm,simd --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleListsWasmMicrobench.mjs --variants base,wasm --rounds 5
  *   node tests/bench/particleListsWasmMicrobench.mjs --variant wasm [--output path]
  */
 import { ParticleComponent } from '../../src/components/particleComponent.js';
@@ -32,10 +33,11 @@ import {
   updateParticlePhysicsBuffers,
 } from '../../src/util/particleIntegrate.js';
 import { calculateCameraScreenBounds, seededRandom } from '../../src/util/utils.js';
-import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
+import { createParticleMemory } from '../../src/util/particleMemory.js';
+import { bindParticleLists, buildParticleListsWasm } from '../../src/workers/particleListsClient.js';
 import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { emitConfig, PARTICLE_EASES } from './particleIntegrateWasmMicrobench.mjs';
-import { instantiateKernel, machineState, warmWasm, wasmTier } from './wasmKernelHelpers.mjs';
+import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
 const MAX_PARTICLES = 65535;
 const INITIAL_BURST = 60000;
@@ -47,19 +49,6 @@ const H = 1080;
 const CULL = 0.1;
 const SPARSE_POOL = 10000;
 const SPARSE_LIVE = 150;
-
-/** The memory: ParticleComponent from byte 0, the worker's local list, then the two published lists. */
-function particleMemory(n) {
-  const layout = layoutRegions([
-    { name: 'component', owner: 'every worker', bytes: ParticleComponent.getBufferSize(n) },
-    { name: 'indices', owner: 'particle', bytes: n * 2 },
-    // [count, index …] and one index past the count.
-    { name: 'activeList', owner: 'particle; pre-render and Pixi read', bytes: (n + 2) * 2 },
-    { name: 'visibleList', owner: 'particle; pre-render reads', bytes: (n + 2) * 2 },
-  ]);
-  const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
-  return { memory, buffer: memory.buffer, regions: layout.regions };
-}
 
 /** The stress scene's population after AGE_FRAMES frames. */
 function agePopulation(indices) {
@@ -130,38 +119,27 @@ const CASES = {
 async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'base');
-  if (!['base', 'wasm', 'simd'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  if (!['base', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
 
-  const mem = particleMemory(MAX_PARTICLES);
-  const r = mem.regions;
+  const mem = createParticleMemory(MAX_PARTICLES, ParticleComponent.getBufferSize(MAX_PARTICLES));
+  const L = mem.layout;
   const pc = ParticleComponent;
   pc.initializeArrays(mem.buffer, MAX_PARTICLES);
   ParticleEmitter.initialize(MAX_PARTICLES);
   ParticleEmitter.initializeFreeList(new SharedArrayBuffer(MAX_PARTICLES * 2), new SharedArrayBuffer(8));
   ParticleEmitter.resetFreeListInterleaved();
   globalThis.rng = seededRandom(0xc0de1234, 'kernel');
-  const indices = new Uint16Array(mem.buffer, r.indices.byte, MAX_PARTICLES);
-  const activeData = new Uint16Array(mem.buffer, r.activeList.byte, MAX_PARTICLES + 2);
-  const visibleData = new Uint16Array(mem.buffer, r.visibleList.byte, MAX_PARTICLES + 2);
+  // The JS path's local list (the particle worker with both switches off), and the published lists.
+  const indices = new Uint16Array(MAX_PARTICLES);
+  const activeData = new Uint16Array(mem.buffer, L.activeListByte, MAX_PARTICLES + 1);
+  const visibleData = new Uint16Array(mem.buffer, L.visibleListByte, MAX_PARTICLES + 1);
   agePopulation(indices);
   const blocks = { dense: blockStats(pc.active, MAX_PARTICLES) };
 
-  const exportsOf = variant === 'base' ? null : instantiateKernel('particleLists', mem.memory);
-  const kernel = !exportsOf
-    ? null
-    : variant === 'simd'
-      ? { build_lists: exportsOf.build_lists_simd, build_lists_turned: exportsOf.build_lists_turned_simd }
-      : exportsOf;
-  const B = { active: pc.active.byteOffset, x: pc.x.byteOffset, y: pc.y.byteOffset, on: pc.isItOnScreen.byteOffset };
+  const lists = variant === 'wasm' ? await bindParticleLists(mem.memory, L, pc) : null;
   const build = (n, cam) => {
     const b = cam.bounds;
-    if (kernel) {
-      return cam.rotation
-        ? kernel.build_lists_turned(B.active, B.x, B.y, B.on, n, r.activeList.byte, r.visibleList.byte, b.zoom,
-          b.cameraOffsetX, b.cameraOffsetY, W * 0.5, H * 0.5, cam.rc, cam.rs, cam.limW, cam.limH)
-        : kernel.build_lists(B.active, B.x, B.y, B.on, n, r.activeList.byte, r.visibleList.byte, b.zoom,
-          b.cameraOffsetX, b.cameraOffsetY, b.minX, b.maxX, b.minY, b.maxY);
-    }
+    if (lists) return buildParticleListsWasm(lists, n, b, cam.rotation, W, H, CULL);
     return cam.rotation
       ? buildActiveAndVisibleListBuffersTurned(pc, n, indices, activeData, visibleData, n, b, cam.rotation, W, H, CULL).activeCount
       : buildActiveAndVisibleListBuffers(pc, n, indices, activeData, visibleData, n, b).activeCount;
@@ -172,7 +150,7 @@ async function main() {
     for (const c of Object.values(CASES)) build(64, c.camera);
   };
   let tier = null;
-  if (kernel) tier = await warmWasm(kernel.build_lists, short);
+  if (lists) tier = await warmWasm(lists.build, short);
   else warmNormalCompile(short);
 
   let sum = 2166136261;
@@ -198,7 +176,7 @@ async function main() {
   const report = {
     feature: 'particle-lists-wasm',
     variant,
-    functions: [kernel ? `particleLists.build_lists${variant === 'simd' ? '_simd' : ''} / build_lists_turned${variant === 'simd' ? '_simd' : ''}` : 'buildActiveAndVisibleListBuffers / …Turned'],
+    functions: [lists ? 'buildParticleListsWasm (particleLists.build_lists / build_lists_turned)' : 'buildActiveAndVisibleListBuffers / …Turned'],
     n: MAX_PARTICLES,
     counts,
     blocks,
@@ -208,7 +186,7 @@ async function main() {
     cases,
   };
   if (args.output) writeReport(String(args.output), report);
-  else console.log(`checksum ${sum} ${JSON.stringify(counts)} blocks ${JSON.stringify(blocks)}${kernel ? ` tier ${tier}` : ''}`);
+  else console.log(`checksum ${sum} ${JSON.stringify(counts)} blocks ${JSON.stringify(blocks)}${lists ? ` tier ${tier}` : ''}`);
 }
 
 if (isCli(import.meta.url)) await main();

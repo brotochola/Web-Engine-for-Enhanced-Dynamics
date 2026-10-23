@@ -99,6 +99,8 @@ Zenithal vs topdown does **not** change physics. Only `flat` vs heighted does. O
 
 This step runs in WebAssembly by default: the particle pool lives in a shared `WebAssembly.Memory` and one call per frame advances every active particle, with the same results as the JavaScript step (dead particles still return to the pool through `ParticleEmitter`). Scene config `wasm: { particleIntegrate: false }` runs the JavaScript step instead.
 
+The sweep before it runs in WebAssembly too. It lists the live particles and tests each one against the camera, setting `isItOnScreen` and filling the visible list that pre-render draws. Scene config `wasm: { particleLists: false }` runs it in JavaScript.
+
 ## Rendering (`preRenderWorker`)
 
 Reads per-particle `viewMode` / `flat`:
