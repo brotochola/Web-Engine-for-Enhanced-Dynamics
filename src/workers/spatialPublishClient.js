@@ -2,24 +2,10 @@
 // Candidates and poses are already stored in that memory. The module writes
 // neighbor rows in place. There is no result copy.
 
+import { loadWasmKernel } from '../util/wasmKernel.js';
+
+// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
 const wasmUrl = new URL('./spatialPublish.wasm', import.meta.url);
-
-function bytesFromDataUrl(href) {
-  const binary = atob(href.slice(href.indexOf(',') + 1));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-async function loadWasmBytes() {
-  // Bundle embed rewrites this asset to a data URL. A blob worker has no
-  // directory, so a relative wasm path cannot be fetched.
-  const href = String(wasmUrl);
-  if (href.startsWith('data:')) return bytesFromDataUrl(href);
-  const response = await fetch(wasmUrl);
-  if (!response.ok) throw new Error(`spatialPublish.wasm ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
-}
 
 /**
  * @param {WebAssembly.Memory} memory
@@ -29,16 +15,7 @@ async function loadWasmBytes() {
  * @param {number} maxNeighbors
  */
 export async function bindSpatialPublish(memory, layout, workerIndex, entityCount, maxNeighbors) {
-  const bytes = await loadWasmBytes();
-  const env = new Proxy(
-    { memory },
-    { get: (target, prop) => (prop in target ? target[prop] : () => 0) },
-  );
-  const wasi = new Proxy({}, { get: () => () => 0 });
-  const { instance } = await WebAssembly.instantiate(bytes, {
-    env,
-    wasi_snapshot_preview1: wasi,
-  });
+  const { publish_batch: publish } = await loadWasmKernel('spatialPublish', wasmUrl, memory, ['publish_batch']);
   const count = entityCount | 0;
   const stride = 1 + (maxNeighbors | 0);
   // Each spatial worker's batch list is its own slice, on its own cache lines.
@@ -48,7 +25,7 @@ export async function bindSpatialPublish(memory, layout, workerIndex, entityCoun
     range: new Float32Array(buffer, layout.rangeByte, count),
     list: new Uint16Array(buffer, listByte, count),
     cand: new Uint16Array(buffer, layout.candByte, count * stride),
-    publish: instance.exports.publish_batch,
+    publish,
     listByte,
     queued: 0,
   };

@@ -96,7 +96,7 @@ try {
     }
 
     const fatal = errors.filter((e) =>
-      /importScripts|worker_common|Failed to fetch|DecompressionStream|WebAssembly|invalid URL/i.test(e),
+      /importScripts|worker_common|Failed to fetch|DecompressionStream|WebAssembly|wasm unavailable|invalid URL/i.test(e),
     );
 
     console.log(`${bundle}:`, result);

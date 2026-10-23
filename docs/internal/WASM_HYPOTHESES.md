@@ -488,3 +488,16 @@ defaults):
   the T3 parity test instantiates it before filling the frame. That test also builds its own
   map-laid memory of at least 2 pages, because the fixture's import asks for 2.
   `tests/node/wasmMemoryMap.test.js` checks the layout properties.
+- **2026-10-22, T5.** `src/util/wasmKernel.js` is the shared loader. `loadWasmKernel(name, url, memory,
+  exports)` compiles each module once per worker and refuses any import other than `env.memory`,
+  naming it; the `Proxy` stubs are gone. It also refuses a missing export. It reads data URLs (the
+  bundle), `file:` URLs in Node (`process.getBuiltinModule`, so real workers can bind modules in
+  kernels and tests) and fetches anything else. `spatialPublishClient.js` keeps its literal
+  `new URL('./spatialPublish.wasm', import.meta.url)` and loads through it. `smokeBundleEmbed.mjs` now
+  requires every `wasm/modules.json` module to be embedded as its committed bytes, raw or in a gzipped
+  worker payload. It passed on all 8 artifacts of a fresh build and correctly found no emcc bytes; it
+  fails on a stale `dist/`, which is the point. `smokeBundleBrowser.mjs` counts "wasm unavailable"
+  (the worker's load-failure log) as fatal; all 8 bundles OK. In source mode, MinimalTick ran with no
+  load error. `tests/node/wasmKernel.test.js` covers file and data URLs, compile-once, the emcc
+  fixture refused for its WASI imports, a missing export, and the real spatial worker binding the
+  module in Node through the loader (worker 1 on the second list slice).

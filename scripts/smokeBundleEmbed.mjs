@@ -11,6 +11,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const weedPost = fs.readFileSync(path.join(root, 'src', 'box2d', 'weedjsPost.js'), 'utf8');
 const siblingNames = extractImportScriptNames(weedPost);
+// Engine WASM kernels (E-76 T5): each must be embedded in every artifact as the base64 of its
+// committed bytes (a data URL the worker loads, raw or inside a gzipped worker payload).
+const kernelModules = JSON.parse(fs.readFileSync(path.join(root, 'wasm', 'modules.json'), 'utf8')).modules.map((m) => ({
+  name: m.name,
+  output: m.output,
+  b64: fs.readFileSync(path.join(root, m.output)).toString('base64'),
+}));
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -96,6 +103,11 @@ for (const name of BUNDLE_ARTIFACTS) {
     .filter((buf) => buf[0] !== 0x00)
     .map((buf) => buf.toString('utf8'));
 
+  for (const mod of kernelModules) {
+    const embedded = s.includes(mod.b64) || utf8Payloads.some((text) => text.includes(mod.b64));
+    assert(embedded, `${name}: kernel ${mod.name} (${mod.output}) is not embedded, or not its committed bytes`);
+  }
+
   if (compressed) {
     assert(s.includes('EMBED_COMPRESSED'), `${name}: compressed bundle missing EMBED_COMPRESSED`);
     const box2dJs = utf8Payloads.find((text) => siblingNames.every((sib) => text.includes(sib)));
@@ -126,3 +138,4 @@ for (const name of BUNDLE_ARTIFACTS) {
 console.log('smoke-bundle-embed OK');
 console.log(`  artifacts: ${BUNDLE_ARTIFACTS.length}`);
 console.log(`  siblings: ${siblingNames.join(', ')}`);
+console.log(`  kernels: ${kernelModules.map((m) => m.name).join(', ')}`);
