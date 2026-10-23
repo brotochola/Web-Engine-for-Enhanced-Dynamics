@@ -396,6 +396,9 @@ class PreRenderWorker extends AbstractWorker {
 
         // Component arrays for spriteSortFootY, bound once on first use
         this._spriteSortArrays = null;
+        // E-98. Whether the entities layer is Y-sorted this frame. Without Y-sort a sprite's key is
+        // its zIndex (orderSortKey), so its sort line is not computed.
+        this._entitySortY = false;
 
         // Animation frame tracking
         this.entityFrameIndex = null;
@@ -1165,6 +1168,7 @@ class PreRenderWorker extends AbstractWorker {
         this.visibleDecorationsCount = 0;
         this.shadowsUpdatedThisFrame = 0;
         this._renderableCount = 0;
+        this._entitySortY = this._entityYSort();
         const zoom = this._frameCameraZoom;
         if (zoom >= this.decorationFadeStartZoom) this._decorationZoomAlpha = 1;
         else if (zoom <= this.decorationHideZoom) this._decorationZoomAlpha = 0;
@@ -2029,7 +2033,9 @@ class PreRenderWorker extends AbstractWorker {
                 if (collector.count < collector.maxItems) {
                     const wi = collector.count;
                     collector.y[wi] = y;
-                    if (type === 0 || type === 6) {
+                    // A sprite's sort line only where the layer is Y-sorted (E-98); an Adobe root's
+                    // key also goes to its pieces' sortKey column, so it is always computed.
+                    if (type === 6 || (type === 0 && Layer._ySorting && Layer._ySorting[layerId])) {
                         const pose = this._displayPoseOut;
                         this._displayPose(index, pose);
                         this._storeEntitySortY(type, index, pose, collector.y, wi);
@@ -2065,8 +2071,10 @@ class PreRenderWorker extends AbstractWorker {
             this._renderableRotS[writeIdx] = pose[3];
             // Drawn Y, whole pixels. A raw pose[1] key changes bits on a
             // fraction of a pixel and the painter swaps two sprites that
-            // did not cross.
-            this._storeEntitySortY(type, index, pose, this._renderableY, writeIdx);
+            // did not cross. Read only under Y-sort (E-98), and by an Adobe root's pieces.
+            if (type === 6 || this._entitySortY) {
+                this._storeEntitySortY(type, index, pose, this._renderableY, writeIdx);
+            }
         } else if (type === 2) {
             const pose = this._displayPoseOut;
             this._decorationWorldXY(index, pose);

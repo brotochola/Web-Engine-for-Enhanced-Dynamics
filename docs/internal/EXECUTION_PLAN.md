@@ -785,12 +785,16 @@ so completions counted against submissions pace it without a closure per frame. 
 (`e55c15a0`): presented frames **43.4 → 60.0 fps, +38.4 %, 4/4**. The renderer's mean step rose 29 %; a CPU
 trace puts Pixi at 3.2 → 2.9 ms per presented frame (it draws 46 % more of them).
 
-### E-98 Pre-render's full emit at 250 000 sprites takes more than a frame — **open (from E-97)**
+### E-98 Pre-render's full emit at 250 000 sprites takes more than a frame — **E-98a kept; open**
 Paced, `bunnyMarkScene`'s Pixi draws 60 frames a second and pre-render's step per worked frame is
 ~21 ms (a detailed run: `COLLECT_MS` 14.3, `EMIT_MS` 4.7), so fewer new queues than frames. The CPU
 profile: `_writeRenderable` 18 %, `_writeType0PosesOnly` 13 %, `_storeEntitySortY` 12 %,
 `spriteYSortKey` 10 %, `_type0PersistHit` 8 %, `collectRenderable` 8 %, `spriteSortFootY` 7 % of its
 busy time. The scene has `ySort: false`, so the sort-key work (29 %) is the first thing to read.
+**E-98a (2026-10-23):** without Y-sort the key is the zIndex alone, so the sort line is computed only
+where the destination layer Y-sorts (Adobe roots always): pre-render **18.943 → 12.014 ms, −36.4 %, worse
+0/4**. Next: profile what is left (the persist check and pose copy each walk all rows; each sprite row
+rewrites its three shadow terms on the persist path, zeros in a scene with no casters).
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **open (from E-85)**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls

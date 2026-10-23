@@ -6956,16 +6956,17 @@
       "id": "E-98",
       "title": "Pre-render's full emit at 250 000 sprites takes more than a frame",
       "status": "open",
-      "statusText": "open (from E-97)",
+      "statusText": "E-98a kept; open",
       "date": "2026-10-23",
-      "result": "Paced bunnyMarkScene: pre-render ~21 ms per worked frame (COLLECT 14.3, EMIT 4.7), fewer new queues than Pixi's 60 frames. Sort-key work is 29 % of its profile in a scene with ySort off.",
+      "result": "E-98a: no sprite sort line where the layer is not Y-sorted (the key is the zIndex alone): bunnyMarkScene pre-render 18.943 → 12.014 ms, −36.4 %, worse 0/4. ~12 ms per new queue at 250 000 sprites left.",
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L784"
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L788"
       ],
       "aliases": [],
-      "next": "Read why spriteYSortKey / _storeEntitySortY run with ySort off; then the collect loop.",
+      "next": "Profile the rest: the persist check and the pose copy each walk all rows; the per-row shadow terms on the persist path.",
       "rank": 1
     },
     {
