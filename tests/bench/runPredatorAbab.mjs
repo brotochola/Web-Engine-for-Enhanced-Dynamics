@@ -169,7 +169,11 @@ const SUB_TIMERS = [
 // band on a count of ~1 is one tile of rounding. Mute only when BOTH medians
 // are under the floor. One side at or above the floor is a normal 5% check,
 // so 100 particles versus 5000 still fails.
-const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8 };
+// The nav keys (E-37) likewise: Predator computes a flow field about once per window, so in the
+// E-78 sitting (2026-10-22) one flow field in one baseline run of twelve (0.03 a frame, median 0
+// on both sides) read as a 245 % cv and failed a pair the change could not reach. A nav
+// hypothesis runs NavStress, far above one a frame, where the band and the cv apply.
+const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8, FLOWFIELDS_COMPUTED: 1, FLOWFIELDS_SERVICED: 1, PATHS_COMPUTED: 1 };
 
 // HOW_WE_MEASURE: a load key outside 5% fails the pair. A coefficient of
 // variation at or above 50% fails the pair. The band does not widen with cv.
