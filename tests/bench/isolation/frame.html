@@ -1,0 +1,9 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Isolation smoke frame</title></head>
+<body style="margin:0;background:#222">
+<!-- DX-SW, SW-4: a page on another origin, not isolated, that embeds the game from ?src=. -->
+<iframe id="game" style="width:640px;height:360px;border:0"></iframe>
+<script>document.getElementById('game').src = new URLSearchParams(location.search).get('src');</script>
+</body>
+</html>
