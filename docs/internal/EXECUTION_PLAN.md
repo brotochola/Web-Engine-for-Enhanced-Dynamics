@@ -635,7 +635,7 @@ reuse. `boidsScene` spatial **7.462 → 6.942 ms (−8.4 %, 0/6 worse), KEPT (pr
 spatial +6.6 % with every unreachable worker +2–6 % the same run; the sort costs 11 µs a frame there
 (0.25 %), so that was drift (WASM_HYPOTHESES Results log).
 
-### E-82 The instanced sprite upload diet — **split built; re-measure on top of E-97**
+### E-82 The instanced sprite upload diet — **KEPT 2026-10-23 (the split)**
 BunnyMark at 250 000 bunnies: Pixi 828 ms/s, 41 fps, 96 % uploading poses (`updateBuffer` 66.7 %,
 `_uploadPose` 29.3 %). The pose-interpolated instance is 17 floats (68 bytes): xy, scale, anchor, rotCS,
 depth, tint, texture, tile terms, previous xy. Packed formats (anchor and rotation as 16-bit pairs, scale
@@ -647,8 +647,10 @@ the renderer from 14.040 to 7.595 ms at 250 000 bunnies, **−44.5 %**: the tran
 Build the split.
 **First sitting of the split (2026-10-23):** pose stream 24 B every frame, statics 44 B per ring slot
 when pre-render's `staticGen` moves. Renderer **13.603 → 3.238 ms, −76.4 %**, but the page **55 → 44 fps**:
-a fast Pixi oversubscribed the full GPU. That is E-97, now kept; the split waits in a stash
-("E-82 split wip") to be measured again on top of it, owner renderer, presented frames guarding.
+a fast Pixi oversubscribed the full GPU. That is E-97, now kept.
+**On top of E-97:** renderer **13.122 → 4.265 ms, −67.7 %, worse 0/4**, presented frames 60 on both sides.
+Report: [`reports/E-82-split-instance-upload.md`](./reports/E-82-split-instance-upload.md). Left: the same split for
+sprites without pose interpolation (`staticGen` is already published), packed static formats.
 
 ### E-83 `TileMap.getTileId` — **open (from Q1b)**
 `tilemapStressScene`: logic 566 ms/s, `getTileId` 80.3 % self. A per-tile lookup the game calls; read
@@ -777,9 +779,10 @@ per frame, read two frames later (`src/render/gpuFramePacer.js`): `bunnyMarkScen
 **54.8 → 59.9 fps, +9.1 %, 4/4**. Lockstep always draws; a paced tick publishes no stats.
 
 ### E-97b Pace Pixi's WebGPU path — **open (from E-97)**
-WebGPU has no fence in E-97. Measure first whether a WebGPU `bunnyMarkScene` (no backend knob today: a
-scene variant) presents fewer frames than it draws; if so, `device.queue.onSubmittedWorkDone()` marks
-the frame done.
+WebGPU has no fence in E-97. A scratch WebGPU `bunnyMarkScene` (with E-82) presents **43.2 fps** with Pixi
+at 2.5 ms: the same oversubscription. `device.queue.onSubmittedWorkDone()` resolves in submission order,
+so completions counted against submissions pace it without a closure per frame. Needs a backend knob on
+the scene to sit.
 
 ### E-98 Pre-render's full emit at 250 000 sprites takes more than a frame — **open (from E-97)**
 Paced, `bunnyMarkScene`'s Pixi draws 60 frames a second and pre-render's step per worked frame is

@@ -370,6 +370,9 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = EMPTY_U16;
         this.renderQueueAnchorX = EMPTY_F32;
         this.renderQueueAnchorY = EMPTY_F32;
+        /** The main queue's staticGen column (renderQueueLayout.js), and the count written there. */
+        this.renderQueueStaticGen = EMPTY_U32;
+        this._staticGen = 1;
         this.renderQueueType = EMPTY_U8;
         /** The instanced-row pack kernel (E-76 W9), bound when the queues live in the render-queue memory. */
         this._gpuPackWasm = null;
@@ -1072,6 +1075,7 @@ class PreRenderWorker extends AbstractWorker {
         if (!buffer) return;
 
         this.renderQueueCount = buffer.count;
+        this.renderQueueStaticGen = buffer.staticGen || EMPTY_U32;
         this.renderQueueX = buffer.x;
         this.renderQueueY = buffer.y;
         this.renderQueueShadowH = buffer.shadowH;
@@ -1945,8 +1949,12 @@ class PreRenderWorker extends AbstractWorker {
         const inherit = SpriteRenderer.inheritTransformRotation;
         const spriteC = SpriteRenderer.spriteRotC;
         const spriteS = SpriteRenderer.spriteRotS;
+        let others = 0;
         for (let i = 0; i < count; i++) {
-            if (collectorType[i] !== 0) continue;
+            if (collectorType[i] !== 0) {
+                others++;
+                continue;
+            }
             const idx = collectorIndex[i];
             rqX[i] = stashPx[i];
             rqY[i] = stashPy[i];
@@ -1960,6 +1968,7 @@ class PreRenderWorker extends AbstractWorker {
             if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], ySort);
             this._writeQueueShadow(i, idx);
         }
+        return others;
     }
 
     /**
@@ -2652,9 +2661,10 @@ class PreRenderWorker extends AbstractWorker {
         const persistHit = persistBuf >= 0
             ? this._type0PersistHit(persistBuf, count, collectorType, collectorIndex)
             : false;
-        if (persistHit) {
-            this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs);
-        }
+        // Rows other than sprites are rewritten in full on a persist frame too (E-82 staticGen).
+        const persistOthers = persistHit
+            ? this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs)
+            : 0;
 
         for (let i = 0; i < count && writeCount < maxItems; i++) {
             const type = collectorType[i];
@@ -3019,6 +3029,12 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
         if (source.persist && !persistHit) {
             this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
+        }
+        if (source.persist) {
+            // E-82. A frame that only moved sprites keeps the count; anything else is a new one
+            // (0 is skipped: it means unknown).
+            if (!persistHit || persistOthers > 0) this._staticGen = ((this._staticGen + 1) >>> 0) || 1;
+            if (this.renderQueueStaticGen.length) this.renderQueueStaticGen[0] = this._staticGen;
         }
         return writeCount;
     }

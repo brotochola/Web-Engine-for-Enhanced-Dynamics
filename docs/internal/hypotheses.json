@@ -51,7 +51,7 @@
       ],
       "aliases": [],
       "next": "With W7.",
-      "rank": 5
+      "rank": 6
     },
     {
       "id": "W7",
@@ -67,24 +67,23 @@
       ],
       "aliases": [],
       "next": "First mover of the Box2D-memory move (Phase 4): components and spatial regions in Box2D's heap, then the whole spatial step in one C call.",
-      "rank": 5
+      "rank": 6
     },
     {
       "id": "E-82",
       "title": "The instanced sprite upload diet",
-      "status": "open",
-      "statusText": "split built; re-measure on top of E-97",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
       "date": "2026-10-23",
-      "result": "Pose stream 24 B every frame, statics 44 B per ring slot when pre-render's staticGen moves. bunnyMarkScene renderer 13.603 → 3.238 ms, −76.4 %, worse 0/4, but the page 55 → 44 fps: a fast Pixi oversubscribed the full GPU (E-97).",
+      "result": "Pose stream 24 B every frame, statics 44 B per ring slot only when pre-render's staticGen moves. On top of E-97, bunnyMarkScene renderer 13.122 → 4.265 ms, −67.7 %, worse 0/4; presented frames 60 both sides.",
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L15",
-        "EXECUTION_PLAN.md#L638"
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L638",
+        "reports/E-82-split-instance-upload.md"
       ],
-      "aliases": [],
-      "next": "The stashed split again on top of E-97: renderer owner, presented frames guarding.",
-      "rank": 1
+      "aliases": []
     },
     {
       "id": "W22",
@@ -100,7 +99,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 6
+      "rank": 7
     },
     {
       "id": "W26",
@@ -116,7 +115,7 @@
       ],
       "aliases": [],
       "next": "A decal memory for the tile buffers; SIMD blend.",
-      "rank": 7
+      "rank": 8
     },
     {
       "id": "W14",
@@ -6944,15 +6943,15 @@
       "status": "open",
       "statusText": "open (from E-97)",
       "date": "2026-10-23",
-      "result": "E-97 fences WebGL only. Whether WebGPU oversubscribes a full GPU the same way is unmeasured.",
+      "result": "A WebGPU bunnyMarkScene presents 43.2 fps with Pixi at 2.5 ms: the E-97 symptom, unpaced.",
       "area": "pixi",
       "kind": "gpu",
       "refs": [
         "EXECUTION_PLAN.md#L779"
       ],
       "aliases": [],
-      "next": "A WebGPU bunnyMarkScene variant; presented vs drawn frames; onSubmittedWorkDone as the fence.",
-      "rank": 8
+      "next": "A backend knob on bunnyMarkScene; onSubmittedWorkDone completions counted against submissions.",
+      "rank": 1
     },
     {
       "id": "E-98",
@@ -6969,6 +6968,23 @@
       "aliases": [],
       "next": "Read why spriteYSortKey / _storeEntitySortY run with ySort off; then the collect loop.",
       "rank": 2
+    },
+    {
+      "id": "E-82b",
+      "title": "The split upload for sprites without pose interpolation",
+      "status": "open",
+      "statusText": "open (from E-82)",
+      "date": "2026-10-23",
+      "result": "E-82 split only the pose-interpolated path; the plain path still uploads the 15-float record every frame. pre-render's staticGen is already published.",
+      "area": "pixi",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L638",
+        "reports/E-82-split-instance-upload.md"
+      ],
+      "aliases": [],
+      "next": "A scene with interpolation off at a high sprite count; the same two streams.",
+      "rank": 5
     }
   ],
   "leads": [

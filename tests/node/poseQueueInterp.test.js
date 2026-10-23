@@ -5,15 +5,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolvePreRenderInterpolation } from '../../src/util/configDefaults.js';
-import {
-  poseDisplayAlpha,
-  poseLerp,
-  writePosePrev,
-  POSE_PREV_OFFSET,
-} from '../../src/render/poseQueueInterp.js';
+import { poseDisplayAlpha, poseLerp } from '../../src/render/poseQueueInterp.js';
 import {
   INSTANCED_SPRITE_FLOATS,
-  INSTANCED_SPRITE_POSE_FLOATS,
+  POSE_DYN_FLOATS,
+  POSE_STATIC_FLOATS,
 } from '../../src/render/instancedSpriteBatch.js';
 
 const dir = dirname(fileURLToPath(import.meta.url));
@@ -39,32 +35,23 @@ test('pose lerp is prev at 0, cur at 1, midpoint at 0.5', () => {
   assert.equal(poseLerp(0, 8, 0.25), 2);
 });
 
-test('pose prev floats sit after the 15-float record', () => {
+test('a pose instance is the 15-float record and the previous xy, in two streams (E-82)', () => {
   assert.equal(INSTANCED_SPRITE_FLOATS, 15);
-  assert.equal(INSTANCED_SPRITE_POSE_FLOATS, 17);
-  assert.equal(POSE_PREV_OFFSET, 15);
-  const data = new Float32Array(17);
-  data[0] = 4;
-  data[1] = 6;
-  writePosePrev(data, 0, 1, 2);
-  assert.equal(data[0], 4);
-  assert.equal(data[1], 6);
-  assert.equal(data[15], 1);
-  assert.equal(data[16], 2);
-  assert.equal(poseLerp(data[15], data[0], 0), 1);
-  assert.equal(poseLerp(data[15], data[0], 1), 4);
-  assert.equal(poseLerp(data[16], data[1], 0.5), 4);
+  // Pose stream: x, y, rotC, rotS, prevX, prevY. Statics: the other 11 terms.
+  assert.equal(POSE_DYN_FLOATS, 6);
+  assert.equal(POSE_STATIC_FLOATS, 11);
+  assert.equal(POSE_DYN_FLOATS + POSE_STATIC_FLOATS, INSTANCED_SPRITE_FLOATS + 2);
 });
 
 test('flag off keeps the 16-float upload; pose pack is a separate method', () => {
   assert.match(batchSrc, /if \(this\.poseInterp\) return this\._uploadPose/);
   assert.match(batchSrc, /_finishUpload\(out, this\._strideBytes\)/);
-  assert.match(batchSrc, /_finishUpload\(out, INSTANCED_SPRITE_POSE_STRIDE\)/);
-  assert.match(batchSrc, /writePosePrev\(data, base, px, py\)/);
+  assert.match(batchSrc, /_finishUpload\(out, POSE_DYN_FLOATS \* 4\)/);
+  assert.match(batchSrc, /data\[base \+ 4\] = px;/);
   assert.match(batchSrc, /uniforms\.uPoseAlpha = alpha/);
   assert.match(batchSrc, /group\.update\(\)/);
   assert.doesNotMatch(
     batchSrc.slice(batchSrc.indexOf('upload(q, opts)'), batchSrc.indexOf('_uploadPose')),
-    /writePosePrev/
+    /POSE_DYN_FLOATS/
   );
 });

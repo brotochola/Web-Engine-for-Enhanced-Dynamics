@@ -29,15 +29,18 @@ import {
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
 import { packInstancedRows } from './gpuQueueLayout.js';
-import { writePosePrev } from './poseQueueInterp.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
- *  Two extra pose floats follow when interpolating. */
+ *  A pose batch splits the same terms, with the previous xy, into two streams (below). */
 export const INSTANCED_SPRITE_FLOATS = 15;
 export const INSTANCED_SPRITE_STRIDE = INSTANCED_SPRITE_FLOATS * 4;
-export const INSTANCED_SPRITE_POSE_FLOATS = 17;
-export const INSTANCED_SPRITE_POSE_STRIDE = INSTANCED_SPRITE_POSE_FLOATS * 4;
+// E-82. A pose batch uploads two streams instead of one 17-float record. The pose (x, y, rotC, rotS,
+// prevX, prevY) goes up every frame; the statics (scale, anchor, depth, tint, texture, tile terms)
+// only when they change: when the queue's staticGen, the rows packed, the type filter or the screen
+// scale differ from what the static buffer holds. 24 bytes a sprite a frame instead of 68.
+export const POSE_DYN_FLOATS = 6;
+export const POSE_STATIC_FLOATS = 11;
 
 export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
 export const BATCH_DEPTH = Object.freeze({ INDEX: 0 });
@@ -244,11 +247,21 @@ export class InstancedSpriteBatch {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
     this.shadowCast = !!shadowCast && !poseInterp;
-    this._floats = this.poseInterp ? INSTANCED_SPRITE_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
+    this._floats = this.poseInterp ? POSE_DYN_FLOATS : INSTANCED_SPRITE_FLOATS;
     if (this.shadowCast) this._floats += 7;
     this._strideBytes = this._floats * 4;
     this.data = new Float32Array(this.capacity * this._floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
+    // A pose batch's static stream (E-82): its CPU copy, the key of what it holds, and the version
+    // each ring slot's GPU copy holds (-1: none).
+    this.staticData = new Float32Array(this.poseInterp ? this.capacity * POSE_STATIC_FLOATS : 0);
+    this.staticDataU32 = new Uint32Array(this.staticData.buffer);
+    this._staticVersion = 0;
+    this._slotStaticVersion = [-1, -1];
+    this._stGen = 0;
+    this._stRows = -1;
+    this._stScale = NaN;
+    this._stFilter = -1;
     this._quad = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
     this._index = [0, 1, 2, 0, 2, 3];
     const labelName = label || 'instanced-sprites';
@@ -256,7 +269,10 @@ export class InstancedSpriteBatch {
       this._makeInstanceBuffer(labelName),
       this._makeInstanceBuffer(labelName + '-ring'),
     ];
-    this._geometries = this._buffers.map((buf) => this._geometryFor(buf));
+    this._staticBuffers = this.poseInterp
+      ? [this._makeStaticBuffer(labelName + '-static'), this._makeStaticBuffer(labelName + '-static-ring')]
+      : null;
+    this._geometries = this._buffers.map((buf, r) => this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null));
     this._ring = 0;
     this.buffer = this._buffers[0];
     this.geometry = this._geometries[0];
@@ -358,7 +374,38 @@ export class InstancedSpriteBatch {
     });
   }
 
-  _geometryFor(buf) {
+  _makeStaticBuffer(label) {
+    return new Buffer({
+      data: this.staticData,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      label,
+    });
+  }
+
+  _geometryFor(buf, staticBuf) {
+    if (this.poseInterp) {
+      // E-82: the pose stream (24-byte stride) and the static stream (44).
+      const ds = POSE_DYN_FLOATS * 4;
+      const ss = POSE_STATIC_FLOATS * 4;
+      const geometry = new Geometry({
+        attributes: {
+          aQuad: { buffer: this._quad, format: 'float32x2' },
+          aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
+          aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
+          aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 16, instance: true },
+          aInstScale: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 0, instance: true },
+          aInstAnchor: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 8, instance: true },
+          aInstDepth: { buffer: staticBuf, format: 'float32', stride: ss, offset: 16, instance: true },
+          aInstTintBits: { buffer: staticBuf, format: 'float32', stride: ss, offset: 20, instance: true },
+          aInstTexId: { buffer: staticBuf, format: 'float32', stride: ss, offset: 24, instance: true },
+          aInstTileInv: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 28, instance: true },
+          aInstTileOff: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 36, instance: true },
+        },
+        indexBuffer: this._index,
+      });
+      geometry.instanceCount = 0;
+      return geometry;
+    }
     const stride = this._strideBytes;
     const attributes = {
       aQuad: { buffer: this._quad, format: 'float32x2' },
@@ -375,15 +422,6 @@ export class InstancedSpriteBatch {
     if (this.shadowCast) {
       attributes.aInstShadow = { buffer: buf, format: 'float32x3', stride, offset: 60, instance: true };
       attributes.aInstLight = { buffer: buf, format: 'float32x4', stride, offset: 72, instance: true };
-    }
-    if (this.poseInterp) {
-      attributes.aInstPrevXY = {
-        buffer: buf,
-        format: 'float32x2',
-        stride,
-        offset: 60,
-        instance: true,
-      };
     }
     const geometry = new Geometry({ attributes, indexBuffer: this._index });
     geometry.instanceCount = 0;
@@ -585,6 +623,12 @@ export class InstancedSpriteBatch {
     this._ring = ring ^ 1;
     const geometry = this._geometries[ring];
     this._buffers[ring].update(out * stride);
+    // E-82: a ring slot's static copy goes up only when it is older than the CPU one.
+    const statics = this._staticBuffers;
+    if (statics && this._slotStaticVersion[ring] !== this._staticVersion) {
+      statics[ring].update(out * POSE_STATIC_FLOATS * 4);
+      this._slotStaticVersion[ring] = this._staticVersion;
+    }
     geometry.instanceCount = out;
     this.geometry = geometry;
     this.buffer = this._buffers[ring];
@@ -634,12 +678,129 @@ export class InstancedSpriteBatch {
     return this._finishUpload(out, this._strideBytes);
   }
 
+  /**
+   * Does staticData already hold this upload's statics (E-82)? True when the queue's staticGen is
+   * known and unchanged, the rows are packed densely in the same number, under the same type filter
+   * and, in screen space, at the same scale. Otherwise the key is set to this upload's, for the
+   * full pack that follows.
+   */
+  _staticsCurrent(q, ctx) {
+    const genView = q.staticGen;
+    const gen = genView && genView.length ? genView[0] : 0;
+    const rows = ctx.scanCount | 0;
+    const scale = ctx.useScreen ? ctx.screenScale : 0;
+    const filter = ctx.filterTypes
+      ? ((ctx.hasInclude ? ctx.includeType + 1 : 0) | ((ctx.exclude0 + 1) << 8) | ((ctx.exclude1 + 1) << 16))
+      : 0;
+    if (gen !== 0 && !ctx.useIndices && gen === this._stGen && rows === this._stRows
+      && scale === this._stScale && filter === this._stFilter) {
+      return true;
+    }
+    this._stGen = gen;
+    this._stRows = rows;
+    this._stScale = scale;
+    this._stFilter = filter;
+    this._staticVersion++;
+    return false;
+  }
+
   _uploadPose(q, opts) {
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
+    const out = this._staticsCurrent(q, ctx) ? this._packPoseOnly(q, ctx) : this._packPoseAndStatics(q, ctx);
+    return this._finishUpload(out, POSE_DYN_FLOATS * 4);
+  }
+
+  /** The pose stream alone: the statics on the GPU are current. A copy of the loop below. */
+  _packPoseOnly(q, ctx) {
     const o = ctx.o;
     const data = this.data;
-    const dataU32 = this.dataU32;
+    const indices = ctx.indices;
+    const useIndices = ctx.useIndices;
+    const useScreen = ctx.useScreen;
+    const cameraX = ctx.cameraX;
+    const cameraY = ctx.cameraY;
+    const screenScale = ctx.screenScale;
+    const typeArr = ctx.typeArr;
+    const includeType = ctx.includeType;
+    const exclude0 = ctx.exclude0;
+    const exclude1 = ctx.exclude1;
+    const hasInclude = ctx.hasInclude;
+    const filterTypes = ctx.filterTypes;
+    const scanCount = ctx.scanCount;
+    const snap = !!o.snap;
+    const prevXArr = snap ? null : o.prevX;
+    const prevYArr = snap ? null : o.prevY;
+    const rqX = q.x;
+    const rqY = q.y;
+    const rqRotC = q.rotC;
+    const rqRotS = q.rotS;
+    let base = 0;
+    let out = 0;
+    for (let k = 0; k < scanCount; k++) {
+      const i = useIndices ? indices[k] : k;
+      if (filterTypes) {
+        const t = typeArr[i];
+        if (hasInclude && t !== includeType) continue;
+        if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
+      }
+      if (out >= this.capacity) break;
+      let x = rqX[i];
+      let y = rqY[i];
+      let px = prevXArr ? prevXArr[i] : x;
+      let py = prevYArr ? prevYArr[i] : y;
+      if (useScreen) {
+        if (ctx.cameraRot) {
+          const c = ctx.camC;
+          const s = ctx.camS;
+          const dx = x - ctx.focusX;
+          const dy = y - ctx.focusY;
+          x = ctx.halfW + (dx * c - dy * s) * screenScale;
+          y = ctx.halfH + (dx * s + dy * c) * screenScale;
+          const pdx = px - ctx.focusX;
+          const pdy = py - ctx.focusY;
+          px = ctx.halfW + (pdx * c - pdy * s) * screenScale;
+          py = ctx.halfH + (pdx * s + pdy * c) * screenScale;
+        } else {
+          x = (x - cameraX) * screenScale;
+          y = (y - cameraY) * screenScale;
+          px = (px - cameraX) * screenScale;
+          py = (py - cameraY) * screenScale;
+        }
+      }
+      const snapped = snapSpritePos(x, y, o, useScreen);
+      x = snapped.x;
+      y = snapped.y;
+      const snappedPrev = snapSpritePos(px, py, o, useScreen);
+      px = snappedPrev.x;
+      py = snappedPrev.y;
+      let rc = rqRotC[i];
+      let rs = rqRotS[i];
+      if (useScreen && ctx.cameraRot) {
+        const c = ctx.camC;
+        const s = ctx.camS;
+        const nrc = rc * c - rs * s;
+        rs = rs * c + rc * s;
+        rc = nrc;
+      }
+      data[base] = x;
+      data[base + 1] = y;
+      data[base + 2] = rc;
+      data[base + 3] = rs;
+      data[base + 4] = px;
+      data[base + 5] = py;
+      base += POSE_DYN_FLOATS;
+      out++;
+    }
+    return out;
+  }
+
+  /** Both streams: the pose into data, the statics into staticData. */
+  _packPoseAndStatics(q, ctx) {
+    const o = ctx.o;
+    const data = this.data;
+    const stat = this.staticData;
+    const statU32 = this.staticDataU32;
     const indices = ctx.indices;
     const useIndices = ctx.useIndices;
     const useScreen = ctx.useScreen;
@@ -675,6 +836,7 @@ export class InstancedSpriteBatch {
     const rqTileOffU = q.tileOffsetU;
     const rqTileOffV = q.tileOffsetV;
     let base = 0;
+    let sBase = 0;
     let out = 0;
     for (let k = 0; k < scanCount; k++) {
       const i = useIndices ? indices[k] : k;
@@ -690,27 +852,27 @@ export class InstancedSpriteBatch {
       let py = prevYArr ? prevYArr[i] : y;
       let sx = rqScaleX[i];
       let sy = rqScaleY[i];
-    if (useScreen) {
-      if (ctx.cameraRot) {
-        const c = ctx.camC;
-        const s = ctx.camS;
-        const dx = x - ctx.focusX;
-        const dy = y - ctx.focusY;
-        x = ctx.halfW + (dx * c - dy * s) * screenScale;
-        y = ctx.halfH + (dx * s + dy * c) * screenScale;
-        const pdx = px - ctx.focusX;
-        const pdy = py - ctx.focusY;
-        px = ctx.halfW + (pdx * c - pdy * s) * screenScale;
-        py = ctx.halfH + (pdx * s + pdy * c) * screenScale;
-      } else {
-        x = (x - cameraX) * screenScale;
-        y = (y - cameraY) * screenScale;
-        px = (px - cameraX) * screenScale;
-        py = (py - cameraY) * screenScale;
+      if (useScreen) {
+        if (ctx.cameraRot) {
+          const c = ctx.camC;
+          const s = ctx.camS;
+          const dx = x - ctx.focusX;
+          const dy = y - ctx.focusY;
+          x = ctx.halfW + (dx * c - dy * s) * screenScale;
+          y = ctx.halfH + (dx * s + dy * c) * screenScale;
+          const pdx = px - ctx.focusX;
+          const pdy = py - ctx.focusY;
+          px = ctx.halfW + (pdx * c - pdy * s) * screenScale;
+          py = ctx.halfH + (pdx * s + pdy * c) * screenScale;
+        } else {
+          x = (x - cameraX) * screenScale;
+          y = (y - cameraY) * screenScale;
+          px = (px - cameraX) * screenScale;
+          py = (py - cameraY) * screenScale;
+        }
+        sx *= screenScale;
+        sy *= screenScale;
       }
-      sx *= screenScale;
-      sy *= screenScale;
-    }
       const snapped = snapSpritePos(x, y, o, useScreen);
       x = snapped.x;
       y = snapped.y;
@@ -727,12 +889,6 @@ export class InstancedSpriteBatch {
       const ry = rqRepeatY ? rqRepeatY[i] : 0;
       const invX = rqTileMulX ? rqTileMulX[i] : (rx > 0 ? 1 / rx : 0);
       const invY = rqTileMulY ? rqTileMulY[i] : (ry > 0 ? 1 / ry : 0);
-      data[base] = x;
-      data[base + 1] = y;
-      data[base + 2] = sx;
-      data[base + 3] = sy;
-      data[base + 4] = rqAnchorX[i];
-      data[base + 5] = rqAnchorY[i];
       let rc = rqRotC[i];
       let rs = rqRotS[i];
       if (useScreen && ctx.cameraRot) {
@@ -742,19 +898,27 @@ export class InstancedSpriteBatch {
         rs = rs * c + rc * s;
         rc = nrc;
       }
-      data[base + 6] = rc;
-      data[base + 7] = rs;
-      data[base + 8] = depth;
-      dataU32[base + 9] = packed >>> 0;
-      data[base + 10] = rqTextureId[i];
-      data[base + 11] = invX;
-      data[base + 12] = invY;
-      data[base + 13] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
-      data[base + 14] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
-      writePosePrev(data, base, px, py);
-      base += INSTANCED_SPRITE_POSE_FLOATS;
+      data[base] = x;
+      data[base + 1] = y;
+      data[base + 2] = rc;
+      data[base + 3] = rs;
+      data[base + 4] = px;
+      data[base + 5] = py;
+      stat[sBase] = sx;
+      stat[sBase + 1] = sy;
+      stat[sBase + 2] = rqAnchorX[i];
+      stat[sBase + 3] = rqAnchorY[i];
+      stat[sBase + 4] = depth;
+      statU32[sBase + 5] = packed >>> 0;
+      stat[sBase + 6] = rqTextureId[i];
+      stat[sBase + 7] = invX;
+      stat[sBase + 8] = invY;
+      stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
+      stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
+      base += POSE_DYN_FLOATS;
+      sBase += POSE_STATIC_FLOATS;
       out++;
     }
-    return this._finishUpload(out, INSTANCED_SPRITE_POSE_STRIDE);
+    return out;
   }
 }

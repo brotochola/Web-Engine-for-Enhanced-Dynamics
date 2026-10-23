@@ -161,6 +161,8 @@ function makeBatchViews() {
     tileOffsetV: null,
     tileMulX: null,
     tileMulY: null,
+    // E-82: the queue's staticGen column, or null (a queue whose statics are not counted).
+    staticGen: null,
   };
 }
 
@@ -870,6 +872,7 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueShadowH = null;
     this.renderQueueShadowOffX = null;
     this.renderQueueShadowOffY = null;
+    this.renderQueueStaticGen = null;
     this._poseSnapX = null;
     this._poseSnapY = null;
     this._poseSnapRotC = null;
@@ -947,6 +950,7 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueShadowH = buffer.shadowH;
     this.renderQueueShadowOffX = buffer.shadowOffX;
     this.renderQueueShadowOffY = buffer.shadowOffY;
+    this.renderQueueStaticGen = buffer.staticGen || null;
     this.renderQueueType = buffer.type;
     this.renderQueueSortKey = buffer.sortKey;
     this._sortKeyU32 = this._sortKeyU32ByBuf[bufferIdx];
@@ -1417,6 +1421,7 @@ class PixiRenderer extends AbstractWorker {
     q.shadowH = src.shadowH || null;
     q.shadowOffX = src.shadowOffX || null;
     q.shadowOffY = src.shadowOffY || null;
+    q.staticGen = src.staticGen || null;
   }
 
   _bindRenderQueueTo(q, count) {
@@ -1445,6 +1450,7 @@ class PixiRenderer extends AbstractWorker {
     src.shadowH = this.renderQueueShadowH;
     src.shadowOffX = this.renderQueueShadowOffX;
     src.shadowOffY = this.renderQueueShadowOffY;
+    src.staticGen = this.renderQueueStaticGen;
     this._bindSpriteQueue(q, src, count);
   }
 
