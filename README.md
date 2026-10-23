@@ -166,7 +166,7 @@ Both styles work: `import WEED from '@weed.js/engine'` and then `WEED.Scene`, or
 
 **Scene files use the global `WEED`.** The workers load your scene file too, so write it without an import: `const { Scene, GameObject } = WEED;`. The page's import defines `WEED`, and each worker defines its own. The file then runs on whichever build the page loaded. An import of the other build from a scene file would load a second engine.
 
-`SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game. Per-host setup (Vercel, Netlify, GitHub Pages, itch.io): [`docs/guide/DEPLOY.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md).
+`SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game. Hosts that cannot send those headers (GitHub Pages, any static server) need only `weed-sw.js`, which ships with the engine, next to your `index.html`: the engine registers it and reloads once on the first visit. Per-host setup (Vercel, Netlify, GitHub Pages, itch.io): [`docs/guide/DEPLOY.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md).
 
 ### CDN (jsDelivr)
 
@@ -415,7 +415,7 @@ Docs live in the GitHub repo, not in the npm tarball. Start with the [docs index
 | [docs/guide/TILEMAP.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/TILEMAP.md)                           | SAB-backed Tiled map API                                        |
 | [docs/guide/RAYCASTING.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/RAYCASTING.md)                     | Grid-based raycast API                                          |
 | [docs/guide/ENTITY_TEMPLATE.js](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/ENTITY_TEMPLATE.js)           | Copy-paste entity starter                                       |
-| [docs/guide/DEPLOY.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md)                             | Headers for SharedArrayBuffer per host (Vercel, Netlify, GitHub Pages, itch.io) |
+| [docs/guide/DEPLOY.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md)                             | Headers for SharedArrayBuffer per host (Vercel, Netlify, GitHub Pages, itch.io), and `weed-sw.js` for hosts without them |
 
 ---
 

@@ -6722,9 +6722,9 @@
       "id": "DX-SW",
       "title": "SharedArrayBuffer without COOP/COEP headers: our own isolation service worker (`weed-sw.js`)",
       "status": "open",
-      "statusText": "in progress on branch isolation_sw: SW-1 to SW-7 done (the worker, the gate, the engine wiring, a Chromium smoke test of 11 cases passing, dist/weed-sw.js, the package and the template)",
+      "statusText": "SW-1 to SW-8 done on branch isolation_sw: a host without COOP/COEP runs the game through weed-sw.js; Chromium smoke test 11/11. Left: phase 3 numbers, Firefox and the dev-server rows",
       "date": "2026-10-22",
-      "result": "Plan only. Built from coi-serviceworker v0.1.7 principles, not vendored: reload only after `activated`, no worker state, rewrite only page loads and worker scripts, never replace another service worker, guarded reload marker, the gate runs inside engine boot with the screen black, every failure named in the error overlay. SW-1 done: `new GameEngine()` threw a ReferenceError without SharedArrayBuffer, so the friendly message DEPLOY.md promises never showed; its flag now falls back to a plain buffer. Hot reload is unaffected (the dev servers send the headers).",
+      "result": "weed-sw.js (adds COOP/COEP to page loads and worker scripts only) and a gate in engine boot: registers it next to the page, waits until active, reloads once with the screen black; never replaces another service worker; every failure named first in the error. On by default (isolationServiceWorker). Chromium end to end, 11 cases: first visit 2 loads then isolated and drawing, return visit 1, hard reload 2, stopped worker 1, real headers register nothing, and the failure cases show their reason. Found on the way: new GameEngine() threw without SharedArrayBuffer (SW-1); the isolated page gets its own copy of sessionStorage (COOP), so the reload guard counts two reloads; a reload during a hard reload stays uncontrolled, so the gate waits for load. Shipped as dist/weed-sw.js, in the package exports and the template build; DEPLOY.md rewritten.",
       "area": "engine",
       "kind": "dx",
       "refs": [
@@ -6734,7 +6734,7 @@
       "aliases": [
         "coi-serviceworker"
       ],
-      "next": "SW-8: DEPLOY.md (replace the coi-serviceworker paragraph, the folder rule, the limits, removal) and the error text."
+      "next": "Phase 3: time to first frame (real headers, return visit, first visit) and a Predator pair through the worker; phase 2 rows for Firefox (needs Playwright's Firefox), npm run dev hot reload, the AudioWorklet and an allowed frame."
     },
     {
       "id": "E-86",
