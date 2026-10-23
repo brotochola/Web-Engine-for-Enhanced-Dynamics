@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Isolation smoke</title>
+<style>html, body { margin: 0; background: #000; }</style>
+</head>
+<body>
+<script type="module">
+// DX-SW, SW-4. A game page as a host without COOP/COEP serves it: the engine from source, the
+// isolation service worker at the URL in ?sw= (default /weed-sw.js; "off" turns it off), the scene
+// in ?scene=. window.__smoke says how far it got; isolationWorkerSmoke.mjs reads it.
+const q = new URLSearchParams(location.search);
+window.__smoke = { state: 'loading', isolated: self.crossOriginIsolated === true, error: null };
+try {
+  const { default: WEED } = await import('/src/index.js');
+  const sw = q.get('sw') ?? '/weed-sw.js';
+  const game = new WEED.GameEngine({ isolationServiceWorker: sw === 'off' ? false : sw, autoResize: true });
+  window.__smoke.game = game;
+  await game.loadScene(q.get('scene') || '/demos/orientedBoxScene/orientedBoxScene.js');
+  window.__smoke.state = 'running';
+} catch (err) {
+  window.__smoke.state = 'failed';
+  window.__smoke.error = String((err && err.message) || err);
+}
+</script>
+</body>
+</html>
