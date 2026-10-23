@@ -158,8 +158,9 @@ export interface GameEngineConfig {
   presentWhenHidden?: boolean;
   /**
    * URL of the service worker that makes the page cross-origin isolated (SharedArrayBuffer) on
-   * hosts that cannot send COOP/COEP, resolved against the page. Default 'weed-sw.js', next to
-   * the page; the first visit reloads once. false never registers one.
+   * hosts that cannot send COOP/COEP, resolved against the page. Default 'weed-sw.js', next to the
+   * page, with a bundle; '/weed-sw.js', the site root, when the engine runs from source (its
+   * workers load from /src/). The first visit reloads once. false never registers one.
    */
   isolationServiceWorker?: string | false;
 }

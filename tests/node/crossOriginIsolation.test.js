@@ -5,6 +5,7 @@ import {
   ISOLATION_REASONS,
   ISOLATION_RELOAD_KEY,
   SHARED_ARRAY_BUFFER_MISSING,
+  defaultIsolationServiceWorker,
   ensureCrossOriginIsolation,
   isolationFailureReason,
   sharedArrayBufferMissing,
@@ -250,4 +251,11 @@ test('storage that cannot keep the marker means no reload, and the player is tol
   assert.equal(await ensureCrossOriginIsolation({}, scope), 'failed');
   assert.equal(isolationFailureReason(), ISOLATION_REASONS.storage);
   assert.equal(calls.reload, 0);
+});
+
+test('the default worker URL: next to the page for a bundle, the site root from source', () => {
+  // From source the workers load from /src/workers/, which only a worker at the root covers.
+  assert.equal(defaultIsolationServiceWorker({}), '/weed-sw.js');
+  assert.equal(defaultIsolationServiceWorker({ WEED: {} }), '/weed-sw.js');
+  assert.equal(defaultIsolationServiceWorker({ WEED: { BUNDLE_MODE: true } }), 'weed-sw.js');
 });

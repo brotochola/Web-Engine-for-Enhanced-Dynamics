@@ -20,12 +20,12 @@ When the page is not isolated, the scene does not start and the page shows an er
 - **Where:** next to your `index.html`, on your own site (a service worker cannot come from a CDN). With npm, copy `node_modules/@weed.js/engine/dist/weed-sw.js`; `create-weed-game`'s `npm run build` does it for you. With the CDN build, download `weed-sw.js` from the same version's `dist/` folder and upload it with your game.
 - **First visit:** the engine registers it before anything else loads, waits until it is active, and reloads the page once; the screen stays black meanwhile. Later visits load once.
 - **Headers already there:** if the page is isolated (your host sends the headers, or `npm run dev`), the engine does nothing: no service worker is registered.
-- **Its folder:** a service worker covers the folder it sits in and everything below it. Next to `index.html` covers the game. Worker scripts loaded by URL count too, so if you serve the engine's source (`src/`) rather than a bundle, put `weed-sw.js` at your site's root.
+- **Its folder:** a service worker covers the folder it sits in and everything below it. Next to `index.html` covers the game. Worker scripts loaded by URL count too: if you serve the engine's source (`src/`) rather than a bundle, its workers load from `/src/`, so the engine looks for `weed-sw.js` at your site's root instead.
 - **Another service worker:** if your site already has one (an offline cache, a PWA) over the game's folder, the engine never replaces it and shows an error instead. Add the two headers to that worker's responses.
 - **Where it cannot help:** plain HTTP (browsers allow it only over HTTPS, or on `localhost`); Firefox private windows and the browsers built into apps, which block service workers; and a game embedded in a page on another site that is not isolated itself (see [Game portals](#game-portals-and-other-iframes)). The error says which.
 - **Your own page:** the rules in [What `require-corp` changes](#what-require-corp-changes-for-your-own-page) apply as with real headers.
 
-The engine looks for `weed-sw.js` next to the page by default. To use another URL, or none:
+By default the engine looks for `weed-sw.js` next to the page (at the site root when it runs from source). To use another URL, or none:
 
 ```js
 new GameEngine({ isolationServiceWorker: '/weed-sw.js' }); // at the site root
