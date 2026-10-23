@@ -136,17 +136,19 @@
     {
       "id": "E-85",
       "title": "GC in the bullet and ray path",
-      "status": "open",
-      "statusText": "open (from Q1b)",
-      "date": null,
-      "result": "`bulletStressScene`: particle 493 ms/s with 29.6 ms/s of GC, the only GC pressure in the sweep; `rayStressScene` 5.2 ms/s. Find the allocation sites with `heapSampleWorkers.mjs`, then W19. --- ## Not doing (read the log first)",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
+      "date": "2026-10-23",
+      "result": "Doubles boxed as arguments of ray functions TurboFan does not inline, and the global `Infinity` in branches that never run. The traced ray lives in a module Float64Array; Ray tests circles and boxes with its own copies of the helpers. bulletStressScene particle allocation 278.5 → 2.1 MB/s; ray cast kernel +20.9 %, bullet tick +41.6 %; bulletStressScene particle 6.593 → 4.873 ms, −26.6 %, worse 0/4 (4 pairs).",
       "area": "particle",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L654"
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L657",
+        "reports/E-85-ray-path-boxing.md"
       ],
       "aliases": [],
-      "rank": 7
+      "next": "castAll's hit objects (47 MB/s left in rayStressScene); the Predator gate with W24."
     },
     {
       "id": "W19",

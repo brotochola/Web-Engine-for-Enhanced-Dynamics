@@ -654,9 +654,16 @@ looks assets up by id (kept in step by `register`, `deserialize` and the unload;
 `adobeAnimateScene` pre-render **3.514 → 3.214 ms (−9.6 %, 0/4 worse), KEPT (product)**, four pairs, load
 identical; no Predator gate (Predator loads no Adobe Animate asset).
 
-### E-85 GC in the bullet and ray path — **open (from Q1b)**
+### E-85 GC in the bullet and ray path — **kept (product), 2026-10-23**
+Report: [`reports/E-85-ray-path-boxing.md`](./reports/E-85-ray-path-boxing.md).
 `bulletStressScene`: particle 493 ms/s with **29.6 ms/s of GC**, the only GC pressure in the sweep;
-`rayStressScene` 5.2 ms/s. Find the allocation sites with `heapSampleWorkers.mjs`, then W19.
+`rayStressScene` 5.2 ms/s. The allocation was doubles boxed as arguments of ray functions TurboFan
+does not inline, and the global `Infinity` in branches that never run (its load has no feedback,
+so the other branch's double was boxed). The traced ray now lives in a module `Float64Array`; Ray
+tests circles and boxes with its own copies of the helpers. Particle allocation **278.5 → 2.1 MB/s**;
+kernels: ray cast +20.9 %, bullet tick +41.6 %; `bulletStressScene` particle **6.593 → 4.873 ms,
+−26.6 %, worse 0/4**. Next: `castAll`'s hit objects (47 MB/s left in `rayStressScene`), then the
+Predator gate with W24. W19 (WASM batched casts) now starts from this faster JS.
 
 ---
 

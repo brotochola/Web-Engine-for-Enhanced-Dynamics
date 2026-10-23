@@ -6,9 +6,40 @@ import { Transform } from '../components/transform.js';
 import { Collider } from '../components/collider.js';
 import { ColliderFixture } from './colliderFixture.js';
 import { Grid } from './grid.js';
-import { rayCircleIntersect, rayBoxIntersect, rayPolygonIntersect } from '../util/utils.js';
+import { rayPolygonIntersect } from '../util/utils.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 import { ChainPoints } from './chainPoints.js';
+
+// The ray being traced, and the hits, live in typed arrays (E-85). _traverseGrid, _castUnitDir,
+// _checkCellEntities and _shapeRayDistance are too big for TurboFan to inline, and a double passed
+// to a call that is not inlined, returned from one, or stored in a shared object field became a
+// heap number: per ray, per cell visited and per candidate, 272 MB/s in bulletStressScene. Their
+// callers write the ray into RAY and pass only integers (entity, cell, mask) and objects.
+const RAY = new Float64Array(9);
+const RAY_X = 0;
+const RAY_Y = 1;
+const RAY_DIR_X = 2; // unit direction
+const RAY_DIR_Y = 3;
+const RAY_LEN = 4;
+const RAY_TO_X = 5; // where the traversal stops
+const RAY_TO_Y = 6;
+const RAY_MAX = 7; // _traverseGrid: farthest hit kept; _checkCellEntities: the closest hit so far
+const RAY_SHAPE_MAX = 8; // the bound of one shape test
+// Infinity for the branches that almost never run (an axis-aligned ray). The global `Infinity` in a
+// branch that never ran is a load without feedback, and TurboFan then boxed the double the other
+// branch computed into the same variable: four heap numbers per traversal (tMaxX, tDeltaX, ...).
+const INF = Infinity;
+// [entity, fixture] and the distance, per cell and per traversal; one shape's distance.
+const CELL_HIT = new Int32Array(2);
+const CELL_HIT_DIST = new Float64Array(1);
+const TRAVERSE_HIT = new Int32Array(2);
+const TRAVERSE_DIST = new Float64Array(1);
+const SHAPE_DIST = new Float64Array(1);
+
+/** castAll's hit order. A sign, not a - b: the comparator's double result was boxed per comparison. */
+function byDistance(a, b) {
+  return a.distance < b.distance ? -1 : a.distance > b.distance ? 1 : 0;
+}
 
 /**
  * Ray - Static class for raycasting against entities in the spatial grid
@@ -45,6 +76,7 @@ import { ChainPoints } from './chainPoints.js';
  *   const hits = Ray.castAll(gun.x, gun.y, targetX, targetY);
  *   hits.forEach(h => spawnBulletHole(h.hitX, h.hitY));
  */
+
 export class Ray {
   // Shape type constants (must match Collider.js / ShapeType enum)
   static SHAPE_BOX = ShapeType.Box;
@@ -53,7 +85,10 @@ export class Ray {
   static SHAPE_CHAIN = ShapeType.Chain;
 
   // GC Optimization: Reusable objects to avoid GC pressure
-  static _tempResult = { entityIndex: -1, distance: Infinity, fixtureIndex: -1 };
+  // The traced ray and the per-cell, per-traversal and per-shape results are the typed arrays at the
+  // top of this file (E-85); these statics name the same arrays for tests.
+  static _traverseHit = TRAVERSE_HIT;
+  static _traverseDist = TRAVERSE_DIST;
   static _tempHitInfo = {
     hit: false,
     entityIndex: -1,
@@ -73,7 +108,6 @@ export class Ray {
   static _tempAllHitsCount = 0; // Reused counter to avoid allocations
   static _tempAllHitsFarthest = -1; // H1: farthest distance among top-N castAll hits
   static _checkedEntities = new Set(); // Reused Set for castAll
-  static _traverseResult = { entityIndex: -1, distance: Infinity, fixtureIndex: -1 };
   // Per-cast generation stamp (skip entities already shape-tested this ray)
   static _rayGen = 1;
   static _rayGenStamp = new Uint32Array(0);
@@ -168,9 +202,15 @@ export class Ray {
           console.warn('Ray.castDir: non-unit dir', dirX, dirY, 'normSq=', n);
         }
       }
-      const xTo = x + dirX * maxDist;
-      const yTo = y + dirY * maxDist;
-      return Ray._castUnitDir(x, y, xTo, yTo, dirX, dirY, maxDist, mask);
+      const ray = RAY;
+      ray[RAY_X] = x;
+      ray[RAY_Y] = y;
+      ray[RAY_DIR_X] = dirX;
+      ray[RAY_DIR_Y] = dirY;
+      ray[RAY_LEN] = maxDist;
+      ray[RAY_TO_X] = x + dirX * maxDist;
+      ray[RAY_TO_Y] = y + dirY * maxDist;
+      return Ray._castUnitDir(mask);
     } finally {
       Ray._leaveStats();
     }
@@ -194,12 +234,27 @@ export class Ray {
     const dirX = dx / rayLength;
     const dirY = dy / rayLength;
     const capped = maxDist !== Infinity && maxDist < rayLength ? maxDist : rayLength;
-    const xEnd = capped < rayLength ? xFrom + dirX * capped : xTo;
-    const yEnd = capped < rayLength ? yFrom + dirY * capped : yTo;
-    return Ray._castUnitDir(xFrom, yFrom, xEnd, yEnd, dirX, dirY, capped, mask);
+    const ray = RAY;
+    ray[RAY_X] = xFrom;
+    ray[RAY_Y] = yFrom;
+    ray[RAY_DIR_X] = dirX;
+    ray[RAY_DIR_Y] = dirY;
+    ray[RAY_LEN] = capped;
+    ray[RAY_TO_X] = capped < rayLength ? xFrom + dirX * capped : xTo;
+    ray[RAY_TO_Y] = capped < rayLength ? yFrom + dirY * capped : yTo;
+    return Ray._castUnitDir(mask);
   }
 
-  static _castUnitDir(xFrom, yFrom, xTo, yTo, dirX, dirY, rayLength, mask) {
+  /** The first entity on the ray in RAY (origin, unit direction, length, end), or -1. */
+  static _castUnitDir(mask) {
+    const ray = RAY;
+    const xFrom = ray[RAY_X];
+    const yFrom = ray[RAY_Y];
+    const dirX = ray[RAY_DIR_X];
+    const dirY = ray[RAY_DIR_Y];
+    const rayLength = ray[RAY_LEN];
+    const xTo = ray[RAY_TO_X];
+    const yTo = ray[RAY_TO_Y];
     Ray._beginRayGen();
     // Get grid data from Grid class
     const invCellSize = Grid.invCellSize;
@@ -225,7 +280,7 @@ export class Ray {
         cellSize;
       tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
     } else {
-      tMaxX = Infinity;
+      tMaxX = INF;
     }
 
     if (dirY !== 0) {
@@ -234,12 +289,12 @@ export class Ray {
         cellSize;
       tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
     } else {
-      tMaxY = Infinity;
+      tMaxY = INF;
     }
 
     // Distance to cross one cell
-    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : Infinity;
-    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : Infinity;
+    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : INF;
+    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : INF;
 
     // Current cell position
     let currentCellX = startCellX;
@@ -263,13 +318,13 @@ export class Ray {
       ) {
         // Get entities in this cell
         const cellIndex = currentCellY * gridCols + currentCellX;
-        Ray._checkCellEntities(cellIndex, xFrom, yFrom, dirX, dirY, rayLength, closestDist, null, mask);
+        ray[RAY_MAX] = closestDist;
+        Ray._checkCellEntities(cellIndex, null, mask);
 
-        const result = Ray._tempResult;
-
-        if (result.entityIndex !== -1) {
-          closestHit = result.entityIndex;
-          closestDist = result.distance;
+        const hitE = CELL_HIT[0];
+        if (hitE !== -1) {
+          closestHit = hitE;
+          closestDist = CELL_HIT_DIST[0];
         }
       }
 
@@ -356,17 +411,26 @@ export class Ray {
       const dirY = dy / rayLength;
 
       // Use internal traversal
-      const result = Ray._traverseGrid(
-        xFrom, yFrom, xTo, yTo, dirX, dirY, rayLength, maxDist, null, mask, excludeEntity
-      );
+      const ray = RAY;
+      ray[RAY_X] = xFrom;
+      ray[RAY_Y] = yFrom;
+      ray[RAY_DIR_X] = dirX;
+      ray[RAY_DIR_Y] = dirY;
+      ray[RAY_LEN] = rayLength;
+      ray[RAY_TO_X] = xTo;
+      ray[RAY_TO_Y] = yTo;
+      ray[RAY_MAX] = maxDist;
+      Ray._traverseGrid(null, mask, excludeEntity);
 
-      if (result.entityIndex !== -1) {
+      const hitE = TRAVERSE_HIT[0];
+      if (hitE !== -1) {
+        const distance = TRAVERSE_DIST[0];
         info.hit = true;
-        info.entityIndex = result.entityIndex;
-        info.distance = result.distance;
-        info.hitX = xFrom + dirX * result.distance;
-        info.hitY = yFrom + dirY * result.distance;
-        info.fixtureIndex = result.fixtureIndex;
+        info.entityIndex = hitE;
+        info.distance = distance;
+        info.hitX = xFrom + dirX * distance;
+        info.hitY = yFrom + dirY * distance;
+        info.fixtureIndex = TRAVERSE_HIT[1];
       }
 
       return info;
@@ -462,16 +526,21 @@ export class Ray {
   static _linecastDirImpl(
     x1, y1, x2, y2, dirX, dirY, rayLength, excludeEntities, mask, result, excludeA = -1, excludeB = -1
   ) {
-    const hitResult = Ray._traverseGrid(
-      x1, y1, x2, y2,
-      dirX, dirY, rayLength, rayLength,
-      excludeEntities, mask,
-      excludeA, excludeB
-    );
-    if (hitResult.entityIndex !== -1) {
+    const ray = RAY;
+    ray[RAY_X] = x1;
+    ray[RAY_Y] = y1;
+    ray[RAY_DIR_X] = dirX;
+    ray[RAY_DIR_Y] = dirY;
+    ray[RAY_LEN] = rayLength;
+    ray[RAY_TO_X] = x2;
+    ray[RAY_TO_Y] = y2;
+    ray[RAY_MAX] = rayLength;
+    Ray._traverseGrid(excludeEntities, mask, excludeA, excludeB);
+    const hitE = TRAVERSE_HIT[0];
+    if (hitE !== -1) {
       result.blocked = true;
-      result.entityIndex = hitResult.entityIndex;
-      result.distance = hitResult.distance;
+      result.entityIndex = hitE;
+      result.distance = TRAVERSE_DIST[0];
     }
     return result;
   }
@@ -516,28 +585,22 @@ export class Ray {
     if (distSq === 0) return result;
 
     const rayLength = Math.sqrt(distSq);
-    const dirX = dx / rayLength;
-    const dirY = dy / rayLength;
+    const ray = RAY;
+    ray[RAY_X] = x1;
+    ray[RAY_Y] = y1;
+    ray[RAY_DIR_X] = dx / rayLength;
+    ray[RAY_DIR_Y] = dy / rayLength;
+    ray[RAY_LEN] = rayLength;
+    ray[RAY_TO_X] = x2;
+    ray[RAY_TO_Y] = y2;
+    ray[RAY_MAX] = rayLength;
+    Ray._traverseGrid(null, mask, entityIndexA, entityIndexB);
 
-    const hitResult = Ray._traverseGrid(
-      x1,
-      y1,
-      x2,
-      y2,
-      dirX,
-      dirY,
-      rayLength,
-      rayLength,
-      null,
-      mask,
-      entityIndexA,
-      entityIndexB
-    );
-
-    if (hitResult.entityIndex !== -1) {
+    const hitE = TRAVERSE_HIT[0];
+    if (hitE !== -1) {
       result.blocked = true;
-      result.entityIndex = hitResult.entityIndex;
-      result.distance = hitResult.distance;
+      result.entityIndex = hitE;
+      result.distance = TRAVERSE_DIST[0];
     }
     return result;
   }
@@ -635,6 +698,12 @@ export class Ray {
     const dirX = dx / rayLength;
     const dirY = dy / rayLength;
     const hitCap = maxHits > 0 ? maxHits : 1;
+    const ray = RAY;
+    ray[RAY_X] = xFrom;
+    ray[RAY_Y] = yFrom;
+    ray[RAY_DIR_X] = dirX;
+    ray[RAY_DIR_Y] = dirY;
+    ray[RAY_LEN] = rayLength;
 
     const invCellSize = Grid.invCellSize;
     const gridCols = Grid.gridWidth;
@@ -658,7 +727,7 @@ export class Ray {
         cellSize;
       tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
     } else {
-      tMaxX = Infinity;
+      tMaxX = INF;
     }
 
     if (dirY !== 0) {
@@ -667,11 +736,11 @@ export class Ray {
         cellSize;
       tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
     } else {
-      tMaxY = Infinity;
+      tMaxY = INF;
     }
 
-    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : Infinity;
-    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : Infinity;
+    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : INF;
+    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : INF;
 
     let currentCellX = startCellX;
     let currentCellY = startCellY;
@@ -687,17 +756,7 @@ export class Ray {
         currentCellY < gridRows
       ) {
         const cellIndex = currentCellY * gridCols + currentCellX;
-        Ray._collectCellHitsTopN(
-          cellIndex,
-          xFrom,
-          yFrom,
-          dirX,
-          dirY,
-          rayLength,
-          allHits,
-          mask,
-          hitCap
-        );
+        Ray._collectCellHitsTopN(cellIndex, allHits, mask, hitCap);
       }
 
       const cellExit = tMaxX < tMaxY ? tMaxX : tMaxY;
@@ -719,7 +778,7 @@ export class Ray {
     }
 
     allHits.length = Ray._tempAllHitsCount;
-    allHits.sort((a, b) => a.distance - b.distance);
+    allHits.sort(byDistance);
 
     const count = allHits.length;
     for (let i = 0; i < count; i++) {
@@ -741,23 +800,19 @@ export class Ray {
 
   /**
    * Internal: Traverse grid and find first hit
-   * Shared logic for cast, castWithInfo, linecast
+   * Shared logic for castWithInfo and the linecasts. Traces the ray in RAY (origin, unit direction,
+   * length, end, and RAY_MAX, the farthest hit kept); the hit goes to TRAVERSE_HIT and TRAVERSE_DIST.
    * @private
    */
-  static _traverseGrid(
-    xFrom,
-    yFrom,
-    xTo,
-    yTo,
-    dirX,
-    dirY,
-    rayLength,
-    maxDist,
-    excludeEntities = null,
-    rayMask = 0xFFFFFFFF,
-    excludeA = -1,
-    excludeB = -1
-  ) {
+  static _traverseGrid(excludeEntities = null, rayMask = 0xFFFFFFFF, excludeA = -1, excludeB = -1) {
+    const ray = RAY;
+    const xFrom = ray[RAY_X];
+    const yFrom = ray[RAY_Y];
+    const dirX = ray[RAY_DIR_X];
+    const dirY = ray[RAY_DIR_Y];
+    const xTo = ray[RAY_TO_X];
+    const yTo = ray[RAY_TO_Y];
+    const maxDist = ray[RAY_MAX];
     Ray._beginRayGen();
     const invCellSize = Grid.invCellSize;
     const gridCols = Grid.gridWidth;
@@ -779,7 +834,7 @@ export class Ray {
         cellSize;
       tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
     } else {
-      tMaxX = Infinity;
+      tMaxX = INF;
     }
 
     if (dirY !== 0) {
@@ -788,11 +843,11 @@ export class Ray {
         cellSize;
       tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
     } else {
-      tMaxY = Infinity;
+      tMaxY = INF;
     }
 
-    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : Infinity;
-    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : Infinity;
+    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : INF;
+    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : INF;
 
     let currentCellX = startCellX;
     let currentCellY = startCellY;
@@ -813,26 +868,14 @@ export class Ray {
       ) {
         const cellIndex = currentCellY * gridCols + currentCellX;
 
-        Ray._checkCellEntities(
-          cellIndex,
-          xFrom,
-          yFrom,
-          dirX,
-          dirY,
-          rayLength,
-          closestDist,
-          excludeEntities,
-          rayMask,
-          excludeA,
-          excludeB
-        );
+        ray[RAY_MAX] = closestDist;
+        Ray._checkCellEntities(cellIndex, excludeEntities, rayMask, excludeA, excludeB);
 
-        const result = Ray._tempResult;
-
-        if (result.entityIndex !== -1) {
-          closestHit = result.entityIndex;
-          closestDist = result.distance;
-          closestFi = result.fixtureIndex;
+        const hitE = CELL_HIT[0];
+        if (hitE !== -1) {
+          closestHit = hitE;
+          closestDist = CELL_HIT_DIST[0];
+          closestFi = CELL_HIT[1];
         }
       }
 
@@ -855,107 +898,191 @@ export class Ray {
       }
     }
 
-    // Borrowed static result: consumed immediately by castWithInfo/linecast
-    const out = Ray._traverseResult;
-    out.entityIndex = closestHit;
-    out.distance = closestDist;
-    out.fixtureIndex = closestFi;
-    return out;
+    // Read at once by castWithInfo and the linecasts.
+    TRAVERSE_HIT[0] = closestHit;
+    TRAVERSE_HIT[1] = closestFi;
+    TRAVERSE_DIST[0] = closestDist;
   }
 
   /**
-   * Ray vs one collider shape. Returns distance along ray, or -1 if miss.
+   * Ray vs one collider shape: the ray in RAY, bounded by RAY_SHAPE_MAX. The distance along the
+   * ray, or -1 for a miss, goes to SHAPE_DIST[0]; a compound polygon's fixture to _lastFixtureIndex.
+   * One function per shape, each called with the entity alone: whichever of them TurboFan inlines
+   * here (or into _checkCellEntities), no call on the way passes a double. Inlined together, the
+   * tests overran the inlining budget and the one left out boxed its nine doubles per candidate.
    * @private
    */
-  static _shapeRayDistance(entityIndex, rayX, rayY, dirX, dirY, rayLength) {
+  static _shapeRayDistance(entityIndex) {
     Ray._lastFixtureIndex = -1;
     const shapeType = Collider.shapeType[entityIndex];
+    if (shapeType === Ray.SHAPE_CIRCLE) Ray._circleRayDistance(entityIndex);
+    else if (shapeType === Ray.SHAPE_BOX) Ray._boxRayDistance(entityIndex);
+    else if (shapeType === Ray.SHAPE_POLYGON) Ray._polygonRayDistance(entityIndex);
+    else if (shapeType === Ray.SHAPE_CHAIN) Ray._chainRayDistance(entityIndex);
+    else SHAPE_DIST[0] = -1;
+  }
+
+  /**
+   * _shapeRayDistance for a circle: rayCircleIntersect (util/utils.js) on the ray in RAY, its math
+   * copied here so no call takes the ray's doubles (rayShapeParity.test.js holds them equal).
+   * @private
+   */
+  static _circleRayDistance(entityIndex) {
+    const ray = RAY;
+    const rayX = ray[RAY_X];
+    const rayY = ray[RAY_Y];
+    const dirX = ray[RAY_DIR_X];
+    const dirY = ray[RAY_DIR_Y];
+    const maxDist = ray[RAY_SHAPE_MAX];
+    const circleX = Transform.x[entityIndex] + (Collider.offsetX[entityIndex] || 0);
+    const circleY = Transform.y[entityIndex] + (Collider.offsetY[entityIndex] || 0);
+    const radius = Collider.radius[entityIndex];
+    SHAPE_DIST[0] = -1;
+
+    const toCircleX = circleX - rayX;
+    const toCircleY = circleY - rayY;
+    const distToCircleSq = toCircleX * toCircleX + toCircleY * toCircleY;
+    const maxPossibleDist = maxDist + radius;
+    if (distToCircleSq > maxPossibleDist * maxPossibleDist) return;
+
+    const projection = toCircleX * dirX + toCircleY * dirY;
+    if (projection < 0) return;
+
+    const closestX = rayX + dirX * projection;
+    const closestY = rayY + dirY * projection;
+    const distX = circleX - closestX;
+    const distY = circleY - closestY;
+    const distSq = distX * distX + distY * distY;
+    const radiusSq = radius * radius;
+    if (distSq > radiusSq) return;
+
+    const distance = projection - Math.sqrt(radiusSq - distSq);
+    if (distance > maxDist || distance < 0) return;
+    SHAPE_DIST[0] = distance;
+  }
+
+  /**
+   * _shapeRayDistance for an axis-aligned box: rayBoxIntersect (util/utils.js) on the ray in RAY,
+   * copied for the same reason as _circleRayDistance.
+   * @private
+   */
+  static _boxRayDistance(entityIndex) {
+    const ray = RAY;
+    const rayX = ray[RAY_X];
+    const rayY = ray[RAY_Y];
+    const dirX = ray[RAY_DIR_X];
+    const dirY = ray[RAY_DIR_Y];
+    const maxDist = ray[RAY_SHAPE_MAX];
+    const boxX = Transform.x[entityIndex] + (Collider.offsetX[entityIndex] || 0);
+    const boxY = Transform.y[entityIndex] + (Collider.offsetY[entityIndex] || 0);
+    const halfW = Collider.width[entityIndex] * 0.5;
+    const halfH = Collider.height[entityIndex] * 0.5;
+    SHAPE_DIST[0] = -1;
+
+    const minX = boxX - halfW;
+    const maxX = boxX + halfW;
+    const minY = boxY - halfH;
+    const maxY = boxY + halfH;
+    const invDirX = dirX !== 0 ? 1 / dirX : INF;
+    const invDirY = dirY !== 0 ? 1 / dirY : INF;
+    const t1 = (minX - rayX) * invDirX;
+    const t2 = (maxX - rayX) * invDirX;
+    const t3 = (minY - rayY) * invDirY;
+    const t4 = (maxY - rayY) * invDirY;
+    const tmin = Math.max(Math.min(t1, t2), Math.min(t3, t4));
+    const tmax = Math.min(Math.max(t1, t2), Math.max(t3, t4));
+    if (tmax < 0 || tmin > tmax) return;
+
+    const distance = tmin >= 0 ? tmin : tmax;
+    if (distance > maxDist || distance < 0) return;
+    SHAPE_DIST[0] = distance;
+  }
+
+  /** @private _shapeRayDistance for a chain. */
+  static _chainRayDistance(entityIndex) {
+    const ray = RAY;
+    SHAPE_DIST[0] = ChainPoints.rayDistance(
+      entityIndex, ray[RAY_X], ray[RAY_Y], ray[RAY_DIR_X], ray[RAY_DIR_Y], ray[RAY_SHAPE_MAX]
+    );
+  }
+
+  /** @private _shapeRayDistance for a polygon, single or compound (one convex ColliderFixture each). */
+  static _polygonRayDistance(entityIndex) {
+    const ray = RAY;
+    const rayX = ray[RAY_X];
+    const rayY = ray[RAY_Y];
+    const dirX = ray[RAY_DIR_X];
+    const dirY = ray[RAY_DIR_Y];
+    const rayLength = ray[RAY_SHAPE_MAX];
+    const out = SHAPE_DIST;
     const ox = Collider.offsetX[entityIndex] || 0;
     const oy = Collider.offsetY[entityIndex] || 0;
-    const tx = Transform.x[entityIndex];
-    const ty = Transform.y[entityIndex];
-
-    if (shapeType === Ray.SHAPE_CHAIN) {
-      return ChainPoints.rayDistance(entityIndex, rayX, rayY, dirX, dirY, rayLength);
-    }
-
-    if (shapeType === Ray.SHAPE_POLYGON) {
-      const c = Transform.rotC ? Transform.rotC[entityIndex] : 1;
-      const s = Transform.rotS ? Transform.rotS[entityIndex] : 0;
-      const entityX = tx + c * ox - s * oy;
-      const entityY = ty + s * ox + c * oy;
-      const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[entityIndex] : 0;
-      if (fixtureCount > 0 && ColliderFixture.active) {
-        let best = -1;
-        let bestFi = -1;
-        const fxActive = ColliderFixture.active;
-        const fxNext = ColliderFixture.next;
-        const fxVertCount = ColliderFixture.vertCount;
-        const vx = ColliderFixture.vertexX;
-        const vy = ColliderFixture.vertexY;
-        const nx = ColliderFixture.normalX;
-        const ny = ColliderFixture.normalY;
-        const fxMax = ColliderFixture.maxCount | 0;
-        let fi = ColliderFixture.headOf(entityIndex);
-        let guard = 0;
-        while (fi !== 0xffff && guard++ < fxMax) {
-          if (fxActive[fi]) {
-            const count = fxVertCount[fi] | 0;
-            if (count >= 3) {
-              const base = fi * MAX_POLYGON_VERTICES;
-              const d = rayPolygonIntersect(
-                rayX, rayY, dirX, dirY,
-                entityX, entityY, c, s,
-                vx, vy, nx, ny,
-                count, base, rayLength
-              );
-              if (d >= 0 && (best < 0 || d < best)) {
-                best = d;
-                bestFi = fi;
-              }
+    const c = Transform.rotC ? Transform.rotC[entityIndex] : 1;
+    const s = Transform.rotS ? Transform.rotS[entityIndex] : 0;
+    const entityX = Transform.x[entityIndex] + c * ox - s * oy;
+    const entityY = Transform.y[entityIndex] + s * ox + c * oy;
+    const fixtureCount = Collider.fixtureCount ? Collider.fixtureCount[entityIndex] : 0;
+    if (fixtureCount > 0 && ColliderFixture.active) {
+      let best = -1;
+      let bestFi = -1;
+      const fxActive = ColliderFixture.active;
+      const fxNext = ColliderFixture.next;
+      const fxVertCount = ColliderFixture.vertCount;
+      const vx = ColliderFixture.vertexX;
+      const vy = ColliderFixture.vertexY;
+      const nx = ColliderFixture.normalX;
+      const ny = ColliderFixture.normalY;
+      const fxMax = ColliderFixture.maxCount | 0;
+      let fi = ColliderFixture.headOf(entityIndex);
+      let guard = 0;
+      while (fi !== 0xffff && guard++ < fxMax) {
+        if (fxActive[fi]) {
+          const count = fxVertCount[fi] | 0;
+          if (count >= 3) {
+            const base = fi * MAX_POLYGON_VERTICES;
+            const d = rayPolygonIntersect(
+              rayX, rayY, dirX, dirY,
+              entityX, entityY, c, s,
+              vx, vy, nx, ny,
+              count, base, rayLength
+            );
+            if (d >= 0 && (best < 0 || d < best)) {
+              best = d;
+              bestFi = fi;
             }
           }
-          fi = fxNext[fi];
         }
-        Ray._lastFixtureIndex = bestFi;
-        return best;
+        fi = fxNext[fi];
       }
-      const count = Collider.polyCount[entityIndex];
-      if (count < 3) return -1;
-      const base = entityIndex * MAX_POLYGON_VERTICES;
-      return rayPolygonIntersect(
-        rayX, rayY, dirX, dirY,
-        entityX, entityY, c, s,
-        Collider.polyVertexX, Collider.polyVertexY,
-        Collider.polyNormalX, Collider.polyNormalY,
-        count, base, rayLength
-      );
+      Ray._lastFixtureIndex = bestFi;
+      out[0] = best;
+      return;
     }
-
-    const entityX = tx + ox;
-    const entityY = ty + oy;
-    if (shapeType === Ray.SHAPE_CIRCLE) {
-      return rayCircleIntersect(
-        rayX, rayY, dirX, dirY, entityX, entityY, Collider.radius[entityIndex], rayLength
-      );
+    const count = Collider.polyCount[entityIndex];
+    if (count < 3) {
+      out[0] = -1;
+      return;
     }
-    if (shapeType === Ray.SHAPE_BOX) {
-      return rayBoxIntersect(
-        rayX, rayY, dirX, dirY,
-        entityX, entityY, Collider.width[entityIndex], Collider.height[entityIndex], rayLength
-      );
-    }
-    return -1;
+    const base = entityIndex * MAX_POLYGON_VERTICES;
+    out[0] = rayPolygonIntersect(
+      rayX, rayY, dirX, dirY,
+      entityX, entityY, c, s,
+      Collider.polyVertexX, Collider.polyVertexY,
+      Collider.polyNormalX, Collider.polyNormalY,
+      count, base, rayLength
+    );
   }
 
   /**
    * H1: Collect hits into a top-N buffer (closest maxHits only), deduped via generation stamp.
    * @private
    */
-  static _collectCellHitsTopN(cellIndex, rayX, rayY, dirX, dirY, rayLength, allHits, rayMask, maxHits) {
+  static _collectCellHitsTopN(cellIndex, allHits, rayMask, maxHits) {
     const count = Grid.getCellCount(cellIndex);
     if (count === 0) return;
 
+    const ray = RAY;
+    const rayLength = ray[RAY_LEN];
     const cellBase = Grid.getCellBase(cellIndex);
     const gridEntities = Grid._gridEntities;
     const active = Transform.active;
@@ -978,7 +1105,9 @@ export class Ray {
         Ray._tempAllHitsCount >= maxHits && Ray._tempAllHitsFarthest >= 0
           ? Ray._tempAllHitsFarthest
           : rayLength;
-      const distance = Ray._shapeRayDistance(entityIndex, rayX, rayY, dirX, dirY, shapeMax);
+      ray[RAY_SHAPE_MAX] = shapeMax;
+      Ray._shapeRayDistance(entityIndex);
+      const distance = SHAPE_DIST[0];
       if (distance < 0) continue;
 
       let hitCount = Ray._tempAllHitsCount;
@@ -1015,26 +1144,19 @@ export class Ray {
   }
 
   /**
-   * Check all entities in a cell for ray collision
-   * Mutates Ray._tempResult with entity index and distance, or {-1, Infinity} if no hit
+   * Check all entities in a cell for ray collision: the ray in RAY, a hit counting only when it is
+   * closer than RAY_MAX. Writes the closest hit into CELL_HIT ([entity, fixture]) and CELL_HIT_DIST,
+   * or -1 and Infinity
    * @private
    */
-  static _checkCellEntities(
-    cellIndex,
-    rayX,
-    rayY,
-    dirX,
-    dirY,
-    rayLength,
-    currentClosest,
-    excludeEntities = null,
-    rayMask = 0xFFFFFFFF,
-    excludeA = -1,
-    excludeB = -1
-  ) {
-    Ray._tempResult.entityIndex = -1;
-    Ray._tempResult.distance = Infinity;
-    Ray._tempResult.fixtureIndex = -1;
+  static _checkCellEntities(cellIndex, excludeEntities = null, rayMask = 0xFFFFFFFF, excludeA = -1, excludeB = -1) {
+    const ray = RAY;
+    const rayLength = ray[RAY_LEN];
+    const currentClosest = ray[RAY_MAX];
+    const cellHit = CELL_HIT;
+    cellHit[0] = -1;
+    cellHit[1] = -1;
+    CELL_HIT_DIST[0] = Infinity;
 
     const count = Grid.getCellCount(cellIndex);
     if (count === 0) {
@@ -1082,8 +1204,9 @@ export class Ray {
       if (!((1 << (cCollisionLayer[entityIndex] & 31)) & rayMask)) continue;
 
       // Tighten shape maxDist to running closest so later candidates early-out
-      const shapeMax = closestDist < rayLength ? closestDist : rayLength;
-      const distance = Ray._shapeRayDistance(entityIndex, rayX, rayY, dirX, dirY, shapeMax);
+      ray[RAY_SHAPE_MAX] = closestDist < rayLength ? closestDist : rayLength;
+      Ray._shapeRayDistance(entityIndex);
+      const distance = SHAPE_DIST[0];
 
       // Track closest hit in this cell
       if (distance >= 0 && distance < closestDist) {
@@ -1093,8 +1216,8 @@ export class Ray {
       }
     }
 
-    Ray._tempResult.entityIndex = closestIndex;
-    Ray._tempResult.distance = closestDist;
-    Ray._tempResult.fixtureIndex = closestFi;
+    cellHit[0] = closestIndex;
+    cellHit[1] = closestFi;
+    CELL_HIT_DIST[0] = closestDist;
   }
 }

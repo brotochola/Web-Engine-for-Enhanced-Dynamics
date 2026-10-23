@@ -60,6 +60,13 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   them; that cost 10–30 % (review R8). Send the rare case to its own copied loop instead
   (E-41, E-51, E-52 do this). Keep hot callees under TurboFan's 460-byte inline limit when they
   take or return doubles (a non-inlined call boxes them: E-59).
+- **No doubles across a call TurboFan may leave out.** Inlining is transitive and has a budget
+  (920 bytecode bytes per function), so splitting a callee into small integer-argument functions
+  only moves the boxed call deeper. On a hot path, write the doubles into a module `Float64Array`
+  and pass integers; results come back the same way (E-85: the ray path made 279 MB/s of heap
+  numbers). The global `Infinity` in a branch that never ran is a load without feedback, and
+  TurboFan then boxed the double the other branch stored in the same variable: use a module
+  `const INF = Infinity`. `tests/bench/heapSampleNode.mjs` shows both in Node.
 - **Per-entity doubles in typed arrays, not object fields.** In Chrome, x and y stored into a
   scratch object allocated a heap number each (shared map transitions make such fields tagged),
   and a double returned from a callee that a big caller did not inline was boxed: pre-render made
