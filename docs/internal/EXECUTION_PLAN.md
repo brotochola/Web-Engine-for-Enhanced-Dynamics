@@ -652,9 +652,11 @@ a fast Pixi oversubscribed the full GPU. That is E-97, now kept.
 Report: [`reports/E-82-split-instance-upload.md`](./reports/E-82-split-instance-upload.md). Left: the same split for
 sprites without pose interpolation (`staticGen` is already published), packed static formats.
 
-### E-83 `TileMap.getTileId` — **open (from Q1b)**
+### E-83 `TileMap.getTileId` — **answered 2026-10-23, no change**
 `tilemapStressScene`: logic 566 ms/s, `getTileId` 80.3 % self. A per-tile lookup the game calls; read
 it before measuring.
+**Answer:** the scene asks 63 M tiles per second (64 queriers × 16 500 per tick); `tileMapMicrobench`
+reads 2.5 ns per query in Node. The share is the query count, not a slow lookup. Closed without a sitting.
 
 ### E-84 Adobe Animate registry lookups per entity — **KEPT 2026-10-23**
 Adobe Animate (zoom 1.4): pre-render `getAsset` 9.7 % and `getClipFrameRate` 6.0 % self, per entity per

@@ -723,17 +723,17 @@
     {
       "id": "E-83",
       "title": "`TileMap.getTileId`",
-      "status": "open",
-      "statusText": "open (from Q1b)",
-      "date": null,
-      "result": "`tilemapStressScene`: logic 566 ms/s, `getTileId` 80.3 % self. A per-tile lookup the game calls; read it before measuring. …",
+      "status": "answered",
+      "statusText": "answered 2026-10-23, no change",
+      "date": "2026-10-23",
+      "result": "The stress scene asks 63 M tiles per second; the lookup is 2.5 ns per query in Node (`tileMapMicrobench`). The share is the query count, not a slow lookup.",
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L646"
+        "EXECUTION_PLAN.md#L655",
+        "HYPOTHESIS_LOG.md#L15"
       ],
-      "aliases": [],
-      "next": "Low priority: the stress scene only calls getTileId; read the data type first."
+      "aliases": []
     },
     {
       "id": "W8b",
