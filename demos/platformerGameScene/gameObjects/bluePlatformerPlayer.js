@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 import { Platform } from './platform.js';
 import { PlatformerCharacterComponent } from '../components/platformerCharacterComponent.js';
 
-const { LightEmitter, GameObject, AdobeAnimComponent, ParticleEmitter, AdobeAnimRegistry, RigidBody, Collider, Keyboard, CollisionListener, Transform } = WEED;
+const { LightEmitter, GameObject, AdobeAnimComponent, ParticleEmitter, AdobeAnimRegistry, RigidBody, Collider, Keyboard, Gamepad, CollisionListener, Transform } = WEED;
 
 export class BluePlatformerPlayer extends GameObject {
   static serializable = true;
@@ -13,6 +13,8 @@ export class BluePlatformerPlayer extends GameObject {
   // depended on how many physics steps ran before the next tick).
   static jumpSpeed = 1333; // px/s, what the old -80000 px/s² burst gave on one 60 Hz step
   static moveAcceleration = 1800; // px/s²
+  static stickThreshold = 0.35; // left stick past this counts as left/right
+  static stickJumpThreshold = 0.6; // stick pushed up this far jumps, like the up arrow
   static scale = 0.35;
   static clips = Object.freeze({
     idle: 'idle',
@@ -136,9 +138,13 @@ export class BluePlatformerPlayer extends GameObject {
   tick(dtRatio) {
     const amIOnAPlatform = this.platformerCharacterComponent.isItStandingOnPlatform > -1
     const ratioOfSideMovement = amIOnAPlatform ? 1 : 0.3
-    const left = Keyboard.isDown('a') || Keyboard.isDown('arrowleft');
-    const right = Keyboard.isDown('d') || Keyboard.isDown('arrowright');
-    const jumpHeld = Keyboard.isDown('w') || Keyboard.isDown('arrowup') || Keyboard.isDown(' ');
+    const stickX = Gamepad.leftX;
+    const left = Keyboard.isDown('a') || Keyboard.isDown('arrowleft')
+      || Gamepad.isLeftDown || stickX < -BluePlatformerPlayer.stickThreshold;
+    const right = Keyboard.isDown('d') || Keyboard.isDown('arrowright')
+      || Gamepad.isRightDown || stickX > BluePlatformerPlayer.stickThreshold;
+    const jumpHeld = Keyboard.isDown('w') || Keyboard.isDown('arrowup') || Keyboard.isDown(' ')
+      || Gamepad.isADown || Gamepad.isUpDown || Gamepad.leftY < -BluePlatformerPlayer.stickJumpThreshold;
 
     // console.log(left, right, jumpHeld);
 
