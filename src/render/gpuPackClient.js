@@ -33,34 +33,45 @@ export async function bindGpuPack(memory, layout) {
     tableByte: layout.tableByte,
     tableSlots: layout.tableSlots,
     tables: new Map(),
+    used: 0,
     indexByte: layout.indexByte,
     indexCap: layout.indexCap,
     particlesByte: layout.particlesByte,
   };
 }
 
-/** The byte offset of q's column table, written on first use; -1 when a column is not in the memory. */
+/**
+ * The byte offset of the column table for q's columns, written on first use; -1 when a column is
+ * not in the memory or the tables are full. Keyed by the columns, not by q: pre-render reuses one
+ * q object and points it at queue A or B each frame.
+ */
 function tableFor(b, q) {
-  const known = b.tables.get(q);
-  if (known !== undefined) return known;
-  let at = -1;
-  if (b.tables.size < b.tableSlots) {
-    const cols = GPU_PACK_COLUMNS;
-    let ok = true;
+  const cols = GPU_PACK_COLUMNS;
+  const entry = b.tables.get(q.x);
+  if (entry !== undefined) {
+    let same = true;
     for (let c = 0; c < cols.length; c++) {
-      const v = q[cols[c]];
-      if (!v || v.buffer !== b.buffer) {
-        ok = false;
+      if (entry.cols[c] !== q[cols[c]]) {
+        same = false;
         break;
       }
     }
-    if (ok) {
-      at = b.tableByte + b.tables.size * cols.length * 4;
-      const base = at >> 2;
-      for (let c = 0; c < cols.length; c++) b.u32[base + c] = q[cols[c]].byteOffset;
-    }
+    if (same) return entry.at;
   }
-  b.tables.set(q, at);
+  let at = -1;
+  const ref = new Array(cols.length);
+  for (let c = 0; c < cols.length; c++) {
+    const v = q[cols[c]];
+    if (!v || v.buffer !== b.buffer) return -1;
+    ref[c] = v;
+  }
+  if (b.used < b.tableSlots) {
+    at = b.tableByte + b.used * cols.length * 4;
+    b.used++;
+    const base = at >> 2;
+    for (let c = 0; c < cols.length; c++) b.u32[base + c] = ref[c].byteOffset;
+  }
+  b.tables.set(q.x, { at, cols: ref });
   return at;
 }
 

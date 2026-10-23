@@ -22,19 +22,20 @@
     {
       "id": "W9",
       "title": "WASM W9, `packInstancedRows` in Pixi",
-      "status": "open",
-      "statusText": "reopened (decision 6): ~10 % of Pixi at 1.4×; Q1b: pre-render packs too: 38–40 % of a saturated pre-render (995–998 ms/s) in `painterSortStressScene`, …",
-      "date": "2026-10-22",
-      "result": "screened, ceiling. Q1 Predator: 33.9 % of Pixi. E-18 measured that arithmetic is 26 % of the call (painter pack 0.497 ms, gather-only 0.367, identity 0.287) and the rest is the gather through the painter list; …",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23 (E-94)",
+      "date": "2026-10-23",
+      "result": "gpuPack.wasm packs pre-render's sprite and caster rows on the render-queue memory, bit-identical. Kernel 3.1× (Node), 2.3–3.0× (Chrome). painterSortStressScene pre-render 44.446 → 42.561 ms, −3.5 %, worse 0/4: at 300 000 rows the painter-order gather over a 14 MB queue is the cost.",
       "area": "pixi",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L39",
-        "WASM_HYPOTHESES.md#L159"
+        "WASM_HYPOTHESES.md#L159",
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L737",
+        "reports/E-94-gpu-pack-wasm.md"
       ],
       "aliases": [],
-      "next": "Kernel sitting on pre-render's pack (38–40 % of a saturated pre-render in sprite-heavy scenes), the render queue in a memory WASM can read.",
-      "rank": 3
+      "next": "A scatter variant (read in queue order, write to the painter slot); the Predator gate (pre-render packs its sun casters)."
     },
     {
       "id": "W6",
@@ -6747,7 +6748,7 @@
       ],
       "aliases": [],
       "next": "16 bits per dirty word, so every value is a Smi; spawnStormScene logic and physics.",
-      "rank": 1
+      "rank": 2
     },
     {
       "id": "E-88",
@@ -6793,7 +6794,7 @@
       ],
       "aliases": [],
       "next": "A public method that only writes RAY and calls an integer-argument body; rayStressScene heap pass, then a logic pair.",
-      "rank": 2
+      "rank": 3
     },
     {
       "id": "E-91",
@@ -6841,6 +6842,39 @@
       ],
       "aliases": [],
       "next": "Predator gate with the next batch."
+    },
+    {
+      "id": "E-94",
+      "title": "The instanced-row pack in WASM (E-76 W9)",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
+      "date": "2026-10-23",
+      "result": "See W9: painterSortStressScene pre-render −3.5 %, worse 0/4; kernel 2.3–3.1×.",
+      "area": "preRender",
+      "kind": "wasm",
+      "refs": [
+        "EXECUTION_PLAN.md#L737",
+        "reports/E-94-gpu-pack-wasm.md"
+      ],
+      "aliases": [
+        "W9"
+      ]
+    },
+    {
+      "id": "W9b",
+      "title": "The instanced-row pack as a scatter (rows in queue order, written to their painter slot)",
+      "status": "open",
+      "statusText": "open (from E-94)",
+      "date": "2026-10-23",
+      "result": "At 300 000 rows the WASM pack is bound by its painter-order gather across a 14 MB queue (pack_sprites 33.6 % of painterSort pre-render). Reading in queue order and writing through the inverse permutation turns 18 scattered reads per row into one scattered row write.",
+      "area": "preRender",
+      "kind": "wasm",
+      "refs": [
+        "reports/E-94-gpu-pack-wasm.md"
+      ],
+      "aliases": [],
+      "next": "A kernel variant at 300 000 rows (gpuPackWasmMicrobench --rows 300000); keep it only if Chrome confirms.",
+      "rank": 1
     }
   ],
   "leads": [

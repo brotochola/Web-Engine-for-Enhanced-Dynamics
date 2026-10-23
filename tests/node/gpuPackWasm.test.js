@@ -134,3 +134,28 @@ test('the WASM pack declines what it does not pack', async () => {
   const ctx = makePackContext(plainQ, { space: GPU_SPACE_WORLD, indices: s.inMemory, indexCount: N }, N, {});
   assert.equal(packInstancedRowsWasm(b, plainQ, ctx, dst, GPU_SPRITE_FLOATS, N, false), -1, 'a column outside');
 });
+
+test('one q object pointed at another queue each frame packs that queue', async () => {
+  // Pre-render reuses one q object and points its columns at queue A or B each frame.
+  const a = await setup(4);
+  const b2 = await setup(5);
+  // Queue B's columns on queue A's memory, so one binding sees both.
+  const buf = a.b.buffer;
+  let top = a.b.particlesByte + 64; // past the client's scratch
+  const qB = { count: N };
+  for (const [name, v] of Object.entries(b2.q)) {
+    if (!ArrayBuffer.isView(v)) continue;
+    top = (top + 15) & ~15;
+    const w = new v.constructor(buf, top, v.length);
+    w.set(v);
+    top += v.byteLength;
+    qB[name] = w;
+  }
+  const qA = { ...a.q };
+  const shared = {};
+  const world = { space: GPU_SPACE_WORLD, indices: a.inMemory, indexCount: N };
+  for (const [label, src] of [['A', qA], ['B', qB], ['A again', qA]]) {
+    Object.assign(shared, src);
+    compare({ ...a, q: shared }, { ...world, type: shared.type }, N, false, `frame on queue ${label}`);
+  }
+});

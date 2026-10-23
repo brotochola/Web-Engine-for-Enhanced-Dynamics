@@ -61,6 +61,7 @@ import {
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
+import { bindGpuPack, packInstancedRowsWasm } from '../render/gpuPackClient.js';
 import {
     GPU_SPRITE_FLOATS,
     GPU_CASTER_FLOATS,
@@ -370,6 +371,8 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorX = EMPTY_F32;
         this.renderQueueAnchorY = EMPTY_F32;
         this.renderQueueType = EMPTY_U8;
+        /** The instanced-row pack kernel (E-76 W9), bound when the queues live in the render-queue memory. */
+        this._gpuPackWasm = null;
         this.renderQueueSortKey = EMPTY_F32;
         this.renderQueueSortKeyU32 = EMPTY_U32;
         this.renderQueueRepeatX = EMPTY_U16;
@@ -847,6 +850,15 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuKeepIdx = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
                 this._gpuPackOpts = {};
                 this._gpuCookieQ = null;
+                // E-76 W9: pack in WASM where both queues live in the render-queue memory.
+                if (data.renderQueueMemory && data.renderQueueLayout) {
+                    try {
+                        this._gpuPackWasm = await bindGpuPack(data.renderQueueMemory, data.renderQueueLayout);
+                    } catch (err) {
+                        console.warn('[PRE_RENDER] gpuPack.wasm did not load; packing in JS', err);
+                        this._gpuPackWasm = null;
+                    }
+                }
                 const cookieN = Math.max(1, caps.maxCookie | 0);
                 if (cookieN > 0) {
                     const cookieRot = new Float32Array(cookieN);
@@ -3258,7 +3270,7 @@ class PreRenderWorker extends AbstractWorker {
             opts.sortKey = null;
             const sctx = makePackContext(q, opts, caps.maxSun, this._gpuPackCtx);
             sunN = sctx
-                ? packInstancedRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
+                ? this._packRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
                 : 0;
         }
         return sunN;
@@ -3412,7 +3424,7 @@ class PreRenderWorker extends AbstractWorker {
         opts.depthDenom = Math.max(1, n);
         const cctx = makePackContext(cq, opts, caps.maxCookie, this._gpuPackCtx);
         return cctx
-            ? packInstancedRows(cq, cctx, dst.cookie, dst.cookieU32, GPU_SPRITE_FLOATS, caps.maxCookie, false)
+            ? this._packRows(cq, cctx, dst.cookie, dst.cookieU32, GPU_SPRITE_FLOATS, caps.maxCookie, false)
             : 0;
     }
 
@@ -3465,6 +3477,19 @@ class PreRenderWorker extends AbstractWorker {
             && this._sortSprites === SORT_SPRITES_PRERENDER;
     }
 
+    /**
+     * packInstancedRows through the WASM kernel when it takes the call (world space, no snap, no
+     * type filter, everything in the render-queue memory), else in JS. The same bits either way.
+     */
+    _packRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast) {
+        const b = this._gpuPackWasm;
+        if (b) {
+            const n = packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shadowCast);
+            if (n >= 0) return n;
+        }
+        return packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast);
+    }
+
     _bindGpuPackWriters() {
         if (this._gpuPackSpec) return;
         this._addPackSortMs = (ms) => { this.sortTimeThisFrame += ms; };
@@ -3474,7 +3499,7 @@ class PreRenderWorker extends AbstractWorker {
             const cap = this.gpuQueueCaps.maxSprites;
             const ctx = makePackContext(q, opts, cap, this._gpuPackCtx);
             const n = ctx
-                ? packInstancedRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, cap, false)
+                ? this._packRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, cap, false)
                 : 0;
             this._packParticles = ctx ? (ctx.particleCount | 0) : 0;
             return n;
@@ -3485,7 +3510,7 @@ class PreRenderWorker extends AbstractWorker {
             const cap = this.gpuQueueCaps.maxGlow;
             const ctx = makePackContext(q, opts, cap, this._gpuPackCtx);
             return ctx
-                ? packInstancedRows(q, ctx, dst.glow, dst.glowU32, GPU_SPRITE_FLOATS, cap, false)
+                ? this._packRows(q, ctx, dst.glow, dst.glowU32, GPU_SPRITE_FLOATS, cap, false)
                 : 0;
         };
         this._gpuPackSpec = {
