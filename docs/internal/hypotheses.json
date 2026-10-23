@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-23",
-  "about": "Every speed hypothesis WeedJS has tested or plans to test: one short entry each, with a link to its evidence (the log row, the plan entry, the report). Seeded from HYPOTHESIS_LOG.md, EXECUTION_PLAN.md and WASM_HYPOTHESES.md; kept by hand from then on. The page docs/internal/hypotheses.html is built from this file by scripts/buildHypothesesPage.mjs.",
+  "about": "Every speed hypothesis WeedJS has tested or plans to test, plus developer-experience todos (kind `dx`): one short entry each, with a link to its evidence (the log row, the plan entry, the report). Seeded from HYPOTHESIS_LOG.md, EXECUTION_PLAN.md and WASM_HYPOTHESES.md; kept by hand from then on. The page docs/internal/hypotheses.html is built from this file by scripts/buildHypothesesPage.mjs.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
     "open": "Not tested yet, or reopened.",
@@ -6717,6 +6717,24 @@
         "HYPOTHESIS_LOG.md#L543"
       ],
       "aliases": []
+    },
+    {
+      "id": "DX-SW",
+      "title": "SharedArrayBuffer without COOP/COEP headers: our own isolation service worker (`weed-sw.js`)",
+      "status": "open",
+      "statusText": "in progress on branch isolation_sw; decisions taken 2026-10-23 (on by default, narrow rewrite, reasons worded for whoever can fix them, a self-unregistering file to remove it)",
+      "date": "2026-10-22",
+      "result": "Plan only. Built from coi-serviceworker v0.1.7 principles, not vendored: reload only after `activated`, no worker state, rewrite only page loads and worker scripts, never replace another service worker, guarded reload marker, the gate runs inside engine boot with the screen black, every failure named in the error overlay. Found: `new GameEngine()` throws a ReferenceError without SharedArrayBuffer, so the friendly message DEPLOY.md promises never shows. Hot reload is unaffected (the dev servers send the headers).",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "ISOLATION_SERVICE_WORKER_PLAN.md",
+        "ISOLATION_SERVICE_WORKER_PLAN.md#L261"
+      ],
+      "aliases": [
+        "coi-serviceworker"
+      ],
+      "next": "SW-1: GameEngine survives a page without SharedArrayBuffer, so the existing message becomes reachable."
     },
     {
       "id": "E-86",

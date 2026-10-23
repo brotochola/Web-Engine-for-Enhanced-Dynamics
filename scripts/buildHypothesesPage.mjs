@@ -96,7 +96,7 @@ code { font: 13px ui-monospace, Consolas, monospace; }
     <input id="q" type="search" placeholder="Search id, title, result…">
     <select id="fstatus"><option value="">Any status</option><option value="@pending">Pending (open, running, blocked)</option><option value="@kept">Kept</option><option value="@notkept">Not kept (dropped, rejected, fail)</option><option value="@neutral">Tie, mixed, screened</option></select>
     <select id="farea"><option value="">Any worker</option></select>
-    <select id="fkind"><option value="">Any kind</option><option value="wasm">WASM / C</option><option value="js">JS</option><option value="gpu">GPU</option></select>
+    <select id="fkind"><option value="">Any kind</option><option value="wasm">WASM / C</option><option value="js">JS</option><option value="gpu">GPU</option><option value="dx">DX</option></select>
   </div>
 </div></header>
 <main><div class="wrap" id="view"></div></main>
