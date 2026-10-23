@@ -9,6 +9,7 @@ import { Scene } from './scene.js';
 import { printLogo, usableCanvasSize } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { DEBUG_DEFAULTS, ENGINE_DEFAULTS } from '../util/configDefaults.js';
+import { ensureCrossOriginIsolation } from '../util/crossOriginIsolation.js';
 import {
   ensureResourceTimingBuffer,
   inferSceneScriptUrl,
@@ -29,6 +30,11 @@ class GameEngine {
   };
 
   constructor(config = {}) {
+    // DX-SW. Before anything loads: a page the host did not isolate gets weed-sw.js and one
+    // reload. loadScene waits for it; the screen stays black meanwhile.
+    this._isolation = ensureCrossOriginIsolation({
+      serviceWorker: config.isolationServiceWorker ?? ENGINE_DEFAULTS.isolationServiceWorker,
+    });
     this.autoResize = config.autoResize ?? ENGINE_DEFAULTS.autoResize;
     this.preventContextMenu = config.preventContextMenu ?? ENGINE_DEFAULTS.preventContextMenu;
     this.preventDefaultKeys = config.preventDefaultKeys ?? ENGINE_DEFAULTS.preventDefaultKeys;
@@ -302,6 +308,9 @@ class GameEngine {
    * @returns {boolean} - true if scene change accepted, false if busy
    */
   async loadScene(source, options = {}) {
+    // The page is about to reload into an isolated one: nothing after this call should run.
+    // 'failed' goes on, so Scene.init shows why the engine cannot start.
+    if ((await this._isolation) === 'reloading') return new Promise(() => {});
     const label = typeof source === 'string' ? source : source && source.name;
     if (this.state === GameEngine.states.TRANSITIONING) {
       console.warn(

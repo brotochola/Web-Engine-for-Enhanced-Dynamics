@@ -6734,7 +6734,7 @@
       "aliases": [
         "coi-serviceworker"
       ],
-      "next": "SW-3: weed-sw.js, the gate (ensureCrossOriginIsolation) and the GameEngine wiring, with the Node tests."
+      "next": "SW-4: the browser end-to-end smoke test (Chromium; Firefox needs Playwright's Firefox installed, which waits for the owner)."
     },
     {
       "id": "E-86",

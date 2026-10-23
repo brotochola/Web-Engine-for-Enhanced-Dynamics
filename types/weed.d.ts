@@ -156,6 +156,12 @@ export interface GameEngineConfig {
   transitionCooldown?: number;
   /** Keep presenting to the canvas while the document is hidden. Default false. */
   presentWhenHidden?: boolean;
+  /**
+   * URL of the service worker that makes the page cross-origin isolated (SharedArrayBuffer) on
+   * hosts that cannot send COOP/COEP, resolved against the page. Default 'weed-sw.js', next to
+   * the page; the first visit reloads once. false never registers one.
+   */
+  isolationServiceWorker?: string | false;
 }
 
 /** Main-thread camera snapshot synced from {@link Camera} static state. */
