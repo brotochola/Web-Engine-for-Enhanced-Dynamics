@@ -40,24 +40,24 @@
     {
       "id": "W6",
       "title": "`rebuildOwnedRows`",
-      "status": "open",
-      "statusText": "open, only as part of W7",
-      "date": null,
-      "result": "WASM binning beats JS. Q1: 12.5 % inclusive of Predator spatial: 2.9 % ceiling alone. Inputs in five SABs including Box2D's heap",
+      "status": "screened",
+      "statusText": "screened (ceiling): +10.9 % in its kernel",
+      "date": "2026-10-23",
+      "result": "A bit-exact C port of rebuildOwnedRows (every shape path) ran +10.9 % in its kernel on Predator's mix, 5 alternating rounds (1.48× on a mix of every shape). The rebuild is 12.5 % of Predator spatial and its JS is near the floor of its scattered cell writes: about 1.4 % of spatial.",
       "area": "spatial",
       "kind": "wasm",
       "refs": [
+        "HYPOTHESIS_LOG.md#L13",
         "WASM_HYPOTHESES.md#L155"
       ],
       "aliases": [],
-      "next": "With W7.",
-      "rank": 1
+      "next": "Only inside W7, if W7 runs."
     },
     {
       "id": "W7",
       "title": "W5 + W6 + the existing publish",
       "status": "open",
-      "statusText": "open, blocked on Phase 4 and on Q3 for W5/W6",
+      "statusText": "open, blocked on Phase 4; ceiling under 10 % of spatial after the W6 screen",
       "date": null,
       "result": "The whole spatial step in one call beats JS + WASM publish. Q1: the three are ~98 % of Predator spatial; the publish module itself 17.5 %. Needs `Transform.x/y` in the same memory: arena or Box2D's memory",
       "area": "spatial",
@@ -66,8 +66,8 @@
         "WASM_HYPOTHESES.md#L156"
       ],
       "aliases": [],
-      "next": "Boot barrier first (Box2D memory + offsets with box2dReady, rebind before start). Ceiling measured: JS left in Predator spatial is rebuildOwnedRows 12 % + glue 8 %, so one C call ≈ 10–15 % of spatial.",
-      "rank": 1
+      "next": "After W4 makes the Phase 4 move: one C call per frame saves the glue (8 % of Predator spatial) and W6's 1.4 %.",
+      "rank": 14
     },
     {
       "id": "E-82",
@@ -273,7 +273,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 14
+      "rank": 15
     },
     {
       "id": "W28",
@@ -288,7 +288,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 16
     },
     {
       "id": "W4",
@@ -303,8 +303,8 @@
         "WASM_HYPOTHESES.md#L153"
       ],
       "aliases": [],
-      "next": "Unblocked by the Phase 4 decision (Box2D's memory).",
-      "rank": 16
+      "next": "Measure its premise again first: Q1 predates E-98 (BunnyMark collect 21 → 6 ms in JS). A Predator and BunnyMark profile of what the emit and collect chain costs now; if it still holds, it is the first reason for the Phase 4 move (physics starts first and mallocs the engine block, the moved buffers are built inside it).",
+      "rank": 2
     },
     {
       "id": "W18",
@@ -6984,7 +6984,7 @@
       ],
       "aliases": [],
       "next": "Profile after E-98g (bunnyMarkScene, 293 ms/s): collectVisibleEntities 54.1 %, _type0PersistHit 23.3 % (its frame and animation-state loads), _writeType0PosesOnly 16.9 %. Fusing the two walks would save their shared loads, est. 5–8 % of pre-render; four tests call them by name. W4 for the rest.",
-      "rank": 2
+      "rank": 1
     },
     {
       "id": "E-82b",
