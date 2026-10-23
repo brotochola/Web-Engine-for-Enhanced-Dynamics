@@ -642,6 +642,9 @@ depth, tint, texture, tile terms, previous xy. Packed formats (anchor and rotati
 as halves, tile terms only for tiled sprites) bring a plain sprite to about 40 bytes; splitting the
 per-frame pose (xy, previous xy, rotation) from per-sprite statics kept in a slot texture brings it to
 24–28. Judged on `bunnyMarkScene` Pixi `STEP_MS − WAIT_MS`, and the bunny count at 60 fps.
+**Ceiling screen (2026-10-23):** uploading 24 of the 68 bytes (a temporary hack, garbage on screen) took
+the renderer from 14.040 to 7.595 ms at 250 000 bunnies, **−44.5 %**: the transfer is half of Pixi's step.
+Build the split.
 
 ### E-83 `TileMap.getTileId` — **open (from Q1b)**
 `tilemapStressScene`: logic 566 ms/s, `getTileId` 80.3 % self. A per-tile lookup the game calls; read
