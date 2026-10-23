@@ -1,6 +1,6 @@
 #version 300 es
 // Every light's umbra disc and visibility fan in one draw (E-96): the light's terms are vertex
-// attributes, constant over its triangles, where visibilityPolygon.vert.glsl had them as uniforms.
+// attributes, constant over its triangles, where the per-light shader had them as uniforms.
 in vec2 aPosition;
 in vec4 aLight; // x, y, intensity, radius
 in vec4 aColor; // r, g, b, attenuation scale

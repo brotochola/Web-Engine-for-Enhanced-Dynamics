@@ -5,7 +5,7 @@ flat in vec4 vLight; // x, y, intensity, radius
 flat in vec4 vColor; // r, g, b, attenuation scale
 out vec4 finalColor;
 
-// visibilityPolygon.frag.glsl with the light's terms from the vertex (E-96).
+// The per-light visibility fan shader (removed in E-96b) with the light's terms from the vertex (E-96).
 void main() {
   vec2 delta = vWorldPos - vLight.xy;
   float dist = length(delta);

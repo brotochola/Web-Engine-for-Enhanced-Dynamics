@@ -329,6 +329,13 @@ const VIS_REST = 1 - UMBRA_FLOOR;
 /** E-96. Floats per vertex of the light batch: x, y; the light's x, y, intensity, radius; r, g, b, attenuation scale. */
 const VIS_BATCH_FLOATS = 10;
 const WEDGE_MAX_QUADS = 256;
+/**
+ * E-96b. Floats per vertex of the self-lit batch: x, y; the light's x, y, intensity, radius; r, g, b,
+ * attenuation scale; the occluder's centre and radius (the facing term).
+ */
+const SELF_LIT_BATCH_FLOATS = 13;
+/** A transmit wedge's radius in the self-lit batch: past any light's distance, so its facing term is 1. */
+const SELF_LIT_NO_FACING = 1e30;
 
 function crossOrigin(ox, oy, ax, ay, bx, by) {
   return (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
@@ -829,7 +836,9 @@ class PixiRenderer extends AbstractWorker {
     this._selfLitBuffers = [null, null];
     this._selfLitItemBytes = 28;
     this._selfLitContainer = null;
-    this._selfLitColliderMesh = null;
+    // E-96b. Every light's self-lit fills and transmit wedges in one mesh, drawn in the light pass:
+    // { mesh, geometry, vbuf, data, indices, uniforms, vertCap, idxCap, idxUsed, gpuReady }.
+    this._selfLitBatch = null;
     this._selfLitSpriteMeshes = [];
     this._selfLitCircleSegs = 16;
     // The circle fan's fixed angles, cos/sin built with the loop's own expression
@@ -900,20 +909,12 @@ class PixiRenderer extends AbstractWorker {
     this._deferredRenderQueueRelease = 0;
     this._decalSharedBuffers = null;
     this._decalCopyBuffers = null;
-    this._visPolyProgramOpts = null;
     this._visBatchProgramOpts = null;
     this._selfLitSpriteProgramOpts = null;
-    this._selfLitColliderProgramOpts = null;
+    this._selfLitBatchProgramOpts = null;
     this._selfLitMaxFillVerts = 0;
-    this._selfLitCenterRadius = null;
-    this._selfLitLastIdxCount = 0;
-    this._selfLitGpuReady = false;
     this._wedgePositions = null;
     this._wedgeScales = null;
-    this._wedgeIndices = null;
-    this._wedgeMesh = null;
-    this._wedgeGpuReady = false;
-    this._wedgeLastIdx = 0;
     this._missingTextureWarns = null;
     this.shadowUpdateInterval = 1;
     this._shadowUpdateTick = 0;
@@ -2675,25 +2676,14 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     if (Layer.castedShadows) Layer.castedShadows.visible = false;
 
     if (this._useWebGpu) {
-      this._visPolyProgramOpts = { gpuProgram: gpuFromWgsl(this._visPolyWgsl, 'visibility-polygon') };
       this._visBatchProgramOpts = { gpuProgram: gpuFromWgsl(this._visBatchWgsl, 'visibility-polygon-batch') };
       if (this._selfLitSpriteWgsl) {
         this._selfLitSpriteProgramOpts = {
           gpuProgram: gpuFromWgsl(this._selfLitSpriteWgsl, 'occluder-self-lit-sprite'),
         };
       }
-      if (this._selfLitColliderWgsl) {
-        this._selfLitColliderProgramOpts = {
-          gpuProgram: gpuFromWgsl(this._selfLitColliderWgsl, 'occluder-self-lit-collider'),
-        };
-      }
+      this._selfLitBatchProgramOpts = { gpuProgram: gpuFromWgsl(this._selfLitBatchWgsl, 'occluder-self-lit-batch') };
     } else {
-      this._visPolyProgramOpts = {
-        glProgram: new PIXI.GlProgram({
-          vertex: this._visPolyVertexShader,
-          fragment: this._visPolyFragmentShader,
-        }),
-      };
       this._visBatchProgramOpts = {
         glProgram: new PIXI.GlProgram({
           vertex: this._visBatchVertexShader,
@@ -2708,43 +2698,16 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           }),
         };
       }
-      if (this._selfLitColliderVertShader && this._selfLitColliderFragShader) {
-        this._selfLitColliderProgramOpts = {
-          glProgram: new PIXI.GlProgram({
-            vertex: this._selfLitColliderVertShader,
-            fragment: this._selfLitColliderFragShader,
-          }),
-        };
-      }
+      this._selfLitBatchProgramOpts = {
+        glProgram: new PIXI.GlProgram({
+          vertex: this._selfLitBatchVertexShader,
+          fragment: this._selfLitBatchFragmentShader,
+        }),
+      };
     }
 
-    // Collider self-lit: facing term, so it cannot share the vis-poly attribute layout.
-    {
-      const maxFillVerts = 256 * 20;
-      this._selfLitMaxFillVerts = maxFillVerts;
-      const centerRadius = new Float32Array(maxFillVerts * 3);
-      this._selfLitCenterRadius = centerRadius;
-      const geometry = new PIXI.Geometry({
-        attributes: {
-          aPosition: {
-            buffer: this._dynBuf(new Float32Array(maxFillVerts * 2), BufferUsage.VERTEX),
-            size: 2,
-          },
-          aCenterRadius: {
-            buffer: this._dynBuf(centerRadius, BufferUsage.VERTEX),
-            size: 3,
-          },
-        },
-        indexBuffer: this._dynBuf(new Uint16Array(maxFillVerts * 3), BufferUsage.INDEX),
-      });
-      const shader = new PIXI.Shader({
-        ...(this._selfLitColliderProgramOpts || this._visPolyProgramOpts),
-        resources: this._lightUniformResources(VIS_REST),
-      });
-      const mesh = new PIXI.Mesh({ geometry, shader });
-      mesh.blendMode = 'add';
-      this._selfLitColliderMesh = { mesh, geometry, shader };
-    }
+    // The most collider-fill vertices one light writes into the self-lit batch.
+    this._selfLitMaxFillVerts = 256 * 20;
 
     this._initTransmitWedge();
 
@@ -2813,6 +2776,70 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     return this._visBatch;
   }
 
+  /**
+   * E-96b. The self-lit batch, with room for `verts` vertices and `idx` indices, grown like the light
+   * batch. It may grow in the middle of a frame: the first `keepVerts` vertices and `keepIdx` indices
+   * written so far are copied into the new buffers.
+   */
+  _ensureSelfLitBatch(verts, idx, keepVerts, keepIdx) {
+    const old = this._selfLitBatch;
+    if (old && verts <= old.vertCap && idx <= old.idxCap) return old;
+    const vertCap = Math.ceil(Math.max(verts, old ? old.vertCap : 0, 64) * 1.25);
+    const idxCap = Math.ceil(Math.max(idx, old ? old.idxCap : 0, 192) * 1.25);
+    const data = new Float32Array(vertCap * SELF_LIT_BATCH_FLOATS);
+    const indices = new Uint32Array(idxCap);
+    if (old) {
+      data.set(old.data.subarray(0, keepVerts * SELF_LIT_BATCH_FLOATS));
+      indices.set(old.indices.subarray(0, keepIdx));
+    }
+    const vbuf = new Buffer({
+      data,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      shrinkToFit: false,
+    });
+    const stride = SELF_LIT_BATCH_FLOATS * 4;
+    const geometry = new PIXI.Geometry({
+      attributes: {
+        aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
+        aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 8 },
+        aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 24 },
+        aCenterRadius: { buffer: vbuf, format: 'float32x3', stride, offset: 40 },
+      },
+      indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
+    });
+    // The camera only, in the WGSL struct's order.
+    const resources = {
+      uniforms: {
+        uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+        uZoom: { value: 1.0, type: 'f32' },
+        uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
+        uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
+      },
+    };
+    const shader = new PIXI.Shader({ ...this._selfLitBatchProgramOpts, resources });
+    const mesh = new PIXI.Mesh({ geometry, shader });
+    mesh.blendMode = 'add';
+    if (old) {
+      if (old.mesh.parent) old.mesh.parent.removeChild(old.mesh);
+      old.mesh.destroy();
+      old.geometry.destroy();
+    }
+    this._selfLitBatch = {
+      mesh,
+      geometry,
+      vbuf,
+      data,
+      indices,
+      uniforms: shader.resources.uniforms.uniforms,
+      vertCap,
+      idxCap,
+      // The new index buffer is zero past what was copied: nothing of an earlier frame to clear.
+      idxUsed: keepIdx,
+      gpuReady: false,
+    };
+    return this._selfLitBatch;
+  }
+
   _stampLightCamera(uniforms, cameraX, cameraY, zoom) {
     uniforms.uCameraPos[0] = cameraX;
     uniforms.uCameraPos[1] = cameraY;
@@ -2824,64 +2851,14 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     rc[1] = Math.sin(rot);
   }
 
-  _lightUniformResources(attenScale) {
-    return {
-      uniforms: {
-        uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-        uZoom: { value: 1.0, type: 'f32' },
-        uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
-        uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
-        uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-        uLightIntensity: { value: 1000, type: 'f32' },
-        uLightRadius: { value: 1e6, type: 'f32' },
-        uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
-        uAttenScale: { value: attenScale, type: 'f32' },
-      },
-    };
-  }
-
-  /** Shadow wedges for block < 1. One mesh, rewritten per light. aScale carries (1-block)*VIS_REST. */
+  /**
+   * Shadow wedges for block < 1: one light's quads, staged until its fills are in the self-lit batch
+   * (E-96b), with each quad's scale, (1-block)*VIS_REST.
+   */
   _initTransmitWedge() {
-    const verts = WEDGE_MAX_QUADS * 4;
-    const positions = new Float32Array(verts * 2);
-    const scales = new Float32Array(verts);
-    const indices = new Uint16Array(WEDGE_MAX_QUADS * 6);
-    for (let q = 0; q < WEDGE_MAX_QUADS; q++) {
-      const b = q * 4;
-      const i = q * 6;
-      indices[i] = b;
-      indices[i + 1] = b + 1;
-      indices[i + 2] = b + 2;
-      indices[i + 3] = b;
-      indices[i + 4] = b + 2;
-      indices[i + 5] = b + 3;
-    }
-    this._wedgePositions = positions;
-    this._wedgeScales = scales;
-    this._wedgeIndices = indices;
-    const geometry = new PIXI.Geometry({
-      attributes: {
-        aPosition: {
-          buffer: this._dynBuf(positions, BufferUsage.VERTEX),
-          size: 2,
-        },
-        aScale: {
-          buffer: this._dynBuf(scales, BufferUsage.VERTEX),
-          size: 1,
-        },
-      },
-      indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
-    });
-    const shader = new PIXI.Shader({
-      ...this._visPolyProgramOpts,
-      resources: this._lightUniformResources(1),
-    });
-    const mesh = new PIXI.Mesh({ geometry, shader });
-    mesh.blendMode = 'add';
-    this._wedgeMesh = { mesh, geometry, shader };
+    this._wedgePositions = new Float32Array(WEDGE_MAX_QUADS * 8);
+    this._wedgeScales = new Float32Array(WEDGE_MAX_QUADS);
     this._wedgeVerts = 0;
-    this._wedgeGpuReady = false;
-    this._wedgeLastIdx = 0;
   }
 
   _pushWedge(lx, ly, lightR, ax, ay, bx, by, scale) {
@@ -2924,47 +2901,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     p[o + 5] = e1y;
     p[o + 6] = bx;
     p[o + 7] = by;
-    s[n] = scale;
-    s[n + 1] = scale;
-    s[n + 2] = scale;
-    s[n + 3] = scale;
-    const indices = this._wedgeIndices;
-    const ii = (n >> 2) * 6;
-    indices[ii] = n;
-    indices[ii + 1] = n + 1;
-    indices[ii + 2] = n + 2;
-    indices[ii + 3] = n;
-    indices[ii + 4] = n + 2;
-    indices[ii + 5] = n + 3;
+    s[n >> 2] = scale;
     this._wedgeVerts = n + 4;
-  }
-
-  _uploadWedge() {
-    const pack = this._wedgeMesh;
-    if (!pack || this._wedgeVerts <= 0) return;
-    const verts = this._wedgeVerts;
-    const geometry = pack.geometry;
-    const posBuf = geometry.attributes.aPosition.buffer;
-    const scaleBuf = geometry.attributes.aScale.buffer;
-    const idxBuf = geometry.indexBuffer;
-    const indices = this._wedgeIndices;
-    const idxCount = (verts >> 2) * 6;
-    const prev = this._wedgeLastIdx | 0;
-    if (idxCount < prev) {
-      for (let k = idxCount; k < prev; k++) indices[k] = 0;
-    }
-    const uploadIdx = idxCount > prev ? idxCount : prev;
-    this._wedgeLastIdx = idxCount;
-    if (!this._wedgeGpuReady) {
-      posBuf.update();
-      scaleBuf.update();
-      idxBuf.update();
-      this._wedgeGpuReady = true;
-    } else {
-      posBuf.update(verts * 8);
-      scaleBuf.update(verts * 4);
-      idxBuf.update(uploadIdx * 2);
-    }
   }
 
   // transmit-wedge-start
@@ -3042,14 +2980,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     this._pushWedge(lx, ly, lightR, tan[0], tan[1], tan[2], tan[3], scale);
   }
   // transmit-wedge-end
-
-  _stampOccluderVert(vert, cx, cy, rad) {
-    const o = vert * 3;
-    const cr = this._selfLitCenterRadius;
-    cr[o] = cx;
-    cr[o + 1] = cy;
-    cr[o + 2] = rad;
-  }
 
   /**
    * Render visibility polygon meshes for all visible lights.
@@ -3188,7 +3118,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       this._stampLightCamera(uniforms, cameraX, cameraY, zoom);
       uniforms.uCanvasSize[0] = this.canvasWidth;
       uniforms.uCanvasSize[1] = this.canvasHeight;
-      if (batchMesh.parent !== container) container.addChild(batchMesh);
+      if (batchMesh.parent !== container) container.addChildAt(batchMesh, 0);
       batchMesh.visible = true;
     }
 
@@ -3198,6 +3128,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const ambient = this.baseAmbient + sunIntensity;
     const clampedAmbient = Math.min(ambient, 1.0);
 
+    // Restore unoccluded light under occluder footprints (no self-darken), after the fans.
+    const spriteMasks = this._buildSelfLitBatch(readBufferIdx);
+
     this._submitRender({
       container,
       target: this._visPolyRT,
@@ -3205,69 +3138,79 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       clearColor: [clampedAmbient, clampedAmbient, clampedAmbient, 1.0],
     });
 
-    // Restore unoccluded light under occluder footprints (no self-darken)
-    this._renderOccluderSelfLit(readBufferIdx);
+    if (spriteMasks) this._renderSelfLitSpriteMasks(readBufferIdx);
   }
 
   /**
-   * ADD unoccluded light attenuation into the lighting RT under each occluder.
-   * Default: Collider footprint. maskMode=sprite: sprite alpha mask.
+   * E-96b. ADD unoccluded light attenuation into the lighting RT under each occluder (default: the
+   * Collider footprint): every light's fills, then its transmit wedges (the order its two meshes drew
+   * in when each light was a pass of its own), into one mesh the light pass draws after the fans. A
+   * pass per light was 46 % of Pixi in visPolyStressScene, most of it Pixi's setup per render.
+   * Returns whether an occluder uses its sprite's alpha as the mask (maskMode=sprite), which still
+   * draws a pass per light (_renderSelfLitSpriteMasks).
    */
-  _renderOccluderSelfLit(readBufferIdx) {
+  _buildSelfLitBatch(readBufferIdx) {
     const buf = this._selfLitBuffers[readBufferIdx];
-    if (!buf || !this._visPolyRT || !LightOccluder.active || !Collider.active) return;
-
-    const count = buf.header[0] | 0;
-    if (count <= 0) return;
+    const count = buf ? buf.header[0] | 0 : 0;
+    if (count <= 0 || !this._visPolyRT || !LightOccluder.active || !Collider.active || !this._selfLitBatchProgramOpts) {
+      if (this._selfLitBatch) this._selfLitBatch.mesh.visible = false;
+      return false;
+    }
 
     const i32 = buf.i32;
     const f32 = buf.f32;
-    const u16 = buf.u16;
     const u8 = buf.u8;
     const itemBytes = this._selfLitItemBytes;
     const lightIntensityArr = LightEmitter.lightIntensity;
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
+    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
     const rgb = this._rgbResult;
-    const zoom = this._renderZoom;
-    const cameraX = this._renderCameraX;
-    const cameraY = this._renderCameraY;
+    const maxVerts = this._selfLitMaxFillVerts;
+    const segs = this._selfLitCircleSegs;
+    const fanCos = this._selfLitCircleCos;
+    const fanSin = this._selfLitCircleSin;
+    const boxX = this._selfLitBoxScratchX;
+    const boxY = this._selfLitBoxScratchY;
+    const occluderBlock = LightOccluder.block;
+    const wedgePos = this._wedgePositions;
+    const wedgeScale = this._wedgeScales;
+    // The most one light writes: its fills, then its wedges.
+    const lightVerts = maxVerts + WEDGE_MAX_QUADS * 4;
+    const lightIndices = maxVerts * 3 + WEDGE_MAX_QUADS * 6;
+    let batch = this._ensureSelfLitBatch(lightVerts, lightIndices, 0, 0);
+    let data = batch.data;
+    let indices = batch.indices;
+    let vtx = 0;
+    let iCount = 0;
+    let spriteMasks = false;
 
     // Process contiguous runs sharing the same lightIdx (collector writes per-light)
     let i = 0;
     while (i < count) {
-      const byte0 = 4 + i * itemBytes;
-      const lightIdx = i32[(byte0 >> 2) + 1];
-      let j = i + 1;
+      const light = i32[((4 + i * itemBytes) >> 2) + 1];
+      let j = i;
       while (j < count) {
         const b = 4 + j * itemBytes;
-        if (i32[(b >> 2) + 1] !== lightIdx) break;
+        if (i32[(b >> 2) + 1] !== light) break;
+        if (u8[b + 26] === LIGHT_OCCLUDER_MASK_SPRITE) spriteMasks = true;
         j++;
       }
 
       // Light center: baked into visibility poly; here Transform is fine (lights rarely have RB)
-      const lx = Transform.x[lightIdx];
-      const ly = Transform.y[lightIdx] - (lightHeight[lightIdx] || 0);
-      const intensity = lightIntensityArr[lightIdx];
-      extractRGBNormalizedMut(lightColor[lightIdx], rgb);
+      const lx = Transform.x[light];
+      const ly = Transform.y[light] - (lightHeight[light] || 0);
+      const intensity = lightIntensityArr[light];
+      extractRGBNormalizedMut(lightColor[light], rgb);
+      const lightR = lightInfluenceRadius(sqrtLightIntensity ? sqrtLightIntensity[light] : 0);
 
-      // --- Collider fills for this light (batched) ---
-      let vertCount = 0;
-      let idxCount = 0;
-      const colliderEntry = this._selfLitColliderMesh;
-      if (!colliderEntry) { i = j; continue; }
-      const posBuf = colliderEntry.geometry.attributes.aPosition.buffer;
-      const idxBuf = colliderEntry.geometry.indexBuffer;
-      const positions = posBuf.data;
-      const indices = idxBuf.data;
-      const maxVerts = this._selfLitMaxFillVerts;
-      const segs = this._selfLitCircleSegs;
-      const boxX = this._selfLitBoxScratchX;
-      const boxY = this._selfLitBoxScratchY;
-      const occluderBlock = LightOccluder.block;
-      const lightR = lightInfluenceRadius(
-        LightEmitter.sqrtLightIntensity ? LightEmitter.sqrtLightIntensity[lightIdx] : 0
-      );
+      if (vtx + lightVerts > batch.vertCap || iCount + lightIndices > batch.idxCap) {
+        batch = this._ensureSelfLitBatch(vtx + lightVerts, iCount + lightIndices, vtx, iCount);
+        data = batch.data;
+        indices = batch.indices;
+      }
+      // This light's vertices start here; its fills stop at maxVerts of them, as its own mesh did.
+      const lightBase = vtx;
       this._wedgeVerts = 0;
 
       for (let e = i; e < j; e++) {
@@ -3308,22 +3251,26 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const originY = ey + s * ox + c * oy;
           let stopFill = false;
           for (let v = 0; v + 3 <= n; v += 3) {
-            if (vertCount + 3 > maxVerts) {
+            if (vtx - lightBase + 3 > maxVerts) {
               stopFill = true;
               break;
             }
-            const baseV = vertCount;
+            const baseV = vtx;
             for (let k = 0; k < 3; k++) {
               const lxocal = fill[(v + k) * 2];
               const lyocal = fill[(v + k) * 2 + 1];
-              positions[vertCount * 2] = originX + c * lxocal - s * lyocal;
-              positions[vertCount * 2 + 1] = originY + s * lxocal + c * lyocal;
-              this._stampOccluderVert(vertCount, bodyCx, bodyCy, 0);
-              vertCount++;
+              const o = vtx * SELF_LIT_BATCH_FLOATS;
+              data[o] = originX + c * lxocal - s * lyocal;
+              data[o + 1] = originY + s * lxocal + c * lyocal;
+              data[o + 9] = VIS_REST;
+              data[o + 10] = bodyCx;
+              data[o + 11] = bodyCy;
+              data[o + 12] = 0;
+              vtx++;
             }
-            indices[idxCount++] = baseV;
-            indices[idxCount++] = baseV + 1;
-            indices[idxCount++] = baseV + 2;
+            indices[iCount++] = baseV;
+            indices[iCount++] = baseV + 1;
+            indices[iCount++] = baseV + 2;
           }
           if (stopFill) break;
           continue;
@@ -3337,24 +3284,22 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const ldx = lx - cx;
           const ldy = ly - cy;
           if (ldx * ldx + ldy * ldy <= r * r) continue;
-          if (vertCount + segs + 1 > maxVerts) break;
-          const center = vertCount;
-          positions[vertCount * 2] = cx;
-          positions[vertCount * 2 + 1] = cy;
-          this._stampOccluderVert(vertCount, cx, cy, r);
-          vertCount++;
-          const fanCos = this._selfLitCircleCos;
-          const fanSin = this._selfLitCircleSin;
-          for (let si = 0; si < segs; si++) {
-            positions[vertCount * 2] = cx + fanCos[si] * r;
-            positions[vertCount * 2 + 1] = cy + fanSin[si] * r;
-            this._stampOccluderVert(vertCount, cx, cy, r);
-            vertCount++;
+          if (vtx - lightBase + segs + 1 > maxVerts) break;
+          const center = vtx;
+          for (let si = -1; si < segs; si++) {
+            const o = vtx * SELF_LIT_BATCH_FLOATS;
+            data[o] = si < 0 ? cx : cx + fanCos[si] * r;
+            data[o + 1] = si < 0 ? cy : cy + fanSin[si] * r;
+            data[o + 9] = VIS_REST;
+            data[o + 10] = cx;
+            data[o + 11] = cy;
+            data[o + 12] = r;
+            vtx++;
           }
           for (let si = 0; si < segs; si++) {
-            indices[idxCount++] = center;
-            indices[idxCount++] = center + 1 + si;
-            indices[idxCount++] = center + 1 + ((si + 1) % segs);
+            indices[iCount++] = center;
+            indices[iCount++] = center + 1 + si;
+            indices[iCount++] = center + 1 + ((si + 1) % segs);
           }
         } else if (shape === ShapeType.Chain) {
           continue;
@@ -3384,8 +3329,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             }
           }
           if (pointInConvex(lx, ly, boxX, boxY, vc)) continue;
-          if (vertCount + vc > maxVerts) break;
-          const baseV = vertCount;
+          if (vtx - lightBase + vc > maxVerts) break;
+          const baseV = vtx;
           const bodyCx = ex + ox;
           const bodyCy = ey + oy;
           // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted
@@ -3398,88 +3343,133 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const bodyHalfH = (Collider.height[entityIdx] || 0) * 0.5;
           const bodyR = Math.sqrt(bodyHalfW * bodyHalfW + bodyHalfH * bodyHalfH);
           for (let v = 0; v < vc; v++) {
-            positions[vertCount * 2] = boxX[v];
-            positions[vertCount * 2 + 1] = boxY[v];
-            this._stampOccluderVert(vertCount, bodyCx, bodyCy, bodyR);
-            vertCount++;
+            const o = vtx * SELF_LIT_BATCH_FLOATS;
+            data[o] = boxX[v];
+            data[o + 1] = boxY[v];
+            data[o + 9] = VIS_REST;
+            data[o + 10] = bodyCx;
+            data[o + 11] = bodyCy;
+            data[o + 12] = bodyR;
+            vtx++;
           }
           for (let v = 1; v < vc - 1; v++) {
-            indices[idxCount++] = baseV;
-            indices[idxCount++] = baseV + v;
-            indices[idxCount++] = baseV + v + 1;
+            indices[iCount++] = baseV;
+            indices[iCount++] = baseV + v;
+            indices[iCount++] = baseV + v + 1;
           }
         }
       }
 
+      // Then its wedges, which have no facing term.
       const wedgeVerts = this._wedgeVerts;
-      if ((idxCount > 0 && this._selfLitColliderMesh) || wedgeVerts > 0) {
-        const container = this._selfLitContainer;
-        container.removeChildren();
-
-        if (idxCount > 0 && this._selfLitColliderMesh) {
-          const { mesh, geometry, shader } = this._selfLitColliderMesh;
-          const prevIdx = this._selfLitLastIdxCount || 0;
-          if (idxCount < prevIdx) {
-            for (let k = idxCount; k < prevIdx; k++) indices[k] = 0;
-          }
-          const uploadIdx = idxCount > prevIdx ? idxCount : prevIdx;
-          this._selfLitLastIdxCount = idxCount;
-
-          // First write sizes the GPU buffer (tail stays 0). Later writes send only the live prefix.
-          const crBuf = geometry.attributes.aCenterRadius.buffer;
-          if (!this._selfLitGpuReady) {
-            posBuf.update();
-            crBuf.update();
-            idxBuf.update();
-            this._selfLitGpuReady = true;
-          } else {
-            posBuf.update(vertCount * 8);
-            crBuf.update(vertCount * 12);
-            idxBuf.update(uploadIdx * 2);
-          }
-
-          const uniforms = shader.resources.uniforms.uniforms;
-          this._stampLightCamera(uniforms, cameraX, cameraY, zoom);
-          uniforms.uCanvasSize[0] = this.canvasWidth;
-          uniforms.uCanvasSize[1] = this.canvasHeight;
-          uniforms.uLightPos[0] = lx;
-          uniforms.uLightPos[1] = ly;
-          uniforms.uLightIntensity = intensity;
-          uniforms.uLightRadius = lightR;
-          uniforms.uLightColor[0] = rgb.r;
-          uniforms.uLightColor[1] = rgb.g;
-          uniforms.uLightColor[2] = rgb.b;
-          container.addChild(mesh);
+      for (let w = 0; w < wedgeVerts; w += 4) {
+        const scale = wedgeScale[w >> 2];
+        const baseV = vtx;
+        for (let k = 0; k < 4; k++) {
+          const o = vtx * SELF_LIT_BATCH_FLOATS;
+          data[o] = wedgePos[(w + k) * 2];
+          data[o + 1] = wedgePos[(w + k) * 2 + 1];
+          data[o + 9] = scale;
+          data[o + 10] = 0;
+          data[o + 11] = 0;
+          data[o + 12] = SELF_LIT_NO_FACING;
+          vtx++;
         }
-
-        if (wedgeVerts > 0 && this._wedgeMesh) {
-          this._uploadWedge();
-          const wu = this._wedgeMesh.shader.resources.uniforms.uniforms;
-          this._stampLightCamera(wu, cameraX, cameraY, zoom);
-          wu.uCanvasSize[0] = this.canvasWidth;
-          wu.uCanvasSize[1] = this.canvasHeight;
-          wu.uLightPos[0] = lx;
-          wu.uLightPos[1] = ly;
-          wu.uLightIntensity = intensity;
-          wu.uLightRadius = lightR;
-          wu.uLightColor[0] = rgb.r;
-          wu.uLightColor[1] = rgb.g;
-          wu.uLightColor[2] = rgb.b;
-          container.addChild(this._wedgeMesh.mesh);
-        }
-
-        this._submitRender({
-          container,
-          target: this._visPolyRT,
-          clear: false,
-        });
+        indices[iCount++] = baseV;
+        indices[iCount++] = baseV + 1;
+        indices[iCount++] = baseV + 2;
+        indices[iCount++] = baseV;
+        indices[iCount++] = baseV + 2;
+        indices[iCount++] = baseV + 3;
       }
+
+      // The light's terms on every vertex it wrote.
+      const r = rgb.r;
+      const g = rgb.g;
+      const b = rgb.b;
+      for (let v = lightBase; v < vtx; v++) {
+        const o = v * SELF_LIT_BATCH_FLOATS;
+        data[o + 2] = lx;
+        data[o + 3] = ly;
+        data[o + 4] = intensity;
+        data[o + 5] = lightR;
+        data[o + 6] = r;
+        data[o + 7] = g;
+        data[o + 8] = b;
+      }
+
+      i = j;
+    }
+
+    // Pixi draws the whole index buffer: what the last frame used past this one's end goes back to 0.
+    const prevIdx = batch.idxUsed;
+    if (iCount < prevIdx) indices.fill(0, iCount, prevIdx);
+    batch.idxUsed = iCount;
+    const mesh = batch.mesh;
+    if (iCount === 0) {
+      mesh.visible = false;
+      return spriteMasks;
+    }
+    const indexBuffer = batch.geometry.indexBuffer;
+    if (!batch.gpuReady) {
+      batch.vbuf.update();
+      indexBuffer.update();
+      batch.gpuReady = true;
+    } else {
+      batch.vbuf.update(vtx * SELF_LIT_BATCH_FLOATS * 4);
+      indexBuffer.update((iCount > prevIdx ? iCount : prevIdx) * 4);
+    }
+    const uniforms = batch.uniforms;
+    this._stampLightCamera(uniforms, this._renderCameraX, this._renderCameraY, this._renderZoom);
+    uniforms.uCanvasSize[0] = this.canvasWidth;
+    uniforms.uCanvasSize[1] = this.canvasHeight;
+    // After the light batch, which is the container's first child.
+    const container = this._visPolyContainer;
+    if (mesh.parent !== container) container.addChild(mesh);
+    mesh.visible = true;
+    return spriteMasks;
+  }
+
+  /**
+   * The self-lit pass for occluders whose sprite's alpha is the mask (maskMode=sprite): a mesh per
+   * sprite, a pass per light, after the light pass.
+   */
+  _renderSelfLitSpriteMasks(readBufferIdx) {
+    const buf = this._selfLitBuffers[readBufferIdx];
+    const count = buf.header[0] | 0;
+    const i32 = buf.i32;
+    const f32 = buf.f32;
+    const u16 = buf.u16;
+    const u8 = buf.u8;
+    const itemBytes = this._selfLitItemBytes;
+    const lightIntensityArr = LightEmitter.lightIntensity;
+    const lightColor = LightEmitter.lightColor;
+    const lightHeight = LightEmitter.height;
+    const rgb = this._rgbResult;
+    const zoom = this._renderZoom;
+    const cameraX = this._renderCameraX;
+    const cameraY = this._renderCameraY;
+
+    let i = 0;
+    while (i < count) {
+      const lightIdx = i32[((4 + i * itemBytes) >> 2) + 1];
+      let j = i + 1;
+      while (j < count) {
+        const b = 4 + j * itemBytes;
+        if (i32[(b >> 2) + 1] !== lightIdx) break;
+        j++;
+      }
+
+      const lx = Transform.x[lightIdx];
+      const ly = Transform.y[lightIdx] - (lightHeight[lightIdx] || 0);
+      const intensity = lightIntensityArr[lightIdx];
+      extractRGBNormalizedMut(lightColor[lightIdx], rgb);
 
       // --- Sprite mask fills for this light ---
       if (this._selfLitSpriteProgramOpts) {
         let spriteMeshIdx = 0;
         const container = this._selfLitContainer;
-        container.removeChildren();
+        if (container.children.length > 0) container.removeChildren();
 
         for (let e = i; e < j; e++) {
           const byteOff = 4 + e * itemBytes;
@@ -5547,27 +5537,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (data.visibilityPolygons && data.visibilityPolygons.enabled) {
       if (this._useWebGpu) {
         shaderFetches.push(
-          fetchEngineShader('/src/shaders/visibilityPolygon.wgsl').then((s) => {
-            this._visPolyWgsl = s;
-          }),
           fetchEngineShader('/src/shaders/visibilityPolygonBatch.wgsl').then((s) => {
             this._visBatchWgsl = s;
           }),
           fetchEngineShader('/src/shaders/occluderSelfLitSprite.wgsl').then((s) => {
             this._selfLitSpriteWgsl = s;
           }),
-          fetchEngineShader('/src/shaders/occluderSelfLitCollider.wgsl').then((s) => {
-            this._selfLitColliderWgsl = s;
+          fetchEngineShader('/src/shaders/occluderSelfLitBatch.wgsl').then((s) => {
+            this._selfLitBatchWgsl = s;
           })
         );
       } else {
         shaderFetches.push(
-          fetchEngineShader('/src/shaders/visibilityPolygon.vert.glsl').then((s) => {
-            this._visPolyVertexShader = s;
-          }),
-          fetchEngineShader('/src/shaders/visibilityPolygon.frag.glsl').then((s) => {
-            this._visPolyFragmentShader = s;
-          }),
           fetchEngineShader('/src/shaders/visibilityPolygonBatch.vert.glsl').then((s) => {
             this._visBatchVertexShader = s;
           }),
@@ -5580,11 +5561,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           fetchEngineShader('/src/shaders/occluderSelfLitSprite.frag.glsl').then((s) => {
             this._selfLitSpriteFragShader = s;
           }),
-          fetchEngineShader('/src/shaders/occluderSelfLitCollider.vert.glsl').then((s) => {
-            this._selfLitColliderVertShader = s;
+          fetchEngineShader('/src/shaders/occluderSelfLitBatch.vert.glsl').then((s) => {
+            this._selfLitBatchVertexShader = s;
           }),
-          fetchEngineShader('/src/shaders/occluderSelfLitCollider.frag.glsl').then((s) => {
-            this._selfLitColliderFragShader = s;
+          fetchEngineShader('/src/shaders/occluderSelfLitBatch.frag.glsl').then((s) => {
+            this._selfLitBatchFragmentShader = s;
           })
         );
       }

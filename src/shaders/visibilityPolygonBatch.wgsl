@@ -1,5 +1,5 @@
 // Every light's umbra disc and visibility fan in one draw (E-96): the light's terms are vertex
-// attributes, constant over its triangles, where visibilityPolygon.wgsl had them as uniforms.
+// attributes, constant over its triangles, where the per-light shader had them as uniforms.
 struct GlobalUniforms {
   uProjectionMatrix: mat3x3<f32>,
   uWorldTransformMatrix: mat3x3<f32>,

@@ -779,6 +779,12 @@ pattern), the cheap part.
 pixel-identical on WebGL and WebGPU: renderer **5.472 → 1.361 ms, −75.2 %, worse 0/4**; Pixi allocation
 36.5 → 8.7 MB/s. Report: [`reports/E-96-light-batch.md`](./reports/E-96-light-batch.md). Next (E-96b): the
 self-lit pass refills its container every frame (~0.7 MB/s) and passes nine doubles per wedge (1.6 MB/s).
+**E-96b (2026-10-23):** the self-lit pass was still a render call per light, 46 % of Pixi after E-96. Every
+light's fills, then its transmit wedges, now go into one mesh with the light's terms per vertex, drawn in the
+light pass after the fans; only sprite-masked occluders keep a pass per light. Pixel-identical (WebGL, WebGPU,
+wedges, circles, compound in the lockstep suite). `visPolyStressScene?selfLit=65536` renderer **3.395 → 1.197 ms,
+−64.9 %, worse 0/4**; Pixi allocation 8.7 → 1.8 MB/s. Report: [`reports/E-96b-self-lit-batch.md`](./reports/E-96b-self-lit-batch.md).
+Next (E-96c): 1.4 MB/s of what is left is `_emitTransmitWedge`'s nine boxed doubles, even where it returns at once.
 
 ### E-97 Pixi submits frames faster than a full GPU finishes them — **KEPT 2026-10-23**
 Report: [`reports/E-97-gpu-frame-pacing.md`](./reports/E-97-gpu-frame-pacing.md). A worker's rAF fires at the

@@ -7048,20 +7048,19 @@
     },
     {
       "id": "E-96b",
-      "title": "The self-lit pass refills its container and boxes nine doubles per wedge",
-      "status": "open",
-      "statusText": "open (from E-96)",
+      "title": "The self-lit pass is a render call per light",
+      "status": "kept",
+      "statusText": "kept (product), 2026-10-23",
       "date": "2026-10-23",
-      "result": "visPolyStressScene Pixi after E-96: _renderOccluderSelfLit 1.6 MB/s (_emitTransmitWedge's nine double arguments), removeChildren/addChild every frame ~0.7 MB/s.",
+      "result": "Every light's fills and transmit wedges in one mesh, drawn in the light pass; pixel-identical. visPolyStressScene?selfLit=65536 renderer 3.395 → 1.197 ms, −64.9 %, 0/4 worse; Pixi allocation 8.7 → 1.8 MB/s.",
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L766",
-        "reports/E-96-light-batch.md"
+        "HYPOTHESIS_LOG.md#L13",
+        "EXECUTION_PLAN.md#L782",
+        "reports/E-96b-self-lit-batch.md"
       ],
-      "aliases": [],
-      "next": "Doubles through a module Float64Array; children kept and toggled visible.",
-      "rank": 1
+      "aliases": []
     },
     {
       "id": "W9d",
@@ -7120,6 +7119,23 @@
         "HYPOTHESIS_LOG.md#L13"
       ],
       "aliases": []
+    },
+    {
+      "id": "E-96c",
+      "title": "`_emitTransmitWedge` boxes nine doubles per occluder per light",
+      "status": "open",
+      "statusText": "open (from E-96b)",
+      "date": "2026-10-23",
+      "result": "After E-96b, 1.4 of Pixi's 1.8 MB/s in visPolyStressScene is allocated in _buildSelfLitBatch: the wedge emitter's double arguments, boxed even when it returns at its first line (block 1).",
+      "area": "pixi",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#L782",
+        "reports/E-96b-self-lit-batch.md"
+      ],
+      "aliases": [],
+      "next": "Test block < 1 at the call site; the doubles through a module Float64Array for the wedge path.",
+      "rank": 1
     }
   ],
   "leads": [
