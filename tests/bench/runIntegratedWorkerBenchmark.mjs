@@ -273,6 +273,16 @@ function buildBenchmarkOptions(cliArgs) {
   const collectDetailedStats = !cliArgs['no-collect-detailed-stats'];
   // GPU timestamps are extra submits. Off unless this campaign asks.
   const collectGpuStats = !!cliArgs['collect-gpu-stats'];
+  // --camera-zoom min|<zoom>: set once the scene's create() has run. min is Camera.minZoom, the
+  // zoom that shows the whole world (every entity in view, for a scene whose load is what it draws).
+  let cameraZoom = null;
+  if (cliArgs['camera-zoom'] !== undefined) {
+    const raw = cliArgs['camera-zoom'];
+    cameraZoom = raw === 'min' ? 'min' : Number(raw);
+    if (cameraZoom !== 'min' && !(cameraZoom > 0)) {
+      throw new Error(`benchmark: --camera-zoom takes min or a positive zoom, not "${raw}"`);
+    }
+  }
 
   return {
     warmupMs,
@@ -287,6 +297,7 @@ function buildBenchmarkOptions(cliArgs) {
     debug: Boolean(cliArgs.debug),
     collectDetailedStats,
     collectGpuStats,
+    ...(cameraZoom != null ? { cameraZoom } : {}),
     ...(canvasWidth != null ? { canvasWidth } : {}),
     ...(canvasHeight != null ? { canvasHeight } : {}),
   };

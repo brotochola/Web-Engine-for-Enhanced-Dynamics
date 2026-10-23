@@ -6,7 +6,7 @@
  *
  *   node tests/bench/heapSampleWorkers.mjs --scene /demos/predatorScene/predatorScene.js \
  *     --scene-export PredatorScene --workers preRenderWorker,logicWorker [--query k=v] \
- *     [--warmup-ms 10000] [--sample-ms 8000] [--output heap.json]
+ *     [--warmup-ms 10000] [--sample-ms 8000] [--camera-zoom min|<zoom>] [--output heap.json]
  *
  * From Git Bash set MSYS_NO_PATHCONV=1, as for the benchmark runner. Prints, per
  * worker, the top allocating functions in KB/s and their callers. Sampling, so a
@@ -98,6 +98,8 @@ try {
     warmupMs: warmupMs + sampleMs, durationMs: 2000, sampleIntervalMs: 250, sceneModule, sceneExport,
     collectDetailedStats: false, collectGpuStats: false, canvasWidth: 1280, canvasHeight: 720,
     worldWidth: dims.width, worldHeight: dims.height,
+    // --camera-zoom min|<zoom>, as the benchmark runner takes it.
+    ...(args['camera-zoom'] ? { cameraZoom: args['camera-zoom'] } : {}),
   });
 
   await new Promise((r) => setTimeout(r, warmupMs));

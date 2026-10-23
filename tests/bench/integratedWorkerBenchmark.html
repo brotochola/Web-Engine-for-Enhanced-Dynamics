@@ -105,6 +105,8 @@
             ? true
             : Boolean(options.collectDetailedStats),
         collectGpuStats: Boolean(options.collectGpuStats),
+        // --camera-zoom: min (Camera.minZoom) or a zoom, set once the scene has been created.
+        cameraZoom: options.cameraZoom === 'min' || Number(options.cameraZoom) > 0 ? options.cameraZoom : null,
       };
     }
 
@@ -260,6 +262,10 @@
 
       await game.loadScene(config.sceneModule, { export: config.sceneExport });
       const scene = game.currentScene;
+      // loadScene resolves after the scene's create(), so this zoom stays.
+      if (config.cameraZoom != null) {
+        WEED.Camera.setZoom(config.cameraZoom === 'min' ? WEED.Camera.minZoom : Number(config.cameraZoom));
+      }
       const reader = createWorkerBenchmarkReader(scene);
 
       session = {
