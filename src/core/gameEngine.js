@@ -9,7 +9,7 @@ import { Scene } from './scene.js';
 import { printLogo, usableCanvasSize } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { DEBUG_DEFAULTS, ENGINE_DEFAULTS } from '../util/configDefaults.js';
-import { ensureCrossOriginIsolation } from '../util/crossOriginIsolation.js';
+import { defaultIsolationServiceWorker, ensureCrossOriginIsolation } from '../util/crossOriginIsolation.js';
 import {
   ensureResourceTimingBuffer,
   inferSceneScriptUrl,
@@ -33,7 +33,7 @@ class GameEngine {
     // DX-SW. Before anything loads: a page the host did not isolate gets weed-sw.js and one
     // reload. loadScene waits for it; the screen stays black meanwhile.
     this._isolation = ensureCrossOriginIsolation({
-      serviceWorker: config.isolationServiceWorker ?? ENGINE_DEFAULTS.isolationServiceWorker,
+      serviceWorker: config.isolationServiceWorker ?? defaultIsolationServiceWorker(),
     });
     this.autoResize = config.autoResize ?? ENGINE_DEFAULTS.autoResize;
     this.preventContextMenu = config.preventContextMenu ?? ENGINE_DEFAULTS.preventContextMenu;

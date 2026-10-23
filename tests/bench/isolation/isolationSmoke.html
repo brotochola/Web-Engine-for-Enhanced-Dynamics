@@ -8,14 +8,17 @@
 <body>
 <script type="module">
 // DX-SW, SW-4. A game page as a host without COOP/COEP serves it: the engine from source, the
-// isolation service worker at the URL in ?sw= (default /weed-sw.js; "off" turns it off), the scene
+// isolation service worker at the URL in ?sw= (the engine's default without it; "off" turns it off), the scene
 // in ?scene=. window.__smoke says how far it got; isolationWorkerSmoke.mjs reads it.
 const q = new URLSearchParams(location.search);
 window.__smoke = { state: 'loading', isolated: self.crossOriginIsolated === true, error: null };
 try {
   const { default: WEED } = await import('/src/index.js');
-  const sw = q.get('sw') ?? '/weed-sw.js';
-  const game = new WEED.GameEngine({ isolationServiceWorker: sw === 'off' ? false : sw, autoResize: true });
+  // No ?sw=: the engine's own default (from source, /weed-sw.js at the site root).
+  const sw = q.get('sw');
+  const config = { autoResize: true };
+  if (sw !== null) config.isolationServiceWorker = sw === 'off' ? false : sw;
+  const game = new WEED.GameEngine(config);
   window.__smoke.game = game;
   await game.loadScene(q.get('scene') || '/demos/orientedBoxScene/orientedBoxScene.js');
   window.__smoke.state = 'running';

@@ -319,11 +319,8 @@ export const ENGINE_DEFAULTS = Object.freeze({
   resizeDebounceMs: 150,
   /** Keep presenting to the canvas while the document is hidden. Default off: skip swapchain present. */
   presentWhenHidden: false,
-  /**
-   * The service worker that makes the page cross-origin isolated on hosts that cannot send the
-   * headers (DX-SW), resolved against the page. false never registers one.
-   */
-  isolationServiceWorker: 'weed-sw.js',
+  // isolationServiceWorker has no fixed default: defaultIsolationServiceWorker() in
+  // util/crossOriginIsolation.js (next to the page for bundles, the site root from source).
 });
 
 // ============================================================================

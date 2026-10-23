@@ -65,6 +65,18 @@ const registerReason = (err) =>
   `weed-sw.js could not be installed (${(err && err.message) || err}). Put the weed-sw.js that ships with ` +
   'WeedJS next to index.html, served as JavaScript.';
 
+/**
+ * Where weed-sw.js is looked for when the game does not say (option isolationServiceWorker).
+ * A bundle's workers are blob URLs, which take the page's isolation: next to the page. From
+ * source the engine loads its workers from /src/workers/ and /src/box2d/, root-absolute URLs that
+ * a service worker covers only from the site root, wherever the page is (DX-SW).
+ * @param {object} [scope] - globalThis, or a stand-in in tests
+ * @returns {string}
+ */
+export function defaultIsolationServiceWorker(scope = globalThis) {
+  return scope.WEED && scope.WEED.BUNDLE_MODE ? 'weed-sw.js' : '/weed-sw.js';
+}
+
 let isolationFailure = null;
 
 /** Why the last ensureCrossOriginIsolation() failed, or null. */
