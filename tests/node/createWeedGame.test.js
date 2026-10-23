@@ -60,6 +60,12 @@ test('npm run build swaps in the production engine and writes _headers', () => {
     const engineDir = path.join(dir, 'node_modules/@weed.js/engine/dist');
     fs.mkdirSync(engineDir, { recursive: true });
     fs.writeFileSync(path.join(engineDir, 'weed.prod.bundle.esm.min.js'), '/* prod */');
+    // An engine without weed-sw.js (older than DX-SW): the build still works, without it.
+    const old = spawnSync(process.execPath, ['scripts/build.mjs'], { cwd: dir, encoding: 'utf8' });
+    assert.equal(old.status, 0, old.stderr);
+    assert.equal(fs.existsSync(path.join(dir, 'dist/weed-sw.js')), false);
+    // DX-SW: the isolation service worker goes next to index.html, for hosts without headers.
+    fs.writeFileSync(path.join(engineDir, 'weed-sw.js'), '/* sw */');
 
     const r = spawnSync(process.execPath, ['scripts/build.mjs'], { cwd: dir, encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
@@ -69,6 +75,7 @@ test('npm run build swaps in the production engine and writes _headers', () => {
     assert.doesNotMatch(html, /node_modules/);
     assert.equal(fs.readFileSync(path.join(dir, 'dist/vendor/weed.js'), 'utf8'), '/* prod */');
     assert.ok(fs.existsSync(path.join(dir, 'dist/src/gameScene.js')));
+    assert.equal(fs.readFileSync(path.join(dir, 'dist/weed-sw.js'), 'utf8'), '/* sw */');
     const headers = fs.readFileSync(path.join(dir, 'dist/_headers'), 'utf8');
     assert.match(headers, /Cross-Origin-Opener-Policy: same-origin/);
     assert.match(headers, /Cross-Origin-Embedder-Policy: require-corp/);
