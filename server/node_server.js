@@ -2,13 +2,29 @@
 /**
  * Simple Node.js HTTP server with CORS headers for SharedArrayBuffer support.
  * Enables Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy.
+ *
+ * --sw (npm run dev:sw): no isolation headers, as GitHub Pages or a plain static
+ * host serves a game, and /weed-sw.js is the engine's isolation service worker, so
+ * pages become isolated through it (DX-SW). Its own port by default (8090), so the
+ * service worker the browser keeps never lands on the usual dev origin.
  */
 
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const PORT = Number(process.env.PORT) || 8000;
+const SW_MODE = process.argv.includes('--sw');
+const PORT = Number(process.env.PORT) || (SW_MODE ? 8090 : 8000);
+const ISOLATION_WORKER = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/workers/isolationServiceWorker.js');
+/** What makes a page cross-origin isolated; left out in --sw mode, where weed-sw.js adds it. */
+const ISOLATION_HEADERS = SW_MODE
+  ? {}
+  : {
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Embedder-Policy': 'require-corp',
+    'Cross-Origin-Resource-Policy': 'cross-origin', // Allow COEP to load resources
+  };
 
 // Hot reload: a change under the served folder pings /__weed/reload (Server-Sent
 // Events). The engine's debug build puts a changed game script into the running
@@ -96,9 +112,7 @@ const server = http.createServer((req, res) => {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Resource-Policy': 'cross-origin',
+      ...ISOLATION_HEADERS,
     });
     res.write(': hot reload\n\n');
     reloadClients.add(res);
@@ -112,6 +126,8 @@ const server = http.createServer((req, res) => {
   if (filePath === './') {
     filePath = './index.html';
   }
+  // From source the engine looks for its isolation service worker at the site root.
+  if (SW_MODE && urlPath === '/weed-sw.js') filePath = ISOLATION_WORKER;
 
   // Directory without trailing slash: redirect so relative assets
   // (e.g. weed.bundle.min.js under /dist/) resolve correctly.
@@ -149,9 +165,7 @@ const server = http.createServer((req, res) => {
       // Set required headers for SharedArrayBuffer
       res.writeHead(200, {
         'Content-Type': mimeType,
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'require-corp',
-        'Cross-Origin-Resource-Policy': 'cross-origin', // Allow COEP to load resources
+        ...ISOLATION_HEADERS,
         'Access-Control-Allow-Origin': '*',
         // Disable caching for JavaScript files (especially workers)
         'Cache-Control':
@@ -168,7 +182,12 @@ const startServer = (port) => {
   server.listen(port, () => {
     console.log('🚀 Server running at http://localhost:' + port + '/');
     console.log('📁 Serving files from: ' + process.cwd());
-    console.log('✅ SharedArrayBuffer enabled (COOP & COEP headers set)');
+    if (SW_MODE) {
+      console.log('🧪 No COOP/COEP headers: SharedArrayBuffer through weed-sw.js (the first visit reloads once)');
+      console.log('   To start over: DevTools, Application, Storage, "Clear site data".');
+    } else {
+      console.log('✅ SharedArrayBuffer enabled (COOP & COEP headers set)');
+    }
     console.log('Press Ctrl+C to stop\n');
   });
 

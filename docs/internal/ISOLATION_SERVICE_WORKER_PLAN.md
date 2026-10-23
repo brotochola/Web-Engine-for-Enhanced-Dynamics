@@ -345,6 +345,15 @@ a server without isolation headers, with the worker at the root (src mode) or ne
   a loop. The marker now counts reloads (`time:count`) and allows two in 10 s; a real loop
   (DevTools "Bypass for network") still stops at the second. The smoke test counts loads as
   navigation commits for the same reason (its first version kept a log in sessionStorage).
+- **From source the default location is the site root** (2026-10-23, for `npm run dev:sw`). The engine
+  loads its source-mode workers from the root-absolute `/src/workers/` and `/src/box2d/`, which a
+  `weed-sw.js` next to a page in another folder (`/demos/index.html`) does not cover, so the demos
+  started isolated but their workers did not. `defaultIsolationServiceWorker()`: `'weed-sw.js'` with
+  a bundle (`WEED.BUNDLE_MODE`), `'/weed-sw.js'` otherwise; `ENGINE_DEFAULTS` no longer holds one.
+- **`npm run dev:sw`**: `server/node_server.js --sw` serves without the isolation headers (pages and
+  the hot-reload stream) and serves `/weed-sw.js` from the engine, on port 8090 by default so the
+  registration never lands on the usual dev origin. The demo launcher runs through it, Predator
+  included, and a hot reload keeps the page isolated with the scene restored.
 - **A reload issued while a hard reload is still loading comes back uncontrolled** (SW-4,
   Chromium); issued after `load` it is controlled. The gate now waits for the page's `load`
   event before reloading. The screen is black either way.
