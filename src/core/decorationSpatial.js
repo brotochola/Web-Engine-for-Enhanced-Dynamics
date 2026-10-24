@@ -1,9 +1,11 @@
 // DecorationSpatial.js - SAB spatial hash for world-owned decorations (not parented).
 // Intrusive doubly-linked lists per cell; no maxPerCell. Mutate on spawn/despawn/move.
+// E-129: the links are the decoration pool's slot ids, u16 up to 65 535 decorations and u32 past that, with
+// their "no decoration" value (0xffff or 0xffffffff), chosen once in initialize from maxDecorations.
 
 import { DecorationComponent } from '../components/decorationComponent.js';
+import { PoolSlotArray, poolSlotNone } from '../util/poolSlotWidth.js';
 
-const EMPTY = 0xffff;
 const NOT_IN_GRID = -1;
 
 export class DecorationSpatial {
@@ -13,12 +15,14 @@ export class DecorationSpatial {
   static gridHeight = 0;
   static totalCells = 0;
   static maxDecorations = 0;
+  /** The links' "no decoration": 0xffff, or 0xffffffff past 65 535 decorations. */
+  static empty = 0xffff;
 
-  /** @type {Uint16Array|null} */
+  /** @type {Uint16Array|Uint32Array|null} */
   static head = null;
-  /** @type {Uint16Array|null} */
+  /** @type {Uint16Array|Uint32Array|null} */
   static next = null;
-  /** @type {Uint16Array|null} */
+  /** @type {Uint16Array|Uint32Array|null} */
   static prev = null;
   /** @type {Int32Array|null} */
   static cellOf = null;
@@ -46,10 +50,12 @@ export class DecorationSpatial {
     this.gridHeight = metadata.gridHeight | 0;
     this.totalCells = this.gridWidth * this.gridHeight;
     this.maxDecorations = metadata.maxDecorations | 0;
+    const Slot = PoolSlotArray(this.maxDecorations);
+    this.empty = poolSlotNone(this.maxDecorations);
 
-    this.head = buffers.head ? new Uint16Array(buffers.head) : null;
-    this.next = buffers.next ? new Uint16Array(buffers.next) : null;
-    this.prev = buffers.prev ? new Uint16Array(buffers.prev) : null;
+    this.head = buffers.head ? new Slot(buffers.head) : null;
+    this.next = buffers.next ? new Slot(buffers.next) : null;
+    this.prev = buffers.prev ? new Slot(buffers.prev) : null;
     this.cellOf = buffers.cellOf ? new Int32Array(buffers.cellOf) : null;
     this._lock = buffers.lock ? new Int32Array(buffers.lock) : null;
 
@@ -65,6 +71,7 @@ export class DecorationSpatial {
     this.gridHeight = 0;
     this.totalCells = 0;
     this.maxDecorations = 0;
+    this.empty = 0xffff;
     this.head = null;
     this.next = null;
     this.prev = null;
@@ -101,6 +108,7 @@ export class DecorationSpatial {
 
   /** Clear all lists (caller must hold lock, or use clear()). */
   static clearUnlocked() {
+    const EMPTY = this.empty;
     if (this.head) this.head.fill(EMPTY);
     if (this.next) this.next.fill(EMPTY);
     if (this.prev) this.prev.fill(EMPTY);
@@ -140,6 +148,7 @@ export class DecorationSpatial {
     const cell = this.getCellIndex(DecorationComponent.x[decoIdx], DecorationComponent.y[decoIdx]);
     if (cell < 0) return;
 
+    const EMPTY = this.empty;
     const head = this.head;
     const next = this.next;
     const prev = this.prev;
@@ -173,6 +182,7 @@ export class DecorationSpatial {
     const cell = this.cellOf[decoIdx];
     if (cell === NOT_IN_GRID) return;
 
+    const EMPTY = this.empty;
     const next = this.next;
     const prev = this.prev;
     const n = next[decoIdx];
@@ -234,7 +244,7 @@ export class DecorationSpatial {
    * @param {number} x
    * @param {number} y
    * @param {number} radius
-   * @param {Uint16Array} out
+   * @param {Uint16Array|Uint32Array} out pool indices (a Uint32Array past 65 535 decorations)
    * @returns {number} count written (capped by out.length)
    */
   static queryCircle(x, y, radius, out) {
@@ -255,6 +265,7 @@ export class DecorationSpatial {
     if (maxRow >= this.gridHeight) maxRow = this.gridHeight - 1;
     if (minCol > maxCol || minRow > maxRow) return 0;
 
+    const EMPTY = this.empty;
     const xs = DecorationComponent.x;
     const ys = DecorationComponent.y;
     const head = this.head;

@@ -54,9 +54,10 @@ import { resetFreeList } from '../../src/util/atomicFreeList.js';
 import { SWAY_ANGLE_PER_MS, SWAY_LOOP, swayFrequencyForBucket } from '../../src/util/decorationSway.js';
 import { bindDecorationSway, SWAY_SLOTS, TRIG_IMPULSE } from '../../src/workers/decorationSwayClient.js';
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
+import { poolFreeListTopBytes, poolSlotBytes } from '../../src/util/poolSlotWidth.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
-import { instantiateKernel, machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
 /** The float32 sway of the shipped module (wasm/decorationSway.c), by variant name. */
 export const SWAY_F32_MODULE = 'decorationSway';
@@ -209,7 +210,8 @@ export async function setupSwayKernel(opts = {}) {
   const k = opts.k ?? BUCKETS;
   const kMax = Math.max(k, opts.kMax ?? k);
   const listCap = opts.listCap ?? SWAY_LIST_CAP;
-  const slotBytes = opts.slotBytes ?? 2;
+  // The pool's own width (E-129: 4 past 65 535 decorations), or 4 for a 16-bit pool to run the u32 sway on.
+  const slotBytes = opts.slotBytes ?? poolSlotBytes(n);
   const layout = layoutRegions([
     { name: 'guard', bytes: NULL_GUARD_BYTES },
     { name: 'decorations', bytes: DecorationComponent.getBufferSize(n) },
@@ -241,9 +243,9 @@ export async function setupSwayKernel(opts = {}) {
     },
     extra: {
       maxDecorations: n,
-      decorationFreeList: new SharedArrayBuffer(n * 2),
-      decorationFreeListTop: new SharedArrayBuffer(8),
-      activeDecorationsData: new SharedArrayBuffer((1 + n) * 2),
+      decorationFreeList: new SharedArrayBuffer(n * poolSlotBytes(n)),
+      decorationFreeListTop: new SharedArrayBuffer(poolFreeListTopBytes(n)),
+      activeDecorationsData: new SharedArrayBuffer((1 + n) * poolSlotBytes(n)),
       activeDecorationsLock: new SharedArrayBuffer(4),
     },
   });
@@ -314,12 +316,9 @@ export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIS
     trigByte: regions.trig.byte,
     trigValueByte: regions.trigValue.byte,
     tableByte: regions.table.byte,
+    // The client binds the sway of this width (the _u32 one, with its trig bits, for 4).
+    slotBytes,
   }, { f32 });
-  if (slotBytes === 4) {
-    b.sway = instantiateKernel('decorationSway', memory)[f32 ? 'sway_decorations_f32x4_u32' : 'sway_decorations_u32'];
-    b.trigIndexMask = 0x7fffffff;
-    b.trigImpulse = 0x80000000;
-  }
   writeSwayTable(b, worker);
   return b;
 }

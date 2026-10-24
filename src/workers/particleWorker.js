@@ -46,7 +46,7 @@ import {
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
-import { bindDecorationSway, writeSwayColumns, TRIG_IMPULSE } from './decorationSwayClient.js';
+import { bindDecorationSway, writeSwayColumns } from './decorationSwayClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
 import { bindDecalStamp, flushDecalStamps } from './decalStampClient.js';
 import {
@@ -562,7 +562,8 @@ class ParticleWorker extends AbstractWorker {
       const swayLayout = this._swayRegions(data);
       const swayBuffer = swayLayout ? data.renderQueueMemory.buffer : null;
       const swayView = (Type, byte, length) => (swayLayout ? new Type(swayBuffer, byte, length) : new Type(length));
-      this._activeDecorationSnapshot = swayView(Uint16Array, swayLayout?.snapshotByte, this.maxDecorations);
+      // E-129: u32 past 65 535 decorations, as the sway regions and the kernel bound for them.
+      this._activeDecorationSnapshot = swayView(PoolSlotArray(this.maxDecorations), swayLayout?.snapshotByte, this.maxDecorations);
       if (this._swayBuckets) {
         this._phaseSin = swayView(Float32Array, swayLayout?.phaseSinByte, this.maxDecorations);
         this._phaseCos = swayView(Float32Array, swayLayout?.phaseCosByte, this.maxDecorations);
@@ -1547,15 +1548,17 @@ class ParticleWorker extends AbstractWorker {
     const b = this._swayWasm;
     if (!writeSwayColumns(b, this, DecorationComponent)) return false;
     const n = b.sway(b.tableByte, activeCount, k, deltaTime);
-    if (n > 0) this._finishSwayTrig(b.trig, b.trigValue, n);
+    if (n > 0) this._finishSwayTrig(b.trig, b.trigValue, n, b.trigIndexMask, b.trigImpulse);
     return true;
   }
 
   /**
    * W22. The rest of the loop body for the decorations the kernel listed, in its order: an impulse's
-   * Math.sin(phase) * swayAmplitude, then the rotation with its Math.cos / Math.sin past 0.08 rad.
+   * Math.sin(phase) * swayAmplitude, then the rotation with its Math.cos / Math.sin past 0.08 rad. An entry is
+   * the decoration's index under `indexMask` with `impulseBit` for an impulse, as the bound kernel writes it
+   * (bit 16, or bit 31 past 65 535 decorations: E-129).
    */
-  _finishSwayTrig(trig, trigValue, n) {
+  _finishSwayTrig(trig, trigValue, n, indexMask, impulseBit) {
     const rotC = DecorationComponent.rotC;
     const rotS = DecorationComponent.rotS;
     const baseRotC = DecorationComponent.baseRotC;
@@ -1563,9 +1566,9 @@ class ParticleWorker extends AbstractWorker {
     const swayAmplitude = DecorationComponent.swayAmplitude;
     for (let t = 0; t < n; t++) {
       const e = trig[t];
-      const i = e & 0xffff;
+      const i = e & indexMask;
       let delta = trigValue[t];
-      if ((e & TRIG_IMPULSE) !== 0) delta = Math.sin(delta) * swayAmplitude[i];
+      if ((e & impulseBit) !== 0) delta = Math.sin(delta) * swayAmplitude[i];
       const bc = baseRotC[i];
       const bs = baseRotS[i];
       if (delta !== 0) {

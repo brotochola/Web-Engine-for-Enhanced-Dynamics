@@ -619,13 +619,14 @@ export class AbstractWorker {
       // Initialize activeDecorationsData compact list (for optimized iteration)
       if (data.activeDecorationsData) {
         DecorationPool.initializeActiveList(data.activeDecorationsData, data.activeDecorationsLock || null);
-        this.activeDecorationsData = new Uint16Array(data.activeDecorationsData);
+        // E-129: u32 past 65 535 decorations.
+        this.activeDecorationsData = new (PoolSlotArray(data.maxDecorations | 0))(data.activeDecorationsData);
         this.reportLog(`initialized DecorationPool activeDecorationsData`);
       }
 
       // Initialize visibleDecorationsData compact list (written by particle_worker, read by pre_render_worker)
       if (data.visibleDecorationsData) {
-        this.visibleDecorationsData = new Uint16Array(data.visibleDecorationsData);
+        this.visibleDecorationsData = new (PoolSlotArray(data.maxDecorations | 0))(data.visibleDecorationsData);
         this.reportLog(`initialized visibleDecorationsData`);
       }
 

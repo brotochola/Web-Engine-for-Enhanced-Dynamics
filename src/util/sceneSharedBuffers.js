@@ -128,7 +128,7 @@ export function validateSceneSharedBufferConfig(scene) {
 
   // E-129: 32-bit slot ids past 65 535, up to MAX_POOL_SLOTS (poolSlotWidth.js).
   assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_POOL_SLOTS);
-  assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_ENTITIES_U16);
+  assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_POOL_SLOTS);
   assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES_U16);
   assertIntegerInRange('tween.maxTweens', config.tween?.maxTweens ?? 0, 0, 1 << 20);
   assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, maxEnt);
@@ -369,7 +369,7 @@ function initializeDecorationBuffers(scene) {
   DecorationComponent.initializeArrays(buffers.componentData.DecorationComponent, maxDecorations, decorationAt | 0);
   DecorationComponent.decorationCount = maxDecorations;
 
-  const { freeList, freeListTop } = createUint16FreeListBuffers(
+  const { freeList, freeListTop } = createSlotFreeListBuffers(
     buffers,
     'decorationFreeList',
     'decorationFreeListTop',
@@ -381,7 +381,7 @@ function initializeDecorationBuffers(scene) {
   DecorationPool.swayFrequencyBuckets = config.particle?.swayFrequencyBuckets | 0;
   DecorationPool.initializeFreeList(buffers.decorationFreeList, buffers.decorationFreeListTop);
 
-  createCompactUint16ListPair(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);
+  createCompactSlotListPair(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);
   buffers.activeDecorationsLock = new SharedArrayBuffer(4);
   DecorationPool.initializeActiveList(buffers.activeDecorationsData, buffers.activeDecorationsLock);
 
@@ -389,9 +389,11 @@ function initializeDecorationBuffers(scene) {
   const gridWidth = Math.ceil(config.worldWidth / cellSize);
   const gridHeight = Math.ceil(config.worldHeight / cellSize);
   const totalCells = gridWidth * gridHeight;
-  buffers.decorationSpatialHead = new SharedArrayBuffer(totalCells * Uint16Array.BYTES_PER_ELEMENT);
-  buffers.decorationSpatialNext = new SharedArrayBuffer(maxDecorations * Uint16Array.BYTES_PER_ELEMENT);
-  buffers.decorationSpatialPrev = new SharedArrayBuffer(maxDecorations * Uint16Array.BYTES_PER_ELEMENT);
+  // The spatial links are decoration slots: u32 past 65 535 decorations (E-129).
+  const slotBytes = poolSlotBytes(maxDecorations);
+  buffers.decorationSpatialHead = new SharedArrayBuffer(totalCells * slotBytes);
+  buffers.decorationSpatialNext = new SharedArrayBuffer(maxDecorations * slotBytes);
+  buffers.decorationSpatialPrev = new SharedArrayBuffer(maxDecorations * slotBytes);
   buffers.decorationSpatialCellOf = new SharedArrayBuffer(maxDecorations * Int32Array.BYTES_PER_ELEMENT);
   buffers.decorationSpatialLock = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
   DecorationSpatial.initialize(
@@ -409,7 +411,7 @@ function initializeDecorationBuffers(scene) {
   const maxAttached = config.decoration.maxAttachedDecorationsPerEntity;
   if (totalEntityCount > 0 && maxAttached > 0) {
     buffers.attachedDecorationCount = new SharedArrayBuffer(totalEntityCount);
-    buffers.attachedDecorationIndices = new SharedArrayBuffer(totalEntityCount * maxAttached * 2);
+    buffers.attachedDecorationIndices = new SharedArrayBuffer(totalEntityCount * maxAttached * slotBytes);
     DecorationPool.initializeAttachmentSlots(
       buffers.attachedDecorationCount,
       buffers.attachedDecorationIndices,

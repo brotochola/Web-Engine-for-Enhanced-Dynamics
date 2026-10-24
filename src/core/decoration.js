@@ -40,7 +40,8 @@ export class Decoration {
    * @param {number} x
    * @param {number} y
    * @param {number} radius
-   * @param {Uint16Array} out - Preallocated pool-index buffer
+   * @param {Uint16Array|Uint32Array} out - Preallocated pool-index buffer (a Uint32Array past 65 535 decorations,
+   *   whose indices do not fit 16 bits: E-129)
    * @returns {number} Count written (capped by out.length)
    */
   static queryCircle(x, y, radius, out) {

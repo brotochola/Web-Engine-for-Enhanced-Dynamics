@@ -86,7 +86,8 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * decorations block above), the particle worker's sway arrays: the frame's active snapshot (u16), the
  * phase tables (f32 per decoration), this frame's sin and cos per bucket (f32), the bucket cache (u16
  * bucket, f32 frequency per decoration), the kernel's chunk list (u16), its trig list (u32 entries, f64
- * values, one per decoration at most) and its column table.
+ * values, one per decoration at most) and its column table. E-129: past 65 535 decorations the snapshot and
+ * the chunk list are u32 (poolSlotBytes); the bucket cache holds bucket ids and stays u16.
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {number} maxItems the queue's rows
@@ -164,15 +165,16 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
   if (sway) {
     const d = sway.decorations | 0;
     const k = sway.buckets | 0;
+    const s = poolSlotBytes(d);
     regions.push(
-      { name: 'swaySnapshot', owner: 'particle', bytes: d * 2 },
+      { name: 'swaySnapshot', owner: 'particle', bytes: d * s },
       { name: 'swayPhaseSin', owner: 'particle', bytes: d * 4 },
       { name: 'swayPhaseCos', owner: 'particle', bytes: d * 4 },
       { name: 'swayBucketSin', owner: 'particle', bytes: k * 4 },
       { name: 'swayBucketCos', owner: 'particle', bytes: k * 4 },
       { name: 'swayBucketOf', owner: 'particle', bytes: d * 2 },
       { name: 'swayBucketFreq', owner: 'particle', bytes: d * 4 },
-      { name: 'swayList', owner: 'particle', bytes: SWAY_LIST_CAP * 2 },
+      { name: 'swayList', owner: 'particle', bytes: SWAY_LIST_CAP * s },
       { name: 'swayTrig', owner: 'particle', bytes: d * 4 },
       { name: 'swayTrigValue', owner: 'particle', bytes: d * 8 },
       { name: 'swayTable', owner: 'particle', bytes: SWAY_TABLE_SLOTS * 4 },

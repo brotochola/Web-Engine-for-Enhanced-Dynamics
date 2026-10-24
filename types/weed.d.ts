@@ -3889,8 +3889,8 @@ export declare class Decoration {
   static get(id: number): Decoration;
   static ensureForParented(id: number): Decoration;
   static evictFacade(id: number): void;
-  /** World-owned decorations only; fills out with pool indices; returns count. */
-  static queryCircle(x: number, y: number, radius: number, out: Uint16Array): number;
+  /** World-owned decorations only; fills out with pool indices (a Uint32Array past 65 535 decorations); returns count. */
+  static queryCircle(x: number, y: number, radius: number, out: Uint16Array | Uint32Array): number;
   get active(): boolean;
   get x(): number;
   set x(v: number);
@@ -3963,7 +3963,7 @@ export declare class DecorationSpatial {
   static insert(decoIdx: number): void;
   static remove(decoIdx: number): void;
   static move(decoIdx: number, x: number, y: number): void;
-  static queryCircle(x: number, y: number, radius: number, out: Uint16Array): number;
+  static queryCircle(x: number, y: number, radius: number, out: Uint16Array | Uint32Array): number;
 }
 
 export declare class BulletPool extends SharedAtomicPool {
