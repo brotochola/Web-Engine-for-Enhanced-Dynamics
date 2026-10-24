@@ -972,14 +972,22 @@ export class ColliderFillBatch {
    * @param {object} opts.shaders
    * @param {import('../vendor/pixi.min.js').TextureSource} [opts.atlasSource]
    * @param {import('../vendor/pixi.min.js').TextureSource} [opts.lutSource]
-   * @param {Float32Array|null} [opts.data] the rows, capacity × COLLIDER_FILL_FLOATS: a region of the mesh memory
-   *   (meshMemory.js, E-76 W11), where the corner kernel rewrites them; any other length gets an array of its own
+   * @param {Float32Array|null} [opts.data] where the rows are written, capacity × COLLIDER_FILL_FLOATS: a region of
+   *   the mesh memory (meshMemory.js, E-76 W11), where the corner kernel rewrites them; any other length, none
    */
   constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null }) {
     this.capacity = Math.max(1, capacity | 0);
     const floats = this.capacity * COLLIDER_FILL_FLOATS;
-    this.data = data instanceof Float32Array && data.length === floats ? data : new Float32Array(floats);
-    this.dataU32 = new Uint32Array(this.data.buffer, this.data.byteOffset, this.data.length);
+    // What the Pixi Buffer uploads: always an array of its own. Uploading every frame from a view on shared
+    // memory made every other worker slower in Chrome (E-123).
+    this.data = new Float32Array(floats);
+    this.dataU32 = new Uint32Array(this.data.buffer);
+    // Where the packs and the corner rewrite write the rows: the mesh memory's region when there is one, and
+    // upload copies the rows it sends from there; else this.data. Every writer writes here, because the
+    // rewrite changes the corners of some rows and keeps the rest of what is there.
+    const shared = data instanceof Float32Array && data.length === floats ? data : null;
+    this.rows = shared || this.data;
+    this.rowsU32 = shared ? new Uint32Array(shared.buffer, shared.byteOffset, shared.length) : this.dataU32;
     this.buffer = new Buffer({
       data: this.data,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
@@ -1072,7 +1080,7 @@ export class ColliderFillBatch {
   }
 
   /**
-   * @param {number} count packed instances already written into this.data
+   * @param {number} count packed instances already written into this.rows
    * @returns {number}
    */
   upload(count) {
@@ -1083,6 +1091,8 @@ export class ColliderFillBatch {
       return 0;
     }
     this.mesh.visible = true;
+    // E-123: the rows this upload sends, out of the mesh memory into the Buffer's own array.
+    if (this.rows !== this.data) this.data.set(this.rows.subarray(0, n * COLLIDER_FILL_FLOATS));
     this.buffer.update(n * COLLIDER_FILL_STRIDE);
     this.geometry.instanceCount = n;
     return n;

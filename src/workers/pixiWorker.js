@@ -4773,8 +4773,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       skip.uvInstanceEntity = new Uint32Array(cap);
     }
     views.instanceEntity = skip.uvInstanceEntity;
-    views.outU32 = batch.dataU32;
-    const packed = packMeshUvFill(batch.data, cap, cl.layerId, views);
+    views.outU32 = batch.rowsU32;
+    const packed = packMeshUvFill(batch.rows, cap, cl.layerId, views);
     skip.uvLocalsReady = packed > 0;
     cl.uvPrevCount = packed;
     batch.upload(packed);
@@ -6859,7 +6859,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         densityMesh = cl.batch.mesh;
       } else if (cl.fillBatch) {
         const views = this._ensureColliderFillViews();
-        views.outU32 = cl.fillBatch.dataU32;
+        views.outU32 = cl.fillBatch.rowsU32;
         let skip = this._colliderFillSkip[cl.layerId];
         if (!skip) {
           skip = this._colliderFillSkip[cl.layerId] = {
@@ -6921,7 +6921,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const uvGenNow = genNow ? this._captureUvGen(skip, views) : null;
           if (!full && vertsMoved) {
             const fillRewrite = this._rewriteMeshCorners(
-              cl.fillBatch.data,
+              cl.fillBatch.rows,
               lastPacked,
               skip.instanceEntity,
               views,
@@ -6933,7 +6933,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             const uvRewrite = !cl.uvFillBatch || uvCount <= 0
               ? 1
               : this._rewriteMeshCorners(
-                cl.uvFillBatch.data,
+                cl.uvFillBatch.rows,
                 uvCount,
                 skip.uvInstanceEntity,
                 views,
@@ -6947,8 +6947,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
           if (full) {
             views.instanceEntity = skip.instanceEntity;
-            views.outU32 = cl.fillBatch.dataU32;
-            const packed = packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
+            views.outU32 = cl.fillBatch.rowsU32;
+            const packed = packColliderFill(cl.fillBatch.rows, cap, cl.layerId, views);
             skip.localsReady = packed > 0;
             cl.fillBatch.upload(packed);
             cl.prevCount = packed;
@@ -6963,9 +6963,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             const touchVbo = vertsMoved || paintMoved;
             if (paintMoved) {
               if (lastPacked > 0) {
-                views.outU32 = cl.fillBatch.dataU32;
+                views.outU32 = cl.fillBatch.rowsU32;
                 packColliderFillPoseOnly(
-                  cl.fillBatch.data,
+                  cl.fillBatch.rows,
                   cap,
                   lastPacked,
                   skip.instanceEntity,
@@ -6974,9 +6974,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               }
               const uvCount = cl.uvPrevCount | 0;
               if (cl.uvFillBatch && uvCount > 0 && skip.uvInstanceEntity) {
-                views.outU32 = cl.uvFillBatch.dataU32;
+                views.outU32 = cl.uvFillBatch.rowsU32;
                 packColliderFillPoseOnly(
-                  cl.uvFillBatch.data,
+                  cl.uvFillBatch.rows,
                   cl.uvFillBatch.capacity,
                   uvCount,
                   skip.uvInstanceEntity,

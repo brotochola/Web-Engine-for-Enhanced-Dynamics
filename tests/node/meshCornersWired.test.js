@@ -4,8 +4,10 @@
 // the JS rewrite, and the mesh memory with the corner kernel. Every frame the game side edits meshes through
 // the MeshRenderer API (setVertices on grids, fans and stars; setRope; setMesh with new UVs or new indices; the
 // same setPlane again; now and then a new topology or a clearMesh) and repaints one, and all three runs must
-// hold the same rows in both batches, word for word. Pixi runs on the WebGPU program path, which builds in
-// Node; with no renderer, its uploads stop before the GPU.
+// hold the same rows in both batches, word for word. On the mesh memory the batches write their rows there and
+// upload arrays of their own (E-123), so each frame also checks that the rows the upload sent are the rows the
+// memory holds. Pixi runs on the WebGPU program path, which builds in Node; with no renderer, its uploads stop
+// before the GPU.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -255,8 +257,16 @@ async function run(px, meshCorners, kernel) {
       px.updateCustomLayers();
       const fillN = cl.prevCount | 0;
       const uvN = cl.uvPrevCount | 0;
+      // What the uploads sent: each Buffer's own array.
       const fill = cl.fillBatch.dataU32.slice(0, fillN * COLLIDER_FILL_FLOATS);
       const uv = cl.uvFillBatch ? cl.uvFillBatch.dataU32.slice(0, uvN * MESH_UV_FILL_FLOATS) : new Uint32Array(0);
+      // E-123: on the mesh memory, the rows the writers left there, every one of them copied before the upload.
+      const fillAt = firstDiff(cl.fillBatch.rowsU32.subarray(0, fill.length), fill);
+      assert.equal(fillAt, -1, `frame ${f}: fill float ${fillAt} is not what the upload sent`);
+      if (cl.uvFillBatch) {
+        const uvAt = firstDiff(cl.uvFillBatch.rowsU32.subarray(0, uv.length), uv);
+        assert.equal(uvAt, -1, `frame ${f}: UV float ${uvAt} is not what the upload sent`);
+      }
       frames.push({ fillN, uvN, fill, uv });
     }
   });
@@ -277,6 +287,8 @@ test('Pixi draws the same mesh rows with the switch off, on the mesh memory in J
   assert.ok(off.scene.buffers.meshGeomData instanceof SharedArrayBuffer);
   assert.equal(off.cl.meshRegion, null, 'the batches keep arrays of their own');
   assert.ok(!(off.cl.fillBatch.data.buffer instanceof SharedArrayBuffer));
+  assert.equal(off.cl.fillBatch.rows, off.cl.fillBatch.data, 'written where they are uploaded from');
+  assert.equal(off.cl.uvFillBatch.rows, off.cl.uvFillBatch.data);
 
   const js = await run(px, true, false);
   const mem = js.scene.meshMemory;
@@ -285,10 +297,18 @@ test('Pixi draws the same mesh rows with the switch off, on the mesh memory in J
   assert.equal(MeshGeometry.vertOffset.buffer, mem.buffer);
   assert.equal(MeshGeometry.vertOffset.byteOffset, 0, 'from byte 0');
   assert.ok(js.cl.meshRegion, 'the layer has its regions');
-  assert.equal(js.cl.fillBatch.data.buffer, mem.buffer, 'fill rows in the memory');
-  assert.equal(js.cl.fillBatch.data.byteOffset, js.cl.meshRegion.fillRowsByte);
-  assert.equal(js.cl.uvFillBatch.data.buffer, mem.buffer, 'UV rows in the memory');
-  assert.equal(js.cl.uvFillBatch.data.byteOffset, js.cl.meshRegion.uvRowsByte);
+  assert.equal(js.cl.fillBatch.rows.buffer, mem.buffer, 'fill rows in the memory');
+  assert.equal(js.cl.fillBatch.rows.byteOffset, js.cl.meshRegion.fillRowsByte);
+  assert.equal(js.cl.uvFillBatch.rows.buffer, mem.buffer, 'UV rows in the memory');
+  assert.equal(js.cl.uvFillBatch.rows.byteOffset, js.cl.meshRegion.uvRowsByte);
+  // E-123: each Pixi Buffer uploads an array of its own, not a view on the memory.
+  for (const batch of [js.cl.fillBatch, js.cl.uvFillBatch]) {
+    assert.equal(batch.buffer.data, batch.data);
+    assert.ok(!(batch.data.buffer instanceof SharedArrayBuffer), 'the upload array is not shared');
+    assert.equal(batch.dataU32.buffer, batch.data.buffer);
+    assert.equal(batch.rowsU32.buffer, mem.buffer);
+    assert.equal(batch.rowsU32.byteOffset, batch.rows.byteOffset);
+  }
   for (const name of ['instanceEntity', 'uvInstanceEntity', 'lastVertGen', 'frameVertGen', 'lastUvGen', 'frameUvGen']) {
     assert.equal(js.skip[name].buffer, mem.buffer, `${name} in the memory`);
   }
