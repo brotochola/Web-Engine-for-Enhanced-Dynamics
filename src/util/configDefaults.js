@@ -443,6 +443,13 @@ export const WASM_DEFAULTS = Object.freeze({
   spatialGather: true,
   /** Particle integrate (`particleIntegrate.wasm`, E-79): ParticleComponent in a WebAssembly.Memory. */
   particleIntegrate: true,
+  /**
+   * The integrate in float32, four particles per f32x4 where the loop allows it (`integrate_batch_f32x4`, the
+   * float32 pass): positions, velocities, the alpha, scale and tint lerps and the sine and cosine of a turning
+   * particle in float32, within a stated tolerance; lifetimes, deaths and the free list exact. false: the double
+   * integrate (`integrate_batch`), the JS integrate's state bit for bit.
+   */
+  particleIntegrateF32: true,
   /** Particle list build (`particleLists.wasm`, E-80): the active and visible lists in that memory. */
   particleLists: true,
   /**

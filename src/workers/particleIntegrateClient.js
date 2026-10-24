@@ -1,7 +1,10 @@
 // The WASM particle integrate (E-79): loads particleIntegrate.wasm onto the particle memory and
 // runs updateParticlePhysicsBuffers' work in it. What JS did around the loop stays here: the dead
 // list goes back to the pool in the order JS returned it (the free list's order decides later
-// allocations), and an angle past fdlibm's medium reduction gets Math.cos / Math.sin.
+// allocations), and an angle past fdlibm's medium reduction gets Math.cos / Math.sin. With `f32`
+// (wasm.particleIntegrateF32, the particle worker's default) the kernel's float32 integrate,
+// integrate_batch_f32x4, is bound in integrate_batch's place, once; the call and the JS around it are the
+// same.
 
 import { ParticleEmitter } from '../core/particleEmitter.js';
 import { PARTICLE_LUT_ENTRIES } from '../util/particleMemory.js';
@@ -27,9 +30,11 @@ export const PARTICLE_INTEGRATE_COLUMNS = Object.freeze([
  * @param {Record<string, number>} layout createParticleMemory's layout
  * @param {typeof import('../components/particleComponent.js').ParticleComponent} pc
  * @param {number} maxParticles
+ * @param {{ f32?: boolean }} [options] f32: the float32 integrate (`f32` on the binding says which)
  */
-export async function bindParticleIntegrate(memory, layout, pc, maxParticles) {
-  const { integrate_batch: integrate } = await loadWasmKernel('particleIntegrate', wasmUrl, memory, ['integrate_batch']);
+export async function bindParticleIntegrate(memory, layout, pc, maxParticles, { f32 = false } = {}) {
+  const exportName = f32 ? 'integrate_batch_f32x4' : 'integrate_batch';
+  const integrate = (await loadWasmKernel('particleIntegrate', wasmUrl, memory, [exportName]))[exportName];
   const buffer = memory.buffer;
   if (pc.sharedBuffer !== buffer) throw new Error('ParticleComponent is not in the particle memory');
   const columns = new Uint32Array(buffer, layout.columnsByte, PARTICLE_INTEGRATE_COLUMNS.length);
@@ -42,6 +47,7 @@ export async function bindParticleIntegrate(memory, layout, pc, maxParticles) {
   const n = maxParticles | 0;
   return {
     integrate,
+    f32: Boolean(f32),
     layout,
     lutSize: PARTICLE_LUT_ENTRIES - 1,
     indices: new Uint16Array(buffer, layout.indicesByte, n),

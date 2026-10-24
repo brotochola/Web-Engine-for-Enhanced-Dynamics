@@ -8,11 +8,13 @@
  *   base        updateParticlePhysicsBuffers (src/util/particleIntegrate.js), the JS path
  *   wasm        integrateParticlesWasm (src/workers/particleIntegrateClient.js): integrate_batch
  *               (wasm/particleIntegrate.c), then returnToPool for its dead list, in order, and
- *               Math.cos / Math.sin for its trig list
+ *               Math.cos / Math.sin for its trig list; what the particle worker binds with
+ *               wasm.particleIntegrateF32 false
  *   wasm-f32x4  the same wrapper around integrate_batch_f32x4 (wasm/particleIntegrate.c): float32
  *               arithmetic where integrateF32Tolerance holds, f32x4 on runs of four slots in the position
  *               passes and on the staged rotations. (The float32 pass also timed a scalar float32
  *               integrate: +1.8 % tween, +5.7 % spin against integrate_batch, under f32x4's spin +24.3 %.)
+ *               What the worker binds by default (bindParticleIntegrate's `f32`).
  *
  * Both run on the particle memory the scene builds (createParticleMemory: ParticleComponent from
  * byte 0 of a shared WebAssembly.Memory, the lists and the kernel's scratch after it). One variant per process: runKernelVariants.mjs
@@ -46,7 +48,7 @@ import { seededRandom } from '../../src/util/utils.js';
 import { createParticleMemory } from '../../src/util/particleMemory.js';
 import { bindParticleIntegrate, integrateParticlesWasm } from '../../src/workers/particleIntegrateClient.js';
 import { isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
-import { instantiateKernel, machineState, wasmTier } from './wasmKernelHelpers.mjs';
+import { machineState, wasmTier } from './wasmKernelHelpers.mjs';
 
 const MAX_PARTICLES = 65535;
 const INITIAL_BURST = 60000;
@@ -252,11 +254,11 @@ export async function createIntegrateRig(maxParticles = MAX_PARTICLES, { f32: wi
   ParticleEmitter.initialize(maxParticles);
   ParticleEmitter.initializeFreeList(new SharedArrayBuffer(maxParticles * 2), new SharedArrayBuffer(8));
   ParticleEmitter.resetFreeListInterleaved();
-  const binding = await bindParticleIntegrate(mem.memory, mem.layout, ParticleComponent, maxParticles);
+  // As the particle worker binds them: wasm with wasm.particleIntegrateF32 off, wasm-f32x4 with it on.
+  const binding = await bindParticleIntegrate(mem.memory, mem.layout, ParticleComponent, maxParticles, { f32: false });
   const kernels = { wasm: binding.integrate };
   if (withF32) {
-    const f32 = instantiateKernel(INTEGRATE_F32_MODULE, mem.memory);
-    for (const [variant, name] of Object.entries(INTEGRATE_F32_EXPORTS)) kernels[variant] = f32[name];
+    kernels['wasm-f32x4'] = (await bindParticleIntegrate(mem.memory, mem.layout, ParticleComponent, maxParticles, { f32: true })).integrate;
   }
   const bytes = new Uint8Array(mem.buffer);
   const save = () => ({ bytes: bytes.slice(), freeList: ParticleEmitter.freeList.slice(), freeListTop: ParticleEmitter.freeListTop.slice() });

@@ -307,6 +307,12 @@ export type SceneConfig = Record<string, unknown> & {
     spatialGather?: boolean;
     /** Particle integrate (lifetime, tweens, motion, floor) for the CPU particle pool. */
     particleIntegrate?: boolean;
+    /**
+     * The particle integrate in float32 (default true): faster; positions, tweens and turning particles' rotations
+     * within a float32 rounding or so of the double step (lifetimes and deaths exact). false: the double step, the
+     * JavaScript integrate's results exactly.
+     */
+    particleIntegrateF32?: boolean;
     /** Particle active and visible lists (the per-frame sweep of the pool and the screen test). */
     particleLists?: boolean;
     /**

@@ -520,9 +520,12 @@ class ParticleWorker extends AbstractWorker {
         // E-80: the integrate's input is the published active list, which is in the particle memory.
         this.activeParticleIndices = new Uint16Array(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
         // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
+        // wasm.particleIntegrateF32 (default on) takes the kernel's float32 integrate, chosen once here.
         if (this.config?.wasm?.particleIntegrate !== false) {
           try {
-            this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles);
+            this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles, {
+              f32: this.config?.wasm?.particleIntegrateF32 !== false,
+            });
             this.particlesToStamp = this._wasmIntegrate.stamp;
           } catch (err) {
             console.error('[particle] integrate wasm unavailable', err);

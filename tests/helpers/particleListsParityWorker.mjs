@@ -34,7 +34,16 @@ const listBuffers = mem
     }
   : { activeParticlesData: new SharedArrayBuffer((n + 1) * 2), visibleParticlesData: new SharedArrayBuffer((n + 1) * 2) };
 await initWorker(worker, {
-  config: { particle: { maxParticles: n }, wasm: { particleIntegrate: integrate, particleLists: lists, ...(f32 === undefined ? {} : { particleListsF32: f32 }) } },
+  config: {
+    particle: { maxParticles: n },
+    wasm: {
+      particleIntegrate: integrate,
+      // The double integrate: its state is the JS integrate's bit for bit, so the lists alone decide the sums.
+      particleIntegrateF32: false,
+      particleLists: lists,
+      ...(f32 === undefined ? {} : { particleListsF32: f32 }),
+    },
+  },
   globalEntityCount: 16,
   buffers: { componentData: { ParticleComponent: mem ? mem.buffer : new SharedArrayBuffer(componentBytes) } },
   extra: {
