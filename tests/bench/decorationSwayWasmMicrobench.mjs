@@ -27,9 +27,9 @@
  * worker's init the component block at a region of it (componentDataByte, the product's path) and moves
  * the worker's own arrays after it, so the JS and the kernel read and write the same bytes.
  *
- *   wasm-f32    the same call with sway_decorations_f32 (wasm/test/decorationSwayF32.c, a test module)
- *               bound in the kernel's place: the sway angle and its rotation in float32, scalar
- *   wasm-f32x4  sway_decorations_f32x4: the same operations, four skew decorations per f32x4 (bit-identical)
+ *   wasm-f32x4  the same call with sway_decorations_f32x4 (wasm/decorationSway.c) bound in the kernel's
+ *               place: the sway angle and its rotation in float32, four skew decorations per f32x4. (The
+ *               float32 pass also timed a scalar float32 sway: -3.6 % against sway_decorations.)
  *
  * One variant per process, through runKernelVariants.mjs, which rejects a variant whose checksum differs.
  * The checksum covers rotC, rotS, sway, swayPhase, the bucket tables and the cache after each of the first
@@ -42,7 +42,7 @@
  * the first difference when one does not.
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/decorationSwayWasmMicrobench.mjs --variants js,wasm --rounds 5
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/decorationSwayWasmMicrobench.mjs --variants wasm,wasm-f32,wasm-f32x4 --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/decorationSwayWasmMicrobench.mjs --variants wasm,wasm-f32x4 --rounds 5
  *   node tests/bench/decorationSwayWasmMicrobench.mjs --variant wasm [--on-screen 1] [--n 20000] [--check] [--output path]
  *
  * --on-screen is the share of the world's width in view (1: every blade on screen, Q3's fixture).
@@ -57,9 +57,9 @@ import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } 
 import { initWorker, loadWorker } from './workerHarness.mjs';
 import { instantiateKernel, machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
-/** The float32 sways: tests/fixtures/wasm/decorationSwayF32.wasm, by variant name. */
-export const SWAY_F32_MODULE = 'decorationSwayF32';
-export const SWAY_F32_EXPORTS = Object.freeze({ 'wasm-f32': 'sway_decorations_f32', 'wasm-f32x4': 'sway_decorations_f32x4' });
+/** The float32 sway of the shipped module (wasm/decorationSway.c), by variant name. */
+export const SWAY_F32_MODULE = 'decorationSway';
+export const SWAY_F32_EXPORTS = Object.freeze({ 'wasm-f32x4': 'sway_decorations_f32x4' });
 
 /** The float32 sway functions on `memory`, by variant name. */
 export function swayF32Kernels(memory) {

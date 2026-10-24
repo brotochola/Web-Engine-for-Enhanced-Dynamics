@@ -135,7 +135,8 @@
       "source": "wasm/decorationSway.c",
       "output": "src/workers/decorationSway.wasm",
       "exports": [
-        "sway_decorations"
+        "sway_decorations",
+        "sway_decorations_f32x4"
       ],
       "maxMemoryPages": 32768
     },
@@ -305,17 +306,6 @@
         "order_batch_by_cell",
         "gather_batch_f32",
         "gather_batch_f32x4"
-      ],
-      "maxMemoryPages": 8192,
-      "test": true
-    },
-    {
-      "name": "decorationSwayF32",
-      "source": "wasm/test/decorationSwayF32.c",
-      "output": "tests/fixtures/wasm/decorationSwayF32.wasm",
-      "exports": [
-        "sway_decorations_f32",
-        "sway_decorations_f32x4"
       ],
       "maxMemoryPages": 8192,
       "test": true

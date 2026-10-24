@@ -1,5 +1,5 @@
-// E-76 W22, float32: sway_decorations_f32 and sway_decorations_f32x4 (wasm/test/decorationSwayF32.c) against the
-// shipped sway_decorations, which decorationSwayWasm.test.js ties to the JS sway bit for bit, on that test's
+// E-76 W22, float32: sway_decorations_f32x4 (wasm/decorationSway.c) against sway_decorations, its double sway,
+// which decorationSwayWasm.test.js ties to the JS sway bit for bit, on that test's
 // frames (tests/helpers/decorationSwayScenarios.mjs: Predator's grass, then random decorations through every
 // branch, bucket grids from 2 to 70 000, chunks of 1, 37 and 1024, the 32-bit parents), each through the bench's
 // wrapper (swayDecorationsWasm: the per-bucket Math.sin / Math.cos before, Math.sin / Math.cos for the trig list
@@ -15,8 +15,8 @@
 // - except where swayF32Free holds nothing to compare: an infinite or NaN amplitude or base rotation, or a loop
 //   amplitude past 6.6e6 rad, where the shipped rotation is Math.cos of an angle no rounding defines (these
 //   frames sway amplitudes of 3e38); how many of those differ goes to the diagnostics.
-// sway_decorations_f32x4 must write the same bytes as sway_decorations_f32. Two mutants must fail: the skew
-// cosine 1.5 off by 1e-4 and the small-angle bound 0.08 moved to 0.07, both in the binary.
+// Two mutants must fail: the skew cosine 1.5 off by 1e-4 and the small-angle bound 0.08 moved to 0.07, both in
+// the binary (a mutant's sway_decorations_f32x4 against the unchanged binary's sway_decorations).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -47,7 +47,7 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LIST_CAP_SLOT = SWAY_SLOTS.indexOf('listCap');
-const BINARY = fs.readFileSync(path.join(root, 'tests/fixtures/wasm/decorationSwayF32.wasm'));
+const BINARY = fs.readFileSync(path.join(root, 'src/workers/decorationSway.wasm'));
 
 /** The float32 sways of `bytes` (the fixture, or a mutant of it) on `memory`, by variant. */
 function kernelsOf(bytes, memory) {
@@ -90,19 +90,16 @@ async function runFrames(bytes = BINARY) {
       const refTrig = trigOf(n);
       const ref = mem.slice();
       const refCacheK = w._swayBucketCacheK;
-      const outs = [];
       for (const [v, fn] of Object.entries(kernels)) {
         mem.set(before);
         w._swayBucketCacheK = cacheK;
         s.b.sway = fn;
         const m = swayDecorationsWasm(s.b, w, deltaTime);
         const got = mem.slice();
-        outs.push(got);
         const bad = w._swayBucketCacheK !== refCacheK ? 'the cache grid differs'
           : compareSwayStates(stateViews(s), ref, got, refTrig, trigOf(m), stats[v]);
         if (bad) return { violation: `${v}, ${p.name} frame ${f} (deltaTime ${deltaTime}): ${bad}`, stats, frame, listed };
       }
-      if (Buffer.compare(outs[0], outs[1]) !== 0) return { violation: `${p.name} frame ${f}: f32x4 differs from f32`, stats, frame, listed };
       mem.set(ref);
       w._swayBucketCacheK = refCacheK;
     }
@@ -158,7 +155,7 @@ test('the tolerance catches a wrong skew cosine and a moved small-angle bound', 
     { pat: f64Bytes(0.08), rep: f64Bytes(0.07), caught: /trig list only/, what: 'the small-angle bound' },
   ]) {
     const { bytes, hits } = patch(BINARY, m.pat, m.rep);
-    assert.ok(hits >= 2, `${m.what} is in both exports (${hits} found)`);
+    assert.ok(hits >= 2, `${m.what} is in the binary (${hits} found)`);
     const r = await runFrames(bytes);
     assert.match(String(r.violation), m.caught, m.what);
   }
