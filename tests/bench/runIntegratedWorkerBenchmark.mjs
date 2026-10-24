@@ -595,7 +595,10 @@ async function main() {
         text.includes('WebGPU') ||
         text.includes('PIXI WORKER') ||
         text.includes('uncaptured') ||
-        text.includes('ComputeLayer')
+        text.includes('ComputeLayer') ||
+        // The physics host's own warnings (a body Box2D would not create, a full pool): a run that hits them is not
+        // the scene it was asked to be.
+        text.includes('[weedjs-box2d]')
       ) {
         console.log(`[page ${msg.type()}] ${text}`);
       }
