@@ -67,8 +67,10 @@ import {
     bindPreRenderEmit,
     writeEmitColumns,
     writeEmitTextures,
+    writePersistColumns,
     EMIT_BOUNDS,
     EMIT_DECLINED,
+    EMIT_PERSIST_MISS,
     EMIT_SORT_KEY,
     EMIT_TILES_DIRTY,
     EMIT_WARN_NO_ANIM,
@@ -2967,13 +2969,23 @@ class PreRenderWorker extends AbstractWorker {
         const ySort = !!source.ySort;
         // -1 when off: buffer 0 is a valid persist target (it used to read as false).
         const persistBuf = source.persist ? this._queueBuf : -1;
-        const persistHit = persistBuf >= 0
-            ? this._type0PersistHit(persistBuf, count, collectorType, collectorIndex)
-            : false;
+        // E-112, W4c. preRenderEmit.wasm takes the frame when every column it reads is in its memory: the
+        // persist path, then on a miss the full emit's sprite and decoration rows and the remembered rows.
+        const emitWasm = this._emitWasm !== null && !!stashPx && this._writeEmitTable(source);
+        const persistWasm = emitWasm && persistBuf >= 0 && writePersistColumns(this._emitWasm, this, SpriteRenderer, persistBuf);
+        let persistHit = false;
+        if (persistBuf >= 0) {
+            persistHit = persistWasm
+                ? this._type0PersistHitWasm(persistBuf, count, maxItems)
+                : this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
+        }
         // Rows other than sprites are rewritten in full on a persist frame too (E-82 staticGen).
-        const persistOthers = persistHit
-            ? this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime)
-            : 0;
+        let persistOthers = 0;
+        if (persistHit) {
+            persistOthers = persistWasm
+                ? this._writeType0PosesWasm(count, maxItems, deltaTime)
+                : this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime);
+        }
         // E-98b. On a persist frame of sprites only, the loop below would only count the rows.
         let loopCount = count;
         if (persistHit && persistOthers === 0) {
@@ -2983,7 +2995,7 @@ class PreRenderWorker extends AbstractWorker {
         // E-112. A full emit's sprite and decoration rows are written by preRenderEmit.wasm, the rows of
         // other types after it; a frame it does not take (an Adobe root, a LiquidFun row, a column
         // outside its memory) runs the loop below.
-        if (this._emitWasm !== null && !persistHit && loopCount > 0 && stashPx) {
+        if (emitWasm && !persistHit && loopCount > 0) {
             const written = this._emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty);
             if (written >= 0) {
                 writeCount = written;
@@ -3359,7 +3371,8 @@ class PreRenderWorker extends AbstractWorker {
         // E-102b: from now on this queue's other rows must clear what a repeating sprite left.
         if (tiledRows && rqTileMode !== null) this._tiledTileColumns.add(rqTileMode);
         if (source.persist && !persistHit) {
-            this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
+            if (persistWasm) this._rememberType0SetWasm(persistBuf, count, maxItems);
+            else this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
         }
         if (source.persist) {
             // E-82. A frame that only moved sprites keeps the count; anything else is a new one
@@ -3373,15 +3386,66 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * E-112. The full emit's rows through preRenderEmit.wasm: it writes the sprite and decoration rows,
-     * then the rows of other types it listed are written here, its play-once ends sent through the
-     * entity-type filter and its missing textures warned as the JS emit warns them.
+     * E-112, W4c. preRenderEmit.wasm's column table for this frame; false when the kernel cannot take the
+     * frame (no texture tables yet, a column outside its memory), and the JS runs it.
+     */
+    _writeEmitTable(source) {
+        const b = this._emitWasm;
+        return b.texturesReady && writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source);
+    }
+
+    /** W4c. _type0PersistHit in preRenderEmit.wasm (persist_check), on this frame's table. */
+    _type0PersistHitWasm(bufIdx, count, maxItems) {
+        if (this._persistCount[bufIdx] !== count) return false;
+        this._persistFramesRepaired = 0;
+        const b = this._emitWasm;
+        const repaired = b.persistCheck(b.tableByte, count, maxItems);
+        if (repaired === EMIT_PERSIST_MISS) return false;
+        this._persistFramesRepaired = repaired;
+        return true;
+    }
+
+    /**
+     * W4c. _writeType0PosesOnly in preRenderEmit.wasm (persist_poses). Returns the rows of other types;
+     * the sprites whose frame moved go to _persistFramesMoved, the play-once ends through the
+     * entity-type filter, as the JS sends them.
+     */
+    _writeType0PosesWasm(count, maxItems, deltaTime) {
+        const b = this._emitWasm;
+        const writeSortKey = !!(this.renderQueueSortKey && this._queueHasOrder());
+        const ySort = writeSortKey && this._entityYSort();
+        const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
+        const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0) | (bounds ? EMIT_BOUNDS : 0);
+        const others = b.persistPoses(b.tableByte, count, maxItems, flags, deltaTime / 1000, this._zBand);
+        const results = b.results;
+        this._persistFramesMoved = results[1];
+        const ends = results[0];
+        const u32 = b.u32;
+        for (let k = 0, at = b.endsAt; k < ends; k++, at += 2) {
+            const idx = u32[at];
+            if (this._animEndByType[Transform.entityType[idx]] === 1) this._spriteAnimationEnded(idx, u32[at + 1]);
+        }
+        return others;
+    }
+
+    /** W4c. _rememberType0Set in preRenderEmit.wasm (persist_remember). */
+    _rememberType0SetWasm(bufIdx, count, maxItems) {
+        const b = this._emitWasm;
+        const cleared = b.persistRemember(b.tableByte, count, maxItems);
+        this._persistCount[bufIdx] = count;
+        // As in _rememberType0Set: the other buffer still holds the old columns of a sprite that changed.
+        if (cleared) this._persistCount[bufIdx ^ 1] = -1;
+    }
+
+    /**
+     * E-112. The full emit's rows through preRenderEmit.wasm, on this frame's table (_writeEmitTable): it
+     * writes the sprite and decoration rows, then the rows of other types it listed are written here, its
+     * play-once ends sent through the entity-type filter and its missing textures warned as the JS emit
+     * warns them.
      * Returns the rows written, or -1 when the kernel cannot take the frame (the JS loop does).
      */
     _emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty) {
         const b = this._emitWasm;
-        if (!b.texturesReady) return -1;
-        if (!writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source)) return -1;
         const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
         const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0)
             | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0);

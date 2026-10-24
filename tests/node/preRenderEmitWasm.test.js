@@ -484,10 +484,8 @@ function persistRegions(m, maxItems) {
   ];
 }
 
-async function runPersistCase(t, { ySort, inQueue, seed }) {
-  const k = await setup({ ySort, seed, persist: true });
-  const { worker, b, m, maxItems } = k;
-  const count = k.count;
+/** Run fn with an order on the entity queue (a zIndex user, and Y-sort on the entities layer when ySort). */
+async function withPersistOrder(ySort, fn) {
   // Sort keys on persist frames need an order: a zIndex user, and Y-sort on the entities layer.
   SpriteRenderer._zIndexUsers[0] = 1;
   const savedLayer = [Layer._ySorting, Layer.entitiesId];
@@ -497,37 +495,34 @@ async function runPersistCase(t, { ySort, inQueue, seed }) {
     Layer._ySorting[0] = 1;
   }
   try {
-    await persistFrames(t, k, { ySort, inQueue, seed });
+    await fn();
   } finally {
     [Layer._ySorting, Layer.entitiesId] = savedLayer;
   }
 }
 
-async function persistFrames(t, k, { ySort, inQueue, seed }) {
-  const { worker, b, m, maxItems } = k;
-  const count = k.count;
-  assert.equal(worker._entityYSort(), ySort);
-  assert.ok(worker._queueHasOrder());
-  const all = new Uint8Array(m.buffer);
-  const regions = persistRegions(m, maxItems);
+/**
+ * The persist cases' frames: prepare(f) flips to buffer f & 1, writes the frame's poses into the stash
+ * (the queue's own columns, E-98d, or the other buffer's) and makes what misses on schedule: dirty
+ * sprites, a changed animation, swapped collector rows, a frame past its animation's end and, with
+ * adobe, an Adobe root for six frames. Some animated sprites get NaN clocks first (the persist path
+ * advances them on every frame, !(clock < duration); the full emit never does). The same calls give the
+ * same frames on both runs.
+ */
+function persistSchedule(k, { inQueue, seed, adobe }) {
+  const { worker, count } = k;
   const cType = worker._renderableType;
   const cIndex = worker._renderableIndex;
-  const cY = worker._renderableY;
   const sprites = [];
   for (let r = 0; r < count; r++) if (cType[r] === 0) sprites.push(r);
-  // NaN clocks: the persist path advances them on every frame (!(clock < duration)); the full emit never does.
   for (const r of sprites.slice(0, 60)) if (SpriteRenderer.isAnimated[cIndex[r]]) SpriteRenderer.animationSpeed[cIndex[r]] = NaN;
-  const start = all.slice();
   const animatedRow = sprites.find((r) => SpriteRenderer.isAnimated[cIndex[r]] && SpriteRenderer.spritesheetId[cIndex[r]] === 2
     && SpriteRenderer.animationState[cIndex[r]] === 3);
   assert.ok(animatedRow !== undefined, 'a sprite with a 13-frame animation');
-
-  /** Frame f's input, the same on both runs: the buffer, the poses, and what makes it miss. */
-  const prepare = (f) => {
+  return (f) => {
     const buf = f & 1;
     worker._queueBuf = buf;
     worker._setWriteBuffer(buf);
-    // The stash: the queue's own columns (E-98d), or the other buffer's (in the memory as well).
     const o = worker.renderQueueBuffers[buf ^ 1];
     const st = inQueue
       ? { x: worker.renderQueueX, y: worker.renderQueueY, rc: worker.renderQueueRotC, rs: worker.renderQueueRotS }
@@ -551,10 +546,29 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
       [cIndex[a], cIndex[c]] = [cIndex[c], cIndex[a]];
     }
     if (f === 17) worker.entityFrameIndex[cIndex[animatedRow]] = 99;
-    if (f === 20) cType[5] = 6;
-    if (f === 26) cType[5] = k.types[5];
+    if (adobe && f === 20) cType[5] = 6;
+    if (adobe && f === 26) cType[5] = k.types[5];
     return { buf, st };
   };
+}
+
+async function runPersistCase(t, { ySort, inQueue, seed }) {
+  const k = await setup({ ySort, seed, persist: true });
+  await withPersistOrder(ySort, () => persistFrames(t, k, { ySort, inQueue, seed }));
+}
+
+async function persistFrames(t, k, { ySort, inQueue, seed }) {
+  const { worker, b, m, maxItems } = k;
+  const count = k.count;
+  assert.equal(worker._entityYSort(), ySort);
+  assert.ok(worker._queueHasOrder());
+  const all = new Uint8Array(m.buffer);
+  const regions = persistRegions(m, maxItems);
+  const cType = worker._renderableType;
+  const cIndex = worker._renderableIndex;
+  const cY = worker._renderableY;
+  const prepare = persistSchedule(k, { inQueue, seed, adobe: true });
+  const start = all.slice();
 
   const record = (hit, others, moved, repaired, ends) => ({
     hit, others, moved, repaired, ends, counts: [...worker._persistCount],
@@ -637,4 +651,79 @@ test('the persist path in the kernel does what the JS persist path does, without
 
 test('the persist path in the kernel copies a stash that is not the queue', async (t) => {
   await runPersistCase(t, { ySort: true, inQueue: false, seed: 0x9e3 });
+});
+
+test('emitSpriteQueue through the kernel takes the persist frames the JS takes and writes what it writes', async (t) => {
+  for (const ySort of [true, false]) {
+    const seed = ySort ? 0xa11 : 0xa12;
+    const k = await setup({ ySort, seed, persist: true });
+    await withPersistOrder(ySort, async () => {
+      const { worker, m, maxItems, count } = k;
+      const bound = worker._emitWasm;
+      assert.ok(bound && bound.texturesReady, 'the worker bound the kernel and wrote its tables');
+      const calls = { persistCheck: 0, persistPoses: 0, persistRemember: 0, emitRows: 0 };
+      for (const name of Object.keys(calls)) {
+        const real = bound[name];
+        bound[name] = (...args) => {
+          calls[name]++;
+          return real(...args);
+        };
+      }
+      const all = new Uint8Array(m.buffer);
+      const regions = persistRegions(m, maxItems);
+      // No Adobe root here: the JS loop's Adobe branch needs AdobeAnimComponent (the kernel test has one).
+      const prepare = persistSchedule(k, { inQueue: true, seed, adobe: false });
+      const start = all.slice();
+      const startGen = worker._staticGen;
+      const realEnded = worker._spriteAnimationEnded;
+      const realWarn = worker._warnMissingTexture;
+      const run = (kernel) => {
+        all.set(start);
+        worker._persistCount = [0, 0];
+        worker._tiledTileColumns = new Set();
+        worker._staticGen = startGen;
+        worker._emitWasm = kernel;
+        const frames = [];
+        for (let f = 0; f < PERSIST_FRAMES; f++) {
+          const { st } = prepare(f);
+          const ends = [];
+          const warns = [];
+          worker._spriteAnimationEnded = (idx, anim) => ends.push(`${idx}:${anim}`);
+          worker._warnMissingTexture = (key) => warns.push(key);
+          const hasOrder = worker._queueHasOrder();
+          const source = worker._fillEmitSource(count, maxItems, worker._renderableY, worker._renderableType,
+            worker._renderableIndex, st.x, st.y, st.rc, st.rs, true, hasOrder, hasOrder && worker._entityYSort());
+          const written = worker.emitSpriteQueue(DT, source);
+          frames.push({
+            written, ends, warns: warns.sort(), counts: [...worker._persistCount], gen: worker._staticGen,
+            tiled: [...worker._tiledTileColumns].length, mem: regions.map(([, at, bytes]) => all.slice(at, at + bytes)),
+          });
+        }
+        worker._spriteAnimationEnded = realEnded;
+        worker._warnMissingTexture = realWarn;
+        return frames;
+      };
+      const js = run(null);
+      assert.deepEqual(calls, { persistCheck: 0, persistPoses: 0, persistRemember: 0, emitRows: 0 }, 'the JS run called no kernel');
+      const wasm = run(bound);
+      for (let f = 0; f < PERSIST_FRAMES; f++) {
+        const got = wasm[f];
+        const want = js[f];
+        assert.deepEqual({ written: got.written, counts: got.counts, gen: got.gen, tiled: got.tiled },
+          { written: want.written, counts: want.counts, gen: want.gen, tiled: want.tiled }, `frame ${f}`);
+        assert.deepEqual(got.ends, want.ends, `frame ${f}: play-once ends, in order`);
+        assert.deepEqual(got.warns, want.warns, `frame ${f}: warnings`);
+        regions.forEach(([name], r) => {
+          const at = got.mem[r].findIndex((x, i) => x !== want.mem[r][i]);
+          assert.equal(at, -1, `frame ${f}: ${name} differs at byte ${at}`);
+        });
+      }
+      // Every frame went through the kernel: a check unless the count changed, the poses on a hit, the
+      // full emit and the remember on a miss.
+      assert.equal(calls.persistPoses + calls.persistRemember, PERSIST_FRAMES, JSON.stringify(calls));
+      assert.equal(calls.emitRows, calls.persistRemember, JSON.stringify(calls));
+      assert.ok(calls.persistPoses >= 10 && calls.persistRemember >= 10, JSON.stringify(calls));
+      t.diagnostic(`ySort ${ySort}: ${JSON.stringify(calls)}`);
+    });
+  }
 });
