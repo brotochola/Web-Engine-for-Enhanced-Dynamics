@@ -2,9 +2,9 @@
  * The shipped Box2D WASM for node tests, one instance alive at a time.
  *
  * The module imports a shared memory of 256 to 32768 pages (16 MB to 2 GB);
- * the engine picks the size per scene (physics.wasmMemoryMB). Tests get 8192
- * pages (512 MB, the engine's default) unless they pass `pages`. The memory is
- * committed up front. Test files made a new instance per test and left the old
+ * the engine picks the size per scene (physics.wasmMemoryMB). Tests get the
+ * engine's default (2048 pages, 128 MB) unless they pass `pages`. The memory
+ * is committed up front. Test files made a new instance per test and left the old
  * ones to GC (liquidFun.wasm.test.js made 47). With four test processes in
  * parallel that took this machine's free commit from ~6 GB to 0.2 GB; then any
  * process's allocation could fail and V8 aborted it (exit 0xC0000409). Those
@@ -20,6 +20,7 @@ import path from 'node:path';
 import v8 from 'node:v8';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { BOX2D_MEMORY_MB_DEFAULT } from '../../src/box2d/box2dMemory.js';
 
 const BOX2D_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/box2d');
 
@@ -53,11 +54,11 @@ function load() {
 
 /**
  * @param {string[]} [requiredExports] fail fast when the build lacks these
- * @param {{ pages?: number }} [options] memory size in 64 KB pages (default 8192, 512 MB)
+ * @param {{ pages?: number }} [options] memory size in 64 KB pages (default: the engine's, 2048)
  * @returns {{ instance: WebAssembly.Instance, memory: WebAssembly.Memory,
  *   fn: (name: string) => Function, names: Record<string, string> }}
  */
-export function instantiateBox2dWasm(requiredExports = [], { pages = 8192 } = {}) {
+export function instantiateBox2dWasm(requiredExports = [], { pages = BOX2D_MEMORY_MB_DEFAULT * 16 } = {}) {
   load();
   for (const name of requiredExports) {
     if (!exportNames[name]) throw new Error(`${name} export missing - rebuild box2dWasm.js`);
