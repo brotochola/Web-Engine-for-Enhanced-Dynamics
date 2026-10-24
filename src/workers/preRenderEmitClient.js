@@ -108,6 +108,8 @@ export async function bindPreRenderEmit(memory, emit) {
     warnsAt: emit.warnsByte >> 2,
     foreignAt: emit.foreignByte >> 2,
     texturesReady: false,
+    // The frame sizes' length in the kernel's copy (frameWidthByte, frameHeightByte), once written.
+    frames: 0,
   };
 }
 
@@ -183,6 +185,7 @@ export function writeEmitTextures(b, meta) {
   t[SLOT.tSheets] = 0;
   t[SLOT.tAnims] = 0;
   t[SLOT.tFrames] = 0;
+  b.frames = 0;
   if (!meta) return false;
   const starts = meta.animationFrameStart || [];
   const counts = meta.animationFrameCount || [];
@@ -217,6 +220,7 @@ export function writeEmitTextures(b, meta) {
   t[SLOT.tSheets] = sheets;
   t[SLOT.tAnims] = anims;
   t[SLOT.tFrames] = frames;
+  b.frames = frames;
   b.texturesReady = true;
   return true;
 }
