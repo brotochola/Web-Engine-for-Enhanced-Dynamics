@@ -76,8 +76,19 @@ export class BunnyMarkStressScene extends Scene {
   }
 }
 
-/** C is the render screen. 20k and 60k left Pixi under 3 ms. */
-export const BUNNY_COUNT_C = 100000;
+/**
+ * C is the render screen. 20k and 60k left Pixi under 3 ms. `?bunnies=<n>` sets its count (default 100 000): E-82b's
+ * split upload left Pixi under the floor at 100 000.
+ */
+export const BUNNY_COUNT_C = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('bunnies');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 100000;
+  } catch {
+    return 100000;
+  }
+})();
 
 export class BunnyMarkStressCScene extends Scene {
   static config = {
