@@ -29,10 +29,14 @@ function fail(message) {
   process.exit(1);
 }
 
+// npm is npm.cmd on Windows and needs a shell; nothing else may get one, because a shell splits
+// arguments with spaces (the commit message "release vX" became a pathspec).
+const shellFor = (command) => command === 'npm' && process.platform === 'win32';
+
 /** Run a command in the repo, output shown; stop the release when it fails. */
 function step(label, command, commandArgs) {
   console.log(`\n▶ ${label}`);
-  const r = spawnSync(command, commandArgs, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+  const r = spawnSync(command, commandArgs, { cwd: root, stdio: 'inherit', shell: shellFor(command) });
   if (r.status !== 0) fail(`${label} failed (exit ${r.status}). Nothing is committed yet.`);
 }
 
@@ -42,7 +46,7 @@ function read(command, commandArgs) {
     return execFileSync(command, commandArgs, {
       cwd: root,
       stdio: ['ignore', 'pipe', 'ignore'],
-      shell: process.platform === 'win32',
+      shell: shellFor(command),
     })
       .toString()
       .trim();
@@ -102,7 +106,7 @@ function main() {
   // 5. publish, then push
   const publishArgs = ['publish', '--access', 'public', ...(otp ? ['--otp', otp] : [])];
   console.log('\n▶ npm publish');
-  const published = spawnSync('npm', publishArgs, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+  const published = spawnSync('npm', publishArgs, { cwd: root, stdio: 'inherit', shell: shellFor('npm') });
   if (published.status !== 0) {
     fail(
       `npm publish failed. The release commit and tag v${version} are local. Fix it, then:\n` +
