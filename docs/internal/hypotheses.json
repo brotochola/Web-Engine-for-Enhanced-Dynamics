@@ -1322,16 +1322,19 @@
     {
       "id": "W8b",
       "title": "a 32-bit-id `publish_batch`",
-      "status": "open",
+      "status": "kept",
       "statusText": "open",
       "date": null,
-      "result": "A 32-bit-id variant keeps the win past 65,535 ids. today `createSpatialPublishMemory` returns `null` unless ids are 2 bytes (E-27), and the scene takes the JS path silently. …",
+      "result": "kept (product) 2026-10-24: stationarySpatialWideScene (70 000 entities, 32-bit ids) spatial 18.648 → 12.234 ms (−33.0 %, 0/4); 16-bit kernels unchanged",
       "area": "spatial",
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#W8b"
       ],
-      "aliases": []
+      "aliases": [],
+      "records": [
+        "R-0611"
+      ]
     },
     {
       "id": "W17",
@@ -13407,6 +13410,15 @@
       "commits": [
         "33241ca1"
       ]
+    },
+    {
+      "id": "R-0611",
+      "date": "2026-10-24",
+      "time": "15:41",
+      "timeFrom": "recorded",
+      "title": "WASM W8b, the 32-bit spatial publish and gather, E-76",
+      "verdict": "kept",
+      "text": "**kept (product).** `wasm/spatialPublish.c` and `wasm/spatialGather.c` are written once over the id width (always_inline, a constant flag) and export `publish_batch_u32`, `gather_batch_u32` and `order_batch_by_cell_u32` beside the 16-bit ones (`5dcff194`). The memory map sizes the rows, lists, rebuild lists and order scratch by the id width; `createSpatialPublishMemory` accepts 4-byte ids and the modules' 2 GB import; the clients bind the `_u32` exports when `entityIdBytes()` is 4. Before this, a scene past 65 535 entities took the JS publish and gather silently. Owner pair, `stationarySpatialWideScene` (new, `79088100`: 70 000 stationary entities, 32-bit ids by 'auto', two spatial workers, physics off), Chrome, headed, source, 4 pairs, one build, `wasmOff=spatialPublish,spatialGather` on side A: spatial **18.648 → 12.234 ms, −33.0 % paired, worse 0/4**, cv 3/6 %; every other worker under the 3 ms floor; `ENTITIES_PROCESSED` 70 000 and `VISIBLE_ENTITIES` 21 318 on both sides. The JS side ran at 104–106 % load (FPS 57–58), so the gap is a floor. Parity: `spatialGatherWasm.test.js` runs 70 000 entities on three real spatial workers at 32-bit ids, and the WASM publish, the WASM gather and the gather in cell order publish what the plain buffers' JS path publishes, rows and counters, on every frame (detailed stats on, so the WASM publish's E-02 recount fills `neighborsFoundThisFrame`). The 16-bit kernels are unchanged (Node, `kernelAB2`, 5 alternating rounds against the parent): publish WASM 6 292 → 6 218 ops/s median, the gather frame 252 → 255 frames/s, both inside the rounds' spread. Found on the way and fixed first (`7b91a58b`): `box2dBlockPlan` returned null when the spatial part took Box2D's block past 2 GB, so the render-queue part lost the block too. The spatial part now stays out alone. A scene whose rows do not fit 2 GB (`count × (1 + maxNeighbors) × 4` bytes, twice: rows and candidates) still runs the JS path."
     }
   ],
   "leads": [
