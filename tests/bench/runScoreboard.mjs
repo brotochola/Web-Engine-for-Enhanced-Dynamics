@@ -33,6 +33,7 @@ import {
 } from './measureLib.mjs';
 import { isCli } from './microbenchHelpers.mjs';
 import { ensureRevWorktree } from './revWorktree.mjs';
+import { addRecord, loadRegistry, localStamp, saveRegistry } from '../../scripts/hypothesesRegister.mjs';
 
 const outRoot = path.join(repoRoot, 'tests/results/scoreboard');
 
@@ -419,22 +420,22 @@ export function writeReport(payload) {
   return md;
 }
 
-function updateHypothesisLog(payload) {
-  const logPath = path.join(repoRoot, 'docs/internal/HYPOTHESIS_LOG.md');
-  if (!fs.existsSync(logPath)) return;
-  let text = fs.readFileSync(logPath, 'utf8');
-  const stamp = new Date().toISOString().slice(0, 10);
-  const ids = payload.rows.map((r) => `${r.id}:${r.decision.verdict}`).join(', ');
-  const block = `| Scoreboard platform vs \`${payload.vs}\` | Catalog runner can compare every engine feature with load gates. | kept | ${stamp} | Scoreboard ${payload.args.smoke ? 'smoke' : 'full'}; ${payload.rows.length} rows | ${ids}. ${payload.product.text} | Platform shipped. Do not claim best WeedJS unless every catalog row is KEPT or TIE and none WORSE/FAIL. | [\`tests/results/scoreboard/report.md\`](../tests/results/scoreboard/report.md) |\n`;
-  const marker = '| Always-on load counts |';
-  if (text.includes('| Scoreboard platform vs')) {
-    text = text.replace(/\| Scoreboard platform vs[^\n]*\n/, block);
-  } else if (text.includes(marker)) {
-    text = text.replace(marker, `${block}${marker}`);
-  } else {
-    text += `\n${block}`;
-  }
-  fs.writeFileSync(logPath, text);
+/** The sitting as a record of the register (docs/internal/hypotheses.json), with every row's verdict. */
+function recordScoreboard(payload) {
+  const reg = loadRegistry();
+  const { date, time } = localStamp();
+  const ids = payload.rows.map((r) => `${r.id}: ${r.decision.verdict}`).join(', ');
+  const r = addRecord(reg, {
+    title: `Scoreboard against \`${payload.vs}\` (${payload.args.smoke ? 'smoke' : 'full'}, ${payload.rows.length} rows)`,
+    date,
+    time,
+    timeFrom: 'recorded',
+    verdict: 'note',
+    text: `${ids}.\n\n${payload.product.text} A tree is the fastest WeedJS only when every catalog row is kept or a tie and none is worse or failed. The rows' numbers are in the local report (\`tests/results/scoreboard/report.md\`, not kept).`,
+  });
+  reg.updated = date;
+  saveRegistry(reg);
+  console.log(`register: ${r.id}`);
 }
 
 function gateFailed(gates) {
@@ -622,7 +623,7 @@ function main() {
   };
   writeJson(path.join(outRoot, 'summary.json'), payload);
   writeReport(payload);
-  updateHypothesisLog(payload);
+  recordScoreboard(payload);
   console.log('\n======== SCOREBOARD ========');
   console.log(payload.product.text);
   console.log(`Wrote ${path.join(outRoot, 'report.md')}`);
