@@ -123,7 +123,8 @@ export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, 
     memory, views: v, offsets, insert, bind,
     layout: {
       tableByte: offsets.table, resultsByte: offsets.results, returnedByte: offsets.returned,
-      stampByte: offsets.stamp, bullets, entities,
+      stampByte: offsets.stamp, activeByte: offsets.activeOut, impactsByte: offsets.impacts,
+      bullets, entities, impacts,
     },
   };
 }

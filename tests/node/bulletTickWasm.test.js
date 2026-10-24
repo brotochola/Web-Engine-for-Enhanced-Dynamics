@@ -134,7 +134,7 @@ async function compare(seed, { dtRatio = 1, odd = false, variant } = {}) {
     // The kernel, from the same bytes.
     restore(w, start);
     const b = await bindBullets(w, variant);
-    assert.equal(writeBulletColumns(b, BulletComponent, Transform, Collider, w.views.activeOut, w.views.impacts, Grid), true);
+    assert.equal(writeBulletColumns(b, BulletComponent, Transform, Collider, Grid), true);
     const res = b.results;
     res[0] = 1;
     res[1] = 0;
@@ -175,7 +175,7 @@ test('bullet_tick hands a bullet back at its position when its cast meets a chai
   v.bSpeed[0] = 60;
   v.bOwner[0] = 0;
   const b = await bindBullets(w);
-  assert.equal(writeBulletColumns(b, BulletComponent, Transform, Collider, v.activeOut, v.impacts, Grid), true);
+  assert.equal(writeBulletColumns(b, BulletComponent, Transform, Collider, Grid), true);
   b.results.set([1, 0, SIZE.impacts, 0]);
   readyBulletStamps(b, SIZE.bullets);
   const x0 = v.bX[0];

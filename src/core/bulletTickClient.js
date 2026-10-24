@@ -31,8 +31,10 @@ if (ShapeType.Box !== 0 || ShapeType.Circle !== 1 || ShapeType.Polygon !== 2 || 
 
 /**
  * @param {WebAssembly.Memory} memory
- * @param {{ tableByte: number, resultsByte: number, returnedByte: number, stampByte: number, bullets: number,
- *   entities: number }} layout the kernel's regions in that memory
+ * @param {{ tableByte: number, resultsByte: number, returnedByte: number, stampByte: number, activeByte: number,
+ *   impactsByte: number, bullets: number, entities: number, impacts: number }} layout the kernel's regions in that
+ *   memory: the active list and the impact records it writes (the pool copies them out), its returned list, stamps,
+ *   results and table
  * @param {string} [variant] one of BULLET_TICK_VARIANTS (benches and tests pick; the engine takes the default)
  */
 export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIANT) {
@@ -42,6 +44,8 @@ export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIA
   const table = new Uint32Array(buffer, layout.tableByte, BULLET_TICK_SLOTS.length);
   table[SLOT.results] = layout.resultsByte;
   table[SLOT.oReturned] = layout.returnedByte;
+  table[SLOT.oActive] = layout.activeByte;
+  table[SLOT.oImpacts] = layout.impactsByte;
   table[SLOT.gStamp] = layout.stampByte;
   table[SLOT.gGen] = 0;
   return {
@@ -52,14 +56,18 @@ export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIA
     results: new Int32Array(buffer, layout.resultsByte, 4),
     returned: new Uint32Array(buffer, layout.returnedByte, layout.bullets),
     stamp: new Uint32Array(buffer, layout.stampByte, layout.entities),
+    // The active list ([0] unused here: the count is results[0] - 1) and the impacts, 6 floats each.
+    activeOut: new Uint16Array(buffer, layout.activeByte, layout.bullets + 1),
+    impacts: new Float32Array(buffer, layout.impactsByte, layout.impacts * 6),
+    impactCap: layout.impacts | 0,
   };
 }
 
 /**
  * The column table for this frame. False when a column the tick reads or writes is not in the memory (or the
- * grid's ids are not 16-bit), and the JS tick runs instead.
+ * grid's ids or the owners are not 16-bit), and the JS tick runs instead.
  */
-export function writeBulletColumns(b, BulletComponent, Transform, Collider, activeData, impactData, Grid) {
+export function writeBulletColumns(b, BulletComponent, Transform, Collider, Grid) {
   const t = b.table;
   const buffer = b.buffer;
   let ok = true;
@@ -87,9 +95,7 @@ export function writeBulletColumns(b, BulletComponent, Transform, Collider, acti
   put('bDamage', bc.damage, true);
   put('bOwner', bc.ownerId, true);
   put('bShooter', bc.shooterEntityType, true);
-  if (!(bc.ownerId instanceof Uint16Array) || !(activeData instanceof Uint16Array)) ok = false;
-  put('oActive', activeData, true);
-  put('oImpacts', impactData, false);
+  if (!(bc.ownerId instanceof Uint16Array)) ok = false;
   put('tActive', Transform.active, true);
   put('tX', Transform.x, true);
   put('tY', Transform.y, true);

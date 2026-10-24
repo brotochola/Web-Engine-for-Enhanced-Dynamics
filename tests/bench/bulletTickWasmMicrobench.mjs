@@ -133,7 +133,7 @@ export async function setupBulletKernel(caseName, seed = SEED, kernel = 'bullet_
     w.bind();
     BulletPool.returnToPool = countReturn;
     restore();
-    if (!writeBulletColumns(k, BulletComponent, Transform, Collider, v.activeOut, v.impacts, Grid)) {
+    if (!writeBulletColumns(k, BulletComponent, Transform, Collider, Grid)) {
       throw new Error('a column is not in the memory');
     }
     const res = k.results;

@@ -5,10 +5,14 @@
 // EXTENDS SharedAtomicPool for thread-safe free list management
 
 import { BulletComponent } from '../components/bulletComponent.js';
+import { Transform } from '../components/transform.js';
+import { Collider } from '../components/collider.js';
 import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
 import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { Layer } from './layer.js';
 import { Ray } from './ray.js';
+import { Grid } from './grid.js';
+import { readyBulletStamps, writeBulletColumns } from './bulletTickClient.js';
 
 export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';
@@ -17,6 +21,8 @@ export class BulletPool extends SharedAtomicPool {
   static _warnedPoolExhausted = false;
   static _warnedMissingTextures = new Set();
   static _tickResult = { activeCount: 0, impactWrite: 0 };
+  /** W19: the bullet tick kernel (bulletTickClient.js), bound by the particle worker when its columns are in one memory. */
+  static _wasm = null;
 
   static get maxBullets() {
     return this.maxCount;
@@ -195,6 +201,13 @@ export class BulletPool extends SharedAtomicPool {
    * @returns {{ activeCount: number, impactWrite: number }}
    */
   static tick(dtRatio, activeData, impactHeader, impactData, maxImpacts, opts) {
+    // W19: the kernel takes the frame when it is bound, the call is the worker's own (no kernel options), the
+    // lists are 16-bit, its impact region holds the cap, and every column is in its memory.
+    const k = this._wasm;
+    if (k !== null && opts === undefined && activeData instanceof Uint16Array && (maxImpacts | 0) <= k.impactCap
+      && writeBulletColumns(k, BulletComponent, Transform, Collider, Grid)) {
+      return this._tickWasm(dtRatio, activeData, impactHeader, impactData, maxImpacts);
+    }
     const bc = BulletComponent;
     const maxBullets = this.maxCount;
     const active = bc.active;
@@ -285,6 +298,89 @@ export class BulletPool extends SharedAtomicPool {
     this._tickResult.activeCount = activeWrite - 1;
     this._tickResult.impactWrite = impactWrite;
     return this._tickResult;
+  }
+
+  /**
+   * tick() through bulletTick.wasm. The kernel walks the pool and writes the active list and the impacts in its
+   * own regions; the JS returns the slots that hit to the pool in the walk's order, ticks a bullet the kernel hands
+   * back (a compound polygon or a chain on its way) with Ray, and copies the lists to the buffers other workers
+   * read.
+   */
+  static _tickWasm(dtRatio, activeData, impactHeader, impactData, maxImpacts) {
+    const k = this._wasm;
+    const res = k.results;
+    const count = this.maxCount;
+    const dt = dtRatio * (1 / 60);
+    res[0] = 1;
+    res[1] = 0;
+    res[2] = impactHeader ? maxImpacts | 0 : 0;
+    res[3] = 0;
+    readyBulletStamps(k, count);
+    const returned = k.returned;
+    let from = 0;
+    for (;;) {
+      const stop = k.tick(k.tableByte, from, count, dt, Grid.invCellSize, Grid.cellSize, Grid.gridWidth,
+        Grid.gridHeight, Grid.cellByteSize, -1);
+      const back = res[3];
+      for (let n = 0; n < back; n++) this.returnToPool(returned[n]);
+      res[3] = 0;
+      if (stop >= count) break;
+      this._tickOneJs(stop, dt, k.activeOut, k.impacts, res);
+      from = stop + 1;
+    }
+    const activeWrite = res[0];
+    const impactWrite = res[1];
+    if (activeWrite > 1) activeData.set(k.activeOut.subarray(1, activeWrite), 1);
+    activeData[0] = activeWrite - 1;
+    if (impactHeader) {
+      if (impactWrite > 0) impactData.set(k.impacts.subarray(0, impactWrite * 6));
+      Atomics.store(impactHeader, 0, impactWrite);
+      Atomics.add(impactHeader, 1, 1);
+    }
+    this._tickResult.activeCount = activeWrite - 1;
+    this._tickResult.impactWrite = impactWrite;
+    return this._tickResult;
+  }
+
+  /**
+   * One bullet of tick()'s loop in JS, for a bullet the kernel handed back: the loop body, copied (the loop is hot),
+   * writing the kernel's lists through its results ([0] the next active slot, [1] impacts, [2] their cap).
+   */
+  static _tickOneJs(i, dt, activeOut, impacts, res) {
+    const bc = BulletComponent;
+    const x = bc.x;
+    const y = bc.y;
+    const px = x[i];
+    const py = y[i];
+    bc.prevX[i] = px;
+    bc.prevY[i] = py;
+    const dx = bc.vx[i] * dt;
+    const dy = bc.vy[i] * dt;
+    x[i] = px + dx;
+    y[i] = py + dy;
+    const len = bc.speed[i] * dt;
+    if (len > 1e-6) {
+      const hit = Ray.linecastDir(px, py, bc.bulletRotC[i], bc.bulletRotS[i], len, bc.ownerId[i]);
+      if (hit.blocked && hit.entityIndex >= 0) {
+        const t = Math.min(hit.distance / len, 1);
+        const n = res[1];
+        if (n < res[2]) {
+          const base = n * 6;
+          impacts[base] = hit.entityIndex;
+          impacts[base + 1] = bc.damage[i];
+          impacts[base + 2] = px + dx * t;
+          impacts[base + 3] = py + dy * t;
+          impacts[base + 4] = bc.ownerId[i];
+          impacts[base + 5] = bc.shooterEntityType[i];
+          res[1] = n + 1;
+        }
+        bc.active[i] = 0;
+        this.returnToPool(i);
+        return;
+      }
+    }
+    activeOut[res[0]] = i;
+    res[0] = res[0] + 1;
   }
 
   static reset() {
