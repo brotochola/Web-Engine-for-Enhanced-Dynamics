@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W4b, screen): pre-render's sprite collect in WASM (wasm/test/preRenderCollect.c) against the
+ * Kernel (E-76 W4b): pre-render's sprite collect in WASM (wasm/preRenderCollect.c) against the JS loop of the
  * shipped PreRenderWorker.collectVisibleEntities, on a real worker, 250 000 sprites with no body in a scene
  * without physics, every column in one shared memory (preRenderCollectKernel.mjs).
  *
@@ -8,8 +8,8 @@
  *   cull    a straight camera at zoom 0.5 over a world five times the view: about a fifth queued
  *   turned  the same camera turned 0.4 rad (E-51's copy of the loop)
  *
- *   js    the shipped collectVisibleEntities
- *   wasm  collectWithKernel: the same preamble, the kernel, collectRenderable for what it hands back
+ *   js    the shipped collectVisibleEntities with no kernel bound (its JS loop)
+ *   wasm  the same with the kernel bound (_collectVisibleEntitiesWasm)
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderCollectWasmMicrobench.mjs --variants js,wasm --rounds 5
  *   node tests/bench/preRenderCollectWasmMicrobench.mjs --variant wasm [--scale 0.1] [--output path]
@@ -18,7 +18,7 @@ import { Query } from '../../src/core/query.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { loadWorker, quietly } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
-import { bindCollectKernel, collectMemory, collectWithKernel } from './preRenderCollectKernel.mjs';
+import { bindCollect, collectMemory } from './preRenderCollectKernel.mjs';
 
 const ARGS = parseArgs();
 const SCALE = Number(ARGS.scale ?? 1);
@@ -71,7 +71,7 @@ export async function setupCollectKernel(caseName, seed = 0xb0b) {
   const ids = Uint32Array.from({ length: N }, (_, i) => i);
   let listLength = N;
   Query.queryActiveEntities = () => (c.list ? ids.subarray(0, listLength) : null);
-  const k = bindCollectKernel(m.memory);
+  const k = await bindCollect(m);
 
   /** One collect of the first `items` entities into an empty collector. */
   const sized = (items, fn) => {
@@ -84,8 +84,8 @@ export async function setupCollectKernel(caseName, seed = 0xb0b) {
     listLength = N;
     return pre._renderableCount;
   };
-  const js = (items = N) => sized(items, () => pre.collectVisibleEntities());
-  const wasm = (items = N) => sized(items, () => collectWithKernel(pre, k, m, 0));
+  const js = (items = N) => sized(items, () => { pre._collectWasm = null; pre.collectVisibleEntities(); });
+  const wasm = (items = N) => sized(items, () => { pre._collectWasm = k; pre.collectVisibleEntities(); });
   const hash = () => {
     let x = 2166136261;
     const n = pre._renderableCount;
@@ -111,7 +111,7 @@ async function main() {
     checksum = Math.imul(checksum ^ s.hash(), 16777619) >>> 0;
     // Normal compiles, not OSR: short calls over the first 64 entities.
     if (variant === 'wasm') {
-      const fn = CASES[name].rot ? s.k.collect_sprites_turned : s.k.collect_sprites;
+      const fn = CASES[name].rot ? s.k.collectSpritesTurned : s.k.collectSprites;
       tier = await warmWasm(fn, () => run(64));
     }
     else warmNormalCompile(() => run(64));

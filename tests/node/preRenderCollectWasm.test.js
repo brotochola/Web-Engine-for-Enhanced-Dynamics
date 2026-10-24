@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
-import { bindCollectKernel, collectMemory, collectWithKernel } from '../bench/preRenderCollectKernel.mjs';
+import { bindCollect, collectMemory } from '../bench/preRenderCollectKernel.mjs';
 import { Query } from '../../src/core/query.js';
 import { Layer } from '../../src/core/layer.js';
 
-// E-76 W4b, the collect kernel screen (wasm/test/preRenderCollect.c). On the same bytes, the kernel's collect
-// must leave the main collector, a custom layer's collector, the visible count and the overflow warning
+// E-76 W4b, the sprite collect kernel (wasm/preRenderCollect.c). On the same bytes, the worker's collect through
+// the kernel must leave the main collector, a custom layer's collector, the visible count and the overflow warning
 // exactly as the shipped collectVisibleEntities leaves them: every sprite with no body and no layer mask
 // written by the kernel, every masked one through collectRenderable at its place in the walk.
 
@@ -118,20 +118,27 @@ for (const c of CASES) {
         const ids = Uint16Array.from({ length: N }, (_, i) => i).filter(() => rng() < 0.7).sort(() => rng() - 0.5);
         Query.queryActiveEntities = () => ids;
       }
-      const k = bindCollectKernel(m.memory);
+      const kernel = await bindCollect(m);
+      let calls = 0;
+      const wrap = (fn) => (...a) => { calls++; return fn(...a); };
+      kernel.collectSprites = wrap(kernel.collectSprites);
+      kernel.collectSpritesTurned = wrap(kernel.collectSpritesTurned);
 
       reset(pre, m, fx);
       const warn = console.warn;
       console.warn = () => {};
+      pre._collectWasm = null;
       pre.collectVisibleEntities();
       const js = snapshot(pre, m, fx);
-      const keyY = js.n > 0 ? m.views.oY[0] : 0;
 
       reset(pre, m, fx);
-      collectWithKernel(pre, k, m, keyY);
+      pre._collectWasm = kernel;
+      pre.collectVisibleEntities();
+      pre._collectWasm = null;
       console.warn = warn;
       const wasm = snapshot(pre, m, fx);
 
+      assert.ok(calls > 0, 'the collect took the kernel');
       assert.ok(js.n > 100, `the case queues sprites (${js.n})`);
       if (c.masked) assert.ok(js.fx.count > 10, 'masked sprites reached the fx collector');
       if (c.maxItems) assert.equal(js.warned, true, 'the collector filled');

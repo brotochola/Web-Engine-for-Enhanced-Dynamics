@@ -63,6 +63,7 @@ import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import { bindGpuPack, packInstancedRowsWasm } from '../render/gpuPackClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
+import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
 import {
     bindPreRenderEmit,
     writeEmitColumns,
@@ -405,6 +406,8 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPackWasm = null;
         /** The emit kernel (E-112), bound when the emit's columns live in the render-queue memory. */
         this._emitWasm = null;
+        /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
+        this._collectWasm = null;
         /** The shadow stamp kernel (E-114), bound when its scratch lives in the render-queue memory. */
         this._stampWasm = null;
         /** Whether the kernel's last frame wrote a repeating sprite (emitSpriteQueue's tiledRows). */
@@ -894,6 +897,17 @@ class PreRenderWorker extends AbstractWorker {
                 } catch (err) {
                     console.warn('[PRE_RENDER] preRenderEmit.wasm did not load; emitting in JS', err);
                     this._emitWasm = null;
+                }
+            }
+            // W4b: the sprite collect in WASM, when Transform, its pose and Collider are in the memory too.
+            this._collectWasm = null;
+            const collectLayout = data.renderQueueLayout?.collect || null;
+            if (collectLayout && this.config?.wasm?.preRenderCollect !== false) {
+                try {
+                    this._collectWasm = await bindPreRenderCollect(data.renderQueueMemory, collectLayout);
+                } catch (err) {
+                    console.warn('[PRE_RENDER] preRenderCollect.wasm did not load; collecting in JS', err);
+                    this._collectWasm = null;
                 }
             }
             this._renderablePx = new Float32Array(maxItems);
@@ -1518,6 +1532,14 @@ class PreRenderWorker extends AbstractWorker {
      */
     collectVisibleEntities() {
         if (this.globalEntityCount === 0 || !SpriteRenderer.active || !this.cameraData) return;
+        // W4b: the kernel walks the sprites when every column is in the render-queue memory and nothing needs
+        // the JS loop: no body's published pose (a scene without physics), no Y-sort key, the queue on.
+        if (this._collectWasm !== null && this.renderQueueEnabled && !this._entitySortY
+            && !(this._poseX && this._rbActive)
+            && writeCollectColumns(this._collectWasm, this, Transform, SpriteRenderer, Collider)) {
+            this._collectVisibleEntitiesWasm();
+            return;
+        }
 
         const cameraBounds = this.calculateCameraBounds();
         if (!cameraBounds) return;
@@ -1744,6 +1766,64 @@ class PreRenderWorker extends AbstractWorker {
         // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
         this._collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
             screenMinX, screenMaxX, screenMinY, screenMaxY);
+    }
+
+    /**
+     * W4b. collectVisibleEntities through preRenderCollect.wasm: the same iteration source, camera bounds and
+     * turned-camera margins, one call for the walk, and for each sprite it hands back (a layer mask)
+     * collectRenderable before the walk goes on from the next one, so the collectors fill in the JS's order.
+     */
+    _collectVisibleEntitiesWasm() {
+        const cb = this.calculateCameraBounds();
+        if (!cb) return;
+        const b = this._collectWasm;
+        const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
+        const listed = writeCollectList(b, spriteEntities);
+        const count = listed > 0 ? listed : this.globalEntityCount;
+        const res = b.results;
+        res[0] = this._renderableCount;
+        res[1] = 0;
+        res[2] = 0;
+        const maxItems = this.renderQueueMaxItems;
+        const keyY = COLLECT_Y[0];
+        const zoom = cb.zoom;
+        const rot = this._frameCameraRot || 0;
+        const turned = rot && !this.skipCull;
+        let rc = 0;
+        let rs = 0;
+        let halfCw = 0;
+        let halfCh = 0;
+        let limW = 0;
+        let limH = 0;
+        if (turned) {
+            rc = Math.cos(rot);
+            rs = Math.sin(rot);
+            halfCw = this.canvasWidth * 0.5;
+            halfCh = this.canvasHeight * 0.5;
+            const marginScale = zoom < 1 ? zoom : 1;
+            limW = halfCw + this.canvasWidth * this.cullingRatio * marginScale;
+            limH = halfCh + this.canvasHeight * this.cullingRatio * marginScale;
+        }
+        let visible = 0;
+        let from = 0;
+        for (;;) {
+            const stop = turned
+                ? b.collectSpritesTurned(b.tableByte, from, count, maxItems, keyY, zoom, cb.cameraOffsetX,
+                    cb.cameraOffsetY, halfCw, halfCh, rc, rs, limW, limH)
+                : b.collectSprites(b.tableByte, from, count, maxItems, this.skipCull ? 1 : 0, keyY, zoom,
+                    cb.cameraOffsetX, cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY);
+            if (stop >= count) break;
+            this._renderableCount = res[0];
+            this.collectRenderable(0, listed > 0 ? spriteEntities[stop] : stop);
+            res[0] = this._renderableCount;
+            visible++;
+            from = stop + 1;
+        }
+        this._renderableCount = res[0];
+        if (res[2]) this._collectorFull();
+        this.visibleEntitiesCount += visible + res[1];
+        this._collectEntityGlow(Transform.x, Transform.y, Collider.visualRange, zoom, cb.cameraOffsetX,
+            cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY);
     }
 
     _collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,

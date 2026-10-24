@@ -166,14 +166,13 @@
     },
     {
       "name": "preRenderCollect",
-      "source": "wasm/test/preRenderCollect.c",
-      "output": "tests/fixtures/wasm/preRenderCollect.wasm",
+      "source": "wasm/preRenderCollect.c",
+      "output": "src/workers/preRenderCollect.wasm",
       "exports": [
         "collect_sprites",
         "collect_sprites_turned"
       ],
-      "maxMemoryPages": 8192,
-      "test": true
+      "maxMemoryPages": 8192
     }
   ]
 }

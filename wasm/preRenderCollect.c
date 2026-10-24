@@ -1,4 +1,4 @@
-/* Pre-render's collect (E-76 W4b, screen): the per-entity loop of PreRenderWorker.collectVisibleEntities
+/* Pre-render's collect (E-76 W4b): the per-entity loop of PreRenderWorker.collectVisibleEntities
    (src/workers/preRenderWorker.js) for sprites with no body in a scene without physics, written into the main
    collector as the JS writes it (E-98c/e/f): the sort key, type 0, the entity, and the Transform pose into the
    collector's pose columns. Every column is a byte offset into one shared memory, from the table; 0 marks a
