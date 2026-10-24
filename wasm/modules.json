@@ -275,6 +275,16 @@
       "maxMemoryPages": 32768
     },
     {
+      "name": "visibilityGather",
+      "source": "wasm/visibilityGather.c",
+      "output": "src/render/visibility/visibilityGather.wasm",
+      "exports": [
+        "gather_light",
+        "gather_light_u32"
+      ],
+      "maxMemoryPages": 32768
+    },
+    {
       "name": "decalPremultiply",
       "source": "wasm/decalPremultiply.c",
       "output": "src/render/decalPremultiply.wasm",
