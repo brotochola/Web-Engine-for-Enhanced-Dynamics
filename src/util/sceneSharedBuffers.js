@@ -90,6 +90,7 @@ import {
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
 import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
 import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } from './poolSlotWidth.js';
+import { visibilityMemoryBytes, visibilityMemoryOpts } from './visibilityMemory.js';
 import { Messages } from '../core/messages.js';
 
 /** Cell count ceiling. Not an entity id. 2^20 covers a 4096 px world at a 4 px cell. */
@@ -581,14 +582,24 @@ export function renderQueueMemorySpec(scene) {
         impacts: config.bullet.maxImpactsPerFrame ?? 64,
       }
     : null;
+  // W2b: the visibility gather reads LightOccluder, Transform, Collider, the bodies' poses and the neighbour rows in
+  // Box2D's block and packs into pre-render's visibility regions placed there (so it needs W2a's sweep): with
+  // physics and raycasted lighting only.
+  const visibility = inBlock && lighting.enabled && lighting.raycasted
+    && config.wasm?.visibilitySweep !== false && config.wasm?.visibilityGather !== false
+    && Boolean(pools.LightOccluder?.ComponentClass) && Boolean(pools.Collider?.ComponentClass)
+    && spatialPublishSpec(scene) !== null
+    ? visibilityGatherSpec(scene)
+    : null;
   const wantsCollect = config.wasm?.preRenderCollect !== false && Boolean(emit) && emit.spriteBytes > 0;
-  const collect = (wantsCollect || bullets) && pools.Transform?.ComponentClass && (!physics || inBlock)
+  const collect = (wantsCollect || bullets || visibility) && pools.Transform?.ComponentClass && (!physics || inBlock)
     ? {
         entities: n,
         transformBytes: Transform.getBufferSize(n),
         colliderBytes: pools.Collider?.ComponentClass ? Collider.getBufferSize(n) : 0,
         rigidBodyBytes: physics ? RigidBody.getBufferSize(n) : 0,
         bullets,
+        visibility,
       }
     : null;
   // W10: the painter sort's state for the worker that sorts the main queue (preRender.sortSprites, which the
@@ -605,6 +616,26 @@ export function renderQueueMemorySpec(scene) {
     args: [maxVisibleRenderables, computeRenderQueueBufferSize(maxVisibleRenderables), computeGpuQueueBufferSize(gpuCaps), emit, stamp, sway, pixiPack],
     collect,
     painter,
+  };
+}
+
+/**
+ * W2b: the visibility gather's part of the collect spec: LightOccluder's block, the visibility memory's options and
+ * bytes (pre-render places the memory with these options), and one event record per neighbour a row can hold.
+ */
+function visibilityGatherSpec(scene) {
+  const { config } = scene;
+  const n = scene.totalEntityCount;
+  const opts = visibilityMemoryOpts({
+    maxVerts: config.lighting.maxPolygonVertices || 128,
+    entities: n,
+    fixtures: config.wasm?.solidSegments !== false ? (config.physics.maxFixturePoolSize || 0) : 0,
+  });
+  return {
+    opts,
+    occluderBytes: LightOccluder.getBufferSize(n),
+    bytes: visibilityMemoryBytes(opts),
+    events: config.spatial.maxNeighbors | 0,
   };
 }
 
@@ -668,6 +699,7 @@ function initializeRenderQueueMemory(scene) {
     if (c.transformByte >= 0) buffers.componentDataByte.Transform = c.transformByte;
     if (c.rigidBodyByte >= 0) buffers.componentDataByte.RigidBody = c.rigidBodyByte;
     if (c.colliderByte >= 0) buffers.componentDataByte.Collider = c.colliderByte;
+    if (c.visibility) buffers.componentDataByte.LightOccluder = c.visibility.occluderByte;
   }
   const e = scene.renderQueueMemory?.layout.emit;
   if (!e) return;

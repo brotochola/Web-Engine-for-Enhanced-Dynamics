@@ -163,6 +163,20 @@ function collectLayout(r, collect) {
           resultsByte: r.bulletResults.byte,
         }
       : null,
+    // W2b: the visibility gather's regions (bindVisibilityGather's layout; createVisibilityMemory's place and
+    // options), or null.
+    visibility: collect.visibility
+      ? {
+          opts: { ...collect.visibility.opts },
+          occluderByte: r.lightOccluder.byte,
+          byte: r.visibility.byte,
+          bytes: r.visibility.bytes,
+          tableByte: r.gatherTable.byte,
+          resultsByte: r.gatherResults.byte,
+          eventsByte: r.gatherEvents.byte,
+          events: collect.visibility.events | 0,
+        }
+      : null,
   };
 }
 

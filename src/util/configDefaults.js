@@ -552,6 +552,12 @@ export const WASM_DEFAULTS = Object.freeze({
    * needs visibilitySweep.
    */
   solidSegments: true,
+  /**
+   * Pre-render's visibility gather (`visibilityGather.wasm`, W2b): each light's neighbour walk, display poses, cull
+   * and occluder packing in one call. With physics only: LightOccluder and the visibility memory move into Box2D's
+   * block, next to Transform, Collider, the poses and the neighbour rows. Needs visibilitySweep.
+   */
+  visibilityGather: true,
 });
 
 // ============================================================================

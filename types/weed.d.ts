@@ -359,6 +359,8 @@ export type SceneConfig = Record<string, unknown> & {
     visibilitySweepF32?: boolean;
     /** Pre-render's raster of compound occluders (fixture pools) into the visibility bins. Needs visibilitySweep. */
     solidSegments?: boolean;
+    /** Pre-render's per-light occluder gather in one call (physics scenes: LightOccluder moves into Box2D's memory). Needs visibilitySweep. */
+    visibilityGather?: boolean;
     /** The particle worker's decoration sway (with particle.swayFrequencyBuckets above 1 and preRenderEmit on). */
     decorationSway?: boolean;
     /**

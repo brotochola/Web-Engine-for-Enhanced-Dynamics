@@ -244,6 +244,19 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
         { name: 'bulletResults', owner: 'particle', bytes: 16 },
       );
     }
+    // W2b: with physics and raycasted lighting, LightOccluder's block, pre-render's visibility regions (W2a's
+    // memory, placed here: visibilityMemory.js) and the gather kernel's table, results and event records
+    // (visibilityGatherClient.js), so the gather reads every column it needs in this memory.
+    const v = collect.visibility;
+    if (v) {
+      regions.push(
+        { name: 'lightOccluder', owner: 'every worker (LightOccluder)', bytes: v.occluderBytes | 0 },
+        { name: 'visibility', owner: 'pre-render (visibilityMemory.js)', bytes: v.bytes | 0 },
+        { name: 'gatherTable', owner: 'pre-render', bytes: GATHER_TABLE_SLOTS * 4 },
+        { name: 'gatherResults', owner: 'pre-render', bytes: 16 },
+        { name: 'gatherEvents', owner: 'pre-render', bytes: (v.events | 0) * GATHER_EVENT_BYTES },
+      );
+    }
   }
   if (painter) {
     // W10: a painter state per worker that sorts; Pixi's and pre-render's are apart, they may sort at once.
@@ -308,6 +321,11 @@ export const COLLECT_TABLE_SLOTS = 64;
 
 /** Room for the bullet tick's column table (bulletTickClient.js BULLET_TICK_SLOTS). */
 export const BULLET_TABLE_SLOTS = 48;
+
+/** Room for the visibility gather's column table (visibilityGatherClient.js GATHER_SLOTS). */
+export const GATHER_TABLE_SLOTS = 64;
+/** One gather event record: kind, entity, occluder slot, pad (i32 each), the display pose (four doubles). */
+export const GATHER_EVENT_BYTES = 48;
 
 /** The decorations the sway kernel lets through its early continues at a time (its chunk list). */
 export const SWAY_LIST_CAP = 1024;

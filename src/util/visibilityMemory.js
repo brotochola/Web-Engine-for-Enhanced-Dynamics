@@ -37,6 +37,25 @@ export const SOLID_REGION_CAP = 64 << 20;
 /** The float cos/sin tables carry four entries past the last bin (four-lane loads at bin 511). */
 const SOLID_F32_PAD = 4;
 
+/** The gather's occluder cap a light (pre-render's _vpMaxOccluders), and its vertex pool at MAX_POLYGON_VERTICES each. */
+export const VISIBILITY_MAX_OCCLUDERS = 1024;
+
+/**
+ * The visibility memory's options for a scene: the gather's caps, the polygon cap (lighting.maxPolygonVertices,
+ * 128 when unset), the entity count and, with wasm.solidSegments, the fixture pool. The main thread sizes the
+ * region in Box2D's block from these (W2b) and pre-render places the memory with the same.
+ * @param {{ maxVerts: number, entities: number, fixtures: number }} scene
+ */
+export function visibilityMemoryOpts({ maxVerts, entities, fixtures }) {
+  return {
+    maxOccluders: VISIBILITY_MAX_OCCLUDERS,
+    poolVerts: VISIBILITY_MAX_OCCLUDERS * MAX_POLYGON_VERTICES,
+    maxVerts: maxVerts | 0,
+    entities: entities | 0,
+    fixtures: fixtures | 0,
+  };
+}
+
 /** The solids region for a fixture pool: every outline edge it can make, capped. */
 export function solidRegionBytes(fixtures) {
   const edges = Math.max(0, fixtures | 0) * MAX_POLYGON_VERTICES;

@@ -243,3 +243,63 @@ test('W19: with physics the bodies part carries the bullet tick regions, for a 1
   }
   assert.ok(l.impactsByte >= l.activeByte + (4000 + 1) * 2 && l.returnedByte >= l.impactsByte + 128 * 24);
 });
+
+test('W2b: with physics and raycasted lighting the bodies part carries LightOccluder, the visibility regions and the gather\'s', async () => {
+  const { renderQueueMemorySpec } = await import('../../src/util/sceneSharedBuffers.js');
+  const { Transform } = await import('../../src/components/transform.js');
+  const { RigidBody } = await import('../../src/components/rigidBody.js');
+  const { Collider } = await import('../../src/components/collider.js');
+  const { LightOccluder } = await import('../../src/components/lightOccluder.js');
+  const { WASM_DEFAULTS } = await import('../../src/util/configDefaults.js');
+  const { visibilityMemoryBytes, visibilityMemoryOpts } = await import('../../src/util/visibilityMemory.js');
+  assert.equal(WASM_DEFAULTS.visibilityGather, true);
+  const scene = (over = {}) => ({
+    _physicsEnabled: true,
+    totalEntityCount: 1000,
+    componentPools: {
+      Transform: { ComponentClass: Transform },
+      RigidBody: { ComponentClass: RigidBody },
+      Collider: { ComponentClass: Collider },
+      ...(over.noOccluders ? {} : { LightOccluder: { ComponentClass: LightOccluder } }),
+    },
+    config: {
+      physics: { enabled: true, wasmMemoryMB: 64, maxFixturePoolSize: over.fixtures ?? 300 },
+      wasm: over.wasm || {},
+      renderer: { maxVisibleRenderables: 500 },
+      lighting: { enabled: true, raycasted: over.raycasted ?? true, shadowsEnabled: false, maxPolygonVertices: 256 },
+      decoration: { maxDecorations: 0 },
+      particle: {},
+      preRender: {},
+      bullet: { maxBullets: 0 },
+      worldWidth: 4096,
+      worldHeight: 4096,
+      spatial: { numberOfSpatialWorkers: over.spatial ?? 1, cellSize: 128, maxNeighbors: 48, maxEntitiesPerCell: 32 },
+    },
+  });
+  const v = renderQueueMemorySpec(scene()).collect?.visibility;
+  assert.ok(v, 'no sprites to collect, yet the bodies part is laid for the gather');
+  const opts = visibilityMemoryOpts({ maxVerts: 256, entities: 1000, fixtures: 300 });
+  assert.deepEqual(v.opts, opts);
+  assert.equal(v.bytes, visibilityMemoryBytes(opts));
+  assert.equal(v.occluderBytes, LightOccluder.getBufferSize(1000));
+  assert.equal(v.events, 48, 'one record per neighbour a row holds');
+  assert.equal(renderQueueMemorySpec(scene({ wasm: { solidSegments: false } })).collect.visibility.opts.fixtures, 0, 'W1 off: no outline regions');
+  assert.equal(renderQueueMemorySpec(scene({ wasm: { visibilityGather: false } })).collect, null, 'the switch off');
+  assert.equal(renderQueueMemorySpec(scene({ wasm: { visibilitySweep: false } })).collect, null, 'it needs the sweep');
+  assert.equal(renderQueueMemorySpec(scene({ raycasted: false })).collect, null, 'no raycasted lighting');
+  assert.equal(renderQueueMemorySpec(scene({ spatial: 0 })).collect, null, 'no neighbour rows');
+  assert.equal(renderQueueMemorySpec(scene({ noOccluders: true })).collect, null, 'no occluders');
+  assert.equal(renderQueueMemorySpec(scene({ wasm: { box2dBlock: false } })).collect, null, 'no block');
+
+  const args = [500, 500 * 64, 4096, null, null, null, false];
+  const collect = { entities: 1000, transformBytes: 3000, colliderBytes: 64000, rigidBodyBytes: 80000, bullets: null, visibility: v };
+  const memory = new WebAssembly.Memory({ initial: 512, maximum: 512, shared: true });
+  const placed = createRenderQueueMemory(...args, collect, null, { memory, baseByte: 65536 });
+  const l = placed.layout.collect.visibility;
+  for (const key of ['occluderByte', 'byte', 'tableByte', 'resultsByte', 'eventsByte']) {
+    assert.ok(l[key] >= 65536 && l[key] % 64 === 0, key);
+  }
+  assert.ok(l.byte >= l.occluderByte + v.occluderBytes && l.tableByte >= l.byte + v.bytes, 'in order, apart');
+  assert.ok(l.eventsByte + 48 * 48 <= memory.buffer.byteLength);
+  assert.deepEqual(l.opts, opts);
+});
