@@ -410,6 +410,7 @@ export function decideAbab(pairs, owner, metric = null) {
     const interpretable = baseMedian >= STEP_MS_FLOOR;
     kinds[kind] = {
       source,
+      key,
       baseMedian,
       hypMedian: median(b),
       pairedDeltaPct,
@@ -419,7 +420,30 @@ export function decideAbab(pairs, owner, metric = null) {
       cvHyp: cv(b),
       interpretable,
       belowFloorPct: interpretable ? null : ((baseMedian / STEP_MS_FLOOR) * 100).toFixed(1),
+      againstOthers: null,
     };
+  }
+  // Each judged kind against the median of the other judged kinds in the same pair (HOW_WE_MEASURE's drift
+  // rule, read per pair). The session's A/A of 2026-10-24 swung every worker 5–15 % together from run to run;
+  // this reading cancels what a whole run shares. Reported beside the verdict, which it does not change. The
+  // owner is left out of every other kind's reference: its own move is the change's, not the run's.
+  const judged = KINDS.filter((k) => kinds[k].interpretable);
+  for (const kind of judged) {
+    const others = judged.filter((k) => k !== kind && k !== owner);
+    if (others.length < 2) continue;
+    const rel = [];
+    for (const p of pairs) {
+      const own = pctDelta(p.B[kinds[kind].key], p.A[kinds[kind].key]);
+      const od = others.map((k) => pctDelta(p.B[kinds[k].key], p.A[kinds[k].key])).filter(Number.isFinite);
+      if (Number.isFinite(own) && od.length >= 2) rel.push(own - median(od));
+    }
+    if (rel.length) {
+      kinds[kind].againstOthers = {
+        deltas: rel,
+        medianPct: median(rel),
+        lowerFraction: rel.filter((d) => d < 0).length / rel.length,
+      };
+    }
   }
   const load = {};
   const reasons = [];
@@ -808,7 +832,11 @@ function printDecision(name, decision) {
     }
     console.log(
       `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%` +
-        (k.source === 'exact' ? '' : '  (sampled)'),
+        (k.source === 'exact' ? '' : '  (sampled)') +
+        (k.againstOthers
+          ? `  vs the others ${k.againstOthers.medianPct >= 0 ? '+' : ''}${k.againstOthers.medianPct.toFixed(1)}% ` +
+            `(lower ${Math.round(k.againstOthers.lowerFraction * k.againstOthers.deltas.length)}/${k.againstOthers.deltas.length})`
+          : ''),
     );
   }
   if (decision.throughput) {

@@ -235,3 +235,27 @@ test('sideQuery: a side\'s parameters on top of the shared query', async () => {
   assert.equal(sideQuery('sprites=250000&wasmOff=gpuPack', 'wasmOff=shadowStamp'), 'sprites=250000&wasmOff=shadowStamp');
   assert.equal(sideQuery('', 'wasmOff=gpuPack'), 'wasmOff=gpuPack');
 });
+
+test('each judged kind is read against the median of the others in the same pair, the owner left out of their reference', () => {
+  // A run where the whole machine is 10 % slower on side B, and the renderer (the owner) 5 % cheaper than that.
+  const pairs = [0, 1, 2, 3].map((i) => {
+    const swing = i % 2 ? 1.1 : 0.9;
+    const A = {};
+    const B = {};
+    for (const k of KINDS) {
+      A[`${k}_STEP_MS`] = k === 'particle' ? 0.5 : 5;
+      B[`${k}_STEP_MS`] = A[`${k}_STEP_MS`] * swing * (k === 'renderer' ? 0.95 : 1);
+    }
+    return { A, B };
+  });
+  const d = decideAbab(pairs, 'renderer');
+  const r = d.kinds.renderer.againstOthers;
+  assert.equal(r.deltas.length, 4);
+  // 0.95 × 0.9 against 0.9 is −4.5 %, 0.95 × 1.1 against 1.1 is −5.5 %.
+  for (const x of r.deltas) assert.ok(Math.abs(x + 4.5) < 0.01 || Math.abs(x + 5.5) < 0.01, `renderer vs others ${x}`);
+  assert.equal(r.lowerFraction, 1);
+  // The unreachable kinds read 0 against each other: the owner's move does not leak into them.
+  for (const k of ['logic', 'spatial', 'physics', 'preRender']) assert.ok(Math.abs(d.kinds[k].againstOthers.medianPct) < 1e-9, k);
+  // Below the floor: not judged, and not part of anyone's reference.
+  assert.equal(d.kinds.particle.againstOthers, null);
+});

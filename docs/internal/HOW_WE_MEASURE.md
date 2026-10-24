@@ -263,7 +263,12 @@ verdict reads the median of those deltas.
   key drifting more than 5 %.
 - **Drift:** when every worker the change cannot reach moved the same way, read the owner against them
   (its median minus their median) and write both. E-81: a gate read spatial +6.6 % while four workers the
-  change cannot reach read +2.1 to +5.9 %; the change itself cost 11 µs a frame there.
+  change cannot reach read +2.1 to +5.9 %; the change itself cost 11 µs a frame there. The gate prints this
+  for every judged worker, per pair ("vs the others": its delta minus the median of the other judged
+  workers in that pair, the owner left out of their reference). In Predator a whole run swings every worker
+  5–15 % together, so this is the reading that resolves a Predator change: the A/A of 2026-10-24 gave
+  detection limits of renderer 2.2 %, spatial 2.3 %, physics 2.6 %, pre-render 4.8 % and logic 7.0 % this
+  way at 4 pairs, against 10–15 % for each worker alone.
 - **The session's noise.** One A/A sitting per session (and after anything on the machine changes) gives
   each worker kind its paired spread in each scene used that day. A scene's **detection limit** for a
   worker is about 2.5 times that spread divided by the square root of the number of pairs: a delta inside
