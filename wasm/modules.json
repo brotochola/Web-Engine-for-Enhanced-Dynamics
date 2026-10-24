@@ -106,6 +106,16 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "preRenderEmit",
+      "source": "wasm/test/preRenderEmit.c",
+      "output": "tests/fixtures/wasm/preRenderEmit.wasm",
+      "exports": [
+        "emit_rows"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
