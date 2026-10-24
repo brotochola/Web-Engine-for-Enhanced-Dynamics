@@ -8015,6 +8015,22 @@
       "kind": "js",
       "result": "kept (product) 2026-10-24: ContactDrainHuntScene logic 4.123 → 3.590 ms (−12.9 %, 0/4); Predator NEUTRAL; kernel contact +31.0 %, dense +29.0 %",
       "next": "The owner pair (ContactDrainHuntScene, logic) and the Predator guard (logic)."
+    },
+    {
+      "aliases": [],
+      "refs": [],
+      "records": [
+        "R-0608"
+      ],
+      "id": "E-133",
+      "title": "With maxShadowsPerEntity the shadow stamp does not sort each light's kept casters",
+      "status": "kept",
+      "statusText": "opened 2026-10-24 (from Predator's profile, R-0607: the stamp is 46.7 % of pre-render)",
+      "date": "2026-10-24",
+      "area": "pre-render",
+      "kind": "wasm",
+      "result": "kept (product) 2026-10-24: Predator pre-render 4.355 → 4.017 ms (−12.0 % paired, −7.0 % against the other workers, 4/4); kernel wasm +22.9 %, js +11.6 % (5/5, checksums equal)",
+      "next": "The Predator pair (owner pre-render)."
     }
   ],
   "records": [
@@ -13347,6 +13363,16 @@
       "title": "Predator's CPU profile after the day's work (shadow stamp half of pre-render, the component getter a tenth of logic)",
       "verdict": "note",
       "text": "**note: Predator's CPU profile after the day's work.** `profileSceneSweep --pass cpu --only predatorScene`: headed, source, detailed stats off, an 8 s window after 6 s. Self time by worker; engine code unless marked.\n\n| worker (busy) | top self time |\n|---|---|\n| pre-render (416 ms/s) | `stamp_light_range` (shadowStamp.wasm) **46.7 %**, `emit_rows` 15.1 %, `collect_sprites` 9.9 %, `pack_casters_scatter` 8.1 %, `quicksort_order` 3.1 % |\n| pixi (415 ms/s) | `pack_sprites_split` 18.3 %, Pixi's `updateBuffer` 13.2 %, `_commitPackedBatch` 7.7 %, `_uploadSplit` 5.0 %, `radix_simd` 3.2 % |\n| logic (2 × ~400 ms/s) | GameObject's component getter (`gameObject.js:612`, 95 % on the `_componentCache[name]` load) **10.4 %**, game code (`findACivilianToShoot` 9.1 %, `Person.tick` 7.3 %), `neighborCount` 6.9 %, `_tickIntervalBucket` 6.3 %, `fsm.tick` 5.8 %, `getNeighbor` 5.4 %, ray `_circleRayDistance` 4.2 %, `_checkCellEntities` 3.2 %, `_processBox2dCollisionCallbacks` 3.2 % |\n| spatial (411 ms/s) | `gather_batch` 38.1 %, `publish_batch` 33.9 % (both C), `rebuildOwnedRows` (JS) **13.9 %**, `_findNeighborsWasmGather` (JS glue) 8.0 % |\n| physics (Box2D, 4 threads) | Box2D's own functions; three task threads at 1000 ms/s (its workers wait busy); `_emscripten_get_now` 3.2 % (E-55) |\n| particle (80 ms/s) | light: decoration visibility 17.5 %, sway 15.2 % |\n\nLeads it gives, in the order they can move Predator's frame:\n1. The shadow stamp is nearly half of pre-render, in C already: its algorithm (casters a light walks, the sort) is what is left.\n2. The component getter is a tenth of logic. Two engine fixes lost in Predator: L4's pre-filled caches (R-0284) and E-69's slot array (R-0400). The engine's own methods and the demo call the four core components most (`spriteRenderer`, `collider`, `rigidBody`). Explicit getters on fields the constructor declares are the one shape not tried.\n3. `rebuildOwnedRows` and the gather glue are a fifth of spatial; W7 takes the glue at the grouping step.\n4. Pixi's sprite pack and upload in Predator write statics every frame, because Pixi sorts there (`sortSprites: 'pixi'`), so E-82b cannot skip them."
+    },
+    {
+      "id": "R-0608",
+      "date": "2026-10-24",
+      "title": "The shadow stamp without the kept-slice sort under maxShadowsPerEntity, kernel and Predator, E-133",
+      "verdict": "kept",
+      "text": "**kept (product).** From Predator's profile (R-0607): the shadow stamp (`stamp_light_range`) is 46.7 % of pre-render, and `quicksort_order` showed apart at 3.1 %.\n\nThe argument (E-110's, for another sort): with `maxShadowsPerEntity` (Predator: 3), each light's kept casters go only into their own nearest-light slots (`note_nearest` / `noteNearest`). Those order by (distance, light index) whatever order the casters arrive in. So `takeClosest`'s quicksort of the kept slice, after the quickselect, changed nothing there. The quickselect still picks the same casters. The sort now runs only without a per-entity cap, where the kept order is the stamp's order. C and JS changed alike (c7b4e94b). `gpuShadowCasters.test.js` checks that the unordered take keeps the same casters, ties included, over 200 random rounds.\n\n**Kernel.** `shadowStampWasmMicrobench` on the Predator fixture (48 lights, 512 per light, 3 per entity), the tree before (a5a646c9) against this one (`kernelAB2.sh`), 5 alternating rounds. Checksums were equal on every run (2692520044): the stamped rows are the same.\n\n| variant | before | after | | won |\n|---|---|---|---|---|\n| wasm (shipped) | 1 816 ops/s | 2 233 | **+22.9 %** | 5/5 |\n| js (fallback) | 915 | 1 021 | **+11.6 %** | 5/5 |\n\n**Predator, the owner pair (pre-render).** Both sides from worktrees (`--vs a5a646c9 --hyp-rev 78795bfd`, the same code as c7b4e94b), headed, source, detailed stats off, exact windows, 4 pairs:\n- pre-render 4.355 → 4.017 ms: **−12.0 %** paired, 3/4 better, cv 11/6 %; **−7.0 %** against the other workers, lower 4/4, past the session's 4.8 % relative limit;\n- renderer −6.9 % (1/4 worse), spatial −3.8 %, physics −2.0 %, logic +0.0 %: none worse;\n- GPU_CASTERS 13 400 → 13 360 (−0.3 %), the other load keys within 0.4 %, presented 59.8 → 60.0.\n\nThe −12 % paired is noisy; against the other workers, −7 % is what the kernel predicts: about a fifth of a stamp that is half of pre-render.",
+      "commits": [
+        "c7b4e94b"
+      ]
     }
   ],
   "leads": [
