@@ -836,7 +836,8 @@
       "records": [
         "R-0562",
         "R-0564",
-        "R-0574"
+        "R-0574",
+        "R-0581"
       ]
     },
     {
@@ -12963,6 +12964,20 @@
       "title": "copyTypeActiveListToBuffer with TypedArray.set, screened at the desk, E-124",
       "verdict": "screened",
       "text": "**screened (ceiling), at the desk.** The copy is 2.4 % of logic (Q1's own share) and the `set` version won 20.9 % in its kernel, so the most it can save is about 0.5 % of logic, under every detection limit the session's A/A gave (logic 7.0 % against the others at 4 pairs). It also costs what E-104 removed: `buffer.set` needs a source view of the type list's live length, a `subarray` allocated per type per query per frame in every logic worker (logic garbage is 0.2 MB/s since E-104/E-105). Neither side of that trade can be seen in a scene, so no sitting is spent on it. Reopen if a profile shows the copy past 10 % of a worker (a scene with many large precomputed queries)."
+    },
+    {
+      "id": "R-0581",
+      "date": "2026-10-24",
+      "time": "10:16",
+      "timeFrom": "recorded",
+      "title": "The sprite collect in C with bodies and the Y-sort foot line, W4b kernel (Phase 4)",
+      "verdict": "note",
+      "text": "**Kernel win; Predator pair pending.** W4b's collect kernel now takes scenes with physics. Phase 4 put Transform's state block, RigidBody's, Collider's and both published pose buffers in Box2D's block, and workers bind Transform's heap pose on the block's buffer. So `collect_sprites` reads a body's latched pose and the one before it, and interpolates as `_displayPose` does.\n\nThe Y-sort foot line (`_storeEntitySortY`, `spriteSortFootY`, then `Math.round` with its halves and −0) is computed in C from the emit kernel's frame sizes. A sprite whose frame is not resolved yet goes to `collectRenderable`, as a masked one does. Each mode is a compiled copy of the walk, so the plain path carries no new test.\n\n`preRenderCollectWasmMicrobench`, 250 000 sprites, 5 alternating rounds, every case won, checksums equal. Node; the machine was loaded by two agents' builds and tests.\n\n| case | js ops/s | wasm ops/s | |\n|---|---|---|---|\n| predator (60 % bodies interpolated, Y-sort, mostly non-feet anchors, about a quarter queued) | 112.2 | 185.1 | **+65.0 %** |\n| bunny | 351.3 | 494.6 | +40.8 % |\n| cull | 230.4 | 297.5 | +29.1 % |\n| turned | 211.4 | 252.2 | +19.3 % |\n\nThe three plain cases match this morning's sitting (+39.6 / 28.6 / 18.4 %), so the mode copies cost the plain walk nothing. A headless Predator smoke, one run each and not a pair, read `COLLECT_MS` 1.84 ms with the kernel off and 0.87 ms with it on.\n\nNext: a Predator pair on one build, owner pre-render, `--query-a wasmOff=preRenderCollect`, on a quiet machine. Commits: 355839d3 (the kernel), a4e276ab (the bench case), b7de8bdb (the bodies' blocks in the block).",
+      "commits": [
+        "355839d3",
+        "a4e276ab",
+        "b7de8bdb"
+      ]
     }
   ],
   "leads": [
