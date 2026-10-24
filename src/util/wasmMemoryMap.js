@@ -124,7 +124,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
     { name: 'packIndices', owner: 'pre-render', bytes: n * 4 },
     { name: 'packInverse', owner: 'pre-render', bytes: n * 4 },
     { name: 'packTables', owner: 'pre-render', bytes: tableBytes },
-    { name: 'packResults', owner: 'pre-render', bytes: 16 },
+    // The pack's results, then (16 bytes in) the slow path's parameters: 16 doubles (gpuPackClient.js).
+    { name: 'packResults', owner: 'pre-render', bytes: 144 },
   ];
   if (emit) {
     const e = emit.entities | 0;
@@ -208,7 +209,7 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiInstances', owner: 'Pixi packs and uploads', bytes: (pixiRows | 0) * 15 * 4 },
       { name: 'pixiPackIndices', owner: 'Pixi', bytes: n * 4 },
       { name: 'pixiPackTables', owner: 'Pixi', bytes: tableBytes },
-      { name: 'pixiPackResults', owner: 'Pixi', bytes: 16 },
+      { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
     );
   }
   if (collect) {

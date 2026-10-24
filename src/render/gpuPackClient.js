@@ -27,10 +27,13 @@ export const GPU_PACK_COLUMNS = [
  *   `indexCap` u32, the scatter's inverse (`inverseByte`, one u32 per queue row; 0 for none) and one
  *   u32 for the particle count
  */
+/** The doubles the general pack reads (wasm/gpuPack.c pack_general): flags, then the camera, snap and type values. */
+const GENERAL_PARAMS = 16;
+
 export async function bindGpuPack(memory, layout) {
   const k = await loadWasmKernel('gpuPack', wasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
-    'pack_sprites_split', 'pack_sprites_split_scatter',
+    'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general',
   ]);
   return {
     buffer: memory.buffer,
@@ -40,6 +43,12 @@ export async function bindGpuPack(memory, layout) {
     castersScatter: k.pack_casters_scatter,
     spritesSplit: k.pack_sprites_split,
     spritesSplitScatter: k.pack_sprites_split_scatter,
+    // Close-out group B: packInstancedRows' slow path (a type filter, screen space, pixel snap), its parameters 16
+    // bytes into the results region (GENERAL_PARAMS doubles).
+    spritesGeneral: k.pack_sprites_general,
+    castersGeneral: k.pack_casters_general,
+    params: new Float64Array(memory.buffer, layout.particlesByte + 16, GENERAL_PARAMS),
+    paramsByte: layout.particlesByte + 16,
     inverseByte: layout.inverseByte | 0,
     u32: new Uint32Array(memory.buffer),
     tableByte: layout.tableByte,
@@ -110,7 +119,7 @@ function indexByteFor(b, ctx, count, capacity) {
 export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shadowCast) {
   if (!b || !q || !dst || !ctx) return -1;
   const o = ctx.o || ctx;
-  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  const general = Boolean(ctx.useScreen || o.pixelSnap || ctx.filterTypes);
   if ((floatsPer | 0) !== (shadowCast ? GPU_CASTER_FLOATS : GPU_SPRITE_FLOATS)) return -1;
   if (dst.buffer !== b.buffer) return -1;
   const typeArr = ctx.typeArr;
@@ -123,6 +132,31 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   const typeByte = typeArr ? typeArr.byteOffset : 0;
+  if (general) {
+    // The slow path: packInstancedRows' own values, read as it reads them.
+    const P = b.params;
+    P[0] = (ctx.useScreen ? 1 : 0) | (ctx.useScreen && ctx.cameraRot ? 2 : 0) | (o.pixelSnap ? 4 : 0)
+      | (ctx.filterTypes ? 8 : 0) | (ctx.hasInclude ? 16 : 0);
+    P[1] = ctx.cameraX || 0;
+    P[2] = ctx.cameraY || 0;
+    P[3] = ctx.screenScale || 1;
+    P[4] = ctx.camC;
+    P[5] = ctx.camS;
+    P[6] = ctx.focusX;
+    P[7] = ctx.focusY;
+    P[8] = ctx.halfW;
+    P[9] = ctx.halfH;
+    P[10] = o.snapCameraX || 0;
+    P[11] = o.snapCameraY || 0;
+    P[12] = o.snapZoom || 1;
+    P[13] = ctx.includeType | 0;
+    P[14] = ctx.exclude0 | 0;
+    P[15] = ctx.exclude1 | 0;
+    const pack = shadowCast ? b.castersGeneral : b.spritesGeneral;
+    const n = pack(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte, b.paramsByte);
+    ctx.particleCount = b.u32[b.particlesByte >> 2];
+    return n;
+  }
   let out = -1;
   // W9b: a long list over most of the queue goes through its inverse, reading the queue in order.
   // The kernel declines (-1) a list with a repeated or out-of-range row, and the gather packs it.

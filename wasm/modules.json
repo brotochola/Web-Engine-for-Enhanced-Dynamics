@@ -108,7 +108,9 @@
         "pack_sprites_scatter",
         "pack_casters_scatter",
         "pack_sprites_split",
-        "pack_sprites_split_scatter"
+        "pack_sprites_split_scatter",
+        "pack_sprites_general",
+        "pack_casters_general"
       ],
       "maxMemoryPages": 32768
     },

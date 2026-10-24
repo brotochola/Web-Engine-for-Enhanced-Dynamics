@@ -1,6 +1,8 @@
 /* The instanced-row pack (E-76 W9): packInstancedRows (src/render/gpuQueueLayout.js) on its two fast
    paths, world space, no pixel snap, no type filter: sprite rows (15 floats) and caster rows (22), and
-   sprite rows split into a pose stream and a static stream (E-82b, packSplitRows).
+   sprite rows split into a pose stream and a static stream (E-82b, packSplitRows). Its slow path too (close-out
+   group B): pack_sprites_general and pack_casters_general take a type filter, screen space (with the camera's turn)
+   and pixel snap, from a block of doubles the client writes.
    The render-queue columns and the destination are byte offsets into the imported shared memory, the
    columns through a table written once per queue (src/render/gpuPackClient.js). Arithmetic as JS
    does it: alpha clamped and rounded in double, depth and the tile-offset scale in double, each
@@ -234,4 +236,125 @@ uint32_t pack_sprites_split_scatter(uint32_t table, uint32_t indices, uint32_t c
   return pack_split_scatter((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
                             (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstStatic, typeByte,
                             (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount);
+}
+
+/* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags
+   (screen 1, a turned camera 2, pixel snap 4, a type filter 8, an include type 16), the camera's x and y, the screen
+   scale, the turn's cos and sin, its focus x and y, half the canvas in pixels, the snap camera's x and y and zoom,
+   and the include and two exclude types (-1 for none). A filtered row does not take a slot; the depth and the
+   particle count follow the rows written. Arithmetic as the JS: float32 columns widened, every operation in
+   double, Math.round as V8 rounds, each value stored as a Float32Array stores it. */
+#define G_SCREEN 1u
+#define G_TURNED 2u
+#define G_SNAP 4u
+#define G_FILTER 8u
+#define G_INCLUDE 16u
+
+INLINE double js_round(double x) {
+  double r = __builtin_ceil(x);
+  if (r - 0.5 > x) r -= 1.0;
+  return r;
+}
+
+INLINE double snap_world(double v, double cam, double zoom) {
+  if (!(zoom > 0)) return v;
+  return js_round((v - cam) * zoom) / zoom + cam;
+}
+
+INLINE uint32_t pack_general(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
+                             float *dst, uint32_t typeByte, uint32_t *particles, const double *P, int caster) {
+  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+  const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
+  const uint32_t stride = caster ? 22 : 15;
+  const uint32_t flags = (uint32_t)P[0];
+  const int screen = (flags & G_SCREEN) != 0;
+  const int turned = (flags & G_TURNED) != 0;
+  const int snap = (flags & G_SNAP) != 0;
+  const int filter = (flags & G_FILTER) != 0 && type;
+  const int hasInclude = (flags & G_INCLUDE) != 0;
+  const double camX = P[1], camY = P[2], scale = P[3], camC = P[4], camS = P[5];
+  const double focusX = P[6], focusY = P[7], halfW = P[8], halfH = P[9];
+  const double snapX = P[10], snapY = P[11], snapZoom = P[12];
+  const int32_t include = (int32_t)P[13], exclude0 = (int32_t)P[14], exclude1 = (int32_t)P[15];
+  const float *X = F32(t, COL_X), *Y = F32(t, COL_Y), *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y);
+  const float *RC = F32(t, COL_ROT_C), *RS = F32(t, COL_ROT_S);
+  uint32_t out = 0;
+  uint32_t p = 0;
+  for (uint32_t k = 0; k < count; k++) {
+    const uint32_t i = indices ? idx[k] : k;
+    if (filter) {
+      const int32_t ty = type[i];
+      if (hasInclude && ty != include) continue;
+      if ((exclude0 >= 0 && ty == exclude0) || (exclude1 >= 0 && ty == exclude1)) continue;
+    }
+    if (out >= cap) break;
+    if (type) p += type[i] == 1;
+    double x = X[i];
+    double y = Y[i];
+    double sx = SX[i];
+    double sy = SY[i];
+    double rc = RC[i];
+    double rs = RS[i];
+    if (screen) {
+      if (turned) {
+        const double dx = x - focusX;
+        const double dy = y - focusY;
+        x = halfW + (dx * camC - dy * camS) * scale;
+        y = halfH + (dx * camS + dy * camC) * scale;
+        const double nrc = rc * camC - rs * camS;
+        rs = rs * camC + rc * camS;
+        rc = nrc;
+      } else {
+        x = (x - camX) * scale;
+        y = (y - camY) * scale;
+      }
+      sx *= scale;
+      sy *= scale;
+    }
+    if (snap) {
+      if (screen) {
+        x = js_round(x);
+        y = js_round(y);
+      } else {
+        x = snap_world(x, snapX, snapZoom);
+        y = snap_world(y, snapY, snapZoom);
+      }
+    }
+    float *d = dst + out * stride;
+    sprite_row(t, i, d, 1.0 - (double)(out + 1) * invDepthDenom);
+    d[0] = (float)x;
+    d[1] = (float)y;
+    d[2] = (float)sx;
+    d[3] = (float)sy;
+    d[6] = (float)rc;
+    d[7] = (float)rs;
+    if (caster) {
+      d[15] = F32(t, COL_SHADOW_H)[i];
+      d[16] = F32(t, COL_SHADOW_OFF_X)[i];
+      d[17] = F32(t, COL_SHADOW_OFF_Y)[i];
+      d[18] = 0;
+      d[19] = 0;
+      d[20] = 0;
+      d[21] = 0;
+    }
+    out++;
+  }
+  *particles = p;
+  return out;
+}
+
+__attribute__((export_name("pack_sprites_general")))
+uint32_t pack_sprites_general(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
+                              uint32_t dstByte, uint32_t typeByte, uint32_t particlesByte, uint32_t paramsByte) {
+  return pack_general((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
+                      (float *)(uintptr_t)dstByte, typeByte, (uint32_t *)(uintptr_t)particlesByte,
+                      (const double *)(uintptr_t)paramsByte, 0);
+}
+
+__attribute__((export_name("pack_casters_general")))
+uint32_t pack_casters_general(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
+                              uint32_t dstByte, uint32_t typeByte, uint32_t particlesByte, uint32_t paramsByte) {
+  return pack_general((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
+                      (float *)(uintptr_t)dstByte, typeByte, (uint32_t *)(uintptr_t)particlesByte,
+                      (const double *)(uintptr_t)paramsByte, 1);
 }

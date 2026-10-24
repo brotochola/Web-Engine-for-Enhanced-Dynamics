@@ -118,6 +118,31 @@ test('the WASM pack writes what packInstancedRows writes', async () => {
   }
 });
 
+// Close-out group B: packInstancedRows' slow path in the kernel (pack_sprites_general, pack_casters_general).
+test('the WASM pack writes what packInstancedRows writes on its slow path: screen space, a turned camera, pixel snap, a type filter', async () => {
+  const s = await setup(4);
+  const cam = { zoom: 0.73, cameraX: -812.5, cameraY: 333.25, resolution: 1.5, canvasW: 1280, canvasH: 720 };
+  const cases = [
+    ['screen', { ...cam, space: GPU_SPACE_SCREEN }],
+    ['screen, turned', { ...cam, space: GPU_SPACE_SCREEN, cameraRot: 0.61 }],
+    ['world, snapped', { ...cam, space: GPU_SPACE_WORLD, pixelSnap: true, snapCameraX: 17.3, snapCameraY: -9.75, snapZoom: 2.5 }],
+    ['screen, snapped', { ...cam, space: GPU_SPACE_SCREEN, pixelSnap: true }],
+    ['screen, turned, snapped', { ...cam, space: GPU_SPACE_SCREEN, cameraRot: -1.2, pixelSnap: true }],
+    ['include a type', { space: GPU_SPACE_WORLD, type: s.q.type, includeType: 3 }],
+    ['exclude two types', { space: GPU_SPACE_WORLD, type: s.q.type, excludeType0: 1, excludeType1: 5 }],
+    ['include, screen, snapped', { ...cam, space: GPU_SPACE_SCREEN, type: s.q.type, includeType: 1, pixelSnap: true }],
+  ];
+  for (const shadowCast of [false, true]) {
+    for (const [label, opts] of cases) {
+      const kind = shadowCast ? 'casters' : 'sprites';
+      const listed = opts.includeType == null && opts.excludeType0 == null;
+      if (listed) compare(s, { ...opts, indices: s.inMemory, indexCount: N, type: s.q.type }, N, shadowCast, `${kind} ${label}, indices`);
+      const n = compare(s, opts, 1500, shadowCast, `${kind} ${label}, dense, capacity under count`);
+      assert.ok(n > 0, `${kind} ${label}: rows were written`);
+    }
+  }
+});
+
 test('the WASM pack declines what it does not pack', async () => {
   const s = await setup(3);
   const { q, b, dst } = s;
@@ -125,9 +150,6 @@ test('the WASM pack declines what it does not pack', async () => {
     const ctx = makePackContext(q, opts, N, {});
     return packInstancedRowsWasm(b, q, ctx, d, fp, N, shadowCast);
   };
-  assert.equal(decline({ space: GPU_SPACE_SCREEN, zoom: 1, indices: s.inMemory, indexCount: N }), -1, 'screen space');
-  assert.equal(decline({ space: GPU_SPACE_WORLD, pixelSnap: true, indices: s.inMemory, indexCount: N }), -1, 'pixel snap');
-  assert.equal(decline({ space: GPU_SPACE_WORLD, type: q.type, includeType: 3 }), -1, 'type filter');
   assert.equal(decline({ space: GPU_SPACE_WORLD, indices: s.inMemory, indexCount: N }, new Float32Array(N * 22)), -1, 'dst outside');
   assert.equal(decline({ space: GPU_SPACE_WORLD, indices: s.inMemory, indexCount: N }, dst, GPU_CASTER_FLOATS, false), -1, 'row size');
   const plainQ = { ...q, x: new Float32Array(N) };
