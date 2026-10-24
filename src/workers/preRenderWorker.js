@@ -1044,9 +1044,11 @@ class PreRenderWorker extends AbstractWorker {
             this._lightPersistScratch = new Array(lightCap);
             this._lightFlashScratch = new Array(lightCap);
             this._stampLights = new Array(lightCap);
+            // Every field _collectStampLights writes, the doubles as doubles: a field added or turned from
+            // a small integer to a double in the frame loop moves the slot to a new map (N-32).
             for (let i = 0; i < lightCap; i++) {
                 this._stampLights[i] = {
-                    id: 0, x: 0, y: 0, intensity: 0, rangeSq: 0, sqrtI: 0, distSq: 0,
+                    id: 0, x: NaN, y: NaN, intensity: NaN, rangeSq: NaN, sqrtI: NaN, distSq: NaN, maxShadows: 0,
                 };
             }
         }
