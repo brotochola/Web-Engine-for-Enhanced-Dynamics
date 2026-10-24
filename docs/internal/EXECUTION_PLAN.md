@@ -873,9 +873,9 @@ Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 An agent's `wasm/test/navFlowfield.c` (`f0237dd0`): `computeFlowfield`'s search, walls' pass and smoothing,
 bit for bit (23 grids, two mutants caught). Kernel: 710.0 → 11 369.4 flowfields/s (25/25). In navStress the JS
 computes about 6 a frame against an 8 ms deadline (E-38): the gate's owner is the throughput, not STEP_MS
-(`--owner FLOWFIELDS_COMPUTED`, `54b09f41`, the serviced count muted with it, `21964f6b`). Wired: the nav buffer
-at byte 0 of a WebAssembly.Memory with the scratch after it (`e1f30e47`), the module and its client
-(`e3c5481e`), the particle worker (`4e843306`); a test boots a worker on that memory, 60 flowfields bit for bit.
+(`--owner FLOWFIELDS_COMPUTED`, `54b09f41`, the serviced count muted with it, `c9f0377e`). Wired: the nav buffer
+at byte 0 of a WebAssembly.Memory with the scratch after it (`6fe64c1a`), the module and its client
+(`0995b2cf`), the particle worker (`0786a06c`); a test boots a worker on that memory, 60 flowfields bit for bit.
 The navStress gate was stopped by the owner during its first pair (the base read 6.2 flowfields a frame,
 particle 8.55 ms).
 
