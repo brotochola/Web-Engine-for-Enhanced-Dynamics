@@ -503,9 +503,10 @@ async function withPersistOrder(ySort, fn) {
 
 /**
  * The persist cases' frames: prepare(f) flips to buffer f & 1, writes the frame's poses into the stash
- * (the queue's own columns, E-98d, or the other buffer's) and makes what misses on schedule: dirty
- * sprites, a changed animation, swapped collector rows, a frame past its animation's end and, with
- * adobe, an Adobe root for six frames. Some animated sprites get NaN clocks first (the persist path
+ * (the queue's own columns, E-98d, or the other buffer's), changes shadow casters with no dirty flag (the
+ * persist frames must refresh their terms) and makes what misses on schedule: dirty sprites, a changed
+ * animation, swapped collector rows, a frame past its animation's end and, with adobe, an Adobe root for
+ * six frames. Some animated sprites get NaN clocks first (the persist path
  * advances them on every frame, !(clock < duration); the full emit never does). The same calls give the
  * same frames on both runs.
  */
@@ -546,6 +547,14 @@ function persistSchedule(k, { inQueue, seed, adobe }) {
       [cIndex[a], cIndex[c]] = [cIndex[c], cIndex[a]];
     }
     if (f === 17) worker.entityFrameIndex[cIndex[animatedRow]] = 99;
+    // ShadowCaster columns change with no dirty flag: every persist frame refreshes the shadow terms.
+    if (f % 5 === 2) {
+      for (let j = 0; j < 8; j++) {
+        const idx = cIndex[sprites[Math.floor(r() * sprites.length)]];
+        ShadowCaster.heightMultiplier[idx] = r() * 2;
+        ShadowCaster.active[idx] ^= 1;
+      }
+    }
     if (adobe && f === 20) cType[5] = 6;
     if (adobe && f === 26) cType[5] = k.types[5];
     return { buf, st };
