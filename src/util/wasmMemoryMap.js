@@ -78,6 +78,14 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  *   leaves to the JS (u32); emitResults: its counts; emitTable: its column table (u32 byte offsets);
  * - emitPersistType, emitPersistEntity, emitPersistFrame, emitPersistAnim: the rows each queue buffer last
  *   held, for the persist check (W4c; u8, i32, u16, u16, the two buffers back to back).
+ * With `emit.adobe` (W27, the Adobe Animate emit in the same kernel), what it reads besides:
+ * - adobeAnim: the AdobeAnimComponent block (Component.initializeArrays at the region's byte, as above);
+ * - emitStashX, emitStashY, emitStashRotC, emitStashRotS: the collector's pose stash (f32 per row), where the
+ *   collect writes the poses when a frame has Adobe roots (the queue's own columns otherwise, E-98d);
+ * - emitAdobeList: the frame's active Adobe entities, copied from their query for the clock advance (u32);
+ * - emitAdobeAssets: the Adobe assets' tables, a directory of EMIT_ADOBE_MAX_ASSETS records
+ *   (EMIT_ADOBE_ASSET_BYTES each, preRenderEmitClient.js writes them) and the clip, frame and piece arrays
+ *   after it (`emit.adobe.tableBytes`, preRender.adobeTablesMB); an asset that does not fit is emitted in JS.
  * With `stamp` (E-114, the shadow stamp `shadowStamp.wasm`, which reads the sun rows and writes the stamp
  * rows where the GPU queues hold them), its scratch: the candidates, their distances, order and the kept
  * list (one entry per sun caster each), the stamp grid's counts, starts and items, the nearest lights per
@@ -92,7 +100,8 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {number} maxItems the queue's rows
  * @param {number} tableBytes packTables' size
- * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number }} [emit]
+ * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number,
+ *   adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp]
  * @param {null | { decorations: number, buckets: number }} [sway]
  * @param {number} [pixiRows] rows of Pixi's plain sprite batch when Pixi packs it with gpuPack.wasm (W9d), else 0
@@ -143,6 +152,17 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitPersistFrame', owner: 'pre-render', bytes: 2 * n * 2 },
       { name: 'emitPersistAnim', owner: 'pre-render', bytes: 2 * n * 2 },
     );
+    if (emit.adobe) {
+      regions.push(
+        { name: 'adobeAnim', owner: 'every worker (AdobeAnimComponent)', bytes: emit.adobe.animBytes | 0 },
+        { name: 'emitStashX', owner: 'pre-render', bytes: n * 4 },
+        { name: 'emitStashY', owner: 'pre-render', bytes: n * 4 },
+        { name: 'emitStashRotC', owner: 'pre-render', bytes: n * 4 },
+        { name: 'emitStashRotS', owner: 'pre-render', bytes: n * 4 },
+        { name: 'emitAdobeList', owner: 'pre-render', bytes: e * 4 },
+        { name: 'emitAdobeAssets', owner: 'pre-render', bytes: EMIT_ADOBE_MAX_ASSETS * EMIT_ADOBE_ASSET_BYTES + (emit.adobe.tableBytes | 0) },
+      );
+    }
   }
   if (stamp) {
     const sun = stamp.maxSun | 0;
@@ -290,6 +310,9 @@ export const EMIT_MAX_ANIMATIONS = 65536;
 export const EMIT_MAX_FRAMES = 65536;
 /** Room for the emit kernel's column table (preRenderEmitClient.js EMIT_SLOTS). */
 export const EMIT_TABLE_SLOTS = 96;
+/** W27: the Adobe assets the emit kernel's directory holds (asset ids 0 … 255), and the bytes of a record. */
+export const EMIT_ADOBE_MAX_ASSETS = 256;
+export const EMIT_ADOBE_ASSET_BYTES = 160;
 
 /**
  * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its

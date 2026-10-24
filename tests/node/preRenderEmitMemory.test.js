@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
@@ -85,4 +86,31 @@ test('an emit layout for another entity count is not used', async () => {
   assert.notEqual(worker._renderableType.buffer, m.buffer);
   assert.notEqual(worker.entityFrameIndex.buffer, m.buffer);
   assert.equal(worker.entityFrameIndex.length, N);
+});
+
+test('with the Adobe regions (W27) the pose stash is in the memory too, where the emit kernel reads it', async () => {
+  const caps = gpuQueueCaps(MAX, { enabled: false });
+  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), {
+    entities: N,
+    spriteBytes: SpriteRenderer.getBufferSize(N),
+    casterBytes: 0,
+    decorationBytes: 0,
+    adobe: { animBytes: AdobeAnimComponent.getBufferSize(N), tableBytes: 65536 },
+  });
+  const e = m.layout.emit;
+  const worker = await boot(m);
+  for (const [name, view, byte] of [
+    ['stash x', worker._renderablePx, e.stashXByte],
+    ['stash y', worker._renderablePy, e.stashYByte],
+    ['stash rotC', worker._renderableRotC, e.stashRotCByte],
+    ['stash rotS', worker._renderableRotS, e.stashRotSByte],
+  ]) {
+    assert.equal(view.buffer, m.buffer, `${name} in the memory`);
+    assert.equal(view.byteOffset, byte, `${name} at its region`);
+    assert.equal(view.length, MAX);
+  }
+  // Without them the stash is pre-render's own.
+  const plain = await boot(emitMemory(N));
+  assert.notEqual(plain._renderablePx.buffer, m.buffer);
+  assert.ok(!(plain._renderablePx.buffer instanceof SharedArrayBuffer));
 });

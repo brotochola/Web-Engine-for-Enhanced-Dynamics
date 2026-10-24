@@ -476,6 +476,13 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   preRenderEmit: true,
   /**
+   * Adobe Animate characters in pre-render's emit kernel (W27): AdobeAnimComponent, the collector's pose stash and
+   * the Adobe assets' piece tables (room for them: preRender.adobeTablesMB) live in the render-queue memory too, so
+   * `preRenderEmit.wasm` expands each character into its pieces and advances the clips. false declines every frame
+   * with an Adobe character, as before (needs preRenderEmit).
+   */
+  preRenderEmitAdobe: true,
+  /**
    * Pre-render's sprite collect (`preRenderCollect.wasm`, W4b) in a scene without physics: Transform, its pose and
    * Collider in the render-queue memory with the emit's SpriteRenderer (so it needs preRenderEmit).
    */
@@ -817,6 +824,13 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
   cullingRatio: 0.1,
   startFadingDecorationsAtZoom: 0.5,
   hideDecorationsAtZoom: 0.25,
+  /**
+   * Room in MB (whole, 0..1024) for the Adobe Animate assets' clip, frame and piece tables in the render-queue
+   * memory, with wasm.preRenderEmitAdobe in a scene with Adobe characters. The memory is made before the assets
+   * load, so it cannot be sized from them: a piece takes 46 bytes. An asset that does not fit draws its characters
+   * through the JavaScript emit (pre-render warns once).
+   */
+  adobeTablesMB: 4,
 });
 
 /** @param {boolean|null|undefined} value */

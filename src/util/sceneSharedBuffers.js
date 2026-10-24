@@ -38,6 +38,7 @@ import {
   LAYER_DEFAULTS,
   DEFAULT_LAYERS,
   LIGHTING_DEFAULTS,
+  PRE_RENDER_DEFAULTS,
 } from './configDefaults.js';
 import { Sun } from '../core/sun.js';
 import { Layer } from '../core/layer.js';
@@ -648,18 +649,28 @@ function initializeRenderQueueMemory(scene) {
   if (e.spriteRendererByte >= 0) buffers.componentDataByte.SpriteRenderer = e.spriteRendererByte;
   if (e.shadowCasterByte >= 0) buffers.componentDataByte.ShadowCaster = e.shadowCasterByte;
   if (e.decorationByte >= 0) buffers.componentDataByte.DecorationComponent = e.decorationByte;
+  if (e.adobeAnimByte >= 0) buffers.componentDataByte.AdobeAnimComponent = e.adobeAnimByte;
 }
 
-/** The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster and decorations. */
+/**
+ * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster and decorations; with
+ * wasm.preRenderEmitAdobe (W27) and Adobe Animate characters, AdobeAnimComponent and room for the assets' tables
+ * (preRender.adobeTablesMB: the assets load after this memory is made, so their size is not known yet).
+ */
 function emitBlocks(scene) {
+  const { config } = scene;
   const pools = scene.componentPools || {};
   const n = scene.totalEntityCount;
-  const maxDecorations = scene.config.decoration?.maxDecorations | 0;
+  const maxDecorations = config.decoration?.maxDecorations | 0;
+  const adobeOn = config.wasm?.preRenderEmitAdobe !== false && Boolean(pools.AdobeAnimComponent?.ComponentClass);
+  const tablesMB = config.preRender?.adobeTablesMB ?? PRE_RENDER_DEFAULTS.adobeTablesMB;
+  if (adobeOn) assertIntegerInRange('preRender.adobeTablesMB', tablesMB, 0, 1024);
   return {
     entities: n,
     spriteBytes: pools.SpriteRenderer?.ComponentClass ? SpriteRenderer.getBufferSize(n) : 0,
     casterBytes: pools.ShadowCaster?.ComponentClass ? ShadowCaster.getBufferSize(n) : 0,
     decorationBytes: maxDecorations > 0 ? DecorationComponent.getBufferSize(maxDecorations) : 0,
+    adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
   };
 }
 

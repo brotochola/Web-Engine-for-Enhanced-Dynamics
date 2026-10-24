@@ -296,6 +296,13 @@ export type SceneConfig = Record<string, unknown> & {
     /** @deprecated one-release alias of maxFixturePoolSize */
     maxFixtures?: number;
   };
+  preRender?: Record<string, unknown> & {
+    /**
+     * Room in MB, whole, 0..1024 (default 4), for the Adobe Animate assets' tables in the render-queue memory
+     * (wasm.preRenderEmitAdobe). A piece takes 46 bytes; an asset that does not fit is drawn through the JavaScript emit.
+     */
+    adobeTablesMB?: number;
+  };
   /**
    * WebAssembly kernels, one switch per module (default true). false runs that module's
    * JavaScript path instead, for example to time one against the other in the same build.
@@ -325,6 +332,13 @@ export type SceneConfig = Record<string, unknown> & {
     gpuPack?: boolean;
     /** The same pack for Pixi's sprite rows, with packGpuSprites 'pixi' and no pose interpolation. Needs gpuPack. */
     pixiPack?: boolean;
+    /** Pre-render's emit of sprite and decoration rows (SpriteRenderer, ShadowCaster and the decorations move into the render-queue memory). */
+    preRenderEmit?: boolean;
+    /**
+     * Adobe Animate characters in that emit: each one expanded into its pieces, and the clips advanced
+     * (AdobeAnimComponent and the assets' tables move into the render-queue memory; preRender.adobeTablesMB). Needs preRenderEmit.
+     */
+    preRenderEmitAdobe?: boolean;
     /** Pre-render's sprite collect, in scenes with physics off (Transform and Collider move into the render-queue memory). */
     preRenderCollect?: boolean;
     /** The painter sort of the main sprite queue, in the worker preRender.sortSprites names (its state in the render-queue memory). */

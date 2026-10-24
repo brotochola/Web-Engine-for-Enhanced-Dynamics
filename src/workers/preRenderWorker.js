@@ -940,10 +940,14 @@ class PreRenderWorker extends AbstractWorker {
                     this._collectWasm = null;
                 }
             }
-            this._renderablePx = new Float32Array(maxItems);
-            this._renderablePy = new Float32Array(maxItems);
-            this._renderableRotC = new Float32Array(maxItems);
-            this._renderableRotS = new Float32Array(maxItems);
+            // W27: the pose stash in the memory too when the emit kernel expands Adobe roots (the collect writes
+            // the poses there on a frame with one, _bindCollectPoses).
+            const stashIn = emitLayout !== null && emitLayout.persistRows === maxItems && emitLayout.stashXByte >= 0;
+            const stash = (byte) => (stashIn ? new Float32Array(emitBuffer, byte, maxItems) : new Float32Array(maxItems));
+            this._renderablePx = stash(emitLayout?.stashXByte);
+            this._renderablePy = stash(emitLayout?.stashYByte);
+            this._renderableRotC = stash(emitLayout?.stashRotCByte);
+            this._renderableRotS = stash(emitLayout?.stashRotSByte);
             // W4c: in the memory, where the emit kernel's persist path reads them.
             const persistRows = emitLayout && emitLayout.persistRows === maxItems ? maxItems : 0;
             const persistView = (Type, byte, b) => (persistRows

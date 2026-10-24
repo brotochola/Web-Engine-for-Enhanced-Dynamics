@@ -5,6 +5,7 @@ import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
 import { Query } from '../../src/core/query.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Layer } from '../../src/core/layer.js';
@@ -12,6 +13,7 @@ import { MeshGeometry } from '../../src/core/meshGeometry.js';
 import { LAYER_KIND, WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { meshLayerCapacities } from '../../src/util/meshMemory.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
+import { EMIT_ADOBE_ASSET_BYTES, EMIT_ADOBE_MAX_ASSETS } from '../../src/util/wasmMemoryMap.js';
 
 // E-76 T7: one switch per WASM module. wasm.spatialPublish false must give the scene the plain-SAB
 // JavaScript publish path (what 32-bit ids get), default true the publish memory.
@@ -19,7 +21,7 @@ import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 class Entity extends GameObject {}
 Entity.components = [RigidBody, Collider, SpriteRenderer];
 
-function buildScene(wasm, lightingOverride = null, configOverride = {}) {
+function buildScene(wasm, lightingOverride = null, configOverride = {}, extraComponents = []) {
   const previousLog = console.log;
   console.log = () => {};
   try {
@@ -27,12 +29,13 @@ function buildScene(wasm, lightingOverride = null, configOverride = {}) {
     const scene = {
       totalEntityCount: 1000,
       nextComponentId: 4,
-      registeredClasses: [{ class: Entity, count: 1000, startIndex: 0, entityType: 0, components: Entity.components }],
+      registeredClasses: [{ class: Entity, count: 1000, startIndex: 0, entityType: 0, components: [...Entity.components, ...extraComponents] }],
       componentPools: {
         Transform: { ComponentClass: Transform },
         RigidBody: { ComponentClass: RigidBody },
         Collider: { ComponentClass: Collider },
         SpriteRenderer: { ComponentClass: SpriteRenderer },
+        ...Object.fromEntries(extraComponents.map((C) => [C.name, { ComponentClass: C }])),
       },
       config: {
         worldWidth: 2000,
@@ -119,6 +122,42 @@ test('wasm.preRenderEmit puts SpriteRenderer and the emit state in the render-qu
   const none = buildScene({ gpuPack: false, preRenderEmit: false });
   assert.equal(none.renderQueueMemory, null);
   assert.ok(none.buffers.renderQueueDataA instanceof SharedArrayBuffer);
+});
+
+test('wasm.preRenderEmitAdobe puts AdobeAnimComponent, the pose stash and the Adobe tables in the render-queue memory (W27)', () => {
+  assert.equal(WASM_DEFAULTS.preRenderEmitAdobe, true);
+
+  const on = buildScene({}, null, {}, [AdobeAnimComponent]);
+  const rqm = on.renderQueueMemory;
+  const e = rqm.layout.emit;
+  assert.ok(e.adobeAnimByte > e.persistAnimByte, 'the AdobeAnimComponent block, after the emit regions');
+  assert.equal(on.buffers.componentData.AdobeAnimComponent, rqm.buffer);
+  assert.equal(on.buffers.componentDataByte.AdobeAnimComponent, e.adobeAnimByte);
+  assert.equal(AdobeAnimComponent.active.buffer, rqm.buffer, 'the main thread binds it there');
+  assert.equal(AdobeAnimComponent.active.byteOffset, e.adobeAnimByte);
+  for (const k of ['stashXByte', 'stashYByte', 'stashRotCByte', 'stashRotSByte', 'adobeListByte', 'adobeAssetsByte']) {
+    assert.ok(e[k] > 0 && e[k] % 64 === 0, `${k} on a line`);
+  }
+  assert.equal(e.stashYByte - e.stashXByte, 100 * 4 + 48, 'a stash row per queue row, from a line');
+  assert.equal(e.adobeAssetsBytes, EMIT_ADOBE_MAX_ASSETS * EMIT_ADOBE_ASSET_BYTES + 4 * 1048576, 'the directory and 4 MB by default');
+  const nine = buildScene({}, null, { preRender: { adobeTablesMB: 9 } }, [AdobeAnimComponent]).renderQueueMemory.layout.emit;
+  assert.equal(nine.adobeAssetsBytes, EMIT_ADOBE_MAX_ASSETS * EMIT_ADOBE_ASSET_BYTES + 9 * 1048576, 'preRender.adobeTablesMB');
+  assert.throws(() => buildScene({}, null, { preRender: { adobeTablesMB: 2.5 } }, [AdobeAnimComponent]), /preRender\.adobeTablesMB/);
+
+  const off = buildScene({ preRenderEmitAdobe: false }, null, {}, [AdobeAnimComponent]);
+  const o = off.renderQueueMemory.layout.emit;
+  assert.ok(o, 'the emit regions stay');
+  for (const k of ['adobeAnimByte', 'stashXByte', 'stashYByte', 'stashRotCByte', 'stashRotSByte', 'adobeListByte', 'adobeAssetsByte']) {
+    assert.equal(o[k], -1, `${k}: none`);
+  }
+  assert.equal(off.buffers.componentDataByte.AdobeAnimComponent, undefined);
+  assert.ok(off.buffers.componentData.AdobeAnimComponent instanceof SharedArrayBuffer);
+  assert.notEqual(off.buffers.componentData.AdobeAnimComponent, off.renderQueueMemory.buffer);
+
+  const none = buildScene({}).renderQueueMemory.layout.emit;
+  assert.equal(none.adobeAnimByte, -1, 'no Adobe character in the scene: no Adobe regions');
+  assert.equal(none.adobeAssetsByte, -1);
+  assert.equal(buildScene({ preRenderEmit: false }, null, {}, [AdobeAnimComponent]).renderQueueMemory.layout.emit, null, 'needs the emit');
 });
 
 test('wasm.shadowStamp puts the stamp scratch in the render-queue memory when shadows are on', () => {

@@ -7,6 +7,7 @@
 // E-114 (W23): with a stamp spec, the shadow stamp's scratch and light table.
 // W22: with a sway spec, the particle worker's decoration sway arrays.
 // W10: with a painter spec, the painter sort's state of the worker that sorts (pre-render's, Pixi's, or both).
+// W27: with emit.adobe, the AdobeAnimComponent block, the collector's pose stash and the Adobe assets' tables.
 
 import { painterStateLayout, renderQueueMemoryRegions, SWAY_LIST_CAP } from './wasmMemoryMap.js';
 import { GPU_PACK_COLUMNS } from '../render/gpuPackClient.js';
@@ -21,7 +22,8 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {number} maxItems the render queue's rows
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
- * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number }} [emit]
+ * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number,
+ *   adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
  *   the emit's regions too (renderQueueMemoryRegions); a component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
  * @param {null | { decorations: number, buckets: number }} [sway] the sway's regions too (with emit's decorations)
@@ -119,6 +121,15 @@ function emitLayout(r, entities, rows) {
     persistEntityByte: r.emitPersistEntity.byte,
     persistFrameByte: r.emitPersistFrame.byte,
     persistAnimByte: r.emitPersistAnim.byte,
+    // W27: the Adobe emit's regions, -1 without them (wasm.preRenderEmitAdobe off, or no AdobeAnimComponent).
+    adobeAnimByte: r.adobeAnim ? block(r.adobeAnim) : -1,
+    stashXByte: r.emitStashX ? r.emitStashX.byte : -1,
+    stashYByte: r.emitStashY ? r.emitStashY.byte : -1,
+    stashRotCByte: r.emitStashRotC ? r.emitStashRotC.byte : -1,
+    stashRotSByte: r.emitStashRotS ? r.emitStashRotS.byte : -1,
+    adobeListByte: r.emitAdobeList ? r.emitAdobeList.byte : -1,
+    adobeAssetsByte: r.emitAdobeAssets ? r.emitAdobeAssets.byte : -1,
+    adobeAssetsBytes: r.emitAdobeAssets ? r.emitAdobeAssets.bytes : 0,
   };
 }
 
