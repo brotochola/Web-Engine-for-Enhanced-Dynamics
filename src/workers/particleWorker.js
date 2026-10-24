@@ -529,10 +529,13 @@ class ParticleWorker extends AbstractWorker {
             this._wasmIntegrate = null;
           }
         }
-        // E-80: the active and visible lists built in WASM.
+        // E-80: the active and visible lists built in WASM; wasm.particleListsF32 (default on) takes the
+        // kernel's float32 screen test, chosen once here.
         if (this.config?.wasm?.particleLists !== false) {
           try {
-            this._wasmLists = await bindParticleLists(data.particleMemory, data.particleLayout, ParticleComponent);
+            this._wasmLists = await bindParticleLists(data.particleMemory, data.particleLayout, ParticleComponent, {
+              f32: this.config?.wasm?.particleListsF32 !== false,
+            });
           } catch (err) {
             console.error('[particle] list wasm unavailable', err);
             this._wasmLists = null;

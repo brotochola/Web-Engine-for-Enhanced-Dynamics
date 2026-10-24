@@ -445,6 +445,12 @@ export const WASM_DEFAULTS = Object.freeze({
   particleIntegrate: true,
   /** Particle list build (`particleLists.wasm`, E-80): the active and visible lists in that memory. */
   particleLists: true,
+  /**
+   * The list build's screen test in float32, four particles per f32x4 (`build_lists_f32x4`, the float32 pass):
+   * a particle within a few float32 steps of the culling box's edge (which has the cull margin around the view)
+   * can land on the other side. false: the double test (`build_lists`), the JS build's flags bit for bit.
+   */
+  particleListsF32: true,
   /** Instanced-row pack (`gpuPack.wasm`, E-76 W9): the render queues in a WebAssembly.Memory, packed there by pre-render. */
   gpuPack: true,
   /**

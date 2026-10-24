@@ -99,7 +99,7 @@ Zenithal vs topdown does **not** change physics. Only `flat` vs heighted does. O
 
 This step runs in WebAssembly by default: the particle pool lives in a shared `WebAssembly.Memory` and one call per frame advances every active particle, with the same results as the JavaScript step (dead particles still return to the pool through `ParticleEmitter`). Scene config `wasm: { particleIntegrate: false }` runs the JavaScript step instead.
 
-The sweep before it runs in WebAssembly too. It lists the live particles and tests each one against the camera, setting `isItOnScreen` and filling the visible list that pre-render draws. Scene config `wasm: { particleLists: false }` runs it in JavaScript.
+The sweep before it runs in WebAssembly too. It lists the live particles and tests each one against the camera, setting `isItOnScreen` and filling the visible list that pre-render draws. Scene config `wasm: { particleLists: false }` runs it in JavaScript. By default the WebAssembly sweep tests positions in float32, four particles at a time: a particle within a float32 rounding of the culling box's edge (outside the canvas, inside the cull margin) can land on the other side of it. `wasm: { particleListsF32: false }` keeps the double test, whose flags are the JavaScript sweep's exactly.
 
 ## Rendering (`preRenderWorker`)
 

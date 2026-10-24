@@ -309,6 +309,12 @@ export type SceneConfig = Record<string, unknown> & {
     particleIntegrate?: boolean;
     /** Particle active and visible lists (the per-frame sweep of the pool and the screen test). */
     particleLists?: boolean;
+    /**
+     * The particle lists' screen test in float32 (default true): faster; a particle within a float32 rounding of
+     * the culling box's edge (off the canvas, inside the cull margin) can land on the other side. false: the
+     * double test, the JavaScript build's flags exactly.
+     */
+    particleListsF32?: boolean;
     /** Instanced-row pack in pre-render (the render queues live in one WebAssembly.Memory). */
     gpuPack?: boolean;
     /** The same pack for Pixi's sprite rows, with packGpuSprites 'pixi' and no pose interpolation. Needs gpuPack. */

@@ -9,9 +9,11 @@
  *         worker's local index list and the two published lists, as the particle worker calls them
  *   wasm  buildParticleListsWasm (src/workers/particleListsClient.js): build_lists /
  *         build_lists_turned (wasm/particleLists.c, f64x2 on full 16-slot blocks) writing the
- *         published lists only, the integrate's input being the published active list
+ *         published lists only, the integrate's input being the published active list; what the
+ *         particle worker binds with wasm.particleListsF32 false
  *   wasm-f32x4  the same wrapper around build_lists_f32x4 / build_lists_turned_f32x4 (wasm/particleLists.c):
- *               the screen test in float32, four particles per f32x4 on a full block
+ *               the screen test in float32, four particles per f32x4 on a full block; what the worker
+ *               binds by default (bindParticleLists' `f32`)
  *
  * Both run on the particle memory the scene builds (createParticleMemory). E-80's kernel sitting
  * also timed a scalar build (every particle alone, in double): f64x2 beat it 25/25 in the dense cases.
@@ -50,7 +52,7 @@ import { createParticleMemory } from '../../src/util/particleMemory.js';
 import { bindParticleLists, buildParticleListsWasm } from '../../src/workers/particleListsClient.js';
 import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { emitConfig, PARTICLE_EASES } from './particleIntegrateWasmMicrobench.mjs';
-import { instantiateKernel, machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
 /** The float32 builds of the shipped module (wasm/particleLists.c), by variant name. */
 export const LISTS_F32_MODULE = 'particleLists';
@@ -59,18 +61,15 @@ export const LISTS_F32_EXPORTS = Object.freeze({
 });
 
 /**
- * The shipped binding (bindParticleLists) and one per float32 variant: the same object with its build and
- * buildTurned swapped, which buildParticleListsWasm calls as the particle worker does. `f32: false` leaves
- * the float32 variants out.
+ * The shipped bindings, as the particle worker makes them: `wasm` with wasm.particleListsF32 off (the double
+ * builds), `wasm-f32x4` with it on (bindParticleLists' `f32`). buildParticleListsWasm calls either.
+ * `f32: false` leaves the float32 binding out.
  */
 export async function bindListKernels(memory, layout, pc, { f32: withF32 = true } = {}) {
-  const wasm = await bindParticleLists(memory, layout, pc);
+  const wasm = await bindParticleLists(memory, layout, pc, { f32: false });
   const out = { wasm };
   if (!withF32) return out;
-  const f32 = instantiateKernel(LISTS_F32_MODULE, memory);
-  for (const [variant, names] of Object.entries(LISTS_F32_EXPORTS)) {
-    out[variant] = { ...wasm, build: f32[names.build], buildTurned: f32[names.buildTurned] };
-  }
+  out['wasm-f32x4'] = await bindParticleLists(memory, layout, pc, { f32: true });
   return out;
 }
 
