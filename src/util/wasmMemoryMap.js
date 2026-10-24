@@ -277,7 +277,7 @@ export function particleMemoryRegions(maxParticles, componentBytes, lutFloats) {
 
 /**
  * The mesh batches' row bytes: colliderFillBatch.js COLLIDER_FILL_STRIDE and MESH_UV_FILL_STRIDE. That module
- * loads Pixi, which the main thread does not; wasmMemoryMap.test.js ties the two.
+ * loads Pixi, which the main thread does not; meshCornersLayout.test.js ties the two.
  */
 export const MESH_FILL_ROW_BYTES = 72;
 export const MESH_UV_ROW_BYTES = 96;
