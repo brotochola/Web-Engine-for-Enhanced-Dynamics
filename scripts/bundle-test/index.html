@@ -139,6 +139,8 @@ export class Floor extends GameObject {
     const bundle = BUNDLES.has(requested) ? requested : 'weed.bundle.min.js';
     const fixedFps = Math.max(0, Number(params.get('fixedFps')) || 0);
     const box2dWorkers = Math.max(0, Number(params.get('box2dWorkers')) || 0);
+    // ?physicsMemoryMB=N sets physics.wasmMemoryMB (Box2D's memory; the engine's default without it).
+    const physicsMemoryMB = Math.max(0, Number(params.get('physicsMemoryMB')) || 0);
     const ticksParam = Math.max(0, Number(params.get('ticks')) || 0);
     const secondsParam = Math.max(0, Number(params.get('seconds')) || 0);
     const ballCount = Math.max(1, Number(params.get('balls')) || 9000);
@@ -216,6 +218,7 @@ export class Floor extends GameObject {
         }),
         physics: applyFixedFps({
           numberOfPhysicsWorkers: box2dWorkers > 0 ? box2dWorkers : 4,
+          ...(physicsMemoryMB > 0 ? { wasmMemoryMB: physicsMemoryMB } : {}),
           subStepCount: 4,
           noLimitFPS: false,
           gravity: { x: 0, y: 1800 },
