@@ -173,6 +173,31 @@
         "collect_sprites_turned"
       ],
       "maxMemoryPages": 8192
+    },
+    {
+      "name": "painterRadix",
+      "source": "wasm/test/painterRadix.c",
+      "output": "tests/fixtures/wasm/painterRadix.wasm",
+      "exports": [
+        "radix_sort_scalar",
+        "radix_sort_kv8",
+        "radix_sort_kv11",
+        "radix_sort_adaptive",
+        "radix_sort_simd",
+        "painter_order_scalar",
+        "painter_order_kv8",
+        "painter_order_kv11",
+        "painter_order_adaptive",
+        "painter_order_simd",
+        "reinsert_scalar",
+        "reinsert_kv8",
+        "reinsert_kv11",
+        "reinsert_adaptive",
+        "reinsert_simd",
+        "reinsert_inplace"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
