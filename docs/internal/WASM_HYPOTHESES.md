@@ -519,9 +519,12 @@ Playwright can drive both with COOP/COEP.
 | **L4** | Compile and warm-up: each worker compiles each module on V8 background threads that compete with busy workers; the first frames run unoptimized WASM | time to first frame and time to steady step times (first 10 s per worker), all-JS against all-WASM; if bad, compile once and post the `WebAssembly.Module` to the workers |
 | **L5** | Memory bandwidth and L3: winners measured alone in different workers may not add up when they run at the same time | L-sitting below |
 | **L6** | Fallbacks: N modules with JS fallbacks make 2^N paths; 16- vs 32-bit ids flip several at once | the L-sitting configurations, on both id widths |
-| **L7** | Feature support: every module assumes SIMD, atomics and bulk memory | one capability check; if it fails, all fall back together; that path tested once |
+| **L7** | Feature support: every module assumes SIMD, atomics and bulk memory | one capability check; if it fails, all fall back together; that path tested once. Once the JS paths leave `src/` (decision 7) there is nothing to fall back to: before that, every scene boots once in Firefox and in WebKit, and afterwards a failed check is an error that names the missing feature |
 | **L8** | Tools | T10 on every module |
 | **L9** | Bundle size | all 8 dist bundles measured; `smokeBundleEmbed` covers every module |
+| **L10** | Cores: the gains were measured with 16 logical processors, and a scene starts the workers its config names on any machine (no file under `src/` reads `navigator.hardwareConcurrency`); on four cores the workers share them, and the whole machine's CPU decides | the all-JS-against-all-WASM pair of the L-sitting once more with Chrome held to four physical cores, process CPU per presented frame on both sides ([HOW_WE_MEASURE, milestone checks](./HOW_WE_MEASURE.md#engine-wide-claim)) |
+| **L11** | Inputs past a region: Box2D's memory holds its own heap and the engine's block (render queues, Transform, RigidBody, Collider, the published poses, the bullet pool), so a count or an offset past its region writes into a neighbour without a fault | each client checks the counts and offsets it passes against its region once per call (one check per batch); a debug build leaves canary gaps between the regions and checks them every few frames |
+| **L12** | The reference: each parity test compares a kernel with its JS path on the same bytes. Once the winners' JS paths leave `src/` (decision 7), the grouping step rewrites kernels with nothing to compare them against | before a JS path leaves `src/`, it moves under `tests/` as the reference its parity test runs, or the test keeps golden frames recorded from it |
 
 ### Do the winners add up (the L-sitting)
 
@@ -542,8 +545,11 @@ memory. The lockstep scenes (balls, liquidfun, lfstress, particles) run all JS a
 where a module promised bit-identical output, within the declared tolerance where Q2 says the maths
 cannot match.
 
-**Close-out.** One `npm run bench:scoreboard`, all WASM against the last commit before the migration.
-Boot numbers on record. A HYPOTHESIS_LOG row for the combination with the leave-one-out table.
+**Close-out.** One `npm run bench:scoreboard`, all WASM against the last commit before the migration,
+and L10's four-core pair. Boot numbers on record. A record in the register for the combination, with the
+leave-one-out table. The migration's total is the number of these sittings, never the sum of the
+kernels' records ([HOW_WE_MEASURE](./HOW_WE_MEASURE.md#how-a-sitting-decides): a total is measured, not
+added).
 
 ## Open decisions
 
@@ -570,6 +576,12 @@ defaults):
    (11.8 %) about 3.4 %, and W3 the cull loop (7.2 % self) about 2 %. W9 and W10 are reopened. W9's
    inputs are the render-queue SABs and its output is Pixi's `Buffer.data`, so it needs a render-queue
    memory (an own Memory like the particles', no arena) and a copy out.
+7. **The order after the hypotheses (the owner, 2026-10-23):** every hypothesis first, new candidates
+   included; then Phase 6, the kernels living together; then the JS paths of the winners leave `src/`, with
+   their `wasm.*` switches; and only then are the kernels grouped into `.wasm` files. Only engine code moves
+   to WASM: scenes and game objects stay JavaScript, and the engine APIs that game code calls per entity
+   stay callable from it. Grouping and cleanup are cheap once the winners are known; done earlier, they are
+   churn on kernels that may still be dropped.
 
 ## Results log
 
