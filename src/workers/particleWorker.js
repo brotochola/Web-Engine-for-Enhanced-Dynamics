@@ -44,6 +44,7 @@ import {
 } from '../util/particleIntegrate.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
+import { bindDecorationSway, writeSwayColumns, TRIG_IMPULSE } from './decorationSwayClient.js';
 import {
   getColliderBounds as getColliderBoundsImport,
   getCellRange as getCellRangeImport,
@@ -386,6 +387,8 @@ class ParticleWorker extends AbstractWorker {
     this._swayFrameCounter = 0;
     this._activeDecorationSnapshot = null;
     this._activeDecorationSnapshotCount = 0;
+    // W22: decorationSway.wasm on the render-queue memory, or null (the JS loop).
+    this._swayWasm = null;
 
     // Navigation
     this.navEnabled = false;
@@ -532,19 +535,23 @@ class ParticleWorker extends AbstractWorker {
       }
     }
     if (this.maxDecorations > 0) {
-      this._activeDecorationSnapshot = new Uint16Array(this.maxDecorations);
       const buckets = this.config?.particle?.swayFrequencyBuckets | 0;
       this._swayBuckets = buckets > 1 ? buckets : 0;
+      // W22: in the render-queue memory, where the sway kernel reads them, when the scene laid them out there.
+      const swayLayout = this._swayRegions(data);
+      const swayBuffer = swayLayout ? data.renderQueueMemory.buffer : null;
+      const swayView = (Type, byte, length) => (swayLayout ? new Type(swayBuffer, byte, length) : new Type(length));
+      this._activeDecorationSnapshot = swayView(Uint16Array, swayLayout?.snapshotByte, this.maxDecorations);
       if (this._swayBuckets) {
-        this._phaseSin = new Float32Array(this.maxDecorations);
-        this._phaseCos = new Float32Array(this.maxDecorations);
+        this._phaseSin = swayView(Float32Array, swayLayout?.phaseSinByte, this.maxDecorations);
+        this._phaseCos = swayView(Float32Array, swayLayout?.phaseCosByte, this.maxDecorations);
         for (let i = 0; i < this.maxDecorations; i++) {
           const p = i * 0.1;
           this._phaseSin[i] = Math.sin(p);
           this._phaseCos[i] = Math.cos(p);
         }
-        this._bucketSin = new Float32Array(this._swayBuckets);
-        this._bucketCos = new Float32Array(this._swayBuckets);
+        this._bucketSin = swayView(Float32Array, swayLayout?.bucketSinByte, this._swayBuckets);
+        this._bucketCos = swayView(Float32Array, swayLayout?.bucketCosByte, this._swayBuckets);
         // Bucket cache for the sway hot loop. See `_updateDecorationSwayBuckets`.
         //
         // Deliberately self-validating rather than invalidated at the write
@@ -560,12 +567,20 @@ class ParticleWorker extends AbstractWorker {
         // back the wrong bucket - a decoration swaying at another decoration's
         // frequency. 65535 buckets is far past any sane grid and the cache still
         // costs two bytes per decoration.
-        this._swayBucketOf = new Uint16Array(this.maxDecorations);
-        this._swayBucketFreq = new Float32Array(this.maxDecorations);
+        this._swayBucketOf = swayView(Uint16Array, swayLayout?.bucketOfByte, this.maxDecorations);
+        this._swayBucketFreq = swayView(Float32Array, swayLayout?.bucketFreqByte, this.maxDecorations);
         // A sentinel no real frequency can equal, so the first read always misses.
         this._swayBucketFreq.fill(-1);
         // The bucket count the cache was populated for; k can be reconfigured.
         this._swayBucketCacheK = this._swayBuckets;
+      }
+      if (swayLayout) {
+        try {
+          this._swayWasm = await bindDecorationSway(data.renderQueueMemory, swayLayout);
+        } catch (err) {
+          console.warn('[particle] decorationSway.wasm did not load; swaying in JS', err);
+          this._swayWasm = null;
+        }
       }
     }
 
@@ -1351,6 +1366,8 @@ class ParticleWorker extends AbstractWorker {
       this._swayBucketCacheK = k;
       this._swayBucketFreq.fill(-1);
     }
+    // W22. The loop below in decorationSway.wasm, when it can read every column.
+    if (this._swayWasm !== null && this._swayFrameWasm(activeCount, k, deltaTime)) return;
     const bucketOf = this._swayBucketOf;
     const bucketFreq = this._swayBucketFreq;
     const noParent = this._noParent;
@@ -1404,6 +1421,60 @@ class ParticleWorker extends AbstractWorker {
         swayPhase[i] = nextPhase;
         delta = Math.sin(nextPhase) * swayAmplitude[i];
       }
+      if (delta !== 0) {
+        const ad = delta < 0 ? -delta : delta;
+        const dc = ad < 0.08 ? 1 : Math.cos(delta);
+        const ds = ad < 0.08 ? delta : Math.sin(delta);
+        rotC[i] = bc * dc - bs * ds;
+        rotS[i] = bs * dc + bc * ds;
+      } else {
+        rotC[i] = bc;
+        rotS[i] = bs;
+      }
+    }
+  }
+
+  /** W22. The scene's sway regions when they fit this worker's decorations and grid, else null (the JS sway). */
+  _swayRegions(data) {
+    const s = data.renderQueueLayout?.sway;
+    if (!s || !data.renderQueueMemory || this.config?.wasm?.decorationSway === false) return null;
+    if (s.decorations !== this.maxDecorations || s.buckets !== this._swayBuckets || this._swayBuckets <= 1) return null;
+    // The kernel reads DecorationComponent where the scene bound it: the memory's decorations block.
+    const rotC = DecorationComponent.rotC;
+    if (!rotC || rotC.buffer !== data.renderQueueMemory.buffer) return null;
+    return s;
+  }
+
+  /**
+   * W22. _updateDecorationSwayBuckets' loop in decorationSway.wasm (sway_decorations), after this frame's
+   * bucket angles; then the Math.sin / Math.cos of the decorations it listed. False when the kernel cannot
+   * read a column (the JS loop runs).
+   */
+  _swayFrameWasm(activeCount, k, deltaTime) {
+    const b = this._swayWasm;
+    if (!writeSwayColumns(b, this, DecorationComponent)) return false;
+    const n = b.sway(b.tableByte, activeCount, k, deltaTime);
+    if (n > 0) this._finishSwayTrig(b.trig, b.trigValue, n);
+    return true;
+  }
+
+  /**
+   * W22. The rest of the loop body for the decorations the kernel listed, in its order: an impulse's
+   * Math.sin(phase) * swayAmplitude, then the rotation with its Math.cos / Math.sin past 0.08 rad.
+   */
+  _finishSwayTrig(trig, trigValue, n) {
+    const rotC = DecorationComponent.rotC;
+    const rotS = DecorationComponent.rotS;
+    const baseRotC = DecorationComponent.baseRotC;
+    const baseRotS = DecorationComponent.baseRotS;
+    const swayAmplitude = DecorationComponent.swayAmplitude;
+    for (let t = 0; t < n; t++) {
+      const e = trig[t];
+      const i = e & 0xffff;
+      let delta = trigValue[t];
+      if ((e & TRIG_IMPULSE) !== 0) delta = Math.sin(delta) * swayAmplitude[i];
+      const bc = baseRotC[i];
+      const bs = baseRotS[i];
       if (delta !== 0) {
         const ad = delta < 0 ? -delta : delta;
         const dc = ad < 0.08 ? 1 : Math.cos(delta);

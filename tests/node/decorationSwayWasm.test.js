@@ -19,6 +19,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
+import { computeBufferSize } from '../../src/render/renderQueueLayout.js';
+import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
+import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
 import {
   bucketFromSwayFrequency,
   SWAY_IMPULSE,
@@ -327,4 +331,72 @@ test('the sway kernel writes what _updateDecorationSwayBuckets writes, frame aft
   }
   for (const [branch, hits] of Object.entries(cov)) assert.ok(hits > 0, `no frame reached ${branch}`);
   t.diagnostic(`${frame} frames: ${JSON.stringify(cov)}`);
+});
+
+// W22 wired: a particle worker booted on a render-queue memory with the sway regions (as the scene makes it:
+// the decorations block, then the sway arrays) binds the kernel itself and keeps its sway arrays there.
+// updateDecorationSway with the kernel and without it must leave the same bytes, frame after frame, on the
+// random frames above: the worker's own path (writeSwayColumns, sway_decorations, _finishSwayTrig).
+test('updateDecorationSway through the kernel the worker binds writes what the JS writes', async (t) => {
+  const k = 100;
+  const caps = gpuQueueCaps(64, { enabled: false });
+  const m = createRenderQueueMemory(64, computeBufferSize(64), computeGpuQueueBufferSize(caps),
+    { entities: 16, spriteBytes: 0, casterBytes: 0, decorationBytes: DecorationComponent.getBufferSize(N) }, null,
+    { decorations: N, buckets: k });
+  const worker = await loadWorker('particleWorker.js', 'particleWorker');
+  await initWorker(worker, {
+    config: { particle: { swayFrequencyBuckets: k }, decoration: { maxDecorations: N } },
+    globalEntityCount: 16,
+    buffers: {
+      componentData: { DecorationComponent: m.buffer },
+      componentDataByte: { DecorationComponent: m.layout.emit.decorationByte },
+    },
+    extra: {
+      maxDecorations: N,
+      decorationFreeList: new SharedArrayBuffer(N * 2),
+      decorationFreeListTop: new SharedArrayBuffer(8),
+      activeDecorationsData: new SharedArrayBuffer((1 + N) * 2),
+      activeDecorationsLock: new SharedArrayBuffer(4),
+      renderQueueMemory: m.memory,
+      renderQueueLayout: m.layout,
+    },
+  });
+  const bound = worker._swayWasm;
+  assert.ok(bound, 'the worker bound the kernel at init');
+  for (const name of ['_activeDecorationSnapshot', '_phaseSin', '_phaseCos', '_bucketSin', '_bucketCos', '_swayBucketOf', '_swayBucketFreq']) {
+    assert.equal(worker[name].buffer, m.buffer, `${name} is in the memory`);
+  }
+  let calls = 0;
+  let listed = 0;
+  const kernel = bound.sway;
+  bound.sway = (...args) => {
+    calls++;
+    const n = kernel(...args);
+    listed += n;
+    return n;
+  };
+  const st = { worker };
+  const r = rng(0x5ee1);
+  const mem = new Uint8Array(m.buffer);
+  for (let f = 0; f < 60; f++) {
+    scramble(r, st, k, f === 0 ? 1 : 0.25, false);
+    pickSnapshot(r, st);
+    const deltaTime = frameDelta(r);
+    worker.accumulatedTime += DT;
+    const before = mem.slice();
+    const cacheK = worker._swayBucketCacheK;
+    worker._swayWasm = null;
+    worker.updateDecorationSway(deltaTime);
+    const js = stateViews(st).map(([name, v]) => [name, v.slice()]);
+    mem.set(before);
+    worker._swayBucketCacheK = cacheK;
+    worker._swayWasm = bound;
+    worker.updateDecorationSway(deltaTime);
+    stateViews(st).forEach(([name, v], c) => {
+      const at = firstDiff(v, js[c][1]);
+      assert.equal(at, -1, `frame ${f}: ${name}[${at}]: JS ${js[c][1][at]}, kernel ${v[at]}`);
+    });
+  }
+  assert.ok(calls >= 50 && listed > 0, `the kernel ran (${calls} calls) and listed decorations for the JS (${listed})`);
+  t.diagnostic(`${calls} kernel calls, ${listed} decorations finished in JS`);
 });
