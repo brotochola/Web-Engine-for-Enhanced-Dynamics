@@ -46,8 +46,24 @@ export const CAM_ROT = (() => {
   }
 })();
 
+/**
+ * `?maxParticles=<n>`: the pool (particle.maxParticles), default 65535. Past 65 535 the pool takes 32-bit slot
+ * ids (E-129) and the render queue is sized to the pool, so every particle in view is drawn; at the default it
+ * keeps the scene's 55 000 rows. The driver's burst and top-up fill a larger pool in a few seconds and keep it
+ * full (the emitter warns once that it is exhausted).
+ */
+export const MAX_PARTICLES = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('maxParticles');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 65535;
+  } catch {
+    return 65535;
+  }
+})();
+
 export const stressSceneConfig = {
-  requested: { tween: TWEEN, spin: SPIN, camRot: CAM_ROT },
+  requested: { tween: TWEEN, spin: SPIN, camRot: CAM_ROT, maxParticles: MAX_PARTICLES },
 };
 
 /** L2 intermediate bench: large heighted (gravity + despawnOnGroundContact) population. No decals. */
@@ -74,13 +90,13 @@ export class ParticleIntegrateStressScene extends Scene {
       gravity: { x: 0, y: 0 },
     },
     particle: {
-      maxParticles: 65535,
+      maxParticles: MAX_PARTICLES,
       decals: false,
     },
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      maxVisibleRenderables: 55000,
+      maxVisibleRenderables: MAX_PARTICLES > 65535 ? MAX_PARTICLES + 16 : 55000,
     },
     lighting: {
       enabled: false,
