@@ -21,6 +21,7 @@ import { Layer } from '../../src/core/layer.js';
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import {
   bindPreRenderEmit,
   EMIT_BOUNDS,
@@ -733,6 +734,103 @@ test('emitSpriteQueue through the kernel takes the persist frames the JS takes a
       assert.equal(calls.emitRows, calls.persistRemember, JSON.stringify(calls));
       assert.ok(calls.persistPoses >= 10 && calls.persistRemember >= 10, JSON.stringify(calls));
       t.diagnostic(`ySort ${ySort}: ${JSON.stringify(calls)}`);
+    });
+  }
+});
+
+// E-116: persist_frame (wasm/test/preRenderPersistFrame.c) against the shipped two calls. A miss leaves
+// pose writes behind it (the rows the walk passed), which the full emit after a miss rewrites; so both
+// paths run that full emit (emit_rows) and the remember on a miss, and must then hold the same bytes.
+const FUSED_URL = new URL('../fixtures/wasm/preRenderPersistFrame.wasm', import.meta.url);
+
+test('the persist path in one walk (E-116) leaves what the two calls and the full emit leave', async (t) => {
+  for (const ySort of [true, false]) {
+    const seed = ySort ? 0xf11 : 0xf12;
+    const k = await setup({ ySort, seed, persist: true });
+    await withPersistOrder(ySort, async () => {
+      const { worker, b, m, maxItems, count } = k;
+      const fused = await loadWasmKernel('preRenderPersistFrame', FUSED_URL, m.memory, ['persist_frame']);
+      const all = new Uint8Array(m.buffer);
+      const regions = persistRegions(m, maxItems);
+      // No Adobe root: emit_rows declines a frame with one, and the JS loop the worker then runs is not here.
+      const prepare = persistSchedule(k, { inQueue: true, seed, adobe: false });
+      const start = all.slice();
+      const cType = worker._renderableType;
+      const cIndex = worker._renderableIndex;
+      const cY = worker._renderableY;
+      const run = (oneWalk) => {
+        all.set(start);
+        worker._persistCount = [0, 0];
+        worker._tiledTileColumns = new Set();
+        const frames = [];
+        for (let f = 0; f < PERSIST_FRAMES; f++) {
+          const { buf, st } = prepare(f);
+          const source = worker._fillEmitSource(count, maxItems, cY, cType, cIndex, st.x, st.y, st.rc, st.rs, true, true, ySort);
+          assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source));
+          assert.ok(writePersistColumns(b, worker, SpriteRenderer, buf));
+          const sort = !!(worker.renderQueueSortKey && worker._queueHasOrder());
+          const flags = (sort ? EMIT_SORT_KEY : 0) | (sort && worker._entityYSort() ? EMIT_Y_SORT : 0) | EMIT_BOUNDS;
+          let hit = false;
+          let others = 0;
+          let moved = 0;
+          let repaired = 0;
+          const ends = [];
+          const takeEnds = () => {
+            for (let e = 0, at = b.endsAt; e < b.results[0]; e++, at += 2) ends.push(`${b.u32[at]}:${b.u32[at + 1]}`);
+          };
+          if (worker._persistCount[buf] === count) {
+            if (oneWalk) {
+              const got = fused.persist_frame(b.tableByte, count, maxItems, flags, DT / 1000, worker._zBand);
+              hit = got !== EMIT_PERSIST_MISS;
+              if (hit) {
+                others = got;
+                moved = b.results[1];
+                repaired = b.results[2];
+                takeEnds();
+              }
+            } else {
+              const got = b.persistCheck(b.tableByte, count, maxItems);
+              hit = got !== EMIT_PERSIST_MISS;
+              if (hit) {
+                repaired = got;
+                others = b.persistPoses(b.tableByte, count, maxItems, flags, DT / 1000, worker._zBand);
+                moved = b.results[1];
+                takeEnds();
+              }
+            }
+          }
+          if (!hit) {
+            const tilesDirty = worker.renderQueueTileMode !== null && worker._tiledTileColumns.has(worker.renderQueueTileMode);
+            const emitFlags = (sort ? EMIT_SORT_KEY : 0) | (sort && worker._entityYSort() ? EMIT_Y_SORT : 0) | EMIT_BOUNDS
+              | (tilesDirty ? EMIT_TILES_DIRTY : 0);
+            const written = b.emitRows(b.tableByte, count, maxItems, emitFlags, DT / 1000, worker._decorationZoomAlpha, worker._zBand);
+            assert.notEqual(written, EMIT_DECLINED, `frame ${f}`);
+            if (b.results[2] && worker.renderQueueTileMode !== null) worker._tiledTileColumns.add(worker.renderQueueTileMode);
+            takeEnds();
+            const cleared = b.persistRemember(b.tableByte, count, maxItems);
+            worker._persistCount[buf] = count;
+            if (cleared) worker._persistCount[buf ^ 1] = -1;
+          }
+          frames.push({ hit, others, moved, repaired, ends, counts: [...worker._persistCount], mem: regions.map(([, at, bytes]) => all.slice(at, at + bytes)) });
+        }
+        return frames;
+      };
+      const two = run(false);
+      const one = run(true);
+      let hits = 0;
+      for (let f = 0; f < PERSIST_FRAMES; f++) {
+        const got = one[f];
+        const want = two[f];
+        assert.deepEqual({ hit: got.hit, others: got.others, moved: got.moved, repaired: got.repaired, counts: got.counts, ends: got.ends },
+          { hit: want.hit, others: want.others, moved: want.moved, repaired: want.repaired, counts: want.counts, ends: want.ends }, `frame ${f}`);
+        regions.forEach(([name], r) => {
+          const at = got.mem[r].findIndex((x, i) => x !== want.mem[r][i]);
+          assert.equal(at, -1, `frame ${f}: ${name} differs at byte ${at}`);
+        });
+        if (got.hit) hits++;
+      }
+      assert.ok(hits >= 10 && hits <= PERSIST_FRAMES - 10, `hits ${hits}`);
+      t.diagnostic(`ySort ${ySort}: ${hits} persist frames of ${PERSIST_FRAMES}`);
     });
   }
 });

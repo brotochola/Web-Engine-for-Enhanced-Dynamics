@@ -127,6 +127,20 @@
         "stamp_light_range"
       ],
       "maxMemoryPages": 8192
+    },
+    {
+      "name": "preRenderPersistFrame",
+      "source": "wasm/test/preRenderPersistFrame.c",
+      "output": "tests/fixtures/wasm/preRenderPersistFrame.wasm",
+      "exports": [
+        "emit_rows",
+        "persist_check",
+        "persist_poses",
+        "persist_remember",
+        "persist_frame"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }

@@ -9,17 +9,23 @@
  *             the buffers alternate as pre-render's frames do (BunnyMark's every frame)
  *   remember  the rows a full emit leaves, remembered for the next check (a frame the check missed)
  *
- *   js    the shipped functions, as emitSpriteQueue calls them
- *   wasm  the kernel through preRenderEmitClient.js, as a product wrapper would call it: the column
- *         table written, the call, the counts and the play-once ends acted on in JS
+ *   js        the shipped functions, as emitSpriteQueue calls them
+ *   wasm      the kernel through preRenderEmitClient.js, as a product wrapper would call it: the column
+ *             table written, the call, the counts and the play-once ends acted on in JS
+ *   fused     E-116: persist_frame (wasm/test/preRenderPersistFrame.c, a test module), the check and the
+ *             poses-only pass in one walk; the remember as wasm
+ *   fused-nc  E-117 on top: the walk leaves the shadow terms when the scene has no ShadowCaster
  *
  * Every column is where the scene keeps it: the render-queue memory with the emit spec
  * (createRenderQueueMemory), the worker bound to it at init. The checksum covers both queue buffers'
  * rows, the animation state and the remembered rows after a fixed run of both cases.
  *
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderPersistWasmMicrobench.mjs --variants js,wasm --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderPersistWasmMicrobench.mjs --variants js,wasm,fused,fused-nc --rounds 5
  *   node tests/bench/preRenderPersistWasmMicrobench.mjs --variant wasm [--scale 0.1] [--output path]
  */
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import { Transform } from '../../src/components/transform.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { ShadowCaster } from '../../src/components/shadowCaster.js';
@@ -27,6 +33,7 @@ import { DecorationComponent } from '../../src/components/decorationComponent.js
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import {
   EMIT_BOUNDS,
   EMIT_PERSIST_MISS,
@@ -45,6 +52,9 @@ const SCALE = Number(ARGS.scale ?? 1);
 const N = Math.max(1024, Math.round(250000 * SCALE));
 const MAX_ITEMS = N;
 const DT = 1000 / 60;
+const FUSED_URL = pathToFileURL(path.resolve(import.meta.dirname, '../fixtures/wasm/preRenderPersistFrame.wasm'));
+/** preRenderPersistFrame.c's F_NO_CASTERS. */
+const F_NO_CASTERS = 16;
 
 /** BunnyMark's metadata: sheet 1's state 0 is the one-frame 'bunny', then the builtin textures. */
 function textureMetadata() {
@@ -116,6 +126,9 @@ export async function setupPersistKernel(opts = {}) {
   if (!b || !b.texturesReady) throw new Error('the worker did not bind the emit kernel');
   if (SpriteRenderer.scaleX.buffer !== m.buffer) throw new Error('SpriteRenderer is not in the memory');
   if (worker._persistType[0].buffer !== m.buffer) throw new Error('the persist rows are not in the memory');
+  const fused = opts.fused
+    ? await loadWasmKernel('preRenderPersistFrame', FUSED_URL, m.memory, ['persist_frame'])
+    : null;
 
   // BunnyMark's bunnies (Bunny.onSpawned): the one texture, a random tint, centred, unrotated.
   const rng = mulberry32(opts.seed ?? 0xb0b);
@@ -209,6 +222,25 @@ export async function setupPersistKernel(opts = {}) {
     }
     return others;
   };
+  /** E-116 (and E-117 with noCasters): the check and the poses-only pass in one call. */
+  const persistFused = (rows = count) => {
+    const buf = nextFrame();
+    table(buf);
+    if (worker._persistCount[buf] !== rows) throw new Error('the persist check missed');
+    const sort = !!(worker.renderQueueSortKey && worker._queueHasOrder());
+    const bounds = worker.frameWidth && worker.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
+    const flags = (sort ? EMIT_SORT_KEY : 0) | (sort && worker._entityYSort() ? EMIT_Y_SORT : 0) | (bounds ? EMIT_BOUNDS : 0)
+      | (opts.noCasters && !ShadowCaster.active ? F_NO_CASTERS : 0);
+    const others = fused.persist_frame(b.tableByte, rows, MAX_ITEMS, flags, DT / 1000, worker._zBand);
+    if (others === EMIT_PERSIST_MISS) throw new Error('the persist check missed');
+    worker._persistFramesMoved = b.results[1];
+    worker._persistFramesRepaired = b.results[2];
+    for (let k = 0, at = b.endsAt; k < b.results[0]; k++, at += 2) {
+      const idx = b.u32[at];
+      if (worker._animEndByType[Transform.entityType[idx]] === 1) worker._spriteAnimationEnded(idx, b.u32[at + 1]);
+    }
+    return others;
+  };
   const rememberWasm = (rows = count) => {
     const buf = nextFrame();
     table(buf);
@@ -230,7 +262,7 @@ export async function setupPersistKernel(opts = {}) {
     for (const bytes of hashed) h = hashBytes(h, bytes);
     return h;
   };
-  return { worker, count, persistJs, rememberJs, persistWasm, rememberWasm, hashState, kernel: b };
+  return { worker, count, persistJs, rememberJs, persistWasm, persistFused, rememberWasm, hashState, kernel: b, fused };
 }
 
 function hashBytes(h, bytes) {
@@ -241,10 +273,11 @@ function hashBytes(h, bytes) {
 async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'js');
-  if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
-  const k = await setupPersistKernel({ seed: Number(args.seed ?? 0xb0b) });
-  const persist = variant === 'wasm' ? k.persistWasm : k.persistJs;
-  const remember = variant === 'wasm' ? k.rememberWasm : k.rememberJs;
+  if (!['js', 'wasm', 'fused', 'fused-nc'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  const isFused = variant.startsWith('fused');
+  const k = await setupPersistKernel({ seed: Number(args.seed ?? 0xb0b), fused: isFused, noCasters: variant === 'fused-nc' });
+  const persist = isFused ? k.persistFused : variant === 'wasm' ? k.persistWasm : k.persistJs;
+  const remember = variant === 'js' ? k.rememberJs : k.rememberWasm;
 
   // Both buffers remembered (the two frames a scene's first emit misses), then six persist frames.
   let checksum = 2166136261;
@@ -255,9 +288,9 @@ async function main() {
   // Normal compiles, not OSR: short calls over the first 64 rows. A 64-row remember leaves 64 as the
   // buffers' count, so both are remembered at full size again before the timed calls.
   let tier = null;
-  if (variant === 'wasm') {
+  if (variant !== 'js') {
     for (let f = 0; f < 2; f++) remember(64);
-    tier = await warmWasm(k.kernel.persistCheck, () => persist(64));
+    tier = await warmWasm(isFused ? k.fused.persist_frame : k.kernel.persistCheck, () => persist(64));
     await warmWasm(k.kernel.persistRemember, () => remember(64));
   } else {
     for (let f = 0; f < 2; f++) remember(64);
@@ -273,7 +306,8 @@ async function main() {
     feature: 'preRender-persist-wasm',
     variant,
     functions: ['PreRenderWorker._type0PersistHit', 'PreRenderWorker._writeType0PosesOnly', 'PreRenderWorker._rememberType0Set',
-      'preRenderEmit.persist_check', 'preRenderEmit.persist_poses', 'preRenderEmit.persist_remember'],
+      'preRenderEmit.persist_check', 'preRenderEmit.persist_poses', 'preRenderEmit.persist_remember',
+      'preRenderPersistFrame.persist_frame'],
     rows: k.count,
     checksum,
     wasmTier: tier,
