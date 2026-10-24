@@ -6,6 +6,8 @@
  * `?sprites=<n>` (default 500 000, the engine's ceiling with 32-bit ids): static sprites on a grid that fills the world.
  * `?view=<share>` (default 0.05): the share of the world, and so of the sprites, the view covers at zoom 1 on a
  * 1920 x 1080 canvas. The spacing follows from the two (smaller sprites overlap; the cull is what is timed).
+ * `?static=1`: the props' type declares `static isStatic = true` (static scenery: pre-render culls it by the cells in
+ * view, E-127); default 0, the linear cull over every sprite.
  *
  * Primary: preRender STEP_MS. Load: VISIBLE_ENTITIES (about sprites x view).
  */
@@ -25,6 +27,7 @@ const param = (name, fallback, ok) => {
 
 export const SPRITE_COUNT = Math.floor(param('sprites', 500000, (n) => Number.isFinite(n) && n >= 1));
 export const VIEW_SHARE = param('view', 0.05, (n) => Number.isFinite(n) && n > 0 && n <= 1);
+export const STATIC_PROPS = param('static', 0, (n) => n === 0 || n === 1) === 1;
 
 const VIEW_W = 1920;
 const VIEW_H = 1080;
@@ -36,11 +39,12 @@ export const WORLD_W = Math.ceil(COLS * SPACING);
 export const WORLD_H = Math.ceil(ROWS * SPACING);
 
 export const stressSceneConfig = {
-  requested: { sprites: SPRITE_COUNT, view: VIEW_SHARE },
+  requested: { sprites: SPRITE_COUNT, view: VIEW_SHARE, static: STATIC_PROPS ? 1 : 0 },
 };
 
 class WorldProp extends WEED.GameObject {
   static components = [WEED.SpriteRenderer];
+  static isStatic = STATIC_PROPS;
 
   onSpawned({ x = 0, y = 0 } = {}) {
     this.setSprite('sprite');
