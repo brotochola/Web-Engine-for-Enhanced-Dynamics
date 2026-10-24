@@ -167,7 +167,7 @@
       "status": "kept-kernel",
       "statusText": "open (found in E-112), 2026-10-23",
       "date": "2026-10-23",
-      "result": "Each queue column starts a line past a boundary: at capacity 32 768 the C emit 2.4x (900.8 -> 2162.0 ops/s, 5/5) and the JS +11.7 %; at Predator's 119 298 +1.4 % / +0.8 %. Component columns not done.",
+      "result": "Each queue column starts a line past a boundary: at capacity 32 768 the C emit 2.4x (900.8 -> 2162.0 ops/s, 5/5) and the JS +11.7 %; at Predator's 119 298 +1.4 % / +0.8 %. The component columns, screened on the collect at 262 144 sprites: -0.7 to +3.3 % (C), -1.0 to +1.9 % (JS); not taken.",
       "area": "engine",
       "kind": "js",
       "refs": [
@@ -177,7 +177,8 @@
       "next": "Each queue column a cache line after the last in renderQueueLayout; measure on a scene at an aliased capacity.",
       "records": [
         "R-0518",
-        "R-0583"
+        "R-0583",
+        "R-0585"
       ]
     },
     {
@@ -13022,6 +13023,18 @@
       "commits": [
         "0318e74f",
         "0ed1cdba"
+      ]
+    },
+    {
+      "id": "R-0585",
+      "date": "2026-10-24",
+      "time": "10:55",
+      "timeFrom": "recorded",
+      "title": "Component columns a line apart, screened on the collect kernel (E-113)",
+      "verdict": "screened",
+      "text": "**Screened, not taken: the component columns.** The question was whether components' columns alias the way the queue's did. At a count that is a multiple of 1 024 they are a multiple of 4 KB apart. The shipped sprite collect was run at 262 144 sprites: each column on its 64-byte boundary, against one line past it, with the bench's `--skew`, the rule E-113 gave the queue. 5 alternating rounds, checksums equal.\n\n| case | wasm aliased | skewed | | won | js aliased | skewed | | won |\n|---|---|---|---|---|---|---|---|---|\n| bunny | 459.4 | 472.1 | +2.8 % | 4/5 | 327.5 | 333.6 | +1.9 % | 3/5 |\n| cull | 283.8 | 286.0 | +0.8 % | 4/5 | 219.8 | 221.2 | +0.6 % | 3/5 |\n| turned | 240.8 | 239.1 | −0.7 % | 2/5 | 201.3 | 203.1 | +0.9 % | 5/5 |\n| predator | 169.7 | 175.3 | +3.3 % | 5/5 | 109.0 | 107.9 | −1.0 % | 3/5 |\n\nA single run each on a machine loaded by an agent had read +12 to +31 %. The sitting does not hold that up.\n\nThe collect mostly reads its columns. The queue's 2.4× came from the emit writing some 20 columns per row. The component layout, and the physics host's mirror of it, stay as they are.\n\nThe knob stays in the bench (24c4191a) for a writing kernel that might show the same thing later.",
+      "commits": [
+        "24c4191a"
       ]
     }
   ],
