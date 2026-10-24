@@ -155,7 +155,7 @@ function heapPass(file, dir, opts) {
 
 /**
  * boot: the scene runs a short window (no trace) in --browser's browser (Chrome by default, `firefox` for
- * Playwright's Firefox), and fails on a nonzero exit or a page error: the check that every scene still starts where
+ * the installed Firefox), and fails on a nonzero exit or a page error: the check that every scene still starts where
  * no JS fallback is left (WASM_HYPOTHESES L7).
  */
 function bootPass(file, dir, opts) {
@@ -169,7 +169,7 @@ function bootPass(file, dir, opts) {
   ], opts);
   const out = `${run.stdout || ''}\n${run.stderr || ''}`;
   fs.writeFileSync(path.join(dir, 'run.log'), out);
-  const error = out.split('\n').find((l) => l.includes('[page error]') || l.includes('Fatal engine error'));
+  const error = out.split('\n').find((l) => /\[(benchmark )?page error\]|Fatal engine error/.test(l));
   if (error) return error.trim().slice(0, 240);
   return run.status === 0 ? '' : failed(run);
 }
