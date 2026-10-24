@@ -247,6 +247,18 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "meshCornersF32",
+      "source": "wasm/test/meshCornersF32.c",
+      "output": "tests/fixtures/wasm/meshCornersF32.wasm",
+      "exports": [
+        "rewrite_corners",
+        "rewrite_corners_f32",
+        "rewrite_corners_f32x4"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
