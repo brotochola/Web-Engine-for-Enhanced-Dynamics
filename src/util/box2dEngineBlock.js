@@ -3,11 +3,14 @@
 // Box2D's heap), the render columns and the spatial grid in one memory. The main thread knows the block's size
 // before any buffer exists (renderQueueBlockBytes, spatialBlockBytes), so it starts the physics worker first,
 // with Box2D's memory grown by the block, asks the host to malloc it, and the shared buffers are then laid in
-// it: the render-queue regions first, the spatial ones after them. Without physics, with wasm.box2dBlock off, or
-// when the block cannot be had, the memories stay separate, as before.
+// it: the render-queue regions first, the spatial ones after them. Without physics the block is a shared memory of
+// its own with the same layout (standaloneBlock), so the kernels that read both parts in one memory (the bullet tick,
+// the visibility gather) run there too. With wasm.box2dBlock off, or when the block cannot be had, the memories stay
+// separate, as before.
 
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
 import { renderQueueBlockBytes, spatialBlockBytes } from './sceneSharedBuffers.js';
+import { NULL_GUARD_BYTES } from './wasmMemoryMap.js';
 
 /** Box2D's module imports at most 32768 pages of 64 KB (2 GB). */
 const BOX2D_MAX_PAGES = 32768;
@@ -34,6 +37,31 @@ export function box2dBlockPlan(scene) {
   if (!(bytes > 0)) return null;
   const pages = pagesFor(bytes);
   return pages <= BOX2D_MAX_PAGES ? { bytes, pages, queueBytes, spatialBytes } : null;
+}
+
+/**
+ * Without physics: the block as a shared memory of its own, laid out as box2dBlockPlan lays Box2D's (the render-queue
+ * part, then the spatial part), after a null guard (a kernel reads offset 0 as a missing column). As scene.box2dBlock
+ * keeps it, or null with physics on, with wasm.box2dBlock off, or when nothing goes in it or it cannot be made.
+ * @returns {null | { memory: WebAssembly.Memory, byte: number, bytes: number, queueBytes: number, spatialByte: number,
+ *   spatialBytes: number, standalone: true }}
+ */
+export function standaloneBlock(scene) {
+  if (scene._physicsEnabled || scene.config.wasm?.box2dBlock === false) return null;
+  const queueBytes = (renderQueueBlockBytes(scene) + 63) & ~63;
+  const base = NULL_GUARD_BYTES;
+  const pagesFor = (bytes) => Math.ceil((base + bytes) / 65536);
+  let spatialBytes = spatialBlockBytes(scene);
+  if (spatialBytes > 0 && pagesFor(queueBytes + spatialBytes) > BOX2D_MAX_PAGES) spatialBytes = 0;
+  const bytes = queueBytes + spatialBytes;
+  if (!(bytes > 0) || pagesFor(bytes) > BOX2D_MAX_PAGES) return null;
+  let memory;
+  try {
+    memory = new WebAssembly.Memory({ initial: pagesFor(bytes), maximum: pagesFor(bytes), shared: true });
+  } catch {
+    return null;
+  }
+  return { memory, byte: base, bytes, queueBytes, spatialByte: base + queueBytes, spatialBytes, standalone: true };
 }
 
 /** The reserved block with its two parts' places (box2dBlockPlan), as scene.box2dBlock keeps it. */

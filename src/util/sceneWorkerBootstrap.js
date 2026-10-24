@@ -16,7 +16,7 @@ import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
 import { installDecalMemory } from './decalMemory.js';
-import { box2dBlockParts, box2dBlockPlan, requestBox2dBlock } from './box2dEngineBlock.js';
+import { box2dBlockParts, box2dBlockPlan, requestBox2dBlock, standaloneBlock } from './box2dEngineBlock.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -634,10 +634,15 @@ async function workerMode() {
 /**
  * Phase 4: start the physics worker before the shared buffers exist, with Box2D's memory grown by the
  * render-queue regions' block, and reserve that block (box2dEngineBlock.js). Sets scene.box2dBlock to
- * { memory, byte, bytes } or null; createSceneWorkers then reuses the worker.
+ * { memory, byte, bytes } or null; createSceneWorkers then reuses the worker. Without physics the block is a memory of
+ * its own, laid out the same way (standaloneBlock), and no worker starts early.
  */
 export async function reserveBox2dBlock(scene) {
   scene.box2dBlock = null;
+  if (!scene._physicsEnabled) {
+    scene.box2dBlock = standaloneBlock(scene);
+    return scene.box2dBlock;
+  }
   const plan = box2dBlockPlan(scene);
   if (!plan) return null;
   const { useInlineWorkers, cacheBust } = await workerMode();

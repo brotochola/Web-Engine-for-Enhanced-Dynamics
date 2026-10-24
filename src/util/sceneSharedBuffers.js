@@ -570,9 +570,11 @@ export function renderQueueMemorySpec(scene) {
   const pools = scene.componentPools || {};
   const n = scene.totalEntityCount;
   const physics = config.physics?.enabled !== false;
-  const inBlock = physics && config.wasm?.box2dBlock !== false && Boolean(pools.RigidBody?.ComponentClass);
-  // W19: the bullet tick reads the pool, Transform, Collider and the spatial grid in Box2D's block, so with
-  // physics its regions ride with these blocks; any pool size and id width (the kernel's _u32 forms).
+  // The engine block: Box2D's with physics (where the bodies' poses are), a memory of its own without (close-out
+  // group B), laid out the same way.
+  const inBlock = config.wasm?.box2dBlock !== false && (!physics || Boolean(pools.RigidBody?.ComponentClass));
+  // W19: the bullet tick reads the pool, Transform, Collider and the spatial grid in the engine block, so its regions
+  // ride with these blocks; any pool size and id width (the kernel's _u32 forms).
   const maxBullets = config.bullet?.maxBullets | 0;
   const bullets = inBlock && config.wasm?.bulletTick !== false && maxBullets > 0
     && spatialPublishSpec(scene) !== null
@@ -583,9 +585,9 @@ export function renderQueueMemorySpec(scene) {
         impacts: config.bullet.maxImpactsPerFrame ?? 64,
       }
     : null;
-  // W2b: the visibility gather reads LightOccluder, Transform, Collider, the bodies' poses and the neighbour rows in
-  // Box2D's block and packs into pre-render's visibility regions placed there (so it needs W2a's sweep): with
-  // physics and raycasted lighting only.
+  // W2b: the visibility gather reads LightOccluder, Transform, Collider, the bodies' poses (with physics) and the
+  // neighbour rows in the engine block and packs into pre-render's visibility regions placed there (so it needs W2a's
+  // sweep): with raycasted lighting.
   const visibility = inBlock && lighting.enabled && lighting.raycasted
     && config.wasm?.visibilitySweep !== false && config.wasm?.visibilityGather !== false
     && Boolean(pools.LightOccluder?.ComponentClass) && Boolean(pools.Collider?.ComponentClass)
@@ -692,7 +694,8 @@ function initializeRenderQueueMemory(scene) {
       ? createRenderQueueMemory(...spec.args, collect, painter, at)
       : null;
   let rqm = null;
-  if (place) for (const [c, p] of shapes(bodies)) if ((rqm = make(c, p, place))) break;
+  // In the block the collect takes its body variant with physics and its own without.
+  if (place) for (const [c, p] of shapes(bodies || own)) if ((rqm = make(c, p, place))) break;
   if (!rqm && spec.enabled) for (const [c, p] of shapes(own)) if ((rqm = make(c, p, null))) break;
   scene.renderQueueMemory = rqm;
   const c = scene.renderQueueMemory?.layout.collect;
