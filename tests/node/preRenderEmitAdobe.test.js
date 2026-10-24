@@ -368,9 +368,12 @@ async function setup({
   };
 
   const queueBytes = new Uint8Array(m.buffer, m.layout.queueAByte, computeBufferSize(maxItems));
+  // What either side may write, and what neither may: the collector, its stash, the persist rows.
   const state = [
     worker.entityFrameIndex, worker.entityFrameAccumulator, worker.entityLastTextureId,
     SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH, a.time, a.playing,
+    worker._renderableType, worker._renderableIndex, worker._renderableY, stash.x, stash.y, stash.rc, stash.rs,
+    ...worker._persistType, ...worker._persistEntity, ...worker._persistFrame, ...worker._persistAnim,
   ];
   const snapshot = () => ({ queue: queueBytes.slice(), state: state.map((v) => v.slice()) });
   const restore = (s) => {
