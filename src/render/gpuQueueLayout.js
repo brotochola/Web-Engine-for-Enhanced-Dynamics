@@ -13,14 +13,16 @@ export const GPU_SPRITE_FLOATS = 15;
 export const GPU_CASTER_LIGHT_FLOAT = GPU_SPRITE_FLOATS + 3;
 export const GPU_CASTER_FLOATS = GPU_CASTER_LIGHT_FLOAT + 4;
 /**
- * E-82b. A plain sprite's row as two streams: its pose (x, y, rotC, rotS, GPU_POSE_FLOATS a row) and its statics
- * (scale, anchor, depth, packed tint, texture, tile terms, GPU_STATIC_FLOATS a row: E-82's static order). Same
- * bytes as the 15-float row.
+ * E-82b. With GPU_FLAG_SPLIT the sprite region holds the same terms in two streams instead of 15-float
+ * rows: the poses first (x, y, rotC, rotS, GPU_POSE_FLOATS a row), then the statics (scale, anchor, depth,
+ * packed tint, texture, tile terms, GPU_STATIC_FLOATS a row: E-82's static order). GPU_HDR_STATIC_GEN is
+ * the queue's staticGen when the statics are those of that generation, else 0, so Pixi uploads the statics
+ * only when it changes. Same bytes as the 15-float rows.
  */
 export const GPU_POSE_FLOATS = 4;
 export const GPU_STATIC_FLOATS = 11;
-export const GPU_HEADER_INTS = 8;
-export const GPU_QUEUE_VERSION = 5;
+export const GPU_HEADER_INTS = 12;
+export const GPU_QUEUE_VERSION = 6;
 
 export const GPU_HDR_SPRITE = 0;
 export const GPU_HDR_GLOW = 1;
@@ -30,8 +32,10 @@ export const GPU_HDR_COOKIE = 4;
 export const GPU_HDR_PARTICLE = 5;
 export const GPU_HDR_FLAGS = 6;
 export const GPU_HDR_VERSION = 7;
+export const GPU_HDR_STATIC_GEN = 8;
 
 export const GPU_FLAG_SORTED = 1;
+export const GPU_FLAG_SPLIT = 2;
 
 export const GPU_SPACE_WORLD = 0;
 export const GPU_SPACE_SCREEN = 1;
@@ -105,6 +109,9 @@ export function createGpuQueueViews(sab, caps, base = 0) {
   const header = new Int32Array(sab, offset, GPU_HEADER_INTS);
   offset += GPU_HEADER_INTS * 4;
   const sprites = regionF32(sab, offset, (c.maxSprites | 0) * GPU_SPRITE_FLOATS);
+  // E-82b: the same region as two streams.
+  const spritePose = regionF32(sab, offset, (c.maxSprites | 0) * GPU_POSE_FLOATS);
+  const spriteStatic = regionF32(sab, spritePose.next, (c.maxSprites | 0) * GPU_STATIC_FLOATS);
   offset = sprites.next;
   const glow = regionF32(sab, offset, (c.maxGlow | 0) * GPU_SPRITE_FLOATS);
   offset = glow.next;
@@ -123,6 +130,9 @@ export function createGpuQueueViews(sab, caps, base = 0) {
     header,
     sprites: sprites.view,
     spritesU32: sprites.u32,
+    spritePose: spritePose.view,
+    spriteStatic: spriteStatic.view,
+    spriteStaticU32: spriteStatic.u32,
     glow: glow.view,
     glowU32: glow.u32,
     sun: sun.view,
@@ -147,6 +157,7 @@ export function clearGpuQueueHeader(header) {
   header[GPU_HDR_PARTICLE] = 0;
   header[GPU_HDR_FLAGS] = 0;
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;
+  header[GPU_HDR_STATIC_GEN] = 0;
 }
 
 export function writeGpuQueueHeader(header, counts, flags) {
@@ -159,6 +170,7 @@ export function writeGpuQueueHeader(header, counts, flags) {
   header[GPU_HDR_PARTICLE] = counts.particle | 0;
   header[GPU_HDR_FLAGS] = flags | 0;
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;
+  header[GPU_HDR_STATIC_GEN] = counts.staticGen | 0;
 }
 
 /**

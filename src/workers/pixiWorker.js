@@ -76,7 +76,9 @@ import {
   GPU_HDR_FLAGS,
   GPU_QUEUE_VERSION,
   GPU_HDR_VERSION,
+  GPU_HDR_STATIC_GEN,
   GPU_FLAG_SORTED,
+  GPU_FLAG_SPLIT,
   createGpuQueueViews,
 } from '../render/gpuQueueLayout.js';
 import {
@@ -1676,14 +1678,21 @@ class PixiRenderer extends AbstractWorker {
       !this.entitiesBatch.poseInterp &&
       !(packedN === 0 && soaN > 0) &&
       (!needOrder || (packedFlags & GPU_FLAG_SORTED)) &&
+      ((packedFlags & GPU_FLAG_SPLIT) === 0 || this.entitiesBatch.split) &&
       this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI
     );
     if (packedOk) {
       this._syncEntityOrder();
       if (layerIsVisible(Layer.entitiesId)) {
-        this.visibleEntityCount = this._commitPackedBatch(
-          this.entitiesBatch, gpu.sprites, packedN, GPU_SPRITE_FLOATS
-        );
+        const batch = this.entitiesBatch;
+        if (!batch.split) {
+          this.visibleEntityCount = this._commitPackedBatch(batch, gpu.sprites, packedN, GPU_SPRITE_FLOATS);
+        } else if (packedFlags & GPU_FLAG_SPLIT) {
+          // E-82b: the two streams, the statics copied when their generation or the row count moved.
+          this.visibleEntityCount = batch.commitSplit(gpu.spritePose, gpu.spriteStatic, packedN, gpu.header[GPU_HDR_STATIC_GEN]);
+        } else {
+          this.visibleEntityCount = batch.commitRowsSplit(gpu.sprites, gpu.spritesU32, packedN);
+        }
       } else {
         this.entitiesBatch.mesh.visible = false;
         this.visibleEntityCount = 0;
@@ -1953,6 +1962,9 @@ class PixiRenderer extends AbstractWorker {
       poseInterp: this._queueInterp,
       data: this._pixiInstanceRows,
       gpuPack: this._pixiGpuPack,
+      // E-82b (wasm.gpuPackSplit): the plain sprites in two streams, the statics uploaded when they change. A
+      // nearest atlas snaps every pose, which neither the kernel nor packSplitRows packs, so it keeps 15-float rows.
+      split: this.config?.wasm?.gpuPackSplit !== false && !this._queueInterp && this.atlasScaleMode !== 'nearest',
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 

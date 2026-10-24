@@ -332,6 +332,8 @@ export type SceneConfig = Record<string, unknown> & {
     gpuPack?: boolean;
     /** The same pack for Pixi's sprite rows, with packGpuSprites 'pixi' and no pose interpolation. Needs gpuPack. */
     pixiPack?: boolean;
+    /** Plain sprites go to the GPU as a pose stream every frame, and their statics only when they change. */
+    gpuPackSplit?: boolean;
     /** Pre-render's emit of sprite and decoration rows (SpriteRenderer, ShadowCaster and the decorations move into the render-queue memory). */
     preRenderEmit?: boolean;
     /**

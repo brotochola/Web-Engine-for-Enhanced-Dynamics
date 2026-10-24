@@ -80,7 +80,7 @@ import {
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
-import { bindGpuPack, packInstancedRowsWasm } from '../render/gpuPackClient.js';
+import { bindGpuPack, packInstancedRowsWasm, packSplitRowsWasm } from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
 import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
@@ -108,6 +108,7 @@ import {
     GPU_SPACE_WORLD,
     GPU_SPACE_SCREEN,
     GPU_FLAG_SORTED,
+    GPU_FLAG_SPLIT,
     createGpuQueueViews,
     clearGpuQueueHeader,
     writeGpuQueueHeader,
@@ -427,6 +428,14 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueType = EMPTY_U8;
         /** The instanced-row pack kernel (E-76 W9), bound when the queues live in the render-queue memory. */
         this._gpuPackWasm = null;
+        // E-82b (wasm.gpuPackSplit): the main sprites go into the GPU queue as a pose stream and a static stream,
+        // the statics written only when the GPU queue buffer does not hold this generation's already. Per GPU
+        // queue buffer: the generation its statics hold (0: none) and their rows; and this frame's split.
+        this._gpuSplit = false;
+        this._gpuStaticGen = new Uint32Array(2);
+        this._gpuStaticRows = new Int32Array(2);
+        this._packSplitUsed = false;
+        this._packSplitGen = 0;
         /** The main queue's painter state (createPainterState's shape), with ySort on and a GPU queue. */
         this._gpuPainter = null;
         /** The painter sort kernel (W10) on pre-render's painter regions of the render-queue memory, when laid out. */
@@ -1013,6 +1022,8 @@ class PreRenderWorker extends AbstractWorker {
                         this._gpuPackWasm = null;
                     }
                 }
+                this._gpuSplit = this._gpuPackWasm !== null && this.config?.wasm?.gpuPackSplit !== false;
+                this._gpuStaticGen.fill(0);
                 // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions.
                 this._stampWasm = null;
                 if (data.renderQueueMemory && data.renderQueueLayout?.stamp && this.config?.wasm?.shadowStamp !== false) {
@@ -4431,9 +4442,15 @@ class PreRenderWorker extends AbstractWorker {
             const dst = this._packDst;
             const cap = this.gpuQueueCaps.maxSprites;
             const ctx = makePackContext(q, opts, cap, this._gpuPackCtx);
-            const n = ctx
-                ? this._packRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, cap, false)
-                : 0;
+            let n = 0;
+            if (ctx) {
+                n = this._gpuSplit ? this._packSpritesSplit(q, ctx, dst, cap) : -1;
+                if (n < 0) {
+                    // 15-float rows: whatever statics this buffer held are gone.
+                    this._gpuStaticGen[this._queueBuf & 1] = 0;
+                    n = this._packRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, cap, false);
+                }
+            }
             this._packParticles = ctx ? (ctx.particleCount | 0) : 0;
             return n;
         };
@@ -4454,17 +4471,46 @@ class PreRenderWorker extends AbstractWorker {
         };
     }
 
+    /**
+     * E-82b: the main sprites as two streams through gpuPack.wasm, the statics only when this GPU queue buffer
+     * does not hold the queue's current generation (renderQueueStaticGen) for the same rows. The glow split's
+     * list (_gpuIdxEntity: the rows that are not glows, in order) follows from the queue's types, which the
+     * generation covers; a painter's order may move with the poses alone, so a sorted frame writes both. -1 when
+     * the kernel does not take the call; the caller then packs 15-float rows and the frame goes without
+     * GPU_FLAG_SPLIT.
+     */
+    _packSpritesSplit(q, ctx, dst, cap) {
+        const slot = this._queueBuf & 1;
+        const genView = this.renderQueueStaticGen;
+        const sorted = ctx.useIndices && ctx.indices !== this._gpuIdxEntity;
+        const gen = !sorted && genView.length ? genView[0] >>> 0 : 0;
+        const scan = ctx.scanCount | 0;
+        const rows = scan < cap ? scan : cap;
+        const current = gen !== 0 && this._gpuStaticGen[slot] === gen && this._gpuStaticRows[slot] === rows;
+        const n = packSplitRowsWasm(this._gpuPackWasm, q, ctx, dst.spritePose, current ? null : dst.spriteStatic, cap);
+        if (n < 0) return -1;
+        this._gpuStaticGen[slot] = gen;
+        this._gpuStaticRows[slot] = n;
+        this._packSplitUsed = true;
+        this._packSplitGen = gen;
+        return n;
+    }
+
     _packGpuSprites(dst, q, allowPainter) {
         const caps = this.gpuQueueCaps;
         const opts = this._gpuPackOpts;
         this._resetGpuPackOpts(opts);
         const count = q.count | 0;
-        const res = this._gpuSpritesResult || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0 });
+        const res = this._gpuSpritesResult
+            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0 });
+        this._packSplitUsed = false;
+        this._packSplitGen = 0;
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
             res.sprite = 0;
             res.glow = 0;
             res.particle = 0;
             res.flags = 0;
+            res.staticGen = 0;
             return res;
         }
         this._bindGpuPackWriters();
@@ -4488,7 +4534,8 @@ class PreRenderWorker extends AbstractWorker {
         res.sprite = packed.sprite;
         res.glow = packed.glow;
         res.particle = this._packParticles | 0;
-        res.flags = packed.flags;
+        res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0);
+        res.staticGen = this._packSplitUsed ? this._packSplitGen : 0;
         return res;
     }
 
@@ -4517,6 +4564,7 @@ class PreRenderWorker extends AbstractWorker {
         counts.stamp = shadows.stamp | 0;
         counts.cookie = shadows.cookie | 0;
         counts.flags = sprites.flags | 0;
+        counts.staticGen = sprites.staticGen | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
         if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
     }

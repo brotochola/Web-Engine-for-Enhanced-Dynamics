@@ -471,6 +471,13 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   pixiPack: true,
   /**
+   * E-82b: plain sprites (no pose interpolation, an atlas that is not nearest) go to the GPU as a pose stream every
+   * frame and a static stream only when the queue's statics change. `gpuPack.wasm` writes both into pre-render's GPU
+   * queue (and Pixi's rows, with pixiPack), and the entity batch uploads them as E-82's pose batch does. false keeps
+   * 15-float rows.
+   */
+  gpuPackSplit: true,
+  /**
    * Pre-render's emit (`preRenderEmit.wasm`, E-112): SpriteRenderer, ShadowCaster and DecorationComponent
    * live in the render-queue memory with the emit's state, so the kernel reads every column there.
    */

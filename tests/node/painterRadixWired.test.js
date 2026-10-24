@@ -23,7 +23,7 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { Query } from '../../src/core/query.js';
 import { computeBufferSize, createViews, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, GPU_HDR_GLOW, GPU_HDR_SPRITE, GPU_SPRITE_FLOATS, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
-import { INSTANCED_SPRITE_FLOATS } from '../../src/render/instancedSpriteBatch.js';
+import { INSTANCED_SPRITE_FLOATS, POSE_STATIC_FLOATS, SPLIT_POSE_FLOATS } from '../../src/render/instancedSpriteBatch.js';
 import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
@@ -353,8 +353,13 @@ async function pixiRun(px, frames, painterRadix) {
     px.updateSpritesFromRenderQueue();
     const nS = px.visibleEntityCount | 0;
     const nG = glowOrder.length;
+    // A split batch (E-82b, wasm.gpuPackSplit) holds the rows as its pose stream and its static stream.
+    const batch = px.entitiesBatch;
+    const sprites = batch.split
+      ? Uint32Array.from([...copyU32(batch.data, nS * SPLIT_POSE_FLOATS), ...copyU32(batch.staticData, nS * POSE_STATIC_FLOATS)])
+      : copyU32(batch.data, nS * INSTANCED_SPRITE_FLOATS);
     out.push({
-      sprites: copyU32(px.entitiesBatch.data, nS * INSTANCED_SPRITE_FLOATS),
+      sprites,
       glow: copyU32(px.entitiesGlowBatch.data, nG * INSTANCED_SPRITE_FLOATS),
       spriteOrder,
       glowOrder,

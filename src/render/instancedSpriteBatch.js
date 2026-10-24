@@ -28,8 +28,14 @@ import {
   instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
-import { packInstancedRows } from './gpuQueueLayout.js';
-import { packInstancedRowsWasm } from './gpuPackClient.js';
+import {
+  GPU_POSE_FLOATS,
+  GPU_STATIC_FLOATS,
+  packInstancedRows,
+  packSplitRows,
+  splitInterleavedRows,
+} from './gpuQueueLayout.js';
+import { packInstancedRowsWasm, packSplitRowsWasm } from './gpuPackClient.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -41,7 +47,11 @@ export const INSTANCED_SPRITE_STRIDE = INSTANCED_SPRITE_FLOATS * 4;
 // only when they change: when the queue's staticGen, the rows packed, the type filter or the screen
 // scale differ from what the static buffer holds. 24 bytes a sprite a frame instead of 68.
 export const POSE_DYN_FLOATS = 6;
-export const POSE_STATIC_FLOATS = 11;
+export const POSE_STATIC_FLOATS = GPU_STATIC_FLOATS;
+// E-82b. A split batch is a plain batch in the same two streams, its pose 4 floats (x, y, rotC, rotS) and
+// the previous xy read from the current one: 16 bytes a sprite on a frame whose statics hold, the same 60
+// as a plain batch on one whose statics change.
+export const SPLIT_POSE_FLOATS = GPU_POSE_FLOATS;
 
 export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
 export const BATCH_DEPTH = Object.freeze({ INDEX: 0 });
@@ -246,11 +256,15 @@ export class InstancedSpriteBatch {
     shadowCast = false,
     data = null,
     gpuPack = null,
+    split = false,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
     this.shadowCast = !!shadowCast && !poseInterp;
-    this._floats = this.poseInterp ? POSE_DYN_FLOATS : INSTANCED_SPRITE_FLOATS;
+    this.split = !!split && !this.poseInterp && !this.shadowCast;
+    // Two streams, a pose and the statics: a pose batch's (E-82) or a split batch's (E-82b).
+    this._twoStreams = this.poseInterp || this.split;
+    this._floats = this.poseInterp ? POSE_DYN_FLOATS : this.split ? SPLIT_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
     if (this.shadowCast) this._floats += 7;
     this._strideBytes = this._floats * 4;
     this.data = new Float32Array(this.capacity * this._floats);
@@ -258,14 +272,22 @@ export class InstancedSpriteBatch {
     // W9d: a plain sprite batch may pack through gpuPack.wasm (`gpuPack`, gpuPackClient.bindGpuPack) into rows
     // of the render-queue memory (`data`); they are copied into `this.data` before the upload, as
     // _commitPackedBatch copies pre-render's. Uploading from the shared rows themselves made every other
-    // worker slower in Predator (E-123: physics +9.5 %, spatial +6.3 %, 4/4).
+    // worker slower in Predator (E-123: physics +9.5 %, spatial +6.3 %, 4/4). A split batch packs the same
+    // region as its two streams, the poses first.
     const shared = !this.poseInterp && !this.shadowCast && data instanceof Float32Array
-      && data.length >= this.capacity * this._floats ? data : null;
+      && data.length >= this.capacity * INSTANCED_SPRITE_FLOATS ? data : null;
     this._sharedRows = shared || new Float32Array(0);
     this._gpuPack = shared && gpuPack ? gpuPack : null;
-    // A pose batch's static stream (E-82): its CPU copy, the key of what it holds, and the version
-    // each ring slot's GPU copy holds (-1: none).
-    this.staticData = new Float32Array(this.poseInterp ? this.capacity * POSE_STATIC_FLOATS : 0);
+    this._sharedPose = shared && this.split ? shared.subarray(0, this.capacity * SPLIT_POSE_FLOATS) : new Float32Array(0);
+    this._sharedStatic = shared && this.split
+      ? new Float32Array(shared.buffer, shared.byteOffset + this.capacity * SPLIT_POSE_FLOATS * 4, this.capacity * POSE_STATIC_FLOATS)
+      : new Float32Array(0);
+    // A split batch's 15-float scratch for the calls packSplitRows does not take, made on the first one.
+    this._splitScratch = new Float32Array(0);
+    this._splitScratchU32 = new Uint32Array(0);
+    // The static stream (E-82): its CPU copy, the key of what it holds, and the version each ring
+    // slot's GPU copy holds (-1: none).
+    this.staticData = new Float32Array(this._twoStreams ? this.capacity * POSE_STATIC_FLOATS : 0);
     this.staticDataU32 = new Uint32Array(this.staticData.buffer);
     this._staticVersion = 0;
     this._slotStaticVersion = [-1, -1];
@@ -280,7 +302,7 @@ export class InstancedSpriteBatch {
       this._makeInstanceBuffer(labelName),
       this._makeInstanceBuffer(labelName + '-ring'),
     ];
-    this._staticBuffers = this.poseInterp
+    this._staticBuffers = this._twoStreams
       ? [this._makeStaticBuffer(labelName + '-static'), this._makeStaticBuffer(labelName + '-static-ring')]
       : null;
     this._geometries = this._buffers.map((buf, r) => this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null));
@@ -394,16 +416,17 @@ export class InstancedSpriteBatch {
   }
 
   _geometryFor(buf, staticBuf) {
-    if (this.poseInterp) {
-      // E-82: the pose stream (24-byte stride) and the static stream (44).
-      const ds = POSE_DYN_FLOATS * 4;
+    if (this._twoStreams) {
+      // E-82: the pose stream (24-byte stride) and the static stream (44). E-82b, a split batch: a 16-byte
+      // pose whose previous xy is the current one (the pose shader's mix at uPoseAlpha 1 gives it back).
+      const ds = this._floats * 4;
       const ss = POSE_STATIC_FLOATS * 4;
       const geometry = new Geometry({
         attributes: {
           aQuad: { buffer: this._quad, format: 'float32x2' },
           aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
           aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
-          aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 16, instance: true },
+          aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: this.poseInterp ? 16 : 0, instance: true },
           aInstScale: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 0, instance: true },
           aInstAnchor: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 8, instance: true },
           aInstDepth: { buffer: staticBuf, format: 'float32', stride: ss, offset: 16, instance: true },
@@ -443,9 +466,10 @@ export class InstancedSpriteBatch {
     const uniforms = {
       uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
     };
-    if (this.poseInterp) {
+    if (this._twoStreams) {
       // Number, not Float32Array. Pixi's WebGL f32 sync compares the value
       // with !==. The same array never looks changed, so the GPU stays at 0.
+      // A split batch keeps 1 (setPoseAlpha leaves it).
       uniforms.uPoseAlpha = { value: 1, type: 'f32' };
     }
     const resources = {
@@ -459,8 +483,8 @@ export class InstancedSpriteBatch {
       fragEntry = 'mainFrag';
     }
     const shaders = this._engineShaders;
-    const spriteSource = this.poseInterp ? shaders?.spritePose : shaders?.sprite;
-    const vertSource = this.poseInterp ? shaders?.spriteVertPose : shaders?.spriteVert;
+    const spriteSource = this._twoStreams ? shaders?.spritePose : shaders?.sprite;
+    const vertSource = this._twoStreams ? shaders?.spriteVertPose : shaders?.spriteVert;
     if (this._useWebGpu) {
       const gpuProgram = instancedSpriteGpuProgram(GpuProgram, spriteSource, fragEntry, name);
       return new Shader({ gpuProgram, resources });
@@ -675,6 +699,7 @@ export class InstancedSpriteBatch {
    */
   upload(q, opts) {
     if (this.poseInterp) return this._uploadPose(q, opts);
+    if (this.split) return this._uploadSplit(q, opts);
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
     // W9d: the kernel packs what packInstancedRows' fast paths pack, bit for bit, and declines (-1)
@@ -729,6 +754,76 @@ export class InstancedSpriteBatch {
     if (!ctx) return 0;
     const out = this._staticsCurrent(q, ctx) ? this._packPoseOnly(q, ctx) : this._packPoseAndStatics(q, ctx);
     return this._finishUpload(out, POSE_DYN_FLOATS * 4);
+  }
+
+  /**
+   * E-82b. A split batch's upload: the pose stream, and the statics when _staticsCurrent says the GPU's are
+   * not this upload's. Through gpuPack.wasm (W9d) when the batch has it and the call is one it packs, else
+   * packSplitRows, else 15-float rows split afterwards. The values are a plain batch's.
+   */
+  _uploadSplit(q, opts) {
+    const ctx = this._beginUpload(q, opts);
+    if (!ctx) return 0;
+    const current = this._staticsCurrent(q, ctx);
+    let out = -1;
+    if (this._gpuPack !== null) {
+      out = packSplitRowsWasm(this._gpuPack, q, ctx, this._sharedPose, current ? null : this._sharedStatic, this.capacity);
+      if (out > 0) {
+        this.data.set(this._sharedPose.subarray(0, out * SPLIT_POSE_FLOATS));
+        if (!current) this.staticData.set(this._sharedStatic.subarray(0, out * POSE_STATIC_FLOATS));
+      }
+    }
+    if (out < 0) out = packSplitRows(q, ctx, this.data, current ? null : this.staticData, this.staticDataU32, this.capacity);
+    if (out < 0) out = this._packSplitFromRows(q, ctx, current);
+    return this._finishUpload(out, SPLIT_POSE_FLOATS * 4);
+  }
+
+  /** The calls packSplitRows does not take (screen space, pixel snap, a type filter): 15-float rows, split. */
+  _packSplitFromRows(q, ctx, current) {
+    const floats = this.capacity * INSTANCED_SPRITE_FLOATS;
+    if (this._splitScratch.length < floats) {
+      this._splitScratch = new Float32Array(floats);
+      this._splitScratchU32 = new Uint32Array(this._splitScratch.buffer);
+    }
+    const rows = this._splitScratch;
+    const rowsU32 = this._splitScratchU32;
+    const out = packInstancedRows(q, ctx, rows, rowsU32, INSTANCED_SPRITE_FLOATS, this.capacity, false);
+    splitInterleavedRows(rows, rowsU32, out, this.data, current ? null : this.staticData, this.staticDataU32);
+    return out;
+  }
+
+  /**
+   * E-82b: commit `count` rows another worker packed in the two streams (pre-render's GPU queue with
+   * GPU_FLAG_SPLIT). `gen` is their statics' generation (0: unknown); the statics are copied only when it
+   * or the row count differs from what this batch holds.
+   */
+  commitSplit(pose, stat, count, gen) {
+    const n = count | 0;
+    const keep = n > this.capacity ? this.capacity : n;
+    if (keep <= 0) return this._finishUpload(0, SPLIT_POSE_FLOATS * 4);
+    const g = gen >>> 0;
+    if (g === 0 || g !== this._stGen || keep !== this._stRows || this._stScale !== 0 || this._stFilter !== 0) {
+      this._stGen = g;
+      this._stRows = keep;
+      this._stScale = 0;
+      this._stFilter = 0;
+      this._staticVersion++;
+      this.staticData.set(stat.subarray(0, keep * POSE_STATIC_FLOATS));
+    }
+    this.data.set(pose.subarray(0, keep * SPLIT_POSE_FLOATS));
+    return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4);
+  }
+
+  /** E-82b: commit `count` 15-float rows into a split batch (a GPU queue frame without GPU_FLAG_SPLIT). */
+  commitRowsSplit(src, srcU32, count) {
+    const n = count | 0;
+    const keep = n > this.capacity ? this.capacity : n;
+    if (keep <= 0) return this._finishUpload(0, SPLIT_POSE_FLOATS * 4);
+    this._stGen = 0;
+    this._stRows = -1;
+    this._staticVersion++;
+    splitInterleavedRows(src, srcU32, keep, this.data, this.staticData, this.staticDataU32);
+    return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4);
   }
 
   /** The pose stream alone: the statics on the GPU are current. A copy of the loop below. */
