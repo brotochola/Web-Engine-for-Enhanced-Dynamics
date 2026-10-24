@@ -95,7 +95,7 @@
         "pack_sprites_scatter",
         "pack_casters_scatter"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "spatialRebuild",
@@ -116,7 +116,7 @@
         "persist_frame",
         "persist_remember"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "shadowStamp",
@@ -125,7 +125,7 @@
       "exports": [
         "stamp_light_range"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "decorationSway",
@@ -134,7 +134,7 @@
       "exports": [
         "sway_decorations"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "decalStamp",
@@ -172,7 +172,7 @@
         "collect_sprites",
         "collect_sprites_turned"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "painterRadix",
