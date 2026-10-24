@@ -197,7 +197,7 @@
         "reinsert_inplace",
         "reinsert_simd_inplace"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "solidSegments",
