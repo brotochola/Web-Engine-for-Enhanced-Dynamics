@@ -1043,6 +1043,7 @@
       changes++;
     }
 
+    // body-create-start
     if (want && !have) {
       if (createBodyForEntity(i)) {
         hasBody[i] = 1;
@@ -1059,7 +1060,7 @@
           views.px[i] = views.x[i];
           views.py[i] = views.y[i];
         }
-      } else {
+      } else if (views.entityActive[i] !== 0 && (views.rbActive[i] !== 0 || views.colActive[i] !== 0)) {
         if (!createFailed[i]) {
           createFailed[i] = 1;
           console.warn('[weedjs-box2d] createBody failed; retry next step', i);
@@ -1069,7 +1070,11 @@
           Atomics.or(bodyDirtyHalves, i >>> 4, 1 << (i & 15));
         }
       }
+      // Otherwise the entity was despawned while this step created its body (createBodyForEntity found no
+      // RigidBody or Collider active): nothing failed and there is nothing to retry; the despawn marks the slot.
+      // SpawnStorm warned 470 times a second here, and the warning was ~23 % of its physics.
     }
+    // body-create-end
     // LIFECYCLE alone = create/destroy above. Extra bits (GEOMETRY / BODY_TYPE /
     // FILTER / …) still need property sync — including the create frame.
     // Spawn swallows markBodyDirty inside withBodyDirtyDeferred, then bumps
