@@ -216,6 +216,8 @@
           // The fatal overlay's text if a worker died during the run (null when none did).
           fatalError: fatalErrorText(),
           wasmRan: { spatialPublish: Boolean(scene.spatialPublish) },
+          // Phase 4: the block of Box2D's memory the render-queue regions sit in, or null (separate memories).
+          box2dBlock: scene.box2dBlock ? { byte: scene.box2dBlock.byte, bytes: scene.box2dBlock.bytes, inBlock: scene.renderQueueMemory?.memory === scene.box2dBlock.memory } : null,
           worldWidth: config.worldWidth,
           worldHeight: config.worldHeight,
           warmupMs: config.warmupMs,
