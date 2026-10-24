@@ -5,7 +5,7 @@
  * WebAssembly.Memory, as Phase 4's block holds them: the bullets, Transform, Collider, the spatial grid (16-bit
  * ids), and the kernel's own regions (the active list and impacts it writes, the returned list, its stamps,
  * results and table). It binds them where the shipped code reads them, so BulletPool.tick runs the JS on the
- * same bytes the kernel reads.
+ * same bytes the kernel reads; `bind` points them back at this world.
  */
 import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { Transform } from '../../src/components/transform.js';
@@ -53,51 +53,55 @@ export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, 
   const v = {};
   for (const [name, Ctor, len] of parts) v[name] = new Ctor(memory.buffer, offsets[name], len);
 
-  const bc = BulletComponent;
-  bc.active = v.bActive;
-  bc.x = v.bX;
-  bc.y = v.bY;
-  bc.prevX = v.bPrevX;
-  bc.prevY = v.bPrevY;
-  bc.vx = v.bVx;
-  bc.vy = v.bVy;
-  bc.speed = v.bSpeed;
-  bc.bulletRotC = v.bRotC;
-  bc.bulletRotS = v.bRotS;
-  bc.damage = v.bDamage;
-  bc.ownerId = v.bOwner;
-  bc.shooterEntityType = v.bShooter;
-  Transform.active = v.tActive;
-  Transform.x = v.tX;
-  Transform.y = v.tY;
-  Transform.rotC = v.tRotC;
-  Transform.rotS = v.tRotS;
-  Collider.active = v.cActive;
-  Collider.shapeType = v.cShape;
-  Collider.collisionLayer = v.cLayer;
-  Collider.offsetX = v.cOffX;
-  Collider.offsetY = v.cOffY;
-  Collider.radius = v.cRadius;
-  Collider.width = v.cWidth;
-  Collider.height = v.cHeight;
-  Collider.polyCount = v.cPolyCount;
-  Collider.fixtureCount = v.cFixtureCount;
-  Collider.polyVertexX = v.cPvx;
-  Collider.polyVertexY = v.cPvy;
-  Collider.polyNormalX = v.cPnx;
-  Collider.polyNormalY = v.cPny;
-  Grid.cellSize = cellSize;
-  Grid.invCellSize = 1 / cellSize;
-  Grid.gridWidth = cols;
-  Grid.gridHeight = rows;
-  Grid.totalCells = cols * rows;
-  Grid.maxEntitiesPerCell = perCell;
-  Grid.cellByteSize = cellByteSize;
-  Grid._cellIdStride = cellByteSize / 2;
-  Grid._headerIds = 2;
-  Grid._gridCounts = v.grid;
-  Grid._gridEntities = new Uint16Array(memory.buffer, offsets.grid, (cols * rows * cellByteSize) / 2);
-  BulletPool.maxCount = bullets;
+  /** Point the components, the grid and the pool at this world (several worlds can share a page). */
+  const bind = () => {
+    const bc = BulletComponent;
+    bc.active = v.bActive;
+    bc.x = v.bX;
+    bc.y = v.bY;
+    bc.prevX = v.bPrevX;
+    bc.prevY = v.bPrevY;
+    bc.vx = v.bVx;
+    bc.vy = v.bVy;
+    bc.speed = v.bSpeed;
+    bc.bulletRotC = v.bRotC;
+    bc.bulletRotS = v.bRotS;
+    bc.damage = v.bDamage;
+    bc.ownerId = v.bOwner;
+    bc.shooterEntityType = v.bShooter;
+    Transform.active = v.tActive;
+    Transform.x = v.tX;
+    Transform.y = v.tY;
+    Transform.rotC = v.tRotC;
+    Transform.rotS = v.tRotS;
+    Collider.active = v.cActive;
+    Collider.shapeType = v.cShape;
+    Collider.collisionLayer = v.cLayer;
+    Collider.offsetX = v.cOffX;
+    Collider.offsetY = v.cOffY;
+    Collider.radius = v.cRadius;
+    Collider.width = v.cWidth;
+    Collider.height = v.cHeight;
+    Collider.polyCount = v.cPolyCount;
+    Collider.fixtureCount = v.cFixtureCount;
+    Collider.polyVertexX = v.cPvx;
+    Collider.polyVertexY = v.cPvy;
+    Collider.polyNormalX = v.cPnx;
+    Collider.polyNormalY = v.cPny;
+    Grid.cellSize = cellSize;
+    Grid.invCellSize = 1 / cellSize;
+    Grid.gridWidth = cols;
+    Grid.gridHeight = rows;
+    Grid.totalCells = cols * rows;
+    Grid.maxEntitiesPerCell = perCell;
+    Grid.cellByteSize = cellByteSize;
+    Grid._cellIdStride = cellByteSize / 2;
+    Grid._headerIds = 2;
+    Grid._gridCounts = v.grid;
+    Grid._gridEntities = new Uint16Array(memory.buffer, offsets.grid, (cols * rows * cellByteSize) / 2);
+    BulletPool.maxCount = bullets;
+  };
+  bind();
 
   /** Insert entity e into every cell its box (centre, half extents) overlaps, as the spatial workers do. */
   const insert = (e, cx, cy, half, halfY = half) => {
@@ -116,7 +120,7 @@ export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, 
     }
   };
   return {
-    memory, views: v, offsets, insert,
+    memory, views: v, offsets, insert, bind,
     layout: {
       tableByte: offsets.table, resultsByte: offsets.results, returnedByte: offsets.returned,
       stampByte: offsets.stamp, bullets, entities,
