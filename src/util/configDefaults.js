@@ -483,10 +483,16 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   preRenderEmitAdobe: true,
   /**
-   * Pre-render's sprite collect (`preRenderCollect.wasm`, W4b) in a scene without physics: Transform, its pose and
-   * Collider in the render-queue memory with the emit's SpriteRenderer (so it needs preRenderEmit).
+   * Pre-render's sprite collect (`preRenderCollect.wasm`, W4b): Transform, its pose and Collider in the render-queue
+   * memory with the emit's SpriteRenderer (so it needs preRenderEmit); with physics, in Box2D's block with RigidBody
+   * and the published poses (so it needs box2dBlock).
    */
   preRenderCollect: true,
+  /**
+   * The bullet tick (`bulletTick.wasm`, W19): the pool walk and its linecasts in one call per frame, with physics,
+   * on Box2D's block (the pool, Transform, Collider and the spatial grid there; needs box2dBlock and spatialPublish).
+   */
+  bulletTick: true,
   /** The shadow-caster stamp (`shadowStamp.wasm`, E-114): its scratch and light table in the render-queue memory. */
   shadowStamp: true,
   /**

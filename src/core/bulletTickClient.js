@@ -5,6 +5,7 @@
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { ShapeType } from '../box2d/box2dConstants.js';
+import { BULLET_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
 
 // Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
 const wasmUrl = new URL('./bulletTick.wasm', import.meta.url);
@@ -23,6 +24,7 @@ export const BULLET_TICK_SLOTS = [
   'gGrid', 'gStamp', 'gGen',
 ];
 const SLOT = Object.fromEntries(BULLET_TICK_SLOTS.map((name, k) => [name, k]));
+if (BULLET_TICK_SLOTS.length > BULLET_TABLE_SLOTS) throw new Error('bulletTick: the column table outgrew its region');
 
 // The kernel's shape numbers.
 if (ShapeType.Box !== 0 || ShapeType.Circle !== 1 || ShapeType.Polygon !== 2 || ShapeType.Chain !== 3) {

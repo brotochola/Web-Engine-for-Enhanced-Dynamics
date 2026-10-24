@@ -148,6 +148,21 @@ function collectLayout(r, collect) {
     listByte: r.collectList.byte,
     tableByte: r.collectTable.byte,
     resultsByte: r.collectResults.byte,
+    // W19: the bullet tick's regions (bindBulletTick's layout), or null.
+    bullets: collect.bullets
+      ? {
+          bullets: collect.bullets.bullets | 0,
+          entities: collect.bullets.entities | 0,
+          impacts: collect.bullets.impacts | 0,
+          componentByte: r.bulletComponent.byte,
+          activeByte: r.bulletActive.byte,
+          impactsByte: r.bulletImpacts.byte,
+          returnedByte: r.bulletReturned.byte,
+          stampByte: r.bulletStamp.byte,
+          tableByte: r.bulletTable.byte,
+          resultsByte: r.bulletResults.byte,
+        }
+      : null,
   };
 }
 

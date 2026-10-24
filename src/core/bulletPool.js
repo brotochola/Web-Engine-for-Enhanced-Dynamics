@@ -385,6 +385,7 @@ export class BulletPool extends SharedAtomicPool {
 
   static reset() {
     super.reset();
+    this._wasm = null;
     this._warnedPoolExhausted = false;
     this._warnedMissingTextures.clear();
   }

@@ -424,7 +424,10 @@ function initializeBulletBuffers(scene) {
   if (maxBullets <= 0) return;
 
   const bulletBufferSize = BulletComponent.getBufferSize(maxBullets);
-  buffers.componentData.BulletComponent = new SharedArrayBuffer(bulletBufferSize);
+  // W19: in Box2D's block when the bullet tick's regions are there (renderQueueMemorySpec), else a buffer of its own.
+  const bulletBlock = scene.renderQueueMemory?.layout.collect?.bullets;
+  if (bulletBlock) buffers.componentDataByte.BulletComponent = bulletBlock.componentByte;
+  buffers.componentData.BulletComponent = bulletBlock ? scene.renderQueueMemory.buffer : new SharedArrayBuffer(bulletBufferSize);
   BulletComponent.initializeArrays(buffers.componentData.BulletComponent, maxBullets, buffers.componentDataByte?.BulletComponent | 0);
   BulletComponent.bulletCount = maxBullets;
 
@@ -556,14 +559,27 @@ export function renderQueueMemorySpec(scene) {
   const pools = scene.componentPools || {};
   const n = scene.totalEntityCount;
   const physics = config.physics?.enabled !== false;
-  const collect = config.wasm?.preRenderCollect !== false && emit && emit.spriteBytes > 0
-    && pools.Transform?.ComponentClass
-    && (!physics || (config.wasm?.box2dBlock !== false && pools.RigidBody?.ComponentClass))
+  const inBlock = physics && config.wasm?.box2dBlock !== false && Boolean(pools.RigidBody?.ComponentClass);
+  // W19: the bullet tick reads the pool, Transform, Collider and the spatial grid in Box2D's block, so with
+  // physics its regions ride with these blocks; a 16-bit pool only (its lists are u16).
+  const maxBullets = config.bullet?.maxBullets | 0;
+  const bullets = inBlock && config.wasm?.bulletTick !== false && maxBullets > 0 && maxBullets <= 65535
+    && spatialPublishSpec(scene) !== null
+    ? {
+        bullets: maxBullets,
+        entities: n,
+        componentBytes: BulletComponent.getBufferSize(maxBullets),
+        impacts: config.bullet.maxImpactsPerFrame ?? 64,
+      }
+    : null;
+  const wantsCollect = config.wasm?.preRenderCollect !== false && Boolean(emit) && emit.spriteBytes > 0;
+  const collect = (wantsCollect || bullets) && pools.Transform?.ComponentClass && (!physics || inBlock)
     ? {
         entities: n,
         transformBytes: Transform.getBufferSize(n),
         colliderBytes: pools.Collider?.ComponentClass ? Collider.getBufferSize(n) : 0,
         rigidBodyBytes: physics ? RigidBody.getBufferSize(n) : 0,
+        bullets,
       }
     : null;
   // W10: the painter sort's state for the worker that sorts the main queue (preRender.sortSprites, which the

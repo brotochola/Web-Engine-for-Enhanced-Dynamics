@@ -339,8 +339,10 @@ export type SceneConfig = Record<string, unknown> & {
      * (AdobeAnimComponent and the assets' tables move into the render-queue memory; preRender.adobeTablesMB). Needs preRenderEmit.
      */
     preRenderEmitAdobe?: boolean;
-    /** Pre-render's sprite collect, in scenes with physics off (Transform and Collider move into the render-queue memory). */
+    /** Pre-render's sprite collect (Transform and Collider move into the render-queue memory; with physics, into Box2D's). */
     preRenderCollect?: boolean;
+    /** The bullet tick and its linecasts in one WASM call per frame (physics scenes: the pool moves into Box2D's memory). */
+    bulletTick?: boolean;
     /** The painter sort of the main sprite queue, in the worker preRender.sortSprites names (its state in the render-queue memory). */
     painterRadix?: boolean;
     /** The particle worker's decal stamping (the decal tiles live in a WebAssembly.Memory of their own). */

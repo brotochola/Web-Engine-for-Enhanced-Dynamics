@@ -230,6 +230,20 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'collectTable', owner: 'pre-render', bytes: COLLECT_TABLE_SLOTS * 4 },
       { name: 'collectResults', owner: 'pre-render', bytes: 16 },
     );
+    // W19: with physics, the bullet pool's block and the bullet tick's regions too (bulletTickClient.js): the
+    // active list (u16) and the impact records it writes, the slots it returns, its ray stamps, table, results.
+    const b = collect.bullets;
+    if (b) {
+      regions.push(
+        { name: 'bulletComponent', owner: 'every worker (BulletComponent)', bytes: b.componentBytes | 0 },
+        { name: 'bulletActive', owner: 'particle', bytes: ((b.bullets | 0) + 1) * 2 },
+        { name: 'bulletImpacts', owner: 'particle', bytes: (b.impacts | 0) * 6 * 4 },
+        { name: 'bulletReturned', owner: 'particle', bytes: (b.bullets | 0) * 4 },
+        { name: 'bulletStamp', owner: 'particle', bytes: (b.entities | 0) * 4 },
+        { name: 'bulletTable', owner: 'particle', bytes: BULLET_TABLE_SLOTS * 4 },
+        { name: 'bulletResults', owner: 'particle', bytes: 16 },
+      );
+    }
   }
   if (painter) {
     // W10: a painter state per worker that sorts; Pixi's and pre-render's are apart, they may sort at once.
@@ -291,6 +305,9 @@ export function painterStateLayout(regions, prefix, rows) {
 
 /** Room for the collect kernel's column table (preRenderCollectClient.js COLLECT_SLOTS). */
 export const COLLECT_TABLE_SLOTS = 64;
+
+/** Room for the bullet tick's column table (bulletTickClient.js BULLET_TICK_SLOTS). */
+export const BULLET_TABLE_SLOTS = 48;
 
 /** The decorations the sway kernel lets through its early continues at a time (its chunk list). */
 export const SWAY_LIST_CAP = 1024;

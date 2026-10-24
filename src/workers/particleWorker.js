@@ -47,6 +47,7 @@ import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
 import { bindDecorationSway, writeSwayColumns } from './decorationSwayClient.js';
+import { bindBulletTick } from '../core/bulletTickClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
 import { bindDecalStamp, flushDecalStamps } from './decalStampClient.js';
 import {
@@ -606,6 +607,18 @@ class ParticleWorker extends AbstractWorker {
           console.warn('[particle] decorationSway.wasm did not load; swaying in JS', err);
           this._swayWasm = null;
         }
+      }
+    }
+
+    // W19: the bullet tick in WASM, when the pool, Transform, Collider and the grid share Box2D's block.
+    BulletPoolImport._wasm = null;
+    const bulletLayout = data.renderQueueLayout?.collect?.bullets || null;
+    if (bulletLayout && data.renderQueueMemory && this.maxBullets > 0 && this.config?.wasm?.bulletTick !== false) {
+      try {
+        BulletPoolImport._wasm = await bindBulletTick(data.renderQueueMemory, bulletLayout);
+      } catch (err) {
+        console.warn('[particle] bulletTick.wasm did not load; bullets tick in JS', err);
+        BulletPoolImport._wasm = null;
       }
     }
 

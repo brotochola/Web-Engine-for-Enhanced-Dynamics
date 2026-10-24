@@ -199,3 +199,47 @@ test('the block plan sizes the spatial part after the render-queue part', () => 
   assert.ok(withSpatial.spatialBytes > 0);
   assert.equal(withSpatial.bytes, withSpatial.queueBytes + withSpatial.spatialBytes);
 });
+
+test('W19: with physics the bodies part carries the bullet tick regions, for a 16-bit pool with the spatial grid', async () => {
+  const { renderQueueMemorySpec } = await import('../../src/util/sceneSharedBuffers.js');
+  const { Transform } = await import('../../src/components/transform.js');
+  const { RigidBody } = await import('../../src/components/rigidBody.js');
+  const { WASM_DEFAULTS } = await import('../../src/util/configDefaults.js');
+  assert.equal(WASM_DEFAULTS.bulletTick, true);
+  const scene = (over = {}) => ({
+    _physicsEnabled: true,
+    totalEntityCount: 1000,
+    componentPools: { Transform: { ComponentClass: Transform }, RigidBody: { ComponentClass: RigidBody } },
+    config: {
+      physics: { enabled: true, wasmMemoryMB: 64 },
+      wasm: over.wasm || {},
+      renderer: { maxVisibleRenderables: 500 },
+      lighting: { enabled: false, shadowsEnabled: false },
+      decoration: { maxDecorations: 0 },
+      particle: {},
+      preRender: {},
+      bullet: { maxBullets: over.maxBullets ?? 4000, maxImpactsPerFrame: 128 },
+      worldWidth: 4096,
+      worldHeight: 4096,
+      spatial: { numberOfSpatialWorkers: over.spatial ?? 1, cellSize: 128, maxNeighbors: 16, maxEntitiesPerCell: 32 },
+    },
+  });
+  const b = renderQueueMemorySpec(scene()).collect?.bullets;
+  assert.ok(b, 'no sprites to collect, yet the bodies part is laid for the bullets');
+  assert.equal(b.bullets, 4000);
+  assert.equal(b.impacts, 128);
+  assert.equal(renderQueueMemorySpec(scene({ wasm: { bulletTick: false } })).collect, null, 'the switch off');
+  assert.equal(renderQueueMemorySpec(scene({ maxBullets: 70000 })).collect, null, 'a 32-bit pool keeps the JS');
+  assert.equal(renderQueueMemorySpec(scene({ spatial: 0 })).collect, null, 'no spatial grid, no cast');
+  assert.equal(renderQueueMemorySpec(scene({ wasm: { box2dBlock: false } })).collect, null, 'no block');
+
+  const args = [500, 500 * 64, 4096, null, null, null, false];
+  const withBullets = { entities: 1000, transformBytes: 3000, colliderBytes: 64000, rigidBodyBytes: 80000, bullets: b };
+  const memory = new WebAssembly.Memory({ initial: 256, maximum: 256, shared: true });
+  const placed = createRenderQueueMemory(...args, withBullets, null, { memory, baseByte: 65536 });
+  const l = placed.layout.collect.bullets;
+  for (const key of ['componentByte', 'activeByte', 'impactsByte', 'returnedByte', 'stampByte', 'tableByte', 'resultsByte']) {
+    assert.ok(l[key] >= 65536 && l[key] % 64 === 0, key);
+  }
+  assert.ok(l.impactsByte >= l.activeByte + (4000 + 1) * 2 && l.returnedByte >= l.impactsByte + 128 * 24);
+});
