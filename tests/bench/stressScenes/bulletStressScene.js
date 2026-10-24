@@ -9,6 +9,14 @@ const INTERIOR = 240;
 const WALL = 48;
 const WORLD_W = 4000;
 const WORLD_H = 3000;
+/** ?physics=0: no physics worker; the walls and props are colliders without bodies (the bullets still hit them). */
+const PHYSICS = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('physics') !== '0';
+  } catch {
+    return true;
+  }
+})();
 
 /** Dense in-world bullets: walls so they die inside, driver keeps the pool full. */
 export class BulletStressScene extends Scene {
@@ -29,6 +37,7 @@ export class BulletStressScene extends Scene {
       staggeredUpdates: false,
     },
     physics: {
+      enabled: PHYSICS,
       subStepCount: 1,
       noLimitFPS: false,
       gravity: { x: 0, y: 0 },
