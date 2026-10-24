@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { MovedBody } from './movedBodies/movedBody.js';
+import { MovedBody, MovedTicker } from './movedBodies/movedBody.js';
 
 const { Scene, Camera } = WEED;
 
@@ -8,8 +8,33 @@ export const STILL_COUNT = 60000;
 const COLS = 220;
 const SPACING = 40;
 
-function stillConfig(spatialExtra, physicsExtra) {
-  const rows = Math.ceil(STILL_COUNT / COLS);
+function queryInt(name, fallback, max) {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get(name);
+    if (raw === null) return fallback;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), max) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** MovedBodiesStillScene only. `?bodies=N`: bodies in the lattice (default 60 000; 16-bit ids, so at most 65 000). */
+export const STILL_BODIES = queryInt('bodies', STILL_COUNT, 65000) || STILL_COUNT;
+/**
+ * MovedBodiesStillScene only. `?moverEvery=N`: every Nth body is dynamic and moves along its row
+ * every tick (a teleport, so in physics' moved list each step), the rest stay static: 20 is 5 %
+ * awake. 0 (the default) keeps all of them static.
+ */
+export const STILL_MOVER_EVERY = queryInt('moverEvery', 0, 1000000);
+const STILL_MOVERS = STILL_MOVER_EVERY > 0 ? Math.ceil(STILL_BODIES / STILL_MOVER_EVERY) : 0;
+
+export const stressSceneConfig = {
+  requested: { bodies: STILL_BODIES, moverEvery: STILL_MOVER_EVERY },
+};
+
+function stillConfig(spatialExtra, physicsExtra, count = STILL_COUNT) {
+  const rows = Math.ceil(count / COLS);
   const worldW = COLS * SPACING + 400;
   const worldH = rows * SPACING + 400;
   return {
@@ -42,29 +67,34 @@ function stillConfig(spatialExtra, physicsExtra) {
   };
 }
 
-function placeStill(scene, visualRange) {
+function placeStill(scene, visualRange, count = STILL_COUNT, moverEvery = 0) {
   const start = 200;
-  for (let i = 0; i < STILL_COUNT; i++) {
+  const maxX = scene.config.worldWidth - 200;
+  for (let i = 0; i < count; i++) {
     const col = i % COLS;
     const row = (i / COLS) | 0;
-    MovedBody.spawn({
-      x: start + col * SPACING,
-      y: start + row * SPACING,
-      dynamic: false,
-      visualRange,
-      radius: 8,
-    });
+    const x = start + col * SPACING;
+    const y = start + row * SPACING;
+    if (moverEvery > 0 && i % moverEvery === 0) {
+      MovedTicker.spawn({ x, y, dynamic: true, visualRange, radius: 8, vx: 4, minX: start, maxX });
+    } else {
+      MovedBody.spawn({ x, y, dynamic: false, visualRange, radius: 8 });
+    }
   }
   Camera.centerOn(scene.config.worldWidth * 0.5, scene.config.worldHeight * 0.5);
   Camera.setZoom(0.2);
 }
 
+/** `?bodies=` and `?moverEvery=` (above) set its size and its awake share (E-126's owner pair). */
 export class MovedBodiesStillScene extends Scene {
-  static config = stillConfig(null);
+  // A teleport is a command: room for a few ticks of them before physics drains the ring.
+  static config = stillConfig(null, STILL_MOVERS > 0 ? { commandRingCapacity: 4 * STILL_MOVERS + 4096 } : null, STILL_BODIES);
   static assets = { textures: { ball: '/demos/img/bola.png' } };
-  static entities = [[MovedBody, STILL_COUNT]];
+  static entities = STILL_MOVERS > 0
+    ? [[MovedBody, STILL_BODIES - STILL_MOVERS], [MovedTicker, STILL_MOVERS]]
+    : [[MovedBody, STILL_BODIES]];
   create() {
-    placeStill(this, 0);
+    placeStill(this, 0, STILL_BODIES, STILL_MOVER_EVERY);
   }
 }
 
