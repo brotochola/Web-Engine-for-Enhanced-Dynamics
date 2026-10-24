@@ -44,6 +44,7 @@ test('a key finds a row by its whole title or by a whole token of it, wherever t
     '**Pixi\'s sprite pack through gpuPack.wasm, W9d (2026-10-23):** **rejected.** Text.',
     '### E-82b The split upload — **open**',
     '### E-82 The upload diet — **KEPT**',
+    '- [x] **M13** — found 2026-10-23. **The gate flagged drifts.** Text.',
   ].join('\n');
   const rows = docRows(doc);
   const lineOf = (key) => findRows(rows, key).map((r) => r.line);
@@ -53,6 +54,7 @@ test('a key finds a row by its whole title or by a whole token of it, wherever t
   assert.deepEqual(lineOf('E-82'), [9], 'E-82 is not a token of E-82b');
   assert.deepEqual(lineOf('E-82b'), [8]);
   assert.deepEqual(lineOf('Hypothesis'), [1]);
+  assert.deepEqual(lineOf('M13'), [10], 'a review item is named by its bold id');
   // Rows above a row do not change its key.
   const moved = docRows('**New row, E-123 (2026-10-24):** text.\n' + doc);
   assert.deepEqual(findRows(moved, 'W9d').map((r) => r.line), [8]);

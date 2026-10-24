@@ -10,7 +10,7 @@
  * The JSON is the registry; the page is built from it and the docs when you want to read it, and is
  * not committed. An entry's refs name rows, not lines: `HYPOTHESIS_LOG.md#W9d` is the one row of
  * the log whose title is `W9d` or holds it as a whole token (a row's title is a table row's first
- * cell, a bold lead before `:**`, or a heading), so a row keeps its ref however many rows go in
+ * cell, a bold lead before `:**`, a heading, or a review item's bold id), so a row keeps its ref however many rows go in
  * above it. A key is an id, or the start of the title when the id alone finds several. The page resolves
  * each ref to its line and shows the row; tests/node/hypothesesRegistry.test.js fails when a ref
  * finds no row or several.
@@ -43,6 +43,10 @@ function rowTitle(line) {
     if (close >= 0) t = t.slice(0, close);
   } else if (/^#{1,4} /.test(line)) {
     t = line.replace(/^#{1,4} /, '');
+  } else {
+    // A review item: `- [x] **M13** — ...`.
+    const item = /^- \[[ x]\] \*\*([^*]+)\*\*/.exec(line);
+    if (item) t = item[1];
   }
   return normalizeTitle(t);
 }
