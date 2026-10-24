@@ -183,13 +183,19 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
     );
   }
   if (collect) {
-    // W4b: in a scene without physics, Transform's state block and its pose (the Weed pose buffer: x, y,
-    // rotation, rotC, rotS), Collider, and the collect kernel's list, table and results, so the kernel reads
-    // every column the sprite collect reads.
+    // W4b: Transform's state block, Collider, and the collect kernel's list, table and results, so the kernel
+    // reads every column the sprite collect reads. In a scene without physics Transform's pose too (the Weed
+    // pose buffer: x, y, rotation, rotC, rotS). With physics (Phase 4: the regions are a block of Box2D's
+    // memory, where Transform's pose already is), RigidBody's block and the two published pose buffers instead
+    // (x, y, rotC, rotS each, the physics host's publishPose).
     const e = collect.entities | 0;
+    const bodies = (collect.rigidBodyBytes | 0) > 0;
     regions.push(
       { name: 'transform', owner: 'every worker (Transform)', bytes: collect.transformBytes | 0 },
-      { name: 'transformPose', owner: 'logic writes; every worker reads (Transform pose)', bytes: e * 5 * 4 },
+      { name: 'transformPose', owner: 'logic writes; every worker reads (Transform pose)', bytes: bodies ? 0 : e * 5 * 4 },
+      { name: 'rigidBody', owner: 'every worker (RigidBody)', bytes: collect.rigidBodyBytes | 0 },
+      { name: 'bodyPoseA', owner: 'physics publishes; every worker reads', bytes: bodies ? e * 16 : 0 },
+      { name: 'bodyPoseB', owner: 'physics publishes; every worker reads', bytes: bodies ? e * 16 : 0 },
       { name: 'collider', owner: 'every worker (Collider)', bytes: collect.colliderBytes | 0 },
       { name: 'collectList', owner: 'pre-render', bytes: e * 4 },
       { name: 'collectTable', owner: 'pre-render', bytes: COLLECT_TABLE_SLOTS * 4 },

@@ -145,6 +145,9 @@ export class AbstractWorker {
     this.poseSync = null;
     this.poseBuffers = [null, null];
     this.poseCapacity = 0;
+    // Phase 4: Box2D's memory's buffer when the render-queue regions are a block of it, so Transform's pose
+    // (Box2D's heap) is bound on the same buffer as the regions and a kernel finds both in one memory.
+    this._box2dHeap = null;
     this._poseX = null;
     this._poseY = null;
     this._poseRotC = null;
@@ -504,6 +507,9 @@ export class AbstractWorker {
     setAssertRotCSUnit(!!this.config.debug?.assertRotCSUnit);
 
     this._bindPosePublish(data.posePublish);
+    this._box2dHeap = data.renderQueueLayout?.inBox2dBlock && data.renderQueueMemory
+      ? data.renderQueueMemory.buffer
+      : null;
 
     // Boot: query/explode throw if no WASM worker. Not a per-tick gate.
     Box2d.physicsWorkerAbsent = data.config?.physics?.enabled === false;
@@ -1129,15 +1135,17 @@ export class AbstractWorker {
     this.poseCapacity = n;
     this.poseSync = new Int32Array(pose.sync);
     const sabs = [pose.dataA, pose.dataB];
+    const bytes = [pose.dataAByte | 0, pose.dataBByte | 0];
     // 4 channels: x,y,rotC,rotS - must mirror weedjsPost.js bindPosePublish
-    // (physics-worker-side writer of this same SAB layout).
+    // (physics-worker-side writer of this same SAB layout), from each buffer's byte.
     for (let i = 0; i < 2; i++) {
       const sab = sabs[i];
+      const at = bytes[i];
       this.poseBuffers[i] = {
-        x: new Float32Array(sab, 0, n),
-        y: new Float32Array(sab, n * 4, n),
-        rotC: new Float32Array(sab, n * 8, n),
-        rotS: new Float32Array(sab, n * 12, n),
+        x: new Float32Array(sab, at, n),
+        y: new Float32Array(sab, at + n * 4, n),
+        rotC: new Float32Array(sab, at + n * 8, n),
+        rotS: new Float32Array(sab, at + n * 12, n),
       };
     }
     bindPoseSlotBuffers(pose);
@@ -1502,7 +1510,8 @@ export class AbstractWorker {
    */
   handleCustomMessage(data) {
     if (data?.msg === 'box2dReady' && data.channelOffsets) {
-      bindBox2dHotFields(data);
+      // The same memory as the posted heap: its offsets hold there (Box2D's memory does not grow).
+      bindBox2dHotFields(this._box2dHeap ? { ...data, sab: this._box2dHeap } : data);
       if (data.commandSab) {
         bindCommandRing(data.commandSab);
       }

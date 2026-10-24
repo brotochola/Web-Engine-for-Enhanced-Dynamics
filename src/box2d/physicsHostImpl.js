@@ -268,9 +268,11 @@
     return { type: typeOrSpec, length: 1 };
   }
 
-  function bindSchema(buffer, count, schema) {
+  // byte: where the block starts in buffer (a region of Box2D's block, Phase 4; 64-aligned, so each field
+  // aligns as it does from 0), as the components' initializeArrays take it.
+  function bindSchema(buffer, count, schema, byte) {
     var views = {};
-    var offset = 0;
+    var offset = byte | 0;
     var names = Object.keys(schema);
     for (var i = 0; i < names.length; i++) {
       var name = names[i];
@@ -713,6 +715,8 @@
         ? {
           dataA: state.posePublish.dataA,
           dataB: state.posePublish.dataB,
+          dataAByte: state.posePublish.dataAByte | 0,
+          dataBByte: state.posePublish.dataBByte | 0,
           sync: state.posePublish.sync,
           capacity: state.posePublish.capacity | 0,
         }
@@ -998,20 +1002,25 @@
       throw new Error('[physics_host] init missing Transform/RigidBody/Collider buffers');
     }
 
+    // Each block's byte in its buffer: a region of the render-queue memory (Phase 4: Box2D's block), else 0.
+    var componentByte = buffers.componentDataByte || {};
     state.transform = bindSchema(
       componentData.Transform,
       state.globalEntityCount,
       TRANSFORM_SCHEMA,
+      componentByte.Transform,
     );
     state.rigidBody = bindSchema(
       componentData.RigidBody,
       state.globalEntityCount,
       RIGIDBODY_SCHEMA,
+      componentByte.RigidBody,
     );
     state.collider = bindSchema(
       componentData.Collider,
       state.globalEntityCount,
       COLLIDER_SCHEMA,
+      componentByte.Collider,
     );
 
     var lfMax = data.liquidFunMaxCount | 0;

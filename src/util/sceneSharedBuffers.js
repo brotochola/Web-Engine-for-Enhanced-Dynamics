@@ -526,17 +526,20 @@ export function renderQueueMemorySpec(scene) {
   // pack kernel, on rows of its own in this memory.
   const pixiPack = pack && config.wasm?.pixiPack !== false && config.preRender?.packGpuSprites === 'pixi'
     && config.renderer?.interpolation !== true;
-  // W4b: in a scene without physics, Transform (its state block and its pose) and Collider too, next to the
-  // emit's SpriteRenderer, so the sprite collect kernel reads every column there. With physics on, the pose is
-  // in Box2D's heap: Phase 4.
+  // W4b: Transform (its state block and, without physics, its pose) and Collider too, next to the emit's
+  // SpriteRenderer, so the sprite collect kernel reads every column there. With physics the pose is in Box2D's
+  // heap, so these blocks, RigidBody's and the published pose buffers go only in Box2D's block (Phase 4).
   const pools = scene.componentPools || {};
   const n = scene.totalEntityCount;
+  const physics = config.physics?.enabled !== false;
   const collect = config.wasm?.preRenderCollect !== false && emit && emit.spriteBytes > 0
-    && config.physics?.enabled === false && pools.Transform?.ComponentClass
+    && pools.Transform?.ComponentClass
+    && (!physics || (config.wasm?.box2dBlock !== false && pools.RigidBody?.ComponentClass))
     ? {
         entities: n,
         transformBytes: Transform.getBufferSize(n),
         colliderBytes: pools.Collider?.ComponentClass ? Collider.getBufferSize(n) : 0,
+        rigidBodyBytes: physics ? RigidBody.getBufferSize(n) : 0,
       }
     : null;
   return {
@@ -550,11 +553,11 @@ export function renderQueueMemorySpec(scene) {
 
 /**
  * The bytes the render-queue regions take in a block of Box2D's memory (Phase 4), 0 when the scene makes no
- * render-queue memory. The collect blocks are never in it: they exist only without physics.
+ * render-queue memory. The collect's blocks are in it when the spec has them (with physics, its body variant).
  */
 export function renderQueueBlockBytes(scene) {
   const spec = renderQueueMemorySpec(scene);
-  return spec.enabled ? renderQueueMemoryBytes(...spec.args, null) : 0;
+  return spec.enabled ? renderQueueMemoryBytes(...spec.args, spec.collect) : 0;
 }
 
 function initializeRenderQueueMemory(scene) {
@@ -566,15 +569,19 @@ function initializeRenderQueueMemory(scene) {
   const make = (withCollect, place = null) => createRenderQueueMemory(...spec.args, withCollect, place);
   // Phase 4: in the block physics reserved in Box2D's memory when there is one and the regions fit it (they
   // were sized from the same spec); else a memory of its own. A scene whose collect blocks would not fit keeps
-  // the memory without them (and the JS collect).
+  // the memory without them (and the JS collect). The collect's body variant goes only in the block: outside
+  // Box2D's memory the kernel could not read Transform's pose.
   const block = scene.box2dBlock;
-  const inBlock = block && spec.enabled && renderQueueMemoryBytes(...spec.args, null) <= block.bytes
-    ? make(null, { memory: block.memory, baseByte: block.byte })
-    : null;
-  scene.renderQueueMemory = inBlock || (spec.enabled ? (spec.collect && make(spec.collect)) || make(null) : null);
+  const bodies = spec.collect && spec.collect.rigidBodyBytes > 0 ? spec.collect : null;
+  const fits = (withCollect) => renderQueueMemoryBytes(...spec.args, withCollect) <= block.bytes;
+  const place = block && spec.enabled ? { memory: block.memory, baseByte: block.byte } : null;
+  const inBlock = place ? (bodies && fits(bodies) && make(bodies, place)) || (fits(null) && make(null, place)) || null : null;
+  const own = spec.collect && !bodies ? spec.collect : null;
+  scene.renderQueueMemory = inBlock || (spec.enabled ? (own && make(own)) || make(null) : null);
   const c = scene.renderQueueMemory?.layout.collect;
   if (c) {
     if (c.transformByte >= 0) buffers.componentDataByte.Transform = c.transformByte;
+    if (c.rigidBodyByte >= 0) buffers.componentDataByte.RigidBody = c.rigidBodyByte;
     if (c.colliderByte >= 0) buffers.componentDataByte.Collider = c.colliderByte;
   }
   const e = scene.renderQueueMemory?.layout.emit;
@@ -676,11 +683,23 @@ function initializeLightingAndRenderBuffers(scene) {
   buffers.gpuQueueDataAByte = rqm ? rqm.layout.gpuAByte : 0;
   buffers.gpuQueueDataBByte = rqm ? rqm.layout.gpuBByte : 0;
 
-  // Physics pose publish (post-step snapshot for visuals) — SoA x,y,rotC,rotS × 2 buffers
+  // Physics pose publish (post-step snapshot for visuals) — SoA x,y,rotC,rotS × 2 buffers. Phase 4: two
+  // regions of Box2D's block when the collect's body variant is there (each with its byte), else buffers.
   const poseN = scene.totalEntityCount;
   const poseBufBytes = poseN * 4 * 4;
-  buffers.poseDataA = new SharedArrayBuffer(Math.max(poseBufBytes, 12));
-  buffers.poseDataB = new SharedArrayBuffer(Math.max(poseBufBytes, 12));
+  const posePlace = rqm?.layout.collect;
+  if (posePlace && posePlace.bodyPoseAByte >= 0 && posePlace.bodyPoseBByte >= 0) {
+    buffers.poseDataA = rqm.buffer;
+    buffers.poseDataB = rqm.buffer;
+    buffers.poseDataAByte = posePlace.bodyPoseAByte;
+    buffers.poseDataBByte = posePlace.bodyPoseBByte;
+  } else {
+    buffers.poseDataA = new SharedArrayBuffer(Math.max(poseBufBytes, 12));
+    buffers.poseDataB = new SharedArrayBuffer(Math.max(poseBufBytes, 12));
+    buffers.poseDataAByte = 0;
+    buffers.poseDataBByte = 0;
+  }
+  buffers.poseCapacity = poseN;
   buffers.poseSync = new SharedArrayBuffer(8);
   new Int32Array(buffers.poseSync)[0] = 0;
   new Int32Array(buffers.poseSync)[1] = 0;

@@ -25,8 +25,9 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
  * @param {null | { decorations: number, buckets: number }} [sway] the sway's regions too (with emit's decorations)
  * @param {boolean} [pixiPack] Pixi's plain sprite rows and pack scratch too (W9d), one row per queue row
- * @param {null | { entities: number, transformBytes: number, colliderBytes: number }} [collect] the sprite collect's
- *   blocks too (W4b): Transform, its pose, Collider and the kernel's scratch
+ * @param {null | { entities: number, transformBytes: number, colliderBytes: number, rigidBodyBytes?: number }} [collect]
+ *   the sprite collect's blocks too (W4b): Transform, its pose, Collider and the kernel's scratch; with
+ *   rigidBodyBytes (physics, in Box2D's block) RigidBody and the published pose buffers instead of the pose
  * @param {null | { memory: WebAssembly.Memory, baseByte: number }} [place] lay the regions in that memory from
  *   baseByte (Phase 4: a block of Box2D's memory) instead of making a memory of their own
  * @returns {null | { memory: WebAssembly.Memory, buffer: SharedArrayBuffer, layout: Record<string, any> }}
@@ -63,6 +64,8 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         tableByte: r.packTables.byte,
         tableSlots: GPU_PACK_TABLE_SLOTS,
         particlesByte: r.packResults.byte,
+        // Phase 4: the regions are a block of Box2D's memory, so Transform's pose in Box2D's heap is in it too.
+        inBox2dBlock: Boolean(place),
         emit: emit ? emitLayout(r, emit.entities | 0, n) : null,
         stamp: stamp ? stampLayout(r, stamp) : null,
         sway: sway ? swayLayout(r, sway) : null,
@@ -120,7 +123,10 @@ function collectLayout(r, collect) {
   return {
     entities: collect.entities | 0,
     transformByte: block(r.transform),
-    poseByte: r.transformPose.byte,
+    poseByte: block(r.transformPose),
+    rigidBodyByte: block(r.rigidBody),
+    bodyPoseAByte: block(r.bodyPoseA),
+    bodyPoseBByte: block(r.bodyPoseB),
     colliderByte: block(r.collider),
     listByte: r.collectList.byte,
     tableByte: r.collectTable.byte,

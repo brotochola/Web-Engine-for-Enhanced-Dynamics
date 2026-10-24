@@ -140,13 +140,16 @@ export class DebugCanvas {
       return;
     }
     const sabs = [buffers.poseDataA, buffers.poseDataB];
+    // Each buffer's byte: a region of Box2D's block (Phase 4), else 0.
+    const bytes = [buffers.poseDataAByte | 0, buffers.poseDataBByte | 0];
     for (let i = 0; i < 2; i++) {
       const sab = sabs[i];
+      const at = bytes[i];
       this._poseBuffers[i] = {
-        x: new Float32Array(sab, 0, n),
-        y: new Float32Array(sab, n * 4, n),
-        rotC: new Float32Array(sab, n * 8, n),
-        rotS: new Float32Array(sab, n * 12, n),
+        x: new Float32Array(sab, at, n),
+        y: new Float32Array(sab, at + n * 4, n),
+        rotC: new Float32Array(sab, at + n * 8, n),
+        rotS: new Float32Array(sab, at + n * 12, n),
       };
     }
   }

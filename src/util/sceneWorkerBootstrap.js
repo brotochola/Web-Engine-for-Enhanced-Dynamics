@@ -349,6 +349,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     posePublish: {
       dataA: scene.buffers.poseDataA,
       dataB: scene.buffers.poseDataB,
+      // Each buffer's byte: a region of Box2D's block (Phase 4), else 0.
+      dataAByte: scene.buffers.poseDataAByte | 0,
+      dataBByte: scene.buffers.poseDataBByte | 0,
       sync: scene.buffers.poseSync,
       capacity: scene.poseCapacity || scene.totalEntityCount,
     },
