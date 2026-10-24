@@ -253,12 +253,15 @@ export class InstancedSpriteBatch {
     this._floats = this.poseInterp ? POSE_DYN_FLOATS : INSTANCED_SPRITE_FLOATS;
     if (this.shadowCast) this._floats += 7;
     this._strideBytes = this._floats * 4;
-    // W9d: a plain sprite batch may take its rows from the render-queue memory, where gpuPack.wasm
-    // writes them; `gpuPack` is that kernel's binding (gpuPackClient.bindGpuPack).
+    this.data = new Float32Array(this.capacity * this._floats);
+    this.dataU32 = new Uint32Array(this.data.buffer);
+    // W9d: a plain sprite batch may pack through gpuPack.wasm (`gpuPack`, gpuPackClient.bindGpuPack) into rows
+    // of the render-queue memory (`data`); they are copied into `this.data` before the upload, as
+    // _commitPackedBatch copies pre-render's. Uploading from the shared rows themselves made every other
+    // worker slower in Predator (E-123: physics +9.5 %, spatial +6.3 %, 4/4).
     const shared = !this.poseInterp && !this.shadowCast && data instanceof Float32Array
       && data.length >= this.capacity * this._floats ? data : null;
-    this.data = shared || new Float32Array(this.capacity * this._floats);
-    this.dataU32 = new Uint32Array(this.data.buffer, this.data.byteOffset, this.data.length);
+    this._sharedRows = shared || new Float32Array(0);
     this._gpuPack = shared && gpuPack ? gpuPack : null;
     // A pose batch's static stream (E-82): its CPU copy, the key of what it holds, and the version
     // each ring slot's GPU copy holds (-1: none).
@@ -677,9 +680,11 @@ export class InstancedSpriteBatch {
     // W9d: the kernel packs what packInstancedRows' fast paths pack, bit for bit, and declines (-1)
     // the rest.
     let out = this._gpuPack !== null
-      ? packInstancedRowsWasm(this._gpuPack, q, ctx, this.data, this._floats, this.capacity, this.shadowCast)
+      ? packInstancedRowsWasm(this._gpuPack, q, ctx, this._sharedRows, this._floats, this.capacity, this.shadowCast)
       : -1;
-    if (out < 0) {
+    if (out > 0) {
+      this.data.set(this._sharedRows.subarray(0, out * this._floats));
+    } else if (out < 0) {
       out = packInstancedRows(
         q,
         ctx,

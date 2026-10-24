@@ -96,7 +96,8 @@ function batches(s) {
   const wasm = new InstancedSpriteBatch({ ...opts, data: s.rows, gpuPack: s.pack });
   const js = new InstancedSpriteBatch(opts);
   for (const b of [...wasm._buffers, ...js._buffers]) b.update = () => {};
-  assert.equal(wasm.data, s.rows, 'the batch packs into the shared rows');
+  assert.equal(wasm._sharedRows, s.rows, 'the kernel packs into the shared rows');
+  assert.ok(!(wasm.data.buffer instanceof SharedArrayBuffer), 'and the upload reads a private copy (E-123)');
   return { wasm, js };
 }
 
@@ -134,5 +135,6 @@ test('a pose batch and a caster batch keep their own rows', async () => {
   const s = await setup(7);
   const pose = new InstancedSpriteBatch({ capacity: N, label: 'p', useWebGpu: false, shaders, poseInterp: true, data: s.rows, gpuPack: s.pack });
   assert.notEqual(pose.data, s.rows);
+  assert.equal(pose._sharedRows.length, 0);
   assert.equal(pose._gpuPack, null);
 });
