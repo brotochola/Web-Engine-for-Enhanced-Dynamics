@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
@@ -546,7 +546,12 @@ async function main() {
   watchdog.unref();
 
   try {
-    if (requestedChannel === 'chromium') {
+    if (cliArgs.browser === 'firefox') {
+      // --browser firefox: Playwright's Firefox (PLAYWRIGHT_BROWSERS_PATH says where it is installed). No Chrome
+      // flags; tracing and the window watch are Chrome's (CDP) and are skipped there.
+      browserChannel = 'firefox';
+      browser = await firefox.launch({ headless: !headed });
+    } else if (requestedChannel === 'chromium') {
       browserChannel = 'chromium';
       browser = await chromium.launch(launchOptions);
     } else {
@@ -557,6 +562,11 @@ async function main() {
       browserChannel = requestedChannel || 'chrome';
     }
   } catch (chromeError) {
+    // A Firefox run never falls back to Chromium: its numbers would be Chrome's.
+    if (cliArgs.browser === 'firefox') {
+      await server.close();
+      throw new Error(`Unable to launch Playwright's Firefox (PLAYWRIGHT_BROWSERS_PATH): ${chromeError.message}`);
+    }
     try {
       browserChannel = 'chromium';
       browser = await chromium.launch(launchOptions);

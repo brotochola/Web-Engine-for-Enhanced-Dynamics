@@ -669,6 +669,8 @@ async function main() {
       // The camera zoom the runner sets (min, or a number): adobeAnimateScene draws all 10 000
       // characters only at the minimum zoom, and saturates pre-render there.
       ...(args['camera-zoom'] ? ['--camera-zoom', String(args['camera-zoom'])] : []),
+      // --browser firefox: both sides in Playwright's Firefox (PLAYWRIGHT_BROWSERS_PATH), not Chrome.
+      ...(args.browser ? ['--browser', String(args.browser)] : []),
     ],
   };
   const scene = resolveScene(args);
