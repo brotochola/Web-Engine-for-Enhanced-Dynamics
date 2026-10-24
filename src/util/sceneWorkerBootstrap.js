@@ -440,6 +440,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     // E-76 W9: the render-queue memory, for pre-render's pack kernel.
     renderQueueMemory: scene.renderQueueMemory?.memory || null,
     renderQueueLayout: scene.renderQueueMemory?.layout || null,
+    // W14: the navigation memory (the nav buffer and the flowfield's scratch), for the particle worker.
+    navigationMemory: scene.navigationMemory?.memory || null,
+    navigationLayout: scene.navigationMemory?.layout || null,
   };
 }
 

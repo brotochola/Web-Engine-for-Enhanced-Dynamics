@@ -193,6 +193,42 @@ export const EMIT_MAX_FRAMES = 65536;
 export const EMIT_TABLE_SLOTS = 96;
 
 /**
+ * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its
+ * header at byte 0 of the buffer it is given, so this memory starts with the nav buffer and has no guard
+ * (no table slot is 0: the walkability is at byte 32). After it, the particle worker's flowfield scratch:
+ * - state: a byte per cell (wall, settled, grid edges), dist (u16) and dir (u8) per cell;
+ * - next, prev: the distance buckets' lists (i32 per cell); head: the buckets' heads (i32, 65 536 at most:
+ *   NavScratch.maxDistance is capped at 65 535);
+ * - sums: the smoothing's row sums (u32 per cell); quotient: its rounded quotients (NAV_QUOTIENT_BYTES);
+ * - vectors: the smoothed Int8 pairs the slot is filled from; table: the kernel's column table.
+ * @param {number} navBytes NavGrid.calculateSABSize(...)
+ * @param {number} cells gridWidth * gridHeight
+ */
+export function navigationMemoryRegions(navBytes, cells) {
+  const n = cells | 0;
+  return layoutRegions([
+    { name: 'nav', owner: 'every worker (NavGrid); the particle worker writes the slots', bytes: navBytes | 0 },
+    { name: 'state', owner: 'particle', bytes: n },
+    { name: 'dist', owner: 'particle', bytes: n * 2 },
+    { name: 'dir', owner: 'particle', bytes: n },
+    { name: 'next', owner: 'particle', bytes: n * 4 },
+    { name: 'prev', owner: 'particle', bytes: n * 4 },
+    { name: 'head', owner: 'particle', bytes: NAV_MAX_BUCKETS * 4 },
+    { name: 'sums', owner: 'particle', bytes: n * 4 },
+    { name: 'quotient', owner: 'particle', bytes: NAV_QUOTIENT_BYTES },
+    { name: 'vectors', owner: 'particle', bytes: n * 2 },
+    { name: 'table', owner: 'particle', bytes: NAV_TABLE_SLOTS * 4 },
+  ]);
+}
+
+/** The flowfield's distance buckets: NavScratch.maxDistance + 1 at most. */
+export const NAV_MAX_BUCKETS = 65536;
+/** navFlowfield.c's QUOTIENT_BYTES: the 19 x 10 (sum, count) pairs of the smoothing. */
+export const NAV_QUOTIENT_BYTES = 190;
+/** Room for the flowfield kernel's column table (navFlowfieldClient.js FLOWFIELD_SLOTS). */
+export const NAV_TABLE_SLOTS = 16;
+
+/**
  * The particle memory (E-79 `particleIntegrate.wasm`, E-80 `particleLists.wasm`, created by
  * particleMemory.js). The ParticleComponent lays its columns out from byte 0 of its buffer in every
  * worker (Component.initializeArrays), so this memory starts with the component and has no guard:

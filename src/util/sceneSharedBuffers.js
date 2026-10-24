@@ -2,6 +2,7 @@ import { debugWorkerLog } from './debugLog.js';
 import { createSpatialPublishMemory } from './spatialPublishMemory.js';
 import { createParticleMemory } from './particleMemory.js';
 import { createRenderQueueMemory } from './renderQueueMemory.js';
+import { createNavigationMemory } from './navigationMemory.js';
 import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -685,7 +686,12 @@ function initializeNavigationAndQueryBuffers(scene) {
     const gridHeight = Math.ceil(config.worldHeight / navConfig.cellSize);
     const navBufferSize = NavGrid.calculateSABSize(navConfig, gridWidth, gridHeight);
 
-    buffers.navigationData = new SharedArrayBuffer(navBufferSize);
+    // W14: the nav buffer at byte 0 of a WebAssembly.Memory, the flowfield kernel's scratch after it; every
+    // worker views the buffer as it views a plain one.
+    scene.navigationMemory = config.wasm?.navFlowfield !== false
+      ? createNavigationMemory(navBufferSize, gridWidth * gridHeight)
+      : null;
+    buffers.navigationData = scene.navigationMemory ? scene.navigationMemory.buffer : new SharedArrayBuffer(navBufferSize);
     NavGrid.writeHeader(buffers.navigationData, navConfig, gridWidth, gridHeight);
 
     const walkabilityOffset = 32;

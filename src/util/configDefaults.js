@@ -450,6 +450,11 @@ export const WASM_DEFAULTS = Object.freeze({
    * next to the decorations block the emit puts there (so it needs preRenderEmit), with a sway bucket grid.
    */
   decorationSway: true,
+  /**
+   * The particle worker's flowfield search (`navFlowfield.wasm`, W14): the nav buffer at byte 0 of a
+   * WebAssembly.Memory, the search's scratch after it.
+   */
+  navFlowfield: true,
 });
 
 // ============================================================================
