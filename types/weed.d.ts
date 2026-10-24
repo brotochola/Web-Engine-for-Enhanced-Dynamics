@@ -315,6 +315,8 @@ export type SceneConfig = Record<string, unknown> & {
     pixiPack?: boolean;
     /** Pre-render's sprite collect, in scenes with physics off (Transform and Collider move into the render-queue memory). */
     preRenderCollect?: boolean;
+    /** The particle worker's decal stamping (the decal tiles live in a WebAssembly.Memory of their own). */
+    decalStamp?: boolean;
     /** Pixi's mesh corner rewrite for MESH layers (the meshes and the mesh batches live in one WebAssembly.Memory). */
     meshCorners?: boolean;
   };

@@ -138,13 +138,12 @@
     },
     {
       "name": "decalStamp",
-      "source": "wasm/test/decalStamp.c",
-      "output": "tests/fixtures/wasm/decalStamp.wasm",
+      "source": "wasm/decalStamp.c",
+      "output": "src/workers/decalStamp.wasm",
       "exports": [
         "stamp_tiles"
       ],
-      "maxMemoryPages": 8192,
-      "test": true
+      "maxMemoryPages": 8192
     },
     {
       "name": "meshCorners",

@@ -46,6 +46,7 @@ import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
 import { bindDecorationSway, writeSwayColumns, TRIG_IMPULSE } from './decorationSwayClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
+import { bindDecalStamp, flushDecalStamps } from './decalStampClient.js';
 import {
   getColliderBounds as getColliderBoundsImport,
   getCellRange as getCellRangeImport,
@@ -397,6 +398,8 @@ class ParticleWorker extends AbstractWorker {
     // W14: navFlowfield.wasm on the navigation memory, or null (the JS search).
     this._flowWasm = null;
     this.flowfieldRequests = null;
+    /** W26: the decal stamp kernel, bound when the tiles live in the decal memory; stamps queue as records. */
+    this._decalWasm = null;
     this.pathRequests = null;
     this._pathRequestTmp = { key: 0, fromCell: 0, toCell: 0 };
     this.gridWidth = 0;
@@ -600,7 +603,9 @@ class ParticleWorker extends AbstractWorker {
       this.decalsTilesY = data.decals.tilesY;
       this.decalsTotalTiles = data.decals.totalTiles;
 
-      this.decalsTilesRGBA = new Uint8ClampedArray(data.decals.tilesRGBA);
+      // The tiles' bytes only: with W26 their buffer is the decal memory, the kernel's scratch after them.
+      this.decalsTilesRGBA = new Uint8ClampedArray(
+        data.decals.tilesRGBA, 0, data.decals.totalTiles * data.decals.tilePixelSize * data.decals.tilePixelSize * 4);
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
       Decal.bindStampRing(data.decals.stampRing || data.buffers?.decalStampRing || null);
       Decal.bindStampApply(this.stampParticleToTile.bind(this));
@@ -611,7 +616,23 @@ class ParticleWorker extends AbstractWorker {
             width: textureData.width,
             height: textureData.height,
             rgba: new Uint8ClampedArray(textureData.rgba),
+            // W26: the texture's copy in the decal memory, -1 without one.
+            wasmByte: -1,
           };
+        }
+      }
+      // W26: the stamps through decalStamp.wasm, when the tiles are the decal memory.
+      this._decalWasm = null;
+      if (data.decals.memory && data.decals.memoryLayout && this.config?.wasm?.decalStamp !== false) {
+        try {
+          this._decalWasm = await bindDecalStamp(data.decals.memory, data.decals.memoryLayout, this.decalsTilesX, this.decalsTilesY);
+          for (const [textureId, placed] of Object.entries(this._decalWasm.textures)) {
+            const texture = this.decalTextures[textureId];
+            if (texture) texture.wasmByte = placed.byte;
+          }
+        } catch (err) {
+          console.warn('[PARTICLE WORKER] decalStamp.wasm did not load; stamping decals in JS', err);
+          this._decalWasm = null;
         }
       }
       // console.log('[PARTICLE WORKER] Decals system initialized');
@@ -808,6 +829,8 @@ class ParticleWorker extends AbstractWorker {
     const ringStamps = Decal.drainStampRing((x, y, tint, scaleX, scaleY, textureId, alpha, blendMode) => {
       this.stampParticleToTile(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode);
     });
+    // W26: the frame's stamps, queued as records, in one kernel call.
+    this.flushDecalStamps();
     this.particlesStampedThisFrame += ringStamps;
     if (shouldProfile) {
       this.decalStampTimeThisFrame += performance.now() - startTime;
@@ -1255,6 +1278,30 @@ class ParticleWorker extends AbstractWorker {
   stampParticleToTile(worldX, worldY, tint, scaleX, scaleY, textureId, alpha, blendMode) {
     const texture = this.decalTextures[textureId];
     if (!texture) return;
+    // W26: a record for decalStamp.wasm (written here, so no double crosses a call), stamped at the flush.
+    const b = this._decalWasm;
+    if (b !== null) {
+      if (texture.wasmByte >= 0) {
+        if (b.count === b.maxStamps) this.flushDecalStamps();
+        const n = b.count;
+        const f = n << 3;
+        const u = n << 4;
+        b.f64[f] = worldX;
+        b.f64[f + 1] = worldY;
+        b.f64[f + 2] = scaleX;
+        b.f64[f + 3] = scaleY;
+        b.f64[f + 4] = alpha;
+        b.u32[u + 10] = tint;
+        b.u32[u + 11] = blendMode === 1 ? 1 : 0;
+        b.u32[u + 12] = texture.wasmByte;
+        b.u32[u + 13] = texture.width;
+        b.u32[u + 14] = texture.height;
+        b.count = n + 1;
+        return;
+      }
+      // A texture the memory does not hold stamps in JS, after the records before it.
+      if (b.count > 0) this.flushDecalStamps();
+    }
 
     const p = this._stampArgs;
     p.worldX = worldX;
@@ -1275,6 +1322,13 @@ class ParticleWorker extends AbstractWorker {
     p.decalsTilesY = this.decalsTilesY;
     p.decalsResolution = this.decalsResolution;
     Decal.stampToTileBuffers(p);
+  }
+
+  /** W26: stamp the records queued since the last flush (stampParticleToTile) and set their tiles dirty. */
+  flushDecalStamps() {
+    const b = this._decalWasm;
+    if (b === null || b.count === 0) return 0;
+    return flushDecalStamps(b, this.decalsTilesDirty, this.decalsTileSize, this.decalsResolution);
   }
 
   // ========================================

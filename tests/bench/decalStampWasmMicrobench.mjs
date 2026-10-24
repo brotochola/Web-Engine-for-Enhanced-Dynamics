@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W26): the particle worker's decal stamping in WASM (wasm/test/decalStamp.c, a test module,
- * tests/fixtures/wasm/decalStamp.wasm) against the shipped Decal.stampToTileBuffers, on the stamps
+ * Kernel (E-76 W26): the particle worker's decal stamping in WASM (wasm/decalStamp.c, src/workers/decalStamp.wasm)
+ * against the shipped Decal.stampToTileBuffers, on the stamps
  * decalStampStressScene makes: DecalStampDriver's 768 seeded Decal.stamp calls a tick (blood.png, 32 × 32;
  * scale 0.4–2, alpha 0.4–1, a random tint, every third one multiply) on a 1920 × 1080 world, decalsTileSize
  * 256 at resolution 0.5: 8 × 5 tiles of 128 px.
  *
  *   js           ParticleWorker.stampParticleToTile → Decal.stampToTileBuffers (shipped), once per drained
  *                stamp, on a real particle worker
- *   wasm         stamp_tiles, one call per frame, after each drained stamp is written into a 64-byte record
- *                with its texture's offset and size (looked up by id, as stampParticleToTile looks it up),
- *                as a product wrapper would
+ *   wasm         the same worker with decalStamp.wasm bound: stampParticleToTile writes each drained stamp as
+ *                a 64-byte record, flushDecalStamps stamps the frame's records in one call
  *   wasm-scalar  the same call with the kernel's scalar loop forced (the JS pixel loop line for line)
  *
  * The stamps reach the particle worker through the stamp ring, so x, y, scale and alpha arrive as float32:
@@ -32,14 +31,13 @@ import zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 
 import { Decal } from '../../src/core/decal.js';
-import { loadWasmKernel } from '../../src/util/wasmKernel.js';
-import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
+import { createDecalMemory } from '../../src/util/decalMemory.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-export const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'tests/fixtures/wasm/decalStamp.wasm'));
+export const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/workers/decalStamp.wasm'));
 
 /** decalStamp.c's table, slot for slot. */
 export const DECAL_SLOTS = ['tiles', 'dirty', 'tilesX', 'tilesY', 'tilePixels', 'stamps', 'columns', 'columnsCap', 'flags'];
@@ -191,21 +189,13 @@ function drainedFrames(frames) {
 export async function setupDecalKernel({ flags = 0 } = {}) {
   const blood = bloodTexture();
   const tileBytes = TOTAL_TILES * TILE_PIXELS * TILE_PIXELS * 4;
-  // The tiles first: every worker views them from byte 0 of the buffer (particle, Pixi, getColor, saves).
-  const layout = layoutRegions([
-    { name: 'tiles', owner: 'particle writes; Pixi, main and logic read', bytes: tileBytes },
-    { name: 'dirty', owner: 'particle sets; Pixi claims', bytes: TOTAL_TILES },
-    { name: 'texture', owner: 'particle, read only', bytes: blood.rgba.length },
-    { name: 'stamps', owner: 'particle', bytes: STAMPS_PER_TICK * STAMP_BYTES },
-    { name: 'columns', owner: 'particle', bytes: columnBytes(TILE_PIXELS) },
-    { name: 'table', owner: 'particle', bytes: DECAL_SLOTS.length * 4 },
-  ]);
-  const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
-  const buffer = memory.buffer;
-  const R = layout.regions;
-  if (R.tiles.byte !== 0) throw new Error('the tiles must start at byte 0');
+  const textures = { [BLOOD]: { width: blood.width, height: blood.height, rgba: blood.rgba.slice().buffer } };
+  // The decal memory as the scene makes it (installDecalMemory): the tiles from byte 0, as every worker views
+  // them, then the kernel's scratch and the texture.
+  const m = createDecalMemory({ totalTiles: TOTAL_TILES, tilePixelSize: TILE_PIXELS, textures });
+  if (!m) throw new Error('the decal memory does not fit');
 
-  // The particle worker as the scene starts it, decals on: it binds the ring, the atlas and its stamp apply.
+  // The particle worker as the scene starts it, decals on: the ring, the atlas, its stamp apply and the kernel.
   const ring = Decal.createStampRingSab();
   const worker = await loadWorker('particleWorker.js', 'particleWorker');
   await initWorker(worker, {
@@ -213,9 +203,10 @@ export async function setupDecalKernel({ flags = 0 } = {}) {
       worldWidth: WORLD_W,
       worldHeight: WORLD_H,
       particle: { decals: true, decalsTileSize: TILE_SIZE, decalsResolution: RESOLUTION, decalsTilePixelSize: TILE_PIXELS },
+      wasm: { decalStamp: true },
     },
     globalEntityCount: 16,
-    buffers: { decalStampRing: ring, decalsTilesRGBA: buffer },
+    buffers: { decalStampRing: ring, decalsTilesRGBA: m.buffer },
     extra: {
       decals: {
         enabled: true,
@@ -225,70 +216,33 @@ export async function setupDecalKernel({ flags = 0 } = {}) {
         tilesX: TILES_X,
         tilesY: TILES_Y,
         totalTiles: TOTAL_TILES,
-        tilesRGBA: buffer,
+        tilesRGBA: m.buffer,
         tilesDirty: new SharedArrayBuffer(TOTAL_TILES),
         stampRing: ring,
-        textures: { [BLOOD]: { width: blood.width, height: blood.height, rgba: blood.rgba.slice().buffer } },
+        textures,
+        memory: m.memory,
+        memoryLayout: m.layout,
       },
     },
   });
-  // The worker's views on the memory's regions: the JS and the kernel stamp the same bytes.
-  worker.decalsTilesRGBA = new Uint8ClampedArray(buffer, R.tiles.byte, tileBytes);
-  worker.decalsTilesDirty = new Uint8Array(buffer, R.dirty.byte, TOTAL_TILES);
-  const texture = worker.decalTextures[BLOOD];
-  texture.rgba = new Uint8ClampedArray(buffer, R.texture.byte, blood.rgba.length);
-  texture.rgba.set(blood.rgba);
+  const kernel = worker._decalWasm;
+  if (!kernel) throw new Error('the worker did not bind decalStamp.wasm');
+  kernel.table[DECAL_SLOTS.indexOf('flags')] = flags;
 
   const fx = drainedFrames(FRAMES);
 
-  const t = new Uint32Array(buffer, R.table.byte, DECAL_SLOTS.length);
-  const put = (slot, v) => { t[DECAL_SLOTS.indexOf(slot)] = v; };
-  put('tiles', R.tiles.byte);
-  put('dirty', R.dirty.byte);
-  put('tilesX', TILES_X);
-  put('tilesY', TILES_Y);
-  put('tilePixels', TILE_PIXELS);
-  put('stamps', R.stamps.byte);
-  put('columns', R.columns.byte);
-  put('columnsCap', TILE_PIXELS);
-  put('flags', flags);
-
-  const { stamp_tiles: stampTiles } = await loadWasmKernel('decalStamp', KERNEL_URL, memory, ['stamp_tiles']);
-  const recF64 = new Float64Array(buffer, R.stamps.byte, STAMPS_PER_TICK * (STAMP_BYTES / 8));
-  const recU32 = new Uint32Array(buffer, R.stamps.byte, STAMPS_PER_TICK * (STAMP_BYTES / 4));
-  const tableByte = R.table.byte;
-
-  /** The shipped path: the particle worker's stamp apply, once per drained stamp. */
-  const stampFrameJs = (frame, count = STAMPS_PER_TICK) => {
+  /** The shipped path, once per drained stamp: the JS stamp (no kernel) or a record, then the frame's flush. */
+  const stampFrameWith = (useKernel) => (frame, count = STAMPS_PER_TICK) => {
+    worker._decalWasm = useKernel ? kernel : null;
     for (let k = frame * STAMPS_PER_TICK, end = k + count; k < end; k++) {
       worker.stampParticleToTile(fx.x[k], fx.y[k], fx.tint[k], fx.scaleX[k], fx.scaleY[k], fx.textureId[k], fx.alpha[k], fx.blendMode[k]);
     }
-    return 0;
+    return useKernel ? worker.flushDecalStamps() : 0;
   };
-  /** The product wrapper: each drained stamp into a record, its texture looked up by id, then one call. */
-  const stampFrameWasm = (frame, count = STAMPS_PER_TICK) => {
-    let n = 0;
-    for (let k = frame * STAMPS_PER_TICK, end = k + count; k < end; k++) {
-      const tex = worker.decalTextures[fx.textureId[k]];
-      if (!tex) continue;
-      const f = n * 8;
-      const u = n * 16;
-      recF64[f] = fx.x[k];
-      recF64[f + 1] = fx.y[k];
-      recF64[f + 2] = fx.scaleX[k];
-      recF64[f + 3] = fx.scaleY[k];
-      recF64[f + 4] = fx.alpha[k];
-      recU32[u + 10] = fx.tint[k];
-      recU32[u + 11] = fx.blendMode[k] === 1 ? 1 : 0;
-      recU32[u + 12] = tex.rgba.byteOffset;
-      recU32[u + 13] = tex.width;
-      recU32[u + 14] = tex.height;
-      n++;
-    }
-    return stampTiles(tableByte, n, TILE_SIZE, RESOLUTION);
-  };
+  const stampFrameJs = stampFrameWith(false);
+  const stampFrameWasm = stampFrameWith(true);
 
-  const tiles = worker.decalsTilesRGBA;
+  const tiles = new Uint8Array(m.buffer, 0, tileBytes);
   const dirty = worker.decalsTilesDirty;
   /** From clear tiles: the dirty flags after each frame, then the tiles; and what stamp_tiles returned. */
   function checksumFrames(stampFrame) {
@@ -311,7 +265,7 @@ export async function setupDecalKernel({ flags = 0 } = {}) {
     if (a > 0 && a * 255 < 256 && Math.fround(a) === a) vectorStamps++;
   }
   return {
-    worker, texture: blood, fx, stampFrameJs, stampFrameWasm, stampTiles, checksumFrames,
+    worker, texture: blood, fx, stampFrameJs, stampFrameWasm, stampTiles: kernel.stampTiles, checksumFrames,
     vectorStamps: flags & F_SCALAR ? 0 : vectorStamps,
   };
 }

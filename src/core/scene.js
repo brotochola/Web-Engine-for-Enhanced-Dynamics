@@ -243,6 +243,8 @@ class Scene {
     this.box2dHotFields = null;
     /** @type {object|null} Weed pose SAB when physics.enabled === false (5 float channels). */
     this.weedPose = null;
+    /** W26: the decal memory (decalMemory.js) when the tiles live in one, else null. */
+    this.decalMemory = null;
 
     // Workers
     this.workers = {
@@ -2696,6 +2698,7 @@ class Scene {
     this.loadedTilemaps = {};
     this.loadedAdobeAnimateAssets = {};
     this.decalTextureData = null;
+    this.decalMemory = null;
     this.bigAtlasCanvas = null;
     this.bigAtlasJson = null;
     this.bigAtlasProxySheets = null;

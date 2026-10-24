@@ -390,3 +390,31 @@ export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorke
   );
   return { regions, listStride, markerStride, truncatedStride, rebuildStride, orderStride };
 }
+
+/** A stamp record of decalStamp.wasm: f64 x, y, scaleX, scaleY, alpha; u32 tint, blendMode, texture byte, width, height, pad. */
+export const DECAL_STAMP_BYTES = 64;
+/** The stamps one flush holds; a frame with more flushes when the records are full. */
+export const DECAL_MAX_STAMPS = 4096;
+/** Room for the stamp kernel's column table (decalStampClient.js DECAL_SLOTS). */
+export const DECAL_TABLE_SLOTS = 16;
+
+/**
+ * The decal memory (E-76 W26, decalMemory.js): the RGBA tiles at byte 0, where every worker views them (as it
+ * viewed the tiles' own SharedArrayBuffer), then the stamp kernel's scratch. `touched` is a byte per tile the
+ * kernel sets when it stamps one; the particle worker publishes those as the tiles' dirty flags after the call.
+ * @param {number} tileBytes the tiles' bytes
+ * @param {number} totalTiles
+ * @param {number} textureBytes every decal texture's RGBA, each from a 64-byte line
+ * @param {number} tilePixels a tile's side in pixels (the widest clip the column map holds)
+ */
+export function decalMemoryRegions(tileBytes, totalTiles, textureBytes, tilePixels) {
+  return layoutRegions([
+    { name: 'tiles', owner: 'particle writes; Pixi, main and logic read', bytes: tileBytes },
+    { name: 'touched', owner: 'particle', bytes: totalTiles },
+    { name: 'textures', owner: 'particle, read only', bytes: textureBytes },
+    { name: 'stamps', owner: 'particle', bytes: DECAL_MAX_STAMPS * DECAL_STAMP_BYTES },
+    // decalStamp.c's column map: two arrays of column_stride(tilePixels) u32.
+    { name: 'columns', owner: 'particle', bytes: ((tilePixels + 6) & ~3) * 4 * 2 },
+    { name: 'table', owner: 'particle', bytes: DECAL_TABLE_SLOTS * 4 },
+  ]);
+}

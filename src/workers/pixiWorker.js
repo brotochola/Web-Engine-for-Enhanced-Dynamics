@@ -5988,7 +5988,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.decalsTotalTiles = data.decals.totalTiles;
 
       // Create typed array views over SharedArrayBuffers
-      this.decalsTilesRGBA = new Uint8ClampedArray(data.decals.tilesRGBA);
+      // The tiles' bytes only: with W26 their buffer is the decal memory, the kernel's scratch after them.
+      this.decalsTilesRGBA = new Uint8ClampedArray(
+        data.decals.tilesRGBA, 0, data.decals.totalTiles * data.decals.tilePixelSize * data.decals.tilePixelSize * 4);
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
 
       // Create decal tile container (renders between background and entities)

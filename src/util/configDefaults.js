@@ -475,6 +475,11 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   decorationSway: true,
   /**
+   * The particle worker's decal stamping (`decalStamp.wasm`, W26): the decal tiles at byte 0 of a WebAssembly.Memory
+   * of their own, with the decal textures and the kernel's scratch after them.
+   */
+  decalStamp: true,
+  /**
    * The particle worker's flowfield search (`navFlowfield.wasm`, W14): the nav buffer at byte 0 of a
    * WebAssembly.Memory, the search's scratch after it.
    */

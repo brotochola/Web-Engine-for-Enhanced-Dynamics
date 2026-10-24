@@ -1,4 +1,4 @@
-/* Decal stamping (E-76 W26), a test module: Decal.stampToTileBuffers (src/core/decal.js) for a batch of
+/* Decal stamping (E-76 W26): Decal.stampToTileBuffers (src/core/decal.js) for a batch of
    stamps in one call, the pixel loop four pixels per vector. Every array is a byte offset into the decal
    memory, through the table: the RGBA tiles, their dirty flags, the stamp records the caller writes from
    the drained ring, the textures they name, and a clip's column map as scratch. Arithmetic as the JS does

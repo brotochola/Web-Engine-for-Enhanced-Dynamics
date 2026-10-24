@@ -15,6 +15,7 @@ import { frameClockSlot } from './frameClock.js';
 import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
+import { installDecalMemory } from './decalMemory.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -361,6 +362,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           tilesDirty: scene.buffers.decalsTilesDirty,
           stampRing: scene.buffers.decalStampRing,
           textures: scene.decalTextureData,
+          // W26: the decal memory (the tiles are its buffer) and its regions, or none.
+          memory: scene.decalMemory ? scene.decalMemory.memory : null,
+          memoryLayout: scene.decalMemory ? scene.decalMemory.layout : null,
         }
       : null,
     shadows: scene.config.lighting.shadowsEnabled
@@ -627,6 +631,9 @@ export async function createSceneWorkers(scene) {
   const spritesheetConfigs = scene.imageUrls.spritesheets || {};
   // preloadAssets overlaps atlas ∥ audio ∥ tilemaps ∥ flowfields ∥ shaders
   await scene.preloadAssets(scene.imageUrls, spritesheetConfigs, scene.audioUrls);
+  // W26: the decal tiles in a memory of their own, with the stamp kernel's scratch and the decal textures, now
+  // that the textures are loaded and before any worker binds the tiles.
+  installDecalMemory(scene);
 
   scene.textureMetadata = scene.buildTextureMetadata();
   injectLoadedShaderSources(scene);
