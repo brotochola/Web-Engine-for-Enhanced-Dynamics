@@ -25,7 +25,10 @@ import { bindCollect, collectMemory, useBodies, useSortY } from './preRenderColl
 
 const ARGS = parseArgs();
 const SCALE = Number(ARGS.scale ?? 1);
-const N = Math.max(1024, Math.round(250000 * SCALE));
+// --sprites sets the count exactly (262144 puts the columns a multiple of 4 KB apart); --skew 1 starts each
+// column a cache line past its boundary (E-113).
+const N = ARGS.sprites ? Number(ARGS.sprites) : Math.max(1024, Math.round(250000 * SCALE));
+const SKEW = Number(ARGS.skew ?? 0) === 1;
 
 const CASES = {
   bunny: { skipCull: true, rot: 0, zoom: 1, world: 1, list: true },
@@ -40,7 +43,7 @@ const ANCHORS = [[0.5, 0.5], [0.5, 0.5], [0.5, 0.98], [0.5, 0.66], [0.5, 1]];
 export async function setupCollectKernel(caseName, seed = 0xb0b) {
   const c = CASES[caseName];
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-  const m = collectMemory(pre, N, N);
+  const m = collectMemory(pre, N, N, { skew: SKEW });
   const v = m.views;
   const rng = mulberry32(seed);
   const w = 1920 * c.world;

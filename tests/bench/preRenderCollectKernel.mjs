@@ -18,9 +18,11 @@ import { bindPreRenderCollect } from '../../src/workers/preRenderCollectClient.j
 
 /**
  * One memory with every collect column for `n` entities and a `maxItems` collector, bound on the components
- * and on `pre`. `mask`: SpriteRenderer.layerMask exists; `visualRange`: Collider.visualRange exists.
+ * and on `pre`. `mask`: SpriteRenderer.layerMask exists; `visualRange`: Collider.visualRange exists. `skew`:
+ * each column starts one cache line past its 64-byte boundary (E-113's queue layout), else on the boundary, as
+ * the components' columns lie (at a count that is a multiple of 1 024, a multiple of 4 KB apart).
  */
-export function collectMemory(pre, n, maxItems, { mask = true, visualRange = true, frames = 64 } = {}) {
+export function collectMemory(pre, n, maxItems, { mask = true, visualRange = true, frames = 64, skew = false } = {}) {
   const parts = [
     ['tActive', Uint8Array, n], ['x', Float32Array, n], ['y', Float32Array, n],
     ['rotC', Float32Array, n], ['rotS', Float32Array, n],
@@ -41,7 +43,7 @@ export function collectMemory(pre, n, maxItems, { mask = true, visualRange = tru
   let top = 64;
   const offsets = {};
   for (const [name, Ctor, len] of parts) {
-    top = (top + 63) & ~63;
+    top = ((top + 63) & ~63) + (skew ? 64 : 0);
     offsets[name] = len > 0 ? top : 0;
     top += len * Ctor.BYTES_PER_ELEMENT;
   }
