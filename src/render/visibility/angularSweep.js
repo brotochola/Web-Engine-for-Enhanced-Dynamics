@@ -256,6 +256,15 @@ const _tangentOut = new Int32Array(2);
 
 function warnEventOverflow(occCount) {
   _sweepSeenValid = false;
+  warnEventCap(occCount);
+}
+
+function warnActiveOverflow() {
+  _sweepSeenValid = false;
+  warnActiveCap();
+}
+
+function warnEventCap(occCount) {
   if (_warnedEventOverflow) return;
   _warnedEventOverflow = true;
   console.warn(
@@ -264,8 +273,7 @@ function warnEventOverflow(occCount) {
   );
 }
 
-function warnActiveOverflow() {
-  _sweepSeenValid = false;
+function warnActiveCap() {
   if (_warnedActiveOverflow) return;
   _warnedActiveOverflow = true;
   console.warn(
@@ -273,6 +281,23 @@ function warnActiveOverflow() {
     `Falling back to full-circle visibility for this light.`
   );
 }
+
+/**
+ * W2a. The sweep kernel (visibilitySweep.wasm) gave up on a light as buildVisibilityPolygon does at its event
+ * or active cap: the same warning, once per kind, shared with the JS sweep.
+ */
+export function warnSweepOverflow(eventOverflow, occCount) {
+  if (eventOverflow) warnEventCap(occCount);
+  else warnActiveCap();
+}
+
+/** The sweep's caps, for a kernel's scratch (W2a): it holds the JS's, so it gives up where the JS does. */
+export const SWEEP_CAPS = Object.freeze({
+  maxEvents: MAX_EVENTS,
+  occCache: MAX_OCC_CACHE,
+  maxActive: MAX_ACTIVE,
+  fullCircleSegs: FULL_CIRCLE_SEGS,
+});
 
 /**
  * Build a visibility polygon from a light source blocked by mixed occluders.
@@ -1042,10 +1067,14 @@ for (let m = 0; m <= POLAR_BINS * 2; m++) {
   _polarCos[m] = Math.cos(ang);
   _polarSin[m] = Math.sin(ang);
 }
-const _polarDist = new Float32Array(POLAR_BINS);
+// The bins are the module's own arrays, or views on pre-render's visibility memory while its kernels run
+// (bindPolarBins: W2a, W1), so the raster, the merge and the kernels read and write the same bytes.
+const _ownPolarDist = new Float32Array(POLAR_BINS);
 // N-19: who stamped each bin's nearest hit (-1: nothing), so the caller can
 // tell which solids end up on the polygon.
-const _polarOwner = new Int32Array(POLAR_BINS);
+const _ownPolarOwner = new Int32Array(POLAR_BINS);
+let _polarDist = _ownPolarDist;
+let _polarOwner = _ownPolarOwner;
 let _polarRadius = 0;
 let _polarActive = 0;
 // The last clipVisibilityToPolar merge, for markSeenPolarOwners: -1 = none ran.
@@ -1064,6 +1093,31 @@ export function clearPolarBins(radius) {
 
 export function polarBinsActive() {
   return _polarActive;
+}
+
+/**
+ * W2a, W1. Raster and merge into `dist` (Float32Array) and `owner` (Int32Array) of POLAR_BINS each, views on
+ * pre-render's visibility memory where its kernels read and write the bins; null puts the module's own
+ * arrays back (a scene on the JS path). The bins are cleared either way.
+ */
+export function bindPolarBins(dist, owner) {
+  if (dist === null || owner === null) {
+    _polarDist = _ownPolarDist;
+    _polarOwner = _ownPolarOwner;
+  } else {
+    if (!(dist instanceof Float32Array) || !(owner instanceof Int32Array) ||
+        dist.length !== POLAR_BINS || owner.length !== POLAR_BINS) {
+      throw new Error(`bindPolarBins: a Float32Array and an Int32Array of ${POLAR_BINS}`);
+    }
+    _polarDist = dist;
+    _polarOwner = owner;
+  }
+  clearPolarBins(0);
+}
+
+/** The arrays the bins are in now (bindPolarBins); for tests. */
+export function polarBinArrays() {
+  return { dist: _polarDist, owner: _polarOwner, own: _polarDist === _ownPolarDist };
 }
 
 function raySegT(ox, oy, dx, dy, ax, ay, bx, by) {
@@ -1326,4 +1380,21 @@ function mergeSweep(lx, ly, xs, ys, n, count, group, radius, outX, outY) {
 /** Raster one world segment into the current polar buffer. For kernels and tests. */
 export function rasterBoundarySegment(x0, y0, x1, y1, lx, ly, owner = -1) {
   writePolarSegment(x0, y0, x1, y1, lx, ly, owner);
+}
+
+/**
+ * W2a. This module's constant tables, copied for the sweep kernel, which reads them from its memory and so
+ * computes with these doubles: `consts` [1 / cos(MAX_FREE_GAP / 2), cos(END_ANGLE), sin(END_ANGLE)], the empty
+ * light's 32-gon (`fullC`, `fullS`: SWEEP_CAPS.fullCircleSegs each) and the polar angles' cos, sin and
+ * pseudoAngle (POLAR_BINS * 2 + 1 each).
+ */
+export function copySweepTables({ consts, fullC, fullS, polarCos, polarSin, polarPseudo }) {
+  consts[0] = FREE_OVERSIZE;
+  consts[1] = END_DIR_C;
+  consts[2] = END_DIR_S;
+  fullC.set(_fullCircleC);
+  fullS.set(_fullCircleS);
+  polarCos.set(_polarCos);
+  polarSin.set(_polarSin);
+  polarPseudo.set(_polarPseudo);
 }

@@ -496,6 +496,16 @@ export const WASM_DEFAULTS = Object.freeze({
    * WebAssembly.Memory, the search's scratch after it.
    */
   navFlowfield: true,
+  /**
+   * Pre-render's per-light visibility sweep with raycasted lighting (`visibilitySweep.wasm`, W2a): the light's
+   * occluders, its polygon and the polar bins of compound solids in a WebAssembly.Memory pre-render owns.
+   */
+  visibilitySweep: true,
+  /**
+   * The sweep's float32 export (Chrome's pick: edge terms and box tests in float32, within 1e-4 of each
+   * vertex's distance from the light); false runs its double SIMD export instead. Needs visibilitySweep.
+   */
+  visibilitySweepF32: true,
 });
 
 // ============================================================================

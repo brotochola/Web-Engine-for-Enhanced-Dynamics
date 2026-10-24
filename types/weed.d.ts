@@ -323,6 +323,10 @@ export type SceneConfig = Record<string, unknown> & {
     decalPremultiply?: boolean;
     /** Pixi's mesh corner rewrite for MESH layers (the meshes and the mesh batches live in one WebAssembly.Memory). */
     meshCorners?: boolean;
+    /** Pre-render's per-light visibility sweep with raycasted lighting (its scratch lives in a WebAssembly.Memory of pre-render's own). */
+    visibilitySweep?: boolean;
+    /** The sweep in float32 (default) or, false, in double precision. Needs visibilitySweep. */
+    visibilitySweepF32?: boolean;
   };
 };
 

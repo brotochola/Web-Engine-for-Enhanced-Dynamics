@@ -228,6 +228,16 @@
       "test": true
     },
     {
+      "name": "visibilitySweep",
+      "source": "wasm/visibilitySweep.c",
+      "output": "src/render/visibility/visibilitySweep.wasm",
+      "exports": [
+        "sweep_light_f32",
+        "sweep_light_simd"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
       "name": "decalPremultiply",
       "source": "wasm/decalPremultiply.c",
       "output": "src/render/decalPremultiply.wasm",

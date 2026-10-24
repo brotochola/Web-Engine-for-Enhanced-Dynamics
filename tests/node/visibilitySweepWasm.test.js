@@ -34,6 +34,7 @@ import {
   writeOrientedBoxVerts,
   writePolygonVerts,
 } from '../../src/render/visibility/angularSweep.js';
+import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { mulberry32 } from '../bench/benchMath.js';
 import { raySegT } from '../helpers/polarReference.mjs';
 import {
@@ -573,4 +574,55 @@ test('W2a sweep: mutants of the kernel fail the gate (EPSILON 1e-5 -> 2e-5, the 
   }
   // And the unmutated module on the same scenes passes.
   assertTallies(await runScenes(scenes, { k }), 'unmutated');
+});
+
+// ---- the shipped module -------------------------------------------------------------------------------
+
+const SHIPPED_URL = new URL('../../src/render/visibility/visibilitySweep.wasm', import.meta.url);
+const SHIPPED = { f32: 'sweep_light_f32', simd: 'sweep_light_simd' };
+
+test('W2a sweep: the shipped visibilitySweep.wasm writes the screening module\'s f32 and simd bits', async () => {
+  const OWNER_CAP = 64;
+  const k = await createSweepKernel({ sets: [{ occluders: 48, poolVerts: 48 * 8 }], maxVerts: 512, ownerSeenCap: OWNER_CAP });
+  const shipped = await loadWasmKernel('visibilitySweep', SHIPPED_URL, k.memory, Object.values(SHIPPED));
+  const polarCos = new Float64Array(k.buffer, k.regions.polarCos.byte, POLAR_BINS * 2 + 1);
+  const polarSin = new Float64Array(k.buffer, k.regions.polarSin.byte, POLAR_BINS * 2 + 1);
+  const rng = mulberry32(0x5b1b);
+  const scenes = randomScenes(0x5a5a).filter((_, i) => i % 3 === 0);
+  let calls = 0;
+  let polarCalls = 0;
+  let stamp = 0;
+  /** A call and everything it left: the polygon, the result words but the stamp, who it saw, the seen owners. */
+  const run = (fn, sc, active) => {
+    k.ownerSeen.fill(0);
+    const n = quiet(() => fn(k.sets[0].tableByte, sc.lx, sc.ly, sc.radius, sc.occCount, active));
+    const saw = [];
+    for (let oi = 0; oi < sc.occCount + 2; oi++) saw.push(k.sawOccluder(oi));
+    const res = Array.from(k.results);
+    res[R.stamp] = 0;
+    return { n, x: Array.from(k.outX.subarray(0, n)), y: Array.from(k.outY.subarray(0, n)), res, saw, owners: Array.from(k.ownerSeen) };
+  };
+  for (const [s, sc] of scenes.entries()) {
+    k.load(0, sc);
+    setMaxVerts(k, 0, sc.maxVerts);
+    let active = 0;
+    if (s % 2 === 1) {
+      const segsOf = [];
+      const owners = 1 + Math.floor(rng() * 6);
+      for (let o = 0; o < owners; o++) segsOf.push(boundary(rng, sc.lx, sc.ly, sc.radius, 1 + Math.floor(rng() * 12)));
+      const bins = polarBins(segsOf, sc.lx, sc.ly, sc.radius, polarCos, polarSin);
+      k.polarDist.set(bins.dist);
+      k.polarOwner.set(bins.owner);
+      active = bins.active;
+    }
+    k.setOwnerStamp(++stamp);
+    for (const [v, name] of Object.entries(SHIPPED)) {
+      const ref = run(k.variants[v], sc, active);
+      const got = run(shipped[name], sc, active);
+      assert.deepEqual(got, ref, `${sc.kindName} scene ${s} ${v}`);
+      calls++;
+      if (active) polarCalls++;
+    }
+  }
+  assert.ok(calls > 3000 && polarCalls > 1000, `${calls} calls compared, ${polarCalls} with polar bins`);
 });
