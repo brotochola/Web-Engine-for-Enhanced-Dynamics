@@ -90,11 +90,11 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L31",
-        "EXECUTION_PLAN.md#L908"
+        "EXECUTION_PLAN.md#L907"
       ],
       "aliases": [],
       "next": "A guide note on per-entity doubles (components, not instance fields); then the Box2D clock and updateLighting.",
-      "rank": 20
+      "rank": 19
     },
     {
       "id": "E-110",
@@ -107,7 +107,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L23",
-        "EXECUTION_PLAN.md#L904"
+        "EXECUTION_PLAN.md#L903"
       ],
       "aliases": []
     },
@@ -122,11 +122,11 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L21",
-        "EXECUTION_PLAN.md#L898"
+        "EXECUTION_PLAN.md#L897"
       ],
       "aliases": [],
       "next": "Rerun shadowStampMicrobench on a quiet machine (diff D:\\tmp\\p4\\e111.patch); W23's port would absorb it.",
-      "rank": 21
+      "rank": 20
     },
     {
       "id": "E-112",
@@ -134,13 +134,13 @@
       "status": "kept",
       "statusText": "KEPT 2026-10-23",
       "date": "2026-10-23",
-      "result": "wasm/preRenderEmit.c writes emitSpriteQueue's full-emit rows for sprites and decorations on the render-queue memory (SpriteRenderer, ShadowCaster and DecorationComponent bound there at byte offsets); the other rows are written after it in JS. Kernel +117.5 % (25/25, Node); Chrome EMIT_MS 1.24 → 0.92 ms; Predator gate, 8 pairs: pre-render 5.054 → 4.666 ms, −4.6 %, worse 2/8 (spatial's +5.1 % flag did not reproduce in a same-build pair).",
+      "result": "wasm/preRenderEmit.c writes emitSpriteQueue's full-emit rows for sprites and decorations on the render-queue memory (SpriteRenderer, ShadowCaster and DecorationComponent bound there at byte offsets); the other rows are written after it in JS. Kernel +117.5 % (25/25, Node); Chrome EMIT_MS 1.24 → 0.92 ms; Predator gate, 8 pairs: pre-render 5.054 → 4.666 ms, −4.6 %, worse 2/8 (spatial's +5.1 % flag did not reproduce in a same-build pair). Watched re-gate (2026-10-24, the stamp off): pre-render 5.407 → 5.255 ms, −5.2 %, worse 1/4.",
       "area": "preRender",
       "kind": "wasm",
       "refs": [
         "HYPOTHESIS_LOG.md#L19",
-        "EXECUTION_PLAN.md#L888",
-        "WASM_HYPOTHESES.md#L844",
+        "EXECUTION_PLAN.md#L887",
+        "WASM_HYPOTHESES.md#L846",
         "reports/E-112-preRender-emit-wasm.md"
       ],
       "aliases": [
@@ -158,31 +158,31 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L17",
-        "EXECUTION_PLAN.md#L880"
+        "EXECUTION_PLAN.md#L879"
       ],
       "aliases": [],
       "next": "Each queue column a cache line after the last in renderQueueLayout; measure on a scene at an aliased capacity.",
-      "rank": 22
+      "rank": 21
     },
     {
       "id": "E-114",
       "title": "The shadow-caster stamp in WASM (W23)",
-      "status": "open",
-      "statusText": "kernel +99.8 % (25/25), wiring next, 2026-10-23",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23",
       "date": "2026-10-23",
-      "result": "wasm/test/shadowStamp.c is stampLightRange whole, bit for bit on the Predator fixture: 897.7 → 1 794.0 ops/s (+99.8 %, 25/25, Node 22); the plain path 2.27×. The stamp's call tree was 32 % of Predator pre-render before E-112: about 16 % of it.",
+      "result": "wasm/shadowStamp.c is stampLightRange whole, bit for bit, on the render-queue memory (scratch and a light table in stamp regions). Kernel +99.8 % (25/25, Node); Chrome SHADOW_Q_MS 2.6–2.8 → 1.9–2.0 ms; Predator gate (window watched), 4 pairs: pre-render 5.287 → 4.692 ms, −10.3 %, worse 0/4.",
       "area": "preRender",
       "kind": "wasm",
       "refs": [
         "HYPOTHESIS_LOG.md#L13",
         "EXECUTION_PLAN.md#L872",
-        "WASM_HYPOTHESES.md#L854"
+        "WASM_HYPOTHESES.md#L856",
+        "WASM_HYPOTHESES.md#L866",
+        "reports/E-114-shadow-stamp-wasm.md"
       ],
       "aliases": [
         "W23"
-      ],
-      "next": "Wiring: the stamp scratch and a light table in the render-queue memory, a randomized parity test, switch wasm.shadowStamp, then the Predator gate.",
-      "rank": 1
+      ]
     },
     {
       "id": "E-104",
@@ -246,7 +246,7 @@
       ],
       "aliases": [],
       "next": "After W4 makes the Phase 4 move: one C call per frame saves the glue (8 % of Predator spatial) and W6's 1.4 %.",
-      "rank": 14
+      "rank": 13
     },
     {
       "id": "E-82",
@@ -278,7 +278,7 @@
       ],
       "aliases": [],
       "next": "The whole decoration chain (sway, visibility, attached, snapshot), 57 % of Predator particle.",
-      "rank": 4
+      "rank": 3
     },
     {
       "id": "W26",
@@ -295,7 +295,7 @@
       ],
       "aliases": [],
       "next": "SIMD blending with a ±1 tolerance, or GPU stamping into tile render textures (an architecture item).",
-      "rank": 5
+      "rank": 4
     },
     {
       "id": "W14",
@@ -312,7 +312,7 @@
       ],
       "aliases": [],
       "next": "navStressScene: flowfield 89 % of particle.",
-      "rank": 6
+      "rank": 5
     },
     {
       "id": "E-85",
@@ -346,7 +346,7 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 7
+      "rank": 6
     },
     {
       "id": "W11",
@@ -362,7 +362,7 @@
       ],
       "aliases": [],
       "next": "meshApiStressScene Pixi 53 %.",
-      "rank": 8
+      "rank": 7
     },
     {
       "id": "W21c",
@@ -377,7 +377,7 @@
         "WASM_HYPOTHESES.md#L173"
       ],
       "aliases": [],
-      "rank": 10
+      "rank": 9
     },
     {
       "id": "W2a",
@@ -392,7 +392,7 @@
         "WASM_HYPOTHESES.md#L150"
       ],
       "aliases": [],
-      "rank": 11
+      "rank": 10
     },
     {
       "id": "W1",
@@ -407,7 +407,7 @@
         "WASM_HYPOTHESES.md#L149"
       ],
       "aliases": [],
-      "rank": 12
+      "rank": 11
     },
     {
       "id": "W10",
@@ -422,23 +422,23 @@
         "WASM_HYPOTHESES.md#L160"
       ],
       "aliases": [],
-      "rank": 13
+      "rank": 12
     },
     {
       "id": "W23",
       "title": "shadow-caster stamp: `stampLightRange`, `buildStampGrid`, `partitionOrder` in gpuShadowCasters.js (new from …",
-      "status": "open",
-      "statusText": "kernel +99.8 % (E-114), wiring next",
+      "status": "kept",
+      "statusText": "KEPT 2026-10-23 (E-114)",
       "date": null,
       "result": "WASM stamp beats JS. Q1: 16.8 % of Predator pre-render (25.9 % with the caster pack); the hottest line is the gathered load `sun[b] - lx` (32 %); lights arrive as JS objects. … E-110 made the JS stamp +36.4 % in the kernel (per-entity cap), which lowers the ceiling.",
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#L178",
-        "WASM_HYPOTHESES.md#L854"
+        "WASM_HYPOTHESES.md#L856",
+        "WASM_HYPOTHESES.md#L866"
       ],
-      "aliases": [],
-      "next": "E-114."
+      "aliases": []
     },
     {
       "id": "W27",
@@ -453,7 +453,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 15
     },
     {
       "id": "W28",
@@ -468,7 +468,7 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 17
+      "rank": 16
     },
     {
       "id": "W4",
@@ -481,11 +481,11 @@
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#L153",
-        "WASM_HYPOTHESES.md#L844"
+        "WASM_HYPOTHESES.md#L846"
       ],
       "aliases": [],
       "next": "W4b, the collect chain (collectVisibleEntities, _displayPose, _storeEntitySortY), after Phase 4; W4a is E-112.",
-      "rank": 15
+      "rank": 14
     },
     {
       "id": "W4c",
@@ -501,7 +501,7 @@
       ],
       "aliases": [],
       "next": "The three in the emit kernel; bunnyMarkScene pre-render, then the Predator gate.",
-      "rank": 2
+      "rank": 1
     },
     {
       "id": "W18",
@@ -517,7 +517,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 18
+      "rank": 17
     },
     {
       "id": "W2b",
@@ -533,7 +533,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 19
+      "rank": 18
     },
     {
       "id": "E-76",
@@ -575,7 +575,7 @@
       "kind": "wasm",
       "refs": [
         "HYPOTHESIS_LOG.md#L125",
-        "EXECUTION_PLAN.md#L1199"
+        "EXECUTION_PLAN.md#L1198"
       ],
       "aliases": []
     },
@@ -984,7 +984,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "EXECUTION_PLAN.md#L1328"
+        "EXECUTION_PLAN.md#L1327"
       ],
       "aliases": []
     },
@@ -1000,7 +1000,7 @@
       "refs": [
         "WASM_HYPOTHESES.md#L178",
         "HYPOTHESIS_LOG.md#L27",
-        "EXECUTION_PLAN.md#L1388"
+        "EXECUTION_PLAN.md#L1387"
       ],
       "aliases": [
         "E-55",
@@ -1090,7 +1090,7 @@
       "kind": "wasm",
       "refs": [
         "HYPOTHESIS_LOG.md#L61",
-        "EXECUTION_PLAN.md#L1719"
+        "EXECUTION_PLAN.md#L1718"
       ],
       "aliases": []
     },
@@ -1147,7 +1147,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L81",
-        "EXECUTION_PLAN.md#L1530"
+        "EXECUTION_PLAN.md#L1529"
       ],
       "aliases": []
     },
@@ -1162,7 +1162,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L89",
-        "EXECUTION_PLAN.md#L1645"
+        "EXECUTION_PLAN.md#L1644"
       ],
       "aliases": [
         "E-72"
@@ -1179,7 +1179,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L93",
-        "EXECUTION_PLAN.md#L1564"
+        "EXECUTION_PLAN.md#L1563"
       ],
       "aliases": []
     },
@@ -1209,7 +1209,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L101",
-        "EXECUTION_PLAN.md#L1518"
+        "EXECUTION_PLAN.md#L1517"
       ],
       "aliases": []
     },
@@ -1224,7 +1224,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L103",
-        "EXECUTION_PLAN.md#L1494"
+        "EXECUTION_PLAN.md#L1493"
       ],
       "aliases": []
     },
@@ -1239,7 +1239,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L105",
-        "EXECUTION_PLAN.md#L1079"
+        "EXECUTION_PLAN.md#L1078"
       ],
       "aliases": []
     },
@@ -1254,7 +1254,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L107",
-        "EXECUTION_PLAN.md#L1481"
+        "EXECUTION_PLAN.md#L1480"
       ],
       "aliases": []
     },
@@ -1269,7 +1269,7 @@
       "kind": "wasm",
       "refs": [
         "HYPOTHESIS_LOG.md#L111",
-        "EXECUTION_PLAN.md#L1429"
+        "EXECUTION_PLAN.md#L1428"
       ],
       "aliases": []
     },
@@ -1298,7 +1298,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L123",
-        "EXECUTION_PLAN.md#L1245"
+        "EXECUTION_PLAN.md#L1244"
       ],
       "aliases": []
     },
@@ -1313,7 +1313,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L131",
-        "EXECUTION_PLAN.md#L1064"
+        "EXECUTION_PLAN.md#L1063"
       ],
       "aliases": []
     },
@@ -1328,7 +1328,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L133",
-        "EXECUTION_PLAN.md#L1040"
+        "EXECUTION_PLAN.md#L1039"
       ],
       "aliases": []
     },
@@ -1344,7 +1344,7 @@
       "refs": [
         "HYPOTHESIS_LOG.md#L135",
         "EXECUTION_PLAN.md#L410",
-        "EXECUTION_PLAN.md#L1703"
+        "EXECUTION_PLAN.md#L1702"
       ],
       "aliases": []
     },
@@ -1372,7 +1372,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1120"
+        "EXECUTION_PLAN.md#L1119"
       ],
       "aliases": []
     },
@@ -1387,7 +1387,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L137",
-        "EXECUTION_PLAN.md#L1340"
+        "EXECUTION_PLAN.md#L1339"
       ],
       "aliases": []
     },
@@ -1416,7 +1416,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L175",
-        "EXECUTION_PLAN.md#L999"
+        "EXECUTION_PLAN.md#L998"
       ],
       "aliases": [
         "E-16",
@@ -3347,7 +3347,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "EXECUTION_PLAN.md#L1660"
+        "EXECUTION_PLAN.md#L1659"
       ],
       "aliases": []
     },
@@ -3362,7 +3362,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L127",
-        "EXECUTION_PLAN.md#L1178"
+        "EXECUTION_PLAN.md#L1177"
       ],
       "aliases": []
     },
@@ -4088,7 +4088,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L87",
-        "EXECUTION_PLAN.md#L1676"
+        "EXECUTION_PLAN.md#L1675"
       ],
       "aliases": []
     },
@@ -4103,7 +4103,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L97",
-        "EXECUTION_PLAN.md#L1592"
+        "EXECUTION_PLAN.md#L1591"
       ],
       "aliases": []
     },
@@ -4118,7 +4118,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L109",
-        "EXECUTION_PLAN.md#L1112"
+        "EXECUTION_PLAN.md#L1111"
       ],
       "aliases": []
     },
@@ -4133,7 +4133,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L121",
-        "EXECUTION_PLAN.md#L1278"
+        "EXECUTION_PLAN.md#L1277"
       ],
       "aliases": []
     },
@@ -4147,7 +4147,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1158"
+        "EXECUTION_PLAN.md#L1157"
       ],
       "aliases": []
     },
@@ -4274,7 +4274,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L77",
-        "EXECUTION_PLAN.md#L1373"
+        "EXECUTION_PLAN.md#L1372"
       ],
       "aliases": []
     },
@@ -4289,7 +4289,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L79",
-        "EXECUTION_PLAN.md#L1612"
+        "EXECUTION_PLAN.md#L1611"
       ],
       "aliases": [
         "E-75"
@@ -4306,7 +4306,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L91",
-        "EXECUTION_PLAN.md#L1597"
+        "EXECUTION_PLAN.md#L1596"
       ],
       "aliases": []
     },
@@ -4321,7 +4321,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L99",
-        "EXECUTION_PLAN.md#L1555"
+        "EXECUTION_PLAN.md#L1554"
       ],
       "aliases": []
     },
@@ -4336,7 +4336,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L113",
-        "EXECUTION_PLAN.md#L1397"
+        "EXECUTION_PLAN.md#L1396"
       ],
       "aliases": []
     },
@@ -4350,7 +4350,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1548"
+        "EXECUTION_PLAN.md#L1547"
       ],
       "aliases": []
     },
@@ -6056,7 +6056,7 @@
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#L732",
-        "EXECUTION_PLAN.md#L1024"
+        "EXECUTION_PLAN.md#L1023"
       ],
       "aliases": []
     },
@@ -6282,7 +6282,7 @@
       "kind": "wasm",
       "refs": [
         "HYPOTHESIS_LOG.md#L115",
-        "EXECUTION_PLAN.md#L1313"
+        "EXECUTION_PLAN.md#L1312"
       ],
       "aliases": []
     },
@@ -6297,7 +6297,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L117",
-        "EXECUTION_PLAN.md#L1293"
+        "EXECUTION_PLAN.md#L1292"
       ],
       "aliases": []
     },
@@ -6312,7 +6312,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L129",
-        "EXECUTION_PLAN.md#L1137"
+        "EXECUTION_PLAN.md#L1136"
       ],
       "aliases": []
     },
@@ -6326,7 +6326,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1585"
+        "EXECUTION_PLAN.md#L1584"
       ],
       "aliases": []
     },
@@ -6402,7 +6402,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L193",
-        "EXECUTION_PLAN.md#L932"
+        "EXECUTION_PLAN.md#L931"
       ],
       "aliases": []
     },
@@ -6458,7 +6458,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L951"
+        "EXECUTION_PLAN.md#L950"
       ],
       "aliases": []
     },
@@ -6472,7 +6472,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1170"
+        "EXECUTION_PLAN.md#L1169"
       ],
       "aliases": []
     },
@@ -7180,7 +7180,7 @@
       ],
       "aliases": [],
       "next": "W4a (E-112) for the emit, W4b for the collect. Predator profile 2026-10-23: emitSpriteQueue 17.2 %, collectVisibleEntities 9.6 %, _storeEntitySortY 5.1 %, _displayPose 5.0 %, _writeQueueShadow 4.1 % of pre-render; the shadow stamp chain 37 % (W23).",
-      "rank": 3
+      "rank": 2
     },
     {
       "id": "E-82b",
@@ -7197,7 +7197,7 @@
       ],
       "aliases": [],
       "next": "Pays only on frames that keep their rows (a still camera); an animation frame change bumps staticGen, so animated scenes would re-upload statics as often as now unless the texture moves to the pose stream. Measure on animatedSpriteStressScene?sprites=250000 if taken up.",
-      "rank": 9
+      "rank": 8
     },
     {
       "id": "N-64",

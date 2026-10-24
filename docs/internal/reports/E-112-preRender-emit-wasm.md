@@ -99,6 +99,17 @@ switched off (`--override`), side B the same tree with it on. Spatial read +1.0 
 (+8.5 %, 3/4), physics (+7.7 %, 4/4) and the renderer (+4.5 %, 4/4) flagged instead, and pre-render read
 −1.7 %. Load keys stayed within 0.5 % in every sitting.
 
+## Re-measured with the window watched
+
+That night the owner found the headed Chrome window had been minimized for about half an hour, which covers the
+A/A and the same-build pair above. With the bench's launch flags a minimized window keeps its page "visible", so
+nothing caught it, but Windows slows a minimized window's processes. The runner now restores a window that opens
+minimized and watches it during the run, measuring a minimized run again (`092abe39`, `b14a6bc6`). E-112 re-gated
+that way, with the stamp of E-114 switched off (`wasmOff=shadowStamp`) so the sitting holds the emit alone, 4 pairs:
+**pre-render 5.407 → 5.255 ms, −5.2 %, worse 1/4, KEPT (product)**; spatial +0.8 %, logic −2.6 %, physics −0.4 %,
+renderer +3.4 % (2/4). An A/A in the same conditions still read physics +8.5 % (4/4), so a side bias remains
+(REVIEW_PLAN M13).
+
 ## Verdict
 
 **KEPT (product).** The kernel wins outright, the emit got 26 % cheaper in Chrome, and the owner improved

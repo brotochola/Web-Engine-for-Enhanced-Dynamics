@@ -869,13 +869,12 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 
-### E-114 The shadow-caster stamp in WASM (E-76 W23) — **kernel +99.8 % (25/25); wiring next**
-`wasm/test/shadowStamp.c` is `stampLightRange` whole, bit for bit on the Predator fixture: 897.7 → 1 794.0 ops/s
-(+99.8 %, 25/25, Node 22), and 2.27× on the plain path. The stamp's call tree was 32 % of Predator pre-render before
-E-112, so about 16 % of it. Wiring: the stamp scratch (candidates, distances, order, kept list, the grid, the
-per-caster nearest lights) and a light table become regions of the render-queue memory, where the sun rows and the
-stamp output already are; a randomized parity test (NaN and far positions, ties, light budgets, the grid's fallback,
-stride and begin, a full stamp) before the switch `wasm.shadowStamp`; then the Predator gate, owner pre-render.
+### E-114 The shadow-caster stamp in WASM (E-76 W23) — **KEPT (product), 2026-10-23**
+`wasm/shadowStamp.c` is `stampLightRange` whole, bit for bit; it runs on the render-queue memory, where the sun rows
+and the stamp output already were, with its scratch and a light table in new stamp regions; switch `wasm.shadowStamp`.
+Kernel +99.8 % (25/25, Node); Chrome `SHADOW_Q_MS` 2.6–2.8 → 1.9–2.0 ms. **Predator gate, window watched, 4 pairs:
+pre-render 5.287 → 4.692 ms, −10.3 %, worse 0/4**, every other worker within the session's A/A.
+Report: [`reports/E-114-shadow-stamp-wasm.md`](./reports/E-114-shadow-stamp-wasm.md).
 
 ### E-113 Queue columns a multiple of 4 KB apart alias in cache — **open (found in E-112)**
 At a render-queue capacity that is a multiple of 1 024 every float column of a row falls in one L1 set: in E-112's
@@ -891,7 +890,7 @@ memory, where SpriteRenderer, ShadowCaster and DecorationComponent now live (bou
 emit's state; the rows of other types are written after it by a copy of their branches. Kernel +117.5 % (25/25,
 Node); through the worker the queue is the JS one byte for byte. Chrome: `EMIT_MS` 1.24 → 0.92 ms. Predator gate,
 8 pairs: **pre-render 5.054 → 4.666 ms, −4.6 %, worse 2/8**; spatial's +5.1 % flag did not reproduce in a
-same-build pair (+1.0 %). Next in this line: W4c, the persist path (`_type0PersistHit`, `_writeType0PosesOnly`,
+same-build pair (+1.0 %). Watched re-gate (2026-10-24, the stamp off): pre-render 5.407 → 5.255 ms, −5.2 %, worse 1/4. Next in this line: W4c, the persist path (`_type0PersistHit`, `_writeType0PosesOnly`,
 `_rememberType0Set`) in the kernel, for BunnyMark's pre-render; W4b, the collect, after Phase 4.
 Report: [`reports/E-112-preRender-emit-wasm.md`](./reports/E-112-preRender-emit-wasm.md).
 

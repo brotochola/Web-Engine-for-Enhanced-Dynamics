@@ -6,6 +6,12 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 24 October 2026 (small hours) — The Shadow Stamp in C, and a Minimized Window
+
+The shadow pass was half of Predator's pre-render once the emit went to C: every light gathers the shadow casters in its range, keeps the closest ones, and each kept caster is copied into the stamp queue with the light. All of it is now one C call on the render-queue memory, the same bits out, down to which caster wins a tie. In its kernel it runs twice as fast as the JavaScript; in Predator pre-render went from 5.29 to 4.69 ms, 10 % with every pair agreeing.
+
+The night's real lesson was the gate. One sitting said physics got 18 % slower from a pre-render change, which cannot happen. I had minimized the Chrome window the benchmark opens. With the flags the bench launches Chrome with, the page never finds out it is minimized, but Windows slows the window down anyway, and for half an hour every sitting measured that. The runner now asks Chrome four times a second whether its window is minimized, puts it back and measures that run again, and restores a window that opens minimized. Measured again that way, the emit and the stamp both held. An A/A still leans one way, so the gate has one more ghost to find.
+
 ## Friday 23 October 2026 (late night) — The Emit in C
 
 Pre-render's emit writes the render queue: every visible sprite and grass blade gets its pose, scale, tint, texture and shadow terms copied into the columns Pixi draws from, and every animated sprite's clock moves on. In Predator that is about a fifth of pre-render, and E-98 had already taken the JavaScript as far as it went. The next step was C.
