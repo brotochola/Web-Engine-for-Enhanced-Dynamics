@@ -972,7 +972,7 @@ order during `buildStampGrid` tied in `shadowStampMicrobench` (666 → 658 ops/s
 cache and the samples were load stalls. The stamp is about a third of Predator's pre-render (`stampLightRange`,
 `buildStampGrid`, `partitionOrder`, `copyTypedRange`, `noteNearest`); W23 is the next look at it.
 
-### E-82b The split upload for sprites without pose interpolation — **open (from E-82)**
+### E-82b The split upload for sprites without pose interpolation — **KEPT (product), 2026-10-24**
 Scenes with `renderer.interpolation` off (the default) upload 15 floats per sprite every frame. With the
 default `packGpuSprites: 'preRender'` those rows come from pre-render's WASM packer (`gpuPack.wasm`) and Pixi
 copies them in `_commitPackedBatch`, so the split needs the packer to write a pose stream and a static stream
@@ -984,6 +984,13 @@ would cost the frames whose statics change: Pixi would pack in JS what pre-rende
 packer: `gpuPack.wasm` writes a pose stream and a static stream into the GPU queue, and Pixi copies both and
 uploads the statics only when `staticGen` moves. Owner scene: `BunnyMarkStressCScene` (100 000 bunnies,
 default renderer, still camera), renderer; Predator renderer as the guard.
+**Built and kept (2026-10-24, R-0599):** `wasm.gpuPackSplit`. The packer writes a 16-byte pose stream and a 44-byte
+static stream into the GPU queue (`GPU_FLAG_SPLIT`, the statics' generation in the header), the statics only into
+a buffer that lacks the generation; Pixi's entity batch is E-82's two-stream batch with the previous xy read from
+the current one. BunnyMarkStressC at 250 000 bunnies (`?bunnies=`; 100 000 put Pixi under the floor), one build,
+4 pairs: renderer **4.953 → 1.701 ms, −65.6 %**, pre-render **9.212 → 7.006 ms, −23.8 %**, both 0/4 worse.
+Predator NEUTRAL. Left: a nearest atlas (the snapped pose) keeps 15-float rows; pose interpolation on the packed
+path (pre-render writing the previous xy) and E-82's packed static formats.
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **kept (hygiene), 2026-10-23**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls
