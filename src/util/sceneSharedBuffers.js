@@ -1,5 +1,5 @@
 import { debugWorkerLog } from './debugLog.js';
-import { createSpatialPublishMemory } from './spatialPublishMemory.js';
+import { createSpatialPublishMemory, spatialPublishMemoryBytes } from './spatialPublishMemory.js';
 import { createParticleMemory } from './particleMemory.js';
 import { createRenderQueueMemory, renderQueueMemoryBytes } from './renderQueueMemory.js';
 import { createNavigationMemory } from './navigationMemory.js';
@@ -211,10 +211,14 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   const maxNeighbors = config.spatial.maxNeighbors;
   scene.spatialPublish = null;
   if (spatialOn) {
-    // wasm.spatialPublish false (E-76 T7) takes the plain-SAB JS path, as 32-bit ids do.
-    scene.spatialPublish = config.wasm?.spatialPublish === false
-      ? null
-      : createSpatialPublishMemory(totalEntityCount, maxNeighbors, config.spatial.numberOfSpatialWorkers | 0, spatialGridSpec(config));
+    // wasm.spatialPublish false (E-76 T7) takes the plain-SAB JS path, as 32-bit ids do. Phase 4: in the spatial
+    // part of Box2D's block when there is one (sized from the same spec), else a memory of its own.
+    const args = spatialPublishSpec(scene);
+    const block = scene.box2dBlock;
+    const place = args && block && block.spatialBytes > 0 ? { memory: block.memory, baseByte: block.spatialByte } : null;
+    scene.spatialPublish = args
+      ? (place && createSpatialPublishMemory(...args, place)) || createSpatialPublishMemory(...args)
+      : null;
     buffers.neighborData = scene.spatialPublish
       ? scene.spatialPublish.buffer
       : new SharedArrayBuffer(totalEntityCount * (1 + maxNeighbors) * entityIdBytes());
@@ -560,6 +564,27 @@ export function renderQueueMemorySpec(scene) {
 }
 
 /**
+ * The spatial publish memory's arguments (createSpatialPublishMemory), or null when the scene keeps plain buffers
+ * (no spatial worker, or wasm.spatialPublish off).
+ */
+export function spatialPublishSpec(scene) {
+  const { config } = scene;
+  const workers = config.spatial?.numberOfSpatialWorkers | 0;
+  if (!(workers > 0) || config.wasm?.spatialPublish === false) return null;
+  return [scene.totalEntityCount, config.spatial.maxNeighbors, workers, spatialGridSpec(config)];
+}
+
+/**
+ * The bytes the spatial publish regions take in a block of Box2D's memory (Phase 4), 0 without them. Sized before
+ * createSceneSharedBuffers binds the scene's entity id width, so it binds it here (the same width).
+ */
+export function spatialBlockBytes(scene) {
+  bindEntityIdWidth(resolveEntityIdWidth(scene.config));
+  const args = spatialPublishSpec(scene);
+  return args ? spatialPublishMemoryBytes(...args) : 0;
+}
+
+/**
  * The bytes the render-queue regions take in a block of Box2D's memory (Phase 4), 0 when the scene makes no
  * render-queue memory. The collect's blocks are in it when the spec has them (with physics, its body variant),
  * and the painter state when the spec has it.
@@ -586,7 +611,7 @@ function initializeRenderQueueMemory(scene) {
   const shapes = (collect) => (collect ? [[collect, spec.painter], [collect, null]] : [])
     .concat([[null, spec.painter], [null, null]]);
   const make = (collect, painter, at) =>
-    (!at || renderQueueMemoryBytes(...spec.args, collect, painter) <= block.bytes)
+    (!at || renderQueueMemoryBytes(...spec.args, collect, painter) <= block.queueBytes)
       ? createRenderQueueMemory(...spec.args, collect, painter, at)
       : null;
   let rqm = null;

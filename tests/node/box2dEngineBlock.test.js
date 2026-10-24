@@ -150,3 +150,52 @@ test('the spec: with physics the collect asks for the body variant, which needs 
   assert.ok(box2dBlockPlan(scene(true)).bytes > box2dBlockPlan(scene(true, { preRenderCollect: false })).bytes,
     'the block holds the body variant');
 });
+
+test('the spatial publish regions sit in the block after the render-queue part, every region shifted', async () => {
+  const { createSpatialPublishMemory, spatialPublishMemoryBytes } = await import('../../src/util/spatialPublishMemory.js');
+  const { box2dBlockParts } = await import('../../src/util/box2dEngineBlock.js');
+  const grid = { totalCells: 40 * 30, cellByteSize: 4 + 32 * 2 };
+  const own = createSpatialPublishMemory(2000, 16, 2, grid);
+  assert.ok(own);
+  const bytes = spatialPublishMemoryBytes(2000, 16, 2, grid);
+  assert.ok(bytes > 0);
+  const memory = new WebAssembly.Memory({ initial: 128, maximum: 128, shared: true });
+  const block = box2dBlockParts({ memory, byte: 65536, bytes: 65536 * 3 + bytes }, { queueBytes: 65536 * 3, spatialBytes: bytes });
+  assert.equal(block.spatialByte, 65536 * 4);
+  const placed = createSpatialPublishMemory(2000, 16, 2, grid, { memory, baseByte: block.spatialByte });
+  assert.ok(placed);
+  assert.equal(placed.memory, memory);
+  for (const key of ['posByte', 'rangeByte', 'neighborByte', 'candByte', 'listByte', 'gridByte', 'markerByte', 'truncatedByte', 'rebuildByte', 'orderByte', 'patternByte']) {
+    assert.equal(placed[key], own[key] + block.spatialByte, key);
+  }
+  assert.ok(placed.patternByte + placed.patternBytes <= block.spatialByte + bytes, 'the regions fit the part');
+  assert.equal(createSpatialPublishMemory(2000, 16, 2, grid, { memory, baseByte: block.spatialByte + 4 }), null, 'unaligned');
+  assert.equal(box2dBlockParts(null, { queueBytes: 0, spatialBytes: 0 }), null);
+});
+
+test('the block plan sizes the spatial part after the render-queue part', () => {
+  const scene = (spatial) => ({
+    _physicsEnabled: true,
+    totalEntityCount: 1000,
+    componentPools: {},
+    config: {
+      physics: { wasmMemoryMB: 64 },
+      wasm: {},
+      renderer: { maxVisibleRenderables: 500 },
+      lighting: { enabled: false, shadowsEnabled: false },
+      decoration: { maxDecorations: 0 },
+      particle: {},
+      preRender: {},
+      worldWidth: 4096,
+      worldHeight: 4096,
+      spatial: { numberOfSpatialWorkers: spatial, cellSize: 128, maxNeighbors: 16, maxEntitiesPerCell: 32 },
+    },
+  });
+  const without = box2dBlockPlan(scene(0));
+  const withSpatial = box2dBlockPlan(scene(2));
+  assert.equal(without.spatialBytes, 0);
+  assert.equal(withSpatial.queueBytes, without.queueBytes);
+  assert.equal(withSpatial.queueBytes % 64, 0);
+  assert.ok(withSpatial.spatialBytes > 0);
+  assert.equal(withSpatial.bytes, withSpatial.queueBytes + withSpatial.spatialBytes);
+});

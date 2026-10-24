@@ -16,7 +16,7 @@ import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
 import { installDecalMemory } from './decalMemory.js';
-import { box2dBlockPlan, requestBox2dBlock } from './box2dEngineBlock.js';
+import { box2dBlockParts, box2dBlockPlan, requestBox2dBlock } from './box2dEngineBlock.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -647,7 +647,7 @@ export async function reserveBox2dBlock(scene) {
     scene._showFatalErrorMessage('physics', 'Physics worker failed to start', e.message || String(e));
   };
   scene.workers.physics = worker;
-  scene.box2dBlock = await requestBox2dBlock(worker, plan.bytes);
+  scene.box2dBlock = box2dBlockParts(await requestBox2dBlock(worker, plan.bytes), plan);
   return scene.box2dBlock;
 }
 

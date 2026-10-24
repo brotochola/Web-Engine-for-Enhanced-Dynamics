@@ -17,6 +17,8 @@ export const SPATIAL_MAX_CELL_RADIUS = 12;
  * @param {number} maxNeighbors
  * @param {number} spatialWorkers
  * @param {{ totalCells: number, cellByteSize: number } | null} [grid] lays out the gather's regions too
+ * @param {null | { memory: WebAssembly.Memory, baseByte: number }} [place] lay the regions in that memory from
+ *   baseByte (Phase 4: the spatial part of Box2D's block) instead of making a memory of their own
  * @returns {null | {
  *   memory: WebAssembly.Memory,
  *   buffer: SharedArrayBuffer,
@@ -40,20 +42,22 @@ export const SPATIAL_MAX_CELL_RADIUS = 12;
  *   regions: Record<string, { byte: number, bytes: number, owner: string }>,
  * }}
  */
-export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWorkers, grid = null) {
-  if (entityIdBytes() !== 2) return null;
-  const count = entityCount | 0;
-  const maxN = maxNeighbors | 0;
-  if (count <= 0 || maxN < 0) return null;
-  const gather = grid
-    ? { gridBytes: (grid.totalCells | 0) * (grid.cellByteSize | 0), patternBytes: spatialPatternTableBytes(SPATIAL_MAX_CELL_RADIUS) }
-    : null;
-  const layout = spatialPublishRegions(count, maxN, spatialWorkers, gather);
-  if (layout.pages > WASM_MAX_PAGES) return null;
-  const { regions } = layout;
+export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWorkers, grid = null, place = null) {
+  const layout = spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid);
+  if (!layout) return null;
+  const gather = layout.gather;
+  const base = place ? place.baseByte | 0 : 0;
+  if (place) {
+    if ((base & 63) !== 0 || base + layout.bytes > place.memory.buffer.byteLength) return null;
+  } else if (layout.pages > WASM_MAX_PAGES) {
+    return null;
+  }
+  // Every region's byte from the memory's start: the block's offset added when the regions sit in a block.
+  const regions = {};
+  for (const [name, region] of Object.entries(layout.regions)) regions[name] = base ? { ...region, byte: region.byte + base } : region;
 
   try {
-    const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
+    const memory = place ? place.memory : new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
     return {
       memory,
       buffer: memory.buffer,
@@ -80,4 +84,22 @@ export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWor
   } catch {
     return null;
   }
+}
+
+/** The regions' layout (spatialPublishRegions) for these counts, or null when the scene keeps plain buffers. */
+function spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid) {
+  if (entityIdBytes() !== 2) return null;
+  const count = entityCount | 0;
+  const maxN = maxNeighbors | 0;
+  if (count <= 0 || maxN < 0) return null;
+  const gather = grid
+    ? { gridBytes: (grid.totalCells | 0) * (grid.cellByteSize | 0), patternBytes: spatialPatternTableBytes(SPATIAL_MAX_CELL_RADIUS) }
+    : null;
+  return { ...spatialPublishRegions(count, maxN, spatialWorkers, gather), gather };
+}
+
+/** The bytes createSpatialPublishMemory's regions take, for a block reserved before the memory is made (Phase 4). */
+export function spatialPublishMemoryBytes(entityCount, maxNeighbors, spatialWorkers, grid = null) {
+  const layout = spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid);
+  return layout ? layout.bytes : 0;
 }

@@ -18,7 +18,7 @@
       "exports": [
         "publish_batch"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "coexistScale",
@@ -63,7 +63,7 @@
         "gather_batch",
         "order_batch_by_cell"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "particleIntegrate",
