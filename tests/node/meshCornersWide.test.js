@@ -14,6 +14,12 @@ import fs from 'node:fs';
 import { MESH_UV_FILL_FLOATS, COLLIDER_FILL_FLOATS, rewriteExplicitMeshCorners } from '../../src/render/colliderFillBatch.js';
 import { bindMeshCorners, rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
 import { E, frameCall, rng, setup } from '../helpers/meshCornerFrames.mjs';
+import {
+  MESH_CORNER_WIDE_VARIANTS,
+  WIDE_ARENA_VERTS,
+  meshCornerVariant,
+  setupMeshCornersKernel,
+} from '../bench/meshCornersWasmMicrobench.mjs';
 import { loadWorker } from '../bench/workerHarness.mjs';
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
@@ -149,6 +155,28 @@ test('rewrite_corners_u32 writes what rewriteExplicitMeshCorners writes on a 32-
   t.diagnostic(`1024 vertices, 800 frames: codes ${JSON.stringify(small.codes)}; ${JSON.stringify(small.tally)}`);
   const large = await compareFrames({ V: 70000, I: 3072 }, 120, 0x1e130, ['indexed', 'indexedUv', 'highIndex', 'bigMesh', 'fan']);
   t.diagnostic(`70 000 vertices, 120 frames: codes ${JSON.stringify(large.codes)}; ${JSON.stringify(large.tally)}`);
+});
+
+test('the bench scene hashes the same on a 32-bit arena, and each variant runs on the width it names', async () => {
+  for (const wide of MESH_CORNER_WIDE_VARIANTS) {
+    const narrow = wide.slice(0, -'-u32'.length);
+    // One kernel at a time: each binds MeshGeometry, where the scene's logic writes.
+    const a = await setupMeshCornersKernel({ scale: 0.125 });
+    assert.equal(a.indexWidth, 16);
+    const hash = a.checksumFrames(narrow);
+    const b = await setupMeshCornersKernel({ scale: 0.125, maxVerts: WIDE_ARENA_VERTS });
+    assert.equal(b.indexWidth, 32);
+    assert.equal(b.checksumFrames(wide), hash, `${wide} against ${narrow}`);
+    if (meshCornerVariant(wide).wasm) {
+      const bound = b.bindingOf(wide);
+      assert.equal(bound.indexWidth, 32, `${wide}: rewrite_corners_u32`);
+      assert.equal(bound.declined, 0, `${wide}: the kernel took every call`);
+      assert.ok(bound.calls > 0, `${wide}: the kernel ran`);
+    }
+    assert.throws(() => b.frameOp(narrow), /runs on a 16-bit arena/, `${narrow} refuses the 32-bit arena`);
+    assert.throws(() => a.frameOp(wide), /runs on a 32-bit arena/, `${wide} refuses the 16-bit arena`);
+  }
+  assert.equal(meshCornerVariant('wasm-f32-u32'), null, 'no float32 variant reads 32-bit columns');
 });
 
 // Pixi's real MESH layer path, as meshCornersWired.test.js runs it, on a 32-bit arena.

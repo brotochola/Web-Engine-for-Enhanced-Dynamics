@@ -41,10 +41,19 @@
  * variant must give the same checksum: the UV generations change which stores run, not what the rows hold.
  * --check runs only those frames and prints the checksum (no warm-up, no timing).
  *
+ * E-130, the arena's width: js-u32, js-uvgen-u32, wasm-u32 and wasm-uvgen-u32 are js, js-uvgen, wasm and
+ * wasm-uvgen on a vertex arena of 131072 (WIDE_ARENA_VERTS), past 65535, so MeshGeometry's vertex counts and
+ * indices are Uint32 and the wasm ones run rewrite_corners_u32. The meshes are the same, so the checksum is too.
+ * --max-verts (renderer.maxMeshVerts, default 65535, or 131072 for a -u32 variant) and --max-indices (default
+ * 524288) size the arenas by hand: past --scale 1.02 the default vertex arena is full. The float32 variants read
+ * 16-bit columns and refuse a 32-bit arena. The report names the width it ran (indexWidth).
+ *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/meshCornersWasmMicrobench.mjs --variants js,js-uvgen --rounds 5
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/meshCornersWasmMicrobench.mjs --variants wasm,wasm-f32,wasm-f32x4 --rounds 5
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/meshCornersWasmMicrobench.mjs --variants wasm-uvgen,wasm-f32-uvgen,wasm-f32x4-uvgen --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/meshCornersWasmMicrobench.mjs --variants wasm-uvgen,wasm-uvgen-u32,js-uvgen-u32 --rounds 5
  *   node tests/bench/meshCornersWasmMicrobench.mjs --variant wasm-uvgen [--check] [--scale 0.1] [--output path]
+ *   node tests/bench/meshCornersWasmMicrobench.mjs --variant wasm-uvgen-u32 --scale 4 --max-verts 262144 --max-indices 1310720
  */
 import { MeshGeometry, resetMeshGeometryWarns } from '../../src/core/meshGeometry.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
@@ -80,6 +89,23 @@ export const MESH_CORNER_VARIANTS = {
   'wasm-f32x4-uvgen': { wasm: true, uvGen: true, fn: 'rewrite_corners_f32x4' },
 };
 
+/** E-130: a -u32 variant's vertex arena, past 65535 (a 32-bit arena that still holds the default scene). */
+export const WIDE_ARENA_VERTS = 131072;
+const WIDE_SUFFIX = '-u32';
+/** The variants that have a -u32 twin: the float32 ones read 16-bit columns. */
+export const MESH_CORNER_WIDE_VARIANTS = ['js-u32', 'js-uvgen-u32', 'wasm-u32', 'wasm-uvgen-u32'];
+
+/**
+ * A variant's spec: MESH_CORNER_VARIANTS[name], or for a -u32 name its 16-bit twin with `indexWidth` 32 (run on
+ * a vertex arena past 65535); null for no such variant.
+ */
+export function meshCornerVariant(name) {
+  const v = String(name);
+  if (!v.endsWith(WIDE_SUFFIX)) return MESH_CORNER_VARIANTS[v] ? { ...MESH_CORNER_VARIANTS[v], indexWidth: 16 } : null;
+  if (!MESH_CORNER_WIDE_VARIANTS.includes(v)) return null;
+  return { ...MESH_CORNER_VARIANTS[v.slice(0, -WIDE_SUFFIX.length)], indexWidth: 32 };
+}
+
 // meshApiStressScene's shapes and cohorts (its defaults; `scale` is its `count` query).
 const FAN_VERTS = 8;
 const ROPE_POINTS = 8;
@@ -89,6 +115,7 @@ const DEFORM_SY = 16;
 const DEFORM_VERTS = (DEFORM_SX + 1) * (DEFORM_SY + 1);
 const PLANE_SX = 4;
 const PLANE_SY = 3;
+// The scene's arenas, by default (its maxVerts and maxIndices query).
 const MAX_VERTS = 65535;
 const MAX_INDICES = 524288;
 const COLS = 96;
@@ -157,10 +184,13 @@ function ropePoints(pts, time, phase) {
 /**
  * The scene's meshes in a memory laid out as the product's mesh memory, packed by the shipped packs, and the
  * kernel bound to it.
- * @param {{ scale?: number }} [opts]
+ * @param {{ scale?: number, maxVerts?: number, maxIndices?: number }} [opts] the scene's count and its arenas
+ *   (a vertex arena past 65535 is 32-bit, E-130)
  */
 export async function setupMeshCornersKernel(opts = {}) {
   const c = mix(opts.scale ?? 1);
+  const maxVerts = opts.maxVerts ?? MAX_VERTS;
+  const maxIndices = opts.maxIndices ?? MAX_INDICES;
   const first = {};
   let total = 0;
   for (const name of ['rigid', 'deform', 'rope', 'uv', 'plane', 'poly', 'fill']) {
@@ -173,14 +203,14 @@ export async function setupMeshCornersKernel(opts = {}) {
   const ropeTris = (ROPE_POINTS - 1) * 2;
   const uvCap = c.deform * deformTris + c.rope * ropeTris + c.uv * 2 + c.plane * PLANE_SX * PLANE_SY * 2;
 
-  const layout = meshMemoryRegions(MeshGeometry.getBufferSize(MAX_VERTS, MAX_INDICES, n), n, [{ fillRows: fillCap, uvRows: uvCap }]);
+  const layout = meshMemoryRegions(MeshGeometry.getBufferSize(maxVerts, maxIndices, n), n, [{ fillRows: fillCap, uvRows: uvCap }]);
   const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
   const buffer = memory.buffer;
   const R = layout.regions;
   MeshGeometry.reset();
   resetMeshGeometryWarns();
   resetColliderFillMeshLayerWarn();
-  MeshGeometry.initializeArrays(buffer, MAX_VERTS, MAX_INDICES, n);
+  MeshGeometry.initializeArrays(buffer, maxVerts, maxIndices, n);
 
   // The scene's spawns, in its pool order.
   const api = [];
@@ -286,16 +316,26 @@ export async function setupMeshCornersKernel(opts = {}) {
   const f32 = await loadWasmKernel('meshCornersF32', F32_URL, memory, F32_EXPORTS);
   const bindings = {};
   const rewriters = {};
+  /** A variant's spec, refused on an arena of the other width (E-130): the run would time another kernel. */
+  const arenaWidth = MeshGeometry.indexWidth;
+  const specOf = (variant) => {
+    const spec = meshCornerVariant(variant);
+    if (!spec) throw new Error(`unknown variant ${variant}`);
+    if (spec.indexWidth !== arenaWidth) {
+      throw new Error(`${variant} runs on a ${spec.indexWidth}-bit arena; this one is ${arenaWidth}-bit (maxVerts ${maxVerts})`);
+    }
+    return spec;
+  };
   /** The binding a variant's rewrite goes through. */
   const bindingOf = (variant) => {
-    const fn = MESH_CORNER_VARIANTS[variant]?.fn;
+    const fn = specOf(variant).fn;
     if (!fn) return b;
     bindings[fn] ??= { ...b, rewrite: f32[fn], calls: 0, declined: 0 };
     return bindings[fn];
   };
   /** A variant's rewrite function, with rewriteExplicitMeshCorners' arguments. */
   const rewriteOf = (variant) => {
-    const spec = MESH_CORNER_VARIANTS[variant];
+    const spec = specOf(variant);
     if (!spec.wasm) return rewriteExplicitMeshCorners;
     if (!spec.fn) return wasmRewrite;
     const bound = bindingOf(variant);
@@ -312,8 +352,7 @@ export async function setupMeshCornersKernel(opts = {}) {
   };
   /** One frame's two calls for `variant`, as the timed op runs them. */
   const frameOp = (variant) => {
-    const spec = MESH_CORNER_VARIANTS[variant];
-    if (!spec) throw new Error(`unknown variant ${variant}`);
+    const spec = specOf(variant);
     const rewrite = rewriteOf(variant);
     return () => rewriteFrameWith(rewrite, spec.uvGen);
   };
@@ -391,7 +430,7 @@ export async function setupMeshCornersKernel(opts = {}) {
   const shortStars = { rows: fillRows.subarray(starRow * COLLIDER_FILL_FLOATS), entity: fillEntity.subarray(starRow), count: starRows };
   const warmLast = new Uint32Array(n);
   const shortFrame = (variant) => {
-    const spec = MESH_CORNER_VARIANTS[variant];
+    const spec = specOf(variant);
     const rewrite = rewriteOf(variant);
     rewrite(fillRows, shortFill, fillEntity, views, COLLIDER_FILL_FLOATS, lastVertGen, frameVertGen);
     if (spec.uvGen) {
@@ -408,21 +447,29 @@ export async function setupMeshCornersKernel(opts = {}) {
 
   return {
     cohorts: c, n, fillCount, uvCount, b, bindingOf, views, frameOp, checksumFrames, sceneDirty, shortFrame,
+    maxVerts, maxIndices, indexWidth: arenaWidth,
   };
 }
 
 async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'js');
-  const spec = MESH_CORNER_VARIANTS[variant];
-  if (!spec) throw new Error(`unknown variant ${variant} (${Object.keys(MESH_CORNER_VARIANTS).join(', ')})`);
-  const k = await setupMeshCornersKernel({ scale: Number(args.scale ?? 1) });
+  const spec = meshCornerVariant(variant);
+  if (!spec) {
+    throw new Error(`unknown variant ${variant} (${[...Object.keys(MESH_CORNER_VARIANTS), ...MESH_CORNER_WIDE_VARIANTS].join(', ')})`);
+  }
+  const k = await setupMeshCornersKernel({
+    scale: Number(args.scale ?? 1),
+    // A -u32 variant's arena is past 65535 unless sized by hand.
+    maxVerts: args['max-verts'] == null ? (spec.indexWidth === 32 ? WIDE_ARENA_VERTS : undefined) : Number(args['max-verts']),
+    maxIndices: args['max-indices'] == null ? undefined : Number(args['max-indices']),
+  });
 
   const checksum = k.checksumFrames(variant);
   const bound = k.bindingOf(variant);
   if (spec.wasm && bound.declined) throw new Error(`the kernel declined ${bound.declined} calls`);
   if (args.check) {
-    console.log(`checksum ${checksum} variant ${variant} fill ${k.fillCount} uv ${k.uvCount} rows, ${FRAMES} frames`);
+    console.log(`checksum ${checksum} variant ${variant} fill ${k.fillCount} uv ${k.uvCount} rows, ${FRAMES} frames, ${k.indexWidth}-bit arena`);
     return;
   }
 
@@ -440,7 +487,12 @@ async function main() {
   const report = {
     feature: 'mesh-corners-wasm',
     variant,
-    functions: ['rewriteExplicitMeshCorners', spec.fn ? `meshCornersF32.${spec.fn}` : 'meshCorners.rewrite_corners'],
+    functions: [
+      'rewriteExplicitMeshCorners',
+      spec.fn ? `meshCornersF32.${spec.fn}` : k.indexWidth === 32 ? 'meshCorners.rewrite_corners_u32' : 'meshCorners.rewrite_corners',
+    ],
+    indexWidth: k.indexWidth,
+    arenas: { maxVerts: k.maxVerts, maxIndices: k.maxIndices },
     cohorts: k.cohorts,
     rows: { fill: k.fillCount, uv: k.uvCount, rewritten: dirty.rewritten, withUv: uvRows },
     checksum,
@@ -450,7 +502,7 @@ async function main() {
     cases,
   };
   if (args.output) writeReport(String(args.output), report);
-  else console.log(`checksum ${checksum} rows ${k.fillCount} + ${k.uvCount}${tier ? ` tier ${tier}` : ''} rewrite ${cases.rewrite.opsPerSec.toFixed(1)} ops/s`);
+  else console.log(`checksum ${checksum} rows ${k.fillCount} + ${k.uvCount} ${k.indexWidth}-bit${tier ? ` tier ${tier}` : ''} rewrite ${cases.rewrite.opsPerSec.toFixed(1)} ops/s`);
 }
 
 if (isCli(import.meta.url)) await main();
