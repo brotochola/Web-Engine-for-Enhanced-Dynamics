@@ -7,7 +7,10 @@ import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Query } from '../../src/core/query.js';
 import { GameObject } from '../../src/core/gameObject.js';
-import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
+import { Layer } from '../../src/core/layer.js';
+import { MeshGeometry } from '../../src/core/meshGeometry.js';
+import { LAYER_KIND, WASM_DEFAULTS } from '../../src/util/configDefaults.js';
+import { meshLayerCapacities } from '../../src/util/meshMemory.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 
 // E-76 T7: one switch per WASM module. wasm.spatialPublish false must give the scene the plain-SAB
@@ -177,4 +180,37 @@ test('wasm.pixiPack gives Pixi its own sprite rows and pack scratch in the rende
   const interp = { ...pixi, renderer: { maxVisibleRenderables: 100, interpolation: true } };
   assert.equal(buildScene({}, null, interp).renderQueueMemory.layout.pixiInstanceRows, 0, 'pose interpolation packs its own way');
   assert.equal(buildScene({ gpuPack: false, preRenderEmit: false }, null, pixi).renderQueueMemory, null, 'needs gpuPack');
+});
+
+test('wasm.meshCorners puts MeshGeometry and the MESH layers\' batches in the mesh memory (W11)', () => {
+  assert.equal(WASM_DEFAULTS.meshCorners, true);
+  const renderer = { maxVisibleRenderables: 100, maxMeshVerts: 512, maxMeshIndices: 1536 };
+  const meshes = {
+    renderer,
+    physics: { maxJoints: 0, maxFixturePoolSize: 300 },
+    layers: { ground: { kind: LAYER_KIND.MESH, zIndex: 1 }, sprites: { zIndex: 2 }, cloth: { kind: LAYER_KIND.MESH, zIndex: 3 } },
+  };
+  const on = buildScene({}, null, meshes);
+  const mem = on.meshMemory;
+  assert.ok(mem, 'the mesh memory');
+  assert.equal(on.buffers.meshGeomData, mem.buffer, 'MeshGeometry\'s buffer is its buffer');
+  assert.equal(MeshGeometry.vertOffset.buffer, mem.buffer, 'the main thread binds it there');
+  assert.equal(MeshGeometry.vertOffset.byteOffset, 0, 'from byte 0');
+  const caps = meshLayerCapacities(300, 1000, 512, 1536);
+  assert.deepEqual(mem.layout.layers.map((l) => l.layerId), [Layer.get('ground').id, Layer.get('cloth').id], 'each MESH layer, in order');
+  for (const l of mem.layout.layers) {
+    assert.equal(l.fillRows, caps.fill, 'the fill rows Pixi gives the layer');
+    assert.equal(l.uvRows, caps.uv, 'the UV rows Pixi gives the layer');
+  }
+  assert.equal(mem.layout.geometryBytes, MeshGeometry.getBufferSize(512, 1536, 1000));
+
+  const off = buildScene({ meshCorners: false }, null, meshes);
+  assert.equal(off.meshMemory, null, 'off');
+  assert.ok(off.buffers.meshGeomData instanceof SharedArrayBuffer);
+  assert.equal(off.buffers.meshGeomData.byteLength, MeshGeometry.getBufferSize(512, 1536, 1000), 'a buffer of its own');
+
+  const noMeshLayer = buildScene({}, null, { renderer, layers: { sprites: { zIndex: 2 } } });
+  assert.equal(noMeshLayer.meshMemory, null, 'no MESH layer, nothing to rewrite');
+  assert.ok(noMeshLayer.buffers.meshGeomData instanceof SharedArrayBuffer);
+  assert.equal(buildScene({}, null, { layers: meshes.layers }).meshMemory, null, 'no mesh vertices, no MeshGeometry');
 });
