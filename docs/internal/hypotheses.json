@@ -8031,6 +8031,22 @@
       "kind": "wasm",
       "result": "kept (product) 2026-10-24: Predator pre-render 4.355 → 4.017 ms (−12.0 % paired, −7.0 % against the other workers, 4/4); kernel wasm +22.9 %, js +11.6 % (5/5, checksums equal)",
       "next": "The Predator pair (owner pre-render)."
+    },
+    {
+      "aliases": [],
+      "refs": [],
+      "records": [
+        "R-0609"
+      ],
+      "id": "E-134",
+      "title": "The grid rebuild reads Grid.maxEntitiesPerCell and cellByteSize once, not per cell",
+      "status": "screened",
+      "statusText": "opened 2026-10-24 (from Predator's profile, R-0607: rebuildOwnedRows 13.9 % of spatial, 16 % of it on the per-cell cap test)",
+      "date": "2026-10-24",
+      "area": "spatial",
+      "kind": "js",
+      "result": "screened 2026-10-24: a tie on spatialGridMoversMicrobench's full rebuild (+0.8 to +4.2 % against an A/A of ±5 %); the profile's 16 % on that line is the cell stores, not the static read; reverted",
+      "next": ""
     }
   ],
   "records": [
@@ -13373,6 +13389,13 @@
       "commits": [
         "c7b4e94b"
       ]
+    },
+    {
+      "id": "R-0609",
+      "date": "2026-10-24",
+      "title": "Grid statics hoisted out of the rebuild's insert loop, screened on the movers bench, E-134",
+      "verdict": "screened",
+      "text": "**screened, not taken.** Predator's profile (R-0607) puts 16 % of `rebuildOwnedRows` on `if (localCount < Grid.maxEntitiesPerCell)`. Both copies of the rebuild (`rebuildOwnedRows`, `_rebuildOwnedRowsLatched`) read `Grid.maxEntitiesPerCell` and `Grid.cellByteSize` per cell. Hoisted into locals, `spatialGridMoversMicrobench --variant base` (the full rebuild on a real worker, 60 000 circles), the tree before against the hoist, 5 alternating rounds, checksums equal: 0 % movers +2.5 %, 5 % +4.2 %, 35 % +2.5 %, 50 % +0.8 %, 100 % +3.5 % (medians). A first sitting where the edit had not applied, the same tree on both sides, read −4 to +5 %: an A/A of this bench at ±5 %. So a tie: the line's time is the stores into the cell arrays that follow it, not the static read. Reverted; nothing committed."
     }
   ],
   "leads": [
