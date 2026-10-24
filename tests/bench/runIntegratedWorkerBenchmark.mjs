@@ -7,6 +7,7 @@ import { chromium, firefox } from 'playwright';
 
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
+import { createStockFirefox, stockFirefoxExe } from './stockFirefox.mjs';
 import { assertDistFreshForRun } from '../../scripts/distVersion.js';
 import {
   DEFAULT_DURATION_MS,
@@ -439,7 +440,12 @@ async function main() {
   // different engine than the working tree with nothing in the output to say so.
   assertDistFreshForRun(repoRoot, { useSrc: srcModules, label: 'runIntegratedWorkerBenchmark' });
 
-  const server = await createStaticBenchmarkServer(repoRoot);
+  // --browser firefox: the installed Firefox, driven over HTTP (stockFirefox.mjs); Chrome's CDP tools are not there.
+  const stockFirefox = cliArgs.browser === 'firefox' ? createStockFirefox() : null;
+  if (stockFirefox && (trace || usePhasedScreenshots)) {
+    throw new Error('--browser firefox: no trace or screenshots (they use Chrome CDP)');
+  }
+  const server = await createStaticBenchmarkServer(repoRoot, 0, stockFirefox ? { routes: stockFirefox.routes } : {});
   const extraQuery = typeof cliArgs.query === 'string' ? cliArgs.query.replace(/^\?/, '') : '';
   const qs = [];
   if (srcModules) qs.push('src=1');
@@ -546,10 +552,15 @@ async function main() {
   watchdog.unref();
 
   try {
-    if (cliArgs.browser === 'firefox') {
-      // --browser firefox: Playwright's Firefox (PLAYWRIGHT_BROWSERS_PATH says where it is installed). No Chrome
-      // flags; tracing and the window watch are Chrome's (CDP) and are skipped there.
-      browserChannel = 'firefox';
+    if (stockFirefox) {
+      const exe = stockFirefoxExe(cliArgs);
+      browserChannel = `firefox (${exe})`;
+      browser = stockFirefox.launch(exe, { headed });
+    } else if (cliArgs.browser === 'playwright-firefox') {
+      // Playwright's Firefox (PLAYWRIGHT_BROWSERS_PATH says where it is installed): boots and console lines, not
+      // speed, since its WASM ran 5-18x slower than release Firefox (stockFirefox.mjs). No Chrome flags; tracing and
+      // the window watch are Chrome's (CDP) and are skipped there.
+      browserChannel = 'playwright-firefox';
       browser = await firefox.launch({ headless: !headed });
     } else if (requestedChannel === 'chromium') {
       browserChannel = 'chromium';
@@ -563,9 +574,9 @@ async function main() {
     }
   } catch (chromeError) {
     // A Firefox run never falls back to Chromium: its numbers would be Chrome's.
-    if (cliArgs.browser === 'firefox') {
+    if (stockFirefox || cliArgs.browser === 'playwright-firefox') {
       await server.close();
-      throw new Error(`Unable to launch Playwright's Firefox (PLAYWRIGHT_BROWSERS_PATH): ${chromeError.message}`);
+      throw new Error(`Unable to launch ${browserChannel}: ${chromeError.message}`);
     }
     try {
       browserChannel = 'chromium';
@@ -809,7 +820,8 @@ async function main() {
       ? 'Chromium background-throttle mitigation off (--allow-throttle)'
       : 'Chromium background-throttle mitigation on (minimize/occlude less punishing)';
     console.log(
-      `Benchmark report written to ${outputPath} (${headed ? 'headed' : 'headless'} Chromium; ${throttleNote})`
+      `Benchmark report written to ${outputPath} (${headed ? 'headed' : 'headless'} ${browserChannel}` +
+        `${browserChannel.includes('firefox') ? '' : `; ${throttleNote}`})`
     );
     if (screenshotPaths.length > 0) {
       console.log(`Screenshots (${screenshotPaths.length}): ${screenshotDir}`);

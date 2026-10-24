@@ -8,6 +8,10 @@
     if (!new URLSearchParams(location.search).has('src')) {
       document.write('<script type="importmap">{"imports":{"/src/index.js":"/dist/weed.bundle.esm.min.js"}}<\/script>');
     }
+    // A browser started without Playwright (stockFirefox.mjs) takes the runner's calls through stockDriver.js.
+    if (new URLSearchParams(location.search).has('stockDriver')) {
+      document.write('<script src="stockDriver.js"><\/script>');
+    }
   </script>
 </head>
 <body>
