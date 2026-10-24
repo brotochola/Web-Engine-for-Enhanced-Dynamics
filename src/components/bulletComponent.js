@@ -3,6 +3,7 @@
 // Straight-line movement, raycast collision (prev→next), no physics
 
 import { Component } from '../core/component.js';
+import { EntityIdArray } from '../util/entityIdWidth.js';
 
 export class BulletComponent extends Component {
   static ARRAY_SCHEMA = {
@@ -25,7 +26,7 @@ export class BulletComponent extends Component {
     bulletRotS: Float32Array,
 
     damage: Float32Array,
-    ownerId: Uint16Array,
+    ownerId: Uint16Array, // the shooter: rebound to EntityIdArray (u32 when entityIdWidth is 32)
     shooterEntityType: Uint8Array,
 
     textureId: Uint16Array,
@@ -47,7 +48,15 @@ export class BulletComponent extends Component {
 
   static bulletCount = 0;
 
+  static getBufferSize(count) {
+    this.ARRAY_SCHEMA.ownerId = EntityIdArray();
+    return super.getBufferSize(count);
+  }
+
   static initializeArrays(buffer, count, byteOffset = 0) {
+    // An entity index: at 32-bit ids a 16-bit column would cut the shooter past 65 535, and its own bullets would
+    // hit it (the cast excludes the owner by index) and report another owner.
+    this.ARRAY_SCHEMA.ownerId = EntityIdArray();
     super.initializeArrays(buffer, count, byteOffset);
     if (this.bulletRotC) this.bulletRotC.fill(1);
     if (this.spriteRotC) this.spriteRotC.fill(1);
