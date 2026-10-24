@@ -36,12 +36,15 @@ Plans, this document, records and reports are written in English, in full senten
    kernel claim.
 7. **Know the session's noise:** one A/A sitting per session in the scenes used that day. A change smaller
    than the scene's detection limit cannot be called either way there. When every worker the change
-   cannot reach moved the same way, that is drift: read the owner against it.
+   cannot reach moved the same way, that is drift: read the owner against it. The A/A also judges the
+   protocol: a new way of running sittings stays only if it lowers that noise for the same machine time.
 8. **Correctness first, by a test:** bit-identical when that is free, within a stated tolerance held by a
    test when exactness would cost speed. A timing whose checksum differs does not exist.
 9. **One benchmark at a time, on a quiet machine.** Agents write kernels and tests; they do not time.
-10. **Write the record the same day** with the numbers that decided it (`node scripts/hypotheses.mjs
-    record`). Raw result files are not kept.
+10. **Write the record the same day** with the numbers that decided it and the sitting's detection limit
+    (`node scripts/hypotheses.mjs record`). Raw result files are not kept.
+11. **A total is measured, not added:** what a campaign gained, a projection or a README number comes from
+    one sitting that runs the changes together. The register's percentages, added up, overstate it.
 
 ## What counts as faster
 
@@ -73,6 +76,22 @@ whatever the owner did. E-82 is why: Pixi's step fell 76 % in BunnyMark while th
 is the frame rate names `--owner presented`. Such a change makes every worker run more frames, and Pixi's
 mean step can rise while it costs less per frame: read Pixi's busy ms/s from a CPU trace of both sides
 and divide by the presented frames (E-97b: renderer +29 % on the gate, 3.2 → 2.9 ms per presented frame).
+
+**A mean frame rate hides a hitch.** One late frame a second is 1.7 % of the frames, and one every four
+seconds is 0.4 %: both pass a 3 % guard on the mean, and a player sees both. CarScene's sprite froze on its
+last pose every four seconds when two clocks lapped, and the scene hitched each time `@pixi/tilemap` built a
+chunk while `STEP_MS` stayed under a millisecond ([DEVLOG](./DEVLOG.md), 19 September 2026). A worker's
+p95 does not see it either: the workers run as a pipeline, and a long step costs a frame only when it makes
+the present miss its vsync. What sees it is the count of late frames on the main thread, the rAF intervals
+longer than about 1.5 vsyncs: planned tool 8 makes it a guard beside the presented frames.
+
+**The whole machine.** The primary is one worker and the regression guard is per worker kind, so a change
+that adds 2.5 % to each of five other workers passes every rule while the machine does more work. No file
+under `src/` reads `navigator.hardwareConcurrency`: a scene starts the workers its config names on any
+machine, and the gains on record were measured with 16 logical processors (the README's Ryzen 7 4800H, 8
+cores). On four cores the workers share them, and the whole machine's CPU is the budget. Planned tool 9
+adds process CPU per presented frame to every gate, and each milestone runs once on four cores
+([Engine-wide claim](#engine-wide-claim)).
 
 ## Three instruments
 
@@ -253,7 +272,11 @@ verdict reads the median of those deltas.
   4 pairs on its side and its cv at most 10 %. When the median clears 3 % but the pairs do not, or the cv
   is above 10 %, add 4 with `--append` and read all 8; when 8 still split (G1: −5.7 %, 5 of 8), add 8 more,
   said up front, and read 16 (12 of 16 for consistency). `--append` refuses a tree that changed since the
-  first pairs.
+  first pairs. Each look is one more chance for a borderline result to cross 3 %. Where the detection limit
+  at 4 pairs is well under 3 %, that costs little; where it is near 3 % or above (Predator's pre-render and
+  logic, a noisy owner scene), planned tool 4 gives each look its own threshold from the session's A/A, so
+  that the rate of false keeps over the looks is the one chosen, as a sequential probability ratio test
+  does.
 - **Kept (product):** the owner at least 3 % cheaper (or its throughput 3 % higher) in at least 75 % of the
   pairs, the load matched, nothing regressed.
 - **Kept (kernel, product-neutral):** the kernel gates passed and the scene did not regress anywhere; the
@@ -272,10 +295,18 @@ verdict reads the median of those deltas.
 - **The session's noise.** One A/A sitting per session (and after anything on the machine changes) gives
   each worker kind its paired spread in each scene used that day. A scene's **detection limit** for a
   worker is about 2.5 times that spread divided by the square root of the number of pairs: a delta inside
-  it is neither a keep nor a regression on that sitting. Write it next to the verdict.
+  it is neither a keep nor a regression on that sitting. Write it next to every verdict, a keep's too:
+  −3.4 % at a limit of 1.5 % and −3.4 % at a limit of 3.2 % are different claims. The same A/A judges the
+  protocol: a new way of running sittings (headless gates, a power plan without boost, an affinity mask, a
+  longer window) stays only if it lowers the spread for the same machine time.
 - **A regression the change cannot explain** gets one more sitting, with the rule decided before looking:
   if it repeats, the change goes. Check first that it is not drift, side bias or load (Q1 was dropped on
   two such sittings where every worker moved by the same 3 to 4 %; E-124 re-sits it).
+- **A total is measured, not added.** A keep that crossed 3 % by a little probably read high: on another
+  day the same change could have read 2 % and been written down as a tie. Near the threshold, the keeps are
+  the readings that came out high, so their percentages, added up, overstate what a campaign gained. A
+  total, a projection or a README number comes from one sitting that runs the changes together: the
+  scoreboard, a multi-arm sitting (planned tool 2) or the WASM plan's leave-one-out.
 
 ### Floors
 
@@ -301,7 +332,10 @@ verdict reads the median of those deltas.
   to running totals ([`src/util/frameTotals.js`](../../src/util/frameTotals.js)) and the gate's primary is
   the window's exact mean (`STEP_MS − WAIT_MS`, plus `QUERY_WAKE_MS` on physics), with a median and a p95.
   A sitting whose base revision predates the totals falls back to the samples on both sides, and its
-  printout says `(sampled)`. Read older numbers as samples.
+  printout says `(sampled)`. Read older numbers as samples. In a paired delta, sampling mostly adds noise;
+  it biases one when the change moves work between frames (a persist path, a skipped frame, staggered
+  updates). Keeps of that kind from before 2026-10-24 are read again in the next combined sitting, not one
+  by one.
 - **Same-build comparisons since 2026-10-24.** `--query-a` and `--query-b` add parameters to one side only;
   without `--hyp-rev` both sides then run the `--vs` worktree, so a runtime switch (`wasmOff=<kernel>`, a
   scene knob) is the only difference between them: no second directory, no side bias. Prefer it whenever
@@ -319,10 +353,23 @@ Planned tools, each in its own commit before the measurements that use it:
    (all off, kernel 1, kernel 2, all on), which also measure whether gains add up.
 3. Headless gates for worker owners, once a same-build sitting per scene shows headless and headed agree.
 4. The sequential decision of [How a sitting decides](#how-a-sitting-decides) in the runner, reading the
-   session's A/A for the detection limits.
+   session's A/A for the detection limits, with a threshold for each look so that the rate of false keeps
+   over the looks is the one chosen.
 5. A preflight that refuses to start a sitting on a busy machine or with another benchmark running.
 6. A records writer: the sitting's summary becomes its record in the register.
 7. Warm-up and window per scene in `engineFeatureCatalog.mjs`, from where each scene's running mean flattens.
+8. Late frames: the main thread counts its rAF intervals longer than about 1.5 vsyncs over the window, a
+   guard beside the presented frames (a regression when they rise past the A/A's spread in 75 % of the
+   pairs).
+9. Process CPU per presented frame in every gate: the operating system's CPU time of the browser's process
+   tree over the window (as E-34's sampler reads it,
+   [`e34ProcessTreeCpu.ps1`](../../tests/bench/e34ProcessTreeCpu.ps1)), divided by the presented frames. A
+   change that moves work between workers, adds a thread or changes how one waits declares it as a
+   secondary: 3 % more in 75 % of the pairs is a regression.
+10. A frame stamp for input-to-present latency: an input's time travels with the frame through logic,
+    pre-render and Pixi and is read at the present.
+11. A capacity search: the largest load knob at which a scene holds 60 presented frames with no late
+    frames.
 
 ## Reading where the time goes
 
@@ -354,7 +401,7 @@ CPU samples say where time goes; they are never a speed verdict.
   `node scripts/hypotheses.mjs record --hyp <id> --title "…" --verdict <word> [--status <word>]
   [--commits <ids>] --text-file <note.md>`. The text says the hypothesis in one sentence, what ran (kernel,
   scene, knobs, pairs), both sides' medians with their cv, the load keys, the verdict and why, in words a
-  newcomer can read, and the detection limit when the verdict is a tie. `--status` also sets the
+  newcomer can read, and the sitting's detection limit, whatever the verdict. `--status` also sets the
   hypothesis's status; update its one-line `result` with `--result`.
 - **A report** (`docs/internal/reports/`, full prose) only for a campaign, or a result that needs the
   story; the record links it.
@@ -382,6 +429,22 @@ The feature catalog is [`tests/bench/engineFeatureCatalog.mjs`](../../tests/benc
 (described in [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)). To claim "this tree is faster than a
 revision" for the engine, `pnpm bench:scoreboard --vs <rev>`: every row kept or a tie within its detection
 limit, none worse or failed. Run it per milestone, not per change.
+
+**Milestone checks** go with the scoreboard, never with a single change:
+
+- **Four physical cores.** The scoreboard's Predator row and the owner scenes of the milestone's changes,
+  this tree against the last milestone, once more with Chrome held to one logical processor on each of four
+  cores (Windows usually numbers SMT siblings next to each other, which makes the mask 0x55; 0xF would be
+  two cores and their siblings), with process CPU per presented frame on both sides. The runner has no
+  option for it yet.
+- **Other browsers.** Every scene boots once in Firefox and in WebKit, which Playwright drives with
+  COOP/COEP: a smoke run, nothing timed. It matters most before a JS path leaves `src/`.
+- **Hitches.** A scene load, a spawn burst and the first use of textures, with late frames counted
+  (planned tool 8).
+- **Latency.** Input to present, with the frame stamp (planned tool 10). The pipeline's stages, the
+  double-buffered queues and the interpolated poses set it; the fence on the frame two back caps it.
+- **Capacity.** The largest load each flagship scene holds at 60 presented frames (planned tool 11): a
+  number for the README, never a gate.
 
 ## Commands
 
@@ -436,3 +499,9 @@ The runner and its options: [`tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests
 - A faster renderer lowered the frames the page presented on a full GPU (E-82, E-97).
 - A fixed order inside each pair put all the drift on one side (S4).
 - A floor that stood in for precision dropped a 24 % result (E-126).
+- A hitch in 0.4 % of the frames passes a 3 % guard on the mean frame rate (CarScene, 19 September 2026).
+- Work saved in one worker cost another: Pixi's sprite pack through the WASM kernel made the renderer 9 %
+  cheaper and logic 6 % dearer (2026-10-23). Spread thinner over several workers, the same cost would pass
+  every per-worker guard.
+- Statistics, not an incident: a keep near 3 % reads high (the winner's curse), and each extra look gives
+  a borderline result one more chance to cross (optional stopping).

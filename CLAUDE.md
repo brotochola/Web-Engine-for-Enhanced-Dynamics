@@ -112,6 +112,9 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   detection limit (it replaced the old 8 ms floor); quiet machine, one benchmark at a time.
 - WASM kernels: Node screens, Chrome decides between variants; time TurboFan, not Liftoff; one
   boundary call per batch; every kernel gets the flags/SIMD/float32 pass (HOW_WE_MEASURE).
+- A total is measured, not added: a campaign's gain or a README number comes from one sitting that runs
+  the changes together (scoreboard, multi-arm, leave-one-out), since a keep near 3 % reads high. Every
+  verdict carries its sitting's detection limit.
 - After measuring, write the record (`node scripts/hypotheses.mjs record …`) with the numbers that
   decided it, and update `EXECUTION_PLAN.md` when the plan changes. Raw results under `tests/results/`
   are not kept: never link them. A report (full prose, `docs/internal/reports/`) only when the sitting
