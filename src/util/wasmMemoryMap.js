@@ -75,7 +75,8 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * - emitProxy, emitFrameCount, emitFrameStart, emitFrameWidth, emitFrameHeight: the texture metadata as
  *   flat tables, written when it arrives (i32 per sheet and state, i32 and u16 per animation and frame);
  * - emitEnds, emitWarns: [entity, value] u32 pairs the kernel hands back; emitForeign: the rows it
- *   leaves to the JS (u32); emitResults: its counts; emitTable: its column table (u32 byte offsets);
+ *   leaves to the JS ([collector row, queue row] u32 pairs: rows after an Adobe root move down, W27);
+ *   emitResults: its counts; emitTable: its column table (u32 byte offsets);
  * - emitPersistType, emitPersistEntity, emitPersistFrame, emitPersistAnim: the rows each queue buffer last
  *   held, for the persist check (W4c; u8, i32, u16, u16, the two buffers back to back).
  * With `emit.adobe` (W27, the Adobe Animate emit in the same kernel), what it reads besides:
@@ -144,8 +145,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitFrameHeight', owner: 'pre-render', bytes: EMIT_MAX_FRAMES * 2 },
       { name: 'emitEnds', owner: 'pre-render', bytes: n * 8 },
       { name: 'emitWarns', owner: 'pre-render', bytes: n * 8 },
-      { name: 'emitForeign', owner: 'pre-render', bytes: n * 4 },
-      { name: 'emitResults', owner: 'pre-render', bytes: 16 },
+      { name: 'emitForeign', owner: 'pre-render', bytes: n * 8 },
+      { name: 'emitResults', owner: 'pre-render', bytes: 32 },
       { name: 'emitTable', owner: 'pre-render', bytes: EMIT_TABLE_SLOTS * 4 },
       { name: 'emitPersistType', owner: 'pre-render', bytes: 2 * n },
       { name: 'emitPersistEntity', owner: 'pre-render', bytes: 2 * n * 4 },
@@ -309,7 +310,7 @@ export const EMIT_PROXY_STATES = 256;
 export const EMIT_MAX_ANIMATIONS = 65536;
 export const EMIT_MAX_FRAMES = 65536;
 /** Room for the emit kernel's column table (preRenderEmitClient.js EMIT_SLOTS). */
-export const EMIT_TABLE_SLOTS = 96;
+export const EMIT_TABLE_SLOTS = 128;
 /** W27: the Adobe assets the emit kernel's directory holds (asset ids 0 … 255), and the bytes of a record. */
 export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;

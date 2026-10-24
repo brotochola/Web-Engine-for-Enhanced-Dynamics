@@ -3,11 +3,14 @@
    the collector's stash, on a frame the persist check missed. Every column is a byte offset into the
    render-queue memory (src/workers/preRenderEmitClient.js writes the table); 0 marks a column the worker
    does not have. Arithmetic as the JS does it: the sort key and the animation clock in double, each value
-   stored as the typed array would store it. Row i is queue row i (no row expands without an Adobe root), so
-   rows of other types (particles, glows, bullets) are listed and left for the JS to write; a frame with an
-   Adobe root or a LiquidFun row is declined (0xffffffff) before anything is written. Play-once ends and
-   missing animations come back as lists too: the end message, its entity-type filter and the warnings
-   stay JS.
+   stored as the typed array would store it. Rows of other types (particles, glows, bullets) are listed with
+   the queue row they go to and left for the JS to write; a frame with a LiquidFun row is declined
+   (0xffffffff) before anything is written. Play-once ends and missing animations come back as lists too:
+   the end message, its entity-type filter and the warnings stay JS.
+   W27: an Adobe Animate root (type 6) expands into its pieces as _emitAdobePieces expands it, the frame
+   resolved as _resolveAdobeFrameIndex resolves it, from AdobeAnimComponent and the asset directory the JS
+   copies the registry's assets into (AdobeAsset); rows after it move down. Without those tables, or with a
+   root whose asset they do not hold, the frame is declined. adobe_advance is advanceAdobeAnimations.
    W4c: the persist path of the entity queue, from the same table. persist_frame is _type0PersistHit (with
    _repairPersistFrame) and _writeType0PosesOnly (with _writeQueueShadow and _advancePersistFrame) in one
    walk (E-116), persist_remember is _rememberType0Set; the rows a queue buffer last held are the P_
@@ -37,6 +40,11 @@ enum {
   /* W4c: the sprites' dirty flags, the rows of the queue buffer being written as it last held them
      (type, entity, frame, animation state) and the length of the frame column (a value, not an offset). */
   S_DIRTY, P_TYPE, P_ENTITY, P_FRAME, P_ANIM, A_ENTITIES,
+  /* W27: AdobeAnimComponent's columns; the asset directory (0: no Adobe tables this frame, so a frame with a
+     root is declined) and its records (a value); the frame's Adobe entities for adobe_advance. */
+  AA_ACTIVE, AA_PLAYING, AA_RATE, AA_TIME, AA_LOOP, AA_ASSET, AA_CLIP,
+  AA_SCALE_X, AA_SCALE_Y, AA_ANCHOR_X, AA_ANCHOR_Y, AA_ROT_C, AA_ROT_S, AA_ALPHA, AA_TINT,
+  AD_DIR, AD_ASSETS, AD_LIST,
   SLOT_COUNT
 };
 
@@ -54,288 +62,618 @@ enum {
 #define WARN_NO_START 1u   /* sprite: the global animation has no first frame */
 #define WARN_DECO_START 2u /* decoration: its animation has no first frame */
 
+/* W27: an asset directory record (preRenderEmitClient.js writeEmitAdobeAssets). Each array is a byte offset
+   with its length (an index past it reads as the JS reads undefined there); the piece arrays share one length,
+   past every frame's last piece. The rotations are doubles: the asset's pieceRotC/pieceRotS widened, or
+   Math.cos/Math.sin of pieceRotation as the JS computes them for an asset without them. */
+#define ASSET_NONE 0u /* no asset at this id: its roots draw nothing */
+#define ASSET_IN 1u   /* in the tables */
+#define ASSET_JS 2u   /* registered, not in the tables (no room, or arrays the kernel cannot read exactly) */
+typedef struct {
+  uint32_t kind;
+  uint32_t clipStartLen, clipStart;   /* clipFrameStart, u32 */
+  uint32_t clipCountLen, clipCount;   /* clipFrameCount, u16 */
+  uint32_t clipRateLen, clipRate;     /* clipFrameRate, f32 */
+  uint32_t minXLen, minX, minYLen, minY, maxXLen, maxX, maxYLen, maxY; /* clipBounds*, f32 */
+  uint32_t frames, frameStart, frameCount; /* framePieceStart u32, framePieceCount u16 */
+  uint32_t pieces;
+  uint32_t px, py, psx, psy, prc, prs, palpha, pax, pay, ptex; /* f32 x4, f64 x2, f32 x3, u16 */
+  uint32_t pad[3];
+  double assetMinX, assetMinY, assetMaxX, assetMaxY; /* assetBounds* ?? 0 */
+} AdobeAsset;
+_Static_assert(sizeof(AdobeAsset) == 160, "EMIT_ADOBE_ASSET_BYTES");
+
 #define PTR(T, c) ((T *)(uintptr_t)t[c])
+#define AT(T, byte) ((const T *)(uintptr_t)(byte))
 
 /* `v || 0` on a number: 0, -0 and NaN become 0. */
 INLINE float or0(float v) { return (v == 0.0f || v != v) ? 0.0f : v; }
 INLINE double fabs_d(double v) { return __builtin_fabs(v); }
 
+/* JS `x % y` on doubles: the exact remainder, the sign of x (musl's fmod, the normalisation by count). */
+static double js_fmod(double x, double y) {
+  union { double f; uint64_t i; } ux = {x}, uy = {y};
+  int ex = (int)(ux.i >> 52 & 0x7ff);
+  int ey = (int)(uy.i >> 52 & 0x7ff);
+  const uint64_t sx = ux.i >> 63;
+  uint64_t i;
+  uint64_t uxi = ux.i;
+  if (uy.i << 1 == 0 || y != y || ex == 0x7ff) return (x * y) / (x * y);
+  if (uxi << 1 <= uy.i << 1) {
+    if (uxi << 1 == uy.i << 1) return 0 * x;
+    return x;
+  }
+  if (!ex) {
+    for (i = uxi << 12; i >> 63 == 0; ex--, i <<= 1) {}
+    uxi <<= -ex + 1;
+  } else {
+    uxi &= -1ULL >> 12;
+    uxi |= 1ULL << 52;
+  }
+  if (!ey) {
+    for (i = uy.i << 12; i >> 63 == 0; ey--, i <<= 1) {}
+    uy.i <<= -ey + 1;
+  } else {
+    uy.i &= -1ULL >> 12;
+    uy.i |= 1ULL << 52;
+  }
+  for (; ex > ey; ex--) {
+    i = uxi - uy.i;
+    if (i >> 63 == 0) {
+      if (i == 0) return 0 * x;
+      uxi = i;
+    }
+    uxi <<= 1;
+  }
+  i = uxi - uy.i;
+  if (i >> 63 == 0) {
+    if (i == 0) return 0 * x;
+    uxi = i;
+  }
+  {
+    const int sh = __builtin_clzll(uxi) - 11;
+    uxi <<= sh;
+    ex -= sh;
+  }
+  if (ex > 0) {
+    uxi -= 1ULL << 52;
+    uxi |= (uint64_t)ex << 52;
+  } else {
+    uxi >>= -ex + 1;
+  }
+  uxi |= sx << 63;
+  ux.i = uxi;
+  return ux.f;
+}
+
+/* JS `v | 0`: NaN and the infinities are 0, the rest truncated and wrapped to 32 bits. */
+INLINE int32_t js_toint32(double v) {
+  if (v != v || v - v != 0.0) return 0;
+  const double r = __builtin_trunc(v);
+  if (r >= -2147483648.0 && r <= 2147483647.0) return (int32_t)r;
+  double m = js_fmod(r, 4294967296.0);
+  if (m < 0.0) m += 4294967296.0;
+  return (int32_t)(uint32_t)m;
+}
+
+/* Everything emit_rows reads, loaded from the table once (the stores may alias the table as far as the
+   compiler knows); the row writers below are inlined into each of its loops. */
+typedef struct {
+  const uint8_t *cType;
+  const int32_t *cIndex;
+  const float *cY, *stX, *stY, *stRc, *stRs;
+  const float *sScaleX, *sScaleY, *sAlpha;
+  const uint32_t *sTint;
+  const float *sAnchorX, *sAnchorY;
+  const uint8_t *sInherit;
+  const float *sRotC, *sRotS;
+  const uint16_t *sRepeatX, *sRepeatY;
+  const uint8_t *sTileMode;
+  const uint16_t *sTileOffU, *sTileOffV;
+  float *sHalfW, *sHalfH;
+  const uint8_t *sSheet, *sAnim, *sAnimated;
+  const float *sSpeed;
+  const uint8_t *sLoop;
+  const int16_t *sZ;
+  const uint8_t *scActive;
+  const float *scH, *scOx, *scOy;
+  const float *dScaleX, *dScaleY, *dAlpha;
+  const uint32_t *dTint;
+  const uint16_t *dTexture;
+  const float *dAnchorX, *dAnchorY;
+  uint16_t *aFrame;
+  float *aAccum;
+  uint16_t *aLastTex;
+  const int32_t *proxy;
+  uint32_t nSheets;
+  const int32_t *frameCount, *frameStart;
+  uint32_t nAnims;
+  const uint16_t *frameW, *frameH;
+  uint32_t nFrames;
+  float *qX, *qY, *qScaleX, *qScaleY, *qRotC, *qRotS, *qAlpha;
+  uint32_t *qTint;
+  uint16_t *qTexture;
+  float *qAnchorX, *qAnchorY;
+  uint8_t *qType;
+  float *qSortKey;
+  uint16_t *qRepeatX, *qRepeatY;
+  uint8_t *qTileMode;
+  uint16_t *qTileOffU, *qTileOffV;
+  float *qTileMulX, *qTileMulY, *qShadowH, *qShadowOffX, *qShadowOffY;
+  uint32_t *ends, *warns;
+  const uint16_t *aaAsset, *aaClip;
+  const float *aaTime;
+  const uint8_t *aaLoop;
+  const float *aaScaleX, *aaScaleY, *aaAnchorX, *aaAnchorY, *aaRotC, *aaRotS, *aaAlpha;
+  const uint32_t *aaTint;
+  const AdobeAsset *dir;
+  uint32_t nAssets;
+  int sortKey, ySort, tilesDirty, bounds;
+  double deltaSeconds, zoomAlpha, band;
+  uint32_t nEnds, nWarns, tiled;
+} Emit;
+
+INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSeconds, double zoomAlpha, double band) {
+  e->cType = PTR(const uint8_t, C_TYPE);
+  e->cIndex = PTR(const int32_t, C_INDEX);
+  e->cY = PTR(const float, C_Y);
+  e->stX = PTR(const float, C_STASH_X);
+  e->stY = PTR(const float, C_STASH_Y);
+  e->stRc = PTR(const float, C_STASH_RC);
+  e->stRs = PTR(const float, C_STASH_RS);
+  e->sScaleX = PTR(const float, S_SCALE_X);
+  e->sScaleY = PTR(const float, S_SCALE_Y);
+  e->sAlpha = PTR(const float, S_ALPHA);
+  e->sTint = PTR(const uint32_t, S_TINT);
+  e->sAnchorX = PTR(const float, S_ANCHOR_X);
+  e->sAnchorY = PTR(const float, S_ANCHOR_Y);
+  e->sInherit = PTR(const uint8_t, S_INHERIT);
+  e->sRotC = PTR(const float, S_ROT_C);
+  e->sRotS = PTR(const float, S_ROT_S);
+  e->sRepeatX = PTR(const uint16_t, S_REPEAT_X);
+  e->sRepeatY = PTR(const uint16_t, S_REPEAT_Y);
+  e->sTileMode = PTR(const uint8_t, S_TILE_MODE);
+  e->sTileOffU = PTR(const uint16_t, S_TILE_OFF_U);
+  e->sTileOffV = PTR(const uint16_t, S_TILE_OFF_V);
+  e->sHalfW = PTR(float, S_HALF_W);
+  e->sHalfH = PTR(float, S_HALF_H);
+  e->sSheet = PTR(const uint8_t, S_SHEET);
+  e->sAnim = PTR(const uint8_t, S_ANIM);
+  e->sAnimated = PTR(const uint8_t, S_ANIMATED);
+  e->sSpeed = PTR(const float, S_SPEED);
+  e->sLoop = PTR(const uint8_t, S_LOOP);
+  e->sZ = PTR(const int16_t, S_Z);
+  e->scActive = PTR(const uint8_t, SC_ACTIVE);
+  e->scH = PTR(const float, SC_H);
+  e->scOx = PTR(const float, SC_OFF_X);
+  e->scOy = PTR(const float, SC_OFF_Y);
+  e->dScaleX = PTR(const float, D_SCALE_X);
+  e->dScaleY = PTR(const float, D_SCALE_Y);
+  e->dAlpha = PTR(const float, D_ALPHA);
+  e->dTint = PTR(const uint32_t, D_TINT);
+  e->dTexture = PTR(const uint16_t, D_TEXTURE);
+  e->dAnchorX = PTR(const float, D_ANCHOR_X);
+  e->dAnchorY = PTR(const float, D_ANCHOR_Y);
+  e->aFrame = PTR(uint16_t, A_FRAME);
+  e->aAccum = PTR(float, A_ACCUM);
+  e->aLastTex = PTR(uint16_t, A_LAST_TEX);
+  e->proxy = PTR(const int32_t, T_PROXY);
+  e->nSheets = t[T_SHEETS];
+  e->frameCount = PTR(const int32_t, T_FRAME_COUNT);
+  e->frameStart = PTR(const int32_t, T_FRAME_START);
+  e->nAnims = t[T_ANIMS];
+  e->frameW = PTR(const uint16_t, T_FRAME_W);
+  e->frameH = PTR(const uint16_t, T_FRAME_H);
+  e->nFrames = t[T_FRAMES];
+  e->qX = PTR(float, Q_X);
+  e->qY = PTR(float, Q_Y);
+  e->qScaleX = PTR(float, Q_SCALE_X);
+  e->qScaleY = PTR(float, Q_SCALE_Y);
+  e->qRotC = PTR(float, Q_ROT_C);
+  e->qRotS = PTR(float, Q_ROT_S);
+  e->qAlpha = PTR(float, Q_ALPHA);
+  e->qTint = PTR(uint32_t, Q_TINT);
+  e->qTexture = PTR(uint16_t, Q_TEXTURE);
+  e->qAnchorX = PTR(float, Q_ANCHOR_X);
+  e->qAnchorY = PTR(float, Q_ANCHOR_Y);
+  e->qType = PTR(uint8_t, Q_TYPE);
+  e->qSortKey = PTR(float, Q_SORT_KEY);
+  e->qRepeatX = PTR(uint16_t, Q_REPEAT_X);
+  e->qRepeatY = PTR(uint16_t, Q_REPEAT_Y);
+  e->qTileMode = PTR(uint8_t, Q_TILE_MODE);
+  e->qTileOffU = PTR(uint16_t, Q_TILE_OFF_U);
+  e->qTileOffV = PTR(uint16_t, Q_TILE_OFF_V);
+  e->qTileMulX = PTR(float, Q_TILE_MUL_X);
+  e->qTileMulY = PTR(float, Q_TILE_MUL_Y);
+  e->qShadowH = PTR(float, Q_SHADOW_H);
+  e->qShadowOffX = PTR(float, Q_SHADOW_OFF_X);
+  e->qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
+  e->ends = PTR(uint32_t, R_ENDS);
+  e->warns = PTR(uint32_t, R_WARNS);
+  e->aaAsset = PTR(const uint16_t, AA_ASSET);
+  e->aaClip = PTR(const uint16_t, AA_CLIP);
+  e->aaTime = PTR(const float, AA_TIME);
+  e->aaLoop = PTR(const uint8_t, AA_LOOP);
+  e->aaScaleX = PTR(const float, AA_SCALE_X);
+  e->aaScaleY = PTR(const float, AA_SCALE_Y);
+  e->aaAnchorX = PTR(const float, AA_ANCHOR_X);
+  e->aaAnchorY = PTR(const float, AA_ANCHOR_Y);
+  e->aaRotC = PTR(const float, AA_ROT_C);
+  e->aaRotS = PTR(const float, AA_ROT_S);
+  e->aaAlpha = PTR(const float, AA_ALPHA);
+  e->aaTint = PTR(const uint32_t, AA_TINT);
+  e->dir = PTR(const AdobeAsset, AD_DIR);
+  e->nAssets = t[AD_ASSETS];
+  e->sortKey = (flags & F_SORT_KEY) != 0;
+  e->ySort = (flags & F_Y_SORT) != 0;
+  e->tilesDirty = (flags & F_TILES_DIRTY) != 0;
+  e->bounds = (flags & F_BOUNDS) != 0;
+  e->deltaSeconds = deltaSeconds;
+  e->zoomAlpha = zoomAlpha;
+  e->band = band;
+  e->nEnds = 0;
+  e->nWarns = 0;
+  e->tiled = 0;
+}
+
+/* _writeQueueShadow: entity idx's shadow terms at row out. */
+INLINE void queue_shadow(const Emit *e, uint32_t out, int32_t idx) {
+  if (!e->qShadowH) return;
+  const int cast = e->scActive && e->scActive[idx];
+  e->qShadowH[out] = cast ? (e->scH ? or0(e->scH[idx]) : 0.0f) : 0.0f;
+  if (e->qShadowOffX) e->qShadowOffX[out] = cast ? (e->scOx ? or0(e->scOx[idx]) : 0.0f) : 0.0f;
+  if (e->qShadowOffY) e->qShadowOffY[out] = cast ? (e->scOy ? or0(e->scOy[idx]) : 0.0f) : 0.0f;
+}
+
+/* A row that is no tiled sprite, on a queue whose tile columns a repeating sprite wrote (E-102b). */
+INLINE void clear_tiles(const Emit *e, uint32_t out) {
+  if (e->qRepeatX) e->qRepeatX[out] = 0;
+  if (e->qRepeatY) e->qRepeatY[out] = 0;
+  if (e->qTileMode) e->qTileMode[out] = 0;
+  if (e->qTileOffU) e->qTileOffU[out] = 0;
+  if (e->qTileOffV) e->qTileOffV[out] = 0;
+  if (e->qTileMulX) e->qTileMulX[out] = 0.0f;
+  if (e->qTileMulY) e->qTileMulY[out] = 0.0f;
+}
+
+/* The sort key of a sprite or an Adobe root: orderSortKey(yKey, zIndex | 0, ySort, band). */
+INLINE double order_key(const Emit *e, uint32_t i, int32_t idx) {
+  const double z = e->sZ ? (double)e->sZ[idx] : 0.0;
+  return e->ySort ? z * e->band + (double)e->cY[i] : z;
+}
+
+/* emitSpriteQueue's sprite branch: collector row i at queue row out. */
+INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  if (e->sortKey) e->qSortKey[out] = (float)order_key(e, i, idx);
+  const float x = e->stX[i];
+  const float y = e->stY[i];
+  float rc;
+  float rs;
+  if (e->sInherit[idx]) {
+    rc = e->stRc[i];
+    rs = e->stRs[i];
+  } else {
+    rc = e->sRotC[idx];
+    rs = e->sRotS[idx];
+  }
+  e->qAlpha[out] = e->sAlpha[idx];
+  queue_shadow(e, out, idx);
+  const uint32_t rx = e->sRepeatX[idx];
+  const uint32_t ry = e->sRepeatY[idx];
+  if (rx != 0 || ry != 0) {
+    e->tiled = 1;
+    if (e->qRepeatX) e->qRepeatX[out] = (uint16_t)rx;
+    if (e->qRepeatY) e->qRepeatY[out] = (uint16_t)ry;
+    /* writeEntityTileFields */
+    const uint32_t mode = e->sTileMode[idx];
+    if (e->qTileMode) e->qTileMode[out] = (uint8_t)mode;
+    if (e->qTileOffU) e->qTileOffU[out] = e->sTileOffU[idx];
+    if (e->qTileOffV) e->qTileOffV[out] = e->sTileOffV[idx];
+    double mx = 0.0;
+    double my = 0.0;
+    if (rx > 0) mx = mode == TILE_MODE_LOCAL ? -((double)e->sHalfW[idx] * 2.0) / (double)rx : 1.0 / (double)rx;
+    if (ry > 0) my = mode == TILE_MODE_LOCAL ? -((double)e->sHalfH[idx] * 2.0) / (double)ry : 1.0 / (double)ry;
+    if (e->qTileMulX) e->qTileMulX[out] = (float)mx;
+    if (e->qTileMulY) e->qTileMulY[out] = (float)my;
+  } else if (e->tilesDirty) {
+    if (e->qRepeatX) e->qRepeatX[out] = 0;
+    if (e->qRepeatY) e->qRepeatY[out] = 0;
+    if (e->qTileMulX) e->qTileMulX[out] = 0.0f;
+    if (e->qTileMulY) e->qTileMulY[out] = 0.0f;
+  }
+  e->qX[out] = x;
+  e->qY[out] = y;
+  e->qScaleX[out] = e->sScaleX[idx];
+  e->qScaleY[out] = e->sScaleY[idx];
+  e->qRotC[out] = rc;
+  e->qRotS[out] = rs;
+  e->qTint[out] = e->sTint[idx];
+  e->qAnchorX[out] = e->sAnchorX[idx];
+  e->qAnchorY[out] = e->sAnchorY[idx];
+  if (e->qType) e->qType[out] = 0;
+
+  const uint32_t sheet = e->sSheet[idx];
+  const uint32_t anim = e->sAnim[idx];
+  const int32_t g = sheet < e->nSheets ? e->proxy[sheet * PROXY_STATES + anim] : -1;
+  uint32_t tex = INVALID_TEXTURE;
+  if (g >= 0) {
+    const int known = (uint32_t)g < e->nAnims;
+    const int32_t fc = known ? e->frameCount[g] : 1;
+    if ((int32_t)e->aFrame[idx] >= fc) e->aFrame[idx] = 0;
+    if (e->sAnimated[idx] && fc > 1) {
+      const float acc = (float)((double)e->aAccum[idx] + e->deltaSeconds);
+      e->aAccum[idx] = acc;
+      const double duration = 1.0 / ((double)e->sSpeed[idx] * 60.0);
+      if ((double)acc >= duration) {
+        e->aAccum[idx] = (float)((double)acc - duration);
+        const int32_t cur = e->aFrame[idx];
+        if (e->sLoop[idx] != 1 && cur >= fc - 1) {
+          /* The last frame of a play-once animation finished showing. */
+          e->ends[2 * e->nEnds] = (uint32_t)idx;
+          e->ends[2 * e->nEnds + 1] = anim;
+          e->nEnds++;
+        } else {
+          e->aFrame[idx] = (uint16_t)((cur + 1) % fc);
+          if (e->bounds) {
+            /* Bounds may change (variable frame sizes). */
+            const int32_t texId = (known ? e->frameStart[g] : 0) + (int32_t)e->aFrame[idx];
+            const int inRange = texId >= 0 && (uint32_t)texId < e->nFrames;
+            const double w = inRange ? (double)e->frameW[texId] : 0.0;
+            const double h = inRange ? (double)e->frameH[texId] : 0.0;
+            double ax = fabs_d((double)e->sScaleX[idx]);
+            double ay = fabs_d((double)e->sScaleY[idx]);
+            if (ax == 0.0 || ax != ax) ax = 1.0;
+            if (ay == 0.0 || ay != ay) ay = 1.0;
+            e->sHalfW[idx] = (float)((w * ax) * 0.5);
+            e->sHalfH[idx] = (float)((h * ay) * 0.5);
+          }
+        }
+      }
+    }
+    if (known) {
+      tex = (uint32_t)(e->frameStart[g] + (int32_t)e->aFrame[idx]);
+      if (e->aLastTex) e->aLastTex[idx] = (uint16_t)tex;
+    } else {
+      e->warns[2 * e->nWarns] = (uint32_t)idx;
+      e->warns[2 * e->nWarns + 1] = WARN_NO_START;
+      e->nWarns++;
+    }
+  } else {
+    /* Never reuse a stale last texture (pool recycle, spawn before setSprite). */
+    if (e->aLastTex) e->aLastTex[idx] = INVALID_TEXTURE;
+    if (sheet) {
+      e->warns[2 * e->nWarns] = (uint32_t)idx;
+      e->warns[2 * e->nWarns + 1] = WARN_NO_ANIM;
+      e->nWarns++;
+    }
+  }
+  e->qTexture[out] = (uint16_t)tex;
+}
+
+/* emitSpriteQueue's decoration branch: collector row i at queue row out. */
+INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  if (e->sortKey) e->qSortKey[out] = (float)(e->ySort ? 0.0 * e->band + (double)e->cY[i] : 0.0);
+  if (e->tilesDirty) clear_tiles(e, out);
+  if (e->qShadowH) e->qShadowH[out] = 0.0f;
+  if (e->qShadowOffX) e->qShadowOffX[out] = 0.0f;
+  if (e->qShadowOffY) e->qShadowOffY[out] = 0.0f;
+  const float x = e->stX[i];
+  const float y = e->stY[i];
+  const float rc = e->stRc[i];
+  const float rs = e->stRs[i];
+  e->qX[out] = x;
+  e->qY[out] = y;
+  e->qScaleX[out] = e->dScaleX[idx];
+  e->qScaleY[out] = e->dScaleY[idx];
+  e->qRotC[out] = rc;
+  e->qRotS[out] = rs;
+  e->qAlpha[out] = (float)((double)e->dAlpha[idx] * e->zoomAlpha);
+  e->qTint[out] = e->dTint[idx];
+  const uint32_t a = e->dTexture[idx];
+  uint32_t tex = INVALID_TEXTURE;
+  if (a < e->nAnims) {
+    tex = (uint32_t)e->frameStart[a];
+  } else {
+    e->warns[2 * e->nWarns] = (uint32_t)idx;
+    e->warns[2 * e->nWarns + 1] = WARN_DECO_START;
+    e->nWarns++;
+  }
+  e->qTexture[out] = (uint16_t)tex;
+  e->qAnchorX[out] = e->dAnchorX[idx];
+  e->qAnchorY[out] = e->dAnchorY[idx];
+  if (e->qType) e->qType[out] = 2;
+}
+
+/* _resolveAdobeFrameIndex for an asset in the tables: the clip's frame at this time, or -1 when the root
+   draws nothing (no frames, no frame rate). */
+INLINE int32_t adobe_frame(const AdobeAsset *as, uint32_t clip, double time, int loop) {
+  const int32_t frameCount = clip < as->clipCountLen ? (int32_t)AT(uint16_t, as->clipCount)[clip] : 0;
+  const double frameRate = clip < as->clipRateLen ? (double)AT(float, as->clipRate)[clip] : 0.0;
+  if (frameCount <= 0 || frameRate <= 0.0) return -1;
+  const double duration = (double)frameCount / frameRate;
+  if (duration > 0.0) {
+    if (loop) time = js_fmod(js_fmod(time, duration) + duration, duration);
+    else if (time >= duration) time = duration;
+    else if (time < 0.0) time = 0.0;
+  } else {
+    time = 0.0;
+  }
+  int32_t frameIndex = frameCount > 1 ? js_toint32(time * frameRate) : 0;
+  if (frameIndex >= frameCount) frameIndex = frameCount - 1;
+  if (frameIndex < 0) frameIndex = 0;
+  return frameIndex;
+}
+
+/* _emitAdobePieces: root collector row i, its pieces from queue row w while the queue has room (cap).
+   Returns the next free row; *overflow is set when pieces did not fit. */
+INLINE uint32_t adobe_root(Emit *e, uint32_t i, uint32_t w, uint32_t cap, double sortKey, uint32_t *overflow) {
+  const int32_t idx = e->cIndex[i];
+  const uint32_t id = e->aaAsset[idx];
+  if (id >= e->nAssets) return w;
+  const AdobeAsset *as = &e->dir[id];
+  if (as->kind != ASSET_IN) return w;
+  const uint32_t clip = e->aaClip[idx];
+  const int32_t frameIndex = adobe_frame(as, clip, (double)e->aaTime[idx], e->aaLoop[idx] != 0);
+  if (frameIndex < 0) return w;
+
+  const double rootX = (double)e->stX[i];
+  const double rootY = (double)e->stY[i];
+  const double poseC = (double)e->stRc[i];
+  const double poseS = (double)e->stRs[i];
+  /* body pose CS x AdobeAnimComponent CS */
+  const double ac = (double)e->aaRotC[idx];
+  const double asn = (double)e->aaRotS[idx];
+  const double rootC = poseC * ac - poseS * asn;
+  const double rootS = poseS * ac + poseC * asn;
+  const double rootScaleX = (double)e->aaScaleX[idx];
+  const double rootScaleY = (double)e->aaScaleY[idx];
+  const double rootAnchorX = (double)e->aaAnchorX[idx];
+  const double rootAnchorY = (double)e->aaAnchorY[idx];
+  const double rootAlpha = (double)e->aaAlpha[idx];
+  const uint32_t rootTint = e->aaTint[idx];
+
+  const uint64_t absoluteFrame = (uint64_t)(clip < as->clipStartLen ? AT(uint32_t, as->clipStart)[clip] : 0u)
+    + (uint64_t)frameIndex;
+  uint32_t start = 0;
+  uint32_t end = 0;
+  if (absoluteFrame < as->frames) {
+    start = AT(uint32_t, as->frameStart)[absoluteFrame];
+    end = start + AT(uint16_t, as->frameCount)[absoluteFrame];
+  }
+  const double minX = clip < as->minXLen ? (double)AT(float, as->minX)[clip] : as->assetMinX;
+  const double minY = clip < as->minYLen ? (double)AT(float, as->minY)[clip] : as->assetMinY;
+  const double maxX = clip < as->maxXLen ? (double)AT(float, as->maxX)[clip] : as->assetMaxX;
+  const double maxY = clip < as->maxYLen ? (double)AT(float, as->maxY)[clip] : as->assetMaxY;
+  const double pivotX = minX + (maxX - minX) * rootAnchorX;
+  const double pivotY = minY + (maxY - minY) * rootAnchorY;
+  /* -1 when exactly one of the root's scales is negative (a reflection): the pieces' rotations flip. */
+  const double mirrorSign = ((rootScaleX < 0.0) != (rootScaleY < 0.0)) ? -1.0 : 1.0;
+
+  const float *pieceX = AT(float, as->px);
+  const float *pieceY = AT(float, as->py);
+  const float *pieceScaleX = AT(float, as->psx);
+  const float *pieceScaleY = AT(float, as->psy);
+  const double *pieceRotC = AT(double, as->prc);
+  const double *pieceRotS = AT(double, as->prs);
+  const float *pieceAlpha = AT(float, as->palpha);
+  const float *pieceAnchorX = AT(float, as->pax);
+  const float *pieceAnchorY = AT(float, as->pay);
+  const uint16_t *textureIds = AT(uint16_t, as->ptex);
+  const float sk = (float)sortKey;
+
+  int64_t feetSlot = -1;
+  float feetY = 0.0f;
+  uint32_t p = start;
+  for (; p < end && w < cap; p++) {
+    const double localX = ((double)pieceX[p] - pivotX) * rootScaleX;
+    const double localY = ((double)pieceY[p] - pivotY) * rootScaleY;
+    const float y = (float)(rootY + rootS * localX + rootC * localY);
+    e->qX[w] = (float)(rootX + rootC * localX - rootS * localY);
+    e->qY[w] = y;
+    e->qScaleX[w] = (float)((double)pieceScaleX[p] * rootScaleX);
+    e->qScaleY[w] = (float)((double)pieceScaleY[p] * rootScaleY);
+    const double pc = pieceRotC[p];
+    const double ps = pieceRotS[p] * mirrorSign;
+    e->qRotC[w] = (float)(rootC * pc - rootS * ps);
+    e->qRotS[w] = (float)(rootS * pc + rootC * ps);
+    e->qAlpha[w] = (float)((double)pieceAlpha[p] * rootAlpha);
+    e->qTint[w] = rootTint;
+    e->qTexture[w] = textureIds[p];
+    e->qAnchorX[w] = pieceAnchorX[p];
+    e->qAnchorY[w] = pieceAnchorY[p];
+    if (e->qType) e->qType[w] = 6;
+    if (e->tilesDirty) clear_tiles(e, w);
+    if (e->qSortKey) e->qSortKey[w] = sk;
+    if (e->qShadowH) {
+      e->qShadowH[w] = 0.0f;
+      if (e->qShadowOffX) e->qShadowOffX[w] = 0.0f;
+      if (e->qShadowOffY) e->qShadowOffY[w] = 0.0f;
+    }
+    /* The lowest piece on screen carries the root's shadow. */
+    if (feetSlot < 0 || y >= feetY) {
+      feetY = y;
+      feetSlot = w;
+    }
+    w++;
+  }
+  if (feetSlot >= 0) queue_shadow(e, (uint32_t)feetSlot, idx);
+  if (p < end) *overflow = 1;
+  return w;
+}
+
 __attribute__((export_name("emit_rows")))
 uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t flags,
                    double deltaSeconds, double zoomAlpha, double band) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
-  /* Every pointer is read once: the stores below may alias the table as far as the compiler knows. */
-  const uint8_t *cType = PTR(const uint8_t, C_TYPE);
-  const int32_t *cIndex = PTR(const int32_t, C_INDEX);
-  const float *cY = PTR(const float, C_Y);
-  const float *stX = PTR(const float, C_STASH_X);
-  const float *stY = PTR(const float, C_STASH_Y);
-  const float *stRc = PTR(const float, C_STASH_RC);
-  const float *stRs = PTR(const float, C_STASH_RS);
-
-  const float *sScaleX = PTR(const float, S_SCALE_X);
-  const float *sScaleY = PTR(const float, S_SCALE_Y);
-  const float *sAlpha = PTR(const float, S_ALPHA);
-  const uint32_t *sTint = PTR(const uint32_t, S_TINT);
-  const float *sAnchorX = PTR(const float, S_ANCHOR_X);
-  const float *sAnchorY = PTR(const float, S_ANCHOR_Y);
-  const uint8_t *sInherit = PTR(const uint8_t, S_INHERIT);
-  const float *sRotC = PTR(const float, S_ROT_C);
-  const float *sRotS = PTR(const float, S_ROT_S);
-  const uint16_t *sRepeatX = PTR(const uint16_t, S_REPEAT_X);
-  const uint16_t *sRepeatY = PTR(const uint16_t, S_REPEAT_Y);
-  const uint8_t *sTileMode = PTR(const uint8_t, S_TILE_MODE);
-  const uint16_t *sTileOffU = PTR(const uint16_t, S_TILE_OFF_U);
-  const uint16_t *sTileOffV = PTR(const uint16_t, S_TILE_OFF_V);
-  float *sHalfW = PTR(float, S_HALF_W);
-  float *sHalfH = PTR(float, S_HALF_H);
-  const uint8_t *sSheet = PTR(const uint8_t, S_SHEET);
-  const uint8_t *sAnim = PTR(const uint8_t, S_ANIM);
-  const uint8_t *sAnimated = PTR(const uint8_t, S_ANIMATED);
-  const float *sSpeed = PTR(const float, S_SPEED);
-  const uint8_t *sLoop = PTR(const uint8_t, S_LOOP);
-  const int16_t *sZ = PTR(const int16_t, S_Z);
-
-  const uint8_t *scActive = PTR(const uint8_t, SC_ACTIVE);
-  const float *scH = PTR(const float, SC_H);
-  const float *scOx = PTR(const float, SC_OFF_X);
-  const float *scOy = PTR(const float, SC_OFF_Y);
-
-  const float *dScaleX = PTR(const float, D_SCALE_X);
-  const float *dScaleY = PTR(const float, D_SCALE_Y);
-  const float *dAlpha = PTR(const float, D_ALPHA);
-  const uint32_t *dTint = PTR(const uint32_t, D_TINT);
-  const uint16_t *dTexture = PTR(const uint16_t, D_TEXTURE);
-  const float *dAnchorX = PTR(const float, D_ANCHOR_X);
-  const float *dAnchorY = PTR(const float, D_ANCHOR_Y);
-
-  uint16_t *aFrame = PTR(uint16_t, A_FRAME);
-  float *aAccum = PTR(float, A_ACCUM);
-  uint16_t *aLastTex = PTR(uint16_t, A_LAST_TEX);
-
-  const int32_t *proxy = PTR(const int32_t, T_PROXY);
-  const uint32_t nSheets = t[T_SHEETS];
-  const int32_t *frameCount = PTR(const int32_t, T_FRAME_COUNT);
-  const int32_t *frameStart = PTR(const int32_t, T_FRAME_START);
-  const uint32_t nAnims = t[T_ANIMS];
-  const uint16_t *frameW = PTR(const uint16_t, T_FRAME_W);
-  const uint16_t *frameH = PTR(const uint16_t, T_FRAME_H);
-  const uint32_t nFrames = t[T_FRAMES];
-
-  float *qX = PTR(float, Q_X);
-  float *qY = PTR(float, Q_Y);
-  float *qScaleX = PTR(float, Q_SCALE_X);
-  float *qScaleY = PTR(float, Q_SCALE_Y);
-  float *qRotC = PTR(float, Q_ROT_C);
-  float *qRotS = PTR(float, Q_ROT_S);
-  float *qAlpha = PTR(float, Q_ALPHA);
-  uint32_t *qTint = PTR(uint32_t, Q_TINT);
-  uint16_t *qTexture = PTR(uint16_t, Q_TEXTURE);
-  float *qAnchorX = PTR(float, Q_ANCHOR_X);
-  float *qAnchorY = PTR(float, Q_ANCHOR_Y);
-  uint8_t *qType = PTR(uint8_t, Q_TYPE);
-  float *qSortKey = PTR(float, Q_SORT_KEY);
-  uint16_t *qRepeatX = PTR(uint16_t, Q_REPEAT_X);
-  uint16_t *qRepeatY = PTR(uint16_t, Q_REPEAT_Y);
-  uint8_t *qTileMode = PTR(uint8_t, Q_TILE_MODE);
-  uint16_t *qTileOffU = PTR(uint16_t, Q_TILE_OFF_U);
-  uint16_t *qTileOffV = PTR(uint16_t, Q_TILE_OFF_V);
-  float *qTileMulX = PTR(float, Q_TILE_MUL_X);
-  float *qTileMulY = PTR(float, Q_TILE_MUL_Y);
-  float *qShadowH = PTR(float, Q_SHADOW_H);
-  float *qShadowOffX = PTR(float, Q_SHADOW_OFF_X);
-  float *qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
-
-  uint32_t *ends = PTR(uint32_t, R_ENDS);
-  uint32_t *warns = PTR(uint32_t, R_WARNS);
+  Emit e;
+  load_emit(&e, t, flags, deltaSeconds, zoomAlpha, band);
   uint32_t *foreign = PTR(uint32_t, R_FOREIGN);
   uint32_t *counts = PTR(uint32_t, R_COUNTS);
+  const uint8_t *cType = e.cType;
 
-  /* The loop below visits min(count, maxItems) rows, each writing one. */
+  /* Without an Adobe root the loop visits min(count, maxItems) rows, each writing one: row i is queue row i. */
   const uint32_t n = count < maxItems ? count : maxItems;
+  uint32_t roots = 0;
   for (uint32_t i = 0; i < n; i++) {
     const uint8_t ty = cType[i];
-    if (ty == 6 || ty == 7) return DECLINED;
+    if (ty == 7) return DECLINED;
+    if (ty == 6) {
+      if (!e.dir) return DECLINED;
+      const uint32_t id = e.aaAsset[e.cIndex[i]];
+      if (id < e.nAssets && e.dir[id].kind == ASSET_JS) return DECLINED;
+      roots++;
+    }
   }
+  /* A collector longer than the queue past an expansion reads past its rows in the JS. */
+  if (roots && count > maxItems) return DECLINED;
 
-  const int sortKey = (flags & F_SORT_KEY) != 0;
-  const int ySort = (flags & F_Y_SORT) != 0;
-  const int tilesDirty = (flags & F_TILES_DIRTY) != 0;
-  const int bounds = (flags & F_BOUNDS) != 0;
-  uint32_t nEnds = 0;
-  uint32_t nWarns = 0;
   uint32_t nForeign = 0;
-  uint32_t tiled = 0;
-
-  for (uint32_t i = 0; i < n; i++) {
-    const uint8_t ty = cType[i];
-    if (ty != 0 && ty != 2) {
-      foreign[nForeign++] = i;
-      continue;
+  uint32_t overflow = 0;
+  uint32_t w;
+  if (!roots) {
+    for (uint32_t i = 0; i < n; i++) {
+      const uint8_t ty = cType[i];
+      if (ty == 0) {
+        sprite_row(&e, i, i);
+      } else if (ty == 2) {
+        deco_row(&e, i, i);
+      } else {
+        foreign[2 * nForeign] = i;
+        foreign[2 * nForeign + 1] = i;
+        nForeign++;
+      }
     }
-    const int32_t idx = cIndex[i];
-    const uint32_t out = i;
-    if (ty == 0) {
-      if (sortKey) {
-        /* orderSortKey(yKey, zIndex | 0, ySort, band) */
-        const double z = sZ ? (double)sZ[idx] : 0.0;
-        qSortKey[out] = (float)(ySort ? z * band + (double)cY[i] : z);
+    w = n;
+  } else {
+    /* emitSpriteQueue's loop: until the collector or the queue runs out. */
+    w = 0;
+    for (uint32_t i = 0; i < count && w < maxItems; i++) {
+      const uint8_t ty = cType[i];
+      if (ty == 6) {
+        const double sk = e.sortKey ? order_key(&e, i, e.cIndex[i]) : (double)e.cY[i];
+        w = adobe_root(&e, i, w, maxItems, sk, &overflow);
+        continue;
       }
-      const float x = stX[i];
-      const float y = stY[i];
-      float rc;
-      float rs;
-      if (sInherit[idx]) {
-        rc = stRc[i];
-        rs = stRs[i];
+      if (ty == 0) {
+        sprite_row(&e, i, w);
+      } else if (ty == 2) {
+        deco_row(&e, i, w);
       } else {
-        rc = sRotC[idx];
-        rs = sRotS[idx];
+        foreign[2 * nForeign] = i;
+        foreign[2 * nForeign + 1] = w;
+        nForeign++;
       }
-      qAlpha[out] = sAlpha[idx];
-      if (qShadowH) {
-        /* _writeQueueShadow */
-        const int cast = scActive && scActive[idx];
-        qShadowH[out] = cast ? (scH ? or0(scH[idx]) : 0.0f) : 0.0f;
-        if (qShadowOffX) qShadowOffX[out] = cast ? (scOx ? or0(scOx[idx]) : 0.0f) : 0.0f;
-        if (qShadowOffY) qShadowOffY[out] = cast ? (scOy ? or0(scOy[idx]) : 0.0f) : 0.0f;
-      }
-      const uint32_t rx = sRepeatX[idx];
-      const uint32_t ry = sRepeatY[idx];
-      if (rx != 0 || ry != 0) {
-        tiled = 1;
-        if (qRepeatX) qRepeatX[out] = (uint16_t)rx;
-        if (qRepeatY) qRepeatY[out] = (uint16_t)ry;
-        /* writeEntityTileFields */
-        const uint32_t mode = sTileMode[idx];
-        if (qTileMode) qTileMode[out] = (uint8_t)mode;
-        if (qTileOffU) qTileOffU[out] = sTileOffU[idx];
-        if (qTileOffV) qTileOffV[out] = sTileOffV[idx];
-        double mx = 0.0;
-        double my = 0.0;
-        if (rx > 0) mx = mode == TILE_MODE_LOCAL ? -((double)sHalfW[idx] * 2.0) / (double)rx : 1.0 / (double)rx;
-        if (ry > 0) my = mode == TILE_MODE_LOCAL ? -((double)sHalfH[idx] * 2.0) / (double)ry : 1.0 / (double)ry;
-        if (qTileMulX) qTileMulX[out] = (float)mx;
-        if (qTileMulY) qTileMulY[out] = (float)my;
-      } else if (tilesDirty) {
-        if (qRepeatX) qRepeatX[out] = 0;
-        if (qRepeatY) qRepeatY[out] = 0;
-        if (qTileMulX) qTileMulX[out] = 0.0f;
-        if (qTileMulY) qTileMulY[out] = 0.0f;
-      }
-      qX[out] = x;
-      qY[out] = y;
-      qScaleX[out] = sScaleX[idx];
-      qScaleY[out] = sScaleY[idx];
-      qRotC[out] = rc;
-      qRotS[out] = rs;
-      qTint[out] = sTint[idx];
-      qAnchorX[out] = sAnchorX[idx];
-      qAnchorY[out] = sAnchorY[idx];
-      if (qType) qType[out] = 0;
-
-      const uint32_t sheet = sSheet[idx];
-      const uint32_t anim = sAnim[idx];
-      const int32_t g = sheet < nSheets ? proxy[sheet * PROXY_STATES + anim] : -1;
-      uint32_t tex = INVALID_TEXTURE;
-      if (g >= 0) {
-        const int known = (uint32_t)g < nAnims;
-        const int32_t fc = known ? frameCount[g] : 1;
-        if ((int32_t)aFrame[idx] >= fc) aFrame[idx] = 0;
-        if (sAnimated[idx] && fc > 1) {
-          const float acc = (float)((double)aAccum[idx] + deltaSeconds);
-          aAccum[idx] = acc;
-          const double duration = 1.0 / ((double)sSpeed[idx] * 60.0);
-          if ((double)acc >= duration) {
-            aAccum[idx] = (float)((double)acc - duration);
-            const int32_t cur = aFrame[idx];
-            if (sLoop[idx] != 1 && cur >= fc - 1) {
-              /* The last frame of a play-once animation finished showing. */
-              ends[2 * nEnds] = (uint32_t)idx;
-              ends[2 * nEnds + 1] = anim;
-              nEnds++;
-            } else {
-              aFrame[idx] = (uint16_t)((cur + 1) % fc);
-              if (bounds) {
-                /* Bounds may change (variable frame sizes). */
-                const int32_t texId = (known ? frameStart[g] : 0) + (int32_t)aFrame[idx];
-                const int inRange = texId >= 0 && (uint32_t)texId < nFrames;
-                const double w = inRange ? (double)frameW[texId] : 0.0;
-                const double h = inRange ? (double)frameH[texId] : 0.0;
-                double ax = fabs_d((double)sScaleX[idx]);
-                double ay = fabs_d((double)sScaleY[idx]);
-                if (ax == 0.0 || ax != ax) ax = 1.0;
-                if (ay == 0.0 || ay != ay) ay = 1.0;
-                sHalfW[idx] = (float)((w * ax) * 0.5);
-                sHalfH[idx] = (float)((h * ay) * 0.5);
-              }
-            }
-          }
-        }
-        if (known) {
-          tex = (uint32_t)(frameStart[g] + (int32_t)aFrame[idx]);
-          if (aLastTex) aLastTex[idx] = (uint16_t)tex;
-        } else {
-          warns[2 * nWarns] = (uint32_t)idx;
-          warns[2 * nWarns + 1] = WARN_NO_START;
-          nWarns++;
-        }
-      } else {
-        /* Never reuse a stale last texture (pool recycle, spawn before setSprite). */
-        if (aLastTex) aLastTex[idx] = INVALID_TEXTURE;
-        if (sheet) {
-          warns[2 * nWarns] = (uint32_t)idx;
-          warns[2 * nWarns + 1] = WARN_NO_ANIM;
-          nWarns++;
-        }
-      }
-      qTexture[out] = (uint16_t)tex;
-    } else {
-      if (sortKey) qSortKey[out] = (float)(ySort ? 0.0 * band + (double)cY[i] : 0.0);
-      if (tilesDirty) {
-        if (qRepeatX) qRepeatX[out] = 0;
-        if (qRepeatY) qRepeatY[out] = 0;
-        if (qTileMode) qTileMode[out] = 0;
-        if (qTileOffU) qTileOffU[out] = 0;
-        if (qTileOffV) qTileOffV[out] = 0;
-        if (qTileMulX) qTileMulX[out] = 0.0f;
-        if (qTileMulY) qTileMulY[out] = 0.0f;
-      }
-      if (qShadowH) qShadowH[out] = 0.0f;
-      if (qShadowOffX) qShadowOffX[out] = 0.0f;
-      if (qShadowOffY) qShadowOffY[out] = 0.0f;
-      const float x = stX[i];
-      const float y = stY[i];
-      const float rc = stRc[i];
-      const float rs = stRs[i];
-      qX[out] = x;
-      qY[out] = y;
-      qScaleX[out] = dScaleX[idx];
-      qScaleY[out] = dScaleY[idx];
-      qRotC[out] = rc;
-      qRotS[out] = rs;
-      qAlpha[out] = (float)((double)dAlpha[idx] * zoomAlpha);
-      qTint[out] = dTint[idx];
-      const uint32_t a = dTexture[idx];
-      uint32_t tex = INVALID_TEXTURE;
-      if (a < nAnims) {
-        tex = (uint32_t)frameStart[a];
-      } else {
-        warns[2 * nWarns] = (uint32_t)idx;
-        warns[2 * nWarns + 1] = WARN_DECO_START;
-        nWarns++;
-      }
-      qTexture[out] = (uint16_t)tex;
-      qAnchorX[out] = dAnchorX[idx];
-      qAnchorY[out] = dAnchorY[idx];
-      if (qType) qType[out] = 2;
+      w++;
     }
   }
-  counts[0] = nEnds;
-  counts[1] = nWarns;
-  counts[2] = tiled;
+  counts[0] = e.nEnds;
+  counts[1] = e.nWarns;
+  counts[2] = e.tiled;
   counts[3] = nForeign;
-  return n;
+  counts[4] = overflow;
+  return w;
 }
 
 /* What persist_check returns when the rows are not the ones this buffer last held. */

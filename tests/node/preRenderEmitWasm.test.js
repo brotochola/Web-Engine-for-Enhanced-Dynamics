@@ -321,10 +321,11 @@ async function runCase(t, opts) {
         Buffer.from(js.snap.state[s].buffer, js.snap.state[s].byteOffset, js.snap.state[s].byteLength), `frame ${f}: state ${s}`);
     }
     // Rows: sprites and decorations equal to the JS's, bit for bit; the others untouched and listed.
+    // [collector row, queue row] pairs: the same row without an Adobe root.
     const foreign = [];
-    for (let r = 0; r < results[3]; r++) foreign.push(b.u32[b.foreignAt + r]);
+    for (let r = 0; r < results[3]; r++) foreign.push([b.u32[b.foreignAt + 2 * r], b.u32[b.foreignAt + 2 * r + 1]]);
     const expectForeign = [];
-    for (let r = 0; r < n; r++) if (types[r] !== 0 && types[r] !== 2) expectForeign.push(r);
+    for (let r = 0; r < n; r++) if (types[r] !== 0 && types[r] !== 2) expectForeign.push([r, r]);
     assert.deepEqual(foreign, expectForeign, `frame ${f}: the rows left to the JS`);
     const qa = k.m.layout.queueAByte;
     for (let r = 0; r < n; r++) {

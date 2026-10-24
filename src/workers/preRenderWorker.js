@@ -85,7 +85,10 @@ import { bindPainterRadix, createWasmPainterState, painterSlotList } from '../re
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
 import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
 import {
+    bindEmitAdobe,
     bindPreRenderEmit,
+    writeEmitAdobeAssets,
+    writeEmitAdobeColumns,
     writeEmitColumns,
     writeEmitTextures,
     writePersistColumns,
@@ -927,6 +930,11 @@ class PreRenderWorker extends AbstractWorker {
                 } catch (err) {
                     console.warn('[PRE_RENDER] preRenderEmit.wasm did not load; emitting in JS', err);
                     this._emitWasm = null;
+                }
+                // W27: the Adobe roots too, from a copy of the registry's assets (deserialized before initialize).
+                if (this._emitWasm !== null && this.config?.wasm?.preRenderEmitAdobe !== false
+                    && bindEmitAdobe(this._emitWasm, emitLayout)) {
+                    this._copyEmitAdobeAssets();
                 }
             }
             // W4b: the sprite collect in WASM, when Transform, its pose and Collider are in the memory too.
@@ -3579,7 +3587,26 @@ class PreRenderWorker extends AbstractWorker {
      */
     _writeEmitTable(source) {
         const b = this._emitWasm;
-        return b.texturesReady && writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source);
+        if (!b.texturesReady || !writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source)) return false;
+        // W27: Adobe roots expand in the kernel when its tables hold the registry's assets and AdobeAnimComponent is
+        // in the memory (else it declines a frame with one), on a queue whose texture column is the source's length
+        // (_emitAdobePieces stops at that column's end, the loop at maxItems).
+        if (b.adobe) {
+            const assets = AdobeAnimRegistry.assetById;
+            if (assets !== b.adobeFrom || assets.length !== b.adobeAssets) this._copyEmitAdobeAssets();
+            writeEmitAdobeColumns(b, AdobeAnimComponent, this.renderQueueTextureId.length === source.maxItems);
+        }
+        return true;
+    }
+
+    /** W27. The registry's assets into the emit kernel's tables; an asset with no room there warns, once per copy. */
+    _copyEmitAdobeAssets() {
+        const skipped = writeEmitAdobeAssets(this._emitWasm, AdobeAnimRegistry.assetById);
+        for (let k = 0; k < skipped.length; k++) {
+            const s = skipped[k];
+            console.warn(`[PRE_RENDER] Adobe Animate asset "${s.name}" needs ${s.bytes} bytes of tables in the render-queue `
+                + 'memory and preRender.adobeTablesMB has no room left: its characters are emitted in JavaScript.');
+        }
     }
 
     /**
@@ -3624,9 +3651,9 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * E-112. The full emit's rows through preRenderEmit.wasm, on this frame's table (_writeEmitTable): it
-     * writes the sprite and decoration rows, then the rows of other types it listed are written here, its
-     * play-once ends sent through the entity-type filter and its missing textures warned as the JS emit
-     * warns them.
+     * writes the sprite and decoration rows and expands the Adobe roots (W27), then the rows of other types it
+     * listed are written here, its play-once ends sent through the entity-type filter and its missing textures
+     * warned as the JS emit warns them.
      * Returns the rows written, or -1 when the kernel cannot take the frame (the JS loop does).
      */
     _emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty) {
@@ -3648,13 +3675,18 @@ class PreRenderWorker extends AbstractWorker {
         const warns = results[1];
         for (let k = 0, at = b.warnsAt; k < warns; k++, at += 2) this._emitWarn(u32[at], u32[at + 1]);
         this._emitTiledRows = results[2] !== 0;
+        // W27: an Adobe root's pieces ran past the queue's end (_emitAdobePieces warns once).
+        if (results[4] !== 0 && !this._adobeRenderQueueOverflowWarned) {
+            this._adobeRenderQueueOverflowWarned = true;
+            console.warn('[PRE_RENDER] Adobe Animate piece expansion exceeded render queue capacity. Increase renderer.maxVisibleRenderables.');
+        }
         return written;
     }
 
     /**
-     * E-112. The rows preRenderEmit.wasm left to the JS (particles, glows, bullets and their trails), at
-     * their collector rows: the full emit's branches for those types, copied (the emit loop is too hot to
-     * share them). Row i is queue row i: a frame the kernel took has no Adobe root to expand.
+     * E-112. The rows preRenderEmit.wasm left to the JS (particles, glows, bullets and their trails), listed as
+     * [collector row, queue row] pairs (W27: after an Adobe root the queue rows move down): the full emit's
+     * branches for those types, copied (the emit loop is too hot to share them).
      */
     _emitForeignRows(listAt, listCount, source, writeSortKey, ySort, tilesDirty) {
         const list = this._emitWasm.u32;
@@ -3724,13 +3756,13 @@ class PreRenderWorker extends AbstractWorker {
         const bulletTrailTextureId = this._resolveBuiltinTextureId('_bulletTrail');
         const BULLET_TRAIL_MIN_LENGTH_SQ = 0.01;
 
-        for (let k = 0; k < listCount; k++) {
-            const i = list[listAt + k];
+        for (let k = 0, at = listAt; k < listCount; k++, at += 2) {
+            const i = list[at];
             const type = collectorType[i];
             const idx = collectorIndex[i];
             const yKey = collectorY[i];
             const sk = writeSortKey ? this._orderKey(type, idx, yKey, ySort) : yKey;
-            const out = i;
+            const out = list[at + 1];
             if (writeSortKey) rqSortKey[out] = sk;
             if (tilesDirty) {
                 if (rqRepeatX) rqRepeatX[out] = 0;

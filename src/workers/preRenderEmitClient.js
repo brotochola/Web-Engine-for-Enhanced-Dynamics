@@ -6,9 +6,14 @@
 // W4c: persist_frame (the check and the poses-only pass in one walk, E-116) and persist_remember are the
 // entity queue's persist path, on the same table with the rows each queue buffer last held
 // (writePersistColumns).
+// W27: with the Adobe regions, emit_rows also expands Adobe Animate roots into their pieces, from
+// AdobeAnimComponent (writeEmitAdobeColumns) and a copy of the registry's assets (writeEmitAdobeAssets).
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
-import { EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
+import {
+  EMIT_ADOBE_ASSET_BYTES, EMIT_ADOBE_MAX_ASSETS, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES,
+  EMIT_TABLE_SLOTS,
+} from '../util/wasmMemoryMap.js';
 
 // Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
 const wasmUrl = new URL('./preRenderEmit.wasm', import.meta.url);
@@ -28,6 +33,9 @@ export const EMIT_SLOTS = [
   'qTileMulY', 'qShadowH', 'qShadowOffX', 'qShadowOffY',
   'rEnds', 'rWarns', 'rForeign', 'rCounts',
   'sDirty', 'pType', 'pEntity', 'pFrame', 'pAnim', 'aEntities',
+  'aaActive', 'aaPlaying', 'aaRate', 'aaTime', 'aaLoop', 'aaAsset', 'aaClip',
+  'aaScaleX', 'aaScaleY', 'aaAnchorX', 'aaAnchorY', 'aaRotC', 'aaRotS', 'aaAlpha', 'aaTint',
+  'adDir', 'adAssets', 'adList',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -67,6 +75,26 @@ export const EMIT_QUEUE_COLUMNS = [
   ['qRotC', 'renderQueueRotC'], ['qRotS', 'renderQueueRotS'], ['qAlpha', 'renderQueueAlpha'], ['qTint', 'renderQueueTint'],
   ['qTexture', 'renderQueueTextureId'], ['qAnchorX', 'renderQueueAnchorX'], ['qAnchorY', 'renderQueueAnchorY'],
 ];
+/** W27: AdobeAnimComponent's columns the kernel reads (and adobe_advance writes), by slot. */
+export const EMIT_ADOBE_COLUMNS = [
+  ['aaActive', 'active'], ['aaPlaying', 'playing'], ['aaRate', 'playbackRate'], ['aaTime', 'time'], ['aaLoop', 'loop'],
+  ['aaAsset', 'assetId'], ['aaClip', 'clipId'], ['aaScaleX', 'scaleX'], ['aaScaleY', 'scaleY'], ['aaAnchorX', 'anchorX'],
+  ['aaAnchorY', 'anchorY'], ['aaRotC', 'rotC'], ['aaRotS', 'rotS'], ['aaAlpha', 'alpha'], ['aaTint', 'tint'],
+];
+/** W27: what an asset directory record says of its asset (preRenderEmit.c ASSET_*). */
+export const EMIT_ADOBE_NONE = 0;
+export const EMIT_ADOBE_IN = 1;
+export const EMIT_ADOBE_JS = 2;
+/** The record's u32 words (preRenderEmit.c AdobeAsset); its four doubles start at word 32. */
+const REC = {
+  kind: 0, clipStartLen: 1, clipStart: 2, clipCountLen: 3, clipCount: 4, clipRateLen: 5, clipRate: 6,
+  minXLen: 7, minX: 8, minYLen: 9, minY: 10, maxXLen: 11, maxX: 12, maxYLen: 13, maxY: 14,
+  frames: 15, frameStart: 16, frameCount: 17, pieces: 18,
+  px: 19, py: 20, psx: 21, psy: 22, prc: 23, prs: 24, palpha: 25, pax: 26, pay: 27, ptex: 28,
+};
+const REC_WORDS = EMIT_ADOBE_ASSET_BYTES / 4;
+const REC_BOUNDS_DOUBLE = 16;
+
 /** Queue columns pre-render may not have (0 in the table, the kernel skips them). */
 export const EMIT_OPTIONAL_QUEUE_COLUMNS = [
   ['qType', 'renderQueueType'], ['qSortKey', 'renderQueueSortKey'], ['qRepeatX', 'renderQueueRepeatX'],
@@ -101,7 +129,8 @@ export async function bindPreRenderEmit(memory, emit) {
     layout: emit,
     table,
     tableByte: emit.tableByte,
-    results: new Uint32Array(buffer, emit.resultsByte, 4),
+    // [ends, warnings, a tiled sprite, rows left to the JS, an Adobe expansion past the queue's end].
+    results: new Uint32Array(buffer, emit.resultsByte, 8),
     // The lists are read by index up to the counts in results.
     u32: new Uint32Array(buffer),
     endsAt: emit.endsByte >> 2,
@@ -110,7 +139,187 @@ export async function bindPreRenderEmit(memory, emit) {
     texturesReady: false,
     // The frame sizes' length in the kernel's copy (frameWidthByte, frameHeightByte), once written.
     frames: 0,
+    // W27: the Adobe tables are bound (bindEmitAdobe); the directory holds the registry's assets
+    // (writeEmitAdobeAssets), copied from this assetById array when it had this length; the directory's byte.
+    adobe: false,
+    adobeReady: false,
+    adobeFrom: null,
+    adobeAssets: 0,
+    adobeDirByte: 0,
   };
+}
+
+/**
+ * W27. Bind the Adobe tables when the layout has them (wasm.preRenderEmitAdobe). Until writeEmitAdobeAssets
+ * copies the registry in, frames with an Adobe root are declined.
+ * @returns {boolean} whether the layout has them
+ */
+export function bindEmitAdobe(b, emit) {
+  if (!(emit.adobeAssetsByte >= 0) || !(emit.adobeListByte >= 0)) return false;
+  b.adobe = true;
+  b.table[SLOT.adList] = emit.adobeListByte;
+  return true;
+}
+
+/**
+ * W27. AdobeAnimComponent's columns in this frame's table, and the asset directory when it is ready and `ok`
+ * (the caller's own conditions); else the directory slot is 0 and the kernel declines a frame with an Adobe root.
+ * @returns {boolean} whether the kernel can expand roots this frame
+ */
+export function writeEmitAdobeColumns(b, AdobeAnimComponent, ok) {
+  let ready = ok && b.adobeReady;
+  for (let k = 0; k < EMIT_ADOBE_COLUMNS.length; k++) {
+    if (!putSlot(b, EMIT_ADOBE_COLUMNS[k][0], AdobeAnimComponent[EMIT_ADOBE_COLUMNS[k][1]])) ready = false;
+  }
+  b.table[SLOT.adDir] = ready ? b.adobeDirByte : 0;
+  return ready;
+}
+
+/** An asset array's length when it is absent (0) or of the class the compiler makes; -1 for anything else. */
+function arrayLength(a, Ctor) {
+  if (a === undefined || a === null) return 0;
+  return a instanceof Ctor ? a.length : -1;
+}
+
+/**
+ * What the tables need of one asset: the lengths of its arrays and the bytes they take, or null when the kernel
+ * cannot read it as the JS does (arrays of another class, frame lists of two lengths, pieces past the piece
+ * arrays, bounds that are not numbers). Such an asset is emitted in JS.
+ */
+function planAsset(asset) {
+  const L = {
+    clipStart: arrayLength(asset.clipFrameStart, Uint32Array),
+    clipCount: arrayLength(asset.clipFrameCount, Uint16Array),
+    clipRate: arrayLength(asset.clipFrameRate, Float32Array),
+    minX: arrayLength(asset.clipBoundsMinX, Float32Array),
+    minY: arrayLength(asset.clipBoundsMinY, Float32Array),
+    maxX: arrayLength(asset.clipBoundsMaxX, Float32Array),
+    maxY: arrayLength(asset.clipBoundsMaxY, Float32Array),
+    frameStart: arrayLength(asset.framePieceStart, Uint32Array),
+    frameCount: arrayLength(asset.framePieceCount, Uint16Array),
+  };
+  for (const n of Object.values(L)) if (n < 0) return null;
+  // framePieceCount?.[f] ?? 0 and framePieceStart?.[f] ?? 0 are read apart in the JS: one length for both.
+  const frames = L.frameCount;
+  if (frames > 0 && L.frameStart !== frames) return null;
+  let pieces = 0;
+  for (let f = 0; f < frames; f++) {
+    const end = asset.framePieceStart[f] + asset.framePieceCount[f];
+    if (end > pieces) pieces = end;
+  }
+  const bounds = [asset.assetBoundsMinX ?? 0, asset.assetBoundsMinY ?? 0, asset.assetBoundsMaxX ?? 0, asset.assetBoundsMaxY ?? 0];
+  if (bounds.some((v) => typeof v !== 'number')) return null;
+  if (pieces > 0) {
+    for (const name of ['pieceX', 'pieceY', 'pieceScaleX', 'pieceScaleY', 'pieceAlpha', 'pieceAnchorX', 'pieceAnchorY']) {
+      if (!(arrayLength(asset[name], Float32Array) >= pieces)) return null;
+    }
+    if (!(arrayLength(asset.pieceTextureId, Uint16Array) >= pieces)) return null;
+    // pieceRotC ? pieceRotC[p] : Math.cos(pieceRotation[p]), and the same for the sine (an empty array is truthy).
+    const rotation = arrayLength(asset.pieceRotation, Float32Array) >= pieces;
+    for (const name of ['pieceRotC', 'pieceRotS']) {
+      if (asset[name] == null ? !rotation : !(arrayLength(asset[name], Float32Array) >= pieces)) return null;
+    }
+  }
+  const line = (bytes) => Math.ceil(bytes / 8) * 8;
+  const clips = line(L.clipStart * 4) + line(L.clipCount * 2) + line(L.clipRate * 4)
+    + line(L.minX * 4) + line(L.minY * 4) + line(L.maxX * 4) + line(L.maxY * 4);
+  const bytes = clips + line(frames * 4) + line(frames * 2) + 7 * line(pieces * 4) + 2 * pieces * 8 + line(pieces * 2);
+  return { L, frames, pieces, bounds, bytes };
+}
+
+/**
+ * W27. Copy the registry's assets (AdobeAnimRegistry.assetById) into the asset directory and the tables after
+ * it, every array as the kernel reads it: the piece rotations as doubles (an asset without pieceRotC/pieceRotS
+ * gets Math.cos/Math.sin of pieceRotation, as the JS emit computes them). An asset that does not fit, or that
+ * planAsset turns down, is marked for the JS: a frame with one of its roots is declined. Called when pre-render
+ * binds the kernel and whenever the registry's array changes.
+ * @param {Array<object | null | undefined>} assets by asset id
+ * @returns {Array<{ name: string, bytes: number }>} the assets left out for want of room
+ */
+export function writeEmitAdobeAssets(b, assets) {
+  const L = b.layout;
+  const dirByte = L.adobeAssetsByte;
+  const dirBytes = EMIT_ADOBE_MAX_ASSETS * EMIT_ADOBE_ASSET_BYTES;
+  const words = new Uint32Array(b.buffer, dirByte, dirBytes / 4);
+  const doubles = new Float64Array(b.buffer, dirByte, dirBytes / 8);
+  words.fill(0);
+  b.adobeFrom = assets;
+  b.adobeAssets = assets.length;
+  b.adobeReady = false;
+  b.adobeDirByte = dirByte;
+  b.table[SLOT.adDir] = 0;
+  b.table[SLOT.adAssets] = 0;
+  const skipped = [];
+  if (assets.length > EMIT_ADOBE_MAX_ASSETS) {
+    skipped.push({ name: `${assets.length - 1} assets (the tables hold ${EMIT_ADOBE_MAX_ASSETS - 1})`, bytes: 0 });
+    return skipped;
+  }
+  const buffer = b.buffer;
+  const end = dirByte + L.adobeAssetsBytes;
+  let at = dirByte + dirBytes;
+  /** Copy `src`'s first `n` values as `Ctor` at the next free byte; returns that byte (0 for an empty array). */
+  const put = (Ctor, src, n) => {
+    if (n === 0) return 0;
+    const byte = at;
+    new Ctor(buffer, byte, n).set(src.subarray(0, n));
+    at += Math.ceil((n * Ctor.BYTES_PER_ELEMENT) / 8) * 8;
+    return byte;
+  };
+  /** The piece rotation column: the prebaked one widened, or the trig of pieceRotation. */
+  const putRotation = (baked, rotation, n, trig) => {
+    if (n === 0) return 0;
+    const byte = at;
+    const dst = new Float64Array(buffer, byte, n);
+    if (baked != null) dst.set(baked.subarray(0, n));
+    else for (let p = 0; p < n; p++) dst[p] = trig(rotation[p]);
+    at += n * 8;
+    return byte;
+  };
+  for (let id = 0; id < assets.length; id++) {
+    const asset = assets[id];
+    if (!asset) continue;
+    const r = id * REC_WORDS;
+    const plan = planAsset(asset);
+    if (!plan || at + plan.bytes > end) {
+      words[r + REC.kind] = EMIT_ADOBE_JS;
+      if (plan) skipped.push({ name: String(asset.name ?? id), bytes: plan.bytes });
+      continue;
+    }
+    const { L: n, frames, pieces } = plan;
+    words[r + REC.clipStartLen] = n.clipStart;
+    words[r + REC.clipStart] = put(Uint32Array, asset.clipFrameStart, n.clipStart);
+    words[r + REC.clipCountLen] = n.clipCount;
+    words[r + REC.clipCount] = put(Uint16Array, asset.clipFrameCount, n.clipCount);
+    words[r + REC.clipRateLen] = n.clipRate;
+    words[r + REC.clipRate] = put(Float32Array, asset.clipFrameRate, n.clipRate);
+    words[r + REC.minXLen] = n.minX;
+    words[r + REC.minX] = put(Float32Array, asset.clipBoundsMinX, n.minX);
+    words[r + REC.minYLen] = n.minY;
+    words[r + REC.minY] = put(Float32Array, asset.clipBoundsMinY, n.minY);
+    words[r + REC.maxXLen] = n.maxX;
+    words[r + REC.maxX] = put(Float32Array, asset.clipBoundsMaxX, n.maxX);
+    words[r + REC.maxYLen] = n.maxY;
+    words[r + REC.maxY] = put(Float32Array, asset.clipBoundsMaxY, n.maxY);
+    words[r + REC.frames] = frames;
+    words[r + REC.frameStart] = put(Uint32Array, asset.framePieceStart, frames);
+    words[r + REC.frameCount] = put(Uint16Array, asset.framePieceCount, frames);
+    words[r + REC.pieces] = pieces;
+    words[r + REC.px] = put(Float32Array, asset.pieceX, pieces);
+    words[r + REC.py] = put(Float32Array, asset.pieceY, pieces);
+    words[r + REC.psx] = put(Float32Array, asset.pieceScaleX, pieces);
+    words[r + REC.psy] = put(Float32Array, asset.pieceScaleY, pieces);
+    words[r + REC.prc] = putRotation(asset.pieceRotC, asset.pieceRotation, pieces, Math.cos);
+    words[r + REC.prs] = putRotation(asset.pieceRotS, asset.pieceRotation, pieces, Math.sin);
+    words[r + REC.palpha] = put(Float32Array, asset.pieceAlpha, pieces);
+    words[r + REC.pax] = put(Float32Array, asset.pieceAnchorX, pieces);
+    words[r + REC.pay] = put(Float32Array, asset.pieceAnchorY, pieces);
+    words[r + REC.ptex] = put(Uint16Array, asset.pieceTextureId, pieces);
+    doubles.set(plan.bounds, r / 2 + REC_BOUNDS_DOUBLE);
+    words[r + REC.kind] = EMIT_ADOBE_IN;
+  }
+  b.table[SLOT.adAssets] = assets.length;
+  b.adobeReady = true;
+  return skipped;
 }
 
 /**
