@@ -428,7 +428,8 @@
       "next": "Reapply; check the kernel against the shipped function; 4 pairs of `spawnStormScene` from worktrees; batch with E-124.",
       "rank": 22,
       "records": [
-        "R-0335"
+        "R-0335",
+        "R-0584"
       ]
     },
     {
@@ -13008,6 +13009,19 @@
       "text": "**Kept (kernel).** Each render-queue column now starts at the next 64-byte boundary plus one line, measured from the queue's base, in `computeBufferSize` and `createViews`. That is the one layout every reader takes; the kernels take it through their tables. It adds about 1.6 KB per queue.\n\nAt a capacity that is a multiple of 1 024, every column of a row now falls in its own L1 set. `renderQueueColumnSkew.test.js` checks this; it fails on the old layout. At other capacities a set holds at most four columns.\n\n`preRenderEmitWasmMicrobench`: the old layout from a worktree at HEAD against the new one, alternating processes, 5 rounds, checksums equal. Node; agents' builds and tests were on the machine.\n\n| capacity | emit | old ops/s | new ops/s | | rounds won |\n|---|---|---|---|---|---|\n| 32 768 (aliased) | C | 900.8 | 2 162.0 | **+140 % (2.4×)** | 5/5 |\n| 32 768 | JS | 863.0 | 964.2 | +11.7 % | 4/5 |\n| 119 298 (Predator) | C | 2 144.9 | 2 175.5 | +1.4 % | 5/5 |\n| 119 298 | JS | 971.5 | 979.3 | +0.8 % | 4/5 |\n\nThe aliased capacity now runs as fast as Predator's. The numbers reproduce the finding (R-0518: 882 → 2 150 C, +11 % JS for 32 768 against 33 000).\n\nStill open:\n- The component columns alias in the same way at entity totals at or near a multiple of 1 024. Their layout is mirrored by hand in `physicsHostImpl.js`, and both move together, so it is not done here.\n- A scene check at an aliased capacity (proceduralTree's 8 192) and the Predator gate go in the next batch.\n\nCommit 85edd25a.",
       "commits": [
         "85edd25a"
+      ]
+    },
+    {
+      "id": "R-0584",
+      "date": "2026-10-24",
+      "time": "10:40",
+      "timeFrom": "recorded",
+      "title": "The spawn sort by packed keys on the shipped method, E-125 kernel A/B",
+      "verdict": "note",
+      "text": "**Kernel win; spawnStorm pair pending.** H-14 has been reapplied to the shipped `_processSpawnSoA`. Each spawn becomes a key, `entityIndex * span + position`, in a `Float64Array`. Its length is the batch capacity, a power of two from 256 that doubles, and it doubles as the span. The typed array's native numeric sort then gives the order the stable comparator sort over a permutation gave: by index, then by position. The position comes back exactly. `spawnSortParity.test.js` passes unchanged.\n\nThe 2026-10-14 kernel timed the sort strategies apart from the worker. The new `spawnSoAMicrobench` times the whole shipped method on a real logic worker: the sort, the duplicate drop, and the merges into the active list and the class lists. Each class owns a quarter of a 65 536-slot space, as an entity type owns its pool's range, and the batch draws 2 % repeats.\n\nWriting the bench turned up two artifacts of a bare worker, both fixed before timing:\n- **Merge scratch:** the merge allocated its scratch, because the worker's init sizes it and a bare worker never ran init.\n- **Class layout:** random classes per index made one merge per spawn.\n\nOld tree against new, alternating processes, 5 rounds, checksums equal. Node; agents' builds and tests were on the machine.\n\n| case | old ops/s | new ops/s | | new won |\n|---|---|---|---|---|\n| storm: 1 024 spawns into 8 000 live | 5 427.3 | 7 491.6 | **+38.0 %** | 5/5 |\n| batch: 256 into 20 000 | 7 235.4 | 7 823.4 | +8.1 % | 5/5 |\n| trickle: 16 into 20 000 | 9 724.2 | 9 680.4 | −0.5 % | 2/5, a tie |\n\nNext: `spawnStormScene`, owner logic, 4 pairs from worktrees, in the next batch. A kernel win with a scene not 3 % worse is a kept-kernel. Commits: 0318e74f (the bench), 0ed1cdba (the change).",
+      "commits": [
+        "0318e74f",
+        "0ed1cdba"
       ]
     }
   ],
