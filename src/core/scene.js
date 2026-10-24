@@ -67,7 +67,7 @@ import {
 } from '../util/sceneBufferMemory.js';
 import { createSceneSharedBuffers, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
-import { createSceneWorkers } from '../util/sceneWorkerBootstrap.js';
+import { createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
 import {
   bindFrameClock,
   publishFrame,
@@ -245,6 +245,8 @@ class Scene {
     this.weedPose = null;
     /** W26: the decal memory (decalMemory.js) when the tiles live in one, else null. */
     this.decalMemory = null;
+    /** Phase 4: the block of Box2D's memory the render-queue regions live in ({ memory, byte, bytes }), or null. */
+    this.box2dBlock = null;
 
     // Workers
     this.workers = {
@@ -1040,6 +1042,10 @@ class Scene {
 
     await this.loadEntityScriptsInMainThread();
     this._loadStep('scripts');
+
+    // Phase 4: with physics, the physics worker starts here and reserves a block of Box2D's memory, so the
+    // render-queue regions the shared buffers make are laid in it.
+    await reserveBox2dBlock(this);
 
     // Create shared buffers
 
@@ -2699,6 +2705,7 @@ class Scene {
     this.loadedAdobeAnimateAssets = {};
     this.decalTextureData = null;
     this.decalMemory = null;
+    this.box2dBlock = null;
     this.bigAtlasCanvas = null;
     this.bigAtlasJson = null;
     this.bigAtlasProxySheets = null;

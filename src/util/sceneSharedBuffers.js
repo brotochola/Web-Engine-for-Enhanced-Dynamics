@@ -1,7 +1,7 @@
 import { debugWorkerLog } from './debugLog.js';
 import { createSpatialPublishMemory } from './spatialPublishMemory.js';
 import { createParticleMemory } from './particleMemory.js';
-import { createRenderQueueMemory } from './renderQueueMemory.js';
+import { createRenderQueueMemory, renderQueueMemoryBytes } from './renderQueueMemory.js';
 import { createNavigationMemory } from './navigationMemory.js';
 import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/transform.js';
@@ -497,13 +497,14 @@ export function resolveMaxVisibleRenderables(scene) {
  * blocks, which those components are then bound in (buffers.componentDataByte), and pre-render's emit
  * state. Without the memory (both switches off, or too big) every component keeps a buffer of its own.
  */
-function initializeRenderQueueMemory(scene) {
-  const { buffers, config } = scene;
-  buffers.componentDataByte = {};
+/**
+ * What the render-queue memory will hold for this scene, computed from its config and pools before anything is
+ * made: Phase 4 sizes Box2D's block from it before the shared buffers exist (renderQueueBlockBytes).
+ */
+export function renderQueueMemorySpec(scene) {
+  const { config } = scene;
   const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
   const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
-  scene.maxVisibleRenderables = maxVisibleRenderables;
-  scene.gpuQueueCaps = gpuCaps;
   const pack = config.wasm?.gpuPack !== false;
   const emit = config.wasm?.preRenderEmit !== false ? emitBlocks(scene) : null;
   // E-114: the shadow stamp's scratch, sized by the sun casters' cap and the lighting config.
@@ -538,18 +539,39 @@ function initializeRenderQueueMemory(scene) {
         colliderBytes: pools.Collider?.ComponentClass ? Collider.getBufferSize(n) : 0,
       }
     : null;
-  const make = (withCollect) => createRenderQueueMemory(
+  return {
     maxVisibleRenderables,
-    computeRenderQueueBufferSize(maxVisibleRenderables),
-    computeGpuQueueBufferSize(gpuCaps),
-    emit,
-    stamp,
-    sway,
-    pixiPack,
-    withCollect,
-  );
-  // A scene whose collect blocks would not fit keeps the memory without them (and the JS collect).
-  scene.renderQueueMemory = pack || emit || stamp ? (collect && make(collect)) || make(null) : null;
+    gpuCaps,
+    enabled: Boolean(pack || emit || stamp),
+    args: [maxVisibleRenderables, computeRenderQueueBufferSize(maxVisibleRenderables), computeGpuQueueBufferSize(gpuCaps), emit, stamp, sway, pixiPack],
+    collect,
+  };
+}
+
+/**
+ * The bytes the render-queue regions take in a block of Box2D's memory (Phase 4), 0 when the scene makes no
+ * render-queue memory. The collect blocks are never in it: they exist only without physics.
+ */
+export function renderQueueBlockBytes(scene) {
+  const spec = renderQueueMemorySpec(scene);
+  return spec.enabled ? renderQueueMemoryBytes(...spec.args, null) : 0;
+}
+
+function initializeRenderQueueMemory(scene) {
+  const { buffers } = scene;
+  buffers.componentDataByte = {};
+  const spec = renderQueueMemorySpec(scene);
+  scene.maxVisibleRenderables = spec.maxVisibleRenderables;
+  scene.gpuQueueCaps = spec.gpuCaps;
+  const make = (withCollect, place = null) => createRenderQueueMemory(...spec.args, withCollect, place);
+  // Phase 4: in the block physics reserved in Box2D's memory when there is one and the regions fit it (they
+  // were sized from the same spec); else a memory of its own. A scene whose collect blocks would not fit keeps
+  // the memory without them (and the JS collect).
+  const block = scene.box2dBlock;
+  const inBlock = block && spec.enabled && renderQueueMemoryBytes(...spec.args, null) <= block.bytes
+    ? make(null, { memory: block.memory, baseByte: block.byte })
+    : null;
+  scene.renderQueueMemory = inBlock || (spec.enabled ? (spec.collect && make(spec.collect)) || make(null) : null);
   const c = scene.renderQueueMemory?.layout.collect;
   if (c) {
     if (c.transformByte >= 0) buffers.componentDataByte.Transform = c.transformByte;

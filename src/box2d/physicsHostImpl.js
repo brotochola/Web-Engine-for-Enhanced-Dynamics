@@ -477,6 +477,8 @@
     clockScale: null,
     frameRateIndex: -1,
     frameRateStride: 1,
+    // Phase 4: the engine block malloc'd in Box2D's memory (its raw pointer), 0 without one.
+    engineBlockRaw: 0,
     // Running totals of every step, on the frame clock's slot (ftAdd).
     ftI32: null,
     ftF64: null,
@@ -1299,6 +1301,34 @@
     }
   }
 
+  // Phase 4 (WASM_HYPOTHESES): a block of Box2D's memory for the engine's regions (the render-queue memory),
+  // asked for before init. Allocated once the module runs, 64-byte aligned and zeroed, and posted back with the
+  // memory itself, which every kernel then imports. memory null: no block, and the engine makes its own memory.
+  function reserveEngineBlock(bytes) {
+    var whenReady = typeof global.weedjsWhenModuleReady === 'function'
+      ? global.weedjsWhenModuleReady
+      : function (cb) { cb(); };
+    whenReady(function () {
+      var memory = typeof Module !== 'undefined' ? Module.wasmMemory : null;
+      var raw = 0;
+      if (memory && bytes > 0 && !state.engineBlockRaw && typeof Module._malloc === 'function') {
+        try {
+          raw = Module._malloc(bytes + 64);
+        } catch (err) {
+          raw = 0;
+        }
+      }
+      if (!raw) {
+        self.postMessage({ msg: 'engineBlock', memory: null, byte: 0, bytes: 0 });
+        return;
+      }
+      var byte = (raw + 63) & ~63;
+      new Uint8Array(memory.buffer, byte, bytes).fill(0);
+      state.engineBlockRaw = raw;
+      self.postMessage({ msg: 'engineBlock', memory: memory, byte: byte, bytes: bytes });
+    });
+  }
+
   function startGameLoop() {
     state.isPaused = false;
     state.lastFrameTime = performance.now();
@@ -1318,6 +1348,8 @@
       if (data.msg === 'init') {
         state.isPaused = true;
         initializeFromWeedInit(data);
+      } else if (data.msg === 'reserveEngineBlock') {
+        reserveEngineBlock(data.bytes | 0);
       } else if (data.msg === 'start') {
         startGameLoop();
       } else if (data.msg === 'pause') {

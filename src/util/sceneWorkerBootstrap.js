@@ -16,6 +16,7 @@ import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
 import { installDecalMemory } from './decalMemory.js';
+import { box2dBlockPlan, requestBox2dBlock } from './box2dEngineBlock.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -35,10 +36,11 @@ function createSceneWorkerFactory(useInlineWorkers, cacheBust) {
 /**
  * Classic Box2D worker (pthread entry). Bundle blob or /src/box2d/box2dWasm.js — no type:module.
  * The worker's name carries Box2D's memory size ('physics pages=N'): the glue creates the memory
- * while the script is evaluated, before any message can arrive. Exported for tests.
+ * while the script is evaluated, before any message can arrive. `pages` overrides the size Phase 4 grows by
+ * the engine block. Exported for tests.
  */
-export function createPhysicsWorker(useInlineWorkers, cacheBust, physicsConfig) {
-  const options = { name: `physics pages=${box2dMemoryPages(physicsConfig)}` };
+export function createPhysicsWorker(useInlineWorkers, cacheBust, physicsConfig, pages = box2dMemoryPages(physicsConfig)) {
+  const options = { name: `physics pages=${pages}` };
   if (useInlineWorkers) {
     if (typeof window.WEED.getBox2dWorkerUrl !== 'function') {
       throw new Error('BUNDLE_MODE physics requires WEED.getBox2dWorkerUrl()');
@@ -62,9 +64,11 @@ function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBu
     scene.workers.logicWorkers.push(logicWorker);
   }
 
-  // Boot: no box2dWasm.js when config.physics.enabled === false.
+  // Boot: no box2dWasm.js when config.physics.enabled === false. Phase 4 started it already (reserveBox2dBlock).
   if (scene._physicsEnabled) {
-    scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics);
+    if (!scene.workers.physics) {
+      scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics);
+    }
     // Main-side label for step waiters and logs; the worker's own name is set above.
     scene.workers.physics.name = 'physics';
   } else {
@@ -612,17 +616,41 @@ function attachSceneWorkerRuntimeHandlers(scene) {
   debugWorkerLog('[Scene] ✅ Message handlers set up');
 }
 
-export async function createSceneWorkers(scene) {
-  const cacheBust = WORKER_CACHE_BUST;
+/** Bundle (inline worker sources, made ready here) or /src workers, and the cache-bust token. */
+async function workerMode() {
   const useInlineWorkers =
     typeof window !== 'undefined' && window.WEED?.BUNDLE_MODE && window.WEED?.WorkerSources;
-
-  if (useInlineWorkers) {
-    if (typeof window.WEED.ensureEmbeddedSources === 'function') {
-      await window.WEED.ensureEmbeddedSources();
-    }
-    debugWorkerLog('[Scene] Using inline workers (single-file bundle mode)');
+  if (useInlineWorkers && typeof window.WEED.ensureEmbeddedSources === 'function') {
+    await window.WEED.ensureEmbeddedSources();
   }
+  return { useInlineWorkers, cacheBust: WORKER_CACHE_BUST };
+}
+
+/**
+ * Phase 4: start the physics worker before the shared buffers exist, with Box2D's memory grown by the
+ * render-queue regions' block, and reserve that block (box2dEngineBlock.js). Sets scene.box2dBlock to
+ * { memory, byte, bytes } or null; createSceneWorkers then reuses the worker.
+ */
+export async function reserveBox2dBlock(scene) {
+  scene.box2dBlock = null;
+  const plan = box2dBlockPlan(scene);
+  if (!plan) return null;
+  const { useInlineWorkers, cacheBust } = await workerMode();
+  const worker = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics, plan.pages);
+  worker.name = 'physics';
+  // The glue's pre-js throws while the script loads when the memory cannot be made; nothing else listens yet.
+  worker.onerror = (e) => {
+    console.error('❌ EARLY ERROR in physics worker (module load failed):', e.message, e);
+    scene._showFatalErrorMessage('physics', 'Physics worker failed to start', e.message || String(e));
+  };
+  scene.workers.physics = worker;
+  scene.box2dBlock = await requestBox2dBlock(worker, plan.bytes);
+  return scene.box2dBlock;
+}
+
+export async function createSceneWorkers(scene) {
+  const { useInlineWorkers, cacheBust } = await workerMode();
+  if (useInlineWorkers) debugWorkerLog('[Scene] Using inline workers (single-file bundle mode)');
 
   const makeWorker = createSceneWorkerFactory(useInlineWorkers, cacheBust);
   createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBust);

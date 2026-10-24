@@ -27,18 +27,27 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {boolean} [pixiPack] Pixi's plain sprite rows and pack scratch too (W9d), one row per queue row
  * @param {null | { entities: number, transformBytes: number, colliderBytes: number }} [collect] the sprite collect's
  *   blocks too (W4b): Transform, its pose, Collider and the kernel's scratch
+ * @param {null | { memory: WebAssembly.Memory, baseByte: number }} [place] lay the regions in that memory from
+ *   baseByte (Phase 4: a block of Box2D's memory) instead of making a memory of their own
  * @returns {null | { memory: WebAssembly.Memory, buffer: SharedArrayBuffer, layout: Record<string, any> }}
  */
-export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false, collect = null) {
+export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false, collect = null, place = null) {
   const n = maxItems | 0;
   if (n <= 0) return null;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiRows = pixiPack ? n : 0;
   const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect);
-  if (map.pages > WASM_MAX_PAGES) return null;
-  const r = map.regions;
+  const base = place ? place.baseByte | 0 : 0;
+  if (place) {
+    if ((base & 63) !== 0 || base + map.bytes > place.memory.buffer.byteLength) return null;
+  } else if (map.pages > WASM_MAX_PAGES) {
+    return null;
+  }
+  // Every region's byte from the memory's start: the block's offset added when the regions sit in a block.
+  const r = {};
+  for (const [name, region] of Object.entries(map.regions)) r[name] = base ? { ...region, byte: region.byte + base } : region;
   try {
-    const memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
+    const memory = place ? place.memory : new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
     return {
       memory,
       buffer: memory.buffer,
@@ -117,6 +126,14 @@ function collectLayout(r, collect) {
     tableByte: r.collectTable.byte,
     resultsByte: r.collectResults.byte,
   };
+}
+
+/** The bytes createRenderQueueMemory's regions take, for a block reserved before the memory is made (Phase 4). */
+export function renderQueueMemoryBytes(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false, collect = null) {
+  const n = maxItems | 0;
+  if (n <= 0) return 0;
+  const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
+  return renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiPack ? n : 0, collect).bytes;
 }
 
 function stampLayout(r, stamp) {
