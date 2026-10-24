@@ -82,6 +82,7 @@ import { ShadowCaster } from '../components/shadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { bindPoolExhaustion } from '../util/poolExhaustion.js';
+import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from '../core/messages.js';
 
@@ -748,15 +749,16 @@ export class AbstractWorker {
     // Initialize particle compact lists (for optimized iteration)
     if (data.maxParticles && data.maxParticles > 0) {
       // activeParticlesData: rebuilt each frame by particle_worker. In the particle memory (E-80)
-      // both lists sit at a byte offset; a plain SAB starts at 0.
+      // both lists sit at a byte offset; a plain SAB starts at 0. E-129: u32 past 65 535 particles.
       const listLength = (data.maxParticles | 0) + 1;
+      const ParticleSlots = PoolSlotArray(data.maxParticles | 0);
       if (data.activeParticlesData) {
-        this.activeParticlesData = new Uint16Array(data.activeParticlesData, data.activeParticlesByte | 0, listLength);
+        this.activeParticlesData = new ParticleSlots(data.activeParticlesData, data.activeParticlesByte | 0, listLength);
         this.reportLog(`initialized activeParticlesData`);
       }
       // visibleParticlesData: subset of active particles that are on-screen
       if (data.visibleParticlesData) {
-        this.visibleParticlesData = new Uint16Array(data.visibleParticlesData, data.visibleParticlesByte | 0, listLength);
+        this.visibleParticlesData = new ParticleSlots(data.visibleParticlesData, data.visibleParticlesByte | 0, listLength);
         this.reportLog(`initialized visibleParticlesData`);
       }
     }

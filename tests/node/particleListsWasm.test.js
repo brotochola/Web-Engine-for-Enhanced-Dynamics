@@ -54,3 +54,27 @@ test('wasm.particleListsF32 (default on) binds the float32 build: the same activ
   const sameFlags = js.sums.filter((s, i) => s === f32.sums[i]).length;
   t.diagnostic(`${sameFlags} of ${js.sums.length} frames with the JS build's visible list and flags exactly`);
 });
+
+// E-129: a pool past 65 535 slots (70 007, a tail of 7) has u32 lists, FL4 links and the kernel's _u32 builds;
+// the same comparisons hold there, and the lists reach past slot 65 535.
+test('past 65 535 slots the u32 WASM lists are the JS lists under every camera path', async (t) => {
+  const wide = { ...base, n: 70007 };
+  const [js, wasm, listsOnly, f32] = await Promise.all([
+    run({ ...wide, lists: false, integrate: false }),
+    run({ ...wide, lists: true, integrate: true }),
+    run({ ...wide, lists: true, integrate: false }),
+    run({ ...wide, lists: true, integrate: false, f32: undefined }),
+  ]);
+  assert.equal(js.listClass, 'Uint32Array', 'the JS lists are u32');
+  assert.equal(wasm.listsSlotBytes, 4, 'the worker bound the _u32 builds');
+  assert.equal(f32.listsSlotBytes, 4);
+  assert.equal(f32.listsF32, true);
+  assert.ok(js.maxIndex > 65535, `the lists hold slot ${js.maxIndex}`);
+  for (const [name, side] of [['WASM lists and integrate', wasm], ['WASM lists, JS integrate', listsOnly]]) {
+    const first = js.sums.findIndex((s, i) => s !== side.sums[i]);
+    assert.equal(first, -1, `${name}: the lists or the state differ from frame ${first}`);
+  }
+  const first = js.activeSums.findIndex((s, i) => s !== f32.activeSums[i]);
+  assert.equal(first, -1, `float32: the active list or the particle state differs from frame ${first}`);
+  t.diagnostic(`${js.active} live at the end, slots up to ${js.maxIndex}`);
+});

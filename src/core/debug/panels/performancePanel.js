@@ -6,6 +6,7 @@ import { DecorationPool } from '../../decorationPool.js';
 import { BulletPool } from '../../bulletPool.js';
 import { ParticleEmitter } from '../../particleEmitter.js';
 import { GameObject } from '../../gameObject.js';
+import { PoolSlotArray } from '../../../util/poolSlotWidth.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -408,14 +409,17 @@ export class PerformancePanel {
 
   _bindPoolLists() {
     const buffers = this.debugUI.scene?.buffers;
-    const view = (sab) => (sab ? new Uint16Array(sab) : null);
-    // The particle lists may sit in the particle memory at a byte offset (E-80).
-    const listView = (sab, byte) => (sab ? new Uint16Array(sab, byte | 0, 1) : null);
-    this._activeParticles = listView(buffers?.activeParticlesData, buffers?.activeParticlesByte);
-    this._visibleParticles = listView(buffers?.visibleParticlesData, buffers?.visibleParticlesByte);
-    this._activeBullets = view(buffers?.activeBulletsData);
-    this._visibleBullets = view(buffers?.visibleBulletsData);
-    this._visibleDecorations = view(buffers?.visibleDecorationsData);
+    const config = this.debugUI.scene?.config;
+    // The count of a pool's list, at the pool's slot width (E-129: u32 past 65 535). The particle lists may sit
+    // in the particle memory at a byte offset (E-80).
+    const listView = (sab, byte, max) => (sab ? new (PoolSlotArray(max | 0))(sab, byte | 0, 1) : null);
+    const particles = config?.particle?.maxParticles;
+    const bullets = config?.bullet?.maxBullets;
+    this._activeParticles = listView(buffers?.activeParticlesData, buffers?.activeParticlesByte, particles);
+    this._visibleParticles = listView(buffers?.visibleParticlesData, buffers?.visibleParticlesByte, particles);
+    this._activeBullets = listView(buffers?.activeBulletsData, 0, bullets);
+    this._visibleBullets = listView(buffers?.visibleBulletsData, 0, bullets);
+    this._visibleDecorations = listView(buffers?.visibleDecorationsData, 0, config?.decoration?.maxDecorations);
   }
 
   _listCount(list) {

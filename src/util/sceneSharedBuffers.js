@@ -88,6 +88,7 @@ import {
 } from '../box2d/box2dBodySync.js';
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
 import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
+import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } from './poolSlotWidth.js';
 import { Messages } from '../core/messages.js';
 
 /** Cell count ceiling. Not an entity id. 2^20 covers a 4096 px world at a 4 px cell. */
@@ -125,7 +126,8 @@ export function validateSceneSharedBufferConfig(scene) {
     }
   }
 
-  assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_ENTITIES_U16);
+  // E-129: 32-bit slot ids past 65 535, up to MAX_POOL_SLOTS (poolSlotWidth.js).
+  assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_POOL_SLOTS);
   assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_ENTITIES_U16);
   assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES_U16);
   assertIntegerInRange('tween.maxTweens', config.tween?.maxTweens ?? 0, 0, 1 << 20);
@@ -180,6 +182,29 @@ function createUint16FreeListBuffers(buffers, freeListKey, freeListTopKey, count
     freeList: new Uint16Array(buffers[freeListKey]),
     freeListTop: new Int32Array(buffers[freeListTopKey]),
   };
+}
+
+/**
+ * A slot pool's free list (E-129): the u16 stack's buffers up to 65 535 slots (Uint16 links, an 8-byte head),
+ * FL4's past that (Uint32 links, a 16-byte head). SharedAtomicPool.initializeFreeList binds the same width.
+ */
+function createSlotFreeListBuffers(buffers, freeListKey, freeListTopKey, count) {
+  buffers[freeListKey] = new SharedArrayBuffer(count * poolSlotBytes(count));
+  buffers[freeListTopKey] = new SharedArrayBuffer(poolFreeListTopBytes(count));
+  return {
+    freeList: new (PoolSlotArray(count))(buffers[freeListKey]),
+    freeListTop: new Int32Array(buffers[freeListTopKey]),
+  };
+}
+
+/** A slot pool's [count, index, ...] list pair, at its slot width (E-129: u32 past 65 535). */
+function createCompactSlotListPair(buffers, activeKey, visibleKey, maxEntries) {
+  const Slot = PoolSlotArray(maxEntries);
+  const size = (1 + maxEntries) * Slot.BYTES_PER_ELEMENT;
+  buffers[activeKey] = new SharedArrayBuffer(size);
+  buffers[visibleKey] = new SharedArrayBuffer(size);
+  new Slot(buffers[activeKey])[0] = 0;
+  new Slot(buffers[visibleKey])[0] = 0;
 }
 
 function createCompactUint16ListPair(buffers, activeKey, visibleKey, maxEntries) {
@@ -286,7 +311,7 @@ function initializeParticleBuffers(scene) {
   ParticleComponent.initializeArrays(buffers.componentData.ParticleComponent, maxParticles, buffers.componentDataByte?.ParticleComponent | 0);
   ParticleComponent.particleCount = maxParticles;
 
-  const { freeList, freeListTop } = createUint16FreeListBuffers(
+  const { freeList, freeListTop } = createSlotFreeListBuffers(
     buffers,
     'particleFreeList',
     'particleFreeListTop',
@@ -305,7 +330,7 @@ function initializeParticleBuffers(scene) {
     buffers.activeParticlesByte = scene.particleMemory.layout.activeListByte;
     buffers.visibleParticlesByte = scene.particleMemory.layout.visibleListByte;
   } else {
-    createCompactUint16ListPair(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles);
+    createCompactSlotListPair(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles);
     buffers.activeParticlesByte = 0;
     buffers.visibleParticlesByte = 0;
   }

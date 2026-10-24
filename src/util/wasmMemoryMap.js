@@ -6,6 +6,8 @@
 // a cache line with a region another worker writes. Inside a region, entities owned by different
 // workers still interleave (each spatial worker writes the rows of the entities it owns).
 
+import { poolSlotBytes } from './poolSlotWidth.js';
+
 export const WASM_PAGE_BYTES = 65536;
 export const CACHE_LINE_BYTES = 64;
 
@@ -337,21 +339,25 @@ export const NAV_TABLE_SLOTS = 16;
  * - trig, trigAngle: particles whose angle needs Math.cos / Math.sin, and those angles (u16, f64);
  * - luts: the EXPO ease tables, copied from particleTween.js (f32);
  * - columns: one u32 byte offset per column the kernel reads; results: four i32.
+ * E-129: past 65 535 particles every list and scratch list above is u32, and flat and heighted are the
+ * pool's size (poolSlotBytes); up to 65 535 the regions are the 16-bit ones above.
  * @param {number} maxParticles
  * @param {number} componentBytes ParticleComponent.getBufferSize(maxParticles)
  * @param {number} lutFloats every EXPO table's entries together
  */
 export function particleMemoryRegions(maxParticles, componentBytes, lutFloats) {
   const n = maxParticles | 0;
+  const s = poolSlotBytes(n);
+  const scratch = s === 2 ? 65536 : n;
   return layoutRegions([
     { name: 'component', owner: 'every worker (the ParticleComponent views)', bytes: componentBytes },
-    { name: 'activeList', owner: 'particle; Pixi reads', bytes: (n + 2) * 2 },
-    { name: 'visibleList', owner: 'particle; pre-render reads', bytes: (n + 2) * 2 },
-    { name: 'stamp', owner: 'particle', bytes: n * 2 },
-    { name: 'flat', owner: 'particle', bytes: 65536 * 2 },
-    { name: 'heighted', owner: 'particle', bytes: 65536 * 2 },
-    { name: 'dead', owner: 'particle', bytes: n * 2 },
-    { name: 'trig', owner: 'particle', bytes: n * 2 },
+    { name: 'activeList', owner: 'particle; Pixi reads', bytes: (n + 2) * s },
+    { name: 'visibleList', owner: 'particle; pre-render reads', bytes: (n + 2) * s },
+    { name: 'stamp', owner: 'particle', bytes: n * s },
+    { name: 'flat', owner: 'particle', bytes: scratch * s },
+    { name: 'heighted', owner: 'particle', bytes: scratch * s },
+    { name: 'dead', owner: 'particle', bytes: n * s },
+    { name: 'trig', owner: 'particle', bytes: n * s },
     { name: 'trigAngle', owner: 'particle', bytes: n * 8 },
     { name: 'luts', owner: 'particle, read only', bytes: lutFloats * 4 },
     { name: 'columns', owner: 'particle, read only', bytes: CACHE_LINE_BYTES * 4 },

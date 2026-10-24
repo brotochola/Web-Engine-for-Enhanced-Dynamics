@@ -41,7 +41,9 @@ import {
   buildActiveListBuffers as buildActiveListBuffersImport,
   buildActiveAndVisibleListBuffers as buildActiveAndVisibleListBuffersImport,
   buildActiveAndVisibleListBuffersTurned as buildActiveAndVisibleListBuffersTurnedImport,
+  particleClassifyLists,
 } from '../util/particleIntegrate.js';
+import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
 import { bindDecorationSway, writeSwayColumns, TRIG_IMPULSE } from './decorationSwayClient.js';
@@ -432,6 +434,10 @@ class ParticleWorker extends AbstractWorker {
 
     // Active particle tracking
     this.activeParticleIndices = null;
+    // The JS integrate's classify lists (particleClassifyLists): its 16-bit module lists, or 32-bit ones
+    // for a pool past 65 535 particles (E-129).
+    this._classifyFlat = new Uint16Array(0);
+    this._classifyHeighted = new Uint16Array(0);
     // The WASM integrate (E-79) and list build (E-80), bound in initialize when the scene gives a
     // particle memory.
     this._wasmIntegrate = null;
@@ -512,13 +518,16 @@ class ParticleWorker extends AbstractWorker {
 
     // Initialize particle arrays
     if (this.maxParticles > 0 && data.buffers.componentData.ParticleComponent) {
-      this.particlesToStamp = new Uint16Array(this.maxParticles);
-      this.activeParticleIndices = new Uint16Array(this.maxParticles);
+      // E-129: slot ids are u32 past 65 535 particles, in every list.
+      const ParticleSlots = PoolSlotArray(this.maxParticles);
+      this.particlesToStamp = new ParticleSlots(this.maxParticles);
+      this.activeParticleIndices = new ParticleSlots(this.maxParticles);
+      [this._classifyFlat, this._classifyHeighted] = particleClassifyLists(this.maxParticles);
       this._wasmIntegrate = null;
       this._wasmLists = null;
       if (data.particleMemory && data.particleLayout) {
         // E-80: the integrate's input is the published active list, which is in the particle memory.
-        this.activeParticleIndices = new Uint16Array(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
+        this.activeParticleIndices = new ParticleSlots(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
         // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
         // wasm.particleIntegrateF32 (default on) takes the kernel's float32 integrate, chosen once here.
         if (this.config?.wasm?.particleIntegrate !== false) {
@@ -1239,6 +1248,8 @@ class ParticleWorker extends AbstractWorker {
         dtRatio,
         this.decalsEnabled,
         this.particlesToStamp,
+        this._classifyFlat,
+        this._classifyHeighted,
       );
 
     this.particlesToStampCount = stampedCount;

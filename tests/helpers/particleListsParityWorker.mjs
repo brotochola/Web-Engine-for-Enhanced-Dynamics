@@ -12,6 +12,7 @@ import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { Camera } from '../../src/core/camera.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { createParticleMemory } from '../../src/util/particleMemory.js';
+import { poolFreeListTopBytes, poolSlotBytes } from '../../src/util/poolSlotWidth.js';
 import { seededRandom } from '../../src/util/utils.js';
 import { checksum, emitConfig, PARTICLE_EASES } from '../bench/particleIntegrateWasmMicrobench.mjs';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
@@ -32,7 +33,10 @@ const listBuffers = mem
       activeParticlesByte: mem.layout.activeListByte,
       visibleParticlesByte: mem.layout.visibleListByte,
     }
-  : { activeParticlesData: new SharedArrayBuffer((n + 1) * 2), visibleParticlesData: new SharedArrayBuffer((n + 1) * 2) };
+  : {
+      activeParticlesData: new SharedArrayBuffer((n + 1) * poolSlotBytes(n)),
+      visibleParticlesData: new SharedArrayBuffer((n + 1) * poolSlotBytes(n)),
+    };
 await initWorker(worker, {
   config: {
     particle: { maxParticles: n },
@@ -48,8 +52,9 @@ await initWorker(worker, {
   buffers: { componentData: { ParticleComponent: mem ? mem.buffer : new SharedArrayBuffer(componentBytes) } },
   extra: {
     maxParticles: n,
-    particleFreeList: new SharedArrayBuffer(n * 2),
-    particleFreeListTop: new SharedArrayBuffer(8),
+    // E-129: FL4 buffers past 65 535 particles.
+    particleFreeList: new SharedArrayBuffer(n * poolSlotBytes(n)),
+    particleFreeListTop: new SharedArrayBuffer(poolFreeListTopBytes(n)),
     particleMemory: mem ? mem.memory : null,
     particleLayout: mem ? mem.layout : null,
     ...listBuffers,
@@ -79,6 +84,7 @@ const visibleData = worker.visibleParticlesData;
 const sums = [];
 const activeSums = [];
 let visibleSeen = 0;
+let maxIndex = -1;
 for (let f = 0; f < frames; f++) {
   if (f % 5 === 0) worker.cameraData = camera(CAMERAS[(f / 5) % CAMERAS.length]);
   if (f === 0) {
@@ -98,6 +104,7 @@ for (let f = 0; f < frames; f++) {
   for (let k = 0, m = 1 + visibleData[0]; k < m; k++) mix(visibleData[k]);
   for (let i = 0; i < n; i++) mix(ParticleComponent.isItOnScreen[i]);
   visibleSeen += visibleData[0];
+  for (let k = 1, m = 1 + activeData[0]; k < m; k++) if (activeData[k] > maxIndex) maxIndex = activeData[k];
   worker.activeParticleCount = worker.updateParticlePhysics(1000 / 60, 1);
   const state = checksum(worker.activeParticleIndices, worker.activeParticleCount);
   mix(state);
@@ -110,6 +117,9 @@ parentPort.postMessage({
   activeSums,
   lists: Boolean(worker._wasmLists),
   listsF32: worker._wasmLists ? worker._wasmLists.f32 : null,
+  listsSlotBytes: worker._wasmLists ? worker._wasmLists.slotBytes : null,
+  listClass: activeData.constructor.name,
+  maxIndex,
   integrate: Boolean(worker._wasmIntegrate),
   active: worker.activeParticleCount,
   visibleSeen,

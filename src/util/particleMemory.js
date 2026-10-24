@@ -1,9 +1,12 @@
 // The particle memory (E-79, E-80): ParticleComponent's buffer as a shared WebAssembly.Memory, with the
 // published particle lists and the WASM kernels' scratch after the component. Every worker views
 // the component exactly as it views a plain SharedArrayBuffer (its columns start at byte 0). The
-// regions and their offsets come from the memory map (wasmMemoryMap.js).
+// regions and their offsets come from the memory map (wasmMemoryMap.js). E-129: a pool past 65 535
+// slots lays its lists out at 4 bytes a slot (layout.slotBytes), up to MAX_POOL_SLOTS; up to 65 535
+// the layout is the 16-bit one it always was.
 
 import { PARTICLE_DEFAULTS } from './configDefaults.js';
+import { MAX_POOL_SLOTS, poolSlotBytes } from './poolSlotWidth.js';
 import { particleMemoryRegions } from './wasmMemoryMap.js';
 
 // The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
@@ -19,7 +22,8 @@ export const PARTICLE_LUT_ENTRIES = (PARTICLE_DEFAULTS.expoLutSize | 0) + 1;
  */
 export function createParticleMemory(maxParticles, componentBytes) {
   const n = maxParticles | 0;
-  if (n <= 0 || n > 65535) return null;
+  if (n <= 0 || n > MAX_POOL_SLOTS) return null;
+  const slotBytes = poolSlotBytes(n);
   const map = particleMemoryRegions(n, componentBytes | 0, 3 * PARTICLE_LUT_ENTRIES);
   if (map.pages > WASM_MAX_PAGES) return null;
   const r = map.regions;
@@ -32,8 +36,10 @@ export function createParticleMemory(maxParticles, componentBytes) {
       layout: {
         activeListByte: r.activeList.byte,
         visibleListByte: r.visibleList.byte,
+        // Bytes per slot id in every list: 2, or 4 past 65 535 slots.
+        slotBytes,
         // The integrate's input: the published active list after its count.
-        indicesByte: r.activeList.byte + 2,
+        indicesByte: r.activeList.byte + slotBytes,
         stampByte: r.stamp.byte,
         flatByte: r.flat.byte,
         heightedByte: r.heighted.byte,

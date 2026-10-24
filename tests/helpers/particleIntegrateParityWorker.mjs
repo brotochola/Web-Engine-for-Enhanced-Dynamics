@@ -10,6 +10,7 @@ import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { buildActiveListBuffers } from '../../src/util/particleIntegrate.js';
 import { createParticleMemory } from '../../src/util/particleMemory.js';
+import { poolFreeListTopBytes, poolSlotBytes } from '../../src/util/poolSlotWidth.js';
 import { seededRandom } from '../../src/util/utils.js';
 import { checksum, emitConfig, PARTICLE_EASES } from '../bench/particleIntegrateWasmMicrobench.mjs';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
@@ -24,8 +25,9 @@ await initWorker(worker, {
   buffers: { componentData: { ParticleComponent: mem ? mem.buffer : new SharedArrayBuffer(componentBytes) } },
   extra: {
     maxParticles: n,
-    particleFreeList: new SharedArrayBuffer(n * 2),
-    particleFreeListTop: new SharedArrayBuffer(8),
+    // E-129: FL4 buffers past 65 535 particles.
+    particleFreeList: new SharedArrayBuffer(n * poolSlotBytes(n)),
+    particleFreeListTop: new SharedArrayBuffer(poolFreeListTopBytes(n)),
     particleMemory: mem ? mem.memory : null,
     particleLayout: mem ? mem.layout : null,
   },
@@ -54,5 +56,7 @@ parentPort.postMessage({
   counts,
   bound: Boolean(worker._wasmIntegrate),
   f32: worker._wasmIntegrate ? worker._wasmIntegrate.f32 : null,
+  slotBytes: worker._wasmIntegrate ? worker._wasmIntegrate.slotBytes : null,
+  maxIndex: worker.activeParticleIndices.subarray(0, worker.activeParticleCount).reduce((m, i) => (i > m ? i : m), -1),
   active: worker.activeParticleCount,
 });
