@@ -513,7 +513,7 @@ Every worker family writes its own stats SAB. Main thread reads them for DebugUI
 
 Performance rows (aligned columns **Step · Fps · Msg · Details**): Main → Logic → Physics → PreRender → Render → Spatial → Particles → Audio.
 
-All use a strided `Float32Array` layout. The stride is per schema (`STRIDE_FLOATS` in `src/util/workersUtils.js`): renderer 39, particle 19, physics 50, spatial 16, logic 18, pre-render 21 floats per worker slot.
+All use a strided `Float32Array` layout. The stride is per schema (`STRIDE_FLOATS` in `src/util/workersUtils.js`): renderer 39, particle 19, physics 51, spatial 16, logic 18, pre-render 21 floats per worker slot.
 
 Every worker exposes **`STEP_MS`** (wall ms for that frame’s work) and **`FPS`**. DebugUI Performance tab shows **Step**, then **FPS**, then worker-specific fields. With capped FPS (~60), Step is the load signal. Every worker also writes `WAIT_MS` (wall ms blocked on a sibling inside the step; always 0 on the renderer) and `IDLE_MS` (wall ms between the end of the previous frame and the start of this one, not part of `STEP_MS`).
 

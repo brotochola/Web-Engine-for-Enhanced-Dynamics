@@ -44,6 +44,15 @@ weedjs\build_for_weed.bat
 
 Default: **pthread pool 0 + `-flto=full`** (`weedjs\build_for_weed.bat`). The link does not prewarm workers. `physics.numberOfPhysicsWorkers` is 1..32 (`B2_MAX_WORKERS`, clamped by the host), default 4; the pre-rename key `box2dWorkerCount` still works with a warning; helpers started are `count - 1`. Builds with `weedjs/weed_post.js` (`importScripts('weedjsPost.js')` then `physicsHostImpl.js`), `OUTPUT_NAME box2dWasm` (not lab `box2d_wasm`), runs a post-link `wasm-opt` size pass, and copies **only** `box2dWasm.js` + `.wasm` into this folder. Do not keep a snake_case pair here — glue `locateFile` follows `OUTPUT_NAME`. After that CMake name changes, `build_for_weed.bat clean` then rebuild.
 
+**Memory.** The link imports its memory (`-sIMPORTED_MEMORY`) and accepts 16 MB to 2 GB
+(`-sALLOW_MEMORY_GROWTH -sMAXIMUM_MEMORY=2GB`, only so the import takes a range). `weedjs/weed_pre.js`,
+prepended with `--pre-js`, creates the memory from the physics worker's name (`physics pages=N`, set from
+`physics.wasmMemoryMB` by `src/box2d/box2dMemory.js`) with initial = maximum, so it never grows.
+`-sABORTING_MALLOC` turns a failed grow into `abort("OOM")`, which the host shows on screen. The `.bat`
+refuses a glue without the pre-js, and the host refuses a heap of the wrong size. Design and survey:
+[`docs/internal/BOX2D_MEMORY_PLAN.md`](../../docs/internal/BOX2D_MEMORY_PLAN.md). The glue is committed
+with CRLF line endings; the build writes LF.
+
 **WASM only.** Weed never needs sibling native `test.exe`, samples, or `demo_*.exe`. Correctness after a C change is Weed Node WASM tests + L2/visual, not ctest.
 
 Fluids: `liquidfun-c` is compiled into this WASM. Integration and SAB rules: [`docs/guide/LIQUIDFUN.md`](../../docs/guide/LIQUIDFUN.md).

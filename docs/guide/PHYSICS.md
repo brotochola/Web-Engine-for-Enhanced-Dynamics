@@ -410,6 +410,62 @@ Physics sync iterates the dense active list (`activeIndices` / `activeCount`), n
 
 ---
 
+## Physics memory (`physics.wasmMemoryMB`)
+
+Box2D and LiquidFun run in one WebAssembly memory, shared by the physics worker and its helper threads,
+and every Weed worker reads body poses straight out of it. `physics.wasmMemoryMB` sets its size:
+
+```js
+static config = {
+  physics: { wasmMemoryMB: 256 },
+};
+```
+
+- Whole megabytes, from 16 to 2048. The default is **128 MB**, enough for every demo and bench scene the
+  engine ships. A value outside the range, or not whole, is clamped and rounded, with one console warning.
+- It is read once, when the physics worker starts, and the memory never grows while the scene runs: every
+  worker binds its views onto it at boot, and a memory that grew would put new allocations where those
+  views cannot see them. A scene swap that keeps the physics worker keeps its size.
+- The whole size is committed when the scene starts, whether the scene uses it or not, so don't set it far
+  above what the scene needs.
+
+**What lives there.** Box2D's world (bodies, shapes, contacts, joints, the broad-phase tree, the solver's
+scratch), LiquidFun's particle buffers, Weed's per-body tables (pose, velocity, sleep, the moved list, the
+event and query buffers), one stack per physics helper thread, and the allocator's slack.
+
+**Sizing it.** Run the scene at its busiest, open the debug UI's Memory tab and read **Box2D WASM peak**:
+the highest point Box2D's memory reached. Set `wasmMemoryMB` to the peak × 1.25, rounded up. The physics
+stats publish the same number as `MEMORY_PEAK_KB`. When the peak passes 90 % of the size, the physics
+worker warns once in the console.
+
+**Running out.** Box2D stops, and the scene shows "Box2D ran out of memory: physics.wasmMemoryMB is N MB.
+Raise physics.wasmMemoryMB in the scene config". Physics does not resume: raise the size and reload.
+
+**Measured** (2026-10-24, `tests/bench/box2dMemorySurvey.mjs`; peak after an 8 s run, 15 s for the churn
+scenes; the size is the peak × 1.25 on the 16/32/48/64/96/128/192/256/… ladder):
+
+| Scene | Bodies | Contacts | Peak | Size |
+| --- | ---: | ---: | ---: | ---: |
+| SteadyCombatScene | 204 | 0 | 2.9 MB | 16 MB |
+| SpawnStormScene (churn) | 542 | 0 | 4.9 MB | 16 MB |
+| ConstraintBoxScene (4,096 joints) | 2,504 | 5,925 | 11.4 MB | 16 MB |
+| LiquidFunQueryStressScene | 4 | 0 | 16.2 MB | 32 MB |
+| WaterAndBoxesScene | 4,006 | 12,407 | 19.0 MB | 32 MB |
+| BadPiggiesScene (65,534 LiquidFun particles of capacity) | 753 | 0 | 29.3 MB | 48 MB |
+| BoidsScene | 40,000 | 0 | 31.2 MB | 48 MB |
+| GearChainScene | 5,001 | 33,468 | 42.4 MB | 64 MB |
+| CompoundFixtureSpatialScene | 6,000 | 0 | 48.5 MB | 64 MB |
+| BallsScene, 4 physics threads (1 thread: −0.1 MB; 32: +2.0 MB) | 9,004 | 31,156 | 54.3 MB | 96 MB |
+| MovedBodiesStillScene | 60,000 | 0 | 57.0 MB | 96 MB |
+| PredatorScene | 17,572 | 24,112 | 60.2 MB | 96 MB |
+| MovedBodiesAwakeScene | 60,000 | 0 | 70.9 MB | 96 MB |
+| BallsHeavyStressScene | 12,004 | 42,916 | 89.7 MB | 128 MB |
+
+Roughly: 2.7 MB fixed, about 1 KB per body (0.7 asleep to 1.2 awake), 1 to 1.8 KB per contact (Box2D's
+arrays double, so the peak steps up), about 0.4 KB per LiquidFun particle of capacity, and about 70 KB per
+physics thread. Joints cost less than contacts. The peaks are the same at any FPS: they follow what the
+scene allocates. A dense pile of 60,000 bodies needs several hundred MB; measure it.
+
 ## GC and allocations (physics worker)
 
 - Hot pose/vel/sleeping bound to WASM HEAP (`bindBox2dHotFields`) — not allocated in Weed SoA.
@@ -441,6 +497,8 @@ Physics-only fields on `physicsStats` (`PHYSICS_STATS`):
 | `WEED_JOINTS`                                | Dense active count from Weed `Joint` SAB (when joints enabled)       |
 | `COMMAND_OVERFLOW_TOTAL`                     | Commands dropped by a full MPSC command ring (cumulative). The first drop also warns once: raise `physics.commandRingCapacity` |
 | `CONTACT_DROPPED` / `SENSOR_DROPPED`         | WASM export drops + contact-ring overrun counter                     |
+| `HEAP_USED_KB` / `HEAP_HIGH_WATER_KB`        | Box2D's live bytes (dlmalloc `uordblks`), and their highest value this session |
+| `MEMORY_PEAK_KB`                             | The highest point Box2D's memory reached: static data, stacks and heap, fragmentation included. Size `physics.wasmMemoryMB` from this |
 | `BODY_SYNC_*` / `JOINT_SYNC_*` / `COMMAND_*` | Nested subphase timings and change counts                            |
 
 With capped FPS (~60), prefer **Step** over FPS to compare worker load. Every worker also writes `WAIT_MS` (wall ms blocked on a sibling inside the step) and `IDLE_MS` (wall ms between frames, not part of `STEP_MS`). Layout and strides: MEMORY_STRUCTURE.md, section 11.
