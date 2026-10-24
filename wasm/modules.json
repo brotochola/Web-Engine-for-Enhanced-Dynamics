@@ -141,6 +141,16 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "decorationSway",
+      "source": "wasm/test/decorationSway.c",
+      "output": "tests/fixtures/wasm/decorationSway.wasm",
+      "exports": [
+        "sway_decorations"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
