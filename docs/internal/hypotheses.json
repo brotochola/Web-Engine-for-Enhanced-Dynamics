@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-24",
-  "about": "Every speed hypothesis WeedJS has tested or plans to test, plus developer-experience todos (kind `dx`): one short entry each, with a link to its evidence (the log row, the plan entry, the report). Seeded from HYPOTHESIS_LOG.md, EXECUTION_PLAN.md and WASM_HYPOTHESES.md; kept by hand from then on. The page docs/internal/hypotheses.html is built from this file by scripts/buildHypothesesPage.mjs.",
+  "about": "Every speed hypothesis WeedJS has tested or plans to test, plus developer-experience todos (kind `dx`): one short entry each, with links to its evidence (the log row, the plan entry, the report). Seeded from HYPOTHESIS_LOG.md, EXECUTION_PLAN.md and WASM_HYPOTHESES.md; kept by hand from then on. A ref names a row, never a line: `HYPOTHESIS_LOG.md#W9d` is the row whose title is `W9d` or holds it as a whole token (a table row's first cell, a bold lead before `:**`, a heading); use the id, or the start of the title when the id finds several rows. A file name alone is the whole document. `result` is a sentence or two: the evidence is the row, which the page shows. `node scripts/buildHypothesesPage.mjs --open` builds docs/internal/hypotheses.html from this file and the docs; the page is not committed.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
     "open": "Not tested yet, or reopened.",
@@ -29,9 +29,9 @@
       "area": "pixi",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L160",
-        "HYPOTHESIS_LOG.md#L177",
-        "EXECUTION_PLAN.md#L751",
+        "WASM_HYPOTHESES.md#W9",
+        "HYPOTHESIS_LOG.md#WASM W9, packInstancedRows in Pixi (2026-10-22)",
+        "EXECUTION_PLAN.md#W9",
         "reports/E-94-gpu-pack-wasm.md"
       ],
       "aliases": [],
@@ -47,7 +47,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L43"
+        "HYPOTHESIS_LOG.md#E-106"
       ],
       "aliases": []
     },
@@ -61,7 +61,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L41"
+        "HYPOTHESIS_LOG.md#E-107"
       ],
       "aliases": []
     },
@@ -75,7 +75,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L39"
+        "HYPOTHESIS_LOG.md#Decal stamps enqueue through a module array, E-108 (2026-10-23)"
       ],
       "aliases": []
     },
@@ -89,8 +89,8 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L45",
-        "EXECUTION_PLAN.md#L947"
+        "HYPOTHESIS_LOG.md#Where the rest of the garbage is (2026-10-23, heap pass over seven scenes after E-104 to E-108)",
+        "EXECUTION_PLAN.md#E-109"
       ],
       "aliases": [],
       "next": "A guide note on per-entity doubles (components, not instance fields); then the Box2D clock and updateLighting.",
@@ -106,8 +106,8 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L37",
-        "EXECUTION_PLAN.md#L943"
+        "HYPOTHESIS_LOG.md#E-110",
+        "EXECUTION_PLAN.md#E-110"
       ],
       "aliases": []
     },
@@ -121,8 +121,8 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L35",
-        "EXECUTION_PLAN.md#L937"
+        "HYPOTHESIS_LOG.md#E-111",
+        "EXECUTION_PLAN.md#E-111"
       ],
       "aliases": [],
       "next": "Rerun shadowStampMicrobench on a quiet machine (diff D:\\tmp\\p4\\e111.patch); W23's port would absorb it.",
@@ -138,9 +138,9 @@
       "area": "preRender",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L33",
-        "EXECUTION_PLAN.md#L927",
-        "WASM_HYPOTHESES.md#L848",
+        "HYPOTHESIS_LOG.md#E-112",
+        "EXECUTION_PLAN.md#W4a",
+        "WASM_HYPOTHESES.md#Results",
         "reports/E-112-preRender-emit-wasm.md"
       ],
       "aliases": [
@@ -157,8 +157,8 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L31",
-        "EXECUTION_PLAN.md#L919"
+        "HYPOTHESIS_LOG.md#E-113",
+        "EXECUTION_PLAN.md#E-113"
       ],
       "aliases": [],
       "next": "Each queue column a cache line after the last in renderQueueLayout; measure on a scene at an aliased capacity.",
@@ -174,10 +174,9 @@
       "area": "preRender",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L27",
-        "EXECUTION_PLAN.md#L912",
-        "WASM_HYPOTHESES.md#L858",
-        "WASM_HYPOTHESES.md#L868",
+        "HYPOTHESIS_LOG.md#E-114",
+        "EXECUTION_PLAN.md#E-114",
+        "WASM_HYPOTHESES.md#Results",
         "reports/E-114-shadow-stamp-wasm.md"
       ],
       "aliases": [
@@ -194,9 +193,9 @@
       "area": "preRender",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L15",
-        "EXECUTION_PLAN.md#L906",
-        "WASM_HYPOTHESES.md#L877",
+        "HYPOTHESIS_LOG.md#E-115",
+        "EXECUTION_PLAN.md#E-115",
+        "WASM_HYPOTHESES.md#Results",
         "reports/E-115-preRender-persist-wasm.md"
       ],
       "aliases": [
@@ -213,8 +212,8 @@
       "area": "preRender",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
-        "EXECUTION_PLAN.md#L902"
+        "HYPOTHESIS_LOG.md#E-116",
+        "EXECUTION_PLAN.md#E-116"
       ],
       "aliases": []
     },
@@ -228,8 +227,8 @@
       "area": "preRender",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L19",
-        "EXECUTION_PLAN.md#L898"
+        "HYPOTHESIS_LOG.md#E-117",
+        "EXECUTION_PLAN.md#E-117"
       ],
       "aliases": []
     },
@@ -243,8 +242,8 @@
       "area": "renderer",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L893",
-        "HYPOTHESIS_LOG.md#L23"
+        "EXECUTION_PLAN.md#E-118",
+        "HYPOTHESIS_LOG.md#Three agent kernels screened, E-120 to E-122 (2026-10-24)"
       ],
       "aliases": [],
       "next": "The agent's JS and kernel variants, then the kernel sitting and the meshApi gate."
@@ -259,9 +258,9 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L21",
-        "EXECUTION_PLAN.md#L889",
-        "WASM_HYPOTHESES.md#L887"
+        "HYPOTHESIS_LOG.md#W22",
+        "EXECUTION_PLAN.md#E-119",
+        "WASM_HYPOTHESES.md#Results"
       ],
       "aliases": [
         "W22"
@@ -277,8 +276,8 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L23",
-        "EXECUTION_PLAN.md#L885"
+        "HYPOTHESIS_LOG.md#E-120",
+        "EXECUTION_PLAN.md#E-120"
       ],
       "aliases": [
         "W26"
@@ -295,8 +294,8 @@
       "area": "renderer",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L23",
-        "EXECUTION_PLAN.md#L881"
+        "HYPOTHESIS_LOG.md#Three agent kernels screened, E-120 to E-122 (2026-10-24)",
+        "EXECUTION_PLAN.md#E-121"
       ],
       "aliases": [
         "W11"
@@ -313,10 +312,10 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L13",
-        "WASM_HYPOTHESES.md#L890",
-        "HYPOTHESIS_LOG.md#L23",
-        "EXECUTION_PLAN.md#L872"
+        "HYPOTHESIS_LOG.md#The flowfield search in C, E-122 (W14, 2026-10-24)",
+        "WASM_HYPOTHESES.md#Results",
+        "HYPOTHESIS_LOG.md#Three agent kernels screened, E-120 to E-122 (2026-10-24)",
+        "EXECUTION_PLAN.md#E-122"
       ],
       "aliases": [
         "W14"
@@ -332,8 +331,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L49",
-        "EXECUTION_PLAN.md#L852"
+        "HYPOTHESIS_LOG.md#Query type masks as index lists, E-104 (2026-10-23)",
+        "EXECUTION_PLAN.md#E-104"
       ],
       "aliases": []
     },
@@ -347,8 +346,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L51",
-        "EXECUTION_PLAN.md#L857"
+        "HYPOTHESIS_LOG.md#E-105",
+        "EXECUTION_PLAN.md#E-105 FSM time"
       ],
       "aliases": [
         "E-68"
@@ -364,8 +363,8 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L53",
-        "WASM_HYPOTHESES.md#L156"
+        "HYPOTHESIS_LOG.md#W6",
+        "WASM_HYPOTHESES.md#W6"
       ],
       "aliases": [],
       "next": "Only inside W7, if W7 runs."
@@ -380,7 +379,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L157"
+        "WASM_HYPOTHESES.md#W7"
       ],
       "aliases": [],
       "next": "After W4 makes the Phase 4 move: one C call per frame saves the glue (8 % of Predator spatial) and W6's 1.4 %.",
@@ -396,8 +395,8 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L111",
-        "EXECUTION_PLAN.md#L638",
+        "HYPOTHESIS_LOG.md#The split instance upload on top of E-97, E-82 (2026-10-23)",
+        "EXECUTION_PLAN.md#E-82 The instanced",
         "reports/E-82-split-instance-upload.md"
       ],
       "aliases": []
@@ -412,8 +411,8 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L177",
-        "WASM_HYPOTHESES.md#L887"
+        "WASM_HYPOTHESES.md#W22",
+        "WASM_HYPOTHESES.md#Results"
       ],
       "aliases": []
     },
@@ -427,9 +426,9 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L85",
-        "WASM_HYPOTHESES.md#L181",
-        "WASM_HYPOTHESES.md#L884"
+        "HYPOTHESIS_LOG.md#W26",
+        "WASM_HYPOTHESES.md#W26",
+        "WASM_HYPOTHESES.md#Results"
       ],
       "aliases": []
     },
@@ -443,10 +442,9 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L179",
-        "WASM_HYPOTHESES.md#L165",
-        "WASM_HYPOTHESES.md#L884",
-        "WASM_HYPOTHESES.md#L890"
+        "HYPOTHESIS_LOG.md#WASM W14, navigation search (2026-10-22)",
+        "WASM_HYPOTHESES.md#W14",
+        "WASM_HYPOTHESES.md#Results"
       ],
       "aliases": []
     },
@@ -460,10 +458,10 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L143",
-        "HYPOTHESIS_LOG.md#L145",
-        "HYPOTHESIS_LOG.md#L141",
-        "EXECUTION_PLAN.md#L668",
+        "HYPOTHESIS_LOG.md#castAll without per-call objects, E-85 second change (2026-10-23)",
+        "HYPOTHESIS_LOG.md#Ray path without heap numbers, E-85 (2026-10-23)",
+        "HYPOTHESIS_LOG.md#Predator gate, W24 + E-85 (2026-10-23)",
+        "EXECUTION_PLAN.md#E-85 GC in",
         "reports/E-85-ray-path-boxing.md"
       ],
       "aliases": []
@@ -478,7 +476,7 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L170"
+        "WASM_HYPOTHESES.md#W19"
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
@@ -494,8 +492,8 @@
       "area": "pixi",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L162",
-        "WASM_HYPOTHESES.md#L884"
+        "WASM_HYPOTHESES.md#W11",
+        "WASM_HYPOTHESES.md#Results"
       ],
       "aliases": []
     },
@@ -509,7 +507,7 @@
       "area": "pixi",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L174"
+        "WASM_HYPOTHESES.md#W21c"
       ],
       "aliases": [],
       "rank": 4
@@ -524,7 +522,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L150"
+        "WASM_HYPOTHESES.md#W2a"
       ],
       "aliases": [],
       "rank": 5
@@ -539,7 +537,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L149"
+        "WASM_HYPOTHESES.md#W1"
       ],
       "aliases": [],
       "rank": 6
@@ -554,7 +552,7 @@
       "area": "pixi",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L161"
+        "WASM_HYPOTHESES.md#W10"
       ],
       "aliases": [],
       "rank": 7
@@ -569,9 +567,8 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L178",
-        "WASM_HYPOTHESES.md#L858",
-        "WASM_HYPOTHESES.md#L868"
+        "WASM_HYPOTHESES.md#W23",
+        "WASM_HYPOTHESES.md#Results"
       ],
       "aliases": []
     },
@@ -585,7 +582,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L182"
+        "WASM_HYPOTHESES.md#W27"
       ],
       "aliases": [],
       "rank": 10
@@ -600,7 +597,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L183"
+        "WASM_HYPOTHESES.md#W28"
       ],
       "aliases": [],
       "rank": 11
@@ -615,7 +612,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L153"
+        "WASM_HYPOTHESES.md#W4"
       ],
       "aliases": [],
       "next": "W4b, the collect chain (collectVisibleEntities, _displayPose, _storeEntitySortY), after Phase 4; W4a is E-112.",
@@ -631,8 +628,8 @@
       "area": "preRender",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L154",
-        "WASM_HYPOTHESES.md#L877"
+        "WASM_HYPOTHESES.md#W4c",
+        "WASM_HYPOTHESES.md#Results"
       ],
       "aliases": []
     },
@@ -646,7 +643,7 @@
       "area": "logic",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L169"
+        "WASM_HYPOTHESES.md#W18"
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
@@ -662,7 +659,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L151"
+        "WASM_HYPOTHESES.md#W2b"
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
@@ -678,15 +675,15 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L161",
-        "HYPOTHESIS_LOG.md#L163",
-        "HYPOTHESIS_LOG.md#L165",
-        "HYPOTHESIS_LOG.md#L167",
-        "HYPOTHESIS_LOG.md#L169",
-        "HYPOTHESIS_LOG.md#L171",
-        "HYPOTHESIS_LOG.md#L173",
-        "EXECUTION_PLAN.md#L577",
-        "WASM_HYPOTHESES.md#L158"
+        "HYPOTHESIS_LOG.md#Q3",
+        "HYPOTHESIS_LOG.md#Q4",
+        "HYPOTHESIS_LOG.md#Q2",
+        "HYPOTHESIS_LOG.md#W8a",
+        "HYPOTHESIS_LOG.md#Q5",
+        "HYPOTHESIS_LOG.md#WASM spatial publish kernel against the shipped JS, E-76 T4 (2026-10-22)",
+        "HYPOTHESIS_LOG.md#WASM migration Phase 0 and Q1, E-76 (2026-10-22)",
+        "EXECUTION_PLAN.md#E-76 WASM migration:",
+        "WASM_HYPOTHESES.md#W8a"
       ],
       "aliases": [
         "Q3",
@@ -707,8 +704,8 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L251",
-        "EXECUTION_PLAN.md#L1489"
+        "HYPOTHESIS_LOG.md#E-50",
+        "EXECUTION_PLAN.md#E-50"
       ],
       "aliases": []
     },
@@ -722,7 +719,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L661"
+        "EXECUTION_PLAN.md#E-84"
       ],
       "aliases": []
     },
@@ -736,7 +733,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "EXECUTION_PLAN.md#L1140"
+        "EXECUTION_PLAN.md#E-31"
       ],
       "aliases": []
     },
@@ -750,7 +747,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L325"
+        "HYPOTHESIS_LOG.md#Time scale (2026-10-17)"
       ],
       "aliases": []
     },
@@ -764,7 +761,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L327"
+        "HYPOTHESIS_LOG.md#Camera dead zone and shake (2026-10-17)"
       ],
       "aliases": []
     },
@@ -778,7 +775,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L369"
+        "HYPOTHESIS_LOG.md#H-15"
       ],
       "aliases": []
     },
@@ -792,7 +789,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L381"
+        "HYPOTHESIS_LOG.md#Interleaved pack record (2026-10-06)"
       ],
       "aliases": []
     },
@@ -806,7 +803,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L425"
+        "HYPOTHESIS_LOG.md#P2 sway without Math.sin (2026-10-01)"
       ],
       "aliases": []
     },
@@ -820,7 +817,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L439"
+        "HYPOTHESIS_LOG.md#D1"
       ],
       "aliases": [
         "D2"
@@ -836,7 +833,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L453"
+        "HYPOTHESIS_LOG.md#Second batch, not measured (2026-09-30)"
       ],
       "aliases": []
     },
@@ -850,7 +847,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L477"
+        "HYPOTHESIS_LOG.md#R2 emit type 0 (2026-09-30)"
       ],
       "aliases": []
     },
@@ -864,7 +861,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L799"
+        "HYPOTHESIS_LOG.md#Caster ids per cell from spatial"
       ],
       "aliases": []
     },
@@ -878,7 +875,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L776"
+        "HYPOTHESIS_LOG.md#Bitonic H1/H2/H3 + combo (GPU numbers)"
       ],
       "aliases": []
     },
@@ -892,7 +889,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L762"
+        "HYPOTHESIS_LOG.md#Floor occlusion (do not project if it covers the ground)"
       ],
       "aliases": []
     },
@@ -906,7 +903,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L733"
+        "HYPOTHESIS_LOG.md#lightGlow sprite versus add"
       ],
       "aliases": []
     },
@@ -920,7 +917,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L735"
+        "HYPOTHESIS_LOG.md#useZBuffer, one pass"
       ],
       "aliases": []
     },
@@ -934,7 +931,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L706"
+        "HYPOTHESIS_LOG.md#Doc+Doubao filter"
       ],
       "aliases": []
     },
@@ -948,7 +945,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L711"
+        "HYPOTHESIS_LOG.md#H-ROW / H-OWN spatial"
       ],
       "aliases": []
     },
@@ -962,7 +959,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L715"
+        "HYPOTHESIS_LOG.md#H-VIS previous list"
       ],
       "aliases": []
     },
@@ -976,7 +973,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L689"
+        "HYPOTHESIS_LOG.md#CELL u32"
       ],
       "aliases": []
     },
@@ -990,7 +987,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L626"
+        "HYPOTHESIS_LOG.md#Facades vs main (screen)"
       ],
       "aliases": []
     },
@@ -1004,7 +1001,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L594"
+        "HYPOTHESIS_LOG.md#Keep set after drops (2-run screen)"
       ],
       "aliases": []
     },
@@ -1018,7 +1015,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L519"
+        "EXECUTION_PLAN.md#E-11 Flowfield/A clear"
       ],
       "aliases": []
     },
@@ -1032,7 +1029,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L533"
+        "EXECUTION_PLAN.md#E-12"
       ],
       "aliases": []
     },
@@ -1046,7 +1043,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L543"
+        "EXECUTION_PLAN.md#E-14"
       ],
       "aliases": []
     },
@@ -1060,8 +1057,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L655",
-        "HYPOTHESIS_LOG.md#L69"
+        "EXECUTION_PLAN.md#E-83",
+        "HYPOTHESIS_LOG.md#E-83"
       ],
       "aliases": []
     },
@@ -1075,7 +1072,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L159"
+        "WASM_HYPOTHESES.md#W8b"
       ],
       "aliases": []
     },
@@ -1089,7 +1086,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L168"
+        "WASM_HYPOTHESES.md#W17"
       ],
       "aliases": []
     },
@@ -1103,7 +1100,7 @@
       "area": "rebuild",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L172"
+        "WASM_HYPOTHESES.md#W21a"
       ],
       "aliases": []
     },
@@ -1117,7 +1114,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "EXECUTION_PLAN.md#L1618"
+        "EXECUTION_PLAN.md#E-55"
       ],
       "aliases": []
     },
@@ -1131,9 +1128,9 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L179",
-        "HYPOTHESIS_LOG.md#L147",
-        "EXECUTION_PLAN.md#L1618"
+        "WASM_HYPOTHESES.md#W24",
+        "HYPOTHESIS_LOG.md#E-55",
+        "EXECUTION_PLAN.md#W24"
       ],
       "aliases": [
         "E-55",
@@ -1150,9 +1147,9 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L151",
-        "EXECUTION_PLAN.md#L630",
-        "WASM_HYPOTHESES.md#L180"
+        "HYPOTHESIS_LOG.md#E-81",
+        "EXECUTION_PLAN.md#E-81",
+        "WASM_HYPOTHESES.md#W25"
       ],
       "aliases": [
         "W25"
@@ -1168,9 +1165,9 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L153",
-        "EXECUTION_PLAN.md#L617",
-        "WASM_HYPOTHESES.md#L164"
+        "HYPOTHESIS_LOG.md#E-80",
+        "EXECUTION_PLAN.md#E-80",
+        "WASM_HYPOTHESES.md#W13"
       ],
       "aliases": [
         "W13"
@@ -1186,9 +1183,9 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L155",
-        "EXECUTION_PLAN.md#L603",
-        "WASM_HYPOTHESES.md#L163"
+        "HYPOTHESIS_LOG.md#E-79",
+        "EXECUTION_PLAN.md#E-79",
+        "WASM_HYPOTHESES.md#W12"
       ],
       "aliases": [
         "W12"
@@ -1204,9 +1201,9 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L157",
-        "EXECUTION_PLAN.md#L590",
-        "WASM_HYPOTHESES.md#L155"
+        "HYPOTHESIS_LOG.md#E-78",
+        "EXECUTION_PLAN.md#E-78",
+        "WASM_HYPOTHESES.md#W5"
       ],
       "aliases": [
         "W5"
@@ -1222,8 +1219,8 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L187",
-        "EXECUTION_PLAN.md#L2019"
+        "HYPOTHESIS_LOG.md#E-77",
+        "EXECUTION_PLAN.md#E-77"
       ],
       "aliases": []
     },
@@ -1237,7 +1234,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L193"
+        "HYPOTHESIS_LOG.md#N-58"
       ],
       "aliases": []
     },
@@ -1251,7 +1248,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L199"
+        "HYPOTHESIS_LOG.md#N-17"
       ],
       "aliases": []
     },
@@ -1265,7 +1262,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L201"
+        "HYPOTHESIS_LOG.md#Several physics steps for a long frame, B7 (2026-10-21)"
       ],
       "aliases": []
     },
@@ -1279,8 +1276,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L207",
-        "EXECUTION_PLAN.md#L1830"
+        "HYPOTHESIS_LOG.md#E-63",
+        "EXECUTION_PLAN.md#E-63"
       ],
       "aliases": []
     },
@@ -1294,8 +1291,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L215",
-        "EXECUTION_PLAN.md#L1945"
+        "HYPOTHESIS_LOG.md#E-71",
+        "EXECUTION_PLAN.md#E-71"
       ],
       "aliases": [
         "E-72"
@@ -1311,8 +1308,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L219",
-        "EXECUTION_PLAN.md#L1864"
+        "HYPOTHESIS_LOG.md#E-66",
+        "EXECUTION_PLAN.md#E-66"
       ],
       "aliases": []
     },
@@ -1326,8 +1323,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L221",
-        "EXECUTION_PLAN.md#L446"
+        "HYPOTHESIS_LOG.md#E-54",
+        "EXECUTION_PLAN.md#E-54"
       ],
       "aliases": []
     },
@@ -1341,8 +1338,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L227",
-        "EXECUTION_PLAN.md#L1818"
+        "HYPOTHESIS_LOG.md#E-62",
+        "EXECUTION_PLAN.md#E-62"
       ],
       "aliases": []
     },
@@ -1356,8 +1353,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L229",
-        "EXECUTION_PLAN.md#L1794"
+        "HYPOTHESIS_LOG.md#E-61",
+        "EXECUTION_PLAN.md#E-61"
       ],
       "aliases": []
     },
@@ -1371,8 +1368,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L231",
-        "EXECUTION_PLAN.md#L1369"
+        "HYPOTHESIS_LOG.md#E-43",
+        "EXECUTION_PLAN.md#E-43 Polar merge"
       ],
       "aliases": []
     },
@@ -1386,8 +1383,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L233",
-        "EXECUTION_PLAN.md#L1781"
+        "HYPOTHESIS_LOG.md#E-60",
+        "EXECUTION_PLAN.md#E-60"
       ],
       "aliases": []
     },
@@ -1401,8 +1398,8 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L237",
-        "EXECUTION_PLAN.md#L1729"
+        "HYPOTHESIS_LOG.md#E-59",
+        "EXECUTION_PLAN.md#E-59"
       ],
       "aliases": []
     },
@@ -1416,7 +1413,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L245"
+        "HYPOTHESIS_LOG.md#E-51b"
       ],
       "aliases": []
     },
@@ -1430,8 +1427,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L249",
-        "EXECUTION_PLAN.md#L1535"
+        "HYPOTHESIS_LOG.md#E-51",
+        "EXECUTION_PLAN.md#E-51"
       ],
       "aliases": []
     },
@@ -1445,8 +1442,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L257",
-        "EXECUTION_PLAN.md#L1354"
+        "HYPOTHESIS_LOG.md#E-42",
+        "EXECUTION_PLAN.md#E-42"
       ],
       "aliases": []
     },
@@ -1460,8 +1457,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L259",
-        "EXECUTION_PLAN.md#L1330"
+        "HYPOTHESIS_LOG.md#E-41",
+        "EXECUTION_PLAN.md#E-41"
       ],
       "aliases": []
     },
@@ -1475,9 +1472,9 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L261",
-        "EXECUTION_PLAN.md#L410",
-        "EXECUTION_PLAN.md#L49"
+        "HYPOTHESIS_LOG.md#Light sort adaptive insertion to merge, E-08 reopened (2026-10-21)",
+        "EXECUTION_PLAN.md#E-08 _sortPrefix reallocates",
+        "EXECUTION_PLAN.md#E-08"
       ],
       "aliases": []
     },
@@ -1491,7 +1488,7 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L606"
+        "HYPOTHESIS_LOG.md#Scoreboard platform vs main"
       ],
       "aliases": []
     },
@@ -1505,7 +1502,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1410"
+        "EXECUTION_PLAN.md#E-45"
       ],
       "aliases": []
     },
@@ -1519,8 +1516,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L263",
-        "EXECUTION_PLAN.md#L1640"
+        "HYPOTHESIS_LOG.md#E-56",
+        "EXECUTION_PLAN.md#E-56"
       ],
       "aliases": []
     },
@@ -1534,7 +1531,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L269"
+        "HYPOTHESIS_LOG.md#Compound occluder polar nearest-hit (2026-10-19)"
       ],
       "aliases": []
     },
@@ -1548,8 +1545,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L301",
-        "EXECUTION_PLAN.md#L1289"
+        "HYPOTHESIS_LOG.md#E-29",
+        "EXECUTION_PLAN.md#E-29 _collectVisibleLights and"
       ],
       "aliases": [
         "E-16",
@@ -1566,7 +1563,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L303"
+        "HYPOTHESIS_LOG.md#E-32"
       ],
       "aliases": []
     },
@@ -1580,8 +1577,8 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L311",
-        "EXECUTION_PLAN.md#L501"
+        "HYPOTHESIS_LOG.md#E-37",
+        "EXECUTION_PLAN.md#E-37"
       ],
       "aliases": []
     },
@@ -1595,7 +1592,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L335"
+        "HYPOTHESIS_LOG.md#Box2D 3.2.0 pin, scoreboard vs 7322d7e6 (2026-10-16)"
       ],
       "aliases": []
     },
@@ -1609,7 +1606,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L339"
+        "HYPOTHESIS_LOG.md#Audio slot scan, per-bus list and quietest cache (2026-10-15)"
       ],
       "aliases": []
     },
@@ -1623,7 +1620,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L345"
+        "HYPOTHESIS_LOG.md#Shared picture upload (2026-10-15)"
       ],
       "aliases": []
     },
@@ -1637,7 +1634,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L353"
+        "HYPOTHESIS_LOG.md#H-02"
       ],
       "aliases": []
     },
@@ -1651,7 +1648,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L355"
+        "HYPOTHESIS_LOG.md#Mesh API trace (2026-10-14)"
       ],
       "aliases": []
     },
@@ -1665,7 +1662,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L363"
+        "HYPOTHESIS_LOG.md#H-19"
       ],
       "aliases": []
     },
@@ -1679,7 +1676,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L365"
+        "HYPOTHESIS_LOG.md#H-11a"
       ],
       "aliases": []
     },
@@ -1693,7 +1690,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L397"
+        "HYPOTHESIS_LOG.md#One wait for 3072 castRayClosest (2026-10-06)"
       ],
       "aliases": []
     },
@@ -1707,7 +1704,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L413"
+        "HYPOTHESIS_LOG.md#Scoreboard against fc229a21 (2026-10-06)"
       ],
       "aliases": []
     },
@@ -1721,7 +1718,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L457"
+        "HYPOTHESIS_LOG.md#Bug: contacts with mismatched gens in (max, min) order (2026-09-30)"
       ],
       "aliases": []
     },
@@ -1735,7 +1732,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L491"
+        "HYPOTHESIS_LOG.md#Stamp: do not sort pairs by index if takeClosest already cuts (2026-09-30)"
       ],
       "aliases": []
     },
@@ -1749,7 +1746,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L493"
+        "HYPOTHESIS_LOG.md#rendering-post-merge-fixes vs main (2026-09-30)"
       ],
       "aliases": []
     },
@@ -1763,7 +1760,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L495"
+        "HYPOTHESIS_LOG.md#Kernels again, branch checkout (2026-09-30)"
       ],
       "aliases": []
     },
@@ -1777,7 +1774,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L553"
+        "HYPOTHESIS_LOG.md#Full scoreboard vs main (2026-09-29, end of the partial campaign)"
       ],
       "aliases": []
     },
@@ -1791,7 +1788,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L561"
+        "HYPOTHESIS_LOG.md#LiquidFun / decorations / spawn vs main (2026-09-29)"
       ],
       "aliases": []
     },
@@ -1805,7 +1802,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L565"
+        "HYPOTHESIS_LOG.md#Honest floors, protocol ceilings, and product (2026-09-29)"
       ],
       "aliases": []
     },
@@ -1819,7 +1816,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L531"
+        "HYPOTHESIS_LOG.md#Shadow stamp grid (2026-09-28)"
       ],
       "aliases": []
     },
@@ -1833,7 +1830,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L539"
+        "HYPOTHESIS_LOG.md#Pack without per-frame closures (2026-09-28)"
       ],
       "aliases": []
     },
@@ -1847,7 +1844,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L543"
+        "HYPOTHESIS_LOG.md#takeClosest with a stable comparator (2026-09-28)"
       ],
       "aliases": []
     },
@@ -1861,7 +1858,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L507"
+        "HYPOTHESIS_LOG.md#Contiguous Y bands with 2 pre-renders (2026-09-27)"
       ],
       "aliases": []
     },
@@ -1875,7 +1872,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L787"
+        "HYPOTHESIS_LOG.md#H-born kernel (GPU row + bands)"
       ],
       "aliases": []
     },
@@ -1889,7 +1886,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L792"
+        "HYPOTHESIS_LOG.md#WAIT_MS chip + Amdahl protocol ceiling N=1/N=2"
       ],
       "aliases": []
     },
@@ -1903,7 +1900,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L796"
+        "HYPOTHESIS_LOG.md#Atomic stamp cursor (one fewer join)"
       ],
       "aliases": []
     },
@@ -1917,7 +1914,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L797"
+        "HYPOTHESIS_LOG.md#Visible lights by view Y band, N>1"
       ],
       "aliases": []
     },
@@ -1931,7 +1928,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L802"
+        "HYPOTHESIS_LOG.md#Knobs packGpuSprites + sortSprites"
       ],
       "aliases": []
     },
@@ -1945,7 +1942,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L803"
+        "HYPOTHESIS_LOG.md#Hoist makePackContext / _gpuWin"
       ],
       "aliases": []
     },
@@ -1959,7 +1956,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L804"
+        "HYPOTHESIS_LOG.md#Bunny N=1 pack Pixi vs N=2 pack pre-render"
       ],
       "aliases": []
     },
@@ -1973,7 +1970,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L805"
+        "HYPOTHESIS_LOG.md#Predator far N=1 sort+pack Pixi vs pre-render"
       ],
       "aliases": []
     },
@@ -1987,7 +1984,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L806"
+        "HYPOTHESIS_LOG.md#LittleCity far N=1 sort+pack Pixi vs pre-render"
       ],
       "aliases": []
     },
@@ -2001,7 +1998,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L771"
+        "HYPOTHESIS_LOG.md#Caster copy without subarray per row"
       ],
       "aliases": []
     },
@@ -2015,7 +2012,7 @@
       "area": "particle",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L775"
+        "HYPOTHESIS_LOG.md#WebGPU collectGpuStats + readback"
       ],
       "aliases": []
     },
@@ -2029,7 +2026,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L778"
+        "HYPOTHESIS_LOG.md#CPU-only ySort"
       ],
       "aliases": []
     },
@@ -2043,7 +2040,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L737"
+        "HYPOTHESIS_LOG.md#zIndex and ySort"
       ],
       "aliases": []
     },
@@ -2057,7 +2054,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L738"
+        "HYPOTHESIS_LOG.md#Listener without a global flag"
       ],
       "aliases": []
     },
@@ -2071,7 +2068,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L741"
+        "HYPOTHESIS_LOG.md#Mesh pose table"
       ],
       "aliases": []
     },
@@ -2085,7 +2082,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L743"
+        "HYPOTHESIS_LOG.md#Caster shadows on the GPU"
       ],
       "aliases": []
     },
@@ -2099,7 +2096,7 @@
       "area": "spatial",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L749"
+        "HYPOTHESIS_LOG.md#Lights in a texture, shadows on both backends"
       ],
       "aliases": []
     },
@@ -2113,7 +2110,7 @@
       "area": "pre-render",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L750"
+        "HYPOTHESIS_LOG.md#CPU shadows (main) vs GPU (branch)"
       ],
       "aliases": []
     },
@@ -2127,7 +2124,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L751"
+        "HYPOTHESIS_LOG.md#Compact casters, cookies per light, light cap"
       ],
       "aliases": []
     },
@@ -2141,7 +2138,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L752"
+        "HYPOTHESIS_LOG.md#Performance panel: GPU only GPU, Rest"
       ],
       "aliases": []
     },
@@ -2155,7 +2152,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L756"
+        "HYPOTHESIS_LOG.md#GPU Fps = Pixi currentFPS"
       ],
       "aliases": []
     },
@@ -2169,7 +2166,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L757"
+        "HYPOTHESIS_LOG.md#Pixi ticker.maxFPS = 60"
       ],
       "aliases": []
     },
@@ -2183,7 +2180,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L758"
+        "HYPOTHESIS_LOG.md#Predator maxShadowCastingLights=48"
       ],
       "aliases": []
     },
@@ -2197,7 +2194,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L761"
+        "HYPOTHESIS_LOG.md#shadowUpdateInterval=2 (hold shadowRT)"
       ],
       "aliases": []
     },
@@ -2211,7 +2208,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L763"
+        "HYPOTHESIS_LOG.md#Real grid of the light and shadow RT"
       ],
       "aliases": []
     },
@@ -2225,7 +2222,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L764"
+        "HYPOTHESIS_LOG.md#Cookies every frame with interval 2"
       ],
       "aliases": []
     },
@@ -2239,7 +2236,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L767"
+        "HYPOTHESIS_LOG.md#Predator lighting.resolution=0.25"
       ],
       "aliases": []
     },
@@ -2253,7 +2250,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L770"
+        "HYPOTHESIS_LOG.md#Z clip on the zIndex bands in use"
       ],
       "aliases": []
     },
@@ -2267,7 +2264,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L724"
+        "HYPOTHESIS_LOG.md#Painter-sort: custom layers + sharding"
       ],
       "aliases": []
     },
@@ -2281,7 +2278,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L725"
+        "HYPOTHESIS_LOG.md#Painter-sort: retire GPU two-pass"
       ],
       "aliases": []
     },
@@ -2295,7 +2292,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L726"
+        "HYPOTHESIS_LOG.md#Integer-pixel Y key"
       ],
       "aliases": []
     },
@@ -2309,7 +2306,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L732"
+        "HYPOTHESIS_LOG.md#Dense upload without Y-sort or lights"
       ],
       "aliases": []
     },
@@ -2323,7 +2320,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L734"
+        "HYPOTHESIS_LOG.md#Two instance buffers"
       ],
       "aliases": []
     },
@@ -2337,7 +2334,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L708"
+        "HYPOTHESIS_LOG.md#H-BLOCK logic by blocks"
       ],
       "aliases": []
     },
@@ -2351,7 +2348,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L709"
+        "HYPOTHESIS_LOG.md#H-BUCKET tickInterval"
       ],
       "aliases": []
     },
@@ -2365,7 +2362,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L710"
+        "HYPOTHESIS_LOG.md#H-TICKALL without scratch"
       ],
       "aliases": []
     },
@@ -2379,7 +2376,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L713"
+        "HYPOTHESIS_LOG.md#H-HAS flags per class"
       ],
       "aliases": []
     },
@@ -2393,7 +2390,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L714"
+        "HYPOTHESIS_LOG.md#H-NBR view lazy"
       ],
       "aliases": []
     },
@@ -2407,7 +2404,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L716"
+        "HYPOTHESIS_LOG.md#Double queue % 2"
       ],
       "aliases": []
     },
@@ -2421,7 +2418,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L718"
+        "HYPOTHESIS_LOG.md#Painter with movement"
       ],
       "aliases": []
     },
@@ -2435,7 +2432,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L720"
+        "HYPOTHESIS_LOG.md#Neighbors if nobody moved"
       ],
       "aliases": []
     },
@@ -2449,7 +2446,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L682"
+        "HYPOTHESIS_LOG.md#entityIdWidth 32-best"
       ],
       "aliases": []
     },
@@ -2463,7 +2460,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L683"
+        "HYPOTHESIS_LOG.md#FL4 Treiber 19+13"
       ],
       "aliases": []
     },
@@ -2477,7 +2474,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L687"
+        "HYPOTHESIS_LOG.md#Leftovers joint/parent/fixture"
       ],
       "aliases": []
     },
@@ -2491,7 +2488,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L690"
+        "HYPOTHESIS_LOG.md#Spatial stamp 19+13"
       ],
       "aliases": []
     },
@@ -2505,7 +2502,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L692"
+        "HYPOTHESIS_LOG.md#Bind pop/pair without instanceof"
       ],
       "aliases": []
     },
@@ -2519,7 +2516,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L693"
+        "HYPOTHESIS_LOG.md#getCellBase by stride"
       ],
       "aliases": []
     },
@@ -2533,7 +2530,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L695"
+        "HYPOTHESIS_LOG.md#Prev pose in denseList"
       ],
       "aliases": []
     },
@@ -2547,7 +2544,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L697"
+        "HYPOTHESIS_LOG.md#FNV of cellVersion"
       ],
       "aliases": []
     },
@@ -2561,7 +2558,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L698"
+        "HYPOTHESIS_LOG.md#Decal without ImageBitmap"
       ],
       "aliases": []
     },
@@ -2575,7 +2572,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L699"
+        "HYPOTHESIS_LOG.md#Vis-poly box without array"
       ],
       "aliases": []
     },
@@ -2589,7 +2586,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L700"
+        "HYPOTHESIS_LOG.md#Vis-poly Pixi without reassembly"
       ],
       "aliases": []
     },
@@ -2603,7 +2600,7 @@
       "area": "pre-render",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L703"
+        "HYPOTHESIS_LOG.md#Renderer queue interpolation"
       ],
       "aliases": []
     },
@@ -2617,7 +2614,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L704"
+        "HYPOTHESIS_LOG.md#PreRender shard cache + direct emit"
       ],
       "aliases": []
     },
@@ -2631,7 +2628,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L670"
+        "HYPOTHESIS_LOG.md#Bunny Mark A vs C (pose without WASM)"
       ],
       "aliases": []
     },
@@ -2645,7 +2642,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L672"
+        "HYPOTHESIS_LOG.md#BUNNY_COUNT / MARK_ACTIVE always-on"
       ],
       "aliases": []
     },
@@ -2659,7 +2656,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L674"
+        "HYPOTHESIS_LOG.md#Hygiene physics-ON vs main (4 scenes)"
       ],
       "aliases": []
     },
@@ -2673,7 +2670,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L675"
+        "HYPOTHESIS_LOG.md#Hygiene steadyCombat vs main"
       ],
       "aliases": []
     },
@@ -2687,7 +2684,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L676"
+        "HYPOTHESIS_LOG.md#preRender DRY one loop + shadows"
       ],
       "aliases": []
     },
@@ -2701,7 +2698,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L677"
+        "HYPOTHESIS_LOG.md#preRender B dead fields"
       ],
       "aliases": []
     },
@@ -2715,7 +2712,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L679"
+        "HYPOTHESIS_LOG.md#preRender C persist statics"
       ],
       "aliases": []
     },
@@ -2729,7 +2726,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L649"
+        "HYPOTHESIS_LOG.md#Collider fill pack H2 (C vs B)"
       ],
       "aliases": []
     },
@@ -2743,7 +2740,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L656"
+        "HYPOTHESIS_LOG.md#MeshRenderer arch baseline (B + WebGL)"
       ],
       "aliases": []
     },
@@ -2757,7 +2754,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L657"
+        "HYPOTHESIS_LOG.md#Terrain WebGPU wire"
       ],
       "aliases": []
     },
@@ -2771,7 +2768,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L659"
+        "HYPOTHESIS_LOG.md#MESH tube hygiene"
       ],
       "aliases": []
     },
@@ -2785,7 +2782,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L660"
+        "HYPOTHESIS_LOG.md#MESH H2 C-lite pose-only"
       ],
       "aliases": []
     },
@@ -2799,7 +2796,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L667"
+        "HYPOTHESIS_LOG.md#Tickless entity types"
       ],
       "aliases": []
     },
@@ -2813,7 +2810,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L669"
+        "HYPOTHESIS_LOG.md#Optional static tickAll"
       ],
       "aliases": []
     },
@@ -2827,7 +2824,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L650"
+        "HYPOTHESIS_LOG.md#forceProcessOnLogicWorker rename + Int16 SoA + maxFixturePoolSize + measurement kit"
       ],
       "aliases": []
     },
@@ -2841,7 +2838,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L651"
+        "HYPOTHESIS_LOG.md#MeshRenderer fills primary collider shapes"
       ],
       "aliases": []
     },
@@ -2855,7 +2852,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L652"
+        "HYPOTHESIS_LOG.md#MF1 inline fixture walk"
       ],
       "aliases": []
     },
@@ -2869,7 +2866,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L653"
+        "HYPOTHESIS_LOG.md#MF2 cheap OBB for spatial cells"
       ],
       "aliases": []
     },
@@ -2883,7 +2880,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L654"
+        "HYPOTHESIS_LOG.md#MF3 one WASM vertex scratch"
       ],
       "aliases": []
     },
@@ -2897,7 +2894,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L655"
+        "HYPOTHESIS_LOG.md#MF4 skip collider-fill pack/upload"
       ],
       "aliases": []
     },
@@ -2911,7 +2908,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L661"
+        "HYPOTHESIS_LOG.md#MF5 flat replace without JS {x,y} graphs"
       ],
       "aliases": []
     },
@@ -2925,7 +2922,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L662"
+        "HYPOTHESIS_LOG.md#Forced-worker refcount + types/docs"
       ],
       "aliases": []
     },
@@ -2939,7 +2936,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L615"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 1 BulletPool.tick"
       ],
       "aliases": []
     },
@@ -2953,7 +2950,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L616"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 2 particleIntegrate API"
       ],
       "aliases": []
     },
@@ -2967,7 +2964,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L617"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 3 _stampArgs"
       ],
       "aliases": []
     },
@@ -2981,7 +2978,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L618"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 4 resolveParticleOp out-param"
       ],
       "aliases": []
     },
@@ -2995,7 +2992,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L619"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 5 drain callbacks"
       ],
       "aliases": []
     },
@@ -3009,7 +3006,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L620"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 6 gens without BigInt"
       ],
       "aliases": []
     },
@@ -3023,7 +3020,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L621"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 7 tilemap cull scratch"
       ],
       "aliases": []
     },
@@ -3037,7 +3034,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L624"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 10 ray call-site scratch"
       ],
       "aliases": []
     },
@@ -3051,7 +3048,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L627"
+        "HYPOTHESIS_LOG.md#Skip-work B tween early-out + radians"
       ],
       "aliases": []
     },
@@ -3065,7 +3062,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L628"
+        "HYPOTHESIS_LOG.md#Skip-work C skip zero animFrames"
       ],
       "aliases": []
     },
@@ -3079,7 +3076,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L629"
+        "HYPOTHESIS_LOG.md#Skip-work E emitAlongLine scratch"
       ],
       "aliases": []
     },
@@ -3093,7 +3090,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L630"
+        "HYPOTHESIS_LOG.md#Skip-work N layer-feed wrapper"
       ],
       "aliases": []
     },
@@ -3107,7 +3104,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L633"
+        "HYPOTHESIS_LOG.md#Skip-work D spawn bags SoA"
       ],
       "aliases": []
     },
@@ -3121,7 +3118,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L635"
+        "HYPOTHESIS_LOG.md#Skip-work K sway off-screen"
       ],
       "aliases": []
     },
@@ -3135,7 +3132,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L636"
+        "HYPOTHESIS_LOG.md#Skip-work H nav READY"
       ],
       "aliases": []
     },
@@ -3149,7 +3146,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L637"
+        "HYPOTHESIS_LOG.md#Skip-work S nav Uint32 view"
       ],
       "aliases": []
     },
@@ -3163,7 +3160,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L638"
+        "HYPOTHESIS_LOG.md#Skip-work I vis pack vs disk"
       ],
       "aliases": []
     },
@@ -3177,7 +3174,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L640"
+        "HYPOTHESIS_LOG.md#Skip-work P LF emit scratch"
       ],
       "aliases": []
     },
@@ -3191,7 +3188,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L642"
+        "HYPOTHESIS_LOG.md#Skip-work M command ring"
       ],
       "aliases": []
     },
@@ -3205,7 +3202,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L644"
+        "HYPOTHESIS_LOG.md#Skip-work F joints + camera + cover"
       ],
       "aliases": []
     },
@@ -3219,7 +3216,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L647"
+        "HYPOTHESIS_LOG.md#Layer kinds vs HEAD (without BACKGROUND)"
       ],
       "aliases": []
     },
@@ -3233,7 +3230,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L599"
+        "HYPOTHESIS_LOG.md#AABB burst leftover revert"
       ],
       "aliases": []
     },
@@ -3247,7 +3244,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L602"
+        "HYPOTHESIS_LOG.md#Nav N2 hoist gridHeight"
       ],
       "aliases": []
     },
@@ -3261,7 +3258,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L603"
+        "HYPOTHESIS_LOG.md#Pre-merge strip of dropped hyps"
       ],
       "aliases": []
     },
@@ -3275,7 +3272,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L607"
+        "HYPOTHESIS_LOG.md#Cached bullet speed + scalar exclude"
       ],
       "aliases": []
     },
@@ -3289,7 +3286,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L610"
+        "HYPOTHESIS_LOG.md#ACTIVE_DECORATIONS always-on"
       ],
       "aliases": []
     },
@@ -3303,7 +3300,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L581"
+        "HYPOTHESIS_LOG.md#Debug hygiene"
       ],
       "aliases": []
     },
@@ -3317,7 +3314,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L582"
+        "HYPOTHESIS_LOG.md#Collision pair key"
       ],
       "aliases": []
     },
@@ -3331,7 +3328,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L584"
+        "HYPOTHESIS_LOG.md#Particle emit field list (P2)"
       ],
       "aliases": [
         "P2"
@@ -3347,7 +3344,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L585"
+        "HYPOTHESIS_LOG.md#P6"
       ],
       "aliases": [
         "P6"
@@ -3363,7 +3360,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L592"
+        "HYPOTHESIS_LOG.md#Spatial dep-hash removal (HASH)"
       ],
       "aliases": []
     },
@@ -3377,7 +3374,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L595"
+        "HYPOTHESIS_LOG.md#Always-on load counts"
       ],
       "aliases": []
     },
@@ -3391,7 +3388,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L816"
+        "HYPOTHESIS_LOG.md#Decal D2"
       ],
       "aliases": [
         "D2"
@@ -3407,7 +3404,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L817"
+        "HYPOTHESIS_LOG.md#P4"
       ],
       "aliases": [
         "P4",
@@ -3424,7 +3421,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L815"
+        "HYPOTHESIS_LOG.md#Ray H6 + H1"
       ],
       "aliases": []
     },
@@ -3438,7 +3435,7 @@
       "area": "liquidfun",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L820"
+        "HYPOTHESIS_LOG.md#LiquidFun shipped set"
       ],
       "aliases": []
     },
@@ -3452,7 +3449,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L818"
+        "HYPOTHESIS_LOG.md#Spatial Verlet H3"
       ],
       "aliases": []
     },
@@ -3466,7 +3463,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L336"
+        "EXECUTION_PLAN.md#E-06"
       ],
       "aliases": []
     },
@@ -3480,7 +3477,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "EXECUTION_PLAN.md#L1960"
+        "EXECUTION_PLAN.md#E-72"
       ],
       "aliases": []
     },
@@ -3494,8 +3491,8 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L253",
-        "EXECUTION_PLAN.md#L1468"
+        "HYPOTHESIS_LOG.md#E-49",
+        "EXECUTION_PLAN.md#E-49"
       ],
       "aliases": []
     },
@@ -3509,7 +3506,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L271"
+        "HYPOTHESIS_LOG.md#Body-dirty flush, spawn window (2026-10-19)"
       ],
       "aliases": []
     },
@@ -3523,7 +3520,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L359"
+        "HYPOTHESIS_LOG.md#H-10"
       ],
       "aliases": []
     },
@@ -3537,7 +3534,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L467"
+        "HYPOTHESIS_LOG.md#S3"
       ],
       "aliases": []
     },
@@ -3551,7 +3548,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L469"
+        "HYPOTHESIS_LOG.md#X1"
       ],
       "aliases": []
     },
@@ -3565,7 +3562,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L195"
+        "HYPOTHESIS_LOG.md#Step-2 engine package, Predator gate (2026-10-22)"
       ],
       "aliases": []
     },
@@ -3579,7 +3576,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L197"
+        "HYPOTHESIS_LOG.md#N-41"
       ],
       "aliases": []
     },
@@ -3593,7 +3590,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L265"
+        "HYPOTHESIS_LOG.md#One slot helper for the six sync query SABs, R3 (2026-10-20)"
       ],
       "aliases": []
     },
@@ -3607,7 +3604,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L267"
+        "HYPOTHESIS_LOG.md#Clear shapes past a batch of 32 (2026-10-19)"
       ],
       "aliases": []
     },
@@ -3621,8 +3618,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L313",
-        "EXECUTION_PLAN.md#L392"
+        "HYPOTHESIS_LOG.md#E-07",
+        "EXECUTION_PLAN.md#E-07 Per-row template-literal"
       ],
       "aliases": [
         "E-08"
@@ -3638,8 +3635,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L317",
-        "EXECUTION_PLAN.md#L143"
+        "HYPOTHESIS_LOG.md#E-02",
+        "EXECUTION_PLAN.md#E-02 Remove the"
       ],
       "aliases": []
     },
@@ -3653,7 +3650,7 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L357"
+        "HYPOTHESIS_LOG.md#H-03"
       ],
       "aliases": []
     },
@@ -3667,7 +3664,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L371"
+        "HYPOTHESIS_LOG.md#Math-allocation audit, visibility hygiene (2026-10-14)"
       ],
       "aliases": []
     },
@@ -3681,7 +3678,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L373"
+        "HYPOTHESIS_LOG.md#LiquidFun contact alias filter (2026-10-09)"
       ],
       "aliases": []
     },
@@ -3695,7 +3692,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L487"
+        "HYPOTHESIS_LOG.md#H9 emit: no fill(0) of shadows in emitSpriteQueue (2026-09-30)"
       ],
       "aliases": []
     },
@@ -3709,7 +3706,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L65"
+        "EXECUTION_PLAN.md#E-01 WAIT_MS does"
       ],
       "aliases": []
     },
@@ -3723,7 +3720,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L159"
+        "HYPOTHESIS_LOG.md#N-63"
       ],
       "aliases": []
     },
@@ -3737,7 +3734,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L189"
+        "HYPOTHESIS_LOG.md#seededRandom state wraps to 32 bits (2026-10-22)"
       ],
       "aliases": []
     },
@@ -3751,7 +3748,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L191"
+        "HYPOTHESIS_LOG.md#Source modules against the bundle (2026-10-22)"
       ],
       "aliases": []
     },
@@ -3765,7 +3762,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L273"
+        "HYPOTHESIS_LOG.md#Working tree versus main 1800f777 (2026-10-19)"
       ],
       "aliases": []
     },
@@ -3779,7 +3776,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L333"
+        "HYPOTHESIS_LOG.md#Box2D chain wiring, physics rows vs 43354d7f (2026-10-16)"
       ],
       "aliases": []
     },
@@ -3793,7 +3790,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L347"
+        "HYPOTHESIS_LOG.md#Balls spawn all at once, scoreboard vs 5ef9775e (2026-10-14)"
       ],
       "aliases": []
     },
@@ -3807,7 +3804,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L375"
+        "HYPOTHESIS_LOG.md#Max campaign, snapshot (2026-10-06)"
       ],
       "aliases": []
     },
@@ -3821,7 +3818,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L385"
+        "HYPOTHESIS_LOG.md#QueryAABB across frames (2026-10-06)"
       ],
       "aliases": []
     },
@@ -3835,7 +3832,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L409"
+        "HYPOTHESIS_LOG.md#Close against fc229a21 (2026-10-06)"
       ],
       "aliases": []
     },
@@ -3849,7 +3846,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L419"
+        "HYPOTHESIS_LOG.md#H11 hoist of ShadowCaster in _writeQueueShadow (2026-10-01)"
       ],
       "aliases": []
     },
@@ -3863,7 +3860,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L433"
+        "HYPOTHESIS_LOG.md#Kernels --changed against HEAD (2026-10-01)"
       ],
       "aliases": []
     },
@@ -3877,7 +3874,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L441"
+        "HYPOTHESIS_LOG.md#Predator A/A control (2026-09-30)"
       ],
       "aliases": []
     },
@@ -3891,7 +3888,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L447"
+        "HYPOTHESIS_LOG.md#S6"
       ],
       "aliases": []
     },
@@ -3905,7 +3902,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L559"
+        "HYPOTHESIS_LOG.md#QueryAABB and stress floors (2026-09-29)"
       ],
       "aliases": []
     },
@@ -3919,7 +3916,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L563"
+        "HYPOTHESIS_LOG.md#ENOENT fixed and the last batch vs main (2026-09-29)"
       ],
       "aliases": []
     },
@@ -3933,7 +3930,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L567"
+        "HYPOTHESIS_LOG.md#visPoly + combat remeasured vs main (2026-09-29)"
       ],
       "aliases": []
     },
@@ -3947,7 +3944,7 @@
       "area": "spatial",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L658"
+        "HYPOTHESIS_LOG.md#Terrain WebGL vs WebGPU (champion + remesh)"
       ],
       "aliases": []
     },
@@ -3961,7 +3958,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L781"
+        "HYPOTHESIS_LOG.md#Protocol ceiling 16 ms, Predator far"
       ],
       "aliases": []
     },
@@ -3975,7 +3972,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L785"
+        "HYPOTHESIS_LOG.md#H-pub: do not repack sprites on publish, N>1"
       ],
       "aliases": []
     },
@@ -3989,7 +3986,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L794"
+        "HYPOTHESIS_LOG.md#Stamp by half the lights + sun concat (N>1)"
       ],
       "aliases": []
     },
@@ -4003,7 +4000,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L800"
+        "HYPOTHESIS_LOG.md#Bunny N=2/N=4 after the shadow parallel"
       ],
       "aliases": []
     },
@@ -4017,7 +4014,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L801"
+        "HYPOTHESIS_LOG.md#Confirm N=2 vs N=1 Predator far 5×25/18"
       ],
       "aliases": []
     },
@@ -4031,7 +4028,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L807"
+        "HYPOTHESIS_LOG.md#K-way preRenderMerge N=2 vs join preRender (Predator/LittleCity far)"
       ],
       "aliases": []
     },
@@ -4045,7 +4042,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L673"
+        "HYPOTHESIS_LOG.md#preRender.skipCull (AABB vs emit-all)"
       ],
       "aliases": []
     },
@@ -4059,7 +4056,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L680"
+        "HYPOTHESIS_LOG.md#SAB spawn command ring"
       ],
       "aliases": []
     },
@@ -4073,7 +4070,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L614"
+        "HYPOTHESIS_LOG.md#Headed median vs 0695a8d (Balls + Predator + LiquidFun stress)"
       ],
       "aliases": []
     },
@@ -4087,7 +4084,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L597"
+        "HYPOTHESIS_LOG.md#Keep set as package vs 0695a8d"
       ],
       "aliases": []
     },
@@ -4101,7 +4098,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L600"
+        "HYPOTHESIS_LOG.md#visPoly detailed-stats retry"
       ],
       "aliases": []
     },
@@ -4115,7 +4112,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L604"
+        "HYPOTHESIS_LOG.md#Keep set after strip vs 0695a8d"
       ],
       "aliases": []
     },
@@ -4129,7 +4126,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L605"
+        "HYPOTHESIS_LOG.md#queryAabb after full strip"
       ],
       "aliases": []
     },
@@ -4143,7 +4140,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L822"
+        "HYPOTHESIS_LOG.md#Feature program waves C–K leftovers"
       ],
       "aliases": []
     },
@@ -4157,8 +4154,8 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L175",
-        "WASM_HYPOTHESES.md#L152"
+        "HYPOTHESIS_LOG.md#W3",
+        "WASM_HYPOTHESES.md#W3"
       ],
       "aliases": []
     },
@@ -4172,8 +4169,8 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L181",
-        "WASM_HYPOTHESES.md#L166"
+        "HYPOTHESIS_LOG.md#W15",
+        "WASM_HYPOTHESES.md#W15"
       ],
       "aliases": []
     },
@@ -4187,8 +4184,8 @@
       "area": "audio",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L183",
-        "WASM_HYPOTHESES.md#L171"
+        "HYPOTHESIS_LOG.md#W20",
+        "WASM_HYPOTHESES.md#W20"
       ],
       "aliases": []
     },
@@ -4202,8 +4199,8 @@
       "area": "load",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L185",
-        "WASM_HYPOTHESES.md#L173"
+        "HYPOTHESIS_LOG.md#W21b",
+        "WASM_HYPOTHESES.md#W21b"
       ],
       "aliases": [
         "W21d",
@@ -4220,8 +4217,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L213",
-        "EXECUTION_PLAN.md#L1976"
+        "HYPOTHESIS_LOG.md#E-73",
+        "EXECUTION_PLAN.md#E-73"
       ],
       "aliases": []
     },
@@ -4235,8 +4232,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L223",
-        "EXECUTION_PLAN.md#L1892"
+        "HYPOTHESIS_LOG.md#E-68",
+        "EXECUTION_PLAN.md#E-68 FSM.tick boxes"
       ],
       "aliases": []
     },
@@ -4250,8 +4247,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L235",
-        "EXECUTION_PLAN.md#L1402"
+        "HYPOTHESIS_LOG.md#E-44",
+        "EXECUTION_PLAN.md#E-44"
       ],
       "aliases": []
     },
@@ -4265,8 +4262,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L247",
-        "EXECUTION_PLAN.md#L1568"
+        "HYPOTHESIS_LOG.md#E-65",
+        "EXECUTION_PLAN.md#E-65"
       ],
       "aliases": []
     },
@@ -4280,7 +4277,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1448"
+        "EXECUTION_PLAN.md#E-47"
       ],
       "aliases": []
     },
@@ -4294,7 +4291,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L323"
+        "HYPOTHESIS_LOG.md#Ease dispatch, switch vs else-if vs object (2026-10-17)"
       ],
       "aliases": []
     },
@@ -4308,7 +4305,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L329"
+        "HYPOTHESIS_LOG.md#100k tweens, one logic worker (2026-10-17)"
       ],
       "aliases": []
     },
@@ -4322,7 +4319,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L337"
+        "HYPOTHESIS_LOG.md#Audio storm trace (2026-10-15)"
       ],
       "aliases": []
     },
@@ -4336,7 +4333,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L497"
+        "HYPOTHESIS_LOG.md#Alpha cut screen (2026-09-27)"
       ],
       "aliases": []
     },
@@ -4350,7 +4347,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L501"
+        "HYPOTHESIS_LOG.md#Renderable grid on Predator (2026-09-27)"
       ],
       "aliases": []
     },
@@ -4364,7 +4361,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L167"
+        "WASM_HYPOTHESES.md#W16"
       ],
       "aliases": []
     },
@@ -4378,7 +4375,7 @@
       "area": "load",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L175"
+        "WASM_HYPOTHESES.md#W21d"
       ],
       "aliases": []
     },
@@ -4392,7 +4389,7 @@
       "area": "load",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L176"
+        "WASM_HYPOTHESES.md#W21e"
       ],
       "aliases": []
     },
@@ -4406,8 +4403,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L203",
-        "EXECUTION_PLAN.md#L1673"
+        "HYPOTHESIS_LOG.md#E-57",
+        "EXECUTION_PLAN.md#E-57"
       ],
       "aliases": []
     },
@@ -4421,8 +4418,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L205",
-        "EXECUTION_PLAN.md#L1912"
+        "HYPOTHESIS_LOG.md#E-70",
+        "EXECUTION_PLAN.md#E-70"
       ],
       "aliases": [
         "E-75"
@@ -4438,8 +4435,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L217",
-        "EXECUTION_PLAN.md#L1897"
+        "HYPOTHESIS_LOG.md#E-69",
+        "EXECUTION_PLAN.md#E-69"
       ],
       "aliases": []
     },
@@ -4453,8 +4450,8 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L225",
-        "EXECUTION_PLAN.md#L1855"
+        "HYPOTHESIS_LOG.md#E-64",
+        "EXECUTION_PLAN.md#E-64"
       ],
       "aliases": []
     },
@@ -4468,8 +4465,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L239",
-        "EXECUTION_PLAN.md#L1697"
+        "HYPOTHESIS_LOG.md#E-58",
+        "EXECUTION_PLAN.md#E-58"
       ],
       "aliases": []
     },
@@ -4483,7 +4480,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1848"
+        "EXECUTION_PLAN.md#E-74"
       ],
       "aliases": []
     },
@@ -4497,8 +4494,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L305",
-        "EXECUTION_PLAN.md#L255"
+        "HYPOTHESIS_LOG.md#E-05",
+        "EXECUTION_PLAN.md#E-05 packGpuSprites /"
       ],
       "aliases": []
     },
@@ -4512,7 +4509,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L361"
+        "HYPOTHESIS_LOG.md#H-14"
       ],
       "aliases": []
     },
@@ -4526,7 +4523,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L391"
+        "HYPOTHESIS_LOG.md#Interleaved record, write and read on Predator (2026-10-06)"
       ],
       "aliases": []
     },
@@ -4540,7 +4537,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L393"
+        "HYPOTHESIS_LOG.md#Polygon SAT, cut the second axis (2026-10-06)"
       ],
       "aliases": []
     },
@@ -4554,7 +4551,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L395"
+        "HYPOTHESIS_LOG.md#QueryAABB wake on the LiquidFun query (2026-10-06)"
       ],
       "aliases": []
     },
@@ -4568,7 +4565,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L421"
+        "HYPOTHESIS_LOG.md#PH1"
       ],
       "aliases": []
     },
@@ -4582,7 +4579,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L423"
+        "HYPOTHESIS_LOG.md#E1 4-frame cache in findACivilianToShoot (2026-10-01)"
       ],
       "aliases": []
     },
@@ -4596,7 +4593,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L427"
+        "HYPOTHESIS_LOG.md#Sway with a grid of 100 frequencies (2026-10-01)"
       ],
       "aliases": []
     },
@@ -4610,7 +4607,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L431"
+        "HYPOTHESIS_LOG.md#P1 pthread pool 2 against 4 (2026-10-01)"
       ],
       "aliases": []
     },
@@ -4624,7 +4621,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L437"
+        "HYPOTHESIS_LOG.md#Branch rendering-post-merge-fixes (c40821ec) against main (f13b25cd) (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4638,7 +4635,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L443"
+        "HYPOTHESIS_LOG.md#G1"
       ],
       "aliases": []
     },
@@ -4652,7 +4649,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L445"
+        "HYPOTHESIS_LOG.md#Q1 logic: copyTypeActiveListToBuffer with TypedArray.set (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4666,7 +4663,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L449"
+        "HYPOTHESIS_LOG.md#X5"
       ],
       "aliases": []
     },
@@ -4680,7 +4677,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L451"
+        "HYPOTHESIS_LOG.md#X6"
       ],
       "aliases": []
     },
@@ -4694,7 +4691,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L455"
+        "HYPOTHESIS_LOG.md#Kernels against a revision: rounds and a verdict by ranges (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4708,7 +4705,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L459"
+        "HYPOTHESIS_LOG.md#L1 contacts: a dense pair table instead of a Set + two Maps (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4722,7 +4719,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L461"
+        "HYPOTHESIS_LOG.md#L2 contacts: each logic worker validates only its own pairs on the stay (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4736,7 +4733,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L463"
+        "HYPOTHESIS_LOG.md#L3 audio: Atomics.load before the CAS in _writeSlot (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4750,7 +4747,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L465"
+        "HYPOTHESIS_LOG.md#S4"
       ],
       "aliases": []
     },
@@ -4764,7 +4761,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L471"
+        "HYPOTHESIS_LOG.md#L4 logic: a component cache with one shape per class (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4778,7 +4775,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L481"
+        "HYPOTHESIS_LOG.md#H6 persist: local _persistCount in _rememberType0Set (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4792,7 +4789,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L483"
+        "HYPOTHESIS_LOG.md#H11 emit: hoist ShadowCaster / the queue in _writeQueueShadow (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4806,7 +4803,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L485"
+        "HYPOTHESIS_LOG.md#H10 pose: cache typed pose/foot-Y columns once per frame (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4820,7 +4817,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L489"
+        "HYPOTHESIS_LOG.md#H7 pack: cache q.shadowH / shadowOff outside the packInstancedRows loop (2026-09-30)"
       ],
       "aliases": []
     },
@@ -4834,7 +4831,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L535"
+        "HYPOTHESIS_LOG.md#Remove optional chaining from the cull (2026-09-28)"
       ],
       "aliases": []
     },
@@ -4848,7 +4845,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L545"
+        "HYPOTHESIS_LOG.md#Early reject of sheetId/renderVisible before the cull (2026-09-28)"
       ],
       "aliases": []
     },
@@ -4862,7 +4859,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L782"
+        "HYPOTHESIS_LOG.md#Y bands, direct write"
       ],
       "aliases": []
     },
@@ -4876,7 +4873,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L783"
+        "HYPOTHESIS_LOG.md#Single-pass pack"
       ],
       "aliases": []
     },
@@ -4890,7 +4887,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L784"
+        "HYPOTHESIS_LOG.md#Decoration persist"
       ],
       "aliases": []
     },
@@ -4904,7 +4901,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L786"
+        "HYPOTHESIS_LOG.md#H-aos: GPU emit without SoA, N=1"
       ],
       "aliases": []
     },
@@ -4918,7 +4915,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L788"
+        "HYPOTHESIS_LOG.md#Stamp grid on lights"
       ],
       "aliases": []
     },
@@ -4932,7 +4929,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L789"
+        "HYPOTHESIS_LOG.md#Pack indexed “plain”"
       ],
       "aliases": []
     },
@@ -4946,7 +4943,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L790"
+        "HYPOTHESIS_LOG.md#takeClosest quickselect"
       ],
       "aliases": []
     },
@@ -4960,7 +4957,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L791"
+        "HYPOTHESIS_LOG.md#fillSplit one walk of types"
       ],
       "aliases": []
     },
@@ -4974,7 +4971,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L793"
+        "HYPOTHESIS_LOG.md#Collect by Grid cells of the camera AABB"
       ],
       "aliases": []
     },
@@ -4988,7 +4985,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L795"
+        "HYPOTHESIS_LOG.md#Shard start before Pixi pressure"
       ],
       "aliases": []
     },
@@ -5002,7 +4999,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L798"
+        "HYPOTHESIS_LOG.md#S1"
       ],
       "aliases": [
         "S1"
@@ -5018,7 +5015,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L772"
+        "HYPOTHESIS_LOG.md#Stamp on each shard (z-buffer, N=2)"
       ],
       "aliases": []
     },
@@ -5032,7 +5029,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L773"
+        "HYPOTHESIS_LOG.md#Stamp dirty with moved bodies"
       ],
       "aliases": []
     },
@@ -5046,7 +5043,7 @@
       "area": "pre-render",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L774"
+        "HYPOTHESIS_LOG.md#ySort bitonic + read Z"
       ],
       "aliases": []
     },
@@ -5060,7 +5057,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L777"
+        "HYPOTHESIS_LOG.md#Bitonic H1 vs combo, far camera"
       ],
       "aliases": []
     },
@@ -5074,7 +5071,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L779"
+        "HYPOTHESIS_LOG.md#PreRender N=2/4 join, far"
       ],
       "aliases": []
     },
@@ -5088,7 +5085,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L780"
+        "HYPOTHESIS_LOG.md#Windows by id with no wait"
       ],
       "aliases": []
     },
@@ -5102,7 +5099,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L736"
+        "HYPOTHESIS_LOG.md#useZBuffer on Bunny"
       ],
       "aliases": []
     },
@@ -5116,7 +5113,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L739"
+        "HYPOTHESIS_LOG.md#Fixed slot, only x and y"
       ],
       "aliases": []
     },
@@ -5130,7 +5127,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L740"
+        "HYPOTHESIS_LOG.md#Pose in a separate buffer"
       ],
       "aliases": []
     },
@@ -5144,7 +5141,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L742"
+        "HYPOTHESIS_LOG.md#Custom layers in a single pass"
       ],
       "aliases": []
     },
@@ -5158,7 +5155,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L744"
+        "HYPOTHESIS_LOG.md#Particles out of the queue"
       ],
       "aliases": []
     },
@@ -5172,7 +5169,7 @@
       "area": "liquidfun",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L745"
+        "HYPOTHESIS_LOG.md#LiquidFun as points"
       ],
       "aliases": []
     },
@@ -5186,7 +5183,7 @@
       "area": "engine",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L746"
+        "HYPOTHESIS_LOG.md#Animation frame in the shader"
       ],
       "aliases": []
     },
@@ -5200,7 +5197,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L747"
+        "HYPOTHESIS_LOG.md#Clipping on the GPU (casters, retest H11)"
       ],
       "aliases": []
     },
@@ -5214,7 +5211,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L748"
+        "HYPOTHESIS_LOG.md#useZBuffer on PainterMove"
       ],
       "aliases": []
     },
@@ -5228,7 +5225,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L753"
+        "HYPOTHESIS_LOG.md#gpuShadowPath=reuse"
       ],
       "aliases": []
     },
@@ -5242,7 +5239,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L754"
+        "HYPOTHESIS_LOG.md#gpuShadowPath=queue"
       ],
       "aliases": []
     },
@@ -5256,7 +5253,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L755"
+        "HYPOTHESIS_LOG.md#gpuShadowCookies=night"
       ],
       "aliases": []
     },
@@ -5270,7 +5267,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L759"
+        "HYPOTHESIS_LOG.md#Lower lightingRes / shadowRes"
       ],
       "aliases": []
     },
@@ -5284,7 +5281,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L760"
+        "HYPOTHESIS_LOG.md#Predator maxShadowsPerLight=15"
       ],
       "aliases": []
     },
@@ -5298,7 +5295,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L765"
+        "HYPOTHESIS_LOG.md#gpuShadowPath=batch"
       ],
       "aliases": []
     },
@@ -5312,7 +5309,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L766"
+        "HYPOTHESIS_LOG.md#Shadows via encoder.draw"
       ],
       "aliases": []
     },
@@ -5326,7 +5323,7 @@
       "area": "pre-render",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L768"
+        "HYPOTHESIS_LOG.md#Shadow inside the light shader"
       ],
       "aliases": []
     },
@@ -5340,7 +5337,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L769"
+        "HYPOTHESIS_LOG.md#Shadows under 2 px"
       ],
       "aliases": []
     },
@@ -5354,7 +5351,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L727"
+        "HYPOTHESIS_LOG.md#Y tie-break by id"
       ],
       "aliases": []
     },
@@ -5368,7 +5365,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L728"
+        "HYPOTHESIS_LOG.md#sortKey ordinal"
       ],
       "aliases": []
     },
@@ -5382,7 +5379,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L729"
+        "HYPOTHESIS_LOG.md#Pixi Buffer.update without copy"
       ],
       "aliases": []
     },
@@ -5396,7 +5393,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L730"
+        "HYPOTHESIS_LOG.md#Sort in pre-render"
       ],
       "aliases": []
     },
@@ -5410,7 +5407,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L731"
+        "HYPOTHESIS_LOG.md#Sort by Y bands"
       ],
       "aliases": []
     },
@@ -5424,7 +5421,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L705"
+        "HYPOTHESIS_LOG.md#PreRender emit before the join"
       ],
       "aliases": []
     },
@@ -5438,7 +5435,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L707"
+        "HYPOTHESIS_LOG.md#H-AX skip accel without RigidBody"
       ],
       "aliases": []
     },
@@ -5452,7 +5449,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L717"
+        "HYPOTHESIS_LOG.md#Sprites painter"
       ],
       "aliases": []
     },
@@ -5466,7 +5463,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L719"
+        "HYPOTHESIS_LOG.md#Grid movers only"
       ],
       "aliases": []
     },
@@ -5480,7 +5477,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L721"
+        "HYPOTHESIS_LOG.md#Neighbors dirty cells only"
       ],
       "aliases": []
     },
@@ -5494,7 +5491,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L722"
+        "HYPOTHESIS_LOG.md#Pose movers only"
       ],
       "aliases": []
     },
@@ -5508,7 +5505,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L723"
+        "HYPOTHESIS_LOG.md#Mesh movers only"
       ],
       "aliases": []
     },
@@ -5522,7 +5519,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L684"
+        "HYPOTHESIS_LOG.md#Uint32 vs Int32 (same width)"
       ],
       "aliases": []
     },
@@ -5536,7 +5533,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L686"
+        "HYPOTHESIS_LOG.md#NBR mixed stride"
       ],
       "aliases": []
     },
@@ -5550,7 +5547,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L691"
+        "HYPOTHESIS_LOG.md#entityIndex queue u32"
       ],
       "aliases": []
     },
@@ -5564,7 +5561,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L694"
+        "HYPOTHESIS_LOG.md#Stay without sqrt"
       ],
       "aliases": []
     },
@@ -5578,7 +5575,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L696"
+        "HYPOTHESIS_LOG.md#Spatial row prefilter"
       ],
       "aliases": []
     },
@@ -5592,7 +5589,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L701"
+        "HYPOTHESIS_LOG.md#A without re-push"
       ],
       "aliases": []
     },
@@ -5606,7 +5603,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L702"
+        "HYPOTHESIS_LOG.md#Headed Balls from speed-night"
       ],
       "aliases": []
     },
@@ -5620,7 +5617,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L671"
+        "HYPOTHESIS_LOG.md#Bunny Mark D (solver integrates)"
       ],
       "aliases": []
     },
@@ -5634,7 +5631,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L678"
+        "HYPOTHESIS_LOG.md#preRender A fuse type 0"
       ],
       "aliases": []
     },
@@ -5648,7 +5645,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L663"
+        "HYPOTHESIS_LOG.md#Pixi peel H1a decal blit"
       ],
       "aliases": []
     },
@@ -5662,7 +5659,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L664"
+        "HYPOTHESIS_LOG.md#Pixi peel H1c scenery cam"
       ],
       "aliases": []
     },
@@ -5676,7 +5673,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L665"
+        "HYPOTHESIS_LOG.md#Pixi peel H2 fill camera uniform"
       ],
       "aliases": []
     },
@@ -5690,7 +5687,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L666"
+        "HYPOTHESIS_LOG.md#Pixi peel H3 look as pass"
       ],
       "aliases": []
     },
@@ -5704,7 +5701,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L668"
+        "HYPOTHESIS_LOG.md#Visit pile (inline + typeof + skip ax)"
       ],
       "aliases": []
     },
@@ -5718,7 +5715,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L622"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 8 serviceRayCast scratch"
       ],
       "aliases": []
     },
@@ -5732,7 +5729,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L623"
+        "HYPOTHESIS_LOG.md#Hot-path Hyp 9 ray write-through"
       ],
       "aliases": []
     },
@@ -5746,7 +5743,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L631"
+        "HYPOTHESIS_LOG.md#Skip-work O moved-bodies views"
       ],
       "aliases": []
     },
@@ -5760,7 +5757,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L634"
+        "HYPOTHESIS_LOG.md#Skip-work J getTileId last-cell"
       ],
       "aliases": []
     },
@@ -5774,7 +5771,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L639"
+        "HYPOTHESIS_LOG.md#Skip-work G QueryAABB scratch"
       ],
       "aliases": []
     },
@@ -5788,7 +5785,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L641"
+        "HYPOTHESIS_LOG.md#Skip-work L queryCircle stamp"
       ],
       "aliases": []
     },
@@ -5802,7 +5799,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L643"
+        "HYPOTHESIS_LOG.md#Predator logic0 vs main (skip-work pile)"
       ],
       "aliases": []
     },
@@ -5816,7 +5813,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L646"
+        "HYPOTHESIS_LOG.md#Pose skip-emit (poseSkip)"
       ],
       "aliases": []
     },
@@ -5830,7 +5827,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L648"
+        "HYPOTHESIS_LOG.md#Collider fill pack H1 (B vs A)"
       ],
       "aliases": []
     },
@@ -5844,7 +5841,7 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L598"
+        "HYPOTHESIS_LOG.md#Overnight catalog-rest vs 0695a8d"
       ],
       "aliases": []
     },
@@ -5858,7 +5855,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L601"
+        "HYPOTHESIS_LOG.md#Nav N1 cellY"
       ],
       "aliases": []
     },
@@ -5872,7 +5869,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L608"
+        "HYPOTHESIS_LOG.md#Compact bullet list (new protocol)"
       ],
       "aliases": []
     },
@@ -5886,7 +5883,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L609"
+        "HYPOTHESIS_LOG.md#Speed-cache on Predator"
       ],
       "aliases": []
     },
@@ -5900,7 +5897,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L611"
+        "HYPOTHESIS_LOG.md#Two-pass live bullet indices"
       ],
       "aliases": []
     },
@@ -5914,7 +5911,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L612"
+        "HYPOTHESIS_LOG.md#Compact+lock storm 8192"
       ],
       "aliases": []
     },
@@ -5928,7 +5925,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L613"
+        "HYPOTHESIS_LOG.md#Deco sway scan vs snapshot"
       ],
       "aliases": []
     },
@@ -5942,7 +5939,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L583"
+        "HYPOTHESIS_LOG.md#QueryAABB burst"
       ],
       "aliases": []
     },
@@ -5956,7 +5953,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L586"
+        "HYPOTHESIS_LOG.md#Particle expectedActive (PACT)"
       ],
       "aliases": []
     },
@@ -5970,7 +5967,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L587"
+        "HYPOTHESIS_LOG.md#Compact bullet list"
       ],
       "aliases": []
     },
@@ -5984,7 +5981,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L588"
+        "HYPOTHESIS_LOG.md#Skip pixi light re-cull (LIGHT)"
       ],
       "aliases": []
     },
@@ -5998,7 +5995,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L589"
+        "HYPOTHESIS_LOG.md#Visibility polygon cache (VP)"
       ],
       "aliases": []
     },
@@ -6012,7 +6009,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L590"
+        "HYPOTHESIS_LOG.md#Cached tick function (TICK)"
       ],
       "aliases": []
     },
@@ -6026,7 +6023,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L591"
+        "HYPOTHESIS_LOG.md#Spawn/despawn batch (ECB)"
       ],
       "aliases": []
     },
@@ -6040,7 +6037,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L593"
+        "HYPOTHESIS_LOG.md#Full stack (all hyps at once)"
       ],
       "aliases": []
     },
@@ -6054,7 +6051,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L596"
+        "HYPOTHESIS_LOG.md#Keep set product confirm"
       ],
       "aliases": []
     },
@@ -6068,7 +6065,7 @@
       "area": "liquidfun",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L821"
+        "HYPOTHESIS_LOG.md#LiquidFun rejected set"
       ],
       "aliases": []
     },
@@ -6082,7 +6079,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L819"
+        "HYPOTHESIS_LOG.md#Spatial H1–H15 (except shipped Verlet / stagger)"
       ],
       "aliases": []
     },
@@ -6096,7 +6093,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1080"
+        "EXECUTION_PLAN.md#E-17 Shadow stamp"
       ],
       "aliases": []
     },
@@ -6110,8 +6107,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L279",
-        "EXECUTION_PLAN.md#L426"
+        "HYPOTHESIS_LOG.md#E-09",
+        "EXECUTION_PLAN.md#E-09"
       ],
       "aliases": []
     },
@@ -6125,8 +6122,8 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L293",
-        "EXECUTION_PLAN.md#L54"
+        "HYPOTHESIS_LOG.md#E-18",
+        "EXECUTION_PLAN.md#E-18"
       ],
       "aliases": []
     },
@@ -6140,8 +6137,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L297",
-        "EXECUTION_PLAN.md#L430"
+        "HYPOTHESIS_LOG.md#E-10",
+        "EXECUTION_PLAN.md#E-10 Contact pair"
       ],
       "aliases": [
         "E-27"
@@ -6157,8 +6154,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L309",
-        "EXECUTION_PLAN.md#L550"
+        "HYPOTHESIS_LOG.md#E-13",
+        "EXECUTION_PLAN.md#E-13 _getNeighborCells does"
       ],
       "aliases": []
     },
@@ -6172,8 +6169,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L315",
-        "EXECUTION_PLAN.md#L157"
+        "HYPOTHESIS_LOG.md#E-03",
+        "EXECUTION_PLAN.md#E-03 logicBlockRange allocates"
       ],
       "aliases": []
     },
@@ -6187,8 +6184,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1058",
-        "EXECUTION_PLAN.md#L1314"
+        "EXECUTION_PLAN.md#E-16 Incremental / sharded shadow stamp — REJECTED on premise, by E-29.",
+        "EXECUTION_PLAN.md#E-16 Incremental / sharded shadow stamp — REJECTED on premise, by E-29 (recorded"
       ],
       "aliases": []
     },
@@ -6202,7 +6199,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L417"
+        "HYPOTHESIS_LOG.md#R3 emit in entity order (2026-10-01)"
       ],
       "aliases": []
     },
@@ -6216,7 +6213,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L473"
+        "HYPOTHESIS_LOG.md#R1 stamp: takeClosest on (dist, idx) pairs in place (2026-09-30)"
       ],
       "aliases": []
     },
@@ -6230,7 +6227,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L475"
+        "HYPOTHESIS_LOG.md#X2"
       ],
       "aliases": []
     },
@@ -6244,7 +6241,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L712"
+        "HYPOTHESIS_LOG.md#H-NCACHE neighbor cells"
       ],
       "aliases": []
     },
@@ -6258,7 +6255,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L685"
+        "HYPOTHESIS_LOG.md#FL5 gen per slot"
       ],
       "aliases": []
     },
@@ -6272,7 +6269,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L688"
+        "HYPOTHESIS_LOG.md#FL2 Treiber ABA"
       ],
       "aliases": []
     },
@@ -6286,7 +6283,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L632"
+        "HYPOTHESIS_LOG.md#Skip-work A frameDuration cache"
       ],
       "aliases": []
     },
@@ -6300,7 +6297,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L340"
+        "EXECUTION_PLAN.md#E-27"
       ],
       "aliases": []
     },
@@ -6314,7 +6311,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L331"
+        "HYPOTHESIS_LOG.md#65535 entities, one tween each, split across logic workers (2026-10-17)"
       ],
       "aliases": []
     },
@@ -6328,8 +6325,8 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L9",
-        "HYPOTHESIS_LOG.md#L625"
+        "HYPOTHESIS_LOG.md#3 ms stress floor (2026-09-17)",
+        "HYPOTHESIS_LOG.md#3 ms stress floor"
       ],
       "aliases": []
     },
@@ -6343,7 +6340,7 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L11"
+        "HYPOTHESIS_LOG.md#8 ms campaign floor (2026-09-17)"
       ],
       "aliases": []
     },
@@ -6357,7 +6354,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L541"
+        "HYPOTHESIS_LOG.md#takeClosest by top-K insertion (2026-09-28)"
       ],
       "aliases": []
     },
@@ -6371,7 +6368,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L645"
+        "HYPOTHESIS_LOG.md#Instanced pack 25→15"
       ],
       "aliases": []
     },
@@ -6385,7 +6382,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L209"
+        "HYPOTHESIS_LOG.md#N-18"
       ],
       "aliases": []
     },
@@ -6399,7 +6396,7 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L211"
+        "HYPOTHESIS_LOG.md#N-19"
       ],
       "aliases": []
     },
@@ -6413,8 +6410,8 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L241",
-        "EXECUTION_PLAN.md#L1603"
+        "HYPOTHESIS_LOG.md#E-53",
+        "EXECUTION_PLAN.md#E-53"
       ],
       "aliases": []
     },
@@ -6428,8 +6425,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L243",
-        "EXECUTION_PLAN.md#L1583"
+        "HYPOTHESIS_LOG.md#E-52",
+        "EXECUTION_PLAN.md#E-52"
       ],
       "aliases": []
     },
@@ -6443,8 +6440,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L255",
-        "EXECUTION_PLAN.md#L1427"
+        "HYPOTHESIS_LOG.md#E-46",
+        "EXECUTION_PLAN.md#E-46"
       ],
       "aliases": []
     },
@@ -6458,7 +6455,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1885"
+        "EXECUTION_PLAN.md#E-67"
       ],
       "aliases": []
     },
@@ -6472,9 +6469,9 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L287",
-        "HYPOTHESIS_LOG.md#L295",
-        "EXECUTION_PLAN.md#L84"
+        "HYPOTHESIS_LOG.md#noLimitFPS, E-24 (a) (2026-10-18)",
+        "HYPOTHESIS_LOG.md#Frame phase, E-24 (2026-10-18)",
+        "EXECUTION_PLAN.md#E-24 The frame"
       ],
       "aliases": []
     },
@@ -6488,8 +6485,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L289",
-        "EXECUTION_PLAN.md#L473"
+        "HYPOTHESIS_LOG.md#E-38",
+        "EXECUTION_PLAN.md#E-38"
       ],
       "aliases": []
     },
@@ -6503,8 +6500,8 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L299",
-        "EXECUTION_PLAN.md#L368"
+        "HYPOTHESIS_LOG.md#E-26",
+        "EXECUTION_PLAN.md#E-26"
       ],
       "aliases": []
     },
@@ -6518,8 +6515,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L307",
-        "EXECUTION_PLAN.md#L176"
+        "HYPOTHESIS_LOG.md#E-04b",
+        "EXECUTION_PLAN.md#E-04b box2dWorkerCount sweep"
       ],
       "aliases": []
     },
@@ -6533,8 +6530,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L319",
-        "EXECUTION_PLAN.md#L56"
+        "HYPOTHESIS_LOG.md#E-21",
+        "EXECUTION_PLAN.md#E-21"
       ],
       "aliases": []
     },
@@ -6548,7 +6545,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L389"
+        "HYPOTHESIS_LOG.md#Neighbor publish in shared memory (2026-10-06)"
       ],
       "aliases": []
     },
@@ -6562,7 +6559,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L547"
+        "HYPOTHESIS_LOG.md#Partial scoreboard vs main + knobs/z-buffer (2026-09-29)"
       ],
       "aliases": []
     },
@@ -6576,7 +6573,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L169"
+        "EXECUTION_PLAN.md#E-04 Grid._cellVersionData is"
       ],
       "aliases": []
     },
@@ -6590,7 +6587,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1241"
+        "EXECUTION_PLAN.md#E-23"
       ],
       "aliases": []
     },
@@ -6604,7 +6601,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1460"
+        "EXECUTION_PLAN.md#E-48"
       ],
       "aliases": []
     },
@@ -6618,9 +6615,9 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L275",
-        "HYPOTHESIS_LOG.md#L277",
-        "EXECUTION_PLAN.md#L205"
+        "HYPOTHESIS_LOG.md#Browser-tree CPU, E-34 (2026-10-19)",
+        "HYPOTHESIS_LOG.md#Box2D CPU sampler, E-34 (2026-10-18)",
+        "EXECUTION_PLAN.md#E-34"
       ],
       "aliases": []
     },
@@ -6634,10 +6631,10 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L281",
-        "HYPOTHESIS_LOG.md#L283",
-        "HYPOTHESIS_LOG.md#L291",
-        "EXECUTION_PLAN.md#L55"
+        "HYPOTHESIS_LOG.md#Neighbor read shape, E-15 sitting 2 (2026-10-19)",
+        "HYPOTHESIS_LOG.md#Neighbor publish, E-15 (2026-10-18)",
+        "HYPOTHESIS_LOG.md#Neighbor layout read, E-15 (2026-10-18)",
+        "EXECUTION_PLAN.md#E-15"
       ],
       "aliases": []
     },
@@ -6651,7 +6648,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L285"
+        "HYPOTHESIS_LOG.md#E-19"
       ],
       "aliases": []
     },
@@ -6665,7 +6662,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L321"
+        "HYPOTHESIS_LOG.md#Audit hygiene, kernel vs 5c986922 (2026-10-17)"
       ],
       "aliases": []
     },
@@ -6679,7 +6676,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L349"
+        "HYPOTHESIS_LOG.md#Math-allocation audit, scoreboard vs 5ef9775e (2026-10-14)"
       ],
       "aliases": []
     },
@@ -6693,7 +6690,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L367"
+        "HYPOTHESIS_LOG.md#H-13"
       ],
       "aliases": []
     },
@@ -6707,7 +6704,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L377"
+        "HYPOTHESIS_LOG.md#Worker count (2026-10-06)"
       ],
       "aliases": []
     },
@@ -6721,7 +6718,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L379"
+        "HYPOTHESIS_LOG.md#WASM SIMD for the neighbor publish (2026-10-06)"
       ],
       "aliases": []
     },
@@ -6735,7 +6732,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L383"
+        "HYPOTHESIS_LOG.md#Neighbor row (2026-10-06)"
       ],
       "aliases": []
     },
@@ -6749,7 +6746,7 @@
       "area": "particle",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L387"
+        "HYPOTHESIS_LOG.md#renderOnly particles (2026-10-06)"
       ],
       "aliases": []
     },
@@ -6763,7 +6760,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L399"
+        "HYPOTHESIS_LOG.md#Trace wave after the ray keep (2026-10-06)"
       ],
       "aliases": []
     },
@@ -6777,7 +6774,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L415"
+        "HYPOTHESIS_LOG.md#Trace after-keeps and what was measured after (2026-10-01)"
       ],
       "aliases": []
     },
@@ -6791,7 +6788,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L429"
+        "HYPOTHESIS_LOG.md#P3"
       ],
       "aliases": []
     },
@@ -6805,7 +6802,7 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L435"
+        "HYPOTHESIS_LOG.md#New method: kernels that do not write src/, worktrees, Predator ABAB (2026-09-30)"
       ],
       "aliases": []
     },
@@ -6819,7 +6816,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L549"
+        "HYPOTHESIS_LOG.md#Kernels vs main with a fresh protocol (2026-09-29)"
       ],
       "aliases": []
     },
@@ -6833,7 +6830,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L551"
+        "HYPOTHESIS_LOG.md#Ray stress logic0 vs main — isolation (2026-09-29)"
       ],
       "aliases": []
     },
@@ -6847,7 +6844,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L555"
+        "HYPOTHESIS_LOG.md#Balls box2d +34 % was the dirty demo, not Box2D (2026-09-29)"
       ],
       "aliases": []
     },
@@ -6861,7 +6858,7 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L557"
+        "HYPOTHESIS_LOG.md#Fresh kernels again vs main (2026-09-29, post-Balls loop)"
       ],
       "aliases": []
     },
@@ -6875,7 +6872,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L509"
+        "HYPOTHESIS_LOG.md#Phases 6+7+8 together on Predator zoom 0.4 (2026-09-28)"
       ],
       "aliases": []
     },
@@ -6889,7 +6886,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L519"
+        "HYPOTHESIS_LOG.md#Single pre-render baseline (2026-09-28)"
       ],
       "aliases": []
     },
@@ -6903,7 +6900,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L521"
+        "HYPOTHESIS_LOG.md#Frame object reuse (2026-09-28)"
       ],
       "aliases": []
     },
@@ -6917,7 +6914,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L523"
+        "HYPOTHESIS_LOG.md#Fixed light lists and sort/pack without rewriting the other knob (2026-09-28)"
       ],
       "aliases": []
     },
@@ -6931,7 +6928,7 @@
       "area": "physics",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L525"
+        "HYPOTHESIS_LOG.md#Shader light pool in Pixi (2026-09-28)"
       ],
       "aliases": []
     },
@@ -6945,7 +6942,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L527"
+        "HYPOTHESIS_LOG.md#Predator zoom 0.4 baseline (2026-09-28)"
       ],
       "aliases": []
     },
@@ -6959,7 +6956,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L529"
+        "HYPOTHESIS_LOG.md#Zoom 0.4 breakdown, one run with detail (2026-09-28)"
       ],
       "aliases": []
     },
@@ -6973,7 +6970,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L533"
+        "HYPOTHESIS_LOG.md#Breakdown after the grid, one run with detail (2026-09-28)"
       ],
       "aliases": []
     },
@@ -6987,7 +6984,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L537"
+        "HYPOTHESIS_LOG.md#Stamp grid, Predator with no query (2026-09-28)"
       ],
       "aliases": []
     },
@@ -7001,7 +6998,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L499"
+        "HYPOTHESIS_LOG.md#Shared pack (2026-09-27)"
       ],
       "aliases": []
     },
@@ -7015,7 +7012,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L503"
+        "HYPOTHESIS_LOG.md#Three-path spatial cull on Predator (2026-09-27)"
       ],
       "aliases": []
     },
@@ -7029,7 +7026,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L505"
+        "HYPOTHESIS_LOG.md#Three Predator configs, same sitting (2026-09-27)"
       ],
       "aliases": []
     },
@@ -7043,7 +7040,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L681"
+        "HYPOTHESIS_LOG.md#entityIdWidth 16"
       ],
       "aliases": []
     },
@@ -7058,7 +7055,7 @@
       "kind": "dx",
       "refs": [
         "ISOLATION_SERVICE_WORKER_PLAN.md",
-        "ISOLATION_SERVICE_WORKER_PLAN.md#L261"
+        "ISOLATION_SERVICE_WORKER_PLAN.md#4. Test"
       ],
       "aliases": [
         "coi-serviceworker"
@@ -7093,8 +7090,8 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L139",
-        "EXECUTION_PLAN.md#L681"
+        "HYPOTHESIS_LOG.md#Pre-render sort keys through a typed slot, E-86 (2026-10-23)",
+        "EXECUTION_PLAN.md#E-86"
       ],
       "aliases": [],
       "next": "Predator gate with the next batch (20 000 decorations go through the same call)."
@@ -7109,8 +7106,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L97",
-        "EXECUTION_PLAN.md#L695"
+        "HYPOTHESIS_LOG.md#The body dirty words in 16 bits, E-87 (2026-10-23)",
+        "EXECUTION_PLAN.md#E-87"
       ],
       "aliases": []
     },
@@ -7124,7 +7121,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L715"
+        "EXECUTION_PLAN.md#E-88"
       ],
       "aliases": []
     },
@@ -7138,7 +7135,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L978"
+        "EXECUTION_PLAN.md#E-89"
       ],
       "aliases": []
     },
@@ -7152,8 +7149,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L95",
-        "EXECUTION_PLAN.md#L966"
+        "HYPOTHESIS_LOG.md#E-90",
+        "EXECUTION_PLAN.md#E-90"
       ],
       "aliases": []
     },
@@ -7167,8 +7164,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L135",
-        "EXECUTION_PLAN.md#L725"
+        "HYPOTHESIS_LOG.md#Physics body creation without option objects, E-91 (2026-10-23)",
+        "EXECUTION_PLAN.md#E-91"
       ],
       "aliases": [],
       "next": "A load-matched kernel (extracted createBodyForEntity on the real wasm) would decide the speed."
@@ -7183,8 +7180,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L133",
-        "EXECUTION_PLAN.md#L736"
+        "HYPOTHESIS_LOG.md#Spawn without a closure, E-92 (2026-10-23)",
+        "EXECUTION_PLAN.md#E-92"
       ],
       "aliases": []
     },
@@ -7198,8 +7195,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L131",
-        "EXECUTION_PLAN.md#L745"
+        "HYPOTHESIS_LOG.md#setSprite's cache key, E-93 (2026-10-23)",
+        "EXECUTION_PLAN.md#E-93"
       ],
       "aliases": [],
       "next": "Predator gate with the next batch."
@@ -7214,7 +7211,7 @@
       "area": "preRender",
       "kind": "wasm",
       "refs": [
-        "EXECUTION_PLAN.md#L751",
+        "EXECUTION_PLAN.md#E-94",
         "reports/E-94-gpu-pack-wasm.md"
       ],
       "aliases": [
@@ -7231,8 +7228,8 @@
       "area": "preRender",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L125",
-        "EXECUTION_PLAN.md#L751",
+        "HYPOTHESIS_LOG.md#The pack as a scatter, E-94 W9b (2026-10-23)",
+        "EXECUTION_PLAN.md#E-94 The instanced-row",
         "reports/E-94-gpu-pack-wasm.md"
       ],
       "aliases": []
@@ -7247,7 +7244,7 @@
       "area": "pixi",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L123",
+        "HYPOTHESIS_LOG.md#W9c",
         "reports/E-94-gpu-pack-wasm.md"
       ],
       "aliases": [],
@@ -7263,8 +7260,8 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L119",
-        "EXECUTION_PLAN.md#L760"
+        "HYPOTHESIS_LOG.md#E-95",
+        "EXECUTION_PLAN.md#E-95"
       ],
       "aliases": []
     },
@@ -7278,8 +7275,8 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L83",
-        "EXECUTION_PLAN.md#L766",
+        "HYPOTHESIS_LOG.md#E-96",
+        "EXECUTION_PLAN.md#E-95 The visibility",
         "reports/E-96-light-batch.md"
       ],
       "aliases": []
@@ -7294,8 +7291,8 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L113",
-        "EXECUTION_PLAN.md#L794",
+        "HYPOTHESIS_LOG.md#Pixi paces its frames to the GPU, E-97 (2026-10-23)",
+        "EXECUTION_PLAN.md#E-97 Pixi submits",
         "reports/E-97-gpu-frame-pacing.md"
       ],
       "aliases": []
@@ -7310,8 +7307,8 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L109",
-        "EXECUTION_PLAN.md#L801"
+        "HYPOTHESIS_LOG.md#E-97b",
+        "EXECUTION_PLAN.md#E-97b"
       ],
       "aliases": []
     },
@@ -7325,8 +7322,8 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L808",
-        "HYPOTHESIS_LOG.md#L47"
+        "EXECUTION_PLAN.md#E-98",
+        "HYPOTHESIS_LOG.md#The persist check and the pose pass in one walk, E-98h (2026-10-23)"
       ],
       "aliases": [],
       "next": "W4a (E-112) for the emit, W4b for the collect. Predator profile 2026-10-23: emitSpriteQueue 17.2 %, collectVisibleEntities 9.6 %, _storeEntitySortY 5.1 %, _displayPose 5.0 %, _writeQueueShadow 4.1 % of pre-render; the shadow stamp chain 37 % (W23).",
@@ -7342,7 +7339,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L959",
+        "EXECUTION_PLAN.md#E-82b",
         "reports/E-82-split-instance-upload.md"
       ],
       "aliases": [],
@@ -7359,7 +7356,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L105",
+        "HYPOTHESIS_LOG.md#N-64",
         "REVIEW_PLAN.md"
       ],
       "aliases": []
@@ -7374,7 +7371,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L93",
+        "HYPOTHESIS_LOG.md#N-1",
         "REVIEW_PLAN.md"
       ],
       "aliases": []
@@ -7389,8 +7386,8 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L89",
-        "EXECUTION_PLAN.md#L953"
+        "HYPOTHESIS_LOG.md#E-99",
+        "EXECUTION_PLAN.md#E-99"
       ],
       "aliases": []
     },
@@ -7404,7 +7401,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L87"
+        "HYPOTHESIS_LOG.md#E-100"
       ],
       "aliases": []
     },
@@ -7418,8 +7415,8 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L65",
-        "EXECUTION_PLAN.md#L782",
+        "HYPOTHESIS_LOG.md#E-96b",
+        "EXECUTION_PLAN.md#E-96b",
         "reports/E-96b-self-lit-batch.md"
       ],
       "aliases": []
@@ -7434,7 +7431,7 @@
       "area": "pixi",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L79"
+        "HYPOTHESIS_LOG.md#W9d"
       ],
       "aliases": [],
       "next": "Retry when the workers' phasing changes (diff kept outside the tree)."
@@ -7449,7 +7446,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L75"
+        "HYPOTHESIS_LOG.md#E-102"
       ],
       "aliases": []
     },
@@ -7463,7 +7460,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L73"
+        "HYPOTHESIS_LOG.md#E-102b"
       ],
       "aliases": [],
       "next": "Predator gate with the next batch."
@@ -7478,7 +7475,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L71"
+        "HYPOTHESIS_LOG.md#The painter sorts runs of equal keys as one, E-103 (2026-10-23)"
       ],
       "aliases": []
     },
@@ -7492,8 +7489,8 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L63",
-        "EXECUTION_PLAN.md#L788"
+        "HYPOTHESIS_LOG.md#E-96c",
+        "EXECUTION_PLAN.md#E-96c"
       ],
       "aliases": []
     }

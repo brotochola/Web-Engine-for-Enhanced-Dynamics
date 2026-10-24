@@ -20,6 +20,7 @@ Thumbs.db
 package-lock.json
 
 # Generated files
+docs/internal/hypotheses.html
 src/index.bundle.js
 js_docs/
 

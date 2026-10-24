@@ -1,13 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import path from 'node:path';
 
-import { PAGE_PATH, REGISTRY_PATH, renderPage } from '../../scripts/buildHypothesesPage.mjs';
+import { REGISTRY_PATH, docRows, findRows, renderPage, resolveRefs } from '../../scripts/buildHypothesesPage.mjs';
 
-// docs/internal/hypotheses.json is the index of every speed hypothesis; hypotheses.html is built
-// from it. The index must stay well formed, its evidence links must point at real lines, and the
-// page must be the one the builder makes from it (edit the JSON, then run the builder).
+// docs/internal/hypotheses.json is the index of every speed hypothesis. Its refs name rows of the docs
+// by key (`HYPOTHESIS_LOG.md#W9d`), never by line, so new rows above them do not move them; each key must
+// find exactly one row. The page (hypotheses.html) is built from it on demand and is not committed.
 
 const registry = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8'));
 const PENDING = new Set(['open', 'running', 'blocked']);
@@ -29,21 +28,51 @@ test('every hypothesis has a title and a known status, and ids are unique', () =
   }
 });
 
-test('every evidence link points at a line that exists', () => {
-  const docs = path.dirname(REGISTRY_PATH);
-  const lineCount = new Map();
-  for (const h of registry.hypotheses) {
-    for (const ref of h.refs || []) {
-      const [file, line] = ref.split('#L');
-      const full = path.join(docs, file);
-      assert.ok(fs.existsSync(full), `${h.id || h.title}: ${file} does not exist`);
-      if (!lineCount.has(full)) lineCount.set(full, fs.readFileSync(full, 'utf8').split('\n').length);
-      if (line) assert.ok(Number(line) <= lineCount.get(full), `${h.id || h.title}: ${ref} is past the end of ${file}`);
-    }
-  }
+test('every ref names a file that exists and, after #, exactly one of its rows', () => {
+  const { errors } = resolveRefs(registry);
+  assert.deepEqual(errors, [], errors.join('\n'));
 });
 
-test('hypotheses.html is the page the builder makes from the registry', () => {
-  const page = fs.readFileSync(PAGE_PATH, 'utf8');
-  assert.equal(page, renderPage(registry), 'the page is out of date: run node scripts/buildHypothesesPage.mjs');
+test('a key finds a row by its whole title or by a whole token of it, wherever the row is', () => {
+  const doc = [
+    '| Hypothesis | Status |',
+    '|---|---|',
+    '| Compact bullet list | dropped |',
+    '| Compact bullet list (new protocol) | dropped |',
+    '| **W9** | Pixi |',
+    '',
+    '**Pixi\'s sprite pack through gpuPack.wasm, W9d (2026-10-23):** **rejected.** Text.',
+    '### E-82b The split upload — **open**',
+    '### E-82 The upload diet — **KEPT**',
+  ].join('\n');
+  const rows = docRows(doc);
+  const lineOf = (key) => findRows(rows, key).map((r) => r.line);
+  assert.deepEqual(lineOf('Compact bullet list'), [3], 'the exact title wins over a longer one');
+  assert.deepEqual(lineOf('W9'), [5], 'W9 is not a token of W9d');
+  assert.deepEqual(lineOf('W9d'), [7]);
+  assert.deepEqual(lineOf('E-82'), [9], 'E-82 is not a token of E-82b');
+  assert.deepEqual(lineOf('E-82b'), [8]);
+  assert.deepEqual(lineOf('Hypothesis'), [1]);
+  // Rows above a row do not change its key.
+  const moved = docRows('**New row, E-123 (2026-10-24):** text.\n' + doc);
+  assert.deepEqual(findRows(moved, 'W9d').map((r) => r.line), [8]);
+});
+
+test('a line-number ref is refused with the way to fix it', () => {
+  const reg = { hypotheses: [{ id: 'X-1', title: 'x', refs: ['HYPOTHESIS_LOG.md#L12'] }] };
+  const { errors } = resolveRefs(reg);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /line number/);
+});
+
+test('the page builds from the registry and its resolved rows', () => {
+  const { resolved } = resolveRefs(registry);
+  const page = renderPage(registry, resolved);
+  assert.match(page, /<title>WeedJS hypotheses<\/title>/);
+  // The embedded data reads back whole (a `<` inside it cannot end its script tag).
+  const open = '<script id="data" type="application/json">';
+  const start = page.indexOf(open) + open.length;
+  const data = JSON.parse(page.slice(start, page.indexOf('</script>', start)));
+  assert.equal(data.registry.hypotheses.length, registry.hypotheses.length);
+  assert.equal(Object.keys(data.resolved).length, Object.keys(resolved).length);
 });

@@ -15,8 +15,10 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
 - **Plans and open items:** `docs/internal/EXECUTION_PLAN.md` (speed hypotheses E-xx),
   `docs/internal/REVIEW_PLAN.md` (review items B/M/D/R/G/V/N/DOC). New findings go there.
 - **Index of every hypothesis:** `docs/internal/hypotheses.json`, one short entry each (status, result,
-  rank when pending, links to the evidence), read as `docs/internal/hypotheses.html`. After a sitting,
-  update its entry and run `node scripts/buildHypothesesPage.mjs` (a node test fails when they differ).
+  rank when pending, links to the evidence). After a sitting, update its entry. Links name a row by key,
+  never by line (`HYPOTHESIS_LOG.md#W9d`: the id, or the start of the row's title when the id finds
+  several), so new rows above it do not move it; a node test fails when a key finds no row or several.
+  `node scripts/buildHypothesesPage.mjs --open` builds the page to read it (`hypotheses.html`, not committed).
 
 ## Commands
 

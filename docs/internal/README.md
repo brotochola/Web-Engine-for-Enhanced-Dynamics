@@ -6,7 +6,7 @@ These files are for us: how a speed claim gets kept or dropped, what was already
 | --- | --- |
 | [`DEVLOG.md`](./DEVLOG.md) | Dated journal. Newest first. Stories, not specs. |
 | [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md) | The speed protocol. Worker step time, load match, keep and drop. |
-| [`hypotheses.html`](./hypotheses.html) | Every hypothesis on one page: what is next, what was tested, leads for new ones. Open it in a browser. Built from [`hypotheses.json`](./hypotheses.json) by `node scripts/buildHypothesesPage.mjs`. |
+| [`hypotheses.html`](./hypotheses.html) | Every hypothesis on one page: what is next, what was tested, leads for new ones, and each one's evidence rows. Built from [`hypotheses.json`](./hypotheses.json) and these docs by `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). |
 | [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) | Claims already measured. Read a row before measuring that idea again. |
 | [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) | Kernel, stress scene, and gameplay catalog. |
 | [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md) | Per-row map: champion, what was measured, how to measure again. |

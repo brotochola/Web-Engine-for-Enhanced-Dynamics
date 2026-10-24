@@ -4,23 +4,125 @@
  * (data embedded, no server, no network) to read every speed hypothesis WeedJS has tested or plans
  * to test, the leads that may become new ones, and the tools that find them.
  *
- *   node scripts/buildHypothesesPage.mjs           write the page
- *   node scripts/buildHypothesesPage.mjs --check   exit 1 when the page is out of date
+ *   node scripts/buildHypothesesPage.mjs          write the page
+ *   node scripts/buildHypothesesPage.mjs --open   write it and open it in the browser
  *
- * Edit the JSON, never the page: tests/node/hypothesesRegistry.test.js fails when they disagree.
+ * The JSON is the registry; the page is built from it and the docs when you want to read it, and is
+ * not committed. An entry's refs name rows, not lines: `HYPOTHESIS_LOG.md#W9d` is the one row of
+ * the log whose title is `W9d` or holds it as a whole token (a row's title is a table row's first
+ * cell, a bold lead before `:**`, or a heading), so a row keeps its ref however many rows go in
+ * above it. A key is an id, or the start of the title when the id alone finds several. The page resolves
+ * each ref to its line and shows the row; tests/node/hypothesesRegistry.test.js fails when a ref
+ * finds no row or several.
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const REGISTRY_PATH = path.join(root, 'docs/internal/hypotheses.json');
 export const PAGE_PATH = path.join(root, 'docs/internal/hypotheses.html');
+const DOCS_DIR = path.dirname(REGISTRY_PATH);
+const EXCERPT_CHARS = 480;
 
-/** The page for a registry (a string; the same input always gives the same bytes). */
-export function renderPage(registry) {
+/** A row title or a key without its markdown: no `*`, backticks or backslashes, single spaces. */
+export const normalizeTitle = (s) => s.replace(/[*`\\]/g, '').replace(/\s+/g, ' ').trim();
+
+/** The title of a row line (a table row's first cell, a bold lead, a heading), or '' for other lines. */
+function rowTitle(line) {
+  let t = '';
+  if (line.startsWith('|')) {
+    if (/^\|[\s:|-]*$/.test(line)) return '';
+    t = line.split('|')[1] || '';
+  } else if (line.startsWith('**')) {
+    const end = line.indexOf(':**');
+    if (end < 0) return '';
+    t = line.slice(2, end);
+    const close = t.indexOf('**');
+    if (close >= 0) t = t.slice(0, close);
+  } else if (/^#{1,4} /.test(line)) {
+    t = line.replace(/^#{1,4} /, '');
+  }
+  return normalizeTitle(t);
+}
+
+/** A doc's rows, each with its line (1-based), title and excerpt. */
+export function docRows(text) {
+  const lines = text.split(/\r?\n/);
+  const rows = [];
+  for (let i = 0; i < lines.length; i++) {
+    const title = rowTitle(lines[i]);
+    if (!title) continue;
+    let body = lines[i];
+    if (body.startsWith('|')) body = body.split('|').slice(1, -1).map((c) => c.trim()).filter(Boolean).join(' · ');
+    else if (body.startsWith('#')) {
+      // A heading's excerpt is its section's first lines.
+      for (let k = i + 1; k < lines.length && body.length < EXCERPT_CHARS && !/^#{1,4} /.test(lines[k]); k++) body += ' ' + lines[k];
+    }
+    body = body.replace(/[*\\]/g, '').replace(/\s+/g, ' ').trim();
+    rows.push({ line: i + 1, title, excerpt: body.length > EXCERPT_CHARS ? body.slice(0, EXCERPT_CHARS) + '…' : body });
+  }
+  return rows;
+}
+
+const TOKEN_CHAR = /[A-Za-z0-9]/;
+/** Does a row title hold the key as a whole token (`W9` is not in `W9d`, `E-82` is not in `E-82b`)? */
+export function keyMatches(title, key) {
+  for (let at = title.indexOf(key); at >= 0; at = title.indexOf(key, at + 1)) {
+    if (!TOKEN_CHAR.test(title[at - 1] || '') && !TOKEN_CHAR.test(title[at + key.length] || '')) return true;
+  }
+  return false;
+}
+
+/** The rows a key names: those whose title is the key, else those that hold it as a whole token. */
+export function findRows(rows, key) {
+  const exact = rows.filter((r) => r.title === key);
+  return exact.length ? exact : rows.filter((r) => keyMatches(r.title, key));
+}
+
+/**
+ * Resolve every ref of a registry against the docs.
+ * @returns {{ resolved: Record<string, { file: string, line: number, title: string, excerpt: string }>, errors: string[] }}
+ */
+export function resolveRefs(registry, docsDir = DOCS_DIR) {
+  const docs = new Map();
+  const rowsOf = (file) => {
+    if (!docs.has(file)) {
+      const full = path.join(docsDir, file);
+      docs.set(file, fs.existsSync(full) ? docRows(fs.readFileSync(full, 'utf8')) : null);
+    }
+    return docs.get(file);
+  };
+  const resolved = {};
+  const errors = [];
+  for (const h of registry.hypotheses) {
+    for (const ref of h.refs || []) {
+      if (resolved[ref]) continue;
+      const name = h.id || h.title;
+      const hash = ref.indexOf('#');
+      const file = hash < 0 ? ref : ref.slice(0, hash);
+      const rows = rowsOf(file);
+      if (!rows) { errors.push(`${name}: ${file} does not exist`); continue; }
+      if (hash < 0) { resolved[ref] = { file, line: 0, title: '', excerpt: '' }; continue; }
+      const key = normalizeTitle(ref.slice(hash + 1));
+      if (/^L\d+$/.test(key)) { errors.push(`${name}: ${ref} is a line number; name the row by a key in its title (${file}#W9d)`); continue; }
+      const hits = findRows(rows, key);
+      if (hits.length !== 1) {
+        const some = hits.slice(0, 3).map((r) => `line ${r.line} "${r.title.slice(0, 60)}"`).join('; ');
+        errors.push(`${name}: ${ref} finds ${hits.length ? hits.length + ' rows (' + some + '): use more of the title' : 'no row'}`);
+        continue;
+      }
+      resolved[ref] = { file, line: hits[0].line, title: hits[0].title, excerpt: hits[0].excerpt };
+    }
+  }
+  return { resolved, errors };
+}
+
+/** The page for a registry and its resolved refs (a string). */
+export function renderPage(registry, resolved = {}) {
   // A `</script>` inside the data would end the tag early.
-  const data = JSON.stringify(registry).replace(/</g, '\\u003c');
+  const data = JSON.stringify({ registry, resolved }).replace(/</g, '\\u003c');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -77,6 +179,7 @@ tr.detail td { background: var(--bg); font-size: 14px; }
 td.res { color: var(--muted); font-size: 14px; }
 a { color: var(--accent); }
 .links a { margin-right: 10px; font-size: 13px; }
+.ev { margin-top: 6px; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); font-size: 13px; }
 .empty { color: var(--muted); padding: 20px 4px; }
 code { font: 13px ui-monospace, Consolas, monospace; }
 @media (max-width: 720px) { .hide-sm { display: none; } th, td { padding: 7px 6px; } }
@@ -103,20 +206,23 @@ code { font: 13px ui-monospace, Consolas, monospace; }
 <script id="data" type="application/json">${data}</script>
 <script>
 (() => {
-  const reg = JSON.parse(document.getElementById('data').textContent);
+  const { registry: reg, resolved } = JSON.parse(document.getElementById('data').textContent);
   const H = reg.hypotheses;
   const GROUPS = { '@pending': ['open', 'running', 'blocked'], '@kept': ['kept', 'kept-kernel', 'kept-hygiene'], '@notkept': ['dropped', 'rejected', 'fail'], '@neutral': ['tie', 'mixed', 'screened'] };
   const LABEL = { 'kept-kernel': 'kept (kernel)', 'kept-hygiene': 'kept (hygiene)' };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const md = (s) => esc(s).replace(/\`([^\`]+)\`/g, '<code>$1</code>');
-  // Evidence links: the doc in VS Code at its line, and the file itself.
+  // Evidence links: the doc in VS Code at the row's line, and the file itself.
   const base = decodeURIComponent(location.pathname).replace(/\\/docs\\/internal\\/hypotheses\\.html$/, '');
   const links = (refs) => (refs || []).map((r) => {
-    const [file, anchor] = r.split('#L');
-    const line = anchor ? ':' + anchor : '';
-    const label = file.replace(/\\.md$/, '') + (anchor ? ' line ' + anchor : '');
-    return '<a href="vscode://file' + esc(base) + '/docs/internal/' + esc(file) + esc(line) + '">' + esc(label) + '</a><a href="./' + esc(file) + '">file</a>';
+    const at = resolved[r] || { file: r.split('#')[0], line: 0 };
+    const line = at.line ? ':' + at.line : '';
+    const key = r.includes('#') ? r.slice(r.indexOf('#') + 1) : '';
+    const label = at.file.replace(/\\.md$/, '') + (at.line ? ' line ' + at.line : '') + (key && key.length <= 24 ? ' (' + key + ')' : '');
+    return '<a href="vscode://file' + esc(base) + '/docs/internal/' + esc(at.file) + esc(line) + '" title="' + esc(at.title || '') + '">' + esc(label) + '</a><a href="./' + esc(at.file) + '">file</a>';
   }).join('');
+  // The rows themselves, under an entry opened in the table.
+  const evidence = (refs) => (refs || []).map((r) => resolved[r] && resolved[r].excerpt ? '<div class="ev"><b>' + esc(resolved[r].file.replace(/\\.md$/, '')) + ':</b> ' + md(resolved[r].excerpt) + '</div>' : '').join('');
   const chip = (s) => '<span class="chip s-' + esc(s) + '" title="' + esc(reg.statuses[s] || '') + '">' + esc(LABEL[s] || s) + '</span>';
 
   const counts = H.reduce((m, h) => ((m[h.status] = (m[h.status] || 0) + 1), m), {});
@@ -173,7 +279,7 @@ code { font: 13px ui-monospace, Consolas, monospace; }
         '</td><td class="hide-sm">' + esc(h.area || '') + '</td><td class="hide-sm">' + esc(h.date || '') + '</td><td class="res hide-sm">' + md((h.result || '').slice(0, 140)) + ((h.result || '').length > 140 ? '…' : '') + '</td></tr>';
       const detail = open.has(k) ? '<tr class="detail"><td colspan="6">' + ((h.aliases || []).length ? '<div><b>Also:</b> ' + esc(h.aliases.join(', ')) + '</div>' : '') +
         (h.statusText ? '<div><b>Status:</b> ' + md(h.statusText) + '</div>' : '') + (h.next ? '<div><b>Next:</b> ' + md(h.next) + '</div>' : '') +
-        '<div>' + md(h.result) + '</div><div class="links">' + links(h.refs) + '</div></td></tr>' : '';
+        '<div>' + md(h.result) + '</div><div class="links">' + links(h.refs) + '</div>' + evidence(h.refs) + '</td></tr>' : '';
       return row + detail;
     }).join('');
     return '<div class="counts">' + Object.keys(reg.statuses).filter((s) => counts[s]).map((s) => chip(s) + ' ' + counts[s]).join(' &nbsp; ') + '</div>' +
@@ -220,18 +326,15 @@ code { font: 13px ui-monospace, Consolas, monospace; }
 
 function main() {
   const registry = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8'));
-  const page = renderPage(registry);
-  if (process.argv.includes('--check')) {
-    const current = fs.existsSync(PAGE_PATH) ? fs.readFileSync(PAGE_PATH, 'utf8') : '';
-    if (current !== page) {
-      console.error('docs/internal/hypotheses.html is out of date: run node scripts/buildHypothesesPage.mjs');
-      process.exit(1);
-    }
-    console.log('hypotheses.html is up to date');
-    return;
+  const { resolved, errors } = resolveRefs(registry);
+  for (const e of errors) console.warn(`ref: ${e}`);
+  fs.writeFileSync(PAGE_PATH, renderPage(registry, resolved));
+  console.log(`wrote ${path.relative(root, PAGE_PATH)} (${registry.hypotheses.length} hypotheses; built locally, not committed)`);
+  if (process.argv.includes('--open')) {
+    const [cmd, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', PAGE_PATH]]
+      : process.platform === 'darwin' ? ['open', [PAGE_PATH]] : ['xdg-open', [PAGE_PATH]];
+    execFile(cmd, args);
   }
-  fs.writeFileSync(PAGE_PATH, page);
-  console.log(`wrote ${path.relative(root, PAGE_PATH)} (${registry.hypotheses.length} hypotheses)`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
