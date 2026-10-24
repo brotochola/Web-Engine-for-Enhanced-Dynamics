@@ -11,6 +11,13 @@
  *   wasm        rewrite_corners through the shipped client's rewriteCornersWasm (meshCornersClient.js), one call
  *               per batch, without the UV generations
  *   wasm-uvgen  the same with the UV generations
+ *   wasm-f32, wasm-f32-uvgen      rewrite_corners_f32 (tests/fixtures/wasm/meshCornersF32.wasm, from
+ *               wasm/test/meshCornersF32.c) through the same client: one float load and store per coordinate
+ *   wasm-f32x4, wasm-f32x4-uvgen  rewrite_corners_f32x4: two corners per f32x4 store from lane loads, the third
+ *               a 64-bit lane store
+ *
+ * The rewrite computes nothing, so the float32 variants copy the same bits: their checksum is the exact one
+ * (nothing to quantise), and runKernelVariants compares them with wasm (or wasm-uvgen) as it compares js.
  *
  * The rewrite reads the MeshGeometry block (spans, counts, vertices, UVs, indices) and Pixi's batch rows,
  * instance-to-entity lists and generations, so the kernel needs all of them in the memory it imports. The
@@ -35,6 +42,8 @@
  * --check runs only those frames and prints the checksum (no warm-up, no timing).
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/meshCornersWasmMicrobench.mjs --variants js,js-uvgen --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/meshCornersWasmMicrobench.mjs --variants wasm,wasm-f32,wasm-f32x4 --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/meshCornersWasmMicrobench.mjs --variants wasm-uvgen,wasm-f32-uvgen,wasm-f32x4-uvgen --rounds 5
  *   node tests/bench/meshCornersWasmMicrobench.mjs --variant wasm-uvgen [--check] [--scale 0.1] [--output path]
  */
 import { MeshGeometry, resetMeshGeometryWarns } from '../../src/core/meshGeometry.js';
@@ -48,16 +57,27 @@ import {
   rewriteExplicitMeshCorners,
 } from '../../src/render/colliderFillBatch.js';
 import { bindMeshCorners, rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
+import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { meshMemoryRegions } from '../../src/util/wasmMemoryMap.js';
 import { checksumInts, isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
-/** The variants: which rewrite, and whether Pixi hands it the UV generations (E-118). */
+const F32_URL = new URL('../fixtures/wasm/meshCornersF32.wasm', import.meta.url);
+const F32_EXPORTS = ['rewrite_corners_f32', 'rewrite_corners_f32x4'];
+
+/**
+ * The variants: which rewrite, whether Pixi hands it the UV generations (E-118), and for the float32 variants
+ * which export of the meshCornersF32 test module the client calls instead of rewrite_corners.
+ */
 export const MESH_CORNER_VARIANTS = {
   js: { wasm: false, uvGen: false },
   'js-uvgen': { wasm: false, uvGen: true },
   wasm: { wasm: true, uvGen: false },
   'wasm-uvgen': { wasm: true, uvGen: true },
+  'wasm-f32': { wasm: true, uvGen: false, fn: 'rewrite_corners_f32' },
+  'wasm-f32-uvgen': { wasm: true, uvGen: true, fn: 'rewrite_corners_f32' },
+  'wasm-f32x4': { wasm: true, uvGen: false, fn: 'rewrite_corners_f32x4' },
+  'wasm-f32x4-uvgen': { wasm: true, uvGen: true, fn: 'rewrite_corners_f32x4' },
 };
 
 // meshApiStressScene's shapes and cohorts (its defaults; `scale` is its `count` query).
@@ -262,6 +282,26 @@ export async function setupMeshCornersKernel(opts = {}) {
   });
 
   const wasmRewrite = (out, count, ent, v, stride, last, genNow, lastUv, uvNow) => rewriteCornersWasm(b, out, count, ent, v, stride, last, genNow, lastUv, uvNow);
+  // The float32 variants: the same client and table, another export (their calls and declines counted apart).
+  const f32 = await loadWasmKernel('meshCornersF32', F32_URL, memory, F32_EXPORTS);
+  const bindings = {};
+  const rewriters = {};
+  /** The binding a variant's rewrite goes through. */
+  const bindingOf = (variant) => {
+    const fn = MESH_CORNER_VARIANTS[variant]?.fn;
+    if (!fn) return b;
+    bindings[fn] ??= { ...b, rewrite: f32[fn], calls: 0, declined: 0 };
+    return bindings[fn];
+  };
+  /** A variant's rewrite function, with rewriteExplicitMeshCorners' arguments. */
+  const rewriteOf = (variant) => {
+    const spec = MESH_CORNER_VARIANTS[variant];
+    if (!spec.wasm) return rewriteExplicitMeshCorners;
+    if (!spec.fn) return wasmRewrite;
+    const bound = bindingOf(variant);
+    rewriters[spec.fn] ??= (out, count, ent, v, stride, last, genNow, lastUv, uvNow) => rewriteCornersWasm(bound, out, count, ent, v, stride, last, genNow, lastUv, uvNow);
+    return rewriters[spec.fn];
+  };
   /** Pixi's rewrite of both batches on a frame whose vertices moved (the `!full && vertsMoved` branch). */
   const rewriteFrameWith = (rewrite, uvGen) => {
     const fill = rewrite(fillRows, fillCount, fillEntity, views, COLLIDER_FILL_FLOATS, lastVertGen, frameVertGen);
@@ -274,7 +314,7 @@ export async function setupMeshCornersKernel(opts = {}) {
   const frameOp = (variant) => {
     const spec = MESH_CORNER_VARIANTS[variant];
     if (!spec) throw new Error(`unknown variant ${variant}`);
-    const rewrite = spec.wasm ? wasmRewrite : rewriteExplicitMeshCorners;
+    const rewrite = rewriteOf(variant);
     return () => rewriteFrameWith(rewrite, spec.uvGen);
   };
 
@@ -352,7 +392,7 @@ export async function setupMeshCornersKernel(opts = {}) {
   const warmLast = new Uint32Array(n);
   const shortFrame = (variant) => {
     const spec = MESH_CORNER_VARIANTS[variant];
-    const rewrite = spec.wasm ? wasmRewrite : rewriteExplicitMeshCorners;
+    const rewrite = rewriteOf(variant);
     rewrite(fillRows, shortFill, fillEntity, views, COLLIDER_FILL_FLOATS, lastVertGen, frameVertGen);
     if (spec.uvGen) {
       rewrite(shortUv.rows, shortUv.count, shortUv.entity, views, MESH_UV_FILL_FLOATS, lastVertGen, frameVertGen, lastUvGen, frameUvGen);
@@ -367,7 +407,7 @@ export async function setupMeshCornersKernel(opts = {}) {
   };
 
   return {
-    cohorts: c, n, fillCount, uvCount, b, views, frameOp, checksumFrames, sceneDirty, shortFrame,
+    cohorts: c, n, fillCount, uvCount, b, bindingOf, views, frameOp, checksumFrames, sceneDirty, shortFrame,
   };
 }
 
@@ -379,7 +419,8 @@ async function main() {
   const k = await setupMeshCornersKernel({ scale: Number(args.scale ?? 1) });
 
   const checksum = k.checksumFrames(variant);
-  if (spec.wasm && k.b.declined) throw new Error(`the kernel declined ${k.b.declined} calls`);
+  const bound = k.bindingOf(variant);
+  if (spec.wasm && bound.declined) throw new Error(`the kernel declined ${bound.declined} calls`);
   if (args.check) {
     console.log(`checksum ${checksum} variant ${variant} fill ${k.fillCount} uv ${k.uvCount} rows, ${FRAMES} frames`);
     return;
@@ -390,7 +431,7 @@ async function main() {
   if (op() !== 4 + 1) throw new Error('the scene frame does not rewrite both batches');
   // Normal compiles, not OSR: short calls over a few meshes of each batch.
   let tier = null;
-  if (spec.wasm) tier = await warmWasm(k.b.rewrite, () => k.shortFrame(variant));
+  if (spec.wasm) tier = await warmWasm(bound.rewrite, () => k.shortFrame(variant));
   else warmNormalCompile(() => k.shortFrame(variant));
   const uvRows = spec.uvGen ? dirty.withUv : dirty.rewritten;
   const cases = {
@@ -399,11 +440,11 @@ async function main() {
   const report = {
     feature: 'mesh-corners-wasm',
     variant,
-    functions: ['rewriteExplicitMeshCorners', 'meshCorners.rewrite_corners'],
+    functions: ['rewriteExplicitMeshCorners', spec.fn ? `meshCornersF32.${spec.fn}` : 'meshCorners.rewrite_corners'],
     cohorts: k.cohorts,
     rows: { fill: k.fillCount, uv: k.uvCount, rewritten: dirty.rewritten, withUv: uvRows },
     checksum,
-    declined: k.b.declined,
+    declined: bound.declined,
     wasmTier: tier,
     machine: machineState(),
     cases,

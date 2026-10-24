@@ -170,8 +170,9 @@ test('the bench scene hashes the same through every variant', async () => {
     const k = await setupMeshCornersKernel({ scale: 0.125 });
     hashes[variant] = k.checksumFrames(variant);
     if (MESH_CORNER_VARIANTS[variant].wasm) {
-      assert.equal(k.b.declined, 0, `${variant}: the kernel took every call`);
-      assert.ok(k.b.calls > 0, `${variant}: the kernel ran`);
+      const bound = k.bindingOf(variant);
+      assert.equal(bound.declined, 0, `${variant}: the kernel took every call`);
+      assert.ok(bound.calls > 0, `${variant}: the kernel ran`);
     }
     assert.ok(k.uvCount > 10000 && k.fillCount > 400, `${k.fillCount} fill and ${k.uvCount} UV rows`);
   }
