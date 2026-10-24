@@ -30,11 +30,13 @@ import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import {
   CORES,
+  INPLACE_VARIANTS,
   VARIANTS,
   loadPainterRadix,
   painterRadixVariant,
   painterStateRegions,
   resetWasmPainterState,
+  variantCore,
   wasmPainterState,
 } from '../bench/painterRadixWasmClient.mjs';
 
@@ -213,7 +215,7 @@ function sameState(js, variant, label, { order = true, moved = true } = {}) {
   sameArray(ws.runHeads, js.runHeads, CAP, `${label} runHeads`);
   sameArray(ws.runLen, js.runLen, CAP, `${label} runLen`);
   if (moved) sameArray(ws.moved, js.moved, CAP, `${label} moved`);
-  if (variant !== 'inplace') sameArray(ws.merge, js.merge, CAP, `${label} merge`);
+  if (!INPLACE_VARIANTS.includes(variant)) sameArray(ws.merge, js.merge, CAP, `${label} merge`);
   if (variant === 'scalar') sameArray(ws.scratch, js.scratch, CAP, `${label} scratch`);
   assert.equal(ws.n, js.n, `${label} n`);
   assert.equal(ws.ready, js.ready, `${label} ready`);
@@ -274,11 +276,12 @@ test('painter_order_* = radixPainterOrder: runs that pay, runs that do not, gaps
 /**
  * Frames of reinsert on both sides from one rebuild: each frame `step(frame, keysNow)` edits the keys in
  * place; both sides then reinsert and must agree. A -1 rebuilds both, as orderPainterSlots does (on that
- * path inplace leaves the stable rows at the end of order, the JS at its start: the rebuild rewrites it).
+ * path the in-place merges leave the stable rows at the end of order, the JS at its start: the rebuild
+ * rewrites it).
  */
 function reinsertRun(variant, bits, list, frames, step, label) {
   const js = freshPair();
-  const core = variant === 'inplace' ? 'scalar' : variant;
+  const core = variantCore(variant);
   keys.fill(0);
   keys.set(bits);
   const n = list ? list.length : bits.length;
@@ -296,7 +299,7 @@ function reinsertRun(variant, bits, list, frames, step, label) {
     const want = reinsertChangedSlots(js.order, n, keys, js.prevKey, js.slotMoved, js.moved, js.merge, js.scratch, js.hist);
     const got = writesOnly(REINSERT_WRITES, () => variants[variant].reinsertChanged(ws, n, R.keys.byte));
     assert.equal(got, want, `${label} frame ${f}: returned ${got}, the JS ${want}`);
-    sameState(js, variant, `${label} frame ${f}`, { order: want >= 0 || variant !== 'inplace' });
+    sameState(js, variant, `${label} frame ${f}`, { order: want >= 0 || !INPLACE_VARIANTS.includes(variant) });
     if (want < 0) {
       rebuild();
       sameState(js, variant, `${label} frame ${f} rebuild`);
@@ -362,7 +365,7 @@ test('reinsert_* = reinsertChangedSlots from no slot changed to every slot chang
 test('reinsert_* on an order that is not a permutation: the same -1 and the same rebuild after it', () => {
   const r = mulberry32(0xd0b1e);
   for (const variant of VARIANTS) {
-    const core = variant === 'inplace' ? 'scalar' : variant;
+    const core = variantCore(variant);
     for (const changeDuplicate of [true, false]) {
       const n = 5000;
       const js = freshPair();
@@ -384,9 +387,9 @@ test('reinsert_* on an order that is not a permutation: the same -1 and the same
       sameArray(ws.prevKey, js.prevKey, CAP, `${label} prevKey`);
       sameArray(ws.slotMoved, js.slotMoved, CAP, `${label} slotMoved`);
       sameArray(ws.moved, js.moved, CAP, `${label} moved`);
-      // On the -1 path inplace has the stable rows at the end of order, the JS at its start; the
-      // rebuild rewrites it.
-      if (variant !== 'inplace' || !changeDuplicate) sameArray(ws.order, js.order, CAP, `${label} order`);
+      // On the -1 path the in-place merges have the stable rows at the end of order, the JS at its start;
+      // the rebuild rewrites it.
+      if (!INPLACE_VARIANTS.includes(variant) || !changeDuplicate) sameArray(ws.order, js.order, CAP, `${label} order`);
       if (want < 0) {
         radixPainterOrder(js, null, n, keys);
         variants[variant].painterOrder(ws, 0, n, R.keys.byte);

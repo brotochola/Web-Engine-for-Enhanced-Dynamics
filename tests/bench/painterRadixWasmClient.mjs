@@ -20,8 +20,20 @@ export const PAINTER_SLOTS = ['order', 'scratch', 'moved', 'merge', 'prevKey', '
 export const HIST_WORDS = 6144;
 /** Radix variants: each has radix_sort_*, painter_order_* and reinsert_*. */
 export const CORES = ['scalar', 'kv8', 'kv11', 'adaptive', 'simd'];
-/** Every variant; 'inplace' is the scalar radix with reinsert_inplace (its own merge). */
-export const VARIANTS = [...CORES, 'inplace'];
+/**
+ * Every variant; 'inplace' is the scalar radix with reinsert_inplace (its own merge), 'simd_inplace' the simd
+ * radix with that merge (reinsert_simd_inplace).
+ */
+export const VARIANTS = [...CORES, 'inplace', 'simd_inplace'];
+/** The variants whose reinsert merges inside `order` (they leave `merge` unwritten). */
+export const INPLACE_VARIANTS = ['inplace', 'simd_inplace'];
+
+/** The radix a variant's rebuild and radix exports use. */
+export function variantCore(variant) {
+  if (variant === 'inplace') return 'scalar';
+  if (variant === 'simd_inplace') return 'simd';
+  return variant;
+}
 export const KERNEL_EXPORTS = [
   ...CORES.map((c) => `radix_sort_${c}`),
   ...CORES.map((c) => `painter_order_${c}`),
@@ -109,7 +121,7 @@ export function loadPainterRadix(memory, url = KERNEL_URL) {
  */
 export function painterRadixVariant(kernel, variant) {
   if (!VARIANTS.includes(variant)) throw new Error(`painterRadix: no variant ${variant}`);
-  const core = variant === 'inplace' ? 'scalar' : variant;
+  const core = variantCore(variant);
   const radix = kernel[`radix_sort_${core}`];
   const order = kernel[`painter_order_${core}`];
   const reinsert = kernel[`reinsert_${variant}`];

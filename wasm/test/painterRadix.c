@@ -25,6 +25,7 @@
                without a branch and the JS merge run inside `order` from the front, its choice a select,
                so `merge` is not written and nothing is copied back. On the -1 path `order` holds the
                stable rows at its end, not its start (radixPainterOrder rewrites it next)
+     simd_inplace  reinsert only: simd's radix of the moved slots, then inplace's compaction and merge
 
    Returns: radix_sort_* nothing; painter_order_* 1 when some key is not 0 (the JS `ready`), the caller
    sets n and ready; reinsert_* the changed slot count, 0, or -1 when order is not a permutation. */
@@ -517,4 +518,9 @@ PAINTER_EXPORTS(simd, CORE_SIMD)
 __attribute__((export_name("reinsert_inplace")))
 int32_t reinsert_inplace(uint32_t table, uint32_t n, uint32_t keys) {
   return reinsert(T(table), n, T(keys), CORE_SCALAR, 1);
+}
+
+__attribute__((export_name("reinsert_simd_inplace")))
+int32_t reinsert_simd_inplace(uint32_t table, uint32_t n, uint32_t keys) {
+  return reinsert(T(table), n, T(keys), CORE_SIMD, 1);
 }

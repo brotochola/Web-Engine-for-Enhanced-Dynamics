@@ -194,7 +194,8 @@
         "reinsert_kv11",
         "reinsert_adaptive",
         "reinsert_simd",
-        "reinsert_inplace"
+        "reinsert_inplace",
+        "reinsert_simd_inplace"
       ],
       "maxMemoryPages": 8192,
       "test": true

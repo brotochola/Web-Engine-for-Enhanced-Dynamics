@@ -27,13 +27,14 @@
  *
  * Variants, one per process (runKernelVariants.mjs rejects a variant whose checksum differs from base's):
  *   base       the shipped JS
- *   scalar, kv8, kv11, adaptive, simd, inplace   the kernel's exports (painter_order_* for the rebuilds,
- *              reinsert_* for the reinserts; inplace is the scalar rebuild with reinsert_inplace)
+ *   scalar, kv8, kv11, adaptive, simd, inplace, simd_inplace   the kernel's exports (painter_order_* for the
+ *              rebuilds, reinsert_* for the reinserts; inplace is the scalar rebuild with reinsert_inplace,
+ *              simd_inplace the simd rebuild with reinsert_simd_inplace: simd's radix, inplace's merge)
  * The checksum: each case from a fresh state, the rebuild once and the reinsert one period plus a frame,
  * the order (and what reinsert returned) after each. JS warms with warmNormalCompile, WASM with warmWasm,
  * both through short calls on the first 64 rows of each case. --check prints the checksum and exits.
  *
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/painterRadixWasmMicrobench.mjs --variants base,scalar,kv8,kv11,adaptive,simd,inplace --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/painterRadixWasmMicrobench.mjs --variants base,scalar,kv8,kv11,adaptive,simd,inplace,simd_inplace --rounds 5
  *   node tests/bench/painterRadixWasmMicrobench.mjs --variant kv8 [--check] [--cases a,b] [--stress-rows N] [--output path]
  *   node tests/bench/chromeKernel.mjs --module /tests/bench/painterRadixWasmMicrobench.mjs [--args '{"rounds":7}']
  *
