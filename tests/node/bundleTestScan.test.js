@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { classifyTestFile } from '../../scripts/bundleTestScan.mjs';
+import { classifyTestFile, classifyTestPath } from '../../scripts/bundleTestScan.mjs';
 
 const fromFile = fileURLToPath(new URL('./fake.test.js', import.meta.url));
 const repoRoot = path.resolve(path.dirname(fromFile), '../..');
@@ -26,6 +26,15 @@ test('named import missing from the bundle is skipped', () => {
   );
   assert.equal(result.ok, false);
   assert.match(result.reason, /missing QuerySystem/);
+});
+
+test("a worker thread's script is scanned too (N-72)", () => {
+  // particleIntegrateWasm.test.js imports nothing from src/; its worker helper does, and runs under the
+  // same remap, so a bundle without those exports must skip the test rather than fail it.
+  const file = fileURLToPath(new URL('./particleIntegrateWasm.test.js', import.meta.url));
+  const result = classifyTestPath(file, { repoRoot, exportNames: new Set(['Decal']) });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /missing .*ParticleComponent/);
 });
 
 test('readFile of a src/ path is skipped', () => {

@@ -9,6 +9,9 @@ import path from 'node:path';
 const FROM_IMPORT_RE = /\bimport\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/g;
 const SIDE_EFFECT_IMPORT_RE = /\bimport\s+['"]([^'"]+)['"]/g;
 const DYNAMIC_IMPORT_RE = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+// A worker thread's script is part of the test's graph too, and its src/ imports go through the same
+// remap: `new Worker(new URL('../helpers/x.mjs', import.meta.url))`.
+const WORKER_URL_RE = /\bnew\s+Worker\(\s*new\s+URL\(\s*['"]([^'"]+)['"]\s*,\s*import\.meta\.url\s*\)/g;
 const IDENT_RE = /^[A-Za-z_$][\w$]*$/;
 
 function isUnderDir(filePath, dir) {
@@ -207,6 +210,12 @@ function collectGraphSources(entryFile, repoRoot) {
     out.push({ source, fromFile: norm });
     for (const imp of collectImports(source)) {
       const next = resolveWalkTarget(imp.specifier, norm, repoRoot);
+      if (next) visit(next);
+    }
+    let m;
+    WORKER_URL_RE.lastIndex = 0;
+    while ((m = WORKER_URL_RE.exec(source))) {
+      const next = resolveWalkTarget(m[1], norm, repoRoot);
       if (next) visit(next);
     }
   };
