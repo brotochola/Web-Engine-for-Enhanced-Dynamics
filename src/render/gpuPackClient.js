@@ -28,13 +28,18 @@ export const GPU_PACK_COLUMNS = [
  *   u32 for the particle count
  */
 export async function bindGpuPack(memory, layout) {
-  const k = await loadWasmKernel('gpuPack', wasmUrl, memory, ['pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter']);
+  const k = await loadWasmKernel('gpuPack', wasmUrl, memory, [
+    'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
+    'pack_sprites_split', 'pack_sprites_split_scatter',
+  ]);
   return {
     buffer: memory.buffer,
     sprites: k.pack_sprites,
     casters: k.pack_casters,
     spritesScatter: k.pack_sprites_scatter,
     castersScatter: k.pack_casters_scatter,
+    spritesSplit: k.pack_sprites_split,
+    spritesSplitScatter: k.pack_sprites_split_scatter,
     inverseByte: layout.inverseByte | 0,
     u32: new Uint32Array(memory.buffer),
     tableByte: layout.tableByte,
@@ -83,6 +88,22 @@ function tableFor(b, q) {
 }
 
 /**
+ * The kernel's index list for ctx: its byte offset, 0 for none, or -1 when it does not fit the index
+ * scratch. A list kept outside the memory is copied into the scratch.
+ */
+function indexByteFor(b, ctx, count, capacity) {
+  if (!ctx.useIndices) return 0;
+  const idx = ctx.indices;
+  if (idx.buffer === b.buffer && idx.BYTES_PER_ELEMENT === 4) return idx.byteOffset;
+  const n = count < (capacity | 0) ? count : capacity | 0;
+  if (n > b.indexCap) return -1;
+  const base = b.indexByte >> 2;
+  const u32 = b.u32;
+  for (let k = 0; k < n; k++) u32[base + k] = idx[k];
+  return b.indexByte;
+}
+
+/**
  * packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast) through the kernel.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
@@ -97,20 +118,8 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
   const table = tableFor(b, q);
   if (table < 0) return -1;
   const count = ctx.scanCount | 0;
-  let indexByte = 0;
-  if (ctx.useIndices) {
-    const idx = ctx.indices;
-    if (idx.buffer === b.buffer && idx.BYTES_PER_ELEMENT === 4) {
-      indexByte = idx.byteOffset;
-    } else {
-      const n = count < (capacity | 0) ? count : capacity | 0;
-      if (n > b.indexCap) return -1;
-      const base = b.indexByte >> 2;
-      const u32 = b.u32;
-      for (let k = 0; k < n; k++) u32[base + k] = idx[k];
-      indexByte = b.indexByte;
-    }
-  }
+  const indexByte = indexByteFor(b, ctx, count, capacity);
+  if (indexByte < 0) return -1;
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   const typeByte = typeArr ? typeArr.byteOffset : 0;
@@ -125,6 +134,42 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
   if (out < 0) {
     const pack = shadowCast ? b.casters : b.sprites;
     out = pack(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte);
+  }
+  ctx.particleCount = b.u32[b.particlesByte >> 2];
+  return out;
+}
+
+/**
+ * E-82b: packSplitRows (gpuQueueLayout.js) through the kernel. Each plain sprite's pose goes into `pose`
+ * (POSE_PLAIN_FLOATS a row) and, unless `stat` is null, its statics into `stat` (POSE_STATIC_FLOATS a row).
+ * @returns {number} the rows written, or -1 when this call is not one the kernel packs
+ */
+export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
+  if (!b || !q || !pose || !ctx) return -1;
+  const o = ctx.o || ctx;
+  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  if (pose.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
+  const typeArr = ctx.typeArr;
+  if (typeArr && typeArr.buffer !== b.buffer) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const count = ctx.scanCount | 0;
+  const indexByte = indexByteFor(b, ctx, count, capacity);
+  if (indexByte < 0) return -1;
+  const depthDenom = ctx.depthDenom || 1;
+  const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
+  const typeByte = typeArr ? typeArr.byteOffset : 0;
+  let out = -1;
+  // As above: a long list over most of the queue goes through its inverse (with the statics: a listed
+  // frame's statics are never current).
+  const rows = q.count | 0;
+  if (stat !== null && indexByte && b.inverseByte && count >= SCATTER_MIN_ROWS && count * 2 >= rows && rows <= b.indexCap) {
+    out = b.spritesSplitScatter(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset, stat.byteOffset,
+      typeByte, b.particlesByte, b.inverseByte, rows);
+  }
+  if (out < 0) {
+    out = b.spritesSplit(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+      stat !== null ? stat.byteOffset : 0, typeByte, b.particlesByte);
   }
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;

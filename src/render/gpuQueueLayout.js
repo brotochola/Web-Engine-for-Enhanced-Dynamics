@@ -12,6 +12,13 @@ export const GPU_SPRITE_FLOATS = 15;
 /** x, y, intensity, rangeSq. Sits after shadowH, shadowOffX, shadowOffY. */
 export const GPU_CASTER_LIGHT_FLOAT = GPU_SPRITE_FLOATS + 3;
 export const GPU_CASTER_FLOATS = GPU_CASTER_LIGHT_FLOAT + 4;
+/**
+ * E-82b. A plain sprite's row as two streams: its pose (x, y, rotC, rotS, GPU_POSE_FLOATS a row) and its statics
+ * (scale, anchor, depth, packed tint, texture, tile terms, GPU_STATIC_FLOATS a row: E-82's static order). Same
+ * bytes as the 15-float row.
+ */
+export const GPU_POSE_FLOATS = 4;
+export const GPU_STATIC_FLOATS = 11;
 export const GPU_HEADER_INTS = 8;
 export const GPU_QUEUE_VERSION = 5;
 
@@ -374,6 +381,141 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
   }
   ctx.particleCount = particles;
   return out;
+}
+
+/**
+ * E-82b: packInstancedRows' sprite fast path (world space, no pixel snap, no type filter) into two streams:
+ * each row's pose into `pose` (GPU_POSE_FLOATS a row) and, unless `stat` is null, its statics into `stat`
+ * (GPU_STATIC_FLOATS a row). The values are the 15-float row's. Returns -1 for any other call; the
+ * caller packs 15-float rows and splits them (splitInterleavedRows).
+ * @returns {number} instances written, or -1
+ */
+export function packSplitRows(q, ctx, pose, stat, statU32, capacity) {
+  if (!q || !pose || !ctx) return -1;
+  const o = ctx.o || ctx;
+  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  const indices = ctx.indices;
+  const useIndices = ctx.useIndices;
+  const typeArr = ctx.typeArr;
+  const scanCount = ctx.scanCount | 0;
+  const cap = capacity | 0;
+  const rqX = q.x;
+  const rqY = q.y;
+  const rqRotC = q.rotC;
+  const rqRotS = q.rotS;
+  let particles = 0;
+  let base = 0;
+  let out = 0;
+  if (stat === null) {
+    // The pose alone: the statics on the GPU are current. A copy of the loop below.
+    for (let k = 0; k < scanCount; k++) {
+      if (out >= cap) break;
+      const i = useIndices ? indices[k] : k;
+      if (typeArr && typeArr[i] === 1) particles++;
+      pose[base] = rqX[i];
+      pose[base + 1] = rqY[i];
+      pose[base + 2] = rqRotC[i];
+      pose[base + 3] = rqRotS[i];
+      base += GPU_POSE_FLOATS;
+      out++;
+    }
+    ctx.particleCount = particles;
+    return out;
+  }
+  const depthDenom = ctx.depthDenom || 1;
+  const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
+  const INV_65535 = 1 / 65535;
+  const rqScaleX = q.scaleX;
+  const rqScaleY = q.scaleY;
+  const rqAlpha = q.alpha;
+  const rqTint = q.tint;
+  const rqTextureId = q.textureId;
+  const rqAnchorX = q.anchorX;
+  const rqAnchorY = q.anchorY;
+  const rqRepeatX = q.repeatX;
+  const rqRepeatY = q.repeatY;
+  const rqTileMulX = q.tileMulX;
+  const rqTileMulY = q.tileMulY;
+  const rqTileOffU = q.tileOffsetU;
+  const rqTileOffV = q.tileOffsetV;
+  let sBase = 0;
+  for (let k = 0; k < scanCount; k++) {
+    if (out >= cap) break;
+    const i = useIndices ? indices[k] : k;
+    if (typeArr && typeArr[i] === 1) particles++;
+
+    const depth = 1.0 - (out + 1) * invDepthDenom;
+    let a = rqAlpha[i];
+    if (a < 0) a = 0;
+    else if (a > 1) a = 1;
+    const a8 = (a * 255 + 0.5) | 0;
+    const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
+
+    const invX = rqTileMulX ? rqTileMulX[i] : (rqRepeatX && rqRepeatX[i] > 0 ? 1 / rqRepeatX[i] : 0);
+    const invY = rqTileMulY ? rqTileMulY[i] : (rqRepeatY && rqRepeatY[i] > 0 ? 1 / rqRepeatY[i] : 0);
+    pose[base] = rqX[i];
+    pose[base + 1] = rqY[i];
+    pose[base + 2] = rqRotC[i];
+    pose[base + 3] = rqRotS[i];
+    stat[sBase] = rqScaleX[i];
+    stat[sBase + 1] = rqScaleY[i];
+    stat[sBase + 2] = rqAnchorX[i];
+    stat[sBase + 3] = rqAnchorY[i];
+    stat[sBase + 4] = depth;
+    statU32[sBase + 5] = packed >>> 0;
+    stat[sBase + 6] = rqTextureId[i];
+    stat[sBase + 7] = invX;
+    stat[sBase + 8] = invY;
+    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
+    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+    base += GPU_POSE_FLOATS;
+    sBase += GPU_STATIC_FLOATS;
+    out++;
+  }
+  ctx.particleCount = particles;
+  return out;
+}
+
+/**
+ * E-82b: n 15-float sprite rows from `src` into the two streams of packSplitRows (the statics unless `stat`
+ * is null). The tint word moves as bits.
+ */
+export function splitInterleavedRows(src, srcU32, n, pose, stat, statU32) {
+  const rows = n | 0;
+  let s = 0;
+  let p = 0;
+  if (stat === null) {
+    for (let k = 0; k < rows; k++) {
+      pose[p] = src[s];
+      pose[p + 1] = src[s + 1];
+      pose[p + 2] = src[s + 6];
+      pose[p + 3] = src[s + 7];
+      s += GPU_SPRITE_FLOATS;
+      p += GPU_POSE_FLOATS;
+    }
+    return;
+  }
+  let t = 0;
+  for (let k = 0; k < rows; k++) {
+    pose[p] = src[s];
+    pose[p + 1] = src[s + 1];
+    pose[p + 2] = src[s + 6];
+    pose[p + 3] = src[s + 7];
+    stat[t] = src[s + 2];
+    stat[t + 1] = src[s + 3];
+    stat[t + 2] = src[s + 4];
+    stat[t + 3] = src[s + 5];
+    stat[t + 4] = src[s + 8];
+    statU32[t + 5] = srcU32[s + 9];
+    stat[t + 6] = src[s + 10];
+    stat[t + 7] = src[s + 11];
+    stat[t + 8] = src[s + 12];
+    stat[t + 9] = src[s + 13];
+    stat[t + 10] = src[s + 14];
+    s += GPU_SPRITE_FLOATS;
+    p += GPU_POSE_FLOATS;
+    t += GPU_STATIC_FLOATS;
+  }
 }
 
 /**
