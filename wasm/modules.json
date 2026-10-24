@@ -175,6 +175,15 @@
       "maxMemoryPages": 32768
     },
     {
+      "name": "bulletTick",
+      "source": "wasm/bulletTick.c",
+      "output": "src/core/bulletTick.wasm",
+      "exports": [
+        "bullet_tick"
+      ],
+      "maxMemoryPages": 32768
+    },
+    {
       "name": "painterRadix",
       "source": "wasm/painterRadix.c",
       "output": "src/render/painterRadix.wasm",
