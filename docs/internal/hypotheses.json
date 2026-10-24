@@ -8059,17 +8059,17 @@
       "aliases": [],
       "refs": [],
       "records": [
-        "R-0612"
+        "R-0612",
+        "R-0613"
       ],
       "id": "E-135",
       "title": "The self-lit fill of a compound occluder as indexed vertices, not a triangle soup",
-      "status": "open",
+      "status": "kept",
       "statusText": "opened 2026-10-24 (from W21a's trace, R-0612: `_buildSelfLitBatch` 43.8 % of Pixi in compoundVisPoly ringSegments=64)",
       "date": "2026-10-24",
       "area": "pixi",
       "kind": "js",
-      "rank": 11,
-      "result": "Pixi writes each fill triangle of each (light, compound) pair as three fresh 13-float vertices; a ring's vertex is in about three triangles. Shared vertices (exact float equality, so the triangles and every attribute are the same) cut the vertices written and uploaded about 3×: the fill loop is ~54 % of the batch and `updateBuffer` 27 % of Pixi.",
+      "result": "kept (product) 2026-10-24: compoundVisPoly ringSegments=128 Pixi 3.361 → 2.875 ms (−15.6 % paired, −16.2 % against the others, 4/4); 152 vertices instead of 352 for the same triangles",
       "next": "Owner: compoundVisPolyStressScene (ringSegments raised until Pixi ≥ 3 ms), Pixi; a parity test on the drawn triangles."
     }
   ],
@@ -13448,6 +13448,19 @@
       "title": "WASM W21a, ensureCompoundSolid's premise in the remesh scene, E-76",
       "verdict": "screened",
       "text": "**screened (premise), no change.** One headed CPU trace (source, detailed stats off, 6 s warm-up, 8 s window) of `compoundVisPolyStressScene?remeshEvery=1&ringSegments=64`, the worst case on record: island 0 re-applies its polygons every tick, the pool-wide fixture revision moves, and every lit compound rebuilds its outline every frame. `ensureCompoundSolid` was **8.7 ms of pre-render's 1 490 ms busy (0.6 %)**, and it does not appear among Pixi's top functions (Pixi also rebuilds the fill there). Pre-render's time is W1's `collect_solid_f32x4` (74.1 %) and `sweep_light_f32` (9.6 %). A WASM rebuild cannot move a 0.6 % share. What the trace showed instead: Pixi's `_buildSelfLitBatch` was 43.8 % of Pixi's busy time (106 ms/s) and Pixi's `updateBuffer` 27.3 %. The fill loop (lines `data[o] = originX + …`, `fill[(v + k) * 2]`) is about 54 % of the batch: each fill triangle of each (light, compound) pair is written as three fresh 13-float vertices, though a ring's vertices are shared by about three triangles. Opened as E-135."
+    },
+    {
+      "id": "R-0613",
+      "date": "2026-10-24",
+      "time": "16:04",
+      "timeFrom": "recorded",
+      "title": "The self-lit fill as shared vertices, the compoundVisPoly pair, E-135",
+      "verdict": "kept",
+      "text": "**kept (product).** `ensureCompoundSolid` builds, with the fill, its shared vertices (`fillPts`, `fillPtCount`) and per soup vertex its shared one (`fillIdx`). A soup vertex joins an earlier one only when both floats are the same bits, so the triangles keep the soup's order and every attribute Pixi computes from a vertex is the same. `_buildSelfLitBatch` writes a compound's shared vertices once per light and its triangles by index. Every shape now stops a light at either budget, vertices (`maxVerts`) or indices (`3 × maxVerts`), since an indexed fill can take more than three indices a vertex. Commits `e44b0dcf` (the golden, before the change) and `c3d6dd06` (the change). Golden, `selfLitFillTriangles.test.js`: a real Pixi worker with two lights over a ring, a jittered grid and an unshared pair of compounds, a circle, a box and a polygon, then a remesh. It draws the same 142 triangles with the same 13 floats a vertex, before and after the change, from **152 vertices instead of 352** (the fills 300 → 100). Owner pair, `compoundVisPolyStressScene?ringSegments=128`, Chrome, headed, source, detailed stats off, both sides from worktrees (`--vs e44b0dcf --hyp-rev c3d6dd06`), 4 pairs: Pixi **3.361 → 2.875 ms, −15.6 % paired** (better in 3/4), **−16.2 % against the other workers (4/4)**, cv 8/5 %. Pre-render +1.9 % (2/4) and physics −2.5 % (2/4), both unreachable from the change. `BODY_COUNT` 64 and `ENTITIES_PROCESSED` 65 on both sides. The vertex buffer Pixi uploads shrinks with the vertices (`vbuf.update(vtx × 52)`); the index upload is unchanged.",
+      "commits": [
+        "e44b0dcf",
+        "c3d6dd06"
+      ]
     }
   ],
   "leads": [
