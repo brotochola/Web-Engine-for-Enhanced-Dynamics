@@ -1,7 +1,7 @@
 # Box2D memory plan (`physics.wasmMemoryMB`)
 
 **Opened:** 2026-10-23 (planned in a chat session); reviewed against emsdk 6.0.4 and the shipped glue and
-saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-9. **Registry:** `DX-MEM` in
+saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-14. **Registry:** `DX-MEM` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: a WeedJS developer chooses how much memory Box2D gets, per scene, with
@@ -230,11 +230,19 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   32 threads cost about 3 MB more than 1). At 16 MB, all five stop with "Box2D ran out of memory:
   physics.wasmMemoryMB is 16 MB…" on screen. Three stopped in their first steps (4, 8 and 16 threads) and
   two while booting (1 and 32 threads), where the page's boot check ended the run.
-- [ ] **BM-11** the survey (section 6).
-- [ ] **BM-12** `demos`/`bench`: scenes that need more than the new default set `physics.wasmMemoryMB`
-  from the survey's numbers. `npm run test:demos` passes.
-- [ ] **BM-13** `feat(physics)`: lower the default to the survey's number. The report states it before
-  this commit.
+- [x] **BM-11** the survey (section 6). Done 2026-10-24, in about 3.5 minutes instead of 15, at the owner's
+  request. The first 11 runs went one at a time; the other 14 ran three at a time at 256 MB, with the churn
+  windows at 15 s instead of 60. A peak depends on what the scene allocates, not on the machine being
+  quiet: four scenes re-run under other contention, at their recommended sizes, gave the same peaks to
+  0.1 MB while their physics FPS ranged from 23 to 60. Every peak was under 90 MB. Numbers in section 6.
+- [x] **BM-12** `demos`/`bench`: scenes that need more than the new default set `physics.wasmMemoryMB`
+  from the survey's numbers. `npm run test:demos` passes. Done 2026-10-24, with nothing to change: at the
+  128 MB default (BM-13) every shipped scene fits.
+- [x] **BM-13** `feat(physics)`: lower the default to the survey's number. The report states it before
+  this commit. Done 2026-10-24: **128 MB**. The plan's rule, the largest recommendation among the gameplay
+  scenes, gave 96 MB (Predator's peak 60.2 MB) and would have left BallsHeavyStressScene (peak 89.7 MB)
+  to set its own size. 32 MB more per scene buys a default that runs every demo and bench, still 4× less
+  commit than the 512 MB of before.
 - [ ] **BM-14** `docs` (section 7).
 
 ## 6. Survey (BM-11)

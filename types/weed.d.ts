@@ -283,7 +283,7 @@ export type SceneConfig = Record<string, unknown> & {
     /** Global ColliderFixture slot count for the scene (not per body). */
     maxFixturePoolSize?: number;
     /**
-     * Box2D's memory in MB, whole, 16..2048 (default 512). Read once, when the physics worker
+     * Box2D's memory in MB, whole, 16..2048 (default 128). Read once, when the physics worker
      * starts; committed up front and never grown. Size it from the memory panel's Box2D peak;
      * running out stops physics with an error that names this key.
      */
