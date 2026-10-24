@@ -14,6 +14,7 @@ import { ShapeType } from '../../src/box2d/box2dConstants.js';
 import { ColliderFixture } from '../../src/core/colliderFixture.js';
 import { Grid } from '../../src/core/grid.js';
 import { MAX_POLYGON_VERTICES } from '../../src/util/configDefaults.js';
+import { visibilityMemoryBytes, visibilityMemoryOpts } from '../../src/util/visibilityMemory.js';
 import { mulberry32 } from '../bench/benchMath.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker, spatialBuffers } from '../bench/workerHarness.mjs';
 import { FLIP_AREA_TOLERANCE, MAX_FLIP_SHARE, comparePolygons } from './visibilitySweepKernel.mjs';
@@ -148,6 +149,119 @@ export async function bootPreRender(scene, {
   // The frame loop's selectWriteBuffers picks the write slots; a first init leaves the self-lit one unset.
   if (pre._selfLitBuffers) pre._selfLitWriteBuffer = pre._selfLitBuffers[0];
   return { pre, scene, maxVerts, maxNeighbors, slotBytes };
+}
+
+/**
+ * W2b: bootPreRender with what the gather kernel reads in one shared memory, as Phase 4 lays it in Box2D's block:
+ * Transform (its block and its pose columns), Collider, LightOccluder, the neighbour rows, the visibility regions
+ * and the gather's table, results and events (renderQueueLayout.collect.visibility). `wasm.visibilityGather: false`
+ * runs the JS gather on the same memory, which places the visibility memory there all the same.
+ */
+export async function bootPreRenderGather(scene, {
+  wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, fixtureSlack = 16, fixtures: withPool = true,
+} = {}) {
+  const N = scene.entities;
+  const maxLights = Math.max(1, scene.lights);
+  const fixturePool = Math.max(16, scene.fixtures + fixtureSlack);
+  if (!withPool) ColliderFixture.reset();
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const { buffers, gridMetadata } = spatialBuffers({
+    worldWidth: WORLD_W, worldHeight: WORLD_H, cellSize: 128, maxEntitiesPerCell: 64, maxNeighbors,
+  }, N);
+  const opts = visibilityMemoryOpts({
+    maxVerts, entities: N, fixtures: withPool && wasm.solidSegments !== false ? fixturePool : 0,
+  });
+  const regions = [
+    ['transform', Transform.getBufferSize(N)],
+    ['pose', N * 4 * 4],
+    ['collider', Collider.getBufferSize(N)],
+    ['lightOccluder', LightOccluder.getBufferSize(N)],
+    ['rows', N * (1 + maxNeighbors) * gridMetadata.entityIdBytes],
+    ['visibility', visibilityMemoryBytes(opts)],
+    ['gatherTable', 64 * 4],
+    ['gatherResults', 16],
+    ['gatherEvents', maxNeighbors * 48],
+  ];
+  const at = {};
+  let top = 64;
+  for (const [name, bytes] of regions) {
+    at[name] = top;
+    top = (top + bytes + 63) & ~63;
+  }
+  const memory = new WebAssembly.Memory({ initial: Math.ceil(top / 65536), maximum: 32768, shared: true });
+  const core = coreComponentData(N);
+  Object.assign(buffers, {
+    neighborData: memory.buffer,
+    componentData: {
+      ...core,
+      Transform: memory.buffer,
+      Collider: memory.buffer,
+      LightEmitter: new SharedArrayBuffer(LightEmitter.getBufferSize(N)),
+      LightOccluder: memory.buffer,
+    },
+    componentDataByte: { Transform: at.transform, Collider: at.collider, LightOccluder: at.lightOccluder },
+    visibleLightsData: new SharedArrayBuffer(2 + maxLights * 2),
+  });
+  const slotBytes = 16 + maxVerts * 8;
+  const vp = {
+    enabled: true,
+    maxPolygonVertices: maxVerts,
+    maxLights,
+    dataA: new SharedArrayBuffer(4 + maxLights * slotBytes),
+    dataB: new SharedArrayBuffer(4 + maxLights * slotBytes),
+    selfLitDataA: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
+    selfLitDataB: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
+    maxOccluderSelfLit: selfLit,
+  };
+  const fixtureData = {
+    enabled: true,
+    maxFixturePoolSize: fixturePool,
+    entityIdWidth: 16,
+    entityCount: N,
+    data: new SharedArrayBuffer(ColliderFixture.getBufferSize(fixturePool, N)),
+    freeList: new SharedArrayBuffer(fixturePool * 2),
+    freeListTop: new SharedArrayBuffer(8),
+  };
+  await initWorker(pre, {
+    config: {
+      worldWidth: WORLD_W,
+      worldHeight: WORLD_H,
+      lighting: { enabled: true, raycasted: true, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, maxOccluderSelfLit: selfLit },
+      physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
+      wasm: { preRenderCollect: false, ...wasm },
+    },
+    globalEntityCount: N,
+    buffers,
+    gridMetadata: { ...gridMetadata, neighborByte: at.rows },
+    extra: {
+      visibilityPolygons: vp,
+      fixtures: withPool ? fixtureData : null,
+      renderQueueMemory: memory,
+      renderQueueLayout: {
+        collect: {
+          visibility: {
+            opts,
+            occluderByte: at.lightOccluder,
+            byte: at.visibility,
+            bytes: visibilityMemoryBytes(opts),
+            tableByte: at.gatherTable,
+            resultsByte: at.gatherResults,
+            eventsByte: at.gatherEvents,
+            events: maxNeighbors,
+          },
+        },
+      },
+    },
+  });
+  // The blocks in the memory, as a worker's init binds them there (a worker the harness re-initializes keeps the
+  // views of its last init otherwise), and Transform's pose too (the scene's Weed pose buffer, a region of it).
+  Transform.initializeArrays(memory.buffer, N, at.transform);
+  Collider.initializeArrays(memory.buffer, N, at.collider);
+  LightOccluder.initializeArrays(memory.buffer, N, at.lightOccluder);
+  ['x', 'y', 'rotC', 'rotS'].forEach((k, c) => { Transform[k] = new Float32Array(memory.buffer, at.pose + c * N * 4, N); });
+  bindPoseColumns(N);
+  if (pre._selfLitBuffers) pre._selfLitWriteBuffer = pre._selfLitBuffers[0];
+  return { pre, scene, maxVerts, maxNeighbors, slotBytes, memory };
 }
 
 /**

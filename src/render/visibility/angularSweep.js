@@ -1103,6 +1103,16 @@ export function clearPolarBins(radius) {
   _mergeCount = -1;
 }
 
+/**
+ * W2b: clearPolarBins' state for a light whose solids are not known yet, without the fill: nothing reads the bins
+ * while polarBinsActive() is 0, and the light's first raster calls clearPolarBins first.
+ */
+export function skipPolarBins(radius) {
+  _polarRadius = radius > 0 ? radius : 0;
+  _polarActive = 0;
+  _mergeCount = -1;
+}
+
 export function polarBinsActive() {
   return _polarActive;
 }

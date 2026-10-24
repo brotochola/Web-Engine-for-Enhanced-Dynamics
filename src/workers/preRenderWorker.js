@@ -31,10 +31,18 @@ import {
     OCC_CIRCLE,
     OCC_POLY,
     polarBinsActive,
+    skipPolarBins,
     warnSweepOverflow,
     writeOrientedBoxVerts,
     writePolygonVerts,
 } from '../render/visibility/angularSweep.js';
+import {
+    GATHER_EVENT_F64,
+    GATHER_EVENT_I32,
+    GATHER_EV_SOLID,
+    bindVisibilityGather,
+    writeGatherColumns,
+} from '../render/visibility/visibilityGatherClient.js';
 import {
     bindVisibilitySweep,
     SWEEP_OWNER_SEEN,
@@ -51,7 +59,7 @@ import {
     collectSolidWasm,
     unbindSolidSegments,
 } from '../render/visibility/solidSegmentsClient.js';
-import { createVisibilityMemory } from '../util/visibilityMemory.js';
+import { VISIBILITY_MAX_OCCLUDERS, createVisibilityMemory, visibilityMemoryOpts } from '../util/visibilityMemory.js';
 import { Grid as GridImport } from '../core/grid.js';
 import { Sun } from '../core/sun.js';
 import {
@@ -631,6 +639,9 @@ class PreRenderWorker extends AbstractWorker {
         this._visMemory = null;
         // W1: the swept light loop's compound raster, solidSegments.wasm (collectSolidWasm) or the JS.
         this._visCollectSolid = collectSolidJs;
+        // W2b: the light's neighbour gather in visibilityGather.wasm (bindVisibilityGather's binding), with the
+        // visibility memory placed in Box2D's block; null gathers in JS.
+        this._visGather = null;
         this._decorationZoomAlpha = 1;
         this._emitWriteCount = 0;
         this._emptyAdobeEntities = null;
@@ -1177,6 +1188,7 @@ class PreRenderWorker extends AbstractWorker {
         this._visSweep = null;
         this._visMemory = null;
         this._visCollectSolid = collectSolidJs;
+        this._visGather = null;
         unbindSolidSegments();
         bindPolarBins(null, null);
         if (
@@ -1212,14 +1224,14 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             // Scratch arrays for collecting nearby occluders (circle + convex)
-            const maxOccluders = 1024;
+            const maxOccluders = VISIBILITY_MAX_OCCLUDERS;
             // Max verts: 4 per box, MAX_POLYGON_VERTICES per poly, rare all-poly worst case
             const poolVerts = maxOccluders * MAX_POLYGON_VERTICES;
             // W2a: with wasm.visibilitySweep on, the scratch below, the polar bins and the seen stamps are views
             // on a visibility memory, where visibilitySweep.wasm reads them; otherwise (or when it cannot be
             // made or loaded) plain arrays, as always.
             const vm = this.config?.wasm?.visibilitySweep !== false
-                ? await this._bindVisibilitySweep(maxOccluders, poolVerts, maxVerts)
+                ? await this._bindVisibilitySweep(maxVerts, data)
                 : null;
             this._vpOccKind = vm ? vm.kind : new Uint8Array(maxOccluders);
             this._vpCircleX = vm ? vm.cx : new Float32Array(maxOccluders);
@@ -1269,15 +1281,25 @@ class PreRenderWorker extends AbstractWorker {
      * memory could not be made or the module did not load, and the JS sweep runs on plain arrays.
      * W1: with a fixture pool and wasm.solidSegments on, the memory also holds the compound solids' outlines
      * and solidSegments.wasm rasters them into its bins (the swept loop only: W1 needs W2a).
+     * W2b: when the scene laid the gather's regions in Box2D's block with these options, the memory is placed
+     * there and visibilityGather.wasm is bound on it; otherwise it is a memory of its own and the JS gathers.
      */
-    async _bindVisibilitySweep(maxOccluders, poolVerts, maxVerts) {
-        const vm = createVisibilityMemory({
-            maxOccluders,
-            poolVerts,
+    async _bindVisibilitySweep(maxVerts, data) {
+        const opts = visibilityMemoryOpts({
             maxVerts,
             entities: this.globalEntityCount,
             fixtures: this.config?.wasm?.solidSegments !== false ? (ColliderFixture.maxCount | 0) : 0,
         });
+        const v = data.renderQueueLayout?.collect?.visibility || null;
+        const memory = data.renderQueueMemory || null;
+        const sameOpts = (a, b) => a.maxOccluders === b.maxOccluders && a.poolVerts === b.poolVerts
+            && a.maxVerts === b.maxVerts && a.entities === b.entities && a.fixtures === b.fixtures;
+        let place = v && memory && sameOpts(v.opts, opts) ? { memory, baseByte: v.byte } : null;
+        let vm = createVisibilityMemory(opts, place);
+        if (!vm && place) {
+            place = null;
+            vm = createVisibilityMemory(opts, null);
+        }
         if (!vm) {
             console.warn('[PRE_RENDER] the visibility memory could not be made; sweeping in JS');
             return null;
@@ -1297,6 +1319,14 @@ class PreRenderWorker extends AbstractWorker {
                 if (await bindSolidSegments(vm)) this._visCollectSolid = collectSolidWasm;
             } catch (err) {
                 console.warn('[PRE_RENDER] solidSegments.wasm did not load; compound solids raster in JS', err);
+            }
+        }
+        if (place && this.config?.wasm?.visibilityGather !== false) {
+            try {
+                this._visGather = await bindVisibilityGather(memory, v, vm);
+            } catch (err) {
+                console.warn('[PRE_RENDER] visibilityGather.wasm did not load; gathering in JS', err);
+                this._visGather = null;
             }
         }
         return vm.views;
@@ -5095,6 +5125,16 @@ class PreRenderWorker extends AbstractWorker {
 
         let lightsWritten = 0;
 
+        // W2b: each light's neighbour walk in visibilityGather.wasm when every column it reads is in the memory
+        // this frame (the published pose generations move); the compound solids and the self-lit candidates come
+        // back as events, in neighbour order.
+        const gk = this._visGather;
+        const gatherOn = gk !== null
+            && writeGatherColumns(gk, this, Grid, Transform, Collider, LightOccluder, ColliderFixture, selfLitI32 !== null);
+        const gatherRes = gatherOn ? gk.results : null;
+        const evI32 = gatherOn ? gk.eventsI32 : null;
+        const evF64 = gatherOn ? gk.eventsF64 : null;
+
         for (let li = 0; li < lightCount && lightsWritten < maxLts; li++) {
             const lightIdx = visibleLights[1 + li];
             if (!lightEnabled[lightIdx]) continue;
@@ -5114,11 +5154,90 @@ class PreRenderWorker extends AbstractWorker {
             let occCount = 0;
             let vertPool = 0;
             let occluderLimitHit = false;
-            clearPolarBins(influenceRadius);
+            if (!gatherOn) clearPolarBins(influenceRadius);
             const selfLitStart = selfLitCount;
             let solidsLit = 0;
 
-            if (neighborData && stride > 0) {
+            if (gatherOn) {
+                // The bins are cleared before the light's first solid rasters; a light with none leaves them.
+                skipPolarBins(influenceRadius);
+                let binsCleared = false;
+                occCount = gk.gather(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha);
+                occluderLimitHit = gatherRes[3] !== 0;
+                const events = gatherRes[2];
+                for (let e = 0; e < events; e++) {
+                    const ei = e * GATHER_EVENT_I32;
+                    const ef = e * GATHER_EVENT_F64;
+                    const nIdx = evI32[ei + 1];
+                    const wx = evF64[ef + 2];
+                    const wy = evF64[ef + 3];
+                    const c = evF64[ef + 4];
+                    const s = evF64[ef + 5];
+                    if (evI32[ei] === GATHER_EV_SOLID) {
+                        if (!binsCleared) {
+                            clearPolarBins(influenceRadius);
+                            binsCleared = true;
+                        }
+                        const solid = ensureCompoundSolid(
+                            nIdx,
+                            fixtureRevision ? fixtureRevision[0] : 0,
+                            fixtureHead, fixtureNext, fixtureActiveArr,
+                            fixtureVertCount, fixtureVertX, fixtureVertY,
+                            fixtureHead[nIdx], fixturePoolMax,
+                            false // segments only: the fill is pixi's (self-lit)
+                        );
+                        SOLID_ARGS[0] = wx;
+                        SOLID_ARGS[1] = wy;
+                        SOLID_ARGS[2] = c;
+                        SOLID_ARGS[3] = s;
+                        SOLID_ARGS[4] = colOffX[nIdx] || 0;
+                        SOLID_ARGS[5] = colOffY[nIdx] || 0;
+                        const hit = collectSolid(solid, nIdx);
+                        if (!(hit > 0 && selfLitI32 && selfLitCount < maxSelfLit)) continue;
+                        const byteOff = 4 + selfLitCount * selfLitItemBytes;
+                        const i32Off = byteOff >> 2;
+                        selfLitI32[i32Off] = nIdx;
+                        selfLitI32[i32Off + 1] = lightIdx;
+                        selfLitF32[i32Off + 2] = wx;
+                        selfLitF32[i32Off + 3] = wy;
+                        selfLitF32[i32Off + 4] = c;
+                        selfLitF32[i32Off + 5] = s;
+                        const u16Off = byteOff >> 1;
+                        let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
+                        if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
+                            texId = this._resolveEntitySpriteTextureId(nIdx);
+                        }
+                        selfLitU16[u16Off + 12] = texId;
+                        selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
+                        selfLitU8[byteOff + 27] = 0;
+                        selfLitSolid[selfLitCount] = 1;
+                        solidsLit++;
+                        selfLitCount++;
+                        continue;
+                    }
+                    // A packed occluder: the kernel sends these only while the self-lit list is on.
+                    if (selfLitCount >= maxSelfLit) continue;
+                        const byteOff = 4 + selfLitCount * selfLitItemBytes;
+                        const i32Off = byteOff >> 2;
+                        selfLitI32[i32Off] = nIdx;
+                        selfLitI32[i32Off + 1] = lightIdx;
+                        selfLitF32[i32Off + 2] = wx;
+                        selfLitF32[i32Off + 3] = wy;
+                        selfLitF32[i32Off + 4] = c;
+                        selfLitF32[i32Off + 5] = s;
+                        const u16Off = byteOff >> 1;
+                        let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
+                        if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
+                            texId = this._resolveEntitySpriteTextureId(nIdx);
+                        }
+                        selfLitU16[u16Off + 12] = texId;
+                        selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
+                        selfLitU8[byteOff + 27] = 0;
+                        selfLitSolid[selfLitCount] = 0;
+                        selfLitOcc[selfLitCount] = evI32[ei + 2];
+                        selfLitCount++;
+                }
+            } else if (neighborData && stride > 0) {
                 const offset = lightIdx * stride;
                 const nCount = neighborData[offset];
                 for (let k = 0; k < nCount; k++) {
