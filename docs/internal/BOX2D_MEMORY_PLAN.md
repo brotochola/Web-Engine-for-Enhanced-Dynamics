@@ -1,7 +1,7 @@
 # Box2D memory plan (`physics.wasmMemoryMB`)
 
 **Opened:** 2026-10-23 (planned in a chat session); reviewed against emsdk 6.0.4 and the shipped glue and
-saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-6. **Registry:** `DX-MEM` in
+saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-7. **Registry:** `DX-MEM` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: a WeedJS developer chooses how much memory Box2D gets, per scene, with
@@ -183,9 +183,11 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   steps at 64 MB; the glue head runs in a `vm` worker with a fake `WebAssembly.Memory`: 1024 pages from the
   name, 8192 without one, none in a pthread, errors that name the key; the glue takes `Module.wasmMemory`
   and aborts with "OOM").
-- [ ] **BM-6** `fix(physics)`: the host refuses a heap of the wrong size. Before booting the world,
+- [x] **BM-6** `fix(physics)`: the host refuses a heap of the wrong size. Before booting the world,
   `physicsHostImpl.js` reads the requested pages from `self.name` itself (8192 without one) and compares
   them with `Module.HEAPF32.buffer.byteLength`; a mismatch posts `msg:'error'` and physics does not start.
+  Done 2026-10-24: `box2dMemoryMismatch` sits between `bm6-memory` markers, and
+  `tests/node/physicsHostMemoryGuard.test.js` runs it from the shipped source.
 - [ ] **BM-7** `feat(physics)`: the key. `PHYSICS_DEFAULTS.wasmMemoryMB: 512`;
   `box2dMemoryPages(physics)` (whole MB, clamped to 16..2048 with one warning, × 16); `createPhysicsWorker`
   passes the name on both URLs; `types/weed.d.ts` documents the key. Tests: the default, the clamp and

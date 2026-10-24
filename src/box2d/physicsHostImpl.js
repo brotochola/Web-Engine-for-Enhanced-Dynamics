@@ -496,6 +496,22 @@
     self.postMessage({ msg: 'workerReady', worker: 'PhysicsHost' });
   }
 
+  // bm6-memory-start
+  // Box2D's memory is sized once, from this worker's name ('physics pages=N'; 8192 pages without
+  // one), by the glue's pre-js (weedjs/weed_pre.js in the sibling build), and it never grows. A
+  // glue built without that pre-js makes its own memory, which can grow, and the other workers'
+  // views would not see what Box2D allocates after a growth. The host refuses to start instead.
+  function box2dMemoryMismatch(workerName, heapBytes) {
+    var match = /(?:^|\s)pages=(\d+)(?:\s|$)/.exec(workerName || '');
+    var wantedBytes = (match ? +match[1] : 8192) * 65536;
+    if (heapBytes === wantedBytes) return '';
+    return (
+      'Box2D memory is ' + heapBytes / 1048576 + ' MB but the scene asked for ' + wantedBytes / 1048576 +
+      ' MB. Rebuild box2dWasm.js with weedjs\\build_for_weed.bat: its weed_pre.js sizes the memory.'
+    );
+  }
+  // bm6-memory-end
+
   function reportError(title, err) {
     self.postMessage({
       msg: 'error',
@@ -987,6 +1003,15 @@
 
     weedjsWhenModuleReady(function () {
       try {
+        var heapBytes =
+          typeof Module !== 'undefined' && Module.HEAPF32 ? Module.HEAPF32.buffer.byteLength : -1;
+        var mismatch =
+          heapBytes < 0 ? '' : box2dMemoryMismatch(typeof self !== 'undefined' ? self.name : '', heapBytes);
+        if (mismatch) {
+          console.error('[physics_host] ' + mismatch);
+          reportError('Box2D memory size mismatch', new Error(mismatch));
+          return;
+        }
         bootWorld();
         reportReady();
       } catch (err) {
