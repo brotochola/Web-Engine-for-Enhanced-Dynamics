@@ -179,6 +179,7 @@ function buildSceneSharedBuffers(scene) {
     debugDrawData: scene.buffers.debugDrawData,
     frameRateData: scene.buffers.frameRateData,
     frameClock: scene.buffers.frameClock || null,
+    frameTotals: scene.buffers.frameTotals || null,
     componentData: scene.buffers.componentData,
     // Each component's byte offset in its buffer (a region of the render-queue memory, E-112), or none.
     componentDataByte: scene.buffers.componentDataByte || null,

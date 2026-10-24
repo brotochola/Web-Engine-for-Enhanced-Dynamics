@@ -25,6 +25,14 @@ function formatWorkerConsoleLine(worker) {
   let line =
     `${worker.id}: STEP_MS ${step.toFixed(3)} | Load ${formatLoadPct(step)}` +
     ` | FPS ${worker.averageFPS.toFixed(2)} (inst ${worker.instantaneousFPS.toFixed(2)})`;
+  // Every frame of the window (src/util/frameTotals.js); the STEP_MS above is the mean of the samples.
+  const ex = worker.exact;
+  if (ex) {
+    line += ` | exact ${ex.frames} frames: step ${ex.stepMs.toFixed(3)}` +
+      (ex.waitMs > 0 ? ` wait ${ex.waitMs.toFixed(3)}` : '') +
+      (ex.extraMs > 0 ? ` query wake ${ex.extraMs.toFixed(3)}` : '') +
+      ` p50 ${ex.p50Ms.toFixed(2)} p95 ${ex.p95Ms.toFixed(2)}`;
+  }
   if (worker.type === 'preRender' || worker.id === 'preRender' || String(worker.id || '').startsWith('preRender')) {
     if (avg.COLLECT_MS != null) line += ` | COLLECT_MS ${Number(avg.COLLECT_MS).toFixed(3)}`;
     if (avg.EMIT_MS != null) line += ` | EMIT_MS ${Number(avg.EMIT_MS).toFixed(3)}`;

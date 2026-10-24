@@ -75,6 +75,7 @@ import {
   readPhaseSample,
   frameClockSlot,
 } from '../util/frameClock.js';
+import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
 import { Query } from './query.js';
 import { GrabSystem } from './grabSystem.js';
 import {
@@ -2506,6 +2507,7 @@ class Scene {
 
   startMainLoop() {
     const clock = this.buffers?.frameClock ? bindFrameClock(this.buffers.frameClock) : null;
+    const totals = this.buffers?.frameTotals ? bindFrameTotals(this.buffers.frameTotals) : null;
     const mainSlot = frameClockSlot('main');
     const loop = (currentTime) => {
       // E-24. Publish the display frame before any worker of this vsync is
@@ -2529,6 +2531,7 @@ class Scene {
         const t0 = performance.now();
         this.updateInternal(deltaTime);
         this.mainStepMs = performance.now() - t0;
+        if (totals) addFrame(totals, mainSlot, this.mainStepMs, 0, 0);
 
         this.mainFrameNumber++;
         this.mainFrameTimesSum -= this.mainFrameTimes[this.mainFrameTimeIndex];

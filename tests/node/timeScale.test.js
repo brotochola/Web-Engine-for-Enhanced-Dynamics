@@ -119,6 +119,6 @@ test('physics host multiplies solver dt and still times STEP_MS with performance
   const host = readFileSync(join(root, 'src/box2d/physicsHostImpl.js'), 'utf8');
   assert.match(host, /dt \*= readTimeScale\(\)/);
   assert.match(host, /\(deltaTimeMs \/ 1000\) \* readTimeScale\(\)/);
-  assert.match(host, /state\.stats\[PS\.STEP_MS\] = performance\.now\(\) - t0/);
+  assert.match(host, /var stepMs = performance\.now\(\) - t0;\s*state\.stats\[PS\.STEP_MS\] = stepMs;/);
   assert.doesNotMatch(host, /STEP_MS\] = dt/);
 });

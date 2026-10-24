@@ -77,6 +77,31 @@
     Atomics.add(i32, i32Base + 5, 1);
   }
 
+  // src/util/frameTotals.js addFrame, copied for the same reason. tests/node/frameTotals.test.js
+  // runs this copy against addFrame and compares the buffers byte for byte.
+  var FT_HEADER = 64;
+  var FT_BINS = 1024;
+  var FT_SLOT = FT_HEADER + FT_BINS * 4;
+
+  function ftAdd(state, stepMs, waitMs, extraMs) {
+    var slot = state.fcSlot;
+    if (!state.ftI32 || slot < 0 || !(stepMs >= 0)) return;
+    var i32 = state.ftI32;
+    var f64 = state.ftF64;
+    var f0 = (slot * FT_SLOT) >> 3;
+    var seq = (slot * FT_SLOT) >> 2;
+    var work = waitMs > 0 ? stepMs - waitMs : stepMs;
+    var bin = work > 0 ? (work * 8) | 0 : 0;
+    if (bin >= FT_BINS) bin = FT_BINS - 1;
+    Atomics.add(i32, seq, 1);
+    f64[f0 + 1] += 1;
+    f64[f0 + 2] += stepMs;
+    if (waitMs > 0) f64[f0 + 3] += waitMs;
+    if (extraMs > 0) f64[f0 + 4] += extraMs;
+    state.ftU32[((slot * FT_SLOT + FT_HEADER) >> 2) + bin]++;
+    Atomics.add(i32, seq, 1);
+  }
+
   // Mirrors Transform / RigidBody ARRAY_SCHEMA (pose/vel/sleeping = HEAP only).
   var TRANSFORM_SCHEMA = {
     active: Uint8Array,
@@ -452,6 +477,10 @@
     clockScale: null,
     frameRateIndex: -1,
     frameRateStride: 1,
+    // Running totals of every step, on the frame clock's slot (ftAdd).
+    ftI32: null,
+    ftF64: null,
+    ftU32: null,
     commandSab: null,
     queryAabbSab: null,
     overlapCircleSab: null,
@@ -939,6 +968,11 @@
       state.fcI32 = new Int32Array(data.buffers.frameClock);
       state.fcF64 = new Float64Array(data.buffers.frameClock);
       state.fcSlot = data.frameClockSlot | 0;
+      if (data.buffers.frameTotals) {
+        state.ftI32 = new Int32Array(data.buffers.frameTotals);
+        state.ftF64 = new Float64Array(data.buffers.frameTotals);
+        state.ftU32 = new Uint32Array(data.buffers.frameTotals);
+      }
     }
     if (data.frameRateIndex !== undefined) {
       state.frameRateIndex = data.frameRateIndex | 0;
@@ -1195,9 +1229,11 @@
         }
       }
       if (state.stats) {
-        state.stats[PS.STEP_MS] = performance.now() - t0;
+        var stepMs = performance.now() - t0;
+        state.stats[PS.STEP_MS] = stepMs;
         state.stats[PS.WAIT_MS] = WAIT_METER.ms;
         state.stats[PS.QUERY_WAKE_MS] = queryWakeMs;
+        ftAdd(state, stepMs, WAIT_METER.ms, queryWakeMs);
         queryWakeMs = 0;
       }
     }
@@ -1240,9 +1276,11 @@
         state._inStep = false;
       }
       if (state.stats) {
-        state.stats[PS.STEP_MS] = performance.now() - t0;
+        var stepMs = performance.now() - t0;
+        state.stats[PS.STEP_MS] = stepMs;
         state.stats[PS.WAIT_MS] = WAIT_METER.ms;
         state.stats[PS.QUERY_WAKE_MS] = queryWakeMs;
+        ftAdd(state, stepMs, WAIT_METER.ms, queryWakeMs);
         queryWakeMs = 0;
       }
     }

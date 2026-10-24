@@ -196,6 +196,7 @@
       const summary = session.summarizeWorkerBenchmarkWindow(startSnapshot, endSnapshot, {
         measurementDurationMs: endSnapshot.takenAtMs - startSnapshot.takenAtMs,
         sampleSnapshots,
+        totalsWindow: session.reader.totalsWindow,
       });
 
       return {
@@ -221,6 +222,8 @@
           durationMs: config.durationMs,
           sampleIntervalMs: config.sampleIntervalMs,
           sampleCount: sampleSnapshots.length,
+          // Every frame in the window counted (src/util/frameTotals.js), or only the samples.
+          exactWindow: Boolean(session.reader.totalsWindow),
         },
       };
     }
@@ -293,7 +296,9 @@
       if (config.cameraZoom != null) {
         WEED.Camera.setZoom(config.cameraZoom === 'min' ? WEED.Camera.minZoom : Number(config.cameraZoom));
       }
-      const reader = createWorkerBenchmarkReader(scene);
+      // The running totals, when this tree's engine keeps them (an older baseline does not).
+      const frameTotals = scene.buffers?.frameTotals ? await import('/src/util/frameTotals.js') : null;
+      const reader = createWorkerBenchmarkReader(scene, { frameTotals });
 
       session = {
         config,
@@ -320,7 +325,7 @@
         throw new Error('Benchmark session not prepared');
       }
       stopSampling();
-      session.startSnapshot = session.reader.snapshot(performance.now());
+      session.startSnapshot = session.reader.snapshot(performance.now(), { totals: true });
       session.sampleSnapshots = [];
       session.sampleTimer = setInterval(() => {
         if (!session) return;
@@ -336,7 +341,7 @@
       }
       stopSampling();
 
-      const endSnapshot = session.reader.snapshot(performance.now());
+      const endSnapshot = session.reader.snapshot(performance.now(), { totals: true });
       const startSnapshot = session.startSnapshot || endSnapshot;
       const result = summarizeFromSession(
         startSnapshot,

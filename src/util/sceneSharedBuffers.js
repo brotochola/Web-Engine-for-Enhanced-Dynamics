@@ -59,6 +59,7 @@ import {
   PRE_RENDER_STATS,
 } from './workersUtils.js';
 import { createFrameClockBuffer } from './frameClock.js';
+import { createFrameTotalsBuffer } from './frameTotals.js';
 import { ParticleEmitter } from '../core/particleEmitter.js';
 import { liquidFunRenderByteSize } from '../render/liquidFunRender.js';
 import { liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from './liquidFunGroups.js';
@@ -1029,6 +1030,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   // slot: Float32 cannot hold an epoch millisecond, and the benchmark average
   // would erase the phase the buffer exists to show.
   buffers.frameClock = createFrameClockBuffer();
+  // Running totals of every published frame on the frame clock's slots: the bench's exact window.
+  buffers.frameTotals = createFrameTotalsBuffer();
 
   scene.camera.x = config.worldWidth / 2 - config.canvasWidth / 2;
   scene.camera.y = config.worldHeight / 2 - config.canvasHeight / 2;

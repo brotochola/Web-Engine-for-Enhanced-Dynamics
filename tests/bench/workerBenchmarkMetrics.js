@@ -8,6 +8,7 @@ import {
   createStatsReader,
   createMultiWorkerStatsReaderArray,
 } from '../../src/util/workersUtils.js';
+import { frameClockSlot } from '../../src/util/frameClock.js';
 
 const FRAME_RATE_STRIDE_FLOATS = 16;
 
@@ -138,6 +139,13 @@ function getFrameRateValue(scene, frameRateIndex) {
   return view[frameRateIndex * FRAME_RATE_STRIDE_FLOATS] || 0;
 }
 
+/** The worker's slot in the frame clock and the frame totals; -1 when it has none (a second pre-render). */
+function totalsSlotOf(entry) {
+  if (entry.type === 'preRender') return entry.workerIndex === 0 ? frameClockSlot('preRender') : -1;
+  if (entry.type === 'spatial' || entry.type === 'logic') return frameClockSlot(entry.type, entry.workerIndex);
+  return frameClockSlot(entry.type);
+}
+
 function buildWorkerReaders(scene) {
   const counts = getSceneWorkerCounts(scene);
   const layout = getWorkerFrameRateLayout(counts);
@@ -189,29 +197,43 @@ function buildWorkerReaders(scene) {
       ...entry,
       statsView,
       statsSchema,
+      totalsSlot: totalsSlotOf(entry),
     };
   });
 }
 
-export function createWorkerBenchmarkReader(scene) {
+/**
+ * @param {object} scene
+ * @param {{ frameTotals?: null | typeof import('../../src/util/frameTotals.js') }} [opts] the totals module,
+ *   passed only when the scene has the buffer: a baseline revision older than it has neither, and its windows
+ *   stay sampled
+ */
+export function createWorkerBenchmarkReader(scene, { frameTotals = null } = {}) {
   const workerReaders = buildWorkerReaders(scene);
   const sceneName = scene?.constructor?.name || 'UnknownScene';
+  const totalsView = frameTotals && scene?.buffers?.frameTotals ? frameTotals.bindFrameTotals(scene.buffers.frameTotals) : null;
+  const mainSlot = frameClockSlot('main');
 
   return {
     sceneName,
+    /** Diffs two snapshots' totals of one worker (frameTotals.totalsWindow), or null without the buffer. */
+    totalsWindow: totalsView ? frameTotals.totalsWindow : null,
     workerLayout: workerReaders.map(({ id, type, workerIndex, frameRateIndex }) => ({
       id,
       type,
       workerIndex,
       frameRateIndex,
     })),
-    snapshot(takenAtMs = performance.now()) {
+    /** `totals`: also copy every worker's running totals (the window's two ends need them, samples do not). */
+    snapshot(takenAtMs = performance.now(), { totals = false } = {}) {
+      const withTotals = totals && totalsView;
       return {
         sceneName,
         takenAtMs,
         mainFrameNumber: scene?.mainFrameNumber || 0,
         mainFPS: scene?.mainFPS || 0,
-        workers: workerReaders.map(({ id, type, workerIndex, frameRateIndex, statsView, statsSchema }) => ({
+        mainTotals: withTotals ? frameTotals.readTotals(totalsView, mainSlot) : null,
+        workers: workerReaders.map(({ id, type, workerIndex, frameRateIndex, statsView, statsSchema, totalsSlot }) => ({
           id,
           type,
           workerIndex,
@@ -220,16 +242,21 @@ export function createWorkerBenchmarkReader(scene) {
             (statsView && statsSchema ? statsView[statsSchema.FPS] : 0) ||
             getFrameRateValue(scene, frameRateIndex),
           stats: readWorkerStatsFields(statsView, statsSchema),
+          totals: withTotals ? frameTotals.readTotals(totalsView, totalsSlot) : null,
         })),
       };
     },
   };
 }
 
+/**
+ * `totalsWindow` (the reader's): each worker's `exact` window from the two ends' running totals, every frame
+ * it published between them, next to the sampled averages.
+ */
 export function summarizeWorkerBenchmarkWindow(
   startSnapshot,
   endSnapshot,
-  { measurementDurationMs, sampleSnapshots = [] } = {}
+  { measurementDurationMs, sampleSnapshots = [], totalsWindow = null } = {}
 ) {
   const elapsedWallTimeMs = Math.max(
     0,
@@ -272,6 +299,9 @@ export function summarizeWorkerBenchmarkWindow(
       spritesUploadMs = spritesUploadSamples > 0 ? sum / spritesUploadSamples : 0;
     }
 
+    const startWorker = startSnapshot.workers?.find((candidate) => candidate.id === worker.id);
+    const exact = totalsWindow ? totalsWindow(startWorker?.totals, worker.totals) : null;
+
     return {
       id: worker.id,
       type: worker.type,
@@ -280,6 +310,7 @@ export function summarizeWorkerBenchmarkWindow(
       instantaneousFPS: worker.currentFPS,
       averageFPS,
       sampleCount,
+      exact,
       ...(spritesUploadMs != null
         ? { spritesUploadMs, spritesUploadSamples, spritesSkipSamples }
         : {}),
@@ -315,6 +346,9 @@ export function summarizeWorkerBenchmarkWindow(
             : 0,
       instantaneousFPS: endSnapshot.mainFPS || 0,
       frameDelta: mainFrameDelta,
+      // The frames the page presented in the window over its length, and the main thread's step (exact).
+      exactFPS: totalsWindow && elapsedWallTimeMs > 0 ? (mainFrameDelta * 1000) / elapsedWallTimeMs : null,
+      exact: totalsWindow ? totalsWindow(startSnapshot.mainTotals, endSnapshot.mainTotals) : null,
     },
     workers,
     workersByType,

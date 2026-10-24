@@ -39,6 +39,7 @@ import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
 import { bindFrameClock, stampStep } from '../util/frameClock.js';
+import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
 import { Grid } from '../core/grid.js';
@@ -204,6 +205,8 @@ export class AbstractWorker {
     // outside STEP_MS: they run before the step timer starts and after it stops.
     this._frameClock = null;
     this._frameClockSlot = -1;
+    // Running totals of the frames this worker publishes, on its frame clock slot (frameTotals.js).
+    this._frameTotals = null;
 
     // Injected dt for `{ msg: 'step' }` (lockstep). 0 = use wall / fixedFps.
     this._injectedDeltaTime = 0;
@@ -303,10 +306,13 @@ export class AbstractWorker {
    */
   _writeFrameMeters(schema) {
     const stats = this.stats;
+    const waitMs = waitMeterMs();
     stats[schema.FPS] = this.currentFPS;
     stats[schema.STEP_MS] = this.stepTimeThisFrame;
     stats[schema.IDLE_MS] = this.idleTimeThisFrame;
-    stats[schema.WAIT_MS] = waitMeterMs();
+    stats[schema.WAIT_MS] = waitMs;
+    // Every frame that publishes meters, so the bench reads a window exactly instead of sampling it.
+    if (this._frameTotals) addFrame(this._frameTotals, this._frameClockSlot, this.stepTimeThisFrame, waitMs, 0);
   }
 
   reportLog(message) {
@@ -859,6 +865,7 @@ export class AbstractWorker {
     if (data.buffers?.frameClock && Number.isInteger(data.frameClockSlot)) {
       this._frameClock = bindFrameClock(data.buffers.frameClock);
       this._frameClockSlot = data.frameClockSlot;
+      if (data.buffers.frameTotals) this._frameTotals = bindFrameTotals(data.buffers.frameTotals);
     }
     if (data.buffers?.tweenData) {
       Tween.bind(data.buffers.tweenData, data.config?.tween?.maxTweens | 0, data.globalEntityCount | 0);
