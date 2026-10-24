@@ -7784,10 +7784,10 @@
     {
       "id": "E-82b",
       "title": "The split upload for sprites without pose interpolation",
-      "status": "open",
+      "status": "kept",
       "statusText": "open (from E-82)",
       "date": "2026-10-23",
-      "result": "E-82 split only the pose-interpolated path; the plain path still uploads the 15-float record every frame. pre-render's staticGen is already published.",
+      "result": "kept (product) 2026-10-24: BunnyMarkStressC at 250 000 bunnies, renderer 4.953 → 1.701 ms (−65.6 %, 0/4), pre-render 9.212 → 7.006 ms (−23.8 %, 0/4); Predator NEUTRAL",
       "area": "pixi",
       "kind": "js",
       "refs": [
@@ -7796,7 +7796,9 @@
       ],
       "aliases": [],
       "next": "Pays only on frames that keep their rows (a still camera); an animation frame change bumps staticGen, so animated scenes would re-upload statics as often as now unless the texture moves to the pose stream. Measure on animatedSpriteStressScene?sprites=250000 if taken up.",
-      "rank": 4
+      "records": [
+        "R-0599"
+      ]
     },
     {
       "id": "N-64",
@@ -13219,6 +13221,20 @@
         "b4406793",
         "2f73036a",
         "97eaa482"
+      ]
+    },
+    {
+      "id": "R-0599",
+      "date": "2026-10-24",
+      "time": "13:23",
+      "timeFrom": "recorded",
+      "title": "The split upload for plain sprites, BunnyMarkStressC and Predator pairs, E-82b",
+      "verdict": "kept",
+      "text": "**kept (product).** The split upload for sprites without pose interpolation (`wasm.gpuPackSplit`, default on), built as the 2026-10-24 design note asked: in the packer.\n\nHow it works:\n- `gpuPack.wasm` gains `pack_sprites_split` and its scatter (b0ec6ca8). They write each plain sprite's pose (x, y, rotC, rotS: 16 bytes) and, when asked, its statics (44 bytes, E-82's static order). The values are bit for bit those of the 15-float row: `gpuPackSplit.test.js`, through the gather and the scatter.\n- Pre-render writes the main sprites into its GPU queue as the two streams (`GPU_FLAG_SPLIT`, the statics' generation in the header). It writes the statics only into a GPU queue buffer that lacks the queue's `staticGen` for the same rows.\n- The glow split's list (the rows that are not glows, in order) follows from the types and so from the generation. A painter-sorted frame always writes both streams.\n- Pixi's entity batch is E-82's two-stream batch with a 16-byte pose, the previous xy read from the current one (the pose shader's mix at alpha 1). It copies and uploads the statics only when the generation or the row count moves (a37217a6).\n- A frame whose statics change uploads the same 60 bytes a sprite as before. A nearest atlas, whose poses snap, keeps 15-float rows.\n\nMeasuring tool: `?bunnies=` on BunnyMarkStressCScene (f7d7ae5d). At 100 000 bunnies the split left Pixi under the floor (headless 1.93 → 0.80 ms).\n\n**Owner pair.** BunnyMarkStressC at 250 000 bunnies (still camera, no Y-sort), one build (a37217a6 as f57b390f), side A `wasmOff=gpuPackSplit`, headed, source, detailed stats off, exact windows, 4 pairs, `--owner renderer`:\n- renderer 4.953 → 1.701 ms, **−65.6 %**, worse 0/4, cv 2/2 %;\n- pre-render 9.212 → 7.006 ms, **−23.8 %**, worse 0/4 (16 bytes written a sprite on a persist frame instead of 60);\n- logic 2.501 → 2.533 (under the floor); 250 000 rows on both sides.\n\n**Predator guard.** Its sprites take Pixi's SoA path into the split batch, painter-sorted, so their statics move every frame. Renderer, one build, 4 pairs: NEUTRAL. Renderer 3.517 → 3.480 ms (−3.1 % paired, 2/4 worse, +1.1 % against the others); no worker 3 % worse in 3 of 4; load within 0.6 %.\n\nTests:\n- `instancedSpriteSplit.test.js` (the batch on every path, the static uploads);\n- `gpuPackSplitWired.test.js` (pre-render's GPU queue on the real worker: the streams equal the rows of the switch-off run, which buffer rewrites its statics when, a painter-sorted frame every time);\n- `gpuPackSplitPixi.test.js` (Pixi's commit of split and row frames, and a plain batch never reading a split frame as rows).\n\nScreenshots of BunnyMark (on and off), Predator, and painterMove on WebGPU draw as before.\n\nLeft:\n- the same split for a nearest atlas (the pose with the pixel snap);\n- pose interpolation on the packed path (pre-render writing the previous xy, 24 bytes);\n- packed static formats (E-82's half floats).",
+      "commits": [
+        "f7d7ae5d",
+        "b0ec6ca8",
+        "a37217a6"
       ]
     }
   ],
