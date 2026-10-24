@@ -1345,7 +1345,11 @@ class Scene {
   createSharedBuffers() {
     createSceneSharedBuffers(this);
     if (!this._physicsEnabled) {
-      this.weedPose = createWeedPosePayload(this.totalEntityCount);
+      // W4b: the pose's region of the render-queue memory when the collect kernel has one.
+      const collect = this.renderQueueMemory?.layout.collect;
+      this.weedPose = collect
+        ? createWeedPosePayload(this.totalEntityCount, this.renderQueueMemory.buffer, collect.poseByte)
+        : createWeedPosePayload(this.totalEntityCount);
       initWeedPoseDefaults(this.weedPose);
     } else {
       this.weedPose = null;

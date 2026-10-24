@@ -93,8 +93,10 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp]
  * @param {null | { decorations: number, buckets: number }} [sway]
  * @param {number} [pixiRows] rows of Pixi's plain sprite batch when Pixi packs it with gpuPack.wasm (W9d), else 0
+ * @param {null | { entities: number, transformBytes: number, colliderBytes: number }} [collect] the sprite collect's
+ *   blocks (W4b, a scene without physics); a component with 0 bytes gets no block
  */
-export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null, pixiRows = 0) {
+export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null, pixiRows = 0, collect = null) {
   const n = maxItems | 0;
   const regions = [
     { name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES },
@@ -180,8 +182,25 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 16 },
     );
   }
+  if (collect) {
+    // W4b: in a scene without physics, Transform's state block and its pose (the Weed pose buffer: x, y,
+    // rotation, rotC, rotS), Collider, and the collect kernel's list, table and results, so the kernel reads
+    // every column the sprite collect reads.
+    const e = collect.entities | 0;
+    regions.push(
+      { name: 'transform', owner: 'every worker (Transform)', bytes: collect.transformBytes | 0 },
+      { name: 'transformPose', owner: 'logic writes; every worker reads (Transform pose)', bytes: e * 5 * 4 },
+      { name: 'collider', owner: 'every worker (Collider)', bytes: collect.colliderBytes | 0 },
+      { name: 'collectList', owner: 'pre-render', bytes: e * 4 },
+      { name: 'collectTable', owner: 'pre-render', bytes: COLLECT_TABLE_SLOTS * 4 },
+      { name: 'collectResults', owner: 'pre-render', bytes: 16 },
+    );
+  }
   return layoutRegions(regions);
 }
+
+/** Room for the collect kernel's column table (preRenderCollectClient.js COLLECT_SLOTS). */
+export const COLLECT_TABLE_SLOTS = 32;
 
 /** The decorations the sway kernel lets through its early continues at a time (its chunk list). */
 export const SWAY_LIST_CAP = 1024;

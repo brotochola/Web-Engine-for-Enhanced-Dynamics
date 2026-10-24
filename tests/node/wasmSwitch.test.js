@@ -214,3 +214,36 @@ test('wasm.meshCorners puts MeshGeometry and the MESH layers\' batches in the me
   assert.ok(noMeshLayer.buffers.meshGeomData instanceof SharedArrayBuffer);
   assert.equal(buildScene({}, null, { layers: meshes.layers }).meshMemory, null, 'no mesh vertices, no MeshGeometry');
 });
+
+test('wasm.preRenderCollect puts Transform, its pose and Collider in the render-queue memory when physics is off (W4b)', () => {
+  assert.equal(WASM_DEFAULTS.preRenderCollect, true);
+  const noPhysics = { physics: { maxJoints: 0, enabled: false } };
+  const on = buildScene({}, null, noPhysics);
+  const c = on.renderQueueMemory?.layout.collect;
+  assert.ok(c, 'the collect regions');
+  assert.equal(c.entities, 1000);
+  assert.ok(c.transformByte > 0 && c.colliderByte > 0 && c.poseByte > 0 && c.listByte > 0 && c.tableByte > 0);
+  assert.equal(on.buffers.componentDataByte.Transform, c.transformByte);
+  assert.equal(on.buffers.componentDataByte.Collider, c.colliderByte);
+  assert.equal(on.buffers.componentData.Transform, on.renderQueueMemory.buffer, 'Transform is a block of the memory');
+  assert.equal(Transform.active.buffer, on.renderQueueMemory.buffer);
+
+  assert.equal(buildScene({ preRenderCollect: false }, null, noPhysics).renderQueueMemory.layout.collect, null, 'off');
+  assert.equal(buildScene({}, null).renderQueueMemory.layout.collect, null, 'physics on: the pose is in Box2D\'s heap');
+  assert.equal(buildScene({ preRenderEmit: false }, null, noPhysics).renderQueueMemory.layout.collect, null, 'needs the emit');
+  const off = buildScene({ preRenderCollect: false }, null, noPhysics);
+  assert.equal(off.buffers.componentDataByte.Transform, undefined);
+  assert.ok(off.buffers.componentData.Transform instanceof SharedArrayBuffer && off.buffers.componentData.Transform !== off.renderQueueMemory.buffer);
+});
+
+test('the Weed pose payload binds at a byte offset of a shared buffer', async () => {
+  const { createWeedPosePayload, bindWeedPoseFields } = await import('../../src/box2d/box2dHotFields.js');
+  const sab = new SharedArrayBuffer(64 + 10 * 20);
+  const p = createWeedPosePayload(10, sab, 64);
+  bindWeedPoseFields(p);
+  assert.equal(Transform.x.buffer, sab);
+  assert.equal(Transform.x.byteOffset, 64);
+  assert.equal(Transform.rotS.byteOffset, 64 + 4 * 10 * 4);
+  const own = createWeedPosePayload(10);
+  assert.deepEqual(own.channelOffsets, [0, 10, 20, 30, 40]);
+});

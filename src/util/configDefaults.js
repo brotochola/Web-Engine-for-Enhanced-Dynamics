@@ -454,6 +454,11 @@ export const WASM_DEFAULTS = Object.freeze({
    * live in the render-queue memory with the emit's state, so the kernel reads every column there.
    */
   preRenderEmit: true,
+  /**
+   * Pre-render's sprite collect (`preRenderCollect.wasm`, W4b) in a scene without physics: Transform, its pose and
+   * Collider in the render-queue memory with the emit's SpriteRenderer (so it needs preRenderEmit).
+   */
+  preRenderCollect: true,
   /** The shadow-caster stamp (`shadowStamp.wasm`, E-114): its scratch and light table in the render-queue memory. */
   shadowStamp: true,
   /**

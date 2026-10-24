@@ -25,14 +25,16 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
  * @param {null | { decorations: number, buckets: number }} [sway] the sway's regions too (with emit's decorations)
  * @param {boolean} [pixiPack] Pixi's plain sprite rows and pack scratch too (W9d), one row per queue row
+ * @param {null | { entities: number, transformBytes: number, colliderBytes: number }} [collect] the sprite collect's
+ *   blocks too (W4b): Transform, its pose, Collider and the kernel's scratch
  * @returns {null | { memory: WebAssembly.Memory, buffer: SharedArrayBuffer, layout: Record<string, any> }}
  */
-export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false) {
+export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false, collect = null) {
   const n = maxItems | 0;
   if (n <= 0) return null;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiRows = pixiPack ? n : 0;
-  const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows);
+  const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect);
   if (map.pages > WASM_MAX_PAGES) return null;
   const r = map.regions;
   try {
@@ -55,6 +57,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         emit: emit ? emitLayout(r, emit.entities | 0, n) : null,
         stamp: stamp ? stampLayout(r, stamp) : null,
         sway: sway ? swayLayout(r, sway) : null,
+        collect: collect ? collectLayout(r, collect) : null,
         // W9d: Pixi's instance rows and pack scratch (0 rows: Pixi does not pack plain rows here).
         pixiInstanceRows: pixiRows,
         pixiInstanceByte: pixiRows > 0 ? r.pixiInstances.byte : -1,
@@ -102,6 +105,20 @@ function emitLayout(r, entities, rows) {
 }
 
 /** Byte offsets and capacities of the stamp's regions. */
+/** Byte offsets of the collect's regions; -1 for a component block the scene does not have. */
+function collectLayout(r, collect) {
+  const block = (region) => (region.bytes > 0 ? region.byte : -1);
+  return {
+    entities: collect.entities | 0,
+    transformByte: block(r.transform),
+    poseByte: r.transformPose.byte,
+    colliderByte: block(r.collider),
+    listByte: r.collectList.byte,
+    tableByte: r.collectTable.byte,
+    resultsByte: r.collectResults.byte,
+  };
+}
+
 function stampLayout(r, stamp) {
   return {
     maxSun: stamp.maxSun | 0,

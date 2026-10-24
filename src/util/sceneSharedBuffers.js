@@ -524,17 +524,36 @@ function initializeRenderQueueMemory(scene) {
   // pack kernel, on rows of its own in this memory.
   const pixiPack = pack && config.wasm?.pixiPack !== false && config.preRender?.packGpuSprites === 'pixi'
     && config.renderer?.interpolation !== true;
-  scene.renderQueueMemory = pack || emit || stamp
-    ? createRenderQueueMemory(
-        maxVisibleRenderables,
-        computeRenderQueueBufferSize(maxVisibleRenderables),
-        computeGpuQueueBufferSize(gpuCaps),
-        emit,
-        stamp,
-        sway,
-        pixiPack,
-      )
+  // W4b: in a scene without physics, Transform (its state block and its pose) and Collider too, next to the
+  // emit's SpriteRenderer, so the sprite collect kernel reads every column there. With physics on, the pose is
+  // in Box2D's heap: Phase 4.
+  const pools = scene.componentPools || {};
+  const n = scene.totalEntityCount;
+  const collect = config.wasm?.preRenderCollect !== false && emit && emit.spriteBytes > 0
+    && config.physics?.enabled === false && pools.Transform?.ComponentClass
+    ? {
+        entities: n,
+        transformBytes: Transform.getBufferSize(n),
+        colliderBytes: pools.Collider?.ComponentClass ? Collider.getBufferSize(n) : 0,
+      }
     : null;
+  const make = (withCollect) => createRenderQueueMemory(
+    maxVisibleRenderables,
+    computeRenderQueueBufferSize(maxVisibleRenderables),
+    computeGpuQueueBufferSize(gpuCaps),
+    emit,
+    stamp,
+    sway,
+    pixiPack,
+    withCollect,
+  );
+  // A scene whose collect blocks would not fit keeps the memory without them (and the JS collect).
+  scene.renderQueueMemory = pack || emit || stamp ? (collect && make(collect)) || make(null) : null;
+  const c = scene.renderQueueMemory?.layout.collect;
+  if (c) {
+    if (c.transformByte >= 0) buffers.componentDataByte.Transform = c.transformByte;
+    if (c.colliderByte >= 0) buffers.componentDataByte.Collider = c.colliderByte;
+  }
   const e = scene.renderQueueMemory?.layout.emit;
   if (!e) return;
   if (e.spriteRendererByte >= 0) buffers.componentDataByte.SpriteRenderer = e.spriteRendererByte;
