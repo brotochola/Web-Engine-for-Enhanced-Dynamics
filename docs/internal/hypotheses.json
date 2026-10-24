@@ -673,7 +673,10 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 2
+      "rank": 2,
+      "records": [
+        "R-0582"
+      ]
     },
     {
       "id": "W11",
@@ -12977,6 +12980,22 @@
         "355839d3",
         "a4e276ab",
         "b7de8bdb"
+      ]
+    },
+    {
+      "id": "R-0582",
+      "date": "2026-10-24",
+      "time": "10:20",
+      "timeFrom": "recorded",
+      "title": "The bullet tick with its linecasts in C, W19 kernel (Node and Chrome)",
+      "verdict": "note",
+      "text": "**Kernel win; wiring after E-129.** `wasm/bulletTick.c` puts `BulletPool.tick` and its `Ray.linecastDir` in one call per frame:\n- the pool walk;\n- the grid DDA of `_traverseGrid`;\n- the filters of `_checkCellEntities`;\n- the circle, box and single-polygon tests;\n- the impact records;\n- the active list;\n- the slots that hit, which go back for the JS's `returnToPool` in walk order.\n\nA cast that meets a compound polygon or a chain hands its bullet back before anything is written for it. `bulletTickWasm.test.js` checks the kernel bit for bit against the shipped tick: 4 000 bullets among 1 500 circles, boxes and rotated polygons, at three time steps and with every variant. A 0.02 % change to the box test fails it. The hand-back is tested too.\n\nThe pass covered:\n- **flags:** two variants, both bit-identical: the box test's reciprocals once per ray (`hoist`), and no ray stamps (`nostamp`). A repeated test gives the same distance, which is never closer.\n- **SIMD:** none. The walk is scalar per bullet, with a gather per candidate, so no lanes fill (the float32 pass's lesson).\n- **float32:** not tried. Scalar f32 buys nothing over f64 on x86, and it would give up bit-identity.\n\n`bulletTickWasmMicrobench`: bulletStressScene's world (4000 × 3000 px, cells of 128, 240 circles and boxes, four walls), a pool of 40 000 at 1500 px/s.\n\n| | storm, 40 000 live | sparse, 4 000 live |\n|---|---|---|\n| Chrome 155, js | 262.7 ops/s | 2 074.6 ops/s |\n| wasm | +61.0 % | +38.9 % |\n| wasm_hoist | +62.1 % | +40.2 % |\n| wasm_nostamp | +62.0 % | +40.2 % |\n| **wasm_lean** (both) | **+63.5 %** | **+40.6 %** |\n| Node, 5 alternating rounds | +73.7 to +80.2 % | +52.5 to +53.5 % |\n\nChrome ran every variant in one page over 7 alternating rounds, each 7/7 over the JS, checksums equal. The variants differ by about 2 %; `lean` was first in both cases and ships (9bc70782). The machine carried agents' builds and tests during both sittings.\n\nAn earlier smoke had inserted the walls into every cell their largest half extent covered; the bench now inserts each box by its own extents (81ae305d).\n\nNext:\n- E-129 widens the bullet pool.\n- Then the wiring: the bullet columns in the bodies' part of Box2D's block, a dispatch in `BulletPool.tick` behind `wasm.bulletTick`, and a `bulletStressScene` pair on one build (owner particle).",
+      "commits": [
+        "7194be79",
+        "9456de4f",
+        "81ae305d",
+        "50eafd1a",
+        "9bc70782"
       ]
     }
   ],
