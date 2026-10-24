@@ -90,9 +90,9 @@ export class MovedBodiesStillScene extends Scene {
   // A teleport is a command: room for a few ticks of them before physics drains the ring.
   static config = stillConfig(null, STILL_MOVERS > 0 ? { commandRingCapacity: 4 * STILL_MOVERS + 4096 } : null, STILL_BODIES);
   static assets = { textures: { ball: '/demos/img/bola.png' } };
-  static entities = STILL_MOVERS > 0
-    ? [[MovedBody, STILL_BODIES - STILL_MOVERS], [MovedTicker, STILL_MOVERS]]
-    : [[MovedBody, STILL_BODIES]];
+  // MovedTicker is listed whatever ?moverEvery says (a pool of 0 without it): a worker evaluates this module
+  // without the page's query, and finds the entity classes through this list (bindSceneGraph).
+  static entities = [[MovedBody, STILL_BODIES - STILL_MOVERS], [MovedTicker, STILL_MOVERS]];
   create() {
     placeStill(this, 0, STILL_BODIES, STILL_MOVER_EVERY);
   }
