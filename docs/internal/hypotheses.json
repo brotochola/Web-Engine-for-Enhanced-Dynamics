@@ -454,19 +454,19 @@
     {
       "id": "E-127",
       "title": "Cull through a grid when the world is much bigger than the view (the renderable grid in its own regime)",
-      "status": "open",
+      "status": "kept",
       "statusText": "reopened 2026-10-24 (screened on Predator 2026-09-27)",
       "date": "2026-10-24",
-      "result": "`collectVisibleEntities` tests every entity every frame, so its cost follows the world, not the view. The 2026-09-27 grid (`renderGrid.js`, since removed) was measured only on Predator, where the fight fills the view and a grid cannot win, and that pair did not exist: it lost sprites (visible −6.3 %) and casters (−31.6 %). The regime where it pays, a large world seen through a small view, was never measured.",
+      "result": "kept (product) 2026-10-24: bigWorldCullStressScene 500 000 sprites, 2.5 % in view: pre-render 4.230 → 1.346 ms (−68.0 %, 0/4) with static isStatic; the collectors bit-identical to the linear cull",
       "area": "pre-render",
       "kind": "js",
       "aliases": [],
       "next": "A stress knob for world size against the view (say 500 000 sprites, 5 % on screen); a parity test that the culled set equals the linear cull's at several zooms and rotations; then a grid in pre-render, or a read of spatial's published cells, as an owner pair. Before W4b, so the collect is ported once.",
-      "rank": 12,
       "records": [
         "R-0241",
         "R-0258",
-        "R-0610"
+        "R-0610",
+        "R-0616"
       ]
     },
     {
@@ -13488,10 +13488,23 @@
       "timeFrom": "recorded",
       "title": "SpawnStorm's createBody warnings: a despawn during the create is not a failure (found screening W17)",
       "verdict": "kept-hygiene",
-      "text": "**kept (hygiene, a bug fix).** Found while screening W17 (Q1b's SpawnStorm trace had 86 % of `syncBodySlot` on its `console.warn` line). The scene runner now prints the physics host's `[weedjs-box2d]` warnings (`55a83624`), and SpawnStorm warned `createBody failed; retry next step` about 470 times a second. A diagnostic in a scratch worktree showed every one with `entityActive`, `rbActive` and `colActive` at 0, a circle of radius 6. The entity was despawned while physics, beside the logic workers, created its body; `createBodyForEntity` found nothing active and returned false, and `syncBodySlot` warned and marked a retry that had nothing to do. Fix (`5fcac8df`): a false create on an entity that no longer wants a body is left alone (the despawn marks the slot); a failure on a live entity still warns once and retries. `bodyCreateRace.test.js` runs the shipped block (`body-create-start/end`) and fails on the old one. Pair, `spawnStormScene?storm=4000`, Chrome, headed, source, worktrees (`--vs 76194d2a --hyp-rev 5fcac8df`), 4 pairs: warnings **112 083 → 0**; physics **3.600 → 3.460 ms (−6.9 %, worse 1/4)** while it holds **2.2× the bodies** (`BODY_COUNT` 529 → 1 184: physics now creates them before the storm despawns them, so the runner's load gate read FAIL on that key, an output of the fix, not its input); logic 10.896 → 10.361 ms (−7.6 %, worse 1/4). No worker worse.",
+      "text": "**kept (hygiene, a bug fix).** Found while screening W17 (Q1b's SpawnStorm trace had 86 % of `syncBodySlot` on its `console.warn` line). The scene runner now prints the physics host's `[weedjs-box2d]` warnings (`55a83624`), and SpawnStorm warned `createBody failed; retry next step` about 470 times a second. A diagnostic in a scratch worktree showed every one with `entityActive`, `rbActive` and `colActive` at 0, a circle of radius 6. The entity was despawned while physics, beside the logic workers, created its body; `createBodyForEntity` found nothing active and returned false, and `syncBodySlot` warned and marked a retry that had nothing to do. Fix (`d11f9387`): a false create on an entity that no longer wants a body is left alone (the despawn marks the slot); a failure on a live entity still warns once and retries. `bodyCreateRace.test.js` runs the shipped block (`body-create-start/end`) and fails on the old one. Pair, `spawnStormScene?storm=4000`, Chrome, headed, source, worktrees (`--vs 76194d2a --hyp-rev d11f9387`), 4 pairs: warnings **112 083 → 0**; physics **3.600 → 3.460 ms (−6.9 %, worse 1/4)** while it holds **2.2× the bodies** (`BODY_COUNT` 529 → 1 184: physics now creates them before the storm despawns them, so the runner's load gate read FAIL on that key, an output of the fix, not its input); logic 10.896 → 10.361 ms (−7.6 %, worse 1/4). No worker worse.",
       "commits": [
         "55a83624",
-        "5fcac8df"
+        "d11f9387"
+      ]
+    },
+    {
+      "id": "R-0616",
+      "date": "2026-10-24",
+      "time": "16:58",
+      "timeFrom": "recorded",
+      "title": "Static scenery culled through pre-render's grid (static isStatic), the big-world pair, E-127",
+      "verdict": "kept",
+      "text": "**kept (product).** The owner's choice (2026-10-24): an opt-in flag. A type that declares `static isStatic = true` does not move after onSpawned. Pre-render bins those types' entities by position in a grid of its own (`staticSceneryGrid.js`, about 8 entities a cell) when the scene's static counter moves (`staticScenery.js`: a static entity spawned or despawned, or moved, resized or given another sprite through the GameObject setters; writing its Transform columns directly is not seen). Each frame the collect walks the published sprite list's moving entities plus the static entities in the cells that meet the view, widened by the largest static half extent, in entity order. The static types' runs in the sorted list are skipped by binary search, and the static entities come out of a bitset in ascending order. Both collects, the JS and the kernel, still test every listed entity, so they draw the linear cull's set in its order. `staticSceneryCull.test.js` compares the collectors bit for bit at seven cameras (zooms 0.3 to 2.5, two turned, past the world's corner, far from everything), on both paths, and after a static entity moves; the walk is asserted to run and to leave entities out. Commits `65fb25f8` (the scene's `?static=1`) and `54e1b49f` (the change). Owner pair, `bigWorldCullStressScene?sprites=500000&view=0.025`, Chrome, headed, source, one build with `static=0` on side A and `static=1` on side B, 4 pairs: pre-render **4.230 → 1.346 ms, −68.0 % paired, worse 0/4**, cv 3/4 %; `VISIBLE_ENTITIES` 18 643 on both sides; every other worker under the 3 ms floor. What is left of the collect at 1.3 ms is its per-visible work (18 643 rows), not the world. One limit: the view box is widened by the largest static half extent, so one huge static sprite widens it for all of them; binning the large ones apart would remove that.",
+      "commits": [
+        "65fb25f8",
+        "54e1b49f"
       ]
     }
   ],
