@@ -417,20 +417,20 @@
     {
       "id": "E-125",
       "title": "Spawn sort by packed numeric keys, re-sat (H-14)",
-      "status": "open",
+      "status": "kept-kernel",
       "statusText": "reopened 2026-10-24 (H-14 was dropped 2026-10-14)",
       "date": "2026-10-24",
-      "result": "A numeric sort of packed keys ran 2.1 to 2.5× the comparator sort in its kernel (5/5 rounds, n = 8 to 1024). `spawnStormScene` logic read −0.55 % (worse 3/8) in a sitting that a toolchain guard contaminated by launching Chromium between pairs, and it was never re-sat. A kernel win with a scene that is not 3 % worse is a kept-kernel today.",
+      "result": "kept-kernel 2026-10-24: spawnSoAMicrobench on the shipped method storm +38.0 %, batch +8.1 % (R-0584); spawnStormScene logic −2.0 % (0/4), under the 3 % bar",
       "area": "logic",
       "kind": "js",
       "aliases": [
         "H-14"
       ],
       "next": "Reapply; check the kernel against the shipped function; 4 pairs of `spawnStormScene` from worktrees; batch with E-124.",
-      "rank": 22,
       "records": [
         "R-0335",
-        "R-0584"
+        "R-0584",
+        "R-0594"
       ]
     },
     {
@@ -598,7 +598,8 @@
       "records": [
         "R-0532",
         "R-0536",
-        "R-0571"
+        "R-0571",
+        "R-0597"
       ]
     },
     {
@@ -664,10 +665,10 @@
     {
       "id": "W19",
       "title": "batched bullet linecasts: `BulletPool.tick` → `Ray.linecastDir`, geometry in ray.js (`querySystem.js` has …",
-      "status": "open",
+      "status": "kept",
       "statusText": "open, blocked on Phase 4; Q1b: bullet rays ~70 % of particle in `bulletStressScene` (493 ms/s: `_traverseGrid` 30.7 %, `_checkCellEntities` 13.6 %, `tick` 13.4 …",
       "date": null,
-      "result": "WASM batched casts beat JS. absent from the Predator trace; per-query game calls lose to the boundary (Q4) and are out of scope",
+      "result": "kept (product) 2026-10-24: bulletStressScene particle 4.839 → 3.171 ms (−33.9 %, 0/4); Chrome kernel bullet_tick_lean storm +63.5 %, sparse +40.6 % (7/7)",
       "area": "particle",
       "kind": "wasm",
       "refs": [
@@ -675,9 +676,9 @@
       ],
       "aliases": [],
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
-      "rank": 2,
       "records": [
-        "R-0582"
+        "R-0582",
+        "R-0587"
       ]
     },
     {
@@ -721,55 +722,55 @@
     {
       "id": "W2a",
       "title": "per light: `buildVisibilityPolygon`, `clipVisibilityToPolar`, `mergeSweep`",
-      "status": "open",
+      "status": "kept",
       "statusText": "open: tolerance gates (decision 5)",
       "date": null,
-      "result": "One call per light, the per-light scratch in the module's own Memory, beats JS. Q1: the sweep is 49.2 % of visPoly pre-render (`rayPolyDist` 17.6 %, `emitVertex` 26.9 % inclusive). Tolerance gate (H-06, 1e-4): Q2 did not pass in Chrome; …",
+      "result": "kept (product) 2026-10-24: visPoly pre-render 5.090 → 3.790 ms (−25.4 %, 0/4), the f32 sweep against the JS",
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#W2a"
       ],
       "aliases": [],
-      "rank": 6,
       "records": [
-        "R-0569"
+        "R-0569",
+        "R-0591"
       ]
     },
     {
       "id": "W1",
       "title": "`collectSolidSegments` with `rasterPolarSpan`, `stampPolarBin` and `raySegT` inlined, in angularSweep.js",
-      "status": "open",
+      "status": "kept",
       "statusText": "open: tolerance gates (decision 5)",
       "date": null,
-      "result": "One call per (light, compound solid) that transforms, faces, ranges and rasters every edge beats the shipped loop on the same `_polarDist` / `_polarOwner`. Runs only with `raycasted` lighting and compound occluders: never in Predator or visPoly. …",
+      "result": "kept (product) 2026-10-24: compoundVisPoly ringSegments=64 pre-render 3.867 → 1.971 ms (−49.0 %, 0/4)",
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#W1"
       ],
       "aliases": [],
-      "rank": 7,
       "records": [
-        "R-0568"
+        "R-0568",
+        "R-0592"
       ]
     },
     {
       "id": "W10",
       "title": "`radixSortIndicesBySortKey`, `radixPainterOrder`, `reinsertChangedSlots` in sortIndexByKey.js",
-      "status": "open",
+      "status": "kept",
       "statusText": "reopened (decision 6): ~3.4 % of Pixi at 1.4×",
       "date": null,
-      "result": "WASM radix beats JS. Q1: 11.8 % inclusive of Predator Pixi (2.0 % ceiling there); no painter stress scene share on record",
+      "result": "kept (product) 2026-10-24: painterSort pre-render −3.4 %, painterMove −7.5 % (0/4 each), Predator renderer −2.6 % paired, −5.8 % against the drift",
       "area": "pixi",
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#W10"
       ],
       "aliases": [],
-      "rank": 8,
       "records": [
-        "R-0570"
+        "R-0570",
+        "R-0590"
       ]
     },
     {
@@ -796,17 +797,20 @@
     {
       "id": "W27",
       "title": "the Adobe Animate emit, `_emitAdobePieces` and `advanceAdobeAnimations` (new from Q1b)",
-      "status": "open",
+      "status": "kept",
       "statusText": "open (with W4)",
       "date": null,
-      "result": "WASM piece emission beats JS. Q1b, Adobe Animate at the minimum zoom (10 000 characters): pre-render saturated at 995 ms/s, `_emitAdobePieces` 27.1 %; …",
+      "result": "kept (product) 2026-10-24: Adobe Animate at minimum zoom, pre-render 20.103 → 14.252 ms (−29.1 %, 0/4); kernel emit +151.5 %, advance +59.9 % (Node, 5/5)",
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#W27"
       ],
       "aliases": [],
-      "rank": 14
+      "records": [
+        "R-0586",
+        "R-0589"
+      ]
     },
     {
       "id": "W28",
@@ -826,10 +830,10 @@
     {
       "id": "W4",
       "title": "`emitSpriteQueue`, `_displayPose`, `_writeQueueShadow`, with W3's collect chain",
-      "status": "open",
+      "status": "kept",
       "statusText": "W4a kept (E-112), W4c kept (E-115 to E-117), W4b kept for scenes without physics 2026-10-24 (BunnyMark pre-render −9.4 %); W4b with physics waits on Phase 4",
       "date": null,
-      "result": "A WASM render-queue build beats JS. Q1: emit 28.7 % inclusive of Predator pre-render, the collect chain 32.1 %. E-66 removed the boxing, E-71/E-72 typed the columns, E-77 the imports",
+      "result": "W4a kept (E-112), W4c kept (E-115 to E-117), W4b kept: BunnyMark pre-render −9.4 % without physics, Predator pre-render −13.3 % (−17.3 % against the drift) with physics, 2026-10-24",
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
@@ -837,12 +841,12 @@
       ],
       "aliases": [],
       "next": "W4b with bodies (Predator): Phase 4, the render-queue block inside Box2D's memory (WASM_HYPOTHESES Phase 4 design).",
-      "rank": 13,
       "records": [
         "R-0562",
         "R-0564",
         "R-0574",
-        "R-0581"
+        "R-0581",
+        "R-0588"
       ]
     },
     {
@@ -1431,7 +1435,8 @@
         "R-0455",
         "R-0456",
         "R-0527",
-        "R-0571"
+        "R-0571",
+        "R-0596"
       ]
     },
     {
@@ -1454,7 +1459,8 @@
         "R-0454",
         "R-0529",
         "R-0530",
-        "R-0571"
+        "R-0571",
+        "R-0593"
       ]
     },
     {
@@ -7955,16 +7961,17 @@
     {
       "aliases": [],
       "refs": [],
-      "records": [],
+      "records": [
+        "R-0598"
+      ],
       "id": "E-129",
       "title": "Particle, decoration and bullet pools past 65 535: 32-bit slot ids when the configured maximum asks for them",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "opened 2026-10-24 (owner request)",
       "date": "2026-10-24",
       "area": "particle",
       "kind": "reach",
-      "rank": 23,
-      "result": "maxParticles, maxDecorations and maxBullets are asserted at 65 535 or less (sceneSharedBuffers.js), and the free lists, the active and visible lists, the decoration spatial cells (EMPTY = 0xffff), the sway snapshot and the particle and sway kernels hold 16-bit slot ids. As entity ids do since 2026-10-24 (entityIdWidth auto), each pool would pick 16-bit ids up to 65 535 and 32-bit past that, once at boot from its own maximum, so a scene under the cap runs the code it runs today. A reach claim (like W8b), not a speed claim; it also lifts the protocol ceiling that kept W22 under the 3 ms floor.",
+      "result": "kept-hygiene 2026-10-24: the 16-bit kernels within 3 % of the tree before (Node, 5 rounds), a pool of 200 000 runs in Chrome (197 860 live), the afternoon gate NEUTRAL",
       "next": "After the float32 pass on particleIntegrate/particleLists/decorationSway (it edits their benches): an agent widens every list and kernel per pool (one export per width, chosen at the caller), with parity tests at both widths, the 16-bit kernels shown not to regress, and a 200 000-particle scene that boots and runs."
     },
     {
@@ -13035,6 +13042,183 @@
       "text": "**Screened, not taken: the component columns.** The question was whether components' columns alias the way the queue's did. At a count that is a multiple of 1 024 they are a multiple of 4 KB apart. The shipped sprite collect was run at 262 144 sprites: each column on its 64-byte boundary, against one line past it, with the bench's `--skew`, the rule E-113 gave the queue. 5 alternating rounds, checksums equal.\n\n| case | wasm aliased | skewed | | won | js aliased | skewed | | won |\n|---|---|---|---|---|---|---|---|---|\n| bunny | 459.4 | 472.1 | +2.8 % | 4/5 | 327.5 | 333.6 | +1.9 % | 3/5 |\n| cull | 283.8 | 286.0 | +0.8 % | 4/5 | 219.8 | 221.2 | +0.6 % | 3/5 |\n| turned | 240.8 | 239.1 | −0.7 % | 2/5 | 201.3 | 203.1 | +0.9 % | 5/5 |\n| predator | 169.7 | 175.3 | +3.3 % | 5/5 | 109.0 | 107.9 | −1.0 % | 3/5 |\n\nA single run each on a machine loaded by an agent had read +12 to +31 %. The sitting does not hold that up.\n\nThe collect mostly reads its columns. The queue's 2.4× came from the emit writing some 20 columns per row. The component layout, and the physics host's mirror of it, stay as they are.\n\nThe knob stays in the bench (24c4191a) for a writing kernel that might show the same thing later.",
       "commits": [
         "24c4191a"
+      ]
+    },
+    {
+      "id": "R-0586",
+      "date": "2026-10-24",
+      "time": "11:08",
+      "timeFrom": "recorded",
+      "title": "W27's kernels: the Adobe emit and clock advance in C, and the plain emit after the restructure",
+      "verdict": "note",
+      "text": "**W27's kernels, and the plain emit after the restructure.** `preRenderEmitAdobeMicrobench` (f0694ff0: the Adobe Animate demo's emit and clock advance at minimum zoom, 130 888 rows), Node, `runKernelVariants --variants js,wasm`, 5 alternating rounds:\n\n| | js | wasm | | won |\n|---|---|---|---|---|\n| emit (the pieces through the kernel) | 204.5 ops/s | 514.4 | **+151.5 %** | 5/5 |\n| advance (`adobe_advance`) | 2 964.5 | 4 739.0 | **+59.9 %** | 5/5 |\n\nThe plain sprite emit, after W27 put the Adobe paths in `preRenderEmit.wasm`: `preRenderEmitWasmMicrobench --variant wasm`, the tree at 8e316354 (before c81bcbfc) against f04f2313, alternating processes, 5 rounds: 2 178.9 → 2 219.0 ops/s (medians), +1.8 %, 4/5, checksums equal (2238942111). A tie: the Adobe branches cost the emit of every other row nothing.\n\nThere is one variant, so Chrome has nothing to choose between; the demo pair decides (the next record).",
+      "commits": [
+        "f0694ff0",
+        "bcbef5ed",
+        "084cfbf6"
+      ]
+    },
+    {
+      "id": "R-0587",
+      "date": "2026-10-24",
+      "time": "11:14",
+      "timeFrom": "recorded",
+      "title": "The bullet tick in C on bulletStressScene, W19 pair",
+      "verdict": "kept",
+      "text": "**kept (product).** `bulletStressScene`, one build (f04f2313), side A `wasmOff=bulletTick`, headed, source, detailed stats off, exact windows, 4 pairs, `--owner particle`: particle 4.839 → 3.171 ms, **−33.9 %**, worse 0/4, cv 3/2 %.\n\nEvery other worker is under the 3 ms floor and within 3 % (pre-render 2.838 → 2.831). Load keys are equal: 244 bodies, 195 visible. The headless smoke had read 4.66 → 3.05 ms.\n\nCommits:\n- 7194be79: the kernel.\n- 9bc70782: `bullet_tick_lean`.\n- 19f0c4f0: the dispatch in `BulletPool.tick`.\n- f04f2313: the regions in Box2D's block, and the particle worker's binding.",
+      "commits": [
+        "7194be79",
+        "9bc70782",
+        "19f0c4f0",
+        "f04f2313"
+      ]
+    },
+    {
+      "id": "R-0588",
+      "date": "2026-10-24",
+      "time": "11:19",
+      "timeFrom": "recorded",
+      "title": "The sprite collect in C with bodies, Predator pair, W4b",
+      "verdict": "kept",
+      "text": "**kept (product).** W4b with physics, on Predator. One build (f04f2313), side A `wasmOff=preRenderCollect`, headed, source, detailed stats off, exact windows, 4 pairs, `--owner preRender`.\n\nPre-render went from 4.364 to 3.757 ms: −13.3 % paired, worse 0/4. Against the other workers it reads −17.3 % (lower 4/4). Load keys are within 1 %: bodies 17 549 → 17 569, visible +0.9 %, queue +0.8 %.\n\nThe other workers read worse:\n- logic +4.5 % (3/4);\n- spatial +5.3 % (3/4);\n- renderer +5.6 % (3/4);\n- physics +7.9 % (2/4, cv 11/8 %).\n\nThe switch cannot reach them:\n- Predator has bullets (`maxBullets: 2048`), so the bodies' blocks sit in Box2D's block on both sides; the bullet tick lays them (f04f2313).\n- The only difference between the sides is whether pre-render's collect runs the kernel.\n- Each worker is inside the morning A/A's limits at 4 pairs (R-0561: logic 9.7 %, spatial 12.2 %, physics 14.5 %, renderer 14.1 %).\n- They moved together. That is drift, and against it the owner reads −17.3 %.\n\nThe kernel: Predator's case +65.0 % (R-0581). Commits: b7de8bdb (the bodies in the block), 9a8b3110, 355839d3 (the kernel with bodies and the Y-sort foot line).",
+      "commits": [
+        "b7de8bdb",
+        "9a8b3110",
+        "355839d3"
+      ]
+    },
+    {
+      "id": "R-0589",
+      "date": "2026-10-24",
+      "time": "11:24",
+      "timeFrom": "recorded",
+      "title": "The Adobe emit in C at minimum zoom, W27 pair",
+      "verdict": "kept",
+      "text": "**kept (product).** The Adobe Animate demo at minimum zoom (20 000 characters, 261 796 queue rows), one build (f04f2313), side A `wasmOff=preRenderEmitAdobe`, headed, source, detailed stats off, exact windows, 4 pairs, `--owner preRender`: pre-render 20.103 → 14.252 ms, **−29.1 %**, worse 0/4, cv 1/2 %. Load keys equal (20 000 bodies; 261 796 → 261 790 rows).\n\nThe renderer read +27.6 % (4/4, 5.513 → 7.058 ms). That is throughput, not cost:\n- On side A pre-render finished 380 to 392 frames in the window; on side B, 434 to 444.\n- The renderer spends the same time per pre-render frame on both sides: 7.20 to 7.27 ms on A, 7.10 to 7.32 on B (its exact-frame time × its frames ÷ pre-render's frames, run by run).\n- With the slower pre-render, more of the renderer's frames have no new queue and cost little, which pulls its mean down.\n\nPhysics read +3.6 % (4/4, 6.464 → 6.681 ms, cv 2/3 %; 20 000 moved on both sides).\n- The switch can reach it. On, the render-queue memory reserves AdobeAnimComponent and `preRender.adobeTablesMB` of tables. With physics that memory is a block of Box2D's heap, so Box2D's own allocations land elsewhere.\n- It is unproven either way, and there is no A/A of this scene on record.\n- It cannot change the verdict: +0.22 ms of physics against −5.85 ms of pre-render.\n- If it is the heap moving, every region in the block moves it, which makes it a Phase 4 question. A pair with the tables laid on both sides would separate the two.",
+      "commits": [
+        "c81bcbfc",
+        "bcbef5ed",
+        "084cfbf6"
+      ]
+    },
+    {
+      "id": "R-0590",
+      "date": "2026-10-24",
+      "time": "11:39",
+      "timeFrom": "recorded",
+      "title": "The painter sort in C, painterSort, painterMove and Predator pairs, W10",
+      "verdict": "kept",
+      "text": "**kept (product).** The painter sort in C, three pairs. Each is one build (f04f2313), side A `wasmOff=painterRadix`, headed, source, detailed stats off, exact windows, 4 pairs. The owner is the worker that sorts: pre-render in the stress scenes (the default `preRender.sortSprites`), the renderer in Predator (`sortSprites: 'pixi'`).\n\n| scene | owner | A → B | paired | worse |\n|---|---|---|---|---|\n| painterSortStressScene | pre-render | 17.377 → 16.906 ms | **−3.4 %** | 0/4 |\n| painterMoveStressScene (PainterMoveReinsertScene) | pre-render | 23.684 → 21.849 ms | **−7.5 %** | 0/4 |\n| Predator | renderer | 3.618 → 3.552 ms | −2.6 % (**−5.8 %** against the others, lower 4/4) | 1/4 |\n\nLoad keys are equal in each: 300 000 rows in the stress scenes, and Predator's bodies and queue within 0.4 %.\n\n**painterSort.** The renderer read +5.6 % (4/4). That is throughput again:\n- Pre-render is past 16.7 ms on both sides, and side B finished more frames (360 to 391, against 352 to 361).\n- The renderer's time per pre-render frame is the same: 8.08 ms on A, 8.11 on B (means of the four runs).\n\n**Predator.** The workers the switch does not reach there moved together, each inside R-0561's limits:\n- logic +6.0 % (3/4);\n- spatial +4.3 % (3/4);\n- pre-render +6.5 % (3/4);\n- physics +2.2 % (2/4).\n\nAgainst them the owner reads −5.8 %, past the session's 4.8 % relative limit (R-0577). Q1 had put the ceiling at 2.0 % of Predator Pixi. This keep rests on the drift reading, so take its size as soft.\n\nCommits: a797cf81 (the painter state in the render-queue memory), 4f37ee6a (the kernel in the worker that sorts), 93c7f5b7.",
+      "commits": [
+        "a797cf81",
+        "4f37ee6a",
+        "93c7f5b7"
+      ]
+    },
+    {
+      "id": "R-0591",
+      "date": "2026-10-24",
+      "time": "11:44",
+      "timeFrom": "recorded",
+      "title": "The per-light visibility sweep in C, visPoly pair, W2a",
+      "verdict": "kept",
+      "text": "**kept (product).** `visPolyStressScene`, one build (f04f2313), side A `wasmOff=visibilitySweep`, headed, source, detailed stats off, exact windows, 4 pairs, `--owner preRender`: pre-render 5.090 → 3.790 ms, **−25.4 %**, worse 0/4, cv 1/0 %.\n\nEvery other worker is under the floor and within 2.1 % (spatial 1.403 → 1.433). Load keys are equal (1 060 bodies).\n\nThe f32 sweep is the default (`wasm.visibilitySweepF32`), so this measures the f32 sweep against the JS. Commit 5ba72ab9.",
+      "commits": [
+        "5ba72ab9"
+      ]
+    },
+    {
+      "id": "R-0592",
+      "date": "2026-10-24",
+      "time": "11:49",
+      "timeFrom": "recorded",
+      "title": "The compound-solid raster in C, compoundVisPoly pair, W1",
+      "verdict": "kept",
+      "text": "**kept (product).** `compoundVisPolyStressScene?ringSegments=64`, one build (f04f2313), side A `wasmOff=solidSegments` (W2a's sweep on both sides), headed, source, detailed stats off, exact windows, 4 pairs, `--owner preRender`: pre-render 3.867 → 1.971 ms, **−49.0 %**, worse 0/4, cv 0/4 %.\n\nThe other workers are under the floor and within 1.3 %. Load keys are equal (64 bodies). Commit 8745eea9.",
+      "commits": [
+        "8745eea9"
+      ]
+    },
+    {
+      "id": "R-0593",
+      "date": "2026-10-24",
+      "time": "11:59",
+      "timeFrom": "recorded",
+      "title": "The particle integrate in float32 on the spin mix, scene pair (W12)",
+      "verdict": "kept",
+      "text": "**kept (product).** `wasm.particleIntegrateF32` (7c506cd3: `integrate_batch_f32x4`, 964550a9) on `particleIntegrateStressScene?spin=1`. One build (f04f2313), side A `wasmOff=particleIntegrateF32` (the shipped double kernel), headed, source, detailed stats off, exact windows, 4 pairs, `--owner particle`.\n\nParticle went from 3.708 to 2.962 ms: **−20.1 %**, worse 0/4, cv 1/0 %. Load is equal: 64 786 live particles on both sides. Node had read f32x4 +24.3 % on the spin mix (R-0571).",
+      "commits": [
+        "964550a9",
+        "7c506cd3"
+      ]
+    },
+    {
+      "id": "R-0594",
+      "date": "2026-10-24",
+      "time": "12:10",
+      "timeFrom": "recorded",
+      "title": "The packed-key spawn sort on spawnStormScene, E-125 pair",
+      "verdict": "kept-kernel",
+      "text": "**kept-kernel.** `spawnStormScene`, both sides from worktrees: `--vs 0318e74f` (the bench commit, before the change), `--hyp-rev 0ed1cdba`. Headed, source, detailed stats off, exact windows, 4 pairs, `--owner logic`.\n\nLogic went from 5.365 to 5.256 ms: −2.0 %, worse 0/4, cv 1/2 %. Bodies 475.7 → 463.3 (−2.6 %, within 5 %), entities 2 001 on both sides.\n\nUnder 3 %, so neutral on the scene. The kernel won on the shipped method (R-0584: storm +38.0 %, batch +8.1 %) and the scene is not worse, so it stays as a kernel keep. This sitting replaces H-14's, which a toolchain guard had contaminated (−0.55 %, 3/8).",
+      "commits": [
+        "0318e74f",
+        "0ed1cdba"
+      ]
+    },
+    {
+      "id": "R-0595",
+      "date": "2026-10-24",
+      "time": "12:20",
+      "timeFrom": "recorded",
+      "title": "Predator gate for the afternoon batch of 2026-10-24",
+      "verdict": "passed",
+      "text": "**passed (NEUTRAL at 8 pairs).** The Predator gate for the afternoon batch of 2026-10-24: `d8f41eb7` (the last gate, R-0577) against `f04f2313`. Both sides in worktrees, headed, source, detailed stats off, exact windows, 8 pairs.\n\nThe range covers:\n- Phase 4's bodies and spatial publish in Box2D's block;\n- W10, W1, W2a;\n- W4b with physics;\n- W19;\n- E-113's queue columns, E-125;\n- the particle float32 switches, E-129;\n- W27.\n\n| worker | A → B | paired | worse |\n|---|---|---|---|\n| pre-render | 4.708 → 3.773 ms | **−17.9 %** | 0/8 |\n| renderer | 3.641 → 3.426 ms | **−6.4 %** | 0/8 |\n| physics | 6.726 → 6.527 ms | −2.6 % | 3/8 |\n| logic | 4.040 → 4.136 ms | +2.4 % | 5/8 |\n| spatial | 4.662 → 4.702 ms | +3.9 % | 5/8 |\n\nPresented is 60.0 on both sides, and load keys are within 0.1 %. No worker is 3 % worse in 75 % of the pairs. Spatial's means differ by +0.9 %; its paired +3.9 % is well inside its limit at 8 pairs (12.2 % at 4 in R-0561, about 8.6 % at 8).\n\n\"Vs the others\" is no drift reference here. Nearly every worker is reachable:\n- logic by E-125;\n- spatial by its publish moving into Box2D's block;\n- physics by the bodies'.\n\nAnd pre-render and the renderer really did get faster.",
+      "commits": [
+        "d8f41eb7",
+        "f04f2313"
+      ]
+    },
+    {
+      "id": "R-0596",
+      "date": "2026-10-24",
+      "time": "12:34",
+      "timeFrom": "recorded",
+      "title": "The particle lists in float32 on a pool of 200 000, scene pair (W13)",
+      "verdict": "kept-kernel",
+      "text": "**kept-kernel.** `wasm.particleListsF32` (e07bafe2: `build_lists_f32x4`, 56dc587d; its `_u32` exports past 65 535, 1852b9a1). Sat on `particleIntegrateStressScene?tween=1&maxParticles=200000`, one build (f04f2313), side A `wasmOff=particleListsF32`, headed, source, detailed stats off, exact windows, 4 pairs, `--owner particle`.\n\nParticle went from 5.511 to 5.444 ms: −1.5 %, worse 1/4, cv 1/2 %. Live particles were 197 860 on both sides, queue rows −0.1 %, and pre-render +0.7 % (3/4).\n\nAt the default pool, particle read 2.10 ms, under the floor (2.103 → 2.064, −1.9 %), hence the raised pool.\n\nA tie on the scene. Since E-80 the lists are a small part of particle's step, so Node's +49.1 % (R-0571) shows here as 1.5 %. The kernel win stands and the scene is not worse, so it is kept on the kernel.\n\nThe same sitting is E-129's first browser run past 65 535: a pool of 200 000 in Chrome, 197 860 live, the u32 lists bound, presented 60.0, and the runner reported no error.",
+      "commits": [
+        "56dc587d",
+        "e07bafe2",
+        "1852b9a1"
+      ]
+    },
+    {
+      "id": "R-0597",
+      "date": "2026-10-24",
+      "time": "12:45",
+      "timeFrom": "recorded",
+      "title": "Decoration sway in float32 at 500 000 decorations, scene pair",
+      "verdict": "tie",
+      "text": "**tie (the scene); kept on the kernel.** `wasm.decorationSwayF32` (7c35e18f: `sway_decorations_f32x4`, 830ce87d; its `_u32` export past 65 535, 4e40fba6). Sat on `decorationSwayStressScene?decorations=500000`, one build (f04f2313), side A `wasmOff=decorationSwayF32`, headed, source, detailed stats off, exact windows, 4 pairs, `--owner particle`.\n\nParticle went from 3.627 to 3.669 ms: +0.4 %, worse 3/4, cv 1/1 %, with 500 000 decorations on both sides.\n\nEarlier attempts:\n- At 200 000 decorations, particle read 1.78 ms, under the floor (1.776 → 1.786, +0.6 %).\n- A first sitting at 500 000 had a long grep from this session running through pairs 2 to 4, so it was not read. Its one clean pair read −2.8 %.\n\nThe sway is screen-bounded, so at 500 000 decorations most of particle's step is other work, and Node's +12.9 % (R-0571) does not reach the scene. The kernel win stands and the scene is not worse; the float32 default stays.",
+      "commits": [
+        "830ce87d",
+        "7c35e18f",
+        "4e40fba6"
+      ]
+    },
+    {
+      "id": "R-0598",
+      "date": "2026-10-24",
+      "time": "12:49",
+      "timeFrom": "recorded",
+      "title": "Pools past 65 535: the 16-bit kernels hold, 200 000 particles in Chrome, E-129",
+      "verdict": "kept-hygiene",
+      "text": "**kept-hygiene.** Pools past 65 535 (54552ee2 through 97eaa482), checked three ways.\n\n**1. The 16-bit kernels hold.** The tree before E-129 (7c35e18f) against f04f2313, Node, alternating processes, 5 rounds, checksums equal on both sides:\n\n| bench, variant | before | after | | won |\n|---|---|---|---|---|\n| `particleIntegrateWasmMicrobench`, wasm-f32x4 (tween, 65 535) | 559 ops/s | 552 | −1.3 % | 1/5 |\n| `particleIntegrateWasmMicrobench`, base (the JS, which now takes its classify lists, 0b56ed2a) | 333 | 355 | paired median −2.7 % | 1/5 |\n| `particleListsWasmMicrobench`, wasm-f32x4 stress | 10 831 | 10 866 | +0.3 % | |\n| same, zoomed | 10 719 | 10 787 | +0.6 % | |\n| same, turned | 9 338 | 9 128 | −2.2 % | |\n| same, sparse (148 live) | 737.5 | 728.7 | −1.2 % | 2/5 |\n| `decorationSwayWasmMicrobench`, wasm-f32x4 | 12 113 | 12 129 | +0.1 % | |\n\nEvery row is within 3 %. The JS integrate is noisy here (paired −7.9 to +8.1 %).\n\nLead: in the lists' sparse case, two of the five new runs read 509 and 564 ops/s against 697 to 805 for every other run, a call of about 1.4 µs becoming about 1.9 µs. The other three tied. The bimodal shape points at the JIT on the call path (the binding now holds a u16 or a u32 export), not the kernel. It costs 0.6 µs a frame at most, so it was not chased.\n\n**2. A pool of 200 000 runs in Chrome.** `particleIntegrateStressScene?tween=1&maxParticles=200000` (the lists-f32 pair): 197 860 live, the u32 lists bound, presented 60.0, no error.\n\n**3. The gate.** The Predator gate of the afternoon (d8f41eb7 against f04f2313, 8 pairs, NEUTRAL) holds every E-129 commit.",
+      "commits": [
+        "54552ee2",
+        "b4406793",
+        "2f73036a",
+        "97eaa482"
       ]
     }
   ],
