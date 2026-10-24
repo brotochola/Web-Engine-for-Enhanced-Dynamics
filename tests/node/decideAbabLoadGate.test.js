@@ -373,4 +373,14 @@ test('a load key named as the owner is the claim: judged higher-is-better, out o
   const flat = pairsWithLoad('particle', [8.5, 8.6, 8.4, 8.5], [8.4, 8.5, 8.5, 8.4],
     'FLOWFIELDS_COMPUTED', [6.0, 6.1, 5.9, 6.0], [6.1, 6.0, 6.0, 6.1]);
   assert.equal(decideAbab(flat, 'FLOWFIELDS_COMPUTED').verdict, 'NEUTRAL');
+
+  // Every request a miss: the serviced count is the computed one, and it moves with the claim.
+  const serviced = pairs.map((p) => ({
+    A: { ...p.A, FLOWFIELDS_SERVICED: p.A.FLOWFIELDS_COMPUTED },
+    B: { ...p.B, FLOWFIELDS_SERVICED: p.B.FLOWFIELDS_COMPUTED },
+  }));
+  const withFamily = decideAbab(serviced, 'FLOWFIELDS_COMPUTED');
+  assert.equal(withFamily.verdict, 'KEPT (product)');
+  assert.equal(withFamily.load.FLOWFIELDS_SERVICED.mutedBy, 'owner family');
+  assert.equal(decideAbab(serviced, 'particle').verdict, 'FAIL (load)', 'with a worker as the owner both are load');
 });

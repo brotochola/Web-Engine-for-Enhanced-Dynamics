@@ -193,6 +193,12 @@ const SUB_TIMERS = [
 const PRESENTED_KEY = 'MAIN_FPS';
 
 const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8, FLOWFIELDS_COMPUTED: 1, FLOWFIELDS_SERVICED: 1, PATHS_COMPUTED: 1 };
+/**
+ * A throughput owner's family: the keys that move with it when it does, muted from the load-drift check with
+ * it. The serviced flowfields are the computed ones plus the cache hits (E-37): with every request a miss, as
+ * in navStress, they are the same count.
+ */
+const THROUGHPUT_FAMILY = { FLOWFIELDS_COMPUTED: ['FLOWFIELDS_SERVICED'] };
 
 // HOW_WE_MEASURE: a load key outside 5% fails the pair. A coefficient of
 // variation at or above 50% fails the pair. The band does not widen with cv.
@@ -374,10 +380,10 @@ export function decideAbab(pairs, owner, metric = null) {
     };
     load[key] = entry;
     if (belowFloor) continue;
-    // The owner's own key is the claim, not the load (see --owner <LOAD_KEY>).
-    if (key === owner) {
+    // The owner's own key is the claim, not the load (see --owner <LOAD_KEY>), and so are the keys that move with it.
+    if (key === owner || (THROUGHPUT_FAMILY[owner] || []).includes(key)) {
       entry.gated = false;
-      entry.mutedBy = 'owner';
+      entry.mutedBy = key === owner ? 'owner' : 'owner family';
       continue;
     }
     if (!bothPresent) {
