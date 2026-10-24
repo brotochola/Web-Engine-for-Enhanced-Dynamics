@@ -19,7 +19,7 @@ import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Grid } from '../../src/core/grid.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
-import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../../src/util/entityIdWidth.js';
+import { bindEntityIdWidth, EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../../src/util/entityIdWidth.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../../src/util/colliderUtils.js';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
@@ -85,10 +85,13 @@ export async function setupSpatialKernel(opts = {}) {
   const workersCount = opts.workers ?? 3;
   const seed = opts.seed ?? 0x5a71a1;
   const cfg = { ...PREDATOR_SPATIAL, ...(opts.spatial || {}) };
+  // opts.idWidth 32: the scene's 32-bit entity ids (the workers bind the width from config.entityIdWidth).
+  const idWidth = opts.idWidth === 32 ? 32 : 16;
+  bindEntityIdWidth(idWidth);
   const { buffers, gridMetadata } = spatialBuffers(cfg, n);
   buffers.componentData = coreComponentData(n);
   // WASM mode (E-76): poses, rows, candidates and (E-78) the grid in the publish memory, as
-  // sceneSharedBuffers builds it at 16-bit ids. 'product' is that memory; a function is a factory,
+  // sceneSharedBuffers builds it. 'product' is that memory; a function is a factory,
   // so a kernel can lay out more regions. `opts.wasm` is the scene's wasm switches (T7).
   const mem = opts.publishMemory === 'product'
     ? createSpatialPublishMemory(n, cfg.maxNeighbors, workersCount, {
@@ -98,7 +101,7 @@ export async function setupSpatialKernel(opts = {}) {
     : opts.publishMemory
       ? opts.publishMemory(n, cfg.maxNeighbors, workersCount, gridMetadata)
       : null;
-  if (opts.publishMemory && !mem) throw new Error('no publish memory (16-bit entity ids only)');
+  if (opts.publishMemory && !mem) throw new Error('no publish memory');
   if (mem) {
     buffers.entityPosData = mem.buffer;
     buffers.neighborData = mem.buffer;
@@ -127,7 +130,13 @@ export async function setupSpatialKernel(opts = {}) {
   const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base', opts.make);
   for (let w = 0; w < workers.length; w++) {
     await initWorker(workers[w], {
-      config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg, ...(opts.wasm ? { wasm: opts.wasm } : {}) },
+      config: {
+        worldWidth: cfg.worldWidth,
+        worldHeight: cfg.worldHeight,
+        spatial: cfg,
+        entityIdWidth: idWidth,
+        ...(opts.wasm ? { wasm: opts.wasm } : {}),
+      },
       globalEntityCount: n,
       buffers,
       gridMetadata,

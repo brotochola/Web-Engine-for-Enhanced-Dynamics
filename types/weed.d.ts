@@ -308,7 +308,7 @@ export type SceneConfig = Record<string, unknown> & {
    * JavaScript path instead, for example to time one against the other in the same build.
    */
   wasm?: {
-    /** Spatial neighbour publish. Needs 16-bit entity ids; at 32 the JavaScript path runs anyway. */
+    /** Spatial neighbour publish, at either entity id width. A scene whose rows would not fit its 2 GB memory runs the JavaScript path. */
     spatialPublish?: boolean;
     /** Spatial candidate gather (the cell walk before the publish). Runs only with spatialPublish. */
     spatialGather?: boolean;

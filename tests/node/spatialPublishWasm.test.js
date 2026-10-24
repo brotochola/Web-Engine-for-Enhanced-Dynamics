@@ -154,5 +154,8 @@ test('the spatial module publishes exactly what the JS path publishes, on the ra
 test('the shipped spatial module imports only the shared memory', () => {
   const mod = new WebAssembly.Module(fs.readFileSync(SHIPPED));
   assert.deepEqual(WebAssembly.Module.imports(mod), [{ module: 'env', name: 'memory', kind: 'memory' }]);
-  assert.deepEqual(WebAssembly.Module.exports(mod), [{ name: 'publish_batch', kind: 'function' }]);
+  assert.deepEqual(WebAssembly.Module.exports(mod), [
+    { name: 'publish_batch', kind: 'function' },
+    { name: 'publish_batch_u32', kind: 'function' },
+  ]);
 });

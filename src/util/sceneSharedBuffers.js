@@ -230,7 +230,7 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   const maxNeighbors = config.spatial.maxNeighbors;
   scene.spatialPublish = null;
   if (spatialOn) {
-    // wasm.spatialPublish false (E-76 T7) takes the plain-SAB JS path, as 32-bit ids do. Phase 4: in the spatial
+    // wasm.spatialPublish false (E-76 T7) takes the plain-SAB JS path. Phase 4: in the spatial
     // part of Box2D's block when there is one (sized from the same spec), else a memory of its own.
     const args = spatialPublishSpec(scene);
     const block = scene.box2dBlock;

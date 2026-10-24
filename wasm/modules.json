@@ -16,7 +16,8 @@
       "source": "wasm/spatialPublish.c",
       "output": "src/workers/spatialPublish.wasm",
       "exports": [
-        "publish_batch"
+        "publish_batch",
+        "publish_batch_u32"
       ],
       "maxMemoryPages": 32768
     },
@@ -61,7 +62,9 @@
       "output": "src/workers/spatialGather.wasm",
       "exports": [
         "gather_batch",
-        "order_batch_by_cell"
+        "order_batch_by_cell",
+        "gather_batch_u32",
+        "order_batch_by_cell_u32"
       ],
       "maxMemoryPages": 32768
     },

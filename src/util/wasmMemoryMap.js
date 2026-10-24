@@ -51,8 +51,8 @@ export function layoutRegions(regions) {
  * @param {number} maxNeighbors
  * @param {number} spatialWorkers
  */
-export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers, gather = null) {
-  const { regions, ...strides } = spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather);
+export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers, gather = null, idBytes = 2) {
+  const { regions, ...strides } = spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather, idBytes);
   return { ...layoutRegions(regions), ...strides };
 }
 
@@ -493,11 +493,13 @@ export function spatialPatternTableBytes(maxCellRadius) {
  * - rebuilds: one u16 list slice per spatial worker (the entities whose lists rebuild this frame);
  * - patterns: the circle-pattern table, the same in every worker (spatialPatternTableBytes).
  */
-export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather = null) {
+export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorkers, gather = null, idBytes = 2) {
   const count = entityCount | 0;
   const workers = Math.max(1, spatialWorkers | 0);
-  const rowBytes = count * (1 + (maxNeighbors | 0)) * 2;
-  const listStride = alignToLine(count * 2);
+  // W8b: ids are 2 or 4 bytes (the scene's entity id width) in the rows, the lists and the rebuild lists.
+  const id = idBytes === 4 ? 4 : 2;
+  const rowBytes = count * (1 + (maxNeighbors | 0)) * id;
+  const listStride = alignToLine(count * id);
   const regions = [
     { name: 'guard', owner: 'none', bytes: NULL_GUARD_BYTES },
     { name: 'pos', owner: 'spatial', bytes: count * 16 },
@@ -509,9 +511,9 @@ export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorke
   if (!gather) return { regions, listStride };
   const markerStride = alignToLine(count * 4);
   const truncatedStride = alignToLine(count);
-  const rebuildStride = alignToLine(count * 2);
-  // order_batch_by_cell: a u32 histogram[256], then three u16 lists of the entity count.
-  const orderStride = alignToLine(1024 + count * 6);
+  const rebuildStride = alignToLine(count * id);
+  // order_batch_by_cell: a u32 histogram[256], then two u16 key lists and a list of ids, each of the entity count.
+  const orderStride = alignToLine(1024 + count * (4 + id));
   regions.push(
     { name: 'grid', owner: 'spatial, each worker its own rows', bytes: gather.gridBytes },
     { name: 'markers', owner: 'spatial, one slice per worker', bytes: workers * markerStride },

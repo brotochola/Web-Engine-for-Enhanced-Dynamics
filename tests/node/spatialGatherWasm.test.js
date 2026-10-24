@@ -41,3 +41,31 @@ for (const [name, spatial] of Object.entries(CONFIGS)) {
     assert.equal(firstOrdered, -1, `in cell order, rows or counters differ from frame ${firstOrdered}`);
   });
 }
+
+// W8b: past 65 535 entities the ids are 32-bit and the publish and the gather take the kernels' _u32 exports.
+// Against the plain buffers' JS publish and gather, frame after frame, with ids above the 16-bit range in
+// every row. Detailed stats on: the JS publish counts the neighbours it finds, the WASM one only then (E-02).
+test('at 32-bit ids the WASM publish and gather publish what the JS path publishes', async () => {
+  const base = {
+    spatial: { maxNeighbors: 64, neighborReuseSkin: 0, neighborTickInterval: 1 },
+    n: 70000,
+    workers: 3,
+    frames: 6,
+    idWidth: 32,
+    detailedStats: true,
+  };
+  const [js, publish, gather, ordered] = await Promise.all([
+    run({ ...base, plain: true, gather: false }),
+    run({ ...base, gather: false }),
+    run({ ...base, gather: true }),
+    run({ ...base, spatial: { ...base.spatial, gatherCellOrder: true }, gather: true }),
+  ]);
+  assert.deepEqual(js.publishBound, [false, false, false], 'the plain buffers keep the JS publish');
+  assert.deepEqual(publish.publishBound, [true, true, true], 'the WASM publish is bound at 32-bit ids');
+  assert.deepEqual(gather.bound, [true, true, true], 'the WASM gather is bound at 32-bit ids');
+  assert.ok(js.published > 0, 'neighbours are published');
+  for (const [name, r] of [['publish', publish], ['gather', gather], ['cell order', ordered]]) {
+    const first = js.sums.findIndex((s, i) => s !== r.sums[i]);
+    assert.equal(first, -1, `${name}: rows or counters differ from frame ${first}`);
+  }
+});

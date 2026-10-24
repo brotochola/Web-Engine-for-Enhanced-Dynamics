@@ -72,6 +72,10 @@ test('the block plan: physics on and the switch on, Box2D grown by the block', (
     assert.equal(big.spatialBytes, 0, 'the spatial part past 2 GB stays out');
     assert.equal(big.queueBytes, fits.queueBytes, 'the render-queue part keeps its place');
     assert.equal(big.bytes, big.queueBytes);
+    // W8b: at 32-bit ids the part is laid out too, with 4-byte ids, and past 2 GB at half the neighbours.
+    const wide = box2dBlockPlan(spatial(64, 32));
+    assert.ok(wide && wide.spatialBytes > 60000 * 65 * 4 * 2, 'at 32-bit ids the spatial part is in the block, 4-byte ids');
+    assert.equal(box2dBlockPlan(spatial(4500, 32)).spatialBytes, 0, 'at 32-bit ids, past 2 GB it stays out');
   } finally {
     bindEntityIdWidth(16);
   }

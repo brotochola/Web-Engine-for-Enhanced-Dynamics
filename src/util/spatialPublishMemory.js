@@ -1,13 +1,13 @@
 // One shared WebAssembly.Memory for neighbor rows, latched poses, and candidate lists, and, with a
 // grid spec, the grid cells and the per-worker state of the WASM candidate gather (E-78).
 // The regions and their offsets come from the memory map (wasmMemoryMap.js); callers view them
-// with those byte offsets. Uint16 entity ids only. Wider ids keep the plain SharedArrayBuffers.
+// with those byte offsets. Entity ids of the scene's width: 16-bit, or 32-bit through the kernels' _u32 exports (W8b).
 
 import { entityIdBytes } from './entityIdWidth.js';
 import { spatialPatternTableBytes, spatialPublishRegions } from './wasmMemoryMap.js';
 
-// The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
-const WASM_MAX_PAGES = 8192;
+// The modules' import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
+const WASM_MAX_PAGES = 32768;
 
 /** Largest circle-pattern radius, in cells, a spatial worker searches (visual ranges to ~1500 px at 128). */
 export const SPATIAL_MAX_CELL_RADIUS = 12;
@@ -88,14 +88,15 @@ export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWor
 
 /** The regions' layout (spatialPublishRegions) for these counts, or null when the scene keeps plain buffers. */
 function spatialPublishLayout(entityCount, maxNeighbors, spatialWorkers, grid) {
-  if (entityIdBytes() !== 2) return null;
+  const idBytes = entityIdBytes();
+  if (idBytes !== 2 && idBytes !== 4) return null;
   const count = entityCount | 0;
   const maxN = maxNeighbors | 0;
   if (count <= 0 || maxN < 0) return null;
   const gather = grid
     ? { gridBytes: (grid.totalCells | 0) * (grid.cellByteSize | 0), patternBytes: spatialPatternTableBytes(SPATIAL_MAX_CELL_RADIUS) }
     : null;
-  return { ...spatialPublishRegions(count, maxN, spatialWorkers, gather), gather };
+  return { ...spatialPublishRegions(count, maxN, spatialWorkers, gather, idBytes), gather };
 }
 
 /** The bytes createSpatialPublishMemory's regions take, for a block reserved before the memory is made (Phase 4). */
