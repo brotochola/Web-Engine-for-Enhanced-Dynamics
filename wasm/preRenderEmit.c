@@ -1,11 +1,13 @@
-/* W4a screen (E-76): the full emit of PreRenderWorker.emitSpriteQueue (src/workers/preRenderWorker.js) for
-   sprite rows (type 0) and decoration rows (type 2), poses taken from the collector's stash, no persist hit.
-   Every column is a byte offset into the imported shared memory, through a table of u32 offsets; 0 marks a
-   column the worker does not have. Arithmetic as the JS does it: the sort key and the animation clock in
-   double, each value stored as the typed array would store it. A frame holding any other row type is
-   declined (0xffffffff) before anything is written, and the JS emits it. Play-once ends and missing
-   animations come back as lists for the JS to act on: the end message, its entity-type filter and the
-   warnings stay JS. */
+/* Pre-render's emit (E-76 W4a, E-112): the full emit of PreRenderWorker.emitSpriteQueue
+   (src/workers/preRenderWorker.js) for sprite rows (type 0) and decoration rows (type 2), poses taken from
+   the collector's stash, on a frame the persist check missed. Every column is a byte offset into the
+   render-queue memory (src/workers/preRenderEmitClient.js writes the table); 0 marks a column the worker
+   does not have. Arithmetic as the JS does it: the sort key and the animation clock in double, each value
+   stored as the typed array would store it. Row i is queue row i (no row expands without an Adobe root), so
+   rows of other types (particles, glows, bullets) are listed and left for the JS to write; a frame with an
+   Adobe root or a LiquidFun row is declined (0xffffffff) before anything is written. Play-once ends and
+   missing animations come back as lists too: the end message, its entity-type filter and the warnings
+   stay JS. */
 #include <stdint.h>
 
 #define INLINE static inline __attribute__((always_inline))
@@ -27,7 +29,7 @@ enum {
   Q_X, Q_Y, Q_SCALE_X, Q_SCALE_Y, Q_ROT_C, Q_ROT_S, Q_ALPHA, Q_TINT, Q_TEXTURE, Q_ANCHOR_X, Q_ANCHOR_Y,
   Q_TYPE, Q_SORT_KEY, Q_REPEAT_X, Q_REPEAT_Y, Q_TILE_MODE, Q_TILE_OFF_U, Q_TILE_OFF_V, Q_TILE_MUL_X,
   Q_TILE_MUL_Y, Q_SHADOW_H, Q_SHADOW_OFF_X, Q_SHADOW_OFF_Y,
-  R_ENDS, R_WARNS, R_COUNTS,
+  R_ENDS, R_WARNS, R_FOREIGN, R_COUNTS,
   SLOT_COUNT
 };
 
@@ -136,13 +138,14 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
 
   uint32_t *ends = PTR(uint32_t, R_ENDS);
   uint32_t *warns = PTR(uint32_t, R_WARNS);
+  uint32_t *foreign = PTR(uint32_t, R_FOREIGN);
   uint32_t *counts = PTR(uint32_t, R_COUNTS);
 
   /* The loop below visits min(count, maxItems) rows, each writing one. */
   const uint32_t n = count < maxItems ? count : maxItems;
   for (uint32_t i = 0; i < n; i++) {
     const uint8_t ty = cType[i];
-    if (ty != 0 && ty != 2) return DECLINED;
+    if (ty == 6 || ty == 7) return DECLINED;
   }
 
   const int sortKey = (flags & F_SORT_KEY) != 0;
@@ -151,12 +154,18 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   const int bounds = (flags & F_BOUNDS) != 0;
   uint32_t nEnds = 0;
   uint32_t nWarns = 0;
+  uint32_t nForeign = 0;
   uint32_t tiled = 0;
 
   for (uint32_t i = 0; i < n; i++) {
+    const uint8_t ty = cType[i];
+    if (ty != 0 && ty != 2) {
+      foreign[nForeign++] = i;
+      continue;
+    }
     const int32_t idx = cIndex[i];
     const uint32_t out = i;
-    if (cType[i] == 0) {
+    if (ty == 0) {
       if (sortKey) {
         /* orderSortKey(yKey, zIndex | 0, ySort, band) */
         const double z = sZ ? (double)sZ[idx] : 0.0;
@@ -315,5 +324,6 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   counts[0] = nEnds;
   counts[1] = nWarns;
   counts[2] = tiled;
+  counts[3] = nForeign;
   return n;
 }

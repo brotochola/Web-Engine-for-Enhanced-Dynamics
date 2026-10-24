@@ -1,0 +1,406 @@
+// E-112 (W4a): the emit kernel (preRenderEmit.wasm, through preRenderEmitClient.js) against the shipped
+// PreRenderWorker.emitSpriteQueue on a real worker, every column in the render-queue memory as the scene
+// lays it out. Both sides start from the same state and run 30 frames; for every frame the kernel's sprite
+// and decoration rows, the animation state (frame, clock, last texture, bounds), the play-once ends and
+// the missing-texture warnings must be what the JS made, and the rows of other types must be listed and
+// left alone. The mix covers what the kernel copies from the JS: tiled sprites (world and local) and the
+// tiles-dirty frames after them, sprites without an animation or a first frame, play-once ends, zIndex,
+// Y-sort on and off, NaN and -0 shadow terms, decorations with and without a texture, and a collector
+// longer than the queue.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { Transform } from '../../src/components/transform.js';
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { ShadowCaster } from '../../src/components/shadowCaster.js';
+import { DecorationComponent } from '../../src/components/decorationComponent.js';
+import { ParticleComponent } from '../../src/components/particleComponent.js';
+import { BulletComponent } from '../../src/components/bulletComponent.js';
+import { LightEmitter } from '../../src/components/lightEmitter.js';
+import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
+import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
+import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import {
+  bindPreRenderEmit,
+  EMIT_BOUNDS,
+  EMIT_DECLINED,
+  EMIT_SORT_KEY,
+  EMIT_TILES_DIRTY,
+  EMIT_WARN_DECO_START,
+  EMIT_WARN_NO_ANIM,
+  EMIT_WARN_NO_START,
+  EMIT_Y_SORT,
+  writeEmitColumns,
+  writeEmitTextures,
+} from '../../src/workers/preRenderEmitClient.js';
+import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
+
+const N = 700;
+const DECOS = 300;
+const MAX = 900;
+const DT = 1000 / 60;
+const FRAMES = 30;
+const POOL = 64;
+
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Sheets 1-3 with 1-, 2-, 5- and 13-frame animations, frame sizes that change from frame to frame. */
+function textureMetadata() {
+  const animationFrameStart = [];
+  const animationFrameCount = [];
+  const widths = [];
+  const heights = [];
+  const proxyToGlobalAnim = {};
+  let offset = 0;
+  for (let sheet = 1; sheet <= 3; sheet++) {
+    proxyToGlobalAnim[sheet] = {};
+    [1, 2, 5, 13].forEach((frames, local) => {
+      proxyToGlobalAnim[sheet][local] = animationFrameStart.length;
+      animationFrameStart.push(offset);
+      animationFrameCount.push(frames);
+      for (let f = 0; f < frames; f++) {
+        widths.push(16 + ((sheet * 7 + local * 3 + f * 5) % 50));
+        heights.push(20 + ((sheet * 11 + f * 3) % 40));
+      }
+      offset += frames;
+    });
+  }
+  // Sheet 4: state 0 maps past the last animation (no first frame), state 1 to nothing at all.
+  proxyToGlobalAnim[4] = { 0: animationFrameStart.length + 5 };
+  const animationNameToIndex = {};
+  for (const name of ['_lightGradient', '_whiteCircle', '_bulletTrail']) {
+    animationNameToIndex[name] = animationFrameStart.length;
+    animationFrameStart.push(offset);
+    animationFrameCount.push(1);
+    widths.push(64);
+    heights.push(64);
+    offset += 1;
+  }
+  return {
+    animationFrameStart,
+    animationFrameCount,
+    proxyToGlobalAnim,
+    animationNameToIndex,
+    totalFrames: offset,
+    frameWidth: Uint16Array.from(widths),
+    frameHeight: Uint16Array.from(heights),
+  };
+}
+
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed }) {
+  const caps = gpuQueueCaps(maxItems, { enabled: false });
+  const m = createRenderQueueMemory(maxItems, computeBufferSize(maxItems), computeGpuQueueBufferSize(caps), {
+    entities: N,
+    spriteBytes: SpriteRenderer.getBufferSize(N),
+    casterBytes: ShadowCaster.getBufferSize(N),
+    decorationBytes: DecorationComponent.getBufferSize(DECOS),
+  });
+  const e = m.layout.emit;
+  const buffers = {
+    componentData: {
+      ...coreComponentData(N),
+      SpriteRenderer: m.buffer,
+      ShadowCaster: m.buffer,
+      DecorationComponent: m.buffer,
+      // What the rows of other types read in the JS run (the kernel leaves those rows to it).
+      LightEmitter: new SharedArrayBuffer(LightEmitter.getBufferSize(N)),
+      ParticleComponent: new SharedArrayBuffer(ParticleComponent.getBufferSize(POOL)),
+      BulletComponent: new SharedArrayBuffer(BulletComponent.getBufferSize(POOL)),
+    },
+    componentDataByte: { SpriteRenderer: e.spriteRendererByte, ShadowCaster: e.shadowCasterByte, DecorationComponent: e.decorationByte },
+  };
+  for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent]) C.clearArrays();
+  const meta = textureMetadata();
+  const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  await initWorker(worker, {
+    config: { worldWidth: 4000, worldHeight: 3000, preRender: { interpolation: false }, renderer: { ySort } },
+    globalEntityCount: N,
+    buffers,
+    extra: {
+      maxDecorations: DECOS,
+      maxParticles: POOL,
+      maxBullets: POOL,
+      textureMetadata: meta,
+      renderQueueMemory: m.memory,
+      renderQueueLayout: m.layout,
+      renderQueue: {
+        maxItems,
+        sync: new SharedArrayBuffer(8),
+        dataA: m.buffer,
+        dataAByte: m.layout.queueAByte,
+        dataB: m.buffer,
+        dataBByte: m.layout.queueBByte,
+        cameraA: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
+        cameraB: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
+        entityTextureData: m.buffer,
+        entityTextureByte: e.lastTextureByte,
+      },
+    },
+  });
+  bindPoseColumns(N);
+  assert.equal(SpriteRenderer.scaleX.buffer, m.buffer, 'SpriteRenderer is in the memory');
+  assert.equal(worker._renderableType.buffer, m.buffer, 'the collector is in the memory');
+  worker._decorationZoomAlpha = 0.75;
+  worker._animEndByType = new Uint8Array(256).fill(1);
+
+  const r = rng(seed);
+  const sr = SpriteRenderer;
+  for (let i = 0; i < N; i++) {
+    sr.active[i] = 1;
+    sr.scaleX[i] = i % 31 === 0 ? -1.25 : 0.5 + r();
+    sr.scaleY[i] = i % 37 === 0 ? 0 : 0.5 + r();
+    sr.alpha[i] = r();
+    sr.tint[i] = (r() * 0xffffff) >>> 0;
+    sr.anchorX[i] = r();
+    sr.anchorY[i] = r();
+    sr.inheritTransformRotation[i] = i % 3 === 0 ? 0 : 1;
+    sr.spriteRotC[i] = Math.cos(i);
+    sr.spriteRotS[i] = Math.sin(i);
+    sr.zIndex[i] = (i % 5) - 2;
+    // Tiled sprites, world and local; every other one is stretched.
+    sr.repeatX[i] = i % 17 === 0 ? 32 : 0;
+    sr.repeatY[i] = i % 23 === 0 ? 48 : 0;
+    sr.tileMode[i] = i % 2 ? 2 : 1;
+    sr.tileOffsetU[i] = (i * 977) & 0xffff;
+    sr.tileOffsetV[i] = (i * 331) & 0xffff;
+    sr.boundsHalfW[i] = 10 + (i % 40);
+    sr.boundsHalfH[i] = 12 + (i % 30);
+    // Sheets 1-3 with every state, sheet 4 (no first frame / no animation), sheet 0 (unset).
+    sr.spritesheetId[i] = i % 41 === 0 ? 0 : i % 29 === 0 ? 4 : 1 + (i % 3);
+    sr.animationState[i] = sr.spritesheetId[i] === 4 ? (i & 1) : i % 4;
+    sr.isAnimated[i] = i % 7 === 0 ? 0 : 1;
+    sr.animationSpeed[i] = 0.1 + r() * 0.9;
+    sr.loop[i] = i % 11 === 0 ? 0 : 1;
+    ShadowCaster.active[i] = i % 4 === 0 ? 0 : 1;
+    ShadowCaster.heightMultiplier[i] = i % 13 === 0 ? NaN : i % 19 === 0 ? -0 : r() * 2;
+    ShadowCaster.anchorOffsetX[i] = i % 9 === 0 ? -0 : r();
+    ShadowCaster.anchorOffsetY[i] = i % 10 === 0 ? NaN : r();
+    worker.entityFrameIndex[i] = (i * 7) % 15;
+    worker.entityFrameAccumulator[i] = r() * 0.2;
+  }
+  const meta2 = meta;
+  for (let d = 0; d < DECOS; d++) {
+    DecorationComponent.scaleX[d] = r();
+    DecorationComponent.scaleY[d] = r();
+    DecorationComponent.alpha[d] = r();
+    DecorationComponent.tint[d] = (r() * 0xffffff) >>> 0;
+    DecorationComponent.textureId[d] = d % 47 === 0 ? meta2.animationFrameStart.length + 9 : d % 12;
+    DecorationComponent.anchorX[d] = r();
+    DecorationComponent.anchorY[d] = r();
+  }
+
+  // The collector: sprites, decorations and a few rows of other types, poses in the queue (E-98d).
+  const types = [];
+  const indices = [];
+  for (let k = 0; k < count; k++) {
+    const pick = r();
+    if (pick < 0.62) { types.push(0); indices.push(Math.floor(r() * N)); }
+    else if (pick < 0.92) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
+    else { types.push([1, 3, 4, 5][k % 4]); indices.push(k % POOL); }
+  }
+  const qViews = () => ({ x: worker.renderQueueX, y: worker.renderQueueY, rc: worker.renderQueueRotC, rs: worker.renderQueueRotS });
+  const q = qViews();
+  for (let k = 0; k < count; k++) {
+    worker._renderableType[k] = types[k];
+    worker._renderableIndex[k] = indices[k];
+    worker._renderableY[k] = Math.round(r() * 3000) * 128 + (k % 3 === 0 ? -0 : 0);
+    q.x[k] = r() * 4000;
+    q.y[k] = r() * 3000;
+    q.rc[k] = Math.cos(k);
+    q.rs[k] = Math.sin(k);
+  }
+  const source = worker._fillEmitSource(count, maxItems, worker._renderableY, worker._renderableType, worker._renderableIndex,
+    q.x, q.y, q.rc, q.rs, false, true, ySort);
+
+  // Everything either side writes, to put back between the two runs.
+  const state = [
+    worker.entityFrameIndex, worker.entityFrameAccumulator, worker.entityLastTextureId,
+    SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH,
+  ];
+  const queueBytes = new Uint8Array(m.buffer, m.layout.queueAByte, computeBufferSize(maxItems));
+  const snapshot = () => ({
+    queue: queueBytes.slice(),
+    state: state.map((a) => a.slice()),
+    tiled: new Set(worker._tiledTileColumns),
+  });
+  const restore = (s) => {
+    queueBytes.set(s.queue);
+    state.forEach((a, k) => a.set(s.state[k]));
+    worker._tiledTileColumns = new Set(s.tiled);
+  };
+
+  const b = await bindPreRenderEmit(m.memory, e);
+  assert.ok(writeEmitTextures(b, meta), 'the metadata fits the tables');
+  return { worker, m, b, source, types, count, maxItems, snapshot, restore, ySort };
+}
+
+/** The queue columns a row has. */
+const ROW_COLUMNS = [
+  'renderQueueX', 'renderQueueY', 'renderQueueScaleX', 'renderQueueScaleY', 'renderQueueRotC', 'renderQueueRotS',
+  'renderQueueAlpha', 'renderQueueTint', 'renderQueueTextureId', 'renderQueueAnchorX', 'renderQueueAnchorY',
+  'renderQueueType', 'renderQueueSortKey', 'renderQueueRepeatX', 'renderQueueRepeatY', 'renderQueueTileMode',
+  'renderQueueTileOffsetU', 'renderQueueTileOffsetV', 'renderQueueTileMulX', 'renderQueueTileMulY',
+  'renderQueueShadowH', 'renderQueueShadowOffX', 'renderQueueShadowOffY',
+];
+
+function hex(bytes, at, n) {
+  return [...bytes.subarray(at, at + n)].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+async function runCase(t, opts) {
+  const k = await setup(opts);
+  const { worker, b, source, types, count, maxItems } = k;
+  const n = Math.min(count, maxItems);
+  const start = k.snapshot();
+
+  // The JS: 30 frames, the queue and the state after each, the ends and warnings it made.
+  const jsFrames = [];
+  const ends = [];
+  const warns = [];
+  const realEnded = worker._spriteAnimationEnded;
+  const realWarn = worker._warnMissingTexture;
+  worker._spriteAnimationEnded = (idx, anim) => ends.push(`${idx}:${anim}`);
+  worker._warnMissingTexture = (key) => warns.push(key);
+  for (let f = 0; f < FRAMES; f++) {
+    ends.length = 0;
+    warns.length = 0;
+    const written = worker.emitSpriteQueue(DT, source);
+    assert.equal(written, n);
+    jsFrames.push({ snap: k.snapshot(), ends: [...ends].sort(), warns: warns.filter((w) => !w.startsWith('name:')).sort() });
+  }
+  worker._spriteAnimationEnded = realEnded;
+  worker._warnMissingTexture = realWarn;
+
+  // The kernel from the same start. Rows of other types hold a marker it must not change.
+  k.restore(start);
+  const marker = 0x5a;
+  for (let r = 0; r < n; r++) {
+    if (types[r] === 0 || types[r] === 2) continue;
+    for (const c of ROW_COLUMNS) {
+      const v = worker[c];
+      if (v) new Uint8Array(v.buffer, v.byteOffset + r * v.BYTES_PER_ELEMENT, v.BYTES_PER_ELEMENT).fill(marker);
+    }
+  }
+  // L1: the regions the kernel must never write hold a canary through every frame.
+  const L = k.m.layout;
+  const queueSize = computeBufferSize(maxItems);
+  const untouched = [
+    ['guard', 0, L.queueAByte],
+    ['queueB', L.queueBByte, queueSize],
+    ['gpu queues and the pack scratch', L.gpuAByte, L.emit.spriteRendererByte - L.gpuAByte],
+  ].map(([name, at, bytes]) => [name, new Uint8Array(k.m.buffer, at, bytes)]);
+  for (const [, bytes] of untouched) bytes.fill(0xa5);
+  const results = b.results;
+  for (let f = 0; f < FRAMES; f++) {
+    assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
+    const tilesDirty = worker.renderQueueTileMode !== null && worker._tiledTileColumns.has(worker.renderQueueTileMode);
+    const flags = EMIT_SORT_KEY | (k.ySort ? EMIT_Y_SORT : 0) | (tilesDirty ? EMIT_TILES_DIRTY : 0) | EMIT_BOUNDS;
+    const written = b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, worker._decorationZoomAlpha, worker._zBand);
+    assert.notEqual(written, EMIT_DECLINED);
+    assert.equal(written, n, `frame ${f}: rows written`);
+    if (results[2] && worker.renderQueueTileMode !== null) worker._tiledTileColumns.add(worker.renderQueueTileMode);
+    const js = jsFrames[f];
+    // State: every entity, every frame.
+    const now = k.snapshot();
+    for (let s = 0; s < now.state.length; s++) {
+      assert.deepEqual(Buffer.from(now.state[s].buffer, now.state[s].byteOffset, now.state[s].byteLength),
+        Buffer.from(js.snap.state[s].buffer, js.snap.state[s].byteOffset, js.snap.state[s].byteLength), `frame ${f}: state ${s}`);
+    }
+    // Rows: sprites and decorations equal to the JS's, bit for bit; the others untouched and listed.
+    const foreign = [];
+    for (let r = 0; r < results[3]; r++) foreign.push(b.u32[b.foreignAt + r]);
+    const expectForeign = [];
+    for (let r = 0; r < n; r++) if (types[r] !== 0 && types[r] !== 2) expectForeign.push(r);
+    assert.deepEqual(foreign, expectForeign, `frame ${f}: the rows left to the JS`);
+    const qa = k.m.layout.queueAByte;
+    for (let r = 0; r < n; r++) {
+      const ours = types[r] === 0 || types[r] === 2;
+      for (const c of ROW_COLUMNS) {
+        const v = worker[c];
+        if (!v) continue;
+        const bpe = v.BYTES_PER_ELEMENT;
+        const at = v.byteOffset - qa + r * bpe;
+        for (let x = 0; x < bpe; x++) {
+          const got = now.queue[at + x];
+          if (ours && got !== js.snap.queue[at + x]) {
+            assert.fail(`frame ${f} row ${r} (type ${types[r]}) ${c}: ${hex(now.queue, at, bpe)}, the JS wrote ${hex(js.snap.queue, at, bpe)}`);
+          }
+          if (!ours && got !== marker) assert.fail(`frame ${f} row ${r} (type ${types[r]}) ${c} was written`);
+        }
+      }
+    }
+    // Ends and warnings: the JS's, from the kernel's lists.
+    const kEnds = [];
+    for (let r = 0; r < results[0]; r++) kEnds.push(`${b.u32[b.endsAt + 2 * r]}:${b.u32[b.endsAt + 2 * r + 1]}`);
+    assert.deepEqual(kEnds.sort(), js.ends, `frame ${f}: play-once ends`);
+    const kWarns = [];
+    for (let r = 0; r < results[1]; r++) {
+      const idx = b.u32[b.warnsAt + 2 * r];
+      const kind = b.u32[b.warnsAt + 2 * r + 1];
+      kWarns.push(warnKey(worker, idx, kind));
+    }
+    assert.deepEqual(kWarns.sort(), js.warns, `frame ${f}: warnings`);
+  }
+  for (const [name, bytes] of untouched) {
+    const at = bytes.findIndex((x) => x !== 0xa5);
+    assert.equal(at, -1, `the kernel wrote ${name} (byte ${at})`);
+  }
+  t.diagnostic(`${n} rows, ${jsFrames.reduce((s, x) => s + x.ends.length, 0)} ends, ${jsFrames[0].warns.length} warnings a frame`);
+}
+
+/** The key the JS warns under, for a kernel warning. */
+function warnKey(worker, idx, kind) {
+  if (kind === EMIT_WARN_NO_ANIM) return `sprite:${SpriteRenderer.spritesheetId[idx]}:${SpriteRenderer.animationState[idx]}`;
+  if (kind === EMIT_WARN_NO_START) {
+    const g = worker.proxyToGlobalAnim[SpriteRenderer.spritesheetId[idx]][SpriteRenderer.animationState[idx]];
+    return `animStart:${g}`;
+  }
+  if (kind === EMIT_WARN_DECO_START) return `frameStart:decoration:${DecorationComponent.textureId[idx]}`;
+  return `kind ${kind}`;
+}
+
+test('the emit kernel writes what emitSpriteQueue writes, Y-sorted', async (t) => {
+  await runCase(t, { ySort: true });
+});
+
+test('the emit kernel writes what emitSpriteQueue writes, without Y-sort', async (t) => {
+  await runCase(t, { ySort: false, seed: 0xbeef });
+});
+
+test('the emit kernel fills a queue to its capacity', async (t) => {
+  await runCase(t, { ySort: true, maxItems: 600, count: 600, seed: 0xfeed });
+});
+
+test('a frame with an Adobe root or a LiquidFun row is declined before anything is written', async () => {
+  const k = await setup({ ySort: true });
+  const { worker, b, source } = k;
+  for (const type of [6, 7]) {
+    worker._renderableType[17] = type;
+    const before = k.snapshot();
+    assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source));
+    const written = b.emitRows(b.tableByte, source.count, source.maxItems, EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS, DT / 1000, 1, worker._zBand);
+    assert.equal(written, EMIT_DECLINED, `type ${type}`);
+    const after = k.snapshot();
+    assert.deepEqual(Buffer.from(after.queue), Buffer.from(before.queue), 'the queue is untouched');
+    after.state.forEach((a, s) => assert.deepEqual(Buffer.from(a.buffer, a.byteOffset, a.byteLength), Buffer.from(before.state[s].buffer, before.state[s].byteOffset, before.state[s].byteLength)));
+  }
+});
+
+test('a column outside the memory makes the table refuse, so the JS emits', async () => {
+  const k = await setup({ ySort: true });
+  const { worker, b, source } = k;
+  const saved = SpriteRenderer.alpha;
+  SpriteRenderer.alpha = new Float32Array(N);
+  assert.equal(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), false);
+  SpriteRenderer.alpha = saved;
+  assert.equal(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), true);
+});

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W4a screen): pre-render's full emit of sprite rows (type 0) and decoration rows (type 2)
- * in WASM (wasm/test/preRenderEmit.c, a test module) against the shipped
+ * Kernel (E-76 W4a, E-112): pre-render's full emit of sprite rows (type 0) and decoration rows (type 2)
+ * in WASM (wasm/preRenderEmit.c, src/workers/preRenderEmit.wasm) against the shipped
  * PreRenderWorker.emitSpriteQueue, on a real worker with Predator's mix.
  *
  *   js    PreRenderWorker.emitSpriteQueue (shipped), as buildRenderQueue calls it on a frame its
@@ -43,9 +43,10 @@ import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { EMIT_SLOTS } from '../../src/workers/preRenderEmitClient.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'tests/fixtures/wasm/preRenderEmit.wasm'));
+const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/workers/preRenderEmit.wasm'));
 
 // --scale shrinks every count (a cache-resident population, a diagnostic; the verdict is at 1).
 const ARGS = parseArgs();
@@ -70,20 +71,7 @@ const PROXY_STATES = 256;
 const DECLINED = 0xffffffff;
 
 /** preRenderEmit.c's table, slot for slot. */
-const SLOTS = [
-  'cType', 'cIndex', 'cY', 'stashX', 'stashY', 'stashRc', 'stashRs',
-  'sScaleX', 'sScaleY', 'sAlpha', 'sTint', 'sAnchorX', 'sAnchorY', 'sInherit', 'sRotC', 'sRotS',
-  'sRepeatX', 'sRepeatY', 'sTileMode', 'sTileOffU', 'sTileOffV', 'sHalfW', 'sHalfH',
-  'sSheet', 'sAnim', 'sAnimated', 'sSpeed', 'sLoop', 'sZ',
-  'scActive', 'scH', 'scOffX', 'scOffY',
-  'dScaleX', 'dScaleY', 'dAlpha', 'dTint', 'dTexture', 'dAnchorX', 'dAnchorY',
-  'aFrame', 'aAccum', 'aLastTex',
-  'tProxy', 'tSheets', 'tFrameCount', 'tFrameStart', 'tAnims', 'tFrameW', 'tFrameH', 'tFrames',
-  'qX', 'qY', 'qScaleX', 'qScaleY', 'qRotC', 'qRotS', 'qAlpha', 'qTint', 'qTexture', 'qAnchorX', 'qAnchorY',
-  'qType', 'qSortKey', 'qRepeatX', 'qRepeatY', 'qTileMode', 'qTileOffU', 'qTileOffV', 'qTileMulX',
-  'qTileMulY', 'qShadowH', 'qShadowOffX', 'qShadowOffY',
-  'rEnds', 'rWarns', 'rCounts',
-];
+const SLOTS = EMIT_SLOTS;
 const F_SORT_KEY = 1;
 const F_Y_SORT = 2;
 const F_TILES_DIRTY = 4;
@@ -190,6 +178,7 @@ function regionList(tex) {
   col('tFrameH', Uint16Array, tex.meta.totalFrames);
   col('rEnds', Uint32Array, 2 * MAX_ITEMS);
   col('rWarns', Uint32Array, 2 * MAX_ITEMS);
+  col('rForeign', Uint32Array, MAX_ITEMS);
   col('rCounts', Uint32Array, 4);
   col('table', Uint32Array, SLOTS.length);
   return list.map((r) => ({ ...r, owner: 'preRender' }));
@@ -378,7 +367,7 @@ export async function setupEmitKernel(opts = {}) {
     t[k] = value;
   };
   for (const name of ['cType', 'cIndex', 'cY', 'aFrame', 'aAccum', 'aLastTex', 'tProxy', 'tFrameCount', 'tFrameStart',
-    'tFrameW', 'tFrameH', 'rEnds', 'rWarns', 'rCounts', ...Object.keys(SPRITE_COLUMNS), ...Object.keys(CASTER_COLUMNS),
+    'tFrameW', 'tFrameH', 'rEnds', 'rWarns', 'rForeign', 'rCounts', ...Object.keys(SPRITE_COLUMNS), ...Object.keys(CASTER_COLUMNS),
     ...Object.keys(DECO_COLUMNS)]) {
     at(name, regions[name].byte);
   }

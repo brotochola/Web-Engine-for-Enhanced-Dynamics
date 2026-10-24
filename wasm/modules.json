@@ -109,13 +109,12 @@
     },
     {
       "name": "preRenderEmit",
-      "source": "wasm/test/preRenderEmit.c",
-      "output": "tests/fixtures/wasm/preRenderEmit.wasm",
+      "source": "wasm/preRenderEmit.c",
+      "output": "src/workers/preRenderEmit.wasm",
       "exports": [
         "emit_rows"
       ],
-      "maxMemoryPages": 8192,
-      "test": true
+      "maxMemoryPages": 8192
     }
   ]
 }
