@@ -434,19 +434,19 @@
     {
       "id": "E-126",
       "title": "Spatial grid rebuilt for the bodies that moved only, in worlds where most sleep (Grid movers only)",
-      "status": "open",
+      "status": "kept-kernel",
       "statusText": "reopened 2026-10-24 (dropped 2026-09-22 on the 8 ms floor)",
       "date": "2026-10-24",
-      "result": "Its kernel ran 11.6× at 5 % movers (13.8 → 160 ops/s) and half as fast at 100 % (14.2 → 6.9). The quiet stress, 60 000 bodies and none moving, read spatial 5.269 → 3.990 ms (−24 %) and failed only the old 8 ms floor, which stood in for the one-in-six sampler's precision, not for a doubt about 24 %. Large worlds where most bodies sleep are where big entity counts come from. Predator moves 47 % of its bodies a frame (8 329 of 17 563), near the kernel's break-even (about 50 %), so it would take the full rebuild: there it is a guard.",
+      "result": "Kernel +639.2 % at 5 % movers, +17.5 % at 20 % (threshold 0.2); movedBodiesStillScene at the 65 000-body cap spatial 2.514 → 1.048 ms, under the floor.",
       "area": "spatial",
       "kind": "js",
       "aliases": [],
       "next": "Restore the path from 57d30b14 (removed in 4f26427c) onto today's `rebuildOwnedRows`, with a parity test against the full rebuild and the switch to it at the kernel's crossover. Owner pair on a static-heavy stress (60 000 bodies, 5 % awake); Predator must not get worse. Before W7, so W7 ports whichever rebuild wins.",
-      "rank": 9,
       "records": [
         "R-0140",
         "R-0508",
-        "R-0572"
+        "R-0572",
+        "R-0579"
       ]
     },
     {
@@ -698,19 +698,19 @@
     {
       "id": "W21c",
       "title": "decal premultiply (`copyPremultiplyRgba`) and the dirty-tile sweep",
-      "status": "open",
+      "status": "kept",
       "statusText": "open",
       "date": null,
-      "result": "WASM premultiply beats JS. runs every Pixi frame with decals on; Q1: 0.5 % of Predator Pixi. X1: kernel +44.4 %, Predator renderer −0.8 %",
+      "result": "decalStampStressScene at resolution 1: renderer 6.959 → 3.361 ms, −51.3 % (4/4); particle +6.0 % (4/4) from the tiles' cache lines; kernel +304 %.",
       "area": "pixi",
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#W21c"
       ],
       "aliases": [],
-      "rank": 5,
       "records": [
-        "R-0565"
+        "R-0565",
+        "R-0578"
       ]
     },
     {
@@ -12928,6 +12928,31 @@
       "text": "**passed (NEUTRAL at 8 pairs).** The Predator gate for the batch of 2026-10-24: every engine change since the gate reading (`5b3b3633`: W9d's copy is in it) against `d8f41eb7` (W11 with E-118, W4b's memory and collect, W26, W21c, E-126, E-130, entityIdWidth auto), both sides in worktrees, exact windows, headed, source, 8 pairs (4, then `--append` 4: the first 4 flagged pre-render +6.6 %, 3/4, which \"vs the others\" read +4.4 %, inside the session's 4.8 % relative limit). At 8 pairs: logic +3.8 % paired (5/8 worse) / −0.5 % vs the others; spatial −0.9 % / −2.0 %; physics +0.8 % / −1.2 %; renderer −0.6 % / **−1.8 % (7/8 lower)**; pre-render +2.6 % (5/8) / +1.7 % (2/8 lower); presented 60.0 both; load within 0.2 %. No worker past its limit.",
       "commits": [
         "5b3b3633",
+        "d8f41eb7"
+      ]
+    },
+    {
+      "id": "R-0578",
+      "date": "2026-10-24",
+      "time": "09:01",
+      "timeFrom": "recorded",
+      "title": "The decal premultiply in C at resolution 1, W21c pair",
+      "verdict": "kept",
+      "text": "**kept (product), with a cost on the particle worker written down.** decalStampStressScene at `resolution=1` (tiles of 256 px, `360a2461`'s knob, which puts the renderer past the floor), one build, `--query-a wasmOff=decalPremultiply` (side A copyPremultiplyRgba, side B the kernel), exact windows, headed, source, 4 pairs: renderer **6.959 → 3.361 ms, −51.3 %, worse 0/4**, cv 1/4 %, while Pixi uploaded more tiles a frame (sampled 25.6 → 27.2, +7 %; DECAL_TILES_DIRTY 28.3 → 34.3, which failed the load band: a faster sweep sees more of the frame's dirty tiles, the same stamps on both sides). The particle worker read **+6.0 % (4/4, cv 2 %)**, about +0.25 ms, on code W21c does not touch: most likely the faster sweep now reads the tiles while the stamp kernel is still writing them, so the two cores pass the same cache lines (X5). The slowest worker of the frame goes from 6.96 ms (Pixi) to 5.84 ms (particle), −16 %. At the default resolution (0.5) the renderer read 2.282 → 1.153 ms under the floor. The Predator gate of the batch (decals on) passed with the renderer −1.8 % against the others.",
+      "commits": [
+        "a49710ac"
+      ]
+    },
+    {
+      "id": "R-0579",
+      "date": "2026-10-24",
+      "time": "09:06",
+      "timeFrom": "recorded",
+      "title": "The movers-only grid at 65 000 bodies, E-126 pair (under the floor)",
+      "verdict": "kept-kernel",
+      "text": "**kept (kernel); the scene under the floor at the body cap.** movedBodiesStillScene at 65 000 bodies with every 20th moving (`moverEvery=20`, 5 %; the knob needed `61e95a07`, which lists MovedTicker for the workers), side A `097df89a` (the full rebuild), side B `d8f41eb7` (the movers path, threshold 0.2), both in worktrees, exact windows, headed, source, 4 pairs: spatial **2.514 → 1.048 ms (−58 %)**, under the 3 ms floor and so not judged; physics 5.522 → 5.578 ms (+1.8 %, 3/4: the moved list's sequence and the created/destroyed/reshaped bodies it now carries); load equal (BODY_COUNT 65 000). Box2D refuses more than 65 535 bodies, so no setting of this scene reaches 3 ms on the base: a protocol ceiling, and the claim is the kernel's (R-0572: +639.2 % at 5 % movers, +17.5 % at 20 %). Predator (47 % moved) takes the full rebuild; the batch's Predator gate passed.",
+      "commits": [
+        "096295a3",
         "d8f41eb7"
       ]
     }
