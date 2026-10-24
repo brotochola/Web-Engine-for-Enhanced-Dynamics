@@ -689,11 +689,13 @@ export class AbstractWorker {
       if (data.bulletFreeList && data.bulletFreeListTop) {
         BulletPool.initializeFreeList(data.bulletFreeList, data.bulletFreeListTop);
       }
+      // E-129: u32 past 65 535 bullets.
+      const BulletSlots = PoolSlotArray(data.maxBullets | 0);
       if (data.activeBulletsData) {
-        this.activeBulletsData = new Uint16Array(data.activeBulletsData);
+        this.activeBulletsData = new BulletSlots(data.activeBulletsData);
       }
       if (data.visibleBulletsData) {
-        this.visibleBulletsData = new Uint16Array(data.visibleBulletsData);
+        this.visibleBulletsData = new BulletSlots(data.visibleBulletsData);
       }
       if (data.impactBuffer) {
         this.impactBuffer = data.impactBuffer;

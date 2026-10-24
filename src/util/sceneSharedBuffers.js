@@ -129,7 +129,7 @@ export function validateSceneSharedBufferConfig(scene) {
   // E-129: 32-bit slot ids past 65 535, up to MAX_POOL_SLOTS (poolSlotWidth.js).
   assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_POOL_SLOTS);
   assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_POOL_SLOTS);
-  assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES_U16);
+  assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_POOL_SLOTS);
   assertIntegerInRange('tween.maxTweens', config.tween?.maxTweens ?? 0, 0, 1 << 20);
   assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, maxEnt);
   assertIntegerInRange(
@@ -205,14 +205,6 @@ function createCompactSlotListPair(buffers, activeKey, visibleKey, maxEntries) {
   buffers[visibleKey] = new SharedArrayBuffer(size);
   new Slot(buffers[activeKey])[0] = 0;
   new Slot(buffers[visibleKey])[0] = 0;
-}
-
-function createCompactUint16ListPair(buffers, activeKey, visibleKey, maxEntries) {
-  const size = (1 + maxEntries) * 2;
-  buffers[activeKey] = new SharedArrayBuffer(size);
-  buffers[visibleKey] = new SharedArrayBuffer(size);
-  new Uint16Array(buffers[activeKey])[0] = 0;
-  new Uint16Array(buffers[visibleKey])[0] = 0;
 }
 
 function clearActiveFlags(array, count) {
@@ -435,7 +427,7 @@ function initializeBulletBuffers(scene) {
   BulletComponent.initializeArrays(buffers.componentData.BulletComponent, maxBullets, buffers.componentDataByte?.BulletComponent | 0);
   BulletComponent.bulletCount = maxBullets;
 
-  const { freeList, freeListTop } = createUint16FreeListBuffers(
+  const { freeList, freeListTop } = createSlotFreeListBuffers(
     buffers,
     'bulletFreeList',
     'bulletFreeListTop',
@@ -443,7 +435,7 @@ function initializeBulletBuffers(scene) {
   );
   resetFreeList(freeListTop, freeList, maxBullets, 1);
 
-  createCompactUint16ListPair(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
+  createCompactSlotListPair(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
 
   // Header: [0]=count (Int32), [1]=batch sequence (Int32). Impact data starts at byte 8.
   // The sequence lets logic workers detect new batches and avoid double-processing

@@ -169,7 +169,7 @@ export class BulletPool extends SharedAtomicPool {
 
   /**
    * Fill `out` with indices where `active[i]` is set. Kernel override only.
-   * @param {Uint16Array} out
+   * @param {Uint16Array|Uint32Array} out (a Uint32Array past 65 535 bullets)
    * @returns {number} live count
    */
   static collectLiveIndices(out) {
@@ -187,11 +187,11 @@ export class BulletPool extends SharedAtomicPool {
    * impacts, despawn on hit. Writes activeData[0] = live count.
    *
    * @param {number} dtRatio
-   * @param {Uint16Array} activeData
+   * @param {Uint16Array|Uint32Array} activeData [count, index, ...], at the pool's slot width (E-129: u32 past 65 535)
    * @param {Int32Array|null} impactHeader
    * @param {Float32Array|null} impactData
    * @param {number} maxImpacts
-   * @param {{ speed?: Float32Array|null, excludeSet?: Set<number>|null, liveIndices?: Uint16Array|null, liveCount?: number }} [opts] kernel-only
+   * @param {{ speed?: Float32Array|null, excludeSet?: Set<number>|null, liveIndices?: Uint16Array|Uint32Array|null, liveCount?: number }} [opts] kernel-only
    * @returns {{ activeCount: number, impactWrite: number }}
    */
   static tick(dtRatio, activeData, impactHeader, impactData, maxImpacts, opts) {
