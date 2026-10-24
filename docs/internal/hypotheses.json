@@ -1350,7 +1350,10 @@
       "refs": [
         "WASM_HYPOTHESES.md#W17"
       ],
-      "aliases": []
+      "aliases": [],
+      "records": [
+        "R-0615"
+      ]
     },
     {
       "id": "W21a",
@@ -13476,6 +13479,19 @@
       "text": "**screened (premise), no change.** `bodyForceCallMicrobench` (`f6c28028`): the shipped `box2dWasm.wasm` in Node, single-threaded, the Predator fixture's 16 551 bodies as dynamic circles, every one with an acceleration. Five alternating rounds of `applyForcesAndTorque`'s linear part, with the call and without it. With the call, **7.4 ns a body** (one `body_apply_force_center` per body); the same loads and tests with the force summed instead, **2.3 ns**. So the call costs **5.1 ns a body**, and that includes Box2D's own work (the slot's body lookup, the wake test, the force add), which a batched C export would still do. Q4 put the boundary itself at 3.4–4.8 ns for a call of this shape. The most one C call over the force ring can save is therefore about 3–4 ns a body: **about 60–70 µs a step** at Predator's body count with every body accelerating, **about 2 % of Predator's physics** (3.7 ms). That is under the 3 % keep bar, and under the 14.5 % that Predator's A/A can resolve for physics at 4 pairs. `publishMovedBodies` and `snapshotPrevPose` are plain JS loops with no boundary (2–5 % and less of the physics JS thread in Q1b); at the 1.5–2× that WASM gives such loops they add 1–2 %, each needing its own glue and a Box2D rebuild in both builds. Reopen if a scene has a much larger share of accelerating bodies in physics.",
       "commits": [
         "f6c28028"
+      ]
+    },
+    {
+      "id": "R-0615",
+      "date": "2026-10-24",
+      "time": "16:36",
+      "timeFrom": "recorded",
+      "title": "SpawnStorm's createBody warnings: a despawn during the create is not a failure (found screening W17)",
+      "verdict": "kept-hygiene",
+      "text": "**kept (hygiene, a bug fix).** Found while screening W17 (Q1b's SpawnStorm trace had 86 % of `syncBodySlot` on its `console.warn` line). The scene runner now prints the physics host's `[weedjs-box2d]` warnings (`55a83624`), and SpawnStorm warned `createBody failed; retry next step` about 470 times a second. A diagnostic in a scratch worktree showed every one with `entityActive`, `rbActive` and `colActive` at 0, a circle of radius 6. The entity was despawned while physics, beside the logic workers, created its body; `createBodyForEntity` found nothing active and returned false, and `syncBodySlot` warned and marked a retry that had nothing to do. Fix (`5fcac8df`): a false create on an entity that no longer wants a body is left alone (the despawn marks the slot); a failure on a live entity still warns once and retries. `bodyCreateRace.test.js` runs the shipped block (`body-create-start/end`) and fails on the old one. Pair, `spawnStormScene?storm=4000`, Chrome, headed, source, worktrees (`--vs 76194d2a --hyp-rev 5fcac8df`), 4 pairs: warnings **112 083 → 0**; physics **3.600 → 3.460 ms (−6.9 %, worse 1/4)** while it holds **2.2× the bodies** (`BODY_COUNT` 529 → 1 184: physics now creates them before the storm despawns them, so the runner's load gate read FAIL on that key, an output of the fix, not its input); logic 10.896 → 10.361 ms (−7.6 %, worse 1/4). No worker worse.",
+      "commits": [
+        "55a83624",
+        "5fcac8df"
       ]
     }
   ],
