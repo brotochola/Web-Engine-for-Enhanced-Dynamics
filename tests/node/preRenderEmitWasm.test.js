@@ -17,6 +17,7 @@ import { DecorationComponent } from '../../src/components/decorationComponent.js
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
+import { Layer } from '../../src/core/layer.js';
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
@@ -24,6 +25,7 @@ import {
   bindPreRenderEmit,
   EMIT_BOUNDS,
   EMIT_DECLINED,
+  EMIT_PERSIST_MISS,
   EMIT_SORT_KEY,
   EMIT_TILES_DIRTY,
   EMIT_WARN_DECO_START,
@@ -32,6 +34,7 @@ import {
   EMIT_Y_SORT,
   writeEmitColumns,
   writeEmitTextures,
+  writePersistColumns,
 } from '../../src/workers/preRenderEmitClient.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
 
@@ -96,7 +99,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   const m = createRenderQueueMemory(maxItems, computeBufferSize(maxItems), computeGpuQueueBufferSize(caps), {
     entities: N,
@@ -219,7 +222,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed }) {
     q.rs[k] = Math.sin(k);
   }
   const source = worker._fillEmitSource(count, maxItems, worker._renderableY, worker._renderableType, worker._renderableIndex,
-    q.x, q.y, q.rc, q.rs, false, true, ySort);
+    q.x, q.y, q.rc, q.rs, persist, true, ySort);
 
   // Everything either side writes, to put back between the two runs.
   const state = [
@@ -457,4 +460,181 @@ test('emitSpriteQueue through the kernel writes every row the JS loop writes, ot
     }
     t.diagnostic(`ySort ${ySort}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
   }
+});
+
+// W4c: the persist path. Frame after frame on alternating queue buffers, the kernel's persist_check,
+// persist_poses and persist_remember against the shipped _type0PersistHit, _writeType0PosesOnly and
+// _rememberType0Set, with what makes a frame miss scheduled in: dirty sprites (and the other buffer's
+// full emit they force), a changed animation, swapped collector rows, a frame past its animation's end
+// (the repair misses) and an Adobe root. The full emit a miss leads to is left out on both sides.
+const PERSIST_FRAMES = 40;
+
+/** The regions the persist path writes, as [name, byte, bytes]. */
+function persistRegions(m, maxItems) {
+  const L = m.layout;
+  const e = L.emit;
+  const q = computeBufferSize(maxItems);
+  const n = e.persistRows;
+  return [
+    ['queueA', L.queueAByte, q], ['queueB', L.queueBByte, q],
+    ['spriteRenderer', e.spriteRendererByte, SpriteRenderer.getBufferSize(N)],
+    ['frame', e.frameByte, N * 2], ['accum', e.accumByte, N * 4], ['lastTexture', e.lastTextureByte, N * 2],
+    ['persistType', e.persistTypeByte, 2 * n], ['persistEntity', e.persistEntityByte, 8 * n],
+    ['persistFrame', e.persistFrameByte, 4 * n], ['persistAnim', e.persistAnimByte, 4 * n],
+  ];
+}
+
+async function runPersistCase(t, { ySort, inQueue, seed }) {
+  const k = await setup({ ySort, seed, persist: true });
+  const { worker, b, m, maxItems } = k;
+  const count = k.count;
+  // Sort keys on persist frames need an order: a zIndex user, and Y-sort on the entities layer.
+  SpriteRenderer._zIndexUsers[0] = 1;
+  const savedLayer = [Layer._ySorting, Layer.entitiesId];
+  if (ySort) {
+    Layer._ySorting = new Uint8Array(32);
+    Layer.entitiesId = 0;
+    Layer._ySorting[0] = 1;
+  }
+  try {
+    await persistFrames(t, k, { ySort, inQueue, seed });
+  } finally {
+    [Layer._ySorting, Layer.entitiesId] = savedLayer;
+  }
+}
+
+async function persistFrames(t, k, { ySort, inQueue, seed }) {
+  const { worker, b, m, maxItems } = k;
+  const count = k.count;
+  assert.equal(worker._entityYSort(), ySort);
+  assert.ok(worker._queueHasOrder());
+  const all = new Uint8Array(m.buffer);
+  const regions = persistRegions(m, maxItems);
+  const cType = worker._renderableType;
+  const cIndex = worker._renderableIndex;
+  const cY = worker._renderableY;
+  const sprites = [];
+  for (let r = 0; r < count; r++) if (cType[r] === 0) sprites.push(r);
+  // NaN clocks: the persist path advances them on every frame (!(clock < duration)); the full emit never does.
+  for (const r of sprites.slice(0, 60)) if (SpriteRenderer.isAnimated[cIndex[r]]) SpriteRenderer.animationSpeed[cIndex[r]] = NaN;
+  const start = all.slice();
+  const animatedRow = sprites.find((r) => SpriteRenderer.isAnimated[cIndex[r]] && SpriteRenderer.spritesheetId[cIndex[r]] === 2
+    && SpriteRenderer.animationState[cIndex[r]] === 3);
+  assert.ok(animatedRow !== undefined, 'a sprite with a 13-frame animation');
+
+  /** Frame f's input, the same on both runs: the buffer, the poses, and what makes it miss. */
+  const prepare = (f) => {
+    const buf = f & 1;
+    worker._queueBuf = buf;
+    worker._setWriteBuffer(buf);
+    // The stash: the queue's own columns (E-98d), or the other buffer's (in the memory as well).
+    const o = worker.renderQueueBuffers[buf ^ 1];
+    const st = inQueue
+      ? { x: worker.renderQueueX, y: worker.renderQueueY, rc: worker.renderQueueRotC, rs: worker.renderQueueRotS }
+      : { x: o.x, y: o.y, rc: o.rotC, rs: o.rotS };
+    const r = rng(seed * 1000 + f);
+    for (let i = 0; i < count; i++) {
+      st.x[i] = r() * 4000;
+      st.y[i] = r() * 3000;
+      st.rc[i] = Math.cos(f + i);
+      st.rs[i] = Math.sin(f + i);
+    }
+    if (f % 7 === 3) for (let j = 0; j < 5; j++) SpriteRenderer.renderDirty[cIndex[sprites[Math.floor(r() * sprites.length)]]] = 1;
+    if (f % 11 === 5) {
+      const idx = cIndex[sprites[Math.floor(r() * sprites.length)]];
+      if (SpriteRenderer.spritesheetId[idx] !== 4) SpriteRenderer.animationState[idx] = (SpriteRenderer.animationState[idx] + 1) % 4;
+    }
+    if (f % 13 === 8) {
+      const a = Math.floor(r() * count);
+      const c = Math.floor(r() * count);
+      [cType[a], cType[c]] = [cType[c], cType[a]];
+      [cIndex[a], cIndex[c]] = [cIndex[c], cIndex[a]];
+    }
+    if (f === 17) worker.entityFrameIndex[cIndex[animatedRow]] = 99;
+    if (f === 20) cType[5] = 6;
+    if (f === 26) cType[5] = k.types[5];
+    return { buf, st };
+  };
+
+  const record = (hit, others, moved, repaired, ends) => ({
+    hit, others, moved, repaired, ends, counts: [...worker._persistCount],
+    mem: regions.map(([, at, bytes]) => all.slice(at, at + bytes)),
+  });
+
+  // The JS persist path.
+  const realEnded = worker._spriteAnimationEnded;
+  const js = [];
+  for (let f = 0; f < PERSIST_FRAMES; f++) {
+    const { buf, st } = prepare(f);
+    const ends = [];
+    worker._spriteAnimationEnded = (idx, anim) => ends.push(`${idx}:${anim}`);
+    const hit = worker._type0PersistHit(buf, count, cType, cIndex);
+    const others = hit ? worker._writeType0PosesOnly(count, cType, cIndex, cY, st.x, st.y, st.rc, st.rs, DT) : 0;
+    if (!hit) worker._rememberType0Set(buf, count, cType, cIndex);
+    js.push(record(hit, others, hit ? worker._persistFramesMoved : 0, hit ? worker._persistFramesRepaired : 0, ends));
+  }
+  worker._spriteAnimationEnded = realEnded;
+
+  // The kernel, from the same start.
+  all.set(start);
+  worker._persistCount = [0, 0];
+  const kinds = { hit: 0, repaired: 0, moved: 0, ends: 0 };
+  for (let f = 0; f < PERSIST_FRAMES; f++) {
+    const { buf, st } = prepare(f);
+    const source = worker._fillEmitSource(count, maxItems, cY, cType, cIndex, st.x, st.y, st.rc, st.rs, true, true, ySort);
+    assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
+    assert.ok(writePersistColumns(b, worker, SpriteRenderer, buf), 'and the persist rows');
+    let hit = false;
+    let repaired = 0;
+    if (worker._persistCount[buf] === count) {
+      const got = b.persistCheck(b.tableByte, count, maxItems);
+      hit = got !== EMIT_PERSIST_MISS;
+      if (hit) repaired = got;
+    }
+    let others = 0;
+    let moved = 0;
+    const ends = [];
+    if (hit) {
+      const sort = !!(worker.renderQueueSortKey && worker._queueHasOrder());
+      const flags = (sort ? EMIT_SORT_KEY : 0) | (sort && worker._entityYSort() ? EMIT_Y_SORT : 0) | EMIT_BOUNDS;
+      others = b.persistPoses(b.tableByte, count, maxItems, flags, DT / 1000, worker._zBand);
+      moved = b.results[1];
+      for (let e = 0, at = b.endsAt; e < b.results[0]; e++, at += 2) {
+        if (worker._animEndByType[Transform.entityType[b.u32[at]]] === 1) ends.push(`${b.u32[at]}:${b.u32[at + 1]}`);
+      }
+    } else {
+      const cleared = b.persistRemember(b.tableByte, count, maxItems);
+      worker._persistCount[buf] = count;
+      if (cleared) worker._persistCount[buf ^ 1] = -1;
+    }
+    const got = record(hit, others, moved, repaired, ends);
+    const want = js[f];
+    assert.deepEqual({ hit: got.hit, others: got.others, moved: got.moved, repaired: got.repaired, counts: got.counts },
+      { hit: want.hit, others: want.others, moved: want.moved, repaired: want.repaired, counts: want.counts }, `frame ${f}`);
+    assert.deepEqual(got.ends, want.ends, `frame ${f}: play-once ends, in order`);
+    regions.forEach(([name], r) => {
+      const at = got.mem[r].findIndex((x, i) => x !== want.mem[r][i]);
+      assert.equal(at, -1, `frame ${f}: ${name} differs at byte ${at}`);
+    });
+    if (hit) kinds.hit++;
+    kinds.repaired += repaired;
+    kinds.moved += moved;
+    kinds.ends += ends.length;
+  }
+  // The schedule must have reached every branch it is there for.
+  assert.ok(kinds.hit >= 10 && kinds.hit <= PERSIST_FRAMES - 10, `hits ${kinds.hit}`);
+  assert.ok(kinds.repaired > 0 && kinds.moved > 0 && kinds.ends > 0, JSON.stringify(kinds));
+  t.diagnostic(`${count} rows: ${kinds.hit} persist frames of ${PERSIST_FRAMES}, ${kinds.repaired} repaired, ${kinds.moved} moved, ${kinds.ends} ends`);
+}
+
+test('the persist path in the kernel does what the JS persist path does, Y-sorted', async (t) => {
+  await runPersistCase(t, { ySort: true, inQueue: true, seed: 0x9e1 });
+});
+
+test('the persist path in the kernel does what the JS persist path does, without Y-sort', async (t) => {
+  await runPersistCase(t, { ySort: false, inQueue: true, seed: 0x9e2 });
+});
+
+test('the persist path in the kernel copies a stash that is not the queue', async (t) => {
+  await runPersistCase(t, { ySort: true, inQueue: false, seed: 0x9e3 });
 });

@@ -3,6 +3,8 @@
 // blocks, both queue buffers, the collector, the animation state; see renderQueueMemoryRegions). emit_rows
 // writes the full emit's sprite and decoration rows with the JS's bits; the rows of other types, the
 // play-once ends and the missing textures come back as lists, and pre-render acts on them in JS.
+// W4c: persist_check, persist_poses and persist_remember are the entity queue's persist path, on the same
+// table with the rows each queue buffer last held (writePersistColumns).
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
@@ -24,6 +26,7 @@ export const EMIT_SLOTS = [
   'qType', 'qSortKey', 'qRepeatX', 'qRepeatY', 'qTileMode', 'qTileOffU', 'qTileOffV', 'qTileMulX',
   'qTileMulY', 'qShadowH', 'qShadowOffX', 'qShadowOffY',
   'rEnds', 'rWarns', 'rForeign', 'rCounts',
+  'sDirty', 'pType', 'pEntity', 'pFrame', 'pAnim', 'aEntities',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -35,6 +38,8 @@ export const EMIT_TILES_DIRTY = 4;
 export const EMIT_BOUNDS = 8;
 /** What JS reads back from emit_rows when it declined the frame (u32 0xffffffff as an i32). */
 export const EMIT_DECLINED = -1;
+/** What persist_check returns when the rows are not the ones the buffer last held (W4c). */
+export const EMIT_PERSIST_MISS = -1;
 /** Warning kinds in the warns list. */
 export const EMIT_WARN_NO_ANIM = 0;
 export const EMIT_WARN_NO_START = 1;
@@ -73,7 +78,7 @@ export const EMIT_OPTIONAL_QUEUE_COLUMNS = [
  * @param {Record<string, number>} emit createRenderQueueMemory's layout.emit
  */
 export async function bindPreRenderEmit(memory, emit) {
-  const k = await loadWasmKernel('preRenderEmit', wasmUrl, memory, ['emit_rows']);
+  const k = await loadWasmKernel('preRenderEmit', wasmUrl, memory, ['emit_rows', 'persist_check', 'persist_poses', 'persist_remember']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, emit.tableByte, EMIT_SLOTS.length);
   table[SLOT.rEnds] = emit.endsByte;
@@ -88,6 +93,9 @@ export async function bindPreRenderEmit(memory, emit) {
   return {
     buffer,
     emitRows: k.emit_rows,
+    persistCheck: k.persist_check,
+    persistPoses: k.persist_poses,
+    persistRemember: k.persist_remember,
     layout: emit,
     table,
     tableByte: emit.tableByte,
@@ -137,6 +145,7 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
     if (!putSlot(b, EMIT_DECORATION_COLUMNS[k][0], DecorationComponent[EMIT_DECORATION_COLUMNS[k][1]], true)) return false;
   }
   if (!putSlot(b, 'aFrame', w.entityFrameIndex) || !putSlot(b, 'aAccum', w.entityFrameAccumulator)) return false;
+  b.table[SLOT.aEntities] = w.entityFrameIndex.length;
   if (!putSlot(b, 'aLastTex', w.entityLastTextureId, true)) return false;
   for (let k = 0; k < EMIT_QUEUE_COLUMNS.length; k++) {
     if (!putSlot(b, EMIT_QUEUE_COLUMNS[k][0], w[EMIT_QUEUE_COLUMNS[k][1]])) return false;
@@ -145,6 +154,17 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
     if (!putSlot(b, EMIT_OPTIONAL_QUEUE_COLUMNS[k][0], w[EMIT_OPTIONAL_QUEUE_COLUMNS[k][1]], true)) return false;
   }
   return true;
+}
+
+/**
+ * W4c. The persist path's columns, after writeEmitColumns: the rows queue buffer `buf` last held (pre-render's
+ * _persistType, _persistEntity, _persistFrame and _persistAnim of that buffer) and the sprites' dirty flags.
+ * @returns {boolean} false when one is not in the memory: the JS runs the persist path
+ */
+export function writePersistColumns(b, w, SpriteRenderer, buf) {
+  return putSlot(b, 'pType', w._persistType[buf]) && putSlot(b, 'pEntity', w._persistEntity[buf])
+    && putSlot(b, 'pFrame', w._persistFrame[buf]) && putSlot(b, 'pAnim', w._persistAnim[buf])
+    && putSlot(b, 'sDirty', SpriteRenderer.renderDirty, true);
 }
 
 /**

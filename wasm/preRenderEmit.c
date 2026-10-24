@@ -7,7 +7,11 @@
    rows of other types (particles, glows, bullets) are listed and left for the JS to write; a frame with an
    Adobe root or a LiquidFun row is declined (0xffffffff) before anything is written. Play-once ends and
    missing animations come back as lists too: the end message, its entity-type filter and the warnings
-   stay JS. */
+   stay JS.
+   W4c: the persist path of the entity queue, from the same table. persist_check is _type0PersistHit (with
+   _repairPersistFrame), persist_poses is _writeType0PosesOnly (with _writeQueueShadow and
+   _advancePersistFrame) and persist_remember is _rememberType0Set; the rows a queue buffer last held are
+   the P_ columns, the slots of that buffer. */
 #include <stdint.h>
 
 #define INLINE static inline __attribute__((always_inline))
@@ -30,6 +34,9 @@ enum {
   Q_TYPE, Q_SORT_KEY, Q_REPEAT_X, Q_REPEAT_Y, Q_TILE_MODE, Q_TILE_OFF_U, Q_TILE_OFF_V, Q_TILE_MUL_X,
   Q_TILE_MUL_Y, Q_SHADOW_H, Q_SHADOW_OFF_X, Q_SHADOW_OFF_Y,
   R_ENDS, R_WARNS, R_FOREIGN, R_COUNTS,
+  /* W4c: the sprites' dirty flags, the rows of the queue buffer being written as it last held them
+     (type, entity, frame, animation state) and the length of the frame column (a value, not an offset). */
+  S_DIRTY, P_TYPE, P_ENTITY, P_FRAME, P_ANIM, A_ENTITIES,
   SLOT_COUNT
 };
 
@@ -326,4 +333,245 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   counts[2] = tiled;
   counts[3] = nForeign;
   return n;
+}
+
+/* What persist_check returns when the rows are not the ones this buffer last held. */
+#define PERSIST_MISS 0xffffffffu
+
+/* The global animation of (sheet, state), or -1: proxyToGlobalAnim?.[sheet]?.[state]. */
+INLINE int32_t global_anim(const int32_t *proxy, uint32_t nSheets, uint32_t sheet, uint32_t anim) {
+  return sheet < nSheets ? proxy[sheet * PROXY_STATES + anim] : -1;
+}
+
+/* _type0PersistHit, once the JS has matched the buffer's count: PERSIST_MISS when a row's type or entity
+   is not the one this buffer last held, when a row is an Adobe root, or when a sprite is dirty or changed
+   its animation; else the sprites whose frame moved since, each given its current frame's texture
+   (_repairPersistFrame, which misses when that frame has no texture). */
+__attribute__((export_name("persist_check")))
+uint32_t persist_check(uint32_t table, uint32_t count, uint32_t maxItems) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint8_t *cType = PTR(const uint8_t, C_TYPE);
+  const int32_t *cIndex = PTR(const int32_t, C_INDEX);
+  const uint8_t *pType = PTR(const uint8_t, P_TYPE);
+  const int32_t *pEntity = PTR(const int32_t, P_ENTITY);
+  uint16_t *pFrame = PTR(uint16_t, P_FRAME);
+  const uint16_t *pAnim = PTR(const uint16_t, P_ANIM);
+  const uint8_t *sDirty = PTR(const uint8_t, S_DIRTY);
+  const uint8_t *sSheet = PTR(const uint8_t, S_SHEET);
+  const uint8_t *sAnim = PTR(const uint8_t, S_ANIM);
+  const uint16_t *aFrame = PTR(const uint16_t, A_FRAME);
+  uint16_t *aLastTex = PTR(uint16_t, A_LAST_TEX);
+  const int32_t *proxy = PTR(const int32_t, T_PROXY);
+  const uint32_t nSheets = t[T_SHEETS];
+  const int32_t *frameCount = PTR(const int32_t, T_FRAME_COUNT);
+  const int32_t *frameStart = PTR(const int32_t, T_FRAME_START);
+  const uint32_t nAnims = t[T_ANIMS];
+  uint16_t *qTexture = PTR(uint16_t, Q_TEXTURE);
+
+  /* Rows past the buffer pass: the JS reads undefined on both sides of each comparison there. */
+  const uint32_t n = count < maxItems ? count : maxItems;
+  uint32_t repaired = 0;
+  for (uint32_t i = 0; i < n; i++) {
+    const uint32_t ty = cType[i];
+    const int32_t idx = cIndex[i];
+    if (pType[i] != ty || pEntity[i] != idx) return PERSIST_MISS;
+    if (ty == 6) return PERSIST_MISS;
+    if (ty != 0) continue;
+    if (sDirty && sDirty[idx]) return PERSIST_MISS;
+    const uint32_t anim = sAnim[idx];
+    if (pAnim[i] != anim) return PERSIST_MISS;
+    const uint32_t frame = aFrame[idx];
+    if (pFrame[i] != frame) {
+      const int32_t g = global_anim(proxy, nSheets, sSheet[idx], anim);
+      if (g < 0 || (uint32_t)g >= nAnims) return PERSIST_MISS;
+      if ((int32_t)frame >= frameCount[g]) return PERSIST_MISS;
+      const uint32_t tex = (uint32_t)(frameStart[g] + (int32_t)frame);
+      qTexture[i] = (uint16_t)tex;
+      if (aLastTex) aLastTex[idx] = (uint16_t)tex;
+      pFrame[i] = (uint16_t)frame;
+      repaired++;
+    }
+  }
+  return repaired;
+}
+
+/* _writeType0PosesOnly on a frame persist_check took: each sprite row's pose (only the rotation of a
+   sprite drawn with its own facing when the collect wrote the poses into the queue), sort key and shadow
+   terms, and the animation clock of the animated ones (_advancePersistFrame, which advances on
+   !(clock < duration), where the full emit advances on clock >= duration). Returns the rows of other
+   types; R_COUNTS gets the play-once ends ([entity, state] pairs in R_ENDS) and the sprites whose frame
+   moved. */
+__attribute__((export_name("persist_poses")))
+uint32_t persist_poses(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t flags,
+                       double deltaSeconds, double band) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint8_t *cType = PTR(const uint8_t, C_TYPE);
+  const int32_t *cIndex = PTR(const int32_t, C_INDEX);
+  const float *cY = PTR(const float, C_Y);
+  const float *stX = PTR(const float, C_STASH_X);
+  const float *stY = PTR(const float, C_STASH_Y);
+  const float *stRc = PTR(const float, C_STASH_RC);
+  const float *stRs = PTR(const float, C_STASH_RS);
+  const float *sScaleX = PTR(const float, S_SCALE_X);
+  const float *sScaleY = PTR(const float, S_SCALE_Y);
+  const uint8_t *sInherit = PTR(const uint8_t, S_INHERIT);
+  const float *sRotC = PTR(const float, S_ROT_C);
+  const float *sRotS = PTR(const float, S_ROT_S);
+  float *sHalfW = PTR(float, S_HALF_W);
+  float *sHalfH = PTR(float, S_HALF_H);
+  const uint8_t *sSheet = PTR(const uint8_t, S_SHEET);
+  const uint8_t *sAnim = PTR(const uint8_t, S_ANIM);
+  const uint8_t *sAnimated = PTR(const uint8_t, S_ANIMATED);
+  const float *sSpeed = PTR(const float, S_SPEED);
+  const uint8_t *sLoop = PTR(const uint8_t, S_LOOP);
+  const int16_t *sZ = PTR(const int16_t, S_Z);
+  const uint8_t *scActive = PTR(const uint8_t, SC_ACTIVE);
+  const float *scH = PTR(const float, SC_H);
+  const float *scOx = PTR(const float, SC_OFF_X);
+  const float *scOy = PTR(const float, SC_OFF_Y);
+  uint16_t *aFrame = PTR(uint16_t, A_FRAME);
+  float *aAccum = PTR(float, A_ACCUM);
+  uint16_t *aLastTex = PTR(uint16_t, A_LAST_TEX);
+  const int32_t *proxy = PTR(const int32_t, T_PROXY);
+  const uint32_t nSheets = t[T_SHEETS];
+  const int32_t *frameCount = PTR(const int32_t, T_FRAME_COUNT);
+  const int32_t *frameStart = PTR(const int32_t, T_FRAME_START);
+  const uint32_t nAnims = t[T_ANIMS];
+  const uint16_t *frameW = PTR(const uint16_t, T_FRAME_W);
+  const uint16_t *frameH = PTR(const uint16_t, T_FRAME_H);
+  const uint32_t nFrames = t[T_FRAMES];
+  float *qX = PTR(float, Q_X);
+  float *qY = PTR(float, Q_Y);
+  float *qRotC = PTR(float, Q_ROT_C);
+  float *qRotS = PTR(float, Q_ROT_S);
+  uint16_t *qTexture = PTR(uint16_t, Q_TEXTURE);
+  float *qSortKey = PTR(float, Q_SORT_KEY);
+  float *qShadowH = PTR(float, Q_SHADOW_H);
+  float *qShadowOffX = PTR(float, Q_SHADOW_OFF_X);
+  float *qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
+  uint16_t *pFrame = PTR(uint16_t, P_FRAME);
+  uint32_t *ends = PTR(uint32_t, R_ENDS);
+  uint32_t *counts = PTR(uint32_t, R_COUNTS);
+
+  const int sortKey = (flags & F_SORT_KEY) != 0;
+  const int ySort = (flags & F_Y_SORT) != 0;
+  const int bounds = (flags & F_BOUNDS) != 0;
+  /* E-98d: the collect wrote the poses into this queue's columns. */
+  const int inQueue = stX == qX;
+  const uint32_t n = count < maxItems ? count : maxItems;
+  /* The JS counts the rows past the buffer as other types (their type reads undefined). */
+  uint32_t others = count - n;
+  uint32_t moved = 0;
+  uint32_t nEnds = 0;
+  for (uint32_t i = 0; i < n; i++) {
+    if (cType[i] != 0) {
+      others++;
+      continue;
+    }
+    const int32_t idx = cIndex[i];
+    if (inQueue) {
+      if (!sInherit[idx]) {
+        qRotC[i] = sRotC[idx];
+        qRotS[i] = sRotS[idx];
+      }
+    } else {
+      qX[i] = stX[i];
+      qY[i] = stY[i];
+      if (sInherit[idx]) {
+        qRotC[i] = stRc[i];
+        qRotS[i] = stRs[i];
+      } else {
+        qRotC[i] = sRotC[idx];
+        qRotS[i] = sRotS[idx];
+      }
+    }
+    if (sortKey) {
+      const double z = sZ ? (double)sZ[idx] : 0.0;
+      qSortKey[i] = (float)(ySort ? z * band + (double)cY[i] : z);
+    }
+    if (qShadowH) {
+      const int cast = scActive && scActive[idx];
+      qShadowH[i] = cast ? (scH ? or0(scH[idx]) : 0.0f) : 0.0f;
+      if (qShadowOffX) qShadowOffX[i] = cast ? (scOx ? or0(scOx[idx]) : 0.0f) : 0.0f;
+      if (qShadowOffY) qShadowOffY[i] = cast ? (scOy ? or0(scOy[idx]) : 0.0f) : 0.0f;
+    }
+    if (!sAnimated[idx]) continue;
+    /* _advancePersistFrame */
+    const uint32_t anim = sAnim[idx];
+    const int32_t g = global_anim(proxy, nSheets, sSheet[idx], anim);
+    if (g < 0) continue;
+    const int32_t fc = (uint32_t)g < nAnims ? frameCount[g] : 1;
+    if (fc <= 1) continue;
+    const float acc = (float)((double)aAccum[idx] + deltaSeconds);
+    aAccum[idx] = acc;
+    const double duration = 1.0 / ((double)sSpeed[idx] * 60.0);
+    if ((double)acc < duration) continue;
+    aAccum[idx] = (float)((double)acc - duration);
+    const int32_t cur = aFrame[idx];
+    if (sLoop[idx] != 1 && cur >= fc - 1) {
+      /* The last frame of a play-once animation finished showing. */
+      ends[2 * nEnds] = (uint32_t)idx;
+      ends[2 * nEnds + 1] = anim;
+      nEnds++;
+      continue;
+    }
+    aFrame[idx] = (uint16_t)((cur + 1) % fc);
+    const uint32_t frame = aFrame[idx];
+    const int32_t tex = frameStart[g] + (int32_t)frame;
+    qTexture[i] = (uint16_t)tex;
+    if (aLastTex) aLastTex[idx] = (uint16_t)tex;
+    /* This buffer now shows the new frame: its next check needs no repair (E-98g). */
+    pFrame[i] = (uint16_t)frame;
+    if (bounds) {
+      /* Bounds may change (variable frame sizes). */
+      const int inRange = tex >= 0 && (uint32_t)tex < nFrames;
+      const double w = inRange ? (double)frameW[tex] : 0.0;
+      const double h = inRange ? (double)frameH[tex] : 0.0;
+      double ax = fabs_d((double)sScaleX[idx]);
+      double ay = fabs_d((double)sScaleY[idx]);
+      if (ax == 0.0 || ax != ax) ax = 1.0;
+      if (ay == 0.0 || ay != ay) ay = 1.0;
+      sHalfW[idx] = (float)((w * ax) * 0.5);
+      sHalfH[idx] = (float)((h * ay) * 0.5);
+    }
+    moved++;
+  }
+  counts[0] = nEnds;
+  counts[1] = moved;
+  return others;
+}
+
+/* _rememberType0Set after a full emit: the rows this buffer now holds, and the dirty flags of its sprites
+   cleared. Returns 1 when it cleared one (the other buffer then still shows the old columns). */
+__attribute__((export_name("persist_remember")))
+uint32_t persist_remember(uint32_t table, uint32_t count, uint32_t maxItems) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint8_t *cType = PTR(const uint8_t, C_TYPE);
+  const int32_t *cIndex = PTR(const int32_t, C_INDEX);
+  uint8_t *pType = PTR(uint8_t, P_TYPE);
+  int32_t *pEntity = PTR(int32_t, P_ENTITY);
+  uint16_t *pFrame = PTR(uint16_t, P_FRAME);
+  uint16_t *pAnim = PTR(uint16_t, P_ANIM);
+  uint8_t *sDirty = PTR(uint8_t, S_DIRTY);
+  const uint8_t *sAnim = PTR(const uint8_t, S_ANIM);
+  const uint16_t *aFrame = PTR(const uint16_t, A_FRAME);
+  const uint32_t nEntities = t[A_ENTITIES];
+
+  /* Stores past the buffer are dropped, as the JS's are. */
+  const uint32_t n = count < maxItems ? count : maxItems;
+  uint32_t cleared = 0;
+  for (uint32_t i = 0; i < n; i++) {
+    const uint32_t ty = cType[i];
+    const int32_t idx = cIndex[i];
+    pType[i] = (uint8_t)ty;
+    pEntity[i] = idx;
+    /* frameIndex[idx] | 0 for every row; past the column it reads undefined. */
+    pFrame[i] = (uint32_t)idx < nEntities ? aFrame[idx] : 0;
+    pAnim[i] = ty == 0 ? sAnim[idx] : 0;
+    if (ty == 0 && sDirty && sDirty[idx]) {
+      sDirty[idx] = 0;
+      cleared = 1;
+    }
+  }
+  return cleared;
 }

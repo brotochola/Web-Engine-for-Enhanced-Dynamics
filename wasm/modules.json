@@ -112,7 +112,10 @@
       "source": "wasm/preRenderEmit.c",
       "output": "src/workers/preRenderEmit.wasm",
       "exports": [
-        "emit_rows"
+        "emit_rows",
+        "persist_check",
+        "persist_poses",
+        "persist_remember"
       ],
       "maxMemoryPages": 8192
     },
