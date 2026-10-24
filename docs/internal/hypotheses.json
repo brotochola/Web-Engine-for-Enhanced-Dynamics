@@ -395,7 +395,7 @@
     {
       "id": "E-124",
       "title": "`copyTypeActiveListToBuffer` with `TypedArray.set`, re-sat on clean sides (Q1)",
-      "status": "open",
+      "status": "screened",
       "statusText": "reopened 2026-10-24 (Q1 was dropped 2026-09-30)",
       "date": "2026-10-24",
       "result": "The kernel won 20.9 % (5/5 rounds) on a copy that is 2.4 % of logic. Two Predator sittings were called REGRESSION on spatial, renderer and particle (+3 to +4 %), which never run the copy, and no mechanism was found. Every worker moving the same way is drift or side bias (M13); read against those workers' median, logic was −1 % and 0 %. Under today's rule a kernel win whose scene is not 3 % worse is kept on its kernel.",
@@ -408,9 +408,9 @@
         "Q1"
       ],
       "next": "Reapply `set` with the clip to the room left (the edge test is in the tree); 4 pairs, logic owner, both sides from worktrees; batch with E-125 under one Predator guard.",
-      "rank": 21,
       "records": [
-        "R-0297"
+        "R-0297",
+        "R-0580"
       ]
     },
     {
@@ -4989,7 +4989,7 @@
     {
       "id": "Q1",
       "title": "Q1 logic: `copyTypeActiveListToBuffer` with `TypedArray.set`",
-      "status": "dropped",
+      "status": "screened",
       "statusText": "element-by-element copy loop (2.4 % of logic) → `buffer.set(subarray)`, clipped to the …",
       "date": "2026-09-30",
       "result": "element-by-element copy loop (2.4 % of logic) → `buffer.set(subarray)`, clipped to the space that remains (the old loop silently dropped what did not fit; `set` would throw). …",
@@ -4998,7 +4998,8 @@
       "aliases": [],
       "next": "Reopened as E-124 (2026-10-24).",
       "records": [
-        "R-0297"
+        "R-0297",
+        "R-0580"
       ]
     },
     {
@@ -12955,6 +12956,13 @@
         "096295a3",
         "d8f41eb7"
       ]
+    },
+    {
+      "id": "R-0580",
+      "date": "2026-10-24",
+      "title": "copyTypeActiveListToBuffer with TypedArray.set, screened at the desk, E-124",
+      "verdict": "screened",
+      "text": "**screened (ceiling), at the desk.** The copy is 2.4 % of logic (Q1's own share) and the `set` version won 20.9 % in its kernel, so the most it can save is about 0.5 % of logic, under every detection limit the session's A/A gave (logic 7.0 % against the others at 4 pairs). It also costs what E-104 removed: `buffer.set` needs a source view of the type list's live length, a `subarray` allocated per type per query per frame in every logic worker (logic garbage is 0.2 MB/s since E-104/E-105). Neither side of that trade can be seen in a scene, so no sitting is spent on it. Reopen if a profile shows the copy past 10 % of a worker (a scene with many large precomputed queries)."
     }
   ],
   "leads": [
