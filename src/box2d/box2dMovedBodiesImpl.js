@@ -1,6 +1,7 @@
 // Shared "bodies that moved this physics step" SAB.
-// Producer: weedjs_post afterStep (WASM body move events + teleports).
-// Consumers: spatial (dirty rebuild), later anything needing movers.
+// Producer: weedjs_post afterStep (WASM body move events, teleports, and bodies created,
+// destroyed or reshaped by the body sync).
+// Consumers: spatial (the grid rewritten for the bodies that moved, E-126), Box2d.getMovedBodies.
 //
 // Layout:
 //   Int32 header[4]: generation, count, entityCapacity, sequence (odd while a publish writes)

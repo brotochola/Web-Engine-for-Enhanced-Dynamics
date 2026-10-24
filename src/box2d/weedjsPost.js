@@ -1011,6 +1011,10 @@
   function syncBodySlot(i, flags) {
     let changes = 0;
     let created = false;
+    // E-126. A body created, destroyed or reshaped changes the cells it covers without a move
+    // event: the moved list carries it, as it carries a teleport, so the spatial grid rewritten
+    // for the bodies that moved rewrites this one too.
+    if ((flags & (BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY)) !== 0) markTeleportMoved(i);
     const want =
       views.entityActive[i] !== 0 &&
         (views.rbActive[i] !== 0 || views.colActive[i] !== 0)
