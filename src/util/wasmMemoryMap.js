@@ -95,8 +95,12 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * @param {number} [pixiRows] rows of Pixi's plain sprite batch when Pixi packs it with gpuPack.wasm (W9d), else 0
  * @param {null | { entities: number, transformBytes: number, colliderBytes: number }} [collect] the sprite collect's
  *   blocks (W4b, a scene without physics); a component with 0 bytes gets no block
+ * @param {null | { preRender: boolean, pixi: boolean }} [painter] the painter sort's state (W10
+ *   `painterRadix.wasm`) for each worker that sorts the main queue, one set each (painterStateRegions):
+ *   `preRenderPainter*` owned by pre-render, `pixiPainter*` by Pixi, so the kernel reads the sort keys where
+ *   pre-render wrote them and the two never share a state
  */
-export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null, pixiRows = 0, collect = null) {
+export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null, pixiRows = 0, collect = null, painter = null) {
   const n = maxItems | 0;
   const regions = [
     { name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES },
@@ -202,7 +206,62 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'collectResults', owner: 'pre-render', bytes: 16 },
     );
   }
+  if (painter) {
+    // W10: a painter state per worker that sorts; Pixi's and pre-render's are apart, they may sort at once.
+    if (painter.preRender) regions.push(...painterStateRegions('preRenderPainter', n, 'pre-render'));
+    if (painter.pixi) regions.push(...painterStateRegions('pixiPainter', n, 'Pixi'));
+  }
   return layoutRegions(regions);
+}
+
+/**
+ * A painter state's arrays (W10 `painterRadix.wasm`), in the order of the kernel's table (painterRadix.c P_*):
+ * createPainterState's order, scratch, moved, merge (u32 per row), prevKey (u32 per slot), slotMoved (u8 per
+ * slot), runHeads (u32 per row) and runLen (u32 per slot), then the kernel's histograms (PAINTER_HIST_WORDS
+ * u32, the JS module's radixHist4) and its two ordinal buffers (u32 per row).
+ */
+export const PAINTER_SLOTS = ['order', 'scratch', 'moved', 'merge', 'prevKey', 'slotMoved', 'runHeads', 'runLen', 'hist', 'ordsA', 'ordsB'];
+/** painterRadix.c HIST_WORDS: three 11-bit histograms. */
+export const PAINTER_HIST_WORDS = 6144;
+
+const capitalized = (name) => name[0].toUpperCase() + name.slice(1);
+
+/**
+ * One painter state's regions, named `${prefix}Order` … `${prefix}OrdsB` (PAINTER_SLOTS), then its table (a u32
+ * byte offset per slot, written by the worker that binds the kernel) and the two slot lists the sort reads by
+ * offset: the main queue's rows without the glow rows (`${prefix}IdxEntity`) and the glow rows
+ * (`${prefix}IdxGlow`), u32 per row. Rows and slots are both the queue's rows.
+ * @param {string} prefix
+ * @param {number} rows the queue's rows (createPainterState's maxItems)
+ * @param {string} owner
+ */
+export function painterStateRegions(prefix, rows, owner) {
+  const n = Math.max(1, rows | 0);
+  const bytes = (slot) => (slot === 'slotMoved' ? n : slot === 'hist' ? PAINTER_HIST_WORDS * 4 : n * 4);
+  return [
+    ...PAINTER_SLOTS.map((slot) => ({ name: `${prefix}${capitalized(slot)}`, owner, bytes: bytes(slot) })),
+    { name: `${prefix}Table`, owner, bytes: PAINTER_SLOTS.length * 4 },
+    { name: `${prefix}IdxEntity`, owner, bytes: n * 4 },
+    { name: `${prefix}IdxGlow`, owner, bytes: n * 4 },
+  ];
+}
+
+/**
+ * The byte offsets of painterStateRegions(prefix, rows) in a layout: `${slot}Byte` for each of PAINTER_SLOTS,
+ * tableByte, idxEntityByte and idxGlowByte, and the rows (plain numbers: the layout posts to workers as it is).
+ * @param {Record<string, { byte: number }>} regions layoutRegions(...).regions
+ * @param {string} prefix
+ * @param {number} rows
+ */
+export function painterStateLayout(regions, prefix, rows) {
+  const out = {
+    rows: Math.max(1, rows | 0),
+    tableByte: regions[`${prefix}Table`].byte,
+    idxEntityByte: regions[`${prefix}IdxEntity`].byte,
+    idxGlowByte: regions[`${prefix}IdxGlow`].byte,
+  };
+  for (const slot of PAINTER_SLOTS) out[`${slot}Byte`] = regions[`${prefix}${capitalized(slot)}`].byte;
+  return out;
 }
 
 /** Room for the collect kernel's column table (preRenderCollectClient.js COLLECT_SLOTS). */

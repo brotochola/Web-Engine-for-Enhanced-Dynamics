@@ -470,6 +470,11 @@ export const WASM_DEFAULTS = Object.freeze({
   /** The shadow-caster stamp (`shadowStamp.wasm`, E-114): its scratch and light table in the render-queue memory. */
   shadowStamp: true,
   /**
+   * The painter sort of the main sprite queue (`painterRadix.wasm`, W10): the state of the worker that sorts
+   * (`preRender.sortSprites`) in the render-queue memory, where the kernel reads the sort keys pre-render wrote.
+   */
+  painterRadix: true,
+  /**
    * Pixi's mesh corner rewrite (`meshCorners.wasm`, E-76 W11): MeshGeometry at byte 0 of a WebAssembly.Memory
    * that also holds every MESH layer's batches, their instance lists and generation copies.
    */

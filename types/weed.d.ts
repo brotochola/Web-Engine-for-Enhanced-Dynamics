@@ -315,6 +315,8 @@ export type SceneConfig = Record<string, unknown> & {
     pixiPack?: boolean;
     /** Pre-render's sprite collect, in scenes with physics off (Transform and Collider move into the render-queue memory). */
     preRenderCollect?: boolean;
+    /** The painter sort of the main sprite queue, in the worker preRender.sortSprites names (its state in the render-queue memory). */
+    painterRadix?: boolean;
     /** The particle worker's decal stamping (the decal tiles live in a WebAssembly.Memory of their own). */
     decalStamp?: boolean;
     /** Pixi's premultiply of each dirty decal tile, on that decal memory. */

@@ -7,7 +7,7 @@ import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { GPU_PACK_COLUMNS } from '../../src/render/gpuPackClient.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
-import { EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_TABLE_SLOTS, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS, SWAY_LIST_CAP, SWAY_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
+import { EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_TABLE_SLOTS, PAINTER_HIST_WORDS, PAINTER_SLOTS, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS, SWAY_LIST_CAP, SWAY_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
 
 // E-76 W9: the render queue's and the GPU queue's buffers as regions of one shared memory. Every
 // view a worker makes from the payload's (buffer, byte) pairs lies in its own region.
@@ -217,4 +217,44 @@ test("with the sway spec, the particle worker's sway arrays are regions of their
     if (i > 0) assert.ok(at >= spans[i - 1][1] + spans[i - 1][2], `${name} overlaps ${spans[i - 1][0]}`);
   }
   assert.equal(createRenderQueueMemory(MAX, queueBytes, gpuBytes, emit).layout.sway, null, 'no spec, no regions');
+});
+
+test("with the painter spec, each sorting worker's painter state is a set of regions of its own (W10)", () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, null, null, null, false, null, { preRender: true, pixi: true });
+  const L = m.layout;
+  const spans = [
+    ['queueA', L.queueAByte, queueBytes],
+    ['queueB', L.queueBByte, queueBytes],
+    ['gpuA', L.gpuAByte, gpuBytes],
+    ['gpuB', L.gpuBByte, gpuBytes],
+  ];
+  const owners = [];
+  for (const [owner, p] of [['preRender', L.preRenderPainter], ['pixi', L.pixiPainter]]) {
+    assert.equal(p.rows, MAX, `${owner}: one row per queue row`);
+    for (const slot of PAINTER_SLOTS) {
+      const bytes = slot === 'slotMoved' ? MAX : slot === 'hist' ? PAINTER_HIST_WORDS * 4 : MAX * 4;
+      spans.push([`${owner} ${slot}`, p[`${slot}Byte`], bytes]);
+    }
+    spans.push([`${owner} table`, p.tableByte, PAINTER_SLOTS.length * 4]);
+    spans.push([`${owner} idxEntity`, p.idxEntityByte, MAX * 4]);
+    spans.push([`${owner} idxGlow`, p.idxGlowByte, MAX * 4]);
+    owners.push(p);
+  }
+  spans.sort((a, b) => a[1] - b[1]);
+  for (let i = 0; i < spans.length; i++) {
+    const [name, at, bytes] = spans[i];
+    assert.equal(at % 64, 0, `${name} starts on a line`);
+    assert.ok(at + bytes <= m.buffer.byteLength, `${name} fits`);
+    if (i > 0) assert.ok(at >= spans[i - 1][1] + spans[i - 1][2], `${name} overlaps ${spans[i - 1][0]}`);
+  }
+  const one = createRenderQueueMemory(MAX, queueBytes, gpuBytes, null, null, null, false, null, { preRender: false, pixi: true }).layout;
+  assert.equal(one.preRenderPainter, null, 'only the worker that sorts gets a state');
+  assert.ok(one.pixiPainter);
+  const none = createRenderQueueMemory(MAX, queueBytes, gpuBytes).layout;
+  assert.equal(none.preRenderPainter, null, 'no spec, no regions');
+  assert.equal(none.pixiPainter, null);
+  assert.equal(none.queueAByte, L.queueAByte, 'the painter regions come after the queues');
 });

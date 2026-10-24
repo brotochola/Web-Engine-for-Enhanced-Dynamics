@@ -6,8 +6,9 @@
 // blocks and pre-render's emit state, so the emit kernel reads every column where the scene keeps it.
 // E-114 (W23): with a stamp spec, the shadow stamp's scratch and light table.
 // W22: with a sway spec, the particle worker's decoration sway arrays.
+// W10: with a painter spec, the painter sort's state of the worker that sorts (pre-render's, Pixi's, or both).
 
-import { renderQueueMemoryRegions, SWAY_LIST_CAP } from './wasmMemoryMap.js';
+import { painterStateLayout, renderQueueMemoryRegions, SWAY_LIST_CAP } from './wasmMemoryMap.js';
 import { GPU_PACK_COLUMNS } from '../render/gpuPackClient.js';
 
 // The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
@@ -28,16 +29,18 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {null | { entities: number, transformBytes: number, colliderBytes: number, rigidBodyBytes?: number }} [collect]
  *   the sprite collect's blocks too (W4b): Transform, its pose, Collider and the kernel's scratch; with
  *   rigidBodyBytes (physics, in Box2D's block) RigidBody and the published pose buffers instead of the pose
+ * @param {null | { preRender: boolean, pixi: boolean }} [painter] the painter sort's state too (W10), one set per
+ *   worker that sorts the main queue, each with its slot lists (layout.preRenderPainter, layout.pixiPainter)
  * @param {null | { memory: WebAssembly.Memory, baseByte: number }} [place] lay the regions in that memory from
  *   baseByte (Phase 4: a block of Box2D's memory) instead of making a memory of their own
  * @returns {null | { memory: WebAssembly.Memory, buffer: SharedArrayBuffer, layout: Record<string, any> }}
  */
-export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false, collect = null, place = null) {
+export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false, collect = null, painter = null, place = null) {
   const n = maxItems | 0;
   if (n <= 0) return null;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiRows = pixiPack ? n : 0;
-  const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect);
+  const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter);
   const base = place ? place.baseByte | 0 : 0;
   if (place) {
     if ((base & 63) !== 0 || base + map.bytes > place.memory.buffer.byteLength) return null;
@@ -76,6 +79,9 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         pixiIndexByte: pixiRows > 0 ? r.pixiPackIndices.byte : -1,
         pixiTableByte: pixiRows > 0 ? r.pixiPackTables.byte : -1,
         pixiParticlesByte: pixiRows > 0 ? r.pixiPackResults.byte : -1,
+        // W10: each sorting worker's painter state (null: that worker sorts in JS on arrays of its own).
+        preRenderPainter: painter?.preRender ? painterStateLayout(r, 'preRenderPainter', n) : null,
+        pixiPainter: painter?.pixi ? painterStateLayout(r, 'pixiPainter', n) : null,
       },
     };
   } catch {
@@ -135,11 +141,11 @@ function collectLayout(r, collect) {
 }
 
 /** The bytes createRenderQueueMemory's regions take, for a block reserved before the memory is made (Phase 4). */
-export function renderQueueMemoryBytes(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false, collect = null) {
+export function renderQueueMemoryBytes(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false, collect = null, painter = null) {
   const n = maxItems | 0;
   if (n <= 0) return 0;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
-  return renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiPack ? n : 0, collect).bytes;
+  return renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiPack ? n : 0, collect, painter).bytes;
 }
 
 function stampLayout(r, stamp) {

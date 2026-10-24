@@ -17,16 +17,16 @@ test('the render-queue regions sit in a given memory from its byte, every region
   assert.ok(bytes > 0);
   const memory = new WebAssembly.Memory({ initial: 64, maximum: 64, shared: true });
   const base = 65536 * 3;
-  const placed = createRenderQueueMemory(...ARGS, { memory, baseByte: base });
+  const placed = createRenderQueueMemory(...ARGS, null, { memory, baseByte: base });
   assert.ok(placed);
   assert.equal(placed.memory, memory);
   assert.equal(placed.buffer, memory.buffer);
   for (const key of ['queueAByte', 'queueBByte', 'gpuAByte', 'gpuBByte', 'indexByte', 'inverseByte', 'tableByte', 'particlesByte']) {
     assert.equal(placed.layout[key], own.layout[key] + base, key);
   }
-  assert.equal(createRenderQueueMemory(...ARGS, { memory, baseByte: base + 8 }), null, 'an unaligned byte is refused');
+  assert.equal(createRenderQueueMemory(...ARGS, null, { memory, baseByte: base + 8 }), null, 'an unaligned byte is refused');
   const small = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
-  assert.equal(createRenderQueueMemory(...ARGS, { memory: small, baseByte: 0 }), null, 'a block too small is refused');
+  assert.equal(createRenderQueueMemory(...ARGS, null, { memory: small, baseByte: 0 }), null, 'a block too small is refused');
 });
 
 test('the block plan: physics on and the switch on, Box2D grown by the block', () => {
@@ -60,7 +60,7 @@ test('in the block, the collect keeps RigidBody and the two published pose buffe
   const args = [500, 500 * 64, 4096, { entities, spriteBytes: 200 * entities, casterBytes: 0, decorationBytes: 0 }, null, null, false];
   const memory = new WebAssembly.Memory({ initial: 128, maximum: 128, shared: true });
   const base = 65536 * 2;
-  const placed = createRenderQueueMemory(...args, withBodies, { memory, baseByte: base });
+  const placed = createRenderQueueMemory(...args, withBodies, null, { memory, baseByte: base });
   assert.ok(placed);
   assert.equal(placed.layout.inBox2dBlock, true);
   const c = placed.layout.collect;

@@ -236,6 +236,32 @@ test('wasm.preRenderCollect puts Transform, its pose and Collider in the render-
   assert.ok(off.buffers.componentData.Transform instanceof SharedArrayBuffer && off.buffers.componentData.Transform !== off.renderQueueMemory.buffer);
 });
 
+test('wasm.painterRadix gives the worker that sorts its painter state in the render-queue memory (W10)', () => {
+  assert.equal(WASM_DEFAULTS.painterRadix, true);
+  const renderer = { maxVisibleRenderables: 100, ySort: true };
+  // As the scene resolves preRender.sortSprites before the buffers (resolveSpritePipeline).
+  const pre = { renderer, preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' } };
+  const pixi = { renderer, preRender: { packGpuSprites: 'pixi', sortSprites: 'pixi' } };
+
+  const preL = buildScene({}, null, pre).renderQueueMemory.layout;
+  const p = preL.preRenderPainter;
+  assert.ok(p, 'pre-render sorts: its painter state');
+  assert.equal(preL.pixiPainter, null, 'Pixi does not sort');
+  assert.equal(p.rows, 100, 'one row per queue row');
+  assert.ok(p.orderByte > preL.queueBByte && p.tableByte > 0 && p.idxEntityByte > 0 && p.idxGlowByte > 0);
+
+  const pixiL = buildScene({}, null, pixi).renderQueueMemory.layout;
+  assert.ok(pixiL.pixiPainter, 'Pixi sorts (Predator): its painter state');
+  assert.equal(pixiL.preRenderPainter, null, 'pre-render does not sort');
+
+  assert.equal(buildScene({ painterRadix: false }, null, pre).renderQueueMemory.layout.preRenderPainter, null, 'off');
+  assert.equal(buildScene({ painterRadix: false }, null, pixi).renderQueueMemory.layout.pixiPainter, null, 'off');
+  const none = buildScene({}, null, { renderer, preRender: { packGpuSprites: 'preRender', sortSprites: 'none' } }).renderQueueMemory.layout;
+  assert.equal(none.preRenderPainter, null, 'nobody sorts: no state');
+  assert.equal(none.pixiPainter, null);
+  assert.equal(buildScene({ gpuPack: false, preRenderEmit: false }, null, pre).renderQueueMemory, null, 'it rides on the memory, does not make it');
+});
+
 test('the Weed pose payload binds at a byte offset of a shared buffer', async () => {
   const { createWeedPosePayload, bindWeedPoseFields } = await import('../../src/box2d/box2dHotFields.js');
   const sab = new SharedArrayBuffer(64 + 10 * 20);

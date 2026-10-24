@@ -44,7 +44,7 @@ import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
-import { ySortEnabled } from '../render/rendererBackend.js';
+import { SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, ySortEnabled } from '../render/rendererBackend.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
 import { NavGrid } from '../core/navGrid.js';
 import { Grid } from '../core/grid.js';
@@ -542,22 +542,31 @@ export function renderQueueMemorySpec(scene) {
         rigidBodyBytes: physics ? RigidBody.getBufferSize(n) : 0,
       }
     : null;
+  // W10: the painter sort's state for the worker that sorts the main queue (preRender.sortSprites, which the
+  // scene resolved), next to the sort keys pre-render writes here.
+  const sortSprites = config.preRender?.sortSprites;
+  const painter = config.wasm?.painterRadix !== false
+    && (sortSprites === SORT_SPRITES_PRERENDER || sortSprites === SORT_SPRITES_PIXI)
+    ? { preRender: sortSprites === SORT_SPRITES_PRERENDER, pixi: sortSprites === SORT_SPRITES_PIXI }
+    : null;
   return {
     maxVisibleRenderables,
     gpuCaps,
     enabled: Boolean(pack || emit || stamp),
     args: [maxVisibleRenderables, computeRenderQueueBufferSize(maxVisibleRenderables), computeGpuQueueBufferSize(gpuCaps), emit, stamp, sway, pixiPack],
     collect,
+    painter,
   };
 }
 
 /**
  * The bytes the render-queue regions take in a block of Box2D's memory (Phase 4), 0 when the scene makes no
- * render-queue memory. The collect's blocks are in it when the spec has them (with physics, its body variant).
+ * render-queue memory. The collect's blocks are in it when the spec has them (with physics, its body variant),
+ * and the painter state when the spec has it.
  */
 export function renderQueueBlockBytes(scene) {
   const spec = renderQueueMemorySpec(scene);
-  return spec.enabled ? renderQueueMemoryBytes(...spec.args, spec.collect) : 0;
+  return spec.enabled ? renderQueueMemoryBytes(...spec.args, spec.collect, spec.painter) : 0;
 }
 
 function initializeRenderQueueMemory(scene) {
@@ -566,18 +575,24 @@ function initializeRenderQueueMemory(scene) {
   const spec = renderQueueMemorySpec(scene);
   scene.maxVisibleRenderables = spec.maxVisibleRenderables;
   scene.gpuQueueCaps = spec.gpuCaps;
-  const make = (withCollect, place = null) => createRenderQueueMemory(...spec.args, withCollect, place);
   // Phase 4: in the block physics reserved in Box2D's memory when there is one and the regions fit it (they
-  // were sized from the same spec); else a memory of its own. A scene whose collect blocks would not fit keeps
-  // the memory without them (and the JS collect). The collect's body variant goes only in the block: outside
-  // Box2D's memory the kernel could not read Transform's pose.
+  // were sized from the same spec); else a memory of its own. A scene whose collect blocks or painter state
+  // would not fit keeps the memory without them (and their JS), the collect before the painter. The collect's
+  // body variant goes only in the block: outside Box2D's memory the kernel could not read Transform's pose.
   const block = scene.box2dBlock;
-  const bodies = spec.collect && spec.collect.rigidBodyBytes > 0 ? spec.collect : null;
-  const fits = (withCollect) => renderQueueMemoryBytes(...spec.args, withCollect) <= block.bytes;
   const place = block && spec.enabled ? { memory: block.memory, baseByte: block.byte } : null;
-  const inBlock = place ? (bodies && fits(bodies) && make(bodies, place)) || (fits(null) && make(null, place)) || null : null;
+  const bodies = spec.collect && spec.collect.rigidBodyBytes > 0 ? spec.collect : null;
   const own = spec.collect && !bodies ? spec.collect : null;
-  scene.renderQueueMemory = inBlock || (spec.enabled ? (own && make(own)) || make(null) : null);
+  const shapes = (collect) => (collect ? [[collect, spec.painter], [collect, null]] : [])
+    .concat([[null, spec.painter], [null, null]]);
+  const make = (collect, painter, at) =>
+    (!at || renderQueueMemoryBytes(...spec.args, collect, painter) <= block.bytes)
+      ? createRenderQueueMemory(...spec.args, collect, painter, at)
+      : null;
+  let rqm = null;
+  if (place) for (const [c, p] of shapes(bodies)) if ((rqm = make(c, p, place))) break;
+  if (!rqm && spec.enabled) for (const [c, p] of shapes(own)) if ((rqm = make(c, p, null))) break;
+  scene.renderQueueMemory = rqm;
   const c = scene.renderQueueMemory?.layout.collect;
   if (c) {
     if (c.transformByte >= 0) buffers.componentDataByte.Transform = c.transformByte;
