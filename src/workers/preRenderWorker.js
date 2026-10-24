@@ -70,6 +70,7 @@ import {
     writePersistColumns,
     EMIT_BOUNDS,
     EMIT_DECLINED,
+    EMIT_NO_CASTERS,
     EMIT_PERSIST_MISS,
     EMIT_SORT_KEY,
     EMIT_TILES_DIRTY,
@@ -3408,7 +3409,9 @@ class PreRenderWorker extends AbstractWorker {
         const writeSortKey = !!(this.renderQueueSortKey && this._queueHasOrder());
         const ySort = writeSortKey && this._entityYSort();
         const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
-        const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0) | (bounds ? EMIT_BOUNDS : 0);
+        // E-117. Without ShadowCaster every sprite row's shadow terms are the zeros the full emit wrote.
+        const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0) | (bounds ? EMIT_BOUNDS : 0)
+            | (ShadowCaster.active ? 0 : EMIT_NO_CASTERS);
         const others = b.persistFrame(b.tableByte, count, maxItems, flags, deltaTime / 1000, this._zBand);
         if (others === EMIT_PERSIST_MISS) return -1;
         const results = b.results;

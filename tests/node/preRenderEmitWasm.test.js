@@ -512,7 +512,7 @@ async function withPersistOrder(ySort, fn) {
  * advances them on every frame, !(clock < duration); the full emit never does). The same calls give the
  * same frames on both runs.
  */
-function persistSchedule(k, { inQueue, seed, adobe }) {
+function persistSchedule(k, { inQueue, seed, adobe, casters = true }) {
   const { worker, count } = k;
   const cType = worker._renderableType;
   const cIndex = worker._renderableIndex;
@@ -550,7 +550,7 @@ function persistSchedule(k, { inQueue, seed, adobe }) {
     }
     if (f === 17) worker.entityFrameIndex[cIndex[animatedRow]] = 99;
     // ShadowCaster columns change with no dirty flag: every persist frame refreshes the shadow terms.
-    if (f % 5 === 2) {
+    if (casters && f % 5 === 2) {
       for (let j = 0; j < 8; j++) {
         const idx = cIndex[sprites[Math.floor(r() * sprites.length)]];
         ShadowCaster.heightMultiplier[idx] = r() * 2;
@@ -707,10 +707,16 @@ test('persist_frame misses on a frame with an Adobe root, which it held last tim
   assert.notEqual(frame(), EMIT_PERSIST_MISS, 'the same rows without it');
 });
 
-test('emitSpriteQueue through the kernel takes the persist frames the JS takes and writes what it writes', async (t) => {
-  for (const ySort of [true, false]) {
-    const seed = ySort ? 0xa11 : 0xa12;
+/**
+ * emitSpriteQueue on persist frames with the kernel against the JS, end to end. Without casters the scene
+ * has no ShadowCaster (its columns unbound): the kernel leaves the sprite rows' shadow terms (E-117), the
+ * JS writes their zeros again, and the queues must not differ.
+ */
+async function runWiredPersist(t, cases, casters) {
+  for (const { ySort, seed } of cases) {
     const k = await setup({ ySort, seed, persist: true });
+    // No ShadowCaster: its columns unbound, as in a scene that never registered it (the next setup binds them).
+    if (!casters) for (const c of ['active', 'heightMultiplier', 'anchorOffsetX', 'anchorOffsetY']) ShadowCaster[c] = null;
     await withPersistOrder(ySort, async () => {
       const { worker, m, maxItems, count } = k;
       const bound = worker._emitWasm;
@@ -728,7 +734,7 @@ test('emitSpriteQueue through the kernel takes the persist frames the JS takes a
       const all = new Uint8Array(m.buffer);
       const regions = persistRegions(m, maxItems);
       // No Adobe root here: the JS loop's Adobe branch needs AdobeAnimComponent (the kernel test has one).
-      const prepare = persistSchedule(k, { inQueue: true, seed, adobe: false });
+      const prepare = persistSchedule(k, { inQueue: true, seed, adobe: false, casters });
       const start = all.slice();
       const startGen = worker._staticGen;
       const realEnded = worker._spriteAnimationEnded;
@@ -779,7 +785,15 @@ test('emitSpriteQueue through the kernel takes the persist frames the JS takes a
       assert.equal(calls.persistHits + calls.persistRemember, PERSIST_FRAMES, JSON.stringify(calls));
       assert.equal(calls.emitRows, calls.persistRemember, JSON.stringify(calls));
       assert.ok(calls.persistHits >= 10 && calls.persistRemember >= 10, JSON.stringify(calls));
-      t.diagnostic(`ySort ${ySort}: ${JSON.stringify(calls)}`);
+      t.diagnostic(`ySort ${ySort}${casters ? '' : ', no ShadowCaster'}: ${JSON.stringify(calls)}`);
     });
   }
+}
+
+test('emitSpriteQueue through the kernel takes the persist frames the JS takes and writes what it writes', async (t) => {
+  await runWiredPersist(t, [{ ySort: true, seed: 0xa11 }, { ySort: false, seed: 0xa12 }], true);
+});
+
+test('without ShadowCaster the kernel leaves the shadow terms the full emit wrote (E-117)', async (t) => {
+  await runWiredPersist(t, [{ ySort: true, seed: 0xa13 }], false);
 });

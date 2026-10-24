@@ -45,6 +45,9 @@ enum {
 #define F_Y_SORT 2u      /* source.ySort */
 #define F_TILES_DIRTY 4u /* a repeating sprite wrote this queue's tile columns before */
 #define F_BOUNDS 8u      /* frameWidth, frameHeight, boundsHalfW and boundsHalfH all exist */
+/* persist_frame (E-117): the scene has no ShadowCaster, so a sprite row's shadow terms are the zeros the
+   full emit wrote when this buffer last held the row, and the walk leaves them. */
+#define F_NO_CASTERS 16u
 
 /* Warning kinds, for the JS to replay with its own keys. */
 #define WARN_NO_ANIM 0u    /* sprite: no global animation for (sheet, state), sheet set */
@@ -349,7 +352,7 @@ INLINE int32_t global_anim(const int32_t *proxy, uint32_t nSheets, uint32_t shee
    current frame's texture (_repairPersistFrame, which misses when that frame has none). As the walk passes
    a sprite it writes what _writeType0PosesOnly writes but the clock: the rotation of a sprite drawn with
    its own facing (the pose too when the collect did not write it into the queue), the sort key and the
-   shadow terms (_writeQueueShadow). On a miss the full emit that follows rewrites every one of those, so
+   shadow terms (_writeQueueShadow; not with F_NO_CASTERS, E-117). On a miss the full emit that follows rewrites every one of those, so
    the frame ends as the two JS passes leave it. The clocks, which that full emit would advance a second
    time, wait until every row has passed: the animated sprites' rows are listed in R_FOREIGN (unused on a
    persist frame) and advanced in row order after it (_advancePersistFrame, which advances on
@@ -416,7 +419,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   const int sortKey = (flags & F_SORT_KEY) != 0;
   const int ySort = (flags & F_Y_SORT) != 0;
   const int bounds = (flags & F_BOUNDS) != 0;
-  const int shadows = qShadowH != 0;
+  const int shadows = qShadowH != 0 && (flags & F_NO_CASTERS) == 0;
   /* E-98d: the collect wrote the poses into this queue's columns. */
   const int inQueue = stX == qX;
   /* Rows past the buffer pass the check (the JS reads undefined on both sides of each comparison there)
