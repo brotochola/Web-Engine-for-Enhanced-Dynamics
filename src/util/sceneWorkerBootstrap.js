@@ -14,6 +14,7 @@ import { collectWorkerScriptsToLoad } from './sceneScript.js';
 import { frameClockSlot } from './frameClock.js';
 import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
+import { box2dMemoryPages } from './configDefaults.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -30,15 +31,20 @@ function createSceneWorkerFactory(useInlineWorkers, cacheBust) {
   };
 }
 
-/** Classic Box2D worker (pthread entry). Bundle blob or /src/box2d/box2dWasm.js — no type:module. */
-function createPhysicsWorker(useInlineWorkers, cacheBust) {
+/**
+ * Classic Box2D worker (pthread entry). Bundle blob or /src/box2d/box2dWasm.js — no type:module.
+ * The worker's name carries Box2D's memory size ('physics pages=N'): the glue creates the memory
+ * while the script is evaluated, before any message can arrive. Exported for tests.
+ */
+export function createPhysicsWorker(useInlineWorkers, cacheBust, physicsConfig) {
+  const options = { name: `physics pages=${box2dMemoryPages(physicsConfig)}` };
   if (useInlineWorkers) {
     if (typeof window.WEED.getBox2dWorkerUrl !== 'function') {
       throw new Error('BUNDLE_MODE physics requires WEED.getBox2dWorkerUrl()');
     }
-    return new Worker(window.WEED.getBox2dWorkerUrl());
+    return new Worker(window.WEED.getBox2dWorkerUrl(), options);
   }
-  return new Worker(`/src/box2d/box2dWasm.js${cacheBust}`);
+  return new Worker(`/src/box2d/box2dWasm.js${cacheBust}`, options);
 }
 
 function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBust) {
@@ -57,7 +63,8 @@ function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBu
 
   // Boot: no box2dWasm.js when config.physics.enabled === false.
   if (scene._physicsEnabled) {
-    scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust);
+    scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics);
+    // Main-side label for step waiters and logs; the worker's own name is set above.
     scene.workers.physics.name = 'physics';
   } else {
     scene.workers.physics = null;

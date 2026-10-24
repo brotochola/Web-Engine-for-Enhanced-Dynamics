@@ -1,7 +1,7 @@
 # Box2D memory plan (`physics.wasmMemoryMB`)
 
 **Opened:** 2026-10-23 (planned in a chat session); reviewed against emsdk 6.0.4 and the shipped glue and
-saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-7. **Registry:** `DX-MEM` in
+saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-8. **Registry:** `DX-MEM` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: a WeedJS developer chooses how much memory Box2D gets, per scene, with
@@ -188,10 +188,11 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   them with `Module.HEAPF32.buffer.byteLength`; a mismatch posts `msg:'error'` and physics does not start.
   Done 2026-10-24: `box2dMemoryMismatch` sits between `bm6-memory` markers, and
   `tests/node/physicsHostMemoryGuard.test.js` runs it from the shipped source.
-- [ ] **BM-7** `feat(physics)`: the key. `PHYSICS_DEFAULTS.wasmMemoryMB: 512`;
+- [x] **BM-7** `feat(physics)`: the key. `PHYSICS_DEFAULTS.wasmMemoryMB: 512`;
   `box2dMemoryPages(physics)` (whole MB, clamped to 16..2048 with one warning, × 16); `createPhysicsWorker`
   passes the name on both URLs; `types/weed.d.ts` documents the key. Tests: the default, the clamp and
-  its single warning, the pages, and a stubbed `Worker` that receives `physics pages=N`.
+  its single warning, the pages, and a stubbed `Worker` that receives `physics pages=N`. Done 2026-10-24:
+  `box2dMemoryPages` lives in `src/util/configDefaults.js`; `tests/node/physicsWasmMemoryConfig.test.js`.
 - [ ] **BM-8** `feat(physics)`: running out reaches the scene.
   - `physicsHostImpl.js` sets `Module.onAbort` when it loads, before the first `pthread_create`, so helper
     threads proxy their aborts to it (Emscripten hands a pthread the main thread's known handlers when it

@@ -374,9 +374,39 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   hitEventThreshold: SIM.hitEventThreshold,
   noLimitFPS: false,
   fixedFps: 0,
+  /**
+   * Box2D's memory in MB, whole, 16..2048. Read once, when the physics worker starts; committed up
+   * front and never grown. Size it from the memory panel's Box2D peak.
+   */
+  wasmMemoryMB: 512,
   /** LiquidFun particle system; each key is documented in physicsConfigImpl.js. */
   liquidFun: SIM.liquidFun,
 });
+
+/** Bounds of physics.wasmMemoryMB: the Box2D module imports 256 to 32768 pages of 64 KB. */
+export const BOX2D_MEMORY_MB_MIN = 16;
+export const BOX2D_MEMORY_MB_MAX = 2048;
+let warnedBox2dMemoryMB = false;
+
+/**
+ * Pages of 64 KB for Box2D's memory from `physics.wasmMemoryMB`: whole megabytes, clamped to
+ * 16..2048 with one warning. The physics worker's name carries the result ('physics pages=N').
+ * @param {{ wasmMemoryMB?: number } | undefined} physics
+ */
+export function box2dMemoryPages(physics) {
+  const asked = physics?.wasmMemoryMB;
+  const mb = Number.isFinite(asked)
+    ? Math.min(BOX2D_MEMORY_MB_MAX, Math.max(BOX2D_MEMORY_MB_MIN, Math.round(asked)))
+    : PHYSICS_DEFAULTS.wasmMemoryMB;
+  if (asked !== undefined && mb !== asked && !warnedBox2dMemoryMB) {
+    warnedBox2dMemoryMB = true;
+    console.warn(
+      `WeedJS: physics.wasmMemoryMB ${asked} is not a whole number of MB in ` +
+        `${BOX2D_MEMORY_MB_MIN}..${BOX2D_MEMORY_MB_MAX}; using ${mb}`,
+    );
+  }
+  return mb * 16;
+}
 
 // ============================================================================
 // SPATIAL DEFAULTS (Spatial Hashing Grid)
