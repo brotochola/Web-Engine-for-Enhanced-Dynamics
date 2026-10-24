@@ -354,6 +354,47 @@ async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Read the browser window's state through CDP every 250 ms while a headed run measures. A minimized window
+ * is restored at once; the polls that found it minimized are counted (minimizedMs ≈ polls × 250).
+ * @returns {Promise<{ stop(): { minimizedPolls: number, minimizedMs: number } }>}
+ */
+async function watchWindowState(page) {
+  const POLL_MS = 250;
+  let cdp;
+  let windowId;
+  try {
+    cdp = await page.context().newCDPSession(page);
+    ({ windowId } = await cdp.send('Browser.getWindowForTarget'));
+  } catch {
+    return { stop: () => null };
+  }
+  let minimizedPolls = 0;
+  let busy = false;
+  const timer = setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const { bounds } = await cdp.send('Browser.getWindowBounds', { windowId });
+      if (bounds.windowState === 'minimized') {
+        minimizedPolls++;
+        await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
+        console.warn('WARNING: the benchmark window was minimized; restored it (this run will be measured again)');
+      }
+    } catch {
+      // The page is closing.
+    } finally {
+      busy = false;
+    }
+  }, POLL_MS);
+  return {
+    stop() {
+      clearInterval(timer);
+      return { minimizedPolls, minimizedMs: minimizedPolls * POLL_MS };
+    },
+  };
+}
+
 async function main() {
   const cliArgs = parseArgs(process.argv.slice(2));
   const benchmarkOptions = buildBenchmarkOptions(cliArgs);
@@ -594,6 +635,12 @@ async function main() {
     await page.setViewportSize({ width: canvasWidth, height: canvasHeight });
     // Reduce accidental occlusion (another window on top); does not stop user minimizing afterward.
     await page.bringToFront();
+    // A minimized window. With the launch flags above the page still reports itself visible, but on
+    // 2026-10-23 runs taken while the window was minimized read 4–18 % one-sided deltas on workers the
+    // change could not reach (Windows slows a minimized window's processes). The window's state is read
+    // through CDP four times a second; a minimized window is put back, and the time is counted so that
+    // measureLib can run the measurement again.
+    const windowWatch = headed ? await watchWindowState(page) : null;
 
     // The scene resolved a different population than the one requested. Every
     // number this run is about to produce describes a scene nobody asked for, so
@@ -687,8 +734,14 @@ async function main() {
       console.log(`Memory snapshot saved to ${path.join(path.dirname(outputPath), 'memory_snapshot.json')}`);
     }
 
+    const windowState = windowWatch ? windowWatch.stop() : null;
+    if (windowState && windowState.minimizedMs > 0) {
+      console.warn(`WARNING: the window was minimized for about ${windowState.minimizedMs} ms during this run: these numbers are not the scene's`);
+    }
+
     result.metadata = {
       ...result.metadata,
+      windowState,
       playwrightHeadless: !headed,
       chromiumBackgroundThrottleMitigation: !allowThrottle,
       chromiumExtraArgs: launchArgs,
