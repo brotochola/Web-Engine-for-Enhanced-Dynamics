@@ -98,6 +98,40 @@ function firstDiff(a, b) {
   return -1;
 }
 
+/**
+ * The sines and cosines the kernel takes itself (sway_free, sway_trig) are fdlibm's, which V8's match to an ulp
+ * (E-76 Q2): a rotation it writes may differ from the JS's by that much after the composition and the float32
+ * store, so rotC and rotS are held to SWAY_TRIG_TOL of the base rotation's size. An angle past fdlibm's medium
+ * reduction (|x| >= 2^20 pi/2, about 1.6e6 rad: an amplitude, a frequency or an impulse phase no decoration has)
+ * is reduced modulo 2 pi in double, which keeps nothing of the angle: such a decoration is left out of the
+ * comparison (its rotation is noise on both paths).
+ */
+const SWAY_TRIG_TOL = 1e-6;
+const SWAY_TRIG_DOMAIN = 2 ** 20 * (Math.PI / 2);
+/** How many rotations firstRotationDiff held to the tolerance (not equal bit for bit, inside the domain). */
+const rotationsCompared = { n: 0 };
+
+/** The first rotation outside the tolerance (D's columns as they were before the frame), or -1. */
+function firstRotationDiff(a, b, D, before, baseAngle, deltaTime) {
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (Object.is(x, y) || (Number.isNaN(x) && Number.isNaN(y))) continue;
+    const scale = Math.max(1, Math.abs(before.baseRotC[i]) + Math.abs(before.baseRotS[i]));
+    if (Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) <= SWAY_TRIG_TOL * scale) {
+      rotationsCompared.n++;
+      continue;
+    }
+    // The largest argument either path takes for it: the amplitude bounds a sway angle, the frequency times the
+    // base angle or the frame's phase step bounds a sine's argument (an impulse adds its phase, under pi).
+    const amp = Math.abs(before.swayAmplitude[i]);
+    const reach = Math.abs(before.swayFrequency[i]) * Math.max(1, Math.abs(baseAngle), Math.abs(deltaTime * 0.002)) + 4 + i * 0.1;
+    if (!(amp < SWAY_TRIG_DOMAIN) || !(reach < SWAY_TRIG_DOMAIN)) continue;
+    return i;
+  }
+  return -1;
+}
+
 /** One frame on each side from the same bytes; the kernel's state is the next frame's. */
 function runFrame(s, deltaTime) {
   const w = s.worker;
@@ -190,8 +224,9 @@ async function bootWired(k, wasm) {
 
 // W22 wired: the worker binds the kernel itself and keeps its sway arrays in the memory.
 // updateDecorationSway with the kernel and without it must leave the same bytes, frame after frame, on the
-// random frames above: the worker's own path (writeSwayColumns, sway_decorations, _finishSwayTrig), with
-// wasm.decorationSwayF32 off (the double sway).
+// random frames above: the worker's own path (writeSwayColumns, sway_decorations, sway_trig), with
+// wasm.decorationSwayF32 off (the double sway). The rotations of the decorations sway_trig finishes are held to
+// SWAY_TRIG_TOL; every other byte is exact.
 test('updateDecorationSway through the kernel the worker binds writes what the JS writes', async (t) => {
   const k = 100;
   const { m, worker } = await bootWired(k, { decorationSwayF32: false });
@@ -225,15 +260,69 @@ test('updateDecorationSway through the kernel the worker binds writes what the J
     const js = stateViews(st).map(([name, v]) => [name, v.slice()]);
     mem.set(before);
     worker._swayBucketCacheK = cacheK;
+    const pre = beforeColumns();
     worker._swayWasm = bound;
     worker.updateDecorationSway(deltaTime);
     stateViews(st).forEach(([name, v], c) => {
-      const at = firstDiff(v, js[c][1]);
+      const rot = name === 'rotC' || name === 'rotS';
+      const at = rot ? firstRotationDiff(v, js[c][1], DecorationComponent, pre, worker.accumulatedTime * 0.002, deltaTime) : firstDiff(v, js[c][1]);
       assert.equal(at, -1, `frame ${f}: ${name}[${at}]: JS ${js[c][1][at]}, kernel ${v[at]}`);
     });
   }
-  assert.ok(calls >= 50 && listed > 0, `the kernel ran (${calls} calls) and listed decorations for the JS (${listed})`);
-  t.diagnostic(`${calls} kernel calls, ${listed} decorations finished in JS`);
+  assert.ok(calls >= 50 && listed > 0, `the kernel ran (${calls} calls) and listed decorations for sway_trig (${listed})`);
+  t.diagnostic(`${calls} kernel calls, ${listed} decorations finished by sway_trig`);
+});
+
+/** The columns the tolerance reads, as they are before a frame. */
+function beforeColumns() {
+  const D = DecorationComponent;
+  return {
+    baseRotC: D.baseRotC.slice(),
+    baseRotS: D.baseRotS.slice(),
+    swayAmplitude: D.swayAmplitude.slice(),
+    swayFrequency: D.swayFrequency.slice(),
+  };
+}
+
+// Close-out group B: without a frequency grid (particle.swayFrequencyBuckets 0, the default) the worker binds
+// sway_free and the whole loop runs in the kernel, every sine in it. updateDecorationSway with the kernel and
+// without it, on the random frames above: every byte exact but the rotations, which are held to SWAY_TRIG_TOL.
+test('updateDecorationSway without a frequency grid runs sway_free, within its tolerance of the JS', async (t) => {
+  const { m, worker } = await bootWired(0, { decorationSwayF32: false });
+  const bound = worker._swayWasm;
+  assert.ok(bound, 'the worker bound the kernel without a grid');
+  assert.equal(worker._swayBuckets, 0);
+  let calls = 0;
+  const free = bound.free;
+  bound.free = (...args) => {
+    calls++;
+    return free(...args);
+  };
+  const st = { worker };
+  const r = rng(0x5ee3);
+  const mem = new Uint8Array(m.buffer);
+  for (let f = 0; f < 60; f++) {
+    scramble(r, st, 2, f === 0 ? 1 : 0.25, false);
+    pickSnapshot(r, st);
+    const deltaTime = frameDelta(r);
+    worker.accumulatedTime += DT;
+    const before = mem.slice();
+    worker._swayWasm = null;
+    worker.updateDecorationSway(deltaTime);
+    const js = stateViews(st).map(([name, v]) => [name, v.slice()]);
+    mem.set(before);
+    const pre = beforeColumns();
+    worker._swayWasm = bound;
+    worker.updateDecorationSway(deltaTime);
+    const baseAngle = worker.accumulatedTime * 0.002;
+    stateViews(st).forEach(([name, v], c) => {
+      const rot = name === 'rotC' || name === 'rotS';
+      const at = rot ? firstRotationDiff(v, js[c][1], DecorationComponent, pre, baseAngle, deltaTime) : firstDiff(v, js[c][1]);
+      assert.equal(at, -1, `frame ${f}: ${name}[${at}]: JS ${js[c][1][at]}, kernel ${v[at]}`);
+    });
+  }
+  assert.ok(calls >= 50, `sway_free ran (${calls} calls)`);
+  t.diagnostic(`${calls} sway_free calls, ${rotationsCompared.n} rotations within the tolerance and not bit for bit`);
 });
 
 // The default, wasm.decorationSwayF32 on: the worker binds sway_decorations_f32x4, and its frames on the

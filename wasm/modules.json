@@ -151,7 +151,10 @@
         "sway_decorations",
         "sway_decorations_f32x4",
         "sway_decorations_u32",
-        "sway_decorations_f32x4_u32"
+        "sway_decorations_f32x4_u32",
+        "sway_free",
+        "sway_free_u32",
+        "sway_trig"
       ],
       "maxMemoryPages": 32768
     },

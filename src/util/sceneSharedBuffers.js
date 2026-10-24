@@ -554,11 +554,11 @@ export function renderQueueMemorySpec(scene) {
         maxLights: lighting.maxShadowCastingLights | 0,
       }
     : null;
-  // W22: the particle worker's decoration sway, on the decorations block (so only with the emit's), for
-  // a bucket grid (without one every decoration takes a Math.sin and the loop stays JS).
+  // W22: the particle worker's decoration sway, on the decorations block (so only with the emit's), with a
+  // frequency grid (sway_decorations) or without one (sway_free, every decoration's own sine in the kernel).
   const buckets = config.particle?.swayFrequencyBuckets | 0;
-  const sway = config.wasm?.decorationSway !== false && emit && emit.decorationBytes > 0 && buckets > 1
-    ? { decorations: config.decoration.maxDecorations | 0, buckets }
+  const sway = config.wasm?.decorationSway !== false && emit && emit.decorationBytes > 0
+    ? { decorations: config.decoration.maxDecorations | 0, buckets: buckets > 1 ? buckets : 0 }
     : null;
   // W9d: Pixi packs the plain sprite rows itself (packGpuSprites 'pixi', no pose interpolation), with the
   // pack kernel, on rows of its own in this memory.

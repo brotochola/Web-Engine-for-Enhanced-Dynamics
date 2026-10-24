@@ -188,7 +188,10 @@ test('wasm.decorationSway puts the sway arrays in the render-queue memory, next 
 
   assert.equal(buildScene({ decorationSway: false }, null, grass).renderQueueMemory.layout.sway, null, 'off');
   const noGrid = { ...grass, particle: { maxParticles: 0, swayFrequencyBuckets: 0 } };
-  assert.equal(buildScene({}, null, noGrid).renderQueueMemory.layout.sway, null, 'no bucket grid, the loop stays JS');
+  // Without a frequency grid the regions are there too, with no bucket tables: sway_free runs the loop.
+  const free = buildScene({}, null, noGrid).renderQueueMemory.layout.sway;
+  assert.ok(free, 'no bucket grid: the sway regions, for sway_free');
+  assert.equal(free.buckets, 0);
   assert.equal(buildScene({}, null).renderQueueMemory.layout.sway, null, 'no decorations');
   const noEmit = buildScene({ preRenderEmit: false }, null, grass);
   assert.equal(noEmit.renderQueueMemory.layout.sway, null, 'without the emit the decorations are not in the memory');

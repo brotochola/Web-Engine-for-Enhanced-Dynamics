@@ -3,7 +3,8 @@
 // sway regions). sway_decorations is the per-decoration loop of _updateDecorationSwayBuckets with its
 // bucket cache and impulse step; the frame's per-bucket Math.sin / Math.cos and the cache reset stay JS
 // before it, and the decorations that need a Math.sin or Math.cos of their own (an impulse's phase, a sway
-// angle of 0.08 rad or more) come back in the trig list for the JS to finish. With `f32`
+// angle of 0.08 rad or more) come back in the trig list, which sway_trig finishes. Without a frequency grid
+// (particle.swayFrequencyBuckets 0 or 1) sway_free runs the whole loop, every sine in the kernel. With `f32`
 // (wasm.decorationSwayF32, the particle worker's default) the kernel's float32 sway, sway_decorations_f32x4,
 // is bound in sway_decorations' place, once; the table, the call and the JS around it are the same. E-129: past
 // 65 535 decorations the snapshot and the chunk list are u32 and the _u32 export is bound, whose trig list puts
@@ -51,11 +52,14 @@ const WORKER_COLUMNS = [
 export async function bindDecorationSway(memory, sway, { f32 = false } = {}) {
   const wide = (sway.slotBytes ?? poolSlotBytes(sway.decorations | 0)) === 4;
   const exportName = `${f32 ? 'sway_decorations_f32x4' : 'sway_decorations'}${wide ? '_u32' : ''}`;
-  const k = await loadWasmKernel('decorationSway', wasmUrl, memory, [exportName]);
+  const freeName = wide ? 'sway_free_u32' : 'sway_free';
+  const k = await loadWasmKernel('decorationSway', wasmUrl, memory, [exportName, freeName, 'sway_trig']);
   const buffer = memory.buffer;
   return {
     buffer,
     sway: k[exportName],
+    free: k[freeName],
+    finishTrig: k.sway_trig,
     f32: Boolean(f32),
     slotBytes: wide ? 4 : 2,
     // How the JS reads a trig-list entry: the decoration's index, and the impulse bit.
@@ -91,6 +95,11 @@ export function writeSwayColumns(b, w, DecorationComponent) {
   t[SLOT.parentWide] = parent.BYTES_PER_ELEMENT === 4 ? 1 : 0;
   t[SLOT.noParent] = w._noParent;
   for (let c = 0; c < WORKER_COLUMNS.length; c++) {
+    // Without a frequency grid (sway_free) the worker has no phase or bucket tables: only the snapshot is read.
+    if (w._swayBuckets === 0 && WORKER_COLUMNS[c][0] !== 'snapshot') {
+      t[SLOT[WORKER_COLUMNS[c][0]]] = 0;
+      continue;
+    }
     const view = w[WORKER_COLUMNS[c][1]];
     if (!view || view.buffer !== b.buffer) return false;
     t[SLOT[WORKER_COLUMNS[c][0]]] = view.byteOffset;

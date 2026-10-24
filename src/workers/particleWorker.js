@@ -1392,6 +1392,8 @@ class ParticleWorker extends AbstractWorker {
       this._updateDecorationSwayBuckets(deltaTime, swayBaseAngle);
       return;
     }
+    // Without a frequency grid, the loop below in decorationSway.wasm (sway_free), when it can read every column.
+    if (this._swayWasm !== null && this._swayFreeWasm(activeCount, deltaTime, swayBaseAngle)) return;
 
     const parentEntityIndex = DecorationComponent.parentEntityIndex;
     const isItOnScreen = DecorationComponent.isItOnScreen;
@@ -1545,7 +1547,7 @@ class ParticleWorker extends AbstractWorker {
   _swayRegions(data) {
     const s = data.renderQueueLayout?.sway;
     if (!s || !data.renderQueueMemory || this.config?.wasm?.decorationSway === false) return null;
-    if (s.decorations !== this.maxDecorations || s.buckets !== this._swayBuckets || this._swayBuckets <= 1) return null;
+    if (s.decorations !== this.maxDecorations || s.buckets !== this._swayBuckets) return null;
     // The kernel reads DecorationComponent where the scene bound it: the memory's decorations block.
     const rotC = DecorationComponent.rotC;
     if (!rotC || rotC.buffer !== data.renderQueueMemory.buffer) return null;
@@ -1561,40 +1563,20 @@ class ParticleWorker extends AbstractWorker {
     const b = this._swayWasm;
     if (!writeSwayColumns(b, this, DecorationComponent)) return false;
     const n = b.sway(b.tableByte, activeCount, k, deltaTime);
-    if (n > 0) this._finishSwayTrig(b.trig, b.trigValue, n, b.trigIndexMask, b.trigImpulse);
+    // The decorations it listed (an impulse's sine, an angle of 0.08 rad or more), finished in C too.
+    if (n > 0) b.finishTrig(b.tableByte, n, b.trigIndexMask, b.trigImpulse);
     return true;
   }
 
   /**
-   * W22. The rest of the loop body for the decorations the kernel listed, in its order: an impulse's
-   * Math.sin(phase) * swayAmplitude, then the rotation with its Math.cos / Math.sin past 0.08 rad. An entry is
-   * the decoration's index under `indexMask` with `impulseBit` for an impulse, as the bound kernel writes it
-   * (bit 16, or bit 31 past 65 535 decorations: E-129).
+   * updateDecorationSway's unbucketed loop in decorationSway.wasm (sway_free): every decoration's sine and the
+   * rotation it composes. False when the kernel cannot read a column (the JS loop runs).
    */
-  _finishSwayTrig(trig, trigValue, n, indexMask, impulseBit) {
-    const rotC = DecorationComponent.rotC;
-    const rotS = DecorationComponent.rotS;
-    const baseRotC = DecorationComponent.baseRotC;
-    const baseRotS = DecorationComponent.baseRotS;
-    const swayAmplitude = DecorationComponent.swayAmplitude;
-    for (let t = 0; t < n; t++) {
-      const e = trig[t];
-      const i = e & indexMask;
-      let delta = trigValue[t];
-      if ((e & impulseBit) !== 0) delta = Math.sin(delta) * swayAmplitude[i];
-      const bc = baseRotC[i];
-      const bs = baseRotS[i];
-      if (delta !== 0) {
-        const ad = delta < 0 ? -delta : delta;
-        const dc = ad < 0.08 ? 1 : Math.cos(delta);
-        const ds = ad < 0.08 ? delta : Math.sin(delta);
-        rotC[i] = bc * dc - bs * ds;
-        rotS[i] = bs * dc + bc * ds;
-      } else {
-        rotC[i] = bc;
-        rotS[i] = bs;
-      }
-    }
+  _swayFreeWasm(activeCount, deltaTime, swayBaseAngle) {
+    const b = this._swayWasm;
+    if (!writeSwayColumns(b, this, DecorationComponent)) return false;
+    b.free(b.tableByte, activeCount, deltaTime, swayBaseAngle);
+    return true;
   }
 
   // ========================================

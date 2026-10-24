@@ -20,6 +20,7 @@
    stated tolerance allows it. */
 #include <stdint.h>
 #include <wasm_simd128.h>
+#include "fdlibmSincos.h"
 
 #define INLINE static inline __attribute__((always_inline))
 
@@ -720,4 +721,177 @@ uint32_t sway_decorations_f32x4_u32(uint32_t table, uint32_t count, uint32_t k, 
     }
   }
   return nTrig;
+}
+
+
+/* Close-out (group B): the sway with every Math.sin and Math.cos in C, so no decoration is finished in JS.
+
+   sway_free and sway_free_u32 are ParticleWorker.updateDecorationSway's loop for a scene without a frequency grid
+   (particle.swayFrequencyBuckets 0 or 1, the default): a loop or skew decoration's angle is
+   sin(swayBaseAngle * swayFrequency + i * 0.1) * swayAmplitude, an impulse's sin(phase) * swayAmplitude after the
+   same phase step as sway_decorations. sway_trig finishes the trig list sway_decorations and its variants leave
+   (an impulse's sine, an angle of 0.08 rad or more), in their order. The sines and cosines are fdlibm's
+   (weed_sincos, musl's code, which V8's Math.sin and Math.cos match to an ulp, and exactly after the float32
+   store: E-76 Q2); an argument past its medium reduction (|x| >= 2^20 pi/2, past about three days of play at a
+   frequency of 3) is first taken modulo 2 pi. tests/node/decorationSwayFree.test.js states the tolerance against
+   the JS. Arithmetic otherwise as the JS: float32 columns widened to double, a Float32Array store a (float). */
+
+#define TWO_PI 0x1.921fb54442d18p+2
+
+INLINE void sway_sincos(double x, double *s, double *c) {
+  if (weed_sincos(x, s, c)) return;
+  const double r = x - TWO_PI * __builtin_floor(x / TWO_PI);
+  if (!weed_sincos(r, s, c)) {
+    *s = x - x;
+    *c = *s;
+  }
+}
+
+/* The rotation the JS composes for a decoration whose angle is `delta` (the end of updateDecorationSway's loop and
+   of _finishSwayTrig). */
+INLINE void sway_rotate(uint32_t i, double delta, float *rotC, float *rotS, const float *baseRotC,
+                        const float *baseRotS) {
+  if (delta != 0.0) {
+    const double ad = delta < 0.0 ? -delta : delta;
+    double dc;
+    double ds;
+    if (ad < SMALL_ANGLE) {
+      dc = 1.0;
+      ds = delta;
+    } else if (ad - ad == 0.0) {
+      sway_sincos(delta, &ds, &dc);
+    } else {
+      /* Math.cos and Math.sin of NaN or +-Infinity are NaN. */
+      dc = delta - delta;
+      ds = dc;
+    }
+    const double bc = baseRotC[i];
+    const double bs = baseRotS[i];
+    rotC[i] = (float)(bc * dc - bs * ds);
+    rotS[i] = (float)(bs * dc + bc * ds);
+  } else {
+    rotC[i] = baseRotC[i];
+    rotS[i] = baseRotS[i];
+  }
+}
+
+/* One decoration of the unbucketed loop, after the early continues. */
+INLINE void sway_free_one(uint32_t i, double baseAngle, double dtAngle, uint8_t *sway, const float *amplitude,
+                          const float *frequency, float *phase, float *rotC, float *rotS, const float *baseRotC,
+                          const float *baseRotS) {
+  const uint32_t mode = sway[i];
+  double delta = 0.0;
+  double s;
+  double c;
+  if (mode == SWAY_LOOP || mode == SWAY_LOOP_SKEW) {
+    sway_sincos(baseAngle * (double)frequency[i] + (double)i * 0.1, &s, &c);
+    delta = s * (double)amplitude[i];
+    if (mode == SWAY_LOOP_SKEW) {
+      rotC[i] = SWAY_SKEW_C;
+      rotS[i] = (float)delta;
+      return;
+    }
+  } else if (mode == SWAY_IMPULSE) {
+    /* advanceImpulsePhase, then the JS's test against IMPULSE_DONE (which a phase of -1 also meets). */
+    const double next = (double)phase[i] + dtAngle * (double)frequency[i];
+    if (next >= JS_PI || next == IMPULSE_DONE) {
+      sway[i] = SWAY_OFF;
+      phase[i] = 0.0f;
+      rotC[i] = baseRotC[i];
+      rotS[i] = baseRotS[i];
+      return;
+    }
+    phase[i] = (float)next;
+    if (next - next == 0.0) {
+      sway_sincos(next, &s, &c);
+      delta = s * (double)amplitude[i];
+    } else {
+      /* Math.sin of NaN or -Infinity is NaN. */
+      delta = (next - next) * (double)amplitude[i];
+    }
+  }
+  sway_rotate(i, delta, rotC, rotS, baseRotC, baseRotS);
+}
+
+#define SWAY_FREE_COLUMNS                                                       \
+  const uint8_t *active = PTR(const uint8_t, T_ACTIVE);                        \
+  const uint16_t *parent16 = PTR(const uint16_t, T_PARENT);                    \
+  const uint32_t *parent32 = PTR(const uint32_t, T_PARENT);                    \
+  const int wide = t[T_PARENT_WIDE] != 0;                                      \
+  const uint32_t noParent = t[T_NO_PARENT];                                    \
+  const uint8_t *onScreen = PTR(const uint8_t, T_ON_SCREEN);                   \
+  uint8_t *sway = PTR(uint8_t, T_SWAY);                                        \
+  const float *amplitude = PTR(const float, T_AMPLITUDE);                      \
+  const float *frequency = PTR(const float, T_FREQUENCY);                      \
+  float *phase = PTR(float, T_PHASE);                                          \
+  float *rotC = PTR(float, T_ROT_C);                                           \
+  float *rotS = PTR(float, T_ROT_S);                                           \
+  const float *baseRotC = PTR(const float, T_BASE_ROT_C);                      \
+  const float *baseRotS = PTR(const float, T_BASE_ROT_S);                      \
+  const uint32_t cap = t[T_LIST_CAP];                                          \
+  const double dtAngle = deltaTime * SWAY_ANGLE_PER_MS;
+
+/* The unbucketed sway on a u16 snapshot. Returns 0 (no trig list: every decoration is finished here). */
+__attribute__((export_name("sway_free")))
+uint32_t sway_free(uint32_t table, uint32_t count, double deltaTime, double baseAngle) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint16_t *snapshot = PTR(const uint16_t, T_SNAPSHOT);
+  uint16_t *list = PTR(uint16_t, T_LIST);
+  SWAY_FREE_COLUMNS
+  for (uint32_t begin = 0; begin < count; begin += cap) {
+    const uint32_t end = count - begin > cap ? begin + cap : count;
+    const uint32_t n = wide
+      ? let_through(snapshot, begin, end, active, parent16, parent32, 1, noParent, onScreen, sway, list)
+      : let_through(snapshot, begin, end, active, parent16, parent32, 0, noParent, onScreen, sway, list);
+    for (uint32_t e = 0; e < n; e++) {
+      sway_free_one(list[e], baseAngle, dtAngle, sway, amplitude, frequency, phase, rotC, rotS, baseRotC, baseRotS);
+    }
+  }
+  return 0;
+}
+
+/* sway_free on a u32 snapshot and list (past 65 535 decorations, E-129). */
+__attribute__((export_name("sway_free_u32")))
+uint32_t sway_free_u32(uint32_t table, uint32_t count, double deltaTime, double baseAngle) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *snapshot = PTR(const uint32_t, T_SNAPSHOT);
+  uint32_t *list = PTR(uint32_t, T_LIST);
+  SWAY_FREE_COLUMNS
+  for (uint32_t begin = 0; begin < count; begin += cap) {
+    const uint32_t end = count - begin > cap ? begin + cap : count;
+    const uint32_t n = wide
+      ? let_through_u32(snapshot, begin, end, active, parent16, parent32, 1, noParent, onScreen, sway, list)
+      : let_through_u32(snapshot, begin, end, active, parent16, parent32, 0, noParent, onScreen, sway, list);
+    for (uint32_t e = 0; e < n; e++) {
+      sway_free_one(list[e], baseAngle, dtAngle, sway, amplitude, frequency, phase, rotC, rotS, baseRotC, baseRotS);
+    }
+  }
+  return 0;
+}
+
+/* The trig list of sway_decorations (or a variant), finished as _finishSwayTrig did: entry t is the decoration's
+   index under `indexMask`, with `impulseBit` for an impulse whose value is its phase (else the value is the sway
+   angle). */
+__attribute__((export_name("sway_trig")))
+void sway_trig(uint32_t table, uint32_t n, uint32_t indexMask, uint32_t impulseBit) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const float *amplitude = PTR(const float, T_AMPLITUDE);
+  float *rotC = PTR(float, T_ROT_C);
+  float *rotS = PTR(float, T_ROT_S);
+  const float *baseRotC = PTR(const float, T_BASE_ROT_C);
+  const float *baseRotS = PTR(const float, T_BASE_ROT_S);
+  const uint32_t *trig = PTR(const uint32_t, T_TRIG);
+  const double *trigValue = PTR(const double, T_TRIG_VALUE);
+  for (uint32_t k = 0; k < n; k++) {
+    const uint32_t e = trig[k];
+    const uint32_t i = e & indexMask;
+    double delta = trigValue[k];
+    if ((e & impulseBit) != 0) {
+      double s;
+      double c;
+      sway_sincos(delta, &s, &c);
+      delta = s * (double)amplitude[i];
+    }
+    sway_rotate(i, delta, rotC, rotS, baseRotC, baseRotS);
+  }
 }
