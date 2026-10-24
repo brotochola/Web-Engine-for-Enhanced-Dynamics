@@ -465,7 +465,8 @@
       "rank": 12,
       "records": [
         "R-0241",
-        "R-0258"
+        "R-0258",
+        "R-0610"
       ]
     },
     {
@@ -13396,6 +13397,16 @@
       "title": "Grid statics hoisted out of the rebuild's insert loop, screened on the movers bench, E-134",
       "verdict": "screened",
       "text": "**screened, not taken.** Predator's profile (R-0607) puts 16 % of `rebuildOwnedRows` on `if (localCount < Grid.maxEntitiesPerCell)`. Both copies of the rebuild (`rebuildOwnedRows`, `_rebuildOwnedRowsLatched`) read `Grid.maxEntitiesPerCell` and `Grid.cellByteSize` per cell. Hoisted into locals, `spatialGridMoversMicrobench --variant base` (the full rebuild on a real worker, 60 000 circles), the tree before against the hoist, 5 alternating rounds, checksums equal: 0 % movers +2.5 %, 5 % +4.2 %, 35 % +2.5 %, 50 % +0.8 %, 100 % +3.5 % (medians). A first sitting where the edit had not applied, the same tree on both sides, read −4 to +5 %: an A/A of this bench at ±5 %. So a tie: the line's time is the stores into the cell arrays that follow it, not the static read. Reverted; nothing committed."
+    },
+    {
+      "id": "R-0610",
+      "date": "2026-10-24",
+      "title": "The cull's cost on bigWorldCullStressScene: the collect follows the world at a fixed visible count, E-127",
+      "verdict": "note",
+      "text": "**note (Q1, the ceiling).** bigWorldCullStressScene (33241ca1: static sprites on a grid, `?sprites=`, `?view=` the share in view; physics off, no spatial worker), headless, source, detailed stats on, one run each:\n\n| sprites | view | queue rows | pre-render STEP_MS | COLLECT_MS | EMIT_MS |\n|---|---|---|---|---|---|\n| 250 000 | 5 % | 18 643 | 2.333 | 2.033 | 0.148 |\n| 500 000 | 2.5 % | 18 643 | 4.017 | 3.695 | 0.169 |\n\nWith the visible count fixed, doubling the world takes the collect from 2.03 to 3.70 ms (+82 %), while the emit holds (persist frames: the rows do not change). The collect is about 90 % of pre-render there, and it grows with every sprite in the world: about 7.4 ns a sprite at 500 000. The bench commit's message read the 250 000 / 500 000 pair at a fixed share, where the visible count doubled too; this pair is the clean one.\n\nThe ceiling is a cull that costs what the view holds. The 2026-09-27 grid (R-0241) lost sprites to the cell cap; spatial's grid includes sprites (`rebuildOwnedRows` bins every collider or SpriteRenderer) but caps cells too, and a scene like this one has no spatial worker. Next: the design (a grid of pre-render's own, kept for sprites that do not move, with the collect kernel walking only the cells in view).",
+      "commits": [
+        "33241ca1"
+      ]
     }
   ],
   "leads": [
