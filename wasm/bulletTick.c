@@ -67,8 +67,9 @@ typedef struct {
   uint32_t cellByteSize;
 } world_t;
 
-/* The ray's state as RAY holds it: origin, unit direction, length. */
-typedef struct { double x, y, dx, dy, len; } ray_t;
+/* The ray's state as RAY holds it: origin, unit direction, length; with the hoisted variants, the box test's
+   reciprocals of the direction (the same value each candidate computes). */
+typedef struct { double x, y, dx, dy, len, invX, invY; } ray_t;
 
 /* rayPolygonIntersect (src/util/utils.js) on an entity's own vertices. */
 INLINE double ray_polygon(const ray_t *r, double polyX, double polyY, double cs, double sn, const float *vx,
@@ -106,7 +107,7 @@ INLINE double ray_polygon(const ray_t *r, double polyX, double polyY, double cs,
 }
 
 /* _shapeRayDistance for one entity: the distance, -1 for a miss, or -2 when the shape stays JS. */
-INLINE double shape_distance(const world_t *w, const ray_t *r, uint32_t e, double maxDist) {
+INLINE double shape_distance(const world_t *w, const ray_t *r, uint32_t e, double maxDist, const int hoist) {
   const uint32_t shape = w->cShape[e];
   if (shape == SHAPE_CIRCLE) {
     const double circleX = (double)w->x[e] + or0(w->offX[e]);
@@ -139,8 +140,8 @@ INLINE double shape_distance(const world_t *w, const ray_t *r, uint32_t e, doubl
     const double maxX = boxX + halfW;
     const double minY = boxY - halfH;
     const double maxY = boxY + halfH;
-    const double invDirX = r->dx != 0 ? 1 / r->dx : INF;
-    const double invDirY = r->dy != 0 ? 1 / r->dy : INF;
+    const double invDirX = hoist ? r->invX : (r->dx != 0 ? 1 / r->dx : INF);
+    const double invDirY = hoist ? r->invY : (r->dy != 0 ? 1 / r->dy : INF);
     const double t1 = (minX - r->x) * invDirX;
     const double t2 = (maxX - r->x) * invDirX;
     const double t3 = (minY - r->y) * invDirY;
@@ -171,13 +172,15 @@ INLINE double shape_distance(const world_t *w, const ray_t *r, uint32_t e, doubl
 
 /* _traverseGrid with _checkCellEntities: the closest hit's entity (-1 for none, -2 when the JS must cast) and its
    distance in *dist. */
-INLINE int32_t cast(const world_t *w, const ray_t *r, int32_t excludeA, double *dist) {
-  uint32_t gen = w->t[G_GEN] + 1;
-  if (gen == 0) {
+INLINE int32_t cast(const world_t *w, const ray_t *r, int32_t excludeA, double *dist, const int hoist,
+                    const int stamps) {
+  uint32_t gen = 0;
+  if (stamps) {
+    gen = w->t[G_GEN] + 1;
     /* Ray._beginRayGen's wrap: the stamps are cleared by the client before a call that would wrap. */
-    gen = 1;
+    if (gen == 0) gen = 1;
+    w->t[G_GEN] = gen;
   }
-  w->t[G_GEN] = gen;
   const double xTo = r->x + r->dx * r->len;
   const double yTo = r->y + r->dy * r->len;
   const double inv = w->invCellSize;
@@ -222,14 +225,17 @@ INLINE int32_t cast(const world_t *w, const ray_t *r, int32_t excludeA, double *
       double cellDist = closestDist;
       for (uint32_t k = 0; k < count; k++) {
         const uint32_t e = ids[k];
-        if (w->stamp[e] == gen) continue;
-        w->stamp[e] = gen;
+        /* The stamps only skip a test: a repeated test gives the same distance, which is not closer. */
+        if (stamps) {
+          if (w->stamp[e] == gen) continue;
+          w->stamp[e] = gen;
+        }
         if ((int32_t)e == excludeA) continue;
         if (!w->tActive[e]) continue;
         if (!w->cActive[e]) continue;
         if (!((1u << (w->cLayer[e] & 31)) & (uint32_t)w->rayMask)) continue;
         const double shapeMax = cellDist < r->len ? cellDist : r->len;
-        const double d = shape_distance(w, r, e, shapeMax);
+        const double d = shape_distance(w, r, e, shapeMax, hoist);
         if (d == -2) return -2;
         if (d >= 0 && d < cellDist) {
           cellDist = d;
@@ -256,10 +262,11 @@ INLINE int32_t cast(const world_t *w, const ray_t *r, int32_t excludeA, double *
 }
 
 /* BulletPool.tick's loop from bullet `from` to `count`: returns `count` when it ticked them all, or the position of
-   a bullet the JS must tick. dt is dtRatio / 60 as the JS computes it. */
-__attribute__((export_name("bullet_tick")))
-uint32_t bullet_tick(uint32_t table, uint32_t from, uint32_t count, double dt, double invCellSize, double cellSize,
-                     int32_t gridCols, int32_t gridRows, uint32_t cellByteSize, int32_t rayMask) {
+   a bullet the JS must tick. dt is dtRatio / 60 as the JS computes it. hoist: the box test's reciprocals once per
+   ray; stamps: skip an entity a ray already tested (Ray._rayGenStamp). Every variant writes the same bytes. */
+INLINE uint32_t tick(uint32_t table, uint32_t from, uint32_t count, double dt, double invCellSize, double cellSize,
+                     int32_t gridCols, int32_t gridRows, uint32_t cellByteSize, int32_t rayMask, const int hoist,
+                     const int stamps) {
   uint32_t *t = (uint32_t *)(uintptr_t)table;
   uint8_t *active = PTR(uint8_t, B_ACTIVE);
   float *x = PTR(float, B_X);
@@ -321,8 +328,14 @@ uint32_t bullet_tick(uint32_t table, uint32_t from, uint32_t count, double dt, d
     int32_t hit = -1;
     double distance = INF;
     if (len > 1e-6) {
-      ray_t r = { px, py, rotC[i], rotS[i], len };
-      hit = cast(&w, &r, owner[i], &distance);
+      const double rdx = rotC[i];
+      const double rdy = rotS[i];
+      ray_t r = { px, py, rdx, rdy, len, 0, 0 };
+      if (hoist) {
+        r.invX = rdx != 0 ? 1 / rdx : INF;
+        r.invY = rdy != 0 ? 1 / rdy : INF;
+      }
+      hit = cast(&w, &r, owner[i], &distance, hoist, stamps);
       if (hit == -2) {
         res[0] = activeWrite;
         res[1] = impactWrite;
@@ -357,3 +370,10 @@ uint32_t bullet_tick(uint32_t table, uint32_t from, uint32_t count, double dt, d
   res[3] = back;
   return count;
 }
+
+#define BULLET_TICK(name, hoist, stamps)                                                                           __attribute__((export_name(#name))) uint32_t name(uint32_t table, uint32_t from, uint32_t count, double dt,                                                       double invCellSize, double cellSize, int32_t gridCols,                                                          int32_t gridRows, uint32_t cellByteSize, int32_t rayMask) {     return tick(table, from, count, dt, invCellSize, cellSize, gridCols, gridRows, cellByteSize, rayMask,                      hoist, stamps);                                                                                  }
+
+BULLET_TICK(bullet_tick, 0, 1)
+BULLET_TICK(bullet_tick_hoist, 1, 1)
+BULLET_TICK(bullet_tick_nostamp, 0, 0)
+BULLET_TICK(bullet_tick_lean, 1, 0)

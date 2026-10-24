@@ -9,6 +9,10 @@ import { ShapeType } from '../box2d/box2dConstants.js';
 // Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
 const wasmUrl = new URL('./bulletTick.wasm', import.meta.url);
 
+/** The kernel's variants (one walk, the same bytes): the shipped tick takes BULLET_TICK_VARIANT. */
+export const BULLET_TICK_VARIANTS = ['bullet_tick', 'bullet_tick_hoist', 'bullet_tick_nostamp', 'bullet_tick_lean'];
+export const BULLET_TICK_VARIANT = 'bullet_tick';
+
 /** wasm/bulletTick.c's column table, slot for slot. */
 export const BULLET_TICK_SLOTS = [
   'bActive', 'bX', 'bY', 'bPrevX', 'bPrevY', 'bVx', 'bVy', 'bSpeed', 'bRotC', 'bRotS', 'bDamage', 'bOwner', 'bShooter',
@@ -29,9 +33,11 @@ if (ShapeType.Box !== 0 || ShapeType.Circle !== 1 || ShapeType.Polygon !== 2 || 
  * @param {WebAssembly.Memory} memory
  * @param {{ tableByte: number, resultsByte: number, returnedByte: number, stampByte: number, bullets: number,
  *   entities: number }} layout the kernel's regions in that memory
+ * @param {string} [variant] one of BULLET_TICK_VARIANTS (benches and tests pick; the engine takes the default)
  */
-export async function bindBulletTick(memory, layout) {
-  const k = await loadWasmKernel('bulletTick', wasmUrl, memory, ['bullet_tick']);
+export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIANT) {
+  if (!BULLET_TICK_VARIANTS.includes(variant)) throw new Error(`bulletTick: no variant ${variant}`);
+  const k = await loadWasmKernel('bulletTick', wasmUrl, memory, BULLET_TICK_VARIANTS);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, layout.tableByte, BULLET_TICK_SLOTS.length);
   table[SLOT.results] = layout.resultsByte;
@@ -40,7 +46,7 @@ export async function bindBulletTick(memory, layout) {
   table[SLOT.gGen] = 0;
   return {
     buffer,
-    tick: k.bullet_tick,
+    tick: k[variant],
     table,
     tableByte: layout.tableByte,
     results: new Int32Array(buffer, layout.resultsByte, 4),

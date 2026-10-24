@@ -179,7 +179,10 @@
       "source": "wasm/bulletTick.c",
       "output": "src/core/bulletTick.wasm",
       "exports": [
-        "bullet_tick"
+        "bullet_tick",
+        "bullet_tick_hoist",
+        "bullet_tick_nostamp",
+        "bullet_tick_lean"
       ],
       "maxMemoryPages": 32768
     },

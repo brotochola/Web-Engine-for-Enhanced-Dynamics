@@ -99,12 +99,12 @@ export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, 
   Grid._gridEntities = new Uint16Array(memory.buffer, offsets.grid, (cols * rows * cellByteSize) / 2);
   BulletPool.maxCount = bullets;
 
-  /** Insert entity e into every cell its box (centre, half extent) overlaps, as the spatial workers do. */
-  const insert = (e, cx, cy, half) => {
+  /** Insert entity e into every cell its box (centre, half extents) overlaps, as the spatial workers do. */
+  const insert = (e, cx, cy, half, halfY = half) => {
     const c0 = Math.max(0, Math.floor((cx - half) / cellSize));
     const c1 = Math.min(cols - 1, Math.floor((cx + half) / cellSize));
-    const r0 = Math.max(0, Math.floor((cy - half) / cellSize));
-    const r1 = Math.min(rows - 1, Math.floor((cy + half) / cellSize));
+    const r0 = Math.max(0, Math.floor((cy - halfY) / cellSize));
+    const r1 = Math.min(rows - 1, Math.floor((cy + halfY) / cellSize));
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
         const cell = r * cols + c;
@@ -124,7 +124,7 @@ export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, 
   };
 }
 
-/** The kernel on that world, as the particle worker binds it. */
-export function bindBullets(w) {
-  return bindBulletTick(w.memory, w.layout);
+/** The kernel on that world, as the particle worker binds it (a variant of BULLET_TICK_VARIANTS, or the default). */
+export function bindBullets(w, variant) {
+  return bindBulletTick(w.memory, w.layout, variant);
 }

@@ -8,7 +8,7 @@ import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { Grid } from '../../src/core/grid.js';
-import { readyBulletStamps, writeBulletColumns } from '../../src/core/bulletTickClient.js';
+import { BULLET_TICK_VARIANTS, readyBulletStamps, writeBulletColumns } from '../../src/core/bulletTickClient.js';
 
 // E-76 W19, the bullet tick kernel (wasm/bulletTick.c). On the same bytes, one bullet_tick over the pool must
 // leave the bullets, the active list, the impact records and the order of the returned slots exactly as the
@@ -116,7 +116,7 @@ function state(w, active, impacts, nImpacts, returned) {
   };
 }
 
-async function compare(seed, { dtRatio = 1, odd = false } = {}) {
+async function compare(seed, { dtRatio = 1, odd = false, variant } = {}) {
   const w = bulletWorld(SIZE);
   fill(w, seed, { odd });
   const start = save(w);
@@ -133,7 +133,7 @@ async function compare(seed, { dtRatio = 1, odd = false } = {}) {
 
     // The kernel, from the same bytes.
     restore(w, start);
-    const b = await bindBullets(w);
+    const b = await bindBullets(w, variant);
     assert.equal(writeBulletColumns(b, BulletComponent, Transform, Collider, w.views.activeOut, w.views.impacts, Grid), true);
     const res = b.results;
     res[0] = 1;
@@ -152,8 +152,8 @@ async function compare(seed, { dtRatio = 1, odd = false } = {}) {
 }
 
 test('bullet_tick leaves the bullets, the active list, the impacts and the returned slots as BulletPool.tick does', async () => {
-  for (const [seed, dtRatio] of [[11, 1], [12, 0.37], [13, 2.5]]) {
-    const { js, wasm, stop, header } = await compare(seed, { dtRatio });
+  for (const [seed, dtRatio, variant] of [[11, 1], [12, 0.37], [13, 2.5], ...BULLET_TICK_VARIANTS.map((v, k) => [30 + k, 1, v])]) {
+    const { js, wasm, stop, header } = await compare(seed, { dtRatio, variant });
     assert.equal(stop, SIZE.bullets, 'no bullet went back to the JS');
     assert.ok(js.returned.length > 50, `the case hits (${js.returned.length})`);
     assert.ok(header[0] > 10, 'impacts were written');
