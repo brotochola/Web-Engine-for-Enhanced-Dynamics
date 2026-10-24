@@ -45,8 +45,10 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   scene knobs) go in their own commit before the change they measure.
 - **No AI or Cursor attribution trailers.** Commits belong to the human author
   (`.cursor/rules/no-cursor-attribution.mdc`; the commit-msg hook strips Cursor trailers).
-- The pre-commit hook bumps the patch version and stages `package.json` and `src/version.js`.
-  Commit other `package.json` edits on their own.
+- Commits leave the version alone. Only `npm run release -- patch|minor` changes it: it builds
+  and checks the bundles, commits and tags `vX.Y.Z`, publishes to npm and pushes. `dist/` is
+  fresh when it was built from the working tree's sources (`npm run check:dist`, a hash in
+  `dist/.build-inputs`), whatever the version.
 - Preserve line endings: some files are CRLF (`git ls-files --eol <file>`). Edit those with a
   script that writes `\r\n`, not a tool that writes `\n`.
 - Do not push unless asked.

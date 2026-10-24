@@ -903,8 +903,7 @@ and it is still there.
   - `npm run test:node` is green before every commit. Demo tests run with
     `npm run test:demos`.
   - No AI attribution trailers.
-  - The pre-commit hook bumps the version; commit other `package.json` edits on their
-    own.
+  - Commits leave the version alone (since 2026-10-24); `npm run release` changes it.
 - **Tests:** prefer behavioural tests on real code (`tests/bench/workerHarness.mjs`)
   over assertions on source text.
 - **Measurement:**
