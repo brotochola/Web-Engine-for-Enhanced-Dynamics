@@ -62,6 +62,7 @@ import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_S
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import { bindGpuPack, packInstancedRowsWasm } from '../render/gpuPackClient.js';
+import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
 import {
     bindPreRenderEmit,
     writeEmitColumns,
@@ -401,6 +402,8 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPackWasm = null;
         /** The emit kernel (E-112), bound when the emit's columns live in the render-queue memory. */
         this._emitWasm = null;
+        /** The shadow stamp kernel (E-114), bound when its scratch lives in the render-queue memory. */
+        this._stampWasm = null;
         /** Whether the kernel's last frame wrote a repeating sprite (emitSpriteQueue's tiledRows). */
         this._emitTiledRows = false;
         this.renderQueueSortKey = EMPTY_F32;
@@ -930,6 +933,16 @@ class PreRenderWorker extends AbstractWorker {
                     } catch (err) {
                         console.warn('[PRE_RENDER] gpuPack.wasm did not load; packing in JS', err);
                         this._gpuPackWasm = null;
+                    }
+                }
+                // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions.
+                this._stampWasm = null;
+                if (data.renderQueueMemory && data.renderQueueLayout?.stamp && this.config?.wasm?.shadowStamp !== false) {
+                    try {
+                        this._stampWasm = await bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp);
+                    } catch (err) {
+                        console.warn('[PRE_RENDER] shadowStamp.wasm did not load; stamping in JS', err);
+                        this._stampWasm = null;
                     }
                 }
                 const cookieN = Math.max(1, caps.maxCookie | 0);
@@ -3991,6 +4004,11 @@ class PreRenderWorker extends AbstractWorker {
         spec.stampLightIdx = dst.stampLightIdx;
         spec.lightVec = this._gpuLightVec;
 
+        // E-114: the stamp in WASM; a call its regions cannot hold stamps in JS.
+        if (this._stampWasm !== null) {
+            const cursor = stampLightRangeWasm(this._stampWasm, spec);
+            if (cursor >= 0) return cursor;
+        }
         return stampLightRange(spec);
     }
 

@@ -178,3 +178,62 @@ test('a call the regions cannot hold is declined, so the JS stamps it', async ()
   assert.equal(stampLightRangeWasm(b, { ...spec, sunN: caps.maxSun + 1 }), -1, 'more casters than the scratch holds');
   assert.equal(stampLightRangeWasm(b, { ...spec, sunN: 0 }), spec.stampBase | 0, 'no casters: the JS early return');
 });
+
+test('pre-render binds the stamp kernel and its stamp is the JS one', async () => {
+  const { RENDER_QUEUE_CAMERA_BYTES } = await import('../../src/render/renderQueueLayout.js');
+  const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
+  const { coreComponentData, initWorker, loadWorker } = await import('../bench/workerHarness.mjs');
+  const N = 2000;
+  const lighting = { enabled: true, shadowsEnabled: true, maxShadowCastingLights: LIGHTS, maxShadowsPerLight: 64, maxShadowsPerEntity: PER_ENTITY, maxLights: 64 };
+  const caps = gpuQueueCaps(MAX, lighting);
+  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), null,
+    { maxSun: caps.maxSun, maxPerEntity: PER_ENTITY, maxLights: LIGHTS });
+  const buffers = { componentData: { ...coreComponentData(N), ShadowCaster: new SharedArrayBuffer(ShadowCaster.getBufferSize(N)) } };
+  const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  await initWorker(worker, {
+    config: { worldWidth: 4000, worldHeight: 3000, lighting },
+    globalEntityCount: N,
+    buffers,
+    extra: {
+      shadows: { enabled: true, maxShadowCastingLights: LIGHTS, maxShadowsPerLight: 64, maxShadowsPerEntity: PER_ENTITY },
+      renderQueueMemory: m.memory,
+      renderQueueLayout: m.layout,
+      renderQueue: {
+        maxItems: MAX,
+        sync: new SharedArrayBuffer(8),
+        dataA: m.buffer,
+        dataAByte: m.layout.queueAByte,
+        dataB: m.buffer,
+        dataBByte: m.layout.queueBByte,
+        cameraA: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
+        cameraB: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
+        entityTextureData: new SharedArrayBuffer(N * 2),
+      },
+      gpuQueue: { dataA: m.buffer, dataAByte: m.layout.gpuAByte, dataB: m.buffer, dataBByte: m.layout.gpuBByte, caps },
+    },
+  });
+  const bound = worker._stampWasm;
+  assert.ok(bound, 'the worker bound the stamp kernel');
+  const dst = worker.gpuQueueBuffers[0];
+  assert.equal(dst.sun.buffer, m.buffer, 'the sun rows are in the memory');
+  const r = rng(0xfa11);
+  for (let k = 0; k < 12; k++) {
+    const f = frame(r, k, caps, dst);
+    worker._collectStampLights = function collectTestLights() {
+      this._stampLights = f.lights.map((L) => (L ? { ...L } : L));
+      this._stampLightCount = f.lights.length;
+    };
+    const stampBytes = new Uint8Array(dst.stamp.buffer, dst.stamp.byteOffset, dst.stamp.byteLength);
+    worker._stampWasm = null;
+    stampBytes.fill(0xa5);
+    const js = worker._stampAgainstSun(dst, dst.sun, f.nSun, 0, 0, 1);
+    const jsBytes = stampBytes.slice();
+    let calls = 0;
+    worker._stampWasm = { ...bound, stampRange: (...a) => { calls++; return bound.stampRange(...a); } };
+    stampBytes.fill(0xa5);
+    const wasm = worker._stampAgainstSun(dst, dst.sun, f.nSun, 0, 0, 1);
+    if (f.nSun > 0 && f.lights.length > 0) assert.equal(calls, 1, `frame ${k}: the kernel stamped it`);
+    assert.equal(wasm, js, `frame ${k}: cursor`);
+    assert.equal(stampBytes.findIndex((x, i) => x !== jsBytes[i]), -1, `frame ${k}: stamp rows`);
+  }
+});
