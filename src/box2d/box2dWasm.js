@@ -37,6 +37,34 @@ var ENVIRONMENT_IS_PTHREAD = ENVIRONMENT_IS_WORKER && globalThis.name == "em-pth
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
+// include: D:/xampp/htdocs/Box2d_3.2_C_-_liquidfun/wasm/../weedjs/weed_pre.js
+// Prepended to box2dWasm.js via --pre-js when building for WeedJS (wasm/CMakeLists.txt).
+// Sizes Box2D's memory for the scene. The engine creates the physics worker with the name
+// 'physics pages=N' (physics.wasmMemoryMB x 16); without one, 8192 pages (512 MB).
+// initial === maximum, so the memory never grows: every Weed worker binds views onto it once, at
+// boot, and growth would put new allocations in pages those views do not cover. When Box2D runs
+// out, its attempt to grow fails and ends in abort("OOM") (ABORTING_MALLOC).
+// Pthread helpers receive this memory by message and skip all of this.
+// A statement, not an IIFE: the glue line before this has no semicolon, and a leading "(" would
+// turn it into a call.
+if (!ENVIRONMENT_IS_PTHREAD) {
+  const weedMemoryMatch = /(?:^|\s)pages=(\d+)(?:\s|$)/.exec(globalThis.name || "");
+  const weedMemoryPages = weedMemoryMatch ? +weedMemoryMatch[1] : 8192;
+  if (!(weedMemoryPages >= 256 && weedMemoryPages <= 32768)) {
+    throw new Error("[weedjs-box2d] memory: " + weedMemoryPages + " pages is outside 256..32768 (physics.wasmMemoryMB 16..2048)");
+  }
+  try {
+    Module["wasmMemory"] = new WebAssembly.Memory({
+      initial: weedMemoryPages,
+      maximum: weedMemoryPages,
+      shared: true
+    });
+  } catch (e) {
+    throw new Error("[weedjs-box2d] Box2D could not reserve " + weedMemoryPages / 16 + " MB (physics.wasmMemoryMB): " + (e && e.message ? e.message : e));
+  }
+}
+
+// end include: D:/xampp/htdocs/Box2d_3.2_C_-_liquidfun/wasm/../weedjs/weed_pre.js
 var programArgs = [];
 
 var thisProgram = "./this.program";
@@ -138,6 +166,15 @@ class EmscriptenSjLj extends EmscriptenEH {}
 // end include: runtime_exceptions.js
 // include: runtime_debug.js
 // end include: runtime_debug.js
+// Support for growable heap + pthreads, where the buffer may change, so JS views
+// must be updated.
+function growMemViews() {
+  // `updateMemoryViews` updates all the views simultaneously, so it's enough to check any of them.
+  if (wasmMemory.buffer != HEAP8.buffer) {
+    updateMemoryViews();
+  }
+}
+
 // include: runtime_pthread.js
 // Pthread Web Worker handling code.
 // This code runs only on pthread web workers and handles pthread setup
@@ -248,8 +285,17 @@ if (ENVIRONMENT_IS_PTHREAD) {
 // Memory management
 var runtimeInitialized = false;
 
+// When ALLOW_MEMORY_GROWTH is enabled, the conversion from Wasm
+// memory to ArrayBuffer requires some additional logic.
+function getMemoryBuffer() {
+  return wasmMemory.buffer;
+}
+
 function updateMemoryViews() {
-  var b = wasmMemory.buffer;
+  // If we already have a heap that is resizeable/growable buffer we don't
+  // need to do anything in updateMemoryViews.
+  if (HEAP8?.buffer?.growable) return;
+  var b = getMemoryBuffer();
   HEAP8 = new Int8Array(b);
   HEAPU8 = new Uint8Array(b);
   Module["HEAP32"] = HEAP32 = new Int32Array(b);
@@ -267,11 +313,18 @@ function initMemory() {
   if ((ENVIRONMENT_IS_PTHREAD)) {
     return;
   }
-  {
-    var INITIAL_MEMORY = 536870912;
+  if (Module["wasmMemory"]) {
+    wasmMemory = Module["wasmMemory"];
+  } else {
+    var INITIAL_MEMORY = Module["INITIAL_MEMORY"] || 16777216;
     /** @suppress {checkTypes} */ wasmMemory = new WebAssembly.Memory({
       "initial": INITIAL_MEMORY / 65536,
-      "maximum": INITIAL_MEMORY / 65536,
+      // In theory we should not need to emit the maximum if we want "unlimited"
+      // or 4GB of memory, but VMs error on that atm, see
+      // https://github.com/emscripten-core/emscripten/issues/14130
+      // And in the pthreads case we definitely need to emit a maximum. So
+      // always emit one.
+      "maximum": 32768,
       "shared": true
     });
   }
@@ -459,6 +512,8 @@ class ExitStatus {
   }
 }
 
+/** @type {!Int8Array} */ var HEAP8;
+
 var terminateWorker = worker => {
   worker.terminate();
   // terminate() can be asynchronous, so in theory the worker can continue
@@ -542,12 +597,12 @@ var stackAlloc = sz => __emscripten_stack_alloc(sz);
   for (var arg of callArgs) {
     if (typeof arg == "bigint") {
       // The prefix is non-zero to indicate a bigint.
-      HEAP64[b++] = 1n;
-      HEAP64[b++] = arg;
+      (growMemViews(), HEAP64)[b++] = 1n;
+      (growMemViews(), HEAP64)[b++] = arg;
     } else {
       // The prefix is zero to indicate a JS Number.
-      HEAP64[b++] = 0n;
-      HEAPF64[b++] = arg;
+      (growMemViews(), HEAP64)[b++] = 0n;
+      (growMemViews(), HEAPF64)[b++] = arg;
     }
   }
   var rtn = __emscripten_run_js_on_main_thread(funcIndex, emAsmAddr, bufSize, args, proxyMode);
@@ -625,7 +680,7 @@ var PThread = {
       // Break the waitAsync loop.  Note that checkMailbox will not
       // re-register since the `___set_thread_state` above causes _pthread_self
       // to return 0.
-      Atomics.notify(HEAP32, ((pthread_ptr) >> 2));
+      Atomics.notify((growMemViews(), HEAP32), ((pthread_ptr) >> 2));
     }
   },
   returnWorkerToPool: worker => {
@@ -750,8 +805,8 @@ var onPostRuns = [];
 /** @type {!Uint32Array} */ var HEAPU32;
 
 function establishStackSpace(pthread_ptr) {
-  var stackHigh = HEAPU32[(((pthread_ptr) + (48)) >> 2)];
-  var stackSize = HEAPU32[(((pthread_ptr) + (52)) >> 2)];
+  var stackHigh = (growMemViews(), HEAPU32)[(((pthread_ptr) + (48)) >> 2)];
+  var stackSize = (growMemViews(), HEAPU32)[(((pthread_ptr) + (52)) >> 2)];
   var stackLow = stackHigh - stackSize;
   // Set stack limits used by `emscripten/stack.h` function.  These limits are
   // cached in wasm-side globals to make checks as fast as possible.
@@ -861,7 +916,7 @@ var __emscripten_init_main_thread_js = tb => {
   var can_block = !ENVIRONMENT_IS_WEB;
   // Feature detect whether the main thread can block.
   try {
-    Atomics.wait(HEAP32, 0, 0, 0);
+    Atomics.wait((growMemViews(), HEAP32), 0, 0, 0);
     can_block = true;
   } catch (e) {}
   // Pass the thread address to the native code where they are stored in wasm
@@ -921,10 +976,10 @@ var __emscripten_thread_mailbox_await = pthread_ptr => {
     // Note: Under wasm64 only the low 32-bit of the pthread_ptr are
     // read/compared here, but we don't actually care about the exact values
     // here as long as they match.
-    var wait = Atomics.waitAsync(HEAP32, ((pthread_ptr) >> 2), pthread_ptr);
+    var wait = Atomics.waitAsync((growMemViews(), HEAP32), ((pthread_ptr) >> 2), pthread_ptr);
     wait.value.then(checkMailbox);
     var waitingAsync = pthread_ptr + 112;
-    Atomics.store(HEAP32, ((waitingAsync) >> 2), 1);
+    Atomics.store((growMemViews(), HEAP32), ((waitingAsync) >> 2), 1);
   }
 };
 
@@ -977,12 +1032,12 @@ var __emscripten_receive_on_main_thread_js = (funcIndex, emAsmAddr, callingThrea
   var end = ((args + bufSize) >> 3);
   while (b < end) {
     var arg;
-    if (HEAP64[b++]) {
+    if ((growMemViews(), HEAP64)[b++]) {
       // It's a BigInt.
-      arg = HEAP64[b++];
+      arg = (growMemViews(), HEAP64)[b++];
     } else {
       // It's a Number.
-      arg = HEAPF64[b++];
+      arg = (growMemViews(), HEAPF64)[b++];
     }
     proxiedJSCallArgs.push(arg);
   }
@@ -1057,12 +1112,73 @@ var abortOnCannotGrowMemory = requestedSize => {
   abort("OOM");
 };
 
+var getHeapMax = () => // Stay one Wasm page short of 4GB: while e.g. Chrome is able to allocate
+// full 4GB Wasm memories, the size will wrap back to 0 bytes in Wasm side
+// for any code that deals with heap sizes, which would require special
+// casing all heap size related code to treat 0 specially.
+2147483648;
+
+var alignMemory = (size, alignment) => Math.ceil(size / alignment) * alignment;
+
+var growMemory = size => {
+  var oldHeapSize = wasmMemory.buffer.byteLength;
+  var pages = ((size - oldHeapSize + 65535) / 65536) | 0;
+  try {
+    // round size grow request up to wasm page size (fixed 64KB per spec)
+    wasmMemory.grow(pages);
+    // .grow() takes a delta compared to the previous size
+    updateMemoryViews();
+    return 1;
+  } catch (e) {}
+};
+
 /** @type {!Uint8Array} */ var HEAPU8;
 
 var _emscripten_resize_heap = requestedSize => {
-  var oldSize = HEAPU8.length;
+  var oldSize = (growMemViews(), HEAPU8).length;
   // With CAN_ADDRESS_2GB or MEMORY64, pointers are already unsigned.
   requestedSize >>>= 0;
+  // With multithreaded builds, races can happen (another thread might increase the size
+  // in between), so return a failure, and let the caller retry.
+  if (requestedSize <= oldSize) {
+    return false;
+  }
+  // Memory resize rules:
+  // 1.  Always increase heap size to at least the requested size, rounded up
+  //     to next page multiple.
+  // 2a. If MEMORY_GROWTH_LINEAR_STEP == -1, excessively resize the heap
+  //     geometrically: increase the heap size according to
+  //     MEMORY_GROWTH_GEOMETRIC_STEP factor (default +20%), At most
+  //     overreserve by MEMORY_GROWTH_GEOMETRIC_CAP bytes (default 96MB).
+  // 2b. If MEMORY_GROWTH_LINEAR_STEP != -1, excessively resize the heap
+  //     linearly: increase the heap size by at least
+  //     MEMORY_GROWTH_LINEAR_STEP bytes.
+  // 3.  Max size for the heap is capped at 2048MB-WASM_PAGE_SIZE, or by
+  //     MAXIMUM_MEMORY, or by ASAN limit, depending on which is smallest
+  // 4.  If we were unable to allocate as much memory, it may be due to
+  //     over-eager decision to excessively reserve due to (3) above.
+  //     Hence if an allocation fails, cut down on the amount of excess
+  //     growth, in an attempt to succeed to perform a smaller allocation.
+  // A limit is set for how much we can grow. We should not exceed that
+  // (the wasm binary specifies it, so if we tried, we'd fail anyhow).
+  var maxHeapSize = getHeapMax();
+  if (requestedSize > maxHeapSize) {
+    abortOnCannotGrowMemory(requestedSize);
+  }
+  // Loop through potential heap size increases. If we attempt a too eager
+  // reservation that fails, cut down on the attempted size and reserve a
+  // smaller bump instead. (max 3 times, chosen somewhat arbitrarily)
+  for (var cutDown = 1; cutDown <= 4; cutDown *= 2) {
+    var overGrownHeapSize = oldSize * (1 + .2 / cutDown);
+    // ensure geometric growth
+    // but limit overreserving (default to capping at +96MB overgrowth at most)
+    overGrownHeapSize = Math.min(overGrownHeapSize, requestedSize + 100663296);
+    var newSize = Math.min(maxHeapSize, alignMemory(Math.max(requestedSize, overGrownHeapSize), 65536));
+    var replacement = growMemory(newSize);
+    if (replacement) {
+      return true;
+    }
+  }
   abortOnCannotGrowMemory(requestedSize);
 };
 
@@ -1156,22 +1272,23 @@ var printChar = (stream, curr) => {
    *   string will cut short at that byte index.
    * @param {boolean=} ignoreNul - If true, the function will not stop on a NUL character.
    * @return {string}
-   */ var UTF8ToString = (ptr, maxBytesToRead, ignoreNul) => ptr ? UTF8ArrayToString(HEAPU8, ptr, maxBytesToRead, ignoreNul) : "";
+   */ var UTF8ToString = (ptr, maxBytesToRead, ignoreNul) => ptr ? UTF8ArrayToString((growMemViews(), 
+HEAPU8), ptr, maxBytesToRead, ignoreNul) : "";
 
 function _fd_write(fd, iov, iovcnt, pnum) {
   if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(4, 0, 1, fd, iov, iovcnt, pnum);
   // hack to support printf in SYSCALLS_REQUIRE_FILESYSTEM=0
   var num = 0;
   for (var i = 0; i < iovcnt; i++) {
-    var ptr = HEAPU32[((iov) >> 2)];
-    var len = HEAPU32[(((iov) + (4)) >> 2)];
+    var ptr = (growMemViews(), HEAPU32)[((iov) >> 2)];
+    var len = (growMemViews(), HEAPU32)[(((iov) + (4)) >> 2)];
     iov += 8;
     for (var j = 0; j < len; j++) {
-      printChar(fd, HEAPU8[ptr + j]);
+      printChar(fd, (growMemViews(), HEAPU8)[ptr + j]);
     }
     num += len;
   }
-  HEAPU32[((pnum) >> 2)] = num;
+  (growMemViews(), HEAPU32)[((pnum) >> 2)] = num;
   return 0;
 }
 
@@ -1181,10 +1298,8 @@ var getCFunc = ident => {
   return func;
 };
 
-/** @type {!Int8Array} */ var HEAP8;
-
 var writeArrayToMemory = (array, buffer) => {
-  HEAP8.set(array, buffer);
+  (growMemViews(), HEAP8).set(array, buffer);
 };
 
 var lengthBytesUTF8 = str => {
@@ -1250,7 +1365,8 @@ var stringToUTF8Array = (str, heap, outIdx, maxBytesToWrite) => {
   return outIdx - startIdx;
 };
 
-var stringToUTF8 = (str, outPtr, maxBytesToWrite) => stringToUTF8Array(str, HEAPU8, outPtr, maxBytesToWrite);
+var stringToUTF8 = (str, outPtr, maxBytesToWrite) => stringToUTF8Array(str, (growMemViews(), 
+HEAPU8), outPtr, maxBytesToWrite);
 
 var stringToUTF8OnStack = str => {
   var size = lengthBytesUTF8(str) + 1;

@@ -1,7 +1,7 @@
 # Box2D memory plan (`physics.wasmMemoryMB`)
 
 **Opened:** 2026-10-23 (planned in a chat session); reviewed against emsdk 6.0.4 and the shipped glue and
-saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-2. **Registry:** `DX-MEM` in
+saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-6. **Registry:** `DX-MEM` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: a WeedJS developer chooses how much memory Box2D gets, per scene, with
@@ -134,9 +134,21 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   2026-10-24 (sibling `23226d5`): `EMSCRIPTEN_KEEPALIVE` exports it, so `EXPORTED_FUNCTIONS` is unchanged. The
   rebuild changed the glue only by the new export and the letters of internal exports; the import letters
   are the same.
-- [ ] **BM-2** the Weed build: the link flags and `weedjs/weed_pre.js` of section 3; the stale 256 MB
+- [x] **BM-2** the Weed build: the link flags and `weedjs/weed_pre.js` of section 3; the stale 256 MB
   comment fixed; `build_for_weed.bat` fails when the glue lacks the pre-js, as it already fails when the
-  glue does not load `weedjsPost.js`. Checks on the new glue:
+  glue does not load `weedjsPost.js`. Done 2026-10-24 (sibling `733e2c2`; `weedjs/` is gitignored there, so
+  `weed_pre.js` and the `.bat` live outside its history, like `weed_post.js`). Found on the way:
+  - The pre-js must be a statement. The shell's `ENVIRONMENT_IS_PTHREAD` line has no semicolon, and a
+    pre-js that opened with an IIFE became a call on the string `"em-pthread"`, a TypeError in every
+    physics worker. BM-5's test runs the real glue head in a simulated worker.
+  - `build_for_weed.bat` had LF line endings, and cmd could not run it (it read the lines at shifted
+    offsets). It is CRLF now.
+  - The growth rewrite added 22 checks, all in cold paths: printf, ccall's string and array marshalling
+    (Weed's cwraps are all numeric, so they are the raw exports), thread start and mailbox, proxied JS
+    calls, resize and teardown. The import letters did not move. In the `.wasm`, only the import section
+    differs from BM-1's build (the memory limits); code and data are byte-identical.
+
+  Checks on the new glue:
   - `initMemory` reads `Module["wasmMemory"]`;
   - `_emscripten_resize_heap` ends in `abortOnCannotGrowMemory`;
   - the pre-js sits before the glue's own code;
@@ -160,14 +172,17 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   just written (both in `writePhysicsStats`, `weedjsPost.js`). The second call goes. Done 2026-10-24: the
   detailed block also re-read the awake count and the moved list the same way; all three copies went, and
   `workloadCountsAlways.test.js` checks each is read once per stats write.
-- [ ] **BM-5** `build(box2d)`: ship BM-2's artifacts. The default stays 512 MB, so behaviour does not
+- [x] **BM-5** `build(box2d)`: ship BM-2's artifacts. The default stays 512 MB, so behaviour does not
   change. A Node test checks that the shipped `.wasm` imports a shared memory of [256, 32768] pages, that
   it links at 1024 pages, and that the pre-js block of the shipped glue, run in a `vm` context, sizes the
   memory from a worker name, skips pthreads and rejects bad sizes. The test helper
   (`tests/helpers/box2dWasmInstance.mjs`) takes a `pages` option (default 8192), maps imports by name
   from the glue's `assignWasmImports` (today the clock is the hardcoded `a.b`), and makes
   `_emscripten_resize_heap` throw, so a test that runs out of memory fails loudly instead of handing Box2D
-  a NULL.
+  a NULL. Done 2026-10-24: `tests/node/box2dMemoryImport.wasm.test.js` (the import limits; a world boots and
+  steps at 64 MB; the glue head runs in a `vm` worker with a fake `WebAssembly.Memory`: 1024 pages from the
+  name, 8192 without one, none in a pthread, errors that name the key; the glue takes `Module.wasmMemory`
+  and aborts with "OOM").
 - [ ] **BM-6** `fix(physics)`: the host refuses a heap of the wrong size. Before booting the world,
   `physicsHostImpl.js` reads the requested pages from `self.name` itself (8192 without one) and compares
   them with `Module.HEAPF32.buffer.byteLength`; a mismatch posts `msg:'error'` and physics does not start.
