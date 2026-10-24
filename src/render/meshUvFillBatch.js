@@ -22,10 +22,15 @@ import { dummyLutSource } from './instancedSpriteBatch.js';
 import { FILL_ROW, MESH_UV_FILL_FLOATS, MESH_UV_FILL_STRIDE, sampleMeshFillPose } from './colliderFillBatch.js';
 
 export class MeshUvFillBatch {
-  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null }) {
+  /**
+   * `data`: the rows, capacity × MESH_UV_FILL_FLOATS, a region of the mesh memory (meshMemory.js, E-76 W11)
+   * where the corner kernel rewrites them; any other length gets an array of its own.
+   */
+  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null }) {
     this.capacity = Math.max(1, capacity | 0);
-    this.data = new Float32Array(this.capacity * MESH_UV_FILL_FLOATS);
-    this.dataU32 = new Uint32Array(this.data.buffer);
+    const floats = this.capacity * MESH_UV_FILL_FLOATS;
+    this.data = data instanceof Float32Array && data.length === floats ? data : new Float32Array(floats);
+    this.dataU32 = new Uint32Array(this.data.buffer, this.data.byteOffset, this.data.length);
     this.buffer = new Buffer({
       data: this.data,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,

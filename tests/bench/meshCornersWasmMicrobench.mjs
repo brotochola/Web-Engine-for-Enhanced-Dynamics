@@ -1,162 +1,64 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W11): Pixi's mesh corner rewrite in WASM (wasm/test/meshCorners.c, a test module) against the
- * shipped rewriteExplicitMeshCorners, on the meshes meshApiStressScene makes.
+ * Kernel (E-76 W11, E-118): Pixi's mesh corner rewrite in WASM (wasm/meshCorners.c, src/render/meshCorners.wasm)
+ * against the shipped rewriteExplicitMeshCorners, on the meshes meshApiStressScene makes.
  *
- *   js    rewriteExplicitMeshCorners (src/render/colliderFillBatch.js), as Pixi calls it on a frame whose
- *         vertices moved: once for the fill batch (18-float rows), once for the UV batch (24-float rows)
- *   wasm  rewrite_corners, one call per batch, through rewriteCornersWasm: rewriteExplicitMeshCorners' own
- *         early return, the call's slots of the table, the call, as a product wrapper would
+ *   js          rewriteExplicitMeshCorners (src/render/colliderFillBatch.js), as Pixi called it before E-118 on
+ *               a frame whose vertices moved: once for the fill batch (18-float rows), once for the UV batch
+ *               (24-float rows), without the UV generations, so every rewritten UV row stores its UVs
+ *   js-uvgen    the same calls with the UV generations (E-118): a UV row stores its UVs only when its mesh's UV
+ *               generation moved (the ropes), not when only its positions did (the deform grids)
+ *   wasm        rewrite_corners through the shipped client's rewriteCornersWasm (meshCornersClient.js), one call
+ *               per batch, without the UV generations
+ *   wasm-uvgen  the same with the UV generations
  *
  * The rewrite reads the MeshGeometry block (spans, counts, vertices, UVs, indices) and Pixi's batch rows,
- * instance-to-entity lists and vertex generations, so the kernel needs all of them in the memory it imports.
- * MeshGeometry.initializeArrays lays its views out from byte 0 of its buffer (as the ParticleComponent does in
- * the particle memory), so this memory starts with the block and Pixi's arrays follow it: both sides read and
- * write the same bytes. The meshes are made with the MeshRenderer calls the scene makes, and the batches are
- * filled by the shipped packColliderFill and packMeshUvFill.
+ * instance-to-entity lists and generations, so the kernel needs all of them in the memory it imports. The
+ * memory is laid out as the product's mesh memory (wasmMemoryMap.js meshMemoryRegions, one MESH layer): the
+ * MeshGeometry block at byte 0 (MeshGeometry.initializeArrays lays its views out from byte 0 of its buffer),
+ * then the kernel's table and the layer's rows, lists and generation copies, sized to the rows packed here.
+ * The meshes are made with the MeshRenderer calls the scene makes, and the batches are filled by the shipped
+ * packColliderFill and packMeshUvFill.
  *
  * meshApiStressScene's default mix: 600 rigid fans (8 vertices, fill batch, never rewritten), 120 deform grids
  * (setPlane 24 × 16 with UVs, setVertices every tick: 768 indexed UV triangles each), 400 ropes (setRope of 8
- * points every tick: 14 triangles), 400 UV quads, 8 planes, 8 stars (ear-clipped, fill batch) and 200 outset
- * boxes (collider fill). Each frame the UV batch rewrites 97 760 of its 98 752 rows; the fill batch's 4 064 are
- * walked and skipped. The timed op is one frame's two calls with that dirty set.
+ * points every tick: 14 triangles, UVs written each time), 400 UV quads, 8 planes, 8 stars (ear-clipped, fill
+ * batch) and 200 outset boxes (collider fill). Each frame the UV batch rewrites 97 760 of its 98 752 rows, the
+ * ropes' 5 600 with their UVs; the fill batch's 4 064 are walked and skipped. The timed op is one frame's two
+ * calls with that dirty set.
  *
  * Checksum: 24 frames from the packed state. Each is a logic tick (the scene's waves and ropes; on top of them a
  * quarter of the rigid fans and a third of the stars change shape and a fifth of the grids skip the tick, so the
  * fan and 18-float paths run and meshes that could be dirty are skipped) and then Pixi's sequence (capture the
- * generations, rewrite both batches, commit), hashed over both batches' rows and the two return codes.
+ * generations, rewrite both batches, commit), hashed over both batches' rows and the two return codes. Every
+ * variant must give the same checksum: the UV generations change which stores run, not what the rows hold.
  * --check runs only those frames and prints the checksum (no warm-up, no timing).
  *
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/meshCornersWasmMicrobench.mjs --variants js,wasm --rounds 5
- *   node tests/bench/meshCornersWasmMicrobench.mjs --variant wasm [--check] [--scale 0.1] [--output path]
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/meshCornersWasmMicrobench.mjs --variants js,js-uvgen --rounds 5
+ *   node tests/bench/meshCornersWasmMicrobench.mjs --variant wasm-uvgen [--check] [--scale 0.1] [--output path]
  */
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
 import { MeshGeometry, resetMeshGeometryWarns } from '../../src/core/meshGeometry.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
 import {
   COLLIDER_FILL_FLOATS,
-  COLLIDER_FILL_STRIDE,
   MESH_UV_FILL_FLOATS,
-  MESH_UV_FILL_STRIDE,
   packColliderFill,
   packMeshUvFill,
   resetColliderFillMeshLayerWarn,
   rewriteExplicitMeshCorners,
 } from '../../src/render/colliderFillBatch.js';
-import { loadWasmKernel } from '../../src/util/wasmKernel.js';
-import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
+import { bindMeshCorners, rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
+import { meshMemoryRegions } from '../../src/util/wasmMemoryMap.js';
 import { checksumInts, isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
-const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../fixtures/wasm/meshCorners.wasm'));
-
-/** meshCorners.c's table, slot for slot. */
-export const MESH_CORNER_SLOTS = [
-  'out', 'count', 'step', 'uvOn', 'entity', 'gen', 'genLen', 'last', 'lastLen',
-  'vertOffset', 'vertCount', 'indexOffset', 'indexCount', 'geomN',
-  'vertexX', 'vertexY', 'uvU', 'uvV', 'vertCap', 'indices', 'indexCap',
-];
-const OUT = 0;
-const COUNT = 1;
-const STEP = 2;
-const UV_ON = 3;
-const ENTITY = 4;
-const GEN = 5;
-const GEN_LEN = 6;
-const LAST = 7;
-const LAST_LEN = 8;
-const VERT_OFFSET = 9;
-const VERT_COUNT = 10;
-const INDEX_OFFSET = 11;
-const INDEX_COUNT = 12;
-const GEOM_N = 13;
-const VERTEX_X = 14;
-const VERTEX_Y = 15;
-const UV_U = 16;
-const UV_V = 17;
-const VERT_CAP = 18;
-const INDICES = 19;
-const INDEX_CAP = 20;
-
-/**
- * Bind the kernel to `memory`, the MeshGeometry columns in it (`geom`: the views MeshGeometry holds) and a
- * table of MESH_CORNER_SLOTS u32 at `tableByte`. The columns' slots are written once.
- */
-export async function bindMeshCorners(memory, tableByte, geom) {
-  const buffer = memory.buffer;
-  const columns = {
-    vertOffset: Int32Array, vertCount: Uint16Array, indexOffset: Int32Array, indexCount: Uint32Array,
-    vertexX: Float32Array, vertexY: Float32Array, uvU: Float32Array, uvV: Float32Array, indices: Uint16Array,
-  };
-  for (const [name, Ctor] of Object.entries(columns)) {
-    const view = geom[name];
-    if (!(view instanceof Ctor) || view.buffer !== buffer) throw new Error(`meshCorners: MeshGeometry.${name} is not a ${Ctor.name} in the memory`);
-  }
-  const e = geom.vertOffset.length;
-  const v = geom.vertexX.length;
-  if (geom.vertCount.length !== e || geom.indexOffset.length !== e || geom.indexCount.length !== e) throw new Error('meshCorners: entity columns of different lengths');
-  if (geom.vertexY.length !== v || geom.uvU.length !== v || geom.uvV.length !== v) throw new Error('meshCorners: vertex columns of different lengths');
-  const { rewrite_corners: rewrite } = await loadWasmKernel('meshCorners', KERNEL_URL, memory, ['rewrite_corners']);
-  const table = new Uint32Array(buffer, tableByte, MESH_CORNER_SLOTS.length);
-  table[VERT_OFFSET] = geom.vertOffset.byteOffset;
-  table[VERT_COUNT] = geom.vertCount.byteOffset;
-  table[INDEX_OFFSET] = geom.indexOffset.byteOffset;
-  table[INDEX_COUNT] = geom.indexCount.byteOffset;
-  table[GEOM_N] = e;
-  table[VERTEX_X] = geom.vertexX.byteOffset;
-  table[VERTEX_Y] = geom.vertexY.byteOffset;
-  table[UV_U] = geom.uvU.byteOffset;
-  table[UV_V] = geom.uvV.byteOffset;
-  table[VERT_CAP] = v;
-  table[INDICES] = geom.indices.byteOffset;
-  table[INDEX_CAP] = geom.indices.length;
-  return { buffer, table, tableByte, rewrite, geom: { ...geom }, declined: 0 };
-}
-
-/** A Uint32Array in the kernel's memory holding at least `n` values. */
-function u32In(b, a, n) {
-  return a instanceof Uint32Array && a.buffer === b.buffer && a.length >= n;
-}
-
-/**
- * rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow) through the
- * kernel, same arguments, same result. A call it cannot take (an array outside the memory or of another type,
- * MeshGeometry columns other than the bound ones, a row or instance list shorter than the call) goes to the
- * JS function, and `b.declined` counts it.
- */
-export function rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow) {
-  const n = count | 0;
-  const gen = genNow || views.meshVertGen;
-  // rewriteExplicitMeshCorners' own early return.
-  if (!out || n <= 0 || !entityOfInstance || !gen || !lastVertGen) return 0;
-  const step = (stride | 0) > 0 ? (stride | 0) : COLLIDER_FILL_FLOATS;
-  const g = b.geom;
-  const uvOn = step >= MESH_UV_FILL_FLOATS && !!views.meshUvU && !!views.meshUvV;
-  if (
-    !(out instanceof Float32Array) || out.buffer !== b.buffer || n * step > out.length ||
-    !u32In(b, entityOfInstance, n) || !u32In(b, gen, 0) || !u32In(b, lastVertGen, 0) ||
-    views.meshVertOffset !== g.vertOffset || views.meshVertCount !== g.vertCount ||
-    views.meshIndexOffset !== g.indexOffset || views.meshIndexCount !== g.indexCount ||
-    views.meshVertexX !== g.vertexX || views.meshVertexY !== g.vertexY || views.meshIndices !== g.indices ||
-    (uvOn && (views.meshUvU !== g.uvU || views.meshUvV !== g.uvV))
-  ) {
-    b.declined++;
-    return rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow);
-  }
-  const t = b.table;
-  t[OUT] = out.byteOffset;
-  t[COUNT] = n;
-  t[STEP] = step;
-  t[UV_ON] = uvOn ? 1 : 0;
-  t[ENTITY] = entityOfInstance.byteOffset;
-  t[GEN] = gen.byteOffset;
-  t[GEN_LEN] = gen.length;
-  t[LAST] = lastVertGen.byteOffset;
-  t[LAST_LEN] = lastVertGen.length;
-  return b.rewrite(b.tableByte);
-}
+/** The variants: which rewrite, and whether Pixi hands it the UV generations (E-118). */
+export const MESH_CORNER_VARIANTS = {
+  js: { wasm: false, uvGen: false },
+  'js-uvgen': { wasm: false, uvGen: true },
+  wasm: { wasm: true, uvGen: false },
+  'wasm-uvgen': { wasm: true, uvGen: true },
+};
 
 // meshApiStressScene's shapes and cohorts (its defaults; `scale` is its `count` query).
 const FAN_VERTS = 8;
@@ -233,8 +135,8 @@ function ropePoints(pts, time, phase) {
 }
 
 /**
- * The scene's meshes in a memory that starts with the MeshGeometry block, packed by the shipped packs, and
- * the kernel bound to it.
+ * The scene's meshes in a memory laid out as the product's mesh memory, packed by the shipped packs, and the
+ * kernel bound to it.
  * @param {{ scale?: number }} [opts]
  */
 export async function setupMeshCornersKernel(opts = {}) {
@@ -251,16 +153,7 @@ export async function setupMeshCornersKernel(opts = {}) {
   const ropeTris = (ROPE_POINTS - 1) * 2;
   const uvCap = c.deform * deformTris + c.rope * ropeTris + c.uv * 2 + c.plane * PLANE_SX * PLANE_SY * 2;
 
-  const layout = layoutRegions([
-    { name: 'meshGeometry', owner: 'every worker (MeshGeometry)', bytes: MeshGeometry.getBufferSize(MAX_VERTS, MAX_INDICES, n) },
-    { name: 'fillRows', owner: 'pixi', bytes: fillCap * COLLIDER_FILL_STRIDE },
-    { name: 'uvRows', owner: 'pixi', bytes: uvCap * MESH_UV_FILL_STRIDE },
-    { name: 'fillEntity', owner: 'pixi', bytes: fillCap * 4 },
-    { name: 'uvEntity', owner: 'pixi', bytes: uvCap * 4 },
-    { name: 'frameVertGen', owner: 'pixi', bytes: n * 4 },
-    { name: 'lastVertGen', owner: 'pixi', bytes: n * 4 },
-    { name: 'table', owner: 'pixi', bytes: MESH_CORNER_SLOTS.length * 4 },
-  ]);
+  const layout = meshMemoryRegions(MeshGeometry.getBufferSize(MAX_VERTS, MAX_INDICES, n), n, [{ fillRows: fillCap, uvRows: uvCap }]);
   const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
   const buffer = memory.buffer;
   const R = layout.regions;
@@ -321,6 +214,7 @@ export async function setupMeshCornersKernel(opts = {}) {
     meshGeomRevision: MeshGeometry.revision,
     meshVertGen: MeshGeometry.vertGen,
     meshVertEpoch: MeshGeometry.vertEpoch,
+    meshUvGen: MeshGeometry.uvGen,
     instanceEntity: null,
     outU32: null,
     layerHasVertexUv: 0,
@@ -339,12 +233,12 @@ export async function setupMeshCornersKernel(opts = {}) {
     views.meshVisualOutset[i] = 6;
   }
 
-  const fillRows = new Float32Array(buffer, R.fillRows.byte, fillCap * COLLIDER_FILL_FLOATS);
-  const uvRows = new Float32Array(buffer, R.uvRows.byte, uvCap * MESH_UV_FILL_FLOATS);
-  const fillWords = new Uint32Array(buffer, R.fillRows.byte, fillRows.length);
-  const uvWords = new Uint32Array(buffer, R.uvRows.byte, uvRows.length);
-  const fillEntity = new Uint32Array(buffer, R.fillEntity.byte, fillCap);
-  const uvEntity = new Uint32Array(buffer, R.uvEntity.byte, uvCap);
+  const fillRows = new Float32Array(buffer, R.meshFillRows0.byte, fillCap * COLLIDER_FILL_FLOATS);
+  const uvRows = new Float32Array(buffer, R.meshUvRows0.byte, uvCap * MESH_UV_FILL_FLOATS);
+  const fillWords = new Uint32Array(buffer, R.meshFillRows0.byte, fillRows.length);
+  const uvWords = new Uint32Array(buffer, R.meshUvRows0.byte, uvRows.length);
+  const fillEntity = new Uint32Array(buffer, R.meshFillEntity0.byte, fillCap);
+  const uvEntity = new Uint32Array(buffer, R.meshUvEntity0.byte, uvCap);
   views.instanceEntity = fillEntity;
   views.outU32 = fillWords;
   const fillCount = packColliderFill(fillRows, fillCap, 0, views);
@@ -353,26 +247,35 @@ export async function setupMeshCornersKernel(opts = {}) {
   const uvCount = packMeshUvFill(uvRows, uvCap, 0, views);
   if (fillCount !== fillCap || uvCount !== uvCap) throw new Error(`packed ${fillCount}/${fillCap} fill and ${uvCount}/${uvCap} UV rows`);
 
-  // Pixi's generations: drawn by the full pack (_commitVertGen), captured each frame (_captureVertGen).
-  const frameVertGen = new Uint32Array(buffer, R.frameVertGen.byte, n);
-  const lastVertGen = new Uint32Array(buffer, R.lastVertGen.byte, n);
+  // Pixi's generations: drawn by the full pack (_commitVertGen, _commitUvGen), captured each frame
+  // (_captureVertGen, _captureUvGen).
+  const frameVertGen = new Uint32Array(buffer, R.meshFrameVertGen0.byte, n);
+  const lastVertGen = new Uint32Array(buffer, R.meshLastVertGen0.byte, n);
+  const frameUvGen = new Uint32Array(buffer, R.meshFrameUvGen0.byte, n);
+  const lastUvGen = new Uint32Array(buffer, R.meshLastUvGen0.byte, n);
   lastVertGen.set(MeshGeometry.vertGen);
-  const b = await bindMeshCorners(memory, R.table.byte, {
+  lastUvGen.set(MeshGeometry.uvGen);
+  const b = await bindMeshCorners(memory, R.meshCornerTable.byte, {
     vertOffset: MeshGeometry.vertOffset, vertCount: MeshGeometry.vertCount, indexOffset: MeshGeometry.indexOffset,
     indexCount: MeshGeometry.indexCount, vertexX: MeshGeometry.vertexX, vertexY: MeshGeometry.vertexY,
     uvU: MeshGeometry.uvU, uvV: MeshGeometry.uvV, indices: MeshGeometry.indices,
   });
 
-  const rewriters = {
-    js: rewriteExplicitMeshCorners,
-    wasm: (out, count, ent, v, stride, last, genNow) => rewriteCornersWasm(b, out, count, ent, v, stride, last, genNow),
-  };
-
+  const wasmRewrite = (out, count, ent, v, stride, last, genNow, lastUv, uvNow) => rewriteCornersWasm(b, out, count, ent, v, stride, last, genNow, lastUv, uvNow);
   /** Pixi's rewrite of both batches on a frame whose vertices moved (the `!full && vertsMoved` branch). */
-  const rewriteFrame = (rewrite) => {
+  const rewriteFrameWith = (rewrite, uvGen) => {
     const fill = rewrite(fillRows, fillCount, fillEntity, views, COLLIDER_FILL_FLOATS, lastVertGen, frameVertGen);
-    const uv = rewrite(uvRows, uvCount, uvEntity, views, MESH_UV_FILL_FLOATS, lastVertGen, frameVertGen);
+    const uv = uvGen
+      ? rewrite(uvRows, uvCount, uvEntity, views, MESH_UV_FILL_FLOATS, lastVertGen, frameVertGen, lastUvGen, frameUvGen)
+      : rewrite(uvRows, uvCount, uvEntity, views, MESH_UV_FILL_FLOATS, lastVertGen, frameVertGen);
     return fill * 4 + uv;
+  };
+  /** One frame's two calls for `variant`, as the timed op runs them. */
+  const frameOp = (variant) => {
+    const spec = MESH_CORNER_VARIANTS[variant];
+    if (!spec) throw new Error(`unknown variant ${variant}`);
+    const rewrite = spec.wasm ? wasmRewrite : rewriteExplicitMeshCorners;
+    return () => rewriteFrameWith(rewrite, spec.uvGen);
   };
 
   const fanScaled = new Float32Array(FAN_VERTS * 2);
@@ -400,13 +303,15 @@ export async function setupMeshCornersKernel(opts = {}) {
 
   /** FRAMES frames of logic then Pixi; the hash of both batches' rows and the codes after each. */
   const checksumFrames = (variant) => {
-    const rewrite = rewriters[variant];
+    const op = frameOp(variant);
     let h = 2166136261;
     for (let f = 0; f < FRAMES; f++) {
       logicTick(f);
       frameVertGen.set(MeshGeometry.vertGen);
-      const codes = rewriteFrame(rewrite);
+      frameUvGen.set(MeshGeometry.uvGen);
+      const codes = op();
       lastVertGen.set(frameVertGen);
+      lastUvGen.set(frameUvGen);
       h = Math.imul(h ^ codes, 16777619) >>> 0;
       h = Math.imul(h ^ checksumInts(fillWords, fillCount * COLLIDER_FILL_FLOATS), 16777619) >>> 0;
       h = Math.imul(h ^ checksumInts(uvWords, uvCount * MESH_UV_FILL_FLOATS), 16777619) >>> 0;
@@ -414,60 +319,89 @@ export async function setupMeshCornersKernel(opts = {}) {
     return h;
   };
 
-  /** The timed state: the scene's dirty set, every grid and rope, against the generations drawn. */
+  /**
+   * The timed state: the scene's dirty set, every grid and rope, against the generations drawn. The ropes'
+   * UV generations moved too (setRope writes UVs); the grids' did not (setVertices).
+   */
   const sceneDirty = () => {
     frameVertGen.set(MeshGeometry.vertGen);
     lastVertGen.set(frameVertGen);
+    frameUvGen.set(MeshGeometry.uvGen);
+    lastUvGen.set(frameUvGen);
     for (let k = 0; k < c.deform; k++) lastVertGen[first.deform + k] = ~frameVertGen[first.deform + k] >>> 0;
-    for (let k = 0; k < c.rope; k++) lastVertGen[first.rope + k] = ~frameVertGen[first.rope + k] >>> 0;
-    return c.deform * deformTris + c.rope * ropeTris;
+    for (let k = 0; k < c.rope; k++) {
+      lastVertGen[first.rope + k] = ~frameVertGen[first.rope + k] >>> 0;
+      lastUvGen[first.rope + k] = ~frameUvGen[first.rope + k] >>> 0;
+    }
+    return { rewritten: c.deform * deformTris + c.rope * ropeTris, withUv: c.rope * ropeTris };
   };
 
-  /** Short calls for a normal compile: the first four ropes of the UV batch, the first rigid fans of the fill. */
+  /**
+   * Short calls for a normal compile, over the timed state's generations: the first rigid fans of the fill
+   * batch (clean, a walk) and the first four ropes of the UV batch (their UVs). The JS variants also run the
+   * fill batch's first fans and stars with every mesh dirty (a private generation copy), so the fan loop and
+   * the indexed loop without UVs (the grids' loop under js-uvgen) have their feedback before the timing.
+   */
   const ropeRow = c.deform * deformTris;
   const ropeRows = Math.min(4, c.rope) * ropeTris;
   const shortUv = { rows: uvRows.subarray(ropeRow * MESH_UV_FILL_FLOATS), entity: uvEntity.subarray(ropeRow), count: ropeRows };
   const shortFill = Math.min(8, c.rigid) * (FAN_VERTS - 2);
-  const shortFrame = (rewrite) => {
+  const starRow = c.rigid * (FAN_VERTS - 2);
+  const starRows = Math.min(2, c.poly) * 8;
+  const shortStars = { rows: fillRows.subarray(starRow * COLLIDER_FILL_FLOATS), entity: fillEntity.subarray(starRow), count: starRows };
+  const warmLast = new Uint32Array(n);
+  const shortFrame = (variant) => {
+    const spec = MESH_CORNER_VARIANTS[variant];
+    const rewrite = spec.wasm ? wasmRewrite : rewriteExplicitMeshCorners;
     rewrite(fillRows, shortFill, fillEntity, views, COLLIDER_FILL_FLOATS, lastVertGen, frameVertGen);
-    rewrite(shortUv.rows, shortUv.count, shortUv.entity, views, MESH_UV_FILL_FLOATS, lastVertGen, frameVertGen);
+    if (spec.uvGen) {
+      rewrite(shortUv.rows, shortUv.count, shortUv.entity, views, MESH_UV_FILL_FLOATS, lastVertGen, frameVertGen, lastUvGen, frameUvGen);
+    } else {
+      rewrite(shortUv.rows, shortUv.count, shortUv.entity, views, MESH_UV_FILL_FLOATS, lastVertGen, frameVertGen);
+    }
+    if (spec.wasm) return;
+    // The rows these rewrite already hold what they write: the state the timing reads does not change.
+    for (let i = 0; i < n; i++) warmLast[i] = ~frameVertGen[i] >>> 0;
+    rewrite(fillRows, shortFill, fillEntity, views, COLLIDER_FILL_FLOATS, warmLast, frameVertGen);
+    rewrite(shortStars.rows, shortStars.count, shortStars.entity, views, COLLIDER_FILL_FLOATS, warmLast, frameVertGen);
   };
 
   return {
-    cohorts: c, n, fillCount, uvCount, b, views, rewriters, rewriteFrame, checksumFrames, sceneDirty, shortFrame,
+    cohorts: c, n, fillCount, uvCount, b, views, frameOp, checksumFrames, sceneDirty, shortFrame,
   };
 }
 
 async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'js');
-  if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  const spec = MESH_CORNER_VARIANTS[variant];
+  if (!spec) throw new Error(`unknown variant ${variant} (${Object.keys(MESH_CORNER_VARIANTS).join(', ')})`);
   const k = await setupMeshCornersKernel({ scale: Number(args.scale ?? 1) });
-  const rewrite = k.rewriters[variant];
 
   const checksum = k.checksumFrames(variant);
-  if (variant === 'wasm' && k.b.declined) throw new Error(`the kernel declined ${k.b.declined} calls`);
+  if (spec.wasm && k.b.declined) throw new Error(`the kernel declined ${k.b.declined} calls`);
   if (args.check) {
     console.log(`checksum ${checksum} variant ${variant} fill ${k.fillCount} uv ${k.uvCount} rows, ${FRAMES} frames`);
     return;
   }
 
-  const rewritten = k.sceneDirty();
-  const op = () => k.rewriteFrame(rewrite);
+  const dirty = k.sceneDirty();
+  const op = k.frameOp(variant);
   if (op() !== 4 + 1) throw new Error('the scene frame does not rewrite both batches');
   // Normal compiles, not OSR: short calls over a few meshes of each batch.
   let tier = null;
-  if (variant === 'wasm') tier = await warmWasm(k.b.rewrite, () => k.shortFrame(rewrite));
-  else warmNormalCompile(() => k.shortFrame(rewrite));
+  if (spec.wasm) tier = await warmWasm(k.b.rewrite, () => k.shortFrame(variant));
+  else warmNormalCompile(() => k.shortFrame(variant));
+  const uvRows = spec.uvGen ? dirty.withUv : dirty.rewritten;
   const cases = {
-    rewrite: timeIt(`mesh corners ${variant} (${k.fillCount} fill + ${k.uvCount} UV rows, ${rewritten} rewritten)`, op, { iterations: 20, warmup: 10 }),
+    rewrite: timeIt(`mesh corners ${variant} (${k.fillCount} fill + ${k.uvCount} UV rows, ${dirty.rewritten} rewritten, ${uvRows} with UVs)`, op, { iterations: 20, warmup: 10 }),
   };
   const report = {
     feature: 'mesh-corners-wasm',
     variant,
     functions: ['rewriteExplicitMeshCorners', 'meshCorners.rewrite_corners'],
     cohorts: k.cohorts,
-    rows: { fill: k.fillCount, uv: k.uvCount, rewritten },
+    rows: { fill: k.fillCount, uv: k.uvCount, rewritten: dirty.rewritten, withUv: uvRows },
     checksum,
     declined: k.b.declined,
     wasmTier: tier,

@@ -457,6 +457,11 @@ export const WASM_DEFAULTS = Object.freeze({
   /** The shadow-caster stamp (`shadowStamp.wasm`, E-114): its scratch and light table in the render-queue memory. */
   shadowStamp: true,
   /**
+   * Pixi's mesh corner rewrite (`meshCorners.wasm`, E-76 W11): MeshGeometry at byte 0 of a WebAssembly.Memory
+   * that also holds every MESH layer's batches, their instance lists and generation copies.
+   */
+  meshCorners: true,
+  /**
    * The particle worker's decoration sway (`decorationSway.wasm`, W22): its arrays in the render-queue memory,
    * next to the decorations block the emit puts there (so it needs preRenderEmit), with a sway bucket grid.
    */

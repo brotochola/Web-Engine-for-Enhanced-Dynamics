@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { rewriteExplicitMeshCorners, COLLIDER_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners, COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
 
 // B24. A logic worker edits a mesh in place: it stores the vertices, then bumps
 // that entity's vertex generation. Pixi redrew entities whose generation moved,
@@ -83,9 +83,82 @@ test('the dirty check reads the captured generations, not the live ones', () => 
 test('Pixi captures before both vertex-reading paths and commits the capture', () => {
   const block = pixi.slice(pixi.indexOf('const vertsMoved = vertEpoch'), pixi.indexOf('copyMeshFillPoseScratch(views, skip.prevPose);'));
   const capture = block.indexOf('this._captureVertGen(skip, views)');
+  const rewrite = block.indexOf('this._rewriteMeshCorners(');
   assert.ok(capture > 0, 'captured');
-  assert.ok(capture < block.indexOf('rewriteExplicitMeshCorners('), 'before the rewrite');
+  assert.ok(rewrite > 0 && capture < rewrite, 'before the rewrite');
   assert.ok(capture < block.indexOf('packColliderFill('), 'before the full pack');
+  // E-118: the UV generations right after the vertex ones, committed with them.
+  const uvCapture = block.indexOf('this._captureUvGen(skip, views)');
+  assert.ok(uvCapture > capture && uvCapture < rewrite, 'the UV generations after the vertex ones, before the rewrite');
   assert.equal((block.match(/_commitVertGen\(skip, views\)/g) || []).length, 2);
+  assert.equal((block.match(/_commitUvGen\(skip, views\)/g) || []).length, 2);
   assert.ok(!/_snapshotVertGen/.test(pixi), 'no copy of the live generations after the reads');
+});
+
+/** One entity, one fan triangle with UVs (the UV batch's rows), and its skip state with UV generations. */
+function uvViews() {
+  return {
+    ...views(),
+    meshUvU: new Float32Array([0, 1, 0]),
+    meshUvV: new Float32Array([0, 0, 1]),
+    meshUvGen: new Uint32Array([1]),
+  };
+}
+
+function uvSkip() {
+  return { lastVertGen: new Uint32Array([0]), frameVertGen: null, lastUvGen: new Uint32Array(1), frameUvGen: new Uint32Array(0) };
+}
+
+function drawnU(out) {
+  return [out[18], out[20], out[22]];
+}
+
+function uvFrame(px, out, instance, v, skip) {
+  const genNow = px._captureVertGen(skip, v);
+  const uvNow = px._captureUvGen(skip, v);
+  const code = rewriteExplicitMeshCorners(out, 1, instance, v, MESH_UV_FILL_FLOATS, skip.lastVertGen, genNow, skip.lastUvGen, uvNow);
+  px._commitVertGen(skip, v);
+  px._commitUvGen(skip, v);
+  return code;
+}
+
+test('E-118: a write whose UV bump a capture missed draws its UVs the next frame', () => {
+  const px = vertGenMethods();
+  const v = uvViews();
+  const skip = uvSkip();
+  const out = new Float32Array(MESH_UV_FILL_FLOATS);
+  const instance = new Uint32Array([0]);
+  assert.equal(uvFrame(px, out, instance, v, skip), 1);
+  assert.deepEqual(drawnU(out), [0, 1, 0]);
+  // A UV write whose vertex bump the next capture sees and whose UV bump it does not.
+  v.meshUvU.set([0.5, 0.75, 0.25]);
+  v.meshVertexX.set([5, 25, 5]);
+  v.meshVertGen[0] = 2;
+  uvFrame(px, out, instance, v, skip);
+  assert.deepEqual(drawnX(out), [5, 25, 5], 'the positions are drawn');
+  assert.deepEqual(drawnU(out), [0, 1, 0], 'the UVs wait for their bump');
+  v.meshUvGen[0] = 2;
+  // The vertex generation is the drawn one now; the UV generation alone moved: the run is rewritten.
+  uvFrame(px, out, instance, v, skip);
+  assert.deepEqual(drawnU(out), [0.5, 0.75, 0.25], 'the UVs are on screen');
+});
+
+test('E-118: a write whose vertex bump a capture missed is drawn whole by the two frames', () => {
+  const px = vertGenMethods();
+  const v = uvViews();
+  const skip = uvSkip();
+  const out = new Float32Array(MESH_UV_FILL_FLOATS);
+  const instance = new Uint32Array([0]);
+  uvFrame(px, out, instance, v, skip);
+  v.meshUvU.set([0.5, 0.75, 0.25]);
+  v.meshVertexX.set([5, 25, 5]);
+  v.meshUvGen[0] = 2;
+  // The capture sees the UV bump only: the run is rewritten from what is in the columns.
+  uvFrame(px, out, instance, v, skip);
+  assert.deepEqual(drawnU(out), [0.5, 0.75, 0.25]);
+  v.meshVertGen[0] = 2;
+  out.fill(-1);
+  uvFrame(px, out, instance, v, skip);
+  assert.deepEqual(drawnX(out), [5, 25, 5], 'the vertex bump rewrites the positions');
+  assert.deepEqual(drawnU(out), [-1, -1, -1], 'and leaves the UVs, drawn the frame before');
 });

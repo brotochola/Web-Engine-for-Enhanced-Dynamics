@@ -308,6 +308,8 @@ export type SceneConfig = Record<string, unknown> & {
     gpuPack?: boolean;
     /** The same pack for Pixi's sprite rows, with packGpuSprites 'pixi' and no pose interpolation. Needs gpuPack. */
     pixiPack?: boolean;
+    /** Pixi's mesh corner rewrite for MESH layers (the meshes and the mesh batches live in one WebAssembly.Memory). */
+    meshCorners?: boolean;
   };
 };
 

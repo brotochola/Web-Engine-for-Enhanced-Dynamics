@@ -276,6 +276,51 @@ export function particleMemoryRegions(maxParticles, componentBytes, lutFloats) {
 }
 
 /**
+ * The mesh batches' row bytes: colliderFillBatch.js COLLIDER_FILL_STRIDE and MESH_UV_FILL_STRIDE. That module
+ * loads Pixi, which the main thread does not; wasmMemoryMap.test.js ties the two.
+ */
+export const MESH_FILL_ROW_BYTES = 72;
+export const MESH_UV_ROW_BYTES = 96;
+/** Room for the corner kernel's column table (meshCornersClient.js MESH_CORNER_SLOTS). */
+export const MESH_CORNER_TABLE_SLOTS = 32;
+
+/**
+ * The mesh memory (E-76 W11 `meshCorners.wasm`, created by meshMemory.js on the main thread). MeshGeometry
+ * lays its views out from byte 0 of its buffer in every worker, so this memory starts with the block and has
+ * no guard: logic workers write the meshes there, Pixi reads them. After it, Pixi's:
+ * - meshCornerTable: the kernel's column table (u32 byte offsets);
+ * - per MESH layer k, in the order of the layer metadata: meshFillRows<k> and meshUvRows<k>, the layer's fill
+ *   and UV batches (the rows Pixi uploads); meshFillEntity<k> and meshUvEntity<k>, their instance-to-entity
+ *   lists (u32 per row); meshLastVertGen<k>, meshFrameVertGen<k>, meshLastUvGen<k> and meshFrameUvGen<k>,
+ *   the vertex and UV generations the layer drew and this frame's copies (u32 per entity, E-118).
+ * @param {number} geometryBytes MeshGeometry.getBufferSize(maxVerts, maxIndices, entities)
+ * @param {number} entities
+ * @param {Array<{ fillRows: number, uvRows: number }>} layers each MESH layer's batch capacities
+ */
+export function meshMemoryRegions(geometryBytes, entities, layers) {
+  const e = entities | 0;
+  const regions = [
+    { name: 'meshGeometry', owner: 'every worker (MeshGeometry): logic writes, Pixi reads', bytes: geometryBytes | 0 },
+    { name: 'meshCornerTable', owner: 'Pixi', bytes: MESH_CORNER_TABLE_SLOTS * 4 },
+  ];
+  for (let k = 0; k < layers.length; k++) {
+    const fill = layers[k].fillRows | 0;
+    const uv = layers[k].uvRows | 0;
+    regions.push(
+      { name: `meshFillRows${k}`, owner: 'Pixi', bytes: fill * MESH_FILL_ROW_BYTES },
+      { name: `meshUvRows${k}`, owner: 'Pixi', bytes: uv * MESH_UV_ROW_BYTES },
+      { name: `meshFillEntity${k}`, owner: 'Pixi', bytes: fill * 4 },
+      { name: `meshUvEntity${k}`, owner: 'Pixi', bytes: uv * 4 },
+      { name: `meshLastVertGen${k}`, owner: 'Pixi', bytes: e * 4 },
+      { name: `meshFrameVertGen${k}`, owner: 'Pixi', bytes: e * 4 },
+      { name: `meshLastUvGen${k}`, owner: 'Pixi', bytes: e * 4 },
+      { name: `meshFrameUvGen${k}`, owner: 'Pixi', bytes: e * 4 },
+    );
+  }
+  return layoutRegions(regions);
+}
+
+/**
  * Bytes the circle-pattern table may take: i32 [dr, dc] pairs for every radius up to
  * `maxCellRadius`, then i32 [first pair, pair count] per radius. A pattern of radius r fits in
  * the (2r + 3)² cells around its centre, so this bounds what the spatial workers write.

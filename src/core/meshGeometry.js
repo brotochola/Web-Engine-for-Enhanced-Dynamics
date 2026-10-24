@@ -70,6 +70,8 @@ function bindMeshGeom(buffer, maxVerts, maxIndices, entityCount) {
   const revision = view(Uint32Array, 1, 4);
   const vertEpoch = view(Uint32Array, 1, 4);
   const vertGen = view(Uint32Array, E, E * 4);
+  // E-118: bumped by in-place writes that store UVs (setMesh, setPlane, setRope), not by setVertices.
+  const uvGen = view(Uint32Array, E, E * 4);
   const lock = view(Int32Array, 1, 4);
   const vertFreeCount = view(Int32Array, 1, 4);
   const indexFreeCount = view(Int32Array, 1, 4);
@@ -92,6 +94,7 @@ function bindMeshGeom(buffer, maxVerts, maxIndices, entityCount) {
     revision,
     vertEpoch,
     vertGen,
+    uvGen,
     lock,
     vertFreeCount,
     indexFreeCount,
@@ -125,6 +128,8 @@ export class MeshGeometry {
   static uvV = null;
   static indices = null;
   static revision = null;
+  /** E-118: per-entity UV generation (u32), bumped by _publishUv. */
+  static uvGen = null;
   static lock = null;
   static vertFreeCount = null;
   static indexFreeCount = null;
@@ -159,6 +164,7 @@ export class MeshGeometry {
     this.revision = g.revision;
     this.vertEpoch = g.vertEpoch;
     this.vertGen = g.vertGen;
+    this.uvGen = g.uvGen;
     this.lock = g.lock;
     this.vertFreeCount = g.vertFreeCount;
     this.indexFreeCount = g.indexFreeCount;
@@ -179,6 +185,7 @@ export class MeshGeometry {
     this.revision[0] = 0;
     if (this.vertEpoch) this.vertEpoch[0] = 0;
     if (this.vertGen) this.vertGen.fill(0);
+    if (this.uvGen) this.uvGen.fill(0);
     this.lock[0] = 0;
     this.vertFreeCount[0] = 1;
     this.vertFreeOff[0] = 0;
@@ -202,6 +209,7 @@ export class MeshGeometry {
     this.revision = null;
     this.vertEpoch = null;
     this.vertGen = null;
+    this.uvGen = null;
     this.lock = null;
     this.vertFreeCount = null;
     this.indexFreeCount = null;
@@ -237,6 +245,18 @@ export class MeshGeometry {
   static bumpRevision() {
     const rev = this.revision;
     if (rev) rev[0] = (rev[0] + 1) >>> 0;
+  }
+
+  /**
+   * E-118. In-place write that stored UVs (and maybe new indices): bump the entity's UV generation, so
+   * Pixi rewrites the UV batch's corners of this mesh. Call after the stores and before _publishVert,
+   * whose epoch bump tells Pixi to look. setVertices stores positions only and does not call it.
+   */
+  static _publishUv(i) {
+    const g = this.uvGen;
+    if (!g) return;
+    const next = (Atomics.load(g, i) + 1) >>> 0;
+    Atomics.store(g, i, next === 0 ? 1 : next);
   }
 
   /** In-place vert/UV write. Call after the stores. Does not bump topology revision. */
@@ -412,6 +432,8 @@ export class MeshGeometry {
     if (same) {
       this._copyVerts(oldV, positions, vertN, useUv ? uvs : null);
       if (indexN > 0) this._copyIndices(oldI, indices, indexN);
+      // A mesh with UVs rewrote them here (and its indices, which pick each corner's UV).
+      if (useUv) this._publishUv(i);
       this._publishVert(i);
       this._unlock();
       return true;

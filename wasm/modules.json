@@ -148,13 +148,12 @@
     },
     {
       "name": "meshCorners",
-      "source": "wasm/test/meshCorners.c",
-      "output": "tests/fixtures/wasm/meshCorners.wasm",
+      "source": "wasm/meshCorners.c",
+      "output": "src/render/meshCorners.wasm",
       "exports": [
         "rewrite_corners"
       ],
-      "maxMemoryPages": 8192,
-      "test": true
+      "maxMemoryPages": 8192
     },
     {
       "name": "navFlowfield",

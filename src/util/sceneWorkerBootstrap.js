@@ -436,6 +436,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           maxMeshIndices: scene.config.renderer.maxMeshIndices | 0,
           entityCount: scene.totalEntityCount,
           data: scene.buffers.meshGeomData,
+          // E-76 W11: the mesh memory that data is the buffer of, and its layout (Pixi's corner kernel).
+          memory: scene.meshMemory?.memory || null,
+          layout: scene.meshMemory?.layout || null,
         }
       : null,
     audio: {

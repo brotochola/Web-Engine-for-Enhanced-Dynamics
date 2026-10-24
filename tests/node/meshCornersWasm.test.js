@@ -1,12 +1,13 @@
-// E-76 W11: the mesh corner rewrite kernel (wasm/test/meshCorners.c, a test module, through the bench's
-// rewriteCornersWasm) against the shipped rewriteExplicitMeshCorners, in one memory that starts with the
-// MeshGeometry block as meshCornersWasmMicrobench lays it out. Random frames are written straight into the
-// columns, so they reach what the MeshRenderer API never makes: fans and index lists, with and without the UV
-// batch's corners, generations equal and not, entities with no mesh, ids past the geometry columns, past the
-// generations and past 2^31 (negative as int32), drawn generations shorter than the captured ones, runs a
-// triangle short or long, runs of one entity split in two, meshes under 3 vertices, corner indices past the
-// mesh, spans that run past the vertex or index column (undefined reads: NaN corners, index 0), strides that
-// overlap rows, no UV columns, the live generations instead of a capture, and empty calls. Corners hold NaN with
+// E-76 W11: the mesh corner rewrite kernel (wasm/meshCorners.c, through the client's rewriteCornersWasm)
+// against the shipped rewriteExplicitMeshCorners, in one memory that starts with the MeshGeometry block as the
+// product's mesh memory does. Random frames are written straight into the columns, so they reach what the
+// MeshRenderer API never makes: fans and index lists, with and without the UV batch's corners, generations
+// equal and not, entities with no mesh, ids past the geometry columns, past the generations and past 2^31
+// (negative as int32), drawn generations shorter than the captured ones, runs a triangle short or long, runs
+// of one entity split in two, meshes under 3 vertices, corner indices past the mesh, spans that run past the
+// vertex or index column (undefined reads: NaN corners, index 0), strides that overlap rows, no UV columns,
+// the live generations instead of a capture, and empty calls. E-118: the UV generations too, absent, live or
+// captured, short or long, moved with the vertex generation, without it, or not at all. Corners hold NaN with
 // payloads, both zeros, infinities and subnormals. Each frame: the same return code, and every word of the row
 // region (the corners and the pose, paint and depth words the rewrite must leave alone) bit for bit.
 // Signaling NaNs are left out: V8 quiets them on some JS tiers and not others, and the API stores finite values.
@@ -15,8 +16,9 @@ import assert from 'node:assert/strict';
 
 import { MeshGeometry } from '../../src/core/meshGeometry.js';
 import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS, rewriteExplicitMeshCorners } from '../../src/render/colliderFillBatch.js';
+import { bindMeshCorners, MESH_CORNER_SLOTS, rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
 import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
-import { bindMeshCorners, MESH_CORNER_SLOTS, rewriteCornersWasm, setupMeshCornersKernel } from '../bench/meshCornersWasmMicrobench.mjs';
+import { MESH_CORNER_VARIANTS, setupMeshCornersKernel } from '../bench/meshCornersWasmMicrobench.mjs';
 
 const E = 48;
 const GEN_EXTRA = 8;
@@ -56,6 +58,8 @@ async function setup() {
     { name: 'entity', owner: 'test', bytes: CAP * 4 },
     { name: 'gen', owner: 'test', bytes: GEN_ROOM * 4 },
     { name: 'last', owner: 'test', bytes: GEN_ROOM * 4 },
+    { name: 'uvGen', owner: 'test', bytes: GEN_ROOM * 4 },
+    { name: 'lastUv', owner: 'test', bytes: GEN_ROOM * 4 },
     { name: 'table', owner: 'test', bytes: MESH_CORNER_SLOTS.length * 4 },
   ]);
   const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
@@ -72,14 +76,18 @@ async function setup() {
   const words = (view) => new Uint32Array(buffer, view.byteOffset, view.length);
   return {
     b,
+    buffer,
     geom,
     vertGen: g.vertGen,
+    uvGenLive: g.uvGen,
     corners: [words(g.vertexX), words(g.vertexY), words(g.uvU), words(g.uvV)],
     out: new Float32Array(buffer, R.rows.byte, CAP * MAX_STEP),
     outWords: new Uint32Array(buffer, R.rows.byte, CAP * MAX_STEP),
     entity: new Uint32Array(buffer, R.entity.byte, CAP),
     gen: new Uint32Array(buffer, R.gen.byte, GEN_ROOM),
     last: new Uint32Array(buffer, R.last.byte, GEN_ROOM),
+    uvGen: new Uint32Array(buffer, R.uvGen.byte, GEN_ROOM),
+    lastUv: new Uint32Array(buffer, R.lastUv.byte, GEN_ROOM),
   };
 }
 
@@ -88,7 +96,7 @@ function viewsOf(s) {
   return {
     meshVertOffset: g.vertOffset, meshVertCount: g.vertCount, meshIndexOffset: g.indexOffset, meshIndexCount: g.indexCount,
     meshVertexX: g.vertexX, meshVertexY: g.vertexY, meshUvU: g.uvU, meshUvV: g.uvV, meshIndices: g.indices,
-    meshVertGen: s.vertGen,
+    meshVertGen: s.vertGen, meshUvGen: s.uvGenLive,
   };
 }
 
@@ -178,12 +186,14 @@ function writeInstances(r, s, mode, need) {
 
 /**
  * What the JS should do with this frame, run by run, in its order: the return code and the branches taken,
- * for the coverage tally. Checked against the JS's own code, so a mirror that drifts fails loudly.
+ * for the coverage tally. Checked against the JS's own code, so a mirror that drifts fails loudly. `uvGen`
+ * is the UV generation array the call resolves (captured or live), null for none.
  */
-function expected(s, views, n, step, gen, last, tally) {
+function expected(s, views, n, step, gen, last, uvGen, lastUv, tally) {
   const g = s.geom;
   const ent = s.entity;
   const uvOn = step >= MESH_UV_FILL_FLOATS && !!views.meshUvU && !!views.meshUvV;
+  const uvG = uvOn && lastUv ? uvGen : null;
   let k = 0;
   while (k < n) {
     const id = ent[k];
@@ -195,12 +205,15 @@ function expected(s, views, n, step, gen, last, tally) {
     if (i < 0) tally.negative++;
     else if (i >= gen.length) tally.pastGen++;
     else if (i >= last.length) tally.lastShort++;
-    const dirty = i >= 0 && i < gen.length && gen[i] !== (i < last.length ? last[i] : 0);
+    const vertDirty = i >= 0 && i < gen.length && gen[i] !== (i < last.length ? last[i] : 0);
+    const uvDirty = uvG !== null && i >= 0 && i < uvG.length && uvG[i] !== (i < lastUv.length ? lastUv[i] : 0);
+    if (uvG !== null && i >= 0 && i < uvG.length && i >= lastUv.length) tally.lastUvShort++;
     k = end;
-    if (!dirty) {
+    if (!vertDirty && !uvDirty) {
       if (i >= 0 && i < gen.length) tally.clean++;
       continue;
     }
+    if (!vertDirty) tally.uvOnly++;
     if (i >= E) {
       tally.pastGeometry++;
       return -1;
@@ -221,6 +234,7 @@ function expected(s, views, n, step, gen, last, tally) {
       tally.underThree++;
       return -1;
     }
+    const uvRun = uvOn && (uvG === null || uvDirty);
     const pastVerts = vOff + vN > V;
     if (iAt >= 0) {
       const pastIndices = iAt + 3 * run > I;
@@ -232,13 +246,14 @@ function expected(s, views, n, step, gen, last, tally) {
           return -1;
         }
       }
-      tally[uvOn ? 'indexedUv' : 'indexed']++;
+      tally[uvRun ? 'indexedUv' : 'indexed']++;
       if (pastIndices) tally.pastIndices++;
       if (pastVerts) tally.pastVerts++;
     } else {
-      tally[uvOn ? 'fanUv' : 'fan']++;
+      tally[uvRun ? 'fanUv' : 'fan']++;
       if (pastVerts) tally.pastVerts++;
     }
+    if (uvOn && uvG !== null) tally[uvDirty ? 'uvWritten' : 'uvSkipped']++;
   }
   return n > 0 ? 1 : 0;
 }
@@ -252,8 +267,10 @@ test('the corner kernel writes what rewriteExplicitMeshCorners writes, frame aft
   const tally = {
     clean: 0, negative: 0, pastGen: 0, lastShort: 0, pastGeometry: 0, noMesh: 0, need: 0, underThree: 0, badIndex: 0,
     fan: 0, fanUv: 0, indexed: 0, indexedUv: 0, pastVerts: 0, pastIndices: 0, longRun: 0,
+    uvOnly: 0, uvWritten: 0, uvSkipped: 0, lastUvShort: 0,
   };
   const codes = { 0: 0, 1: 0, '-1': 0 };
+  const uvCalls = { none: 0, live: 0, captured: 0 };
   const pattern = new Uint32Array(s.outWords.length);
   for (let k = 0; k < FRAMES; k++) {
     const mode = k % 8;
@@ -261,9 +278,17 @@ test('the corner kernel writes what rewriteExplicitMeshCorners writes, frame aft
     const n = writeInstances(r, s, mode, need);
     for (let q = 0; q < GEN_ROOM; q++) s.gen[q] = r() < 0.1 ? 0 : Math.floor(r() * 4294967296);
     for (let q = 0; q < GEN_ROOM; q++) s.last[q] = r() < 0.6 ? (s.gen[q] ^ (1 + Math.floor(r() * 0xffff))) >>> 0 : s.gen[q];
-    for (let q = 0; q < E; q++) s.vertGen[q] = s.gen[q];
+    // E-118: UV generations that moved for some meshes, with their vertex generation or without it.
+    for (let q = 0; q < GEN_ROOM; q++) s.uvGen[q] = r() < 0.1 ? 0 : Math.floor(r() * 4294967296);
+    for (let q = 0; q < GEN_ROOM; q++) s.lastUv[q] = r() < 0.4 ? (s.uvGen[q] ^ (1 + Math.floor(r() * 0xffff))) >>> 0 : s.uvGen[q];
+    for (let q = 0; q < E; q++) {
+      s.vertGen[q] = s.gen[q];
+      s.uvGenLive[q] = s.uvGen[q];
+    }
     const genLen = mode === 6 || r() < 0.1 ? E + GEN_EXTRA : E;
     const lastLen = mode === 6 && r() < 0.5 ? E - 6 : genLen;
+    const uvGenLen = mode === 6 || r() < 0.1 ? E + GEN_EXTRA : E;
+    const lastUvLen = mode === 6 && r() < 0.5 ? E - 6 : uvGenLen;
     let views = viewsOf(s);
     let genNow = s.gen.subarray(0, genLen);
     let stride = STRIDES[k & 1 ? 0 : 1];
@@ -274,17 +299,32 @@ test('the corner kernel writes what rewriteExplicitMeshCorners writes, frame aft
       if (r() < 0.4) views = { ...views, meshUvU: null };
     }
     const last = s.last.subarray(0, lastLen);
+    // No UV generations (the call before E-118), the live ones (MeshGeometry.uvGen), or a capture.
+    const uvMode = r();
+    let lastUvGen = s.lastUv.subarray(0, lastUvLen);
+    let uvGenNow = s.uvGen.subarray(0, uvGenLen);
+    if (uvMode < 0.25) {
+      lastUvGen = null;
+      uvGenNow = null;
+      uvCalls.none++;
+    } else if (uvMode < 0.4) {
+      uvGenNow = null;
+      uvCalls.live++;
+    } else {
+      uvCalls.captured++;
+    }
     for (let q = 0; q < pattern.length; q++) pattern[q] = Math.floor(r() * 4294967296);
     const step = (stride | 0) > 0 ? stride | 0 : COLLIDER_FILL_FLOATS;
     const gen = genNow || views.meshVertGen;
+    const uvSource = lastUvGen ? uvGenNow || views.meshUvGen : null;
 
     s.outWords.set(pattern);
-    const jsCode = rewriteExplicitMeshCorners(s.out, n, s.entity, views, stride, last, genNow);
+    const jsCode = rewriteExplicitMeshCorners(s.out, n, s.entity, views, stride, last, genNow, lastUvGen, uvGenNow);
     const jsWords = s.outWords.slice();
-    assert.equal(expected(s, views, n, step, gen, last, tally), jsCode, `frame ${k} (mode ${mode}): the test's mirror of the JS`);
+    assert.equal(expected(s, views, n, step, gen, last, uvSource, lastUvGen, tally), jsCode, `frame ${k} (mode ${mode}): the test's mirror of the JS`);
     s.outWords.set(pattern);
     const declined = s.b.declined;
-    const code = rewriteCornersWasm(s.b, s.out, n, s.entity, views, stride, last, genNow);
+    const code = rewriteCornersWasm(s.b, s.out, n, s.entity, views, stride, last, genNow, lastUvGen, uvGenNow);
     assert.equal(s.b.declined, declined, `frame ${k}: the kernel took the call`);
     assert.equal(code, jsCode, `frame ${k} (mode ${mode}, ${n} instances, stride ${stride}): return code`);
     const at = s.outWords.findIndex((w, q) => w !== jsWords[q]);
@@ -293,7 +333,8 @@ test('the corner kernel writes what rewriteExplicitMeshCorners writes, frame aft
   }
   for (const [branch, hits] of Object.entries(tally)) assert.ok(hits > 0, `no frame reached ${branch}`);
   for (const [code, hits] of Object.entries(codes)) assert.ok(hits > 0, `no frame returned ${code}`);
-  t.diagnostic(`${FRAMES} frames; codes ${JSON.stringify(codes)}; runs ${JSON.stringify(tally)}`);
+  for (const [kind, hits] of Object.entries(uvCalls)) assert.ok(hits > 0, `no frame called with ${kind} UV generations`);
+  t.diagnostic(`${FRAMES} frames; codes ${JSON.stringify(codes)}; UV generations ${JSON.stringify(uvCalls)}; runs ${JSON.stringify(tally)}`);
 });
 
 test('a call the kernel cannot take goes to the JS, and an empty one returns 0', async () => {
@@ -317,17 +358,32 @@ test('a call the kernel cannot take goes to the JS, and an empty one returns 0',
   assert.equal(s.b.declined, 2, 'vertices other than the bound column');
   rewriteCornersWasm(s.b, s.out, s.entity.length + 1, s.entity, views, COLLIDER_FILL_FLOATS, last, gen);
   assert.equal(s.b.declined, 3, 'a count past the instance list');
+  // E-118: UV generations the kernel cannot read.
+  const uvGen = s.uvGen.subarray(0, E);
+  rewriteCornersWasm(s.b, s.out, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen, new Uint32Array(E), uvGen);
+  assert.equal(s.b.declined, 4, 'drawn UV generations outside the memory');
+  rewriteCornersWasm(s.b, s.out, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen, s.lastUv.subarray(0, E), new Uint32Array(s.buffer, 0, E));
+  assert.equal(s.b.declined, 5, 'UV generations at byte 0, which the table reads as none');
+  rewriteCornersWasm(s.b, s.out, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen, s.lastUv.subarray(0, E), Array.from(uvGen));
+  assert.equal(s.b.declined, 6, 'UV generations that are not a Uint32Array');
+  // On the fill batch the UV generations are not read, so they cannot decline the call.
+  rewriteCornersWasm(s.b, s.out, n, s.entity, views, COLLIDER_FILL_FLOATS, last, gen, new Uint32Array(E), uvGen);
+  assert.equal(s.b.declined, 6, 'the fill batch ignores them');
   assert.equal(rewriteCornersWasm(s.b, s.out, 0, s.entity, views, COLLIDER_FILL_FLOATS, last, gen), 0);
   assert.equal(rewriteCornersWasm(s.b, s.out, n, s.entity, { ...views, meshVertGen: null }, COLLIDER_FILL_FLOATS, last, null), 0);
-  assert.equal(s.b.declined, 3, 'the early returns never reach the kernel or the JS');
+  assert.equal(s.b.declined, 6, 'the early returns never reach the kernel or the JS');
 });
 
-test('the bench scene hashes the same through the JS and the kernel', async () => {
-  const js = await setupMeshCornersKernel({ scale: 0.125 });
-  const hashJs = js.checksumFrames('js');
-  const k = await setupMeshCornersKernel({ scale: 0.125 });
-  const hashWasm = k.checksumFrames('wasm');
-  assert.equal(k.b.declined, 0);
-  assert.equal(hashWasm, hashJs);
-  assert.ok(k.uvCount > 10000 && k.fillCount > 400, `${k.fillCount} fill and ${k.uvCount} UV rows`);
+test('the bench scene hashes the same through every variant', async () => {
+  const hashes = {};
+  for (const variant of Object.keys(MESH_CORNER_VARIANTS)) {
+    const k = await setupMeshCornersKernel({ scale: 0.125 });
+    hashes[variant] = k.checksumFrames(variant);
+    if (MESH_CORNER_VARIANTS[variant].wasm) {
+      assert.equal(k.b.declined, 0, `${variant}: the kernel took every call`);
+      assert.ok(k.b.calls > 0, `${variant}: the kernel ran`);
+    }
+    assert.ok(k.uvCount > 10000 && k.fillCount > 400, `${k.fillCount} fill and ${k.uvCount} UV rows`);
+  }
+  assert.deepEqual(new Set(Object.values(hashes)).size, 1, `checksums ${JSON.stringify(hashes)}`);
 });

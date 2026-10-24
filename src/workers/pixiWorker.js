@@ -119,6 +119,8 @@ import {
   COLLIDER_FILL_FLOATS,
   MESH_UV_FILL_FLOATS,
 } from '../render/colliderFillBatch.js';
+import { bindMeshCorners, rewriteCornersWasm } from '../render/meshCornersClient.js';
+import { meshLayerCapacities } from '../util/meshMemory.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
@@ -937,6 +939,10 @@ class PixiRenderer extends AbstractWorker {
     // Per MESH layer: last packed ColliderFixture.revision + pose scratch.
     // ponytail: first frame / replace / moving mesh always pack; skip keeps instanceCount.
     this._colliderFillSkip = [];
+    // E-76 W11: the mesh memory (meshMemory.js) the MESH layers' batches live in, and the corner kernel.
+    this._meshMemoryBuffer = null;
+    this._meshMemoryLayout = null;
+    this._meshCornersWasm = null;
 
     // Reusable matrices for low-res rendering
     this._shadowTransform = new PIXI.Matrix();
@@ -1388,6 +1394,7 @@ class PixiRenderer extends AbstractWorker {
       v.meshGeomRevision = MeshGeometry.revision;
       v.meshVertGen = MeshGeometry.vertGen;
       v.meshVertEpoch = MeshGeometry.vertEpoch;
+      v.meshUvGen = MeshGeometry.uvGen;
     }
     v.entityCount = MeshRenderer.active ? MeshRenderer.active.length : 0;
     v.animationFrameStart = this.animationFrameStart;
@@ -4622,10 +4629,34 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
   }
 
+  /** E-76 W11. A MESH layer's instance lists and generation copies, in its regions of the mesh memory. */
+  _bindMeshSkipRegions(skip, r) {
+    const buf = this._meshMemoryBuffer;
+    const n = this._meshMemoryLayout.entities | 0;
+    skip.instanceEntity = new Uint32Array(buf, r.fillEntityByte, r.fillRows);
+    skip.uvInstanceEntity = new Uint32Array(buf, r.uvEntityByte, r.uvRows);
+    skip.lastVertGen = new Uint32Array(buf, r.lastVertGenByte, n);
+    skip.frameVertGen = new Uint32Array(buf, r.frameVertGenByte, n);
+    skip.lastUvGen = new Uint32Array(buf, r.lastUvGenByte, n);
+    skip.frameUvGen = new Uint32Array(buf, r.frameUvGenByte, n);
+  }
+
+  /**
+   * E-76 W11. rewriteExplicitMeshCorners through the corner kernel when it is bound; the client hands a call
+   * the kernel cannot take to the JS function.
+   */
+  _rewriteMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow) {
+    const b = this._meshCornersWasm;
+    if (b) return rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
+    return rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
+  }
+
   _ensureMeshUvBatch(cl) {
     if (cl.uvFillBatch) return cl.uvFillBatch;
     const cap = cl.uvCapacity | 0;
     if (cap <= 0) return null;
+    // E-76 W11: the rows in the mesh memory when the layer has its regions there.
+    const region = cl.meshRegion;
     const batch = new MeshUvFillBatch({
       capacity: cap,
       label: `mesh-uv-${cl.layerId}`,
@@ -4633,6 +4664,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaders: this._engineShaders,
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
+      data: region && region.uvRows === cap
+        ? new Float32Array(this._meshMemoryBuffer, region.uvRowsByte, cap * MESH_UV_FILL_FLOATS)
+        : null,
     });
     batch.mesh.blendMode = cl.fillBatch?.mesh?.blendMode || cl.containerBlend || 'normal';
     cl.uvFillBatch = batch;
@@ -4687,6 +4721,39 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!skip.frameVertGen || !views.meshVertGen) return;
     this._ensureVertGenScratch(skip, views);
     skip.lastVertGen.set(skip.frameVertGen.subarray(0, skip.lastVertGen.length));
+  }
+
+  /**
+   * E-118. Copy the live UV generations right after the vertex generations, before any vertex or UV is
+   * read this frame, for the reason _captureVertGen gives. The rewrite also redraws a run whose UV
+   * generation moved alone, so a capture that caught one of a write's two bumps and not the other draws
+   * the write the next frame.
+   * @returns {Uint32Array|null}
+   */
+  _captureUvGen(skip, views) {
+    const g = views.meshUvGen;
+    if (!g) return null;
+    const n = views.entityCount | 0;
+    if (skip.lastUvGen.length < n) {
+      const next = new Uint32Array(n);
+      next.set(skip.lastUvGen);
+      skip.lastUvGen = next;
+    }
+    if (skip.frameUvGen.length < n) skip.frameUvGen = new Uint32Array(n);
+    const dst = skip.frameUvGen;
+    if (g.length === n && dst.length === n) {
+      dst.set(g);
+    } else {
+      dst.set(g.subarray(0, n));
+    }
+    return dst;
+  }
+
+  /** E-118. Record the UV generations captured this frame as drawn. */
+  _commitUvGen(skip, views) {
+    if (!views.meshUvGen) return;
+    const last = skip.lastUvGen;
+    last.set(skip.frameUvGen.subarray(0, last.length));
   }
   // vertgen-end
 
@@ -6314,6 +6381,57 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     debugWorkerLog(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}`);
   }
 
+  /**
+   * E-76 W11. The mesh memory the main thread made (meshMemory.js), when MeshGeometry is bound on its buffer
+   * here, and the corner kernel on it unless wasm.meshCorners is off. A kernel that does not load leaves the
+   * JS rewrite, on the same arrays.
+   */
+  async _bindMeshMemory(data) {
+    this._meshMemoryBuffer = null;
+    this._meshMemoryLayout = null;
+    this._meshCornersWasm = null;
+    const mg = data.meshGeom;
+    const memory = mg?.memory || null;
+    const layout = mg?.layout || null;
+    if (!memory || !layout || mg.data !== memory.buffer || MeshGeometry.vertOffset?.buffer !== memory.buffer) return;
+    if ((layout.entities | 0) !== (this.globalEntityCount | 0)) return;
+    this._meshMemoryBuffer = memory.buffer;
+    this._meshMemoryLayout = layout;
+    if ((data.config || this.config)?.wasm?.meshCorners === false) return;
+    try {
+      this._meshCornersWasm = await bindMeshCorners(memory, layout.tableByte, {
+        vertOffset: MeshGeometry.vertOffset,
+        vertCount: MeshGeometry.vertCount,
+        indexOffset: MeshGeometry.indexOffset,
+        indexCount: MeshGeometry.indexCount,
+        vertexX: MeshGeometry.vertexX,
+        vertexY: MeshGeometry.vertexY,
+        uvU: MeshGeometry.uvU,
+        uvV: MeshGeometry.uvV,
+        indices: MeshGeometry.indices,
+      });
+    } catch (err) {
+      console.warn('[PIXI] meshCorners.wasm did not load; rewriting mesh corners in JS', err);
+      this._meshCornersWasm = null;
+    }
+  }
+
+  /**
+   * E-76 W11. The mesh memory's regions for MESH layer `layerId`, when the main thread sized them as this
+   * worker sizes the layer's batches (meshLayerCapacities); else null, and the layer keeps arrays of its own.
+   */
+  _meshLayerRegion(layerId, caps) {
+    const layout = this._meshMemoryLayout;
+    if (!layout || !this._meshMemoryBuffer) return null;
+    const layers = layout.layers || [];
+    for (let i = 0; i < layers.length; i++) {
+      const r = layers[i];
+      if (r.layerId !== layerId) continue;
+      return r.fillRows === caps.fill && r.uvRows === caps.uv ? r : null;
+    }
+    return null;
+  }
+
   async initializeCustomLayers(data) {
     const prev = this._customLayerList || [];
     for (let i = 0; i < prev.length; i++) {
@@ -6329,6 +6447,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     this._destroyAllCustomLayerCompute();
     this._customLayers = {};
+    await this._bindMeshMemory(data);
     if (!data.layerData) return;
 
     const metadata = data.layerData.metadata;
@@ -6371,6 +6490,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       let buffers = null;
       let batch = null;
       let fillBatch = null;
+      let meshRegion = null;
       if (isMesh) {
         const maxFx =
           (data.config?.physics?.maxFixturePoolSize | 0) ||
@@ -6385,19 +6505,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           (data.config?.renderer?.maxMeshIndices | 0) ||
           (this.config?.renderer?.maxMeshIndices | 0);
         // Fixtures or one primary shape per entity; each convex is at most 6 fans (8-2).
-        const colliderCap = Math.max(maxFx, entitySlots) * (MAX_POLYGON_VERTICES - 2);
-        const fanCap = maxMeshVerts > 2 ? maxMeshVerts - 2 : 0;
-        const indexCap = (maxMeshIndices / 3) | 0;
-        const explicitCap = fanCap + indexCap;
+        const caps = meshLayerCapacities(maxFx, entitySlots, maxMeshVerts, maxMeshIndices);
+        // E-76 W11: the rows in the mesh memory, where the corner kernel rewrites them.
+        meshRegion = this._meshLayerRegion(layerId, caps);
         fillBatch = new ColliderFillBatch({
-          capacity: Math.max(1, colliderCap + explicitCap),
+          capacity: caps.fill,
           label: `mesh-layer-${layerName}`,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
           atlasSource: this._resolveAtlasSource(),
           lutSource: this._texLutSource,
+          data: meshRegion
+            ? new Float32Array(this._meshMemoryBuffer, meshRegion.fillRowsByte, caps.fill * COLLIDER_FILL_FLOATS)
+            : null,
         });
-        fillBatch._uvCapacity = explicitCap;
+        fillBatch._uvCapacity = caps.uv;
         fillBatch.mesh.blendMode = containerBlend;
       }
       let sortKeyU32ByBuf = null;
@@ -6453,6 +6575,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         uvFillBatch: null,
         uvCapacity: fillBatch?._uvCapacity | 0,
         uvPrevCount: 0,
+        // E-76 W11: this MESH layer's regions of the mesh memory, or null.
+        meshRegion,
         splatBatch,
         densitySource: isLfDensity ? LAYER_DENSITY_SOURCE.LIQUID_FUN : LAYER_DENSITY_SOURCE.SPRITES,
         splat: splatCfg ? { ...splatCfg } : null,
@@ -6746,6 +6870,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             lastVertEpoch: 0,
             lastVertGen: null,
             frameVertGen: null,
+            // E-118: the UV generations drawn and this frame's copy (_captureUvGen).
+            lastUvGen: new Uint32Array(0),
+            frameUvGen: new Uint32Array(0),
+            // Each batch's instance-to-entity list, written by its full pack.
+            instanceEntity: new Uint32Array(0),
+            uvInstanceEntity: new Uint32Array(0),
             prevPose: {},
             camX: NaN,
             camY: NaN,
@@ -6754,6 +6884,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             rtReady: false,
             uvLocalsReady: false,
           };
+          if (cl.meshRegion) this._bindMeshSkipRegions(skip, cl.meshRegion);
         }
         views.lastPaintEpoch = skip.lastPaintEpoch;
         views.lastMeshRevision = skip.lastMeshRevision | 0;
@@ -6786,8 +6917,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           let full = !topologyStable;
           // Generations before vertices (B24): both paths below read vertices.
           const genNow = full || vertsMoved ? this._captureVertGen(skip, views) : null;
+          // E-118: the UV generations right after, for the same reads.
+          const uvGenNow = genNow ? this._captureUvGen(skip, views) : null;
           if (!full && vertsMoved) {
-            const fillRewrite = rewriteExplicitMeshCorners(
+            const fillRewrite = this._rewriteMeshCorners(
               cl.fillBatch.data,
               lastPacked,
               skip.instanceEntity,
@@ -6799,7 +6932,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             const uvCount = cl.uvPrevCount | 0;
             const uvRewrite = !cl.uvFillBatch || uvCount <= 0
               ? 1
-              : rewriteExplicitMeshCorners(
+              : this._rewriteMeshCorners(
                 cl.uvFillBatch.data,
                 uvCount,
                 skip.uvInstanceEntity,
@@ -6807,6 +6940,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 MESH_UV_FILL_FLOATS,
                 skip.lastVertGen,
                 genNow,
+                skip.lastUvGen,
+                uvGenNow,
               );
             if (fillRewrite < 0 || uvRewrite < 0) full = true;
           }
@@ -6823,6 +6958,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             }
             this._packMeshUvLayer(cl, views, skip);
             this._commitVertGen(skip, views);
+            this._commitUvGen(skip, views);
           } else {
             const touchVbo = vertsMoved || paintMoved;
             if (paintMoved) {
@@ -6865,7 +7001,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 this._uploadMeshPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
               }
             }
-            if (vertsMoved) this._commitVertGen(skip, views);
+            if (vertsMoved) {
+              this._commitVertGen(skip, views);
+              this._commitUvGen(skip, views);
+            }
           }
           copyMeshFillPoseScratch(views, skip.prevPose);
           skip.lastRevision = rev;

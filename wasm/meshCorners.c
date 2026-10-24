@@ -1,13 +1,17 @@
 /* The mesh corner rewrite (E-76 W11): rewriteExplicitMeshCorners (src/render/colliderFillBatch.js) in C, the
    whole call: the walk over runs of instances that share an entity, the vertex-generation test, the topology
    checks that answer -1, and the corner copy (aV0..aV2, and uv0..uv2 on the UV batch's 24-float rows) through
-   the index buffer or as a fan. Every array is a byte offset into one memory (the wrapper writes the table):
+   the index buffer or as a fan. It runs in Pixi on the mesh memory (src/util/meshMemory.js), through
+   src/render/meshCornersClient.js, which writes the table. Every array is a byte offset into that memory:
    the batch rows, the instance-to-entity list, the captured and the drawn generations, and the MeshGeometry
    columns (spans, counts, vertices, UVs, indices). Nothing is computed: each corner is copied as its 32 bits,
    x and y (or u and v) as one 64-bit store. Where the JS reads past a column's end it reads undefined, an
    index of 0 and a corner of NaN; a run whose spans fit its columns takes the loop without those checks, the
    rest a checked copy of it. Returns 1 (done), -1 (the packed triangles no longer match: the caller repacks)
-   or 0 (no instances). */
+   or 0 (no instances).
+   E-118: with the UV generations in the table (captured and drawn; slot T_UV_GEN 0 means none), a run of the
+   UV batch is rewritten when its vertex or its UV generation moved, and gets its UV corners only when the UV
+   generation moved, as rewriteExplicitMeshCorners does with lastUvGen. */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -21,6 +25,8 @@ enum {
   T_OUT, T_COUNT, T_STEP, T_UV_ON, T_ENTITY, T_GEN, T_GEN_LEN, T_LAST, T_LAST_LEN,
   T_VERT_OFFSET, T_VERT_COUNT, T_INDEX_OFFSET, T_INDEX_COUNT, T_GEOM_N,
   T_VX, T_VY, T_U, T_V, T_VERT_CAP, T_INDICES, T_INDEX_CAP,
+  /* E-118: the UV generations captured this frame and drawn, and their lengths. */
+  T_UV_GEN, T_UV_GEN_LEN, T_LAST_UV, T_LAST_UV_LEN,
   SLOT_COUNT
 };
 
@@ -174,6 +180,12 @@ int32_t rewrite_corners(uint32_t table) {
   const uint32_t vertCap = t[T_VERT_CAP];
   const uint16_t *indices = PTR(const uint16_t, T_INDICES);
   const uint32_t indexCap = t[T_INDEX_CAP];
+  /* E-118: only the UV batch reads the UV generations. */
+  const int uvGenOn = uvOn && t[T_UV_GEN] != 0;
+  const uint32_t *uvGen = PTR(const uint32_t, T_UV_GEN);
+  const uint32_t uvGenLen = t[T_UV_GEN_LEN];
+  const uint32_t *lastUv = PTR(const uint32_t, T_LAST_UV);
+  const uint32_t lastUvLen = t[T_LAST_UV_LEN];
 
   if (n == 0) return 0;
   uint32_t k = 0;
@@ -182,8 +194,10 @@ int32_t rewrite_corners(uint32_t table) {
     const uint32_t end = run_end(ent, k, n);
     const uint32_t run = end - k;
     /* `i >= 0 && i < gen.length` with i = id | 0: an id past 2^31 is negative there, and past any length here.
-       The drawn generations read 0 past their end (undefined >>> 0). */
-    if (id < genLen && gen[id] != (id < lastLen ? last[id] : 0u)) {
+       The drawn generations read 0 past their end (undefined >>> 0); the UV ones the same. */
+    const int vertDirty = id < genLen && gen[id] != (id < lastLen ? last[id] : 0u);
+    const int uvDirty = uvGenOn && id < uvGenLen && uvGen[id] != (id < lastUvLen ? lastUv[id] : 0u);
+    if (vertDirty || uvDirty) {
       /* Past the MeshGeometry columns the JS reads offset 0, no vertices and no triangles: need 0 !== run. */
       if (id >= geomN) return -1;
       const int32_t vOff = vertOffset[id];
@@ -192,11 +206,13 @@ int32_t rewrite_corners(uint32_t table) {
         const int32_t iAt = indexOffset[id];
         const uint32_t need = iAt >= 0 ? indexCount[id] / 3u : (vN >= 3 ? vN - 2 : 0u);
         if (need != run || vN < 3) return -1;
+        /* The UV corners on the UV batch, unless the UV generations say they did not move. */
+        const int uvRun = uvOn && (!uvGenOn || uvDirty);
         const uint32_t base = k * step;
         const int fits = (uint64_t)(uint32_t)vOff + vN <= vertCap &&
                          (iAt < 0 || (uint64_t)(uint32_t)iAt + 3ull * run <= indexCap);
         if (!fits) {
-          if (checked_run(out, base, step, uvOn, run, vN, iAt, (uint32_t)vOff, indices, indexCap, vx, vy, u, v,
+          if (checked_run(out, base, step, uvRun, run, vN, iAt, (uint32_t)vOff, indices, indexCap, vx, vy, u, v,
                           vertCap) < 0) {
             return -1;
           }
@@ -204,10 +220,10 @@ int32_t rewrite_corners(uint32_t table) {
           const uint32_t o = (uint32_t)vOff;
           if (iAt >= 0) {
             const uint16_t *ix = indices + (uint32_t)iAt;
-            const int32_t r = uvOn ? indexed_run(out, base, step, 1, ix, run, vN, vx + o, vy + o, u + o, v + o)
-                                   : indexed_run(out, base, step, 0, ix, run, vN, vx + o, vy + o, u, v);
+            const int32_t r = uvRun ? indexed_run(out, base, step, 1, ix, run, vN, vx + o, vy + o, u + o, v + o)
+                                    : indexed_run(out, base, step, 0, ix, run, vN, vx + o, vy + o, u, v);
             if (r < 0) return -1;
-          } else if (uvOn) {
+          } else if (uvRun) {
             fan_run(out, base, step, 1, run, vx + o, vy + o, u + o, v + o);
           } else {
             fan_run(out, base, step, 0, run, vx + o, vy + o, u, v);
