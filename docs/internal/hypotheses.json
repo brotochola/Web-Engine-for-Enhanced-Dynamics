@@ -94,7 +94,7 @@
       ],
       "aliases": [],
       "next": "A guide note on per-entity doubles (components, not instance fields); then the Box2D clock and updateLighting.",
-      "rank": 14
+      "rank": 18
     },
     {
       "id": "E-110",
@@ -126,7 +126,7 @@
       ],
       "aliases": [],
       "next": "Rerun shadowStampMicrobench on a quiet machine (diff D:\\tmp\\p4\\e111.patch); W23's port would absorb it.",
-      "rank": 15
+      "rank": 19
     },
     {
       "id": "E-112",
@@ -162,7 +162,7 @@
       ],
       "aliases": [],
       "next": "Each queue column a cache line after the last in renderQueueLayout; measure on a scene at an aliased capacity.",
-      "rank": 16
+      "rank": 20
     },
     {
       "id": "E-114",
@@ -322,6 +322,117 @@
       ]
     },
     {
+      "id": "E-123",
+      "title": "Pixi's plain sprite pack through gpuPack.wasm, re-gated without the side bias (W9d)",
+      "status": "open",
+      "statusText": "reopened 2026-10-24 (W9d was rejected 2026-10-23)",
+      "date": "2026-10-24",
+      "result": "W9d made Predator's renderer 9.1 % cheaper (better in 8 of 8 pairs) and was rejected for logic +5.9 % (worse 7/8), a worker it cannot reach. That sitting served side B from the main folder, which M13 later found runs slower than a worktree on the same code; the layout-only control (kernel off) already read logic +2.7 % (5/8), and Predator's logic spreads 8 to 13 % run to run, so the flag is within what that setup produced on its own.",
+      "area": "pixi",
+      "kind": "wasm",
+      "refs": [
+        "HYPOTHESIS_LOG.md#W9d",
+        "REVIEW_PLAN.md#M13",
+        "HYPOTHESIS_LOG.md#The Predator gate reads the main folder"
+      ],
+      "aliases": [
+        "W9d"
+      ],
+      "next": "Rebase the diff (D:\\tmp\\e85prof\\w9d.diff and w9d.test.js, base 3e2dc99c, outside the repo) onto main behind a `wasm.*` switch. Renderer owner, as same-build switch pairs or with both sides from worktrees (`--hyp-rev`): a plain-sprite scene with `packGpuSprites: 'pixi'` for the claim, Predator as the guard.",
+      "rank": 3
+    },
+    {
+      "id": "E-124",
+      "title": "`copyTypeActiveListToBuffer` with `TypedArray.set`, re-sat on clean sides (Q1)",
+      "status": "open",
+      "statusText": "reopened 2026-10-24 (Q1 was dropped 2026-09-30)",
+      "date": "2026-10-24",
+      "result": "The kernel won 20.9 % (5/5 rounds) on a copy that is 2.4 % of logic. Two Predator sittings were called REGRESSION on spatial, renderer and particle (+3 to +4 %), which never run the copy, and no mechanism was found. Every worker moving the same way is drift or side bias (M13); read against those workers' median, logic was −1 % and 0 %. Under today's rule a kernel win whose scene is not 3 % worse is kept on its kernel.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#Q1 logic",
+        "REVIEW_PLAN.md#M13"
+      ],
+      "aliases": [
+        "Q1"
+      ],
+      "next": "Reapply `set` with the clip to the room left (the edge test is in the tree); 4 pairs, logic owner, both sides from worktrees; batch with E-125 under one Predator guard.",
+      "rank": 21
+    },
+    {
+      "id": "E-125",
+      "title": "Spawn sort by packed numeric keys, re-sat (H-14)",
+      "status": "open",
+      "statusText": "reopened 2026-10-24 (H-14 was dropped 2026-10-14)",
+      "date": "2026-10-24",
+      "result": "A numeric sort of packed keys ran 2.1 to 2.5× the comparator sort in its kernel (5/5 rounds, n = 8 to 1024). `spawnStormScene` logic read −0.55 % (worse 3/8) in a sitting that a toolchain guard contaminated by launching Chromium between pairs, and it was never re-sat. A kernel win with a scene that is not 3 % worse is a kept-kernel today.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#H-14"
+      ],
+      "aliases": [
+        "H-14"
+      ],
+      "next": "Reapply; check the kernel against the shipped function; 4 pairs of `spawnStormScene` from worktrees; batch with E-124.",
+      "rank": 22
+    },
+    {
+      "id": "E-126",
+      "title": "Spatial grid rebuilt for the bodies that moved only, in worlds where most sleep (Grid movers only)",
+      "status": "open",
+      "statusText": "reopened 2026-10-24 (dropped 2026-09-22 on the 8 ms floor)",
+      "date": "2026-10-24",
+      "result": "Its kernel ran 11.6× at 5 % movers (13.8 → 160 ops/s) and half as fast at 100 % (14.2 → 6.9). The quiet stress, 60 000 bodies and none moving, read spatial 5.269 → 3.990 ms (−24 %) and failed only the old 8 ms floor, which stood in for the one-in-six sampler's precision, not for a doubt about 24 %. Large worlds where most bodies sleep are where big entity counts come from. Predator moves 47 % of its bodies a frame (8 329 of 17 563), near the kernel's break-even (about 50 %), so it would take the full rebuild: there it is a guard.",
+      "area": "spatial",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#Grid movers only",
+        "HYPOTHESIS_LOG.md#W6"
+      ],
+      "aliases": [],
+      "next": "Restore the path from 57d30b14 (removed in 4f26427c) onto today's `rebuildOwnedRows`, with a parity test against the full rebuild and the switch to it at the kernel's crossover. Owner pair on a static-heavy stress (60 000 bodies, 5 % awake); Predator must not get worse. Before W7, so W7 ports whichever rebuild wins.",
+      "rank": 9
+    },
+    {
+      "id": "E-127",
+      "title": "Cull through a grid when the world is much bigger than the view (the renderable grid in its own regime)",
+      "status": "open",
+      "statusText": "reopened 2026-10-24 (screened on Predator 2026-09-27)",
+      "date": "2026-10-24",
+      "result": "`collectVisibleEntities` tests every entity every frame, so its cost follows the world, not the view. The 2026-09-27 grid (`renderGrid.js`, since removed) was measured only on Predator, where the fight fills the view and a grid cannot win, and that pair did not exist: it lost sprites (visible −6.3 %) and casters (−31.6 %). The regime where it pays, a large world seen through a small view, was never measured.",
+      "area": "pre-render",
+      "kind": "js",
+      "refs": [
+        "HYPOTHESIS_LOG.md#Renderable grid on Predator",
+        "HYPOTHESIS_LOG.md#Phases 6+7+8 together"
+      ],
+      "aliases": [],
+      "next": "A stress knob for world size against the view (say 500 000 sprites, 5 % on screen); a parity test that the culled set equals the linear cull's at several zooms and rotations; then a grid in pre-render, or a read of spatial's published cells, as an owner pair. Before W4b, so the collect is ported once.",
+      "rank": 12
+    },
+    {
+      "id": "E-128",
+      "title": "The cull loop's share of BunnyMark's pre-render, against W3's reopen trigger",
+      "status": "open",
+      "statusText": "reopened 2026-10-24 (W3 was screened, ceiling, 2026-10-22)",
+      "date": "2026-10-24",
+      "result": "W3 was parked on Predator, where the cull loop is 7.2 % self of pre-render (a 1.2 % ceiling), with its own trigger: reopen when a cull-dominated scene shows the loop at 18 % or more. After the persist series (E-115 to E-117) BunnyMark's pre-render is 5.17 ms at 250 000 sprites, all on screen, and the collect walks every one of them: the likeliest scene to meet it, and one Predator's profile cannot speak for.",
+      "area": "pre-render",
+      "kind": "wasm",
+      "refs": [
+        "HYPOTHESIS_LOG.md#W3",
+        "WASM_HYPOTHESES.md#W3",
+        "HYPOTHESIS_LOG.md#E-117"
+      ],
+      "aliases": [
+        "W3"
+      ],
+      "next": "A CPU profile of BunnyMark (detailed stats off): the loop's self share. At 18 % or more, run Q3's floor and fold W3 into W4b (Phase 4: Transform lives in Box2D's heap). Shares the scene work with E-127.",
+      "rank": 11
+    },
+    {
       "id": "E-104",
       "title": "Query type masks walked in BigInt every publish",
       "status": "kept-hygiene",
@@ -383,7 +494,7 @@
       ],
       "aliases": [],
       "next": "After W4 makes the Phase 4 move: one C call per frame saves the glue (8 % of Predator spatial) and W6's 1.4 %.",
-      "rank": 8
+      "rank": 10
     },
     {
       "id": "E-82",
@@ -510,7 +621,7 @@
         "WASM_HYPOTHESES.md#W21c"
       ],
       "aliases": [],
-      "rank": 4
+      "rank": 5
     },
     {
       "id": "W2a",
@@ -525,7 +636,7 @@
         "WASM_HYPOTHESES.md#W2a"
       ],
       "aliases": [],
-      "rank": 5
+      "rank": 6
     },
     {
       "id": "W1",
@@ -540,7 +651,7 @@
         "WASM_HYPOTHESES.md#W1"
       ],
       "aliases": [],
-      "rank": 6
+      "rank": 7
     },
     {
       "id": "W10",
@@ -555,7 +666,7 @@
         "WASM_HYPOTHESES.md#W10"
       ],
       "aliases": [],
-      "rank": 7
+      "rank": 8
     },
     {
       "id": "W23",
@@ -585,7 +696,7 @@
         "WASM_HYPOTHESES.md#W27"
       ],
       "aliases": [],
-      "rank": 10
+      "rank": 14
     },
     {
       "id": "W28",
@@ -600,7 +711,7 @@
         "WASM_HYPOTHESES.md#W28"
       ],
       "aliases": [],
-      "rank": 11
+      "rank": 15
     },
     {
       "id": "W4",
@@ -616,7 +727,7 @@
       ],
       "aliases": [],
       "next": "W4b, the collect chain (collectVisibleEntities, _displayPose, _storeEntitySortY), after Phase 4; W4a is E-112.",
-      "rank": 9
+      "rank": 13
     },
     {
       "id": "W4c",
@@ -647,7 +758,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 12
+      "rank": 16
     },
     {
       "id": "W2b",
@@ -663,7 +774,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 13
+      "rank": 17
     },
     {
       "id": "E-76",
@@ -4157,7 +4268,8 @@
         "HYPOTHESIS_LOG.md#W3",
         "WASM_HYPOTHESES.md#W3"
       ],
-      "aliases": []
+      "aliases": [],
+      "next": "Reopened as E-128 (2026-10-24): the trigger is checked in BunnyMark."
     },
     {
       "id": "W15",
@@ -4349,7 +4461,8 @@
       "refs": [
         "HYPOTHESIS_LOG.md#Renderable grid on Predator (2026-09-27)"
       ],
-      "aliases": []
+      "aliases": [],
+      "next": "Reopened as E-127 (2026-10-24), in its own regime."
     },
     {
       "id": "W16",
@@ -4511,7 +4624,8 @@
       "refs": [
         "HYPOTHESIS_LOG.md#H-14"
       ],
-      "aliases": []
+      "aliases": [],
+      "next": "Reopened as E-125 (2026-10-24)."
     },
     {
       "id": null,
@@ -4651,7 +4765,8 @@
       "refs": [
         "HYPOTHESIS_LOG.md#Q1 logic: copyTypeActiveListToBuffer with TypedArray.set (2026-09-30)"
       ],
-      "aliases": []
+      "aliases": [],
+      "next": "Reopened as E-124 (2026-10-24)."
     },
     {
       "id": "X5",
@@ -5113,9 +5228,11 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#Fixed slot, only x and y"
+        "HYPOTHESIS_LOG.md#Fixed slot, only x and y",
+        "HYPOTHESIS_LOG.md#The split instance upload on top of E-97"
       ],
-      "aliases": []
+      "aliases": [],
+      "next": "Reopened by E-82 (kept 2026-10-23): the split upload cut BunnyMark's renderer 67.7 %."
     },
     {
       "id": null,
@@ -5127,9 +5244,11 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#Pose in a separate buffer"
+        "HYPOTHESIS_LOG.md#Pose in a separate buffer",
+        "HYPOTHESIS_LOG.md#The split instance upload on top of E-97"
       ],
-      "aliases": []
+      "aliases": [],
+      "next": "Reopened by E-82 (kept 2026-10-23): the split upload cut BunnyMark's renderer 67.7 %."
     },
     {
       "id": null,
@@ -5465,7 +5584,8 @@
       "refs": [
         "HYPOTHESIS_LOG.md#Grid movers only"
       ],
-      "aliases": []
+      "aliases": [],
+      "next": "Reopened as E-126 (2026-10-24)."
     },
     {
       "id": null,
@@ -7344,7 +7464,7 @@
       ],
       "aliases": [],
       "next": "Pays only on frames that keep their rows (a still camera); an animation frame change bumps staticGen, so animated scenes would re-upload statics as often as now unless the texture moves to the pose stream. Measure on animatedSpriteStressScene?sprites=250000 if taken up.",
-      "rank": 3
+      "rank": 4
     },
     {
       "id": "N-64",
@@ -7434,7 +7554,7 @@
         "HYPOTHESIS_LOG.md#W9d"
       ],
       "aliases": [],
-      "next": "Retry when the workers' phasing changes (diff kept outside the tree)."
+      "next": "Reopened as E-123 (2026-10-24)."
     },
     {
       "id": "E-102",
@@ -7560,6 +7680,11 @@
       "source": "E-93 (2026-10-23)",
       "finding": "_processSpawnSoA sorts its permutation with a comparator, which copies the elements per batch (0.85 MB/s in spawnStormScene logic). H-14 (numeric sort of packed keys) won its kernel by +106..147 % and was dropped on a sitting a stray Chromium launch contaminated.",
       "next": "Re-sit H-14 on a quiet machine (spawnStormScene logic, 4 pairs) before re-proposing it; read its log row first."
+    },
+    {
+      "source": "Reopen review (2026-10-24)",
+      "finding": "The persist path (E-115 to E-117) pays only on frames whose visible set is the one the queue buffer last held, and E-82b notes that a moving camera rarely gives one (Predator).",
+      "next": "Find what breaks it under a moving camera (the set changing at the view's edges, or rows written in screen space), then keep rows in place through small changes (a free list of queue slots for the sprites that enter and leave) instead of a full emit; measure on a panning BunnyMark."
     }
   ],
   "howToFindNew": [
@@ -7590,6 +7715,10 @@
     {
       "tool": "docs/internal/REVIEW_PLAN.md",
       "what": "Open review items (bugs and cleanups found while reading code)."
+    },
+    {
+      "tool": "Old verdicts against today's rules",
+      "what": "A drop decided on a floor, on a drift every worker shared, on a sitting that was contaminated or served from the main folder, or in a regime that cannot show the gain: reopen it as a new entry that points at the old one (E-123 to E-128 did)."
     }
   ]
 }
