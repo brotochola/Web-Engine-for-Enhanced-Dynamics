@@ -1,110 +1,78 @@
-# Integrated worker benchmark — methodology
+# Benchmark harness
 
-## Problem
+How the scene runner and the gate work, and what their options do. When to use them, and how a sitting
+decides, is [`docs/internal/HOW_WE_MEASURE.md`](../../docs/internal/HOW_WE_MEASURE.md); what can be
+measured (the catalog, the kernels, the stress scenes) is
+[`docs/internal/FEATURE_BENCHMARKS.md`](../../docs/internal/FEATURE_BENCHMARKS.md).
 
-BallsScene starts with a **dense spawn**; the first seconds are not representative of later churn. Short windows also **sample different collision phases** (pile vs spread), so physics FPS and `BODY_COUNT` / contact event rates can swing wildly between runs even with **identical code**.
+## The scene runner
 
-## Defaults (see `benchmarkDefaults.mjs`)
+`node tests/bench/runIntegratedWorkerBenchmark.mjs` opens a scene in Chromium (Playwright), lets it warm up,
+then reads every worker's stats for the measured window and writes one JSON report.
 
-- **Warmup 10 s** — not measured; lets the pile relax before sampling.
-- **Measure 10 s** — averages FPS and stats over a steady(ish) interval.
-- Override anytime: `--warmup-ms`, `--duration-ms`. The old 25 s / 18 s schedule is retired.
+- **What it reads.** Each worker publishes its stats in shared memory every frame: `STEP_MS` (the wall time
+  of its `update()`), `WAIT_MS`, the load counts (`BODY_COUNT`, `ACTIVE_PARTICLES`, `VISIBLE_ENTITIES`,
+  `RENDER_QUEUE_SIZE`, …) and, with detailed stats on, its sub-timers (`COLLECT_MS`, `EMIT_MS`, `BOX2D_MS`,
+  …). The runner samples them every 100 ms (`--sample-interval-ms`) and reports, per worker, the average of
+  the samples (`statsSamplesAverage`), grouped by kind (`workersByType`). A sample is the last frame's
+  value: one frame in six at 60 Hz.
+- **Load%.** `STEP_MS / (1000 / 60) * 100`, or against `1000 / fixedFps` for a worker with `fixedFps`
+  (`workerLoadPct` in `src/util/workersUtils.js`). An uncapped worker can read above 100 %.
+- **Defaults** ([`benchmarkDefaults.mjs`](./benchmarkDefaults.mjs)): warm-up 10 s, measured window 10 s,
+  samples every 100 ms, the 3 ms stress floor (`STEP_MS_FLOOR`).
+- **Output.** `--output <file>`, by default `tests/results/integrated-worker-benchmark.json`. Everything under
+  `tests/results/` is local and not kept: a record in the register carries the numbers that matter.
 
-The protocol (layers, floors, pairs, when Predator gates a change) is [`docs/internal/HOW_WE_MEASURE.md`](../../docs/internal/HOW_WE_MEASURE.md). This file is the harness: what the runner measures and how to point it at a scene.
+| Option | What it does |
+|---|---|
+| `--scene <path> --scene-export <Class>` | The scene module and its exported class (default `BallsScene`). From Git Bash set `MSYS_NO_PATHCONV=1`, or `/demos/...` becomes a Windows path. |
+| `--query <k=v&…>` | Query parameters for the scene (its load knobs, `wasm.*` switches it reads). |
+| `--src` | Load the engine from `src/` instead of the bundle in `dist/`. Every measurement of engine code uses it. |
+| `--headed` | A visible window (default headless). The window must stay unminimized: a watch restores it, warns, and the run is measured again. |
+| `--warmup-ms`, `--duration-ms`, `--sample-interval-ms` | The schedule. |
+| `--no-collect-detailed-stats` | Detailed stats off: the setting for any number that decides. |
+| `--canvas-width`, `--canvas-height`, `--camera-zoom` | The view; a culling claim may need a larger canvas (H-19 queued nothing at 1920×1080). |
+| `--trace-cpu` | A CPU-only trace (profiler and thread names) for `pnpm trace:summary`. `--trace` records the full timeline, which costs every task. |
+| `--js-flags "<flags>"`, `--v8-log-dir <dir>` | V8 flags for the page and its workers (`--log-deopt --log-ic`, `--trace-turbo-inlining`), and where V8 writes its logs. |
+| `--collect-gpu-stats` | GPU timings where the backend has timestamp queries. |
+| `--allow-throttle` | Lets Chromium throttle background timers (off by default, so a covered window keeps its pace). |
 
-## Scientific method (local / manual experiments)
+## The gate
 
-1. **Hypothesis** — e.g. “change X reduces step cost without changing behavior.”
-2. **Constants** — same branch, same `pnpm`/Node, same headed flags, **don’t minimize** the browser, avoid heavy background load.
-3. **Primary response variables** — physics `statsSamplesAverage.STEP_MS` and derived **Load%** (`STEP_MS / (1000/60) * 100`, or `1000/fixedFps` when `fixedFps > 0`). Equivalence: `BODY_COUNT`. FPS is **secondary** (with capped `noLimitFPS: false`, FPS ≈ 60 is expected and uninformative). Diagnose `STEP_MS` with `BODY_SYNC_MS`, `JOINT_SYNC_MS`, `COMMAND_MS`, `FORCE_MS`, `BOX2D_MS`, and `POST_MS`; also compare `BODY_SYNC_VISITED` / `BODY_SYNC_CHANGES`, `BODY_MOVED_COUNT`, `AWAKE_COUNT` so workload remains equivalent. Stress A/B: if a primary ms metric is under **3 ms**, the pair **fails** (`STEP_MS_FLOOR` in `benchmarkDefaults.mjs`) — raise load; do not keep/drop. Gameplay skips this floor. Kernel `timeIt` uses the same 3 ms sample floor.
-4. **Equivalence check** — if `BODY_COUNT` shifts a lot between baseline and the change, the runs are **not comparable** (different simulation state). Do **not** attribute STEP_MS/Load% delta to the code change. `BODY_COUNT`, `AWAKE_COUNT`, `BODY_MOVED_COUNT`, and `ACTIVE_PARTICLES` are written even when `collectDetailedStats` is off. Protocol: [`docs/internal/HOW_WE_MEASURE.md`](../../docs/internal/HOW_WE_MEASURE.md).
-5. **Replication** — `pnpm bench:headed:median` (or `runHeadedMedian.mjs`): 2 runs by default (`--runs`), report **median** and **CV** (coefficient of variation). A keep or drop comes from a paired sitting (`runPredatorAbab.mjs`), not from medians of separate runs. Lower CV on body counts usually means more comparable load. Prints **spatial** `STEP_MS` / Load% / `NEIGHBOR_MS` / `GRID_CELLS_CHECKED` medians when present. Keep `COMMAND_OVERFLOW_TOTAL`, `CONTACT_DROPPED`, and `SENSOR_DROPPED` at zero. Optional JSON: `pnpm bench:headed:spatial-confirm` (writes `tests/results/research-spatial-headed.json`).
-6. **Paired comparison** — same machine, same sitting, the sides alternating and counterbalanced (AB, BA, …) with `runPredatorAbab.mjs` (`--scene` for any scene, `--vs <rev>` for the baseline worktree). Conclusions need the load keys within 5 % and the paired deltas to agree (see the protocol).
+`node tests/bench/runPredatorAbab.mjs` runs two sides in counterbalanced pairs (AB, BA, AB, …), Predator by
+default or any scene with `--scene`, headed, and decides as described in HOW_WE_MEASURE. Each side is a
+worktree under `../weed-ab/` whose `src/` comes from a revision; the scenes, kernels and harness come from
+the working tree, so both sides run the same scene code.
 
-## Worker Load%
+| Option | What it does |
+|---|---|
+| `--name <id>` | The sitting's name; its pairs and `summary.json` go to `tests/results/predator-abab/<id>/`. |
+| `--vs <rev>` | Side A is `src/` at that revision. |
+| `--hyp-rev <rev>` | Side B is `src/` at that revision, in its own worktree (without it, side B is the working tree; do not measure that way). `--vs X --hyp-rev X` is an A/A. |
+| `--override <file>=<copy>` | Without `--vs`: side A is the working tree with those files swapped for the copies. |
+| `--owner <kind>` | The worker kind the claim is about (`spatial`, `preRender`, `pixi`, `physics`, `logic`, `particle`), `presented` for the frame rate, or a load key for a throughput (`FLOWFIELDS_COMPUTED`). |
+| `--pairs <n>` | Pairs to run (default 4). |
+| `--append` | Add pairs to an existing sitting of that name; refused when the tree changed since its first pairs. |
+| `--decide-only` | Re-read a finished sitting with the current decision rules. |
+| `--hyp <name>` | Run that hypothesis's probe (a check that its code path ran in the scene); it turns detailed stats on, so leave it off for the sitting that decides. |
+| `--query`, `--scene`, `--scene-export`, `--warmup-ms`, `--duration-ms`, `--canvas-*`, `--camera-zoom` | As for the scene runner, on both sides. |
 
-`STEP_MS` is wall time of worker `update()` only (`AbstractWorker`). Frame budget for comparison:
+After a session, remove its worktrees with `removeRevWorktree()` from [`revWorktree.mjs`](./revWorktree.mjs)
+and `git worktree prune`; never `rm -r` them or `git worktree remove --force`, because their
+`node_modules` is a junction to the repository's and those follow it.
 
-```text
-frameBudgetMs = 1000 / 60 ≈ 16.667   // or 1000/fixedFps when fixedFps > 0
-loadPct       = (STEP_MS / frameBudgetMs) * 100
-```
+## Other runners
 
-Always compare against **60 Hz** unless that worker has `fixedFps > 0`. Do **not** use measured FPS as denominator (circular). Uncapped workers can report >100% — intentional (“busy vs real-time budget”). Helper: `workerLoadPct` in `src/util/workersUtils.js`. JSON reports stay unchanged; Load% is derived when printing.
-
-## Scene configuration
-
-Integrated benchmarks use **BallsScene** by default. You can select another scene module/export when the workload you care about is not represented by BallsScene:
-
-```bash
-node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
-  --scene /demos/waterAndBoxesScene/waterAndBoxesScene.js \
-  --scene-export WaterAndBoxesScene \
-  --output tests/results/water-and-boxes-headed.json
-```
-
-Use scene selection for targeted checks:
-
-- **Feature pyramid (L1/L2/L3):** see [`docs/internal/FEATURE_BENCHMARKS.md`](../../docs/internal/FEATURE_BENCHMARKS.md). L2 stress scenes live under `tests/bench/stressScenes/`.
-- **Raycasts:** L1 `pnpm bench:micro:ray`; L2 `pnpm bench:feature:ray` (`RayStressScene`).
-- **Spatial/physics:** `BallsScene` or `StationarySpatialScene`.
-- **Query churn:** `QueryChurnScene` for spawn/despawn list updates and custom precomputed active-query publication.
-- **Pre-render/render queues:** `RenderQueueStressScene` for many visible renderables and Y-sorted queue pressure.
-- **Particles/decorations:** a scene that actually has active particles/decorations; BallsScene reports `ACTIVE_DECORATIONS: 0`.
-
-Stationary spatial reuse check:
-
-```bash
-node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
-  --scene /tests/bench/stressScenes/stationarySpatialScene.js \
-  --scene-export StationarySpatialScene \
-  --output tests/results/stationary-spatial-headed.json
-```
-
-Query churn check:
-
-```bash
-node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
-  --scene /tests/bench/stressScenes/queryChurnScene.js \
-  --scene-export QueryChurnScene \
-  --output tests/results/query-churn-headed.json
-```
-
-Render queue stress check:
-
-```bash
-node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
-  --scene /tests/bench/stressScenes/renderQueueStressScene.js \
-  --scene-export RenderQueueStressScene \
-  --output tests/results/render-queue-stress-headed.json
-```
-
-Ray stress (L2) check:
-
-```bash
-pnpm bench:feature:ray
-# or:
-node tests/bench/runIntegratedWorkerBenchmark.mjs --headed \
-  --scene /tests/bench/stressScenes/rayStressScene.js \
-  --scene-export RayStressScene \
-  --output tests/results/ray-stress-headed.json
-```
-
-Ray microbench (L1):
-
-```bash
-pnpm bench:micro:ray
-# optional: --entities 2000 --rays 200000 --cell-size 128 --seed 12648430 --output tests/results/ray-micro.json
-```
-
-Physics kernel study (isolated JavaScript loop research, not an engine scene):
-
-```bash
-node tests/bench/runPhysicsKernelStudy.mjs --entities 100000 --iterations 240
-```
-
-To compare different static config values inside a scene (e.g. `cellSize`), edit that scene's config between runs; there is no CLI patch into scene config.
+- `node tests/bench/runKernelVariants.mjs` and `node tests/bench/runKernelsVsRev.mjs`: kernels against a
+  variant or a revision (HOW_WE_MEASURE, Kernel comparisons).
+- `pnpm bench:scoreboard`: every catalog row against a revision.
+- `node tests/bench/profileSceneSweep.mjs`: a CPU, deopt or heap inventory of every scene.
+- `node tests/bench/heapSampleWorkers.mjs`, `node tests/bench/heapSampleNode.mjs`: allocation per site.
+- `pnpm bench:headed:median` (`runHeadedMedian.mjs`) runs one tree a few times and reports medians; it is
+  for a quick look at a scene, not for a verdict, which needs pairs.
 
 ## Limits
 
-Multithreaded physics + floating point ⇒ **not perfectly reproducible** without a dedicated deterministic replay harness. These defaults **reduce** but do not remove variance.
+Multithreaded physics and floating point make a scene not exactly reproducible without a deterministic
+replay harness; seeds and fixed knobs reduce the spread but do not remove it. That is why verdicts come
+from paired, counterbalanced sittings against the session's own A/A.
