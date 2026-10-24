@@ -2733,9 +2733,15 @@ export class GameObject {
       RigidBody.static[i] = 0;
       RigidBody.ax[i] = 0;
       RigidBody.ay[i] = 0;
-      RigidBody.vx[i] = 0;
-      RigidBody.vy[i] = 0;
-      RigidBody.angularVelocity[i] = 0;
+      // vx, vy, angularVelocity and sleeping are views of Box2D's heap (bindBox2dHotFields): without physics they are
+      // not bound, and a spawn that wrote them threw, so a scene with physics off could not spawn a RigidBody type.
+      if (RigidBody.vx) {
+        RigidBody.vx[i] = 0;
+        RigidBody.vy[i] = 0;
+        RigidBody.angularVelocity[i] = 0;
+        // Reset sleeping state (entity must start awake for physics to work)
+        RigidBody.sleeping[i] = 0;
+      }
       RigidBody.angularAccel[i] = 0;
       RigidBody.mass[i] = 0;
       RigidBody.invMass[i] = 0;
@@ -2745,8 +2751,6 @@ export class GameObject {
       RigidBody.angularDamping[i] = 0;
       RigidBody.speed[i] = 0;
       RigidBody.fixedRotation[i] = 0;
-      // Reset sleeping state (entity must start awake for physics to work)
-      RigidBody.sleeping[i] = 0;
       RigidBody.sleepThreshold[i] = 0;
     }
 
