@@ -1890,6 +1890,9 @@ class LogicWorker extends AbstractWorker {
     // Purge pairs whose generation changed or entities went inactive.
     // A throwing onCollisionStay is reported and the walk resumes at the next
     // pair (s is already past it); the try sits outside the loop.
+    // E-131: the generations are plain reads. Physics bumps them; a bump this walk misses is caught on the
+    // next frame's, as one that lands just after an Atomics.load would be. Atomics.load here cost the contact
+    // flow kernel 22 to 24 % of its time.
     let s = 0;
     let calling = -1;
     for (;;) {
@@ -1901,7 +1904,7 @@ class LogicWorker extends AbstractWorker {
             active[minE] &&
             active[maxE] &&
             (gen
-              ? (Atomics.load(gen, minE) >>> 0) === genMin[s] && (Atomics.load(gen, maxE) >>> 0) === genMax[s]
+              ? (gen[minE] >>> 0) === genMin[s] && (gen[maxE] >>> 0) === genMax[s]
               : genMin[s] === 0 && genMax[s] === 0);
           if (!valid) {
             this._removePairSlot(s, collisionPairKey(minE, maxE));
