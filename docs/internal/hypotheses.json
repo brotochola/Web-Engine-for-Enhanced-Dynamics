@@ -7980,17 +7980,17 @@
       "aliases": [],
       "refs": [],
       "records": [
-        "R-0573"
+        "R-0573",
+        "R-0600"
       ],
       "id": "E-130",
       "title": "Mesh vertices past 65 535: 32-bit triangle indices when maxMeshVerts asks for them",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "opened 2026-10-24 (owner request)",
       "date": "2026-10-24",
       "area": "pixi",
       "kind": "reach",
-      "rank": 24,
-      "result": "MeshGeometry is one arena capped at 65 535 vertices (meshGeometry.js MAX_VERTS) because its triangle indices are 16-bit; MeshRenderer and meshTriangulate clamp to it, and wasm/meshCorners.c follows the arena layout. WebGL2 takes 32-bit index buffers natively. With 32-bit indices when renderer.maxMeshVerts passes 65 535, meshApiStressScene could load the renderer past the 3 ms floor (W11 is a protocol ceiling today).",
+      "result": "kept-hygiene 2026-10-24: the old layout and the 16-bit kernel body unchanged, meshApi on 262 144 vertices in Chrome (W11's pair, R-0575), the gate R-0577 NEUTRAL",
       "next": "After the float32 pass on meshCorners: an agent widens the arena indices and the corner kernel per width, parity tests at both widths, a meshApi load knob past 65 535 vertices."
     }
   ],
@@ -13235,6 +13235,19 @@
         "f7d7ae5d",
         "b0ec6ca8",
         "a37217a6"
+      ]
+    },
+    {
+      "id": "R-0600",
+      "date": "2026-10-24",
+      "title": "Mesh vertices past 65 535 closed: the 16-bit path unchanged, 262 144 vertices in Chrome, the gate, E-130",
+      "verdict": "kept-hygiene",
+      "text": "**kept-hygiene (reach).** Closed from the record, with no new sitting:\n- **The 16-bit path is the old one.** A config of up to 65 535 vertices binds exactly the old layout (class, offset and length of all 21 columns, 8 configs, through createSceneSharedBuffers). The 16-bit corner kernel's body is byte-identical in the disassembly (R-0573).\n- **Past 65 535 runs in Chrome.** W11's owner pair (R-0575) ran meshApiStressScene on the 32-bit arena (`count=4&maxVerts=262144&maxIndices=1310720`, 5 280 entities), headed, 4 pairs, with no error. Pixi's MESH path on a 66 306-vertex plane is in `meshCornersWide.test.js`.\n- **The gate.** The Predator gate of the morning (R-0577, `5b3b3633` against `d8f41eb7`) held every E-130 commit: NEUTRAL at 8 pairs.\n\nThe 32-bit kernel costs 5.5 % against the 16-bit on the same meshes (R-0567), paid only by a scene that asks for more than 65 535 vertices.",
+      "commits": [
+        "89d93fcc",
+        "2b39540b",
+        "0acb17c6",
+        "f20949e6"
       ]
     }
   ],
