@@ -897,10 +897,15 @@ class PreRenderWorker extends AbstractWorker {
             this._renderablePy = new Float32Array(maxItems);
             this._renderableRotC = new Float32Array(maxItems);
             this._renderableRotS = new Float32Array(maxItems);
-            this._persistEntity = [new Int32Array(maxItems), new Int32Array(maxItems)];
-            this._persistType = [new Uint8Array(maxItems), new Uint8Array(maxItems)];
-            this._persistFrame = [new Uint16Array(maxItems), new Uint16Array(maxItems)];
-            this._persistAnim = [new Uint16Array(maxItems), new Uint16Array(maxItems)];
+            // W4c: in the memory, where the emit kernel's persist path reads them.
+            const persistRows = emitLayout && emitLayout.persistRows === maxItems ? maxItems : 0;
+            const persistView = (Type, byte, b) => (persistRows
+                ? new Type(emitBuffer, byte + b * persistRows * Type.BYTES_PER_ELEMENT, persistRows)
+                : new Type(maxItems));
+            this._persistEntity = [0, 1].map((b) => persistView(Int32Array, emitLayout?.persistEntityByte, b));
+            this._persistType = [0, 1].map((b) => persistView(Uint8Array, emitLayout?.persistTypeByte, b));
+            this._persistFrame = [0, 1].map((b) => persistView(Uint16Array, emitLayout?.persistFrameByte, b));
+            this._persistAnim = [0, 1].map((b) => persistView(Uint16Array, emitLayout?.persistAnimByte, b));
             this._persistCount = [0, 0];
 
             // Pre-allocate query arrays

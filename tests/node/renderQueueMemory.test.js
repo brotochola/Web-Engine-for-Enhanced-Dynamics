@@ -113,7 +113,13 @@ test('with the emit spec, the component blocks and the emit state are regions ap
     ['foreign', e.foreignByte, MAX * 4],
     ['results', e.resultsByte, 16],
     ['table', e.tableByte, EMIT_TABLE_SLOTS * 4],
+    // W4c: the rows each queue buffer last held, both buffers back to back.
+    ['persistType', e.persistTypeByte, 2 * MAX],
+    ['persistEntity', e.persistEntityByte, 2 * MAX * 4],
+    ['persistFrame', e.persistFrameByte, 2 * MAX * 2],
+    ['persistAnim', e.persistAnimByte, 2 * MAX * 2],
   ].sort((a, b) => a[1] - b[1]);
+  assert.equal(e.persistRows, MAX);
   for (let k = 0; k < spans.length; k++) {
     const [name, at, bytes] = spans[k];
     assert.equal(at % 64, 0, `${name} starts on a line`);

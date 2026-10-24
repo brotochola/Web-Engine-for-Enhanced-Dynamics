@@ -73,7 +73,9 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * - emitProxy, emitFrameCount, emitFrameStart, emitFrameWidth, emitFrameHeight: the texture metadata as
  *   flat tables, written when it arrives (i32 per sheet and state, i32 and u16 per animation and frame);
  * - emitEnds, emitWarns: [entity, value] u32 pairs the kernel hands back; emitForeign: the rows it
- *   leaves to the JS (u32); emitResults: its counts; emitTable: its column table (u32 byte offsets).
+ *   leaves to the JS (u32); emitResults: its counts; emitTable: its column table (u32 byte offsets);
+ * - emitPersistType, emitPersistEntity, emitPersistFrame, emitPersistAnim: the rows each queue buffer last
+ *   held, for the persist check (W4c; u8, i32, u16, u16, the two buffers back to back).
  * With `stamp` (E-114, the shadow stamp `shadowStamp.wasm`, which reads the sun rows and writes the stamp
  * rows where the GPU queues hold them), its scratch: the candidates, their distances, order and the kept
  * list (one entry per sun caster each), the stamp grid's counts, starts and items, the nearest lights per
@@ -120,6 +122,10 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitForeign', owner: 'pre-render', bytes: n * 4 },
       { name: 'emitResults', owner: 'pre-render', bytes: 16 },
       { name: 'emitTable', owner: 'pre-render', bytes: EMIT_TABLE_SLOTS * 4 },
+      { name: 'emitPersistType', owner: 'pre-render', bytes: 2 * n },
+      { name: 'emitPersistEntity', owner: 'pre-render', bytes: 2 * n * 4 },
+      { name: 'emitPersistFrame', owner: 'pre-render', bytes: 2 * n * 2 },
+      { name: 'emitPersistAnim', owner: 'pre-render', bytes: 2 * n * 2 },
     );
   }
   if (stamp) {

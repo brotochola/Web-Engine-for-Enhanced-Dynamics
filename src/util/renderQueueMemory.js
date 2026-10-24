@@ -48,7 +48,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         tableByte: r.packTables.byte,
         tableSlots: GPU_PACK_TABLE_SLOTS,
         particlesByte: r.packResults.byte,
-        emit: emit ? emitLayout(r, emit.entities | 0) : null,
+        emit: emit ? emitLayout(r, emit.entities | 0, n) : null,
         stamp: stamp ? stampLayout(r, stamp) : null,
       },
     };
@@ -58,7 +58,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
 }
 
 /** Byte offsets of the emit's regions; -1 for a component block the scene does not have. */
-function emitLayout(r, entities) {
+function emitLayout(r, entities, rows) {
   const block = (region) => (region.bytes > 0 ? region.byte : -1);
   return {
     entities,
@@ -81,6 +81,12 @@ function emitLayout(r, entities) {
     foreignByte: r.emitForeign.byte,
     resultsByte: r.emitResults.byte,
     tableByte: r.emitTable.byte,
+    // Buffer b's rows start at byte + b * persistRows * the element size.
+    persistRows: rows,
+    persistTypeByte: r.emitPersistType.byte,
+    persistEntityByte: r.emitPersistEntity.byte,
+    persistFrameByte: r.emitPersistFrame.byte,
+    persistAnimByte: r.emitPersistAnim.byte,
   };
 }
 
