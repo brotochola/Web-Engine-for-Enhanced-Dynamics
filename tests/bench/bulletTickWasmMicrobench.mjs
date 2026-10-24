@@ -7,10 +7,13 @@
  *   storm    40 000 live bullets at 1500 px/s, one frame (the scene's pool, full)
  *   sparse   4 000 live bullets in the same pool of 40 000 (the walk over idle slots)
  *
- *   js    BulletPool.tick
- *   wasm  bullet_tick, then the JS's returnToPool over the returned slots
+ *   js            BulletPool.tick
+ *   wasm          bullet_tick, then the JS's returnToPool over the returned slots
+ *   wasm_hoist    the same with the box test's reciprocals once per ray
+ *   wasm_nostamp  without the stamps that skip an entity a ray already tested
+ *   wasm_lean     both
  *
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/bulletTickWasmMicrobench.mjs --variants js,wasm --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/bulletTickWasmMicrobench.mjs --variants js,wasm,wasm_hoist,wasm_nostamp,wasm_lean --rounds 5
  *   node tests/bench/bulletTickWasmMicrobench.mjs --variant wasm [--output path]
  */
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
@@ -22,6 +25,14 @@ import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { Grid } from '../../src/core/grid.js';
 import { readyBulletStamps, writeBulletColumns } from '../../src/core/bulletTickClient.js';
+
+/** Bench variant name → the kernel's export. */
+const KERNELS = {
+  wasm: 'bullet_tick',
+  wasm_hoist: 'bullet_tick_hoist',
+  wasm_nostamp: 'bullet_tick_nostamp',
+  wasm_lean: 'bullet_tick_lean',
+};
 
 const ARGS = parseArgs();
 const POOL = 40000;
@@ -37,7 +48,7 @@ const CASES = {
   sparse: { live: 4000 },
 };
 
-export async function setupBulletKernel(caseName, seed = 0xb011e7) {
+export async function setupBulletKernel(caseName, seed = 0xb011e7, kernel = 'bullet_tick') {
   const c = CASES[caseName];
   const size = { bullets: POOL, entities: INTERIOR + 4, cols: 32, rows: 24, cellSize: 128, perCell: 96, impacts: IMPACTS };
   const w = bulletWorld(size);
@@ -53,7 +64,7 @@ export async function setupBulletKernel(caseName, seed = 0xb011e7) {
     v.cShape[e] = 0;
     v.cWidth[e] = wd;
     v.cHeight[e] = ht;
-    w.insert(e, x, y, Math.max(wd, ht) * 0.5);
+    w.insert(e, x, y, wd * 0.5, ht * 0.5);
   };
   // The walls' boxes span the world: inserted in every cell along each edge, as their AABBs are.
   box(0, WORLD_W * 0.5, WALL * 0.5, WORLD_W, WALL);
@@ -103,7 +114,7 @@ export async function setupBulletKernel(caseName, seed = 0xb011e7) {
   const activeJs = new Uint16Array(POOL + 1);
   const header = new Int32Array(2);
   const impactsJs = new Float32Array(IMPACTS * 6);
-  const k = await bindBullets(w);
+  const k = await bindBullets(w, kernel);
   const dt = 1 / 60;
 
   /** One tick of the first `bullets` slots from the starting bytes; returns the bullets left. */
@@ -135,9 +146,10 @@ export async function setupBulletKernel(caseName, seed = 0xb011e7) {
   };
   const hash = (variant) => {
     let x = 2166136261;
-    const list = variant === 'wasm' ? v.activeOut : activeJs;
-    const impacts = variant === 'wasm' ? v.impacts : impactsJs;
-    const nImpacts = variant === 'wasm' ? k.results[1] : header[0];
+    const kernelRun = variant !== 'js';
+    const list = kernelRun ? v.activeOut : activeJs;
+    const impacts = kernelRun ? v.impacts : impactsJs;
+    const nImpacts = kernelRun ? k.results[1] : header[0];
     const parts = [v.bActive, v.bX, v.bY, v.bPrevX, v.bPrevY, list.subarray(0, list[0] + 1), impacts.subarray(0, nImpacts * 6)];
     for (const a of parts) {
       const bytes = new Uint8Array(a.buffer, a.byteOffset, a.length * a.BYTES_PER_ELEMENT);
@@ -150,18 +162,18 @@ export async function setupBulletKernel(caseName, seed = 0xb011e7) {
 
 async function main() {
   const variant = String(ARGS.variant || 'js');
-  if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  if (variant !== 'js' && !KERNELS[variant]) throw new Error(`unknown variant ${variant}`);
   const cases = {};
   let checksum = 2166136261;
   let tier = null;
   for (const name of Object.keys(CASES)) {
-    const s = await setupBulletKernel(name);
-    const run = variant === 'wasm' ? s.wasm : s.js;
+    const s = await setupBulletKernel(name, undefined, KERNELS[variant]);
+    const run = variant === 'js' ? s.js : s.wasm;
     s.resetReturned();
     const left = run();
     checksum = Math.imul(checksum ^ s.hash(variant), 16777619) >>> 0;
     // Normal compiles, not OSR: short calls over the first 64 slots.
-    if (variant === 'wasm') tier = await warmWasm(s.k.tick, () => run(64));
+    if (variant !== 'js') tier = await warmWasm(s.k.tick, () => run(64));
     else warmNormalCompile(() => run(64));
     cases[name] = timeIt(`bullet tick ${variant} ${name} (${CASES[name].live} live, ${left} left)`, () => run(), { iterations: 10, warmup: 3 });
     cases[name].left = left;
@@ -169,7 +181,7 @@ async function main() {
   const report = {
     feature: 'bullet-tick-wasm',
     variant,
-    functions: ['BulletPool.tick', 'Ray.linecastDir', 'bulletTick.bullet_tick'],
+    functions: ['BulletPool.tick', 'Ray.linecastDir', `bulletTick.${KERNELS[variant] || 'bullet_tick'}`],
     pool: POOL,
     seed: 0xb011e7,
     checksum,
