@@ -869,6 +869,47 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 
+### E-122 The flowfield search in WASM (E-76 W14) — **kernel 16×, wired; scene gate not run yet, 2026-10-24**
+An agent's `wasm/test/navFlowfield.c` (`f0237dd0`): `computeFlowfield`'s search, walls' pass and smoothing,
+bit for bit (23 grids, two mutants caught). Kernel: 710.0 → 11 369.4 flowfields/s (25/25). In navStress the JS
+computes about 6 a frame against an 8 ms deadline (E-38): the gate's owner is the throughput, not STEP_MS
+(`--owner FLOWFIELDS_COMPUTED`, `54b09f41`, the serviced count muted with it, `21964f6b`). Wired: the nav buffer
+at byte 0 of a WebAssembly.Memory with the scratch after it (`e1f30e47`), the module and its client
+(`e3c5481e`), the particle worker (`4e843306`); a test boots a worker on that memory, 60 flowfields bit for bit.
+The navStress gate was stopped by the owner during its first pair (the base read 6.2 flowfields a frame,
+particle 8.55 ms).
+
+### E-121 The mesh corner rewrite in WASM (E-76 W11) — **kernel +35.7 %, wiring in progress, 2026-10-24**
+An agent's `wasm/test/meshCorners.c` (`517a41bd`), `rewriteExplicitMeshCorners` whole: 688.7 → 934.9 ops/s
+(25/25). The rewrite is 53.1 % of Pixi in meshApiStressScene; E-118 first.
+
+### E-120 Decal stamping in WASM with SIMD (E-76 W26) — **kernel +377.9 %, wiring next, 2026-10-24**
+An agent's `wasm/test/decalStamp.c` (`db9f9f3a`), exact: 304.1 → 1 453.0 ops/s (25/25); the scalar port loses
+(−11.4 %). Wiring needs the tiles in a WebAssembly.Memory of their own (every consumer views them at byte 0).
+
+### E-119 Decoration sway in WASM (E-76 W22) — **KEPT (kernel; product-neutral by the floor), 2026-10-24**
+Kernel +94.5 % (25/25); wired in `0433e6cc`, `f86afae5`, `4bad5d36`. No scene can lift the particle worker past
+the 3 ms floor (65 535 decorations at most, about 1.6 ms). Predator (both sides in worktrees): particle 0.942 → 0.870 ms (−7.6 %, under the floor); nothing regressed.
+
+### E-118 A UV generation for the mesh corners — **open (from W11's screen), 2026-10-24**
+`setVertices` writes positions only, yet the UV batch rewrites every corner's UVs each frame (half of 9.5 MB
+of writes in meshApiStressScene). A UV generation next to the vertex generation lets the JS and the kernel skip
+them, bit-identical. Being built by an agent with the W11 wiring.
+
+### E-117 Persist frames without shadow casters — **KEPT (product), 2026-10-24**
+Without ShadowCaster the sprite rows' shadow terms stay the full emit's zeros (`7a06ab3e`). Kernel +31.7 %
+(25/25). Gate with E-116, BunnyMark, 4 pairs: pre-render 5.644 → 5.174 ms, −7.7 %, worse 0/4.
+
+### E-116 The persist check and the poses in one WASM walk — **KEPT (product), 2026-10-24**
+`persist_frame` (`b8a3af2c`): the pose writes as the walk passes each row, the clocks after it. Kernel +11.3 %
+(25/25). Gated with E-117 (above).
+
+### E-115 The persist path in WASM (E-76 W4c) — **KEPT (product), 2026-10-24**
+The persist check, the poses-only pass and the remembered rows in the emit kernel (`7a839d29`). Kernel: a persist
+frame +36.7 %, a remember +129.9 % (25/25 each). BunnyMark gate, 4 pairs: pre-render 6.121 → 5.699 ms, −6.9 %,
+worse 0/4. Predator (with W22, both sides in worktrees): pre-render −3.4 %, worse 1/4.
+Report: [`reports/E-115-preRender-persist-wasm.md`](./reports/E-115-preRender-persist-wasm.md).
+
 ### E-114 The shadow-caster stamp in WASM (E-76 W23) — **KEPT (product), 2026-10-23**
 `wasm/shadowStamp.c` is `stampLightRange` whole, bit for bit; it runs on the render-queue memory, where the sun rows
 and the stamp output already were, with its scratch and a light table in new stamp regions; switch `wasm.shadowStamp`.

@@ -6,6 +6,14 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 24 October 2026 (morning) — BunnyMark's Persist Frames, Four Agents, and a Folder That Moved
+
+BunnyMark draws 250 000 bunnies, and on almost every frame nothing about them changes but their positions, which the collect already wrote. Pre-render still walked all of them twice to make sure, and once more after any frame where something did change. All three walks are now one C call in the same memory as the queue, then one walk instead of two, and finally a walk that leaves alone the shadow terms of a scene with no shadows. Pre-render went from 6.1 to 5.2 ms.
+
+Four agents worked in parallel on four more kernels: grass sway, decal stamping, mesh corners and the navigation flow fields. I ran their timings one at a time. All four won; the flow field search runs sixteen times faster than the JavaScript. Grass sway is wired, and runs in its own corner of the render-queue memory.
+
+Then a Predator gate said everything got slower, physics included, which none of the changes touch. The gate runs the new code from the main folder, and an agent was editing files there. The gate can now take the new side from a worktree of its own, so the agents can keep working while it measures.
+
 ## Saturday 24 October 2026 (small hours) — The Shadow Stamp in C, and a Minimized Window
 
 The shadow pass was half of Predator's pre-render once the emit went to C: every light gathers the shadow casters in its range, keeps the closest ones, and each kept caster is copied into the stamp queue with the light. All of it is now one C call on the render-queue memory, the same bits out, down to which caster wins a tie. In its kernel it runs twice as fast as the JavaScript; in Predator pre-render went from 5.29 to 4.69 ms, 10 % with every pair agreeing.
