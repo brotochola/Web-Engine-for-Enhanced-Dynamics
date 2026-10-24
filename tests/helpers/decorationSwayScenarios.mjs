@@ -10,7 +10,7 @@ import {
   SWAY_OFF,
   swayFrequencyForBucket,
 } from '../../src/util/decorationSway.js';
-import { writeSwayTable } from '../bench/decorationSwayWasmMicrobench.mjs';
+import { swayStateViews, writeSwayTable } from '../bench/decorationSwayWasmMicrobench.mjs';
 
 export const N = 1500;
 export const K_MAX = 70000;
@@ -175,19 +175,7 @@ export function useWideParents(s) {
   writeSwayTable(s.b, s.worker);
 }
 
-/** Every array the sway reads or writes, by name: the DecorationComponent columns and the worker's. */
+/** Every array the sway reads or writes, by name (swayStateViews), as the views are now. */
 export function stateViews(s) {
-  const D = DecorationComponent;
-  const w = s.worker;
-  const out = Object.keys(D.ARRAY_SCHEMA).map((name) => [name, D[name]]);
-  out.push(
-    ['snapshot', w._activeDecorationSnapshot],
-    ['phaseSin', w._phaseSin],
-    ['phaseCos', w._phaseCos],
-    ['bucketSin', w._bucketSin],
-    ['bucketCos', w._bucketCos],
-    ['bucketOf', w._swayBucketOf],
-    ['bucketFreq', w._swayBucketFreq],
-  );
-  return out;
+  return swayStateViews(s.worker);
 }
