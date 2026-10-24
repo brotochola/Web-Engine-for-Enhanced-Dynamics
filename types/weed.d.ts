@@ -276,7 +276,7 @@ export type SceneQueryTuple = readonly (typeof Component)[];
 export type SceneConfig = Record<string, unknown> & {
   /**
    * Entity id width. 'auto' (default): 16-bit ids while the scene's pools hold at most 65535 entities, 32-bit
-   * past that, decided when the scene is built. 16 or 32 forces one (32: up to 300000 entities).
+   * past that, decided when the scene is built. 16 or 32 forces one (32: up to 500000 entities).
    */
   entityIdWidth?: 'auto' | 16 | 32;
   physics?: Record<string, unknown> & {

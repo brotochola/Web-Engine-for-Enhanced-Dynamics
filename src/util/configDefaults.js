@@ -298,7 +298,7 @@ export const SCENE_DEFAULTS = Object.freeze({
   seed: 1,
   /**
    * 'auto' = Uint16 entity ids while the scene's pools hold at most 65535 entities, Uint32 past that (the
-   * engine decides when the scene is built). 16 or 32 forces one: 16 = max 65535, 32 = Uint32 lists (max 300000).
+   * engine decides when the scene is built). 16 or 32 forces one: 16 = max 65535, 32 = Uint32 lists (max 500000).
    */
   entityIdWidth: 'auto',
   /**

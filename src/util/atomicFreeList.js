@@ -10,7 +10,7 @@
 //
 // Entities: popEntity / pushEntity / resetEntity, bound once in bindEntityIdWidth.
 // Width 16 uses the same u16 Treiber. Width 32 uses FL4: one Int32 CAS,
-// 19-bit (local+1) + 13-bit tag. Product ceiling 300000 fits in 19 index bits.
+// 19-bit (local+1) + 13-bit tag. Product ceiling 500000 fits in 19 index bits (524287).
 // Tag window is 8192 ops.
 //
 // top u16: Int32Array[2] over 8 bytes. [0]=packed head, [1]=free count.

@@ -100,15 +100,15 @@ test('u16 Treiber wraps local+1 at pool 70000; u32 does not', () => {
   assert.equal(popFreeIndex(u32.top, u32.links), n - 1);
 });
 
-test('u32 Treiber pop/push/batch at 300000', () => {
-  const n = 300000;
+test('u32 Treiber pop/push/batch at 500000 (the 32-bit entity ceiling)', () => {
+  const n = 500000;
   const { top, links } = makeListU32(n);
   resetFreeList(top, links, n, 1);
   const batch = new Int32Array(5);
   assert.equal(popFreeIndices(top, links, 5, batch), 5);
-  assert.deepEqual(Array.from(batch), [299999, 299998, 299997, 299996, 299995]);
+  assert.deepEqual(Array.from(batch), [499999, 499998, 499997, 499996, 499995]);
   for (let i = 4; i >= 0; i--) pushFreeIndex(top, links, batch[i]);
-  assert.equal(popFreeIndex(top, links), 299999);
+  assert.equal(popFreeIndex(top, links), 499999);
 });
 
 test('startIndex offsets pops and pushes (entity pools)', () => {
