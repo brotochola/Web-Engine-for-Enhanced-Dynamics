@@ -1,7 +1,9 @@
 // The mesh corner rewrite's test frames (tests/node/meshCornersWasm.test.js, meshCornersF32.test.js): one memory
 // that starts with the MeshGeometry block as the product's mesh memory does, the shipped kernel bound to it, and
 // random frames written straight into the columns, so they reach what the MeshRenderer API never makes (see
-// meshCornersWasm.test.js for the list).
+// meshCornersWasm.test.js for the list). setup({ width: 32, V, I }) binds a 32-bit arena (E-130,
+// meshCornersWide.test.js); the frames then also hold indices and vertex counts no 16-bit column holds. With no
+// options the frames are the ones they were before E-130.
 import { MeshGeometry } from '../../src/core/meshGeometry.js';
 import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
 import { bindMeshCorners, MESH_CORNER_SLOTS } from '../../src/render/meshCornersClient.js';
@@ -38,9 +40,15 @@ function cornerBits(r) {
   return f32Bits[0];
 }
 
-export async function setup() {
+/**
+ * @param {{ width?: number, V?: number, I?: number }} [opts] the arena: its width (32 binds Uint32 vertex counts
+ *   and indices at any size) and its vertex and index capacities
+ */
+export async function setup(opts = {}) {
+  const sv = opts.V ?? V;
+  const si = opts.I ?? I;
   const layout = layoutRegions([
-    { name: 'meshGeometry', owner: 'test', bytes: MeshGeometry.getBufferSize(V, I, E) },
+    { name: 'meshGeometry', owner: 'test', bytes: MeshGeometry.getBufferSize(sv, si, E, opts.width) },
     { name: 'rows', owner: 'test', bytes: CAP * MAX_STEP * 4 },
     { name: 'entity', owner: 'test', bytes: CAP * 4 },
     { name: 'gen', owner: 'test', bytes: GEN_ROOM * 4 },
@@ -53,7 +61,7 @@ export async function setup() {
   const buffer = memory.buffer;
   const R = layout.regions;
   MeshGeometry.reset();
-  MeshGeometry.initializeArrays(buffer, V, I, E);
+  MeshGeometry.initializeArrays(buffer, sv, si, E, opts.width);
   const g = MeshGeometry;
   const geom = {
     vertOffset: g.vertOffset, vertCount: g.vertCount, indexOffset: g.indexOffset, indexCount: g.indexCount,
@@ -65,6 +73,9 @@ export async function setup() {
     b,
     memory,
     buffer,
+    V: sv,
+    I: si,
+    wide: g.indexWidth === 32,
     geom,
     vertGen: g.vertGen,
     uvGenLive: g.uvGen,
@@ -88,12 +99,21 @@ export function viewsOf(s) {
   };
 }
 
+/** E-130: corner indices past any mesh that only a 32-bit column holds (2^31 and up are negative as int32). */
+const WIDE_BAD_INDEX = [65535, 65536, 0x7fffffff, 0x80000000, 0xffffffff];
+/** A 32-bit arena's large meshes: 65 536 vertices and up, indexed (a few triangles each). */
+const BIG_VERTS = 65536;
+
 /**
  * One frame's MeshGeometry, written into the columns. Mode 2 puts vertex spans past the column's end, mode 3
  * index spans, mode 5 corner indices past the mesh; mode 4 makes meshes under 3 vertices. Returns each
- * entity's triangle count as rewriteExplicitMeshCorners works it out (need), for the instance lists.
+ * entity's triangle count as rewriteExplicitMeshCorners works it out (need), for the instance lists. In a
+ * 32-bit arena (s.wide) some index lists name vertices past 65535 of meshes that large (when the arena holds
+ * one), mode 5 puts indices of 2^16 and up past the mesh, and mode 4 gives some meshes a count of 2^31 or more.
  */
 export function writeGeometry(r, s, mode) {
+  const V = s.V;
+  const I = s.I;
   for (const w of s.corners) for (let q = 0; q < V; q++) w[q] = cornerBits(r);
   const g = s.geom;
   let vAt = 0;
@@ -109,6 +129,7 @@ export function writeGeometry(r, s, mode) {
       continue;
     }
     let vN = 3 + Math.floor(r() * 13);
+    if (s.wide && kind >= 0.5 && V > BIG_VERTS + 4096 && r() < 0.08) vN = BIG_VERTS + Math.floor(r() * 4096);
     if (mode === 4 && r() < 0.25) vN = Math.floor(r() * 3);
     if (vAt + vN > V) vAt = 0;
     let vOff = vAt;
@@ -119,6 +140,8 @@ export function writeGeometry(r, s, mode) {
     }
     g.vertOffset[e] = vOff;
     g.vertCount[e] = vN;
+    // A count the JS reads as negative: the runs keep the mesh's own triangle count, so the count decides.
+    if (s.wide && mode === 4 && r() < 0.1) g.vertCount[e] = (0x80000000 + Math.floor(r() * 1000)) >>> 0;
     if (kind < 0.5) {
       // A fan: no index list, whatever indexCount holds.
       g.indexOffset[e] = -1 - Math.floor(r() * 4);
@@ -133,7 +156,7 @@ export function writeGeometry(r, s, mode) {
     let at = iAt;
     iAt += count;
     for (let q = 0; q < count; q++) g.indices[at + q] = Math.floor(r() * Math.max(1, vN));
-    if (mode === 5 && count >= 3 && r() < 0.3) g.indices[at + Math.floor(r() * count)] = r() < 0.7 ? vN + Math.floor(r() * 3) : 65535;
+    if (mode === 5 && count >= 3 && r() < 0.3) g.indices[at + Math.floor(r() * count)] = r() < 0.7 ? vN + Math.floor(r() * 3) : s.wide ? WIDE_BAD_INDEX[Math.floor(r() * WIDE_BAD_INDEX.length)] : 65535;
     if (mode === 3 && count >= 3 && r() < 0.35) {
       const past = r();
       at = past < 0.7 ? I - count + 1 + Math.floor(r() * count) : past < 0.9 ? I + Math.floor(r() * 16) : 0x7ffffff0;

@@ -5,6 +5,8 @@
 // own, so the kernel reads and writes every array where it lives. A call it cannot take goes to the JS
 // function, and the binding counts it in `declined`: an array outside the memory or of another type,
 // MeshGeometry columns other than the bound ones, rows or an instance list shorter than the call.
+// E-130: a 32-bit arena (renderer.maxMeshVerts past 65535) binds the kernel's rewrite_corners_u32 export, a
+// 16-bit one rewrite_corners, by the class of the columns at bind time; the call path is the same.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { MESH_CORNER_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
@@ -48,7 +50,7 @@ const UV_GEN_LEN = 22;
 const LAST_UV = 23;
 const LAST_UV_LEN = 24;
 
-/** The MeshGeometry columns the kernel reads, with the class each must have. */
+/** The MeshGeometry columns the kernel reads, with the class each must have, in a 16-bit arena. */
 const GEOMETRY_COLUMNS = {
   vertOffset: Int32Array,
   vertCount: Uint16Array,
@@ -60,18 +62,26 @@ const GEOMETRY_COLUMNS = {
   uvV: Float32Array,
   indices: Uint16Array,
 };
+/** E-130: in a 32-bit arena (renderer.maxMeshVerts past 65535), the vertex counts and indices are Uint32. */
+const GEOMETRY_COLUMNS_U32 = { ...GEOMETRY_COLUMNS, vertCount: Uint32Array, indices: Uint32Array };
+/** The kernel's export for each arena width: wasm/meshCorners.c rewrite_corners and rewrite_corners_u32. */
+const REWRITE_EXPORT = 'rewrite_corners';
+const REWRITE_EXPORT_U32 = 'rewrite_corners_u32';
 
 /**
  * Bind the kernel to `memory`, the MeshGeometry columns in it (`geom`: the views MeshGeometry holds, by their
  * MeshGeometry names) and a table of MESH_CORNER_SLOTS u32 at `tableByte`. The columns' slots are written
- * once. Throws when a column is not where the kernel can read it.
+ * once, and the export of the arena's width is chosen here, once (E-130): `indexWidth` on the binding says
+ * which. Throws when a column is not where the kernel can read it.
  * @param {WebAssembly.Memory} memory
  * @param {number} tableByte
  * @param {Record<string, ArrayBufferView>} geom
  */
 export async function bindMeshCorners(memory, tableByte, geom) {
   const buffer = memory.buffer;
-  for (const [name, Ctor] of Object.entries(GEOMETRY_COLUMNS)) {
+  const wide = geom.indices instanceof Uint32Array;
+  const columns = wide ? GEOMETRY_COLUMNS_U32 : GEOMETRY_COLUMNS;
+  for (const [name, Ctor] of Object.entries(columns)) {
     const view = geom[name];
     if (!(view instanceof Ctor) || view.buffer !== buffer) throw new Error(`meshCorners: MeshGeometry.${name} is not a ${Ctor.name} in the memory`);
   }
@@ -79,7 +89,8 @@ export async function bindMeshCorners(memory, tableByte, geom) {
   const v = geom.vertexX.length;
   if (geom.vertCount.length !== e || geom.indexOffset.length !== e || geom.indexCount.length !== e) throw new Error('meshCorners: entity columns of different lengths');
   if (geom.vertexY.length !== v || geom.uvU.length !== v || geom.uvV.length !== v) throw new Error('meshCorners: vertex columns of different lengths');
-  const { rewrite_corners: rewrite } = await loadWasmKernel('meshCorners', wasmUrl, memory, ['rewrite_corners']);
+  const exportName = wide ? REWRITE_EXPORT_U32 : REWRITE_EXPORT;
+  const rewrite = (await loadWasmKernel('meshCorners', wasmUrl, memory, [exportName]))[exportName];
   const table = new Uint32Array(buffer, tableByte, MESH_CORNER_SLOTS.length);
   table[VERT_OFFSET] = geom.vertOffset.byteOffset;
   table[VERT_COUNT] = geom.vertCount.byteOffset;
@@ -94,8 +105,8 @@ export async function bindMeshCorners(memory, tableByte, geom) {
   table[INDICES] = geom.indices.byteOffset;
   table[INDEX_CAP] = geom.indices.length;
   const bound = {};
-  for (const name of Object.keys(GEOMETRY_COLUMNS)) bound[name] = geom[name];
-  return { buffer, table, tableByte, rewrite, geom: bound, calls: 0, declined: 0 };
+  for (const name of Object.keys(columns)) bound[name] = geom[name];
+  return { buffer, table, tableByte, rewrite, geom: bound, calls: 0, declined: 0, indexWidth: wide ? 32 : 16 };
 }
 
 /** A Uint32Array in the kernel's memory holding at least `n` values. */

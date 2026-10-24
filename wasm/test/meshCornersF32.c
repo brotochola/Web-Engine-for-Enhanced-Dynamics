@@ -10,7 +10,7 @@
                             the same. A fan keeps vertex 0 in the low half of a vector and moves the shared edge
                             in from the previous triangle with one shuffle
    Same table and memory contract as rewrite_corners, which this module also exports (the shipped body,
-   included). The run walk, the generation tests, the topology checks and the checked copy for a torn mesh are
+   included, with its 32-bit copy rewrite_corners_u32, E-130; the float32 variants read 16-bit columns). The run walk, the generation tests, the topology checks and the checked copy for a torn mesh are
    the shipped ones. Bit-identical to rewrite_corners (tests/node/meshCornersF32.test.js). */
 #include "../meshCorners.c"
 
