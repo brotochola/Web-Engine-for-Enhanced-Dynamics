@@ -1,7 +1,8 @@
 # Box2D memory plan (`physics.wasmMemoryMB`)
 
 **Opened:** 2026-10-23 (planned in a chat session); reviewed against emsdk 6.0.4 and the shipped glue and
-saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-14. **Registry:** `DX-MEM` in
+saved here 2026-10-24. **Status:** done 2026-10-24 on `main`; follow-ups are review items N-69 to N-71.
+**Results:** [`reports/DX-MEM-box2d-memory.md`](./reports/DX-MEM-box2d-memory.md). **Registry:** `DX-MEM` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: a WeedJS developer chooses how much memory Box2D gets, per scene, with
@@ -16,8 +17,8 @@ error that names the key, and the documentation gives a measured size per kind o
   `D:\xampp\htdocs\Box2d_3.2_C_-_liquidfun` (branch `main`).
 - One item per commit; the node suite is green before each engine commit. Tick the item here (`[x]`,
   the date and the commit hash) in the same commit, add anything new under "Found during
-  implementation", and update `DX-MEM` in `hypotheses.json` (then run
-  `node scripts/buildHypothesesPage.mjs`).
+  implementation", and update `DX-MEM` in `hypotheses.json` (its refs name rows by key, never by line;
+  the page it feeds is built locally and not committed).
 - `weedjs\build_for_weed.bat` copies its output into `src/box2d/` at the end. Build into a scratch folder
   (`set WEED_BOX2D_DIR=…`) and copy in only when no other session is running a bench (check for
   headless Playwright Chrome or `runIntegratedWorkerBenchmark.mjs` in `Win32_Process`).
@@ -243,9 +244,14 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   scenes, gave 96 MB (Predator's peak 60.2 MB) and would have left BallsHeavyStressScene (peak 89.7 MB)
   to set its own size. 32 MB more per scene buys a default that runs every demo and bench, still 4× less
   commit than the 512 MB of before.
-- [ ] **BM-14** `docs` (section 7).
+- [x] **BM-14** `docs` (section 7). Done 2026-10-24. The report replaces the EXECUTION_PLAN entry, which
+  holds speed hypotheses; the HYPOTHESIS_LOG row records that the build change was not timed, and why.
+  The sibling's README was updated too.
 
 ## 6. Survey (BM-11)
+
+*Results, and how it was run in the end (3.5 minutes, three runs at a time): the report,
+[`reports/DX-MEM-box2d-memory.md`](./reports/DX-MEM-box2d-memory.md). The plan as first written follows.*
 
 Headless, `--src`, `--no-collect-detailed-stats`, one scene at a time, on a quiet machine. Each run warms
 up 3 s and measures 5 s; the churn scenes measure 60 s (does the peak plateau?). One line per run goes to a
@@ -315,9 +321,13 @@ The 2026-10-23 draft (items S1, S2, E1–E8) held up against the toolchain. The 
 
 ## Found during implementation
 
-- `buildBox2dHeapInsight` in `src/util/sceneBufferMemory.js`: the comment says "6× f32 state channels"; the code uses
-  `STATE_CHANNEL_COUNT`, which is 8.
+- `buildBox2dHeapInsight` in `src/util/sceneBufferMemory.js`: the comment said "6× f32 state channels"; the
+  code uses `STATE_CHANNEL_COUNT`, which is 8. Comment fixed (`b675e0d1`).
 - `ContactDrainCap32Scene` (`tests/bench/stressScenes/contactDrainHuntScene.js`) declares 70,000 bodies,
-  over the 65,535 that a physics scene allows.
+  over the 65,535 that a physics scene allows: review item N-69.
 - `writePhysicsStats` calls mallinfo every step, even with detailed stats off. Its cost is not measured;
-  BM-4 removes only the duplicate call.
+  BM-4 removes only the duplicate call: N-71.
+- Running out stopped physics silently (N-66, fixed by BM-8); a worker that died while booting hung the bench
+  page (N-67, fixed in BM-10); the sibling's `.bat` had LF endings (N-68, fixed); the template test fails
+  on `main` since 2026-10-22 (N-70, not this plan's).
+- The node test helper's Box2D instances moved from 512 to 128 MB with the default (`b6ced511`).
